@@ -1,0 +1,26 @@
+{
+  "name": "sutra-os",
+  "version": "1.0.0",
+  "description": "Sutra — Operating system for building companies with AI. One install: gstack + GSD + Sutra.",
+  "bin": {
+    "sutra": "./bin/install.mjs"
+  },
+  "keywords": [
+    "claude-code",
+    "ai",
+    "startup",
+    "operating-system",
+    "gstack",
+    "gsd"
+  ],
+  "author": "Asawa Inc.",
+  "license": "UNLICENSED",
+  "private": false,
+  "files": [
+    "bin/",
+    "commands/",
+    "skills/",
+    "templates/"
+  ],
+  "dependencies": {}
+}

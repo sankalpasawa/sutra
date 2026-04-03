@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read", "Write", "Edit", "Bash", "Glob", "Grep",
+      "WebSearch", "WebFetch", "Agent", "Skill",
+      "TaskCreate", "TaskUpdate", "TaskGet", "TaskList",
+      "TaskOutput", "TaskStop", "AskUserQuestion",
+      "EnterPlanMode", "ExitPlanMode", "ToolSearch"
+    ]
+  }
+}
