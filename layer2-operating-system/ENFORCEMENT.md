@@ -1,5 +1,19 @@
 # Sutra — Enforcement Protocol
 
+## Relationship to Asawa Enforcement Framework
+
+This document defines **process-specific** enforcement rules — what gets enforced, at what tier, for which protocols. The **universal enforcement mechanism** (how gates work, the hook API, override protocol, audit logging, deployment model) is defined in:
+
+> `asawa-inc/holding/ENFORCEMENT-FRAMEWORK.md`
+
+The **principles** that enforcement serves (natural language is intent, process is default, self-assessment, etc.) are defined in:
+
+> `asawa-inc/holding/HUMAN-AI-INTERACTION.md`
+
+Sutra compiles the rules from this document using the mechanism from the Asawa framework. Companies receive the compiled result as installed hooks.
+
+---
+
 ## Default: Hard Enforcement
 
 Every protocol in Sutra is HARD-enforced unless explicitly marked as soft. If a document says "do X," that means X is mandatory. Not a suggestion. Not a guideline. Mandatory.

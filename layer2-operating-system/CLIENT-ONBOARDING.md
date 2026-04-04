@@ -446,7 +446,14 @@ Stage → determines process intensity
 6. **Set A/B test config** (SUTRA mode for first feature, alternating after)
 7. **Generate TODO.md** from P0 feature list with build order
 8. **Set gstack skills** appropriate for platform and stage
-9. **Self-check**: grep for "DayFlow", "{placeholder}", or any generic text. Replace all.
+9. **Configure shared infrastructure** — read `asawa-inc/shared/AI-PROVIDERS.md` and `EXTERNAL-SYSTEMS.md`:
+   - Select AI provider from approved list based on use case + cost constraints
+   - Copy `asawa-inc/shared/templates/ai-provider.ts` to company's `src/lib/ai.ts`
+   - Configure the provider/model override for this company
+   - Register any new external systems the company needs in `EXTERNAL-SYSTEMS.md`
+   - Add `## AI Configuration` section to the company's OS file
+   - Follow override rules from `asawa-inc/shared/OVERRIDE-RULES.md`
+10. **Self-check**: grep for "DayFlow", "{placeholder}", or any generic text. Replace all.
 
 ### Output: Company OS Package
 
@@ -478,7 +485,18 @@ Stage → determines process intensity
 3. Update Sutra Client Registry (this file, bottom)
 4. Update Daily Pulse to include new company
 5. Run `/setup-deploy` to configure deployment automation
-6. Commit everything: `git add asawa-inc/{company}/ && git commit`
+6. **Compile and install enforcement hooks**:
+   a. Read `asawa-inc/holding/ENFORCEMENT-FRAMEWORK.md` (mechanism spec)
+   b. Read `asawa-inc/sutra/layer2-operating-system/ENFORCEMENT.md` (rule definitions)
+   c. Read `asawa-inc/{company}/SUTRA-CONFIG.md` (tier and mode config)
+   d. For each hook template in `asawa-inc/holding/hooks/`:
+      - Apply tier-based gate configuration (Tier 1: soft, Tier 2: mixed, Tier 3: hard)
+      - Copy to `.claude/hooks/`
+   e. Update `.claude/settings.json` with hook entries (order: boundaries → process-gate → self-assessment; PostToolUse: compliance, feedback, override-tracker)
+   f. Create `.enforcement/` directory with empty `audit.log`
+   g. Create `.planning/features/` directory for feature state machine
+   h. Verify: trigger a test Edit action, confirm hooks fire correctly
+7. Commit everything: `git add asawa-inc/{company}/ .claude/ .enforcement/ && git commit`
 
 ### Default Checklist (founder can override any item)
 
