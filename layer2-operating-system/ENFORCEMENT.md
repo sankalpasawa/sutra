@@ -100,6 +100,8 @@ When Sutra runs its own session, it checks all clients:
 | Founder must DECIDE (Phase 4) before building | HARD |
 | Landing page by default | FOUNDER-OVERRIDE (default yes) |
 | Analytics before 100 users | HARD |
+| Verify external account ownership before deploy (Phase 7) | HARD |
+| No destructive actions on unverified resources | HARD |
 
 ### SESSION-ISOLATION.md
 | Rule | Enforcement |
@@ -162,6 +164,35 @@ ENFORCEMENT: HARD (Tier 2+), SOFT (Tier 1)
 | Tier 1 (Personal) | SOFT — flag if parallel operations detected, don't block |
 | Tier 2 (Product) | HARD — block parallel operations unless isolation verified |
 | Tier 3 (Company) | HARD — block + require written verification in deploy log |
+
+---
+
+## External Resource Sovereignty Rule
+
+ENFORCEMENT: HARD (all tiers)
+
+**Principle**: Before pausing, deleting, or modifying any external resource (Supabase projects, Vercel deploys, DNS records, third-party accounts), verify ownership — even when the founder has granted full autonomy.
+
+**Why**: During Maze onboarding, Sutra paused a Supabase project on an MCP-connected account that wasn't the founder's. "Full autonomy" means autonomy over product decisions — it does NOT extend to destructive actions on resources whose ownership is unverified.
+
+**Rules:**
+1. MCP-connected accounts may not be the founder's personal accounts — verify before making changes
+2. "Don't ask me anything" covers product decisions, NOT destructive infrastructure actions
+3. Before pausing/deleting any external resource: confirm it belongs to this company
+4. If uncertain about ownership, ask — this is never a violation of autonomy
+
+**Checklist (before any external resource modification):**
+1. Identify who owns the resource (which account, which org)
+2. Confirm the resource belongs to this company, not a shared or different account
+3. If the MCP-connected account has resources from multiple companies, do NOT touch resources that aren't explicitly this company's
+4. Log the verification in the deploy log
+
+**Tier behavior:**
+| Tier | Enforcement |
+|------|-------------|
+| Tier 1 (Personal) | HARD — ownership verification always required |
+| Tier 2 (Product) | HARD — ownership verification always required |
+| Tier 3 (Company) | HARD — ownership verification + written confirmation |
 
 ---
 

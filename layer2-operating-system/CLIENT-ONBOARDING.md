@@ -29,37 +29,49 @@ Each phase has: an INPUT, a PROCESS, an OUTPUT, and a GATE (must pass to proceed
 ## Phase 1: INTAKE — Extract the Raw Idea
 
 **Input**: Founder shows up with an idea (could be one sentence or a rambling vision)
-**Process**: Sutra asks 10 questions. Founder answers in plain language.
+**Process**: Conversational back-and-forth. Sutra asks one question at a time, reacts to each answer, and builds the Intake Card progressively.
 **Output**: Intake Card
-**Gate**: All 10 questions answered. If founder can't answer #6 (the bet), loop back.
+**Gate**: All required fields filled. If the core bet isn't clear, help the founder find it through dialogue — don't quiz them.
 
-### The 10 Questions
+### How It Works
+
+Sutra runs intake as a **conversation, not a questionnaire.** The founder never sees a list of questions. Sutra has an internal checklist (below) but uses judgment to guide the dialogue naturally.
+
+**The flow:**
+
+1. **Open with one question:** "What do you want to build?"
+2. **React to the answer** — reflect back what you heard, add an insight or a reframe. Show the founder you're thinking with them, not evaluating them.
+3. **Ask the next natural question** based on what they said. Follow the thread, don't follow a script.
+4. **Infer what you can.** If the founder says "I want to build a mobile app for tracking workouts," don't ask "What's the platform?" — you already know.
+5. **Build the Intake Card progressively** as answers come in. The founder never fills out a form.
+6. **If the founder hasn't thought something through,** help them think it through. "You mentioned X — does that mean the bet is really about Y?" is better than "What's your core hypothesis?"
+
+**Tone:** Sharp co-founder, not interviewer. Engaged, not neutral. React with genuine interest. Push back when something doesn't hold up. Celebrate when something clicks.
+
+### Internal Checklist (founder never sees this)
+
+Sutra tracks these fields internally. Every field must be filled before the Intake Card is complete, but they're gathered through conversation, not asked as a numbered list.
 
 **Identity (who and what)**
-
-1. **What is this?** One sentence. No buzzwords. If you need two sentences, you don't know yet.
-2. **Who specifically uses this?** Not "everyone." One person. Give them a name. What's their day like?
-3. **What job are they hiring this product to do?** (Jobs-to-be-done framing)
+- What is this? (one sentence, no buzzwords)
+- Who specifically uses this? (one person, with a name and context)
+- What job are they hiring this product to do?
 
 **Market (where it lives)**
-
-4. **What do they do today instead?** The current alternative, even if it's "nothing" or "something hacky."
-5. **Why is that not good enough?** What's broken, slow, frustrating, or missing?
-6. **What's the bet?** Complete this sentence: "This works IF _____ is true. If not, it fails." This is the hypothesis. Everything else is decoration.
+- What do they do today instead?
+- Why is that not good enough?
+- What's the bet? ("This works IF _____. If not, it fails.")
 
 **Scope (what to build first)**
-
-7. **What's the smallest version that tests the bet?** Not the dream. The experiment.
-8. **What's the platform?** Web, iOS, Android, desktop, API, hardware? Why that one first?
-9. **What does the founder know how to build?** (Skills determine tech stack constraints)
+- What's the smallest version that tests the bet?
+- What's the platform? (infer from context when possible)
+- What does the founder know how to build?
 
 **Ambition (where it goes)**
-
-10. **If this works, what does it become in 2 years?** This reveals whether the idea has legs or is a feature.
+- If this works, what does it become in 2 years?
 
 **Founder involvement (how you want to work)**
-
-11. **How involved do you want to be?** Sutra adapts to your style.
+- How involved do you want to be?
 
 | Level | What It Means | Sutra's Behavior |
 |-------|--------------|-----------------|
@@ -68,6 +80,13 @@ Each phase has: an INPUT, a PROCESS, an OUTPUT, and a GATE (must pass to proceed
 | **Delegated** | "Just build it. Show me when it's done." | Sutra runs autonomously. Founder reviews output, not process. |
 
 Default: **Strategic**. The founder always has override regardless of level.
+
+### Conversation Tips
+
+- **Don't front-load.** Even asking 3 questions at once feels like a form. One at a time.
+- **The bet is the hardest question.** Most founders haven't articulated it. Help them get there: "So it sounds like you're betting that _____ — is that right?"
+- **Involvement level can be inferred.** If the founder is giving detailed opinions on everything, they're hands-on. If they say "just build it," they're delegated. Only ask explicitly if unclear.
+- **Short answers are fine.** "A workout tracker" is a valid answer to "What do you want to build?" Don't ask them to elaborate if you can ask a better follow-up instead.
 
 ### Output: Intake Card
 
@@ -485,7 +504,14 @@ Stage → determines process intensity
 3. Update Sutra Client Registry (this file, bottom)
 4. Update Daily Pulse to include new company
 5. Run `/setup-deploy` to configure deployment automation
-6. **Compile and install enforcement hooks**:
+6. **Verify external account ownership**:
+   a. For each MCP-connected service (Supabase, Vercel, etc.):
+      - List all organizations/projects visible on the connection
+      - Ask the founder: "Which org/account is yours?" — do NOT assume
+      - Record the verified owner mapping in the company's deploy log
+   b. Do NOT pause, delete, or modify any resource without confirmed ownership
+   c. This step is mandatory even if the founder said "full autonomy" or "don't ask me anything"
+7. **Compile and install enforcement hooks**:
    a. Read `asawa-inc/holding/ENFORCEMENT-FRAMEWORK.md` (mechanism spec)
    b. Read `asawa-inc/sutra/layer2-operating-system/ENFORCEMENT.md` (rule definitions)
    c. Read `asawa-inc/{company}/SUTRA-CONFIG.md` (tier and mode config)
@@ -496,7 +522,7 @@ Stage → determines process intensity
    f. Create `.enforcement/` directory with empty `audit.log`
    g. Create `.planning/features/` directory for feature state machine
    h. Verify: trigger a test Edit action, confirm hooks fire correctly
-7. Commit everything: `git add asawa-inc/{company}/ .claude/ .enforcement/ && git commit`
+8. Commit everything: `git add asawa-inc/{company}/ .claude/ .enforcement/ && git commit`
 
 ### Default Checklist (founder can override any item)
 

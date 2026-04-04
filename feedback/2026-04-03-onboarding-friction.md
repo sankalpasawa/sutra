@@ -40,3 +40,6 @@ The 10 questions still exist as a checklist for Sutra internally — but the fou
 ## What We Learned
 
 Sutra's intake must be a conversation, not a questionnaire. The founder may not have answers ready — Sutra's job is to help them find the answers through dialogue, not demand them upfront.
+
+## Status
+INCORPORATED — Sutra v1.2 — Phase 1 INTAKE rewritten as conversational flow (2026-04-05)

@@ -78,6 +78,13 @@ principles:
     rule: "Every decision has exactly one DRI. 'The team decided' is not allowed. Name the person."
     when_to_apply: "When a decision is being made. When reviewing a decision log entry. When something goes wrong and we need to understand the chain of responsibility."
     violation_signal: "A decision log entry has no owner. Two agents made conflicting decisions about the same thing."
+
+  - id: P8
+    name: Never bypass a running process
+    rule: "When a process is in flight (parallel agents, data collection, review pipeline), wait for it to complete. Impatience is not a reason to skip steps. Speed matters at execution time, not at the cost of process integrity. If agents are gathering data, the synthesis waits for all agents — it does not proceed with partial data or substitute its own work."
+    when_to_apply: "When parallel agents are running and results are pending. When a review pipeline is in progress. When tempted to skip a step because it's 'taking too long.' When the orchestrator could do the work itself instead of waiting for the delegated agent."
+    violation_signal: "An orchestrator writes a report while delegated agents are still running. A synthesis step uses partial data. A process step is skipped with the rationale 'I already know the answer.' An agent duplicates work that was delegated to another agent."
+    origin: "Maze onboarding 2026-04-04. HOD meeting agents were running in parallel. Orchestrator got impatient and wrote the report itself, bypassing the agents. Founder corrected: 'Just because you have to wait on something, you cannot bypass those things.'"
 ```
 
 ### 1.5 The Six Tension Resolution Frameworks
