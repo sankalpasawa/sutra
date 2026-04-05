@@ -709,11 +709,12 @@ Sutra publishes a new version when:
 
 ## Client Registry
 
-| # | Company | Type | Platform | Stage | Sutra Version | Mode | Onboarded | Status |
+| # | Company | Type | Platform | Stage | Sutra Version | Tier | Onboarded | Status |
 |---|---------|------|----------|-------|---------------|------|-----------|--------|
-| 1 | DayFlow | Productivity tool | iOS (Expo) | Pre-launch | v1.0 | A/B Test | 2026-04-01 | Active |
-| 2 | PPR | Productivity tool | Web (Next.js) | Pre-launch | v1.0 | A/B Test | 2026-04-03 | Active |
-| 3 | Maze | Content platform | Web (Next.js) | Pre-launch | v1.0 | A/B Test | 2026-04-04 | Active |
+| 1 | DayFlow | Productivity tool | iOS (Expo) | Pre-launch | v1.3 | 2 (Product) | 2026-04-01 | Active — 5/6 P0s done, 123 tests |
+| 2 | PPR | Wedding command center | Web (Next.js) | Pre-launch | v1.0 | 1 (Personal) | 2026-04-03 | Active |
+| 3 | Maze | Humor feed | Web (Next.js) | Pre-launch | v1.3 | 2 (Product) | 2026-04-04 | Active — 42 features, web launch ready |
+| 4 | Jarvis | AI chief-of-staff | Web (Next.js) | MVP | v1.3 | 1 (Personal) | 2026-04-05 | Active — deployed to Vercel |
 
 
 ---
