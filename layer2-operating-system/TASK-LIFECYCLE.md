@@ -64,6 +64,18 @@ Thoroughness determines depth:
 | **Monitor** | Sensors running during execution (design QA, type checks, principle checks) |
 | **Adapt** | If something changes mid-task, re-evaluate — don't blindly follow a stale plan |
 
+**Parallelization Gate** (mandatory check at EXECUTE entry):
+
+Before executing sequentially, apply the **independence test**:
+1. Enumerate all pending work items
+2. For each pair: do they share state (same files, same config, same output)?
+3. If NO shared state → dispatch as parallel agents
+4. If shared state → execute sequentially
+
+This is not optional. Sequential execution of independent tasks is a **throughput violation** — it wastes time proportional to the number of tasks that could have been parallel. The agent must justify sequential execution of 2+ independent items.
+
+**Root cause for this rule**: Session 2026-04-05 dispatched 5 agents in parallel (wave 1), then fell into sequential mode for waves 2-3. Post-mortem: no structural check forced parallelization at each decision point. Results arrived → agent processed one-by-one → built next thing → repeated. The fix is this gate: EXECUTE always checks for parallelism first.
+
 The old pipeline stages (SHAPE, BUILD, TEST, SHIP, REVIEW, QA) all live inside EXECUTE. Which ones activate depends on thoroughness:
 
 | Level | Active stages |
