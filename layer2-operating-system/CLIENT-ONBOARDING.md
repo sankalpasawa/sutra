@@ -138,6 +138,9 @@ two_year_vision: "{Where it goes if it works}"
 | **What do users complain about?** | App Store reviews, Reddit threads, Twitter complaints | Reveals unmet needs — these are your features |
 | **What's the market size?** | Back-of-napkin TAM | Not for investor pitch — to know if the bet is worth making |
 | **What technical approaches exist?** | How do competitors build this? What APIs? | Don't reinvent. Use what works. Innovate where it matters. |
+| **Who are the best practitioners?** | Search for domain experts, advisors, thought leaders, consultants | D20/D32: Know who has solved this before and what they learned |
+| **What frameworks do the best use?** | Study methodologies, playbooks, published approaches from identified experts | Adopt proven patterns instead of inventing from scratch |
+| **What do the best avoid?** | Look for post-mortems, "mistakes I made" posts, anti-pattern discussions | Learn from others' failures — cheaper than making your own |
 
 ### Research Method
 
@@ -146,7 +149,10 @@ two_year_vision: "{Where it goes if it works}"
 2. Web search: "{competitor name} reviews" — find what users hate
 3. Web search: "{product type} open source" — find existing codebases to learn from
 4. Web search: "{core technology} API" — find best tools (e.g., joke APIs, humor datasets)
-5. Synthesize: what's the gap? What do ALL competitors miss?
+5. Web search: "{domain} expert OR consultant OR advisor" — find 3-5 best-in-class practitioners
+6. Web search: "{identified expert} methodology OR framework" — extract their approaches
+7. Web search: "{domain} mistakes OR anti-patterns OR post-mortem" — learn what the best avoid
+8. Synthesize: what's the gap? What do ALL competitors miss? What do the best practitioners recommend?
 ```
 
 gstack skill: `/office-hours` (Startup mode — demand reality, status quo, desperate specificity)
@@ -167,7 +173,37 @@ market_gap: "{what nobody does well}"
 market_size: "{back-of-napkin TAM}"
 technical_landscape: "{what APIs/tools exist}"
 key_insight: "{the one thing that changes our approach}"
+
+# --- External Practitioner Research (D20/D32) ---
+
+domain_experts:
+  - name: "{expert 1}"
+    role: "{what they do — consultant, founder, author, advisor}"
+    relevance: "{why they matter for this domain}"
+    key_insight: "{their most actionable insight for our product}"
+    source: "{where we found them — book, talk, blog, podcast}"
+  - name: "{expert 2}"
+    ...
+  - name: "{expert 3}"
+    ...
+  # Minimum 3, target 5. Not just competitors — people who advise, build, or lead in this space.
+
+best_practices:
+  - pattern: "{what the best do}"
+    evidence: "{who does it, where we saw it}"
+    applicability: "{how this applies to our product}"
+  - pattern: "{...}"
+    ...
+
+anti_patterns:
+  - pattern: "{what the best avoid}"
+    evidence: "{who failed at this, or who explicitly warns against it}"
+    relevance: "{why this matters for our product}"
+  - pattern: "{...}"
+    ...
 ```
+
+**Refresh cadence**: This research is conducted during onboarding and refreshed at the quarterly Knowledge Refresh cadence (G13 from SYSTEM-HEALTH.md). When G13 fires, re-evaluate domain experts, check for new frameworks, and update the Market Brief. Major market shifts trigger an immediate refresh regardless of schedule.
 
 ### Example:
 
@@ -183,6 +219,23 @@ market_gap: "{what nobody does well}"
 market_size: "{back-of-napkin TAM}"
 technical_landscape: "{what APIs/tools exist}"
 key_insight: "{the one thing that changes our approach}"
+
+domain_experts:
+  - name: "{Expert Name}"
+    role: "{consultant / founder / author}"
+    relevance: "{why they matter}"
+    key_insight: "{their most actionable insight}"
+    source: "{book / talk / blog}"
+
+best_practices:
+  - pattern: "{what the best do}"
+    evidence: "{who and where}"
+    applicability: "{how it applies to us}"
+
+anti_patterns:
+  - pattern: "{what the best avoid}"
+    evidence: "{who warns against it}"
+    relevance: "{why it matters for us}"
 ```
 
 ---
