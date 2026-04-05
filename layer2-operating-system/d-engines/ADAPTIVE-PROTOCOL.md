@@ -121,17 +121,29 @@ Full process. Research phase to map the territory. Spec to define the approach. 
 
 ### Level 4: Critical (composite 5)
 
-**Pipeline:** estimate -> research -> spec -> peer review -> build -> staged rollout -> verify -> ship -> learn -> retro.
+**Pipeline:** estimate -> research -> spec -> peer review -> build -> platform-appropriate rollout -> verify -> ship -> learn -> retro.
 
-Maximum process. Peer review of the spec before building. Staged rollout (deploy to subset/staging first). Verification in production. Retrospective after.
+Maximum process. Peer review of the spec before building. Platform-appropriate rollout (see below). Verification in production. Retrospective after.
 
 **When:** Auth system changes, payment flows, data model migrations, irreversible decisions, anything touching PII or regulatory compliance, public API changes.
 
-**Sutra involvement:** Full pipeline + founder checkpoint (mandatory, regardless of involvement level). Staged rollout required. Post-ship canary mandatory. Retro feeds back into Sutra.
+**Sutra involvement:** Full pipeline + founder checkpoint (mandatory, regardless of involvement level). Post-ship canary mandatory. Retro feeds back into Sutra.
+
+**Platform-specific rollout (replaces "staged rollout"):**
+
+| Platform | Rollout Strategy |
+|----------|-----------------|
+| Web app (Next.js/Vercel) | Preview deploy → verify → promote to production |
+| Mobile app (Expo) | EAS build → internal test → TestFlight/Play Store beta → production |
+| Edge functions (Supabase) | Deploy is all-or-nothing — verify via test calls before and after, rollback via git revert |
+| CLI tool | Publish to npm with `--tag beta` → test → promote to `latest` |
+| Database migration | Run on staging DB first → verify → run on production with backup |
+
+If the platform doesn't support staged rollout, the "rollout" step becomes: deploy → immediate verify → rollback plan ready.
 
 **Time budget:** Days to weeks. No rushing. If time pressure conflicts, flag it — do not lower the level.
 
-**What gets logged:** Everything from Level 3, plus: rollout plan, verification results, retro document. All artifacts preserved.
+**What gets logged:** Everything from Level 3, plus: rollout plan (platform-specific), verification results, retro document. All artifacts preserved.
 
 ---
 
