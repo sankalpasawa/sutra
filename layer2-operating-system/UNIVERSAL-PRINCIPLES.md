@@ -67,6 +67,11 @@ The founder gives direction. The agent models all implications and acts autonomo
 Match cognitive resource to the problem. Deploy the right amount of thinking.
 **Lock level**: Practitioner (adjustable after understanding the depth levels)
 
+
+### P11: Human Confidence Through Clarity
+Every interaction makes the founder MORE confident. Three daily signals: what shipped, what's next, what's broken. Everything else is noise.
+**Lock level**: Beginner (always enforced — the system must always build confidence)
+
 ## For External Founders
 
 When a new founder creates their holding company with Sutra:
@@ -74,6 +79,6 @@ When a new founder creates their holding company with Sutra:
 2. After 5 features: P2, P3, P10 unlock to Practitioner
 3. After 20 features across 2+ companies: P1, P4, P5, P9 unlock to Expert  
 4. After contributing protocols back to Sutra: P6 unlocks to Master
-5. P7 is never locked. P8 is always enforced.
+5. P7 is never locked. P8 and P11 are always enforced.
 
 The system tracks maturity automatically through the estimation + routing logs.
