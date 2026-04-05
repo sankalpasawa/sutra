@@ -1,11 +1,39 @@
 {
   "permissions": {
     "allow": [
-      "Read", "Write", "Edit", "Bash", "Glob", "Grep",
-      "WebSearch", "WebFetch", "Agent", "Skill",
-      "TaskCreate", "TaskUpdate", "TaskGet", "TaskList",
-      "TaskOutput", "TaskStop", "AskUserQuestion",
-      "EnterPlanMode", "ExitPlanMode", "ToolSearch"
+      "Read",
+      "Write",
+      "Edit",
+      "Bash",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch",
+      "Agent",
+      "Skill",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskGet",
+      "TaskList",
+      "TaskOutput",
+      "TaskStop",
+      "AskUserQuestion",
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "ToolSearch"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/enforce-boundaries.sh"
+          }
+        ]
+      }
     ]
   }
 }

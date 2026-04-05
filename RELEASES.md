@@ -28,7 +28,15 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 
 ## The Versioning
 
-### Sutra v1.2 (current)
+### Sutra v1.3 (current)
+- **Engines layer** (`d-engines/`): three runtime intelligence systems added to Layer 2
+- **Estimation Engine**: pre-task cost/impact/confidence table with token estimation, JSONL feedback format, rolling accuracy tracking, configurable gates
+- **Adaptive Protocol Engine**: dynamic process depth routing (4 levels: Minimal→Critical), 13-parameter max-severity scoring model, mid-task escalation, learning loop
+- **Enforcement Review**: 3-cadence review system (3-day micro, weekly, monthly calibration), sensitivity scoring replacing file-count proxy, per-company sensitivity.jsonl, judgment inheritance
+- All three engines interconnect: Estimation feeds Adaptive Protocol (cost informs depth), Enforcement Review feeds sensitivity scores into both, all validated post-task
+- Triggered by: founder design session — static one-size-fits-all process depth needed dynamic routing
+
+### Sutra v1.2
 - Phase 1 INTAKE rewritten as conversational flow: one question at a time, react-and-follow-up, build Intake Card progressively
 - Internal checklist preserved (all fields still required), but founder never sees a numbered list
 - Conversation tips added for handling the bet question, involvement level inference, and short answers
@@ -97,6 +105,7 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 |---------|-----------|--------|
 | DayFlow | Sutra v1.0 | Running. No feedback sent yet. |
 | PPR | Sutra v1.0 | Running. First feedback sent (parallel deploy collision). |
+| Maze | Sutra v1.3 | Upgrading. First company to receive engines layer. |
 
 ## Release History
 
@@ -106,3 +115,4 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 | v1.1 | 2026-04-04 | Complexity tiers, infrastructure guardrail, enforcement tiering | PPR onboarding + parallel deploy collision |
 | v1.1.1 | 2026-04-04 | External resource sovereignty rule, Phase 7 ownership verification step | Maze Supabase org confusion |
 | v1.2 | 2026-04-05 | Phase 1 INTAKE → conversational flow (no question dump) | Founder onboarding friction feedback |
+| v1.3 | 2026-04-05 | Engines layer: Estimation, Adaptive Protocol, Enforcement Review | Founder design session — process depth must match problem |

@@ -499,30 +499,76 @@ Stage → determines process intensity
 
 ### Steps
 
-1. Create `asawa-inc/{company}/` directory
-2. Write all OS files from Phase 6
-3. Update Sutra Client Registry (this file, bottom)
-4. Update Daily Pulse to include new company
-5. Run `/setup-deploy` to configure deployment automation
-6. **Verify external account ownership**:
+1. **Create GitHub repo**: `gh repo create sankalpasawa/{company} --private`
+2. **Initialize repo structure**: Write all OS files from Phase 6
+3. **Declare session identity in CLAUDE.md** (MANDATORY):
+   The company's root `CLAUDE.md` MUST start with:
+   ```markdown
+   # {Company} — Claude Instructions
+
+   ## Identity
+   You are **CEO of {Company}**. This is an isolated {Company} session.
+   You can ONLY edit files in this repo. You cannot access other companies,
+   Sutra source, or holding company files.
+   ```
+   This ensures the LLM identifies as CEO of this company, not CEO of Asawa.
+4. **Install boundary enforcement hook** (MANDATORY):
+   a. Create `.claude/hooks/enforce-boundaries.sh`:
+      ```bash
+      #!/bin/bash
+      # Blocks Edit/Write/Bash to files outside this repo's root.
+      REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+      REPO_NAME="$(basename "$REPO_ROOT")"
+      FILE_PATH="$TOOL_INPUT_file_path"
+      # For Bash: block commands referencing parent dirs or other repos
+      if [ -n "$TOOL_INPUT_command" ]; then
+        CMD="$TOOL_INPUT_command"
+        if echo "$CMD" | grep -qE '\.\./|/Claude/asawa-holding/(holding|sutra|dayflow|maze|ppr)/' ; then
+          if ! echo "$CMD" | grep -q "/asawa-holding/${REPO_NAME}/"; then
+            echo "BLOCKED: Cannot access files outside ${REPO_NAME}/."
+            exit 2
+          fi
+        fi
+        exit 0
+      fi
+      if [ -z "$FILE_PATH" ]; then exit 0; fi
+      ABS_PATH="$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && pwd)/$(basename "$FILE_PATH")" 2>/dev/null
+      if [ -n "$ABS_PATH" ]; then
+        case "$ABS_PATH" in "$REPO_ROOT"*) exit 0 ;; *)
+          echo "BLOCKED: Cannot edit files outside ${REPO_NAME}/."
+          exit 2 ;; esac
+      fi
+      exit 0
+      ```
+   b. `chmod +x .claude/hooks/enforce-boundaries.sh`
+   c. Register in `.claude/settings.json`:
+      ```json
+      "PreToolUse": [{"matcher": "Edit|Write|Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-boundaries.sh"}]}]
+      ```
+   d. **TEST**: Run the hook with a path outside the repo and verify exit code 2.
+5. **Configure `.claude/settings.json`** with permissions and all hooks:
+   - Permissions allow list (Read, Write, Edit, Bash, Glob, Grep, etc.)
+   - PreToolUse: boundary enforcement (step 4) + process-gate + self-assessment
+   - PostToolUse: compliance, feedback, override-tracker
+6. Update Sutra Client Registry (this file, bottom)
+7. Update Daily Pulse to include new company
+8. Run `/setup-deploy` to configure deployment automation
+9. **Verify external account ownership**:
    a. For each MCP-connected service (Supabase, Vercel, etc.):
       - List all organizations/projects visible on the connection
       - Ask the founder: "Which org/account is yours?" — do NOT assume
       - Record the verified owner mapping in the company's deploy log
    b. Do NOT pause, delete, or modify any resource without confirmed ownership
    c. This step is mandatory even if the founder said "full autonomy" or "don't ask me anything"
-7. **Compile and install enforcement hooks**:
-   a. Read `asawa-inc/holding/ENFORCEMENT-FRAMEWORK.md` (mechanism spec)
-   b. Read `asawa-inc/sutra/layer2-operating-system/ENFORCEMENT.md` (rule definitions)
-   c. Read `asawa-inc/{company}/SUTRA-CONFIG.md` (tier and mode config)
-   d. For each hook template in `asawa-inc/holding/hooks/`:
-      - Apply tier-based gate configuration (Tier 1: soft, Tier 2: mixed, Tier 3: hard)
-      - Copy to `.claude/hooks/`
-   e. Update `.claude/settings.json` with hook entries (order: boundaries → process-gate → self-assessment; PostToolUse: compliance, feedback, override-tracker)
-   f. Create `.enforcement/` directory with empty `audit.log`
-   g. Create `.planning/features/` directory for feature state machine
-   h. Verify: trigger a test Edit action, confirm hooks fire correctly
-8. Commit everything: `git add asawa-inc/{company}/ .claude/ .enforcement/ && git commit`
+10. **Add as submodule to asawa-holding**: `cd asawa-holding && git submodule add git@github.com:sankalpasawa/{company}.git`
+11. Create `.enforcement/` directory with empty `audit.log`
+12. Create `.planning/features/` directory for feature state machine
+13. **Verify isolation** (MANDATORY — do not skip):
+    a. From the company directory, run the boundary hook with a path to `../holding/TODO.md` — must return exit 2
+    b. Run the boundary hook with a path to `../sutra/RELEASES.md` — must return exit 2
+    c. Run the boundary hook with a path inside the company — must return exit 0
+    d. If any test fails, fix the hook before proceeding
+14. Commit everything and push
 
 ### Default Checklist (founder can override any item)
 
