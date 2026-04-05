@@ -28,7 +28,19 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 
 ## The Versioning
 
-### Sutra v1.3.1 (current)
+### Sutra v1.4 (current)
+- **TASK-LIFECYCLE.md**: unified 5-phase lifecycle (THINK → PRE → EXECUTE → POST → COMPRESS) replacing 3 separate pipelines; Parallelization Gate at PRE phase; thoroughness scales with change, not company
+- **DEFAULTS-ARCHITECTURE.md**: 3-tier directive governance (Immutable Invariants / Controlled Defaults / Tunable Parameters); formal safety property analysis (Lamport); FMEA blast radius assessment; convention-over-configuration inheritance
+- **PARALLELIZATION-ARCHITECTURE.md**: Bernstein conditions for formal independence testing; BSP (Bulk Synchronous Parallel) wave model adapted for LLM agent orchestration; structural enforcement after 15-agent collapse
+- **READABILITY-STANDARD.md**: Tier 1 Immutable invariant — all agent output must conform; output format taxonomy (9 types); 10 anti-patterns with enforcement; format selection rules
+- **SYSTEM-HEALTH.md**: 13 growth protocols (G1-G13) with triggers — refactoring, pruning, consolidation, deprecation, archival, migration, documentation gardening, and more; Lehman's Laws of Software Evolution as foundation
+- **SUTRA-KPI.md**: 4 metrics (V/C/A/U — Velocity, Cognitive Load, Accuracy, Unit Cost) with v1.3.1 baselines; per-level normalization; statistical methods defined
+- **ESTIMATION-LOG-FORMAT.md**: JSONL schema (v1) for persistent estimation data; EWMA rolling accuracy tracking; UUID-keyed records with full estimate/actual pairs
+- **CLIENT-ONBOARDING.md**: Phase 2 updated with practitioner identification (D32); 8-phase flow from raw idea to deployed OS
+- Client registry: 5 companies (DayFlow, PPR, Maze, Jarvis, + Asawa itself as meta-client)
+- Triggered by: Asawa CEO session 2026-04-05 — comprehensive infrastructure buildout
+
+### Sutra v1.3.1
 - Estimation Engine calibrated with real data from 22 evolution cycles (8 task-category multipliers)
 - Adaptive Protocol Level 4: platform-specific rollout patterns (web, mobile, edge functions, CLI, DB)
 - Client Onboarding: Phase 7 now includes mandatory identity, boundary hooks, isolation tests, engine deployment
@@ -118,6 +130,8 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 | DayFlow | Sutra v1.0 | Running. No feedback sent yet. |
 | PPR | Sutra v1.0 | Running. First feedback sent (parallel deploy collision). |
 | Maze | Sutra v1.3 | Upgrading. First company to receive engines layer. |
+| Jarvis | Sutra v1.3.1 | Onboarded. |
+| Asawa | Sutra v1.4 | Meta-client. Running latest as governance layer. |
 
 ## Release History
 
@@ -128,3 +142,5 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 | v1.1.1 | 2026-04-04 | External resource sovereignty rule, Phase 7 ownership verification step | Maze Supabase org confusion |
 | v1.2 | 2026-04-05 | Phase 1 INTAKE → conversational flow (no question dump) | Founder onboarding friction feedback |
 | v1.3 | 2026-04-05 | Engines layer: Estimation, Adaptive Protocol, Enforcement Review | Founder design session — process depth must match problem |
+| v1.3.1 | 2026-04-05 | Estimation calibration (22 cycles), Adaptive Protocol L4, expanded onboarding, mid-stage deploy, protocol creation, process generation, skill acquisition | Evolution Protocol session — 22 cycles across 3 companies |
+| v1.4 | 2026-04-05 | Task Lifecycle, Defaults Architecture, Parallelization Architecture, Readability Standard, System Health, KPI System, Estimation Log Format, onboarding D32, Asawa as meta-client | Asawa CEO session — comprehensive infrastructure buildout |
