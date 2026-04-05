@@ -727,6 +727,7 @@ Sutra publishes a new version when:
 | 2 | PPR | Wedding command center | Web (Next.js) | Pre-launch | v1.0 | 1 (Personal) | 2026-04-03 | Active |
 | 3 | Maze | Humor feed | Web (Next.js) | Pre-launch | v1.3 | 2 (Product) | 2026-04-04 | Active — 42 features, web launch ready |
 | 4 | Jarvis | AI chief-of-staff | Web (Next.js) | MVP | v1.3 | 1 (Personal) | 2026-04-05 | Active — deployed to Vercel |
+| 5 | Asawa Inc | Holding company | Governance | Active | v1.3.1 | 1 (Governance) | 2026-04-05 | Active — governance uses Sutra tools |
 
 
 ---
