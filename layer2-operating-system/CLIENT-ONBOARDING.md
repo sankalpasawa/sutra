@@ -326,10 +326,10 @@ This is where Sutra adapts to the SPECIFIC product. Different products need diff
 ### 5A: Product Type Classification
 
 ```yaml
-product_type: "{content-platform / productivity-tool / social-network / marketplace / saas / game}"
-primary_value: "{what users get — content, utility, connection, transactions, capability}"
+product_type: "{content-platform / productivity-tool / social-network / marketplace / saas / game / ai-agent}"
+primary_value: "{what users get — content, utility, connection, transactions, capability, intelligence}"
 content_source: "{user-generated / curated / ai-generated / hybrid / none}"
-interaction_model: "{consume / create / collaborate / transact}"
+interaction_model: "{consume / create / collaborate / transact / converse}"
 data_sensitivity: "{public / private / mixed}"
 ```
 
@@ -341,6 +341,7 @@ data_sensitivity: "{public / private / mixed}"
 | Marketplace | GMV, liquidity | Two-sided supply/demand | Search, matching, payments |
 | SaaS | MRR, churn | Multi-tenancy, reliability | Auth, billing, admin |
 | Game | Session retention, D7 | Engagement loop, balance | Game state, real-time |
+| AI agent | Task success rate, cost/interaction | LLM reliability, cost control, safety | Prompt versioning, tool schemas, fallback chains, eval suites |
 
 ### 5B: Platform & Tech Stack Selection
 
@@ -429,6 +430,56 @@ create table user_settings (
 );
 ```
 
+**AI Agent Pattern:**
+
+```sql
+-- Interactions (every agent conversation turn)
+create table interactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  session_id text not null,       -- conversation thread
+  capability text not null,       -- which agent capability was invoked
+  model text not null,            -- which LLM model was used
+  prompt_hash text not null,      -- hash of system prompt version
+  user_input text not null,
+  agent_response text not null,
+  tokens_in int default 0,
+  tokens_out int default 0,
+  cost_usd numeric(10,6) default 0,
+  latency_ms int default 0,
+  first_token_ms int default 0,
+  cache_hit boolean default false,
+  tool_calls jsonb default '[]',  -- tools the agent invoked
+  eval_result text,               -- 'pass', 'fail', 'skip'
+  error text,
+  created_at timestamptz default now()
+);
+
+-- Prompt versions (system prompts as versioned artifacts)
+create table prompt_versions (
+  id uuid primary key default gen_random_uuid(),
+  capability text not null,
+  version int not null,
+  system_prompt text not null,
+  few_shot_examples jsonb default '[]',
+  active boolean default false,
+  created_at timestamptz default now(),
+  unique(capability, version)
+);
+
+-- Eval cases (test suite for agent behavior)
+create table eval_cases (
+  id uuid primary key default gen_random_uuid(),
+  capability text not null,
+  category text not null,         -- 'happy-path', 'edge-case', 'adversarial', 'boundary', 'safety'
+  input text not null,
+  expected_output text not null,
+  match_type text default 'semantic', -- 'exact', 'contains', 'regex', 'semantic'
+  tags text[] default '{}',
+  created_at timestamptz default now()
+);
+```
+
 ### 5D: Content Strategy (for content-driven products)
 
 If `content_source` includes 'ai-generated' or 'curated':
@@ -496,8 +547,11 @@ gstack skills: `/plan-eng-review` → `/autoplan`
 
 ```
 Product type → selects the Stage module
+  b2c-consumer-app: layer3-modules/b2c-consumer-app/
+  b2c-ai-agent:     layer3-modules/b2c-ai-agent/
 Platform → selects tech stack defaults and deployment
 Content source → adds content strategy section (or skips it)
+AI agent → adds prompt lifecycle, eval suites, cost management, safety pipeline
 Stage → determines process intensity
 ```
 
