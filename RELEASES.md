@@ -28,7 +28,19 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 
 ## The Versioning
 
-### Sutra v1.3 (current)
+### Sutra v1.3.1 (current)
+- Estimation Engine calibrated with real data from 22 evolution cycles (8 task-category multipliers)
+- Adaptive Protocol Level 4: platform-specific rollout patterns (web, mobile, edge functions, CLI, DB)
+- Client Onboarding: Phase 7 now includes mandatory identity, boundary hooks, isolation tests, engine deployment
+- MID-STAGE-DEPLOY.md: 7-step protocol for deploying to existing codebases
+- PROTOCOL-CREATION.md: meta-protocol for how new protocols get created (lifecycle: EXPERIMENTAL → STABLE → REMOVED)
+- PROCESS-GENERATION.md: generate processes on the fly for new situations
+- SKILL-ACQUISITION.md: how to find, evaluate, install new skills
+- Skill Registry: tiered activation (Tier 1: 8 skills, Tier 2: 14, Tier 3: 21)
+- Client registry: 4 companies (DayFlow, PPR, Maze, Jarvis)
+- Triggered by: Evolution Protocol session — 22 cycles across 3 active companies
+
+### Sutra v1.3
 - **Engines layer** (`d-engines/`): three runtime intelligence systems added to Layer 2
 - **Estimation Engine**: pre-task cost/impact/confidence table with token estimation, JSONL feedback format, rolling accuracy tracking, configurable gates
 - **Adaptive Protocol Engine**: dynamic process depth routing (4 levels: Minimal→Critical), 13-parameter max-severity scoring model, mid-task escalation, learning loop
