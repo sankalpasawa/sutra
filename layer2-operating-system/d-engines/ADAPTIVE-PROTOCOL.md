@@ -147,6 +147,36 @@ If the platform doesn't support staged rollout, the "rollout" step becomes: depl
 
 ---
 
+
+
+---
+
+## Minimum Verification Evidence Per Level
+
+VERIFY is proof, not a checklist. Each depth level has a minimum evidence requirement.
+
+| Level | Minimum Evidence Required | Example |
+|-------|--------------------------|---------|
+| **L1 Minimal** | None — no VERIFY artifact. Ship log entry in METRICS.md suffices. | "Shipped vercel.json cron config" |
+| **L2 Standard** | One concrete check: build passes, app loads, or feature renders. | `npm run build` → exit 0, or screenshot of feature working |
+| **L3 Full** | Test output or grep evidence proving the feature works. | "45/45 tests pass" or `grep -c "requireAuth" functions/*/index.ts → 5` |
+| **L4 Critical** | Test output + deployment verification + rollback plan documented. | Tests pass + preview deploy verified + "rollback: git revert abc123" |
+
+### What Counts as Evidence
+
+| Evidence Type | Counts | Doesn't Count |
+|--------------|--------|---------------|
+| Test output | `PASS: 45/45 tests` | "Tests look good" |
+| Grep result | `5 functions import requireAuth` | "All functions updated" |
+| Build output | `exit 0, no errors` | "Builds clean" |
+| Deployment URL | `https://app.vercel.app (200 OK)` | "Deployed successfully" |
+| Screenshot | Actual screenshot file | "Looks right" |
+
+### The Rule
+
+If VERIFY.md says "PASS" without evidence, it violates PROTO-010.
+The evidence must be **reproducible** — another agent reading the VERIFY could verify the same thing.
+
 ## How Routing Works
 
 ### Runtime flow:
