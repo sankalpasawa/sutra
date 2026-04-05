@@ -490,6 +490,18 @@ Stage → determines process intensity
 
 ---
 
+
+### Telescoping Documentation Model
+
+Every company gets documentation at multiple zoom levels. The founder reads the minimum; deeper layers exist when needed.
+
+- **Zoom 0**: Quick Reference (36 lines) — daily use, before every task
+- **Zoom 1**: CLAUDE.md engine section (~30 lines) — when something unexpected happens
+- **Zoom 2**: Full engine specs (~500 lines each) — when customizing or debugging
+- **Zoom 3**: Evolution history (gap reports, calibration logs) — Sutra internal only
+
+Deploy Zoom 0 + Zoom 1 during Phase 6. Zoom 2 goes in os/engines/. Zoom 3 stays in holding/.
+
 ## Phase 7: DEPLOY — Activate the Company
 
 **Input**: OS Package

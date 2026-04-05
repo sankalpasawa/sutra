@@ -6,6 +6,9 @@ ENFORCEMENT: HARD for Tier 2+. The engine MUST run before every task. Founder ca
 
 ## Purpose
 
+
+> **Governing Principle**: P10 — Scalability of Intelligence. Match cognitive resource to the problem. This engine is the implementation of that principle at the task level.
+
 The Adaptive Protocol Engine is the meta-skill of Sutra: it reads a problem and decides how much process to apply. Every problem has two outputs — code and knowledge. The code is for the user. The knowledge is for the system. But the depth of process should match the problem, not be one-size-fits-all. A privacy policy page and an auth system rewrite should not pass through the same pipeline. This engine evaluates problem parameters and context parameters at runtime, then selects the appropriate protocol depth — replacing static classification with dynamic routing.
 
 ---
