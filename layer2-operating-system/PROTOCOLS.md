@@ -10,17 +10,17 @@ Executable rules compiled from Asawa + Sutra principles. Every protocol has: tri
 | PROTO-001 | Structure Before Creation | Convergent | SOFT | SHIPPED | dispatcher check 4 |
 | PROTO-002 | Wait for Parallel Completion | Constitutional | HARD | SHIPPED | agent-completion-check.sh |
 | PROTO-003 | Free Tier First | Constitutional | HARD | SHIPPED | onboarding review (advisory) |
-| PROTO-004 | Keys in Env Vars Only | Constitutional | HARD | PARTIAL | pre-commit grep (not automated) |
-| PROTO-005 | Self-Assess Before Foundational Work | Constitutional | SOFT | PARTIAL | DayFlow has hook, Asawa doesn't |
-| PROTO-006 | Process Discipline | Constitutional | HARD | PARTIAL | DayFlow process-gate.sh, Asawa none |
-| PROTO-007 | One Metric Per Feature | Federal | SOFT | EXPERIMENTAL | no mechanism |
-| PROTO-008 | Follow the Sprint Sequence | Federal | SOFT | EXPERIMENTAL | no mechanism |
-| PROTO-009 | Narration Is Not Artifact | Constitutional | HARD | PARTIAL | DayFlow process-compliance.sh |
+| PROTO-004 | Keys in Env Vars Only | Constitutional | HARD | SHIPPED | dispatcher check 5 + DayFlow hook |
+| PROTO-005 | Self-Assess Before Foundational Work | Constitutional | SOFT | SHIPPED | dispatcher check 6 + DayFlow hook |
+| PROTO-006 | Process Discipline | Constitutional | HARD | SHIPPED | dispatcher check 7 + depth system |
+| PROTO-007 | One Metric Per Feature | Federal | SOFT | SHIPPED | CLAUDE.md MEASURE phase |
+| PROTO-008 | Follow the Sprint Sequence | Federal | SOFT | SHIPPED | CLAUDE.md depth assessment |
+| PROTO-009 | Narration Is Not Artifact | Constitutional | HARD | SHIPPED | dispatcher check 8 + DayFlow hook |
 | PROTO-010 | Version Focus | Constitutional | HARD | SHIPPED | session-start file loading |
 | PROTO-011 | Company Independence | Constitutional | HARD | SHIPPED | boundary hooks (exit 2) |
 | PROTO-012 | Ownership Model | Convergent | SOFT | SHIPPED | advisory (session start) |
 | PROTO-013 | Sutra Version Deploy | Federal | SOFT | SHIPPED | verify-os-deploy.sh + manual |
-| PROTO-014 | Sutra Version Check | Federal | SOFT | PARTIAL | DayFlow CLAUDE.md only |
+| PROTO-014 | Sutra Version Check | Federal | SOFT | SHIPPED | all companies CLAUDE.md |
 | PROTO-015 | Verify Before Commit | Constitutional | HARD | SHIPPED | memory + proportional checks |
 | PROTO-016 | Root Cause on Founder Correction | Constitutional | HARD | SHIPPED | memory |
 
@@ -463,16 +463,16 @@ origin: 2026-04-06. Multiple instances during session where founder
 | 001 | dispatcher-pretool.sh check 4 | Asawa | ACTIVE |
 | 002 | agent-completion-check.sh | Asawa (PostToolUse) | ACTIVE |
 | 003 | onboarding review | CLIENT-ONBOARDING.md | ACTIVE (manual) |
-| 004 | pre-commit grep | stated but not automated | NEEDS HOOK |
-| 005 | self-assessment.sh | DayFlow has it, Asawa doesn't | PARTIAL |
-| 006 | process-gate.sh | DayFlow has it, Asawa doesn't | PARTIAL |
-| 007 | — | — | NOT BUILT |
-| 008 | — | — | NOT BUILT |
-| 009 | process-compliance.sh | DayFlow has it, Asawa doesn't | PARTIAL |
+| 004 | dispatcher check 5 (secret pattern grep) | Asawa + DayFlow | ACTIVE |
+| 005 | dispatcher check 6 (foundational doc reminder) | Asawa + DayFlow | ACTIVE |
+| 006 | dispatcher check 7 + depth system | Asawa + DayFlow | ACTIVE |
+| 007 | MEASURE phase in task lifecycle | all sessions | ACTIVE |
+| 008 | depth assessment sequence | all sessions | ACTIVE |
+| 009 | dispatcher check 8 (artifact reminder) | Asawa + DayFlow | ACTIVE |
 | 010 | CLAUDE.md session start | all companies | ACTIVE |
 | 011 | enforce-boundaries.sh | all companies (exit 2) | ACTIVE |
 | 012 | advisory in session start | CLAUDE.md | ACTIVE |
 | 013 | verify-os-deploy.sh + manual | holding/hooks/ | ACTIVE |
-| 014 | CLAUDE.md instruction | DayFlow only | PARTIAL |
+| 014 | CLAUDE.md instruction | all companies | ACTIVE |
 | 015 | memory entry | all sessions | ACTIVE |
 | 016 | memory entry | all sessions | ACTIVE |
