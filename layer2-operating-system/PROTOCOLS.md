@@ -20,6 +20,8 @@ Executable rules compiled from Asawa + Sutra principles. Every protocol has: tri
 | PROTO-012 | Ownership Model | Convergent | SOFT | Selling a company or founder operating instead of governing |
 | PROTO-013 | Sutra Version Deploy | Federal | SOFT | New Sutra version released |
 | PROTO-014 | Sutra Version Check | Federal | SOFT | Client company session starts |
+| PROTO-015 | Verify Before Commit | Constitutional | HARD | Any commit to a company repo |
+| PROTO-016 | Root Cause on Founder Correction | Constitutional | HARD | Founder points out a miss |
 
 Types: **Constitutional** (Asawa-locked, no override) | **Federal** (Sutra, override within bounds) | **Convergent** (both, rule locked, method flexible)
 
@@ -133,159 +135,150 @@ _Merged from: PROTO-014 (Permanent Ownership) + PROTO-015 (Owner Not Operator)_
 ### PROTO-013: Sutra Version Deploy
 ```
 federal | [Sutra P9, D22] | SOFT
-trigger: New Sutra version released (CURRENT-VERSION.md updated)
-check:   All client companies updated + verified? → done. Not yet? → run deploy.
+trigger: New Sutra version released OR company needs OS deploy/update
+check:   Company OS matches Sutra source 100%? → done. Any mismatch? → deploy.
+
+Deployment is BINARY. Either the OS is fully deployed or it's not.
+There is no "partial deploy" or "Depth 2 deploy." You don't install
+60% of an operating system.
+
+THE PROCESS:
+
+  1. SUTRA OS EXISTS (source of truth in sutra/)
+  2. CUSTOMIZE for the company (company-specific config)
+  3. DEPLOY 100% (every file, every line, every reference)
+  4. VERIFY 100% (content matches, not just file exists)
+
+STEP 1: GENERATE EXPECTED STATE
+
+  Read the Sutra source and generate the FULL expected state for
+  this company. Not "what changed since last version" — what the
+  company SHOULD look like right now if deployed perfectly.
+
+  Expected state includes:
+    CLAUDE.md:
+      [ ] "Sutra OS Version: v{current}" — exact version string
+      [ ] Session start instructions — match current Sutra template
+      [ ] Depth assessment block with cost as % of $200 plan
+      [ ] Version check protocol (PROTO-014) — reads ../sutra/CURRENT-VERSION.md
+      [ ] Input routing section — current format
+      [ ] All terminology current ("Depth" not "Level" or "Gear")
+
+    os/engines/:
+      [ ] ADAPTIVE-PROTOCOL.md — byte-identical to Sutra source (minus company customization)
+      [ ] ESTIMATION-ENGINE.md — byte-identical to Sutra source
+      [ ] estimation-log.jsonl — exists (content is company-specific, don't overwrite)
+
+    os/:
+      [ ] SUTRA-CONFIG.md — version matches, lifecycle phases match,
+          depth range matches, terminology current
+      [ ] METRICS.md — exists with correct format
+      [ ] OKRs.md — exists with correct format
+      [ ] feedback-to-sutra/ — directory exists
+      [ ] feedback-from-sutra/ — directory exists
+
+    .claude/:
+      [ ] hooks/enforce-boundaries.sh — exists, executable, exit 2 on violation
+      [ ] settings.json — hook registered
+
+STEP 2: COMPARE TO ACTUAL STATE
+
+  Read EVERY file listed above in the company.
+  Compare CONTENT, not just existence.
+
+  For each file, check:
+    - Does it exist? (L1)
+    - Does the version string match? (L2)
+    - Does the terminology match? ("Depth" not "Level") (L2)
+    - Do the lifecycle phases match? (L2)
+    - Does the depth range match the company's tier? (L2)
+    - Are references to other OS files current? (L2)
+
+  Output a diff report:
+    MATCH:    file exists AND content is current
+    OUTDATED: file exists BUT content references old version/terminology
+    MISSING:  file does not exist
+    EXTRA:    file exists in company but not in expected state (leave alone)
+
+STEP 3: DEPLOY (fix every mismatch)
+
+  For each OUTDATED or MISSING item:
+    - Update the file to match expected state
+    - Preserve company-specific content (architecture, design, TODO)
+    - Replace ONLY the Sutra-managed sections
+
+  WHAT IS SUTRA-MANAGED (update freely):
+    - Version strings
+    - Session start instructions
+    - Depth assessment format
+    - Version check protocol
+    - Input routing format
+    - Engine files (ADAPTIVE-PROTOCOL.md, ESTIMATION-ENGINE.md)
+    - SUTRA-CONFIG.md lifecycle and depth sections
+    - Hook files
+
+  WHAT IS COMPANY-MANAGED (never touch):
+    - Architecture sections in CLAUDE.md
+    - Design principles
+    - Key files / important files sections
+    - TODO.md content
+    - estimation-log.jsonl entries (company data)
+    - feedback-to-sutra/ content
+    - Company-specific workflows
+
+  Commit: "deploy: Sutra OS v{ver} — full state sync"
+
+STEP 4: VERIFY (content, not existence)
+
+  Re-run Step 2 after deploy. Every item must be MATCH.
+  If any OUTDATED remains, the deploy failed. Fix and re-verify.
+
+  Binary outcome: DEPLOYED (100% match) or NOT DEPLOYED.
+
+  Then confirm in a live session:
+    - Start a session in the company directory
+    - Does the version check fire?
+    - Give a task — does depth assessment appear?
+    - If yes: DEPLOYED
+    - If no: instructions unclear, rewrite and re-deploy
+
+POST-DEPLOY (ongoing, not part of deploy):
+
+  These happen AFTER deployment, during normal company sessions:
+
+  ADOPTION SCORECARD (after 5 sessions):
+    - Depth compliance: what % of tasks show depth blocks?
+    - Triage compliance: what % log triage after completion?
+    - Estimation compliance: what % have estimate vs actual?
+    - Target: > 80% on all. Below 80% = rewrite instructions.
+
+  MECHANICAL ENFORCEMENT (only if adoption < 80% after rewrite):
+    - Add hooks that remind or block
+    - Last resort — hooks add friction
+
+  GRADUATION (for experimental features):
+    - Used correctly in 5+ tasks > ADDITIVE
+    - Used in 2+ companies > STABLE
+    - Can become required
+
+  DEPRECATION (when retiring old features):
+    - 2-version notice minimum
+    - Migration path documented
+    - Audit: no company depends on it
+    - Remove from expected state
 
 REFERENCES:
-  Stripe — version pinning (client stays on version until explicit upgrade)
-  Salesforce — breaking/non-breaking classification + preview before enforcement
-  Kubernetes — alpha > beta > stable feature graduation
-  Accenture — adoption scorecards (measure behavior, not installation)
-  McKinsey — pilot > coach > embed > withdraw lifecycle
+  Ansible/Puppet — desired state convergence (declare, compare, converge)
+  Salesforce — readiness scoring before upgrade
+  Stripe — version pinning with explicit upgrade
+  Kubernetes — feature graduation
+  Accenture — adoption scorecards
 
-PHASE 0: BASELINE CHECK (before any incremental changes)
-
-  Incremental deploys assume the previous version was complete.
-  That assumption is often wrong. Check the FULL expected state
-  first, not just what's new.
-
-  Like Salesforce Upgrade Center: shows readiness score, not just
-  changelog. Missing items from v1.0 matter as much as new items
-  in v1.7.
-
-  FOR the target company, verify these exist:
-    [ ] CLAUDE.md has "Sutra OS Version" line
-    [ ] CLAUDE.md has session start instructions
-    [ ] CLAUDE.md has input routing section
-    [ ] CLAUDE.md has depth assessment instructions
-    [ ] CLAUDE.md has version check protocol
-    [ ] os/ directory exists with operating system files
-    [ ] os/engines/ has ADAPTIVE-PROTOCOL.md (current version)
-    [ ] os/engines/ has ESTIMATION-ENGINE.md
-    [ ] os/engines/ has estimation-log.jsonl
-    [ ] os/feedback-to-sutra/ directory exists (upstream feedback)
-    [ ] os/feedback-from-sutra/ directory exists (downstream push)
-    [ ] os/SUTRA-CONFIG.md exists
-    [ ] os/METRICS.md exists
-    [ ] os/OKRs.md exists
-    [ ] .claude/hooks/enforce-boundaries.sh exists and works
-
-  Anything missing > add it NOW, regardless of what version
-  introduced it. Don't carry gaps forward.
-
-  OUTPUT: baseline report showing what exists vs what's missing.
-  Treat missing items the same as new items — they get deployed.
-
-PHASE 1: RELEASE CLASSIFICATION
-
-  Read CURRENT-VERSION.md changelog. Classify EACH change:
-
-  STABLE (auto-deploy):
-    Internal engine improvements, bug fixes, doc rewrites.
-    No client-facing change. Just bump version number.
-    Like Stripe: non-breaking changes ship to all versions.
-
-  ADDITIVE (notify + opt-in):
-    New capabilities, new protocols, new depth levels.
-    Client can adopt when ready. No deadline.
-    Like Salesforce: new features available, not forced.
-
-  BREAKING (notify + migration guide + grace period):
-    Changes how tasks are assessed, renames concepts,
-    removes/restructures sections in CLAUDE.md.
-    Like Kubernetes deprecation: 2-version notice minimum.
-    Grace period: at least 2 sessions before old way stops working.
-
-  EXPERIMENTAL (preview only):
-    New features not yet proven. Deployed to one company first.
-    Like Kubernetes alpha: may change or be removed.
-    Graduation criteria: works correctly in 5+ tasks.
-
-PHASE 2: DEPLOY
-
-  FOR EACH client company:
-
-  a. Read their CLAUDE.md "Sutra OS Version" line
-  b. If already current > skip
-  c. If outdated > apply changes by classification:
-
-  STABLE: bump version, no other changes.
-  ADDITIVE: bump version, add new sections marked OPTIONAL.
-  BREAKING: bump version, update sections, add MIGRATION NOTES
-    with what changed, why, old behavior, new behavior, what
-    the company needs to do differently.
-  EXPERIMENTAL: deploy to ONE pilot company only. Mark as
-    EXPERIMENTAL with graduation criteria.
-
-  WHAT DOES NOT GET UPDATED:
-    Company-specific content, TODO items, workflows, anything
-    the company wrote themselves, customizations that override
-    Sutra defaults.
-
-  COMMIT FORMAT:
-    stable:   "update: Sutra OS v{ver} — internal"
-    additive: "update: Sutra OS v{ver} — {summary}"
-    breaking: "update: Sutra OS v{ver} — BREAKING: {summary}"
-
-PHASE 3: VERIFY
-
-  Deployment is NOT done when CLAUDE.md is updated.
-  Deployment is done when the feature works in a real session.
-
-  LEVEL 1 — INSTALL VERIFICATION (every deploy):
-    Start a session in the company directory.
-    Does the LLM read and acknowledge the new version?
-    Does the version check protocol fire?
-    If no > deployment failed. Fix CLAUDE.md instructions.
-
-  LEVEL 2 — BEHAVIORAL VERIFICATION (additive + breaking):
-    Give the session a real task.
-    Did the new feature activate? (e.g., depth assessment appeared?)
-    Did the protocol fire on its trigger?
-    If no > instructions unclear. Rewrite until it works.
-
-  LEVEL 3 — ADOPTION SCORECARD (after 5 sessions):
-    Audit estimation log or session artifacts.
-    | Feature                     | Expected | Actual | Pass? |
-    |-----------------------------|----------|--------|-------|
-    | Depth assessment before task| 100%     | ?%     |       |
-    | Triage logging after task   | 100%     | ?%     |       |
-    | Version check on start      | 100%     | ?%     |       |
-
-    If compliance < 80%:
-      Instruction unclear? > rewrite
-      LLM ignoring? > add structural enforcement (artifact gates)
-      Feature not useful? > consider removing
-
-  LEVEL 4 — MECHANICAL ENFORCEMENT (persistent non-compliance):
-    Add hook that blocks or reminds. Last resort — hooks add friction.
-    Only for features where non-compliance causes real harm.
-    Example: PreToolUse hook checks depth assessment before Edit/Write.
-
-PHASE 4: GRADUATION (experimental features)
-
-  Graduate when:
-    Used correctly in 5+ tasks in pilot company.
-    No false positives or unnecessary friction.
-    Founder hasn't overridden or complained.
-    Feature adds measurable value.
-
-  Path: EXPERIMENTAL > ADDITIVE > STABLE > can become required
-
-PHASE 5: DEPRECATION (retiring old features)
-
-  1. NOTICE: deprecation warning in CLAUDE.md (2 versions minimum)
-  2. GRACE: feature continues working for 2 versions
-  3. MIGRATION: clear path to replacement
-  4. REMOVAL: remove from CLAUDE.md + onboarding template
-  5. AUDIT: check no company still depends on it
-
-  Like Stripe: clear warnings, no surprise removals.
-
-origin: DayFlow v1.7 deploy 2026-04-06. Informed by Stripe
-        (version pinning), Salesforce (change classification),
-        Kubernetes (feature graduation), Accenture (adoption
-        scorecards), McKinsey (pilot > embed lifecycle).
+TRIGGER: SUTRA-CONFIG.md found with "Level 1-4" after v1.7 deploy.
+         File existed (L1 pass) but content was wrong (L2 fail).
+         Incremental deploy missed it. Full state sync would catch it.
+SOURCE: customer feedback (DayFlow CEO session 2026-04-06)
+GRADE: I
 times_used: 2
 ```
 
@@ -328,6 +321,66 @@ ENFORCEMENT: SOFT — check runs, founder can ignore. No blocking.
 origin: Adaptive Protocol v3 deploy 2026-04-06. Informed by
         Stripe (version pinning), Salesforce (upgrade center).
 times_used: 0 (deployed to DayFlow)
+```
+
+### PROTO-015: Verify Before Commit
+```
+constitutional | [Asawa D11, P3] | HARD
+trigger: Any commit to a company repo
+check:   Tests pass AND typecheck clean? → commit. Either fails? → fix first.
+
+PROCESS:
+  Before every git commit in a company repo:
+    1. If tests exist: run them (npm test / jest)
+    2. If typecheck exists: run it (npx tsc --noEmit)
+    3. Both pass → commit
+    4. Either fails → fix, then re-run, then commit
+    5. NEVER skip because "it's just docs" — verify anyway
+
+  The assumption "this change is safe" is the exact assumption
+  that causes regressions. The test suite catches assumptions.
+
+origin: 2026-04-06. Removed Operating Modes from DayFlow SUTRA-CONFIG.md.
+        Did not run tests before committing. Founder asked "why didn't you
+        run it?" Change was safe (142/142 pass) but verification was skipped.
+        The miss was behavioral, not technical.
+```
+
+### PROTO-016: Root Cause on Founder Correction
+```
+constitutional | [Asawa D11, P3] | HARD
+trigger: Founder points out something was missed or done wrong
+check:   Root cause identified AND systemic fix applied? → continue. Not yet? → stop and fix.
+
+PROCESS:
+  When the founder corrects a mistake or points out a miss:
+
+    1. STOP current work immediately
+    2. ACKNOWLEDGE the specific miss (not generic "you're right")
+    3. ROOT CAUSE: Why did this happen systemically?
+       Not "I forgot" — what process gap allowed the forget?
+    4. FIX THE INSTANCE: do the thing that was missed (run the test,
+       check the file, verify the content)
+    5. FIX THE SYSTEM: create or update a protocol/memory/hook so
+       this class of miss cannot recur
+       - If it's a repeated behavior: save as feedback memory
+       - If it's a process gap: add to a protocol
+       - If it's critical: add a hook
+    6. RESUME work
+
+  The founder should never have to point out the same class of
+  miss twice. The first correction creates the prevention.
+
+  NEVER:
+    - Say "you're right" and continue without fixing
+    - Treat it as a one-time mistake without systemic analysis
+    - Fix only the instance without fixing the process
+    - Wait until asked to do the root cause analysis
+
+origin: 2026-04-06. Multiple instances during session where founder
+        pointed out misses (tests not run, SUTRA-CONFIG.md outdated,
+        modes feature still present, feedback not implemented).
+        Each required founder to push for the systemic fix.
 ```
 
 ---
