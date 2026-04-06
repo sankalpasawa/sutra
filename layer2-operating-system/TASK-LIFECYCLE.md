@@ -30,7 +30,7 @@ Every task enters this flow. Every phase runs. What changes is **depth**.
 
 OBJECTIVE produces one thing: a **clear statement of intent** that anchors every subsequent phase.
 
-At Level 1, OBJECTIVE is implicit in the task itself. At Level 4, it's a written goal with success criteria.
+At Depth 1, OBJECTIVE is implicit in the task itself. At Depth 4, it's a written goal with success criteria.
 
 ---
 
@@ -46,18 +46,18 @@ At Level 1, OBJECTIVE is implicit in the task itself. At Level 4, it's a written
 
 OBSERVE produces one thing: a **thoroughness level** (1-4) that governs the depth of every subsequent phase.
 
-At Level 1, OBSERVE is a 10-second gut check. At Level 4, it's deep research with expert-pattern review.
+At Depth 1, OBSERVE is a 10-second gut check. At Depth 4, it's deep research with expert-pattern review.
 
-**Research Gate** (L3+ mandatory):
+**Research Gate** (D3+ mandatory):
 
-At L3+, OBSERVE must produce a documented research step before moving to PLAN. The LLM knows industry practices but won't surface them unless required. This gate prevents reinventing known patterns.
+At D3+, OBSERVE must produce a documented research step before moving to PLAN. The LLM knows industry practices but won't surface them unless required. This gate prevents reinventing known patterns.
 
-| Level | Research Requirement |
+| Depth | Research Requirement |
 |-------|---------------------|
-| L1 | None |
-| L2 | None |
-| L3 | **3-5 bullet "prior art" section**: how do industry/experts approach this type of problem? |
-| L4 | **Full prior art scan with references**: named sources, patterns reviewed, approach selected with rationale |
+| D1 | None |
+| D2 | None |
+| D3 | **3-5 bullet "prior art" section**: how do industry/experts approach this type of problem? |
+| D4 | **Full prior art scan with references**: named sources, patterns reviewed, approach selected with rationale |
 
 The research artifact lives inline in the task planning output or as an `OBSERVE.research` section in the task log. It does not need to be a separate document.
 
@@ -87,36 +87,36 @@ SHAPE translates observation into a concrete approach direction before detailed 
 | **Plan** | What are the steps? What's the sequence? |
 
 Thoroughness determines depth:
-- **Level 1**: One-line estimate ("~10 min, 1 file, trivial")
-- **Level 2**: Estimation table with key dimensions
-- **Level 3**: Full estimation table + step-by-step plan + **HLD** (see below)
-- **Level 4**: Full table + risk assessment + contingency plan + **HLD** + **ADR** (see below)
+- **Depth 1**: One-line estimate ("~10 min, 1 file, trivial")
+- **Depth 2**: Estimation table with key dimensions
+- **Depth 3**: Full estimation table + step-by-step plan + **HLD** (see below)
+- **Depth 4**: Full table + risk assessment + contingency plan + **HLD** + **ADR** (see below)
 
-**HLD Requirement** (L3+ engineering tasks, mandatory):
+**HLD Requirement** (D3+ engineering tasks, mandatory):
 
-At L3+, PLAN must produce a High-Level Design BEFORE the file-level plan. The LLM naturally plans at file level (which is LLD) but misses system-level implications. The HLD catches cross-cutting concerns before code is written.
+At D3+, PLAN must produce a High-Level Design BEFORE the file-level plan. The LLM naturally plans at file level (which is LLD) but misses system-level implications. The HLD catches cross-cutting concerns before code is written.
 
-| Level | HLD Requirement |
+| Depth | HLD Requirement |
 |-------|----------------|
-| L1 | None |
-| L2 | None |
-| L3 | **Text-based HLD (5-10 lines)**: component interaction map, data flow, system boundaries |
-| L4 | **Full architecture diagram**: interaction patterns, data flow, boundaries, risks — reviewed before LLD begins |
+| D1 | None |
+| D2 | None |
+| D3 | **Text-based HLD (5-10 lines)**: component interaction map, data flow, system boundaries |
+| D4 | **Full architecture diagram**: interaction patterns, data flow, boundaries, risks — reviewed before LLD begins |
 
 HLD vs LLD distinction:
 - **HLD** = "these components interact this way, data flows here to here"
 - **LLD** = "file X gets function Y with signature Z"
 
-**ADR Protocol for Irreversible Decisions** (L3+ mandatory when alternatives exist):
+**ADR Protocol for Irreversible Decisions** (D3+ mandatory when alternatives exist):
 
-Any L3+ task that involves choosing between alternatives (technology, pattern, architecture) must produce an Architecture Decision Record. In the solo founder + AI model, each session starts fresh -- ADRs are how decisions survive between sessions.
+Any D3+ task that involves choosing between alternatives (technology, pattern, architecture) must produce an Architecture Decision Record. In the solo founder + AI model, each session starts fresh -- ADRs are how decisions survive between sessions.
 
-| Level | ADR Requirement |
+| Depth | ADR Requirement |
 |-------|----------------|
-| L1 | None |
-| L2 | None |
-| L3 | **ADR required for irreversible decisions** — when choosing between alternatives with hard-to-reverse consequences |
-| L4 | **ADR required for all significant decisions** — every technology choice, pattern selection, or architecture decision |
+| D1 | None |
+| D2 | None |
+| D3 | **ADR required for irreversible decisions** — when choosing between alternatives with hard-to-reverse consequences |
+| D4 | **ADR required for all significant decisions** — every technology choice, pattern selection, or architecture decision |
 
 ADR template (one page max):
 1. **Context** (2 sentences): what situation requires a decision?
@@ -150,22 +150,22 @@ This is not optional. Sequential execution of independent tasks is a **throughpu
 
 **Root cause for this rule**: Session 2026-04-05 dispatched 5 agents in parallel (wave 1), then fell into sequential mode for waves 2-3. Post-mortem: no structural check forced parallelization at each decision point. Results arrived → agent processed one-by-one → built next thing → repeated. The fix is this gate: EXECUTE always checks for parallelism first.
 
-**Regression Test Rule** (L2+ bug fixes, mandatory):
+**Regression Test Rule** (D2+ bug fixes, mandatory):
 
-Every bug fix at L2+ must include a test that would have caught the bug. Without this, the same class of bug recurs. The LLM fixes bugs well but doesn't think about prevention unless required.
+Every bug fix at D2+ must include a test that would have caught the bug. Without this, the same class of bug recurs. The LLM fixes bugs well but doesn't think about prevention unless required.
 
-| Level | Regression Test Requirement |
+| Depth | Regression Test Requirement |
 |-------|---------------------------|
-| L1 | None |
-| L2 | **Regression test required**: a test that reproduces the original bug and verifies the fix |
-| L3 | **Regression test required**: same as L2, plus edge case coverage for the bug class |
-| L4 | **Regression test required**: same as L3, plus root cause analysis documented in test comments |
+| D1 | None |
+| D2 | **Regression test required**: a test that reproduces the original bug and verifies the fix |
+| D3 | **Regression test required**: same as D2, plus edge case coverage for the bug class |
+| D4 | **Regression test required**: same as D3, plus root cause analysis documented in test comments |
 
 This rule applies only to bug fix tasks (not new features). For new features, the standard test requirements by level apply.
 
 The old pipeline stages (SHAPE, BUILD, TEST, SHIP, REVIEW, QA) all live inside EXECUTE. Which ones activate depends on thoroughness:
 
-| Level | Active stages |
+| Depth | Active stages |
 |-------|--------------|
 | **1: Minimal** | Build + ship |
 | **2: Standard** | Build + test + ship |
@@ -231,9 +231,9 @@ LEARN is what makes this lifecycle anti-bureaucratic. Process grows when needed 
 
 ### Task-to-Protocol Conversion (the missing loop)
 
-Every solved task is a candidate protocol. The first time you solve a problem, it's problem-solving (Gear 3-5). The second time, if a protocol exists, it's execution (Gear 1-2). LEARN is where this conversion happens.
+Every solved task is a candidate protocol. The first time you solve a problem, it's problem-solving (Depth 3-5). The second time, if a protocol exists, it's execution (Depth 1-2). LEARN is where this conversion happens.
 
-**After every task at Gear 3+, LEARN asks:**
+**After every task at Depth 3+, LEARN asks:**
 
 ```
 1. Will this type of task recur?
@@ -247,7 +247,7 @@ Every solved task is a candidate protocol. The first time you solve a problem, i
 3. Extract the protocol:
    - TRIGGER: what signals this type of task? (e.g., "new SDK integration")
    - PROCESS: what steps worked? (ordered, with inputs/outputs per step)
-   - GEAR: what gear should this be next time? (usually current gear - 1 or - 2)
+   - DEPTH: what depth should this be next time? (usually current depth - 1 or - 2)
    - VERIFY: how do you know it worked?
 
 4. Store:
@@ -262,7 +262,7 @@ Every solved task is a candidate protocol. The first time you solve a problem, i
 ```yaml
 protocol: sdk-integration
 trigger: "integrate a third-party SDK with existing docs"
-gear: 2  # was Gear 3 when first solved, now Gear 2
+depth: 2  # was Depth 3 when first solved, now Depth 2
 process:
   - read SDK docs and changelog for breaking changes
   - check existing integration patterns in codebase
@@ -277,44 +277,44 @@ last_refined: 2026-04-05
 **Protocol maturity:**
 - **0 uses**: candidate — created from one task, untested as protocol
 - **3 uses**: proven — survived 3 applications, refine based on what varied
-- **10 uses**: locked — stable pattern, Gear 1 candidate, auto-apply
+- **10 uses**: locked — stable pattern, Depth 1 candidate, auto-apply
 
-**The gear drop:**
-When a protocol exists for a task type, the Adaptive Protocol Engine reads it and drops the gear. First time building auth = Gear 5. After auth protocol exists = Gear 2 (follow the protocol). After 10 uses = Gear 1 (the protocol is the task).
+**The depth drop:**
+When a protocol exists for a task type, the Adaptive Protocol Engine reads it and drops the depth. First time building auth = Depth 5. After auth protocol exists = Depth 2 (follow the protocol). After 10 uses = Depth 1 (the protocol is the task).
 
 This is how the system gets faster over time without getting sloppier. The thoroughness was already done — it's baked into the protocol. You're not skipping the thinking. You're reusing the thinking.
 
 ---
 
-## Gears (Thoroughness)
+## Depths (Thoroughness)
 
-Gear selection is handled by the Adaptive Protocol Engine (`d-engines/ADAPTIVE-PROTOCOL.md` v3). The gear controls decomposition granularity — how finely a task is broken down before the LLM executes each piece. See the engine doc for the full scoring model.
+Depth selection is handled by the Adaptive Protocol Engine (`d-engines/ADAPTIVE-PROTOCOL.md` v3). The depth controls decomposition granularity — how finely a task is broken down before the LLM executes each piece. See the engine doc for the full scoring model.
 
-| Gear | Name | When | Example |
-|------|------|------|---------|
+| Depth | Name | When | Example |
+|-------|------|------|---------|
 | **1** | Direct | LLM knows the answer. Zero decomposition. | Fix a typo. Change a button color. |
 | **2** | Think then do | One layer of analysis before code. | Add a screen following existing pattern. SDK integration with docs. |
 | **3** | Research then plan | Two layers before code. Map territory first. | Content moderation pipeline. Onboarding redesign. |
 | **4** | Architect then build | Three layers. System-level thinking first. | Database schema migration. Auth system from scratch. |
 | **5** | Full cascade | Every layer activated. Atomic subtask decomposition. | Payment infrastructure. Company data architecture. |
 
-### Phase Depth by Level
+### Phase Depth by Depth
 
-| Phase | Level 1 | Level 2 | Level 3 | Level 4 |
-|-------|---------|---------|---------|---------|
-| **OBJECTIVE** | Implicit in task | 1-line goal | Written goal statement | Goal + success criteria |
-| **OBSERVE** | 10-sec gut check | 2-min analysis | Research + analysis | Deep research + expert review |
-| **SHAPE** | Implicit | Quick framing | Approach evaluation | Approach + constraints + options |
-| **PLAN** | 1-line estimate | Estimation table | Full table + plan | Full table + risk assessment |
-| **EXECUTE** | Build + ship | Build + test + ship | Full SDLC stages | Full SDLC + review + approval |
-| **MEASURE** | Log result | Measure + compare | Full retro | Full retro + process update |
-| **LEARN** | Auto (passive) | Auto (passive) | Review patterns | Review + simplify |
+| Phase | Depth 1 | Depth 2 | Depth 3 | Depth 4 | Depth 5 |
+|-------|---------|---------|---------|---------|---------|
+| **OBJECTIVE** | Implicit in task | 1-line goal | Written goal statement | Goal + success criteria | Goal + success criteria + stakeholder alignment |
+| **OBSERVE** | 10-sec gut check | 2-min analysis | Research + analysis | Deep research + expert review | Full cascade research + cross-domain review |
+| **SHAPE** | Implicit | Quick framing | Approach evaluation | Approach + constraints + options | Full option analysis + risk modeling |
+| **PLAN** | 1-line estimate | Estimation table | Full table + plan | Full table + risk assessment | Full table + risk + contingency + rollback |
+| **EXECUTE** | Build + ship | Build + test + ship | Full SDLC stages | Full SDLC + review + approval | Full SDLC + review + approval + staged rollout |
+| **MEASURE** | Log result | Measure + compare | Full retro | Full retro + process update | Full retro + process update + calibration |
+| **LEARN** | Auto (passive) | Auto (passive) | Review patterns | Review + simplify | Review + simplify + protocol extraction |
 
-### Artifact Requirements by Phase and Level
+### Artifact Requirements by Phase and Depth
 
 This matrix specifies which artifacts each phase MUST produce. Items in **bold** are discipline-specific additions (from artifact chain analysis, 2026-04-06).
 
-| Phase | L1 (Minimal) | L2 (Standard) | L3 (Thorough) | L4 (Critical) |
+| Phase | D1 (Minimal) | D2 (Standard) | D3 (Thorough) | D4 (Critical) |
 |-------|-------------|---------------|----------------|----------------|
 | **OBJECTIVE** | Implicit in task | 1-line goal | Written goal statement | Goal + success criteria |
 | **OBSERVE** | 10-sec gut check | 2-min analysis | **Research gate** (3-5 bullets prior art) + analysis | **Research gate** (full prior art scan) + deep analysis + expert review |
@@ -324,9 +324,9 @@ This matrix specifies which artifacts each phase MUST produce. Items in **bold**
 | **MEASURE** | Log result | Measure + compare | Log + review; **ADR archive** | Log + review + process update; **ADR archive** |
 | **LEARN** | Auto (passive) | Auto (passive) | Learnings + pattern review | Learnings + calibration + simplification |
 
-### L1 Fast-Path Gate
+### D1 Fast-Path Gate
 
-L1 tasks that meet ALL of the following criteria skip directly to EXECUTE then LEARN, bypassing PLAN and MEASURE:
+D1 tasks that meet ALL of the following criteria skip directly to EXECUTE then LEARN, bypassing PLAN and MEASURE:
 
 | Criterion | Threshold |
 |-----------|-----------|
@@ -337,7 +337,7 @@ L1 tasks that meet ALL of the following criteria skip directly to EXECUTE then L
 
 When the gate passes: `OBJECTIVE → OBSERVE (10-sec score) → EXECUTE → LEARN`. No estimation, no plan, no measurement.
 
-When the gate fails (any criterion not met): the task is not L1. Re-score at L2+.
+When the gate fails (any criterion not met): the task is not D1. Re-score at D2+.
 
 This prevents process overhead on trivially small changes while ensuring nothing that deserves scrutiny slips through.
 
@@ -378,17 +378,17 @@ The highest score on any single dimension sets the level.
 
 ### Override: Security/Auth/Data
 
-Any task touching authentication, authorization, encryption, PII, or data schema changes gets **automatic Level 3 floor**, regardless of scores. If all three axes are also high, Level 4.
+Any task touching authentication, authorization, encryption, PII, or data schema changes gets **automatic Depth 3 floor**, regardless of scores. If all three axes are also high, Depth 4.
 
 ---
 
 ## Examples
 
-### Level 1: Fix broken link in README
+### Depth 1: Fix broken link in README
 
 ```
 OBJECTIVE: Fix the broken link.
-OBSERVE: Known issue, one file, no risk. Level 1.
+OBSERVE: Known issue, one file, no risk. Depth 1.
 SHAPE: Straightforward edit.
 PLAN:  ~2 min, 1 file, $0.05.
 EXECUTE: Edit file. Commit. Push.
@@ -396,12 +396,12 @@ MEASURE: Logged.
 LEARN: n/a
 ```
 
-### Level 2: Add a new settings screen
+### Depth 2: Add a new settings screen
 
 ```
 OBJECTIVE: Add a settings screen to the app.
 OBSERVE: Multiple files (screen + navigator + linking), known pattern (done before).
-         Complexity 2, Cost 1, Impact 1. Level 2.
+         Complexity 2, Cost 1, Impact 1. Depth 2.
 SHAPE: Follow existing screen pattern.
 PLAN:  Estimation table — ~20 min, 3 files, ~$0.50. Plan: create screen, add route, link nav.
 EXECUTE: Build screen. Write basic test. Ship to device.
@@ -409,12 +409,12 @@ MEASURE: Actual: 25 min, 3 files, $0.45. Accuracy: 80%. Logged to ESTIMATION-LOG
 LEARN: Passive — pattern "new screen" gets this data point.
 ```
 
-### Level 3: Add natural language quick-add parsing
+### Depth 3: Add natural language quick-add parsing
 
 ```
 OBJECTIVE: Enable natural language quick-add so users can type free-form text to create activities.
 OBSERVE: Cross-system (input layer + parse layer + command layer). New pattern (NLP).
-         Complexity 3, Cost 2, Impact 2. Level 3.
+         Complexity 3, Cost 2, Impact 2. Depth 3.
 SHAPE: Parse→activity flow with library evaluation.
 PLAN:  Full estimation table. Plan: research parsing libs, design parse→activity flow,
        build parser, integrate with quick-add, test edge cases.
@@ -425,12 +425,12 @@ MEASURE: Full retro. Parse accuracy measured. Estimation accuracy compared.
 LEARN: "NLP features" category gets calibration data.
 ```
 
-### Level 4: Migrate auth from Supabase JWT to custom token system
+### Depth 4: Migrate auth from Supabase JWT to custom token system
 
 ```
 OBJECTIVE: Migrate auth from Supabase JWT to custom token system for full control.
 OBSERVE: Foundational (every API call uses auth). Security-critical. Irreversible in production.
-         Complexity 4, Cost 4, Impact 4. Level 4 + security override.
+         Complexity 4, Cost 4, Impact 4. Depth 4 + security override.
 SHAPE: Custom token approach with feature flag rollout.
 PLAN:  Full estimation table with risk assessment. Rollback plan documented.
        Protocol: full SDLC with CISO review. 
@@ -448,11 +448,11 @@ LEARN: "Auth migration" pattern documented for future reference.
 
 | Old Pipeline | What It Was | Lifecycle Equivalent |
 |-------------|------------|---------------------|
-| "The Only Process" (IDEA → build → ship) | Stage-1 minimal process | Level 1 lifecycle |
-| Idea Flow (SENSE → SHAPE → DECIDE → SPECIFY → EXECUTE → LEARN) | Medium-depth feature flow | Level 2-3 lifecycle |
-| Full SDLC (IDEA → INTAKE → ... → MONITOR → ITERATE) | Heavy enterprise-style process | Level 3-4 lifecycle |
+| "The Only Process" (IDEA → build → ship) | Stage-1 minimal process | Depth 1 lifecycle |
+| Idea Flow (SENSE → SHAPE → DECIDE → SPECIFY → EXECUTE → LEARN) | Medium-depth feature flow | Depth 2-3 lifecycle |
+| Full SDLC (IDEA → INTAKE → ... → MONITOR → ITERATE) | Heavy enterprise-style process | Depth 3-4 lifecycle |
 
-The insight: these were never different systems. A 0-user company doing an auth rewrite needs Level 4. A 1000-user company fixing a typo needs Level 1. Thoroughness follows the **change**, not the company stage.
+The insight: these were never different systems. A 0-user company doing an auth rewrite needs Depth 4. A 1000-user company fixing a typo needs Depth 1. Thoroughness follows the **change**, not the company stage.
 
 ---
 
@@ -474,9 +474,9 @@ The insight: these were never different systems. A 0-user company doing an auth 
 | Rule | Behavior |
 |------|----------|
 | Every task enters the lifecycle | HARD — no task bypasses OBJECTIVE. Even "just do it" gets a 10-second score. |
-| Thoroughness set by scoring, not preference | HARD — cannot choose Level 1 for a Level 3 task. Founder can override UP (more thorough) but not DOWN without explicit approval gate (D29). |
-| MEASURE captures actuals for Level 2+ | HARD — task is not complete until actuals are logged. |
-| MEASURE captures actuals for Level 1 | SOFT — prompted, not enforced. |
+| Thoroughness set by scoring, not preference | HARD — cannot choose Depth 1 for a Depth 3 task. Founder can override UP (more thorough) but not DOWN without explicit approval gate (D29). |
+| MEASURE captures actuals for Depth 2+ | HARD — task is not complete until actuals are logged. |
+| MEASURE captures actuals for Depth 1 | SOFT — prompted, not enforced. |
 | LEARN runs automatically | PASSIVE — no human action required. System tracks patterns. |
 
 ---

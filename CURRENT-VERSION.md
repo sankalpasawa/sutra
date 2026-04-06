@@ -30,11 +30,11 @@
 | # | Company | Pinned to | Status |
 |---|---------|-----------|--------|
 | 1 | DayFlow | v1.7 | Running. Depth system deployed. feedback-to-sutra/ created. |
-| 2 | PPR | v1.0 | Running. First feedback sent (parallel deploy collision). |
-| 3 | Maze | v1.3 | Upgrading. First company to receive engines layer. |
-| 4 | Jarvis | v1.3.1 | Onboarded. |
-| 5 | Paisa | v1.4 | Onboarded. MVP stage. |
-| 6 | Asawa | v1.6 | Meta-client. Running latest as governance layer. |
+| 2 | PPR | v1.7 | Deploying. Depth system + engines + version check. |
+| 3 | Maze | v1.7 | Deploying. Depth system + engine upgrade + version check. |
+| 4 | Jarvis | v1.3.1 | Onboarded. Upgrade pending. |
+| 5 | Paisa | v1.7 | Deploying. Depth system + engines + version check. |
+| 6 | Asawa | v1.7 | Meta-client. Running latest as governance layer. |
 
 ## Release Model
 
