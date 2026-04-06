@@ -143,6 +143,39 @@ REFERENCES:
   Accenture — adoption scorecards (measure behavior, not installation)
   McKinsey — pilot > coach > embed > withdraw lifecycle
 
+PHASE 0: BASELINE CHECK (before any incremental changes)
+
+  Incremental deploys assume the previous version was complete.
+  That assumption is often wrong. Check the FULL expected state
+  first, not just what's new.
+
+  Like Salesforce Upgrade Center: shows readiness score, not just
+  changelog. Missing items from v1.0 matter as much as new items
+  in v1.7.
+
+  FOR the target company, verify these exist:
+    [ ] CLAUDE.md has "Sutra OS Version" line
+    [ ] CLAUDE.md has session start instructions
+    [ ] CLAUDE.md has input routing section
+    [ ] CLAUDE.md has depth assessment instructions
+    [ ] CLAUDE.md has version check protocol
+    [ ] os/ directory exists with operating system files
+    [ ] os/engines/ has ADAPTIVE-PROTOCOL.md (current version)
+    [ ] os/engines/ has ESTIMATION-ENGINE.md
+    [ ] os/engines/ has estimation-log.jsonl
+    [ ] os/feedback-to-sutra/ directory exists (upstream feedback)
+    [ ] os/feedback-from-sutra/ directory exists (downstream push)
+    [ ] os/SUTRA-CONFIG.md exists
+    [ ] os/METRICS.md exists
+    [ ] os/OKRs.md exists
+    [ ] .claude/hooks/enforce-boundaries.sh exists and works
+
+  Anything missing > add it NOW, regardless of what version
+  introduced it. Don't carry gaps forward.
+
+  OUTPUT: baseline report showing what exists vs what's missing.
+  Treat missing items the same as new items — they get deployed.
+
 PHASE 1: RELEASE CLASSIFICATION
 
   Read CURRENT-VERSION.md changelog. Classify EACH change:

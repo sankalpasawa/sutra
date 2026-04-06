@@ -20,7 +20,7 @@
 
 | # | Company | Pinned to | Status |
 |---|---------|-----------|--------|
-| 1 | DayFlow | v1.0 | Running. No feedback sent yet. |
+| 1 | DayFlow | v1.7 | Running. Depth system deployed. feedback-to-sutra/ created. |
 | 2 | PPR | v1.0 | Running. First feedback sent (parallel deploy collision). |
 | 3 | Maze | v1.3 | Upgrading. First company to receive engines layer. |
 | 4 | Jarvis | v1.3.1 | Onboarded. |
