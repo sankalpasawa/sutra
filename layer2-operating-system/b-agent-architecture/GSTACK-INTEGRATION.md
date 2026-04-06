@@ -6,7 +6,14 @@ Sutra defines HOW a company should operate. gstack provides the TOOLS to execute
 
 ## The Operating Model → gstack Mapping
 
-### Phase: SENSE (understand the situation)
+### Phase: OBJECTIVE (define the goal)
+
+| Sutra Step | gstack Skill | What It Does |
+|------------|-------------|-------------|
+| Define success criteria | `/office-hours` | YC-style forcing questions — what does winning look like? |
+| Scope the goal | `/plan-ceo-review` | CEO-mode: expand/reduce/hold scope, find 10-star product |
+
+### Phase: OBSERVE (understand the situation)
 
 | Sutra Step | gstack Skill | What It Does |
 |------------|-------------|-------------|
@@ -24,7 +31,7 @@ Sutra defines HOW a company should operate. gstack provides the TOOLS to execute
 | Explore visual options | `/design-shotgun` | Generate multiple design variants, compare, pick |
 | Review scope | `/plan-ceo-review` | CEO-mode: expand/reduce/hold scope, find 10-star product |
 
-### Phase: DECIDE (commit or kill)
+### Phase: PLAN (commit, specify, lock)
 
 | Sutra Step | gstack Skill | What It Does |
 |------------|-------------|-------------|
@@ -32,11 +39,6 @@ Sutra defines HOW a company should operate. gstack provides the TOOLS to execute
 | Design review | `/plan-design-review` | Rate each design dimension 0-10, fix gaps |
 | Full auto-review | `/autoplan` | Runs CEO + design + eng reviews sequentially, auto-decides |
 | Get second opinion | `/codex` | Independent review via Codex, adversarial challenge |
-
-### Phase: SPECIFY (define what to build)
-
-| Sutra Step | gstack Skill | What It Does |
-|------------|-------------|-------------|
 | Finalize design | `/design-html` | Turn approved mockup into production HTML/CSS |
 | Safety boundaries | `/careful` | Destructive command guardrails |
 | Scope lock | `/freeze` | Restrict edits to specific directory |
@@ -53,7 +55,7 @@ Sutra defines HOW a company should operate. gstack provides the TOOLS to execute
 | Browser testing | `/browse` | Headless Chromium: navigate, click, screenshot, verify |
 | Full safety mode | `/guard` | /careful + /freeze combined for high-risk work |
 
-### Phase: SHIP (deploy it)
+### Phase: MEASURE (ship, deploy, verify)
 
 | Sutra Step | gstack Skill | What It Does |
 |------------|-------------|-------------|

@@ -131,15 +131,18 @@ When a department discovers a signal that another department needs to act on, th
 
 ## Depth Integration
 
-Routing decisions reference the depth assessment from the Adaptive Protocol Engine (PROTO-000). Higher depth means more departments are consulted before routing.
+Routing decisions reference the depth assessment from the Adaptive Protocol Engine (PROTO-000). Higher depth means wider department fan-out and stricter review requirements.
 
-| Depth | Routing Behavior |
-|-------|------------------|
-| 1-2 | Route to primary department only. No cross-department consultation. |
-| 3 | Route per table. Check for secondary department impact. |
-| 4-5 | Full routing: all affected departments notified, Operations tracks handoff, resolution requires sign-off. |
+| Depth | Routing Behavior | Review Requirement |
+|-------|------------------|--------------------|
+| 1-2 (Surface/Considered) | Route to **primary domain only**. No cross-department consultation. Signal stays within the originating department's ownership. | None — primary department resolves autonomously. |
+| 3 (Thorough) | Route to **primary domain + check adjacent domains**. Use the Master Routing Table to identify secondary departments that may be affected. Notify them for awareness, but primary department owns resolution. | Secondary departments acknowledge and flag conflicts within SLA. |
+| 4-5 (Rigorous/Exhaustive) | **Multi-domain routing with cross-domain review.** All departments listed in the Master Routing Table are notified simultaneously. Operations assigns a primary owner and tracks the handoff. | Resolution requires sign-off from all routed departments. Cross-domain review meeting for Depth 5. |
 
-**Rule**: The depth assessment output determines how many routing hops a signal takes. Low-depth signals go direct; high-depth signals follow the full multi-department routing protocol.
+**Rules**:
+- The depth assessment output determines how many routing hops a signal takes. Low-depth signals go direct; high-depth signals follow the full multi-department routing protocol.
+- When depth is ambiguous, route at the higher depth level — over-routing is cheaper than missed dependencies.
+- Depth is assessed per-signal, not per-department. The same department can process Depth 1 and Depth 5 signals simultaneously.
 
 ---
 
