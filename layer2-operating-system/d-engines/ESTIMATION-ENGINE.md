@@ -435,18 +435,18 @@ Adjust: if the pattern has been done before in this codebase, add +20% to confid
 
 ## Auto-Calibration Feedback Loop
 
-The feedback loop closes the gap between PRE-phase estimates and POST-phase actuals with automated comparison, category-specific calibration multipliers, compression triggers, and EWMA-based accuracy feeding into SUTRA-KPI.md's A metric.
+The feedback loop closes the gap between PLAN-phase estimates and MEASURE-phase actuals with automated comparison, category-specific calibration multipliers, compression triggers, and EWMA-based accuracy feeding into SUTRA-KPI.md's A metric.
 
 **State file**: `holding/CALIBRATION-STATE.json`
 **Design doc**: `holding/research/ESTIMATION-FEEDBACK-LOOP-DESIGN.md`
 
-### POST Phase Auto-Capture
+### MEASURE Phase Auto-Capture
 
-POST capture fires when any of these occur:
+MEASURE capture fires when any of these occur:
 1. A GSD phase completes (`/gsd:execute-phase` finishes)
 2. A task is marked done in TODO.md
 3. A session ends with work completed (SessionEnd hook)
-4. Manual invocation via `/estimate:post`
+4. Manual invocation via `/estimate:measure`
 
 #### Automated Data Collection
 
@@ -474,7 +474,7 @@ Special case: if both estimate and actual are 0, accuracy = 1.0. If estimate is 
 #### JSONL Append Procedure
 
 ```
-1. Retrieve PRE-phase estimates from session memory
+1. Retrieve PLAN-phase estimates from session memory
 2. Collect actuals from session metadata + git
 3. Compute accuracy per dimension
 4. Generate UUID v4
@@ -503,9 +503,9 @@ For each dimension d in [tokens, duration, files]:
   where alpha = 0.3
 ```
 
-**Interpretation**: A multiplier of 1.5 means "tasks in this category take 1.5x the estimated value." Future PRE-phase estimates are scaled by the multiplier before presentation.
+**Interpretation**: A multiplier of 1.5 means "tasks in this category take 1.5x the estimated value." Future PLAN-phase estimates are scaled by the multiplier before presentation.
 
-**Application in PRE phase**:
+**Application in PLAN phase**:
 
 ```
 raw_estimate = heuristic_calculation()
@@ -517,7 +517,7 @@ The estimation table shows the calibrated number. The raw number is stored in se
 #### Multiplier Update Protocol
 
 ```
-On each POST capture for category_key K:
+On each MEASURE capture for category_key K:
   1. n = count entries where category_key == K
   2. If n < 5: record data but do not compute multipliers (insufficient signal)
   3. If n >= 5:
@@ -535,7 +535,7 @@ On each POST capture for category_key K:
 #### EWMA Update (Per-Task)
 
 ```
-On each POST capture:
+On each MEASURE capture:
 
   // Global EWMA (feeds A metric in SUTRA-KPI.md)
   global_ewma = 0.3 * accuracy.tokens_pct + 0.7 * global_ewma_prev
@@ -555,14 +555,14 @@ Compression reduces estimation overhead for well-calibrated categories.
 
 | Level | Condition | Action |
 |-------|-----------|--------|
-| **Level 1: Compress** | 10+ tasks AND EWMA accuracy > 0.80 across all three dimensions (tokens, cost, duration) for 3 consecutive entries | Switch PRE output from full table to one-line format |
+| **Level 1: Compress** | 10+ tasks AND EWMA accuracy > 0.80 across all three dimensions (tokens, cost, duration) for 3 consecutive entries | Switch PLAN output from full table to one-line format |
 | **Level 2: Auto-fill** | 20+ tasks AND EWMA accuracy > 0.90 across all three dimensions | Pre-fill estimates automatically with category averages |
 | **Decompression** | 3 consecutive entries with any accuracy dimension < 0.65 after compression | Revert to full estimation table |
 
 #### Compression Tracking
 
 ```
-On each POST capture for category_key K:
+On each MEASURE capture for category_key K:
 
   If NOT compressed:
     If all(ewma_d > 0.80 for d in [tokens, cost, duration]) AND n >= 10:
@@ -584,15 +584,15 @@ On each POST capture for category_key K:
       decompression_watch = 0
 ```
 
-#### Compressed PRE Output Format
+#### Compressed PLAN Output Format
 
-When a category is compressed, the PRE phase prints:
+When a category is compressed, the PLAN phase prints:
 
 ```
 ESTIMATE: ~{tokens}K tokens, ~${cost}, ~{minutes}min | confidence: {pct}% (calibrated from {n} prior tasks)
 ```
 
-The full JSONL record is always written at POST — compression only affects the PRE display.
+The full JSONL record is always written at MEASURE — compression only affects the PLAN display.
 
 ### Connection to SUTRA-KPI.md A Metric
 
@@ -602,10 +602,10 @@ A = 0.7 * A_estimation + 0.3 * A_compliance
 A_estimation = global_ewma from CALIBRATION-STATE.json
 ```
 
-#### Data Flow: POST Capture to KPI Dashboard
+#### Data Flow: MEASURE Capture to KPI Dashboard
 
 ```
-POST phase captures actuals
+MEASURE phase captures actuals
     |
     +---> ESTIMATION-LOG.jsonl (append record)
     |
@@ -618,6 +618,7 @@ POST phase captures actuals
             +---> A = 0.7 * A_estimation + 0.3 * A_compliance
             |
             +---> At version bump: snapshot A into SUTRA-KPI.md baseline table
+
 ```
 
 #### Supplementary Statistics (Per SUTRA-KPI.md Requirements)
@@ -650,14 +651,14 @@ Each line is a single JSON object conforming to this schema:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | UUID v4 | YES | Unique record identifier. Generated at POST phase. |
+| `id` | UUID v4 | YES | Unique record identifier. Generated at MEASURE phase. |
 | `ts` | ISO 8601 | YES | Timestamp of record creation (task completion time). |
 | `company` | enum | YES | One of: `dayflow`, `sutra`, `holding`, `maze`, `ppr`. Extensible as companies onboard. |
 | `task_type` | enum | YES | One of: `research`, `implementation`, `build`, `migration`, `design`, `ops`. |
 | `task_description` | string | YES | Human-readable summary, max 120 chars. |
 | `thoroughness_level` | int | YES | 1-4 per TASK-LIFECYCLE.md scoring. |
-| `estimates` | object | YES | PRE-phase predictions. See Metrics Object below. |
-| `actuals` | object | YES | POST-phase measurements. See Metrics Object below. |
+| `estimates` | object | YES | PLAN-phase predictions. See Metrics Object below. |
+| `actuals` | object | YES | MEASURE-phase measurements. See Metrics Object below. |
 | `accuracy` | object | YES | Computed deltas. See Accuracy Object below. |
 | `category` | enum | YES | `first_occurrence` or `calibrated` (prior data existed). |
 | `notes` | string | NO | Learnings, surprises, heuristic corrections. |
@@ -685,15 +686,15 @@ Each line is a single JSON object conforming to this schema:
 
 ### Append Protocol
 
-1. **PRE phase** generates the `estimates` object and holds it in session memory.
-2. **POST phase** captures `actuals` from session metadata + `git diff --stat`.
+1. **PLAN phase** generates the `estimates` object and holds it in session memory.
+2. **MEASURE phase** captures `actuals` from session metadata + `git diff --stat`.
 3. Compute `accuracy` using the formula above.
 4. Generate UUID v4 for `id`.
 5. Serialize as single-line JSON (no pretty-printing, no trailing comma).
 6. Append to `holding/ESTIMATION-LOG.jsonl` with `\n` terminator.
 7. Never modify existing lines. Append-only invariant.
 
-**Idempotency**: If a POST phase runs twice (e.g., session crash and recovery), check the last 5 lines for a matching `task_description` + `ts` within 5 minutes. If found, skip the append.
+**Idempotency**: If a MEASURE phase runs twice (e.g., session crash and recovery), check the last 5 lines for a matching `task_description` + `ts` within 5 minutes. If found, skip the append.
 
 ### Querying the Log
 

@@ -1,430 +1,442 @@
-# Sutra — Adaptive Protocol Engine v2
+# Sutra — Adaptive Protocol Engine v3
 
-ENFORCEMENT: HARD for Tier 2+. The engine MUST run before every task. Founder can override the selected depth (up or down) but must acknowledge.
+ENFORCEMENT: HARD for Tier 2+. The engine MUST run before every task. Founder can override the selected gear (up or down) but must acknowledge.
 
 ---
 
 ## Purpose
 
-> **Governing Principle**: P10 — Scalability of Intelligence. Match cognitive resource to the problem.
+> **Governing Principle**: The depth of process must match the task, not the company size. A button change in a 10,000-user app is still Gear 1 if it affects one component.
 
-The Adaptive Protocol Engine reads a problem and decides how much process to apply. Every problem has two outputs — code and knowledge. The code is for the user. The knowledge is for the system. The depth of process must match the problem, not be one-size-fits-all.
+The Adaptive Protocol Engine selects the gear for every task. The gear controls **task decomposition granularity** — how finely a task is broken down before the LLM executes each piece.
 
-v2 adds three capabilities over v1:
-1. **Pre-scoring gates** — certain triggers bypass scoring and set a floor immediately (from medical ESI and military ROE patterns).
-2. **Problem-type routing** — a second axis alongside severity. The path to solution (known vs. discoverable vs. emergent) determines process shape independently.
-3. **Undertriage/overtriage tracking** — asymmetric learning targets that treat under-processing as more dangerous than over-processing.
+### The Core Trade-off: Speed vs Precision
+
+Speed and precision cannot be simultaneously maximized. The more precisely you decompose a task (higher gear), the slower you move. The faster you move (lower gear), the less precise your output. The total cognitive budget per unit of time is roughly constant.
+
+The engine's job: **given this task, where on the speed-precision curve should you sit?**
+
+```
+Speed <===============================> Precision
+  1        2        3        4        5
+ direct   think    research  architect  full
+          then do  then do   then do    cascade
+```
+
+That number IS the gear. Everything else — gates, parameters, scoring — is internal machinery to arrive at that single number.
 
 ---
 
-## Phase 1: Pre-Scoring Gates
+## The Five Gears
 
-Before any parameter scoring, run this decision tree. Gates set a **floor** — scoring can raise the level higher, but cannot lower it below the gate floor.
+Each gear adds one layer of thinking before code. The process is always the same — LLM does a task. What changes is how fine-grained you decompose before handing it to the LLM.
+
+### Gear 1: Direct
+
+**LLM --> code --> done.**
+
+Zero intermediate artifacts. The answer is obvious. No decomposition needed.
+
+**Example:** "Change this button color." "Fix this typo." "Update this copy."
+
+**PRD at Gear 1:** "Write a PRD for this feature" — LLM writes the whole PRD in one shot.
+
+**Code at Gear 1:** "Add a loading spinner to this component" — LLM writes the code directly.
+
+**What gets logged:** Task name, time spent, files changed. One line in LEARN.md if anything surprised you.
+
+**Time budget:** Minutes.
+
+### Gear 2: Think Then Do
+
+**Estimate --> code --> verify.**
+
+One layer of analysis. Scope the work, sanity-check the approach, then execute. Light estimation catches scope creep before you start.
+
+**Example:** "Add a new card component following the existing pattern." "Integrate this SDK — docs exist, follow them."
+
+**PRD at Gear 2:** Outline the sections first, then write the PRD. Quick review of the outline before committing.
+
+**Code at Gear 2:** Estimate files affected, check for existing patterns, then build. Verify with a build/test.
+
+**What gets logged:** Estimation vs actual. LEARN.md entry with gear evaluation.
+
+**Time budget:** Hours.
+
+### Gear 3: Research Then Plan Then Do
+
+**Research --> plan --> code --> test --> review.**
+
+Two layers before code. Map the territory first. Understand what exists, what's been tried, what the options are. Then plan, then execute.
+
+**Example:** "Build content moderation. What should we moderate?" "Redesign onboarding — will users complete it?"
+
+**PRD at Gear 3:** Research the problem space, identify comparable products, outline sections, write each section with evidence, review the whole document.
+
+**Code at Gear 3:** Research approaches, write a spec/plan, implement against the spec, test, review before shipping.
+
+**What gets logged:** Research findings. Plan document. Review notes. Estimation accuracy. Full metrics.
+
+**Time budget:** Days.
+
+### Gear 4: Architect Then Research Then Plan Then Do
+
+**HLD --> research --> LLD --> code --> test --> staged verify.**
+
+Three layers. System-level thinking before touching code. High-level design first, then deep research into the details, then low-level design, then implementation with staged verification.
+
+**Example:** "Migrate the database schema across all services." "Build the auth system from scratch."
+
+**PRD at Gear 4:** Stakeholder analysis, market research, competitive analysis, problem decomposition, section-by-section writing with sub-sections individually crafted, cross-reference review, consistency check.
+
+**Code at Gear 4:** HLD defining architecture, research into each component, LLD per component, implementation per LLD, tests per component, staged rollout with verification at each stage.
+
+**What gets logged:** Everything from Gear 3, plus: architecture documents, rollout plan, verification results.
+
+**Time budget:** Days to weeks.
+
+### Gear 5: Full Cascade
+
+**Domain experts --> market research --> architecture (HLD) --> detailed design (LLD) --> implementation --> multi-stage verification --> retrospective.**
+
+Maximum depth. Every layer of thinking activated. Each sub-area gets its own decomposition. The task is broken into pieces so small that each one gets directed, focused intelligence from the LLM.
+
+**Example:** "Build the payment infrastructure." "Design the company's data architecture." "Create a new product vertical."
+
+**PRD at Gear 5:** Domain expert research, market landscape analysis, user research synthesis, competitive feature matrix, problem decomposition into sub-problems, each sub-problem gets its own mini-PRD, cross-references validated, success metrics defined per section, acceptance criteria per sub-section.
+
+**Code at Gear 5:** Full SDLC. Expert consultation on approach, HLD with architecture decisions documented, LLD per module, implementation broken into atomic subtasks each with clear inputs/outputs, tests at unit/integration/e2e levels, staged rollout per platform, post-deploy verification, retrospective feeding back into the engine.
+
+**What gets logged:** All artifacts preserved. Full retrospective document. Triage evaluation.
+
+**Time budget:** Weeks.
+
+---
+
+## The Decomposition Principle
+
+The gear doesn't change what gets built. It changes how finely you think before building.
+
+```
+Gear 1: "Write a PRD for this feature"
+         --> LLM writes the whole PRD
+
+Gear 5: "Write the user problem statement"
+         "Write the success metrics"
+         "Write the technical constraints"  
+         "Write the edge cases for constraint #2"
+         "Write the acceptance criteria for edge case #3"
+         --> LLM writes each piece with full focus
+```
+
+Same output. Different precision. At Gear 5, you're not trusting the LLM to hold the whole problem in its head — you're decomposing it into pieces small enough that each one gets directed, focused intelligence.
+
+**Selective depth (future evolution):** A task can run at Gear 3 overall but Gear 5 on the sensitive sub-area. The auth logic gets Gear 5 decomposition while the UI wrapper stays Gear 1. For now, the gear applies uniformly per task. Variable depth per sub-area is the next evolution.
+
+---
+
+## How The Engine Selects The Gear
+
+### Step 1: Pre-Scoring Gates
+
+Before any scoring, check for hard floors. Gates set a minimum gear — scoring can raise it higher but cannot lower it below the floor.
 
 ```
 TASK ARRIVES
-    │
-    ├─ Does it touch auth, payments, PII, or regulatory/legal compliance?
-    │   YES → Floor = L4. Proceed to scoring (score may confirm L4, cannot lower).
-    │   NO  ↓
-    │
-    ├─ Is there an active production incident affecting users RIGHT NOW?
-    │   YES → Floor = L4 (Chaotic protocol). Act to stabilize first, full process second.
-    │   NO  ↓
-    │
-    ├─ Does it touch a published API contract, data model schema, or architectural boundary?
-    │   YES → Floor = L3. Precedent-setting changes need research phase minimum.
-    │   NO  ↓
-    │
-    ├─ Can the engine confidently score this task? (Do we understand the scope?)
-    │   NO  → Floor = L3. Low confidence means research phase is mandatory.
-    │   YES ↓
-    │
-    └─ No gate triggered. Floor = L1. Proceed to scoring.
+    |
+    |-- Does it touch auth, payments, PII, or regulatory/legal?
+    |   YES --> Floor = Gear 4. Proceed to scoring.
+    |   NO  |
+    |
+    |-- Is there an active production incident affecting users NOW?
+    |   YES --> Floor = Gear 4 (Chaotic). Stabilize first.
+    |   NO  |
+    |
+    |-- Does it touch a published API, data model, or architectural boundary?
+    |   YES --> Floor = Gear 3. Precedent-setting needs research minimum.
+    |   NO  |
+    |
+    |-- Can the engine confidently score this task?
+    |   NO  --> Floor = Gear 3. Low confidence = research mandatory.
+    |   YES |
+    |
+    +-- No gate triggered. Floor = Gear 1.
 ```
 
-### Gate Rules
+**Gate rules:**
+- Cumulative — multiple triggers use the highest floor.
+- Not overridable by scoring — scoring adds on top.
+- Overridable by founder (logged per SOVEREIGNTY.md).
+- Logged: `gate_triggered: "auth-pii", floor_set: 4` or `gate_triggered: "none"`.
 
-- Gates are **cumulative** — if multiple trigger, use the highest floor.
-- Gates are **not overridable by scoring** — scoring adds on top of the floor.
-- Gates ARE overridable by the founder (logged per SOVEREIGNTY.md).
-- Gate results are logged: `gate_triggered: "auth-pii", floor_set: "L4"` or `gate_triggered: "none"`.
+### Step 2: Problem-Type Classification (Cynefin)
 
----
+Classify the problem. This determines the **shape** of decomposition, not just depth.
 
-## Phase 2: Problem-Type Classification
+| Problem Type | Signal | Decomposition Shape |
+|-------------|--------|-------------------|
+| **Clear** | Done this exact thing before. Pattern exists. | Apply existing pattern. Skip research layers. |
+| **Complicated** | Discoverable with analysis. Docs/examples exist. | Research maps territory, then build on findings. |
+| **Complex** | Emergent. Can't predict outcome. Unknown unknowns. | Probe with small experiments first. Iterate. |
+| **Chaotic** | Active crisis. No discernible cause-effect. | Stabilize first. Process comes after stability. |
 
-Before parameter scoring, classify the problem along the Cynefin axis. This determines the **shape** of the process (not just depth).
+### Step 3: Score the Parameters
 
-| Problem Type | Cause-Effect | Signal | Process Shape |
-|-------------|-------------|--------|---------------|
-| **Clear** | Obvious, repeatable. Done this exact thing before. | Pattern exists in codebase. Known inputs, known outputs. | Sense → Categorize → Respond. Apply existing pattern. Skip research. |
-| **Complicated** | Discoverable through analysis. Requires expertise but the answer exists. | Familiar domain, new variation. Can find examples externally. | Sense → Analyze → Respond. Research phase maps the territory, then build. |
-| **Complex** | Emergent. Only visible in retrospect. Can't predict outcome. | First time for anyone. "Will users like this?" Unknown unknowns present. | Probe → Sense → Respond. Small experiments first. Full pipeline with checkpoints. |
-| **Chaotic** | No discernible relationship. Active crisis. | Production down. Data corruption. Security breach. | Act → Sense → Respond. Stabilize first. Process comes after stability. |
+Score each 1-5. These measure what actually determines the gear:
 
-### How Problem Type Modifies Depth
+| # | Parameter | What It Measures | 1 | 5 |
+|---|-----------|-----------------|---|---|
+| 1 | **Causal Clarity** | Is the path to solution known? | Done this exact thing before | Emergent, unknowable upfront |
+| 2 | **Irreversibility** | Can you undo it? | One git revert | Can't undo — data loss, published API |
+| 3 | **Blast Radius** | What breaks if this goes wrong? | 1 file, 0 users | Cross-service, all users |
+| 4 | **Component Maturity** | Novel or commodity? | Commodity, standardized | Genesis, first attempt ever |
+| 5 | **Resource Consumption** | How many systems/layers involved? | 1 layer, 1 tool | 3+ layers, external APIs |
+| 6 | **Precedent Impact** | Sets a pattern others follow? | Nth instance of existing pattern | First-of-kind, defines THE pattern |
+| 7 | **Assessment Confidence** | How sure is the engine? | Scope is crystal clear | Can't tell scope, need research |
+| 8 | **Appetite** | Founder's time/resource budget? | "30 minutes max" | "Take whatever it needs" |
+| 9 | **Company Stage** | What's the blast radius amplifier? | Pre-launch, mistakes are free | Growth/scale, mistakes cost money |
+| 10 | **Sensitivity Floor** | Sensitive domain? | No security/data/legal touch | Auth, payments, PII, regulatory |
 
-Problem type is a **second axis**, not a replacement for severity scoring. The combination determines the final level:
+**What does NOT determine the gear:**
+- Company size alone
+- User count alone
+- Team size alone
+- How long the company has existed
 
-| | Low Stakes (score 1-2) | Medium Stakes (score 3) | High Stakes (score 4-5) |
-|---|---|---|---|
-| **Clear** | L1 — apply pattern, ship | L2 — estimate + apply pattern | L2-L3 — apply pattern with safeguards |
-| **Complicated** | L2 — light analysis needed | L2-L3 — analysis + testing | L3 — full pipeline |
-| **Complex** | L2-L3 — probe needed regardless of stakes | L3 — full pipeline with experiments | L4 — maximum process, probe before committing |
-| **Chaotic** | L3 — stabilize, then assess | L4 — emergency protocol | L4 — emergency protocol, all hands |
+Company stage only matters when it **actually amplifies** blast radius. A pre-launch company's button change and a growth company's button change are both Gear 1 if blast radius is 1 component.
 
-Key insight: a Complex problem at low stakes still needs L2-L3 because the path to solution is unknown. A Clear problem at high stakes may only need L2 with careful testing because the solution is known.
+### Step 4: Compute the Gear
 
----
-
-## Phase 3: Parameter Scoring
-
-Score each parameter 1-5. The engine reads the task description and codebase context to assign scores.
-
-### The 10 Core Parameters
-
-| # | Parameter | What It Measures | 1 (Low) | 3 (Medium) | 5 (Critical) |
-|---|-----------|-----------------|---------|------------|---------------|
-| 1 | **Causal Clarity** | Is the path to solution known? | Clear — done this exact thing, known outcome | Complicated — discoverable with analysis | Complex/Chaotic — emergent or unknowable outcome |
-| 2 | **Irreversibility** | Can the action be undone? | One `git revert` undoes it cleanly | Requires data migration or multi-step rollback | Irreversible — data loss, sent notifications, published API, legal filing |
-| 3 | **Blast Radius** | How many systems/users/components break if this goes wrong? | 1 file, 0 users, no dependents | 3-8 files, one feature area, moderate dependents | 9+ files, cross-service, all users, multiple downstream systems |
-| 4 | **Component Maturity** | Is this pattern Genesis, Custom, Product, or Commodity? | Commodity — fully standardized, automated | Product — best practices exist, following them | Genesis — novel, no prior art anywhere. First attempt. |
-| 5 | **Resource Consumption** | How many distinct systems/layers/tools does this require? | 1 layer, 1 tool, no external deps | 2 layers, 2-3 tools, 1 external dependency | 3+ layers, multiple services, external APIs, review cycles needed |
-| 6 | **Precedent Impact** | Does this create a pattern future tasks will follow? | Nth instance of an existing pattern | Extends an existing pattern in a new direction | First-of-kind — new API contract, data model, or architectural pattern |
-| 7 | **Assessment Confidence** | How sure is the engine about its own scoring? | High — scope is clear, parameters are obvious | Moderate — some ambiguity, but bounded | Low — can't tell scope, don't understand the domain, need research |
-| 8 | **Appetite** | How much time/resource is the founder willing to invest? | Founder says "30 minutes max" — minimal investment | No explicit limit — default investment | Founder says "take whatever time it needs" — full investment |
-| 9 | **Company Stage** | Organizational maturity and user base? | Pre-launch, no users (mistakes are free) | Beta or early users (mistakes cost trust) | Growth/scale with revenue (mistakes cost money and users) |
-| 10 | **Sensitivity Floor** | Does this touch a domain that forces minimum depth? | No security/data/legal/financial touch | Adjacent to sensitive domains | Auth, payments, PII, legal, regulatory — triggers pre-scoring gate |
-
----
-
-## Phase 4: Scoring Model
-
-This is NOT a weighted average. A task that scores 5 on Sensitivity and 1 on everything else is a Level 4 task, not a "2.5" task.
-
-### Step-by-step scoring:
-
-**Step 1: Check pre-scoring gates (Phase 1).** Record the floor.
-
-**Step 2: Classify problem type (Phase 2).** Record Clear/Complicated/Complex/Chaotic.
-
-**Step 3: Score all 10 parameters (1-5 each).**
-
-**Step 4: Compute severity score.**
-
-Group parameters into three scoring categories:
+**This is NOT a weighted average.** A single 5 drives the gear up.
 
 ```
 stakes_max     = max(Irreversibility, Blast Radius, Sensitivity Floor, Company Stage)
 complexity_max = max(Causal Clarity, Component Maturity, Resource Consumption)
 judgment_max   = max(Precedent Impact, Assessment Confidence)
+
+composite = max(stakes_max, complexity_max, judgment_max)
 ```
 
-Composite severity = max(stakes_max, complexity_max, judgment_max).
+Appetite does not enter the composite. It's a modifier (Step 5).
 
-Note: **Appetite does not enter the composite.** It is an override parameter (see Step 6).
+Cross-reference composite x problem type:
 
-**Step 5: Map severity to depth level using the two-axis table (Phase 2).**
+| Composite | Clear | Complicated | Complex | Chaotic |
+|-----------|-------|-------------|---------|---------|
+| 1-2 | Gear 1 | Gear 2 | Gear 2 | Gear 3 |
+| 3 | Gear 2 | Gear 2 | Gear 3 | Gear 4 |
+| 4 | Gear 2 | Gear 3 | Gear 3 | Gear 4 |
+| 5 | Gear 3 | Gear 3 | Gear 4 | Gear 5 |
 
-Cross-reference: severity score (composite) x problem type → candidate depth level.
+### Step 5: Apply Modifiers
 
-| Composite Score | Clear | Complicated | Complex | Chaotic |
-|-----------------|-------|-------------|---------|---------|
-| 1-2 | L1 | L2 | L2 | L3 |
-| 3 | L2 | L2 | L3 | L4 |
-| 4 | L2 | L3 | L3 | L4 |
-| 5 | L3 | L3 | L4 | L4 |
+- **Gate floor:** Use max(candidate gear, gate floor).
+- **Appetite:** If founder limits ("30 min max"), reduce by one gear IF no gate floor active. If founder invests ("take whatever time"), raise by one gear.
+- **Chaotic at Gear 5:** Complex + composite 5 + Chaotic crisis = Gear 5. Full cascade with stabilization first.
 
-**Step 6: Apply modifiers.**
+### Step 6: Output
 
-- **Gate floor**: If pre-scoring gate set a floor, use max(candidate level, gate floor).
-- **Appetite override**: If Appetite = 1 (founder explicitly limiting), the engine may reduce by one level IF no gate floor is active. This reshapes process to fit the budget — scope is cut, not quality. If Appetite = 5 (founder explicitly investing), the engine may raise by one level.
-- **Tier constraints**: Apply tier ceiling/floor (see Tier Behavior section).
-
-**Step 7: Output.**
-
-```
-gate_triggered: "none" | "auth-pii" | "incident" | "precedent" | "low-confidence"
-gate_floor: L1 | L3 | L4
-problem_type: Clear | Complicated | Complex | Chaotic
-parameter_scores: { causal_clarity: 2, irreversibility: 1, blast_radius: 1, ... }
-composite_severity: 3
-candidate_level: L2
-appetite_modifier: 0 | -1 | +1
-tier_constraint: "none" | "capped at L3 by Tier 2" | "raised to L2 by Tier 3"
-final_level: L2
+```yaml
+gate_triggered: "none"
+gate_floor: 1
+problem_type: Complicated
+parameter_scores: { causal_clarity: 2, irreversibility: 1, ... }
+composite: 3
+candidate_gear: 2
+appetite_modifier: 0
+final_gear: 2
+decomposition: "estimate scope, then build, then verify"
 ```
 
 ---
 
-## Process Depth Levels
+## Minimum Verification Evidence Per Gear
 
-### Level 1: Minimal
+| Gear | Minimum Evidence | Example |
+|------|-----------------|---------|
+| 1 | None. Ship log entry suffices. | "Shipped button color change" |
+| 2 | One concrete check: build passes or feature renders. | `npm run build` exit 0 |
+| 3 | Test output or grep evidence proving it works. | "45/45 tests pass" |
+| 4 | Test output + deployment verification + rollback plan. | Tests pass + preview deploy verified |
+| 5 | All of Gear 4 + retrospective + documentation. | Full artifact chain preserved |
 
-**Pipeline:** build → ship → log.
-
-No review, no spec, no research phase. The task is well-understood and low-risk.
-
-**When:** CSS fixes, copy changes, dependency bumps with no breaking changes, well-understood CRUD following existing patterns, config tweaks. Problem type is Clear, stakes are low.
-
-**Sutra involvement:** Estimation table entry only. No pipeline activation. Compliance check skipped (counted toward the "every 3rd feature" cadence for Tier 1).
-
-**Time budget:** Minutes. If this takes more than 30 minutes, re-evaluate — it may not be Level 1.
-
-**What gets logged:** Task name, time spent, files changed. One line in LEARN.md if anything surprised you.
-
-### Level 2: Standard
-
-**Pipeline:** estimate → build → test → ship → learn.
-
-Light process. Estimation up front to catch scope creep. Testing before ship. Learning after.
-
-**When:** New features in familiar territory, moderate scope, UI components with clear specs, API endpoints following established patterns. Also: Complex problems at low stakes (the probe is lightweight) or Clear problems at high stakes (known solution, careful execution).
-
-**Sutra involvement:** Estimation Engine runs. Lightweight review (self-check, not peer review). Compliance check runs.
-
-**Time budget:** Hours. If estimation says > 1 day, re-evaluate — it may be Level 3.
-
-**What gets logged:** Estimation vs. actual. LEARN.md entry with depth evaluation. Metrics update.
-
-### Level 3: Full
-
-**Pipeline:** estimate → research → spec → build → test → review → ship → learn.
-
-Full process. Research phase to map the territory. Spec to define the approach. Review before ship.
-
-**When:** Cross-cutting changes, new domains, user-facing features with UX implications, changes that touch multiple services, precedent-setting decisions, anything where problem type is Complex. Also triggered by low assessment confidence (need research to understand scope).
-
-**Sutra involvement:** Full pipeline with compliance checks. All relevant skills activate (/plan, /review, /qa). Founder checkpoint if involvement level is "hands-on" or "strategic."
-
-**Time budget:** Days. Normal pace, no shortcuts on quality.
-
-**What gets logged:** Research findings. Spec document. Review notes. Estimation accuracy. LEARN.md entry with depth evaluation. Full metrics.
-
-### Level 4: Critical
-
-**Pipeline:** estimate → research → spec → peer review → build → platform-appropriate rollout → verify → ship → learn → retro.
-
-Maximum process. Peer review of the spec before building. Platform-appropriate rollout. Verification in production. Retrospective after.
-
-**When:** Auth system changes, payment flows, data model migrations, irreversible decisions, anything touching PII or regulatory compliance, public API changes, active production incidents (Chaotic protocol). Always triggered by the auth/PII/payments pre-scoring gate.
-
-**Sutra involvement:** Full pipeline + founder checkpoint (mandatory, regardless of involvement level). Post-ship canary mandatory. Retro feeds back into Sutra.
-
-**Platform-specific rollout (replaces "staged rollout"):**
-
-| Platform | Rollout Strategy |
-|----------|-----------------|
-| Web app (Next.js/Vercel) | Preview deploy → verify → promote to production |
-| Mobile app (Expo) | EAS build → internal test → TestFlight/Play Store beta → production |
-| Edge functions (Supabase) | Deploy is all-or-nothing — verify via test calls before and after, rollback via git revert |
-| CLI tool | Publish to npm with `--tag beta` → test → promote to `latest` |
-| Database migration | Run on staging DB first → verify → run on production with backup |
-
-If the platform doesn't support staged rollout, the "rollout" step becomes: deploy → immediate verify → rollback plan ready.
-
-**Time budget:** Days to weeks. No rushing. If time pressure conflicts, flag it — do not lower the level.
-
-**What gets logged:** Everything from Level 3, plus: rollout plan (platform-specific), verification results, retro document. All artifacts preserved.
+**The rule:** If verification says "PASS" without evidence, it violates PROTO-010. Evidence must be reproducible.
 
 ---
 
-## Minimum Verification Evidence Per Level
+## Protocol Activation Per Gear
 
-VERIFY is proof, not a checklist. Each depth level has a minimum evidence requirement.
-
-| Level | Minimum Evidence Required | Example |
-|-------|--------------------------|---------|
-| **L1 Minimal** | None — no VERIFY artifact. Ship log entry in METRICS.md suffices. | "Shipped vercel.json cron config" |
-| **L2 Standard** | One concrete check: build passes, app loads, or feature renders. | `npm run build` → exit 0, or screenshot of feature working |
-| **L3 Full** | Test output or grep evidence proving the feature works. | "45/45 tests pass" or `grep -c "requireAuth" functions/*/index.ts → 5` |
-| **L4 Critical** | Test output + deployment verification + rollback plan documented. | Tests pass + preview deploy verified + "rollback: git revert abc123" |
-
-### What Counts as Evidence
-
-| Evidence Type | Counts | Doesn't Count |
-|--------------|--------|---------------|
-| Test output | `PASS: 45/45 tests` | "Tests look good" |
-| Grep result | `5 functions import requireAuth` | "All functions updated" |
-| Build output | `exit 0, no errors` | "Builds clean" |
-| Deployment URL | `https://app.vercel.app (200 OK)` | "Deployed successfully" |
-| Screenshot | Actual screenshot file | "Looks right" |
-
-### The Rule
-
-If VERIFY.md says "PASS" without evidence, it violates PROTO-010.
-The evidence must be **reproducible** — another agent reading the VERIFY could verify the same thing.
+| Gear | What Activates |
+|------|---------------|
+| 1 | Nothing — just build |
+| 2 | /estimate |
+| 3 | /estimate, /plan, /review, /qa |
+| 4 | /estimate, /plan, /review, /qa, /canary, staged rollout |
+| 5 | Everything from Gear 4 + expert research, HLD, LLD, retrospective |
 
 ---
 
-## How Routing Works
+## Mid-Task Gear Shifts
 
-### Runtime flow:
+### Escalation (automatic):
 
-```
-1. TASK ARRIVES
-   Source: TODO.md priority, user request, incident, or dependency trigger.
+- Discover the task touches auth/payments/PII: **escalate to Gear 4 immediately**. Not overridable.
+- Discover 2x more files affected than estimated: **escalate one gear**.
+- Discover an unknown unknown: **escalate one gear**.
+- Problem type shifts (Complicated --> Complex): **re-route using the two-axis table**.
+- Escalation adds missing decomposition layers. Does not restart from scratch.
 
-2. PRE-SCORING GATES (Phase 1)
-   Check: auth/PII/payments? Production incident? API/schema change? Scope clarity?
-   Output: gate floor (L1/L3/L4).
+### De-escalation (founder only):
 
-3. PROBLEM-TYPE CLASSIFICATION (Phase 2)
-   Assess: Clear / Complicated / Complex / Chaotic.
-   Reads: task description, codebase context, prior art in repo.
-
-4. PARAMETER SCORING (Phase 3)
-   Score 10 parameters (1-5 each).
-   Reads: task description, affected files (git diff preview or file list),
-          codebase context (what the files do, what depends on them),
-          company SUTRA-CONFIG.md (stage, involvement level, tier).
-
-5. DEPTH SELECTION (Phase 4)
-   Cross-reference: severity score x problem type → candidate level.
-   Apply: gate floor, appetite modifier, tier constraints.
-   Output: final depth level + activated protocols.
-
-6. TASK EXECUTES AT SELECTED DEPTH
-   The session follows the configured pipeline.
-   Mid-task escalation rules apply (see below).
-   Mid-task de-escalation requires founder override.
-
-7. POST-TASK: EFFECTIVENESS CHECK + TRIAGE TRACKING
-   Evaluate: was the depth right?
-   Record: depth_selected, depth_correct, delta, reason, triage_class.
-   Feed into learning loop.
-```
-
-### Protocol activation per level:
-
-| Level | Activated Protocols |
-|-------|-------------------|
-| L1 | None — just build |
-| L2 | /estimate |
-| L3 | /estimate, /plan, /review, /qa |
-| L4 | /estimate, /plan, /review, /qa, /canary, staged rollout |
-
-### Mid-task escalation rules:
-
-- If during build you discover the task touches auth, payments, or PII: **escalate to Level 4 immediately**. No override possible.
-- If during build you discover more than 2x the estimated files are affected: **escalate one level**.
-- If during build you discover an unknown unknown (something you didn't know you didn't know): **escalate one level**.
-- If the problem type shifts (e.g., started as Complicated, turns out to be Complex): **re-route using the two-axis table**.
-- Escalation adds the missing pipeline steps. It does not restart from scratch.
-
-### Mid-task de-escalation:
-
-- Only by founder override.
 - Founder says "this doesn't need full process" or "skip the review."
-- Logged as override per SOVEREIGNTY.md protocol.
+- Logged as override per SOVEREIGNTY.md.
+
+---
+
+## The Three Layers
+
+The engine is Layer 3. Two layers sit above it:
+
+```
+STRATEGY    "What matters"       OKRs, big rocks, vision, charters
+SELECTION   "What to do now"     Prioritization, sequencing
+EXECUTION   "How deep"           Adaptive Protocol Engine (gears)
+
+Strategy picks the task.
+Selection sequences it.
+Engine picks the gear.
+```
+
+Strategy and selection also have gears — deciding "what to work on" can itself be Gear 1 ("founder says do this") through Gear 5 ("full strategic planning with market research"). The gear system is fractal.
 
 ---
 
 ## The Routing Table
 
-Concrete examples showing the full v2 scoring pipeline:
+Concrete examples showing the full scoring pipeline:
 
-| Task | Gate | Problem Type | Severity | Final Level | Rationale |
-|------|------|-------------|----------|-------------|-----------|
-| Fix button color on landing page | none | Clear | 1 | **L1** | Known pattern, zero risk, commodity task. |
-| Update privacy policy page content | none | Clear | 2 | **L1** | Known pattern, low risk. Sensitivity=2 doesn't trigger gate. |
-| Add new card component to feed | none | Clear | 2 | **L2** | Clear pattern but enough scope to warrant estimation. |
-| Implement deep linking for share URLs | none | Complicated | 3 | **L2** | Discoverable solution, moderate scope. Analysis needed. |
-| Build content moderation pipeline | none | Complex | 3 | **L3** | Emergent problem — "what should we moderate?" is unknowable upfront. Probe first. |
-| Add RLS policies to all tables | auth-pii (L4) | Complicated | 5 | **L4** | Gate triggers on PII. Sensitivity=5 confirms. |
-| Redesign onboarding flow (user-facing) | none | Complex | 4 | **L3** | "Will users like this?" is emergent. Full pipeline with experiments. |
-| Migrate database schema (add new entity) | precedent (L3) | Complicated | 5 | **L4** | Gate triggers on schema change (precedent). Irreversibility=4, Foundationality=5 push to L4. |
-| Integrate third-party payment provider | auth-pii (L4) | Complicated | 5 | **L4** | Gate triggers on payments. Maximum process. |
-| Set up CI/CD pipeline | precedent (L3) | Complicated | 4 | **L3** | Creates infrastructure pattern. Gate ensures research phase minimum. |
-| "Will users pay for feature X?" | low-confidence (L3) | Complex | 2 | **L3** | Low stakes technically, but causally unclear. Confidence gate forces research. |
-| CSS hotfix during production incident | incident (L4) | Chaotic | 2 | **L4** | Incident gate overrides low severity. Stabilize first. |
+| Task | Gate | Type | Composite | Gear | Rationale |
+|------|------|------|-----------|------|-----------|
+| Fix button color | none | Clear | 1 | **1** | Known, zero risk, one file |
+| Update privacy policy content | none | Clear | 2 | **1** | Known pattern, low risk |
+| Add new card component | none | Clear | 2 | **2** | Clear but enough scope for estimation |
+| Deep linking for share URLs | none | Complicated | 3 | **2** | Discoverable, moderate scope |
+| Content moderation pipeline | none | Complex | 3 | **3** | "What to moderate?" is unknowable upfront |
+| RLS policies on all tables | auth-pii (4) | Complicated | 5 | **4** | Gate fires on PII, sensitivity confirms |
+| Redesign onboarding flow | none | Complex | 4 | **3** | Emergent — "will users like this?" |
+| Database schema migration | precedent (3) | Complicated | 5 | **4** | Gate + irreversibility + precedent |
+| Payment provider integration | auth-pii (4) | Complicated | 5 | **4** | Gate fires on payments |
+| CI/CD pipeline setup | precedent (3) | Complicated | 4 | **3** | Creates infra pattern, gate ensures research |
+| Build entire auth system | auth-pii (4) | Complex | 5 | **5** | PII gate + complex + max composite |
+| Company data architecture | none | Complex | 5 | **4** | Genesis maturity, max precedent |
+| Button change in 10K-user app | none | Clear | 1 | **1** | Company size irrelevant — blast radius is 1 |
 
 ---
 
 ## Learning Loop
 
-The engine improves over time through structured feedback.
+### Per-task feedback:
 
-### Per-task feedback (in LEARN.md):
+Every task records in LEARN.md:
 
-Every task records:
 ```yaml
-depth_selected: 3
-depth_correct: 2
+gear_selected: 3
+gear_correct: 2
 delta: -1
-triage_class: overtriage    # undertriage | correct | overtriage
-reason: "Standard feature in familiar pattern. Review step added no new information."
+triage_class: overtriage
+reason: "Familiar pattern. Research step added no information."
 task_category: "feed-feature"
 problem_type: Clear
 gate_triggered: none
 ```
 
-### Triage Tracking
+### Triage tracking:
 
-Every task is classified into one of three triage outcomes:
+| Class | Definition | Risk |
+|-------|-----------|------|
+| **Undertriage** | Gear too low. Missed needed steps. | HIGH — causes bugs, rework |
+| **Correct** | Gear was right. Every step added value. | Target |
+| **Overtriage** | Gear too high. Steps wasted. | LOW — wastes time only |
 
-| Triage Class | Definition | Risk Level |
-|-------------|-----------|------------|
-| **Undertriage** | Depth was too low. Missed steps that were needed. Something went wrong or nearly went wrong. | HIGH — most dangerous. Under-processing causes bugs, security holes, rework. |
-| **Correct** | Depth was right. Every step added value, no step was wasted. | NONE — this is the target. |
-| **Overtriage** | Depth was too high. Steps were run that added no information or value. | LOW — wastes time but doesn't cause harm. |
-
-### Triage Targets (asymmetric)
+### Triage targets (asymmetric):
 
 | Metric | Target | Rationale |
 |--------|--------|-----------|
-| Undertriage rate | **< 5%** | Under-processing is dangerous. Nearly every task should get enough process. |
-| Overtriage rate | **< 30%** | Over-processing wastes time but is the safer failure mode. Tolerate more of it. |
-| Correct rate | **> 65%** | The majority of routing decisions should be right. |
+| Undertriage rate | < 5% | Under-processing is dangerous |
+| Overtriage rate | < 30% | Over-processing is the safer failure mode |
+| Correct rate | > 65% | Majority of routing should be right |
 
-When undertriage rate exceeds 5%: **all locked rules unlock**. The engine is being too aggressive with shortcuts.
-
-When overtriage rate exceeds 30%: review locked rules for the most over-triaged categories and consider lowering their default levels.
-
-### Aggregation table:
-
-Track per task category:
-
-| Task Category | Tasks | Correct | Over | Under | Accuracy | Undertriage % | Overtriage % |
-|---------------|-------|---------|------|-------|----------|---------------|--------------|
-| feed-feature | 12 | 10 | 2 | 0 | 83% | 0% | 17% |
-| auth-change | 3 | 3 | 0 | 0 | 100% | 0% | 0% |
-| schema-migration | 4 | 3 | 0 | 1 | 75% | 25% | 0% |
+When undertriage > 5%: all locked rules unlock.
+When overtriage > 30%: review locked rules for over-triaged categories.
 
 ### Locking rules:
 
-- When accuracy exceeds **90% over 10+ tasks** for a category, lock the routing rule. The engine uses the locked rule without re-scoring for that category.
-- Locked rules include an expiry: re-evaluate when company stage changes or after 50 tasks (whichever comes first).
-- Any **undertriage event** immediately unlocks the rule for that category. Under-processing is more dangerous than over-processing.
-- When a category has > 30% overtriage over 10+ tasks, flag for review (don't auto-adjust — the founder decides).
+- Accuracy > 90% over 10+ tasks for a category: lock the routing rule.
+- Any undertriage event: immediately unlock that category.
+- Locked rules expire when company stage changes or after 50 tasks.
 
 ### Stage recalibration:
 
-When the company's stage changes (pre-launch → beta, beta → growth, growth → scale):
+When stage changes (pre-launch --> beta --> growth --> scale):
 - All locked rules unlock.
-- Company Stage parameter baseline shifts up by 1.
-- All triage tracking resets to zero for the new stage.
-- The engine re-learns at the new stage.
+- Triage tracking resets for the new stage.
+- Engine re-learns at the new stage.
 
-This prevents rules learned during pre-launch ("schema changes are fine at Level 2") from carrying into growth ("schema changes affect 10,000 users now").
+---
 
-### LEARN.md feedback format:
+## Company State
 
-Every LEARN.md entry should include a depth evaluation section:
+Company state is passive input to this engine, not a separate system. Growing a company is a task — it goes through the same engine.
+
+### Config
 
 ```yaml
-## Depth Evaluation
-depth_selected: 3
-depth_correct: 3
-triage_class: correct
-problem_type_selected: Complicated
-problem_type_correct: Complicated
-gate_triggered: precedent
-notes: "Research phase correctly identified the edge case in the existing API contract."
+# Lives in each company's SUTRA-CONFIG.md
+company_state:
+  stage: "pre-launch"
+  user_count: 0
+  active_depts: ["product", "engineering"]
+  dormant_depts: ["quality", "data", "growth", "security", "design",
+                  "content", "legal", "finance", "ops"]
+  active_protocols: ["P4", "P10"]
 ```
 
-When `depth_correct != depth_selected`, explain what was missed (undertriage) or what added no value (overtriage). This is what trains the next routing decision.
+### State Transitions
+
+When a task needs a dormant capability, the engine flags it:
+
+```
+1. Task arrives: "Add QA test suite"
+2. Engine routes: needs /qa skill.
+3. Checks: quality dept is dormant.
+4. Flags: "This task needs QA. Activate quality department?"
+5. Founder confirms.
+6. company_state updates.
+7. Task proceeds.
+```
+
+### Activation Signals
+
+Not automatic triggers — signals the engine watches. Engine recommends, founder decides.
+
+| Signal | Recommended Activation |
+|--------|----------------------|
+| First task needing test verification | Quality dept |
+| First task needing usage data | Data dept |
+| First task targeting user acquisition | Growth dept |
+| First external security concern | Security dept |
+| First task where design judgment needed | Design dept |
+| Revenue > $0/mo | Finance dept |
+| Manual ops becoming repeated pain | Ops dept |
+| Pre-launch checklist begins | Legal dept |
+
+### Stage Transitions
+
+| Transition | Trigger | Engine Effect |
+|-----------|---------|---------------|
+| pre-launch --> beta | First real users | Locked rules reset |
+| beta --> growth | Product-market fit proven | All tasks minimum Gear 2 |
+| growth --> scale | Team > 1 or users > 1000 | Full gear range, minimum Gear 2 |
 
 ---
 
@@ -432,114 +444,41 @@ When `depth_correct != depth_selected`, explain what was missed (undertriage) or
 
 | Direction | System | What Flows |
 |-----------|--------|------------|
-| **Receives from** | Estimation Engine (`d-engines/`) | Cost estimate, confidence level, scope assessment. Low confidence raises Assessment Confidence score AND may trigger the low-confidence pre-scoring gate. |
-| **Receives from** | TODO.md / user request | Task description, priority, deadline. |
-| **Receives from** | SUTRA-CONFIG.md | Company tier, stage, founder involvement level. |
-| **Feeds into** | `b-agent-architecture/` | Which skills and protocols to activate for this task. |
-| **Feeds into** | `b-agent-architecture/SKILL-CATALOG.md` | Skill activation list per depth level. |
-| **Feeds into** | LEARN.md | Depth evaluation, triage classification, routing accuracy data. |
-| **Validated by** | Effectiveness Agent | Post-task audit: was the depth right? Assigns triage class. |
-| **Respects** | `c-human-agent-interface/HUMAN-AGENT-INTERFACE.md` (Part 1: Sovereignty) | Founder override always available. Override logged per protocol. |
-| **Respects** | `c-human-agent-interface/HUMAN-AGENT-INTERFACE.md` (Part 2: Involvement Levels) | Hands-on = more checkpoints. Delegated = fewer. Does not change depth level, only checkpoint frequency. |
-
----
-
-## Tier Behavior
-
-The Adaptive Protocol Engine operates WITHIN a complexity tier (defined in `CLIENT-ONBOARDING.md` Appendix A). It does not change the tier. It varies process depth within the tier's allowed range.
-
-| Tier | Depth Range | Constraints |
-|------|-------------|-------------|
-| **1 (Personal)** | Levels 1-2 | Level 3 available on founder request only. Level 4 never (no team to peer review, no staged rollout infra). |
-| **2 (Product)** | Levels 1-3 | Level 4 available on founder request only. Default ceiling is Level 3. |
-| **3 (Company)** | Levels 2-4 | Level 1 never — at scale, even "simple" changes carry risk from blast radius. Minimum is Level 2. |
-
-### When tier constrains the engine:
-
-If the scoring model selects Level 4 but the tier only allows up to Level 3:
-1. Engine applies Level 3 (the tier maximum).
-2. Engine logs: "Depth 4 recommended but constrained to 3 by Tier 2. Founder can override up."
-3. If the constraining parameter was Sensitivity Floor >= 4 or a pre-scoring gate triggered, the engine flags this as a **risk acceptance** — the founder must acknowledge.
-
-If the scoring model selects Level 1 but the tier minimum is Level 2:
-1. Engine applies Level 2 (the tier minimum).
-2. No flag needed. The overhead is minimal and the safety is real.
+| **Receives from** | Estimation Engine | Cost, confidence, scope. Low confidence may trigger gate. |
+| **Receives from** | TODO.md / user request | Task description, priority. |
+| **Receives from** | SUTRA-CONFIG.md | Company state, founder involvement level. |
+| **Feeds into** | Agent architecture | Which skills/protocols activate per gear. |
+| **Feeds into** | LEARN.md | Gear evaluation, triage, accuracy data. |
+| **Validated by** | Effectiveness check | Post-task: was the gear right? |
+| **Respects** | Sovereignty | Founder override always available, always logged. |
 
 ---
 
 ## Enforcement
 
-ENFORCEMENT: HARD for Tier 2+.
+### HARD (Tier 2+):
+- Engine MUST run before every task.
+- Engine MUST output: gate result, problem type, scores, gear, activated protocols.
+- Output MUST be visible (not silent).
+- Skipping the engine is a BLOCK violation.
 
-### What "HARD" means:
-
-- The engine MUST run before every task begins execution.
-- The engine MUST output: gate result, problem type, parameter scores, composite score, selected level, activated protocols.
-- The output MUST be visible (logged to session, not silent).
-- Skipping the engine is a BLOCK violation (task cannot proceed).
+### SOFT (Tier 1):
+- Engine runs and recommends. Does not block if founder ignores it.
+- Rationale: personal tools have higher friction cost than process gaps.
 
 ### Founder override:
-
-- Founder can override the selected depth — both up and down.
-- Override up: always allowed, no justification needed ("I want full process on this").
-- Override down: allowed, but must acknowledge. "I understand this was scored Level 4 but I want Level 2" is valid. It is logged per SOVEREIGNTY.md.
-- Override does not change the score. It changes the executed depth. The learning loop records both: `depth_selected: 4, depth_executed: 2, override: true, triage_class: override`.
-
-### Tier 1 behavior:
-
-- SOFT enforcement. The engine runs and recommends a depth, but does not block if the founder ignores it.
-- Rationale: Tier 1 companies are personal tools. Process friction has higher cost than process gaps at this scale.
-
----
-
-## Quick Reference: The Full Pipeline
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   TASK ARRIVES                       │
-└──────────────────────┬──────────────────────────────┘
-                       │
-              ┌────────▼────────┐
-              │  PRE-SCORING    │
-              │  GATES          │  Auth/PII? Incident? Schema? Confidence?
-              │  → Set floor    │
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │  PROBLEM TYPE   │
-              │  CLASSIFICATION │  Clear / Complicated / Complex / Chaotic
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │  SCORE 10       │
-              │  PARAMETERS     │  1-5 each, grouped into 3 categories
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │  TWO-AXIS       │
-              │  LOOKUP         │  Severity x Problem Type → Candidate Level
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │  APPLY          │
-              │  MODIFIERS      │  Gate floor, appetite, tier constraints
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │  EXECUTE AT     │
-              │  SELECTED DEPTH │  L1 / L2 / L3 / L4 pipeline
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │  LEARN          │  Depth evaluation + triage classification
-              │  → Feed back    │  Undertriage < 5%, Overtriage < 30%
-              └─────────────────┘
-```
+- Override up: always allowed.
+- Override down: allowed, must acknowledge. Logged per SOVEREIGNTY.md.
+- Override doesn't change the score. Changes the executed gear. Learning loop records both.
 
 ---
 
 ## Origin
 
-Maze onboarding, 2026-04-04. Ran SUTRA mode on two features during the first build session: a static privacy policy page and a full RLS rewrite with row-level security across all tables. Both went through the identical pipeline. The code output was identical for both approaches. The process added no value to the privacy policy page and was essential for the RLS rewrite.
+v1: Maze onboarding, 2026-04-04. Two features got identical pipeline — privacy policy page and RLS rewrite. Process added no value to the first and was essential for the second.
 
-v2 informed by research across 8 external frameworks (2026-04-06): Cynefin (problem-type classification), Wardley Mapping (component maturity), Military ROE (pre-scoring gates, asymmetric escalation), Medical ESI (resource prediction, triage tracking), Toyota Kata (learning loops), Legal Proportional Process (precedent impact), Spotify Model (cross-boundary coordination), Shape Up (appetite-based scoping). Full research at `holding/research/ADAPTIVE-PROTOCOL-RESEARCH.md`.
+v2 (2026-04-06): Added pre-scoring gates, Cynefin classification, undertriage/overtriage tracking. Informed by 8 external frameworks: Cynefin, Wardley Mapping, Military ROE, Medical ESI, Toyota Kata, Legal Proportional Process, Spotify Model, Shape Up. Full research at `holding/research/ADAPTIVE-PROTOCOL-RESEARCH.md`.
+
+v3 (2026-04-06): Reframed around speed-precision trade-off. 4 levels --> 5 gears. Gears defined by decomposition granularity, not pipeline steps. Removed company-size floor — company stage only matters when it amplifies blast radius. Merged Progressive OS into Company State section. Three-layer model: Strategy > Selection > Execution. The gear system is fractal — applies to strategy and meta-decisions, not just code tasks.
+
+**Governing insight:** Speed and precision cannot be simultaneously maximized. The engine's job is to place each task at the right point on that curve.

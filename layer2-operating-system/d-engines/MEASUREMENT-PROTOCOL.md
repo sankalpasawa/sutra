@@ -67,15 +67,15 @@ Each metric follows the same structure:
 
 | Field | Value |
 |-------|-------|
-| **Name** | Time spent in each lifecycle phase (THINK, PRE, EXECUTE, POST, COMPRESS) |
+| **Name** | Time spent in each lifecycle phase (OBJECTIVE, OBSERVE, SHAPE, PLAN, EXECUTE, MEASURE, LEARN) |
 | **Formula** | `phase_end_ts - phase_start_ts` per phase |
 | **Data source** | Phase transition timestamps in session log |
 | **Cadence** | Per-task |
-| **Target** | PRE < 10% of total task time. POST < 5%. COMPRESS < 2%. |
-| **Breach action** | If PRE > 20% of total time over 5 tasks: estimation process is too heavy. Review compression eligibility. |
+| **Target** | PLAN < 10% of total task time. MEASURE < 5%. LEARN < 2%. |
+| **Breach action** | If PLAN > 20% of total time over 5 tasks: estimation process is too heavy. Review compression eligibility. |
 | **Feeds** | Speed charter, Efficiency charter |
 | **Status** | NO |
-| **Implementation** | Add phase transition timestamps to ESTIMATION-LOG.jsonl as optional `phases` object: `{"pre_start": ts, "pre_end": ts, "execute_start": ts, ...}`. |
+| **Implementation** | Add phase transition timestamps to ESTIMATION-LOG.jsonl as optional `phases` object: `{"plan_start": ts, "plan_end": ts, "execute_start": ts, ...}`. |
 | **Effort** | MEDIUM |
 | **Priority** | P2 |
 
@@ -259,7 +259,7 @@ Each metric follows the same structure:
 | **Breach action** | If global EWMA < 0.75: heuristic review. If per-category EWMA < 0.65 for 3 consecutive entries: decompression trigger fires. |
 | **Feeds** | Accuracy charter, KPI A (A_estimation = 0.7 weight) |
 | **Status** | YES |
-| **Implementation** | Captured in CALIBRATION-STATE.json. Updated by POST phase auto-capture. |
+| **Implementation** | Captured in CALIBRATION-STATE.json. Updated by MEASURE phase auto-capture. |
 | **Effort** | -- |
 | **Priority** | -- |
 
@@ -880,7 +880,7 @@ TASK ARRIVES
     |       +---> A-04: Problem-Type Classification (problem_type)
     |       +---> Depth level selected
     |
-    +---> Estimation Engine (PRE phase)
+    +---> Estimation Engine (PLAN phase)
     |       +---> E-01: EWMA (reads calibration state)
     |       +---> E-04: Cold-Start Accuracy (first_occurrence flag)
     |       +---> E-05: Compression Eligibility (check compressed state)
@@ -893,7 +893,7 @@ TASK EXECUTES
     +---> S-04: Hook Latency (per hook invocation)
     +---> H-01: Input Classification (per founder input)
     |
-TASK COMPLETES (POST phase)
+TASK COMPLETES (MEASURE phase)
     |
     +---> ESTIMATION-LOG.jsonl (append)
     |       +---> S-02: Task Duration (actuals.duration_min)

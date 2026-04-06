@@ -254,7 +254,7 @@ After wave completion, log to ESTIMATION-LOG.jsonl:
 }
 ```
 
-This feeds the recursive estimation engine — over time, wave estimates improve and estimation overhead compresses (D23 COMPRESS phase).
+This feeds the recursive estimation engine — over time, wave estimates improve and estimation overhead compresses (D23 LEARN phase).
 
 ---
 

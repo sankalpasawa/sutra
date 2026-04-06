@@ -1,6 +1,6 @@
 # Research Gate: [Task Name]
 
-> Required at L3+ during THINK phase, before PRE begins.
+> Required at L3+ during OBSERVE phase, before PLAN begins.
 
 ## What We Know
 - (facts, constraints, existing decisions)

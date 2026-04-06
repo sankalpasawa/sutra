@@ -35,6 +35,7 @@ Every growing system needs ALL of these. They are not interchangeable.
 | G12 | **Capacity Review** | Assess if current architecture handles current load | Performance degradation, outages | Usage doubles OR response time degrades 50% |
 | G13 | **Knowledge Refresh** | Re-evaluate assumptions against current environment | Stale strategy, missed opportunities | AI/tech/market: weekly; framework/methodology: bi-weekly; OR after major market shift |
 | G14 | **Kill/Pivot Check** | Evaluate whether a live company deserves continued investment | Zombie companies consuming attention with zero traction | 4 weeks post-launch, then monthly |
+| G15 | **Hook Health** | Run `hook-health-sensor.sh` to surface broken, slow, and dormant hooks | Silent hook failures accumulate; dead hooks become cruft | Weekly |
 
 ---
 
@@ -46,7 +47,7 @@ Based on patterns from Google SRE, Spotify, Amazon, Basecamp, and mature open-so
 |---------|-----------|-----|
 | **Every session** | G7 (doc gardening), G11 (drift detection) | Built into session-end checklist |
 | **Every feature ship** | G1 (refactor touched code), G9 (automate new toil) | Part of feature lifecycle |
-| **Weekly** | G5 (archive done items), G3 (consolidate if duplicates found) | Weekly planning process |
+| **Weekly** | G5 (archive done items), G3 (consolidate if duplicates found), G15 (hook health) | Weekly planning process |
 | **Monthly** | G8 (dependency audit), G2 (prune unused features), G14 (kill/pivot check for live companies) | Dedicated maintenance session |
 | **Weekly** | G13 — AI/tech/market domain research | Weekly review |
 | **Bi-weekly** | G13 — framework/methodology research (Cynefin, Wardley, Shape Up, etc.) | Bi-weekly review |

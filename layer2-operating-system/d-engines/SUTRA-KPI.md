@@ -9,7 +9,7 @@
 
 ### V — Velocity (Time-to-Ship)
 
-**Definition**: Wall-clock time from THINK phase initiation to POST phase completion, per feature unit.
+**Definition**: Wall-clock time from OBSERVE phase initiation to MEASURE phase completion, per feature unit.
 
 **Formula**:
 ```
@@ -153,11 +153,11 @@ When comparing versions with different task-mix distributions (e.g., v1.3.1 had 
 ```
 TASK (any company)
   │
-  ├─ PRE phase  → ESTIMATION-LOG.jsonl (estimates)
+  ├─ PLAN phase    → ESTIMATION-LOG.jsonl (estimates)
   │
-  ├─ POST phase → ESTIMATION-LOG.jsonl (actuals + accuracy)
+  ├─ MEASURE phase → ESTIMATION-LOG.jsonl (actuals + accuracy)
   │
-  └─ COMPRESS   → Category calibration updates
+  └─ LEARN         → Category calibration updates
         │
         ▼
   VERSION BUMP → KPI snapshot generated from ESTIMATION-LOG.jsonl

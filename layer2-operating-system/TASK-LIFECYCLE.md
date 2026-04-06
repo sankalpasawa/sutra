@@ -10,33 +10,47 @@
 ## The Lifecycle
 
 ```
-THINK ────> PRE ────> EXECUTE ────> POST ────> COMPRESS
-  │                                               │
-  └──────────────── FEEDBACK LOOP ────────────────┘
+OBJECTIVE ──> OBSERVE ──> SHAPE ──> PLAN ──> EXECUTE ──> MEASURE ──> LEARN
+    │                                                                  │
+    └────────────────────── FEEDBACK LOOP ─────────────────────────────┘
 ```
 
 Every task enters this flow. Every phase runs. What changes is **depth**.
 
 ---
 
-## Phase 1: THINK
+## Phase 1: OBJECTIVE
 
-*What are we doing and why?*
+*What are we trying to achieve?*
+
+| Activity | Purpose |
+|----------|---------|
+| **Goal definition** | What is the desired outcome? What does success look like? |
+| **Scope boundary** | What is in scope and out of scope? |
+
+OBJECTIVE produces one thing: a **clear statement of intent** that anchors every subsequent phase.
+
+At Level 1, OBJECTIVE is implicit in the task itself. At Level 4, it's a written goal with success criteria.
+
+---
+
+## Phase 2: OBSERVE
+
+*What's the situation?*
 
 | Activity | Purpose |
 |----------|---------|
 | **Research** | What do the best practitioners do here? (D20) |
 | **Analysis** | What's the complexity, cost, impact of this change? |
-| **Framing** | What's the right approach? What are the constraints? |
 | **Depth scoring** | Based on complexity x cost x impact, assign a thoroughness level (see Scoring below) |
 
-THINK produces one thing: a **thoroughness level** (1-4) that governs the depth of every subsequent phase.
+OBSERVE produces one thing: a **thoroughness level** (1-4) that governs the depth of every subsequent phase.
 
-At Level 1, THINK is a 10-second gut check. At Level 4, it's deep research with expert-pattern review.
+At Level 1, OBSERVE is a 10-second gut check. At Level 4, it's deep research with expert-pattern review.
 
 **Research Gate** (L3+ mandatory):
 
-At L3+, THINK must produce a documented research step before moving to PRE. The LLM knows industry practices but won't surface them unless required. This gate prevents reinventing known patterns.
+At L3+, OBSERVE must produce a documented research step before moving to PLAN. The LLM knows industry practices but won't surface them unless required. This gate prevents reinventing known patterns.
 
 | Level | Research Requirement |
 |-------|---------------------|
@@ -45,11 +59,24 @@ At L3+, THINK must produce a documented research step before moving to PRE. The 
 | L3 | **3-5 bullet "prior art" section**: how do industry/experts approach this type of problem? |
 | L4 | **Full prior art scan with references**: named sources, patterns reviewed, approach selected with rationale |
 
-The research artifact lives inline in the task planning output or as a `THINK.research` section in the task log. It does not need to be a separate document.
+The research artifact lives inline in the task planning output or as an `OBSERVE.research` section in the task log. It does not need to be a separate document.
 
 ---
 
-## Phase 2: PRE
+## Phase 3: SHAPE
+
+*What's the right approach?*
+
+| Activity | Purpose |
+|----------|---------|
+| **Framing** | What's the right approach? What are the constraints? |
+| **Option evaluation** | Which approach best fits the objective given what we observed? |
+
+SHAPE translates observation into a concrete approach direction before detailed planning begins.
+
+---
+
+## Phase 4: PLAN
 
 *What's the plan?*
 
@@ -67,7 +94,7 @@ Thoroughness determines depth:
 
 **HLD Requirement** (L3+ engineering tasks, mandatory):
 
-At L3+, PRE must produce a High-Level Design BEFORE the file-level plan. The LLM naturally plans at file level (which is LLD) but misses system-level implications. The HLD catches cross-cutting concerns before code is written.
+At L3+, PLAN must produce a High-Level Design BEFORE the file-level plan. The LLM naturally plans at file level (which is LLD) but misses system-level implications. The HLD catches cross-cutting concerns before code is written.
 
 | Level | HLD Requirement |
 |-------|----------------|
@@ -82,7 +109,7 @@ HLD vs LLD distinction:
 
 **ADR Protocol for Irreversible Decisions** (L3+ mandatory when alternatives exist):
 
-Any L3+ task that involves choosing between alternatives (technology, pattern, architecture) must produce an Architecture Decision Record. In the solo founder + AI model, each session starts fresh — ADRs are how decisions survive between sessions.
+Any L3+ task that involves choosing between alternatives (technology, pattern, architecture) must produce an Architecture Decision Record. In the solo founder + AI model, each session starts fresh -- ADRs are how decisions survive between sessions.
 
 | Level | ADR Requirement |
 |-------|----------------|
@@ -101,7 +128,7 @@ Storage: `org/decisions/{date}-{slug}.md`
 
 ---
 
-## Phase 3: EXECUTE
+## Phase 5: EXECUTE
 
 *Do the work.*
 
@@ -147,7 +174,7 @@ The old pipeline stages (SHAPE, BUILD, TEST, SHIP, REVIEW, QA) all live inside E
 
 ---
 
-## Phase 4: POST
+## Phase 6: MEASURE
 
 *Did it work?*
 
@@ -155,24 +182,23 @@ The old pipeline stages (SHAPE, BUILD, TEST, SHIP, REVIEW, QA) all live inside E
 |----------|---------|
 | **Measure** | Capture actuals: tokens, cost, time, files touched (from git diff, session metadata) |
 | **Compare** | Accuracy delta: estimate vs actual, per dimension (D23 recursive feedback) |
-| **Learn** | What worked, what didn't — feed insights back into estimation data |
 | **Principle check** | Did any direction or principle get violated? (D27 regression tests) |
 
-POST feeds two systems:
+MEASURE feeds two systems:
 - **ESTIMATION-ENGINE.md** receives the accuracy data (ESTIMATION-LOG.jsonl)
 - **DIRECTION-ENFORCEMENT.md** receives violation reports
 
-At Level 1, POST is "log the result." At Level 4, it's a full retrospective with process updates.
+At Level 1, MEASURE is "log the result." At Level 4, it's a full retrospective with process updates.
 
-**ADR Archival**: If an ADR was produced in PRE, POST confirms the decision held (or documents why it changed during EXECUTE) and ensures the ADR is committed to `org/decisions/`.
+**ADR Archival**: If an ADR was produced in PLAN, MEASURE confirms the decision held (or documents why it changed during EXECUTE) and ensures the ADR is committed to `org/decisions/`.
 
 ---
 
-## Phase 5: COMPRESS
+## Phase 7: LEARN
 
 *Reduce overhead for next time.*
 
-COMPRESS is the learning loop that makes the system lighter over time (D23, D30).
+LEARN is the learning loop that makes the system lighter over time (D23, D30).
 
 | Trigger | Compression |
 |---------|-------------|
@@ -181,7 +207,7 @@ COMPRESS is the learning loop that makes the system lighter over time (D23, D30)
 | Repeated pattern recognition | Pre-fill estimates: "tasks like X always cost Y, take Z minutes" |
 | 5+ expansions since last contraction | Trigger simplification pass (D30) |
 
-COMPRESS is what makes this lifecycle anti-bureaucratic. Process grows when needed and shrinks when proven unnecessary.
+LEARN is what makes this lifecycle anti-bureaucratic. Process grows when needed and shrinks when proven unnecessary.
 
 ---
 
@@ -198,11 +224,13 @@ COMPRESS is what makes this lifecycle anti-bureaucratic. Process grows when need
 
 | Phase | Level 1 | Level 2 | Level 3 | Level 4 |
 |-------|---------|---------|---------|---------|
-| **THINK** | 10-sec gut check | 2-min analysis | Research + analysis + framing | Deep research + expert review |
-| **PRE** | 1-line estimate | Estimation table | Full table + plan | Full table + risk assessment |
+| **OBJECTIVE** | Implicit in task | 1-line goal | Written goal statement | Goal + success criteria |
+| **OBSERVE** | 10-sec gut check | 2-min analysis | Research + analysis | Deep research + expert review |
+| **SHAPE** | Implicit | Quick framing | Approach evaluation | Approach + constraints + options |
+| **PLAN** | 1-line estimate | Estimation table | Full table + plan | Full table + risk assessment |
 | **EXECUTE** | Build + ship | Build + test + ship | Full SDLC stages | Full SDLC + review + approval |
-| **POST** | Log result | Measure + compare | Full retro + learn | Full retro + process update |
-| **COMPRESS** | Auto (passive) | Auto (passive) | Review patterns | Review + simplify |
+| **MEASURE** | Log result | Measure + compare | Full retro | Full retro + process update |
+| **LEARN** | Auto (passive) | Auto (passive) | Review patterns | Review + simplify |
 
 ### Artifact Requirements by Phase and Level
 
@@ -210,15 +238,17 @@ This matrix specifies which artifacts each phase MUST produce. Items in **bold**
 
 | Phase | L1 (Minimal) | L2 (Standard) | L3 (Thorough) | L4 (Critical) |
 |-------|-------------|---------------|----------------|----------------|
-| **THINK** | 10-sec gut check | 2-min analysis | **Research gate** (3-5 bullets prior art) + analysis + framing | **Research gate** (full prior art scan) + deep analysis + expert review |
-| **PRE** | 1-line estimate | Estimation table | Estimation + **HLD** + plan; **ADR if irreversible** | Estimation + **HLD** + risk assessment + **ADR for all decisions** |
+| **OBJECTIVE** | Implicit in task | 1-line goal | Written goal statement | Goal + success criteria |
+| **OBSERVE** | 10-sec gut check | 2-min analysis | **Research gate** (3-5 bullets prior art) + analysis | **Research gate** (full prior art scan) + deep analysis + expert review |
+| **SHAPE** | Implicit | Quick framing | Approach evaluation + framing | Approach + constraints + options evaluated |
+| **PLAN** | 1-line estimate | Estimation table | Estimation + **HLD** + plan; **ADR if irreversible** | Estimation + **HLD** + risk assessment + **ADR for all decisions** |
 | **EXECUTE** | Build + ship | Build + tests; **regression test on bug fixes** | Build + tests + review; **regression test on bug fixes** | Build + tests + review + QA + approval; **regression test on bug fixes** |
-| **POST** | Log result | Measure + compare | Log + review; **ADR archive** | Log + review + process update; **ADR archive** |
-| **COMPRESS** | Auto (passive) | Auto (passive) | Learnings + pattern review | Learnings + calibration + simplification |
+| **MEASURE** | Log result | Measure + compare | Log + review; **ADR archive** | Log + review + process update; **ADR archive** |
+| **LEARN** | Auto (passive) | Auto (passive) | Learnings + pattern review | Learnings + calibration + simplification |
 
 ### L1 Fast-Path Gate
 
-L1 tasks that meet ALL of the following criteria skip directly to EXECUTE then COMPRESS, bypassing PRE and POST:
+L1 tasks that meet ALL of the following criteria skip directly to EXECUTE then LEARN, bypassing PLAN and MEASURE:
 
 | Criterion | Threshold |
 |-----------|-----------|
@@ -227,7 +257,7 @@ L1 tasks that meet ALL of the following criteria skip directly to EXECUTE then C
 | Complexity score | 1 on all axes |
 | Reversibility | Fully reversible |
 
-When the gate passes: `THINK (10-sec score) → EXECUTE → COMPRESS`. No estimation, no plan, no post-measurement.
+When the gate passes: `OBJECTIVE → OBSERVE (10-sec score) → EXECUTE → LEARN`. No estimation, no plan, no measurement.
 
 When the gate fails (any criterion not met): the task is not L1. Re-score at L2+.
 
@@ -279,51 +309,59 @@ Any task touching authentication, authorization, encryption, PII, or data schema
 ### Level 1: Fix broken link in README
 
 ```
-THINK: Known issue, one file, no risk. Level 1.
-PRE:   ~2 min, 1 file, $0.05.
+OBJECTIVE: Fix the broken link.
+OBSERVE: Known issue, one file, no risk. Level 1.
+SHAPE: Straightforward edit.
+PLAN:  ~2 min, 1 file, $0.05.
 EXECUTE: Edit file. Commit. Push.
-POST:  Logged.
-COMPRESS: n/a
+MEASURE: Logged.
+LEARN: n/a
 ```
 
 ### Level 2: Add a new settings screen
 
 ```
-THINK: Multiple files (screen + navigator + linking), known pattern (done before).
-       Complexity 2, Cost 1, Impact 1. Level 2.
-PRE:   Estimation table — ~20 min, 3 files, ~$0.50. Plan: create screen, add route, link nav.
+OBJECTIVE: Add a settings screen to the app.
+OBSERVE: Multiple files (screen + navigator + linking), known pattern (done before).
+         Complexity 2, Cost 1, Impact 1. Level 2.
+SHAPE: Follow existing screen pattern.
+PLAN:  Estimation table — ~20 min, 3 files, ~$0.50. Plan: create screen, add route, link nav.
 EXECUTE: Build screen. Write basic test. Ship to device.
-POST:  Actual: 25 min, 3 files, $0.45. Accuracy: 80%. Logged to ESTIMATION-LOG.jsonl.
-COMPRESS: Passive — pattern "new screen" gets this data point.
+MEASURE: Actual: 25 min, 3 files, $0.45. Accuracy: 80%. Logged to ESTIMATION-LOG.jsonl.
+LEARN: Passive — pattern "new screen" gets this data point.
 ```
 
 ### Level 3: Add natural language quick-add parsing
 
 ```
-THINK: Cross-system (input layer + parse layer + command layer). New pattern (NLP).
-       Complexity 3, Cost 2, Impact 2. Level 3.
-PRE:   Full estimation table. Plan: research parsing libs, design parse→activity flow,
+OBJECTIVE: Enable natural language quick-add so users can type free-form text to create activities.
+OBSERVE: Cross-system (input layer + parse layer + command layer). New pattern (NLP).
+         Complexity 3, Cost 2, Impact 2. Level 3.
+SHAPE: Parse→activity flow with library evaluation.
+PLAN:  Full estimation table. Plan: research parsing libs, design parse→activity flow,
        build parser, integrate with quick-add, test edge cases.
 EXECUTE: Research → Shape brief → Build parser → Test (90%+ accuracy target) → 
          Design QA → Review → Ship.
-POST:  Full retro. Parse accuracy measured. Estimation accuracy compared.
-       Principle check: D20 (did we research best practices?). Clean.
-COMPRESS: "NLP features" category gets calibration data.
+MEASURE: Full retro. Parse accuracy measured. Estimation accuracy compared.
+         Principle check: D20 (did we research best practices?). Clean.
+LEARN: "NLP features" category gets calibration data.
 ```
 
 ### Level 4: Migrate auth from Supabase JWT to custom token system
 
 ```
-THINK: Foundational (every API call uses auth). Security-critical. Irreversible in production.
-       Complexity 4, Cost 4, Impact 4. Level 4 + security override.
-PRE:   Full estimation table with risk assessment. Rollback plan documented.
+OBJECTIVE: Migrate auth from Supabase JWT to custom token system for full control.
+OBSERVE: Foundational (every API call uses auth). Security-critical. Irreversible in production.
+         Complexity 4, Cost 4, Impact 4. Level 4 + security override.
+SHAPE: Custom token approach with feature flag rollout.
+PLAN:  Full estimation table with risk assessment. Rollback plan documented.
        Protocol: full SDLC with CISO review. 
        Estimate: 6-8 hrs, 15+ files, ~$15.
 EXECUTE: Shape brief → Tech spec → CISO security review → Build with feature flag → 
          Full test suite → Code review → QA verification → Staged rollout → Ship.
-POST:  Full retrospective. Every dimension measured. Process update if anything failed.
-       Principle check: all directions scanned. D27 regression tests run.
-COMPRESS: "Auth migration" pattern documented for future reference.
+MEASURE: Full retrospective. Every dimension measured. Process update if anything failed.
+         Principle check: all directions scanned. D27 regression tests run.
+LEARN: "Auth migration" pattern documented for future reference.
 ```
 
 ---
@@ -344,12 +382,12 @@ The insight: these were never different systems. A 0-user company doing an auth 
 
 | System | Role in Lifecycle |
 |--------|------------------|
-| **ESTIMATION-ENGINE.md** | Feeds the PRE phase. Generates the estimation table. Receives actuals in POST. |
+| **ESTIMATION-ENGINE.md** | Feeds the PLAN phase. Generates the estimation table. Receives actuals in MEASURE. |
 | **Adaptive Protocol Engine** | IS the scoring/routing logic. Reads complexity/cost/impact, outputs thoroughness level. |
-| **DIRECTION-ENFORCEMENT.md** | Fires in POST phase. Scans for principle violations (D27 regression). |
-| **Evolution Pulse** | Fires in POST phase. Reports outputs, not activities (D17). |
-| **PROTOCOLS.md** (creation lifecycle) | Invoked in PRE when no existing protocol covers the task (D9/D25). |
-| **ESTIMATION-LOG.jsonl** | Accumulates POST data. Feeds COMPRESS phase pattern recognition. |
+| **DIRECTION-ENFORCEMENT.md** | Fires in MEASURE phase. Scans for principle violations (D27 regression). |
+| **Evolution Pulse** | Fires in MEASURE phase. Reports outputs, not activities (D17). |
+| **PROTOCOLS.md** (creation lifecycle) | Invoked in PLAN when no existing protocol covers the task (D9/D25). |
+| **ESTIMATION-LOG.jsonl** | Accumulates MEASURE data. Feeds LEARN phase pattern recognition. |
 
 ---
 
@@ -357,11 +395,11 @@ The insight: these were never different systems. A 0-user company doing an auth 
 
 | Rule | Behavior |
 |------|----------|
-| Every task enters the lifecycle | HARD — no task bypasses THINK. Even "just do it" gets a 10-second score. |
+| Every task enters the lifecycle | HARD — no task bypasses OBJECTIVE. Even "just do it" gets a 10-second score. |
 | Thoroughness set by scoring, not preference | HARD — cannot choose Level 1 for a Level 3 task. Founder can override UP (more thorough) but not DOWN without explicit approval gate (D29). |
-| POST captures actuals for Level 2+ | HARD — task is not complete until actuals are logged. |
-| POST captures actuals for Level 1 | SOFT — prompted, not enforced. |
-| COMPRESS runs automatically | PASSIVE — no human action required. System tracks patterns. |
+| MEASURE captures actuals for Level 2+ | HARD — task is not complete until actuals are logged. |
+| MEASURE captures actuals for Level 1 | SOFT — prompted, not enforced. |
+| LEARN runs automatically | PASSIVE — no human action required. System tracks patterns. |
 
 ---
 
