@@ -18,6 +18,8 @@ Executable rules compiled from Asawa + Sutra principles. Every protocol has: tri
 | PROTO-010 | Version Focus | Constitutional | HARD | File grows unboundedly over time |
 | PROTO-011 | Company Independence | Constitutional | HARD | Cross-company synergy or holding co making product decisions |
 | PROTO-012 | Ownership Model | Convergent | SOFT | Selling a company or founder operating instead of governing |
+| PROTO-013 | Sutra Version Deploy | Federal | SOFT | New Sutra version released |
+| PROTO-014 | Sutra Version Check | Federal | SOFT | Client company session starts |
 
 Types: **Constitutional** (Asawa-locked, no override) | **Federal** (Sutra, override within bounds) | **Convergent** (both, rule locked, method flexible)
 
@@ -128,6 +130,125 @@ origin:  CSI never sells. Tiny never sells. Permanent Equity: "Build for durabil
 ```
 _Merged from: PROTO-014 (Permanent Ownership) + PROTO-015 (Owner Not Operator)_
 
+### PROTO-013: Sutra Version Deploy
+```
+federal | [Sutra P9, D22] | SOFT
+trigger: New Sutra version released (CURRENT-VERSION.md updated)
+check:   All client companies notified? → done. Not yet? → run deploy process.
+
+PROCESS (Depth 2 — considered):
+
+1. READ: sutra/CURRENT-VERSION.md changelog — what changed in this version?
+
+2. CLASSIFY changes by impact:
+   - BREAKING: changes how tasks are assessed, new required sections in CLAUDE.md
+   - ADDITIVE: new capabilities, optional for clients
+   - INTERNAL: engine improvements, no client-facing change
+
+3. FOR EACH client company:
+   a. Read their CLAUDE.md "Sutra OS Version" line
+   b. If already current → skip
+   c. If outdated → generate update patch:
+
+   BREAKING changes — update their CLAUDE.md:
+   - Bump version number
+   - Add/modify session start instructions
+   - Add/modify depth assessment format
+   - Update any renamed concepts (e.g., "Level" → "Depth")
+   - Update engine references if file structure changed
+
+   ADDITIVE changes — add to their CLAUDE.md:
+   - New optional sections
+   - New protocols they can adopt
+   - New engine capabilities
+
+   INTERNAL changes — version bump only:
+   - Bump version number in CLAUDE.md
+   - No other changes needed
+
+4. FOR EACH updated company:
+   - Commit: "update: Sutra OS v{version} — {one-line summary}"
+   - Push to company repo
+
+5. UPDATE holding/SYSTEM-MAP.md client registry versions
+
+6. LOG: which companies updated, which skipped, what changed
+
+WHAT GETS UPDATED IN CLIENT CLAUDE.md (checklist):
+  [ ] "Sutra OS Version: v{new}" line
+  [ ] Session start instructions (if process changed)
+  [ ] Depth assessment format (if depth system changed)
+  [ ] Engine file references (if files renamed/moved)
+  [ ] Input routing format (if routing changed)
+  [ ] Any new protocols added to onboarding template
+
+WHAT DOES NOT GET UPDATED:
+  - Company-specific content (architecture, design principles, key files)
+  - Company-specific TODO items
+  - Company-specific workflows
+  - Anything the company wrote themselves
+
+OVERRIDE: D22 — PULL is default. If a company has customized their
+process beyond standard Sutra, deploy only the version bump. Let
+the company CEO decide what to adopt from the changelog.
+
+origin: DayFlow v1.7 deploy 2026-04-06. Manual update of CLAUDE.md
+        to add depth system + version check. Extracted into protocol
+        after second occurrence (Paisa v1.4 deploy was the first).
+times_used: 2
+```
+
+### PROTO-014: Sutra Version Check (Client-Side)
+```
+federal | [Sutra P3, D22] | SOFT
+trigger: Client company session starts
+check:   Sutra version current? → proceed. Outdated? → notify founder.
+
+PROCESS (built into every client CLAUDE.md):
+
+1. On session start, read ../sutra/CURRENT-VERSION.md line 3
+2. Compare to "Sutra OS Version" in own CLAUDE.md
+3. If versions match → proceed normally
+4. If Sutra is newer:
+
+   a. SHOW to founder:
+      "Sutra update available: v{new} (you're on v{current})"
+
+   b. READ the changelog in CURRENT-VERSION.md
+      Summarize what changed in 1-2 lines
+
+   c. CLASSIFY relevance to this company:
+      - "Affects you: [list relevant changes]"
+      - "Does not affect you: [list irrelevant changes]"
+
+   d. ASK (do NOT auto-update):
+      "Want to update? This will modify your session start
+       instructions and depth assessment format."
+
+   e. If founder says yes:
+      - Update own CLAUDE.md per PROTO-013 patch format
+      - Commit and push
+      - Continue session with new instructions
+
+   f. If founder says no or ignores:
+      - Proceed with current version
+      - Do not ask again this session
+      - Will check again next session
+
+WHY PULL NOT PUSH (D22):
+  Companies decide when to upgrade. A company mid-sprint
+  should not be forced to adopt a new process. The check
+  informs. The founder decides. The system respects that.
+
+ENFORCEMENT: SOFT — the check runs, but the founder can
+  ignore it. No blocking. Just awareness.
+
+origin: Adaptive Protocol v3 deploy 2026-04-06. Founder said
+        "client companies should check automatically when they
+        start their day." Built into CLAUDE.md session start.
+times_used: 0 (just deployed to DayFlow)
+```
+
 ---
 
 ## Protocol Lifecycle
@@ -153,3 +274,5 @@ _Merged from: PROTO-014 (Permanent Ownership) + PROTO-015 (Owner Not Operator)_
 | 010 | Session-start file loading |
 | 011 | process-gate.sh |
 | 012 | Session-start advisory |
+| 013 | Manual (CEO of Asawa/Sutra runs after version bump) |
+| 014 | Client CLAUDE.md session start instructions |
