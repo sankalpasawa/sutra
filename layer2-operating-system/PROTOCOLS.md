@@ -6,6 +6,7 @@ Executable rules compiled from Asawa + Sutra principles. Every protocol has: tri
 
 | ID | Name | Type | Enf. | Trigger Summary |
 |----|------|------|------|-----------------|
+| PROTO-000 | Protocol Must Ship With Implementation | Constitutional | HARD | Any new or changed protocol |
 | PROTO-001 | Structure Before Creation | Convergent | SOFT | New dir/file at org level |
 | PROTO-002 | Wait for Parallel Completion | Constitutional | HARD | Orchestrator writing before agents finish |
 | PROTO-003 | Free Tier First | Constitutional | HARD | Selecting a service/provider |
@@ -28,6 +29,49 @@ Types: **Constitutional** (Asawa-locked, no override) | **Federal** (Sutra, over
 ---
 
 ## ───── DETAIL: Full definitions ─────
+
+### PROTO-000: Protocol Must Ship With Implementation
+```
+constitutional | [Asawa P0, P9, D11] | HARD
+trigger: Any new protocol created OR any existing protocol changed
+check:   Implementation shipped alongside the protocol? → proceed. Just docs? → BLOCK.
+
+A protocol without implementation is prose, not process.
+This is the meta-protocol — it governs all other protocols.
+
+WHEN A NEW PROTOCOL IS CREATED, it must ship with:
+
+  1. THE WORDS: protocol definition in PROTOCOLS.md (the what)
+  2. THE MECHANISM: at least one of:
+     - Hook that enforces it (mechanical)
+     - CLAUDE.md instruction that triggers it (structural)
+     - Manifest check that verifies it (verification)
+     - Memory/feedback entry that reminds of it (advisory)
+  3. THE TEST: evidence that the mechanism works
+     - Hook: run it, show it blocks/allows correctly
+     - Instruction: show a session producing the behavior
+     - Manifest: run verify script, show it checks this protocol
+  4. THE DEPLOYMENT: mechanism deployed to affected companies
+     - Not just in Sutra source — in the actual company repos
+
+WHEN AN EXISTING PROTOCOL IS CHANGED:
+  Same 4 requirements. Update the mechanism, re-test, re-deploy.
+
+CHECKLIST (must all be YES before the protocol commit):
+  [ ] Words written in PROTOCOLS.md
+  [ ] Mechanism exists (hook / instruction / manifest check / memory)
+  [ ] Mechanism tested (evidence it works)
+  [ ] Deployed to affected companies
+
+If any is NO, the protocol is a draft, not shipped. Mark it
+EXPERIMENTAL and schedule implementation.
+
+origin: 2026-04-06. Entire session spent creating protocols
+        (PROTO-013 through PROTO-016) that were documented but
+        not implemented. Modes removed without tests. Finding
+        Resolution Gate written but no infrastructure. Founder
+        repeatedly asked "but is it actually implemented?"
+```
 
 ### PROTO-001: Structure Before Creation
 ```
