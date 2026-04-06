@@ -31,12 +31,19 @@ DayFlow becomes the default way solo knowledge workers organize their day. Not a
 | **Offline-first, always** | The app works without internet. Network is an enhancement, not a dependency. | Does this work in airplane mode? |
 | **Schema drives capability** | Expand the data schema, expand what the AI can do. The schema IS the API. | Can the AI reason about this without special code? |
 
-### 1.4 The Seven Universal Principles
+### 1.4 Universal Principles
 
-These are machine-readable. Each has a trigger condition.
+These are machine-readable. Each has a trigger condition. P0 overrides all others.
 
 ```yaml
 principles:
+  - id: P0
+    name: Customer focus first
+    rule: "Every output, label, metric, and process exists to serve the customer. If the customer doesn't understand it without explanation, fix it. When customer experience conflicts with system design, customer wins. This supersedes all other principles."
+    when_to_apply: "Always. Before presenting any output, naming any concept, designing any process. When choosing between internal consistency and external clarity, choose clarity."
+    violation_signal: "Terminology requires a glossary. Output requires a training session. A label was chosen for system reasons, not customer reasons. Jargon that was never explained."
+    origin: "Founding Doctrine Principle 0, 2026-04-06. 'Gear' renamed to 'Depth' because customers understand depth without explanation."
+
   - id: P1
     name: Make work visible and explicit
     rule: "Every task, decision, and dependency must exist in a written artifact. If it is not written down, it does not exist for agents."
