@@ -615,7 +615,7 @@ Stage → determines process intensity
 3. **Add content strategy section** if product type is content-driven
 4. **Set tech stack** from Architecture Card
 5. **Set metrics** from Shape Brief success criteria
-6. **Set A/B test config** (SUTRA mode for first feature, alternating after)
+6. **Set A/B test config** (Depth 3 for first feature, alternating after)
 7. **Generate TODO.md** from P0 feature list with build order
 8. **Set gstack skills** appropriate for platform and stage
 9. **Configure shared infrastructure** — read `asawa-inc/shared/AI-PROVIDERS.md` and `EXTERNAL-SYSTEMS.md`:
@@ -796,15 +796,15 @@ The landing page is part of every company by default. Sutra builds and deploys i
 ```
 1. Read the OS (OPERATING-SYSTEM-V1.md)
 2. Read the TODO (top P0 item)
-3. Check SUTRA-CONFIG.md — is feature #1 in SUTRA or DIRECT mode?
-4. If SUTRA mode:
+3. Check SUTRA-CONFIG.md — what depth level for feature #1?
+4. If Depth 3+:
    /office-hours → refine the feature idea
    /autoplan → CEO + design + eng review
    [BUILD]
    /qa → test + fix
    /ship → deploy
    /canary → post-deploy health
-5. If DIRECT mode:
+5. If Depth 1-2:
    [BUILD]
    /review → code review
    /ship → deploy
@@ -837,10 +837,10 @@ CLIENT reviews new version
 ### Sutra ↔ gstack (per feature)
 
 ```
-SUTRA OS says "use SUTRA mode for this feature"
+SUTRA OS says "use Depth 3+ for this feature"
   → triggers gstack pipeline: /office-hours → /autoplan → build → /qa → /ship → /canary
 
-SUTRA OS says "use DIRECT mode"
+SUTRA OS says "use Depth 1-2"
   → triggers minimal pipeline: build → /review → /ship
 
 gstack /retro produces weekly metrics

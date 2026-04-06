@@ -15,7 +15,7 @@ Any client can run a controlled comparison:
 ### 1. Define the experiment
 ```
 Features in test: [5 recommended minimum]
-Split: alternating (1-SUTRA, 2-DIRECT, 3-SUTRA, 4-DIRECT, 5-tiebreaker)
+Split: alternating (1-HIGH, 2-LOW, 3-HIGH, 4-LOW, 5-tiebreaker)
 Duration: until all features shipped
 ```
 
@@ -29,20 +29,20 @@ Duration: until all features shipped
 | **Knowledge captured** | Did we learn something that updates the knowledge system? (yes/no) |
 
 ### 3. Run the features
-- SUTRA features follow the full OS: shape → design → specify → build → verify → learn
-- DIRECT features follow minimal process: read knowledge system → build → ship
+- High-depth features follow the full OS: shape → design → specify → build → verify → learn
+- Low-depth features follow minimal process: read knowledge system → build → ship
 - Log metrics honestly. Don't optimize for one mode over the other.
 
 ### 4. Analyze results
 ```
-SUTRA features average:
+High-depth features average:
   Ship time: ___
   Break rate: ___
   Rework: ___
   Quality: ___
   Knowledge: ___
 
-DIRECT features average:
+Low-depth features average:
   Ship time: ___
   Break rate: ___
   Rework: ___
@@ -53,26 +53,26 @@ DIRECT features average:
 ### 5. Decision
 | Result | Action |
 |--------|--------|
-| SUTRA faster AND fewer breaks | Use SUTRA as default |
-| SUTRA slower but significantly fewer breaks | Use AUTO mode (SUTRA for risky, DIRECT for small) |
-| DIRECT faster AND same break rate | Strip Sutra back. It's overhead. |
+| Higher depth faster AND fewer breaks | Use higher depth as default |
+| SUTRA slower but significantly fewer breaks | Use adaptive depth (higher for risky, lower for small) |
+| Lower depth faster AND same break rate | Strip Sutra back. It's overhead. |
 | Mixed / unclear | Run 5 more features |
 
 ## What Sutra Learns from A/B Results
 
 Every client's A/B test results feed back to Sutra:
 
-**If SUTRA mode wins:**
+**If higher depth wins:**
 - Which steps added the most value? (usually: specify + verify)
 - Which steps were overhead? (maybe: formal shape for small features)
 - Optimize: keep the valuable steps, trim the overhead
 
-**If DIRECT mode wins:**
+**If lower depth wins:**
 - Sutra's process is too heavy for this stage/company
 - Simplify: fewer steps, lighter checkpoints
 - Maybe this client needs a different Sutra module (startup vs growth vs enterprise)
 
-**If AUTO mode is the sweet spot:**
+**If adaptive depth is the sweet spot:**
 - Refine the size thresholds (what counts as small vs medium vs large)
 - Document which change types benefit from process and which don't
 

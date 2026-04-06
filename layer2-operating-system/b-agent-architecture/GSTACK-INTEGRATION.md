@@ -75,7 +75,7 @@ Sutra defines HOW a company should operate. gstack provides the TOOLS to execute
 
 ## Sutra Workflows as gstack Pipelines
 
-### Workflow 1: New Feature (SUTRA mode)
+### Workflow 1: New Feature (Depth 3+)
 
 ```
 /office-hours          → brainstorm, validate the idea
@@ -97,7 +97,7 @@ Sutra defines HOW a company should operate. gstack provides the TOOLS to execute
 /retro                 → weekly review of what shipped
 ```
 
-### Workflow 2: Bug Fix (DIRECT mode)
+### Workflow 2: Bug Fix (Depth 1-2)
 
 ```
 /investigate           → root cause analysis
@@ -154,12 +154,12 @@ Sutra defines HOW a company should operate. gstack provides the TOOLS to execute
 
 ## A/B Test Integration
 
-When running the Sutra A/B test (SUTRA vs DIRECT mode):
+When running the Sutra A/B test (depth level comparison):
 
-**SUTRA mode features** use the full pipeline (Workflow 1):
+**Depth 3+ features** use the full pipeline (Workflow 1):
 - /office-hours → /autoplan → /design-shotgun → build → /qa → /ship → /canary
 
-**DIRECT mode features** use the minimal pipeline (Workflow 2):
+**Depth 1-2 features** use the minimal pipeline (Workflow 2):
 - /investigate (if bug) or just build → /review → /ship
 
 The A/B test measures whether the full pipeline produces better outcomes (fewer breaks, higher quality) at acceptable speed cost.

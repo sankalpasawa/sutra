@@ -54,7 +54,7 @@ At the end of every feature (before shipping), the session runs a self-check:
 
 ```
 COMPLIANCE CHECK:
-- [ ] Did we follow the correct mode? (SUTRA/DIRECT per SUTRA-CONFIG.md)
+- [ ] Did we follow the correct depth level? (per SUTRA-CONFIG.md)
 - [ ] Did we log metrics? (METRICS.md updated)
 - [ ] Did we write feedback? (feedback-to-sutra/ if anything was learned)
 - [ ] Did we run the gstack skills specified by the mode?
@@ -71,8 +71,8 @@ These fire automatically before git commits:
 | Hook | What It Checks | Blocks Commit? |
 |------|---------------|---------------|
 | File boundary | Edited files are within session's company scope | YES |
-| Metrics logged | METRICS.md has an entry for this feature | YES (SUTRA mode only) |
-| Mode compliance | Feature used the correct mode per SUTRA-CONFIG.md | YES |
+| Metrics logged | METRICS.md has an entry for this feature | YES (Depth 3+ only) |
+| Depth compliance | Feature used the correct depth level per SUTRA-CONFIG.md | YES |
 | OS loaded | Session has read the company's OPERATING-SYSTEM file | YES |
 
 ### Level 4: Cross-Session Enforcement (Sutra Agent)
@@ -81,7 +81,7 @@ When Sutra runs its own session, it checks all clients:
 
 | Check | Frequency | Action on Violation |
 |-------|-----------|-------------------|
-| Mode compliance | Every feature | Flag in Daily Pulse |
+| Depth compliance | Every feature | Flag in Daily Pulse |
 | Metrics logged | Every feature | Block next feature until logged |
 | Feedback written | Weekly | Flag if no feedback in 7 days |
 | OS version current | Monthly | Notify of available upgrade |
@@ -115,8 +115,8 @@ When Sutra runs its own session, it checks all clients:
 ### SKILL-CATALOG.md
 | Rule | Enforcement |
 |------|-------------|
-| SUTRA mode uses full pipeline | HARD |
-| DIRECT mode uses minimal pipeline | HARD |
+| Depth 3+ uses full pipeline | HARD |
+| Depth 1-2 uses minimal pipeline | HARD |
 | /canary after every deploy | HARD |
 | /retro weekly | SOFT (but flagged if skipped 2 weeks) |
 
@@ -132,14 +132,14 @@ When Sutra runs its own session, it checks all clients:
 |------|-------------|
 | Metrics tracked per agent | HARD |
 | Tension scenarios surfaced in Daily Pulse | HARD |
-| Bypass tracking (when DIRECT used instead of SUTRA) | HARD |
+| Bypass tracking (when lower depth used instead of recommended) | HARD |
 
 ### A/B-TEST-FRAMEWORK.md
 | Rule | Enforcement |
 |------|-------------|
-| Alternating SUTRA/DIRECT per schedule | HARD |
-| Metrics logged per feature per mode | HARD |
-| Data decides mode after test completes | HARD |
+| Alternating depth levels per schedule | HARD |
+| Metrics logged per feature per depth level | HARD |
+| Data decides depth approach after test completes | HARD |
 | Founder can override at any time | FOUNDER-OVERRIDE |
 
 ---
@@ -218,7 +218,7 @@ When the founder adds a new protocol to Sutra:
 | BLOCK | Editing another company's files | Hook blocks the edit. |
 | FLAG | No feedback written this week | Daily Pulse highlights it. Decision needed. |
 | FLAG | Skipped /canary after deploy | Added to next session's TODO. |
-| LOG | Used DIRECT when schedule said SUTRA | Logged in A/B test metrics. Not blocked (founder has override). |
+| LOG | Used lower depth when schedule said higher | Logged in A/B test metrics. Not blocked (founder has override). |
 
 ---
 

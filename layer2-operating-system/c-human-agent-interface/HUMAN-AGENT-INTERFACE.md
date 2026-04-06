@@ -102,7 +102,7 @@ Defines how much the human (founder/CEO) wants to be involved in day-to-day deci
 | Architecture | Agent proposes, human reviews before implementation |
 | Shipping | Agent prepares, human approves before deploy |
 | Bug fixes | Agent diagnoses, human approves fix approach |
-| Process | Full pipeline (SUTRA mode) by default |
+| Process | Full pipeline (Depth 3-5) by default |
 
 **When to use**: Early-stage products, design-sensitive work, founder learning the system.
 
@@ -117,7 +117,7 @@ Defines how much the human (founder/CEO) wants to be involved in day-to-day deci
 | Architecture | Agent decides within established patterns, escalates novel patterns |
 | Shipping | Agent ships autonomously, human reviews post-deploy |
 | Bug fixes | Agent fixes and ships, notifies human |
-| Process | Agent chooses SUTRA or DIRECT mode per feature based on complexity |
+| Process | Agent chooses depth level per feature based on complexity |
 
 **When to use**: Established products with clear design system, trusted agent-founder relationship.
 
@@ -132,7 +132,7 @@ Defines how much the human (founder/CEO) wants to be involved in day-to-day deci
 | Architecture | Agent decides, documents in decision log |
 | Shipping | Autonomous. Human gets weekly summary. |
 | Bug fixes | Autonomous. Human gets incident report only for P0/P1. |
-| Process | DIRECT mode unless agent judges SUTRA mode is needed |
+| Process | Depth 1-2 unless agent judges Depth 3+ is needed |
 
 **When to use**: Mature products, well-defined roadmaps, founder focused elsewhere.
 

@@ -161,7 +161,7 @@ origin:  Maze 2026-04-04/05. Agent skipped HOD sequence, jumped to deploy over P
 ### PROTO-009: Narration Is Not Artifact
 ```
 constitutional | [Asawa P1, P8] | HARD
-trigger: Executing process pipeline (SUTRA mode, feature lifecycle, HOD)
+trigger: Executing process pipeline (Depth 3+, feature lifecycle, HOD)
 check:   FILE on disk for each stage? → complete. No? → write artifact FIRST. Only files count.
 origin:  Maze 2026-04-04. Zero artifacts on disk for 2 features. 28 FAILs on audit.
 ```
