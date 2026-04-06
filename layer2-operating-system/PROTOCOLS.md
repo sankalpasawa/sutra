@@ -330,15 +330,24 @@ trigger: Any commit to a company repo
 check:   Tests pass AND typecheck clean? → commit. Either fails? → fix first.
 
 PROCESS:
-  Before every git commit in a company repo:
-    1. If tests exist: run them (npm test / jest)
-    2. If typecheck exists: run it (npx tsc --noEmit)
-    3. Both pass → commit
-    4. Either fails → fix, then re-run, then commit
-    5. NEVER skip because "it's just docs" — verify anyway
+  Use judgment based on the task's depth assessment:
 
-  The assumption "this change is safe" is the exact assumption
-  that causes regressions. The test suite catches assumptions.
+  Depth 1 (doc-only, no code touched):
+    Quick grep: does any code reference what you changed?
+    If no references → commit. No test run needed.
+    If references exist → run affected tests only.
+
+  Depth 2 (1-3 files, known pattern):
+    Typecheck: npx tsc --noEmit
+    Skip full test suite unless changed files have tests.
+
+  Depth 3+ (cross-file, risky, or unfamiliar):
+    Full typecheck + full test suite.
+    Both pass → commit. Either fails → fix first.
+
+  The goal is proportional verification, not ritual verification.
+  Burning 30 seconds of tokens to confirm a README change is safe
+  is overtriage. But NEVER assume — check if code references exist.
 
 origin: 2026-04-06. Removed Operating Modes from DayFlow SUTRA-CONFIG.md.
         Did not run tests before committing. Founder asked "why didn't you
