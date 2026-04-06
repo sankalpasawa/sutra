@@ -129,6 +129,20 @@ When a department discovers a signal that another department needs to act on, th
 
 ---
 
+## Depth Integration
+
+Routing decisions reference the depth assessment from the Adaptive Protocol Engine (PROTO-000). Higher depth means more departments are consulted before routing.
+
+| Depth | Routing Behavior |
+|-------|------------------|
+| 1-2 | Route to primary department only. No cross-department consultation. |
+| 3 | Route per table. Check for secondary department impact. |
+| 4-5 | Full routing: all affected departments notified, Operations tracks handoff, resolution requires sign-off. |
+
+**Rule**: The depth assessment output determines how many routing hops a signal takes. Low-depth signals go direct; high-depth signals follow the full multi-department routing protocol.
+
+---
+
 ## Routing Rules
 
 ### General Rules

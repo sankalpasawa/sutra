@@ -202,6 +202,22 @@ Web apps get MORE gstack coverage because browser testing is native. iOS apps ne
 
 ---
 
+## Depth-Based Skill Activation
+
+The Adaptive Protocol Engine (PROTO-000) depth assessment determines which gstack skills activate. Higher depth = more skills in the pipeline.
+
+| Depth | Active Skills | Rationale |
+|-------|--------------|-----------|
+| 1 (Surface) | None — direct execution | Skill overhead exceeds task complexity |
+| 2 (Considered) | `/review` (optional) | Light review before shipping small changes |
+| 3 (Thorough) | `/plan-eng-review`, `/review`, `/qa`, `/ship` | Standard quality pipeline |
+| 4 (Rigorous) | + `/plan-ceo-review`, `/plan-design-review`, `/canary`, `/cso` | Full review + post-deploy monitoring |
+| 5 (Exhaustive) | + `/autoplan`, `/codex`, `/retro`, `/benchmark` | Full pipeline with independent review and performance tracking |
+
+**Rule**: At Depth 1, no skills fire — the agent executes directly. At Depth 3+, the skill pipeline from "Sutra Workflows as gstack Pipelines" activates progressively.
+
+---
+
 ## Minimum Skill Set Per Stage
 
 | Stage | Required Skills | Optional |

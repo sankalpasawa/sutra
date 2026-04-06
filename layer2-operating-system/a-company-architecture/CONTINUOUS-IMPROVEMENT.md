@@ -137,6 +137,22 @@ Each file:
 PENDING → REVIEWED → INCORPORATED (in v{X}) | REJECTED (reason)
 ```
 
+## Depth Integration
+
+Improvement initiatives are assessed at depth like any task (PROTO-000). The depth determines how much investigation and process surrounds a finding.
+
+| Depth | Improvement Behavior |
+|-------|---------------------|
+| 1 (Surface) | Log finding to TODO.md. No investigation. |
+| 2 (Considered) | Log finding + classify type. Route to correct destination. |
+| 3 (Thorough) | Full classification, root cause analysis for bugs, feedback-to-sutra/ for process issues. |
+| 4 (Rigorous) | Full flow + cross-company check ("does this apply elsewhere?"). Sutra doc update if protocol gap. |
+| 5 (Exhaustive) | Full flow + systemic review + version bump consideration + update notices to all clients. |
+
+**Rule**: Not every finding warrants a full investigation. Depth 1-2 captures and routes; Depth 3+ investigates and improves.
+
+---
+
 ## Cross-Company Improvement
 
 When Sutra learns from Company A, it checks: does this apply to Company B?

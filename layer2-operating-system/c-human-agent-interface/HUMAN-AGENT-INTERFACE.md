@@ -216,6 +216,19 @@ The following skip classification entirely — they are system maintenance, not 
 - Git operations (commit, push)
 - Lock files (`.lock`)
 
+### Depth Integration
+
+The Adaptive Protocol Engine (PROTO-000) depth assessment interacts with the involvement level to determine checkpoint behavior.
+
+| Depth | Checkpoint Behavior |
+|-------|--------------------|
+| 1-2 (Surface/Considered) | No founder checkpoint needed. Agent executes and reports result. |
+| 3 (Thorough) | Founder checkpoint at PLAN phase — confirm approach before execution. |
+| 4 (Rigorous) | Checkpoints at PLAN + REVIEW phases. Decision brief required for Category 2+ decisions. |
+| 5 (Exhaustive) | Checkpoints at PLAN + REVIEW + SHIP. Founder approves at each gate. |
+
+**Rule**: Depth modulates checkpoints regardless of involvement level. Even in "Delegated" mode, a Depth 5 task triggers founder checkpoints. Even in "Hands-on" mode, a Depth 1 task executes without interruption.
+
 ### Key Principle
 
 > The LLM is the runtime that executes the system's protocols. It is never the first responder. The routing layer is the first responder.

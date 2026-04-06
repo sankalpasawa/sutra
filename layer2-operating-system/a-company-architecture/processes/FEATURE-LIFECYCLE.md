@@ -576,4 +576,20 @@ The cycle repeats. Every iteration goes through the full lifecycle again, but ma
 
 ---
 
+## Depth Integration
+
+The Adaptive Protocol Engine (PROTO-000) depth assessment determines how much of the lifecycle runs for a given feature.
+
+| Depth | Stages Applied | Documentation |
+|-------|---------------|---------------|
+| 1 (Surface) | INTAKE (1-line) -> IMPLEMENTATION -> SHIP | Minimal: commit message only |
+| 2 (Considered) | INTAKE -> EVALUATION (quick RICE) -> IMPLEMENTATION -> QA (smoke test) -> SHIP | One-page feature doc |
+| 3 (Thorough) | Full 10-stage lifecycle, abbreviated specs | All templates, sections can be brief |
+| 4 (Rigorous) | Full 10-stage lifecycle, complete specs | All templates filled completely |
+| 5 (Exhaustive) | Full lifecycle + cross-functional review + ADR + post-ship retro | Full documentation, decision records |
+
+**Rule**: Stages are never invented — they are scaled. Depth 1-2 compresses the pipeline; Depth 3+ runs it fully. The depth assessment happens once at INTAKE and governs the entire lifecycle for that feature.
+
+---
+
 *This lifecycle applies to ALL features regardless of size. For tiny features (< 2 hours), stages can be abbreviated but not skipped. Every stage must produce at least a one-line entry in the feature's documentation.*

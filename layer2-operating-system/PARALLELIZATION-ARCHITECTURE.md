@@ -316,7 +316,23 @@ This feeds the recursive estimation engine — over time, wave estimates improve
 
 ---
 
-## 8. Enforcement
+## 8. Depth Integration
+
+Parallelization overhead is only justified at sufficient task depth. The Adaptive Protocol Engine (PROTO-000) depth assessment gates whether parallelization applies.
+
+| Depth | Parallelization Behavior |
+|-------|--------------------------|
+| 1 (Surface) | Sequential. Single-task execution, no wave dispatch. |
+| 2 (Considered) | Sequential. Multi-step but linear — parallelization overhead exceeds benefit. |
+| 3 (Thorough) | **Check parallelization gate.** If 2+ independent tasks exist, apply Bernstein conditions and dispatch as wave. |
+| 4 (Rigorous) | Mandatory gate check. Wave estimation required before dispatch. Full BSP model. |
+| 5 (Exhaustive) | Full model: wave estimation, snapshot isolation, post-merge validation, wave-level accuracy tracking. |
+
+**Rule**: At Depth 1-2, skip Section 1-6 entirely — just execute. At Depth 3+, the Parallelization Gate in TASK-LIFECYCLE.md is active.
+
+---
+
+## 9. Enforcement
 
 | Rule | Level | Behavior |
 |------|-------|----------|

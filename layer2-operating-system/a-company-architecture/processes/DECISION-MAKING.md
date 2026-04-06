@@ -201,6 +201,22 @@ When escalating, provide:
 
 ---
 
+## Depth Integration
+
+The Adaptive Protocol Engine (PROTO-000) depth assessment determines how much decision process is required.
+
+| Depth | Decision Process |
+|-------|-----------------|
+| 1 (Surface) | Decide immediately. No ADR. Log in commit message if needed. |
+| 2 (Considered) | Decide with brief rationale. One-line entry in decision log. |
+| 3 (Thorough) | Full decision framework (Section "For Any Non-Trivial Decision"). ADR required for Category 2+. |
+| 4 (Rigorous) | Full ADR with all sections. Cross-department input required. |
+| 5 (Exhaustive) | Full ADR + reversibility analysis + follow-up tracking + monthly review inclusion. |
+
+**Rule**: Depth 1-2 decisions are fast and lightweight — the cost of deciding should not exceed the cost of reversing. Depth 3+ decisions use the full template and are logged to `org/decisions/`.
+
+---
+
 ## Anti-Patterns to Avoid
 
 1. **Decision paralysis**: Spending more time deciding than the decision is worth. If effort to decide > effort to reverse, just pick one.

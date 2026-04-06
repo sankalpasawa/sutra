@@ -80,6 +80,22 @@ Sub-agents       → Within the task they were delegated
 
 No agent modifies a layer above itself without going through the feedback protocol.
 
+## Depth-Based Agent Behavior
+
+The Adaptive Protocol Engine (PROTO-000) depth assessment modulates how strictly agents follow protocols.
+
+| Depth | Agent Behavior |
+|-------|---------------|
+| 1 (Surface) | Execute directly. No coordination, no delegation, no escalation unless blocked. |
+| 2 (Considered) | Execute with lightweight self-assessment. Escalate only on uncertainty. |
+| 3 (Thorough) | Follow full protocol: coordination rules, delegation boundaries, escalation table. |
+| 4 (Rigorous) | Full protocol + structured output for every sub-agent + post-task audit. |
+| 5 (Exhaustive) | Full protocol + cross-agent dependency analysis + authority hierarchy enforcement + incentive conflict resolution. |
+
+**Rule**: Depth 1-2 agents act autonomously within their scope. Depth 3+ agents follow the coordination, escalation, and delegation rules defined above.
+
+---
+
 ## Agent Incentive Awareness
 
 Each department agent has an incentive (from holding/AGENT-INCENTIVES.md). Productive tension happens when incentives conflict:
