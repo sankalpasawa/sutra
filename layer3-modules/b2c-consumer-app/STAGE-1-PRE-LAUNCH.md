@@ -25,6 +25,20 @@ This is the minimal operating system for DayFlow's current stage. Everything els
 12. **What broke?** Any bugs or regressions. Feed back to Sutra as learning.
 13. **What's next?** Top 3 items from TODO.md Layer 2 (DayFlow P0).
 
+## Depth by Stage
+
+The depth system (Layer 2) controls how thoroughly each task is executed. Modules activate different depth ranges as the company matures.
+
+| Stage | Default Depth | When to use higher |
+|-------|--------------|-------------------|
+| **Stage 1 — Pre-Launch** (current) | 1-3 | Depth 3 for architecture decisions, data model changes |
+| **Stage 2 — Beta** (25+ users) | 2-4 | Depth 4 for user-facing flows, security, data migrations |
+| **Stage 3 — Growth** (scaling) | 2-5 | Depth 5 for compliance, performance-critical paths, pricing |
+
+At Stage 1, most tasks are Depth 1-2. Only reach for Depth 3 when the decision is hard to reverse.
+
+---
+
 ## Functions Active at This Stage
 
 | Function | What it does now | What it does NOT do yet |

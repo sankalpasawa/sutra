@@ -28,6 +28,20 @@ An AI agent is fundamentally different from a consumer app. The product IS the m
 13. **What's next?** Top 3 items from TODO.md.
 14. **Cost review.** Total spend, cost-per-interaction trend, model usage breakdown.
 
+## Depth by Stage
+
+The depth system (Layer 2) controls how thoroughly each task is executed. AI agent products require slightly higher default depths than consumer apps because failures are probabilistic and cost-bearing.
+
+| Stage | Default Depth | When to use higher |
+|-------|--------------|-------------------|
+| **Stage 1 — Pre-Launch** (current) | 1-3 | Depth 3 for prompt engineering, safety boundaries, cost architecture |
+| **Stage 2 — Beta** (25+ users) | 2-4 | Depth 4 for eval suites, multi-model routing, user-facing conversation UX |
+| **Stage 3 — Growth** (scaling) | 2-5 | Depth 5 for compliance, red-teaming, cost optimization at scale |
+
+At Stage 1, most tasks are Depth 1-2. Reach for Depth 3 when the decision affects model behavior, safety, or per-interaction cost.
+
+---
+
 ## Functions Active at This Stage
 
 | Function | What it does now | What it does NOT do yet |
