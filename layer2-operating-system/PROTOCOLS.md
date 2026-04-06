@@ -4,25 +4,25 @@ Executable rules compiled from Asawa + Sutra principles. Every protocol has: tri
 
 ## Protocol Index
 
-| ID | Name | Type | Enf. | Trigger Summary |
-|----|------|------|------|-----------------|
-| PROTO-000 | Protocol Must Ship With Implementation | Constitutional | HARD | Any new or changed protocol |
-| PROTO-001 | Structure Before Creation | Convergent | SOFT | New dir/file at org level |
-| PROTO-002 | Wait for Parallel Completion | Constitutional | HARD | Orchestrator writing before agents finish |
-| PROTO-003 | Free Tier First | Constitutional | HARD | Selecting a service/provider |
-| PROTO-004 | Keys in Env Vars Only | Constitutional | HARD | Configuring API key or secret |
-| PROTO-005 | Self-Assess Before Foundational Work | Constitutional | SOFT | Creating/modifying foundational doc |
-| PROTO-006 | Process Discipline | Constitutional | HARD | Agent receives task or cannot complete process step |
-| PROTO-007 | One Metric Per Feature | Federal | SOFT | Shipping a feature |
-| PROTO-008 | Follow the Sprint Sequence | Federal | SOFT | Starting next task after completion |
-| PROTO-009 | Narration Is Not Artifact | Constitutional | HARD | Executing a process pipeline |
-| PROTO-010 | Version Focus | Constitutional | HARD | File grows unboundedly over time |
-| PROTO-011 | Company Independence | Constitutional | HARD | Cross-company synergy or holding co making product decisions |
-| PROTO-012 | Ownership Model | Convergent | SOFT | Selling a company or founder operating instead of governing |
-| PROTO-013 | Sutra Version Deploy | Federal | SOFT | New Sutra version released |
-| PROTO-014 | Sutra Version Check | Federal | SOFT | Client company session starts |
-| PROTO-015 | Verify Before Commit | Constitutional | HARD | Any commit to a company repo |
-| PROTO-016 | Root Cause on Founder Correction | Constitutional | HARD | Founder points out a miss |
+| ID | Name | Type | Enf. | Status | Mechanism |
+|----|------|------|------|--------|-----------|
+| PROTO-000 | Every Change Ships With Implementation | Constitutional | HARD | SHIPPED | memory |
+| PROTO-001 | Structure Before Creation | Convergent | SOFT | SHIPPED | dispatcher check 4 |
+| PROTO-002 | Wait for Parallel Completion | Constitutional | HARD | SHIPPED | agent-completion-check.sh |
+| PROTO-003 | Free Tier First | Constitutional | HARD | SHIPPED | onboarding review (advisory) |
+| PROTO-004 | Keys in Env Vars Only | Constitutional | HARD | PARTIAL | pre-commit grep (not automated) |
+| PROTO-005 | Self-Assess Before Foundational Work | Constitutional | SOFT | PARTIAL | DayFlow has hook, Asawa doesn't |
+| PROTO-006 | Process Discipline | Constitutional | HARD | PARTIAL | DayFlow process-gate.sh, Asawa none |
+| PROTO-007 | One Metric Per Feature | Federal | SOFT | EXPERIMENTAL | no mechanism |
+| PROTO-008 | Follow the Sprint Sequence | Federal | SOFT | EXPERIMENTAL | no mechanism |
+| PROTO-009 | Narration Is Not Artifact | Constitutional | HARD | PARTIAL | DayFlow process-compliance.sh |
+| PROTO-010 | Version Focus | Constitutional | HARD | SHIPPED | session-start file loading |
+| PROTO-011 | Company Independence | Constitutional | HARD | SHIPPED | boundary hooks (exit 2) |
+| PROTO-012 | Ownership Model | Convergent | SOFT | SHIPPED | advisory (session start) |
+| PROTO-013 | Sutra Version Deploy | Federal | SOFT | SHIPPED | verify-os-deploy.sh + manual |
+| PROTO-014 | Sutra Version Check | Federal | SOFT | PARTIAL | DayFlow CLAUDE.md only |
+| PROTO-015 | Verify Before Commit | Constitutional | HARD | SHIPPED | memory + proportional checks |
+| PROTO-016 | Root Cause on Founder Correction | Constitutional | HARD | SHIPPED | memory |
 
 Types: **Constitutional** (Asawa-locked, no override) | **Federal** (Sutra, override within bounds) | **Convergent** (both, rule locked, method flexible)
 
@@ -30,47 +30,56 @@ Types: **Constitutional** (Asawa-locked, no override) | **Federal** (Sutra, over
 
 ## ───── DETAIL: Full definitions ─────
 
-### PROTO-000: Protocol Must Ship With Implementation
+### PROTO-000: Every Change Must Ship With Implementation
 ```
 constitutional | [Asawa P0, P9, D11] | HARD
-trigger: Any new protocol created OR any existing protocol changed
-check:   Implementation shipped alongside the protocol? → proceed. Just docs? → BLOCK.
+trigger: Any change that affects how companies operate
+check:   4-part rule satisfied? → ship. Any part missing? → mark EXPERIMENTAL.
 
-A protocol without implementation is prose, not process.
-This is the meta-protocol — it governs all other protocols.
+This is the meta-protocol. It governs everything below.
+A change without implementation is prose, not process.
 
-WHEN A NEW PROTOCOL IS CREATED, it must ship with:
+APPLIES TO ALL CHANGE TYPES:
 
-  1. THE WORDS: protocol definition in PROTOCOLS.md (the what)
-  2. THE MECHANISM: at least one of:
-     - Hook that enforces it (mechanical)
-     - CLAUDE.md instruction that triggers it (structural)
-     - Manifest check that verifies it (verification)
-     - Memory/feedback entry that reminds of it (advisory)
-  3. THE TEST: evidence that the mechanism works
-     - Hook: run it, show it blocks/allows correctly
-     - Instruction: show a session producing the behavior
-     - Manifest: run verify script, show it checks this protocol
-  4. THE DEPLOYMENT: mechanism deployed to affected companies
-     - Not just in Sutra source — in the actual company repos
+  1. New/changed PROTOCOL       → 4-part rule below
+  2. New/changed PRINCIPLE      → must flow downstream (verify-recursive-flow.sh)
+  3. New/changed DIRECTION      → must encode TRIGGER/CHECK/ENFORCEMENT
+  4. ENGINE UPDATE              → must deploy to companies, content verified
+  5. LIFECYCLE CHANGE           → must update SUTRA-CONFIG in companies
+  6. NEW FOUNDING DOCTRINE      → must cascade Doctrine > Asawa > Sutra > Companies
+  7. MANIFEST CHANGE            → must re-verify all companies against new manifest
+  8. HOOK CHANGE                → must re-test, re-register, re-deploy
 
-WHEN AN EXISTING PROTOCOL IS CHANGED:
-  Same 4 requirements. Update the mechanism, re-test, re-deploy.
+THE 4-PART RULE (for every change type):
 
-CHECKLIST (must all be YES before the protocol commit):
-  [ ] Words written in PROTOCOLS.md
-  [ ] Mechanism exists (hook / instruction / manifest check / memory)
-  [ ] Mechanism tested (evidence it works)
-  [ ] Deployed to affected companies
+  1. DEFINED:      written in the right file
+  2. IMPLEMENTED:  mechanism exists (hook / instruction / manifest / memory)
+  3. TESTED:       evidence the mechanism works
+  4. DEPLOYED:     mechanism active in affected companies
 
-If any is NO, the protocol is a draft, not shipped. Mark it
-EXPERIMENTAL and schedule implementation.
+  If any part is missing → mark EXPERIMENTAL, schedule implementation.
 
-origin: 2026-04-06. Entire session spent creating protocols
-        (PROTO-013 through PROTO-016) that were documented but
-        not implemented. Modes removed without tests. Finding
-        Resolution Gate written but no infrastructure. Founder
-        repeatedly asked "but is it actually implemented?"
+WHAT SHIFTS ON CHANGE:
+
+  When anything above changes, the manifest (MANIFEST-v{version}.md)
+  must be updated. The manifest IS the expected state. If the manifest
+  doesn't reflect the change, the change doesn't exist from a
+  deployment perspective.
+
+  Deployment is always verified against the manifest. Binary:
+  company matches manifest = DEPLOYED. Any mismatch = NOT DEPLOYED.
+
+PROTOCOL STATUS LABELS:
+
+  SHIPPED:       all 4 parts satisfied
+  PARTIAL:       words + mechanism exist, test or deploy incomplete
+  EXPERIMENTAL:  words exist, mechanism/test/deploy incomplete
+  PROSE:         words only, no mechanism at all
+
+origin: 2026-04-06. Session created 7 protocols, most without
+        implementation. Founder: "is it actually implemented?"
+        Audit: 11 of 17 protocols had gaps. Root cause: no rule
+        requiring implementation alongside documentation.
 ```
 
 ### PROTO-001: Structure Before Creation
@@ -448,18 +457,22 @@ origin: 2026-04-06. Multiple instances during session where founder
 
 ## Enforcement Map
 
-| Protocol | Hook |
-|----------|------|
-| 001 | new-path-detector.sh |
-| 002 | agent-completion-check.sh |
-| 003 | Onboarding review |
-| 004 | Pre-commit grep |
-| 005 | self-assessment.sh |
-| 006, 009 | process-gate.sh |
-| 007 | ship-metric-check.sh (future) |
-| 008 | sprint-sequence-check.sh (future) |
-| 010 | Session-start file loading |
-| 011 | process-gate.sh |
-| 012 | Session-start advisory |
-| 013 | Manual (CEO of Asawa/Sutra runs after version bump) |
-| 014 | Client CLAUDE.md session start instructions |
+| Protocol | Mechanism | Where | Status |
+|----------|-----------|-------|--------|
+| 000 | memory entry | all sessions | ACTIVE |
+| 001 | dispatcher-pretool.sh check 4 | Asawa | ACTIVE |
+| 002 | agent-completion-check.sh | Asawa (PostToolUse) | ACTIVE |
+| 003 | onboarding review | CLIENT-ONBOARDING.md | ACTIVE (manual) |
+| 004 | pre-commit grep | stated but not automated | NEEDS HOOK |
+| 005 | self-assessment.sh | DayFlow has it, Asawa doesn't | PARTIAL |
+| 006 | process-gate.sh | DayFlow has it, Asawa doesn't | PARTIAL |
+| 007 | — | — | NOT BUILT |
+| 008 | — | — | NOT BUILT |
+| 009 | process-compliance.sh | DayFlow has it, Asawa doesn't | PARTIAL |
+| 010 | CLAUDE.md session start | all companies | ACTIVE |
+| 011 | enforce-boundaries.sh | all companies (exit 2) | ACTIVE |
+| 012 | advisory in session start | CLAUDE.md | ACTIVE |
+| 013 | verify-os-deploy.sh + manual | holding/hooks/ | ACTIVE |
+| 014 | CLAUDE.md instruction | DayFlow only | PARTIAL |
+| 015 | memory entry | all sessions | ACTIVE |
+| 016 | memory entry | all sessions | ACTIVE |
