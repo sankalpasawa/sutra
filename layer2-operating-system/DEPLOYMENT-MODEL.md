@@ -185,8 +185,89 @@ PROTO-013 Phase 5 (Deprecation) is reverse deployment — L5 → L4 → L3 → L
 
 ---
 
+## Proof Artifacts (every principle names its evidence)
+
+Borrowed from ISO/SOC2: documentation without named evidence is theater. Each principle, protocol, and feature must declare what PROVES it's implemented. Not "exists in file" — "produced this artifact in a real session."
+
+| Principle/Feature | Proof Artifact | Where to Find It |
+|-------------------|---------------|-----------------|
+| P0 Customer Focus | Zero unexplained jargon in session output | Session transcript review |
+| P9 Don't Hardcode | Company-specific params in SUTRA-CONFIG, not in engine | Grep engine for hardcoded company names |
+| D26 Depth System | `depth_selected` entries in estimation-log.jsonl | `grep depth_selected os/engines/estimation-log.jsonl` |
+| PROTO-014 Version Check | Version comparison output at session start | Session transcript first 20 lines |
+| Estimation Engine | `estimated_tokens` + `actual_tokens` entries in log | `wc -l os/engines/estimation-log.jsonl` |
+| Triage Logging | `triage_class` entries in estimation log | `grep triage_class os/engines/estimation-log.jsonl` |
+| Feedback Loop | Files in `os/feedback-to-sutra/` | `ls os/feedback-to-sutra/*.md` |
+| Input Routing | Classification block before actions | Session transcript |
+| Boundary Isolation | Hook blocks edit outside company dir | `bash .claude/hooks/enforce-boundaries.sh` with outside path |
+
+If a principle has no named proof artifact, it is not deployable — it's just prose.
+
+---
+
+## Briefback Pattern (from military doctrine)
+
+Before executing any task that implements a principle, the agent RESTATES which principle it's applying and why. This is the military "briefback" — subordinates explain the plan back before executing.
+
+In practice: the depth assessment block IS a briefback. "TASK: X | DEPTH: 3 | IMPACT: Y" is the agent saying "here's what I'm about to do and how deep I'm going." The principle (D26) is embodied in the output, not just referenced.
+
+Extend this: when a protocol fires, the agent should state which principle triggered it. "Input routing per D3 — every task has a Sutra path." This makes the principle-to-behavior link visible in every session.
+
+---
+
+## Desired State Convergence (from Ansible/Puppet)
+
+The verification scripts should not just CHECK state — they should CONVERGE toward it. If `verify-recursive-flow.sh` finds P0 missing from Sutra's operating model, it shouldn't just report FAIL — it should offer to fix it.
+
+Current: scripts report gaps.
+Target: scripts report gaps AND generate the fix command.
+
+```
+[FAIL] Principle 0 NOT in Sutra operating model
+       FIX: Add P0 to sutra/layer2-operating-system/OPERATING-MODEL.md
+       RUN: bash holding/hooks/fix-deployment-gap.sh P0 sutra
+```
+
+This is future work — build when the gap detection is mature enough.
+
+---
+
+## Change Provenance Format (from ITIL + Legal + Medical)
+
+Every mutation at any layer uses this format in commit messages:
+
+```
+TRIGGER: [specific event — incident, data point, feedback, OKR]
+SOURCE:  [customer | data | OKR | incident]
+EVIDENCE: [reference — session date, log entry, founder quote, metric]
+GRADE:   [I: direct evidence | II: pattern | III: judgment]
+```
+
+Evidence grading (from medical protocols):
+- **Grade I**: Direct observation or data (founder said X, log shows Y)
+- **Grade II**: Pattern across multiple instances (3 sessions showed Z)
+- **Grade III**: Judgment call with rationale (no direct evidence, but reasoning is...)
+
+Grade III changes are provisional — they should be re-evaluated after 5 uses. Grade I changes are permanent unless contradicted by new Grade I evidence.
+
+---
+
 ## Origin
 
-Designed 2026-04-06. Triggered by: OS deployed to 5 companies but only L1 (text) was verified. Principle 0 (Customer Focus) existed in Founding Doctrine but flowed to zero downstream files. The `verify-recursive-flow.sh` script caught 2 gaps, proving L1 verification works. L2-L5 verification did not exist.
+Designed 2026-04-06.
 
-Informed by: ISO/SOC2 audit chains (policy → procedure → evidence), Toyota gemba walks (go see the actual work), Ansible desired-state drift detection, franchise inspection cycles, ITIL change management provenance.
+TRIGGER: OS deployed to 5 companies but only L1 (text) verified. P0 had zero downstream flow.
+SOURCE: data (deployment depth audit)
+EVIDENCE: verify-recursive-flow.sh caught 2/27 gaps. L3 had 3 triage entries total across all companies.
+GRADE: I (direct observation)
+
+Research sources (2026-04-06):
+- ISO/SOC2 audit chains (policy > control > procedure > evidence)
+- Military doctrine cascade (doctrine > OPORD > briefback > AAR)
+- Toyota gemba walks (standard at execution point, not in binder)
+- McDonald's franchise inspection (binary checklist, score, coach)
+- Ansible/Puppet desired-state convergence (declare, enforce, detect drift)
+- ITIL change management (trigger > justification > approval > linkage)
+- Medical protocol updates (evidence-graded triggers, citation chains)
+- Legal regulatory process (legislative intent, RIA, notice-and-comment)
+- Git/RFC/ADR provenance (conventional commits, linked issues, decision records)
