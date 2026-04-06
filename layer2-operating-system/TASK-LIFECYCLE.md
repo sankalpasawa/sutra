@@ -188,7 +188,16 @@ MEASURE feeds two systems:
 - **ESTIMATION-ENGINE.md** receives the accuracy data (ESTIMATION-LOG.jsonl)
 - **DIRECTION-ENFORCEMENT.md** receives violation reports
 
-At Level 1, MEASURE is "log the result." At Level 4, it's a full retrospective with process updates.
+At Depth 1, MEASURE is "log the result." At Depth 4-5, it's a full retrospective with process updates.
+
+**Finding Resolution Gate (Depth 4-5, HARD)**: When EXECUTE produced a multi-finding audit (design QA, security scan, code review with N issues), MEASURE MUST verify each finding individually before the task is marked complete. For each finding: provide resolution evidence (screenshot diff, test output, or explicit "confirmed visually/manually"). Partial fixes on compound problems are the highest-risk failure mode for AI agents — fixing 8 of 9 issues and declaring victory is worse than fixing 0, because it creates false confidence.
+
+ENFORCEMENT: HARD at Depth 4-5. SOFT at Depth 2-3.
+
+Infrastructure required in each company:
+- `os/findings/` directory — stores finding tracker files per task
+- Each finding file: `{date}-{task}.md` with finding ID, status, evidence
+- MEASURE cannot mark task complete if any finding lacks evidence
 
 **ADR Archival**: If an ADR was produced in PLAN, MEASURE confirms the decision held (or documents why it changed during EXECUTE) and ensures the ADR is committed to `org/decisions/`.
 
