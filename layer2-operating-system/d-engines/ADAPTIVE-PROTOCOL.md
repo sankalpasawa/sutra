@@ -1,18 +1,18 @@
 # Sutra — Adaptive Protocol Engine v3
 
-ENFORCEMENT: HARD for Tier 2+. The engine MUST run before every task. Founder can override the selected gear (up or down) but must acknowledge.
+ENFORCEMENT: HARD for Tier 2+. The engine MUST run before every task. Founder can override the selected depth (up or down) but must acknowledge.
 
 ---
 
 ## Purpose
 
-> **Governing Principle**: The depth of process must match the task, not the company size. A button change in a 10,000-user app is still Gear 1 if it affects one component.
+> **Governing Principle**: The depth of process must match the task, not the company size. A button change in a 10,000-user app is still Depth 1 if it affects one component.
 
-The Adaptive Protocol Engine selects the gear for every task. The gear controls **task decomposition granularity** — how finely a task is broken down before the LLM executes each piece.
+The Adaptive Protocol Engine selects the depth for every task. The depth controls **task decomposition granularity** — how finely a task is broken down before the LLM executes each piece.
 
 ### The Core Trade-off: Speed vs Precision
 
-Speed and precision cannot be simultaneously maximized. The more precisely you decompose a task (higher gear), the slower you move. The faster you move (lower gear), the less precise your output. The total cognitive budget per unit of time is roughly constant.
+Speed and precision cannot be simultaneously maximized. The more precisely you decompose a task (higher depth), the slower you move. The faster you move (lower depth), the less precise your output. The total cognitive budget per unit of time is roughly constant.
 
 The engine's job: **given this task, where on the speed-precision curve should you sit?**
 
@@ -23,15 +23,15 @@ Speed <===============================> Precision
           then do  then do   then do    cascade
 ```
 
-That number IS the gear. Everything else — gates, parameters, scoring — is internal machinery to arrive at that single number.
+That number IS the depth. Everything else — gates, parameters, scoring — is internal machinery to arrive at that single number.
 
 ---
 
-## The Five Gears
+## The Five Depths
 
-Each gear adds one layer of thinking before code. The process is always the same — LLM does a task. What changes is how fine-grained you decompose before handing it to the LLM.
+Each depth level adds one layer of thinking before code. The process is always the same — LLM does a task. What changes is how fine-grained you decompose before handing it to the LLM.
 
-### Gear 1: Direct
+### Depth 1: Direct
 
 **LLM --> code --> done.**
 
@@ -39,15 +39,15 @@ Zero intermediate artifacts. The answer is obvious. No decomposition needed.
 
 **Example:** "Change this button color." "Fix this typo." "Update this copy."
 
-**PRD at Gear 1:** "Write a PRD for this feature" — LLM writes the whole PRD in one shot.
+**PRD at Depth 1:** "Write a PRD for this feature" — LLM writes the whole PRD in one shot.
 
-**Code at Gear 1:** "Add a loading spinner to this component" — LLM writes the code directly.
+**Code at Depth 1:** "Add a loading spinner to this component" — LLM writes the code directly.
 
 **What gets logged:** Task name, time spent, files changed. One line in LEARN.md if anything surprised you.
 
 **Time budget:** Minutes.
 
-### Gear 2: Think Then Do
+### Depth 2: Think Then Do
 
 **Estimate --> code --> verify.**
 
@@ -55,15 +55,15 @@ One layer of analysis. Scope the work, sanity-check the approach, then execute. 
 
 **Example:** "Add a new card component following the existing pattern." "Integrate this SDK — docs exist, follow them."
 
-**PRD at Gear 2:** Outline the sections first, then write the PRD. Quick review of the outline before committing.
+**PRD at Depth 2:** Outline the sections first, then write the PRD. Quick review of the outline before committing.
 
-**Code at Gear 2:** Estimate files affected, check for existing patterns, then build. Verify with a build/test.
+**Code at Depth 2:** Estimate files affected, check for existing patterns, then build. Verify with a build/test.
 
-**What gets logged:** Estimation vs actual. LEARN.md entry with gear evaluation.
+**What gets logged:** Estimation vs actual. LEARN.md entry with depth evaluation.
 
 **Time budget:** Hours.
 
-### Gear 3: Research Then Plan Then Do
+### Depth 3: Research Then Plan Then Do
 
 **Research --> plan --> code --> test --> review.**
 
@@ -71,15 +71,15 @@ Two layers before code. Map the territory first. Understand what exists, what's 
 
 **Example:** "Build content moderation. What should we moderate?" "Redesign onboarding — will users complete it?"
 
-**PRD at Gear 3:** Research the problem space, identify comparable products, outline sections, write each section with evidence, review the whole document.
+**PRD at Depth 3:** Research the problem space, identify comparable products, outline sections, write each section with evidence, review the whole document.
 
-**Code at Gear 3:** Research approaches, write a spec/plan, implement against the spec, test, review before shipping.
+**Code at Depth 3:** Research approaches, write a spec/plan, implement against the spec, test, review before shipping.
 
 **What gets logged:** Research findings. Plan document. Review notes. Estimation accuracy. Full metrics.
 
 **Time budget:** Days.
 
-### Gear 4: Architect Then Research Then Plan Then Do
+### Depth 4: Architect Then Research Then Plan Then Do
 
 **HLD --> research --> LLD --> code --> test --> staged verify.**
 
@@ -87,15 +87,15 @@ Three layers. System-level thinking before touching code. High-level design firs
 
 **Example:** "Migrate the database schema across all services." "Build the auth system from scratch."
 
-**PRD at Gear 4:** Stakeholder analysis, market research, competitive analysis, problem decomposition, section-by-section writing with sub-sections individually crafted, cross-reference review, consistency check.
+**PRD at Depth 4:** Stakeholder analysis, market research, competitive analysis, problem decomposition, section-by-section writing with sub-sections individually crafted, cross-reference review, consistency check.
 
-**Code at Gear 4:** HLD defining architecture, research into each component, LLD per component, implementation per LLD, tests per component, staged rollout with verification at each stage.
+**Code at Depth 4:** HLD defining architecture, research into each component, LLD per component, implementation per LLD, tests per component, staged rollout with verification at each stage.
 
-**What gets logged:** Everything from Gear 3, plus: architecture documents, rollout plan, verification results.
+**What gets logged:** Everything from Depth 3, plus: architecture documents, rollout plan, verification results.
 
 **Time budget:** Days to weeks.
 
-### Gear 5: Full Cascade
+### Depth 5: Full Cascade
 
 **Domain experts --> market research --> architecture (HLD) --> detailed design (LLD) --> implementation --> multi-stage verification --> retrospective.**
 
@@ -103,9 +103,9 @@ Maximum depth. Every layer of thinking activated. Each sub-area gets its own dec
 
 **Example:** "Build the payment infrastructure." "Design the company's data architecture." "Create a new product vertical."
 
-**PRD at Gear 5:** Domain expert research, market landscape analysis, user research synthesis, competitive feature matrix, problem decomposition into sub-problems, each sub-problem gets its own mini-PRD, cross-references validated, success metrics defined per section, acceptance criteria per sub-section.
+**PRD at Depth 5:** Domain expert research, market landscape analysis, user research synthesis, competitive feature matrix, problem decomposition into sub-problems, each sub-problem gets its own mini-PRD, cross-references validated, success metrics defined per section, acceptance criteria per sub-section.
 
-**Code at Gear 5:** Full SDLC. Expert consultation on approach, HLD with architecture decisions documented, LLD per module, implementation broken into atomic subtasks each with clear inputs/outputs, tests at unit/integration/e2e levels, staged rollout per platform, post-deploy verification, retrospective feeding back into the engine.
+**Code at Depth 5:** Full SDLC. Expert consultation on approach, HLD with architecture decisions documented, LLD per module, implementation broken into atomic subtasks each with clear inputs/outputs, tests at unit/integration/e2e levels, staged rollout per platform, post-deploy verification, retrospective feeding back into the engine.
 
 **What gets logged:** All artifacts preserved. Full retrospective document. Triage evaluation.
 
@@ -115,13 +115,13 @@ Maximum depth. Every layer of thinking activated. Each sub-area gets its own dec
 
 ## The Decomposition Principle
 
-The gear doesn't change what gets built. It changes how finely you think before building.
+The depth doesn't change what gets built. It changes how finely you think before building.
 
 ```
-Gear 1: "Write a PRD for this feature"
+Depth 1: "Write a PRD for this feature"
          --> LLM writes the whole PRD
 
-Gear 5: "Write the user problem statement"
+Depth 5: "Write the user problem statement"
          "Write the success metrics"
          "Write the technical constraints"  
          "Write the edge cases for constraint #2"
@@ -129,38 +129,38 @@ Gear 5: "Write the user problem statement"
          --> LLM writes each piece with full focus
 ```
 
-Same output. Different precision. At Gear 5, you're not trusting the LLM to hold the whole problem in its head — you're decomposing it into pieces small enough that each one gets directed, focused intelligence.
+Same output. Different precision. At Depth 5, you're not trusting the LLM to hold the whole problem in its head — you're decomposing it into pieces small enough that each one gets directed, focused intelligence.
 
-**Selective depth (future evolution):** A task can run at Gear 3 overall but Gear 5 on the sensitive sub-area. The auth logic gets Gear 5 decomposition while the UI wrapper stays Gear 1. For now, the gear applies uniformly per task. Variable depth per sub-area is the next evolution.
+**Selective depth (future evolution):** A task can run at Depth 3 overall but Depth 5 on the sensitive sub-area. The auth logic gets Depth 5 decomposition while the UI wrapper stays Depth 1. For now, the depth applies uniformly per task. Variable depth per sub-area is the next evolution.
 
 ---
 
-## How The Engine Selects The Gear
+## How The Engine Selects The Depth
 
 ### Step 1: Pre-Scoring Gates
 
-Before any scoring, check for hard floors. Gates set a minimum gear — scoring can raise it higher but cannot lower it below the floor.
+Before any scoring, check for hard floors. Gates set a minimum depth — scoring can raise it higher but cannot lower it below the floor.
 
 ```
 TASK ARRIVES
     |
     |-- Does it touch auth, payments, PII, or regulatory/legal?
-    |   YES --> Floor = Gear 4. Proceed to scoring.
+    |   YES --> Floor = Depth 4. Proceed to scoring.
     |   NO  |
     |
     |-- Is there an active production incident affecting users NOW?
-    |   YES --> Floor = Gear 4 (Chaotic). Stabilize first.
+    |   YES --> Floor = Depth 4 (Chaotic). Stabilize first.
     |   NO  |
     |
     |-- Does it touch a published API, data model, or architectural boundary?
-    |   YES --> Floor = Gear 3. Precedent-setting needs research minimum.
+    |   YES --> Floor = Depth 3. Precedent-setting needs research minimum.
     |   NO  |
     |
     |-- Can the engine confidently score this task?
-    |   NO  --> Floor = Gear 3. Low confidence = research mandatory.
+    |   NO  --> Floor = Depth 3. Low confidence = research mandatory.
     |   YES |
     |
-    +-- No gate triggered. Floor = Gear 1.
+    +-- No gate triggered. Floor = Depth 1.
 ```
 
 **Gate rules:**
@@ -182,7 +182,7 @@ Classify the problem. This determines the **shape** of decomposition, not just d
 
 ### Step 3: Score the Parameters
 
-Score each 1-5. These measure what actually determines the gear:
+Score each 1-5. These measure what actually determines the depth:
 
 | # | Parameter | What It Measures | 1 | 5 |
 |---|-----------|-----------------|---|---|
@@ -197,17 +197,17 @@ Score each 1-5. These measure what actually determines the gear:
 | 9 | **Company Stage** | What's the blast radius amplifier? | Pre-launch, mistakes are free | Growth/scale, mistakes cost money |
 | 10 | **Sensitivity Floor** | Sensitive domain? | No security/data/legal touch | Auth, payments, PII, regulatory |
 
-**What does NOT determine the gear:**
+**What does NOT determine the depth:**
 - Company size alone
 - User count alone
 - Team size alone
 - How long the company has existed
 
-Company stage only matters when it **actually amplifies** blast radius. A pre-launch company's button change and a growth company's button change are both Gear 1 if blast radius is 1 component.
+Company stage only matters when it **actually amplifies** blast radius. A pre-launch company's button change and a growth company's button change are both Depth 1 if blast radius is 1 component.
 
-### Step 4: Compute the Gear
+### Step 4: Compute the Depth
 
-**This is NOT a weighted average.** A single 5 drives the gear up.
+**This is NOT a weighted average.** A single 5 drives the depth up.
 
 ```
 stakes_max     = max(Irreversibility, Blast Radius, Sensitivity Floor, Company Stage)
@@ -223,16 +223,16 @@ Cross-reference composite x problem type:
 
 | Composite | Clear | Complicated | Complex | Chaotic |
 |-----------|-------|-------------|---------|---------|
-| 1-2 | Gear 1 | Gear 2 | Gear 2 | Gear 3 |
-| 3 | Gear 2 | Gear 2 | Gear 3 | Gear 4 |
-| 4 | Gear 2 | Gear 3 | Gear 3 | Gear 4 |
-| 5 | Gear 3 | Gear 3 | Gear 4 | Gear 5 |
+| 1-2 | Depth 1 | Depth 2 | Depth 2 | Depth 3 |
+| 3 | Depth 2 | Depth 2 | Depth 3 | Depth 4 |
+| 4 | Depth 2 | Depth 3 | Depth 3 | Depth 4 |
+| 5 | Depth 3 | Depth 3 | Depth 4 | Depth 5 |
 
 ### Step 5: Apply Modifiers
 
-- **Gate floor:** Use max(candidate gear, gate floor).
-- **Appetite:** If founder limits ("30 min max"), reduce by one gear IF no gate floor active. If founder invests ("take whatever time"), raise by one gear.
-- **Chaotic at Gear 5:** Complex + composite 5 + Chaotic crisis = Gear 5. Full cascade with stabilization first.
+- **Gate floor:** Use max(candidate depth, gate floor).
+- **Appetite:** If founder limits ("30 min max"), reduce by one level IF no gate floor active. If founder invests ("take whatever time"), raise by one level.
+- **Chaotic at Depth 5:** Complex + composite 5 + Chaotic crisis = Depth 5. Full cascade with stabilization first.
 
 ### Step 6: Output
 
@@ -242,47 +242,47 @@ gate_floor: 1
 problem_type: Complicated
 parameter_scores: { causal_clarity: 2, irreversibility: 1, ... }
 composite: 3
-candidate_gear: 2
+candidate_depth: 2
 appetite_modifier: 0
-final_gear: 2
+final_depth: 2
 decomposition: "estimate scope, then build, then verify"
 ```
 
 ---
 
-## Minimum Verification Evidence Per Gear
+## Minimum Verification Evidence Per Depth
 
-| Gear | Minimum Evidence | Example |
+| Depth | Minimum Evidence | Example |
 |------|-----------------|---------|
 | 1 | None. Ship log entry suffices. | "Shipped button color change" |
 | 2 | One concrete check: build passes or feature renders. | `npm run build` exit 0 |
 | 3 | Test output or grep evidence proving it works. | "45/45 tests pass" |
 | 4 | Test output + deployment verification + rollback plan. | Tests pass + preview deploy verified |
-| 5 | All of Gear 4 + retrospective + documentation. | Full artifact chain preserved |
+| 5 | All of Depth 4 + retrospective + documentation. | Full artifact chain preserved |
 
 **The rule:** If verification says "PASS" without evidence, it violates PROTO-010. Evidence must be reproducible.
 
 ---
 
-## Protocol Activation Per Gear
+## Protocol Activation Per Depth
 
-| Gear | What Activates |
+| Depth | What Activates |
 |------|---------------|
 | 1 | Nothing — just build |
 | 2 | /estimate |
 | 3 | /estimate, /plan, /review, /qa |
 | 4 | /estimate, /plan, /review, /qa, /canary, staged rollout |
-| 5 | Everything from Gear 4 + expert research, HLD, LLD, retrospective |
+| 5 | Everything from Depth 4 + expert research, HLD, LLD, retrospective |
 
 ---
 
-## Mid-Task Gear Shifts
+## Mid-Task Depth Shifts
 
 ### Escalation (automatic):
 
-- Discover the task touches auth/payments/PII: **escalate to Gear 4 immediately**. Not overridable.
-- Discover 2x more files affected than estimated: **escalate one gear**.
-- Discover an unknown unknown: **escalate one gear**.
+- Discover the task touches auth/payments/PII: **escalate to Depth 4 immediately**. Not overridable.
+- Discover 2x more files affected than estimated: **escalate one level**.
+- Discover an unknown unknown: **escalate one level**.
 - Problem type shifts (Complicated --> Complex): **re-route using the two-axis table**.
 - Escalation adds missing decomposition layers. Does not restart from scratch.
 
@@ -300,14 +300,14 @@ The engine is Layer 3. Two layers sit above it:
 ```
 STRATEGY    "What matters"       OKRs, big rocks, vision, charters
 SELECTION   "What to do now"     Prioritization, sequencing
-EXECUTION   "How deep"           Adaptive Protocol Engine (gears)
+EXECUTION   "How deep"           Adaptive Protocol Engine (depth 1-5)
 
 Strategy picks the task.
 Selection sequences it.
-Engine picks the gear.
+Engine picks the depth.
 ```
 
-Strategy and selection also have gears — deciding "what to work on" can itself be Gear 1 ("founder says do this") through Gear 5 ("full strategic planning with market research"). The gear system is fractal.
+Strategy and selection also have depths — deciding "what to work on" can itself be Depth 1 ("founder says do this") through Depth 5 ("full strategic planning with market research"). The depth system is fractal.
 
 ---
 
@@ -315,7 +315,7 @@ Strategy and selection also have gears — deciding "what to work on" can itself
 
 Concrete examples showing the full scoring pipeline:
 
-| Task | Gate | Type | Composite | Gear | Rationale |
+| Task | Gate | Type | Composite | Depth | Rationale |
 |------|------|------|-----------|------|-----------|
 | Fix button color | none | Clear | 1 | **1** | Known, zero risk, one file |
 | Update privacy policy content | none | Clear | 2 | **1** | Known pattern, low risk |
@@ -340,8 +340,8 @@ Concrete examples showing the full scoring pipeline:
 Every task records in LEARN.md:
 
 ```yaml
-gear_selected: 3
-gear_correct: 2
+depth_selected: 3
+depth_correct: 2
 delta: -1
 triage_class: overtriage
 reason: "Familiar pattern. Research step added no information."
@@ -354,9 +354,9 @@ gate_triggered: none
 
 | Class | Definition | Risk |
 |-------|-----------|------|
-| **Undertriage** | Gear too low. Missed needed steps. | HIGH — causes bugs, rework |
-| **Correct** | Gear was right. Every step added value. | Target |
-| **Overtriage** | Gear too high. Steps wasted. | LOW — wastes time only |
+| **Undertriage** | Depth too low. Missed needed steps. | HIGH — causes bugs, rework |
+| **Correct** | Depth was right. Every step added value. | Target |
+| **Overtriage** | Depth too high. Steps wasted. | LOW — wastes time only |
 
 ### Triage targets (asymmetric):
 
@@ -435,8 +435,8 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 | Transition | Trigger | Engine Effect |
 |-----------|---------|---------------|
 | pre-launch --> beta | First real users | Locked rules reset |
-| beta --> growth | Product-market fit proven | All tasks minimum Gear 2 |
-| growth --> scale | Team > 1 or users > 1000 | Full gear range, minimum Gear 2 |
+| beta --> growth | Product-market fit proven | All tasks minimum Depth 2 |
+| growth --> scale | Team > 1 or users > 1000 | Full depth range, minimum Depth 2 |
 
 ---
 
@@ -447,9 +447,9 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 | **Receives from** | Estimation Engine | Cost, confidence, scope. Low confidence may trigger gate. |
 | **Receives from** | TODO.md / user request | Task description, priority. |
 | **Receives from** | SUTRA-CONFIG.md | Company state, founder involvement level. |
-| **Feeds into** | Agent architecture | Which skills/protocols activate per gear. |
-| **Feeds into** | LEARN.md | Gear evaluation, triage, accuracy data. |
-| **Validated by** | Effectiveness check | Post-task: was the gear right? |
+| **Feeds into** | Agent architecture | Which skills/protocols activate per depth. |
+| **Feeds into** | LEARN.md | Depth evaluation, triage, accuracy data. |
+| **Validated by** | Effectiveness check | Post-task: was the depth right? |
 | **Respects** | Sovereignty | Founder override always available, always logged. |
 
 ---
@@ -458,7 +458,7 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 
 ### HARD (Tier 2+):
 - Engine MUST run before every task.
-- Engine MUST output: gate result, problem type, scores, gear, activated protocols.
+- Engine MUST output: gate result, problem type, scores, depth, activated protocols.
 - Output MUST be visible (not silent).
 - Skipping the engine is a BLOCK violation.
 
@@ -469,7 +469,7 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 ### Founder override:
 - Override up: always allowed.
 - Override down: allowed, must acknowledge. Logged per SOVEREIGNTY.md.
-- Override doesn't change the score. Changes the executed gear. Learning loop records both.
+- Override doesn't change the score. Changes the executed depth. Learning loop records both.
 
 ---
 
@@ -479,6 +479,6 @@ v1: Maze onboarding, 2026-04-04. Two features got identical pipeline — privacy
 
 v2 (2026-04-06): Added pre-scoring gates, Cynefin classification, undertriage/overtriage tracking. Informed by 8 external frameworks: Cynefin, Wardley Mapping, Military ROE, Medical ESI, Toyota Kata, Legal Proportional Process, Spotify Model, Shape Up. Full research at `holding/research/ADAPTIVE-PROTOCOL-RESEARCH.md`.
 
-v3 (2026-04-06): Reframed around speed-precision trade-off. 4 levels --> 5 gears. Gears defined by decomposition granularity, not pipeline steps. Removed company-size floor — company stage only matters when it amplifies blast radius. Merged Progressive OS into Company State section. Three-layer model: Strategy > Selection > Execution. The gear system is fractal — applies to strategy and meta-decisions, not just code tasks.
+v3 (2026-04-06): Reframed around speed-precision trade-off. 4 levels --> 5 depths. Depths defined by decomposition granularity, not pipeline steps. Removed company-size floor — company stage only matters when it amplifies blast radius. Merged Progressive OS into Company State section. Three-layer model: Strategy > Selection > Execution. The depth system is fractal — applies to strategy and meta-decisions, not just code tasks.
 
 **Governing insight:** Speed and precision cannot be simultaneously maximized. The engine's job is to place each task at the right point on that curve.

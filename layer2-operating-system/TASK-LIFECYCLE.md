@@ -220,16 +220,74 @@ Problem type check: Was the classification correct? (clear/complicated/complex/c
 
 LEARN is what makes this lifecycle anti-bureaucratic. Process grows when needed and shrinks when proven unnecessary.
 
+### Task-to-Protocol Conversion (the missing loop)
+
+Every solved task is a candidate protocol. The first time you solve a problem, it's problem-solving (Gear 3-5). The second time, if a protocol exists, it's execution (Gear 1-2). LEARN is where this conversion happens.
+
+**After every task at Gear 3+, LEARN asks:**
+
+```
+1. Will this type of task recur?
+   NO  --> log and move on
+   YES --> proceed to step 2
+
+2. Is the solution generalizable?
+   NO  --> too context-specific, log the pattern but don't formalize
+   YES --> proceed to step 3
+
+3. Extract the protocol:
+   - TRIGGER: what signals this type of task? (e.g., "new SDK integration")
+   - PROCESS: what steps worked? (ordered, with inputs/outputs per step)
+   - GEAR: what gear should this be next time? (usually current gear - 1 or - 2)
+   - VERIFY: how do you know it worked?
+
+4. Store:
+   - If it fits an existing protocol: update that protocol with the new pattern
+   - If it's new: create a minimal protocol entry
+   - Protocol lives in: company's os/protocols/ or Sutra's PROTOCOLS.md
+     depending on whether it's company-specific or universal
+```
+
+**What a converted protocol looks like:**
+
+```yaml
+protocol: sdk-integration
+trigger: "integrate a third-party SDK with existing docs"
+gear: 2  # was Gear 3 when first solved, now Gear 2
+process:
+  - read SDK docs and changelog for breaking changes
+  - check existing integration patterns in codebase
+  - install + configure following docs
+  - verify with build + one smoke test
+  - log any gotchas for next time
+source_task: "Sentry crash reporting integration (2026-04-05)"
+times_used: 0
+last_refined: 2026-04-05
+```
+
+**Protocol maturity:**
+- **0 uses**: candidate — created from one task, untested as protocol
+- **3 uses**: proven — survived 3 applications, refine based on what varied
+- **10 uses**: locked — stable pattern, Gear 1 candidate, auto-apply
+
+**The gear drop:**
+When a protocol exists for a task type, the Adaptive Protocol Engine reads it and drops the gear. First time building auth = Gear 5. After auth protocol exists = Gear 2 (follow the protocol). After 10 uses = Gear 1 (the protocol is the task).
+
+This is how the system gets faster over time without getting sloppier. The thoroughness was already done — it's baked into the protocol. You're not skipping the thinking. You're reusing the thinking.
+
 ---
 
-## Thoroughness Levels
+## Gears (Thoroughness)
 
-| Level | Name | Triggered when | Example |
-|-------|------|---------------|---------|
-| **1** | Minimal | Low on all axes | Fix a typo. Update a button label. Change an env var. |
-| **2** | Standard | Medium on any axis | Add a new screen. Refactor a component. Write a new process doc. |
-| **3** | Thorough | High on any axis | Cross-system feature. New data model field. Third-party integration. |
-| **4** | Critical | High on ALL axes, or security/auth/data | Auth rewrite. Payment integration. Data migration. Schema redesign. |
+Gear selection is handled by the Adaptive Protocol Engine (`d-engines/ADAPTIVE-PROTOCOL.md` v3). The gear controls decomposition granularity — how finely a task is broken down before the LLM executes each piece. See the engine doc for the full scoring model.
+
+| Gear | Name | When | Example |
+|------|------|------|---------|
+| **1** | Direct | LLM knows the answer. Zero decomposition. | Fix a typo. Change a button color. |
+| **2** | Think then do | One layer of analysis before code. | Add a screen following existing pattern. SDK integration with docs. |
+| **3** | Research then plan | Two layers before code. Map territory first. | Content moderation pipeline. Onboarding redesign. |
+| **4** | Architect then build | Three layers. System-level thinking first. | Database schema migration. Auth system from scratch. |
+| **5** | Full cascade | Every layer activated. Atomic subtask decomposition. | Payment infrastructure. Company data architecture. |
 
 ### Phase Depth by Level
 
