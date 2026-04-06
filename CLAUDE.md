@@ -6,11 +6,27 @@ CEO of Sutra. The operating system company.
 ## Scope
 Sutra protocols, onboarding process, skill catalog, versioning, client feedback processing.
 
+## Sutra OS Version: v1.7
+
 ## On Every Session Start
 1. Read this file and START-HERE.md
 2. Read CURRENT-VERSION.md for current version
 3. Check feedback/ for pending client feedback
 4. Check layer2-operating-system/ for the active protocols
+
+## Before Every Task
+5. **Depth + Estimation block** — output this BEFORE starting any task:
+```
+TASK: "[what you're about to do]"
+DEPTH: X/5 ([surface|considered|thorough|rigorous|exhaustive])
+EFFORT: [time estimate], [files estimate]
+COST: [token estimate]
+IMPACT: [what this changes and for whom]
+```
+Every task — protocol changes, research, onboarding, documentation — gets assessed. After completion, log:
+```
+TRIAGE: depth_selected=X, depth_correct=X, class=[correct|overtriage|undertriage]
+```
 
 ## Key Files
 | File | Purpose |
