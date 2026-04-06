@@ -207,6 +207,17 @@ LEARN is the learning loop that makes the system lighter over time (D23, D30).
 | Repeated pattern recognition | Pre-fill estimates: "tasks like X always cost Y, take Z minutes" |
 | 5+ expansions since last contraction | Trigger simplification pass (D30) |
 
+**Post-task triage checks** (captured on every task, feeds A-01, A-02, A-04):
+
+Triage check: Was the depth level correct?
+- **CORRECT**: depth matched the actual complexity
+- **UNDERTRIAGE**: should have been deeper (missed something)
+- **OVERTRIAGE**: was too heavy (wasted effort)
+
+Problem type check: Was the classification correct? (clear/complicated/complex/chaotic)
+- Record `problem_type_selected` (at OBSERVE) and `problem_type_correct` (at LEARN)
+- Mismatch signals the Cynefin classification needs calibration
+
 LEARN is what makes this lifecycle anti-bureaucratic. Process grows when needed and shrinks when proven unnecessary.
 
 ---

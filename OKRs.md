@@ -1,315 +1,258 @@
-# Sutra OKRs
+# Sutra — Q2 2026 Big Rocks
 
 **Period**: Q2 2026 (April - June)
-**Review cadence**: Roadmap Meeting (bi-weekly for Sutra)
-**Scoring**: 0.0-1.0 per KR, 0.7 = on target
+**Sutra Version**: v1.6
+**Focus**: Validate through use, not through theory
+**Review cadence**: Bi-weekly
+**Philosophy**: The system has theoretical coverage but low practical validation. Every piece of complexity must prove it's load-bearing through real tasks. Big rocks first — OKR targets set after baselines exist.
 
 ---
 
-## Charter: Speed
+## Big Rock 1: Run The Engine On Real Tasks
 
-**Objective**: Ship features faster without quality regression
-**DRI**: Sutra Core
-**KPI**: V (Velocity)
+**Objective**: The Adaptive Protocol Engine v3 scores 20+ real tasks and the triage table has real data
+**Due**: May 15, 2026
+**Status**: Not started
 
-### KRAs (Key Result Areas)
-- Session startup latency
-- Governance overhead
-- Fast-path for simple tasks
-- Lazy loading
+### What Done Looks Like
+- 20+ tasks scored with gear selection (across any company)
+- Triage table populated with real correct/overtriage/undertriage counts
+- At least one parameter proven unnecessary (doesn't change gear) or one gap found (missing parameter)
+- At least one refinement made to the engine based on data
 
-### KPIs (Always-on Metrics)
-| Metric | Current (v1.4) | Target (v1.5) |
-|--------|---------------|---------------|
-| V_L2 (min/feature) | 24.7 | < 20 |
-| V_L3 (min/feature) | 23.0 | < 20 |
-| Governance overhead | unmeasured | < 15% |
-| Startup to first action | unmeasured | < 10s |
+### How It Works
+Every task in any session gets this before starting:
 
-### OKRs (Q2 2026: Apr-Jun)
-| KR | Target | Current Score | Status |
-|----|--------|--------------|--------|
-| Implement lazy loading for session-start files | All non-essential files deferred | 0.0 | Not started |
-| Add fast-path for L1 tasks (skip PRE/POST) | L1 tasks bypass full governance stack | 0.0 | Not started |
-| Enforce context budget per session | Governance overhead < 15% of tokens | 0.0 | Not started |
-| Audit all hooks for deferral opportunities | Reduce hook count firing at session start | 0.0 | Not started |
+```yaml
+# Gear Assessment (logged to LEARN.md or checkpoint)
+task: "description"
+gate_triggered: "none" | "auth-pii" | "precedent" | "low-confidence"
+problem_type: Clear | Complicated | Complex | Chaotic
+gear_selected: 1-5
+rationale: "one line why"
+```
 
-### Roadmap
-| # | Action | Impact | Effort | Due |
-|---|--------|--------|--------|-----|
-| 1 | Lazy loading for FOUNDER-DIRECTIONS, SYSTEM-MAP, NEW-THING-PROTOCOL | Cuts startup token load ~40% | Medium | Apr 2026 |
-| 2 | Fast-path L1 in TASK-LIFECYCLE | L1 tasks 2-3x faster | Medium | May 2026 |
-| 3 | Context budget tracking in checkpoint JSON | Enables measurement | Low | May 2026 |
-| 4 | Hook audit and deferral pass | Reduces unnecessary session-start work | Low | Jun 2026 |
+After completion:
 
----
+```yaml
+# Triage (appended)
+gear_correct: 1-5
+triage_class: correct | overtriage | undertriage
+reason: "what was missed or wasted"
+```
 
-## Charter: Simplicity
+### Triage Table (fills as tasks complete)
+| Task Category | Tasks | Correct | Over | Under | Accuracy |
+|---------------|-------|---------|------|-------|----------|
+| | | | | | |
 
-**Objective**: Reduce system complexity without losing capability
-**DRI**: Sutra Core
-**KPI**: C (Cognitive Load)
+### Targets (from v3 spec)
+| Metric | Target |
+|--------|--------|
+| Undertriage rate | < 5% |
+| Overtriage rate | < 30% |
+| Correct rate | > 65% |
 
-### KRAs (Key Result Areas)
-- File count
-- Doc verbosity
-- Protocol consolidation
-- Progressive disclosure
+### Milestones
+| # | Action | Status |
+|---|--------|--------|
+| 1 | Run gear assessment on next 5 tasks (any company) | Not started |
+| 2 | After 5 tasks: first triage review — any patterns? | Not started |
+| 3 | Run gear assessment on tasks 6-15 | Not started |
+| 4 | After 15 tasks: which parameters changed the gear? which didn't? | Not started |
+| 5 | Run tasks 16-20. Apply one refinement from the data. | Not started |
+| 6 | Compile triage table. Report accuracy. | Not started |
 
-### KPIs (Always-on Metrics)
-| Metric | Current (v1.4) | Target (v1.5) |
-|--------|---------------|---------------|
-| C index | 4,621 | < 4,000 |
-| L2 file count | 35 | < 28 |
-| Avg words per governance file | 1,393 | < 1,200 |
-
-### OKRs (Q2 2026: Apr-Jun)
-| KR | Target | Current Score | Status |
-|----|--------|--------------|--------|
-| Run L2 contraction cycle (merge overlapping docs) | Reduce L2 file count by 20% | 0.0 | Not started |
-| Implement progressive OS loading | Context loaded by task scope, not globally | 0.0 | Not started |
-| Merge overlapping protocols into unified docs | Fewer files, same coverage | 0.0 | Not started |
-| Compress verbose governance docs | Avg words/file < 1,200 | 0.0 | Not started |
-
-### Roadmap
-| # | Action | Impact | Effort | Due |
-|---|--------|--------|--------|-----|
-| 1 | L2 contraction cycle — identify merge candidates | Reduces file count, lowers C | High | Apr 2026 |
-| 2 | Progressive OS — load context by task scope | Sessions only see what they need | High | May 2026 |
-| 3 | Merge overlapping docs (e.g., charters into OKRs) | Fewer files, clearer ownership | Medium | May 2026 |
-| 4 | Doc compression pass — tighten prose across L2 | Lower avg words/file | Low | Jun 2026 |
+### What This Unlocks
+- Know if the 10 parameters are the right 10
+- Know if 5 gears is the right number (maybe 3 is enough)
+- Know if gates catch what scoring misses (or are redundant)
+- Real numbers for the learning loop
+- The engine earns its complexity or gets simplified
 
 ---
 
-## Charter: Accuracy
+## Big Rock 2: Close The Estimation Loop
 
-**Objective**: Estimation and compliance approach reliability
-**DRI**: Sutra Core
-**KPI**: A (Accuracy)
+**Objective**: Estimate before, measure after, compare — for 20+ tasks
+**Due**: May 31, 2026
+**Status**: Not started
 
-### KRAs (Key Result Areas)
-- Estimation calibration
-- Principle compliance
-- Feedback loop tightness
+### What Done Looks Like
+- 20+ tasks have estimate vs actual logged
+- Accuracy baseline calculated per dimension (tokens, time, files)
+- The engine self-corrects on at least one category ("tasks touching X average Y tokens, not Z as estimated")
 
-### KPIs (Always-on Metrics)
-| Metric | Current (v1.4) | Target (v1.5) |
-|--------|---------------|---------------|
-| A_EWMA | 89.6% | > 92% |
-| A_mean | 77.6% | > 85% |
-| A_sigma | 23.3% | < 15% |
+### Estimation Format (before each task)
+```yaml
+# Estimate
+task: "description"
+estimated_tokens: 12K
+estimated_time: 25 min
+estimated_files: 4
+estimated_confidence: 70%
+```
 
-### OKRs (Q2 2026: Apr-Jun)
-| KR | Target | Current Score | Status |
-|----|--------|--------------|--------|
-| Close estimation feedback loop (auto-update calibration) | Calibration updates after every task | 0.0 | Not started |
-| Collect 30+ calibration data points across categories | Reduce cold-start inaccuracy | 0.0 | Not started |
-| Add principle regression tests | Compliance measured automatically | 0.0 | Not started |
-| Reduce A_sigma below 15% | Consistent estimation, not just high average | 0.0 | Not started |
+### Actuals Format (after each task)
+```yaml
+# Actuals
+actual_tokens: 18K
+actual_time: 40 min
+actual_files: 7
+accuracy_tokens: 67%
+accuracy_time: 63%
+accuracy_files: 57%
+```
 
-### Roadmap
-| # | Action | Impact | Effort | Due |
-|---|--------|--------|--------|-----|
-| 1 | Estimation feedback loop — auto-calibrate after POST | Reduces cold-start bias | High | Apr 2026 |
-| 2 | Accumulate 30+ calibration records across task types | Broadens estimation accuracy | Medium | May 2026 |
-| 3 | Principle regression test suite | Catches compliance drift | Medium | Jun 2026 |
-| 4 | Sigma analysis — identify high-variance categories | Targeted calibration fixes | Low | Jun 2026 |
+### Calibration Table (fills as tasks complete)
+| Task Category | Count | Token Accuracy | Time Accuracy | File Accuracy |
+|---------------|-------|---------------|--------------|--------------|
+| | | | | |
 
----
+### Milestones
+| # | Action | Status |
+|---|--------|--------|
+| 1 | Add estimation to the first 5 tasks (alongside Big Rock 1) | Not started |
+| 2 | After 5 tasks: first calibration check | Not started |
+| 3 | Continue for tasks 6-15 | Not started |
+| 4 | After 15: identify highest-variance categories | Not started |
+| 5 | Apply one calibration fix. Run tasks 16-20. | Not started |
+| 6 | Calculate accuracy baselines. Report. | Not started |
 
-## Charter: Efficiency
-
-**Objective**: Deliver more value per token and dollar spent
-**DRI**: Sutra Core
-**KPI**: U (Unit Cost)
-
-### KRAs (Key Result Areas)
-- Token optimization
-- Context window management
-- Agent dispatch efficiency
-
-### KPIs (Always-on Metrics)
-| Metric | Current (v1.4) | Target (v1.5) |
-|--------|---------------|---------------|
-| U_tokens (per feature) | 47.5K | < 40K |
-| U_cost (per feature) | $1.47 | < $1.20 |
-
-### OKRs (Q2 2026: Apr-Jun)
-| KR | Target | Current Score | Status |
-|----|--------|--------------|--------|
-| Enforce context budget — cap governance token spend | Governance < 15% of total tokens | 0.0 | Not started |
-| Smarter agent dispatch — avoid unnecessary sub-agents | Reduce overhead on simple tasks | 0.0 | Not started |
-| Implement context compression for long sessions | Fewer tokens for same output quality | 0.0 | Not started |
-| Track U per-level to isolate efficiency from task mix | Level-segmented cost reporting | 0.0 | Not started |
-
-### Roadmap
-| # | Action | Impact | Effort | Due |
-|---|--------|--------|--------|-----|
-| 1 | Context budget enforcement in session hooks | Directly reduces token waste | Medium | Apr 2026 |
-| 2 | Smarter agent dispatch — inline L1, dispatch L3+ | Saves agent-startup token cost | Medium | May 2026 |
-| 3 | Compression pass — reduce governance doc tokens | Lower baseline context cost | Low | May 2026 |
-| 4 | Per-level U tracking in checkpoint JSON | Enables apples-to-apples comparison | Low | Jun 2026 |
+### What This Unlocks
+- Know what things actually cost (tokens, time) before committing
+- Catch scope creep before it happens ("estimated 4 files, already touching 8")
+- Historical calibration data for future tasks
+- Connect to gear selection: low confidence estimate = higher gear
 
 ---
 
-## Charter: Human Readability
+## Big Rock 3: Simplify Through Contraction
 
-**Objective**: Every system output earns founder confidence through clarity and visual design
-**DRI**: Sutra Core
-**KPI**: Founder confidence (qualitative), decision visibility, output scannability
+**Objective**: After 20 tasks, cut what was never used
+**Due**: June 15, 2026
+**Status**: Blocked on Big Rock 1 + 2 (needs usage data)
 
-### KRAs (Key Result Areas)
-- Decision highlighting (decisions must be boxed/bold/impossible to miss)
-- Output formatting (tables, badges, icons)
-- Document scannability (30-second comprehension test)
-- Progressive detail (summary first, depth on demand)
+### What Done Looks Like
+- Every L2 file has a usage count from the 20-task run
+- Files that were never loaded in 20 tasks are archived or merged
+- L2 file count reduced (target: based on data, not arbitrary)
+- Every remaining file was loaded at least once
 
-### KPIs (Always-on Metrics)
-| Metric | Current | Target |
-|--------|---------|--------|
-| Decision miss rate | unmeasured | 0 |
-| Time-to-comprehend per output | unmeasured | < 30s |
-| Founder asks "what?" count | unmeasured | 0 |
+### How It Works
+During Big Rock 1 and 2, track which Sutra files were actually read or referenced per task:
 
-### OKRs (Q2 2026: Apr-Jun)
-| KR | Target | Current Score | Status |
-|----|--------|--------------|--------|
-| All Roadmap Meeting decisions visually highlighted with blockquote/bold format | Decisions impossible to miss | 0.0 | Not started |
-| Every governance output passes 30-second scan test | Instant comprehension | 0.3 | Some outputs already use tables/badges |
-| Founder never misses a decision requiring input | Zero missed decisions | 0.0 | Not started |
+```yaml
+# File usage (tracked per task)
+files_loaded:
+  - ADAPTIVE-PROTOCOL.md     # gear selection
+  - TASK-LIFECYCLE.md         # pipeline reference
+  - PROTOCOLS.md              # protocol check
+files_not_needed:
+  - PARALLELIZATION-ARCHITECTURE.md
+  - DEFAULTS-ARCHITECTURE.md
+```
 
-### Roadmap
-| # | Action | Impact | Effort | Due |
-|---|--------|--------|--------|-----|
-| 1 | Update Roadmap Meeting process with decision highlighting format | Decisions visually unmissable | Low | Apr 2026 |
-| 2 | Audit all output templates for scannability | Consistent quality across outputs | Medium | May 2026 |
-| 3 | Add decision-box format to READABILITY-STANDARD.md | Codified standard for all sessions | Low | May 2026 |
+After 20 tasks, compile:
 
----
+### Usage Table (fills from Big Rock 1+2 data)
+| L2 File | Times Loaded | Times Needed | Verdict |
+|---------|-------------|-------------|---------|
+| ADAPTIVE-PROTOCOL.md | | | |
+| OPERATING-MODEL.md | | | |
+| ENFORCEMENT.md | | | |
+| PROTOCOLS.md | | | |
+| TASK-LIFECYCLE.md | | | |
+| CLIENT-ONBOARDING.md | | | |
+| READABILITY-STANDARD.md | | | |
+| PERMISSIONS-TEMPLATE.md | | | |
+| DEFAULTS-ARCHITECTURE.md | | | |
+| PARALLELIZATION-ARCHITECTURE.md | | | |
+| VERSION-UPDATES.md | | | |
+| a-company-architecture/ (7 files) | | | |
+| b-agent-architecture/ (5 files) | | | |
+| c-human-agent-interface/ (1 file) | | | |
+| d-engines/ (5 files) | | | |
+| templates/ (4 files) | | | |
 
-## Charter: Human-LLM Interaction
+### Milestones
+| # | Action | Status |
+|---|--------|--------|
+| 1 | Track file usage during Big Rock 1+2 tasks | Not started |
+| 2 | After 20 tasks: compile usage table | Not started |
+| 3 | Identify files with 0 loads — candidates for archive/merge | Not started |
+| 4 | Propose contraction plan (which files to cut/merge) | Not started |
+| 5 | Execute contraction. Update SYSTEM-MAP. | Not started |
+| 6 | Verify: no capability lost, lower token footprint | Not started |
 
-**Objective**: Every human input is routed through the system before the LLM acts
-**DRI**: Sutra Core (c-human-agent-interface/)
-**KPI**: Classification compliance rate, routing accuracy, skip rate
-
-### KRAs (Key Result Areas)
-- Input classification (every input classified before action)
-- Routing accuracy (input goes to correct protocol)
-- Enforcement (hook/protocol/skill levels)
-- 7 interaction types coverage
-
-### KPIs (Always-on Metrics)
-| Metric | Current | Target |
-|--------|---------|--------|
-| Classification compliance | unmeasured | > 90% |
-| Routing accuracy | unmeasured | > 95% |
-| Interaction type coverage | 1/7 | 7/7 |
-
-### OKRs (Q2 2026: Apr-Jun)
-| KR | Target | Current Score | Status |
-|----|--------|--------------|--------|
-| Input routing Level 2 deployed to Asawa + all clients | Full deployment | 0.1 | Protocol designed, not deployed |
-| 7/7 interaction types defined (Human↔LLM, Agent↔Agent, Session↔Session, Company↔Company, process enforcement, natural language authority, self-assessment) | Complete coverage | 0.14 | 1/7 done: Human↔LLM via INPUT-ROUTING.md |
-| Classification compliance > 90% across all sessions | Measured and enforced | 0.0 | Not measured yet |
-
-### Roadmap
-| # | Action | Impact | Effort | Due |
-|---|--------|--------|--------|-----|
-| 1 | Deploy Level 2 to CLAUDE.md | Input routing active for all sessions | Medium | Apr 2026 |
-| 2 | Research remaining 6 interaction types | Full interaction model designed | High | May 2026 |
-| 3 | Build measurement for classification compliance | Enables tracking and enforcement | Medium | Jun 2026 |
+### What This Unlocks
+- Earned simplicity — every file proves its value or gets cut
+- Lower session startup cost (fewer files to load)
+- Cleaner architecture for new sessions/agents
+- The system contracts from real evidence, not theory (D7: Expand Then Contract)
 
 ---
 
-## Charter: First-Time QA
+## Dependencies Between Big Rocks
 
-**Objective**: Every company's first deployment passes quality gates without rework
-**DRI**: Sutra Core (onboarding)
-**KPI**: First-deploy pass rate, rework count, onboarding QA coverage
+```
+Big Rock 1 (Engine on real tasks)
+  |
+  |  runs in parallel with
+  |
+Big Rock 2 (Estimation loop)
+  |
+  |  both produce usage data for
+  |
+  v
+Big Rock 3 (Simplify through contraction)
+```
 
-### KRAs (Key Result Areas)
-- Onboarding QA checklist
-- Self-check automation (grep for placeholders, DayFlow references)
-- Deployment verification
-- Post-deploy smoke test
-
-### KPIs (Always-on Metrics)
-| Metric | Current | Target |
-|--------|---------|--------|
-| First-deploy pass rate | unmeasured | 100% |
-| Rework items per onboarding | ~2-3 | < 2 |
-| Time from deploy to first working feature | unmeasured | < 1 session |
-
-### OKRs (Q2 2026: Apr-Jun)
-| KR | Target | Current Score | Status |
-|----|--------|--------------|--------|
-| Automated self-check catches 100% of placeholder/reference errors | Zero escapes | 0.3 | Manual grep exists in Phase 6 Step 12 |
-| Post-deploy smoke test runs automatically for every new company | Automated verification | 0.0 | Not started |
-| Rework items per onboarding < 2 | Near-zero rework | 0.3 | Paisa onboarding was relatively clean |
-
-### Roadmap
-| # | Action | Impact | Effort | Due |
-|---|--------|--------|--------|-----|
-| 1 | Automate Phase 6 self-check as hook | Catches placeholder errors automatically | Medium | Apr 2026 |
-| 2 | Build post-deploy smoke test | Verifies deployment end-to-end | Medium | May 2026 |
-| 3 | Track rework count per onboarding | Enables measurement and improvement | Low | Jun 2026 |
+Rocks 1 and 2 run in parallel on the same 20 tasks. Rock 3 starts after both have enough data (~15 tasks).
 
 ---
 
-## Charter: External Research
+## Archive: Previous OKR Charters
 
-**Objective**: Sutra evolves by learning from the best process frameworks, AI orchestration patterns, and operating system designs worldwide
-**DRI**: Sutra Core
+The following charters existed before the Q2 focus change. They are preserved as reference and will be re-evaluated after the measurement pass.
 
-### KRAs
-- AI/tech/market research — **weekly** cadence (AI agent orchestration, competing AI OS products, new tools/models)
-- Framework/methodology research — **bi-weekly** cadence (Cynefin, Wardley, Shape Up, Toyota Kata, military doctrine)
-- Best-in-class company operations (how Stripe, Linear, Basecamp scale processes)
+<details>
+<summary>Previous charters (click to expand)</summary>
 
-### KPIs (Always-on)
-| Metric | Current (v1.5) | Target (v2.0) |
-|--------|---------------|---------------|
-| Research docs produced | 4 (in progress via agents) | 10+ per quarter |
-| Frameworks evaluated | 8+ (Cynefin, Wardley, military, medical, Toyota, Shape Up, Spotify, legal) | 15+ |
-| Patterns adopted into Sutra | 0 (research phase) | 5+ per quarter |
+### Speed
+- Lazy loading, fast-path L1, context budgets, hook audit
+- Metrics: V_L2, V_L3, governance overhead, startup time
 
-### OKRs (Q2 2026)
-| KR | Target | Current Score | Status |
-|----|--------|--------------|--------|
-| Adaptive Protocol research complete (8 frameworks evaluated) | Research doc with synthesis | 0.3 | Agent running now |
-| Human-AI Interaction research complete | Research doc with 7 interaction types | 0.3 | Agent running now |
-| Discipline artifact chains mapped (eng/design/product) | Full artifact chain with gap analysis | 0.3 | Agent running now |
-| 5+ patterns from research adopted into Sutra protocols | Implemented and tested | 0.0 | Not started |
+### Simplicity
+- L2 contraction, progressive OS loading, protocol merging, doc compression
+- Metrics: C index, L2 file count, avg words/file
+- Note: Partially absorbed into Big Rock 3
 
-### Roadmap
-| # | Action | Impact | Effort | Due |
-|---|--------|--------|--------|-----|
-| 1 | Complete Adaptive Protocol research | High | High | Apr 2026 |
-| 2 | Complete Human-AI Interaction research | High | High | Apr 2026 |
-| 3 | Complete Discipline Artifact Chains research | High | High | Apr 2026 |
-| 4 | Synthesize research into Sutra protocol updates | High | Medium | May 2026 |
-| 5 | Scan for emerging AI OS competitors (weekly) | Medium | Low | Ongoing |
-| 6 | Framework/methodology refresh (bi-weekly) | Medium | Low | Ongoing |
+### Accuracy
+- Estimation feedback loop, 30+ calibration points, principle regression tests
+- Metrics: A_EWMA, A_mean, A_sigma
+- Note: Partially absorbed into Big Rock 2
 
----
+### Efficiency
+- Context budget enforcement, smarter agent dispatch, compression, per-level tracking
+- Metrics: U_tokens, U_cost
 
-## Charter: Revenue/Viability
+### Human Readability
+- Decision highlighting, output formatting, scannability
+- Note: Active as ongoing behavior (D1, readability gate)
 
-**Objective**: Every launched company generates revenue or proves a path to it
-**DRI**: Sutra Core
-**Status**: INACTIVE — activates when first company launches to real users
+### Human-LLM Interaction
+- Input routing deployment, 7 interaction types, compliance measurement
+- Note: Partially absorbed into Asawa Big Rock 2 (direction enforcement)
 
-### KRAs
-- Revenue generation
-- Path to monetization
-- Unit economics
+### First-Time QA
+- Automated self-checks, post-deploy smoke tests, rework tracking
 
-### KPIs (activate at launch)
-| Metric | Current | Target |
-|--------|---------|--------|
-| Companies with revenue | 0 | 1+ |
-| Companies with revenue path | 0 | all launched |
-| Time from launch to first $ | N/A | < 90 days |
+### External Research
+- Adaptive Protocol research — DONE (v3)
+- Human-AI Interaction research — partially done
+- Discipline artifact chains — not started
 
-### OKRs — set when charter activates
+### Revenue/Viability
+- INACTIVE — activates when first company launches
+</details>

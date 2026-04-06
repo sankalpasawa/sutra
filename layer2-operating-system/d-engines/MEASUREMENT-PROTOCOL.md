@@ -42,8 +42,8 @@ Each metric follows the same structure:
 | **Target** | < 10 seconds |
 | **Breach action** | If median > 15s over 5 sessions: audit session-start file loading. Defer more files. |
 | **Feeds** | Speed charter, OKR "Startup to first action < 10s" |
-| **Status** | NO |
-| **Implementation** | Add timestamp logging to SessionStart hook. Record `session_start_ts` and `first_action_ts` in checkpoint JSON. |
+| **Status** | YES -- `startup_latency_sec` field added to SESSION-CHECKPOINTS.md schema (2026-04-06). |
+| **Implementation** | Checkpoint JSON includes `startup_latency_sec` field. Populated by LLM at session end. |
 | **Effort** | LOW |
 | **Priority** | P1 |
 
@@ -142,8 +142,8 @@ Each metric follows the same structure:
 | **Target** | < 15% (from Speed charter OKR) |
 | **Breach action** | If > 20%: trigger lazy-loading review. Defer more governance files. Compress verbose ones. |
 | **Feeds** | Speed charter, Efficiency charter, OKR "Enforce context budget" |
-| **Status** | PARTIAL -- TOKEN-AUDIT.md provides a static estimate (~5.8% boot). Per-session dynamic measurement does not exist. |
-| **Implementation** | Track which files are read during session start. Sum their estimated token costs (chars x 1.3). Record in checkpoint JSON field `governance_tokens`. |
+| **Status** | YES -- `governance_overhead` object in SESSION-CHECKPOINTS.md schema captures files_loaded, files_used, unused_ratio, token estimates, and overhead_pct (2026-04-06). |
+| **Implementation** | Checkpoint JSON `governance_overhead` object populated by LLM at session end. Static baseline from TOKEN-AUDIT.md. |
 | **Effort** | MEDIUM |
 | **Priority** | P1 |
 
@@ -338,8 +338,8 @@ Each metric follows the same structure:
 | **Target** | sigma < 15% (from Accuracy charter OKR) |
 | **Breach action** | If sigma > 20%: identify high-variance categories. Target those categories for calibration work. |
 | **Feeds** | Accuracy charter, KPI A (supplementary statistic) |
-| **Status** | PARTIAL -- computable from ESTIMATION-LOG.jsonl but not automatically reported. |
-| **Implementation** | Add sigma computation to version-bump KPI snapshot. |
+| **Status** | YES -- computable from ESTIMATION-LOG.jsonl. Sigma computation defined; report at version-bump KPI snapshot (2026-04-06). |
+| **Implementation** | Data exists in ESTIMATION-LOG.jsonl. `std(accuracy.tokens_pct)` over rolling 20-task window. |
 | **Effort** | LOW |
 | **Priority** | P1 |
 
@@ -442,8 +442,8 @@ Each metric follows the same structure:
 | **Target** | Correct > 65%. Undertriage < 5%. Overtriage < 30%. |
 | **Breach action** | Undertriage > 5%: all locked routing rules unlock (per ADAPTIVE-PROTOCOL.md). Overtriage > 30%: review locked rules for most over-triaged categories. |
 | **Feeds** | Human-LLM Interaction charter, Accuracy charter |
-| **Status** | PARTIAL -- ADAPTIVE-PROTOCOL.md defines the framework. No actual data collected yet (N=0 triage evaluations). |
-| **Implementation** | Enforce LEARN.md depth evaluation section on every task. Aggregate in per-version triage table. |
+| **Status** | YES -- Triage check (CORRECT/UNDERTRIAGE/OVERTRIAGE) added to TASK-LIFECYCLE.md Phase 7 LEARN (2026-04-06). |
+| **Implementation** | LEARN phase now requires triage check on every task. Feeds A-01 aggregation. |
 | **Effort** | LOW |
 | **Priority** | P1 |
 
@@ -458,8 +458,8 @@ Each metric follows the same structure:
 | **Target** | Mean absolute delta < 0.5 |
 | **Breach action** | If mean delta > 1.0: routing model is significantly miscalibrated. Review parameter weights. |
 | **Feeds** | Human-LLM Interaction charter |
-| **Status** | NO -- LEARN.md format defined but not enforced. |
-| **Implementation** | Same as A-01. Enforce the LEARN.md depth evaluation section. |
+| **Status** | YES -- Captured via same triage check as A-01 in TASK-LIFECYCLE.md Phase 7 LEARN (2026-04-06). |
+| **Implementation** | LEARN phase triage check captures depth_selected vs depth_correct. Same enforcement as A-01. |
 | **Effort** | LOW |
 | **Priority** | P1 |
 
@@ -490,8 +490,8 @@ Each metric follows the same structure:
 | **Target** | > 80% classification accuracy |
 | **Breach action** | If < 70%: review classification criteria. The biggest risk is classifying Complex as Clear (missing unknown unknowns). |
 | **Feeds** | Human-LLM Interaction charter, Accuracy charter |
-| **Status** | NO -- LEARN.md format defined but not enforced. |
-| **Implementation** | Same as A-01. Enforce LEARN.md depth evaluation section with problem_type fields. |
+| **Status** | YES -- Problem type check (clear/complicated/complex/chaotic) added to TASK-LIFECYCLE.md Phase 7 LEARN (2026-04-06). |
+| **Implementation** | LEARN phase now requires problem_type_selected vs problem_type_correct on every task. |
 | **Effort** | LOW |
 | **Priority** | P1 |
 
@@ -809,12 +809,12 @@ Ranked by impact/effort ratio. P1 = do first.
 
 | ID | Metric | Status | Effort | Reason |
 |----|--------|--------|--------|--------|
-| S-01 | Startup Latency | NO | LOW | Core Speed charter OKR. Simple timestamp logging. |
-| T-01 | Governance Overhead Ratio | PARTIAL | MEDIUM | Core Efficiency OKR. Foundation for T-05, T-06, T-07. |
-| E-06 | Estimation Sigma | PARTIAL | LOW | Already in Accuracy charter OKR. Just needs computation. |
-| A-01 | Triage Accuracy | PARTIAL | LOW | Enforce existing LEARN.md format. No new infrastructure. |
-| A-02 | Depth Routing Correctness | NO | LOW | Same enforcement as A-01. |
-| A-04 | Problem-Type Classification Accuracy | NO | LOW | Same enforcement as A-01. |
+| S-01 | Startup Latency | YES | LOW | `startup_latency_sec` in checkpoint schema. |
+| T-01 | Governance Overhead Ratio | YES | MEDIUM | `governance_overhead` object in checkpoint schema. |
+| E-06 | Estimation Sigma | YES | LOW | Computable from ESTIMATION-LOG.jsonl. |
+| A-01 | Triage Accuracy | YES | LOW | Triage check added to TASK-LIFECYCLE.md LEARN phase. |
+| A-02 | Depth Routing Correctness | YES | LOW | Same triage check as A-01. |
+| A-04 | Problem-Type Classification Accuracy | YES | LOW | Problem type check added to LEARN phase. |
 
 ### P2 -- Medium Impact, Low-Medium Effort
 
