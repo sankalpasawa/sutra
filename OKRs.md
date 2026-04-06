@@ -291,3 +291,25 @@
 | 4 | Synthesize research into Sutra protocol updates | High | Medium | May 2026 |
 | 5 | Scan for emerging AI OS competitors (weekly) | Medium | Low | Ongoing |
 | 6 | Framework/methodology refresh (bi-weekly) | Medium | Low | Ongoing |
+
+---
+
+## Charter: Revenue/Viability
+
+**Objective**: Every launched company generates revenue or proves a path to it
+**DRI**: Sutra Core
+**Status**: INACTIVE — activates when first company launches to real users
+
+### KRAs
+- Revenue generation
+- Path to monetization
+- Unit economics
+
+### KPIs (activate at launch)
+| Metric | Current | Target |
+|--------|---------|--------|
+| Companies with revenue | 0 | 1+ |
+| Companies with revenue path | 0 | all launched |
+| Time from launch to first $ | N/A | < 90 days |
+
+### OKRs — set when charter activates

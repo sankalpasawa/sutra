@@ -136,6 +136,19 @@ Defines how much the human (founder/CEO) wants to be involved in day-to-day deci
 
 **When to use**: Mature products, well-defined roadmaps, founder focused elsewhere.
 
+### Founder Role Evolution
+
+| Portfolio Size | Founder Role | Time Split |
+|---------------|-------------|-----------|
+| 1-3 companies | Builder — hands-on in every company | 70% building, 30% governance |
+| 4-7 companies | Director — sets direction, reviews output | 30% building, 70% governance |
+| 8+ companies | Allocator — capital allocation, talent placement, strategy | 10% building, 90% governance |
+
+The shift is gradual. PROTO-015 fires a reminder when the founder is spending >50% time operating a single company.
+
+From Andrew Wilkinson (Tiny): "You must be the owner, not the CEO of each business."
+From Warren Buffett: "I tap dance to work. But I don't do the work at the subsidiaries."
+
 ### Override
 
 The human can always override, regardless of level. "I want to see this before you ship" is always valid, even in Delegated mode.

@@ -34,6 +34,7 @@ Every growing system needs ALL of these. They are not interchangeable.
 | G11 | **Drift Detection** | Verify actual behavior matches documented behavior | Reality diverges from docs/config | After any deploy OR weekly audit |
 | G12 | **Capacity Review** | Assess if current architecture handles current load | Performance degradation, outages | Usage doubles OR response time degrades 50% |
 | G13 | **Knowledge Refresh** | Re-evaluate assumptions against current environment | Stale strategy, missed opportunities | AI/tech/market: weekly; framework/methodology: bi-weekly; OR after major market shift |
+| G14 | **Kill/Pivot Check** | Evaluate whether a live company deserves continued investment | Zombie companies consuming attention with zero traction | 4 weeks post-launch, then monthly |
 
 ---
 
@@ -46,7 +47,7 @@ Based on patterns from Google SRE, Spotify, Amazon, Basecamp, and mature open-so
 | **Every session** | G7 (doc gardening), G11 (drift detection) | Built into session-end checklist |
 | **Every feature ship** | G1 (refactor touched code), G9 (automate new toil) | Part of feature lifecycle |
 | **Weekly** | G5 (archive done items), G3 (consolidate if duplicates found) | Weekly planning process |
-| **Monthly** | G8 (dependency audit), G2 (prune unused features) | Dedicated maintenance session |
+| **Monthly** | G8 (dependency audit), G2 (prune unused features), G14 (kill/pivot check for live companies) | Dedicated maintenance session |
 | **Weekly** | G13 — AI/tech/market domain research | Weekly review |
 | **Bi-weekly** | G13 — framework/methodology research (Cynefin, Wardley, Shape Up, etc.) | Bi-weekly review |
 | **Quarterly** | G6 (migration backlog), G12 (capacity review) | Quarterly review |
@@ -72,6 +73,7 @@ Schedules catch slow decay. Triggers catch acute problems. You need both.
 | Error rate spikes after deploy | Drift between expected and actual | G11 (drift detection) |
 | Total protocol count exceeds cap | System is getting heavier | G10 (complexity budgeting) |
 | Done items cluttering active views | Noise drowning signal | G5 (archival) |
+| Live company at 4+ weeks with zero users, zero revenue, zero learnings | Zombie company consuming resources | G14 (kill/pivot check) |
 
 ---
 
@@ -130,7 +132,38 @@ This file adds the PROACTIVE dimension. Continuous improvement catches problems 
 
 ---
 
-## 7. The One-Line Summary
+## 7. Kill/Pivot Protocol
+
+| # | Protocol | Definition | What Decays Without It | Trigger |
+|---|----------|-----------|----------------------|---------|
+| G14 | **Kill/Pivot Check** | Evaluate whether a live company deserves continued investment | Zombie companies consuming attention with zero traction | 4 weeks post-launch, then monthly |
+
+### How It Works
+
+The kill/pivot check fires automatically at 4 weeks after a company goes live, then monthly thereafter. It is not optional — every live company gets evaluated.
+
+```
+KILL/PIVOT CHECK (fires at 4 weeks post-launch, then monthly):
+- Users: any real users? (not founder, not test accounts)
+- Revenue: any revenue or clear path within 30 days?
+- Learning: did we learn something that justifies continuing?
+
+All three NO → escalate to founder: kill, pivot, or extend with specific hypothesis.
+```
+
+**Evaluation rules:**
+- **Any signal = continue.** Even one real user or one validated learning justifies the next month.
+- **All three NO = escalation.** The founder must make an explicit decision: kill, pivot, or extend. "Extend" requires a specific hypothesis to test in the next 30 days — not "let's keep going and see."
+- **Kill is not failure.** A company killed at 4 weeks with clear learnings is a success. A company limping at 6 months with no signal is the failure.
+- **Log the decision.** Whether kill, pivot, or extend — record the reasoning in the company's checkpoint file.
+
+**Cadence integration:** Add to the monthly maintenance cycle (Section 2). The check runs alongside G8 (dependency audit) and G2 (pruning).
+
+*Inspired by Pieter Levels' approach: launch fast, measure signal, kill without sentiment.*
+
+---
+
+## 8. The One-Line Summary
 
 **Growth without maintenance is decay with extra steps.**
 

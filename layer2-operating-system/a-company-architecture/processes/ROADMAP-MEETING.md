@@ -4,6 +4,14 @@
 
 ---
 
+## Format Rule (from EOS L10)
+
+This meeting is IDENTICAL every time. Same order. Same time boxes. Same sections.
+Never vary the format. Predictability builds the habit.
+If something doesn't fit the format, it goes to the Issues List (Phase 4), not into a new section.
+
+---
+
 ## When to Run
 
 - **Weekly** for active companies (part of weekly cadence)
@@ -112,6 +120,24 @@ DECISION: [What needs deciding]
 ```
 
 Founder decides. Decision is logged.
+
+---
+
+### Phase 4b: Issues (IDS Process)
+
+Surface issues that aren't decisions but need resolution.
+
+For each issue:
+1. IDENTIFY: Name it in one sentence. No storytelling.
+2. DISCUSS: Max 2 minutes. What's the root cause? What are the options?
+3. SOLVE: Pick one action. Assign an owner. Set a due date.
+
+Rules:
+- Issues are solved in the meeting, not deferred to "next time"
+- If it can't be solved in 5 minutes, it becomes a task with an owner (goes to Roadmap)
+- The Issues List carries over between meetings — unresolved issues stay until solved
+
+---
 
 ### Decision Highlighting (mandatory)
 

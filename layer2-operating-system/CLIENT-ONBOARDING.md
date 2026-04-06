@@ -13,6 +13,27 @@ Sutra is not a template factory. It's a structured thinking partner that:
 
 ---
 
+## Fast Track (Tier 1 companies — <30 minutes)
+
+For personal tools and solo founder projects, collapse to 4 phases:
+
+```
+INTAKE → SHAPE → DEPLOY → ACTIVATE
+(5 min)   (10 min) (10 min)  (5 min)
+```
+
+Skip: MARKET (no competitors matter for personal tools), DECIDE (founder already decided), ARCHITECT (use default stack), CONFIGURE (use Tier 1 defaults)
+
+**Gate — only available if:**
+- Solo founder
+- Personal use or <10 target users
+- No revenue goal in first 6 months
+- Founder explicitly requests fast track
+
+Otherwise: full 8-phase flow below.
+
+---
+
 ## The Eight Phases
 
 ```
@@ -119,6 +140,31 @@ platform: "{web/ios/android} ({why this platform first})"
 founder_skills: "{What they can build}"
 two_year_vision: "{Where it goes if it works}"
 ```
+
+---
+
+### Hurdle Rate (must pass before proceeding to Phase 2)
+
+Before the Intake Card is considered complete, the company must clear a hurdle rate. This is not a blocker — it is a checkpoint that forces the right conversation before resources are committed.
+
+```
+HURDLE RATE (must pass all 3 to proceed):
+1. Domain knowledge: Does the founder have deep knowledge in this space? (YES/NO)
+2. Testable bet: Can the core hypothesis be tested with <$500 and <2 weeks? (YES/NO)
+3. Path to revenue: Is there a clear way this makes money within 6 months? (YES/NO)
+
+If any NO → pause. Discuss with founder. Either sharpen the bet or don't proceed.
+```
+
+**How it works in practice:**
+- Sutra evaluates these three questions from the Intake Card answers — the founder is not asked to answer them directly.
+- If domain knowledge is weak: "You mentioned you haven't worked in this space. What gives you an edge here?" Push for a real answer.
+- If the bet isn't testable cheaply: "The smallest version you described would take months. Can we find a smaller slice that proves the core bet?"
+- If revenue path is unclear: "How does this make money? Not in 2 years — in 6 months."
+- All three YES → proceed to Phase 2.
+- Any NO → the conversation continues until the answer changes or the founder decides not to proceed. Log the decision either way.
+
+*Inspired by Constellation Software's acquisition hurdle rate — adapted for pre-revenue company creation.*
 
 ---
 

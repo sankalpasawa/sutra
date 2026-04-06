@@ -136,6 +136,31 @@ contributes_to:
 
 ---
 
+## Accountability Matrix
+
+Every function has exactly one owner. No shared ownership. No "the team owns it."
+
+For each company, the matrix shows WHO (department/role) owns WHAT (function):
+
+| Function | Owner | Accountability |
+|----------|-------|---------------|
+| Product direction | Product (or Founder) | What gets built and why |
+| Technical architecture | Engineering | How it's built |
+| User experience | Design | How it looks and feels |
+| Quality | QA (or Engineering) | Does it work correctly |
+| Growth | Growth (or Product) | Are users increasing |
+| Revenue | Product (or Founder) | Is it making money |
+| Security | Security (or Engineering) | Is it safe |
+| Process | Sutra OS | Is the system followed |
+
+Rules:
+- One owner per function. Not "Engineering and Product co-own quality."
+- The owner can delegate work but not accountability.
+- If something breaks, exactly one person/role is responsible.
+- From EOS: "The Accountability Chart answers 'who owns this?' — if the answer is 'we all do,' nobody does."
+
+---
+
 ## Example Charters
 
 These are common across companies. Not all apply to every company — pick based on stage and strategy.
@@ -210,11 +235,33 @@ Charter count scales with company stage (per CLIENT-ONBOARDING.md Appendix A):
 
 | Tier | Max Charters | Rationale |
 |------|-------------|-----------|
-| Tier 1 (Personal) | 1–2 | Solo founder — focus on one thing. Speed + one other. |
+| Tier 1 (Personal) | 1–2 (Rocks format) | Solo founder — focus on one thing. Rocks instead of full OKRs. |
 | Tier 2 (Product) | 3–5 | External users — need quality, growth, and security alongside speed. |
 | Tier 3 (Company) | Unlimited | Full organization — charter count matches strategic surface area. |
 
 More charters = more coordination overhead. Add only when a cross-cutting concern is actively failing.
+
+---
+
+## Tier 1 Simplified: Rocks
+
+Tier 1 companies (1 founder, no external users yet) use Rocks instead of full OKRs. Rocks come from EOS (Entrepreneurial Operating System) — they are 90-day priorities with binary outcomes. No scoring, no KRAs, no KPIs.
+
+```
+ROCKS (this quarter):
+1. [Rock] — DONE / NOT DONE
+2. [Rock] — DONE / NOT DONE
+3. [Rock] — DONE / NOT DONE
+
+Max 5 rocks. Binary outcome. No KRAs, no KPIs, no scoring.
+Upgrade to full OKRs when company moves to Tier 2.
+```
+
+### Why Rocks for Tier 1
+- Full charter anatomy (KRAs, KPIs, OKRs, DRI, Contributors) is designed for cross-functional teams. Tier 1 has one person.
+- Scoring 0.0–1.0 adds overhead with no audience. Binary done/not-done is honest and fast.
+- 3–5 rocks per quarter forces prioritization without bureaucracy.
+- When the company graduates to Tier 2 (external users, multiple contributors), rocks upgrade to full charters with the complete anatomy.
 
 ---
 
