@@ -462,7 +462,7 @@ The insight: these were never different systems. A 0-user company doing an auth 
 |--------|------------------|
 | **ESTIMATION-ENGINE.md** | Feeds the PLAN phase. Generates the estimation table. Receives actuals in MEASURE. |
 | **Adaptive Protocol Engine** | IS the scoring/routing logic. Reads complexity/cost/impact, outputs thoroughness level. |
-| **DIRECTION-ENFORCEMENT.md** | Fires in MEASURE phase. Scans for principle violations (D27 regression). |
+| **DIRECTION-ENFORCEMENT.md** | Fires in MEASURE phase. Scans for principle violations (D27 regression). <!-- TODO: create this file or remove reference. No DIRECTION-ENFORCEMENT.md exists. --> |
 | **Evolution Pulse** | Fires in MEASURE phase. Reports outputs, not activities (D17). |
 | **PROTOCOLS.md** (creation lifecycle) | Invoked in PLAN when no existing protocol covers the task (D9/D25). |
 | **ESTIMATION-LOG.jsonl** | Accumulates MEASURE data. Feeds LEARN phase pattern recognition. |

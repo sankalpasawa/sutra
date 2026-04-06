@@ -104,6 +104,7 @@ When Sutra runs its own session, it checks all clients:
 | No destructive actions on unverified resources | HARD |
 
 ### SESSION-ISOLATION.md
+<!-- TODO: create this file or remove reference. No SESSION-ISOLATION.md exists in this layer. -->
 | Rule | Enforcement |
 |------|-------------|
 | Separate sessions per company | HARD |
@@ -128,6 +129,7 @@ When Sutra runs its own session, it checks all clients:
 | Client evaluates update | FOUNDER-OVERRIDE (can skip) |
 
 ### AGENT-INCENTIVES.md
+<!-- TODO: create this file or remove reference. No AGENT-INCENTIVES.md exists in this layer. -->
 | Rule | Enforcement |
 |------|-------------|
 | Metrics tracked per agent | HARD |
@@ -334,6 +336,6 @@ Retention: 90 days. Archive older logs to `.claude/logs/archive/`.
 4. [ ] Add micro-review logic to SessionStart hook
 5. [ ] Add weekly review checklist to /retro skill
 6. [ ] Add monthly calibration to session-start first-of-month check
-7. [ ] Create `asawa-holding/holding/SENSITIVITY-RULES.md` with universal floor rules
+7. [ ] Create `asawa-holding/holding/SENSITIVITY-RULES.md` with universal floor rules <!-- TODO: file does not exist yet -->
 8. [ ] Create dashboard generation script
 9. [ ] Add sensitivity score lookup to pre-commit hooks
