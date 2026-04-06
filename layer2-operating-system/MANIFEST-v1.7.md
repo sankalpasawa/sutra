@@ -31,14 +31,13 @@ Both first-time onboarding (CLIENT-ONBOARDING.md) and version updates (PROTO-013
 ```
 MUST CONTAIN:
   "Sutra OS Version: v1.7"
-  "Before Every Task"
-  "DEPTH: X/5"
-  "COST: ~$X (~Y% of $200 plan)"
-  "EFFORT:"
-  "IMPACT:"
-  "TRIAGE:"
-  "version check" or "CURRENT-VERSION"
-  "Input Routing"
+  "depth" (case-insensitive — depth assessment instructions present)
+  "DEPTH:" or "Depth" (the assessment block format)
+  "COST:" or "cost" (estimation present)
+  "EFFORT:" or "effort" (estimation present)
+  "depth_selected" or "triage_class" (triage logging format)
+  "version check" or "CURRENT-VERSION" (version check protocol)
+  "Input Routing" or "input routing" (routing section)
 
 MUST NOT CONTAIN:
   "Level 1-4"              (old depth system)

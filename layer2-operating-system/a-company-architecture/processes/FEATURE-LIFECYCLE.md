@@ -1,3 +1,5 @@
+> **NOTE:** This lifecycle is superseded by TASK-LIFECYCLE.md (unified lifecycle with Depth 1-5). This file is retained as reference for the detailed 10-stage model. For active use, follow TASK-LIFECYCLE.md.
+
 # Feature Lifecycle (SDLC)
 
 Every idea goes through a formal process. No shortcuts. Every step documented. Every decision logged. Every trade-off recorded.

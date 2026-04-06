@@ -1,10 +1,10 @@
-# DayFlow Operating Model — The Source of Truth
+# Sutra Operating Model — The Source of Truth
 
 > One document. Replaces everything in org/, PROCESSES.md, and the scattered process docs.
 > If it is not in this file, it is not how we operate.
 
 **Last updated**: 2026-04-02
-**Owner**: Sankalp (founder, sole DRI until org scales)
+**Owner**: Sutra OS (operating system source)
 **Review cadence**: Quarterly, or when a principle is proven wrong
 
 ---

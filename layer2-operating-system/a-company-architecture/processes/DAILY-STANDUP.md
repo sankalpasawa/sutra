@@ -1,7 +1,10 @@
 # Daily Standup Protocol
 
 ## Overview
-The daily standup is DayFlow's heartbeat. It runs at the start of every session (conceptually 7 AM). It produces a cross-department health report, identifies the day's top priority, and routes action items to the right departments.
+
+> **NOTE:** This file references `org/standup/` and `org/decisions/` directories that do not exist in the Sutra OS template. Client companies using this protocol must create these directories in their own repo (e.g., `org/standup/`, `org/decisions/`).
+
+The daily standup is the company's heartbeat. It runs at the start of every session (conceptually 7 AM). It produces a cross-department health report, identifies the day's top priority, and routes action items to the right departments.
 
 ## When It Runs
 - Triggered by: `/standup` command, session start, or "standup" keyword

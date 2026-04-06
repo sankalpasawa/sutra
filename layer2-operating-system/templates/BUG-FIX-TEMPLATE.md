@@ -1,4 +1,4 @@
-Codify the protocol now and apply the protocol now itself.# Bug Fix: [Short description]
+# Bug Fix: [Short description]
 
 > Required for all bug fixes at L2+. Every fix must include the test that would have caught it.
 
