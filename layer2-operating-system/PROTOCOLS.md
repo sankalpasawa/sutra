@@ -134,67 +134,125 @@ _Merged from: PROTO-014 (Permanent Ownership) + PROTO-015 (Owner Not Operator)_
 ```
 federal | [Sutra P9, D22] | SOFT
 trigger: New Sutra version released (CURRENT-VERSION.md updated)
-check:   All client companies notified? → done. Not yet? → run deploy process.
+check:   All client companies updated + verified? → done. Not yet? → run deploy.
 
-PROCESS (Depth 2 — considered):
+REFERENCES:
+  Stripe — version pinning (client stays on version until explicit upgrade)
+  Salesforce — breaking/non-breaking classification + preview before enforcement
+  Kubernetes — alpha > beta > stable feature graduation
+  Accenture — adoption scorecards (measure behavior, not installation)
+  McKinsey — pilot > coach > embed > withdraw lifecycle
 
-1. READ: sutra/CURRENT-VERSION.md changelog — what changed in this version?
+PHASE 1: RELEASE CLASSIFICATION
 
-2. CLASSIFY changes by impact:
-   - BREAKING: changes how tasks are assessed, new required sections in CLAUDE.md
-   - ADDITIVE: new capabilities, optional for clients
-   - INTERNAL: engine improvements, no client-facing change
+  Read CURRENT-VERSION.md changelog. Classify EACH change:
 
-3. FOR EACH client company:
-   a. Read their CLAUDE.md "Sutra OS Version" line
-   b. If already current → skip
-   c. If outdated → generate update patch:
+  STABLE (auto-deploy):
+    Internal engine improvements, bug fixes, doc rewrites.
+    No client-facing change. Just bump version number.
+    Like Stripe: non-breaking changes ship to all versions.
 
-   BREAKING changes — update their CLAUDE.md:
-   - Bump version number
-   - Add/modify session start instructions
-   - Add/modify depth assessment format
-   - Update any renamed concepts (e.g., "Level" → "Depth")
-   - Update engine references if file structure changed
+  ADDITIVE (notify + opt-in):
+    New capabilities, new protocols, new depth levels.
+    Client can adopt when ready. No deadline.
+    Like Salesforce: new features available, not forced.
 
-   ADDITIVE changes — add to their CLAUDE.md:
-   - New optional sections
-   - New protocols they can adopt
-   - New engine capabilities
+  BREAKING (notify + migration guide + grace period):
+    Changes how tasks are assessed, renames concepts,
+    removes/restructures sections in CLAUDE.md.
+    Like Kubernetes deprecation: 2-version notice minimum.
+    Grace period: at least 2 sessions before old way stops working.
 
-   INTERNAL changes — version bump only:
-   - Bump version number in CLAUDE.md
-   - No other changes needed
+  EXPERIMENTAL (preview only):
+    New features not yet proven. Deployed to one company first.
+    Like Kubernetes alpha: may change or be removed.
+    Graduation criteria: works correctly in 5+ tasks.
 
-4. FOR EACH updated company:
-   - Commit: "update: Sutra OS v{version} — {one-line summary}"
-   - Push to company repo
+PHASE 2: DEPLOY
 
-5. UPDATE holding/SYSTEM-MAP.md client registry versions
+  FOR EACH client company:
 
-6. LOG: which companies updated, which skipped, what changed
+  a. Read their CLAUDE.md "Sutra OS Version" line
+  b. If already current > skip
+  c. If outdated > apply changes by classification:
 
-WHAT GETS UPDATED IN CLIENT CLAUDE.md (checklist):
-  [ ] "Sutra OS Version: v{new}" line
-  [ ] Session start instructions (if process changed)
-  [ ] Depth assessment format (if depth system changed)
-  [ ] Engine file references (if files renamed/moved)
-  [ ] Input routing format (if routing changed)
-  [ ] Any new protocols added to onboarding template
+  STABLE: bump version, no other changes.
+  ADDITIVE: bump version, add new sections marked OPTIONAL.
+  BREAKING: bump version, update sections, add MIGRATION NOTES
+    with what changed, why, old behavior, new behavior, what
+    the company needs to do differently.
+  EXPERIMENTAL: deploy to ONE pilot company only. Mark as
+    EXPERIMENTAL with graduation criteria.
 
-WHAT DOES NOT GET UPDATED:
-  - Company-specific content (architecture, design principles, key files)
-  - Company-specific TODO items
-  - Company-specific workflows
-  - Anything the company wrote themselves
+  WHAT DOES NOT GET UPDATED:
+    Company-specific content, TODO items, workflows, anything
+    the company wrote themselves, customizations that override
+    Sutra defaults.
 
-OVERRIDE: D22 — PULL is default. If a company has customized their
-process beyond standard Sutra, deploy only the version bump. Let
-the company CEO decide what to adopt from the changelog.
+  COMMIT FORMAT:
+    stable:   "update: Sutra OS v{ver} — internal"
+    additive: "update: Sutra OS v{ver} — {summary}"
+    breaking: "update: Sutra OS v{ver} — BREAKING: {summary}"
 
-origin: DayFlow v1.7 deploy 2026-04-06. Manual update of CLAUDE.md
-        to add depth system + version check. Extracted into protocol
-        after second occurrence (Paisa v1.4 deploy was the first).
+PHASE 3: VERIFY
+
+  Deployment is NOT done when CLAUDE.md is updated.
+  Deployment is done when the feature works in a real session.
+
+  LEVEL 1 — INSTALL VERIFICATION (every deploy):
+    Start a session in the company directory.
+    Does the LLM read and acknowledge the new version?
+    Does the version check protocol fire?
+    If no > deployment failed. Fix CLAUDE.md instructions.
+
+  LEVEL 2 — BEHAVIORAL VERIFICATION (additive + breaking):
+    Give the session a real task.
+    Did the new feature activate? (e.g., depth assessment appeared?)
+    Did the protocol fire on its trigger?
+    If no > instructions unclear. Rewrite until it works.
+
+  LEVEL 3 — ADOPTION SCORECARD (after 5 sessions):
+    Audit estimation log or session artifacts.
+    | Feature                     | Expected | Actual | Pass? |
+    |-----------------------------|----------|--------|-------|
+    | Depth assessment before task| 100%     | ?%     |       |
+    | Triage logging after task   | 100%     | ?%     |       |
+    | Version check on start      | 100%     | ?%     |       |
+
+    If compliance < 80%:
+      Instruction unclear? > rewrite
+      LLM ignoring? > add structural enforcement (artifact gates)
+      Feature not useful? > consider removing
+
+  LEVEL 4 — MECHANICAL ENFORCEMENT (persistent non-compliance):
+    Add hook that blocks or reminds. Last resort — hooks add friction.
+    Only for features where non-compliance causes real harm.
+    Example: PreToolUse hook checks depth assessment before Edit/Write.
+
+PHASE 4: GRADUATION (experimental features)
+
+  Graduate when:
+    Used correctly in 5+ tasks in pilot company.
+    No false positives or unnecessary friction.
+    Founder hasn't overridden or complained.
+    Feature adds measurable value.
+
+  Path: EXPERIMENTAL > ADDITIVE > STABLE > can become required
+
+PHASE 5: DEPRECATION (retiring old features)
+
+  1. NOTICE: deprecation warning in CLAUDE.md (2 versions minimum)
+  2. GRACE: feature continues working for 2 versions
+  3. MIGRATION: clear path to replacement
+  4. REMOVAL: remove from CLAUDE.md + onboarding template
+  5. AUDIT: check no company still depends on it
+
+  Like Stripe: clear warnings, no surprise removals.
+
+origin: DayFlow v1.7 deploy 2026-04-06. Informed by Stripe
+        (version pinning), Salesforce (change classification),
+        Kubernetes (feature graduation), Accenture (adoption
+        scorecards), McKinsey (pilot > embed lifecycle).
 times_used: 2
 ```
 
@@ -202,51 +260,41 @@ times_used: 2
 ```
 federal | [Sutra P3, D22] | SOFT
 trigger: Client company session starts
-check:   Sutra version current? → proceed. Outdated? → notify founder.
+check:   Sutra version current? > proceed. Outdated? > notify founder.
+reference: Stripe API version headers — client pinned until explicit upgrade.
 
 PROCESS (built into every client CLAUDE.md):
 
 1. On session start, read ../sutra/CURRENT-VERSION.md line 3
 2. Compare to "Sutra OS Version" in own CLAUDE.md
-3. If versions match → proceed normally
+3. If versions match > proceed normally
 4. If Sutra is newer:
 
-   a. SHOW to founder:
-      "Sutra update available: v{new} (you're on v{current})"
-
-   b. READ the changelog in CURRENT-VERSION.md
-      Summarize what changed in 1-2 lines
-
-   c. CLASSIFY relevance to this company:
-      - "Affects you: [list relevant changes]"
-      - "Does not affect you: [list irrelevant changes]"
-
+   a. SHOW: "Sutra update available: v{new} (you're on v{current})"
+   b. READ changelog. Summarize in 1-2 lines.
+   c. CLASSIFY relevance:
+      "Affects you: [list]"
+      "Does not affect you: [list]"
+      "BREAKING changes: [if any, with migration notes]"
    d. ASK (do NOT auto-update):
-      "Want to update? This will modify your session start
-       instructions and depth assessment format."
-
-   e. If founder says yes:
-      - Update own CLAUDE.md per PROTO-013 patch format
-      - Commit and push
-      - Continue session with new instructions
-
-   f. If founder says no or ignores:
-      - Proceed with current version
-      - Do not ask again this session
-      - Will check again next session
+      "Want to update? [summary of what changes]"
+   e. If yes > apply per PROTO-013 classification. For BREAKING,
+      show migration notes before applying. Commit and push.
+   f. If no > proceed with current version. Do not ask again
+      this session. Check again next session.
+   g. If 3+ sessions ignore same update > note once:
+      "v{new} available for 3 sessions. No action needed."
+      Do not escalate further. Inform, never nag.
 
 WHY PULL NOT PUSH (D22):
-  Companies decide when to upgrade. A company mid-sprint
-  should not be forced to adopt a new process. The check
-  informs. The founder decides. The system respects that.
+  Like Stripe: client stays pinned until they choose to move.
+  Mid-sprint companies should not be forced to adopt new process.
 
-ENFORCEMENT: SOFT — the check runs, but the founder can
-  ignore it. No blocking. Just awareness.
+ENFORCEMENT: SOFT — check runs, founder can ignore. No blocking.
 
-origin: Adaptive Protocol v3 deploy 2026-04-06. Founder said
-        "client companies should check automatically when they
-        start their day." Built into CLAUDE.md session start.
-times_used: 0 (just deployed to DayFlow)
+origin: Adaptive Protocol v3 deploy 2026-04-06. Informed by
+        Stripe (version pinning), Salesforce (upgrade center).
+times_used: 0 (deployed to DayFlow)
 ```
 
 ---
