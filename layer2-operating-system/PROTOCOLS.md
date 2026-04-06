@@ -50,14 +50,24 @@ APPLIES TO ALL CHANGE TYPES:
   7. MANIFEST CHANGE            → must re-verify all companies against new manifest
   8. HOOK CHANGE                → must re-test, re-register, re-deploy
 
-THE 4-PART RULE (for every change type):
+THE 5-PART RULE (for every change type):
 
   1. DEFINED:      written in the right file
-  2. IMPLEMENTED:  mechanism exists (hook / instruction / manifest / memory)
-  3. TESTED:       evidence the mechanism works
-  4. DEPLOYED:     mechanism active in affected companies
+  2. CONNECTED:    linked to every existing file that references or
+                   is referenced by this change. Scan the architecture.
+                   New feature? What existing processes use it?
+                   New principle? What existing protocols embody it?
+                   New engine? What existing files should read from it?
+  3. IMPLEMENTED:  mechanism exists (hook / instruction / manifest / memory)
+  4. TESTED:       evidence the mechanism works
+  5. DEPLOYED:     mechanism active in affected companies
 
   If any part is missing → mark EXPERIMENTAL, schedule implementation.
+
+  STEP 2 (CONNECTED) is the one that gets skipped. Building forward
+  is natural. Connecting backward to existing architecture requires
+  scanning the full system. Run: grep for related terms across all
+  layers. Any file that touches this domain must reference the change.
 
 WHAT SHIFTS ON CHANGE:
 
