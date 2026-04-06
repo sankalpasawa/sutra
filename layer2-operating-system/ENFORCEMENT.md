@@ -20,7 +20,7 @@ Every protocol in Sutra is HARD-enforced unless explicitly marked as soft. If a 
 
 ## Complexity Tiers
 
-Sutra OS is mandatory for all companies. The depth of enforcement scales with company complexity. See `COMPLEXITY-TIERS.md` for the full protocol.
+Sutra OS is mandatory for all companies. The depth of enforcement scales with company complexity. See `CLIENT-ONBOARDING.md` Appendix A for the full protocol.
 
 | Tier | Who | Enforcement depth |
 |------|-----|-------------------|
@@ -219,3 +219,121 @@ When the founder adds a new protocol to Sutra:
 | FLAG | No feedback written this week | Daily Pulse highlights it. Decision needed. |
 | FLAG | Skipped /canary after deploy | Added to next session's TODO. |
 | LOG | Used DIRECT when schedule said SUTRA | Logged in A/B test metrics. Not blocked (founder has override). |
+
+---
+
+## Part 2: Enforcement Review Cadence + Adaptive Judgment
+
+Enforcement rules decay without review. This section defines three review cadences (3-day, weekly, monthly) that keep enforcement rules calibrated, plus an adaptive sensitivity model that replaces file-count proxies with multi-dimensional scoring.
+
+ENFORCEMENT: HARD -- the review cadence itself is mandatory. Missing a monthly calibration triggers a flag in Daily Pulse.
+
+### Review Cadence
+
+#### 3-Day Micro-Review (Automated)
+
+Reads hook execution logs, counts blocked vs. allowed actions, overrides, and skipped compliance steps. Outputs a single paragraph appended to DAILY-PULSE.md. Zero human effort.
+
+**Data source:** `.claude/logs/enforcement.jsonl`
+**Trigger:** Every 3 days (SessionStart hook checks `last_micro_review` timestamp).
+
+**Output format:**
+```
+### Enforcement Micro-Review (YYYY-MM-DD)
+Last 3 days: {blocked_count} blocked, {allowed_count} allowed, {override_count} overrides. Top rule: "{hook_name}" fired {count} times. {override_sentence} Compliance score: {score}/100.
+```
+
+| Tier | Micro-review |
+|------|-------------|
+| 1 (Personal) | Off. Monthly calibration only. |
+| 2 (Product) | On. Automated, appended to Daily Pulse. |
+| 3 (Company) | On. Automated, appended to Daily Pulse. |
+
+#### Weekly Enforcement Review
+
+Part of the weekly review cadence (same session as /retro). Duration: 5-10 minutes.
+
+**Checklist:**
+1. **System working?** — Read last 2 micro-reviews. Blocked counts stable, rising, or falling?
+2. **Rules bypassed?** — List overrides. Was each justified? If yes, rule may be too strict.
+3. **Hooks too strict?** — >2 false positives this week? Flag for demotion.
+4. **Hooks too loose?** — Any incidents that SHOULD have been blocked? Flag for promotion.
+5. **New rule types needed?** — Draft but don't deploy yet (hold for monthly).
+6. **Sensitivity accuracy** — Compare tier assignments vs outcomes. Record accuracy %.
+
+#### Monthly Calibration
+
+First session of the month. Blocking — complete before other work. Duration: 15-20 minutes.
+
+**Calibration Decision Table:**
+
+| Condition | Action |
+|-----------|--------|
+| Soft gate violated >3 times this month | PROMOTE to hard gate |
+| Hard gate with 0 fires in 30 days | DEMOTE to soft gate |
+| Hard gate with 0 fires in 60 days | REMOVE (dead rule) |
+| Override used >2 times on same rule | Review: rule too strict or users undertrained? |
+| New incident revealed uncovered area | ADD new rule (hard by default) |
+| Sensitivity accuracy <70% | Recalibrate sensitivity scores |
+| Sensitivity accuracy >90% | No changes needed |
+
+| Tier | Monthly calibration |
+|------|-------------------|
+| 1 (Personal) | Required (simplified). |
+| 2 (Product) | Required (full + sensitivity recalibration). |
+| 3 (Company) | Required (full + cross-company comparison + dashboard). |
+
+### Adaptive Judgment — Sensitivity Scoring
+
+The sensitivity model replaces file count with multi-dimensional scoring. Each file path has a sensitivity score (1-10) computed from five dimensions:
+
+| Dimension | Weight | Examples |
+|-----------|--------|----------|
+| Area sensitivity | 3x | auth/payment/migration = 9-10, UI components = 3-4, CSS = 1-2 |
+| Blast radius | 2x | shared utility imported by 20+ files = 9, leaf component = 2 |
+| Incident history | 3x | 0 past incidents = 0, 3+ incidents = 10 |
+| Data sensitivity | 3x | PII = 10, financial = 9, credentials = 10, public = 0 |
+| Coupling depth | 1x | cross-layer = 8, single-file = 1 |
+
+**Composite score:** `raw = (area*3 + blast*2 + incidents*3 + data*3 + coupling*1) / 12`, clamped to [1, 10].
+
+**Per-company sensitivity map:** `sensitivity.jsonl` in each company's `.claude/` directory.
+
+| Score | Level | Enforcement behavior |
+|-------|-------|---------------------|
+| 1-3 | Low | Soft gates only. Standard commit flow. |
+| 4-6 | Standard | Hard gates active. Compliance checklist runs. |
+| 7-9 | High | Hard gates + mandatory self-review. Sensitivity reason surfaced. |
+| 10 | Critical | Hard gates + founder notification. Cannot merge without approval. |
+
+### Self-Improving Classification
+
+When a change causes a bug: increase `incidents` dimension by 4 for affected paths. Same area has 2 incidents = locked at minimum 7 for 60 days. 3+ incidents = flag for architectural review.
+
+**Judgment Inheritance:**
+- **Asawa-level (universal):** Rules that apply to ALL companies (auth = minimum 7, migrations = 10, env files = 10). Cannot be overridden.
+- **Company-level (local):** Specific to one company's codebase. Stay local, don't propagate.
+
+**Accuracy targets:** >85% = well-calibrated, 70-85% = review misclassified areas, <70% = major recalibration needed.
+
+### Hook Execution Log Format
+
+All hooks write to `.claude/logs/enforcement.jsonl`:
+
+```jsonl
+{"timestamp": "ISO-8601", "hook": "hook-name", "action": "blocked|allowed|overridden|escalated|skipped_step", "file": "path-or-null", "role": "active-role", "reason": "string-or-null", "sensitivity_score": int-or-null, "session_id": "string"}
+```
+
+Retention: 90 days. Archive older logs to `.claude/logs/archive/`.
+
+### Implementation Checklist
+
+1. [ ] Create `.claude/logs/` directory structure in each company repo
+2. [ ] Update hooks to write `enforcement.jsonl` entries
+3. [ ] Create auto-seed script for `sensitivity.jsonl` initialization
+4. [ ] Add micro-review logic to SessionStart hook
+5. [ ] Add weekly review checklist to /retro skill
+6. [ ] Add monthly calibration to session-start first-of-month check
+7. [ ] Create `asawa-holding/holding/SENSITIVITY-RULES.md` with universal floor rules
+8. [ ] Create dashboard generation script
+9. [ ] Add sensitivity score lookup to pre-commit hooks

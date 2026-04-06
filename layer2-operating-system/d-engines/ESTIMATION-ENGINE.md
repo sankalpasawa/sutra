@@ -430,3 +430,293 @@ Raw estimates consistently over-predict. Apply these multipliers:
 From 18 cycles: when we estimate 60-75% confidence, actual success rate is 100%.
 The model is systematically under-confident for familiar patterns.
 Adjust: if the pattern has been done before in this codebase, add +20% to confidence.
+
+---
+
+## Auto-Calibration Feedback Loop
+
+The feedback loop closes the gap between PRE-phase estimates and POST-phase actuals with automated comparison, category-specific calibration multipliers, compression triggers, and EWMA-based accuracy feeding into SUTRA-KPI.md's A metric.
+
+**State file**: `holding/CALIBRATION-STATE.json`
+**Design doc**: `holding/research/ESTIMATION-FEEDBACK-LOOP-DESIGN.md`
+
+### POST Phase Auto-Capture
+
+POST capture fires when any of these occur:
+1. A GSD phase completes (`/gsd:execute-phase` finishes)
+2. A task is marked done in TODO.md
+3. A session ends with work completed (SessionEnd hook)
+4. Manual invocation via `/estimate:post`
+
+#### Automated Data Collection
+
+| Field | Source | Method |
+|-------|--------|--------|
+| `actuals.tokens_input` | Session metadata | Read from Claude session stats if available; otherwise estimate from conversation length |
+| `actuals.tokens_output` | Session metadata | Same as above |
+| `actuals.tokens_total` | Computed | `tokens_input + tokens_output` |
+| `actuals.cost_usd` | Computed | Apply model pricing table to actual tokens |
+| `actuals.duration_min` | Session clock | `(session_end_ts - task_start_ts)` in minutes |
+| `actuals.files_touched` | Git | `git diff --stat HEAD~{commits_in_task} --name-only | wc -l` |
+
+#### Accuracy Computation
+
+For each numeric dimension, apply the symmetric MAPE formula:
+
+```
+accuracy(est, act) = 1 - abs(est - act) / max(est, act)
+```
+
+Clamped to [0, 1]. Applied to: `tokens_pct`, `cost_pct`, `duration_pct`.
+
+Special case: if both estimate and actual are 0, accuracy = 1.0. If estimate is 0 and actual > 0, accuracy = 0.0.
+
+#### JSONL Append Procedure
+
+```
+1. Retrieve PRE-phase estimates from session memory
+2. Collect actuals from session metadata + git
+3. Compute accuracy per dimension
+4. Generate UUID v4
+5. Determine category_key = "{company}:{task_type}"
+6. Look up current multiplier for category_key (from CALIBRATION-STATE.json)
+7. Serialize as single-line JSON
+8. Idempotency check: scan last 5 lines for matching task_description + ts within 5 min
+9. Append to holding/ESTIMATION-LOG.jsonl
+10. Trigger calibration update (see below)
+```
+
+### Category Calibration Algorithm
+
+Each task belongs to a calibration category: `category_key = "{company}:{task_type}"`.
+
+Examples: `dayflow:implementation`, `sutra:research`, `holding:ops`.
+
+#### Multiplier Derivation (After 5+ Tasks)
+
+Once a category has 5+ entries in ESTIMATION-LOG.jsonl, compute dimension-specific multipliers:
+
+```
+For each dimension d in [tokens, duration, files]:
+  ratio = actual_d / estimate_d  (using RAW estimate, not calibrated)
+  multiplier_d = alpha * ratio + (1 - alpha) * old_multiplier_d
+  where alpha = 0.3
+```
+
+**Interpretation**: A multiplier of 1.5 means "tasks in this category take 1.5x the estimated value." Future PRE-phase estimates are scaled by the multiplier before presentation.
+
+**Application in PRE phase**:
+
+```
+raw_estimate = heuristic_calculation()
+calibrated_estimate = raw_estimate * multiplier[category_key][dimension]
+```
+
+The estimation table shows the calibrated number. The raw number is stored in session memory for future calibration computation (to avoid multiplier drift).
+
+#### Multiplier Update Protocol
+
+```
+On each POST capture for category_key K:
+  1. n = count entries where category_key == K
+  2. If n < 5: record data but do not compute multipliers (insufficient signal)
+  3. If n >= 5:
+     For each dimension d:
+       ratio = actual_d / estimate_d  (using RAW estimate, not calibrated)
+       multiplier_d = 0.3 * ratio + 0.7 * old_multiplier_d
+  4. Write updated multipliers to CALIBRATION-STATE.json
+  5. If multiplier is within [0.95, 1.05]: reset to 1.0 (no correction needed)
+```
+
+**Multiplier bounds**: Clamped to [0.2, 5.0].
+- Below 0.2: heuristic is fundamentally wrong — flag for manual review.
+- Above 5.0: category definition is too broad — flag for splitting.
+
+#### EWMA Update (Per-Task)
+
+```
+On each POST capture:
+
+  // Global EWMA (feeds A metric in SUTRA-KPI.md)
+  global_ewma = 0.3 * accuracy.tokens_pct + 0.7 * global_ewma_prev
+
+  // Per-category EWMA (feeds calibration)
+  For category_key K:
+    ewma_tokens[K] = 0.3 * accuracy.tokens_pct + 0.7 * ewma_tokens[K]_prev
+    ewma_cost[K]   = 0.3 * accuracy.cost_pct   + 0.7 * ewma_cost[K]_prev
+    ewma_duration[K] = 0.3 * accuracy.duration_pct + 0.7 * ewma_duration[K]_prev
+```
+
+**Why alpha=0.3**: The last 3 entries carry ~65% of the weight. The system adapts within 3-5 tasks to a new reality without overcorrecting on a single outlier.
+
+### Compression Trigger Rules
+
+Compression reduces estimation overhead for well-calibrated categories.
+
+| Level | Condition | Action |
+|-------|-----------|--------|
+| **Level 1: Compress** | 10+ tasks AND EWMA accuracy > 0.80 across all three dimensions (tokens, cost, duration) for 3 consecutive entries | Switch PRE output from full table to one-line format |
+| **Level 2: Auto-fill** | 20+ tasks AND EWMA accuracy > 0.90 across all three dimensions | Pre-fill estimates automatically with category averages |
+| **Decompression** | 3 consecutive entries with any accuracy dimension < 0.65 after compression | Revert to full estimation table |
+
+#### Compression Tracking
+
+```
+On each POST capture for category_key K:
+
+  If NOT compressed:
+    If all(ewma_d > 0.80 for d in [tokens, cost, duration]) AND n >= 10:
+      compression_streak += 1
+      If compression_streak >= 3:  // Sustained, not a fluke
+        compressed = true
+        compression_streak = 0
+    Else:
+      compression_streak = 0
+
+  If compressed:
+    If any(accuracy_d < 0.65 for d in [tokens, cost, duration]):
+      decompression_watch += 1
+      If decompression_watch >= 3:
+        compressed = false
+        decompression_watch = 0
+        Log: "DECOMPRESSED {K} — accuracy degraded"
+    Else:
+      decompression_watch = 0
+```
+
+#### Compressed PRE Output Format
+
+When a category is compressed, the PRE phase prints:
+
+```
+ESTIMATE: ~{tokens}K tokens, ~${cost}, ~{minutes}min | confidence: {pct}% (calibrated from {n} prior tasks)
+```
+
+The full JSONL record is always written at POST — compression only affects the PRE display.
+
+### Connection to SUTRA-KPI.md A Metric
+
+```
+A = 0.7 * A_estimation + 0.3 * A_compliance
+
+A_estimation = global_ewma from CALIBRATION-STATE.json
+```
+
+#### Data Flow: POST Capture to KPI Dashboard
+
+```
+POST phase captures actuals
+    |
+    +---> ESTIMATION-LOG.jsonl (append record)
+    |
+    +---> CALIBRATION-STATE.json (update multipliers + EWMA)
+    |
+    +---> Compression check (promote/demote category)
+    |
+    +---> global_ewma updated
+            |
+            +---> A = 0.7 * A_estimation + 0.3 * A_compliance
+            |
+            +---> At version bump: snapshot A into SUTRA-KPI.md baseline table
+```
+
+#### Supplementary Statistics (Per SUTRA-KPI.md Requirements)
+
+Alongside EWMA, report:
+- **Arithmetic mean**: Simple average across window (transparency)
+- **Median**: Robust to outliers
+- **Standard deviation**: High sigma = inconsistent estimation = calibration problem
+- **Trend**: Compare current EWMA to EWMA from 10 tasks ago. Arrow: up (improving), down (declining), stable (within 3%)
+
+---
+
+## Appendix: Estimation Log Format (JSONL Schema v1)
+
+> Persistence layer for D23 (Recursive Estimation). Every estimate-actual pair survives across sessions.
+
+**Format**: JSON Lines (`.jsonl`) — one JSON object per line, append-only, no array wrapper.
+**Location**: `holding/ESTIMATION-LOG.jsonl` (cross-company, holding-level aggregation).
+**Encoding**: UTF-8, no BOM, LF line endings.
+
+### Canonical Schema (v1)
+
+Each line is a single JSON object conforming to this schema:
+
+```jsonl
+{"id":"<uuid-v4>","ts":"<ISO-8601>","company":"<enum>","task_type":"<enum>","task_description":"<string>","thoroughness_level":<1-4>,"estimates":{"tokens_input":<int>,"tokens_output":<int>,"tokens_total":<int>,"cost_usd":<float>,"duration_min":<float>,"files_touched":<int>},"actuals":{"tokens_input":<int>,"tokens_output":<int>,"tokens_total":<int>,"cost_usd":<float>,"duration_min":<float>,"files_touched":<int>},"accuracy":{"tokens_pct":<float>,"cost_pct":<float>,"duration_pct":<float>},"category":"<enum>","notes":"<string>"}
+```
+
+### Field Definitions
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID v4 | YES | Unique record identifier. Generated at POST phase. |
+| `ts` | ISO 8601 | YES | Timestamp of record creation (task completion time). |
+| `company` | enum | YES | One of: `dayflow`, `sutra`, `holding`, `maze`, `ppr`. Extensible as companies onboard. |
+| `task_type` | enum | YES | One of: `research`, `implementation`, `build`, `migration`, `design`, `ops`. |
+| `task_description` | string | YES | Human-readable summary, max 120 chars. |
+| `thoroughness_level` | int | YES | 1-4 per TASK-LIFECYCLE.md scoring. |
+| `estimates` | object | YES | PRE-phase predictions. See Metrics Object below. |
+| `actuals` | object | YES | POST-phase measurements. See Metrics Object below. |
+| `accuracy` | object | YES | Computed deltas. See Accuracy Object below. |
+| `category` | enum | YES | `first_occurrence` or `calibrated` (prior data existed). |
+| `notes` | string | NO | Learnings, surprises, heuristic corrections. |
+
+### Metrics Object (`estimates` and `actuals`)
+
+| Field | Type | Unit | Description |
+|-------|------|------|-------------|
+| `tokens_input` | int | tokens | Input tokens consumed by the model. |
+| `tokens_output` | int | tokens | Output tokens generated by the model. |
+| `tokens_total` | int | tokens | `tokens_input + tokens_output`. Primary tracking dimension. |
+| `cost_usd` | float | USD | Dollar cost from token counts and model pricing table. |
+| `duration_min` | float | minutes | Wall-clock time from task start to completion. |
+| `files_touched` | int | count | Files created, modified, or deleted (`git diff --stat` count). |
+
+### Accuracy Object
+
+| Field | Type | Formula | Interpretation |
+|-------|------|---------|----------------|
+| `tokens_pct` | float | `1 - abs(est - act) / max(est, act)` | 1.0 = perfect. 0.0 = off by 100%. Clamped to [0, 1]. |
+| `cost_pct` | float | Same formula applied to `cost_usd` | Tracks pricing model accuracy alongside volume accuracy. |
+| `duration_pct` | float | Same formula applied to `duration_min` | Time is hardest to estimate — wider tolerance acceptable (>0.65 target). |
+
+**Accuracy formula rationale**: Using `max(est, act)` as denominator instead of `est` prevents accuracy >1.0 when actuals exceed estimates. This is the symmetric MAPE variant, bounded [0, 1].
+
+### Append Protocol
+
+1. **PRE phase** generates the `estimates` object and holds it in session memory.
+2. **POST phase** captures `actuals` from session metadata + `git diff --stat`.
+3. Compute `accuracy` using the formula above.
+4. Generate UUID v4 for `id`.
+5. Serialize as single-line JSON (no pretty-printing, no trailing comma).
+6. Append to `holding/ESTIMATION-LOG.jsonl` with `\n` terminator.
+7. Never modify existing lines. Append-only invariant.
+
+**Idempotency**: If a POST phase runs twice (e.g., session crash and recovery), check the last 5 lines for a matching `task_description` + `ts` within 5 minutes. If found, skip the append.
+
+### Querying the Log
+
+```bash
+# Find all entries for a task type
+grep '"task_type":"research"' holding/ESTIMATION-LOG.jsonl | tail -10
+
+# Compute average token accuracy for a company
+grep '"company":"dayflow"' holding/ESTIMATION-LOG.jsonl | \
+  jq -s '[.[].accuracy.tokens_pct] | add / length'
+
+# Count entries per category
+jq -r '.category' holding/ESTIMATION-LOG.jsonl | sort | uniq -c
+
+# Find under-estimated tasks (accuracy < 50%)
+jq -r 'select(.accuracy.tokens_pct < 0.50) | .task_description' holding/ESTIMATION-LOG.jsonl
+```
+
+### Versioning
+
+Schema version is implicit in the field set. If fields are added:
+- New fields are optional (backward-compatible).
+- Readers must tolerate missing fields (use defaults).
+- Breaking changes require a new file (`ESTIMATION-LOG-v2.jsonl`) and a migration script.
+
+Current schema: **v1** (established 2026-04-05).

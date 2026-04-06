@@ -8,7 +8,7 @@ Sutra protocols, onboarding process, skill catalog, versioning, client feedback 
 
 ## On Every Session Start
 1. Read this file and START-HERE.md
-2. Read RELEASES.md for current version
+2. Read CURRENT-VERSION.md for current version
 3. Check feedback/ for pending client feedback
 4. Check layer2-operating-system/ for the active protocols
 

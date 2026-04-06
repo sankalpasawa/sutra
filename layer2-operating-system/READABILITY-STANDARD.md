@@ -183,6 +183,82 @@ No company, no agent, no session overrides this standard. Only the founder (CEO 
 
 ---
 
+## 6. Terminal Output Style Guide
+
+Research basis: `holding/research/TERMINAL-READABILITY-RESEARCH.md` (2026-04-06)
+
+### Five Rules
+
+1. **Headline first.** Every output starts with a one-line summary that answers "what do I need to know?"
+2. **Structure over style.** Section dividers (`──`), tables, and whitespace create scanability. No heavy borders for data.
+3. **Decisions in boxes.** The `╭╮╰╯` rounded box is RESERVED for decisions. Nothing else gets boxed.
+4. **Numbers with bars.** OKR scores, completion percentages, and trends get inline visual indicators (`▓░`, sparklines).
+5. **25-line budget.** Daily Pulse = 25 lines. Roadmap Meeting = 50 lines per section. OKR summary = 15 lines. If it doesn't fit, use progressive disclosure (headline level only, detail on request).
+
+### Unicode Character Set (Canonical)
+
+| Category | Characters | Usage |
+|----------|-----------|-------|
+| Document frame | `══` (double line) | Top and bottom of major outputs (Pulse, Meeting, OKR Review) |
+| Section divider | `──` (single line) | Between sections within an output |
+| Decision box | `╭ ╮ ╰ ╯ │` (rounded corners) | Decision panels ONLY — nothing else gets boxed |
+| Tree / hierarchy | `├── └── │` | File trees, org charts |
+| Progress bar | `▓░` | OKR scores, completion percentage (10-char bar, each char = 0.1) |
+| Sparkline | `▁▂▃▄▅▆▇█` | Trends (TODO count, accuracy, velocity) |
+
+### OKR Score Format
+
+```
+Name         ▓▓▓▓▓▓░░░░ 0.6  STATUS
+```
+
+- 10-character bar: each `▓` = 0.1 score, remainder `░`
+- Score `0.7` renders as `▓▓▓▓▓▓▓░░░` (on target)
+- Score `0.3` renders as `▓▓▓░░░░░░░` (behind)
+- Charter name + aggregate score + visual bar on ONE line
+- KR table immediately below with individual scores
+
+### Decision Box Format
+
+```
+  ╭─────────────────────────────────────╮
+  │  DECISION: {title}                  │
+  │                                     │
+  │  Recommendation: {option}           │
+  │  Reason: {one sentence}             │
+  │                                     │
+  │  [1] Option A (recommended)         │
+  │  [2] Option B                       │
+  │  [3] Option C                       │
+  ╰─────────────────────────────────────╯
+```
+
+Rules:
+- Recommendation is ALWAYS first
+- Maximum 4 options
+- Reason is one sentence, not a paragraph
+- Box width: 40 characters (fits any terminal)
+- If multiple decisions, each gets its own box with a blank line between
+
+### Line Budgets
+
+| Output Type | Max Lines | Notes |
+|-------------|-----------|-------|
+| Daily Pulse | 25 | One screen, no scroll |
+| OKR Summary | 15 | Per-charter: headline + KR table |
+| Roadmap Meeting | 50 per section | Headline + portfolio + shipped + next + decisions |
+
+### Color Rules
+
+- Green = success/shipped/healthy, Red = blocked/failed, Yellow = warning/in-progress
+- Color is semantic ONLY — never decorative
+- All output MUST be fully readable with no color (monochrome-safe required)
+- Never use blue, cyan, magenta for semantic meaning (poor contrast)
+- Never use background colors (unpredictable across terminal themes)
+- Color applies ONLY to status words (GREEN/YELLOW/RED) and icons — never body text
+
+---
+
 ## Evolution
 
 This document is versioned with Sutra releases. Changes require:

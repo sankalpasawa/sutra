@@ -1,4 +1,6 @@
-# Sutra — Release Model
+# Sutra — Release History
+
+> For current version, see CURRENT-VERSION.md. This file is the full release history — load only when reviewing versions or debugging regressions.
 
 ## How Sutra and Client Companies Interact
 
@@ -28,7 +30,30 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 
 ## The Versioning
 
-### Sutra v1.4 (current)
+### Sutra v1.6 (current)
+- **CHARTERS.md**: Cross-functional goal framework — horizontal outcome goals that span vertical departments; KRAs, KPIs, OKRs per charter; DRI + contributors model
+- **ROADMAP-MEETING.md**: Replaces HOD Meeting with OKR-driven process — impact/effort matrix, forward-looking goal-setting instead of backward-looking status updates
+- **INPUT-ROUTING.md**: Human input classification protocol — every founder input classified (direction/task/feedback/new concept/question) before action; 3 enforcement levels (hook gate, protocol, skill); whitelisted system-maintenance actions
+- **ADAPTIVE-PROTOCOL.md v2**: 10 parameters, pre-scoring gates, two-axis routing, undertriage tracking
+- **TASK-LIFECYCLE.md updated**: L1 fast-path added; artifact requirements matrix (HLD, ADR, research gate, regression test at L3+)
+- **ESTIMATION-ENGINE.md updated**: Auto-calibration feedback loop, CALIBRATION-STATE.json, log format v1.1
+- **HUMAN-AGENT-INTERFACE**: Consolidated from L2 contraction
+- **4 artifact templates**: HLD, ADR, Research Gate, Bug Fix
+- **OKRs.md**: 8 charters for Sutra (expanded from 4)
+- **Versioning protocol**: CURRENT-VERSION.md split from RELEASES.md
+- **Tiered research cadence**: AI research weekly, frameworks bi-weekly
+- **Client registry**: 6 companies (DayFlow, PPR, Maze, Jarvis, Paisa, Asawa)
+- Triggered by: Founder session 2026-04-06 — infrastructure hardening, adaptive protocol v2, artifact gates, estimation auto-calibration
+
+### Sutra v1.5
+- **CHARTERS.md**: Cross-functional goal framework — horizontal outcome goals that span vertical departments; KRAs, KPIs, OKRs per charter; DRI + contributors model; scales by complexity tier (1-2 at Tier 1, 3-5 at Tier 2, unlimited at Tier 3)
+- **ROADMAP-MEETING.md**: Replaces HOD Meeting — OKR-driven, impact/effort matrix, forward-looking goal-setting instead of backward-looking status updates
+- **INPUT-ROUTING.md**: Human input classification protocol — every founder input classified (direction/task/feedback/new concept/question) before action; 3 enforcement levels (hook gate, protocol, skill); whitelisted system-maintenance actions
+- **OKRs.md**: Sutra's own company OKRs — 4 charters (Speed/Simplicity/Accuracy/Efficiency) mapped to V/C/A/U KPIs with Q2 2026 targets and roadmaps
+- **CLIENT-ONBOARDING.md**: Phase 6 updated — Step 10 generates OKRs.md with charters, Step 11 configures input routing enforcement level
+- Triggered by: Founder session 2026-04-06 — speed direction, OKR/charter framework design, input routing enforcement
+
+### Sutra v1.4
 - **TASK-LIFECYCLE.md**: unified 5-phase lifecycle (THINK → PRE → EXECUTE → POST → COMPRESS) replacing 3 separate pipelines; Parallelization Gate at PRE phase; thoroughness scales with change, not company
 - **DEFAULTS-ARCHITECTURE.md**: 3-tier directive governance (Immutable Invariants / Controlled Defaults / Tunable Parameters); formal safety property analysis (Lamport); FMEA blast radius assessment; convention-over-configuration inheritance
 - **PARALLELIZATION-ARCHITECTURE.md**: Bernstein conditions for formal independence testing; BSP (Bulk Synchronous Parallel) wave model adapted for LLM agent orchestration; structural enforcement after 15-agent collapse
@@ -131,7 +156,8 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 | PPR | Sutra v1.0 | Running. First feedback sent (parallel deploy collision). |
 | Maze | Sutra v1.3 | Upgrading. First company to receive engines layer. |
 | Jarvis | Sutra v1.3.1 | Onboarded. |
-| Asawa | Sutra v1.4 | Meta-client. Running latest as governance layer. |
+| Paisa | Sutra v1.4 | Onboarded. MVP stage. |
+| Asawa | Sutra v1.6 | Meta-client. Running latest as governance layer. |
 
 ## Release History
 
@@ -144,3 +170,5 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 | v1.3 | 2026-04-05 | Engines layer: Estimation, Adaptive Protocol, Enforcement Review | Founder design session — process depth must match problem |
 | v1.3.1 | 2026-04-05 | Estimation calibration (22 cycles), Adaptive Protocol L4, expanded onboarding, mid-stage deploy, protocol creation, process generation, skill acquisition | Evolution Protocol session — 22 cycles across 3 companies |
 | v1.4 | 2026-04-05 | Task Lifecycle, Defaults Architecture, Parallelization Architecture, Readability Standard, System Health, KPI System, Estimation Log Format, onboarding D32, Asawa as meta-client | Asawa CEO session — comprehensive infrastructure buildout |
+| v1.6 | 2026-04-06 | Adaptive Protocol v2 (10 params, pre-scoring gates, two-axis routing), Task Lifecycle L1 fast-path + artifact matrix, Estimation auto-calibration, HUMAN-AGENT-INTERFACE consolidated, 4 artifact templates (HLD/ADR/Research Gate/Bug Fix), 8 Sutra charters, tiered research cadence, versioning split | Founder session — infrastructure hardening, adaptive protocol v2, artifact gates, estimation auto-calibration |
+| v1.5 | 2026-04-06 | Charters framework, Roadmap Meeting (replaces HOD), Input Routing protocol (3 enforcement levels), Sutra OKRs (4 charters), onboarding Phase 6 Steps 10-11 | Founder session — speed direction, OKR/charter design, input routing enforcement |

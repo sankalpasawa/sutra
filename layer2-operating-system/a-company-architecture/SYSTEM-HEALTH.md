@@ -33,7 +33,7 @@ Every growing system needs ALL of these. They are not interchangeable.
 | G10 | **Complexity Budgeting** | Cap the number of active protocols/features/docs | Unbounded growth, decision paralysis | Addition requires removal (already in PROTO creation) |
 | G11 | **Drift Detection** | Verify actual behavior matches documented behavior | Reality diverges from docs/config | After any deploy OR weekly audit |
 | G12 | **Capacity Review** | Assess if current architecture handles current load | Performance degradation, outages | Usage doubles OR response time degrades 50% |
-| G13 | **Knowledge Refresh** | Re-evaluate assumptions against current environment | Stale strategy, missed opportunities | Quarterly OR after major market shift |
+| G13 | **Knowledge Refresh** | Re-evaluate assumptions against current environment | Stale strategy, missed opportunities | AI/tech/market: weekly; framework/methodology: bi-weekly; OR after major market shift |
 
 ---
 
@@ -47,7 +47,9 @@ Based on patterns from Google SRE, Spotify, Amazon, Basecamp, and mature open-so
 | **Every feature ship** | G1 (refactor touched code), G9 (automate new toil) | Part of feature lifecycle |
 | **Weekly** | G5 (archive done items), G3 (consolidate if duplicates found) | Weekly planning process |
 | **Monthly** | G8 (dependency audit), G2 (prune unused features) | Dedicated maintenance session |
-| **Quarterly** | G6 (migration backlog), G12 (capacity review), G13 (knowledge refresh) | Quarterly review |
+| **Weekly** | G13 — AI/tech/market domain research | Weekly review |
+| **Bi-weekly** | G13 — framework/methodology research (Cynefin, Wardley, Shape Up, etc.) | Bi-weekly review |
+| **Quarterly** | G6 (migration backlog), G12 (capacity review) | Quarterly review |
 | **On trigger only** | G4 (deprecation), G10 (complexity budget) | When threshold is crossed |
 
 **Key principle from SRE**: Google keeps toil below 50% of engineer time. The other 50% goes to work that reduces future toil. For Sutra: at least 20% of sessions should be maintenance, not feature work.
@@ -102,7 +104,7 @@ sutra/layer2-operating-system/
 **Relationship to existing Sutra:**
 - `CONTINUOUS-IMPROVEMENT.md` = how findings flow through the system (reactive)
 - `SYSTEM-HEALTH.md` = what proactive maintenance the system needs (proactive)
-- `PROTOCOL-CREATION.md` already has complexity budgeting (protocol count cap of 10)
+- `PROTOCOLS.md` (creation lifecycle section) already has complexity budgeting (protocol count cap of 10)
 - `VERSION-UPDATES.md` already has the evolution protocol for Sutra itself
 
 This file adds the PROACTIVE dimension. Continuous improvement catches problems after they appear. System health prevents problems before they appear.

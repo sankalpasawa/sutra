@@ -34,6 +34,19 @@ THINK produces one thing: a **thoroughness level** (1-4) that governs the depth 
 
 At Level 1, THINK is a 10-second gut check. At Level 4, it's deep research with expert-pattern review.
 
+**Research Gate** (L3+ mandatory):
+
+At L3+, THINK must produce a documented research step before moving to PRE. The LLM knows industry practices but won't surface them unless required. This gate prevents reinventing known patterns.
+
+| Level | Research Requirement |
+|-------|---------------------|
+| L1 | None |
+| L2 | None |
+| L3 | **3-5 bullet "prior art" section**: how do industry/experts approach this type of problem? |
+| L4 | **Full prior art scan with references**: named sources, patterns reviewed, approach selected with rationale |
+
+The research artifact lives inline in the task planning output or as a `THINK.research` section in the task log. It does not need to be a separate document.
+
 ---
 
 ## Phase 2: PRE
@@ -49,8 +62,42 @@ At Level 1, THINK is a 10-second gut check. At Level 4, it's deep research with 
 Thoroughness determines depth:
 - **Level 1**: One-line estimate ("~10 min, 1 file, trivial")
 - **Level 2**: Estimation table with key dimensions
-- **Level 3**: Full estimation table + step-by-step plan
-- **Level 4**: Full table + risk assessment + contingency plan
+- **Level 3**: Full estimation table + step-by-step plan + **HLD** (see below)
+- **Level 4**: Full table + risk assessment + contingency plan + **HLD** + **ADR** (see below)
+
+**HLD Requirement** (L3+ engineering tasks, mandatory):
+
+At L3+, PRE must produce a High-Level Design BEFORE the file-level plan. The LLM naturally plans at file level (which is LLD) but misses system-level implications. The HLD catches cross-cutting concerns before code is written.
+
+| Level | HLD Requirement |
+|-------|----------------|
+| L1 | None |
+| L2 | None |
+| L3 | **Text-based HLD (5-10 lines)**: component interaction map, data flow, system boundaries |
+| L4 | **Full architecture diagram**: interaction patterns, data flow, boundaries, risks — reviewed before LLD begins |
+
+HLD vs LLD distinction:
+- **HLD** = "these components interact this way, data flows here to here"
+- **LLD** = "file X gets function Y with signature Z"
+
+**ADR Protocol for Irreversible Decisions** (L3+ mandatory when alternatives exist):
+
+Any L3+ task that involves choosing between alternatives (technology, pattern, architecture) must produce an Architecture Decision Record. In the solo founder + AI model, each session starts fresh — ADRs are how decisions survive between sessions.
+
+| Level | ADR Requirement |
+|-------|----------------|
+| L1 | None |
+| L2 | None |
+| L3 | **ADR required for irreversible decisions** — when choosing between alternatives with hard-to-reverse consequences |
+| L4 | **ADR required for all significant decisions** — every technology choice, pattern selection, or architecture decision |
+
+ADR template (one page max):
+1. **Context** (2 sentences): what situation requires a decision?
+2. **Options** (2-3): what alternatives were considered?
+3. **Decision** (1 sentence): what was chosen?
+4. **Consequences** (2-3 bullets): what are the tradeoffs accepted?
+
+Storage: `org/decisions/{date}-{slug}.md`
 
 ---
 
@@ -75,6 +122,19 @@ Before executing sequentially, apply the **independence test**:
 This is not optional. Sequential execution of independent tasks is a **throughput violation** — it wastes time proportional to the number of tasks that could have been parallel. The agent must justify sequential execution of 2+ independent items.
 
 **Root cause for this rule**: Session 2026-04-05 dispatched 5 agents in parallel (wave 1), then fell into sequential mode for waves 2-3. Post-mortem: no structural check forced parallelization at each decision point. Results arrived → agent processed one-by-one → built next thing → repeated. The fix is this gate: EXECUTE always checks for parallelism first.
+
+**Regression Test Rule** (L2+ bug fixes, mandatory):
+
+Every bug fix at L2+ must include a test that would have caught the bug. Without this, the same class of bug recurs. The LLM fixes bugs well but doesn't think about prevention unless required.
+
+| Level | Regression Test Requirement |
+|-------|---------------------------|
+| L1 | None |
+| L2 | **Regression test required**: a test that reproduces the original bug and verifies the fix |
+| L3 | **Regression test required**: same as L2, plus edge case coverage for the bug class |
+| L4 | **Regression test required**: same as L3, plus root cause analysis documented in test comments |
+
+This rule applies only to bug fix tasks (not new features). For new features, the standard test requirements by level apply.
 
 The old pipeline stages (SHAPE, BUILD, TEST, SHIP, REVIEW, QA) all live inside EXECUTE. Which ones activate depends on thoroughness:
 
@@ -103,6 +163,8 @@ POST feeds two systems:
 - **DIRECTION-ENFORCEMENT.md** receives violation reports
 
 At Level 1, POST is "log the result." At Level 4, it's a full retrospective with process updates.
+
+**ADR Archival**: If an ADR was produced in PRE, POST confirms the decision held (or documents why it changed during EXECUTE) and ensures the ADR is committed to `org/decisions/`.
 
 ---
 
@@ -141,6 +203,35 @@ COMPRESS is what makes this lifecycle anti-bureaucratic. Process grows when need
 | **EXECUTE** | Build + ship | Build + test + ship | Full SDLC stages | Full SDLC + review + approval |
 | **POST** | Log result | Measure + compare | Full retro + learn | Full retro + process update |
 | **COMPRESS** | Auto (passive) | Auto (passive) | Review patterns | Review + simplify |
+
+### Artifact Requirements by Phase and Level
+
+This matrix specifies which artifacts each phase MUST produce. Items in **bold** are discipline-specific additions (from artifact chain analysis, 2026-04-06).
+
+| Phase | L1 (Minimal) | L2 (Standard) | L3 (Thorough) | L4 (Critical) |
+|-------|-------------|---------------|----------------|----------------|
+| **THINK** | 10-sec gut check | 2-min analysis | **Research gate** (3-5 bullets prior art) + analysis + framing | **Research gate** (full prior art scan) + deep analysis + expert review |
+| **PRE** | 1-line estimate | Estimation table | Estimation + **HLD** + plan; **ADR if irreversible** | Estimation + **HLD** + risk assessment + **ADR for all decisions** |
+| **EXECUTE** | Build + ship | Build + tests; **regression test on bug fixes** | Build + tests + review; **regression test on bug fixes** | Build + tests + review + QA + approval; **regression test on bug fixes** |
+| **POST** | Log result | Measure + compare | Log + review; **ADR archive** | Log + review + process update; **ADR archive** |
+| **COMPRESS** | Auto (passive) | Auto (passive) | Learnings + pattern review | Learnings + calibration + simplification |
+
+### L1 Fast-Path Gate
+
+L1 tasks that meet ALL of the following criteria skip directly to EXECUTE then COMPRESS, bypassing PRE and POST:
+
+| Criterion | Threshold |
+|-----------|-----------|
+| Files touched | <= 2 |
+| Task type | Simple task or question (not a feature, not a refactor) |
+| Complexity score | 1 on all axes |
+| Reversibility | Fully reversible |
+
+When the gate passes: `THINK (10-sec score) → EXECUTE → COMPRESS`. No estimation, no plan, no post-measurement.
+
+When the gate fails (any criterion not met): the task is not L1. Re-score at L2+.
+
+This prevents process overhead on trivially small changes while ensuring nothing that deserves scrutiny slips through.
 
 ---
 
@@ -257,7 +348,7 @@ The insight: these were never different systems. A 0-user company doing an auth 
 | **Adaptive Protocol Engine** | IS the scoring/routing logic. Reads complexity/cost/impact, outputs thoroughness level. |
 | **DIRECTION-ENFORCEMENT.md** | Fires in POST phase. Scans for principle violations (D27 regression). |
 | **Evolution Pulse** | Fires in POST phase. Reports outputs, not activities (D17). |
-| **PROTOCOL-CREATION.md** | Invoked in PRE when no existing protocol covers the task (D9/D25). |
+| **PROTOCOLS.md** (creation lifecycle) | Invoked in PRE when no existing protocol covers the task (D9/D25). |
 | **ESTIMATION-LOG.jsonl** | Accumulates POST data. Feeds COMPRESS phase pattern recognition. |
 
 ---
@@ -271,6 +362,56 @@ The insight: these were never different systems. A 0-user company doing an auth 
 | POST captures actuals for Level 2+ | HARD — task is not complete until actuals are logged. |
 | POST captures actuals for Level 1 | SOFT — prompted, not enforced. |
 | COMPRESS runs automatically | PASSIVE — no human action required. System tracks patterns. |
+
+---
+
+## Founder Interaction Shortcuts
+
+| You say | What happens |
+|---------|-------------|
+| "I have an idea: {X}" | CPO creates INTAKE.md, CEO evaluates, specs are created |
+| "standup" | All daily agents run, produce cross-department report |
+| "strategy" | CEO runs weekly review, produces strategic priorities |
+| "ship {feature}" | CTO ships, CQO runs QA, CDaO sets up monitoring |
+| "how's {feature}?" | CPO gives status update across all stages |
+| "kill {feature}" | Feature logged as KILLED with reason |
+| "what should I work on?" | CEO synthesizes all departments, gives #1 priority |
+
+You never have to manage the process. The process manages itself. You set direction. The org executes.
+
+---
+
+## Quick Reference (30-second cheat sheet)
+
+Read this instead of the full engine specs. Takes 30 seconds.
+
+### Before Every Task
+
+**Step 1: Estimate (2 min)**
+
+| Dimension | Quick Answer |
+|-----------|-------------|
+| Confidence | High (>80%) / Medium (50-80%) / Low (<50%) |
+| Files | Count them |
+| Time | Use multiplier: config=0.3x, UI=0.45x, security=0.8x of your gut estimate |
+
+If confidence < 40% or cost > $5 tokens: flag to founder.
+
+**Step 2: Pick Depth**
+Score the task 1-5 on: impact, sensitivity, complexity. Take the MAX score:
+
+| Max Score | Depth | Pipeline |
+|-----------|-------|----------|
+| 1-2 | Minimal | build -> ship -> log |
+| 3 | Standard | estimate -> build -> test -> ship -> learn |
+| 4 | Full | estimate -> SPEC -> build -> test -> review -> ship -> learn |
+| 5 | Critical | estimate -> SPEC -> review -> build -> verify -> ship -> learn -> retro |
+
+**Step 3:** Build at that depth. Follow the pipeline. No more, no less.
+
+**Step 4:** Log actuals to engines/estimation-log.jsonl.
+
+Full specs in engines/ if you need them. You probably don't.
 
 ---
 

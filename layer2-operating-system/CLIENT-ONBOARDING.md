@@ -203,7 +203,7 @@ anti_patterns:
     ...
 ```
 
-**Refresh cadence**: This research is conducted during onboarding and refreshed at the quarterly Knowledge Refresh cadence (G13 from SYSTEM-HEALTH.md). When G13 fires, re-evaluate domain experts, check for new frameworks, and update the Market Brief. Major market shifts trigger an immediate refresh regardless of schedule.
+**Refresh cadence**: This research is conducted during onboarding and refreshed on a tiered cadence (G13 from SYSTEM-HEALTH.md): AI/tech research refreshed weekly, framework/methodology research refreshed bi-weekly. When G13 fires, re-evaluate domain experts, check for new frameworks, and update the Market Brief. Major market shifts trigger an immediate refresh regardless of schedule.
 
 ### Example:
 
@@ -579,7 +579,18 @@ Stage → determines process intensity
    - Register any new external systems the company needs in `EXTERNAL-SYSTEMS.md`
    - Add `## AI Configuration` section to the company's OS file
    - Follow override rules from `asawa-inc/shared/OVERRIDE-RULES.md`
-10. **Self-check**: grep for "DayFlow", "{placeholder}", or any generic text. Replace all.
+10. **Generate OKRs.md** from company stage and strategy:
+    - Tier 1: 1-2 charters (Speed + one other based on the bet)
+    - Tier 2: 3-5 charters (Speed, Quality, Growth + context-specific)
+    - Tier 3: Unlimited (full charter framework from `a-company-architecture/CHARTERS.md`)
+    - Use charter template from CHARTERS.md, set initial KPIs from Shape Brief success metrics
+11. **Configure input routing** — set enforcement level based on founder involvement:
+    - Hands-on: Level 2 (protocol) — founder sees classification, catches skips
+    - Strategic: Level 2 (protocol) — same default
+    - Delegated: Level 3 (skill) — automated routing, less founder overhead
+    - Level 1 (hook gate) available on request — recommended for governance-heavy companies
+    - Write `input-routing.yaml` with chosen level
+12. **Self-check**: grep for "DayFlow", "{placeholder}", or any generic text. Replace all.
 
 ### Output: Company OS Package
 
@@ -592,6 +603,8 @@ Stage → determines process intensity
 ├── METRICS.md                # What to measure, empty log
 ├── TODO.md                   # P0 features from Shape Brief, ordered
 ├── CLAUDE.md                 # Dev instructions for AI agents building this product
+├── OKRs.md                   # Company charters + OKRs (from CHARTERS.md framework)
+├── input-routing.yaml        # Enforcement level config (1=hook, 2=protocol, 3=skill)
 └── feedback-to-sutra/        # Where learnings go back to Sutra
 ```
 
@@ -839,27 +852,152 @@ Sutra publishes a new version when:
 
 ---
 
-## Learnings from Evolution Cycles (2026-04-05)
+## Learnings & Changelog
 
-### What We Learned Deploying to 4 Companies
+> Version-specific changes and evolution cycle learnings moved to [CLIENT-ONBOARDING-CHANGELOG.md](CLIENT-ONBOARDING-CHANGELOG.md). (PROTO-011: Version Focus)
 
-| Company | Type | Onboarding Used | Key Learning |
-|---------|------|----------------|-------------|
-| Maze | New (B2C content) | Full 8-phase | Works well but compliance audit showed gaps — retroactive artifacts don't count |
-| DayFlow | Mid-stage (mobile) | MID-STAGE-DEPLOY.md | Existing conventions must be respected — OS adapts to company, not vice versa |
-| Jarvis | New (AI tool) | Fast scaffold | 8-phase is heavy for a solo founder's personal tool — Tier 1 needs a lighter path |
-| PPR | New (personal) | Full 8-phase | Worked but most departments are stubs at Tier 1 |
+---
 
-### Changes Made Based on Learnings
+## Appendix A: Complexity Tiers
 
-1. **Phase 7 updated**: Mandatory identity declaration, boundary hook installation, isolation tests
-2. **MID-STAGE-DEPLOY.md created**: 7-step protocol for existing codebases (AUDIT → CLASSIFY → MAP → DEPLOY → VERIFY → ACTIVATE → LEARN)
-3. **Engines deploy during Phase 7**: Not as a separate step — estimation, routing, enforcement review all installed during onboarding
-4. **Sensitivity map auto-seeded**: During Phase 7, scan codebase for auth/, env, migrations → seed sensitivity.jsonl
-5. **Skill tier assigned during Phase 6**: SUTRA-CONFIG.md includes skill_tier based on complexity tier
+ENFORCEMENT: HARD — all companies must be classified. Tier requirements are mandatory.
 
-### What Still Needs Improvement
+### How to Classify
 
-1. Tier 1 needs a lighter onboarding path (< 30 min instead of 60 min)
-2. The 8 phases could collapse to 5 for Tier 1 (INTAKE → SHAPE → BUILD → DEPLOY → ACTIVATE)
-3. Automated scaffolding (npx sutra-init) would eliminate manual file creation
+Complexity is determined by three factors. The highest factor determines the tier.
+
+| Factor | Low | Medium | High |
+|--------|-----|--------|------|
+| **People** | Solo founder, no team | 1-3 contributors | 4+ people or cross-functional |
+| **Users** | Founder is the user (0 external) | 1-100 external users | 100+ users |
+| **Stakes** | Personal tool, no revenue | Pre-revenue but external users depend | Revenue, contracts, or regulatory |
+
+### The Three Tiers
+
+**Tier 1: Personal** — "Just me, just shipping"
+
+Mandatory: Onboarding (8 phases), product brief, tech stack, architecture rules, build order, TODO.md, session isolation, feedback to Sutra.
+Scaled down: Metrics (2-3 success metrics), single-track process, self-check every 3rd feature, soft enforcement hooks.
+Skip: Department-level functions, agent incentives, Daily Pulse, standup protocol.
+
+**Tier 2: Product** — "Real users, real consequences"
+
+Everything in Tier 1, plus: shipping log, metrics with weekly review, compliance before every deploy, A/B testing, quality + security functions active, weekly check-in.
+Enforcement: hard for file boundaries, soft for metrics.
+
+**Tier 3: Company** — "Team, revenue, or regulation"
+
+Full Sutra OS. Nothing optional. All department functions, hard enforcement, agent incentives, Daily Pulse, standup, full compliance, incident response, weekly planning, decision logs.
+
+### Classification Table
+
+| Company | Tier | Rationale |
+|---------|------|-----------|
+| PPR | 1 (Personal) | Solo founder, personal wedding tool, 0 external users |
+| DayFlow | 2 (Product) | Solo founder but building for external users, pre-launch |
+
+### When to Re-classify
+
+Re-evaluate when: new person joins, first external user, revenue starts, regulatory requirement appears. Tier only goes UP.
+
+### Enforcement by Tier
+
+| Enforcement aspect | Tier 1 | Tier 2 | Tier 3 |
+|-------------------|--------|--------|--------|
+| File boundary hooks | Soft (flag) | Hard (block) | Hard (block) |
+| Metrics logging | Self-check every 3 features | Every deploy | Every commit |
+| Compliance check | Every 3rd feature | Every deploy | Every deploy + pre-merge |
+| Feedback to Sutra | After incidents | After every incident | After every incident + weekly |
+| Shipping log | Optional | Required | Required |
+
+---
+
+## Appendix B: Tier 1 Quick Onboarding
+
+ENFORCEMENT: Use this for Tier 1 (Personal) companies only. Tier 2+ use the full 8-phase process above.
+
+### When to Use
+
+Solo founder, personal tool, 0 external users. Examples: Jarvis, PPR. Don't need market research, A/B testing, or department structures.
+
+### 5 Phases (30 minutes total)
+
+```
+INTAKE → SHAPE → BUILD → DEPLOY → ACTIVATE
+ (5 min)  (5 min) (10 min) (5 min)  (5 min)
+```
+
+1. **INTAKE** (5 min): Ask three questions: What are you building? What's the core bet? What platform? Output: 3 sentences in CLAUDE.md.
+2. **SHAPE** (5 min): List 5 P0 features + pick tech stack. Output: TODO.md + CLAUDE.md.
+3. **BUILD** (10 min): Scaffold project, create repo, install deps, create CLAUDE.md.
+4. **DEPLOY** (5 min): Deploy, install hooks + settings.json, install engines, seed sensitivity map, run 3 isolation tests.
+5. **ACTIVATE** (5 min): Build first feature through engines, capture actuals, ship.
+
+### What's Skipped (vs full 8-phase)
+
+| Phase | Why Skipped |
+|-------|------------|
+| MARKET (10 min) | Personal tool — no market to research |
+| DECIDE (2 min) | Solo founder — decision is implicit |
+| CONFIGURE (10 min) | Minimal config — no A/B testing, no departments |
+
+### Graduation
+
+When the company gets its first external user: upgrade to Tier 2. Run the missing phases at that point.
+
+---
+
+## Appendix C: Mid-Stage Company Onboarding
+
+The process for installing Sutra on a company that already exists — running code, conventions, habits, and debt.
+
+### The Difference from Greenfield
+
+| | Greenfield (Phases 1-8 above) | Mid-Stage (this appendix) |
+|---|---|---|
+| Starting point | An idea | Running code + existing conventions |
+| Risk | Building the wrong thing | Breaking what already works |
+| Approach | Generate from scratch | Assess, map, adapt, deploy incrementally |
+| Duration | ~60 minutes | ~2-3 sessions |
+
+### Five Phases: ASSESS → MAP → PLAN → DEPLOY → VERIFY
+
+**Phase 0: ASSESS** — Audit codebase health, process health, habits, existing OS, conventions vs Sutra processes. Output: ASSESSMENT.md. Gate: Founder confirms accuracy.
+
+**Phase 1: MAP** — For each Sutra process: adopt as-is, adapt, or defer. Key rule: when company convention conflicts with Sutra, company convention wins UNLESS security/data risk. Output: MAPPING.md. Gate: Founder approves.
+
+**Phase 2: PLAN** — Order deployments to minimize disruption: (1) invisible infrastructure, (2) structure, (3) gates, (4) sensors, (5) one end-to-end feature. Output: DEPLOYMENT-PLAN.md.
+
+**Phase 3: DEPLOY** — Execute one phase at a time, verify after each, commit per change, don't fix old bugs during deployment.
+
+**Phase 4: VERIFY** — Run full system through one real feature. Checklist: standup works, process-gate enforces, design mockup before code, sensors run, metrics logged, LEARN.md written.
+
+### Tier-Specific Adjustments
+
+| Phase | Tier 1 | Tier 2 | Tier 3 |
+|---|---|---|---|
+| Infrastructure | Soft hooks only | Mixed hooks | Hard hooks |
+| Structure | Simple TODO restructure | Full node structure | Full + department tracking |
+| Gates | Soft warnings | Shape is hard, rest soft | All hard |
+| Sensors | 2-3 basic sensors | 5 standard sensors | 5+ custom sensors |
+| Validation | 1 feature | 1 feature + metrics comparison | 3 features + team review |
+
+---
+
+## Appendix D: Mid-Stage Deployment Protocol (7-Step)
+
+ENFORCEMENT: HARD — follow every step for existing codebases.
+
+```
+AUDIT → CLASSIFY → MAP → DEPLOY → VERIFY → ACTIVATE → LEARN
+```
+
+1. **AUDIT**: Read CLAUDE.md, TODO.md, codebase structure, existing OS files, deployment plans, fragile areas, security issues. Output: AUDIT-REPORT.md. Gate: No code changes during audit.
+2. **CLASSIFY**: Classify complexity tier, identify active departments, map existing conventions to PROTO-XXX. Output: SUTRA-CONFIG.md tier + rationale.
+3. **MAP**: Align existing patterns. Key rule: company convention wins unless security/data risk. Output: DEPLOYMENT-MAP.md. Gate: Founder approves conflicts.
+4. **DEPLOY**: Install only gaps. Deploy engines, update version pin, add engine instructions to CLAUDE.md (additive only), verify boundary enforcement + 3 isolation tests.
+5. **VERIFY**: Run existing hooks, boundary tests, check workflow, test one read-only operation through engines.
+6. **ACTIVATE**: Pick top P0 task, run full evolution cycle (estimate, route, build, verify, gap report), log results.
+7. **LEARN**: Was deployment additive? Did engines produce useful output? What doesn't apply? What's missing? Feed back to Sutra.
+
+**Time estimate:** Steps 1-3: ~30 min, Steps 4-5: ~15 min, Steps 6-7: ~30 min. Total: ~75 min.

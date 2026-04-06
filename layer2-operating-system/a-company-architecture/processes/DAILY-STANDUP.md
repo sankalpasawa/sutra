@@ -238,6 +238,11 @@ After report is written, route action items to departments:
 - `org/decisions/` provides context on past decisions
 - No agent maintains state between sessions — the codebase IS the state
 
+Each agent writes:
+- Their section of the standup report
+- Any new decision to `org/decisions/` (if they made one)
+- Updated tasks to TODO.md (if they found new work)
+
 ### Skipping Conditions
 - If `org/standup/{today's date}.md` already exists, skip unless forced
 - User can force re-run with "standup --force" or "re-run standup"
