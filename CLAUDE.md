@@ -20,7 +20,7 @@ Sutra protocols, onboarding process, skill catalog, versioning, client feedback 
 TASK: "[what you're about to do]"
 DEPTH: X/5 ([surface|considered|thorough|rigorous|exhaustive])
 EFFORT: [time estimate], [files estimate]
-COST: [token estimate]
+COST: ~$X (~Y% of $200 plan)
 IMPACT: [what this changes and for whom]
 ```
 Every task — protocol changes, research, onboarding, documentation — gets assessed. After completion, log:
