@@ -43,3 +43,6 @@ Sutra's intake must be a conversation, not a questionnaire. The founder may not 
 
 ## Status
 INCORPORATED — Sutra v1.2 — Phase 1 INTAKE rewritten as conversational flow (2026-04-05)
+
+## Resolution
+RESOLVED in v1.2 (conversational intake)

@@ -6,9 +6,9 @@
 
 **The Problem**: Sutra conflates two distinct things:
 
-1. **Problem-solving process** — forcing you to think through edge cases, risks, department impacts, security implications BEFORE writing code. This is the thinking layer. It earned its keep on F7 (caught a real RLS security hole).
+1. **Problem-solving process** — forcing you to think through edge cases, risks, practice impacts, security implications BEFORE writing code. This is the thinking layer. It earned its keep on F7 (caught a real RLS security hole).
 
-2. **Implementation bureaucracy** — writing INTAKE.md, SHAPE.md, SPEC.md files on disk, compliance gates between stages, artifact depth by tier, department sign-off tables. This is the paperwork layer. It added zero value for trivial features (privacy policy = 28 audit FAILs on process, but the code was fine).
+2. **Implementation bureaucracy** — writing INTAKE.md, SHAPE.md, SPEC.md files on disk, compliance gates between stages, artifact depth by tier, practice sign-off tables. This is the paperwork layer. It added zero value for trivial features (privacy policy = 28 audit FAILs on process, but the code was fine).
 
 **The Principle**: If you know the answer, just do it. Process should only trigger when the problem is genuinely ambiguous, risky, or cross-cutting.
 
@@ -29,13 +29,13 @@ The current SUTRA pipeline forces you to re-document stages that already happene
 
 ### What to Restructure
 
-- [ ] **Split process into thinking vs artifacts** — the thinking prompts (edge cases? RLS? sign-out path? department impact?) are valuable. The mandatory file artifacts (INTAKE.md, SHAPE.md, SPEC.md as separate files with section requirements) are overhead when the answer is obvious.
+- [ ] **Split process into thinking vs artifacts** — the thinking prompts (edge cases? RLS? sign-out path? practice impact?) are valuable. The mandatory file artifacts (INTAKE.md, SHAPE.md, SPEC.md as separate files with section requirements) are overhead when the answer is obvious.
 - [ ] **Auto-route by complexity** — trivial/standard features go DIRECT with optional thinking prompts. Significant/horizontal features get the full problem-solving layer. The current complexity tiers exist but don't affect the process depth enough.
-- [ ] **Kill artifact-as-compliance** — the compliance agent should check "did you think about X?" not "does SHAPE.md have a per-department section?" Checking for thinking is valuable. Checking for word counts and section headers is bureaucracy.
+- [ ] **Kill artifact-as-compliance** — the compliance agent should check "did you think about X?" not "does SHAPE.md have a per-practice section?" Checking for thinking is valuable. Checking for word counts and section headers is bureaucracy.
 - [ ] **Make the compliance agent problem-focused** — instead of "file exists? section exists? depth matches tier?", it should ask: "did you consider RLS implications? is there a rollback plan? what happens on sign-out?" Problem-solving questions, not format compliance.
 - [ ] **Evidence from Maze F7**: SUTRA compliance caught 1 security hole, 1 incomplete migration, 2 scope gaps, 1 missing risk. All of these were *thinking* catches, not *artifact format* catches. The value was in the questions asked, not the documents produced.
 - [ ] **Evidence from Maze INIT-0.1/0.2**: 28 FAIL verdicts on process compliance, but code quality was 7-8/10. The process was theater — auditing paperwork, not catching bugs. DIRECT mode would have shipped identical code faster.
-- [ ] **Reconcile the three competing pipelines** into one that scales: minimal for trivial (just build), thinking-prompts for standard (are there edge cases?), full problem-solving for horizontal (per-department analysis, compliance audit).
+- [ ] **Reconcile the three competing pipelines** into one that scales: minimal for trivial (just build), thinking-prompts for standard (are there edge cases?), full problem-solving for horizontal (per-practice analysis, compliance audit).
 - [ ] **Detect lifecycle entry point** — when a task arrives, ask: "where in the lifecycle is this?" If IDENTIFY and ANALYZE are already done (HOD meeting decided priority, INTAKE exists), skip to DESIGN. If DESIGN is also done (SPEC exists from a prior session), skip to IMPLEMENT. Don't re-document what's already documented elsewhere.
 - [ ] **Trace decisions with pointers, not duplicates** — instead of writing a fresh INTAKE that restates the HOD meeting, write: "See `os/meetings/2026-04-04-hod-q2-kickoff.md` — priority decided there. Problem: users lose preferences. Why now: retention is the bet." One paragraph pointing to the source of truth, not a re-creation of it.
 - [ ] **Make org knowledge cumulative** — the HOD meeting notes, TODO priorities, feature INTAKEs, and session outputs should form a connected graph. Each artifact should reference where the upstream thinking lives. The process adds value by connecting existing knowledge, not by generating fresh paperwork that duplicates it.
@@ -88,3 +88,38 @@ Not now. Build this when:
 - Manual file copying works for 3 companies (DayFlow, Maze, PPR)
 - All on v1.0/v1.1, minimal divergence
 - No upgrade has broken anything yet (because upgrades are rare and manual)
+
+---
+
+## Feedback-Derived: Enforcement Gaps (from DayFlow 2026-04-06)
+
+- [x] **Submodule boundary enforcement** — Boundary hook fails to block edits to git submodules because they share the parent repo's filesystem path. Agent edited `../sutra/` files from DayFlow session. Fix: check if target file is inside a git submodule (via `.gitmodules` or `git ls-files`), block with logged reason, allow only `asawa` role to bypass.
+  - Source: dayflow/os/feedback-to-sutra/2026-04-06-boundary-hook-gap.md
+  - RESOLVED: submodule detection added to enforce-boundaries.sh v2
+
+- [x] **Depth block enforcement hook** — Agent executed ~15 tasks without a single depth assessment block. The depth system is documented but has zero enforcement. Fix: PreToolUse hook that checks if depth block was output before first Edit/Write on a task. Block and remind if missing.
+  - Source: dayflow/os/feedback-to-sutra/2026-04-06-depth-block-skipped.md
+  - RESOLVED: depth-enforcement-hook.sh + register-depth.sh created as standard Sutra module
+
+- [x] **v1.7 missing infrastructure** — Four processes introduced in v1.7 require infrastructure that doesn't exist: (1) Finding Resolution Gate needs persistent finding storage schema, (2) LEARN phase needs protocol store with directory/format/retrieval, (3) Verification cron outputs logs but nothing reads them, (4) Sensitivity Map infrastructure from ENFORCEMENT-REVIEW.md is entirely undeployed (10 unchecked items). Fix: define standard infrastructure modules (`.claude/findings/`, `os/protocols/`, `.claude/logs/` standardization).
+  - Source: dayflow/os/feedback-to-sutra/2026-04-06-v17-infrastructure-gaps.md
+  - RESOLVED: 4 modules created (finding tracker, protocol store, depth hook, sensitivity deferred to v2)
+
+- [x] **VERIFY hard gate for multi-finding audits** — Agent ran depth-5 visual QA, found 9 issues, fixed 8 fully but only partially fixed #2 (compound problem: overlay color + sheet height). Committed as complete. Founder caught the miss. Fix: at depth >= 4, require finding tracking IDs and block commits without resolution evidence for each finding. Add `interaction_frequency` as 6th sensitivity dimension.
+  - Source: dayflow/os/feedback-to-sutra/2026-04-06-verify-gate-miss.md
+  - RESOLVED: FINDING-TRACKER-TEMPLATE.md provides persistence for finding resolution gate
+
+## Feedback-Derived: Process Gaps (from Maze 2026-04-04/05)
+
+- [x] **Supabase org confusion** — MCP-connected accounts may not be the founder's personal accounts. External Resource Sovereignty Rule added to ENFORCEMENT.md.
+  - Source: maze/os/feedback-to-sutra/2026-04-04-supabase-org-confusion.md
+  - RESOLVED
+
+- [ ] **Pipeline stress test: tracking sync + A/B exemptions** — Remaining open items from Maze pipeline stress test: (1) tracking sync — docs fall behind reality during build, need automated sync or post-commit reminder, (2) A/B test exemptions — bug fixes and infra tasks should be exempt from SUTRA/DIRECT alternation.
+  - Source: maze/os/feedback-to-sutra/2026-04-05-sutra-pipeline-stress-test.md
+  - PARTIALLY RESOLVED: v2 domain gate addresses pipeline modes, terminal check addresses VERIFY timing. These 2 items remain open.
+
+## Feedback-Derived: Process Gaps (from Dharmik 2026-04-07)
+
+- [ ] **Wait gate for parallel agents at depth 5** — Orchestrator compiled final SEO audit report before 4 parallel agents returned their findings. At depth 5 (exhaustive), the process should enforce a wait gate: no final compilation until all dispatched agents complete. Fix: add rule to depth 5 process — "if agents dispatched, block final deliverable until all return."
+  - Source: projects/dharmik/os/feedback-to-sutra/001-wait-for-data.md
