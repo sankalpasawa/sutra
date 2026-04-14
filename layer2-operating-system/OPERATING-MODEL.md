@@ -88,17 +88,18 @@ principles:
 
   - id: P8
     name: Never bypass a running process
-    rule: "When a process is in flight (parallel agents, data collection, review pipeline), wait for it to complete. Impatience is not a reason to skip steps. Speed matters at execution time, not at the cost of process integrity. If agents are gathering data, the synthesis waits for all agents — it does not proceed with partial data or substitute its own work."
-    when_to_apply: "When parallel agents are running and results are pending. When a review pipeline is in progress. When tempted to skip a step because it's 'taking too long.' When the orchestrator could do the work itself instead of waiting for the delegated agent."
-    violation_signal: "An orchestrator writes a report while delegated agents are still running. A synthesis step uses partial data. A process step is skipped with the rationale 'I already know the answer.' An agent duplicates work that was delegated to another agent."
-    origin: "Maze onboarding 2026-04-04. HOD meeting agents were running in parallel. Orchestrator got impatient and wrote the report itself, bypassing the agents. Founder corrected: 'Just because you have to wait on something, you cannot bypass those things.'"
+    canonical_source: "holding/PRINCIPLES.md P8"
+    rule: "When a process is in flight, wait for it to complete. Never proceed with partial data or substitute own work for delegated work."
+    protocol_implementation: "PROTO-002 (Wait for Parallel Completion)"
+    when_to_apply: "When parallel agents are running. When a review pipeline is in progress. When tempted to skip a step."
+    violation_signal: "Orchestrator writes synthesis while agents still running. Process step skipped."
 
   - id: P9
     name: Structure adapts, content is configurable
-    rule: "There is always structure — the system always scores, selects a gear, learns. But the structure itself evolves through use. Never hardcode content (parameters, gates, protocols, departments) that varies by company, task type, or context. Content is configured per company. Structure adapts through the learning loop. Hardcoding content into structure makes the system brittle. Freezing structure prevents evolution."
-    when_to_apply: "When building any system, engine, or process. When adding a gate, parameter, protocol, or department. When the same logic needs to work across multiple companies. When the structure itself needs to change based on what was learned."
-    violation_signal: "A gate says 'auth, payments, PII' instead of reading from a company config. A department list is written inline instead of loaded from company state. A pipeline has fixed steps instead of steps configured by gear. The structure cannot accommodate a new company's needs without rewriting the engine."
-    origin: "Adaptive Protocol Engine review 2026-04-06. Gate triggers, parameter lists, department names, and pipeline steps were all hardcoded in the engine doc. Founder corrected: 'Don't hardcode — reusability of the architecture is a core principle.' Then refined: 'Structure is not fixed — it is adaptable. But there is structure.'"
+    rule: "There is always structure — the system always scores, selects a gear, learns. But the structure itself evolves through use. Never hardcode content (parameters, gates, protocols, practices) that varies by company, task type, or context. Content is configured per company. Structure adapts through the learning loop. Hardcoding content into structure makes the system brittle. Freezing structure prevents evolution."
+    when_to_apply: "When building any system, engine, or process. When adding a gate, parameter, protocol, or practice. When the same logic needs to work across multiple companies. When the structure itself needs to change based on what was learned."
+    violation_signal: "A gate says 'auth, payments, PII' instead of reading from a company config. A practice list is written inline instead of loaded from company state. A pipeline has fixed steps instead of steps configured by gear. The structure cannot accommodate a new company's needs without rewriting the engine."
+    origin: "Adaptive Protocol Engine review 2026-04-06. Gate triggers, parameter lists, practice names, and pipeline steps were all hardcoded in the engine doc. Founder corrected: 'Don't hardcode — reusability of the architecture is a core principle.' Then refined: 'Structure is not fixed — it is adaptable. But there is structure.'"
 ```
 
 ### 1.5 The Six Tension Resolution Frameworks
@@ -766,7 +767,7 @@ Concrete protocols for different types of changes.
    - Marketing: Does this change affect App Store listing, screenshots, or messaging?
    - Finance: Does this change affect costs (API usage, infrastructure)?
 
-2. **Which departments need to act:**
+2. **Which practices need to act:**
    At current scale (solo founder), this is a checklist:
    - [ ] Product: Feature spec updated?
    - [ ] Engineering: Code changes identified?
@@ -1091,7 +1092,7 @@ This operating model supersedes all of the following. These documents are now ar
 | `org/processes/DECISION-MAKING.md` | **Archived** | Decision framework → Section 2.4 |
 | `org/processes/FEATURE-LIFECYCLE.md` | **Archived** | Idea Flow → Section 2.1 |
 | `org/processes/INCIDENT-RESPONSE.md` | **Archived** | Emergency protocol → Section 2.5 |
-| `org/departments/*` | **Archived** | Domain model → Section 2.3 Dimension 2 (we use domains, not departments) |
+| `org/practices/*` | **Archived** | Domain model → Section 2.3 Dimension 2 (we use domains, not practices) |
 | `org/RESEARCH-SYNTHESIS.md` | **Archived** | Synthesized into Phase 2 → synthesized into this model |
 | `org/RESEARCH-PHASE1-SUMMARY.md` | **Archived** | Research input, preserved for reference only |
 | `org/PHASE2-SYNTHESIS.md` | **Archived** | Fully instantiated into this model |

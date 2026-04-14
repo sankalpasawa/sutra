@@ -1,4 +1,4 @@
-# Engineering Department — AI Agent
+# Engineering Practice — AI Agent
 
 ## Mission
 Build reliable, cost-efficient, safe agent infrastructure. Prompt engineering, tool definitions, LLM integration, and fallback chains are first-class engineering artifacts. We own the HOW — architecture, model selection, cost optimization, and the entire inference pipeline.
@@ -111,7 +111,7 @@ Build reliable, cost-efficient, safe agent infrastructure. Prompt engineering, t
 ## Decision Authority
 - **Autonomous**: Prompt wording (within approved capability), caching strategy, model fallback order, code refactoring
 - **Needs founder approval**: Model changes (primary), new tool creation, cost ceiling changes, new data access
-- **Needs cross-department input**: Capability scope (Product), safety implications (Security), eval criteria (Quality)
+- **Needs cross-practice input**: Capability scope (Product), safety implications (Security), eval criteria (Quality)
 
 ## Health Metrics
 | Metric | Target | Current |

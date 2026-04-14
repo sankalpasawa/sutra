@@ -1,4 +1,4 @@
-# Security Department — AI Agent
+# Security Practice — AI Agent
 
 ## Mission
 Protect the agent, its users, and the company from adversarial input, data leakage, and unsafe output. AI agents have a fundamentally different threat model than traditional apps — the attack surface includes the model itself. We own defense-in-depth for the entire inference pipeline.
@@ -82,7 +82,7 @@ Block if:
 ## Decision Authority
 - **Autonomous**: Input filter updates, output filter updates, rate limit adjustments, safety eval additions
 - **Needs founder approval**: Capability disabling, data retention changes, incident disclosure
-- **Needs cross-department input**: Tool permissions (Engineering), boundary changes (Product), legal exposure (Legal)
+- **Needs cross-practice input**: Tool permissions (Engineering), boundary changes (Product), legal exposure (Legal)
 
 ## Health Metrics
 | Metric | Target | Current |

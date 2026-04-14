@@ -1,4 +1,4 @@
-# Data Department — AI Agent
+# Data Practice — AI Agent
 
 ## Mission
 Own interaction observability. Every agent interaction generates signal — tokens, cost, latency, accuracy, user satisfaction. We capture it, store it, and make it actionable.
@@ -38,7 +38,7 @@ Own interaction observability. Every agent interaction generates signal — toke
 ## Decision Authority
 - **Autonomous**: Logging schema updates, dashboard creation, cost reports, anomaly detection
 - **Needs founder approval**: Data retention policy changes, external data sharing
-- **Needs cross-department input**: What to track (Product), alert thresholds (Engineering, Finance)
+- **Needs cross-practice input**: What to track (Product), alert thresholds (Engineering, Finance)
 
 ## Health Metrics
 | Metric | Target | Current |

@@ -103,9 +103,12 @@ origin:  Maze onboard 2026-04-04. Agent created shared/ without checking holding
 ### PROTO-002: Wait for Parallel Completion
 ```
 constitutional | [Asawa P8] | HARD
+implements: P8 (holding/PRINCIPLES.md)
 trigger: Orchestrator writing synthesis while agents running
 check:   ALL agents complete? → proceed. No? → wait. Never substitute own work.
+enforcement: agent-completion-check.sh (PostToolUse) + depth-5 hard gate
 origin:  Maze HOD 2026-04-04. Orchestrator wrote report over 3 running agents — missed 6 bugs.
+         Dharmik SEO audit 2026-04-07. Orchestrator compiled before 4 agents returned — incomplete JS analysis.
 ```
 
 ### PROTO-003: Free Tier First
@@ -137,7 +140,7 @@ origin:  HUMAN-AI P3. Foundational work shapes everything downstream.
 constitutional | [Asawa HUMAN-AI P2, P5] | HARD
 trigger: Agent receives a task OR cannot complete a required process step
 check:   Process exists? → follow it. Cannot follow? → resolve without skipping. Still blocked? → STOP, ask human. Never write "TBD."
-override: "skip the process" / "just do it" / "direct mode"
+override: "skip the process" / "just do it" / "skip depth assessment"
 origin:  HUMAN-AI P2+P5. Process exists because someone learned the hard way. Stopping costs minutes; shipping wrong costs days.
 ```
 _Merged from: PROTO-006 (Process Is Default) + PROTO-007 (Escalate Before Violating)_
@@ -451,7 +454,7 @@ PROCESS:
 
 origin: 2026-04-06. Multiple instances during session where founder
         pointed out misses (tests not run, SUTRA-CONFIG.md outdated,
-        modes feature still present, feedback not implemented).
+        stale mode references present, feedback not implemented).
         Each required founder to push for the systemic fix.
 ```
 

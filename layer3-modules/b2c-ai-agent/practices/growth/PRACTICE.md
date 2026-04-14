@@ -1,4 +1,4 @@
-# Growth Department — AI Agent
+# Growth Practice — AI Agent
 
 ## Mission
 Not active at Stage 1. Ship first. Growth activates at Stage 2 (25+ users).

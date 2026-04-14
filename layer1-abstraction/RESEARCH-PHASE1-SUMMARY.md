@@ -42,7 +42,7 @@ IDEA FORMATION
   Decision: RICE scoring + constraint analysis (is this at the bottleneck?)
 
 EVALUATION
-  Cross-functional impact scan (all departments assess)
+  Cross-functional impact scan (all practices assess)
   Shearing layer analysis (which layers does this touch?)
   Constraint check (does this improve throughput at the bottleneck?)
   Founder approves: Go / Defer / Kill

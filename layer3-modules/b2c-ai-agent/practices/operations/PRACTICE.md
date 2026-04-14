@@ -1,4 +1,4 @@
-# Operations Department — AI Agent
+# Operations Practice — AI Agent
 
 ## Mission
 Keep the agent running, deployed, and within budget. Infrastructure, deployment, API key management, and rate limiting.
@@ -18,7 +18,7 @@ Keep the agent running, deployed, and within budget. Infrastructure, deployment,
 ## Decision Authority
 - **Autonomous**: Deployment, key rotation, rate limit tuning, monitoring config
 - **Needs founder approval**: Infrastructure cost changes, new provider accounts, downtime decisions
-- **Needs cross-department input**: Rate limits (Product), budget thresholds (Finance)
+- **Needs cross-practice input**: Rate limits (Product), budget thresholds (Finance)
 
 ## Health Metrics
 | Metric | Target | Current |

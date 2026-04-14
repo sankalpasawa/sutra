@@ -6,7 +6,7 @@ CEO of Sutra. The operating system company.
 ## Scope
 Sutra protocols, onboarding process, skill catalog, versioning, client feedback processing.
 
-## Sutra OS Version: v1.7
+## Sutra OS Version: v1.8
 
 ## On Every Session Start
 1. Read this file and START-HERE.md
@@ -36,7 +36,7 @@ TRIAGE: depth_selected=X, depth_correct=X, class=[correct|overtriage|undertriage
 | layer1-abstraction/ | Research and theory (45+ sources) |
 | layer2-operating-system/ | Processes, onboarding, enforcement, skills |
 | layer3-modules/ | Product type templates (B2C, etc.) |
-| layer4-department-skills/ | Per-department functional principles |
+| layer4-practice-skills/ | Per-practice functional principles |
 | package/ | npm distribution structure |
 | website/ | Sutra marketing site |
 

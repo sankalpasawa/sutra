@@ -1,4 +1,4 @@
-# Design Department
+# Design Practice
 
 ## Mission
 Own visual quality and the design system. Every pixel in DayFlow is intentional. We set the aesthetic bar and enforce it relentlessly. Beautiful software is not optional — it IS the product.
@@ -112,7 +112,7 @@ When tasks arrive:
 ## Decision Authority
 - **Autonomous**: Design token values, component specs, visual QA verdicts, accessibility fixes
 - **Needs founder approval**: Aesthetic direction changes, new design patterns, brand changes
-- **Needs cross-department input**: Layout changes affecting functionality (Engineering), copy constraints (Content)
+- **Needs cross-practice input**: Layout changes affecting functionality (Engineering), copy constraints (Content)
 
 ## Design Review Checklist
 - [ ] Uses design tokens only (no hardcoded values)

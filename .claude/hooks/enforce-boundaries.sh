@@ -1,52 +1,100 @@
 #!/bin/bash
-# Sutra Submodule Boundary Enforcement
-# Blocks Edit/Write/Bash to files outside this repo's root directory.
-# This enforces physical isolation — a Maze session cannot touch DayFlow, Sutra, or holding.
+# Sutra Session Isolation — Level 2 Hook (v2)
+# ARCHITECTURE: Enforces submodule boundaries based on ACTIVE_ROLE.
+#
+# Roles:
+#   "asawa"          — CEO of Asawa Inc. Full access to everything.
+#   "sutra"          — CEO of Sutra. Can access sutra/ and feedback-from-sutra/ dirs.
+#   "company-{name}" — CEO of {name}. Can only access {name}/ submodule.
+#
+# Environment:
+#   ACTIVE_ROLE       — set by /asawa, /sutra, /company slash commands
+#   TOOL_INPUT_file_path — file path being accessed (set by Claude Code hooks)
+#
+# Exit codes:
+#   0 = allowed
+#   2 = blocked (non-zero blocks the tool call)
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -z "$REPO_ROOT" ]; then
-  exit 0
-fi
+ACTIVE_ROLE="${ACTIVE_ROLE:-asawa}"
+FILE_PATH="${TOOL_INPUT_file_path:-}"
 
-REPO_NAME="$(basename "$REPO_ROOT")"
-FILE_PATH="$TOOL_INPUT_file_path"
-
-# For Bash tool, check the command for paths outside repo
-if [ -n "$TOOL_INPUT_command" ]; then
-  CMD="$TOOL_INPUT_command"
-  # Block commands that explicitly reference parent directories to escape
-  if echo "$CMD" | grep -qE '\.\./|/Users/.*/Claude/asawa-holding/(holding|sutra|dayflow|maze|ppr)/' ; then
-    # Allow if it's referencing THIS repo's own path
-    if ! echo "$CMD" | grep -q "/Claude/asawa-holding/${REPO_NAME}/"; then
-      echo "BLOCKED: Cannot access files outside ${REPO_NAME}/."
-      echo "You are in an isolated ${REPO_NAME} session."
-      echo "To access other repos, start a session in asawa-holding/ as CEO of Asawa."
-      exit 2
-    fi
-  fi
-  exit 0
-fi
-
-# For Edit/Write, check file_path
+# No file path = nothing to enforce
 if [ -z "$FILE_PATH" ]; then
   exit 0
 fi
 
-# Resolve to absolute path
-ABS_PATH="$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && pwd)/$(basename "$FILE_PATH")" 2>/dev/null
+# Resolve repo root
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
 
-# Check if path is within repo root
-if [ -n "$ABS_PATH" ]; then
-  case "$ABS_PATH" in
-    "$REPO_ROOT"*) exit 0 ;;  # Inside repo — allowed
+# Make path relative to repo root for matching
+REL_PATH="${FILE_PATH#$REPO_ROOT/}"
+
+# ─── Role: asawa — full access ───────────────────────────────────────────────
+if [ "$ACTIVE_ROLE" = "asawa" ]; then
+  # Check god mode for cross-company edits from holding
+  GOD_MODE_FILE="$REPO_ROOT/.enforcement/god-mode.active"
+  if [ -f "$GOD_MODE_FILE" ]; then
+    exit 0
+  fi
+  exit 0
+fi
+
+# ─── Submodule boundary check ────────────────────────────────────────────────
+# Detect if the target file lives inside a git submodule.
+# Company sessions should NOT be able to edit files in other submodules
+# (e.g., dayflow session editing ../sutra/ via relative path traversal).
+if [ -f "$REPO_ROOT/.gitmodules" ]; then
+  while IFS= read -r submodule_path; do
+    case "$REL_PATH" in
+      ${submodule_path}/*)
+        # File is inside a submodule. Check if it matches the active company.
+        if [[ "$ACTIVE_ROLE" == company-* ]]; then
+          COMPANY_NAME="${ACTIVE_ROLE#company-}"
+          if [ "$submodule_path" != "$COMPANY_NAME" ]; then
+            echo "BLOCKED: Cannot edit files in submodule '$submodule_path' from role '$ACTIVE_ROLE'"
+            echo "This file belongs to a different company/module. Use god mode from holding to override."
+            exit 2
+          fi
+        elif [ "$ACTIVE_ROLE" = "sutra" ]; then
+          if [ "$submodule_path" != "sutra" ]; then
+            echo "BLOCKED: Role 'sutra' cannot access submodule '$submodule_path'"
+            exit 2
+          fi
+        fi
+        ;;
+    esac
+  done < <(grep 'path = ' "$REPO_ROOT/.gitmodules" 2>/dev/null | sed 's/.*path = //')
+fi
+
+# ─── Role: sutra — can access sutra/ and */feedback-from-sutra/ ─────────────
+if [ "$ACTIVE_ROLE" = "sutra" ]; then
+  case "$REL_PATH" in
+    sutra/*|*/feedback-from-sutra/*)
+      exit 0
+      ;;
     *)
-      echo "BLOCKED: Cannot edit files outside ${REPO_NAME}/."
-      echo "  Attempted: $FILE_PATH"
-      echo "  Allowed: anything under $REPO_ROOT/"
-      echo "To access other repos, start a session in asawa-holding/ as CEO of Asawa."
+      echo "BLOCKED: Role 'sutra' cannot access $REL_PATH"
+      echo "Sutra can only access sutra/ and */feedback-from-sutra/ directories."
       exit 2
       ;;
   esac
 fi
 
-exit 0
+# ─── Role: company-{name} — can only access {name}/ ─────────────────────────
+if [[ "$ACTIVE_ROLE" == company-* ]]; then
+  COMPANY_NAME="${ACTIVE_ROLE#company-}"
+  case "$REL_PATH" in
+    ${COMPANY_NAME}/*)
+      exit 0
+      ;;
+    *)
+      echo "BLOCKED: Role '$ACTIVE_ROLE' cannot access $REL_PATH"
+      echo "CEO of $COMPANY_NAME can only access $COMPANY_NAME/ directory."
+      exit 2
+      ;;
+  esac
+fi
+
+# Unknown role — block by default
+echo "BLOCKED: Unknown role '$ACTIVE_ROLE'"
+exit 2

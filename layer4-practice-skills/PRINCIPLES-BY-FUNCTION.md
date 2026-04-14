@@ -12,15 +12,15 @@ Not all 100+ principles apply to every task. The **depth system** (Layer 2) dete
 
 | Depth | Which principles activate | Example task |
 |-------|--------------------------|-------------|
-| **1-2** (surface/considered) | **Universal only (P0-P9):** Product Management #1-7, Engineering #1-5, and the Review Lens of the task's primary department. | Bug fix, copy change, config update |
-| **3** (thorough) | **+ Domain-specific:** All principles for the task's primary department activate. Read that full section. | New feature, architecture decision, design spec |
-| **4-5** (rigorous/exhaustive) | **+ Cross-department:** All relevant domain principles + Section 16 (Cross-Functional) + Section 17 (Problem-Solving Meta-Principles). Check adjacent departments for conflicts. | Data model migration, security review, pricing change, compliance audit |
+| **1-2** (surface/considered) | **Universal only (P0-P9):** Product Management #1-7, Engineering #1-5, and the Review Lens of the task's primary practice. | Bug fix, copy change, config update |
+| **3** (thorough) | **+ Domain-specific:** All principles for the task's primary practice activate. Read that full section. | New feature, architecture decision, design spec |
+| **4-5** (rigorous/exhaustive) | **+ Cross-practice:** All relevant domain principles + Section 16 (Cross-Functional) + Section 17 (Problem-Solving Meta-Principles). Check adjacent practices for conflicts. | Data model migration, security review, pricing change, compliance audit |
 
 **How to use this:**
 1. Check the depth assigned to your task (from the DEPTH block in Layer 2)
-2. At Depth 1-2: scan the Review Lens of your department, apply universal principles, move fast
-3. At Depth 3: read your full department section, apply all its principles and failure modes
-4. At Depth 4-5: read your department + any adjacent departments the task touches + Sections 16-17
+2. At Depth 1-2: scan the Review Lens of your practice, apply universal principles, move fast
+3. At Depth 3: read your full practice section, apply all its principles and failure modes
+4. At Depth 4-5: read your practice + any adjacent practices the task touches + Sections 16-17
 
 This keeps lightweight tasks fast while ensuring high-stakes work gets full principle coverage.
 

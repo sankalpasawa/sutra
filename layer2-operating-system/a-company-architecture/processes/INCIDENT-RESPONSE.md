@@ -66,7 +66,7 @@ When something breaks, we respond systematically. Every incident is classified, 
 
 **Response**:
 - **Response time**: Acknowledged within 48 hours
-- **Who is notified**: Relevant department head
+- **Who is notified**: Relevant practice head
 - **Action**: Fix when convenient or batch with other P3s
 - **Deploy block**: None
 - **Communication**: Tracked in TODO.md with [P3] tag
@@ -77,15 +77,15 @@ When something breaks, we respond systematically. Every incident is classified, 
 
 ### Step 1: Detection
 Incident discovered through:
-- QA testing (Quality department)
+- QA testing (Quality practice)
 - User feedback / app store review
-- Analytics anomaly (Data department)
+- Analytics anomaly (Data practice)
 - Automated monitoring / error tracking
 - Manual testing during standup
 - Founder report
 
 ### Step 2: Classification
-The discovering department classifies severity:
+The discovering practice classifies severity:
 1. What is broken? (describe the symptom)
 2. Who is affected? (all users, some users, edge case)
 3. Is there a workaround? (yes = P2+, no = P0/P1)
@@ -176,8 +176,8 @@ Impact: {who was affected, how}
 - Fix requires architecture change -> escalate to Founder for approval
 
 ### Escalation Chain
-1. Department Head (CTO for engineering issues)
-2. Operations (COO for cross-department coordination)
+1. Practice Head (CTO for engineering issues)
+2. Operations (COO for cross-practice coordination)
 3. Founder (for strategic decisions, architecture changes, user communication)
 
 ---
@@ -203,10 +203,10 @@ All open incidents tracked in a running log:
 ## Prevention
 
 ### Proactive Measures
-1. **Quality department** runs regression tests on every change
-2. **Design department** checks for visual regressions
-3. **Security department** scans for vulnerabilities weekly
-4. **Data department** monitors error rates and anomalies
+1. **Quality practice** runs regression tests on every change
+2. **Design practice** checks for visual regressions
+3. **Security practice** scans for vulnerabilities weekly
+4. **Data practice** monitors error rates and anomalies
 5. **Engineering** maintains tech debt score above 7/10
 
 ### Incident Metrics

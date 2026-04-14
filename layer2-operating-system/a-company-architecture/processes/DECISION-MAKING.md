@@ -10,7 +10,7 @@ Every significant decision at DayFlow is made deliberately, documented, and reve
 ### Category 1: Autonomous Agent Decisions
 **No approval needed.** Agents decide within their domain and execute.
 
-| Department | Can Decide Autonomously |
+| Practice | Can Decide Autonomously |
 |-----------|----------------------|
 | Product | Feature intake, RICE scoring, backlog grooming, user asks logging |
 | Design | Token values, component specs, QA verdicts, accessibility fixes |
@@ -22,10 +22,10 @@ Every significant decision at DayFlow is made deliberately, documented, and reve
 | Operations | Meeting scheduling, blocker routing, process documentation |
 | Content | Microcopy writing, error message phrasing, doc updates, terminology standardization |
 
-**Rule**: If the decision is within your domain, easily reversible, and doesn't affect other departments, just do it.
+**Rule**: If the decision is within your domain, easily reversible, and doesn't affect other practices, just do it.
 
-### Category 2: Cross-Department Decisions
-**Needs coordination.** Multiple departments affected. Operations facilitates.
+### Category 2: Cross-Practice Decisions
+**Needs coordination.** Multiple practices affected. Operations facilitates.
 
 Examples:
 - Feature prioritization changes (Product + Engineering + Design)
@@ -34,9 +34,9 @@ Examples:
 - Onboarding redesign (Growth + Design + Product + Content)
 
 **Process**:
-1. Initiating department proposes decision
-2. Operations identifies affected departments
-3. Each department provides input (constraints, concerns, estimates)
+1. Initiating practice proposes decision
+2. Operations identifies affected practices
+3. Each practice provides input (constraints, concerns, estimates)
 4. If consensus: decision is made, logged, and executed
 5. If disagreement: escalate to Founder
 
@@ -73,7 +73,7 @@ Always requires Founder:
 4. **Evaluate trade-offs**: What do we gain/lose with each option?
 5. **Make the call**: Choose and commit
 6. **Document**: Log the decision with rationale
-7. **Communicate**: Notify affected departments
+7. **Communicate**: Notify affected practices
 
 ### Decision Principles
 1. **Reversible > irreversible**: Prefer decisions that can be undone. For reversible decisions, decide fast. For irreversible decisions, decide carefully.
@@ -93,7 +93,7 @@ Every significant decision gets logged to `org/decisions/{YYYY-MM-DD}-{slug}.md`
 # Decision: {title}
 
 **Date**: {YYYY-MM-DD}
-**Category**: Autonomous / Cross-Department / Founder
+**Category**: Autonomous / Cross-Practice / Founder
 **Decided by**: {agent name or "Founder"}
 **Status**: DECIDED | REVISIT on {date} | REVERSED
 
@@ -135,7 +135,7 @@ We chose **Option {X}** because {rationale}.
 - We accept risk of: {risks}
 
 ## Impact
-- Departments affected: {list}
+- Practices affected: {list}
 - Files affected: {list if applicable}
 - Timeline impact: {description}
 
@@ -155,10 +155,10 @@ We chose **Option {X}** because {rationale}.
 ### When to Escalate
 
 **Agent to Operations (COO)**:
-- Two departments disagree on priority or approach
-- A blocker affects multiple departments
+- Two practices disagree on priority or approach
+- A blocker affects multiple practices
 - Process failure (something fell through the cracks)
-- Resource conflict (two departments need same resource)
+- Resource conflict (two practices need same resource)
 
 **Agent/Operations to Founder**:
 - Strategic direction question
@@ -210,7 +210,7 @@ The Adaptive Protocol Engine (PROTO-000) depth assessment determines how much de
 | 1 (Surface) | Decide immediately. No ADR. Log in commit message if needed. |
 | 2 (Considered) | Decide with brief rationale. One-line entry in decision log. |
 | 3 (Thorough) | Full decision framework (Section "For Any Non-Trivial Decision"). ADR required for Category 2+. |
-| 4 (Rigorous) | Full ADR with all sections. Cross-department input required. |
+| 4 (Rigorous) | Full ADR with all sections. Cross-practice input required. |
 | 5 (Exhaustive) | Full ADR + reversibility analysis + follow-up tracking + monthly review inclusion. |
 
 **Rule**: Depth 1-2 decisions are fast and lightweight — the cost of deciding should not exceed the cost of reversing. Depth 3+ decisions use the full template and are logged to `org/decisions/`.
@@ -220,7 +220,7 @@ The Adaptive Protocol Engine (PROTO-000) depth assessment determines how much de
 ## Anti-Patterns to Avoid
 
 1. **Decision paralysis**: Spending more time deciding than the decision is worth. If effort to decide > effort to reverse, just pick one.
-2. **Design by committee**: Not every department needs to weigh in on every decision. Route to relevant departments only.
+2. **Design by committee**: Not every practice needs to weigh in on every decision. Route to relevant practices only.
 3. **Undocumented decisions**: If it's not in `org/decisions/`, it didn't happen. Future agents won't know why we chose what we chose.
 4. **Revisiting settled decisions**: Once decided and committed, don't re-open unless new data surfaces. Revisit at weekly planning, not mid-sprint.
 5. **Escalation avoidance**: If you're uncertain, escalate. A delayed decision is worse than admitting uncertainty.

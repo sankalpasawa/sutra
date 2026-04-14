@@ -1163,7 +1163,7 @@ explicitly NOT include.
 > that worked. A complex system designed from scratch never works and cannot be patched up
 > to make it work. You have to start over with a working simple system."
 
-**Applied**: Do not design a 12-department AI org structure on paper and then try to
+**Applied**: Do not design a 12-practice AI org structure on paper and then try to
 implement it. Start with one agent doing one thing. When it works, add a second. When two
 agents need to coordinate, add the simplest possible coordination mechanism. Let the
 org structure emerge from working practice, not from theory.

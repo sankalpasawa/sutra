@@ -34,6 +34,34 @@ Otherwise: full 8-phase flow below.
 
 ---
 
+## Existing Company Track (<45 minutes)
+
+For companies that already exist and are running (external clients, not Asawa-owned). Same 8 phases, but answers are pre-filled from what's already known. The company IS already built — Sutra is being deployed to operate it.
+
+```
+INTAKE → MARKET → SHAPE → DECIDE → ARCHITECT → CONFIGURE → DEPLOY → ACTIVATE
+(5 min)  (5 min)  (5 min) (2 min)  (5 min)    (10 min)   (5 min)  (5 min)
+```
+
+**How it differs from new company onboarding:**
+- INTAKE: Company already exists. Extract what they do, tech stack, team, stage, constraints. No "what do you want to build?" — it's built.
+- MARKET: Competitors and domain are known. Validate, don't discover. Quick confirmation.
+- SHAPE: The bet is already being tested (company is live). Capture the current bet and what needs to change.
+- DECIDE: Platform is fixed (already built). Document, don't choose.
+- ARCHITECT: Architecture exists. Map it, don't design it.
+- CONFIGURE: Same as new — deploy Sutra OS config for this company's tier, stage, and needs.
+- DEPLOY: Same as new — full OS deployment per PROTO-013.
+- ACTIVATE: Same as new — first task runs under OS, verify enforcement fires.
+
+**Gate — use this track if:**
+- Company is already live with users/revenue
+- Tech stack already chosen and built
+- Founder is bringing Sutra in to operate, not to build from scratch
+
+**Key principle:** An existing company gets the SAME OS as a new company. No shortcuts on enforcement, hooks, or protocols. The only thing that's faster is the intake — because the answers already exist.
+
+---
+
 ## The Eight Phases
 
 ```
@@ -601,12 +629,12 @@ AI agent → adds prompt lifecycle, eval suites, cost management, safety pipelin
 Stage → determines process intensity
 ```
 
-| Stage | Team Size | Process Intensity | Departments Active |
+| Stage | Team Size | Process Intensity | Practices Active |
 |-------|-----------|------------------|--------------------|
 | Pre-launch (0 users) | 1 | Minimal (12 rules) | Product, Design, Engineering, Quality |
 | Beta (25+ users) | 1-3 | Light (add analytics, user research) | + Growth, Data |
 | Growth (1000+ users) | 3-10 | Standard (full SDLC) | + Ops, Security, Content |
-| Scale (10000+ users) | 10+ | Full (all processes) | All departments |
+| Scale (10000+ users) | 10+ | Full (all processes) | All practices |
 
 ### OS Generation Steps
 
@@ -645,7 +673,7 @@ Stage → determines process intensity
 ├── PRODUCT-BRIEF.md          # From Phase 3 (Shape Brief + Market Brief)
 ├── OPERATING-SYSTEM-V1.md    # The full OS, customized
 ├── SUTRA-VERSION.md          # Pinned to current Sutra release
-├── SUTRA-CONFIG.md           # A/B test config, mode settings
+├── SUTRA-CONFIG.md           # A/B test config, depth settings
 ├── METRICS.md                # What to measure, empty log
 ├── TODO.md                   # P0 features from Shape Brief, ordered
 ├── CLAUDE.md                 # Dev instructions for AI agents building this product
@@ -893,7 +921,7 @@ SUTRA adds content-app metrics template to v1.1:
 Every client interaction teaches Sutra something. The protocol:
 
 1. **After every client onboarding**: Review what was MISSING from the template. Was anything invented from scratch that should have been provided?
-2. **After every 5 features shipped** (across all clients): Are SUTRA-mode features actually producing better outcomes than DIRECT-mode?
+2. **After every 5 features shipped** (across all clients): Are high-depth features actually producing better outcomes than low-depth features?
 3. **After every incident**: Did the OS prevent this? Could it have? What sensor was missing?
 4. **Monthly**: Review all feedback-to-sutra/ across all clients. Batch into version update.
 
@@ -946,7 +974,7 @@ Complexity is determined by three factors. The highest factor determines the tie
 
 Mandatory: Onboarding (8 phases), product brief, tech stack, architecture rules, build order, TODO.md, session isolation, feedback to Sutra.
 Scaled down: Metrics (2-3 success metrics), single-track process, self-check every 3rd feature, soft enforcement hooks.
-Skip: Department-level functions, agent incentives, Daily Pulse, standup protocol.
+Skip: Practice-level functions, agent incentives, Daily Pulse, standup protocol.
 
 **Tier 2: Product** — "Real users, real consequences"
 
@@ -955,7 +983,7 @@ Enforcement: hard for file boundaries, soft for metrics.
 
 **Tier 3: Company** — "Team, revenue, or regulation"
 
-Full Sutra OS. Nothing optional. All department functions, hard enforcement, agent incentives, Daily Pulse, standup, full compliance, incident response, weekly planning, decision logs.
+Full Sutra OS. Nothing optional. All practice functions, hard enforcement, agent incentives, Daily Pulse, standup, full compliance, incident response, weekly planning, decision logs.
 
 ### Classification Table
 
@@ -986,7 +1014,7 @@ ENFORCEMENT: Use this for Tier 1 (Personal) companies only. Tier 2+ use the full
 
 ### When to Use
 
-Solo founder, personal tool, 0 external users. Examples: Jarvis, PPR. Don't need market research, A/B testing, or department structures.
+Solo founder, personal tool, 0 external users. Examples: Jarvis, PPR. Don't need market research, A/B testing, or practice structures.
 
 ### 5 Phases (30 minutes total)
 
@@ -1007,7 +1035,7 @@ INTAKE → SHAPE → BUILD → DEPLOY → ACTIVATE
 |-------|------------|
 | MARKET (10 min) | Personal tool — no market to research |
 | DECIDE (2 min) | Solo founder — decision is implicit |
-| CONFIGURE (10 min) | Minimal config — no A/B testing, no departments |
+| CONFIGURE (10 min) | Minimal config — no A/B testing, no practices |
 
 ### Graduation
 
@@ -1045,7 +1073,7 @@ The process for installing Sutra on a company that already exists — running co
 | Phase | Tier 1 | Tier 2 | Tier 3 |
 |---|---|---|---|
 | Infrastructure | Soft hooks only | Mixed hooks | Hard hooks |
-| Structure | Simple TODO restructure | Full node structure | Full + department tracking |
+| Structure | Simple TODO restructure | Full node structure | Full + practice tracking |
 | Gates | Soft warnings | Shape is hard, rest soft | All hard |
 | Sensors | 2-3 basic sensors | 5 standard sensors | 5+ custom sensors |
 | Validation | 1 feature | 1 feature + metrics comparison | 3 features + team review |
@@ -1061,7 +1089,7 @@ AUDIT → CLASSIFY → MAP → DEPLOY → VERIFY → ACTIVATE → LEARN
 ```
 
 1. **AUDIT**: Read CLAUDE.md, TODO.md, codebase structure, existing OS files, deployment plans, fragile areas, security issues. Output: AUDIT-REPORT.md. Gate: No code changes during audit.
-2. **CLASSIFY**: Classify complexity tier, identify active departments, map existing conventions to PROTO-XXX. Output: SUTRA-CONFIG.md tier + rationale.
+2. **CLASSIFY**: Classify complexity tier, identify active practices, map existing conventions to PROTO-XXX. Output: SUTRA-CONFIG.md tier + rationale.
 3. **MAP**: Align existing patterns. Key rule: company convention wins unless security/data risk. Output: DEPLOYMENT-MAP.md. Gate: Founder approves conflicts.
 4. **DEPLOY**: Install only gaps. Deploy engines, update version pin, add engine instructions to CLAUDE.md (additive only), verify boundary enforcement + 3 isolation tests.
 5. **VERIFY**: Run existing hooks, boundary tests, check workflow, test one read-only operation through engines.

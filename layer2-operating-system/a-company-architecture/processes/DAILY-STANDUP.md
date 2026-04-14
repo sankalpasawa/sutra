@@ -4,7 +4,7 @@
 
 > **NOTE:** This file references `org/standup/` and `org/decisions/` directories that do not exist in the Sutra OS template. Client companies using this protocol must create these directories in their own repo (e.g., `org/standup/`, `org/decisions/`).
 
-The daily standup is the company's heartbeat. It runs at the start of every session (conceptually 7 AM). It produces a cross-department health report, identifies the day's top priority, and routes action items to the right departments.
+The daily standup is the company's heartbeat. It runs at the start of every session (conceptually 7 AM). It produces a cross-practice health report, identifies the day's top priority, and routes action items to the right practices.
 
 ## When It Runs
 - Triggered by: `/standup` command, session start, or "standup" keyword
@@ -132,14 +132,14 @@ After all Phase 1 agents complete (and Phase 2 on Mondays):
 4. Read previous standup for trend analysis
 5. Synthesize into:
    a. **Today's #1 Priority** — the single most important thing
-   b. **Department health table** — red/yellow/green per department
-   c. **Prioritized action items** — numbered list with department assignments
+   b. **Practice health table** — red/yellow/green per practice
+   c. **Prioritized action items** — numbered list with practice assignments
    d. **Risks** — anything that could derail progress
    e. **Decisions needed** — anything requiring founder input
 
 ### Priority Selection Logic
 1. P0 bugs or security issues -> always #1
-2. Blocked cross-department items -> #2
+2. Blocked cross-practice items -> #2
 3. Current sprint P0 features -> #3
 4. Tech/design debt above threshold -> #4
 5. Regular sprint work -> #5
@@ -158,8 +158,8 @@ Write the combined report to `org/standup/{YYYY-MM-DD}.md`.
 ## Today's #1 Priority
 {The single most important thing to work on today}
 
-## Department Health
-| Department | Status | Score | Key Issue |
+## Practice Health
+| Practice | Status | Score | Key Issue |
 |-----------|--------|-------|-----------|
 | Quality | {green/yellow/red} | {score} | {one-line summary} |
 | Design | {green/yellow/red} | {score} | {one-line summary} |
@@ -168,7 +168,7 @@ Write the combined report to `org/standup/{YYYY-MM-DD}.md`.
 | Product | {green/yellow/red} | {score} | {one-line summary} |
 {Add Security, Growth, Content rows on Mondays}
 
-## Department Reports
+## Practice Reports
 
 ### Quality (CQO)
 {Full output from Agent 1}
@@ -188,7 +188,7 @@ Write the combined report to `org/standup/{YYYY-MM-DD}.md`.
 - User asks pending: {count}
 
 ## Action Items (priority order)
-| # | Action | Department | Effort | Priority |
+| # | Action | Practice | Effort | Priority |
 |---|--------|-----------|--------|----------|
 | 1 | {action} | {dept} | {estimate} | P{0-3} |
 | 2 | {action} | {dept} | {estimate} | P{0-3} |
@@ -210,12 +210,12 @@ Write the combined report to `org/standup/{YYYY-MM-DD}.md`.
 
 ## Phase 5: Action Item Routing
 
-After report is written, route action items to departments:
+After report is written, route action items to practices:
 
 1. Read each action item from the report
-2. Determine owning department
-3. Check `org/ROUTING.md` for any cross-department routing needed
-4. File action items into department awareness (mention in next relevant context)
+2. Determine owning practice
+3. Check `org/ROUTING.md` for any cross-practice routing needed
+4. File action items into practice awareness (mention in next relevant context)
 5. Track completion in next standup
 
 ---
@@ -224,10 +224,10 @@ After report is written, route action items to departments:
 
 ### Running Parallel Agents
 ```
-1. Spawn Agent 1 (CQO) — reads org/departments/quality/DEPARTMENT.md for instructions
-2. Spawn Agent 2 (CDO) — reads org/departments/design/DEPARTMENT.md for instructions
-3. Spawn Agent 3 (CTO) — reads org/departments/engineering/DEPARTMENT.md for instructions
-4. Spawn Agent 4 (CDaO) — reads org/departments/data/DEPARTMENT.md for instructions
+1. Spawn Agent 1 (CQO) — reads org/practices/quality/PRACTICE.md for instructions
+2. Spawn Agent 2 (CDO) — reads org/practices/design/PRACTICE.md for instructions
+3. Spawn Agent 3 (CTO) — reads org/practices/engineering/PRACTICE.md for instructions
+4. Spawn Agent 4 (CDaO) — reads org/practices/data/PRACTICE.md for instructions
    (All four run in parallel as sub-agents)
 5. Collect all outputs
 6. Run CEO synthesis

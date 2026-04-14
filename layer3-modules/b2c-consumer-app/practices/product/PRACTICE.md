@@ -1,7 +1,7 @@
-# Product Department
+# Product Practice
 
 ## Mission
-Own the user experience end to end. Decide WHAT to build and WHY. Every feature that ships must have a clear problem statement, measurable success criteria, and a product spec approved by this department.
+Own the user experience end to end. Decide WHAT to build and WHY. Every feature that ships must have a clear problem statement, measurable success criteria, and a product spec approved by this practice.
 
 ## Team
 - **Head of Product** (agent: `cpo`) — owns roadmap, prioritization, feature lifecycle
@@ -15,7 +15,7 @@ Own the user experience end to end. Decide WHAT to build and WHY. Every feature 
 - User asks log maintenance (PLAN.md "User Asks Log" table)
 - Feature lifecycle ownership from INTAKE through MONITOR
 - Success criteria definition for every shipped feature
-- Cross-department spec coordination (product + design + tech specs)
+- Cross-practice spec coordination (product + design + tech specs)
 - Feature flagging strategy and rollout planning
 - User feedback synthesis and pattern identification
 
@@ -78,7 +78,7 @@ When tasks arrive in inbox/:
 | Growth | Onboarding/retention impact | "Optimize this flow" — share funnel data, request analysis |
 | Quality | Feature ready for QA | "Test this" — send specs + implementation for verification |
 | Content | Feature needs copy | "Write copy for this" — send context, request in-app text |
-| Operations | Cross-department blocker | "Unblock this" — describe dependency, request coordination |
+| Operations | Cross-practice blocker | "Unblock this" — describe dependency, request coordination |
 
 ## Routes From
 | Source | Signal | How We Handle |
@@ -101,7 +101,7 @@ When tasks arrive in inbox/:
 ## Decision Authority
 - **Autonomous**: Feature intake, RICE scoring, backlog grooming, user asks logging
 - **Needs founder approval**: P0 priority changes, feature kills, scope expansions, roadmap shifts
-- **Needs cross-department input**: Effort estimates (Engineering), design feasibility (Design), data requirements (Data)
+- **Needs cross-practice input**: Effort estimates (Engineering), design feasibility (Design), data requirements (Data)
 
 ## Health Metrics
 | Metric | Target | Current |

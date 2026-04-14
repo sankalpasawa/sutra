@@ -1,7 +1,7 @@
 # Weekly Planning Protocol
 
 ## Overview
-Every Monday (or first session of the week), the organization conducts a comprehensive planning session. This reviews the previous week, sets priorities for the coming week, resolves cross-department dependencies, and ensures all departments are aligned.
+Every Monday (or first session of the week), the organization conducts a comprehensive planning session. This reviews the previous week, sets priorities for the coming week, resolves cross-practice dependencies, and ensures all practices are aligned.
 
 ## When It Runs
 - Triggered by: Monday standup, `/strategy` command, or "weekly planning" keyword
@@ -14,7 +14,7 @@ Every Monday (or first session of the week), the organization conducts a compreh
 ## Phase 1: Last Week Review (10 minutes)
 
 ### Step 1: OKR Scorecard
-Review each department's OKRs from the previous week. Score each KR as:
+Review each practice's OKRs from the previous week. Score each KR as:
 - **Hit** (100%): KR fully achieved
 - **Partial** (50-99%): Progress made but not complete
 - **Missed** (0-49%): Little or no progress
@@ -36,7 +36,7 @@ Review each department's OKRs from the previous week. Score each KR as:
 | KR | Target | Actual | Status |
 |----|--------|--------|--------|
 
-{... all departments}
+{... all practices}
 
 ### Org-Wide Score
 - KRs Hit: {count}/{total} ({percent}%)
@@ -70,20 +70,20 @@ For every planned item that didn't ship:
 
 ## Phase 2: This Week Planning (10 minutes)
 
-### Step 1: Update Department OKRs
-Each department updates their Weekly OKRs section in their DEPARTMENT.md:
+### Step 1: Update Practice OKRs
+Each practice updates their Weekly OKRs section in their PRACTICE.md:
 - Roll over incomplete KRs (if still relevant)
 - Add new KRs for this week's priorities
 - Ensure KRs are specific and measurable
 - Date-stamp the OKRs with the current week
 
 ### Step 2: Priority Stack Ranking
-Create a single, ordered list of all work items across all departments:
+Create a single, ordered list of all work items across all practices:
 
 ```markdown
 ## This Week's Priority Stack
 
-| Rank | Item | Department | Type | Effort | Dependencies |
+| Rank | Item | Practice | Type | Effort | Dependencies |
 |------|------|-----------|------|--------|-------------|
 | 1 | {item} | {dept} | P0-Feature/Bug/Debt | {hours} | {none or dept} |
 | 2 | {item} | {dept} | P1-Feature | {hours} | {dept} |
@@ -93,17 +93,17 @@ Create a single, ordered list of all work items across all departments:
 
 ### Priority Stack Rules
 1. P0 bugs and security issues always rank first
-2. Cross-department blockers rank second
+2. Cross-practice blockers rank second
 3. Features in progress rank above new features (finish what you started)
 4. Tech debt ranks proportionally (20% of capacity)
 5. Design debt ranks with tech debt
 6. New features rank by RICE score
 
-### Step 3: Cross-Department Dependencies
-Identify all work items that require multiple departments:
+### Step 3: Cross-Practice Dependencies
+Identify all work items that require multiple practices:
 
 ```markdown
-## Cross-Department Dependencies
+## Cross-Practice Dependencies
 
 | Item | Needs From | Needs To | Sequence | Status |
 |------|-----------|---------|----------|--------|
@@ -142,10 +142,10 @@ Update the product roadmap based on:
 - Any taste decisions needed?
 - Any strategic pivots?
 
-### Department Alignment
-- Is every department clear on their top priority?
+### Practice Alignment
+- Is every practice clear on their top priority?
 - Are there any disagreements on prioritization?
-- Does every department have what they need to execute?
+- Does every practice have what they need to execute?
 
 ### Risk Register
 | Risk | Likelihood | Impact | Mitigation | Owner |
@@ -179,7 +179,7 @@ Write to `org/standup/{date}-weekly.md`:
 {One sentence describing the week's theme}
 
 ## Priority Stack
-| Rank | Item | Department | Effort | Status |
+| Rank | Item | Practice | Effort | Status |
 |------|------|-----------|--------|--------|
 | 1 | {item} | {dept} | {hours} | Not Started |
 | 2 | {item} | {dept} | {hours} | Not Started |
@@ -195,8 +195,8 @@ Write to `org/standup/{date}-weekly.md`:
 ## Decisions Needed
 - {decision 1}
 
-## Department OKRs This Week
-{Summary of each department's top OKR}
+## Practice OKRs This Week
+{Summary of each practice's top OKR}
 ```
 
 ---

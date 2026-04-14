@@ -486,12 +486,12 @@ The insight: these were never different systems. A 0-user company doing an auth 
 | You say | What happens |
 |---------|-------------|
 | "I have an idea: {X}" | CPO creates INTAKE.md, CEO evaluates, specs are created |
-| "standup" | All daily agents run, produce cross-department report |
+| "standup" | All daily agents run, produce cross-practice report |
 | "strategy" | CEO runs weekly review, produces strategic priorities |
 | "ship {feature}" | CTO ships, CQO runs QA, CDaO sets up monitoring |
 | "how's {feature}?" | CPO gives status update across all stages |
 | "kill {feature}" | Feature logged as KILLED with reason |
-| "what should I work on?" | CEO synthesizes all departments, gives #1 priority |
+| "what should I work on?" | CEO synthesizes all practices, gives #1 priority |
 
 You never have to manage the process. The process manages itself. You set direction. The org executes.
 

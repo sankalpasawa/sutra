@@ -1,4 +1,4 @@
-# Data Department
+# Data Practice
 
 ## Mission
 Make every decision data-informed. We instrument, measure, analyze, and surface insights that drive product, growth, and engineering decisions. Without data, we are guessing.
@@ -11,10 +11,10 @@ Make every decision data-informed. We instrument, measure, analyze, and surface 
 - Analytics platform selection, integration, and maintenance (PostHog)
 - Event taxonomy design and documentation
 - Core event tracking implementation
-- Dashboard creation for all departments
+- Dashboard creation for all practices
 - A/B testing framework and experiment management
 - User behavior analysis and funnel optimization
-- Weekly metrics reports for all departments
+- Weekly metrics reports for all practices
 - Cohort analysis (retention, engagement, churn)
 - Data quality monitoring and alerting
 - Privacy-compliant data collection (anonymization, consent)
@@ -24,7 +24,7 @@ Make every decision data-informed. We instrument, measure, analyze, and surface 
 - **Client SDK**: PostHog React Native SDK
 - **Events**: Structured taxonomy with `category.action.label` naming
 - **Properties**: Standard set of user/event properties on every event
-- **Dashboards**: One per department + executive overview
+- **Dashboards**: One per practice + executive overview
 
 ## Core Event Taxonomy
 
@@ -80,7 +80,7 @@ Make every decision data-informed. We instrument, measure, analyze, and surface 
 ## Processes
 
 ### New Event Request
-1. Receive request from any department with context
+1. Receive request from any practice with context
 2. Check if existing event covers the need
 3. If new event needed: design schema following taxonomy
 4. Document in event taxonomy table above
@@ -99,7 +99,7 @@ Make every decision data-informed. We instrument, measure, analyze, and surface 
    - Error rates and trends
 3. Write report to `org/standup/` with `[DATA]` prefix
 4. Highlight anomalies and trends
-5. Route insights to relevant departments
+5. Route insights to relevant practices
 
 ### A/B Test Management
 1. Receive hypothesis from Product or Growth
@@ -107,7 +107,7 @@ Make every decision data-informed. We instrument, measure, analyze, and surface 
 3. Implement feature flags
 4. Monitor experiment health (sample ratio mismatch, novelty effects)
 5. Analyze results with statistical significance
-6. Report findings to requesting department
+6. Report findings to requesting practice
 7. Archive experiment results
 
 ## Inbox Protocol
@@ -126,7 +126,7 @@ When tasks arrive:
 | Growth | Retention/churn signal | "Retention alert" — cohort analysis + hypothesis |
 | Engineering | Event implementation needed | "Implement event" — send schema + context |
 | Engineering | Performance regression in data | "Performance issue" — share metrics + impact |
-| Operations | Cross-department metrics ready | "Weekly metrics" — distribute to all departments |
+| Operations | Cross-practice metrics ready | "Weekly metrics" — distribute to all practices |
 
 ## Routes From
 | Source | Signal | How We Handle |
@@ -135,7 +135,7 @@ When tasks arrive:
 | Growth | Need retention analysis | Run cohort analysis, surface insights |
 | Engineering | New feature shipped | Verify events firing, add to dashboards |
 | Quality | Test coverage metrics needed | Create quality dashboard |
-| Operations | Weekly report request | Compile cross-department metrics |
+| Operations | Weekly report request | Compile cross-practice metrics |
 
 ## Key Artifacts
 - PostHog dashboards (external)
@@ -146,14 +146,14 @@ When tasks arrive:
 ## Decision Authority
 - **Autonomous**: Event schema design, dashboard creation, metric definitions, data quality fixes
 - **Needs founder approval**: Analytics platform changes, data retention policies, new data collection scopes
-- **Needs cross-department input**: Event implementation (Engineering), metric interpretation (Product/Growth)
+- **Needs cross-practice input**: Event implementation (Engineering), metric interpretation (Product/Growth)
 
 ## Health Metrics
 | Metric | Target | Current |
 |--------|--------|---------|
 | Analytics SDK integrated | Yes | TBD |
 | Core events tracked | > 80% of taxonomy | TBD |
-| Dashboard coverage (departments) | 100% | TBD |
+| Dashboard coverage (practices) | 100% | TBD |
 | Data pipeline latency | < 5 min | TBD |
 | Event property completeness | 100% | TBD |
 | Weekly report delivery | Every Monday | TBD |

@@ -25,7 +25,7 @@ Sutra OS is mandatory for all companies. The depth of enforcement scales with co
 | Tier | Who | Enforcement depth |
 |------|-----|-------------------|
 | 1 (Personal) | Solo founder, no external users | Core OS mandatory. Metrics, compliance, shipping log scaled down. Hooks soft. |
-| 2 (Product) | External users depend on it | Full OS minus department functions. Hooks hard for boundaries. |
+| 2 (Product) | External users depend on it | Full OS minus practice functions. Hooks hard for boundaries. |
 | 3 (Company) | Team, revenue, or regulation | Full OS. Everything hard. Nothing optional. |
 
 When evaluating compliance, check the company's tier first. A Tier 1 company missing a shipping log is compliant. A Tier 2 company missing one is not.

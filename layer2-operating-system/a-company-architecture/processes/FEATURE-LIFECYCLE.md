@@ -17,7 +17,7 @@ Stage 2: EVALUATION (RICE scoring, business impact, effort)
 Stage 3: SPEC (Product spec + Design spec + Tech spec)
   |                                          Gate: All three specs complete
   v
-Stage 4: REVIEW (Cross-functional review by all departments)
+Stage 4: REVIEW (Cross-functional review by all practices)
   |                                          Gate: All reviewers approve
   v
 Stage 5: APPROVAL (Founder decides: build / defer / kill)
@@ -44,7 +44,7 @@ Every stage produces a document. Every document lives in the repo under `org/fea
 
 ## Stage 1: INTAKE
 
-**Owner**: CPO (Product Department)
+**Owner**: CPO (Product Practice)
 **Trigger**: New idea from founder, user feedback, agent recommendation, competitive analysis
 **Duration**: < 1 day
 **Output**: `org/features/{feature-slug}/INTAKE.md`
@@ -300,14 +300,14 @@ How does this data render? {pill | watermark | task | custom}
 
 ## Stage 4: REVIEW
 
-**Owner**: All relevant departments
+**Owner**: All relevant practices
 **Input**: All three specs
 **Duration**: < 1 day for P0, 2-3 days for P1
 **Output**: `org/features/{feature-slug}/REVIEW.md`
 
 ### Review Matrix
 
-| Reviewer | Department | Checks |
+| Reviewer | Practice | Checks |
 |----------|-----------|--------|
 | CPO | Product | User stories complete? Edge cases covered? |
 | CDO | Design | Matches design system? All states designed? Accessible? |
@@ -338,7 +338,7 @@ Date: {YYYY-MM-DD}
 {APPROVED | NEEDS CHANGES | DEFERRED | KILLED}
 
 ## Changes Required (if NEEDS CHANGES)
-1. {change} — owner: {department} — deadline: {date}
+1. {change} — owner: {practice} — deadline: {date}
 
 ## Concerns Raised
 - {concern} — {how addressed or accepted as risk}
@@ -377,7 +377,7 @@ Date: {YYYY-MM-DD}
 
 ## Stage 6: IMPLEMENTATION
 
-**Owner**: CTO (Engineering Department)
+**Owner**: CTO (Engineering Practice)
 **Input**: Approved specs (all three)
 **Duration**: Per effort estimate in Tech Spec
 **Output**: Working code + commits
@@ -391,7 +391,7 @@ Date: {YYYY-MM-DD}
 6. Commit messages: `feat({feature-slug}): description`
 
 ### During Implementation
-- Spec question arises -> comment in REVIEW.md, tag relevant department
+- Spec question arises -> comment in REVIEW.md, tag relevant practice
 - Trade-off needed -> log to `org/decisions/{date}-{topic}.md`
 - Scope creep detected -> STOP, update PRODUCT-SPEC.md, get re-approval
 - Blocker found -> notify Operations for resolution
@@ -409,7 +409,7 @@ Date: {YYYY-MM-DD}
 
 ## Stage 7: QA
 
-**Owner**: CQO (Quality Department)
+**Owner**: CQO (Quality Practice)
 **Input**: Code-complete implementation
 **Duration**: < 1 day for small features, 2-3 days for complex
 **Output**: `org/features/{feature-slug}/QA-REPORT.md`
@@ -423,7 +423,7 @@ Date: {YYYY-MM-DD}
 6. **Regression**: All existing tests still pass
 7. **Performance**: No frame drops, no slow queries, no memory leaks
 8. **Accessibility**: Touch targets, labels, contrast verified
-9. **Content**: Copy matches approved strings from Content department
+9. **Content**: Copy matches approved strings from Content practice
 
 ### QA Report Template
 
@@ -467,7 +467,7 @@ Tester: CQO Agent
 
 ## Stage 8: SHIP
 
-**Owner**: CTO (Engineering Department)
+**Owner**: CTO (Engineering Practice)
 **Input**: QA-approved code
 **Duration**: < 1 hour
 **Output**: Deployed code, updated changelog
@@ -492,7 +492,7 @@ Tester: CQO Agent
 
 ## Stage 9: MONITOR
 
-**Owner**: CDaO (Data Department)
+**Owner**: CDaO (Data Practice)
 **Input**: Shipped feature + analytics events
 **Duration**: 7 days minimum
 **Output**: `org/features/{feature-slug}/MONITOR.md`
@@ -546,7 +546,7 @@ Period: {start date} to {end date}
 
 ## Stage 10: ITERATE
 
-**Owner**: CPO (Product Department)
+**Owner**: CPO (Product Practice)
 **Input**: Monitor report + user feedback
 **Duration**: Ongoing
 **Output**: New INTAKE.md(s) for improvements

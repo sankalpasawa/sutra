@@ -66,7 +66,7 @@ ASAWA INC. (Holding Company — 3-5 humans)
     Each company has:
     ├── One single-threaded human leader
     ├── Configured agent swarm (inherits shared infrastructure)
-    ├── Own departments (product, design, eng, etc.)
+    ├── Own practices (product, design, eng, etc.)
     ├── Own OKRs, own flywheel, own P&L
     └── Reports to holding via defined API contract
 ```
@@ -104,8 +104,8 @@ ASAWA INC. (Holding Company — 3-5 humans)
 
 | Cadence | What | Who |
 |---------|------|-----|
-| Daily | Department standups within each portfolio company | Agents + company lead |
-| Weekly | Cross-department sync per company | Company lead reviews |
+| Daily | Practice standups within each portfolio company | Agents + company lead |
+| Weekly | Cross-practice sync per company | Company lead reviews |
 | Bi-weekly | Braintrust review per venture | Cross-functional peers |
 | Monthly | OKR scoring + portfolio dashboard review | Founder |
 | Quarterly | Keeper test + OKR reset + capital allocation | Founder |

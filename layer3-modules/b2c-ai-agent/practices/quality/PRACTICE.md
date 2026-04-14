@@ -1,4 +1,4 @@
-# Quality Department — AI Agent
+# Quality Practice — AI Agent
 
 ## Mission
 Ensure the agent is accurate, reliable, safe, and cost-efficient. Quality for AI agents is eval-driven — not manual testing. We own the eval suites, run them on every prompt or tool change, and block deploys that regress.
@@ -98,7 +98,7 @@ Every failure is classified:
 ## Decision Authority
 - **Autonomous**: Eval case authoring, regression reports, failure classification, eval suite organization
 - **Needs founder approval**: Deploy blocks on non-P0 regressions, quality bar adjustments
-- **Needs cross-department input**: Eval criteria (Product), attack patterns (Security), feasibility of fix (Engineering)
+- **Needs cross-practice input**: Eval criteria (Product), attack patterns (Security), feasibility of fix (Engineering)
 
 ## Health Metrics
 | Metric | Target | Current |

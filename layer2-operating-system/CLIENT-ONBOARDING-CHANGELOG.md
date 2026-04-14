@@ -14,7 +14,7 @@
 | Maze | New (B2C content) | Full 8-phase | Works well but compliance audit showed gaps — retroactive artifacts don't count |
 | DayFlow | Mid-stage (mobile) | MID-STAGE-DEPLOY.md | Existing conventions must be respected — OS adapts to company, not vice versa |
 | Jarvis | New (AI tool) | Fast scaffold | 8-phase is heavy for a solo founder's personal tool — Tier 1 needs a lighter path |
-| PPR | New (personal) | Full 8-phase | Worked but most departments are stubs at Tier 1 |
+| PPR | New (personal) | Full 8-phase | Worked but most practices are stubs at Tier 1 |
 
 ### Changes Made Based on Learnings
 

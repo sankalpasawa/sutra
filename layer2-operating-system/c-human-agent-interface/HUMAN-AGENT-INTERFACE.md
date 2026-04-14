@@ -69,7 +69,7 @@ These ARE overrides:
 - "Skip the process"
 - "Just do it, no SHAPE.md needed"
 - "Bypass Sutra"
-- "Direct mode"
+- "Skip depth assessment"
 - "No process needed"
 
 ### The Watchmen Problem

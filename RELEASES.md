@@ -31,7 +31,7 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 ## The Versioning
 
 ### Sutra v1.6 (current)
-- **CHARTERS.md**: Cross-functional goal framework — horizontal outcome goals that span vertical departments; KRAs, KPIs, OKRs per charter; DRI + contributors model
+- **CHARTERS.md**: Cross-functional goal framework — horizontal outcome goals that span vertical practices; KRAs, KPIs, OKRs per charter; DRI + contributors model
 - **ROADMAP-MEETING.md**: Replaces HOD Meeting with OKR-driven process — impact/effort matrix, forward-looking goal-setting instead of backward-looking status updates
 - **INPUT-ROUTING.md**: Human input classification protocol — every founder input classified (direction/task/feedback/new concept/question) before action; 3 enforcement levels (hook gate, protocol, skill); whitelisted system-maintenance actions
 - **ADAPTIVE-PROTOCOL.md v2**: 10 parameters, pre-scoring gates, two-axis routing, undertriage tracking
@@ -46,7 +46,7 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 - Triggered by: Founder session 2026-04-06 — infrastructure hardening, adaptive protocol v2, artifact gates, estimation auto-calibration
 
 ### Sutra v1.5
-- **CHARTERS.md**: Cross-functional goal framework — horizontal outcome goals that span vertical departments; KRAs, KPIs, OKRs per charter; DRI + contributors model; scales by complexity tier (1-2 at Tier 1, 3-5 at Tier 2, unlimited at Tier 3)
+- **CHARTERS.md**: Cross-functional goal framework — horizontal outcome goals that span vertical practices; KRAs, KPIs, OKRs per charter; DRI + contributors model; scales by complexity tier (1-2 at Tier 1, 3-5 at Tier 2, unlimited at Tier 3)
 - **ROADMAP-MEETING.md**: Replaces HOD Meeting — OKR-driven, impact/effort matrix, forward-looking goal-setting instead of backward-looking status updates
 - **INPUT-ROUTING.md**: Human input classification protocol — every founder input classified (direction/task/feedback/new concept/question) before action; 3 enforcement levels (hook gate, protocol, skill); whitelisted system-maintenance actions
 - **OKRs.md**: Sutra's own company OKRs — 4 charters (Speed/Simplicity/Accuracy/Efficiency) mapped to V/C/A/U KPIs with Q2 2026 targets and roadmaps
@@ -116,7 +116,7 @@ DAYFLOW (decides when to upgrade: stay on v1.0 or fetch v1.1)
 - Onboarding optimization
 - Retention tracking
 - Weekly metrics review
-- Expanded department functions
+- Expanded practice functions
 
 ## How a Release Gets Created
 

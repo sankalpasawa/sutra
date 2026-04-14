@@ -74,7 +74,7 @@ Before foundational work (creating ARCHITECTURE, DESIGN, FRAMEWORK, PROCESS docs
 CEO of Asawa    → Full authority everywhere
 CEO of Sutra    → Sutra files + client feedback + version updates
 CEO of {Company} → Company files only + feedback-to-sutra/
-Department agents → Within their department scope only
+Practice agents → Within their practice scope only
 Sub-agents       → Within the task they were delegated
 ```
 
@@ -98,7 +98,7 @@ The Adaptive Protocol Engine (PROTO-000) depth assessment modulates how strictly
 
 ## Agent Incentive Awareness
 
-Each department agent has an incentive (from holding/AGENT-INCENTIVES.md). Productive tension happens when incentives conflict:
+Each practice agent has an incentive (from holding/AGENT-INCENTIVES.md). Productive tension happens when incentives conflict:
 
 - Growth wants to launch → Legal wants privacy policy first → **Legal wins** (compliance > speed)
 - Product wants features → Quality wants tests → **Depends on tier** (Trivial: skip tests, Standard+: tests required)

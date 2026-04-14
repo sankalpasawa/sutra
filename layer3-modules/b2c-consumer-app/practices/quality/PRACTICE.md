@@ -1,4 +1,4 @@
-# Quality Department
+# Quality Practice
 
 ## Mission
 Ship zero defects. We are the last line of defense between code and users. Every feature is tested. Every design is verified. Every regression is caught before it ships. Quality is not a phase — it is a standard.
@@ -95,7 +95,7 @@ Ship zero defects. We are the last line of defense between code and users. Every
 5. Verify fixes applied
 
 ### Bug Triage
-1. Receive bug report (from any department or user feedback)
+1. Receive bug report (from any practice or user feedback)
 2. Reproduce the bug (or mark "cannot reproduce")
 3. Classify severity:
    - P0: App crash, data loss, security issue
@@ -149,7 +149,7 @@ When tasks arrive:
 ## Decision Authority
 - **Autonomous**: Bug severity classification, QA verdicts (SHIP/FIX/BLOCK), test strategy, token audit
 - **Needs founder approval**: Releasing with known P1 bugs, reducing test coverage requirements
-- **Needs cross-department input**: Test case design (Product specs), design expectations (Design specs)
+- **Needs cross-practice input**: Test case design (Product specs), design expectations (Design specs)
 
 ## QA Report Template
 ```markdown

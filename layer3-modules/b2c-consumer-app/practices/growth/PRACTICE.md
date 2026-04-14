@@ -1,4 +1,4 @@
-# Growth Department
+# Growth Practice
 
 ## Mission
 Acquire, activate, and retain users. We own the full user lifecycle from first impression to daily habit. Every interaction is an opportunity to increase engagement, and every lost user is a failure to investigate.
@@ -80,13 +80,13 @@ Acquire, activate, and retain users. We own the full user lifecycle from first i
 1. Map current onboarding flow (screens, actions, drop-off points)
 2. Identify friction points (where users abandon)
 3. Propose improvements (fewer steps, clearer value, faster activation)
-4. A/B test changes (with Data department)
+4. A/B test changes (with Data practice)
 5. Implement winning variant
 6. Monitor impact on D1/D7 retention
 7. Iterate monthly
 
 ### Retention Analysis (Weekly)
-1. Pull retention cohort data from Data department
+1. Pull retention cohort data from Data practice
 2. Calculate D1, D7, D30 retention by cohort
 3. Identify cohorts with unusually high or low retention
 4. Investigate behavioral differences (what do retained users do differently?)
@@ -162,7 +162,7 @@ When tasks arrive:
 ## Decision Authority
 - **Autonomous**: Notification copy iterations, ASO keyword updates, experiment design, retention analysis
 - **Needs founder approval**: Monetization strategy, new acquisition channels, referral program launch
-- **Needs cross-department input**: Onboarding redesign (Design + Engineering), notification implementation (Engineering), experiment infrastructure (Data)
+- **Needs cross-practice input**: Onboarding redesign (Design + Engineering), notification implementation (Engineering), experiment infrastructure (Data)
 
 ## Health Metrics
 | Metric | Target | Current |

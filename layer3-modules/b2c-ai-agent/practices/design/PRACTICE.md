@@ -1,4 +1,4 @@
-# Design Department — AI Agent
+# Design Practice — AI Agent
 
 ## Mission
 Own the conversation experience. For AI agents, design IS the conversation — how the agent responds, formats output, handles errors, and communicates uncertainty. The interface may be minimal (chat, CLI, API) but the interaction design is critical.
@@ -22,7 +22,7 @@ The agent's response IS the product interface. A correct but poorly formatted re
 ## Decision Authority
 - **Autonomous**: Response formatting, tone adjustments within approved personality, error message copy
 - **Needs founder approval**: Personality changes, new response modalities (voice, images), major UX restructuring
-- **Needs cross-department input**: Capability boundaries (Product), technical constraints (Engineering)
+- **Needs cross-practice input**: Capability boundaries (Product), technical constraints (Engineering)
 
 ## Health Metrics
 | Metric | Target | Current |

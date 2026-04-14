@@ -1,18 +1,18 @@
 # Sutra — Adaptive Protocol Engine v3
 
-ENFORCEMENT: HARD for Tier 2+. The engine MUST run before every task. Founder can override the selected depth (up or down) but must acknowledge.
+ENFORCEMENT: HARD for Tier 2+. The engine MUST run before every task. Founder can override the selected practiceh (up or down) but must acknowledge.
 
 ---
 
 ## Purpose
 
-> **Governing Principle**: The depth of process must match the task, not the company size. A button change in a 10,000-user app is still Depth 1 if it affects one component.
+> **Governing Principle**: The practiceh of process must match the task, not the company size. A button change in a 10,000-user app is still Depth 1 if it affects one component.
 
-The Adaptive Protocol Engine selects the depth for every task. The depth controls **task decomposition granularity** — how finely a task is broken down before the LLM executes each piece.
+The Adaptive Protocol Engine selects the practiceh for every task. The practiceh controls **task decomposition granularity** — how finely a task is broken down before the LLM executes each piece.
 
 ### The Core Trade-off: Speed vs Precision
 
-Speed and precision cannot be simultaneously maximized. The more precisely you decompose a task (higher depth), the slower you move. The faster you move (lower depth), the less precise your output. The total cognitive budget per unit of time is roughly constant.
+Speed and precision cannot be simultaneously maximized. The more precisely you decompose a task (higher practiceh), the slower you move. The faster you move (lower practiceh), the less precise your output. The total cognitive budget per unit of time is roughly constant.
 
 The engine's job: **given this task, where on the speed-precision curve should you sit?**
 
@@ -23,13 +23,13 @@ Speed <===============================> Precision
           then do  then do   then do    cascade
 ```
 
-That number IS the depth. Everything else — gates, parameters, scoring — is internal machinery to arrive at that single number.
+That number IS the practiceh. Everything else — gates, parameters, scoring — is internal machinery to arrive at that single number.
 
 ---
 
 ## The Five Depths
 
-Each depth level adds one layer of thinking before code. The process is always the same — LLM does a task. What changes is how fine-grained you decompose before handing it to the LLM.
+Each practiceh level adds one layer of thinking before code. The process is always the same — LLM does a task. What changes is how fine-grained you decompose before handing it to the LLM.
 
 ### Depth 1: Direct
 
@@ -59,7 +59,7 @@ One layer of analysis. Scope the work, sanity-check the approach, then execute. 
 
 **Code at Depth 2:** Estimate files affected, check for existing patterns, then build. Verify with a build/test.
 
-**What gets logged:** Estimation vs actual. LEARN.md entry with depth evaluation.
+**What gets logged:** Estimation vs actual. LEARN.md entry with practiceh evaluation.
 
 **Time budget:** Hours.
 
@@ -99,7 +99,7 @@ Three layers. System-level thinking before touching code. High-level design firs
 
 **Domain experts --> market research --> architecture (HLD) --> detailed design (LLD) --> implementation --> multi-stage verification --> retrospective.**
 
-Maximum depth. Every layer of thinking activated. Each sub-area gets its own decomposition. The task is broken into pieces so small that each one gets directed, focused intelligence from the LLM.
+Maximum practiceh. Every layer of thinking activated. Each sub-area gets its own decomposition. The task is broken into pieces so small that each one gets directed, focused intelligence from the LLM.
 
 **Example:** "Build the payment infrastructure." "Design the company's data architecture." "Create a new product vertical."
 
@@ -115,7 +115,7 @@ Maximum depth. Every layer of thinking activated. Each sub-area gets its own dec
 
 ## The Decomposition Principle
 
-The depth doesn't change what gets built. It changes how finely you think before building.
+The practiceh doesn't change what gets built. It changes how finely you think before building.
 
 ```
 Depth 1: "Write a PRD for this feature"
@@ -131,7 +131,7 @@ Depth 5: "Write the user problem statement"
 
 Same output. Different precision. At Depth 5, you're not trusting the LLM to hold the whole problem in its head — you're decomposing it into pieces small enough that each one gets directed, focused intelligence.
 
-**Selective depth (future evolution):** A task can run at Depth 3 overall but Depth 5 on the sensitive sub-area. The auth logic gets Depth 5 decomposition while the UI wrapper stays Depth 1. For now, the depth applies uniformly per task. Variable depth per sub-area is the next evolution.
+**Selective practiceh (future evolution):** A task can run at Depth 3 overall but Depth 5 on the sensitive sub-area. The auth logic gets Depth 5 decomposition while the UI wrapper stays Depth 1. For now, the practiceh applies uniformly per task. Variable practiceh per sub-area is the next evolution.
 
 ---
 
@@ -139,7 +139,7 @@ Same output. Different precision. At Depth 5, you're not trusting the LLM to hol
 
 ### Step 1: Pre-Scoring Gates
 
-Before any scoring, check for hard floors. Gates set a minimum depth — scoring can raise it higher but cannot lower it below the floor.
+Before any scoring, check for hard floors. Gates set a minimum practiceh — scoring can raise it higher but cannot lower it below the floor.
 
 ```
 TASK ARRIVES
@@ -171,7 +171,7 @@ TASK ARRIVES
 
 ### Step 2: Problem-Type Classification (Cynefin)
 
-Classify the problem. This determines the **shape** of decomposition, not just depth.
+Classify the problem. This determines the **shape** of decomposition, not just practiceh.
 
 | Problem Type | Signal | Decomposition Shape |
 |-------------|--------|-------------------|
@@ -182,7 +182,7 @@ Classify the problem. This determines the **shape** of decomposition, not just d
 
 ### Step 3: Score the Parameters
 
-Score each 1-5. These measure what actually determines the depth:
+Score each 1-5. These measure what actually determines the practiceh:
 
 | # | Parameter | What It Measures | 1 | 5 |
 |---|-----------|-----------------|---|---|
@@ -197,7 +197,7 @@ Score each 1-5. These measure what actually determines the depth:
 | 9 | **Company Stage** | What's the blast radius amplifier? | Pre-launch, mistakes are free | Growth/scale, mistakes cost money |
 | 10 | **Sensitivity Floor** | Sensitive domain? | No security/data/legal touch | Auth, payments, PII, regulatory |
 
-**What does NOT determine the depth:**
+**What does NOT determine the practiceh:**
 - Company size alone
 - User count alone
 - Team size alone
@@ -207,7 +207,7 @@ Company stage only matters when it **actually amplifies** blast radius. A pre-la
 
 ### Step 4: Compute the Depth
 
-**This is NOT a weighted average.** A single 5 drives the depth up.
+**This is NOT a weighted average.** A single 5 drives the practiceh up.
 
 ```
 stakes_max     = max(Irreversibility, Blast Radius, Sensitivity Floor, Company Stage)
@@ -230,7 +230,7 @@ Cross-reference composite x problem type:
 
 ### Step 5: Apply Modifiers
 
-- **Gate floor:** Use max(candidate depth, gate floor).
+- **Gate floor:** Use max(candidate practiceh, gate floor).
 - **Appetite:** If founder limits ("30 min max"), reduce by one level IF no gate floor active. If founder invests ("take whatever time"), raise by one level.
 - **Chaotic at Depth 5:** Complex + composite 5 + Chaotic crisis = Depth 5. Full cascade with stabilization first.
 
@@ -304,10 +304,10 @@ EXECUTION   "How deep"           Adaptive Protocol Engine (depth 1-5)
 
 Strategy picks the task.
 Selection sequences it.
-Engine picks the depth.
+Engine picks the practiceh.
 ```
 
-Strategy and selection also have depths — deciding "what to work on" can itself be Depth 1 ("founder says do this") through Depth 5 ("full strategic planning with market research"). The depth system is fractal.
+Strategy and selection also have practicehs — deciding "what to work on" can itself be Depth 1 ("founder says do this") through Depth 5 ("full strategic planning with market research"). The practiceh system is fractal.
 
 ---
 
@@ -408,8 +408,8 @@ When a task needs a dormant capability, the engine flags it:
 ```
 1. Task arrives: "Add QA test suite"
 2. Engine routes: needs /qa skill.
-3. Checks: quality dept is dormant.
-4. Flags: "This task needs QA. Activate quality department?"
+3. Checks: quality practice is dormant.
+4. Flags: "This task needs QA. Activate quality practice?"
 5. Founder confirms.
 6. company_state updates.
 7. Task proceeds.
@@ -421,14 +421,14 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 
 | Signal | Recommended Activation |
 |--------|----------------------|
-| First task needing test verification | Quality dept |
-| First task needing usage data | Data dept |
-| First task targeting user acquisition | Growth dept |
-| First external security concern | Security dept |
-| First task where design judgment needed | Design dept |
-| Revenue > $0/mo | Finance dept |
-| Manual ops becoming repeated pain | Ops dept |
-| Pre-launch checklist begins | Legal dept |
+| First task needing test verification | Quality practice |
+| First task needing usage data | Data practice |
+| First task targeting user acquisition | Growth practice |
+| First external security concern | Security practice |
+| First task where design judgment needed | Design practice |
+| Revenue > $0/mo | Finance practice |
+| Manual ops becoming repeated pain | Ops practice |
+| Pre-launch checklist begins | Legal practice |
 
 ### Stage Transitions
 
@@ -436,7 +436,7 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 |-----------|---------|---------------|
 | pre-launch --> beta | First real users | Locked rules reset |
 | beta --> growth | Product-market fit proven | All tasks minimum Depth 2 |
-| growth --> scale | Team > 1 or users > 1000 | Full depth range, minimum Depth 2 |
+| growth --> scale | Team > 1 or users > 1000 | Full practiceh range, minimum Depth 2 |
 
 ---
 
@@ -447,9 +447,9 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 | **Receives from** | Estimation Engine | Cost, confidence, scope. Low confidence may trigger gate. |
 | **Receives from** | TODO.md / user request | Task description, priority. |
 | **Receives from** | SUTRA-CONFIG.md | Company state, founder involvement level. |
-| **Feeds into** | Agent architecture | Which skills/protocols activate per depth. |
+| **Feeds into** | Agent architecture | Which skills/protocols activate per practiceh. |
 | **Feeds into** | LEARN.md | Depth evaluation, triage, accuracy data. |
-| **Validated by** | Effectiveness check | Post-task: was the depth right? |
+| **Validated by** | Effectiveness check | Post-task: was the practiceh right? |
 | **Respects** | Sovereignty | Founder override always available, always logged. |
 
 ---
@@ -458,7 +458,7 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 
 ### HARD (Tier 2+):
 - Engine MUST run before every task.
-- Engine MUST output: gate result, problem type, scores, depth, activated protocols.
+- Engine MUST output: gate result, problem type, scores, practiceh, activated protocols.
 - Output MUST be visible (not silent).
 - Skipping the engine is a BLOCK violation.
 
@@ -469,7 +469,7 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 ### Founder override:
 - Override up: always allowed.
 - Override down: allowed, must acknowledge. Logged per SOVEREIGNTY.md.
-- Override doesn't change the score. Changes the executed depth. Learning loop records both.
+- Override doesn't change the score. Changes the executed practiceh. Learning loop records both.
 
 ---
 
@@ -479,6 +479,6 @@ v1: Maze onboarding, 2026-04-04. Two features got identical pipeline — privacy
 
 v2 (2026-04-06): Added pre-scoring gates, Cynefin classification, undertriage/overtriage tracking. Informed by 8 external frameworks: Cynefin, Wardley Mapping, Military ROE, Medical ESI, Toyota Kata, Legal Proportional Process, Spotify Model, Shape Up. Full research at `holding/research/ADAPTIVE-PROTOCOL-RESEARCH.md`.
 
-v3 (2026-04-06): Reframed around speed-precision trade-off. 4 levels --> 5 depths. Depths defined by decomposition granularity, not pipeline steps. Removed company-size floor — company stage only matters when it amplifies blast radius. Merged Progressive OS into Company State section. Three-layer model: Strategy > Selection > Execution. The depth system is fractal — applies to strategy and meta-decisions, not just code tasks.
+v3 (2026-04-06): Reframed around speed-precision trade-off. 4 levels --> 5 practicehs. Depths defined by decomposition granularity, not pipeline steps. Removed company-size floor — company stage only matters when it amplifies blast radius. Merged Progressive OS into Company State section. Three-layer model: Strategy > Selection > Execution. The practiceh system is fractal — applies to strategy and meta-decisions, not just code tasks.
 
 **Governing insight:** Speed and precision cannot be simultaneously maximized. The engine's job is to place each task at the right point on that curve.

@@ -31,7 +31,7 @@ Duration: until all features shipped
 ### 3. Run the features
 - High-depth features follow the full OS: shape → design → specify → build → verify → learn
 - Low-depth features follow minimal process: read knowledge system → build → ship
-- Log metrics honestly. Don't optimize for one mode over the other.
+- Log metrics honestly. Don't optimize for one depth level over the other.
 
 ### 4. Analyze results
 ```

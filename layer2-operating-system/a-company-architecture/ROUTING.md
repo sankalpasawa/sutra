@@ -1,23 +1,23 @@
-# Cross-Department Routing Table
+# Cross-Practice Routing Table
 
-When a department discovers a signal that another department needs to act on, this table defines the routing. Follow it precisely — no ad-hoc communication. Every cross-department handoff goes through this table.
+When a practice discovers a signal that another practice needs to act on, this table defines the routing. Follow it precisely — no ad-hoc communication. Every cross-practice handoff goes through this table.
 
 ---
 
 ## How to Use This Table
 
-1. **Detecting department** identifies a signal (column 2)
+1. **Detecting practice** identifies a signal (column 2)
 2. Look up the signal in this table
-3. Route to the specified department(s) (column 3)
+3. Route to the specified practice(s) (column 3)
 4. Include the specified action/context (column 4)
-5. Receiving department follows their Inbox Protocol (in their DEPARTMENT.md)
-6. Operations tracks handoffs that are cross-department blockers
+5. Receiving practice follows their Inbox Protocol (in their PRACTICE.md)
+6. Operations tracks handoffs that are cross-practice blockers
 
 ---
 
 ## Master Routing Table
 
-### Data Department Signals
+### Data Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
@@ -29,7 +29,7 @@ When a department discovers a signal that another department needs to act on, th
 | 6 | Data | Session duration declining | Product + Design | Investigate UX friction, review recent changes |
 | 7 | Data | New user activation rate low | Growth + Design | Optimize onboarding, review first-time experience |
 
-### Quality Department Signals
+### Quality Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
@@ -41,7 +41,7 @@ When a department discovers a signal that another department needs to act on, th
 | 13 | Quality | Performance regression (fps < 60) | Engineering | Profile and fix frame drops |
 | 14 | Quality | Accessibility failure | Design + Engineering | Design updates spec, Engineering implements fix |
 
-### Security Department Signals
+### Security Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
@@ -52,7 +52,7 @@ When a department discovers a signal that another department needs to act on, th
 | 19 | Security | Privacy concern with feature | Product + Engineering | Product reviews scope, Engineering adjusts data handling |
 | 20 | Security | Compliance deadline approaching | Operations + Content | Operations allocates resources, Content updates policies |
 
-### Engineering Department Signals
+### Engineering Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
@@ -65,18 +65,18 @@ When a department discovers a signal that another department needs to act on, th
 | 27 | Engineering | Build broken | Operations | P0 — block all work until build restored |
 | 28 | Engineering | Technical constraint on feature | Product | Scope adjustment needed — propose alternative |
 
-### Product Department Signals
+### Product Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
 | 29 | Product | New P0 feature approved | Design + Engineering + Content | Design creates spec, Engineering estimates, Content writes copy |
-| 30 | Product | Priority change (P0 shift) | Operations + Engineering | Operations cascades to all departments, Engineering adjusts sprint |
-| 31 | Product | Feature killed | Operations | Operations notifies all departments, stops in-progress work |
+| 30 | Product | Priority change (P0 shift) | Operations + Engineering | Operations cascades to all practices, Engineering adjusts sprint |
+| 31 | Product | Feature killed | Operations | Operations notifies all practices, stops in-progress work |
 | 32 | Product | User feedback trend identified | Design + Growth | Design reviews UX, Growth assesses retention impact |
-| 33 | Product | Roadmap updated | Operations | Operations communicates changes to all departments |
+| 33 | Product | Roadmap updated | Operations | Operations communicates changes to all practices |
 | 34 | Product | Success criteria defined | Data | Data sets up tracking events and dashboard |
 
-### Design Department Signals
+### Design Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
@@ -86,7 +86,7 @@ When a department discovers a signal that another department needs to act on, th
 | 38 | Design | New animation spec | Engineering | Implement with specified spring configs/durations |
 | 39 | Design | Layout constraint with copy | Content | Content adjusts copy length to fit design |
 
-### Growth Department Signals
+### Growth Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
@@ -97,32 +97,32 @@ When a department discovers a signal that another department needs to act on, th
 | 44 | Growth | Churn analysis complete | Product | Product prioritizes retention features based on findings |
 | 45 | Growth | A/B test results in | Product + Data | Product decides on winner, Data archives experiment |
 
-### Content Department Signals
+### Content Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
 | 46 | Content | Inconsistent terminology found | Design + Product | Align on standard terms, update all instances |
 | 47 | Content | Missing empty state copy | Design + Engineering | Design specs the empty state, Engineering implements |
 | 48 | Content | App store listing ready | Growth | Growth reviews ASO, gives final approval |
-| 49 | Content | Documentation outdated | Operations | Operations schedules doc update, assigns to relevant dept |
+| 49 | Content | Documentation outdated | Operations | Operations schedules doc update, assigns to relevant practice |
 | 50 | Content | Copy audit findings | Engineering | Engineering implements copy fixes |
 
-### Operations Department Signals
+### Operations Practice Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
-| 51 | Operations | Cross-department blocker | Founder | Escalate with context, options, recommendation |
-| 52 | Operations | Department underperforming | Relevant department | Investigate cause, propose improvement |
-| 53 | Operations | Process compliance failure | Relevant department | Re-educate on process, track improvement |
+| 51 | Operations | Cross-practice blocker | Founder | Escalate with context, options, recommendation |
+| 52 | Operations | Practice underperforming | Relevant practice | Investigate cause, propose improvement |
+| 53 | Operations | Process compliance failure | Relevant practice | Re-educate on process, track improvement |
 | 54 | Operations | Sprint capacity exceeded | Product | Deprioritize lowest-ranked items |
-| 55 | Operations | Weekly planning complete | All Departments | Distribute updated priorities and OKRs |
+| 55 | Operations | Weekly planning complete | All Practices | Distribute updated priorities and OKRs |
 
 ### Founder Signals
 
 | # | From | Signal | Routes To | Action |
 |---|------|--------|-----------|--------|
 | 56 | Founder | New idea | Product | CPO creates INTAKE.md, begins evaluation |
-| 57 | Founder | Direction change | Operations | Operations cascades to all departments |
+| 57 | Founder | Direction change | Operations | Operations cascades to all practices |
 | 58 | Founder | Taste decision made | Design + Engineering | Design updates spec, Engineering implements |
 | 59 | Founder | Feature approved | Engineering + Design + Content | Begin implementation per FEATURE-LIFECYCLE.md |
 | 60 | Founder | Feature killed | Operations + Product | Operations stops work, Product logs reason |
@@ -131,18 +131,18 @@ When a department discovers a signal that another department needs to act on, th
 
 ## Depth Integration
 
-Routing decisions reference the depth assessment from the Adaptive Protocol Engine (PROTO-000). Higher depth means wider department fan-out and stricter review requirements.
+Routing decisions reference the depth assessment from the Adaptive Protocol Engine (PROTO-000). Higher depth means wider practice fan-out and stricter review requirements.
 
 | Depth | Routing Behavior | Review Requirement |
 |-------|------------------|--------------------|
-| 1-2 (Surface/Considered) | Route to **primary domain only**. No cross-department consultation. Signal stays within the originating department's ownership. | None — primary department resolves autonomously. |
-| 3 (Thorough) | Route to **primary domain + check adjacent domains**. Use the Master Routing Table to identify secondary departments that may be affected. Notify them for awareness, but primary department owns resolution. | Secondary departments acknowledge and flag conflicts within SLA. |
-| 4-5 (Rigorous/Exhaustive) | **Multi-domain routing with cross-domain review.** All departments listed in the Master Routing Table are notified simultaneously. Operations assigns a primary owner and tracks the handoff. | Resolution requires sign-off from all routed departments. Cross-domain review meeting for Depth 5. |
+| 1-2 (Surface/Considered) | Route to **primary domain only**. No cross-practice consultation. Signal stays within the originating practice's ownership. | None — primary practice resolves autonomously. |
+| 3 (Thorough) | Route to **primary domain + check adjacent domains**. Use the Master Routing Table to identify secondary practices that may be affected. Notify them for awareness, but primary practice owns resolution. | Secondary practices acknowledge and flag conflicts within SLA. |
+| 4-5 (Rigorous/Exhaustive) | **Multi-domain routing with cross-domain review.** All practices listed in the Master Routing Table are notified simultaneously. Operations assigns a primary owner and tracks the handoff. | Resolution requires sign-off from all routed practices. Cross-domain review meeting for Depth 5. |
 
 **Rules**:
-- The depth assessment output determines how many routing hops a signal takes. Low-depth signals go direct; high-depth signals follow the full multi-department routing protocol.
+- The depth assessment output determines how many routing hops a signal takes. Low-depth signals go direct; high-depth signals follow the full multi-practice routing protocol.
 - When depth is ambiguous, route at the higher depth level — over-routing is cheaper than missed dependencies.
-- Depth is assessed per-signal, not per-department. The same department can process Depth 1 and Depth 5 signals simultaneously.
+- Depth is assessed per-signal, not per-practice. The same practice can process Depth 1 and Depth 5 signals simultaneously.
 
 ---
 
@@ -151,22 +151,22 @@ Routing decisions reference the depth assessment from the Adaptive Protocol Engi
 ### General Rules
 1. **Always follow the table.** No ad-hoc routing. If a signal isn't in the table, add it.
 2. **Include context.** Never route a bare signal. Include: what was found, why it matters, what action is expected.
-3. **Acknowledge receipt.** Receiving department acknowledges within their SLA (see DEPARTMENT.md Inbox Protocol).
-4. **Track completion.** Operations tracks all P0/P1 cross-department handoffs to completion.
+3. **Acknowledge receipt.** Receiving practice acknowledges within their SLA (see PRACTICE.md Inbox Protocol).
+4. **Track completion.** Operations tracks all P0/P1 cross-practice handoffs to completion.
 5. **Escalate blockers.** If a handoff is stuck for > 24 hours, Operations intervenes.
 
 ### Priority Rules
 - Security signals (rows 15-20) are always P0 until classified otherwise
 - Regression signals (rows 10, 13) are always P0/P1
 - Build broken (row 27) is always P0
-- Everything else follows the originating department's priority assessment
+- Everything else follows the originating practice's priority assessment
 
-### Multi-Department Routing
-When a signal routes to multiple departments:
-- All departments are notified simultaneously
+### Multi-Practice Routing
+When a signal routes to multiple practices:
+- All practices are notified simultaneously
 - Operations assigns a primary owner
-- Primary owner coordinates with secondary departments
-- Resolution requires sign-off from all routed departments
+- Primary owner coordinates with secondary practices
+- Resolution requires sign-off from all routed practices
 
 ---
 

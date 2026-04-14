@@ -1,4 +1,4 @@
-# Content Department
+# Content Practice
 
 ## Mission
 Every word in DayFlow is intentional. From in-app microcopy to app store descriptions to documentation, we own the voice of the product. Good content is invisible — it guides users without them noticing. Bad content creates confusion, friction, and churn.
@@ -58,7 +58,7 @@ Every word in DayFlow is intentional. From in-app microcopy to app store descrip
 - KR4: Terminology consistent across entire app (glossary followed)
 
 ### O2: App store listing ready
-- KR1: App title optimized for ASO (with Growth department input)
+- KR1: App title optimized for ASO (with Growth practice input)
 - KR2: Subtitle written (30 chars, value proposition)
 - KR3: Full description written (keyword-rich, benefit-focused)
 - KR4: "What's New" template ready for releases
@@ -150,7 +150,7 @@ When tasks arrive:
 ## Decision Authority
 - **Autonomous**: Microcopy writing, error message phrasing, documentation updates, terminology standardization
 - **Needs founder approval**: Voice/tone direction changes, app store listing final version, terminology changes for established terms
-- **Needs cross-department input**: Layout-dependent copy (Design), feature context (Product), keyword strategy (Growth)
+- **Needs cross-practice input**: Layout-dependent copy (Design), feature context (Product), keyword strategy (Growth)
 
 ## Content Checklist (Per Feature)
 - [ ] All buttons have clear, action-oriented labels

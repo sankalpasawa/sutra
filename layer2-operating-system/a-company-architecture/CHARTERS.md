@@ -50,11 +50,11 @@ After HOD sets direction:
 
 ## What is a Charter
 
-Departments are vertical — they define **who** does the work (Engineering, Product, Design, etc.).
+Practices are vertical — they define **who** does the work (Engineering, Product, Design, etc.).
 
 Charters are horizontal — they define **what outcomes** the company is driving across functions.
 
-A charter is a named strategic priority with measurable goals, owned by one department but contributed to by many. Charters ensure that cross-cutting concerns (speed, quality, growth) don't fall through the cracks between departments.
+A charter is a named strategic priority with measurable goals, owned by one practice but contributed to by many. Charters ensure that cross-cutting concerns (speed, quality, growth) don't fall through the cracks between practices.
 
 ```
               Charter: Speed          Charter: Quality        Charter: Growth
@@ -78,8 +78,8 @@ Every charter has seven components:
 | **KRAs** | List | Key Result Areas — domains of responsibility within this charter |
 | **KPIs** | Metrics | Always-on measurements — tracked continuously, never "done" |
 | **OKRs** | Time-bound | Quarterly goals scored 0.0–1.0 (format from ROADMAP-MEETING.md) |
-| **DRI** | Department | One department owns the charter — accountable for outcomes |
-| **Contributors** | Departments[] | Other departments that contribute work toward the charter |
+| **DRI** | Practice | One practice owns the charter — accountable for outcomes |
+| **Contributors** | Practices[] | Other practices that contribute work toward the charter |
 
 ### OKR Format (from ROADMAP-MEETING.md)
 
@@ -102,9 +102,9 @@ Each charter includes an action plan — the concrete work that moves KPIs and O
 
 ---
 
-## Charter vs Department
+## Charter vs Practice
 
-Departments and charters form a matrix:
+Practices and charters form a matrix:
 
 | | Speed Charter | Quality Charter | Growth Charter |
 |---|:---:|:---:|:---:|
@@ -115,14 +115,14 @@ Departments and charters form a matrix:
 
 ### How They Connect
 
-- A **department** contributes to multiple charters
-- A **charter** is contributed to by multiple departments
-- Department files (e.g., `departments/engineering.md`) get a `contributes_to` field listing their charters
-- The charter defines what each department's specific contribution looks like
+- A **practice** contributes to multiple charters
+- A **charter** is contributed to by multiple practices
+- Practice files (e.g., `practices/engineering.md`) get a `contributes_to` field listing their charters
+- The charter defines what each practice's specific contribution looks like
 
-### Department File Addition
+### Practice File Addition
 
-Add to each `departments/*.md`:
+Add to each `practices/*.md`:
 
 ```yaml
 contributes_to:
@@ -140,7 +140,7 @@ contributes_to:
 
 Every function has exactly one owner. No shared ownership. No "the team owns it."
 
-For each company, the matrix shows WHO (department/role) owns WHAT (function):
+For each company, the matrix shows WHO (practice/role) owns WHAT (function):
 
 | Function | Owner | Accountability |
 |----------|-------|---------------|
@@ -271,7 +271,7 @@ Upgrade to full OKRs when company moves to Tier 2.
 |--------|---------------------|
 | **SUTRA-KPI.md** | V/C/A/U metrics map directly to charter KPIs (V → Speed, C → Simplicity, A → Quality, U → Speed) |
 | **ROADMAP-MEETING.md** | The process that reviews charter progress — Phase 1 (OKR Check) scores charter OKRs |
-| **departments/** | Contributors to charters — each department file lists `contributes_to` |
+| **practices/** | Contributors to charters — each practice file lists `contributes_to` |
 | **CLIENT-ONBOARDING.md** (Appendix A) | Complexity tiers determine how many charters a company should run |
 | **Company Charter** (example in this file) | Company constitution (mission/values) — charters operationalize the mission into measurable goals |
 | **OKRs.md** | Company-level OKR file — charters provide the structure for organizing OKRs |
@@ -286,8 +286,8 @@ Companies use this in their `os/OKRs.md` or equivalent:
 # Charter: [Name]
 
 **Objective**: [Qualitative — what we're trying to achieve]
-**DRI**: [Department]
-**Contributors**: [Department, Department, ...]
+**DRI**: [Practice]
+**Contributors**: [Practice, Practice, ...]
 **Status**: ACTIVE | RETIRED
 
 ## KRAs
@@ -316,8 +316,8 @@ OBJECTIVE: [Same as charter objective, or narrowed for the quarter]
 |---|--------|----------|-------|-----|--------|
 | 1 | [action] | KR1 | [dept] | [date] | TODO |
 
-## Department Contributions
-| Department | Role | What They Own |
+## Practice Contributions
+| Practice | Role | What They Own |
 |------------|------|---------------|
 | [dept] | DRI | [specific responsibilities] |
 | [dept] | Contributor | [specific responsibilities] |
@@ -350,7 +350,7 @@ DayFlow becomes the cognitive layer between you and your life. Not just a calend
 - **RICE scoring** for prioritization: Reach x Impact x Confidence / Effort.
 
 ### Organizational Structure
-Nine departments, each led by an AI agent (CPO, CDO, CTO, CDaO, CISO, CQO, CGO, COO, CCO). Founder acts as CEO. All CXOs report to the founder.
+Nine practices, each led by an AI agent (CPO, CDO, CTO, CDaO, CISO, CQO, CGO, COO, CCO). Founder acts as CEO. All CXOs report to the founder.
 
 ### Governance
 Charter can be amended by the founder at any time. Agents may propose amendments via decision records. Violating a core value is a P0 issue.

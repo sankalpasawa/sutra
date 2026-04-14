@@ -1,5 +1,15 @@
 # Sutra — Current Version
 
+## v1.8 (2026-04-11)
+
+- **COVERAGE-ENGINE.md v1.0**: Runtime process coverage for client companies. Tracks whether every expected Sutra step fired during a session, per task, per depth. 26 trackable methods across 6 categories (gates, engines, lifecycle phases, verification, research, calibration). Expected checklist auto-generated from assigned depth (D1=4 steps, D2=7, D3=14, D4=19, D5=24).
+- **method-registry.jsonl**: Machine-readable registry of all Sutra methods with depth requirements. Deployed to each company's `os/` directory.
+- **Coverage hooks**: `log-coverage.sh` (logs method fires with evidence) + `coverage-report.sh` (reads log, compares to expected, shows gaps). Deployed to `.claude/hooks/`.
+- **Coverage toggle**: `coverage: on|off` in SUTRA-CONFIG.md. Silent no-op when off. Zero overhead in production.
+- **Evidence requirement**: Each logged method must include task-specific evidence, not generic claims. "goal: audit 47 pages" is valid; "defined objective" is not.
+- **Aggregation**: Task-level, session-level, and 30-day rolling company-level coverage reports.
+- Triggered by: Founder direction 2026-04-09 — "when a client company is running on Sutra, I want to monitor whether all methods are being used." Tested on Dharmik (2 tasks, 100% coverage). Deployed to DayFlow.
+
 ## v1.7 (2026-04-06)
 
 - **ADAPTIVE-PROTOCOL.md v3**: "Gear" renamed to "Depth" (customer focus). 5 depth levels (1-5) controlling task decomposition granularity. Speed vs precision as governing trade-off. Company size no longer determines depth. Progressive OS merged as Company State.
@@ -11,7 +21,7 @@
 
 ## v1.6 (2026-04-06)
 
-- **CHARTERS.md**: Cross-functional goal framework — horizontal outcome goals that span vertical departments; KRAs, KPIs, OKRs per charter; DRI + contributors model
+- **CHARTERS.md**: Cross-functional goal framework — horizontal outcome goals that span vertical practices; KRAs, KPIs, OKRs per charter; DRI + contributors model
 - **ROADMAP-MEETING.md**: Replaces HOD Meeting with OKR-driven process — impact/effort matrix, forward-looking goal-setting instead of backward-looking status updates
 - **INPUT-ROUTING.md**: Human input classification protocol — every founder input classified (direction/task/feedback/new concept/question) before action; 3 enforcement levels (hook gate, protocol, skill); whitelisted system-maintenance actions
 - **ADAPTIVE-PROTOCOL.md v2**: 10 parameters, pre-scoring gates, two-axis routing, undertriage tracking
@@ -29,12 +39,13 @@
 
 | # | Company | Pinned to | Status |
 |---|---------|-----------|--------|
-| 1 | DayFlow | v1.7 | Running. Depth system deployed. feedback-to-sutra/ created. |
+| 1 | DayFlow | v1.8 | Running. Coverage engine deployed. |
 | 2 | PPR | v1.7 | Deploying. Depth system + engines + version check. |
 | 3 | Maze | v1.7 | Deploying. Depth system + engine upgrade + version check. |
 | 4 | Jarvis | v1.3.1 | Onboarded. Upgrade pending. |
 | 5 | Paisa | v1.7 | Deploying. Depth system + engines + version check. |
-| 6 | Asawa | v1.7 | Meta-client. Running latest as governance layer. |
+| 6 | Asawa | v1.8 | Meta-client. Running latest as governance layer. |
+| 7 | Dharmik | v1.8 | External client. Coverage engine deployed + tested (100% on 2 tasks). |
 
 ## Release Model
 

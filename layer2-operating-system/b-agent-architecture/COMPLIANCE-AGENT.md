@@ -109,7 +109,7 @@ The compliance agent scales its checks based on the task's assigned Depth (1-5).
 - [ ] What we're building (clear scope)
 - [ ] Edge cases identified
 - [ ] Not-in-scope explicitly stated
-- [ ] Depth 4-5: cross-department impact, risk assessment
+- [ ] Depth 4-5: cross-practice impact, risk assessment
 
 ### PLAN
 - [ ] Actionable steps listed
@@ -125,12 +125,12 @@ The compliance agent scales its checks based on the task's assigned Depth (1-5).
 - [ ] Success criteria evaluated against OBJECTIVE
 - [ ] Depth 1-2: simple pass/fail
 - [ ] Depth 3: quantified results per criterion
-- [ ] Depth 4-5: cross-department verification, regression check
+- [ ] Depth 4-5: cross-practice verification, regression check
 
 ### LEARN
 - [ ] Depth 1-2: skip (no formal artifact)
 - [ ] Depth 3: what went well, what surprised
-- [ ] Depth 4-5: feedback for Sutra, per-department learnings, process improvements
+- [ ] Depth 4-5: feedback for Sutra, per-practice learnings, process improvements
 
 ## How to Invoke
 

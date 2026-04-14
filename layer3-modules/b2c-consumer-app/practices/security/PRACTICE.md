@@ -1,4 +1,4 @@
-# Security Department
+# Security Practice
 
 ## Mission
 Protect user data and maintain trust. Security is not a feature — it is a foundation. Every line of code, every data flow, every third-party integration must meet our security bar. Users trust us with their most personal data. We do not betray that trust.
@@ -139,7 +139,7 @@ When tasks arrive:
 ## Decision Authority
 - **Autonomous**: Vulnerability classification, dependency approval/rejection, RLS policy enforcement, deploy blocks for Critical issues
 - **Needs founder approval**: Privacy policy changes, compliance commitments, security architecture changes
-- **Needs cross-department input**: Feature security reviews (Product/Engineering), compliance scoping (Operations)
+- **Needs cross-practice input**: Feature security reviews (Product/Engineering), compliance scoping (Operations)
 
 ## Health Metrics
 | Metric | Target | Current |

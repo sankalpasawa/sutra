@@ -1,4 +1,4 @@
-# Product Department — AI Agent
+# Product Practice — AI Agent
 
 ## Mission
 Own the agent's capability boundary and user experience. Decide WHAT the agent does, WHAT it refuses, and HOW it communicates. Every capability that ships must have defined input/output contracts, eval cases, and a clear boundary specification.
@@ -15,7 +15,7 @@ Own the agent's capability boundary and user experience. Decide WHAT the agent d
 - Interaction log review — pattern identification from real usage
 - Failure taxonomy — categorize agent failures (hallucination, wrong tool, refusal error, latency, cost)
 - Personality and tone specification — the agent's voice is a product decision
-- Cross-department spec coordination (capability spec + prompt spec + tool spec)
+- Cross-practice spec coordination (capability spec + prompt spec + tool spec)
 
 ## Processes
 
@@ -60,7 +60,7 @@ Own the agent's capability boundary and user experience. Decide WHAT the agent d
 ## Decision Authority
 - **Autonomous**: Capability intake, eval case authoring, interaction review, boundary documentation
 - **Needs founder approval**: Boundary expansions, capability kills, personality changes, new data access
-- **Needs cross-department input**: Feasibility (Engineering), safety (Security), cost impact (Finance)
+- **Needs cross-practice input**: Feasibility (Engineering), safety (Security), cost impact (Finance)
 
 ## Health Metrics
 | Metric | Target | Current |

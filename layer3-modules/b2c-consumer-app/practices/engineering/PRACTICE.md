@@ -1,4 +1,4 @@
-# Engineering Department
+# Engineering Practice
 
 ## Mission
 Build reliable, performant, maintainable software. We own the HOW. Architecture decisions, code quality, performance, infrastructure, and technical debt are our domain. We turn specs into working product.
@@ -146,7 +146,7 @@ When tasks arrive:
 ## Decision Authority
 - **Autonomous**: Code style, refactoring approach, library choices (minor), performance optimizations, bug fixes
 - **Needs founder approval**: Architecture changes, new dependencies (major), database schema changes, API changes
-- **Needs cross-department input**: Design implementation (Design), feature scope (Product), test strategy (Quality)
+- **Needs cross-practice input**: Design implementation (Design), feature scope (Product), test strategy (Quality)
 
 ## Health Metrics
 | Metric | Target | Current |
