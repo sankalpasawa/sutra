@@ -1,0 +1,511 @@
+#  Sutra — Typed System State (single source of truth)
+#
+#  This file is the ONLY place to edit protocols, directions, hooks, tiers,
+#  and invariants. CLAUDE.md, settings.json, hook bundle, and OS core are
+#  all OUTPUTS compiled from this file in Phase 2.
+#
+#  Do not edit generated markdown by hand. Edit this file, re-run compile.
+#
+#  Validate: node sutra/state/validate.mjs
+#  Schema:   sutra/state/schema.json
+
+meta:
+  version: "1.9"
+  schema: "1.0"
+  updated: "2026-04-15"
+  phase: 1
+  roadmap: holding/research/2026-04-15-asawa-sutra-live-roadmap.md
+  decisions: holding/DECISIONS.md
+  caps:
+    protocols_active_max: 8   # Phase 0 D-3
+    directions_active_max: 18 # Phase 0 D-6
+
+# ─── Tiers (per Phase 0 D-3, D-9) ─────────────────────────────────────────────
+# Each tier picks which hooks ship and whether OS core copies into target.
+# Claude-Code-only runtime for v1 (D-9).
+tiers:
+  - id: 1
+    name: governance
+    description: "Billu-style governance tool. Minimal. Boundary + routing/depth markers + SUTRA-CONFIG only. No engines."
+    hooks_included: [enforce-boundaries, reset-turn-markers, dispatcher-pretool]
+    includes_os_core: false
+    includes_templates: true
+    example_consumer: billu
+
+  - id: 2
+    name: product
+    description: "DayFlow/Maze/PPR/Paisa-style product company. Full OS: engines, hooks, protocols, templates."
+    hooks_included: null  # null = all
+    includes_os_core: true
+    includes_templates: true
+    example_consumer: dayflow
+
+  - id: 3
+    name: platform
+    description: "Meta — Sutra itself. Reserved for future protocol harvester + cross-company learning infra."
+    hooks_included: null
+    includes_os_core: true
+    includes_templates: true
+    example_consumer: sutra
+    reserved: true
+
+# ─── Protocols (Phase 0 D-3: cap 8 active) ────────────────────────────────────
+# All 19 are listed. 8 active. 11 retired/absorbed per Phase 0 decision.
+# A protocol with enforcement=hard MUST have a mechanism that blocks. Doctor enforces.
+protocols:
+  - id: PROTO-000
+    name: Every Change Must Ship With Implementation
+    status: active
+    enforcement: hard
+    mechanism: reconciler  # doctor enforces invariant I-1
+    invariant_refs: [I-1]
+    owner: sutra
+    summary: Every policy marked HARD must have a compiled blocking hook AND a regression test before shipping. Writing prose is not shipping.
+    source: sutra/layer2-operating-system/PROTOCOLS.md
+
+  - id: PROTO-004
+    name: Keys in Env Vars Only
+    status: active
+    enforcement: soft
+    mechanism: dispatcher-pretool.sh  # grep pattern in Check 5
+    test: (none yet)
+    owner: sutra
+    summary: No hardcoded API keys, secrets, tokens in source. Dispatcher soft-warns on detection; hardening to hard-block is post-v1.
+    source: sutra/layer2-operating-system/PROTOCOLS.md
+
+  - id: PROTO-006
+    name: Process Discipline
+    status: active
+    enforcement: soft
+    mechanism: CLAUDE.md + dispatcher routing check
+    owner: sutra
+    summary: Use the defined process. Don't ad-hoc when a protocol exists. Routing classification surfaces this before action.
+
+  - id: PROTO-009
+    name: Narration Is Not Artifact
+    status: active
+    enforcement: soft
+    mechanism: dispatcher-pretool.sh
+    owner: sutra
+    summary: Files under os/ must be artifacts that stand alone, not conversational narration. Dispatcher warns on os/ writes.
+
+  - id: PROTO-013
+    name: Sutra Version Deploy
+    status: active
+    enforcement: hard
+    mechanism: D27 depth-5 gate + compiler (Phase 2)
+    invariant_refs: [I-2]
+    owner: sutra
+    summary: Every Sutra version change triggers a compile → reconcile → deploy cycle per tier. No partial propagation.
+
+  - id: PROTO-014
+    name: Sutra Version Check (Client-Side)
+    status: active
+    enforcement: soft
+    mechanism: CLAUDE.md session-start check + .claude/sutra-version manifest
+    owner: sutra
+    summary: Company sessions compare local sutra-version to upstream on start. Drift surfaces without forcing upgrade.
+
+  - id: PROTO-015
+    name: Verify Before Commit
+    status: active
+    enforcement: hard
+    mechanism: pre-commit git hook (Phase 3 - doctor)
+    invariant_refs: [I-3]
+    owner: sutra
+    summary: No commit lands without proportional verification. Depth 1 = grep; 2 = typecheck; 3+ = full suite. Doctor enforces.
+
+  - id: PROTO-017
+    name: Policy-to-Implementation Coverage
+    status: active
+    enforcement: hard
+    mechanism: reconciler (Phase 3)
+    invariant_refs: [I-1, I-4, I-5]
+    owner: sutra
+    summary: For every active protocol/direction with enforcement=hard, a blocking hook exists AND is wired AND passes its test. Doctor refuses to pass if any row violates.
+
+  # ── Retired (11) — kept as historical record, not wired ────────────────────
+  - id: PROTO-001
+    name: Structure Before Creation
+    status: retired
+    reason: "Absorbed into reconciler invariant I-6 (no orphan files). Per Phase 0 D-3."
+    source: sutra/layer2-operating-system/PROTOCOLS.md
+
+  - id: PROTO-002
+    name: Wait for Parallel Completion
+    status: retired
+    reason: "Agent-execution concern, not system invariant. Handled by TaskCreate/TaskGet in runtime."
+
+  - id: PROTO-003
+    name: Free Tier First
+    status: retired
+    reason: "Business heuristic, not runtime invariant. Per codex review: 'business heuristics should not be in kernel.'"
+
+  - id: PROTO-005
+    name: Self-Assess Before Foundational Work
+    status: retired
+    reason: "Subsumed by depth system (D2, D26). Depth 5 already requires self-assessment."
+
+  - id: PROTO-007
+    name: One Metric Per Feature
+    status: retired
+    reason: "Product discipline, moves to IDEA-SHAPING.md (Phase 5). Not a runtime invariant."
+
+  - id: PROTO-008
+    name: Follow the Sprint Sequence
+    status: retired
+    reason: "Project-management protocol, not OS enforcement. Per Phase 0 D-3 — v1 is deploy/verify/upgrade, not PM."
+
+  - id: PROTO-010
+    name: Version Focus
+    status: retired
+    reason: "Subsumed by PROTO-013 (Sutra Version Deploy) + PROTO-014 (Client-Side Version Check)."
+
+  - id: PROTO-011
+    name: Company Independence
+    status: retired
+    reason: "Absorbed by boundary hook (R4 fail-closed) + tier model. Mechanism is live; separate protocol isn't needed."
+
+  - id: PROTO-012
+    name: Ownership Model
+    status: retired
+    reason: "Business doctrine, moves to holding/ governance. Not portable Sutra canon."
+
+  - id: PROTO-016
+    name: Root Cause on Founder Correction
+    status: retired
+    reason: "Absorbed into D11 (Fix the Process). Single source for that rule."
+
+  - id: PROTO-018
+    name: Auto-Propagation on Version Bump
+    status: retired
+    reason: "Phase 0 D-7. Post-commit trigger disabled 2026-04-15. Phase 2 compiler replaces the mechanism."
+
+  - id: PROTO-019
+    name: External Peer Review on Portfolio Changes
+    status: absorbed
+    reason: "Becomes the reconciler itself in Phase 3. No separate protocol — doctor IS the codex-gate."
+
+# ─── Directions (Phase 0 D-4, D-6: cap 18, split core/ergonomics) ────────────
+# Core = portable, ships with Sutra. Ergonomics = Asawa-only, not portable.
+# Total cap 18. Current: 14 core + 4 ergonomics. Retired below with reason.
+
+directions:
+  core:
+    - id: D2
+      name: Thoroughness Scales With the Change
+      status: active
+      enforcement: hard
+      mechanism: dispatcher-pretool.sh Check 10 (depth marker)
+      test: holding/hooks/tests/test-d28-routing-gate.sh
+      summary: Full lifecycle every time; depth set by complexity/cost/impact, not user count or company stage.
+
+    - id: D3
+      name: Every Task Has a Sutra Path
+      status: active
+      enforcement: soft
+      mechanism: lifecycle-check.sh (Stop event)
+      summary: Sutra is an OS — every task starts with "what's the Sutra way?"
+
+    - id: D6
+      name: Directions Are Executable With Regression Tests
+      status: active
+      enforcement: hard
+      mechanism: reconciler (checks every hard direction has test)
+      invariant_refs: [I-1]
+      summary: Every direction encoded with TRIGGER/CHECK/ENFORCEMENT + regression test. Prose alone is incomplete.
+
+    - id: D10
+      name: Test Everything in Production
+      status: active
+      enforcement: soft
+      mechanism: test-in-production-check.sh (Stop event)
+      summary: No protocol ships without deployment to a company and validation through a real feature.
+
+    - id: D11
+      name: Fix the Process, Not Just the Instance
+      status: active
+      enforcement: soft
+      mechanism: process-fix-check.sh (PostToolUse)
+      summary: Every bug fix includes root cause analysis + process improvement.
+
+    - id: D12
+      name: Architecture Awareness Before Creation
+      status: active
+      enforcement: soft
+      mechanism: dispatcher-pretool.sh Check 4 (new path detector)
+      summary: Before creating anything new, check SYSTEM-MAP. Surfaces drift.
+
+    - id: D13
+      name: Cascade Downstream Immediately
+      status: active
+      enforcement: soft
+      mechanism: cascade-check.sh (PostToolUse)
+      test: holding/hooks/tests/test-d13-cascade.sh
+      summary: Every L0-L2 change triggers downstream impact TODOs.
+
+    - id: D17
+      name: Don't Miss Parallel Statements
+      status: active
+      enforcement: soft
+      mechanism: agent behavior directive
+      summary: Capture all founder statements in rapid succession. Sub-agents for parallel work.
+
+    - id: D20
+      name: Escalate Competing Priorities to Founder
+      status: active
+      enforcement: hard
+      mechanism: AskUserQuestion (agent-enforced)
+      summary: When 2+ high-priority items compete, present the tension — don't decide unilaterally.
+
+    - id: D22
+      name: OS Deploys by Judgment, Not by Default
+      status: active
+      enforcement: soft
+      mechanism: version-governance.sh + PROTO-014 client-side check
+      summary: PULL (company decides) is default. PUSH is explicit override.
+
+    - id: D23
+      name: Push Back With Approval Gates
+      status: active
+      enforcement: hard
+      mechanism: AskUserQuestion on detected conflict
+      summary: System throws back on conflict with existing principles. No silent overrides.
+
+    - id: D26
+      name: Gear = Decomposition Granularity
+      status: active
+      enforcement: soft
+      mechanism: depth system (shared with D2)
+      summary: Gear 1-5 controls decomposition granularity. Speed vs precision trade-off. Task-specific, not company-specific.
+
+    - id: D27
+      name: Sutra→Company Deploys Run at Depth 5
+      status: active
+      enforcement: hard
+      mechanism: dispatcher-pretool.sh Check 11 (sutra-deploy-depth5 marker)
+      test: holding/hooks/tests/test-d28-routing-gate.sh
+      summary: Any edit touching sutra/** or {company}/os/** runs at Depth 5 (exhaustive).
+
+    - id: D28
+      name: Per-Turn Routing & Depth Enforcement
+      status: active
+      enforcement: hard
+      mechanism: dispatcher-pretool.sh Checks 9+10 + reset-turn-markers.sh (UserPromptSubmit)
+      test: holding/hooks/tests/test-d28-routing-gate.sh
+      summary: Every Write/Edit requires fresh INPUT/TYPE/ROUTE block + TASK/DEPTH block. Markers cleared every founder turn.
+
+  ergonomics:
+    - id: D16
+      name: Executive Documents as HTML
+      status: active
+      enforcement: soft
+      scope: asawa-only
+      mechanism: agent behavior directive
+      summary: HOD meetings, portfolio reviews, strategy docs get HTML with visual dashboard elements. Asawa founder preference.
+
+    - id: D19
+      name: Daily Satisfaction Report
+      status: active
+      enforcement: soft
+      scope: asawa-only
+      mechanism: session-end-satisfaction.sh (Stop event)
+      summary: Session-end "Your Day" dashboard showing founder vs LLM contributions. Asawa founder feedback-loop preference.
+
+    - id: D21
+      name: Speed of Building Is a Factor
+      status: active
+      enforcement: soft
+      scope: asawa-only
+      mechanism: agent behavior directive
+      summary: When quality is equal, pick faster approach. Asawa velocity preference.
+
+    - id: D25
+      name: Technical and Scientific Rigor
+      status: active
+      enforcement: soft
+      scope: asawa-only
+      mechanism: agent behavior / voice
+      summary: Use proper technical terminology. Asawa voice preference (codex: "it's a communication-style preference"). Moves with founder, not with Sutra.
+
+  # ── Retired (10 — to hit cap 18: 14 core + 4 ergonomics = 18) ─────────────
+  retired:
+    - id: D1
+      name: Simplicity Through Human Confidence
+      reason: "Aspirational. No mechanism — agent self-assessment only. Absorbed as a design principle in THESIS.md (Phase 7)."
+    - id: D4
+      name: Model Directions as Living Forces
+      reason: "Meta — subsumed by the state model itself. This file is D4 made mechanical."
+    - id: D5
+      name: External Research at Every Level
+      reason: "Advisory. Not a runtime invariant. Moves to IDEA-SHAPING.md (Phase 5)."
+    - id: D7
+      name: Expand Then Contract
+      reason: "Aspirational. Absorbed by doctor cap enforcement (I-7, I-8)."
+    - id: D8
+      name: Output-Driven Metrics Everywhere
+      reason: "Business/measurement discipline. Not kernel. Moves to IDEA-SHAPING.md."
+    - id: D9
+      name: Recursive Estimation Engine
+      reason: "Subsumed by D2/D26 (depth system) + estimation-enforcement.sh (soft)."
+    - id: D14
+      name: Don't Stop
+      reason: "Aspirational. Agent behavior, not invariant."
+    - id: D15
+      name: 70/20/10 — Products First
+      reason: "Asawa-specific allocation. If it returns, it lives in ergonomics. Currently retired to hit cap."
+    - id: D18
+      name: Packaging Before Launch
+      reason: "v1 deliverable (roadmap Phase 4), not an ongoing invariant."
+    - id: D24
+      name: Parallelization While Evolving Is Its Own Project
+      reason: "Meta-observation about this project, not a directive."
+
+# ─── Hooks (Phase 0 D-9: Claude-Code-only format) ────────────────────────────
+# Each hook: file (relative to .claude/hooks/sutra/), event, matcher, tier_visibility,
+# blocking (exit nonzero blocks the tool call), implements (protocols/directions it enforces).
+hooks:
+  - file: dispatcher-pretool.sh
+    event: PreToolUse
+    matcher: "Edit|Write|Bash"
+    tier_visibility: [1, 2, 3]
+    blocking: true
+    implements: [PROTO-004, PROTO-009, D12, D13, D27, D28]
+
+  - file: policy-coverage-gate.sh
+    event: PreToolUse
+    matcher: "Edit|Write|Bash"
+    tier_visibility: [2, 3]
+    blocking: false
+    implements: [PROTO-017]
+
+  - file: enforce-boundaries.sh
+    event: PreToolUse
+    matcher: "Edit|Write"
+    tier_visibility: [1, 2, 3]
+    blocking: true
+    implements: []  # boundary isolation — foundational, not tied to a direction
+    notes: "R4 fail-closed (2026-04-15). Defaults role via .claude/active-role."
+
+  - file: reset-turn-markers.sh
+    event: UserPromptSubmit
+    matcher: ""
+    tier_visibility: [1, 2, 3]
+    blocking: false
+    implements: [D28]
+
+  - file: dispatcher-stop.sh
+    event: Stop
+    matcher: ""
+    tier_visibility: [2, 3]
+    blocking: false
+    implements: [D3, D10, D11, D13]
+
+  - file: agent-completion-check.sh
+    event: PostToolUse
+    matcher: "Bash|Edit|Write"
+    tier_visibility: [2, 3]
+    blocking: false
+    implements: []
+
+  - file: onboarding-self-check.sh
+    event: PostToolUse
+    matcher: "Write"
+    tier_visibility: [2, 3]
+    blocking: false
+    implements: []
+
+  - file: process-fix-check.sh
+    event: PostToolUse
+    matcher: "Edit|Write"
+    tier_visibility: [2, 3]
+    blocking: false
+    implements: [D11]
+
+# ─── Invariants (what doctor checks on every commit) ─────────────────────────
+# Each invariant is machine-checkable. Doctor walks these; fails loud on violation.
+invariants:
+  - id: I-1
+    name: Policy-to-mechanism coverage
+    statement: "For every protocol or direction with status=active AND enforcement=hard, a hook with blocking=true exists in hooks[] AND the hook file is present on disk AND its test passes."
+    enforces: [PROTO-000, PROTO-017, D6]
+    severity: fail  # doctor exits non-zero on violation
+
+  - id: I-2
+    name: Version deploy completeness
+    statement: "When meta.version changes, every company's .claude/sutra-version is updated AND doctor was re-run on each tier's install."
+    enforces: [PROTO-013]
+    severity: fail
+
+  - id: I-3
+    name: Verify before commit
+    statement: "Pre-commit runs doctor. Exit zero required unless commit trailer contains 'Doctor-Override:' with reason."
+    enforces: [PROTO-015]
+    severity: fail
+
+  - id: I-4
+    name: Declared hooks installed
+    statement: "Every hook with tier T in tier_visibility[] is present on disk in tier-T installs: declared ⊆ installed."
+    enforces: [PROTO-017]
+    severity: fail
+
+  - id: I-5
+    name: Installed hooks registered
+    statement: "Every hook file in .claude/hooks/sutra/ is referenced in .claude/settings.json for a real event: installed ⊆ registered."
+    enforces: [PROTO-017]
+    severity: fail
+
+  - id: I-6
+    name: No orphan files
+    statement: "Every file under os/ or .claude/hooks/sutra/ is either declared in this state model OR marked user_hooks in settings.json."
+    enforces: []
+    severity: warn
+
+  - id: I-7
+    name: Protocol budget
+    statement: "count(protocols where status=active) <= meta.caps.protocols_active_max"
+    enforces: [D7-absorbed]
+    severity: fail
+
+  - id: I-8
+    name: Direction budget
+    statement: "count(directions.core where status=active) + count(directions.ergonomics where status=active) <= meta.caps.directions_active_max"
+    enforces: [D7-absorbed]
+    severity: fail
+
+  - id: I-9
+    name: Boundary fail-closed
+    statement: "enforce-boundaries.sh defaults to BLOCKED when ACTIVE_ROLE cannot be resolved from env, .claude/active-role, or repo inference."
+    enforces: []
+    severity: fail
+    notes: "R4 fix 2026-04-15."
+
+  - id: I-10
+    name: Per-turn marker reset
+    statement: "UserPromptSubmit event clears .claude/input-routed, .claude/depth-registered, .claude/sutra-deploy-depth5."
+    enforces: [D28]
+    severity: fail
+
+# ─── Companies (snapshot of current portfolio for compiler targeting) ────────
+companies:
+  - id: dayflow
+    tier: 2
+    sutra_version: "1.9"
+    status: active
+  - id: billu
+    tier: 1
+    sutra_version: "1.9"
+    status: active
+  - id: maze
+    tier: 2
+    sutra_version: "1.7"
+    status: deprioritized
+  - id: ppr
+    tier: 2
+    sutra_version: "1.7"
+    status: archived
+  - id: paisa
+    tier: 2
+    sutra_version: "1.7"
+    status: active
+    external: true  # Sutra service client

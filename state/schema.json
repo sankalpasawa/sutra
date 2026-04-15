@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asawa.inc/sutra/schema/1.0.json",
+  "title": "Sutra System State",
+  "description": "Typed single source of truth for Sutra. Markdown and settings.json are OUTPUTS compiled from this.",
+  "type": "object",
+  "required": ["meta", "tiers", "protocols", "directions", "hooks", "invariants", "companies"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["version", "schema", "updated", "caps"],
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+        "schema": { "type": "string" },
+        "updated": { "type": "string", "format": "date" },
+        "phase": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "roadmap": { "type": "string" },
+        "decisions": { "type": "string" },
+        "caps": {
+          "type": "object",
+          "required": ["protocols_active_max", "directions_active_max"],
+          "properties": {
+            "protocols_active_max": { "type": "integer", "minimum": 1 },
+            "directions_active_max": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+
+    "tiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "description"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "hooks_included": {
+            "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" } }]
+          },
+          "includes_os_core": { "type": "boolean" },
+          "includes_templates": { "type": "boolean" },
+          "example_consumer": { "type": "string" },
+          "reserved": { "type": "boolean" }
+        }
+      }
+    },
+
+    "protocols": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "status"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^PROTO-[0-9]{3}$" },
+          "name": { "type": "string" },
+          "status": { "enum": ["active", "retired", "absorbed", "proposed"] },
+          "enforcement": { "enum": ["hard", "soft", "advisory"] },
+          "mechanism": { "type": "string" },
+          "test": { "type": "string" },
+          "owner": { "type": "string" },
+          "summary": { "type": "string" },
+          "source": { "type": "string" },
+          "invariant_refs": { "type": "array", "items": { "type": "string" } },
+          "reason": { "type": "string" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "status": { "const": "active" }, "enforcement": { "const": "hard" } }, "required": ["status", "enforcement"] },
+            "then": { "required": ["mechanism"] }
+          },
+          {
+            "if": { "properties": { "status": { "enum": ["retired", "absorbed"] } }, "required": ["status"] },
+            "then": { "required": ["reason"] }
+          }
+        ]
+      }
+    },
+
+    "directions": {
+      "type": "object",
+      "required": ["core", "ergonomics", "retired"],
+      "additionalProperties": false,
+      "properties": {
+        "core": { "type": "array", "items": { "$ref": "#/$defs/direction" } },
+        "ergonomics": { "type": "array", "items": { "$ref": "#/$defs/direction" } },
+        "retired": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "reason"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^D[0-9]+$" },
+              "name": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "hooks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "event", "matcher", "tier_visibility", "blocking"],
+        "additionalProperties": false,
+        "properties": {
+          "file": { "type": "string", "pattern": "\\.sh$" },
+          "event": { "enum": ["PreToolUse", "PostToolUse", "Stop", "UserPromptSubmit"] },
+          "matcher": { "type": "string" },
+          "tier_visibility": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+          "blocking": { "type": "boolean" },
+          "implements": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+
+    "invariants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "statement", "severity"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^I-[0-9]+$" },
+          "name": { "type": "string" },
+          "statement": { "type": "string" },
+          "enforces": { "type": "array", "items": { "type": "string" } },
+          "severity": { "enum": ["fail", "warn"] },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+
+    "companies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "tier", "sutra_version", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "tier": { "type": "integer", "minimum": 1 },
+          "sutra_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+          "status": { "enum": ["active", "deprioritized", "archived"] },
+          "external": { "type": "boolean" }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "direction": {
+      "type": "object",
+      "required": ["id", "name", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^D[0-9]+$" },
+        "name": { "type": "string" },
+        "status": { "enum": ["active", "retired", "proposed"] },
+        "enforcement": { "enum": ["hard", "soft", "advisory"] },
+        "scope": { "enum": ["sutra-core", "asawa-only"] },
+        "mechanism": { "type": "string" },
+        "test": { "type": "string" },
+        "summary": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "active" }, "enforcement": { "const": "hard" } }, "required": ["status", "enforcement"] },
+          "then": { "required": ["mechanism"] }
+        }
+      ]
+    }
+  }
+}
