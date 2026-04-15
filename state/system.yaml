@@ -201,7 +201,7 @@ directions:
       status: active
       enforcement: hard
       mechanism: dispatcher-pretool.sh Check 10 (depth marker)
-      test: holding/hooks/tests/test-d28-routing-gate.sh
+      test: sutra/package/tests/test-d28-routing-gate.sh
       summary: Full lifecycle every time; depth set by complexity/cost/impact, not user count or company stage.
 
     - id: D3
@@ -246,7 +246,7 @@ directions:
       status: active
       enforcement: soft
       mechanism: cascade-check.sh (PostToolUse)
-      test: holding/hooks/tests/test-d13-cascade.sh
+      test: sutra/package/tests/test-d13-cascade.sh
       summary: Every L0-L2 change triggers downstream impact TODOs.
 
     - id: D17
@@ -259,8 +259,9 @@ directions:
     - id: D20
       name: Escalate Competing Priorities to Founder
       status: active
-      enforcement: hard
-      mechanism: AskUserQuestion (agent-enforced)
+      enforcement: soft
+      upgrade_to_hard_at: phase-3
+      mechanism: AskUserQuestion (agent-enforced — agent-behavior, no hook harness yet)
       summary: When 2+ high-priority items compete, present the tension — don't decide unilaterally.
 
     - id: D22
@@ -273,8 +274,9 @@ directions:
     - id: D23
       name: Push Back With Approval Gates
       status: active
-      enforcement: hard
-      mechanism: AskUserQuestion on detected conflict
+      enforcement: soft
+      upgrade_to_hard_at: phase-3
+      mechanism: AskUserQuestion on detected conflict (agent-behavior, no hook harness yet)
       summary: System throws back on conflict with existing principles. No silent overrides.
 
     - id: D26
@@ -289,7 +291,7 @@ directions:
       status: active
       enforcement: hard
       mechanism: dispatcher-pretool.sh Check 11 (sutra-deploy-depth5 marker)
-      test: holding/hooks/tests/test-d28-routing-gate.sh
+      test: sutra/package/tests/test-d28-routing-gate.sh
       summary: Any edit touching sutra/** or {company}/os/** runs at Depth 5 (exhaustive).
 
     - id: D28
@@ -297,7 +299,7 @@ directions:
       status: active
       enforcement: hard
       mechanism: dispatcher-pretool.sh Checks 9+10 + reset-turn-markers.sh (UserPromptSubmit)
-      test: holding/hooks/tests/test-d28-routing-gate.sh
+      test: sutra/package/tests/test-d28-routing-gate.sh
       summary: Every Write/Edit requires fresh INPUT/TYPE/ROUTE block + TASK/DEPTH block. Markers cleared every founder turn.
 
   ergonomics:
