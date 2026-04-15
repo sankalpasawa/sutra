@@ -14,6 +14,16 @@ FILE_PATH="$TOOL_INPUT_file_path"
 TOOL_NAME="${TOOL_NAME:-}"
 BLOCK_CODE=0
 
+# Claude Code ≥ ~1.0 passes tool_input as JSON on stdin instead of env vars.
+# Read stdin JSON and extract fields when env vars are missing. 2026-04-15 fix.
+if [ -z "$FILE_PATH" ] && [ ! -t 0 ]; then
+  _STDIN_JSON=$(cat)
+  if [ -n "$_STDIN_JSON" ]; then
+    FILE_PATH=$(printf '%s' "$_STDIN_JSON" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    [ -z "$TOOL_NAME" ] && TOOL_NAME=$(printf '%s' "$_STDIN_JSON" | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  fi
+fi
+
 mkdir -p "$(dirname "$HOOK_LOG")" "$ENFORCEMENT_DIR" 2>/dev/null
 
 log_hook() {
