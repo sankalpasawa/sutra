@@ -11,23 +11,23 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 
 | Policy | Source | Enforced by | Deployed to | Status |
 |---|---|---|---|---|
-| PROTO-000 | Every Change Ships With Implementation | CLAUDE.md (declarative) | (none) | DRIFT |
+| PROTO-000 | Every Change Ships With Implementation | CLAUDE.md (memory-only) | (none) | DRIFT |
 | PROTO-001 | Structure Before Creation | dispatcher check 4 | (none) | DRIFT |
 | PROTO-002 | Wait for Parallel Completion | agent-completion-check.sh | (none) | DRIFT |
 | PROTO-003 | Free Tier First | onboarding review (advisory) | (none) | DRIFT |
 | PROTO-004 | Keys in Env Vars Only | unknown.sh (MISSING) | (none) | DRIFT |
 | PROTO-005 | Self-Assess Before Foundational Work | unknown.sh (MISSING) | (none) | DRIFT |
 | PROTO-006 | Process Discipline | dispatcher check 7 + depth system | (none) | DRIFT |
-| PROTO-007 | One Metric Per Feature | CLAUDE.md (declarative) | (none) | DRIFT |
-| PROTO-008 | Follow the Sprint Sequence | CLAUDE.md (declarative) | (none) | DRIFT |
+| PROTO-007 | One Metric Per Feature | CLAUDE.md (memory-only) | (none) | DRIFT |
+| PROTO-008 | Follow the Sprint Sequence | CLAUDE.md (memory-only) | (none) | DRIFT |
 | PROTO-009 | Narration Is Not Artifact | unknown.sh (MISSING) | (none) | DRIFT |
 | PROTO-010 | Version Focus | session-start file loading | maze | DRIFT |
 | PROTO-011 | Company Independence | unknown.sh (MISSING) | (none) | DRIFT |
 | PROTO-012 | Ownership Model | advisory (session start) | (none) | DRIFT |
 | PROTO-013 | Sutra Version Deploy | verify-os-deploy.sh | (none) | DRIFT |
-| PROTO-014 | Sutra Version Check | CLAUDE.md (declarative) | (none) | DRIFT |
-| PROTO-015 | Verify Before Commit | CLAUDE.md (declarative) | (none) | DRIFT |
-| PROTO-016 | Root Cause on Founder Correction | CLAUDE.md (declarative) | (none) | DRIFT |
+| PROTO-014 | Sutra Version Check | CLAUDE.md (memory-only) | (none) | DRIFT |
+| PROTO-015 | Verify Before Commit | CLAUDE.md (memory-only) | (none) | DRIFT |
+| PROTO-016 | Root Cause on Founder Correction | CLAUDE.md (memory-only) | (none) | DRIFT |
 | PROTO-017 | Policy-to-Implementation Coverage | policy-coverage-gate.sh | (none) | DRIFT |
 | PROTO-018 | Auto-Propagation on Version Bump | upgrade-clients.sh | (none) | DRIFT |
 | PROTO-019 | External Peer Review (Codex) on Portfolio Changes | codex-review-gate.sh | (none) | DRIFT |
@@ -57,7 +57,7 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 
 ---
 
-**Summary**: OK=6, DRIFT=27
+**Summary**: OK=6, MEMORY=0 (memory-only protocols — LLM-enforced), DRIFT=27
 **Regenerate**: `bash holding/hooks/verify-policy-coverage.sh --write`
 
 ### Parsing caveat (known limitation)
