@@ -27,16 +27,16 @@ MAX_AGE_MINUTES=60
 
 # Check if marker file exists
 if [ ! -f "$MARKER_FILE" ]; then
-    echo "BLOCKED: No depth assessment registered for current task."
-    echo ""
-    echo "Before editing files, you must register a depth assessment:"
-    echo "  bash .claude/hooks/register-depth.sh \"<task description>\" <depth 1-5>"
-    echo ""
-    echo "Example:"
-    echo "  bash .claude/hooks/register-depth.sh \"Add user settings screen\" 3"
-    echo ""
-    echo "This is required by Sutra OS. Every task needs a depth assessment"
-    echo "before any file modifications begin."
+    echo >&2 "BLOCKED: No depth assessment registered for current task."
+    echo >&2 ""
+    echo >&2 "Before editing files, you must register a depth assessment:"
+    echo >&2 "  bash .claude/hooks/register-depth.sh \"<task description>\" <depth 1-5>"
+    echo >&2 ""
+    echo >&2 "Example:"
+    echo >&2 "  bash .claude/hooks/register-depth.sh \"Add user settings screen\" 3"
+    echo >&2 ""
+    echo >&2 "This is required by Sutra OS. Every task needs a depth assessment"
+    echo >&2 "before any file modifications begin."
     exit 1
 fi
 

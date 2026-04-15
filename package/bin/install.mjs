@@ -46,6 +46,22 @@ const isLocal = args.includes('--local') || args.includes('-l') || !isGlobal;
 const isHelp = args.includes('--help') || args.includes('-h');
 const companyArg = args.find(a => a.startsWith('--company='));
 const companyName = companyArg ? companyArg.split('=')[1] : basename(process.cwd());
+// R1 from billu feedback 2026-04-15: tiered profiles. Tier controls which pieces install.
+//   tier-1-governance: governance tools (Billu). Minimal — boundary + SUTRA-CONFIG + feedback dirs.
+//   tier-2-product (default): full OS — hooks + engines + OS core + templates.
+//   tier-3-platform: meta — everything plus protocol harvester (future).
+const tierArg = args.find(a => a.startsWith('--tier='));
+const tier = tierArg ? tierArg.split('=')[1] : '2';
+const TIER_CONFIG = {
+  '1': { name: 'governance', hooks: ['enforce-boundaries.sh', 'reset-turn-markers.sh', 'dispatcher-pretool.sh'], installOsCore: false, installTemplates: true },
+  '2': { name: 'product',    hooks: null /* all */,                                                           installOsCore: true,  installTemplates: true },
+  '3': { name: 'platform',   hooks: null /* all */,                                                           installOsCore: true,  installTemplates: true },
+};
+if (!TIER_CONFIG[tier]) {
+  console.error(`ERROR: unknown --tier=${tier}. Valid: 1 (governance), 2 (product, default), 3 (platform).`);
+  process.exit(1);
+}
+const tierConfig = TIER_CONFIG[tier];
 
 if (isHelp) {
   console.log(BANNER);
@@ -56,6 +72,10 @@ if (isHelp) {
     -l, --local             Install to ./.claude + current project (default)
     -u, --uninstall         Remove Sutra (keeps gstack, GSD, user content)
     --company=NAME          Company name for CLAUDE.md template
+    --tier=N                Deployment tier (default 2):
+                              1  governance  (billu-style: boundary + SUTRA-CONFIG only)
+                              2  product     (full OS + all hooks + OS core)
+                              3  platform    (meta, same as 2 today + future harvester)
     -h, --help              Show this help
 
   What installs:
@@ -236,8 +256,23 @@ if (existsSync(sutraCommandsDir)) {
 
 // Step 4: Hooks bundle
 console.log('\n  [4/8] Sutra hooks bundle...');
-const n4 = copyTree(join(packageRoot, 'hooks'), hooksDir);
-console.log(`  ✓ ${n4} hooks installed to ${hooksDir}`);
+let n4;
+if (tierConfig.hooks === null) {
+  n4 = copyTree(join(packageRoot, 'hooks'), hooksDir);
+} else {
+  // Tier 1: only specific hooks
+  mkdir(hooksDir);
+  n4 = 0;
+  for (const hookName of tierConfig.hooks) {
+    const src = join(packageRoot, 'hooks', hookName);
+    if (existsSync(src)) {
+      copyFileSync(src, join(hooksDir, hookName));
+      execSync(`chmod +x "${join(hooksDir, hookName)}"`);
+      n4 += 1;
+    }
+  }
+}
+console.log(`  ✓ ${n4} hooks installed (tier ${tier}-${tierConfig.name}) to ${hooksDir}`);
 
 // Step 5: Settings template (merge)
 console.log('\n  [5/8] Settings template...');
@@ -245,12 +280,14 @@ const settingsFile = join(claudeDir, 'settings.json');
 const mergeResult = mergeSettings(join(packageRoot, 'templates', 'settings.json'), settingsFile);
 console.log(`  ✓ settings.json ${mergeResult}`);
 
-// Step 6: OS core docs (only --local; --global doesn't clobber cwd)
-if (isLocal) {
+// Step 6: OS core docs (only --local + tier 2/3; tier 1 = governance, skip OS core)
+if (isLocal && tierConfig.installOsCore) {
   console.log('\n  [6/8] OS core docs...');
   mkdir(osDir);
   const n6 = copyTree(join(packageRoot, 'os-core'), osDir);
   console.log(`  ✓ ${n6} governance docs copied to ${osDir}`);
+} else if (!tierConfig.installOsCore) {
+  console.log(`\n  [6/8] OS core docs — skipped (tier ${tier}-${tierConfig.name} is minimal)`);
 } else {
   console.log('\n  [6/8] OS core docs — skipped (global install)');
 }

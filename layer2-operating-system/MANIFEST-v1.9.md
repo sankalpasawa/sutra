@@ -97,7 +97,8 @@ so it works across Asawa holding, Sutra self-host, and all companies.
 
 ### CLAUDE.md
 Must contain: `Sutra OS Version: v1.9`, `DEPTH:`, `COST:`, `EFFORT:`, `Input Routing`, `depth_selected`, `CURRENT-VERSION`.
-Must NOT contain: `v1.4`–`v1.8` in version line; `Gear`; `Level 1-4`.
+Must NOT contain: `v1.4`–`v1.8` in version line; `Gear` (the retired term, not `Gear Level [1-4]`); `Depth Level [1-4]` or `Gear Level [1-4]` (retired depth/gear tier terminology).
+Note: `Input Routing (Level N)` and other `Level N` usages referring to enforcement levels, routing levels, or non-depth concepts are ALLOWED. Verifiers MUST anchor the forbidden regex to depth context (e.g., `^## Depth.*Level [1-4]` or `\b(Depth|Gear) Level [1-4]\b`). Fix per dayflow feedback 2026-04-15-v1.9-upgrade-audit-gaps.md GAP A.
 
 ### os/SUTRA-CONFIG.md
 Must contain: `tier:`, `v1.9`, `Depth 1`…`Depth 5`, lifecycle phases, `Finding Resolution Gate`.
