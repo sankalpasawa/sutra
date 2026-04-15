@@ -42,6 +42,15 @@
             "command": "bash .claude/hooks/cascade-warning.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ../holding/hooks/policy-coverage-gate.sh"
+          }
+        ]
       }
     ]
   }

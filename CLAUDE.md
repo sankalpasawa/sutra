@@ -6,7 +6,7 @@ CEO of Sutra. The operating system company.
 ## Scope
 Sutra protocols, onboarding process, skill catalog, versioning, client feedback processing.
 
-## Sutra OS Version: v1.8
+## Sutra OS Version: v1.9
 
 ## On Every Session Start
 1. Read this file and START-HERE.md
@@ -48,3 +48,7 @@ TRIAGE: depth_selected=X, depth_correct=X, class=[correct|overtriage|undertriage
 ## Session Isolation
 This repo contains only Sutra source. No client code, no holding docs.
 Cannot edit: client repos, holding repo.
+
+## Input Routing
+
+Every founder input classified before action (TYPE / ROUTE / FIT CHECK). See holding/INPUT-ROUTING.md for detail. Version check: read CURRENT-VERSION.md on session start.

@@ -23,6 +23,9 @@ Executable rules compiled from Asawa + Sutra principles. Every protocol has: tri
 | PROTO-014 | Sutra Version Check | Federal | SOFT | SHIPPED | all companies CLAUDE.md |
 | PROTO-015 | Verify Before Commit | Constitutional | HARD | SHIPPED | memory + proportional checks |
 | PROTO-016 | Root Cause on Founder Correction | Constitutional | HARD | SHIPPED | memory |
+| PROTO-017 | Policy-to-Implementation Coverage | Constitutional | HARD | SHIPPED | policy-coverage-gate.sh + verify-policy-coverage.sh |
+| PROTO-018 | Auto-Propagation on Version Bump | Federal | HARD | SHIPPED | upgrade-clients.sh (triggered by CURRENT-VERSION.md change) |
+| PROTO-019 | External Peer Review (Codex) on Portfolio Changes | Constitutional | HARD | SHIPPED | codex-review-gate.sh + /codex skill invocation |
 
 Types: **Constitutional** (Asawa-locked, no override) | **Federal** (Sutra, override within bounds) | **Convergent** (both, rule locked, method flexible)
 
@@ -489,3 +492,89 @@ origin: 2026-04-06. Multiple instances during session where founder
 | 014 | CLAUDE.md instruction | all companies | ACTIVE |
 | 015 | memory entry | all sessions | ACTIVE |
 | 016 | memory entry | all sessions | ACTIVE |
+| 017 | policy-coverage-gate.sh (PreToolUse) + verify-policy-coverage.sh (scan) | Sutra + holding/hooks | ACTIVE |
+| 018 | upgrade-clients.sh (triggered on CURRENT-VERSION.md bump) | holding/hooks | ACTIVE |
+
+---
+
+## PROTO-017: Policy-to-Implementation Coverage
+```
+constitutional | [PROTO-000 operationalized] | HARD
+trigger: Any edit to a Sutra policy file (PROTOCOLS.md, MANIFEST-*.md,
+         CLIENT-ONBOARDING.md, ENFORCEMENT.md, d-engines/*.md,
+         templates/SUTRA-CONFIG*.md)
+check:   Does the change satisfy PROTO-000's 5-part rule — DEFINED,
+         CONNECTED, IMPLEMENTED, TESTED, DEPLOYED?
+enforce: Two legs, surfacing + verification.
+         (1) policy-coverage-gate.sh fires as PreToolUse on Edit/Write,
+             warns loudly when a policy file is being edited.
+         (2) verify-policy-coverage.sh generates/refreshes
+             POLICY-COVERAGE.md ledger — every written commitment mapped
+             to its executable artifact and its deployed clients. Rows
+             without both are DRIFT.
+origin:  Billu onboarding revealed declared-but-not-installed hooks (RC4)
+         and manifest silent on 95% of shipping hooks. The drift class
+         keeps recurring because nothing gates policy-without-propagation.
+
+THE CONTRACT:
+  Every written Sutra commitment has three rows:
+    1. policy    (where it's declared)
+    2. enforcer  (the script/hook/gate that executes it)
+    3. clients   (where it's installed and active)
+  If any row is blank, the commitment does not exist operationally.
+
+EXEMPT: POLICY_EXEMPT=1 bypass + logged reason in POLICY-EXEMPTIONS.md.
+        Exemptions are reviewed weekly.
+```
+
+## PROTO-018: Auto-Propagation on Version Bump
+```
+federal | [closes the recurrence loop] | HARD
+trigger: CURRENT-VERSION.md line 3 changes (new Sutra version published).
+check:   Every client in the registry verified against the new manifest.
+enforce: upgrade-clients.sh walks the client registry, runs
+         verify-os-deploy.sh against each, and for any client below
+         the new manifest it:
+           - copies updated engine files from sutra/layer2-operating-system/d-engines/
+           - rewrites client SUTRA-VERSION.md to the new version
+           - installs any newly-required hooks per tier
+           - registers hooks in .claude/settings.json
+         After propagation, re-runs verify and reports per-client score.
+origin:  Version drift (Maze/PPR on v1.7 while Sutra ships v1.8) kept
+         recurring because PROTO-013 described the upgrade path but no
+         mechanism executed it. Propagation is now mechanical, not
+         documentary.
+
+THE CONTRACT:
+  Version bump in Sutra → clients reorganize to match, automatically.
+  No drift window. No manual audit. If a client can't upgrade, the
+  script reports why and leaves the old version in place; it does not
+  half-upgrade.
+```
+
+## PROTO-019: External Peer Review on Portfolio Changes
+```
+constitutional | [cross-company, portfolio-wide] | HARD
+trigger: Any change to Asawa holding, Sutra OS, or any company submodule
+         (edit to CLAUDE.md, PROTOCOLS.md, MANIFEST-*, SUTRA-CONFIG,
+         hooks, engines, or shipped product code) before commit OR
+         before land-and-deploy.
+check:   Has an external AI peer (Codex) reviewed the diff and reported
+         no blocker findings?
+enforce: codex-review-gate.sh wraps /codex review and produces a
+         review artifact at .enforcement/codex-reviews/{timestamp}.md.
+         Gate runs on-demand (pre-commit) and is recorded in commit
+         message trailer: "Codex-Reviewed: <verdict>".
+         Blocker findings = NO commit until resolved or explicitly
+         overridden (CODEX_OVERRIDE=1 with logged reason).
+origin:  Founder direction 2026-04-15 — "For anything of Asawa, Sutra,
+         or any change I am doing right now, ensure that the review is
+         done by the Codex as well. This is applied across Asawa
+         Holdings and Companies." Flows from Sutra to every client via
+         upgrade-clients.sh + MANIFEST-v1.9.
+
+THE CONTRACT:
+  No portfolio change lands without a second AI opinion.
+  Claude writes; Codex reviews; founder decides.
+  Disagreements surface as findings — resolved by founder, not silently.
+```
