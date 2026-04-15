@@ -1,0 +1,20 @@
+# {{COMPANY_NAME}} — TODO
+
+## Quick Reference
+| Status | Count |
+|---|---|
+| Active | 0 |
+| Blocked | 0 |
+| Shipped | 0 |
+
+## Active
+
+<!-- Add tasks here. Each task gets a depth + estimation block when picked up. -->
+
+## Blocked
+
+<!-- Tasks waiting on external input. -->
+
+## Shipped
+
+<!-- Completed tasks with outcome notes. -->

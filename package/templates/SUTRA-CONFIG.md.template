@@ -1,0 +1,48 @@
+# {{COMPANY_NAME}} — Sutra Configuration
+
+## Tier
+Tier 1 (Governance) — full Sutra OS enforcement.
+
+## Depth Policy
+- **Default depth**: 3/5 (thorough)
+- **Minimum depth**: 1/5 (surface)
+- **Maximum depth**: 5/5 (exhaustive)
+- **Sutra-touching edits** (os/**, SUTRA-*): fixed at 5/5 per D27.
+
+To override default depth for this company, set `default_depth` below.
+
+## Enforcement Level
+- **Level**: 2 (standard)
+- **Level 1** = advisory only (warnings, no blocks)
+- **Level 2** = hard gates on routing + depth + Sutra-deploy (default)
+- **Level 3** = Level 2 + HARD gate on all soft directions
+
+## Hook Registry
+
+Hooks installed under `.claude/hooks/sutra/`:
+
+### PreToolUse (Edit|Write)
+- `dispatcher-pretool.sh` — routing/depth/sutra-deploy gates
+- `policy-coverage-gate.sh` — policy enforcement
+
+### PostToolUse
+- `agent-completion-check.sh` (Bash|Edit|Write)
+- `onboarding-self-check.sh` (Write)
+- `process-fix-check.sh` (Edit|Write)
+
+### UserPromptSubmit
+- `reset-turn-markers.sh` — clears per-turn markers
+
+### Stop
+- `dispatcher-stop.sh` — session-end checks
+
+## Config values
+
+```yaml
+default_depth: 3
+min_depth: 1
+max_depth: 5
+sutra_deploy_depth: 5
+enforcement_level: 2
+sutra_version: 1.9
+```
