@@ -370,7 +370,7 @@ hooks:
     matcher: "Edit|Write|Bash"
     tier_visibility: [1, 2, 3]
     blocking: true
-    implements: [PROTO-004, PROTO-009, D12, D13, D27, D28]
+    implements: [PROTO-004, PROTO-009, D2, D12, D13, D27, D28]
 
   - file: policy-coverage-gate.sh
     event: PreToolUse

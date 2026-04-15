@@ -60,6 +60,7 @@
           "status": { "enum": ["active", "retired", "absorbed", "proposed"] },
           "enforcement": { "enum": ["hard", "soft", "advisory"] },
           "mechanism": { "type": "string" },
+          "mechanism_type": { "enum": ["hook", "agent-behavior", "reconciler", "process", "compiler"] },
           "test": { "type": "string" },
           "owner": { "type": "string" },
           "summary": { "type": "string" },
@@ -165,6 +166,7 @@
         "enforcement": { "enum": ["hard", "soft", "advisory"] },
         "scope": { "enum": ["sutra-core", "asawa-only"] },
         "mechanism": { "type": "string" },
+        "mechanism_type": { "enum": ["hook", "agent-behavior", "reconciler", "process", "compiler"] },
         "test": { "type": "string" },
         "summary": { "type": "string" },
         "invariant_refs": { "type": "array", "items": { "type": "string" } }

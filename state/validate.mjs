@@ -314,7 +314,7 @@ for (const d of [...coreActive, ...ergActive]) {
 }
 pass('every active+hard direction has mechanism');
 
-// Hooks implements[] reference validation
+// Hooks implements[] reference validation (forward: every reference resolves)
 const allIds = new Set([
   ...(state.protocols || []).map(p => p.id),
   ...coreActive.map(d => d.id),
@@ -327,7 +327,76 @@ for (const h of state.hooks || []) {
     }
   }
 }
-pass('hook implements[] references checked');
+pass('hook implements[] references checked (forward)');
+
+// Inverse coverage — every active+hard rule must have a mechanism that
+// resolves to something concrete: either a blocking hook, the reconciler,
+// the compiler, or an explicit agent-behavior gate (AskUserQuestion). Codex
+// P1 fix 2026-04-15: previously only forward references were checked,
+// which false-greened D20, D23, PROTO-015 etc.
+function mechanismKind(mech) {
+  if (!mech) return null;
+  const m = mech.toLowerCase();
+  if (m.includes('reconciler') || m.includes('doctor')) return 'reconciler';
+  if (m.includes('compiler')) return 'compiler';
+  if (m.includes('askuserquestion') || m.includes('agent behavior') || m.includes('agent-behavior')) return 'agent-behavior';
+  if (m.includes('claude.md')) return 'agent-behavior';
+  if (m.includes('.sh') || m.includes('dispatcher')) return 'hook';
+  return 'unknown';
+}
+
+const hooksById = new Map();
+for (const h of state.hooks || []) {
+  for (const ref of h.implements || []) {
+    if (!hooksById.has(ref)) hooksById.set(ref, []);
+    hooksById.get(ref).push(h);
+  }
+}
+
+let inverseFail = 0;
+const checkInverse = (item, label) => {
+  if (item.enforcement !== 'hard' || item.status !== 'active') return;
+  const kind = mechanismKind(item.mechanism);
+  if (kind === 'hook') {
+    const matching = hooksById.get(item.id) || [];
+    const blocking = matching.filter(h => h.blocking === true);
+    if (blocking.length === 0) {
+      console.error(`FAIL: I-1 violated: ${label} ${item.id} (hard, mechanism=hook) has no blocking hook with implements[${item.id}]`);
+      inverseFail++;
+    }
+  } else if (kind === 'unknown') {
+    console.error(`FAIL: I-1 violated: ${label} ${item.id} (hard) has unparseable mechanism "${item.mechanism}" — cannot classify as hook/reconciler/compiler/agent-behavior`);
+    inverseFail++;
+  }
+  // reconciler/compiler/agent-behavior: accepted without hook, but tracked
+};
+
+for (const p of activeProtocols) checkInverse(p, 'protocol');
+for (const d of [...coreActive, ...ergActive]) checkInverse(d, 'direction');
+if (inverseFail > 0) {
+  console.error(`FAIL: inverse-coverage failed for ${inverseFail} active+hard rule(s)`);
+  process.exit(1);
+}
+pass('I-1 inverse coverage: every active+hard rule has a resolvable mechanism');
+
+// Test coverage for active+hard rules — WARN in Phase 1, promoted to FAIL in Phase 3.
+let testMissing = 0;
+const checkTest = (item, label) => {
+  if (item.enforcement !== 'hard' || item.status !== 'active') return;
+  const kind = mechanismKind(item.mechanism);
+  // reconciler/compiler will be tested by their own builds in Phase 2-3; hook/agent need explicit test.
+  if ((kind === 'hook' || kind === 'agent-behavior') && !item.test) {
+    warn(`${label} ${item.id} (hard, ${kind}) has no test — will become FAIL in Phase 3 when doctor enforces I-1 fully`);
+    testMissing++;
+  }
+};
+for (const p of activeProtocols) checkTest(p, 'protocol');
+for (const d of [...coreActive, ...ergActive]) checkTest(d, 'direction');
+if (testMissing > 0) {
+  console.warn(`NOTE: ${testMissing} active+hard rule(s) missing test field. Phase 3 doctor will fail on these.`);
+} else {
+  pass('every active+hard hook/agent-behavior rule has a test');
+}
 
 // Invariants must have enforces or notes
 for (const inv of state.invariants || []) {
