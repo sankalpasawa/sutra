@@ -274,11 +274,91 @@ if (tierConfig.hooks === null) {
 }
 console.log(`  ✓ ${n4} hooks installed (tier ${tier}-${tierConfig.name}) to ${hooksDir}`);
 
-// Step 5: Settings template (merge)
+// Step 5: Settings template (merge) — tier-aware: only register hooks that
+// this tier actually installed, so we never wire references to missing files
+// (codex P1 #3). For --global, use absolute path under ~/.claude; for
+// --local, use the CLAUDE_PROJECT_DIR-rooted path (codex P1 #1).
 console.log('\n  [5/8] Settings template...');
 const settingsFile = join(claudeDir, 'settings.json');
-const mergeResult = mergeSettings(join(packageRoot, 'templates', 'settings.json'), settingsFile);
-console.log(`  ✓ settings.json ${mergeResult}`);
+const hookCmdPrefix = isGlobal
+  ? `bash "${hooksDir}"`
+  : 'cd "$CLAUDE_PROJECT_DIR" && bash .claude/hooks/sutra';
+// Only the hooks this tier installed get wired
+const installedHookNames = new Set(
+  (tierConfig.hooks || readdirSync(join(packageRoot, 'hooks'))).filter(n => n.endsWith('.sh'))
+);
+const wantsHook = (name) => installedHookNames.has(name);
+const mkCmd = (h) => `${hookCmdPrefix}/${h}`;
+const tierSettings = {
+  _sutra_version: SUTRA_VERSION,
+  _sutra_managed: true,
+  _sutra_note: 'Sutra-managed. User additions MUST be made under a top-level "user_hooks" key; those are preserved across upgrade.',
+  _sutra_tier: tier,
+  permissions: { defaultMode: 'bypassPermissions', allow: ['Read','Write','Edit','Bash','Glob','Grep','WebSearch','WebFetch','Agent','Skill','TaskCreate','TaskUpdate','TaskGet','TaskList','TaskOutput','TaskStop','AskUserQuestion','EnterPlanMode','ExitPlanMode','NotebookEdit','ToolSearch'] },
+  hooks: { PreToolUse: [], PostToolUse: [], Stop: [], UserPromptSubmit: [] },
+};
+// Wire only installed hooks. dispatcher-pretool gets Edit|Write|Bash (codex P1 #4).
+if (wantsHook('dispatcher-pretool.sh')) {
+  tierSettings.hooks.PreToolUse.push({ matcher: 'Edit|Write|Bash', hooks: [{ type: 'command', command: mkCmd('dispatcher-pretool.sh') }] });
+}
+if (wantsHook('policy-coverage-gate.sh')) {
+  tierSettings.hooks.PreToolUse.push({ matcher: 'Edit|Write|Bash', hooks: [{ type: 'command', command: mkCmd('policy-coverage-gate.sh') }] });
+}
+if (wantsHook('enforce-boundaries.sh')) {
+  tierSettings.hooks.PreToolUse.push({ matcher: 'Edit|Write', hooks: [{ type: 'command', command: mkCmd('enforce-boundaries.sh') }] });
+}
+if (wantsHook('agent-completion-check.sh')) {
+  tierSettings.hooks.PostToolUse.push({ matcher: 'Bash|Edit|Write', hooks: [{ type: 'command', command: mkCmd('agent-completion-check.sh') }] });
+}
+if (wantsHook('onboarding-self-check.sh')) {
+  tierSettings.hooks.PostToolUse.push({ matcher: 'Write', hooks: [{ type: 'command', command: mkCmd('onboarding-self-check.sh') }] });
+}
+if (wantsHook('process-fix-check.sh')) {
+  tierSettings.hooks.PostToolUse.push({ matcher: 'Edit|Write', hooks: [{ type: 'command', command: mkCmd('process-fix-check.sh') }] });
+}
+if (wantsHook('dispatcher-stop.sh')) {
+  tierSettings.hooks.Stop.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('dispatcher-stop.sh') }] });
+}
+if (wantsHook('reset-turn-markers.sh')) {
+  tierSettings.hooks.UserPromptSubmit.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('reset-turn-markers.sh') }] });
+}
+// Merge into existing (preserving user_hooks + non-Sutra entries) or write fresh
+let existing = null;
+if (existsSync(settingsFile)) {
+  try { existing = JSON.parse(readFileSync(settingsFile, 'utf8')); } catch (e) { existing = null; }
+}
+let finalSettings;
+let mergeAction;
+if (!existing) {
+  finalSettings = tierSettings;
+  mergeAction = 'created';
+} else if (existing._sutra_managed) {
+  // Sutra-managed: replace Sutra sections but keep user_hooks (codex P2 #5)
+  finalSettings = { ...tierSettings };
+  if (existing.user_hooks) finalSettings.user_hooks = existing.user_hooks;
+  mergeAction = 'replaced (user_hooks preserved)';
+} else {
+  // User-managed: strip any prior Sutra hooks (codex P2 #6 — no duplicate appends),
+  // then append the current tier's hooks.
+  const stripSutra = (rules) => (rules || []).filter(r =>
+    !(r.hooks || []).some(h => /\.claude\/hooks\/sutra\//.test(h.command || '') || /\/hooks\/sutra\//.test(h.command || ''))
+  );
+  finalSettings = {
+    ...existing,
+    _sutra_version: SUTRA_VERSION,
+    _sutra_managed: false,
+    _sutra_tier: tier,
+    permissions: { ...(existing.permissions || {}), allow: [...new Set([...(existing.permissions?.allow || []), ...tierSettings.permissions.allow])] },
+    hooks: { ...(existing.hooks || {}) },
+  };
+  for (const event of Object.keys(tierSettings.hooks)) {
+    finalSettings.hooks[event] = [...stripSutra(finalSettings.hooks[event]), ...tierSettings.hooks[event]];
+  }
+  mergeAction = 'merged (Sutra section refreshed, user entries preserved)';
+}
+writeFileSync(settingsFile, JSON.stringify(finalSettings, null, 2) + '\n');
+const wiredCount = Object.values(tierSettings.hooks).reduce((a, arr) => a + arr.length, 0);
+console.log(`  ✓ settings.json ${mergeAction} — ${wiredCount} Sutra hook rules (tier ${tier})`);
 
 // Step 6: OS core docs (only --local + tier 2/3; tier 1 = governance, skip OS core)
 if (isLocal && tierConfig.installOsCore) {
@@ -293,8 +373,11 @@ if (isLocal && tierConfig.installOsCore) {
 }
 
 // Step 7: Company templates (only --local, only if absent — never clobber)
+// Ensure osDir exists even if Step 6 was skipped (tier 1) so SUTRA-CONFIG.md and
+// os-layout/ stubs don't ENOENT on fresh repos (codex P1 #2).
 if (isLocal) {
   console.log('\n  [7/8] Company templates...');
+  mkdir(osDir);
   const templatesDir = join(packageRoot, 'templates');
   const vars = { COMPANY_NAME: companyName, SUTRA_VERSION };
   const renderIfAbsent = (tplName, dst) => {
