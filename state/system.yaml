@@ -92,11 +92,12 @@ protocols:
   - id: PROTO-013
     name: Sutra Version Deploy
     status: active
-    enforcement: hard
-    mechanism: D27 depth-5 gate + compiler (Phase 2)
+    enforcement: soft
+    upgrade_to_hard_at: phase-2
+    mechanism: D27 depth-5 gate (current); compiler upgrades this in Phase 2
     invariant_refs: [I-2]
     owner: sutra
-    summary: Every Sutra version change triggers a compile → reconcile → deploy cycle per tier. No partial propagation.
+    summary: Every Sutra version change triggers a compile → reconcile → deploy cycle per tier. Phase 2 upgrades enforcement from soft to hard when the compiler ships.
 
   - id: PROTO-014
     name: Sutra Version Check (Client-Side)
@@ -109,20 +110,22 @@ protocols:
   - id: PROTO-015
     name: Verify Before Commit
     status: active
-    enforcement: hard
-    mechanism: pre-commit git hook (Phase 3 - doctor)
+    enforcement: soft
+    upgrade_to_hard_at: phase-3
+    mechanism: agent behavior + estimation-enforcement.sh (current); pre-commit doctor in Phase 3
     invariant_refs: [I-3]
     owner: sutra
-    summary: No commit lands without proportional verification. Depth 1 = grep; 2 = typecheck; 3+ = full suite. Doctor enforces.
+    summary: No commit lands without proportional verification. Depth 1 = grep; 2 = typecheck; 3+ = full suite. Phase 3 doctor upgrades this to hard.
 
   - id: PROTO-017
     name: Policy-to-Implementation Coverage
     status: active
-    enforcement: hard
-    mechanism: reconciler (Phase 3)
+    enforcement: soft
+    upgrade_to_hard_at: phase-3
+    mechanism: validate.mjs inverse coverage check (current); reconciler/doctor in Phase 3
     invariant_refs: [I-1, I-4, I-5]
     owner: sutra
-    summary: For every active protocol/direction with enforcement=hard, a blocking hook exists AND is wired AND passes its test. Doctor refuses to pass if any row violates.
+    summary: For every active protocol/direction with enforcement=hard, a blocking hook exists AND is wired AND passes its test. validate.mjs enforces this at state-model commit time; Phase 3 doctor enforces at every commit.
 
   # ── Retired (11) — kept as historical record, not wired ────────────────────
   - id: PROTO-001

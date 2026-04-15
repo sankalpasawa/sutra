@@ -216,6 +216,9 @@ function validateSchema(data, schema, rootSchema, path = '$') {
   if (schema.minimum !== undefined && typeof data === 'number' && data < schema.minimum) {
     push(`value ${data} below minimum ${schema.minimum}`);
   }
+  if (schema.maximum !== undefined && typeof data === 'number' && data > schema.maximum) {
+    push(`value ${data} above maximum ${schema.maximum}`);
+  }
 
   // allOf with if/then (conditional required)
   if (schema.allOf) {
@@ -354,8 +357,31 @@ for (const h of state.hooks || []) {
 }
 
 let inverseFail = 0;
+// Hook file search paths — validator accepts any of these.
+// package/hooks/ is the shippable source; holding/hooks/ is legacy sources;
+// .claude/hooks/sutra/ is installed location in company repos.
+const HOOK_SEARCH_PATHS = [
+  'sutra/package/hooks',
+  'holding/hooks',
+  '.claude/hooks/sutra',
+];
+// Phase-placeholder detector — mechanisms referring to unshipped phases
+// should NOT satisfy hard coverage (codex P1 round 3 fix).
+function isPhasePlaceholder(mech) {
+  if (!mech) return false;
+  return /Phase\s*[0-9]+|^\(|not yet|TBD/i.test(mech);
+}
+
 const checkInverse = (item, label) => {
   if (item.enforcement !== 'hard' || item.status !== 'active') return;
+  // Reject phase-placeholder mechanisms for hard rules — the component
+  // being referenced doesn't exist yet, so this is a false-green.
+  if (isPhasePlaceholder(item.mechanism)) {
+    console.error(`FAIL: I-1 violated: ${label} ${item.id} (hard) refers to an unshipped phase component: "${item.mechanism}"`);
+    console.error(`  → Either demote to enforcement=soft until the phase ships, or implement now.`);
+    inverseFail++;
+    return;
+  }
   const kind = mechanismKind(item.mechanism);
   if (kind === 'hook') {
     const matching = hooksById.get(item.id) || [];
@@ -363,6 +389,15 @@ const checkInverse = (item, label) => {
     if (blocking.length === 0) {
       console.error(`FAIL: I-1 violated: ${label} ${item.id} (hard, mechanism=hook) has no blocking hook with implements[${item.id}]`);
       inverseFail++;
+      return;
+    }
+    // NEW: verify the hook file actually exists on disk at one of the search paths.
+    for (const hookEntry of blocking) {
+      const found = HOOK_SEARCH_PATHS.some(p => existsSync(join(__dirname, '..', '..', p, hookEntry.file)));
+      if (!found) {
+        console.error(`FAIL: I-1 violated: ${label} ${item.id} → hook ${hookEntry.file} declared but file absent from all search paths (${HOOK_SEARCH_PATHS.join(', ')})`);
+        inverseFail++;
+      }
     }
   } else if (kind === 'unknown') {
     console.error(`FAIL: I-1 violated: ${label} ${item.id} (hard) has unparseable mechanism "${item.mechanism}" — cannot classify as hook/reconciler/compiler/agent-behavior`);
