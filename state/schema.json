@@ -166,7 +166,8 @@
         "scope": { "enum": ["sutra-core", "asawa-only"] },
         "mechanism": { "type": "string" },
         "test": { "type": "string" },
-        "summary": { "type": "string" }
+        "summary": { "type": "string" },
+        "invariant_refs": { "type": "array", "items": { "type": "string" } }
       },
       "allOf": [
         {

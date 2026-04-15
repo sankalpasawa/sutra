@@ -149,6 +149,98 @@ function parseScalar(v) {
   return v;
 }
 
+// --- Minimal JSON Schema validator (subset supported: type, required,
+//     properties, additionalProperties, enum, pattern, items, $defs, $ref,
+//     minimum, minItems, allOf with if/then) ----------------------------------
+// Zero deps. Not a full Draft 2020-12 implementation — covers what schema.json uses.
+function validateSchema(data, schema, rootSchema, path = '$') {
+  const errs = [];
+  const push = (msg) => errs.push(`${path}: ${msg}`);
+
+  // $ref resolution
+  if (schema && schema.$ref) {
+    const refPath = schema.$ref.replace(/^#\//, '').split('/');
+    let target = rootSchema;
+    for (const seg of refPath) target = target[seg];
+    return validateSchema(data, target, rootSchema, path);
+  }
+
+  // type
+  if (schema.type) {
+    const t = Array.isArray(data) ? 'array' : (data === null ? 'null' : typeof data);
+    if (schema.type === 'integer') {
+      if (t !== 'number' || !Number.isInteger(data)) push(`expected integer, got ${t}`);
+    } else if (schema.type !== t) {
+      push(`expected type ${schema.type}, got ${t}`);
+    }
+  }
+
+  if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+    // required
+    if (schema.required) {
+      for (const key of schema.required) {
+        if (!(key in data)) push(`missing required property "${key}"`);
+      }
+    }
+    // properties + additionalProperties
+    if (schema.properties) {
+      for (const [k, v] of Object.entries(data)) {
+        if (schema.properties[k]) {
+          errs.push(...validateSchema(v, schema.properties[k], rootSchema, `${path}.${k}`));
+        } else if (schema.additionalProperties === false) {
+          push(`unexpected property "${k}"`);
+        }
+      }
+    }
+  }
+
+  // arrays
+  if (Array.isArray(data)) {
+    if (schema.minItems !== undefined && data.length < schema.minItems) {
+      push(`expected at least ${schema.minItems} items, got ${data.length}`);
+    }
+    if (schema.items) {
+      data.forEach((item, i) => {
+        errs.push(...validateSchema(item, schema.items, rootSchema, `${path}[${i}]`));
+      });
+    }
+  }
+
+  // scalars
+  if (schema.enum && !schema.enum.includes(data)) {
+    push(`value "${data}" not in enum [${schema.enum.join(', ')}]`);
+  }
+  if (schema.pattern && typeof data === 'string' && !new RegExp(schema.pattern).test(data)) {
+    push(`value "${data}" does not match pattern ${schema.pattern}`);
+  }
+  if (schema.minimum !== undefined && typeof data === 'number' && data < schema.minimum) {
+    push(`value ${data} below minimum ${schema.minimum}`);
+  }
+
+  // allOf with if/then (conditional required)
+  if (schema.allOf) {
+    for (const clause of schema.allOf) {
+      if (clause.if && clause.then) {
+        // Check the "if" — if it passes, apply "then"
+        const ifErrs = validateSchema(data, clause.if, rootSchema, path);
+        if (ifErrs.length === 0) {
+          errs.push(...validateSchema(data, clause.then, rootSchema, path));
+        }
+      } else {
+        errs.push(...validateSchema(data, clause, rootSchema, path));
+      }
+    }
+  }
+
+  // oneOf (accept if exactly one subschema matches)
+  if (schema.oneOf) {
+    const matches = schema.oneOf.filter(sub => validateSchema(data, sub, rootSchema, path).length === 0);
+    if (matches.length !== 1) push(`expected exactly 1 of oneOf to match, got ${matches.length}`);
+  }
+
+  return errs;
+}
+
 // --- Validation -------------------------------------------------------------
 function fail(msg) { console.error(`FAIL: ${msg}`); process.exit(1); }
 function warn(msg) { console.warn(`WARN: ${msg}`); }
@@ -162,8 +254,20 @@ try {
   fail(`YAML parse error: ${e.message}`);
 }
 
-// Minimal parser has limitations — also try JSON-sidecar validation if available
-// For now: proceed with what we parsed.
+// --- JSON Schema validation (codex P1 fix 2026-04-15) -----------------------
+const schemaPath = join(__dirname, 'schema.json');
+if (!existsSync(schemaPath)) {
+  fail(`schema.json missing at ${schemaPath}`);
+}
+const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
+const schemaErrs = validateSchema(state, schema, schema);
+if (schemaErrs.length > 0) {
+  console.error(`FAIL: schema validation found ${schemaErrs.length} error(s):`);
+  for (const e of schemaErrs.slice(0, 20)) console.error(`  ${e}`);
+  if (schemaErrs.length > 20) console.error(`  ... and ${schemaErrs.length - 20} more`);
+  process.exit(1);
+}
+pass(`schema.json validated (${schemaErrs.length} errors)`);
 
 // Check: required top-level keys
 for (const key of ['meta', 'tiers', 'protocols', 'directions', 'hooks', 'invariants', 'companies']) {
