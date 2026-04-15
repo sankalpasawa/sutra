@@ -360,10 +360,25 @@ let inverseFail = 0;
 // Hook file search paths — validator accepts any of these.
 // package/hooks/ is the shippable source; holding/hooks/ is legacy sources;
 // .claude/hooks/sutra/ is installed location in company repos.
+// Paths are relative to a discovered repo root (git toplevel), not __dirname.
+// This works for standalone clones and differently-named checkouts. Codex P2 fix.
+import { execSync as _execSync } from 'child_process';
+let REPO_ROOT;
+try {
+  REPO_ROOT = _execSync('git rev-parse --show-toplevel', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+} catch (e) {
+  REPO_ROOT = join(__dirname, '..', '..');  // fallback to previous behavior
+}
+// If REPO_ROOT lacks holding/ (we're inside the sutra submodule), walk up one
+// to find the super-project root that does have both sutra/ and holding/.
+if (!existsSync(join(REPO_ROOT, 'holding')) && existsSync(join(REPO_ROOT, '..', 'holding'))) {
+  REPO_ROOT = join(REPO_ROOT, '..');
+}
 const HOOK_SEARCH_PATHS = [
   'sutra/package/hooks',
   'holding/hooks',
   '.claude/hooks/sutra',
+  'package/hooks',  // when repo root IS sutra/
 ];
 // Phase-placeholder detector — mechanisms referring to unshipped phases
 // should NOT satisfy hard coverage (codex P1 round 3 fix).
@@ -393,9 +408,9 @@ const checkInverse = (item, label) => {
     }
     // NEW: verify the hook file actually exists on disk at one of the search paths.
     for (const hookEntry of blocking) {
-      const found = HOOK_SEARCH_PATHS.some(p => existsSync(join(__dirname, '..', '..', p, hookEntry.file)));
+      const found = HOOK_SEARCH_PATHS.some(p => existsSync(join(REPO_ROOT, p, hookEntry.file)));
       if (!found) {
-        console.error(`FAIL: I-1 violated: ${label} ${item.id} → hook ${hookEntry.file} declared but file absent from all search paths (${HOOK_SEARCH_PATHS.join(', ')})`);
+        console.error(`FAIL: I-1 violated: ${label} ${item.id} → hook ${hookEntry.file} declared but file absent from all search paths under ${REPO_ROOT}`);
         inverseFail++;
       }
     }
@@ -415,7 +430,9 @@ if (inverseFail > 0) {
 pass('I-1 inverse coverage: every active+hard rule has a resolvable mechanism');
 
 // Test coverage for active+hard rules — WARN in Phase 1, promoted to FAIL in Phase 3.
+// Codex round 4: also RUN tests that are declared, not just check presence.
 let testMissing = 0;
+let testFailing = 0;
 const checkTest = (item, label) => {
   if (item.enforcement !== 'hard' || item.status !== 'active') return;
   const kind = mechanismKind(item.mechanism);
@@ -423,14 +440,34 @@ const checkTest = (item, label) => {
   if ((kind === 'hook' || kind === 'agent-behavior') && !item.test) {
     warn(`${label} ${item.id} (hard, ${kind}) has no test — will become FAIL in Phase 3 when doctor enforces I-1 fully`);
     testMissing++;
+    return;
+  }
+  if (item.test) {
+    const testPath = join(REPO_ROOT, item.test);
+    if (!existsSync(testPath)) {
+      warn(`${label} ${item.id} declares test ${item.test} but file does not exist`);
+      testMissing++;
+      return;
+    }
+    // Run it. If it has nonzero exit, flag.
+    try {
+      _execSync(`bash "${testPath}"`, { stdio: ['ignore', 'pipe', 'pipe'], cwd: REPO_ROOT });
+    } catch (e) {
+      console.error(`FAIL: ${label} ${item.id} test ${item.test} is failing (exit ${e.status})`);
+      testFailing++;
+    }
   }
 };
 for (const p of activeProtocols) checkTest(p, 'protocol');
 for (const d of [...coreActive, ...ergActive]) checkTest(d, 'direction');
+if (testFailing > 0) {
+  console.error(`FAIL: ${testFailing} declared regression test(s) failing`);
+  process.exit(1);
+}
 if (testMissing > 0) {
-  console.warn(`NOTE: ${testMissing} active+hard rule(s) missing test field. Phase 3 doctor will fail on these.`);
+  console.warn(`NOTE: ${testMissing} active+hard rule(s) missing test or test file. Phase 3 doctor will FAIL on these.`);
 } else {
-  pass('every active+hard hook/agent-behavior rule has a test');
+  pass('every active+hard hook/agent-behavior rule has a test that passes');
 }
 
 // Invariants must have enforces or notes

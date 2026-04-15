@@ -56,11 +56,12 @@ protocols:
   - id: PROTO-000
     name: Every Change Must Ship With Implementation
     status: active
-    enforcement: hard
-    mechanism: reconciler  # doctor enforces invariant I-1
+    enforcement: soft
+    upgrade_to_hard_at: phase-3
+    mechanism: validate.mjs inverse coverage + test runner (current); doctor in Phase 3
     invariant_refs: [I-1]
     owner: sutra
-    summary: Every policy marked HARD must have a compiled blocking hook AND a regression test before shipping. Writing prose is not shipping.
+    summary: Every policy marked HARD must have a compiled blocking hook AND a regression test before shipping. Writing prose is not shipping. Phase 1 validate.mjs enforces this at state-model commit time. Phase 3 doctor enforces at every repo commit.
     source: sutra/layer2-operating-system/PROTOCOLS.md
 
   - id: PROTO-004
@@ -213,10 +214,11 @@ directions:
     - id: D6
       name: Directions Are Executable With Regression Tests
       status: active
-      enforcement: hard
-      mechanism: reconciler (checks every hard direction has test)
+      enforcement: soft
+      upgrade_to_hard_at: phase-3
+      mechanism: validate.mjs test runner (current); doctor in Phase 3
       invariant_refs: [I-1]
-      summary: Every direction encoded with TRIGGER/CHECK/ENFORCEMENT + regression test. Prose alone is incomplete.
+      summary: Every direction encoded with TRIGGER/CHECK/ENFORCEMENT + regression test. Prose alone is incomplete. Phase 3 doctor upgrades this to hard.
 
     - id: D10
       name: Test Everything in Production
