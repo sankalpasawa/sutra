@@ -18,7 +18,7 @@ meta:
   decisions: holding/DECISIONS.md
   caps:
     protocols_active_max: 8   # Phase 0 D-3
-    directions_active_max: 18 # Phase 0 D-6
+    directions_active_max: 19 # bumped 2026-04-16 (founder directive) to admit D29 "Chunk LLM Delegations"; see DECISIONS.md row "Scope/D29"
 
 # ─── Tiers (per Phase 0 D-3, D-9) ─────────────────────────────────────────────
 # Each tier picks which hooks ship and whether OS core copies into target.
@@ -67,10 +67,13 @@ protocols:
   - id: PROTO-004
     name: Keys in Env Vars Only
     status: active
-    enforcement: soft
-    mechanism: dispatcher-pretool.sh  # grep pattern in Check 5
+    enforcement: hard
+    scope: asawa-only
+    mechanism: holding/hooks/dispatcher-pretool.sh Check 5 (PreToolUse exit 2; greps tool_input.content for Write and tool_input.new_string for Edit; SECRET_OVERRIDE override; .env files exempt)
+    test: sutra/package/tests/test-d28-routing-gate.sh
+    invariant_refs: [I-16]
     owner: sutra
-    summary: No hardcoded API keys, secrets, tokens in source. Dispatcher soft-warns on detection; hardening to hard-block is post-v1.
+    summary: No hardcoded API keys, secrets, tokens in source. Dispatcher blocks (exit 2) when the INCOMING post-edit content (Write content / Edit new_string) contains a matching literal. Remediation edits that REMOVE a secret still pass because the new_string carries no literal. Override via SECRET_OVERRIDE=1 with SECRET_OVERRIDE_REASON. Scope: Asawa-only until Phase 2 compiler ships hook to company installs.
     source: sutra/layer2-operating-system/PROTOCOLS.md
 
   - id: PROTO-006
@@ -303,6 +306,14 @@ directions:
       test: sutra/package/tests/test-d28-routing-gate.sh
       summary: Every Write/Edit requires fresh INPUT/TYPE/ROUTE block + TASK/DEPTH block. Markers cleared every founder turn.
 
+    - id: D29
+      name: Chunk LLM Delegations to Fit Server Budgets
+      status: active
+      enforcement: soft
+      upgrade_to_hard_at: phase-3
+      mechanism: agent-behavior directive (current); Phase 3 doctor adds pre-dispatch size lint
+      summary: Any task delegated to an external LLM (codex review/consult/challenge, sub-agent dispatch, managed agent) must fit within ~5 minutes server-side. Pre-plan chunking; if a review would need deep reasoning over many files, split the underlying task into smaller chunks each with its own review. If a dispatched review times out or exceeds budget, kill it and retry with smaller chunks — don't wait longer. Applies to Claude↔Codex loops, Claude↔Claude sub-agents, and any network-bound LLM call. Founder directive 2026-04-16 after 15-min PROTO-004 review stalled. Abstraction-level rule about how Sutra deals with LLMs; ships with Sutra to every company.
+
   ergonomics:
     - id: D16
       name: Executive Documents as HTML
@@ -524,6 +535,13 @@ invariants:
     enforces: [PROTO-001]
     severity: warn
     notes: "Founder-observed failure mode 2026-04-16 — agent created holding/scripts/evolution-cycle.sh despite existing docs/superpowers/specs/2026-04-05-evolution-protocol-v2.md, and holding/scripts/verify-company-deploy.sh despite existing holding/hooks/verify-os-deploy.sh. D12/PROTO-001 warned but didn't block. Phase 3: promote to hard — dispatcher greps name+keyword similarity, blocks on match without --override-duplication trailer."
+
+  - id: I-16
+    name: No hardcoded secrets in tracked files
+    statement: "Any tracked non-.env file must not contain a literal matching (api_key|secret_key|password|token)\\s*[:=]\\s*['\"][A-Za-z0-9_-]{20,} unless the commit was created with SECRET_OVERRIDE=1 and a logged SECRET_OVERRIDE_REASON."
+    enforces: [PROTO-004]
+    severity: fail
+    notes: "Founder directive 2026-04-16 — lift PROTO-004 SOFT→HARD via I-14 ladder. Mechanism: dispatcher-pretool.sh Check 5 greps matching file content at PreToolUse and exits 2 on match. .env/*.env.* files exempt (they ARE the env vars). Override: SECRET_OVERRIDE=1 SECRET_OVERRIDE_REASON='<why>' logged to .enforcement/routing-misses.log. Gap: Write tool with new file path not yet inspected (needs stdin tool_input.content extraction) — Phase 3 doctor closes this gap. Scope: Asawa-runtime only until Phase 2 compiler ships to companies."
 
   - id: I-15
     name: Cascade evidence on governance changes
