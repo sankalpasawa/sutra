@@ -107,6 +107,53 @@ const osDir = join(projectRoot, 'os');
 
 const mkdir = (d) => existsSync(d) || mkdirSync(d, { recursive: true });
 
+// ─── Orphan-sweep + lint helpers (v1.9.1 — billu Stop-hook RCA 2026-04-17) ───
+//
+// Root cause: `_sutra_managed: false` boxes conflated two rules
+//   (a) "don't clobber user keys"  (b) "don't clean up Sutra's own stale keys".
+// The user-managed path already strips Sutra hooks before append; these helpers
+// generalise the same sweep to the sutra-managed path and add a final
+// verification so no settings.json points at a missing script.
+function sweepOrphanSutraHooks(hooks, installedHookNames) {
+  // Remove any hook rule whose command references `.claude/hooks/sutra/<script>`
+  // when <script> is NOT part of the current tier's installed set.
+  const out = {};
+  for (const event of Object.keys(hooks || {})) {
+    out[event] = (hooks[event] || []).filter(rule =>
+      !(rule.hooks || []).some(h => {
+        const cmd = h.command || '';
+        const m = cmd.match(/\.claude\/hooks\/sutra\/([a-zA-Z0-9_-]+\.sh)/);
+        if (!m) return false;
+        return !installedHookNames.has(m[1]);
+      })
+    );
+    if (out[event].length === 0) delete out[event];
+  }
+  return out;
+}
+
+function verifyHookRegistrations(settingsPath, hooksDir) {
+  // Post-install lint: every settings.json entry that references
+  // `.claude/hooks/sutra/*.sh` must resolve to an existing, executable file.
+  // If not — orphan, fail loudly.
+  if (!existsSync(settingsPath)) return { orphans: [], ok: true };
+  let s;
+  try { s = JSON.parse(readFileSync(settingsPath, 'utf8')); } catch (e) { return { orphans: [], ok: true, parseError: e.message }; }
+  const orphans = [];
+  for (const event of Object.keys(s.hooks || {})) {
+    for (const rule of s.hooks[event]) {
+      for (const h of (rule.hooks || [])) {
+        const m = (h.command || '').match(/\.claude\/hooks\/sutra\/([a-zA-Z0-9_-]+\.sh)/);
+        if (!m) continue;
+        const script = m[1];
+        const path = join(hooksDir, script);
+        if (!existsSync(path)) orphans.push({ event, script, reason: 'file missing' });
+      }
+    }
+  }
+  return { orphans, ok: orphans.length === 0 };
+}
+
 // ─── copyTree: recursive copy with executable preservation for .sh ───────────
 function copyTree(src, dst) {
   if (!existsSync(src)) return 0;
@@ -334,12 +381,17 @@ if (!existing) {
   mergeAction = 'created';
 } else if (existing._sutra_managed) {
   // Sutra-managed: replace Sutra sections but keep user_hooks (codex P2 #5)
+  // v1.9.1: also sweep any orphan Sutra hooks from prior-tier installs
+  // (billu RCA 2026-04-17: tier downgrade left dispatcher-stop.sh registered
+  // pointing at a file the Tier 1 bundle doesn't ship).
   finalSettings = { ...tierSettings };
   if (existing.user_hooks) finalSettings.user_hooks = existing.user_hooks;
-  mergeAction = 'replaced (user_hooks preserved)';
+  mergeAction = 'replaced (user_hooks preserved, orphan Sutra hooks swept)';
 } else {
-  // User-managed: strip any prior Sutra hooks (codex P2 #6 — no duplicate appends),
-  // then append the current tier's hooks.
+  // User-managed: strip ALL prior Sutra hooks (codex P2 #6 — no duplicate appends;
+  // billu RCA 2026-04-17 — sweep orphans from prior-tier installs), then append
+  // the current tier's hooks. "Strip all" is correct here because every Sutra
+  // hook rule is about to be re-added from tierSettings if it belongs to this tier.
   const stripSutra = (rules) => (rules || []).filter(r =>
     !(r.hooks || []).some(h => /\.claude\/hooks\/sutra\//.test(h.command || '') || /\/hooks\/sutra\//.test(h.command || ''))
   );
@@ -352,13 +404,37 @@ if (!existing) {
     hooks: { ...(existing.hooks || {}) },
   };
   for (const event of Object.keys(tierSettings.hooks)) {
-    finalSettings.hooks[event] = [...stripSutra(finalSettings.hooks[event]), ...tierSettings.hooks[event]];
+    const swept = stripSutra(finalSettings.hooks[event]);
+    finalSettings.hooks[event] = [...swept, ...tierSettings.hooks[event]];
+    if (finalSettings.hooks[event].length === 0) delete finalSettings.hooks[event];
   }
-  mergeAction = 'merged (Sutra section refreshed, user entries preserved)';
+  // Also sweep any Sutra-hook references in events NOT present in tierSettings
+  // (e.g., Stop left behind on Tier 1 downgrade).
+  for (const event of Object.keys(finalSettings.hooks)) {
+    if (!(event in tierSettings.hooks)) {
+      const swept = stripSutra(finalSettings.hooks[event]);
+      if (swept.length === 0) delete finalSettings.hooks[event];
+      else finalSettings.hooks[event] = swept;
+    }
+  }
+  mergeAction = 'merged (Sutra sections refreshed, orphan Sutra hooks swept, user entries preserved)';
 }
 writeFileSync(settingsFile, JSON.stringify(finalSettings, null, 2) + '\n');
 const wiredCount = Object.values(tierSettings.hooks).reduce((a, arr) => a + arr.length, 0);
 console.log(`  ✓ settings.json ${mergeAction} — ${wiredCount} Sutra hook rules (tier ${tier})`);
+
+// Post-install lint: every settings.json hook reference must resolve to an
+// extant script in the installed bundle. Fail the install if any orphan remains
+// (billu RCA 2026-04-17 Fix B).
+const lint = verifyHookRegistrations(settingsFile, hooksDir);
+if (!lint.ok) {
+  console.error(`  ✗ orphan hook registrations detected after install:`);
+  for (const o of lint.orphans) console.error(`      ${o.event}: ${o.script} (${o.reason})`);
+  console.error(`  The installer wrote a settings.json that references scripts it did not install.`);
+  console.error(`  This is the billu-2026-04-17 failure mode. Please file a bug and re-run with --uninstall then install.`);
+  process.exit(1);
+}
+console.log(`  ✓ post-install lint — no orphan hook registrations`);
 
 // Step 6: OS core docs (only --local + tier 2/3; tier 1 = governance, skip OS core)
 if (isLocal && tierConfig.installOsCore) {

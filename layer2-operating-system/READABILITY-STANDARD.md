@@ -63,6 +63,7 @@ If nothing is broken, omit the third signal. Do not pad.
 | Hedge phrases | "I think", "it seems like", "probably" | State the fact or state the uncertainty with a confidence level (e.g., "~80% confidence"). |
 | Protocol ID soup | "Per D23 and P11 combined with PROTO-004..." | Use plain language. Reference IDs only in specs and audits. |
 | Exhaustive lists | Listing everything that works | Flag what's broken. The founder assumes working = fine. |
+| Filler closers | "Nice work", "Grab a coffee", "Standing by", "Hope that helps", "Let me know if…" | **State, don't perform.** End turns on the last factual statement. Congratulation belongs to the founder's internal state, not the agent's output. When a task ships, the last line is the result — not an emotional beat. |
 
 ### Quantification Standard
 
