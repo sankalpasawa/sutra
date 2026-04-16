@@ -41,12 +41,15 @@ if (!existsSync(join(REPO_ROOT, 'holding')) && existsSync(join(REPO_ROOT, '..', 
 }
 export { REPO_ROOT };
 
-// ─── Hook file resolution — same search paths as validate.mjs ───────────────
+// ─── Hook file resolution — prefer the SHIPPED bundle over legacy holding/ ───
+// Codex P1 2026-04-16: if both exist, they can drift. The shipped bundle in
+// sutra/package/hooks is the canonical source (what system.yaml declares).
+// holding/hooks/ is legacy sources; kept last for backward compat.
 const HOOK_PATHS = [
-  'holding/hooks',
   'sutra/package/hooks',
   '.claude/hooks/sutra',
   'package/hooks',
+  'holding/hooks',  // last — legacy, only when nothing else found
 ];
 
 export function resolveHook(hookFile) {

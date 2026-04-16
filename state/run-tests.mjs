@@ -267,18 +267,28 @@ for (const rule of active) {
 // ─── Coverage matrix — every active rule → tests that cover it ──────────────
 // Industry pattern: DO-178C requirements-traceability matrix. Catches rules
 // that exist in doctrine but have no test coverage.
+//
+// Codex P2 2026-04-16 fix: skipped results → UNCOVERED (not GREEN). Otherwise
+// --strict green-lights unshipped hard mechanisms. Skipped is the absence of
+// coverage, not a pass.
 const coverage = [];
 for (const rule of active) {
   const covered = results.find(r => r.name.startsWith(rule.id));
   const enforcement = rule.enforcement || 'unknown';
   const scope = rule.scope || '';
+  const isSkipped = covered?.details.includes('skipped');
+  let status;
+  if (!covered) status = 'UNCOVERED';
+  else if (isSkipped) status = 'UNCOVERED';
+  else if (covered.passed) status = 'GREEN';
+  else status = 'RED';
   coverage.push({
     id: rule.id,
     enforcement,
     scope,
-    covered_by: covered ? covered.name : null,
-    status: covered?.passed ? 'GREEN' : (covered ? 'RED' : 'UNCOVERED'),
-    skip_reason: covered?.details.includes('skipped') ? covered.details : null,
+    covered_by: covered && !isSkipped ? covered.name : null,
+    status,
+    skip_reason: isSkipped ? covered.details : null,
   });
 }
 
