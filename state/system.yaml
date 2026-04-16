@@ -506,6 +506,13 @@ invariants:
     severity: warn
     notes: "Founder directive 2026-04-16: daily cadence via codex-driven cron."
 
+  - id: I-14
+    name: No-duplication gate before creation
+    statement: "Before creating any new .sh/.mjs/.md script or doctrine file, the agent must grep the repo for existing artifacts of similar name or purpose and refuse to create if matches found (override requires explicit rationale in commit message)."
+    enforces: [PROTO-001]
+    severity: warn
+    notes: "Founder-observed failure mode 2026-04-16 — agent created holding/scripts/evolution-cycle.sh despite existing docs/superpowers/specs/2026-04-05-evolution-protocol-v2.md, and holding/scripts/verify-company-deploy.sh despite existing holding/hooks/verify-os-deploy.sh. D12/PROTO-001 warned but didn't block. Phase 3: promote to hard — dispatcher greps name+keyword similarity, blocks on match without --override-duplication trailer."
+
   - id: I-13
     name: Portfolio deploy readiness
     statement: "For every active company in companies[], verify-company-deploy.sh reports READY. INCOMPLETE means Sutra is NOT enforcing in that company session despite doctrine being present."
