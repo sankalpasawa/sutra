@@ -506,6 +506,13 @@ invariants:
     severity: warn
     notes: "Founder directive 2026-04-16: daily cadence via codex-driven cron."
 
+  - id: I-13
+    name: Portfolio deploy readiness
+    statement: "For every active company in companies[], verify-company-deploy.sh reports READY. INCOMPLETE means Sutra is NOT enforcing in that company session despite doctrine being present."
+    enforces: [PROTO-013, PROTO-014]
+    severity: warn
+    notes: "Founder directive 2026-04-16 — answers 'is Sutra deployed fully when a downstream company builds something?'. Mechanism: holding/scripts/verify-portfolio-deploy.sh. Phase 3 doctor runs this on every commit. Current reading 2026-04-16: 1 READY (billu), 4 INCOMPLETE (dayflow, maze, ppr, paisa)."
+
 # ─── Companies (snapshot of current portfolio for compiler targeting) ────────
 companies:
   - id: dayflow
