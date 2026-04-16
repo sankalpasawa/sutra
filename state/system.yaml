@@ -517,10 +517,10 @@ invariants:
 
   - id: I-11
     name: Codex review on every significant change
-    statement: "Before every commit touching code/hooks/governance, a codex review has been run within the last 10 minutes. Soft today (warn), hard in Phase 3 when gate is scripted."
+    statement: "Before every commit touching code/hooks/governance (.mjs, .sh, .js, .ts, .tsx, .py, .md, holding/, sutra/layer2, .claude/settings.json), a fresh codex review must have been performed: marker file .enforcement/codex-reviews/.last-review must exist and be <600s (10 min) old. Otherwise pre-commit exits 1."
     enforces: [PROTO-000, PROTO-015]
-    severity: warn
-    notes: "Founder directive 2026-04-16: codex review is a core feature of every change in Asawa/Sutra/companies. Wired as pre-commit SOFT warn. Marker: .enforcement/codex-reviews/.last-review."
+    severity: fail
+    notes: "Founder directive 2026-04-16 — lifted SOFT→HARD via I-14 ladder. Mechanism: .git/hooks/pre-commit section (4). MARKER PRODUCER — the agent must `touch .enforcement/codex-reviews/.last-review` after running /codex review (or codex review --uncommitted) as part of the workflow; there is no auto-producer yet. Phase 3 doctor absorbs PROTO-019 and auto-produces the marker when a review verdict artifact lands. Override: CODEX_OVERRIDE=1 CODEX_OVERRIDE_REASON='<why>' git commit ... (logged to .enforcement/codex-reviews/gate-log.jsonl). Emergency escape: git commit --no-verify. Scope: Asawa-local — .git/hooks is untracked so fresh clones do not inherit; Phase 2 compiler must ship a tracked pre-commit under .husky/ or equivalent before clients see this gate."
 
   - id: I-12
     name: Daily test framework run
