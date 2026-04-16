@@ -149,6 +149,61 @@ function findLiveHook(repoRoot, file) {
   return { path: null, size: -1 };
 }
 
+// Synthesize the settings.json template from state.hooks[]. Groups entries
+// by (event, matcher) — one group per unique pair. Preserves non-hook
+// sections (permissions, metadata) from the existing file so user-managed
+// fields survive compilation. Best practice: idempotent (skip write when
+// content is identical to disk).
+function buildSettingsTemplate(existingSrc, hooks, stateVersion) {
+  let existing = {};
+  try { existing = JSON.parse(existingSrc || '{}'); } catch { existing = {}; }
+
+  const next = {
+    // codex P2 fix: version derives from state.meta.version, not the prior template
+    _sutra_version: stateVersion || existing._sutra_version || '1.9',
+    _sutra_managed: true,
+    _sutra_note: existing._sutra_note ||
+      'This file is managed by Sutra. User additions are preserved during upgrade. Sutra-owned hooks live under .claude/hooks/sutra/.',
+    permissions: existing.permissions || {},
+    hooks: {}
+  };
+
+  // codex P1 fix: preserve state.hooks[] declaration order. Hook execution is
+  // order-sensitive once any hook blocks (exit 2), so matchers must appear in
+  // the sequence the state model declares — not alphabetically sorted. Map
+  // preserves insertion order as of ES2015.
+  const byEventMap = new Map();   // event → (matcher → hook[])
+  for (const h of hooks) {
+    if (!byEventMap.has(h.event)) byEventMap.set(h.event, new Map());
+    const matcherMap = byEventMap.get(h.event);
+    const mk = h.matcher || '';
+    if (!matcherMap.has(mk)) matcherMap.set(mk, []);
+    matcherMap.get(mk).push(h);
+  }
+
+  for (const [event, matcherMap] of byEventMap) {
+    next.hooks[event] = [];
+    for (const [matcher, entries] of matcherMap) {
+      next.hooks[event].push({
+        matcher,
+        hooks: entries.map(h => ({
+          type: 'command',
+          command: `cd "$CLAUDE_PROJECT_DIR" && bash .claude/hooks/sutra/${h.file}`
+        }))
+      });
+    }
+  }
+
+  return JSON.stringify(next, null, 2) + '\n';
+}
+
+// Parse meta.version from state yaml — used for compile-emitted metadata
+// so _sutra_version reflects state.meta, not a stale prior template.
+function parseStateVersion(yaml) {
+  const m = yaml.match(/^\s*version:\s*["']?([0-9.]+)["']?\s*$/m);
+  return m ? m[1] : null;
+}
+
 // codex P1 fix: parse settings.json as JSON and verify event+matcher
 // alignment, not just filename substring. Falls back to naive includes if the
 // file isn't valid JSON (defensive).
@@ -270,6 +325,19 @@ if (emit) {
   }
   console.log('─'.repeat(96));
   console.log(`Emitted: ${wrote} written, ${skippedIdentical} already in sync, ${skippedNonCanonical} non-canonical, ${skippedNoLive} no live source.`);
+  console.log('');
+
+  // Settings template emission (chunk b)
+  console.log('Settings template emission:');
+  const stateVersion = parseStateVersion(src);
+  const generatedSettings = buildSettingsTemplate(settingsSrc, hooks, stateVersion);
+  if (generatedSettings === settingsSrc) {
+    console.log(`  SKIP  sutra/package/templates/settings.json — already in sync`);
+  } else {
+    try { mkdirSync(dirname(settingsPath), { recursive: true }); } catch {}
+    writeFileSync(settingsPath, generatedSettings);
+    console.log(`  WRITE sutra/package/templates/settings.json — regenerated from state.hooks[]`);
+  }
   console.log('');
 }
 

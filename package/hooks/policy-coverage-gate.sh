@@ -28,8 +28,32 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LOG_DIR="$REPO_ROOT/.enforcement"
 mkdir -p "$LOG_DIR"
 
-FILE_PATH="${TOOL_INPUT_file_path:-${TOOL_INPUT_command:-}}"
-[ -z "$FILE_PATH" ] && exit 0
+FILE_PATH="${TOOL_INPUT_file_path:-}"
+BASH_CMD="${TOOL_INPUT_command:-}"
+
+# Claude Code stdin-JSON fallback (codex P1 fix 2026-04-16) — modern payloads
+# deliver tool_input via stdin JSON instead of env vars. Same pattern as
+# dispatcher-pretool.sh / cascade-check.sh / process-fix-check.sh.
+if [ -z "$FILE_PATH" ] && [ -z "$BASH_CMD" ] && [ ! -t 0 ]; then
+  _JSON=$(cat)
+  if [ -n "$_JSON" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      FILE_PATH=$(printf '%s' "$_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+      BASH_CMD=$(printf '%s' "$_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null)
+    else
+      FILE_PATH=$(printf '%s' "$_JSON" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      BASH_CMD=$(printf '%s' "$_JSON" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    fi
+  fi
+fi
+
+# Use FILE_PATH primarily; fall back to BASH_CMD for the policy-surface check.
+[ -z "$FILE_PATH" ] && [ -z "$BASH_CMD" ] && exit 0
+# Maintain backward compatibility: policy-file matcher below uses FILE_PATH,
+# while Bash-command matcher uses BASH_CMD (already handled below).
+if [ -z "$FILE_PATH" ] && [ -n "$BASH_CMD" ]; then
+  FILE_PATH="$BASH_CMD"  # legacy behavior — some downstream checks use FILE_PATH
+fi
 
 # Normalize paths — scan for the policy surface as substrings of the file path
 IS_POLICY=0
@@ -43,8 +67,8 @@ case "$FILE_PATH" in
 esac
 
 # Bash tool: detect if the command touches a policy file (sed/awk/tee/rm/mv)
-if [ -n "${TOOL_INPUT_command:-}" ]; then
-  case "$TOOL_INPUT_command" in
+if [ -n "$BASH_CMD" ]; then
+  case "$BASH_CMD" in
     *PROTOCOLS.md*|*MANIFEST-*.md*|*CLIENT-ONBOARDING.md*|*ENFORCEMENT.md*|*d-engines/*.md*)
       IS_POLICY=1 ;;
   esac
