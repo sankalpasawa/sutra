@@ -69,7 +69,6 @@ protocols:
     status: active
     enforcement: soft
     mechanism: dispatcher-pretool.sh  # grep pattern in Check 5
-    test: (none yet)
     owner: sutra
     summary: No hardcoded API keys, secrets, tokens in source. Dispatcher soft-warns on detection; hardening to hard-block is post-v1.
     source: sutra/layer2-operating-system/PROTOCOLS.md
