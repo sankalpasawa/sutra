@@ -264,20 +264,81 @@ for (const rule of active) {
   }
 }
 
+// ─── Coverage matrix — every active rule → tests that cover it ──────────────
+// Industry pattern: DO-178C requirements-traceability matrix. Catches rules
+// that exist in doctrine but have no test coverage.
+const coverage = [];
+for (const rule of active) {
+  const covered = results.find(r => r.name.startsWith(rule.id));
+  const enforcement = rule.enforcement || 'unknown';
+  const scope = rule.scope || '';
+  coverage.push({
+    id: rule.id,
+    enforcement,
+    scope,
+    covered_by: covered ? covered.name : null,
+    status: covered?.passed ? 'GREEN' : (covered ? 'RED' : 'UNCOVERED'),
+    skip_reason: covered?.details.includes('skipped') ? covered.details : null,
+  });
+}
+
+// ─── Strict / output-format flags ───────────────────────────────────────────
+const strict = process.argv.includes('--strict');
+const jsonOut = process.argv.includes('--json');
+const junitOut = process.argv.includes('--junit');
+
 // ─── Report ─────────────────────────────────────────────────────────────────
 const pass = results.filter(r => r.passed).length;
 const fail = results.filter(r => !r.passed).length;
+const skipped = results.filter(r => r.details.includes('skipped')).length;
+const hardUncovered = coverage.filter(c => c.enforcement === 'hard' && c.status === 'UNCOVERED').length;
 
-console.log('');
-console.log('SUTRA TEST FRAMEWORK — RESULTS');
-console.log('━'.repeat(60));
-for (const r of results) {
-  const icon = r.passed ? '✓' : '✗';
-  const status = r.passed ? 'PASS' : 'FAIL';
-  console.log(`  ${icon} ${status}  ${r.name.padEnd(40)}  ${r.details.slice(0, 80)}`);
+if (jsonOut) {
+  const out = {
+    summary: { pass, fail, skipped, total: results.length, hard_uncovered: hardUncovered },
+    results,
+    coverage,
+    timestamp: new Date().toISOString(),
+  };
+  console.log(JSON.stringify(out, null, 2));
+} else if (junitOut) {
+  // JUnit XML — consumable by CI (GitLab, Jenkins, etc.)
+  const esc = (s) => String(s).replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
+  console.log('<?xml version="1.0" encoding="UTF-8"?>');
+  console.log(`<testsuite name="sutra-state" tests="${results.length}" failures="${fail}" skipped="${skipped}">`);
+  for (const r of results) {
+    if (r.details.includes('skipped')) {
+      console.log(`  <testcase classname="sutra.state" name="${esc(r.name)}"><skipped message="${esc(r.details)}"/></testcase>`);
+    } else if (r.passed) {
+      console.log(`  <testcase classname="sutra.state" name="${esc(r.name)}"/>`);
+    } else {
+      console.log(`  <testcase classname="sutra.state" name="${esc(r.name)}"><failure message="${esc(r.details.slice(0, 200))}"/></testcase>`);
+    }
+  }
+  console.log('</testsuite>');
+} else {
+  console.log('');
+  console.log('SUTRA TEST FRAMEWORK — RESULTS');
+  console.log('━'.repeat(70));
+  for (const r of results) {
+    const icon = r.passed ? '✓' : '✗';
+    const status = r.passed ? 'PASS' : 'FAIL';
+    console.log(`  ${icon} ${status}  ${r.name.padEnd(42)}  ${r.details.slice(0, 80)}`);
+  }
+  console.log('━'.repeat(70));
+  console.log(`  ${pass} pass, ${fail} fail, ${skipped} skipped  (of ${results.length} total)`);
+  console.log('');
+  console.log('COVERAGE MATRIX — active rules vs test coverage');
+  console.log('━'.repeat(70));
+  for (const c of coverage) {
+    const icon = c.status === 'GREEN' ? '✓' : (c.status === 'RED' ? '✗' : '⚠');
+    console.log(`  ${icon} ${c.status.padEnd(10)} ${c.id.padEnd(12)} enforcement=${c.enforcement.padEnd(8)} ${c.skip_reason ? 'skipped' : (c.covered_by || 'no test')}`);
+  }
+  console.log('━'.repeat(70));
+  console.log(`  hard rules uncovered: ${hardUncovered}  (must be 0 by phase-3)`);
+  console.log('');
 }
-console.log('━'.repeat(60));
-console.log(`  ${pass} pass, ${fail} fail  (of ${results.length} total)`);
-console.log('');
 
-process.exit(fail > 0 ? 1 : 0);
+let exitCode = fail > 0 ? 1 : 0;
+if (strict && hardUncovered > 0) exitCode = 1;
+process.exit(exitCode);
