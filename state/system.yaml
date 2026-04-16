@@ -243,10 +243,12 @@ directions:
     - id: D13
       name: Cascade Downstream Immediately
       status: active
-      enforcement: soft
-      mechanism: cascade-check.sh (PostToolUse)
+      enforcement: hard
+      scope: asawa-only
+      mechanism: holding/hooks/cascade-check.sh (PostToolUse exit 2; diff-restricted to TODO.md paths; CASCADE_ACK override)
       test: sutra/package/tests/test-d13-cascade.sh
-      summary: Every L0-L2 change triggers downstream impact TODOs.
+      invariant_refs: [I-15]
+      summary: Every L0-L2 change in the Asawa repo blocks the assistant response until a matching downstream TODO line is added to some TODO.md (staged or unstaged diff), or is explicitly deferred via CASCADE_ACK=1 with CASCADE_ACK_REASON. Companies inherit this gate only after Phase 2 compiler copies the hook into sutra/package/hooks/ and wires it into package/templates/settings.json — until then, sutra/package/hooks/cascade-check.sh is empty and company installs have no enforcement. Honest scope, not runtime lie.
 
     - id: D17
       name: Don't Miss Parallel Statements
@@ -376,7 +378,9 @@ hooks:
     matcher: "Edit|Write|Bash"
     tier_visibility: [1, 2, 3]
     blocking: true
-    implements: [PROTO-004, PROTO-009, D2, D12, D13, D27, D28]
+    implements: [PROTO-004, PROTO-009, D2, D12, D27, D28]
+    # D13 removed 2026-04-16: dispatcher-pretool has no actual cascade check —
+    # D13 is enforced by cascade-check.sh (PostToolUse, exit 2). Coverage lie fixed.
 
   - file: policy-coverage-gate.sh
     event: PreToolUse
@@ -427,6 +431,14 @@ hooks:
     tier_visibility: [2, 3]
     blocking: false
     implements: [D11]
+
+  - file: cascade-check.sh
+    event: PostToolUse
+    matcher: "Edit|Write"
+    tier_visibility: [2, 3]
+    blocking: true
+    implements: [D13]
+    notes: "D13 HARD gate (2026-04-16). PostToolUse exit 2 — edit lands on disk but blocks assistant response until matching downstream TODO is added or CASCADE_ACK override is set."
 
 # ─── Invariants (what doctor checks on every commit) ─────────────────────────
 # Each invariant is machine-checkable. Doctor walks these; fails loud on violation.
@@ -512,6 +524,13 @@ invariants:
     enforces: [PROTO-001]
     severity: warn
     notes: "Founder-observed failure mode 2026-04-16 — agent created holding/scripts/evolution-cycle.sh despite existing docs/superpowers/specs/2026-04-05-evolution-protocol-v2.md, and holding/scripts/verify-company-deploy.sh despite existing holding/hooks/verify-os-deploy.sh. D12/PROTO-001 warned but didn't block. Phase 3: promote to hard — dispatcher greps name+keyword similarity, blocks on match without --override-duplication trailer."
+
+  - id: I-15
+    name: Cascade evidence on governance changes
+    statement: "Any edit under holding/** or sutra/layer2-operating-system/** must add a matching TODO line to a TODO.md file in the staged or unstaged diff (line starting with '+' and containing TODO plus the changed file stem/basename/relpath), or carry CASCADE_ACK=1 with CASCADE_ACK_REASON."
+    enforces: [D13]
+    severity: fail
+    notes: "Founder directive 2026-04-16 — lift D13 SOFT→HARD via I-14 ladder. Mechanism: holding/hooks/cascade-check.sh greps diff restricted to TODO.md pathspec for TODO additions referencing the changed file's stem/basename/relpath (regex-escaped); blocks (exit 2) if no evidence and no override. Scope: Asawa-runtime only — sutra/package/hooks/cascade-check.sh is empty, Phase 2 compiler ships the runtime copy to companies. Phase 3 doctor reconciles diff evidence repo-wide pre-commit."
 
   - id: I-13
     name: Portfolio deploy readiness
