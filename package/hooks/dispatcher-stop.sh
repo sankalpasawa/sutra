@@ -5,14 +5,14 @@
 # Replaces 11 individual Stop hook registrations with one shell process.
 # All advisory (exit 0 always). Runs checks sequentially, emitting all output.
 #
-# Individual scripts kept in .claude/hooks/sutra/ for reference but are no longer
+# Individual scripts kept in holding/hooks/ for reference but are no longer
 # registered as separate hooks.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 set -o pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
-HOOK_LOG="$REPO_ROOT/.claude/hooks/sutra/hook-log.jsonl"
+HOOK_LOG="$REPO_ROOT/holding/hooks/hook-log.jsonl"
 
 # Health tracking
 _HOOK_RAN=0
@@ -37,11 +37,11 @@ log_hook() {
 }
 
 # ─── 1. Session Checkpoint ────────────────────────────────────────────────────
-# Source: .claude/hooks/sutra/session-checkpoint.sh
+# Source: holding/hooks/session-checkpoint.sh
 # Saves structured session state to holding/checkpoints/
 _s1=$(date +%s)
 
-CHECKPOINT_DIR="$REPO_ROOT/checkpoints"
+CHECKPOINT_DIR="$REPO_ROOT/holding/checkpoints"
 TODAY=$(date -u +"%Y-%m-%d")
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 SHORT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "0000")
@@ -60,8 +60,8 @@ COMMIT_COUNT=$(git log --oneline HEAD~10..HEAD 2>/dev/null | wc -l | tr -d ' ')
 COMMIT_HASHES_JSON=$(git log --format='%h' HEAD~10..HEAD 2>/dev/null | \
   awk 'BEGIN{first=1} {if(!first) printf ","; first=0; printf "\n    \"%s\"", $0} END{if(NR>0) printf "\n"}')
 
-DIRECTION_COUNT=$(grep -c "^### D[0-9]" "$REPO_ROOT/FOUNDER-DIRECTIONS.md" 2>/dev/null || echo "0")
-ENFORCEMENT_COUNT=$(grep -c "^## D[0-9]" "$REPO_ROOT/DIRECTION-ENFORCEMENT.md" 2>/dev/null || echo "0")
+DIRECTION_COUNT=$(grep -c "^### D[0-9]" "$REPO_ROOT/holding/FOUNDER-DIRECTIONS.md" 2>/dev/null || echo "0")
+ENFORCEMENT_COUNT=$(grep -c "^## D[0-9]" "$REPO_ROOT/holding/DIRECTION-ENFORCEMENT.md" 2>/dev/null || echo "0")
 
 cat > "$CHECKPOINT_FILE" << CHECKPOINT
 {
@@ -104,7 +104,7 @@ echo "Show: founder contributions, LLM contributions, what shipped, what's next.
 log_hook "SessionCheckpoint" "PASS" "" "$_s1"
 
 # ─── 2. Test in Production Check (D1) ────────────────────────────────────────
-# Source: .claude/hooks/sutra/test-in-production-check.sh
+# Source: holding/hooks/test-in-production-check.sh
 _s2=$(date +%s)
 
 NEW_FILES=$(cd "$REPO_ROOT" && git diff --name-only --diff-filter=A HEAD 2>/dev/null | grep -E '^(holding|sutra)/.*\.md$')
@@ -118,7 +118,7 @@ fi
 log_hook "TestInProduction-D1" "PASS" "" "$_s2"
 
 # ─── 3. Time Allocation Tracker (D12) ────────────────────────────────────────
-# Source: .claude/hooks/sutra/time-allocation-tracker.sh
+# Source: holding/hooks/time-allocation-tracker.sh
 _s3=$(date +%s)
 
 CHANGED_FILES=$(cd "$REPO_ROOT" && git diff --name-only HEAD 2>/dev/null; cd "$REPO_ROOT" && git diff --name-only --cached 2>/dev/null)
@@ -137,7 +137,7 @@ fi
 log_hook "TimeAllocation-D12" "PASS" "" "$_s3"
 
 # ─── 4. Principle Regression (D27) ───────────────────────────────────────────
-# Source: .claude/hooks/sutra/principle-regression.sh
+# Source: holding/hooks/principle-regression.sh
 # 5 automated checks: P11 Readability, D7 Cascade, D23 Estimation, D28 Direction encoding, D22 Parallelization
 _s4=$(date +%s)
 
@@ -185,7 +185,7 @@ fi
 pr_check3_status="PASS"
 pr_check3_detail=""
 
-ESTIMATION_LOG="$REPO_ROOT/ESTIMATION-LOG.jsonl"
+ESTIMATION_LOG="$REPO_ROOT/holding/ESTIMATION-LOG.jsonl"
 AGENT_EVIDENCE=$(git log -5 --format='%s %b' 2>/dev/null | grep -iE '(agent|parallel|dispatch|subagent|concurrent)' || true)
 
 if [ -n "$AGENT_EVIDENCE" ]; then
@@ -207,8 +207,8 @@ fi
 pr_check4_status="PASS"
 pr_check4_detail=""
 
-DIRECTIONS_FILE="$REPO_ROOT/FOUNDER-DIRECTIONS.md"
-ENFORCEMENT_FILE="$REPO_ROOT/DIRECTION-ENFORCEMENT.md"
+DIRECTIONS_FILE="$REPO_ROOT/holding/FOUNDER-DIRECTIONS.md"
+ENFORCEMENT_FILE="$REPO_ROOT/holding/DIRECTION-ENFORCEMENT.md"
 
 if [ -f "$DIRECTIONS_FILE" ] && [ -f "$ENFORCEMENT_FILE" ]; then
   DIR_COUNT_D=$(grep -cE '^### D[0-9]+' "$DIRECTIONS_FILE" 2>/dev/null || echo "0")
@@ -303,7 +303,7 @@ else
 fi
 
 # ─── 5. Principle Regression Tests Suite ─────────────────────────────────────
-# Source: .claude/hooks/sutra/principle-regression-tests.sh
+# Source: holding/hooks/principle-regression-tests.sh
 # 7 standalone checks: D1, D5, D6, D10, D12, D13, VER
 _s5=$(date +%s)
 
@@ -362,7 +362,7 @@ else
 fi
 
 # D10: Test in Production — no protocol UNTESTED >7 days
-TIP_FILE="$REPO_ROOT/TEST-IN-PRODUCTION.md"
+TIP_FILE="$REPO_ROOT/holding/TEST-IN-PRODUCTION.md"
 D10_OK=true
 if [ -f "$TIP_FILE" ]; then
   SEVEN_DAYS_AGO=$(date -v-7d +%Y-%m-%d 2>/dev/null || date -d '7 days ago' +%Y-%m-%d 2>/dev/null)
@@ -383,7 +383,7 @@ else
 fi
 
 # D12: Architecture Awareness — SYSTEM-MAP.md freshness
-SYSMAP="$REPO_ROOT/SYSTEM-MAP.md"
+SYSMAP="$REPO_ROOT/holding/SYSTEM-MAP.md"
 if [ -f "$SYSMAP" ]; then
   if [[ "$(uname)" == "Darwin" ]]; then
     LAST_MOD=$(stat -f %m "$SYSMAP" 2>/dev/null)
@@ -454,7 +454,7 @@ else
 fi
 
 # ─── 6. Lifecycle Coverage Check (D3) ────────────────────────────────────────
-# Source: .claude/hooks/sutra/lifecycle-check.sh
+# Source: holding/hooks/lifecycle-check.sh
 _s6=$(date +%s)
 
 SINCE_LC=$(date -v-4H +"%Y-%m-%dT%H:%M:%S" 2>/dev/null || date -d '4 hours ago' +"%Y-%m-%dT%H:%M:%S" 2>/dev/null)
@@ -557,7 +557,7 @@ else
 fi
 
 # ─── 7. Auto-push Warning ────────────────────────────────────────────────────
-# Source: .claude/hooks/sutra/auto-push.sh
+# Source: holding/hooks/auto-push.sh
 _s7=$(date +%s)
 
 warnings=""
@@ -608,7 +608,7 @@ else
 fi
 
 # ─── 8. KPI Tracker ──────────────────────────────────────────────────────────
-# Source: .claude/hooks/sutra/kpi-tracker.sh
+# Source: holding/hooks/kpi-tracker.sh
 _s8=$(date +%s)
 
 BASELINE_FILES=136
@@ -622,7 +622,7 @@ else
   C_SIGN_KPI=""
 fi
 
-KPI_LOG_FILE="$REPO_ROOT/ESTIMATION-LOG.jsonl"
+KPI_LOG_FILE="$REPO_ROOT/holding/ESTIMATION-LOG.jsonl"
 A_DISPLAY_KPI="N/A"
 A_DELTA_DISPLAY_KPI="no data"
 
@@ -668,7 +668,7 @@ else
 fi
 
 # ─── 9. Cascade Check (D7) ───────────────────────────────────────────────────
-# Source: .claude/hooks/sutra/cascade-check.sh
+# Source: holding/hooks/cascade-check.sh
 # Note: This is the PostToolUse version repurposed as Stop check.
 # Checks if L0-L2 files changed and reminds about downstream.
 
@@ -677,7 +677,7 @@ _s9=$(date +%s)
 log_hook "CascadeCheck-D7" "PASS" "" "$_s9"
 
 # ─── 10. Process Fix Check (D2) ──────────────────────────────────────────────
-# Source: .claude/hooks/sutra/process-fix-check.sh
+# Source: holding/hooks/process-fix-check.sh
 _s10=$(date +%s)
 
 LAST_MSG_PF=$(cd "$REPO_ROOT" && git log -1 --oneline 2>/dev/null)
@@ -691,7 +691,7 @@ fi
 log_hook "ProcessFixCheck-D2" "PASS" "" "$_s10"
 
 # ─── 11. Context Budget Check ────────────────────────────────────────────────
-# Source: .claude/hooks/sutra/context-budget-check.sh
+# Source: holding/hooks/context-budget-check.sh
 _s11=$(date +%s)
 
 TRANSCRIPT="${CLAUDE_TRANSCRIPT:-}"

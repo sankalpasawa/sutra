@@ -1,26 +1,38 @@
 #!/usr/bin/env node
 /**
- * Sutra Compiler (Phase 2 MVP — dry-run)
+ * Sutra Compiler (Phase 2)
  *
  * Reads sutra/state/system.yaml (the source of truth) and reports divergence
- * between the declared hooks[] and what actually exists on disk in:
+ * between the declared hooks[] and what exists on disk in:
  *   - sutra/package/hooks/     (the shippable bundle — what install.mjs copies)
- *   - holding/hooks/           (the Asawa-local live copy — current runtime)
+ *   - holding/hooks/           (the Asawa-canonical live copy — runtime source)
  *   - sutra/package/templates/settings.json (hook registration for companies)
  *
- * Dry-run only. Does NOT write files. Next chunks will add actual emission:
- *   - copy holding/hooks/<file> → sutra/package/hooks/<file>
- *   - synthesize settings.json from state.hooks[]
- *   - emit CLAUDE.md sections (DEPTH, INPUT ROUTING, etc.) from yaml
+ * Two modes:
+ *   default       dry-run divergence report. Does NOT write files.
+ *   --emit        reconcile sutra/package/hooks/<file> from the canonical
+ *                 holding/hooks/<file> live copy. Idempotent (skips when
+ *                 hashes already match). Only emits from holding/hooks/ —
+ *                 never from .claude/hooks/ (those are runtime-specific,
+ *                 not shippable).
+ *
+ * Best-practice guards:
+ *   - opt-in write (--emit required to modify anything)
+ *   - idempotent (no-op when pkg hash == live hash)
+ *   - canonical source only (refuses to emit from .claude/hooks/)
+ *   - preserves executable bit (chmod 0o755 on written hooks)
+ *   - strict mode: --strict exits 1 if any divergence remains post-emit
  *
  * Usage:
- *   node sutra/package/bin/compile.mjs           # dry-run divergence report
- *   node sutra/package/bin/compile.mjs --strict  # exit 1 if any divergence
+ *   node sutra/package/bin/compile.mjs              # dry-run report
+ *   node sutra/package/bin/compile.mjs --emit       # write package hooks
+ *   node sutra/package/bin/compile.mjs --emit --strict
  *
  * Phase 2 D-3 note: compiler obsoletes PROTO-018 auto-propagation (disabled).
+ * Next chunks: settings.json emission + CLAUDE.md section emission.
  */
 
-import { readFileSync, existsSync, statSync } from 'fs';
+import { readFileSync, existsSync, statSync, writeFileSync, chmodSync, mkdirSync } from 'fs';
 import { createHash } from 'crypto';
 import { execSync } from 'child_process';
 import { join, dirname } from 'path';
@@ -53,6 +65,7 @@ if (!existsSync(statePath)) {
   process.exit(1);
 }
 const strict = process.argv.includes('--strict');
+const emit = process.argv.includes('--emit');
 
 // Reuse the minimal YAML parser by spawning validate.mjs? Simpler: inline a
 // small parse of the fields we need (hooks:, protocols:, directions:). We only
@@ -217,6 +230,49 @@ for (const h of hooks) {
 console.log('─'.repeat(96));
 console.log(`Divergences: ${divergences}/${hooks.length}`);
 console.log('');
+
+// ─── Emission phase (opt-in via --emit) ───────────────────────────────────
+// Writes live canonical hook content to sutra/package/hooks/<file>. Only
+// emits from holding/hooks/ (Asawa-canonical); refuses .claude/hooks/
+// sources (runtime-specific, not shippable). Idempotent.
+if (emit) {
+  console.log('Emission phase (--emit):');
+  console.log('─'.repeat(96));
+  const holdingPrefix = join(repoRoot, 'holding/hooks');
+  let wrote = 0, skippedIdentical = 0, skippedNonCanonical = 0, skippedNoLive = 0;
+  for (const h of hooks) {
+    const pkgPath = join(repoRoot, 'sutra/package/hooks', h.file);
+    const live = findLiveHook(repoRoot, h.file);
+    if (!live.path) {
+      console.log(`  SKIP  ${h.file.padEnd(32)} — no non-empty live copy found`);
+      skippedNoLive++;
+      continue;
+    }
+    if (!live.path.startsWith(holdingPrefix)) {
+      console.log(`  SKIP  ${h.file.padEnd(32)} — live copy is not canonical (found at ${live.path.replace(repoRoot + '/', '')})`);
+      skippedNonCanonical++;
+      continue;
+    }
+    const pkgHash = hashOf(pkgPath);
+    const liveHash = hashOf(live.path);
+    if (pkgHash && liveHash && pkgHash === liveHash) {
+      skippedIdentical++;
+      continue; // no-op, already in sync
+    }
+    // Write live → pkg
+    const content = readFileSync(live.path);
+    try { mkdirSync(dirname(pkgPath), { recursive: true }); } catch {}
+    writeFileSync(pkgPath, content);
+    try { chmodSync(pkgPath, 0o755); } catch {}
+    const newHash = hashOf(pkgPath);
+    console.log(`  WRITE ${h.file.padEnd(32)} ${pkgHash || 'null'} → ${newHash}`);
+    wrote++;
+  }
+  console.log('─'.repeat(96));
+  console.log(`Emitted: ${wrote} written, ${skippedIdentical} already in sync, ${skippedNonCanonical} non-canonical, ${skippedNoLive} no live source.`);
+  console.log('');
+}
+
 console.log('Legend:');
 console.log('  PKG_EMPTY       sutra/package/hooks/<file> is 0 bytes (no shippable content)');
 console.log('  PKG_MISSING     sutra/package/hooks/<file> does not exist');

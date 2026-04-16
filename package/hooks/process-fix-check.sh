@@ -9,6 +9,9 @@ if [ -z "$REPO_ROOT" ]; then
   exit 0
 fi
 
+# Claude Code stdin-JSON drain (prevents indefinite wait on piped input).
+[ ! -t 0 ] && cat > /dev/null 2>&1 || true
+
 # Check the most recent commit message for fix-related words
 LAST_MSG=$(cd "$REPO_ROOT" && git log -1 --oneline 2>/dev/null)
 
