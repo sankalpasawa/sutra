@@ -492,6 +492,20 @@ invariants:
     enforces: [D28]
     severity: fail
 
+  - id: I-11
+    name: Codex review on every significant change
+    statement: "Before every commit touching code/hooks/governance, a codex review has been run within the last 10 minutes. Soft today (warn), hard in Phase 3 when gate is scripted."
+    enforces: [PROTO-000, PROTO-015]
+    severity: warn
+    notes: "Founder directive 2026-04-16: codex review is a core feature of every change in Asawa/Sutra/companies. Wired as pre-commit SOFT warn. Marker: .enforcement/codex-reviews/.last-review."
+
+  - id: I-12
+    name: Daily test framework run
+    statement: "run-tests.mjs executes at least once per 24h via scheduled agent; results go to .enforcement/test-history.log."
+    enforces: [PROTO-017]
+    severity: warn
+    notes: "Founder directive 2026-04-16: daily cadence via codex-driven cron."
+
 # ─── Companies (snapshot of current portfolio for compiler targeting) ────────
 companies:
   - id: dayflow
