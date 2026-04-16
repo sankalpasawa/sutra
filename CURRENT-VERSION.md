@@ -45,15 +45,21 @@
 
 ## Client Registry
 
-| # | Company | Pinned to | Status |
-|---|---------|-----------|--------|
-| 1 | DayFlow | v1.8 | Running. Coverage engine deployed. |
-| 2 | PPR | v1.7 | Deploying. Depth system + engines + version check. |
-| 3 | Maze | v1.7 | Deploying. Depth system + engine upgrade + version check. |
-| 4 | Jarvis | v1.3.1 | Onboarded. Upgrade pending. |
-| 5 | Paisa | v1.7 | Deploying. Depth system + engines + version check. |
-| 6 | Asawa | v1.8 | Meta-client. Running latest as governance layer. |
-| 7 | Dharmik | v1.8 | External client. Coverage engine deployed + tested (100% on 2 tasks). |
+Reconciled 2026-04-17 against on-disk state (see sutra/feedback-to-holding/2026-04-17-v1.9-propagation-gaps.md for the holding-scope bugs this reconciliation surfaced).
+
+Status vocabulary: `IN-SYNC` (all artifacts at pinned) · `PARTIAL` (SUTRA-VERSION bumped but v1.9 artifacts missing) · `STALE` (pinned behind current) · `GHOST` (registry row exists but no on-disk directory).
+
+| # | Company | Pinned to | Tier | Status |
+|---|---------|-----------|------|--------|
+| 1 | DayFlow | v1.9 | 2 | IN-SYNC — MANIFEST-v1.9 + POLICY-COVERAGE on disk. CLAUDE.md/SUTRA-VERSION/SUTRA-CONFIG all v1.9. |
+| 2 | PPR | v1.9 | 2 | PARTIAL — SUTRA-VERSION=v1.9 but CLAUDE.md=v1.7; MANIFEST-v1.9 + POLICY-COVERAGE not on disk. Needs upgrade-clients.sh ppr. |
+| 3 | Maze | v1.9 | 2 | PARTIAL — SUTRA-VERSION=v1.9 but CLAUDE.md=v1.7; MANIFEST-v1.9 + POLICY-COVERAGE not on disk. Needs upgrade-clients.sh maze. |
+| 4 | Jarvis | v1.3.1 | 2 | GHOST — no on-disk dir at asawa-holding/jarvis. Either onboard or remove row. |
+| 5 | Paisa | v1.4 | 2 | STALE — SUTRA-VERSION=v1.4, CLAUDE.md=v1.7 (internal disagreement). Full re-upgrade required. |
+| 6 | Asawa | v1.8 | 1 | STALE — holding CLAUDE.md declares v1.8; MANIFEST target is v1.9. |
+| 7 | Dharmik | v1.8 | 2 | GHOST — external client, no on-disk dir at asawa-holding/dharmik. Row reflects last known. |
+| 8 | Billu | v1.9 | 1 | IN-SYNC at tier-1 scope. CLAUDE.md/SUTRA-VERSION=v1.9. MANIFEST + POLICY-COVERAGE not required at tier 1. |
+| 9 | Sutra | v1.9 | 3 | SELF-HOSTED. Governance + platform. POLICY-COVERAGE.md = sutra/layer2-operating-system/POLICY-COVERAGE.md (canonical). |
 
 ## Release Model
 
