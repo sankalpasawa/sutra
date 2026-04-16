@@ -41,23 +41,77 @@ if (!existsSync(join(REPO_ROOT, 'holding')) && existsSync(join(REPO_ROOT, '..', 
 }
 export { REPO_ROOT };
 
-// ─── Hook file resolution — prefer the SHIPPED bundle over legacy holding/ ───
-// Codex P1 2026-04-16: if both exist, they can drift. The shipped bundle in
-// sutra/package/hooks is the canonical source (what system.yaml declares).
-// holding/hooks/ is legacy sources; kept last for backward compat.
-const HOOK_PATHS = [
-  'sutra/package/hooks',
-  '.claude/hooks/sutra',
-  'package/hooks',
-  'holding/hooks',  // last — legacy, only when nothing else found
+// ─── Hook file resolution — codex P1 round 2 (2026-04-16) ──────────────────
+// The test must validate the hook that the runtime actually invokes. Read
+// .claude/settings.json and derive the search root from its command strings.
+// Fall back to a layered search when settings don't exist.
+//
+// Also: detect drift between copies and fail loudly if they diverge.
+const DEFAULT_HOOK_PATHS = [
+  'holding/hooks',         // what .claude/settings.json in holding invokes today
+  'sutra/package/hooks',   // shipping source (companies install from here)
+  '.claude/hooks/sutra',   // installed in company sessions
+  'package/hooks',         // standalone sutra checkout
 ];
 
+function readSettings() {
+  const settingsPath = join(REPO_ROOT, '.claude/settings.json');
+  if (!existsSync(settingsPath)) return null;
+  try { return JSON.parse(readFileSync(settingsPath, 'utf8')); } catch (e) { return null; }
+}
+
+function hookRootFromSettings() {
+  const s = readSettings();
+  if (!s?.hooks) return null;
+  for (const event of Object.values(s.hooks)) {
+    for (const rule of event) {
+      for (const h of rule.hooks || []) {
+        const m = (h.command || '').match(/bash\s+([^\s]+\/hooks(?:\/[^\s/]+)?)\/[^\s]+\.sh/);
+        if (m) return m[1];  // e.g., "holding/hooks"
+      }
+    }
+  }
+  return null;
+}
+
 export function resolveHook(hookFile) {
-  for (const p of HOOK_PATHS) {
+  // Priority 1: whatever .claude/settings.json actually invokes
+  const runtimeRoot = hookRootFromSettings();
+  const orderedPaths = runtimeRoot
+    ? [runtimeRoot, ...DEFAULT_HOOK_PATHS.filter(p => p !== runtimeRoot)]
+    : DEFAULT_HOOK_PATHS;
+  for (const p of orderedPaths) {
     const full = join(REPO_ROOT, p, hookFile);
     if (existsSync(full)) return full;
   }
   return null;
+}
+
+// Drift detector — reports hook files that exist in multiple trees but differ.
+export function detectHookDrift() {
+  const seen = new Map();  // hookFile -> { path, content }[]
+  for (const p of DEFAULT_HOOK_PATHS) {
+    const dir = join(REPO_ROOT, p);
+    if (!existsSync(dir)) continue;
+    const files = execSync(`ls "${dir}" 2>/dev/null || true`, { encoding: 'utf8' }).split('\n').filter(f => f.endsWith('.sh'));
+    for (const f of files) {
+      const full = join(dir, f);
+      if (!existsSync(full) || !statSync(full).isFile()) continue;
+      const content = readFileSync(full, 'utf8');
+      if (!seen.has(f)) seen.set(f, []);
+      seen.get(f).push({ path: p, content });
+    }
+  }
+  const drift = [];
+  for (const [file, copies] of seen) {
+    if (copies.length < 2) continue;
+    const first = copies[0].content;
+    const differs = copies.filter(c => c.content !== first);
+    if (differs.length > 0) {
+      drift.push({ file, paths: copies.map(c => c.path) });
+    }
+  }
+  return drift;
 }
 
 // ─── Marker lifecycle ────────────────────────────────────────────────────────

@@ -198,10 +198,13 @@ function runAutoHookTest(rule, hookForRule) {
         results.push(testResult(`${ruleId} (auto)`, false, e.message));
       }
     } else {
-      // Soft rules: just assert hook runs without crashing
+      // Soft rules without rule-specific block/allow assertions: we can only
+      // prove the hook is invokable, NOT that its logic catches violations.
+      // Codex P2 2026-04-16: mark these PARTIAL, not GREEN — don't false-green
+      // hard rules whose mechanism-specific branch was never exercised.
       try {
         assertAllowed(pos);
-        results.push(testResult(`${ruleId} (auto)`, true, 'hook invokable'));
+        results.push(testResult(`${ruleId} (auto)`, true, 'PARTIAL: hook invokable only; rule-specific logic not exercised'));
       } catch (e) {
         results.push(testResult(`${ruleId} (auto)`, false, e.message));
       }
@@ -277,11 +280,13 @@ for (const rule of active) {
   const enforcement = rule.enforcement || 'unknown';
   const scope = rule.scope || '';
   const isSkipped = covered?.details.includes('skipped');
+  const isPartial = covered?.details.includes('PARTIAL');
   let status;
   if (!covered) status = 'UNCOVERED';
   else if (isSkipped) status = 'UNCOVERED';
-  else if (covered.passed) status = 'GREEN';
-  else status = 'RED';
+  else if (!covered.passed) status = 'RED';
+  else if (isPartial) status = 'PARTIAL';
+  else status = 'GREEN';
   coverage.push({
     id: rule.id,
     enforcement,
