@@ -23,7 +23,7 @@ if [ -z "$FILE_PATH" ]; then
 fi
 
 # Resolve repo root
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
 
 # Role resolution — fail CLOSED if we can't determine safely (R4 fix, 2026-04-15).
 # Priority: env ACTIVE_ROLE → .claude/active-role file → repo-root inference → BLOCK.

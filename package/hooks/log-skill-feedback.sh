@@ -5,7 +5,7 @@
 SKILL="${1:?Usage: log-skill-feedback.sh <skill> <effective|ineffective> <note> [project_dir]}"
 OUTCOME="${2:?Usage: log-skill-feedback.sh <skill> <effective|ineffective> <note> [project_dir]}"
 NOTE="${3:-}"
-PROJECT_DIR="${4:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
+PROJECT_DIR="${4:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}}"
 LOG_DIR="$PROJECT_DIR/os/engines"
 LOG_FILE="$LOG_DIR/skill-feedback.jsonl"
 mkdir -p "$LOG_DIR"

@@ -31,7 +31,7 @@ if [ -z "$FILE_PATH" ]; then
 fi
 
 # Resolve repo-relative bits for grep + logging
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo "")}"
 REL_PATH="${FILE_PATH#$REPO_ROOT/}"
 BASE="$(basename "$FILE_PATH")"
 STEM="${BASE%.*}"

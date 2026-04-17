@@ -3,7 +3,7 @@
 # founder prompt requires a fresh Input Routing block + Depth block.
 # Root cause fix for 2026-04-15 miss: markers were session-scoped, not turn-scoped.
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
 cd "$REPO_ROOT" || exit 0
 
 rm -f .claude/input-routed \

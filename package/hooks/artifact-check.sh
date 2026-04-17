@@ -25,7 +25,7 @@ if [ "$IS_COMPLETION" = false ]; then
 fi
 
 # ─── Find repo root ────────────────────────────────────────────────────
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 if [ -z "$REPO_ROOT" ]; then
   exit 0
 fi

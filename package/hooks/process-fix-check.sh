@@ -4,7 +4,7 @@
 # Enforcement: SOFT (reminder, exit 0 always)
 # If recent commit message contains fix/bug/patch/hotfix, remind to fix the process too.
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 if [ -z "$REPO_ROOT" ]; then
   exit 0
 fi

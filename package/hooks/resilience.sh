@@ -6,7 +6,7 @@
 
 HOOK_NAME="${1:?Usage: resilience.sh <hook_name> <pass|warn> [project_dir]}"
 STATUS="${2:?Usage: resilience.sh <hook_name> <pass|warn> [project_dir]}"
-PROJECT_DIR="${3:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
+PROJECT_DIR="${3:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}}"
 
 STATE_DIR="$PROJECT_DIR/.claude/state"
 STATE_FILE="$STATE_DIR/hook-failures.json"

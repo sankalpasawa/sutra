@@ -4,7 +4,7 @@
 # Enforcement: AUDIT (informational, exit 0 always)
 # Count files edited during session by category and report the split.
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 if [ -z "$REPO_ROOT" ]; then
   exit 0
 fi

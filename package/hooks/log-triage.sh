@@ -6,7 +6,7 @@ DEPTH_SELECTED="${1:?Usage: log-triage.sh <depth_selected> <depth_correct> <clas
 DEPTH_CORRECT="${2:?Usage: log-triage.sh <depth_selected> <depth_correct> <class> [task] [project_dir]}"
 CLASS="${3:?Usage: log-triage.sh <depth_selected> <depth_correct> <class> [task] [project_dir]}"
 TASK_DESC="${4:-unspecified}"
-PROJECT_DIR="${5:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
+PROJECT_DIR="${5:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}}"
 LOG_DIR="$PROJECT_DIR/os/engines"
 LOG_FILE="$LOG_DIR/triage-log.jsonl"
 mkdir -p "$LOG_DIR"

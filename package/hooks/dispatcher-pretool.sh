@@ -10,7 +10,7 @@
 # registered as separate hooks.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
 HOOK_LOG="$REPO_ROOT/holding/hooks/hook-log.jsonl"
 FILE_PATH="$TOOL_INPUT_file_path"
 TOOL_NAME="${TOOL_NAME:-}"  # "Edit" or "Write"
