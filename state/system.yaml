@@ -18,7 +18,7 @@ meta:
   decisions: holding/DECISIONS.md
   caps:
     protocols_active_max: 8   # Phase 0 D-3
-    directions_active_max: 19 # bumped 2026-04-16 (founder directive) to admit D29 "Chunk LLM Delegations"; see DECISIONS.md row "Scope/D29"
+    directions_active_max: 20 # bumped 2026-04-17 (founder directive "go ahead") to admit D30 "Policy Ships With Mechanism"; closes billu/os/feedback-to-sutra/2026-04-15-policy-without-mechanism-rca.md
 
 # ─── Tiers (per Phase 0 D-3, D-9) ─────────────────────────────────────────────
 # Each tier picks which hooks ship and whether OS core copies into target.
@@ -313,6 +313,15 @@ directions:
       upgrade_to_hard_at: phase-3
       mechanism: agent-behavior directive (current); Phase 3 doctor adds pre-dispatch size lint
       summary: Any task delegated to an external LLM (codex review/consult/challenge, sub-agent dispatch, managed agent) must fit within ~5 minutes server-side. Pre-plan chunking; if a review would need deep reasoning over many files, split the underlying task into smaller chunks each with its own review. If a dispatched review times out or exceeds budget, kill it and retry with smaller chunks — don't wait longer. Applies to Claude↔Codex loops, Claude↔Claude sub-agents, and any network-bound LLM call. Founder directive 2026-04-16 after 15-min PROTO-004 review stalled. Abstraction-level rule about how Sutra deals with LLMs; ships with Sutra to every company.
+
+    - id: D30
+      name: Policy Ships With Mechanism
+      status: active
+      enforcement: soft
+      upgrade_to_hard_at: phase-3
+      mechanism: holding/hooks/policy-only-sensor.sh (Stop event + on-demand); extends D13 cascade
+      test: sutra/package/tests/test-d30-policy-only-sensor.sh
+      summary: A T1/HARD principle is not shipped until all four hold — (1) hook file exists at target location, (2) hook registered in the correct settings.json, (3) hook fires on a real call (one test invocation verifies), (4) hook logs to designated audit trail. Until all four hold, the principle is marked `POLICY-ONLY since YYYY-MM-DD` in holding/DIRECTION-ENFORCEMENT.md. Sensor grep for POLICY-ONLY entries older than window (default 7d) — escalates to CEO of Asawa. Cascade rule (extends D13) — when a T1 hook ships at a parent layer (Asawa/holding), sibling/child layers (Sutra companies, billu) must receive the hook or record `INHERIT-FROM: {path}` in their settings before the parent ship is considered complete. Founder directive 2026-04-17 accepting D30 candidate from billu/os/feedback-to-sutra/2026-04-15-policy-without-mechanism-rca.md. Closes the "write policy, hope LLM complies" failure mode at the framework level.
 
   ergonomics:
     - id: D16
