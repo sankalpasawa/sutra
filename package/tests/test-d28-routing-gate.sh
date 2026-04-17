@@ -67,6 +67,10 @@ fi
 
 echo ""
 echo "=== D27 regression — Sutra→company edit passes with depth-5 marker ==="
+# 2026-04-17: depth-registered must also carry DEPTH=5 for sutra/ paths now
+# that the dispatcher reads marker values (presence→value upgrade).
+# Synced from holding/hooks/tests/test-d28-routing-gate.sh.
+echo "DEPTH=5 TASK=d27-regression TS=$(date +%s)" > .claude/depth-registered
 echo $(date +%s) > .claude/sutra-deploy-depth5
 TOOL_NAME=Edit TOOL_INPUT_file_path="$REPO_ROOT/sutra/os/anything.md" \
   bash holding/hooks/dispatcher-pretool.sh >/tmp/d28-test.out 2>&1

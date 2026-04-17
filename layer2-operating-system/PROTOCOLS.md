@@ -2,32 +2,46 @@
 
 Executable rules compiled from Asawa + Sutra principles. Every protocol has: trigger, check, enforcement, origin.
 
+<!-- GEN:PROTOCOL-INDEX:START -->
 ## Protocol Index
 
-| ID | Name | Type | Enf. | Status | Mechanism |
-|----|------|------|------|--------|-----------|
-| PROTO-000 | Every Change Ships With Implementation | Constitutional | HARD | SHIPPED | memory |
-| PROTO-001 | Structure Before Creation | Convergent | SOFT | SHIPPED | dispatcher check 4 |
-| PROTO-002 | Wait for Parallel Completion | Constitutional | HARD | SHIPPED | agent-completion-check.sh |
-| PROTO-003 | Free Tier First | Constitutional | HARD | SHIPPED | onboarding review (advisory) |
-| PROTO-004 | Keys in Env Vars Only | Constitutional | HARD | SHIPPED | dispatcher check 5 + DayFlow hook |
-| PROTO-005 | Self-Assess Before Foundational Work | Constitutional | SOFT | SHIPPED | dispatcher check 6 + DayFlow hook |
-| PROTO-006 | Process Discipline | Constitutional | HARD | SHIPPED | dispatcher check 7 + depth system |
-| PROTO-007 | One Metric Per Feature | Federal | SOFT | SHIPPED | CLAUDE.md MEASURE phase |
-| PROTO-008 | Follow the Sprint Sequence | Federal | SOFT | SHIPPED | CLAUDE.md depth assessment |
-| PROTO-009 | Narration Is Not Artifact | Constitutional | HARD | SHIPPED | dispatcher check 8 + DayFlow hook |
-| PROTO-010 | Version Focus | Constitutional | HARD | SHIPPED | session-start file loading |
-| PROTO-011 | Company Independence | Constitutional | HARD | SHIPPED | boundary hooks (exit 2) |
-| PROTO-012 | Ownership Model | Convergent | SOFT | SHIPPED | advisory (session start) |
-| PROTO-013 | Sutra Version Deploy | Federal | SOFT | SHIPPED | verify-os-deploy.sh + manual |
-| PROTO-014 | Sutra Version Check | Federal | SOFT | SHIPPED | all companies CLAUDE.md |
-| PROTO-015 | Verify Before Commit | Constitutional | HARD | SHIPPED | memory + proportional checks |
-| PROTO-016 | Root Cause on Founder Correction | Constitutional | HARD | SHIPPED | memory |
-| PROTO-017 | Policy-to-Implementation Coverage | Constitutional | HARD | SHIPPED | policy-coverage-gate.sh + verify-policy-coverage.sh |
-| PROTO-018 | Auto-Propagation on Version Bump | Federal | HARD | SHIPPED | upgrade-clients.sh (triggered by CURRENT-VERSION.md change) |
-| PROTO-019 | External Peer Review (Codex) on Portfolio Changes | Constitutional | HARD | SHIPPED | codex-review-gate.sh + /codex skill invocation |
+> WARNING: GENERATED section — source of truth is `sutra/state/system.yaml`.
+> Hand-edits below the INDEX table may be overwritten on next reconcile.
+> Regenerate: `node sutra/package/bin/gen-protocols-md.mjs`
+>
+> Prose sections below the INDEX are historical record. RETIRED/ABSORBED
+> protocols are marked inline but not deleted — they document what once
+> shipped and why the system moved past them.
 
-Types: **Constitutional** (Asawa-locked, no override) | **Federal** (Sutra, override within bounds) | **Convergent** (both, rule locked, method flexible)
+_Last reconciled from system.yaml: **2026-04-15** · 20 protocols total_
+
+| ID | Name | yaml_status | enforcement | mechanism | test | last_updated |
+|----|------|-------------|-------------|-----------|------|--------------|
+| PROTO-000 | Every Change Must Ship With Implementation | ACTIVE | SOFT | validate.mjs inverse coverage + test runner (current); doct… | — | 2026-04-15 |
+| PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/dispatcher-pretool.sh Check 5 (PreToolUse exi… | sutra/package/tests/test-d28-routing-gate.sh | 2026-04-15 |
+| PROTO-006 | Process Discipline | ACTIVE | SOFT | CLAUDE.md + dispatcher routing check | — | 2026-04-15 |
+| PROTO-009 | Narration Is Not Artifact | ACTIVE | SOFT | dispatcher-pretool.sh | — | 2026-04-15 |
+| PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | D27 depth-5 gate (current); compiler upgrades this in Phase… | — | 2026-04-15 |
+| PROTO-014 | Sutra Version Check (Client-Side) | ACTIVE | SOFT | CLAUDE.md session-start check + .claude/sutra-version manif… | — | 2026-04-15 |
+| PROTO-015 | Verify Before Commit | ACTIVE | SOFT | agent behavior + estimation-enforcement.sh (current); pre-c… | — | 2026-04-15 |
+| PROTO-017 | Policy-to-Implementation Coverage | ACTIVE | SOFT | validate.mjs inverse coverage check (current); reconciler/d… | — | 2026-04-15 |
+| PROTO-001 | Structure Before Creation | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-002 | Wait for Parallel Completion | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-003 | Free Tier First | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-005 | Self-Assess Before Foundational Work | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-007 | One Metric Per Feature | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-008 | Follow the Sprint Sequence | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-010 | Version Focus | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-011 | Company Independence | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-012 | Ownership Model | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-016 | Root Cause on Founder Correction | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-018 | Auto-Propagation on Version Bump | RETIRED | — | — | — | 2026-04-15 |
+| PROTO-019 | External Peer Review on Portfolio Changes | ABSORBED | — | — | — | 2026-04-15 |
+
+**Status legend**: ACTIVE = shipped and enforced per mechanism · RETIRED = removed, see `reason` in system.yaml · ABSORBED = folded into another protocol (see pointer below)
+
+**Enforcement legend**: HARD = blocking hook (exit 2 on violation) · SOFT = advisory / agent-behavior
+<!-- GEN:PROTOCOL-INDEX:END -->
 
 ---
 
@@ -95,7 +109,8 @@ origin: 2026-04-06. Session created 7 protocols, most without
         requiring implementation alongside documentation.
 ```
 
-### PROTO-001: Structure Before Creation
+### PROTO-001: Structure Before Creation [RETIRED]
+_yaml status: retired — absorbed into reconciler invariant I-6 (no orphan files). See `sutra/state/system.yaml`._
 ```
 convergent | [Asawa P3, Sutra P5] | SOFT
 trigger: New dir/file at org level
@@ -103,7 +118,8 @@ check:   SYSTEM-MAP.md — content has a home? → put it there. No? → documen
 origin:  Maze onboard 2026-04-04. Agent created shared/ without checking holding/.
 ```
 
-### PROTO-002: Wait for Parallel Completion
+### PROTO-002: Wait for Parallel Completion [RETIRED]
+_yaml status: retired — agent-execution concern, not a system invariant. Handled by TaskCreate/TaskGet in runtime._
 ```
 constitutional | [Asawa P8] | HARD
 implements: P8 (holding/PRINCIPLES.md)
@@ -114,7 +130,8 @@ origin:  Maze HOD 2026-04-04. Orchestrator wrote report over 3 running agents �
          Dharmik SEO audit 2026-04-07. Orchestrator compiled before 4 agents returned — incomplete JS analysis.
 ```
 
-### PROTO-003: Free Tier First
+### PROTO-003: Free Tier First [RETIRED]
+_yaml status: retired — business heuristic, not a runtime invariant (codex: "business heuristics should not be in kernel")._
 ```
 constitutional | [Asawa cost, Sutra P5] | HARD
 trigger: Selecting service/provider/infra
@@ -130,7 +147,8 @@ check:   In env var? → proceed. No? → BLOCK, move to env var.
 origin:  Founding principle. No key ever committed to code.
 ```
 
-### PROTO-005: Self-Assess Before Foundational Work
+### PROTO-005: Self-Assess Before Foundational Work [RETIRED]
+_yaml status: retired — subsumed by depth system (D2, D26). Depth 5 already requires self-assessment._
 ```
 constitutional | [Asawa HUMAN-AI P3] | SOFT
 trigger: Creating/modifying foundational doc (DESIGN, ARCHITECTURE, FRAMEWORK…)
@@ -148,7 +166,8 @@ origin:  HUMAN-AI P2+P5. Process exists because someone learned the hard way. St
 ```
 _Merged from: PROTO-006 (Process Is Default) + PROTO-007 (Escalate Before Violating)_
 
-### PROTO-007: One Metric Per Feature
+### PROTO-007: One Metric Per Feature [RETIRED]
+_yaml status: retired — product discipline, moves to IDEA-SHAPING.md (Phase 5). Not a runtime invariant._
 ```
 federal | [Sutra P3] | SOFT
 trigger: Shipping a feature
@@ -156,7 +175,8 @@ check:   Metric defined? → ship. No? → define metric first.
 origin:  Sutra model. Every action must produce a measurable signal.
 ```
 
-### PROTO-008: Follow the Sprint Sequence
+### PROTO-008: Follow the Sprint Sequence [RETIRED]
+_yaml status: retired — project-management protocol, not OS enforcement. v1 is deploy/verify/upgrade, not PM._
 ```
 federal | [Sutra P1, P7] | SOFT
 trigger: Agent done with task, picking next
@@ -172,7 +192,8 @@ check:   FILE on disk for each stage? → complete. No? → write artifact FIRST
 origin:  Maze 2026-04-04. Zero artifacts on disk for 2 features. 28 FAILs on audit.
 ```
 
-### PROTO-010: Version Focus
+### PROTO-010: Version Focus [RETIRED]
+_yaml status: retired — subsumed by PROTO-013 (Sutra Version Deploy) + PROTO-014 (Client-Side Version Check)._
 ```
 constitutional | [Asawa founder, Sutra P5] | HARD
 trigger: File grows unboundedly (history, versions, archives)
@@ -181,7 +202,8 @@ naming:  current="{NAME}.md" | history="{NAME}-HISTORY.md"
 origin:  Founder 2026-04-06 — "Only focus on current versions."
 ```
 
-### PROTO-011: Company Independence
+### PROTO-011: Company Independence [RETIRED]
+_yaml status: retired — absorbed by boundary hook (R4 fail-closed) + tier model. Mechanism is live; separate protocol isn't needed._
 ```
 constitutional | [Asawa governance, Tiny model, CSI model] | HARD
 trigger: Proposal to share customers/products between companies OR holding co/OS making product decisions for a client
@@ -191,7 +213,8 @@ origin:  Andrew Wilkinson (Tiny): "Synergies make CEOs resentful." Mark Leonard 
 ```
 _Merged from: PROTO-012 (Synergy Avoidance) + PROTO-013 (Decentralized Product Decisions)_
 
-### PROTO-012: Ownership Model
+### PROTO-012: Ownership Model [RETIRED]
+_yaml status: retired — business doctrine, moves to holding/ governance. Not portable Sutra canon._
 ```
 convergent | [Asawa governance, CSI/Tiny/PE model] | SOFT
 trigger: Discussion of selling/sunsetting a company OR founder spending >50% time operating a single company
@@ -424,7 +447,8 @@ origin: 2026-04-06. Removed Operating Modes from DayFlow SUTRA-CONFIG.md.
         The miss was behavioral, not technical.
 ```
 
-### PROTO-016: Root Cause on Founder Correction
+### PROTO-016: Root Cause on Founder Correction [RETIRED]
+_yaml status: retired — absorbed into D11 (Fix the Process). Single source for that rule._
 ```
 constitutional | [Asawa D11, P3] | HARD
 trigger: Founder points out something was missed or done wrong
@@ -527,7 +551,8 @@ EXEMPT: POLICY_EXEMPT=1 bypass + logged reason in POLICY-EXEMPTIONS.md.
         Exemptions are reviewed weekly.
 ```
 
-## PROTO-018: Auto-Propagation on Version Bump
+## PROTO-018: Auto-Propagation on Version Bump [RETIRED]
+_yaml status: retired — Phase 0 D-7. Post-commit trigger disabled 2026-04-15. Phase 2 compiler replaces the mechanism._
 ```
 federal | [closes the recurrence loop] | HARD
 trigger: CURRENT-VERSION.md line 3 changes (new Sutra version published).
@@ -552,7 +577,9 @@ THE CONTRACT:
   half-upgrade.
 ```
 
-## PROTO-019: External Peer Review on Portfolio Changes
+## PROTO-019: External Peer Review on Portfolio Changes [ABSORBED]
+_yaml status: absorbed — becomes the reconciler itself in Phase 3. No separate protocol; doctor IS the codex-gate._
+_See: Phase 3 doctor (reconciler) — absorbs this protocol's enforcement surface._
 ```
 constitutional | [cross-company, portfolio-wide] | HARD
 trigger: Any change to Asawa holding, Sutra OS, or any company submodule
