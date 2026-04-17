@@ -165,7 +165,7 @@
         "name": { "type": "string" },
         "status": { "enum": ["active", "retired", "proposed"] },
         "enforcement": { "enum": ["hard", "soft", "advisory"] },
-        "scope": { "enum": ["sutra-core", "asawa-only"] },
+        "scope": { "enum": ["sutra-core", "asawa-only", "tier-local"] },
         "mechanism": { "type": "string" },
         "mechanism_type": { "enum": ["hook", "agent-behavior", "reconciler", "process", "compiler"] },
         "upgrade_to_hard_at": { "type": "string", "pattern": "^phase-[0-9]+$" },

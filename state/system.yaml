@@ -205,6 +205,7 @@ directions:
       mechanism: dispatcher-pretool.sh Check 10 (depth marker)
       test: sutra/package/tests/test-d28-routing-gate.sh
       summary: Full lifecycle every time; depth set by complexity/cost/impact, not user count or company stage.
+      scope: sutra-core
 
     - id: D3
       name: Every Task Has a Sutra Path
@@ -212,6 +213,7 @@ directions:
       enforcement: soft
       mechanism: lifecycle-check.sh (Stop event)
       summary: Sutra is an OS — every task starts with "what's the Sutra way?"
+      scope: sutra-core
 
     - id: D6
       name: Directions Are Executable With Regression Tests
@@ -221,6 +223,7 @@ directions:
       mechanism: validate.mjs test runner (current); doctor in Phase 3
       invariant_refs: [I-1]
       summary: Every direction encoded with TRIGGER/CHECK/ENFORCEMENT + regression test. Prose alone is incomplete. Phase 3 doctor upgrades this to hard.
+      scope: sutra-core
 
     - id: D10
       name: Test Everything in Production
@@ -228,6 +231,7 @@ directions:
       enforcement: soft
       mechanism: test-in-production-check.sh (Stop event)
       summary: No protocol ships without deployment to a company and validation through a real feature.
+      scope: sutra-core
 
     - id: D11
       name: Fix the Process, Not Just the Instance
@@ -235,6 +239,7 @@ directions:
       enforcement: soft
       mechanism: process-fix-check.sh (PostToolUse)
       summary: Every bug fix includes root cause analysis + process improvement.
+      scope: sutra-core
 
     - id: D12
       name: Architecture Awareness Before Creation
@@ -242,12 +247,13 @@ directions:
       enforcement: soft
       mechanism: dispatcher-pretool.sh Check 4 (new path detector)
       summary: Before creating anything new, check SYSTEM-MAP. Surfaces drift.
+      scope: sutra-core
 
     - id: D13
       name: Cascade Downstream Immediately
       status: active
       enforcement: hard
-      scope: asawa-only
+      scope: tier-local
       mechanism: holding/hooks/cascade-check.sh (PostToolUse exit 2; diff-restricted to TODO.md paths; CASCADE_ACK override)
       test: sutra/package/tests/test-d13-cascade.sh
       invariant_refs: [I-15]
@@ -259,6 +265,7 @@ directions:
       enforcement: soft
       mechanism: agent behavior directive
       summary: Capture all founder statements in rapid succession. Sub-agents for parallel work.
+      scope: sutra-core
 
     - id: D20
       name: Escalate Competing Priorities to Founder
@@ -267,6 +274,7 @@ directions:
       upgrade_to_hard_at: phase-3
       mechanism: AskUserQuestion (agent-enforced — agent-behavior, no hook harness yet)
       summary: When 2+ high-priority items compete, present the tension — don't decide unilaterally.
+      scope: sutra-core
 
     - id: D22
       name: OS Deploys by Judgment, Not by Default
@@ -274,6 +282,7 @@ directions:
       enforcement: soft
       mechanism: version-governance.sh + PROTO-014 client-side check
       summary: PULL (company decides) is default. PUSH is explicit override.
+      scope: sutra-core
 
     - id: D23
       name: Push Back With Approval Gates
@@ -282,6 +291,7 @@ directions:
       upgrade_to_hard_at: phase-3
       mechanism: AskUserQuestion on detected conflict (agent-behavior, no hook harness yet)
       summary: System throws back on conflict with existing principles. No silent overrides.
+      scope: sutra-core
 
     - id: D26
       name: Gear = Decomposition Granularity
@@ -289,6 +299,7 @@ directions:
       enforcement: soft
       mechanism: depth system (shared with D2)
       summary: Gear 1-5 controls decomposition granularity. Speed vs precision trade-off. Task-specific, not company-specific.
+      scope: sutra-core
 
     - id: D27
       name: Sutra→Company Deploys Run at Depth 5
@@ -297,6 +308,7 @@ directions:
       mechanism: dispatcher-pretool.sh Check 11 (sutra-deploy-depth5 marker)
       test: sutra/package/tests/test-d28-routing-gate.sh
       summary: Any edit touching sutra/** or {company}/os/** runs at Depth 5 (exhaustive).
+      scope: sutra-core
 
     - id: D28
       name: Per-Turn Routing & Depth Enforcement
@@ -305,6 +317,7 @@ directions:
       mechanism: dispatcher-pretool.sh Checks 9+10 + reset-turn-markers.sh (UserPromptSubmit)
       test: sutra/package/tests/test-d28-routing-gate.sh
       summary: Every Write/Edit requires fresh INPUT/TYPE/ROUTE block + TASK/DEPTH block. Markers cleared every founder turn.
+      scope: sutra-core
 
     - id: D29
       name: Chunk LLM Delegations to Fit Server Budgets
@@ -313,6 +326,7 @@ directions:
       upgrade_to_hard_at: phase-3
       mechanism: agent-behavior directive (current); Phase 3 doctor adds pre-dispatch size lint
       summary: Any task delegated to an external LLM (codex review/consult/challenge, sub-agent dispatch, managed agent) must fit within ~5 minutes server-side. Pre-plan chunking; if a review would need deep reasoning over many files, split the underlying task into smaller chunks each with its own review. If a dispatched review times out or exceeds budget, kill it and retry with smaller chunks — don't wait longer. Applies to Claude↔Codex loops, Claude↔Claude sub-agents, and any network-bound LLM call. Founder directive 2026-04-16 after 15-min PROTO-004 review stalled. Abstraction-level rule about how Sutra deals with LLMs; ships with Sutra to every company.
+      scope: sutra-core
 
     - id: D30
       name: Policy Ships With Mechanism
@@ -322,6 +336,7 @@ directions:
       mechanism: holding/hooks/policy-only-sensor.sh (Stop event + on-demand); extends D13 cascade
       test: sutra/package/tests/test-d30-policy-only-sensor.sh
       summary: A T1/HARD principle is not shipped until all four hold — (1) hook file exists at target location, (2) hook registered in the correct settings.json, (3) hook fires on a real call (one test invocation verifies), (4) hook logs to designated audit trail. Until all four hold, the principle is marked `POLICY-ONLY since YYYY-MM-DD` in holding/DIRECTION-ENFORCEMENT.md. Sensor grep for POLICY-ONLY entries older than window (default 7d) — escalates to CEO of Asawa. Cascade rule (extends D13) — when a T1 hook ships at a parent layer (Asawa/holding), sibling/child layers (Sutra companies, billu) must receive the hook or record `INHERIT-FROM: {path}` in their settings before the parent ship is considered complete. Founder directive 2026-04-17 accepting D30 candidate from billu/os/feedback-to-sutra/2026-04-15-policy-without-mechanism-rca.md. Closes the "write policy, hope LLM complies" failure mode at the framework level.
+      scope: tier-local
 
   ergonomics:
     - id: D16
