@@ -11,7 +11,7 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 
 | Policy | Source | Enforced by | Deployed to | Status |
 |---|---|---|---|---|
-| PROTO-000 | Every Change Ships With Implementation | CLAUDE.md (memory-only) | (none) | DRIFT |
+| PROTO-000 | Every Change Ships With Implementation | CLAUDE.md (memory-only) | sutra | MEMORY |
 | PROTO-001 | Structure Before Creation | dispatcher check 4 | (none) | DRIFT |
 | PROTO-002 | Wait for Parallel Completion | agent-completion-check.sh | (none) | DRIFT |
 | PROTO-003 | Free Tier First | onboarding review (advisory) | (none) | DRIFT |
@@ -57,7 +57,7 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 
 ---
 
-**Summary**: OK=6, MEMORY=0 (memory-only protocols — LLM-enforced), DRIFT=27
+**Summary**: OK=6, MEMORY=1 (memory-only protocols — LLM-enforced), DRIFT=26
 **Regenerate**: `bash holding/hooks/verify-policy-coverage.sh --write`
 
 ### Parsing caveat (known limitation)
