@@ -12,13 +12,21 @@
 meta:
   version: "1.9"
   schema: "1.0"
-  updated: "2026-04-15"
+  updated: "2026-04-17"
   phase: 1
   roadmap: holding/research/2026-04-15-asawa-sutra-live-roadmap.md
   decisions: holding/DECISIONS.md
   caps:
     protocols_active_max: 8   # Phase 0 D-3
     directions_active_max: 20 # bumped 2026-04-17 (founder directive "go ahead") to admit D30 "Policy Ships With Mechanism"; closes billu/os/feedback-to-sutra/2026-04-15-policy-without-mechanism-rca.md
+  conventions:
+    sutra_freeze_marker: |
+      Companies may drop a `.sutra-freeze` file at their repo root to block ALL
+      hook propagation from `holding/hooks/verify-os-deploy.sh --push`. File contents
+      (first line) is logged as the freeze reason. The marker is checked BEFORE any
+      tier/drift logic — freeze always wins. Working-tree-dirty state ALSO blocks
+      `--push` (auto-downgrades to dry-run); commit or stash to proceed. Introduced
+      2026-04-17 (Wave 4 Asawa→Company hook propagation pipeline).
 
 # ─── Tiers (per Phase 0 D-3, D-9) ─────────────────────────────────────────────
 # Each tier picks which hooks ship and whether OS core copies into target.
