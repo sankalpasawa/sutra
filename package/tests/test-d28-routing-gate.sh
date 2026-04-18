@@ -34,26 +34,44 @@ FAIL=0
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1"; FAIL=1; }
 
-# --- Serialization: portable mkdir-based lockfile -------------------------
+# --- Serialization: PID-in-lock with dead-holder detection (2026-04-18 B2) -
+# Previous mkdir-only lock relied on EXIT-trap cleanup; SIGKILL bypassed the
+# trap and left a stale lock that took 120s to break (passive TTL). This
+# cascaded into commit hangs when test was killed mid-run.
+# New pattern: atomic mkdir + PID file. Lock acquisition probes holder
+# liveness via `kill -0` and breaks the lock immediately if holder is dead.
+# Stale-age TTL retained as safety net for cases where PID file is unreadable.
 LOCK_DIR="/tmp/test-d28-routing-gate.lock"
 _lock_acquired=0
 _wait_start=$(date +%s)
-while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-  if [ -d "$LOCK_DIR" ]; then
-    _lock_age=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR" 2>/dev/null || stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
-    if [ "$_lock_age" -gt 120 ]; then
-      echo "  WARN: breaking stale lock (${_lock_age}s old)"
-      rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+while true; do
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo $$ > "$LOCK_DIR/pid"
+    _lock_acquired=1
+    break
+  fi
+  # Lock exists — check if holder is alive
+  if [ -f "$LOCK_DIR/pid" ]; then
+    _holder=$(cat "$LOCK_DIR/pid" 2>/dev/null)
+    if [ -n "$_holder" ] && ! kill -0 "$_holder" 2>/dev/null; then
+      echo "  WARN: breaking abandoned lock (holder PID $_holder is dead)"
+      rm -rf "$LOCK_DIR"
       continue
     fi
+  fi
+  # Holder is alive (or pid file unreadable) — apply stale-age TTL as safety net
+  _lock_age=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR" 2>/dev/null || stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
+  if [ "$_lock_age" -gt 120 ] && [ ! -f "$LOCK_DIR/pid" ]; then
+    echo "  WARN: breaking stale lock (${_lock_age}s old, no pid file)"
+    rm -rf "$LOCK_DIR"
+    continue
   fi
   if [ $(( $(date +%s) - _wait_start )) -gt 300 ]; then
     echo "  FAIL: could not acquire test lock within 300s"
     exit 1
   fi
-  sleep 0.2
+  sleep 0.5
 done
-_lock_acquired=1
 
 # --- Isolation: per-run scaffold tmpdir as CLAUDE_PROJECT_DIR ------------
 TMPROOT=$(mktemp -d -t d28-test.XXXXXX)
@@ -73,11 +91,13 @@ RESET_HOOK="$REAL_REPO_ROOT/holding/hooks/reset-turn-markers.sh"
 cleanup() {
   [ -n "${TMPROOT:-}" ] && [ -d "$TMPROOT" ] && rm -rf "$TMPROOT"
   if [ "$_lock_acquired" = "1" ]; then
-    rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR" 2>/dev/null || true
+    rm -rf "$LOCK_DIR" 2>/dev/null || true
   fi
   : # per-run tmpdir removed above
 }
-trap cleanup EXIT
+# Catch TERM/INT/HUP in addition to EXIT so orchestrated kills clean up too.
+# (SIGKILL still bypasses traps — dead-holder detection above handles that case.)
+trap cleanup EXIT TERM INT HUP
 
 echo "=== D28 regression -- routing gate blocks memory write without markers (2026-04-15 failure mode) ==="
 bash "$RESET_HOOK" >/dev/null
