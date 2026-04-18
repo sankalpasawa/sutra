@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "sutra/state/override-schema.json",
+  "title": "Sutra Override Audit Record",
+  "description": "Schema v1 for entries written to .enforcement/override-audit.jsonl. See OVERRIDE-SCHEMA.md (sibling) for the human-readable spec, lifetime guard, sanitization rules, and migration policy.",
+  "type": "object",
+  "additionalProperties": false,
+  "$comment": "additionalProperties:false applies to PRODUCERS — the shared writer must not emit unknown fields. CONSUMERS (audit aggregators, future readers) MUST tolerate unknown fields per OVERRIDE-SCHEMA.md federation policy. Do not use this schema as a strict read gate.",
+  "required": [
+    "schema_version",
+    "ts",
+    "override_kind",
+    "mode",
+    "alias",
+    "gate",
+    "hook",
+    "decision",
+    "original_gate_severity",
+    "reason",
+    "actor",
+    "company",
+    "nonce",
+    "valid_for_seconds"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Pinned to 1 in this version. Future-incompatible changes bump."
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix seconds at override-acceptance time."
+    },
+    "override_kind": {
+      "type": "string",
+      "enum": ["governance_bypass"],
+      "description": "v1 emits ONLY governance_bypass (codex review fix 2026-04-18). Test-path overrides (TRIAGE_LOG_OVERRIDE, ESTIMATION_LOG_OVERRIDE) do not emit audit records — they are not in this schema's scope. Future hybrids add new enum values without bumping schema_version; consumer readers MUST tolerate unknown enum values per federation policy."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["legacy", "strict"],
+      "description": "Lifetime Guard mode. legacy = env-var-only invocation (audit amplification, F16 partial mitigation). strict = token-gated invocation via *_TOKEN env var validated against single-use file under .claude/override-tokens/ (true F16 mitigation). See OVERRIDE-SCHEMA.md Lifetime Guard section."
+    },
+    "alias": {
+      "type": "string",
+      "enum": [
+        "SECRET_OVERRIDE",
+        "DUPLICATION_OVERRIDE",
+        "CASCADE_ACK",
+        "CODEX_OVERRIDE",
+        "POLICY_ACK"
+      ],
+      "description": "The historical env-var convention (stable identifier). New governance gates SHOULD register their alias here when added."
+    },
+    "gate": {
+      "type": "string",
+      "pattern": "^(PROTO|D|I)-[0-9]+$",
+      "description": "Stable ID of the gate (e.g. PROTO-004, I-14, D13)."
+    },
+    "hook": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Source hook file (basename, e.g. dispatcher-pretool.sh)."
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["allow", "deny", "warn"],
+      "description": "Resolved decision after override processing. 'allow' for accepted overrides; 'deny' if override rejected (missing reason, expired, malformed); 'warn' for advisory mismatch flags."
+    },
+    "original_gate_severity": {
+      "type": "integer",
+      "enum": [1, 2],
+      "description": "Exit code the gate would have emitted without override. Separates 'denied-then-overridden' (2) from 'advisory passes' (1)."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\r\\n\\u0000]+$",
+      "description": "Operator-supplied. Input validation rejects (does not strip) only CR/LF/NUL — these break JSONL line boundaries. Quotes/backslashes/punctuation pass through unchanged; the shared writer JSON-escapes them on serialize per RFC 8259. Codex review fix 2026-04-18 — prior draft was over-destructive."
+    },
+    "actor": {
+      "type": "string",
+      "enum": ["asawa", "sutra", "company-dayflow", "company-billu", "company-maze", "company-ppr", "company-paisa", "company-jarvis", "unknown"],
+      "description": "Active role at override time. Derived from .claude/active-role; falls back to 'unknown'."
+    },
+    "company": {
+      "type": "string",
+      "description": "Working tree company name, or 'holding'. Aggregator filters by this."
+    },
+    "file": {
+      "type": ["string", "null"],
+      "description": "File path the gate was evaluating, if applicable. Null when gate is not file-scoped."
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{12}$",
+      "description": "Per-invocation random hex (12 chars). Uniquely identifies this override event for de-dup + lifetime tracking."
+    },
+    "valid_for_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "description": "TTL for the override marker. Default 60. Helper rejects if (ts + valid_for_seconds) < now."
+    }
+  }
+}
