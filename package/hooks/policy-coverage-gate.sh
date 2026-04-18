@@ -80,10 +80,30 @@ fi
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [ "${POLICY_ACK:-0}" = "1" ]; then
   REASON="${POLICY_ACK_REASON:-no-reason-given}"
-  # Strip newlines defensively (prevent log forgery)
-  REASON_SAFE=$(printf '%s' "$REASON" | tr -d '\n\r')
-  echo "$TS POLICY_ACK=1 file=$FILE_PATH reason=$REASON_SAFE" >> "$LOG_DIR/policy-acks.log"
-  exit 0
+  # B5 shared-writer: typed audit row + legacy mirror until v1.10 cutover.
+  # accept_override sanitizes reason (rejects CR/LF, JSON-escapes via jq).
+  # Mode: STRICT iff POLICY_ACK_TOKEN set, else LEGACY (back-compat).
+  _OA_LIB="$REPO_ROOT/holding/hooks/lib/override-audit.sh"
+  [ -f "$_OA_LIB" ] || _OA_LIB="$(dirname "$0")/lib/override-audit.sh"
+  if [ -f "$_OA_LIB" ]; then
+    # shellcheck disable=SC1090
+    source "$_OA_LIB"
+    _OA_MODE="legacy"
+    [ -n "${POLICY_ACK_TOKEN:-}" ] && _OA_MODE="strict"
+    if accept_override "POLICY_ACK" "PROTO-000" "policy-coverage-gate.sh" "$REASON" 1 "$_OA_MODE" "$FILE_PATH"; then
+      # Legacy mirror (consumed by historic dashboards until v1.10 cutover)
+      REASON_SAFE=$(printf '%s' "$REASON" | tr -d '\n\r')
+      echo "$TS POLICY_ACK=1 file=$FILE_PATH reason=$REASON_SAFE" >> "$LOG_DIR/policy-acks.log"
+      exit 0
+    fi
+    # Helper rejected (bad reason or strict-mode token mismatch); fall through
+    # to the gate's normal block path so the operator must re-invoke correctly.
+  else
+    # Helper not present (very early upgrade window) — preserve original behavior.
+    REASON_SAFE=$(printf '%s' "$REASON" | tr -d '\n\r')
+    echo "$TS POLICY_ACK=1 file=$FILE_PATH reason=$REASON_SAFE" >> "$LOG_DIR/policy-acks.log"
+    exit 0
+  fi
 fi
 
 # Time-boxed exemption: .enforcement/policy-exempt.active younger than 10 min

@@ -63,16 +63,34 @@ case "$FILE_PATH" in
 
     # ── Explicit deferral override (mirror of I-14 DUPLICATION_OVERRIDE) ─────
     if [ "${CASCADE_ACK:-0}" = "1" ]; then
-      # Sanitize reason: strip double-quotes, backslashes, and newlines so the
-      # hand-built JSON record stays valid (codex P2).
       _REASON_RAW="${CASCADE_ACK_REASON:-no-reason-given}"
-      REASON=$(printf '%s' "$_REASON_RAW" | tr -d '"\\' | tr '\n\r' '  ')
-      if [ -n "$REPO_ROOT" ]; then
-        mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
-        echo "{\"ts\":$(date +%s),\"event\":\"cascade-override\",\"file\":\"$REL_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+      # B5 shared-writer: typed audit row + legacy mirror until v1.10 cutover.
+      _OA_LIB="$REPO_ROOT/holding/hooks/lib/override-audit.sh"
+      [ -f "$_OA_LIB" ] || _OA_LIB="$(dirname "$0")/lib/override-audit.sh"
+      if [ -f "$_OA_LIB" ]; then
+        # shellcheck disable=SC1090
+        source "$_OA_LIB"
+        _OA_MODE="legacy"
+        [ -n "${CASCADE_ACK_TOKEN:-}" ] && _OA_MODE="strict"
+        if accept_override "CASCADE_ACK" "D13" "cascade-check.sh" "$_REASON_RAW" 2 "$_OA_MODE" "$REL_PATH"; then
+          REASON=$(printf '%s' "$_REASON_RAW" | tr -d '"\\' | tr '\n\r' '  ')
+          if [ -n "$REPO_ROOT" ]; then
+            mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+            echo "{\"ts\":$(date +%s),\"event\":\"cascade-override\",\"file\":\"$REL_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+          fi
+          echo "  D13 override accepted (CASCADE_ACK): $REASON"
+          exit 0
+        fi
+        # Helper rejected (bad reason or strict-mode token mismatch); fall through to block.
+      else
+        REASON=$(printf '%s' "$_REASON_RAW" | tr -d '"\\' | tr '\n\r' '  ')
+        if [ -n "$REPO_ROOT" ]; then
+          mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+          echo "{\"ts\":$(date +%s),\"event\":\"cascade-override\",\"file\":\"$REL_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+        fi
+        echo "  D13 override accepted (CASCADE_ACK): $REASON"
+        exit 0
       fi
-      echo "  D13 override accepted (CASCADE_ACK): $REASON"
-      exit 0
     fi
 
     # ── Diff-evidence check: did the agent add a TODO referencing this file? ─

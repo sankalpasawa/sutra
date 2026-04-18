@@ -29,11 +29,30 @@ ACTION="${1:-request}"
 # ─── Override path (both actions honor it) ───────────────────────────────
 if [ "${CODEX_OVERRIDE:-0}" = "1" ]; then
   REASON_RAW="${CODEX_OVERRIDE_REASON:-no-reason-given}"
-  REASON_SAFE=$(printf '%s' "$REASON_RAW" | tr -d '\n\r' | head -c 500)
   TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  echo "$TS CODEX_OVERRIDE=1 action=$ACTION reason=$REASON_SAFE" >> "$REVIEW_DIR/overrides.log"
-  echo "PROTO-019 OVERRIDE logged. Gate bypassed."
-  exit 0
+  # B5 shared-writer: typed audit row + legacy mirror until v1.10 cutover.
+  _OA_LIB="$REPO_ROOT/holding/hooks/lib/override-audit.sh"
+  [ -f "$_OA_LIB" ] || _OA_LIB="$(dirname "$0")/lib/override-audit.sh"
+  if [ -f "$_OA_LIB" ]; then
+    # shellcheck disable=SC1090
+    source "$_OA_LIB"
+    _OA_MODE="legacy"
+    [ -n "${CODEX_OVERRIDE_TOKEN:-}" ] && _OA_MODE="strict"
+    if accept_override "CODEX_OVERRIDE" "D29" "codex-review-gate.sh" "$REASON_RAW" 1 "$_OA_MODE" "$ACTION"; then
+      REASON_SAFE=$(printf '%s' "$REASON_RAW" | tr -d '\n\r' | head -c 500)
+      echo "$TS CODEX_OVERRIDE=1 action=$ACTION reason=$REASON_SAFE" >> "$REVIEW_DIR/overrides.log"
+      echo "PROTO-019 OVERRIDE logged. Gate bypassed."
+      exit 0
+    fi
+    # Helper rejected (bad reason or strict-mode token mismatch).
+    echo "PROTO-019 override REJECTED by helper (reason malformed or strict-mode token invalid)."
+    exit 1
+  else
+    REASON_SAFE=$(printf '%s' "$REASON_RAW" | tr -d '\n\r' | head -c 500)
+    echo "$TS CODEX_OVERRIDE=1 action=$ACTION reason=$REASON_SAFE" >> "$REVIEW_DIR/overrides.log"
+    echo "PROTO-019 OVERRIDE logged. Gate bypassed."
+    exit 0
+  fi
 fi
 
 case "$ACTION" in

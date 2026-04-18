@@ -100,7 +100,7 @@ log_hook() {
 }
 
 # ─── Check 1: Session Boundary Enforcement ────────────────────────────────────
-# Source: .claude/hooks/enforce-boundaries.sh
+# Source: holding/hooks/enforce-boundaries.sh (moved from .claude/hooks/ 2026-04-18 — canonical SOT)
 # CEO of Asawa can edit everything — passthrough.
 # (Currently a no-op; kept as a slot for future boundary logic)
 _start1=$(_now_ms)
@@ -217,10 +217,31 @@ if [ -n "$FILE_PATH" ]; then
         # Explicit deferral override (mirror of I-14 / D13 pattern)
         if [ "${SECRET_OVERRIDE:-0}" = "1" ]; then
           _REASON_RAW="${SECRET_OVERRIDE_REASON:-no-reason-given}"
-          REASON=$(printf '%s' "$_REASON_RAW" | tr -d '"\\' | tr '\n\r' '  ')
-          mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
-          echo "{\"ts\":$(date +%s),\"event\":\"secret-override\",\"file\":\"${FILE_PATH#$REPO_ROOT/}\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
-          echo "PROTO-004 override accepted (SECRET_OVERRIDE): $REASON"
+          # B5 shared-writer: typed audit row + legacy mirror until v1.10 cutover.
+          _OA_LIB="$REPO_ROOT/holding/hooks/lib/override-audit.sh"
+          [ -f "$_OA_LIB" ] || _OA_LIB="$(dirname "$0")/lib/override-audit.sh"
+          if [ -f "$_OA_LIB" ]; then
+            # shellcheck disable=SC1090
+            source "$_OA_LIB"
+            _OA_MODE="legacy"
+            [ -n "${SECRET_OVERRIDE_TOKEN:-}" ] && _OA_MODE="strict"
+            if accept_override "SECRET_OVERRIDE" "PROTO-004" "dispatcher-pretool.sh" "$_REASON_RAW" 2 "$_OA_MODE" "${FILE_PATH#$REPO_ROOT/}"; then
+              REASON=$(printf '%s' "$_REASON_RAW" | tr -d '"\\' | tr '\n\r' '  ')
+              mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+              echo "{\"ts\":$(date +%s),\"event\":\"secret-override\",\"file\":\"${FILE_PATH#$REPO_ROOT/}\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+              echo "PROTO-004 override accepted (SECRET_OVERRIDE): $REASON"
+            else
+              echo "PROTO-004 override REJECTED by helper (reason malformed or strict-mode token invalid)."
+              log_hook "KeysInEnvVars-PROTO004" "FAIL" "override-helper-rejected" "$_start5"
+              BLOCK_CODE=2
+              exit $BLOCK_CODE
+            fi
+          else
+            REASON=$(printf '%s' "$_REASON_RAW" | tr -d '"\\' | tr '\n\r' '  ')
+            mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+            echo "{\"ts\":$(date +%s),\"event\":\"secret-override\",\"file\":\"${FILE_PATH#$REPO_ROOT/}\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+            echo "PROTO-004 override accepted (SECRET_OVERRIDE): $REASON"
+          fi
         else
           echo ""
           echo "BLOCKED — PROTO-004 secrets gate (HARD)"

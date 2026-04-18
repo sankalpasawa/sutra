@@ -12,13 +12,18 @@
 meta:
   version: "1.9"
   schema: "1.0"
-  updated: "2026-04-17"
+  updated: "2026-04-18"
   phase: 1
   roadmap: holding/research/2026-04-15-asawa-sutra-live-roadmap.md
   decisions: holding/DECISIONS.md
   caps:
     protocols_active_max: 8   # Phase 0 D-3
     directions_active_max: 20 # bumped 2026-04-17 (founder directive "go ahead") to admit D30 "Policy Ships With Mechanism"; closes billu/os/feedback-to-sutra/2026-04-15-policy-without-mechanism-rca.md
+  override_schema: sutra/state/OVERRIDE-SCHEMA.md             # B5 (2026-04-18). Human-readable spec.
+  override_schema_version: 1                                   # Bumps on backwards-incompatible field changes.
+  override_schema_json: sutra/state/override-schema.json       # Declarative JSON Schema (draft-07).
+  override_audit_log: .enforcement/override-audit.jsonl        # Single sink for governance-bypass records.
+  override_implementation: sutra/package/hooks/lib/override-audit.sh  # Sole serializer; sourced by 5 governance hooks.
   conventions:
     sutra_freeze_marker: |
       Companies may drop a `.sutra-freeze` file at their repo root to block ALL
