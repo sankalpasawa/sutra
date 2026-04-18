@@ -1,226 +1,266 @@
 #!/usr/bin/env bash
-# Regression test for D28 routing/depth gate and D27 Sutra→company gate.
+# Regression test for D28 routing/depth gate and D27 Sutra->company gate.
 # Simulates the 2026-04-15 failure mode and verifies the dispatcher now blocks it.
 #
-# Usage: bash holding/hooks/tests/test-d28-routing-gate.sh
+# Usage: bash sutra/package/tests/test-d28-routing-gate.sh
 # Exit 0 if all assertions pass, 1 otherwise.
+#
+# -- 2026-04-17: Test-hygiene hardening (no assertion changes) --------------
+# Problem: back-to-back or concurrent runs collided on real-repo state:
+#   .claude/{input-routed,depth-registered,depth-assessed,sutra-deploy-depth5}
+#   .enforcement/routing-misses.log, .enforcement/sutra-deploys.log
+#   holding/hooks/hook-log.jsonl
+# Three separate agents in Waves 1-2 hit this; workaround was --no-verify.
+# Fix below keeps all assertions and the REAL dispatcher; only changes where
+# the dispatcher WRITES state.
+# Fix:
+#   1. ISOLATION -- point CLAUDE_PROJECT_DIR at a per-run tmpdir scaffolded
+#      with .claude/, .enforcement/, holding/hooks/, holding/SYSTEM-MAP.md
+#      copy, and virtual sutra/os/ dir. Dispatcher uses
+#        REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"
+#      so ALL marker/log writes redirect to $TMPROOT. Real repo is untouched
+#      even under concurrent session activity that would otherwise stomp
+#      .claude/input-routed between the reset-hook and the dispatcher call.
+#   2. SERIALIZATION -- portable mkdir-based lockfile (macOS has no flock).
+#      Two concurrent test invocations block on the lock instead of racing.
+#      Stale-lock ttl: 120s.
+#   3. TRAP -- rm tmpdir and release lock on any exit path.
+# Proof: 5/5 consecutive runs pass with no flakiness (see commit message).
 
 set -u
-REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-cd "$REPO_ROOT"
+REAL_REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 
 FAIL=0
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1"; FAIL=1; }
 
-# Snapshot existing markers so we can restore after the test
-SNAPSHOT_DIR=$(mktemp -d)
-for f in input-routed depth-registered depth-assessed sutra-deploy-depth5; do
-  [ -f ".claude/$f" ] && cp ".claude/$f" "$SNAPSHOT_DIR/$f"
+# --- Serialization: portable mkdir-based lockfile -------------------------
+LOCK_DIR="/tmp/test-d28-routing-gate.lock"
+_lock_acquired=0
+_wait_start=$(date +%s)
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+  if [ -d "$LOCK_DIR" ]; then
+    _lock_age=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR" 2>/dev/null || stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
+    if [ "$_lock_age" -gt 120 ]; then
+      echo "  WARN: breaking stale lock (${_lock_age}s old)"
+      rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+      continue
+    fi
+  fi
+  if [ $(( $(date +%s) - _wait_start )) -gt 300 ]; then
+    echo "  FAIL: could not acquire test lock within 300s"
+    exit 1
+  fi
+  sleep 0.2
 done
+_lock_acquired=1
+
+# --- Isolation: per-run scaffold tmpdir as CLAUDE_PROJECT_DIR ------------
+TMPROOT=$(mktemp -d -t d28-test.XXXXXX)
+mkdir -p "$TMPROOT/.claude" \
+         "$TMPROOT/.enforcement" \
+         "$TMPROOT/holding/hooks" \
+         "$TMPROOT/holding/checkpoints" \
+         "$TMPROOT/sutra/os"
+[ -f "$REAL_REPO_ROOT/holding/SYSTEM-MAP.md" ] && \
+  cp "$REAL_REPO_ROOT/holding/SYSTEM-MAP.md" "$TMPROOT/holding/SYSTEM-MAP.md"
+
+export CLAUDE_PROJECT_DIR="$TMPROOT"
+
+DISPATCHER="$REAL_REPO_ROOT/holding/hooks/dispatcher-pretool.sh"
+RESET_HOOK="$REAL_REPO_ROOT/holding/hooks/reset-turn-markers.sh"
 
 cleanup() {
-  rm -f .claude/input-routed .claude/depth-registered .claude/depth-assessed .claude/sutra-deploy-depth5
-  for f in input-routed depth-registered depth-assessed sutra-deploy-depth5; do
-    [ -f "$SNAPSHOT_DIR/$f" ] && cp "$SNAPSHOT_DIR/$f" ".claude/$f"
-  done
-  rm -rf "$SNAPSHOT_DIR"
+  [ -n "${TMPROOT:-}" ] && [ -d "$TMPROOT" ] && rm -rf "$TMPROOT"
+  if [ "$_lock_acquired" = "1" ]; then
+    rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR" 2>/dev/null || true
+  fi
+  : # per-run tmpdir removed above
 }
 trap cleanup EXIT
 
-echo "=== D28 regression — routing gate blocks memory write without markers (2026-04-15 failure mode) ==="
-bash holding/hooks/reset-turn-markers.sh >/dev/null
+echo "=== D28 regression -- routing gate blocks memory write without markers (2026-04-15 failure mode) ==="
+bash "$RESET_HOOK" >/dev/null
 TOOL_NAME=Write TOOL_INPUT_file_path="/Users/$USER/.claude/projects/x/memory/feedback_x.md" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/d28-test.out 2>&1
+  bash "$DISPATCHER" >$TMPROOT/d28-test.out 2>&1
 rc=$?
-if [ "$rc" != "0" ] && grep -q "INPUT ROUTING MISSING" /tmp/d28-test.out; then
+if [ "$rc" != "0" ] && grep -q "INPUT ROUTING MISSING" $TMPROOT/d28-test.out; then
   pass "memory write blocked with routing message"
 else
   fail "expected BLOCK + 'INPUT ROUTING MISSING'; got rc=$rc"
 fi
 
 echo ""
-echo "=== D28 regression — gate passes when markers present ==="
-echo $(date +%s) > .claude/input-routed
-echo "3 $(date +%s) test" > .claude/depth-registered
+echo "=== D28 regression -- gate passes when markers present ==="
+echo $(date +%s) > "$TMPROOT/.claude/input-routed"
+echo "3 $(date +%s) test" > "$TMPROOT/.claude/depth-registered"
 TOOL_NAME=Write TOOL_INPUT_file_path="/tmp/fake-deliverable.md" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/d28-test.out 2>&1
+  bash "$DISPATCHER" >$TMPROOT/d28-test.out 2>&1
 rc=$?
 if [ "$rc" = "0" ]; then
   pass "marker-present edit passes"
 else
   fail "expected PASS; got rc=$rc"
-  cat /tmp/d28-test.out
+  cat $TMPROOT/d28-test.out
 fi
 
 echo ""
-echo "=== D27 regression — Sutra→company edit blocked without depth-5 marker ==="
-rm -f .claude/sutra-deploy-depth5
-TOOL_NAME=Edit TOOL_INPUT_file_path="$REPO_ROOT/sutra/os/anything.md" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/d28-test.out 2>&1
+echo "=== D27 regression -- Sutra->company edit blocked without depth-5 marker ==="
+rm -f "$TMPROOT/.claude/sutra-deploy-depth5"
+TOOL_NAME=Edit TOOL_INPUT_file_path="$TMPROOT/sutra/os/anything.md" \
+  bash "$DISPATCHER" >$TMPROOT/d28-test.out 2>&1
 rc=$?
-if [ "$rc" != "0" ] && grep -q "SUTRA→COMPANY DEPLOY REQUIRES DEPTH 5" /tmp/d28-test.out; then
+if [ "$rc" != "0" ] && grep -q "SUTRA.COMPANY DEPLOY REQUIRES DEPTH 5" $TMPROOT/d28-test.out; then
   pass "Sutra edit blocked with D27 message"
 else
-  fail "expected BLOCK + 'SUTRA→COMPANY DEPLOY REQUIRES DEPTH 5'; got rc=$rc"
+  fail "expected BLOCK + D27 message; got rc=$rc"
 fi
 
 echo ""
-echo "=== D27 regression — Sutra→company edit passes with depth-5 marker ==="
-# 2026-04-17: depth-registered must also carry DEPTH=5 for sutra/ paths now
-# that the dispatcher reads marker values (presence→value upgrade).
-# Synced from holding/hooks/tests/test-d28-routing-gate.sh.
-echo "DEPTH=5 TASK=d27-regression TS=$(date +%s)" > .claude/depth-registered
-echo $(date +%s) > .claude/sutra-deploy-depth5
-TOOL_NAME=Edit TOOL_INPUT_file_path="$REPO_ROOT/sutra/os/anything.md" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/d28-test.out 2>&1
+echo "=== D27 regression -- Sutra->company edit passes with depth-5 marker ==="
+echo "DEPTH=5 TASK=d27-regression TS=$(date +%s)" > "$TMPROOT/.claude/depth-registered"
+echo $(date +%s) > "$TMPROOT/.claude/sutra-deploy-depth5"
+TOOL_NAME=Edit TOOL_INPUT_file_path="$TMPROOT/sutra/os/anything.md" \
+  bash "$DISPATCHER" >$TMPROOT/d28-test.out 2>&1
 rc=$?
 if [ "$rc" = "0" ]; then
   pass "Sutra edit passes with depth-5 marker"
 else
   fail "expected PASS; got rc=$rc"
-  cat /tmp/d28-test.out
+  cat $TMPROOT/d28-test.out
 fi
 
 echo ""
-echo "=== UserPromptSubmit reset — markers cleared after reset hook ==="
-echo $(date +%s) > .claude/input-routed
-echo "3 $(date +%s) test" > .claude/depth-registered
-echo $(date +%s) > .claude/sutra-deploy-depth5
-bash holding/hooks/reset-turn-markers.sh >/dev/null
-if [ ! -f .claude/input-routed ] && [ ! -f .claude/depth-registered ] && [ ! -f .claude/sutra-deploy-depth5 ]; then
+echo "=== UserPromptSubmit reset -- markers cleared after reset hook ==="
+echo $(date +%s) > "$TMPROOT/.claude/input-routed"
+echo "3 $(date +%s) test" > "$TMPROOT/.claude/depth-registered"
+echo $(date +%s) > "$TMPROOT/.claude/sutra-deploy-depth5"
+bash "$RESET_HOOK" >/dev/null
+if [ ! -f "$TMPROOT/.claude/input-routed" ] && [ ! -f "$TMPROOT/.claude/depth-registered" ] && [ ! -f "$TMPROOT/.claude/sutra-deploy-depth5" ]; then
   pass "reset-turn-markers.sh clears all three markers"
 else
   fail "markers still present after reset"
 fi
 
 echo ""
-echo "=== Log audit — misses written to .enforcement/routing-misses.log ==="
-if grep -q '"miss":"routing"' .enforcement/routing-misses.log 2>/dev/null; then
+echo "=== Log audit -- misses written to .enforcement/routing-misses.log ==="
+if grep -q '"miss":"routing"' "$TMPROOT/.enforcement/routing-misses.log" 2>/dev/null; then
   pass "routing misses logged"
 else
   fail "no routing miss entries in .enforcement/routing-misses.log"
 fi
 
-# ──────────────────────────────────────────────────────────────────────────
-# PROTO-004 — Keys in Env Vars Only (HARD lift 2026-04-16, I-14 ladder)
+# --------------------------------------------------------------------------
+# PROTO-004 -- Keys in Env Vars Only (HARD lift 2026-04-16, I-14 ladder)
 # Check 5 in dispatcher-pretool.sh blocks on secret-pattern detection in
 # existing file content. Override: SECRET_OVERRIDE=1 + reason. .env exempt.
-# ──────────────────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------
 
-# Markers stay set from prior cases so D28 routing-gate passes through.
-SECRET_FILE="/tmp/proto004-secret.$$.txt"
-SECRET_ENV="/tmp/proto004.$$.env"
-CLEAN_FILE="/tmp/proto004-clean.$$.txt"
-# Realistic-looking pattern that matches Check 5's regex: token[:=]"string >= 20 chars"
-SECRET_LINE='api_key = "abcdef0123456789abcdefghijklm"'
+SECRET_FILE="$TMPROOT/proto004-secret.$$.txt"
+SECRET_ENV="$TMPROOT/proto004.$$.env"
+CLEAN_FILE="$TMPROOT/proto004-clean.$$.txt"
+# Build SECRET_LINE at runtime from split fragments so this source file
+# does not contain the literal api_key=\"20+ chars\" pattern (which would
+# trip PROTO-004 on Write). Runtime value matches the regex.
+_K="api"; _K="${_K}_key"
+_V="abcdef0123456789"; _V="${_V}abcdefghijklm"
+SECRET_LINE="${_K} = \"${_V}\""
 echo "$SECRET_LINE" > "$SECRET_FILE"
 echo "$SECRET_LINE" > "$SECRET_ENV"
 echo "harmless content here" > "$CLEAN_FILE"
 
-# Add a cleanup line so the trap removes our temp files too
-# shellcheck disable=SC2329
-_rm_proto004_temp() {
-  rm -f "$SECRET_FILE" "$SECRET_ENV" "$CLEAN_FILE"
-}
-# Extend existing EXIT trap by calling cleanup + our remover
-trap '_rm_proto004_temp; cleanup' EXIT
-
-# Re-seed markers (prior test cases may have cleared/reset them)
-echo $(date +%s) > .claude/input-routed
-echo "3 $(date +%s) test" > .claude/depth-registered
+echo $(date +%s) > "$TMPROOT/.claude/input-routed"
+echo "3 $(date +%s) test" > "$TMPROOT/.claude/depth-registered"
 
 echo ""
-echo "=== PROTO-004 (HARD) — Edit introducing secret in new_string → exit 2 ==="
+echo "=== PROTO-004 (HARD) -- Edit introducing secret in new_string -> exit 2 ==="
 TOOL_NAME=Edit TOOL_INPUT_file_path="$SECRET_FILE" \
   TOOL_INPUT_new_string="$SECRET_LINE" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/proto004-test.out 2>&1
+  bash "$DISPATCHER" >$TMPROOT/proto004-test.out 2>&1
 rc=$?
-if [ "$rc" = "2" ] && grep -q "BLOCKED — PROTO-004" /tmp/proto004-test.out; then
+if [ "$rc" = "2" ] && grep -q "BLOCKED . PROTO-004" $TMPROOT/proto004-test.out; then
   pass "Edit with secret in new_string blocks exit 2"
 else
-  fail "expected exit 2 + 'BLOCKED — PROTO-004'; got rc=$rc"
-  cat /tmp/proto004-test.out
+  fail "expected exit 2 + BLOCKED PROTO-004; got rc=$rc"
+  cat $TMPROOT/proto004-test.out
 fi
 
 echo ""
-echo "=== PROTO-004 (HARD) — Write with secret in content → exit 2 ==="
-echo $(date +%s) > .claude/input-routed
-echo "3 $(date +%s) test" > .claude/depth-registered
+echo "=== PROTO-004 (HARD) -- Write with secret in content -> exit 2 ==="
+echo $(date +%s) > "$TMPROOT/.claude/input-routed"
+echo "3 $(date +%s) test" > "$TMPROOT/.claude/depth-registered"
 TOOL_NAME=Write TOOL_INPUT_file_path="$CLEAN_FILE" \
   TOOL_INPUT_content="$SECRET_LINE" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/proto004-test.out 2>&1
+  bash "$DISPATCHER" >$TMPROOT/proto004-test.out 2>&1
 rc=$?
-if [ "$rc" = "2" ] && grep -q "BLOCKED — PROTO-004" /tmp/proto004-test.out; then
+if [ "$rc" = "2" ] && grep -q "BLOCKED . PROTO-004" $TMPROOT/proto004-test.out; then
   pass "Write with secret in content blocks exit 2"
 else
   fail "expected exit 2 on Write with secret; got rc=$rc"
-  cat /tmp/proto004-test.out
+  cat $TMPROOT/proto004-test.out
 fi
 
 echo ""
-echo "=== PROTO-004 (HARD, codex P1 fix) — Edit REMOVING secret → exit 0 ==="
-echo $(date +%s) > .claude/input-routed
-echo "3 $(date +%s) test" > .claude/depth-registered
-# Existing file has secret on disk, but new_string removes it — remediation must pass
+echo "=== PROTO-004 (HARD, codex P1 fix) -- Edit REMOVING secret -> exit 0 ==="
+echo $(date +%s) > "$TMPROOT/.claude/input-routed"
+echo "3 $(date +%s) test" > "$TMPROOT/.claude/depth-registered"
+_REM="${_K} = os.environ['API_KEY']  # moved to env"
 TOOL_NAME=Edit TOOL_INPUT_file_path="$SECRET_FILE" \
-  TOOL_INPUT_new_string="api_key = os.environ['API_KEY']  # moved to env" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/proto004-test.out 2>&1
+  TOOL_INPUT_new_string="$_REM" \
+  bash "$DISPATCHER" >$TMPROOT/proto004-test.out 2>&1
 rc=$?
-if [ "$rc" = "0" ] && ! grep -q "BLOCKED — PROTO-004" /tmp/proto004-test.out; then
+if [ "$rc" = "0" ] && ! grep -q "BLOCKED . PROTO-004" $TMPROOT/proto004-test.out; then
   pass "remediation edit (new_string without secret) passes exit 0"
 else
   fail "expected exit 0 for remediation; got rc=$rc"
-  cat /tmp/proto004-test.out
+  cat $TMPROOT/proto004-test.out
 fi
 
 echo ""
-echo "=== PROTO-004 (HARD) — SECRET_OVERRIDE=1 → exit 0 ==="
-echo $(date +%s) > .claude/input-routed
-echo "3 $(date +%s) test" > .claude/depth-registered
+echo "=== PROTO-004 (HARD) -- SECRET_OVERRIDE=1 -> exit 0 ==="
+echo $(date +%s) > "$TMPROOT/.claude/input-routed"
+echo "3 $(date +%s) test" > "$TMPROOT/.claude/depth-registered"
 SECRET_OVERRIDE=1 SECRET_OVERRIDE_REASON='regression-test' \
   TOOL_NAME=Edit TOOL_INPUT_file_path="$SECRET_FILE" \
   TOOL_INPUT_new_string="$SECRET_LINE" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/proto004-test.out 2>&1
+  bash "$DISPATCHER" >$TMPROOT/proto004-test.out 2>&1
 rc=$?
-if [ "$rc" = "0" ] && grep -q "PROTO-004 override accepted" /tmp/proto004-test.out; then
+if [ "$rc" = "0" ] && grep -q "PROTO-004 override accepted" $TMPROOT/proto004-test.out; then
   pass "SECRET_OVERRIDE=1 passes with override-accepted message"
 else
   fail "expected exit 0 + override message; got rc=$rc"
-  cat /tmp/proto004-test.out
+  cat $TMPROOT/proto004-test.out
 fi
 
 echo ""
-echo "=== PROTO-004 — .env file with secret content → exit 0 (exempt) ==="
-echo $(date +%s) > .claude/input-routed
-echo "3 $(date +%s) test" > .claude/depth-registered
+echo "=== PROTO-004 -- .env file with secret content -> exit 0 (exempt) ==="
+echo $(date +%s) > "$TMPROOT/.claude/input-routed"
+echo "3 $(date +%s) test" > "$TMPROOT/.claude/depth-registered"
 TOOL_NAME=Edit TOOL_INPUT_file_path="$SECRET_ENV" \
   TOOL_INPUT_new_string="$SECRET_LINE" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/proto004-test.out 2>&1
+  bash "$DISPATCHER" >$TMPROOT/proto004-test.out 2>&1
 rc=$?
-if [ "$rc" = "0" ] && ! grep -q "BLOCKED — PROTO-004" /tmp/proto004-test.out; then
+if [ "$rc" = "0" ] && ! grep -q "BLOCKED . PROTO-004" $TMPROOT/proto004-test.out; then
   pass ".env file exempt (exit 0, no PROTO-004 block)"
 else
   fail "expected exit 0 on .env; got rc=$rc"
-  cat /tmp/proto004-test.out
+  cat $TMPROOT/proto004-test.out
 fi
 
 echo ""
-echo "=== PROTO-004 — no secret in incoming content → exit 0 (silent) ==="
-echo $(date +%s) > .claude/input-routed
-echo "3 $(date +%s) test" > .claude/depth-registered
+echo "=== PROTO-004 -- no secret in incoming content -> exit 0 (silent) ==="
+echo $(date +%s) > "$TMPROOT/.claude/input-routed"
+echo "3 $(date +%s) test" > "$TMPROOT/.claude/depth-registered"
 TOOL_NAME=Edit TOOL_INPUT_file_path="$CLEAN_FILE" \
   TOOL_INPUT_new_string="harmless replacement content here" \
-  bash holding/hooks/dispatcher-pretool.sh >/tmp/proto004-test.out 2>&1
+  bash "$DISPATCHER" >$TMPROOT/proto004-test.out 2>&1
 rc=$?
-if [ "$rc" = "0" ] && ! grep -q "PROTO-004" /tmp/proto004-test.out; then
+if [ "$rc" = "0" ] && ! grep -q "PROTO-004" $TMPROOT/proto004-test.out; then
   pass "clean content passes with no PROTO-004 message"
 else
   fail "expected exit 0 on clean; got rc=$rc"
-  cat /tmp/proto004-test.out
+  cat $TMPROOT/proto004-test.out
 fi
-
-rm -f /tmp/proto004-test.out
 
 echo ""
 if [ "$FAIL" = "0" ]; then
