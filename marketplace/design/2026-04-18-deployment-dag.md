@@ -1,7 +1,7 @@
 # Sutra Marketplace Deployment — Design DAG
 
 _Workflow instance. Sutra Kernel arch flow, manual runtime (Kernel V1 build pending)._
-_Started: 2026-04-18. Paused at P1→P2 gate awaiting founder validation._
+_Started: 2026-04-18. P0-P2 DONE. P3 ACTIVE (functionality-first). Founder pivot 2026-04-18: functionality > GTM; DayFlow is canary._
 _Spec reference: `holding/research/2026-04-18-workflow-architecture-spec-v1.0-COMMITTED.md`_
 
 ---
@@ -109,33 +109,81 @@ Largest cluster = DX (4 factors). This matches the founder direction "used the w
 
 ---
 
-## P2 VALIDATE — GATE (awaiting founder)
+## P2 VALIDATE — CLEARED (2026-04-18)
 
-Next actions at this gate:
+Founder verdicts on 5 customer/market decisions (companion doc §J):
 
-1. **Founder reads factor table** — approve / amend / add missing factors
-2. **Coverage scoring** — drop overlap (manual, until `coverage-validator` skill ships with Kernel V1)
-3. **Codex adversarial review** — independent omission check per `feedback_codex_everywhere` memory
-4. **Gate criteria to advance**:
-   - ≥95% of factors have founder-approved attributes
-   - Codex review surfaces ≤2 missed factors (fold into list, don't block)
-   - No factor marked "C < 0.3 AND U = H" (those need research before validation)
+| # | Decision | Verdict | Note |
+|---|---|---|---|
+| D-CM-1 | Wedge = Segment 1 (indie) | APPROVE, deprioritized | "not a worry right now" |
+| D-CM-2 | Free forever, no auth at install | APPROVE | functionality-enabler |
+| D-CM-3 | Friend-0 cohort target | REVISE: 8 → **3 confirmed + organic** | Sankalp + Benzy/Paisa + DayFlow contributor |
+| D-CM-4 | F13 (first-run UX) = P3 #1 | APPROVE, **reframed as functionality** (not activation-cliff) | "focus on functionality" |
+| D-CM-5 | Demo video before listing | APPROVE-in-principle, **DEFER execution**, AI-generated later | "keep that for later" |
 
-Current candidates for research-before-P3:
-- **F1** (plugin schema, C=0.4, U=H) — read Claude Code plugin docs
-- **F5** (marketplace repo shape, C=0.3, U=H) — pick org/repo name
-- **F18** (friend-0 plan, C=0.3, U=H) — who is friend-0?
+**Meta-pivot (bigger than any single decision)**:
+- **Functionality > GTM** for P3/P4. GTM factors (CM4 demo, CM6 listing, CM8 competitive watch, Phase D funnel, Phase F pricing tiers) drop to Defer.
+- **DayFlow will be operated via the Sutra plugin** — NEW factor CM9 below. Replaces abstract Friend-0 cohort with an owned functional test loop.
+- **No agents, incremental sessions** (2026-04-18): plugin work proceeds one chunk per session. No subagent fanout. No "do it all now" cascades.
+
+### Factor table additions (CM1–CM9)
+
+| # | Factor | Category | U | R | O | C | Discipline | P3 Tier |
+|---|---|---|:-:|:-:|:-:|:-:|---|---|
+| CM1 | Segment 1 (indie) confirmed as launch wedge, deprioritized | Strategy | L | M | H | 0.8 | Product strategy | Defer |
+| CM2 | Status quo benchmark | Validation | L | H | M | 0.4 | Product research | Defer |
+| CM3 | First-60-second plugin first-run script (functionality, not activation-cliff) | Activation | H | H | H | 0.5 | DX (extends F13) | Tier 1 |
+| CM4 | Demo video — AI-generated, later | Acquisition | L | M | H | 0.3 | Marketing | Defer |
+| CM5 | Friend-0 cohort = 3 confirmed + organic | Validation | M | H | H | 0.7 | Distribution | Tier 3 (background) |
+| CM6 | Marketplace listing copy | Acquisition | L | H | H | 0.3 | Marketing | Defer |
+| CM7 | Free-forever-OS posture, paid deferred 3+ months | Business model | L | M | H | 0.8 | Strategy | Defer (decided) |
+| CM8 | Competitive watch (superpowers etc.) | External deps | L | L | M | 0.4 | Market intel | Defer |
+| **CM9** | **Run DayFlow via Sutra plugin** — operate DayFlow's CEO session through `/plugin install sutra`. Primary functional validator. | Validation | H | M | H | 0.4 | Distribution × Architecture | **Tier 1** |
+
+**Breadth check after fold**: 20 + 9 = 29 factors. Well above Complicated/TRAVERSE floor of 6. ✓
 
 ---
 
-## P3 PRIORITIZE — QUEUED
+## P3 PRIORITIZE — ACTIVE (2026-04-18)
 
-Will be filled after P2 gate passes. Ranking formula (per kernel spec §4):
-`score = impact × uncertainty / cost_of_decision_if_wrong`
+Functionality-first ranking. Formula: `score = impact × uncertainty / cost_of_decision_if_wrong`.
 
-Early guess (not final):
-- Top candidates: F1 (manifest schema), F2 (content mapping), F13 (first-run UX)
-- These shape everything else; other factors become sub-blocks under them.
+### Tier 1 — must resolve before any code ships
+
+| Rank | Factor | Reason |
+|:-:|---|---|
+| 1 | **F13 + CM3** (first-run UX as functionality) | What the plugin DOES when installed. Canary: DayFlow first-run works end-to-end. |
+| 2 | **CM9** (DayFlow-via-plugin) | Concrete test loop. If plugin can run DayFlow, plugin is functional enough to ship. |
+| 3 | **F1** (plugin manifest schema) | Technical blocker. Solvable in hours once Claude Code plugin docs consulted. |
+| 4 | **F2** (content mapping — `sutra/` → skills/commands/resources) | Required by F1 and CM9. |
+| 5 | **F15** (Asawa-leak audit) | D29 hard constraint. Gate before any publish. |
+
+### Tier 2 — required before listing goes live
+
+| Rank | Factor | Reason |
+|:-:|---|---|
+| 6 | **F7** (hooks portability) | Which holding hooks ship externally. Partial in `sutra/package/MANIFEST.md`. |
+| 7 | **F8** (enforcement tier selection at install) | Depth defaults per profile. |
+| 8 | **F12** (profile onboarding — individual/project/company) | DayFlow picks "company" profile → live test. |
+| 9 | **F5** (marketplace repo shape, Asawa-free) | Blocks `plugin.json` homepage URL. |
+| 10 | **F19** (license decision) | Blocks first publish (currently UNLICENSED). |
+
+### Tier 3 — parallel / deferrable
+
+F3, F4, F6, F9, F10, F11, F14, F16, F17, F18, F20, CM5 (Friend-0 — grows organically from 3).
+
+### Deferred (per founder direction 2026-04-18: "focus on functionality, not GTM")
+
+CM1, CM2, CM4 (AI-generated later), CM6, CM7 (already decided), CM8, Phase D funnel, Phase F pricing tiers.
+
+### Next action — P4 DEEPEN (one chunk per session, no agents)
+
+Per founder direction 2026-04-18 (no agents, incremental sessions), P4 starts in a SEPARATE session. When that session opens, it picks exactly ONE of the following as its chunk:
+- **Chunk A**: Read Claude Code plugin docs → draft `plugin.json` skeleton (F1)
+- **Chunk B**: Map DayFlow's current CEO session ops → candidate plugin skills/commands list (F2 + CM9, doc-only)
+- **Chunk C**: Script the T+0 → T+60s plugin first-run (CM3 artifact, doc-only)
+
+Each chunk produces one artifact, commits, and stops. No multi-chunk sessions. No subagent fanout.
 
 ---
 
@@ -165,6 +213,7 @@ Per top-3 factors from P3. Each produces:
 | 2026-04-18 ~19:15 | P0 | Classified as Complicated/TRAVERSE | $0.02 |
 | 2026-04-18 ~19:25 | P1 | Enumerated 20 factors via factor-decomposition skill | $0.30 |
 | 2026-04-18 ~19:30 | GATE | Paused awaiting founder validation | — |
+| 2026-04-18 ~22:55 | P2 | CLEARED — 5 decisions locked; functionality > GTM pivot; DayFlow = canary (CM9 added); no agents / incremental sessions rule locked | $0.50 |
 
 ---
 
@@ -180,4 +229,4 @@ Per top-3 factors from P3. Each produces:
 
 ---
 
-_End P1 output. Resume: founder validates factor list → P2 VALIDATE begins._
+_P2 CLEARED 2026-04-18. Next session picks ONE P4 chunk (A/B/C above), produces ONE artifact, commits, stops. No agents. No multi-chunk sessions._

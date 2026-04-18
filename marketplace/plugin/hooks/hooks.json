@@ -1,0 +1,28 @@
+{
+  "description": "Sutra governance hooks — warn when depth marker missing before Edit/Write, log estimation on Stop.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/depth-marker-pretool.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-stop.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

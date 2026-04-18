@@ -1,0 +1,20 @@
+{
+  "name": "sutra",
+  "version": "0.1.0",
+  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace. Opinionated governance for Claude Code sessions.",
+  "author": {
+    "name": "Sutra",
+    "url": "https://sutra.os"
+  },
+  "homepage": "https://sutra.os",
+  "license": "MIT",
+  "keywords": [
+    "governance",
+    "input-routing",
+    "depth-estimation",
+    "readability",
+    "workflow",
+    "opinionated-os",
+    "session-discipline"
+  ]
+}
