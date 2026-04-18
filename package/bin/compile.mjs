@@ -66,6 +66,7 @@ if (!existsSync(statePath)) {
 }
 const strict = process.argv.includes('--strict');
 const emit = process.argv.includes('--emit');
+const force = process.argv.includes('--force');
 
 // Reuse the minimal YAML parser by spawning validate.mjs? Simpler: inline a
 // small parse of the fields we need (hooks:, protocols:, directions:). We only
@@ -290,41 +291,60 @@ console.log('');
 // Writes live canonical hook content to sutra/package/hooks/<file>. Only
 // emits from holding/hooks/ (Asawa-canonical); refuses .claude/hooks/
 // sources (runtime-specific, not shippable). Idempotent.
+//
+// Policy (per founder directive 2026-04-17 Asawa→Sutra asymmetry closure):
+//   --emit           fills EMPTY / MISSING pkg hooks from holding/hooks/.
+//                    HASH_DRIFT is a WARNING — not overwritten. Protects
+//                    intentional per-tier adaptations from silent clobber.
+//   --emit --force   additionally overwrites HASH_DRIFT files (use after
+//                    per-file review that confirms holding/ is truly canonical).
+let emitted = 0, upToDate = 0, warnDrift = 0, errorNoSource = 0, skippedNonCanonical = 0;
 if (emit) {
-  console.log('Emission phase (--emit):');
+  console.log(`Emission phase (--emit${force ? ' --force' : ''}):`);
   console.log('─'.repeat(96));
   const holdingPrefix = join(repoRoot, 'holding/hooks');
-  let wrote = 0, skippedIdentical = 0, skippedNonCanonical = 0, skippedNoLive = 0;
   for (const h of hooks) {
     const pkgPath = join(repoRoot, 'sutra/package/hooks', h.file);
+    const pkgSize = sizeOf(pkgPath);
     const live = findLiveHook(repoRoot, h.file);
     if (!live.path) {
-      console.log(`  SKIP  ${h.file.padEnd(32)} — no non-empty live copy found`);
-      skippedNoLive++;
+      console.log(`  ERROR-NO-SOURCE   ${h.file.padEnd(32)} — no non-empty live copy found (declared in state but no source to emit)`);
+      errorNoSource++;
       continue;
     }
     if (!live.path.startsWith(holdingPrefix)) {
-      console.log(`  SKIP  ${h.file.padEnd(32)} — live copy is not canonical (found at ${live.path.replace(repoRoot + '/', '')})`);
+      console.log(`  SKIP-NON-CANON    ${h.file.padEnd(32)} — live copy non-canonical (${live.path.replace(repoRoot + '/', '')})`);
       skippedNonCanonical++;
       continue;
     }
     const pkgHash = hashOf(pkgPath);
     const liveHash = hashOf(live.path);
+    const isEmptyOrMissing = (pkgSize <= 0);
+
     if (pkgHash && liveHash && pkgHash === liveHash) {
-      skippedIdentical++;
-      continue; // no-op, already in sync
+      // Already in sync — no-op
+      upToDate++;
+      continue;
     }
-    // Write live → pkg
-    const content = readFileSync(live.path);
-    try { mkdirSync(dirname(pkgPath), { recursive: true }); } catch {}
-    writeFileSync(pkgPath, content);
-    try { chmodSync(pkgPath, 0o755); } catch {}
-    const newHash = hashOf(pkgPath);
-    console.log(`  WRITE ${h.file.padEnd(32)} ${pkgHash || 'null'} → ${newHash}`);
-    wrote++;
+
+    if (isEmptyOrMissing || force) {
+      // EMIT: either pkg is empty/missing (always safe to fill), or --force was passed
+      const content = readFileSync(live.path);
+      try { mkdirSync(dirname(pkgPath), { recursive: true }); } catch {}
+      writeFileSync(pkgPath, content);
+      try { chmodSync(pkgPath, 0o755); } catch {}
+      const newHash = hashOf(pkgPath);
+      const reason = isEmptyOrMissing ? '(was empty/missing)' : '(force-overwrite drift)';
+      console.log(`  EMIT              ${h.file.padEnd(32)} ${pkgHash || 'null'} → ${newHash} ${reason}`);
+      emitted++;
+    } else {
+      // WARN-DRIFT but don't overwrite — protects intentional per-tier adaptations
+      console.log(`  WARN-DRIFT        ${h.file.padEnd(32)} pkg=${pkgHash} live=${liveHash} — not overwritten (use --force if holding/ is canonical)`);
+      warnDrift++;
+    }
   }
   console.log('─'.repeat(96));
-  console.log(`Emitted: ${wrote} written, ${skippedIdentical} already in sync, ${skippedNonCanonical} non-canonical, ${skippedNoLive} no live source.`);
+  console.log(`Emitted: ${emitted}  Up-to-date: ${upToDate}  Warn-drift: ${warnDrift}  No-source: ${errorNoSource}  Non-canonical: ${skippedNonCanonical}`);
   console.log('');
 
   // Settings template emission (chunk b)
@@ -349,10 +369,28 @@ console.log('  HASH_DRIFT      package sha1 ≠ live sha1 (any content differenc
 console.log('  NOT_REGISTERED  hook file not referenced in sutra/package/templates/settings.json');
 console.log('  MATCHER_DRIFT   wired in settings.json but with different matcher than state.hooks[] declares');
 console.log('');
+// Exit logic:
+//   --emit mode — exit 1 if any hook failed with ERROR-NO-SOURCE (declared but
+//                 unemitted). WARN-DRIFT is not an error (that's by design
+//                 without --force). --strict still escalates any divergence.
+//   dry-run     — exit 0 by default (informational); --strict exits 1 if any
+//                 divergence remains (pre-emit state).
+if (emit) {
+  if (errorNoSource > 0) {
+    console.log(`✗ Emit completed with ${errorNoSource} ERROR-NO-SOURCE hook(s) — declared in state.hooks[] but no live source in holding/hooks/.`);
+    process.exit(1);
+  }
+  if (strict && warnDrift > 0) {
+    console.log(`✗ --strict: ${warnDrift} HASH_DRIFT hook(s) remain. Re-run with --emit --force after reviewing per-file drift.`);
+    process.exit(1);
+  }
+  console.log(`✓ Emit complete: ${emitted} emitted, ${upToDate} up-to-date, ${warnDrift} warn-drift${warnDrift ? ' (use --force to overwrite)' : ''}.`);
+  process.exit(0);
+}
 if (divergences === 0) {
   console.log('✓ No divergence — package bundle matches state.');
   process.exit(0);
 } else {
-  console.log(`✗ ${divergences} divergence(s). Next chunk: actual emission will reconcile.`);
+  console.log(`✗ ${divergences} divergence(s). Run --emit to fill empty/missing pkg hooks; --emit --force to also overwrite drift.`);
   process.exit(strict ? 1 : 0);
 }
