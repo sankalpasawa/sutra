@@ -14,17 +14,42 @@ set -o pipefail
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
 HOOK_LOG="$REPO_ROOT/holding/hooks/hook-log.jsonl"
 
+# Stop hooks receive JSON on stdin (transcript_path, session_id, etc.).
+# Capture once at dispatcher entry so downstream sections (triage-collector)
+# can re-use it. Safe when stdin is empty/TTY — read returns immediately.
+_STOP_STDIN=""
+if [ ! -t 0 ]; then
+  _STOP_STDIN=$(cat 2>/dev/null || true)
+fi
+export _STOP_STDIN
+
 # Health tracking
 _HOOK_RAN=0
 _HOOK_PASSED=0
 _HOOK_FAILED=0
 _HOOK_FAILURES=""
 
-# Logging helper: log_hook HOOK_NAME STATUS [ERROR_MSG] START_SECONDS
+# ms-resolution wall-clock helper (slowness #1, 2026-04-16) — matches
+# dispatcher-pretool.sh. EPOCHREALTIME (bash 5) → gdate → python3 → date.
+_now_ms() {
+  if [ -n "${EPOCHREALTIME:-}" ]; then
+    local _er="${EPOCHREALTIME/./}"
+    printf '%s\n' "${_er:0:13}"
+  elif command -v gdate >/dev/null 2>&1; then
+    gdate +%s%3N
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import time; print(int(time.time()*1000))'
+  else
+    echo $(( $(date +%s) * 1000 ))
+  fi
+}
+
+# Logging helper: log_hook HOOK_NAME STATUS [ERROR_MSG] START_MS
 log_hook() {
   local _name="$1" _status="$2" _error="$3" _start="$4"
-  local _end=$(date +%s)
-  local _ms=$(( (_end - _start) * 1000 ))
+  local _end
+  _end=$(_now_ms)
+  local _ms=$(( _end - _start ))
   _HOOK_RAN=$((_HOOK_RAN + 1))
   if [ "$_status" = "FAIL" ]; then
     _HOOK_FAILED=$((_HOOK_FAILED + 1))
@@ -39,7 +64,7 @@ log_hook() {
 # ─── 1. Session Checkpoint ────────────────────────────────────────────────────
 # Source: holding/hooks/session-checkpoint.sh
 # Saves structured session state to holding/checkpoints/
-_s1=$(date +%s)
+_s1=$(_now_ms)
 
 CHECKPOINT_DIR="$REPO_ROOT/holding/checkpoints"
 TODAY=$(date -u +"%Y-%m-%d")
@@ -105,7 +130,7 @@ log_hook "SessionCheckpoint" "PASS" "" "$_s1"
 
 # ─── 2. Test in Production Check (D1) ────────────────────────────────────────
 # Source: holding/hooks/test-in-production-check.sh
-_s2=$(date +%s)
+_s2=$(_now_ms)
 
 NEW_FILES=$(cd "$REPO_ROOT" && git diff --name-only --diff-filter=A HEAD 2>/dev/null | grep -E '^(holding|sutra)/.*\.md$')
 
@@ -119,7 +144,7 @@ log_hook "TestInProduction-D1" "PASS" "" "$_s2"
 
 # ─── 3. Time Allocation Tracker (D12) ────────────────────────────────────────
 # Source: holding/hooks/time-allocation-tracker.sh
-_s3=$(date +%s)
+_s3=$(_now_ms)
 
 CHANGED_FILES=$(cd "$REPO_ROOT" && git diff --name-only HEAD 2>/dev/null; cd "$REPO_ROOT" && git diff --name-only --cached 2>/dev/null)
 
@@ -139,7 +164,7 @@ log_hook "TimeAllocation-D12" "PASS" "" "$_s3"
 # ─── 4. Principle Regression (D27) ───────────────────────────────────────────
 # Source: holding/hooks/principle-regression.sh
 # 5 automated checks: P11 Readability, D7 Cascade, D23 Estimation, D28 Direction encoding, D22 Parallelization
-_s4=$(date +%s)
+_s4=$(_now_ms)
 
 PR_PASSED=0
 PR_TOTAL=5
@@ -305,7 +330,7 @@ fi
 # ─── 5. Principle Regression Tests Suite ─────────────────────────────────────
 # Source: holding/hooks/principle-regression-tests.sh
 # 7 standalone checks: D1, D5, D6, D10, D12, D13, VER
-_s5=$(date +%s)
+_s5=$(_now_ms)
 
 PRT_PASSED=0
 PRT_FAILED=0
@@ -455,7 +480,7 @@ fi
 
 # ─── 6. Lifecycle Coverage Check (D3) ────────────────────────────────────────
 # Source: holding/hooks/lifecycle-check.sh
-_s6=$(date +%s)
+_s6=$(_now_ms)
 
 SINCE_LC=$(date -v-4H +"%Y-%m-%dT%H:%M:%S" 2>/dev/null || date -d '4 hours ago' +"%Y-%m-%dT%H:%M:%S" 2>/dev/null)
 
@@ -558,7 +583,7 @@ fi
 
 # ─── 7. Auto-push Warning ────────────────────────────────────────────────────
 # Source: holding/hooks/auto-push.sh
-_s7=$(date +%s)
+_s7=$(_now_ms)
 
 warnings=""
 
@@ -609,7 +634,7 @@ fi
 
 # ─── 8. KPI Tracker ──────────────────────────────────────────────────────────
 # Source: holding/hooks/kpi-tracker.sh
-_s8=$(date +%s)
+_s8=$(_now_ms)
 
 BASELINE_FILES=136
 BASELINE_ACCURACY=78
@@ -673,12 +698,12 @@ fi
 # Checks if L0-L2 files changed and reminds about downstream.
 
 # Already covered by principle-regression check 4b (D7) above — skip duplicate.
-_s9=$(date +%s)
+_s9=$(_now_ms)
 log_hook "CascadeCheck-D7" "PASS" "" "$_s9"
 
 # ─── 10. Process Fix Check (D2) ──────────────────────────────────────────────
 # Source: holding/hooks/process-fix-check.sh
-_s10=$(date +%s)
+_s10=$(_now_ms)
 
 LAST_MSG_PF=$(cd "$REPO_ROOT" && git log -1 --oneline 2>/dev/null)
 
@@ -692,7 +717,7 @@ log_hook "ProcessFixCheck-D2" "PASS" "" "$_s10"
 
 # ─── 11. Context Budget Check ────────────────────────────────────────────────
 # Source: holding/hooks/context-budget-check.sh
-_s11=$(date +%s)
+_s11=$(_now_ms)
 
 TRANSCRIPT="${CLAUDE_TRANSCRIPT:-}"
 _cb_status="PASS"
@@ -708,6 +733,56 @@ if [ -n "$TRANSCRIPT" ]; then
   fi
 fi
 log_hook "ContextBudget" "$_cb_status" "$_cb_error" "$_s11"
+
+# ─── 12. Triage Collector (CLAUDE.md:32) ─────────────────────────────────────
+# Source: holding/hooks/triage-collector.sh
+# Persists TRIAGE: depth_selected=X, depth_correct=X, class=... lines from the
+# current transcript into holding/TRIAGE-LOG.jsonl. Advisory — always exits 0.
+_s12=$(_now_ms)
+_tc_status="PASS"
+_tc_error=""
+if [ -x "$REPO_ROOT/holding/hooks/triage-collector.sh" ]; then
+  # Pass REPO_ROOT explicitly as CLAUDE_PROJECT_DIR so the collector doesn't
+  # re-derive it via git rev-parse (which in a pipeline subshell inside a
+  # superproject with submodules can resolve to the wrong submodule root).
+  if [ -n "$_STOP_STDIN" ]; then
+    printf '%s' "$_STOP_STDIN" | CLAUDE_PROJECT_DIR="$REPO_ROOT" bash "$REPO_ROOT/holding/hooks/triage-collector.sh" >/dev/null 2>&1 || {
+      _tc_status="FAIL"; _tc_error="triage-collector.sh exited non-zero"
+    }
+  else
+    CLAUDE_PROJECT_DIR="$REPO_ROOT" bash "$REPO_ROOT/holding/hooks/triage-collector.sh" </dev/null >/dev/null 2>&1 || {
+      _tc_status="FAIL"; _tc_error="triage-collector.sh exited non-zero"
+    }
+  fi
+else
+  _tc_status="FAIL"; _tc_error="triage-collector.sh missing or not executable"
+fi
+log_hook "TriageCollector" "$_tc_status" "$_tc_error" "$_s12"
+
+# ─── 13. Estimation Collector (ESTIMATION-ENGINE.md MEASURE phase) ───────────
+# Source: holding/hooks/estimation-collector.sh
+# Persists ESTIMATE: tokens_est=N, files_est=M, time_min_est=T, category=...
+# lines from the current transcript into holding/ESTIMATION-LOG.jsonl.
+# Wires the auto-capture behavior specified in ESTIMATION-ENGINE.md lines
+# 443-486 (MEASURE phase). Seed data was frozen 2026-04-05; this hook
+# resumes live capture as of 2026-04-17. Advisory — always exits 0.
+_s13=$(_now_ms)
+_ec_status="PASS"
+_ec_error=""
+if [ -x "$REPO_ROOT/holding/hooks/estimation-collector.sh" ]; then
+  if [ -n "$_STOP_STDIN" ]; then
+    printf '%s' "$_STOP_STDIN" | CLAUDE_PROJECT_DIR="$REPO_ROOT" bash "$REPO_ROOT/holding/hooks/estimation-collector.sh" >/dev/null 2>&1 || {
+      _ec_status="FAIL"; _ec_error="estimation-collector.sh exited non-zero"
+    }
+  else
+    CLAUDE_PROJECT_DIR="$REPO_ROOT" bash "$REPO_ROOT/holding/hooks/estimation-collector.sh" </dev/null >/dev/null 2>&1 || {
+      _ec_status="FAIL"; _ec_error="estimation-collector.sh exited non-zero"
+    }
+  fi
+else
+  _ec_status="FAIL"; _ec_error="estimation-collector.sh missing or not executable"
+fi
+log_hook "EstimationCollector" "$_ec_status" "$_ec_error" "$_s13"
 
 # ─── Health Summary ──────────────────────────────────────────────────────────
 echo ""

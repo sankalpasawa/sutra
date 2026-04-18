@@ -64,11 +64,34 @@ fi
 # Track first blocking exit code
 BLOCK_CODE=0
 
-# Logging helper: log_hook HOOK_NAME STATUS [ERROR_MSG] START_SECONDS
+# ms-resolution wall-clock helper (slowness #1, 2026-04-16). Prior timer used
+# `date +%s` which rounds to whole seconds — all sub-second hook durations
+# logged as ms=0, invisible for profiling. Order of preference:
+#   (1) bash 5+ $EPOCHREALTIME      — in-process, no fork (~0ms overhead)
+#   (2) gdate +%s%3N                — coreutils on macOS (single fork)
+#   (3) python3 time.time()*1000    — portable fork (~10-20ms overhead)
+#   (4) date +%s * 1000             — last-resort second resolution
+_now_ms() {
+  if [ -n "${EPOCHREALTIME:-}" ]; then
+    # EPOCHREALTIME = "1776336429.123456" — take first 13 chars after strip
+    local _er="${EPOCHREALTIME/./}"
+    printf '%s\n' "${_er:0:13}"
+  elif command -v gdate >/dev/null 2>&1; then
+    gdate +%s%3N
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import time; print(int(time.time()*1000))'
+  else
+    echo $(( $(date +%s) * 1000 ))
+  fi
+}
+
+# Logging helper: log_hook HOOK_NAME STATUS [ERROR_MSG] START_MS
+# START_MS must come from _now_ms (not date +%s).
 log_hook() {
   local _name="$1" _status="$2" _error="$3" _start="$4"
-  local _end=$(date +%s)
-  local _ms=$(( (_end - _start) * 1000 ))
+  local _end
+  _end=$(_now_ms)
+  local _ms=$(( _end - _start ))
   if [ "$_status" = "FAIL" ]; then
     echo "{\"ts\":$(date +%s),\"hook\":\"$_name\",\"event\":\"PreToolUse\",\"status\":\"FAIL\",\"error\":\"$_error\",\"ms\":$_ms}" >> "$HOOK_LOG"
   else
@@ -80,13 +103,13 @@ log_hook() {
 # Source: .claude/hooks/enforce-boundaries.sh
 # CEO of Asawa can edit everything — passthrough.
 # (Currently a no-op; kept as a slot for future boundary logic)
-_start1=$(date +%s)
+_start1=$(_now_ms)
 log_hook "SessionBoundary" "PASS" "" "$_start1"
 
 # ─── Check 2: Version Governance (D24) ────────────────────────────────────────
 # Source: holding/hooks/version-governance.sh
 # Soft: reminds when editing a company's os/ directory
-_start2=$(date +%s)
+_start2=$(_now_ms)
 _check2_status="PASS"
 _check2_error=""
 if [ -n "$FILE_PATH" ]; then
@@ -106,7 +129,7 @@ if [ "$TOOL_NAME" = "Write" ] || [ ! -f "$FILE_PATH" ]; then
   # ─── Check 3: Architecture Awareness (D4) ─────────────────────────────────
   # Source: holding/hooks/architecture-awareness.sh
   # Soft: reminds to check SYSTEM-MAP.md when creating new files
-  _start3=$(date +%s)
+  _start3=$(_now_ms)
   _check3_status="PASS"
   _check3_error=""
   if [ -n "$FILE_PATH" ] && [ ! -f "$FILE_PATH" ]; then
@@ -119,7 +142,7 @@ if [ "$TOOL_NAME" = "Write" ] || [ ! -f "$FILE_PATH" ]; then
   # ─── Check 4: New Path Detector (PROTO-001) ──────────────────────────────
   # Source: holding/hooks/new-path-detector.sh
   # Soft: flags files in directories not listed in SYSTEM-MAP.md
-  _start4=$(date +%s)
+  _start4=$(_now_ms)
   _check4_status="PASS"
   _check4_error=""
   if [ -n "$FILE_PATH" ] && [ ! -f "$FILE_PATH" ]; then
@@ -171,7 +194,7 @@ fi
 # Override: SECRET_OVERRIDE=1 with SECRET_OVERRIDE_REASON (e.g., test fixture).
 # Also supports env-var fallback (TOOL_INPUT_content, TOOL_INPUT_new_string)
 # for tests that don't feed stdin JSON.
-_start5=$(date +%s)
+_start5=$(_now_ms)
 if [ -n "$FILE_PATH" ]; then
   # Exclude .env files (those ARE env vars)
   case "$FILE_PATH" in
@@ -227,7 +250,7 @@ log_hook "KeysInEnvVars-PROTO004" "PASS" "" "$_start5"
 
 # ─── Check 6: Self-Assess Before Foundational Work (PROTO-005) ────────────────
 # SOFT: remind when editing foundational docs
-_start6=$(date +%s)
+_start6=$(_now_ms)
 if [ -n "$FILE_PATH" ]; then
   case "$FILE_PATH" in
     *ARCHITECTURE*|*DESIGN*|*FRAMEWORK*|*DOCTRINE*|*OPERATING-MODEL*|*HUMAN-AGENT*)
@@ -241,7 +264,7 @@ log_hook "SelfAssess-PROTO005" "PASS" "" "$_start6"
 
 # ─── Check 7: Process Discipline (PROTO-006) ──────────────────────────────────
 # SOFT: remind that process exists before ad-hoc work
-_start7=$(date +%s)
+_start7=$(_now_ms)
 # No blocking — this is a behavioral reminder handled by CLAUDE.md depth system
 # Also covers: PROTO-000 (ship with implementation), PROTO-003 (free tier first),
 # PROTO-010 (version focus), PROTO-015 (verify before commit), PROTO-016 (root cause)
@@ -250,7 +273,7 @@ log_hook "ProcessDiscipline-PROTO006" "PASS" "" "$_start7"
 
 # ─── Check 8: Narration Is Not Artifact (PROTO-009) ──────────────────────────
 # SOFT: when writing to os/ directories, remind that files must be artifacts
-_start8=$(date +%s)
+_start8=$(_now_ms)
 if [ -n "$FILE_PATH" ]; then
   case "$FILE_PATH" in
     */os/features/*|*/os/engines/*|*/os/findings/*|*/os/protocols/*)
@@ -266,7 +289,7 @@ log_hook "NarrationNotArtifact-PROTO009" "PASS" "" "$_start8"
 # Whitelist is intentionally narrow — memory writes NO LONGER skip this check,
 # because new directions typically land as memory first (root cause of 2026-04-15 miss).
 # Marker: .claude/input-routed (cleared on UserPromptSubmit → per-turn enforcement)
-_start9=$(date +%s)
+_start9=$(_now_ms)
 _check9_status="PASS"
 _routing_missing=0
 if [ -n "$FILE_PATH" ]; then
@@ -302,9 +325,20 @@ log_hook "InputRouting" "$_check9_status" "" "$_start9"
 
 # ─── Check 10: Depth Block Verification (D2/D9/D26) ──────────────────────────
 # HARD: require depth/estimation block before deliverable edits.
-_start10=$(date +%s)
+#
+# Marker contract (2026-04-17 upgrade — presence→value):
+#   Canonical:  DEPTH=N TASK=<slug> TS=<unix>   where N ∈ {1..5}
+#   Back-compat (old test format): "N <ts> <task>"  (space-separated, first token 1..5)
+#   Migration grace: bare unix timestamp (10+ digits, old format) → treat as DEPTH=3 + warn
+#   Anything else → BLOCK with helpful message
+#
+# Tier escalation: files under sutra/, holding/hooks/, or .claude/ (outside the
+# whitelist) additionally require DEPTH >= 5. The sutra-deploy-depth5 marker
+# (Check 11) remains the dedicated escape hatch for Sutra→company deploys.
+_start10=$(_now_ms)
 _check10_status="PASS"
 _depth_missing=0
+_DEPTH_VALUE=""   # populated on successful parse; consumed by Check 10b
 if [ -n "$FILE_PATH" ]; then
   case "$FILE_PATH" in
     "$REPO_ROOT/.claude/"*|*/holding/checkpoints/*|*/holding/hooks/hook-log*|*/holding/TODO.md|*/holding/ESTIMATION-LOG*|*.lock)
@@ -312,7 +346,14 @@ if [ -n "$FILE_PATH" ]; then
     *)
       DEPTH_MARKER="$REPO_ROOT/.claude/depth-registered"
       DEPTH_MARKER_ALT="$REPO_ROOT/.claude/depth-assessed"
-      if [ ! -f "$DEPTH_MARKER" ] && [ ! -f "$DEPTH_MARKER_ALT" ]; then
+      _MARKER_FILE=""
+      if [ -f "$DEPTH_MARKER" ]; then
+        _MARKER_FILE="$DEPTH_MARKER"
+      elif [ -f "$DEPTH_MARKER_ALT" ]; then
+        _MARKER_FILE="$DEPTH_MARKER_ALT"
+      fi
+
+      if [ -z "$_MARKER_FILE" ]; then
         echo ""
         echo "BLOCKED — DEPTH BLOCK MISSING (D2/D9/D26)"
         echo "  Emit before any Write/Edit:"
@@ -321,12 +362,83 @@ if [ -n "$FILE_PATH" ]; then
         echo "    EFFORT: [time], [files]"
         echo "    COST: ~\$X (~Y% of \$200 plan)"
         echo "    IMPACT: [what this changes]"
-        echo "  Then: echo \"DEPTH TIMESTAMP TASK\" > .claude/depth-registered"
+        echo "  Then (new format):"
+        echo "    echo \"DEPTH=N TASK=<slug> TS=\$(date +%s)\" > .claude/depth-registered"
         echo ""
         mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
         echo "{\"ts\":$(date +%s),\"miss\":\"depth\",\"file\":\"$FILE_PATH\",\"tool\":\"$TOOL_NAME\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
         _check10_status="FAIL"
         _depth_missing=1
+      else
+        # Parse marker contents. Read first non-empty line, strip CR.
+        _MARKER_RAW=$(head -1 "$_MARKER_FILE" 2>/dev/null | tr -d '\r')
+        _PARSED_DEPTH=""
+        _PARSE_WARNING=""
+
+        # Form 1: canonical "DEPTH=N TASK=... TS=..."
+        if [ -z "$_PARSED_DEPTH" ]; then
+          _tmp=$(printf '%s' "$_MARKER_RAW" | sed -n -E 's/.*(^|[[:space:]])DEPTH=([1-5])([[:space:]]|$).*/\2/p' | head -1)
+          [ -n "$_tmp" ] && _PARSED_DEPTH="$_tmp"
+        fi
+
+        # Form 2: legacy "N <ts> <task>" — first whitespace-delimited token is 1..5
+        if [ -z "$_PARSED_DEPTH" ]; then
+          _first=$(printf '%s' "$_MARKER_RAW" | awk '{print $1}')
+          case "$_first" in
+            1|2|3|4|5) _PARSED_DEPTH="$_first" ;;
+          esac
+        fi
+
+        # Form 3: migration grace — bare unix timestamp (10+ consecutive digits, no DEPTH=)
+        if [ -z "$_PARSED_DEPTH" ]; then
+          if printf '%s' "$_MARKER_RAW" | grep -qE '^[[:space:]]*[0-9]{10,}[[:space:]]*$'; then
+            _PARSED_DEPTH="3"
+            _PARSE_WARNING="legacy-bare-timestamp"
+            echo "Warning: depth marker has legacy bare-timestamp format; defaulting DEPTH=3. Use 'DEPTH=N TASK=<slug> TS=<unix>'."
+          fi
+        fi
+
+        if [ -z "$_PARSED_DEPTH" ]; then
+          echo ""
+          echo "BLOCKED — DEPTH MARKER MALFORMED (D2/D9/D26)"
+          echo "  File: .claude/$(basename "$_MARKER_FILE")"
+          echo "  Contents: $_MARKER_RAW"
+          echo "  Expected format:"
+          echo "    DEPTH=N TASK=<slug> TS=<unix>        (N ∈ {1,2,3,4,5})"
+          echo "  Fix:"
+          echo "    echo \"DEPTH=5 TASK=my-task TS=\$(date +%s)\" > .claude/depth-registered"
+          echo ""
+          mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+          _SAFE_RAW=$(printf '%s' "$_MARKER_RAW" | tr -d '"\\' | tr '\n\r' '  ')
+          echo "{\"ts\":$(date +%s),\"miss\":\"depth-malformed\",\"file\":\"$FILE_PATH\",\"marker\":\"$_SAFE_RAW\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+          _check10_status="FAIL"
+          _depth_missing=1
+        else
+          _DEPTH_VALUE="$_PARSED_DEPTH"
+          # Tier escalation: protected paths require DEPTH >= 5.
+          # Scope: sutra/, holding/hooks/ (excluding hook-log which is in whitelist above),
+          #        and .claude/ (but .claude/ under REPO_ROOT was already whitelisted,
+          #        so this catches cross-repo .claude/ writes).
+          _needs_5=0
+          case "$FILE_PATH" in
+            */sutra/*|*/holding/hooks/*|*/.claude/*)
+              _needs_5=1 ;;
+          esac
+          if [ "$_needs_5" = "1" ] && [ "$_DEPTH_VALUE" -lt 5 ]; then
+            echo ""
+            echo "BLOCKED — PROTECTED PATH REQUIRES DEPTH 5 (D2/D26)"
+            echo "  File:  $FILE_PATH"
+            echo "  Depth registered: $_DEPTH_VALUE/5"
+            echo "  Paths under sutra/, holding/hooks/, or .claude/ require DEPTH=5."
+            echo "  Fix:"
+            echo "    echo \"DEPTH=5 TASK=<slug> TS=\$(date +%s)\" > .claude/depth-registered"
+            echo ""
+            mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+            echo "{\"ts\":$(date +%s),\"miss\":\"depth-too-low\",\"file\":\"$FILE_PATH\",\"depth\":$_DEPTH_VALUE}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+            _check10_status="FAIL"
+            _depth_missing=1
+          fi
+        fi
       fi
       ;;
   esac
@@ -337,7 +449,7 @@ log_hook "DepthBlock" "$_check10_status" "" "$_start10"
 # ─── Check 11: Sutra → Company Deploy Depth Gate (D27) ───────────────────────
 # HARD: any edit touching sutra/ OR a company os/ submodule path must declare Depth 5.
 # Marker: .claude/sutra-deploy-depth5 (cleared on UserPromptSubmit).
-_start11=$(date +%s)
+_start11=$(_now_ms)
 _check11_status="PASS"
 _sutra_missing=0
 if [ -n "$FILE_PATH" ]; then
@@ -365,7 +477,7 @@ if [ -n "$FILE_PATH" ]; then
   esac
 fi
 log_hook "SutraDeployDepth5-D27" "$_check11_status" "" "$_start11"
-[ "$_sutra_missing" = "1" ] && [ "$BLOCK_CODE" = "0" ] && BLOCK_CODE=1
+[ "$_sutra_missing" = "1" ] && BLOCK_CODE=2
 
 # ─── Exit ─────────────────────────────────────────────────────────────────────
 exit $BLOCK_CODE

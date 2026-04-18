@@ -45,6 +45,15 @@ ESC_STEM="$(_re_escape "$STEM")"
 ESC_BASE="$(_re_escape "$BASE")"
 ESC_REL_PATH="$(_re_escape "$REL_PATH")"
 
+# Exempt routine backlog maintenance: editing TODO.md IS the cascade action.
+# Without this carve-out, every `- [ ] foo` → `- [x] foo` flip triggers the
+# hard gate and demands CASCADE_ACK (codex P1 2026-04-16).
+case "$FILE_PATH" in
+  */TODO.md|*/BACKLOG.md)
+    exit 0
+    ;;
+esac
+
 # Check if file is in holding/ or sutra/layer2-operating-system/
 case "$FILE_PATH" in
   */holding/*|*/sutra/layer2-operating-system/*)
