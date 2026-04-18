@@ -50,11 +50,31 @@ P6 MEASURE    queued
 
 Design DAG: `design/2026-04-18-deployment-dag.md`
 
-## How to resume
+## How to resume (new session bootstrap)
 
-If you're picking this up in a future session:
+Paste this prompt into a fresh Claude Code session at the asawa-holding root to continue plugin work exactly where it paused:
 
-1. Read `design/2026-04-18-deployment-dag.md` for the live design state
-2. Read `holding/research/2026-04-18-workflow-architecture-spec-v1.0-COMMITTED.md` for the Kernel workflow spec
-3. Read `holding/FOUNDER-DIRECTIONS.md` D29 for the plugin deployment directions
-4. Current gate (in dag file) tells you what founder needs to approve next
+> Resume Sutra Marketplace plugin work. Read these files in order, then surface the 5 founder decisions awaiting approval at P2 GATE:
+> 1. `sutra/marketplace/README.md` (this file — orientation)
+> 2. `sutra/marketplace/design/2026-04-18-deployment-dag.md` (P0 + P1, paused at P2 GATE, 20 engineering factors)
+> 3. `holding/research/2026-04-18-sutra-marketplace-customer-market-design.md` (customer/market supplement, 8 new factors CM1-CM8, 5 boxed founder decisions D-CM-1 through D-CM-5)
+> 4. `holding/FOUNDER-DIRECTIONS.md` D29 (plugin = "Sutra" bare, Asawa hidden, Kernel workflow)
+> 5. `holding/research/2026-04-18-workflow-architecture-spec-v1.0-COMMITTED.md` (Sutra Kernel workflow spec)
+>
+> After loading: present the 5 D-CM-1..D-CM-5 decisions as a single decision board for me to approve/revise/defer. After I clear all 5, fold CM1-CM8 into the deployment DAG and proceed to P3 PRIORITIZE.
+
+State at pause:
+- P0 CLASSIFY: DONE (Complicated/TRAVERSE)
+- P1 ENUMERATE: DONE (20 engineering factors + 8 customer/market factors = 28 total)
+- P2 VALIDATE: **GATE** — 5 founder decisions awaiting approval (see customer/market doc §J)
+- P3-P6: queued
+
+Recommended P3 ranking preview (from customer/market doc §I):
+- Tier 1 must-resolve: F13 first-run UX, CM3 activation script, F1 plugin manifest, F15 Asawa-leak audit
+- Tier 2 pre-listing: CM5 Friend-0 cohort, F2 content mapping, CM2 status quo benchmark, F5 marketplace repo, F18 deeper Friend-0
+- Tier 3 + Defer: rest
+
+What NOT to do in the new session:
+- Do NOT re-enumerate factors (already at 28, well above the Complicated/TRAVERSE floor of 6)
+- Do NOT touch `sutra/package/` npm channel — parallel-channel decision is deferred to P4 F17
+- Do NOT publish the plugin or open the marketplace repo until Friend-0 cohort retains ≥50% at week 4 (per customer/market doc §E)
