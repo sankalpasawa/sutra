@@ -1,5 +1,38 @@
 # Sutra — TODO
 
+## Charter: Tokens (Q2 2026, created 2026-04-20)
+
+**File**: `os/charters/TOKENS.md` — full charter with KRAs, KPIs, OKRs, roadmap
+**DRI**: Sutra-OS · **Contributors**: Analytics, Engineering, Operations
+**Why**: Unmeasured governance overhead; founder direction "A lot of tokens have been used; we need to find some optimization ways."
+
+### W1 (due 2026-04-26) — Measurement
+
+- [ ] Define `token-telemetry.jsonl` schema; extend `holding/departments/analytics/TELEMETRY-CONTRACT.md` (Analytics, KR1, 2026-04-23)
+- [ ] Write `holding/hooks/session-token-snapshot.sh` (SessionStart) — capture boot context size per company (Engineering, KR1, 2026-04-23)
+- [ ] Extend `holding/hooks/dispatcher-stop.sh` to emit `task_end` events with governance-vs-work categorization (Engineering, KR1, 2026-04-24)
+- [ ] Deploy hooks + telemetry into 6 companies (Sutra, Asawa, DayFlow, Maze, PPR, Billu) via god mode (Sutra-OS, KR1, 2026-04-25)
+- [ ] Collect 10+ sessions per company; publish `holding/research/2026-04-26-token-baseline.md` (Analytics, KR1, 2026-04-26)
+
+### W2–W4
+
+- [ ] Rank 7 hypothesis cuts against baseline data; select top 3 (Sutra-OS, KR2, 2026-04-29)
+- [ ] Draft TOKEN-BUDGET-PROTOCOL (candidate PROTO-019); add to `state/system.yaml` (Sutra-OS, KR2+KR3, 2026-05-01)
+- [ ] Ship cut #1 (MEMORY.md indexed retrieval) — pilot DayFlow first (Engineering, KR2, 2026-05-07)
+- [ ] Ship cuts #2–3 (L1 block compression; CLAUDE.md split) (Engineering, KR2, 2026-05-21)
+- [ ] Add per-session + per-task budget alerts to Analytics Pulse (Analytics, KR3, 2026-05-28)
+- [ ] Propagate charter + mechanisms via `upgrade-clients.sh` to Asawa, DayFlow, +1 (Sutra-OS, KR4, 2026-06-10)
+- [ ] Q2 review: score KRs, decide Q3 continuation (Sutra-OS, 2026-06-30)
+
+### Related meta-work (founder direction 2026-04-20)
+
+- [ ] Formalize the unit-architecture model (every unit = definition charter + skills + initiative charters) as PROTO-019 (candidate). Current sketch lives in `os/charters/README.md` sections 1–4.
+- [ ] Formalize `ADDING-DEPARTMENTS.md` protocol (sketch in charters README section 4)
+- [ ] Audit existing departments for charter + skills + participation completeness (exemplar: `holding/departments/analytics/`)
+- [ ] Extend `state/system.yaml` schema to register charters as first-class objects (currently registered only in OKRs.md prose)
+
+---
+
 ## Restructure: Separate Problem-Solving from Implementation Bureaucracy
 
 **Source**: Maze F7 Optional Auth — full SUTRA pipeline run (2026-04-05). CEO feedback: "We don't need to follow a process if we directly know the answer."

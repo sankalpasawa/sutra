@@ -256,3 +256,14 @@ The following charters existed before the Q2 focus change. They are preserved as
 ### Revenue/Viability
 - INACTIVE — activates when first company launches
 </details>
+
+---
+
+## Active Initiative Charters (cross-cutting, horizontal)
+
+| Charter | DRI | Status | Q | KR summary |
+|---|---|---|---|---|
+| [Tokens](os/charters/TOKENS.md) | Sutra-OS | ACTIVE | Q2 2026 | Baseline (Apr 26) → cut boot P50 30% → gov overhead <15% → propagate to 3+ companies |
+
+See `os/charters/README.md` for the charter model (definition vs initiative), placement rules, and protocol for adding new charters.
+
