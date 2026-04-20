@@ -20,6 +20,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-stop.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flush-telemetry.sh",
+            "timeout": 10
           }
         ]
       }

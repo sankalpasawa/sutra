@@ -1,7 +1,7 @@
 {
   "name": "sutra",
-  "version": "0.1.0",
-  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace. Opinionated governance for Claude Code sessions.",
+  "version": "1.0.0",
+  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, plus opt-in metric telemetry to the Asawa analytics pulse.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

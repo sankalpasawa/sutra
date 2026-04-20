@@ -92,15 +92,39 @@ print('  events:', evs)
 " 2>&1 | grep -q "events:" && _pass "hooks.json registers PreToolUse + Stop" || _fail "hooks.json structure wrong"
 fi
 
-# 5. Commands (2)
+# 5. Commands (5 in v1)
 echo ""
-echo "[5/6] Commands"
+echo "[5/8] Commands"
 _req_file "${PCACHE}commands/sutra.md" "command: /sutra"
 _req_file "${PCACHE}commands/depth-check.md" "command: /depth-check"
+_req_file "${PCACHE}commands/sutra-onboard.md" "command: /sutra-onboard (v1)"
+_req_file "${PCACHE}commands/sutra-push.md" "command: /sutra-push (v1)"
+_req_file "${PCACHE}commands/sutra-status.md" "command: /sutra-status (v1)"
 
-# 6. Summary
+# 6. Lib (v1 additions)
 echo ""
-echo "[6/6] Summary"
+echo "[6/8] Lib (v1)"
+_req_file "${PCACHE}lib/project-id.sh" "lib: project-id.sh"
+_req_file "${PCACHE}lib/queue.sh" "lib: queue.sh"
+
+# 7. V1 hooks (emit-metric + flush-telemetry)
+echo ""
+echo "[7/8] V1 hooks"
+_req_run  "${PCACHE}hooks/emit-metric.sh" "hook: emit-metric.sh"
+_req_run  "${PCACHE}hooks/flush-telemetry.sh" "hook: flush-telemetry.sh"
+if [ -f "${PCACHE}hooks/hooks.json" ]; then
+  python3 -c "
+import json
+d=json.load(open('${PCACHE}hooks/hooks.json'))
+stops=[h['command'] for h in d['hooks']['Stop'][0]['hooks']]
+assert any('flush-telemetry' in c for c in stops), 'flush-telemetry not in Stop hook chain'
+print('  Stop chain includes flush-telemetry')
+" 2>&1 | grep -q "includes flush-telemetry" && _pass "hooks.json registers flush-telemetry on Stop" || _fail "flush-telemetry missing from Stop chain"
+fi
+
+# 8. Summary
+echo ""
+echo "[8/8] Summary"
 TOTAL=$((PASS+FAIL))
 echo ""
 echo "==============================================================="
