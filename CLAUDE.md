@@ -55,3 +55,11 @@ Cannot edit: client repos, holding repo.
 ## Input Routing
 
 Every founder input classified before action (TYPE / ROUTE / FIT CHECK). See holding/INPUT-ROUTING.md for detail. Version check: read CURRENT-VERSION.md on session start.
+
+## RTK for voluminous bash (Tokens charter, Mode A)
+
+Prefer `rtk <cmd>` for noisy commands: `rtk git status`, `rtk git log`, `rtk git diff`, `rtk log --tail N <file>`, `rtk find`. Measured `git status` -68.7% (2026-04-20). Skip rtk for small commands. Binary at `~/.local/bin/rtk`; no global hook.
+
+**Kill-switch**: `touch ~/.rtk-disabled` or `RTK_DISABLED=1` → skip rtk everywhere. Re-enable: `rm ~/.rtk-disabled`.
+
+**Avoid lossy modes** (`rtk smart`, `rtk summary`) without founder approval.
