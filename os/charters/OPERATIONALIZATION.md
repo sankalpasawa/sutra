@@ -6,8 +6,9 @@
 **Status**: ACTIVE (v2 — rewritten 2026-04-20 post-Codex round-1 + founder decisions)
 **Applies to**: Sutra (self) first. Propagation to DayFlow + Billu queued (depends on upgrade-clients.sh charter-aware extension — shared dep with Tokens).
 **Created**: 2026-04-20 (v1) → rewritten 2026-04-20 (v2)
-**Review cadence**: Weekly; scored quarterly
+**Review cadence**: Every 6 hours for first 72h, then daily; scored bi-weekly
 **Source direction**: holding/FOUNDER-DIRECTIONS.md D30 (2026-04-20)
+**Cadence note**: All windows in this charter calibrated in hours, not days, per founder 2026-04-20 — Asawa moves per-hour. 6h check cadence; 24h minimum observation window.
 **Design doc**: holding/research/2026-04-20-operationalization-charter-v2-redesign.md
 
 ---
@@ -56,8 +57,8 @@ Under what signal does this artifact retire?
 
 | Metric | Formula | Null handling | Target (Q2) | Warn | Breach |
 |---|---|---|---|---|---|
-| New-artifact compliance | count(new_artifacts_with_ops) / count(new_artifacts) rolling 7d, denom>=2 | denom<2 → insufficient-data | 100% | <95% | <80% |
-| Grandfather-revoked compliance | count(revoked_with_ops) / count(revocations) rolling 30d, denom>=2 | denom<2 → insufficient-data | 100% | <90% | <70% |
+| New-artifact compliance | count(new_artifacts_with_ops) / count(new_artifacts) rolling 6h, denom>=2 | denom<2 → insufficient-data | 100% | <95% | <80% |
+| Grandfather-revoked compliance | count(revoked_with_ops) / count(revocations) rolling 24h, denom>=2 | denom<2 → insufficient-data | 100% | <90% | <70% |
 | Block-to-add time | median(commit_ts_ops_added − commit_ts_first_block) per artifact | null if no block | <=4h | >24h | >72h |
 | Active artifact churn | count(retired_in_q) / count(active_at_q_start) | active=0 → N/A | 5-15% | 0% | >40% |
 | Registry freshness (risk-tiered) | count(active where next_review < today - 2q) / count(active) | tier-relative | <10% | >=25% | >=50% |
@@ -140,7 +141,7 @@ Per founder 2026-04-20: no env-var override. No OPS_PLAN_ACK. Only escape is rev
 | 7 | PROTOCOLS.md — add 6th criterion OPERATIONALIZED to PROTO-000 | V1 (flipped per founder Q5) | DONE |
 | 8 | ESTIMATION-ENGINE.md — add OPERATIONALIZE phase (both paths) | V1 (flipped per founder Q5) | DONE |
 | 9 | Self-test: TOKENS.md gets ops section | V1 | DONE |
-| 10 | 14-day compliance window; heuristic revision if FP>10% | V2 | TODO |
+| 10 | 24-hour compliance window (4 × 6h cycles); heuristic revision if FP>10% | V2 | TODO |
 | 11 | Charter-aware upgrade-clients.sh extension (shared w/ Tokens) | V2 | TODO |
 | 12 | Propagate to DayFlow + Billu | V2 | TODO |
 | 13 | Q2 review | — | TODO |
@@ -196,16 +197,16 @@ New-artifact compliance % + grandfather-revoked compliance % from §3. Source: .
 Hook deploys to Sutra self first (roadmap #9 self-test on TOKENS). Propagation to DayFlow + Billu via upgrade-clients.sh extension (V2 #11).
 
 ### 3. Monitoring / escalation
-Sutra-OS reviews compliance % weekly. Warn <95% → investigate. Breach <80% → revert + rework. Block-to-add time p50 >24h → rework heuristics.
+Sutra-OS reviews compliance % every 6 hours (daily fallback). Warn <95% → investigate. Breach <80% → revert + rework. Block-to-add time p50 >24h → rework heuristics.
 
 ### 4. Iteration trigger
-FP block rate >10% after 14 days → adjust semantic-change heuristic. Zero blocks in 30 days → investigate coverage gap.
+FP block rate >10% after 24 hours → adjust semantic-change heuristic. Zero blocks in 72 hours → investigate coverage gap.
 
 ### 5. DRI
 Sutra-OS (Sankalp through Q2 2026; reassigned at first quarterly review).
 
 ### 6. Decommission criteria
-(a) Reflexive author habit for 6 consecutive quarters (compliance >=95%, FP<2%) → hook → SOFT sensor, merge into PROTO-000 6th criterion; or (b) codex/founder review concludes net-negative → revert + retire.
+(a) Reflexive author habit for 30 consecutive days (compliance >=95%, FP<2%) → hook → SOFT sensor, merge into PROTO-000 6th criterion; or (b) codex/founder review concludes net-negative → revert + retire.
 
 ---
 
