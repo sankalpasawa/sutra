@@ -54,4 +54,16 @@ if [ -x "$EMIT" ]; then
   bash "$EMIT" os_health depth_marker_present    "$MARKER_PRESENT"  count instant 2>/dev/null || true
 fi
 
+# ── v1.1.3 auto-push (async, fire-and-forget) ──────────────────────────
+# If telemetry_optin is true in the project, push the queue in the BACKGROUND.
+# Stop hook stays light (no blocking wait). Queue preserved if push fails.
+if [ -f "$PROJECT_ROOT/.claude/sutra-project.json" ]; then
+  OPTIN=$(python3 -c "import json; print('true' if json.load(open('$PROJECT_ROOT/.claude/sutra-project.json')).get('telemetry_optin') else 'false')" 2>/dev/null)
+  if [ "$OPTIN" = "true" ] && [ -x "$PLUGIN_ROOT/scripts/push.sh" ]; then
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" CLAUDE_PROJECT_DIR="$PROJECT_ROOT" \
+      nohup bash "$PLUGIN_ROOT/scripts/push.sh" >> "$SUTRA_HOME/auto-push.log" 2>&1 &
+    disown 2>/dev/null || true
+  fi
+fi
+
 exit 0
