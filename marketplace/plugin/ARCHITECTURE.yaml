@@ -1,0 +1,324 @@
+# Sutra Plugin — Architecture (structured source of truth)
+#
+# Convention (matches sutra/state/system.yaml):
+#   - This YAML is the single source for plugin components, flows, schemas,
+#     identities, and privacy rules. LLMs read it and render visuals on demand.
+#   - DO NOT persist ASCII art, mermaid diagrams, or image exports. They go stale.
+#   - Update this file when plugin behavior changes. Any PR that changes a hook,
+#     command, schema, or identity formula must update the relevant section here.
+#   - Indexed from: sutra/state/system.yaml (meta.plugin_architecture pointer).
+#
+# Rendering: Any LLM can read this and produce a diagram in the target format
+# (ASCII, mermaid, DOT, plain text) — see `rendering_hints` section below.
+#
+# Version: 1.0.0
+# Last updated: 2026-04-20
+
+version: 1.0.0
+system: sutra-plugin
+
+# ────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# Each component = a filesystem location or repo the plugin touches.
+# An LLM rendering a diagram draws one box per component.
+# ────────────────────────────────────────────────────────────────────
+
+components:
+
+  - id: plugin_cache
+    kind: filesystem
+    at: ~/.claude/plugins/cache/sutra/sutra/<version>/
+    scope: user
+    populated_by: claude plugin install
+    contains:
+      - .claude-plugin/plugin.json
+      - hooks/hooks.json
+      - hooks/depth-marker-pretool.sh      # v0.1 warn-only
+      - hooks/estimation-stop.sh            # v0.1 session log
+      - hooks/emit-metric.sh                # v1 Layer B writer
+      - hooks/flush-telemetry.sh            # v1 Stop — local only
+      - lib/project-id.sh                   # v1 install_id + project_id
+      - lib/queue.sh                        # v1 queue ops
+      - skills/{input-routing,depth-estimation,readability-gate,output-trace}/SKILL.md
+      - commands/{sutra,depth-check,sutra-onboard,sutra-push,sutra-status}.md
+      - tests/{smoke.sh,run-all.sh,unit/*,integration/*}
+    size_kb: ~30
+    rewrites_on_update: true
+
+  - id: plugin_registry
+    kind: filesystem
+    at: ~/.claude/plugins/installed_plugins.json
+    scope: user
+    updated_by: claude plugin install | update | uninstall
+    tracks: [name, version, installPath, installedAt, scope]
+
+  - id: client_project_dotclaude
+    kind: filesystem
+    at: "<user's project>/.claude/"
+    scope: project
+    created_by: first-time plugin use in that project
+    contains:
+      - sutra-project.json       # v1 — install_id, project_id, project_name, telemetry_optin
+      - depth-registered         # v0.1 — per-task depth marker
+      - sutra-estimation.log     # v0.1 — append-only session log
+
+  - id: user_sutra_home
+    kind: filesystem
+    at: ~/.sutra/
+    scope: user
+    created_by: first emit-metric call
+    contains:
+      - metrics-queue.jsonl           # Layer B rows, pending push
+      - metrics-queue.*.bak           # rotated at 10k lines
+      - last-flush.txt                # written by Stop hook
+      - sutra-data-cache/             # shallow clone for push
+      - telemetry-errors.log          # optional — push failures
+
+  - id: sutra_data_repo
+    kind: github_repo
+    at: sankalpasawa/sutra-data
+    visibility: PRIVATE
+    purpose: central telemetry store; one dir per install_id
+    contains:
+      - .claude-plugin/SCHEMA.md
+      - clients/<install_id>/manifest.json       # {first_seen, last_seen, push_count, project_id}
+      - clients/<install_id>/telemetry-<ISO>.jsonl  # immutable per-push files
+      - .github/workflows/validate.yml
+      - scripts/validate.py                      # schema + PII check
+    write_access: portfolio_gh_account_only       # v1 scope
+
+  - id: analytics_collector
+    kind: bash_script
+    at: holding/departments/analytics/collect.sh
+    scope: asawa-holding
+    section_10_reads: sutra-data-cache/clients/**/telemetry-*.jsonl
+    emits:
+      - plugin_installs_total   # count of unique install_id directories
+      - plugin_sessions_7d      # count of telemetry files mtime < 7d
+
+  - id: analytics_pulse
+    kind: markdown_doc
+    at: holding/ANALYTICS-PULSE.md
+    rendered_by: holding/departments/analytics/publish.sh
+    reads: .analytics/latest.jsonl
+    visible_to: founder
+
+# ────────────────────────────────────────────────────────────────────
+# IDENTITIES — per TELEMETRY-CONTRACT.md + codex review
+# ────────────────────────────────────────────────────────────────────
+
+identities:
+  install_id:
+    formula: sha256(HOME + ":" + sutra_version)[:16]
+    length: 16
+    stable_across: [reinstalls_of_same_version, sessions_same_user]
+    changes_on: [version_bump, different_user]
+    rationale: reuses TELEMETRY-CONTRACT.md identity exactly
+
+  project_id:
+    formula_primary: sha256("git:" + normalized_git_remote)[:12]
+    formula_fallback: sha256("path:" + realpath(cwd) + ":" + USER)[:12]
+    length: 12
+    stable_across: [sessions, reinstalls, branch_switches]
+    rationale: repo-level grouping distinct from user-level install identity
+
+# ────────────────────────────────────────────────────────────────────
+# FLOWS — ordered sequences. An LLM drawing a sequence diagram
+# emits one lifeline per component, one arrow per step.
+# ────────────────────────────────────────────────────────────────────
+
+flows:
+
+  - id: install
+    trigger: claude plugin install sutra@sutra
+    actors: [claude_code_cli, github, plugin_cache, plugin_registry]
+    steps:
+      - claude_code_cli clones sankalpasawa/sutra main
+      - reads .claude-plugin/marketplace.json → finds plugin definition
+      - copies marketplace/plugin/** into plugin_cache
+      - adds entry to plugin_registry
+    duration: ~5s
+    network: outbound_git_only
+    mutations_to_project: none
+    mutations_to_user_home: [plugin_cache created, plugin_registry appended]
+
+  - id: first_session_onboard
+    trigger: user runs `/sutra-onboard` in their project
+    actors: [user, plugin_cache, client_project_dotclaude]
+    steps:
+      - source lib/project-id.sh
+      - compute install_id (from HOME + version) and project_id (from git remote or cwd)
+      - derive project_name from git remote basename or cwd basename
+      - write client_project_dotclaude/sutra-project.json with telemetry_optin=false
+      - queue_init creates user_sutra_home + metrics-queue.jsonl
+      - print banner + next-step instructions
+    idempotent: true
+    network: none
+
+  - id: per_session_stop
+    trigger: Claude Code Stop event (session end)
+    actors: [plugin_hooks, client_project_dotclaude, user_sutra_home]
+    runs_in_order: [estimation-stop.sh, flush-telemetry.sh]
+    estimation_stop_writes: .claude/sutra-estimation.log (append)
+    flush_telemetry_writes: ~/.sutra/last-flush.txt (overwrite)
+    network: NEVER
+    git: NEVER
+    rationale: session teardown must stay light (codex review 2026-04-20)
+
+  - id: emit_metric
+    trigger: any caller invokes hooks/emit-metric.sh <dept> <metric> <value> [unit] [window]
+    actors: [caller, emit-metric.sh, user_sutra_home]
+    steps:
+      - validate value is numeric (reject exit 3 if not)
+      - scan dept/metric/unit/window for PII markers (reject exit 4 if found)
+      - compute install_id + project_id + tier
+      - format one JSONL line matching SCHEMA.md
+      - append to user_sutra_home/metrics-queue.jsonl
+      - rotate queue to .bak if size > SUTRA_QUEUE_CAP (default 10000)
+    network: none
+    failure_modes:
+      exit_2: missing required args
+      exit_3: non-numeric value
+      exit_4: PII in a string field
+
+  - id: manual_push
+    trigger: user runs `/sutra-push` command
+    actors: [user, user_sutra_home, sutra_data_repo]
+    precondition: client_project_dotclaude/sutra-project.json.telemetry_optin == true
+    steps:
+      - if sutra-data-cache missing → shallow git clone of sankalpasawa/sutra-data
+      - else → git pull --quiet
+      - copy user_sutra_home/metrics-queue.jsonl → sutra-data-cache/clients/<install_id>/telemetry-<ISO>.jsonl
+      - update clients/<install_id>/manifest.json (push_count += 1, last_seen = now)
+      - git commit + git push (auth via user's gh CLI)
+      - on success → queue_clear
+      - on failure → queue preserved for next attempt
+    network: outbound_git_push
+    failure_is_silent: user_session_never_blocks
+
+  - id: analytics_read
+    trigger: bash holding/departments/analytics/collect.sh
+    actors: [analytics_collector, sutra_data_repo, analytics_pulse]
+    steps:
+      - section_10 best-effort clones or pulls sutra-data-cache
+      - count distinct clients/<install_id>/ dirs → plugin_installs_total
+      - count telemetry files mtime within last 7d → plugin_sessions_7d
+      - emit both metrics to .analytics/metrics-<ts>.jsonl (dept=portfolio)
+      - publish.sh renders to analytics_pulse
+    cadence: on-demand (currently) | cron-3h (planned)
+    network: outbound_git_pull
+
+# ────────────────────────────────────────────────────────────────────
+# PRIVACY MATRIX — what each destination is allowed to see
+# ────────────────────────────────────────────────────────────────────
+
+privacy:
+  never_leaves_user_machine:
+    - file paths
+    - prompt content
+    - task slugs containing project-specific words
+    - raw estimation events (Layer A — if implemented later)
+
+  allowed_in_sutra_data_repo:
+    - install_id (16-char hash)
+    - project_id (12-char hash)
+    - sutra_version
+    - tier
+    - dept / metric names (machine-validated to SCHEMA.md)
+    - metric values (numeric only)
+    - timestamps
+    - window labels (instant | 24h | 7d | lifetime)
+
+  forbidden_everywhere_transmitted:
+    - emails
+    - github handles
+    - absolute paths like /Users/ or /home/
+    - company names in free-text fields
+
+  enforcement:
+    - emit-metric.sh regex-rejects PII in string fields (exit 4)
+    - sutra-data CI workflow re-validates every pushed file (validate.py)
+    - PRs fail on schema violation
+
+# ────────────────────────────────────────────────────────────────────
+# DATA SCHEMAS (minimal — full spec in sutra-data/.claude-plugin/SCHEMA.md)
+# ────────────────────────────────────────────────────────────────────
+
+schemas:
+
+  sutra_project_json:
+    location: "<project>/.claude/sutra-project.json"
+    fields:
+      install_id: string(16)
+      project_id: string(12)
+      project_name: string
+      first_seen: ISO8601
+      sutra_version: semver
+      telemetry_optin: bool (default false)
+
+  telemetry_row:
+    location: clients/<install_id>/telemetry-<ISO>.jsonl (one row per line)
+    required_fields:
+      schema_version: int (always 1 in v1)
+      install_id: string(16)
+      project_id: string(12) | null
+      ts: unix_seconds
+      sutra_version: semver
+      tier: int (0 if unknown)
+      dept: enum(os_health|estimation|velocity|cost|quality|portfolio|knowledge|governance)
+      metric: snake_case_identifier
+      value: number
+      unit: enum(count|pct|tokens|ratio|ms|bytes)
+      window: enum(instant|24h|7d|lifetime)
+
+  manifest:
+    location: clients/<install_id>/manifest.json
+    fields:
+      install_id: string(16)
+      project_id: string(12)
+      project_name_optional: string
+      first_seen: ISO8601
+      last_seen: ISO8601
+      sutra_version: semver
+      push_count: int
+
+# ────────────────────────────────────────────────────────────────────
+# RENDERING HINTS for LLMs asked to visualize this system
+# ────────────────────────────────────────────────────────────────────
+
+rendering_hints:
+  default_diagram: box_and_arrow_flow
+  prefer: ASCII_art_when_possible  # works in terminals, markdown, emails
+  fallback: mermaid  # when structured diagram tooling available
+
+  for_install_flow:
+    show: [claude_code_cli, github, plugin_cache, plugin_registry]
+    hide: [user_project]   # untouched at install time
+
+  for_data_flow:
+    show: [client_project_dotclaude, user_sutra_home, sutra_data_repo, analytics_collector, analytics_pulse]
+    show_direction: client → sutra_data → analytics → pulse
+    annotate_edges: [trigger_name, network_boundary]
+
+  for_privacy_posture:
+    use: matrix_table
+    rows: [never_leaves_user_machine, allowed_in_sutra_data, forbidden_everywhere]
+    columns: [data_class, example]
+
+  for_session_lifecycle:
+    use: sequence_diagram
+    lifelines: [user, claude_code_session, plugin_hooks, disk_writes]
+    events: [input_routing, depth_emission, pretool_hook, tool_call, readability_gate, trace_line, stop_hook]
+
+# ────────────────────────────────────────────────────────────────────
+# Scope guardrails — what's in v1, what's explicitly deferred
+# ────────────────────────────────────────────────────────────────────
+
+scope_v1:
+  in: [portfolio_users_with_gh_push_access_to_sutra_data, git_transport, local_first_queue]
+  out:
+    - supabase_transport        # v2 — for external (non-portfolio) users
+    - dashboard_ui              # v2 — raw pulse is sufficient for v1
+    - windows_support           # never — bash only
+    - auto_push_on_stop         # rejected by codex — teardown stays light
+    - multi_tenant_rls          # v2 — private-repo ACL suffices for v1
