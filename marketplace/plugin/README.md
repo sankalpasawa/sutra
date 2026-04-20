@@ -1,43 +1,66 @@
 # Sutra
 
-Operating system for building with AI. Brings governance — input routing, depth estimation, readability gate, output trace — to every Claude Code session.
+Operating system for building with AI. Governance + observability for Claude Code sessions.
 
 ## What you get
 
-Install Sutra and Claude Code starts behaving like a senior practitioner.
+- **Input routing** — every user message classified (direction / task / feedback / question) before any tool use
+- **Depth + estimation** — every task rated 1-5 with cost/effort estimate before work begins
+- **Readability gate** — outputs formatted as tables/boxes/metrics, not prose
+- **Output trace** — every response ends with a one-line OS trace
+- **Auto-emission observability** — every session-stop emits 3 metrics, auto-pushed to your Sutra data store
+- **Shell helpers** — one-word commands (`sutra-go`, `sutra-reset`) from any terminal
 
-- **Input routing** — every user message gets classified (direction / task / feedback / new concept / question) before any action.
-- **Depth + estimation** — every task gets a depth rating (1-5) and a cost/effort estimate before work starts.
-- **Readability gate** — outputs are formatted for the reader: tables over prose, numbers over adjectives, decisions boxed for visibility.
-- **Output trace** — every response ends with a one-line OS trace so you can see what happened.
+## Install (new users, zero state)
 
-Plus hooks that warn when a depth marker is missing before Edit/Write, and log estimation metrics on session end.
+```bash
+# 1. Register the marketplace
+claude plugin marketplace add sankalpasawa/sutra
 
-## Install
+# 2. Install the plugin
+claude plugin install sutra@sutra
+
+# 3. Install shell helpers (one-time, appends to ~/.zshrc or ~/.bashrc)
+bash ~/.claude/plugins/cache/sutra/sutra/*/scripts/install-shell-helpers.sh
+source ~/.zshrc   # or ~/.bashrc
+
+# Done. Now anywhere:
+sutra-go
+```
+
+`sutra-go` creates a fresh temp project, deploys Sutra with telemetry ON, and opens Claude. One word.
+
+## Usage inside Claude
 
 ```
-/plugin install sutra@<marketplace>
+/sutra:sutra-go         — onboard current dir + enable telemetry (one-shot)
+/sutra:sutra-onboard    — onboard only (telemetry default off)
+/sutra:sutra-status     — show install_id / project_id / queue depth / last flush
+/sutra:sutra-push       — manual push (normally unnecessary — auto-push runs on Stop)
+/sutra:depth-check      — check depth marker
+/sutra:sutra            — session activation banner
 ```
 
-Marketplace repo announced at https://sutra.os.
+## Shell commands (after running `install-shell-helpers.sh`)
 
-## First run
+| Command | Purpose |
+|---|---|
+| `sutra-go` | Fresh dir + deploy + telemetry ON + open Claude |
+| `sutra-uninstall` | Remove plugin + marketplace (keep data) |
+| `sutra-reset` | Full factory reset — plugin + data + cache |
+| `sutra-status-global` | Check install + queue state from any terminal |
 
-Type `/sutra` to activate. The four core skills then auto-invoke based on context:
+## Telemetry + privacy
 
-- `/input-routing` — classify the next input
-- `/depth-estimation` — rate the next task
-- `/readability-gate` — format the next output
-- `/output-trace` — emit the OS trace line
+- Default when onboarding via `/sutra:sutra-onboard`: **opt-in FALSE** (privacy default)
+- Default when onboarding via `/sutra:sutra-go` or `sutra-go`: **opt-in TRUE** (observability default)
+- Auto-push on Stop (v1.1.3+): if opt-in is true, queue ships to your data store asynchronously on every session end
+- Data store: `sankalpasawa/sutra-data` (PRIVATE) — you're the only one with write access unless you distribute tokens
+- Schema: `.claude-plugin/SCHEMA.md` in the data repo — PII-rejected at the emit layer + validated in CI on every push
 
-For manual depth gating, use `/depth-check`.
+## Architecture
 
-## What v0.1 does NOT do
-
-- No hard enforcement. Hooks warn, don't block. (v0.2.)
-- No per-profile defaults (individual / project / company). (v0.2.)
-- No cross-session state. The estimation log is session-local.
-- No paid tier. The OS is free forever.
+Source of truth: `ARCHITECTURE.yaml` — structured YAML with components, flows, identities, privacy matrix. Any LLM can render visuals on demand from it (never persist ASCII art — it goes stale).
 
 ## License
 
@@ -45,4 +68,4 @@ MIT.
 
 ## Status
 
-v0.1 — early. Built for functional validation. Expect sharp edges. File issues at the repo listed in `plugin.json` once announced.
+v1.1.4 — auto-emission + auto-push + shell installer. Production-ready for portfolio use. External distribution needs Supabase transport (v2).
