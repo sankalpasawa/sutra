@@ -7,12 +7,22 @@
 # project_id = sha256(git-remote-url)[:12], fallback sha256(realpath(cwd)+USER)[:12]
 
 _sha256_short() {
-  local n="$1" input="$2"
-  if command -v shasum >/dev/null 2>&1; then
-    printf '%s' "$input" | shasum -a 256 | awk -v n="$n" '{print substr($1,1,n)}'
-  else
-    printf '%s' "$input" | sha256sum | awk -v n="$n" '{print substr($1,1,n)}'
+  # Portable, defensive hash. Tries python3 first (guaranteed on macOS 13+,
+  # most linux distros); falls back to shasum (macOS) then sha256sum (linux).
+  # Returns empty only if all three fail.
+  local n="${1:-12}"
+  local input="${2:-}"
+  local hash=""
+  if command -v python3 >/dev/null 2>&1; then
+    hash=$(printf '%s' "$input" | python3 -c "import hashlib,sys; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
   fi
+  if [ -z "$hash" ] && command -v shasum >/dev/null 2>&1; then
+    hash=$(printf '%s' "$input" | shasum -a 256 2>/dev/null | cut -d' ' -f1)
+  fi
+  if [ -z "$hash" ] && command -v sha256sum >/dev/null 2>&1; then
+    hash=$(printf '%s' "$input" | sha256sum 2>/dev/null | cut -d' ' -f1)
+  fi
+  printf '%s' "${hash:0:$n}"
 }
 
 compute_install_id() {
@@ -24,7 +34,9 @@ compute_project_id() {
   local remote
   remote=$(git config --get remote.origin.url 2>/dev/null || echo "")
   if [ -n "$remote" ]; then
-    remote=$(printf '%s' "$remote" | sed -E 's|^(https?://\|git@)||; s|\.git$||; s|:|/|; s|/$||')
+    # Normalize: strip scheme (https:// or git@), trailing .git, SSH colon→slash, trailing slash
+    # sed -E uses | for alternation (bare, not escaped)
+    remote=$(printf '%s' "$remote" | sed -E 's|^https?://||; s|^git@||; s|\.git$||; s|:|/|; s|/$||')
     _sha256_short 12 "git:${remote}"
   else
     local path
