@@ -28,6 +28,11 @@
 # Proof: 5/5 consecutive runs pass with no flakiness (see commit message).
 
 set -u
+# USER fallback — `set -u` + execSync-from-node (e.g. validate.mjs in pre-commit)
+# can inherit a partial env missing $USER. Line ~104 dereferences $USER; without
+# this fallback, the test fails "unbound variable" only when run via the state
+# validator, not when run directly. Restores parity between both invocation paths.
+: "${USER:=$(id -un 2>/dev/null || whoami)}"
 REAL_REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 
 FAIL=0
