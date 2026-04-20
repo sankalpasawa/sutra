@@ -73,6 +73,7 @@ Pattern: every unit = definition charter + skills + initiative participations. E
 | Name | Status | Tier | Provides | Toggle | Source |
 |---|---|---|---|---|---|
 | **Analytics** (v0) | active | 1 (Asawa-level) | 8-dimension scorecard; session-triggered collect + publish; reads existing logs | Run on-demand (`bash holding/departments/analytics/collect.sh`); plugin adds 3h + hook trigger in v1 | `holding/departments/analytics/CHARTER.md` |
+| **Website** (v0) | active | 1 (Asawa-level) | Owns every public web surface — Asawa, Sutra, Dawny (and future portfolio sites); content ↔ reality contract, refresh playbook, Vercel deploy surface | Trigger: founder refresh request or drift detection; on-demand via `PLAYBOOK.md` | `holding/departments/website/CHARTER.md` |
 | **Implementation** (proposed) | deferred | 1 | Would track protocol instances in production companies (TOKENS charter feeds this) | — | Mentioned in 2026-04-20 session; not built |
 
 ---
