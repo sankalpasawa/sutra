@@ -1,0 +1,26 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sutra",
+  "description": "Sutra — Operating system for building with AI. Input routing, depth estimation, readability gate, output trace. Opinionated governance for Claude Code sessions.",
+  "owner": {
+    "name": "Sutra",
+    "url": "https://sutra.os"
+  },
+  "plugins": [
+    {
+      "name": "sutra",
+      "description": "Sutra governance: input routing, depth estimation, readability gate, output trace. Hooks warn when depth marker missing before Edit/Write; estimation metrics logged on session end.",
+      "source": "./marketplace/plugin",
+      "category": "workflow",
+      "homepage": "https://github.com/sankalpasawa/sutra",
+      "keywords": [
+        "governance",
+        "input-routing",
+        "depth-estimation",
+        "readability",
+        "workflow",
+        "session-discipline"
+      ]
+    }
+  ]
+}
