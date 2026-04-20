@@ -1,5 +1,31 @@
 # Sutra — TODO
 
+## GTM / Marketplace — License Review Before External Launch (MAJOR)
+
+**Founder direction 2026-04-20**: "Asawa is a personal project for now, so it's fine. [Use token-optimizer for now]. This is a to-do when we fully launch it to external clients. This is a major to-do of GTM or somewhere in Sutra."
+
+Before Sutra marketplace publishes to external users, OR before any portfolio company (DayFlow/Maze/PPR/Paisa) ships with token-optimizer as a transitive dep, audit license compatibility.
+
+### Checklist (must complete before Sutra v2.0 external launch / first paid client)
+
+- [ ] **token-optimizer** (alexgreensh/token-optimizer) — PolyForm Noncommercial 1.0.0. For personal use (current Asawa) OK. For commercial distribution via Sutra marketplace: need commercial license from Alex Greenshpun. Action: email with use-case, get quote/terms.
+- [ ] Sweep all plugins/hooks bundled in Sutra marketplace for noncommercial-only or GPL-incompatible licenses. Record in a LICENSE-AUDIT.md.
+- [ ] Every external-facing Sutra component (plugin, skill, hook) must have a clear LICENSE + ATTRIBUTION statement.
+- [ ] Define Sutra's own license (commercial? dual-license? open core?) before first paid deployment.
+- [ ] Privacy/telemetry audit — Analytics Dept `TELEMETRY-CONTRACT.md` rules apply to any bundled tool.
+
+### Why this is GTM-critical
+
+Shipping noncommercial-licensed deps in a commercial product = legal exposure. Different from using them internally as a solo dev. The switch happens at FIRST PAID OR EXTERNAL DEPLOYMENT — catch it before, not after.
+
+### Linked
+
+- License finding: `holding/research/2026-04-20-token-optimizer-i2-spike.md` §4
+- Adoption: `holding/research/2026-04-20-token-optimization-w1-before-after.md` §5
+- Marketplace: `sutra/marketplace/`
+
+---
+
 ## Charter: Tokens (Q2 2026, created 2026-04-20)
 
 **File**: `os/charters/TOKENS.md` — full charter with KRAs, KPIs, OKRs, roadmap
