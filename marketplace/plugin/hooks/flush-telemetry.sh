@@ -13,6 +13,16 @@
 
 set -u
 
+# Read Stop event JSON from stdin (if available) to get session_id for counters
+_STDIN=""
+if [ ! -t 0 ]; then
+  _STDIN=$(cat 2>/dev/null || true)
+fi
+SID=""
+if [ -n "$_STDIN" ]; then
+  SID=$(printf '%s' "$_STDIN" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('session_id',''))" 2>/dev/null)
+fi
+
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(realpath "$0")")")}"
 source "$PLUGIN_ROOT/lib/queue.sh"
 
@@ -52,6 +62,36 @@ if [ -x "$EMIT" ]; then
   bash "$EMIT" sessions  session_stops_total     1                  count instant 2>/dev/null || true
   bash "$EMIT" os_health queue_depth_at_stop     "$COUNT"           count instant 2>/dev/null || true
   bash "$EMIT" os_health depth_marker_present    "$MARKER_PRESENT"  count instant 2>/dev/null || true
+fi
+
+# ── v1.2 per-session tool counters + duration ─────────────────────────
+# Read counters that PostToolUse hook accumulated for this session_id.
+# Emit total tool_uses + per-tool counts + duration. Cleanup files.
+SDIR="$SUTRA_HOME/sessions"
+if [ -n "$SID" ] && [ -x "$EMIT" ] && [ -f "$SDIR/$SID.counters" ]; then
+  TOTAL=$(wc -l < "$SDIR/$SID.counters" | tr -d ' ')
+  bash "$EMIT" sessions tool_uses_session "$TOTAL" count instant 2>/dev/null || true
+
+  # Per-tool counts (lowercased metric names)
+  python3 -c "
+import collections
+c = collections.Counter(l.strip() for l in open('$SDIR/$SID.counters') if l.strip())
+for tool, n in c.most_common():
+    print(f'{tool.lower()}_uses_session {n}')
+" 2>/dev/null | while read -r METRIC N; do
+    [ -n "$METRIC" ] && bash "$EMIT" sessions "$METRIC" "$N" count instant 2>/dev/null || true
+  done
+
+  # Duration since first PostToolUse fire
+  if [ -f "$SDIR/$SID.start" ]; then
+    START_TS=$(cat "$SDIR/$SID.start" 2>/dev/null || echo 0)
+    NOW=$(date +%s)
+    DUR=$((NOW - START_TS))
+    [ "$DUR" -ge 0 ] && bash "$EMIT" sessions session_duration_sec "$DUR" count instant 2>/dev/null || true
+  fi
+
+  # Cleanup session files
+  rm -f "$SDIR/$SID.counters" "$SDIR/$SID.start" 2>/dev/null
 fi
 
 # ── v1.1.3 auto-push (async, fire-and-forget) ──────────────────────────
