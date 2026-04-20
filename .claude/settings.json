@@ -66,6 +66,15 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/auto-coverage.sh"
+          }
+        ]
+      },
+      {
         "matcher": "*",
         "hooks": [
           {

@@ -376,6 +376,12 @@ if (wantsHook('dispatcher-stop.sh')) {
 if (wantsHook('coverage-gate.sh')) {
   tierSettings.hooks.Stop.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('coverage-gate.sh') }] });
 }
+// D31 Phase 3 v0 (2026-04-20): auto-coverage fires log-coverage.sh on tool events
+// via declarative path mappings. Closes the invocation gap — clients no longer
+// rely on LLM discipline to log every method fire.
+if (wantsHook('auto-coverage.sh')) {
+  tierSettings.hooks.PostToolUse.push({ matcher: 'Edit|Write|Bash', hooks: [{ type: 'command', command: mkCmd('auto-coverage.sh') }] });
+}
 if (wantsHook('reset-turn-markers.sh')) {
   tierSettings.hooks.UserPromptSubmit.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('reset-turn-markers.sh') }] });
 }
