@@ -721,3 +721,37 @@ Schema version is implicit in the field set. If fields are added:
 - Breaking changes require a new file (`ESTIMATION-LOG-v2.jsonl`) and a migration script.
 
 Current schema: **v1** (established 2026-04-05).
+
+## OPERATIONALIZE Phase Note (added 2026-04-20, D30)
+
+The Sutra lifecycle now has 8 phases: OBJECTIVE → OBSERVE → SHAPE → PLAN → EXECUTE → MEASURE → **OPERATIONALIZE** → LEARN.
+
+ESTIMATION-ENGINE contributes to MEASURE (capturing actuals post-ship). The new OPERATIONALIZE phase (Phase 7) names the operational wiring *before* handing off to LEARN.
+
+For L0-L2 artifacts (charters, protocols, engines, department Charters, hooks, skills, configs), OPERATIONALIZE is enforced by  at 4 trigger points (PostToolUse, pre-commit, pre-push, CI). See  for the full contract.
+
+For Depth 1-2 tasks, OPERATIONALIZE is implicit (tiny changes don't need a 6-section ops plan). For Depth 3-5, the 6-section plan is required inline in the artifact.
+
+---
+
+---
+
+## Operationalization (added 2026-04-20 per D30)
+
+### 1. Measurement mechanism
+Estimation accuracy per category tracked via ESTIMATION-LOG.jsonl — see §15.4. Rollup feeds SUTRA-KPI.md's A-metric.
+
+### 2. Adoption mechanism
+Engine ships with Sutra v1.7+ install. All companies using Sutra automatically get the engine via `upgrade-clients.sh`.
+
+### 3. Monitoring / escalation
+Analytics Dept watches estimation error rate. Sutra-OS investigates any category with <60% accuracy after 10+ samples.
+
+### 4. Iteration trigger
+Error rate >40% sustained → recalibrate category multipliers. New work category detected → add to taxonomy.
+
+### 5. DRI
+Sutra-OS owns the engine spec. Analytics owns measurement layer.
+
+### 6. Decommission criteria
+Retires when replaced by ML-based estimation (roadmap: Phase 4+). Until then, always-on.

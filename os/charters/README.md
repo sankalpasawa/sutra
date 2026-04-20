@@ -117,6 +117,7 @@ Without a protocol, each new dept or charter invents its own shape, and cross-li
 |---|---|---|---|---|
 | [TOKENS](TOKENS.md) | Sutra-OS | ACTIVE | Q2 2026 | 2026-04-20 |
 | [SPEED](SPEED.md) | Sutra-OS | ACTIVE | Q2 2026 | 2026-04-20 |
+| [OPERATIONALIZATION](OPERATIONALIZATION.md) | Sutra-OS | ACTIVE | Q2 2026 | 2026-04-20 |
 
 ---
 
@@ -126,3 +127,25 @@ Without a protocol, each new dept or charter invents its own shape, and cross-li
 - **Dept exemplar**: `holding/departments/analytics/` (Asawa-level Analytics Dept v0)
 - **Telemetry contract**: `holding/departments/analytics/TELEMETRY-CONTRACT.md`
 - **Propagation**: charter-aware propagation via `upgrade-clients.sh` (PROTO-018) is **not yet implemented** — the current version is manifest-driven only. Extending it is tracked in Tokens charter roadmap step 12. Until then, propagation to client companies is a manual deploy via god mode.
+
+---
+
+## 8. Operationalization (added 2026-04-20 per D30)
+
+### 1. Measurement mechanism
+Charter count in §6 table = ground truth. Any new charter file in this directory without a matching §6 row = registry drift. Detected by lint: `diff <(ls charters/*.md) <(grep -oE '\[[A-Z]+\]' README.md)`.
+
+### 2. Adoption mechanism
+This README loads whenever a charter author opens the directory. No enforced adoption mechanism beyond that.
+
+### 3. Monitoring / escalation
+Sutra-OS audits §6 table against filesystem quarterly. Drift → update table in same PR that lands the drift.
+
+### 4. Iteration trigger
+New charter type (beyond Initiative Charter) → extend §2 table + §3 protocol. New tier-gating rule → revise §3 step 10.
+
+### 5. DRI
+Sutra-OS.
+
+### 6. Decommission criteria
+Retires only if the charter directory itself goes away.

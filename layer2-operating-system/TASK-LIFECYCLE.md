@@ -10,7 +10,7 @@
 ## The Lifecycle
 
 ```
-OBJECTIVE ──> OBSERVE ──> SHAPE ──> PLAN ──> EXECUTE ──> MEASURE ──> LEARN
+OBJECTIVE ──> OBSERVE ──> SHAPE ──> PLAN ──> EXECUTE ──> MEASURE ──> OPERATIONALIZE ──> LEARN
     │                                                                  │
     └────────────────────── FEEDBACK LOOP ─────────────────────────────┘
 ```
@@ -203,7 +203,33 @@ Infrastructure required in each company:
 
 ---
 
-## Phase 7: LEARN
+## Phase 7: OPERATIONALIZE
+
+*How do humans actually run this in production?*
+
+| Activity | Purpose |
+|----------|---------|
+| **Measurement mechanism** | Name the metric that proves this works in prod — not "exists on disk." Formula, source, null handling. |
+| **Adoption mechanism** | Name the propagation path: cascade script, upgrade-clients.sh, plugin push, training comms. |
+| **Monitoring / escalation** | Name the watcher role, cadence, and threshold that triggers action. |
+| **Iteration trigger** | Name the observable condition that forces revision or deprecation. |
+| **DRI** | Durable role (not "author default"). Handoff explicit if author != operator. |
+| **Decommission criteria** | Name the signal that retires this artifact. |
+
+OPERATIONALIZE produces one thing: a **6-section ops plan** inline in the artifact OR in the artifact's ops registry entry.
+
+At Depth 1-2, OPERATIONALIZE is implicit (tiny changes don't need a plan). At Depth 3-5, the plan is enforced — see  (D30) and .
+
+**Enforcement** (D3+ for enforced artifact classes):
+- Tier A: charters, protocols, engines, department Definition Charters, configs
+- Tier B: hooks, skills, deploy scripts, commands, department scripts
+- See charter §5.1 for full enforced path list
+
+OPERATIONALIZE comes AFTER MEASURE because you can't name the metric until you've measured once. It comes BEFORE LEARN because learning without an ops plan means the learning gets lost.
+
+---
+
+## Phase 8: LEARN
 
 *Reduce overhead for next time.*
 

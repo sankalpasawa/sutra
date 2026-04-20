@@ -75,7 +75,7 @@ protocols:
     mechanism: validate.mjs inverse coverage + test runner (current); doctor in Phase 3
     invariant_refs: [I-1]
     owner: sutra
-    summary: Every policy marked HARD must have a compiled blocking hook AND a regression test before shipping. Writing prose is not shipping. Phase 1 validate.mjs enforces this at state-model commit time. Phase 3 doctor enforces at every repo commit.
+    summary: Every change must satisfy the 6-part rule (DEFINED, CONNECTED, IMPLEMENTED, TESTED, DEPLOYED, OPERATIONALIZED) before shipping. Writing prose is not shipping. 6th criterion (OPERATIONALIZED) added 2026-04-20 per D30 — enforced via operationalization-check.sh hook for L0-L2 artifact classes. Phase 1 validate.mjs enforces criteria 1-5 at state-model commit time. Phase 3 doctor enforces all 6 at every repo commit.
     source: sutra/layer2-operating-system/PROTOCOLS.md
 
   - id: PROTO-004
@@ -618,3 +618,48 @@ companies:
     sutra_version: "1.7"
     status: active
     external: true  # Sutra service client
+
+# ─── Operationalization (D30 — 2026-04-20) ────────────────────────────────────
+# Tracks enforcement of the 6-section ops plan required in new L0-L2 artifacts.
+# Governed by: sutra/os/charters/OPERATIONALIZATION.md
+# Standard:    holding/OPERATIONALIZATION-STANDARD.md
+# Hook:        holding/hooks/operationalization-check.sh
+operationalization:
+  cutover_commit: "3f0d3b643a781cc0a9aafed23e554950930b5c2b"  # SHA before V1 charter land — files existing here are grandfathered
+  version: v1
+  created: 2026-04-20
+  enforcement_mode: hard           # per founder 2026-04-20 (no SOFT ladder, no override)
+  enforced_paths:
+    tier_a:
+      - "sutra/os/charters/*.md"
+      - "sutra/**/protocols/PROTO-*.md"
+      - "sutra/**/d-engines/*.md"
+      - "sutra/**/engines/*.md"
+      - "holding/departments/*/CHARTER.md"
+      - "sutra/os/SUTRA-CONFIG.md"
+      - "*/os/SUTRA-CONFIG.md"
+    tier_b:
+      - "holding/hooks/*.sh"
+      - "sutra/package/hooks/*.sh"
+      - "sutra/layer4-practice-skills/**/*.md"
+      - "sutra/package/bin/*.sh"
+      - "sutra/package/bin/*.mjs"
+      - ".claude/commands/*.md"
+      - "holding/departments/*/*.sh"
+  exempt_paths:
+    - "holding/research/*.md"
+    - "**/TODO.md"
+    - "**/BACKLOG.md"
+    - "**/CHANGELOG.md"
+    - "**/MEMORY.md"
+    - ".claude/**"
+    - ".enforcement/**"
+    - ".analytics/**"
+    - "*.log"
+    - "*.jsonl"
+    - "holding/checkpoints/**"
+  semantic_change_thresholds:
+    min_lines_changed: 5   # added+removed combined, excluding pure whitespace
+    heading_change: true   # any +/- line matching ^#+ is semantic
+    table_row_change: true # any +/- line matching ^\|.*\| is semantic
+  active_artifacts: []  # populated as artifacts get ops sections and are tracked

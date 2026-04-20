@@ -189,6 +189,30 @@ If any cut proposal touches these, it escalates to founder.
 
 ---
 
+---
+
+## 15. Operationalization (added 2026-04-20 per D30)
+
+### 1. Measurement mechanism
+Charter progress tracked via `token-telemetry.jsonl` (Layer A local) aggregated into Analytics Pulse. KPI formulas from §3. Null handling: <10 sessions → `insufficient-data`.
+
+### 2. Adoption mechanism
+Charter lives at `sutra/os/charters/TOKENS.md`; enforcement via dispatcher-pretool snapshots + Stop-event telemetry collector. Downstream propagation queued on `upgrade-clients.sh` charter-aware extension (KR4 gated dep).
+
+### 3. Monitoring / escalation
+Analytics Dept owns collection (`collect.sh` §9); Sutra-OS owns escalation. Weekly roadmap meeting reviews boot P50, governance %, waste ratio. Warn at table §3 thresholds; breach → revert last cut.
+
+### 4. Iteration trigger
+Any KPI hits breach threshold for 2 consecutive weeks → revise cut ranking (§8 hypotheses). Any new founder token-direction → re-baseline. Override rate rise after any cut lands → revert that cut.
+
+### 5. DRI
+Sutra-OS (Sankalp through Q2 2026; reassigned at first quarterly review). Analytics contributes measurement; Engineering contributes cut implementation.
+
+### 6. Decommission criteria
+(a) Governance overhead <15% for 2 consecutive quarters → charter retires, KPIs merge into Speed charter; or (b) founder direction supersedes the charter → archive with final scores.
+
+---
+
 ## 13. Related files
 
 - Pattern: `sutra/layer2-operating-system/a-company-architecture/CHARTERS.md`

@@ -51,14 +51,14 @@ _Last reconciled from system.yaml: **2026-04-15** · 20 protocols total_
 ```
 constitutional | [Asawa P0, P9, D11] | HARD
 trigger: Any change that affects how companies operate
-check:   4-part rule satisfied? → ship. Any part missing? → mark EXPERIMENTAL.
+check:   6-part rule satisfied? → ship. Any part missing? → mark EXPERIMENTAL.
 
 This is the meta-protocol. It governs everything below.
 A change without implementation is prose, not process.
 
 APPLIES TO ALL CHANGE TYPES:
 
-  1. New/changed PROTOCOL       → 4-part rule below
+  1. New/changed PROTOCOL       → 6-part rule below
   2. New/changed PRINCIPLE      → must flow downstream (verify-recursive-flow.sh)
   3. New/changed DIRECTION      → must encode TRIGGER/CHECK/ENFORCEMENT
   4. ENGINE UPDATE              → must deploy to companies, content verified
@@ -67,7 +67,7 @@ APPLIES TO ALL CHANGE TYPES:
   7. MANIFEST CHANGE            → must re-verify all companies against new manifest
   8. HOOK CHANGE                → must re-test, re-register, re-deploy
 
-THE 5-PART RULE (for every change type):
+THE 6-PART RULE (for every change type):
 
   1. DEFINED:      written in the right file
   2. CONNECTED:    linked to every existing file that references or
@@ -78,6 +78,11 @@ THE 5-PART RULE (for every change type):
   3. IMPLEMENTED:  mechanism exists (hook / instruction / manifest / memory)
   4. TESTED:       evidence the mechanism works
   5. DEPLOYED:     mechanism active in affected companies
+  6. OPERATIONALIZED: 6-section ops plan present (measurement, adoption,
+                   monitoring, iteration trigger, DRI, decommission). Enforced
+                   for L0-L2 artifacts per D30 + OPERATIONALIZATION charter.
+                   See sutra/os/charters/OPERATIONALIZATION.md + 
+                   holding/OPERATIONALIZATION-STANDARD.md.
 
   If any part is missing → mark EXPERIMENTAL, schedule implementation.
 
@@ -527,7 +532,7 @@ constitutional | [PROTO-000 operationalized] | HARD
 trigger: Any edit to a Sutra policy file (PROTOCOLS.md, MANIFEST-*.md,
          CLIENT-ONBOARDING.md, ENFORCEMENT.md, d-engines/*.md,
          templates/SUTRA-CONFIG*.md)
-check:   Does the change satisfy PROTO-000's 5-part rule — DEFINED,
+check:   Does the change satisfy PROTO-000's 6-part rule — DEFINED,
          CONNECTED, IMPLEMENTED, TESTED, DEPLOYED?
 enforce: Two legs, surfacing + verification.
          (1) policy-coverage-gate.sh fires as PreToolUse on Edit/Write,
