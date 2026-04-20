@@ -8,7 +8,7 @@ Before Sutra marketplace publishes to external users, OR before any portfolio co
 
 ### Checklist (must complete before Sutra v2.0 external launch / first paid client)
 
-- [ ] **token-optimizer** (alexgreensh/token-optimizer) — PolyForm Noncommercial 1.0.0. For personal use (current Asawa) OK. For commercial distribution via Sutra marketplace: need commercial license from Alex Greenshpun. Action: email with use-case, get quote/terms.
+- [ ] **token-optimizer** (alexgreensh/token-optimizer) — PolyForm Noncommercial 1.0.0. Personal use now (Asawa = personal project per founder 2026-04-20). Before shipping Sutra marketplace externally OR bundling in portfolio products: assess license options (commercial license, replacement tool, or port key ideas into bash-only internal impl). Decision deferred to external-launch readiness. No outreach to maintainer at this stage.
 - [ ] Sweep all plugins/hooks bundled in Sutra marketplace for noncommercial-only or GPL-incompatible licenses. Record in a LICENSE-AUDIT.md.
 - [ ] Every external-facing Sutra component (plugin, skill, hook) must have a clear LICENSE + ATTRIBUTION statement.
 - [ ] Define Sutra's own license (commercial? dual-license? open core?) before first paid deployment.
