@@ -116,6 +116,7 @@ Without a protocol, each new dept or charter invents its own shape, and cross-li
 | Charter | DRI | Status | Q | Created |
 |---|---|---|---|---|
 | [TOKENS](TOKENS.md) | Sutra-OS | ACTIVE | Q2 2026 | 2026-04-20 |
+| [SPEED](SPEED.md) | Sutra-OS | ACTIVE | Q2 2026 | 2026-04-20 |
 
 ---
 
