@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# pre-commit wrapper (sutra submodule copy)
+#
+# ## Operationalization
+#
+# ### 1. Measurement mechanism
+# Logs to .analytics/ops-enforcement.jsonl via operationalization-check.sh in this repo.
+#
+# ### 2. Adoption mechanism
+# Installed via `git config core.hooksPath package/hooks/git-wrappers` inside the sutra submodule.
+#
+# ### 3. Monitoring / escalation
+# Failure blocks commit. Author investigates.
+#
+# ### 4. Iteration trigger
+# Any change to the check script → sync from holding/hooks/.
+#
+# ### 5. DRI
+# Engineering.
+#
+# ### 6. Decommission criteria
+# Retires when operationalization-check.sh retires.
+
+set -euo pipefail
+REPO_ROOT=$(git rev-parse --show-toplevel)
+exec bash "$REPO_ROOT/package/hooks/operationalization-check.sh" pre-commit

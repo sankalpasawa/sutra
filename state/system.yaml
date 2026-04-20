@@ -625,7 +625,13 @@ companies:
 # Standard:    holding/OPERATIONALIZATION-STANDARD.md
 # Hook:        holding/hooks/operationalization-check.sh
 operationalization:
-  cutover_commit: "3f0d3b643a781cc0a9aafed23e554950930b5c2b"  # SHA before V1 charter land — files existing here are grandfathered
+  # Per-repo cutover SHAs — each key is a git repo root (parent or submodule name)
+  # Files existing at these SHAs in their respective repos are grandfathered.
+  cutover_commits:
+    parent: "9670d80ee42fe99b11f17ecafda587151d06464b"   # asawa-holding/ HEAD^ at V1 land
+    sutra:  "b103a98a2947386a6042369285eb30a43a61bbc2"    # sutra submodule HEAD^ at V1 land
+  # Backward-compat alias (deprecated): older hook versions read cutover_commit; aliases to parent.
+  cutover_commit: "9670d80ee42fe99b11f17ecafda587151d06464b"
   version: v1
   created: 2026-04-20
   enforcement_mode: hard           # per founder 2026-04-20 (no SOFT ladder, no override)
