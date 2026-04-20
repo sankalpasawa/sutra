@@ -1,7 +1,8 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "sutra",
-  "description": "Sutra — Operating system for building with AI. Input routing, depth estimation, readability gate, output trace. Opinionated governance for Claude Code sessions.",
+  "metadata": {
+    "description": "Sutra — Operating system for building with AI. Input routing, depth estimation, readability gate, output trace. Opinionated governance for Claude Code sessions."
+  },
   "owner": {
     "name": "Sutra",
     "url": "https://sutra.os"
