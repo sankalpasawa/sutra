@@ -133,9 +133,10 @@ if [ "$FAIL" -eq 0 ]; then
   echo "==============================================================="
   echo ""
   echo "Next: behavioural test (run inside Claude Code):"
-  echo "  /sutra"
-  echo "  Task: Create /tmp/sutra-smoke-\$(date +%s).txt with 'sutra plugin v0.1 live'"
-  echo "        and summarize which Sutra surfaces fired during this task."
+  echo "  /sutra-onboard       — create sutra-project.json with install_id + project_id"
+  echo "  /sutra-status        — inspect queue depth, opt-in flag, last flush"
+  echo "  (work a little — Stop hook auto-emits 3 metrics per session)"
+  echo "  /sutra-push          — deliver queue to sankalpasawa/sutra-data (private)"
   echo ""
   exit 0
 else
