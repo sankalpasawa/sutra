@@ -26,10 +26,17 @@ NAME=$(git config --get remote.origin.url 2>/dev/null | sed -E 's|.*/||; s|\.git
 
 mkdir -p .claude
 
-# Preserve telemetry_optin if file exists
+# Resolve telemetry_optin default.
+#   1) If .claude/sutra-project.json exists → preserve whatever it had.
+#   2) Else if $SUTRA_AUTO_OPTIN is 1/true/yes → default to true.
+#   3) Else → default to false (privacy-safe default for external users).
 EXISTING_OPTIN=false
 if [ -f .claude/sutra-project.json ]; then
   EXISTING_OPTIN=$(python3 -c "import json; d=json.load(open('.claude/sutra-project.json')); print('true' if d.get('telemetry_optin') else 'false')" 2>/dev/null || echo false)
+else
+  case "${SUTRA_AUTO_OPTIN:-}" in
+    1|true|TRUE|yes|YES) EXISTING_OPTIN=true ;;
+  esac
 fi
 
 FIRST_SEEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)
