@@ -47,6 +47,15 @@ enforcement_level: 2
 sutra_version: 1.9
 ```
 
+## Enabled Hooks (D32, 2026-04-20 — Sutra-managed, do not edit manually)
+
+Per D32, each PostToolUse dispatcher reads `os/hooks/posttool-registry.jsonl` (Sutra-declared catalog) and fires ONLY the hooks whose name appears here with `: true`. A new client starts with every hook false. Sutra pushes enablement via PROTO-018; clients never flip switches locally. Adding a hook row to the registry does nothing until Sutra flips the corresponding switch here.
+
+enabled_hooks: {}
+# Example (after Sutra pushes enablement):
+# enabled_hooks:
+#   auto-coverage.sh: true   # approved YYYY-MM-DD by Sutra
+
 ## Enabled Methods (D31, 2026-04-20 — Sutra-managed, do not edit manually)
 
 Per D31, every method default = `false` for new clients. Sutra pushes updates via PROTO-018 to enable specific methods per client. `coverage-gate.sh` warns when an enabled method at the task's depth did not fire. If a method feels wrong for a task type, file feedback at `os/feedback-to-sutra/` — never flip switches locally.

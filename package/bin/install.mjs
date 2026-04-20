@@ -382,6 +382,13 @@ if (wantsHook('coverage-gate.sh')) {
 if (wantsHook('auto-coverage.sh')) {
   tierSettings.hooks.PostToolUse.push({ matcher: 'Edit|Write|Bash', hooks: [{ type: 'command', command: mkCmd('auto-coverage.sh') }] });
 }
+// D32 (2026-04-20): hot-reloadable hook dispatcher. Reads os/hooks/posttool-registry.jsonl
+// + enabled_hooks block in SUTRA-CONFIG.md on every fire. Future hooks land without
+// requiring a settings.json edit — add to registry + flip enablement via PROTO-018.
+// Default for every declared hook: OFF (client config must opt in, Sutra-owned).
+if (wantsHook('dispatcher-posttool.sh')) {
+  tierSettings.hooks.PostToolUse.push({ matcher: 'Edit|Write|Bash', hooks: [{ type: 'command', command: mkCmd('dispatcher-posttool.sh') }] });
+}
 if (wantsHook('reset-turn-markers.sh')) {
   tierSettings.hooks.UserPromptSubmit.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('reset-turn-markers.sh') }] });
 }

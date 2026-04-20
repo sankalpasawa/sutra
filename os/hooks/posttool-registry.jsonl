@@ -1,0 +1,5 @@
+# D32 PostToolUse hook registry (Sutra-declared catalog)
+# Each row: {"matcher":"<tool regex>","hook":"<script in .claude/hooks/>"}
+# A row HERE does NOT fire the hook. The client must also have
+# `enabled_hooks:<name>: true` in os/SUTRA-CONFIG.md. Default off.
+{"matcher":"Edit|Write|Bash","hook":"auto-coverage.sh"}
