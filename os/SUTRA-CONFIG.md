@@ -17,3 +17,38 @@ model_profile: quality
 - Governance decisions: claude-opus-4-6
 - Protocol drafting: claude-opus-4-6
 - Documentation sync: claude-haiku-4-5-20251001
+
+## Enabled Methods (D31, 2026-04-20 — Sutra-managed, do not edit manually)
+
+Per D31, every method default = false for new clients. Sutra pushes updates via PROTO-018 to enable specific methods per client. File feedback to `feedback/` if you believe an enablement should change — never flip switches locally.
+
+enabled_methods:
+  INPUT-ROUTING: true
+  ENGINE-ADAPTIVE: true
+  GATE-PRESCORING: true
+  ENGINE-ESTIMATION: true
+  PHASE-OBJECTIVE: true
+  PHASE-OBSERVE: true
+  GATE-RESEARCH: true
+  PHASE-SHAPE: true
+  GATE-HLD: true
+  GATE-ADR: true
+  PHASE-PLAN: true
+  GATE-PARALLEL: true
+  PHASE-EXECUTE: true
+  VERIFY-BASIC: true
+  VERIFY-EVIDENCE: true
+  VERIFY-STAGED: true
+  VERIFY-MULTISTAGE: true
+  PHASE-MEASURE: true
+  GATE-FINDINGS: true
+  PHASE-LEARN: true
+  GATE-RETRO: true
+  EXPERT-CONSULT: true
+  RESEARCH-MARKET: true
+  REVIEW-INDEPENDENT: true
+  RETRO-FULL: true
+  TRIAGE-LOG: true
+
+# Rationale: Sutra-self is tier-3 platform and must dogfood its own full spec.
+# Future Sutra sessions may tune this based on real coverage data.
