@@ -2,9 +2,28 @@
 
 > Tracks whether a session followed the full Sutra process. Like code coverage, but for the operating system itself.
 
-**Version**: 1.0
-**Date**: 2026-04-09
+**Version**: 1.1 (D31 revision)
+**Date**: 2026-04-09 (v1.0); 2026-04-20 (v1.1 — D31 enablement model)
 **Depends on**: COMPLIANCE-AGENT.md, ADAPTIVE-PROTOCOL.md, MEASUREMENT-PROTOCOL.md
+
+---
+
+## D31 update (2026-04-20) — enablement model
+
+**Sutra owns authority. Clients execute. No runtime skip decisions.**
+
+The expected checklist at each depth is no longer the direct denominator. Coverage is now computed as:
+
+```
+expected = enabled_methods ∩ required_at_depth
+coverage_pct = distinct methods fired on task ÷ expected
+```
+
+- **`enabled_methods`** is a block in each client's `os/SUTRA-CONFIG.md`. Every method defaults to `false` on new installs.
+- **Only Sutra flips switches** — via PROTO-018 updates, not runtime decisions.
+- **Clients cannot skip at runtime.** The `skipped_reason` field (deprecated below) is rejected by `log-coverage.sh` (exit 2). Clients file feedback at `os/feedback-to-sutra/` if they believe an enabled method shouldn't apply; Sutra triages and may update `enabled_methods`.
+- **`coverage-gate.sh`** (new hook, 2026-04-20) surfaces gaps at Stop event. SOFT Phase 1 until 2026-05-04; HARD Phase 2 after.
+- The "CONDITIONAL" entries in Depth checklists below (GATE-ADR, GATE-PARALLEL) remain — but conditionality is now evaluated centrally in Sutra's future `skip_when` predicates (roadmap), not by client runtime.
 
 ---
 
@@ -144,7 +163,7 @@ Each session writes to `os/coverage-log.jsonl` in the company's directory. One l
 | method | YES | Method ID from the checklist above |
 | ts | YES | ISO timestamp |
 | evidence | YES | One-line proof that the step actually happened (not just claimed) |
-| skipped_reason | NO | If method was intentionally skipped, why |
+| skipped_reason | **DEPRECATED (D31, 2026-04-20)** | ~~If method was intentionally skipped, why~~ — runtime skip path REMOVED. `log-coverage.sh` now rejects any 5th-arg call with exit 2. Clients file feedback at `os/feedback-to-sutra/` instead; Sutra updates `enabled_methods` in SUTRA-CONFIG.md. |
 | override | NO | If founder overrode a gate, logged here |
 
 ---

@@ -46,3 +46,38 @@ sutra_deploy_depth: 5
 enforcement_level: 2
 sutra_version: 1.9
 ```
+
+## Enabled Methods (D31, 2026-04-20 — Sutra-managed, do not edit manually)
+
+Per D31, every method default = `false` for new clients. Sutra pushes updates via PROTO-018 to enable specific methods per client. `coverage-gate.sh` warns when an enabled method at the task's depth did not fire. If a method feels wrong for a task type, file feedback at `os/feedback-to-sutra/` — never flip switches locally.
+
+enabled_methods:
+  INPUT-ROUTING: false
+  ENGINE-ADAPTIVE: false
+  GATE-PRESCORING: false
+  ENGINE-ESTIMATION: false
+  PHASE-OBJECTIVE: false
+  PHASE-OBSERVE: false
+  GATE-RESEARCH: false
+  PHASE-SHAPE: false
+  GATE-HLD: false
+  GATE-ADR: false
+  PHASE-PLAN: false
+  GATE-PARALLEL: false
+  PHASE-EXECUTE: false
+  VERIFY-BASIC: false
+  VERIFY-EVIDENCE: false
+  VERIFY-STAGED: false
+  VERIFY-MULTISTAGE: false
+  PHASE-MEASURE: false
+  GATE-FINDINGS: false
+  PHASE-LEARN: false
+  GATE-RETRO: false
+  EXPERT-CONSULT: false
+  RESEARCH-MARKET: false
+  REVIEW-INDEPENDENT: false
+  RETRO-FULL: false
+  TRIAGE-LOG: false
+
+# New installs start with every method OFF. Sutra (via PROTO-018) pushes
+# targeted enablements per client based on tier, company needs, and feedback.
