@@ -6,7 +6,7 @@ CEO of Sutra. The operating system company.
 ## Scope
 Sutra protocols, onboarding process, skill catalog, versioning, client feedback processing.
 
-## Sutra OS Version: v1.9
+## Sutra OS Version: v1.9.1
 
 ## Inherited Governance (Asawa D27/D28, 2026-04-15)
 Every Write/Edit must emit (a) an Input Routing block and (b) a Depth block — per-turn, reset on every founder prompt. Editing `sutra/**` is by definition Sutra→company territory: Depth 5 required, declare cross-company downstream deps, run `verify-connections.sh`, ship a test per PROTO-000. Enforcement in `holding/hooks/dispatcher-pretool.sh`.
