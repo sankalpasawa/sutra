@@ -52,6 +52,70 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/abhishekasawa/Claude/asawa-holding/sutra/.claude/hooks/billu-session-bundle/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/abhishekasawa/Claude/asawa-holding/sutra/.claude/hooks/billu-session-bundle/post-tool-use.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/coverage-gate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/abhishekasawa/Claude/asawa-holding/sutra/.claude/hooks/billu-session-bundle/stop.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/abhishekasawa/Claude/asawa-holding/sutra/.claude/hooks/billu-session-bundle/notification.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/abhishekasawa/Claude/asawa-holding/sutra/.claude/hooks/billu-session-bundle/user-prompt-submit.sh"
+          }
+        ]
+      }
     ]
   }
 }

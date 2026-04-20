@@ -32,7 +32,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageRoot = join(__dirname, '..');
 
-const SUTRA_VERSION = '1.9';
+// Single source of truth: read version from package.json at runtime.
+// Keeps install banner + .claude/sutra-version + update-check comparisons aligned.
+const _pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+const SUTRA_VERSION = JSON.parse(readFileSync(_pkgPath, 'utf8')).version;
 
 const BANNER = `
   Sutra OS v${SUTRA_VERSION}
@@ -81,7 +84,7 @@ if (isHelp) {
   What installs:
     1. gstack                — 32 skills (design, QA, ship, review, security)
     2. GSD v1                — 57 skills (plan, execute, verify, debug)
-    3. Sutra commands        — /sutra-onboard, /asawa, /company, /dayflow
+    3. Sutra commands        — /sutra, /sutra-help, /sutra-update, /company
     4. Sutra hooks bundle    — 28 hooks enforcing D27/D28/D9/D12/D13
     5. Settings template     — PreToolUse/PostToolUse/Stop/UserPromptSubmit wiring
     6. OS core docs          — 23 governance documents (os-core → os/)
@@ -89,7 +92,9 @@ if (isHelp) {
     8. Version manifest      — .claude/sutra-version
 
   After install:
-    /sutra-onboard           — Start a new company onboarding
+    /sutra                   — Activate Sutra for this session (CEO day)
+    /sutra-help              — Show commands + install state
+    /sutra-update            — Pull the latest Sutra OS
     /company NAME            — Open a company-scoped session
 `);
   process.exit(0);
@@ -342,7 +347,7 @@ const tierSettings = {
   _sutra_note: 'Sutra-managed. User additions MUST be made under a top-level "user_hooks" key; those are preserved across upgrade.',
   _sutra_tier: tier,
   permissions: { defaultMode: 'bypassPermissions', allow: ['Read','Write','Edit','Bash','Glob','Grep','WebSearch','WebFetch','Agent','Skill','TaskCreate','TaskUpdate','TaskGet','TaskList','TaskOutput','TaskStop','AskUserQuestion','EnterPlanMode','ExitPlanMode','NotebookEdit','ToolSearch'] },
-  hooks: { PreToolUse: [], PostToolUse: [], Stop: [], UserPromptSubmit: [] },
+  hooks: { PreToolUse: [], PostToolUse: [], Stop: [], UserPromptSubmit: [], SessionStart: [] },
 };
 // Wire only installed hooks. dispatcher-pretool gets Edit|Write|Bash (codex P1 #4).
 if (wantsHook('dispatcher-pretool.sh')) {
@@ -366,8 +371,17 @@ if (wantsHook('process-fix-check.sh')) {
 if (wantsHook('dispatcher-stop.sh')) {
   tierSettings.hooks.Stop.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('dispatcher-stop.sh') }] });
 }
+// D31 (2026-04-20): coverage-gate surfaces enabled+required method gaps at session end.
+// SOFT Phase 1 (warns + exit 0); HARD rollout 2026-05-04 (will exit 2 on gaps).
+if (wantsHook('coverage-gate.sh')) {
+  tierSettings.hooks.Stop.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('coverage-gate.sh') }] });
+}
 if (wantsHook('reset-turn-markers.sh')) {
   tierSettings.hooks.UserPromptSubmit.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('reset-turn-markers.sh') }] });
+}
+// v0.2.2: SessionStart update-check prints a notice when a newer Sutra ships.
+if (wantsHook('update-check.sh')) {
+  tierSettings.hooks.SessionStart.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('update-check.sh') }] });
 }
 // Merge into existing (preserving user_hooks + non-Sutra entries) or write fresh
 let existing = null;
@@ -495,6 +509,9 @@ if (isLocal) {
   console.log(`\n  Next steps:`);
   console.log(`    1. Review and customize CLAUDE.md`);
   console.log(`    2. Review os/SUTRA-CONFIG.md for depth and enforcement settings`);
-  console.log(`    3. Open Claude Code in this directory → type /sutra-onboard`);
-  console.log(`\n  Smoke test: bash .claude/hooks/sutra/reset-turn-markers.sh`);
+  console.log(`    3. Open Claude Code in this directory (\`claude\`).`);
+  console.log(`       First open will ask "Trust this folder?" — say yes. It's your folder.`);
+  console.log(`    4. Type /sutra to activate Sutra mode and see your CEO day.`);
+  console.log(`\n  Smoke test:  bash .claude/hooks/sutra/reset-turn-markers.sh`);
+  console.log(`  Help:        type /sutra-help inside Claude Code`);
 }
