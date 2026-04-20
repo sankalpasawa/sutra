@@ -51,6 +51,15 @@
             "command": "bash ../holding/hooks/policy-coverage-gate.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/rtk-auto-rewrite.sh"
+          }
+        ]
       }
     ],
     "SessionStart": [

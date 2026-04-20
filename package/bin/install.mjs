@@ -56,7 +56,7 @@ const companyName = companyArg ? companyArg.split('=')[1] : basename(process.cwd
 const tierArg = args.find(a => a.startsWith('--tier='));
 const tier = tierArg ? tierArg.split('=')[1] : '2';
 const TIER_CONFIG = {
-  '1': { name: 'governance', hooks: ['enforce-boundaries.sh', 'reset-turn-markers.sh', 'dispatcher-pretool.sh'], installOsCore: false, installTemplates: true },
+  '1': { name: 'governance', hooks: ['enforce-boundaries.sh', 'reset-turn-markers.sh', 'dispatcher-pretool.sh', 'rtk-auto-rewrite.sh'], installOsCore: false, installTemplates: true },
   '2': { name: 'product',    hooks: null /* all */,                                                           installOsCore: true,  installTemplates: true },
   '3': { name: 'platform',   hooks: null /* all */,                                                           installOsCore: true,  installTemplates: true },
 };
@@ -389,6 +389,12 @@ if (wantsHook('auto-coverage.sh')) {
 if (wantsHook('dispatcher-posttool.sh')) {
   tierSettings.hooks.PostToolUse.push({ matcher: 'Edit|Write|Bash', hooks: [{ type: 'command', command: mkCmd('dispatcher-posttool.sh') }] });
 }
+// Tokens charter RTK Mode A+ (2026-04-20): mechanical enforcement of rtk wrapper
+// on voluminous git commands (git status / log / diff). Kill-switch ~/.rtk-disabled
+// or RTK_DISABLED=1. Per-command override RTK_SKIP=1. Applies to all tiers.
+if (wantsHook('rtk-auto-rewrite.sh')) {
+  tierSettings.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: mkCmd('rtk-auto-rewrite.sh') }] });
+}
 if (wantsHook('reset-turn-markers.sh')) {
   tierSettings.hooks.UserPromptSubmit.push({ matcher: '', hooks: [{ type: 'command', command: mkCmd('reset-turn-markers.sh') }] });
 }
@@ -528,3 +534,30 @@ if (isLocal) {
   console.log(`\n  Smoke test:  bash .claude/hooks/sutra/reset-turn-markers.sh`);
   console.log(`  Help:        type /sutra-help inside Claude Code`);
 }
+
+/* eslint-disable-next-line no-unused-vars */
+const _INSTALLER_OPERATIONALIZATION = `
+## Operationalization
+
+### 1. Measurement mechanism
+Client registry IN-SYNC count per version at sutra/CURRENT-VERSION.md §Client Registry.
+Failure signal: verify-os-deploy.sh exit non-zero on any IN-SYNC client.
+
+### 2. Adoption mechanism
+External: npx sutra-onboard. Portfolio: holding/hooks/upgrade-clients.sh. Tier via --tier=N.
+Hook whitelist in TIER_CONFIG at top of this file drives what each tier installs.
+
+### 3. Monitoring / escalation
+Sutra-OS reviews client registry weekly. Warn: client STALE >2 versions. Breach:
+verify-os-deploy.sh fails on IN-SYNC. Escalation: block next release + RCA.
+
+### 4. Iteration trigger
+Revise on new hook (update TIER_CONFIG), MANIFEST schema change, install failure
+on any client, tier semantics change, or founder direction.
+
+### 5. DRI
+Sutra-OS. Operator at install time: person running npx sutra-onboard.
+
+### 6. Decommission criteria
+Retire when plugin marketplace replaces installer path (v2.0+) OR Sutra OS sunsets.
+`;
