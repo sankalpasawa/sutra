@@ -43,4 +43,15 @@ mkdir -p "$(dirname "$LOG")" 2>/dev/null
   echo "queue_depth: $COUNT"
 } >> "$LOG" 2>/dev/null || true
 
+# ── v1.1 auto-emission ────────────────────────────────────────────────
+# Emit 3 observability metrics per Stop. Best-effort (do not fail the hook).
+EMIT="$PLUGIN_ROOT/hooks/emit-metric.sh"
+if [ -x "$EMIT" ]; then
+  MARKER_PRESENT=0
+  [ -f "$MARKER" ] && MARKER_PRESENT=1
+  bash "$EMIT" sessions  session_stops_total     1                  count instant 2>/dev/null || true
+  bash "$EMIT" os_health queue_depth_at_stop     "$COUNT"           count instant 2>/dev/null || true
+  bash "$EMIT" os_health depth_marker_present    "$MARKER_PRESENT"  count instant 2>/dev/null || true
+fi
+
 exit 0
