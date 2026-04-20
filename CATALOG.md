@@ -34,7 +34,7 @@ Cross-references:
 | **Adaptive Protocol Engine** (v3) | active | 2, 3 | Depth routing — classifies each task to Depth 1-5; gates fire accordingly | `depth` field in SUTRA-CONFIG or omit; Depth 5 is founder override | `sutra/os/engines/ADAPTIVE-PROTOCOL.md` |
 | **Estimation Engine** (v1.1) | active | 2, 3 | Pre-task token/time/file estimate + post-task actuals + auto-calibration | Always on in Tier 2+; Tier 1 logs to holding/ESTIMATION-LOG | `sutra/os/engines/ESTIMATION-ENGINE.md` |
 | **Coverage Engine** (v1.0) | active | 2, 3 | Runtime process coverage — tracks whether expected Sutra methods fire per task per depth | `coverage: on\|off` in `os/SUTRA-CONFIG.md` (silent no-op when off) | `sutra/os/engines/COVERAGE-ENGINE.md` |
-| **Measurement Protocol** | active | 2, 3 | Measurement registry across 26 methods (6 categories) | Coupled to Coverage Engine toggle | `sutra/os/engines/MEASUREMENT-PROTOCOL.md` + `sutra/os/engines/method-registry.jsonl` |
+| **Measurement Protocol** | active | 2, 3 | Measurement registry across 26 methods (6 categories) | Coupled to Coverage Engine toggle | `sutra/layer2-operating-system/d-engines/MEASUREMENT-PROTOCOL.md` + `sutra/os/method-registry.jsonl` |
 | **Token Telemetry** (v1, WIP) | wip | all | Per-session boot + task_end telemetry; 5 metrics to Analytics Dept | OFF until schema freeze (Phase 0 Step 2). Toggle via hook presence in `.claude/settings.json` | `holding/research/2026-04-20-token-telemetry-schema-reconciliation.md` |
 
 ---
