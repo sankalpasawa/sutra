@@ -42,8 +42,10 @@ Closed-in: [version / commit sha]
   - **D.** Use `userConfig` for opt-in of heavy features (push, shell-helpers) so defaults are minimal
   - **E.** Explicit list in README of what the plugin will ask for and why
 - **Next action:** founder decision on A-E before fix ships
-- **Status:** open
+- **Status:** **closed**
 - **Founder re-escalated 2026-04-21** — "A lot of permissions" — friend has installed, friction is real. Priority bumped to P0 for v1.3.0. Recommended approach: **bin/** pattern per Claude Code plugin docs — plugin executables in `bin/` are auto-added to PATH and treated as bare commands (no Bash permission prompt). Single `sutra` executable with subcommands replaces 6 scripts.
+- **Resolution (2026-04-21):** Shipped `bin/sutra` unified dispatcher in **plugin v1.3.0** — single executable routes `onboard | go | status | push | install-shell-helpers | leak-audit`. All 5 command files updated from `!bash ${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh` to `!sutra <sub>`. Plus breaking rename: `/sutra:sutra-onboard` → `/sutra:onboard` (and peers) to drop redundant prefix inside the `sutra:` namespace. Friend's Claude Code will auto-pull v1.3.0 on next session start.
+- **Closed-in:** v1.3.0 (commit `a93f19d`)
 
 ---
 
