@@ -31,7 +31,7 @@ print(f'  project_name:    {d[\"project_name\"]}')
 print(f'  sutra_version:   {d[\"sutra_version\"]}')
 print(f'  telemetry_optin: {d[\"telemetry_optin\"]}')
 print()
-print('Auto-emission is ON. Run /sutra:sutra-push to ship queued metrics.')
+print('Auto-emission is ON. Telemetry auto-pushes on Stop; run `sutra push` manually if needed.')
 "
 else
   echo "onboard failed — check CLAUDE_PROJECT_DIR and plugin install"

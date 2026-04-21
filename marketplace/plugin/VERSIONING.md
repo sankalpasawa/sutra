@@ -48,9 +48,9 @@ Breaking changes. Users may need to take action. Examples:
 
 Claude Code auto-pulls the latest version on session start for public marketplaces like ours (no token needed). Users can:
 
-- Force-update immediately: `claude plugin marketplace update sutra && claude plugin update sutra@sutra`
+- Force-update immediately: `claude plugin marketplace update sutra && claude plugin update core@sutra`
 - Pin a version: in `.claude/settings.json` add a `sha` or `ref` to the marketplace entry (advanced; see [marketplace source pinning](https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels))
-- Opt out of a version: `claude plugin disable sutra@sutra`, wait for a fix, then re-enable
+- Opt out of a version: `claude plugin disable core@sutra`, wait for a fix, then re-enable
 
 ## Pre-release conventions
 

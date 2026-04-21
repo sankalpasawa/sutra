@@ -1,6 +1,6 @@
 # Permissions — What Sutra Asks For and Why
 
-*Plugin version: 1.4.1 · Updated: 2026-04-21*
+*Plugin version: 1.5.1 · Updated: 2026-04-22*
 
 Claude Code prompts before running shell commands and writing files outside the project. Sutra needs a small, auditable set of permissions to do its job. This doc lists every one of them and explains why.
 
@@ -22,8 +22,8 @@ Paste this into `.claude/settings.local.json` (create the file if it doesn't exi
       "Bash(sutra)",
       "Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*:*)",
       "Bash(claude plugin marketplace update sutra)",
-      "Bash(claude plugin update sutra:*)",
-      "Bash(claude plugin uninstall sutra:*)",
+      "Bash(claude plugin update core:*)",
+      "Bash(claude plugin uninstall core:*)",
       "Write(.claude/sutra-project.json)",
       "Write(.claude/depth-registered)",
       "Write(.claude/input-routed)",
@@ -53,8 +53,8 @@ Equivalent for project-scope (shared with your team via git): put it in `.claude
 | Pattern | When it fires | Why |
 |---|---|---|
 | `Bash(claude plugin marketplace update sutra)` | `/core:update` | Refreshes marketplace cache |
-| `Bash(claude plugin update sutra:*)` | `/core:update` | Applies version bump |
-| `Bash(claude plugin uninstall sutra:*)` | `/core:uninstall` | Removes the plugin |
+| `Bash(claude plugin update core:*)` | `/core:update` | Applies version bump |
+| `Bash(claude plugin uninstall core:*)` | `/core:uninstall` | Removes the plugin |
 
 ### Write — project-local state
 
@@ -80,7 +80,7 @@ These are NEVER requested:
 - Read/Write anywhere outside `.claude/` and `~/.sutra/` in your project
 - No access to Photos, Documents, Downloads, or any system library
 - No read of `~/.ssh`, `~/.aws`, `~/.gnupg`, or any credentials directory
-- No network calls except the optional `/core:push` (which needs gh auth, not a Claude Code permission)
+- No network calls except the optional `sutra push` (auto-fires on Stop when `telemetry_optin=true`; needs gh auth, not a Claude Code permission)
 - No SSH key generation, no keychain access, no OS-level settings change
 
 ## Why so many items?

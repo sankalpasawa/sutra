@@ -20,7 +20,7 @@ Operating system for building with AI. Governance + observability for Claude Cod
 claude plugin marketplace add sankalpasawa/sutra
 
 # 2. Install the plugin
-claude plugin install sutra
+claude plugin install core@sutra
 ```
 
 Then in any Claude Code session:
@@ -77,7 +77,7 @@ wsl --install
 # 2. After WSL2 installs + reboots, open an Ubuntu terminal and:
 curl -fsSL https://claude.ai/install.sh | bash
 claude plugin marketplace add sankalpasawa/sutra
-claude plugin install sutra
+claude plugin install core@sutra
 claude
 # Inside Claude Code:
 /core:start

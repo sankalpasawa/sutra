@@ -2,7 +2,7 @@
 # Sutra plugin smoke test.
 # Verifies the plugin was installed correctly and every surface is wired.
 #
-# Run AFTER `claude plugin install sutra@sutra` (+ Claude Code restart if needed).
+# Run AFTER `claude plugin install core@sutra` (+ Claude Code restart if needed).
 # Exits 0 if all surfaces present, non-zero if anything is missing.
 #
 # Surfaces checked:
@@ -35,10 +35,10 @@ echo ""
 echo "[1/6] Plugin registry"
 REG=~/.claude/plugins/installed_plugins.json
 if [ -f "$REG" ]; then
-  if python3 -c "import json,sys; d=json.load(open('$REG')); sys.exit(0 if 'sutra@sutra' in d.get('plugins',{}) else 1)" 2>/dev/null; then
-    _pass "installed_plugins.json contains sutra@sutra"
+  if python3 -c "import json,sys; d=json.load(open('$REG')); sys.exit(0 if 'core@sutra' in d.get('plugins',{}) else 1)" 2>/dev/null; then
+    _pass "installed_plugins.json contains core@sutra"
   else
-    _fail "sutra@sutra not in installed_plugins.json — did /plugin install run?"
+    _fail "core@sutra not in installed_plugins.json — did /plugin install run?"
   fi
 else
   _fail "installed_plugins.json missing ($REG)"
@@ -55,15 +55,15 @@ if [ -n "$PCACHE" ] && [ -d "$PCACHE" ]; then
     python3 -c "
 import json,sys
 d=json.load(open('${PCACHE}.claude-plugin/plugin.json'))
-assert d.get('name')=='sutra', f\"name is {d.get('name')}\"
+assert d.get('name')=='core', f\"name is {d.get('name')}\"
 assert d.get('version'), 'version missing'
 print(f\"  plugin v{d['version']}\")
-" 2>&1 | grep -q "plugin v" && _pass "plugin.json valid (name=sutra, version set)" || _fail "plugin.json contents invalid"
+" 2>&1 | grep -q "plugin v" && _pass "plugin.json valid (name=core, version set)" || _fail "plugin.json contents invalid"
   fi
 else
   _fail "plugin cache dir missing under ~/.claude/plugins/cache/sutra/sutra/"
   echo ""
-  echo "  HINT: Run: claude plugin install sutra@sutra  — then retry."
+  echo "  HINT: Run: claude plugin install core@sutra  — then retry."
   echo ""
   exit 1
 fi
@@ -92,14 +92,15 @@ print('  events:', evs)
 " 2>&1 | grep -q "events:" && _pass "hooks.json registers PreToolUse + Stop" || _fail "hooks.json structure wrong"
 fi
 
-# 5. Commands (5 in v1)
+# 5. Commands (v1.5.x surface)
 echo ""
 echo "[5/8] Commands"
-_req_file "${PCACHE}commands/sutra.md" "command: /sutra"
-_req_file "${PCACHE}commands/depth-check.md" "command: /depth-check"
-_req_file "${PCACHE}commands/sutra-onboard.md" "command: /sutra-onboard (v1)"
-_req_file "${PCACHE}commands/sutra-push.md" "command: /sutra-push (v1)"
-_req_file "${PCACHE}commands/sutra-status.md" "command: /sutra-status (v1)"
+_req_file "${PCACHE}commands/start.md" "command: /core:start"
+_req_file "${PCACHE}commands/status.md" "command: /core:status"
+_req_file "${PCACHE}commands/update.md" "command: /core:update"
+_req_file "${PCACHE}commands/uninstall.md" "command: /core:uninstall"
+_req_file "${PCACHE}commands/permissions.md" "command: /core:permissions"
+_req_file "${PCACHE}commands/depth-check.md" "command: /core:depth-check"
 
 # 6. Lib (v1 additions)
 echo ""
@@ -133,10 +134,10 @@ if [ "$FAIL" -eq 0 ]; then
   echo "==============================================================="
   echo ""
   echo "Next: behavioural test (run inside Claude Code):"
-  echo "  /sutra-onboard       — create sutra-project.json with install_id + project_id"
-  echo "  /sutra-status        — inspect queue depth, opt-in flag, last flush"
-  echo "  (work a little — Stop hook auto-emits 3 metrics per session)"
-  echo "  /sutra-push          — deliver queue to sankalpasawa/sutra-data (private)"
+  echo "  /core:start          — create sutra-project.json with install_id + project_id"
+  echo "  /core:status         — inspect queue depth, opt-in flag, last flush"
+  echo "  (work a little — Stop hook auto-emits metrics per session)"
+  echo "  sutra push           — deliver queue to sankalpasawa/sutra-data (private)"
   echo ""
   exit 0
 else

@@ -4,6 +4,6 @@ description: Show Sutra plugin state — project IDs, queue depth, opt-in flag, 
 disable-model-invocation: true
 ---
 
-# /sutra:status — Local state
+# /core:status — Local state
 
 !sutra status

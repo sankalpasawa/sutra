@@ -11,10 +11,10 @@
 # Rendering: Any LLM can read this and produce a diagram in the target format
 # (ASCII, mermaid, DOT, plain text) — see `rendering_hints` section below.
 #
-# Version: 1.0.0
-# Last updated: 2026-04-20
+# Version: 1.1.0
+# Last updated: 2026-04-22
 
-version: 1.0.0
+version: 1.1.0
 system: sutra-plugin
 
 # ────────────────────────────────────────────────────────────────────
@@ -33,17 +33,20 @@ components:
     contains:
       - .claude-plugin/plugin.json
       - hooks/hooks.json
-      - hooks/depth-marker-pretool.sh      # v0.1 warn-only
-      - hooks/estimation-stop.sh            # v0.1 session log
-      - hooks/emit-metric.sh                # v1 Layer B writer
-      - hooks/flush-telemetry.sh            # v1 Stop — local only
-      - lib/project-id.sh                   # v1 install_id + project_id
-      - lib/queue.sh                        # v1 queue ops
+      - hooks/depth-marker-pretool.sh       # warn-only (hard in a future release)
+      - hooks/estimation-stop.sh            # session log
+      - hooks/posttool-counter.sh           # v1.2 per-session tool counter
+      - hooks/emit-metric.sh                # Layer B metric writer
+      - hooks/flush-telemetry.sh            # Stop — tallies counters + fire-and-forget push
+      - hooks/update-banner.sh              # SessionStart — version-change banner
+      - lib/project-id.sh                   # install_id + project_id
+      - lib/queue.sh                        # queue ops
       - skills/{input-routing,depth-estimation,readability-gate,output-trace}/SKILL.md
-      - skills/session-retrieve/SKILL.md      # v1.9.x — terminal-surface: recover crashed sessions
-      - commands/{sutra,depth-check,sutra-onboard,sutra-push,sutra-status}.md
+      - commands/{start,status,update,uninstall,permissions,depth-check}.md
+      - bin/sutra                           # unified dispatcher (v1.3+)
+      - scripts/{start,status,push,onboard,install-shell-helpers,leak-audit,go}.sh
       - tests/{smoke.sh,run-all.sh,unit/*,integration/*}
-    size_kb: ~30
+    size_kb: ~35
     rewrites_on_update: true
 
   - id: plugin_registry
@@ -131,40 +134,46 @@ identities:
 flows:
 
   - id: install
-    trigger: claude plugin install sutra@sutra
+    trigger: claude plugin install core@sutra
     actors: [claude_code_cli, github, plugin_cache, plugin_registry]
     steps:
       - claude_code_cli clones sankalpasawa/sutra main
-      - reads .claude-plugin/marketplace.json → finds plugin definition
+      - reads .claude-plugin/marketplace.json → finds plugin definition (name=core)
       - copies marketplace/plugin/** into plugin_cache
-      - adds entry to plugin_registry
+      - adds entry to plugin_registry (key=core@sutra)
     duration: ~5s
     network: outbound_git_only
     mutations_to_project: none
     mutations_to_user_home: [plugin_cache created, plugin_registry appended]
 
   - id: first_session_onboard
-    trigger: user runs `/sutra-onboard` in their project
+    trigger: user runs `/core:start` in their project
     actors: [user, plugin_cache, client_project_dotclaude]
     steps:
       - source lib/project-id.sh
       - compute install_id (from HOME + version) and project_id (from git remote or cwd)
       - derive project_name from git remote basename or cwd basename
-      - write client_project_dotclaude/sutra-project.json with telemetry_optin=false
+      - write client_project_dotclaude/sutra-project.json with telemetry_optin=true (v1.4+ default; flip via edit to disable)
       - queue_init creates user_sutra_home + metrics-queue.jsonl
-      - print banner + next-step instructions
+      - write initial depth marker to .claude/depth-registered
+      - print activation banner + next-step instructions
     idempotent: true
     network: none
 
   - id: per_session_stop
     trigger: Claude Code Stop event (session end)
-    actors: [plugin_hooks, client_project_dotclaude, user_sutra_home]
+    actors: [plugin_hooks, client_project_dotclaude, user_sutra_home, sutra_data_repo]
     runs_in_order: [estimation-stop.sh, flush-telemetry.sh]
     estimation_stop_writes: .claude/sutra-estimation.log (append)
+    flush_telemetry_tallies: ~/.sutra/sessions/<session_id>.counters
+    flush_telemetry_emits_metrics: [sessions.session_stops_total, sessions.tool_uses_session, sessions.session_duration_sec, os_health.queue_depth_at_stop, os_health.depth_marker_present, per-tool *_uses_session]
     flush_telemetry_writes: ~/.sutra/last-flush.txt (overwrite)
-    network: NEVER
-    git: NEVER
-    rationale: session teardown must stay light (codex review 2026-04-20)
+    network: fire_and_forget_outbound_git_push  # v1.1.3+: when telemetry_optin=true, flush-telemetry.sh does `nohup bash .../push.sh &` — teardown returns instantly
+    git: conditional_background
+    rationale: >-
+      Session teardown never blocks. When telemetry_optin=true, flush-telemetry.sh
+      backgrounds push.sh (fire-and-forget); the push happens after Stop returns.
+      When telemetry_optin=false, no network activity.
 
   - id: emit_metric
     trigger: any caller invokes hooks/emit-metric.sh <dept> <metric> <value> [unit] [window]
@@ -183,7 +192,7 @@ flows:
       exit_4: PII in a string field
 
   - id: manual_push
-    trigger: user runs `/sutra-push` command
+    trigger: user runs `sutra push` in terminal (auto-push on Stop is the default; manual is for power users)
     actors: [user, user_sutra_home, sutra_data_repo]
     precondition: client_project_dotclaude/sutra-project.json.telemetry_optin == true
     steps:
@@ -316,10 +325,13 @@ rendering_hints:
 # ────────────────────────────────────────────────────────────────────
 
 scope_v1:
-  in: [portfolio_users_with_gh_push_access_to_sutra_data, git_transport, local_first_queue]
+  in:
+    - portfolio_users_with_gh_push_access_to_sutra_data
+    - git_transport
+    - local_first_queue
+    - auto_push_on_stop_fire_and_forget  # v1.1.3+: flush-telemetry backgrounds push.sh; never blocks teardown
   out:
     - supabase_transport        # v2 — for external (non-portfolio) users
     - dashboard_ui              # v2 — raw pulse is sufficient for v1
     - windows_support           # never — bash only
-    - auto_push_on_stop         # rejected by codex — teardown stays light
     - multi_tenant_rls          # v2 — private-repo ACL suffices for v1

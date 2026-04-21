@@ -59,6 +59,15 @@ case "$SUBCMD" in
   leak-audit)
     exec bash "$SCRIPTS_DIR/leak-audit.sh" "$@"
     ;;
+  permissions)
+    # Print the paste-ready JSON allowlist from PERMISSIONS.md (first json fence block).
+    if [ -f "$PLUGIN_ROOT/PERMISSIONS.md" ]; then
+      awk '/^```json$/{flag=1; next} /^```$/{if(flag){exit}} flag' "$PLUGIN_ROOT/PERMISSIONS.md"
+    else
+      echo "PERMISSIONS.md not found in plugin root ($PLUGIN_ROOT)" >&2
+      exit 1
+    fi
+    ;;
   version|--version|-v)
     manifest="$PLUGIN_ROOT/.claude-plugin/plugin.json"
     if [ -f "$manifest" ] && command -v jq >/dev/null 2>&1; then
@@ -82,7 +91,8 @@ Lifecycle:
 
 Power-user:
   push                 Manually push queued telemetry (auto-runs on Stop).
-  install-shell-helpers  Add sutra-start / sutra-uninstall / sutra-reset
+  permissions          Print paste-ready JSON allowlist for .claude/settings.local.json.
+  install-shell-helpers  Add sutra-go / sutra-uninstall / sutra-reset
                        / sutra-status-global to your ~/.zshrc or ~/.bashrc.
   leak-audit           Scan plugin tree for brand strings (dev check).
   version              Print installed plugin version.
@@ -92,6 +102,7 @@ Inside Claude Code (slash commands):
   /core:status        Local state
   /core:update        Pull latest plugin version
   /core:uninstall     Remove plugin
+  /core:permissions   Print paste-ready allowlist
   /core:depth-check   Manual depth marker
 
 Docs: https://github.com/sankalpasawa/sutra

@@ -37,14 +37,14 @@ sutra-go() {
   mkdir -p ~/temp/$n && cd ~/temp/$n
   git init -q
   git remote add origin git@github.com:${USER}/$n.git 2>/dev/null
-  { claude plugin marketplace update sutra && claude plugin uninstall sutra@sutra 2>/dev/null; claude plugin install sutra@sutra; } >/dev/null 2>&1
+  { claude plugin marketplace update sutra && claude plugin uninstall core@sutra 2>/dev/null; claude plugin install core@sutra; } >/dev/null 2>&1
   local v=$(ls ~/.claude/plugins/cache/sutra/sutra/ | sort -V | tail -1)
   CLAUDE_PLUGIN_ROOT=~/.claude/plugins/cache/sutra/sutra/$v CLAUDE_PROJECT_DIR=$PWD bash ~/.claude/plugins/cache/sutra/sutra/$v/scripts/go.sh
   claude
 }
 
 sutra-uninstall() {
-  claude plugin uninstall sutra@sutra 2>/dev/null
+  claude plugin uninstall core@sutra 2>/dev/null
   claude plugin marketplace remove sutra 2>/dev/null
   echo "Sutra plugin + marketplace removed (data in ~/.sutra/ preserved)"
 }
