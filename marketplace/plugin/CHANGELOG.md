@@ -2,6 +2,28 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-04-22
+
+C3c token-compression bundle — Tokens charter per-turn cost-component cut.
+
+### Added
+
+- **RTK auto-rewrite whitelist (native tools)** — `hooks/rtk-auto-rewrite.sh`. PreToolUse(Bash) hook that blocks unprefixed voluminous git commands and forces `rtk <cmd>` wrap. Whitelist v2: `git status`, `git log`, `git diff`, `git blame`, `git show`. Typical reduction 30-60% on wrapped commands (measured on Asawa repo). Kill-switch: `touch ~/.rtk-disabled` or `RTK_DISABLED=1`.
+- **MCP output compression (all MCP tools)** — `hooks/posttool-mcp-compress.sh`. PostToolUse hook matched on `mcp__.*` that REPLACES large MCP outputs via `hookSpecificOutput.updatedMCPToolOutput` with a head+error+tail compressed summary. Thresholds: size ≥ 4000 bytes AND line count ≥ 80. Smoke-tested: 5,099-byte playwright snapshot → 2,583 bytes (49% cut). Telemetry at `.enforcement/c3c-compress.jsonl`. Codex-verified mechanism + docs-verified (code.claude.com/docs/en/hooks). Kill-switch: `touch ~/.c3c-disabled` or `C3C_DISABLED=1`.
+
+### Changed
+
+- `hooks/hooks.json` registers the two new hooks — RTK on PreToolUse(Bash), MCP-compress on PostToolUse(matcher `mcp__.*`).
+
+### Rationale
+
+Founder direction 2026-04-22: "don't change what I write — find background optimizations for the printing part." Output tokens can't be compressed post-generation, but TOOL OUTPUT Claude reads CAN be compressed before entering context. Native-tool track uses PreToolUse command rewriting via RTK; MCP-tool track uses PostToolUse output replacement. Paired commits ship them as one OS bundle.
+
+### Migration
+
+- Existing v1.6.x users: `claude plugin marketplace update sutra` picks up both hooks automatically. No config change required.
+- Both hooks have individual kill-switches if needed: `~/.rtk-disabled` disables native; `~/.c3c-disabled` disables MCP.
+
 ## [1.6.0] — 2026-04-22
 
 Per-profile enforcement + hard-block mode + release channels.

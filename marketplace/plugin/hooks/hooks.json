@@ -1,5 +1,5 @@
 {
-  "description": "Sutra governance hooks — warn when depth marker missing before Edit/Write, log estimation on Stop, announce version updates on SessionStart.",
+  "description": "Sutra governance hooks — depth-marker gate, estimation logging, version banners, + C3c token-compression bundle (RTK native-tool whitelist, MCP output compression).",
   "hooks": {
     "SessionStart": [
       {
@@ -22,6 +22,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/rtk-auto-rewrite.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -31,6 +41,16 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-counter.sh",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-mcp-compress.sh",
+            "timeout": 10
           }
         ]
       }
