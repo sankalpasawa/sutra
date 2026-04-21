@@ -2,6 +2,18 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] — 2026-04-22
+
+### Added
+
+- **`session-retrieve` skill** — recovers abruptly-closed Claude Code sessions after laptop shutdowns, kernel panics, or API timeouts. Scans `~/.claude/projects/*.jsonl` for orphan signatures (explicit `API Error` OR silent mid-`tool_use` deaths), returns `claude -r <id>` resume commands with correctly-decoded project roots.
+- CATALOG.md §7b "Skills (by LLM interactive surface)" — new taxonomy section. Skills organized by the harness they run in (Terminal / Desktop / Web / SDK). Terminal subsection contains all 5 plugin skills; other surface subsections reserved for future.
+- Trigger phrases for the skill: "figure out past sessions", "what sessions got killed", "my laptop switched off — what was I working on", "find my crashed sessions", etc.
+
+### Why it exists
+
+Session-retrieve was built after a laptop shutdown lost 5 mid-flight sessions. The manual recovery took ~15 min of jsonl grepping and two wrong `claude -r` attempts (wrong project root). Skill encodes the deterministic procedure: detect both orphan flavors, decode the project slug for resume (never use the `cwd` field — #1 failure mode), dedupe shared roots, and output a readability-gate compliant report.
+
 ## [1.5.0] — 2026-04-21
 
 Plugin renamed `sutra` → `core` within the `sutra` marketplace, plus permission-prompt transparency.

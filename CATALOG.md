@@ -114,6 +114,30 @@ Each toggles at the CLAUDE.md level or via a specific hook/config.
 
 ---
 
+## 7b. Skills (by LLM interactive surface)
+
+Skills are per-turn behaviors or task-specific procedures shipped in the Sutra plugin. Unlike Features, skills are invoked via the `Skill` tool (or equivalent per surface) — they're the LLM's playbook, not hooks.
+
+Source of truth: `sutra/marketplace/plugin/skills/<name>/SKILL.md`.
+
+### 7b.1 Terminal Interactive Surfaces (Claude Code CLI)
+
+Skills that run inside Claude Code's terminal harness. Depend on CLI-specific artifacts (`~/.claude/projects/*`, marker files under `.claude/`, hook stderr, terminal output width). Do not apply to Claude Desktop, Claude.ai web, or raw API SDK use.
+
+| Name | Status | Invoke on | Provides | Source |
+|---|---|---|---|---|
+| **input-routing** | active | Every user message, before any Edit/Write/Bash | 5-line classification block (TYPE / ROUTE / FIT CHECK) | `skills/input-routing/SKILL.md` |
+| **depth-estimation** | active | Start of any multi-step task | 5-line TASK/DEPTH/EFFORT/COST/IMPACT block; writes `.claude/depth-registered` | `skills/depth-estimation/SKILL.md` |
+| **readability-gate** | active | Before presenting any output | Output formatting — tables, numbers, boxed decisions, progress bars | `skills/readability-gate/SKILL.md` |
+| **output-trace** | active | End of every response | One-line OS trace: route → domain → nodes → terminal → output | `skills/output-trace/SKILL.md` |
+| **session-retrieve** | active | Founder says "figure out past sessions" / "find my crashed sessions" | Scans `~/.claude/projects/` for orphan jsonls (API-err OR mid-tool-use); returns `claude -r <id>` per session with decoded project root | `skills/session-retrieve/SKILL.md` |
+
+### 7b.2 Other surfaces (Desktop / Web / SDK)
+
+None yet. Reserved for future skills that explicitly target Claude Desktop app, Claude.ai web, or API-SDK callers.
+
+---
+
 ## 8. Hooks (pointer)
 
 Full hook inventory: `sutra/layer2-operating-system/MANIFEST-v1.9.md` (tier-aware: Tier 1 ships boundary + reset-turn-markers + dispatcher-pretool; Tier 2+ ships all).

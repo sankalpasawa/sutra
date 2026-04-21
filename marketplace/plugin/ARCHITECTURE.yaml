@@ -40,6 +40,7 @@ components:
       - lib/project-id.sh                   # v1 install_id + project_id
       - lib/queue.sh                        # v1 queue ops
       - skills/{input-routing,depth-estimation,readability-gate,output-trace}/SKILL.md
+      - skills/session-retrieve/SKILL.md      # v1.9.x — terminal-surface: recover crashed sessions
       - commands/{sutra,depth-check,sutra-onboard,sutra-push,sutra-status}.md
       - tests/{smoke.sh,run-all.sh,unit/*,integration/*}
     size_kb: ~30

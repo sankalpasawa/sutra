@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "1.5.0",
-  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, plus opt-in local metric telemetry.",
+  "version": "1.5.1",
+  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, plus opt-in local metric telemetry.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"
@@ -15,6 +15,7 @@
     "readability",
     "workflow",
     "opinionated-os",
-    "session-discipline"
+    "session-discipline",
+    "session-retrieve"
   ]
 }
