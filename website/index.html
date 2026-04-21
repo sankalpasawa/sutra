@@ -326,7 +326,7 @@
 
 <section class="hero">
   <div class="container">
-    <div class="hero-badge">OS v1.9.1 &middot; PLUGIN v1.3.0 &middot; LIVE ON CLAUDE CODE MARKETPLACE</div>
+    <div class="hero-badge">OS v1.9.1 &middot; PLUGIN v1.4.0 &middot; LIVE ON CLAUDE CODE MARKETPLACE</div>
     <h1>The operating system for <span>AI-native companies</span></h1>
     <p>Sutra structures how a company is built and operated — not just how code ships. Tier-aware governance, depth routing, policy-coverage enforcement, auto-propagation, coverage engine. It takes a founder from an idea to a running company, then keeps every company in the portfolio in-sync with the same operating manual.</p>
 
@@ -396,16 +396,16 @@
         <div class="phase-content">
           <h3>Activate + do your first governed task</h3>
           <p style="margin-bottom: 8px;">In any project directory, open Claude Code and type:</p>
-          <div class="cta-code" style="font-size: 13px; padding: 10px 14px; max-width: 420px;">/sutra:go</div>
-          <p style="font-size: 13px; margin-top: 8px; margin-bottom: 8px;">Writes your install identity, enables local telemetry, prints the activation banner. Then ask Claude to do anything — you'll see the <strong>input-routing block</strong> and <strong>depth-estimation block</strong> before any edit.</p>
+          <div class="cta-code" style="font-size: 13px; padding: 10px 14px; max-width: 420px;">/sutra:start</div>
+          <p style="font-size: 13px; margin-top: 8px; margin-bottom: 8px;">One command. Writes your install identity, enables telemetry, prints the activation banner, writes a depth marker. Then ask Claude to do anything — you'll see the <strong>input-routing block</strong> and <strong>depth-estimation block</strong> before any edit.</p>
           <p style="font-size: 13px; margin-top: 8px; margin-bottom: 0;">Full T+0 → T+60s walkthrough: <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/design/2026-04-21-first-run-walkthrough.md" style="color: var(--accent);">github.com/sankalpasawa/sutra</a></p>
         </div>
       </div>
     </div>
 
     <div class="quote-block" style="margin-top: 40px;">
-      <div class="quote-text" style="font-style: normal;"><strong>Platform compatibility</strong> — plugin v1.3.0 skills &amp; commands work in every Claude Code surface (terminal, desktop, web, IDE). Enforcement hooks use bash — full on Mac/Linux terminal + Mac desktop + IDE (if bash on PATH). Web app: hooks sandboxed. Windows: hooks no-op until v2. Rest of the plugin still works everywhere.</div>
-      <div class="quote-attr" style="margin-top: 10px;">v1.3.0 release notes · 2026-04-21 · <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/CHANGELOG.md" style="color: var(--accent);">full changelog</a></div>
+      <div class="quote-text" style="font-style: normal;"><strong>Platform compatibility</strong> — plugin v1.4.0 skills &amp; commands work in every Claude Code surface (terminal, desktop, web, IDE). Enforcement hooks use bash — full on Mac/Linux terminal + Mac desktop + IDE (if bash on PATH). Web app: hooks sandboxed. Windows: hooks no-op until v2. Rest of the plugin still works everywhere.</div>
+      <div class="quote-attr" style="margin-top: 10px;">v1.4.0 release notes · 2026-04-21 · <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/CHANGELOG.md" style="color: var(--accent);">full changelog</a></div>
     </div>
   </div>
 </section>
@@ -545,12 +545,12 @@
         <div class="skill-desc">Emit OS trace line</div>
       </div>
       <div class="skill">
-        <div class="skill-name">/sutra:onboard</div>
-        <div class="skill-desc">Start a new company</div>
+        <div class="skill-name">/sutra:start</div>
+        <div class="skill-desc">Activate here (the one command)</div>
       </div>
       <div class="skill">
-        <div class="skill-name">/sutra:go</div>
-        <div class="skill-desc">One-shot deploy</div>
+        <div class="skill-name">/sutra:status</div>
+        <div class="skill-desc">Install + queue state</div>
       </div>
     </div>
 
@@ -627,11 +627,9 @@
       <div class="cta-code" style="margin-bottom: 12px;">claude plugin marketplace add sankalpasawa/sutra</div>
       <div class="cta-label">Step 2: Install the plugin</div>
       <div class="cta-code" style="margin-bottom: 12px;">claude plugin install sutra@sutra</div>
-      <div class="cta-label">Step 3: Activate in any session</div>
-      <div class="cta-code" style="margin-bottom: 12px;">/sutra:go</div>
-      <div class="cta-label">Step 4: Onboard a new company</div>
-      <div class="cta-code">/sutra:onboard</div>
-      <div class="cta-hint" style="margin-top: 12px;">Sutra asks the questions; you bring the idea. Sixty minutes later you have a versioned company — an operating system, a roadmap, and the four core skills active across every future session. Upgrades propagate automatically from here.</div>
+      <div class="cta-label">Step 3: Activate + onboard in one command</div>
+      <div class="cta-code">/sutra:start</div>
+      <div class="cta-hint" style="margin-top: 12px;">One command does everything — writes your install identity, enables telemetry, activates the four core skills, prints the banner. Upgrades propagate automatically from here. Need to inspect? <code style="color: var(--green);">/sutra:status</code>. Need an update? <code style="color: var(--green);">/sutra:update</code>. Done? <code style="color: var(--green);">/sutra:uninstall</code>.</div>
     </div>
   </div>
 </section>
