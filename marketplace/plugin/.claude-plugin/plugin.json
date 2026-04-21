@@ -1,6 +1,6 @@
 {
   "name": "core",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, plus opt-in local metric telemetry.",
   "author": {
     "name": "Sutra",
@@ -20,7 +20,9 @@
   ],
   "userConfig": {
     "profile": {
-      "description": "Enforcement profile. `individual` (warn-only, privacy-default telemetry off), `project` (warn-only, telemetry on), `company` (HARD block on missing depth markers, telemetry on). Default: project.",
+      "type": "string",
+      "title": "Enforcement profile",
+      "description": "individual = warn-only, telemetry off. project = warn-only, telemetry on (default). company = HARD block on missing depth markers, telemetry on.",
       "sensitive": false
     }
   }
