@@ -39,14 +39,17 @@ This charter is cross-cutting: measurement is owned by Analytics; cuts are owned
 
 | Metric | Formula | Null handling | Current | Target (Q2) | Warn | Breach |
 |---|---|---|---|---|---|---|
-| Boot context P50 | 50th percentile of `tokens_boot` across sessions in rolling 7d | ≥10 sessions required for a reading; else `insufficient-data` | unknown | ≤15k | >18k | >25k |
-| Boot context P95 | 95th percentile (same) | same | unknown | ≤25k | >30k | >40k |
-| Governance overhead % | `sum(tokens where category in [input-routing, depth-block, estimation-block, enforcement-preamble, boot-memory]) / sum(tokens where event=task_end)` per session | if denominator <1k tokens, exclude from aggregate | unknown | <15% | ≥20% | ≥30% |
-| Waste ratio | `sum(tokens_loaded_boot not referenced in any task's files_touched during the session) / tokens_loaded_boot` | "referenced" = appears in any Read/Edit/Write target OR Grep/Glob match during session | unknown | <10% | ≥20% | ≥35% |
-| Per-task estimate error | `abs(actual_tokens - estimated_tokens) / max(estimated_tokens, 1)` — **error rate**, lower = better (corrects prior "accuracy" misnomer) | null if estimate missing; track null-rate separately | unknown | ≤30% | >40% | >60% |
-| Per-company delta | `max(company_P50) / min(company_P50)` | drop companies with <10 sessions | unknown | <2× | ≥2× | ≥3× |
+| Boot context P50 | 50th percentile of `tokens_boot` across sessions in rolling 7d | ≥10 sessions required for a reading; else `insufficient-data` | **25,620** (n=3, insufficient-data; pre-C5a) | ≤15k | >18k | >25k |
+| Boot context P95 | 95th percentile (same) | same | **39,861** (n=3, insufficient-data; pre-C5a) | ≤25k | >30k | >40k |
+| Governance overhead % | `sum(tokens where category in [input-routing, depth-block, estimation-block, enforcement-preamble, boot-memory]) / sum(tokens where event=task_end)` per session | if denominator <1k tokens, exclude from aggregate | unknown (telemetry not live) | <15% | ≥20% | ≥30% |
+| Waste ratio | `sum(tokens_loaded_boot not referenced in any task's files_touched during the session) / tokens_loaded_boot` | "referenced" = appears in any Read/Edit/Write target OR Grep/Glob match during session | unknown (telemetry not live) | <10% | ≥20% | ≥35% |
+| Per-task estimate error | `abs(actual_tokens - estimated_tokens) / max(estimated_tokens, 1)` — **error rate**, lower = better (corrects prior "accuracy" misnomer) | null if estimate missing; track null-rate separately | unknown (telemetry not live) | ≤30% | >40% | >60% |
+| Per-company delta | `max(company_P50) / min(company_P50)` | drop companies with <10 sessions | unknown (only Asawa sampled) | <2× | ≥2× | ≥3× |
 
-Current = "unknown" until W1 baseline publishes.
+**Current readings** (2026-04-21):
+- Asawa-self real-boot baseline (n=3): 25,620 avg / 39,861 max — insufficient-data per ≥10 rule; canonical reading arrives after Phase 0 Step 6 deploys to 6 cos.
+- **C5a estimator delta** (token-optimizer auto-snapshots, pre/post plugin disable): 53,759 → 26,870 (−50%). Real post-C5a boot will be measured next time `token-optimizer quick` runs in a fresh session.
+- Governance overhead %, waste ratio, error rate, per-company delta: BLOCKED on Phase 0 Step 2–6 (telemetry stream not yet live).
 
 ---
 
@@ -77,13 +80,15 @@ Scoring key: 0.0 = no progress, 0.3 = behind, 0.5 = on pace, 0.7 = target, 1.0 =
 
 | # | Action | OKR | Owner | Due | Status |
 |---|---|---|---|---|---|
-| 1 | Reconcile Tokens local schema with Analytics `TELEMETRY-CONTRACT.md` (allow detailed local jsonl; plugin transport obeys privacy rules — no company names, no raw paths, install_id hash only). Publish reconciled contract. | KR1 | Analytics + Sutra-OS | 2026-04-22 | TODO |
-| 2 | Freeze `token-telemetry.jsonl` schema (local layer) and plugin transport shape (per Analytics contract). | KR1 | Analytics | 2026-04-23 | TODO |
+| 1 | Reconcile Tokens local schema with Analytics `TELEMETRY-CONTRACT.md` (allow detailed local jsonl; plugin transport obeys privacy rules — no company names, no raw paths, install_id hash only). Publish reconciled contract. | KR1 | Analytics + Sutra-OS | 2026-04-22 | ✅ DONE (`research/2026-04-20-token-telemetry-schema-reconciliation.md`) |
+| 1b | Add `compaction_count` field to v1 Layer A schema (surfaced by i2-spike hyp #11 — Smart Compaction needs fire-count signal) | KR1 | Sutra-OS | 2026-04-21 | ✅ DONE (2026-04-21 — baked into Step 2 schema before freeze) |
+| 2 | Freeze `token-telemetry.jsonl` schema (local layer) and plugin transport shape (per Analytics contract). JSON Schema + tests. | KR1 | Analytics | 2026-04-23 | ✅ DONE 2026-04-21 (`holding/departments/analytics/token-telemetry.schema.json` + `tests/token-telemetry-schema.test.sh`) |
 | 3 | Write `holding/hooks/session-token-snapshot.sh` (SessionStart) emitting to frozen schema | KR1 | Engineering | 2026-04-24 | TODO |
 | 4 | Extend `holding/hooks/dispatcher-stop.sh` to emit `task_end` events with governance-vs-work categorization | KR1 | Engineering | 2026-04-24 | TODO |
 | 5 | Deploy hooks to 6 companies via god mode (Sutra, Asawa, DayFlow, Maze, PPR, Billu) | KR1 | Sutra-OS | 2026-04-25 | TODO |
 | 6 | Collect 10+ sessions per company; publish baseline report | KR1 | Analytics | 2026-04-26 | TODO |
 | 7 | Rank the 7 hypothesis cuts against data; select top 3 | KR2 | Sutra-OS | 2026-04-29 | TODO |
+| 7a | Pilot token-optimizer-mcp (deronin #7) — caches repeated bash outputs; addresses hyp #9. Independent of schema freeze; can run pre-baseline. Measure delta via RTK comparison + session-stats. **BUNDLED 2026-04-21 as the first concrete leaf under cost-component-deepening §6 Week-2 C1f MCP-audit track** (see `holding/research/2026-04-21-token-techniques-cost-component-deepening.md` §6). Run order: C7 cache-verification FIRST, then this pilot — MCP installs can break Anthropic prompt caching (5-min TTL, 4k min cacheable on Opus 4.7). | KR2 | Engineering + Sutra-OS | 2026-04-25 | TODO |
 | 8 | Draft TOKEN-BUDGET-PROTOCOL (candidate PROTO-019); add to `state/system.yaml` | KR2, KR3 | Sutra-OS | 2026-05-01 | TODO |
 | 9 | Ship cut #1 (MEMORY.md indexed retrieval) — pilot on DayFlow | KR2 | Engineering | 2026-05-07 | TODO |
 | 10 | Ship cuts #2–3 (block compression for L1; CLAUDE.md split) | KR2 | Engineering | 2026-05-21 | TODO |
@@ -137,8 +142,13 @@ Must obey `holding/departments/analytics/TELEMETRY-CONTRACT.md`:
 | 5 | Log growth (ESTIMATION-LOG, TRIAGE-LOG, hook-log) | Unbounded; loaded when analytics run | Low | −3 to −8% when touched |
 | 6 | READABILITY + Execution-Trace rules | Full rule text in CLAUDE.md | Med | −5 to −10% |
 | 7 | Company CLAUDE.md duplication | Common rules repeat across companies | Low | −5 to −10% per company |
+| 8 | Terminal output bloat | Bash outputs (git status, find, ls) account for >10% of session tokens | Low | −5 to −15% per session — **ADDRESSED via RTK Mode A** (shipped 2026-04-20; cumulative 2.85K saved at 42-75% efficiency) |
+| 9 | Repeated identical tool calls | Same `ls sutra/`, `cat CLAUDE.md`, `git status` repeated across tasks burns tokens | Med (MCP overhead) | −10 to −20% per session — **CANDIDATE: token-optimizer-mcp pilot** (deronin #7), independent of schema freeze |
+| 10 | Ghost context | Files loaded but not used; survives compaction. This IS the waste-ratio KPI (§3) | Low (measurement) | measurement-only; **token-optimizer (alexgreensh)** addresses but PolyForm-Noncommercial license blocks production. Personal-eval installed; commercial license decision pending |
+| 11 | **Compaction loss** | Each auto-compact wipes 60-70% of conversation; fresh context post-compact lacks load-bearing state. Surfaced by i2-spike. | Med (state restoration logic) | −60 to −70% recovery on auto-compact events. Smart Compaction installed via token-optimizer plugin SessionEnd hook 2026-04-20; needs measurement of how often compaction fires + whether restoration succeeds. New Layer A field `compaction_count` added to v1 schema. |
+| 12 | **Verbose plugin skill descriptions** | 34 gstack plugin skills with >120-char descriptions × ~100 tokens/skill = ~3,400 fixed-cost tokens loaded every session, regardless of usage. Surfaced by token-optimizer baseline scan. | Low — third-party plugin (gstack); local override or upstream PR | −3,400 tokens fixed (small but free). Requires local override mechanism OR PR upstream. Defer to W3 unless mechanism is trivial. |
 
-Ranking finalized in W2 after baseline data.
+Ranking finalized in W2 after baseline data. **Already-shipped or in-flight: #8 (RTK), #11 (Smart Compaction install). In-flight personal eval: #10. Top unstarted: #9 (token-optimizer-mcp).**
 
 ---
 
