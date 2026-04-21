@@ -37,19 +37,41 @@ This charter is cross-cutting: measurement is owned by Analytics; cuts are owned
 
 **"Tokens" unit definition**: Claude API usage reported by the harness (input + output + cache-read) per session/task, pulled from `.claude/session-stats/` or equivalent. When unavailable, fall back to **byte-derived proxy** = `file_bytes / 4` (rough 4 bytes/token English heuristic) clearly labeled `proxy=true` in the JSONL.
 
-| Metric | Formula | Null handling | Current | Target (Q2) | Warn | Breach |
-|---|---|---|---|---|---|---|
-| Boot context P50 | 50th percentile of `tokens_boot` across sessions in rolling 7d | ≥10 sessions required for a reading; else `insufficient-data` | **25,620** (n=3, insufficient-data; pre-C5a) | ≤15k | >18k | >25k |
-| Boot context P95 | 95th percentile (same) | same | **39,861** (n=3, insufficient-data; pre-C5a) | ≤25k | >30k | >40k |
-| Governance overhead % | `sum(tokens where category in [input-routing, depth-block, estimation-block, enforcement-preamble, boot-memory]) / sum(tokens where event=task_end)` per session | if denominator <1k tokens, exclude from aggregate | unknown (telemetry not live) | <15% | ≥20% | ≥30% |
-| Waste ratio | `sum(tokens_loaded_boot not referenced in any task's files_touched during the session) / tokens_loaded_boot` | "referenced" = appears in any Read/Edit/Write target OR Grep/Glob match during session | unknown (telemetry not live) | <10% | ≥20% | ≥35% |
-| Per-task estimate error | `abs(actual_tokens - estimated_tokens) / max(estimated_tokens, 1)` — **error rate**, lower = better (corrects prior "accuracy" misnomer) | null if estimate missing; track null-rate separately | unknown (telemetry not live) | ≤30% | >40% | >60% |
-| Per-company delta | `max(company_P50) / min(company_P50)` | drop companies with <10 sessions | unknown (only Asawa sampled) | <2× | ≥2× | ≥3× |
+### North Star (the one number we're reducing)
+
+| Tier | Metric | Formula | Source | Current | Target | Warn | Breach |
+|---|---|---|---|---|---|---|---|
+| ★ NORTH STAR | **`tokens_per_task_median`** | `median(actuals.tokens_total)` over last 50 ESTIMATION-LOG entries | Analytics dept — `holding/departments/analytics/collect.sh` §4 Cost (line 154); rendered in `holding/ANALYTICS-PULSE.md` | **44,000 tok** GRN (2026-04-21) | ≤22,000 tok (50% cut) | >100k | >150k |
+
+**Already wired** — no new collection needed. The metric lives in `holding/departments/analytics/METRICS.md` §4 Cost; emitted every 3h via the analytics-collect LaunchAgent + on-demand via `bash holding/departments/analytics/collect.sh`. Observability dept cross-validates per-company via `Tokens p50` / `Tokens total` panels in `holding/OBSERVABILITY-PULSE.md` §"Per-Task Speed + Tokens" (source: `LATENCY-LOG.jsonl`, 3h window).
+
+**Target 22k rationale**: 50% cut from the 2026-04-21 baseline of 44k, mapping to KR2 "boot P50 reduced ≥30% from baseline by Jun 30" but applied at the task-unit granularity that actually decides $/day. `publish.sh` threshold (currently target=50k, warn=150k, breach=500k) should be retuned to match — queued, not shipped here to keep MVP scope.
+
+### Drivers (demoted from prior flat table; still tracked, not KPIs)
+
+| Metric | Target (Q2) | Status | Note |
+|---|---|---|---|
+| Boot context P50 (rolling 7d) | ≤15k | insufficient-data (n=3, pre-C5a 25.6k) | Blocked on Phase 0 Step 3-6 telemetry stream. Partial proxy via CONTEXT-READING-PROTOCOL manual capture. |
+| Boot context P95 | ≤25k | insufficient-data (n=3, pre-C5a 39.9k) | Same block. |
+| Governance overhead % | <15% | unknown | Blocked on Step 4 task_end events. |
+| Waste ratio | <10% | unknown | Blocked on Step 4. Measurement-only KPI. |
+| Per-task estimate error (lives in Estimation charter, cross-linked) | ≤30% | live via ESTIMATION-LOG `accuracy.tokens_pct` | Cross-charter — owned by Estimation, not Tokens. |
+
+### Guardrails (do-not-cut)
+
+| Metric | Source | Rule |
+|---|---|---|
+| `override_count_total` | `.enforcement/routing-misses.log` | Must not rise after any cut lands. Currently live in ANALYTICS-PULSE. |
+| `triage_correct_pct` | `TRIAGE-LOG.jsonl` | ≥90%. Currently 96% GRN. |
+
+### Per-company fan-out
+
+`Per-company delta = max(company_P50) / min(company_P50)` rendered as a table row in OBSERVABILITY-PULSE per-company panel, not as a flagship KPI. Drop cos with <10 sessions.
 
 **Current readings** (2026-04-21):
-- Asawa-self real-boot baseline (n=3): 25,620 avg / 39,861 max — insufficient-data per ≥10 rule; canonical reading arrives after Phase 0 Step 6 deploys to 6 cos.
-- **C5a estimator delta** (token-optimizer auto-snapshots, pre/post plugin disable): 53,759 → 26,870 (−50%). Real post-C5a boot will be measured next time `token-optimizer quick` runs in a fresh session.
-- Governance overhead %, waste ratio, error rate, per-company delta: BLOCKED on Phase 0 Step 2–6 (telemetry stream not yet live).
+- **North star live**: `tokens_per_task_median = 44,000 tok` (p50 last 50). Target 22k. Status GRN vs. loose target, YLW vs. 50%-cut stretch.
+- C5a estimator delta (boot, pre/post plugin disable): 53,759 → 26,870 (−50%). Real boot measurement queued on Phase 0 Step 3-6.
+- Governance overhead %, waste ratio: BLOCKED on telemetry stream (Step 3-6).
 
 ---
 
