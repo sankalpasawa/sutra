@@ -1,7 +1,7 @@
 #!/bin/bash
-# Sutra plugin — /sutra:start (v1.4.0+)
+# Sutra plugin — /core:start (v1.4.0+)
 # THE one command: onboard + telemetry ON + activation banner + depth marker.
-# Replaces /sutra:onboard, /sutra:go, /sutra:sutra from earlier versions.
+# Replaces /core:onboard, /core:go, /core:sutra from earlier versions.
 #
 # Philosophy: users run one command and they're done. Simpler > flexible.
 
@@ -49,10 +49,10 @@ print()
 print("You're ready. Ask Claude anything — every task goes through governance.")
 print()
 print("Other commands:")
-print("   /sutra:status      — show install / queue / telemetry state")
-print("   /sutra:update      — pull the latest plugin version")
-print("   /sutra:uninstall   — remove Sutra from this machine")
-print("   /sutra:depth-check — manual depth marker for the next task")
+print("   /core:status      — show install / queue / telemetry state")
+print("   /core:update      — pull the latest plugin version")
+print("   /core:uninstall   — remove Sutra from this machine")
+print("   /core:depth-check — manual depth marker for the next task")
 PY
 else
   echo "onboard failed — check CLAUDE_PROJECT_DIR and plugin install"

@@ -1,10 +1,10 @@
 ---
 name: update
-description: Update the Sutra plugin to the latest version from the marketplace. Shortcut for `claude plugin marketplace update sutra && claude plugin update sutra@sutra`.
+description: Update the Sutra plugin to the latest version from the marketplace. Shortcut for `claude plugin marketplace update sutra && claude plugin update core@sutra`.
 disable-model-invocation: true
 ---
 
-# /sutra:update — Pull the latest Sutra version
+# /core:update — Pull the latest Sutra version
 
 !sutra update
 
@@ -14,7 +14,7 @@ Refreshes the Sutra marketplace cache, then applies any version bump to the inst
 
 ```
 claude plugin marketplace update sutra
-claude plugin update sutra@sutra
+claude plugin update core@sutra
 ```
 
 Most Claude Code sessions auto-update on startup. Run this mid-session if you want the latest without waiting for a restart.

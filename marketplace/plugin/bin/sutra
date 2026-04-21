@@ -27,11 +27,11 @@ case "$SUBCMD" in
   update)
     echo "Refreshing marketplace + updating plugin..."
     claude plugin marketplace update sutra
-    claude plugin update sutra@sutra
+    claude plugin update core@sutra
     ;;
   uninstall)
     echo "Uninstalling Sutra plugin..."
-    claude plugin uninstall sutra@sutra
+    claude plugin uninstall core@sutra
     case "${1:-}" in
       --purge)
         echo "Purging ~/.sutra..."
@@ -88,11 +88,11 @@ Power-user:
   version              Print installed plugin version.
 
 Inside Claude Code (slash commands):
-  /sutra:start         Activate in current project
-  /sutra:status        Local state
-  /sutra:update        Pull latest plugin version
-  /sutra:uninstall     Remove plugin
-  /sutra:depth-check   Manual depth marker
+  /core:start         Activate in current project
+  /core:status        Local state
+  /core:update        Pull latest plugin version
+  /core:uninstall     Remove plugin
+  /core:depth-check   Manual depth marker
 
 Docs: https://github.com/sankalpasawa/sutra
 EOF

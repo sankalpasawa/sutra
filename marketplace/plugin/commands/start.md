@@ -4,7 +4,7 @@ description: The one command. Onboards this project, enables local telemetry, ac
 disable-model-invocation: true
 ---
 
-# /sutra:start — Activate Sutra here
+# /core:start — Activate Sutra here
 
 One command. Everything.
 
@@ -20,7 +20,7 @@ One command. Everything.
 
 Idempotent — re-running is safe.
 
-## After `/sutra:start`
+## After `/core:start`
 
 Ask Claude to do anything. Every response should now include:
 
@@ -31,7 +31,7 @@ Ask Claude to do anything. Every response should now include:
 
 ## Related
 
-- `/sutra:status` — inspect install / queue / telemetry state
-- `/sutra:update` — pull the latest plugin version
-- `/sutra:uninstall` — remove Sutra
-- `/sutra:depth-check` — manual depth marker before a big task
+- `/core:status` — inspect install / queue / telemetry state
+- `/core:update` — pull the latest plugin version
+- `/core:uninstall` — remove Sutra
+- `/core:depth-check` — manual depth marker before a big task

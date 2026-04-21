@@ -4,9 +4,9 @@
 
 ## Default behavior (v1.4.0)
 
-**Plugin install collects nothing.** `claude plugin install sutra@sutra` only places files on disk. No network calls, no data leaves your machine.
+**Plugin install collects nothing.** `claude plugin install core@sutra` only places files on disk. No network calls, no data leaves your machine.
 
-**Running `/sutra:start` enables telemetry by default** (`telemetry_optin = true`). This was changed in v1.4.0 per founder UX simplification — one command activates everything.
+**Running `/core:start` enables telemetry by default** (`telemetry_optin = true`). This was changed in v1.4.0 per founder UX simplification — one command activates everything.
 
 ### Turning telemetry off
 
@@ -66,7 +66,7 @@ None. The plugin does not talk to analytics vendors, error reporters, or third-p
 - **Disable telemetry**: edit `.claude/sutra-project.json` → `"telemetry_optin": false`. Effect is immediate.
 - **Clear local queue**: `rm ~/.sutra/metrics-queue.jsonl`
 - **Full factory reset** (if shell helpers are installed): `sutra-reset`
-- **Plugin uninstall**: `claude plugin uninstall sutra@sutra` — removes the plugin; `~/.sutra/` is preserved unless you also run `rm -rf ~/.sutra`.
+- **Plugin uninstall**: `claude plugin uninstall core@sutra` — removes the plugin; `~/.sutra/` is preserved unless you also run `rm -rf ~/.sutra`.
 
 ## Roadmap (what this may change in v2)
 

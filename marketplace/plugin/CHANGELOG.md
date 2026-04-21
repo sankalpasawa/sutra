@@ -2,6 +2,39 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-04-21
+
+Plugin renamed `sutra` → `core` within the `sutra` marketplace, plus permission-prompt transparency.
+
+### Added
+
+- `PERMISSIONS.md` — complete, auditable list of every Bash and Write permission the plugin needs, grouped by purpose, with a paste-ready allowlist.
+- `/core:permissions` (+ `sutra permissions` in terminal) — prints the exact JSON snippet to paste into `.claude/settings.local.json`. One paste, zero further prompts.
+
+### Changed (BREAKING — plugin identifier rename)
+
+- Plugin name `sutra` → `core`. Install is now `claude plugin install core@sutra`. Slash commands move to `/core:*` namespace.
+- Marketplace name stays `sutra`. Install pattern: `core@sutra` reads as "core plugin from the sutra marketplace" (Anthropic's standard "hub + product" naming pattern, same shape as `superpowers@claude-plugins-official`).
+- All docs + scripts + command files updated: `/sutra:start` → `/core:start`, `sutra@sutra` → `core@sutra`.
+- Binary kept as `sutra` — terminal users still type `sutra start`, `sutra status`, etc. Slash commands use `/core:*` because Claude Code namespaces by plugin name.
+
+### Migration for existing users
+
+Claude Code treats the rename as a different plugin (not an update). Users on v1.4.x must:
+
+```
+claude plugin uninstall sutra@sutra
+claude plugin marketplace update sutra
+claude plugin install core@sutra
+/core:start
+```
+
+v1.5.0 cannot auto-migrate because the plugin identifier changed. Sorry.
+
+### Rationale
+
+Founder direction 2026-04-21: "core@sutra" — collapse the visual stutter in `sutra@sutra` by adopting the multi-plugin marketplace naming pattern. Marketplace name remains "sutra" so future plugins (e.g., `sutra-lite`, domain-specific variants) can sit alongside `core` under the same hub.
+
 ## [1.4.0] — 2026-04-21
 
 Radical UX simplification: **one command does everything.**
