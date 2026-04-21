@@ -1,15 +1,14 @@
 #!/bin/bash
-# Sutra plugin — unified dispatcher (v1.3.0+)
-# Replaces per-script command invocations with one bare command.
-# Eliminates per-script Bash permission prompts in Claude Code.
+# Sutra plugin — unified dispatcher (v1.4.0+)
+# Claude Code auto-adds plugin bin/ to PATH, so `sutra <sub>` works as a bare
+# command — one permission scope instead of per-script prompts.
 #
-# Claude Code auto-adds plugin bin/ to PATH, so `sutra <sub>` works
-# as a bare command without path prefix and without separate Bash
-# permission prompts per distinct script path.
+# v1.4.0 — collapsed surface: start / status / update / uninstall are the
+# four lifecycle verbs. push / onboard / go kept as internal aliases for
+# backward-compat but no longer have slash-command front-ends.
 
 set -u
 
-# Resolve plugin root: this script lives in <plugin>/bin/sutra
 SUTRA_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SUTRA_BIN_DIR")"
 SCRIPTS_DIR="$PLUGIN_ROOT/scripts"
@@ -18,17 +17,41 @@ SUBCMD="${1:-help}"
 [ $# -gt 0 ] && shift
 
 case "$SUBCMD" in
-  onboard)
-    exec bash "$SCRIPTS_DIR/onboard.sh" "$@"
-    ;;
-  push)
-    exec bash "$SCRIPTS_DIR/push.sh" "$@"
+  # Primary lifecycle verbs (v1.4.0)
+  start)
+    exec bash "$SCRIPTS_DIR/start.sh" "$@"
     ;;
   status)
     exec bash "$SCRIPTS_DIR/status.sh" "$@"
     ;;
+  update)
+    echo "Refreshing marketplace + updating plugin..."
+    claude plugin marketplace update sutra
+    claude plugin update sutra@sutra
+    ;;
+  uninstall)
+    echo "Uninstalling Sutra plugin..."
+    claude plugin uninstall sutra@sutra
+    case "${1:-}" in
+      --purge)
+        echo "Purging ~/.sutra..."
+        rm -rf "$HOME/.sutra"
+        ;;
+    esac
+    echo "Done."
+    ;;
+
+  # Secondary — kept callable from bin/ for power users and shell helpers
+  push)
+    exec bash "$SCRIPTS_DIR/push.sh" "$@"
+    ;;
+  onboard)
+    # Back-compat alias → start
+    exec bash "$SCRIPTS_DIR/start.sh" "$@"
+    ;;
   go)
-    exec bash "$SCRIPTS_DIR/go.sh" "$@"
+    # Back-compat alias → start
+    exec bash "$SCRIPTS_DIR/start.sh" "$@"
     ;;
   install-shell-helpers)
     exec bash "$SCRIPTS_DIR/install-shell-helpers.sh" "$@"
@@ -50,23 +73,26 @@ Sutra — operating system for building with AI
 
 Usage: sutra <subcommand> [args]
 
-Subcommands:
-  onboard              First-time setup: write .claude/sutra-project.json
-  go                   One-shot deploy: onboard + telemetry ON
-  status               Show install_id, project_id, queue depth, opt-in
-  push                 Push queued telemetry to data store (opt-in gated)
-  install-shell-helpers  Install sutra-go / sutra-reset / sutra-status-global
-                       shell commands to ~/.zshrc or ~/.bashrc
-  leak-audit           Scan plugin tree for brand strings (dev check)
-  version              Print installed plugin version
-  help                 Show this message
+Lifecycle:
+  start                Activate Sutra in current project (the one command).
+                       Onboards + enables telemetry + prints banner.
+  status               Show install_id, project_id, queue depth, telemetry.
+  update               Pull the latest plugin version from the marketplace.
+  uninstall [--purge]  Remove the plugin; --purge also wipes ~/.sutra/.
 
-Inside Claude Code:
-  /sutra:go            One-shot activation
-  /sutra:onboard       Onboarding only
+Power-user:
+  push                 Manually push queued telemetry (auto-runs on Stop).
+  install-shell-helpers  Add sutra-start / sutra-uninstall / sutra-reset
+                       / sutra-status-global to your ~/.zshrc or ~/.bashrc.
+  leak-audit           Scan plugin tree for brand strings (dev check).
+  version              Print installed plugin version.
+
+Inside Claude Code (slash commands):
+  /sutra:start         Activate in current project
   /sutra:status        Local state
-  /sutra:push          Manual telemetry push
-  /sutra:depth-check   Manual depth gate
+  /sutra:update        Pull latest plugin version
+  /sutra:uninstall     Remove plugin
+  /sutra:depth-check   Manual depth marker
 
 Docs: https://github.com/sankalpasawa/sutra
 EOF

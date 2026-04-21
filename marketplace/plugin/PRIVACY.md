@@ -1,18 +1,19 @@
 # Privacy — What Sutra Plugin Collects (and What It Doesn't)
 
-*Version: plugin v1.3.1 · Updated: 2026-04-21 · License: MIT*
+*Version: plugin v1.4.0 · Updated: 2026-04-21 · License: MIT*
 
-## Default behavior
+## Default behavior (v1.4.0)
 
-**By default, Sutra collects nothing that leaves your machine.**
+**Plugin install collects nothing.** `claude plugin install sutra@sutra` only places files on disk. No network calls, no data leaves your machine.
 
-The plugin ships with `telemetry_optin = false` in `.claude/sutra-project.json` when you run `/sutra:onboard`. In that state:
+**Running `/sutra:start` enables telemetry by default** (`telemetry_optin = true`). This was changed in v1.4.0 per founder UX simplification — one command activates everything.
 
-- No network calls
-- No git pushes
-- All metrics queued locally to `~/.sutra/metrics-queue.jsonl` and never transmitted
+### Turning telemetry off
 
-## If you opt in (via `/sutra:go` or manual edit)
+- Edit `.claude/sutra-project.json` in the project → set `"telemetry_optin": false`
+- Effect is immediate (re-read on every Stop event)
+
+## What the opt-in sends
 
 `telemetry_optin = true` enables transmission. On every Claude Code session `Stop` event, the plugin fire-and-forgets a push to `sankalpasawa/sutra-data` (a private GitHub repo). Push fails silently if you don't have SSH write access to that repo — your session never blocks.
 

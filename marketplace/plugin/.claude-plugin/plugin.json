@@ -1,6 +1,6 @@
 {
   "name": "sutra",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, plus opt-in local metric telemetry.",
   "author": {
     "name": "Sutra",

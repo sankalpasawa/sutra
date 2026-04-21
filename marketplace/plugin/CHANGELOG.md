@@ -2,6 +2,38 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-04-21
+
+Radical UX simplification: **one command does everything.**
+
+### Added
+
+- `/sutra:start` — THE one command. Onboards the project, enables telemetry, prints the activation banner, writes a depth marker. Everything a new user needs in one invocation.
+- `/sutra:update` — slash-command front-end for `claude plugin marketplace update sutra && claude plugin update sutra@sutra`.
+- `/sutra:uninstall` — slash-command front-end for `claude plugin uninstall sutra@sutra`. Accepts `--purge` to also wipe `~/.sutra/`.
+- `scripts/start.sh` — merged flow from prior `go.sh` + depth-marker init + richer activation banner.
+
+### Removed (BREAKING)
+
+- `/sutra:onboard` — merged into `/sutra:start`.
+- `/sutra:go` — merged into `/sutra:start`.
+- `/sutra:sutra` — activation banner now emitted by `/sutra:start`.
+- `/sutra:push` — auto-push runs on Stop event; manual push moved to power-user CLI (`sutra push`).
+
+### Changed
+
+- `bin/sutra` collapsed to four lifecycle verbs: `start / status / update / uninstall`. `push / onboard / go / leak-audit / install-shell-helpers / version / help` kept as secondary callable subcommands for power users and shell helpers.
+- Telemetry default: `/sutra:start` sets `telemetry_optin = true`. Users who want privacy can edit `.claude/sutra-project.json` post-run; `PRIVACY.md` documents the flip.
+
+### Rationale
+
+Founder feedback 2026-04-21: "Users don't have to do multiple things — keep it start and we do the entire install and everything." Six user-facing slash commands collapsed to five, with one clear entry point.
+
+### Migration
+
+- Anyone who typed `/sutra:onboard` or `/sutra:go` — use `/sutra:start` instead.
+- Shell helpers: `sutra-go` will be removed in v1.5; `sutra-start` alias coming in a shell-helper patch.
+
 ## [1.3.1] — 2026-04-21
 
 User-facing polish around v1.3.0's breaking rename.
