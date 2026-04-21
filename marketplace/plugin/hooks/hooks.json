@@ -1,6 +1,17 @@
 {
-  "description": "Sutra governance hooks — warn when depth marker missing before Edit/Write, log estimation on Stop.",
+  "description": "Sutra governance hooks — warn when depth marker missing before Edit/Write, log estimation on Stop, announce version updates on SessionStart.",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/update-banner.sh",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
