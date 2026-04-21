@@ -21,6 +21,27 @@
       "EnterPlanMode",
       "ExitPlanMode",
       "ToolSearch"
+    ],
+    "deny": [
+      "Read(**/.DS_Store)",
+      "Read(**/.build/**)",
+      "Read(**/.cache/**)",
+      "Read(**/.expo/**)",
+      "Read(**/.next/**)",
+      "Read(**/.nuxt/**)",
+      "Read(**/.parcel-cache/**)",
+      "Read(**/.turbo/**)",
+      "Read(**/.yarn/cache/**)",
+      "Read(**/Pods/**)",
+      "Read(**/android/.gradle/**)",
+      "Read(**/android/build/**)",
+      "Read(**/build/**)",
+      "Read(**/coverage/**)",
+      "Read(**/dist/**)",
+      "Read(**/ios/Pods/**)",
+      "Read(**/node_modules/**)",
+      "Read(**/tmp/**)",
+      "Read(**/vendor/**)"
     ]
   },
   "hooks": {

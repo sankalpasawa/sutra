@@ -82,7 +82,10 @@ OBJECTIVE: Every session spends tokens on value, not ceremony.
 
   KR1: Baseline token telemetry captured for 6 companies × 10+ sessions each,
        published at holding/research/2026-04-26-token-baseline.md — Score: 0.0
-  KR2: Boot context P50 reduced ≥30% from baseline by Jun 30, 2026 — Score: 0.0
+  KR2: tokens_per_task_median reduced ≥50% from baseline (44k → ≤22k tok)
+       by Jun 30, 2026 — Score: 0.0
+       (Rephrased 2026-04-22 to anchor on north-star metric; Boot P50
+        ≤15k kept as driver target in §3 Drivers table, no longer a KR.)
   KR3: Governance overhead <15% on tracked sessions by Jun 30, 2026 — Score: 0.0
   KR4: Charter + telemetry mechanism deployed to ≥3 downstream companies
        (requires `upgrade-clients.sh` extension first; target: Asawa-holding,
