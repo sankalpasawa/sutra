@@ -1,14 +1,14 @@
 ---
-name: sutra-onboard
+name: onboard
 description: First-time setup for Sutra in this project. Generates install_id + project_id, writes .claude/sutra-project.json, initializes local telemetry queue. Idempotent.
 disable-model-invocation: true
 ---
 
-# /sutra-onboard — Project onboarding
+# /sutra:onboard — Project onboarding
 
 Writes `.claude/sutra-project.json` with deterministic install_id + project_id.
 
-!bash ${CLAUDE_PLUGIN_ROOT}/scripts/onboard.sh
+!sutra onboard
 
 ## What this does
 
@@ -19,6 +19,6 @@ Writes `.claude/sutra-project.json` with deterministic install_id + project_id.
 
 ## Next steps
 
-- `/sutra-status` to inspect state
+- `/sutra:status` to inspect state
 - Edit `.claude/sutra-project.json` → `"telemetry_optin": true` to enable push
-- `/sutra-push` to deliver queue to `sankalpasawa/sutra-data`
+- `/sutra:push` to deliver queue to `sankalpasawa/sutra-data`

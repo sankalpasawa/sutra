@@ -1,0 +1,79 @@
+#!/bin/bash
+# Sutra plugin — unified dispatcher (v1.3.0+)
+# Replaces per-script command invocations with one bare command.
+# Eliminates per-script Bash permission prompts in Claude Code.
+#
+# Claude Code auto-adds plugin bin/ to PATH, so `sutra <sub>` works
+# as a bare command without path prefix and without separate Bash
+# permission prompts per distinct script path.
+
+set -u
+
+# Resolve plugin root: this script lives in <plugin>/bin/sutra
+SUTRA_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="$(dirname "$SUTRA_BIN_DIR")"
+SCRIPTS_DIR="$PLUGIN_ROOT/scripts"
+
+SUBCMD="${1:-help}"
+[ $# -gt 0 ] && shift
+
+case "$SUBCMD" in
+  onboard)
+    exec bash "$SCRIPTS_DIR/onboard.sh" "$@"
+    ;;
+  push)
+    exec bash "$SCRIPTS_DIR/push.sh" "$@"
+    ;;
+  status)
+    exec bash "$SCRIPTS_DIR/status.sh" "$@"
+    ;;
+  go)
+    exec bash "$SCRIPTS_DIR/go.sh" "$@"
+    ;;
+  install-shell-helpers)
+    exec bash "$SCRIPTS_DIR/install-shell-helpers.sh" "$@"
+    ;;
+  leak-audit)
+    exec bash "$SCRIPTS_DIR/leak-audit.sh" "$@"
+    ;;
+  version|--version|-v)
+    manifest="$PLUGIN_ROOT/.claude-plugin/plugin.json"
+    if [ -f "$manifest" ] && command -v jq >/dev/null 2>&1; then
+      jq -r '.version' "$manifest"
+    else
+      echo "unknown"
+    fi
+    ;;
+  help|--help|-h|"")
+    cat <<EOF
+Sutra — operating system for building with AI
+
+Usage: sutra <subcommand> [args]
+
+Subcommands:
+  onboard              First-time setup: write .claude/sutra-project.json
+  go                   One-shot deploy: onboard + telemetry ON
+  status               Show install_id, project_id, queue depth, opt-in
+  push                 Push queued telemetry to data store (opt-in gated)
+  install-shell-helpers  Install sutra-go / sutra-reset / sutra-status-global
+                       shell commands to ~/.zshrc or ~/.bashrc
+  leak-audit           Scan plugin tree for brand strings (dev check)
+  version              Print installed plugin version
+  help                 Show this message
+
+Inside Claude Code:
+  /sutra:go            One-shot activation
+  /sutra:onboard       Onboarding only
+  /sutra:status        Local state
+  /sutra:push          Manual telemetry push
+  /sutra:depth-check   Manual depth gate
+
+Docs: https://github.com/sankalpasawa/sutra
+EOF
+    ;;
+  *)
+    echo "sutra: unknown subcommand '$SUBCMD'" >&2
+    echo "Run 'sutra help' for usage." >&2
+    exit 2
+    ;;
+esac

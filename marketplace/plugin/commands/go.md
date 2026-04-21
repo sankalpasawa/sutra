@@ -1,9 +1,9 @@
 ---
-name: sutra-go
+name: go
 description: One-shot Sutra deploy — onboard + telemetry ON in one step. Idempotent.
 disable-model-invocation: true
 ---
 
-# /sutra-go — Deploy Sutra + enable telemetry
+# /sutra:go — Deploy Sutra + enable telemetry
 
-!bash ${CLAUDE_PLUGIN_ROOT}/scripts/go.sh
+!sutra go
