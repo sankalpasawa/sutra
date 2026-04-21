@@ -1,6 +1,8 @@
-# Sutra
+# Sutra Core
 
 Operating system for building with AI. Governance + observability for Claude Code sessions.
+
+**v1.5.1** — MIT license · `core@sutra` in the Claude Code marketplace
 
 ## What you get
 
@@ -8,64 +10,103 @@ Operating system for building with AI. Governance + observability for Claude Cod
 - **Depth + estimation** — every task rated 1-5 with cost/effort estimate before work begins
 - **Readability gate** — outputs formatted as tables/boxes/metrics, not prose
 - **Output trace** — every response ends with a one-line OS trace
-- **Auto-emission observability** — every session-stop emits 3 metrics, auto-pushed to your Sutra data store
-- **Shell helpers** — one-word commands (`sutra-go`, `sutra-reset`) from any terminal
+- **Session retrieve** — recover abruptly-closed sessions after a laptop crash
+- **Local telemetry** — `~/.sutra/metrics-queue.jsonl`; opt-in push to a data store
 
-## Install (new users, zero state)
+## Install (60 seconds)
 
 ```bash
 # 1. Register the marketplace
 claude plugin marketplace add sankalpasawa/sutra
 
 # 2. Install the plugin
-claude plugin install sutra@sutra
-
-# 3. Install shell helpers (one-time, appends to ~/.zshrc or ~/.bashrc)
-bash ~/.claude/plugins/cache/sutra/sutra/*/scripts/install-shell-helpers.sh
-source ~/.zshrc   # or ~/.bashrc
-
-# Done. Now anywhere:
-sutra-go
+claude plugin install sutra
 ```
 
-`sutra-go` creates a fresh temp project, deploys Sutra with telemetry ON, and opens Claude. One word.
-
-## Usage inside Claude
+Then in any Claude Code session:
 
 ```
-/sutra:sutra-go         — onboard current dir + enable telemetry (one-shot)
-/sutra:sutra-onboard    — onboard only (telemetry default off)
-/sutra:sutra-status     — show install_id / project_id / queue depth / last flush
-/sutra:sutra-push       — manual push (normally unnecessary — auto-push runs on Stop)
-/sutra:depth-check      — check depth marker
-/sutra:sutra            — session activation banner
+/core:start
 ```
 
-## Shell commands (after running `install-shell-helpers.sh`)
+That's it. One command activates everything.
+
+## Every command
+
+Inside Claude Code (slash commands):
 
 | Command | Purpose |
 |---|---|
-| `sutra-go` | Fresh dir + deploy + telemetry ON + open Claude |
-| `sutra-uninstall` | Remove plugin + marketplace (keep data) |
-| `sutra-reset` | Full factory reset — plugin + data + cache |
-| `sutra-status-global` | Check install + queue state from any terminal |
+| `/core:start` | The one command. Onboard + activate + depth marker. |
+| `/core:status` | Install ID, project ID, queue depth, telemetry flag. |
+| `/core:update` | Pull the latest plugin version. |
+| `/core:uninstall` | Remove the plugin. `--purge` also wipes `~/.sutra/`. |
+| `/core:permissions` | Print a paste-ready allowlist for `.claude/settings.local.json`. |
+| `/core:depth-check` | Manual depth marker for the next task. |
 
-## Telemetry + privacy
+From your terminal (bare command, no prefix):
 
-- Default when onboarding via `/sutra:sutra-onboard`: **opt-in FALSE** (privacy default)
-- Default when onboarding via `/sutra:sutra-go` or `sutra-go`: **opt-in TRUE** (observability default)
-- Auto-push on Stop (v1.1.3+): if opt-in is true, queue ships to your data store asynchronously on every session end
-- Data store: `sankalpasawa/sutra-data` (PRIVATE) — you're the only one with write access unless you distribute tokens
-- Schema: `.claude-plugin/SCHEMA.md` in the data repo — PII-rejected at the emit layer + validated in CI on every push
+```
+sutra help
+sutra start
+sutra status
+sutra update
+sutra uninstall
+```
+
+## Platform support
+
+| Platform | Skills + Commands | Hooks (bash) | Telemetry |
+|---|---|---|---|
+| macOS terminal | ✅ Full | ✅ Full | ✅ Full |
+| macOS desktop app | ✅ Full | ✅ Full | ✅ Full |
+| Linux terminal | ✅ Full | ✅ Full | ✅ Full |
+| VS Code / JetBrains (Mac/Linux) | ✅ Full | ✅ Full | ✅ Full |
+| Windows (native) | ✅ Full | ❌ no-op | ❌ no-op |
+| Windows via **WSL2** | ✅ Full | ✅ Full | ✅ Full |
+| Claude Code web app | ✅ Full | ⚠ sandboxed | ⚠ sandboxed |
+
+### Windows users — use WSL2
+
+The plugin's enforcement hooks are bash scripts. On Windows, run Claude Code from inside WSL2 and everything works identically to macOS/Linux.
+
+```powershell
+# 1. Install WSL2 (one-time, run in PowerShell as Administrator)
+wsl --install
+
+# 2. After WSL2 installs + reboots, open an Ubuntu terminal and:
+curl -fsSL https://claude.ai/install.sh | bash
+claude plugin marketplace add sankalpasawa/sutra
+claude plugin install sutra
+claude
+# Inside Claude Code:
+/core:start
+```
+
+Without WSL2, the skills and slash commands still work — you just lose the automatic governance hooks and telemetry. Acceptable for a trial; recommend WSL2 for real use.
+
+A Node-based rewrite of the hooks (removing the bash dependency) is on the roadmap.
+
+## Privacy
+
+See [PRIVACY.md](PRIVACY.md). Short version: plugin install collects nothing. `/core:start` enables telemetry by default; flip `"telemetry_optin": false` in `.claude/sutra-project.json` to disable.
+
+## Permissions
+
+See [PERMISSIONS.md](PERMISSIONS.md). Run `/core:permissions` inside Claude Code for the paste-ready allowlist.
+
+## Versioning
+
+See [VERSIONING.md](VERSIONING.md). SemVer. Plugin auto-updates on session start for public marketplaces like ours.
 
 ## Architecture
 
-Source of truth: `ARCHITECTURE.yaml` — structured YAML with components, flows, identities, privacy matrix. Any LLM can render visuals on demand from it (never persist ASCII art — it goes stale).
+See [ARCHITECTURE.yaml](ARCHITECTURE.yaml) — structured YAML with components, flows, identities, privacy matrix. Any LLM can render visuals on demand from it (never persist ASCII art — it goes stale).
 
 ## License
 
 MIT.
 
-## Status
+## Issues / feedback
 
-v1.1.4 — auto-emission + auto-push + shell installer. Production-ready for portfolio use. External distribution needs Supabase transport (v2).
+<https://github.com/sankalpasawa/sutra/issues>
