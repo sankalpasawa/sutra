@@ -114,25 +114,33 @@ Each toggles at the CLAUDE.md level or via a specific hook/config.
 
 ---
 
-## 7b. Skills (by LLM interactive surface)
+## 7b. Skills (two homes: plugin gates vs. company catalog)
 
-Skills are per-turn behaviors or task-specific procedures shipped in the Sutra plugin. Unlike Features, skills are invoked via the `Skill` tool (or equivalent per surface) — they're the LLM's playbook, not hooks.
+Skills are per-turn behaviors or task-specific procedures invoked via the `Skill` tool. Two homes, by architectural role:
+
+- **Plugin OS gates** (`sutra/marketplace/plugin/skills/<name>/`) — fire every turn as runtime discipline. Tightly coupled to the plugin runtime. Ship WITH the plugin.
+- **Company catalog skills** (`sutra/skills/<name>/`) — task-specific procedures for specific situations. Loose, shareable across companies without plugin upgrades. Plugin retrieves from parent-company catalog on demand (retrieval machinery TBD; pragmatic bridge = user-level copy at `~/.claude/skills/`).
+
+### 7b.1 Plugin OS Gates (Claude Code CLI, per-turn)
 
 Source of truth: `sutra/marketplace/plugin/skills/<name>/SKILL.md`.
 
-### 7b.1 Terminal Interactive Surfaces (Claude Code CLI)
+| Name | Status | Invoke on | Provides | Source |
+|---|---|---|---|---|
+| **input-routing** | active | Every user message, before any Edit/Write/Bash | 5-line classification block (TYPE / ROUTE / FIT CHECK) | `marketplace/plugin/skills/input-routing/` |
+| **depth-estimation** | active | Start of any multi-step task | 5-line TASK/DEPTH/EFFORT/COST/IMPACT block; writes `.claude/depth-registered` | `marketplace/plugin/skills/depth-estimation/` |
+| **readability-gate** | active | Before presenting any output | Output formatting — tables, numbers, boxed decisions, progress bars | `marketplace/plugin/skills/readability-gate/` |
+| **output-trace** | active | End of every response | One-line OS trace: route → domain → nodes → terminal → output | `marketplace/plugin/skills/output-trace/` |
 
-Skills that run inside Claude Code's terminal harness. Depend on CLI-specific artifacts (`~/.claude/projects/*`, marker files under `.claude/`, hook stderr, terminal output width). Do not apply to Claude Desktop, Claude.ai web, or raw API SDK use.
+### 7b.2 Company Catalog Skills (invoked on demand)
+
+Source of truth: `sutra/skills/<name>/SKILL.md`.
 
 | Name | Status | Invoke on | Provides | Source |
 |---|---|---|---|---|
-| **input-routing** | active | Every user message, before any Edit/Write/Bash | 5-line classification block (TYPE / ROUTE / FIT CHECK) | `skills/input-routing/SKILL.md` |
-| **depth-estimation** | active | Start of any multi-step task | 5-line TASK/DEPTH/EFFORT/COST/IMPACT block; writes `.claude/depth-registered` | `skills/depth-estimation/SKILL.md` |
-| **readability-gate** | active | Before presenting any output | Output formatting — tables, numbers, boxed decisions, progress bars | `skills/readability-gate/SKILL.md` |
-| **output-trace** | active | End of every response | One-line OS trace: route → domain → nodes → terminal → output | `skills/output-trace/SKILL.md` |
-| **session-retrieve** | active | Founder says "figure out past sessions" / "find my crashed sessions" | Scans `~/.claude/projects/` for orphan jsonls (API-err OR mid-tool-use); returns `claude -r <id>` per session with decoded project root | `skills/session-retrieve/SKILL.md` |
+| **session-retrieve** | active | Founder says "figure out past sessions" / "find my crashed sessions" / "my laptop switched off" | Scans `~/.claude/projects/` for orphan jsonls (API-err OR mid-tool-use); returns `claude -r <id>` per session with decoded project root | `skills/session-retrieve/` |
 
-### 7b.2 Other surfaces (Desktop / Web / SDK)
+### 7b.3 Other surfaces (Desktop / Web / SDK)
 
 None yet. Reserved for future skills that explicitly target Claude Desktop app, Claude.ai web, or API-SDK callers.
 

@@ -34,7 +34,7 @@ Infer (or ask) when the crash happened. Default window: last 24 hours. Expect or
 ### Step 2 — List recent session files
 
 ```bash
-find /Users/abhishekasawa/.claude/projects -name "*.jsonl" \
+find ~/.claude/projects -name "*.jsonl" \
   -not -path "*/subagents/*" \
   -newermt "<START>" -not -newermt "<END>" 2>/dev/null \
   | xargs ls -lt 2>/dev/null | head -25
@@ -62,16 +62,14 @@ A session is an orphan if **any** of these are true in its `.jsonl`:
 
 ```python
 import json
-path = "/Users/abhishekasawa/.claude/projects/<project-slug>/<session-id>.jsonl"
+path = "/Users/<you>/.claude/projects/<project-slug>/<session-id>.jsonl"
 lines = open(path).readlines()
 cwd = None; last_user = None; last_assistant_text = ""
 last_assistant_stop = None
-session_start_ts = None
 for line in lines:
     try: d = json.loads(line)
     except: continue
     if d.get("cwd"): cwd = d["cwd"]
-    if session_start_ts is None and d.get("timestamp"): session_start_ts = d["timestamp"]
     t = d.get("type"); msg = d.get("message", {})
     if t == "assistant" and isinstance(msg, dict):
         c = msg.get("content", [])
@@ -93,11 +91,7 @@ is_orphan = has_api_err or (last_assistant_stop not in ("end_turn", "stop_sequen
 
 ### Step 5 — Exclude the current session
 
-The scanner itself is running in a live session whose jsonl is also "mid-tool-use" (from its own POV). Exclude it by:
-
-- Tagging any session whose `last_assistant_text` contains the word "orphan" or "session-retrieve" (scanner's own content), OR
-- Tagging any session with `mtime` within the last 60 seconds, OR
-- Asking the founder to confirm which sessions they recognize as truly lost.
+The scanner is running in a live session whose jsonl is also "mid-tool-use" from its own POV. Exclude by content-tag ("session-retrieve" / "orphan" in last_assistant_text) OR mtime within the last 60 seconds OR founder confirmation.
 
 ## Project root decoding — CRITICAL
 
@@ -118,26 +112,19 @@ Example: slug `-Users-me-Code-my-project` → launch dir `/Users/me/Code/my-proj
 | # | Session ID | Task summary | How it died |
 |---|---|---|---|
 | 1 | <id-short> | <one-line what it was doing> | API-err | mid-tool-use |
-...
 
 ## Resume commands
 
 All N sessions launch from `<project-root>`:
 
-```
 cd <project-root>
 claude -r <id1>   # <task summary 1>
 claude -r <id2>   # <task summary 2>
-...
-```
-
-(If sessions span multiple project roots, give one `cd`+`claude -r` block per root.)
 
 ## Priority recommendation
 
 1. <session> first — <reason, e.g., uncommitted edits visible in `git status`>
 2. <session> next — <blocking decision / downstream dependency>
-...
 ```
 
 ## Rules
@@ -154,6 +141,10 @@ claude -r <id2>   # <task summary 2>
 - Memory: `feedback_daily_session_resumption_summary.md` — surface abruptly-closed prior sessions at session start.
 - Related skill: `output-trace` — emit OS TRACE line after the report.
 - Terminal surface: Claude Code CLI only.
+
+## Architectural home
+
+This skill lives at the **Sutra company layer** (`sutra/skills/`), not inside the plugin (`sutra/marketplace/plugin/skills/`). The plugin is a thin OS runtime (4 per-turn gate skills: input-routing, depth-estimation, readability-gate, output-trace). Practice skills like this one live in the company catalog and are retrieved by the plugin on demand. Until retrieval machinery is built, the pragmatic bridge is a user-level copy at `~/.claude/skills/session-retrieve/`.
 
 ## Self-check before returning
 
