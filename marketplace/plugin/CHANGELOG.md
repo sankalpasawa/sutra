@@ -2,6 +2,36 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-04-22
+
+Per-profile enforcement + hard-block mode + release channels.
+
+### Added
+
+- **User profiles** — plugin.json `userConfig.profile` accepts `individual`, `project`, or `company`. Claude Code prompts at enable time. Writes to `.claude/sutra-project.json`.
+- **Profile-dependent telemetry default** — `individual` = off (privacy default), `project` = on, `company` = on.
+- **Hard enforcement on `company` profile** — `hooks/depth-marker-pretool.sh` reads the profile and exits 2 (blocks the tool call) when the depth marker is missing, ONLY for `company` profile. `individual` and `project` stay warn-only.
+- **Escape hatch** — `SUTRA_BYPASS=1 <cmd>` prefix skips the depth check for one tool call, even on `company`. Audit trail preserved via existing routing-misses log.
+- **Release channels** — two marketplace branches on the repo:
+  - `main` branch = **latest** (current behavior; auto-updates push new versions immediately)
+  - `stable` branch = **stable** (promoted manually once a version is proven in portfolio use)
+  - Users pick: `claude plugin marketplace add sankalpasawa/sutra` (latest) or `claude plugin marketplace add sankalpasawa/sutra@stable` (stable).
+
+### Changed
+
+- `/core:start` accepts `--profile individual|project|company` and also reads `CLAUDE_PLUGIN_OPTION_PROFILE` env var that Claude Code injects from userConfig.
+- Activation banner now shows the active profile + enforcement mode.
+
+### Migration
+
+- Existing v1.5.x users: no action needed — `/core:start` on v1.6.0 defaults to `project` profile which preserves current warn-only behavior and telemetry-on default.
+- To opt into hard enforcement: `/core:start --profile company`.
+- To opt into privacy-default: `/core:start --profile individual`.
+
+### Rationale
+
+Founder direction 2026-04-21: "do 14, 15, 16, 17" — collapse P3 items into one profile-aware release. Per-profile defaults (#15) enables hard enforcement (#14) without breaking casual users. Release channels (#16) shipped as a parallel git-branch pattern so stable adopters can pin without affecting latest-chasing early users. Smoke-tested: company profile exits 2 on missing marker; individual/project stay warn-only exit 0.
+
 ## [1.5.1] — 2026-04-22
 
 ### Added

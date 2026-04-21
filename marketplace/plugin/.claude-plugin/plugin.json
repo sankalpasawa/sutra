@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "1.5.1",
-  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, plus opt-in local metric telemetry.",
+  "version": "1.6.0",
+  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, plus opt-in local metric telemetry.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"
@@ -17,5 +17,11 @@
     "opinionated-os",
     "session-discipline",
     "session-retrieve"
-  ]
+  ],
+  "userConfig": {
+    "profile": {
+      "description": "Enforcement profile. `individual` (warn-only, privacy-default telemetry off), `project` (warn-only, telemetry on), `company` (HARD block on missing depth markers, telemetry on). Default: project.",
+      "sensitive": false
+    }
+  }
 }
