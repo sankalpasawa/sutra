@@ -9,8 +9,8 @@
   },
   "plugins": [
     {
-      "name": "sutra",
-      "description": "Sutra governance: input routing, depth estimation, readability gate, output trace. Hooks warn when depth marker missing before Edit/Write; estimation metrics logged on session end.",
+      "name": "core",
+      "description": "Sutra Core — governance primitives: input routing, depth estimation, readability gate, output trace. Hooks warn when depth marker missing before Edit/Write; estimation metrics logged on session end.",
       "source": "./marketplace/plugin",
       "category": "workflow",
       "homepage": "https://github.com/sankalpasawa/sutra",
