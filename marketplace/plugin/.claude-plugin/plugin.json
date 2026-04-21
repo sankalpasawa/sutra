@@ -1,7 +1,7 @@
 {
   "name": "sutra",
   "version": "1.2.0",
-  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, plus opt-in metric telemetry to the Asawa analytics pulse.",
+  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, plus opt-in local metric telemetry.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

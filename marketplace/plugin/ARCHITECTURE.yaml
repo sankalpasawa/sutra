@@ -89,8 +89,8 @@ components:
 
   - id: analytics_collector
     kind: bash_script
-    at: holding/departments/analytics/collect.sh
-    scope: asawa-holding
+    at: <operator>/analytics/collect.sh
+    scope: operator-local
     section_10_reads: sutra-data-cache/clients/**/telemetry-*.jsonl
     emits:
       - plugin_installs_total   # count of unique install_id directories
@@ -98,10 +98,10 @@ components:
 
   - id: analytics_pulse
     kind: markdown_doc
-    at: holding/ANALYTICS-PULSE.md
-    rendered_by: holding/departments/analytics/publish.sh
+    at: <operator>/ANALYTICS-PULSE.md
+    rendered_by: <operator>/analytics/publish.sh
     reads: .analytics/latest.jsonl
-    visible_to: founder
+    visible_to: operator
 
 # ────────────────────────────────────────────────────────────────────
 # IDENTITIES — per TELEMETRY-CONTRACT.md + codex review
@@ -197,7 +197,7 @@ flows:
     failure_is_silent: user_session_never_blocks
 
   - id: analytics_read
-    trigger: bash holding/departments/analytics/collect.sh
+    trigger: bash <operator>/analytics/collect.sh
     actors: [analytics_collector, sutra_data_repo, analytics_pulse]
     steps:
       - section_10 best-effort clones or pulls sutra-data-cache
