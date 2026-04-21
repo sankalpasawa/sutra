@@ -1,6 +1,6 @@
 ---
 name: session-retrieve
-description: Use when the founder says "figure out past sessions", "what sessions got killed", "find my abruptly closed sessions", or similar — including after a laptop shutdown, crash, or API disconnect. Scans ~/.claude/projects/ for sessions that terminated mid-turn, identifies each by last-touched content, and returns the exact `claude -r <session-id>` resume command per session. Runs on the Claude Code terminal surface.
+description: Use when founder asks about killed/abruptly-closed past sessions (shutdown, crash, API disconnect). Scans ~/.claude/projects/, returns exact `claude -r <id>` resume commands.
 ---
 
 # Session Retrieve

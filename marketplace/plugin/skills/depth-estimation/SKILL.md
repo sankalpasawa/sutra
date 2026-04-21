@@ -1,6 +1,6 @@
 ---
 name: depth-estimation
-description: Use at the start of any multi-step task, before tool calls. Assigns a depth rating (1-5) and emits a 5-line estimation block (TASK / DEPTH / EFFORT / COST / IMPACT). Writes a depth marker to .claude/depth-registered for the pretool hook to verify.
+description: Use at start of multi-step tasks, before tool calls. Emits DEPTH block (1-5 rating, TASK/EFFORT/COST/IMPACT) + writes marker for pretool hook.
 ---
 
 # Depth Estimation

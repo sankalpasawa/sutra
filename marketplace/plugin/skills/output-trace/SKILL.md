@@ -1,6 +1,6 @@
 ---
 name: output-trace
-description: Use at the end of every response before the final text. Emits a one-line OS trace showing what the system did — routing, gates fired, nodes traversed, terminal state. Three verbosity levels, user-controlled.
+description: Use at end of response, before final text. Emits one-line OS trace (route > domain > nodes > terminal). Three verbosity levels.
 ---
 
 # Output Trace

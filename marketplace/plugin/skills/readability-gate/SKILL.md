@@ -1,6 +1,6 @@
 ---
 name: readability-gate
-description: Use before presenting any output to the user. Formats responses for readability — tables over prose, numbers over adjectives, decisions boxed for visibility, progress bars for scores. Applies at output time, not as baked-in templates.
+description: Use before presenting output. Formats for readability — tables over prose, numbers over adjectives, decisions boxed, progress bars for scores.
 ---
 
 # Readability Gate

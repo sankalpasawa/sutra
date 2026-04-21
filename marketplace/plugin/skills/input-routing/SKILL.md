@@ -1,6 +1,6 @@
 ---
 name: input-routing
-description: Use at the start of every user message, before any Edit/Write/Bash tool call. Classifies the input into TYPE (direction / task / feedback / new concept / question), identifies EXISTING HOME, the correct ROUTE, and FIT CHECK against current architecture. Emits a 5-line routing block before proposing any ACTION.
+description: Use on every user message, before Edit/Write/Bash. Emits 5-line routing block (TYPE/HOME/ROUTE/FIT/ACTION) classifying direction/task/feedback/new-concept/question.
 ---
 
 # Input Routing
