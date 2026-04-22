@@ -2,6 +2,23 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.2] — 2026-04-22
+
+Governance injection — closes Finding #22 ("governance blocks don't fire on every turn").
+
+### Fixed
+
+- `/core:start` now writes `.claude/CLAUDE.md` with a marker-delimited Sutra-managed governance block containing Input Routing + Depth Estimation + Readability Gate + Output Trace templates. Claude Code loads CLAUDE.md as project system context on every session, so every response now emits governance blocks — fulfilling the sutra.os promise.
+- Idempotent: re-running `/core:start` updates the managed block in-place (detected by `<!-- SUTRA GOVERNANCE ... -->` markers) without clobbering the user's other CLAUDE.md content.
+
+### Rationale
+
+v1.7.1 fixed alias collision. v1.8.0 wired auto-activation. v1.9.1 added identity stamping. Dogfood on 2026-04-22 revealed governance blocks still weren't emitting on every turn — Claude Code's Skill tool doesn't auto-invoke skills per turn; it fires skills on semantic match. Research question "top restaurants in Mumbai" had no semantic match to governance skills, so no blocks fired. The missing piece: instructing the LLM via CLAUDE.md (which IS loaded every session). v1.9.2 adds that injection.
+
+### Migration
+
+Existing v1.8.x / v1.9.x users: `claude plugin marketplace update sutra` pulls v1.9.2. Running `/core:start` in any project writes/updates the managed CLAUDE.md block. Existing CLAUDE.md content untouched — the block is marker-delimited and appendable. To opt out on a specific project: manually delete the block (between the SUTRA GOVERNANCE markers) from that project's CLAUDE.md.
+
 ## [1.9.0] — 2026-04-22
 
 Identity stamping — know who's running the plugin. Backward-compatible, additive.

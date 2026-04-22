@@ -75,6 +75,130 @@ if [ ! -f .claude/depth-registered ]; then
   echo "DEPTH=3 TASK=sutra-start TS=$(date +%s)" > .claude/depth-registered
 fi
 
+# Step 3.5 — write/update managed governance block in .claude/CLAUDE.md
+# (v1.9.2, Finding #22: Claude Code's Skill tool doesn't auto-invoke skills per
+#  turn — it fires on semantic match. CLAUDE.md IS loaded as system context on
+#  every session, so that's the mechanism that guarantees governance blocks emit
+#  on every response. This function is idempotent via marker delimiters.)
+ensure_project_claude_md() {
+  local claude_md="${PROJECT_ROOT}/.claude/CLAUDE.md"
+  local begin_marker='<!-- SUTRA GOVERNANCE (managed by /core:start — do not edit manually) -->'
+  local end_marker='<!-- /SUTRA GOVERNANCE -->'
+
+  mkdir -p "$(dirname "$claude_md")"
+
+  # Governance block body (between the markers). Triple-single-quoted heredoc
+  # keeps Markdown fences and placeholders verbatim.
+  local block
+  block=$(cat <<'GOVBLOCK'
+# Sutra governance (auto-managed by /core:start)
+
+Apply these behaviors in every response in this project. The block is marker-delimited and managed by the plugin; manual edits inside will be overwritten on the next `/core:start`.
+
+## Input Routing — emit BEFORE any response or tool call
+
+```
+INPUT: [paraphrase of what the user said]
+TYPE: direction | task | feedback | new concept | question
+EXISTING HOME: [where this already lives in the system, or 'none']
+ROUTE: [which skill / protocol / tool handles this]
+FIT CHECK: [what changes in the existing architecture]
+ACTION: [what you're about to do]
+```
+
+## Depth Estimation — emit BEFORE any multi-step task
+
+```
+TASK: "[what you're about to do]"
+DEPTH: X/5  (1=surface · 2=considered · 3=thorough · 4=rigorous · 5=exhaustive)
+EFFORT: [time estimate], [files estimate]
+COST: ~$X (~Y% of $200 plan)
+IMPACT: [what this changes and for whom]
+```
+
+## Readability Gate — apply at output time
+
+- Tables over paragraphs when ≥3 rows of comparable data
+- Numbers over adjectives
+- Progress bars for scores: `Name ▓▓▓▓▓▓░░░░ 0.6 STATUS`
+- Decisions in boxed callouts (impossible to miss)
+
+## Output Trace — one line at end of every response
+
+```
+OS: [route] > [domain] > [node count] > [terminal] > [output]
+```
+
+Example: `OS: Input Routing (task) > Depth 3 > 2 tool calls > Readability gate > 1 file written`
+GOVBLOCK
+)
+
+  if [ ! -f "$claude_md" ]; then
+    # File doesn't exist — create with block between markers.
+    {
+      printf '%s\n\n' "$begin_marker"
+      printf '%s\n\n' "$block"
+      printf '%s\n' "$end_marker"
+    } > "$claude_md"
+    echo "governance block written at $claude_md (new file)"
+    return 0
+  fi
+
+  if grep -qF "$begin_marker" "$claude_md" && grep -qF "$end_marker" "$claude_md"; then
+    # Markers present — replace everything between them (inclusive) with a fresh
+    # managed block. awk preserves all content outside the markers exactly.
+    local tmp
+    tmp=$(mktemp)
+    BEGIN_MARKER="$begin_marker" END_MARKER="$end_marker" BLOCK="$block" \
+      awk '
+        BEGIN {
+          begin_m = ENVIRON["BEGIN_MARKER"]
+          end_m   = ENVIRON["END_MARKER"]
+          block   = ENVIRON["BLOCK"]
+          inside  = 0
+          emitted = 0
+        }
+        {
+          if (inside == 0) {
+            if ($0 == begin_m) {
+              inside = 1
+              if (emitted == 0) {
+                print begin_m
+                print ""
+                print block
+                print ""
+                print end_m
+                emitted = 1
+              }
+              next
+            }
+            print
+            next
+          } else {
+            if ($0 == end_m) {
+              inside = 0
+              next
+            }
+            next
+          }
+        }
+      ' "$claude_md" > "$tmp"
+    mv "$tmp" "$claude_md"
+    echo "governance block updated at $claude_md (markers replaced)"
+    return 0
+  fi
+
+  # File exists but has no markers — append the managed block at EOF.
+  {
+    printf '\n%s\n\n' "$begin_marker"
+    printf '%s\n\n' "$block"
+    printf '%s\n' "$end_marker"
+  } >> "$claude_md"
+  echo "governance block appended at $claude_md (no prior markers)"
+}
+
+ensure_project_claude_md
+
 # Step 4 — activation banner + next steps
 if [ -f .claude/sutra-project.json ]; then
   python3 <<PY
