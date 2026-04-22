@@ -15,22 +15,10 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 | PROTO-004 | Keys in Env Vars Only | keys-in-env-vars.sh | asawa | OK |
 | PROTO-006 | Process Discipline | CLAUDE.md (memory-only) | asawa | MEMORY |
 | PROTO-009 | Narration Is Not Artifact | narration-not-artifact.sh | asawa | OK |
-| PROTO-013 | Sutra Version Deploy | D27 depth-5 gate (current); compiler upgrades this in Phase… | (none) | DRIFT |
-| PROTO-014 | Sutra Version Check (Client-Side) | CLAUDE.md (memory-only) | (none) | DRIFT |
+| PROTO-013 | Sutra Version Deploy | verify-os-deploy.sh | (none) | DRIFT |
+| PROTO-014 | Sutra Version Check (Client-Side) | CLAUDE.md (memory-only) | asawa | MEMORY |
 | PROTO-015 | Verify Before Commit | estimation-enforcement.sh | maze ppr paisa | OK |
-| PROTO-017 | Policy-to-Implementation Coverage | validate.mjs inverse coverage check (current); reconciler/d… | (none) | DRIFT |
-| PROTO-001 | Structure Before Creation | — | (none) | DRIFT |
-| PROTO-002 | Wait for Parallel Completion | — | (none) | DRIFT |
-| PROTO-003 | Free Tier First | — | (none) | DRIFT |
-| PROTO-005 | Self-Assess Before Foundational Work | — | (none) | DRIFT |
-| PROTO-007 | One Metric Per Feature | — | (none) | DRIFT |
-| PROTO-008 | Follow the Sprint Sequence | — | (none) | DRIFT |
-| PROTO-010 | Version Focus | — | maze | DRIFT |
-| PROTO-011 | Company Independence | — | asawa | DRIFT |
-| PROTO-012 | Ownership Model | — | (none) | DRIFT |
-| PROTO-016 | Root Cause on Founder Correction | — | (none) | DRIFT |
-| PROTO-018 | Auto-Propagation on Version Bump | — | (none) | DRIFT |
-| PROTO-019 | External Peer Review on Portfolio Changes | — | (none) | DRIFT |
+| PROTO-017 | Policy-to-Implementation Coverage | verify-policy-coverage.sh | (none) | DRIFT |
 | MANIFEST hook: enforce-boundaries.sh | MANIFEST-v1.9.md | enforce-boundaries.sh | maze paisa billu sutra | OK |
 | MANIFEST hook: session-logger.sh | MANIFEST-v1.9.md | session-logger.sh | (none) | DRIFT |
 | MANIFEST hook: log-triage.sh | MANIFEST-v1.9.md | log-triage.sh | (none) | DRIFT |
@@ -57,7 +45,7 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 
 ---
 
-**Summary**: OK=10, MEMORY=1 (memory-only protocols — LLM-enforced), DRIFT=22
+**Summary**: OK=10, MEMORY=2 (memory-only — LLM-enforced), DRIFT=9, RETIRED=12 (excluded from drift — intentionally unenforced)
 **Regenerate**: `bash holding/hooks/verify-policy-coverage.sh --write`
 
 ### Parsing caveat (known limitation)

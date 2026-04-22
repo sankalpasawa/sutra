@@ -21,10 +21,10 @@ _Last reconciled from system.yaml: **2026-04-15** · 20 protocols total_
 | PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/keys-in-env-vars.sh (PreToolUse) + dispatcher-pretool.sh Check 5 | sutra/package/tests/test-d28-routing-gate.sh | 2026-04-22 |
 | PROTO-006 | Process Discipline | ACTIVE | SOFT | CLAUDE.md + dispatcher routing check | — | 2026-04-15 |
 | PROTO-009 | Narration Is Not Artifact | ACTIVE | SOFT | holding/hooks/narration-not-artifact.sh (PostToolUse Write .md) + dispatcher-pretool.sh | — | 2026-04-22 |
-| PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | D27 depth-5 gate (current); compiler upgrades this in Phase… | — | 2026-04-15 |
-| PROTO-014 | Sutra Version Check (Client-Side) | ACTIVE | SOFT | CLAUDE.md session-start check + .claude/sutra-version manif… | — | 2026-04-15 |
+| PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | holding/hooks/verify-os-deploy.sh + dispatcher-pretool.sh (D27 depth-5 gate) | — | 2026-04-23 |
+| PROTO-014 | Sutra Version Check (Client-Side) | ACTIVE | SOFT | CLAUDE.md session-start check (memory-only) + .claude/sutra-version manifest | — | 2026-04-23 |
 | PROTO-015 | Verify Before Commit | ACTIVE | SOFT | agent behavior + estimation-enforcement.sh (current); pre-c… | — | 2026-04-15 |
-| PROTO-017 | Policy-to-Implementation Coverage | ACTIVE | SOFT | validate.mjs inverse coverage check (current); reconciler/d… | — | 2026-04-15 |
+| PROTO-017 | Policy-to-Implementation Coverage | ACTIVE | SOFT | holding/hooks/verify-policy-coverage.sh (this ledger) + validate.mjs inverse coverage | — | 2026-04-23 |
 | PROTO-001 | Structure Before Creation | RETIRED | — | — | — | 2026-04-15 |
 | PROTO-002 | Wait for Parallel Completion | RETIRED | — | — | — | 2026-04-15 |
 | PROTO-003 | Free Tier First | RETIRED | — | — | — | 2026-04-15 |
