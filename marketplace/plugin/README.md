@@ -2,7 +2,7 @@
 
 Operating system for building with AI. Governance + observability for Claude Code sessions.
 
-**v1.7.1** — MIT license · `core@sutra` in the Claude Code marketplace
+**v1.8.0** — MIT license · `core@sutra` in the Claude Code marketplace
 
 ## What you get
 

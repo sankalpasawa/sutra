@@ -2,6 +2,27 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-04-22
+
+One-command install — closes the last mile of "one command does everything."
+
+### Added
+
+- **`hooks/sessionstart-auto-activate.sh`** — REGISTERED in `hooks.json` (sibling of `update-banner.sh` on SessionStart). Fires on every session start; ACTS only when the sentinel `~/.sutra/installed-via-script` exists AND the current project has no `.claude/sutra-project.json`. Runs `sutra start` via absolute `${CLAUDE_PLUGIN_ROOT}/bin/sutra` (Finding #12-safe), deletes sentinel on success (one-shot), never blocks session start (trap + `exit 0`).
+- **`website/install.sh`** — committed in v1.7.1, now operative. Serves from GitHub raw at `https://raw.githubusercontent.com/sankalpasawa/sutra/main/website/install.sh`. No Vercel, no third-party deploy.
+
+### Changed
+
+- **User-facing install flow collapses from 4 commands to 1.** Previous: `claude plugin marketplace add` → `claude plugin install` → `/reload-plugins` → `/core:start`. New: `curl -fsSL <raw-url> | bash` → open `claude` → first session auto-activates.
+
+### Rationale
+
+Founder direction 2026-04-22 (memory `project_sutra_permissions_in_start.md`): "one command should do everything — no 4-step ceremony." v1.7.1 shipped the prerequisite (alias-collision fix, Finding #12). v1.8.0 completes the vision.
+
+### Migration
+
+- Existing v1.7.x users: `claude plugin marketplace update sutra` pulls v1.8.0. The new SessionStart hook is a no-op for already-activated installs (sentinel gate). Fresh installs via `curl | bash` get auto-activation on first `claude`.
+
 ## [1.7.1] — 2026-04-22
 
 Shell-alias collision fix (Codex-converged Option E).
