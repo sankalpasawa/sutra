@@ -18,9 +18,9 @@ _Last reconciled from system.yaml: **2026-04-15** · 20 protocols total_
 | ID | Name | yaml_status | enforcement | mechanism | test | last_updated |
 |----|------|-------------|-------------|-----------|------|--------------|
 | PROTO-000 | Every Change Must Ship With Implementation | ACTIVE | SOFT | validate.mjs inverse coverage + test runner (current); doct… | — | 2026-04-15 |
-| PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/dispatcher-pretool.sh Check 5 (PreToolUse exi… | sutra/package/tests/test-d28-routing-gate.sh | 2026-04-15 |
+| PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/keys-in-env-vars.sh (PreToolUse) + dispatcher-pretool.sh Check 5 | sutra/package/tests/test-d28-routing-gate.sh | 2026-04-22 |
 | PROTO-006 | Process Discipline | ACTIVE | SOFT | CLAUDE.md + dispatcher routing check | — | 2026-04-15 |
-| PROTO-009 | Narration Is Not Artifact | ACTIVE | SOFT | dispatcher-pretool.sh | — | 2026-04-15 |
+| PROTO-009 | Narration Is Not Artifact | ACTIVE | SOFT | holding/hooks/narration-not-artifact.sh (PostToolUse Write .md) + dispatcher-pretool.sh | — | 2026-04-22 |
 | PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | D27 depth-5 gate (current); compiler upgrades this in Phase… | — | 2026-04-15 |
 | PROTO-014 | Sutra Version Check (Client-Side) | ACTIVE | SOFT | CLAUDE.md session-start check + .claude/sutra-version manif… | — | 2026-04-15 |
 | PROTO-015 | Verify Before Commit | ACTIVE | SOFT | agent behavior + estimation-enforcement.sh (current); pre-c… | — | 2026-04-15 |

@@ -11,37 +11,37 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 
 | Policy | Source | Enforced by | Deployed to | Status |
 |---|---|---|---|---|
-| PROTO-000 | Every Change Ships With Implementation | CLAUDE.md (memory-only) | sutra | MEMORY |
-| PROTO-001 | Structure Before Creation | dispatcher check 4 | (none) | DRIFT |
-| PROTO-002 | Wait for Parallel Completion | agent-completion-check.sh | (none) | DRIFT |
-| PROTO-003 | Free Tier First | onboarding review (advisory) | (none) | DRIFT |
-| PROTO-004 | Keys in Env Vars Only | unknown.sh (MISSING) | (none) | DRIFT |
-| PROTO-005 | Self-Assess Before Foundational Work | unknown.sh (MISSING) | (none) | DRIFT |
-| PROTO-006 | Process Discipline | dispatcher check 7 + depth system | (none) | DRIFT |
-| PROTO-007 | One Metric Per Feature | CLAUDE.md (memory-only) | (none) | DRIFT |
-| PROTO-008 | Follow the Sprint Sequence | CLAUDE.md (memory-only) | (none) | DRIFT |
-| PROTO-009 | Narration Is Not Artifact | unknown.sh (MISSING) | (none) | DRIFT |
-| PROTO-010 | Version Focus | session-start file loading | maze | DRIFT |
-| PROTO-011 | Company Independence | unknown.sh (MISSING) | (none) | DRIFT |
-| PROTO-012 | Ownership Model | advisory (session start) | (none) | DRIFT |
-| PROTO-013 | Sutra Version Deploy | verify-os-deploy.sh | (none) | DRIFT |
-| PROTO-014 | Sutra Version Check | CLAUDE.md (memory-only) | (none) | DRIFT |
-| PROTO-015 | Verify Before Commit | CLAUDE.md (memory-only) | (none) | DRIFT |
-| PROTO-016 | Root Cause on Founder Correction | CLAUDE.md (memory-only) | (none) | DRIFT |
-| PROTO-017 | Policy-to-Implementation Coverage | policy-coverage-gate.sh | (none) | DRIFT |
-| PROTO-018 | Auto-Propagation on Version Bump | upgrade-clients.sh | (none) | DRIFT |
-| PROTO-019 | External Peer Review (Codex) on Portfolio Changes | codex-review-gate.sh | (none) | DRIFT |
-| MANIFEST hook: enforce-boundaries.sh | MANIFEST-v1.9.md | enforce-boundaries.sh | dayflow maze billu sutra | OK |
+| PROTO-000 | Every Change Must Ship With Implementation | validate.mjs inverse coverage + test runner (current); doct… | sutra | DRIFT |
+| PROTO-004 | Keys in Env Vars Only | keys-in-env-vars.sh | asawa | OK |
+| PROTO-006 | Process Discipline | CLAUDE.md (memory-only) | asawa | MEMORY |
+| PROTO-009 | Narration Is Not Artifact | narration-not-artifact.sh | asawa | OK |
+| PROTO-013 | Sutra Version Deploy | D27 depth-5 gate (current); compiler upgrades this in Phase… | (none) | DRIFT |
+| PROTO-014 | Sutra Version Check (Client-Side) | CLAUDE.md (memory-only) | (none) | DRIFT |
+| PROTO-015 | Verify Before Commit | estimation-enforcement.sh | maze ppr paisa | OK |
+| PROTO-017 | Policy-to-Implementation Coverage | validate.mjs inverse coverage check (current); reconciler/d… | (none) | DRIFT |
+| PROTO-001 | Structure Before Creation | — | (none) | DRIFT |
+| PROTO-002 | Wait for Parallel Completion | — | (none) | DRIFT |
+| PROTO-003 | Free Tier First | — | (none) | DRIFT |
+| PROTO-005 | Self-Assess Before Foundational Work | — | (none) | DRIFT |
+| PROTO-007 | One Metric Per Feature | — | (none) | DRIFT |
+| PROTO-008 | Follow the Sprint Sequence | — | (none) | DRIFT |
+| PROTO-010 | Version Focus | — | maze | DRIFT |
+| PROTO-011 | Company Independence | — | asawa | DRIFT |
+| PROTO-012 | Ownership Model | — | (none) | DRIFT |
+| PROTO-016 | Root Cause on Founder Correction | — | (none) | DRIFT |
+| PROTO-018 | Auto-Propagation on Version Bump | — | (none) | DRIFT |
+| PROTO-019 | External Peer Review on Portfolio Changes | — | (none) | DRIFT |
+| MANIFEST hook: enforce-boundaries.sh | MANIFEST-v1.9.md | enforce-boundaries.sh | maze paisa billu sutra | OK |
 | MANIFEST hook: session-logger.sh | MANIFEST-v1.9.md | session-logger.sh | (none) | DRIFT |
 | MANIFEST hook: log-triage.sh | MANIFEST-v1.9.md | log-triage.sh | (none) | DRIFT |
-| MANIFEST hook: artifact-check.sh | MANIFEST-v1.9.md | artifact-check.sh | dayflow maze ppr | OK |
+| MANIFEST hook: artifact-check.sh | MANIFEST-v1.9.md | artifact-check.sh | maze ppr paisa | OK |
 | MANIFEST hook: compliance-tracker.sh | MANIFEST-v1.9.md | compliance-tracker.sh | (none) | DRIFT |
-| MANIFEST hook: depth-enforcement.sh | MANIFEST-v1.9.md | depth-enforcement.sh | dayflow maze ppr | OK |
-| MANIFEST hook: estimation-enforcement.sh | MANIFEST-v1.9.md | estimation-enforcement.sh | dayflow maze ppr | OK |
-| MANIFEST hook: measurement-logger.sh | MANIFEST-v1.9.md | measurement-logger.sh | dayflow maze ppr | OK |
+| MANIFEST hook: depth-enforcement.sh | MANIFEST-v1.9.md | depth-enforcement.sh | maze ppr paisa | OK |
+| MANIFEST hook: estimation-enforcement.sh | MANIFEST-v1.9.md | estimation-enforcement.sh | maze ppr paisa | OK |
+| MANIFEST hook: measurement-logger.sh | MANIFEST-v1.9.md | measurement-logger.sh | maze ppr paisa | OK |
 | MANIFEST hook: resilience.sh | MANIFEST-v1.9.md | resilience.sh | (none) | DRIFT |
 | MANIFEST hook: log-skill-feedback.sh | MANIFEST-v1.9.md | log-skill-feedback.sh | (none) | DRIFT |
-| MANIFEST hook: policy-coverage-gate.sh | MANIFEST-v1.9.md | policy-coverage-gate.sh | (none) | DRIFT |
+| MANIFEST hook: policy-coverage-gate.sh | MANIFEST-v1.9.md | policy-coverage-gate.sh | asawa | OK |
 | MANIFEST hook: cascade-warning.sh | MANIFEST-v1.9.md | cascade-warning.sh | sutra | OK |
 | MANIFEST hook: codex-review-gate.sh | MANIFEST-v1.9.md | codex-review-gate.sh | (none) | DRIFT |
 
@@ -49,15 +49,15 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 
 | Client | Declared | Installed+exec | Registered | Gap (not-fully-deployed) |
 |---|---|---|---|---|
-| dayflow | — | — | — | (none — OK) |
 | maze | — | — | — | (none — OK) |
 | ppr | — | — | — | (none — OK) |
+| paisa | — | — | — | (none — OK) |
 | billu | — | — | — | (none — OK) |
 | sutra | — | — | — | (none — OK) |
 
 ---
 
-**Summary**: OK=6, MEMORY=1 (memory-only protocols — LLM-enforced), DRIFT=26
+**Summary**: OK=10, MEMORY=1 (memory-only protocols — LLM-enforced), DRIFT=22
 **Regenerate**: `bash holding/hooks/verify-policy-coverage.sh --write`
 
 ### Parsing caveat (known limitation)
