@@ -610,3 +610,102 @@ THE CONTRACT:
   Claude writes; Codex reviews; founder decides.
   Disagreements surface as findings — resolved by founder, not silently.
 ```
+
+## PROTO-020: Plugin Identity Capture [PENDING — design at holding/research/2026-04-22-sutra-identity-capture-v17-design.md]
+
+Reserved. Design-stage only; not enforced until founder sign-off on §18 checkpoints A-G. See research doc for scope.
+
+## PROTO-021: BUILD-LAYER Declaration
+_yaml status: active — SOFT on research/docs, HARD on code paths (holding/hooks/**, holding/departments/**, sutra/marketplace/plugin/**, sutra/os/charters/**). Shipped 2026-04-23 post Codex adversarial review (session 019db709-bddc-77f0-8823-9b5e7aad0a96)._
+
+```
+constitutional | [every Asawa/Sutra build routes through a layer decision] | HARD-on-code / SOFT-on-docs
+
+trigger: Any Edit or Write to a non-whitelisted path. Whitelist: .claude/,
+         .enforcement/, checkpoints, TODO.md, hook-log.jsonl, .lock, memory
+         files under ~/.claude/projects/.../memory/, git operations.
+
+check:   Did the author emit a BUILD-LAYER block for the current turn before
+         the first enforced-path Edit/Write? Block format (fourth block
+         alongside Input Routing + Depth + Estimation):
+
+           BUILD-LAYER: L0 | L1 | L2
+           ACTIVATION-SCOPE: fleet | cohort:<name> | single-instance:<name>
+           TARGET-PATH: <absolute path>
+           PROMOTION:
+             SOURCE: founder | sutra-forge | client-feedback
+             TARGET-PATH: (if L1) <path in sutra/marketplace/plugin/>
+             BY:          (if L1) <YYYY-MM-DD>
+             OWNER:       (if L1) <durable role>
+             ACCEPTANCE-CRITERIA: (if L1) [checklist]
+             STALE-DISPOSITION:   (if L1) auto-promote-PR | demote-to-L2
+
+         Layers:
+           L0 PLUGIN    — ships via plugin, reaches every instance
+           L1 STAGING   — authoring instance now + promotion deadline to L0
+           L2 INSTANCE  — instance-local forever (doctrine, company-specific)
+
+         Default aspiration is L0; picking L1 requires promotion contract;
+         picking L2 requires REASON field (one-line specificity claim).
+
+enforce: holding/hooks/build-layer-check.sh fires as PreToolUse on Edit|Write.
+         Enforcement bifurcated per founder + Codex decision 2026-04-23:
+           (a) HARD on authored code paths — exit 2 blocks the tool call
+               when declaration missing. Paths:
+                 - holding/hooks/**
+                 - holding/departments/**
+                 - sutra/marketplace/plugin/**
+                 - sutra/os/charters/**
+           (b) SOFT on research/docs and elsewhere — stderr advisory,
+               never blocks.
+         Marker `.claude/build-layer-registered` persists within a turn;
+         cleared by holding/hooks/reset-turn-markers.sh on UserPromptSubmit.
+         Override: BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>' <tool>.
+         Override writes audit row to .enforcement/build-layer-ledger.jsonl
+         with event=override.
+         Ledger schema at .enforcement/build-layer-ledger.jsonl:
+           { ts, session_id, task_slug, layer, scope, target_path,
+             promotion: {source, target_path, by, owner,
+                         acceptance_criteria, stale_disposition},
+             reason, outcome, promoted_ts }
+         Session-end review appended by holding/hooks/dispatcher-stop.sh
+         reports per-session L0/L1/L2 counts + stale-L1 items past
+         promote-by date.
+
+origin:  Founder direction 2026-04-23 — "every block in the ecosystem should
+         be built via the Core Sutra Plugin, not around it." Ecosystem
+         diagram at holding/designs/sutra-ecosystem-diagram.md observed
+         drift: ~14 capabilities in holding/ are L0-candidates by
+         mechanism universality but had no named moment to route them
+         into the plugin. Absorbed founder amendment "decommission the
+         package, everything via Sutra plugin" (package archived 2026-04-23
+         in commits deb81ac + ce20a73 + a5b7cbb). Codex adversarial review
+         (SHIP-WITH-AMENDMENTS verdict) surfaced: ACTIVATION-SCOPE missing
+         axis (adopted), L1 graveyard risk (addressed via OWNER +
+         ACCEPTANCE + STALE-DISPOSITION), advisory-only fatigue
+         (addressed via HARD-on-code bifurcation), declaration block cost
+         (acceptable — compresses via D9 at ≥10 samples + ≥80% accuracy
+         per category).
+
+THE CONTRACT:
+  Every enforced build declares its layer before the first Edit/Write.
+  L0 ships via plugin. L1 carries a promotion contract (owner + deadline
+  + acceptance + stale disposition). L2 carries a specificity reason.
+  Misfiled L0 candidates in holding/ become visible at session end and
+  weekly promotion-debt review.
+
+EXEMPT: BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>' for single-call
+        bypass. Research docs (holding/research/**) SOFT-enforced only.
+        Test and design-doc sessions may use the override liberally;
+        code-producing sessions should not.
+
+RELATES:
+  Composes with D28 (per-turn routing/depth enforcement — shares marker
+  lifecycle). Composes with D30a (every L0/L1 artifact ships with
+  Operationalization section). Honors D29 (plugin is bare "Sutra", no
+  Asawa strings in plugin-facing files). Honors D31 (Sutra owns
+  authoring authority; PROMOTION.SOURCE=client-feedback is a nomination,
+  not a direct commit). Honors D33 (plugin remains the only cross-
+  firewall channel). Design doc: holding/research/2026-04-23-build-layer-
+  protocol-design.md (§15 Codex review synthesis).
+```

@@ -61,8 +61,10 @@ Source of truth: `sutra/state/system.yaml` §protocols. Cap = 8 active per Phase
 | **PROTO-017** | Policy-to-Implementation Coverage Gate | active | hard | Every Sutra policy edit surfaces PROTO-000 reminder; generates POLICY-COVERAGE.md ledger | `state/system.yaml` → status | same |
 | **PROTO-018** | Auto-Propagation on Version Bump | **disabled** (D-7) | — | `upgrade-clients.sh` walks client registry; currently MANUAL per founder | `.enforcement/proto-018-reminders.log` shows when skipped | same |
 | **PROTO-019** (candidate) | Unit-Architecture (every unit = definition charter + skills + initiative charter participations) | deferred | planned | Formalize cascading model in state.yaml | TBD | sketched in `sutra/os/charters/README.md` §1-4 |
+| **PROTO-020** | Plugin Identity Capture | **pending** | design-only | 3-tier identity (anon/attributed/full) in plugin manifest | design doc `holding/research/2026-04-22-sutra-identity-capture-v17-design.md` | — |
+| **PROTO-021** | BUILD-LAYER Declaration | active | HARD-on-code / SOFT-on-docs | Every task declares L0/L1/L2 + ACTIVATION-SCOPE + TARGET-PATH + PROMOTION contract; surfaces misfiled L0 candidates and L1 promotion debt | `.enforcement/build-layer-ledger.jsonl` + session-end review | `sutra/layer2-operating-system/PROTOCOLS.md` + `holding/hooks/build-layer-check.sh` |
 
-See `state/system.yaml` for the full protocol list. Directions D1–D30 similarly tracked there.
+See `state/system.yaml` for the full protocol list. Directions D1–D33 similarly tracked there.
 
 ---
 

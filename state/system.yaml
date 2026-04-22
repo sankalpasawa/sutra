@@ -206,6 +206,56 @@ protocols:
     status: absorbed
     reason: "Becomes the reconciler itself in Phase 3. No separate protocol — doctor IS the codex-gate."
 
+  - id: PROTO-020
+    name: Plugin Identity Capture
+    status: pending
+    reason: "Design at holding/research/2026-04-22-sutra-identity-capture-v17-design.md. §18 checkpoints A-G pending founder sign-off before activation."
+
+  - id: PROTO-021
+    name: BUILD-LAYER Declaration
+    status: active
+    enforcement: "HARD-on-code / SOFT-on-docs"
+    mechanism: holding/hooks/build-layer-check.sh (PreToolUse Edit|Write)
+    test: holding/hooks/tests/test-build-layer-check.sh
+    summary: "Every task declares L0 plugin / L1 staging / L2 instance + ACTIVATION-SCOPE + TARGET-PATH + PROMOTION contract. HARD on holding/hooks/**, holding/departments/**, sutra/marketplace/plugin/**, sutra/os/charters/**. SOFT elsewhere. Override: BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>'."
+    ledger: .enforcement/build-layer-ledger.jsonl
+    design: holding/research/2026-04-23-build-layer-protocol-design.md
+    codex_session: 019db709-bddc-77f0-8823-9b5e7aad0a96
+    scope: sutra-core
+    shipped_at: 2026-04-23
+
+# ─── build_layer inventory (PROTO-021 support) ──────────────────────────────
+# Layer classifications flow from holding/research/2026-04-23-build-layer-
+# protocol-design.md §4 (Codex-amended counts: 10 L0 / 9 L1 / 21 L2).
+# Rows added as artifacts are built, not retroactively. Query with:
+#   yq '.build_layer[] | select(.layer == "L1") | .path' sutra/state/system.yaml
+
+build_layer:
+  enforced_paths:
+    hard:
+      - holding/hooks/**
+      - holding/departments/**
+      - sutra/marketplace/plugin/**
+      - sutra/os/charters/**
+    soft:
+      - holding/research/**
+      - sutra/archive/**
+      - "**/*.md (research/docs shape)"
+  whitelist:
+    - .claude/**
+    - .enforcement/**
+    - .analytics/**
+    - holding/checkpoints/**
+    - holding/TODO.md
+    - holding/hooks/hook-log.jsonl
+    - "*.lock"
+    - "~/.claude/projects/**/memory/**"
+  defaults:
+    promotion_deadline_days: 14
+    auto_promotion_assistant: false
+    retroactive_sweep: false
+    declaration_cadence: per-task
+
 # ─── Directions (Phase 0 D-4, D-6: cap 18, split core/ergonomics) ────────────
 # Core = portable, ships with Sutra. Ergonomics = Asawa-only, not portable.
 # Total cap 18. Current: 14 core + 4 ergonomics. Retired below with reason.
