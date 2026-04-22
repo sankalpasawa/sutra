@@ -2,6 +2,23 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.3] — 2026-04-22
+
+Executable-bit fix — closes Finding #23 ("SessionStart hook: Permission denied").
+
+### Fixed
+
+- `hooks/sessionstart-auto-activate.sh` mode now `100755` (was `100644`). Claude Code invokes hook scripts as executables; without the execute bit, the hook silently fails with `Permission denied` and `/core:start` never auto-runs — so v1.9.2's CLAUDE.md injection never fires for installer-driven installs. This patch makes the hook actually executable.
+- `website/install.sh` mode now `100755` (was `100644`) as belt-and-suspenders; installer already works via `curl | bash` (piped to bash stdin, doesn't need +x) but explicit +x lets users download-then-run (`bash install.sh` or `./install.sh`).
+
+### Rationale
+
+Subagent that landed v1.8.0 (SessionStart hook registration) flagged `chmod +x` as "MANUAL FOLLOW-UP" — never done. v1.9.2's 10-test integration matrix passed because tests invoke scripts via `bash path/to/script.sh` (which doesn't need +x) — but Claude Code's real hook loader calls scripts as executables, requires +x. Test-harness gap, captured as a new dogfood finding for the next test-matrix iteration: verify file modes via `git ls-files -s`, not just functional invocation.
+
+### Migration
+
+Existing v1.9.x users: `claude plugin marketplace update sutra` pulls v1.9.3 and git propagates the new file modes. Fresh installs via `curl | bash` get the correct modes immediately.
+
 ## [1.9.2] — 2026-04-22
 
 Governance injection — closes Finding #22 ("governance blocks don't fire on every turn").

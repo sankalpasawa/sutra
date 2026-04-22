@@ -1,6 +1,6 @@
 {
   "name": "core",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, C3c token-compression bundle (RTK native-tool whitelist + MCP output compression), opt-in local metric telemetry, and v1.9 identity stamping (git name + gh login + os fingerprint in manifest when telemetry is on).",
   "author": {
     "name": "Sutra",
