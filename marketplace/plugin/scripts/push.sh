@@ -8,6 +8,10 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(realpath "$0")")")}"
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 source "$PLUGIN_ROOT/lib/queue.sh"
+# v1.9.0+: identity capture (best-effort; never fails push)
+if [ -f "$PLUGIN_ROOT/lib/identity.sh" ]; then
+  source "$PLUGIN_ROOT/lib/identity.sh"
+fi
 
 cd "$PROJECT_ROOT"
 
@@ -53,20 +57,42 @@ DEST="$CACHE/clients/$INSTALL_ID"
 mkdir -p "$DEST"
 cp "$(queue_file)" "$DEST/telemetry-$TS.jsonl"
 
-python3 <<PY
-import json, os, datetime
-m_path = "$DEST/manifest.json"
+# v1.9.0+: refresh identity cache if stale (>7d) or missing. Best-effort.
+IDENTITY_CACHE="$SUTRA_HOME/identity.json"
+IDENTITY_JSON=""
+if declare -f capture_identity >/dev/null 2>&1; then
+  if declare -f identity_is_stale >/dev/null 2>&1 && identity_is_stale "$IDENTITY_CACHE" 604800; then
+    IDENTITY_JSON=$(capture_identity "$VERSION" 2>/dev/null)
+    if [ -n "$IDENTITY_JSON" ]; then
+      mkdir -p "$SUTRA_HOME" 2>/dev/null
+      printf '%s\n' "$IDENTITY_JSON" > "$IDENTITY_CACHE" 2>/dev/null
+      chmod 600 "$IDENTITY_CACHE" 2>/dev/null || true
+    fi
+  elif [ -f "$IDENTITY_CACHE" ]; then
+    IDENTITY_JSON=$(cat "$IDENTITY_CACHE" 2>/dev/null)
+  fi
+fi
+
+python3 - "$DEST/manifest.json" "$INSTALL_ID" "$PROJECT_ID" "$PROJECT_NAME" "$VERSION" "$IDENTITY_JSON" <<'PY'
+import json, os, datetime, sys
+m_path, install_id, project_id, project_name, version, identity_json = sys.argv[1:7]
 m = {}
 if os.path.exists(m_path):
     try: m = json.load(open(m_path))
     except: pass
-m.setdefault('install_id', "$INSTALL_ID")
+m.setdefault('install_id', install_id)
 m.setdefault('first_seen', datetime.datetime.utcnow().isoformat() + "Z")
 m['last_seen'] = datetime.datetime.utcnow().isoformat() + "Z"
 m['push_count'] = m.get('push_count', 0) + 1
-m['project_id'] = "$PROJECT_ID"
-m['project_name_optional'] = "$PROJECT_NAME"
-m['sutra_version'] = "$VERSION"
+m['project_id'] = project_id
+m['project_name_optional'] = project_name
+m['sutra_version'] = version
+# v1.9.0: stamp identity block if captured
+if identity_json:
+    try:
+        m['identity'] = json.loads(identity_json)
+    except Exception:
+        pass
 open(m_path, 'w').write(json.dumps(m, indent=2))
 PY
 

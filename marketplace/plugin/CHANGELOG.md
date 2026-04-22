@@ -2,6 +2,39 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] — 2026-04-22
+
+Identity stamping — know who's running the plugin. Backward-compatible, additive.
+
+### Added
+
+- **`lib/identity.sh`** — new library. `capture_identity <version>` emits a JSON object with git_user_name, git_user_email_hash (SHA-256[:16]), github_login, github_id, hostname_hash (SHA-256[:12]), os_name, os_version, os_pretty, arch, shell_name, locale, tz, captured_at, captured_by_version. Fallback chain: git global → git local → gh api → system GECOS → `$USER`. Every step best-effort; never fails a session. 3-second timeout on gh API calls.
+- **`tests/unit/test-identity.sh`** — 10 unit tests covering JSON shape, required keys, hash field shapes, fallback when git+gh are unavailable, staleness detection.
+- **`tests/integration/test-identity-stamp.sh`** — 7 integration tests: onboard stamps local JSON + cache, push stamps manifest on bare repo, 7d staleness gate holds, 8-day-old cache triggers recapture, emit-metric PII rejection still active (regression guard).
+
+### Changed
+
+- **`scripts/onboard.sh`** — sources `lib/identity.sh`; when `telemetry_optin=true`, captures identity and stamps it into `.claude/sutra-project.json` > `identity:`. Also caches to `$SUTRA_HOME/identity.json` (chmod 600) for push-time staleness checks.
+- **`scripts/push.sh`** — sources `lib/identity.sh`; on each push, checks cache freshness (`identity_is_stale`, default 7 days). Stale or missing → recapture. Stamps the identity block into `clients/<install_id>/manifest.json` alongside existing `push_count` / `last_seen` / `sutra_version` fields. **Retroactive for existing installs** — next push after upgrade stamps the identity block without requiring a re-onboard.
+
+### Privacy
+
+- **Metrics channel unchanged.** `emit-metric.sh` still regex-rejects PII in `dept`/`metric`/`unit`/`window` fields (regression-tested). Telemetry `*.jsonl` rows remain PII-free.
+- **Identity channel is a new, separate channel** living in `manifest.json`. Activated by existing `telemetry_optin` (default `true` when `/core:start` runs with `profile=project|company`, default `false` with `profile=individual`). Flip `telemetry_optin: false` in `.claude/sutra-project.json` to turn OFF — effect is immediate; next push omits identity.
+- **Fields captured are user-supplied** (git config, gh auth) or coarse machine metadata (os, arch, tz). Raw email and raw hostname are NOT captured — both are SHA-256 hashed to 16/12 hex chars. See PRIVACY.md for full matrix.
+
+### Rationale
+
+Founder direction 2026-04-22 — needed a fleet view of Sutra users (portfolio + external friends who install via marketplace). Prior manifest carried only hashed install_id + project_id, leaving new installs unidentifiable. v1.9.0 closes that gap with a separate, opt-in-by-default identity channel that preserves the existing PII-free posture of the metrics channel.
+
+Design doc (asawa-holding repo): `holding/research/2026-04-22-sutra-identity-capture-v17-design.md`.
+
+### Migration
+
+- Existing users: `claude plugin marketplace update sutra && claude plugin update core@sutra`. Next Stop-hook auto-push stamps identity. No manual action required.
+- Users who had `telemetry_optin: false` stay unstamped until they flip the flag. No behavior change for them.
+- Downstream companies (DayFlow, Billu, etc. — when plugin-installed): inherit on next auto-update.
+
 ## [1.8.0] — 2026-04-22
 
 One-command install — closes the last mile of "one command does everything."

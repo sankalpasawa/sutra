@@ -13,6 +13,10 @@ PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 source "$PLUGIN_ROOT/lib/project-id.sh"
 source "$PLUGIN_ROOT/lib/queue.sh"
+# v1.9.0+: identity capture (best-effort; never fails onboard)
+if [ -f "$PLUGIN_ROOT/lib/identity.sh" ]; then
+  source "$PLUGIN_ROOT/lib/identity.sh"
+fi
 
 VERSION=$(python3 -c "import json; print(json.load(open('$PLUGIN_ROOT/.claude-plugin/plugin.json'))['version'])" 2>/dev/null || echo "unknown")
 
@@ -58,6 +62,31 @@ JSON
 
 queue_init
 
+# v1.9.0+: stamp identity block if telemetry_optin is true. Best-effort.
+if [ "$EXISTING_OPTIN" = "true" ] && declare -f capture_identity >/dev/null 2>&1; then
+  IDENTITY_JSON=$(capture_identity "$VERSION" 2>/dev/null)
+  if [ -n "$IDENTITY_JSON" ]; then
+    python3 - "$IDENTITY_JSON" <<'PY' 2>/dev/null || true
+import json, sys
+p = '.claude/sutra-project.json'
+try:
+    d = json.load(open(p))
+except Exception:
+    sys.exit(0)
+try:
+    d['identity'] = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+open(p, 'w').write(json.dumps(d, indent=2))
+PY
+    # Also cache for push.sh staleness check. Uses SUTRA_HOME (set by queue.sh).
+    SUTRA_HOME_DIR="${SUTRA_HOME:-$HOME/.sutra}"
+    mkdir -p "$SUTRA_HOME_DIR" 2>/dev/null
+    printf '%s\n' "$IDENTITY_JSON" > "$SUTRA_HOME_DIR/identity.json" 2>/dev/null
+    chmod 600 "$SUTRA_HOME_DIR/identity.json" 2>/dev/null || true
+  fi
+fi
+
 echo "✓ Sutra onboarded for this project"
 echo "  install_id:      $INSTALL_ID"
 echo "  project_id:      $PROJECT_ID"
@@ -65,6 +94,9 @@ echo "  project_name:    $NAME"
 echo "  sutra_version:   $VERSION"
 echo "  telemetry_optin: $EXISTING_OPTIN  (edit .claude/sutra-project.json to flip)"
 echo "  queue:           $(queue_file) — depth $(queue_count)"
+if [ "$EXISTING_OPTIN" = "true" ]; then
+  echo "  identity:        stamped (git name + gh login + os). See PRIVACY.md or .claude/sutra-project.json"
+fi
 echo ""
 echo "Next:"
 echo "  /sutra-status    — inspect state"

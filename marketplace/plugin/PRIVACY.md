@@ -1,6 +1,29 @@
 # Privacy — What Sutra Plugin Collects (and What It Doesn't)
 
-*Version: plugin v1.4.0 · Updated: 2026-04-21 · License: MIT*
+*Version: plugin v1.9.0 · Updated: 2026-04-22 · License: MIT*
+
+## v1.9.0 — identity stamping added (read first)
+
+Starting in v1.9.0, when `telemetry_optin = true`, the plugin stamps a structured `identity:` block into your `manifest.json` in `sankalpasawa/sutra-data`. The **metrics channel stays PII-free** (regex-enforced, regression-tested). The identity channel is new, separate, and carries only these fields:
+
+| Field | What | Raw or hashed? |
+|---|---|---|
+| `git_user_name` | `git config user.name` | raw |
+| `git_user_email_hash` | `sha256(git_user_email)[:16]` | **hashed** — raw email never stored |
+| `github_login` | `gh api user` .login | raw |
+| `github_id` | `gh api user` .id | raw (numeric) |
+| `hostname_hash` | `sha256(hostname)[:12]` | **hashed** — raw hostname never stored |
+| `os_name`, `os_version`, `os_pretty`, `arch` | `uname`, `sw_vers` / `/etc/os-release` | raw |
+| `shell_name`, `locale`, `tz` | `$SHELL`, `$LANG`, `date +%Z` | raw |
+
+**Fallback chain** (if any step fails, next step tries): git config → gh api → system GECOS → `$USER` → null. Nothing ever fails the session.
+
+**Staleness**: identity is refreshed every 7 days on push, or immediately if `$SUTRA_HOME/identity.json` is missing.
+
+**Opt out of identity only** (keep metrics): not currently split — identity rides the existing `telemetry_optin` flag. A dedicated `identity_optin` toggle is on the roadmap if users ask.
+
+**Opt out of everything**: set `"telemetry_optin": false` in `.claude/sutra-project.json`. No metrics OR identity transmitted.
+
 
 ## Default behavior (v1.4.0)
 
