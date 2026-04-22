@@ -1,26 +1,64 @@
 ---
 name: sutra
-description: "CEO of Sutra — Operating system company, manages protocols and clients"
+description: Activate Sutra mode for this session. Pulls CEO day from os/*.md (priorities, OKRs, status). Apply input-routing, depth-estimation, readability-gate, output-trace to every subsequent turn.
+disable-model-invocation: true
 ---
 
-# STOP — Wrong Directory
+# /sutra — Activate Sutra mode
 
-Sutra sessions **must** run from the `sutra/` submodule directory.
+## Actions
 
-Tell the user:
+1. Check install state:
 
-```
-To start a Sutra session:
-  1. Open a new terminal
-  2. cd sutra/
-  3. Start Claude Code there
-
-You're currently in asawa-holding/ (CEO of Asawa workspace).
-To work on Sutra from here with full access, just say so.
+```!
+test -f .claude/sutra-version && echo "INSTALLED" || echo "NOT_INSTALLED"
 ```
 
-Do NOT set an active-role file.
+2. If `NOT_INSTALLED`, tell the user:
 
-## If the user insists
+```
+Sutra isn't deployed to this folder yet. Run:
+  npx -y github:sankalpasawa/sutra-os init
 
-They're CEO of Asawa — full access. Load Sutra files directly.
+Then restart Claude Code and try /sutra again.
+```
+
+3. If `INSTALLED`, pull CEO-day context:
+
+```!
+echo "Sutra version: $(cat .claude/sutra-version 2>/dev/null | head -1)"
+cat CLAUDE.md 2>/dev/null | head -5
+echo "---"
+cat TODO.md 2>/dev/null | head -15
+echo "---"
+cat os/STATUS.md 2>/dev/null | head -10
+echo "---"
+cat os/OKRs.md 2>/dev/null | head -15
+```
+
+4. Render the CEO day dashboard using content above. Apply the readability gate (tables, progress bars, boxed decisions).
+
+5. Announce:
+
+```
+🧭 Sutra is ACTIVE for this session.
+
+From this point on:
+  • Every message → input routing (emit the 5-line block)
+  • Every task → depth + estimation block (1-5 scale)
+  • Every output → readability gate
+  • Every response → one-line OS trace
+
+Say "trace off" to quiet the output trace. Say "/sutra-help" for commands.
+```
+
+Apply input-routing, depth-estimation, readability-gate, and output-trace to all subsequent turns.
+
+## What Sutra governs automatically via hooks (already wired in .claude/settings.json)
+
+- Edit/Write without a depth marker → blocked with a helpful message
+- Hook fires log to `.claude/logs/hook-fires.jsonl`
+- Stop event logs session summary
+- SessionStart checks for newer Sutra on github
+
+The plugin does not re-implement these — they're active the moment you opened Claude Code in this folder.

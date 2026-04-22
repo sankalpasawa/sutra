@@ -11,7 +11,16 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
-HOOK_LOG="$REPO_ROOT/holding/hooks/hook-log.jsonl"
+# Portable log path (v0.2.1 2026-04-19): write to .claude/logs/ so external
+# installs work. Falls back to holding/hooks/ for the Asawa monorepo layout
+# where the dir already exists — preserves backward compat with the canonical
+# source-of-truth tree.
+if [ -d "$REPO_ROOT/holding/hooks" ]; then
+  HOOK_LOG="$REPO_ROOT/holding/hooks/hook-log.jsonl"
+else
+  mkdir -p "$REPO_ROOT/.claude/logs" 2>/dev/null
+  HOOK_LOG="$REPO_ROOT/.claude/logs/hook-fires.jsonl"
+fi
 FILE_PATH="$TOOL_INPUT_file_path"
 TOOL_NAME="${TOOL_NAME:-}"  # "Edit" or "Write"
 
@@ -502,3 +511,33 @@ log_hook "SutraDeployDepth5-D27" "$_check11_status" "" "$_start11"
 
 # ─── Exit ─────────────────────────────────────────────────────────────────────
 exit $BLOCK_CODE
+
+# ================================================================================
+# ## Operationalization
+#
+# ### 1. Measurement mechanism
+# Retirement commit. File being archived in the next commit as part of the
+# package -> archive/package-v1.2.1-retired/ directory move (founder directive
+# 2026-04-23 "decommission the package"). No metric applies post-archive;
+# pre-archive behavior frozen at this commit.
+#
+# ### 2. Adoption mechanism
+# Retired. Consumers migrate to marketplace/plugin/hooks/ equivalent when one
+# exists, or surface the gap via BUILD-LAYER L1 staging path (PROTO-021,
+# pending sign-off 2026-04-23).
+#
+# ### 3. Monitoring / escalation
+# N/A after archive. Pre-archive: existing dispatcher logs under
+# holding/hooks/hook-log.jsonl remained authoritative.
+#
+# ### 4. Iteration trigger
+# Frozen. Revival only via BUILD-LAYER L1 resurrection ceremony: promote to
+# marketplace/plugin/hooks/ with owner + acceptance criteria.
+#
+# ### 5. DRI
+# Sutra Forge (authoring team, historical). No active DRI post-archive.
+#
+# ### 6. Decommission criteria
+# DECOMMISSIONED 2026-04-23. Archived to archive/package-v1.2.1-retired/ in
+# the commit immediately following this one.
+# ================================================================================
