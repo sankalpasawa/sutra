@@ -2,9 +2,29 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4] — 2026-04-22
+
+Hotfix for v1.9.3 — executable bit ACTUALLY landed this time.
+
+### Fixed
+
+- `hooks/sessionstart-auto-activate.sh` and `website/install.sh` committed as mode `100755`. v1.9.3's commit recorded them as `100644` despite the `git update-index --chmod=+x` call — a subsequent `git add` re-read the working-tree 644 mode and clobbered the staged 755 before commit. Working-tree files now `chmod +x`'d BEFORE `git add`, so `git add` stages 755 and the commit records 755.
+
+### Rationale
+
+v1.9.3 CHANGELOG claimed the mode fix; the commit didn't actually record it. Live reproduction 2026-04-22: user installed v1.9.3, hook still `-rw-r--r--` on disk, `sessionstart-auto-activate.sh: Permission denied`, governance never activated. `git ls-tree HEAD` confirmed `100644` persisted in the v1.9.3 commit.
+
+### Lesson (for future mode-fix releases)
+
+`git add` re-reads filesystem mode and CLOBBERS any prior `git update-index --chmod=+x`. Correct patterns: EITHER (a) `chmod +x` the working-tree file first, THEN `git add`, OR (b) use `git update-index --chmod=+x` alone (it stages the mode; commit can follow without a subsequent `git add` on the same file). Never both in sequence — `add` wins.
+
+### Migration
+
+Existing v1.9.x users: `claude plugin marketplace update sutra` pulls v1.9.4. The correctly-moded hook file reinstalls at `100755`, SessionStart hook actually executes, `/core:start` auto-runs, CLAUDE.md governance block lands.
+
 ## [1.9.3] — 2026-04-22
 
-Executable-bit fix — closes Finding #23 ("SessionStart hook: Permission denied").
+Executable-bit fix attempt — closes Finding #23 ("SessionStart hook: Permission denied"). **Note: v1.9.3 commit actually recorded mode 100644 due to `git add` clobbering the `update-index` mode change; v1.9.4 is the real fix.**
 
 ### Fixed
 
