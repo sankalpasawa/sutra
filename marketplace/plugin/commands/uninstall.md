@@ -7,7 +7,7 @@ argument-hint: [--purge]
 
 # /core:uninstall — Remove Sutra
 
-!sutra uninstall $ARGUMENTS
+!${CLAUDE_PLUGIN_ROOT}/bin/sutra uninstall $ARGUMENTS
 
 ## What this does
 

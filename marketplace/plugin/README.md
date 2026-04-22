@@ -2,7 +2,7 @@
 
 Operating system for building with AI. Governance + observability for Claude Code sessions.
 
-**v1.5.1** — MIT license · `core@sutra` in the Claude Code marketplace
+**v1.7.1** — MIT license · `core@sutra` in the Claude Code marketplace
 
 ## What you get
 
@@ -11,6 +11,9 @@ Operating system for building with AI. Governance + observability for Claude Cod
 - **Readability gate** — outputs formatted as tables/boxes/metrics, not prose
 - **Output trace** — every response ends with a one-line OS trace
 - **Session retrieve** — recover abruptly-closed sessions after a laptop crash
+- **RTK auto-rewrite** — PreToolUse hook forces `rtk` wrap on voluminous bash (`git status`/`log`/`diff`/`blame`/`show`) for 30-60% tool-output reduction
+- **MCP output compression** — PostToolUse hook replaces large MCP tool outputs (≥4KB, ≥80 lines) with head+error+tail summaries (~50% cut)
+- **Per-profile enforcement** — `individual` / `project` / `company` profiles via `/core:start --profile` (v1.6.0+); `company` hard-blocks on missing depth markers
 - **Local telemetry** — `~/.sutra/metrics-queue.jsonl`; opt-in push to a data store
 
 ## Install (60 seconds)
@@ -37,8 +40,8 @@ Inside Claude Code (slash commands):
 
 | Command | Purpose |
 |---|---|
-| `/core:start` | The one command. Onboard + activate + depth marker. |
-| `/core:status` | Install ID, project ID, queue depth, telemetry flag. |
+| `/core:start` | The one command. Onboard + activate + depth marker. Accepts `--profile individual\|project\|company` (v1.6.0+). |
+| `/core:status` | Install ID, project ID, queue depth, telemetry flag, active profile. |
 | `/core:update` | Pull the latest plugin version. |
 | `/core:uninstall` | Remove the plugin. `--purge` also wipes `~/.sutra/`. |
 | `/core:permissions` | Print a paste-ready allowlist for `.claude/settings.local.json`. |

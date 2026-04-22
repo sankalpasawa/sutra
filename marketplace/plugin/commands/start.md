@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 One command. Everything.
 
-!sutra start
+!${CLAUDE_PLUGIN_ROOT}/bin/sutra start
 
 ## What happens
 

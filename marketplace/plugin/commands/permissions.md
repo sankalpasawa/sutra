@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # /core:permissions — One-paste allowlist
 
-!sutra permissions
+!${CLAUDE_PLUGIN_ROOT}/bin/sutra permissions
 
 ## What this does
 

@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # /core:update — Pull the latest Sutra version
 
-!sutra update
+!${CLAUDE_PLUGIN_ROOT}/bin/sutra update
 
 ## What this does
 

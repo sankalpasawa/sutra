@@ -1,6 +1,6 @@
 {
   "name": "core",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, C3c token-compression bundle (RTK native-tool whitelist + MCP output compression), plus opt-in local metric telemetry.",
   "author": {
     "name": "Sutra",

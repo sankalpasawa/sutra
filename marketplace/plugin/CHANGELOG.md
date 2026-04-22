@@ -2,6 +2,19 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] — 2026-04-22
+
+Shell-alias collision fix (Codex-converged Option E).
+
+### Fixed
+
+- **All internal `!sutra <sub>` invocations in `commands/*.md`, `scripts/*.sh`, and `hooks/*.sh` now use absolute plugin-root paths (`${CLAUDE_PLUGIN_ROOT}/bin/sutra <sub>`).** Shell aliases, functions, or PATH-shadowing `sutra` binaries can no longer intercept plugin self-invocation. Fixes dogfood Finding #12 (P0 shipping blocker, 2026-04-22).
+- Regression test `tests/integration/test-alias-collision.sh` reproduces the founder-observed collision (alias hijacks the plugin's `sutra start` call and redirects into an unrelated project) and asserts activation still succeeds.
+
+### Rationale
+
+Initial diagnosis (`design/2026-04-22-sutra-cli-collision.md`) favored renaming `bin/sutra` → `bin/sutra-core` (Option A) plus a runtime `type -a` self-check (Option D). Codex challenge (`design/2026-04-22-sutra-cli-collision-codex-consult.md`) revealed Option D is conceptually wrong as a *runtime* safety layer — if the user's alias wins shell name resolution, the plugin binary never executes, so the self-check never fires. Option E closes the bug class for *any* name collision (not only `sutra`), ships as a patch with zero breaking changes, and touches ~15 files instead of ~35.
+
 ## [1.7.0] — 2026-04-22
 
 C3c token-compression bundle — Tokens charter per-turn cost-component cut.

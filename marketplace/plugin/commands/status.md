@@ -6,4 +6,4 @@ disable-model-invocation: true
 
 # /core:status — Local state
 
-!sutra status
+!${CLAUDE_PLUGIN_ROOT}/bin/sutra status
