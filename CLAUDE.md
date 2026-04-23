@@ -12,7 +12,7 @@ Sutra protocols, onboarding process, skill catalog, versioning, client feedback 
 Every Write/Edit must emit (a) an Input Routing block and (b) a Depth block — per-turn, reset on every founder prompt. Editing `sutra/**` is by definition Sutra→company territory: Depth 5 required, declare cross-company downstream deps, run `verify-connections.sh`, ship a test per PROTO-000. Enforcement in `holding/hooks/dispatcher-pretool.sh`.
 
 ## Dogfood — Sutra runs on its own plugin (Phase 3, 2026-04-23)
-Sutra Co. is the first client of the Sutra plugin. Per-turn OS gates (input-routing, depth-estimation, readability-gate, output-trace) and core runtime hooks (Boundary, cascade-check, reset-turn-markers, estimation-collector, RTK, MCP-compress, subagent-contract) ship via the plugin at `marketplace/plugin/hooks/`. Holding copies at `holding/hooks/**` remain until 2026-05-23 stability review, then retire. See `INTERFACE-CONTRACTS.md` for activation flow via `os/SUTRA-CONFIG.md`.
+Sutra Co. is the first client of the Sutra plugin. Per-turn OS gates (input-routing, depth-estimation, readability-gate, output-trace) and core runtime hooks (Boundary, cascade-check, reset-turn-markers, estimation-collector, RTK, MCP-compress) ship via the plugin at `marketplace/plugin/hooks/`. Holding copies at `holding/hooks/**` remain until 2026-05-23 stability review, then retire. Subagent-contract hook retired 2026-04-24 — plugin PreToolUse/PostToolUse already propagate governance into subagents deterministically (see `holding/research/2026-04-24-subagent-contract-archive.jsonl`). See `INTERFACE-CONTRACTS.md` for activation flow via `os/SUTRA-CONFIG.md`.
 
 ## On Every Session Start
 1. Read this file and START-HERE.md

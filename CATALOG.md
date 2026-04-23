@@ -111,7 +111,6 @@ Each toggles at the CLAUDE.md level or via a specific hook/config.
 | **Boundary Enforcement** | active | all | Blocks cross-company edits unless role matches | always on; `holding/hooks/enforce-boundaries.sh` | MANIFEST-v1.9 |
 | **Cascade Gate (D13)** | active | 1 | Blocks commit on L0-L2 changes without downstream TODO evidence | `CASCADE_ACK=1 CASCADE_ACK_REASON='<why>'` env var override | `holding/hooks/cascade-check.sh` |
 | **Codex Review Gate (I-11)** | active | 1 | Pre-commit requires fresh codex review marker (<10min) for sutra/holding/os paths | `CODEX_OVERRIDE=1 CODEX_OVERRIDE_REASON='<why>'` env override | `.git/hooks/pre-commit` |
-| **Subagent OS Contract** | active | 1 (TEMP) | Every Task/Agent dispatch must carry OS boot block + footer | `SUBAGENT_CONTRACT_ACK=1` override | `holding/hooks/subagent-os-contract.sh` (DELETE when plugin ships — per holding CLAUDE.md TEMP section) |
 | **Input Routing Whitelist** | active | all | Memory files, checkpoints, TODO checkboxes, git ops skip classification | hardcoded in CLAUDE.md | `holding/CLAUDE.md` §Input Routing |
 
 ---
