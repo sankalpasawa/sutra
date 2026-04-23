@@ -12,15 +12,17 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 | Policy | Source | Enforced by | Deployed to | Status |
 |---|---|---|---|---|
 | PROTO-000 | Every Change Must Ship With Implementation | validate.mjs inverse coverage + test runner (current); doct… | sutra | DRIFT |
-| PROTO-004 | Keys in Env Vars Only | keys-in-env-vars.sh | asawa | OK |
+| PROTO-004 | Keys in Env Vars Only | dispatcher-pretool.sh | billu asawa | OK |
 | PROTO-006 | Process Discipline | CLAUDE.md (memory-only) | asawa | MEMORY |
-| PROTO-009 | Narration Is Not Artifact | narration-not-artifact.sh | asawa | OK |
-| PROTO-013 | Sutra Version Deploy | verify-os-deploy.sh | (none) | DRIFT |
+| PROTO-009 | Narration Is Not Artifact | dispatcher-pretool.sh | billu asawa | OK |
+| PROTO-013 | Sutra Version Deploy | D27 depth-5 gate (current); compiler upgrades this in Phase… | (none) | DRIFT |
 | PROTO-014 | Sutra Version Check (Client-Side) | CLAUDE.md (memory-only) | asawa | MEMORY |
 | PROTO-015 | Verify Before Commit | estimation-enforcement.sh | maze ppr paisa | OK |
-| PROTO-017 | Policy-to-Implementation Coverage | verify-policy-coverage.sh | (none) | DRIFT |
+| PROTO-017 | Policy-to-Implementation Coverage | validate.mjs inverse coverage check (current); reconciler/d… | (none) | DRIFT |
+| PROTO-020 | Plugin Identity Capture | identity.sh | (none) | DRIFT |
+| PROTO-021 | BUILD-LAYER Declaration | build-layer-check.sh | asawa | OK |
 | MANIFEST hook: enforce-boundaries.sh | MANIFEST-v1.9.md | enforce-boundaries.sh | maze paisa billu sutra | OK |
-| MANIFEST hook: session-logger.sh | MANIFEST-v1.9.md | session-logger.sh | (none) | DRIFT |
+| MANIFEST hook: session-logger.sh | MANIFEST-v1.9.md | session-logger.sh | asawa | OK |
 | MANIFEST hook: log-triage.sh | MANIFEST-v1.9.md | log-triage.sh | (none) | DRIFT |
 | MANIFEST hook: artifact-check.sh | MANIFEST-v1.9.md | artifact-check.sh | maze ppr paisa | OK |
 | MANIFEST hook: compliance-tracker.sh | MANIFEST-v1.9.md | compliance-tracker.sh | (none) | DRIFT |
@@ -31,7 +33,7 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 | MANIFEST hook: log-skill-feedback.sh | MANIFEST-v1.9.md | log-skill-feedback.sh | (none) | DRIFT |
 | MANIFEST hook: policy-coverage-gate.sh | MANIFEST-v1.9.md | policy-coverage-gate.sh | asawa | OK |
 | MANIFEST hook: cascade-warning.sh | MANIFEST-v1.9.md | cascade-warning.sh | sutra | OK |
-| MANIFEST hook: codex-review-gate.sh | MANIFEST-v1.9.md | codex-review-gate.sh | (none) | DRIFT |
+| MANIFEST hook: codex-review-gate.sh | MANIFEST-v1.9.md | codex-review-gate.sh | asawa | OK |
 
 ## Per-client declared ⟶ installed+executable+registered
 
@@ -45,7 +47,7 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 
 ---
 
-**Summary**: OK=10, MEMORY=2 (memory-only — LLM-enforced), DRIFT=9, RETIRED=12 (excluded from drift — intentionally unenforced)
+**Summary**: OK=13, MEMORY=2 (memory-only — LLM-enforced), DRIFT=8, RETIRED=12 (excluded from drift — intentionally unenforced)
 **Regenerate**: `bash holding/hooks/verify-policy-coverage.sh --write`
 
 ### Parsing caveat (known limitation)

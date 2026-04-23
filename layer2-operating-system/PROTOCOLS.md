@@ -13,30 +13,32 @@ Executable rules compiled from Asawa + Sutra principles. Every protocol has: tri
 > protocols are marked inline but not deleted — they document what once
 > shipped and why the system moved past them.
 
-_Last reconciled from system.yaml: **2026-04-15** · 20 protocols total_
+_Last reconciled from system.yaml: **2026-04-18** · 22 protocols total_
 
 | ID | Name | yaml_status | enforcement | mechanism | test | last_updated |
 |----|------|-------------|-------------|-----------|------|--------------|
-| PROTO-000 | Every Change Must Ship With Implementation | ACTIVE | SOFT | validate.mjs inverse coverage + test runner (current); doct… | — | 2026-04-15 |
-| PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/keys-in-env-vars.sh (PreToolUse) + dispatcher-pretool.sh Check 5 | sutra/package/tests/test-d28-routing-gate.sh | 2026-04-22 |
-| PROTO-006 | Process Discipline | ACTIVE | SOFT | CLAUDE.md + dispatcher routing check | — | 2026-04-15 |
-| PROTO-009 | Narration Is Not Artifact | ACTIVE | SOFT | holding/hooks/narration-not-artifact.sh (PostToolUse Write .md) + dispatcher-pretool.sh | — | 2026-04-22 |
-| PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | holding/hooks/verify-os-deploy.sh + dispatcher-pretool.sh (D27 depth-5 gate) | — | 2026-04-23 |
-| PROTO-014 | Sutra Version Check (Client-Side) | ACTIVE | SOFT | CLAUDE.md session-start check (memory-only) + .claude/sutra-version manifest | — | 2026-04-23 |
-| PROTO-015 | Verify Before Commit | ACTIVE | SOFT | agent behavior + estimation-enforcement.sh (current); pre-c… | — | 2026-04-15 |
-| PROTO-017 | Policy-to-Implementation Coverage | ACTIVE | SOFT | holding/hooks/verify-policy-coverage.sh (this ledger) + validate.mjs inverse coverage | — | 2026-04-23 |
-| PROTO-001 | Structure Before Creation | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-002 | Wait for Parallel Completion | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-003 | Free Tier First | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-005 | Self-Assess Before Foundational Work | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-007 | One Metric Per Feature | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-008 | Follow the Sprint Sequence | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-010 | Version Focus | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-011 | Company Independence | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-012 | Ownership Model | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-016 | Root Cause on Founder Correction | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-018 | Auto-Propagation on Version Bump | RETIRED | — | — | — | 2026-04-15 |
-| PROTO-019 | External Peer Review on Portfolio Changes | ABSORBED | — | — | — | 2026-04-15 |
+| PROTO-000 | Every Change Must Ship With Implementation | ACTIVE | SOFT | validate.mjs inverse coverage + test runner (current); doct… | — | 2026-04-18 |
+| PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/dispatcher-pretool.sh Check 5 (PreToolUse exi… | sutra/package/tests/test-d28-routing-gate.sh | 2026-04-18 |
+| PROTO-006 | Process Discipline | ACTIVE | SOFT | CLAUDE.md + dispatcher routing check | — | 2026-04-18 |
+| PROTO-009 | Narration Is Not Artifact | ACTIVE | SOFT | dispatcher-pretool.sh | — | 2026-04-18 |
+| PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | D27 depth-5 gate (current); compiler upgrades this in Phase… | — | 2026-04-18 |
+| PROTO-014 | Sutra Version Check (Client-Side) | ACTIVE | SOFT | CLAUDE.md session-start check + .claude/sutra-version manif… | — | 2026-04-18 |
+| PROTO-015 | Verify Before Commit | ACTIVE | SOFT | agent behavior + estimation-enforcement.sh (current); pre-c… | — | 2026-04-18 |
+| PROTO-017 | Policy-to-Implementation Coverage | ACTIVE | SOFT | validate.mjs inverse coverage check (current); reconciler/d… | — | 2026-04-18 |
+| PROTO-001 | Structure Before Creation | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-002 | Wait for Parallel Completion | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-003 | Free Tier First | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-005 | Self-Assess Before Foundational Work | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-007 | One Metric Per Feature | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-008 | Follow the Sprint Sequence | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-010 | Version Focus | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-011 | Company Independence | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-012 | Ownership Model | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-016 | Root Cause on Founder Correction | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-018 | Auto-Propagation on Version Bump | RETIRED | — | — | — | 2026-04-18 |
+| PROTO-019 | External Peer Review on Portfolio Changes | ABSORBED | — | — | — | 2026-04-18 |
+| PROTO-020 | Plugin Identity Capture | ACTIVE | SOFT | sutra/marketplace/plugin/lib/identity.sh (called by onboard… | sutra/marketplace/plugin/tests/unit/test-identity… | 2026-04-18 |
+| PROTO-021 | BUILD-LAYER Declaration | ACTIVE | HARD-ON-CODE / SOFT-ON-DOCS | holding/hooks/build-layer-check.sh (PreToolUse Edit\|Write) | holding/hooks/tests/test-build-layer-check.sh | 2026-04-18 |
 
 **Status legend**: ACTIVE = shipped and enforced per mechanism · RETIRED = removed, see `reason` in system.yaml · ABSORBED = folded into another protocol (see pointer below)
 

@@ -208,8 +208,12 @@ protocols:
 
   - id: PROTO-020
     name: Plugin Identity Capture
-    status: pending
-    reason: "Design at holding/research/2026-04-22-sutra-identity-capture-v17-design.md. §18 checkpoints A-G pending founder sign-off before activation."
+    status: active
+    enforcement: "SOFT"
+    mechanism: "sutra/marketplace/plugin/lib/identity.sh (called by onboard.sh + push.sh) — stamps git_user_name/github_login/os/hostname_hash into manifest.json when telemetry_optin=true"
+    test: "sutra/marketplace/plugin/tests/unit/test-identity.sh + tests/integration/test-identity-stamp.sh"
+    shipped: "2026-04-22 (plugin v1.9.0)"
+    reason: "MVP shipped 2026-04-22 per founder direction 'solve it for everyone; ship MVP now'. Full-tier design parked at holding/research/2026-04-22-sutra-identity-capture-v17-design.md for v2."
 
   - id: PROTO-021
     name: BUILD-LAYER Declaration
