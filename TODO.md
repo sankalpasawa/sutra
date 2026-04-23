@@ -34,8 +34,8 @@ Shipping noncommercial-licensed deps in a commercial product = legal exposure. D
 
 ### W1 (due 2026-04-26) — Measurement
 
-- [ ] Define `token-telemetry.jsonl` schema; extend `holding/departments/analytics/TELEMETRY-CONTRACT.md` (Analytics, KR1, 2026-04-23)
-- [ ] Write `holding/hooks/session-token-snapshot.sh` (SessionStart) — capture boot context size per company (Engineering, KR1, 2026-04-23)
+- [x] Define `token-telemetry.jsonl` schema; extend `holding/departments/analytics/TELEMETRY-CONTRACT.md` (Analytics, KR1, 2026-04-23) — DONE 2026-04-21 (schema + tests) / §7 contract DONE 2026-04-23 (Asawa commit 90064e4)
+- [x] Write `holding/hooks/session-token-snapshot.sh` (SessionStart) — capture boot context size per company (Engineering, KR1, 2026-04-23) — DONE 2026-04-23 (Asawa commit 90064e4, 227 lines, 22/22 test pass, first live `boot` record seeded tokens_boot≈134k)
 - [ ] Extend `holding/hooks/dispatcher-stop.sh` to emit `task_end` events with governance-vs-work categorization (Engineering, KR1, 2026-04-24)
 - [ ] Deploy hooks + telemetry into 6 companies (Sutra, Asawa, DayFlow, Maze, PPR, Billu) via god mode (Sutra-OS, KR1, 2026-04-25)
 - [ ] Collect 10+ sessions per company; publish `holding/research/2026-04-26-token-baseline.md` (Analytics, KR1, 2026-04-26)

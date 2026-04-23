@@ -81,7 +81,10 @@ This charter is cross-cutting: measurement is owned by Analytics; cuts are owned
 OBJECTIVE: Every session spends tokens on value, not ceremony.
 
   KR1: Baseline token telemetry captured for 6 companies × 10+ sessions each,
-       published at holding/research/2026-04-26-token-baseline.md — Score: 0.0
+       published at holding/research/2026-04-26-token-baseline.md — Score: 0.3
+       (schema frozen 2026-04-21 + SessionStart `boot` emitter shipped 2026-04-23
+        w/ first live record; task_end emitter + multi-company deploy + baseline
+        paper pending)
   KR2: tokens_per_task_median reduced ≥50% from baseline (44k → ≤22k tok)
        by Jun 30, 2026 — Score: 0.0
        (Rephrased 2026-04-22 to anchor on north-star metric; Boot P50
@@ -108,9 +111,9 @@ Scoring key: 0.0 = no progress, 0.3 = behind, 0.5 = on pace, 0.7 = target, 1.0 =
 | 1 | Reconcile Tokens local schema with Analytics `TELEMETRY-CONTRACT.md` (allow detailed local jsonl; plugin transport obeys privacy rules — no company names, no raw paths, install_id hash only). Publish reconciled contract. | KR1 | Analytics + Sutra-OS | 2026-04-22 | ✅ DONE (`research/2026-04-20-token-telemetry-schema-reconciliation.md`) |
 | 1b | Add `compaction_count` field to v1 Layer A schema (surfaced by i2-spike hyp #11 — Smart Compaction needs fire-count signal) | KR1 | Sutra-OS | 2026-04-21 | ✅ DONE (2026-04-21 — baked into Step 2 schema before freeze) |
 | 2 | Freeze `token-telemetry.jsonl` schema (local layer) and plugin transport shape (per Analytics contract). JSON Schema + tests. | KR1 | Analytics | 2026-04-23 | ✅ DONE 2026-04-21 (`holding/departments/analytics/token-telemetry.schema.json` + `tests/token-telemetry-schema.test.sh`) |
-| 3 | Write `holding/hooks/session-token-snapshot.sh` (SessionStart) emitting to frozen schema | KR1 | Engineering | 2026-04-24 | TODO |
-| 4 | Extend `holding/hooks/dispatcher-stop.sh` to emit `task_end` events with governance-vs-work categorization | KR1 | Engineering | 2026-04-24 | TODO |
-| 5 | Deploy hooks to 6 companies via god mode (Sutra, Asawa, DayFlow, Maze, PPR, Billu) | KR1 | Sutra-OS | 2026-04-25 | TODO |
+| 3 | Write `holding/hooks/session-token-snapshot.sh` (SessionStart) emitting to frozen schema | KR1 | Engineering | 2026-04-24 | ✅ DONE 2026-04-23 (Asawa commit 90064e4 — 227-line hook + TELEMETRY-CONTRACT §7 + 22/22 test pass; first real `boot` record seeded `tokens_boot≈134k` asawa session; known W2 calibration: over-counts plugin SKILL.md files) |
+| 4 | Extend `holding/hooks/dispatcher-stop.sh` to emit `task_end` events with governance-vs-work categorization | KR1 | Engineering | 2026-04-24 | TODO — next chunk |
+| 5 | Deploy hooks to 6 companies via god mode (Sutra, Asawa, DayFlow, Maze, PPR, Billu) | KR1 | Sutra-OS | 2026-04-25 | TODO — consider plugin-L0 path (PROTO-021) instead of god-mode-deploy; plugin v1.12.0 already propagates via marketplace |
 | 6 | Collect 10+ sessions per company; publish baseline report | KR1 | Analytics | 2026-04-26 | TODO |
 | 7 | Rank the 7 hypothesis cuts against data; select top 3 | KR2 | Sutra-OS | 2026-04-29 | TODO |
 | 7a | Pilot token-optimizer-mcp (deronin #7) — caches repeated bash outputs; addresses hyp #9. Independent of schema freeze; can run pre-baseline. Measure delta via RTK comparison + session-stats. **BUNDLED 2026-04-21 as the first concrete leaf under cost-component-deepening §6 Week-2 C1f MCP-audit track** (see `holding/research/2026-04-21-token-techniques-cost-component-deepening.md` §6). Run order: C7 cache-verification FIRST, then this pilot — MCP installs can break Anthropic prompt caching (5-min TTL, 4k min cacheable on Opus 4.7). | KR2 | Engineering + Sutra-OS | 2026-04-25 | TODO |
