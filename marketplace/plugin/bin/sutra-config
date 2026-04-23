@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# sutra-config — centralized config for the Sutra plugin.
+#
+# One file at $HOME/.sutra/config.env holds every opt-in, kill-switch, and
+# threshold. Shell-sourceable (KEY=VALUE format) so hooks can just:
+#
+#   [ -f "$HOME/.sutra/config.env" ] && . "$HOME/.sutra/config.env"
+#
+# and read the vars directly. Existing env-var checks (RTK_DISABLED,
+# CODEX_DIRECTIVE_DISABLED, etc.) still work — this is an additional source,
+# not an exclusive one. Per-instance (each user on this machine has their own).
+#
+# Usage:
+#   sutra-config get KEY              — print value (empty if unset)
+#   sutra-config set KEY VALUE        — write (create file + defaults if missing)
+#   sutra-config list                 — show full config file
+#   sutra-config init                 — create with defaults (idempotent)
+#   sutra-config path                 — print the config file path
+#
+# Env overrides (for testing):
+#   SUTRA_CONFIG_DIR                  — override $HOME/.sutra
+#   SUTRA_CONFIG_FILE                 — override full path
+#
+# Format is intentionally bash-sourceable. Keys SHOULD begin with SUTRA_ by
+# convention so hooks don't collide with system env. Comments with #.
+
+set -euo pipefail
+
+CONFIG_DIR="${SUTRA_CONFIG_DIR:-$HOME/.sutra}"
+CONFIG_FILE="${SUTRA_CONFIG_FILE:-$CONFIG_DIR/config.env}"
+
+_default_config() {
+  cat <<'EOF'
+# Sutra config — edit freely, changes take effect on next skill/hook run.
+# Format: shell-sourceable KEY=VALUE. Comments with #.
+# Docs: sutra/layer2-operating-system/PROTOCOLS.md § Centralized Config
+
+# ─── Kill switches (true = hook enabled; false = hook skipped) ────────────
+SUTRA_RTK_ENABLED=true
+SUTRA_CODEX_DIRECTIVE_ENABLED=true
+SUTRA_ESTIMATION_COLLECTOR_ENABLED=true
+SUTRA_COMPLETION_PROTOCOL_ENABLED=true
+
+# ─── Thresholds ────────────────────────────────────────────────────────────
+SUTRA_CODEX_TIMEOUT_MS=600000          # 10 min (Claude Code Bash hard cap)
+SUTRA_DEPTH_DEFAULT=5                   # Asawa/Sutra always depth 5
+SUTRA_BUILD_LAYER_DEFAULT=L0            # aspire to fleet reach
+
+# ─── Observability ─────────────────────────────────────────────────────────
+SUTRA_TELEMETRY=off                     # off | anonymous | community
+
+# ─── Instance tier (differs per instance — see holding/ASAWA-AS-CLIENT.md) ─
+SUTRA_TIER=governance                   # governance | ops | basic
+EOF
+}
+
+_ensure_config() {
+  if [ ! -f "$CONFIG_FILE" ]; then
+    mkdir -p "$CONFIG_DIR"
+    _default_config > "$CONFIG_FILE"
+  fi
+}
+
+cmd_init() { _ensure_config; echo "config at: $CONFIG_FILE"; }
+cmd_path() { echo "$CONFIG_FILE"; }
+cmd_list() { _ensure_config; cat "$CONFIG_FILE"; }
+
+cmd_get() {
+  local key="${1:-}"
+  if [ -z "$key" ]; then
+    echo "sutra-config get: missing KEY" >&2
+    return 2
+  fi
+  _ensure_config
+  grep -E "^[[:space:]]*${key}=" "$CONFIG_FILE" 2>/dev/null \
+    | tail -1 \
+    | sed -E "s/^[[:space:]]*${key}=//" \
+    | sed -E 's/[[:space:]]*#.*$//' \
+    | sed -E 's/[[:space:]]+$//' \
+    | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/'
+}
+
+cmd_set() {
+  local key="${1:-}" value="${2:-}"
+  if [ -z "$key" ]; then
+    echo "sutra-config set: missing KEY" >&2
+    return 2
+  fi
+  _ensure_config
+
+  if ! echo "$key" | grep -qE '^[A-Z][A-Z0-9_]*$'; then
+    echo "sutra-config set: invalid KEY '$key' (must be UPPERCASE_ALNUM_UNDERSCORE)" >&2
+    return 2
+  fi
+
+  local safe_value
+  if echo "$value" | grep -qE '[[:space:]#"'"'"']'; then
+    local esc
+    esc=$(printf '%s' "$value" | sed "s/'/'\\\\''/g")
+    safe_value="'$esc'"
+  else
+    safe_value="$value"
+  fi
+
+  if grep -qE "^[[:space:]]*${key}=" "$CONFIG_FILE"; then
+    local tmp
+    tmp=$(mktemp)
+    awk -v k="$key" -v v="$safe_value" '
+      {
+        if (match($0, "^[[:space:]]*" k "=")) {
+          pre = substr($0, 1, RSTART - 1)
+          line = substr($0, RSTART + RLENGTH)
+          if (match(line, "[[:space:]]+#")) {
+            cmt = substr(line, RSTART)
+          } else {
+            cmt = ""
+          }
+          print pre k "=" v cmt
+        } else {
+          print
+        }
+      }
+    ' "$CONFIG_FILE" > "$tmp"
+    mv "$tmp" "$CONFIG_FILE"
+  else
+    printf '%s=%s\n' "$key" "$safe_value" >> "$CONFIG_FILE"
+  fi
+}
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  get)  cmd_get  "$@" ;;
+  set)  cmd_set  "$@" ;;
+  list) cmd_list "$@" ;;
+  init) cmd_init "$@" ;;
+  path) cmd_path "$@" ;;
+  ""|--help|-h)
+    cat <<EOF
+sutra-config — centralized config for the Sutra plugin
+
+Usage:
+  sutra-config get KEY              — print value (empty if unset)
+  sutra-config set KEY VALUE        — write (create file + defaults if missing)
+  sutra-config list                 — show full config file
+  sutra-config init                 — create with defaults (idempotent)
+  sutra-config path                 — print config file path
+
+File: $CONFIG_FILE
+EOF
+    ;;
+  *)
+    echo "sutra-config: unknown command '$cmd'" >&2
+    exit 2
+    ;;
+esac

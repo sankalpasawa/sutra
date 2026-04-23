@@ -39,6 +39,8 @@ _Last reconciled from system.yaml: **2026-04-18** · 22 protocols total_
 | PROTO-019 | Codex Directive Enforcement | ACTIVE | HARD | sutra/marketplace/plugin/hooks/codex-directive-{detect,gate}.sh | sutra/marketplace/plugin/tests/unit/test-codex-directive-*.sh + integration/test-codex-directive-e2e.sh | 2026-04-23 |
 | PROTO-020 | Plugin Identity Capture | ACTIVE | SOFT | sutra/marketplace/plugin/lib/identity.sh (called by onboard… | sutra/marketplace/plugin/tests/unit/test-identity… | 2026-04-18 |
 | PROTO-021 | BUILD-LAYER Declaration | ACTIVE | HARD-ON-CODE / SOFT-ON-DOCS | holding/hooks/build-layer-check.sh (PreToolUse Edit\|Write) | holding/hooks/tests/test-build-layer-check.sh | 2026-04-18 |
+| PROTO-022 | Completion Status Protocol | ACTIVE | SOFT | sutra/marketplace/plugin/hooks/completion-protocol-check.sh (PostToolUse Task) | sutra/marketplace/plugin/tests/unit/test-completion-protocol.sh | 2026-04-24 |
+| PROTO-023 | Centralized Config (`sutra-config`) | ACTIVE | FOUNDATION (read-surface) | sutra/marketplace/plugin/bin/sutra-config | sutra/marketplace/plugin/tests/unit/test-sutra-config.sh | 2026-04-24 |
 
 **Status legend**: ACTIVE = shipped and enforced per mechanism · RETIRED = removed, see `reason` in system.yaml · ABSORBED = folded into another protocol (see pointer below)
 
@@ -754,4 +756,122 @@ RELATES:
   not a direct commit). Honors D33 (plugin remains the only cross-
   firewall channel). Design doc: holding/research/2026-04-23-build-layer-
   protocol-design.md (§15 Codex review synthesis).
+```
+
+## PROTO-022: Completion Status Protocol [ACTIVE]
+_yaml status: active — SOFT enforcement (subagent footer scan warns, does not block). Shipped 2026-04-24 from gstack-patterns-review codex consult (session 019dbc14-ace9-7323-a796-693d943200c9) top-2 ROI recommendation._
+
+```
+constitutional | [every skill/hook/subagent emits a normalized terminal state] | SOFT
+
+trigger: End-of-output for any Sutra-plugin-produced text (skill output,
+         subagent return, hook-emitted banner, commit summary).
+
+check:   Does the output end with exactly one of four normalized
+         terminal state lines?
+
+           STATUS: DONE
+           STATUS: DONE_WITH_CONCERNS
+           STATUS: BLOCKED
+           STATUS: NEEDS_CONTEXT
+
+         For BLOCKED or NEEDS_CONTEXT, the STATUS line is followed by an
+         escalation block:
+
+           STATUS: BLOCKED
+           REASON: <1-2 sentences — why stopped>
+           ATTEMPTED: <what was tried>
+           RECOMMENDATION: <next step for founder>
+
+enforce: sutra/marketplace/plugin/hooks/completion-protocol-check.sh runs
+         as PostToolUse on Task (subagent returns). SOFT enforcement:
+         missing STATUS line → warning to stderr + audit row in
+         .enforcement/completion-protocol.jsonl, NOT blocking. Override
+         with COMPLETION_PROTOCOL_ACK=1 COMPLETION_PROTOCOL_ACK_REASON=...
+
+states:
+  DONE                 — all steps completed, evidence attached.
+  DONE_WITH_CONCERNS   — shipped, but flag something the consumer should know.
+  BLOCKED              — cannot proceed; external dependency or unresolvable
+                         conflict. Must include REASON + ATTEMPTED + RECOMMENDATION.
+  NEEDS_CONTEXT        — cannot proceed without more info from user. Must
+                         include REASON + ATTEMPTED + RECOMMENDATION.
+
+why:     Normalizing terminal states unlocks (a) founder readability
+         (scan 10 outputs, find the 2 that didn't finish), (b) Analytics
+         Dept "blocked rate per week" metric, (c) hook composition
+         (subagent-os-contract, cascade-check can key on outcomes).
+
+origin:  gstack-patterns-review 2026-04-24, codex consult top-2 ROI.
+         Founder direction 2026-04-24 "Implement these two things."
+
+kill-switch: SUTRA_COMPLETION_PROTOCOL_ENABLED=false in ~/.sutra/config.env
+             OR COMPLETION_PROTOCOL_DISABLED=1 env var.
+
+RELATES:
+  Consumes sutra-config (PROTO-023) for enable flag. Extends subagent-
+  os-contract hook's footer validation. Future HARD promotion once
+  skill-layer adoption surpasses ~80% (audit via .enforcement/
+  completion-protocol.jsonl).
+```
+
+## PROTO-023: Centralized Config (`sutra-config`) [ACTIVE]
+_yaml status: active — FOUNDATION (no enforcement). Read-surface for every other hook + protocol. Shipped 2026-04-24 from gstack-patterns-review top-1 ROI._
+
+```
+foundation | [single source of truth for opt-ins, thresholds, kill-switches] | FOUNDATION
+
+trigger: Any hook, skill, or protocol that needs a user-controllable knob.
+
+check:   Does the knob live in a single known place readable by
+         `source $HOME/.sutra/config.env`?
+
+enforce: None (read-surface protocol). Hooks SHOULD source the file at
+         startup and honor values alongside existing env-var checks
+         (config is additive, not exclusive — backward compat preserved).
+
+file:    $HOME/.sutra/config.env
+         Format: shell-sourceable KEY=VALUE, comments with #.
+
+keys:    (initial defaults — extend as new knobs arrive)
+           Kill switches:
+             SUTRA_RTK_ENABLED=true
+             SUTRA_CODEX_DIRECTIVE_ENABLED=true
+             SUTRA_ESTIMATION_COLLECTOR_ENABLED=true
+             SUTRA_COMPLETION_PROTOCOL_ENABLED=true
+           Thresholds:
+             SUTRA_CODEX_TIMEOUT_MS=600000
+             SUTRA_DEPTH_DEFAULT=5
+             SUTRA_BUILD_LAYER_DEFAULT=L0
+           Observability:
+             SUTRA_TELEMETRY=off
+           Tier:
+             SUTRA_TIER=governance
+
+cli:     sutra/marketplace/plugin/bin/sutra-config
+           sutra-config get KEY      → value (empty if unset)
+           sutra-config set KEY VAL  → creates file + defaults if missing
+           sutra-config list         → full file
+           sutra-config init         → idempotent create
+           sutra-config path         → full path of config file
+
+conventions:
+  - Keys MUST be UPPERCASE_ALNUM_UNDERSCORE starting with a letter.
+  - Keys SHOULD be prefixed SUTRA_ to avoid collision with system env.
+  - Existing env-var overrides still work — config is additive.
+  - Per-instance: each Sutra-enabled user has own config under
+    $HOME/.sutra/ (respects D33 client firewall).
+
+why:     gstack-patterns-review surfaced 6 scattered config locations
+         today. Single source unlocks opt-ins, machine-parseable state,
+         and future telemetry/learnings/timeline integrations.
+
+origin:  gstack-patterns-review 2026-04-24, codex top-1 ROI.
+         Founder direction 2026-04-24 "Implement these two things."
+
+RELATES:
+  Foundation for PROTO-022 (SUTRA_COMPLETION_PROTOCOL_ENABLED read from
+  here). Foundation for future PROTO-024 (learnings), PROTO-025
+  (timeline), PROTO-026 (review log). Pairs with D32 (default-off per
+  instance — config is where defaults become per-instance choices).
 ```
