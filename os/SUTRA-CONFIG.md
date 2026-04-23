@@ -27,7 +27,11 @@ Per D31, every method default = false for new clients. Sutra pushes updates via 
 Per D32, the PostToolUse dispatcher will fire a hook only when listed in `os/hooks/posttool-registry.jsonl` AND marked `true` here. Default for every declared hook: false. Only Sutra flips via PROTO-018. Clients never toggle locally.
 
 enabled_hooks:
-  auto-coverage.sh: true   # approved 2026-04-20 (D31 Phase 3 v0, ff1048a)
+  auto-coverage.sh: true                 # approved 2026-04-20 (D31 Phase 3 v0, ff1048a)
+  operationalization-check: true         # enabled 2026-04-23 (plugin v1.10.0 first L0 dogfood, 0623c05)
+  subagent-os-contract: true             # enabled 2026-04-23 (plugin v1.11.0 second L0 dogfood, 8a9f13d)
+  keys-in-env-vars: true                 # enabled 2026-04-23 (plugin v1.12.0 third L0 dogfood, 7f6efc3)
+  estimation-collector: true             # enabled 2026-04-23 (plugin v1.12.0 fourth L0 dogfood, 7f6efc3)
 
 ## Enabled Methods (D31, 2026-04-20 — Sutra-managed, do not edit manually)
 
