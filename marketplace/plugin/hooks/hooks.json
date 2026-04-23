@@ -21,14 +21,16 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/rtk-auto-rewrite.sh", "timeout": 5 }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/rtk-auto-rewrite.sh", "timeout": 5 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-gate.sh", "timeout": 5 }
         ]
       },
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/keys-in-env-vars.sh", "timeout": 5 },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/enforce-boundaries.sh", "timeout": 5 }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/enforce-boundaries.sh", "timeout": 5 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-gate.sh", "timeout": 5 }
         ]
       }
     ],
@@ -62,7 +64,8 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh", "timeout": 3 }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh", "timeout": 3 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-detect.sh", "timeout": 3 }
         ]
       }
     ],

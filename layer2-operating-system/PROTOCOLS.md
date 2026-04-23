@@ -36,7 +36,7 @@ _Last reconciled from system.yaml: **2026-04-18** · 22 protocols total_
 | PROTO-012 | Ownership Model | RETIRED | — | — | — | 2026-04-18 |
 | PROTO-016 | Root Cause on Founder Correction | RETIRED | — | — | — | 2026-04-18 |
 | PROTO-018 | Auto-Propagation on Version Bump | RETIRED | — | — | — | 2026-04-18 |
-| PROTO-019 | External Peer Review on Portfolio Changes | ABSORBED | — | — | — | 2026-04-18 |
+| PROTO-019 | Codex Directive Enforcement | ACTIVE | HARD | sutra/marketplace/plugin/hooks/codex-directive-{detect,gate}.sh | sutra/marketplace/plugin/tests/unit/test-codex-directive-*.sh + integration/test-codex-directive-e2e.sh | 2026-04-23 |
 | PROTO-020 | Plugin Identity Capture | ACTIVE | SOFT | sutra/marketplace/plugin/lib/identity.sh (called by onboard… | sutra/marketplace/plugin/tests/unit/test-identity… | 2026-04-18 |
 | PROTO-021 | BUILD-LAYER Declaration | ACTIVE | HARD-ON-CODE / SOFT-ON-DOCS | holding/hooks/build-layer-check.sh (PreToolUse Edit\|Write) | holding/hooks/tests/test-build-layer-check.sh | 2026-04-18 |
 
@@ -584,34 +584,78 @@ THE CONTRACT:
   half-upgrade.
 ```
 
-## PROTO-019: External Peer Review on Portfolio Changes [ABSORBED]
-_yaml status: absorbed — becomes the reconciler itself in Phase 3. No separate protocol; doctor IS the codex-gate._
-_See: Phase 3 doctor (reconciler) — absorbs this protocol's enforcement surface._
+## PROTO-019: Codex Directive Enforcement [ACTIVE]
+_yaml status: active — directive-triggered. Replaces the v1 request/verify design that Codex itself FAILED (12 findings, 2026-04-15 review). Un-absorbed from Phase 3 doctor — directive enforcement is a distinct capability from diff reconciliation. Shipped 2026-04-23 post Codex-converged design (session 019dbad9-871a-7b03-8343-badbb44f087f)._
+
 ```
-constitutional | [cross-company, portfolio-wide] | HARD
-trigger: Any change to Asawa holding, Sutra OS, or any company submodule
-         (edit to CLAUDE.md, PROTOCOLS.md, MANIFEST-*, SUTRA-CONFIG,
-         hooks, engines, or shipped product code) before commit OR
-         before land-and-deploy.
-check:   Has an external AI peer (Codex) reviewed the diff and reported
-         no blocker findings?
-enforce: codex-review-gate.sh wraps /codex review and produces a
-         review artifact at .enforcement/codex-reviews/{timestamp}.md.
-         Gate runs on-demand (pre-commit) and is recorded in commit
-         message trailer: "Codex-Reviewed: <verdict>".
-         Blocker findings = NO commit until resolved or explicitly
-         overridden (CODEX_OVERRIDE=1 with logged reason).
+constitutional | [every Sutra-enabled instance] | HARD
+
+trigger: UserPromptSubmit — founder says "use codex to review X", "codex
+         should check Y", "run codex", "consult codex", "/codex review",
+         or any phrase where an imperative verb + "codex" co-occur in
+         the prompt (negation-aware, code-block-stripped).
+
+check:   When a directive is detected, does a codex verdict artifact
+         exist in .enforcement/codex-reviews/ whose DIRECTIVE-ID
+         matches the pending marker and whose CODEX-VERDICT is PASS
+         or ADVISORY?
+
+enforce: Two hooks, both L0 (shipped via Sutra plugin).
+  (1) codex-directive-detect.sh (UserPromptSubmit)
+        Regex phrase detection with code-block stripping, negation
+        suppression (don't|do not|without|shouldn't|can't|won't|no-need).
+        On match: writes .claude/codex-directive-pending with
+        DIRECTIVE-ID (epoch), TS, and matched-phrase excerpt.
+        Single-slot marker — latest directive supersedes earlier
+        unresolved ones.
+  (2) codex-directive-gate.sh (PreToolUse on Edit|Write|MultiEdit and
+        destructive Bash — git commit, git push, git reset --hard, rm -rf)
+        If marker present and no matching verdict: exit 2 (BLOCK) with
+        instructions to run /codex review. Verdict must echo
+        DIRECTIVE-ID: N so the gate can pair it to the current directive
+        (prevents old-verdict-clears-new-directive bug).
+        If matching verdict is PASS|ADVISORY: clear marker, allow.
+        If matching verdict is FAIL|CHANGES-REQUIRED: block, surface
+        findings, keep marker.
+
+override: CODEX_DIRECTIVE_ACK=1 CODEX_DIRECTIVE_REASON="<why>" <tool>
+         Clears marker + appends audit row to
+         .enforcement/codex-reviews/gate-log.jsonl.
+
+kill-switch: CODEX_DIRECTIVE_DISABLED=1 env var, OR
+             touch ~/.codex-directive-disabled
+
+verdict contract: codex verdict files MUST contain two lines:
+  DIRECTIVE-ID: <matching epoch from marker>
+  CODEX-VERDICT: PASS | FAIL | CHANGES-REQUIRED | ADVISORY
+
 origin:  Founder direction 2026-04-15 — "For anything of Asawa, Sutra,
          or any change I am doing right now, ensure that the review is
-         done by the Codex as well. This is applied across Asawa
-         Holdings and Companies." Flows from Sutra to every client via
-         upgrade-clients.sh + MANIFEST-v1.9.
+         done by the Codex as well." Re-scoped 2026-04-23: not blanket
+         pre-review of every change, but enforcement of the explicit
+         "use codex" directive whenever founder issues it. Design
+         converged with Codex consult 2026-04-23 (5-question review,
+         CHANGES-REQUIRED → all changes adopted: regex hardening,
+         atomic writes, DIRECTIVE-ID pairing, gate-only-on-destructive-Bash).
+         Ships via Sutra plugin (L0) — reaches every Sutra-enabled
+         instance on next upgrade-clients.sh run.
 
 THE CONTRACT:
-  No portfolio change lands without a second AI opinion.
-  Claude writes; Codex reviews; founder decides.
-  Disagreements surface as findings — resolved by founder, not silently.
+  When founder says "use codex to review X", that directive is
+  honored — not acknowledged and forgotten. Claude cannot proceed
+  past the next Edit/Write/commit without either a matching Codex
+  verdict or an explicit logged override.
 ```
+
+### PROTO-019 v1 (deprecated)
+The pre-2026-04-23 design used a two-phase request/verify model driven by
+commit-time gating. Codex review of that implementation (2026-04-15) found
+12 blocking findings including stale-PENDING state, pathspec injection on
+`$SCOPE`, advisory-only behavior masquerading as enforcement, and logic
+that created a fresh PENDING marker on every invocation. The old script
+remains at `holding/hooks/codex-review-gate.sh` (archived, unregistered
+from .claude/settings.json) and `sutra/marketplace/plugin/hooks/codex-review-gate.sh`
+(pending removal next plugin minor). v2 replaces the entire mechanism.
 
 ## PROTO-020: Plugin Identity Capture [PENDING — design at holding/research/2026-04-22-sutra-identity-capture-v17-design.md]
 
