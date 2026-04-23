@@ -2,8 +2,8 @@
 
 **Purpose**: one place to see every engine, protocol, charter, department, project, feature, and hook Sutra provides — with status, tier, and how to turn it off.
 
-**Updated**: 2026-04-20
-**Sutra version**: v1.9.1
+**Updated**: 2026-04-24
+**Sutra version**: v1.9.1 · **Plugin version**: v1.12.3+ (shipped — see `sutra/marketplace/plugin/CHANGELOG.md`)
 **Rule**: every new engine / protocol / charter / department / feature MUST add a row here on creation. Every deprecation MUST update `Status` here before removal elsewhere. This file is the governance ledger for turning things on and off.
 
 ---
@@ -59,7 +59,7 @@ Source of truth: `sutra/state/system.yaml` §protocols. Cap = 8 active per Phase
 | **PROTO-000** | Every Change Ships With Implementation | active | soft (→hard Phase 3) | Invariant: every policy marked HARD has a compiled blocking hook + regression test | `state/system.yaml` → status | `sutra/layer2-operating-system/PROTOCOLS.md` |
 | **PROTO-004** | (see state.yaml) | active | varies | — | same | same |
 | **PROTO-017** | Policy-to-Implementation Coverage Gate | active | hard | Every Sutra policy edit surfaces PROTO-000 reminder; generates POLICY-COVERAGE.md ledger | `state/system.yaml` → status | same |
-| **PROTO-018** | Auto-Propagation on Version Bump | **disabled** (D-7) | — | `upgrade-clients.sh` walks client registry; currently MANUAL per founder | `.enforcement/proto-018-reminders.log` shows when skipped | same |
+| **PROTO-018** | Auto-Propagation on Version Bump | **disabled** (D-7 manual propagation) | — | `upgrade-clients.sh` walks client registry; currently MANUAL per founder (matches `sutra/CURRENT-VERSION.md` v1.9 shipped-but-disabled state — both docs in sync) | `.enforcement/proto-018-reminders.log` shows when skipped | same |
 | **PROTO-019** (candidate) | Unit-Architecture (every unit = definition charter + skills + initiative charter participations) | deferred | planned | Formalize cascading model in state.yaml | TBD | sketched in `sutra/os/charters/README.md` §1-4 |
 | **PROTO-020** | Plugin Identity Capture | **pending** | design-only | 3-tier identity (anon/attributed/full) in plugin manifest | design doc `holding/research/2026-04-22-sutra-identity-capture-v17-design.md` | — |
 | **PROTO-021** | BUILD-LAYER Declaration | active | HARD-on-code / SOFT-on-docs | Every task declares L0/L1/L2 + ACTIVATION-SCOPE + TARGET-PATH + PROMOTION contract; surfaces misfiled L0 candidates and L1 promotion debt | `.enforcement/build-layer-ledger.jsonl` + session-end review | `sutra/layer2-operating-system/PROTOCOLS.md` + `holding/hooks/build-layer-check.sh` |
@@ -85,7 +85,7 @@ Pattern: every unit = definition charter + skills + initiative participations. E
 | Name | Status | Tier | Provides | Toggle | Source |
 |---|---|---|---|---|---|
 | **Sutra OS** | active | 3 | The operating system itself — versioned releases | Client-side: `sutra/os/SUTRA-CONFIG.md` per-company opt-in | `sutra/CURRENT-VERSION.md` |
-| **Sutra Marketplace / Plugin** | wip | — | Plugin deployment home; delivery mechanism to Claude Code | Not yet shipped | `sutra/marketplace/` |
+| **Sutra Marketplace / Plugin** | active | — | Plugin deployment home; delivery mechanism to Claude Code; shipped v1.12.3+ (Phase 0-6 restructure complete; Kernel reserved for next iteration) | Disable per-client: remove `sutra` from `.claude/settings.json` `enabledPlugins`; plugin-wide: revert plugin commit | `sutra/marketplace/plugin/` + `sutra/marketplace/plugin/CHANGELOG.md` |
 | **DayFlow** | active | 2 | Product company — personal OS iOS app + primary Sutra validator | Per-company CLAUDE.md | `dayflow/` (submodule) |
 | **Maze** | active | 2 | Humor feed product | same | `maze/` (submodule) |
 | **PPR** | active | 2 | Wedding command center | same | `ppr/` (submodule) |
