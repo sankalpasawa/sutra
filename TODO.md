@@ -36,7 +36,7 @@ Shipping noncommercial-licensed deps in a commercial product = legal exposure. D
 
 - [x] Define `token-telemetry.jsonl` schema; extend `holding/departments/analytics/TELEMETRY-CONTRACT.md` (Analytics, KR1, 2026-04-23) — DONE 2026-04-21 (schema + tests) / §7 contract DONE 2026-04-23 (Asawa commit 90064e4)
 - [x] Write `holding/hooks/session-token-snapshot.sh` (SessionStart) — capture boot context size per company (Engineering, KR1, 2026-04-23) — DONE 2026-04-23 (Asawa commit 90064e4, 227 lines, 22/22 test pass, first live `boot` record seeded tokens_boot≈134k)
-- [ ] Extend `holding/hooks/dispatcher-stop.sh` to emit `task_end` events with governance-vs-work categorization (Engineering, KR1, 2026-04-24)
+- [ ] Extend `holding/hooks/dispatcher-stop.sh` to emit `task_end` events with governance-vs-work categorization (Engineering, KR1, 2026-04-24) — **A/B decision on resumption**: see TOKENS.md §5 roadmap row #4 Status column. Option A extends holding (L1 staging). Option B ships plugin-native `sutra/marketplace/plugin/hooks/token-task-end.sh` (L0, plugin v1.13.0, ~40 min). Claude's recommendation: Option B (PROTO-021 intent + today's 4 L0 pattern). Ship heuristic v1 for governance/work split; refine W2.
 - [ ] Deploy hooks + telemetry into 6 companies (Sutra, Asawa, DayFlow, Maze, PPR, Billu) via god mode (Sutra-OS, KR1, 2026-04-25)
 - [ ] Collect 10+ sessions per company; publish `holding/research/2026-04-26-token-baseline.md` (Analytics, KR1, 2026-04-26)
 
