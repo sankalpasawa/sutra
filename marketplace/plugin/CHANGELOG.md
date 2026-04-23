@@ -2,6 +2,43 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] — 2026-04-23
+
+Second L0 promotion via PROTO-021 — subagent OS contract enforcement. Additive, default-off per D32.
+
+### Added
+
+- `hooks/subagent-os-contract.sh` — PostToolUse.Task gate. Validates every subagent response contains the Sutra OS contract (6-field boot block + 4-field footer). Missing footer → `exit 2` block-feedback-to-model. Missing boot fields → soft WARN. Telemetry row per dispatch to `<instance>/.enforcement/subagent-contract.jsonl`. **Default-OFF** per D32 (`enabled_hooks.subagent-os-contract: true` in instance's `os/SUTRA-CONFIG.md`). Override: `SUBAGENT_CONTRACT_ACK=1 SUBAGENT_CONTRACT_ACK_REASON='<why>'`. Kill-switch: `~/.subagent-contract-disabled` or `SUBAGENT_CONTRACT_DISABLED=1`.
+- Registered in `hooks.json` PostToolUse with `matcher: "Task"` matcher (drop-in replacement for Asawa's `holding/hooks/subagent-os-contract.sh`, which is now eligible for retirement per Asawa `CLAUDE.md` §Agent Dispatch "[TEMP — remove when Sutra plugin ships]" marker).
+
+### Why
+
+PROTO-021 first-real-promotion rhythm continues. Asawa's CLAUDE.md has carried an explicit `[TEMP]` marker on the holding-side subagent-os-contract hook for weeks waiting on plugin equivalent. This release ships it.
+
+### Scope intent
+
+- **Asawa**: retains holding/hooks/subagent-os-contract.sh until plugin adoption metric stabilizes. After 30d of plugin-side stability, Asawa flips its own enablement flag and retires the holding copy (per Asawa CLAUDE.md).
+- **Sutra dogfood**: enable via Sutra's own `os/SUTRA-CONFIG.md`.
+- **DayFlow**: inherits via `claude plugin marketplace update sutra`; DayFlow CEO enables in DayFlow's SUTRA-CONFIG per D31+D33.
+- **Paisa, Billu, PPR, Maze**: default-OFF — no action.
+
+### Migration
+
+```yaml
+# os/SUTRA-CONFIG.md
+enabled_hooks:
+  subagent-os-contract: true
+```
+
+Existing Asawa `subagent-os-contract` telemetry rows in `.enforcement/subagent-contract.jsonl` remain format-compatible with the plugin version — aggregation consumers see no schema break.
+
+### Source
+
+- Hook: `hooks/subagent-os-contract.sh` (170 lines incl. Operationalization section)
+- Registry: `hooks/hooks.json` (new PostToolUse.Task matcher group)
+- Promoted-from: `holding/hooks/subagent-os-contract.sh` (L1 → L0)
+- Design: `holding/research/2026-04-23-build-layer-protocol-design.md`
+
 ## [1.10.0] — 2026-04-23
 
 First L0 promotion via PROTO-021 BUILD-LAYER protocol. Additive, backward-compatible — default-off per D32.

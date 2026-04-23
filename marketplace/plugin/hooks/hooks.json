@@ -55,6 +55,16 @@
         ]
       },
       {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/subagent-os-contract.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "mcp__.*",
         "hooks": [
           {
