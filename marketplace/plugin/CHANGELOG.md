@@ -2,6 +2,51 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] — 2026-04-23
+
+Third + fourth L0 promotions via PROTO-021 — keys-in-env-vars + estimation-collector. Bundled release. Additive, default-off per D32.
+
+### Added
+
+- `hooks/keys-in-env-vars.sh` (PROTO-004 "Keys in Env Vars Only") — PreToolUse.Write|Edit|MultiEdit gate. Scans content about to be written for API-key-shaped strings (sk-*, AKIA*, ghp_*, etc.) landing in non-env files; HARD exit 2 blocks the write. Skips legitimate env paths (`*.env*`, `.envrc`, `*/secrets/*`, `*/.ssh/*`, `*keys.json`, `*credentials*`). Default-OFF per D32. Override: `PROTO004_ACK=1 PROTO004_ACK_REASON='<why>'`. Kill-switch: `~/.proto004-disabled` or `PROTO004_DISABLED=1`.
+
+- `hooks/estimation-collector.sh` — Stop-event collector. Scrapes `ESTIMATE:` / `ACTUAL:` lines from session transcript, appends JSONL records to `<instance>/.enforcement/estimation-log.jsonl` (default) or holding/ESTIMATION-LOG.jsonl (Asawa via `ESTIMATION_LOG_OVERRIDE`). Idempotent per session_id. D9 COMPARE path synthesizes tokens_actual from transcript usage fields when ACTUAL line absent. Default-OFF per D32. Kill-switch: `~/.estimation-collector-disabled` or `ESTIMATION_DISABLED=1`.
+
+### Registered
+
+- `hooks.json` PreToolUse gains `matcher: Write|Edit|MultiEdit` group for keys-in-env-vars.sh.
+- `hooks.json` Stop event gains estimation-collector.sh (runs after estimation-stop + flush-telemetry).
+
+### Why bundled
+
+Both promotions are part of the L0 promotion queue documented in `holding/research/2026-04-23-build-layer-protocol-design.md` §4 (classification table). Bundling into one release (vs two version bumps) reflects their complementary nature — security hygiene + measurement capture — and simplifies marketplace upgrade churn for existing installs.
+
+Note on rtk-auto-rewrite: plugin-side version was already at parity with Asawa's holding version (identical 115-line content, no divergence). This release does NOT re-ship it. Asawa's holding/hooks/rtk-auto-rewrite.sh stays in place until Asawa opts into fully plugin-driven enforcement (separate track).
+
+### Scope intent (first-cohort enablement)
+
+- **Asawa**: retains holding copies of both; plugin hooks default-off pending cohort stability review.
+- **Sutra dogfood**: enable in Sutra's own os/SUTRA-CONFIG.md.
+- **DayFlow**: inherits via `claude plugin marketplace update sutra`; DayFlow CEO enables in DayFlow's SUTRA-CONFIG.
+- **Paisa, Billu, PPR, Maze**: default-OFF — no action.
+
+### Migration
+
+```yaml
+# os/SUTRA-CONFIG.md
+enabled_hooks:
+  keys-in-env-vars: true
+  estimation-collector: true
+```
+
+### Cumulative L0 promotions (PROTO-021 dogfood rhythm)
+
+1. v1.10.0 — operationalization-check (2026-04-23)
+2. v1.11.0 — subagent-os-contract (2026-04-23)
+3. v1.12.0 — keys-in-env-vars + estimation-collector (2026-04-23, this release)
+
+4/14 L0 candidates promoted (rtk-auto-rewrite counted as already-at-parity). Remaining queue: 10 candidates. Next round after session-end review surfaces actual adoption signal.
+
 ## [1.11.0] — 2026-04-23
 
 Second L0 promotion via PROTO-021 — subagent OS contract enforcement. Additive, default-off per D32.

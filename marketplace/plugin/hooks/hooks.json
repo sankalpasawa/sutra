@@ -42,6 +42,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/keys-in-env-vars.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -87,6 +97,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flush-telemetry.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-collector.sh",
+            "timeout": 15
           }
         ]
       }
