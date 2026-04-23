@@ -2,6 +2,47 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] — 2026-04-23
+
+First L0 promotion via PROTO-021 BUILD-LAYER protocol. Additive, backward-compatible — default-off per D32.
+
+### Added
+
+- `hooks/operationalization-check.sh` — D30a "Ship Is Not Done" presence gate. Checks Edit/Write targets for a `## Operationalization` section with 6 subsections (Measurement, Adoption, Monitoring, Iteration, DRI, Decommission). Blocks (exit 2) when missing at an enforced path. **Default-OFF** per D32: each instance opts in via `enabled_hooks.operationalization-check: true` in its own `os/SUTRA-CONFIG.md`. Registered in `hooks.json` PreToolUse `Edit|Write` matcher. Ledger at `<instance>/.enforcement/ops-check.jsonl`. Per-call override `OPS_ACK=1 OPS_ACK_REASON='<why>'`. Global kill-switch `~/.ops-check-disabled` or `OPS_CHECK_DISABLED=1`.
+- Default-enforced path patterns: `hooks/**/*.sh`, `departments/**/*.sh`, `{charters,protocols,engines,os/charters,os/protocols,os/engines,os/d-engines}/**/*.md`. Non-enforced paths always pass through.
+
+### Why
+
+PROTO-021 BUILD-LAYER protocol introduces the layer-declaration mechanism for every Asawa/Sutra/client task. This release is the first real L0 promotion — Asawa's `holding/hooks/operationalization-check.sh` (which lived L1 authoring-instance-only) now has a plugin-native MVP every instance can enable. DayFlow + Sutra dogfood get D30a presence-checking natively.
+
+### Scope intent for this first promotion
+
+- **Asawa** (authoring): keeps its full-featured `holding/hooks/operationalization-check.sh` — it has Tier A+B granularity + state.yaml grandfathering that the plugin MVP doesn't yet have.
+- **Sutra dogfood**: enable in Sutra's own `os/SUTRA-CONFIG.md` if desired.
+- **DayFlow**: inherits on `claude plugin marketplace update sutra`; enable via DayFlow's own `os/SUTRA-CONFIG.md`.
+- **Paisa, Billu, PPR, Maze**: default-OFF, no behavior change — explicit opt-in required.
+
+### MVP-not-parity rationale
+
+Plugin version is intentionally a subset of Asawa's holding-side. Full parity in one shot would have meant porting Tier-A/B classification + grandfathering + state.yaml reader — high blast radius. MVP lets DayFlow + Sutra dogfood get the mechanism now; v2 brings richer path granularity after 30 days of plugin-side stability. Tracked in `.enforcement/build-layer-ledger.jsonl` as `promoted-mvp` outcome.
+
+### Source
+
+- Hook: `hooks/operationalization-check.sh` (198 lines including Operationalization section)
+- Registry: `hooks/hooks.json` (PreToolUse.Edit|Write appended after depth-marker-pretool)
+- Spec: `sutra/layer2-operating-system/PROTOCOLS.md` §PROTO-021
+- Design: `holding/research/2026-04-23-build-layer-protocol-design.md` (Codex review synthesis §15)
+
+### Migration
+
+`claude plugin marketplace update sutra` pulls v1.10.0 → hook lands in plugin cache, stays silent until enabled. To enable:
+
+```yaml
+# os/SUTRA-CONFIG.md
+enabled_hooks:
+  operationalization-check: true
+```
+
 ## [1.9.4] — 2026-04-22
 
 Hotfix for v1.9.3 — executable bit ACTUALLY landed this time.

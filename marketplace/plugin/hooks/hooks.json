@@ -25,6 +25,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/depth-marker-pretool.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/operationalization-check.sh",
+            "timeout": 5
           }
         ]
       },
