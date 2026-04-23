@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# pre-commit wrapper (Sutra submodule) — calls pre-commit-test-gate.
+#
+# Ported from holding/hooks/git-wrappers/pre-commit pattern. Simpler here
+# because Sutra doesn't have the operationalization-check gate yet (will
+# propagate in a later ring).
+#
+# Installed via `git config core.hooksPath hooks/git-wrappers` inside sutra.
+#
+## Operationalization
+#
+### 1. Measurement mechanism
+# Exit code — 0 = pass, nonzero = commit blocked. Telemetry via pre-commit-test-gate.sh.
+#
+### 2. Adoption mechanism
+# sutra/.git/config sets core.hooksPath = hooks/git-wrappers.
+#
+### 3. Monitoring / escalation
+# If pre-commit doesn't fire, re-check core.hooksPath; re-run
+# `git config core.hooksPath hooks/git-wrappers` inside sutra.
+#
+### 4. Iteration trigger
+# New gates added here when pre-commit gains new upstream checks
+# (operationalization-check is next candidate once it ports to plugin).
+#
+### 5. DRI
+# CEO of Sutra.
+#
+### 6. Decommission criteria
+# Retire when Sutra plugin ships a shared pre-commit wrapper.
+
+set -euo pipefail
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+# Test gate (D1 — verify before commit)
+bash "$REPO_ROOT/hooks/pre-commit-test-gate.sh"
