@@ -1,0 +1,26 @@
+{"id": "INPUT-ROUTING", "category": "gate", "name": "Input Routing Block", "min_depth": 1, "required_at": [1,2,3,4,5], "phase": "pre"}
+{"id": "ENGINE-ADAPTIVE", "category": "engine", "name": "Depth Assessment", "min_depth": 1, "required_at": [1,2,3,4,5], "phase": "pre"}
+{"id": "GATE-PRESCORING", "category": "gate", "name": "Pre-Scoring Gates", "min_depth": 3, "required_at": [3,4,5], "phase": "pre"}
+{"id": "ENGINE-ESTIMATION", "category": "engine", "name": "Estimation Table", "min_depth": 2, "required_at": [2,3,4,5], "phase": "pre"}
+{"id": "PHASE-OBJECTIVE", "category": "lifecycle", "name": "OBJECTIVE Phase", "min_depth": 2, "required_at": [2,3,4,5], "phase": "objective"}
+{"id": "PHASE-OBSERVE", "category": "lifecycle", "name": "OBSERVE Phase", "min_depth": 3, "required_at": [3,4,5], "phase": "observe"}
+{"id": "GATE-RESEARCH", "category": "gate", "name": "Research Gate", "min_depth": 3, "required_at": [3,4,5], "phase": "observe"}
+{"id": "PHASE-SHAPE", "category": "lifecycle", "name": "SHAPE Phase", "min_depth": 3, "required_at": [3,4,5], "phase": "shape"}
+{"id": "GATE-HLD", "category": "gate", "name": "HLD Gate", "min_depth": 4, "required_at": [4,5], "phase": "plan"}
+{"id": "GATE-ADR", "category": "gate", "name": "ADR Gate", "min_depth": 4, "required_at": [4,5], "phase": "plan", "conditional": true}
+{"id": "PHASE-PLAN", "category": "lifecycle", "name": "PLAN Phase", "min_depth": 3, "required_at": [3,4,5], "phase": "plan"}
+{"id": "GATE-PARALLEL", "category": "gate", "name": "Parallelization Gate", "min_depth": 4, "required_at": [4,5], "phase": "execute", "conditional": true}
+{"id": "PHASE-EXECUTE", "category": "lifecycle", "name": "EXECUTE Phase", "min_depth": 1, "required_at": [1,2,3,4,5], "phase": "execute"}
+{"id": "VERIFY-BASIC", "category": "verify", "name": "Basic Verification", "min_depth": 2, "required_at": [2], "phase": "measure"}
+{"id": "VERIFY-EVIDENCE", "category": "verify", "name": "Evidence-Based Verification", "min_depth": 3, "required_at": [3], "phase": "measure"}
+{"id": "VERIFY-STAGED", "category": "verify", "name": "Staged Verification", "min_depth": 4, "required_at": [4], "phase": "measure"}
+{"id": "VERIFY-MULTISTAGE", "category": "verify", "name": "Multi-Stage Verification", "min_depth": 5, "required_at": [5], "phase": "measure"}
+{"id": "PHASE-MEASURE", "category": "lifecycle", "name": "MEASURE Phase", "min_depth": 3, "required_at": [3,4,5], "phase": "measure"}
+{"id": "GATE-FINDINGS", "category": "gate", "name": "Finding Resolution Gate", "min_depth": 4, "required_at": [4,5], "phase": "measure"}
+{"id": "PHASE-LEARN", "category": "lifecycle", "name": "LEARN Phase", "min_depth": 3, "required_at": [3,4,5], "phase": "learn"}
+{"id": "GATE-RETRO", "category": "gate", "name": "Retrospective Gate", "min_depth": 4, "required_at": [4,5], "phase": "learn"}
+{"id": "EXPERT-CONSULT", "category": "research", "name": "Domain Expert Consultation", "min_depth": 5, "required_at": [5], "phase": "observe"}
+{"id": "RESEARCH-MARKET", "category": "research", "name": "Market Research", "min_depth": 5, "required_at": [5], "phase": "observe"}
+{"id": "REVIEW-INDEPENDENT", "category": "review", "name": "Independent Review", "min_depth": 5, "required_at": [5], "phase": "plan"}
+{"id": "RETRO-FULL", "category": "review", "name": "Full Retrospective Document", "min_depth": 5, "required_at": [5], "phase": "learn"}
+{"id": "TRIAGE-LOG", "category": "calibration", "name": "Triage Log", "min_depth": 1, "required_at": [1,2,3,4,5], "phase": "post"}
