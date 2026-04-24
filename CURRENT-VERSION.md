@@ -1,5 +1,14 @@
 # Sutra — Current Version
 
+## v2.2.0 (2026-04-25) — additive: Assistant Interaction Layer
+
+- **New OS class: Interaction Layer** at `os/interaction/`. First artifact: `ASSISTANT.md` charter. Sits above the 5 foundational blocks; human-facing surface for legibility, feedback capture, per-user customization (S2+), energy tracking (S5+), and passenger-mode problem-solving (S3+). Spec: `holding/research/2026-04-24-assistant-layer-design.md`.
+- **5 new scripts in plugin hooks/**: `assistant-kill-switch.sh` (3-syscall zero-cost shim), `assistant-observer.sh` (turn.observed events, cursor-from-events-tip atomic), `assistant-explain.sh` (narrative renderer), `assistant-feedback.sh` (ask/list/answer/profile), `assistant-decommission.sh` (product kill-switch with atomic settings rewrite).
+- **Stop hook registered**: `hooks.json` fires `assistant-kill-switch.sh` on every Stop; shim exits zero-cost if any of 3 disable flags active; otherwise exec's observer.
+- **Default OFF at L1 per D32**. Clients flip `enabled_hooks.assistant_observer: true` in `os/SUTRA-CONFIG.md` to activate. 4-layer kill-switch (L1 Sutra authority / L2 user runtime / L3 per-instance / L4 product decommission).
+- **Event contract v1.0**: `turn.observed`, `log.rewound`, `feedback.prompted`, `feedback.captured`. Envelope stable; payloads starting shape (will evolve at S2+).
+- **39 tests green** at Asawa reference instance (9 kill-switch + 24 observer + 6 explain). Codex rounds: 4 absorbed (1 REJECT → MODIFY → PASS on approach/spec/P2/P3).
+
 ## v1.9.1 (2026-04-20) — additive
 
 - **Charters as first-class OS concept**: new directory `os/charters/` parallel to `os/engines/` and `os/protocols/`. Holds cross-cutting Initiative Charters (vs. unit-level Definition Charters like `departments/*/CHARTER.md`). Placement doc + protocol for adding new charters in `os/charters/README.md`. Unit-architecture model documented: every unit (org, department, sub-unit) = definition charter + skills + initiative charter participations; cascades recursively.
