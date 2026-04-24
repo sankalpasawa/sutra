@@ -6,13 +6,20 @@
 
 ---
 
-## One-command install
+## Install (two commands in a fresh Claude session)
+
+Inside your project directory (`cd ~/Claude/<your-company>/`), open Claude Code and run:
 
 ```
-/plugin install sutra@marketplace
+/plugin marketplace add sankalpasawa/sutra
+/plugin install core@sutra
 ```
 
-That's it. No 4-step ceremony.
+**What these do**:
+- The first registers the Sutra marketplace from GitHub. Claude Code doesn't auto-discover public marketplaces, so you have to name it once.
+- The second installs the plugin package (`core`) from that marketplace (`sutra`). The package name inside the marketplace is `core`, not `sutra` — `sutra@marketplace` will fail with "Plugin not found in any marketplace" (common first-install pitfall, reported by Testlify 2026-04-24).
+
+After this, `/reload-plugins` if the session doesn't pick them up automatically. You should see skills + agents + hooks listed in `/plugin`.
 
 ---
 
