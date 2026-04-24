@@ -2,6 +2,62 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.1] — 2026-04-24
+
+**Stop-the-bleed for the `vinitharmalkar` incident.** In a recent T4 plugin user session, Sutra responded to a feedback request by offering to "file a GitHub issue on your behalf" and surfaced the `sankalpasawa/sutra` repo URL — leaking the session's auth identity into a public channel and treating a customer as a contributor. This ships a behavioral rule that fires whenever the user's prompt contains a feedback-intent keyword, instructing Claude to capture feedback locally and never file issues on the user's behalf. Independent of (and precedes) the full `/sutra feedback` command which lands in a later release.
+
+### Added
+
+- `hooks/feedback-routing-rule.sh` — UserPromptSubmit hook. Detects feedback-intent patterns (`give/submit/file/report feedback|bug|issue`, `feedback channel`, etc.) and emits a behavioral rule into the session's additional-context: (1) do NOT file GitHub issues on the user's behalf, (2) do NOT surface internal repo URLs as feedback channels, (3) do NOT act on the session's auth identity outside the local machine, (4) capture the feedback locally to `~/.sutra/feedback/pending/<timestamp>.md`. Always exits 0. Kill-switches: `FEEDBACK_ROUTING_RULE_DISABLED=1` env, `~/.feedback-routing-rule-disabled` file.
+- `tests/unit/test-feedback-routing-rule.sh` — 14 golden-case tests (8 positive, 6 negative including kill-switch). All green on v1.14.1 release.
+
+### Registered
+
+- `UserPromptSubmit` chain appended with `feedback-routing-rule.sh` (sibling of `reset-turn-markers.sh` and `codex-directive-detect.sh`).
+
+## [1.14.0] — 2026-04-24
+
+**Plain-English for Bash permission prompts.** When Claude asks to run a Bash command, the approval dialog now includes a one-sentence plain-English summary of what the command actually does. Non-technical users no longer face raw `curl | sh` / `rm -rf` / heredocs with no explanation. Destructive patterns are flagged with 🚨 before the summary. Complements v1.13.0's PermissionRequest meta-permission: v1.13 cut the *count* of prompts, v1.14 makes the *remaining* prompts legible. Compounds with v1.3.0's `bin/sutra` consolidation (which had previously cut script-level prompt count for Sutra commands).
+
+### Added
+
+- `hooks/bash-summary-pretool.sh` — PreToolUse(Bash) hook. Emits `hookSpecificOutput.permissionDecisionReason` with a plain-English summary of the incoming Bash command. Two-stage: (v0) rules matcher covering ~30 verbs (rm, curl, wget, git, mkdir, cp, mv, chmod, chown, dd, kill, sudo, python/pip, node/npm, brew, find, grep, ssh, tar, redirection, heredoc detection) with danger-flagging; (v1) optional LLM fallback (Haiku) for composed commands with hash-keyed cache at `~/.sutra/permission-summary-cache/`. Always exits 0 (never blocks). Kill-switches: `SUTRA_BASH_SUMMARY=0` (hook off), `SUTRA_PERMISSION_LLM=0` (rules-only), `~/.sutra-bash-summary-disabled` (file).
+- `tests/bash-summary-cases.sh` — 38 golden-case tests covering destructive patterns (rm -rf, pipe-to-shell, git reset --hard, dd, sudo, kill -9), network (curl/wget with host extraction), filesystem (mkdir/cp/mv/chmod), read-only, redirection (`>` overwrite vs `>>` append), env-var prefix normalization, and unknown-verb fallback. All 38 pass on v1.14.0 release.
+
+### Registered
+
+- `hooks.json` — `bash-summary-pretool.sh` added to the `PreToolUse[Bash]` matcher, ordered after `rtk-auto-rewrite` + `codex-directive-gate` so blocked commands never pay the summarization cost.
+- `sutra/layer2-operating-system/c-human-agent-interface/HUMAN-AGENT-INTERFACE.md` — new Part 4 "Registry of Implementations" section; first entry is this hook, linked to principles P7 (Human Is the Final Authority) + P11 (Human Confidence Through Clarity).
+- `holding/HUMAN-AI-INTERACTION.md` — P7 + P11 sections gain backlinks pointing to this hook as a concrete implementation.
+
+### Updated
+
+- `.claude-plugin/plugin.json` — version `1.13.0` → `1.14.0`; description extended.
+
+### Why ship this now
+
+Source: `sutra/marketplace/FEEDBACK-LOG.md` 2026-04-24 entry — external user flagged that raw bash in permission dialogs is unreadable for non-technical adopters, leaving them with two bad options: blind approval (worst-case failure mode, invites destructive commands) or getting stuck. Directly violates Founding Doctrine Principle 0 (Customer Focus First) for the T4 non-technical segment of the fleet. With v1.13.0 already cutting prompt count by ~95%, the few remaining prompts carry outsized weight — every one the user can't read is a decision made blind.
+
+### Architecture note — upstream destiny
+
+This hook is a stopgap. The right long-term home for a permission summary is inside Claude Code's native approval dialog — no hook required. A pitch doc at `sutra/marketplace/UPSTREAM-PITCH-permission-summary.md` captures the feature request for Anthropic. If upstream ships this natively, the hook retires cleanly.
+
+### Scope intent
+
+- **Asawa, Sutra dogfood, T2 owned (DayFlow, Billu, Paisa, PPR, Maze)**: inherited via plugin auto-update. Default-ON. Kill-switch available per-user.
+- **T3 projects (Testlify, Dharmik)**: inherited on next plugin update. Default-ON.
+- **T4 Sutra Users**: primary beneficiary segment. Default-ON.
+
+### Migration
+
+No migration. Hook is additive; existing behavior unchanged except that Bash approval dialogs now carry a summary line. No user action required.
+
+### Decommission criteria
+
+Retire when Anthropic ships native permission summary (upstream pitch) OR telemetry shows <1 fire/day for 30 days across the fleet.
+
+---
+
 ## [1.13.0] — 2026-04-24
 
 **Meta-permission.** First release that eliminates the paste-the-snippet step for new installs. Ships the PERMISSIONS charter + PermissionRequest hook so every Sutra-scope operation auto-approves AND persists its rule to `.claude/settings.local.json`. Second session onward: zero hook invocations for in-scope ops — Claude Code's native allow-list handles it directly.

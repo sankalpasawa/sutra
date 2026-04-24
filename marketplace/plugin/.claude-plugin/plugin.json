@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "1.13.0",
-  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, C3c token-compression bundle (RTK native-tool whitelist + MCP output compression), opt-in local metric telemetry, v1.9 identity stamping, and v1.13 permission-gate (PermissionRequest meta-permission per PERMISSIONS charter — one install consent, zero recurring prompts for Sutra-scope operations).",
+  "version": "1.14.1",
+  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, C3c token-compression bundle (RTK native-tool whitelist + MCP output compression), opt-in local metric telemetry, v1.9 identity stamping, v1.13 permission-gate (PermissionRequest meta-permission per PERMISSIONS charter — one install consent, zero recurring prompts for Sutra-scope operations), v1.14 Bash permission-prompt plain-English summarizer (non-technical accessibility for remaining prompts; implements H-Agent Interface P7/P11), and v1.14.1 feedback-routing-rule (UserPromptSubmit hook — stops the vinitharmalkar pattern where Sutra offered to file GitHub issues on a user's behalf; injects a behavioral rule when feedback-intent keywords are detected).",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

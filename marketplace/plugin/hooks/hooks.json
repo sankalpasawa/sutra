@@ -79,7 +79,8 @@
       {
         "hooks": [
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh", "timeout": 3 },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-detect.sh", "timeout": 3 }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-detect.sh", "timeout": 3 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-routing-rule.sh", "timeout": 3 }
         ]
       }
     ],
