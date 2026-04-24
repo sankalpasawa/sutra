@@ -41,6 +41,11 @@ case "$SUBCMD" in
     echo "Done."
     ;;
 
+  # v2.0 — manual feedback channel (local-only, never transmits)
+  feedback)
+    exec bash "$SCRIPTS_DIR/feedback.sh" "$@"
+    ;;
+
   # Secondary — kept callable from bin/ for power users and shell helpers
   push)
     exec bash "$SCRIPTS_DIR/push.sh" "$@"
@@ -88,6 +93,11 @@ Lifecycle:
   status               Show install_id, project_id, queue depth, telemetry.
   update               Pull the latest plugin version from the marketplace.
   uninstall [--purge]  Remove the plugin; --purge also wipes ~/.sutra/.
+
+Feedback (v2.0):
+  feedback "<msg>"     Capture feedback locally at ~/.sutra/feedback/manual/.
+                       Grants consent for auto-capture signals to persist.
+                       Nothing transmitted — see ~/.sutra/PRIVACY.md.
 
 Power-user:
   push                 Manually push queued telemetry (auto-runs on Stop).
