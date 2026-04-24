@@ -170,3 +170,27 @@ Never requested:
 - `VERSIONING.md` — how we bump versions
 - `/core:permissions` — prints the paste-snippet for the fallback workflow
 - Open an issue: <https://github.com/sankalpasawa/sutra/issues>
+
+## Compositional reads (v2.4+)
+
+**What this does**: Lets Sutra run safe read-only shell pipelines (like listing
+files, searching with grep, showing the first or last few lines of a file)
+without asking you every time.
+
+**Examples that auto-approve:**
+- `ls .claude/ | grep foo`
+- `cat file | wc -l`
+- `grep pattern *.md ; echo "---" ; tail -10 log.txt`
+
+**Blast radius**: Read-only. Cannot modify files. Cannot execute arbitrary
+code. Cannot touch credentials or network. Cannot write temp files (sort was
+considered and excluded for this reason).
+
+**What continues to prompt (unchanged)**:
+- Any `git commit` / `git push` / `git add`
+- Anything with `$(...)`, backticks, redirections (`>` `<`), backgrounding (`&`)
+- Any `sed`, `find`, `awk`, `xargs`, `bash -c`, `eval`, `exec`
+- Any `rm`, `cp`, `mv`, `chmod`, `sudo`, and similar mutations
+
+**How to disable**: `SUTRA_PERMISSIONS_DISABLED=1` env var, or
+`touch ~/.sutra-permissions-disabled`.

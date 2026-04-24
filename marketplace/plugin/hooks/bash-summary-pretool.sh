@@ -63,6 +63,23 @@ CMD_CLEAN=$(printf '%s' "$CMD" | sed -E 's/^[[:space:]]*([A-Z_][A-Z0-9_]*=[^[:sp
 # If the command would be auto-approved by permission-gate.sh (v1.13.0),
 # no permission dialog appears — so no summary is needed. Skip the work.
 # These patterns mirror permission-gate.sh's scope, kept in sync manually.
+# Codex round 3 fix: mirror env-shadowing guard from permission-gate.sh to
+# prevent decision drift. If primitives are shadowed, don't skip the summary.
+_bash_summary_compositional_re='ls|cat|head|tail|wc|echo|printf|pwd|date|whoami|which|basename|dirname|realpath|grep|cut|uniq|tr|column'
+
+_bash_summary_env_shadowing() {
+  if env | grep -qE "^BASH_FUNC_(${_bash_summary_compositional_re})(%%|\(\))=" 2>/dev/null; then
+    return 0
+  fi
+  local name
+  for name in ls cat head tail wc echo printf pwd date whoami which basename dirname realpath grep cut uniq tr column; do
+    if declare -F "$name" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 _is_allowlisted() {
   local cmd="$1"
   case "$cmd" in
@@ -80,6 +97,23 @@ _is_allowlisted() {
     # Read-only introspection (rtk-prefixed git commands pass through too)
     'rtk '*) return 0 ;;
   esac
+
+  # Tier 1.5 compositional-read fast-path (v2.4+). Parity with permission-gate.sh
+  # so the summary is also skipped when the command would auto-approve.
+  # MUST apply the same env-shadowing guard — codex round 3.
+  if _bash_summary_env_shadowing; then
+    return 1
+  fi
+  local helper="${CLAUDE_PLUGIN_ROOT:-}/lib/sh_lex_check.py"
+  if [ -f "$helper" ] && command -v python3 >/dev/null 2>&1; then
+    local r
+    local _to2=""
+    if command -v timeout >/dev/null 2>&1; then _to2="timeout 2"
+    elif command -v gtimeout >/dev/null 2>&1; then _to2="gtimeout 2"
+    fi
+    r=$(printf '%s' "$cmd" | $_to2 python3 "$helper" 2>/dev/null | jq -r '.safe // false' 2>/dev/null)
+    [ "$r" = "true" ] && return 0
+  fi
   return 1
 }
 

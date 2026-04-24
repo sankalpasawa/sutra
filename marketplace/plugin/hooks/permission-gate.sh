@@ -114,6 +114,62 @@ _match_bash() {
   return 1
 }
 
+
+# ---- env-level shadowing guard (codex round 2 + 3) ----
+# If any allowlisted primitive name is shadowed by an exported bash function
+# (BASH_FUNC_name%%=() or BASH_FUNC_name()=()) OR is defined as a function in
+# the hook's own shell (declare -F), refuse auto-approve. The Bash tool runs
+# commands in a subshell that inherits exported functions — an attacker with
+# control over env could replace ls/cat/grep/etc. Fall through to normal
+# prompt so the user sees the command and manually approves.
+_compositional_primitives_re='ls|cat|head|tail|wc|echo|printf|pwd|date|whoami|which|basename|dirname|realpath|grep|cut|uniq|tr|column'
+
+_env_has_shadowing() {
+  # Gate 2a: env regex (patched bash 4.3+).
+  if env | grep -qE "^BASH_FUNC_(${_compositional_primitives_re})(%%|\(\))=" 2>/dev/null; then
+    return 0
+  fi
+  # Gate 2b: declare -F universal fallback (covers legacy formats).
+  local name
+  for name in ls cat head tail wc echo printf pwd date whoami which basename dirname realpath grep cut uniq tr column; do
+    if declare -F "$name" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# ---- compositional matcher (Tier 1.5, v2.4+) ----
+# Calls lib/sh_lex_check.py. Sets MATCHED_PATTERN on success. Fail-safe-to-
+# prompt: any error returns 1 (fall-through to normal permission dialog).
+_match_bash_compositional() {
+  local c="$1"
+  # Gate 2: env shadowing.
+  if _env_has_shadowing; then
+    return 1
+  fi
+  local helper="${CLAUDE_PLUGIN_ROOT:-}/lib/sh_lex_check.py"
+  [ -f "$helper" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  local out
+  # Portable timeout: prefer GNU timeout (brew) or gtimeout (macOS), else run
+  # without timeout (python3 shlex is fast; fail-safe if it hangs via hook timeout).
+  local _to=""
+  if command -v timeout >/dev/null 2>&1; then _to="timeout 2"
+  elif command -v gtimeout >/dev/null 2>&1; then _to="gtimeout 2"
+  fi
+  out=$(printf '%s' "$c" | $_to python3 "$helper" 2>/dev/null) || return 1
+  [ -z "$out" ] && return 1
+  local safe pattern
+  safe=$(printf '%s' "$out" | jq -r '.safe // false' 2>/dev/null)
+  pattern=$(printf '%s' "$out" | jq -r '.pattern // empty' 2>/dev/null)
+  if [ "$safe" = "true" ] && [ -n "$pattern" ]; then
+    MATCHED_PATTERN="$pattern"
+    return 0
+  fi
+  return 1
+}
+
 _match_write() {
   local f="$1"
   case "$f" in
@@ -152,7 +208,13 @@ _match_write() {
 case "$TOOL" in
   Bash)
     [ -z "$CMD" ] && exit 0
-    _match_bash "$CMD" || exit 0
+    if _match_bash "$CMD"; then
+      :   # existing Tier 1 allowlist matched
+    elif _match_bash_compositional "$CMD"; then
+      :   # Tier 1.5 compositional-read matched (v2.2+)
+    else
+      exit 0
+    fi
     ;;
   Write|Edit|MultiEdit)
     [ -z "$FILE" ] && exit 0

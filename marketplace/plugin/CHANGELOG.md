@@ -1,5 +1,55 @@
 # Changelog
 
+## v2.4.0 — 2026-04-25
+
+### Added
+- **Tier 1.5 compositional reads** in `permission-gate.sh`: auto-approves
+  read-only shell pipelines over a fixed primitive whitelist (ls, cat, head,
+  tail, wc, echo, printf, pwd, date, whoami, which, basename, dirname,
+  realpath, grep, cut, uniq (≤1 path), tr (stdin-only), column) composed via
+  `; && || |` and stderr redirects (`2>&1`, `2>/dev/null`).
+- New file: `lib/sh_lex_check.py` — Python shlex-based tokenizer with
+  per-primitive argv validators, 5-gate architecture (hard rejects, env
+  shadowing delegated to hook, tokenize+fold, pipeline ops, primitive +
+  argv validation).
+- New file: `scripts/rollback-compositional.sh` — idempotent cleanup for
+  rolled-back installs (strips `Bash(compositional-read:*)` from
+  `.claude/settings.local.json`, creates .pre-rollback.bak).
+- New tests: `tests/unit/test-sh-lex-check.sh` (58+ cases: positive +
+  adversarial + shlex edge cases + printf %n + env shadowing),
+  `tests/unit/test-permission-gate-compositional.sh` (11 integration
+  cases including BASH_FUNC shadowing guard), and
+  `tests/unit/test-rollback-compositional.sh` (idempotent rollback).
+
+### Changed
+- Charter `sutra/os/charters/PERMISSIONS.md` §4 amended with normative Tier
+  1.5 block (full primitive+flag table; 5-gate specification; widening rule).
+- Plugin manifest `PERMISSIONS.md` adds user-facing "Compositional reads"
+  section with examples and blast-radius statement.
+- `bash-summary-pretool.sh` mirrors the compositional fast-path (same env
+  shadowing guard + helper invocation) to prevent decision drift between
+  the two hooks (codex round 3 requirement).
+
+### Security
+- Explicitly NOT added to Tier 1.5 (continue to prompt): `git *`, `sed`,
+  `find`, `awk`, `xargs`, `bash`, `python*`, `node`, `ruby`, `perl`, `curl`,
+  `wget`, `ssh`, `scp`, `rsync`, `cp`, `mv`, `rm`, `ln`, `mkdir`, `touch`,
+  `chmod`, `chown`, `dd`, *kill*, archive tools, sudo. `sort` removed
+  mid-review due to `$TMPDIR` spill (codex round 5).
+- Tokenizer is fail-safe-to-prompt: any helper error (missing python, timeout,
+  malformed JSON) → permission-gate exits 0 → command flows to Claude Code's
+  normal permission dialog. Never auto-denies, never auto-approves on failure.
+- BASH_FUNC exported-function shadowing detected via (a) env regex for patched
+  bash 4.3+ AND (b) `declare -F` universal fallback for legacy formats. Either
+  match → passthrough to normal prompt.
+
+### Review
+- 10 codex rounds at `model_reasoning_effort="high"` (convergence arc: MODIFY
+  → MODIFY-AGAIN × 8 → GO).
+- Claude plan-eng-review: GO (architecture clean, code quality clean, 100%
+  test coverage, performance clean).
+- Both independent reviewers converged on GO before ship.
+
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [2.1.0] — 2026-04-24

@@ -1,5 +1,11 @@
 # Sutra — Current Version
 
+## v2.4.0 (2026-04-25) — Tier 1.5 compositional reads
+
+Permission-gate auto-approves safe read-only shell pipelines (ls, cat, grep, head, tail, wc, echo, printf, pwd, date, whoami, which, basename, dirname, realpath, cut, uniq, tr, column) composed via `; && || |` and stderr redirects `2>&1` / `2>/dev/null`. Python shlex-based tokenizer with 5-gate architecture (hard rejects, env shadowing, tokenize+fold, pipeline ops, per-primitive argv validation). `sh_lex_check.py` at `marketplace/plugin/lib/`. Charter §4 Tier 1.5 amended. 58+ unit tests + 11 integration + 1 rollback test, all green. Codex 10 rounds GO, Claude plan-eng-review GO.
+
+Rollback: `bash marketplace/plugin/scripts/rollback-compositional.sh` strips `Bash(compositional-read:*)` from settings.local.json (idempotent, backs up once).
+
 ## v2.3.0 (2026-04-25) — additive: `sutra` CLI assistant subcommands
 
 - **8 new `sutra` subcommands** for the Assistant Interaction Layer (v2.2.0 shipped the engine; v2.3.0 ships the terminal UX):
