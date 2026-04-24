@@ -1,18 +1,117 @@
 # Permissions — What Sutra Asks For and Why
 
-*Plugin version: 1.5.1 · Updated: 2026-04-22*
+*Plugin version: 1.13.0 · Manifest updated: 2026-04-24*
 
-Claude Code prompts before running shell commands and writing files outside the project. Sutra needs a small, auditable set of permissions to do its job. This doc lists every one of them and explains why.
+Claude Code prompts before running shell commands and writing files outside the project. Sutra needs a small, auditable set of permissions to do its job. Since v1.13.0, the plugin **auto-approves its own in-scope operations on first invocation** so you don't have to paste anything or click "Allow" repeatedly.
 
-## The short story
+This doc explains: how the auto-approve mechanism works, exactly which patterns are in scope, what's out of scope, and how to turn it off if you prefer manual consent.
 
-- Install + configure is a **one-line allowlist** pasted into `.claude/settings.local.json` (or user-level `~/.claude/settings.json`).
-- Run `/core:permissions` inside Claude Code or `sutra permissions` in a terminal to print the exact snippet.
-- All commands and writes stay inside your project or `~/.sutra/`. No `/etc/`, no `/System/`, no photo library, no credentials.
+---
 
-## One-shot bypass (recommended)
+## How v1.13 changes the install flow
 
-Paste this into `.claude/settings.local.json` (create the file if it doesn't exist). One paste, zero prompts for any Sutra operation.
+| Phase | Before v1.13 | From v1.13 onward |
+|---|---|---|
+| 1. `/plugin install sutra@marketplace` | 1 consent (Claude Code native) | 1 consent (unchanged) |
+| 2. First `/core:start` | ~8 individual prompts | **Auto-approved** by `permission-gate.sh` hook + each rule persisted to `.claude/settings.local.json` |
+| 3. Next hook fires (marker writes, mkdir) | ~5 more prompts | **Auto-approved + persisted** |
+| 4. Second session onward | Re-prompts (unless user pasted snippet) | **Zero hook invocations** — Claude Code's native allow-list catches the persisted rules directly |
+
+Net: **≤2 prompts in the first 30 minutes after install** (North Star KPI per `sutra/os/charters/PERMISSIONS.md`). If you observe more, file an issue — that means an allow-list pattern is missing.
+
+---
+
+## The mechanism in one paragraph
+
+Claude Code fires a `PermissionRequest` event before every permission dialog. Sutra's `hooks/permission-gate.sh` intercepts that event, checks whether the pending tool call matches a Sutra-scope pattern, and if so returns `{behavior: "allow", updatedPermissions: [addRules ...]}`. Claude Code then (a) runs the tool call without prompting and (b) persists the matched rule to `.claude/settings.local.json` so next time the native allow-list handles it — the hook doesn't even fire. If no pattern matches, the hook exits silently and Claude Code's normal prompt appears. **The hook never auto-denies.**
+
+---
+
+## Every permission Sutra may auto-approve (Tier 1 — always)
+
+### Starting a session
+
+| Pattern | When it fires | Why | Blast radius |
+|---|---|---|---|
+| `Bash(sutra)` | `/core:*` slash command with no args | Plugin dispatcher (`bin/sutra`) | Prints help |
+| `Bash(sutra <sub>)` | Every `/core:*` command routes here | Runs `start`, `status`, `update`, `uninstall`, `push`, `permissions`, etc. | Plugin scripts only |
+| `Bash(bash ${CLAUDE_PLUGIN_ROOT}/*)` | Legacy/internal script calls | Old v1.2 back-compat + internal hook bodies | Plugin cache dir only |
+
+### Writing governance markers
+
+| Pattern | When it fires | Why | Blast radius |
+|---|---|---|---|
+| `Write(.claude/depth-registered)` | Every task | Depth marker — wiped per-turn | Single file |
+| `Write(.claude/input-routed)` | Every turn | Routing marker — wiped per-turn | Single file |
+| `Write(.claude/sutra-deploy-depth5)` | Sutra-internal edits | Escape hatch for Depth 5 work | Single file |
+| `Write(.claude/build-layer-registered)` | PROTO-021 enforced writes | Build-layer declaration marker | Single file |
+| `Write(.claude/sutra-project.json)` | `/core:start` | install_id + project_id + telemetry_optin | Single file |
+| `Write(.claude/sutra-estimation.log)` | Every Stop event | Session-local estimation log | Single file |
+| `Write(.claude/logs/*)` | Dispatcher telemetry | Hook-fire log | `.claude/logs/` only |
+
+### Filesystem setup
+
+| Pattern | When it fires | Why | Blast radius |
+|---|---|---|---|
+| `Bash(mkdir -p .claude*)` | First use in a project | Creates `.claude/` and `.claude/logs/` if absent | `.claude/` subtree |
+| `Bash(mkdir -p .enforcement*)` | First hook fire | Creates `.enforcement/` for audit logs | `.enforcement/` subtree |
+| `Bash(mkdir -p .context*)` | Codex session start | Creates `.context/` for session IDs | `.context/` subtree |
+
+### Lifecycle operations
+
+| Pattern | When it fires | Why | Blast radius |
+|---|---|---|---|
+| `Bash(claude plugin marketplace update sutra)` | `/core:update` | Refreshes marketplace cache | Plugin cache only |
+| `Bash(claude plugin update core*)` | `/core:update` | Applies version bump | Plugin cache only |
+| `Bash(claude plugin uninstall core*)` | `/core:uninstall` | Removes the plugin | Plugin cache only |
+
+---
+
+## Tier 2 — opt-in only (requires `os/SUTRA-CONFIG.md` flag)
+
+These patterns are **NOT** auto-approved by default. They unlock only when you enable the corresponding feature in your project's `os/SUTRA-CONFIG.md`.
+
+| Feature | Additional patterns | How to enable |
+|---|---|---|
+| `telemetry_optin=true` | `Bash(gh auth status)` + network calls from `sutra push` | Set `telemetry_optin: true` in SUTRA-CONFIG |
+| `codex_review` | `Write(.enforcement/codex-reviews/*)`, `Write(.claude/codex-directive-pending)` | Set `enabled_hooks.codex-review-gate: true` |
+| `keys-in-env-vars` | Read-only content scan (no Write scope added) | Set `enabled_hooks.keys-in-env-vars: true`. Default-OFF per D32. |
+
+---
+
+## Tier 3 — NEVER auto-approved (hard-coded deny)
+
+Sutra's `permission-gate.sh` refuses to auto-approve any of the following, even inside an otherwise-matching pattern:
+
+| Pattern | Why forbidden |
+|---|---|
+| Any path outside `.claude/`, `.enforcement/`, `.context/`, or the plugin cache | Sutra is a governance OS, not a general-purpose filesystem tool |
+| Any network call other than `sutra push` (opt-in only) | Privacy floor — see `PRIVACY.md` |
+| Any access to `~/.ssh`, `~/.aws`, `~/.gnupg`, system Keychain | Credentials are outside Sutra's threat model |
+| Any `sudo`, `su`, privilege escalation | Sutra runs at user-level only |
+| Shell combinators widening scope past Sutra operations: `;`, `&&`, `\|\|`, `\|`, backticks, `$(...)`, redirections | Defense against command-injection inside matched patterns. Example: `sutra status; rm -rf /` is rejected by the hook — it falls through to a normal prompt. |
+
+---
+
+## Kill-switch (opt out of auto-approve entirely)
+
+If you prefer the old paste-or-click flow, disable the hook:
+
+```
+# Per-user global (all projects, all sessions)
+touch ~/.sutra-permissions-disabled
+
+# Per-session env var
+SUTRA_PERMISSIONS_DISABLED=1 claude
+```
+
+With the kill-switch on, every Sutra operation prompts normally. You can still paste the snippet below to pre-populate your allow-list by hand.
+
+---
+
+## Fallback: manual paste snippet (pre-v1.13 workflow)
+
+Run `/core:permissions` inside Claude Code to print this, or paste directly into `.claude/settings.local.json`:
 
 ```json
 {
@@ -28,76 +127,46 @@ Paste this into `.claude/settings.local.json` (create the file if it doesn't exi
       "Write(.claude/depth-registered)",
       "Write(.claude/input-routed)",
       "Write(.claude/sutra-deploy-depth5)",
+      "Write(.claude/build-layer-registered)",
       "Write(.claude/sutra-estimation.log)",
       "Write(.claude/logs/*)",
-      "Bash(mkdir -p .claude*)"
+      "Bash(mkdir -p .claude*)",
+      "Bash(mkdir -p .enforcement*)"
     ]
   }
 }
 ```
 
-Equivalent for project-scope (shared with your team via git): put it in `.claude/settings.json` instead.
-
-## Every permission, grouped by what they do
-
-### Bash — running the plugin itself
-
-| Pattern | When it fires | Why |
-|---|---|---|
-| `Bash(sutra:*)` | Any `/core:*` slash command | Plugin's unified dispatcher (bin/sutra) handles subcommands |
-| `Bash(sutra)` | `sutra` with no args | Same dispatcher, help output |
-| `Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*:*)` | Legacy back-compat | Old v1.2 and earlier scripts still callable |
-
-### Bash — Claude Code lifecycle passthroughs
-
-| Pattern | When it fires | Why |
-|---|---|---|
-| `Bash(claude plugin marketplace update sutra)` | `/core:update` | Refreshes marketplace cache |
-| `Bash(claude plugin update core:*)` | `/core:update` | Applies version bump |
-| `Bash(claude plugin uninstall core:*)` | `/core:uninstall` | Removes the plugin |
-
-### Write — project-local state
-
-| Path | When it fires | Why |
-|---|---|---|
-| `.claude/sutra-project.json` | `/core:start` | Your install_id + project_id + telemetry_optin flag |
-| `.claude/depth-registered` | Every task | Depth marker so PreToolUse hook knows depth was assessed |
-| `.claude/input-routed` | Every turn | Routing marker so PreToolUse hook knows input was classified |
-| `.claude/sutra-deploy-depth5` | Sutra-internal edits | Escape hatch marker for high-depth work |
-| `.claude/sutra-estimation.log` | Every Stop event | Session-local estimation log (not transmitted) |
-| `.claude/logs/*` | Dispatcher telemetry | Local log of hook fires (fallback when holding/ layout absent) |
-
-### Bash — tiny filesystem ops
-
-| Pattern | When it fires | Why |
-|---|---|---|
-| `Bash(mkdir -p .claude*)` | First use in a project | Creates `.claude/` and `.claude/logs/` if absent |
+---
 
 ## What Sutra does NOT need permission for
 
-These are NEVER requested:
+Never requested:
 
-- Read/Write anywhere outside `.claude/` and `~/.sutra/` in your project
-- No access to Photos, Documents, Downloads, or any system library
-- No read of `~/.ssh`, `~/.aws`, `~/.gnupg`, or any credentials directory
-- No network calls except the optional `sutra push` (auto-fires on Stop when `telemetry_optin=true`; needs gh auth, not a Claude Code permission)
-- No SSH key generation, no keychain access, no OS-level settings change
+- Read/Write anywhere outside `.claude/`, `.enforcement/`, `.context/`, or `~/.sutra/`
+- Photos, Documents, Downloads, or any system library
+- `~/.ssh`, `~/.aws`, `~/.gnupg`, or any credentials directory
+- Network calls except optional `sutra push` (auto-fires on Stop when `telemetry_optin=true`; needs `gh auth`, not a Claude Code permission)
+- SSH key generation, Keychain access, OS-level settings change
 
-## Why so many items?
+---
 
-Claude Code treats each distinct shell command and each distinct file path as a separate permission scope. A single `/core:start` invocation can touch 3-4 paths, which translates to 3-4 prompts the first time.
+## Audit trail (last 3 changes)
 
-The v1.3.0 `bin/sutra` refactor collapsed per-script-path Bash prompts to one (the `sutra` bare command). The remaining prompts are for file writes inside `.claude/` which Claude Code asks about because `.claude/` is technically outside the "plain project source" scope.
+| Date | Change | Why |
+|---|---|---|
+| 2026-04-24 | v1.13.0 — shipped `permission-gate.sh` (PermissionRequest hook) + PERMISSIONS charter | Founder direction: eliminate recurring prompts; make manifest human-readable |
+| 2026-04-22 | v1.5.1 — human-readable grouping + `/core:permissions` command | First-pass readability improvement |
+| 2026-04-20 | v1.3.0 — `bin/sutra` refactor collapsed per-script Bash prompts to one | Reduced surface from N scripts to one dispatcher |
 
-## If you don't want to paste the snippet
+---
 
-You can click "Allow" on each prompt the first time you use `/core:start`. Claude Code remembers your choice for the session. Future sessions re-prompt unless you save the choice (Claude Code shows a "Save permission" checkbox).
+## Related
 
-The paste-once approach is faster and gets you through first-run in 10 seconds.
-
-## Questions
-
-- `PRIVACY.md` — what data gets transmitted (hint: nothing, unless you opt in)
+- `sutra/os/charters/PERMISSIONS.md` — governance charter (what Sutra MAY request, policy ceiling)
+- `hooks/permission-gate.sh` — the mechanism
+- `tests/permission-gate-test.sh` — PROTO-000 test (18/18 passing)
+- `PRIVACY.md` — what data leaves your machine (nothing unless opt-in)
 - `VERSIONING.md` — how we bump versions
-- `/core:permissions` — prints the snippet above for easy copy
+- `/core:permissions` — prints the paste-snippet for the fallback workflow
 - Open an issue: <https://github.com/sankalpasawa/sutra/issues>

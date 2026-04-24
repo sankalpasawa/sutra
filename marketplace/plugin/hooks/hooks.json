@@ -1,5 +1,5 @@
 {
-  "description": "Sutra governance hooks — depth-marker gate, estimation logging, version banners, + C3c token-compression bundle. Phase-1 activation adds: session-logger, artifact-check, estimation-enforcement, log-triage, log-skill-feedback, measurement-logger, compliance-tracker.",
+  "description": "Sutra governance hooks — depth-marker gate, estimation logging, version banners, + C3c token-compression bundle. Phase-1 activation adds: session-logger, artifact-check, estimation-enforcement, log-triage, log-skill-feedback, measurement-logger, compliance-tracker. v1.13.0 adds permission-gate (PermissionRequest meta-permission) per PERMISSIONS charter. v2.0.0 adds feedback-auto-override (privacy v2 signals-only capture; codex-reviewed DIRECTIVE-ID 1777036275).",
   "hooks": {
     "SessionStart": [
       {
@@ -11,6 +11,11 @@
       }
     ],
     "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-override.sh", "timeout": 3 }
+        ]
+      },
       {
         "matcher": "Edit|Write",
         "hooks": [
@@ -58,6 +63,14 @@
         "matcher": "mcp__.*",
         "hooks": [
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-mcp-compress.sh", "timeout": 10 }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/permission-gate.sh", "timeout": 3 }
         ]
       }
     ],

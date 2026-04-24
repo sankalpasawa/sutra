@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "1.12.0",
-  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, C3c token-compression bundle (RTK native-tool whitelist + MCP output compression), opt-in local metric telemetry, and v1.9 identity stamping (git name + gh login + os fingerprint in manifest when telemetry is on).",
+  "version": "1.13.0",
+  "description": "Operating system for building with AI — input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, C3c token-compression bundle (RTK native-tool whitelist + MCP output compression), opt-in local metric telemetry, v1.9 identity stamping, and v1.13 permission-gate (PermissionRequest meta-permission per PERMISSIONS charter — one install consent, zero recurring prompts for Sutra-scope operations).",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

@@ -2,6 +2,46 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] — 2026-04-24
+
+**Meta-permission.** First release that eliminates the paste-the-snippet step for new installs. Ships the PERMISSIONS charter + PermissionRequest hook so every Sutra-scope operation auto-approves AND persists its rule to `.claude/settings.local.json`. Second session onward: zero hook invocations for in-scope ops — Claude Code's native allow-list handles it directly.
+
+### Added
+
+- `sutra/os/charters/PERMISSIONS.md` — new charter. Closes a governance gap: defines what Sutra MAY request (Tier 1 always / Tier 2 feature-flagged / Tier 3 forbidden). Any future hook that wants scope outside Tier 1 must update the charter FIRST. North Star KPI: `prompts_per_first_session ≤ 2` (down from ~40). Source: founder direction 2026-04-24 — "lots of permissions... can they be human-readable... meta permission not recurring." DRI: Sutra-OS.
+
+- `hooks/permission-gate.sh` (PERMISSIONS charter mechanism) — PermissionRequest hook. Auto-approves matched patterns and returns `updatedPermissions.addRules` with `destination: "localSettings"` so the rule persists across sessions. Matches: `Bash(sutra)`, `Bash(sutra:*)`, `Bash(bash ${CLAUDE_PLUGIN_ROOT}/*)`, `Bash(claude plugin marketplace update sutra)`, `Bash(claude plugin update|uninstall core*)`, `Bash(mkdir -p .claude*|.enforcement*|.context*)`, governance-marker Writes, `.claude/logs/*`, `.enforcement/codex-reviews/*`, `.context/codex-session-id`. Defense: rejects shell combinators. Fail-open. DEFAULT-ON (UX hook). Kill-switch: `~/.sutra-permissions-disabled` or `SUTRA_PERMISSIONS_DISABLED=1`.
+
+- `tests/permission-gate-test.sh` — PROTO-000 test bundle. 18 cases: 7 in-scope (auto-approve), 5 out-of-scope (silent pass-through), 4 shell-injection attempts (reject), 1 kill-switch, 1 JSON-shape assertion. All 18 pass on v1.13.0 release.
+
+### Registered
+
+- `hooks.json` gains a new `PermissionRequest` event block with matcher `Bash|Write|Edit|MultiEdit` → `permission-gate.sh`.
+
+### Updated
+
+- `PERMISSIONS.md` — regenerated from v1.5.1 → v1.13.0. Adds "How v1.13 changes the install flow" section; retains the paste-able snippet as a fallback for users who kill-switch the hook; adds audit trail.
+- `.claude-plugin/plugin.json` — version 1.12.0 → 1.13.0; description mentions permission-gate.
+
+### Why ship this now
+
+Every T4 fleet install currently walks through ~40 prompts before the user sees Sutra working. That's the single biggest drop-off at the install cliff. The existing `/core:permissions` command requires the user to run it *before* any Sutra operation — but most users don't know that. The PermissionRequest mechanism (documented in Claude Code's plugins-reference 2026-04-24) turns this into a one-consent install: after the first session, `.claude/settings.local.json` holds every rule the user needs, persisted by the hook.
+
+### Scope intent (first-cohort enablement)
+
+- **Asawa**: inherits via plugin update — default-ON, but holding/hooks/ governance is unaffected.
+- **Sutra dogfood**: enabled by default in Sutra's own sessions.
+- **DayFlow, Paisa, Billu, PPR, Maze**: `claude plugin marketplace update sutra` → default-ON on next session. Kill-switch per-user if any surprise.
+
+### Migration
+
+No migration needed. Hook activates on install/update; existing `.claude/settings.local.json` paste-rules remain valid (redundant but harmless).
+
+### Decommission criteria
+
+Claude Code ships native plugin-level `permissions.allow` bundling (plugins-reference currently restricts plugin `settings.json` to `agent` + `subagentStatusLine` keys). When that lands, migrate the allow-list into `plugin.json` and retire `permission-gate.sh`.
+
+---
 ## [1.12.0] — 2026-04-23
 
 Third + fourth L0 promotions via PROTO-021 — keys-in-env-vars + estimation-collector. Bundled release. Additive, default-off per D32.
