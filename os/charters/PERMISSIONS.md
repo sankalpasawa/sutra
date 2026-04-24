@@ -81,7 +81,7 @@ This charter closes both gaps.
 | Any network call other than `sutra push` (opt-in) | Privacy floor (PRIVACY.md). |
 | Any access to `~/.ssh`, `~/.aws`, `~/.gnupg`, Keychain | Credentials are never in Sutra's threat model. |
 | Any `sudo`, `su`, privilege escalation | Sutra runs at user-level only. |
-| Shell combinators widening scope past Sutra operations (`;`, `&&`, `||`, `|`, backticks, `$(...)`, redirections past Sutra paths) | Defense against command-injection inside matched patterns. |
+| Shell combinators widening scope past Sutra operations (`;`, `&&`, `||`, `|`, `&` backgrounding, backticks, `$(...)`, redirections, `bash -c`/`sh -c`, `eval`, `exec`, control chars including newlines and CR) | Defense against command-injection inside matched patterns. |
 
 **Any future hook that needs a permission outside Tier 1 must update this charter FIRST, then ship the hook.**
 

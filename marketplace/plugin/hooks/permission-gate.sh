@@ -38,8 +38,17 @@ fi
 # ---- defense: reject shell combinators that widen scope ----
 _has_combinator() {
   local c="$1"
+  # Reject: shell separators, pipes, cmd-subst, redirections, backgrounding.
   case "$c" in
-    *';'*|*'&&'*|*'||'*|*'|'*|*'`'*|*'$('*|*'>'*|*'<'*) return 0 ;;
+    *';'*|*'&&'*|*'||'*|*'|'*|*'`'*|*'$('*|*'>'*|*'<'*|*'&'*) return 0 ;;
+  esac
+  # Reject control characters (newlines, CR, tab-as-separator etc.).
+  if printf '%s' "$c" | LC_ALL=C tr -d '\011\040' | LC_ALL=C grep -q '[[:cntrl:]]' 2>/dev/null; then
+    return 0
+  fi
+  # Reject explicit shell/interpreter sneak-ins.
+  case "$c" in
+    *'bash -c'*|*'sh -c'*|*'zsh -c'*|*'eval '*|*'exec '*) return 0 ;;
   esac
   return 1
 }
@@ -73,10 +82,14 @@ _match_bash() {
   case "$c" in
     'claude plugin marketplace update sutra')
       MATCHED_PATTERN='Bash(claude plugin marketplace update sutra)'; return 0 ;;
-    'claude plugin update core'*|'claude plugin update sutra'*)
+    'claude plugin update core'*)
       MATCHED_PATTERN='Bash(claude plugin update core*)'; return 0 ;;
-    'claude plugin uninstall core'*|'claude plugin uninstall sutra'*)
+    'claude plugin update sutra'*)
+      MATCHED_PATTERN='Bash(claude plugin update sutra*)'; return 0 ;;
+    'claude plugin uninstall core'*)
       MATCHED_PATTERN='Bash(claude plugin uninstall core*)'; return 0 ;;
+    'claude plugin uninstall sutra'*)
+      MATCHED_PATTERN='Bash(claude plugin uninstall sutra*)'; return 0 ;;
   esac
 
   # --- Tier 1: scoped mkdir for governance dirs ---

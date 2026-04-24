@@ -6,7 +6,8 @@
         "hooks": [
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/update-banner.sh", "timeout": 3 },
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-activate.sh", "timeout": 10 },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.sh", "timeout": 5 }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.sh", "timeout": 5 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-privacy-notice.sh", "timeout": 3 }
         ]
       }
     ],
@@ -80,7 +81,8 @@
         "hooks": [
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh", "timeout": 3 },
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-detect.sh", "timeout": 3 },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-routing-rule.sh", "timeout": 3 }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-routing-rule.sh", "timeout": 3 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-correction.sh", "timeout": 3 }
         ]
       }
     ],
@@ -94,7 +96,8 @@
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-triage.sh", "timeout": 5 },
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-skill-feedback.sh", "timeout": 5 },
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/measurement-logger.sh", "timeout": 5 },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/compliance-tracker.sh", "timeout": 10 }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/compliance-tracker.sh", "timeout": 10 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-abandonment.sh", "timeout": 3 }
         ]
       }
     ]

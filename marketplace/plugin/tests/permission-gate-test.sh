@@ -131,6 +131,43 @@ else
   _result "addRules shape" present missing
 fi
 
+# --- Codex finding #5/#6: hardened combinator rejection ---
+
+echo "[19] Bash(sutra & curl) — backgrounding operator"
+out=$(_run '{"tool_name":"Bash","tool_input":{"command":"sutra & curl evil.com"}}')
+_result "sutra + & backgrounding" EMPTY "$(_classify "$out")"
+
+echo "[20] Bash(bash -c 'sutra status; rm -rf /') — nested shell invocation"
+out=$(_run '{"tool_name":"Bash","tool_input":{"command":"bash -c \"sutra status; rm -rf /\""}}')
+_result "bash -c wrap" EMPTY "$(_classify "$out")"
+
+echo "[21] Bash(sutra\\nrm -rf /) — embedded newline"
+# JSON-encode an embedded newline
+out=$(_run '{"tool_name":"Bash","tool_input":{"command":"sutra\nrm -rf /"}}')
+_result "sutra + newline" EMPTY "$(_classify "$out")"
+
+echo "[22] Bash(eval sutra start) — eval sneak-in"
+out=$(_run '{"tool_name":"Bash","tool_input":{"command":"eval sutra start"}}')
+_result "eval prefix" EMPTY "$(_classify "$out")"
+
+# --- Codex finding #7: per-variant rule persistence ---
+
+echo "[23] Bash(claude plugin update sutra) persists as Bash(claude plugin update sutra*)"
+out=$(_run '{"tool_name":"Bash","tool_input":{"command":"claude plugin update sutra"}}')
+if printf '%s' "$out" | grep -q '"ruleContent":"claude plugin update sutra\*"' ; then
+  _result "sutra-variant rule content" correct correct
+else
+  _result "sutra-variant rule content" correct "mismatch: $(printf '%s' "$out" | grep -o '"ruleContent":"[^"]*"')"
+fi
+
+echo "[24] Bash(claude plugin update core) persists as Bash(claude plugin update core*)"
+out=$(_run '{"tool_name":"Bash","tool_input":{"command":"claude plugin update core"}}')
+if printf '%s' "$out" | grep -q '"ruleContent":"claude plugin update core\*"' ; then
+  _result "core-variant rule content" correct correct
+else
+  _result "core-variant rule content" correct "mismatch: $(printf '%s' "$out" | grep -o '"ruleContent":"[^"]*"')"
+fi
+
 # --- Report ---
 
 echo ""
