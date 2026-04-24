@@ -207,10 +207,10 @@ protocols:
     reason: "Becomes the reconciler itself in Phase 3. No separate protocol — doctor IS the codex-gate."
 
   - id: PROTO-020
-    name: Plugin Identity Capture
+    name: Plugin Identity Capture (Local-First)
     status: active
     enforcement: "SOFT"
-    mechanism: "sutra/marketplace/plugin/lib/identity.sh (called by onboard.sh + push.sh) — stamps git_user_name/github_login/os/hostname_hash into manifest.json when telemetry_optin=true"
+    mechanism: "sutra/marketplace/plugin/lib/identity.sh captures git_user_name/github_login/os/hostname_hash. As of v2.0.3, local writes require telemetry_optin=true AND SUTRA_LEGACY_TELEMETRY=1 (matches PRIVACY.md in-memory-until-consent contract). Outbound push also gated behind SUTRA_LEGACY_TELEMETRY=1 per v2.0.0 privacy rewrite. Fleet attribution intentionally deferred — v2 default is local-only; re-enable via legacy flag or design a consent-gated channel (future protocol)."
     test: "sutra/marketplace/plugin/tests/unit/test-identity.sh + tests/integration/test-identity-stamp.sh"
     shipped: "2026-04-22 (plugin v1.9.0)"
     reason: "MVP shipped 2026-04-22 per founder direction 'solve it for everyone; ship MVP now'. Full-tier design parked at holding/research/2026-04-22-sutra-identity-capture-v17-design.md for v2."
