@@ -2,6 +2,40 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — 2026-04-24
+
+**PEDAGOGY + SECURITY charter v1 primitives ship.** Minor bump adds three new user-facing capabilities (`sutra learn`, `sutra sbom`, `sutra feedback --public`) plus level-aware governance inside the depth-marker hook. No breaking changes; v2.0.3 behavior preserved for installs that do not set `SUTRA_LEVEL`.
+
+### Added
+
+- **`sutra learn`** — PEDAGOGY charter v1 §Primitive #2. Interactive tutor with 5 lessons (~2 min each): depth, routing, charters, hooks, build-layer.
+  - `sutra learn` — list lessons
+  - `sutra learn <topic>` — print one lesson
+  - `sutra learn --all` — print all 5 in order
+  - `/core:learn` slash-command surface
+  - Lessons live at `skills/sutra-learn/lessons/*.md`
+- **`sutra sbom`** — SECURITY charter §Primitive #13. SHA256 per shipped file written to `~/.sutra/sbom.txt` for supply-chain integrity. `/core:sbom` surface.
+- **`sutra feedback --public`** — v2.0 `/sutra feedback` opt-in extension. Wires to `gh` CLI to open a public issue on `sankalpasawa/sutra` after explicit `yes` confirmation. Scrubs content before post. Falls back to local-only if `gh` unavailable or unauthenticated.
+- **`SUTRA_LEVEL` env** — PEDAGOGY charter v1 §Primitive #1. Levels: `novice | apprentice | journeyman | master`. Storage: env OR `~/.sutra/level`. Default `apprentice`.
+
+### Changed
+
+- **`hooks/depth-marker-pretool.sh`** — PEDAGOGY charter §Primitive #3. Output now respects `SUTRA_LEVEL`:
+  - `novice` → verbose explanation (why, format, marker, escape, link to `sutra learn depth`)
+  - `apprentice`/`journeyman` → default reminder (prior v2.0.3 behavior)
+  - `master` → single-line terse warning
+- `bin/sutra` — 2 new subcommands wired (`learn`, `sbom`); help-text updated with v2.1 sections.
+- `scripts/feedback.sh` — `--public` no longer no-ops; gates on `gh` availability + auth, then prompts before posting.
+
+### Charter progress
+
+- PEDAGOGY v1: primitives #1, #2, #3 shipped. Still parked: #5 growth telemetry, #6 level-up ceremony, #7 level-down grace, #8 Sutra Tutor agent.
+- SECURITY v1: primitive #13 shipped. Still parked: #9 signed releases, #10 SHA-pinned submodule, #11 god-mode MFA, #12 plugin-update consent, #14 audit aggregation dashboard.
+
+### Migration
+
+No migration. Existing installs upgrade cleanly. Verbose teaching mode: `export SUTRA_LEVEL=novice`. Terse power mode: `export SUTRA_LEVEL=master`.
+
 ## [1.15.0] — 2026-04-24
 
 **Bash permission-summary format correction.** The v1.14.0 summarizer
