@@ -13,6 +13,16 @@ if [ -f "$PLUGIN_ROOT/lib/identity.sh" ]; then
   source "$PLUGIN_ROOT/lib/identity.sh"
 fi
 
+# v2.0.0: Legacy telemetry gated behind explicit env flag.
+# New privacy model (PRIVACY.md): signals captured locally, no auto-push.
+# To use legacy push: SUTRA_LEGACY_TELEMETRY=1 bash push.sh
+if [ "${SUTRA_LEGACY_TELEMETRY:-0}" != "1" ]; then
+  echo "push disabled in v2.0 privacy model — signals stay local"
+  echo "to restore legacy behavior: SUTRA_LEGACY_TELEMETRY=1 <cmd>"
+  echo "see $PLUGIN_ROOT/PRIVACY.md for new model"
+  exit 0
+fi
+
 cd "$PROJECT_ROOT"
 
 if [ ! -f .claude/sutra-project.json ]; then

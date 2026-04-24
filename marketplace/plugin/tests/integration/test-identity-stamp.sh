@@ -51,7 +51,7 @@ bash "$PLUGIN_ROOT/hooks/emit-metric.sh" os_health hook_fires_session 1 count in
 # Point the cache at the local bare so push.sh hits it instead of sankalpasawa/sutra-data
 (cd "$CACHE" && git remote set-url origin "$BARE")
 
-OUTPUT=$(bash "$PLUGIN_ROOT/scripts/push.sh" 2>&1)
+OUTPUT=$(SUTRA_LEGACY_TELEMETRY=1 bash "$PLUGIN_ROOT/scripts/push.sh" 2>&1)
 if echo "$OUTPUT" | grep -qE "pushed .* metrics"; then
   _ok "push.sh reported successful push"
 else
@@ -75,7 +75,7 @@ fi
 # Phase 4: staleness — second push within 7d should NOT recapture
 CACHE_MTIME_BEFORE=$(stat -f %m "$SUTRA_HOME/identity.json" 2>/dev/null || stat -c %Y "$SUTRA_HOME/identity.json" 2>/dev/null)
 bash "$PLUGIN_ROOT/hooks/emit-metric.sh" os_health hook_fires_session 2 count instant >/dev/null 2>&1
-bash "$PLUGIN_ROOT/scripts/push.sh" >/dev/null 2>&1
+SUTRA_LEGACY_TELEMETRY=1 bash "$PLUGIN_ROOT/scripts/push.sh" >/dev/null 2>&1
 CACHE_MTIME_AFTER=$(stat -f %m "$SUTRA_HOME/identity.json" 2>/dev/null || stat -c %Y "$SUTRA_HOME/identity.json" 2>/dev/null)
 if [ "$CACHE_MTIME_BEFORE" = "$CACHE_MTIME_AFTER" ]; then
   _ok "second push within 7d did not rewrite identity cache"
@@ -88,7 +88,7 @@ EIGHT_DAYS_AGO=$(python3 -c "import time; t=time.time()-8*86400; import time as 
 touch -t "$EIGHT_DAYS_AGO" "$SUTRA_HOME/identity.json" 2>/dev/null || true
 CACHE_MTIME_STALE=$(stat -f %m "$SUTRA_HOME/identity.json" 2>/dev/null || stat -c %Y "$SUTRA_HOME/identity.json" 2>/dev/null)
 bash "$PLUGIN_ROOT/hooks/emit-metric.sh" os_health hook_fires_session 3 count instant >/dev/null 2>&1
-bash "$PLUGIN_ROOT/scripts/push.sh" >/dev/null 2>&1
+SUTRA_LEGACY_TELEMETRY=1 bash "$PLUGIN_ROOT/scripts/push.sh" >/dev/null 2>&1
 CACHE_MTIME_RECAP=$(stat -f %m "$SUTRA_HOME/identity.json" 2>/dev/null || stat -c %Y "$SUTRA_HOME/identity.json" 2>/dev/null)
 if [ "$CACHE_MTIME_STALE" != "$CACHE_MTIME_RECAP" ]; then
   _ok "8-day-old cache triggered recapture on push"
