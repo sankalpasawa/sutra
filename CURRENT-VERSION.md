@@ -1,5 +1,21 @@
 # Sutra — Current Version
 
+## v2.3.0 (2026-04-25) — additive: `sutra` CLI assistant subcommands
+
+- **8 new `sutra` subcommands** for the Assistant Interaction Layer (v2.2.0 shipped the engine; v2.3.0 ships the terminal UX):
+  - `sutra enable` — turn assistant on (removes kill-switch files)
+  - `sutra disable` — persistent off via ~/.sutra-assistant-disabled (zero tokens)
+  - `sutra explain [--last N|--turn N]` — narrative renderer
+  - `sutra ask <surface> "question" "opt1,opt2,opt3"` — queue feedback prompt
+  - `sutra answer <prompt_id> <option>` — answer a queued prompt
+  - `sutra pending` — list unresolved feedback
+  - `sutra profile` — show client profile
+  - `sutra decommission [--dry-run|--confirm]` — product kill-switch
+- All subcommands work in any client repo where `sutra` is on PATH (Claude Code auto-adds plugin bin/ to PATH).
+- Founder directive 2026-04-25: "It should be able to update if the user says enable Billu — from the terminal itself." One command flips the switch in any company session.
+
+# Sutra — Current Version
+
 ## v2.2.0 (2026-04-25) — additive: Assistant Interaction Layer
 
 - **New OS class: Interaction Layer** at `os/interaction/`. First artifact: `ASSISTANT.md` charter. Sits above the 5 foundational blocks; human-facing surface for legibility, feedback capture, per-user customization (S2+), energy tracking (S5+), and passenger-mode problem-solving (S3+). Spec: `holding/research/2026-04-24-assistant-layer-design.md`.

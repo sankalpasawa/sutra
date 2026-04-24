@@ -83,6 +83,61 @@ case "$SUBCMD" in
       exit 1
     fi
     ;;
+
+  # ── Assistant Interaction Layer (v2.2.0+) ───────────────────────────
+  enable)
+    # sutra enable — turn assistant on in current cwd (removes kill-switch files)
+    rm -f "$HOME/.sutra-assistant-disabled" "$HOME/.sutra-disabled" 2>/dev/null
+    if [ -n "${SUTRA_ASSISTANT_DISABLED:-}" ]; then
+      echo "note: SUTRA_ASSISTANT_DISABLED env is set; unset it in this shell to clear"
+    fi
+    echo "✅ Assistant enabled in $PWD"
+    echo "   Next Stop event fires observer; events appended to state/assistants/<client_id>/events.jsonl"
+    echo "   Check with: sutra explain"
+    ;;
+
+  disable)
+    # sutra disable — persistent off (zero tokens) until re-enabled
+    touch "$HOME/.sutra-assistant-disabled"
+    echo "⏹️  Assistant disabled (persistent, via ~/.sutra-assistant-disabled)"
+    echo "   Re-enable: sutra enable"
+    ;;
+
+  explain)
+    EXP="$PLUGIN_ROOT/hooks/assistant-explain.sh"
+    [ -x "$EXP" ] || EXP="$PWD/holding/scripts/assistant-explain.sh"
+    exec bash "$EXP" "$@"
+    ;;
+
+  ask)
+    FB="$PLUGIN_ROOT/hooks/assistant-feedback.sh"
+    [ -x "$FB" ] || FB="$PWD/holding/scripts/assistant-feedback.sh"
+    exec bash "$FB" --ask "$@"
+    ;;
+
+  answer)
+    FB="$PLUGIN_ROOT/hooks/assistant-feedback.sh"
+    [ -x "$FB" ] || FB="$PWD/holding/scripts/assistant-feedback.sh"
+    exec bash "$FB" --answer "$@"
+    ;;
+
+  pending)
+    FB="$PLUGIN_ROOT/hooks/assistant-feedback.sh"
+    [ -x "$FB" ] || FB="$PWD/holding/scripts/assistant-feedback.sh"
+    exec bash "$FB" --list
+    ;;
+
+  profile)
+    FB="$PLUGIN_ROOT/hooks/assistant-feedback.sh"
+    [ -x "$FB" ] || FB="$PWD/holding/scripts/assistant-feedback.sh"
+    exec bash "$FB" --profile
+    ;;
+
+  decommission)
+    DC="$PLUGIN_ROOT/hooks/assistant-decommission.sh"
+    [ -x "$DC" ] || DC="$PWD/holding/scripts/assistant-decommission.sh"
+    exec bash "$DC" "$@"
+    ;;
   version|--version|-v)
     manifest="$PLUGIN_ROOT/.claude-plugin/plugin.json"
     if [ -f "$manifest" ] && command -v jq >/dev/null 2>&1; then
