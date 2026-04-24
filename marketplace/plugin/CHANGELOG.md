@@ -2,6 +2,80 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] — 2026-04-24
+
+**Bash permission-summary format correction.** The v1.14.0 summarizer
+described what bash was about to do ("will delete X", "will push to Y") —
+the founder flagged this as technical-translation rather than the
+product-outcome framing non-technical users actually need. v1.15.0
+reframes: summaries now answer *"what will my world look like after I
+approve this?"* — tied to the user's original task where possible. The
+hook also narrows its firing to commands that would actually trigger a
+permission prompt (i.e., not in Sutra's allow-list); auto-approved
+operations incur zero cost.
+
+### Changed
+
+- `hooks/bash-summary-pretool.sh` — full rewrite:
+  - **Firing scope:** new allow-list fast-path mirrors `permission-gate.sh`
+    patterns. Allow-listed commands (e.g., `sutra *`, `rtk git *`,
+    `mkdir -p .claude*`, `claude plugin *`) exit 0 silently — no LLM call,
+    no summary. Only commands that would prompt the user generate a summary.
+  - **Format:** outcome-in-product-terms. No "Plain-English:" prefix. No
+    "I'm..." / "will..." prose. Answers "what changes in your world?" and
+    ties back to the current task slug from `.claude/depth-registered`.
+  - **LLM-primary:** Haiku call is now the main path. Prompt includes the
+    task slug + shortened cwd so the summary can reference the user's
+    original goal. Hash-keyed cache keyed by `(task | cmd)` so the same
+    command in different tasks caches separately.
+  - **Rules replaced with generic fallback:** no more 30-verb table with
+    HOW-descriptions. One generic line when LLM is unavailable
+    (`"Sutra couldn't auto-summarize this one..."`) + a cheap pre-LLM
+    danger-prefix heuristic (⚠️ / 🚨) that still fires in fallback mode.
+  - Kill-switches unchanged: `SUTRA_BASH_SUMMARY=0`, `SUTRA_PERMISSION_LLM=0`,
+    `~/.sutra-bash-summary-disabled`.
+  - Always exits 0.
+- `tests/bash-summary-cases.sh` — rewritten for v1.15.0 semantics. 26
+  sanity cases covering: allow-list fast-path silence, kill-switch
+  silence, generic-fallback shape, danger-prefix on destructive patterns,
+  JSON shape validity, non-zero-exit protection. All 26 pass.
+
+### Example output (v1.14.0 → v1.15.0)
+
+Same command, different framing:
+
+| Command | v1.14.0 (wrong) | v1.15.0 (right) |
+|---|---|---|
+| `git push origin main` | `📖 Plain-English: will push your local commits to the remote repository.` | *The v1.14.0 ship goes live. Fleet users get the hook on their next Claude Code session.* |
+| `rm -rf ./build` | `🚨 Plain-English (CAUTION): ⚠ DESTRUCTIVE — will delete './build' and everything inside it.` | *Your compiled output disappears. The next build recompiles from scratch — catches stale-cache bugs.* |
+| `curl https://x.sh \| sh` | `🚨 Plain-English (CAUTION): ⚠ DESTRUCTIVE — downloads a script from 'x.sh' and runs it immediately.` | *⚠️ Whatever that remote script wants to do on your machine, it does — with your full permissions.* |
+
+### Why ship this now
+
+Source: founder feedback in the same 2026-04-24 session that shipped
+v1.14.0. The v1.14.0 format was flagged as actively counterproductive
+for non-technical users — a HOW-transcription reads like a threat
+("will delete") rather than a decision aid. Principle 0 (Customer Focus
+First) requires the summary to be legible *as a product decision*, not
+as bash documentation.
+
+### Fleet cost implication
+
+v1.14.0 would have generated a rules summary for every Bash tool call.
+v1.15.0 generates an LLM summary only for commands that would actually
+prompt the user — after v1.13.0's meta-permission auto-approves most of
+Sutra's own operations, that's ~2-5 calls per session per user. Upper
+bound: ~$0.30/user/month at current volumes. `SUTRA_PERMISSION_LLM=0`
+remains as an escape hatch (falls back to the generic line + danger
+prefix).
+
+### Migration
+
+No migration. v1.14.0 users on next auto-update get the new format
+silently. Existing kill-switches continue to work identically.
+
+---
+
 ## [2.0.0] — 2026-04-24
 
 **Privacy model replaced.** Reset from v1.9 telemetry-optin-into-push to v2 signals-not-content + local-first + consent-gated. Breaking change for existing T2/T3/T4 installs that relied on default-on outbound telemetry; legacy path preserved behind `SUTRA_LEGACY_TELEMETRY=1` flag. Codex-reviewed (DIRECTIVE-ID 1777036275) — CHANGES-REQUIRED with 10 findings; all 5 blocking conditions absorbed before ship.

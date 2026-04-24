@@ -243,7 +243,7 @@ The Adaptive Protocol Engine (PROTO-000) depth assessment interacts with the inv
 
 | Surface | Type | Implements | Matcher / Trigger | Status | Source |
 |---|---|---|---|---|---|
-| `sutra/marketplace/plugin/hooks/bash-summary-pretool.sh` | PreToolUse hook | **P7** (Human is the final authority — makes trade-off visible), **P11** (Human Confidence Through Clarity); Part 2 § Override Protocol (enables *informed* consent before approval) | Bash tool call | shipping in plugin v1.4.0 (2026-04-24) | FEEDBACK-LOG 2026-04-24 — external user flagged raw bash unreadable |
+| `sutra/marketplace/plugin/hooks/bash-summary-pretool.sh` | PreToolUse hook | **P7** (Human is the final authority — makes trade-off visible), **P11** (Human Confidence Through Clarity); Part 2 § Override Protocol (enables *informed* consent before approval) | Bash tool call (only on commands not already in the Sutra allow-list — v1.15.0 scope narrowing) | shipping in plugin v1.15.0 (2026-04-24). v1.14.0 shipped with HOW-style summaries; format corrected to outcome-in-product-terms per founder feedback. | FEEDBACK-LOG 2026-04-24 — external user flagged raw bash unreadable + founder format correction |
 
 ### How to read a row
 
