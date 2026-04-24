@@ -232,3 +232,32 @@ The Adaptive Protocol Engine (PROTO-000) depth assessment interacts with the inv
 ### Key Principle
 
 > The LLM is the runtime that executes the system's protocols. It is never the first responder. The routing layer is the first responder.
+
+---
+
+## Part 4: Registry of Implementations
+
+*A bidirectional index of concrete hooks, skills, commands, and UI surfaces that implement the principles above. When any row's implementation changes, the row is updated; when a principle's text changes, every row referencing it is re-examined. Keeps charter + code from drifting.*
+
+**Registration rule**: a surface qualifies for this registry if it (a) mediates a human↔agent interaction moment, OR (b) operationalizes an H-A-I principle in running code/docs. Append entries below the table in append-only style (newest last). Never delete — supersede by adding a newer row with `Status: superseded-by <path>`.
+
+| Surface | Type | Implements | Matcher / Trigger | Status | Source |
+|---|---|---|---|---|---|
+| `sutra/marketplace/plugin/hooks/bash-summary-pretool.sh` | PreToolUse hook | **P7** (Human is the final authority — makes trade-off visible), **P11** (Human Confidence Through Clarity); Part 2 § Override Protocol (enables *informed* consent before approval) | Bash tool call | shipping in plugin v1.4.0 (2026-04-24) | FEEDBACK-LOG 2026-04-24 — external user flagged raw bash unreadable |
+
+### How to read a row
+
+- **Surface**: absolute repo path to the artifact.
+- **Type**: hook / skill / command / CLAUDE.md rule / doc / UI.
+- **Implements**: principle IDs from Holding's HUMAN-AI-INTERACTION.md (P1-P11) and/or Part references within this charter.
+- **Matcher / Trigger**: when the surface activates (e.g., `PreToolUse(Bash)`, `UserPromptSubmit`, `/command-name`).
+- **Status**: `shipping in vX.Y.Z`, `active`, `deprecated`, `superseded-by <path>`.
+- **Source**: what caused this surface to exist (FEEDBACK-LOG entry, direction, research note).
+
+### Cascade rule
+
+When you edit any file listed in the **Surface** column, cascade-check expects a TODO in `holding/TODO.md` referencing either the file stem OR this charter path. Conversely, when this charter is edited in a way that changes a principle a registered surface depends on, open a companion TODO to review each dependent surface (one TODO per surface). This preserves the interconnection the founder asked for on 2026-04-24.
+
+### Paused-redesign acknowledgment
+
+Per memory *H↔Terminal redesign paused* (2026-04-24): the broader redesign of this charter is paused until Core Restructure Phase 0-6 completes. This Part 4 registry is explicitly **additive** — it catalogs what exists without restructuring the charter's shape. When the redesign unparks, the registry migrates intact into whatever the new home becomes.

@@ -83,3 +83,37 @@ Closed-in: [version / commit sha]
 ---
 
 <!-- APPEND NEW ENTRIES BELOW THIS LINE — use the capture format above -->
+
+## 2026-04-24 — [closed] Permission prompts unreadable to non-technical users
+
+- **Reporter:** external-user (routed via founder, in-session 2026-04-24)
+- **Context:** Using Claude Code (with Sutra plugin). When Claude requests tool approval, the dialog displays raw shell: `curl`, `python3`, `rm -f`, multi-line heredocs. User is non-technical, cannot parse what the command actually does.
+- **Description:** The permission dialog shows the raw command string and nothing else. A non-developer has two bad options: blindly approve commands they don't understand, or get stuck. There is no plain-English description of the action, its blast radius, or its reversibility.
+- **Impact:**
+  - **Accessibility** — hard-blocks non-developer adopters. Breaks the "60s onboarding" promise for non-technical segments of the fleet.
+  - **Safety hole** — blind approval is worse than refusal. Users click through destructive commands because they don't know what `rm -f` means. "I don't understand but it's probably fine" is the default failure mode.
+  - **Doctrine violation** — Founding Doctrine Principle 0 (Customer Focus First): "If the customer needs explanation to understand, fix it." This is exactly that case.
+- **Reporter's proposed fix:** Before any permission dialog, prepend a 1-2 sentence plain-English summary of what the command does. Example: *"This will delete 3 files from your Downloads folder and update a spreadsheet to show which tenders are still open."* Raw command remains visible below for technical users.
+- **Relation to prior feedback:** Distinct from the 2026-04-21 entry ("too many permission prompts" — closed in v1.3.0 via `bin/sutra` consolidation). That one reduced **count**; this one improves **readability** of the prompts that remain. They compound — ship both, don't substitute.
+- **Fit analysis:**
+  - **Home:** `sutra/marketplace/plugin/hooks/` — a PreToolUse hook on Bash that prints a summary line before the dialog appears.
+  - **Build-layer:** L0 (fleet — every non-technical user benefits).
+  - **Technical constraint:** the hook cannot modify the Claude Code dialog UI itself (Anthropic-owned). Hook emits summary text into the conversation stream; user reads it, then approves via the native dialog. Must verify Claude Code does not buffer hook stdout below the dialog — if it does, this approach fails and we pitch upstream instead.
+- **Implementation options:**
+  - **v0 — Rule-based summarizer (1-2 days).** Pattern-match common verbs: `rm`, `curl`, `git <sub>`, `mkdir`, `cp`, `mv`, `chmod`, `python3 -c`, heredocs. Emit `"This will delete N files in <dir>"`, `"This downloads a file from <host>"`, etc. ~80% coverage of what users actually see. Zero LLM cost, zero added latency.
+  - **v1 — LLM summarizer (2-3 days).** Haiku call per Bash tool with a tight prompt and aggressive caching. Higher accuracy on long/composed commands, but adds $/latency per prompt across the fleet. Requires budget decision.
+  - **v2 — Upstream pitch to Anthropic.** Best long-term home — the summary belongs inside the dialog, not in hook stdout. Write it up as a Claude Code feature request referencing this feedback. Does not block v0/v1.
+- **Open questions (for founder):**
+  1. Ship v0 now, or wait for v1 (LLM) to avoid rewriting?
+  2. Summary on **all** Bash calls, or only risky verbs (rm / curl / chmod / write-to-home / network)?
+  3. Upstream pitch before or after shipping v0? (If Anthropic builds it natively, we retire the hook.)
+- **Status:** closed.
+- **Resolution (2026-04-24):** Shipped Option D (big bang) in plugin **v1.14.0** — v0 rules-based summarizer + v1 LLM fallback + upstream pitch doc to Anthropic.
+  - Hook: `sutra/marketplace/plugin/hooks/bash-summary-pretool.sh` (~400 lines; rules for ~30 verbs + Haiku fallback for composed commands; always exits 0; three kill-switches).
+  - Registered in `sutra/marketplace/plugin/hooks/hooks.json` under `PreToolUse[Bash]`, ordered after `rtk-auto-rewrite` + `codex-directive-gate` so blocked commands never pay summarization cost.
+  - Tests: `sutra/marketplace/plugin/tests/bash-summary-cases.sh` — 38 golden cases, all passing.
+  - Plan: `holding/research/2026-04-24-permission-summary-plan.md`.
+  - Upstream pitch: `sutra/marketplace/UPSTREAM-PITCH-permission-summary.md` — local doc ready for founder to file with Anthropic (channel TBD).
+  - H-Agent Interface registry: entry added in `sutra/layer2-operating-system/c-human-agent-interface/HUMAN-AGENT-INTERFACE.md` § Part 4; backlinks in `holding/HUMAN-AI-INTERACTION.md` under P7 + P11.
+  - Live smoke test: `rm -rf /tmp/foo` → 🚨 DESTRUCTIVE summary; `ls -la` → 📖 read-only summary; `SUTRA_BASH_SUMMARY=0` → silent (kill-switch works).
+- **Closed-in:** plugin v1.14.0 (commit SHA recorded on commit approval).
