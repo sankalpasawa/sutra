@@ -44,26 +44,45 @@ else
 fi
 
 FIRST_SEEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+# v2.0.3+: preserve existing identity block across re-runs. Prior code rewrote
+# .claude/sutra-project.json unconditionally; a re-onboard would silently erase
+# a previously stamped identity. Codex caught this at ship — 2026-04-24.
+EXISTING_IDENTITY_JSON=""
 if [ -f .claude/sutra-project.json ]; then
   FIRST_SEEN=$(python3 -c "import json; print(json.load(open('.claude/sutra-project.json')).get('first_seen', ''))" 2>/dev/null)
   [ -z "$FIRST_SEEN" ] && FIRST_SEEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  EXISTING_IDENTITY_JSON=$(python3 -c "import json; d=json.load(open('.claude/sutra-project.json')); ident=d.get('identity'); print(json.dumps(ident) if ident else '')" 2>/dev/null || echo "")
 fi
 
-cat > .claude/sutra-project.json <<JSON
-{
-  "install_id": "$INSTALL_ID",
-  "project_id": "$PROJECT_ID",
-  "project_name": "$NAME",
-  "first_seen": "$FIRST_SEEN",
-  "sutra_version": "$VERSION",
-  "telemetry_optin": $EXISTING_OPTIN
+python3 - "$INSTALL_ID" "$PROJECT_ID" "$NAME" "$FIRST_SEEN" "$VERSION" "$EXISTING_OPTIN" "$EXISTING_IDENTITY_JSON" > .claude/sutra-project.json <<'PY'
+import json, sys
+install_id, project_id, name, first_seen, version, optin_str, existing_identity = sys.argv[1:8]
+d = {
+  "install_id": install_id,
+  "project_id": project_id,
+  "project_name": name,
+  "first_seen": first_seen,
+  "sutra_version": version,
+  "telemetry_optin": optin_str == "true",
 }
-JSON
+if existing_identity:
+    try:
+        d["identity"] = json.loads(existing_identity)
+    except Exception:
+        pass
+print(json.dumps(d, indent=2))
+PY
 
 queue_init
 
 # v1.9.0+: stamp identity block if telemetry_optin is true. Best-effort.
-if [ "$EXISTING_OPTIN" = "true" ] && declare -f capture_identity >/dev/null 2>&1; then
+# v2.0.1+: per PRIVACY.md contract ("local-first, consent-gated, in-memory-until-consent"),
+#          local identity writes require SUTRA_LEGACY_TELEMETRY=1 — telemetry_optin alone
+#          is insufficient consent for writing github_login/git name to disk. Closes the
+#          contract gap codex flagged on 2026-04-24 post-v2.0 privacy rewrite.
+if [ "$EXISTING_OPTIN" = "true" ] \
+   && [ "${SUTRA_LEGACY_TELEMETRY:-0}" = "1" ] \
+   && declare -f capture_identity >/dev/null 2>&1; then
   IDENTITY_JSON=$(capture_identity "$VERSION" 2>/dev/null)
   if [ -n "$IDENTITY_JSON" ]; then
     python3 - "$IDENTITY_JSON" <<'PY' 2>/dev/null || true
@@ -94,8 +113,10 @@ echo "  project_name:    $NAME"
 echo "  sutra_version:   $VERSION"
 echo "  telemetry_optin: $EXISTING_OPTIN  (edit .claude/sutra-project.json to flip)"
 echo "  queue:           $(queue_file) — depth $(queue_count)"
-if [ "$EXISTING_OPTIN" = "true" ]; then
-  echo "  identity:        stamped (git name + gh login + os). See PRIVACY.md or .claude/sutra-project.json"
+if [ "$EXISTING_OPTIN" = "true" ] && [ "${SUTRA_LEGACY_TELEMETRY:-0}" = "1" ]; then
+  echo "  identity:        stamped locally (legacy mode active). See PRIVACY.md."
+elif [ "$EXISTING_OPTIN" = "true" ]; then
+  echo "  identity:        not stored locally (v2.0 default). See PRIVACY.md for consent options."
 fi
 echo ""
 echo "Next:"

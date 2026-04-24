@@ -28,7 +28,9 @@ cd "$CLAUDE_PROJECT_DIR"
 git init --quiet
 git remote add origin git@github.com:fake-user/test-project.git 2>/dev/null || true
 
-SUTRA_AUTO_OPTIN=1 bash "$PLUGIN_ROOT/scripts/onboard.sh" >/dev/null 2>&1
+SUTRA_AUTO_OPTIN=1 SUTRA_LEGACY_TELEMETRY=1 bash "$PLUGIN_ROOT/scripts/onboard.sh" >/dev/null 2>&1
+# v2.0.3+: local identity write requires SUTRA_LEGACY_TELEMETRY=1 per PRIVACY.md; this
+# integration test asserts the legacy path still stamps correctly.
 
 # Check sutra-project.json has identity
 if python3 -c "import json; d=json.load(open('.claude/sutra-project.json')); assert 'identity' in d; assert d['identity'].get('git_user_name'); print(d['identity']['git_user_name'])" >/dev/null 2>&1; then

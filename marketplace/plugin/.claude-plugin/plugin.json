@@ -1,6 +1,6 @@
 {
   "name": "core",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Operating system for building with AI. v2.0 — privacy model replaced: signals-not-content capture, consent-gated disk writes, T4 in-memory-default. User surface = single PRIVACY.md sheet + SUTRA_TELEMETRY=0 opt-out + /sutra feedback manual channel. Legacy v1.9 identity stamping + outbound push to sankalpasawa/sutra-data DEPRECATED, gated behind SUTRA_LEGACY_TELEMETRY=1. Existing governance surface preserved: input routing, depth estimation, readability gate, output trace, session-retrieve, per-profile enforcement, C3c token-compression bundle, v1.13 permission-gate, v1.14 Bash permission-prompt summarizer, v1.14.1 feedback-routing-rule. Codex-reviewed DIRECTIVE-ID 1777036275 (5 HIGH + 4 MEDIUM findings absorbed). v2.0.1 patch: log-triage / compliance-tracker / log-skill-feedback now no-op silently on no-args (Stop-hook registration was firing them without CLI args and hitting usage-error every session; reported by Testlify first-install 2026-04-24).",
   "author": {
     "name": "Sutra",
