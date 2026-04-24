@@ -46,6 +46,16 @@ case "$SUBCMD" in
     exec bash "$SCRIPTS_DIR/feedback.sh" "$@"
     ;;
 
+  # v2.1 — PEDAGOGY charter: interactive tutor
+  learn)
+    exec bash "$SCRIPTS_DIR/learn.sh" "$@"
+    ;;
+
+  # v2.1 — SECURITY charter: supply-chain integrity (SBOM)
+  sbom)
+    exec bash "$SCRIPTS_DIR/sbom.sh" "$@"
+    ;;
+
   # Secondary — kept callable from bin/ for power users and shell helpers
   push)
     exec bash "$SCRIPTS_DIR/push.sh" "$@"
@@ -98,6 +108,17 @@ Feedback (v2.0):
   feedback "<msg>"     Capture feedback locally at ~/.sutra/feedback/manual/.
                        Grants consent for auto-capture signals to persist.
                        Nothing transmitted — see ~/.sutra/PRIVACY.md.
+  feedback --public "<msg>"
+                       (v2.1) Opt-in GitHub issue post via gh CLI.
+                       Requires confirmation; scrubbed before post.
+
+Learn (v2.1 — PEDAGOGY charter):
+  learn                List available lessons.
+  learn <topic>        Print a lesson (depth / routing / charters / hooks / build-layer).
+  learn --all          Print all 5 in order.
+
+Security (v2.1 — SECURITY charter):
+  sbom                 Generate SBOM (SHA256 per file) for integrity checks.
 
 Power-user:
   push                 Manually push queued telemetry (auto-runs on Stop).

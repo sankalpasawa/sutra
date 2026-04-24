@@ -44,7 +44,16 @@ EOF
 fi
 
 if [ "$PUBLIC" = "1" ]; then
-  echo "-- --public is not yet implemented in v2.0. Falling back to local capture."
+  # v2.1: wire --public to gh CLI with confirmation + scrub.
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "-- --public requires GitHub CLI (gh). Install: https://cli.github.com/ -- falling back to local capture."
+    PUBLIC=0
+  else
+    if ! gh auth status >/dev/null 2>&1; then
+      echo "-- gh CLI installed but not authenticated (gh auth login). Falling back to local capture."
+      PUBLIC=0
+    fi
+  fi
 fi
 
 mkdir -p "$SUTRA_HOME/feedback/manual" 2>/dev/null
@@ -78,5 +87,32 @@ fi
 echo "captured at $FILE"
 echo "consent granted -- future auto-capture signals will persist locally"
 echo "see ~/.sutra/PRIVACY.md for what's captured and retention policy"
+
+# v2.1: --public opts into GitHub issue post via gh CLI.
+if [ "$PUBLIC" = "1" ]; then
+  echo ""
+  echo "-- --public: about to open a GitHub issue at sankalpasawa/sutra"
+  echo "   title:   [feedback] from plugin v${PLUGIN_VERSION}"
+  echo "   body:    <scrubbed content above>"
+  echo "   labels:  feedback, v${PLUGIN_VERSION}"
+  echo "   visible: PUBLIC (this is permanent; GitHub issues are public)"
+  echo ""
+  printf "   confirm with 'yes' (anything else cancels): "
+  read -r CONFIRM
+  if [ "$CONFIRM" = "yes" ]; then
+    TITLE="[feedback] from plugin v${PLUGIN_VERSION}"
+    if gh issue create \
+         --repo sankalpasawa/sutra \
+         --title "$TITLE" \
+         --body "$SCRUBBED" \
+         --label "feedback,v${PLUGIN_VERSION}" >/dev/null 2>&1; then
+      echo "-- issue opened on sankalpasawa/sutra"
+    else
+      echo "-- gh issue create failed — feedback remains captured locally at $FILE"
+    fi
+  else
+    echo "-- public post cancelled — feedback kept local only"
+  fi
+fi
 
 exit 0

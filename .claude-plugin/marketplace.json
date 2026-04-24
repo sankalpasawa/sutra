@@ -10,7 +10,7 @@
     {
       "name": "core",
       "description": "Sutra Core — governance primitives: input routing, depth estimation, readability gate, output trace + v2.0 privacy model (signals-not-content, consent-gated, local-first). Hooks warn when depth marker is missing before Edit/Write; estimation metrics are logged on session end. Includes session-retrieve for recovering abruptly-closed sessions. Privacy: see ~/.sutra/PRIVACY.md; opt out with SUTRA_TELEMETRY=0.",
-      "version": "2.0.3",
+      "version": "2.1.0",
       "author": {
         "name": "Sutra",
         "url": "https://sutra.os"

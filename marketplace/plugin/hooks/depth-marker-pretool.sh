@@ -36,22 +36,69 @@ if [ -f "$CONFIG" ]; then
   [ -n "$_PROFILE_READ" ] && PROFILE="$_PROFILE_READ"
 fi
 
-# All profiles emit the same reminder text
-cat <<'EOF' >&2
-⚠ Sutra: no depth marker found. Emit a Depth + Estimation block before Edit/Write.
+# v2.1 PEDAGOGY charter — level-aware explanation.
+# SUTRA_LEVEL: novice | apprentice | journeyman | master (env or ~/.sutra/level).
+SUTRA_LEVEL="${SUTRA_LEVEL:-}"
+if [ -z "$SUTRA_LEVEL" ] && [ -f "$HOME/.sutra/level" ]; then
+  SUTRA_LEVEL=$(head -1 "$HOME/.sutra/level" 2>/dev/null | tr -d '[:space:]')
+fi
+SUTRA_LEVEL="${SUTRA_LEVEL:-apprentice}"
 
-Required format:
+case "$SUTRA_LEVEL" in
+  novice)
+    cat <<'EOF' >&2
+⚠ Sutra: no depth marker found.
+
+WHY THIS MATTERS
+  Sutra asks you to rate every task's depth (1-5) BEFORE you act on it.
+  This is the single biggest discipline the OS enforces — because visible
+  choices get examined, and examined choices get better.
+
+  Over-triage (D5 for a one-line fix) = wastes attention.
+  Under-triage (D1 for a cross-cutting migration) = breaks production.
+
+  Writing the depth down before acting forces the choice.
+
+THE FORMAT
   TASK: "..."
-  DEPTH: X/5 (surface|considered|thorough|rigorous|exhaustive)
+  DEPTH: X/5 (surface | considered | thorough | rigorous | exhaustive)
+  EFFORT: time est., files est.
+  COST: ~$X
+  IMPACT: who/what changes
+
+THEN WRITE THE MARKER
+  mkdir -p .claude && echo "DEPTH=N TASK=<slug> TS=$(date +%s)" > .claude/depth-registered
+
+ESCAPE HATCH (one-shot)
+  SUTRA_BYPASS=1 <your-command>
+
+LEARN MORE
+  sutra learn depth
+
+YOUR LEVEL
+  SUTRA_LEVEL=novice — this verbose explanation will fire until you
+  set SUTRA_LEVEL=apprentice (env) or echo apprentice > ~/.sutra/level.
+EOF
+    ;;
+  master)
+    echo "⚠ missing depth marker (SUTRA_BYPASS=1 overrides)" >&2
+    ;;
+  *)
+    cat <<'EOF' >&2
+⚠ Sutra: no depth marker found. Emit Depth + Estimation block before Edit/Write.
+
+Required:
+  TASK: "..."
+  DEPTH: X/5
   EFFORT: ..., ...
   COST: ~$X
   IMPACT: ...
 
-Then write the marker:
-  mkdir -p .claude && echo "DEPTH=N TASK=<slug> TS=$(date +%s)" > .claude/depth-registered
-
-Escape hatch (one-shot): run the command with SUTRA_BYPASS=1 prefix.
+Write marker: mkdir -p .claude && echo "DEPTH=N TASK=<slug> TS=$(date +%s)" > .claude/depth-registered
+Escape: SUTRA_BYPASS=1 prefix.
 EOF
+    ;;
+esac
 
 # Company profile: HARD block. Others: soft warn.
 case "$PROFILE" in
