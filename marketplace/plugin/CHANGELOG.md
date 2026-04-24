@@ -2,6 +2,53 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning per [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] — 2026-04-24
+
+**Privacy model replaced.** Reset from v1.9 telemetry-optin-into-push to v2 signals-not-content + local-first + consent-gated. Breaking change for existing T2/T3/T4 installs that relied on default-on outbound telemetry; legacy path preserved behind `SUTRA_LEGACY_TELEMETRY=1` flag. Codex-reviewed (DIRECTIVE-ID 1777036275) — CHANGES-REQUIRED with 10 findings; all 5 blocking conditions absorbed before ship.
+
+### Added
+
+- `lib/privacy-sanitize.sh` — 8 bash primitives: `derive_signal` (allowlist-only, 5 categories × alphanumeric sub), `scrub_text` (secondary guardrail: paths + KEY=value + Bearer + JWT + PEM + SSH + git-creds + DSN + email), `privacy_gate` (3-state: opt-out / in-memory / disk-allowed), `signal_write` (routes by gate), `sutra_safe_write` (atomic temp+rename + 0600 + symlink-refusal), `sutra_safe_append` (flock-when-available + 0600), `sutra_grant_consent`, `sutra_retention_cleanup`. 38 unit tests green.
+- `hooks/feedback-auto-override.sh` — PreToolUse (all tools). Counts `*_ACK=1` overrides per hook-id. Dedup per invocation. 10 integration tests green.
+- `hooks/feedback-auto-correction.sh` — UserPromptSubmit. In-memory regex match on correction patterns (no / stop / don't / actually / wrong / nope / that's-not). Prompt text never stored. Disclosed in PRIVACY.md §"What we capture" exception clause.
+- `hooks/feedback-auto-abandonment.sh` — Stop. Emits signal only if depth-registered marker exists and is fresh (<1h). Captures task-slug only (no content). Abandonment fingerprint.
+- `hooks/sessionstart-privacy-notice.sh` — SessionStart. Creates `~/.sutra/` with 0700, copies plugin PRIVACY.md to `~/.sutra/PRIVACY.md` with 0600, shows one-time banner, runs opportunistic retention cleanup (30d default).
+- `PRIVACY.md` — v2 user-facing sheet (plain English, 1 page, 7 sections + legacy appendix). Tone: trustworthy, specific, no legalese. Corrected per codex: no "never prompts" / "nowhere else" overclaims.
+
+### Changed
+
+- `scripts/push.sh` — Legacy outbound push to `sankalpasawa/sutra-data` gated behind `SUTRA_LEGACY_TELEMETRY=1`. Default is now no-push.
+- `tests/integration/test-identity-stamp.sh` — patched to opt into legacy flag for its 3 push-path assertions (7/7 green post-patch).
+
+### Deprecated
+
+- v1.9.0 identity stamping (`lib/identity.sh`) — still functional under `SUTRA_LEGACY_TELEMETRY=1`, otherwise inert.
+- `telemetry_optin: true` default in `.claude/sutra-project.json` — no longer has any effect without legacy flag.
+- `claude-plugin/SCHEMA.md` fields `install_id`, `project_id`, `identity:` — not captured by v2 signals.
+
+### Security & Privacy (new in this version)
+
+- **Default-strict**: T4 external users → in-memory-only signals until `/sutra feedback` grants consent.
+- **Kill-switch**: `SUTRA_TELEMETRY=0` → zero capture anywhere. `rm -rf ~/.sutra/` → delete everything.
+- **Allowlist-first**: signals derived from hook metadata, not from raw text scanning. Regex scrub is secondary guardrail only.
+- **Fail-closed**: any sanitization error skips the write. Never writes raw because scrub broke.
+- **Local-first**: no network transport in v2 default mode. No GitHub push, no Supabase, no third-party.
+- **Permissions**: 0700 on `~/.sutra/`, 0600 on all files within.
+- **Retention**: 30d default via `sutra_retention_cleanup` on SessionStart. Configurable via `SUTRA_RETENTION_DAYS` (1-90).
+
+### Governance
+
+- New charter at `sutra/os/charters/PRIVACY.md` (internal spec — 8 principles, tier contract, failure modes, primitives map, 6 KRs).
+- Codex verdict archived at `asawa-holding/.enforcement/codex-reviews/privacy-design-review-2026-04-24.md`.
+
+### Migration notes
+
+- **T0/T1 (Asawa-internal)**: no action. Auto-capture continues; retention unchanged at 90d for internal profile.
+- **T2 (owned portfolio — DayFlow, Billu, Paisa, PPR, Maze)**: on next session, banner shows; data moves to `~/.sutra/feedback/auto/` (was `~/.sutra/metrics-queue.jsonl`). Prior queue is left in place but no longer pushed.
+- **T3 (Testlify, Dharmik)**: auto-capture now in-memory-only until user runs `/sutra feedback` once. No telemetry fan-in to Sutra team without explicit consent.
+- **T4 (external fleet)**: default-strict. In-memory-only until consent. No action required; behavior improves automatically.
+- **Anyone who wants v1 behavior back**: `export SUTRA_LEGACY_TELEMETRY=1`.
+
 ## [1.14.1] — 2026-04-24
 
 **Stop-the-bleed for the `vinitharmalkar` incident.** In a recent T4 plugin user session, Sutra responded to a feedback request by offering to "file a GitHub issue on your behalf" and surfaced the `sankalpasawa/sutra` repo URL — leaking the session's auth identity into a public channel and treating a customer as a contributor. This ships a behavioral rule that fires whenever the user's prompt contains a feedback-intent keyword, instructing Claude to capture feedback locally and never file issues on the user's behalf. Independent of (and precedes) the full `/sutra feedback` command which lands in a later release.
