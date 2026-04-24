@@ -2,6 +2,8 @@
 # Sutra OS — Triage Logger
 # Called by agent after task completion to log depth accuracy.
 # Usage: bash log-triage.sh <depth_selected> <depth_correct> <class> [task_description] [project_dir]
+# Stop-hook safe: no-args → silent exit 0 (hook registration produces no-arg calls).
+[ $# -eq 0 ] && exit 0
 DEPTH_SELECTED="${1:?Usage: log-triage.sh <depth_selected> <depth_correct> <class> [task] [project_dir]}"
 DEPTH_CORRECT="${2:?Usage: log-triage.sh <depth_selected> <depth_correct> <class> [task] [project_dir]}"
 CLASS="${3:?Usage: log-triage.sh <depth_selected> <depth_correct> <class> [task] [project_dir]}"

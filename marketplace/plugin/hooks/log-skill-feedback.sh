@@ -2,6 +2,8 @@
 # Sutra OS — Skill Feedback Logger
 # Called by agent when a skill/pattern was notably effective or ineffective.
 # Usage: bash log-skill-feedback.sh <skill_name> <outcome: effective|ineffective> <note> [project_dir]
+# Stop-hook safe: no-args → silent exit 0 (hook registration produces no-arg calls).
+[ $# -eq 0 ] && exit 0
 SKILL="${1:?Usage: log-skill-feedback.sh <skill> <effective|ineffective> <note> [project_dir]}"
 OUTCOME="${2:?Usage: log-skill-feedback.sh <skill> <effective|ineffective> <note> [project_dir]}"
 NOTE="${3:-}"

@@ -2,6 +2,8 @@
 # Sutra OS — Compliance Tracker
 # Called by SOFT hooks to log pass/warn events for graduation tracking.
 # Usage: bash compliance-tracker.sh <hook_name> <status: pass|warn> [project_dir]
+# Stop-hook safe: no-args → silent exit 0 (hook registration produces no-arg calls).
+[ $# -eq 0 ] && exit 0
 HOOK_NAME="${1:?Usage: compliance-tracker.sh <hook_name> <pass|warn> [project_dir]}"
 STATUS="${2:?Usage: compliance-tracker.sh <hook_name> <pass|warn> [project_dir]}"
 PROJECT_DIR="${3:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}}"
