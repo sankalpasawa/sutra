@@ -1,0 +1,214 @@
+---
+# Direction Coverage Registry — PROTO-017 extended per chunk P4 (2026-04-27)
+#
+# Source of truth for D-direction → mechanism mapping.
+# Seeded from holding/DIRECTIONS-AUDIT-2026-04-22.md (Part 1) plus deltas
+# observed in commits + scanner state through 2026-04-27.
+#
+# Schema:
+#   - id:           D# (matches FOUNDER-DIRECTIONS.md ## D# header)
+#     name:         direction title
+#     mechanisms:   list of paths (executable artifacts) that enforce/measure
+#     status:       IMPLEMENTED | PARTIAL | UNIMPLEMENTED | RETIRED
+#     last_audited: YYYY-MM-DD
+#     notes:        what's missing if PARTIAL/UNIMPLEMENTED
+#
+# Scanner: holding/hooks/verify-policy-coverage.sh (Direction Coverage section)
+# Reconcile: every quarterly direction audit; spot-check on deviation.
+
+directions:
+  - id: D1
+    name: Simplicity Through Human Confidence
+    mechanisms: [holding/hooks/dispatcher-pretool.sh]
+    status: PARTIAL
+    last_audited: 2026-04-22
+    notes: "Session-end goal-count sensor missing per DIRECTIONS-AUDIT."
+
+  - id: D2
+    name: Thoroughness Scales With the Change
+    mechanisms: [sutra/marketplace/plugin/skills/depth-estimation/SKILL.md, holding/hooks/depth-marker-pretool.sh]
+    status: IMPLEMENTED
+
+  - id: D3
+    name: Every Task Has a Sutra Path
+    mechanisms: [holding/hooks/lifecycle-check.sh, holding/hooks/dispatcher-stop.sh]
+    status: IMPLEMENTED
+
+  - id: D4
+    name: Model Directions as Living Forces
+    mechanisms: [holding/hooks/architecture-awareness.sh, holding/hooks/dispatcher-pretool.sh]
+    status: IMPLEMENTED
+
+  - id: D5
+    name: External Research at Every Level
+    mechanisms: [holding/research/]
+    status: PARTIAL
+    notes: "LaunchAgent cron on weekly/bi-weekly cadence missing."
+
+  - id: D6
+    name: Directions with Regression Tests
+    mechanisms: [holding/hooks/principle-regression-tests.sh]
+    status: PARTIAL
+    notes: "Per-direction principle tests for D13/D28/D30 only; 7 more needed."
+
+  - id: D7
+    name: Expand Then Contract
+    mechanisms: []
+    status: UNIMPLEMENTED
+    notes: "Addition-counter sensor; evolution-pulse trigger missing."
+
+  - id: D8
+    name: Output-Driven Metrics
+    mechanisms: [holding/departments/analytics/collect.sh]
+    status: IMPLEMENTED
+
+  - id: D9
+    name: Recursive Estimation Engine
+    mechanisms: [sutra/marketplace/plugin/hooks/estimation-collector.sh, sutra/marketplace/plugin/hooks/estimation-stop.sh]
+    status: IMPLEMENTED
+
+  - id: D10
+    name: Test Everything in Production
+    mechanisms: [holding/hooks/test-in-production-check.sh]
+    status: IMPLEMENTED
+
+  - id: D11
+    name: Fix Process Not Instance
+    mechanisms: [holding/hooks/dispatcher-pretool.sh]
+    status: IMPLEMENTED
+
+  - id: D12
+    name: Architecture Awareness
+    mechanisms: [holding/hooks/architecture-awareness.sh]
+    status: IMPLEMENTED
+
+  - id: D13
+    name: Cascade Downstream
+    mechanisms: [holding/hooks/cascade-check.sh, sutra/marketplace/plugin/hooks/cascade-check.sh]
+    status: IMPLEMENTED
+
+  - id: D14
+    name: Don't Stop
+    mechanisms: []
+    status: IMPLEMENTED
+    notes: "Behavioral / agent disposition; no mechanical enforcer."
+
+  - id: D15
+    name: 70/20/10 Products First
+    mechanisms: [holding/TODO.md]
+    status: IMPLEMENTED
+
+  - id: D16
+    name: Executive Docs as HTML
+    mechanisms: []
+    status: PARTIAL
+    notes: "Write-path sensor classifying executive docs missing."
+
+  - id: D17
+    name: Don't Miss Parallel Statements
+    mechanisms: []
+    status: UNIMPLEMENTED
+    notes: "Input-parsing sensor counting founder statements vs actions missing."
+
+  - id: D18
+    name: Packaging Before Launch
+    mechanisms: [sutra/marketplace/plugin/]
+    status: PARTIAL
+    notes: "npx sutra-os init; marketplace plugin is alt path per D29."
+
+  - id: D19
+    name: Daily Satisfaction Report
+    mechanisms: [holding/hooks/session-end-satisfaction.sh]
+    status: IMPLEMENTED
+    last_audited: 2026-04-27
+    notes: "Hook exists; wired into dispatcher-stop per Tier-A audit follow-through."
+
+  - id: D20
+    name: Escalate Competing Priorities
+    mechanisms: [holding/hooks/dispatcher-stop.sh]
+    status: IMPLEMENTED
+
+  - id: D21
+    name: Speed of Building Is a Factor
+    mechanisms: [holding/hooks/estimation-collector.sh]
+    status: IMPLEMENTED
+    last_audited: 2026-04-27
+    notes: "speed_weight field added to estimation block per Tier-A audit follow-through."
+
+  - id: D22
+    name: OS Deploys by Judgment
+    mechanisms: []
+    status: PARTIAL
+    notes: "PULL/PUSH mode documented but not gated in code."
+
+  - id: D23
+    name: Push Back With Approval Gates
+    mechanisms: [holding/hooks/dispatcher-pretool.sh]
+    status: IMPLEMENTED
+
+  - id: D24
+    name: Parallelization While Evolving
+    mechanisms: [holding/hooks/version-governance.sh]
+    status: IMPLEMENTED
+
+  - id: D25
+    name: Technical / Scientific Rigor
+    mechanisms: []
+    status: UNIMPLEMENTED
+    notes: "Lexical linter with term dictionary missing."
+
+  - id: D26
+    name: Gear = Decomposition Granularity
+    mechanisms: [sutra/marketplace/plugin/skills/depth-estimation/SKILL.md]
+    status: IMPLEMENTED
+
+  - id: D27
+    name: Sutra→Company Depth 5
+    mechanisms: [holding/hooks/dispatcher-pretool.sh]
+    status: IMPLEMENTED
+
+  - id: D28
+    name: Per-Turn Routing & Depth
+    mechanisms: [sutra/marketplace/plugin/skills/input-routing/SKILL.md, holding/hooks/input-classification-gate.sh]
+    status: IMPLEMENTED
+    last_audited: 2026-04-27
+    notes: "input-classification-gate wired PreToolUse Write|Edit|MultiEdit this session (chunk C)."
+
+  - id: D29
+    name: Sutra Plugin = Sutra, Asawa hidden
+    mechanisms: [sutra/marketplace/plugin/]
+    status: PARTIAL
+    notes: "CM9 DayFlow-via-plugin canary; F13/F15/F1 open."
+
+  - id: D30a
+    name: Ship Is Not Done — Operationalize
+    mechanisms: [sutra/os/charters/OPERATIONALIZATION.md, holding/hooks/standing-instructions/engine.sh]
+    status: IMPLEMENTED
+
+  - id: D30b
+    name: Policy Ships With Mechanism
+    mechanisms: [holding/hooks/dispatcher-pretool.sh, holding/hooks/verify-policy-coverage.sh]
+    status: IMPLEMENTED
+
+  - id: D31
+    name: Sutra Owns Authority — No Skip
+    mechanisms: [sutra/os/SUTRA-CONFIG.md]
+    status: IMPLEMENTED
+
+  - id: D32
+    name: Hot-Reloadable Hooks, Default Off
+    mechanisms: [sutra/os/SUTRA-CONFIG.md]
+    status: PARTIAL
+    notes: "Shipped to dayflow+sutra-self; not yet in marketplace plugin."
+
+  - id: D33
+    name: External Clients Firewalled
+    mechanisms: [holding/hooks/external-client-firewall.sh]
+    status: IMPLEMENTED
+
+  - id: D34
+    name: Asawa Client Taxonomy (4 tiers)
+    mechanisms: [holding/ASAWA-AS-CLIENT.md]
+    status: IMPLEMENTED
+    last_audited: 2026-04-27
+    notes: "Added post-2026-04-22 audit."
