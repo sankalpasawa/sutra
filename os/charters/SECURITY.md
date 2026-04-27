@@ -135,6 +135,26 @@ Security as a whole needs **adversarial-actor defenses** above and beyond D33:
 - Network security — no network transport in v2 default; future when fan-in ships
 - Physical security — laptop encryption is founder's responsibility
 
+## Operationalization
+
+### 1. Measurement mechanism
+KR1-KR7 from §"Key Results". Sources: `enforce-boundaries.sh` exit-2 events in `.enforcement/permission-audit-log.md`; PROTO-004 logs; `god-mode.log`; `codex-directive-gate.sh` log; signed-release verification (when shipped). Roll-up: `.enforcement/*.log` monthly anomaly scan; quarterly `/cso comprehensive` audit; ANALYTICS-PULSE Security panel (when wired).
+
+### 2. Adoption mechanism
+Plugin hooks ship to all tiers via Sutra plugin install: `enforce-boundaries.sh`, `keys-in-env-vars.sh`, `feedback-routing-rule.sh`, `permission-gate.sh`, `codex-directive-gate.sh`. D33 firewall via bidirectional `.claude/settings.json` deny. God-mode for T0 only via `holding/hooks/god-mode.sh`. Each new primitive (KR4-KR7 list) ships with adoption plan in its own design doc.
+
+### 3. Monitoring / escalation
+Weekly anomaly scan of `.enforcement/*.log` (Sutra-OS owns). Monthly KR1-KR7 dashboard via Analytics dept. Quarterly `/cso comprehensive` audit. Escalation: KR1 (secrets in commit) = P0 — same-hour founder notification + revert. KR3 ("act as user" pattern) = P0 — block session + post-mortem. Signed-release verification fail (when shipped) = P0 — freeze all plugin updates fleet-wide until resolved.
+
+### 4. Iteration trigger
+Any incident post-mortem → new primitive → charter update (mandatory). Any plugin version bump touching enforce-boundaries / PROTO-004 / permission-gate → codex-review on diff before merge. KR4-KR7 (signed releases, SHA-pinned submodules, MFA god-mode, cross-tier audit aggregation) currently 0 — each one is its own iteration trigger when prioritized. New threat surface discovered (e.g., MCP server exfil, new identity-leak pattern) → §"3 Threat Surfaces" review.
+
+### 5. DRI
+CEO of Sutra (charter ownership). Engineering: hook + pipeline implementation. Operations: incident response + weekly anomaly scan. Founder: P0 escalation handler + god-mode authority.
+
+### 6. Decommission criteria
+Each individual primitive retires when superseded (e.g., god-mode password → MFA → hardware key — older mechanism deprecated, charter updated). Charter as a whole retires only if (a) Security folds into a unified Trust charter merging with PRIVACY (likely future), or (b) Sutra discontinues plugin-based deployment model (no execution surface to protect).
+
 ---
 
 *SECURITY is the charter that owns access + integrity + authenticity. PRIVACY is the charter that owns collection + retention + disposal. Together they cover "can we trust this system with this data?"*

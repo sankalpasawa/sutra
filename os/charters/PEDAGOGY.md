@@ -123,6 +123,26 @@ Triggers that unpark v2 implementation:
 - Any T3 onboarding where the operator asks for a simpler start (like Testlify's first-install Stop-hook bug was the trigger for v2.0.1)
 - First L0 → L1 transition in telemetry (when we can measure it)
 
+## Operationalization
+
+### 1. Measurement mechanism
+Until v2 ships: **presence-only** (this charter exists and is referenceable from CLAUDE.md routing). Once v2 primitives ship, measure KR1-KR5 from §"Key Results" — install→first-build days, retention, level-transition velocity, explanation-to-enforcement ratio. Source: `holding/state/assistants/*/events.jsonl` for transition events; Analytics dept pulse for cohort rollups.
+
+### 2. Adoption mechanism
+T1/T2 sessions inherit framework via Asawa CLAUDE.md (no behavior change in v1 — defaults preserved). T3/T4 inherit via Sutra plugin install once v2 ships LEARN mode default for first install. Charter referenced from Operationalization charter §1 cross-charter links upon registry registration.
+
+### 3. Monitoring / escalation
+Sutra-OS reviews this charter monthly against v2 trigger conditions (§"Triggers that unpark v2 implementation"). Watcher: any T4 fleet feedback ingest containing "too much governance" / "I don't understand" / "why is this blocked" — escalate to founder within 24h with sample. T3 onboarding friction (e.g., Testlify Stop-hook pattern) → priority queue v2 implementation.
+
+### 4. Iteration trigger
+Any of: (a) two or more T4 installs without `/sutra learn` usage in first 7 days post-install (when telemetry exists); (b) ≥1 T3 onboarding hits friction signal in §"Triggers"; (c) founder direction shift on Sutra customer surface — re-read charter and update modes/levels accordingly.
+
+### 5. DRI
+CEO of Sutra (Sankalp through Q2 2026 — reassigned at first quarterly review when v2 implementation begins).
+
+### 6. Decommission criteria
+Retire when (a) v2 ships fully (then this charter rewrites as the v2 reference, not retires); (b) Sutra discontinues T4 onboarding entirely → charter archived under `sutra/archive/` with retirement note; or (c) Pedagogy folds into a unified Sutra Tutor agent charter that supersedes this framing.
+
 ## Prior Art + References
 
 - Memory `project_three_product_tiers` (to be re-expressed as growth path)

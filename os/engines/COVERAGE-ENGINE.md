@@ -315,6 +315,26 @@ TOP GAPS:
 
 ---
 
+## Operationalization
+
+### 1. Measurement mechanism
+Per-task coverage % (Y/X × 100); per-session avg coverage; rolling 30-day company avg; per-method fire rate. Source: `os/coverage-log.jsonl` (per company, written by LLM during execution). Aggregated to ANALYTICS-PULSE coverage panel.
+
+### 2. Adoption mechanism
+Behavioral instruction in every company's CLAUDE.md (LLM actively logs per-method fires). Plugin doesn't enforce — coverage is observed, not blocked, in v1.0 SOFT mode. Method IDs match the expected checklist in this engine for the assigned depth.
+
+### 3. Monitoring / escalation
+Coverage report at task end (on demand). Session-level rollup at session end. Company-level monthly rolling 30-day. Method fire rate <70% on any required method → CONCERN flag in pulse (Sutra-OS reviews); <40% → CRITICAL (founder notification + remediation plan). Cross-company gap pattern (e.g., PHASE-LEARN <40% across multiple companies) → engine v2 instruction redesign.
+
+### 4. Iteration trigger
+HARD enforcement upgrade per §"Future HARD": when method fire rate stabilizes >85% under SOFT for 90 days, that method becomes individually HARD-gated (block on absence). Coverage <80% at assigned depth: warn-mode rolls out fleet-wide. Coverage <60% on a session: block checkpoint (forces retroactive completion). Triggers per-method, not all-at-once.
+
+### 5. DRI
+CEO of Sutra (engine + checklist authorship). Per-company operator (LLM behavioral compliance). Analytics dept (rollup pulse + cross-company pattern detection).
+
+### 6. Decommission criteria
+When coverage stabilizes ≥95% across all companies for 90 consecutive days, engine retires from active observation → SOFT sensor only, embedded in PROTO-000 6th criterion (continuous compliance is the new norm). If Sutra restructures process model (merging phases or eliminating gates), checklist regenerated and v1 archived to `sutra/archive/`.
+
 ## Origin
 
 v1.0 (2026-04-09): Founded on the insight that a company can be "on Sutra" but only exercising a fraction of the process. The 7-phase lifecycle with depth-modulated gates provides a concrete, checkable surface area. Coverage tracking makes adherence visible and improvable.

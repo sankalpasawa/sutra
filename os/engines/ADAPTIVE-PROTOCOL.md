@@ -473,6 +473,26 @@ Not automatic triggers — signals the engine watches. Engine recommends, founde
 
 ---
 
+## Operationalization
+
+### 1. Measurement mechanism
+Triage targets in Learning Loop: undertriage <5%, overtriage <30%, correct >65%. Source: `holding/TRIAGE-LOG.jsonl` (auto-captured per task by `estimation-collector.sh`). LEARN.md feedback per task at D3+. Rolling 50-task window per category for locked-rule accuracy ≥90%.
+
+### 2. Adoption mechanism
+Plugin distributes engine to all tenants via Sutra plugin install. CLAUDE.md depth+estimation block requirement in every company → engine output visible per task. HARD enforcement at Tier 2+ via `holding/hooks/dispatcher-pretool.sh` markers (depth-registered + sutra-deploy-depth5). SOFT at Tier 1.
+
+### 3. Monitoring / escalation
+TRIAGE-LOG aggregated monthly via Analytics dept pulse. Undertriage breach (>5%): all locked rules unlock immediately + Sutra-OS investigates within 24h. Overtriage breach (>30%): review locked rules per category. Stage transition (pre-launch → beta → growth → scale): all rules unlock + triage tracking resets.
+
+### 4. Iteration trigger
+New parameter type discovered (a 2-axis case the existing 10 don't capture) → propose param 11 + engine v3.x. New problem type beyond Cynefin 4 → engine v4 design review. Any pre-scoring gate that fails to fire when it should → gate redesign + post-mortem. Founder override-down rate >50% on a category → category routing rule under-calibrated, unlock + recalibrate.
+
+### 5. DRI
+CEO of Sutra (engine authorship + version bumps). Per-company operator (override accuracy). Analytics dept (triage rollup + monthly pulse). Engineering (hook integration + marker enforcement).
+
+### 6. Decommission criteria
+Engine v4 supersedes (v3 archived to `sutra/archive/` on full migration with completed company-state recalibration). Or: fractal practiceh unification eliminates distinct depth-pick (engine becomes part of Strategy/Selection/Execution unified runtime — engine v3 retires as standalone, logic absorbed). Charter NEVER retires while Sutra has any task-decomposition layer.
+
 ## Origin
 
 v1: Maze onboarding, 2026-04-04. Two features got identical pipeline — privacy policy page and RLS rewrite. Process added no value to the first and was essential for the second.

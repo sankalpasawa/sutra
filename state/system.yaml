@@ -723,3 +723,109 @@ operationalization:
     heading_change: true   # any +/- line matching ^#+ is semantic
     table_row_change: true # any +/- line matching ^\|.*\| is semantic
   active_artifacts: []  # populated as artifacts get ops sections and are tracked
+
+# ─── Standing Instructions (D30b — 2026-04-27) ────────────────────────────────
+# Spec: sutra/os/charters/OPERATIONALIZATION.md §12
+# Engine: holding/hooks/standing-instructions/engine.sh
+# Failure log: .enforcement/standing-instructions.log
+#
+# Schema per entry:
+#   id (slug, unique)
+#   owner_charter (path)
+#   description (one-line)
+#   trigger:
+#     type: cadence|threshold|dependency
+#     spec: type-specific (see charter §12.7)
+#   command (bash invocation, run from repo root)
+#   output_sink (path | 'founder-notify' | 'pulse')
+#   on_failure (log path; default .enforcement/standing-instructions.log)
+#   severity: P0|P1|P2 (P0 = founder-notify on failure)
+#   status: active|paused|retired
+#   plist (generated path, written by engine)
+#   created (YYYY-MM-DD)
+#   last_fire (unix-ts | null, written by engine)
+standing_instructions:
+  # ── Pre-existing (registered 2026-04-27 — these were already running) ──────
+
+  - id: asawa-observability-3h
+    owner_charter: holding/departments/observability/CHARTER.md
+    description: 3-hour synthesis snapshot — Asawa OS state to LATEST.md + snapshots/
+    trigger:
+      type: cadence
+      spec:
+        every: "3h"
+    command: "bash holding/hooks/observability-synthesis.sh"
+    output_sink: "holding/observability/LATEST.md"
+    on_failure: ".enforcement/standing-instructions.log"
+    severity: P2
+    status: active
+    plist: "~/Library/LaunchAgents/com.asawa.observability.plist"
+    created: 2026-04-27   # registry-creation date; plist itself predates registry
+    last_fire: null
+
+  - id: asawa-observability-daily
+    owner_charter: holding/departments/observability/CHARTER.md
+    description: Daily 9:17 AM observability review
+    trigger:
+      type: cadence
+      spec:
+        calendar: ["09:17"]
+    command: "bash holding/departments/observability/daily-review.sh"
+    output_sink: "holding/observability/launchd-daily.log"
+    on_failure: ".enforcement/standing-instructions.log"
+    severity: P2
+    status: active
+    plist: "~/Library/LaunchAgents/com.asawa.observability-daily.plist"
+    created: 2026-04-27
+    last_fire: null
+
+  - id: sutra-analytics-collect
+    owner_charter: holding/departments/analytics/CHARTER.md
+    description: 8x daily analytics collect+publish (every 3h on the hour)
+    trigger:
+      type: cadence
+      spec:
+        calendar: ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00"]
+    command: "bash holding/departments/analytics/collect.sh && bash holding/departments/analytics/publish.sh"
+    output_sink: ".analytics/launchd.out.log"
+    on_failure: ".analytics/launchd.err.log"
+    severity: P2
+    status: active
+    plist: "~/Library/LaunchAgents/os.sutra.analytics-collect.plist"
+    created: 2026-04-27
+    last_fire: null
+
+  - id: asawa-escape-hatch
+    owner_charter: sutra/os/charters/PERMISSIONS.md
+    description: Auto-fix on .claude/active-role change (role-switch boundary integrity)
+    trigger:
+      type: dependency
+      spec:
+        watch_paths:
+          - "/Users/abhishekasawa/Claude/asawa-holding/.claude/active-role"
+    command: "/bin/bash /Users/abhishekasawa/Claude/escape-hatch/auto-fix.sh"
+    output_sink: "/Users/abhishekasawa/Claude/escape-hatch/watcher.log"
+    on_failure: "/Users/abhishekasawa/Claude/escape-hatch/watcher.log"
+    severity: P1
+    status: active
+    plist: "~/Library/LaunchAgents/com.asawa.escape-hatch.plist"
+    created: 2026-04-27
+    last_fire: null
+
+  # ── New (shipped with D30b — 2026-04-27) ──────────────────────────────────
+
+  - id: ops-compliance-rollup
+    owner_charter: sutra/os/charters/OPERATIONALIZATION.md
+    description: 6-hour rollup of ops-enforcement.jsonl — compliance %, blocks, churn → ANALYTICS-PULSE
+    trigger:
+      type: cadence
+      spec:
+        every: "6h"
+    command: "bash holding/hooks/standing-instructions/runners/ops-compliance-rollup.sh"
+    output_sink: "holding/ANALYTICS-PULSE.md"
+    on_failure: ".enforcement/standing-instructions.log"
+    severity: P2
+    status: active
+    plist: "~/Library/LaunchAgents/os.sutra.ops-compliance-rollup.plist"
+    created: 2026-04-27
+    last_fire: null

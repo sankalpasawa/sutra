@@ -110,6 +110,26 @@ Per layer:
 | Per-signal-category | `SUTRA_SKIP_<CATEGORY>=1` (future) | Disable individual signal types |
 | Retention | `SUTRA_RETENTION_DAYS=N` | 1-90 range; default 30 |
 
+## Operationalization
+
+### 1. Measurement mechanism
+KR1-KR6 from §"Key Results". Sources: PROTO-004 gate logs (KR1 — secrets in commit), `derive_signal` allowlist + sheet-vs-fields monthly diff (KR2/KR4), `privacy_gate` consent ledger audit (KR3), `find ~/.sutra -mtime +30` sampled monthly (KR5), CI sanitization fail-closed unit/integration tests (KR6). Aggregated to ANALYTICS-PULSE Privacy panel (when wired).
+
+### 2. Adoption mechanism
+Plugin lib `sutra/marketplace/plugin/lib/privacy-sanitize.sh` sourced by all feedback-auto hooks; SessionStart hook copies user-facing sheet to `~/.sutra/PRIVACY.md` on every install. Tier defaults per §"Tiered Contract": T0/T1 ON full, T2 ON+notice, T3 strict + opt-in fan-in, T4 in-memory until consent.
+
+### 3. Monitoring / escalation
+Monthly KR1-KR6 dashboard via Analytics dept pulse. Quarterly: re-read user-facing sheet vs captured fields; reconcile drift. Escalation: KR1 (secrets) breach = P0 — notify founder same hour + revert offending commit. KR3 (cross-tier) breach = P1 — Sutra-OS investigates within 24h. Sanitization fail-closed test failure in CI = block plugin release.
+
+### 4. Iteration trigger
+Any new data field added to any hook/lib MUST update allowlist + user-facing sheet + this charter in same commit (enforced by review). KR3 breach → consent ledger redesign. T3/T4 retention drift >30d sampled → cleanup hook fix. New regulatory model (regional privacy laws affecting fleet) → tiered contract review.
+
+### 5. DRI
+CEO of Sutra (charter + privacy_gate ownership). Engineering: hook-level enforcement + atomic-write primitives. Analytics: KR pulse + monthly diff. Founder: P0 escalation handler.
+
+### 6. Decommission criteria
+Charter retires when (a) Sutra discontinues data capture entirely (highly unlikely — Sutra IS observation), (b) external regulator imposes contradicting model (charter rewrites, doesn't retire), or (c) Privacy folds into a unified Trust charter merging with SECURITY (likely path; both share fail-closed primitive).
+
 ## Prior Art + References
 
 - Codex design review verdict: `.enforcement/codex-reviews/privacy-design-review-2026-04-24.md` (DIRECTIVE-ID 1777036275, CHANGES-REQUIRED → 5 conditions absorbed)

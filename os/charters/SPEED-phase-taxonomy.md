@@ -205,3 +205,23 @@ Codex session ID to be logged in this file's §9 after review lands.
 
 v1 (2026-04-20): initial taxonomy, this file.
 Amendments require SPEED charter §13 log entry + this file bumped to v2.
+
+## 11. Operationalization
+
+### 1. Measurement mechanism
+Invariants I1-I8 in §5 (sum-of-phases ±2%, no negative phase_ms, signed aggregation, etc.). Source: `.enforcement/latency-parse-errors.log` line count = invariant violation rate. Target: <5% partial=true rate sustained across W2 collection.
+
+### 2. Adoption mechanism
+Read by `latency-collector.sh` (W1 build). Referenced by SPEED charter §6 (governance-overhead formula) and ESTIMATION-ENGINE for actuals calibration. No standalone deployment — taxonomy is consumed by collector code.
+
+### 3. Monitoring / escalation
+Invariant violation rate monitored daily during W2 collection. >5% partial=true rate → re-design taxonomy (escalate via SPEED §13 charter log + bump to v2). Codex review (§9) gates W1 implementation start.
+
+### 4. Iteration trigger
+Tool-specific sub-phase split (§4): when W1 data shows a tool ≥15% of total task time, split that tool's sub-phases. New tool added to harness → §4 review. §7 ambiguities resolved during W1 design review → version bump. SPEED charter waves W3 RCA finds attribution gap → taxonomy rewrite.
+
+### 5. DRI
+CEO of Sutra (taxonomy authorship). Engineering (collector parser implementation). Codex (§9 review gate). Analytics (invariant check on aggregation).
+
+### 6. Decommission criteria
+Charter SPEED satisfied-closure → taxonomy frozen as historical reference. Tool surface drift requires v2 taxonomy → v1 archived under `sutra/archive/`. Dispatched by SPEED §6 (taxonomy follows charter lifecycle).

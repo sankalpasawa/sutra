@@ -152,6 +152,36 @@
           "external": { "type": "boolean" }
         }
       }
+    },
+
+    "standing_instructions": {
+      "description": "D30b — registered automated actions per OPERATIONALIZATION.md §12. Spec: charter §12.7.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "owner_charter", "trigger", "command", "status"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "owner_charter": { "type": "string" },
+          "description": { "type": "string" },
+          "trigger": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "enum": ["cadence", "threshold", "dependency"] },
+              "spec": { "type": "object" }
+            }
+          },
+          "command": { "type": "string" },
+          "output_sink": { "type": "string" },
+          "on_failure": { "type": "string" },
+          "severity": { "enum": ["P0", "P1", "P2"] },
+          "status": { "enum": ["active", "paused", "retired"] },
+          "plist": { "type": "string" },
+          "created": { "type": "string", "format": "date" },
+          "last_fire": { "oneOf": [{ "type": "integer" }, { "type": "null" }] }
+        }
+      }
     }
   },
 

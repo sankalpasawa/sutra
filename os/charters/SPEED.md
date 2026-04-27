@@ -213,7 +213,27 @@ Each milestone (waves W0-W6) appends one row.
 
 ---
 
-## 14. Pointers
+## 14. Operationalization
+
+### 1. Measurement mechanism
+KPIs in §3 (task wall-time P50/P95, governance overhead %, top-1 sink concentration, hook chain P95, sub-agent round-trip, boot load, per-company delta). Source: `holding/LATENCY-LOG.jsonl` once W1 instrumentation ships. Until then: presence-only — charter is referenceable, KRs at 0.0.
+
+### 2. Adoption mechanism
+W1 instruments Sutra self via `_now_ms` in dispatcher hooks + `latency-collector.sh` parsing session JSONL. W2 collects 2 weeks real usage (zero behavior change). W6 propagates to DayFlow + Billu via charter-aware `upgrade-clients.sh` (shared dep with Tokens KR4).
+
+### 3. Monitoring / escalation
+Live ANALYTICS-PULSE Speed panel (when W1 ships). Weekly review at Roadmap Meeting; quarterly OKR Review. Wave gate protocol — each wave artifact must land in committed repo before next wave begins. Breach thresholds in §3 fire alerts; governance overhead ≥30% (breach) becomes the automatic #1 cut per §11.
+
+### 4. Iteration trigger
+W2 collection <50 tasks per company in 2 weeks → extend W2 by 2 more weeks before W3 (per §11 failure mode). W4 proposal rejected 3× by founder → Sutra-OS rewrites proposal framework + charter pauses. Governance overhead measured ≥30% → automatic top-priority cut (§11). New tool surface added to harness → §6 phase taxonomy review (cascades to SPEED-phase-taxonomy.md §4).
+
+### 5. DRI
+CEO of Sutra (charter DRI). Analytics dept (data pipeline, 9th flagship metric `task_wall_time_p50`). Engineering (hook timestamps + collector). Operations (sample-size gate, "≥100 samples = enough"). Founder (W4 cut approval, individually per cut not batched).
+
+### 6. Decommission criteria
+**Satisfied closure** (valid SUCCESS): W3 RCA finds no time sink >20% on any company → KR2=1.0, charter closes "no cuts needed." Otherwise: when all 4 KRs ≥0.7 + propagation complete by Jun 30, 2026, charter transitions to maintenance-mode (quarterly health pulse only; reactivates if any KPI re-breaches Warn threshold for 2+ consecutive quarters).
+
+## 15. Pointers
 
 - Sibling charter: [TOKENS.md](TOKENS.md)
 - Analytics Dept: `holding/departments/analytics/CHARTER.md`

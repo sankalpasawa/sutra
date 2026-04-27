@@ -210,7 +210,118 @@ Sutra-OS (Sankalp through Q2 2026; reassigned at first quarterly review).
 
 ---
 
-## 12. Related files
+## 12. Standing Instructions Abstraction (D30b — 2026-04-27)
+
+### 12.1 Why this section exists
+
+The 6-section ops contract (§2) names the WHAT — "monitor monthly, alert on breach, retire on signal X." It does not run anything. This section names the runtime primitive that turns those contracts into executable orders.
+
+Founder direction (2026-04-27, this charter): *"Some standing instructions which run at some frequency, which get triggered either by time or by some deviation in metrics having happened, or they depend on some other things. How do we think about this holistically and fit this as an abstraction level in Sutra?"*
+
+Founder constraint (2026-04-27, feedback memory `feedback_no_operational_capacity`): no new departments, no human rituals, no manual KPI tracking. The abstraction must self-run.
+
+### 12.2 Definition
+
+A **Standing Instruction (SI)** is a registered, automated action that fires on a defined trigger. SIs replace the need for human ritual review. They are the operational layer that runs the contracts charters declare.
+
+### 12.3 Three trigger types (one runtime)
+
+| Type | Fires when | Production example today | Runtime today |
+|---|---|---|---|
+| **cadence** | A clock condition is met (every Nh / daily at HH:MM / Nx per day) | `os.sutra.analytics-collect` (8x daily); `com.asawa.observability` (every 3h) | ✅ launchd |
+| **threshold** | A metric crosses a defined breach point | None — runtime missing as standalone | ⚠️ implemented as cadence + metric check |
+| **dependency** | A watched signal changes (file write, log append, state transition) | `com.asawa.escape-hatch` (WatchPaths on `.claude/active-role`) | ✅ launchd `WatchPaths` |
+
+**Architectural simplification**: one runtime serves all three trigger types. Cadence is native launchd. Threshold collapses to cadence + a metric-breach gate inside the script. Dependency uses launchd `WatchPaths` (file watch, native). No new daemon needed for V1.
+
+### 12.4 Registry
+
+All SIs are registered in `sutra/state/system.yaml#standing_instructions`. **No SI exists outside the registry.** The registry is the single source of truth answering "what is this OS doing for us?"
+
+Charters reference SIs by `id` from their §3 (Monitoring/escalation) section. The registry validates against the existing `sutra/state/validate.mjs` schema (extended to cover the new top-level key).
+
+### 12.5 Engine
+
+Location: `holding/hooks/standing-instructions/`
+- `engine.sh` — dispatcher. Reads registry, generates plists, loads them.
+- `lib/cadence.sh` — cadence runner helper.
+- `lib/threshold.sh` — threshold runner helper (cadence + metric breach check).
+- `lib/dependency.sh` — dependency runner helper (uses launchd `WatchPaths`).
+- `plists/` — generated launchd plists, one per SI.
+
+Failure handling: every SI invocation appends a row to `.enforcement/standing-instructions.log`. P0-tagged failures (declared per-SI) trigger founder notification via the existing notification channel.
+
+### 12.6 Lifecycle
+
+```
+charter declares SI need (§3 Monitoring/escalation)
+    │
+    ▼
+SI registered in sutra/state/system.yaml#standing_instructions
+    │
+    ▼
+engine.sh compiles registry → installs/updates plists in ~/Library/LaunchAgents/
+    │
+    ▼
+plist fires on schedule/watch → script runs → output to declared sink
+    │
+    ▼
+failures land in .enforcement/standing-instructions.log
+    │
+    ▼
+SI retires via §6 of owner charter's ops contract → registry status: retired → engine unloads plist
+```
+
+### 12.7 Registry schema (minimal)
+
+```yaml
+standing_instructions:
+  - id: <slug>                          # unique, kebab-case
+    owner_charter: <path>                # source charter (e.g. sutra/os/charters/PRIVACY.md)
+    description: <one-line>
+    trigger:
+      type: cadence | threshold | dependency
+      spec:                              # type-specific:
+        # cadence: { every: "3h" } OR { calendar: ["09:17", "21:00"] }
+        # threshold: { cadence: "5m", metric: <path>, op: ">"|"<", value: <n> }
+        # dependency: { watch_paths: [<paths>] }
+    command: <bash invocation>           # full command, run from repo root
+    output_sink: <path> | 'founder-notify' | 'pulse'
+    on_failure: <log path>               # default .enforcement/standing-instructions.log
+    severity: P0 | P1 | P2               # P0 = founder-notify on failure
+    status: active | paused | retired
+    plist: <generated path>              # written by engine, not by hand
+    created: <YYYY-MM-DD>
+    last_fire: <unix-ts | null>          # written by engine
+```
+
+### 12.8 V1 scope (what ships with this section)
+
+- Architecture spec (this section)
+- Registry schema added to `sutra/state/system.yaml`
+- Engine skeleton in `holding/hooks/standing-instructions/`
+- 4 pre-existing plists registered (observability, observability-daily, analytics-collect, escape-hatch)
+- 1 new instance live: **ops-compliance-rollup** (cadence, every 6h) — closes §11.3 dormant requirement
+
+### 12.9 V2 (deferred)
+
+- Threshold runtime as event-driven daemon (not cadence-poll). V1 ships SOFT (cadence + metric check). Promote when V1 data shows polling latency matters.
+- Dependency runtime via fswatch/inotify (current launchd `WatchPaths` is adequate for file changes; insufficient for log-append signals on a single rotating file).
+- Cross-company propagation via charter-aware `upgrade-clients.sh` (same dep as Tokens KR4).
+- Plugin promotion (move from `holding/hooks/` to `sutra/marketplace/plugin/runtime/`) when stable on Sutra-self.
+
+### 12.10 Operationalization (this section's own ops plan)
+
+| Section | Spec |
+|---|---|
+| Measurement | Count of SIs in registry; count of failures in `.enforcement/standing-instructions.log` rolling 7d; per-SI last_fire freshness vs spec |
+| Adoption | Each new charter §3 entry must register SI in registry within same commit (review-enforced, not hook-enforced V1) |
+| Monitoring | 7d failure count >0 → land in `/asawa` pulse; P0 failure → founder-notify same hour |
+| Iteration | If V1 cadence-poll threshold latency >5min consistently → promote threshold to event-driven daemon |
+| DRI | CEO of Sutra (charter); engine maintenance shared with Engineering on hook bugs |
+| Decommission | Standing Instructions abstraction retires only if (a) Sutra discontinues automation surface, or (b) replaced by a more general workflow primitive |
+
+## 13. Related files
 
 - Design doc: holding/research/2026-04-20-operationalization-charter-v2-redesign.md
 - Standard: holding/OPERATIONALIZATION-STANDARD.md
@@ -218,8 +329,10 @@ Sutra-OS (Sankalp through Q2 2026; reassigned at first quarterly review).
 - Test: holding/hooks/tests/test-operationalization-check.sh
 - Git wrappers: .git/hooks/pre-commit, .git/hooks/pre-push
 - CI: .github/workflows/operationalization-check.yml
-- State: sutra/state/system.yaml.operationalization
+- State: sutra/state/system.yaml.operationalization, sutra/state/system.yaml.standing_instructions
+- Standing instructions engine: holding/hooks/standing-instructions/engine.sh
 - Lifecycle: sutra/os/engines/ESTIMATION-ENGINE.md (OPERATIONALIZE phase)
 - PROTO-000 extension: sutra/layer2-operating-system/PROTOCOLS.md (6th criterion)
 - Sister charters: sutra/os/charters/TOKENS.md, sutra/os/charters/SPEED.md
 - Codex round-1: .enforcement/codex-reviews/gate-log.jsonl session 019daada-ffd0-7602-a12a-99208ff8baa1
+- D30b feedback memory: feedback_no_operational_capacity.md (founder constraint)
