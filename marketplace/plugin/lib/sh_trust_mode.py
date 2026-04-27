@@ -49,9 +49,48 @@ FETCH_EXEC_RE = re.compile(
     r"\b(curl|wget|fetch|http)\b[^|]*\|\s*(sudo\s+)?(sh|bash|zsh|ksh|fish|dash)\b"
 )
 
-REMOTE_TOOLS = {"gh", "ssh", "scp", "rsync", "aws", "gcloud", "vercel", "supabase",
+REMOTE_TOOLS = {"ssh", "scp", "rsync", "aws", "gcloud", "vercel", "supabase",
                 "doctl", "fly", "heroku", "kubectl", "helm", "ansible", "terraform",
                 "pulumi", "render", "railway", "netlify"}
+
+# `gh` (GitHub CLI) is handled separately: read-only subcommands auto-approve,
+# mutations prompt. Mirrors the `git` mutation-detection model.
+# Action-level mutations indexed by top-level command. Read-only commands
+# (label, status without args, search, browse, ...) and read actions for
+# command groups below (list, view, status, diff, checks, ...) auto-approve.
+GH_MUTATION_ACTIONS = {
+    "repo":      {"create", "delete", "fork", "rename", "transfer", "archive",
+                  "unarchive", "edit", "deploy-key", "set-default", "sync"},
+    "pr":        {"create", "edit", "close", "reopen", "merge", "ready", "review",
+                  "checkout", "comment", "lock", "unlock"},
+    "issue":     {"create", "edit", "close", "reopen", "comment", "delete",
+                  "transfer", "lock", "unlock", "pin", "unpin"},
+    "release":   {"create", "edit", "delete", "upload"},
+    "gist":      {"create", "edit", "delete", "rename", "clone"},
+    "secret":    {"set", "delete", "remove"},
+    "variable":  {"set", "delete", "remove"},
+    "auth":      {"login", "logout", "refresh", "setup-git", "switch"},
+    "workflow":  {"enable", "disable", "run"},
+    "run":       {"cancel", "delete", "rerun"},
+    "codespace": {"create", "delete", "stop", "rebuild", "edit", "ssh", "code", "cp"},
+    "project":   {"create", "edit", "delete", "close", "copy",
+                  "field-create", "field-delete",
+                  "item-add", "item-archive", "item-create", "item-delete",
+                  "item-edit"},
+    "label":     {"create", "edit", "delete", "clone"},
+    "alias":     {"set", "delete", "import"},
+    "extension": {"install", "remove", "upgrade", "create"},
+    "config":    {"set", "clear-cache"},
+    "gpg-key":   {"add", "delete"},
+    "ssh-key":   {"add", "delete"},
+    "ruleset":   {"create", "edit", "delete"},
+    "cache":     {"delete"},
+    "attestation": {"verify"},
+}
+# Top-level commands where ANY action is treated as mutation (no safe subcmds).
+GH_MUTATION_COMMANDS = set()
+# Mutation HTTP methods for `gh api`.
+GH_API_MUTATION_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 DB_CLI_TOOLS = {"psql", "mysql", "mongo", "mongosh", "redis-cli", "sqlite3", "duckdb"}
 NPM_PUBLISH_RE = re.compile(r"\b(npm|yarn|pnpm|bun)\s+publish\b")
 DOCKER_PUSH_RE = re.compile(r"\bdocker\s+(push|login)\b")
@@ -124,6 +163,97 @@ def is_git_mutation(cmd):
     return False
 
 
+def _gh_command_and_action(toks):
+    """Return (command, action) for `gh` invocation, skipping global flags.
+
+    Examples:
+      ['gh', 'pr', 'list']                      -> ('pr', 'list')
+      ['gh', '--repo', 'a/b', 'label', 'list']  -> ('label', 'list')
+      ['gh', 'auth', 'status']                  -> ('auth', 'status')
+      ['gh']                                    -> (None, None)
+      ['gh', 'help']                            -> ('help', None)
+    """
+    if not toks or toks[0] != "gh":
+        return (None, None)
+    # Flags that take a value (gh global + common per-command).
+    valued_flags = {"--repo", "-R", "--hostname", "--jq", "-q",
+                    "--template", "-t"}
+    i = 1
+    # Resolve command (first non-flag token).
+    while i < len(toks):
+        t = toks[i]
+        if t.startswith("--"):
+            if "=" in t:
+                i += 1; continue
+            if t in valued_flags:
+                i += 2; continue
+            i += 1; continue
+        if t.startswith("-") and len(t) > 1:
+            if t in valued_flags:
+                i += 2; continue
+            i += 1; continue
+        break
+    if i >= len(toks):
+        return (None, None)
+    command = toks[i]; i += 1
+    # Resolve action (next non-flag token).
+    while i < len(toks):
+        t = toks[i]
+        if t.startswith("--"):
+            if "=" in t:
+                i += 1; continue
+            if t in valued_flags:
+                i += 2; continue
+            i += 1; continue
+        if t.startswith("-") and len(t) > 1:
+            if t in valued_flags:
+                i += 2; continue
+            i += 1; continue
+        return (command, t)
+    return (command, None)
+
+
+def _gh_api_is_mutation(toks):
+    """gh api defaults to GET. Mutation only when --method/-X selects POST/PUT/DELETE/PATCH."""
+    i = 0
+    while i < len(toks):
+        t = toks[i]
+        if t in ("--method", "-X") and i + 1 < len(toks):
+            if toks[i + 1].upper() in GH_API_MUTATION_METHODS:
+                return True
+            i += 2; continue
+        if t.startswith("--method="):
+            if t.split("=", 1)[1].upper() in GH_API_MUTATION_METHODS:
+                return True
+        if t.startswith("-X") and len(t) > 2:
+            if t[2:].upper() in GH_API_MUTATION_METHODS:
+                return True
+        i += 1
+    return False
+
+
+def is_gh_mutation(cmd):
+    """True if `gh ...` invokes a write/state-changing subcommand.
+
+    Mirrors is_git_mutation: defaults to NOT-mutation (auto-approve);
+    explicit mutating actions/commands listed in GH_MUTATION_ACTIONS.
+    """
+    toks = all_tokens(cmd)
+    command, action = _gh_command_and_action(toks)
+    if command is None:
+        return False
+    if command == "api":
+        return _gh_api_is_mutation(toks)
+    if command in GH_MUTATION_COMMANDS:
+        return True
+    actions = GH_MUTATION_ACTIONS.get(command)
+    if actions is None:
+        return False
+    if action is None:
+        return False
+    return action in actions
+
+
 def is_privilege(cmd):
     return first_token(cmd) in PRIVILEGE_TOKENS
 
@@ -157,6 +287,8 @@ def is_fetch_exec(cmd):
 
 def is_remote_shared_state(cmd):
     t = first_token(cmd)
+    if t == "gh":
+        return is_gh_mutation(cmd)
     if t in REMOTE_TOOLS:
         return True
     if t in DB_CLI_TOOLS:

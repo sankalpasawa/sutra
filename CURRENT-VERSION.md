@@ -1,5 +1,21 @@
 # Sutra — Current Version
 
+## v2.6.1 (2026-04-27) — Trust Mode `gh` subcommand refinement
+
+Plugin v2.6.1 refines Trust Mode (Tier 1.6) `gh` handling. Closes the founder-reported approval-fatigue gap where every `gh` invocation — including read-only `gh label list`, `gh pr view`, `gh issue list`, `gh api` (default GET) — prompted because `gh` was treated as a coarse REMOTE_TOOL.
+
+**Mechanism**: `lib/sh_trust_mode.py` now distinguishes `gh` read-only subcommands (auto-approve) from mutations (prompt) using the same model as `is_git_mutation` (action-level allowlist of mutating actions per top-level command, default-not-mutation). `gh api` defaults to GET; only `--method`/`-X` selecting POST/PUT/DELETE/PATCH prompts.
+
+**Auto-approves** (sample): `gh {label,pr,issue,repo,release,run,workflow,secret,variable,gist,codespace,cache,extension,ruleset,project} list`, `gh pr {view,diff,checks,status}`, `gh issue {view,status}`, `gh repo {view,clone}`, `gh release view`, `gh run {view,watch}`, `gh workflow view`, `gh search code|prs|issues|...`, `gh auth status`, `gh api repos/...`, `gh api -X GET ...`.
+
+**Still prompts** (sample): `gh pr {create,edit,merge,close,review,comment}`, `gh issue {create,close,delete,comment}`, `gh repo {create,delete,fork,edit}`, `gh release {create,delete}`, `gh secret {set,delete}`, `gh auth {login,logout}`, `gh workflow {run,disable}`, `gh run {cancel,rerun}`, `gh codespace {create,delete,ssh}`, `gh label {create,delete}`, `gh project {create,item-add}`, `gh api -X POST|PUT|DELETE|PATCH`.
+
+**Validation**: 78 new unit tests in `tests/unit/test-sh-trust-mode.sh` (40 read-only auto-approve cases + 38 mutation prompt cases). All 144/144 trust-mode tests green. Existing `gh pr create` test still produces `remote-state` category. PERMISSIONS charter §4 Tier 1.6 row 6 amended.
+
+**Threat model unchanged** — same as v2.5.0 (single trusted local operator, no adversarial input). Recovery model unchanged (mutations still prompt).
+
+**Follow-up**: same subcommand-aware refinement is applicable to `kubectl`, `aws`, `gcloud`, `helm`, `terraform`, `pulumi`. Deferred to next iteration after fleet measures v2.6.1 impact.
+
 ## v2.5.0 (2026-04-27) — Tier 1.6 Trust Mode
 
 Plugin v2.5.0 inverts permission-gate from strict allowlist (v2.4) to denylist with 6 prompt categories. Auto-approves every Bash command except git mutations, privilege escalation, recursive deletes outside safe paths, disk/system catastrophes, fetch-and-exec patterns, and remote/shared-state mutations. Helper: `marketplace/plugin/lib/sh_trust_mode.py`. Charter §4 amended with new Tier 1.6. Codex MODIFY -> GO with 6th category added; Claude GO. Per founder direction "ship it."
