@@ -1,0 +1,116 @@
+---
+# Charter Coverage Registry — PROTO-017 extended per chunk P4 (2026-04-27)
+#
+# Source of truth for charter→mechanism mapping. Hand-maintained; codex P3
+# verdict (1777308775) recommended YAML registry over markdown scraping for v1
+# because charter Operationalization sections lack uniform machine-readable
+# mechanism fields.
+#
+# Schema:
+#   - id:          short charter name (matches sutra/os/charters/<id>.md)
+#     file:        path to charter doc
+#     mechanisms:  list of executable artifacts that enforce/measure
+#                  the charter (paths relative to repo root)
+#     status:      ACTIVE | PARTIAL | DRAFT | DEFERRED
+#     last_updated: YYYY-MM-DD
+#     notes:       free text; especially "what's missing" if PARTIAL
+#
+# Scanner: holding/hooks/verify-policy-coverage.sh (Charter Coverage section)
+# Reconcile cadence: monthly review against actual shipped state.
+
+charters:
+  - id: TOKENS
+    file: sutra/os/charters/TOKENS.md
+    mechanisms:
+      - holding/hooks/context-budget-check.sh
+      - holding/hooks/bash-summary-pretool.sh
+      - sutra/marketplace/plugin/hooks/bash-summary-pretool.sh
+    status: ACTIVE
+    last_updated: 2026-04-27
+    notes: "Token measurement + budget enforcement live. RTK active. context-budget Stop hook wired this session."
+
+  - id: SPEED
+    file: sutra/os/charters/SPEED.md
+    mechanisms:
+      - holding/LATENCY-LOG.jsonl
+      - holding/hooks/latency-collector.sh
+    status: PARTIAL
+    last_updated: 2026-04-27
+    notes: "W1 latency collector shipped (commit eff65f7). Per-phase taxonomy in SPEED-phase-taxonomy.md. Active enforcement gate not yet wired."
+
+  - id: PERMISSIONS
+    file: sutra/os/charters/PERMISSIONS.md
+    mechanisms:
+      - sutra/marketplace/plugin/hooks/permission-gate.sh
+      - sutra/marketplace/plugin/lib/sh_lex_check.py
+    status: ACTIVE
+    last_updated: 2026-04-24
+    notes: "v1.13.0 ships PERMISSIONS charter + permission-gate hook. v2.4.0 adds Tier 1.5 compositional reads."
+
+  - id: PEDAGOGY
+    file: sutra/os/charters/PEDAGOGY.md
+    mechanisms:
+      - sutra/marketplace/plugin/skills/core-learn/SKILL.md
+    status: PARTIAL
+    last_updated: 2026-04-23
+    notes: "Charter shipped v2.1.0. Skill /core:learn live. Production telemetry not yet measured."
+
+  - id: SECURITY
+    file: sutra/os/charters/SECURITY.md
+    mechanisms:
+      - holding/hooks/keys-in-env-vars.sh
+      - sutra/marketplace/plugin/hooks/keys-in-env-vars.sh
+    status: ACTIVE
+    last_updated: 2026-04-24
+    notes: "Charter shipped v2.1.0. PROTO-004 keys-in-env HARD-enforced."
+
+  - id: PRIVACY
+    file: sutra/os/charters/PRIVACY.md
+    mechanisms:
+      - sutra/marketplace/plugin/lib/privacy-sanitize.sh
+      - sutra/marketplace/plugin/scripts/feedback.sh
+    status: ACTIVE
+    last_updated: 2026-04-25
+    notes: "Privacy v2.0 shipped (commit df312f4) — signals-not-content + consent-gated capture. v2.0.0 + correction + abandonment hooks (commit 96d2cbd)."
+
+  - id: FEEDBACK
+    file: sutra/os/charters/FEEDBACK.md
+    mechanisms:
+      - sutra/marketplace/plugin/scripts/feedback.sh
+      - sutra/marketplace/plugin/hooks/feedback-auto-correction.sh
+      - sutra/marketplace/plugin/hooks/feedback-auto-override.sh
+      - sutra/marketplace/plugin/hooks/feedback-auto-abandonment.sh
+      - sutra/marketplace/plugin/hooks/feedback-routing-rule.sh
+    status: ACTIVE
+    last_updated: 2026-04-27
+    notes: "PROTO-024 ships V1 (plugin v2.2.0). Auto-capture hooks + manual /sutra feedback live."
+
+  - id: OPERATIONALIZATION
+    file: sutra/os/charters/OPERATIONALIZATION.md
+    mechanisms:
+      - holding/hooks/standing-instructions/engine.sh
+      - holding/hooks/standing-instructions/lib/registry-parse.py
+      - holding/hooks/standing-instructions/runners/ops-compliance-rollup.sh
+    status: ACTIVE
+    last_updated: 2026-04-27
+    notes: "D30b §12 Standing Instructions abstraction live. ops-compliance-rollup is first new live SI."
+
+  - id: ASSISTANT
+    file: sutra/os/interaction/ASSISTANT.md
+    mechanisms:
+      - sutra/marketplace/plugin/hooks/assistant-kill-switch.sh
+      - holding/hooks/assistant-observer.sh
+      - sutra/marketplace/plugin/hooks/assistant-explain.sh
+      - sutra/marketplace/plugin/hooks/assistant-feedback.sh
+      - sutra/marketplace/plugin/hooks/assistant-decommission.sh
+    status: PARTIAL
+    last_updated: 2026-04-27
+    notes: "v1.0 ships 1/7 capabilities (Vision-vs-Reality table in ASSISTANT.md). assistant-observer wired PostToolUse this session. S2-S5 stubbed."
+
+  - id: BLUEPRINT
+    file: sutra/os/engines/BLUEPRINT-ENGINE.md
+    mechanisms:
+      - sutra/marketplace/plugin/skills/blueprint/SKILL.md
+    status: PARTIAL
+    last_updated: 2026-04-27
+    notes: "V1 = skill at sutra/marketplace/plugin/skills/blueprint/. Engine charter at sutra/os/engines/BLUEPRINT-ENGINE.md. Hook (blueprint-check.sh) not yet shipped."
