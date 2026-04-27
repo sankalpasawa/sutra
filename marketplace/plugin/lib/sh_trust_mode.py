@@ -30,7 +30,11 @@ import re
 import shlex
 import sys
 
-GIT_MUTATION_SUBCMDS = {"commit", "push", "pull", "rebase", "merge", "rm", "mv"}
+# v2.6.1+: simplified to "catastrophic-only" rule per founder direction.
+# `git` prompts only on force-push (rewrites remote history) and `clean -f*`
+# (deletes untracked files irrecoverably). Everything else (commit, push, pull,
+# rebase, merge, rm, mv, reset --hard, checkout, branch -d, tag -d, stash drop)
+# auto-approves. All recoverable via reflog or remote.
 PRIVILEGE_TOKENS = {"sudo", "su", "doas", "pkexec"}
 
 RM_RECURSIVE_RE = re.compile(r"^rm\s+(-[a-zA-Z]*[rR][a-zA-Z]*\b|-r\b|-R\b)")
@@ -53,44 +57,13 @@ REMOTE_TOOLS = {"ssh", "scp", "rsync", "aws", "gcloud", "vercel", "supabase",
                 "doctl", "fly", "heroku", "kubectl", "helm", "ansible", "terraform",
                 "pulumi", "render", "railway", "netlify"}
 
-# `gh` (GitHub CLI) is handled separately: read-only subcommands auto-approve,
-# mutations prompt. Mirrors the `git` mutation-detection model.
-# Action-level mutations indexed by top-level command. Read-only commands
-# (label, status without args, search, browse, ...) and read actions for
-# command groups below (list, view, status, diff, checks, ...) auto-approve.
-GH_MUTATION_ACTIONS = {
-    "repo":      {"create", "delete", "fork", "rename", "transfer", "archive",
-                  "unarchive", "edit", "deploy-key", "set-default", "sync"},
-    "pr":        {"create", "edit", "close", "reopen", "merge", "ready", "review",
-                  "checkout", "comment", "lock", "unlock"},
-    "issue":     {"create", "edit", "close", "reopen", "comment", "delete",
-                  "transfer", "lock", "unlock", "pin", "unpin"},
-    "release":   {"create", "edit", "delete", "upload"},
-    "gist":      {"create", "edit", "delete", "rename", "clone"},
-    "secret":    {"set", "delete", "remove"},
-    "variable":  {"set", "delete", "remove"},
-    "auth":      {"login", "logout", "refresh", "setup-git", "switch"},
-    "workflow":  {"enable", "disable", "run"},
-    "run":       {"cancel", "delete", "rerun"},
-    "codespace": {"create", "delete", "stop", "rebuild", "edit", "ssh", "code", "cp"},
-    "project":   {"create", "edit", "delete", "close", "copy",
-                  "field-create", "field-delete",
-                  "item-add", "item-archive", "item-create", "item-delete",
-                  "item-edit"},
-    "label":     {"create", "edit", "delete", "clone"},
-    "alias":     {"set", "delete", "import"},
-    "extension": {"install", "remove", "upgrade", "create"},
-    "config":    {"set", "clear-cache"},
-    "gpg-key":   {"add", "delete"},
-    "ssh-key":   {"add", "delete"},
-    "ruleset":   {"create", "edit", "delete"},
-    "cache":     {"delete"},
-    "attestation": {"verify"},
-}
-# Top-level commands where ANY action is treated as mutation (no safe subcmds).
-GH_MUTATION_COMMANDS = set()
-# Mutation HTTP methods for `gh api`.
-GH_API_MUTATION_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+# v2.6.1+: catastrophic-only rule for `gh`. Auto-approves everything except
+# delete-class actions (`delete` / `remove` on any subcommand: gh repo delete,
+# gh release delete, gh secret delete, gh secret remove, gh extension remove,
+# gh issue delete, gh codespace delete, etc.). Per founder: "Unless they're
+# very catastrophic, like delete." gh api auto-approves all methods (caller
+# can still scope via deny rules in settings.local.json).
+GH_CATASTROPHIC_ACTIONS = {"delete", "remove"}
 DB_CLI_TOOLS = {"psql", "mysql", "mongo", "mongosh", "redis-cli", "sqlite3", "duckdb"}
 NPM_PUBLISH_RE = re.compile(r"\b(npm|yarn|pnpm|bun)\s+publish\b")
 DOCKER_PUSH_RE = re.compile(r"\bdocker\s+(push|login)\b")
@@ -138,25 +111,16 @@ def _git_subcmd(toks):
 
 
 def is_git_mutation(cmd):
+    """v2.6.1+: catastrophic-only. Auto-approve everything except force-push
+    (rewrites/destroys remote history) and `clean -f*` (irrecoverably deletes
+    untracked files). Reset --hard, branch -D, tag -d, stash drop, etc. are
+    all recoverable via reflog and now auto-approve.
+    """
     toks = all_tokens(cmd)
     sub = _git_subcmd(toks)
     if sub is None:
         return False
-    if sub in GIT_MUTATION_SUBCMDS:
-        return True
-    if sub == "reset" and "--hard" in toks:
-        return True
-    if sub == "checkout":
-        if "--" in toks:
-            return False
-        return True
     if sub == "push" and any(f in toks for f in ("--force", "-f", "--force-with-lease")):
-        return True
-    if sub == "stash" and len(toks) > 2 and "drop" in toks:
-        return True
-    if sub == "branch" and any(f in toks for f in ("-D", "-d", "--delete")):
-        return True
-    if sub == "tag" and "-d" in toks:
         return True
     if sub == "clean" and any(f in toks for f in ("-f", "-fd", "-fdx", "-fx")):
         return True
@@ -213,45 +177,19 @@ def _gh_command_and_action(toks):
     return (command, None)
 
 
-def _gh_api_is_mutation(toks):
-    """gh api defaults to GET. Mutation only when --method/-X selects POST/PUT/DELETE/PATCH."""
-    i = 0
-    while i < len(toks):
-        t = toks[i]
-        if t in ("--method", "-X") and i + 1 < len(toks):
-            if toks[i + 1].upper() in GH_API_MUTATION_METHODS:
-                return True
-            i += 2; continue
-        if t.startswith("--method="):
-            if t.split("=", 1)[1].upper() in GH_API_MUTATION_METHODS:
-                return True
-        if t.startswith("-X") and len(t) > 2:
-            if t[2:].upper() in GH_API_MUTATION_METHODS:
-                return True
-        i += 1
-    return False
-
-
 def is_gh_mutation(cmd):
-    """True if `gh ...` invokes a write/state-changing subcommand.
-
-    Mirrors is_git_mutation: defaults to NOT-mutation (auto-approve);
-    explicit mutating actions/commands listed in GH_MUTATION_ACTIONS.
+    """v2.6.1 catastrophic-only rule. Auto-approve every `gh ...` except
+    delete-class actions (e.g., `gh repo delete`, `gh release delete`,
+    `gh secret delete`, `gh secret remove`, `gh extension remove`,
+    `gh codespace delete`, `gh issue delete`). Per founder direction:
+    "Unless they're very catastrophic, like delete." `gh api` auto-approves
+    all methods (caller can deny via settings.local.json deny rules).
     """
     toks = all_tokens(cmd)
     command, action = _gh_command_and_action(toks)
-    if command is None:
+    if command is None or action is None:
         return False
-    if command == "api":
-        return _gh_api_is_mutation(toks)
-    if command in GH_MUTATION_COMMANDS:
-        return True
-    actions = GH_MUTATION_ACTIONS.get(command)
-    if actions is None:
-        return False
-    if action is None:
-        return False
-    return action in actions
+    return action in GH_CATASTROPHIC_ACTIONS
 
 
 def is_privilege(cmd):
