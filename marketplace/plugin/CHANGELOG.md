@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.7.2 — 2026-04-28
+
+**Honesty pass — stop advertising session-retrieve in the core plugin (vinit#6 partial fix).**
+
+Vinit (Testlify) reported in gh#6 that the `/core:start` banner hardcodes `session-retrieve` as a "loaded skill" but no SKILL.md ships in the plugin. The skill folder lives at `sutra/skills/session-retrieve/` (Sutra OS extensions tree), not at `marketplace/plugin/skills/`. Founder direction 2026-04-28: don't advertise it from the plugin; keep it as a Sutra extensions skill only for now.
+
+### Files changed
+
+- `scripts/start.sh:265` — banner string drops `session-retrieve` from "Skills loaded" line.
+- `.claude-plugin/plugin.json` — `keywords[]` drops `session-retrieve`; version → 2.7.2.
+- `.claude-plugin/marketplace.json` (Sutra repo root) — `keywords[]` drops `session-retrieve`; description text scrubs the "Includes session-retrieve…" sentence; version → 2.7.2.
+
+### What does NOT change
+
+- Skill folder at `sutra/skills/session-retrieve/` is left in place — it remains available for users who explicitly load Sutra extensions.
+- Banner does not yet list `blueprint` and `sutra-learn` skills which DO ship in plugin/skills/. Tracking as a separate honesty gap (banner is hardcoded — dynamic detection is a larger refactor; see vinit#6 follow-up).
+
+### Out of scope this turn
+
+- README claim about session-retrieve (no current README mention found in plugin/README.md).
+- Memory-system honesty pass per vinit#6 (the bigger CLAUDE.md-vs-Claude-native-memory question — needs strategic call).
+- Dynamic banner skill detection.
+
 ## v2.6.0 — 2026-04-27
 
 **PROTO-024 V1 — client→team feedback fanout (collaborator-visible inbox).**

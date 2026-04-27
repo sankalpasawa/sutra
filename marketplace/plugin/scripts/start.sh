@@ -262,7 +262,7 @@ print(f"   Project ID:      {d['project_id']}")
 print(f"   Profile:         {d.get('profile','project')}")
 print(f"   Telemetry:       {'on' if d['telemetry_optin'] else 'off'}  (edit .claude/sutra-project.json to flip)")
 print()
-print("   Skills loaded:   input-routing, depth-estimation, readability-gate, output-trace, session-retrieve")
+print("   Skills loaded:   input-routing, depth-estimation, readability-gate, output-trace")
 profile = d.get('profile','project')
 enforcement = "HARD — missing depth marker blocks Edit/Write" if profile == 'company' else "warn-only"
 print(f"   Enforcement:     {enforcement}")

@@ -9,8 +9,8 @@
   "plugins": [
     {
       "name": "core",
-      "description": "Sutra Core \u2014 governance primitives: input routing, depth estimation, readability gate, output trace + v2.7.1 actually applies the assistant-observer.sh B7+B9 code change (v2.7.0 narrative claimed shipped but commit didn't include the edit) + v2.7.0 permission-system streamline (codex-converged: -50% LoC, single source of truth, drift bugs eliminated) + v2.6.2 D36 Feedback Channel three-layer defense + v2.6.2 D37 Assistant default-OFF + v2.6.1 Trust Mode catastrophic-only + v2.6 PROTO-024 V1 client\u2192team feedback fanout + Tier 1.6 Trust Mode permissions + strengthened scrub. Hooks warn when depth marker is missing before Edit/Write; estimation metrics on session end; reset-turn-markers fires on Stop event (spoof-safe). Includes session-retrieve for recovering abruptly-closed sessions. Privacy: see ~/.sutra/PRIVACY.md; opt out with SUTRA_TELEMETRY=0; feedback fanout opt-out via SUTRA_FEEDBACK_FANOUT=0 or ~/.sutra-feedback-fanout-disabled.",
-      "version": "2.7.1",
+      "description": "Sutra Core \u2014 governance primitives: input routing, depth estimation, readability gate, output trace + v2.7.2 honesty pass: removes session-retrieve from advertised plugin skills (skill remains in Sutra extensions, not in core plugin) per vinit#6 + v2.7.1 actually applies the assistant-observer.sh B7+B9 code change (v2.7.0 narrative claimed shipped but commit didn't include the edit) + v2.7.0 permission-system streamline (codex-converged: -50% LoC, single source of truth, drift bugs eliminated) + v2.6.2 D36 Feedback Channel three-layer defense + v2.6.2 D37 Assistant default-OFF + v2.6.1 Trust Mode catastrophic-only + v2.6 PROTO-024 V1 client\u2192team feedback fanout + Tier 1.6 Trust Mode permissions + strengthened scrub. Hooks warn when depth marker is missing before Edit/Write; estimation metrics on session end; reset-turn-markers fires on Stop event (spoof-safe). Privacy: see ~/.sutra/PRIVACY.md; opt out with SUTRA_TELEMETRY=0; feedback fanout opt-out via SUTRA_FEEDBACK_FANOUT=0 or ~/.sutra-feedback-fanout-disabled.",
+      "version": "2.7.2",
       "author": {
         "name": "Sutra",
         "url": "https://sutra.os"
@@ -25,7 +25,6 @@
         "readability",
         "workflow",
         "session-discipline",
-        "session-retrieve",
         "opinionated-os"
       ]
     }
