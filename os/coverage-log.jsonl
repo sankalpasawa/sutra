@@ -1,1 +1,5 @@
 {"task":"stitch-verify","depth":5,"method":"PHASE-MEASURE","ts":"2026-04-20T10:19:40Z","evidence":"coverage engine deployed to sutra self"}
+{"task":"test","depth":2,"method":"PHASE-EXECUTE","ts":"2026-04-20T11:08:29Z","evidence":"smoke test evidence"}
+{"task":"smoke-auto-cov","depth":5,"method":"PHASE-SHAPE","ts":"2026-04-20T12:04:36Z","evidence":"spec edit: smoke-auto-cov-SPEC.md"}
+{"task":"smoke-auto-cov","depth":5,"method":"PHASE-SHAPE","ts":"2026-04-20T12:04:37Z","evidence":"spec edit: smoke-auto-cov-SPEC.md"}
+{"task":"smoke-auto-cov","depth":5,"method":"GATE-HLD","ts":"2026-04-20T12:04:37Z","evidence":"HLD doc: something-HLD.md"}
