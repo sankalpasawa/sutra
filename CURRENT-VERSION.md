@@ -1,5 +1,29 @@
 # Sutra — Current Version
 
+## v2.7.1 (2026-04-28) — actually apply the v2.6.3 assistant-observer fix
+
+**What this is**: a follow-up patch to v2.7.0. The v2.6.3 entry below (and the v2.7.0 description) claimed the assistant-observer.sh B7+B9 fix had shipped, but the v2.7.0 commit `f1f2352` only included the *narrative* — the actual one-line code change in `hooks/assistant-observer.sh` was a working-tree edit that never made it into a commit (it was bundled into a parallel-session commit that captured the version metadata but missed the .sh diff).
+
+**v2.7.1 closes the gap** by actually applying the edits described in the v2.6.3 section:
+
+- `hooks/assistant-observer.sh` line 55 — drop the redundant nested `${CLAUDE_PROJECT_DIR}`. New form:
+  ```bash
+  HOOK_LOG="${SUTRA_ASSISTANT_HOOK_LOG:-$REPO_ROOT/holding/hooks/hook-log.jsonl}"
+  ```
+  Closes both B7 (path double-substitution) and B9 (set-u crash) with one edit.
+
+- `hooks/assistant-observer.sh` line ~164 — event `evidence_refs[0].source` field now uses `$HOOK_LOG` (the actual path read) instead of `${CLAUDE_PROJECT_DIR}/holding/hooks/hook-log.jsonl`. So `SUTRA_ASSISTANT_HOOK_LOG` overrides are reflected accurately.
+
+- Mirrored to `holding/hooks/assistant-observer.sh`.
+
+**Validation**: 24/24 `holding/hooks/tests/test-assistant-observer.sh` tests green. Manual-shell test with `CLAUDE_PROJECT_DIR` unset, `SUTRA_ASSISTANT_ENABLED=1`, and minimal `SUTRA_ASSISTANT_HOOK_LOG` override now exits cleanly and writes a correct `turn.observed` event.
+
+**Re-enable pre-conditions** for the paused Sutra Assistant Layer (D37) now actually narrows to B1, B5, B6, B8 — as the v2.6.3 section already claimed.
+
+**No threat-model change.** Both bugs lived inside the paused-by-default observer; the fix only matters once the layer is re-enabled (`sutra enable`).
+
+**Lesson** (logged): description-and-code can drift across parallel sessions. Future plugin bumps should include a sanity check: if a section claims a file changed, verify the file actually changed in that commit.
+
 ## v2.7.0 (2026-04-28) — Permission system streamline (codex-converged)
 
 Plugin v2.7.0 removes ~50% of permission-system code (1366 → 690 LoC) without changing the threat model or auto-approve behavior. Codex consult 2026-04-28 converged on this restructure after the founder asked "can we streamline this — it looks complicated."

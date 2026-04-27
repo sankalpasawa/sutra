@@ -52,7 +52,13 @@ REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || 
 
 CLIENT_ID="${SUTRA_CLIENT_ID:-holding}"
 STATE_DIR="${SUTRA_ASSISTANT_STATE_DIR:-$REPO_ROOT/holding/state/assistants/$CLIENT_ID}"
-HOOK_LOG="${SUTRA_ASSISTANT_HOOK_LOG:-$REPO_ROOT/${CLAUDE_PROJECT_DIR}/holding/hooks/hook-log.jsonl}"
+# B7+B9 (2026-04-28): the prior form was
+#   "${SUTRA_ASSISTANT_HOOK_LOG:-$REPO_ROOT/${CLAUDE_PROJECT_DIR}/holding/hooks/hook-log.jsonl}"
+# which (a) double-substituted REPO_ROOT and an absolute CLAUDE_PROJECT_DIR
+# producing an invalid path that silently no-op'd (B7), and (b) crashed under
+# `set -u` when CLAUDE_PROJECT_DIR was unset in manual-shell contexts (B9).
+# REPO_ROOT alone is the correct base — drop the nested env entirely.
+HOOK_LOG="${SUTRA_ASSISTANT_HOOK_LOG:-$REPO_ROOT/holding/hooks/hook-log.jsonl}"
 
 EVENTS="$STATE_DIR/events.jsonl"
 LOCK="$STATE_DIR/observer.lock"
@@ -161,7 +167,7 @@ TURN_ID=$((TURN_ID + 1))
 EVENT=$(jq -cn \
   --arg v "1.0" --arg ts "$TS" --arg cid "$CLIENT_ID" \
   --arg sid "$SESSION_ID" --argjson tid "$TURN_ID" \
-  --argjson hc "$HOOK_COUNT" --arg src "${CLAUDE_PROJECT_DIR}/holding/hooks/hook-log.jsonl" \
+  --argjson hc "$HOOK_COUNT" --arg src "$HOOK_LOG" \
   --argjson f "$FROM_LINE" --argjson t "$TOTAL_LINES" \
   '{v:$v, ts:$ts, client_id:$cid, session_id:$sid, turn_id:$tid, type:"turn.observed",
     payload:{hook_count:$hc, evidence_refs:[{source:$src, lines:[$f,$t]}]}}')
