@@ -130,8 +130,8 @@ fanout_to_sutra_team() {
     if [ -f "$PLUGIN_ROOT/lib/project-id.sh" ]; then
       # shellcheck source=/dev/null
       source "$PLUGIN_ROOT/lib/project-id.sh" 2>/dev/null
-      if declare -f derive_install_id >/dev/null 2>&1; then
-        install_id=$(derive_install_id 2>/dev/null)
+      if declare -f compute_install_id >/dev/null 2>&1; then
+        install_id=$(compute_install_id "$PLUGIN_VERSION" 2>/dev/null)
       fi
     fi
   fi
