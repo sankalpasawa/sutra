@@ -13,7 +13,7 @@ Executable rules compiled from Asawa + Sutra principles. Every protocol has: tri
 > protocols are marked inline but not deleted — they document what once
 > shipped and why the system moved past them.
 
-_Last reconciled from system.yaml: **2026-04-18** · 22 protocols total_
+_Last reconciled from system.yaml: **2026-04-18** · 22 protocols total + 2 hand-added (PROTO-024, PROTO-025) — system.yaml backfill TODO_
 
 | ID | Name | yaml_status | enforcement | mechanism | test | last_updated |
 |----|------|-------------|-------------|-----------|------|--------------|
@@ -37,10 +37,12 @@ _Last reconciled from system.yaml: **2026-04-18** · 22 protocols total_
 | PROTO-016 | Root Cause on Founder Correction | RETIRED | — | — | — | 2026-04-18 |
 | PROTO-018 | Auto-Propagation on Version Bump | RETIRED | — | — | — | 2026-04-18 |
 | PROTO-019 | Codex Directive Enforcement | ACTIVE | HARD | sutra/marketplace/plugin/hooks/codex-directive-{detect,gate}.sh | sutra/marketplace/plugin/tests/unit/test-codex-directive-*.sh + integration/test-codex-directive-e2e.sh | 2026-04-23 |
-| PROTO-020 | Plugin Identity Capture | ACTIVE | SOFT | sutra/marketplace/plugin/lib/identity.sh (called by onboard… | sutra/marketplace/plugin/tests/unit/test-identity… | 2026-04-18 |
+| PROTO-020 | Plugin Identity Capture | ACTIVE | SOFT | lib/identity.sh | sutra/marketplace/plugin/tests/unit/test-identity… | 2026-04-18 |
 | PROTO-021 | BUILD-LAYER Declaration | ACTIVE | HARD-ON-CODE / SOFT-ON-DOCS | holding/hooks/build-layer-check.sh (PreToolUse Edit\|Write) | holding/hooks/tests/test-build-layer-check.sh | 2026-04-18 |
 | PROTO-022 | Completion Status Protocol | ACTIVE | SOFT | sutra/marketplace/plugin/hooks/completion-protocol-check.sh (PostToolUse Task) | sutra/marketplace/plugin/tests/unit/test-completion-protocol.sh | 2026-04-24 |
-| PROTO-023 | Centralized Config (`sutra-config`) | ACTIVE | FOUNDATION (read-surface) | sutra/marketplace/plugin/bin/sutra-config | sutra/marketplace/plugin/tests/unit/test-sutra-config.sh | 2026-04-24 |
+| PROTO-023 | Centralized Config (`sutra-config`) | ACTIVE | FOUNDATION (read-surface) | bin/sutra-config | sutra/marketplace/plugin/tests/unit/test-sutra-config.sh | 2026-04-24 |
+| PROTO-024 | Client→Team Feedback Fan-in (V1) | ACTIVE | SOFT | scripts/feedback.sh + lib/privacy-sanitize.sh | sutra/marketplace/plugin/tests/unit/test-feedback.sh | 2026-04-27 |
+| PROTO-025 | Structural-Move Authorization (extends PROTO-021) | ACTIVE | HARD-ON-CODE | holding/hooks/structural-move-check.sh | holding/hooks/structural-move-check.test.sh | 2026-04-27 |
 
 **Status legend**: ACTIVE = shipped and enforced per mechanism · RETIRED = removed, see `reason` in system.yaml · ABSORBED = folded into another protocol (see pointer below)
 

@@ -65,10 +65,10 @@ Each client declares a tier in `os/SUTRA-CONFIG.md` (`tier: 1|2|3`). The manifes
 |---|---|
 | `artifact-check.sh` | PostToolUse |
 | `compliance-tracker.sh` | SessionStart |
-| `depth-enforcement.sh` | PreToolUse |
+| `depth-marker-pretool.sh` | PreToolUse | _(was `depth-enforcement.sh` — file removed; live mechanism is the plugin's depth-marker-pretool. MANIFEST updated 2026-04-27 per codex P3.)_
 | `estimation-enforcement.sh` | PreToolUse |
 | `measurement-logger.sh` | PostToolUse |
-| `resilience.sh` | PostToolUse |
+| `resilience.sh` (helper/library — invoked by other hooks; not directly registered) | _N/A — helper called as `bash resilience.sh <hook> <pass\|warn>`. Reclassified 2026-04-27 per codex P3._ |
 | `log-skill-feedback.sh` | PostToolUse |
 
 ## 5. HOOKS — tier 3 only
