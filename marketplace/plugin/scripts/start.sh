@@ -252,7 +252,7 @@ ensure_project_claude_md
 # Step 4 — activation banner + next steps
 if [ -f .claude/sutra-project.json ]; then
   python3 <<PY
-import json
+import json, os, shutil
 d = json.load(open('.claude/sutra-project.json'))
 print("🧭 Sutra active")
 print(f"   Version:         {d['sutra_version']}")
@@ -260,7 +260,18 @@ print(f"   Project:         {d['project_name']}")
 print(f"   Install ID:      {d['install_id']}")
 print(f"   Project ID:      {d['project_id']}")
 print(f"   Profile:         {d.get('profile','project')}")
-print(f"   Telemetry:       {'on' if d['telemetry_optin'] else 'off'}  (edit .claude/sutra-project.json to flip)")
+# v2.7.3 honesty (vinit#9): banner reflects actual v2.0+ privacy model — push is
+# disabled regardless of telemetry_optin flag; legacy push only via env opt-in.
+if d.get('telemetry_optin') and os.environ.get('SUTRA_LEGACY_TELEMETRY') == '1':
+    _tel = "on — legacy push active (SUTRA_LEGACY_TELEMETRY=1)"
+elif d.get('telemetry_optin'):
+    _tel = "local-only — push disabled in v2.0 privacy model (see PRIVACY.md)"
+else:
+    _tel = "off"
+print(f"   Telemetry:       {_tel}")
+# v2.7.3 honesty (vinit#7): RTK rewrite is opt-in external dep, not bundled.
+_rtk_active = shutil.which('rtk') is not None and not os.path.exists(os.path.expanduser('~/.rtk-disabled'))
+print(f"   RTK rewrite:     {'active' if _rtk_active else 'inactive — rtk binary not installed (opt-in; see README)'}")
 print()
 print("   Skills loaded:   input-routing, depth-estimation, readability-gate, output-trace")
 profile = d.get('profile','project')

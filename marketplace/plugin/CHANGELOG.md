@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.7.3 — 2026-04-28
+
+**Honesty pass II — RTK opt-in disclosure + telemetry banner truth (vinit#7, vinit#9).**
+
+Vinit (Testlify) reported two more phantom-feature gaps:
+
+- **gh#7 (RTK)** — README advertises `rtk auto-rewrite` for "30-60% tool-output reduction"; the hook is registered and ships. But the `rtk` binary is not bundled with the plugin or any install path; on machines without it, the hook silently exits 0 and the feature is inert. Users believe context bloat is being managed; it isn't.
+- **gh#9 (telemetry)** — `/core:start` banner reads `Telemetry: on`; `push.sh` line 19 unconditionally exits with "push disabled in v2.0 privacy model" unless `SUTRA_LEGACY_TELEMETRY=1`. Banner copy is misleading — push is off regardless of `telemetry_optin` flag.
+
+### Banner reflects real state
+
+- `scripts/start.sh` activation banner now derives **two new lines** from runtime state:
+  - `Telemetry: local-only — push disabled in v2.0 privacy model (see PRIVACY.md)` when `telemetry_optin=true` and legacy push not active. Shows `on — legacy push active` only when `SUTRA_LEGACY_TELEMETRY=1`. Shows `off` when opt-in flag false.
+  - `RTK rewrite: active` when `rtk` binary is on PATH and `~/.rtk-disabled` absent. `inactive — rtk binary not installed (opt-in; see README)` otherwise.
+
+### README honest about external deps
+
+- RTK feature line marked **(opt-in)**; explicit "requires `rtk` binary installed separately (not bundled with the plugin)"; kill-switch path documented inline.
+- Telemetry feature line marked **(v2.0+ privacy model)**; explicit "push to a data store is disabled by default"; legacy reactivation path documented.
+- Removed stale `Session retrieve — recover abruptly-closed sessions after a laptop crash` line (consistency with v2.7.2 plugin removal).
+
+### What does NOT change
+
+- `rtk-auto-rewrite.sh` hook code unchanged — already correctly silently exits when binary missing. The bug was discovery/disclosure, not behavior.
+- `push.sh` v2.0 privacy gating unchanged — that's by design, not a bug. Users who want fleet telemetry can still set `SUTRA_LEGACY_TELEMETRY=1`.
+- No rtk binary bundled with the plugin (out of scope: supply-chain implications, multi-platform builds).
+
+### Out of scope
+
+- Strategic decision on telemetry: do we re-enable a privacy-respecting push channel so the team can see fleet usage? (Currently we have zero data from any external client — see vinit#9 follow-up.) Founder call needed.
+- vinit#6 memory-honesty (Sutra memory vs Claude native).
+
 ## v2.7.2 — 2026-04-28
 
 **Honesty pass — stop advertising session-retrieve in the core plugin (vinit#6 partial fix).**

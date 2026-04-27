@@ -10,11 +10,10 @@ Operating system for building with AI. Governance + observability for Claude Cod
 - **Depth + estimation** — every task rated 1-5 with cost/effort estimate before work begins
 - **Readability gate** — outputs formatted as tables/boxes/metrics, not prose
 - **Output trace** — every response ends with a one-line OS trace
-- **Session retrieve** — recover abruptly-closed sessions after a laptop crash
-- **RTK auto-rewrite** — PreToolUse hook forces `rtk` wrap on voluminous bash (`git status`/`log`/`diff`/`blame`/`show`) for 30-60% tool-output reduction
+- **RTK auto-rewrite (opt-in)** — PreToolUse hook wraps voluminous bash (`git status`/`log`/`diff`/`blame`/`show`) with `rtk` for 30-60% tool-output reduction. **Requires `rtk` binary installed separately** (not bundled with the plugin); inactive when binary missing — start banner shows live status. Kill-switch: `~/.rtk-disabled` or `RTK_DISABLED=1`.
 - **MCP output compression** — PostToolUse hook replaces large MCP tool outputs (≥4KB, ≥80 lines) with head+error+tail summaries (~50% cut)
 - **Per-profile enforcement** — `individual` / `project` / `company` profiles via `/core:start --profile` (v1.6.0+); `company` hard-blocks on missing depth markers
-- **Local telemetry** — `~/.sutra/metrics-queue.jsonl`; opt-in push to a data store
+- **Local telemetry (v2.0+ privacy model)** — signals captured to `~/.sutra/metrics-queue.jsonl` locally; **push to a data store is disabled by default**. Legacy push available via `SUTRA_LEGACY_TELEMETRY=1`. See `PRIVACY.md`.
 
 ## Install (60 seconds)
 
