@@ -1008,3 +1008,43 @@ RELATES:
   as opt-in extension for users who want world-visible feedback).
   V2 will close H1/H3/H5/H8/H10 deferred from V1.
 ```
+
+## PROTO-025: Structural-Move Authorization (extends PROTO-021) [ACTIVE]
+
+**Trigger**: 2026-04-06 unauthorized `git mv` of `holding/evolution/` (commit `d8407d9`) bundled into a multi-purpose contraction commit. PROTO-021 BUILD-LAYER fires only on `Edit|Write` (content changes). Bash structural operations (`mv`, `rm`, `git mv`, `git rm`, `find -delete`, `bash -c`, `xargs`) slipped past every governance hook. Surfaced + restored 2026-04-27 in commit `87fb3ca`.
+
+**Scope**: structural Bash operations on PROTO-021 HARD paths.
+
+**HARD paths (single source of truth, shared with PROTO-021):**
+- `holding/hooks/**`
+- `holding/departments/**`
+- `holding/evolution/**` (added 2026-04-27)
+- `holding/FOUNDER-DIRECTIONS.md` (added 2026-04-27)
+- `sutra/marketplace/plugin/**`
+- `sutra/os/charters/**`
+
+**Authorization (any one):**
+1. `.claude/build-layer-registered` marker present (same marker as PROTO-021 — emit BUILD-LAYER block once per turn).
+2. `BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>' <cmd>` (logged).
+
+**Hook**: `holding/hooks/structural-move-check.sh` (PreToolUse Bash). Promotion to `sutra/marketplace/plugin/hooks/structural-move-check.sh` by 2026-05-27 after 30-day clean operation.
+
+**Ledger**: `.enforcement/build-layer-ledger.jsonl` — events `structural-block` / `structural-override` / `structural-allow-marker`.
+
+**Detection patterns**: `mv`, `rm`, `rmdir`, `git mv`, `git rm`, `find ... -delete`, `find ... -exec rm/mv`, `xargs ... rm/mv`, `bash -c '...'`, `sh -c '...'`, `eval '...'`. Conservative — substring match on HARD path anywhere in the command. False-positive cost = one ack-bypass; false-negative cost = unauthorized governance change.
+
+**Why a separate hook (not extend `build-layer-check.sh`)**: PROTO-021 fires on `Edit|Write` event class; PROTO-025 fires on `Bash` event class. Single-responsibility per hook keeps each focused. They share path list, marker, override env, and ledger — same authorization model, two trigger surfaces.
+
+**Spec / design**:
+- Hook: `holding/hooks/structural-move-check.sh`
+- Test: `holding/hooks/structural-move-check.test.sh` (7 cases — block / override / marker / soft / non-structural / bash-c-evasion / cp-non-destructive — all pass)
+- Design doc: `holding/research/2026-04-27-structural-move-protocol-design.md`
+
+**Decommission criteria**: retire when (a) plugin equivalent ships at `sutra/marketplace/plugin/hooks/structural-move-check.sh` and Asawa-holding loads from plugin path, OR (b) Claude Code gains a native structural-move tool routed through Edit/Write hook chain (rendering Bash mv/rm obsolete for governance purposes).
+
+**RELATES**:
+- Extends PROTO-021 (same path list, same authorization model, different trigger surface).
+- Reuses `BUILD_LAYER_ACK=1` env (single audit lane).
+- Reuses `.enforcement/build-layer-ledger.jsonl` (single ledger).
+- Closes the gap that allowed the 2026-04-06 incident.
+
