@@ -45,21 +45,24 @@ Same threat model as v2.5.0+. Both directives strengthen existing protections; n
 
 Single trusted local operator. No adversarial input.
 
-## v2.6.1 (2026-04-27) — Trust Mode `gh` subcommand refinement
+## v2.6.1 (2026-04-27) — Trust Mode `gh`/`git` catastrophic-only rule
 
-Plugin v2.6.1 refines Trust Mode (Tier 1.6) `gh` handling. Closes the founder-reported approval-fatigue gap where every `gh` invocation — including read-only `gh label list`, `gh pr view`, `gh issue list`, `gh api` (default GET) — prompted because `gh` was treated as a coarse REMOTE_TOOL.
+Plugin v2.6.1 refines Trust Mode (Tier 1.6) `gh` and `git` handling per founder direction: "Keep it simple. Just approve all the Git commands. Unless they're very catastrophic, like delete." Closes the founder-reported approval-fatigue gap where every `gh` invocation prompted because `gh` was a coarse REMOTE_TOOL, and recoverable `git` operations like `commit`/`push`/`rebase`/`merge` prompted unnecessarily.
 
-**Mechanism**: `lib/sh_trust_mode.py` now distinguishes `gh` read-only subcommands (auto-approve) from mutations (prompt) using the same model as `is_git_mutation` (action-level allowlist of mutating actions per top-level command, default-not-mutation). `gh api` defaults to GET; only `--method`/`-X` selecting POST/PUT/DELETE/PATCH prompts.
+**Mechanism** (`lib/sh_trust_mode.py`):
 
-**Auto-approves** (sample): `gh {label,pr,issue,repo,release,run,workflow,secret,variable,gist,codespace,cache,extension,ruleset,project} list`, `gh pr {view,diff,checks,status}`, `gh issue {view,status}`, `gh repo {view,clone}`, `gh release view`, `gh run {view,watch}`, `gh workflow view`, `gh search code|prs|issues|...`, `gh auth status`, `gh api repos/...`, `gh api -X GET ...`.
+- **`gh`**: removed from REMOTE_TOOLS. Auto-approves every `gh ...` invocation EXCEPT delete-class actions: `is_gh_mutation` returns True only when the action token ∈ {`delete`, `remove`}. Catches `gh repo delete`, `gh release delete`, `gh secret delete`/`remove`, `gh issue delete`, `gh codespace delete`, `gh label delete`, `gh extension remove`, `gh gist delete`, `gh variable delete`. `gh api` auto-approves all methods (caller can deny via settings.local.json).
+- **`git`**: simplified to two catastrophic patterns: `git push --force` / `-f` / `--force-with-lease` (rewrites/destroys remote history) and `git clean -f` / `-fd` / `-fdx` / `-fx` (irrecoverable untracked deletion). Everything else (`commit`, `push` non-force, `pull`, `rebase`, `merge`, `reset --hard`, `checkout`, `branch -D`, `tag -d`, `stash drop`, `rm`, `mv`) auto-approves — recoverable via reflog or remote.
 
-**Still prompts** (sample): `gh pr {create,edit,merge,close,review,comment}`, `gh issue {create,close,delete,comment}`, `gh repo {create,delete,fork,edit}`, `gh release {create,delete}`, `gh secret {set,delete}`, `gh auth {login,logout}`, `gh workflow {run,disable}`, `gh run {cancel,rerun}`, `gh codespace {create,delete,ssh}`, `gh label {create,delete}`, `gh project {create,item-add}`, `gh api -X POST|PUT|DELETE|PATCH`.
+**Validation**: 156/156 unit tests green (`tests/unit/test-sh-trust-mode.sh`). 72 auto-approve cases (40 gh read-only + 32 gh recoverable-mutation + 12 git recoverable-mutation + existing primitives), 30 prompt cases (catastrophic-only).
 
-**Validation**: 78 new unit tests in `tests/unit/test-sh-trust-mode.sh` (40 read-only auto-approve cases + 38 mutation prompt cases). All 144/144 trust-mode tests green. Existing `gh pr create` test still produces `remote-state` category. PERMISSIONS charter §4 Tier 1.6 row 6 amended.
+**Threat model unchanged** — same as v2.5.0 (single trusted local operator, no adversarial input). Recovery model: anything NOT prompting is recoverable via reflog, remote, fs, or Time Machine. The minimal prompt set catches every irrecoverable operation. Stricter threat models (multi-actor or untrusted operator) can re-enable broader prompts via `settings.local.json` deny rules — existing `Bash(gh repo delete*)` deny remains.
 
-**Threat model unchanged** — same as v2.5.0 (single trusted local operator, no adversarial input). Recovery model unchanged (mutations still prompt).
+**Charter**: PERMISSIONS §4 Tier 1.6 row 6 + new "git mutations" sub-rule amended.
 
-**Follow-up**: same subcommand-aware refinement is applicable to `kubectl`, `aws`, `gcloud`, `helm`, `terraform`, `pulumi`. Deferred to next iteration after fleet measures v2.6.1 impact.
+**Iteration history**: shipped initially (36431a8) as a granular subcommand-aware spec (28-line GH_MUTATION_ACTIONS dict mapping ~20 commands to ~80 mutation actions; mutation-by-default). Founder reverted spec mid-flight to catastrophic-only after seeing the implementation. Net code change vs granular: -112 / +33 lines (16af031 supersedes 36431a8).
+
+**Follow-up** (deferred): the same catastrophic-only treatment can extend to `kubectl`, `aws`, `gcloud`, `helm`, `terraform`, `pulumi` if/when fleet feedback surfaces approval-fatigue on those tools. Currently they remain in REMOTE_TOOLS (every invocation prompts).
 
 ## v2.5.0 (2026-04-27) — Tier 1.6 Trust Mode
 
