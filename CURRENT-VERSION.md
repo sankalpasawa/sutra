@@ -1,5 +1,92 @@
 # Sutra — Current Version
 
+## v2.7.0 (2026-04-28) — Permission system streamline (codex-converged)
+
+Plugin v2.7.0 removes ~50% of permission-system code (1366 → 690 LoC) without changing the threat model or auto-approve behavior. Codex consult 2026-04-28 converged on this restructure after the founder asked "can we streamline this — it looks complicated."
+
+### What got removed
+
+| Artifact | Why |
+|---|---|
+| `lib/sh_lex_check.py` (228 LoC) | v2.4 compositional matcher. Trust Mode is a strict superset for Bash auto-approve. Drift-prone duplicate. |
+| `scripts/rollback-compositional.sh` | Ties to the deleted matcher. |
+| `tests/unit/test-sh-lex-check.sh` + `test-permission-gate-compositional.sh` + `test-rollback-compositional.sh` | Tests for deleted code. |
+| `_match_bash_compositional` + `_env_has_shadowing` in `permission-gate.sh` | ~50 LoC. Tier 1.5 dispatch + v2.4 env-shadowing guard. |
+| `_bash_summary_compositional_re` + `_bash_summary_env_shadowing` + `_is_allowlisted` mirror branch in `bash-summary-pretool.sh` | ~80 LoC. Drifted duplicate of permission-gate's allowlist logic. |
+| Haiku LLM summarizer in `bash-summary-pretool.sh` | ~80 LoC. Caching, rate limiting, prompt template. Replaced with deterministic category text from Trust Mode (no API cost, equivalent UX). |
+| `_danger_tag` heuristic | Replaced by `category` field already emitted by `sh_trust_mode.py`. |
+
+### What got refactored
+
+**`hooks/bash-summary-pretool.sh` is now a thin Trust Mode wrapper** (152 LoC, was 318):
+- Reads stdin → calls `sh_trust_mode.py` once.
+- Trust Mode says auto-approve → exit silently. Permission gate handles allow + persistence.
+- Trust Mode says prompt → emit `permissionDecision: "ask"` with a deterministic per-category label + hint. Six categories (`git-mutation`, `privilege`, `recursive-delete`, `disk-system`, `fetch-exec`, `remote-state`) → six fixed strings.
+
+**`hooks/permission-gate.sh` simplified** (264 LoC, was 318):
+- Dispatch is now Tier 1 → Trust Mode (was Tier 1 → Tier 1.5 → Trust Mode).
+- Tier 1 (sutra cmd, plugin lifecycle, marker writes, Write/Edit/MultiEdit narrow allowlist) retained per codex correction — Trust Mode is Bash-only and doesn't cover Write/Edit scope.
+
+### Net effect
+
+```
+Before v2.7.0: 4 files, 1138 LoC
++ tests:       sh_lex_check, compositional, rollback (~150 LoC)
+= 1366 LoC total
+
+After v2.7.0:  3 files, 690 LoC + existing trust-mode tests (~140 LoC)
+= 830 LoC total
+
+Reduction: 39% (or 49% counting test files)
+Single source of truth: sh_trust_mode.py
+Single decision call: every hook calls the same classifier
+```
+
+### Threat model unchanged
+
+Same as v2.5.0+. Single trusted local operator, no adversarial input. Trust Mode catches every irreversible op (force-push, clean -f, recursive-delete, privilege, disk/system, fetch-and-exec, gh delete-class, ssh/aws/kubectl/etc., db CLIs, package publish, docker push). Recoverable mutations auto-approve.
+
+### Behavior parity verified
+
+- 156/156 unit tests in `tests/unit/test-sh-trust-mode.sh` green.
+- Manual smoke test of `bash-summary-pretool.sh`: `git push --force` → 🚨 Git catastrophic prompt; `git commit` → silent auto-approve; `gh repo delete` → ⚠️ Remote/shared-state prompt; `sudo rm -rf /etc` → 🚨 Privilege prompt; `curl | sh` → 🚨 Fetch-and-exec prompt.
+- Drift bug codex caught: `bash-summary` skipped `claude plugin update *` and `rtk *` while `permission-gate` didn't. Single-source-of-truth eliminates this class of bug structurally.
+
+### Codex review
+
+Convergence: B (drop sh_lex_check), E (drop env-shadowing), D-partial (drop Haiku, keep deterministic category text). Disagreement: A (keep Tier 1 for Write/Edit + plugin lifecycle), C (merge code via shared lib, not phase model), F (~350-450 LoC realistic vs my ~250). Founder direction: ship the converged set + the disagreed set. Done.
+
+### Migration / rollout
+
+- Existing clients on v2.6.3 → v2.7.0: zero behavior change for permission decisions. Prompts that fired before fire now; auto-approves that fired before fire now.
+- LLM cost reduction: Haiku no longer called on permission prompts. Net Anthropic-API spend goes down for plugin users.
+- Plugin cache: `claude plugin marketplace update sutra && claude plugin update core@sutra` to pick up. New sessions auto-load.
+
+## v2.6.3 (2026-04-28) — assistant-observer B7+B9 single-edit fix
+
+Plugin v2.6.3 closes two bugs in `hooks/assistant-observer.sh` that lived on the same line:
+
+**B7 (path double-substitution)** — prior form:
+```bash
+HOOK_LOG="${SUTRA_ASSISTANT_HOOK_LOG:-$REPO_ROOT/${CLAUDE_PROJECT_DIR}/holding/hooks/hook-log.jsonl}"
+```
+When CLAUDE_PROJECT_DIR is set (the typical hook context — and it's an absolute path), this expanded to `$REPO_ROOT/$ABSOLUTE_PATH/holding/hooks/hook-log.jsonl` — a malformed path that silently no-op'd.
+
+**B9 (crash under `set -u`)** — same line, when CLAUDE_PROJECT_DIR was unset (manual-shell contexts, opt-in path tested via `SUTRA_ASSISTANT_ENABLED=1`), the bare `${CLAUDE_PROJECT_DIR}` reference crashed the observer with `unbound variable`. Discovered 2026-04-28 while verifying the v2.6.2 deployed shim.
+
+**Fix** (single line): drop the redundant nested `${CLAUDE_PROJECT_DIR}` component. `REPO_ROOT` alone is the correct base — `git rev-parse --show-toplevel` returns the repo root absolute path; `holding/hooks/hook-log.jsonl` is its child. New form:
+```bash
+HOOK_LOG="${SUTRA_ASSISTANT_HOOK_LOG:-$REPO_ROOT/holding/hooks/hook-log.jsonl}"
+```
+
+Also: switched the event's `evidence_refs[0].source` field to use `$HOOK_LOG` (the actual path read) so the override via `SUTRA_ASSISTANT_HOOK_LOG` is reflected accurately in events.jsonl.
+
+Mirrored to `holding/hooks/assistant-observer.sh` (the L1 staging copy already had B7 fixed; consolidated line-164 source field to match).
+
+**Re-enable pre-conditions** for the paused Sutra Assistant Layer (D37): now B1, B5, B6, B8 remain. B2, B3, B4 fixed in v2.6.2; B7+B9 fixed here.
+
+**No threat-model change.** Both bugs lived inside the paused-by-default observer; fix only matters once the layer is re-enabled (`sutra enable`).
+
 ## v2.6.2 (2026-04-27) — D36 Feedback Channel three-layer defense + D37 Assistant Layer default-OFF
 
 Plugin v2.6.2 ships two independent founder directives from 2026-04-27, decoupled by mechanism (one feedback-system, one interaction-layer-system) and coupled only by the trigger conversation.

@@ -65,93 +65,32 @@ This charter closes both gaps.
 | Local logs | `Write(.claude/sutra-estimation.log)`, `Write(.claude/logs/*)` | Telemetry captured at Stop events. Never leaves machine unless `telemetry_optin=true` AND user runs `sutra push`. |
 | Filesystem setup | `Bash(mkdir -p .claude*)`, `Bash(mkdir -p .enforcement*)` | First-use directory creation, scoped to `.claude/` and `.enforcement/` only. |
 
-### Tier 1.5 — Compositional reads (v2.4+)
+### Tier 1.5 — Compositional reads (v2.4, REMOVED in v2.7.0)
 
-Read-only shell compositions over a fixed primitive whitelist are auto-approved
-when the entire composition passes ALL five gates. This table is **NORMATIVE**
-— the `sh_lex_check.py` helper at `sutra/marketplace/plugin/lib/` reproduces
-exactly these rules.
+Removed in v2.7.0. The five-gate compositional matcher (`sh_lex_check.py`,
+228 LoC) was a v2.4 strict-allowlist artifact. Trust Mode (Tier 1.6, below)
+is a strict superset for Bash auto-approval — every command Tier 1.5 allowed
+also passes Trust Mode unless it falls into one of the prompt categories.
+The dual-matcher introduced drift (codex review 2026-04-28) and added zero
+catch coverage under the trusted-operator threat model.
 
-**Gate 1 — Pre-tokenization hard rejects.** Reject if the raw command contains
-any of: control chars (bytes < 0x20 other than space/tab), CR (`\r`),
-substring `$(`, backtick, `<(`, `>(`, `<<`, `bash -c`, `sh -c`, `zsh -c`,
-` eval `, ` exec `; or starts with `eval ` or `exec `.
+**Removed artifacts** (v2.7.0):
+- `sutra/marketplace/plugin/lib/sh_lex_check.py`
+- `sutra/marketplace/plugin/scripts/rollback-compositional.sh`
+- `sutra/marketplace/plugin/tests/unit/test-sh-lex-check.sh`
+- `sutra/marketplace/plugin/tests/unit/test-permission-gate-compositional.sh`
+- `sutra/marketplace/plugin/tests/unit/test-rollback-compositional.sh`
+- `_match_bash_compositional` + `_env_has_shadowing` in `permission-gate.sh`
+- `_bash_summary_env_shadowing` + `_is_allowlisted` mirror branch in `bash-summary-pretool.sh`
 
-**Gate 2 — Environment shadowing check.** Reject if any allowlisted primitive
-is shadowed. Two checks, both must pass:
-  - **2a — Fast-path env regex:** match `^BASH_FUNC_<primitive>(%%|\(\))=`
-    against each env row (covers patched bash 4.3+).
-  - **2b — Universal fallback:** for each allowlisted primitive, call
-    `declare -F <primitive>` in the hook's shell. This is the load-bearing
-    check; it catches legacy bash formats, non-exported inherited functions,
-    and anything else shell-visible.
-Fail either → fall through to normal prompt.
+**Reversion path**: if the threat model expands to multi-actor or untrusted
+env, restore Tier 1.5 from git history (last commit before v2.7.0).
 
-**Gate 3 — Tokenization with `shlex(posix=True, punctuation_chars=True)`.**
-Unclosed quotes → `ValueError` → reject. Fold (remove) the 3-token sequences
-`['2', '>&', '1']` (`2>&1`) and `['2', '>', '/dev/null']` (`2>/dev/null`) from
-the stream. After folding, reject if ANY token equals `>`, `<`, `&`, `>>`,
-`<<`, `>|`, `&>`, `>&`.
-
-**Gate 4 — Pipeline operators.** Allowed between segments: `;`, `&&`, `||`, `|`.
-Any other token acts as a segment separator only if it is one of those four.
-
-**Gate 5 — Primitive whitelist (segment leading token).**
-
-| Primitive | Flag denylist (reject if matched) | Positional-arg rule |
-|---|---|---|
-| `ls` | — | paths OK |
-| `cat` | — | paths OK |
-| `head` | — | paths OK |
-| `tail` | `-F`, `--retry`, `--follow=name` | paths OK; `-f` allowed (stdout-only) |
-| `wc` | — | paths OK |
-| `echo` | — | literal strings |
-| `printf` | `-v`, `%n` in format string (bytes-so-far write; defanged without `-v` but blocked for strict read-only) | format + args |
-| `pwd` | — | no args |
-| `date` | `-s`, `--set`, `-d`, `--date` | `+FMT` OK |
-| `whoami` | — | no args |
-| `which` | — | cmd names |
-| `basename` | — | path |
-| `dirname` | — | path |
-| `realpath` | — | paths |
-| `grep` | `--devices=` | pattern + paths |
-| `cut` | — | paths |
-| `uniq` | — | ≤1 positional (2nd positional = output file) |
-| `tr` | — | ≤2 positional (SET strings only; no file args) |
-| `column` | `-J` | optional path |
-
-A primitive name (segment leading token) not in this table → reject.
-
-**Codex round 5 removal (2026-04-25):** `sort` was considered but removed
-because GNU `sort` can spill temp files to `$TMPDIR`/`/tmp` on large input
-even without `-o`, violating the strict read-only posture. If a future need
-emerges, re-introducing `sort` requires charter amendment + a forced
-`TMPDIR=/dev/null` wrapper or equivalent mitigation.
-
-**Not in Tier 1.5** (explicit denylist — these continue to prompt):
-`git`, `sed`, `find`, `awk`, `xargs`, `bash`, `sh`, `zsh`, `python`,
-`python3`, `node`, `ruby`, `perl`, `curl`, `wget`, `ssh`, `scp`, `rsync`,
-`cp`, `mv`, `rm`, `ln`, `mkdir`, `touch`, `chmod`, `chown`, `dd`, `kill`,
-`pkill`, `killall`, `tar`, `zip`, `gzip`, `gunzip`, `unzip`, `nc`, `socat`,
-`sudo`, `su`, `sort`.
-
-**Widening rule**: a future release that needs to add a primitive to Gate 5
-MUST amend this charter block FIRST, then ship the hook change. The flag
-denylist in Gate 5 is normative. Tokenization and `BASH_FUNC_*` shadowing
-(Gates 2-3) are non-negotiable floors.
-
-**Known limitations (accepted false-negatives, NOT security gaps):**
-- `grep ";" file`: shlex posix mode strips quotes from standalone punctuation
-  chars. The literal `;` is indistinguishable from a separator. User approves
-  manually once per session.
-- `grep -F '$(' file`: literal text search for `$(` triggers Gate 1 reject.
-  Rare benign pattern; user approves manually.
-
-### Tier 1.6 — Trust Mode (v2.5+)
+### Tier 1.6 — Trust Mode (v2.5+, sole Bash matcher post-v2.7.0)
 
 **Threat model**: Trust Mode assumes a single trusted local operator on a personally managed machine, no adversarial prompt/file/environment injection, and reserves prompts only for commands with high risk of irreversible local loss, privilege escalation, or remote/shared-state mutation.
 
-**Decision rule**: Auto-approve every Bash command EXCEPT those matching one of the 6 prompt categories below. Inverts v2.4's strict allowlist. v2.4's Tier 1.5 patterns remain for narrow PermissionRequest persistence (compositional-read pattern names land in `settings.local.json`).
+**Decision rule**: Auto-approve every Bash command EXCEPT those matching one of the prompt categories below. Inverts v2.4's strict allowlist. v2.7.0 removed Tier 1.5 (the v2.4 compositional matcher) — Trust Mode is now the sole Bash auto-approve path.
 
 **6 prompt categories** (commands matching any of these fall through to the normal permission dialog — user makes the call):
 
@@ -168,7 +107,7 @@ Helper: `sutra/marketplace/plugin/lib/sh_trust_mode.py` — Python regex/case de
 
 **Recovery model (why this is safe enough)**: anything NOT in the 6 categories is recoverable via local fs, git, Time Machine. The 6 catch every irreversible / shared-state / privilege-elevating operation. Approval fatigue (50 blind-approves per session) was a worse security mode than the 6-prompt baseline.
 
-**Exit ramp**: if threat model changes (multi-user, prompt injection, untrusted env), revert to v2.4 Tier 1.5 strict mode. v2.4 code remains in the hook as the second matcher so compositional-read pattern names still persist correctly.
+**Exit ramp**: if threat model changes (multi-user, prompt injection, untrusted env), restore the v2.4 Tier 1.5 strict-allowlist matcher from git history (last commit before v2.7.0 — `sh_lex_check.py` + `_match_bash_compositional` + env-shadowing guards) and re-register it ahead of Trust Mode in `permission-gate.sh`'s dispatch.
 
 ### Tier 2 — Permissible when feature enabled in `os/SUTRA-CONFIG.md`
 

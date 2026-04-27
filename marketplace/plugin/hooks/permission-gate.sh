@@ -115,61 +115,6 @@ _match_bash() {
 }
 
 
-# ---- env-level shadowing guard (codex round 2 + 3) ----
-# If any allowlisted primitive name is shadowed by an exported bash function
-# (BASH_FUNC_name%%=() or BASH_FUNC_name()=()) OR is defined as a function in
-# the hook's own shell (declare -F), refuse auto-approve. The Bash tool runs
-# commands in a subshell that inherits exported functions — an attacker with
-# control over env could replace ls/cat/grep/etc. Fall through to normal
-# prompt so the user sees the command and manually approves.
-_compositional_primitives_re='ls|cat|head|tail|wc|echo|printf|pwd|date|whoami|which|basename|dirname|realpath|grep|cut|uniq|tr|column'
-
-_env_has_shadowing() {
-  # Gate 2a: env regex (patched bash 4.3+).
-  if env | grep -qE "^BASH_FUNC_(${_compositional_primitives_re})(%%|\(\))=" 2>/dev/null; then
-    return 0
-  fi
-  # Gate 2b: declare -F universal fallback (covers legacy formats).
-  local name
-  for name in ls cat head tail wc echo printf pwd date whoami which basename dirname realpath grep cut uniq tr column; do
-    if declare -F "$name" >/dev/null 2>&1; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-# ---- compositional matcher (Tier 1.5, v2.4+) ----
-# Calls lib/sh_lex_check.py. Sets MATCHED_PATTERN on success. Fail-safe-to-
-# prompt: any error returns 1 (fall-through to normal permission dialog).
-_match_bash_compositional() {
-  local c="$1"
-  # Gate 2: env shadowing.
-  if _env_has_shadowing; then
-    return 1
-  fi
-  local helper="${CLAUDE_PLUGIN_ROOT:-}/lib/sh_lex_check.py"
-  [ -f "$helper" ] || return 1
-  command -v python3 >/dev/null 2>&1 || return 1
-  local out
-  # Portable timeout: prefer GNU timeout (brew) or gtimeout (macOS), else run
-  # without timeout (python3 shlex is fast; fail-safe if it hangs via hook timeout).
-  local _to=""
-  if command -v timeout >/dev/null 2>&1; then _to="timeout 2"
-  elif command -v gtimeout >/dev/null 2>&1; then _to="gtimeout 2"
-  fi
-  out=$(printf '%s' "$c" | $_to python3 "$helper" 2>/dev/null) || return 1
-  [ -z "$out" ] && return 1
-  local safe pattern
-  safe=$(printf '%s' "$out" | jq -r '.safe // false' 2>/dev/null)
-  pattern=$(printf '%s' "$out" | jq -r '.pattern // empty' 2>/dev/null)
-  if [ "$safe" = "true" ] && [ -n "$pattern" ]; then
-    MATCHED_PATTERN="$pattern"
-    return 0
-  fi
-  return 1
-}
-
 _match_write() {
   local f="$1"
   case "$f" in
@@ -205,11 +150,14 @@ _match_write() {
 }
 
 
-# ---- Tier 1.6 Trust Mode (v2.5+) — denylist-based fallback ----
-# After Tier 1 + Tier 1.5 fall through (no narrow allowlist match), Trust
-# Mode auto-approves EVERYTHING except commands matching one of the 6 prompt
-# categories (git mutations, privilege, recursive delete, disk/system,
-# fetch-and-exec, remote/shared-state). Helper: lib/sh_trust_mode.py.
+# ---- Trust Mode (v2.5+; sole Bash matcher post-v2.7.0) ----
+# After Tier 1 falls through (no narrow allowlist match), Trust Mode
+# auto-approves EVERYTHING except commands matching one of the prompt
+# categories (git catastrophic = force-push + clean -f*; privilege;
+# recursive-delete unsafe paths; disk/system; fetch-and-exec;
+# remote/shared-state with gh refined to delete-class only).
+# Helper: lib/sh_trust_mode.py. v2.7.0 removed the v2.4 Tier 1.5
+# compositional matcher + env-shadowing guard as superseded residue.
 _match_bash_trust_mode() {
   local c="$1"
   local helper="${CLAUDE_PLUGIN_ROOT:-}/lib/sh_trust_mode.py"
@@ -242,10 +190,8 @@ case "$TOOL" in
     [ -z "$CMD" ] && exit 0
     if _match_bash "$CMD"; then
       :   # Tier 1: narrow allowlist (sutra, plugin lifecycle, markers)
-    elif _match_bash_compositional "$CMD"; then
-      :   # Tier 1.5: compositional-read strict allowlist (v2.4+)
     elif _match_bash_trust_mode "$CMD"; then
-      :   # Tier 1.6: Trust Mode denylist (v2.5+)
+      :   # Trust Mode: denylist (sole Bash matcher post-v2.7.0)
     else
       exit 0
     fi
