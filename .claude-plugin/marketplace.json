@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/schema/marketplace.schema.json",
   "name": "sutra",
-  "description": "Sutra — Operating system for building with AI. Input routing, depth estimation, readability gate, output trace. Opinionated governance for Claude Code sessions.",
+  "description": "Sutra \u2014 Operating system for building with AI. Input routing, depth estimation, readability gate, output trace. Opinionated governance for Claude Code sessions.",
   "owner": {
     "name": "Sutra",
     "url": "https://sutra.os"
@@ -9,8 +9,8 @@
   "plugins": [
     {
       "name": "core",
-      "description": "Sutra Core — governance primitives: input routing, depth estimation, readability gate, output trace + v2.0 privacy model (signals-not-content, consent-gated, local-first). Hooks warn when depth marker is missing before Edit/Write; estimation metrics are logged on session end. Includes session-retrieve for recovering abruptly-closed sessions. Privacy: see ~/.sutra/PRIVACY.md; opt out with SUTRA_TELEMETRY=0.",
-      "version": "2.1.0",
+      "description": "Sutra Core \u2014 governance primitives: input routing, depth estimation, readability gate, output trace + v2.6 PROTO-024 V1 client\u2192team feedback fanout (collaborator-visible inbox; V2 will encrypt) + Tier 1.6 Trust Mode permissions + strengthened scrub (12+ token detectors + entropy fallback). Hooks warn when depth marker is missing before Edit/Write; estimation metrics on session end; reset-turn-markers fires on Stop event (spoof-safe). Includes session-retrieve for recovering abruptly-closed sessions. Privacy: see ~/.sutra/PRIVACY.md; opt out with SUTRA_TELEMETRY=0; feedback fanout opt-out via SUTRA_FEEDBACK_FANOUT=0 or ~/.sutra-feedback-fanout-disabled.",
+      "version": "2.6.0",
       "author": {
         "name": "Sutra",
         "url": "https://sutra.os"
