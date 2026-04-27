@@ -1,13 +1,18 @@
 ---
 name: feedback
-description: Capture feedback about Sutra — stays local on your machine, never transmitted.
+description: Capture feedback about Sutra. Local by default; `--public` opts into a confirmed GitHub issue post via gh CLI.
 disable-model-invocation: false
 ---
 
-# /core:feedback — Manual feedback channel
+# /core:feedback — Feedback channel
 
-Writes your thoughts to `~/.sutra/feedback/manual/<timestamp>.md`. Nothing is sent anywhere. Running this also grants local consent so auto-capture signals (overrides, corrections, abandonment) start persisting to disk — see `~/.sutra/PRIVACY.md`.
+**Default (local)** — writes your thoughts to `~/.sutra/feedback/manual/<timestamp>.md`. Nothing transmitted. Granting this also enables local consent so auto-capture signals (overrides, corrections, abandonment) persist to disk — see `~/.sutra/PRIVACY.md`.
 
-No `--send` in v2. To share feedback with the Sutra team, copy the file manually.
+**Opt-in transmit** — add `--public` to post the scrubbed body as a GitHub issue at `sankalpasawa/sutra` via the `gh` CLI. Requires `gh` installed + authenticated. Asks for a `yes` confirmation before posting (issue is PUBLIC + permanent). Falls back to local-only capture if `gh` is missing, not authed, or you cancel.
+
+```
+/core:feedback "short thought — stays local"
+/core:feedback --public "bigger report — opens GitHub issue after I confirm"
+```
 
 !${CLAUDE_PLUGIN_ROOT}/bin/sutra feedback "$ARGUMENTS"
