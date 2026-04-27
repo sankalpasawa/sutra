@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# PROTO-019 v2: Codex directive gate (PreToolUse hook)
+# PROTO-019 v3: Codex directive gate (PreToolUse hook)
 #
-# Reads the pending-directive marker written by codex-directive-detect.sh.
-# Blocks Edit|Write|MultiEdit and destructive Bash (git commit/push/reset --hard,
-# rm -rf) until a codex verdict file exists whose DIRECTIVE-ID matches the
-# marker's.
+# Reads the SESSION-SCOPED pending-directive marker written by
+# codex-directive-detect.sh. Blocks Edit|Write|MultiEdit and destructive Bash
+# (git commit/push/reset --hard, rm -rf) until a codex verdict file exists
+# whose DIRECTIVE-ID matches the marker's.
+#
+# v3 change (2026-04-25): marker path is .claude/codex-directive-pending-<SID>
+# instead of the legacy single-slot .claude/codex-directive-pending. This gate
+# only checks the marker for the CURRENT session — orphans from other
+# sessions can no longer block unrelated work.
 #
 # Exit semantics (PreToolUse):
 #   0 = allow
@@ -25,13 +30,21 @@ cd "$REPO_ROOT" || exit 0
 [ -n "${CODEX_DIRECTIVE_DISABLED:-}" ] && exit 0
 [ -f "$HOME/.codex-directive-disabled" ] && exit 0
 
-MARKER=".claude/codex-directive-pending"
 REVIEW_DIR=".enforcement/codex-reviews"
-
-[ -f "$MARKER" ] || exit 0
 
 PAYLOAD=$(cat 2>/dev/null || true)
 TOOL=$(printf '%s' "$PAYLOAD" | jq -r '.tool_name // empty' 2>/dev/null)
+SID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null)
+SID=$(printf '%s' "$SID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
+[ -z "$SID" ] && SID="no-sid"
+
+# Refresh heartbeat on every fire — sweep uses this to detect dead sessions
+mkdir -p .claude/heartbeats 2>/dev/null || true
+touch ".claude/heartbeats/$SID" 2>/dev/null || true
+
+MARKER=".claude/codex-directive-pending-$SID"
+
+[ -f "$MARKER" ] || exit 0
 
 # For Bash, only gate destructive commands
 if [ "$TOOL" = "Bash" ]; then

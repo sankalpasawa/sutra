@@ -53,14 +53,47 @@ derive_signal() {
 scrub_text() {
   local text="${1:-}"
   [ -z "$text" ] && return 0
+
+  # v2.2.0 (PROTO-024 H7-strengthening): order matters — specific token patterns
+  # FIRST so they're caught before generic KEY=val + entropy fallback.
+
+  # Paths
   text=$(printf '%s' "$text" | sed -E 's|/Users/[^/[:space:]]+|<HOME>|g; s|/home/[^/[:space:]]+|<HOME>|g; s|/tmp/[a-zA-Z0-9._-]+|<TMP>|g')
+  # PEM blocks
   text=$(printf '%s' "$text" | sed -E 's|-----BEGIN OPENSSH PRIVATE KEY-----|<SSH-KEY>|g; s|-----BEGIN [A-Z ]+-----|<PEM-BEGIN>|g; s|-----END [A-Z ]+-----|<PEM-END>|g')
+  # JWT (3-part base64url with dots)
   text=$(printf '%s' "$text" | sed -E 's|eyJ[a-zA-Z0-9_=-]{10,}\.[a-zA-Z0-9_=-]{10,}\.[a-zA-Z0-9_=-]{10,}|<JWT>|g')
-  text=$(printf '%s' "$text" | sed -E 's|[Bb]earer [a-zA-Z0-9._-]{16,}|Bearer <REDACTED>|g')
-  text=$(printf '%s' "$text" | sed -E 's|[A-Z_]{3,}=[a-zA-Z0-9+/=_-]{16,}|<KEY=REDACTED>|g')
+  # GitHub tokens
+  text=$(printf '%s' "$text" | sed -E 's|gh[posru]_[A-Za-z0-9]{36,}|<GITHUB-TOKEN>|g')
+  # OpenAI keys
+  text=$(printf '%s' "$text" | sed -E 's|sk-(proj-)?[A-Za-z0-9_-]{20,}|<OPENAI-KEY>|g')
+  # AWS access key IDs (use # delimiter — BSD sed treats | as s-cmd delimiter even inside groups)
+  text=$(printf '%s' "$text" | sed -E 's#(AKIA|ASIA)[0-9A-Z]{16}#<AWS-KEY-ID>#g')
+  # Slack tokens
+  text=$(printf '%s' "$text" | sed -E 's|xox[abprs]-[A-Za-z0-9-]{10,}|<SLACK-TOKEN>|g')
+  # Stripe keys (# delimiter for grouped alternation)
+  text=$(printf '%s' "$text" | sed -E 's#(sk|pk|rk)_(live|test)_[A-Za-z0-9]{24,}#<STRIPE-KEY>#g')
+  # Bearer tokens
+  text=$(printf '%s' "$text" | sed -E 's|[Bb]earer +[a-zA-Z0-9._-]{16,}|Bearer <REDACTED>|g')
+  # Slack webhooks
+  text=$(printf '%s' "$text" | sed -E 's#https://hooks\.slack\.com/services/[A-Za-z0-9/]+#<SLACK-WEBHOOK>#g')
+  # Discord webhooks
+  text=$(printf '%s' "$text" | sed -E 's#https://discord(app)?\.com/api/webhooks/[A-Za-z0-9/_-]+#<DISCORD-WEBHOOK>#g')
+  # Signed URL params (S3 / GCS / Azure) — # delimiter for grouped alternation
+  text=$(printf '%s' "$text" | sed -E 's#[?&](X-Amz-Signature|X-Goog-Signature|Signature|sig|sv|se|sp)=[A-Za-z0-9%+/=._-]{16,}#?<SIGNED-URL-PARAMS>#g')
+  # HTTPS URL with creds
   text=$(printf '%s' "$text" | sed -E 's|https://[^:/[:space:]]+:[^@[:space:]]+@|https://<CREDS>@|g')
+  # DB URIs
   text=$(printf '%s' "$text" | sed -E 's#(postgres|postgresql|mysql|mongodb\+srv|mongodb|redis|amqp|amqps)://[^[:space:]"]+#<DB-URI>#g')
+  # Generic KEY=value (after specific tokens)
+  text=$(printf '%s' "$text" | sed -E 's|[A-Z_]{3,}=[a-zA-Z0-9+/=_-]{16,}|<KEY=REDACTED>|g')
+  # E.164 phone
+  text=$(printf '%s' "$text" | sed -E 's|\+[1-9][0-9]{6,14}|<PHONE>|g')
+  # Email
   text=$(printf '%s' "$text" | sed -E 's|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|<EMAIL>|g')
+  # High-entropy fallback — contiguous 40+ char base64-ish blobs (catches secrets we missed by name)
+  text=$(printf '%s' "$text" | sed -E 's|[A-Za-z0-9+/=_-]{40,}|<HIGH-ENTROPY>|g')
+
   printf '%s' "$text"
 }
 

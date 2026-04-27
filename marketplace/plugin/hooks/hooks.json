@@ -23,6 +23,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-privacy-notice.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-sweep.sh",
+            "timeout": 3
           }
         ]
       }
@@ -161,11 +166,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-detect.sh",
             "timeout": 3
           },
@@ -185,6 +185,11 @@
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh",
+            "timeout": 3
+          },
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-stop.sh",

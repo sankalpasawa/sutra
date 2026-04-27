@@ -147,6 +147,29 @@ denylist in Gate 5 is normative. Tokenization and `BASH_FUNC_*` shadowing
 - `grep -F '$(' file`: literal text search for `$(` triggers Gate 1 reject.
   Rare benign pattern; user approves manually.
 
+### Tier 1.6 — Trust Mode (v2.5+)
+
+**Threat model**: Trust Mode assumes a single trusted local operator on a personally managed machine, no adversarial prompt/file/environment injection, and reserves prompts only for commands with high risk of irreversible local loss, privilege escalation, or remote/shared-state mutation.
+
+**Decision rule**: Auto-approve every Bash command EXCEPT those matching one of the 6 prompt categories below. Inverts v2.4's strict allowlist. v2.4's Tier 1.5 patterns remain for narrow PermissionRequest persistence (compositional-read pattern names land in `settings.local.json`).
+
+**6 prompt categories** (commands matching any of these fall through to the normal permission dialog — user makes the call):
+
+| # | Category | Detection |
+|---|---|---|
+| 1 | **Git history mutations** | `git commit`, `git push`, `git pull`, `git rebase`, `git merge`, `git reset --hard`, `git checkout <branch>` (no `--`), `git push --force`/`-f`/`+ref`, `git rm`, `git mv`, `git stash drop`, `git branch -D/-d`, `git tag -d`, `git clean -f` |
+| 2 | **Privilege escalation** | leading token: `sudo`, `su`, `doas`, `pkexec` |
+| 3 | **Recursive deletes outside safe-path allowlist** | `rm -rf` / `rm -r` / `rm -R` UNLESS every positional path matches `dist\|build\|out\|.next\|node_modules\|.cache\|cache\|tmp\|.tmp\|coverage\|target\|.turbo\|.parcel-cache\|.pytest_cache\|__pycache__` (with optional `./` or `/tmp/` prefix) |
+| 4 | **Disk/system catastrophes** | leading token: `dd`, `diskutil`, `launchctl`, `defaults`, `fdisk`, `parted`, `mount`, `umount`, `kextload`, `kextunload`, `mkfs.*`; OR `chmod -R`/`chown -R` anywhere |
+| 5 | **Fetch-and-exec** | regex: `(curl\|wget\|fetch\|http)…\|…(sh\|bash\|zsh\|ksh\|fish\|dash)` |
+| 6 | **Remote / shared-state mutations** | leading token: `gh`, `ssh`, `scp`, `rsync`, `aws`, `gcloud`, `vercel`, `supabase`, `doctl`, `fly`, `heroku`, `kubectl`, `helm`, `ansible`, `terraform`, `pulumi`, `render`, `railway`, `netlify`, `psql`, `mysql`, `mongo`, `mongosh`, `redis-cli`, `sqlite3`, `duckdb`; OR regex: `(npm\|yarn\|pnpm\|bun) publish`, `docker (push\|login)`, `(pip\|twine\|poetry) (upload\|publish)` |
+
+Helper: `sutra/marketplace/plugin/lib/sh_trust_mode.py` — Python regex/case detector. Reads stdin, prints `{"prompt": bool, "category": str, "reason": str}`. Fail-safe-to-prompt on lex errors.
+
+**Recovery model (why this is safe enough)**: anything NOT in the 6 categories is recoverable via local fs, git, Time Machine. The 6 catch every irreversible / shared-state / privilege-elevating operation. Approval fatigue (50 blind-approves per session) was a worse security mode than the 6-prompt baseline.
+
+**Exit ramp**: if threat model changes (multi-user, prompt injection, untrusted env), revert to v2.4 Tier 1.5 strict mode. v2.4 code remains in the hook as the second matcher so compositional-read pattern names still persist correctly.
+
 ### Tier 2 — Permissible when feature enabled in `os/SUTRA-CONFIG.md`
 
 | Feature | Additional patterns | Enabled by |

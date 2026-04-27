@@ -326,15 +326,16 @@
 
 <section class="hero">
   <div class="container">
-    <div class="hero-badge">OS v1.9.1 &middot; PLUGIN v1.12.0 &middot; LIVE ON CLAUDE CODE MARKETPLACE</div>
+    <div class="hero-badge">OS v1.9.1 &middot; PLUGIN v2.1.0 &middot; LIVE ON CLAUDE CODE MARKETPLACE</div>
     <h1>The operating system for <span>AI-native companies</span></h1>
     <p>Sutra structures how a company is built and operated — not just how code ships. Tier-aware governance, depth routing, policy-coverage enforcement, auto-propagation, coverage engine. It takes a founder from an idea to a running company, then keeps every company in the portfolio in-sync with the same operating manual.</p>
 
     <div class="cta-block">
-      <div class="cta-label">In Claude Code, install the plugin</div>
+      <div class="cta-label">In Claude Code — three lines, one minute</div>
       <div class="cta-code">claude plugin marketplace add sankalpasawa/sutra</div>
       <div class="cta-code" style="margin-top: 8px;">claude plugin install core@sutra</div>
-      <div class="cta-hint" style="margin-top: 12px;">MIT license. Works in Claude Code terminal + Mac desktop app and IDE extensions. Web app: skills work, hooks sandboxed. Windows: bash-only (v2 roadmap). Two channels: <code style="color: var(--green);">core@sutra</code> (latest, auto-updates) and <code style="color: var(--green);">core@sutra@stable</code> (promoted, opt-in via <code style="color: var(--green);">claude plugin marketplace add sankalpasawa/sutra@stable</code>). <a href="#get-started" style="color: var(--accent);">New to Claude Code? Start here →</a></div>
+      <div class="cta-code" style="margin-top: 8px; border-left: 3px solid var(--accent);">/core:start</div>
+      <div class="cta-hint" style="margin-top: 12px;">First two lines install. Third line activates — type <code style="color: var(--green);">/core:start</code> inside any Claude Code session. That's it. MIT license. Works in Claude Code terminal + Mac desktop app and IDE extensions. Web app: skills work, hooks sandboxed. Windows: bash-only (v2 roadmap). <a href="#get-started" style="color: var(--accent);">New to Claude Code? Full walkthrough →</a></div>
     </div>
   </div>
 </section>
@@ -411,8 +412,8 @@
     </div>
 
     <div class="quote-block" style="margin-top: 40px;">
-      <div class="quote-text" style="font-style: normal;"><strong>v1.12 — PROTO-021 Build-Layer Protocol + 4 L0 hook promotions</strong> — every enforced build declares its layer (L0 ships via plugin, L1 carries a promotion contract, L2 stays instance-local). Four L1→L0 promotions landed this release: <code>operationalization-check</code>, <code>subagent-os-contract</code>, <code>keys-in-env-vars</code>, <code>estimation-collector</code> — every plugin client now gets them on auto-update. Plus: per-profile enforcement from v1.7 (<code>individual</code> / <code>project</code> / <code>company</code>), <code>/session-retrieve</code> for abruptly-closed session recovery, <code>SUTRA_BYPASS=1</code> escape hatch, and a submission to the official Claude Code plugin directory (clau.de) on 2026-04-22.</div>
-      <div class="quote-attr" style="margin-top: 10px;">v1.12.0 release notes · 2026-04-23 · <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/CHANGELOG.md" style="color: var(--accent);">full changelog</a></div>
+      <div class="quote-text" style="font-style: normal;"><strong>v2 — Your code stays on your machine.</strong> We rebuilt the plugin around one promise: <strong>Sutra captures nothing about what you're building, by default.</strong> No file contents. No prompts. No commit messages. No code. Only tiny anonymous signals — "a hook ran," "a session ended" — that help us improve the product. Everything lives in a folder on your laptop (<code style="color: var(--green);">~/.sutra/</code>). Nothing is sent anywhere unless you explicitly opt in. Turn it off entirely with <code style="color: var(--green);">SUTRA_TELEMETRY=0</code>. Delete the folder to wipe it all. A plain-English privacy sheet (<code style="color: var(--green);">~/.sutra/PRIVACY.md</code>) lands on your disk the first time you run it — no legalese, one page, read it in two minutes.</div>
+      <div class="quote-attr" style="margin-top: 10px;">v2.1.0 · shipped 2026-04-24 · <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/CHANGELOG.md" style="color: var(--accent);">full changelog</a></div>
     </div>
 
     <div class="quote-block" style="margin-top: 20px;">
@@ -644,14 +645,14 @@
       <div class="cta-code" style="margin-bottom: 12px;">claude plugin install core@sutra</div>
       <div class="cta-label">Step 3: Activate + onboard in one command</div>
       <div class="cta-code">/core:start</div>
-      <div class="cta-hint" style="margin-top: 12px;">One command does everything — writes your install identity, enables telemetry, activates the five core skills + governance enforcement, prints the banner. Upgrades propagate automatically from here. Need to inspect? <code style="color: var(--green);">/core:status</code>. Need an update? <code style="color: var(--green);">/core:update</code>. Done? <code style="color: var(--green);">/core:uninstall</code>.</div>
+      <div class="cta-hint" style="margin-top: 12px;">One command does everything — writes a local identity file on your disk, activates the four governance skills, seeds a depth marker, prints a banner. Nothing leaves your machine unless you opt in. Upgrades propagate automatically from here. Need to inspect? <code style="color: var(--green);">/core:status</code>. Need an update? <code style="color: var(--green);">/core:update</code>. Done? <code style="color: var(--green);">/core:uninstall</code>.</div>
     </div>
   </div>
 </section>
 
 <footer>
   <div class="container">
-    Sutra by Asawa Inc. &middot; OS v1.9.1 &middot; Plugin v1.12.0 &middot; 2026
+    Sutra by Asawa Inc. &middot; OS v1.9.1 &middot; Plugin v2.1.0 &middot; 2026
   </div>
 </footer>
 

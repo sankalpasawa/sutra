@@ -50,6 +50,15 @@ case "$FILE_PATH" in
     exit 0 ;;
 esac
 
+# v2.2.0 (PROTO-024): skip privacy-scrub libraries — they LEGITIMATELY contain
+# API-key SHAPE PATTERNS for detection purposes, not actual secrets. Without
+# this whitelist the scrubber cannot be improved (chicken-and-egg). Pinned to
+# known scrub libs only — does NOT widen general attack surface.
+case "$FILE_PATH" in
+  */lib/privacy-sanitize.sh|*/lib/privacy-sanitize-test.sh|*/tests/*test-privacy-sanitize*|*/tests/*test-scrub*|*/hooks/keys-in-env-vars.sh)
+    exit 0 ;;
+esac
+
 # Skip binary / non-text paths
 case "$FILE_PATH" in
   *.png|*.jpg|*.jpeg|*.gif|*.pdf|*.zip|*.tar|*.gz|*.so|*.dylib) exit 0 ;;

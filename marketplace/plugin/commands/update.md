@@ -1,7 +1,7 @@
 ---
 name: update
 description: Update the Sutra plugin to the latest version from the marketplace. Shortcut for `claude plugin marketplace update sutra && claude plugin update core@sutra`.
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # /core:update — Pull the latest Sutra version

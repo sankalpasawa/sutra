@@ -204,14 +204,48 @@ _match_write() {
   return 1
 }
 
+
+# ---- Tier 1.6 Trust Mode (v2.5+) — denylist-based fallback ----
+# After Tier 1 + Tier 1.5 fall through (no narrow allowlist match), Trust
+# Mode auto-approves EVERYTHING except commands matching one of the 6 prompt
+# categories (git mutations, privilege, recursive delete, disk/system,
+# fetch-and-exec, remote/shared-state). Helper: lib/sh_trust_mode.py.
+_match_bash_trust_mode() {
+  local c="$1"
+  local helper="${CLAUDE_PLUGIN_ROOT:-}/lib/sh_trust_mode.py"
+  [ -f "$helper" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+
+  local _to=""
+  if command -v timeout >/dev/null 2>&1; then _to="timeout 2"
+  elif command -v gtimeout >/dev/null 2>&1; then _to="gtimeout 2"
+  fi
+
+  local out
+  out=$(printf '%s' "$c" | $_to python3 "$helper" 2>/dev/null) || return 1
+  [ -z "$out" ] && return 1
+
+  local prompt pattern
+  prompt=$(printf '%s' "$out" | jq -r 'if .prompt == false then "false" else "true" end' 2>/dev/null)
+  if [ "$prompt" = "false" ]; then
+    pattern=$(printf '%s' "$out" | jq -r '.pattern // empty' 2>/dev/null)
+    [ -z "$pattern" ] && pattern="Bash(trust-mode-auto-approve)"
+    MATCHED_PATTERN="$pattern"
+    return 0
+  fi
+  return 1
+}
+
 # ---- dispatch by tool ----
 case "$TOOL" in
   Bash)
     [ -z "$CMD" ] && exit 0
     if _match_bash "$CMD"; then
-      :   # existing Tier 1 allowlist matched
+      :   # Tier 1: narrow allowlist (sutra, plugin lifecycle, markers)
     elif _match_bash_compositional "$CMD"; then
-      :   # Tier 1.5 compositional-read matched (v2.2+)
+      :   # Tier 1.5: compositional-read strict allowlist (v2.4+)
+    elif _match_bash_trust_mode "$CMD"; then
+      :   # Tier 1.6: Trust Mode denylist (v2.5+)
     else
       exit 0
     fi

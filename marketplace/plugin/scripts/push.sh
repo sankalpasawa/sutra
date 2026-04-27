@@ -67,25 +67,16 @@ DEST="$CACHE/clients/$INSTALL_ID"
 mkdir -p "$DEST"
 cp "$(queue_file)" "$DEST/telemetry-$TS.jsonl"
 
-# v1.9.0+: refresh identity cache if stale (>7d) or missing. Best-effort.
-IDENTITY_CACHE="$SUTRA_HOME/identity.json"
-IDENTITY_JSON=""
-if declare -f capture_identity >/dev/null 2>&1; then
-  if declare -f identity_is_stale >/dev/null 2>&1 && identity_is_stale "$IDENTITY_CACHE" 604800; then
-    IDENTITY_JSON=$(capture_identity "$VERSION" 2>/dev/null)
-    if [ -n "$IDENTITY_JSON" ]; then
-      mkdir -p "$SUTRA_HOME" 2>/dev/null
-      printf '%s\n' "$IDENTITY_JSON" > "$IDENTITY_CACHE" 2>/dev/null
-      chmod 600 "$IDENTITY_CACHE" 2>/dev/null || true
-    fi
-  elif [ -f "$IDENTITY_CACHE" ]; then
-    IDENTITY_JSON=$(cat "$IDENTITY_CACHE" 2>/dev/null)
-  fi
-fi
+# v2.2.0 (PROTO-024 H2 fix): identity capture REMOVED from push path. The
+# legacy block stamped github_login/github_id/git_user_name into remote
+# manifest.json, which leaked PII for any T4 stranger that pushed. Identity
+# is now captured local-only (lib/identity.sh callers other than push) and
+# never crosses the D33 boundary on this rail. Future versions may join
+# identity server-side via a different transport (see PROTO-024 V2 plan).
 
-python3 - "$DEST/manifest.json" "$INSTALL_ID" "$PROJECT_ID" "$PROJECT_NAME" "$VERSION" "$IDENTITY_JSON" <<'PY'
+python3 - "$DEST/manifest.json" "$INSTALL_ID" "$PROJECT_ID" "$PROJECT_NAME" "$VERSION" <<'PY'
 import json, os, datetime, sys
-m_path, install_id, project_id, project_name, version, identity_json = sys.argv[1:7]
+m_path, install_id, project_id, project_name, version = sys.argv[1:6]
 m = {}
 if os.path.exists(m_path):
     try: m = json.load(open(m_path))
@@ -97,12 +88,9 @@ m['push_count'] = m.get('push_count', 0) + 1
 m['project_id'] = project_id
 m['project_name_optional'] = project_name
 m['sutra_version'] = version
-# v1.9.0: stamp identity block if captured
-if identity_json:
-    try:
-        m['identity'] = json.loads(identity_json)
-    except Exception:
-        pass
+# v2.2.0: identity block intentionally NOT written. Pre-v2.2.0 manifests
+# may still contain an 'identity' field — left alone (no retroactive scrub
+# in this ship; covered by V2 transport replacement).
 open(m_path, 'w').write(json.dumps(m, indent=2))
 PY
 

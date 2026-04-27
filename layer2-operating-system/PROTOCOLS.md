@@ -871,7 +871,140 @@ origin:  gstack-patterns-review 2026-04-24, codex top-1 ROI.
 
 RELATES:
   Foundation for PROTO-022 (SUTRA_COMPLETION_PROTOCOL_ENABLED read from
-  here). Foundation for future PROTO-024 (learnings), PROTO-025
-  (timeline), PROTO-026 (review log). Pairs with D32 (default-off per
-  instance — config is where defaults become per-instance choices).
+  here). Foundation for PROTO-024 (feedback fan-in kill-switch). Foundation
+  for future PROTO-025+ (learnings, timeline, review log). Pairs with D32
+  (default-off per instance — config is where defaults become per-instance
+  choices).
+```
+
+## PROTO-024: Client→Team Feedback Fan-in (V1) [ACTIVE]
+_yaml status: active — ships plugin v2.2.0 (2026-04-25). Closes the "clients can't upload feedback to Sutra team" gap opened by the vinitharmalkar incident (2026-04-24). V1 is **collaborator-visible inbox**, not a private team-only channel — V2 adds client-side encryption to close that gap. Reuses existing `sankalpasawa/sutra-data` git rail; no new infra._
+
+```
+fan-in | [client writes feedback locally AND pushes the same scrubbed file to Sutra team's private git, same /core:feedback call, same turn] | MANUAL
+
+trigger: User invokes `/core:feedback "<text>"` in any session where the
+         Sutra plugin is installed.
+
+check:   (C1) Did local write to `~/.sutra/feedback/manual/<ts>.md`
+               succeed? (always attempted first; fanout is best-effort)
+         (C2) Did `scrub_text()` (lib/privacy-sanitize.sh) run on the
+               content before push?
+         (C3) Is fanout enabled — i.e., NOT disabled by `--no-fanout`,
+               `SUTRA_FEEDBACK_FANOUT=0`, or `~/.sutra-feedback-fanout-
+               disabled` file?
+         (C4) Is `~/.sutra/sutra-data-cache/` reachable (clone+auth)?
+         (C5) Was ONLY the new + prior-unmarked feedback file(s) pushed
+               — NOT telemetry-*.jsonl, NOT auto-capture content?
+
+enforce: Functional, not governance gate. Correctness via:
+         - Tests: scrub patterns + push-single-file diff assertion.
+         - Scope guard: `git add clients/<install_id>/feedback/<fname>`
+           with explicit per-file path, no wildcards.
+         - Kill-switches: env / file / flag (any one disables fanout).
+
+flow:    CLIENT SIDE (sync, inline, ~2s end-to-end):
+           1. user: /core:feedback "this broke at step 3"
+           2. plugin scrubs content (lib/privacy-sanitize.sh — V1
+              hardened: GH/OpenAI/AWS/Slack/Stripe tokens, JWT, signed
+              URLs, DSNs, webhooks, emails, phone, 40+char entropy
+              fallback)
+           3. plugin writes scrubbed payload to
+              ~/.sutra/feedback/manual/<utc-ts>.md (local 0600)
+           4. fanout_to_sutra_team():
+              - kill-switch checks
+              - resolve install_id (lib/project-id.sh)
+              - ensure ~/.sutra/sutra-data-cache/ clone (best-effort)
+              - sweep prior-unmarked files (≤7d)
+              - per file: cp into clients/<install_id>/feedback/,
+                          git add explicit path, git commit, git push,
+                          touch <src>.uploaded on success
+           5. print "captured at <local-path>; sent to Sutra team
+              (N items, scrubbed)"
+
+         FAILURE PATH (network/auth/missing cache):
+           - Local file is ALREADY on disk. Never lost.
+           - No .uploaded marker = file eligible for retry.
+           - Next /core:feedback call sweeps unmarked first.
+           - NO Stop hook. NO cron. User-initiated retry only.
+
+         SERVER SIDE (founder-operated; no plugin code):
+           - Founder pulls sutra-data on holding machine.
+           - Reads clients/*/feedback/*.md.
+           - Aggregates into sutra/feedback-from-companies/ at
+             founder's cadence. (V1 has no automated holding-side
+             pipeline — kept manual per founder direction
+             "I will do this".)
+
+scope:   MANUAL feedback content only (what the user typed into
+         /core:feedback). Auto-capture signals (override_count /
+         correction_rate / abandonment) stay LOCAL — fanout NOT in
+         this ship. Per founder scope-lock 2026-04-25:
+         "only this part they push simultaneously; the rest of
+         the rest they should not touch."
+
+privacy: HONEST V1 disclosure (codex 2026-04-25 verdict absorbed —
+         see .enforcement/codex-reviews/2026-04-25-proto-024-feedback-
+         fanin-and-reset-hook-fix.md):
+
+         WHAT V1 PROVIDES:
+         - Strong content scrub (token detectors + entropy fallback)
+         - Decoupled from SUTRA_TELEMETRY=0 (manual feedback works
+           even when telemetry is off)
+         - manifest.identity write REMOVED from push.sh (closes H2
+           PII leak — github_login/github_id/git_user_name no longer
+           stamped on new versions)
+         - Local capture user-visible + user-deletable immediately
+
+         WHAT V1 DOES NOT PROVIDE (DOCUMENTED, NOT CLOSED):
+         - Cross-tenant content readability (H1/H10): scrubbed
+           feedback content is visible to any push-credentialed
+           collaborator on sutra-data. Other installs that successfully
+           push telemetry can also read all feedback. PRIVACY.md
+           discloses this.
+         - install_id opacity (H3): install_id is deterministic
+           (sha256(HOME:version)[:16]) — linkable across repos for
+           same machine/version.
+         - Hard-delete on remote (H5): git history retains scrubbed
+           payload after reap. "User-deletable" applies to local file
+           and remote tip; history persists.
+         - Identity join source-side (H8): not built in V1;
+           server-side is founder-manual.
+
+         V2 PLAN (deferred):
+         - Client-side encryption (openssl RSA-4096 + AES-256-CBC
+           hybrid, public key shipped in plugin) — closes H1/H10
+         - Random 128-bit install_id stored in identity.json — closes H3
+         - Random UUID filenames on remote — breaks install↔file link
+         - Documented key-rotation policy
+
+mechanism (V1 files):
+         - sutra/marketplace/plugin/scripts/feedback.sh
+           (fanout_to_sutra_team() function added)
+         - sutra/marketplace/plugin/lib/privacy-sanitize.sh
+           (scrub_text() strengthened with 12+ token patterns +
+            high-entropy fallback)
+         - sutra/marketplace/plugin/scripts/push.sh
+           (manifest.identity stamping REMOVED on new versions)
+         - sutra/marketplace/plugin/PRIVACY.md
+           (V1 disclosure: collaborator-visible inbox, V2-encrypts)
+
+origin:  Founder direction 2026-04-25 "fix it in this session,
+         converge with codex on best way, stringent privacy, no
+         third-party tools". Codex round-1 FAIL on transport (shared
+         git readability). Codex round-2 FAIL on V1 wording. Round-3
+         (post-honest-wording, post-V1-edits) pending.
+
+         vinitharmalkar incident 2026-04-24 — T4 client tried to
+         send feedback, was offered public GitHub issue creation.
+         Stop-the-bleed hook v1.14.1 closed bad-pattern; PROTO-024
+         V1 closes channel-absent.
+
+RELATES:
+  Consumes lib/privacy-sanitize.sh (PROTO-024 H7 strengthened scrub).
+  Consumes lib/project-id.sh for install_id resolution. Consumes
+  PROTO-023 SUTRA_FEEDBACK_FANOUT kill-switch knob. Replaces the
+  --public flag as the RECOMMENDED feedback path (--public remains
+  as opt-in extension for users who want world-visible feedback).
+  V2 will close H1/H3/H5/H8/H10 deferred from V1.
 ```

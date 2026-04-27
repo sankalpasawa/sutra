@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
-# PROTO-019 v2: Codex directive detector (UserPromptSubmit hook)
+# PROTO-019 v3: Codex directive detector (UserPromptSubmit hook)
 #
 # When the founder says "use codex to review X" (or similar), we want that
 # directive enforced — not just acknowledged and forgotten. This hook detects
 # the directive in the raw prompt and writes a pending marker that the
 # PreToolUse gate reads to block Edit/Write until a matching verdict exists.
 #
-# Design (Codex-converged 2026-04-23):
+# Design (v3 — session-scoped, 2026-04-25):
 #   - Strip fenced code blocks + inline backticks before matching
 #   - Match known directive phrasings (verb + codex proximity)
 #   - Reject on explicit negation within a short window before "codex"
-#   - Single-slot marker: latest directive wins
+#   - Marker is session-scoped: .claude/codex-directive-pending-<session_id>
+#   - Heartbeat touched on every fire: .claude/heartbeats/<session_id>
 #   - Embed DIRECTIVE-ID (epoch) for verdict pairing
 #
-# Payload: JSON on stdin with .prompt
-# Output: writes .claude/codex-directive-pending on match; silent otherwise
-# Exit: always 0 (detection is advisory at this layer; gate does the blocking)
+# Why session-scoped: previous single-slot marker survived across sessions.
+# Abandoned sessions left orphaned markers that blocked unrelated future
+# sessions on the same repo. v3 isolates markers per session; the
+# sessionstart sweep archives any whose heartbeat is stale.
+#
+# Payload: JSON on stdin with .prompt and .session_id
+# Output: writes .claude/codex-directive-pending-<SID> on match; always
+#         touches .claude/heartbeats/<SID>
+# Exit: always 0 (detection is advisory; gate does the blocking)
 
 set -u
 
@@ -26,9 +33,19 @@ cd "$REPO_ROOT" || exit 0
 [ -n "${CODEX_DIRECTIVE_DISABLED:-}" ] && exit 0
 [ -f "$HOME/.codex-directive-disabled" ] && exit 0
 
-mkdir -p .claude
+mkdir -p .claude .claude/heartbeats
 
-PROMPT=$(jq -r '.prompt // empty' 2>/dev/null)
+PAYLOAD=$(cat 2>/dev/null || true)
+PROMPT=$(printf '%s' "$PAYLOAD" | jq -r '.prompt // empty' 2>/dev/null)
+SID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null)
+
+# Sanitize SID (alphanumeric + dash/underscore only; fallback to "no-sid")
+SID=$(printf '%s' "$SID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
+[ -z "$SID" ] && SID="no-sid"
+
+# Always refresh heartbeat — proves this session is alive
+touch ".claude/heartbeats/$SID" 2>/dev/null || true
+
 [ -z "$PROMPT" ] && exit 0
 
 # Strip fenced code blocks and inline backticks
@@ -68,9 +85,10 @@ DIRECTIVE_ID=$(date +%s)
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MATCH_SAFE=$(printf '%s' "$MATCH_TEXT" | tr -d '\n\r' | head -c 160)
 
-cat > .claude/codex-directive-pending <<EOF
+cat > ".claude/codex-directive-pending-$SID" <<EOF
 DIRECTIVE-ID: $DIRECTIVE_ID
 TS: $TS
+SESSION-ID: $SID
 MATCH: $MATCH_SAFE
 EOF
 
@@ -79,8 +97,9 @@ if command -v jq >/dev/null 2>&1; then
   jq -nc \
     --arg ts "$TS" \
     --arg match "$MATCH_SAFE" \
+    --arg sid "$SID" \
     --argjson id "$DIRECTIVE_ID" \
-    '{ts:$ts,event:"directive-detected",id:$id,match:$match}' \
+    '{ts:$ts,event:"directive-detected",id:$id,session_id:$sid,match:$match}' \
     >> .enforcement/codex-reviews/gate-log.jsonl 2>/dev/null || true
 fi
 

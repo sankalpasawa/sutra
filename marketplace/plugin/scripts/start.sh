@@ -19,15 +19,65 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(realpath "$0")")")}"
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$PROJECT_ROOT"
 
-# Resolve profile
+# Resolve args (profile + force)
 PROFILE_ARG=""
+FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE_ARG="${2:-}"; shift 2 ;;
     --profile=*) PROFILE_ARG="${1#*=}"; shift ;;
+    --force) FORCE=1; shift ;;
     *) shift ;;
   esac
 done
+
+# Project-root guard (v2.1.1 — fleet feedback 2026-04-25 + codex review):
+# Running /core:start from $HOME poisons ~/.claude/CLAUDE.md with project-scoped
+# governance and misnames the project after the OS username. Refuse to activate
+# in home/non-project dirs unless --force is passed. Idempotent re-runs on an
+# already-initialized project are always allowed (presence of .claude/sutra-
+# project.json is the "already onboarded" signal).
+#
+# Path comparison uses canonical (symlink-resolved) paths to prevent bypass
+# via trailing slash, /tmp vs /private/tmp, or $HOME symlink tricks.
+# .git check uses -e (not -d) so worktrees/submodules — where .git is a FILE
+# pointing at the real gitdir — also count as valid project markers.
+canon() {
+  if [ -d "$1" ]; then
+    (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+if [ "$FORCE" -ne 1 ] && [ ! -f "$PROJECT_ROOT/.claude/sutra-project.json" ]; then
+  REFUSE=0; REASON=""
+  PR_CANON=$(canon "$PROJECT_ROOT")
+  HOME_CANON=$(canon "$HOME")
+  if [ "$PR_CANON" = "$HOME_CANON" ]; then
+    REFUSE=1; REASON="you're in your home directory ($HOME)"
+  elif [ "$PR_CANON" = "/" ] || [ "$PR_CANON" = "/tmp" ] || [ "$PR_CANON" = "/private/tmp" ]; then
+    REFUSE=1; REASON="you're at $PROJECT_ROOT — not a project"
+  elif [ ! -e "$PROJECT_ROOT/.git" ] && [ ! -f "$PROJECT_ROOT/package.json" ] \
+       && [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ ! -f "$PROJECT_ROOT/Cargo.toml" ] \
+       && [ ! -f "$PROJECT_ROOT/go.mod" ] && [ ! -f "$PROJECT_ROOT/CLAUDE.md" ]; then
+    REFUSE=1; REASON="no project markers in $PROJECT_ROOT (.git / package.json / pyproject.toml / Cargo.toml / go.mod / CLAUDE.md)"
+  fi
+  if [ "$REFUSE" -eq 1 ]; then
+    cat >&2 <<EOF
+sutra start: refusing to activate here — $REASON.
+
+Running /core:start in a non-project directory pollutes user-level files
+(like ~/.claude/CLAUDE.md) with project-scoped governance, and misnames the
+project after your OS username.
+
+Fix: cd into a real project (one with .git/, package.json, pyproject.toml,
+Cargo.toml, go.mod, or CLAUDE.md), then re-run /core:start.
+
+Override (not recommended): re-run with --force.
+EOF
+    exit 2
+  fi
+fi
 
 PROFILE="${PROFILE_ARG:-${CLAUDE_PLUGIN_OPTION_PROFILE:-}}"
 if [ -z "$PROFILE" ] && [ -f .claude/sutra-project.json ]; then

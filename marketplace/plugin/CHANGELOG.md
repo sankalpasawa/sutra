@@ -1,5 +1,93 @@
 # Changelog
 
+## v2.6.0 — 2026-04-27
+
+**PROTO-024 V1 — client→team feedback fanout (collaborator-visible inbox).**
+
+Closes the gap from the 2026-04-24 vinitharmalkar incident: T4 strangers had no way to send feedback to the Sutra team. PROTO-024 V1 reuses the existing `sankalpasawa/sutra-data` git rail — clients scrub locally and push to `clients/<install_id>/feedback/<ts>.md`. Honest disclosure in PRIVACY.md: this is a **collaborator-visible inbox, not a private team-only channel**. V2 (planned) adds client-side encryption (RSA-4096 + AES-256-CBC via openssl) to close the cross-tenant readability gap.
+
+Codex review (DIRECTIVE-ID 1777062127 + 1777058308) at `.enforcement/codex-reviews/2026-04-25-proto-024-feedback-fanin-and-reset-hook-fix.md`. Round-1 FAIL on transport choice (codex preferred Cloudflare Worker); founder picked V1-on-existing-rail with iterate-to-V2 plan. Round-2 FAIL on wording ("don't claim stringent"); fixed via honest disclosure throughout PROTOCOLS.md + PRIVACY.md. Round-3 verification pending.
+
+### Added
+
+- **`fanout_to_sutra_team()`** in `scripts/feedback.sh`: scrubs content, ensures `~/.sutra/sutra-data-cache/` clone, sweeps prior-unmarked feedback files (≤7d), pushes each via explicit-path `git add clients/<install_id>/feedback/<fname>` + commit + push. Touches `<src>.uploaded` marker on success. User-driven retry only (no Stop hook, no cron).
+- **Kill-switches** for fanout: `--no-fanout` flag, `SUTRA_FEEDBACK_FANOUT=0` env, `~/.sutra-feedback-fanout-disabled` file. Any one disables. Local capture proceeds regardless.
+- **Strengthened `scrub_text()`** in `lib/privacy-sanitize.sh`: GitHub `gh[posru]_` tokens, OpenAI `sk-(proj-)?` keys, AWS `(AKIA|ASIA)`, Slack `xox[abprs]-`, Stripe `(sk|pk|rk)_(live|test)_`, Bearer tokens, Slack/Discord webhook URLs, S3/GCS/Azure signed URL params, DSNs, KEY=val, E.164 phones, plus a 40+ character high-entropy fallback for anything regex misses by name.
+- **PROTO-024 spec** in `sutra/layer2-operating-system/PROTOCOLS.md` with HONEST V1 wording (collaborator-visible inbox; V2 plan documented).
+
+### Changed
+
+- **`/core:feedback` decoupled from `SUTRA_TELEMETRY=0`**: manual feedback now works even when telemetry is fully off (codex L17 finding). The two opt-outs are independent.
+- **`scripts/push.sh` STOP writing `manifest.identity`** on new versions: closes the v1.9.0 PII leak that stamped `github_login` / `github_id` / `git_user_name` into remote manifests on every telemetry push. Pre-v2.6.0 manifests on remote are left intact (no retroactive scrub; planned for V2 transport replacement).
+- **`reset-turn-markers.sh` registration moved from `UserPromptSubmit` to `Stop` event** (both `.claude/settings.json` and `sutra/marketplace/plugin/hooks/hooks.json`): structurally closes the spoof vulnerability where a real user prompt containing a sentinel string could suppress per-turn governance reset. Fires only at assistant turn end where there is no synthetic-turn ambiguity. Content-pattern detection logic in the script body becomes dead code (preserved for now; remove in next cleanup).
+- **`hooks/keys-in-env-vars.sh`** (both holding L1 + plugin L0 copies): added `lib/privacy-sanitize.sh` and `tests/test-scrub*` to the path whitelist. Privacy-scrub libraries legitimately contain API-key SHAPE PATTERNS; without this whitelist the scrubber cannot be improved. Path-pinned, does not widen general attack surface.
+- **PRIVACY.md** updated with v2.2.0 changelog entry + main body fanout disclosure + kill-switch documentation.
+
+### Migration
+
+- Existing T1/T2 installs: scrubbed feedback now lands on remote when users run `/core:feedback`. No action needed; PRIVACY.md disclosure covers expectations.
+- Existing T3/T4 installs: same. Users who want zero outbound transmission set `SUTRA_FEEDBACK_FANOUT=0` or `touch ~/.sutra-feedback-fanout-disabled`.
+- Plugin reload required to pick up the new `hooks.json` registration. Run `/reload-plugins` in any active Claude Code session.
+
+### Deferred to V2 (documented as TODO in PROTOCOLS.md PROTO-024)
+
+- Client-side encryption with shipped Sutra public key (closes H1/H10 cross-tenant readability)
+- Random 128-bit `install_id` (closes H3 deterministic-id linkage)
+- Random UUID filenames on remote (breaks install↔file link)
+- Hard-delete on remote (currently soft via reap; history retains scrubbed payload)
+- Documented key-rotation policy
+
+## v2.5.0 — 2026-04-27
+
+### Added
+- **Tier 1.6 Trust Mode** in `permission-gate.sh`: inverts v2.4 strict
+  allowlist to a denylist. Auto-approves every Bash command except those
+  matching one of 6 prompt categories. Closes founder approval-fatigue
+  feedback ("I am just saying yes, yes, yes to things... the architecture
+  design itself should handle this").
+- New: `lib/sh_trust_mode.py` — regex/case detector for the 6 categories.
+  Fail-safe-to-prompt on errors.
+- New: `tests/unit/test-sh-trust-mode.sh` — 60+ test cases covering all 6
+  prompt categories and ~30 auto-approve cases.
+- Charter `PERMISSIONS.md` §4: new Tier 1.6 block with normative threat
+  model + detection table + recovery model + exit ramp.
+- `bash-summary-pretool.sh` mirrors trust-mode fast-path so summarizer
+  skips entirely when trust-mode auto-approves.
+
+### Six Prompt Categories
+1. Git history mutations (commit, push, pull, rebase, merge, reset --hard,
+   checkout branch, push --force, branch -D, tag -d, stash drop, clean -f)
+2. Privilege escalation (sudo, su, doas, pkexec)
+3. Recursive deletes outside safe-path allowlist (build/dist/cache/tmp ok)
+4. Disk/system catastrophes (dd, mkfs.*, chmod -R, chown -R, diskutil,
+   launchctl, defaults, fdisk, parted, mount, umount, kextload)
+5. Fetch-and-exec (curl|sh, wget|bash, etc.)
+6. Remote/shared-state (gh, ssh, scp, rsync, aws, gcloud, kubectl, helm,
+   ansible, terraform, vercel, supabase, doctl, fly, heroku, render,
+   railway, netlify, npm/yarn/pnpm/bun publish, docker push/login,
+   pip/twine/poetry upload/publish, psql/mysql/mongo/redis-cli/sqlite3)
+
+### Threat Model
+"Trust Mode assumes a single trusted local operator on a personally managed
+machine, no adversarial prompt/file/environment injection, and reserves
+prompts only for commands with high risk of irreversible local loss,
+privilege escalation, or remote/shared-state mutation."
+
+### Review
+Codex round 1: MODIFY (add 6th category for remote state, narrow recursive-
+delete allowlist, accept regex heuristic). All 3 conditions absorbed.
+Claude plan-eng-review: GO. Both converged.
+
+### Compatibility
+v2.4 Tier 1.5 (strict compositional reads) remains as second matcher in
+permission-gate.sh dispatch — pattern names like
+`Bash(compositional-read:ls+grep+tail)` still persist to settings.local.json.
+Trust mode is third matcher and covers everything else.
+
+### Kill-switch
+Unchanged: `SUTRA_PERMISSIONS_DISABLED=1` or
+`touch ~/.sutra-permissions-disabled`.
+
 ## v2.4.0 — 2026-04-25
 
 ### Added

@@ -1,7 +1,7 @@
 ---
 name: start
 description: The one command. Onboards this project, enables local telemetry, activates the four core skills, writes a depth marker, prints what's active. Run this first.
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # /core:start — Activate Sutra here

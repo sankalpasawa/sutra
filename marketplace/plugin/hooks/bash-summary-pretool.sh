@@ -114,6 +114,19 @@ _is_allowlisted() {
     r=$(printf '%s' "$cmd" | $_to2 python3 "$helper" 2>/dev/null | jq -r '.safe // false' 2>/dev/null)
     [ "$r" = "true" ] && return 0
   fi
+
+  # Tier 1.6 Trust Mode (v2.5+) — mirrors permission-gate. If trust-mode
+  # auto-approves, the user sees no prompt, so skip summary entirely.
+  local trust_helper="${CLAUDE_PLUGIN_ROOT:-}/lib/sh_trust_mode.py"
+  if [ -f "$trust_helper" ] && command -v python3 >/dev/null 2>&1; then
+    local _to3=""
+    if command -v timeout >/dev/null 2>&1; then _to3="timeout 2"
+    elif command -v gtimeout >/dev/null 2>&1; then _to3="gtimeout 2"
+    fi
+    local p
+    p=$(printf '%s' "$cmd" | $_to3 python3 "$trust_helper" 2>/dev/null | jq -r 'if .prompt == false then "false" else "true" end' 2>/dev/null)
+    [ "$p" = "false" ] && return 0
+  fi
   return 1
 }
 

@@ -1,5 +1,28 @@
 # Sutra — Current Version
 
+## v2.5.0 (2026-04-27) — Tier 1.6 Trust Mode
+
+Plugin v2.5.0 inverts permission-gate from strict allowlist (v2.4) to denylist with 6 prompt categories. Auto-approves every Bash command except git mutations, privilege escalation, recursive deletes outside safe paths, disk/system catastrophes, fetch-and-exec patterns, and remote/shared-state mutations. Helper: `marketplace/plugin/lib/sh_trust_mode.py`. Charter §4 amended with new Tier 1.6. Codex MODIFY -> GO with 6th category added; Claude GO. Per founder direction "ship it."
+
+Threat model: single trusted local operator, no adversarial input. Closes approval-fatigue feedback.
+
+## v2.1.1 — core plugin patch (2026-04-25)
+
+**Trigger**: T4 Sutra user reported `/core:start` writing governance to `~/.claude/CLAUDE.md` when run from their `$HOME` directory; feedback loop silently severed because `/core:feedback` docs said "No --send in v2" despite `--public` being wired at the script layer.
+
+**Fixes** (marketplace/plugin/):
+
+1. **scripts/start.sh — project-root guard**. Refuses activation when PROJECT_ROOT equals `$HOME`, is `/` or `/tmp` or `/private/tmp`, or has no project markers (`.git`/`package.json`/`pyproject.toml`/`Cargo.toml`/`go.mod`/`CLAUDE.md`). `--force` override for power users. Idempotent re-runs always proceed on initialized projects. Path compare is canonical (symlink-resolved) to prevent bypass via trailing slash, `/tmp` vs `/private/tmp`, or `$HOME` symlink tricks. `.git` check uses `-e` so worktrees/submodules (where `.git` is a FILE) count as valid markers. Covered by `tests/unit/test-start-guard.sh` — 10 assertions, all green.
+
+2. **scripts/feedback.sh + commands/feedback.md — docs sync to v2.1 reality**. `--public` flag (GitHub issue post via `gh` CLI, scrubbed, confirmed) was wired in v2.1 at `scripts/feedback.sh:46-57,91-116` but `commands/feedback.md:11` said "No --send in v2, copy manually" and `scripts/feedback.sh:40` usage help said "NOT YET IMPLEMENTED". Both now document `--public` correctly.
+
+3. **hooks/reset-turn-markers.sh — root-cause fix for synthetic-turn detection**. Was treating empty PROMPT (stdin with no `.prompt` field / jq fail) as real-founder-input and wiping per-turn governance markers — produced a 2052:1 wipe:skip ratio that blocked multi-tool edits in `sutra/**`. Now explicitly matches `""` as synthetic. Logged as `reset-skipped-empty-prompt` for telemetry.
+
+**Review**: Codex review DIRECTIVE-ID 1777065370 ran on diff — CHANGES-REQUIRED (3 findings: P1 .git-as-file, P2 canon path, P2 feedback.sh header drift). All absorbed, tests 8 → 10 to cover P1+P2 regressions. Re-review implicit in passing tests.
+
+---
+
+
 ## v2.4.0 (2026-04-25) — Tier 1.5 compositional reads
 
 Permission-gate auto-approves safe read-only shell pipelines (ls, cat, grep, head, tail, wc, echo, printf, pwd, date, whoami, which, basename, dirname, realpath, cut, uniq, tr, column) composed via `; && || |` and stderr redirects `2>&1` / `2>/dev/null`. Python shlex-based tokenizer with 5-gate architecture (hard rejects, env shadowing, tokenize+fold, pipeline ops, per-primitive argv validation). `sh_lex_check.py` at `marketplace/plugin/lib/`. Charter §4 Tier 1.5 amended. 58+ unit tests + 11 integration + 1 rollback test, all green. Codex 10 rounds GO, Claude plan-eng-review GO.

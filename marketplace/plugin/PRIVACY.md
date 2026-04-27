@@ -66,7 +66,30 @@ Sutra keeps working at full functionality with zero data captured.
 /sutra feedback "your thoughts here"
 ```
 
-This stores your message at `~/.sutra/feedback/manual/<timestamp>.md` and grants consent for future auto-capture to persist. The plugin does not send this anywhere — there is no `--send` command in v2.0. If you want Sutra team visibility, file an issue in the public source repo.
+This stores your message at `~/.sutra/feedback/manual/<timestamp>.md` and grants consent for future auto-capture to persist.
+
+**v2.6.0+ — feedback is also pushed to the Sutra team's private GitHub repo (PROTO-024 V1).**
+
+What that means precisely:
+- Your message is **scrubbed** locally (paths, secrets, JWTs, GitHub/OpenAI/AWS/Slack/Stripe tokens, signed URLs, DSNs, webhooks, emails, phone numbers, plus a 40+ character high-entropy fallback for anything regex misses).
+- The scrubbed copy is committed and pushed to `sankalpasawa/sutra-data` under `clients/<install_id>/feedback/<timestamp>.md`.
+- This repo is **PRIVATE on GitHub**, but it is **collaborator-visible** — every install that has push access to write telemetry to this repo also has read access to all other installs' feedback files.
+- For V1, this is **not a private team-only channel** — it is a **collaborator-visible inbox**. V2 (planned) adds client-side encryption (RSA-4096 + AES-256-CBC hybrid via `openssl`) so other collaborators see only opaque ciphertext.
+- If you want zero outbound transmission, disable with any of:
+  - `--no-fanout` flag on the call (`/sutra feedback --no-fanout "..."`)
+  - `SUTRA_FEEDBACK_FANOUT=0` env var
+  - `touch ~/.sutra-feedback-fanout-disabled` file
+- If you want world-visible (rather than collaborator-visible), use `/sutra feedback --public "..."` which posts a GitHub issue at `sankalpasawa/sutra` with explicit confirmation.
+
+**Full V1 residual-risk set (deferred to V2)** — mirrors PROTOCOLS.md PROTO-024:
+- **H1/H10** Cross-tenant content readability — V2 closes via client-side encryption to a Sutra team public key shipped with the plugin.
+- **H3** install_id is currently deterministic `sha256(HOME:version)[:16]` — linkable across repos for the same machine. V2 replaces with random 128-bit hex per install, stored in `~/.sutra/identity.json`.
+- **H5** Git history retains scrubbed payload after reap. "User-deletable" applies to local file and remote tip; history persists. V2 ciphertext-in-history is opaque without the private key.
+- **H8** Identity join is server-side / founder-manual in V1. V2 keeps identity in encrypted payload, joined only after decryption.
+- **Filenames** in V1 are `<timestamp>.md` under `clients/<install_id>/feedback/`. V2 uses random UUIDs in a flat path so install↔file linkage is broken for collaborator-readers.
+- **Key rotation** — V2 ships with a documented yearly key rotation policy.
+
+**Why this is honest, not hidden**: the codex review on 2026-04-25 (`.enforcement/codex-reviews/2026-04-25-proto-024-feedback-fanin-and-reset-hook-fix.md`) flagged that calling V1 "private" would be inaccurate. PROTO-024 V1 ships with HONEST wording: collaborator-visible inbox, not a private channel.
 
 ## What we don't promise
 
@@ -86,6 +109,23 @@ If you're running Sutra inside an Asawa-owned setup (T1 internal / T2 owned port
 ---
 
 ## Changelog
+
+### v2.2.0 (2026-04-25) — PROTO-024 V1 feedback fanout (collaborator-visible inbox)
+
+What changed from v2.1.0:
+
+- **`/sutra feedback` now pushes to Sutra team's private GitHub repo** (PROTO-024 V1). Scrubbed content lands at `sankalpasawa/sutra-data` under `clients/<install_id>/feedback/<ts>.md`. **This is a collaborator-visible inbox, not a private team-only channel** — every install with push access can read all feedback. V2 (planned) closes this with client-side encryption.
+- **Strengthened scrub** in `lib/privacy-sanitize.sh`: added detectors for GitHub `ghp_*`, OpenAI `sk-*`, AWS `AKIA*`, Slack `xoxb-*`, Stripe `sk_live_*`, JWTs, signed URLs (S3/GCS/Azure), DSNs, webhook URLs, emails, E.164 phone, plus a 40+ character high-entropy fallback for anything regex misses.
+- **`manifest.identity` no longer written on push** (closes the v1.9.0 PII leak that stamped `github_login`/`github_id`/`git_user_name` into the remote manifest on every telemetry push). Pre-v2.2.0 manifests on the remote are left intact (no retroactive scrub in this ship; planned for V2 transport).
+- **`/sutra feedback` decoupled from `SUTRA_TELEMETRY=0`**: turning telemetry off no longer disables manual feedback. The two opt-outs are now independent — `SUTRA_FEEDBACK_FANOUT=0` (or `~/.sutra-feedback-fanout-disabled`, or the `--no-fanout` flag) is the manual-feedback fanout kill-switch.
+- **`reset-turn-markers.sh` moved from `UserPromptSubmit` to `Stop` event**: closes a spoof vulnerability where a real user prompt containing a sentinel string could suppress per-turn governance reset. The hook now fires only at assistant turn end, where there is no synthetic-turn ambiguity.
+
+What did NOT change:
+
+- Local capture path (`~/.sutra/feedback/manual/<ts>.md`) is unchanged.
+- Auto-capture signals (override / correction / abandonment) stay LOCAL — fanout NOT in V2.2.0.
+- Permissions (`0700`/`0600`) unchanged.
+- Retention default (30d) unchanged.
 
 ### v2.0.0 (2026-04-24) — privacy model replaced
 

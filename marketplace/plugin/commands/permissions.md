@@ -1,7 +1,7 @@
 ---
 name: permissions
 description: Print a paste-ready .claude/settings.local.json snippet that allows every Sutra operation in one go. Stops all permission prompts for the plugin.
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # /core:permissions — One-paste allowlist

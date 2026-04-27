@@ -1,7 +1,7 @@
 ---
 name: depth-check
 description: Manually emit a Depth + Estimation block for the next task. Writes the depth marker. Use when the auto-skill didn't trigger or you want to set depth explicitly.
-disable-model-invocation: true
+disable-model-invocation: false
 argument-hint: [task description]
 ---
 
