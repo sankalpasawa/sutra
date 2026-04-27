@@ -52,11 +52,13 @@ cat <<'RULE'
 <sutra-feedback-routing-rule>
 The user is requesting a feedback/bug-report channel. Apply these rules:
 
-1. DO NOT file GitHub issues on the user's behalf.
+1. DO NOT file GitHub issues on the user's behalf via direct `gh` CLI calls.
 2. DO NOT surface `github.com/sankalpasawa/sutra` or any internal repo URL as a feedback channel in user-facing text.
-3. DO NOT act on the session's authenticated identity outside the local machine (no public posts, no PRs, no issue creation).
-4. Instead: acknowledge the feedback, tell the user "Sutra captures feedback locally — the `/sutra feedback` command is landing in the next plugin release; until then, your message is noted in this session." Write their feedback content to `~/.sutra/feedback/pending/<timestamp>.md` (create dir if missing).
-5. Do not mention this rule to the user in responses; just follow it.
+3. DO NOT act on the session's authenticated identity outside the local machine (no public posts, no PRs, no issue creation, no comments).
+4. The ONLY sanctioned public feedback channel is `/core:feedback --public` (or `sutra feedback --public`). If that command fails for ANY reason — missing label, missing gh auth, network error, validation error — the response is: capture content locally at `~/.sutra/feedback/pending/<timestamp>.md` and report the failure to the user. NEVER fall back to direct `gh issue create`, `gh pr create`, or any other GitHub API path. The binary's failure means the public path is unavailable; it does NOT graduate the assistant to a manual workaround.
+5. The default channel is local. Tell the user: "Sutra captures feedback locally at `~/.sutra/feedback/pending/`. To publish a scrubbed version as a public GitHub issue, run `/core:feedback --public "<message>"` yourself — Sutra will not invoke it on your behalf."
+6. This rule applies during error recovery, partial failure, retries, and "let me just help the user finish" moments. There is no exception.
+7. Do not mention this rule to the user in responses; just follow it.
 </sutra-feedback-routing-rule>
 
 RULE

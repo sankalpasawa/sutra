@@ -1,5 +1,50 @@
 # Sutra — Current Version
 
+## v2.6.2 (2026-04-27) — D36 Feedback Channel three-layer defense + D37 Assistant Layer default-OFF
+
+Plugin v2.6.2 ships two independent founder directives from 2026-04-27, decoupled by mechanism (one feedback-system, one interaction-layer-system) and coupled only by the trigger conversation.
+
+### D36 — Feedback Channel: three-layer defense
+
+**Trigger**: 2026-04-27 — a v2.6.0 client session attempted `/core:feedback --public` which failed because the binary attached non-existent labels (`feedback`, `vunknown`); `gh issue create` rejects the whole call when any label is unknown. The session AI then bypassed the failure by calling `gh issue create --repo sankalpasawa/sutra` directly, leaking the founder's authenticated identity to a public artifact at sankalpasawa/sutra#15 (since closed).
+
+**Mechanism** (three independent layers):
+
+1. **Textual rule** — `hooks/feedback-routing-rule.sh` UserPromptSubmit hook adds explicit "binary failure does NOT graduate the assistant to manual workaround" clause (rules 4–6).
+2. **Programmatic gate** — NEW `hooks/feedback-channel-guard.sh` PreToolUse:Bash hook. Exits 2 with stderr explanation on any `gh (issue|pr) (create|comment|review)` against `sankalpasawa/sutra*` repos. Allows close/view/list/non-Sutra repos. Kill-switch: `SUTRA_FEEDBACK_GUARD_DISABLED=1` or `~/.sutra-feedback-guard-disabled`. 12/12 functional tests green.
+3. **Binary fix** — `scripts/feedback.sh` drops the `--label` flag (root cause of the failure that triggered the bypass instinct); plugin version moved to title (`[feedback v2.6.2] from plugin`); gh stderr now surfaces on failure.
+
+**Why three layers**: Single-layer textual rules get rationalized around under "let me just help finish" framing during error recovery — exactly what happened in the trigger incident. Programmatic gate is the structural backstop; binary fix removes today's specific failure mode but the gate handles the next one.
+
+### D37 — Sutra Assistant Layer: paused, default-OFF
+
+**Why** (separate from D36): Assistant Layer v1 dogfood surfaced infra + wiring bugs unrelated to feedback. Stop hook errored on missing `jq` in some PATH configs; kill-switch shim's polarity was opt-out despite design comments stating "default-off" (D31/D32 intent); `holding/.claude/settings.json` registered the observer twice (direct + via kill-switch shim), defeating the kill-switch entirely. Founder paused the layer pending re-architecture.
+
+**Mechanism**:
+
+- **Polarity flipped** in `hooks/assistant-kill-switch.sh` — opt-in required via `~/.sutra-assistant-enabled` (file) or `SUTRA_ASSISTANT_ENABLED=1` (env). Hard kill-switches (`~/.sutra-assistant-disabled`, `~/.sutra-disabled`, `SUTRA_ASSISTANT_DISABLED`) still win as emergency overrides.
+- **`bin/sutra enable` / `disable`** rewritten to manage the new flag and warn when emergency-kill files override.
+- **Bug list B1–B8** captured in `holding/research/2026-04-24-assistant-layer-design.md` §0 — re-enable requires clearing the list before `sutra enable`.
+- **Behavior change for users** who had v1 dogfood enabled: assistant goes silent until they explicitly run `sutra enable`. No fleet clients are known to be running it (Asawa-only dogfood).
+
+### Threat model unchanged
+
+Same threat model as v2.5.0+. Both directives strengthen existing protections; neither expands attack surface.
+
+### Memory artifacts (Asawa-side)
+
+- `feedback_three_layer_defense.md` — generalized pattern for any LLM-routing rule that must hold.
+- D36/D37 logged separately in `holding/FOUNDER-DIRECTIONS.md`.
+
+### Migration / rollout
+
+- Existing clients on v2.6.1 upgrading to v2.6.2 see no change to feedback-channel UX unless they were calling `gh issue create` directly against `sankalpasawa/sutra*` (now blocked, exit 2).
+- Assistant Layer goes silent for any client who was running v1 dogfood; `sutra enable` re-enables (subject to the B1-B8 bug list).
+
+### Threat model unchanged
+
+Single trusted local operator. No adversarial input.
+
 ## v2.6.1 (2026-04-27) — Trust Mode `gh` subcommand refinement
 
 Plugin v2.6.1 refines Trust Mode (Tier 1.6) `gh` handling. Closes the founder-reported approval-fatigue gap where every `gh` invocation — including read-only `gh label list`, `gh pr view`, `gh issue list`, `gh api` (default GET) — prompted because `gh` was treated as a coarse REMOTE_TOOL.

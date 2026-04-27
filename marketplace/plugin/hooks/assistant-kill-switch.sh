@@ -10,22 +10,33 @@
 # Spec: holding/research/2026-04-24-assistant-layer-design.md §5
 #
 # PURPOSE
-# Zero-cost kill-switch shim for the Sutra Assistant observer hook.
-# When the Assistant is disabled at L2 (user runtime) or L1 (Sutra authority
-# via hook-registry default-off), this shim exits before any Sutra logic
-# loads. No config parse, no yaml read, no language runtime. 3 syscalls max.
+# Zero-cost gate shim for the Sutra Assistant observer hook. Default is OFF
+# (founder directive 2026-04-27): the observer fires only when the user has
+# explicitly opted in. Honors emergency kill-switches as hard overrides.
 #
-# DISABLED WHEN (any of):
+# DEFAULT: off. Observer never runs unless explicitly enabled.
+#
+# HARD OVERRIDE — observer never runs (any of these wins, even if enabled):
 #   1. $SUTRA_ASSISTANT_DISABLED is set (non-empty)
 #   2. ~/.sutra-assistant-disabled file exists
 #   3. ~/.sutra-disabled file exists (global Sutra kill)
 #
-# When disabled: exit 0 silently (observer never called).
-# When enabled: exec's assistant-observer.sh with the same args + stdin.
+# OPT-IN — observer runs (one of these required, in addition to no override):
+#   4. ~/.sutra-assistant-enabled file exists
+#   5. $SUTRA_ASSISTANT_ENABLED is set (non-empty)
+#
+# When off (default or override): exit 0 silently (observer never called).
+# When on (opt-in flag present, no override): exec assistant-observer.sh.
+#
+# Set via: `sutra enable` / `sutra disable` (see bin/sutra).
 
+# Hard overrides first (must win regardless of enabled state)
 [ -n "${SUTRA_ASSISTANT_DISABLED:-}" ] && exit 0
 [ -f "$HOME/.sutra-assistant-disabled" ] && exit 0
 [ -f "$HOME/.sutra-disabled" ] && exit 0
+
+# Default off — must opt in
+[ -f "$HOME/.sutra-assistant-enabled" ] || [ -n "${SUTRA_ASSISTANT_ENABLED:-}" ] || exit 0
 
 # Pass through to real observer. exec replaces this process — no wrapper overhead.
 exec "$(dirname "$0")/assistant-observer.sh" "$@"

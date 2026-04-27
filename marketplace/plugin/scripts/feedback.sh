@@ -196,23 +196,29 @@ fanout_to_sutra_team
 if [ "$PUBLIC" = "1" ]; then
   echo ""
   echo "-- --public: about to open a GitHub issue at sankalpasawa/sutra"
-  echo "   title:   [feedback] from plugin v${PLUGIN_VERSION}"
+  echo "   title:   [feedback v${PLUGIN_VERSION}] from plugin"
   echo "   body:    <scrubbed content above>"
-  echo "   labels:  feedback, v${PLUGIN_VERSION}"
   echo "   visible: PUBLIC (this is permanent; GitHub issues are public)"
   echo ""
   printf "   confirm with 'yes' (anything else cancels): "
   read -r CONFIRM
   if [ "$CONFIRM" = "yes" ]; then
-    TITLE="[feedback] from plugin v${PLUGIN_VERSION}"
-    if gh issue create \
+    # v2.6.1: Title carries plugin version; no --label flag.
+    # Why: prior --label "feedback,v${PLUGIN_VERSION}" failed every public post
+    # because neither label exists on the repo (gh issue create rejects the
+    # whole call when any label is unknown). Title-prefix is sufficient for
+    # filterability; downstream label automation (if any) can match by prefix.
+    TITLE="[feedback v${PLUGIN_VERSION}] from plugin"
+    GH_OUT=$(gh issue create \
          --repo sankalpasawa/sutra \
          --title "$TITLE" \
-         --body "$SCRUBBED" \
-         --label "feedback,v${PLUGIN_VERSION}" >/dev/null 2>&1; then
+         --body "$SCRUBBED" 2>&1)
+    if [ $? -eq 0 ]; then
       echo "-- issue opened on sankalpasawa/sutra"
+      echo "   ${GH_OUT}"
     else
       echo "-- gh issue create failed — feedback remains captured locally at $FILE"
+      echo "   reason: ${GH_OUT}"
     fi
   else
     echo "-- public post cancelled — feedback kept local only"

@@ -85,21 +85,36 @@ case "$SUBCMD" in
     ;;
 
   # ── Assistant Interaction Layer (v2.2.0+) ───────────────────────────
+  # Default is OFF (founder directive 2026-04-27 — opt-in via positive flag).
+  # Hard kill-switch files still win when present.
   enable)
-    # sutra enable — turn assistant on in current cwd (removes kill-switch files)
-    rm -f "$HOME/.sutra-assistant-disabled" "$HOME/.sutra-disabled" 2>/dev/null
+    # sutra enable — opt in to running the assistant observer.
+    # Order: check hard-disable conflicts FIRST so we never leave a stale
+    # opt-in flag behind on the error path (codex review 2026-04-27).
+    if [ -f "$HOME/.sutra-assistant-disabled" ]; then
+      echo "⚠️  ~/.sutra-assistant-disabled is present and overrides enable."
+      echo "   Remove it with: rm ~/.sutra-assistant-disabled"
+      exit 1
+    fi
+    if [ -f "$HOME/.sutra-disabled" ]; then
+      echo "⚠️  ~/.sutra-disabled (global Sutra kill) overrides enable."
+      echo "   Remove it with: rm ~/.sutra-disabled"
+      exit 1
+    fi
     if [ -n "${SUTRA_ASSISTANT_DISABLED:-}" ]; then
       echo "note: SUTRA_ASSISTANT_DISABLED env is set; unset it in this shell to clear"
     fi
-    echo "✅ Assistant enabled in $PWD"
+    # All clear — flip the opt-in flag.
+    touch "$HOME/.sutra-assistant-enabled"
+    echo "✅ Assistant enabled (~/.sutra-assistant-enabled created)"
     echo "   Next Stop event fires observer; events appended to state/assistants/<client_id>/events.jsonl"
-    echo "   Check with: sutra explain"
+    echo "   Disable: sutra disable     |     Status: sutra explain"
     ;;
 
   disable)
-    # sutra disable — persistent off (zero tokens) until re-enabled
-    touch "$HOME/.sutra-assistant-disabled"
-    echo "⏹️  Assistant disabled (persistent, via ~/.sutra-assistant-disabled)"
+    # sutra disable — persistent off (zero tokens) by removing opt-in flag
+    rm -f "$HOME/.sutra-assistant-enabled" 2>/dev/null
+    echo "⏹️  Assistant disabled (~/.sutra-assistant-enabled removed)"
     echo "   Re-enable: sutra enable"
     ;;
 
