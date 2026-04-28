@@ -33,6 +33,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/inbox-display.sh",
             "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start-rotate.sh",
+            "timeout": 5
           }
         ]
       }
@@ -58,6 +63,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/operationalization-check.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/blueprint-check.sh",
             "timeout": 5
           }
         ]
@@ -114,6 +124,16 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/build-layer-check.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/self-assess-before-foundational.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/input-classification-gate.sh",
+            "timeout": 5
           }
         ]
       }
@@ -145,6 +165,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/artifact-check.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/process-fix-check.sh",
+            "timeout": 5
           }
         ]
       },
@@ -165,6 +190,31 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-mcp-compress.sh",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/agent-completion-check.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/onboarding-self-check.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/narration-not-artifact.sh",
+            "timeout": 5
           }
         ]
       }
@@ -258,6 +308,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/assistant-kill-switch.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/policy-only-sensor.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-budget-check.sh",
             "timeout": 5
           }
         ]

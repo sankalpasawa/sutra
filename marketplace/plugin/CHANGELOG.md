@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.8.5 — 2026-04-28
+
+**D38 Wave 9 — Bucket C activation: 10 promoted hooks now registered in plugin hooks.json (fleet-wide auto-fire).**
+
+Per founder direction "finish it off as well", 10 of the 28 Bucket C hooks promoted in v2.8.4 are now activation-wired in plugin hooks.json — they fire fleet-wide automatically on /core:update, not just for Asawa via settings.json pointer.
+
+### Hooks activated
+
+- **SessionStart**: session-start-rotate
+- **PreToolUse Edit|Write**: blueprint-check
+- **PreToolUse Write|Edit|MultiEdit**: self-assess-before-foundational, input-classification-gate
+- **PostToolUse Edit|Write**: process-fix-check
+- **PostToolUse Bash|Edit|Write**: agent-completion-check (new matcher)
+- **PostToolUse Write**: onboarding-self-check, narration-not-artifact (new matcher)
+- **Stop**: policy-only-sensor, context-budget-check
+
+### Hooks NOT activated (canonical-only, no auto-fire)
+
+- **auto-push** — Stop hook would auto-push every session for every fleet client; deferred pending per-client config (T2/T3/T4 may not want auto-push).
+- 17 other Bucket C hooks (architecture-awareness, check-graduation, hook-health-sensor, kpi-tracker, latency-collector, lifecycle-check, new-path-detector, output-behavior-lint, principle-regression, research-cadence-check, rotate-logs, rtk-health-check, session-checkpoint, test-in-production-check, time-allocation-tracker, triage-collector, tripwire-hook-sizes) — not currently invoked from holding/.claude/settings.json; canonical files exist in plugin/hooks/ for any future activation. Per-hook event-matcher analysis required for each; no need to auto-activate vestigial hooks.
+
+### Acceptance
+
+After /core:update, fleet clients running Sutra v2.8.5 get blueprint-check, self-assess, input-classification, process-fix, agent-completion, onboarding-self-check, narration-not-artifact, policy-only-sensor, context-budget-check, session-start-rotate firing automatically — no settings.json customization required. D38's "canonical = distributed + activation-wired + released" criterion is now met for these 10.
+
+### Wave plan — D38 COMPLETE
+
+This is the last D38 wave. Remaining items deferred-by-design:
+- 17 vestigial Bucket C canonicals: live in plugin/hooks/ but no auto-fire registration. Future wave can activate per-hook on demand.
+- Bucket D L2 in-file headers: cosmetic; promotion ledger already documents WHY_NOT_L0_KIND for each.
+- Wave-3 shim deletion (pre-commit-test-gate, mark-tests-ran in holding/hooks/): safe to keep until callers all updated; revisit at 2026-05-05 retire-by.
+
 ## v2.8.4 — 2026-04-28
 
 **D38 Waves 6+7 — Bucket C bulk promotion (28 governance hooks → plugin canonical).**
