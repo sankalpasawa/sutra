@@ -8,7 +8,11 @@ disable-model-invocation: false
 
 One command. Everything.
 
-!${CLAUDE_PLUGIN_ROOT}/bin/sutra start
+Run this command via the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/sutra start
+```
 
 ## What happens
 

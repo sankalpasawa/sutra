@@ -6,7 +6,11 @@ disable-model-invocation: false
 
 # /core:permissions — One-paste allowlist
 
-!${CLAUDE_PLUGIN_ROOT}/bin/sutra permissions
+Run this command via the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/sutra permissions
+```
 
 ## What this does
 

@@ -1,5 +1,51 @@
 # Changelog
 
+## v2.8.7 — 2026-04-28
+
+**Vinit#36 — slash-command zsh history-expansion fix (8 command files).**
+
+@vinitharmalkar reported (issue #36, 2026-04-28) that `/core:start` fails with exit 127 on zsh: the `!`-prefix line in the slash-command file (`!${CLAUDE_PLUGIN_ROOT}/bin/sutra start`) reaches zsh's `eval`, where the leading `!` triggers history expansion (`(eval):1: no such file or directory: !/path/to/sutra`). The `!`-prefix syntax is **not the documented Claude Code slash-command auto-execute mechanism**; the canonical form is a fenced bash code block that Claude reads and executes via the Bash tool. Confirmed via Claude Code documentation lookup.
+
+### Changed
+
+All 8 affected command files migrated from broken `!`-prefix form to documented fenced-bash form:
+
+| File | Subcmd |
+|---|---|
+| `commands/start.md` | `sutra start` |
+| `commands/feedback.md` | `sutra feedback "$ARGUMENTS"` |
+| `commands/learn.md` | `sutra learn $ARGUMENTS` |
+| `commands/permissions.md` | `sutra permissions` |
+| `commands/sbom.md` | `sutra sbom` |
+| `commands/status.md` | `sutra status` |
+| `commands/uninstall.md` | `sutra uninstall $ARGUMENTS` |
+| `commands/update.md` | `sutra update` |
+
+Pattern (before/after):
+
+```diff
+- !${CLAUDE_PLUGIN_ROOT}/bin/sutra start
++ Run this command via the Bash tool:
++
++ ```bash
++ ${CLAUDE_PLUGIN_ROOT}/bin/sutra start
++ ```
+```
+
+### Why the new form works
+
+The fenced-bash block is read by Claude (the model), which then emits a `Bash` tool call. Claude Code's Bash tool runs the command in a controlled bash environment — it does NOT pass through the user's interactive zsh, so `!` history expansion never triggers. This works identically across bash, zsh, fish, and any other user shell.
+
+### Acceptance
+
+- `grep -rn "^!" commands/` returns zero matches.
+- All 8 files contain a `\`\`\`bash` fenced block with the prior invocation.
+- Plugin smoke unaffected (slash-command files are pre-Claude-rendered, no syntax to break at install time).
+
+### Not addressed in this version
+
+- The zsh `$0`/`$N` expansion bug in `sutra feedback --public` body (separate issue, deferred to a future round; rooted in `$ARGUMENTS` substitution semantics, not the `!`-prefix). Tracked in v2.8.6 changelog "Not addressed" section.
+
 ## v2.8.6 — 2026-04-28
 
 **Vinit feedback round — two deterministic fixes (`vinit#25` bug 2 + `vinit#35`).**

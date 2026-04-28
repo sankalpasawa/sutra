@@ -6,7 +6,11 @@ disable-model-invocation: false
 
 # /core:update — Pull the latest Sutra version
 
-!${CLAUDE_PLUGIN_ROOT}/bin/sutra update
+Run this command via the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/sutra update
+```
 
 ## What this does
 

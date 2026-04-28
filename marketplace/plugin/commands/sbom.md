@@ -8,4 +8,8 @@ disable-model-invocation: false
 
 Writes SHA256 hash per shipped file to `~/.sutra/sbom.txt`. Diff against a stored manifest to detect tampering. SECURITY charter primitive #13.
 
-!${CLAUDE_PLUGIN_ROOT}/bin/sutra sbom
+Run this command via the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/sutra sbom
+```

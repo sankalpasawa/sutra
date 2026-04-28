@@ -15,4 +15,8 @@ disable-model-invocation: false
 /core:feedback --public "bigger report — opens GitHub issue after I confirm"
 ```
 
-!${CLAUDE_PLUGIN_ROOT}/bin/sutra feedback "$ARGUMENTS"
+Run this command via the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/sutra feedback "$ARGUMENTS"
+```

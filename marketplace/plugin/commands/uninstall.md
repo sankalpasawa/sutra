@@ -7,7 +7,11 @@ argument-hint: [--purge]
 
 # /core:uninstall — Remove Sutra
 
-!${CLAUDE_PLUGIN_ROOT}/bin/sutra uninstall $ARGUMENTS
+Run this command via the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/sutra uninstall $ARGUMENTS
+```
 
 ## What this does
 

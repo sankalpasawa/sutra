@@ -6,4 +6,8 @@ disable-model-invocation: false
 
 # /core:status — Local state
 
-!${CLAUDE_PLUGIN_ROOT}/bin/sutra status
+Run this command via the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/sutra status
+```

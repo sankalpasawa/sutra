@@ -8,4 +8,8 @@ disable-model-invocation: false
 
 LEARN-mode lessons from the PEDAGOGY charter. No args = list lessons. With a topic = print that lesson (~2 min each).
 
-!${CLAUDE_PLUGIN_ROOT}/bin/sutra learn $ARGUMENTS
+Run this command via the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/sutra learn $ARGUMENTS
+```
