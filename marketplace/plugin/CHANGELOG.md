@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.8.2 — 2026-04-28
+
+**D38 Wave 2 — `structural-move-check.sh` (PROTO-025) plugin L0 promotion.**
+
+PROTO-025 enforcement (unauthorized rm/mv/git mv on HARD paths — closes the 2026-04-06 evolution-archive incident) moves from `holding/hooks/` (Asawa-only) to `sutra/marketplace/plugin/hooks/` (fleet L0). Same atomic-cutover pattern as Wave 1.
+
+### What changed
+
+- `hooks/structural-move-check.sh` — new in plugin (211 lines). Gates Bash structural ops (`mv`, `rm`, `git mv`, `git rm`, `find -delete`, `bash -c` containing destructive shell) on the same HARD path list as `build-layer-check.sh` (PROTO-021 + D38). Same marker schema; same override path; same audit ledger.
+- `hooks/hooks.json` — registers `structural-move-check.sh` on PreToolUse `Bash`.
+- Plugin version 2.8.1 → 2.8.2.
+
+### Wave plan continuation
+
+- Wave 3: `pre-commit-test-gate.sh` + `mark-tests-ran.sh` paired promotion to `sutra/hooks/` (shared-runtime carve-out).
+- Wave 4+: Bucket A — 22 silent mirror retirement, shim or delete.
+
 ## v2.8.1 — 2026-04-28
 
 **D38 Wave 1 — `build-layer-check.sh` plugin L0 promotion (HARD enforcement now fleet-distributed).**

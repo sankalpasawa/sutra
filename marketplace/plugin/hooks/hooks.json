@@ -84,6 +84,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/bash-summary-pretool.sh",
             "timeout": 6
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/structural-move-check.sh",
+            "timeout": 5
           }
         ]
       },
