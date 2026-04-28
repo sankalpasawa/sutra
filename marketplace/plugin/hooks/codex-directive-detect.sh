@@ -48,6 +48,14 @@ touch ".claude/heartbeats/$SID" 2>/dev/null || true
 
 [ -z "$PROMPT" ] && exit 0
 
+# Strip system-emitted XML wrappers before regex matching. The harness
+# injects task-notifications, system-reminders, command output blocks, etc.
+# into the .prompt field when background tasks complete or local slash
+# commands run. Their content can self-reference codex work and trigger
+# false-positive directive detection. Falls back to original $PROMPT if
+# perl is unavailable (regression-equivalent).
+PROMPT=$(printf '%s' "$PROMPT" | perl -0pe 's{<(task-notification|system-reminder|command-name|command-message|command-args|local-command-stdout|local-command-stderr)>.*?</\1>}{}gs' 2>/dev/null || printf '%s' "$PROMPT")
+
 # Strip fenced code blocks and inline backticks
 CLEAN=$(printf '%s\n' "$PROMPT" | awk '
   /^```/ { inblock = !inblock; next }

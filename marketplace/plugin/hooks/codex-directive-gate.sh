@@ -103,7 +103,7 @@ if [ -z "$MATCHING_VERDICT" ]; then
     printf 'PROTO-019: codex review outstanding for directive at %s.\n' "$MARKER_TS"
     printf '  Directive ID: %s\n' "$DIRECTIVE_ID"
     printf '  Matched phrase: %s\n' "$MATCH"
-    printf '  Run /codex review and ensure the verdict file echoes "DIRECTIVE-ID: %s".\n' "$DIRECTIVE_ID"
+    printf '  Run /codex-sutra review and ensure the verdict file echoes "DIRECTIVE-ID: %s".\n' "$DIRECTIVE_ID"
     printf '  Override: CODEX_DIRECTIVE_ACK=1 CODEX_DIRECTIVE_REASON="..." <tool-call>\n'
   } >&2
   exit 2
@@ -127,7 +127,7 @@ case "$VERDICT" in
     {
       printf 'PROTO-019: codex verdict is %s for directive at %s.\n' "$VERDICT" "$MARKER_TS"
       printf '  Verdict file: %s\n' "$MATCHING_VERDICT"
-      printf '  Fix findings and re-run /codex review (must keep DIRECTIVE-ID: %s),\n' "$DIRECTIVE_ID"
+      printf '  Fix findings and re-run /codex-sutra review (must keep DIRECTIVE-ID: %s),\n' "$DIRECTIVE_ID"
       printf '  or override: CODEX_DIRECTIVE_ACK=1 CODEX_DIRECTIVE_REASON="..." <tool-call>\n'
     } >&2
     exit 2

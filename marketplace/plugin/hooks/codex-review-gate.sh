@@ -3,7 +3,7 @@
 #
 # Two-phase gate:
 #   request : prepare a review packet file and instruct the operator to
-#             invoke the /codex skill with it.
+#             invoke the /codex-sutra skill with it.
 #   verify  : check the latest review packet for a non-PENDING verdict.
 #             Exit 0 on PASS/ADVISORY, 1 on FAIL/PENDING.
 #
@@ -95,7 +95,7 @@ case "$ACTION" in
       echo
       echo "## Codex verdict (operator fills)"
       echo
-      echo "<!-- After invoking /codex review, paste verdict below. -->"
+      echo "<!-- After invoking /codex-sutra review, paste verdict below. -->"
       echo "<!-- Required marker: CODEX-VERDICT: PASS | FAIL | ADVISORY -->"
       echo
       echo "CODEX-VERDICT: PENDING"
@@ -104,7 +104,7 @@ case "$ACTION" in
     echo "Codex review request written: $PENDING"
     echo
     echo "Next step:"
-    echo "  1. Invoke the /codex skill to review this diff."
+    echo "  1. Invoke /codex-sutra review to review this diff."
     echo "  2. Update $PENDING with CODEX-VERDICT: PASS|FAIL|ADVISORY"
     echo "  3. Run: bash $0 verify"
     exit 0

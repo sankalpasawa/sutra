@@ -1,5 +1,90 @@
 # Changelog
 
+## v2.8.0 — 2026-04-28
+
+**codex-sutra v1.0.0 — Sutra-owned codex CLI wrapper, replaces gstack /codex for PROTO-019.**
+
+Founder direction (2026-04-28): "we have to provide this skill to all the clients of Sutra, so it goes by default. We use this skill only when we are trying to review by codex going forward."
+
+### Added
+
+- **`marketplace/plugin/skills/codex-sutra/SKILL.md`** (540 lines) — full skill spec with four modes:
+  - **Review (2A)** — git-diff codex review with P1/P2 gate (`high` reasoning effort).
+  - **Challenge (2B)** — adversarial mode looking for production failure modes (`high`).
+  - **Consult (2C)** — free-form Q&A with session continuity via `.context/codex-session-id` (`medium`).
+  - **Design-review (2D)** — single-file review of specs, plans, RFCs (`medium`). Used during this very release for self-review of v1→v2→v3 of the SKILL.md itself.
+- Forked from gstack `/codex` skill v1.0.0 (`~/.claude/skills/gstack/codex/SKILL.md`, observed 2026-04-28). Quarterly upstream-sync cadence documented inline.
+
+### Changed vs gstack /codex (5 functional changes — not a one-line fork)
+
+1. **Hard cap 5m → 15m.** Bash foreground `timeout: 300000` is too short for `high`-effort reviews on medium diffs. Bash foreground hard-caps at 10m anyway, so a 15m cap requires background execution.
+2. **Foreground timeout → background + wrapper polling.** Codex runs in its own process group (`setsid` or python `os.setsid()` fallback), polled every 30s. Three liveness thresholds: stall warn at 5m no-output, progress warn at 10m wall-clock, hard kill at 15m via `kill -TERM -<pgid>` (whole-group, closes the v2 hole where killing only the subshell PID could leave codex running past the cap).
+3. **Log path** `~/.gstack/.../review-log` → `.enforcement/codex-reviews/gate-log.jsonl` (the canonical PROTO-019 path).
+4. **Filesystem-boundary list extended** to exclude `sutra/marketplace/plugin/skills/` and `sutra/marketplace/plugin/hooks/`.
+5. **Canonical for codex-by-codex review under PROTO-019**, replacing gstack `/codex` only for that path. Other gstack skills unaffected.
+
+### Fail-closed semantics for non-model failures
+
+PROTO-019 gate is fail-closed for every infra error path (codex auth error, codex crash, empty response, malformed output, hard-cap timeout, log-write failure, session-id write failure). Each maps to `GATE: FAIL` with a structured `reason` code so callers can branch on infra-fail vs model-fail.
+
+### Failure durability — three result channels
+
+PROTO-019 hooks need an observable verdict even when the primary log-write fails. Three channels in priority order: (1) primary `.enforcement/codex-reviews/gate-log.jsonl` JSONL append, (2) fallback `/tmp/codex-sutra-fail-<directive_id>-<ts>.json`, (3) stderr `CODEX-SUTRA-RESULT verdict=... reason=... directive=... commit=...` beacon. Skill exit code mirrors verdict (0 for PASS/ADVISORY, 1 for CHANGES-REQUIRED/FAIL, 124 for hard-cap timeout). PROTO-019 hooks treat non-zero exit + no readable verdict file as `reason=infra_silent`.
+
+### Other invariants documented in skill
+
+- **Single-writer rule** for `$TMPDONE` (wrapper-only). Subshell writes only `$TMPNAT` (its own exit code). Eliminates the v2 race where two writers could clobber each other.
+- **Stdin closed via `</dev/null`** on all `codex exec` invocations. Without it, `codex exec` blocks indefinitely waiting on stdin even when a prompt is provided as argv (discovered the hard way during this skill's own v2 design-review iteration).
+- **Orphan reaping**: every codex-sutra invocation prepends `find /tmp/codex-sutra-* -mmin +1440 -delete` to clean prior crashed-session artifacts.
+- **gate-log.jsonl JSONL schema** documented inline (12 fields) + rotation logic with `flock` (or `mkdir`-based fallback on macOS without flock) at 10MB.
+- **Single active consult per repo** (v1 limitation; v2 will add file-locking + session registry).
+
+### Rollout (staged, gated by infra-fail observation)
+
+| Tier | Cohort | Window | Gate to advance |
+|---|---|---|---|
+| T2 (owned) | DayFlow, Billu, Paisa, PPR, Maze | Week 1 | Zero infra-fail verdicts in gate-log.jsonl |
+| T3 (projects) | Testlify, Dharmik | Week 2 | Same gate + founder sign-off |
+| T4 (Sutra users / fleet) | External adopters | Week 3+ | Same gate + announcement in feedback channel |
+
+Skill is identical across tiers; only PROTO-019 hook activation differs.
+
+### PROTO-019 hooks updated to point at /codex-sutra
+
+- `marketplace/plugin/hooks/codex-directive-gate.sh` — two user-facing messages (lines 106, 130) now read `Run /codex-sutra review` and `re-run /codex-sutra review`.
+- `marketplace/plugin/hooks/codex-review-gate.sh` — three references (line 6 header comment, lines 98, 107) all updated to `/codex-sutra review` form.
+- All five message changes are pure text/comment changes; no semantic behavior change.
+
+### Bug fix — codex-directive-detect.sh false-positive
+
+`codex-directive-detect.sh` (UserPromptSubmit hook) was matching codex-related keywords inside system-emitted XML wrappers — `<task-notification>`, `<system-reminder>`, `<command-name>`, `<command-message>`, `<command-args>`, `<local-command-stdout>`, `<local-command-stderr>` — which the harness injects into the `.prompt` field when background tasks complete or local slash commands run. Every background codex review during the codex-sutra v1→v2→v3 iteration spawned a false-positive directive marker that required a separate verdict file to clear, creating cascading governance friction.
+
+Fix: a perl-based system-XML strip step inserted between the empty-prompt guard and the existing fenced-code-block stripping. Allowlist-based (the seven harness-emitted tag names above). Falls back gracefully to original prompt if perl unavailable (regression-equivalent). 6/6 unit tests pass (XML cases stripped, genuine asks still match, negation suppression intact, regression test for the exact phrase that caused this session's first false positive).
+
+### Codex review chain (audit trail)
+
+- **codex-sutra design**: v1 CHANGES-REQUIRED (6 P1, 8 P2; 40,736 tokens) → v2 CHANGES-REQUIRED (2 P1, 2 P2; 45,375 tokens) → v3 ADVISORY (0 P1, 2 PARTIAL items resolved post-review; 46,726 tokens) → ship.
+- **PROTO-019 hook fix proposal**: v1 CHANGES-REQUIRED (1 P1: A2/A3 inconsistency; 42,270 tokens) → v2 PASS (41,072 tokens) → delta PASS for two missed `/codex` references (39,547 tokens) → ship.
+- Total codex spend: ~256K tokens, ~$0.75–1.00.
+- Verdict files: `.enforcement/codex-reviews/2026-04-28-codex-sutra-design-v1.md`, `2026-04-28-codex-sutra-design-v3.md`, `2026-04-28-hook-fix-proposal-pass.md` (plus two false-positive verdict files for directives 1777355386 and 1777355668 — the very class of false positive Change B fixes; documented for traceability).
+
+### What does NOT change
+
+- gstack `/codex` skill itself remains untouched at `~/.claude/skills/gstack/codex/SKILL.md`. Only the **canonical-for-PROTO-019** designation moves to codex-sutra.
+- Verdict-file format (`DIRECTIVE-ID:` + `CODEX-VERDICT:`) is identical between gstack and codex-sutra. Existing verdict files remain valid.
+- PROTO-019 protocol semantics, marker file paths, gate exit codes — all unchanged.
+
+### Known issue (pre-existing, not blocking)
+
+`marketplace/plugin/tests/unit/test-codex-directive-detect.sh` and `test-codex-directive-gate.sh` reference the v2 single-slot marker path `.claude/codex-directive-pending` (no SID suffix), but the v3 hook (shipped 2026-04-25) writes session-scoped markers `.claude/codex-directive-pending-<SID>`. 9 of 12 tests in each suite report false failures because they look at the v2 path. Pre-existing test rot from the 2026-04-25 v3 transition; tracked as a separate follow-up. My change to detect.sh is purely additive (XML strip step) and does not affect these failures — verified by running 6 targeted unit tests independently (all pass) plus reading the diff (one block added, no existing logic modified).
+
+### Out of scope
+
+- Updating the pre-existing test rot in test-codex-directive-detect.sh and test-codex-directive-gate.sh.
+- Adding codex CLI install to a Sutra installer (no `install.sh` exists yet; T2 clients are assumed to have codex via npm).
+- Plugin README mention of codex-sutra (separate doc-update commit).
+- Reaping the orphan v2 marker `.claude/codex-directive-pending-156aa0a5-...` from a dead session (separate cleanup).
+
 ## v2.7.3 — 2026-04-28
 
 **Honesty pass II — RTK opt-in disclosure + telemetry banner truth (vinit#7, vinit#9).**
