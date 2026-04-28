@@ -303,6 +303,25 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
     ).toThrow(/return_contract.*reuse_tag=true|V2\.3 §A11/i)
   })
 
+  it('P2 (codex re-review): rejects reuse_tag=false with empty-string return_contract (constructor/validator alignment)', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-nonskill-empty-rc',
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        reuse_tag: false,
+        return_contract: '',
+      }),
+    ).toThrow(/return_contract.*reuse_tag=false|constructor\/validator alignment/i)
+  })
+
   it('P1.1: accepts reuse_tag=true with non-empty return_contract', () => {
     const skill = createWorkflow({
       id: 'W-skill-ok',

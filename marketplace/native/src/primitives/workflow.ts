@@ -206,6 +206,18 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
         'Workflow.return_contract is required when reuse_tag=true (V2.3 §A11 — every Skill MUST have a return_contract schema-ref)',
       )
     }
+  } else {
+    // reuse_tag=false: return_contract may be null OR a non-empty string.
+    // Aligns constructor with isValidWorkflow predicate (V2 §3 HARD — boundary
+    // must not mint records the validator considers invalid).
+    if (
+      returnContract !== null &&
+      (typeof returnContract !== 'string' || returnContract.length === 0)
+    ) {
+      throw new Error(
+        'Workflow.return_contract must be null OR a non-empty string when reuse_tag=false (constructor/validator alignment per V2 §3 HARD)',
+      )
+    }
   }
 
   const out: Workflow = {
