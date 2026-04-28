@@ -20,12 +20,18 @@ run_case() {
   TMPDIR=$(mktemp -d -t codex-detect-XXXXXX)
   mkdir -p "$TMPDIR/.claude"
 
+  # v3 hook writes session-scoped marker .claude/codex-directive-pending-<SID>;
+  # derive a deterministic SID from the case name (sanitized to [a-zA-Z0-9_-])
+  # so failures are reproducible.
+  local SID="case-${name//[^a-zA-Z0-9_-]/_}"
+
   local PAYLOAD
-  PAYLOAD=$(jq -nc --arg p "$prompt" '{prompt:$p,hook_event_name:"UserPromptSubmit"}')
+  PAYLOAD=$(jq -nc --arg p "$prompt" --arg sid "$SID" \
+    '{prompt:$p,hook_event_name:"UserPromptSubmit",session_id:$sid}')
 
   printf '%s' "$PAYLOAD" | CLAUDE_PROJECT_DIR="$TMPDIR" bash "$DETECT"
 
-  if [ -f "$TMPDIR/.claude/codex-directive-pending" ]; then
+  if [ -f "$TMPDIR/.claude/codex-directive-pending-$SID" ]; then
     got="match"
   else
     got="nomatch"
@@ -68,18 +74,19 @@ run_case "positive-outside-fenced"   $'before\n```\nnot relevant\n```\nuse codex
 # Empty / missing prompt
 run_case "empty-prompt"              ""                                     "nomatch"
 
-# Latest-wins (second prompt overwrites marker)
+# Latest-wins (second prompt overwrites marker — same session, same SID)
 {
   TMPDIR=$(mktemp -d -t codex-detect-lw-XXXXXX)
   mkdir -p "$TMPDIR/.claude"
-  P1=$(jq -nc --arg p "use codex to review plan A" '{prompt:$p}')
-  P2=$(jq -nc --arg p "use codex to review plan B" '{prompt:$p}')
+  SID="latest-wins-test"
+  P1=$(jq -nc --arg p "use codex to review plan A" --arg sid "$SID" '{prompt:$p,session_id:$sid}')
+  P2=$(jq -nc --arg p "use codex to review plan B" --arg sid "$SID" '{prompt:$p,session_id:$sid}')
   printf '%s' "$P1" | CLAUDE_PROJECT_DIR="$TMPDIR" bash "$DETECT"
-  ID1=$(grep DIRECTIVE-ID "$TMPDIR/.claude/codex-directive-pending" | awk '{print $2}')
+  ID1=$(grep DIRECTIVE-ID "$TMPDIR/.claude/codex-directive-pending-$SID" | awk '{print $2}')
   sleep 1
   printf '%s' "$P2" | CLAUDE_PROJECT_DIR="$TMPDIR" bash "$DETECT"
-  ID2=$(grep DIRECTIVE-ID "$TMPDIR/.claude/codex-directive-pending" | awk '{print $2}')
-  MATCH2=$(grep MATCH "$TMPDIR/.claude/codex-directive-pending" | cut -d' ' -f2-)
+  ID2=$(grep DIRECTIVE-ID "$TMPDIR/.claude/codex-directive-pending-$SID" | awk '{print $2}')
+  MATCH2=$(grep MATCH "$TMPDIR/.claude/codex-directive-pending-$SID" | cut -d' ' -f2-)
   if [ "$ID1" != "$ID2" ] && printf '%s' "$MATCH2" | grep -q "plan b"; then
     _ok "latest-wins (second directive overwrites marker)"
   else
@@ -92,9 +99,10 @@ run_case "empty-prompt"              ""                                     "nom
 {
   TMPDIR=$(mktemp -d -t codex-detect-ks-XXXXXX)
   mkdir -p "$TMPDIR/.claude"
-  P=$(jq -nc --arg p "use codex to review" '{prompt:$p}')
+  SID="kill-switch-test"
+  P=$(jq -nc --arg p "use codex to review" --arg sid "$SID" '{prompt:$p,session_id:$sid}')
   printf '%s' "$P" | CLAUDE_PROJECT_DIR="$TMPDIR" CODEX_DIRECTIVE_DISABLED=1 bash "$DETECT"
-  if [ ! -f "$TMPDIR/.claude/codex-directive-pending" ]; then
+  if [ ! -f "$TMPDIR/.claude/codex-directive-pending-$SID" ]; then
     _ok "kill-switch CODEX_DIRECTIVE_DISABLED suppresses detection"
   else
     _no "kill-switch ignored — marker was written"

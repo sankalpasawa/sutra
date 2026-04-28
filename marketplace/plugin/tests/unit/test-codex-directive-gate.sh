@@ -14,9 +14,11 @@ _ok() { PASS=$((PASS+1)); echo "  OK  $1"; }
 _no() { FAIL=$((FAIL+1)); echo "  X   $1"; }
 
 make_marker() {
-  local dir="$1" id="$2" ts="$3" match="$4"
+  # v3 hook reads session-scoped marker .claude/codex-directive-pending-<SID>;
+  # caller passes SID as 5th arg.
+  local dir="$1" id="$2" ts="$3" match="$4" sid="$5"
   mkdir -p "$dir/.claude"
-  cat > "$dir/.claude/codex-directive-pending" <<EOF
+  cat > "$dir/.claude/codex-directive-pending-$sid" <<EOF
 DIRECTIVE-ID: $id
 TS: $ts
 MATCH: $match
@@ -35,12 +37,16 @@ EOF
 }
 
 run_gate() {
-  local dir="$1" tool="$2" cmd="${3:-}" ack="${4:-0}" ack_reason="${5:-}"
+  # v3 hook reads session_id from payload; caller passes SID as 6th arg
+  # (defaults to "test-no-sid" so test 1 still exercises a clean code path).
+  local dir="$1" tool="$2" cmd="${3:-}" ack="${4:-0}" ack_reason="${5:-}" sid="${6:-test-no-sid}"
   local payload
   if [ "$tool" = "Bash" ]; then
-    payload=$(jq -nc --arg t "$tool" --arg c "$cmd" '{tool_name:$t,tool_input:{command:$c}}')
+    payload=$(jq -nc --arg t "$tool" --arg c "$cmd" --arg sid "$sid" \
+      '{tool_name:$t,tool_input:{command:$c},session_id:$sid}')
   else
-    payload=$(jq -nc --arg t "$tool" '{tool_name:$t,tool_input:{}}')
+    payload=$(jq -nc --arg t "$tool" --arg sid "$sid" \
+      '{tool_name:$t,tool_input:{},session_id:$sid}')
   fi
   printf '%s' "$payload" | \
     CLAUDE_PROJECT_DIR="$dir" CODEX_DIRECTIVE_ACK="$ack" CODEX_DIRECTIVE_REASON="$ack_reason" \
@@ -51,7 +57,8 @@ run_gate() {
 # 1. No marker → allow
 {
   D=$(mktemp -d); mkdir -p "$D/.claude"
-  rc=$(run_gate "$D" "Edit")
+  SID="t1-no-marker"
+  rc=$(run_gate "$D" "Edit" "" "0" "" "$SID")
   [ "$rc" -eq 0 ] && _ok "no marker → allow" || _no "no marker but got exit $rc"
   rm -rf "$D"
 }
@@ -59,13 +66,14 @@ run_gate() {
 # 2. Marker + matching PASS verdict → clear + allow
 {
   D=$(mktemp -d)
-  make_marker "$D" "1111" "2026-04-23T22:00:00Z" "use codex to review"
+  SID="t2-pass-match"
+  make_marker "$D" "1111" "2026-04-23T22:00:00Z" "use codex to review" "$SID"
   make_verdict "$D" "1111" "PASS" "v1"
-  rc=$(run_gate "$D" "Write")
-  if [ "$rc" -eq 0 ] && [ ! -f "$D/.claude/codex-directive-pending" ]; then
+  rc=$(run_gate "$D" "Write" "" "0" "" "$SID")
+  if [ "$rc" -eq 0 ] && [ ! -f "$D/.claude/codex-directive-pending-$SID" ]; then
     _ok "PASS matching → clear marker + allow"
   else
-    _no "PASS matching: exit=$rc marker_still=$([ -f $D/.claude/codex-directive-pending ] && echo yes || echo no)"
+    _no "PASS matching: exit=$rc marker_still=$([ -f $D/.claude/codex-directive-pending-$SID ] && echo yes || echo no)"
   fi
   rm -rf "$D"
 }
@@ -73,10 +81,11 @@ run_gate() {
 # 3. Marker + matching FAIL → block
 {
   D=$(mktemp -d)
-  make_marker "$D" "2222" "2026-04-23T22:00:00Z" "codex review"
+  SID="t3-fail-match"
+  make_marker "$D" "2222" "2026-04-23T22:00:00Z" "codex review" "$SID"
   make_verdict "$D" "2222" "FAIL" "v2"
-  rc=$(run_gate "$D" "Edit")
-  if [ "$rc" -eq 2 ] && [ -f "$D/.claude/codex-directive-pending" ]; then
+  rc=$(run_gate "$D" "Edit" "" "0" "" "$SID")
+  if [ "$rc" -eq 2 ] && [ -f "$D/.claude/codex-directive-pending-$SID" ]; then
     _ok "FAIL matching → block + marker remains"
   else
     _no "FAIL matching: exit=$rc"
@@ -87,8 +96,9 @@ run_gate() {
 # 4. Marker with no verdict → block
 {
   D=$(mktemp -d)
-  make_marker "$D" "3333" "2026-04-23T22:00:00Z" "run codex"
-  rc=$(run_gate "$D" "Write")
+  SID="t4-no-verdict"
+  make_marker "$D" "3333" "2026-04-23T22:00:00Z" "run codex" "$SID"
+  rc=$(run_gate "$D" "Write" "" "0" "" "$SID")
   [ "$rc" -eq 2 ] && _ok "no verdict → block" || _no "no verdict: exit=$rc"
   rm -rf "$D"
 }
@@ -96,10 +106,11 @@ run_gate() {
 # 5. Marker + verdict with non-matching DIRECTIVE-ID → block (Codex finding #3)
 {
   D=$(mktemp -d)
-  make_marker "$D" "4444" "2026-04-23T22:00:00Z" "use codex"
+  SID="t5-mismatch-id"
+  make_marker "$D" "4444" "2026-04-23T22:00:00Z" "use codex" "$SID"
   make_verdict "$D" "9999" "PASS" "v-wrong-id"
-  rc=$(run_gate "$D" "Edit")
-  if [ "$rc" -eq 2 ] && [ -f "$D/.claude/codex-directive-pending" ]; then
+  rc=$(run_gate "$D" "Edit" "" "0" "" "$SID")
+  if [ "$rc" -eq 2 ] && [ -f "$D/.claude/codex-directive-pending-$SID" ]; then
     _ok "non-matching DIRECTIVE-ID → does not clear, blocks"
   else
     _no "non-matching DIRECTIVE-ID: exit=$rc"
@@ -110,9 +121,10 @@ run_gate() {
 # 6. Override clears marker + logs
 {
   D=$(mktemp -d)
-  make_marker "$D" "5555" "2026-04-23T22:00:00Z" "codex should check"
-  rc=$(run_gate "$D" "Edit" "" "1" "founder-override-test")
-  if [ "$rc" -eq 0 ] && [ ! -f "$D/.claude/codex-directive-pending" ] \
+  SID="t6-override"
+  make_marker "$D" "5555" "2026-04-23T22:00:00Z" "codex should check" "$SID"
+  rc=$(run_gate "$D" "Edit" "" "1" "founder-override-test" "$SID")
+  if [ "$rc" -eq 0 ] && [ ! -f "$D/.claude/codex-directive-pending-$SID" ] \
       && grep -q "directive-override" "$D/.enforcement/codex-reviews/gate-log.jsonl" 2>/dev/null; then
     _ok "override → allow + clear + log"
   else
@@ -124,8 +136,9 @@ run_gate() {
 # 7. Malformed marker → block
 {
   D=$(mktemp -d); mkdir -p "$D/.claude"
-  echo "garbage content" > "$D/.claude/codex-directive-pending"
-  rc=$(run_gate "$D" "Edit")
+  SID="t7-malformed"
+  echo "garbage content" > "$D/.claude/codex-directive-pending-$SID"
+  rc=$(run_gate "$D" "Edit" "" "0" "" "$SID")
   [ "$rc" -eq 2 ] && _ok "malformed marker → block (fail-safe)" || _no "malformed: exit=$rc"
   rm -rf "$D"
 }
@@ -133,8 +146,9 @@ run_gate() {
 # 8. Bash non-destructive → allow
 {
   D=$(mktemp -d)
-  make_marker "$D" "6666" "2026-04-23T22:00:00Z" "use codex"
-  rc=$(run_gate "$D" "Bash" "ls -la")
+  SID="t8-bash-ls"
+  make_marker "$D" "6666" "2026-04-23T22:00:00Z" "use codex" "$SID"
+  rc=$(run_gate "$D" "Bash" "ls -la" "0" "" "$SID")
   [ "$rc" -eq 0 ] && _ok "Bash non-destructive (ls) → allow" || _no "ls blocked, exit=$rc"
   rm -rf "$D"
 }
@@ -142,8 +156,9 @@ run_gate() {
 # 9. Bash destructive (git commit) → block
 {
   D=$(mktemp -d)
-  make_marker "$D" "7777" "2026-04-23T22:00:00Z" "use codex"
-  rc=$(run_gate "$D" "Bash" "git commit -m hello")
+  SID="t9-bash-commit"
+  make_marker "$D" "7777" "2026-04-23T22:00:00Z" "use codex" "$SID"
+  rc=$(run_gate "$D" "Bash" "git commit -m hello" "0" "" "$SID")
   [ "$rc" -eq 2 ] && _ok "Bash destructive (git commit) → block" || _no "git commit allowed, exit=$rc"
   rm -rf "$D"
 }
@@ -151,8 +166,9 @@ run_gate() {
 # 10. Bash destructive (rm -rf) → block
 {
   D=$(mktemp -d)
-  make_marker "$D" "8888" "2026-04-23T22:00:00Z" "use codex"
-  rc=$(run_gate "$D" "Bash" "rm -rf /tmp/x")
+  SID="t10-bash-rmrf"
+  make_marker "$D" "8888" "2026-04-23T22:00:00Z" "use codex" "$SID"
+  rc=$(run_gate "$D" "Bash" "rm -rf /tmp/x" "0" "" "$SID")
   [ "$rc" -eq 2 ] && _ok "Bash destructive (rm -rf) → block" || _no "rm -rf allowed, exit=$rc"
   rm -rf "$D"
 }
@@ -160,8 +176,9 @@ run_gate() {
 # 11. Kill-switch env → allow
 {
   D=$(mktemp -d)
-  make_marker "$D" "aaaa" "2026-04-23T22:00:00Z" "use codex"
-  payload=$(jq -nc '{tool_name:"Edit",tool_input:{}}')
+  SID="t11-killswitch"
+  make_marker "$D" "aaaa" "2026-04-23T22:00:00Z" "use codex" "$SID"
+  payload=$(jq -nc --arg sid "$SID" '{tool_name:"Edit",tool_input:{},session_id:$sid}')
   printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$D" CODEX_DIRECTIVE_DISABLED=1 bash "$GATE" 2>/dev/null
   rc=$?
   [ "$rc" -eq 0 ] && _ok "kill-switch → allow" || _no "kill-switch ignored, exit=$rc"
@@ -171,13 +188,14 @@ run_gate() {
 # 12. Verdict with unrecognized text → block
 {
   D=$(mktemp -d)
-  make_marker "$D" "bbbb" "2026-04-23T22:00:00Z" "use codex"
+  SID="t12-bad-verdict"
+  make_marker "$D" "bbbb" "2026-04-23T22:00:00Z" "use codex" "$SID"
   mkdir -p "$D/.enforcement/codex-reviews"
   cat > "$D/.enforcement/codex-reviews/v-bad.md" <<EOF
 DIRECTIVE-ID: bbbb
 (no CODEX-VERDICT line)
 EOF
-  rc=$(run_gate "$D" "Edit")
+  rc=$(run_gate "$D" "Edit" "" "0" "" "$SID")
   [ "$rc" -eq 2 ] && _ok "unrecognized verdict → block" || _no "unrecognized verdict: exit=$rc"
   rm -rf "$D"
 }
