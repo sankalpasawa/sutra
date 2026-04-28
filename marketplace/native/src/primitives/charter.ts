@@ -69,8 +69,8 @@ function validateAcl(acl: AclEntry[]): void {
         `Charter.acl[].access must be one of read|write|append|none; got "${String(entry.access)}"`,
       )
     }
-    if (typeof entry.reason !== 'string') {
-      throw new Error('Charter.acl[].reason must be a string')
+    if (typeof entry.reason !== 'string' || entry.reason.length === 0) {
+      throw new Error('Charter.acl[].reason must be a non-empty string')
     }
   }
 }
@@ -116,6 +116,11 @@ export function createCharter(spec: Charter): Charter {
 
 /**
  * Predicate: is this Charter shape valid against V2 §1 P2 + V2.2 §A8?
+ *
+ * Deep-validates ACL entries — defensive runtime checks for deserialized records:
+ * - domain_or_charter_id non-empty string
+ * - access in {read, write, append, none}
+ * - reason non-empty string
  */
 export function isValidCharter(c: Charter): boolean {
   if (typeof c !== 'object' || c === null) return false
@@ -127,7 +132,12 @@ export function isValidCharter(c: Charter): boolean {
   if (!Array.isArray(c.constraints)) return false
   if (!Array.isArray(c.acl)) return false
   for (const entry of c.acl) {
+    if (typeof entry !== 'object' || entry === null) return false
+    if (typeof entry.domain_or_charter_id !== 'string' || entry.domain_or_charter_id.length === 0) {
+      return false
+    }
     if (!VALID_ACL_ACCESS.has(entry.access)) return false
+    if (typeof entry.reason !== 'string' || entry.reason.length === 0) return false
   }
   return true
 }

@@ -14,6 +14,7 @@ import type {
   OverrideAction,
   SchemaRef,
   StepAction,
+  StepFailureAction,
   WorkflowStep,
   WorkflowStringency,
 } from '../types/index.js'
@@ -38,6 +39,14 @@ const VALID_STEP_ACTION: ReadonlySet<StepAction> = new Set([
   'spawn_sub_unit',
   'wait',
   'terminate',
+])
+
+const VALID_STEP_FAILURE_ACTION: ReadonlySet<StepFailureAction> = new Set([
+  'rollback',
+  'escalate',
+  'pause',
+  'abort',
+  'continue',
 ])
 
 /**
@@ -123,6 +132,21 @@ function validateStep(step: WorkflowStep, idx: number): void {
   if (typeof step.on_failure !== 'string' || step.on_failure.length === 0) {
     throw new Error(`Workflow.step_graph[${idx}].on_failure must be a non-empty string`)
   }
+  if (!VALID_STEP_FAILURE_ACTION.has(step.on_failure as StepFailureAction)) {
+    throw new Error(
+      `Workflow.step_graph[${idx}].on_failure must be one of rollback|escalate|pause|abort|continue; got "${String(step.on_failure)}"`,
+    )
+  }
+}
+
+/** Validate expects_response_from is null or a non-empty string (BoundaryEndpointRef). */
+function validateExpectsResponseFrom(value: unknown): void {
+  if (value === null || value === undefined) return
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(
+      'Workflow.expects_response_from must be null or a non-empty BoundaryEndpoint reference string',
+    )
+  }
 }
 
 /**
@@ -150,6 +174,40 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     )
   }
 
+  // V2.1 §A4 — expects_response_from must be null or non-empty string
+  validateExpectsResponseFrom(spec.expects_response_from)
+
+  // V2.4 §A12 — modifies_sutra must be boolean (defensive runtime check)
+  if (spec.modifies_sutra !== undefined && typeof spec.modifies_sutra !== 'boolean') {
+    throw new Error(
+      `Workflow.modifies_sutra must be a boolean; got "${typeof spec.modifies_sutra}"`,
+    )
+  }
+
+  // V2.3 §A11 — reuse_tag must be boolean (defensive runtime check)
+  if (spec.reuse_tag !== undefined && typeof spec.reuse_tag !== 'boolean') {
+    throw new Error(
+      `Workflow.reuse_tag must be a boolean; got "${typeof spec.reuse_tag}"`,
+    )
+  }
+
+  const reuseTag: boolean = spec.reuse_tag ?? false
+  const returnContract: SchemaRef | null = spec.return_contract ?? null
+
+  // V2.3 §A11 HARD — Skill (reuse_tag=true) requires a non-empty return_contract schema-ref
+  if (reuseTag) {
+    if (
+      returnContract === null ||
+      returnContract === undefined ||
+      typeof returnContract !== 'string' ||
+      returnContract.length === 0
+    ) {
+      throw new Error(
+        'Workflow.return_contract is required when reuse_tag=true (V2.3 §A11 — every Skill MUST have a return_contract schema-ref)',
+      )
+    }
+  }
+
   const out: Workflow = {
     ...spec,
     step_graph: spec.step_graph.map((s) => ({ ...s, inputs: [...s.inputs], outputs: [...s.outputs] })),
@@ -159,8 +217,8 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     interfaces_with: [...spec.interfaces_with],
     expects_response_from: spec.expects_response_from ?? null,
     on_override_action: onOverride,
-    reuse_tag: spec.reuse_tag ?? false,
-    return_contract: spec.return_contract ?? null,
+    reuse_tag: reuseTag,
+    return_contract: returnContract,
     modifies_sutra: spec.modifies_sutra ?? false,
   }
   return Object.freeze(out)
@@ -168,6 +226,13 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
 
 /**
  * Predicate: is this Workflow shape valid against V2 §1 P3 + amendments?
+ *
+ * Defensively validates deserialized records — TS compile-time types alone are
+ * insufficient when records arrive from JSONL stores or external producers.
+ *
+ * Validates: id, step_graph (incl. on_failure enum, skill_ref XOR action),
+ * stringency, on_override_action, expects_response_from shape, modifies_sutra
+ * type, reuse_tag type, reuse_tag→return_contract HARD requirement (V2.3 §A11).
  */
 export function isValidWorkflow(w: Workflow): boolean {
   if (typeof w !== 'object' || w === null) return false
@@ -175,11 +240,43 @@ export function isValidWorkflow(w: Workflow): boolean {
   if (!Array.isArray(w.step_graph) || w.step_graph.length === 0) return false
   if (!VALID_STRINGENCY.has(w.stringency)) return false
   if (!VALID_OVERRIDE_ACTION.has(w.on_override_action)) return false
+  // V2.1 §A4 — expects_response_from: null OR non-empty string
+  if (
+    w.expects_response_from !== null &&
+    (typeof w.expects_response_from !== 'string' || w.expects_response_from.length === 0)
+  ) {
+    return false
+  }
+  // V2.4 §A12 — modifies_sutra MUST be boolean (defensive)
+  if (typeof w.modifies_sutra !== 'boolean') return false
+  // V2.3 §A11 — reuse_tag MUST be boolean (defensive)
+  if (typeof w.reuse_tag !== 'boolean') return false
+  // V2.3 §A11 HARD — when reuse_tag=true, return_contract MUST be a non-empty string
+  if (w.reuse_tag) {
+    if (
+      w.return_contract === null ||
+      typeof w.return_contract !== 'string' ||
+      w.return_contract.length === 0
+    ) {
+      return false
+    }
+  } else {
+    // reuse_tag=false: return_contract may be null OR a non-empty string
+    if (
+      w.return_contract !== null &&
+      (typeof w.return_contract !== 'string' || w.return_contract.length === 0)
+    ) {
+      return false
+    }
+  }
   for (const step of w.step_graph) {
     const hasSkill = typeof step.skill_ref === 'string' && step.skill_ref.length > 0
     const hasAction = typeof step.action === 'string' && step.action.length > 0
     if (hasSkill === hasAction) return false // both true or both false => invalid
     if (hasAction && !VALID_STEP_ACTION.has(step.action as StepAction)) return false
+    // V2.3 §A11 — on_failure must be in StepFailureAction enum
+    if (typeof step.on_failure !== 'string' || step.on_failure.length === 0) return false
+    if (!VALID_STEP_FAILURE_ACTION.has(step.on_failure as StepFailureAction)) return false
   }
   return true
 }

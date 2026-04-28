@@ -57,6 +57,30 @@ export function createDomain(spec: Domain): Domain {
   if (!Array.isArray(spec.accountable)) {
     throw new Error('Domain.accountable must be an array')
   }
+
+  // V2 spec §1 P1 — D0 root invariant: id='D0' iff parent_id=null
+  if (spec.id === 'D0' && spec.parent_id !== null) {
+    throw new Error('Domain.parent_id must be null when id="D0" (root domain has no parent)')
+  }
+
+  // V2 spec §1 P1 — non-root: parent_id (when non-null) must match D-id pattern
+  if (spec.parent_id !== null) {
+    if (typeof spec.parent_id !== 'string' || !D_ID_PATTERN.test(spec.parent_id)) {
+      throw new Error(
+        `Domain.parent_id must match D-numbered hierarchy pattern (D0, D1, D1.D2, ...); got "${String(spec.parent_id)}"`,
+      )
+    }
+  }
+
+  // V2 spec §1 P1 — Domain.principles is Constraint{durability=durable}
+  for (const p of spec.principles) {
+    if (p.durability !== 'durable') {
+      throw new Error(
+        `Domain.principles[].durability must be "durable" (V2 §1 P1); got "${String(p.durability)}" on principle "${String(p.name)}"`,
+      )
+    }
+  }
+
   return Object.freeze({ ...spec, principles: [...spec.principles], accountable: [...spec.accountable] })
 }
 
@@ -66,6 +90,12 @@ export function createDomain(spec: Domain): Domain {
  * Used by:
  * - registry validation
  * - L5 META containment-edge checks
+ *
+ * Validates V2 §1 P1 invariants:
+ * - id matches D-numbered pattern
+ * - id='D0' ⇒ parent_id=null
+ * - non-root: parent_id matches D-numbered pattern
+ * - principles[*].durability === 'durable'
  */
 export function isValidDomain(d: Domain): boolean {
   if (typeof d !== 'object' || d === null) return false
@@ -76,5 +106,14 @@ export function isValidDomain(d: Domain): boolean {
   if (typeof d.intelligence !== 'string') return false
   if (!Array.isArray(d.accountable)) return false
   if (typeof d.authority !== 'string') return false
+  // V2 §1 P1 — D0 root invariant
+  if (d.id === 'D0' && d.parent_id !== null) return false
+  // V2 §1 P1 — non-root parent_id pattern
+  if (d.parent_id !== null && !D_ID_PATTERN.test(d.parent_id)) return false
+  // V2 §1 P1 — principles must be durable
+  for (const p of d.principles) {
+    if (typeof p !== 'object' || p === null) return false
+    if (p.durability !== 'durable') return false
+  }
   return true
 }

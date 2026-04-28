@@ -159,4 +159,141 @@ describe('Charter primitive (V2 spec §1 Primitive 2 + V2.2 §A8 acl)', () => {
     })
     expect(Object.isFrozen(c)).toBe(true)
   })
+
+  // ---------------------------------------------------------------------------
+  // P1.3 — V2.2 §A8 deep ACL validation
+  // ---------------------------------------------------------------------------
+
+  it('P1.3: createCharter rejects acl entry with empty domain_or_charter_id', () => {
+    expect(() =>
+      createCharter({
+        id: 'C-acl-empty-id',
+        purpose: 'p',
+        scope_in: '',
+        scope_out: '',
+        obligations: [],
+        invariants: [],
+        success_metrics: [],
+        authority: '',
+        termination: '',
+        constraints: [],
+        acl: [{ domain_or_charter_id: '', access: 'read', reason: 'sibling' }],
+      }),
+    ).toThrow(/domain_or_charter_id/)
+  })
+
+  it('P1.3: createCharter rejects acl entry with non-string domain_or_charter_id (number)', () => {
+    expect(() =>
+      createCharter({
+        id: 'C-acl-num-id',
+        purpose: 'p',
+        scope_in: '',
+        scope_out: '',
+        obligations: [],
+        invariants: [],
+        success_metrics: [],
+        authority: '',
+        termination: '',
+        constraints: [],
+        acl: [
+          // @ts-expect-error — runtime guard for non-string
+          { domain_or_charter_id: 42, access: 'read', reason: 'sibling' },
+        ],
+      }),
+    ).toThrow(/domain_or_charter_id/)
+  })
+
+  it('P1.3: createCharter rejects acl entry with empty reason', () => {
+    expect(() =>
+      createCharter({
+        id: 'C-acl-empty-reason',
+        purpose: 'p',
+        scope_in: '',
+        scope_out: '',
+        obligations: [],
+        invariants: [],
+        success_metrics: [],
+        authority: '',
+        termination: '',
+        constraints: [],
+        acl: [{ domain_or_charter_id: 'D1', access: 'read', reason: '' }],
+      }),
+    ).toThrow(/reason/)
+  })
+
+  it('P1.3: createCharter accepts acl entry with all fields valid', () => {
+    const c = createCharter({
+      id: 'C-acl-ok',
+      purpose: 'p',
+      scope_in: '',
+      scope_out: '',
+      obligations: [],
+      invariants: [],
+      success_metrics: [],
+      authority: '',
+      termination: '',
+      constraints: [],
+      acl: [{ domain_or_charter_id: 'D1', access: 'read', reason: 'parent domain' }],
+    })
+    expect(isValidCharter(c)).toBe(true)
+    expect(c.acl).toHaveLength(1)
+    expect(c.acl[0]?.reason).toBe('parent domain')
+  })
+
+  it('P1.3: isValidCharter returns false for deserialized acl with empty domain_or_charter_id', () => {
+    const bad = {
+      id: 'C-deser-empty-id',
+      purpose: 'p',
+      scope_in: '',
+      scope_out: '',
+      obligations: [],
+      invariants: [],
+      success_metrics: [],
+      authority: '',
+      termination: '',
+      constraints: [],
+      acl: [{ domain_or_charter_id: '', access: 'read' as const, reason: 'sibling' }],
+    }
+    expect(isValidCharter(bad)).toBe(false)
+  })
+
+  it('P1.3: isValidCharter returns false for deserialized acl with non-string domain_or_charter_id', () => {
+    const bad = {
+      id: 'C-deser-num-id',
+      purpose: 'p',
+      scope_in: '',
+      scope_out: '',
+      obligations: [],
+      invariants: [],
+      success_metrics: [],
+      authority: '',
+      termination: '',
+      constraints: [],
+      acl: [
+        {
+          domain_or_charter_id: 42 as unknown as string,
+          access: 'read' as const,
+          reason: 'sibling',
+        },
+      ],
+    }
+    expect(isValidCharter(bad)).toBe(false)
+  })
+
+  it('P1.3: isValidCharter returns false for deserialized acl with empty reason', () => {
+    const bad = {
+      id: 'C-deser-empty-reason',
+      purpose: 'p',
+      scope_in: '',
+      scope_out: '',
+      obligations: [],
+      invariants: [],
+      success_metrics: [],
+      authority: '',
+      termination: '',
+      constraints: [],
+      acl: [{ domain_or_charter_id: 'D1', access: 'read' as const, reason: '' }],
+    }
+    expect(isValidCharter(bad)).toBe(false)
+  })
 })

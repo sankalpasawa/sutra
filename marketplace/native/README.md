@@ -43,3 +43,16 @@ Native is self-contained. Does NOT depend on Core plugin internals. Core (existi
 
 > **M2 primitive contracts** inherit ops surface from §Operationalization above
 > (measurement = test-coverage; iteration trigger = contract-violation in CI).
+
+> **M2 patch (2026-04-28)** — primitive validators tightened; constructors now
+> reject spec-illegal shapes at boundary. Workflow.createWorkflow HARD-rejects
+> reuse_tag=true with null/empty return_contract (V2.3 §A11). Workflow
+> step_graph[i].on_failure validated against StepFailureAction enum;
+> expects_response_from shape (null|non-empty string) and modifies_sutra type
+> defensively checked. isValidWorkflow extends to all routing/gating fields
+> for deserialized records. Charter ACL deeply validated
+> (domain_or_charter_id non-empty string, reason non-empty) in both
+> createCharter and isValidCharter. Domain enforces V2 §1 P1 invariants:
+> id='D0' iff parent_id=null; non-root parent_id matches D-pattern;
+> principles[*].durability='durable'. 26 new contract tests (43→69). Tag:
+> native-v1.0-m2-codex-p1-fixed.

@@ -242,4 +242,288 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
     })
     expect(Object.isFrozen(w)).toBe(true)
   })
+
+  // ---------------------------------------------------------------------------
+  // P1.1 — V2.3 §A11: Skill (reuse_tag=true) MUST have a return_contract schema-ref
+  // ---------------------------------------------------------------------------
+
+  it('P1.1: rejects reuse_tag=true with return_contract=null', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-skill-null-rc',
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        reuse_tag: true,
+        return_contract: null,
+      }),
+    ).toThrow(/return_contract.*reuse_tag=true|V2\.3 §A11/i)
+  })
+
+  it('P1.1: rejects reuse_tag=true with return_contract omitted', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-skill-undef-rc',
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        reuse_tag: true,
+      }),
+    ).toThrow(/return_contract.*reuse_tag=true|V2\.3 §A11/i)
+  })
+
+  it('P1.1: rejects reuse_tag=true with empty-string return_contract', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-skill-empty-rc',
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        reuse_tag: true,
+        return_contract: '',
+      }),
+    ).toThrow(/return_contract.*reuse_tag=true|V2\.3 §A11/i)
+  })
+
+  it('P1.1: accepts reuse_tag=true with non-empty return_contract', () => {
+    const skill = createWorkflow({
+      id: 'W-skill-ok',
+      preconditions: 'true',
+      step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+      reuse_tag: true,
+      return_contract: 'schema-ref-v1',
+    })
+    expect(skill.reuse_tag).toBe(true)
+    expect(skill.return_contract).toBe('schema-ref-v1')
+    expect(isValidWorkflow(skill)).toBe(true)
+  })
+
+  // ---------------------------------------------------------------------------
+  // P1.2 — V2 §3 HARD: routing/gating fields strictly validated
+  // ---------------------------------------------------------------------------
+
+  it('P1.2(a): rejects step.on_failure outside StepFailureAction enum (createWorkflow)', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-bad-onfail',
+        preconditions: 'true',
+        step_graph: [
+          {
+            step_id: 1,
+            action: 'terminate',
+            inputs: [],
+            outputs: [],
+            // @ts-expect-error — runtime guard
+            on_failure: 'garbage',
+          },
+        ],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+      }),
+    ).toThrow(/on_failure.*rollback\|escalate\|pause\|abort\|continue/i)
+  })
+
+  it('P1.2(a): isValidWorkflow returns false for step.on_failure="garbage"', () => {
+    // Build a record bypassing the constructor (simulating deserialized JSONL)
+    const bad = {
+      id: 'W-deser-onfail',
+      preconditions: 'true',
+      step_graph: [
+        {
+          step_id: 1,
+          action: 'terminate' as const,
+          inputs: [],
+          outputs: [],
+          on_failure: 'garbage' as unknown as 'abort',
+        },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task' as const,
+      interfaces_with: [],
+      expects_response_from: null,
+      on_override_action: 'escalate' as const,
+      reuse_tag: false,
+      return_contract: null,
+      modifies_sutra: false,
+    }
+    expect(isValidWorkflow(bad)).toBe(false)
+  })
+
+  it('P1.2(b): rejects expects_response_from = empty string (createWorkflow)', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-bad-erf',
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        expects_response_from: '',
+      }),
+    ).toThrow(/expects_response_from/i)
+  })
+
+  it('P1.2(b): isValidWorkflow returns false for expects_response_from = empty string', () => {
+    const bad = {
+      id: 'W-deser-erf',
+      preconditions: 'true',
+      step_graph: [
+        { step_id: 1, action: 'terminate' as const, inputs: [], outputs: [], on_failure: 'abort' as const },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task' as const,
+      interfaces_with: [],
+      expects_response_from: '',
+      on_override_action: 'escalate' as const,
+      reuse_tag: false,
+      return_contract: null,
+      modifies_sutra: false,
+    }
+    expect(isValidWorkflow(bad)).toBe(false)
+  })
+
+  it('P1.2(c): isValidWorkflow returns false for modifies_sutra = "true" (string not bool)', () => {
+    const bad = {
+      id: 'W-deser-mod',
+      preconditions: 'true',
+      step_graph: [
+        { step_id: 1, action: 'terminate' as const, inputs: [], outputs: [], on_failure: 'abort' as const },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task' as const,
+      interfaces_with: [],
+      expects_response_from: null,
+      on_override_action: 'escalate' as const,
+      reuse_tag: false,
+      return_contract: null,
+      // simulate deserialized record where boolean became string
+      modifies_sutra: 'true' as unknown as boolean,
+    }
+    expect(isValidWorkflow(bad)).toBe(false)
+  })
+
+  it('P1.2(c): createWorkflow rejects non-boolean modifies_sutra at boundary', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-bad-mod',
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        // @ts-expect-error — runtime guard
+        modifies_sutra: 'true',
+      }),
+    ).toThrow(/modifies_sutra/i)
+  })
+
+  it('P1.2: rejects on_override_action="splat" (not in V2.2 §A10 enum)', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-bad-override',
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        // @ts-expect-error — runtime guard
+        on_override_action: 'splat',
+      }),
+    ).toThrow(/on_override_action/i)
+  })
+
+  it('P1.2: isValidWorkflow returns false for on_override_action="splat" on deserialized record', () => {
+    const bad = {
+      id: 'W-deser-override',
+      preconditions: 'true',
+      step_graph: [
+        { step_id: 1, action: 'terminate' as const, inputs: [], outputs: [], on_failure: 'abort' as const },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task' as const,
+      interfaces_with: [],
+      expects_response_from: null,
+      on_override_action: 'splat' as unknown as 'escalate',
+      reuse_tag: false,
+      return_contract: null,
+      modifies_sutra: false,
+    }
+    expect(isValidWorkflow(bad)).toBe(false)
+  })
+
+  it('P1.2: accepts expects_response_from = non-empty BoundaryEndpointRef string', () => {
+    const w = createWorkflow({
+      id: 'W-erf-ok',
+      preconditions: 'true',
+      step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+      expects_response_from: 'codex://reviewer',
+    })
+    expect(w.expects_response_from).toBe('codex://reviewer')
+    expect(isValidWorkflow(w)).toBe(true)
+  })
 })
