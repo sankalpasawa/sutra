@@ -59,8 +59,12 @@ if [ "$FORCE" -ne 1 ] && [ ! -f "$PROJECT_ROOT/.claude/sutra-project.json" ]; th
     REFUSE=1; REASON="you're at $PROJECT_ROOT — not a project"
   elif [ ! -e "$PROJECT_ROOT/.git" ] && [ ! -f "$PROJECT_ROOT/package.json" ] \
        && [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ ! -f "$PROJECT_ROOT/Cargo.toml" ] \
-       && [ ! -f "$PROJECT_ROOT/go.mod" ] && [ ! -f "$PROJECT_ROOT/CLAUDE.md" ]; then
-    REFUSE=1; REASON="no project markers in $PROJECT_ROOT (.git / package.json / pyproject.toml / Cargo.toml / go.mod / CLAUDE.md)"
+       && [ ! -f "$PROJECT_ROOT/go.mod" ] && [ ! -f "$PROJECT_ROOT/CLAUDE.md" ] \
+       && [ ! -d "$PROJECT_ROOT/.claude" ]; then
+    # v2.8.6 — accept .claude/ as a project marker (vinit#35, 2026-04-28).
+    # A directory containing .claude/settings.local.json or .claude/heartbeats
+    # is unambiguously a Claude Code project even if it lacks .git/etc.
+    REFUSE=1; REASON="no project markers in $PROJECT_ROOT (.git / package.json / pyproject.toml / Cargo.toml / go.mod / CLAUDE.md / .claude/)"
   fi
   if [ "$REFUSE" -eq 1 ]; then
     cat >&2 <<EOF
@@ -71,7 +75,7 @@ Running /core:start in a non-project directory pollutes user-level files
 project after your OS username.
 
 Fix: cd into a real project (one with .git/, package.json, pyproject.toml,
-Cargo.toml, go.mod, or CLAUDE.md), then re-run /core:start.
+Cargo.toml, go.mod, CLAUDE.md, or .claude/), then re-run /core:start.
 
 Override (not recommended): re-run with --force.
 EOF

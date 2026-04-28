@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.8.6 — 2026-04-28
+
+**Vinit feedback round — two deterministic fixes (`vinit#25` bug 2 + `vinit#35`).**
+
+Round of marketplace-feedback closures from @vinitharmalkar's reports filed 2026-04-28. Two bugs that had clear specs and surgical fixes are addressed here; non-deterministic issues (#8 plugin/holding L1 layering, #26 hook-transparency UX, zsh `$0` expansion at command-substitution boundary) deferred pending design decisions.
+
+### Fixed
+
+- **`scripts/feedback.sh` — derive GitHub issue title from first content line** (vinit#25 bug 2). Prior behavior: every `sutra feedback --public` invocation produced an issue titled `[feedback v${PLUGIN_VERSION}] from plugin`, regardless of body — making the inbox untriageable (16+ identical titles in #16-#34). New behavior: title is `[v${PLUGIN_VERSION}] <first non-blank, non-frontmatter, non-redacted content line, capped at 80 chars>`. Falls back to the legacy generic format only when the body has no usable line. Awk-based extraction (single-pass, bash-3.2-safe). Version prefix retained for filterability. Tested with 6 cases (Bug:/Feature: prefixes, leading blanks, frontmatter separators, fully-redacted bodies, long lines, empty input).
+
+- **`scripts/start.sh` — accept `.claude/` directory as a valid project marker** (vinit#35). Prior behavior: `/core:start` refused to activate in directories that contain `.claude/settings.local.json` or `.claude/heartbeats` but lack `.git/`/`package.json`/`pyproject.toml`/`Cargo.toml`/`go.mod`/`CLAUDE.md`, requiring users to discover `--force`. New behavior: `.claude/` directory presence is sufficient to identify a Claude Code project. Marker list in error message updated to surface `.claude/`. Existing protections (HOME-dir refusal, `/`/`/tmp` refusal, canonical-path symlink-resolution) preserved. Smoke-tested: a tempdir with only `.claude/settings.local.json` is now accepted.
+
+### Not addressed in this version (deferred)
+
+- **vinit#8** (Assistant Interaction Layer ships as L1 in marketplace plugin; observer not registered in hooks.json; `holding/` paths missing on user machines) — requires architectural decision: promote observer to L0 + register, or strip the `sutra explain/ask/answer/pending` subcommands from `bin/sutra`. Tracked separately.
+- **vinit#26** (feedback-routing-rule hook silently injected via UserPromptSubmit; user has no UI surface) — requires UX design for transparency surfacing.
+- **zsh `$0` expansion bug** (dollar amounts like `$0.14` corrupted to `/bin/zsh.14` in published feedback bodies) — root cause is at the Claude-Code `$ARGUMENTS` text-substitution boundary in `commands/feedback.md`; fix requires moving body delivery to a quoted heredoc / env-passing path with split flag parsing in `feedback.sh`. Tracked separately.
+
+### Acceptance
+
+- `bash -n scripts/feedback.sh` and `bash -n scripts/start.sh` clean.
+- 6/6 title-derivation cases pass under bash 3.2 (macOS default).
+- `.claude/`-only tempdir accepted by the marker-check; HOME-dir / `/tmp` refusals preserved.
+
 ## v2.8.5 — 2026-04-28
 
 **D38 Wave 9 — Bucket C activation: 10 promoted hooks now registered in plugin hooks.json (fleet-wide auto-fire).**

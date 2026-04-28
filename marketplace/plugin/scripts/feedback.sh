@@ -208,7 +208,24 @@ if [ "$PUBLIC" = "1" ]; then
     # because neither label exists on the repo (gh issue create rejects the
     # whole call when any label is unknown). Title-prefix is sufficient for
     # filterability; downstream label automation (if any) can match by prefix.
-    TITLE="[feedback v${PLUGIN_VERSION}] from plugin"
+    #
+    # v2.8.6 — derive title from first content line so the inbox is triageable.
+    # Per vinit#25 bug 2 (2026-04-28): every issue titled identically made
+    # 16+ filings indistinguishable. We pull the first non-blank, non-frontmatter,
+    # non-redacted line and cap at 80 chars; version prefix retained for
+    # filterability. Falls back to legacy generic only when body has no usable line.
+    DERIVED_TITLE=$(printf '%s\n' "$SCRUBBED" | awk '
+      { sub(/^[[:space:]]+/,""); sub(/[[:space:]]+$/,"") }
+      /^$/        { next }
+      /^---$/     { next }
+      /<HIGH-ENTROPY>/ { next }
+      { print substr($0, 1, 80); exit }
+    ')
+    if [ -n "$DERIVED_TITLE" ]; then
+      TITLE="[v${PLUGIN_VERSION}] ${DERIVED_TITLE}"
+    else
+      TITLE="[feedback v${PLUGIN_VERSION}] from plugin"
+    fi
     GH_OUT=$(gh issue create \
          --repo sankalpasawa/sutra \
          --title "$TITLE" \
@@ -216,6 +233,39 @@ if [ "$PUBLIC" = "1" ]; then
     if [ $? -eq 0 ]; then
       echo "-- issue opened on sankalpasawa/sutra"
       echo "   ${GH_OUT}"
+
+      # v2.7.x — Close-Loop Layer V0: record install_id ↔ issue_number mapping
+      # so when the fix ships, close-marketplace-feedback.sh can deliver the
+      # close-out to THIS user's plugin inbox (not just gh comment).
+      # Mapping is private — not embedded in public gh issue body.
+      ISSUE_URL=$(printf '%s\n' "$GH_OUT" | grep -oE 'https://github.com/[^[:space:]]+/issues/[0-9]+' | tail -1)
+      ISSUE_NUM=$(printf '%s' "$ISSUE_URL" | grep -oE '[0-9]+$')
+      if [ -n "$ISSUE_NUM" ]; then
+        # 1. Local sent ledger (used by plugin's gh-API fallback to know which issues are "ours")
+        SENT_LOG="$SUTRA_HOME/feedback/manual/sent.jsonl"
+        mkdir -p "$(dirname "$SENT_LOG")" 2>/dev/null
+        chmod 0700 "$SUTRA_HOME/feedback/manual" 2>/dev/null
+        printf '{"ts":%s,"issue_number":%s,"title":"%s","plugin_version":"%s","url":"%s"}\n' \
+          "$(date +%s)" "$ISSUE_NUM" "$TITLE" "$PLUGIN_VERSION" "$ISSUE_URL" \
+          >> "$SENT_LOG" 2>/dev/null
+
+        # 2. Private mapping push to sutra-data (clients/<install_id>/feedback-mapping.jsonl)
+        # Reuses the install_id resolution from the fanout block above; falls
+        # through silently if cache not initialized (next push will catch up).
+        if [ -d "$SUTRA_HOME/sutra-data-cache/.git" ] && [ -n "${install_id:-}" ]; then
+          MAP_FILE="$SUTRA_HOME/sutra-data-cache/clients/$install_id/feedback-mapping.jsonl"
+          mkdir -p "$(dirname "$MAP_FILE")" 2>/dev/null
+          printf '{"ts":%s,"issue_number":%s,"title":"%s","plugin_version":"%s"}\n' \
+            "$(date +%s)" "$ISSUE_NUM" "$TITLE" "$PLUGIN_VERSION" \
+            >> "$MAP_FILE" 2>/dev/null
+          (cd "$SUTRA_HOME/sutra-data-cache" \
+            && git add "clients/$install_id/feedback-mapping.jsonl" >/dev/null 2>&1 \
+            && git -c user.name="sutra-plugin" -c user.email="plugin@sutra.os" \
+               commit -q -m "feedback-mapping: $install_id issue $ISSUE_NUM" >/dev/null 2>&1 \
+            && git push -q 2>/dev/null) || true   # best-effort; will retry on next push
+        fi
+        echo "-- close-loop mapping recorded (issue #$ISSUE_NUM)"
+      fi
     else
       echo "-- gh issue create failed — feedback remains captured locally at $FILE"
       echo "   reason: ${GH_OUT}"
