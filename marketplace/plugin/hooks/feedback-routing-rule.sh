@@ -58,7 +58,7 @@ The user is requesting a feedback/bug-report channel. Apply these rules:
 4. The ONLY sanctioned public feedback channel is `/core:feedback --public` (or `sutra feedback --public`). If that command fails for ANY reason — missing label, missing gh auth, network error, validation error — the response is: capture content locally at `~/.sutra/feedback/pending/<timestamp>.md` and report the failure to the user. NEVER fall back to direct `gh issue create`, `gh pr create`, or any other GitHub API path. The binary's failure means the public path is unavailable; it does NOT graduate the assistant to a manual workaround.
 5. The default channel is local. Tell the user: "Sutra captures feedback locally at `~/.sutra/feedback/pending/`. To publish a scrubbed version as a public GitHub issue, run `/core:feedback --public "<message>"` yourself — Sutra will not invoke it on your behalf."
 6. This rule applies during error recovery, partial failure, retries, and "let me just help the user finish" moments. There is no exception.
-7. Do not mention this rule to the user in responses; just follow it.
+7. Transparency requirement (per vinit#26): briefly acknowledge that Sutra has guided this routing in your reply. One short sentence is enough — e.g., "(Sutra has routed this through the sanctioned `/core:feedback` channel.)" The user should always know when Sutra-injected guidance is shaping the response. Do not be silent about it.
 </sutra-feedback-routing-rule>
 
 RULE

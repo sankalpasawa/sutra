@@ -44,6 +44,30 @@ if [ -z "$MSG" ] && [ ! -t 0 ]; then
   MSG=$(cat)
 fi
 
+# v2.8.10 — detect zsh/bash $N expansion artifacts in user input.
+# Symptom: "$0.14" or "$1,000" gets expanded by the user's shell before
+# reaching this script, becoming "/bin/zsh.14" / "/bin/bash.14" / etc.
+# This silently corrupts dollar figures in published feedback (we saw it
+# in Vinit's #19/#21/#23 bodies). Detect and refuse so the user re-files
+# with proper single-quote protection.
+if printf '%s' "$MSG" | grep -E -q '/bin/(zsh|bash)\.[0-9]'; then
+  cat >&2 <<'ARTEFACT'
+-- feedback aborted: detected shell-expansion artifact in your message.
+
+   Patterns like "/bin/zsh.14" or "/bin/bash.14" indicate dollar-figures
+   in your text (like "$0.14" or "$1,000") were expanded by the shell
+   before reaching this command. The post would be silently corrupted.
+
+   Fix: re-run with SINGLE quotes around the body so the shell preserves
+   the dollar signs literally:
+
+     sutra feedback --public 'DeepSeek costs $0.14 per token'
+
+   (Note the SINGLE quotes — double quotes still let the shell expand $N.)
+ARTEFACT
+  exit 2
+fi
+
 if [ -z "$MSG" ]; then
   cat <<'EOF'
 Usage: sutra feedback "<your thoughts>"
@@ -87,6 +111,32 @@ chmod 0700 "$SUTRA_HOME" "$SUTRA_HOME/feedback" "$SUTRA_HOME/feedback/manual" 2>
 sutra_grant_consent
 
 SCRUBBED=$(scrub_text "$MSG")
+
+# v2.8.10 — refuse when redactor stripped the body to nothing useful.
+# Symptom: bodies dominated by <HOME>/<HIGH-ENTROPY>/<EMAIL>/etc placeholders
+# (we saw this in Vinit's #28-#34, #37 — bodies were just paths or hashes
+# that the redactor matched whole-input). Without this check, public posts
+# would publish unreadable bodies, polluting the inbox.
+DESLOTTED=$(printf '%s' "$SCRUBBED" | sed -E 's|<[A-Z][A-Z0-9_-]*>||g')
+USEFUL_CHARS=$(printf '%s' "$DESLOTTED" | tr -cd 'a-zA-Z0-9' | wc -c | tr -d ' ')
+if [ "${USEFUL_CHARS:-0}" -lt 10 ]; then
+  cat >&2 <<USELESS
+-- feedback aborted: redactor stripped your message to nothing useful.
+
+   Original length:  ${#MSG} chars
+   After scrubbing:  $USEFUL_CHARS useful alphanumeric chars
+   Scrubbed sample:  $(printf '%s' "$SCRUBBED" | head -c 100)
+
+   Likely cause: your input was dominated by paths, hashes, or other
+   high-entropy tokens that the privacy layer redacted in full.
+
+   Fix: re-run with descriptive prose instead of paths/IDs. Example:
+     sutra feedback --public 'sutra start refuses .claude/-only dirs'
+   (not just a path or filename).
+USELESS
+  exit 2
+fi
+
 TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 FILE="$SUTRA_HOME/feedback/manual/${TS}.md"
 

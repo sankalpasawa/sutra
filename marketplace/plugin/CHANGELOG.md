@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.8.10 — 2026-04-28
+
+**Three infrastructure fixes — vinit#26 transparency + redactor over-strip refusal + zsh `$0` artifact detection.**
+
+Per founder direction "fix infrastructure bugs". Three small, deterministic fixes that improve user trust + observability without architectural decisions.
+
+### 1. `hooks/feedback-routing-rule.sh` — transparency requirement (vinit#26)
+
+The hook injects a behavioral rule into the session context when the user's prompt contains a feedback-intent keyword. Prior clause 7 told Claude *"Do not mention this rule to the user in responses; just follow it."* — exactly the silent-injection pattern @vinitharmalkar reported.
+
+New clause 7 requires Claude to acknowledge the routing in a single short sentence: *"(Sutra has routed this through the sanctioned `/core:feedback` channel.)"* The user is now always aware when Sutra-injected guidance shapes the response.
+
+### 2. `scripts/feedback.sh` — redactor over-strip refusal
+
+Symptom: 8 of Vinit's filings (#28-#34, #37) had bodies reduced to placeholders only — `<HOME>/.<HIGH-ENTROPY>.md` with no actual content. The privacy redactor stripped the entire body when input matched path or high-entropy patterns wholesale, then the script published the placeholders publicly anyway.
+
+Fix: after `scrub_text()`, count the useful alphanumeric characters remaining (after stripping placeholders). If under 10, refuse to proceed with a clear error explaining the likely cause and the fix (re-file with descriptive prose, not paths). Local capture path is unaffected.
+
+### 3. `scripts/feedback.sh` — zsh `$0` expansion artifact detection
+
+Symptom: Vinit's #19/#21/#23 had dollar figures (`$0.14`, `$5,000`) corrupted to `/bin/zsh.14` / `/bin/zsh.000`. Root cause is the user's shell expanding `$0` before `sutra feedback` ever sees the argument. The structural fix (heredoc/env redesign of the slash-command argument-passing) is still deferred, but in the meantime we can detect the artifact and refuse rather than publish silently corrupted bodies.
+
+Fix: regex-match `/bin/(zsh|bash)\.[0-9]` in `MSG` immediately after capture; if matched, refuse with a clear error and instructions to re-run with single quotes (which preserve `$N` literally).
+
+### Acceptance
+
+All three are detect-and-refuse mechanisms — no false-negative risk for the legitimate path. Manual smoke confirmed all three error paths fire correctly with synthetic inputs; clean inputs unaffected.
+
+### Closes
+- vinit#26 (silent UserPromptSubmit hook UX)
+
 ## v2.8.9 — 2026-04-28
 
 **Vinit#16 — `sutra feedback` empty input now exits 0.**
