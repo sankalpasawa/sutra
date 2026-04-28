@@ -62,7 +62,10 @@ Flags:
              Falls back to local-only capture if gh missing / not authed /
              user cancels.
 EOF
-  exit 1
+  # v2.8.9 — empty-input is not a failure; printing usage IS the action.
+  # Per vinit#16: prior `exit 1` made the slash-command invocation report
+  # error in pipelines and broke /core:feedback with no args.
+  exit 0
 fi
 
 if [ "$PUBLIC" = "1" ]; then

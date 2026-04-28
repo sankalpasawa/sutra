@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.8.9 — 2026-04-28
+
+**Vinit#16 — `sutra feedback` empty input now exits 0.**
+
+@vinitharmalkar reported (#16) that calling `sutra feedback` with no arguments prints usage to stdout but exits with code 1, which makes the `/core:feedback` slash-command invocation report failure in pipelines.
+
+### Changed
+
+`scripts/feedback.sh` line 65: `exit 1` → `exit 0` after the usage block. Empty input is not a failure — printing usage IS the action when no args are provided. Equivalent to most `git`/`gh` subcommand conventions where `--help` exits 0.
+
 ## v2.8.8 — 2026-04-28
 
 **Vinit#17 second encounter — `feedback-channel-guard.sh` body-content false-positive (re-fix).**
