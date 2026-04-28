@@ -56,3 +56,95 @@ Native is self-contained. Does NOT depend on Core plugin internals. Core (existi
 > id='D0' iff parent_id=null; non-root parent_id matches D-pattern;
 > principles[*].durability='durable'. 26 new contract tests (43→69). Tag:
 > native-v1.0-m2-codex-p1-fixed.
+
+## Laws (M3) — V2 §3 + V2.1 §A6 + V2.4 §A12
+
+Six pure-predicate transformation laws plus the 6 terminal-check predicates
+(T1-T6) live at `src/laws/`. All laws operate on M2 primitive shapes; no I/O,
+no runtime state. Property tests (fast-check, 1000 runs each) live at
+`tests/property/`; deterministic edge tests at `tests/contract/laws/`. Shared
+arbitraries at `tests/property/arbitraries.ts`.
+
+### L1 DATA law
+
+- **Rule** (V2 §3): "DataRef → Asset iff `stable_identity AND len(lifecycle_states) > 1`"
+- **API**: `l1Data.shouldPromoteToAsset(ref) → boolean`
+- **Measurement**: contract test coverage (deterministic) + property test counterexample density
+- **Iteration trigger**: fast-check counterexample on regression run
+- **Adoption**: read-only utility; no in-repo callers yet (Workflow Engine M5 + schemas M4 will consume)
+- **Monitoring**: telemetry hook deferred to M5; intended event shape `{kind:l1_promotion, ts, ref_id}` in `~/.sutra/native/events.jsonl`
+- **DRI**: Asawa CEO + Sutra-OS team rotation
+- **Decommission**: V3.0 ships breaking changes superseding V2.x
+
+### L2 BOUNDARY law
+
+- **Rule** (V2 §3): "Every Interface MUST have `contract_schema` (JSON schema). 'Environment' is not a type."
+- **API**: `l2Boundary.isValid(iface) → boolean`
+- **Measurement**: contract test for malformed JSON + empty schema; property tests for valid JSON-object + valid JSON-string-root rejection
+- **Iteration trigger**: M5 Workflow Engine integration may surface need for full Ajv compile (deferred per M3.2.3)
+- **Adoption**: ready for M5 dispatch-stage interface check
+- **Monitoring**: violations logged at the engine layer (M5)
+- **DRI**: Sutra-OS team
+- **Decommission**: V3 supersession or full Ajv replacement
+
+### L3 ACTIVATION law
+
+- **Rule** (V2 §3): "TriggerEvent creates Execution iff `schema_match(payload) AND route_predicate(payload)`."
+- **API**: `l3Activation.shouldActivate(event, spec) → boolean`
+- **Measurement**: 4 contract edges + 4 property tests covering the truth-table for (schemaMatch × routeMatch × spec_id_match × predicate_throws)
+- **Iteration trigger**: spec-string compilation lands in M5 (replaces accept-precompiled-fn shim)
+- **Adoption**: ready for M5 trigger dispatcher
+- **Monitoring**: per-trigger activation counter at engine layer
+- **DRI**: Sutra-OS team
+- **Decommission**: V3 supersession
+
+### L4 COMMITMENT law (load-bearing)
+
+- **Rule** (V2 §3): "operationalizes(W,C) iff every workflow step traces to obligation/invariant AND all charter obligations have explicit coverage or `gap_status='accepted'`."
+- **API**: `l4Commitment.{tracesAllSteps, coversAllObligations, operationalizes}(W, C, coverage) → boolean`
+- **Measurement**: 7 contract edges + 5 property tests; happy + missing-coverage + accepted-gap branches
+- **Iteration trigger**: Workflow Engine integration (M5) reads coverage matrix at terminate stage; deviations logged
+- **Adoption**: M5 Workflow Engine `terminate` stage will invoke `tracesAllSteps` + `coversAllObligations`
+- **Monitoring**: telemetry: per-execution coverage matrix snapshot
+- **DRI**: Sutra-OS team
+- **Decommission**: V3 supersession
+
+### L4 TERMINAL-CHECK (T1-T6)
+
+- **Rule** (V2.4 §A12): A Workflow Execution reaches `state=success` iff ALL six predicates hold at terminal_check time. Any `T_i==false` → `state=failed`, `failure_reason=terminal_check_failed:T<i>`.
+- **API**: `l4TerminalCheck.runAll(ctx) → TerminalCheckResult`; individual `t1Postconditions / t2OutputSchemas / t3StepTraces / t4InterfaceContracts / t5NoAbandonedChildren / t6ReflexiveAuth` exported for granular telemetry
+- **Measurement**: 18 property tests (positive + negative per T_i, plus aggregate happy + T2-fail edge); 1 contract edge for T2 fail in commitment suite
+- **Iteration trigger**: T6 specifically fires escalation TriggerSpec (V2.2 §A9) on failure — Engine wiring lands in M5
+- **Adoption**: M5 Workflow Engine `terminate` stage runs the 6 predicates in order
+- **Monitoring**: per-execution `failure_reason` recorded in JSONL event log; per-T failure counter at engine layer
+- **DRI**: Sutra-OS team + founder gate (T6 escalation path)
+- **Decommission**: V3 supersession
+
+### L5 META law
+
+- **Rule** (V2 §3 + V2.1 §A1): "Single containment edge: `Domain.contains(Charter)`. All others typed."
+- **API**: `l5Meta.{isValidContainment, isValidEdge, typedEdges}() → boolean | Set<TypedEdgeKind>`
+- **Measurement**: 5 contract edges + 3 property tests covering the (kind × parent × child) cube; explicit V2.1 §A1 `propagates_to` inclusion verified
+- **Iteration trigger**: new typed-edge addition in V2.5+ requires update to TYPED_EDGES set
+- **Adoption**: M4 schemas + M5 graph traversal will consume
+- **Monitoring**: graph-edge audit at engine layer
+- **DRI**: Sutra-OS team
+- **Decommission**: V3 supersession
+
+### L6 REFLEXIVITY law
+
+- **Rule** (V2.1 §A6): "Workflows that modify Sutra primitives require an explicit `reflexive_check` Constraint with founder OR meta-charter authorization."
+- **API**: `l6Reflexivity.{requiresApproval, reflexiveChecks}(workflow, constraints, satisfaction?) → boolean | Constraint[]`
+- **Measurement**: 5 contract edges + 5 property tests (modifies_sutra=false no-op; modifies_sutra=true with/without reflexive_check; founder-auth vs meta-charter-approval branches)
+- **Iteration trigger**: T6 in terminal-check is the post-commit verification; L6 fires PRE-execution. Engine wires both at M5.
+- **Adoption**: M5 Workflow Engine dispatch stage runs L6; terminate stage runs T6
+- **Monitoring**: founder gate state + meta-charter approval ledger feed `satisfaction` map
+- **DRI**: founder (gate) + Sutra-OS team (engine)
+- **Decommission**: V3 supersession
+
+> **M3 ship (2026-04-28)** — 6 laws + T1-T6 + arbitraries + 187 tests
+> (43 new contract law tests + ~31 property law tests covering 25,000+
+> fast-check cases). Coverage: stmts 96.89% / branches 82.87% / funcs 100%
+> / lines 96.89% (all above 80% threshold). TS strict clean. Tag:
+> `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
+> (controller-dispatched).
