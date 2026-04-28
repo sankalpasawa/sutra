@@ -1,0 +1,133 @@
+/**
+ * CHARTER — V2 spec §1 Primitive 2 + V2.2 §A8 (acl[])
+ *
+ * Durable commitment envelope. Owns Workflows that operationalize this commitment.
+ *
+ * Source-of-truth: holding/research/2026-04-28-v2-architecture-spec.md §1 P2 + §17 A8
+ */
+
+import type { AclAccess, AclEntry, Constraint } from '../types/index.js'
+
+/** Charter id starts with 'C-' followed by an opaque hash/identifier (>=1 char). */
+const C_ID_PATTERN = /^C-.+$/
+
+const VALID_ACL_ACCESS: ReadonlySet<AclAccess> = new Set([
+  'read',
+  'write',
+  'append',
+  'none',
+])
+
+/**
+ * Charter primitive shape — V2 §1 + V2.2 §A8.
+ */
+export interface Charter {
+  id: string
+  /** 1-line outcome statement; required non-empty (HARD per V2 §3) */
+  purpose: string
+  /** what is included (machine-checkable predicate) */
+  scope_in: string
+  /** what is explicitly excluded */
+  scope_out: string
+  /** what MUST be delivered; each Constraint typed obligation or untyped */
+  obligations: Constraint[]
+  /** what MUST always hold; each Constraint typed invariant or untyped */
+  invariants: Constraint[]
+  /** how to measure delivery */
+  success_metrics: string[]
+  /** inherited from parent Domain; may be narrower */
+  authority: string
+  /** decommission criteria */
+  termination: string
+  /** episodic Constraints (durability='episodic') */
+  constraints: Constraint[]
+  /** V2.2 §A8 — per-Domain/Charter access control list */
+  acl: AclEntry[]
+}
+
+function validateConstraintRole(
+  list: Constraint[],
+  expected: 'obligation' | 'invariant',
+  fieldName: string,
+): void {
+  for (const c of list) {
+    if (c.type !== undefined && c.type !== expected) {
+      throw new Error(
+        `Charter.${fieldName}[] entries must have Constraint.type='${expected}' (or undefined); got "${c.type}"`,
+      )
+    }
+  }
+}
+
+function validateAcl(acl: AclEntry[]): void {
+  for (const entry of acl) {
+    if (typeof entry.domain_or_charter_id !== 'string' || entry.domain_or_charter_id.length === 0) {
+      throw new Error('Charter.acl[].domain_or_charter_id must be a non-empty string')
+    }
+    if (!VALID_ACL_ACCESS.has(entry.access)) {
+      throw new Error(
+        `Charter.acl[].access must be one of read|write|append|none; got "${String(entry.access)}"`,
+      )
+    }
+    if (typeof entry.reason !== 'string') {
+      throw new Error('Charter.acl[].reason must be a string')
+    }
+  }
+}
+
+/**
+ * Construct a Charter after validating shape + V2.2 §A8 acl invariants.
+ * Returns a frozen object.
+ */
+export function createCharter(spec: Charter): Charter {
+  if (!C_ID_PATTERN.test(spec.id)) {
+    throw new Error(`Charter.id must match pattern C-<hash>; got "${spec.id}"`)
+  }
+  if (typeof spec.purpose !== 'string' || spec.purpose.trim().length === 0) {
+    throw new Error('Charter.purpose must be a non-empty 1-line outcome statement')
+  }
+  if (!Array.isArray(spec.obligations)) {
+    throw new Error('Charter.obligations must be an array')
+  }
+  if (!Array.isArray(spec.invariants)) {
+    throw new Error('Charter.invariants must be an array')
+  }
+  if (!Array.isArray(spec.success_metrics)) {
+    throw new Error('Charter.success_metrics must be an array')
+  }
+  if (!Array.isArray(spec.constraints)) {
+    throw new Error('Charter.constraints must be an array')
+  }
+  if (!Array.isArray(spec.acl)) {
+    throw new Error('Charter.acl must be an array')
+  }
+  validateConstraintRole(spec.obligations, 'obligation', 'obligations')
+  validateConstraintRole(spec.invariants, 'invariant', 'invariants')
+  validateAcl(spec.acl)
+  return Object.freeze({
+    ...spec,
+    obligations: [...spec.obligations],
+    invariants: [...spec.invariants],
+    success_metrics: [...spec.success_metrics],
+    constraints: [...spec.constraints],
+    acl: [...spec.acl],
+  })
+}
+
+/**
+ * Predicate: is this Charter shape valid against V2 §1 P2 + V2.2 §A8?
+ */
+export function isValidCharter(c: Charter): boolean {
+  if (typeof c !== 'object' || c === null) return false
+  if (typeof c.id !== 'string' || !C_ID_PATTERN.test(c.id)) return false
+  if (typeof c.purpose !== 'string' || c.purpose.trim().length === 0) return false
+  if (!Array.isArray(c.obligations)) return false
+  if (!Array.isArray(c.invariants)) return false
+  if (!Array.isArray(c.success_metrics)) return false
+  if (!Array.isArray(c.constraints)) return false
+  if (!Array.isArray(c.acl)) return false
+  for (const entry of c.acl) {
+    if (!VALID_ACL_ACCESS.has(entry.access)) return false
+  }
+  return true
+}

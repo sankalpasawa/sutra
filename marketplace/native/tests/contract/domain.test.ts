@@ -1,0 +1,124 @@
+import { describe, it, expect } from 'vitest'
+import { createDomain, isValidDomain, type Domain } from '../../src/primitives/domain.js'
+import type { Constraint } from '../../src/types/index.js'
+
+describe('Domain primitive (V2 spec §1 Primitive 1)', () => {
+  it('creates a D0 root domain with parent_id=null', () => {
+    const d0 = createDomain({
+      id: 'D0',
+      name: 'Asawa Inc.',
+      parent_id: null,
+      principles: [],
+      intelligence: '',
+      accountable: ['founder'],
+      authority: 'org-root',
+    })
+    expect(isValidDomain(d0)).toBe(true)
+    expect(d0.parent_id).toBeNull()
+    expect(d0.id).toBe('D0')
+  })
+
+  it('creates a sub-domain with parent_id reference', () => {
+    const principle: Constraint = {
+      name: 'plugin-first',
+      predicate: 'always',
+      durability: 'durable',
+      owner_scope: 'domain',
+    }
+    const d1 = createDomain({
+      id: 'D1',
+      name: 'Sutra-OS',
+      parent_id: 'D0',
+      principles: [principle],
+      intelligence: 'accumulated context',
+      accountable: ['sutra-os-team'],
+      authority: 'plugin-runtime',
+    })
+    expect(isValidDomain(d1)).toBe(true)
+    expect(d1.parent_id).toBe('D0')
+    expect(d1.principles).toHaveLength(1)
+    expect(d1.principles[0]?.name).toBe('plugin-first')
+  })
+
+  it('accepts deep D-numbered hierarchy (D1.D2.D3)', () => {
+    const deep = createDomain({
+      id: 'D1.D2.D3',
+      name: 'deep sub-domain',
+      parent_id: 'D1.D2',
+      principles: [],
+      intelligence: '',
+      accountable: [],
+      authority: '',
+    })
+    expect(isValidDomain(deep)).toBe(true)
+    expect(deep.id).toBe('D1.D2.D3')
+  })
+
+  it('rejects domain with non-D-shaped id', () => {
+    expect(() =>
+      createDomain({
+        id: 'not-d-shaped',
+        name: 'invalid',
+        parent_id: null,
+        principles: [],
+        intelligence: '',
+        accountable: [],
+        authority: '',
+      }),
+    ).toThrow(/D-numbered hierarchy/)
+  })
+
+  it('rejects domain with lowercase d prefix', () => {
+    expect(() =>
+      createDomain({
+        id: 'd0',
+        name: 'invalid',
+        parent_id: null,
+        principles: [],
+        intelligence: '',
+        accountable: [],
+        authority: '',
+      }),
+    ).toThrow(/D-numbered hierarchy/)
+  })
+
+  it('rejects domain with empty id', () => {
+    expect(() =>
+      createDomain({
+        id: '',
+        name: 'invalid',
+        parent_id: null,
+        principles: [],
+        intelligence: '',
+        accountable: [],
+        authority: '',
+      }),
+    ).toThrow(/D-numbered hierarchy/)
+  })
+
+  it('isValidDomain returns false for malformed records', () => {
+    const bad: Domain = {
+      id: 'X1',
+      name: 'malformed',
+      parent_id: null,
+      principles: [],
+      intelligence: '',
+      accountable: [],
+      authority: '',
+    }
+    expect(isValidDomain(bad)).toBe(false)
+  })
+
+  it('returned Domain is frozen (immutable)', () => {
+    const d = createDomain({
+      id: 'D0',
+      name: 'root',
+      parent_id: null,
+      principles: [],
+      intelligence: '',
+      accountable: [],
+      authority: '',
+    })
+    expect(Object.isFrozen(d)).toBe(true)
+  })
+})

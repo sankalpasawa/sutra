@@ -40,3 +40,6 @@ Native is self-contained. Does NOT depend on Core plugin internals. Core (existi
 4. Iteration: client-reported issue OR codex audit finding triggers v1.x patch
 5. DRI: Asawa CEO + Sutra-OS team rotation
 6. Decommission: V3.0 ships breaking changes superseding V2.x, OR Native plugin discontinued
+
+> **M2 primitive contracts** inherit ops surface from §Operationalization above
+> (measurement = test-coverage; iteration trigger = contract-violation in CI).
