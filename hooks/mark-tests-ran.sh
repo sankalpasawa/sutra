@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
-# mark-tests-ran.sh — run a test command and write .claude/ran-tests marker
+# mark-tests-ran.sh — run a test command and write the .claude/ran-tests marker
 # ═══════════════════════════════════════════════════════════════════════════════
-# Ported from holding/hooks/mark-tests-ran.sh (commit 31dcaa3 in asawa-holding).
 # Usage:
-#   bash hooks/mark-tests-ran.sh <command...>
+#   bash holding/hooks/mark-tests-ran.sh <command...>
+#
+# Examples:
+#   bash holding/hooks/mark-tests-ran.sh bash holding/hooks/tests/test-subagent-os-contract.sh
+#   bash holding/hooks/mark-tests-ran.sh npm test
+#   bash holding/hooks/mark-tests-ran.sh make check
+#
+# Runs the command inline, captures exit code, writes:
+#   .claude/ran-tests  (ts=<unix>, exit=<code>, cmd=<command>)
+#
+# Exit code: propagates the wrapped command's exit (so CI/dev loops see failures).
+# The marker is always written so pre-commit-test-gate can surface the failure.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 set -uo pipefail
@@ -15,7 +25,11 @@ mkdir -p "$REPO_ROOT/.claude"
 
 if [ $# -eq 0 ]; then
   cat >&2 <<EOF
-usage: bash hooks/mark-tests-ran.sh <command...>
+usage: bash holding/hooks/mark-tests-ran.sh <command...>
+
+Examples:
+  bash holding/hooks/mark-tests-ran.sh bash holding/hooks/tests/test-subagent-os-contract.sh
+  bash holding/hooks/mark-tests-ran.sh npm test
 EOF
   exit 2
 fi
@@ -27,6 +41,7 @@ echo "→ running: $CMD_STR"
 "$@"
 EXIT=$?
 
+# Sanitize cmd for marker file (strip newlines, quotes).
 SAFE_CMD=$(printf '%s' "$CMD_STR" | tr -d '"\\' | tr '\n\r' '  ')
 
 cat > "$MARKER_FILE" <<EOF
@@ -46,19 +61,21 @@ exit "$EXIT"
 ## Operationalization
 #
 ### 1. Measurement mechanism
-# Marker file .claude/ran-tests. Freshness read by pre-commit-test-gate.
+# Marker file .claude/ran-tests per repo. Freshness read by pre-commit-test-gate.
+# Telemetry flows through the gate hook (not this helper).
 #
 ### 2. Adoption mechanism
-# Developer invocation: `bash hooks/mark-tests-ran.sh <cmd>`.
+# Developer invocation: `bash holding/hooks/mark-tests-ran.sh <cmd>`.
+# Documented in CLAUDE.md pre-commit section + pre-commit-test-gate block message.
 #
 ### 3. Monitoring / escalation
-# Stale-marker blocks flagged in test-gate.jsonl.
+# If marker is routinely stale at commit time, adoption is low — review dev loop.
 #
 ### 4. Iteration trigger
-# Kept in sync with holding/hooks/mark-tests-ran.sh.
+# TTL tune in pre-commit-test-gate, not here. This is a pure helper.
 #
 ### 5. DRI
-# CEO of Sutra.
+# CEO of Asawa (governance-layer helper paired with pre-commit-test-gate).
 #
 ### 6. Decommission criteria
-# Retire when CI runs tests server-side and local marker is redundant.
+# Retire when CI runs tests server-side and the local marker becomes redundant.

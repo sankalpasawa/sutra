@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.8.3 — 2026-04-28
+
+**D38 Wave 3 — `pre-commit-test-gate.sh` + `mark-tests-ran.sh` paired promotion to `sutra/hooks/` (shared-runtime carve-out).**
+
+Per codex amendment (DIRECTIVE-ID 1777362899), git/runtime universal hooks live at `sutra/hooks/` (parallel L0 surface to `marketplace/plugin/hooks/`). These are NOT Claude Code marketplace hooks — they're git pre-commit hooks invoked from `.git/hooks/pre-commit` wrapper. Promoting them to `sutra/hooks/` makes them canonical for Sutra-tree dev workflows.
+
+### What changed
+
+- `sutra/hooks/pre-commit-test-gate.sh` — synced from holding's latest. Existing file (since 6b088db); now D38-aware.
+- `sutra/hooks/mark-tests-ran.sh` — synced from holding's latest. Existing file; now paired explicitly with the test-gate per codex's "treat as one mechanism" recommendation.
+
+### Note on this version bump
+
+This is an infrastructure update — not a marketplace plugin feature. The bumped version is for visibility in the v2.8.x sequence; consumers on `/core:update` see no behavior change in plugin hooks (the shared-runtime hooks live in the Sutra source tree, not in the marketplace plugin path).
+
+### Wave plan continuation
+
+- Wave 4+: Bucket A — 22 silent mirror retirement, shim or delete.
+
 ## v2.8.2 — 2026-04-28
 
 **D38 Wave 2 — `structural-move-check.sh` (PROTO-025) plugin L0 promotion.**

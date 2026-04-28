@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
-# Pre-commit Test Gate — D1 "verify before commit" enforcement (Sutra-local)
+# Pre-commit Test Gate — D1 "verify before commit" enforcement
 # ═══════════════════════════════════════════════════════════════════════════════
-# Ported from holding/hooks/pre-commit-test-gate.sh (commit 31dcaa3 in
-# asawa-holding). Same behavior, sutra-local paths.
+# Called from holding/hooks/git-wrappers/pre-commit after operationalization-check.
+# Blocks commits that touch code without fresh test evidence.
 #
-# Called from sutra/hooks/git-wrappers/pre-commit.
+# What counts as "code" (requires tests):
+#   *.sh *.ts *.tsx *.js *.jsx *.py *.rb *.go *.rs *.java *.kt *.swift *.c *.cpp
+#   *.h *.hpp package.json tsconfig.json Makefile *.toml *.yaml (except .github/)
+#
+# What counts as "docs" (skip test-gate):
+#   *.md *.txt *.jsonl *.log memory/** research/** .planning/** CHANGELOG LICENSE
+#   CODEOWNERS .gitignore TODO.md
 #
 # Fresh marker requirements:
 #   File: .claude/ran-tests (repo-local)
@@ -15,7 +21,7 @@
 # Enforcement:
 #   Docs-only staged set        → exit 0 (skip)
 #   Fresh marker + exit=0       → exit 0 (pass)
-#   Missing/stale marker / exit≠0 → exit 1 (git pre-commit BLOCK)
+#   Missing/stale marker OR exit≠0 → exit 1 (git pre-commit BLOCK)
 #   Override: SKIP_TESTS_ACK=<reason> → exit 0, logged
 #
 # Kill-switch: TEST_GATE_DISABLED=1 (env) or touch ~/.test-gate-disabled (global).
@@ -38,24 +44,27 @@ log_row() {
     "$TS" "$status" "$reason" "$staged_code" "$staged_docs" >> "$LOG_FILE"
 }
 
+# ── Kill-switches ──
 if [ "${TEST_GATE_DISABLED:-0}" = "1" ] || [ -f "$HOME/.test-gate-disabled" ]; then
   log_row "disabled" "kill-switch" 0 0
   exit 0
 fi
 
+# ── Get staged files ──
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
 if [ -z "$STAGED" ]; then
   log_row "skip" "no-staged-files" 0 0
   exit 0
 fi
 
+# ── Classify each file: docs vs code ──
 CODE_COUNT=0
 DOCS_COUNT=0
 is_doc() {
   case "$1" in
     *.md|*.txt|*.jsonl|*.log|CHANGELOG|LICENSE|CODEOWNERS|.gitignore|TODO.md) return 0 ;;
-    */memory/*|*/research/*|*/.planning/*|*/checkpoints/*) return 0 ;;
-    */feedback/*|*/feedback-from-companies/*) return 0 ;;
+    */memory/*|*/research/*|*/.planning/*|*/checkpoints/*|*/observability/snapshots/*) return 0 ;;
+    */hook-log*|*/latency-cursor) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -77,15 +86,18 @@ while IFS= read -r f; do
   elif is_doc "$f"; then
     DOCS_COUNT=$((DOCS_COUNT + 1))
   else
+    # Unknown extension: treat as doc for now (conservative — don't block on settings/configs/etc.)
     DOCS_COUNT=$((DOCS_COUNT + 1))
   fi
 done <<<"$STAGED"
 
+# ── Docs-only staged set → skip ──
 if [ "$CODE_COUNT" -eq 0 ]; then
   log_row "skip" "docs-only" 0 "$DOCS_COUNT"
   exit 0
 fi
 
+# ── Override ──
 if [ -n "${SKIP_TESTS_ACK:-}" ]; then
   REASON=$(printf '%s' "$SKIP_TESTS_ACK" | tr -d '"\\' | tr '\n\r' '  ')
   log_row "override" "$REASON" "$CODE_COUNT" "$DOCS_COUNT"
@@ -93,6 +105,7 @@ if [ -n "${SKIP_TESTS_ACK:-}" ]; then
   exit 0
 fi
 
+# ── Check marker exists ──
 if [ ! -f "$MARKER_FILE" ]; then
   log_row "block" "no-marker" "$CODE_COUNT" "$DOCS_COUNT"
   cat >&2 <<EOF
@@ -100,19 +113,23 @@ if [ ! -f "$MARKER_FILE" ]; then
 BLOCKED — pre-commit-test-gate (HARD)
   Code files staged ($CODE_COUNT) but no test-run marker at: .claude/ran-tests
 
-  D1 (verify before commit) requires test evidence. Run:
-    bash hooks/mark-tests-ran.sh <your-test-command>
+  D1 (verify before commit) requires test evidence. Run one of:
+    bash holding/hooks/mark-tests-ran.sh bash holding/hooks/tests/test-subagent-os-contract.sh
+    bash holding/hooks/mark-tests-ran.sh <your-test-command>
 
   Override (intentional skip — logged + reviewed):
-    SKIP_TESTS_ACK='<why>' git commit ...
+    SKIP_TESTS_ACK='<why — e.g., "trivial typo fix, no testable change">' git commit ...
 
-  Kill-switch: touch ~/.test-gate-disabled
+  Kill-switch (turn off gate globally):
+    touch ~/.test-gate-disabled    # re-enable: rm ~/.test-gate-disabled
 
 EOF
   exit 1
 fi
 
+# ── Check marker freshness ──
 if command -v stat >/dev/null 2>&1; then
+  # BSD stat (macOS) vs GNU stat
   MARKER_MTIME=$(stat -f %m "$MARKER_FILE" 2>/dev/null || stat -c %Y "$MARKER_FILE" 2>/dev/null || echo 0)
 else
   MARKER_MTIME=0
@@ -125,7 +142,7 @@ if [ "$AGE" -gt "$MARKER_TTL" ]; then
 
 BLOCKED — pre-commit-test-gate (HARD)
   Marker at .claude/ran-tests is ${AGE}s old (>${MARKER_TTL}s TTL).
-  Re-run tests: bash hooks/mark-tests-ran.sh <cmd>
+  Re-run tests: bash holding/hooks/mark-tests-ran.sh <cmd>
 
   Override: SKIP_TESTS_ACK='<why>' git commit ...
 
@@ -133,6 +150,7 @@ EOF
   exit 1
 fi
 
+# ── Check marker exit=0 ──
 MARKER_EXIT=$(grep -E '^exit=' "$MARKER_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
 if [ -z "$MARKER_EXIT" ] || [ "$MARKER_EXIT" != "0" ]; then
   log_row "block" "marker-nonzero-exit" "$CODE_COUNT" "$DOCS_COUNT"
@@ -140,7 +158,7 @@ if [ -z "$MARKER_EXIT" ] || [ "$MARKER_EXIT" != "0" ]; then
 
 BLOCKED — pre-commit-test-gate (HARD)
   Last test run failed (exit=${MARKER_EXIT:-unknown}).
-  Fix the failing test, then: bash hooks/mark-tests-ran.sh <cmd>
+  Fix the failing test, then: bash holding/hooks/mark-tests-ran.sh <cmd>
 
   Override: SKIP_TESTS_ACK='<why>' git commit ...
 
@@ -148,27 +166,27 @@ EOF
   exit 1
 fi
 
+# ── All checks pass ──
 log_row "pass" "fresh-marker-exit-0" "$CODE_COUNT" "$DOCS_COUNT"
 exit 0
 
 ## Operationalization
 #
 ### 1. Measurement mechanism
-# .enforcement/test-gate.jsonl in sutra repo — one row per commit attempt.
+# .enforcement/test-gate.jsonl — one row per commit attempt with status and reason.
 #
 ### 2. Adoption mechanism
-# Called from sutra/hooks/git-wrappers/pre-commit. Installed via
-# `git config core.hooksPath hooks/git-wrappers` inside sutra.
+# Called from holding/hooks/git-wrappers/pre-commit after operationalization-check.
+# Installed via git config core.hooksPath = holding/hooks/git-wrappers.
 #
 ### 3. Monitoring / escalation
-# Override/block ratio. >20% override rate → review reasons.
+# Weekly review: override/block ratio. >20% override rate → review reasons; may mean TTL too tight.
 #
 ### 4. Iteration trigger
-# Kept in sync with holding/hooks/pre-commit-test-gate.sh until
-# Sutra plugin hosts the shared implementation (L2→L1 promotion target).
+# Per-repo TTL tune if founder flags thrash. Kill-switch via ~/.test-gate-disabled.
 #
 ### 5. DRI
-# CEO of Sutra (sutra-repo hook).
+# CEO of Asawa (governance-layer hook).
 #
 ### 6. Decommission criteria
-# Retire when CI covers verification AND pre-commit is redundant.
+# Retire when CI covers verification end-to-end AND pre-commit is redundant.
