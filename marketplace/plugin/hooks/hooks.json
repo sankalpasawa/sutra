@@ -28,6 +28,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-sweep.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/inbox-display.sh",
+            "timeout": 8
           }
         ]
       }
@@ -98,6 +103,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-gate.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/build-layer-check.sh",
             "timeout": 5
           }
         ]

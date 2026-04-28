@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.8.1 — 2026-04-28
+
+**D38 Wave 1 — `build-layer-check.sh` plugin L0 promotion (HARD enforcement now fleet-distributed).**
+
+Per D38 (`holding/FOUNDER-DIRECTIONS.md` §D38) and codex consult DIRECTIVE-ID 1777362899, the `build-layer-check.sh` HARD-enforcement hook moves from `holding/hooks/` (Asawa-only) to `sutra/marketplace/plugin/hooks/` (fleet L0). The hook implements PROTO-021 + D38 with structured marker schema + plugin-first decision logic.
+
+### What changed
+
+- `hooks/build-layer-check.sh` — new in plugin (385 lines). Five path categories (D38_PLUGIN_RUNTIME, D38_SHARED_RUNTIME, D38_HOLDING_IMPL, LEGACY_HARD, SOFT). Codex's exact decision logic. Override audit emits `path` + `actor` + `cmd` + `reason` + `ts` + `session_id` + `declared_layer` + `override_kind`. Backward compat: LEGACY_HARD paths accept old single-line marker.
+- `hooks/hooks.json` — registers `build-layer-check.sh` on PreToolUse `Write|Edit|MultiEdit`.
+- Holding copy at `holding/hooks/build-layer-check.sh` (Asawa repo) becomes a 4-line shim per D38 §5 mirror retirement rule (canonical = plugin; retire-by 2026-05-05).
+
+### Impact
+
+Every fleet-installed Sutra plugin gets D38 HARD enforcement on next `/core:update`. Plugin-runtime files require `LAYER=L0`; holding-implementation paths require structured L1/L2 justification. Phantom-feature class becomes structurally impossible across the fleet — not just at Asawa.
+
+### What does NOT change
+
+- LEGACY_HARD paths (`holding/departments/**`, `holding/evolution/**`, `holding/FOUNDER-DIRECTIONS.md`, `sutra/os/charters/**`) keep PROTO-021 original semantics: marker present (any content) = pass. Backward compat preserved for clients on older marker schemas.
+- Override path (`BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<reason>'`) unchanged in API; logging schema enriched.
+
+### Codex review
+
+Verdict files: `.enforcement/codex-reviews/d38-codex-consult-1777362899.md` (Pass 1 ADVISORY) + `d38-codex-impl-review-1777362899.md` (Pass 2 ADVISORY). Two structural refinements absorbed (canonical = distributed + activated + released; sutra/hooks/ carve-out for shared runtime; marker schema upgrade). Two implementation findings absorbed (override JSON `path` field; marker single-line documented).
+
+### Wave plan continuation
+
+- Wave 2 (next): `structural-move-check.sh` (PROTO-025) plugin L0 promotion, same atomic pattern.
+- Wave 3: `pre-commit-test-gate.sh` + `mark-tests-ran.sh` paired promotion to `sutra/hooks/` (shared-runtime carve-out).
+- Wave 4+: Bucket A — 22 silent mirror retirement, shim or delete, 7-day TTL max per codex.
+
 ## v2.8.0 — 2026-04-28
 
 **codex-sutra v1.0.0 — Sutra-owned codex CLI wrapper, replaces gstack /codex for PROTO-019.**
