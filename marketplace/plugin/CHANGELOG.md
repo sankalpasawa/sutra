@@ -1,5 +1,41 @@
 # Changelog
 
+## v2.8.8 — 2026-04-28
+
+**Vinit#17 second encounter — `feedback-channel-guard.sh` body-content false-positive (re-fix).**
+
+Discovered while attempting to close vinit#36 with a comment that mentioned "gh issue create" as a concept (referring to the threat model). The shipped guard's regex `gh +issue +(create|comment)` matched the substring inside `--comment "..."` body text — same class of bug @vinitharmalkar reported in #17, which I'd previously assessed as fixed. The earlier "fix" addressed the threat-model framing but not the regex's command-vs-body discrimination.
+
+### Root cause
+
+`feedback-channel-guard.sh` `grep`'d the entire command line for action verbs. Any flag value (`--comment "..."`, `--body "..."`) containing the literal text `gh issue create` or `gh issue comment` triggered a false-positive block — even on legitimate operations like `gh issue close --comment "..."`.
+
+### Fix
+
+Replaced whole-command `grep` with explicit token parsing:
+
+1. Strip everything after the first quoted value (`sed -E "s/[[:space:]]['\"].*$//"`) — flag bodies cannot influence the action match.
+2. Read remaining tokens; locate `gh` position; extract the next two tokens (noun + verb).
+3. Match against `(noun, verb)` tuples directly: `(issue, create)`, `(issue, comment)`, `(pr, create)`, `(pr, comment)`, `(pr, review)`.
+4. `gh api` mutation detection unchanged (its parameters always live unquoted on the line, so whole-string scan is acceptable).
+
+### Acceptance — 8/8 tests pass
+
+| Test | Expected | Result |
+|---|---|---|
+| `gh issue close 36 ... --comment "guard blocks unsanctioned gh issue create paths"` | pass (false-positive case) | ✅ pass |
+| `gh issue create -R sankalpasawa/sutra ...` | block | ✅ block |
+| `gh issue comment -R sankalpasawa/sutra ...` | block | ✅ block |
+| `gh issue close -R sankalpasawa/sutra --comment "..."` (simple) | pass | ✅ pass |
+| `gh issue create -R someother/repo ...` | pass | ✅ pass |
+| `gh api -X POST /repos/sankalpasawa/sutra/issues ...` | block | ✅ block |
+| `gh pr create -R sankalpasawa/sutra ...` | block | ✅ block |
+| `gh issue close ... --comment "...gh issue comment was matched..."` | pass | ✅ pass |
+
+### Why this matters
+
+The original false-positive @vinitharmalkar reported in #17 was discovered when the guard blocked legitimate `sutra feedback --public` invocations whose feedback-text body contained the repo name. The threat-model fix in v2.6.2 addressed that specific path (the sanctioned binary) but left this broader class of false-positive in place. Confirmed in the wild today (2026-04-28) when an attempt to close #36 with a descriptive comment was blocked.
+
 ## v2.8.7 — 2026-04-28
 
 **Vinit#36 — slash-command zsh history-expansion fix (8 command files).**

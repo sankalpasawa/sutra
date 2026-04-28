@@ -81,8 +81,12 @@ esac
 if [ "$SUTRA_TARGET" -eq 0 ]; then
   # Only consult `git remote` if the command doesn't already specify --repo
   # (no need; it would already be path A or pointing somewhere else).
+  # v2.8.8 — also recognize the short form `-R` / `-r` which gh treats
+  # equivalently to --repo. Without this, `gh issue create -R other/repo`
+  # inside a sutra checkout falls through to git-remote inference and gets
+  # blocked despite the explicit non-sutra target.
   case "$CMD_LOWER" in
-    *--repo*) ;;  # explicit repo, but didn't match Sutra → not our target
+    *--repo*|*\ -r\ *|*\ -r=*) ;;  # explicit repo, but didn't match Sutra → not our target
     *)
       REMOTE_URL=$(git remote get-url origin 2>/dev/null | tr '[:upper:]' '[:lower:]')
       case "$REMOTE_URL" in
@@ -99,15 +103,46 @@ fi
 #   gh pr create|comment|review
 #   gh api ... (issues|pulls|comments) with mutating method (-X POST|PUT|PATCH|DELETE
 #                                       or --method POST|PUT|PATCH|DELETE)
+#
+# v2.8.8 (vinit#17 second-encounter, 2026-04-28) — extract the actual gh
+# subcommand+action by parsing tokens up to the first quoted flag value.
+# Prior implementation grep'd the whole command line, including --comment
+# "..." body content, producing false positives when message text mentioned
+# "gh issue create" or "gh issue comment" as concepts. Now we look at the
+# command structure: gh <noun> <verb> ... and only match on <noun> <verb>.
 BLOCK=0
-if printf '%s' "$CMD_LOWER" | grep -E -q 'gh +issue +(create|comment)'; then
-  BLOCK=1
-elif printf '%s' "$CMD_LOWER" | grep -E -q 'gh +pr +(create|comment|review)'; then
-  BLOCK=1
-elif printf '%s' "$CMD_LOWER" | grep -E -q 'gh +api +' && \
-     printf '%s' "$CMD_LOWER" | grep -E -q '(issues|pulls|comments)' && \
-     printf '%s' "$CMD_LOWER" | grep -E -q -- '(-x|--method) +[\"'"'"']?(post|put|patch|delete)'; then
-  BLOCK=1
+
+# Strip everything from the first quoted value onward — flag bodies cannot
+# influence the action match. (We tolerate flags before the quoted body
+# because gh tools accept --repo / -R before --comment.)
+CMD_HEAD=$(printf '%s' "$CMD_LOWER" | sed -E "s/[[:space:]]['\"].*$//")
+
+# Parse tokens; find 'gh' position; capture next two tokens (noun + verb).
+# shellcheck disable=SC2206
+TOKENS=( $CMD_HEAD )
+GH_NOUN=""
+GH_VERB=""
+for i in "${!TOKENS[@]}"; do
+  if [ "${TOKENS[$i]}" = "gh" ]; then
+    GH_NOUN="${TOKENS[$((i+1))]:-}"
+    GH_VERB="${TOKENS[$((i+2))]:-}"
+    break
+  fi
+done
+
+case "$GH_NOUN $GH_VERB" in
+  "issue create"|"issue comment") BLOCK=1 ;;
+  "pr create"|"pr comment"|"pr review") BLOCK=1 ;;
+esac
+
+# Mutating gh api calls — this we still scan whole command since gh api
+# parameters live unquoted on the line. The pattern is specific enough
+# that false-positives in message bodies are extremely unlikely.
+if [ "$BLOCK" -eq 0 ] && [ "$GH_NOUN" = "api" ]; then
+  if printf '%s' "$CMD_LOWER" | grep -E -q '(issues|pulls|comments)' && \
+     printf '%s' "$CMD_LOWER" | grep -E -q -- '(-x|--method)[[:space:]]+["'"'"']?(post|put|patch|delete)'; then
+    BLOCK=1
+  fi
 fi
 
 [ "$BLOCK" -eq 0 ] && exit 0
