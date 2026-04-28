@@ -545,4 +545,96 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
     expect(w.expects_response_from).toBe('codex://reviewer')
     expect(isValidWorkflow(w)).toBe(true)
   })
+
+  // ---------------------------------------------------------------------------
+  // Codex M3 P1 #2 (2026-04-28) — step_id MUST be unique within step_graph.
+  // L4/T3 keys per-step coverage by step_id; duplicates would silently collapse
+  // coverage records and let unsoundness through.
+  // ---------------------------------------------------------------------------
+
+  it('P1.2 (codex M3 P1 #2): rejects duplicate step_ids in step_graph (createWorkflow)', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-dup-step',
+        preconditions: 'true',
+        step_graph: [
+          { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+          { step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' },
+        ],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+      }),
+    ).toThrow(/step_id.*duplicate|unique/i)
+  })
+
+  it('P1.2 (codex M3 P1 #2): rejects duplicate step_ids on triple-step duplicate (createWorkflow)', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-dup-step-3',
+        preconditions: 'true',
+        step_graph: [
+          { step_id: 0, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+          { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+          { step_id: 0, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' },
+        ],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+      }),
+    ).toThrow(/step_id.*duplicate|unique/i)
+  })
+
+  it('P1.2 (codex M3 P1 #2): isValidWorkflow returns false for deserialized record with duplicate step_ids', () => {
+    const bad = {
+      id: 'W-deser-dup-step',
+      preconditions: 'true',
+      step_graph: [
+        { step_id: 7, action: 'wait' as const, inputs: [], outputs: [], on_failure: 'abort' as const },
+        { step_id: 7, action: 'terminate' as const, inputs: [], outputs: [], on_failure: 'abort' as const },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task' as const,
+      interfaces_with: [],
+      expects_response_from: null,
+      on_override_action: 'escalate' as const,
+      reuse_tag: false,
+      return_contract: null,
+      modifies_sutra: false,
+    }
+    expect(isValidWorkflow(bad)).toBe(false)
+  })
+
+  it('P1.2 (codex M3 P1 #2): accepts step_graph with all unique step_ids', () => {
+    const w = createWorkflow({
+      id: 'W-uniq-steps',
+      preconditions: 'true',
+      step_graph: [
+        { step_id: 0, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+        { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+        { step_id: 2, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+    expect(w.step_graph).toHaveLength(3)
+    expect(isValidWorkflow(w)).toBe(true)
+  })
 })

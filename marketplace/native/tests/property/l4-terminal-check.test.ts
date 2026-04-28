@@ -111,6 +111,9 @@ describe('T3 — step traces', () => {
         }),
         (w, c) => {
           const allowed = [...c.obligations.map((o) => o.name), ...c.invariants.map((i) => i.name)]
+          // T3 only checks tracesAllSteps; allowed[0] is sufficient (every
+          // step traces to ≥1 allowed name). Relation-check (codex M3 P1)
+          // applies only to coversAllObligations / operationalizes.
           const cov: CoverageMatrix = {
             step_coverage: w.step_graph.map((s) =>
               allowed.length > 0
@@ -380,9 +383,13 @@ describe('runAll — aggregate semantics', () => {
             postcondition_predicates: [],
             output_validators: w.outputs.map(() => ALWAYS_VALID),
             coverage: {
+              // Codex M3 P1 fix: traces_to MUST include the obligation each
+              // decision points at. Cover all allowed names per step so the
+              // L4 relation-check passes regardless of which step covers
+              // which obligation.
               step_coverage: w.step_graph.map((s) =>
                 allowed.length > 0
-                  ? { step_id: s.step_id, traces_to: [allowed[0]!] }
+                  ? { step_id: s.step_id, traces_to: [...allowed] }
                   : { step_id: s.step_id, traces_to: [], gap_status: 'accepted' as const },
               ),
               obligation_coverage: c.obligations.map((o) => ({
@@ -399,7 +406,7 @@ describe('runAll — aggregate semantics', () => {
           return r.pass === true && r.failed_at === null && r.failure_reason === null
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 1000 },
     )
   })
 

@@ -56,4 +56,39 @@ describe('L2 BOUNDARY — property tests', () => {
       { numRuns: 1000 },
     )
   })
+
+  // ---------------------------------------------------------------------------
+  // Codex M3 P1 #1 (2026-04-28) — array roots are not valid schema documents.
+  // ---------------------------------------------------------------------------
+
+  it('P1.1: forall Interface with JSON-array-root contract_schema: invalid', () => {
+    const arrayRootArb = fc
+      .array(fc.oneof(fc.integer(), fc.string({ maxLength: 6 }), fc.boolean()), { maxLength: 5 })
+      .map((arr) => JSON.stringify(arr))
+    fc.assert(
+      fc.property(interfaceArb({ contract_schema: arrayRootArb }), (iface) =>
+        l2Boundary.isValid(iface) === false,
+      ),
+      { numRuns: 1000 },
+    )
+  })
+
+  it('P1.1: forall Interface with JSON-boolean-root contract_schema: invalid (M3 conservative)', () => {
+    const boolRootArb = fc.boolean().map((b) => JSON.stringify(b))
+    fc.assert(
+      fc.property(interfaceArb({ contract_schema: boolRootArb }), (iface) =>
+        l2Boundary.isValid(iface) === false,
+      ),
+      { numRuns: 1000 },
+    )
+  })
+
+  it('P1.1: forall Interface with JSON-null-root contract_schema: invalid', () => {
+    fc.assert(
+      fc.property(interfaceArb({ contract_schema: fc.constant('null') }), (iface) =>
+        l2Boundary.isValid(iface) === false,
+      ),
+      { numRuns: 200 },
+    )
+  })
 })

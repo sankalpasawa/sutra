@@ -30,7 +30,7 @@ IFS=$'\n\t'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-SUTRA_VERSION="0.1.0"
+SUTRA_VERSION="0.2.0"  # installer script version; plugin currently ships at v2.8.11
 SUTRA_MARKETPLACE="sankalpasawa/sutra"
 SUTRA_PLUGIN="core@sutra"
 SUTRA_HOME="${HOME}/.sutra"

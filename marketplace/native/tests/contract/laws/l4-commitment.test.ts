@@ -135,6 +135,90 @@ describe('L4 COMMITMENT — contract', () => {
     expect(r.failed_at).toBeNull()
   })
 
+  // ---------------------------------------------------------------------------
+  // Codex M3 P1 #3 (2026-04-28) — coversAllObligations relation-check:
+  //   (a) covered_by_step MUST exist in workflow.step_graph[*].step_id
+  //   (b) the referenced step's traces_to MUST include the obligation
+  // Shape-only acceptance of a numeric covered_by_step is unsound — it lets
+  // operationalizes(W,C) return true with fabricated coverage decisions.
+  // ---------------------------------------------------------------------------
+
+  it('P1.3: coversAllObligations(C, cov, W) rejects covered_by_step pointing to non-existent step', () => {
+    const cov: CoverageMatrix = {
+      step_coverage: [
+        { step_id: 0, traces_to: ['oblig-1'] },
+        { step_id: 1, traces_to: ['oblig-1'] },
+      ],
+      // 999 is NOT a step_id in W (which has step_ids 0 and 1).
+      obligation_coverage: [{ obligation_name: 'oblig-1', covered_by_step: 999 }],
+    }
+    expect(l4Commitment.coversAllObligations(C, cov, W)).toBe(false)
+    expect(l4Commitment.operationalizes(W, C, cov)).toBe(false)
+  })
+
+  it('P1.3: coversAllObligations(C, cov, W) rejects step that does not trace to the obligation it claims to cover', () => {
+    // step_id=1 exists, but its traces_to does NOT include 'oblig-1'.
+    const cov: CoverageMatrix = {
+      step_coverage: [
+        { step_id: 0, traces_to: ['oblig-1'] },
+        { step_id: 1, traces_to: ['some-other-name'] },
+      ],
+      obligation_coverage: [{ obligation_name: 'oblig-1', covered_by_step: 1 }],
+    }
+    expect(l4Commitment.coversAllObligations(C, cov, W)).toBe(false)
+    expect(l4Commitment.operationalizes(W, C, cov)).toBe(false)
+  })
+
+  it('P1.3: coversAllObligations(C, cov, W) accepts when covered_by_step exists AND traces_to includes obligation', () => {
+    const cov: CoverageMatrix = {
+      step_coverage: [
+        { step_id: 0, traces_to: ['oblig-1'] },
+        { step_id: 1, traces_to: ['oblig-1'] },
+      ],
+      obligation_coverage: [{ obligation_name: 'oblig-1', covered_by_step: 1 }],
+    }
+    expect(l4Commitment.coversAllObligations(C, cov, W)).toBe(true)
+    expect(l4Commitment.operationalizes(W, C, cov)).toBe(true)
+  })
+
+  it('P1.3: coversAllObligations without workflow skips step-existence check but still validates step_coverage relation', () => {
+    // No workflow passed → step-existence check (a) is skipped, but the
+    // step_coverage relation-check (b) still runs when step_coverage is
+    // provided. This keeps the predicate sound when used standalone (e.g.
+    // legacy callers that exercise charter+coverage in isolation).
+    const covWithRelation: CoverageMatrix = {
+      step_coverage: [
+        { step_id: 5, traces_to: ['oblig-1'] },
+      ],
+      // 5 exists in step_coverage AND traces_to includes 'oblig-1' → ok.
+      obligation_coverage: [{ obligation_name: 'oblig-1', covered_by_step: 5 }],
+    }
+    expect(l4Commitment.coversAllObligations(C, covWithRelation)).toBe(true)
+
+    // Disagreement in step_coverage relation → still false even without W.
+    const covMismatch: CoverageMatrix = {
+      step_coverage: [
+        { step_id: 5, traces_to: ['some-other'] },
+      ],
+      obligation_coverage: [{ obligation_name: 'oblig-1', covered_by_step: 5 }],
+    }
+    expect(l4Commitment.coversAllObligations(C, covMismatch)).toBe(false)
+  })
+
+  it('P1.3: declared accepted gap clears relation-check (no covered_by_step required)', () => {
+    const cov: CoverageMatrix = {
+      step_coverage: [
+        { step_id: 0, traces_to: [] },
+        { step_id: 1, traces_to: [] },
+      ],
+      // gap_status='accepted' clears even with non-existent step pointer.
+      obligation_coverage: [
+        { obligation_name: 'oblig-1', covered_by_step: 999, gap_status: 'accepted' },
+      ],
+    }
+    expect(l4Commitment.coversAllObligations(C, cov, W)).toBe(true)
+  })
+
   it('terminal-check T2 fail → failed_at=T2', () => {
     const wWithOutputs = createWorkflow({
       ...W,

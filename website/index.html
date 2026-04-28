@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sutra — The operating system for AI-native companies</title>
-<meta name="description" content="Sutra structures how a company is built and operated — tier-aware governance, policy-coverage gate, auto-propagation, coverage engine, and a marketplace plugin. Currently running 7 companies on v1.9.">
-<meta property="og:title" content="Sutra — The operating system for AI-native companies">
-<meta property="og:description" content="An AI operating system that takes founders from idea to operating company — and keeps it running. v1.9 · 7 companies in-sync · ships as a marketplace plugin.">
+<title>Sutra — One command. Your AI assistant works like a senior engineer.</title>
+<meta name="description" content="Sutra is a plugin for Claude Code that makes your AI assistant think before it types. One command installs everything (Claude Code included). Currently shipping v2.8.11.">
+<meta property="og:title" content="Sutra — One command. Your AI assistant works like a senior engineer.">
+<meta property="og:description" content="A plugin for Claude Code that makes your AI assistant think before it types. One curl command installs everything you need.">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -66,7 +66,7 @@
 
   /* Hero */
   .hero {
-    padding: 80px 0 60px;
+    padding: 80px 0 48px;
     text-align: center;
   }
   .hero-badge {
@@ -91,7 +91,7 @@
   .hero p {
     font-size: 18px;
     color: var(--muted);
-    max-width: 540px;
+    max-width: 560px;
     margin: 0 auto 36px;
     line-height: 1.7;
   }
@@ -101,8 +101,8 @@
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 24px;
-    max-width: 480px;
+    padding: 28px;
+    max-width: 560px;
     margin: 0 auto;
     text-align: left;
   }
@@ -118,22 +118,27 @@
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 14px 18px;
+    padding: 16px 18px;
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 14px;
     color: var(--green);
-    margin-bottom: 8px;
     user-select: all;
     cursor: pointer;
     transition: border-color 0.2s;
+    overflow-x: auto;
+    white-space: nowrap;
   }
   .cta-code:hover { border-color: var(--accent); }
   .cta-hint {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
+    margin-top: 14px;
+    line-height: 1.6;
   }
+  .cta-hint a { color: var(--accent); text-decoration: none; }
+  .cta-hint a:hover { text-decoration: underline; }
 
-  /* Problem */
+  /* Section */
   .section {
     padding: 60px 0;
     border-top: 1px solid var(--border);
@@ -174,11 +179,15 @@
     padding: 24px;
   }
   .card-icon {
-    font-size: 24px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 1px;
     margin-bottom: 12px;
   }
   .card h3 {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     margin-bottom: 8px;
   }
@@ -189,70 +198,48 @@
     margin-bottom: 0;
   }
 
-  /* Phase timeline */
-  .phases {
-    margin-top: 32px;
-  }
-  .phase {
-    display: flex;
-    gap: 20px;
-    margin-bottom: 24px;
-    align-items: flex-start;
-  }
-  .phase-num {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: var(--accent-dim);
-    color: var(--accent);
-    font-size: 14px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .phase-content h3 {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 4px;
-  }
-  .phase-content p {
-    font-size: 14px;
-    color: var(--muted);
-    margin-bottom: 0;
-  }
-  .phase-time {
-    font-size: 12px;
-    color: var(--accent);
-    font-weight: 500;
+  /* Inline code */
+  code.inline {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--green);
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
   }
 
-  /* Skills */
-  .skill-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    margin-top: 24px;
-  }
-  .skill {
-    background: var(--card);
+  /* Manual install fallback */
+  .manual-install {
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px;
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-top: 32px;
   }
-  .skill-name {
+  .manual-install h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .manual-install .step {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .manual-install .step-code {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 13px;
     color: var(--green);
-    margin-bottom: 4px;
-  }
-  .skill-desc {
-    font-size: 12px;
-    color: var(--muted);
+    margin-top: 4px;
+    overflow-x: auto;
+    white-space: nowrap;
   }
 
-  /* Testimonial / quote */
+  /* Quote / privacy block */
   .quote-block {
     background: var(--card);
     border: 1px solid var(--border);
@@ -262,14 +249,38 @@
     margin-top: 32px;
   }
   .quote-text {
-    font-size: 16px;
-    font-style: italic;
+    font-size: 15px;
     color: var(--text);
     line-height: 1.7;
     margin-bottom: 12px;
   }
+  .quote-text strong { color: var(--accent); }
   .quote-attr {
-    font-size: 13px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .quote-attr a { color: var(--accent); text-decoration: none; }
+
+  /* Companies row */
+  .companies-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .company {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .company-name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .company-desc {
+    font-size: 12px;
     color: var(--muted);
   }
 
@@ -304,10 +315,13 @@
   /* Responsive */
   @media (max-width: 640px) {
     .hero h1 { font-size: 32px; }
+    .hero { padding: 48px 0 32px; }
+    .cta-block { padding: 20px; }
+    .cta-code { font-size: 12px; padding: 14px; }
     .cards { grid-template-columns: 1fr; }
-    .skill-grid { grid-template-columns: 1fr 1fr; }
-    .hero { padding: 48px 0 40px; }
+    .companies-row { grid-template-columns: 1fr 1fr; }
     .section { padding: 40px 0; }
+    .section h2 { font-size: 22px; }
   }
 </style>
 </head>
@@ -317,8 +331,9 @@
   <div class="container">
     <div class="logo">sutra</div>
     <div style="display: flex; gap: 24px;">
-      <a class="nav-link" href="#get-started">Get started</a>
-      <a class="nav-link" href="#how-it-works">How it works</a>
+      <a class="nav-link" href="#install">Install</a>
+      <a class="nav-link" href="#what-it-does">What it does</a>
+      <a class="nav-link" href="#privacy">Privacy</a>
       <a class="nav-link" href="https://github.com/sankalpasawa/sutra">GitHub</a>
     </div>
   </div>
@@ -326,308 +341,133 @@
 
 <section class="hero">
   <div class="container">
-    <div class="hero-badge">OS v1.9.1 &middot; PLUGIN v2.1.0 &middot; LIVE ON CLAUDE CODE MARKETPLACE</div>
-    <h1>The operating system for <span>AI-native companies</span></h1>
-    <p>Sutra structures how a company is built and operated — not just how code ships. Tier-aware governance, depth routing, policy-coverage enforcement, auto-propagation, coverage engine. It takes a founder from an idea to a running company, then keeps every company in the portfolio in-sync with the same operating manual.</p>
+    <div class="hero-badge">v2.8.11 &middot; live on Claude Code marketplace</div>
+    <h1>One command. Your AI assistant works like a <span>senior engineer</span>.</h1>
+    <p>Sutra is a plugin for Claude Code that makes your AI think before it types — classify what you asked for, estimate the work, surface the plan, then act. No more 50,000-token sessions to fix a typo.</p>
 
-    <div class="cta-block">
-      <div class="cta-label">In Claude Code — three lines, one minute</div>
-      <div class="cta-code">claude plugin marketplace add sankalpasawa/sutra</div>
-      <div class="cta-code" style="margin-top: 8px;">claude plugin install core@sutra</div>
-      <div class="cta-code" style="margin-top: 8px; border-left: 3px solid var(--accent);">/core:start</div>
-      <div class="cta-hint" style="margin-top: 12px;">First two lines install. Third line activates — type <code style="color: var(--green);">/core:start</code> inside any Claude Code session. That's it. MIT license. Works in Claude Code terminal + Mac desktop app and IDE extensions. Web app: skills work, hooks sandboxed. Windows: bash-only (v2 roadmap). <a href="#get-started" style="color: var(--accent);">New to Claude Code? Full walkthrough →</a></div>
+    <div class="cta-block" id="install">
+      <div class="cta-label">Install — one command (works on macOS &amp; Linux)</div>
+      <div class="cta-code">curl -fsSL https://sutra.os/install.sh | bash</div>
+      <div class="cta-hint">
+        Installs <strong style="color: var(--text);">Claude Code if you don't have it</strong>, adds the Sutra marketplace, installs the plugin, and writes the permission allowlist. Idempotent — safe to re-run. After it finishes, open Claude Code in any project and run <code class="inline">/core:start</code>. <a href="#manual">Prefer manual install? →</a>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="section">
+<section class="section" id="what-it-does">
   <div class="container">
-    <div class="section-label">The problem</div>
-    <h2>You have an idea. Now what?</h2>
-    <p>You open your terminal. You start coding. Three hours later, you've built a login page that nobody asked for, you haven't validated your idea, and you don't know if anyone wants this.</p>
-    <p>Building a product is not the hard part. Knowing WHAT to build, for WHO, and WHY... that's what kills startups. Most founders skip this. Then they spend months building the wrong thing.</p>
+    <div class="section-label">What you get</div>
+    <h2>Five things change in every Claude Code session.</h2>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-icon">01 — Routing</div>
+        <h3>Every message gets classified</h3>
+        <p>Claude doesn't just react — it labels what you said (a task, a question, a correction, a new direction) before doing anything. Stops misrouted work at the front door.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">02 — Depth</div>
+        <h3>Every task gets a depth rating</h3>
+        <p>Before any code edit, Claude rates the task 1-5 and shows you the time / file count / cost estimate. You see the bill before you pay.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">03 — Plan first</div>
+        <h3>Every action gets a plan you can stop</h3>
+        <p>Before any Edit / Write / Bash call, Claude shows a Blueprint — what it's about to do, the steps, when it would stop. You catch wrong turns in seconds.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">04 — Readable</div>
+        <h3>Output formatted for skimming</h3>
+        <p>Tables over walls of prose. Numbers over adjectives. Decisions in boxes. Designed to be scanned in 10 seconds, not read in 2 minutes.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">05 — Permissions</div>
+        <h3>Sutra's own commands auto-approved</h3>
+        <p>The plugin handles its own permission prompts — first session goes from ~13 prompts down to ≤2. You spend time on your code, not clicking "allow".</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">06 — Trace</div>
+        <h3>One-line trace per response</h3>
+        <p>Every reply ends with a tiny breadcrumb showing what Claude did under the hood — input → routing → plan → action → result. No guessing what just happened.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="privacy">
+  <div class="container">
+    <div class="section-label">Privacy</div>
+    <h2>Your code stays on your machine.</h2>
 
     <div class="quote-block">
-      <div class="quote-text">"The biggest risk is not building the wrong feature. It's building the wrong product."</div>
-      <div class="quote-attr">Every startup post-mortem, ever</div>
+      <div class="quote-text">
+        <strong>Sutra captures nothing about what you're building, by default.</strong> No file contents. No prompts. No commit messages. No code. Only tiny anonymous signals — "a hook ran," "a session ended" — kept locally in <code class="inline">~/.sutra/</code>. Nothing is transmitted unless you explicitly opt in by setting <code class="inline">SUTRA_LEGACY_TELEMETRY=1</code>. A plain-English privacy sheet (<code class="inline">~/.sutra/PRIVACY.md</code>) lands on your disk the first time you run it — one page, no legalese, read it in two minutes. Delete the folder to wipe it all.
+      </div>
+      <div class="quote-attr">
+        v2.0+ privacy charter &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PRIVACY.md">PRIVACY.md</a> &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/CHANGELOG.md">full changelog</a>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="section" id="get-started">
+<section class="section" id="manual">
   <div class="container">
-    <div class="section-label">Get started</div>
-    <h2>Never used Claude Code? Here's the full path.</h2>
-    <p>Sutra is a plugin for <strong>Claude Code</strong>, Anthropic's AI coding environment. If you've never used Claude Code, follow these four steps. If you already have Claude Code running, jump to step 3.</p>
+    <div class="section-label">Manual install (if you prefer)</div>
+    <h2>Three commands. One minute.</h2>
+    <p>The one-command installer runs all of these for you. If you'd rather see each step:</p>
 
-    <div class="phases" style="margin-top: 32px;">
-      <div class="phase">
-        <div class="phase-num">1</div>
-        <div class="phase-content">
-          <h3>Install Claude Code</h3>
-          <p style="margin-bottom: 8px;">Claude Code runs in the terminal, Mac/Windows desktop app, web (claude.ai/code), and as VS Code / JetBrains extensions. Pick your surface and install.</p>
-          <p style="margin-bottom: 4px; font-size: 13px;">Terminal (Mac / Linux):</p>
-          <div class="cta-code" style="font-size: 13px; padding: 10px 14px; max-width: 420px;">curl -fsSL https://claude.ai/install.sh | bash</div>
-          <p style="font-size: 13px; margin-top: 8px; margin-bottom: 4px;">After install, add Claude Code to your PATH:</p>
-          <div class="cta-code" style="font-size: 13px; padding: 10px 14px; max-width: 420px;">echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.zshrc &amp;&amp; source ~/.zshrc</div>
-          <p style="font-size: 13px; margin-top: 8px; margin-bottom: 0;">Verify with <code style="color: var(--green); background: var(--bg); padding: 2px 6px; border-radius: 4px;">claude --version</code> — expect version &ge; 2.1.116.</p>
-          <p style="font-size: 13px; margin-top: 8px; margin-bottom: 0;">Or download the <a href="https://claude.ai/download" style="color: var(--accent);">desktop app</a>, or use the <a href="https://claude.ai/code" style="color: var(--accent);">web app</a> — same Sutra install flow.</p>
-        </div>
-      </div>
+    <div class="manual-install">
+      <h3>Step 1 — Install Claude Code (skip if you already have it)</h3>
+      <div class="step-code">curl -fsSL https://claude.ai/install.sh | bash</div>
+      <div class="step">Or download the <a href="https://claude.ai/download" style="color: var(--accent);">desktop app</a>, or use the <a href="https://claude.ai/code" style="color: var(--accent);">web app</a>. Verify with <code class="inline">claude --version</code>.</div>
 
-      <div class="phase">
-        <div class="phase-num">2</div>
-        <div class="phase-content">
-          <h3>Sign in + verify</h3>
-          <p>Run <code style="color: var(--green); background: var(--bg); padding: 2px 6px; border-radius: 4px;">claude</code> — it opens the sign-in flow. Works with an Anthropic account or Claude.ai login.</p>
-          <span class="phase-time">1 min</span>
-        </div>
-      </div>
+      <h3 style="margin-top: 24px;">Step 2 — Add the Sutra marketplace + install the plugin</h3>
+      <div class="step-code">claude plugin marketplace add sankalpasawa/sutra</div>
+      <div class="step-code" style="margin-top: 6px;">claude plugin install core@sutra</div>
+      <div class="step">Two commands. Restart Claude Code (or run <code class="inline">/reload-plugins</code>) to pick it up.</div>
 
-      <div class="quote-block" style="margin-top: 8px; margin-bottom: 24px;">
-        <div class="quote-text" style="font-style: normal; font-size: 14px;"><strong>Coming in v1.8</strong>: a single-command install — <code style="color: var(--green); background: var(--bg); padding: 2px 6px; border-radius: 4px;">curl -fsSL https://sutra.os/install.sh | bash</code>. For now, the 4-step path below.</div>
-      </div>
-
-      <div class="phase">
-        <div class="phase-num">3</div>
-        <div class="phase-content">
-          <h3>Add the Sutra marketplace + install the plugin</h3>
-          <p style="margin-bottom: 8px;">Two commands in your terminal (or inside any Claude Code session with <code style="color: var(--green); background: var(--bg); padding: 2px 6px; border-radius: 4px;">/plugin</code>):</p>
-          <div class="cta-code" style="font-size: 13px; padding: 10px 14px; max-width: 420px;">claude plugin marketplace add sankalpasawa/sutra</div>
-          <div class="cta-code" style="font-size: 13px; padding: 10px 14px; max-width: 420px; margin-top: 8px;">claude plugin install core@sutra</div>
-          <p style="font-size: 13px; margin-top: 8px; margin-bottom: 0;">Restart Claude Code, or run <code style="color: var(--green); background: var(--bg); padding: 2px 6px; border-radius: 4px;">/reload-plugins</code> inside your session to pick up the plugin. The five core skills + onboarding commands are now active in every session.</p>
-        </div>
-      </div>
-
-      <div class="phase">
-        <div class="phase-num">4</div>
-        <div class="phase-content">
-          <h3>Activate + do your first governed task</h3>
-          <p style="margin-bottom: 8px;">In any project directory, open Claude Code and type:</p>
-          <div class="cta-code" style="font-size: 13px; padding: 10px 14px; max-width: 420px;">/core:start</div>
-          <p style="font-size: 13px; margin-top: 8px; margin-bottom: 8px;">One command. Writes your install identity, enables telemetry, prints the activation banner, writes a depth marker. Then ask Claude to do anything — you'll see the <strong>input-routing block</strong> and <strong>depth-estimation block</strong> before any edit. Five skills + governance enforcement now active.</p>
-          <p style="font-size: 13px; margin-top: 8px; margin-bottom: 0;">Full T+0 → T+60s walkthrough: <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/design/2026-04-21-first-run-walkthrough.md" style="color: var(--accent);">github.com/sankalpasawa/sutra</a></p>
-        </div>
-      </div>
+      <h3 style="margin-top: 24px;">Step 3 — Activate in a project</h3>
+      <div class="step-code">cd your/project &amp;&amp; claude</div>
+      <div class="step">Then inside Claude Code: <code class="inline">/core:start</code>. Idempotent — safe to re-run.</div>
     </div>
 
-    <div class="quote-block" style="margin-top: 40px;">
-      <div class="quote-text" style="font-style: normal;"><strong>v2 — Your code stays on your machine.</strong> We rebuilt the plugin around one promise: <strong>Sutra captures nothing about what you're building, by default.</strong> No file contents. No prompts. No commit messages. No code. Only tiny anonymous signals — "a hook ran," "a session ended" — that help us improve the product. Everything lives in a folder on your laptop (<code style="color: var(--green);">~/.sutra/</code>). Nothing is sent anywhere unless you explicitly opt in. Turn it off entirely with <code style="color: var(--green);">SUTRA_TELEMETRY=0</code>. Delete the folder to wipe it all. A plain-English privacy sheet (<code style="color: var(--green);">~/.sutra/PRIVACY.md</code>) lands on your disk the first time you run it — no legalese, one page, read it in two minutes.</div>
-      <div class="quote-attr" style="margin-top: 10px;">v2.1.0 · shipped 2026-04-24 · <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/CHANGELOG.md" style="color: var(--accent);">full changelog</a></div>
-    </div>
-
-    <div class="quote-block" style="margin-top: 20px;">
-      <div class="quote-text" style="font-style: normal;"><strong>Platform compatibility</strong> — skills &amp; commands work in every Claude Code surface (terminal, desktop, web, IDE). Enforcement hooks use bash — full on Mac/Linux terminal + Mac desktop + IDE (if bash on PATH). Web app: hooks sandboxed. Windows: hooks no-op until v2. Rest of the plugin still works everywhere.</div>
-    </div>
-  </div>
-</section>
-
-<section class="section" id="how-it-works">
-  <div class="container">
-    <div class="section-label">How Sutra works</div>
-    <h2>8 phases. 60 minutes. One command.</h2>
-    <p>Sutra walks you through a structured process. Not a template. A thinking partner that adapts to your specific idea, market, and skills.</p>
-
-    <div class="phases">
-      <div class="phase">
-        <div class="phase-num">1</div>
-        <div class="phase-content">
-          <h3>Intake</h3>
-          <p>Sutra asks you 10 sharp questions. Who is this for? What's the bet? What's the smallest version? No hand-waving allowed.</p>
-          <span class="phase-time">5 min</span>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-num">2</div>
-        <div class="phase-content">
-          <h3>Market Research</h3>
-          <p>Sutra researches your competitors, finds user complaints, discovers existing APIs and datasets. Your decisions are now data-informed, not guesses.</p>
-          <span class="phase-time">10 min</span>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-num">3</div>
-        <div class="phase-content">
-          <h3>Shape</h3>
-          <p>PR/FAQ test. Feature carve (ruthless). Risk map. Success metrics. Your fuzzy idea becomes a clear, one-page brief.</p>
-          <span class="phase-time">10 min</span>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-num">4</div>
-        <div class="phase-content">
-          <h3>Decide</h3>
-          <p>Commit or kill. Is the bet clear? Is the scope small enough? Is this worth your time? No building before this gate.</p>
-          <span class="phase-time">2 min</span>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-num">5</div>
-        <div class="phase-content">
-          <h3>Architect</h3>
-          <p>Sutra classifies your product type, picks the right tech stack for YOUR skills, generates your data model, and plans deployment. Every choice has a reason.</p>
-          <span class="phase-time">15 min</span>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-num">6</div>
-        <div class="phase-content">
-          <h3>Configure</h3>
-          <p>Sutra generates a custom operating system for your company. Not a template. A fitted OS based on your product type, platform, stage, and team size.</p>
-          <span class="phase-time">10 min</span>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-num">7</div>
-        <div class="phase-content">
-          <h3>Deploy</h3>
-          <p>Your company folder is created. OS files written. Committed to git. Your company now exists.</p>
-          <span class="phase-time">5 min</span>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-num">8</div>
-        <div class="phase-content">
-          <h3>Activate</h3>
-          <p>Project initialized with a roadmap. First feature ready to plan. You're building within minutes of finishing onboarding.</p>
-          <span class="phase-time">5 min</span>
-        </div>
-      </div>
+    <div class="quote-block" style="margin-top: 24px;">
+      <div class="quote-text"><strong>Platform compatibility.</strong> Skills work everywhere Claude Code works (terminal, Mac/Windows desktop, web, VS Code / JetBrains). Enforcement hooks need bash — full strength on macOS / Linux terminal + Mac desktop + IDE extensions. Web app: skills work, hooks sandboxed. Windows: install on WSL2.</div>
     </div>
   </div>
 </section>
 
 <section class="section">
   <div class="container">
-    <div class="section-label">What the OS provides</div>
-    <h2>Governance, not just tooling.</h2>
-    <p>Most AI dev tools help you type faster. Sutra changes how work is classified, scoped, and enforced across every session — for every company in your portfolio.</p>
+    <div class="section-label">In production</div>
+    <h2>Six companies running Sutra today.</h2>
+    <p>Sutra is the operating system Asawa Inc. uses to keep its portfolio in sync. Same plugin, same governance, same skill set across every company.</p>
 
-    <div class="cards">
-      <div class="card">
-        <div class="card-icon">01</div>
-        <h3>Input Routing</h3>
-        <p>Every user message is classified — direction, task, feedback, new concept, or question — before any action. Stops misrouted work at the front door.</p>
+    <div class="companies-row">
+      <div class="company">
+        <div class="company-name">Asawa Inc.</div>
+        <div class="company-desc">Holding company (self)</div>
       </div>
-      <div class="card">
-        <div class="card-icon">02</div>
-        <h3>Depth &amp; Estimation</h3>
-        <p>Every task gets a depth rating (1-5) and a cost/effort/impact estimate before it starts. Post-task actuals feed an auto-calibrating engine.</p>
+      <div class="company">
+        <div class="company-name">DayFlow</div>
+        <div class="company-desc">iOS + Android planner</div>
       </div>
-      <div class="card">
-        <div class="card-icon">03</div>
-        <h3>Coverage Engine</h3>
-        <p>Runtime process coverage — 26 trackable methods across 6 categories — measures whether the expected Sutra steps actually fired per task, per depth.</p>
+      <div class="company">
+        <div class="company-name">Billu</div>
+        <div class="company-desc">Personal AI assistant</div>
       </div>
-      <div class="card">
-        <div class="card-icon">04</div>
-        <h3>Policy-Coverage Gate</h3>
-        <p>PROTO-017: every policy marked HARD must have a compiled blocking hook and a regression test. If it can't be enforced, it can't be policy.</p>
+      <div class="company">
+        <div class="company-name">Paisa</div>
+        <div class="company-desc">Digital lending, India</div>
       </div>
-      <div class="card">
-        <div class="card-icon">05</div>
-        <h3>Auto-Propagation</h3>
-        <p>PROTO-018: when Sutra bumps version, every client company in the registry is re-manifested, re-pinned, and re-installed. No drift between the OS and the companies that run on it.</p>
+      <div class="company">
+        <div class="company-name">Testlify</div>
+        <div class="company-desc">Hiring platform</div>
       </div>
-      <div class="card">
-        <div class="card-icon">06</div>
-        <h3>Initiative Charters</h3>
-        <p>Cross-cutting outcome goals (Tokens, Speed) with DRI, contributors, quarterly OKRs. Charters sit alongside unit definitions, compound across the portfolio.</p>
-      </div>
-    </div>
-
-    <div style="margin-top: 40px;">
-      <div class="section-label">The 5 core skills shipped by the plugin</div>
-    </div>
-    <div class="skill-grid">
-      <div class="skill">
-        <div class="skill-name">/input-routing</div>
-        <div class="skill-desc">Classify next input</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">/depth-estimation</div>
-        <div class="skill-desc">Rate next task 1-5</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">/readability-gate</div>
-        <div class="skill-desc">Format next output</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">/output-trace</div>
-        <div class="skill-desc">Emit OS trace line</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">/session-retrieve</div>
-        <div class="skill-desc">Recover abruptly-closed sessions</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">/core:start</div>
-        <div class="skill-desc">Activate here (the one command)</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">/core:status</div>
-        <div class="skill-desc">Install + queue state</div>
-      </div>
-    </div>
-
-    <div style="margin-top: 40px;">
-      <div class="section-label">Running companies (v1.9 client registry)</div>
-    </div>
-    <div class="skill-grid">
-      <div class="skill">
-        <div class="skill-name">Asawa Inc.</div>
-        <div class="skill-desc">Tier-1 governance (self)</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">Dawny (DayFlow)</div>
-        <div class="skill-desc">iOS + Android planner</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">Maze</div>
-        <div class="skill-desc">Humor feed platform</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">PPR</div>
-        <div class="skill-desc">Wedding command center</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">Paisa</div>
-        <div class="skill-desc">Digital lending, India</div>
-      </div>
-      <div class="skill">
-        <div class="skill-name">Dharmik</div>
-        <div class="skill-desc">Shopify D2C, 1M+ customers</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="container">
-    <div class="section-label">How Sutra thinks</div>
-    <h2>Company-first, not code-first</h2>
-    <p>Most AI tools help you write code faster. Sutra helps you build a company. The difference: code is a means, not the end. Sutra makes sure you're building the right thing before you build it fast.</p>
-
-    <div class="cards">
-      <div class="card">
-        <div class="card-icon">Sense</div>
-        <h3>Understand the situation</h3>
-        <p>Check production health. Review learnings from past sessions. Understand what's working and what's not.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">Shape</div>
-        <h3>Turn fuzzy into clear</h3>
-        <p>Brainstorm, research, carve scope. Every idea gets stress-tested against market reality.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">Decide</div>
-        <h3>Commit or kill</h3>
-        <p>Architecture review. Design review. Second opinions. No building without commitment.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">Build</div>
-        <h3>Execute with quality</h3>
-        <p>Plan. Execute in waves. Test. Fix. Review code. Ship. Monitor. Learn.</p>
+      <div class="company">
+        <div class="company-name">Dharmik</div>
+        <div class="company-desc">Shopify D2C</div>
       </div>
     </div>
   </div>
@@ -635,24 +475,21 @@
 
 <section class="final-cta">
   <div class="container">
-    <h2>Ready to run a company on Sutra?</h2>
-    <p>Install the plugin. Activate the OS. Start with one command.</p>
+    <h2>Ready?</h2>
+    <p>One command. macOS or Linux. Idempotent. Privacy-first.</p>
 
     <div class="cta-block" style="text-align: left;">
-      <div class="cta-label">Step 1: Add the marketplace</div>
-      <div class="cta-code" style="margin-bottom: 12px;">claude plugin marketplace add sankalpasawa/sutra</div>
-      <div class="cta-label">Step 2: Install the plugin</div>
-      <div class="cta-code" style="margin-bottom: 12px;">claude plugin install core@sutra</div>
-      <div class="cta-label">Step 3: Activate + onboard in one command</div>
-      <div class="cta-code">/core:start</div>
-      <div class="cta-hint" style="margin-top: 12px;">One command does everything — writes a local identity file on your disk, activates the four governance skills, seeds a depth marker, prints a banner. Nothing leaves your machine unless you opt in. Upgrades propagate automatically from here. Need to inspect? <code style="color: var(--green);">/core:status</code>. Need an update? <code style="color: var(--green);">/core:update</code>. Done? <code style="color: var(--green);">/core:uninstall</code>.</div>
+      <div class="cta-code">curl -fsSL https://sutra.os/install.sh | bash</div>
+      <div class="cta-hint">
+        Then open Claude Code in any project: <code class="inline">cd your/project &amp;&amp; claude</code> → <code class="inline">/core:start</code>. That's it.
+      </div>
     </div>
   </div>
 </section>
 
 <footer>
   <div class="container">
-    Sutra by Asawa Inc. &middot; OS v1.9.1 &middot; Plugin v2.1.0 &middot; 2026
+    Sutra by Asawa Inc. &middot; v2.8.11 &middot; <a href="https://github.com/sankalpasawa/sutra">github</a> &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/CHANGELOG.md">changelog</a> &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PRIVACY.md">privacy</a> &middot; MIT license
   </div>
 </footer>
 

@@ -38,12 +38,18 @@ export const l2Boundary = {
     // Parse-as-JSON gate (lightweight Ajv-defer per M3.2.3).
     try {
       const parsed = JSON.parse(i.contract_schema)
-      // JSON Schema documents are objects (or booleans true/false per Draft-7).
-      // Reject obviously-invalid shapes: strings, numbers, null roots.
+      // JSON Schema documents are objects (or booleans true/false per Draft-7
+      // / 2020-12 trivial-schema rule). Reject obviously-invalid roots:
+      // strings, numbers, null, AND arrays. (Codex M3 P1 fix 2026-04-28:
+      // arrays are NOT valid JSON Schema document roots — '[]' must reject.)
       if (parsed === null) return false
       if (typeof parsed === 'string' || typeof parsed === 'number') return false
-      // Booleans and objects (incl. arrays) are accepted as candidate schema
-      // documents at this layer; full Ajv compile lives in M5.
+      if (Array.isArray(parsed)) return false
+      // V2 §3 HARD spirit (codex M3 P1, conservative): require object root.
+      // Trivial schemas (raw `true` / `false`) are not minted by the M3
+      // boundary — full Draft-7/2020-12 trivial-schema compile lives in M5.
+      if (typeof parsed === 'boolean') return false
+      if (typeof parsed !== 'object') return false
       return true
     } catch {
       return false

@@ -134,8 +134,25 @@ export const l4Commitment = {
   /**
    * Predicate: every Charter obligation either has a step trace OR has
    * gap_status='accepted'.
+   *
+   * Codex M3 P1 fix 2026-04-28: shape-check is insufficient. A
+   * `covered_by_step` integer that doesn't refer to a real step in
+   * `workflow.step_graph` — or refers to a step whose `traces_to` does NOT
+   * include this obligation — must be rejected. Otherwise a Workflow can
+   * fabricate coverage decisions and pass `operationalizes` with no real
+   * coverage edge.
+   *
+   * `workflow` is OPTIONAL for backwards-compat: when absent we keep the old
+   * shape-only behavior (used by tests that exercise charter+coverage in
+   * isolation, e.g. "missing decision → false"). `operationalizes` always
+   * passes a workflow so the relation-check is enforced for the composed
+   * predicate.
    */
-  coversAllObligations(charter: Charter, coverage: CoverageMatrix): boolean {
+  coversAllObligations(
+    charter: Charter,
+    coverage: CoverageMatrix,
+    workflow?: Workflow,
+  ): boolean {
     if (typeof charter !== 'object' || charter === null) return false
     if (!Array.isArray(coverage.obligation_coverage)) return false
 
@@ -146,23 +163,56 @@ export const l4Commitment = {
       byName.set(d.obligation_name, d)
     }
 
+    // Build relation-check side-tables when workflow + per-step coverage
+    // are available. This is the codex-mandated path: shape-only acceptance
+    // of a numeric covered_by_step is unsound.
+    const stepIdSet: Set<number> | null =
+      workflow && Array.isArray(workflow.step_graph)
+        ? new Set(
+            (workflow.step_graph as WorkflowStep[])
+              .map((s) => s.step_id)
+              .filter((n) => typeof n === 'number'),
+          )
+        : null
+    const stepCoverageById: Map<number, StepCoverage> | null =
+      Array.isArray(coverage.step_coverage)
+        ? new Map(coverage.step_coverage.map((sc) => [sc.step_id, sc]))
+        : null
+
     for (const oblig of obligations) {
       const decision = byName.get(oblig)
       if (!decision) return false
       if (isAcceptedDecision(decision)) continue
       // Must point at a real step.
       if (typeof decision.covered_by_step !== 'number') return false
+
+      // Relation-check (codex M3 P1):
+      // (a) covered_by_step MUST exist in workflow.step_graph[*].step_id
+      // (b) the referenced step's traces_to MUST include this obligation
+      if (stepIdSet !== null) {
+        if (!stepIdSet.has(decision.covered_by_step)) return false
+      }
+      if (stepCoverageById !== null) {
+        const sc = stepCoverageById.get(decision.covered_by_step)
+        if (!sc) return false
+        if (!Array.isArray(sc.traces_to)) return false
+        if (!sc.traces_to.includes(oblig)) return false
+      }
     }
     return true
   },
 
   /**
    * `operationalizes(W, C)` per V2 §3 L4: AND of the two predicates above.
+   *
+   * Codex M3 P1 fix 2026-04-28: passes Workflow to coversAllObligations so
+   * the relation-check (covered_by_step exists + step.traces_to includes
+   * obligation) runs for the composed predicate.
    */
   operationalizes(w: Workflow, charter: Charter, coverage: CoverageMatrix): boolean {
     return (
       this.tracesAllSteps(w, charter, coverage) &&
-      this.coversAllObligations(charter, coverage)
+      this.coversAllObligations(charter, coverage, w)
     )
   },
 }

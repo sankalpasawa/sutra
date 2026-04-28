@@ -148,3 +148,18 @@ arbitraries at `tests/property/arbitraries.ts`.
 > / lines 96.89% (all above 80% threshold). TS strict clean. Tag:
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
+
+> **M3 patch (2026-04-28)** — L2 schema-root validation tightened (array
+> roots, raw-boolean trivial schemas, and JSON-null roots all rejected per
+> V2 §3 HARD spirit, conservative); L4/T3 step coverage soundness via
+> Workflow primitive-level enforcement of unique step_ids in step_graph
+> (createWorkflow throws; isValidWorkflow rejects deserialized duplicates);
+> L4 obligation coverage relation-check (covered_by_step MUST exist in
+> workflow.step_graph AND step.traces_to MUST include the obligation it's
+> claimed to cover — closes the unsoundness where operationalizes(W,C) could
+> return true with fabricated coverage decisions); runAll property test
+> density bumped 200 → 1000 cases. 19 new contract + property tests
+> (187 → 206). Coverage: stmts 96.99% / branches 83.08% / funcs 100% /
+> lines 96.99%. TS strict clean. Sub-tag:
+> `native-v1.0-m3-codex-p1-fixed`. Awaits codex re-review
+> (controller-dispatched).

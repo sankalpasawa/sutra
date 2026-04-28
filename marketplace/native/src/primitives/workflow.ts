@@ -167,6 +167,24 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
   }
   spec.step_graph.forEach((s, i) => validateStep(s, i))
 
+  // Codex M3 P1 fix 2026-04-28: enforce unique step_id across step_graph.
+  // L4/T3 (tracesAllSteps) keys per-step coverage by step_id via Map<number, _>;
+  // duplicate ids would silently collapse coverage records and let unsoundness
+  // through. Catch at the boundary (createWorkflow) and at the validator
+  // (isValidWorkflow) for deserialized records.
+  {
+    const seen = new Set<number>()
+    for (let i = 0; i < spec.step_graph.length; i++) {
+      const id = spec.step_graph[i]!.step_id
+      if (seen.has(id)) {
+        throw new Error(
+          `Workflow.step_graph[${i}].step_id=${id} duplicates an earlier step (V2 §1 P3 — step_ids MUST be unique within a Workflow; required for L4/T3 coverage soundness)`,
+        )
+      }
+      seen.add(id)
+    }
+  }
+
   const onOverride: OverrideAction = spec.on_override_action ?? 'escalate'
   if (!VALID_OVERRIDE_ACTION.has(onOverride)) {
     throw new Error(
@@ -281,6 +299,11 @@ export function isValidWorkflow(w: Workflow): boolean {
       return false
     }
   }
+  // Codex M3 P1 fix 2026-04-28: defensively reject deserialized records that
+  // carry duplicate step_ids. Constructor enforces uniqueness; validator must
+  // agree (V2 §3 HARD — boundary must not mint records the validator considers
+  // invalid; same direction holds for deserialized records).
+  const seenStepIds = new Set<number>()
   for (const step of w.step_graph) {
     const hasSkill = typeof step.skill_ref === 'string' && step.skill_ref.length > 0
     const hasAction = typeof step.action === 'string' && step.action.length > 0
@@ -289,6 +312,10 @@ export function isValidWorkflow(w: Workflow): boolean {
     // V2.3 §A11 — on_failure must be in StepFailureAction enum
     if (typeof step.on_failure !== 'string' || step.on_failure.length === 0) return false
     if (!VALID_STEP_FAILURE_ACTION.has(step.on_failure as StepFailureAction)) return false
+    // step_id uniqueness (codex M3 P1)
+    if (typeof step.step_id !== 'number' || !Number.isInteger(step.step_id)) return false
+    if (seenStepIds.has(step.step_id)) return false
+    seenStepIds.add(step.step_id)
   }
   return true
 }

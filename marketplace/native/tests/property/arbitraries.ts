@@ -201,12 +201,19 @@ export interface WorkflowArbOpts {
   return_contract?: string | null
 }
 
-/** Generates a Workflow record with all V2.4 fields. step_graph guaranteed non-empty. */
+/**
+ * Generates a Workflow record with all V2.4 fields. step_graph guaranteed
+ * non-empty AND with unique step_ids (codex M3 P1 fix 2026-04-28 — workflow
+ * primitive now enforces step_id uniqueness, so the arbitrary must agree to
+ * keep property tests realistic instead of relying on test-side renumbering).
+ */
 export function workflowArb(opts: WorkflowArbOpts = {}): fc.Arbitrary<Workflow> {
   return fc.record({
     id: fc.string({ minLength: 1, maxLength: 16 }).map((s) => `W-${s}`),
     preconditions: fc.string({ maxLength: 30 }),
-    step_graph: fc.array(workflowStepArb, { minLength: 1, maxLength: 5 }),
+    step_graph: fc
+      .array(workflowStepArb, { minLength: 1, maxLength: 5 })
+      .map((steps) => steps.map((s, i) => ({ ...s, step_id: i }))),
     inputs: fc.array(dataRefArb, { maxLength: 3 }),
     outputs: fc.array(dataRefArb, { maxLength: 3 }),
     state: fc.array(dataRefArb, { maxLength: 3 }),
