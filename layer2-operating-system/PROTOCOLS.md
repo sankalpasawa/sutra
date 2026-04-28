@@ -21,7 +21,7 @@ _Last reconciled from system.yaml: **2026-04-18** · 22 protocols total + 2 hand
 | PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/dispatcher-pretool.sh Check 5 (PreToolUse exi… | sutra/package/tests/test-d28-routing-gate.sh | 2026-04-18 |
 | PROTO-006 | Process Discipline | ACTIVE | SOFT | CLAUDE.md + dispatcher routing check | — | 2026-04-18 |
 | PROTO-009 | Narration Is Not Artifact | ACTIVE | SOFT | dispatcher-pretool.sh | — | 2026-04-18 |
-| PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | D27 depth-5 gate (current); compiler upgrades this in Phase… | — | 2026-04-18 |
+| PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | holding/hooks/dispatcher-pretool.sh (D27 depth-5 gate) | — | 2026-04-18 |
 | PROTO-014 | Sutra Version Check (Client-Side) | ACTIVE | SOFT | CLAUDE.md session-start check + .claude/sutra-version manif… | — | 2026-04-18 |
 | PROTO-015 | Verify Before Commit | ACTIVE | SOFT | agent behavior + estimation-enforcement.sh (current); pre-c… | — | 2026-04-18 |
 | PROTO-017 | Policy-to-Implementation Coverage | ACTIVE | SOFT | validate.mjs inverse coverage check (current); reconciler/d… | — | 2026-04-18 |
@@ -759,6 +759,64 @@ RELATES:
   firewall channel). Design doc: holding/research/2026-04-23-build-layer-
   protocol-design.md (§15 Codex review synthesis).
 ```
+
+### D38 Amendment (2026-04-28) — Plugin-First HARD enforcement
+
+Per D38 (`holding/FOUNDER-DIRECTIONS.md` §D38) and codex consult DIRECTIVE-ID 1777362899 (verdict ADVISORY, all findings absorbed atomically), PROTO-021 is extended with:
+
+**1. Structured marker schema** (replaces loose single-line marker for D38 paths):
+
+```
+LAYER=L0|L1|L2
+SCOPE=fleet|cohort:<name>|single-instance:<name>
+TARGET_PATH=<abs path or normalized prefix>
+WHY_NOT_L0_KIND=staging|instance-only             # required for L2 on D38 paths (L1 implies "staging")
+WHY_NOT_L0_REASON=<non-empty text>                # required for L2 on D38 paths
+PROMOTE_TO=<plugin path or NONE>                  # required non-NONE for L1
+PROMOTE_BY=<YYYY-MM-DD or NONE>                   # required non-NONE for L1
+OWNER=<durable role or NONE>                      # required non-NONE for L1
+ACCEPTANCE=<non-empty or NONE>                    # required non-NONE for L1
+TS=<unix>
+```
+
+Old single-line `LAYER=N SCOPE=X TARGET=path TS=ts` is rejected for D38 paths but accepted for LEGACY-HARD paths during transition (PROTO-021 original semantics for non-D38 paths preserved).
+
+**2. Path categories + decision logic (HARD, exit 2 on violation)**:
+
+| Category | Paths | Rule |
+|---|---|---|
+| D38 PLUGIN-RUNTIME | `sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin}/**` | LAYER must be L0 |
+| D38 SHARED-RUNTIME | `sutra/hooks/**` (git/runtime universals — codex carve-out) | LAYER must be L0 |
+| D38 HOLDING-IMPL | `holding/{hooks,scripts,skills,commands,bin}/**` | marker required; LAYER L0 forbidden (lying); L1 needs all PROMOTE_*/OWNER/ACCEPTANCE non-empty + non-NONE; L2 needs WHY_NOT_L0_KIND=instance-only AND WHY_NOT_L0_REASON non-empty |
+| LEGACY-HARD (PROTO-021 original) | `holding/departments/**`, `holding/evolution/**`, `holding/FOUNDER-DIRECTIONS.md`, `sutra/os/charters/**` | marker present (any content) = pass |
+| SOFT | everywhere else not whitelisted | advisory only |
+
+**3. "Canonical" definition** (codex's deepest insight):
+
+A file under `sutra/marketplace/plugin/` is canonical only if it is **distributed + activation-wired + released**. Inactive plugin-path files (not registered in `hooks.json`, not exposed via `bin/sutra` or commands, not present in a shipped release) are still phantoms. Wave-1 promotions are atomic ship units: canonical implementation + activation wiring + tests + release surface + holding cutover in the same change window.
+
+**4. Mirror retirement** — shims, not copies:
+
+```bash
+#!/usr/bin/env bash
+# MIRROR OF: sutra/marketplace/plugin/hooks/<file>.sh
+# canonical = plugin; retire-by: <YYYY-MM-DD>
+exec bash "$CLAUDE_PROJECT_DIR/sutra/marketplace/plugin/hooks/<file>.sh" "$@"
+```
+
+TTL: 7 days max as a shim, immediate deletion preferred when settings + activation update in the same release window. Codex: "30 days is too long; you are preserving the disease."
+
+**5. Override requirements**:
+
+`BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<specific reason>'` logs structured fields: `actor`, `path`, `cmd`, `reason`, `ts`, `session_id`, `declared_layer`, `override_kind`. Per codex: "founder-only flag without trusted identity is theater" — override is honor-system at env-var level, audit-logged, not authenticated.
+
+**6. Wave sequencing (Bucket B atomic cutovers)**:
+- Wave 1: marker-schema upgrade + `build-layer-check.sh` plugin L0 promotion + `hooks.json` registration + tests + plugin release + holding shim cutover. (This wave.)
+- Wave 2: `structural-move-check.sh` (PROTO-025) plugin L0 promotion, same atomic pattern.
+- Wave 3: `pre-commit-test-gate.sh` + `mark-tests-ran.sh` paired promotion to `sutra/hooks/`.
+- Wave 4+: Bucket A (22 mirrors) retirement, 5-7 hooks per wave, shim or delete, highest-churn first.
+
+Source: D38 + codex consult `.enforcement/codex-reviews/d38-codex-consult-1777362899.md`.
 
 ## PROTO-022: Completion Status Protocol [ACTIVE]
 _yaml status: active — SOFT enforcement (subagent footer scan warns, does not block). Shipped 2026-04-24 from gstack-patterns-review codex consult (session 019dbc14-ace9-7323-a796-693d943200c9) top-2 ROI recommendation._
