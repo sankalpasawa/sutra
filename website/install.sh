@@ -185,39 +185,55 @@ step_marketplace_add() {
 
   if [[ ${rc} -eq 0 ]]; then
     log "Marketplace added: ${SUTRA_MARKETPLACE}"
-    return 0
-  fi
-
-  # Common "already added" phrases — treat as success.
-  if printf '%s' "${out}" | grep -iqE 'already (added|exists|present)|duplicate'; then
+  elif printf '%s' "${out}" | grep -iqE 'already (added|exists|present)|duplicate'; then
     log "Marketplace already added — continuing."
-    return 0
+  else
+    printf '%s\n' "${out}" >&2
+    die "marketplace add failed (rc=${rc})."
   fi
 
-  printf '%s\n' "${out}" >&2
-  die "marketplace add failed (rc=${rc})."
+  # Always refresh the marketplace cache after add. Without this, a returning
+  # user (whose cache pre-dates the latest release) gets the cached version of
+  # core@sutra at install/update time, not the actual latest. Idempotent.
+  log "Refreshing marketplace cache to latest catalog…"
+  if ! claude plugin marketplace update "${SUTRA_MARKETPLACE}" 2>&1 | sed 's/^/[sutra]   /' >&2; then
+    warn "marketplace update returned non-zero (continuing — install/update step may still pull latest)."
+  fi
 }
 
 # -----------------------------------------------------------------------------
 # Step 3 — plugin install (idempotent)
 # -----------------------------------------------------------------------------
 step_plugin_install() {
-  step "Step 3/5: plugin install"
+  step "Step 3/5: plugin install or update"
   local out rc=0
   out="$(claude plugin install "${SUTRA_PLUGIN}" 2>&1)" || rc=$?
 
   if [[ ${rc} -eq 0 ]]; then
     log "Plugin installed: ${SUTRA_PLUGIN}"
-    return 0
+  elif printf '%s' "${out}" | grep -iqE 'already (installed|present)'; then
+    # Returning user — bump to whatever the just-refreshed marketplace cache
+    # advertises. Without this, the user keeps whatever version was on disk,
+    # which is exactly the bug founder reported (curl|bash kept stale plugin).
+    log "Plugin already installed — updating to latest…"
+    local up_out up_rc=0
+    up_out="$(claude plugin update "${SUTRA_PLUGIN}" 2>&1)" || up_rc=$?
+    printf '%s\n' "${up_out}" | sed 's/^/[sutra]   /' >&2
+    if [[ ${up_rc} -ne 0 ]]; then
+      warn "plugin update returned non-zero (rc=${up_rc}) — your local plugin may still be at a prior version. Try: claude plugin update ${SUTRA_PLUGIN}"
+    fi
+  else
+    printf '%s\n' "${out}" >&2
+    die "plugin install failed (rc=${rc})."
   fi
 
-  if printf '%s' "${out}" | grep -iqE 'already (installed|present)'; then
-    log "Plugin already installed — continuing."
-    return 0
+  # Final visibility: print the version we ended up at so users see what they got.
+  local plugin_dir="${HOME}/.claude/plugins/cache/sutra/core"
+  if [[ -d "${plugin_dir}" ]]; then
+    local latest_version
+    latest_version=$(ls -1 "${plugin_dir}" 2>/dev/null | sort -V | tail -1)
+    [[ -n "${latest_version}" ]] && log "Active core@sutra version: v${latest_version}"
   fi
-
-  printf '%s\n' "${out}" >&2
-  die "plugin install failed (rc=${rc})."
 }
 
 # -----------------------------------------------------------------------------
