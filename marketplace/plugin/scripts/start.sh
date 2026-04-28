@@ -110,17 +110,42 @@ esac
 SUTRA_AUTO_OPTIN="$TELEMETRY_DEFAULT" bash "$PLUGIN_ROOT/scripts/onboard.sh" >/dev/null 2>&1
 
 # Step 2 — patch .claude/sutra-project.json to persist the profile + telemetry
+# v2.8.11 (vinit#38): moved from python3 stdin-heredoc to file-execution form +
+# atomic write. Some macOS sandbox/EDR setups SIGKILL stdin-fed python3.
+sutra_run_python() {
+  local label="$1"; shift
+  python3 "$@"
+  local rc=$?
+  if [ "$rc" -eq 137 ]; then
+    cat >&2 <<SIGKILL_HINT
+sutra: $label was SIGKILLed (exit 137). This typically means a macOS
+sandbox/EDR tool (Endpoint Security, MDM/Jamf, Gatekeeper, Crowdstrike,
+SentinelOne, etc.) is killing python3 launches from Claude Code's bash
+environment. v2.8.11 already moved python3 calls from heredoc form to
+file form, which sidesteps most heuristic killers. If you still see 137:
+
+  1. Try /core:start from Terminal.app (outside Claude Code) to confirm
+     the fix landed.
+  2. Check for an Endpoint Detection agent on your Mac:
+       ps -ef | grep -iE '(jamf|crowdstrike|sentinel|esp|carbonblack)'
+  3. Check python3 codesign:
+       codesign -d --verbose=4 \$(which python3)
+  4. Report at https://github.com/sankalpasawa/sutra/issues/38 with
+     the above output.
+
+Repro: vinit#38 documented identical symptoms on a v2.8.10 machine
+(user @abhishekshah). The atomic-write protections in v2.8.11 ensure
+your sutra-project.json was NOT corrupted by this kill — re-running
+/core:start after the diagnostic above will pick up where you left off.
+SIGKILL_HINT
+    exit 137
+  fi
+  return $rc
+}
+
 if [ -f .claude/sutra-project.json ]; then
-  python3 - "$PROFILE" "$TELEMETRY_DEFAULT" <<'PY'
-import json, sys
-p = '.claude/sutra-project.json'
-profile = sys.argv[1]
-telemetry_default = sys.argv[2] == '1'
-d = json.load(open(p))
-d['profile'] = profile
-d['telemetry_optin'] = telemetry_default
-open(p, 'w').write(json.dumps(d, indent=2))
-PY
+  sutra_run_python "patch-profile (step 2)" \
+    "$PLUGIN_ROOT/scripts/_sutra_project_lib.py" patch-profile "$PROFILE" "$TELEMETRY_DEFAULT"
 fi
 
 # Step 3 — depth marker so the next Edit/Write won't trip PreToolUse warn
@@ -254,46 +279,10 @@ GOVBLOCK
 ensure_project_claude_md
 
 # Step 4 — activation banner + next steps
+# v2.8.11 (vinit#38): moved from python3 stdin-heredoc to file-execution form.
 if [ -f .claude/sutra-project.json ]; then
-  python3 <<PY
-import json, os, shutil
-d = json.load(open('.claude/sutra-project.json'))
-print("🧭 Sutra active")
-print(f"   Version:         {d['sutra_version']}")
-print(f"   Project:         {d['project_name']}")
-print(f"   Install ID:      {d['install_id']}")
-print(f"   Project ID:      {d['project_id']}")
-print(f"   Profile:         {d.get('profile','project')}")
-# v2.7.3 honesty (vinit#9): banner reflects actual v2.0+ privacy model — push is
-# disabled regardless of telemetry_optin flag; legacy push only via env opt-in.
-if d.get('telemetry_optin') and os.environ.get('SUTRA_LEGACY_TELEMETRY') == '1':
-    _tel = "on — legacy push active (SUTRA_LEGACY_TELEMETRY=1)"
-elif d.get('telemetry_optin'):
-    _tel = "local-only — push disabled in v2.0 privacy model (see PRIVACY.md)"
-else:
-    _tel = "off"
-print(f"   Telemetry:       {_tel}")
-# v2.7.3 honesty (vinit#7): RTK rewrite is opt-in external dep, not bundled.
-_rtk_active = shutil.which('rtk') is not None and not os.path.exists(os.path.expanduser('~/.rtk-disabled'))
-print(f"   RTK rewrite:     {'active' if _rtk_active else 'inactive — rtk binary not installed (opt-in; see README)'}")
-print()
-print("   Skills loaded:   input-routing, depth-estimation, readability-gate, output-trace")
-profile = d.get('profile','project')
-enforcement = "HARD — missing depth marker blocks Edit/Write" if profile == 'company' else "warn-only"
-print(f"   Enforcement:     {enforcement}")
-print()
-print("You're ready. Ask Claude anything — every task goes through governance.")
-print()
-print("Other commands:")
-print("   /core:status      — show install / queue / telemetry state")
-print("   /core:update      — pull the latest plugin version")
-print("   /core:uninstall   — remove Sutra from this machine")
-print("   /core:depth-check — manual depth marker for the next task")
-print("   /core:permissions — paste-ready allowlist snippet")
-if profile == 'company':
-  print()
-  print("Escape hatch (one-shot): prefix any tool call with SUTRA_BYPASS=1")
-PY
+  sutra_run_python "banner (step 4)" \
+    "$PLUGIN_ROOT/scripts/_sutra_project_lib.py" banner
 else
   echo "onboard failed — check CLAUDE_PROJECT_DIR and plugin install"
   exit 1

@@ -54,24 +54,12 @@ if [ -f .claude/sutra-project.json ]; then
   EXISTING_IDENTITY_JSON=$(python3 -c "import json; d=json.load(open('.claude/sutra-project.json')); ident=d.get('identity'); print(json.dumps(ident) if ident else '')" 2>/dev/null || echo "")
 fi
 
-python3 - "$INSTALL_ID" "$PROJECT_ID" "$NAME" "$FIRST_SEEN" "$VERSION" "$EXISTING_OPTIN" "$EXISTING_IDENTITY_JSON" > .claude/sutra-project.json <<'PY'
-import json, sys
-install_id, project_id, name, first_seen, version, optin_str, existing_identity = sys.argv[1:8]
-d = {
-  "install_id": install_id,
-  "project_id": project_id,
-  "project_name": name,
-  "first_seen": first_seen,
-  "sutra_version": version,
-  "telemetry_optin": optin_str == "true",
-}
-if existing_identity:
-    try:
-        d["identity"] = json.loads(existing_identity)
-    except Exception:
-        pass
-print(json.dumps(d, indent=2))
-PY
+# v2.8.11 (vinit#38): moved from python3 stdin-heredoc to file-execution form +
+# atomic write (the helper writes via tempfile + os.replace internally, so a
+# SIGKILL mid-write leaves the prior valid file content untouched rather than
+# producing a 0-byte corrupted .claude/sutra-project.json).
+python3 "$PLUGIN_ROOT/scripts/_sutra_project_lib.py" write-onboard \
+    "$INSTALL_ID" "$PROJECT_ID" "$NAME" "$FIRST_SEEN" "$VERSION" "$EXISTING_OPTIN" "$EXISTING_IDENTITY_JSON"
 
 queue_init
 
@@ -85,19 +73,9 @@ if [ "$EXISTING_OPTIN" = "true" ] \
    && declare -f capture_identity >/dev/null 2>&1; then
   IDENTITY_JSON=$(capture_identity "$VERSION" 2>/dev/null)
   if [ -n "$IDENTITY_JSON" ]; then
-    python3 - "$IDENTITY_JSON" <<'PY' 2>/dev/null || true
-import json, sys
-p = '.claude/sutra-project.json'
-try:
-    d = json.load(open(p))
-except Exception:
-    sys.exit(0)
-try:
-    d['identity'] = json.loads(sys.argv[1])
-except Exception:
-    sys.exit(0)
-open(p, 'w').write(json.dumps(d, indent=2))
-PY
+    # v2.8.11 (vinit#38): moved from python3 stdin-heredoc to file-execution
+    # form + atomic write. Best-effort per onboard.sh contract — silent failure.
+    python3 "$PLUGIN_ROOT/scripts/_sutra_project_lib.py" stamp-identity "$IDENTITY_JSON" 2>/dev/null || true
     # Also cache for push.sh staleness check. Uses SUTRA_HOME (set by queue.sh).
     SUTRA_HOME_DIR="${SUTRA_HOME:-$HOME/.sutra}"
     mkdir -p "$SUTRA_HOME_DIR" 2>/dev/null

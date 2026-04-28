@@ -1,5 +1,46 @@
 # Changelog
 
+## v2.8.11 — 2026-04-28
+
+**Vinit#38 — `/core:start` SIGKILLed by macOS sandbox/EDR on stdin-fed `python3` heredocs (P0 — bricks new-client onboarding).**
+
+@vinitharmalkar reported (#38) on behalf of @abhishekshah that `/core:start` exits 137 (SIGKILL) on a v2.8.10 macOS install. Two `python3` subprocesses fed code via stdin heredoc (`python3 - <<'PY' ... PY`) are killed mid-execution by signal 9; bash code paths in the same script complete normally. Result: 0-byte `.claude/sutra-project.json`, partial governance block in `.claude/CLAUDE.md`, bricked onboarding.
+
+The kill is external — likely a macOS Endpoint Detection agent (Crowdstrike, SentinelOne, Jamf MDM, Apple Endpoint Security framework, Gatekeeper) flagging stdin-fed `python3` as suspicious. Vinit's own v2.8.5 Mac on the same plugin pattern works fine, confirming this is an environment-specific kill — not a universal Sutra bug — but enough macOS setups have one of these agents that we need to defend.
+
+### Fix (Vinit's recommendations A + B + C)
+
+**A. File-execution form replaces stdin-fed heredocs.** All `python3 - <<'PY' ... PY` heredocs in `start.sh` and `onboard.sh` (4 total) moved into a real `.py` file: `scripts/_sutra_project_lib.py` with subcommands `patch-profile`, `write-onboard`, `stamp-identity`, `banner`. The file form is much less likely to be flagged by sandbox/EDR than stdin-fed code.
+
+**B. SIGKILL diagnostic.** New `sutra_run_python` wrapper in `start.sh` detects exit 137 and prints a clear, actionable diagnostic — what to check (`ps -ef | grep crowdstrike/jamf/sentinel`, `codesign -d $(which python3)`), where to report, and confirmation that the user's `sutra-project.json` is not corrupted (because of fix C).
+
+**C. Atomic writes.** All file mutations in the new helper use `tempfile + os.replace`. A SIGKILL between the temp-file create and the rename leaves the prior valid file content untouched — no more 0-byte corruption. Applies to both initial onboard write and subsequent patch.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `scripts/_sutra_project_lib.py` | NEW — 4 subcommands replacing all stdin-fed python3 heredocs in start/onboard |
+| `scripts/start.sh` | Heredoc 1 (line 114) + heredoc 2 (line 258) → file-form helper calls; new `sutra_run_python` wrapper with SIGKILL diagnostic |
+| `scripts/onboard.sh` | Heredoc 1 (line 57, main onboard write) + heredoc 2 (line 88, identity stamp) → file-form helper calls |
+
+### Acceptance
+
+- `bash -n` clean on both modified shell scripts.
+- `python3 -m py_compile` clean on the new helper.
+- Smoke: `/core:start` happy path completes with valid `sutra-project.json` + banner output identical to v2.8.10.
+- Non-existent file path: `patch-profile` exits 0 with skip message; `banner` exits 1 with clear error.
+- Corrupt-file path: `patch-profile` exits 2 with recovery hint (`rm + /core:start`).
+- Atomic-write path: confirmed `tempfile + os.replace` semantics — temp file removed on exception.
+
+### Notes
+
+- Inline `python3 -c "..."` calls in `onboard.sh` (4 read-only one-liners) intentionally NOT migrated — argv-form `python3 -c` is documented as not affected by Vinit's repro (only stdin-fed heredocs received SIGKILL). Migrating those would add file overhead with no observable benefit.
+- Future hardening track: if `python3 -c` form ALSO gets killed on some setups (we'll find out from the fleet), migrate those too.
+
+### Closes
+- vinit#38 (P0 — `/core:start` SIGKILL on stdin-fed python3, bricking @abhishekshah's onboarding)
+
 ## v2.8.10 — 2026-04-28
 
 **Three infrastructure fixes — vinit#26 transparency + redactor over-strip refusal + zsh `$0` artifact detection.**
