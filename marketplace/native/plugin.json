@@ -1,0 +1,14 @@
+{
+  "name": "native",
+  "version": "1.0.0",
+  "description": "Sutra's V2.4-architecture-based deployable plugin",
+  "author": "Sutra",
+  "license": "Apache-2.0",
+  "marketplace": "sutra@asawa-marketplace",
+  "hooks": {
+    "PreToolUse": "bin/pretool-shim.sh",
+    "PostToolUse": "bin/posttool-shim.sh",
+    "Stop": "bin/stop-shim.sh"
+  },
+  "skills_dir": "skills/"
+}
