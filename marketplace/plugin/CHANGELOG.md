@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.8.4 — 2026-04-28
+
+**D38 Waves 6+7 — Bucket C bulk promotion (28 governance hooks → plugin canonical).**
+
+Per founder direction "finish all the rest of the things" + D38 §Acceptance ("documented disposition within 14 days, target 2026-05-12"), 28 Bucket C governance hooks moved from holding/hooks/ to sutra/marketplace/plugin/hooks/. Plugin is now the canonical home for them.
+
+### Hooks promoted (28)
+
+agent-completion-check, architecture-awareness, auto-push, blueprint-check, check-graduation, context-budget-check, hook-health-sensor, input-classification-gate, kpi-tracker, latency-collector, lifecycle-check, narration-not-artifact, new-path-detector, onboarding-self-check, output-behavior-lint, policy-only-sensor, principle-regression, process-fix-check, research-cadence-check, rotate-logs, rtk-health-check, self-assess-before-foundational, session-checkpoint, session-start-rotate, test-in-production-check, time-allocation-tracker, triage-collector, tripwire-hook-sizes.
+
+### What does NOT change in this version
+
+- These hooks are NOT yet registered in plugin hooks.json (each requires per-hook event-matcher analysis — deferred to a follow-up wave). Marketplace consumers see canonical files in plugin/hooks/ but no automatic activation. Holding-side consumers (Asawa) continue to invoke them via existing settings.json (paths updated in companion holding commit to point at plugin canonicals).
+- Asawa-specific hooks (Bucket D — high holding/Asawa references) stay at holding/hooks/ with `WHY_NOT_L0_KIND=instance-only` headers (separate commit).
+
+### What's still pending
+
+- Wave 8 (companion holding commit): update holding/.claude/settings.json to point at plugin canonicals + delete holding/hooks/ shims and Bucket C originals.
+- Wave 9 (future): per-hook plugin hooks.json registration so promoted Bucket C hooks fire fleet-wide automatically.
+
 ## v2.8.3 — 2026-04-28
 
 **D38 Wave 3 — `pre-commit-test-gate.sh` + `mark-tests-ran.sh` paired promotion to `sutra/hooks/` (shared-runtime carve-out).**
