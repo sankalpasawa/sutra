@@ -3,7 +3,7 @@
 # sutra install.sh — one-command installer for Sutra OS on Claude Code
 #
 # Usage:
-#   curl -fsSL https://sutra.os/install.sh | bash
+#   curl -fsSL https://sankalpasawa.github.io/sutra/install.sh | bash
 #
 # What it does (idempotent — safe to re-run):
 #   1. Detects OS (macOS / Linux). Windows users get pointed at WSL2.
@@ -20,7 +20,7 @@
 #   SUTRA_INSTALL_VERBOSE=1   Print every step (set -x)
 #
 # Version: 0.1.0 (draft)
-# Source:  https://github.com/sankalpasawa/sutra (served at https://sutra.os/install.sh)
+# Source:  https://github.com/sankalpasawa/sutra (served at https://sankalpasawa.github.io/sutra/install.sh)
 # License: MIT
 # -----------------------------------------------------------------------------
 
