@@ -277,6 +277,9 @@ export const domainArb: fc.Arbitrary<Domain> = fc.record({
   intelligence: fc.string({ maxLength: 20 }),
   accountable: fc.array(fc.string({ minLength: 1, maxLength: 12 }), { maxLength: 3 }),
   authority: fc.string({ maxLength: 16 }),
+  // M4.1 — tenant_id required; default to 'T-default' for property tests so
+  // isValidDomain passes the new D4 §1.1 owner check.
+  tenant_id: fc.constant('T-default'),
 })
 
 // -----------------------------------------------------------------------------

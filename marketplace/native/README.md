@@ -149,6 +149,14 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### Tenant primitive (M4.1)
+
+- **Measurement**: contract test count + property test counterexample density
+- **Iteration trigger**: any cross-tenant operation surfaces in audit log
+- **DRI**: Sutra OS team
+- **Decommission**: when Tenant moves from sovereignty primitive to inherited from SPIFFE
+- D-NS-9 default applied (codex P1.2): only `extension_ref` extension seam ships in M4.5; the other 4 candidate seams defer to v1.x.
+
 ### Test data fixtures (M4.10)
 
 - **Measurement**: count of fixtures vs primitives ≥ 1:1; fixtures self-test count

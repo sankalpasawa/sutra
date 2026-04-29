@@ -9,6 +9,7 @@ import type { Constraint } from '../../src/types/index.js'
 
 /**
  * Minimal valid Domain — D0 root with no principles, just the required fields.
+ * `tenant_id` defaults to `T-default` via createDomain (M4.1).
  */
 export function validMinimal(): Domain {
   return {
@@ -19,11 +20,13 @@ export function validMinimal(): Domain {
     intelligence: '',
     accountable: ['founder'],
     authority: 'org-root',
+    tenant_id: 'T-default',
   }
 }
 
 /**
- * Fully populated valid Domain — sub-domain with one durable principle.
+ * Fully populated valid Domain — sub-domain with one durable principle and
+ * an explicit non-default tenant_id (M4.1 multi-tenant readiness).
  */
 export function validFull(): Domain {
   const principle: Constraint = {
@@ -41,6 +44,7 @@ export function validFull(): Domain {
     intelligence: 'engine charter + V2 spec + M3 laws shipped',
     accountable: ['sutra-os-team', 'asawa-ceo'],
     authority: 'plugin-runtime',
+    tenant_id: 'T-asawa-holding',
   }
 }
 

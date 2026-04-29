@@ -10,6 +10,15 @@
 import type { Constraint } from '../types/index.js'
 
 /**
+ * Tenant id pattern (must match `src/schemas/tenant.ts` TENANT_ID_PATTERN).
+ * Duplicated here to keep `domain.ts` zero-dependency on zod at the type layer.
+ */
+const TENANT_ID_PATTERN = /^T-[a-z0-9-]+$/
+
+/** Default tenant when none specified — single-tenant v1.0 baseline. */
+export const DEFAULT_TENANT_ID = 'T-default'
+
+/**
  * D-numbered hierarchy id pattern.
  * - Root domain is 'D0'
  * - Sub-domains are 'D1', 'D2', ...
@@ -39,13 +48,21 @@ export interface Domain {
   accountable: string[]
   /** what this domain is empowered to decide */
   authority: string
+  /**
+   * Owning Tenant id (M4.1; D4 §1.1 closes Tenant→Domain ownership).
+   * Defaults to `T-default` (single-tenant v1.0 baseline).
+   */
+  tenant_id: string
 }
+
+/** A Domain may omit `tenant_id`; createDomain fills the default. */
+export type DomainSpec = Omit<Domain, 'tenant_id'> & { tenant_id?: string }
 
 /**
  * Construct a Domain after validating the D-numbered id shape.
  * Returns a frozen object so primitive instances are immutable by default.
  */
-export function createDomain(spec: Domain): Domain {
+export function createDomain(spec: DomainSpec): Domain {
   if (!D_ID_PATTERN.test(spec.id)) {
     throw new Error(
       `Domain.id must match D-numbered hierarchy pattern (D0, D1, D1.D2, ...); got "${spec.id}"`,
@@ -81,7 +98,21 @@ export function createDomain(spec: Domain): Domain {
     }
   }
 
-  return Object.freeze({ ...spec, principles: [...spec.principles], accountable: [...spec.accountable] })
+  // M4.1 — D4 §1.1: tenant_id required (Tenant→Domain ownership). Default
+  // applied when caller omits.
+  const tenantId = spec.tenant_id ?? DEFAULT_TENANT_ID
+  if (typeof tenantId !== 'string' || !TENANT_ID_PATTERN.test(tenantId)) {
+    throw new Error(
+      `Domain.tenant_id must match T-<id> pattern (M4.1; D4 §1.1); got "${String(tenantId)}"`,
+    )
+  }
+
+  return Object.freeze({
+    ...spec,
+    principles: [...spec.principles],
+    accountable: [...spec.accountable],
+    tenant_id: tenantId,
+  })
 }
 
 /**
@@ -115,5 +146,7 @@ export function isValidDomain(d: Domain): boolean {
     if (typeof p !== 'object' || p === null) return false
     if (p.durability !== 'durable') return false
   }
+  // M4.1 — D4 §1.1: tenant_id required + pattern-checked
+  if (typeof d.tenant_id !== 'string' || !TENANT_ID_PATTERN.test(d.tenant_id)) return false
   return true
 }

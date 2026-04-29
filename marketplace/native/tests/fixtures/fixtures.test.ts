@@ -11,11 +11,13 @@ import { createDomain, isValidDomain } from '../../src/primitives/domain.js'
 import { createCharter, isValidCharter } from '../../src/primitives/charter.js'
 import { createWorkflow, isValidWorkflow } from '../../src/primitives/workflow.js'
 import { createExecution, isValidExecution } from '../../src/primitives/execution.js'
+import { createTenant, isValidTenant } from '../../src/schemas/tenant.js'
 
 import * as DomainFx from './domain.fixture.js'
 import * as CharterFx from './charter.fixture.js'
 import * as WorkflowFx from './workflow.fixture.js'
 import * as ExecutionFx from './execution.fixture.js'
+import * as TenantFx from './tenant.fixture.js'
 
 describe('M4.10 fixtures — round-trip + reject contract', () => {
   describe('Domain', () => {
@@ -92,6 +94,29 @@ describe('M4.10 fixtures — round-trip + reject contract', () => {
         // @ts-expect-error — fixture intentionally missing required field
         const w = createWorkflow(bad)
         if (!isValidWorkflow(w)) threwOrFailed = true
+      } catch {
+        threwOrFailed = true
+      }
+      expect(threwOrFailed).toBe(true)
+    })
+  })
+
+  describe('Tenant (M4.1)', () => {
+    it('validMinimal round-trips through createTenant + isValidTenant', () => {
+      const t = createTenant(TenantFx.validMinimal())
+      expect(isValidTenant(t)).toBe(true)
+    })
+    it('validFull round-trips through createTenant + isValidTenant', () => {
+      const t = createTenant(TenantFx.validFull())
+      expect(isValidTenant(t)).toBe(true)
+    })
+    it('invalidMissingRequired throws OR fails predicate', () => {
+      const bad = TenantFx.invalidMissingRequired()
+      let threwOrFailed = false
+      try {
+        // @ts-expect-error — fixture intentionally missing required field
+        const t = createTenant(bad)
+        if (!isValidTenant(t)) threwOrFailed = true
       } catch {
         threwOrFailed = true
       }
