@@ -1,5 +1,6 @@
 /**
  * L4 TERMINAL-CHECK predicates (T1-T6) — V2.4 §A12
+ * AND schema-level forbidden couplings (F-1..F-4) — D4 §3 (M4.9 Group D)
  *
  * Closes V2 §9 OPEN ("6 terminal-check tests need formal definitions"):
  *
@@ -22,7 +23,15 @@
  * invoke them at the `terminate` stage and route failure_policy + escalation
  * TriggerSpec on T6 failure.
  *
- * Source-of-truth: holding/research/2026-04-28-v2-architecture-spec.md §19 §A12
+ * M4.9 Group D (D4 §3) — first 4 schema-level forbidden couplings land here:
+ * F-1..F-4. Group E (F-5..F-8) and Group F (F-10 + aggregator) follow in
+ * subsequent commits. F-9 (D38 plugin shipment) is hook-level and DEFERRED to
+ * M8 per codex P1.3 pre-dispatch.
+ *
+ * Source-of-truth:
+ *  - holding/research/2026-04-28-v2-architecture-spec.md §19 §A12
+ *  - holding/research/2026-04-29-native-d4-primitives-composition-spec.md §3
+ *  - holding/plans/native-v1.0/M4-schemas-edges.md M4.9
  */
 
 import type { Asset, Constraint, DataRef, Interface } from '../types/index.js'
@@ -30,6 +39,7 @@ import type { Charter } from '../primitives/charter.js'
 import type { Execution } from '../primitives/execution.js'
 import type { Workflow } from '../primitives/workflow.js'
 import { l4Commitment, type CoverageMatrix } from './l4-commitment.js'
+import type { Tenant } from '../schemas/tenant.js'
 
 // -----------------------------------------------------------------------------
 // Auxiliary types — terminal-check inputs that aren't on V2 base shapes
@@ -287,3 +297,129 @@ export const l4TerminalCheck = {
 
 // Re-export Constraint to keep downstream barrel imports tidy.
 export type { Constraint }
+
+// =============================================================================
+// M4.9 — 9 schema-level forbidden couplings (F-1..F-8, F-10) per D4 §3
+//
+// F-9 (D38 plugin shipment) is hook-level — DEFERRED to M8 per codex P1.3
+// pre-dispatch. F-1..F-8 + F-10 are pure-predicate, schema-level checks.
+//
+// Each predicate returns `true` iff the input SATISFIES the forbidden coupling
+// (i.e., violates the rule). The aggregator inverts to {pass, violations[]}.
+// =============================================================================
+
+/**
+ * Stable id for a schema-level forbidden coupling (D4 §3). F-9 omitted (M8).
+ *
+ * M4.9 Group D ships F-1..F-4; Groups E + F extend the union with F-5..F-8 + F-10.
+ */
+export type ForbiddenCouplingId = 'F-1' | 'F-2' | 'F-3' | 'F-4'
+
+/**
+ * F-1 — Tenant directly contains Workflow (skips Domain + Charter).
+ *
+ * D4 §3: L5 META preserves only `Domain.contains.Charter` as a containment
+ * edge. Tenant is sovereignty-not-containment; it MUST NOT directly contain a
+ * Workflow.
+ *
+ * v1.0 schema-level enforcement: there is no direct Tenant→Workflow containment
+ * edge schema; the edges file ships only `owns` (Tenant→Domain),
+ * `delegates_to` (Tenant→Tenant), and `emits` (W/E/Hook→DP). A "containment
+ * edge" here means an external graph asserting Tenant.id is the immediate
+ * parent of Workflow.id with no intervening Domain + Charter. The predicate
+ * accepts the optional `containment_chain` and returns true (VIOLATION) iff
+ * the chain skips Domain or Charter.
+ *
+ * @returns true iff F-1 VIOLATION (Tenant immediately above Workflow with no
+ *   Domain + Charter in between)
+ */
+export function f1Predicate(input: {
+  tenant: Pick<Tenant, 'id'>
+  workflow: Pick<Workflow, 'id'>
+  /**
+   * Ordered ids from Tenant down to Workflow as observed in the graph.
+   * Well-formed: [Tenant.id, 'D-...', 'C-...', Workflow.id]
+   * Violation:    [Tenant.id, Workflow.id]   ← F-1
+   */
+  containment_chain: string[]
+}): boolean {
+  const { tenant, workflow, containment_chain } = input
+  if (!Array.isArray(containment_chain)) return false
+  if (containment_chain.length < 2) return false
+  const head = containment_chain[0]
+  const tail = containment_chain[containment_chain.length - 1]
+  if (head !== tenant.id) return false
+  if (tail !== workflow.id) return false
+  // VIOLATION iff chain has length 2 (no Domain + Charter in between)
+  if (containment_chain.length === 2) return true
+  // Or if chain has any length but no D-* or no C-* between head and tail.
+  const middle = containment_chain.slice(1, -1)
+  const hasDomain = middle.some((s) => typeof s === 'string' && /^D\d+(\.D\d+)*$/.test(s))
+  const hasCharter = middle.some((s) => typeof s === 'string' && /^C-.+$/.test(s))
+  return !(hasDomain && hasCharter)
+}
+
+/**
+ * F-2 — Workflow without operationalizes link to Charter.
+ *
+ * D4 §3 + L4 COMMITMENT: every Workflow MUST ladder to a Charter
+ * obligation/invariant or declared gap. A Workflow with NO operationalizes
+ * link to ANY Charter is a forbidden coupling.
+ *
+ * Inputs: a Workflow + its observed `operationalizes_charters` list (charter
+ * ids the Workflow claims to operationalize). Empty list ⇒ VIOLATION.
+ *
+ * Note: F-2 is a "link exists" check; the deeper "every step traces to a
+ * Charter obligation" check is L4 COMMITMENT (already shipped at M3 via
+ * `l4Commitment.operationalizes`).
+ *
+ * @returns true iff F-2 VIOLATION (Workflow has no operationalizes link)
+ */
+export function f2Predicate(input: {
+  workflow: Pick<Workflow, 'id'>
+  /** Charter ids this Workflow operationalizes (must be ≥1). */
+  operationalizes_charters: string[]
+}): boolean {
+  const { operationalizes_charters } = input
+  if (!Array.isArray(operationalizes_charters)) return true
+  return operationalizes_charters.length === 0
+}
+
+/**
+ * F-3 — Execution spawned without TriggerEvent.
+ *
+ * D4 §3 + L3 ACTIVATION: Executions are NOT free-standing; every Execution
+ * must reference the TriggerEvent that activated it. The Execution primitive
+ * carries `trigger_event` (V2 §1 P4) which MUST be a non-empty string.
+ *
+ * @returns true iff F-3 VIOLATION (trigger_event missing or empty)
+ */
+export function f3Predicate(input: { execution: Pick<Execution, 'trigger_event'> }): boolean {
+  const { execution } = input
+  if (typeof execution !== 'object' || execution === null) return true
+  if (typeof execution.trigger_event !== 'string') return true
+  return execution.trigger_event.length === 0
+}
+
+/**
+ * F-4 — step_graph[i] with both skill_ref AND action set.
+ *
+ * V2.3 §A11: skill_ref XOR action — mutually exclusive. Both set ⇒ VIOLATION.
+ *
+ * @returns true iff F-4 VIOLATION (some step has both)
+ */
+export function f4Predicate(input: { workflow: Pick<Workflow, 'step_graph'> }): boolean {
+  const { workflow } = input
+  if (typeof workflow !== 'object' || workflow === null) return false
+  if (!Array.isArray(workflow.step_graph)) return false
+  for (const step of workflow.step_graph) {
+    const hasSkill = typeof step.skill_ref === 'string' && step.skill_ref.length > 0
+    const hasAction = typeof step.action === 'string' && step.action.length > 0
+    if (hasSkill && hasAction) return true
+  }
+  return false
+}
+
+// F-5..F-8 land in M4.9 Group E (T-025..T-028).
+// F-10 + routing/gating-positions inventory + terminalCheck aggregator land in
+// M4.9 Group F (T-029..T-031).
