@@ -1,6 +1,6 @@
 /**
  * L4 TERMINAL-CHECK predicates (T1-T6) — V2.4 §A12
- * AND schema-level forbidden couplings (F-1..F-4) — D4 §3 (M4.9 Group D)
+ * AND schema-level forbidden couplings (F-1..F-8) — D4 §3 (M4.9 Groups D + E)
  *
  * Closes V2 §9 OPEN ("6 terminal-check tests need formal definitions"):
  *
@@ -40,6 +40,8 @@ import type { Execution } from '../primitives/execution.js'
 import type { Workflow } from '../primitives/workflow.js'
 import { l4Commitment, type CoverageMatrix } from './l4-commitment.js'
 import type { Tenant } from '../schemas/tenant.js'
+import type { DelegatesToEdge } from '../types/edges.js'
+import type { DecisionProvenance } from '../schemas/decision-provenance.js'
 
 // -----------------------------------------------------------------------------
 // Auxiliary types — terminal-check inputs that aren't on V2 base shapes
@@ -311,9 +313,18 @@ export type { Constraint }
 /**
  * Stable id for a schema-level forbidden coupling (D4 §3). F-9 omitted (M8).
  *
- * M4.9 Group D ships F-1..F-4; Groups E + F extend the union with F-5..F-8 + F-10.
+ * M4.9 Group D shipped F-1..F-4; Group E (this commit) extends with F-5..F-8;
+ * Group F adds F-10 + the terminalCheck aggregator.
  */
-export type ForbiddenCouplingId = 'F-1' | 'F-2' | 'F-3' | 'F-4'
+export type ForbiddenCouplingId =
+  | 'F-1'
+  | 'F-2'
+  | 'F-3'
+  | 'F-4'
+  | 'F-5'
+  | 'F-6'
+  | 'F-7'
+  | 'F-8'
 
 /**
  * F-1 — Tenant directly contains Workflow (skips Domain + Charter).
@@ -420,6 +431,115 @@ export function f4Predicate(input: { workflow: Pick<Workflow, 'step_graph'> }): 
   return false
 }
 
-// F-5..F-8 land in M4.9 Group E (T-025..T-028).
+/**
+ * F-5 — step_graph[i] with neither skill_ref NOR action.
+ *
+ * L2 BOUNDARY: every step MUST specify what it does — either a skill_ref or
+ * an action. Neither set ⇒ VIOLATION.
+ *
+ * @returns true iff F-5 VIOLATION (some step has neither)
+ */
+export function f5Predicate(input: { workflow: Pick<Workflow, 'step_graph'> }): boolean {
+  const { workflow } = input
+  if (typeof workflow !== 'object' || workflow === null) return false
+  if (!Array.isArray(workflow.step_graph)) return false
+  for (const step of workflow.step_graph) {
+    const hasSkill = typeof step.skill_ref === 'string' && step.skill_ref.length > 0
+    const hasAction = typeof step.action === 'string' && step.action.length > 0
+    if (!hasSkill && !hasAction) return true
+  }
+  return false
+}
+
+/**
+ * F-6 — Cross-tenant operation without TenantDelegation.
+ *
+ * D1 P-B8 + D4 §3: cross-tenant access requires explicit `delegates_to` edge
+ * between source and target tenants. A Workflow whose `custody_owner` differs
+ * from the operating tenant — without a `delegates_to` edge linking the two —
+ * is a forbidden coupling.
+ *
+ * Inputs: the Workflow + the operating tenant id + the registered
+ * delegates_to edge set. If `workflow.custody_owner` is null OR equals
+ * `operating_tenant_id`, no cross-tenant op is occurring (no F-6 risk).
+ * Otherwise we check for a delegates_to edge with
+ * source=operating_tenant_id, target=workflow.custody_owner.
+ *
+ * @returns true iff F-6 VIOLATION (cross-tenant op without delegates_to edge)
+ */
+export function f6Predicate(input: {
+  workflow: Pick<Workflow, 'custody_owner'>
+  operating_tenant_id: string
+  delegates_to_edges: ReadonlyArray<DelegatesToEdge>
+}): boolean {
+  const { workflow, operating_tenant_id, delegates_to_edges } = input
+  if (typeof workflow !== 'object' || workflow === null) return false
+  // Single-tenant or matching custody — no cross-tenant op.
+  if (workflow.custody_owner === null || workflow.custody_owner === undefined) return false
+  if (workflow.custody_owner === operating_tenant_id) return false
+  // Cross-tenant op detected; require delegates_to edge.
+  if (!Array.isArray(delegates_to_edges)) return true
+  for (const e of delegates_to_edges) {
+    if (
+      typeof e === 'object' &&
+      e !== null &&
+      e.kind === 'delegates_to' &&
+      e.source === operating_tenant_id &&
+      e.target === workflow.custody_owner
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * F-7 — Workflow.modifies_sutra=true without reflexive_check Constraint cleared.
+ *
+ * V2.1 §A6 L6 REFLEXIVITY: a Workflow that modifies Sutra primitives MUST
+ * carry an explicit `reflexive_check` Constraint with founder OR meta-charter
+ * authorization. M3 shipped L6 (`l6Reflexivity`) and T6 (in this file).
+ *
+ * F-7 is the schema-level invariant that mirrors the runtime gate: the
+ * Workflow declares modifies_sutra=true AND no reflexive_check Constraint
+ * cleared. Cleared = founder_authorization OR meta_charter_approval.
+ *
+ * @returns true iff F-7 VIOLATION (modifies_sutra=true with no cleared
+ *   reflexive_check)
+ */
+export function f7Predicate(input: {
+  workflow: Pick<Workflow, 'modifies_sutra'>
+  reflexive_auth: ReflexiveAuth
+}): boolean {
+  const { workflow, reflexive_auth } = input
+  if (typeof workflow !== 'object' || workflow === null) return false
+  if (workflow.modifies_sutra !== true) return false
+  if (typeof reflexive_auth !== 'object' || reflexive_auth === null) return true
+  const cleared =
+    reflexive_auth.founder_authorization === true ||
+    reflexive_auth.meta_charter_approval === true
+  return !cleared
+}
+
+/**
+ * F-8 — DecisionProvenance without policy_id + policy_version co-present.
+ *
+ * D2 P-A3 + D4 §3: every consequential decision must reference the policy +
+ * version it was made under. The DecisionProvenance schema (M4.3) requires
+ * both as `min(1)`; F-8 is the cross-coupling check at terminal_check —
+ * if a DP record arrives at terminal time without both fields, VIOLATION.
+ *
+ * @returns true iff F-8 VIOLATION (policy_id or policy_version missing/empty)
+ */
+export function f8Predicate(input: {
+  dp: Pick<DecisionProvenance, 'policy_id' | 'policy_version'>
+}): boolean {
+  const { dp } = input
+  if (typeof dp !== 'object' || dp === null) return true
+  const hasId = typeof dp.policy_id === 'string' && dp.policy_id.length > 0
+  const hasVer = typeof dp.policy_version === 'string' && dp.policy_version.length > 0
+  return !(hasId && hasVer)
+}
+
 // F-10 + routing/gating-positions inventory + terminalCheck aggregator land in
 // M4.9 Group F (T-029..T-031).

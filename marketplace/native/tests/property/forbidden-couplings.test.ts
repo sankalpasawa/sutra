@@ -2,8 +2,9 @@
  * Forbidden couplings (F-1..F-10) — property tests.
  *
  * M4.9 per holding/plans/native-v1.0/TASK-QUEUE.md.
- * Group D (this commit): F-1..F-4 with ≥1000 fast-check cases per predicate.
- * Group E + F extend the suite with F-5..F-8 + F-10 + aggregator.
+ * Group D shipped: F-1..F-4 (≥1000 fast-check cases each).
+ * Group E (this commit): F-5..F-8 (≥1000 fast-check cases each).
+ * Group F: F-10 + aggregator.
  *
  * F-9 (D38 plugin shipment) is hook-level — DEFERRED to M8 per codex P1.3.
  *
@@ -19,8 +20,15 @@ import {
   f2Predicate,
   f3Predicate,
   f4Predicate,
+  f5Predicate,
+  f6Predicate,
+  f7Predicate,
+  f8Predicate,
+  type ReflexiveAuth,
 } from '../../src/laws/l4-terminal-check.js'
 import type { Workflow } from '../../src/primitives/workflow.js'
+import type { DecisionProvenance } from '../../src/schemas/decision-provenance.js'
+import type { DelegatesToEdge } from '../../src/types/edges.js'
 
 const PROP_RUNS = 1000
 
@@ -176,6 +184,205 @@ describe('F-4: step_graph[i] with both skill_ref AND action set', () => {
         })
         return result === false
       }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+})
+
+// =============================================================================
+// Group E — F-5..F-8 (T-025..T-028)
+// =============================================================================
+
+describe('F-5: step_graph[i] with neither skill_ref NOR action', () => {
+  it('VIOLATION (true) when any step has neither skill_ref nor action', () => {
+    const emptyStepArb = fc.record({
+      step_id: fc.integer({ min: 0, max: 50 }),
+      inputs: fc.constant([]),
+      outputs: fc.constant([]),
+      on_failure: fc.constantFrom('rollback', 'escalate', 'pause', 'abort', 'continue'),
+    })
+    fc.assert(
+      fc.property(fc.array(emptyStepArb, { minLength: 1, maxLength: 4 }), (steps) => {
+        const result = f5Predicate({
+          workflow: { step_graph: steps as unknown as Workflow['step_graph'] },
+        })
+        return result === true
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('SAFE (false) when every step has at least one of skill_ref or action', () => {
+    const stepSkillArb = fc.record({
+      step_id: fc.integer({ min: 0, max: 50 }),
+      skill_ref: fc.string({ minLength: 1, maxLength: 16 }),
+      inputs: fc.constant([]),
+      outputs: fc.constant([]),
+      on_failure: fc.constantFrom('rollback', 'escalate', 'pause', 'abort', 'continue'),
+    })
+    const stepActionArb = fc.record({
+      step_id: fc.integer({ min: 0, max: 50 }),
+      action: fc.constantFrom('spawn_sub_unit', 'wait', 'terminate'),
+      inputs: fc.constant([]),
+      outputs: fc.constant([]),
+      on_failure: fc.constantFrom('rollback', 'escalate', 'pause', 'abort', 'continue'),
+    })
+    fc.assert(
+      fc.property(
+        fc.array(fc.oneof(stepSkillArb, stepActionArb), { minLength: 1, maxLength: 4 }),
+        (steps) => {
+          const result = f5Predicate({
+            workflow: { step_graph: steps as unknown as Workflow['step_graph'] },
+          })
+          return result === false
+        },
+      ),
+      { numRuns: PROP_RUNS },
+    )
+  })
+})
+
+describe('F-6: Cross-tenant operation without TenantDelegation (uses delegates_to from M4.8)', () => {
+  it('VIOLATION (true) when custody_owner != operating tenant AND no delegates_to edge', () => {
+    fc.assert(
+      fc.property(tenantIdArb, tenantIdArb, (opTenant, otherTenant) => {
+        fc.pre(opTenant !== otherTenant)
+        const result = f6Predicate({
+          workflow: { custody_owner: otherTenant },
+          operating_tenant_id: opTenant,
+          delegates_to_edges: [],
+        })
+        return result === true
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('SAFE (false) when delegates_to edge bridges operating → custody_owner', () => {
+    fc.assert(
+      fc.property(tenantIdArb, tenantIdArb, (opTenant, otherTenant) => {
+        fc.pre(opTenant !== otherTenant)
+        const edge: DelegatesToEdge = {
+          kind: 'delegates_to',
+          source: opTenant,
+          target: otherTenant,
+        }
+        const result = f6Predicate({
+          workflow: { custody_owner: otherTenant },
+          operating_tenant_id: opTenant,
+          delegates_to_edges: [edge],
+        })
+        return result === false
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('SAFE (false) when custody_owner is null (single-tenant)', () => {
+    fc.assert(
+      fc.property(tenantIdArb, (opTenant) => {
+        const result = f6Predicate({
+          workflow: { custody_owner: null },
+          operating_tenant_id: opTenant,
+          delegates_to_edges: [],
+        })
+        return result === false
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+})
+
+describe('F-7: Workflow.modifies_sutra=true without reflexive_check Constraint cleared', () => {
+  it('VIOLATION (true) when modifies_sutra=true AND no auth granted', () => {
+    fc.assert(
+      fc.property(fc.constant(true), (modifies) => {
+        const auth: ReflexiveAuth = {
+          founder_authorization: false,
+          meta_charter_approval: false,
+        }
+        const result = f7Predicate({
+          workflow: { modifies_sutra: modifies },
+          reflexive_auth: auth,
+        })
+        return result === true
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('SAFE (false) when modifies_sutra=true AND ≥1 auth granted', () => {
+    fc.assert(
+      fc.property(fc.boolean(), fc.boolean(), (founder, meta) => {
+        fc.pre(founder || meta)
+        const auth: ReflexiveAuth = {
+          founder_authorization: founder,
+          meta_charter_approval: meta,
+        }
+        const result = f7Predicate({
+          workflow: { modifies_sutra: true },
+          reflexive_auth: auth,
+        })
+        return result === false
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('SAFE (false) when modifies_sutra=false (no L6 gate fires)', () => {
+    fc.assert(
+      fc.property(fc.boolean(), fc.boolean(), (founder, meta) => {
+        const auth: ReflexiveAuth = {
+          founder_authorization: founder,
+          meta_charter_approval: meta,
+        }
+        const result = f7Predicate({
+          workflow: { modifies_sutra: false },
+          reflexive_auth: auth,
+        })
+        return result === false
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+})
+
+describe('F-8: DecisionProvenance without policy_id + policy_version', () => {
+  type DpFields = Pick<DecisionProvenance, 'policy_id' | 'policy_version'>
+
+  it('VIOLATION (true) when policy_id is empty', () => {
+    fc.assert(
+      fc.property(fc.string({ minLength: 1, maxLength: 16 }), (ver) => {
+        const dp: DpFields = { policy_id: '', policy_version: ver }
+        const result = f8Predicate({ dp })
+        return result === true
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('VIOLATION (true) when policy_version is empty', () => {
+    fc.assert(
+      fc.property(fc.string({ minLength: 1, maxLength: 16 }), (id) => {
+        const dp: DpFields = { policy_id: id, policy_version: '' }
+        const result = f8Predicate({ dp })
+        return result === true
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('SAFE (false) when both policy_id and policy_version are non-empty', () => {
+    fc.assert(
+      fc.property(
+        fc.string({ minLength: 1, maxLength: 16 }),
+        fc.string({ minLength: 1, maxLength: 16 }),
+        (id, ver) => {
+          const dp: DpFields = { policy_id: id, policy_version: ver }
+          const result = f8Predicate({ dp })
+          return result === false
+        },
+      ),
       { numRuns: PROP_RUNS },
     )
   })
