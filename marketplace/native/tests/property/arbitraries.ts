@@ -237,6 +237,12 @@ export function workflowArb(opts: WorkflowArbOpts = {}): fc.Arbitrary<Workflow> 
     // M4.5 — extension_ref: null is the v1.0 enforcement default. Tests that
     // exercise non-null pass an override directly.
     extension_ref: fc.constant<string | null>(null),
+    // M5 Group J / T-045 — autonomy_level: rotate through all 3 enum values
+    // so existing property tests don't accidentally pin to one branch. Tests
+    // that need a specific level pass an override directly.
+    autonomy_level: fc.constantFrom('manual', 'semi', 'autonomous') as fc.Arbitrary<
+      'manual' | 'semi' | 'autonomous'
+    >,
   })
 }
 

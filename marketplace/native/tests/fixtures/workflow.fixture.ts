@@ -1,11 +1,11 @@
 /**
- * Workflow fixture factories — M4.10 baseline.
+ * Workflow fixture factories — M4.10 baseline + M5 Group J variants.
  *
  * Spec source: V2 §1 P3 + V2.1-V2.4 amendments + `src/primitives/workflow.ts`.
  *
- * Note: this fixture is EXTENDED in M4.4 to include `custody_owner`. M4.10
- * baseline ships the M2/M3 shape; the extension lands together with the
- * Workflow schema change in M4.4.
+ * Note: this fixture was EXTENDED in M4.4 to include `custody_owner`, and again
+ * in M5 Group J / T-048 with `validMinimalAutonomous` / `validSemiAutonomy` /
+ * `invalidAutonomyLevel` factories for the new `autonomy_level` routing field.
  */
 
 import type { Workflow } from '../../src/primitives/workflow.js'
@@ -40,6 +40,7 @@ export function validMinimal(): Workflow {
     modifies_sutra: false,
     custody_owner: null,
     extension_ref: null,
+    autonomy_level: 'manual',
   }
 }
 
@@ -89,6 +90,7 @@ export function validFull(): Workflow {
     modifies_sutra: false,
     custody_owner: 'T-asawa-holding',
     extension_ref: null,
+    autonomy_level: 'manual',
   }
 }
 
@@ -106,5 +108,117 @@ export function invalidMissingRequired(): Partial<Workflow> {
     failure_policy: '',
     stringency: 'task',
     interfaces_with: [],
+  }
+}
+
+// -----------------------------------------------------------------------------
+// M5 Group J / T-048 — autonomy_level fixture variants
+//
+// These factories cover the 3-enum routing field added in T-045. Sourced from
+// `validMinimal` and tweaked so consumers get a deterministic record per level.
+// Round-trip + reject contracts asserted in `tests/fixtures/fixtures.test.ts`.
+// -----------------------------------------------------------------------------
+
+/**
+ * Minimal valid Workflow with autonomy_level='autonomous' — runtime is
+ * permitted to advance without human gate. Useful as a positive test for
+ * Group K's failure_policy auto-escalate path.
+ */
+export function validMinimalAutonomous(): Workflow {
+  const step: WorkflowStep = {
+    step_id: 0,
+    action: 'wait',
+    inputs: [],
+    outputs: [],
+    on_failure: 'abort',
+  }
+  return {
+    id: 'W-min-autonomous',
+    preconditions: '',
+    step_graph: [step],
+    inputs: [],
+    outputs: [],
+    state: [],
+    postconditions: '',
+    failure_policy: 'abort',
+    stringency: 'task',
+    interfaces_with: [],
+    expects_response_from: null,
+    on_override_action: 'escalate',
+    reuse_tag: false,
+    return_contract: null,
+    modifies_sutra: false,
+    custody_owner: null,
+    extension_ref: null,
+    autonomy_level: 'autonomous',
+  }
+}
+
+/**
+ * Minimal valid Workflow with autonomy_level='semi' — human-in-loop default.
+ */
+export function validSemiAutonomy(): Workflow {
+  const step: WorkflowStep = {
+    step_id: 0,
+    action: 'wait',
+    inputs: [],
+    outputs: [],
+    on_failure: 'abort',
+  }
+  return {
+    id: 'W-min-semi',
+    preconditions: '',
+    step_graph: [step],
+    inputs: [],
+    outputs: [],
+    state: [],
+    postconditions: '',
+    failure_policy: 'abort',
+    stringency: 'task',
+    interfaces_with: [],
+    expects_response_from: null,
+    on_override_action: 'escalate',
+    reuse_tag: false,
+    return_contract: null,
+    modifies_sutra: false,
+    custody_owner: null,
+    extension_ref: null,
+    autonomy_level: 'semi',
+  }
+}
+
+/**
+ * Invalid: autonomy_level outside the {manual,semi,autonomous} enum.
+ * Constructor MUST throw; validator MUST return false. Returned as
+ * `Partial<Workflow>` so the type system permits the invalid literal value.
+ */
+export function invalidAutonomyLevel(): Partial<Workflow> {
+  const step: WorkflowStep = {
+    step_id: 0,
+    action: 'wait',
+    inputs: [],
+    outputs: [],
+    on_failure: 'abort',
+  }
+  return {
+    id: 'W-bad-autonomy',
+    preconditions: '',
+    step_graph: [step],
+    inputs: [],
+    outputs: [],
+    state: [],
+    postconditions: '',
+    failure_policy: 'abort',
+    stringency: 'task',
+    interfaces_with: [],
+    expects_response_from: null,
+    on_override_action: 'escalate',
+    reuse_tag: false,
+    return_contract: null,
+    modifies_sutra: false,
+    custody_owner: null,
+    extension_ref: null,
+    // intentionally invalid — constructor + validator must reject.
+    autonomy_level: 'fully_automatic' as unknown as Workflow['autonomy_level'],
   }
 }

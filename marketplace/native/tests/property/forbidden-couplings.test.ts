@@ -478,6 +478,7 @@ describe('terminalCheck aggregator (F-1..F-8 + F-10)', () => {
     const workflow: Workflow = {
       id: 'W-safe',
       preconditions: '',
+      autonomy_level: 'manual',
       step_graph: [
         {
           step_id: 0,

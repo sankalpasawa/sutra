@@ -208,6 +208,7 @@ describe('T4 — interface contracts', () => {
               modifies_sutra: fc.constant(false),
               custody_owner: fc.constant<null>(null),
               extension_ref: fc.constant<null>(null),
+              autonomy_level: fc.constant<'manual'>('manual'),
             },
           }),
         fc.integer({ min: 1, max: 99 }),
@@ -444,6 +445,7 @@ describe('runAll — aggregate semantics', () => {
       modifies_sutra: false,
       custody_owner: null,
       extension_ref: null,
+      autonomy_level: 'manual' as const,
     }
     const c = {
       id: 'C-x',

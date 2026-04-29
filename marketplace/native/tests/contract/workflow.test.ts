@@ -400,6 +400,7 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       modifies_sutra: false,
       custody_owner: null,
       extension_ref: null,
+      autonomy_level: 'manual' as const,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -443,6 +444,7 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       modifies_sutra: false,
       custody_owner: null,
       extension_ref: null,
+      autonomy_level: 'manual' as const,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -469,6 +471,7 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       modifies_sutra: 'true' as unknown as boolean,
       custody_owner: null,
       extension_ref: null,
+      autonomy_level: 'manual' as const,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -532,6 +535,7 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       modifies_sutra: false,
       custody_owner: null,
       extension_ref: null,
+      autonomy_level: 'manual' as const,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -623,6 +627,7 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       modifies_sutra: false,
       custody_owner: null,
       extension_ref: null,
+      autonomy_level: 'manual' as const,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -646,5 +651,93 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
     })
     expect(w.step_graph).toHaveLength(3)
     expect(isValidWorkflow(w)).toBe(true)
+  })
+
+  // ---------------------------------------------------------------------------
+  // M5 Group J — T-045: Workflow.autonomy_level (manual|semi|autonomous, default 'manual')
+  // Spec: holding/plans/native-v1.0/M5-workflow-engine.md Group J + A-3.
+  // required_capabilities[] REMOVED per codex P1.2 (deferred to v1.x per D-NS-9 (b)).
+  // ---------------------------------------------------------------------------
+
+  it('T-045: defaults autonomy_level to "manual" when omitted', () => {
+    const w = createWorkflow({
+      id: 'W-auto-default',
+      preconditions: 'true',
+      step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+    expect(w.autonomy_level).toBe('manual')
+    expect(isValidWorkflow(w)).toBe(true)
+  })
+
+  it('T-045: round-trips all 3 autonomy_level enum values', () => {
+    for (const level of ['manual', 'semi', 'autonomous'] as const) {
+      const w = createWorkflow({
+        id: `W-auto-${level}`,
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        autonomy_level: level,
+      })
+      expect(w.autonomy_level).toBe(level)
+      expect(isValidWorkflow(w)).toBe(true)
+    }
+  })
+
+  it('T-045: rejects invalid autonomy_level value at constructor (createWorkflow)', () => {
+    expect(() =>
+      createWorkflow({
+        id: 'W-bad-autonomy',
+        preconditions: 'true',
+        step_graph: [{ step_id: 1, action: 'terminate', inputs: [], outputs: [], on_failure: 'abort' }],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: 'true',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        // @ts-expect-error — runtime guard
+        autonomy_level: 'fully_automatic',
+      }),
+    ).toThrow(/autonomy_level/i)
+  })
+
+  it('T-045: isValidWorkflow returns false for deserialized record with invalid autonomy_level', () => {
+    const bad = {
+      id: 'W-deser-autonomy',
+      preconditions: 'true',
+      step_graph: [
+        { step_id: 1, action: 'terminate' as const, inputs: [], outputs: [], on_failure: 'abort' as const },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: 'true',
+      failure_policy: 'abort',
+      stringency: 'task' as const,
+      interfaces_with: [],
+      expects_response_from: null,
+      on_override_action: 'escalate' as const,
+      reuse_tag: false,
+      return_contract: null,
+      modifies_sutra: false,
+      custody_owner: null,
+      extension_ref: null,
+      autonomy_level: 'fully_automatic' as unknown as 'manual',
+    }
+    expect(isValidWorkflow(bad)).toBe(false)
   })
 })

@@ -15,6 +15,7 @@ import type {
   SchemaRef,
   StepAction,
   StepFailureAction,
+  WorkflowAutonomyLevel,
   WorkflowStep,
   WorkflowStringency,
 } from '../types/index.js'
@@ -57,6 +58,12 @@ const VALID_STEP_FAILURE_ACTION: ReadonlySet<StepFailureAction> = new Set([
   'pause',
   'abort',
   'continue',
+])
+
+const VALID_AUTONOMY_LEVEL: ReadonlySet<WorkflowAutonomyLevel> = new Set([
+  'manual',
+  'semi',
+  'autonomous',
 ])
 
 /**
@@ -117,6 +124,17 @@ export interface Workflow {
    * value, MUST match `EXTENSION_REF_PATTERN` (`/^ext-[a-z0-9-]+$/`).
    */
   extension_ref: ExtensionRef
+
+  // ---- M5 Group J / T-045 — A-3 ----
+  /**
+   * Autonomy level the runtime is permitted to take when executing this
+   * Workflow. Default `manual` (safest). Used by step_graph executor (Group K)
+   * + failure_policy to gate auto-escalate vs human-loop semantics.
+   *
+   * `required_capabilities[]` REMOVED per codex P1.2 (D-NS-9 (b)) — deferred
+   * to v1.x.
+   */
+  autonomy_level: WorkflowAutonomyLevel
 }
 
 /**
@@ -124,12 +142,12 @@ export interface Workflow {
  */
 export type WorkflowSpec = Omit<
   Workflow,
-  'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref'
+  'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level'
 > &
   Partial<
     Pick<
       Workflow,
-      'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref'
+      'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level'
     >
   >
 
@@ -294,6 +312,16 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     }
   }
 
+  // M5 Group J / T-045 — autonomy_level: enum manual|semi|autonomous; default 'manual'.
+  // Required by step_graph executor (Group K) + failure_policy. `required_capabilities[]`
+  // REMOVED per codex P1.2 (deferred to v1.x; D-NS-9 (b)).
+  const autonomyLevel: WorkflowAutonomyLevel = spec.autonomy_level ?? 'manual'
+  if (!VALID_AUTONOMY_LEVEL.has(autonomyLevel)) {
+    throw new Error(
+      `Workflow.autonomy_level must be manual|semi|autonomous; got "${String(autonomyLevel)}"`,
+    )
+  }
+
   const out: Workflow = {
     ...spec,
     step_graph: spec.step_graph.map((s) => ({ ...s, inputs: [...s.inputs], outputs: [...s.outputs] })),
@@ -308,6 +336,7 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     modifies_sutra: spec.modifies_sutra ?? false,
     custody_owner: custodyOwner,
     extension_ref: extensionRef,
+    autonomy_level: autonomyLevel,
   }
   return Object.freeze(out)
 }
@@ -386,6 +415,13 @@ export function isValidWorkflow(w: Workflow): boolean {
   if (
     w.extension_ref !== null &&
     (typeof w.extension_ref !== 'string' || !EXTENSION_REF_PATTERN.test(w.extension_ref))
+  ) {
+    return false
+  }
+  // M5 Group J / T-045 — autonomy_level MUST be in WorkflowAutonomyLevel enum.
+  if (
+    typeof w.autonomy_level !== 'string' ||
+    !VALID_AUTONOMY_LEVEL.has(w.autonomy_level as WorkflowAutonomyLevel)
   ) {
     return false
   }

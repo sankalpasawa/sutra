@@ -104,6 +104,30 @@ describe('M4.10 fixtures — round-trip + reject contract', () => {
       }
       expect(threwOrFailed).toBe(true)
     })
+
+    // M5 Group J / T-048 — autonomy_level fixture variants
+    it('validMinimalAutonomous round-trips with autonomy_level="autonomous"', () => {
+      const w = createWorkflow(WorkflowFx.validMinimalAutonomous())
+      expect(isValidWorkflow(w)).toBe(true)
+      expect(w.autonomy_level).toBe('autonomous')
+    })
+    it('validSemiAutonomy round-trips with autonomy_level="semi"', () => {
+      const w = createWorkflow(WorkflowFx.validSemiAutonomy())
+      expect(isValidWorkflow(w)).toBe(true)
+      expect(w.autonomy_level).toBe('semi')
+    })
+    it('invalidAutonomyLevel throws OR fails predicate', () => {
+      const bad = WorkflowFx.invalidAutonomyLevel()
+      let threwOrFailed = false
+      try {
+        // @ts-expect-error — fixture intentionally has invalid enum value
+        const w = createWorkflow(bad)
+        if (!isValidWorkflow(w)) threwOrFailed = true
+      } catch {
+        threwOrFailed = true
+      }
+      expect(threwOrFailed).toBe(true)
+    })
   })
 
   describe('Tenant (M4.1)', () => {

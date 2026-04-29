@@ -185,6 +185,19 @@ export interface WorkflowStep {
 export type WorkflowStringency = 'task' | 'process' | 'protocol'
 
 // -----------------------------------------------------------------------------
+// Workflow autonomy_level — M5 Group J / T-045 / A-3
+//
+// V2 §17 routing — declares the level of autonomy the runtime is permitted to
+// take when executing this Workflow. Default `manual` (safest). Required by
+// step_graph executor (Group K) + failure_policy handler to gate auto-escalate
+// vs human-loop semantics.
+//
+// `required_capabilities[]` REMOVED per codex P1.2 (deferred to v1.x; D-NS-9 (b)).
+// -----------------------------------------------------------------------------
+
+export type WorkflowAutonomyLevel = 'manual' | 'semi' | 'autonomous'
+
+// -----------------------------------------------------------------------------
 // Workflow override action — V2.2 §A10
 // -----------------------------------------------------------------------------
 
