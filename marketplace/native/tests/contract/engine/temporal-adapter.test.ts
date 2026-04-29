@@ -112,16 +112,35 @@ describe('TemporalAdapter — registerWorkflow', () => {
     expect(() => registerWorkflow({ id: 'W-bad' })).toThrow()
   })
 
-  it('run() returns the explicit __shell:true tag (Group J/K must remove)', async () => {
-    // Fail-fast shell marker: until the real Temporal-SDK orchestration body
-    // is wired up in Group J/K, run() must self-identify as a shell. When the
-    // tag is removed, this test fails loudly and forces a contract update —
-    // preventing downstream tests from passing against fake "success."
+  it('run() returns a real ExecutionResult — __shell tag REMOVED at M5 Group K (T-049)', async () => {
+    // M5 Group K wired the real step-graph executor into run(). The Group I
+    // shell tag `__shell:true` is gone; the result now carries the real
+    // ExecutionResult shape: state, failure_reason, partial, step_outputs.
+    //
+    // Shape contract (positive case — no dispatcher injected, default returns
+    // ok/[] for each step):
+    //   - workflow_id matches the Sutra Workflow id
+    //   - visited_step_ids = ordered step_ids
+    //   - state = 'success'
+    //   - failure_reason = null
+    //   - partial = false
+    //   - step_outputs has one entry per step (output_validation_skipped=false)
+    //   - NO `__shell` field (would be a regression to Group I shell)
     const sutra = makeSutraWorkflow()
     const def = registerWorkflow(sutra)
     const result = await def.run()
-    expect(result.__shell).toBe(true)
+
     expect(result.workflow_id).toBe(sutra.id)
     expect(result.visited_step_ids).toEqual([1, 2])
+    expect(result.state).toBe('success')
+    expect(result.failure_reason).toBeNull()
+    expect(result.partial).toBe(false)
+    expect(result.step_outputs).toHaveLength(2)
+    expect(result.step_outputs[0]?.step_id).toBe(1)
+    expect(result.step_outputs[0]?.output_validation_skipped).toBe(false)
+    expect(result.step_outputs[1]?.step_id).toBe(2)
+
+    // Regression guard: __shell must NOT be present after Group K.
+    expect((result as { __shell?: unknown }).__shell).toBeUndefined()
   })
 })

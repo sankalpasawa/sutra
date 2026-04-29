@@ -38,6 +38,12 @@ describe('engine barrel — public surface', () => {
     expect(engine.F12_ERROR_TAG).toBe('F-12')
   })
 
+  it('re-exports M5 Group K — executeStepGraph + applyFailurePolicy + formatTerminalCheckFailureReason', () => {
+    expect(typeof engine.executeStepGraph).toBe('function')
+    expect(typeof engine.applyFailurePolicy).toBe('function')
+    expect(typeof engine.formatTerminalCheckFailureReason).toBe('function')
+  })
+
   it('does NOT re-export test seams on the public barrel', () => {
     expect((engine as Record<string, unknown>).__setWorkflowContextProbeForTest).toBeUndefined()
     expect((engine as Record<string, unknown>).__resetWorkflowContextProbeForTest).toBeUndefined()

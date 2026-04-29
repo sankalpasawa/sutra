@@ -21,6 +21,12 @@
 
 import type { Workflow } from '../primitives/workflow.js'
 import type { DataRef, StepFailureAction, StepAction } from '../types/index.js'
+import {
+  executeStepGraph,
+  type ActivityDispatcher,
+  type ExecuteOptions,
+  type ExecutionResult,
+} from './step-graph-executor.js'
 
 /**
  * Activity descriptor — one entry per Sutra step in the step_graph.
@@ -61,27 +67,22 @@ export interface TemporalWorkflowDefinition {
    */
   activities: ActivityDescriptor[]
   /**
-   * The orchestrating Temporal workflow function (shell). At runtime, Temporal
-   * SDK calls this from inside the Workflow sandbox; it sequences activities
-   * via `proxyActivities` and routes per-step failures per `on_failure`.
+   * The orchestrating Temporal workflow function. M5 Group K (T-049):
+   * delegates to `executeStepGraph` for deterministic dispatch + failure
+   * routing + terminalCheck integration. The Group I shell `__shell:true`
+   * tag is REMOVED — `run()` returns the real `ExecutionResult` from the
+   * step-graph executor.
    *
-   * At M5 Group I this is a typed shell: callable, returns a structured
-   * trace of step ids visited. The full Temporal-SDK-native body (with
-   * `proxyActivities`, retry policies, signals, and timers) lands in
-   * subsequent Group I/J tasks.
+   * Caller may supply a `dispatch` function (the I/O boundary; tests inject
+   * deterministic mocks; production wires real Temporal `proxyActivities`).
+   * When `dispatch` is omitted, a default dispatcher returns
+   * `{ kind: 'ok', outputs: [] }` for every step — useful for the
+   * "registration smoke" path; the real Worker integration provides the
+   * production dispatcher at M11 dogfood entry.
    */
-  run: (input?: Record<string, unknown>) => Promise<{
-    workflow_id: string
-    visited_step_ids: number[]
-    /**
-     * Fail-fast shell tag — present (true) until Group J/K replaces this
-     * function body with the real Temporal-SDK orchestration. Tests assert
-     * this tag is set, so when the real body lands and this field is removed
-     * the contract test fails loudly and forces a contract update — preventing
-     * downstream groups from getting a fake "success" against the shell.
-     */
-    __shell?: boolean
-  }>
+  run: (
+    input?: { dispatch?: ActivityDispatcher; options?: ExecuteOptions } | Record<string, unknown>,
+  ) => Promise<ExecutionResult>
 }
 
 /**
@@ -148,18 +149,28 @@ export function registerWorkflow(
     on_failure: step.on_failure,
   }))
 
-  // Snapshot the visited order from the source step_graph. The shell `run`
-  // returns this trace; the full implementation will replace this with
-  // proxyActivities calls inside the Temporal Workflow sandbox.
-  const visited_step_ids = sutraWorkflow.step_graph.map((s) => s.step_id)
+  // M5 Group K (T-049): real executor wired. The Group I `__shell:true` tag is
+  // REMOVED. `run()` delegates to `executeStepGraph` which dispatches
+  // Activities in order, routes failures via failure-policy.ts, and folds
+  // terminalCheck violations into `failure_reason` per T-051.
+  //
+  // The default dispatcher returns `{kind:'ok', outputs:[]}` for every step.
+  // It exists so `registerWorkflow(...)` is callable without a Worker (e.g.,
+  // for adapter-shape contract tests + the registration smoke path). Real
+  // dispatchers (Temporal `proxyActivities` or test mocks) are passed via
+  // `run({ dispatch })`.
+  const defaultDispatcher: ActivityDispatcher = () => ({ kind: 'ok', outputs: [] })
 
-  const run: TemporalWorkflowDefinition['run'] = async () => ({
-    workflow_id,
-    visited_step_ids,
-    // Explicit shell tag — Group J/K must remove this when the real
-    // Temporal-SDK orchestration body lands. The contract test asserts on it.
-    __shell: true,
-  })
+  const run: TemporalWorkflowDefinition['run'] = async (input) => {
+    const inputObj =
+      typeof input === 'object' && input !== null
+        ? (input as { dispatch?: ActivityDispatcher; options?: ExecuteOptions })
+        : {}
+    const dispatch =
+      typeof inputObj.dispatch === 'function' ? inputObj.dispatch : defaultDispatcher
+    const options: ExecuteOptions = inputObj.options ?? {}
+    return executeStepGraph(sutraWorkflow, dispatch, options)
+  }
 
   return {
     workflow_id,

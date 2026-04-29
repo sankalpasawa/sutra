@@ -23,6 +23,24 @@ export {
   type ActivityFn,
 } from './activity-wrapper.js'
 
+// M5 Group K — step_graph executor + failure_policy.
+export {
+  executeStepGraph,
+  formatTerminalCheckFailureReason,
+  type ActivityDispatcher,
+  type DispatchContext,
+  type ExecuteOptions,
+  type ExecutionResult,
+  type StepDispatchResult,
+  type TerminalCheckProbe,
+} from './step-graph-executor.js'
+
+export {
+  applyFailurePolicy,
+  type ExecutionContext,
+  type FailurePolicyOutcome,
+} from './failure-policy.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public

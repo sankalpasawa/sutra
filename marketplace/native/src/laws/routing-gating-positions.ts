@@ -50,12 +50,19 @@ export type RoutingGatingPosition = (typeof ROUTING_GATING_POSITIONS)[number]
  *                      F-10 only checks the parser hook is reachable (the field
  *                      EXISTS on the shipped schema and the M5 plan binds a
  *                      parser); the actual parsing executes at M5+.
+ * - `parser-bound`   : M5 Group K (T-052) — parser is now SHIPPED in the codebase.
+ *                      Per codex P2.6 (D-NS-13 default flipped 2026-04-29):
+ *                      Workflow.preconditions + Workflow.failure_policy are
+ *                      bound at M5; TriggerSpec.pattern + Charter.obligations[i]
+ *                      .mechanization stay `typed_parser` (deferred to M7).
+ *                      Parsers live in `src/laws/f10-parsers.ts`.
  */
 export type MachineCheckabilityKind =
   | 'typed_enum'
   | 'typed_record'
   | 'typed_ref'
   | 'typed_parser'
+  | 'parser-bound'
 
 /**
  * Static descriptor: each routing/gating position's representation kind in v1.0.
@@ -70,9 +77,14 @@ export const ROUTING_GATING_REPRESENTATIONS: Record<
   RoutingGatingPosition,
   MachineCheckabilityKind
 > = {
-  // String fields with M5+ parsers attached — typed_parser kind.
-  'Workflow.preconditions': 'typed_parser',
-  'Workflow.failure_policy': 'typed_parser',
+  // M5 Group K (T-052) — flipped to `parser-bound` per codex P2.6 (D-NS-13 (b)).
+  // Parsers shipped at `src/laws/f10-parsers.ts`:
+  //   - parseWorkflowPreconditions  → boolean expression AST
+  //   - parseWorkflowFailurePolicy  → 5-enum / structured JSON
+  'Workflow.preconditions': 'parser-bound',
+  'Workflow.failure_policy': 'parser-bound',
+  // Deferred to M7 per codex P2.6 — TriggerSpec.pattern enum mismatch with V2;
+  // Charter.obligations[i].mechanization not a typed Constraint field today.
   'TriggerSpec.pattern': 'typed_parser',
   'Charter.obligations[i].mechanization': 'typed_parser',
 
