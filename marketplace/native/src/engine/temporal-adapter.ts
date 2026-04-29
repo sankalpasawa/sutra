@@ -73,6 +73,14 @@ export interface TemporalWorkflowDefinition {
   run: (input?: Record<string, unknown>) => Promise<{
     workflow_id: string
     visited_step_ids: number[]
+    /**
+     * Fail-fast shell tag — present (true) until Group J/K replaces this
+     * function body with the real Temporal-SDK orchestration. Tests assert
+     * this tag is set, so when the real body lands and this field is removed
+     * the contract test fails loudly and forces a contract update — preventing
+     * downstream groups from getting a fake "success" against the shell.
+     */
+    __shell?: boolean
   }>
 }
 
@@ -129,6 +137,8 @@ export function registerWorkflow(
   const workflow_id = sutraWorkflow.id
   const task_queue = deriveTaskQueue(workflow_id)
 
+  // Defensive — Workflow primitive validators run earlier but pre-typeguarded
+  // for safety in case of partial input shapes during Group J wiring.
   const activities: ActivityDescriptor[] = sutraWorkflow.step_graph.map((step) => ({
     step_id: step.step_id,
     skill_ref: typeof step.skill_ref === 'string' ? step.skill_ref : null,
@@ -146,6 +156,9 @@ export function registerWorkflow(
   const run: TemporalWorkflowDefinition['run'] = async () => ({
     workflow_id,
     visited_step_ids,
+    // Explicit shell tag — Group J/K must remove this when the real
+    // Temporal-SDK orchestration body lands. The contract test asserts on it.
+    __shell: true,
   })
 
   return {

@@ -18,7 +18,13 @@
  *  - holding/research/2026-04-29-native-v1.0-final-architecture.md §5
  */
 
+import { createRequire } from 'node:module'
 import type { ForbiddenCouplingId } from '../laws/l4-terminal-check.js'
+
+// ESM-native dynamic require for the Temporal Workflow module. Replaces the
+// CSP-hostile `Function('return require')()` pattern: createRequire is the
+// standard, bundler-friendly way to access CommonJS interop from ESM.
+const require = createRequire(import.meta.url)
 
 /**
  * Stable string tag carried by every F-12 trap error. Tests assert by tag so
@@ -43,14 +49,12 @@ let workflowContextProbe: WorkflowContextProbe = defaultWorkflowContextProbe
 function defaultWorkflowContextProbe(): boolean {
   // We cannot statically import `@temporalio/workflow` at module load — that
   // module's runtime guards itself against being loaded outside a Workflow
-  // sandbox. We attempt a guarded `require`; failure ⇒ "not in Workflow
+  // sandbox. We attempt a guarded `require` (via the module-scope
+  // `createRequire(import.meta.url)` shim above); failure ⇒ "not in Workflow
   // context" (the safe default — Activities running on a Worker sit in
   // ordinary Node runtime where the Workflow module is absent or inert).
   try {
-    // Use dynamic require via createRequire so this file remains ESM-clean.
-    // The Temporal Workflow module exposes `inWorkflowContext()` from v1.x.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const wfMod: unknown = (Function('return require'))()('@temporalio/workflow')
+    const wfMod: unknown = require('@temporalio/workflow')
     if (
       typeof wfMod === 'object' &&
       wfMod !== null &&
@@ -65,12 +69,15 @@ function defaultWorkflowContextProbe(): boolean {
   }
 }
 
-/** Test seam — override the probe (e.g. simulate Workflow context). */
+/**
+ * Internal test seams — accessed via `src/engine/_test_seams.ts` so they do
+ * NOT leak into the public engine barrel. Tests import from `_test_seams.ts`
+ * directly.
+ */
 export function __setWorkflowContextProbeForTest(probe: WorkflowContextProbe): void {
   workflowContextProbe = probe
 }
 
-/** Test seam — restore default probe behavior. */
 export function __resetWorkflowContextProbeForTest(): void {
   workflowContextProbe = defaultWorkflowContextProbe
 }
@@ -102,6 +109,8 @@ export function asActivity<Args extends unknown[], R>(
     )
   }
   // AsyncFunction constructor name is the standard discriminator.
+  // Note: misses bound async functions whose constructor degrades to Function.
+  // Acceptable for V1; revisit if real bound usage emerges.
   const isAsync =
     impl.constructor && impl.constructor.name === 'AsyncFunction'
   if (!isAsync) {

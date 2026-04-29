@@ -16,11 +16,11 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { asActivity } from '../../../src/engine/activity-wrapper.js'
 import {
-  asActivity,
   __setWorkflowContextProbeForTest,
   __resetWorkflowContextProbeForTest,
-} from '../../../src/engine/activity-wrapper.js'
+} from '../../../src/engine/_test_seams.js'
 
 describe('asActivity — wrapper signature', () => {
   it('accepts an async impl and returns an ActivityFn', () => {

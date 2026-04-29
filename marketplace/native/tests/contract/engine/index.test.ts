@@ -1,12 +1,16 @@
 /**
  * Engine barrel — surface test (M5 Group I).
  *
- * Asserts the public surface of `src/engine/index.ts` re-exports the four
- * runtime entry points used by the rest of the engine layer + tests:
+ * Asserts the public surface of `src/engine/index.ts` re-exports the three
+ * runtime entry points used by downstream engine consumers:
  *  - registerWorkflow
  *  - asActivity
  *  - F12_ERROR_TAG
- *  - the test seams (so M5 Group J/K integration tests can stub the probe)
+ *
+ * Test seams (`__set/resetWorkflowContextProbeForTest`) are intentionally
+ * NOT on the public barrel — they live in `src/engine/_test_seams.ts` so the
+ * production surface stays clean. This test asserts both contracts: seams
+ * present on `_test_seams`, ABSENT from the barrel.
  *
  * Also exercises the default Workflow-context probe: in pure Node runtime,
  * the probe MUST return `false` (the safe default — Activities run on a
@@ -16,6 +20,10 @@
 import { describe, it, expect } from 'vitest'
 import * as engine from '../../../src/engine/index.js'
 import { asActivity } from '../../../src/engine/index.js'
+import {
+  __setWorkflowContextProbeForTest,
+  __resetWorkflowContextProbeForTest,
+} from '../../../src/engine/_test_seams.js'
 
 describe('engine barrel — public surface', () => {
   it('re-exports registerWorkflow', () => {
@@ -30,16 +38,21 @@ describe('engine barrel — public surface', () => {
     expect(engine.F12_ERROR_TAG).toBe('F-12')
   })
 
-  it('re-exports the Workflow-context probe test seams', () => {
-    expect(typeof engine.__setWorkflowContextProbeForTest).toBe('function')
-    expect(typeof engine.__resetWorkflowContextProbeForTest).toBe('function')
+  it('does NOT re-export test seams on the public barrel', () => {
+    expect((engine as Record<string, unknown>).__setWorkflowContextProbeForTest).toBeUndefined()
+    expect((engine as Record<string, unknown>).__resetWorkflowContextProbeForTest).toBeUndefined()
+  })
+
+  it('exposes test seams via src/engine/_test_seams.ts', () => {
+    expect(typeof __setWorkflowContextProbeForTest).toBe('function')
+    expect(typeof __resetWorkflowContextProbeForTest).toBe('function')
   })
 })
 
 describe('asActivity — default probe (pure Node runtime)', () => {
   it('does NOT trap when invoked in pure Node runtime (default probe = false)', async () => {
     // Reset to the default probe to exercise its real return value.
-    engine.__resetWorkflowContextProbeForTest()
+    __resetWorkflowContextProbeForTest()
     const act = asActivity(async (n: number) => n + 1)
     await expect(act(41)).resolves.toBe(42)
   })

@@ -111,4 +111,17 @@ describe('TemporalAdapter — registerWorkflow', () => {
     // @ts-expect-error — intentional bad input for runtime guard
     expect(() => registerWorkflow({ id: 'W-bad' })).toThrow()
   })
+
+  it('run() returns the explicit __shell:true tag (Group J/K must remove)', async () => {
+    // Fail-fast shell marker: until the real Temporal-SDK orchestration body
+    // is wired up in Group J/K, run() must self-identify as a shell. When the
+    // tag is removed, this test fails loudly and forces a contract update —
+    // preventing downstream tests from passing against fake "success."
+    const sutra = makeSutraWorkflow()
+    const def = registerWorkflow(sutra)
+    const result = await def.run()
+    expect(result.__shell).toBe(true)
+    expect(result.workflow_id).toBe(sutra.id)
+    expect(result.visited_step_ids).toEqual([1, 2])
+  })
 })

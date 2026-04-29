@@ -22,10 +22,12 @@ import { describe, it, expect } from 'vitest'
 import * as fc from 'fast-check'
 import {
   asActivity,
-  __setWorkflowContextProbeForTest,
-  __resetWorkflowContextProbeForTest,
   F12_ERROR_TAG,
 } from '../../src/engine/activity-wrapper.js'
+import {
+  __setWorkflowContextProbeForTest,
+  __resetWorkflowContextProbeForTest,
+} from '../../src/engine/_test_seams.js'
 import type { ForbiddenCouplingId } from '../../src/laws/l4-terminal-check.js'
 
 const PROP_RUNS = 1000

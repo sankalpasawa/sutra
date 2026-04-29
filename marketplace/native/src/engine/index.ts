@@ -21,6 +21,9 @@ export {
   asActivity,
   F12_ERROR_TAG,
   type ActivityFn,
-  __setWorkflowContextProbeForTest,
-  __resetWorkflowContextProbeForTest,
 } from './activity-wrapper.js'
+
+// Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
+// re-exported here — they live in `./_test_seams.ts` and are reachable only
+// by test code that imports from that path directly. This keeps the public
+// engine barrel free of test-only seams.
