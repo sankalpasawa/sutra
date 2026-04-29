@@ -149,6 +149,20 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### Edge types: owns / delegates_to / emits (M4.8)
+
+- **Schema** at `src/types/edges.ts` — `OwnsEdgeSchema` (Tenant → Domain),
+  `DelegatesToEdgeSchema` (Tenant → Tenant), `EmitsEdgeSchema`
+  (Workflow/Execution/Hook → DecisionProvenance), and the `EdgeSchema`
+  discriminated union over all three.
+- **L5 META preserved**: `owns` is sovereignty-not-containment. The only
+  containment edge in Native v1.0 remains `Domain.contains.Charter`.
+- **Runtime checks deferred**: schema validates id-pattern shape only.
+  Composition rules — F-6 cross-tenant op without delegates_to, "delegates_to
+  source !== target", "emits source must exist in registry" — land at
+  terminal_check (M4.9) and Workflow Engine (M5+).
+- **DRI**: Sutra OS team
+
 ### Charter.cutover_contract (M4.7)
 
 - Schema scaffold; full migration tooling lands at M10
