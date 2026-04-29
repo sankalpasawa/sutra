@@ -31,35 +31,123 @@ import type {
 } from './types.js';
 
 // ---------------------------------------------------------------------------
-// Approval token registry (module-level, single-use semantics)
+// Approval token registry (module-level, single-use, ctx-bound)
 // ---------------------------------------------------------------------------
 
-const ISSUED_TOKENS: Set<string> = new Set<string>();
+/**
+ * Approval bindings — fix for codex iter-11 P1 #3 (token replay).
+ *
+ * Tokens are bound to (clientId, sessionId, capability, ts) at issue time.
+ * Consume requires matching ctx for binding to apply. Bindings expire after
+ * APPROVAL_TTL_MS to bound the replay window even within the same session.
+ */
+interface ApprovalBinding {
+  readonly clientId: string;
+  readonly sessionId: string;
+  readonly capability: string;
+  readonly issuedAt: number;
+}
+
+const ISSUED_TOKENS: Map<string, ApprovalBinding> = new Map<string, ApprovalBinding>();
+
+/** Approval freshness window — token valid for matching ctx within 5 minutes of issue. */
+const APPROVAL_TTL_MS = 5 * 60 * 1000;
 
 /**
- * Mint a new approval token, register it as single-use, return the string.
- * Per LLD §3: founder ack flow → router calls this → caller re-invokes call(ctx)
- * with ctx.approvalToken=<minted>; consumeApproval(token) gates the actual run.
+ * Mint a new approval token bound to the issuing ctx. Per LLD §3 + codex iter-11
+ * security fix: founder ack flow → router calls this → caller re-invokes call(ctx)
+ * with ctx.approvalToken=<minted>; consumeApproval(token, ctx) verifies binding
+ * before single-use consumption.
  *
- * The optional ctx parameter is accepted for forward-compatibility (richer
- * tokens may bind to clientId/sessionId in a later iter); it is not used
- * to derive the token today.
+ * The binding is captured from ctx.clientId, ctx.sessionId, ctx.capability, ctx.ts
+ * at issue time. Caller MUST pass the same ctx (or one matching on those four
+ * fields, within APPROVAL_TTL_MS) when re-invoking.
  */
-export function issueApproval(_ctx?: ConnectorCallContext): string {
+export function issueApproval(ctx?: ConnectorCallContext): string {
   const token = `appr-${generateUuidLike()}`;
-  ISSUED_TOKENS.add(token);
+  if (ctx !== undefined) {
+    ISSUED_TOKENS.set(token, {
+      clientId: ctx.clientId,
+      sessionId: ctx.sessionId,
+      capability: ctx.capability,
+      issuedAt: ctx.ts,
+    });
+  } else {
+    // Defensive — pre-iter-12 callers may still mint without ctx. Record an
+    // empty binding so the token exists but can never be consumed via
+    // ctx-bound consumeApproval. (Effectively unusable; safer than throwing.)
+    ISSUED_TOKENS.set(token, {
+      clientId: '',
+      sessionId: '',
+      capability: '',
+      issuedAt: 0,
+    });
+  }
   return token;
 }
 
 /**
- * Consume an approval token. Returns true if the token was issued and
- * has not been consumed; removes it from the registry. Returns false
- * for unknown / already-consumed tokens.
+ * Verify whether a token EXISTS and binds to the given ctx. Does NOT consume.
+ * Used by evaluatePolicy to decide require-approval vs allow without burning
+ * the token (consumption happens at the router post-decision step).
  */
-export function consumeApproval(token: string): boolean {
+export function isApprovalValidFor(
+  token: string | undefined,
+  ctx: ConnectorCallContext,
+): boolean {
   if (typeof token !== 'string' || token.length === 0) return false;
-  if (!ISSUED_TOKENS.has(token)) return false;
+  const binding = ISSUED_TOKENS.get(token);
+  if (binding === undefined) return false;
+  return bindingMatches(binding, ctx);
+}
+
+/**
+ * Consume an approval token. Returns true ONLY if the token was issued AND
+ * its binding matches the supplied ctx (clientId, sessionId, capability) AND
+ * is within the freshness window. Removes from registry on success.
+ *
+ * Backward-compat: ctx is optional ONLY for callers that genuinely have no
+ * ctx (e.g. legacy tests). When ctx is omitted the consume is rejected for
+ * any binding that has a non-empty clientId — i.e. real bound tokens require
+ * ctx. The legacy-empty-binding path (issued without ctx) consumes for any
+ * caller, preserving the pre-iter-12 contract for the explicit unbound case.
+ */
+export function consumeApproval(
+  token: string,
+  ctx?: ConnectorCallContext,
+): boolean {
+  if (typeof token !== 'string' || token.length === 0) return false;
+  const binding = ISSUED_TOKENS.get(token);
+  if (binding === undefined) return false;
+
+  // Legacy unbound issue (ctx-less issueApproval) — accept any consume.
+  if (
+    binding.clientId === '' &&
+    binding.sessionId === '' &&
+    binding.capability === ''
+  ) {
+    ISSUED_TOKENS.delete(token);
+    return true;
+  }
+
+  // Bound token — require matching ctx.
+  if (ctx === undefined) return false;
+  if (!bindingMatches(binding, ctx)) return false;
+
   ISSUED_TOKENS.delete(token);
+  return true;
+}
+
+function bindingMatches(
+  binding: ApprovalBinding,
+  ctx: ConnectorCallContext,
+): boolean {
+  if (binding.clientId !== ctx.clientId) return false;
+  if (binding.sessionId !== ctx.sessionId) return false;
+  if (binding.capability !== ctx.capability) return false;
+  // Freshness — bound to the issue ts.
+  const age = ctx.ts - binding.issuedAt;
+  if (age < 0 || age > APPROVAL_TTL_MS) return false;
   return true;
 }
 
@@ -154,12 +242,9 @@ export function evaluatePolicy(
   }
 
   // 6. Approval gate — checks pass; if approval required and no consumable
-  //    token, return require-approval; otherwise allow.
+  //    token bound to THIS ctx, return require-approval; otherwise allow.
   if (decl.approvalRequired) {
-    const tokenOk =
-      typeof ctx.approvalToken === 'string' &&
-      ctx.approvalToken.length > 0 &&
-      ISSUED_TOKENS.has(ctx.approvalToken);
+    const tokenOk = isApprovalValidFor(ctx.approvalToken, ctx);
     if (!tokenOk) {
       return {
         verdict: 'require-approval',
@@ -187,28 +272,44 @@ export function evaluatePolicy(
 /**
  * Find the manifest CapabilityDecl whose id matches ctx.capability.
  *
- * Match strategy: EXACT id match only.
+ * Match strategy (iter 12 — codex final-fix):
+ *   1. EXACT id match → return decl.
+ *   2. ELSE: scan decls whose id contains '*' — treat the decl id as a
+ *      glob pattern (same matchesGlob helper used elsewhere) and match
+ *      against ctx.capability. First glob-id hit wins.
+ *   3. ELSE: undefined → unknown-capability.
  *
- * Rationale (iter 11 fix): a prior prefix-fallback that matched on the first
- * two ':'-segments (connector:action) plus a resourcePattern glob caused a
- * mis-classification. A capability like 'slack:read-channel:#never-declared'
- * — never declared in the manifest — would silently match the
- * 'slack:read-channel:#dayflow-eng' decl (whose resourcePattern '#*' accepts
- * any '#' resource), then fall through to a tier-denied verdict because the
- * tierAccess list enumerates exact ids. The test "ctx.capability is not
- * declared in manifest" expects unknown-capability, not tier-denied.
+ * Why glob-id fallback (iter 12): T4 tier access uses prefix patterns like
+ * 'slack:read-channel:#public-*'. The manifest now ships a corresponding
+ * glob-id decl ('slack:read-channel:#public-*') so any concrete capability
+ * matching that prefix (e.g. '#public-announce') resolves to a real decl
+ * rather than being dropped as unknown-capability.
  *
- * Per LLD §2.4, the manifest is the closed set of declared capabilities;
- * resourcePattern is checked AFTER an exact decl is found (matchesResource
- * → 'pattern-mismatch'), it is not a way to "find" a decl for a different id.
+ * Iter 11 unknown-capability invariant preserved: a ctx.capability that
+ * matches NEITHER an exact decl NOR any glob-id decl still returns
+ * undefined. The unit-test fixture (policy.test.ts buildManifest) only
+ * uses exact-id decls, so its CAP_UNKNOWN ('slack:read-channel:#never-declared')
+ * still hits no decl → still returns unknown-capability.
+ *
+ * Per LLD §2.4, resourcePattern is still the post-decl gate (matchesResource
+ * → pattern-mismatch); the glob-id fallback only widens DECL DISCOVERY for
+ * legitimately glob-shaped declarations, it does not absorb arbitrary ids.
  */
 function findCapabilityDecl(
   capability: Capability,
   decls: ReadonlyArray<CapabilityDecl>,
 ): CapabilityDecl | undefined {
+  // 1. Exact id match first — fast path + preserves iter-11 unknown-capability test.
   for (const d of decls) {
     if (d.id === capability) return d;
   }
+  // 2. Glob-id fallback — only decls whose id literally contains '*'.
+  for (const d of decls) {
+    if (d.id.includes('*') && matchesGlob(capability, d.id)) {
+      return d;
+    }
+  }
+  // 3. No match — caller surfaces unknown-capability.
   return undefined;
 }
 

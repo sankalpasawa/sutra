@@ -227,14 +227,16 @@ export class ConnectorRouter {
     }
 
     // verdict === 'allow' — determine whether this is an
-    // approved-after-gate retry by consuming the supplied token.
+    // approved-after-gate retry by consuming the supplied token. Per codex
+    // iter-11 P1 #3: token consumption is ctx-bound — replay across different
+    // (clientId, sessionId, capability) is rejected by consumeApproval.
     let approvedAfterGate = false;
     let consumedToken: string | undefined;
     if (
       typeof ctx.approvalToken === 'string' &&
       ctx.approvalToken.length > 0
     ) {
-      if (consumeApproval(ctx.approvalToken)) {
+      if (consumeApproval(ctx.approvalToken, ctx)) {
         approvedAfterGate = true;
         consumedToken = ctx.approvalToken;
       }

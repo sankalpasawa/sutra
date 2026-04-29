@@ -49,6 +49,27 @@ capabilities:
     approvalRequired: false
     costEstimate: free
 
+  # Public-prefix read — licensed for T4 (external Sutra users). ONLY public
+  # channels (e.g. #public-launch, #public-announce). Asawa-internal channels
+  # (#ops, #dayflow-eng, etc.) are intentionally excluded from this prefix.
+  - id: 'slack:read-channel:#public-launch'
+    action: read
+    resourcePattern: '#public-*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  # Glob-id decl — discovered by findCapabilityDecl glob fallback (iter 12).
+  # This is the decl that backs T4's 'slack:read-channel:#public-*' tier entry
+  # for ARBITRARY public channels (e.g. #public-announce). The literal
+  # #public-launch decl above remains for exact-id callers (e.g. T1 post path).
+  - id: 'slack:read-channel:#public-*'
+    action: read
+    resourcePattern: '#public-*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
   # ---- POST ----
   # Generic post: D3+ floor, founder approval required at write time.
   - id: 'slack:post-message:#*'
@@ -86,9 +107,13 @@ tierAccess:
     - 'slack:read-channel:#testlify-status'
     - 'slack:read-channel:#dharmik-build'
 
-  # T4 (external Sutra users): license-bound — no Asawa-internal channels
+  # T4 (external Sutra users): license-bound — public-prefix only.
+  # Excludes Asawa-internal channels (#ops, #dayflow-eng, #testlify-status,
+  # #dharmik-build) — those are NOT in the licensed surface for fleet adopters.
+  # Concrete licensed reads will be added per-customer at v1.x; v0 ships only
+  # the public-channel-shaped pattern as the safe default.
   T4:
-    - 'slack:read-channel:#*'
+    - 'slack:read-channel:#public-*'
 
 # Fields appended to every audit event for forensic replay.
 auditFields:
@@ -97,16 +122,19 @@ auditFields:
   - team_id
   - user_id
 
-# Paths scrubbed from response payloads before audit-log write.
+# Paths scrubbed from response payloads (router post-call) AND audit args
+# (audit-sink pre-write). Both shapes share the manifest path grammar — paths
+# are relative to the value being redacted (no `response.` wrapper). Composio
+# returns the raw object; our router applies these paths directly.
 redactPaths:
-  - 'response.tokens'
-  - 'response.access_token'
-  - 'response.bot_access_token'
-  - 'response.user.email'
-  - 'response.user.real_name'
-  - 'response.user.profile.email'
-  - 'response.user.profile.phone'
-  - 'response.users[*].email'
-  - 'response.users[*].real_name'
-  - 'response.users[*].profile.email'
-  - 'response.users[*].profile.phone'
+  - 'tokens'
+  - 'access_token'
+  - 'bot_access_token'
+  - 'user.email'
+  - 'user.real_name'
+  - 'user.profile.email'
+  - 'user.profile.phone'
+  - 'users[*].email'
+  - 'users[*].real_name'
+  - 'users[*].profile.email'
+  - 'users[*].profile.phone'

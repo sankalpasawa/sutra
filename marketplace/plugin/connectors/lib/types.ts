@@ -98,7 +98,18 @@ export interface FleetPolicy {
   readonly version: string;
   readonly lastUpdated: number;
   readonly freezes: ReadonlyArray<FreezeRule>;
-  readonly tierOverrides: Readonly<Partial<Record<Tier, ReadonlyArray<Capability>>>>;
+  /**
+   * @deprecated v0 — documented in CHARTER §7 but NOT implemented.
+   *
+   * Per codex iter-11 review (P2 #5), tierOverrides is deferred to v1.x via
+   * TODO-CONNECTORS-004. The field is kept optional only to preserve existing
+   * test fixtures; runtime policy evaluation does not consult it. Setting a
+   * value here has no effect.
+   *
+   * Remove or implement in v1.x; until then, all tier access flows through
+   * `ConnectorManifest.tierAccess`.
+   */
+  readonly tierOverrides?: Readonly<Partial<Record<Tier, ReadonlyArray<Capability>>>>;
 }
 
 export interface FreezeRule {

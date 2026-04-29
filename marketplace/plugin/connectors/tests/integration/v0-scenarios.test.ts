@@ -376,3 +376,220 @@ describe('v0 edges', () => {
     expect(() => parseManifest(': : not yaml at all : :::')).toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Realistic redaction integration test — codex iter-11 P2 #4
+//
+// Earlier tests used synthetic `response.*`-prefixed objects which masked the
+// production gap: Composio returns the unwrapped payload directly, so the
+// pre-fix manifest paths matched nothing and secrets passed through. This
+// test asserts the post-fix shape: realistic Composio result (no `response.`
+// wrapper) → router applies manifest.redactPaths → secrets are scrubbed in
+// the returned value AND not present in the audit log line.
+// ---------------------------------------------------------------------------
+
+describe('redaction — realistic Composio result shape (codex iter-11 P2 #4)', () => {
+  it('redacts top-level + nested secrets from result.value AND keeps audit log clean', async () => {
+    const realisticComposioResult = {
+      ok: true,
+      access_token: 'TEST_TOKEN_XYZ_realistic',
+      user: {
+        email: 'redact@test',
+        real_name: 'redact-me-realistic',
+        profile: {
+          email: 'redact@test',
+          phone: '+1-555-redact',
+        },
+      },
+      // Field NOT in redactPaths — must pass through.
+      team_id: 'TXXXXXXX',
+    };
+
+    const composio = makeComposioClient({
+      isAuthenticated: true,
+      executeToolImpl: async () => realisticComposioResult,
+    });
+    const { router, audit } = await buildRouter({ composio });
+
+    const ctx = makeCtx({
+      tier: 'T2',
+      clientId: 'sutra-dayflow-001',
+      depth: 1,
+      capability: 'slack:read-channel:#dayflow-eng',
+      args: { channel: '#dayflow-eng' },
+      sessionId: 'session-redact-realistic',
+    });
+
+    const result = await router.call(ctx);
+    await audit.close();
+
+    // 1. Caller-visible value — secrets MUST be redacted.
+    expect(result.outcome).toBe('allowed');
+    const value = result.value as Record<string, unknown>;
+    expect(value).toBeDefined();
+    expect(value.access_token).toBe('<REDACTED>');
+    const user = value.user as Record<string, unknown>;
+    expect(user.email).toBe('<REDACTED>');
+    expect(user.real_name).toBe('<REDACTED>');
+    const profile = user.profile as Record<string, unknown>;
+    expect(profile.email).toBe('<REDACTED>');
+    expect(profile.phone).toBe('<REDACTED>');
+    // Non-redacted fields pass through.
+    expect(value.ok).toBe(true);
+    expect(value.team_id).toBe('TXXXXXXX');
+
+    // 2. Audit log MUST NOT contain raw secret strings anywhere.
+    const raw = await fs.readFile(auditPath, 'utf8');
+    expect(raw).not.toContain('TEST_TOKEN_XYZ_realistic');
+    expect(raw).not.toContain('redact@test');
+    expect(raw).not.toContain('redact-me-realistic');
+    expect(raw).not.toContain('+1-555-redact');
+
+    // 3. Audit line still records the call shape.
+    const lines = await readAuditLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      tier: 'T2',
+      capability: 'slack:read-channel:#dayflow-eng',
+      outcome: 'allowed',
+      sessionId: 'session-redact-realistic',
+    });
+  });
+
+  it('T4 reads arbitrary #public-* channel → allowed via glob-id decl (codex iter-12 P1)', async () => {
+    const composio = makeComposioClient({
+      isAuthenticated: true,
+      executeToolImpl: async () => ({ ok: true, messages: [{ ts: '1.0', text: 'announce' }] }),
+    });
+    const { router, audit } = await buildRouter({ composio });
+
+    // T4 fleet user reads an ARBITRARY public channel (NOT the literal
+    // #public-launch). This must resolve via the glob-id decl
+    // 'slack:read-channel:#public-*' that T4 prefix-matches in tierAccess.
+    const result = await router.call(makeCtx({
+      tier: 'T4',
+      clientId: 'sutra-fleet-user-001',
+      depth: 1,
+      capability: 'slack:read-channel:#public-announce',
+      args: { channel: '#public-announce' },
+      sessionId: 'session-t4-public-announce',
+    }));
+    await audit.close();
+
+    expect(result.outcome).toBe('allowed');
+    expect((result.value as { ok?: boolean }).ok).toBe(true);
+    expect(composio.executeTool).toHaveBeenCalledTimes(1);
+    expect(composio.executeTool).toHaveBeenCalledWith('slack', 'read-channel', { channel: '#public-announce' });
+
+    const lines = await readAuditLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      tier: 'T4',
+      capability: 'slack:read-channel:#public-announce',
+      outcome: 'allowed',
+      clientId: 'sutra-fleet-user-001',
+    });
+  });
+
+  it('T4 reads Asawa-internal #ops → blocked (not in T4 tier surface)', async () => {
+    const composio = makeComposioClient({ isAuthenticated: true });
+    const { router, audit } = await buildRouter({ composio });
+
+    const result = await router.call(makeCtx({
+      tier: 'T4',
+      clientId: 'sutra-fleet-user-001',
+      depth: 3,
+      capability: 'slack:read-channel:#ops',
+      args: { channel: '#ops' },
+      sessionId: 'session-t4-ops',
+    }));
+    await audit.close();
+
+    expect(result.outcome).toBe('blocked');
+    // Either tier-denied (T4 tier list excludes #ops) or pattern-mismatch
+    // depending on which gate fires first — both are acceptable shapes per
+    // LLD §2.4 precedence (capability sub-checks).
+    expect(result.reason === 'tier-denied' || result.reason === 'pattern-mismatch').toBe(true);
+    expect(composio.executeTool).not.toHaveBeenCalled();
+
+    const lines = await readAuditLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      tier: 'T4',
+      outcome: 'blocked',
+      capability: 'slack:read-channel:#ops',
+    });
+  });
+
+  it('T4 reads Asawa-internal #dayflow-eng → blocked (not in T4 tier surface)', async () => {
+    const composio = makeComposioClient({ isAuthenticated: true });
+    const { router, audit } = await buildRouter({ composio });
+
+    const result = await router.call(makeCtx({
+      tier: 'T4',
+      clientId: 'sutra-fleet-user-001',
+      depth: 3,
+      capability: 'slack:read-channel:#dayflow-eng',
+      args: { channel: '#dayflow-eng' },
+      sessionId: 'session-t4-dayflow',
+    }));
+    await audit.close();
+
+    expect(result.outcome).toBe('blocked');
+    expect(composio.executeTool).not.toHaveBeenCalled();
+
+    const lines = await readAuditLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      tier: 'T4',
+      outcome: 'blocked',
+      capability: 'slack:read-channel:#dayflow-eng',
+    });
+  });
+
+  it('rejects approval-token replay across different ctx (codex iter-11 P1 #3)', async () => {
+    // Issue a token for DayFlow posting to #public-launch at D5.
+    const composio = makeComposioClient({
+      isAuthenticated: true,
+      executeToolImpl: async () => ({ ok: true, ts: '3.0' }),
+    });
+    const { router } = await buildRouter({ composio });
+
+    const dayflowCtx = makeCtx({
+      tier: 'T2',
+      clientId: 'sutra-dayflow-001',
+      depth: 5,
+      capability: 'slack:post-message:#public-launch',
+      args: { channel: '#public-launch', text: 'launch' },
+      sessionId: 'session-replay-A',
+    });
+
+    const issued = await router.call(dayflowCtx);
+    expect(issued.outcome).toBe('blocked');
+    expect(issued.reason).toBe('approval-required');
+    const token = issued.approvalToken as string;
+    expect(token.length).toBeGreaterThan(0);
+
+    // Try to replay with a DIFFERENT sessionId (otherwise same shape).
+    const replaySession = await router.call(makeCtx({
+      ...dayflowCtx,
+      sessionId: 'session-replay-B',
+      approvalToken: token,
+    }));
+    // Token bound to session-replay-A — different session must NOT consume.
+    // The call still gets gated as require-approval (token doesn't match), so
+    // the router responds with another blocked/approval-required outcome.
+    expect(replaySession.outcome).toBe('blocked');
+    expect(replaySession.reason).toBe('approval-required');
+    expect(composio.executeTool).not.toHaveBeenCalled();
+
+    // The original (matching) ctx still consumes successfully — proves the
+    // token wasn't burned by the replay attempt.
+    const success = await router.call(makeCtx({
+      ...dayflowCtx,
+      approvalToken: token,
+    }));
+    expect(success.outcome).toBe('approved-after-gate');
+    expect(composio.executeTool).toHaveBeenCalledTimes(1);
+  });
+});

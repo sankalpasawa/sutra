@@ -225,9 +225,28 @@ Asawa-holding pushes; clients pull. `FleetPolicySource` is the abstraction (LLD 
 
 A `FreezeRule` is push-active immediately. The cache `watch()` callback fires on change; in-flight calls receive the new policy on next call boundary, not mid-call (LLD §3 dataflow — policy is evaluated in step 2, single read per call).
 
-### Tier overrides
+### Tier overrides — DEFERRED to v1.x (TODO-CONNECTORS-004)
 
-`tierOverrides: Partial<Record<Tier, ReadonlyArray<Capability>>>` (LLD §2.6) is additive at refresh time but never widens beyond what the manifest allows for that tier — i.e., overrides can SUBTRACT capabilities or grant capabilities the manifest already permits, but cannot grant capabilities a manifest hasn't declared. This protects against fleet policy drift around the manifest's curated surface (rule 3 above).
+**Status (2026-04-30, codex iter-11 P2 #5):** the `tierOverrides` field on `FleetPolicy` is documented in LLD §2.6 but **not implemented** in v0. `evaluatePolicy` does not consult it; setting a value has no effect on tier access. The field is kept optional on the type for backward-compat with existing fixtures and is deprecated in `types.ts`.
+
+**Why deferred:** v0 ships a single source of truth for tier access — `ConnectorManifest.tierAccess`. Adding a runtime override layer increases surface area without a v0 use case. A real v1.x driver (e.g., per-customer license-bound additions) will pull this back as TODO-CONNECTORS-004 with a real test matrix.
+
+**v1 design intent (when implemented):** overrides are SUBTRACTIVE OR within-manifest only — they MUST NOT widen access beyond what `tierAccess` already declares. This preserves rule 3 (Sutra owns the LLM-visible surface).
+
+### TODO-CONNECTORS-004 — Implement tierOverrides
+
+**Why deferred:** v0 had no concrete driver for fleet-level tier overrides; sole demand was "documented in LLD." Removing instead of implementing keeps the v0 surface honest.
+
+**Trigger conditions to revisit (any one):**
+- First customer asking for per-license capability subset (e.g., T4 customer with limited #public-* + #their-org channel)
+- First need to dynamically REVOKE a tier-granted capability without re-shipping the manifest
+- Fleet policy roll-out cadence outpaces manifest update cadence
+
+**Action when triggered:**
+- Codex consult on subtractive-only semantics + drift defense
+- Implement in `policy.ts` with explicit allow-only-narrowing test matrix
+- Lift `@deprecated` from `FleetPolicy.tierOverrides` in `types.ts`
+- Charter amendment to update §7 prose
 
 ### Push cadence
 
