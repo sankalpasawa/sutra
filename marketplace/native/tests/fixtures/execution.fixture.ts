@@ -12,7 +12,8 @@ import type { Execution } from '../../src/primitives/execution.js'
 import type { DataRef } from '../../src/types/index.js'
 
 /**
- * Minimal valid Execution — terminal `success` state, empty journals.
+ * Minimal valid Execution — terminal `success` state, empty journals,
+ * agent_identity=null (M4.2 chunk 1 default).
  */
 export function validMinimal(): Execution {
   return {
@@ -26,12 +27,14 @@ export function validMinimal(): Execution {
     sibling_group: null,
     fingerprint: 'fp-min',
     failure_reason: null,
+    agent_identity: null,
   }
 }
 
 /**
  * Fully populated valid Execution — failed state with reason, sibling group,
- * one log entry, one result.
+ * one log entry, one result, and a Claude-Opus agent_identity (M4.2;
+ * D-NS-10 namespace prefix applied).
  */
 export function validFull(): Execution {
   const result: DataRef = {
@@ -53,6 +56,11 @@ export function validFull(): Execution {
     sibling_group: 'sg-1',
     fingerprint: 'fp-full',
     failure_reason: 'terminal_check_failed:T1',
+    agent_identity: {
+      kind: 'claude-opus',
+      id: 'claude-opus:session-abc',
+      version: '4.7-1m',
+    },
   }
 }
 

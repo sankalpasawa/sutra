@@ -8,6 +8,10 @@
  */
 
 import type { Asset, DataRef, ExecutionState } from '../types/index.js'
+import {
+  isValidAgentIdentity,
+  type AgentIdentity,
+} from '../types/agent-identity.js'
 
 const E_ID_PATTERN = /^E-.+$/
 const W_ID_PATTERN = /^W-.+$/
@@ -69,11 +73,18 @@ export interface Execution {
    * For all other states this is null.
    */
   failure_reason: string | null
+  /**
+   * M4.2 — D1 P-A2 / V2.5 §A14: which LLM/agent made this Execution's decisions.
+   * Optional in v1.0 (default null); F-7 (modifies_sutra=true ⇒ agent_identity
+   * required) lands at M4.9 chunk 2.
+   */
+  agent_identity: AgentIdentity | null
 }
 
-/** Caller may omit failure_reason; createExecution fills the contract default. */
-export type ExecutionSpec = Omit<Execution, 'failure_reason'> & {
+/** Caller may omit failure_reason and agent_identity; createExecution fills defaults. */
+export type ExecutionSpec = Omit<Execution, 'failure_reason' | 'agent_identity'> & {
   failure_reason?: string | null
+  agent_identity?: AgentIdentity | null
 }
 
 /**
@@ -115,11 +126,22 @@ export function createExecution(spec: ExecutionSpec): Execution {
     )
   }
 
+  // M4.2 — agent_identity is optional in v1.0; default null. When provided, it
+  // MUST satisfy the AgentIdentity discriminated union (D-NS-10 namespace prefix
+  // per kind). This raises lying-id rejections at the boundary.
+  const agentIdentity = spec.agent_identity ?? null
+  if (agentIdentity !== null && !isValidAgentIdentity(agentIdentity)) {
+    throw new Error(
+      'Execution.agent_identity must be a valid AgentIdentity (M4.2; D-NS-10 namespace prefix per kind)',
+    )
+  }
+
   const out: Execution = {
     ...spec,
     logs: [...spec.logs],
     results: [...spec.results],
     failure_reason: reason,
+    agent_identity: agentIdentity,
   }
   return Object.freeze(out)
 }
@@ -137,6 +159,8 @@ export function isValidExecution(e: Execution): boolean {
   if (typeof e.fingerprint !== 'string' || e.fingerprint.length === 0) return false
   if (e.state === 'failed' && (e.failure_reason === null || e.failure_reason.length === 0)) return false
   if (e.state !== 'failed' && e.failure_reason !== null) return false
+  // M4.2 — agent_identity must be null OR a valid AgentIdentity record.
+  if (e.agent_identity !== null && !isValidAgentIdentity(e.agent_identity)) return false
   return true
 }
 

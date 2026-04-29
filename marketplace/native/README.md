@@ -149,6 +149,14 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### Execution.agent_identity (M4.2)
+
+- **Measurement**: count of Executions with non-null agent_identity / total
+- **Iteration trigger**: founder request to attribute decisions to specific LLMs/agents in audit
+- **DRI**: Sutra OS team
+- **Decommission**: Inherited from M2.4+ Authority Map evolution
+- D-NS-10 founder default (c) applied: id values use namespace prefix per kind (`claude-opus:abc`, `codex:session-xyz`); cross-kind prefixes rejected at constructor + validator.
+
 ### Tenant primitive (M4.1)
 
 - **Measurement**: contract test count + property test counterexample density

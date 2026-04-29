@@ -309,6 +309,7 @@ export const executionArb: fc.Arbitrary<Execution> = fc
       ({
         ...r,
         failure_reason: null,
+        agent_identity: null,
       }) as Execution,
   )
 
