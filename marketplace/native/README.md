@@ -149,6 +149,14 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### Test data fixtures (M4.10)
+
+- **Measurement**: count of fixtures vs primitives ≥ 1:1; fixtures self-test count
+- **Iteration trigger**: any new primitive in M4-M12 ships with a matching fixture in the same commit
+- **DRI**: Sutra-OS team
+- **Decommission**: V3 schema generators auto-emit fixtures
+- See `tests/fixtures/README.md` for the factory convention (`validMinimal()` / `validFull()` / `invalidMissingRequired()`).
+
 > **M3 patch (2026-04-28)** — L2 schema-root validation tightened (array
 > roots, raw-boolean trivial schemas, and JSON-null roots all rejected per
 > V2 §3 HARD spirit, conservative); L4/T3 step coverage soundness via
