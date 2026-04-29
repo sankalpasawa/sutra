@@ -323,12 +323,19 @@ export type { Constraint }
 /**
  * Stable id for a schema-level forbidden coupling (D4 §3). F-9 omitted (M8).
  *
- * Full v1.0 set: F-1..F-8, F-10, F-11 (10 total). F-9 (D38 plugin shipment) is
- * hook-level — DEFERRED to M8 per codex P1.3 pre-dispatch.
+ * Full v1.0 set: F-1..F-8, F-10, F-11, F-12 (11 total). F-9 (D38 plugin shipment)
+ * is hook-level — DEFERRED to M8 per codex P1.3 pre-dispatch.
  *
  * F-11 (Group G' fix-up 2026-04-29): Workflow.extension_ref MUST be null in
  * v1.0 per D4 §7.3. Codex master review caught the gap — schema accepts
  * non-null `ext-*` shape, but v1.0 enforcement was missing at terminal_check.
+ *
+ * F-12 (M5 Group I 2026-04-29): "Workflow code performs I/O" — replay
+ * determinism rule. Per codex P2.4 narrowed scope, F-12 enforcement at M5 is
+ * RUNTIME-ONLY (Activity wrapper detects Workflow execution context and
+ * throws). The schema-level terminalCheck integration is DEFERRED to M9 once
+ * the evidence-input shape is known. Enum value present here so downstream
+ * tooling (M9 schema integration, error reporting) can name the coupling.
  */
 export type ForbiddenCouplingId =
   | 'F-1'
@@ -341,6 +348,7 @@ export type ForbiddenCouplingId =
   | 'F-8'
   | 'F-10'
   | 'F-11'
+  | 'F-12'
 
 /**
  * F-1 — Tenant directly contains Workflow (skips Domain + Charter).
