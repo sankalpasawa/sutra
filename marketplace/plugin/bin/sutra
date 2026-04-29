@@ -24,6 +24,11 @@ case "$SUBCMD" in
   status)
     exec bash "$SCRIPTS_DIR/status.sh" "$@"
     ;;
+  connect)
+    CONNECTORS_DIR="$PLUGIN_ROOT/connectors"
+    [ -x "$CONNECTORS_DIR/scripts/connect.sh" ] || { echo "connectors module not installed" >&2; exit 1; }
+    exec bash "$CONNECTORS_DIR/scripts/connect.sh" "$@"
+    ;;
   update)
     echo "Refreshing marketplace + updating plugin..."
     claude plugin marketplace update sutra

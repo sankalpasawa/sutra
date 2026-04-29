@@ -1,0 +1,112 @@
+# Sutra Connectors — Slack reference manifest (v0)
+# Schema: holding/research/2026-04-30-connectors-LLD.md §2.2
+# Validator: sutra/marketplace/plugin/connectors/lib/manifest.ts (validateManifest)
+# Status: FIRST reference manifest — proves the format end-to-end.
+# v0 scenarios: DayFlow eng channel reads, Asawa #ops reads, gated post-message.
+
+schemaVersion: '1'
+name: slack
+description: >-
+  Slack workspace connector. Read channel messages, post messages with
+  founder-in-loop approval at high depth. Tier-scoped: T1 full fleet, T2
+  scoped to own channels, T3 scoped to own product channels, T4 license-bound.
+composioToolkit: slack
+
+capabilities:
+  # ---- READ ----
+  - id: 'slack:read-channel:#*'
+    action: read
+    resourcePattern: '#*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'slack:read-channel:#dayflow-eng'
+    action: read
+    resourcePattern: '#dayflow-eng'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'slack:read-channel:#ops'
+    action: read
+    resourcePattern: '#ops'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'slack:read-channel:#testlify-status'
+    action: read
+    resourcePattern: '#testlify-status'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'slack:read-channel:#dharmik-build'
+    action: read
+    resourcePattern: '#dharmik-build'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  # ---- POST ----
+  # Generic post: D3+ floor, founder approval required at write time.
+  - id: 'slack:post-message:#*'
+    action: write
+    resourcePattern: '#*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: cents
+
+  # Public-launch channel: D5 mandatory. Highest blast radius.
+  - id: 'slack:post-message:#public-launch'
+    action: write
+    resourcePattern: '#public-launch'
+    minDepth: 5
+    approvalRequired: true
+    costEstimate: cents
+
+# Tier access — references concrete capability ids or glob prefixes that
+# resolve to known ids (per matchesKnownCapabilityPrefix). Connector and
+# action segments are never bare '*' (would be overbroad).
+tierAccess:
+  # T1 (Asawa): full fleet incl. post + public-launch
+  T1:
+    - 'slack:read-channel:#*'
+    - 'slack:post-message:#*'
+    - 'slack:post-message:#public-launch'
+
+  # T2 (DayFlow / Billu / Paisa): read own scoped channels, post with approval
+  T2:
+    - 'slack:read-channel:#dayflow-eng'
+    - 'slack:post-message:#*'
+
+  # T3 (Testlify / Dharmik): read only their own product channels
+  T3:
+    - 'slack:read-channel:#testlify-status'
+    - 'slack:read-channel:#dharmik-build'
+
+  # T4 (external Sutra users): license-bound — no Asawa-internal channels
+  T4:
+    - 'slack:read-channel:#*'
+
+# Fields appended to every audit event for forensic replay.
+auditFields:
+  - channel
+  - thread_ts
+  - team_id
+  - user_id
+
+# Paths scrubbed from response payloads before audit-log write.
+redactPaths:
+  - 'response.tokens'
+  - 'response.access_token'
+  - 'response.bot_access_token'
+  - 'response.user.email'
+  - 'response.user.real_name'
+  - 'response.user.profile.email'
+  - 'response.user.profile.phone'
+  - 'response.users[*].email'
+  - 'response.users[*].real_name'
+  - 'response.users[*].profile.email'
+  - 'response.users[*].profile.phone'
