@@ -168,6 +168,13 @@ export type StepFailureAction =
 /**
  * V2.3 §A11: step has either skill_ref OR action (mutually exclusive).
  * Validation per L2 BOUNDARY: a step with neither is invalid.
+ *
+ * M7 Group V (T-093): `policy_check?: boolean` is ORTHOGONAL to the
+ * skill_ref XOR action discipline — when true, the executor dispatches the
+ * Charter's compiled policy through the OPAEvaluator BEFORE this step's
+ * Activity runs. Workflow.modifies_sutra=true also implicitly enables
+ * policy_check at every step (per V2.4 §A12 + M7 sovereignty discipline).
+ * Default `undefined` ⇒ false (no policy gate).
  */
 export interface WorkflowStep {
   step_id: number
@@ -176,6 +183,7 @@ export interface WorkflowStep {
   inputs: DataRef[]
   outputs: DataRef[]
   on_failure: StepFailureAction
+  policy_check?: boolean
 }
 
 // -----------------------------------------------------------------------------

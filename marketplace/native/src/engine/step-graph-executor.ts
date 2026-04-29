@@ -36,6 +36,9 @@ import {
 } from './failure-policy.js'
 import type { SkillEngine } from './skill-engine.js'
 import { invokeSkill } from './skill-invocation.js'
+import type { CompiledPolicy } from './charter-rego-compiler.js'
+import type { PolicyDispatcher } from './policy-dispatcher.js'
+import type { PolicyInput } from './opa-evaluator.js'
 
 // =============================================================================
 // Types
@@ -123,6 +126,29 @@ export interface ExecuteOptions {
    * resolution and increments it before re-entering executeStepGraph.
    */
   recursion_depth?: number
+  /**
+   * M7 Group V (T-094). When supplied, the executor evaluates the supplied
+   * `compiled_policy` BEFORE dispatching any step that has either
+   *   - `step.policy_check === true`, OR
+   *   - `workflow.modifies_sutra === true` (V2.4 §A12 — every step in a
+   *     reflexive Workflow gets policy-checked, even when the step itself
+   *     does not declare policy_check).
+   *
+   * On `kind: 'allow'` the step proceeds through its normal dispatch path.
+   * On `kind: 'deny'` the executor synthesizes a step failure with
+   *   `errMsg = 'policy_deny:<rule_name>:<reason>:<policy_version>'`
+   * and routes via the existing M5 failure-policy (rollback / escalate /
+   * pause / abort / continue per `step.on_failure`).
+   *
+   * Both fields MUST be supplied together; if `policy_dispatcher` is set
+   * without `compiled_policy` (or vice versa), the policy gate is a no-op
+   * (defensive default — never block-as-side-effect-of-misconfiguration).
+   * Test-time injection: pass a stub PolicyDispatcher to assert allow/deny
+   * paths without invoking the real OPA binary.
+   */
+  policy_dispatcher?: PolicyDispatcher
+  /** M7 Group V (T-094). Compiled policy bound to the Workflow's parent Charter. */
+  compiled_policy?: CompiledPolicy
 }
 
 /**
@@ -302,6 +328,14 @@ export async function executeStepGraph(
   // increments before re-entering this executor for the resolved Skill.
   const recursion_depth = options.recursion_depth ?? 0
   const skill_engine = options.skill_engine
+  // M7 Group V (T-094). Policy gate is active iff BOTH a dispatcher AND a
+  // compiled policy are supplied — defensive against misconfiguration
+  // (one-without-the-other should never silently block-or-pass; the safe
+  // default is "no gate", surfaced explicitly to the operator at config
+  // time via the type contract).
+  const policy_dispatcher = options.policy_dispatcher
+  const compiled_policy = options.compiled_policy
+  const policyGateActive = policy_dispatcher !== undefined && compiled_policy !== undefined
 
   for (const step of workflow.step_graph) {
     // Per-step dispatch context — derived snapshot, not a live reference.
@@ -334,15 +368,86 @@ export async function executeStepGraph(
     }
 
     let result: StepDispatchResult
-    // M6 Group P (T-073). Steps with `skill_ref` route through invokeSkill
-    // when a SkillEngine is present in options. The adapter resolves the
-    // Skill, runs an isolated child execution, validates the payload
-    // against the cached return_contract, and returns either a validated
-    // payload (translated below into a synthetic 'ok' StepDispatchResult)
-    // or a canonical failure (translated into a synthetic 'failure'
-    // StepDispatchResult so the existing failure-policy switch routes it
-    // unchanged via M5).
-    if (skill_engine !== undefined && typeof step.skill_ref === 'string') {
+
+    // M7 Group V (T-094). Policy gate — runs BEFORE the step's normal dispatch.
+    //
+    // Activation rule:
+    //   - step.policy_check === true    (per-step opt-in), OR
+    //   - workflow.modifies_sutra === true   (V2.4 §A12 — all steps in a
+    //     reflexive Workflow get policy-checked, even when the step itself
+    //     does not declare policy_check)
+    //
+    // Allow path: control falls through to the existing dispatch branch below.
+    //
+    // Deny path: synthesize a step failure with the canonical errMsg
+    //   `policy_deny:<rule_name>:<reason>:<policy_version>`
+    // and route via the SAME failure-policy switch the dispatcher uses for
+    // step failures (rollback / escalate / pause / abort / continue per
+    // step.on_failure). This keeps deny semantics symmetric with arbitrary
+    // step failures — the parent Workflow's failure policy is the single
+    // place that decides "what happens when something goes wrong".
+    //
+    // Codex r8 P1.1 fold: the policy_eval Activity runs through the
+    // dispatcher seam (PolicyDispatcher), preserving the M5 boundary that
+    // I/O happens via Activities. The executor itself remains pure
+    // orchestration — no shell-out, no Date.now(), no Math.random().
+    let policyDenied = false
+    let policyDenyError: Error | null = null
+    if (policyGateActive && (step.policy_check === true || workflow.modifies_sutra === true)) {
+      const policyInput: PolicyInput = {
+        step,
+        workflow,
+        execution_context: {
+          visited_step_ids: [...visited_step_ids],
+          completed_step_ids: [...completed_step_ids],
+          autonomy_level: workflow.autonomy_level,
+          recursion_depth,
+        },
+      }
+      try {
+        const decision = await policy_dispatcher!.dispatch_policy_eval({
+          kind: 'policy_eval',
+          policy: compiled_policy!,
+          input: policyInput,
+        })
+        if (decision.kind === 'deny') {
+          policyDenied = true
+          // errMsg format pinned by M7 Group V plan T-094 (P2.1 fold):
+          //   `policy_deny:<rule_name>:<reason>:<policy_version>`
+          // Downstream tools that parse failure_reason MUST match against
+          // this string prefix; do NOT reorder fields without a contract bump.
+          policyDenyError = new Error(
+            `policy_deny:${decision.rule_name}:${decision.reason}:${decision.policy_version}`,
+          )
+        }
+      } catch (raw) {
+        // Dispatcher itself threw (e.g. OPAUnavailableError). Per sovereignty
+        // discipline, an unevaluable policy is treated as deny — the runtime
+        // never fabricates an "approval" when authorization cannot be
+        // verified. The errMsg surfaces the underlying failure so the operator
+        // can diagnose (binary missing, timeout, parse error, etc.).
+        policyDenied = true
+        const errMsg = raw instanceof Error ? raw.message : String(raw)
+        policyDenyError = new Error(
+          `policy_deny:dispatch_error:${errMsg}:${compiled_policy!.policy_version}`,
+        )
+      }
+    }
+
+    if (policyDenied) {
+      // Synthesize a failure StepDispatchResult and let the existing failure-
+      // policy switch route per step.on_failure. The dispatcher is NOT called
+      // for this step — policy gate fires before any I/O for the step.
+      result = { kind: 'failure', error: policyDenyError as Error }
+    } else if (skill_engine !== undefined && typeof step.skill_ref === 'string') {
+      // M6 Group P (T-073). Steps with `skill_ref` route through invokeSkill
+      // when a SkillEngine is present in options. The adapter resolves the
+      // Skill, runs an isolated child execution, validates the payload
+      // against the cached return_contract, and returns either a validated
+      // payload (translated below into a synthetic 'ok' StepDispatchResult)
+      // or a canonical failure (translated into a synthetic 'failure'
+      // StepDispatchResult so the existing failure-policy switch routes it
+      // unchanged via M5).
       try {
         const invokeResult = await invokeSkill(step, {
           skill_engine,

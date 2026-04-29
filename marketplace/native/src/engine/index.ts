@@ -81,6 +81,36 @@ export {
   type CompiledPolicy,
 } from './charter-rego-compiler.js'
 
+// M7 Group V — OPA bundle service: in-memory, version-keyed CompiledPolicy
+// store. The runtime registers compiled policies via `register()`; the
+// dispatcher fetches the active version via `get(policy_id)` (or pins a
+// specific version via `get(policy_id, policy_version)` for audit / replay).
+export { OPABundleService } from './opa-bundle-service.js'
+
+// M7 Group V — OPA evaluator. `evaluate(policy, input)` shells out to the
+// OPA binary; `policyEvalActivity` is the asActivity-wrapped form that
+// preserves the M5 I/O boundary (codex r8 P1.1). `OPAUnavailableError`
+// surfaces when the binary is missing — the runtime treats this as deny.
+export {
+  evaluate,
+  policyEvalActivity,
+  OPAUnavailableError,
+  type PolicyAllow,
+  type PolicyDecision,
+  type PolicyDeny,
+  type PolicyInput,
+} from './opa-evaluator.js'
+
+// M7 Group V — policy dispatcher. `makePolicyDispatcher()` returns the
+// default dispatcher (Activity-wrapped); tests inject mock dispatchers
+// through the same interface.
+export {
+  makePolicyDispatcher,
+  type DispatchableCommand,
+  type PolicyDispatcher,
+  type PolicyEvalCommand,
+} from './policy-dispatcher.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public

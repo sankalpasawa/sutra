@@ -188,6 +188,13 @@ function validateStep(step: WorkflowStep, idx: number): void {
       `Workflow.step_graph[${idx}].on_failure must be one of rollback|escalate|pause|abort|continue; got "${String(step.on_failure)}"`,
     )
   }
+  // M7 Group V (T-093). Defensive runtime check — `policy_check` is optional
+  // (default undefined ⇒ no gate); when supplied it MUST be boolean.
+  if (step.policy_check !== undefined && typeof step.policy_check !== 'boolean') {
+    throw new Error(
+      `Workflow.step_graph[${idx}].policy_check must be a boolean when supplied; got "${typeof step.policy_check}"`,
+    )
+  }
 }
 
 /** Validate expects_response_from is null or a non-empty string (BoundaryEndpointRef). */
