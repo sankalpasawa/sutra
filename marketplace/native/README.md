@@ -149,6 +149,15 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### DecisionProvenance schema (M4.3)
+
+- **Measurement**: contract test count + property test counterexample density (5,000+ cases)
+- **Iteration trigger**: any consequential decision in M5+ that the schema can't represent
+- **DRI**: Sutra OS team
+- **Decommission**: V3 supersession of D2 §2.1 spec
+- v1.0 contract: DecisionProvenance schema is shipped at M4 as a typed contract. The emission gateway (Activity wrapper that pushes DP via OTel SDK to OTel Collector) lands at M8. M4 does NOT ship the emitter — only the shape.
+- F-8 partial enforcement: `policy_id` + `policy_version` both `min(1)`; full F-8 cross-coupling at terminal_check lands at M4.9 chunk 2.
+
 ### Execution.agent_identity (M4.2)
 
 - **Measurement**: count of Executions with non-null agent_identity / total

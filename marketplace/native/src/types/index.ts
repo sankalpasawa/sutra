@@ -52,6 +52,21 @@ export interface DataRef {
   retention: string
 }
 
+// M4.3: DataRef zod schema for use by DecisionProvenance.evidence (and other
+// new M4 schemas). The TS interface remains the source-of-truth for primitives;
+// this schema mirrors it for runtime parsing. Imported here so the dependency
+// graph stays acyclic (schemas may import types/, never the reverse).
+import { z } from 'zod'
+
+export const DataRefSchema = z.object({
+  kind: z.string().min(1),
+  schema_ref: z.string().min(1),
+  locator: z.string().min(1),
+  version: z.string(),
+  mutability: z.enum(['mutable', 'immutable']),
+  retention: z.string(),
+})
+
 export interface Asset extends DataRef {
   /** L1 DATA promotion: stable_identity AND len(lifecycle_states) > 1 */
   stable_identity: string

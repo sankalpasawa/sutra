@@ -12,12 +12,17 @@ import { createCharter, isValidCharter } from '../../src/primitives/charter.js'
 import { createWorkflow, isValidWorkflow } from '../../src/primitives/workflow.js'
 import { createExecution, isValidExecution } from '../../src/primitives/execution.js'
 import { createTenant, isValidTenant } from '../../src/schemas/tenant.js'
+import {
+  createDecisionProvenance,
+  isValidDecisionProvenance,
+} from '../../src/schemas/decision-provenance.js'
 
 import * as DomainFx from './domain.fixture.js'
 import * as CharterFx from './charter.fixture.js'
 import * as WorkflowFx from './workflow.fixture.js'
 import * as ExecutionFx from './execution.fixture.js'
 import * as TenantFx from './tenant.fixture.js'
+import * as DPFx from './decision-provenance.fixture.js'
 
 describe('M4.10 fixtures — round-trip + reject contract', () => {
   describe('Domain', () => {
@@ -117,6 +122,29 @@ describe('M4.10 fixtures — round-trip + reject contract', () => {
         // @ts-expect-error — fixture intentionally missing required field
         const t = createTenant(bad)
         if (!isValidTenant(t)) threwOrFailed = true
+      } catch {
+        threwOrFailed = true
+      }
+      expect(threwOrFailed).toBe(true)
+    })
+  })
+
+  describe('DecisionProvenance (M4.3)', () => {
+    it('validMinimal round-trips', () => {
+      const v = createDecisionProvenance(DPFx.validMinimal())
+      expect(isValidDecisionProvenance(v)).toBe(true)
+    })
+    it('validFull round-trips', () => {
+      const v = createDecisionProvenance(DPFx.validFull())
+      expect(isValidDecisionProvenance(v)).toBe(true)
+    })
+    it('invalidMissingRequired throws OR fails predicate', () => {
+      const bad = DPFx.invalidMissingRequired()
+      let threwOrFailed = false
+      try {
+        // @ts-expect-error — fixture intentionally missing required field
+        const v = createDecisionProvenance(bad)
+        if (!isValidDecisionProvenance(v)) threwOrFailed = true
       } catch {
         threwOrFailed = true
       }
