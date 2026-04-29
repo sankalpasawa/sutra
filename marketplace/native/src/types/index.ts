@@ -43,6 +43,14 @@ export interface Constraint {
 
 export type DataMutability = 'mutable' | 'immutable'
 
+/**
+ * M4.6 — D2 §5: explicit authoritative-vs-advisory status per DataRef.
+ * Default `authoritative` (safest). Re-exported here as a string-literal type
+ * so the TS DataRef interface stays free of zod imports; the runtime schema
+ * (DataRefSchema below) uses the zod enum from `./authoritative-status.ts`.
+ */
+export type AuthoritativeStatus = 'authoritative' | 'advisory'
+
 export interface DataRef {
   kind: string
   schema_ref: string
@@ -50,6 +58,13 @@ export interface DataRef {
   version: string
   mutability: DataMutability
   retention: string
+  /**
+   * M4.6 — D2 §5. Default `authoritative` (safest). Optional on the TS shape
+   * because DataRefSchema.parse fills the default; existing callers that omit
+   * the field continue to compile. When set, must be `authoritative` or
+   * `advisory`.
+   */
+  authoritative_status?: AuthoritativeStatus
 }
 
 // M4.3: DataRef zod schema for use by DecisionProvenance.evidence (and other
@@ -57,6 +72,7 @@ export interface DataRef {
 // this schema mirrors it for runtime parsing. Imported here so the dependency
 // graph stays acyclic (schemas may import types/, never the reverse).
 import { z } from 'zod'
+import { AuthoritativeStatusSchema } from './authoritative-status.js'
 
 export const DataRefSchema = z.object({
   kind: z.string().min(1),
@@ -65,6 +81,8 @@ export const DataRefSchema = z.object({
   version: z.string(),
   mutability: z.enum(['mutable', 'immutable']),
   retention: z.string(),
+  // M4.6 — default `authoritative` per D2 §5; explicit `advisory` allowed.
+  authoritative_status: AuthoritativeStatusSchema.default('authoritative'),
 })
 
 export interface Asset extends DataRef {

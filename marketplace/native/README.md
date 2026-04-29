@@ -149,6 +149,15 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### DataRef.authoritative_status (M4.6)
+
+- **Measurement**: count of DataRefs with `authoritative_status='advisory'` / total
+- **Iteration trigger**: drift detection (D2 §5.4) lands at M8 hooks
+- **DRI**: Sutra OS team
+- **Decommission**: V3 supersession of D2 §5
+- Default `authoritative` (safest); explicit `advisory` must be declared. Resolves the markdown-vs-code source-of-truth arbitration (PS-9, Q7) at the schema boundary.
+- TS interface field is optional (DataRefSchema.parse fills the default); callers that omit the field continue to compile.
+
 ### Workflow.extension_ref (M4.5)
 
 - **Measurement**: count of Workflows with non-null extension_ref (must be 0 in v1.0)
