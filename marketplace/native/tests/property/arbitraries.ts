@@ -230,6 +230,10 @@ export function workflowArb(opts: WorkflowArbOpts = {}): fc.Arbitrary<Workflow> 
         : fc.constant<string | null>(null),
     modifies_sutra:
       opts.modifies_sutra !== undefined ? fc.constant(opts.modifies_sutra) : fc.boolean(),
+    // M4.4 — custody_owner: null is valid v1.0 default; arbitraries pin to null
+    // here so existing law-property tests remain green. Tests that exercise
+    // non-null values pass an override directly.
+    custody_owner: fc.constant<string | null>(null),
   })
 }
 

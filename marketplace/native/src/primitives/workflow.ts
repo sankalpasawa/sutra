@@ -22,6 +22,12 @@ import type {
 /** Workflow id starts with 'W-' followed by hash/identifier. */
 const W_ID_PATTERN = /^W-.+$/
 
+/**
+ * Tenant id pattern (must match `src/schemas/tenant.ts` TENANT_ID_PATTERN).
+ * Duplicated to keep workflow.ts zero-dependency on zod at the type layer.
+ */
+const TENANT_ID_PATTERN = /^T-[a-z0-9-]+$/
+
 const VALID_STRINGENCY: ReadonlySet<WorkflowStringency> = new Set([
   'task',
   'process',
@@ -89,6 +95,16 @@ export interface Workflow {
   // ---- V2.4 §A12 ----
   /** True iff this Workflow may modify Sutra structural paths. Triggers L6 + T6 at terminal_check. Default false. */
   modifies_sutra: boolean
+
+  // ---- M4.4 — D1 §2 P-A4 ----
+  /**
+   * Owning Tenant id when this Workflow's state is owned by a specific Tenant.
+   * D-NS-11 founder default (c) applied: explicit declaration; required when
+   * Workflow crosses 2+ Tenants. Single-tenant v1.0: null is acceptable;
+   * runtime will assert non-null at terminal_check (M4.9 chunk 2 enforcement).
+   * Pattern: `T-<id>` (must match `src/schemas/tenant.ts` TENANT_ID_PATTERN).
+   */
+  custody_owner: string | null
 }
 
 /**
@@ -96,12 +112,12 @@ export interface Workflow {
  */
 export type WorkflowSpec = Omit<
   Workflow,
-  'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra'
+  'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner'
 > &
   Partial<
     Pick<
       Workflow,
-      'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra'
+      'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner'
     >
   >
 
@@ -238,6 +254,19 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     }
   }
 
+  // M4.4 — D-NS-11 default (c): custody_owner is an explicit declaration.
+  // null is acceptable at v1.0 (single-tenant); when supplied, must match
+  // T-<id> pattern. Cross-tenant detection (asserting non-null at terminal_check
+  // when Workflow crosses 2+ Tenants) lands at M4.9 chunk 2.
+  const custodyOwner = spec.custody_owner ?? null
+  if (custodyOwner !== null) {
+    if (typeof custodyOwner !== 'string' || !TENANT_ID_PATTERN.test(custodyOwner)) {
+      throw new Error(
+        `Workflow.custody_owner must be null or match T-<id> pattern (M4.4; D-NS-11); got "${String(custodyOwner)}"`,
+      )
+    }
+  }
+
   const out: Workflow = {
     ...spec,
     step_graph: spec.step_graph.map((s) => ({ ...s, inputs: [...s.inputs], outputs: [...s.outputs] })),
@@ -250,6 +279,7 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     reuse_tag: reuseTag,
     return_contract: returnContract,
     modifies_sutra: spec.modifies_sutra ?? false,
+    custody_owner: custodyOwner,
   }
   return Object.freeze(out)
 }
@@ -316,6 +346,13 @@ export function isValidWorkflow(w: Workflow): boolean {
     if (typeof step.step_id !== 'number' || !Number.isInteger(step.step_id)) return false
     if (seenStepIds.has(step.step_id)) return false
     seenStepIds.add(step.step_id)
+  }
+  // M4.4 — custody_owner must be null OR match T-<id> pattern.
+  if (
+    w.custody_owner !== null &&
+    (typeof w.custody_owner !== 'string' || !TENANT_ID_PATTERN.test(w.custody_owner))
+  ) {
+    return false
   }
   return true
 }

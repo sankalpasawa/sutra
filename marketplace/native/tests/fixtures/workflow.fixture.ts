@@ -38,12 +38,13 @@ export function validMinimal(): Workflow {
     reuse_tag: false,
     return_contract: null,
     modifies_sutra: false,
+    custody_owner: null,
   }
 }
 
 /**
  * Fully populated valid Workflow — multi-step Skill (reuse_tag=true) with a
- * return_contract, no modifies_sutra.
+ * return_contract, no modifies_sutra. M4.4: explicit custody_owner declared.
  */
 export function validFull(): Workflow {
   const dataRef: DataRef = {
@@ -84,6 +85,7 @@ export function validFull(): Workflow {
     reuse_tag: true,
     return_contract: 'native://schemas/checkpoint',
     modifies_sutra: false,
+    custody_owner: 'T-asawa-holding',
   }
 }
 

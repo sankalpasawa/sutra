@@ -149,6 +149,14 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### Workflow.custody_owner (M4.4)
+
+- **Measurement**: ratio of Workflows with non-null custody_owner across cross-tenant audits
+- **Iteration trigger**: cross-tenant Workflow without custody_owner detected at terminal_check (M4.9 chunk 2)
+- **DRI**: Sutra OS team
+- **Decommission**: V3 supersession of D1 P-A4
+- D-NS-11 founder default (c) applied: explicit declaration; chunk 1 ships the field with T-<id> pattern validation. Cross-tenant runtime assertion at terminal_check lands at M4.9 chunk 2.
+
 ### DecisionProvenance schema (M4.3)
 
 - **Measurement**: contract test count + property test counterexample density (5,000+ cases)
