@@ -29,9 +29,32 @@ describe('asActivity — wrapper signature', () => {
     expect(typeof act).toBe('function')
   })
 
-  it('rejects a sync (non-Promise-returning) impl at registration', () => {
-    // @ts-expect-error — intentional: sync impl violates ActivityFn contract
-    expect(() => asActivity(() => 42)).toThrow(/async/i)
+  // Codex master review 2026-04-29 P2.2 (advisory) — broadened gate.
+  // Public type is `(...args) => Promise<R>`; the wrapper is itself an
+  // `async function` so any sync return is auto-promoted to Promise<R>.
+  // We accept any function at registration; misuse surfaces at first call
+  // (consumer awaits non-Promise → TypeError) rather than registration.
+  it('accepts a Promise-returning arrow (() => Promise.resolve(...)) — codex P2.2', () => {
+    const impl = () => Promise.resolve(42)
+    const act = asActivity(impl as () => Promise<number>)
+    expect(typeof act).toBe('function')
+  })
+
+  it('accepts a bound async function (constructor.name degrades to Function) — codex P2.2', async () => {
+    const baseAsync = async (n: number) => n * 2
+    const bound = baseAsync.bind(null)
+    // Bound async functions lose `AsyncFunction` constructor.name — the prior
+    // gate rejected these despite the type contract allowing them.
+    const act = asActivity(bound)
+    expect(typeof act).toBe('function')
+    await expect(act(21)).resolves.toBe(42)
+  })
+
+  it('accepts a factory-produced Promise-returning callable — codex P2.2', async () => {
+    const make = (): ((n: number) => Promise<number>) => (n) => Promise.resolve(n + 1)
+    const impl = make()
+    const act = asActivity(impl)
+    await expect(act(5)).resolves.toBe(6)
   })
 
   it('rejects non-function inputs', () => {

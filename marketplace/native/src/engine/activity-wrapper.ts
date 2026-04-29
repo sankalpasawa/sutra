@@ -83,21 +83,31 @@ export function __resetWorkflowContextProbeForTest(): void {
 }
 
 /**
- * Wrap an async impl as an Activity. The returned function:
+ * Wrap an async-callable impl as an Activity. The returned function:
  *  - invokes the impl when called outside a Workflow context (positive path)
  *  - throws an F-12 error when called inside a Workflow context (negative
  *    path — F-12 RUNTIME TRAP per codex P2.4)
  *
  * Registration-time guards:
- *  - impl must be a function
- *  - impl must be async (return a Promise) — enforced by inspecting
- *    `Function.prototype.constructor.name === 'AsyncFunction'`. Sync impls
- *    are rejected synchronously so misuse fails fast at startup, not at the
- *    first call.
+ *  - impl must be a function (any callable)
+ *
+ * Async-shape contract:
+ *  - The public type contract is `(...args: Args) => Promise<R>` — any
+ *    function returning a Promise (declared `async`, bound async, factory-
+ *    produced Promise-returning callable, `() => Promise.resolve(...)`).
+ *  - Codex master review 2026-04-29 P2.2 (advisory): the prior gate
+ *    `impl.constructor.name === 'AsyncFunction'` was narrower than the type
+ *    contract — it rejected bound-async + factory-produced Promise-returning
+ *    callables despite the type permitting them. Gate is now broadened to
+ *    "is a function"; the wrapper itself is an `async function` so any sync
+ *    return is auto-wrapped in `Promise.resolve(...)`. A sync impl that
+ *    violates the contract surfaces at first real call (TypeError on the
+ *    consumer's `await`-on-non-promise expectations) rather than registration,
+ *    which the wrapper's `async function` envelope already covers.
  *
  * @template Args  Tuple of impl argument types.
  * @template R     Awaited result type.
- * @param impl     Async function to wrap as an Activity.
+ * @param impl     Async-callable function to wrap as an Activity.
  * @returns ActivityFn<Args, R>
  */
 export function asActivity<Args extends unknown[], R>(
@@ -108,17 +118,9 @@ export function asActivity<Args extends unknown[], R>(
       `asActivity: impl must be a function; got ${typeof impl}`,
     )
   }
-  // AsyncFunction constructor name is the standard discriminator.
-  // Note: misses bound async functions whose constructor degrades to Function.
-  // Acceptable for V1; revisit if real bound usage emerges.
-  const isAsync =
-    impl.constructor && impl.constructor.name === 'AsyncFunction'
-  if (!isAsync) {
-    throw new TypeError(
-      'asActivity: impl must be async (declared with `async` or returning a Promise constructor). ' +
-        'Sync impls violate the ActivityFn contract.',
-    )
-  }
+  // Codex P2.2 — accept any function. Promise-returning callables are valid
+  // per the public type contract; the wrapper's `async function` envelope
+  // ensures the returned value is always a Promise<R>.
 
   return async function activityFn(...args: Args): Promise<R> {
     if (workflowContextProbe()) {

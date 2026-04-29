@@ -174,6 +174,28 @@ describe('M5 Workflow Engine — integration (T-056)', () => {
 // =============================================================================
 
 describe('M5 Workflow Engine — Temporal SDK smoke (T-056)', () => {
+  // ---------------------------------------------------------------------------
+  // Scope of this describe block (codex master review 2026-04-29 P2.1):
+  //
+  // This block proves DEPENDENCY SMOKE only — the @temporalio/* modules
+  // resolve, type signatures match, and `MockActivityEnvironment` instantiates
+  // without a cluster. It does NOT prove the F-12 RUNTIME TRAP fires inside
+  // Temporal's real Workflow sandbox — that proof requires:
+  //   1. A Worker bundled with `@temporalio/workflow` (not just imported)
+  //   2. A `TestWorkflowEnvironment.createTimeSkipping()` cluster
+  //   3. A registered Workflow function that calls `asActivity(impl)` directly
+  //      (not via proxyActivities) and asserts the F-12 trap fires inside the
+  //      sandbox interpreter
+  //
+  // That proof is DEFERRED to M11 (Asawa dogfood) per D-NS-12 (b) — production
+  // cluster connection deferred to M11, and the bundling step rides with it.
+  //
+  // The F-12 contract IS proven at L2 via:
+  //   - Injected-probe contract test in tests/contract/engine/activity-wrapper.test.ts
+  //   - 1000-case property test in tests/property/f12-determinism.test.ts
+  //
+  // Tracked in holding/plans/native-v1.0/M5-workflow-engine.md → "M5 Follow-ups (post-close)".
+  //
   // The Temporal test server downloads a binary on first use; in CI without
   // network the import itself succeeds but `createTimeSkipping()` may stall.
   // We import lazily and skip on failure so the M5 mock-based contract above

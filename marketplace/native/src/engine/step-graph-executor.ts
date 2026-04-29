@@ -69,7 +69,11 @@ export type ActivityDispatcher = (
 
 /** Context passed to each `dispatch(...)` call. */
 export interface DispatchContext {
-  /** Step ids already completed in this run. Order = execution order. */
+  /**
+   * Step ids that produced successful effects in this run. Order = execution
+   * order. Failed-continue steps are NOT included — see codex P1.1
+   * (2026-04-29 master review). This is the rollback-correct "completed" view.
+   */
   completed_step_ids: ReadonlyArray<number>
   /** Workflow autonomy level — for dispatcher to gate human-loop interruptions. */
   autonomy_level: 'manual' | 'semi' | 'autonomous'
@@ -102,8 +106,20 @@ export interface ExecuteOptions {
  */
 export interface ExecutionResult {
   workflow_id: string
-  /** Step ids visited, in execution order (incl. failures up to abort point). */
+  /**
+   * Step ids visited, in execution order (incl. failed-continue steps + steps
+   * up to the abort/rollback/pause/escalate point). Trace-shaped — for
+   * observability + debugging. NOT the rollback compensation set; see
+   * `completed_step_ids` for that.
+   */
   visited_step_ids: number[]
+  /**
+   * Step ids that produced successful effects, in execution order. Strictly
+   * a subset of `visited_step_ids`: a step that failed with `on_failure='continue'`
+   * appears in visited but NOT here. Rollback compensation walks reverse this
+   * list — never the visited list. Codex P1.1 (2026-04-29 master review).
+   */
+  completed_step_ids: number[]
   /** Per-step outputs — one entry per visited step (skipped steps omitted). */
   step_outputs: Array<{
     step_id: number
@@ -199,17 +215,25 @@ export async function executeStepGraph(
     throw new Error('executeStepGraph: Workflow.step_graph must be a non-empty array')
   }
 
+  // Two distinct lists per codex P1.1 (2026-04-29 master review):
+  //   visited_step_ids   — every step the executor saw, including failed-continue
+  //                        steps (trace-shaped; for observability / debugging)
+  //   completed_step_ids — only steps that produced successful effects (for
+  //                        rollback compensation walks + dispatch context)
+  // Aliasing them was the M5 ship-blocker: rollback would compensate steps
+  // that failed-continue (never produced effects).
   const visited_step_ids: number[] = []
+  const completed_step_ids: number[] = []
   const step_outputs: ExecutionResult['step_outputs'] = []
   const child_workflows: NonNullable<ExecutionResult['child_workflows']> = []
   let partial = false
 
-  const completedView = (): ReadonlyArray<number> => visited_step_ids
-
   for (const step of workflow.step_graph) {
     // Per-step dispatch context — derived snapshot, not a live reference.
+    // `completed_step_ids` here is the rollback-correct view (success-only),
+    // NOT visited; failed-continue steps are excluded.
     const dispatchCtx: DispatchContext = {
-      completed_step_ids: [...completedView()],
+      completed_step_ids: [...completed_step_ids],
       autonomy_level: workflow.autonomy_level,
     }
 
@@ -227,7 +251,8 @@ export async function executeStepGraph(
 
     // Special-case: action='terminate' is the V2.3 §A11 terminate stage. We
     // record the visit and break — no dispatcher call (terminate is structural,
-    // not an I/O step). T-051: terminalCheck runs after this loop.
+    // not an I/O step). T-051: terminalCheck runs after this loop. Terminate
+    // is structural, not effect-producing — visited only, NOT completed.
     if (descriptor.action === 'terminate') {
       visited_step_ids.push(step.step_id)
       break
@@ -242,7 +267,9 @@ export async function executeStepGraph(
     }
 
     if (result.kind === 'ok') {
+      // Successful effect → both visited + completed.
       visited_step_ids.push(step.step_id)
+      completed_step_ids.push(step.step_id)
       step_outputs.push({
         step_id: step.step_id,
         outputs: result.outputs,
@@ -253,8 +280,10 @@ export async function executeStepGraph(
 
     if (result.kind === 'child_result') {
       // V2.3 §A11 — action='spawn_sub_unit' delegates to a child Workflow.
-      // Outputs from the child propagate as this step's outputs.
+      // Outputs from the child propagate as this step's outputs. Successful
+      // child invocation → both visited + completed.
       visited_step_ids.push(step.step_id)
+      completed_step_ids.push(step.step_id)
       step_outputs.push({
         step_id: step.step_id,
         outputs: result.outputs,
@@ -267,9 +296,11 @@ export async function executeStepGraph(
       continue
     }
 
-    // Failure — route via failure_policy.
+    // Failure — route via failure_policy. Pass success-only completed list,
+    // NOT visited (codex P1.1): rollback compensation must reverse only steps
+    // that produced effects, never failed-continue steps.
     const policyCtx: ExecutionContext = {
-      completed_step_ids: [...completedView()],
+      completed_step_ids: [...completed_step_ids],
       autonomy_level: workflow.autonomy_level,
       escalation_target: options.escalation_target,
     }
@@ -278,6 +309,9 @@ export async function executeStepGraph(
     switch (outcome.action) {
       case 'continue': {
         // Codex P1.3 — log + advance to step[i+1]; partial=true; skip output validation.
+        // Codex P1.1 — push to visited (trace) but NOT completed (no successful
+        // effect). Subsequent failure-policy / rollback uses completed_step_ids
+        // and therefore correctly excludes this step.
         partial = true
         visited_step_ids.push(step.step_id)
         step_outputs.push({
@@ -289,10 +323,12 @@ export async function executeStepGraph(
         continue
       }
       case 'abort': {
+        // Failed step → visited only, NOT completed.
         visited_step_ids.push(step.step_id)
         return {
           workflow_id: workflow.id,
           visited_step_ids,
+          completed_step_ids,
           step_outputs,
           state: 'failed',
           failure_reason: outcome.reason,
@@ -301,10 +337,13 @@ export async function executeStepGraph(
         }
       }
       case 'rollback': {
+        // Failed step → visited only, NOT completed. Compensation_order
+        // already came from failure-policy applied to completed-only ctx.
         visited_step_ids.push(step.step_id)
         return {
           workflow_id: workflow.id,
           visited_step_ids,
+          completed_step_ids,
           step_outputs,
           state: 'failed',
           failure_reason: outcome.reason,
@@ -314,10 +353,12 @@ export async function executeStepGraph(
         }
       }
       case 'pause': {
+        // Failed step → visited only, NOT completed.
         visited_step_ids.push(step.step_id)
         return {
           workflow_id: workflow.id,
           visited_step_ids,
+          completed_step_ids,
           step_outputs,
           state: 'paused',
           failure_reason: outcome.reason,
@@ -327,10 +368,12 @@ export async function executeStepGraph(
         }
       }
       case 'escalate': {
+        // Failed step → visited only, NOT completed.
         visited_step_ids.push(step.step_id)
         return {
           workflow_id: workflow.id,
           visited_step_ids,
+          completed_step_ids,
           step_outputs,
           state: 'escalated',
           failure_reason: outcome.reason,
@@ -352,6 +395,7 @@ export async function executeStepGraph(
       return {
         workflow_id: workflow.id,
         visited_step_ids,
+        completed_step_ids,
         step_outputs,
         state: 'failed',
         failure_reason: reason,
@@ -363,10 +407,11 @@ export async function executeStepGraph(
 
   // success path — no abort, no rollback, no escalate, no pause, no
   // terminalCheck violation. partial may still be true if any step's
-  // on_failure='continue' fired.
+  // on_failure='continue' fired (in which case visited_step_ids ⊃ completed_step_ids).
   return {
     workflow_id: workflow.id,
     visited_step_ids,
+    completed_step_ids,
     step_outputs,
     state: 'success',
     failure_reason: null,

@@ -57,6 +57,9 @@ describe('executeStepGraph — happy path', () => {
     expect(visits).toEqual([1, 2, 3])
     expect(result.workflow_id).toBe(w.id)
     expect(result.visited_step_ids).toEqual([1, 2, 3])
+    // Codex P1.1 — completed_step_ids is the success-only subset; on the
+    // happy path it equals visited_step_ids.
+    expect(result.completed_step_ids).toEqual([1, 2, 3])
     expect(result.state).toBe('success')
     expect(result.failure_reason).toBeNull()
     expect(result.partial).toBe(false)
@@ -94,6 +97,9 @@ describe('executeStepGraph — per-step failure policies', () => {
     expect(result.state).toBe('failed')
     expect(result.rollback_compensations).toEqual([1])
     expect(result.failure_reason).toContain('step:2:rollback:s2-bad')
+    // Codex P1.1 — failed step 2 is in visited but NOT completed.
+    expect(result.visited_step_ids).toEqual([1, 2])
+    expect(result.completed_step_ids).toEqual([1])
   })
 
   it('pause: emits paused state + resume_token', async () => {
@@ -112,6 +118,41 @@ describe('executeStepGraph — per-step failure policies', () => {
     expect(result.state).toBe('escalated')
     expect(result.escalation_target).toBe('meta-charter')
     expect(result.failure_reason).toContain('escalate')
+  })
+
+  it('continue then rollback: rollback compensates only successfully-completed steps (codex P1.1 master fix)', async () => {
+    // M5 ship-blocker fix from codex master review 2026-04-29:
+    //   step1 — succeeds → completed
+    //   step2 — fails with on_failure='continue' → visited but NOT completed
+    //   step3 — fails with on_failure='rollback' → triggers rollback
+    // Expected: rollback compensation_order reverses ONLY [step1] (NOT [step1,step2]).
+    //          step2 appears in visited_step_ids but NOT in completed_step_ids
+    //          and NOT in rollback_compensations.
+    const w = wf(['abort', 'continue', 'rollback'])
+    const dispatch: ActivityDispatcher = (descriptor) => {
+      if (descriptor.step_id === 1) return { kind: 'ok', outputs: ['s1'] }
+      if (descriptor.step_id === 2) return { kind: 'failure', error: new Error('s2-soft-fail') }
+      return { kind: 'failure', error: new Error('s3-rollback') }
+    }
+    const result = await executeStepGraph(w, dispatch)
+
+    // Workflow ended in rollback failure
+    expect(result.state).toBe('failed')
+    expect(result.failure_reason).toContain('step:3:rollback:s3-rollback')
+
+    // Trace records all 3 steps as visited (incl. failed-continue step 2)
+    expect(result.visited_step_ids).toEqual([1, 2, 3])
+
+    // ONLY step 1 produced successful effects → only step 1 is completed
+    expect(result.completed_step_ids).toEqual([1])
+
+    // Compensation_order reverses completed (success-only), NOT visited.
+    // Pre-fix this would be [2, 1] — wrong, would compensate a step that
+    // never produced effects. Post-fix: [1] only.
+    expect(result.rollback_compensations).toEqual([1])
+
+    // partial flag stays true (continue fired in step 2)
+    expect(result.partial).toBe(true)
   })
 
   it('continue (codex P1.3 5 assertions): partial=true, advances past failure, skips outputs', async () => {
@@ -144,6 +185,9 @@ describe('executeStepGraph — per-step failure policies', () => {
 
     // visited_step_ids includes the failed step + subsequent
     expect(result.visited_step_ids).toEqual([1, 2, 3])
+    // Codex P1.1 — failed-continue step 1 is in visited but NOT completed.
+    // step 2 + step 3 succeed → both completed.
+    expect(result.completed_step_ids).toEqual([2, 3])
   })
 })
 
