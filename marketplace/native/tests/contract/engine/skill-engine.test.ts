@@ -231,3 +231,66 @@ describe('SkillEngine.validateOutputs() — Group P seam', () => {
     }
   })
 })
+
+// -----------------------------------------------------------------------------
+// T-074 — Contract supplement (Group Q): double-register semantics +
+// boolean-true JSON Schema (a permissive schema that accepts any value).
+//
+// Codex P2.3 — scenario coverage. These two edges round out Group O's
+// register/resolve/unregister/validateOutputs surface:
+//   - double-register: same skill_ref re-registered → overwrite policy
+//     (vs. throw). Lock the policy in tests so future refactors can't
+//     silently flip it. Implementation in skill-engine.ts uses Map.set,
+//     so re-register OVERWRITES (idempotent re-bootstrap pattern).
+//   - boolean-true JSON Schema: per JSON Schema spec, the literal `true`
+//     is a valid schema that accepts ANY value. ajv compiles it to an
+//     always-passing validator. This is the canonical "no shape" Skill
+//     return_contract — register MUST succeed; validateOutputs MUST pass
+//     for any value (including null/undefined/objects/strings).
+// -----------------------------------------------------------------------------
+
+describe('SkillEngine.register() — T-074 supplement (double-register + boolean schema)', () => {
+  it('double-register of same skill_ref OVERWRITES the prior registration (Map.set semantics)', () => {
+    const engine = new SkillEngine()
+    const v1 = makeSkill({ id: 'W-dup', return_contract: STRICT_JSON_SCHEMA })
+    engine.register(v1)
+    expect(engine.resolve('W-dup')).toBe(v1)
+
+    // Re-register same id with a different return_contract. Implementation
+    // uses Map.set, so the second registration replaces the first.
+    const RELAXED = JSON.stringify({ type: 'object' }) // any object passes
+    const v2 = makeSkill({ id: 'W-dup', return_contract: RELAXED })
+    expect(() => engine.register(v2)).not.toThrow()
+    expect(engine.resolve('W-dup')).toBe(v2)
+
+    // The compiled validator MUST also have been overwritten — value that
+    // violated the strict schema (string in `value`) but conforms to the
+    // relaxed object schema now passes.
+    const r = engine.validateOutputs('W-dup', { value: 'not-an-int' })
+    expect(r.valid).toBe(true)
+  })
+
+  it('accepts `true` (literal-true JSON Schema = any value) as a valid return_contract', () => {
+    const engine = new SkillEngine()
+    // JSON.stringify(true) = "true" — valid JSON, valid JSON Schema.
+    const skill = makeSkill({ id: 'W-anything', return_contract: JSON.stringify(true) })
+    expect(() => engine.register(skill)).not.toThrow()
+    // Validator accepts ANY value: object, string, number, null, undefined.
+    expect(engine.validateOutputs('W-anything', { whatever: 1 }).valid).toBe(true)
+    expect(engine.validateOutputs('W-anything', 'a-string').valid).toBe(true)
+    expect(engine.validateOutputs('W-anything', 42).valid).toBe(true)
+    expect(engine.validateOutputs('W-anything', null).valid).toBe(true)
+  })
+
+  it('rejects literal-false JSON Schema as a return_contract that always fails (validator returns valid:false)', () => {
+    // Literal-false is a valid JSON Schema document; ajv compiles it to a
+    // validator that REJECTS every value. register MUST succeed (compile
+    // doesn't throw), but validateOutputs MUST return valid:false for any
+    // payload. This pins the codex-mandated symmetric edge to literal-true.
+    const engine = new SkillEngine()
+    const skill = makeSkill({ id: 'W-nothing', return_contract: JSON.stringify(false) })
+    expect(() => engine.register(skill)).not.toThrow()
+    const r = engine.validateOutputs('W-nothing', { anything: true })
+    expect(r.valid).toBe(false)
+  })
+})

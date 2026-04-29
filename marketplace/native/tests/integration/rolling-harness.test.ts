@@ -59,6 +59,7 @@ import {
   registerWorkflow,
   executeStepGraph,
   asActivity,
+  SkillEngine,
   type ActivityDispatcher,
   type ExecutionResult,
   type StepDispatchResult,
@@ -344,7 +345,87 @@ describe('M5.5 rolling harness — engine surfaces (M5)', () => {
 })
 
 // =============================================================================
-// Test 3 — Replay determinism across the full compose
+// Test 3 — M6 SkillEngine: register + invoke + isolated child trace
+// =============================================================================
+
+describe('M5.5 rolling harness — M6 SkillEngine surfaces', () => {
+  it('register echo Skill + invoke from a parent step + child_edge surfaces with deterministic id', async () => {
+    // M6 cross-milestone composition: SkillEngine registers a leaf Skill
+    // ('echo'); a parent Workflow with a single step.skill_ref dispatches
+    // through invokeSkill; the harness asserts state=success + child_edge
+    // shape + parent isolation. This locks M2..M6 surfaces under the same
+    // harness umbrella so M7+ can extend without re-deriving the contract.
+    const echo = createWorkflow({
+      id: 'W-echo',
+      preconditions: '',
+      step_graph: [
+        { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+      reuse_tag: true,
+      // Permissive schema (literal-true) — accepts any payload from the
+      // dispatcher. The contract test in skill-engine.test.ts T-074 covers
+      // schema-conformance assertions; this harness pins the COMPOSE.
+      return_contract: JSON.stringify(true),
+    })
+
+    const engine = new SkillEngine()
+    engine.register(echo)
+
+    // Parent: 1 step with skill_ref='W-echo'.
+    const parent = createWorkflow({
+      id: 'W-harness-m6-parent',
+      preconditions: '',
+      step_graph: [
+        { step_id: 7, skill_ref: 'W-echo', inputs: [], outputs: [], on_failure: 'abort' },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+
+    // Dispatcher returns the leaf Skill's terminal payload. Validated against
+    // the literal-true return_contract (always passes).
+    const dispatch: ActivityDispatcher = (descriptor) => ({
+      kind: 'ok',
+      outputs: [`echo:${descriptor.step_id}`],
+    })
+
+    const result: ExecutionResult = await executeStepGraph(parent, dispatch, {
+      skill_engine: engine,
+    })
+
+    expect(result.state).toBe('success')
+    expect(result.partial).toBe(false)
+    expect(result.failure_reason).toBeNull()
+    // Parent's lists carry ONLY parent step_id (7) — child internals isolated.
+    expect(result.completed_step_ids).toEqual([7])
+    expect(result.visited_step_ids).toEqual([7])
+    // child_edges has exactly ONE entry — the echo invocation.
+    expect(result.child_edges).toBeDefined()
+    expect(result.child_edges).toHaveLength(1)
+    expect(result.child_edges![0]!.step_id).toBe(7)
+    expect(result.child_edges![0]!.skill_ref).toBe('W-echo')
+    // Deterministic child_execution_id (replay-stable, no clock).
+    expect(result.child_edges![0]!.child_execution_id).toBe('child-7-W-echo')
+    // Parent step 7's outputs[0] is the validated payload (= the leaf step's
+    // dispatcher output: 'echo:1').
+    expect(result.step_outputs[0]?.outputs).toEqual(['echo:1'])
+  })
+})
+
+// =============================================================================
+// Test 4 — Replay determinism across the full compose
 // =============================================================================
 
 describe('M5.5 rolling harness — replay determinism', () => {
