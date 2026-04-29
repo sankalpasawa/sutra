@@ -12,6 +12,26 @@
  * `holding/plans/native-v1.0/M3-laws.md` M3.2.3.
  *
  * Source-of-truth: holding/research/2026-04-28-v2-architecture-spec.md §3 L2
+ *
+ * ---------------------------------------------------------------------------
+ * Canonical XOR enforcement at L2 BOUNDARY per V2 §A11 + codex M6 P2.1
+ * 2026-04-30.
+ *
+ * V2.3 §A11 mandates that every WorkflowStep specify EITHER `skill_ref` XOR
+ * `action` (not both, not neither). That predicate IS a boundary-contract law:
+ * a step without exactly one of those two fields has no specified boundary
+ * for "what does this step DO". Per codex P2.1, the canonical anchor for the
+ * XOR rule is L2 BOUNDARY (this file).
+ *
+ * Operational mirror: the runtime check ships at the constructor + validator
+ * layer in `src/primitives/workflow.ts` (`createWorkflow.validateStep` +
+ * `isValidWorkflow`) so the violation surfaces at primitive-mint time and
+ * during deserialized-record validation, not at execution time. That mirror
+ * has been audited (M6 Group O T-068, 2026-04-30) and is in agreement with
+ * the L2 BOUNDARY rule stated here. No new check is added at this layer —
+ * the constructor + validator pair is already authoritative; this comment
+ * records the canonical anchor relationship.
+ * ---------------------------------------------------------------------------
  */
 
 import type { Interface } from '../types/index.js'

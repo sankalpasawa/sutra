@@ -44,6 +44,15 @@ describe('engine barrel — public surface', () => {
     expect(typeof engine.formatTerminalCheckFailureReason).toBe('function')
   })
 
+  it('re-exports M6 Group O — SkillEngine class', () => {
+    expect(typeof engine.SkillEngine).toBe('function') // class is a function
+    const e = new engine.SkillEngine()
+    expect(typeof e.register).toBe('function')
+    expect(typeof e.resolve).toBe('function')
+    expect(typeof e.unregister).toBe('function')
+    expect(typeof e.validateOutputs).toBe('function')
+  })
+
   it('does NOT re-export test seams on the public barrel', () => {
     expect((engine as Record<string, unknown>).__setWorkflowContextProbeForTest).toBeUndefined()
     expect((engine as Record<string, unknown>).__resetWorkflowContextProbeForTest).toBeUndefined()

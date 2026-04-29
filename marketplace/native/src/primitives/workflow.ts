@@ -152,6 +152,11 @@ export type WorkflowSpec = Omit<
   >
 
 function validateStep(step: WorkflowStep, idx: number): void {
+  // Operational mirror of L2 BOUNDARY per codex M6 P2.1 (2026-04-30).
+  // Canonical anchor: src/laws/l2-boundary.ts — every step MUST specify a
+  // boundary contract for "what it does", which V2.3 §A11 codifies as
+  // skill_ref XOR action. This validator + isValidWorkflow are the runtime
+  // mirrors; they enforce the rule at primitive-mint + deserialization time.
   const hasSkill = typeof step.skill_ref === 'string' && step.skill_ref.length > 0
   const hasAction = typeof step.action === 'string' && step.action.length > 0
   if (hasSkill && hasAction) {

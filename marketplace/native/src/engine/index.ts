@@ -41,6 +41,14 @@ export {
   type FailurePolicyOutcome,
 } from './failure-policy.js'
 
+// M6 Group O — SkillEngine: skill_ref registry + JSON Schema return_contract
+// validation per V2 §A11. Caches ajv-compiled validators at register-time so
+// Group P (child-invocation adapter) can validate outputs in O(1).
+export {
+  SkillEngine,
+  type ValidateOutputsResult,
+} from './skill-engine.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public
