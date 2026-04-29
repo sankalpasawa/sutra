@@ -152,9 +152,12 @@ export function formatTerminalCheckFailureReason(
   violations: ReadonlyArray<ForbiddenCouplingId>,
 ): string | null {
   if (!Array.isArray(violations) || violations.length === 0) return null
-  // ASCII sort — `F-10` sorts AFTER `F-1` AFTER `F-12` (ASCII), so we use a
-  // stable string sort. The contract is "sorted ASCII"; downstream tooling
-  // matches against this string, so we MUST be deterministic.
+  // Lexicographic ASCII string-sort (NOT numeric). E.g. ['F-10','F-2','F-1']
+  // → 'F-1,F-10,F-2'. Downstream consumers that need numeric ordering must
+  // re-sort by parsed integer. The contract pinned by
+  // step-graph-executor.test.ts:178-183 is "sorted ASCII"; downstream tooling
+  // matches against this string, so we MUST be deterministic. Do NOT "fix"
+  // this to numeric sort — that would silently break the contract.
   const sorted = [...violations].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
   return `forbidden_coupling:${sorted.join(',')}`
 }
@@ -200,7 +203,6 @@ export async function executeStepGraph(
   const step_outputs: ExecutionResult['step_outputs'] = []
   const child_workflows: NonNullable<ExecutionResult['child_workflows']> = []
   let partial = false
-  let reachedTerminate = false
 
   const completedView = (): ReadonlyArray<number> => visited_step_ids
 
@@ -224,10 +226,9 @@ export async function executeStepGraph(
     }
 
     // Special-case: action='terminate' is the V2.3 §A11 terminate stage. We
-    // mark the flag and break — no dispatcher call (terminate is structural,
+    // record the visit and break — no dispatcher call (terminate is structural,
     // not an I/O step). T-051: terminalCheck runs after this loop.
     if (descriptor.action === 'terminate') {
-      reachedTerminate = true
       visited_step_ids.push(step.step_id)
       break
     }
@@ -371,9 +372,5 @@ export async function executeStepGraph(
     failure_reason: null,
     partial,
     ...(child_workflows.length > 0 ? { child_workflows } : {}),
-    // intentionally drop `reachedTerminate` from the surface — it's an internal
-    // signal that the loop hit a terminate action. Tests can infer from
-    // visited_step_ids if needed.
-    ...(reachedTerminate ? {} : {}),
   }
 }

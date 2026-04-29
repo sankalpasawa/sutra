@@ -142,7 +142,9 @@ export function applyFailurePolicy(
       const completed = Array.isArray(context.completed_step_ids)
         ? [...context.completed_step_ids]
         : []
-      const compensation_order = completed.reverse()
+      // Defensive — clone before .reverse() to prevent caller mutation even
+      // if a future refactor drops the spread above. .slice() is cheap.
+      const compensation_order = completed.slice().reverse()
       return {
         action: 'rollback',
         compensation_order,
