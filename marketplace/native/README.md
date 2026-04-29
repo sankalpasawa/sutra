@@ -149,6 +149,12 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### Charter.cutover_contract (M4.7)
+
+- Schema scaffold; full migration tooling lands at M10
+- Runtime enforcement at M11 dogfood
+- DRI: Sutra OS team
+
 ### DataRef.authoritative_status (M4.6)
 
 - **Measurement**: count of DataRefs with `authoritative_status='advisory'` / total

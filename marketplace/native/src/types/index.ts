@@ -74,6 +74,10 @@ export interface DataRef {
 import { z } from 'zod'
 import { AuthoritativeStatusSchema } from './authoritative-status.js'
 
+// M4.7: re-export CutoverContract type for Charter consumers + downstream
+// migration tooling (P-C12 at M10). Schema lives in src/schemas/cutover-contract.ts.
+export type { CutoverContract } from '../schemas/cutover-contract.js'
+
 export const DataRefSchema = z.object({
   kind: z.string().min(1),
   schema_ref: z.string().min(1),

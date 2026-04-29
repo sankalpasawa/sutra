@@ -7,6 +7,10 @@
  */
 
 import type { AclAccess, AclEntry, Constraint } from '../types/index.js'
+import {
+  CutoverContractSchema,
+  type CutoverContract,
+} from '../schemas/cutover-contract.js'
 
 /** Charter id starts with 'C-' followed by an opaque hash/identifier (>=1 char). */
 const C_ID_PATTERN = /^C-.+$/
@@ -43,6 +47,17 @@ export interface Charter {
   constraints: Constraint[]
   /** V2.2 §A8 — per-Domain/Charter access control list */
   acl: AclEntry[]
+  /**
+   * M4.7 — D1 §11.1 (P-A11). Optional cutover contract used when migrating
+   * the Charter from one engine to another (e.g. Core → Native). `null`
+   * when no cutover required (the default for greenfield Charters).
+   * Cutover engine (P-B1) + migration tooling (P-C12) at M10 consume this.
+   *
+   * Optional on the TS shape because `createCharter` defaults absent values
+   * to `null` via CutoverContractSchema.parse — existing callers continue
+   * to compile without supplying the field.
+   */
+  cutover_contract?: CutoverContract
 }
 
 function validateConstraintRole(
@@ -104,6 +119,14 @@ export function createCharter(spec: Charter): Charter {
   validateConstraintRole(spec.obligations, 'obligation', 'obligations')
   validateConstraintRole(spec.invariants, 'invariant', 'invariants')
   validateAcl(spec.acl)
+  // M4.7: validate cutover_contract via CutoverContractSchema. Schema accepts
+  // null (no cutover) AND fully-populated records; `.parse()` throws on any
+  // malformed shape (empty source_engine, empty behavior_invariants array, etc.).
+  // Default `null` when caller omits the field — keeps the v1.0 contract
+  // backward-compatible with M2-M4.6 Charters.
+  const cutover_contract = CutoverContractSchema.parse(
+    spec.cutover_contract ?? null,
+  )
   return Object.freeze({
     ...spec,
     obligations: [...spec.obligations],
@@ -111,6 +134,7 @@ export function createCharter(spec: Charter): Charter {
     success_metrics: [...spec.success_metrics],
     constraints: [...spec.constraints],
     acl: [...spec.acl],
+    cutover_contract,
   })
 }
 
@@ -138,6 +162,14 @@ export function isValidCharter(c: Charter): boolean {
     }
     if (!VALID_ACL_ACCESS.has(entry.access)) return false
     if (typeof entry.reason !== 'string' || entry.reason.length === 0) return false
+  }
+  // M4.7: cutover_contract optional on the TS shape; when present (including
+  // explicit null), defer to the schema-level guard so the same predicates
+  // apply to deserialized records as to constructor input.
+  if ('cutover_contract' in c) {
+    if (!CutoverContractSchema.safeParse(c.cutover_contract).success) {
+      return false
+    }
   }
   return true
 }

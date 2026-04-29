@@ -86,3 +86,69 @@ export function invalidMissingRequired(): Partial<Charter> {
     scope_out: '',
   }
 }
+
+// -----------------------------------------------------------------------------
+// M4.7 — cutover_contract fixture variants (per TASK-QUEUE.md §1 T-011)
+// -----------------------------------------------------------------------------
+
+/**
+ * Charter with a minimal valid cutover_contract — single behavior_invariant +
+ * short engine ids. Useful for: smoke tests, contract round-trip checks,
+ * cutover engine seed scenarios at M10.
+ */
+export function validMinimalWithCutover(): Charter {
+  return {
+    ...validMinimal(),
+    id: 'C-cutover-min',
+    purpose: 'minimum viable charter with cutover contract',
+    cutover_contract: {
+      source_engine: 'engine-a',
+      target_engine: 'engine-b',
+      behavior_invariants: ['no_data_loss'],
+      rollback_gate: 'failure_count > 0',
+      canary_window: '60s',
+    },
+  }
+}
+
+/**
+ * Charter with a fully-populated cutover_contract — multiple behavior
+ * invariants, realistic Core→Native engine ids, ISO-8601-style canary window.
+ * Mirrors the canonical example from D1 §11.1.
+ */
+export function validFullWithCutover(): Charter {
+  return {
+    ...validFull(),
+    id: 'C-cutover-full',
+    cutover_contract: {
+      source_engine: 'sutra-core-v2.8',
+      target_engine: 'sutra-native-v1.0',
+      behavior_invariants: [
+        'no_data_loss',
+        'latency_within_5_percent',
+        'no_authority_drift',
+      ],
+      rollback_gate: 'error_rate > 0.01 OR latency_p99 > baseline * 1.5',
+      canary_window: 'PT168H',
+    },
+  }
+}
+
+/**
+ * Invalid Charter: cutover_contract is set but `behavior_invariants` is empty.
+ * Constructor must throw — schema requires `min(1)` when contract is set.
+ */
+export function invalidEmptyInvariants(): Charter {
+  return {
+    ...validMinimal(),
+    id: 'C-cutover-empty-invariants',
+    purpose: 'cutover with empty invariants — must be rejected',
+    cutover_contract: {
+      source_engine: 'engine-a',
+      target_engine: 'engine-b',
+      behavior_invariants: [],
+      rollback_gate: 'r',
+      canary_window: '60s',
+    },
+  }
+}
