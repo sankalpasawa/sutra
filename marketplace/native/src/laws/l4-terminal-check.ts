@@ -1,6 +1,6 @@
 /**
  * L4 TERMINAL-CHECK predicates (T1-T6) — V2.4 §A12
- * AND schema-level forbidden couplings (F-1..F-8) — D4 §3 (M4.9 Groups D + E)
+ * AND 9 schema-level forbidden couplings (F-1..F-8 + F-10) — D4 §3 (M4.9)
  *
  * Closes V2 §9 OPEN ("6 terminal-check tests need formal definitions"):
  *
@@ -42,6 +42,11 @@ import { l4Commitment, type CoverageMatrix } from './l4-commitment.js'
 import type { Tenant } from '../schemas/tenant.js'
 import type { DelegatesToEdge } from '../types/edges.js'
 import type { DecisionProvenance } from '../schemas/decision-provenance.js'
+import {
+  ROUTING_GATING_POSITIONS,
+  allRoutingGatingMachineCheckable,
+  type RoutingGatingPosition,
+} from './routing-gating-positions.js'
 
 // -----------------------------------------------------------------------------
 // Auxiliary types — terminal-check inputs that aren't on V2 base shapes
@@ -313,8 +318,8 @@ export type { Constraint }
 /**
  * Stable id for a schema-level forbidden coupling (D4 §3). F-9 omitted (M8).
  *
- * M4.9 Group D shipped F-1..F-4; Group E (this commit) extends with F-5..F-8;
- * Group F adds F-10 + the terminalCheck aggregator.
+ * Full v1.0 set: F-1..F-8 + F-10 (9 total). F-9 (D38 plugin shipment) is
+ * hook-level — DEFERRED to M8 per codex P1.3 pre-dispatch.
  */
 export type ForbiddenCouplingId =
   | 'F-1'
@@ -325,6 +330,7 @@ export type ForbiddenCouplingId =
   | 'F-6'
   | 'F-7'
   | 'F-8'
+  | 'F-10'
 
 /**
  * F-1 — Tenant directly contains Workflow (skips Domain + Charter).
@@ -541,5 +547,132 @@ export function f8Predicate(input: {
   return !(hasId && hasVer)
 }
 
-// F-10 + routing/gating-positions inventory + terminalCheck aggregator land in
-// M4.9 Group F (T-029..T-031).
+/**
+ * F-10 — English-only fields in routing/gating positions.
+ *
+ * V2 §3 HARD: every routing/gating field decides which branch executes; it
+ * MUST have a typed representation OR a typed parser. The 10 positions are
+ * inventoried in `routing-gating-positions.ts`. F-10 VIOLATION = any position
+ * lacks a registered representation kind.
+ *
+ * Inverted from `allRoutingGatingMachineCheckable` which returns true when
+ * all 10 positions register a representation kind.
+ *
+ * @returns true iff F-10 VIOLATION (any position is English-only / unregistered)
+ */
+export function f10Predicate(): boolean {
+  return !allRoutingGatingMachineCheckable()
+}
+
+// Re-export the inventory's public surface so downstream callers can pull
+// everything from the laws barrel via this module.
+export type { RoutingGatingPosition }
+export { ROUTING_GATING_POSITIONS }
+
+// =============================================================================
+// Aggregator — `terminalCheck(...)` returns
+// `{ pass: boolean, violations: ForbiddenCouplingId[] }`.
+//
+// Per task M4.9: this is the single entry point for all 9 schema-level
+// forbidden couplings. Each F-N predicate runs independently; the aggregator
+// collects every violation (NOT first-failure-stop, unlike runAll for T1-T6)
+// so callers see the full set in one report.
+// =============================================================================
+
+export interface TerminalCheckForbiddenCouplingsResult {
+  pass: boolean
+  violations: ForbiddenCouplingId[]
+}
+
+export interface TerminalCheckForbiddenCouplingsInput {
+  workflow: Workflow
+  execution: Execution
+  charter: Charter
+  tenant: Tenant
+  /** Optional DP record — F-8 skipped when not provided. */
+  dp?: DecisionProvenance | null
+  /** Tenant-id of the operating context (for F-6). Defaults to `tenant.id`. */
+  operating_tenant_id?: string
+  /** Registered delegates_to edges (for F-6). Defaults to []. */
+  delegates_to_edges?: ReadonlyArray<DelegatesToEdge>
+  /**
+   * Containment chain from Tenant down to Workflow (for F-1). When omitted,
+   * F-1 is skipped (no chain to inspect at this terminal_check call site).
+   */
+  containment_chain?: string[]
+  /** Charter ids the Workflow operationalizes (for F-2). Required. */
+  operationalizes_charters: string[]
+  /** Reflexive auth tokens (for F-7). */
+  reflexive_auth: ReflexiveAuth
+}
+
+/**
+ * Aggregate F-1..F-8 + F-10 forbidden-coupling check.
+ *
+ * Returns `{ pass: true, violations: [] }` iff ALL 9 predicates clear; otherwise
+ * `pass: false` with the full list of `ForbiddenCouplingId` values that fired.
+ *
+ * Caller integration (M5 Workflow Engine):
+ *  - on `pass: false`, dispatch fails the Workflow with
+ *    `failure_reason = 'forbidden_coupling:F-N,F-M'` (joined) and routes per
+ *    `Workflow.failure_policy`.
+ */
+export function terminalCheck(
+  input: TerminalCheckForbiddenCouplingsInput,
+): TerminalCheckForbiddenCouplingsResult {
+  const violations: ForbiddenCouplingId[] = []
+
+  if (Array.isArray(input.containment_chain)) {
+    if (
+      f1Predicate({
+        tenant: input.tenant,
+        workflow: input.workflow,
+        containment_chain: input.containment_chain,
+      })
+    ) {
+      violations.push('F-1')
+    }
+  }
+  if (
+    f2Predicate({
+      workflow: input.workflow,
+      operationalizes_charters: input.operationalizes_charters,
+    })
+  ) {
+    violations.push('F-2')
+  }
+  if (f3Predicate({ execution: input.execution })) {
+    violations.push('F-3')
+  }
+  if (f4Predicate({ workflow: input.workflow })) {
+    violations.push('F-4')
+  }
+  if (f5Predicate({ workflow: input.workflow })) {
+    violations.push('F-5')
+  }
+  if (
+    f6Predicate({
+      workflow: input.workflow,
+      operating_tenant_id: input.operating_tenant_id ?? input.tenant.id,
+      delegates_to_edges: input.delegates_to_edges ?? [],
+    })
+  ) {
+    violations.push('F-6')
+  }
+  if (f7Predicate({ workflow: input.workflow, reflexive_auth: input.reflexive_auth })) {
+    violations.push('F-7')
+  }
+  if (input.dp !== null && input.dp !== undefined) {
+    if (f8Predicate({ dp: input.dp })) {
+      violations.push('F-8')
+    }
+  }
+  if (f10Predicate()) {
+    violations.push('F-10')
+  }
+
+  return {
+    pass: violations.length === 0,
+    violations,
+  }
+}

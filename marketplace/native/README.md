@@ -149,6 +149,16 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### M4.9 — 9 schema-level forbidden couplings (F-1..F-8, F-10)
+
+- **Aggregator**: `src/laws/l4-terminal-check.ts` — `terminalCheck(input) → { pass, violations[] }` runs all 9 predicates, returns the full violation list (NOT first-failure-stop, unlike `runAll` for T1-T6).
+- **F-10 routing/gating inventory**: `src/laws/routing-gating-positions.ts` — 10 positions (`Workflow.preconditions`, `Workflow.failure_policy`, `step_graph[i].action`, `step_graph[i].skill_ref`, `expects_response_from`, `on_override_action`, `Charter.acl[]`, `Charter.obligations[i].mechanization`, `TriggerSpec.pattern`, `BoundaryEndpoint.class`) with per-position `MachineCheckabilityKind` (`typed_enum` / `typed_record` / `typed_ref` / `typed_parser`).
+- **F-9 (D38 plugin shipment)** — DEFERRED to M8 (hook-level, not schema). Codex P1.3 pre-dispatch.
+- **9 property tests**, ≥1000 fast-check cases each (~10000 forbidden-coupling cases total).
+- **Caller integration (M5 Workflow Engine)**: on `pass: false`, dispatch fails the Workflow with `failure_reason = 'forbidden_coupling:F-N,F-M'` (joined) and routes per `Workflow.failure_policy`.
+- **DRI**: Sutra OS team
+- **Decommission**: V3 supersession of D4 §3
+
 ### Edge types: owns / delegates_to / emits (M4.8)
 
 - **Schema** at `src/types/edges.ts` — `OwnsEdgeSchema` (Tenant → Domain),

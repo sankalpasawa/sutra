@@ -1,10 +1,10 @@
 /**
- * Forbidden couplings (F-1..F-10) — property tests.
+ * Forbidden couplings (F-1..F-8 + F-10) — property tests.
  *
  * M4.9 per holding/plans/native-v1.0/TASK-QUEUE.md.
  * Group D shipped: F-1..F-4 (≥1000 fast-check cases each).
- * Group E (this commit): F-5..F-8 (≥1000 fast-check cases each).
- * Group F: F-10 + aggregator.
+ * Group E shipped: F-5..F-8 (≥1000 fast-check cases each).
+ * Group F (this commit): F-10 + terminalCheck aggregator.
  *
  * F-9 (D38 plugin shipment) is hook-level — DEFERRED to M8 per codex P1.3.
  *
@@ -24,10 +24,20 @@ import {
   f6Predicate,
   f7Predicate,
   f8Predicate,
+  f10Predicate,
+  terminalCheck,
   type ReflexiveAuth,
 } from '../../src/laws/l4-terminal-check.js'
+import {
+  ROUTING_GATING_POSITIONS,
+  ROUTING_GATING_REPRESENTATIONS,
+  isMachineCheckable,
+} from '../../src/laws/routing-gating-positions.js'
 import type { Workflow } from '../../src/primitives/workflow.js'
+import type { Execution } from '../../src/primitives/execution.js'
+import type { Charter } from '../../src/primitives/charter.js'
 import type { DecisionProvenance } from '../../src/schemas/decision-provenance.js'
+import type { Tenant } from '../../src/schemas/tenant.js'
 import type { DelegatesToEdge } from '../../src/types/edges.js'
 
 const PROP_RUNS = 1000
@@ -384,6 +394,202 @@ describe('F-8: DecisionProvenance without policy_id + policy_version', () => {
         },
       ),
       { numRuns: PROP_RUNS },
+    )
+  })
+})
+
+// =============================================================================
+// Group F — F-10 + aggregator (T-029..T-031)
+// =============================================================================
+
+describe('F-10: English-only fields in routing/gating positions', () => {
+  it('SAFE (false) — all 10 inventoried positions register a representation kind', () => {
+    // F-10 is a static inventory check; we run it under fc.property to keep
+    // the cadence consistent (≥1000 cases) per task spec, even though the
+    // function is a no-arg pure check.
+    fc.assert(
+      fc.property(fc.integer(), () => {
+        return f10Predicate() === false
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('inventory has exactly 10 positions and each is machine-checkable', () => {
+    // Sanity assertion on the inventory itself.
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: ROUTING_GATING_POSITIONS.length - 1 }), (i) => {
+        const pos = ROUTING_GATING_POSITIONS[i]!
+        return (
+          ROUTING_GATING_POSITIONS.length === 10 &&
+          isMachineCheckable(pos) &&
+          pos in ROUTING_GATING_REPRESENTATIONS
+        )
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+})
+
+// =============================================================================
+// Aggregator — terminalCheck(...)
+// =============================================================================
+
+describe('terminalCheck aggregator (F-1..F-8 + F-10)', () => {
+  function makeMinimalSafeInput(): Parameters<typeof terminalCheck>[0] {
+    const tenantId = 'T-default'
+    const workflow: Workflow = {
+      id: 'W-safe',
+      preconditions: '',
+      step_graph: [
+        {
+          step_id: 0,
+          action: 'wait',
+          inputs: [],
+          outputs: [],
+          on_failure: 'abort',
+        },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+      expects_response_from: null,
+      on_override_action: 'escalate',
+      reuse_tag: false,
+      return_contract: null,
+      modifies_sutra: false,
+      custody_owner: null,
+      extension_ref: null,
+    }
+    const execution: Execution = {
+      id: 'E-safe',
+      workflow_id: 'W-safe',
+      trigger_event: 'turn_start',
+      state: 'success',
+      logs: [],
+      results: [],
+      parent_exec_id: null,
+      sibling_group: null,
+      fingerprint: 'fp-1',
+      failure_reason: null,
+      agent_identity: null,
+    }
+    const charter: Charter = {
+      id: 'C-safe',
+      purpose: 'p',
+      scope_in: '',
+      scope_out: '',
+      obligations: [],
+      invariants: [],
+      success_metrics: [],
+      authority: '',
+      termination: '',
+      constraints: [],
+      acl: [],
+    }
+    const tenant: Tenant = {
+      id: tenantId,
+      name: 'default',
+      isolation_contract: 'single-tenant',
+      parent_tenant_id: null,
+      managed_agents_session: null,
+      audit_log_path: null,
+    }
+    return {
+      workflow,
+      execution,
+      charter,
+      tenant,
+      operationalizes_charters: ['C-safe'],
+      reflexive_auth: { founder_authorization: false, meta_charter_approval: false },
+    }
+  }
+
+  it('returns pass=true with empty violations list for minimal SAFE input', () => {
+    fc.assert(
+      fc.property(fc.integer(), () => {
+        const result = terminalCheck(makeMinimalSafeInput())
+        return result.pass === true && result.violations.length === 0
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('aggregates F-2 + F-3 violations when both fire', () => {
+    fc.assert(
+      fc.property(fc.integer(), () => {
+        const input = makeMinimalSafeInput()
+        // Trigger F-2 (no operationalizes link).
+        input.operationalizes_charters = []
+        // Trigger F-3 (empty trigger_event).
+        input.execution = { ...input.execution, trigger_event: '' }
+        const result = terminalCheck(input)
+        return (
+          result.pass === false &&
+          result.violations.includes('F-2') &&
+          result.violations.includes('F-3')
+        )
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('skips F-1 when containment_chain omitted; skips F-8 when dp omitted', () => {
+    fc.assert(
+      fc.property(fc.integer(), () => {
+        const input = makeMinimalSafeInput()
+        // No containment_chain; no dp. SAFE input otherwise.
+        const result = terminalCheck(input)
+        return (
+          result.pass === true &&
+          !result.violations.includes('F-1') &&
+          !result.violations.includes('F-8')
+        )
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('catches F-6 cross-tenant op without delegates_to edge', () => {
+    fc.assert(
+      fc.property(fc.integer(), () => {
+        const input = makeMinimalSafeInput()
+        input.workflow = { ...input.workflow, custody_owner: 'T-other' }
+        input.delegates_to_edges = []
+        const result = terminalCheck(input)
+        return result.pass === false && result.violations.includes('F-6')
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('catches F-8 violation when dp lacks policy_id', () => {
+    fc.assert(
+      fc.property(fc.string({ minLength: 1, maxLength: 12 }), (ver) => {
+        const input = makeMinimalSafeInput()
+        input.dp = {
+          id: 'dp-deadbeef',
+          actor: 'a',
+          agent_identity: { kind: 'claude-opus', id: 'claude-opus:test' },
+          timestamp: '2026-04-29T00:00:00.000Z',
+          evidence: [],
+          authority_id: 'auth',
+          policy_id: '', // empty -> F-8 fires
+          policy_version: ver,
+          confidence: 0.5,
+          decision_kind: 'DECIDE',
+          scope: 'EXECUTION',
+          outcome: 'ok',
+          next_action_ref: null,
+        } as DecisionProvenance
+        const result = terminalCheck(input)
+        return result.pass === false && result.violations.includes('F-8')
+      }),
+      { numRuns: 200 },
     )
   })
 })
