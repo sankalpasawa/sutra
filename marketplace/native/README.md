@@ -149,6 +149,15 @@ arbitraries at `tests/property/arbitraries.ts`.
 > `native-v1.0-m3-shipped`. Codex Layer 1 xhigh review pending
 > (controller-dispatched).
 
+### Workflow.extension_ref (M4.5)
+
+- **Measurement**: count of Workflows with non-null extension_ref (must be 0 in v1.0)
+- **Iteration trigger**: any v1.x extension shipping (PS-16) — extension_ref enforcement relaxed at that point
+- **DRI**: Sutra OS team
+- **Decommission**: V3 supersession of D4 §7
+- D-NS-9 founder default (b) applied per codex P1.2: only `extension_ref` ships in v1.0; the 4 candidate seams (`metadata`, `schema_version`, `required_capabilities`, `discipline_tag`) defer to v1.x case-by-case.
+- v1.0 enforcement (extension_ref MUST be null) lives at terminal_check via forbidden coupling F-N (M4.9). M4.5 ships the field shape only; the constructor accepts `ext-<id>` strings so future v1.x extensions can use the same API.
+
 ### Workflow.custody_owner (M4.4)
 
 - **Measurement**: ratio of Workflows with non-null custody_owner across cross-tenant audits

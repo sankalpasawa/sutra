@@ -18,6 +18,10 @@ import type {
   WorkflowStep,
   WorkflowStringency,
 } from '../types/index.js'
+import {
+  EXTENSION_REF_PATTERN,
+  type ExtensionRef,
+} from '../types/extension.js'
 
 /** Workflow id starts with 'W-' followed by hash/identifier. */
 const W_ID_PATTERN = /^W-.+$/
@@ -105,6 +109,14 @@ export interface Workflow {
    * Pattern: `T-<id>` (must match `src/schemas/tenant.ts` TENANT_ID_PATTERN).
    */
   custody_owner: string | null
+
+  // ---- M4.5 — D4 §7 (D-NS-9 default b: only extension_ref ships) ----
+  /**
+   * v1.0→v1.x extension seam. v1.0 enforcement (D4 §7.3): MUST be null;
+   * forbidden coupling enforced at terminal_check (M4.9). When v1.x supplies a
+   * value, MUST match `EXTENSION_REF_PATTERN` (`/^ext-[a-z0-9-]+$/`).
+   */
+  extension_ref: ExtensionRef
 }
 
 /**
@@ -112,12 +124,12 @@ export interface Workflow {
  */
 export type WorkflowSpec = Omit<
   Workflow,
-  'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner'
+  'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref'
 > &
   Partial<
     Pick<
       Workflow,
-      'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner'
+      'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref'
     >
   >
 
@@ -267,6 +279,20 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     }
   }
 
+  // M4.5 — D-NS-9 default (b): only `extension_ref` extension seam ships.
+  // v1.0 enforcement (extension_ref MUST be null) is checked at terminal_check
+  // (forbidden coupling F-N, M4.9). At the constructor we accept null OR a
+  // string that matches the EXTENSION_REF_PATTERN; future-format strings are
+  // valid shapes here so v1.x extensions can be authored against the same API.
+  const extensionRef: ExtensionRef = spec.extension_ref ?? null
+  if (extensionRef !== null) {
+    if (typeof extensionRef !== 'string' || !EXTENSION_REF_PATTERN.test(extensionRef)) {
+      throw new Error(
+        `Workflow.extension_ref must be null or match ext-<id> pattern (M4.5; D4 §7); got "${String(extensionRef)}"`,
+      )
+    }
+  }
+
   const out: Workflow = {
     ...spec,
     step_graph: spec.step_graph.map((s) => ({ ...s, inputs: [...s.inputs], outputs: [...s.outputs] })),
@@ -280,6 +306,7 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     return_contract: returnContract,
     modifies_sutra: spec.modifies_sutra ?? false,
     custody_owner: custodyOwner,
+    extension_ref: extensionRef,
   }
   return Object.freeze(out)
 }
@@ -351,6 +378,13 @@ export function isValidWorkflow(w: Workflow): boolean {
   if (
     w.custody_owner !== null &&
     (typeof w.custody_owner !== 'string' || !TENANT_ID_PATTERN.test(w.custody_owner))
+  ) {
+    return false
+  }
+  // M4.5 — extension_ref must be null OR match ext-<id> pattern.
+  if (
+    w.extension_ref !== null &&
+    (typeof w.extension_ref !== 'string' || !EXTENSION_REF_PATTERN.test(w.extension_ref))
   ) {
     return false
   }

@@ -234,6 +234,9 @@ export function workflowArb(opts: WorkflowArbOpts = {}): fc.Arbitrary<Workflow> 
     // here so existing law-property tests remain green. Tests that exercise
     // non-null values pass an override directly.
     custody_owner: fc.constant<string | null>(null),
+    // M4.5 — extension_ref: null is the v1.0 enforcement default. Tests that
+    // exercise non-null pass an override directly.
+    extension_ref: fc.constant<string | null>(null),
   })
 }
 
