@@ -24,10 +24,15 @@ export {
 } from './activity-wrapper.js'
 
 // M5 Group K — step_graph executor + failure_policy.
+// M6 Group P (T-073) extends ExecutionResult + ExecuteOptions for child Skill
+// invocations: ChildEdge surfaces parent→child invocation edges; skill_engine
+// + recursion_depth on options carry the SkillEngine + depth through the
+// nested invocation chain.
 export {
   executeStepGraph,
   formatTerminalCheckFailureReason,
   type ActivityDispatcher,
+  type ChildEdge,
   type DispatchContext,
   type ExecuteOptions,
   type ExecutionResult,
@@ -48,6 +53,20 @@ export {
   SkillEngine,
   type ValidateOutputsResult,
 } from './skill-engine.js'
+
+// M6 Group P — child invocation adapter. Wires step.skill_ref → resolved
+// Skill execution with isolated child trace + canonical M5 failure-policy
+// failure formats (skill_unresolved / skill_output_validation /
+// skill_recursion_cap) + recursion cap. The executor calls into invokeSkill
+// when a step has skill_ref + options.skill_engine is provided.
+export {
+  invokeSkill,
+  SKILL_RECURSION_CAP,
+  type SkillInvocationContext,
+  type SkillInvocationFailure,
+  type SkillInvocationResult,
+  type SkillInvocationSuccess,
+} from './skill-invocation.js'
 
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only

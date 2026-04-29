@@ -33,6 +33,8 @@ import {
   type ExecutionContext,
   type FailurePolicyOutcome,
 } from './failure-policy.js'
+import type { SkillEngine } from './skill-engine.js'
+import { invokeSkill } from './skill-invocation.js'
 
 // =============================================================================
 // Types
@@ -99,6 +101,51 @@ export interface ExecuteOptions {
   terminalCheckProbe?: TerminalCheckProbe
   /** Optional escalation target ref forwarded to failure-policy. */
   escalation_target?: string
+  /**
+   * M6 Group P (T-073). When provided, steps with `skill_ref` are dispatched
+   * via the child-invocation adapter (`invokeSkill`) instead of the
+   * dispatcher. The adapter resolves the Skill, runs an isolated child
+   * execution, validates the terminal payload against the cached
+   * return_contract, and returns either a validated payload (recorded as the
+   * parent step's outputs) or a canonical failure (synthesized as a step
+   * failure → routed via M5 failure-policy).
+   *
+   * If omitted, steps with `skill_ref` continue to flow through the
+   * dispatcher unchanged (back-compat with M5 tests + activity-only
+   * Workflows that don't use the SkillEngine).
+   */
+  skill_engine?: SkillEngine
+  /**
+   * M6 Group P (T-073). Current recursion depth for child Skill invocations.
+   * Defaults to 0 at the root invocation. The executor passes this through
+   * to `invokeSkill`, which checks it against `SKILL_RECURSION_CAP` before
+   * resolution and increments it before re-entering executeStepGraph.
+   */
+  recursion_depth?: number
+}
+
+/**
+ * M6 Group P (T-073). One entry per child Skill invocation that succeeded.
+ * Surfaced on `ExecutionResult.child_edges` so observability + downstream
+ * tooling can reconstruct the parent→child invocation graph WITHOUT having
+ * to merge the child's internals into the parent's visited/completed lists
+ * (codex P1.3 isolation contract).
+ */
+export interface ChildEdge {
+  /** Parent step that carried `skill_ref`. */
+  step_id: number
+  /** Resolved Skill ref (== Workflow.id of the registered Skill). */
+  skill_ref: string
+  /**
+   * Deterministic child execution id synthesized by `invokeSkill` from
+   * (parent step_id, skill_ref). Replay-stable; no clock dependency.
+   */
+  child_execution_id: string
+  /**
+   * The Skill's terminal payload, validated against return_contract. Same
+   * value the executor records into `step_outputs[parent step_id].outputs[0]`.
+   */
+  validated_payload: unknown
 }
 
 /**
@@ -153,6 +200,15 @@ export interface ExecutionResult {
   rollback_compensations?: number[]
   /** Child workflow invocations triggered via action='spawn_sub_unit'. */
   child_workflows?: Array<{ step_id: number; child_workflow_id: string }>
+  /**
+   * M6 Group P (T-073). Child Skill invocations triggered via a parent step
+   * carrying `skill_ref` while `options.skill_engine` was provided. Empty
+   * when no Skill invocations occurred (back-compat with M5 dispatchers).
+   * The child's internal step_ids are NOT merged into `visited_step_ids`
+   * or `completed_step_ids` (codex P1.3 isolation); only the parent step
+   * carrying `skill_ref` appears in those lists.
+   */
+  child_edges?: ChildEdge[]
 }
 
 // =============================================================================
@@ -226,7 +282,18 @@ export async function executeStepGraph(
   const completed_step_ids: number[] = []
   const step_outputs: ExecutionResult['step_outputs'] = []
   const child_workflows: NonNullable<ExecutionResult['child_workflows']> = []
+  // M6 Group P (T-073). Child Skill invocations populate this; merged into
+  // ExecutionResult.child_edges at every return point below. Codex P1.3
+  // isolation: parent's visited/completed never carry child internals; the
+  // edge entries here are the only cross-reference between parent + child.
+  const child_edges: NonNullable<ExecutionResult['child_edges']> = []
   let partial = false
+
+  // M6 Group P (T-073). Carry-through for nested Skill invocations.
+  // recursion_depth defaults to 0 at the root invocation; invokeSkill
+  // increments before re-entering this executor for the resolved Skill.
+  const recursion_depth = options.recursion_depth ?? 0
+  const skill_engine = options.skill_engine
 
   for (const step of workflow.step_graph) {
     // Per-step dispatch context — derived snapshot, not a live reference.
@@ -259,11 +326,60 @@ export async function executeStepGraph(
     }
 
     let result: StepDispatchResult
-    try {
-      result = await Promise.resolve(dispatch(descriptor, dispatchCtx))
-    } catch (raw) {
-      const err = raw instanceof Error ? raw : new Error(String(raw))
-      result = { kind: 'failure', error: err }
+    // M6 Group P (T-073). Steps with `skill_ref` route through invokeSkill
+    // when a SkillEngine is present in options. The adapter resolves the
+    // Skill, runs an isolated child execution, validates the payload
+    // against the cached return_contract, and returns either a validated
+    // payload (translated below into a synthetic 'ok' StepDispatchResult)
+    // or a canonical failure (translated into a synthetic 'failure'
+    // StepDispatchResult so the existing failure-policy switch routes it
+    // unchanged via M5).
+    if (skill_engine !== undefined && typeof step.skill_ref === 'string') {
+      try {
+        const invokeResult = await invokeSkill(step, {
+          skill_engine,
+          dispatch,
+          recursion_depth,
+        })
+        if (invokeResult.kind === 'success') {
+          // Record the cross-reference edge BEFORE pushing visited/completed
+          // — keeps the relative order obvious to readers.
+          child_edges.push({
+            step_id: step.step_id,
+            skill_ref: invokeResult.skill_ref,
+            child_execution_id: invokeResult.child_execution_id,
+            validated_payload: invokeResult.validated_payload,
+          })
+          // Translate to the dispatcher-shaped success result. The single
+          // payload becomes the parent step's outputs[0]; the executor's
+          // ok-branch below handles visited/completed bookkeeping uniformly
+          // — codex P1.3 isolation is preserved because the child's
+          // visited/completed lists were captured inside the child's
+          // ExecutionResult (NOT mutated into the parent's lists).
+          result = { kind: 'ok', outputs: [invokeResult.validated_payload] }
+        } else {
+          // Synthesize a step failure with the canonical errMsg. The
+          // failure-policy switch downstream will route per step.on_failure
+          // exactly as if the dispatcher had thrown — keeping all 5 routes
+          // (rollback / escalate / pause / abort / continue) reachable for
+          // skill_unresolved / skill_output_validation / skill_recursion_cap.
+          result = { kind: 'failure', error: new Error(invokeResult.errMsg) }
+        }
+      } catch (raw) {
+        // Invariant guard: invokeSkill is contracted to never throw for
+        // expected failure paths. If it does (programmer error in the
+        // adapter), surface it as a step failure so the executor stays
+        // crash-free.
+        const err = raw instanceof Error ? raw : new Error(String(raw))
+        result = { kind: 'failure', error: err }
+      }
+    } else {
+      try {
+        result = await Promise.resolve(dispatch(descriptor, dispatchCtx))
+      } catch (raw) {
+        const err = raw instanceof Error ? raw : new Error(String(raw))
+        result = { kind: 'failure', error: err }
+      }
     }
 
     if (result.kind === 'ok') {
@@ -334,6 +450,7 @@ export async function executeStepGraph(
           failure_reason: outcome.reason,
           partial,
           ...(child_workflows.length > 0 ? { child_workflows } : {}),
+          ...(child_edges.length > 0 ? { child_edges } : {}),
         }
       }
       case 'rollback': {
@@ -350,6 +467,7 @@ export async function executeStepGraph(
           partial,
           rollback_compensations: outcome.compensation_order,
           ...(child_workflows.length > 0 ? { child_workflows } : {}),
+          ...(child_edges.length > 0 ? { child_edges } : {}),
         }
       }
       case 'pause': {
@@ -365,6 +483,7 @@ export async function executeStepGraph(
           partial,
           resume_token: outcome.resume_token,
           ...(child_workflows.length > 0 ? { child_workflows } : {}),
+          ...(child_edges.length > 0 ? { child_edges } : {}),
         }
       }
       case 'escalate': {
@@ -380,6 +499,7 @@ export async function executeStepGraph(
           partial,
           escalation_target: outcome.escalation_target,
           ...(child_workflows.length > 0 ? { child_workflows } : {}),
+          ...(child_edges.length > 0 ? { child_edges } : {}),
         }
       }
     }
@@ -401,6 +521,7 @@ export async function executeStepGraph(
         failure_reason: reason,
         partial,
         ...(child_workflows.length > 0 ? { child_workflows } : {}),
+        ...(child_edges.length > 0 ? { child_edges } : {}),
       }
     }
   }
@@ -417,5 +538,6 @@ export async function executeStepGraph(
     failure_reason: null,
     partial,
     ...(child_workflows.length > 0 ? { child_workflows } : {}),
+    ...(child_edges.length > 0 ? { child_edges } : {}),
   }
 }
