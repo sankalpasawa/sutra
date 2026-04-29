@@ -68,6 +68,19 @@ export {
   type SkillInvocationSuccess,
 } from './skill-invocation.js'
 
+// M7 Group U — Charter→Rego compiler. compileCharter(charter) → CompiledPolicy
+// (policy_id, content-hash policy_version, rego_source). Throws
+// BuiltinNotAllowedError when generated Rego references a forbidden builtin
+// (codex P1.4 fold; sovereignty discipline foundation).
+export {
+  compileCharter,
+  checkBuiltinAllowlist,
+  ALLOWED_BUILTINS,
+  BuiltinNotAllowedError,
+  COMPILER_VERSION_CONST,
+  type CompiledPolicy,
+} from './charter-rego-compiler.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public
