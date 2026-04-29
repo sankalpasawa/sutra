@@ -309,17 +309,27 @@ describe('M6 scenarios — 4. child trace isolation (codex P1.3)', () => {
       expect(result.completed_step_ids).not.toContain(cid)
     }
     // step_outputs has exactly ONE entry (the parent step) — child internal
-    // step outputs are NOT in the parent's step_outputs list.
+    // step outputs are NOT in the parent's step_outputs list. Codex master
+    // 2026-04-30 P1.1 fold: outputs[0] is the V2 §A11 DataRef envelope.
+    const expectedDataRef = {
+      kind: 'skill-output',
+      schema_ref: SCHEMA_OBJ_VALUE,
+      locator: `inline:${JSON.stringify({ value: 99 })}`,
+      version: '1',
+      mutability: 'immutable',
+      retention: 'session',
+      authoritative_status: 'authoritative',
+    }
     expect(result.step_outputs).toHaveLength(1)
     expect(result.step_outputs[0]!.step_id).toBe(10)
-    expect(result.step_outputs[0]!.outputs).toEqual([{ value: 99 }])
-    // child_edge surfaces with the validated payload + deterministic id.
+    expect(result.step_outputs[0]!.outputs).toEqual([expectedDataRef])
+    // child_edge surfaces with the validated DataRef + deterministic id.
     expect(result.child_edges).toEqual([
       {
         step_id: 10,
         skill_ref: 'W-iso-5step',
         child_execution_id: 'child-10-W-iso-5step',
-        validated_payload: { value: 99 },
+        validated_dataref: expectedDataRef,
       },
     ])
   })
@@ -383,13 +393,14 @@ describe('M6 scenarios — 5. recursion depth cap', () => {
     // (8 non-leaves + 1 invoking-leaf-position + 1 leaf), the cap fires when
     // chain[8]'s executor (depth 8) attempts to invoke chain[9].
     //
-    // Bubble-up: the cap message is wrapped by each ancestor's invokeSkill
-    // (which sees the child's empty terminal payload + fails return_contract
-    // validation → `skill_output_validation:...`). The OUTER failure_reason
-    // carries the wrapped form. We assert state='failed' (the load-bearing
-    // invariant) and that the failure surfaced through return_contract
-    // validation (the documented bubble-up shape). A direct cap test (above)
-    // pins the canonical errMsg surface separately.
+    // Bubble-up (codex master 2026-04-30 P2.1 fold): each ancestor's
+    // invokeSkill now propagates the child's canonical failure_reason
+    // directly (stripping ONE layer of M5 prefix per frame so the outer
+    // wrapping yields exactly one prefix level). The OUTERMOST
+    // failure_reason therefore preserves the canonical `skill_recursion_cap:8`
+    // class — major win for M8/M9 observability invariants. Pre-fold
+    // behavior (skill_output_validation:... wrap from undefined-payload
+    // validation) is gone.
     const engine = new SkillEngine()
     const ids = [
       'W-skill-a', 'W-skill-b', 'W-skill-c', 'W-skill-d', 'W-skill-e',
@@ -442,10 +453,10 @@ describe('M6 scenarios — 5. recursion depth cap', () => {
     const result = await executeStepGraph(parent, dispatch, { skill_engine: engine })
 
     expect(result.state).toBe('failed')
-    // Bubble-up: each ancestor's invokeSkill saw the failed child's empty
-    // terminal payload → return_contract validation rejected `undefined` as
-    // not-an-integer → wraps as `skill_output_validation:`. The outermost
-    // failure_reason is therefore step:1:abort:skill_output_validation:...
-    expect(result.failure_reason).toMatch(/^step:1:abort:skill_output_validation:/)
+    // Codex master 2026-04-30 P2.1 fold: failure class is preserved through
+    // nesting. The deepest cap fire (`skill_recursion_cap:8`) propagates up
+    // each ancestor frame; the outermost executor wraps it via M5
+    // failure-policy exactly once → canonical `step:1:abort:skill_recursion_cap:8`.
+    expect(result.failure_reason).toBe('step:1:abort:skill_recursion_cap:8')
   })
 })

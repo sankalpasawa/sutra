@@ -26,6 +26,7 @@
  */
 
 import type { Workflow } from '../primitives/workflow.js'
+import type { DataRef } from '../types/index.js'
 import type { ForbiddenCouplingId } from '../laws/l4-terminal-check.js'
 import type { ActivityDescriptor } from './temporal-adapter.js'
 import {
@@ -142,10 +143,17 @@ export interface ChildEdge {
    */
   child_execution_id: string
   /**
-   * The Skill's terminal payload, validated against return_contract. Same
-   * value the executor records into `step_outputs[parent step_id].outputs[0]`.
+   * The Skill's terminal payload wrapped in a V2 §A11 DataRef envelope after
+   * validation against `return_contract`. Codex master review 2026-04-30
+   * P1.1 fold: contract drift fix — V2 §A11 says child execution "returns
+   * DataRef per `return_contract`", so the parent step's outputs slot carries
+   * the DataRef envelope (kind='skill-output', schema_ref=return_contract,
+   * locator='inline:<JSON>', version='1', mutability='immutable',
+   * retention='session', authoritative_status='authoritative').
+   *
+   * Same value the executor records into `step_outputs[parent step_id].outputs[0]`.
    */
-  validated_payload: unknown
+  validated_dataref: DataRef
 }
 
 /**
@@ -348,15 +356,16 @@ export async function executeStepGraph(
             step_id: step.step_id,
             skill_ref: invokeResult.skill_ref,
             child_execution_id: invokeResult.child_execution_id,
-            validated_payload: invokeResult.validated_payload,
+            validated_dataref: invokeResult.validated_dataref,
           })
-          // Translate to the dispatcher-shaped success result. The single
-          // payload becomes the parent step's outputs[0]; the executor's
-          // ok-branch below handles visited/completed bookkeeping uniformly
-          // — codex P1.3 isolation is preserved because the child's
-          // visited/completed lists were captured inside the child's
-          // ExecutionResult (NOT mutated into the parent's lists).
-          result = { kind: 'ok', outputs: [invokeResult.validated_payload] }
+          // Translate to the dispatcher-shaped success result. The DataRef
+          // envelope (V2 §A11; codex master 2026-04-30 P1.1 fold) becomes
+          // the parent step's outputs[0]; the executor's ok-branch below
+          // handles visited/completed bookkeeping uniformly — codex P1.3
+          // isolation is preserved because the child's visited/completed
+          // lists were captured inside the child's ExecutionResult (NOT
+          // mutated into the parent's lists).
+          result = { kind: 'ok', outputs: [invokeResult.validated_dataref] }
         } else {
           // Synthesize a step failure with the canonical errMsg. The
           // failure-policy switch downstream will route per step.on_failure

@@ -39,8 +39,8 @@
  *     return_contract)
  */
 
-import type { SkillEngine } from './skill-engine.js'
-import type { WorkflowStep } from '../types/index.js'
+import type { SkillEngine, ValidateOutputsResult } from './skill-engine.js'
+import type { DataRef, WorkflowStep } from '../types/index.js'
 import {
   executeStepGraph,
   type ActivityDispatcher,
@@ -85,9 +85,23 @@ export interface SkillInvocationContext {
 }
 
 /**
- * Discriminated success branch. `validated_payload` is the value the parent
- * step's outputs slot will receive (the executor at T-073 records it as
- * step_outputs[parent_step_id]).
+ * Discriminated success branch. `validated_dataref` is the DataRef envelope the
+ * parent step's outputs slot will receive (the executor at T-073 records it as
+ * step_outputs[parent_step_id].outputs[0]).
+ *
+ * Per V2 §A11 (codex master 2026-04-30 P1.1 fold): a Skill returns a DataRef
+ * per its `return_contract`. The envelope is built at the invocation boundary
+ * after the child's terminal payload validates against return_contract:
+ *
+ *   {
+ *     kind: 'skill-output',
+ *     schema_ref: skill.return_contract,        // the JSON Schema string
+ *     locator: 'inline:' + JSON.stringify(payload),
+ *     version: '1',                              // implicit at v1.0 (one impl per ref)
+ *     mutability: 'immutable',                   // outputs are frozen
+ *     retention: 'session',                      // in-memory; M11 may extend
+ *     authoritative_status: 'authoritative',     // outputs are authoritative
+ *   }
  *
  * `child_result` is the FULL ExecutionResult of the isolated child. The
  * executor MUST NOT merge child.visited_step_ids / completed_step_ids into
@@ -99,7 +113,7 @@ export interface SkillInvocationSuccess {
   readonly kind: 'success'
   readonly skill_ref: string
   readonly child_execution_id: string
-  readonly validated_payload: unknown
+  readonly validated_dataref: DataRef
   readonly child_result: ExecutionResult
 }
 
@@ -131,6 +145,30 @@ function synthesizeChildExecutionId(parent_step_id: number, skill_ref: string): 
 }
 
 /**
+ * Type guard: is this value a `kind='skill-output'` DataRef envelope (the
+ * shape produced by `buildSkillOutputDataRef`)?
+ *
+ * Codex master 2026-04-30 P1.1 fold support helper: when the OUTER Skill's
+ * terminal step is itself a skill_ref step, the outer's terminal payload is
+ * the INNER Skill's DataRef envelope (because the executor records the inner
+ * envelope into outputs[0]). Without unwrapping, the outer's `return_contract`
+ * (which describes the payload shape, e.g. `{type:'integer'}`) would validate
+ * against the DataRef object — false negative every time.
+ *
+ * The unwrap path uses this guard to detect that case and pull the original
+ * payload out of `locator='inline:<JSON>'` before validation.
+ */
+function isSkillOutputDataRef(value: unknown): value is DataRef {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    v.kind === 'skill-output' &&
+    typeof v.locator === 'string' &&
+    (v.locator as string).startsWith('inline:')
+  )
+}
+
+/**
  * Pull the validated_payload out of a child's ExecutionResult.
  *
  * Convention (V2 §A11): a Skill's `return_contract` describes the shape of
@@ -140,6 +178,15 @@ function synthesizeChildExecutionId(parent_step_id: number, skill_ref: string): 
  * produced no outputs, return `undefined` — the validator will catch it
  * (most schemas reject undefined; if a Skill explicitly allows undefined,
  * its schema must declare so).
+ *
+ * Codex master 2026-04-30 P1.1 fold transitivity: when the terminal step is
+ * itself a `skill_ref` step (Skill-of-Skills composition), the terminal
+ * output is the INNER Skill's DataRef envelope. The outer Skill's
+ * `return_contract` is declared against the original payload shape (V2 §A11
+ * design intent — schema_ref describes what's inside the locator), so we
+ * unwrap one level of `kind='skill-output'` envelope before validation.
+ * Without this, every chained Skill at depth >= 2 would fail validation
+ * against an envelope shape it never declared.
  *
  * Rationale for outputs[0]: V2 §A11 frames `return_contract` as the
  * Skill's typed return value, not its full per-step output stream. Skills
@@ -156,7 +203,89 @@ function extractTerminalPayload(child_result: ExecutionResult): unknown {
   // return_contract gate.
   const last = entries[entries.length - 1]
   if (!last || last.outputs.length === 0) return undefined
-  return last.outputs[0]
+  const raw = last.outputs[0]
+  // Transitivity unwrap (codex master 2026-04-30 P1.1 fold): if the terminal
+  // output is an inner Skill's DataRef envelope, pull the original payload
+  // back out so the outer Skill's return_contract validates against the
+  // declared payload shape, not the envelope shape.
+  if (isSkillOutputDataRef(raw)) {
+    const locator = (raw as DataRef).locator
+    const innerJson = locator.slice('inline:'.length)
+    try {
+      return JSON.parse(innerJson) as unknown
+    } catch {
+      // Malformed locator → fall through with the envelope itself (defensive;
+      // in practice the locator is always JSON.stringify(payload) from
+      // buildSkillOutputDataRef so JSON.parse should never throw).
+      return raw
+    }
+  }
+  return raw
+}
+
+/**
+ * Wrap a validated terminal payload in the V2 §A11 DataRef envelope.
+ *
+ * Codex master review 2026-04-30 P1.1 fold: V2 §A11 says child execution
+ * "returns DataRef per `return_contract`." This builder produces that envelope
+ * at the invocation boundary. Field semantics:
+ *
+ *   - kind='skill-output'         — discriminator for downstream observability
+ *   - schema_ref=return_contract  — the JSON Schema string the Skill declared
+ *   - locator='inline:<JSON>'     — v1.0 inline locator (M8+ may upgrade to
+ *                                   content-addressed/URI for cross-process
+ *                                   passing); JSON-encoded to keep the locator
+ *                                   self-describing without ambient context
+ *   - version='1'                 — Skill version is implicit at v1.0 (the
+ *                                   registry has only one impl per skill_ref)
+ *   - mutability='immutable'      — Skill outputs are frozen at completion;
+ *                                   downstream consumers MUST NOT mutate
+ *   - retention='session'         — in-memory for v1.0; M11 dogfood may
+ *                                   promote to durable storage
+ *   - authoritative_status='authoritative' — Skill outputs are authoritative
+ *                                            by default per D2 §5; advisory
+ *                                            tagging is a Skill-author opt-in
+ *                                            in v1.x (D-NS future)
+ *
+ * Pure function — no clock, no random. Replay-deterministic given identical
+ * (payload, return_contract).
+ */
+function buildSkillOutputDataRef(payload: unknown, return_contract: string): DataRef {
+  return {
+    kind: 'skill-output',
+    schema_ref: return_contract,
+    locator: `inline:${JSON.stringify(payload)}`,
+    version: '1',
+    mutability: 'immutable',
+    retention: 'session',
+    authoritative_status: 'authoritative',
+  }
+}
+
+/**
+ * Strip the M5 failure-policy prefix (`step:<N>:<action>:`) from a
+ * `child_result.failure_reason` to recover the canonical inner errMsg.
+ *
+ * Codex master review 2026-04-30 P2.1 fold: when a child's child fails (e.g.
+ * `skill_recursion_cap:8` deep in a chain), the immediate child's
+ * failure-policy wraps it as `step:1:abort:skill_recursion_cap:8`. If the
+ * outer frame propagated that wrapped string, EACH ancestor would re-wrap,
+ * yielding `step:1:abort:step:1:abort:...` chains with N levels of prefix.
+ *
+ * Solution: strip ONE layer of M5 prefix when propagating. Each ancestor's
+ * own failure-policy then re-applies exactly one prefix level, keeping the
+ * outermost failure_reason at `step:<N>:<action>:<canonical-errMsg>` shape
+ * regardless of nesting depth. The canonical inner errMsg
+ * (`skill_recursion_cap:8`, `skill_unresolved:foo`, `skill_output_validation:...`)
+ * is preserved for M8/M9 observability.
+ *
+ * Regex: `^step:\d+:[a-z]+:(.+)$` — captures the inner errMsg. If the input
+ * does NOT match (defensive: unexpected shape), return the input unchanged so
+ * we never lose information.
+ */
+function stripFailurePolicyPrefix(reason: string): string {
+  const match = /^step:\d+:[a-z]+:(.+)$/.exec(reason)
+  return match ? match[1]! : reason
 }
 
 /**
@@ -219,12 +348,33 @@ export async function invokeSkill(
     skill_engine: context.skill_engine,
   })
 
+  // 3a. Codex master review 2026-04-30 P2.1 fold: when the child execution
+  // FAILED, the canonical failure class is already in `child_result.failure_reason`
+  // (e.g. `step:1:abort:skill_recursion_cap:8` from M5 failure-policy formatting).
+  // Propagate that DIRECTLY rather than running validateOutputs against an
+  // undefined terminal payload + synthesizing `skill_output_validation:` from
+  // ajv's "expected X, got undefined" error. Strip ONE layer of M5 prefix so
+  // each ancestor frame re-applies exactly one prefix, keeping the outermost
+  // failure_reason canonically shaped regardless of nesting depth.
+  if (child_result.state !== 'success') {
+    const childReason = child_result.failure_reason ?? 'child_failed:no_reason'
+    const innerErrMsg = stripFailurePolicyPrefix(childReason)
+    return {
+      kind: 'failure',
+      skill_ref,
+      errMsg: innerErrMsg,
+    }
+  }
+
   // 4. Extract the terminal payload (last completed step's outputs[0]).
   const validated_payload = extractTerminalPayload(child_result)
 
   // 5. Validate against the cached return_contract. ajv compiled at
   // register-time → O(1) on the validation hot path.
-  const validation = context.skill_engine.validateOutputs(skill_ref, validated_payload)
+  const validation: ValidateOutputsResult = context.skill_engine.validateOutputs(
+    skill_ref,
+    validated_payload,
+  )
   if (!validation.valid) {
     return {
       kind: 'failure',
@@ -233,13 +383,18 @@ export async function invokeSkill(
     }
   }
 
-  // 6. Success — synthesize the deterministic child_execution_id, return
-  // the typed payload + the child_result for downstream tooling.
+  // 6. Success — wrap the validated payload in the V2 §A11 DataRef envelope.
+  // The schema_ref is the Skill's return_contract (already on the resolved
+  // Workflow). Codex master review 2026-04-30 P1.1 fold.
+  const validated_dataref = buildSkillOutputDataRef(
+    validated_payload,
+    resolved.return_contract!,
+  )
   return {
     kind: 'success',
     skill_ref,
     child_execution_id: synthesizeChildExecutionId(parentStep.step_id, skill_ref),
-    validated_payload,
+    validated_dataref,
     child_result,
   }
 }

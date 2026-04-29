@@ -127,7 +127,7 @@ function buildRootParent(entry_id: string): Workflow {
 const dispatch: ActivityDispatcher = () => ({ kind: 'ok', outputs: [42] })
 
 describe('skill-invocation recursion cap — property (≥1000 cases)', () => {
-  it('chain depth N >= SKILL_RECURSION_CAP+1 fails (cap fires; bubble-up wraps as skill_output_validation)', async () => {
+  it('chain depth N >= SKILL_RECURSION_CAP+1 fails with canonical skill_recursion_cap propagated through nesting', async () => {
     await fc.assert(
       fc.asyncProperty(
         // Depth tracing — root parent invokes chain-0 at recursion_depth=0
@@ -143,19 +143,17 @@ describe('skill-invocation recursion cap — property (≥1000 cases)', () => {
         // (= SKILL_RECURSION_CAP+1). At N=8, chain-6 at depth 7 invokes
         // chain-7 (leaf) → cap NOT fired (7 < 8); chain succeeds.
         //
-        // Bubble-up: the cap returns kind=failure with errMsg
-        // `skill_recursion_cap:8` from the deepest invokeSkill. That step's
-        // executor wraps it as a step failure → `step:1:abort:skill_recursion_cap:8`
-        // → ExecutionResult.state='failed'. The PARENT's invokeSkill then
-        // sees this child's empty terminal payload (failed steps push empty
-        // outputs) → return_contract validation rejects undefined →
-        // surfaces as `skill_output_validation:...` at each ancestor frame.
-        // The OUTERMOST failure_reason therefore matches
-        // `step:1:abort:skill_output_validation:...`. The canonical
-        // `skill_recursion_cap:8` errMsg is asserted directly by the
-        // contract test (skill-invocation.test.ts) and by m6-skill-resolution
-        // scenario 5(a) which uses options.recursion_depth=8 to fire the
-        // cap at the OUTER frame (no bubble-up wrapping).
+        // Codex master 2026-04-30 P2.1 fold (failure-class preservation):
+        // the cap returns kind=failure with errMsg `skill_recursion_cap:8`.
+        // Each ancestor's invokeSkill now SHORT-CIRCUITS on
+        // child_result.state !== 'success' and propagates the child's
+        // canonical failure_reason directly (stripping ONE layer of M5
+        // prefix per frame). The outermost executor's failure-policy then
+        // applies exactly one prefix → canonical
+        // `step:1:abort:skill_recursion_cap:8`, regardless of nesting
+        // depth. Pre-fold behavior (skill_output_validation:... wrap from
+        // undefined-payload validation) is gone — this is the M8/M9
+        // observability invariant: nested failure class is preserved.
         fc.integer({ min: SKILL_RECURSION_CAP + 1, max: 15 }),
         async (N: number) => {
           const { engine, entry_id } = buildChain(N)
@@ -163,9 +161,11 @@ describe('skill-invocation recursion cap — property (≥1000 cases)', () => {
           const result = await executeStepGraph(parent, dispatch, { skill_engine: engine })
 
           expect(result.state).toBe('failed')
-          // Bubble-up surface — locked here so a future change to the cap
-          // propagation path surfaces in tests.
-          expect(result.failure_reason).toMatch(/^step:1:abort:skill_output_validation:/)
+          // Canonical errMsg preserved through nesting — locked here so a
+          // future change to the propagation path surfaces in tests.
+          expect(result.failure_reason).toBe(
+            `step:1:abort:skill_recursion_cap:${SKILL_RECURSION_CAP}`,
+          )
         },
       ),
       { numRuns: PROP_RUNS },

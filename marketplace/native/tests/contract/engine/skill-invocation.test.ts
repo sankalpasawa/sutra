@@ -4,7 +4,8 @@
  * Surface under test:
  *   invokeSkill(parentStep, context) — discriminated SkillInvocationResult.
  *   Happy path: resolve → run isolated child executor → extract terminal step
- *     output → validate against cached return_contract → success payload.
+ *     output → validate against cached return_contract → wrap in DataRef
+ *     envelope (V2 §A11; codex master 2026-04-30 P1.1 fold) → success.
  *   Failure paths (errMsg formats per M5 canonical):
  *     - skill_unresolved:<skill_ref>      (registry miss)
  *     - skill_output_validation:<details> (return_contract violation)
@@ -13,6 +14,7 @@
  *
  * Plan: holding/plans/native-v1.0/M6-skill-engine.md Group P.
  * Codex pre-dispatch: .enforcement/codex-reviews/2026-04-30-m6-plan-pre-dispatch.md (P1.3).
+ * Codex master fold: .enforcement/codex-reviews/2026-04-30-m6-master.md (P1.1 + P2.1).
  *
  * Note: executor wiring scenarios (steps with skill_ref dispatched via
  * executeStepGraph + child_edges shape) live in Group Q's integration
@@ -91,7 +93,9 @@ function parentStep(skill_ref: string, step_id = 42): WorkflowStep {
 
 /**
  * Dispatcher that returns a fixed payload as the leaf step's first output.
- * Convention: validated_payload = outputs[0] of the Skill's terminal step.
+ * Convention: the Skill's terminal step output is wrapped in a V2 §A11 DataRef
+ * envelope at the invocation boundary (codex master 2026-04-30 P1.1 fold);
+ * `result.validated_dataref.locator` carries the original payload via JSON.
  */
 function dispatcherWithPayload(payload: unknown): ActivityDispatcher {
   return () => ({ kind: 'ok', outputs: [payload] })
@@ -127,13 +131,50 @@ describe('invokeSkill — happy path (T-070)', () => {
     expect(result.kind).toBe('success')
     if (result.kind !== 'success') return // narrow
     expect(result.skill_ref).toBe('W-skill-ok')
-    expect(result.validated_payload).toEqual({ value: 42 })
+    // Codex master 2026-04-30 P1.1 fold: V2 §A11 says child execution returns
+    // a DataRef per `return_contract`. The validated payload is wrapped in
+    // a DataRef envelope at the invocation boundary; the wrapped envelope
+    // carries the original payload via the inline locator.
+    expect(result.validated_dataref.kind).toBe('skill-output')
+    expect(result.validated_dataref.schema_ref).toBe(SCHEMA_INT_VALUE)
+    expect(result.validated_dataref.locator).toBe(`inline:${JSON.stringify({ value: 42 })}`)
+    expect(result.validated_dataref.version).toBe('1')
+    expect(result.validated_dataref.mutability).toBe('immutable')
+    expect(result.validated_dataref.retention).toBe('session')
+    expect(result.validated_dataref.authoritative_status).toBe('authoritative')
     // Deterministic, clock-free id (replay-determinism: codex P1.3)
     expect(result.child_execution_id).toBe('child-42-W-skill-ok')
     // Child result available for diagnostics (NOT merged into parent state by
     // invokeSkill itself — the executor at T-073 decides what to record).
     expect(result.child_result.workflow_id).toBe('W-skill-ok')
     expect(result.child_result.state).toBe('success')
+  })
+
+  it('returns validated_dataref as full DataRef envelope per V2 §A11 (codex P1.1 fold)', async () => {
+    // Codex master 2026-04-30 P1.1 fold: deep-equal assertion on the entire
+    // DataRef envelope shape. Locks the V2 §A11 invocation-boundary contract
+    // so any future drift back to raw-payload pass-through surfaces in tests.
+    const engine = new SkillEngine()
+    engine.register(makeSkill({ id: 'W-dataref-shape' }))
+
+    const ctx: SkillInvocationContext = {
+      skill_engine: engine,
+      dispatch: dispatcherWithPayload({ value: 7 }),
+      recursion_depth: 0,
+    }
+    const result = await invokeSkill(parentStep('W-dataref-shape', 9), ctx)
+
+    expect(result.kind).toBe('success')
+    if (result.kind !== 'success') return // narrow
+    expect(result.validated_dataref).toEqual({
+      kind: 'skill-output',
+      schema_ref: SCHEMA_INT_VALUE,
+      locator: `inline:${JSON.stringify({ value: 7 })}`,
+      version: '1',
+      mutability: 'immutable',
+      retention: 'session',
+      authoritative_status: 'authoritative',
+    })
   })
 
   it('child_execution_id is deterministic across calls (replay determinism)', async () => {
@@ -341,18 +382,38 @@ describe('step-graph-executor wiring (T-073)', () => {
     // stay isolated — codex P1.3.
     expect(result.visited_step_ids).toEqual([10])
     expect(result.completed_step_ids).toEqual([10])
-    // child_edges surfaces the parent→child cross-reference.
+    // child_edges surfaces the parent→child cross-reference. Codex master
+    // 2026-04-30 P1.1 fold: validated_dataref carries the V2 §A11 DataRef
+    // envelope (the parent step's outputs[0] is the same envelope).
     expect(result.child_edges).toBeDefined()
     expect(result.child_edges).toEqual([
       {
         step_id: 10,
         skill_ref: 'W-leaf-2step',
         child_execution_id: 'child-10-W-leaf-2step',
-        validated_payload: { value: 99 },
+        validated_dataref: {
+          kind: 'skill-output',
+          schema_ref: SCHEMA_INT_VALUE,
+          locator: `inline:${JSON.stringify({ value: 99 })}`,
+          version: '1',
+          mutability: 'immutable',
+          retention: 'session',
+          authoritative_status: 'authoritative',
+        },
       },
     ])
-    // Parent's step_outputs records the validated payload as outputs[0].
-    expect(result.step_outputs[0]?.outputs).toEqual([{ value: 99 }])
+    // Parent's step_outputs records the validated DataRef envelope as outputs[0].
+    expect(result.step_outputs[0]?.outputs).toEqual([
+      {
+        kind: 'skill-output',
+        schema_ref: SCHEMA_INT_VALUE,
+        locator: `inline:${JSON.stringify({ value: 99 })}`,
+        version: '1',
+        mutability: 'immutable',
+        retention: 'session',
+        authoritative_status: 'authoritative',
+      },
+    ])
   })
 
   it('skill_unresolved synthesizes step failure → routed via on_failure=abort', async () => {

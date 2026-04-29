@@ -411,16 +411,28 @@ describe('M5.5 rolling harness — M6 SkillEngine surfaces', () => {
     // Parent's lists carry ONLY parent step_id (7) — child internals isolated.
     expect(result.completed_step_ids).toEqual([7])
     expect(result.visited_step_ids).toEqual([7])
-    // child_edges has exactly ONE entry — the echo invocation.
+    // child_edges has exactly ONE entry — the echo invocation. Codex master
+    // 2026-04-30 P1.1 fold: validated_dataref carries the V2 §A11 DataRef
+    // envelope; parent step 7's outputs[0] is the same envelope.
     expect(result.child_edges).toBeDefined()
     expect(result.child_edges).toHaveLength(1)
     expect(result.child_edges![0]!.step_id).toBe(7)
     expect(result.child_edges![0]!.skill_ref).toBe('W-echo')
     // Deterministic child_execution_id (replay-stable, no clock).
     expect(result.child_edges![0]!.child_execution_id).toBe('child-7-W-echo')
-    // Parent step 7's outputs[0] is the validated payload (= the leaf step's
-    // dispatcher output: 'echo:1').
-    expect(result.step_outputs[0]?.outputs).toEqual(['echo:1'])
+    // The DataRef envelope wraps the leaf step's dispatcher output ('echo:1').
+    const expectedDataRef = {
+      kind: 'skill-output',
+      schema_ref: JSON.stringify(true),
+      locator: `inline:${JSON.stringify('echo:1')}`,
+      version: '1',
+      mutability: 'immutable',
+      retention: 'session',
+      authoritative_status: 'authoritative',
+    }
+    expect(result.child_edges![0]!.validated_dataref).toEqual(expectedDataRef)
+    // Parent step 7's outputs[0] is the validated DataRef envelope.
+    expect(result.step_outputs[0]?.outputs).toEqual([expectedDataRef])
   })
 })
 
