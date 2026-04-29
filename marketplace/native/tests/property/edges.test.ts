@@ -44,8 +44,9 @@ const executionIdArb = fc
   .filter((s) => s.length >= 1)
   .map((s) => `E-${s}`)
 
-// Hook ids are free-form (no canonical pattern in v1.0); just non-empty.
-const hookIdArb = fc.string({ minLength: 1, maxLength: 24 })
+// Hook ids canonicalized to `H-<id>` (Group G' fix-up 2026-04-29 per codex
+// master P3.5). Pre-fix: free-form non-empty strings; post-fix: H- prefix.
+const hookIdArb = fc.string({ minLength: 1, maxLength: 24 }).map((s) => `H-${s}`)
 
 // EmitsEdge source can be any of W- / E- / hook
 const emitsSourceArb = fc.oneof(workflowIdArb, executionIdArb, hookIdArb)

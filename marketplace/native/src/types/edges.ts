@@ -37,6 +37,21 @@ const TENANT_ID_PATTERN = /^T-[a-z0-9-]+$/
 const DOMAIN_ID_PATTERN = /^D\d+(\.D\d+)*$/
 const DP_ID_PATTERN = /^dp-[a-f0-9]+$/
 
+/**
+ * EmitsEdge source pattern — Workflow / Execution / Hook ids only (D4 §2.2).
+ *
+ * Tightened in Group G' fix-up (2026-04-29) per codex master P3.5: the schema
+ * previously accepted any non-empty string, allowing Tenant/Domain/garbage ids
+ * to validate as provenance emitters. Now restricted to one of:
+ *   - Workflow:  `W-<id>`  (canonical W_ID_PATTERN: `^W-.+$`)
+ *   - Execution: `E-<id>`  (canonical E_ID_PATTERN: `^E-.+$`)
+ *   - Hook:      `H-<id>`  (Group G' canonicalization; free-form body)
+ *
+ * Pattern mirrors the canonical primitive id patterns (no character-class
+ * restriction on the body) so any valid Workflow/Execution id is accepted.
+ */
+const EMITS_SOURCE_PATTERN = /^(W-.+|E-.+|H-.+)$/
+
 // -----------------------------------------------------------------------------
 // `owns` — Tenant → Domain (D4 §2.2; D1 P-A1)
 //
@@ -70,16 +85,19 @@ export type DelegatesToEdge = z.infer<typeof DelegatesToEdgeSchema>
 // -----------------------------------------------------------------------------
 // `emits` — Workflow / Execution / Hook → DecisionProvenance (D4 §2.2; D2 P-A3)
 //
-// Provenance attribution edge. Source can be any of three id namespaces:
-//   - Workflow.id   `W-<...>`
-//   - Execution.id  `E-<...>`
-//   - Hook.id       free-form (no canonical pattern in v1.0; min(1) only)
+// Provenance attribution edge. Source MUST match one of three id namespaces:
+//   - Workflow.id   `W-<id>`
+//   - Execution.id  `E-<id>`
+//   - Hook.id       `H-<id>`
 // Target is always a DecisionProvenance.id (`dp-<hex>`).
+//
+// Source pattern tightened in Group G' fix-up (2026-04-29) per codex master
+// P3.5: prior `z.string().min(1)` allowed Tenant/Domain/garbage ids through.
 // -----------------------------------------------------------------------------
 
 export const EmitsEdgeSchema = z.object({
   kind: z.literal('emits'),
-  source: z.string().min(1),
+  source: z.string().regex(EMITS_SOURCE_PATTERN),
   target: z.string().regex(DP_ID_PATTERN),
 })
 

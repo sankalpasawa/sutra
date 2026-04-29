@@ -281,9 +281,10 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
 
   // M4.5 — D-NS-9 default (b): only `extension_ref` extension seam ships.
   // v1.0 enforcement (extension_ref MUST be null) is checked at terminal_check
-  // (forbidden coupling F-N, M4.9). At the constructor we accept null OR a
-  // string that matches the EXTENSION_REF_PATTERN; future-format strings are
-  // valid shapes here so v1.x extensions can be authored against the same API.
+  // (forbidden coupling F-11, Group G' fix-up 2026-04-29). At the constructor
+  // we accept null OR a string that matches the EXTENSION_REF_PATTERN;
+  // future-format strings are valid shapes here so v1.x extensions can be
+  // authored against the same API.
   const extensionRef: ExtensionRef = spec.extension_ref ?? null
   if (extensionRef !== null) {
     if (typeof extensionRef !== 'string' || !EXTENSION_REF_PATTERN.test(extensionRef)) {

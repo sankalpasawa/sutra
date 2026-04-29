@@ -14,6 +14,10 @@ import {
 } from '../../../src/types/extension.js'
 import { createWorkflow, isValidWorkflow } from '../../../src/primitives/workflow.js'
 import * as WorkflowFx from '../../fixtures/workflow.fixture.js'
+import { f11Predicate, terminalCheck } from '../../../src/laws/l4-terminal-check.js'
+import type { Execution } from '../../../src/primitives/execution.js'
+import type { Charter } from '../../../src/primitives/charter.js'
+import type { Tenant } from '../../../src/schemas/tenant.js'
 
 describe('ExtensionRefSchema (M4.5)', () => {
   it('accepts null', () => {
@@ -67,13 +71,79 @@ describe('Workflow.extension_ref field (M4.5)', () => {
     expect(w.extension_ref).toBeNull()
   })
 
-  it('valid `ext-<id>` string accepted at constructor (v1.x format)', () => {
+  it('valid `ext-<id>` string accepted at constructor (v1.x format) — schema layer', () => {
+    // Schema-level acceptance (createWorkflow + isValidWorkflow) accepts
+    // well-formed `ext-<id>` strings so v1.x extensions can be authored against
+    // the same API. v1.0 enforcement (extension_ref MUST be null) lives at
+    // terminal_check (F-11). See test below.
     const w = createWorkflow({
       ...WorkflowFx.validMinimal(),
       extension_ref: 'ext-mcp-bridge',
     })
     expect(w.extension_ref).toBe('ext-mcp-bridge')
     expect(isValidWorkflow(w)).toBe(true)
+  })
+
+  it('F-11 (Group G\' 2026-04-29): terminal_check REJECTS non-null extension_ref in v1.0', () => {
+    // D4 §7.3: extension_ref MUST be null in v1.0. Schema accepts non-null
+    // (above test); terminal_check rejects via F-11 predicate.
+    const w = createWorkflow({
+      ...WorkflowFx.validMinimal(),
+      extension_ref: 'ext-mcp-bridge',
+    })
+    // F-11 predicate fires (returns true = VIOLATION) for non-null extension_ref.
+    expect(f11Predicate({ workflow: w })).toBe(true)
+
+    // Aggregator surfaces F-11 in the violations list.
+    const execution: Execution = {
+      id: 'E-test',
+      workflow_id: w.id,
+      trigger_event: 'turn_start',
+      state: 'success',
+      logs: [],
+      results: [],
+      parent_exec_id: null,
+      sibling_group: null,
+      fingerprint: 'fp',
+      failure_reason: null,
+      agent_identity: null,
+    }
+    const charter: Charter = {
+      id: 'C-test',
+      purpose: 'p',
+      scope_in: '',
+      scope_out: '',
+      obligations: [],
+      invariants: [],
+      success_metrics: [],
+      authority: '',
+      termination: '',
+      constraints: [],
+      acl: [],
+    }
+    const tenant: Tenant = {
+      id: 'T-default',
+      name: 'default',
+      isolation_contract: 'single-tenant',
+      parent_tenant_id: null,
+      managed_agents_session: null,
+      audit_log_path: null,
+    }
+    const result = terminalCheck({
+      workflow: w,
+      execution,
+      charter,
+      tenant,
+      operationalizes_charters: ['C-test'],
+      reflexive_auth: { founder_authorization: false, meta_charter_approval: false },
+    })
+    expect(result.pass).toBe(false)
+    expect(result.violations).toContain('F-11')
+  })
+
+  it('F-11: terminal_check ACCEPTS null extension_ref (v1.0 default)', () => {
+    const w = createWorkflow({ ...WorkflowFx.validMinimal(), extension_ref: null })
+    expect(f11Predicate({ workflow: w })).toBe(false)
   })
 
   it('rejects malformed extension_ref (no prefix)', () => {

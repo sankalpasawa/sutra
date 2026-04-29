@@ -32,13 +32,21 @@ tests/fixtures/
 ├── README.md                          ← this file
 ├── domain.fixture.ts                  ← M4.10 baseline
 ├── charter.fixture.ts                 ← M4.10 baseline
+│                                        + M4.7 cutover variants (factory fns:
+│                                          validMinimalWithCutover,
+│                                          validFullWithCutover,
+│                                          invalidEmptyInvariants)
 ├── workflow.fixture.ts                ← M4.10 baseline (extended in M4.4)
 ├── execution.fixture.ts               ← M4.10 baseline (extended in M4.2)
 ├── tenant.fixture.ts                  ← M4.1
 ├── decision-provenance.fixture.ts     ← M4.3
-├── cutover-contract.fixture.ts        ← M4.7 (chunk 2)
 └── fixtures.test.ts                   ← validates every fixture round-trips
 ```
+
+> Note (Group G' fix-up 2026-04-29 per codex master P3.6): cutover variants
+> live as factory functions inside `charter.fixture.ts` — no dedicated
+> `cutover-contract.fixture.ts` file ships. Earlier README revisions (pre-fix)
+> incorrectly listed a dedicated file.
 
 ## Validation contract
 

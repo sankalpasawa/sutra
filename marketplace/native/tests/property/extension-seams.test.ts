@@ -3,8 +3,9 @@
  *
  * 1000+ cases per property: round-trip preservation + reject malformed.
  * v1.0 enforcement (extension_ref MUST be null at terminal_check) is gated
- * by forbidden coupling F-N — implemented in M4.9 + tested there. Here we
- * test the schema-shape level only.
+ * by forbidden coupling F-11 (Group G' fix-up 2026-04-29) — predicate +
+ * property tests live in `tests/property/forbidden-couplings.test.ts`. Here
+ * we test the schema-shape level only (createWorkflow + isValidWorkflow).
  */
 
 import { describe, expect, it } from 'vitest'

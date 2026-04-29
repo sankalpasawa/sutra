@@ -165,7 +165,6 @@ describe('M4.10 fixtures — round-trip + reject contract', () => {
       const bad = ExecutionFx.invalidMissingRequired()
       let threwOrFailed = false
       try {
-        // @ts-expect-error — fixture intentionally missing required field
         const e = createExecution(bad as never)
         if (!isValidExecution(e)) threwOrFailed = true
       } catch {

@@ -398,6 +398,8 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       reuse_tag: false,
       return_contract: null,
       modifies_sutra: false,
+      custody_owner: null,
+      extension_ref: null,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -439,6 +441,8 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       reuse_tag: false,
       return_contract: null,
       modifies_sutra: false,
+      custody_owner: null,
+      extension_ref: null,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -463,6 +467,8 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       return_contract: null,
       // simulate deserialized record where boolean became string
       modifies_sutra: 'true' as unknown as boolean,
+      custody_owner: null,
+      extension_ref: null,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -524,6 +530,8 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       reuse_tag: false,
       return_contract: null,
       modifies_sutra: false,
+      custody_owner: null,
+      extension_ref: null,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })
@@ -613,6 +621,8 @@ describe('Workflow primitive (V2 §1 P3 + V2.1 §A4 + V2.2 §A10 + V2.3 §A11 + 
       reuse_tag: false,
       return_contract: null,
       modifies_sutra: false,
+      custody_owner: null,
+      extension_ref: null,
     }
     expect(isValidWorkflow(bad)).toBe(false)
   })

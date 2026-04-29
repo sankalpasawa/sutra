@@ -87,6 +87,7 @@ describe('DecisionProvenance — D2 §2.1 schema', () => {
           version: '1',
           mutability: 'immutable',
           retention: '30d',
+          authoritative_status: 'authoritative',
         },
       ],
     })
@@ -95,7 +96,7 @@ describe('DecisionProvenance — D2 §2.1 schema', () => {
     expect(() =>
       createDecisionProvenance({
         ...base(),
-        evidence: [{ kind: '', schema_ref: '', locator: '', version: '', mutability: 'immutable', retention: '' }],
+        evidence: [{ kind: '', schema_ref: '', locator: '', version: '', mutability: 'immutable', retention: '', authoritative_status: 'authoritative' }],
       }),
     ).toThrow()
   })
@@ -126,7 +127,9 @@ describe('DecisionProvenance — D2 §2.1 schema', () => {
     expect(() => createDecisionProvenance({ ...base(), confidence: 1.01 })).toThrow()
   })
 
-  it('field 10/13: decision_kind accepts every D1 enum; rejects unknown', () => {
+  it('field 10/13: decision_kind accepts every D1 + D2 enum (incl AUDIT); rejects unknown', () => {
+    // AUDIT added in Group G' fix-up (2026-04-29) per codex master P2.3 —
+    // D2 §195 drift detection uses decision_kind=AUDIT.
     const kinds = [
       'DECIDE',
       'EXECUTE',
@@ -135,6 +138,7 @@ describe('DecisionProvenance — D2 §2.1 schema', () => {
       'REJECT',
       'DELEGATE',
       'TERMINATE',
+      'AUDIT',
     ] as const
     for (const k of kinds) {
       const v = createDecisionProvenance({ ...base(), decision_kind: k })
@@ -146,7 +150,9 @@ describe('DecisionProvenance — D2 §2.1 schema', () => {
     ).toThrow()
   })
 
-  it('field 11/13: scope accepts every D1 enum; rejects unknown', () => {
+  it('field 11/13: scope accepts every D1 enum (incl PLUGIN, MARKETPLACE); rejects unknown', () => {
+    // PLUGIN + MARKETPLACE added in Group G' fix-up (2026-04-29) per codex
+    // master P2.3 — D1 §52 lists S-PLUGIN and S-MARKETPLACE as valid scopes.
     const scopes = [
       'CONSTITUTIONAL',
       'DOMAIN',
@@ -155,6 +161,8 @@ describe('DecisionProvenance — D2 §2.1 schema', () => {
       'WORKFLOW',
       'EXECUTION',
       'HOOK',
+      'PLUGIN',
+      'MARKETPLACE',
     ] as const
     for (const s of scopes) {
       const v = createDecisionProvenance({ ...base(), scope: s })
@@ -180,8 +188,7 @@ describe('DecisionProvenance — D2 §2.1 schema', () => {
     const c = createDecisionProvenance({ ...base(), next_action_ref: 'W-abc' })
     expect(c.next_action_ref).toBe('W-abc')
     expect(() =>
-      // @ts-expect-error — invalid string for the union
-      createDecisionProvenance({ ...base(), next_action_ref: 'X-abc' }),
+      createDecisionProvenance({ ...base(), next_action_ref: 'X-abc' as unknown as null }),
     ).toThrow()
   })
 

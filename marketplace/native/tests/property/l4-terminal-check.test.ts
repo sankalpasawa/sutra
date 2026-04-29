@@ -206,6 +206,8 @@ describe('T4 — interface contracts', () => {
               reuse_tag: fc.constant(false),
               return_contract: fc.constant<null>(null),
               modifies_sutra: fc.constant(false),
+              custody_owner: fc.constant<null>(null),
+              extension_ref: fc.constant<null>(null),
             },
           }),
         fc.integer({ min: 1, max: 99 }),
@@ -234,6 +236,7 @@ describe('T5 — no abandoned children', () => {
       sibling_group: fc.constant<string | null>(null),
       fingerprint: fc.constant('fp'),
       failure_reason: fc.constant<string | null>(state === 'failed' ? 'r' : null),
+      agent_identity: fc.constant(null),
     }) as fc.Arbitrary<Execution>
 
   it('forall children all in {success, declared_gap, escalated}: T5 passes', () => {
@@ -258,6 +261,7 @@ describe('T5 — no abandoned children', () => {
                 sibling_group: null,
                 fingerprint: 'fp',
                 failure_reason: null,
+                agent_identity: null,
               }) as Execution,
           )
           return t5NoAbandonedChildren(selfId, children) === true
@@ -284,6 +288,7 @@ describe('T5 — no abandoned children', () => {
             sibling_group: null,
             fingerprint: 'fp',
             failure_reason: badState === 'failed' ? 'r' : null,
+            agent_identity: null,
           } as Execution
           return t5NoAbandonedChildren(selfId, [child]) === false
         },
@@ -311,6 +316,7 @@ describe('T5 — no abandoned children', () => {
             sibling_group: null,
             fingerprint: 'fp',
             failure_reason: badState === 'failed' ? 'r' : null,
+            agent_identity: null,
           } as Execution
           return t5NoAbandonedChildren(selfId, [child]) === true
         },
@@ -436,6 +442,8 @@ describe('runAll — aggregate semantics', () => {
       reuse_tag: false,
       return_contract: null,
       modifies_sutra: false,
+      custody_owner: null,
+      extension_ref: null,
     }
     const c = {
       id: 'C-x',

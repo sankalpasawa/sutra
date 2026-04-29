@@ -48,6 +48,7 @@ export function validFull(): DecisionProvenance {
         version: '1',
         mutability: 'immutable',
         retention: '180d',
+        authoritative_status: 'authoritative',
       },
     ],
     authority_id: 'A-sutra-os-rotation',

@@ -9,7 +9,7 @@
  * v1.0 enforcement (D4 §7.3): `extension_ref` MUST be null on every shipped
  * Workflow. The format check (when v1.x non-null) is the regex
  * `/^ext-[a-z0-9-]+$/`. The "must be null in v1.0" gate lives at terminal_check
- * as forbidden coupling F-N (M4.9 chunk 2).
+ * as forbidden coupling F-11 (Group G' fix-up 2026-04-29 per codex master).
  *
  * Spec source:
  * - holding/research/2026-04-29-native-d4-primitives-composition-spec.md §7
@@ -29,7 +29,7 @@ export const EXTENSION_REF_PATTERN = /^ext-[a-z0-9-]+$/
  *
  * - `null` (default) accepted in every version
  * - non-null string MUST match `EXTENSION_REF_PATTERN`; v1.0 terminal_check
- *   additionally requires null (forbidden coupling F-N)
+ *   additionally requires null (forbidden coupling F-11)
  */
 export const ExtensionRefSchema = z.union([
   z.string().regex(EXTENSION_REF_PATTERN),

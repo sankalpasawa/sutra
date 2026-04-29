@@ -54,6 +54,7 @@ const decisionKindArb = fc.constantFrom(
   'REJECT',
   'DELEGATE',
   'TERMINATE',
+  'AUDIT',
 ) as fc.Arbitrary<DecisionProvenance['decision_kind']>
 
 const scopeArb = fc.constantFrom(
@@ -64,6 +65,8 @@ const scopeArb = fc.constantFrom(
   'WORKFLOW',
   'EXECUTION',
   'HOOK',
+  'PLUGIN',
+  'MARKETPLACE',
 ) as fc.Arbitrary<DecisionProvenance['scope']>
 
 const dataRefArb = fc.record({
@@ -75,6 +78,9 @@ const dataRefArb = fc.record({
     'mutable' | 'immutable'
   >,
   retention: fc.string({ maxLength: 6 }),
+  authoritative_status: fc.constantFrom('authoritative', 'advisory') as fc.Arbitrary<
+    'authoritative' | 'advisory'
+  >,
 })
 
 const dpArb: fc.Arbitrary<DecisionProvenance> = fc.record({

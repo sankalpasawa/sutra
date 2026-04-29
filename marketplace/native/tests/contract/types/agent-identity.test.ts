@@ -37,7 +37,6 @@ describe('AgentIdentity discriminated union (M4.2)', () => {
 
   it('rejects empty id', () => {
     expect(() =>
-      // @ts-expect-error — intentionally invalid
       createAgentIdentity({ kind: 'human', id: '' }),
     ).toThrow()
   })

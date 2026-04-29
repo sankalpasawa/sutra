@@ -105,6 +105,7 @@ describe('Domain primitive (V2 spec §1 Primitive 1)', () => {
       intelligence: '',
       accountable: [],
       authority: '',
+      tenant_id: 'T-asawa-holding',
     }
     expect(isValidDomain(bad)).toBe(false)
   })
@@ -149,6 +150,7 @@ describe('Domain primitive (V2 spec §1 Primitive 1)', () => {
       intelligence: '',
       accountable: [],
       authority: '',
+      tenant_id: 'T-asawa-holding',
     }
     expect(isValidDomain(bad)).toBe(false)
   })
@@ -176,6 +178,7 @@ describe('Domain primitive (V2 spec §1 Primitive 1)', () => {
       intelligence: '',
       accountable: [],
       authority: '',
+      tenant_id: 'T-asawa-holding',
     }
     expect(isValidDomain(bad)).toBe(false)
   })
@@ -215,6 +218,7 @@ describe('Domain primitive (V2 spec §1 Primitive 1)', () => {
       intelligence: '',
       accountable: [],
       authority: '',
+      tenant_id: 'T-asawa-holding',
     }
     expect(isValidDomain(bad)).toBe(false)
   })

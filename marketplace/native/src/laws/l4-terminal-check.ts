@@ -1,6 +1,6 @@
 /**
  * L4 TERMINAL-CHECK predicates (T1-T6) — V2.4 §A12
- * AND 9 schema-level forbidden couplings (F-1..F-8 + F-10) — D4 §3 (M4.9)
+ * AND 10 schema-level forbidden couplings (F-1..F-8, F-10, F-11) — D4 §3 (M4.9 + Group G' fix-up)
  *
  * Closes V2 §9 OPEN ("6 terminal-check tests need formal definitions"):
  *
@@ -25,8 +25,9 @@
  *
  * M4.9 Group D (D4 §3) — first 4 schema-level forbidden couplings land here:
  * F-1..F-4. Group E (F-5..F-8) and Group F (F-10 + aggregator) follow in
- * subsequent commits. F-9 (D38 plugin shipment) is hook-level and DEFERRED to
- * M8 per codex P1.3 pre-dispatch.
+ * subsequent commits. Group G' adds F-11 (extension_ref null in v1.0).
+ * F-9 (D38 plugin shipment) is hook-level and DEFERRED to M8 per codex P1.3
+ * pre-dispatch.
  *
  * Source-of-truth:
  *  - holding/research/2026-04-28-v2-architecture-spec.md §19 §A12
@@ -306,10 +307,14 @@ export const l4TerminalCheck = {
 export type { Constraint }
 
 // =============================================================================
-// M4.9 — 9 schema-level forbidden couplings (F-1..F-8, F-10) per D4 §3
+// M4.9 + Group G' — 10 schema-level forbidden couplings
+// (F-1..F-8, F-10, F-11) per D4 §3 + D4 §7.3
 //
 // F-9 (D38 plugin shipment) is hook-level — DEFERRED to M8 per codex P1.3
-// pre-dispatch. F-1..F-8 + F-10 are pure-predicate, schema-level checks.
+// pre-dispatch. F-1..F-8, F-10, F-11 are pure-predicate, schema-level checks.
+//
+// F-11 added in Group G' fix-up (2026-04-29) per codex master review P1.2:
+// extension_ref MUST be null in v1.0 — gate enforced here at terminal_check.
 //
 // Each predicate returns `true` iff the input SATISFIES the forbidden coupling
 // (i.e., violates the rule). The aggregator inverts to {pass, violations[]}.
@@ -318,8 +323,12 @@ export type { Constraint }
 /**
  * Stable id for a schema-level forbidden coupling (D4 §3). F-9 omitted (M8).
  *
- * Full v1.0 set: F-1..F-8 + F-10 (9 total). F-9 (D38 plugin shipment) is
+ * Full v1.0 set: F-1..F-8, F-10, F-11 (10 total). F-9 (D38 plugin shipment) is
  * hook-level — DEFERRED to M8 per codex P1.3 pre-dispatch.
+ *
+ * F-11 (Group G' fix-up 2026-04-29): Workflow.extension_ref MUST be null in
+ * v1.0 per D4 §7.3. Codex master review caught the gap — schema accepts
+ * non-null `ext-*` shape, but v1.0 enforcement was missing at terminal_check.
  */
 export type ForbiddenCouplingId =
   | 'F-1'
@@ -331,6 +340,7 @@ export type ForbiddenCouplingId =
   | 'F-7'
   | 'F-8'
   | 'F-10'
+  | 'F-11'
 
 /**
  * F-1 — Tenant directly contains Workflow (skips Domain + Charter).
@@ -564,6 +574,29 @@ export function f10Predicate(): boolean {
   return !allRoutingGatingMachineCheckable()
 }
 
+/**
+ * F-11 — Workflow.extension_ref non-null in v1.0.
+ *
+ * D4 §7.3: `extension_ref MUST be null in v1.0`. The schema-level
+ * ExtensionRefSchema accepts both null AND well-formed `ext-<id>` strings (so
+ * v1.x callers compile); the v1.0-only "must be null" gate lives here at
+ * terminal_check.
+ *
+ * Source comments at `src/types/extension.ts:9-16` and
+ * `src/primitives/workflow.ts:282-285` say enforcement happens at
+ * terminal_check; codex M4 master review (2026-04-29) caught that the
+ * predicate was missing — added here in Group G' fix-up.
+ *
+ * @returns true iff F-11 VIOLATION (extension_ref is non-null)
+ */
+export function f11Predicate(input: {
+  workflow: Pick<Workflow, 'extension_ref'>
+}): boolean {
+  const { workflow } = input
+  if (typeof workflow !== 'object' || workflow === null) return false
+  return workflow.extension_ref !== null
+}
+
 // Re-export the inventory's public surface so downstream callers can pull
 // everything from the laws barrel via this module.
 export type { RoutingGatingPosition }
@@ -573,10 +606,10 @@ export { ROUTING_GATING_POSITIONS }
 // Aggregator — `terminalCheck(...)` returns
 // `{ pass: boolean, violations: ForbiddenCouplingId[] }`.
 //
-// Per task M4.9: this is the single entry point for all 9 schema-level
-// forbidden couplings. Each F-N predicate runs independently; the aggregator
-// collects every violation (NOT first-failure-stop, unlike runAll for T1-T6)
-// so callers see the full set in one report.
+// Per task M4.9 + Group G' (2026-04-29): this is the single entry point for all
+// 10 schema-level forbidden couplings. Each F-N predicate runs independently;
+// the aggregator collects every violation (NOT first-failure-stop, unlike
+// runAll for T1-T6) so callers see the full set in one report.
 // =============================================================================
 
 export interface TerminalCheckForbiddenCouplingsResult {
@@ -607,9 +640,9 @@ export interface TerminalCheckForbiddenCouplingsInput {
 }
 
 /**
- * Aggregate F-1..F-8 + F-10 forbidden-coupling check.
+ * Aggregate F-1..F-8, F-10, F-11 forbidden-coupling check.
  *
- * Returns `{ pass: true, violations: [] }` iff ALL 9 predicates clear; otherwise
+ * Returns `{ pass: true, violations: [] }` iff ALL 10 predicates clear; otherwise
  * `pass: false` with the full list of `ForbiddenCouplingId` values that fired.
  *
  * Caller integration (M5 Workflow Engine):
@@ -669,6 +702,9 @@ export function terminalCheck(
   }
   if (f10Predicate()) {
     violations.push('F-10')
+  }
+  if (f11Predicate({ workflow: input.workflow })) {
+    violations.push('F-11')
   }
 
   return {

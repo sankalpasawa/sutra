@@ -70,10 +70,12 @@ describe('EmitsEdge (Workflow/Execution/Hook → DecisionProvenance) — M4.8 T-
     expect(EmitsEdgeSchema.parse(e)).toEqual(e)
   })
 
-  it('round-trips a Hook (free-form id) → DP edge', () => {
+  it('round-trips a Hook (H-<id>) → DP edge', () => {
+    // P3.5 (Group G' fix-up 2026-04-29): EmitsEdge.source tightened to W/E/H
+    // patterns. Hook ids canonicalized to `H-<id>` (was free-form pre-fix).
     const e = {
       kind: 'emits',
-      source: 'hook:cascade-check',
+      source: 'H-cascade-check',
       target: 'dp-0123456789abcdef',
     } as const
     expect(EmitsEdgeSchema.parse(e)).toEqual(e)
@@ -84,6 +86,26 @@ describe('EmitsEdge (Workflow/Execution/Hook → DecisionProvenance) — M4.8 T-
       EmitsEdgeSchema.safeParse({ kind: 'emits', source: '', target: 'dp-deadbeef' })
         .success,
     ).toBe(false)
+  })
+
+  it('P3.5 (Group G\' 2026-04-29): rejects Tenant id in source slot', () => {
+    // Pre-fix: any non-empty string accepted; post-fix: T-* rejected.
+    const bad = { kind: 'emits', source: 'T-asawa', target: 'dp-deadbeef' }
+    expect(EmitsEdgeSchema.safeParse(bad).success).toBe(false)
+    expect(EdgeSchema.safeParse(bad).success).toBe(false)
+  })
+
+  it('P3.5 (Group G\' 2026-04-29): rejects Domain id in source slot', () => {
+    // Pre-fix: any non-empty string accepted; post-fix: D0 / D1.D2 rejected.
+    const badRoot = { kind: 'emits', source: 'D0', target: 'dp-deadbeef' }
+    const badSub = { kind: 'emits', source: 'D1.D2', target: 'dp-deadbeef' }
+    expect(EmitsEdgeSchema.safeParse(badRoot).success).toBe(false)
+    expect(EmitsEdgeSchema.safeParse(badSub).success).toBe(false)
+  })
+
+  it('P3.5 (Group G\' 2026-04-29): rejects garbage source ids (no W-/E-/H- prefix)', () => {
+    const bad = { kind: 'emits', source: 'garbage-id', target: 'dp-deadbeef' }
+    expect(EmitsEdgeSchema.safeParse(bad).success).toBe(false)
   })
 })
 

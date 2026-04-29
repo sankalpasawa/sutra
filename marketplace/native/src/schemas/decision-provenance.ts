@@ -20,7 +20,12 @@ export const DP_ID_PATTERN = /^dp-[a-f0-9]+$/
 /** Workflow id pattern (mirrors `src/primitives/workflow.ts` W_ID_PATTERN). */
 const W_ID_PATTERN = /^W-.+$/
 
-/** Decision kinds — D1 §2 Authority Map. */
+/**
+ * Decision kinds — D1 §2 Authority Map.
+ *
+ * AUDIT added in Group G' fix-up (2026-04-29) per codex master P2.3:
+ * D2 §195 uses `decision_kind=AUDIT` for drift detection / provenance audits.
+ */
 export const DecisionKindSchema = z.enum([
   'DECIDE',
   'EXECUTE',
@@ -29,10 +34,16 @@ export const DecisionKindSchema = z.enum([
   'REJECT',
   'DELEGATE',
   'TERMINATE',
+  'AUDIT',
 ])
 export type DecisionKind = z.infer<typeof DecisionKindSchema>
 
-/** Decision scopes — D1 §3 Authority Map. */
+/**
+ * Decision scopes — D1 §3 Authority Map.
+ *
+ * PLUGIN + MARKETPLACE added in Group G' fix-up (2026-04-29) per codex master
+ * P2.3: D1 §52 lists S-PLUGIN + S-MARKETPLACE as valid scopes.
+ */
 export const DecisionScopeSchema = z.enum([
   'CONSTITUTIONAL',
   'DOMAIN',
@@ -41,6 +52,8 @@ export const DecisionScopeSchema = z.enum([
   'WORKFLOW',
   'EXECUTION',
   'HOOK',
+  'PLUGIN',
+  'MARKETPLACE',
 ])
 export type DecisionScope = z.infer<typeof DecisionScopeSchema>
 

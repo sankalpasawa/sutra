@@ -1,15 +1,16 @@
 /**
- * Forbidden couplings (F-1..F-8 + F-10) — property tests.
+ * Forbidden couplings (F-1..F-8, F-10, F-11) — property tests.
  *
  * M4.9 per holding/plans/native-v1.0/TASK-QUEUE.md.
  * Group D shipped: F-1..F-4 (≥1000 fast-check cases each).
  * Group E shipped: F-5..F-8 (≥1000 fast-check cases each).
- * Group F (this commit): F-10 + terminalCheck aggregator.
+ * Group F: F-10 + terminalCheck aggregator.
+ * Group G' (2026-04-29): F-11 (extension_ref null in v1.0) per codex master.
  *
  * F-9 (D38 plugin shipment) is hook-level — DEFERRED to M8 per codex P1.3.
  *
  * Spec source:
- *  - holding/research/2026-04-29-native-d4-primitives-composition-spec.md §3
+ *  - holding/research/2026-04-29-native-d4-primitives-composition-spec.md §3 §7.3
  *  - holding/plans/native-v1.0/M4-schemas-edges.md M4.9
  */
 
@@ -25,6 +26,7 @@ import {
   f7Predicate,
   f8Predicate,
   f10Predicate,
+  f11Predicate,
   terminalCheck,
   type ReflexiveAuth,
 } from '../../src/laws/l4-terminal-check.js'
@@ -432,6 +434,41 @@ describe('F-10: English-only fields in routing/gating positions', () => {
 })
 
 // =============================================================================
+// Group G' — F-11 (extension_ref null in v1.0)
+// =============================================================================
+
+describe('F-11: Workflow.extension_ref non-null in v1.0 (D4 §7.3)', () => {
+  const validExtensionRefArb = fc
+    .string({ minLength: 1, maxLength: 24 })
+    .filter((s) => /^[a-z0-9-]+$/.test(s) && s.length > 0)
+    .map((s) => `ext-${s}`)
+
+  it('VIOLATION (true) for any non-null extension_ref', () => {
+    fc.assert(
+      fc.property(validExtensionRefArb, (ref) => {
+        const result = f11Predicate({
+          workflow: { extension_ref: ref },
+        })
+        return result === true
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+
+  it('SAFE (false) when extension_ref is null (v1.0 default)', () => {
+    fc.assert(
+      fc.property(fc.constant(null), (ref) => {
+        const result = f11Predicate({
+          workflow: { extension_ref: ref },
+        })
+        return result === false
+      }),
+      { numRuns: PROP_RUNS },
+    )
+  })
+})
+
+// =============================================================================
 // Aggregator — terminalCheck(...)
 // =============================================================================
 
@@ -562,6 +599,18 @@ describe('terminalCheck aggregator (F-1..F-8 + F-10)', () => {
         input.delegates_to_edges = []
         const result = terminalCheck(input)
         return result.pass === false && result.violations.includes('F-6')
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('catches F-11 when extension_ref is non-null (v1.0 violation)', () => {
+    fc.assert(
+      fc.property(fc.integer(), () => {
+        const input = makeMinimalSafeInput()
+        input.workflow = { ...input.workflow, extension_ref: 'ext-test' }
+        const result = terminalCheck(input)
+        return result.pass === false && result.violations.includes('F-11')
       }),
       { numRuns: 200 },
     )
