@@ -136,6 +136,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/subagent-dispatch-brief.sh",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -247,6 +257,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-correction.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-discipline-prompt.sh",
             "timeout": 3
           }
         ]

@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sutra-os.dev/schemas/sutra-defaults.json",
+  "$comment": "Canonical machine-readable policy surface. See SUTRA-DEFAULTS.md for human-readable equivalent. Per founder direction D40. v1.0.1: codex CHANGES-REQUIRED fold — kill_switches comprehensive, hooks now consume this file at runtime via jq, harness rewired.",
+  "version": "1.0.4",
+  "issued": "2026-04-30",
+  "source_direction": "D40",
+  "per_turn_blocks": {
+    "input_routing": {
+      "required": true,
+      "applies_to_turn_types": ["question", "task", "direction", "feedback", "new_concept"],
+      "fields": ["INPUT", "TYPE", "EXISTING HOME", "ROUTE", "FIT CHECK", "ACTION"],
+      "skill": "core:input-routing",
+      "soft_hint_hook": "per-turn-discipline-prompt.sh"
+    },
+    "depth_estimation": {
+      "required": true,
+      "fields_pre": ["TASK", "DEPTH", "EFFORT", "COST", "IMPACT"],
+      "fields_post": ["TRIAGE", "ESTIMATE", "ACTUAL"],
+      "skill": "core:depth-estimation",
+      "auto_captured_by": "estimation-collector.sh",
+      "log_path": "holding/ESTIMATION-LOG.jsonl"
+    },
+    "blueprint": {
+      "required_when": "tool_calls_planned",
+      "skip_when": "pure_question_turn",
+      "fields": ["Doing", "Steps", "Scale", "Stops if", "Switch"],
+      "skill": "core:blueprint",
+      "hook": "blueprint-check.sh"
+    },
+    "build_layer": {
+      "required_when": "path_in_D38_categories",
+      "fields": ["BUILD-LAYER", "ACTIVATION-SCOPE", "TARGET-PATH"],
+      "marker_file": ".claude/build-layer-registered",
+      "marker_schema_keys": [
+        "LAYER", "SCOPE", "TARGET_PATH",
+        "WHY_NOT_L0_KIND", "WHY_NOT_L0_REASON",
+        "PROMOTE_TO", "PROMOTE_BY", "OWNER", "ACCEPTANCE", "TS"
+      ],
+      "hook": "build-layer-check.sh"
+    },
+    "output_trace": {
+      "required": true,
+      "default_verbosity": "L1",
+      "skill": "core:output-trace",
+      "format": "> route: <skill> > <domain> > <nodes> > <terminal>"
+    }
+  },
+  "consult_policy": {
+    "depth_threshold": 3,
+    "applies_to_tools": ["Edit", "Write", "MultiEdit"],
+    "consult_skill": "core:codex-sutra",
+    "max_call_duration_minutes": 5,
+    "convergence_pattern": "claude_and_codex_agree_then_execute_end_to_end",
+    "kill_switch": {
+      "env": "CONSULT_BEFORE_EDIT_DISABLED=1",
+      "file": "~/.consult-before-edit-disabled",
+      "founder_override_phrase": "skip consult, just edit"
+    },
+    "memory_references": [
+      "Codex consult on everything",
+      "Converge and proceed",
+      "Chunk LLM work"
+    ]
+  },
+  "skill_explanation": {
+    "template_lines": ["SKILL", "WHAT", "WHY", "EXPECT", "ASKS"],
+    "required_before": "skill_invocation",
+    "enforcement": "convention_only",
+    "reason_no_enforcement": "Claude Code lacks PreSkillUse hook",
+    "skill": "core:skill-explain",
+    "kill_switch": {
+      "env": "SKILL_EXPLAIN_DISABLED=1",
+      "file": "~/.skill-explain-disabled",
+      "founder_override_phrase": "skip skill cards"
+    }
+  },
+  "subagent_dispatch": {
+    "briefing_blocks": [
+      "input_routing",
+      "depth_estimation",
+      "build_layer_if_D38",
+      "operationalization_6_section",
+      "codex_review_per_layer"
+    ],
+    "briefing_blocks_human": [
+      "Input Routing",
+      "Depth + Estimation",
+      "Build-Layer marker (if D38 path)",
+      "Operationalization 6-section ops block",
+      "Codex review per layer"
+    ],
+    "footer_lines": ["TRIAGE", "ESTIMATE", "ACTUAL", "OS_TRACE"],
+    "hook": "subagent-dispatch-brief.sh",
+    "applies_to_tools": ["Task"],
+    "kill_switch": {
+      "env": "SUBAGENT_BRIEF_DISABLED=1",
+      "file": "~/.subagent-brief-disabled"
+    }
+  },
+  "output_discipline": {
+    "tables_preferred_over_prose": true,
+    "numbers_preferred_over_adjectives": true,
+    "decisions_in_ascii_boxes": true,
+    "no_unicode_box_drawing": true,
+    "progress_bars_for_scores": true,
+    "skill": "core:readability-gate"
+  },
+  "build_layer_categories": {
+    "D38_PLUGIN_RUNTIME": {
+      "paths": ["sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin}/**"],
+      "rule": "LAYER must be L0",
+      "enforcement": "HARD",
+      "hook_exit_on_violation": 2
+    },
+    "D38_SHARED_RUNTIME": {
+      "paths": ["sutra/hooks/**"],
+      "rule": "LAYER must be L0",
+      "enforcement": "HARD"
+    },
+    "D38_HOLDING_IMPL": {
+      "paths": ["holding/{hooks,scripts,skills,commands,bin}/**"],
+      "rule": "L0 forbidden (lying); L1 needs full promotion fields; L2 needs WHY_NOT_L0_KIND=instance-only + WHY_NOT_L0_REASON",
+      "enforcement": "HARD"
+    },
+    "LEGACY_HARD": {
+      "paths": [
+        "holding/departments/**",
+        "holding/evolution/**",
+        "holding/FOUNDER-DIRECTIONS.md",
+        "sutra/os/charters/**"
+      ],
+      "rule": "marker present (any content) = pass",
+      "enforcement": "HARD"
+    },
+    "SOFT": {
+      "paths": ["everywhere else not whitelisted"],
+      "rule": "advisory only",
+      "enforcement": "SOFT"
+    },
+    "WHITELIST": {
+      "paths": [
+        ".claude/", ".enforcement/", ".analytics/",
+        "holding/checkpoints/", "holding/TODO.md",
+        "holding/hooks/hook-log.jsonl",
+        "holding/research/", "holding/state/",
+        "sutra/archive/", "*.lock", "memory files"
+      ],
+      "rule": "no advisory, no block"
+    }
+  },
+  "kill_switches": {
+    "$comment": "Escape-hatch surface for D40-introduced defaults (G1-G4 + blueprint). Pre-existing defaults (depth_estimation, output_trace, output_discipline, build_layer) keep their own kill paths in their respective hook scripts and are not re-listed here. Per codex CHANGES-REQUIRED fold v1.0.2 — scope claim made honest.",
+    "all_defaults": {
+      "env": "SUTRA_DEFAULTS_DISABLED=1",
+      "file": "~/.sutra-defaults-disabled",
+      "scope": "disables every D40 governance default in one shot"
+    },
+    "blueprint": {
+      "env": "BLUEPRINT_ACK=1 BLUEPRINT_ACK_REASON='<reason>'",
+      "file": "~/.blueprint-disabled",
+      "config": "BLUEPRINT_BLOCK: false in sutra/os/SUTRA-CONFIG.md",
+      "scope": "blueprint block enforcement only"
+    },
+    "per_turn_discipline_prompt": {
+      "env": "SUTRA_DEFAULTS_DISABLED=1",
+      "file": "~/.per-turn-discipline-disabled",
+      "scope": "G1 — UserPromptSubmit reminder hook"
+    },
+    "consult_before_edit": {
+      "env": "CONSULT_BEFORE_EDIT_DISABLED=1",
+      "file": "~/.consult-before-edit-disabled",
+      "founder_override_phrase": "skip consult, just edit",
+      "scope": "G2 — codex consult policy at Depth >= 3"
+    },
+    "skill_explanation_card": {
+      "env": "SKILL_EXPLAIN_DISABLED=1",
+      "file": "~/.skill-explain-disabled",
+      "founder_override_phrase": "skip skill cards",
+      "scope": "G3 — 5-line skill card (SKILL/WHAT/WHY/EXPECT/ASKS)"
+    },
+    "subagent_dispatch_brief": {
+      "env": "SUBAGENT_BRIEF_DISABLED=1",
+      "file": "~/.subagent-brief-disabled",
+      "scope": "G4 — PreToolUse Task briefing hook"
+    }
+  },
+  "applies_to_tiers": {
+    "T1_T2": "HARD",
+    "T3_T4": "RECOMMENDED",
+    "override_path": "~/.sutra/overrides.json",
+    "tier_definitions_source": "D34 in holding/FOUNDER-DIRECTIONS.md"
+  },
+  "codex_caveats": {
+    "hook_injects_prompt_is_fragile": true,
+    "failure_modes": [
+      "prompt_dilution",
+      "prompt_collision",
+      "token_bloat",
+      "cosmetic_emission",
+      "subagent_drift"
+    ],
+    "treatment": "soft guidance only; back with deterministic checks where possible",
+    "principle": "skills/docs EXPLAIN; hooks ENFORCE; one policy substrate consumed everywhere",
+    "review_findings_folded": [
+      "v1.0.1 — kill_switches surfaced comprehensively",
+      "v1.0.1 — hooks now consume this json at runtime via jq (was hardcoded reminders)",
+      "v1.0.1 — acceptance harness rewritten with multiline regex + absence checks + temporal ordering"
+    ]
+  },
+  "compliance_test_contract": {
+    "harness": "sutra/marketplace/plugin/tests/governance-parity-acceptance.sh",
+    "scenarios_required_pass_count": 5,
+    "verification_techniques": {
+      "multiline_match": "perl -0777 (grep -E does not match across newlines)",
+      "absence_assertion": "explicit ! grep for forbidden tool calls",
+      "temporal_ordering": "first match line of A < first match line of B"
+    },
+    "scenarios": [
+      {
+        "id": "Q1",
+        "type": "pure_question",
+        "input_example": "What does this repo do?",
+        "verification": "multiline regex: INPUT block + DEPTH block both present",
+        "expected_output_includes": ["INPUT", "TYPE", "DEPTH"]
+      },
+      {
+        "id": "Q2",
+        "type": "depth_3_plan_no_edit",
+        "verification": "consult mention present AND no Edit/Write/MultiEdit tool calls in log",
+        "expected_output_includes": ["consult"],
+        "expected_no_tool_calls": ["Edit", "Write", "MultiEdit"]
+      },
+      {
+        "id": "Q3",
+        "type": "depth_3_edit_request",
+        "verification": "temporal ordering — first consult mention BEFORE first Edit/Write line",
+        "expected_behavior": "consult_before_edit"
+      },
+      {
+        "id": "Q4",
+        "type": "skill_explain_request",
+        "verification": "multiline regex: all 5 lines (SKILL+WHAT+WHY+EXPECT+ASKS) in sequence",
+        "expected_output_includes": ["SKILL:", "WHAT:", "WHY:", "EXPECT:", "ASKS:"]
+      },
+      {
+        "id": "Q5",
+        "type": "task_subagent_dispatch",
+        "verification": "multiline regex: 5 numbered briefing items + 4-line footer",
+        "expected_dispatch_prompt_includes": [
+          "Sutra discipline",
+          "1. Input Routing",
+          "2. Depth",
+          "3. Build-Layer",
+          "4. Operationalization",
+          "5. Codex review",
+          "TRIAGE",
+          "ESTIMATE",
+          "ACTUAL",
+          "OS TRACE"
+        ]
+      }
+    ]
+  },
+  "references": {
+    "human_readable": "SUTRA-DEFAULTS.md",
+    "founder_direction": "D40 in holding/FOUNDER-DIRECTIONS.md",
+    "execution_plan": "holding/plans/governance-parity-execution-plan.md",
+    "codex_consult": ".enforcement/codex-reviews/2026-04-30-d40-governance-parity-consult.md",
+    "tier_taxonomy": "D34 in holding/FOUNDER-DIRECTIONS.md",
+    "build_layer_protocol": "PROTO-021 + D38"
+  }
+}

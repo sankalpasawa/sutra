@@ -47,6 +47,22 @@ policy: see "Upstream sync" section.
 
 ---
 
+## Default policy: consult-before-Edit at Depth >= 3 (D40 G2)
+
+**Per founder direction D40 (2026-04-30)** + memory `[Codex consult on everything]` + `[Converge and proceed]`:
+
+When the model is preparing to call **Edit / Write / MultiEdit** AND the current task's **Depth is >= 3** (thorough / rigorous / exhaustive per `core:depth-estimation`), invoke this skill in **consult mode** with a tight <500-word prompt **before** the first Edit/Write call. Surface convergence with codex; per `[Converge and proceed]` execute end-to-end if both agree.
+
+**Where the policy lives**: `sutra-defaults.json` `.consult_policy` is the **SINGLE canonical source**. This skill defers to that surface — fields are NOT duplicated here per codex CHANGES-REQUIRED fold (v1.0.1). Runtime read: `jq '.consult_policy' "$CLAUDE_PLUGIN_ROOT/sutra-defaults.json"`. For thresholds, override paths, or convergence pattern, query the json — do not hardcode.
+
+**Why this is convention, not enforcement**: per codex caveat in the D40 verdict, hook-injects-prompt is fragile (prompt dilution, cosmetic emission, prompt collision, token bloat, subagent drift). Consult-before-Edit relies on the model choosing to invoke this skill at the right moment. Skills/docs EXPLAIN; hooks ENFORCE — and Claude Code has no PreEditWithDepthThreshold hook. The policy is documented at the canonical surface so the model has a stable instruction; the deterministic backstop is `codex-directive-gate.sh` for explicit founder directives.
+
+**Override path**: see `sutra-defaults.json` `.kill_switches.consult_before_edit`. Founder explicit override phrase ("skip consult, just edit") is founder authority, not a bypass per `[Never bypass governance]`.
+
+**Chunking**: per `[Chunk LLM work]` keep each consult call < 5 minutes; per `sutra-defaults.json` `.consult_policy.max_call_duration_minutes`. Split larger questions into sequential consults rather than one long call.
+
+---
+
 ## Defense layers (boundary is NOT the only control)
 
 Three layers protect against codex reading skill files, in order of strength:
