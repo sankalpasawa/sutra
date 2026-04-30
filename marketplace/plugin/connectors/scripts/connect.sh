@@ -3,10 +3,20 @@
 # Direct-OAuth path (no Composio dependency). Per-toolkit flow handles the
 # credential shape that toolkit needs.
 #
-# Storage: ~/.sutra-connectors/oauth/<toolkit>.json (chmod 600)
-#   Slack: { "type": "slack-bot", "token": "xoxb-..." }
+# Storage (Wave 5 / M1.10):
+#   ~/.sutra-connectors/oauth/<toolkit>.age   (encrypted via age, primary)
+#   ~/.sutra-connectors/oauth/<toolkit>.json  (plaintext shadow, migration window)
+#   Both written via scripts/save-credential.mjs → CredentialLoader.save(),
+#   which uses sutra_safe_write semantics (atomic rename, EXCL+NOFOLLOW, chmod 600).
+#
+# Bundle shapes:
+#   Slack: { "type": "slack-bot", "token": "xoxb-...", "obtained_at": <unix-ms> }
 #   Gmail: { "type": "gmail-oauth", "clientId": "...", "clientSecret": "...",
-#             "accessToken": "...", "refreshToken": "...", "expiresAt": <unix-ms> }
+#             "accessToken": "...", "refreshToken": "...", "expiresAt": <unix-ms>,
+#             "obtained_at": <unix-ms> }
+#
+# Bootstrap: requires an age keypair at ~/.sutra-connectors/keys/. If missing,
+# script prints install instructions and bails before collecting any token.
 #
 # Dry-run mode (CI / tests): SUTRA_CONNECTORS_DRY_RUN=1 — no fs writes, no
 # network. Prints what it would do. The integration tests rely on this.
@@ -71,21 +81,87 @@ echo "  tier access:  $(grep -E '^  T[1-4]:' "$MANIFEST_PATH" | wc -l | tr -d ' 
 echo "────────────────────────────────────────────────────────────"
 
 CRED_DIR="${HOME}/.sutra-connectors/oauth"
+KEY_DIR="${HOME}/.sutra-connectors/keys"
+IDENTITY_FILE="${KEY_DIR}/sutra-identity.key"
+RECIPIENT_FILE="${KEY_DIR}/sutra-recipient.txt"
 CRED_FILE="${CRED_DIR}/${CONNECTOR}.json"
+CRED_AGE_FILE="${CRED_DIR}/${CONNECTOR}.age"
+SAVE_CREDENTIAL_JS="${SCRIPT_DIR}/save-credential.mjs"
 DRY_RUN="${SUTRA_CONNECTORS_DRY_RUN:-0}"
 
-if [ -f "$CRED_FILE" ] && [ "$DRY_RUN" != "1" ]; then
-  echo "$CONNECTOR is already connected (cred file: $CRED_FILE)"
-  echo "  To re-register, delete the file and re-run."
+# Already-connected fast exit (Wave 5: check both .age and .json so users who
+# completed a Wave 5 save aren't told they're unconnected).
+if { [ -f "$CRED_AGE_FILE" ] || [ -f "$CRED_FILE" ]; } && [ "$DRY_RUN" != "1" ]; then
+  if [ -f "$CRED_AGE_FILE" ]; then
+    echo "$CONNECTOR is already connected (encrypted: $CRED_AGE_FILE)"
+  else
+    echo "$CONNECTOR is already connected (cred file: $CRED_FILE)"
+  fi
+  echo "  To re-register, delete the file(s) and re-run."
   exit 0
 fi
 
 if [ "$DRY_RUN" = "1" ]; then
-  echo "[dry-run] would check $CRED_FILE for existing OAuth state"
+  echo "[dry-run] would check $CRED_AGE_FILE / $CRED_FILE for existing OAuth state"
   echo "[dry-run] would prompt founder for credential payload"
-  echo "[dry-run] would write JSON cred to $CRED_FILE (chmod 600)"
+  echo "[dry-run] would write encrypted cred via save-credential.mjs (.age + .json shadow, chmod 600)"
   exit 0
 fi
+
+# ── Wave 5 (M1.10) — age keypair bootstrap check ─────────────────────────────
+# CredentialLoader.save() encrypts to .age via SecretStoreAge, which requires
+# an age identity + recipient pair. If missing, print install instructions and
+# bail before we collect a token (so we don't lose the founder's input).
+if [ ! -f "$IDENTITY_FILE" ] || [ ! -f "$RECIPIENT_FILE" ]; then
+  cat <<EOF >&2
+First-run setup required: age keypair missing.
+
+Sutra Connectors stores credentials encrypted at rest under
+$KEY_DIR via the 'age' tool. Generate a keypair once:
+
+  mkdir -p "$KEY_DIR" && chmod 700 "$KEY_DIR"
+  age-keygen -o "$IDENTITY_FILE"
+  grep '^# public key:' "$IDENTITY_FILE" | sed 's/^# public key: //' > "$RECIPIENT_FILE"
+  chmod 600 "$IDENTITY_FILE"
+  chmod 644 "$RECIPIENT_FILE"
+
+If 'age' isn't installed:
+  brew install age          # macOS
+  apt install age           # Debian/Ubuntu
+
+Then re-run: sutra connect $CONNECTOR
+EOF
+  exit 1
+fi
+
+# Sanity check: save-credential.mjs bridge must be present.
+if [ ! -f "$SAVE_CREDENTIAL_JS" ]; then
+  echo "connect.sh: missing $SAVE_CREDENTIAL_JS — plugin install corrupt?" >&2
+  exit 1
+fi
+
+# Helper: write a bundle JSON via mktemp, hand off to save-credential.mjs,
+# always rm the temp on the way out.
+save_via_loader() {
+  local _bundle_json="$1"
+  local _tmp
+  _tmp="$(mktemp -t sutra-bundle.XXXXXX)" || {
+    echo "connect.sh: mktemp failed" >&2
+    return 1
+  }
+  printf '%s' "$_bundle_json" > "$_tmp" || {
+    rm -f "$_tmp"
+    echo "connect.sh: failed to write temp bundle" >&2
+    return 1
+  }
+  if ! node "$SAVE_CREDENTIAL_JS" "$CONNECTOR" "$_tmp"; then
+    rm -f "$_tmp"
+    echo "connect.sh: failed to save credential via loader" >&2
+    return 1
+  fi
+  rm -f "$_tmp"
+  return 0
+}
 
 # ── Per-connector credential collection ──────────────────────────────────────
 case "$CONNECTOR" in
@@ -126,15 +202,15 @@ SLACK_HELP
     umask 077
     mkdir -p "$CRED_DIR"
     chmod 700 "$CRED_DIR"
-    cat > "$CRED_FILE" <<JSON
-{
-  "type": "slack-bot",
-  "token": "$TOKEN",
-  "savedAt": $(date +%s)
-}
-JSON
-    chmod 600 "$CRED_FILE"
-    echo "✔ saved Slack credential to $CRED_FILE"
+    # Wave 5 (M1.10): write through CredentialLoader.save() via the bridge.
+    # Bundle shape matches CredentialLoader's SlackBotBundle (type+token+obtained_at).
+    NOW_MS=$(($(date +%s) * 1000))
+    BUNDLE_JSON=$(printf '{"type":"slack-bot","token":"%s","obtained_at":%s}' \
+      "$TOKEN" "$NOW_MS")
+    if ! save_via_loader "$BUNDLE_JSON"; then
+      exit 1
+    fi
+    echo "✔ saved Slack credential (encrypted: $CRED_AGE_FILE; shadow: $CRED_FILE)"
     echo "  Verify with: sutra connect-test slack"
     ;;
 
@@ -193,19 +269,15 @@ GMAIL_HELP
     umask 077
     mkdir -p "$CRED_DIR"
     chmod 700 "$CRED_DIR"
-    cat > "$CRED_FILE" <<JSON
-{
-  "type": "gmail-oauth",
-  "clientId": "$CLIENT_ID",
-  "clientSecret": "$CLIENT_SECRET",
-  "accessToken": "$ACCESS_TOKEN",
-  "refreshToken": "$REFRESH_TOKEN",
-  "expiresAt": $EXPIRES_AT,
-  "savedAt": $(date +%s)
-}
-JSON
-    chmod 600 "$CRED_FILE"
-    echo "✔ saved Gmail credential to $CRED_FILE"
+    # Wave 5 (M1.10): write through CredentialLoader.save() via the bridge.
+    # Bundle shape matches CredentialLoader's GmailOAuthBundle.
+    NOW_MS=$(($(date +%s) * 1000))
+    BUNDLE_JSON=$(printf '{"type":"gmail-oauth","clientId":"%s","clientSecret":"%s","accessToken":"%s","refreshToken":"%s","expiresAt":%s,"obtained_at":%s}' \
+      "$CLIENT_ID" "$CLIENT_SECRET" "$ACCESS_TOKEN" "$REFRESH_TOKEN" "$EXPIRES_AT" "$NOW_MS")
+    if ! save_via_loader "$BUNDLE_JSON"; then
+      exit 1
+    fi
+    echo "✔ saved Gmail credential (encrypted: $CRED_AGE_FILE; shadow: $CRED_FILE)"
     echo "  Verify with: sutra connect-test gmail"
     ;;
 
@@ -228,15 +300,20 @@ GENERIC_HELP
     umask 077
     mkdir -p "$CRED_DIR"
     chmod 700 "$CRED_DIR"
-    cat > "$CRED_FILE" <<JSON
-{
-  "type": "$CONNECTOR-token",
-  "token": "$TOKEN",
-  "savedAt": $(date +%s)
-}
-JSON
-    chmod 600 "$CRED_FILE"
-    echo "✔ saved $CONNECTOR credential to $CRED_FILE"
+    # Wave 5 (M1.10): write through CredentialLoader.save() via the bridge.
+    # Generic opaque-token shape — type tag matches the legacy "<connector>-token"
+    # convention. CredentialLoader currently types the discriminator as a
+    # closed union; this passes through `bundle.type` as a string, so the
+    # loader's runtime check (typeof bundle.type === 'string') accepts it.
+    # Note: no first-class TS narrowing yet for generic connectors — that's
+    # tracked separately for the generic-backend M2 polish.
+    NOW_MS=$(($(date +%s) * 1000))
+    BUNDLE_JSON=$(printf '{"type":"%s-token","token":"%s","obtained_at":%s}' \
+      "$CONNECTOR" "$TOKEN" "$NOW_MS")
+    if ! save_via_loader "$BUNDLE_JSON"; then
+      exit 1
+    fi
+    echo "✔ saved $CONNECTOR credential (encrypted: $CRED_AGE_FILE; shadow: $CRED_FILE)"
     echo "  Note: no backend exists yet for $CONNECTOR."
     ;;
 esac

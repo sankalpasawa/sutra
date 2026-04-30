@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 // Sutra Connectors — verify-connection.mjs
 //
-// Plain JS (Node 18+ ESM, no TS deps) one-shot smoke test for a saved
-// credential. Reads ~/.sutra-connectors/oauth/<toolkit>.json and makes
-// ONE auth-check call against the provider (Slack auth.test, Gmail
-// /profile). Exits 0 on success, 1 on failure.
+// One-shot smoke test for a saved credential. Reads via CredentialLoader.load()
+// — prefers ~/.sutra-connectors/oauth/<toolkit>.age (encrypted) and falls back
+// to <toolkit>.json (plaintext, migration window). Makes ONE auth-check call
+// against the provider (Slack auth.test, Gmail /profile). Exits 0 on success,
+// 1 on failure.
 //
 // Usage:
 //   node scripts/verify-connection.mjs <toolkit>
 //
 // Wired by `sutra connect-test <toolkit>` in bin/sutra.
 
-import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+
+import { CredentialLoader, SecretStoreAge } from "../lib/index.js";
 
 const toolkit = process.argv[2];
 if (!toolkit) {
@@ -21,24 +23,31 @@ if (!toolkit) {
   process.exit(2);
 }
 
-const credFile = join(homedir(), ".sutra-connectors", "oauth", `${toolkit}.json`);
-if (!existsSync(credFile)) {
-  console.error(`✘ no credential at ${credFile}`);
-  console.error(`  Run: sutra connect ${toolkit}`);
-  process.exit(1);
-}
+// Wave 5 (M1.10): route reads through CredentialLoader so we honor the
+// .age-first / .json-fallback policy and emit a MIGRATION_PENDING beacon
+// when the plaintext shadow is consumed. Discriminator (`cred.type`) values
+// continue to match the shipped contract — Wave 3's discriminated union
+// matched verify-connection.mjs's existing checks verbatim.
+const keyDir = join(homedir(), ".sutra-connectors", "keys");
+const oauthDir = join(homedir(), ".sutra-connectors", "oauth");
+const store = new SecretStoreAge({
+  identityPath: join(keyDir, "sutra-identity.key"),
+  recipientPath: join(keyDir, "sutra-recipient.txt"),
+});
+const loader = new CredentialLoader({ secretStore: store, keyDir: oauthDir });
 
 let cred;
 try {
-  cred = JSON.parse(readFileSync(credFile, "utf8"));
+  cred = await loader.load(toolkit);
 } catch (e) {
-  console.error(`✘ malformed credential at ${credFile}: ${e.message}`);
+  console.error(`✘ verify-connection: ${e?.message ?? e}`);
+  console.error(`  If no credential exists yet: sutra connect ${toolkit}`);
   process.exit(1);
 }
 
 console.log(`── Verifying ${toolkit} ──────────────────────────────────`);
 console.log(`  cred type:  ${cred.type}`);
-console.log(`  cred file:  ${credFile}`);
+console.log(`  cred dir:   ${oauthDir}/${toolkit}.{age,json}`);
 
 try {
   switch (toolkit) {
