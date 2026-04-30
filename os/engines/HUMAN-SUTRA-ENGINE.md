@@ -73,7 +73,7 @@ Surface invariant (charter Stage-3-only emission rule): only Stage 3 SURFACE may
 
 | Skill | Path | Status | Role |
 |-------|------|--------|------|
-| `core:human-sutra` | `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` | V1 (Task 2.4, in flight) | Per-turn classifier + tag inference + log-row emission + header tag rendering. |
+| `core:human-sutra` | `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` | V1 (shipped at commit 106a94a) | Per-turn classifier + tag inference + log-row emission + header tag rendering. |
 
 V1 ships with **one** skill inside this bound. V2+ candidates (require ADR per evolution discipline below):
 
@@ -136,9 +136,9 @@ Binding rules:
 
 - Charter (policy layer): `sutra/os/charters/HUMAN-SUTRA-LAYER.md`
 - ADR-001 (locked decisions): `sutra/os/decisions/ADR-001-h-sutra-9cell-grid.md`
-- Skill (raw rule, V1): `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` (Task 2.4, in flight)
-- Classifier script: `sutra/marketplace/plugin/scripts/h-sutra-classify.sh` (Task 2.3, in flight)
-- Founder direction: D42 in `holding/FOUNDER-DIRECTIONS.md` (Task 2.7)
+- Skill (raw rule, V1): `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` (shipped at commit 106a94a)
+- Classifier script: `sutra/marketplace/plugin/skills/human-sutra/scripts/classify.sh` (shipped at commit 7a32af4)
+- Founder direction: D42 in `holding/FOUNDER-DIRECTIONS.md` (shipped at commit 8305df8)
 - Plan: `holding/plans/h-sutra-layer-v1.0/PLAN.md`
 - Codex verdict (R2 PASS, DIRECTIVE-ID 1777572677): `.enforcement/codex-reviews/2026-05-01-h-sutra-v1.0-plan-consult.md`
 - Sibling engine (shape reference): `sutra/os/engines/BLUEPRINT-ENGINE.md`
