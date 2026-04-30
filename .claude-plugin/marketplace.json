@@ -30,7 +30,7 @@
     },
     {
       "name": "native",
-      "description": "Sutra Native — TypeScript-native Sutra Engine plugin (V2.4 architecture). Implements 4 primitives (Domain / Charter / Workflow / Execution) + 6 laws + Skill Engine R4 contract + Workflow Engine 5-stage runtime + 3 default-composition seed Workflows (governance-turn-emit, charter-obligation-eval, skill-chain-stub) + threat model with 3 runtime-tested attack classes (prompt-injection / hook-tampering / cross-tenant authority). Self-contained; coexists with Core. v1.0.1 folds codex M12 P2 (tsconfig composition surface + valid Domain id quick-start).",
+      "description": "Sutra Native — TypeScript-native Sutra Engine LIBRARY (V2.4 architecture). v1.0.1 ships the engine surface only: 4 primitives (Domain / Charter / Workflow / Execution) + 6 laws + Skill Engine R4 contract + Workflow Engine 5-stage runtime + 3 default-composition seed Workflows + threat model with 3 runtime-tested attack classes. NOT a hook-activated plugin at v1.0.1 — `bin/` shims + `skills/` directory are deferred to v1.x. Install via `/plugin install native@sutra` then import the library from your own code; see marketplace/native/composition/README.md for usage.",
       "version": "1.0.1",
       "author": {
         "name": "Sutra",

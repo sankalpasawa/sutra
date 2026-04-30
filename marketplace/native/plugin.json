@@ -1,14 +1,8 @@
 {
   "name": "native",
   "version": "1.0.1",
-  "description": "Sutra's V2.4-architecture-based deployable plugin",
+  "description": "Sutra Native — TypeScript-native Sutra Engine library. v1.0.1 ships the engine + Default Composition v1.0; hook/skill plugin activation surface deferred to v1.x (see CHANGELOG).",
   "author": "Sutra",
   "license": "Apache-2.0",
-  "marketplace": "sutra@asawa-marketplace",
-  "hooks": {
-    "PreToolUse": "bin/pretool-shim.sh",
-    "PostToolUse": "bin/posttool-shim.sh",
-    "Stop": "bin/stop-shim.sh"
-  },
-  "skills_dir": "skills/"
+  "marketplace": "sutra"
 }
