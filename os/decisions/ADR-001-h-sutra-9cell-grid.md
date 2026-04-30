@@ -4,10 +4,11 @@
 - **Date**: 2026-05-01
 - **Author**: CEO of Asawa session (Claude) + founder Sankalp
 - **References**:
-  - Charter: `sutra/os/charters/HUMAN-SUTRA-LAYER.md` (Task 2.1, written after this ADR)
-  - Engine of record: `sutra/os/engines/HUMAN-SUTRA-ENGINE.md` (Task 2.2, future)
-  - Skill: `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` (Task 2.4, future)
-  - D-direction: D42 in `holding/FOUNDER-DIRECTIONS.md` (Task 2.7, future)
+  - Charter: `sutra/os/charters/HUMAN-SUTRA-LAYER.md` (shipped at commit f65725a; written after this ADR)
+  - Engine of record: `sutra/os/engines/HUMAN-SUTRA-ENGINE.md` (shipped at commit 192bea4)
+  - Skill: `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` (shipped at commit 106a94a)
+  - Classifier: `sutra/marketplace/plugin/skills/human-sutra/scripts/classify.sh` (shipped at commit 7a32af4)
+  - D-direction: D42 in `holding/FOUNDER-DIRECTIONS.md` (shipped at commit 8305df8)
   - Codex verdict (R2 PASS): `.enforcement/codex-reviews/2026-05-01-h-sutra-v1.0-plan-consult.md`
   - Prior DESIGN consult brief: `holding/research/2026-04-30-h-sutra-layer-codex-consult.md`
   - Prior framing (superseded): `sutra/layer2-operating-system/c-human-agent-interface/HUMAN-AGENT-INTERFACE.md` (policy layer; this ADR adds the missing classification layer)
