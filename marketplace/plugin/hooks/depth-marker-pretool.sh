@@ -38,11 +38,14 @@ fi
 
 # v2.1 PEDAGOGY charter — level-aware explanation.
 # SUTRA_LEVEL: novice | apprentice | journeyman | master (env or ~/.sutra/level).
+# Default = master (terse one-line warn). Apprentice/novice are opt-in via
+# `sutra learn` flow or explicit ~/.sutra/level write — they emit verbose
+# stderr that's overwhelming to customers who haven't asked to be taught.
 SUTRA_LEVEL="${SUTRA_LEVEL:-}"
 if [ -z "$SUTRA_LEVEL" ] && [ -f "$HOME/.sutra/level" ]; then
   SUTRA_LEVEL=$(head -1 "$HOME/.sutra/level" 2>/dev/null | tr -d '[:space:]')
 fi
-SUTRA_LEVEL="${SUTRA_LEVEL:-apprentice}"
+SUTRA_LEVEL="${SUTRA_LEVEL:-master}"
 
 case "$SUTRA_LEVEL" in
   novice)

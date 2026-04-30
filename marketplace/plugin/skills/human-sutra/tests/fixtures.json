@@ -1,0 +1,17 @@
+{
+  "fixtures": [
+    {"id": 1, "input": "I want to build a human Sutra layer", "direction": "INBOUND", "verb": "DIRECT", "reversibility": "reversible", "risk": "medium"},
+    {"id": 2, "input": "What is a core restructure phase 0 to 6?", "direction": "INBOUND", "verb": "QUERY", "tense": "past", "reversibility": "reversible", "risk": "low"},
+    {"id": 3, "input": "I think that is done now. So is it done already?", "direction": "INBOUND", "verb": "ASSERT", "mixed_acts": ["QUERY"], "reversibility": "reversible", "risk": "low"},
+    {"id": 4, "input": "lets build it for core plugin, solve for native later", "direction": "INBOUND", "verb": "DIRECT", "timing": "now", "reversibility": "reversible", "risk": "medium"},
+    {"id": 5, "input": "what do we have right now in place", "direction": "INBOUND", "verb": "QUERY", "tense": "present", "reversibility": "reversible", "risk": "low"},
+    {"id": 6, "input": "Lets redesign the above block diagram", "direction": "INBOUND", "verb": "DIRECT", "reversibility": "reversible", "risk": "low"},
+    {"id": 7, "input": "stimulate scenarios", "direction": "INBOUND", "verb": "DIRECT", "reversibility": "reversible", "risk": "low"},
+    {"id": 8, "input": "didnt get it", "direction": "INBOUND", "verb": "ASSERT", "reversibility": "reversible", "risk": "low"},
+    {"id": 9, "input": "you missed the d42 row in TODO.md, fix it", "direction": "INBOUND", "verb": "DIRECT", "mixed_acts": ["ASSERT"], "reversibility": "reversible", "risk": "low"},
+    {"id": 10, "input": "push the native v1.0.1 tag to origin/main", "direction": "INBOUND", "verb": "DIRECT", "reversibility": "irreversible", "risk": "high"},
+    {"id": 11, "input": "what shipped overnight?", "direction": "INBOUND", "verb": "QUERY", "tense": "past", "reversibility": "reversible", "risk": "low"},
+    {"id": 12, "input": "remind me to clean up the flag in 2 weeks", "direction": "INBOUND", "verb": "DIRECT", "timing": "later", "reversibility": "reversible", "risk": "low"},
+    {"id": 13, "input": "do that thing", "direction": "INBOUND", "verb": "STAGE-1-FAIL", "reason": "ambiguous-referent"}
+  ]
+}

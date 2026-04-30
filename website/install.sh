@@ -363,7 +363,7 @@ EOF
 }
 
 step_write_permissions() {
-  step "Step 4/5: permissions allowlist"
+  step "Step 5/5: permissions allowlist"
   mkdir -p "${CLAUDE_SETTINGS_DIR}"
 
   if command -v jq >/dev/null 2>&1; then
@@ -386,10 +386,15 @@ step_write_permissions() {
 }
 
 # -----------------------------------------------------------------------------
-# Step 5 — sentinel for first-session auto-activation
+# Step 4 — sentinel for first-session auto-activation
+#
+# Runs BEFORE step_write_permissions on purpose: if permissions writing
+# hard-fails (no jq + no python3), the sentinel still exists, so the user's
+# next Claude Code session auto-fires /core:start and they get a usable
+# experience even from a partial install.
 # -----------------------------------------------------------------------------
 step_write_sentinel() {
-  step "Step 5/5: first-run sentinel"
+  step "Step 4/5: first-run sentinel"
   mkdir -p "${SUTRA_HOME}"
   date +%s > "${SUTRA_INSTALL_SENTINEL}"
   log "Sentinel written: ${SUTRA_INSTALL_SENTINEL}"
@@ -431,8 +436,14 @@ main() {
   step_install_claude
   step_marketplace_add
   step_plugin_install
-  step_write_permissions
+  # Sentinel BEFORE permissions: if step_write_permissions hard-fails (e.g.
+  # neither jq nor python3 available), the sentinel is already written so the
+  # next Claude Code session still auto-activates /core:start. Without this,
+  # a partial install leaves the user with a fully-functional plugin but no
+  # auto-activation, and they get the full pre-activation governance noise on
+  # every turn forever (vinit#8 evidence + asawa@Rameshs report 2026-05-01).
   step_write_sentinel
+  step_write_permissions
   print_banner
 }
 

@@ -30,6 +30,16 @@ set -u
 [ -n "${SUTRA_DEFAULTS_DISABLED:-}" ] && exit 0
 
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
+
+# Fresh-install gate: stay silent until the user has run /core:start (which
+# writes .claude/sutra-project.json with their profile). Before that, the
+# reminder is non-actionable noise — they don't yet know what Input Routing /
+# Depth blocks ARE. After /core:start, the doctrine doc is on their disk and
+# the reminder becomes a useful nudge. Kill-switch: SUTRA_DISCIPLINE_PRE_ACTIVATION=1.
+if [ -z "${SUTRA_DISCIPLINE_PRE_ACTIVATION:-}" ] && [ ! -f "$REPO_ROOT/.claude/sutra-project.json" ]; then
+  exit 0
+fi
+
 DEFAULTS_DIR="${CLAUDE_PLUGIN_ROOT:-$REPO_ROOT/sutra/marketplace/plugin}"
 DEFAULTS_JSON="$DEFAULTS_DIR/sutra-defaults.json"
 
