@@ -288,6 +288,66 @@ describe('ConnectorRouter Mode A / Mode B contract (Wave 4)', () => {
     expect(receivedOpts!.signal).toBe(controller.signal);
   });
 
+  it('Mode B AbortSignal short-circuits cockatiel retry loop (M2.8 / Wave 4 residual)', async () => {
+    // Codex Wave 4 P1 advisory residual: lib/index.ts wraps backend.execute in
+    // a cockatiel retry policy with maxAttempts:2 (= 3 total attempts) and
+    // initialDelay:100ms exponential backoff. ctx.signal is passed to
+    // policy.execute(fn, signal) as the parent abort signal so an aborted
+    // call SHORT-CIRCUITS the retry loop instead of exhausting attempts.
+    // Wave 4 fold (commit 83364ac) wired this; this test locks the contract.
+    //
+    // Strategy: backend always throws a retryable error and counts invocations.
+    // Schedule signal.abort() at ~50ms — inside the first backoff delay —
+    // and assert backend.invocations < 3 (full cap). If cockatiel honored
+    // the signal, we should see exactly 1 invocation (no retry happened).
+    let invocations = 0;
+    const composio = makeComposioClient({
+      isAuthenticated: true,
+      executeToolImpl: async () => {
+        invocations += 1;
+        // Throw a generic retryable error — handleAll matches everything.
+        throw new Error('transient backend failure');
+      },
+    });
+    const fleetSource = makeFleetSource(makePolicy());
+    const cache = await buildCache(fleetSource.source);
+    const audit = new AuditSink({ path: auditPath, redactPaths: manifest.redactPaths });
+    const adapter = new ComposioAdapter(composio.client);
+    const router = new ConnectorRouter({
+      mode: 'native-compat',
+      manifests: [manifest],
+      fleetPolicy: cache,
+      audit,
+      adapter,
+      credentialLoader: makeStubCredentialLoader(),
+    });
+
+    const controller = new AbortController();
+    // Abort during the first retry backoff (initialDelay=100ms in lib/index.ts).
+    // 50ms places the abort firmly inside that window.
+    const abortTimer = setTimeout(() => controller.abort(), 50);
+
+    const result = await router.call(makeCtx({
+      tier: 'T2',
+      clientId: 'sutra-dayflow-001',
+      capability: 'slack:read-channel:#dayflow-eng',
+      idempotency_key: 'idem-key-abort-001',
+      signal: controller.signal,
+    }));
+    clearTimeout(abortTimer);
+    await audit.close();
+
+    // Router catches the policy.execute() rejection and returns error outcome.
+    expect(result.outcome).toBe('error');
+
+    // The proof: backend was called fewer than the full retry budget (3).
+    // With abort short-circuit, we expect exactly 1 invocation (the initial
+    // attempt; the abort fires during backoff before any retry runs).
+    // Strict bound `< 3` is what the advisory called for; the typical
+    // observed value is 1.
+    expect(invocations).toBeLessThan(3);
+  });
+
   it('Router rejects payload > 1MB with payload-too-large error outcome (M1.5)', async () => {
     // Build a backend response just over the 1 MB cap.
     const oversizePayload = 'x'.repeat(1_500_000);
