@@ -1,5 +1,71 @@
 # Changelog
 
+## v2.9.0 — 2026-04-30
+
+**D40 governance parity — every Sutra plugin client inherits Asawa's per-turn discipline by default.**
+
+Founder direction D40 (2026-04-30): the rich governance Asawa uses internally (Input Routing, Depth + Estimation, BLUEPRINT, codex consult before Edit/Write at Depth ≥ 3, 4-line skill cards, subagent dispatch contracts) was previously locked behind ~30 personal memories that don't ship with the plugin. Clients got skills + hooks but missed the convention layer that makes the discipline actually fire. v2.9.0 closes that gap.
+
+### What's NEW for clients
+
+| Surface | What you get |
+|---|---|
+| **Single canonical policy surface** | New `sutra-defaults.json` — machine-readable policy schema consumed by hooks at runtime via `jq`. `SUTRA-DEFAULTS.md` is the human-readable equivalent. ALL governance defaults documented in one place. |
+| **Per-turn discipline reminder** | New `UserPromptSubmit` hook (`per-turn-discipline-prompt.sh`) reminds the model on every turn — including pure-question turns — to emit Input Routing + Depth blocks. Reads policy from json (no hardcoded reminder text). |
+| **Codex-before-Edit policy** | `core:codex-sutra` skill now declares default policy: consult before Edit/Write/MultiEdit at Depth ≥ 3. Per `[Codex consult on everything]` discipline. |
+| **4-line skill cards** | New `core:skill-explain` skill — emits 4-line WHAT/WHY/EXPECT/ASKS card before any Skill invocation so non-technical users can predict the experience. |
+| **Subagent dispatch contract** | New `PreToolUse` hook on `Task` tool (`subagent-dispatch-brief.sh`) reminds Claude to brief subagent prompts with the 5-block §Sutra discipline + 4-line footer (TRIAGE/ESTIMATE/ACTUAL/OS TRACE). |
+| **/core:workflow** | New slash command + skill — pedagogical wrapper that walks Claude through the full canonical Sutra discipline (8-step sequence) on a single task. Use for onboarding, pedagogy, reset, or audit. |
+| **/core:start polish** | Honest inventory: 8 skills + 10 commands + 51 hooks across 6 events. Quick-start example included. References SUTRA-DEFAULTS.md for the full convention pack. |
+| **5-turn acceptance harness** | New `tests/governance-parity-acceptance.sh` — `--verify <log>` checks a fresh-client session for the 5 governance behaviors using multi-line regex (perl -0777), absence assertions, and temporal ordering. Codex-reviewed 3 rounds. |
+
+### How to update
+
+```
+/core:update
+```
+
+Or manually:
+```
+claude plugin marketplace update sutra && claude plugin update core@sutra
+```
+
+### Try the new surface
+
+After update:
+1. `/core:start` — see the polished onboarding with full inventory
+2. `/core:workflow plan a small refactor` — see the full 8-step Sutra discipline applied
+3. Run any task — observe the per-turn discipline reminder + the codex-consult policy at Depth ≥ 3
+
+### Caveats (codex-flagged, preserved)
+
+Hook injections of prompt text are **soft guidance only** — fragility class includes prompt dilution, prompt collision, token bloat, cosmetic emission, and subagent drift. Skills/docs EXPLAIN; hooks ENFORCE. Where a deterministic check exists, it backs the soft hint. Where it doesn't (e.g., 4-line skill cards — Claude Code lacks PreSkillUse), the convention relies on the model emitting it.
+
+### Codex review trail
+
+DIRECTIVE 1777505000 — D40 implementation review:
+- Round 1: CHANGES-REQUIRED → v1.0.1 fold (G6 real json consumption + G7 multiline regex + kill_switches comprehensive)
+- Round 2: CHANGES-REQUIRED → v1.0.2/1.0.3 fold (Q3 MultiEdit + Q1 regex tightening + Q5 contract alignment + version drift)
+- Round 3: ADVISORY → gate cleared
+
+DIRECTIVE 1777510000 — start polish + workflow skill:
+- Consult: ADVISORY → renamed core:do→core:workflow + sutra-learn classification fix
+- Review #1: CHANGES-REQUIRED → count drift fold (Skills 7→8, Commands 9→10, workflow.md created)
+- Review #2: PASS → counts match filesystem
+
+### Files shipped
+
+8 new + 3 modified across plugin/:
+- NEW: `SUTRA-DEFAULTS.md`, `sutra-defaults.json`, `hooks/per-turn-discipline-prompt.sh`, `hooks/subagent-dispatch-brief.sh`, `skills/skill-explain/SKILL.md`, `skills/workflow/SKILL.md`, `commands/workflow.md`, `tests/governance-parity-acceptance.sh`
+- MODIFIED: `hooks/hooks.json` (registered 2 new hooks), `skills/codex-sutra/SKILL.md` (consult-before-Edit policy), `commands/start.md` (rewrite — honest inventory)
+
+### Deferred to v2.x.y
+
+- **G6 finalization** — rewire ALL existing Core hooks to consume `sutra-defaults.json` (currently only the 2 NEW hooks consume it; ~50 existing hooks still hardcode policies)
+- **Q5 log segmentation** by tool_use boundary (full hook-vs-model provenance proof in the acceptance harness)
+
+---
+
 ## v2.8.11 — 2026-04-28
 
 **Vinit#38 — `/core:start` SIGKILLed by macOS sandbox/EDR on stdin-fed `python3` heredocs (P0 — bricks new-client onboarding).**
