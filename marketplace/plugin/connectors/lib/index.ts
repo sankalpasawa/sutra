@@ -358,10 +358,11 @@ export class ConnectorRouter {
         // this is purely a type-narrowing courtesy.
         const adapterOpts: { signal?: AbortSignal } = {};
         if (ctx.signal !== undefined) adapterOpts.signal = ctx.signal;
-        // Pass ctx.signal as cockatiel's parent abort signal so abort
-        // short-circuits the retry loop (NOT just the in-flight fetch).
-        const executeContext =
-          ctx.signal !== undefined ? { signal: ctx.signal } : undefined;
+        // Pass ctx.signal directly as cockatiel's parent abort signal.
+        // Cockatiel 3.x: execute(fn, signal?: AbortSignal) — the second arg
+        // is an AbortSignal value (NOT a context object). Wrapping in
+        // { signal } would set signal.aborted=undefined and silently disable
+        // abort short-circuit. Reads via signal.aborted in RetryPolicy.js.
         rawResult = await policy.execute(
           () =>
             this.#adapter.call(
@@ -370,7 +371,7 @@ export class ConnectorRouter {
               ctx.args as Record<string, unknown>,
               adapterOpts,
             ),
-          executeContext as never,
+          ctx.signal,
         );
       } else {
         rawResult = await this.#adapter.call(
