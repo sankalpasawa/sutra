@@ -53,6 +53,9 @@ import type { AgentIdentity } from '../types/agent-identity.js'
  *   - FAILURE_POLICY_ROLLBACK / FAILURE_POLICY_ESCALATE / FAILURE_POLICY_PAUSE
  *     / FAILURE_POLICY_ABORT / FAILURE_POLICY_CONTINUE  — failure-policy.ts (T-109)
  *
+ * Group AA kinds (this milestone — governance overhead measurement, PS-14):
+ *   - GOVERNANCE_OVERHEAD_ALERT  — governance-overhead.ts (T-112)
+ *
  * Group BB kinds (next milestone, NOT shipped here):
  *   - HOST_LLM_INVOCATION
  *
@@ -78,6 +81,8 @@ export type OTelEventKind =
   | 'FAILURE_POLICY_PAUSE'
   | 'FAILURE_POLICY_ABORT'
   | 'FAILURE_POLICY_CONTINUE'
+  // Group AA kind — governance overhead alert (PS-14, this milestone)
+  | 'GOVERNANCE_OVERHEAD_ALERT'
   // Group BB kinds (forward-declared; emission lands at M8 Group BB)
   | 'HOST_LLM_INVOCATION'
   // D2 §2.1 strict-set (cross-reference)

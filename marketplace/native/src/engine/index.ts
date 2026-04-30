@@ -133,6 +133,21 @@ export {
   type OTelExporter,
 } from './otel-emitter.js'
 
+// M8 Group AA — Governance overhead measurement + 15% threshold alert (PS-14
+// closure). The runtime accumulates per-turn governance tokens across six
+// disciplines (input_routing, depth_estimation, blueprint, build_layer,
+// codex_review, hook_fire) and emits a non-blocking OTel
+// 'GOVERNANCE_OVERHEAD_ALERT' event when overhead exceeds the configured
+// threshold (default 0.15, env override SUTRA_GOVERNANCE_OVERHEAD_THRESHOLD).
+// HARD-STOP at 25% (D5 §3 HS-2) is wired separately at M9 invariants.
+export {
+  GovernanceOverhead,
+  TurnNotStartedError,
+  type GovernanceCategory,
+  type GovernanceOverheadOptions,
+  type OverheadReport,
+} from './governance-overhead.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public
