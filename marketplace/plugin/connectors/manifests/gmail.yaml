@@ -1,0 +1,105 @@
+schemaVersion: '1'
+name: gmail
+description: >-
+  Gmail connector via Composio. Read and send messages with Sutra-tier scoping.
+  T1 Asawa = full read + send. T2 owned cos = read own threads + send with
+  approval. T3 client projects = read own labels only. T4 fleet = no access by
+  default (license-bound; opt-in per-tenant).
+composioToolkit: gmail
+
+capabilities:
+  # READ — list messages, fetch thread, fetch single message
+  - id: gmail:list-messages:*
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: gmail:get-message:*
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: gmail:get-thread:*
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  # READ — by label (T2/T3 own labels: 'asawa-*', 'dayflow-*', etc.)
+  - id: gmail:list-by-label:asawa-*
+    action: read
+    resourcePattern: 'asawa-*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: gmail:list-by-label:dayflow-*
+    action: read
+    resourcePattern: 'dayflow-*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  # WRITE — send message (always approval-required at D5)
+  - id: gmail:send-message:*
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
+  # ADMIN — modify labels (T1 only)
+  - id: gmail:modify-labels:*
+    action: admin
+    resourcePattern: '*'
+    minDepth: 5
+    approvalRequired: true
+    costEstimate: free
+
+tierAccess:
+  T1:  # Asawa — full surface
+    - 'gmail:list-messages:*'
+    - 'gmail:get-message:*'
+    - 'gmail:get-thread:*'
+    - 'gmail:list-by-label:*'
+    - 'gmail:send-message:*'
+    - 'gmail:modify-labels:*'
+
+  T2:  # Owned cos (DayFlow, Billu, Paisa, etc.) — own labels + send with approval
+    - 'gmail:list-messages:*'
+    - 'gmail:get-message:*'
+    - 'gmail:get-thread:*'
+    - 'gmail:list-by-label:dayflow-*'
+    - 'gmail:send-message:*'
+
+  T3:  # Project clients (Testlify, Dharmik) — read only, scoped to their label namespace
+    - 'gmail:list-by-label:dayflow-*'  # placeholder; replace per-client at install time
+
+  T4:  # External fleet — no Gmail access by default; opt-in per-tenant via fleet policy
+    []
+
+auditFields:
+  - threadId
+  - messageId
+  - labelIds
+  - to
+  - subject
+
+redactPaths:
+  # Strip OAuth + sensitive content. Paths reference the actual Composio
+  # response shape (no `response.` wrapper — see codex iter-11 P1#2 fix).
+  - 'access_token'
+  - 'refresh_token'
+  - 'tokens'
+  - 'authorizationHeader'
+  - 'user.emailAddress'
+  - 'profile.emailAddress'
+  - 'messages[*].body.data'  # raw email body — redact unless explicitly requested
+  - 'messages[*].payload.headers'  # contains Bcc, Cc, return-path
+  - 'thread.messages[*].body.data'
+  - 'thread.messages[*].payload.headers'
