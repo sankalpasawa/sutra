@@ -28,7 +28,7 @@
  *  - .enforcement/codex-reviews/2026-04-29-m5-plan-pre-dispatch.md (P1.1 partial)
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 
 // ---- M2 primitives ----------------------------------------------------------
 import { createDomain, type Domain } from '../../src/primitives/domain.js'
@@ -72,7 +72,21 @@ import {
   makePolicyDispatcher,
 } from '../../src/engine/index.js'
 
-import type { Constraint, WorkflowStep } from '../../src/types/index.js'
+// ---- M8 engine (OTel + governance overhead + host-LLM) ---------------------
+import {
+  InMemoryOTelExporter,
+  OTelEmitter,
+} from '../../src/engine/otel-emitter.js'
+import { GovernanceOverhead } from '../../src/engine/governance-overhead.js'
+import {
+  __setHostAvailabilityForTest,
+  __resetHostAvailabilityForTest,
+  __setExecFileSyncStubForTest,
+  __resetExecFileSyncStubForTest,
+} from '../../src/engine/host-llm-activity.js'
+import { __resetWorkflowRunSeqForTest } from '../../src/engine/step-graph-executor.js'
+
+import type { Constraint, DataRef, WorkflowStep } from '../../src/types/index.js'
 
 // =============================================================================
 // Fixtures — reusable across sub-tests so the cross-milestone wiring is
@@ -548,5 +562,217 @@ describe('M5.5 rolling harness — M7 policy surfaces (Charter compile + bundle 
     expect(result.partial).toBe(false)
     expect(result.completed_step_ids).toEqual([1])
     expect(result.step_outputs[0]?.outputs).toEqual(['m55-m7-step-1'])
+  })
+})
+
+// =============================================================================
+// Test 6 — M8 surface (Group CC T-126): OTel + governance overhead + host-LLM
+// composed end-to-end across M2..M8 in ONE Workflow run. Locks the cross-
+// milestone interface contract for the M8 ship gate. Wall budget <3s.
+// =============================================================================
+
+describe('M5.5 rolling harness — M8 surfaces (OTel + governance overhead + host-LLM)', () => {
+  // Reset module-level state so the trace_id derivation is deterministic
+  // across back-to-back runs.
+  beforeEach(() => {
+    __resetWorkflowRunSeqForTest()
+  })
+
+  afterEach(() => {
+    __resetHostAvailabilityForTest()
+    __resetExecFileSyncStubForTest()
+  })
+
+  it('composes M2 primitives + M3 L4 terminalCheck + M4 schemas + M5 engine + M6 skill resolution + M7 policy + M8 host-LLM end-to-end', async () => {
+    // Stub the host CLI so no real subprocess spawns. Both hosts available
+    // with stable versions (deterministic invocation_id + provenance hashes).
+    const availabilityMap = new Map<
+      'claude' | 'codex',
+      { available: boolean; version: string | null }
+    >()
+    availabilityMap.set('claude', { available: true, version: '2.1.123' })
+    availabilityMap.set('codex', { available: true, version: 'codex-cli 0.118.0' })
+    __setHostAvailabilityForTest(availabilityMap)
+    __setExecFileSyncStubForTest(() => 'host-llm-response')
+
+    // Single OTel exporter + emitter shared across the run so we can assert
+    // trace correlation + per-surface emit coverage in one place.
+    const exporter = new InMemoryOTelExporter()
+    const emitter = new OTelEmitter(exporter)
+
+    // Governance overhead: under threshold (no alert) — proves the M8 GA
+    // surface composes alongside without contaminating workflow execution.
+    const overhead = new GovernanceOverhead({ otelEmitter: emitter })
+    overhead.startTurn('m8-harness', 1000)
+    overhead.track('m8-harness', 'codex_review', 80) // 8% — safely under 15%
+
+    // M7 policy gate: charter that always allows. Dispatcher emits OTel
+    // POLICY_ALLOW with the run's trace_id.
+    const charter = createCharter({
+      id: 'C-m8-harness',
+      purpose: 'M8 cross-milestone harness charter.',
+      scope_in: '',
+      scope_out: '',
+      obligations: [],
+      invariants: [],
+      success_metrics: [],
+      authority: 'M8-harness',
+      termination: '',
+      constraints: [
+        {
+          name: 'always_allow',
+          predicate: '1 == 1',
+          durability: 'episodic',
+          owner_scope: 'charter',
+        },
+      ],
+      acl: [],
+    })
+    const policy = compileCharter(charter)
+    const bundle = new OPABundleService()
+    bundle.register(policy)
+    const dispatcher = makePolicyDispatcher(bundle, emitter)
+
+    // M6 skill engine: register one leaf Skill so step 1 (skill_ref) resolves.
+    const engine = new SkillEngine()
+    engine.register(
+      createWorkflow({
+        id: 'W-m8-leaf',
+        preconditions: '',
+        step_graph: [
+          { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+        ],
+        inputs: [],
+        outputs: [],
+        state: [],
+        postconditions: '',
+        failure_policy: 'abort',
+        stringency: 'task',
+        interfaces_with: [],
+        reuse_tag: true,
+        return_contract: JSON.stringify(true),
+      }),
+    )
+
+    // M8 host-LLM step: prompt flows via inputs[0].locator (DataRef).
+    const promptDataRef: DataRef = {
+      kind: 'host-llm-prompt',
+      schema_ref: '',
+      locator: 'm8-harness-prompt',
+      version: '1',
+      mutability: 'immutable',
+      retention: 'session',
+      authoritative_status: 'authoritative',
+    }
+
+    // Composed Workflow — one step per surface in execution order:
+    //   step 1 = M6 skill_ref       → SKILL_RESOLVED + DataRef envelope
+    //   step 2 = M7 policy_check    → POLICY_ALLOW
+    //   step 3 = M8 invoke_host_llm → HOST_LLM_INVOCATION + DataRef envelope
+    const composed = createWorkflow({
+      id: 'W-m8-harness',
+      preconditions: '',
+      step_graph: [
+        { step_id: 1, skill_ref: 'W-m8-leaf', inputs: [], outputs: [], on_failure: 'abort' },
+        {
+          step_id: 2,
+          action: 'wait',
+          inputs: [],
+          outputs: [],
+          on_failure: 'abort',
+          policy_check: true,
+        },
+        {
+          step_id: 3,
+          action: 'invoke_host_llm',
+          host: 'claude',
+          inputs: [promptDataRef],
+          outputs: [],
+          on_failure: 'abort',
+        },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+
+    // M3 L4 T6 — modifies_sutra=false ⇒ vacuously clears.
+    expect(
+      l4TerminalCheck.t6(composed, {
+        founder_authorization: false,
+        meta_charter_approval: false,
+      }),
+    ).toBe(true)
+
+    const dispatch: ActivityDispatcher = (descriptor): StepDispatchResult => ({
+      kind: 'ok',
+      outputs: [`m8-harness-${descriptor.step_id}`],
+    })
+
+    const t0 = Date.now()
+    const result: ExecutionResult = await executeStepGraph(composed, dispatch, {
+      skill_engine: engine,
+      policy_dispatcher: dispatcher,
+      compiled_policy: policy,
+      otel_emitter: emitter,
+      actor: 'asawa@nurix.ai',
+    })
+    const wall_ms = Date.now() - t0
+
+    // M5 contract — clean success across all 3 steps.
+    expect(result.state).toBe('success')
+    expect(result.partial).toBe(false)
+    expect(result.failure_reason).toBeNull()
+    expect(result.visited_step_ids).toEqual([1, 2, 3])
+    expect(result.completed_step_ids).toEqual([1, 2, 3])
+
+    // M6 surface — child_edge for the skill resolution.
+    expect(result.child_edges).toBeDefined()
+    expect(result.child_edges).toHaveLength(1)
+    expect(result.child_edges![0]!.skill_ref).toBe('W-m8-leaf')
+
+    // M8 host-LLM — step 3's outputs[0] is a V2 §A11 DataRef envelope.
+    const step3 = result.step_outputs.find((s) => s.step_id === 3)
+    expect(step3).toBeDefined()
+    const dr = step3!.outputs[0] as DataRef
+    expect(dr.kind).toBe('host-llm-output')
+    expect(dr.locator).toBe('inline:' + JSON.stringify('host-llm-response'))
+    expect(dr.mutability).toBe('immutable')
+    expect(dr.authoritative_status).toBe('authoritative')
+
+    // M8 OTel — every milestone surface emitted at least one event AND all
+    // events share ONE trace_id (D-NS-26 deterministic correlation).
+    const kinds = new Set(exporter.records.map((r) => r.decision_kind))
+    expect(kinds.has('SKILL_RESOLVED')).toBe(true)
+    expect(kinds.has('POLICY_ALLOW')).toBe(true)
+    expect(kinds.has('HOST_LLM_INVOCATION')).toBe(true)
+    expect(kinds.has('STEP_START')).toBe(true)
+    expect(kinds.has('STEP_COMPLETE')).toBe(true)
+
+    // Filter to events emitted by the executor (workflow_id-bearing); the
+    // GovernanceOverhead alert (when present) carries trace_id=turn_id which
+    // is a SEPARATE correlation namespace by design.
+    const workflowEvents = exporter.records.filter((r) => r.workflow_id === 'W-m8-harness')
+    expect(workflowEvents.length).toBeGreaterThan(0)
+    const traceIds = new Set(workflowEvents.map((r) => r.trace_id))
+    expect(traceIds.size).toBe(1)
+    expect([...traceIds][0]!).toMatch(/^[a-f0-9]{32}$/)
+
+    // M8 GovernanceOverhead — under threshold ⇒ NO alert event in the exporter.
+    const report = overhead.endTurn('m8-harness')
+    expect(report.threshold_tripped).toBe(false)
+    expect(report.overhead_pct).toBeCloseTo(0.08, 5)
+    const alerts = exporter.records.filter(
+      (r) => r.decision_kind === 'GOVERNANCE_OVERHEAD_ALERT',
+    )
+    expect(alerts).toHaveLength(0)
+
+    // Wall budget per A-4: harness <3s. The M8 composition should be <500ms
+    // in practice; the 3s ceiling is the hard SLO.
+    expect(wall_ms).toBeLessThan(3000)
   })
 })
