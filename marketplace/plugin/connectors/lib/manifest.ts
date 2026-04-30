@@ -102,6 +102,33 @@ export function validateManifest(m: ConnectorManifest): void {
     );
   }
 
+  // integration (optional, M1.13) — when present, must be { kind, target }
+  const integration = (m as { integration?: unknown }).integration;
+  if (integration !== undefined && integration !== null) {
+    if (typeof integration !== 'object' || Array.isArray(integration)) {
+      throw new ManifestError(
+        'integration must be an object with kind and target',
+        'missing-field',
+      );
+    }
+    const integ = integration as Record<string, unknown>;
+    if (
+      typeof integ.kind !== 'string' ||
+      !['composio', 'direct'].includes(integ.kind)
+    ) {
+      throw new ManifestError(
+        'integration.kind must be "composio" or "direct"',
+        'invalid-capability',
+      );
+    }
+    if (typeof integ.target !== 'string' || integ.target.length === 0) {
+      throw new ManifestError(
+        'integration.target must be a non-empty string',
+        'missing-field',
+      );
+    }
+  }
+
   // capabilities — non-empty array
   if (!Array.isArray(m.capabilities) || m.capabilities.length === 0) {
     throw new ManifestError(

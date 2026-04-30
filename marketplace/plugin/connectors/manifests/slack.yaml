@@ -12,6 +12,10 @@ description: >-
   scoped to own channels, T3 scoped to own product channels, T4 license-bound.
 composioToolkit: slack
 
+integration:
+  kind: 'direct'
+  target: 'slack-direct'
+
 capabilities:
   # ---- READ ----
   - id: 'slack:read-channel:#*'

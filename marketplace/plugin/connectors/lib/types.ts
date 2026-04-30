@@ -55,6 +55,16 @@ export interface ConnectorManifest {
   readonly tierAccess: Readonly<Record<Tier, ReadonlyArray<Capability>>>;
   readonly auditFields: ReadonlyArray<string>;
   readonly redactPaths: ReadonlyArray<string>;
+  /**
+   * Optional integration descriptor (M1.13). When present, declares which
+   * adapter the Router should dispatch to. Absence = legacy/Composio default.
+   *  - kind: 'composio' (catalog) or 'direct' (first-party backend)
+   *  - target: opaque identifier (e.g. 'slack-direct', 'gmail-direct')
+   */
+  readonly integration?: {
+    readonly kind: 'composio' | 'direct';
+    readonly target: string;
+  };
 }
 
 export interface CapabilityCheckResult {

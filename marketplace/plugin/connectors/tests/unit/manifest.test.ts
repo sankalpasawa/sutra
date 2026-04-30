@@ -362,6 +362,68 @@ describe('manifest.validateManifest', () => {
 });
 
 // -----------------------------------------------------------------------------
+// integration field (M1.13) — optional, additive
+// -----------------------------------------------------------------------------
+
+describe('manifest.integration (M1.13)', () => {
+  it('parses optional integration field with kind+target', () => {
+    const yaml = `
+schemaVersion: '1'
+name: slack
+description: 'Slack connector'
+composioToolkit: 'SLACK'
+integration:
+  kind: 'direct'
+  target: 'slack-direct'
+capabilities:
+  - id: slack:read-channel:#dayflow-eng
+    action: read
+    resourcePattern: '#*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+tierAccess:
+  T1:
+    - slack:read-channel:#dayflow-eng
+  T2: []
+  T3: []
+  T4: []
+auditFields: []
+redactPaths: []
+`;
+    const m = parseManifest(yaml);
+    expect(m.integration?.kind).toBe('direct');
+    expect(m.integration?.target).toBe('slack-direct');
+  });
+
+  it('parses manifest WITHOUT integration field (legacy)', () => {
+    const yaml = `
+schemaVersion: '1'
+name: slack-legacy
+description: 'Legacy'
+composioToolkit: 'SLACK'
+capabilities:
+  - id: slack:read-channel:#dayflow-eng
+    action: read
+    resourcePattern: '#*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+tierAccess:
+  T1:
+    - slack:read-channel:#dayflow-eng
+  T2: []
+  T3: []
+  T4: []
+auditFields: []
+redactPaths: []
+`;
+    const m = parseManifest(yaml);
+    expect(m.integration).toBeUndefined();
+  });
+});
+
+// -----------------------------------------------------------------------------
 // ManifestError shape (LLD §2.2 + errors.ts)
 // -----------------------------------------------------------------------------
 
