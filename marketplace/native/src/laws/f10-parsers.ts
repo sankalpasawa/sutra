@@ -8,11 +8,11 @@
  *   1. Workflow.preconditions  — boolean expression
  *   2. Workflow.failure_policy — 5-enum or structured policy descriptor
  *
- * Deferred to M7 (per codex P2.6):
- *   - TriggerSpec.pattern                 (V2 enum mismatch — actual values are
- *                                          preprocessor/observer/gate/fan_out/
- *                                          negotiation, NOT cron/dependency/
- *                                          threshold)
+ * Bound at M7 Group W (T-095):
+ *   - TriggerSpec.pattern                 — V2 enum (preprocessor / observer /
+ *                                          gate / fan_out / negotiation).
+ *
+ * Deferred to v1.x (per codex M7 P1.3):
  *   - Charter.obligations[i].mechanization (Constraint schema doesn't expose
  *                                          this typed field today)
  *
@@ -415,4 +415,128 @@ export function parseWorkflowFailurePolicy(input: string): ParsedFailurePolicy {
     input,
     'expected bare enum (rollback|escalate|pause|abort|continue) or JSON object — English prose rejected',
   )
+}
+
+// =============================================================================
+// 3. TriggerSpec.pattern — V2 enum parser (M7 Group W T-095)
+// =============================================================================
+
+/**
+ * V2 §A11 enum for TriggerSpec.pattern. The 5 values pin the recognized
+ * routing/gating shapes for trigger composition:
+ *
+ *   - preprocessor : transforms input before the next workflow stage
+ *   - observer     : taps an event stream without back-pressure on producers
+ *   - gate         : binary go/no-go based on a guard predicate
+ *   - fan_out      : duplicates one input across multiple downstream workflows
+ *   - negotiation  : multi-party request/response that expects a reply
+ *
+ * IMPORTANT — this enum is NOT the older M5-era cron/dependency/threshold
+ * triplet. Codex M5 P2.6 caught the V2 spec mismatch and deferred binding
+ * until M7. M7 Group W ships the parser; downstream consumers can rely on
+ * `parseTriggerSpecPattern` to reject anything outside the closed set.
+ */
+const TRIGGER_PATTERN_VALUES = [
+  'preprocessor',
+  'observer',
+  'gate',
+  'fan_out',
+  'negotiation',
+] as const
+
+/** Closed string-literal union for static type narrowing. */
+export type TriggerPatternKind = (typeof TRIGGER_PATTERN_VALUES)[number]
+
+const TRIGGER_PATTERN_SET: ReadonlySet<TriggerPatternKind> = new Set(
+  TRIGGER_PATTERN_VALUES,
+)
+
+/**
+ * Thrown by `parseTriggerSpecPattern` when the input does not match one of
+ * the 5 V2 enum values. Carries the offending input (truncated for log
+ * sanity) so downstream telemetry can surface what slipped past the schema.
+ *
+ * Distinct error type (not F10ParseError) because the parser's domain is
+ * a single enum field — there is no `field` discriminator to carry. Keeping
+ * it separate also lets callers route TriggerSpec.pattern rejections to a
+ * different remediation path (TriggerSpec authors get a different message
+ * from Workflow authors).
+ */
+export class TriggerPatternParseError extends Error {
+  public readonly input: string
+  constructor(input: string) {
+    super(
+      `TriggerSpec.pattern must be one of: ${TRIGGER_PATTERN_VALUES.join(
+        ', ',
+      )}; got: ${safeQuote(input).slice(0, 60)}`,
+    )
+    this.name = 'TriggerPatternParseError'
+    this.input = input
+  }
+}
+
+/**
+ * Best-effort JSON-quoted string for the error payload. JSON.stringify can
+ * throw on BigInt + circular structures; this helper falls back to the
+ * already-coerced string representation when serialization fails. Pure;
+ * does not propagate exceptions.
+ */
+function safeQuote(s: string): string {
+  try {
+    return JSON.stringify(s)
+  } catch {
+    return `"${s}"`
+  }
+}
+
+/**
+ * Parse a TriggerSpec.pattern value against the V2 §A11 5-enum.
+ *
+ * Accepts: any of the 5 enum strings, EXACTLY (no leading/trailing
+ * whitespace, no case folding — V2 enums are tokens, not human-readable
+ * labels).
+ *
+ * Rejects:
+ *   - non-string inputs (numbers, objects, null, undefined, arrays)
+ *   - empty string
+ *   - any string outside the 5-enum (including near-miss casings like
+ *     'Preprocessor' or 'fan-out')
+ *
+ * Round-trip identity: `parseTriggerSpecPattern(v) === v` for every v in the
+ * enum (the parser does NOT canonicalize — it validates).
+ *
+ * @throws TriggerPatternParseError on any deviation from the closed enum.
+ */
+export function parseTriggerSpecPattern(input: unknown): TriggerPatternKind {
+  if (typeof input !== 'string' || input.length === 0) {
+    // Stringify non-strings for the error payload so the operator sees what
+    // shape arrived (e.g. `[object Object]`, `null`, `undefined`). Use the
+    // safe coercer — naked `String(x)` throws on objects whose `toString` /
+    // `valueOf` is overridden to a non-function (e.g. `{toString: ""}`),
+    // which would surface as TypeError instead of TriggerPatternParseError.
+    throw new TriggerPatternParseError(safeCoerceToString(input))
+  }
+  if (!TRIGGER_PATTERN_SET.has(input as TriggerPatternKind)) {
+    throw new TriggerPatternParseError(input)
+  }
+  return input as TriggerPatternKind
+}
+
+/**
+ * Safe `String(x)` replacement. Naked `String(x)` calls `x.toString()` /
+ * `x.valueOf()` and propagates anything those throw (TypeError for
+ * `{toString: ""}` and similar). The parser guarantees that ANY non-string
+ * input throws `TriggerPatternParseError` — so coercion failures must NOT
+ * leak as TypeError. This helper traps the failure and falls back to a
+ * stable type-tag string.
+ */
+function safeCoerceToString(x: unknown): string {
+  if (x === null) return 'null'
+  if (x === undefined) return 'undefined'
+  try {
+    return String(x)
+  } catch {
+    // String() threw — fall back to typeof, which never throws.
+    return `<${typeof x}>`
+  }
 }

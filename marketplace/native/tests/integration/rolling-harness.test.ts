@@ -65,6 +65,13 @@ import {
   type StepDispatchResult,
 } from '../../src/engine/index.js'
 
+// ---- M7 engine (Charter→Rego compile + bundle + dispatcher) ----------------
+import {
+  compileCharter,
+  OPABundleService,
+  makePolicyDispatcher,
+} from '../../src/engine/index.js'
+
 import type { Constraint, WorkflowStep } from '../../src/types/index.js'
 
 // =============================================================================
@@ -454,5 +461,91 @@ describe('M5.5 rolling harness — replay determinism', () => {
     // any non-determinism introduced in M2/M3/M4/M5 surfaces here as an
     // inequality before it leaks into M6+.
     expect(r2).toEqual(r1)
+  })
+})
+
+// =============================================================================
+// Test 5 — M7 surface (T-099): Charter compile → bundle register → policy
+// allow path runs end-to-end through the executor's policy gate
+// =============================================================================
+
+describe('M5.5 rolling harness — M7 policy surfaces (Charter compile + bundle + evaluate)', () => {
+  it('compileCharter + OPABundleService.register + executor policy gate allow path', async () => {
+    // Charter with a single permissive predicate (Rego literal `1 == 1` —
+    // always holds). The compiler emits `allow if { 1 == 1 }` + default deny;
+    // the OPA evaluator returns kind:'allow' on every input.
+    const charter = createCharter({
+      id: 'C-m55-m7',
+      purpose: 'Rolling-harness M7 policy gate allow path.',
+      scope_in: '',
+      scope_out: '',
+      obligations: [],
+      invariants: [],
+      success_metrics: ['policy_gate_allow_path_passes'],
+      authority: 'M5.5-harness',
+      termination: '',
+      constraints: [
+        {
+          name: 'always_allow',
+          predicate: '1 == 1',
+          durability: 'episodic',
+          owner_scope: 'charter',
+        },
+      ],
+      acl: [],
+    })
+
+    // Compile + register. Bundle service round-trips the policy by id.
+    const policy = compileCharter(charter)
+    const bundle = new OPABundleService()
+    bundle.register(policy)
+    expect(bundle.get(policy.policy_id)).toBe(policy)
+    // policy_version is a 64-hex sha256 — pin format so cross-milestone
+    // changes that broke determinism would surface here.
+    expect(policy.policy_version).toMatch(/^[a-f0-9]{64}$/)
+
+    // Workflow: 1 step with policy_check=true + action='wait'. The executor
+    // evaluates the policy via the dispatcher (real OPA), gets allow, then
+    // dispatches the step normally.
+    const w = createWorkflow({
+      id: 'W-m55-m7',
+      preconditions: '',
+      step_graph: [
+        {
+          step_id: 1,
+          action: 'wait',
+          inputs: [],
+          outputs: [],
+          on_failure: 'abort',
+          policy_check: true,
+        },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+
+    const dispatcher = makePolicyDispatcher()
+    const dispatch: ActivityDispatcher = (descriptor): StepDispatchResult => ({
+      kind: 'ok',
+      outputs: [`m55-m7-step-${descriptor.step_id}`],
+    })
+
+    const result: ExecutionResult = await executeStepGraph(w, dispatch, {
+      policy_dispatcher: dispatcher,
+      compiled_policy: policy,
+    })
+
+    // M7 surface composes cleanly with M5 executor: allow ⇒ step runs ⇒
+    // success ⇒ failure_reason=null ⇒ partial=false. Step 1 visited+completed.
+    expect(result.state).toBe('success')
+    expect(result.failure_reason).toBeNull()
+    expect(result.partial).toBe(false)
+    expect(result.completed_step_ids).toEqual([1])
+    expect(result.step_outputs[0]?.outputs).toEqual(['m55-m7-step-1'])
   })
 })

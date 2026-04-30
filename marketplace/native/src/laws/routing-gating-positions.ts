@@ -83,9 +83,11 @@ export const ROUTING_GATING_REPRESENTATIONS: Record<
   //   - parseWorkflowFailurePolicy  → 5-enum / structured JSON
   'Workflow.preconditions': 'parser-bound',
   'Workflow.failure_policy': 'parser-bound',
-  // Deferred to M7 per codex P2.6 — TriggerSpec.pattern enum mismatch with V2;
-  // Charter.obligations[i].mechanization not a typed Constraint field today.
-  'TriggerSpec.pattern': 'typed_parser',
+  // M7 codex P1.3: TriggerSpec.pattern parser-bound at M7. Charter.obligations[i].mechanization
+  // stays typed_parser (deferred to v1.x — Constraint schema lacks the field).
+  // Parser shipped at `src/laws/f10-parsers.ts` as `parseTriggerSpecPattern`
+  // — V2 §A11 5-enum (preprocessor / observer / gate / fan_out / negotiation).
+  'TriggerSpec.pattern': 'parser-bound',
   'Charter.obligations[i].mechanization': 'typed_parser',
 
   // Closed enums — decidable at the type level.
