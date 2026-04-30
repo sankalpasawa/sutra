@@ -9,6 +9,15 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
+
+# Customer-box guard: this hook emits a verbose Asawa-doctrine warning the
+# customer cannot act on (they don't yet know what an estimation marker is).
+# Silent return on customer boxes; full enforcement on Asawa-internal repos.
+if [ -r "${CLAUDE_PLUGIN_ROOT:-}/lib/is_customer_box.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/lib/is_customer_box.sh"
+  is_customer_box && exit 0
+fi
+
 HOOK_LOG="$REPO_ROOT/holding/hooks/hook-log.jsonl"
 FILE_PATH="${TOOL_INPUT_file_path:-}"
 _start=$(date +%s)

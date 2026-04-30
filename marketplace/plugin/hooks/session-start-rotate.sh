@@ -5,6 +5,13 @@
 
 set -uo pipefail
 
+# Customer-box guard: this hook rotates Asawa-internal logs that don't exist
+# on plugin-only customer machines. Silent return.
+if [ -r "${CLAUDE_PLUGIN_ROOT:-}/lib/is_customer_box.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/lib/is_customer_box.sh"
+  is_customer_box && exit 0
+fi
+
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
 ROTATE="$REPO_ROOT/holding/hooks/rotate-logs.sh"
 
