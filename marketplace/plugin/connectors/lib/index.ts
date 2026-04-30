@@ -44,6 +44,11 @@ export type {
   CredentialLoaderOpts,
 } from './credential-loader.js';
 
+// ConnectorRouterOpts is declared further down (alongside the class) since
+// it carries CredentialLoader + ComposioAdapter symbols that must be in
+// scope. The type is exported lower in this file via `export interface
+// ConnectorRouterOpts {...}` — kept here as a doc anchor for the public API.
+
 export {
   ConnectorError,
   ManifestError,
@@ -70,11 +75,41 @@ import type {
 import { AuditSink } from './audit.js';
 import { FleetPolicyCache } from './fleet-policy.js';
 import { ComposioAdapter } from './composio-adapter.js';
+import { CredentialLoader } from './credential-loader.js';
 import { evaluatePolicy, consumeApproval, issueApproval } from './policy.js';
 import {
   StalePolicyError,
   ForbiddenComposioApiError,
+  IdempotencyKeyRequiredError,
+  PayloadTooLargeError,
 } from './errors.js';
+import { retry, handleAll, ExponentialBackoff } from 'cockatiel';
+
+/**
+ * ConnectorRouter constructor opts.
+ *
+ * Mode A ('legacy') — preserves the v0 surface for existing call sites
+ * (Slack-live integration fixtures, CLI tests). No idempotency-key,
+ * AbortSignal, retry, or credential-loader requirements.
+ *
+ * Mode B ('native-compat') — Activity-shaped contract for native/Temporal
+ * orchestration: REQUIRES `ctx.idempotency_key` and `ctx.signal` per call,
+ * REQUIRES `credentialLoader` at construction, wraps backend calls in a
+ * cockatiel retry policy, and threads AbortSignal end-to-end. Payload bound
+ * (1 MB) applies in BOTH modes for safety (M1.5).
+ *
+ * Mode is REQUIRED — no default — so a caller who forgets to declare cannot
+ * accidentally land in either mode.
+ */
+export interface ConnectorRouterOpts {
+  readonly mode: 'legacy' | 'native-compat';
+  readonly manifests: ReadonlyArray<ConnectorManifest>;
+  readonly fleetPolicy: FleetPolicyCache;
+  readonly audit: AuditSink;
+  readonly adapter: ComposioAdapter;
+  /** REQUIRED when mode === 'native-compat'; ignored otherwise. */
+  readonly credentialLoader?: CredentialLoader;
+}
 
 /**
  * ConnectorRouter — top-level orchestrator for the 6-step LLD §3 call lifecycle.
@@ -104,35 +139,66 @@ export class ConnectorRouter {
   readonly #fleetPolicy: FleetPolicyCache;
   readonly #audit: AuditSink;
   readonly #adapter: ComposioAdapter;
+  readonly #mode: 'legacy' | 'native-compat';
+  readonly #credentialLoader: CredentialLoader | undefined;
 
-  constructor(deps: {
-    manifests: ReadonlyArray<ConnectorManifest>;
-    fleetPolicy: FleetPolicyCache;
-    audit: AuditSink;
-    adapter: ComposioAdapter;
-  }) {
-    if (!deps || typeof deps !== 'object') {
-      throw new Error('ConnectorRouter: deps must be an object');
+  constructor(opts: ConnectorRouterOpts) {
+    if (!opts || typeof opts !== 'object') {
+      throw new Error('ConnectorRouter: opts must be an object');
     }
-    if (!Array.isArray(deps.manifests)) {
-      throw new Error('ConnectorRouter: deps.manifests must be an array');
+    if (opts.mode !== 'legacy' && opts.mode !== 'native-compat') {
+      throw new Error(
+        `ConnectorRouter: mode must be 'legacy' | 'native-compat' (got: ${String(opts.mode)})`,
+      );
     }
-    if (!(deps.fleetPolicy instanceof FleetPolicyCache)) {
-      throw new Error('ConnectorRouter: deps.fleetPolicy must be a FleetPolicyCache');
+    if (opts.mode === 'native-compat' && !opts.credentialLoader) {
+      throw new Error(
+        'ConnectorRouter: mode=native-compat requires credentialLoader',
+      );
     }
-    if (!(deps.audit instanceof AuditSink)) {
-      throw new Error('ConnectorRouter: deps.audit must be an AuditSink');
+    if (!Array.isArray(opts.manifests)) {
+      throw new Error('ConnectorRouter: opts.manifests must be an array');
     }
-    if (!(deps.adapter instanceof ComposioAdapter)) {
-      throw new Error('ConnectorRouter: deps.adapter must be a ComposioAdapter');
+    if (!(opts.fleetPolicy instanceof FleetPolicyCache)) {
+      throw new Error('ConnectorRouter: opts.fleetPolicy must be a FleetPolicyCache');
     }
-    this.#manifests = deps.manifests.slice();
-    this.#fleetPolicy = deps.fleetPolicy;
-    this.#audit = deps.audit;
-    this.#adapter = deps.adapter;
+    if (!(opts.audit instanceof AuditSink)) {
+      throw new Error('ConnectorRouter: opts.audit must be an AuditSink');
+    }
+    if (!(opts.adapter instanceof ComposioAdapter)) {
+      throw new Error('ConnectorRouter: opts.adapter must be a ComposioAdapter');
+    }
+    this.#manifests = opts.manifests.slice();
+    this.#fleetPolicy = opts.fleetPolicy;
+    this.#audit = opts.audit;
+    this.#adapter = opts.adapter;
+    this.#mode = opts.mode;
+    this.#credentialLoader = opts.credentialLoader;
   }
 
   async call(ctx: ConnectorCallContext): Promise<ConnectorCallResult> {
+    // ----------------------------------------------------------------------
+    // Step 0: Mode-B contract enforcement (M1.3).
+    //   - native-compat REQUIRES ctx.idempotency_key + ctx.signal so that
+    //     callers (Activity hooks, Temporal workflows) can dedupe replays
+    //     and propagate cancellation. Legacy callers are unaffected.
+    // ----------------------------------------------------------------------
+    if (this.#mode === 'native-compat') {
+      if (
+        typeof ctx.idempotency_key !== 'string' ||
+        ctx.idempotency_key.length === 0
+      ) {
+        throw new IdempotencyKeyRequiredError(
+          'ConnectorRouter mode=native-compat requires ctx.idempotency_key',
+        );
+      }
+      if (!(ctx.signal instanceof AbortSignal)) {
+        throw new IdempotencyKeyRequiredError(
+          'ConnectorRouter mode=native-compat requires ctx.signal: AbortSignal',
+        );
+      }
+    }
+
     // ----------------------------------------------------------------------
     // Step 1: Manifest lookup by capability connector segment.
     // ----------------------------------------------------------------------
@@ -266,15 +332,39 @@ export class ConnectorRouter {
 
     // ----------------------------------------------------------------------
     // Step 4: Composio adapter call.
+    //   - Mode A (legacy): single attempt, no retry, no signal threading.
+    //   - Mode B (native-compat): cockatiel retry policy (3 attempts, expo
+    //     backoff 100ms→5s) wraps the call; AbortSignal short-circuits via
+    //     adapter → backend.fetch().
     // ----------------------------------------------------------------------
     const toolName = extractToolName(ctx.capability);
     let rawResult: unknown;
     try {
-      rawResult = await this.#adapter.call(
-        manifest.composioToolkit,
-        toolName,
-        ctx.args as Record<string, unknown>,
-      );
+      if (this.#mode === 'native-compat') {
+        const policy = retry(handleAll, {
+          maxAttempts: 3,
+          backoff: new ExponentialBackoff({ initialDelay: 100, maxDelay: 5000 }),
+        });
+        // exactOptionalPropertyTypes — only set `signal` when defined.
+        // Mode B already validated ctx.signal is AbortSignal at Step 0 so
+        // this is purely a type-narrowing courtesy.
+        const adapterOpts: { signal?: AbortSignal } = {};
+        if (ctx.signal !== undefined) adapterOpts.signal = ctx.signal;
+        rawResult = await policy.execute(() =>
+          this.#adapter.call(
+            manifest.composioToolkit,
+            toolName,
+            ctx.args as Record<string, unknown>,
+            adapterOpts,
+          ),
+        );
+      } else {
+        rawResult = await this.#adapter.call(
+          manifest.composioToolkit,
+          toolName,
+          ctx.args as Record<string, unknown>,
+        );
+      }
     } catch (err) {
       if (err instanceof ForbiddenComposioApiError) {
         await this.#auditSafe({
@@ -313,6 +403,45 @@ export class ConnectorRouter {
         reason: errorMessageOf(err),
         errorClass,
       };
+    }
+
+    // ----------------------------------------------------------------------
+    // Step 4b: Payload size bound (M1.5).
+    //   Native/Temporal Activities and downstream transports cap payloads at
+    //   ~2-4 MB. We enforce a conservative 1 MB ceiling on the RAW backend
+    //   value before redaction (redacted payload is always ≤ raw size). This
+    //   applies in BOTH modes — a Mode-A oversize result is just as bad for
+    //   the audit log as a Mode-B one. We surface as an error outcome rather
+    //   than throwing so the caller gets the standard ConnectorCallResult
+    //   contract.
+    // ----------------------------------------------------------------------
+    if (rawResult !== undefined && rawResult !== null) {
+      let valueBytes = 0;
+      try {
+        valueBytes = Buffer.byteLength(JSON.stringify(rawResult));
+      } catch {
+        // Non-serializable value — treat as oversize (defensive).
+        valueBytes = MAX_PAYLOAD_BYTES + 1;
+      }
+      if (valueBytes > MAX_PAYLOAD_BYTES) {
+        await this.#auditSafe({
+          ts: ctx.ts,
+          clientId: ctx.clientId,
+          tier: ctx.tier,
+          depth: ctx.depth,
+          capability: ctx.capability,
+          outcome: 'error',
+          reason: `payload-too-large:${valueBytes}>${MAX_PAYLOAD_BYTES}`,
+          sessionId: ctx.sessionId,
+          redactedArgsHash: '',
+          errorClass: 'PayloadTooLargeError',
+        }, ctx.args);
+        return {
+          outcome: 'error',
+          reason: `payload-too-large:${valueBytes}>${MAX_PAYLOAD_BYTES}`,
+          errorClass: 'PayloadTooLargeError',
+        };
+      }
     }
 
     // ----------------------------------------------------------------------
@@ -368,6 +497,18 @@ export class ConnectorRouter {
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
+
+/**
+ * Per spec §M1.5 — 1 MB ceiling on raw backend payload. Conservative
+ * relative to native/Temporal Activity transports (~2-4 MB). Enforced in
+ * Router.call() after backend resolves, before redaction.
+ */
+const MAX_PAYLOAD_BYTES = 1_000_000;
+
+// Keep the symbol live so the typed-error class is exported AND referenced
+// (router emits 'PayloadTooLargeError' as a string in the error outcome to
+// match the existing ConnectorCallResult contract).
+void PayloadTooLargeError;
 
 /**
  * Extract the connector name (first ':'-segment) from a capability id.

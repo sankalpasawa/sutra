@@ -94,6 +94,7 @@ export class SlackDirectClient implements ComposioClient {
     _toolkit: string,
     tool: string,
     args: Record<string, unknown>,
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown> {
     const cred = await this.#loadCredential();
     if (!cred) {
@@ -132,7 +133,7 @@ export class SlackDirectClient implements ComposioClient {
         throw new Error(`unsupported slack tool: ${tool}`);
     }
 
-    const res = await this.#post(method, cred.token, body);
+    const res = await this.#post(method, cred.token, body, opts?.signal);
     if (!res.ok) {
       throw new Error(`slack ${method} failed: ${res.error ?? 'unknown_error'}`);
     }
@@ -164,16 +165,21 @@ export class SlackDirectClient implements ComposioClient {
     method: string,
     token: string,
     body: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<SlackResponse> {
     const url = `${SLACK_API_BASE}/${method}`;
-    const response = await fetch(url, {
+    const init: RequestInit = {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-    });
+    };
+    // M1.4 — undefined-safe: fetch ignores `signal: undefined`. Mode-B
+    // Router supplies ctx.signal so an abort cancels the in-flight request.
+    if (signal !== undefined) init.signal = signal;
+    const response = await fetch(url, init);
     // Slack always returns JSON for Web API methods.
     const json = (await response.json()) as SlackResponse;
     return json;

@@ -136,7 +136,7 @@ async function buildRouter(opts: {
   const audit = new AuditSink({ path: auditPath, redactPaths: manifest.redactPaths });
   const adapter = new ComposioAdapter(composio.client);
   const router = new ConnectorRouter({
-    manifests: [manifest], fleetPolicy: cache, audit, adapter,
+    mode: 'legacy', manifests: [manifest], fleetPolicy: cache, audit, adapter,
   });
   return { router, audit, composio, fleetSource };
 }

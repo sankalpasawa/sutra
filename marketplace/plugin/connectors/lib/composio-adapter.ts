@@ -91,6 +91,7 @@ export class ComposioAdapter {
     toolkit: string,
     tool: string,
     args: Record<string, unknown>,
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown> {
     // Lazy auth: probe first, authenticate only if needed. Tests use a
     // mocked isAuthenticated (true by default; explicit false for the
@@ -102,6 +103,19 @@ export class ComposioAdapter {
 
     // Delegate verbatim. Return value passes through unchanged.
     // Rejections propagate unchanged (no try/catch — would swallow them).
+    //
+    // M1.4 (AbortSignal threading): if the caller supplied opts (Mode B
+    // path), thread it to executeTool. Backends that accept signal use it
+    // to cancel in-flight fetches; backends that do not accept opts simply
+    // ignore the extra parameter.
+    //
+    // PRESERVATION (Mode A): when no opts were supplied, call executeTool
+    // with the EXACT 3-argument signature. Tests assert
+    // `toHaveBeenCalledWith(toolkit, tool, args)` and adding a 4th
+    // `undefined` would regress those assertions for legacy callers.
+    if (opts !== undefined) {
+      return this.#client.executeTool(toolkit, tool, args, opts);
+    }
     return this.#client.executeTool(toolkit, tool, args);
   }
 }

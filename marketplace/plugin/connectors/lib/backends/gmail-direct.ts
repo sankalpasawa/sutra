@@ -167,6 +167,7 @@ export class GmailDirectClient implements ComposioClient {
     toolkit: string,
     tool: string,
     args: Record<string, unknown>,
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown> {
     if (toolkit !== 'gmail') {
       throw new Error(
@@ -174,20 +175,21 @@ export class GmailDirectClient implements ComposioClient {
       );
     }
     const cred = await this.#loadFresh();
+    const signal = opts?.signal;
 
     switch (tool) {
       case 'list-messages':
-        return this.#listMessages(cred, args);
+        return this.#listMessages(cred, args, signal);
       case 'list-by-label':
-        return this.#listByLabel(cred, args);
+        return this.#listByLabel(cred, args, signal);
       case 'get-message':
-        return this.#getMessage(cred, args);
+        return this.#getMessage(cred, args, signal);
       case 'get-thread':
-        return this.#getThread(cred, args);
+        return this.#getThread(cred, args, signal);
       case 'send-message':
-        return this.#sendMessage(cred, args);
+        return this.#sendMessage(cred, args, signal);
       case 'modify-labels':
-        return this.#modifyLabels(cred, args);
+        return this.#modifyLabels(cred, args, signal);
       default:
         throw new Error(`unsupported gmail tool: ${tool}`);
     }
@@ -218,22 +220,25 @@ export class GmailDirectClient implements ComposioClient {
   async #listMessages(
     cred: GmailCredential,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.#listLike(cred, args, undefined);
+    return this.#listLike(cred, args, undefined, signal);
   }
 
   async #listByLabel(
     cred: GmailCredential,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     const label = asString(args.label, 'label');
-    return this.#listLike(cred, args, [label]);
+    return this.#listLike(cred, args, [label], signal);
   }
 
   async #listLike(
     cred: GmailCredential,
     args: Record<string, unknown>,
     enforcedLabels: string[] | undefined,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     const q = asOptionalString(args.q, 'q');
     const argLabels = asOptionalStringArray(args.labelIds, 'labelIds');
@@ -244,47 +249,62 @@ export class GmailDirectClient implements ComposioClient {
     if (labels && labels.length > 0) params.set('labelIds', labels.join(','));
     params.set('maxResults', String(maxResults));
     const url = `${GMAIL_BASE}/messages?${params.toString()}`;
-    return this.#requestJson(cred, url, { method: 'GET' });
+    return this.#requestJson(cred, url, { method: 'GET' }, signal);
   }
 
   async #getMessage(
     cred: GmailCredential,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     const id = asString(args.id, 'id');
-    return this.#requestJson(cred, `${GMAIL_BASE}/messages/${encodeURIComponent(id)}`, {
-      method: 'GET',
-    });
+    return this.#requestJson(
+      cred,
+      `${GMAIL_BASE}/messages/${encodeURIComponent(id)}`,
+      { method: 'GET' },
+      signal,
+    );
   }
 
   async #getThread(
     cred: GmailCredential,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     const id = asString(args.id, 'id');
-    return this.#requestJson(cred, `${GMAIL_BASE}/threads/${encodeURIComponent(id)}`, {
-      method: 'GET',
-    });
+    return this.#requestJson(
+      cred,
+      `${GMAIL_BASE}/threads/${encodeURIComponent(id)}`,
+      { method: 'GET' },
+      signal,
+    );
   }
 
   async #sendMessage(
     cred: GmailCredential,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     const to = asString(args.to, 'to');
     const subject = asString(args.subject, 'subject');
     const body = asString(args.body, 'body');
     const raw = buildMime(to, subject, body);
-    return this.#requestJson(cred, `${GMAIL_BASE}/messages/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw }),
-    });
+    return this.#requestJson(
+      cred,
+      `${GMAIL_BASE}/messages/send`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw }),
+      },
+      signal,
+    );
   }
 
   async #modifyLabels(
     cred: GmailCredential,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     const id = asString(args.id, 'id');
     const addLabelIds = asOptionalStringArray(args.addLabelIds, 'addLabelIds') ?? [];
@@ -298,6 +318,7 @@ export class GmailDirectClient implements ComposioClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addLabelIds, removeLabelIds }),
       },
+      signal,
     );
   }
 
@@ -324,15 +345,16 @@ export class GmailDirectClient implements ComposioClient {
     cred: GmailCredential,
     url: string,
     init: { method: string; headers?: Record<string, string>; body?: string },
+    signal?: AbortSignal,
   ): Promise<unknown> {
     let active = cred;
     if (Date.now() > active.expiresAt - REFRESH_SKEW_MS) {
-      active = await this.#refresh(active);
+      active = await this.#refresh(active, signal);
     }
-    const first = await this.#fetchWith(active, url, init);
+    const first = await this.#fetchWith(active, url, init, signal);
     if (first.status === 401) {
-      const refreshed = await this.#refresh(active);
-      const second = await this.#fetchWith(refreshed, url, init);
+      const refreshed = await this.#refresh(active, signal);
+      const second = await this.#fetchWith(refreshed, url, init, signal);
       if (second.status === 401) {
         throw new Error(
           'gmail-direct: 401 after refresh — refresh-token revoked or invalid',
@@ -347,6 +369,7 @@ export class GmailDirectClient implements ComposioClient {
     cred: GmailCredential,
     url: string,
     init: { method: string; headers?: Record<string, string>; body?: string },
+    signal?: AbortSignal,
   ): Promise<Response> {
     const headers: Record<string, string> = {
       ...(init.headers ?? {}),
@@ -356,6 +379,8 @@ export class GmailDirectClient implements ComposioClient {
     if (init.body !== undefined) {
       reqInit.body = init.body;
     }
+    // M1.4 — undefined-safe abort threading.
+    if (signal !== undefined) reqInit.signal = signal;
     return fetch(url, reqInit);
   }
 
@@ -378,18 +403,23 @@ export class GmailDirectClient implements ComposioClient {
    * Exchange refresh_token for a new access_token. Persists the result
    * via the saver and returns the fresh cred.
    */
-  async #refresh(cred: GmailCredential): Promise<GmailCredential> {
+  async #refresh(
+    cred: GmailCredential,
+    signal?: AbortSignal,
+  ): Promise<GmailCredential> {
     const form = new URLSearchParams();
     form.set('grant_type', 'refresh_token');
     form.set('client_id', cred.clientId);
     form.set('client_secret', cred.clientSecret);
     form.set('refresh_token', cred.refreshToken);
 
-    const res = await fetch(TOKEN_URL, {
+    const refreshInit: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: form.toString(),
-    });
+    };
+    if (signal !== undefined) refreshInit.signal = signal;
+    const res = await fetch(TOKEN_URL, refreshInit);
     if (res.status !== 200) {
       let detail = '';
       try {

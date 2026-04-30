@@ -147,13 +147,22 @@ export interface FleetPolicySource {
   watch(onChange: (p: FleetPolicy) => void): () => void;
 }
 
-/** Narrow Composio surface — no plan/discover/workbench/session-memory. */
+/**
+ * Narrow Composio surface — no plan/discover/workbench/session-memory.
+ *
+ * `executeTool` accepts an OPTIONAL fourth `opts` arg with `{ signal? }`
+ * (M1.4). Existing call sites that pass three args remain valid: the parameter
+ * is optional and undefined-safe (fetch / SDK calls ignore an undefined
+ * signal). Mode-B Router threads `ctx.signal` here so cancellation propagates
+ * end-to-end (Router → adapter → backend.fetch).
+ */
 export interface ComposioClient {
   authenticate(toolkit: string, oauthToken: string): Promise<void>;
   executeTool(
     toolkit: string,
     tool: string,
     args: Record<string, unknown>,
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown>;
   isAuthenticated(toolkit: string): Promise<boolean>;
 }
