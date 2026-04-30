@@ -29,7 +29,7 @@ The module path is `sutra/marketplace/plugin/connectors/` and is D38 build-layer
 - **Not a planning surface.** Connectors do not invoke `Composio.plan()`, `Composio.discover()`, `Composio.workbench`, `session-memory`, or any Composio surface beyond `authenticate` + `executeTool` + `isAuthenticated` (LLD §2.7).
 - **Not a substitute for permission gates.** Existing PERMISSIONS hooks govern the local Bash/Write/Edit surface; Connectors govern *external* service calls. Different threat models, different gates.
 - **Not an MCP-shaped internal model.** MCP is a wire protocol used at L3 only. Sutra's internal types (LLD §2.1) are MCP-agnostic.
-- **Not a multi-vendor abstraction layer in v0.** v0 = Composio-only. A second vendor (e.g., Nango per TODO-CONNECTORS-001) requires charter amendment.
+- **Not a multi-vendor abstraction layer in v0.** v0 supports two integration patterns — Composio adapter AND first-party direct backends — both legitimate. A SECOND EXTERNAL VENDOR (e.g. Activepieces) still triggers charter amendment + codex review per PROTO-019.
 - **Not unaudited.** Every external call produces an `AuditEvent` in `.enforcement/connector-audit.jsonl` (LLD §2.5). No silent calls.
 
 ---
@@ -40,8 +40,11 @@ These five rules from foundational spec §5 are the architectural promise. Each 
 
 ```
 ┌─ RULE 1 ────────────────────────────────────────────────────┐
-│ Sutra L1 ALWAYS calls Composio. Composio NEVER calls back   │
-│ into Sutra.                                                 │
+│ Sutra L1 owns policy + audit + capability gating. L1        │
+│ dispatches to integration adapters (Composio for catalog    │
+│ connectors, first-party direct backends for high-traffic    │
+│ services like Slack/Gmail). Adapters NEVER call back into   │
+│ Sutra.                                                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -329,6 +332,9 @@ Codex review is required on every PR touching `connectors/` regardless of amendm
 ---
 
 *This charter governs the Connectors module. Amendments follow §8. Quarterly audit by CEO of Sutra; 6-month TODO-CONNECTORS-001 checkpoint at 2026-10-30 (mandatory).*
+
+## Changelog
+- v0.2.0 (2026-04-30): Sync to shipped runtime — direct backends recognized as legitimate alongside Composio. Multi-vendor expansion still triggers amendment.
 
 TRIAGE: depth=5 class=correct
 ESTIMATE: tokens=~25k files=1 time=3min category=charter
