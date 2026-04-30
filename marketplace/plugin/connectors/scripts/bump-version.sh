@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Sutra Connectors — bump-version.sh (M1.12)
+# Sutra Connectors — bump-version.sh (M1.12, extended in M2 step 5)
 #
-# Atomic version bump across 3 active surfaces (4th deferred to M2). On any
-# failure mid-way, restores from .bak files via trap.
+# Atomic version bump across all 4 canonical surfaces. On any failure
+# mid-way, restores from .bak files via trap.
 #
 # Surfaces:
 #   1. plugin/.claude-plugin/plugin.json            (canonical "version" field)
 #   2. plugin/README.md                             (banner: **vX.Y.Z**)
 #   3. plugin/connectors/package.json               ("version" field)
-#   4. (deferred to M2 step 5: plugin/connectors/QUICKSTART.md when banner ships)
+#   4. plugin/connectors/QUICKSTART.md              (banner: **Version:** vX.Y.Z)
 #
 # Usage:
 #   bash connectors/scripts/bump-version.sh 2.10.0
@@ -76,17 +76,18 @@ backup "$CONN_PKG"
 sed -i.tmp -E "s/(\"version\"[[:space:]]*:[[:space:]]*\")[0-9]+\.[0-9]+\.[0-9]+(\")/\1$NEW_VERSION\2/" "$CONN_PKG"
 rm -f "$CONN_PKG.tmp"
 
-# 4. QUICKSTART.md — DEFERRED to M2 polish (current banner is "v0 shipped",
-#    not a semver; doing a sed substitution here is a silent no-op and
-#    leaves drift behind. Per spec §M2.5, QUICKSTART rewrite is M2 work.
-#    Including it in M1 bump would be cosmetic noise that hides real drift.
+# 4. QUICKSTART.md — banner format: **Version:** vX.Y.Z (added M2 step 4)
+backup "$CONN_QS"
+sed -i.tmp -E "s/(\*\*Version:\*\*[[:space:]]+v)[0-9]+\.[0-9]+\.[0-9]+/\1$NEW_VERSION/" "$CONN_QS"
+rm -f "$CONN_QS.tmp"
 
 # Success — remove .bak files
 for b in "${BACKUPS[@]}"; do
   rm -f "$b"
 done
 
-echo "bump-version: $NEW_VERSION applied across 3 M1 surfaces (QUICKSTART deferred to M2)"
+echo "bump-version: $NEW_VERSION applied across 4 canonical surfaces"
 echo "  $PLUGIN_JSON"
 echo "  $PLUGIN_README"
 echo "  $CONN_PKG"
+echo "  $CONN_QS"

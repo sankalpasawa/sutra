@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Sutra Connectors — check-version-drift.sh (M1.12)
+# Sutra Connectors — check-version-drift.sh (M1.12, extended in M2 step 5)
 #
 # Reads the canonical version from plugin/.claude-plugin/plugin.json and
-# compares it to 3 active surfaces (4th deferred to M2). Exits 1 on drift; 0 if synced.
+# compares it to all 4 canonical surfaces. Exits 1 on drift; 0 if synced.
 #
 # Surfaces compared:
 #   1. plugin/.claude-plugin/plugin.json   (CANONICAL)
 #   2. plugin/README.md                    (banner: **vX.Y.Z**)
 #   3. plugin/connectors/package.json      ("version" field)
-#   4. (deferred to M2 step 5: plugin/connectors/QUICKSTART.md banner)
+#   4. plugin/connectors/QUICKSTART.md     (banner: **Version:** vX.Y.Z)
 #
 # Spec: holding/research/2026-04-30-core-connectors-hardening-spec.md §M1.12
 set -euo pipefail
@@ -58,15 +58,19 @@ if [ "$pkg_v" != "$canon" ]; then
   drift=1
 fi
 
-# QUICKSTART.md — DEFERRED to M2 polish (per spec §M2.5).
-# Current banner is "v0 shipped" prose, not a semver; including it here
-# would always-fail and obscure real drift. M2 work converts QUICKSTART
-# to a versioned banner and re-adds it to this drift check.
+# QUICKSTART.md — banner format **Version:** vX.Y.Z (added M2 step 4)
+qs_v=$(grep -Eo '\*\*Version:\*\*[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+' "$CONN_QS" 2>/dev/null \
+       | head -1 \
+       | sed -E 's/.*v([0-9]+\.[0-9]+\.[0-9]+)/\1/' || true)
+if [ "$qs_v" != "$canon" ]; then
+  echo "DRIFT: QUICKSTART banner=$qs_v canonical=$canon ($CONN_QS)"
+  drift=1
+fi
 
 if [ "$drift" -eq 1 ]; then
   echo "version-drift: failed (canonical=$canon)"
   exit 1
 fi
 
-echo "version-drift: OK (canonical=$canon, 3 M1 surfaces synced; QUICKSTART deferred to M2)"
+echo "version-drift: OK (canonical=$canon, all 4 surfaces synced)"
 exit 0

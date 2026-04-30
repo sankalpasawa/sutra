@@ -333,7 +333,40 @@ Codex review is required on every PR touching `connectors/` regardless of amendm
 
 *This charter governs the Connectors module. Amendments follow §8. Quarterly audit by CEO of Sutra; 6-month TODO-CONNECTORS-001 checkpoint at 2026-10-30 (mandatory).*
 
+---
+
+## 10. License posture (M2 step 5 honesty)
+
+The Connectors module pulls in five OSS dependencies plus one system binary. License posture is an explicit clause in the charter so future contributors know what's acceptable to swap in or replace.
+
+| Dep | Kind | License | Status | Why we picked it |
+|---|---|---|---|---|
+| **Composio** | L2 adapter (npm) | MIT | shipped (optional, behind ComposioAdapter) | Self-hosted, MIT, broadest catalog. Per §1, Composio is a plug — no callbacks, no planning surface. |
+| **age** | system binary | BSD-3-Clause | shipped (system dep, install via brew/apt/pacman/scoop) | Single small binary, well-audited symmetric encryption. Used by `lib/secret-store-age.ts` for credential at-rest encryption (M1.7). |
+| **cockatiel** | npm dep (Microsoft) | MIT | shipped (Mode B retry policy) | Battle-tested retry + circuit-breaker. Used by `ConnectorRouter` Mode B (M1.6). |
+| **nanoid** | npm dep | MIT | shipped (idempotency_key + event_id generation) | Tiny (~130B), zero deps, URL-safe IDs. Used by `call.mjs` + Mode B Router (M1.3). |
+| **yaml** | npm dep | ISC | shipped (manifest parser) | Standard YAML 1.2 parser. Used by `lib/manifest.ts`. Moved to runtime `dependencies` in M2 step 1. |
+
+### Considered but NOT shipped
+
+| Dep | License | Why we did not ship |
+|---|---|---|
+| **Infisical** | MIT-core / commercial-enterprise | Considered for credential management before age was selected. age won on simplicity (single binary, no server) and license clarity (pure BSD vs split-license). |
+| **Activepieces** | MIT-core / commercial | Considered as a second L2 vendor alongside Composio. Per §1 rule 4 ("Not a multi-vendor abstraction layer in v0"), adding a second vendor triggers charter amendment + codex review. Not shipped in v2.10.x. |
+
+### Posture rule
+
+Any new runtime dependency added to `connectors/package.json` MUST be:
+1. Listed in this section with kind, license, status, and rationale.
+2. Reviewed for license compatibility with the plugin's MIT umbrella (no GPL, no AGPL, no SSPL).
+3. Justified against an in-tree alternative — if Sutra could write 50 lines of code instead of taking the dep, prefer the in-tree code.
+
+License-tracking note: this charter is the source of truth. `package.json` is the runtime artifact. If they drift, the charter wins and `package.json` must be reconciled.
+
+---
+
 ## Changelog
+- v0.3.0 (2026-05-01): §10 added — explicit license posture for shipped + considered OSS deps (M2 step 5).
 - v0.2.0 (2026-04-30): Sync to shipped runtime — direct backends recognized as legitimate alongside Composio. Multi-vendor expansion still triggers amendment.
 
 TRIAGE: depth=5 class=correct
