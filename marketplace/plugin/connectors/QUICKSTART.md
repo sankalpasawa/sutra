@@ -1,6 +1,6 @@
 # Sutra Connectors — Quickstart
 
-**Version:** v2.10.1
+**Version:** v2.11.0
 
 ---
 

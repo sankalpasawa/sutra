@@ -1,6 +1,6 @@
 {
   "name": "@sutra/connectors",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "description": "Sutra Connectors — L1 control plane for external system access (Slack, GitHub, Gmail, etc.) via Composio L2 + MCP L3",
   "license": "MIT",
   "private": true,
