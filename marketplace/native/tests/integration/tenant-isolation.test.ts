@@ -244,6 +244,55 @@ describe('M9 Group FF — F-6 cross-tenant rejection (skill_ref step path)', () 
   })
 })
 
+describe('M9 codex master P1.1 fold — fail-closed when tenant_context_id missing', () => {
+  it('workflow.custody_owner non-null AND tenant_context_id omitted → cross_tenant_boundary:tenant_context_required', async () => {
+    __resetWorkflowRunSeqForTest()
+    const wf = createWorkflow({
+      id: 'W-fail-closed',
+      preconditions: '',
+      step_graph: [
+        { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+      custody_owner: 'T-paisa', // tenant-scoped Workflow
+    })
+    // Caller did NOT supply tenant_context_id → the round-3 bypass loophole
+    // is closed: executor refuses to run a tenant-scoped Workflow without
+    // an operating tenant declared.
+    const result = await executeStepGraph(wf, ALWAYS_OK_DISPATCH, {})
+    expect(result.state).toBe('failed')
+    expect(result.failure_reason).toBe('cross_tenant_boundary:tenant_context_required')
+    expect(result.visited_step_ids).toEqual([])
+    expect(result.completed_step_ids).toEqual([])
+  })
+
+  it('workflow.custody_owner null → no fail-closed (single-tenant default; gate a no-op)', async () => {
+    __resetWorkflowRunSeqForTest()
+    const wf = createWorkflow({
+      id: 'W-no-custody-no-fail-closed',
+      preconditions: '',
+      step_graph: [
+        { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+    const result = await executeStepGraph(wf, ALWAYS_OK_DISPATCH, {})
+    expect(result.state).toBe('success')
+  })
+})
+
 describe('M9 Group FF — I-8 boundary invariant', () => {
   it('Workflow with no custody_owner → no cross-tenant op possible (gate is no-op)', async () => {
     // Single-tenant default at v1.0: workflow.custody_owner=null → no

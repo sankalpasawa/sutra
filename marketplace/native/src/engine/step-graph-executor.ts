@@ -678,15 +678,39 @@ export async function executeStepGraph(
   const agent_identity = options.agent_identity
   const actor = options.actor
 
-  // M9 Group FF (T-153). Tenant-isolation gate is active iff the caller
-  // supplied a `tenant_context_id`. The `delegates_to_edges` set defaults
-  // to []; when active and the step's effective tenant differs from the
-  // operating tenant, `TenantIsolation.assertCrossTenantAllowed` is called
-  // unconditionally — there is no opt-out hint a producer can omit (codex
-  // M9 re-review P1 fold: advisory `WorkflowStep.crosses_tenant?` REJECTED).
+  // M9 Group FF (T-153) + codex master P1.1 fold. Tenant-isolation gate
+  // is active iff the caller supplied a `tenant_context_id`. The
+  // `delegates_to_edges` set defaults to []; when active and the step's
+  // effective tenant differs from the operating tenant,
+  // `TenantIsolation.assertCrossTenantAllowed` is called unconditionally
+  // — there is no opt-out hint a producer can omit (codex M9 re-review
+  // P1 fold: advisory `WorkflowStep.crosses_tenant?` REJECTED).
   const tenant_context_id = options.tenant_context_id
   const delegates_to_edges = options.delegates_to_edges ?? []
   const tenantGateActive = typeof tenant_context_id === 'string' && tenant_context_id.length > 0
+
+  // FAIL-CLOSED gate (codex master P1.1 fold): when the Workflow declares
+  // a `custody_owner` (i.e. it is non-trivially tenant-scoped), the caller
+  // MUST supply `tenant_context_id`. Omitting it disables the runtime
+  // gate — that was the round-3 bypass loophole; explicit option-omission
+  // is the same shape as the previously-rejected `WorkflowStep.crosses_tenant?`
+  // advisory hint. The fail-closed rule keeps the round-3 contract closed:
+  // "runtime-derived enforcement; no opt-out."
+  if (
+    typeof workflow.custody_owner === 'string' &&
+    workflow.custody_owner.length > 0 &&
+    !tenantGateActive
+  ) {
+    return {
+      workflow_id: workflow.id,
+      visited_step_ids: [],
+      completed_step_ids: [],
+      step_outputs: [],
+      state: 'failed',
+      failure_reason: 'cross_tenant_boundary:tenant_context_required',
+      partial: false,
+    }
+  }
 
   // M9 Group HH (T-162). HS-2 overhead-termination gate is active iff
   // BOTH a GovernanceOverhead instance AND a turn_id were supplied
@@ -697,6 +721,40 @@ export async function executeStepGraph(
     governance_overhead !== undefined &&
     typeof turn_id === 'string' &&
     turn_id.length > 0
+
+  // M9 codex master P1.2 fold. Single HS-2 check helper called from
+  // BOTH iteration top AND every terminal-return path. Returns either
+  // a `'red'` ExecutionResult-shaped halt (caller `return`s it) or
+  // `null` when the band is green/yellow / gate inactive.
+  const hs2Halt = async (step_id: number): Promise<ExecutionResult | null> => {
+    if (!overheadGateActive) return null
+    const band = governance_overhead!.getThresholdState(turn_id as string)
+    if (band !== 'red') return null
+    const report = governance_overhead!.report(turn_id as string)
+    await emitStepEvent(otel_emitter, 'TERMINATE', {
+      trace_id,
+      workflow_id: workflow.id,
+      step_id,
+      agent_identity,
+      actor,
+      attributes: {
+        reason: 'hs2_overhead_exceeded',
+        overhead_pct: report.overhead_pct,
+        threshold: 0.25,
+      },
+    })
+    return {
+      workflow_id: workflow.id,
+      visited_step_ids,
+      completed_step_ids,
+      step_outputs,
+      state: 'failed',
+      failure_reason: 'hs2_overhead_exceeded',
+      partial,
+      ...(child_workflows.length > 0 ? { child_workflows } : {}),
+      ...(child_edges.length > 0 ? { child_edges } : {}),
+    }
+  }
 
   for (const step of workflow.step_graph) {
     // M9 Group HH (T-162). HS-2 overhead-termination — after every step
@@ -712,35 +770,9 @@ export async function executeStepGraph(
     // failure_reason pattern. No new enums (would require coordinated
     // D2/D3/D5 contract change), no new error class (caller already
     // handles failed Execution).
-    if (overheadGateActive) {
-      const band = governance_overhead!.getThresholdState(turn_id as string)
-      if (band === 'red') {
-        const report = governance_overhead!.report(turn_id as string)
-        // Emit TERMINATE provenance via OTel — using existing enum.
-        await emitStepEvent(otel_emitter, 'TERMINATE', {
-          trace_id,
-          workflow_id: workflow.id,
-          step_id: step.step_id,
-          agent_identity,
-          actor,
-          attributes: {
-            reason: 'hs2_overhead_exceeded',
-            overhead_pct: report.overhead_pct,
-            threshold: 0.25,
-          },
-        })
-        return {
-          workflow_id: workflow.id,
-          visited_step_ids,
-          completed_step_ids,
-          step_outputs,
-          state: 'failed',
-          failure_reason: 'hs2_overhead_exceeded',
-          partial,
-          ...(child_workflows.length > 0 ? { child_workflows } : {}),
-          ...(child_edges.length > 0 ? { child_edges } : {}),
-        }
-      }
+    {
+      const halt = await hs2Halt(step.step_id)
+      if (halt !== null) return halt
     }
 
     // Per-step dispatch context — derived snapshot, not a live reference.
@@ -1069,6 +1101,10 @@ export async function executeStepGraph(
           workflow_id: workflow.id,
           ...(agent_identity !== undefined ? { agent_identity } : {}),
           ...(actor !== undefined ? { actor } : {}),
+          // M9 codex master P1.1 fold — forward tenant context so the
+          // child re-entry honors the same operating-tenant + edges set.
+          ...(tenant_context_id !== undefined ? { tenant_context_id } : {}),
+          delegates_to_edges,
         })
         if (invokeResult.kind === 'success') {
           // Record the cross-reference edge BEFORE pushing visited/completed
@@ -1221,6 +1257,14 @@ export async function executeStepGraph(
       case 'abort': {
         // Failed step → visited only, NOT completed.
         visited_step_ids.push(step.step_id)
+        // Codex master P1.2 fold: HS-2 priority over failure-policy reason
+        // when the breach happened during this step. The HS-2 helper checks
+        // band; only halts when 'red'. Otherwise return the failure-policy
+        // outcome unchanged.
+        {
+          const halt = await hs2Halt(step.step_id)
+          if (halt !== null) return halt
+        }
         return {
           workflow_id: workflow.id,
           visited_step_ids,
@@ -1237,6 +1281,10 @@ export async function executeStepGraph(
         // Failed step → visited only, NOT completed. Compensation_order
         // already came from failure-policy applied to completed-only ctx.
         visited_step_ids.push(step.step_id)
+        {
+          const halt = await hs2Halt(step.step_id)
+          if (halt !== null) return halt
+        }
         return {
           workflow_id: workflow.id,
           visited_step_ids,
@@ -1253,6 +1301,10 @@ export async function executeStepGraph(
       case 'pause': {
         // Failed step → visited only, NOT completed.
         visited_step_ids.push(step.step_id)
+        {
+          const halt = await hs2Halt(step.step_id)
+          if (halt !== null) return halt
+        }
         return {
           workflow_id: workflow.id,
           visited_step_ids,
@@ -1269,6 +1321,10 @@ export async function executeStepGraph(
       case 'escalate': {
         // Failed step → visited only, NOT completed.
         visited_step_ids.push(step.step_id)
+        {
+          const halt = await hs2Halt(step.step_id)
+          if (halt !== null) return halt
+        }
         return {
           workflow_id: workflow.id,
           visited_step_ids,
@@ -1283,6 +1339,18 @@ export async function executeStepGraph(
         }
       }
     }
+  }
+
+  // Codex master P1.2 fold — final HS-2 check at natural end-of-graph
+  // before terminalCheckProbe / success exit. If the LAST step pushed
+  // overhead into the red zone, HS-2 must take priority over the success
+  // path so the run reports `failure_reason='hs2_overhead_exceeded'`
+  // rather than `null` (which would lie about the overheaded run).
+  {
+    const lastStepId =
+      workflow.step_graph[workflow.step_graph.length - 1]?.step_id ?? -1
+    const halt = await hs2Halt(lastStepId)
+    if (halt !== null) return halt
   }
 
   // T-051 — terminate stage (or natural end-of-graph): run terminalCheck probe.

@@ -99,6 +99,21 @@ export interface SkillInvocationContext {
   readonly agent_identity?: AgentIdentity
   /** M8 Group Z (T-107). actor (authority-holder id, D1 §1) when known. */
   readonly actor?: string
+  /**
+   * M9 Group FF + codex master P1.1 fold. Tenant context propagated into
+   * child invocations so the executor's fail-closed gate sees the same
+   * `tenant_context_id` the parent supplied. Without this, a child Skill
+   * with a non-null `custody_owner` (e.g. cross-tenant grants via
+   * delegates_to) would trip fail-closed because the child re-entry got
+   * no tenant context.
+   */
+  readonly tenant_context_id?: string
+  /**
+   * M9 Group FF + codex master P1.1 fold. Delegates_to edge set
+   * propagated alongside tenant_context_id so child cross-tenant
+   * decisions consult the same edges.
+   */
+  readonly delegates_to_edges?: ReadonlyArray<import('../types/edges.js').DelegatesToEdge>
 }
 
 /**
@@ -375,6 +390,13 @@ export async function invokeSkill(
     ...(context.trace_id !== undefined ? { trace_id: context.trace_id } : {}),
     ...(context.agent_identity !== undefined ? { agent_identity: context.agent_identity } : {}),
     ...(context.actor !== undefined ? { actor: context.actor } : {}),
+    // M9 codex master P1.1 fold — propagate tenant context so the child
+    // re-entry sees the same operating tenant + delegates_to edges as
+    // the parent. Without this, a child Skill with a non-null
+    // `custody_owner` would trip fail-closed inside the child's executor
+    // call even when the parent had a legal cross-tenant grant.
+    ...(context.tenant_context_id !== undefined ? { tenant_context_id: context.tenant_context_id } : {}),
+    ...(context.delegates_to_edges !== undefined ? { delegates_to_edges: context.delegates_to_edges } : {}),
   })
 
   // 3a. Codex master review 2026-04-30 P2.1 fold: when the child execution

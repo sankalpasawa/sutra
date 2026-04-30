@@ -338,10 +338,16 @@ describe('M7 A-7.e — tenant isolation via execution_context.tenant_id', () => 
       custody_owner: 'T-tenant-a',
     })
 
+    // M9 codex master P1.1 fold: when workflow.custody_owner is non-null,
+    // executor's fail-closed gate requires tenant_context_id. Pass the
+    // matching `T-tenant-a` so sovereignty check passes; the OPA
+    // execution_context.tenant_id ('T-tenant-b') is what the Charter
+    // policy denies on (different namespace per M7 P2.3 fold).
     const result = await executeStepGraph(w, okDispatcher, {
       policy_dispatcher: dispatcher,
       compiled_policy: policy,
       tenant_id: 'T-tenant-b',
+      tenant_context_id: 'T-tenant-a',
     })
 
     expect(result.state).toBe('failed')

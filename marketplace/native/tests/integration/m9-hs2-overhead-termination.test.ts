@@ -191,6 +191,87 @@ describe('M9 Group HH — HS-2 overhead-termination at >25%', () => {
   })
 })
 
+describe('M9 codex master P1.2 fold — HS-2 fires on terminal-return paths too', () => {
+  it('overhead crosses red on the LAST step → natural-end exit reports hs2_overhead_exceeded (not success)', async () => {
+    __resetWorkflowRunSeqForTest()
+    const overhead = new GovernanceOverhead()
+    overhead.startTurn('m9-hs2-end', 1000)
+    expect(overhead.getThresholdState('m9-hs2-end')).toBe('green')
+
+    const wf = createWorkflow({
+      id: 'W-hs2-end-of-graph',
+      preconditions: '',
+      step_graph: [
+        { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+
+    // Dispatcher pushes overhead into red zone DURING step 1 (the only
+    // step). After step 1 completes, the loop exits — without the codex
+    // master P1.2 fold, the executor would return state='success' here.
+    // With the fold, the natural-end HS-2 check fires and reports
+    // failure_reason='hs2_overhead_exceeded'.
+    const dispatch: ActivityDispatcher = () => {
+      overhead.track('m9-hs2-end', 'codex_review', 400) // → 40% red
+      return { kind: 'ok', outputs: [1] }
+    }
+
+    const exporter = new InMemoryOTelExporter()
+    const emitter = new OTelEmitter(exporter)
+
+    const result = await executeStepGraph(wf, dispatch, {
+      governance_overhead: overhead,
+      turn_id: 'm9-hs2-end',
+      otel_emitter: emitter,
+    })
+    expect(result.state).toBe('failed')
+    expect(result.failure_reason).toBe('hs2_overhead_exceeded')
+    const terminates = exporter.records.filter((r) => r.decision_kind === 'TERMINATE')
+    expect(terminates).toHaveLength(1)
+    overhead.endTurn('m9-hs2-end')
+  })
+
+  it('overhead crosses red during a failure-policy abort path → HS-2 takes priority over abort reason', async () => {
+    __resetWorkflowRunSeqForTest()
+    const overhead = new GovernanceOverhead()
+    overhead.startTurn('m9-hs2-abort', 1000)
+    const wf = createWorkflow({
+      id: 'W-hs2-abort-path',
+      preconditions: '',
+      step_graph: [
+        { step_id: 1, action: 'wait', inputs: [], outputs: [], on_failure: 'abort' },
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+    const dispatch: ActivityDispatcher = () => {
+      overhead.track('m9-hs2-abort', 'codex_review', 400)
+      return { kind: 'failure', error: new Error('step-fail') }
+    }
+    const result = await executeStepGraph(wf, dispatch, {
+      governance_overhead: overhead,
+      turn_id: 'm9-hs2-abort',
+    })
+    // P1.2 fold: HS-2 priority over the abort reason — the run is failed,
+    // and the failure_reason is the HS-2 envelope, NOT the step-fail.
+    expect(result.state).toBe('failed')
+    expect(result.failure_reason).toBe('hs2_overhead_exceeded')
+    overhead.endTurn('m9-hs2-abort')
+  })
+})
+
 describe('M9 Group HH — getThresholdState contract', () => {
   it('returns green / yellow / red per band boundaries', () => {
     const o = new GovernanceOverhead()
