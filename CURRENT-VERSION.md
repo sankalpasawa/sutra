@@ -1,5 +1,43 @@
 # Sutra — Current Version
 
+## v2.10.1 (2026-05-01) — cascade-check.sh silent-block fix + tracking-artifact whitelist
+
+**What this is**: companion fix to v2.10.0. The same drift family Vinit reported in #43 (silent hook diagnostics) had a *second* instance — `hooks/cascade-check.sh`. Caught during the v2.10.0 release session itself: two `cascade-check.sh` PostToolUse firings emitted `Failed with non-blocking status code: No stderr output` while editing `holding/research/2026-04-22-sutra-official-marketplace-submission.md`.
+
+### Two root causes
+
+1. **Diagnostics on stdout, not stderr.** Claude Code's PostToolUse hook protocol relays the hook's stderr when it exits non-zero. The hook printed BLOCKED, the policy reason, and the override hint to **stdout** via plain `echo` — Claude Code surfaces "No stderr output" because nothing reached stderr. Fix: the blocking diagnostic now routes via `{ echo ... } >&2`.
+2. **Tracking artifacts triggered the gate.** Routine writes to research notes, session checkpoints, state ledgers, enforcement logs, telemetry — all already CLAUDE.md-whitelisted as "no advisory, no block" — were still firing the D13 cascade gate and demanding TODO follow-ups. Fix: the exempt list now matches the CLAUDE.md whitelist.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `hooks/cascade-check.sh` | Block diagnostic moved into `{ ... } >&2` group; warning prelude moved out of unconditional path into the block branch only. New exempt cases: `*/.claude/*`, `*/.enforcement/*`, `*/.analytics/*`, `*/holding/research/*`, `*/holding/state/*`, `*/holding/checkpoints/*`, `*/holding/hooks/hook-log.jsonl`, `*/sutra/archive/*`. Existing `*/TODO.md`, `*/BACKLOG.md` exempts + the `*/holding/*` and `*/sutra/layer2-operating-system/*` gated paths preserved. |
+| `tests/unit/test-cascade-check.sh` | NEW. 17 cases. |
+
+### Validation
+
+| Surface | Result |
+|---|---|
+| `tests/unit/test-cascade-check.sh` | 17/17 PASS |
+| Full unit suite | 14/14 PASS (zero regressions from v2.10.0) |
+| Reproduction (pre-fix): `holding/SYSTEM-MAP.md` blocked path | exit 2, stdout 13-line diagnostic, stderr **empty** |
+| Reproduction (post-fix): same input | exit 2, stdout **empty**, stderr 13-line diagnostic |
+| Reproduction (post-fix): `holding/research/test.md` whitelist | exit 0, stdout empty, stderr empty |
+
+### Why ship as v2.10.1, not fold into v2.10.0
+
+v2.10.0 already has a tag, GitHub release, and pushed pin. Folding the cascade-check fix into v2.10.0 would mean force-bumping a published tag — disallowed. v2.10.1 is the clean increment.
+
+### What did NOT change
+
+- Threat model: unchanged. D13 still HARD-blocks governance changes without TODO evidence; only diagnostic routing + whitelist scope changed.
+- API/skill/command surface: unchanged.
+- Telemetry behavior: unchanged.
+
+---
+
 ## v2.10.0 (2026-05-01) — inbox-display ships; release packaging guard
 
 **What this is**: a release fix for the SessionStart STDERR banner reported by Vinit (Testlify) as [issue #43](https://github.com/sankalpasawa/sutra/issues/43). Every `claude -r <id>` resume printed `inbox-display.sh: No such file or directory`. The hook was authored, registered in `hooks/hooks.json`, and worked in the asawa-holding working tree — but the `.sh` file was never `git add`'d, so the published plugin tarball shipped a manifest pointing at a missing file. v2.8.5, v2.8.11, v2.9.1 all carried the bug.

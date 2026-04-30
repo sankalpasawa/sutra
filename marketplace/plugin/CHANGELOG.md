@@ -1,5 +1,50 @@
 # Changelog
 
+## v2.10.1 — 2026-05-01
+
+**`cascade-check.sh` silent-block fix + tracking-artifact whitelist.**
+
+Companion fix to v2.10.0. Same drift family as Vinit's #43 (silent hook diagnostics): `hooks/cascade-check.sh` was the *second* hook surfacing `Failed with non-blocking status code: No stderr output` — observed during the v2.10.0 release session itself. Two root causes:
+
+1. **Diagnostics on stdout, not stderr.** Claude Code's PostToolUse protocol relays the hook's stderr when it exits non-zero. The hook printed BLOCKED, the policy reason, and the override hint to **stdout** via plain `echo` — Claude Code surfaces "No stderr output" because nothing reached stderr. Fix: the entire blocking diagnostic now routes via `{ echo ... } >&2`.
+2. **Tracking artifacts triggered the gate.** Routine writes to research notes, session checkpoints, state ledgers, enforcement logs, telemetry — all CLAUDE.md-whitelisted as "no advisory, no block" — were firing the D13 cascade gate and demanding TODO follow-ups. Fix: the existing exempt list now matches the CLAUDE.md whitelist.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `hooks/cascade-check.sh` | Block diagnostic moved into `{ ... } >&2` group; warning prelude moved out of the unconditional path into the block branch only (was printing on accept paths too). New exempt cases: `*/.claude/*`, `*/.enforcement/*`, `*/.analytics/*`, `*/holding/research/*`, `*/holding/state/*`, `*/holding/checkpoints/*`, `*/holding/hooks/hook-log.jsonl`, `*/sutra/archive/*`. Existing `*/TODO.md`, `*/BACKLOG.md`, `*/holding/*` (gated), `*/sutra/layer2-operating-system/*` (gated) preserved. |
+| `tests/unit/test-cascade-check.sh` | NEW. 17 cases: 10 whitelist exit-0-silent paths, 4 blocked-path stderr-routing assertions, 1 CASCADE_ACK override accept, 1 missing-file_path defensive, 1 non-governance pass-through. |
+
+### Behavior matrix
+
+| Path class | Old | New |
+|---|---|---|
+| `holding/research/*`, `holding/state/*`, `holding/checkpoints/*`, `.enforcement/*`, `.analytics/*`, `.claude/*`, `sutra/archive/*` | BLOCKED unless TODO evidence found | exit 0 silently (whitelist exempt) |
+| `holding/<governance>` non-research | BLOCKED — diagnostic to **stdout** (invisible to Claude Code) | BLOCKED — diagnostic to **stderr** (Claude Code surfaces it) |
+| `holding/<governance>` with `CASCADE_ACK=1` | exit 0, message on stdout | exit 0, message on stdout (unchanged — accept paths) |
+| `holding/<governance>` with TODO evidence in diff | exit 0, message on stdout | exit 0, message on stdout (unchanged — accept paths) |
+| Anything outside the gated prefixes | exit 0 silently | exit 0 silently (unchanged) |
+
+### Validation
+
+- 14/14 unit tests pass (no regressions from v2.10.0)
+- Reproduction (pre-fix): `printf '{"tool_input":{"file_path":"/foo/holding/SYSTEM-MAP.md"}}' | bash hooks/cascade-check.sh` → exit 2, stdout has 13-line diagnostic, stderr empty
+- Reproduction (post-fix): same input → exit 2, stdout empty, stderr has 13-line diagnostic
+- Reproduction (research path, post-fix): `/foo/holding/research/test.md` → exit 0, stdout + stderr both empty
+
+### Why ship as v2.10.1, not fold into v2.10.0
+
+v2.10.0 already has a tag, GitHub release, and pushed pin. Folding the cascade-check fix into v2.10.0 would mean force-bumping a published tag — disallowed. v2.10.1 is the clean increment.
+
+### What did NOT change
+
+- Threat model: unchanged. The D13 enforcement still HARD-blocks governance changes without TODO evidence; only the diagnostic routing + whitelist scope changed.
+- API/skill/command surface: unchanged.
+- Telemetry behavior: unchanged.
+
+---
+
 ## v2.10.0 — 2026-05-01
 
 **Inbox display ships + release packaging guard.**

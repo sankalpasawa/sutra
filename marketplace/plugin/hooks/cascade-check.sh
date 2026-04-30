@@ -48,8 +48,21 @@ ESC_REL_PATH="$(_re_escape "$REL_PATH")"
 # Exempt routine backlog maintenance: editing TODO.md IS the cascade action.
 # Without this carve-out, every `- [ ] foo` → `- [x] foo` flip triggers the
 # hard gate and demands CASCADE_ACK (codex P1 2026-04-16).
+#
+# Also exempt the CLAUDE.md whitelist (tracking artifacts, not governance
+# policy) so routine session-state writes don't fire the D13 gate. Aligned
+# with CLAUDE.md "Whitelist (no advisory, no block)" list.
 case "$FILE_PATH" in
   */TODO.md|*/BACKLOG.md)
+    exit 0
+    ;;
+  */.claude/*|*/.enforcement/*|*/.analytics/*)
+    exit 0
+    ;;
+  */holding/research/*|*/holding/state/*|*/holding/checkpoints/*|*/holding/hooks/hook-log.jsonl)
+    exit 0
+    ;;
+  */sutra/archive/*)
     exit 0
     ;;
 esac
@@ -57,10 +70,6 @@ esac
 # Check if file is in holding/ or sutra/layer2-operating-system/
 case "$FILE_PATH" in
   */holding/*|*/sutra/layer2-operating-system/*)
-    echo "Warning: L0-L2 file changed: $FILE_PATH"
-    echo "Per D13: List all downstream impacts and create TODOs for each company affected."
-    echo "Check: dayflow, billu, maze, ppr, paisa — which are affected by this change?"
-
     # ── Explicit deferral override (mirror of I-14 DUPLICATION_OVERRIDE) ─────
     if [ "${CASCADE_ACK:-0}" = "1" ]; then
       _REASON_RAW="${CASCADE_ACK_REASON:-no-reason-given}"
@@ -111,17 +120,25 @@ case "$FILE_PATH" in
     fi
 
     # ── No evidence, no override → hard block (exit 2) ──────────────────────
-    echo ""
-    echo "BLOCKED — D13 cascade gate (HARD)"
-    echo "  File:   $REL_PATH"
-    echo "  No downstream TODO evidence found in any TODO.md diff (staged or unstaged)."
-    echo ""
-    echo "  Required: add a line to holding/TODO.md and/or the affected"
-    echo "  company TODO.md files matching: '+ ... TODO ... ${STEM}'"
-    echo ""
-    echo "  Override (intentional deferral):"
-    echo "    CASCADE_ACK=1 CASCADE_ACK_REASON='<why>' <tool call>"
-    echo ""
+    # Diagnostics route to STDERR so Claude Code's PostToolUse hook protocol
+    # surfaces them. Prior versions echoed to stdout, leaving the user with
+    # only "No stderr output" — the v2.10.1 fix.
+    {
+      echo "Warning: L0-L2 file changed: $FILE_PATH"
+      echo "Per D13: List all downstream impacts and create TODOs for each company affected."
+      echo "Check: dayflow, billu, maze, ppr, paisa — which are affected by this change?"
+      echo ""
+      echo "BLOCKED — D13 cascade gate (HARD)"
+      echo "  File:   $REL_PATH"
+      echo "  No downstream TODO evidence found in any TODO.md diff (staged or unstaged)."
+      echo ""
+      echo "  Required: add a line to holding/TODO.md and/or the affected"
+      echo "  company TODO.md files matching: '+ ... TODO ... ${STEM}'"
+      echo ""
+      echo "  Override (intentional deferral):"
+      echo "    CASCADE_ACK=1 CASCADE_ACK_REASON='<why>' <tool call>"
+      echo ""
+    } >&2
     if [ -n "$REPO_ROOT" ]; then
       mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
       _SAFE_REL_PATH=$(printf '%s' "$REL_PATH" | tr -d '"\\' | tr '\n\r' '  ')

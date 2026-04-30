@@ -1,11 +1,13 @@
 # Sutra Core Plugin SBOM
-# Generated: 2026-04-30T20:11:55Z
+# Generated: 2026-04-30T20:18:55Z
 # Plugin: core v2.10.0
 # Root: sutra/marketplace/plugin/
+# Source: fresh clone of origin/main (no local-modified files)
 #
 # Scope: shipped files only
-#   excludes: */node_modules/* (any depth) · .claude/ · .enforcement/ · .analytics/
-#             tests/ · *.log · *.jsonl · .DS_Store · .gitignore · SBOM-v*.txt · .git/
+#   excludes: */node_modules/* · */__pycache__/* · .claude/ · .enforcement/
+#             .analytics/ · tests/ · *.log · *.jsonl · .DS_Store · .gitignore
+#             SBOM-v*.txt · .git/ · *.pyc
 # Verify: cd sutra/marketplace/plugin && shasum -a 256 -c <(grep -v '^#\|^$' SBOM-v2.10.0.txt)
 # Format: <sha256>  <relative-path>
 
@@ -82,7 +84,6 @@ bf287d2bb2d627524d9e7f4da666063c74a10eec7582d255ccf862789c267db6  connectors/tes
 e49afe5ea320dcacffaa640b343dd93e27737fc90ac70646f641aafe8c29fe3e  connectors/tsconfig.build.json
 66454fbf5c4fe7b8938a616f8c0061b1fac8d09f0ca9837e4d67245a0f748df1  connectors/tsconfig.json
 1235f5225e585558c69101db3bdfe403df775471cfcbd49ac080237e12deee51  EXTERNAL-CLIENT-INSTALL.md
-348eca048ee0b394e76036b31479cfd336308976e975ed32956aeb8314afe806  hooks/.claude/build-layer-registered
 ee6c340ef2cdf2b40d2a407e9d7b71ac3fc22992c8c9e1dc6ef5b6a977603c9a  hooks/agent-completion-check.sh
 2dc57593a1c6b08cc28d292fb6db7ccbad2c75d795e72a012cc55705081034cb  hooks/architecture-awareness.sh
 53f077903e15f04d454fb87506125fe4955c1249b2ef964da4662815274195f6  hooks/artifact-check.sh
@@ -90,7 +91,7 @@ ee6c340ef2cdf2b40d2a407e9d7b71ac3fc22992c8c9e1dc6ef5b6a977603c9a  hooks/agent-co
 d66ac6734d341a35c335464aab5093f709429303d5f2034a9d0a493da13cb2b6  hooks/bash-summary-pretool.sh
 bf1f1b3bfea13bd28e64b2e817a31761163389fa824e0882af59f590a524cfec  hooks/blueprint-check.sh
 44cd64b852ab7b4fd164f7707b6639dfd96507f2ce746bc371477b9a8e7908f6  hooks/build-layer-check.sh
-03aabb2cf962df0315a053ef818da6faa0e5c9153f6fcf405fed265dbfc7f606  hooks/cascade-check.sh
+9c67e04c43aa816ecf6656712db4bc87f96e230e12c3e06c3f8cc2fa9eb26249  hooks/cascade-check.sh
 3a8530f8f45be65abde072619fb24062f6a1dd9a974c44bebfdaaf0117b900ef  hooks/check-graduation.sh
 8b4670dcc98e0ebf0bf70fc0e95122941c3d41614a243be85e5b5cdc0bb73856  hooks/codex-directive-detect.sh
 c56bb9d4af991a3c9e7a286fc3d938022817a4cf7df3073b0553e651c6d5e962  hooks/codex-directive-gate.sh
@@ -171,9 +172,8 @@ e847e8b8815ccb23512226af5d4fb65cf497b1f4775cc0212a33323dc1a44452  lib/sh_trust_m
 15d01f0811f7a0b781759a5a22701c85108ddd0d7a08ae6dcdd35760ffff9670  os/engines/COVERAGE-ENGINE.md
 4d168f104db4a4c6132cd0160d0c95705a0b3087fe083f8efcb5bfe2ff2605da  os/engines/ESTIMATION-ENGINE.md
 5139f402d027aa087a49b11592182f2eb957b09745eee22586e7887a603f814d  PERMISSIONS.md
-5672d7133c88b235365e4ffa2073d10fd97510c08a84cff59c84f1f6377b3afb  PRIVACY.md
+ea36eb162650a98050138803d8d17cc853531c74cd81523da65a53eeb8399dd0  PRIVACY.md
 86100e036d7bc82565c842bad19cdb03e488000f55e66cb22fee5f33073ce5a7  README.md
-2e5d0b359598e1fab8dd927494cf3e954e69222f77f33111f0f11ba0801f60f3  scripts/__pycache__/_sutra_project_lib.cpython-314.pyc
 5a48e8add06a384ce6333f8dbea70da490bcb901e77fc41267a0f25dc4021bbe  scripts/_sutra_project_lib.py
 b024b025dbd34dc9236c8fcd6fd2a52f664bb6fb561b631ae3a0a7ed7615650f  scripts/feedback.sh
 75dd6441a9da8cdfe4112a4abf59903f6d14e12952309dc31b4ef33b20b1e437  scripts/go.sh
