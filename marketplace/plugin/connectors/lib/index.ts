@@ -37,6 +37,13 @@ export {
   ApprovalRequiredError,
   ApprovalTokenExpiredError,
   ForbiddenComposioApiError,
+  IdempotencyKeyRequiredError,
+  PayloadTooLargeError,
+  CredentialNotFoundError,
+  SecretStoreSafetyError,
+  SecretStoreTimeoutError,
+  SecretStoreDecryptError,
+  AbortError,
 } from './errors.js';
 
 import type {
