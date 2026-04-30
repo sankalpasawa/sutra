@@ -1,26 +1,24 @@
 # Sutra Connectors — Quickstart
 
-**Status:** v0 shipped (codex ADVISORY, 117 tests passing). Module on disk; OAuth + real Composio install are founder-action.
+**Status:** v0 shipped — Path C (direct provider integration, no Composio). 146 tests passing.
 
 ---
 
 ## What this is
 
-A Sutra-governed bridge to Slack, Gmail, GitHub, Linear, and any other Composio-supported service. **You** keep the brain (audit, depth-gating, tier-scoped permissions, fleet policy). Composio carries the auth + execution.
+A Sutra-governed bridge to Slack, Gmail, and (later) GitHub, Linear, etc. **You** keep the brain (audit, depth-gating, tier-scoped permissions, fleet policy). Each provider is wrapped by a thin direct-API backend in `lib/backends/` — no third-party broker, no SaaS dependency at runtime.
 
 ```
-Your tier (T1-T4)  →  Sutra L1 (this module — rules)
-                  →  Composio (auth + tool execution)
-                  →  External system (Slack/Gmail/etc.)
+Tier (T1-T4) → Sutra L1 (rules)
+             → Direct backend (slack-direct.ts, gmail-direct.ts)
+             → Provider API (slack.com/api, gmail.googleapis.com)
 ```
 
-All external calls are logged to `.enforcement/connector-audit.jsonl` with depth, tier, capability, outcome, and a hash of the (redacted) args.
+All external calls log to `.enforcement/connector-audit.jsonl` with depth, tier, capability, outcome, and a hash of the (redacted) args.
 
 ---
 
 ## Founder action items — first-time setup
-
-**One-time, ~10 minutes.**
 
 ### 1. Update plugin (after push lands)
 
@@ -29,48 +27,68 @@ claude plugin marketplace update sutra
 claude plugin update core@sutra
 ```
 
-This pulls the new connectors module into your `~/.claude/plugins/cache/sutra/core/<latest>/`.
+This refreshes `~/.claude/plugins/cache/sutra/core/<latest>/`. Your shell `sutra` function auto-points at the latest cached version.
 
-### 2. Install Composio runtime deps
-
-```bash
-cd ~/.claude/plugins/cache/sutra/core/$(ls -1 ~/.claude/plugins/cache/sutra/core/ | sort -V | tail -1)/connectors
-npm install
-```
-
-(This pulls vitest, yaml, typescript — dev deps. The Composio runtime client itself lands when we wire the real adapter — see `lib/composio-adapter.ts` — currently the module ships with the interface defined and a mock-friendly boundary, so tests run without the Composio package. Founder action 4 below pastes a token; the adapter wraps whatever Composio client you supply.)
-
-### 3. Connect Slack
-
-Register a Slack OAuth app → get a bot token (`xoxb-...`).
+### 2. Connect Slack — paste a bot token (~2 minutes)
 
 ```bash
 sutra connect slack
 ```
 
-Paste the token when prompted. Lands at `~/.sutra-connectors/oauth/slack.token` (chmod 600).
+The CLI walks you through:
+1. Open https://api.slack.com/apps → "Create New App" → "From scratch"
+2. Pick your workspace, add scopes: `channels:history`, `channels:read`, `chat:write`, `users:read`
+3. Install to workspace, copy the Bot User OAuth Token (`xoxb-...`)
+4. Paste it into the prompt
 
-### 4. Connect Gmail
+Saves to `~/.sutra-connectors/oauth/slack.json` (chmod 600).
 
-Either path:
+**Verify it works:**
 
-**Path A — Composio Cloud (easiest):**
-1. Sign in at https://composio.dev → create an account API key
-2. Connect Gmail through Composio's OAuth flow (they handle the Google OAuth dance)
-3. Get the connection ID
+```bash
+sutra connect-test slack
+```
 
-**Path B — self-host Composio (per CHARTER TODO-003):**
-1. Install Composio backend (Node + Postgres + Redis)
-2. Register your own Google OAuth app
-3. Connect Gmail through your local Composio instance
+Expected output:
+```
+✔ Slack OK
+  team:    YourWorkspace
+  user:    your-bot-name
+  bot_id:  B0123ABCDEF
+  url:     https://yourworkspace.slack.com/
+```
 
-Then:
+### 3. Connect Gmail — OAuth 2.0 flow (~10 minutes one-time)
 
 ```bash
 sutra connect gmail
 ```
 
-Paste the Composio connection ID + API key.
+The CLI walks you through Google Cloud Console setup. Summary:
+1. https://console.cloud.google.com — create / pick a project
+2. Enable Gmail API
+3. Create OAuth client ID (type: Desktop app)
+4. Add your Gmail to OAuth consent screen test users
+5. Use https://developers.google.com/oauthplayground to do the auth dance and get an `access_token` + `refresh_token`
+6. Paste 5 values into the prompt: `client_id`, `client_secret`, `access_token`, `refresh_token`, `expires_in`
+
+Saves to `~/.sutra-connectors/oauth/gmail.json` (chmod 600).
+
+**Verify it works:**
+
+```bash
+sutra connect-test gmail
+```
+
+Expected output:
+```
+✔ Gmail OK
+  emailAddress:  you@gmail.com
+  messagesTotal: 12345
+  threadsTotal:  6789
+```
+
+If your access token has expired, `connect-test` automatically refreshes using the refresh_token before checking — same logic that runs at every real call.
 
 ---
 
@@ -111,7 +129,7 @@ jq -r 'select(.tier=="T2") | "\(.ts) \(.clientId) \(.capability) \(.outcome)"' \
 3. Caller surfaces a BLUEPRINT box with the message preview
 4. You approve → caller re-invokes `router.call({…, approvalToken:<token>})`
 5. Policy verifies binding match (no replay across sessions/clients/capabilities) + 5-min TTL + single-use
-6. Composio executes the post
+6. Backend executes the post (Slack chat.postMessage)
 7. Audit logs `outcome='approved-after-gate'` with the token id
 
 ---
@@ -138,21 +156,26 @@ The push mechanism (git? gh issue? push notification?) is **CHARTER TODO-002** �
 ## Adding a new connector
 
 1. Add manifest `manifests/<name>.yaml` (follow `slack.yaml` / `gmail.yaml` shape)
-2. Run `npm test tests/unit/shipped-manifests.test.ts` — should auto-validate the new manifest
-3. Optionally add tier-specific scenarios to `tests/integration/v0-scenarios.test.ts`
-4. `sutra connect <name>` to register OAuth
+2. Write a backend at `lib/backends/<name>-direct.ts` implementing the `ComposioClient` interface (3 methods: authenticate / executeTool / isAuthenticated)
+3. Add a case to `scripts/connect.sh` for the credential collection flow (or rely on the generic opaque-token fallback)
+4. Add a verifier branch to `scripts/verify-connection.mjs` for `sutra connect-test <name>`
+5. Run `npm test` — `shipped-manifests.test.ts` auto-validates the new manifest
 
-The Composio toolkit name in the manifest's `composioToolkit` field maps to https://composio.dev/toolkits/<toolkit>.
+Templates:
+- `lib/backends/slack-direct.ts` — simplest case (single bot token, ~150 LOC)
+- `lib/backends/gmail-direct.ts` — full OAuth 2.0 with refresh-token handling, ~300 LOC
+
+Both ship with paired test files in `tests/unit/` (mocked fetch).
 
 ---
 
 ## Charter TODOs (deferred — revisit triggers in CHARTER.md)
 
 - **TODO-001** — Re-evaluate Nango for SOC2/HIPAA-sensitive paths (6-month checkpoint 2026-10-30)
-- **TODO-002** — OAuth app ownership: Asawa-managed vs per-client
-- **TODO-003** — Composio self-host topology
-- **TODO-004** — `tierOverrides` implement-or-remove
-- **TODO-005** — `findCapabilityDecl` resolver order — prefer specific globs over generic
+- **TODO-002** — Fleet-policy push mechanism (git? gh issue? push notification?)
+- **TODO-003** — `tierOverrides` implement-or-remove
+- **TODO-004** — Resolver-order specificity in `findCapabilityDecl`
+- **TODO-005** — Wire ConnectorRouter to load credentials from disk (`lib/oauth-store.ts` ?) so callers don't have to manually instantiate the backend
 
 ---
 
@@ -161,22 +184,24 @@ The Composio toolkit name in the manifest's `composioToolkit` field maps to http
 - `lib/index.ts` — `ConnectorRouter` (top-level orchestrator)
 - `lib/policy.ts` — depth-aware permission + approval gate
 - `lib/audit.ts` — append-only sink with redaction-by-construction
+- `lib/backends/slack-direct.ts` — Slack Web API wrapper
+- `lib/backends/gmail-direct.ts` — Gmail API + OAuth 2.0 refresh
 - `manifests/*.yaml` — per-connector capability + tier + redaction
+- `scripts/connect.sh` — `sutra connect <toolkit>`
+- `scripts/verify-connection.mjs` — `sutra connect-test <toolkit>`
 - `CHARTER.md` — governance contract (5 LOAD-BEARING boundaries; do not delegate)
-- `holding/research/2026-04-30-sutra-connectors-foundational-design.md` — spec
-- `holding/research/2026-04-30-connectors-LLD.md` — frozen interfaces
-- `.enforcement/codex-reviews/2026-04-30-connectors-master.md` — codex verdict (ADVISORY)
 
 ---
 
-## Test it
+## Test it locally (dry-run, no creds needed)
 
 ```bash
 cd ~/.claude/plugins/cache/sutra/core/$(ls -1 ~/.claude/plugins/cache/sutra/core/ | sort -V | tail -1)/connectors
+npm install
 npm test
 ```
 
-Expected: **117 tests passing.**
+Expected: **146 tests passing** across 11 files (unit + integration + CLI).
 
 Smoke-test the CLI without committing anything:
 
@@ -185,4 +210,11 @@ SUTRA_CONNECTORS_DRY_RUN=1 sutra connect slack
 SUTRA_CONNECTORS_DRY_RUN=1 sutra connect gmail
 ```
 
-Should print the connector summary + dry-run note for each.
+---
+
+## What's NOT done yet (deliberate v0 scope)
+
+- **`ConnectorRouter` doesn't auto-load creds from disk** — the test harness builds its own backend. For a real CLI tool that invokes a Slack/Gmail call, we need a tiny `lib/oauth-store.ts` that reads `~/.sutra-connectors/oauth/<name>.json` and instantiates the right backend. **TODO-005.** Maybe ~30 LoC + a CLI verb like `sutra call <toolkit> <tool> --arg ...`.
+- **Production deployment** — for the connectors module to actually be invoked from a Sutra session (e.g. when an LLM agent decides to read Slack), we need to expose `ConnectorRouter` to the agent runtime. Currently it's a library; not yet wired into a Claude Code skill or the assistant loop. Separate work.
+
+These are intentional v0 deferrals. The pieces that ship today: governance contracts (frozen), backends (tested), CLI registration + verification (works against live Slack/Gmail today).
