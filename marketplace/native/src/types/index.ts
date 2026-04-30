@@ -219,6 +219,28 @@ export interface WorkflowStep {
    * structural check (no bury-in-inputs anti-pattern).
    */
   host?: HostKind
+  /**
+   * M8 codex master review 2026-04-30 P2.1 fold. Optional JSON-Schema
+   * string declaring the expected shape of the host-LLM response. When set
+   * AND `action === 'invoke_host_llm'`, the executor:
+   *   1. Stamps the response DataRef envelope's `schema_ref` with this value
+   *      (parallels M6 `buildSkillOutputDataRef` in skill-invocation.ts which
+   *      sets `schema_ref = Workflow.return_contract`).
+   *   2. Validates the response against the schema via ajv. A validation
+   *      miss synthesizes a step failure with errMsg
+   *      `host_llm_output_validation:<details>` (sanitized via the same
+   *      `sanitizeReasonForFailureReason` pipeline used for policy denies).
+   *
+   * When unset, the envelope's schema_ref defaults to '' (empty string —
+   * "no contract declared") and no output validation runs.
+   *
+   * SchemaRef is a JSON Schema STRING (parsed lazily; ajv compile happens at
+   * step-dispatch time, not at primitive-mint, since host-LLM steps are
+   * synthesized in many places that should not need to compile schemas just
+   * to construct the workflow). Codex P2.1 alignment with M6 contract drift —
+   * the envelope MUST advertise the response schema, not the prompt schema.
+   */
+  return_contract?: SchemaRef
 }
 
 // -----------------------------------------------------------------------------

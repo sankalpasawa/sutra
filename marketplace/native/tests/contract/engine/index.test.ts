@@ -80,6 +80,10 @@ describe('engine barrel — public surface', () => {
     expect((engine as Record<string, unknown>).__setExecFileSyncStubForTest).toBeUndefined()
     expect((engine as Record<string, unknown>).__resetExecFileSyncStubForTest).toBeUndefined()
     expect((engine as Record<string, unknown>).__deriveInvocationIdForTest).toBeUndefined()
+    // Codex master review 2026-04-30 P1.1 fold — F-12 probe seams stay off
+    // the public barrel (M7 P1.1 lesson).
+    expect((engine as Record<string, unknown>).__setInvokeHostLLMF12ProbeForTest).toBeUndefined()
+    expect((engine as Record<string, unknown>).__resetInvokeHostLLMF12ProbeForTest).toBeUndefined()
   })
 
   it('does NOT re-export test seams on the public barrel', () => {

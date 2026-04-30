@@ -27,6 +27,8 @@
 
 import { createHash } from 'node:crypto'
 
+import Ajv from 'ajv'
+
 import type { Workflow } from '../primitives/workflow.js'
 import type { DataRef, HostKind } from '../types/index.js'
 import type { ForbiddenCouplingId } from '../laws/l4-terminal-check.js'
@@ -57,24 +59,39 @@ import {
 // =============================================================================
 
 /**
- * Per-Workflow run counter. Module-level, deterministic across processes
- * for one continuous module load — not persistent across restarts (which
- * is fine: trace_id only needs uniqueness within one observability stream
- * for cross-event correlation; replay determinism is bound to the
- * (workflow_id, run_seq) pair, both of which the executor controls here).
+ * trace_id derivation: per-run correlation only.
  *
- * D-NS-26 (clock-free derivation): trace_id = sha256(workflow.id + ':' + run_seq).
- * Truncated to 32 hex chars for compactness — 128 bits of state is more
- * than enough for collision avoidance within an observability stream.
+ * Codex master review 2026-04-30 P2.2 fold — narrow the determinism claim.
+ * The previous comment overstated the contract; the precise semantics are:
  *
- * Note: a deliberately-deterministic trace_id is the M8 Group Z contract.
- * The property test (T-110) relies on a SHARED trace_id across all events
- * of one run; the helper below builds it once at the top of executeStepGraph.
+ *   trace_id = sha256(workflow.id + ':' + run_seq).slice(0, 32)
+ *
+ * where `run_seq` is a process-local counter that increments on each
+ * `executeStepGraph` invocation. This gives:
+ *   - Same trace_id for ALL events of one Workflow run (correlation invariant
+ *     across STEP_*, POLICY_*, SKILL_*, HOST_LLM_INVOCATION, GOVERNANCE_OVERHEAD_ALERT).
+ *   - DIFFERENT trace_id across runs (even of the same Workflow), because
+ *     `run_seq` advances every invocation.
+ *   - Counter resets on process restart — the first run after restart
+ *     gets run_seq=1, NOT a continuation of pre-restart sequencing.
+ *
+ * NOT a stable replay key across process boundaries. For audit-grade
+ * cross-process replay correlation, see M11 dogfood (D-NS-12 b) — that's
+ * where Temporal's own run_id integration lands and lifts trace_id from a
+ * per-run identifier to a process-stable replay key.
+ *
+ * Why `run_seq` rather than a hash of inputs: the M8 Group Z contract is
+ * "shared trace_id within one logical run, distinct across runs." A counter
+ * gives that with no hidden inputs (no clock, no random) and the test seam
+ * `__resetWorkflowRunSeqForTest` lets property tests pin determinism inside
+ * one process. Cross-process determinism would require hashing run inputs +
+ * process identity — a v1.x decision when the dogfood corpus is in hand.
  */
 const workflowRunSeq = new Map<string, number>()
 
 /**
- * Derive a deterministic trace_id for one Workflow execution.
+ * Derive the trace_id for one Workflow execution. Per the comment block
+ * above, this is per-run correlation, NOT a cross-process replay key.
  *
  * @param workflow_id — Workflow.id (assumed non-empty per the primitive)
  * @returns 32-char hex string `sha256(workflow_id + ':' + run_seq).slice(0, 32)`
@@ -110,6 +127,135 @@ function getWorkflowRunSeq(workflow_id: string): number {
  */
 export function __resetWorkflowRunSeqForTest(): void {
   workflowRunSeq.clear()
+}
+
+// =============================================================================
+// Host-LLM output validation (codex master review 2026-04-30 P2.1 fold)
+// =============================================================================
+
+/**
+ * Per-process Ajv instance used to compile + validate host-LLM `return_contract`
+ * schemas. `strict: false` matches SkillEngine — Sutra schemas may be authored
+ * against older JSON Schema drafts; permissive compilation is the right v1.0
+ * default (strict-mode promotion is a v1.x decision, see SkillEngine comment).
+ *
+ * Compiled validators are cached by raw schema source to keep the validation
+ * hot path O(1) on repeat dispatches of the same return_contract.
+ */
+const hostLLMAjv = new Ajv({ strict: false })
+const hostLLMValidatorCache = new Map<
+  string,
+  ReturnType<typeof hostLLMAjv.compile> | { error: string }
+>()
+
+/**
+ * Sanitize host-LLM validation error text for inclusion in the M5
+ * canonical `failure_reason` envelope (`step:N:abort:host_llm_output_validation:<details>`).
+ *
+ * Mirrors the OPA-evaluator `sanitizeReasonForFailureReason` shape (replace `:`
+ * with `\:`, collapse newlines/tabs, length cap 256). Kept local rather than
+ * imported because the OPA sanitizer is module-scoped to opa-evaluator; both
+ * sanitizers MUST stay shape-compatible (codex P1.2 envelope contract).
+ */
+function sanitizeHostLLMValidationError(raw: string): string {
+  return raw
+    .replace(/:/g, '\\:')
+    .replace(/[\n\r\t]/g, ' ')
+    .slice(0, 256)
+}
+
+/**
+ * Result of a host-LLM output validation pass.
+ *
+ *   kind='valid'   — no return_contract OR response satisfies it
+ *   kind='invalid' — return_contract set + response violates it
+ */
+type HostLLMValidationResult =
+  | { kind: 'valid' }
+  | { kind: 'invalid'; errors: string }
+
+/**
+ * Validate a host-LLM response string against an optional return_contract
+ * (a JSON Schema string). When return_contract is unset, the contract is
+ * "no schema declared" → always valid (parallels M6's behavior when a
+ * Workflow has no return_contract field).
+ *
+ * Validation pipeline:
+ *   1. JSON.parse the response. If parse fails, validate the raw string
+ *      directly (so a Skill author can declare `{"type":"string"}`).
+ *   2. ajv.compile the schema (cached by source string). Compile errors
+ *      surface as a deterministic 'invalid' outcome — a malformed schema
+ *      is a contract violation, not a soft failure.
+ *   3. Run the compiled validator. Return errors via ajv.errorsText.
+ *
+ * All errors are routed through `sanitizeHostLLMValidationError` so the
+ * resulting `failure_reason` envelope stays single-line + colon-safe.
+ */
+function validateHostLLMOutput(
+  response: string,
+  return_contract: string | undefined,
+): HostLLMValidationResult {
+  if (return_contract === undefined || return_contract.length === 0) {
+    return { kind: 'valid' }
+  }
+
+  // Step 1: try JSON.parse. If the response is not JSON, validate the raw
+  // string against the schema directly — Skill authors writing
+  // `{"type":"string"}` should not need the response to be JSON-encoded.
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(response)
+  } catch {
+    parsed = response
+  }
+
+  // Step 2: compile (or fetch cached compile) the schema. Compile errors
+  // surface as 'invalid' — a malformed return_contract is a step failure.
+  let validator: ReturnType<typeof hostLLMAjv.compile>
+  const cached = hostLLMValidatorCache.get(return_contract)
+  if (cached !== undefined) {
+    if ('error' in cached) {
+      return {
+        kind: 'invalid',
+        errors: sanitizeHostLLMValidationError(`schema_compile_failed:${cached.error}`),
+      }
+    }
+    validator = cached
+  } else {
+    try {
+      // Cast to AnySchema is safe — JSON.parse can produce any schema shape
+      // and ajv's compile rejects invalid shapes via thrown errors.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const schema = JSON.parse(return_contract) as any
+      validator = hostLLMAjv.compile(schema)
+      hostLLMValidatorCache.set(return_contract, validator)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      hostLLMValidatorCache.set(return_contract, { error: msg })
+      return {
+        kind: 'invalid',
+        errors: sanitizeHostLLMValidationError(`schema_compile_failed:${msg}`),
+      }
+    }
+  }
+
+  // Step 3: run the validator.
+  if (validator(parsed)) {
+    return { kind: 'valid' }
+  }
+  return {
+    kind: 'invalid',
+    errors: sanitizeHostLLMValidationError(hostLLMAjv.errorsText(validator.errors)),
+  }
+}
+
+/**
+ * Test-only seam: reset the host-LLM validator cache. Used by integration
+ * tests that exercise multiple distinct return_contract shapes back-to-back.
+ * NOT exported on the public engine barrel.
+ */
+export function __resetHostLLMValidatorCacheForTest(): void {
+  hostLLMValidatorCache.clear()
 }
 
 // =============================================================================
@@ -651,16 +797,39 @@ export async function executeStepGraph(
           // fold #5 alignment with M6 Skill output convention). Downstream
           // consumers see kind='host-llm-output' and can lift the response
           // text from locator='inline:<JSON>'.
-          const dataRef: DataRef = {
-            kind: 'host-llm-output',
-            schema_ref: step.inputs[0]!.schema_ref ?? '',
-            locator: 'inline:' + JSON.stringify(hostResult.response),
-            version: '1',
-            mutability: 'immutable',
-            retention: 'session',
-            authoritative_status: 'authoritative',
+          //
+          // Codex master review 2026-04-30 P2.1 fold: schema_ref now uses
+          // `step.return_contract` (the response schema) — NOT the input
+          // prompt's schema_ref (which was a contract drift). When set, we
+          // also validate the response against the schema via ajv; a
+          // validation miss synthesizes a step failure with errMsg
+          // `host_llm_output_validation:<details>`. This parallels M6's
+          // skill-invocation.ts validateOutputs path (skill-invocation.ts:250-279
+          // sets schema_ref=resolved.return_contract and validates via ajv-
+          // backed SkillEngine.validateOutputs).
+          const validation = validateHostLLMOutput(
+            hostResult.response,
+            step.return_contract,
+          )
+          if (validation.kind === 'invalid') {
+            result = {
+              kind: 'failure',
+              error: new Error(
+                `host_llm_output_validation:${validation.errors}`,
+              ),
+            }
+          } else {
+            const dataRef: DataRef = {
+              kind: 'host-llm-output',
+              schema_ref: step.return_contract ?? '',
+              locator: 'inline:' + JSON.stringify(hostResult.response),
+              version: '1',
+              mutability: 'immutable',
+              retention: 'session',
+              authoritative_status: 'authoritative',
+            }
+            result = { kind: 'ok', outputs: [dataRef] }
           }
-          result = { kind: 'ok', outputs: [dataRef] }
         } catch (raw) {
           // HostUnavailableError → host_llm_unavailable:<host>
           // Other errors (subprocess failure, timeout) →

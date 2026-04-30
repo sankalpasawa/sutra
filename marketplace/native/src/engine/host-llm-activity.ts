@@ -50,9 +50,13 @@
  * NOT in the public engine barrel (M7 P1.1 lesson; see src/engine/index.ts):
  *   - The raw `invokeHostLLM(args)` function — internal seam used to wrap
  *     via asActivity. External callers MUST go through `hostLLMActivity`.
+ *     Codex M8 master review 2026-04-30 P1.1 fold added an F-12 guard
+ *     INSIDE `invokeHostLLM` (mirroring the opa-evaluator.evaluate fix) so
+ *     a Workflow-side deep import cannot bypass the activity wrapper.
  *   - The test seams `__set/resetHostAvailabilityForTest`,
- *     `__set/resetExecFileSyncStubForTest`. Reachable only by test code
- *     importing this module directly.
+ *     `__set/resetExecFileSyncStubForTest`,
+ *     `__set/resetInvokeHostLLMF12ProbeForTest`. Reachable only by test
+ *     code importing this module directly.
  *
  * Spec source:
  *   - holding/plans/native-v1.0/M8-hooks-otel-mcp.md Group BB
@@ -64,7 +68,15 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { asActivity } from './activity-wrapper.js'
+
+// `createRequire` lets this ESM module pull `@temporalio/workflow` for the
+// F-12 probe below. We can't `import` it at the top because workflow code
+// must be loadable in non-Temporal test contexts (Vitest unit tests do not
+// install the workflow runtime); a guarded `require` keeps the load lazy +
+// catchable.
+const __require = createRequire(import.meta.url)
 
 /**
  * The two host LLMs Sutra targets at v1.0.
@@ -147,6 +159,60 @@ export class HostUnavailableError extends Error {
     )
     this.name = 'HostUnavailableError'
   }
+}
+
+// =============================================================================
+// F-12 defense-in-depth probe (codex master review 2026-04-30 P1.1 fold)
+// =============================================================================
+
+/**
+ * Workflow-context probe for `invokeHostLLM`. Mirrors the same shape used in
+ * `opa-evaluator.evaluate` (M7 P1.1 precedent): the Activity wrapper at
+ * `activity-wrapper.ts` enforces F-12 on the wrapped form (`hostLLMActivity`),
+ * but the raw subprocess seam (`invokeHostLLM`) is reachable via direct module
+ * import from test code. Without a probe inside the raw function, a Workflow-
+ * side deep import of `src/engine/host-llm-activity.js` would execute
+ * subprocess I/O without ever hitting the workflow-context guard.
+ *
+ * The default probe attempts a guarded `require('@temporalio/workflow')`'s
+ * `inWorkflowContext()`; tests inject their own probe via the
+ * `__set/resetInvokeHostLLMF12ProbeForTest` seam below to simulate Workflow
+ * context (since Vitest unit tests do not install the workflow runtime).
+ */
+function defaultInvokeHostLLMF12Probe(): boolean {
+  try {
+    const wfMod: unknown = __require('@temporalio/workflow')
+    if (
+      typeof wfMod === 'object' &&
+      wfMod !== null &&
+      'inWorkflowContext' in wfMod &&
+      typeof (wfMod as { inWorkflowContext: unknown }).inWorkflowContext === 'function'
+    ) {
+      return Boolean((wfMod as { inWorkflowContext: () => boolean }).inWorkflowContext())
+    }
+    return false
+  } catch {
+    // Not in a Temporal workflow runtime; fall through.
+    return false
+  }
+}
+
+let invokeHostLLMF12Probe: () => boolean = defaultInvokeHostLLMF12Probe
+
+/**
+ * Test override for the F-12 guard inside `invokeHostLLM`. Tests that simulate
+ * Workflow context use this seam to assert the trap fires even when the
+ * subprocess stub would otherwise succeed.
+ *
+ * NOT exported on the public engine barrel (M7 P1.1 lesson — keep test seams
+ * off the production import surface).
+ */
+export function __setInvokeHostLLMF12ProbeForTest(probe: () => boolean): void {
+  invokeHostLLMF12Probe = probe
+}
+
+export function __resetInvokeHostLLMF12ProbeForTest(): void {
+  invokeHostLLMF12Probe = defaultInvokeHostLLMF12Probe
 }
 
 // =============================================================================
@@ -322,6 +388,25 @@ export { deriveInvocationId as __deriveInvocationIdForTest }
  *     surfaces timeout via err.signal/err.status).
  */
 export function invokeHostLLM(args: HostLLMInvokeArgs): HostLLMResult {
+  // F-12 defense-in-depth (codex master review 2026-04-30 P1.1 fold).
+  // The Activity wrapper enforces F-12 on `hostLLMActivity`; this guard
+  // prevents direct callers of `invokeHostLLM` from inside Workflow context
+  // even when Workflow code does a deep import of this module. Mirrors
+  // the M7 P1.1 fix in `opa-evaluator.evaluate` — the public barrel does
+  // NOT re-export `invokeHostLLM`, but a deep import from `./host-llm-activity.js`
+  // would otherwise reach the raw subprocess seam without hitting the
+  // workflow-context guard in `activity-wrapper.ts`. Tests that simulate
+  // Workflow context inject `__setInvokeHostLLMF12ProbeForTest(() => true)`
+  // and assert this throws BEFORE the subprocess stub runs.
+  if (invokeHostLLMF12Probe()) {
+    throw new Error(
+      'F-12: opa/host LLM invocation in Workflow context. ' +
+        'Use hostLLMActivity (asActivity-wrapped) via the dispatcher, ' +
+        'not invokeHostLLM directly. ' +
+        'See holding/plans/native-v1.0/M5-workflow-engine.md F-12.',
+    )
+  }
+
   const avail = getAvailability(args.host)
   if (!avail.available || avail.version === null) {
     throw new HostUnavailableError(args.host)

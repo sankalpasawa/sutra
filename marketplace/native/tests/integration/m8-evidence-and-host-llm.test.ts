@@ -128,6 +128,7 @@ function hostLLMStep(opts: {
   host: 'claude' | 'codex'
   prompt: string
   on_failure?: 'abort' | 'rollback' | 'continue' | 'escalate' | 'pause'
+  return_contract?: string
 }): WorkflowStep {
   const promptRef: DataRef = {
     kind: 'host-llm-prompt',
@@ -138,7 +139,7 @@ function hostLLMStep(opts: {
     retention: 'session',
     authoritative_status: 'authoritative',
   }
-  return {
+  const step: WorkflowStep = {
     step_id: opts.step_id,
     action: 'invoke_host_llm',
     host: opts.host,
@@ -146,6 +147,10 @@ function hostLLMStep(opts: {
     outputs: [],
     on_failure: opts.on_failure ?? 'abort',
   }
+  if (opts.return_contract !== undefined) {
+    step.return_contract = opts.return_contract
+  }
+  return step
 }
 
 // Reset shared module-level state between scenarios.
@@ -493,11 +498,20 @@ describe('M8 A-11.f — Claude CLI invocation produces DataRef envelope', () => 
     }
     __setExecFileSyncStubForTest(stub)
 
+    // Codex master review 2026-04-30 P2.1 fold: declare a step.return_contract
+    // so the envelope advertises the response schema (not the prompt schema —
+    // the previous shape was a contract drift).
+    const responseSchema = JSON.stringify({ type: 'string' })
     const w = createWorkflow({
       id: 'W-m8f',
       preconditions: '',
       step_graph: [
-        hostLLMStep({ step_id: 1, host: 'claude', prompt: 'hello' }),
+        hostLLMStep({
+          step_id: 1,
+          host: 'claude',
+          prompt: 'hello',
+          return_contract: responseSchema,
+        }),
       ],
       inputs: [],
       outputs: [],
@@ -520,11 +534,37 @@ describe('M8 A-11.f — Claude CLI invocation produces DataRef envelope', () => 
     expect(outs).toHaveLength(1)
     const dr = outs[0] as DataRef
     expect(dr.kind).toBe('host-llm-output')
+    // Codex P2.1 fold: schema_ref MUST be step.return_contract (the response
+    // schema), NOT inputs[0].schema_ref (the prompt schema).
+    expect(dr.schema_ref).toBe(responseSchema)
     expect(dr.locator).toBe('inline:' + JSON.stringify('response text'))
     expect(dr.version).toBe('1')
     expect(dr.mutability).toBe('immutable')
     expect(dr.retention).toBe('session')
     expect(dr.authoritative_status).toBe('authoritative')
+  })
+
+  it('omitted return_contract → schema_ref defaults to empty string (codex M8 P2.1 fold)', async () => {
+    setBothHostsAvailable()
+    __setExecFileSyncStubForTest(() => 'unconstrained-response')
+    const w = createWorkflow({
+      id: 'W-m8f-no-rc',
+      preconditions: '',
+      step_graph: [
+        hostLLMStep({ step_id: 1, host: 'claude', prompt: 'p' }),
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+    const result = await executeStepGraph(w, okDispatcher)
+    expect(result.state).toBe('success')
+    const dr = result.step_outputs[0]!.outputs[0] as DataRef
+    expect(dr.schema_ref).toBe('')
   })
 })
 
@@ -546,11 +586,19 @@ describe('M8 A-11.g — Codex CLI invocation produces DataRef envelope', () => {
     }
     __setExecFileSyncStubForTest(stub)
 
+    // Codex P2.1: declare step.return_contract so envelope schema_ref carries
+    // the response schema (not the prompt schema).
+    const responseSchema = JSON.stringify({ type: 'string' })
     const w = createWorkflow({
       id: 'W-m8g',
       preconditions: '',
       step_graph: [
-        hostLLMStep({ step_id: 1, host: 'codex', prompt: 'codex prompt' }),
+        hostLLMStep({
+          step_id: 1,
+          host: 'codex',
+          prompt: 'codex prompt',
+          return_contract: responseSchema,
+        }),
       ],
       inputs: [],
       outputs: [],
@@ -571,7 +619,107 @@ describe('M8 A-11.g — Codex CLI invocation produces DataRef envelope', () => {
 
     const dr = result.step_outputs[0]!.outputs[0] as DataRef
     expect(dr.kind).toBe('host-llm-output')
+    // Codex P2.1 fold: schema_ref MUST be step.return_contract.
+    expect(dr.schema_ref).toBe(responseSchema)
     expect(dr.locator).toBe('inline:' + JSON.stringify('codex response'))
+  })
+})
+
+// =============================================================================
+// A-11.l — codex master review 2026-04-30 P2.1 fold: host-LLM output validation
+// =============================================================================
+
+describe('M8 A-11.l — host-LLM output validates against return_contract (codex P2.1 fold)', () => {
+  it('valid response → step succeeds; envelope carries return_contract as schema_ref', async () => {
+    setBothHostsAvailable()
+    // Response is JSON-encoded number; schema asserts type=number.
+    __setExecFileSyncStubForTest(() => '42')
+    const numberSchema = JSON.stringify({ type: 'number' })
+    const w = createWorkflow({
+      id: 'W-m8l-ok',
+      preconditions: '',
+      step_graph: [
+        hostLLMStep({
+          step_id: 1,
+          host: 'claude',
+          prompt: 'p',
+          return_contract: numberSchema,
+        }),
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+    const result = await executeStepGraph(w, okDispatcher)
+    expect(result.state).toBe('success')
+    const dr = result.step_outputs[0]!.outputs[0] as DataRef
+    expect(dr.schema_ref).toBe(numberSchema)
+  })
+
+  it('invalid response → synthesizes step failure with host_llm_output_validation:<details> errMsg', async () => {
+    setBothHostsAvailable()
+    // Response cannot parse as JSON → falls back to validating the raw
+    // string. Schema asserts type=number, so a string fails validation.
+    __setExecFileSyncStubForTest(() => 'not-a-number')
+    const numberSchema = JSON.stringify({ type: 'number' })
+    const w = createWorkflow({
+      id: 'W-m8l-bad',
+      preconditions: '',
+      step_graph: [
+        hostLLMStep({
+          step_id: 1,
+          host: 'claude',
+          prompt: 'p',
+          return_contract: numberSchema,
+        }),
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+    const result = await executeStepGraph(w, okDispatcher)
+    expect(result.state).toBe('failed')
+    // M5 P1.2 sanitized envelope: `step:<id>:<action>:<errMsg>`.
+    expect(result.failure_reason).toMatch(
+      /^step:1:abort:host_llm_output_validation:/,
+    )
+  })
+
+  it('malformed return_contract (non-JSON) → schema_compile_failed under host_llm_output_validation', async () => {
+    setBothHostsAvailable()
+    __setExecFileSyncStubForTest(() => 'response')
+    const w = createWorkflow({
+      id: 'W-m8l-malformed',
+      preconditions: '',
+      step_graph: [
+        hostLLMStep({
+          step_id: 1,
+          host: 'claude',
+          prompt: 'p',
+          return_contract: '{ not json',
+        }),
+      ],
+      inputs: [],
+      outputs: [],
+      state: [],
+      postconditions: '',
+      failure_policy: 'abort',
+      stringency: 'task',
+      interfaces_with: [],
+    })
+    const result = await executeStepGraph(w, okDispatcher)
+    expect(result.state).toBe('failed')
+    expect(result.failure_reason).toMatch(
+      /^step:1:abort:host_llm_output_validation:schema_compile_failed/,
+    )
   })
 })
 

@@ -178,3 +178,7 @@ export {
 // `__set/resetHostAvailabilityForTest`, `__set/resetExecFileSyncStubForTest`,
 // `__deriveInvocationIdForTest` (M8 Group BB T-117..T-119) are also NOT on
 // the public barrel — tests import directly from './host-llm-activity.js'.
+//
+// `__set/resetInvokeHostLLMF12ProbeForTest` (M8 codex master 2026-04-30 P1.1
+// fold) — F-12 defense-in-depth probe seam mirroring the opa-evaluator
+// pattern. Reachable only via direct module import in test code.

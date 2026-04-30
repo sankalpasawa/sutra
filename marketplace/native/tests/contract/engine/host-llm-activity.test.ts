@@ -29,6 +29,8 @@ import {
   __resetHostAvailabilityForTest,
   __setExecFileSyncStubForTest,
   __resetExecFileSyncStubForTest,
+  __setInvokeHostLLMF12ProbeForTest,
+  __resetInvokeHostLLMF12ProbeForTest,
   __deriveInvocationIdForTest,
   type ExecFileSyncStub,
 } from '../../../src/engine/host-llm-activity.js'
@@ -45,6 +47,7 @@ function setBothAvailable(): void {
 afterEach(() => {
   __resetHostAvailabilityForTest()
   __resetExecFileSyncStubForTest()
+  __resetInvokeHostLLMF12ProbeForTest()
 })
 
 describe('invokeHostLLM — Claude path (T-117)', () => {
@@ -211,6 +214,48 @@ describe('invokeHostLLM — invocation_id determinism', () => {
     const a = __deriveInvocationIdForTest('p', 'claude', '2.1.123', 1)
     const b = __deriveInvocationIdForTest('p', 'claude', '2.1.123', 2)
     expect(a).not.toBe(b)
+  })
+})
+
+// =============================================================================
+// F-12 defense-in-depth — codex master review 2026-04-30 P1.1 fold
+// =============================================================================
+
+describe('invokeHostLLM — F-12 defense-in-depth (codex M8 P1.1 fold)', () => {
+  it('throws F-12 error when called from simulated Workflow context (codex M8 P1.1 fold)', () => {
+    // Pin a passing config: hosts available + a stub that WOULD succeed if
+    // the F-12 guard were absent. The F-12 trap MUST fire BEFORE the stub
+    // runs — that is the load-bearing assertion.
+    setBothAvailable()
+    let stubInvoked = false
+    const stub: ExecFileSyncStub = (_file, _args, _opts) => {
+      stubInvoked = true
+      return 'should-never-reach-here'
+    }
+    __setExecFileSyncStubForTest(stub)
+
+    // Simulate Workflow context — the same shape opa-evaluator.evaluate uses.
+    __setInvokeHostLLMF12ProbeForTest(() => true)
+
+    expect(() =>
+      invokeHostLLM({ prompt: 'p', host: 'claude', workflow_run_seq: 1 }),
+    ).toThrow(/F-12/)
+
+    // Defense-in-depth: the subprocess stub MUST NOT have been reached.
+    expect(stubInvoked).toBe(false)
+  })
+
+  it('does NOT throw F-12 when probe returns false (default non-Workflow context)', () => {
+    setBothAvailable()
+    __setExecFileSyncStubForTest(() => 'normal-response')
+    __setInvokeHostLLMF12ProbeForTest(() => false)
+
+    const result = invokeHostLLM({
+      prompt: 'p',
+      host: 'claude',
+      workflow_run_seq: 1,
+    })
+    expect(result.response).toBe('normal-response')
   })
 })
 

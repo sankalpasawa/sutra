@@ -227,6 +227,23 @@ function validateStep(step: WorkflowStep, idx: number): void {
       `Workflow.step_graph[${idx}].policy_check must be a boolean when supplied; got "${typeof step.policy_check}"`,
     )
   }
+  // M8 codex master review 2026-04-30 P2.1 fold. Step-level `return_contract`
+  // is optional; when supplied it MUST be a non-empty SchemaRef string AND
+  // the step MUST have action='invoke_host_llm' (other step shapes do not
+  // declare an output schema at the step level — Skill outputs use
+  // Workflow.return_contract via the SkillEngine path instead).
+  if (step.return_contract !== undefined) {
+    if (typeof step.return_contract !== 'string' || step.return_contract.length === 0) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].return_contract must be a non-empty string when supplied; got "${typeof step.return_contract}"`,
+      )
+    }
+    if (step.action !== 'invoke_host_llm') {
+      throw new Error(
+        `Workflow.step_graph[${idx}].return_contract is only permitted when action='invoke_host_llm' (codex M8 P2.1 fold); got action="${String(step.action)}"`,
+      )
+    }
+  }
 }
 
 /** Validate expects_response_from is null or a non-empty string (BoundaryEndpointRef). */
@@ -458,6 +475,16 @@ export function isValidWorkflow(w: Workflow): boolean {
       }
     } else if (hasHost) {
       return false
+    }
+    // M8 codex master review 2026-04-30 P2.1 fold. Defensive — step.return_contract
+    // is permitted only when action='invoke_host_llm' AND must be a non-empty string.
+    if (step.return_contract !== undefined) {
+      if (typeof step.return_contract !== 'string' || step.return_contract.length === 0) {
+        return false
+      }
+      if (step.action !== 'invoke_host_llm') {
+        return false
+      }
     }
   }
   // M4.4 — custody_owner must be null OR match T-<id> pattern.
