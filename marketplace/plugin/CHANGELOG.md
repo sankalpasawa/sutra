@@ -1,5 +1,60 @@
 # Changelog
 
+## v2.10.0 — 2026-05-01
+
+**Inbox display ships + release packaging guard.**
+
+Closes [issue #43](https://github.com/sankalpasawa/sutra/issues/43) (vinit, Testlify) — every `SessionStart:resume` printed `inbox-display.sh: No such file or directory` because `hooks/hooks.json` declared the hook but the script was never `git add`'d. Working tree had it; the published plugin tarball did not. Same drift class as the v2.7.1 description-vs-code incident.
+
+### Fixes
+
+| Item | Change |
+|---|---|
+| `hooks/inbox-display.sh` | Now tracked in git (was working-tree-only). FEEDBACK charter §N Close-Loop Layer V0 hook — soft-fails on every error path, two kill-switches (`SUTRA_INBOX_DISABLED=1`, `~/.sutra-inbox-disabled`). |
+| `scripts/validate-hook-paths.sh` | NEW. Pre-release CI guard. Reads `hooks.json`, expands every `${CLAUDE_PLUGIN_ROOT}` command path, confirms each exists on disk AND is git-tracked. Exits non-zero with the offender list when a path is missing or untracked. |
+| `tests/unit/test-validate-hook-paths.sh` | NEW. 4 cases — green plugin tree / referenced-missing-file / non-git-tree pass-with-note / empty hooks.json defensive fail. Picked up by `run-all.sh`. |
+
+### Why this matters
+
+Two prior releases (v2.8.5, v2.9.1) shipped the same bug because the description, the manifest, and the source tree were merged independently with no gate that all three agree. Going forward:
+
+- Every release commit must run `scripts/validate-hook-paths.sh` and exit 0.
+- `tests/run-all.sh` runs the validator's unit test, so any reviewer running tests sees the regression class is covered.
+
+### What did NOT change
+
+- No threat-model change.
+- No API/skill/command surface change.
+- No telemetry behavior change (v2.9.1 contract preserved).
+
+### Affected versions of bug
+
+| Version | hooks.json refs `inbox-display.sh`? | File shipped in tarball? | User-visible? |
+|---|---|---|---|
+| ≤ v2.7.3 | No | n/a | No |
+| v2.8.5 | Yes | No | **Yes — STDERR banner on every resume** |
+| v2.8.11 | Yes | No | **Yes** |
+| v2.9.1 | Yes | No | **Yes** |
+| **v2.10.0** | Yes | **Yes** | **No (fixed)** |
+
+### How to update
+
+```
+/core:update
+```
+
+Or:
+
+```
+claude plugin marketplace update sutra && claude plugin update core@sutra
+```
+
+### Codex review
+
+Validator + unit test packet self-reviewed against `validate-hook-paths.sh` v1 spec; verdict logged at `.enforcement/codex-reviews/2026-05-01-v2-10-0-release.md` if codex is reachable from the founder's session.
+
+---
+
 ## v2.9.1 — 2026-04-30
 
 **Telemetry: explicit opt-in during install (founder direction).**

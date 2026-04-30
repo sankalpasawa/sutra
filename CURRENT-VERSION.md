@@ -1,5 +1,37 @@
 # Sutra — Current Version
 
+## v2.10.0 (2026-05-01) — inbox-display ships; release packaging guard
+
+**What this is**: a release fix for the SessionStart STDERR banner reported by Vinit (Testlify) as [issue #43](https://github.com/sankalpasawa/sutra/issues/43). Every `claude -r <id>` resume printed `inbox-display.sh: No such file or directory`. The hook was authored, registered in `hooks/hooks.json`, and worked in the asawa-holding working tree — but the `.sh` file was never `git add`'d, so the published plugin tarball shipped a manifest pointing at a missing file. v2.8.5, v2.8.11, v2.9.1 all carried the bug.
+
+**Same drift class as v2.7.1**: description / manifest / source tree merged independently with no gate that all three agree.
+
+### What v2.10.0 ships
+
+- `hooks/inbox-display.sh` — now tracked in git. Close-Loop Layer V0 (FEEDBACK charter §N): on SessionStart, reads `clients/<install_id>/inbox/` from the sutra-data git rail to deliver close-out messages for issues filed via `sutra feedback --public`, with a gh-API fallback for gh-UI filers. Soft-fails on every error path (never blocks). Two kill-switches: `SUTRA_INBOX_DISABLED=1` env, `~/.sutra-inbox-disabled` file.
+- `scripts/validate-hook-paths.sh` — pre-release CI guard. Reads `hooks.json`, expands every `${CLAUDE_PLUGIN_ROOT}` command path, confirms each exists on disk AND is git-tracked. Exits non-zero with the offender list. Will be wired into the pre-commit hook + every release-cut acceptance gate going forward.
+- `tests/unit/test-validate-hook-paths.sh` — 4 cases: green plugin tree / referenced-missing-file / non-git pass-with-note / empty hooks.json defensive fail. Auto-discovered by `tests/run-all.sh`.
+
+### Validation
+
+| Surface | Result |
+|---|---|
+| `scripts/validate-hook-paths.sh` on HEAD | 49/49 hook paths present and tracked (exit 0) |
+| `tests/unit/test-validate-hook-paths.sh` | 4/4 PASS |
+| Cache install of v2.10.0 | will be verified post-publish; expected: `inbox-display.sh` present in `~/.claude/plugins/cache/sutra/core/2.10.0/hooks/` |
+
+### What did NOT change
+
+- No threat-model change.
+- No API/skill/command surface change vs v2.9.1.
+- No telemetry behavior change (v2.9.1 contract preserved).
+
+### Lesson (mirrored from v2.7.1)
+
+Every release commit must run `scripts/validate-hook-paths.sh` and exit 0. The v2.7.1 entry already noted "description-and-code can drift across parallel sessions" — v2.10.0 generalises that to "manifest-and-source-tree can drift" and ships a deterministic check.
+
+---
+
 ## v2.7.1 (2026-04-28) — actually apply the v2.6.3 assistant-observer fix
 
 **What this is**: a follow-up patch to v2.7.0. The v2.6.3 entry below (and the v2.7.0 description) claimed the assistant-observer.sh B7+B9 fix had shipped, but the v2.7.0 commit `f1f2352` only included the *narrative* — the actual one-line code change in `hooks/assistant-observer.sh` was a working-tree edit that never made it into a commit (it was bundled into a parallel-session commit that captured the version metadata but missed the .sh diff).
