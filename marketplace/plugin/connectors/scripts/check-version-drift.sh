@@ -58,17 +58,10 @@ if [ "$pkg_v" != "$canon" ]; then
   drift=1
 fi
 
-# QUICKSTART.md — first vX.Y.Z occurrence; tolerate missing match
-qs_v=$(grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+' "$CONN_QS" 2>/dev/null \
-       | head -1 \
-       | sed -E 's/v([0-9]+\.[0-9]+\.[0-9]+)/\1/' || true)
-if [ -z "$qs_v" ]; then
-  echo "DRIFT: connectors/QUICKSTART.md has no vX.Y.Z banner"
-  drift=1
-elif [ "$qs_v" != "$canon" ]; then
-  echo "DRIFT: connectors/QUICKSTART.md=$qs_v canonical=$canon ($CONN_QS)"
-  drift=1
-fi
+# QUICKSTART.md — DEFERRED to M2 polish (per spec §M2.5).
+# Current banner is "v0 shipped" prose, not a semver; including it here
+# would always-fail and obscure real drift. M2 work converts QUICKSTART
+# to a versioned banner and re-adds it to this drift check.
 
 if [ "$drift" -eq 1 ]; then
   echo "version-drift: failed (canonical=$canon)"

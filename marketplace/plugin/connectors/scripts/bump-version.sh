@@ -76,18 +76,17 @@ backup "$CONN_PKG"
 sed -i.tmp -E "s/(\"version\"[[:space:]]*:[[:space:]]*\")[0-9]+\.[0-9]+\.[0-9]+(\")/\1$NEW_VERSION\2/" "$CONN_PKG"
 rm -f "$CONN_PKG.tmp"
 
-# 4. QUICKSTART.md — "Status:" line containing "vX.Y.Z" OR test-count banner
-backup "$CONN_QS"
-sed -i.tmp -E "s/v[0-9]+\.[0-9]+\.[0-9]+/v$NEW_VERSION/" "$CONN_QS"
-rm -f "$CONN_QS.tmp"
+# 4. QUICKSTART.md — DEFERRED to M2 polish (current banner is "v0 shipped",
+#    not a semver; doing a sed substitution here is a silent no-op and
+#    leaves drift behind. Per spec §M2.5, QUICKSTART rewrite is M2 work.
+#    Including it in M1 bump would be cosmetic noise that hides real drift.
 
 # Success — remove .bak files
 for b in "${BACKUPS[@]}"; do
   rm -f "$b"
 done
 
-echo "bump-version: $NEW_VERSION applied across 4 surfaces"
+echo "bump-version: $NEW_VERSION applied across 3 M1 surfaces (QUICKSTART deferred to M2)"
 echo "  $PLUGIN_JSON"
 echo "  $PLUGIN_README"
 echo "  $CONN_PKG"
-echo "  $CONN_QS"

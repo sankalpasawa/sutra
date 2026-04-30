@@ -176,6 +176,15 @@ export class SecretStoreAge {
     const identityPath = this.#identityPath;
 
     return new Promise<Buffer>((resolve, reject) => {
+      // INVARIANT 6 (must run BEFORE spawn): already-aborted fast path.
+      // If signal is already aborted, do not launch the age subprocess at
+      // all — synchronously reject. Defending against the regression where
+      // we used to spawn first then check, which violated the discipline.
+      if (signal && signal.aborted) {
+        reject(new AbortError('age -d aborted via signal (pre-spawn fast path)'));
+        return;
+      }
+
       // INVARIANT 3: signal NOT passed to spawn — explicit listener owns abort.
       // INVARIANT 4: stdio ignore stdin (noninteractive); pipe stdout/stderr.
       const proc = spawn('age', ['-d', '-i', identityPath, target], {
@@ -291,6 +300,14 @@ export class SecretStoreAge {
     const recipientPath = this.#recipientPath;
 
     return new Promise<void>((resolve, reject) => {
+      // INVARIANT 6 (must run BEFORE spawn): already-aborted fast path.
+      // If signal is already aborted, do not launch the age subprocess at
+      // all — synchronously reject. Mirrors decrypt() symmetric discipline.
+      if (signal && signal.aborted) {
+        reject(new AbortError('age -e aborted via signal (pre-spawn fast path)'));
+        return;
+      }
+
       const proc = spawn('age', ['-e', '-R', recipientPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
