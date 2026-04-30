@@ -46,6 +46,8 @@ import {
   type ActivityDispatcher,
   type ExecutionResult,
 } from './step-graph-executor.js'
+import type { AgentIdentity } from '../types/agent-identity.js'
+import type { OTelEmitter } from './otel-emitter.js'
 
 /**
  * Maximum chain depth for skill→skill invocation. Eight is the v1.0 ceiling
@@ -82,6 +84,21 @@ export interface SkillInvocationContext {
    * the top of invokeSkill against SKILL_RECURSION_CAP.
    */
   readonly recursion_depth: number
+  /**
+   * M8 Group Z (T-107). Optional OTel emitter — when supplied, invokeSkill
+   * emits SKILL_RESOLVED / SKILL_UNRESOLVED / SKILL_RECURSION_CAP records
+   * carrying the trace_id + workflow_id + step_id + agent_identity for
+   * cross-correlation. Absent ⇒ no emission (M6 baseline tests stay clean).
+   */
+  readonly otel_emitter?: OTelEmitter
+  /** M8 Group Z (T-107). trace_id propagated from the parent executor. */
+  readonly trace_id?: string
+  /** M8 Group Z (T-107). workflow_id of the parent execution. */
+  readonly workflow_id?: string
+  /** M8 Group Z (T-107). agent_identity carried from the executor caller. */
+  readonly agent_identity?: AgentIdentity
+  /** M8 Group Z (T-107). actor (authority-holder id, D1 §1) when known. */
+  readonly actor?: string
 }
 
 /**
@@ -320,6 +337,9 @@ export async function invokeSkill(
   // 1. Recursion-depth cap (T-072). Check BEFORE resolution so a runaway
   // chain fails fast without touching the registry / dispatcher.
   if (context.recursion_depth >= SKILL_RECURSION_CAP) {
+    await emitSkillEvent(context, 'SKILL_RECURSION_CAP', parentStep.step_id, skill_ref, {
+      recursion_depth: context.recursion_depth,
+    })
     return {
       kind: 'failure',
       skill_ref,
@@ -330,6 +350,7 @@ export async function invokeSkill(
   // 2. Resolve the Skill. Miss surfaces as canonical skill_unresolved.
   const resolved = context.skill_engine.resolve(skill_ref)
   if (resolved === null) {
+    await emitSkillEvent(context, 'SKILL_UNRESOLVED', parentStep.step_id, skill_ref, {})
     return {
       kind: 'failure',
       skill_ref,
@@ -343,9 +364,17 @@ export async function invokeSkill(
   // its OWN children (depth+2, etc.); the parent's executor never sees
   // the child's internals — the only thing it gets back is the validated
   // payload + child_result for diagnostics.
+  //
+  // M8 Group Z (T-108): forward trace_id + emitter + identity so the child's
+  // STEP_* / POLICY_* / SKILL_* events all share the parent's trace_id —
+  // observability sees the full logical chain as one run.
   const child_result = await executeStepGraph(resolved, context.dispatch, {
     recursion_depth: context.recursion_depth + 1,
     skill_engine: context.skill_engine,
+    ...(context.otel_emitter !== undefined ? { otel_emitter: context.otel_emitter } : {}),
+    ...(context.trace_id !== undefined ? { trace_id: context.trace_id } : {}),
+    ...(context.agent_identity !== undefined ? { agent_identity: context.agent_identity } : {}),
+    ...(context.actor !== undefined ? { actor: context.actor } : {}),
   })
 
   // 3a. Codex master review 2026-04-30 P2.1 fold: when the child execution
@@ -390,11 +419,55 @@ export async function invokeSkill(
     validated_payload,
     resolved.return_contract!,
   )
+  await emitSkillEvent(context, 'SKILL_RESOLVED', parentStep.step_id, skill_ref, {
+    child_execution_id: synthesizeChildExecutionId(parentStep.step_id, skill_ref),
+    validated_dataref,
+  })
   return {
     kind: 'success',
     skill_ref,
     child_execution_id: synthesizeChildExecutionId(parentStep.step_id, skill_ref),
     validated_dataref,
     child_result,
+  }
+}
+
+/**
+ * M8 Group Z (T-107) helper. Emit a SKILL_* OTel event when the context
+ * carries a configured emitter + trace_id. Errors are swallowed silently —
+ * observability failures must not break Workflow execution.
+ *
+ * Attribute schemas per kind:
+ *   SKILL_RESOLVED       : { skill_ref, child_execution_id, validated_dataref }
+ *   SKILL_UNRESOLVED     : { skill_ref }
+ *   SKILL_RECURSION_CAP  : { skill_ref, recursion_depth }
+ */
+async function emitSkillEvent(
+  context: SkillInvocationContext,
+  kind: 'SKILL_RESOLVED' | 'SKILL_UNRESOLVED' | 'SKILL_RECURSION_CAP',
+  step_id: number,
+  skill_ref: string,
+  extra: Record<string, unknown>,
+): Promise<void> {
+  const emitter = context.otel_emitter
+  const trace_id = context.trace_id
+  if (emitter === undefined || typeof trace_id !== 'string' || trace_id.length === 0) {
+    return
+  }
+  try {
+    await emitter.emit({
+      decision_kind: kind,
+      trace_id,
+      step_id,
+      ...(context.workflow_id !== undefined ? { workflow_id: context.workflow_id } : {}),
+      ...(context.agent_identity !== undefined ? { agent_identity: context.agent_identity } : {}),
+      ...(context.actor !== undefined ? { actor: context.actor } : {}),
+      attributes: {
+        skill_ref,
+        ...extra,
+      },
+    })
+  } catch {
+    // Observability failure must NEVER break execution. Drop silently.
   }
 }

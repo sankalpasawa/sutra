@@ -36,6 +36,8 @@ import {
   type PolicyDecision,
   type PolicyInput,
 } from './opa-evaluator.js'
+import type { AgentIdentity } from '../types/agent-identity.js'
+import { OTelEmitter, type OTelEventRecord } from './otel-emitter.js'
 
 /**
  * Discriminated command shape. v1.0 only carries `policy_eval`; future
@@ -54,6 +56,18 @@ export interface PolicyEvalCommand {
   /** Optional version pin. When omitted, the bundle's latest is used. */
   readonly policy_version?: string
   readonly input: PolicyInput
+  /**
+   * M8 Group Z (T-106). Optional observability fields — when supplied, the
+   * dispatcher emits POLICY_ALLOW / POLICY_DENY events to the configured
+   * OTelEmitter carrying these identity + correlation fields. Absent values
+   * keep the dispatcher emission-clean (e.g. M7 baseline tests that do not
+   * supply an emitter or identity).
+   */
+  readonly trace_id?: string
+  readonly workflow_id?: string
+  readonly step_id?: number
+  readonly agent_identity?: AgentIdentity
+  readonly actor?: string
 }
 
 export type DispatchableCommand = PolicyEvalCommand
@@ -87,12 +101,21 @@ export interface PolicyDispatcher {
  * `bundleService` as its single required parameter — the bundle is the
  * policy source of truth at evaluation time.
  */
-export function makePolicyDispatcher(bundleService: OPABundleService): PolicyDispatcher {
+export function makePolicyDispatcher(
+  bundleService: OPABundleService,
+  otelEmitter?: OTelEmitter,
+): PolicyDispatcher {
   if (typeof bundleService !== 'object' || bundleService === null) {
     throw new TypeError(
       'makePolicyDispatcher: bundleService must be an OPABundleService instance',
     )
   }
+  // M8 Group Z (T-106). The emitter is OPTIONAL — M7 callers that don't yet
+  // wire observability stay backward-compatible. When undefined we use a
+  // shared "disabled" emitter so the dispatch hot-path can call .emit()
+  // unconditionally without per-call branching.
+  const emitter = otelEmitter ?? OTelEmitter.disabled()
+
   return {
     dispatch_policy_eval: async (cmd: PolicyEvalCommand): Promise<PolicyDecision> => {
       const policy = bundleService.get(cmd.policy_id, cmd.policy_version)
@@ -103,14 +126,82 @@ export function makePolicyDispatcher(bundleService: OPABundleService): PolicyDis
         // policy_version surfaces "unknown" since no compiled record exists.
         const missingId = cmd.policy_id
         const versionPart = cmd.policy_version ?? 'latest'
-        return {
+        const decision: PolicyDecision = {
           kind: 'deny',
           rule_name: 'bundle_lookup_failure',
           reason: `no_policy_for_id:${missingId}@${versionPart}`,
           policy_version: 'unknown',
         }
+        await emitPolicyDecision(emitter, cmd, decision)
+        return decision
       }
-      return policyEvalActivity(policy, cmd.input)
+      const decision = await policyEvalActivity(policy, cmd.input)
+      await emitPolicyDecision(emitter, cmd, decision)
+      return decision
     },
+  }
+}
+
+/**
+ * M8 Group Z (T-106) helper. Emit POLICY_ALLOW or POLICY_DENY for the
+ * dispatcher's decision. The emit is async but errors are NEVER propagated:
+ * an exporter failure must not break Workflow execution. We swallow inside
+ * a try/catch so the dispatch result returns to the executor regardless.
+ *
+ * Attribute schema:
+ *   ALLOW: { policy_id, policy_version }
+ *   DENY:  { policy_id, policy_version, rule_name, reason }
+ *
+ * Reason field carries the dispatcher's `reason` UNREDACTED. Codex review
+ * note (Group AA + DD): if reasons start carrying user data in M11 dogfood,
+ * this is the layer to add a sanitizer; for v1.0 the rule names + bundle
+ * tags are operator-controlled strings.
+ */
+async function emitPolicyDecision(
+  emitter: OTelEmitter,
+  cmd: PolicyEvalCommand,
+  decision: PolicyDecision,
+): Promise<void> {
+  // Emission requires a trace_id to be useful — without one the record
+  // cannot correlate to a Workflow run. Skip silently if the executor
+  // didn't supply one (M7 baseline path).
+  if (typeof cmd.trace_id !== 'string' || cmd.trace_id.length === 0) {
+    return
+  }
+  try {
+    const base: Pick<
+      OTelEventRecord,
+      'trace_id' | 'workflow_id' | 'step_id' | 'agent_identity' | 'actor'
+    > = {
+      trace_id: cmd.trace_id,
+      ...(cmd.workflow_id !== undefined ? { workflow_id: cmd.workflow_id } : {}),
+      ...(cmd.step_id !== undefined ? { step_id: cmd.step_id } : {}),
+      ...(cmd.agent_identity !== undefined ? { agent_identity: cmd.agent_identity } : {}),
+      ...(cmd.actor !== undefined ? { actor: cmd.actor } : {}),
+    }
+    if (decision.kind === 'allow') {
+      await emitter.emit({
+        ...base,
+        decision_kind: 'POLICY_ALLOW',
+        attributes: {
+          policy_id: cmd.policy_id,
+          policy_version: decision.policy_version,
+        },
+      })
+    } else {
+      await emitter.emit({
+        ...base,
+        decision_kind: 'POLICY_DENY',
+        attributes: {
+          policy_id: cmd.policy_id,
+          policy_version: decision.policy_version,
+          rule_name: decision.rule_name,
+          reason: decision.reason,
+        },
+      })
+    }
+  } catch {
+    // Observability failure must NEVER break execution. Drop silently;
+    // the production OTLP exporter handles its own retry/buffering.
   }
 }

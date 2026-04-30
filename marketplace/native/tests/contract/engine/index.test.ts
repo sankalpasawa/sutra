@@ -53,6 +53,18 @@ describe('engine barrel — public surface', () => {
     expect(typeof e.validateOutputs).toBe('function')
   })
 
+  it('re-exports M8 Group Z — OTelEmitter + exporters', () => {
+    expect(typeof engine.OTelEmitter).toBe('function')
+    expect(typeof engine.InMemoryOTelExporter).toBe('function')
+    expect(typeof engine.NoopOTelExporter).toBe('function')
+    expect(typeof engine.OTLPHttpExporter).toBe('function')
+    // Smoke: emitter constructible + emit + flush
+    const exporter = new engine.InMemoryOTelExporter()
+    const emitter = new engine.OTelEmitter(exporter)
+    expect(typeof emitter.emit).toBe('function')
+    expect(typeof emitter.flush).toBe('function')
+  })
+
   it('does NOT re-export test seams on the public barrel', () => {
     expect((engine as Record<string, unknown>).__setWorkflowContextProbeForTest).toBeUndefined()
     expect((engine as Record<string, unknown>).__resetWorkflowContextProbeForTest).toBeUndefined()

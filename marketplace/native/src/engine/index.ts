@@ -117,7 +117,27 @@ export {
   type PolicyEvalCommand,
 } from './policy-dispatcher.js'
 
+// M8 Group Z — OTel emitter + universal evidence-emit. The OTelEmitter is
+// the gateway every consequential decision flows through; InMemoryOTelExporter
+// is the test sink; NoopOTelExporter + OTLPHttpExporter ship for production
+// (the OTLP HTTP exporter is a stub at v1.0 — M11 dogfood will wire the real
+// implementation). `OTelEventKind` is the open-ended discriminator carrying
+// both the strict D2 §2.1 set and Group Z/BB observability kinds.
+export {
+  InMemoryOTelExporter,
+  NoopOTelExporter,
+  OTelEmitter,
+  OTLPHttpExporter,
+  type OTelEventKind,
+  type OTelEventRecord,
+  type OTelExporter,
+} from './otel-emitter.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public
 // engine barrel free of test-only seams.
+//
+// `__resetWorkflowRunSeqForTest` (M8 Group Z T-108) is the trace_id seam —
+// also intentionally NOT on the public barrel; tests import directly from
+// './step-graph-executor.js'.

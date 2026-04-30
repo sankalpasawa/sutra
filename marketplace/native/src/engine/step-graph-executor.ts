@@ -25,6 +25,8 @@
  *  - .enforcement/codex-reviews/2026-04-29-m5-plan-pre-dispatch.md P2.5 + P1.3
  */
 
+import { createHash } from 'node:crypto'
+
 import type { Workflow } from '../primitives/workflow.js'
 import type { DataRef } from '../types/index.js'
 import type { ForbiddenCouplingId } from '../laws/l4-terminal-check.js'
@@ -39,6 +41,55 @@ import { invokeSkill } from './skill-invocation.js'
 import type { CompiledPolicy } from './charter-rego-compiler.js'
 import type { PolicyDispatcher } from './policy-dispatcher.js'
 import type { PolicyInput } from './opa-evaluator.js'
+import type { AgentIdentity } from '../types/agent-identity.js'
+import { OTelEmitter, type OTelEventKind } from './otel-emitter.js'
+
+// =============================================================================
+// trace_id derivation (M8 Group Z T-108; D-NS-26)
+// =============================================================================
+
+/**
+ * Per-Workflow run counter. Module-level, deterministic across processes
+ * for one continuous module load — not persistent across restarts (which
+ * is fine: trace_id only needs uniqueness within one observability stream
+ * for cross-event correlation; replay determinism is bound to the
+ * (workflow_id, run_seq) pair, both of which the executor controls here).
+ *
+ * D-NS-26 (clock-free derivation): trace_id = sha256(workflow.id + ':' + run_seq).
+ * Truncated to 32 hex chars for compactness — 128 bits of state is more
+ * than enough for collision avoidance within an observability stream.
+ *
+ * Note: a deliberately-deterministic trace_id is the M8 Group Z contract.
+ * The property test (T-110) relies on a SHARED trace_id across all events
+ * of one run; the helper below builds it once at the top of executeStepGraph.
+ */
+const workflowRunSeq = new Map<string, number>()
+
+/**
+ * Derive a deterministic trace_id for one Workflow execution.
+ *
+ * @param workflow_id — Workflow.id (assumed non-empty per the primitive)
+ * @returns 32-char hex string `sha256(workflow_id + ':' + run_seq).slice(0, 32)`
+ */
+function deriveTraceId(workflow_id: string): string {
+  const seq = (workflowRunSeq.get(workflow_id) ?? 0) + 1
+  workflowRunSeq.set(workflow_id, seq)
+  const hash = createHash('sha256').update(`${workflow_id}:${seq}`).digest('hex')
+  return hash.slice(0, 32)
+}
+
+/**
+ * Test-only seam (M8 Group Z): reset the per-Workflow run counter so
+ * back-to-back property-test cases don't accumulate run_seq across runs
+ * (which would change the trace_id between identical inputs and break
+ * replay-determinism assertions).
+ *
+ * NOT exported on the engine barrel — internal seam reachable only via
+ * direct module import (tests/property/otel-emitter.test.ts).
+ */
+export function __resetWorkflowRunSeqForTest(): void {
+  workflowRunSeq.clear()
+}
 
 // =============================================================================
 // Types
@@ -159,6 +210,35 @@ export interface ExecuteOptions {
    * explicit value to exercise cross-tenant deny scenarios (A-7.e).
    */
   tenant_id?: string
+  /**
+   * M8 Group Z (T-108). Optional OTel emitter — when supplied, the executor
+   * emits STEP_START / STEP_COMPLETE / STEP_FAIL records (and propagates
+   * the emitter into invokeSkill + policy_dispatcher) carrying a
+   * deterministic trace_id derived from the Workflow + run_seq. Absent ⇒
+   * no emission (M5/M6/M7 baseline tests stay clean).
+   */
+  otel_emitter?: OTelEmitter
+  /**
+   * M8 Group Z (T-108). Optional agent_identity carried through to OTel
+   * emissions. Production code populates from session/Activity context;
+   * tests pass an explicit value when asserting identity in records.
+   */
+  agent_identity?: AgentIdentity
+  /**
+   * M8 Group Z (T-108). Optional actor (authority-holder id, D1 §1) carried
+   * through to OTel emissions. Production code populates from policy
+   * context; tests pass an explicit value.
+   */
+  actor?: string
+  /**
+   * M8 Group Z (T-108) — child-execution carry-through. The executor
+   * derives trace_id deterministically at root invocation; child Skill
+   * invocations re-enter executeStepGraph and MUST share the parent's
+   * trace_id so all events for one logical run correlate. invokeSkill
+   * forwards the parent's trace_id via this option. Direct callers leave
+   * this undefined — the executor derives a fresh trace_id.
+   */
+  trace_id?: string
 }
 
 /**
@@ -347,6 +427,21 @@ export async function executeStepGraph(
   const compiled_policy = options.compiled_policy
   const policyGateActive = policy_dispatcher !== undefined && compiled_policy !== undefined
 
+  // M8 Group Z (T-108). Derive a deterministic trace_id for this run unless
+  // the caller (e.g. invokeSkill re-entering for a child Skill) supplied
+  // one — child invocations share the parent's trace_id so cross-event
+  // correlation traces the full logical execution.
+  //
+  // D-NS-26: trace_id = sha256(workflow.id + ':' + run_seq).slice(0, 32);
+  // clock-free. The run_seq is a per-Workflow module-level counter (see
+  // top of file) — the property test (T-110) calls
+  // __resetWorkflowRunSeqForTest between cases so back-to-back runs over
+  // identical inputs produce identical trace_ids (replay-determinism).
+  const trace_id = options.trace_id ?? deriveTraceId(workflow.id)
+  const otel_emitter = options.otel_emitter
+  const agent_identity = options.agent_identity
+  const actor = options.actor
+
   for (const step of workflow.step_graph) {
     // Per-step dispatch context — derived snapshot, not a live reference.
     // `completed_step_ids` here is the rollback-correct view (success-only),
@@ -376,6 +471,21 @@ export async function executeStepGraph(
       visited_step_ids.push(step.step_id)
       break
     }
+
+    // M8 Group Z (T-108). STEP_START emitted before policy gate / dispatch.
+    // Carries trace_id + workflow_id + step_id + agent_identity for cross-
+    // event correlation. Idempotent — emission failures are swallowed.
+    await emitStepEvent(otel_emitter, 'STEP_START', {
+      trace_id,
+      workflow_id: workflow.id,
+      step_id: step.step_id,
+      agent_identity,
+      actor,
+      attributes: {
+        action: descriptor.action,
+        skill_ref: descriptor.skill_ref,
+      },
+    })
 
     let result: StepDispatchResult
 
@@ -433,6 +543,14 @@ export async function executeStepGraph(
           policy_id: compiled_policy!.policy_id,
           policy_version: compiled_policy!.policy_version,
           input: policyInput,
+          // M8 Group Z (T-108) — propagate trace + identity so the dispatcher
+          // can emit POLICY_ALLOW / POLICY_DENY records sharing this run's
+          // trace_id. Spread-only so undefined fields don't appear on the cmd.
+          trace_id,
+          workflow_id: workflow.id,
+          step_id: step.step_id,
+          ...(agent_identity !== undefined ? { agent_identity } : {}),
+          ...(actor !== undefined ? { actor } : {}),
         })
         if (decision.kind === 'deny') {
           policyDenied = true
@@ -477,6 +595,14 @@ export async function executeStepGraph(
           skill_engine,
           dispatch,
           recursion_depth,
+          // M8 Group Z (T-108) — propagate trace + identity into invokeSkill
+          // so SKILL_RESOLVED / SKILL_UNRESOLVED / SKILL_RECURSION_CAP
+          // records share the parent run's trace_id + workflow_id.
+          ...(otel_emitter !== undefined ? { otel_emitter } : {}),
+          trace_id,
+          workflow_id: workflow.id,
+          ...(agent_identity !== undefined ? { agent_identity } : {}),
+          ...(actor !== undefined ? { actor } : {}),
         })
         if (invokeResult.kind === 'success') {
           // Record the cross-reference edge BEFORE pushing visited/completed
@@ -529,6 +655,22 @@ export async function executeStepGraph(
         outputs: result.outputs,
         output_validation_skipped: false,
       })
+      // M8 Group Z (T-108). STEP_COMPLETE — outputs_hash is a stable digest
+      // of the outputs payload for downstream tamper-detection / replay
+      // verification. JSON.stringify is order-preserving for arrays (which
+      // is what `outputs` is); for objects inside, downstream consumers MUST
+      // accept that key order is JS-engine-dependent. v1.0 is fine because
+      // emission is informational, not a forensic anchor.
+      await emitStepEvent(otel_emitter, 'STEP_COMPLETE', {
+        trace_id,
+        workflow_id: workflow.id,
+        step_id: step.step_id,
+        agent_identity,
+        actor,
+        attributes: {
+          outputs_hash: hashOutputs(result.outputs),
+        },
+      })
       continue
     }
 
@@ -547,6 +689,20 @@ export async function executeStepGraph(
         step_id: step.step_id,
         child_workflow_id: result.child_workflow_id,
       })
+      // M8 Group Z (T-108). STEP_COMPLETE for the spawn_sub_unit branch —
+      // child_workflow_id surfaces alongside outputs_hash so observability
+      // can trace into the child's ExecutionResult.
+      await emitStepEvent(otel_emitter, 'STEP_COMPLETE', {
+        trace_id,
+        workflow_id: workflow.id,
+        step_id: step.step_id,
+        agent_identity,
+        actor,
+        attributes: {
+          outputs_hash: hashOutputs(result.outputs),
+          child_workflow_id: result.child_workflow_id,
+        },
+      })
       continue
     }
 
@@ -558,7 +714,27 @@ export async function executeStepGraph(
       autonomy_level: workflow.autonomy_level,
       escalation_target: options.escalation_target,
     }
-    const outcome: FailurePolicyOutcome = applyFailurePolicy(step, result.error, policyCtx)
+    // M8 Group Z (T-108). STEP_FAIL emitted before failure-policy routing so
+    // observability sees the raw failure reason; failure-policy then emits
+    // FAILURE_POLICY_<OUTCOME> with the routing decision (T-109).
+    await emitStepEvent(otel_emitter, 'STEP_FAIL', {
+      trace_id,
+      workflow_id: workflow.id,
+      step_id: step.step_id,
+      agent_identity,
+      actor,
+      attributes: {
+        failure_reason: result.error.message,
+        on_failure: step.on_failure,
+      },
+    })
+    const outcome: FailurePolicyOutcome = applyFailurePolicy(step, result.error, policyCtx, {
+      ...(otel_emitter !== undefined ? { otel_emitter } : {}),
+      trace_id,
+      workflow_id: workflow.id,
+      ...(agent_identity !== undefined ? { agent_identity } : {}),
+      ...(actor !== undefined ? { actor } : {}),
+    })
 
     switch (outcome.action) {
       case 'continue': {
@@ -678,4 +854,58 @@ export async function executeStepGraph(
     ...(child_workflows.length > 0 ? { child_workflows } : {}),
     ...(child_edges.length > 0 ? { child_edges } : {}),
   }
+}
+
+// =============================================================================
+// M8 Group Z (T-108) — emission helpers
+// =============================================================================
+
+/**
+ * Emit a STEP_* event when an emitter is configured. Errors swallowed —
+ * observability failures must not break Workflow execution.
+ *
+ * Defined as a private module helper (NOT exported on the engine barrel) so
+ * the only public emit-surface is via the OTelEmitter passed in via options.
+ */
+async function emitStepEvent(
+  emitter: OTelEmitter | undefined,
+  kind: OTelEventKind,
+  fields: {
+    trace_id: string
+    workflow_id: string
+    step_id: number
+    agent_identity?: AgentIdentity
+    actor?: string
+    attributes: Readonly<Record<string, unknown>>
+  },
+): Promise<void> {
+  if (emitter === undefined) return
+  try {
+    await emitter.emit({
+      decision_kind: kind,
+      trace_id: fields.trace_id,
+      workflow_id: fields.workflow_id,
+      step_id: fields.step_id,
+      ...(fields.agent_identity !== undefined ? { agent_identity: fields.agent_identity } : {}),
+      ...(fields.actor !== undefined ? { actor: fields.actor } : {}),
+      attributes: fields.attributes,
+    })
+  } catch {
+    // observability failure must NEVER break execution
+  }
+}
+
+/**
+ * Stable, deterministic digest of a step's outputs payload. Pure function —
+ * no clock, no random. Uses sha256 over JSON.stringify; truncated to 16 hex
+ * chars for compactness (collision probability is acceptable for an
+ * informational tag, not a forensic anchor).
+ *
+ * `JSON.stringify` is order-preserving for arrays and follows insertion order
+ * for plain objects — sufficient for v1.0. If forensic-grade hashing is
+ * required at M11, swap to a canonicalizing serializer (e.g. JCS).
+ */
+function hashOutputs(outputs: ReadonlyArray<unknown>): string {
+  const json = JSON.stringify(outputs)
+  return createHash('sha256').update(json).digest('hex').slice(0, 16)
 }
