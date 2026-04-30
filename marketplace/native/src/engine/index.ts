@@ -166,6 +166,20 @@ export {
   type HostLLMResult,
 } from './host-llm-activity.js'
 
+// M9 Group FF (T-151). TenantIsolation engine — runtime-derived cross-tenant
+// boundary enforcement. Reads existing D4 §3 `delegates_to: Tenant→Tenant`
+// edges (codex P1.2 fold; no new schema). Engine throws CrossTenantBoundaryError
+// when a cross-tenant op is attempted without a delegates_to edge granting it;
+// step-graph-executor catches the throw and synthesizes a step failure routed
+// via the existing M5 failure-policy. No annotation-driven opt-out (codex
+// re-review P1 fold — `WorkflowStep.crosses_tenant?` was removed as a bypass
+// loophole).
+export {
+  TenantIsolation,
+  CrossTenantBoundaryError,
+  type AssertCrossTenantAllowedInput,
+} from './tenant-isolation.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public

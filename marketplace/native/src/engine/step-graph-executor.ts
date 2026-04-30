@@ -53,6 +53,22 @@ import {
   HostUnavailableError,
   type HostLLMResult,
 } from './host-llm-activity.js'
+// M9 Group FF (T-153). Cross-tenant boundary enforcement runtime-derived
+// at every step. Engine reads existing D4 §3 `delegates_to` edges; throws
+// CrossTenantBoundaryError when source ≠ target AND no edge grants the
+// operation. The executor catches the throw and synthesizes a step failure
+// routed via the existing M5 failure-policy.
+import {
+  TenantIsolation,
+  CrossTenantBoundaryError,
+} from './tenant-isolation.js'
+// M9 Group HH (T-162). Governance-overhead red-zone HARD-STOP — when
+// the supplied GovernanceOverhead reports `getThresholdState() === 'red'`
+// after any step, the executor halts the run by emitting a TERMINATE
+// DecisionProvenance + transitioning the Execution to state='failed'
+// with failure_reason='hs2_overhead_exceeded'. Reuses existing failure
+// pathway; no new enums.
+import { type GovernanceOverhead } from './governance-overhead.js'
 
 // =============================================================================
 // trace_id derivation (M8 Group Z T-108; D-NS-26)
@@ -406,6 +422,59 @@ export interface ExecuteOptions {
    * this undefined — the executor derives a fresh trace_id.
    */
   trace_id?: string
+  /**
+   * M9 Group FF (T-153). The OPERATING tenant id — the tenant whose
+   * authority frames this Execution. Compared at every step against the
+   * step's resolved effective tenant; mismatch ⇒ TenantIsolation
+   * assertion runs (see below). Optional: when undefined the cross-tenant
+   * gate is a no-op (single-tenant-by-default v1.0 behaviour).
+   *
+   * NOT the same as `tenant_id` (M7 P2.3 fold) which feeds OPA via
+   * `PolicyInput.execution_context.tenant_id`. The two namespaces are
+   * intentionally separate because OPA tenant policy may target a
+   * scoping concept (e.g. "is this step authorized for tenant T-asawa")
+   * that differs from sovereignty enforcement (cross-tenant move
+   * requires delegates_to). Both happen to take a tenant id at v1.0;
+   * the names stay distinct so v1.x can evolve them independently.
+   */
+  tenant_context_id?: string
+  /**
+   * M9 Group FF (T-153). Registered D4 §3 typed `delegates_to: Tenant→Tenant`
+   * edges available to the runtime. When a step's effective tenant differs
+   * from `tenant_context_id`, the executor consults this set via
+   * `TenantIsolation.assertCrossTenantAllowed`; the call THROWS
+   * `CrossTenantBoundaryError` when no edge grants the operation. The
+   * executor catches the throw and synthesizes a step failure with errMsg
+   *   `cross_tenant_boundary:<source>:<target>:<operation>`
+   * routed via the existing M5 failure-policy (rollback / escalate /
+   * pause / abort / continue). Default `[]` — no edges, every cross-tenant
+   * op is rejected.
+   */
+  delegates_to_edges?: ReadonlyArray<import('../types/edges.js').DelegatesToEdge>
+  /**
+   * M9 Group HH (T-162). Governance-overhead tracker used by the
+   * red-zone HARD-STOP (HS-2: ≥25% overhead halts the run). When supplied
+   * AND `turn_id` is also supplied, after every step transition the
+   * executor calls `governance_overhead.report(turn_id)` and inspects the
+   * threshold-state. If the report's `overhead_pct >= 0.25`, the executor:
+   *   1. Emits a TERMINATE DecisionProvenance via OTel (if otel_emitter
+   *      supplied) carrying overhead_pct + threshold + reason
+   *      'hs2_overhead_exceeded'.
+   *   2. Returns an ExecutionResult with state='failed' +
+   *      failure_reason='hs2_overhead_exceeded'.
+   * Reuses canonical I-4 contract (failed ⇒ failure_reason non-null);
+   * no new enums, no new error class. Deferred from M8 per M8 plan
+   * "NOT shipping at M8" + folded per codex M9 pre-dispatch P1.1.
+   */
+  governance_overhead?: GovernanceOverhead
+  /**
+   * M9 Group HH (T-162). Turn id keyed in the supplied `governance_overhead`
+   * tracker. Required for HS-2 wire-up; when omitted the gate is a no-op
+   * even if `governance_overhead` is supplied (defensive — supplying half
+   * the wire is operator error; surface it as "no gate" rather than block
+   * the workflow on misconfiguration, matching the policy-gate convention).
+   */
+  turn_id?: string
 }
 
 /**
@@ -609,7 +678,65 @@ export async function executeStepGraph(
   const agent_identity = options.agent_identity
   const actor = options.actor
 
+  // M9 Group FF (T-153). Tenant-isolation gate is active iff the caller
+  // supplied a `tenant_context_id`. The `delegates_to_edges` set defaults
+  // to []; when active and the step's effective tenant differs from the
+  // operating tenant, `TenantIsolation.assertCrossTenantAllowed` is called
+  // unconditionally — there is no opt-out hint a producer can omit (codex
+  // M9 re-review P1 fold: advisory `WorkflowStep.crosses_tenant?` REJECTED).
+  const tenant_context_id = options.tenant_context_id
+  const delegates_to_edges = options.delegates_to_edges ?? []
+  const tenantGateActive = typeof tenant_context_id === 'string' && tenant_context_id.length > 0
+
+  // M9 Group HH (T-162). HS-2 overhead-termination gate is active iff
+  // BOTH a GovernanceOverhead instance AND a turn_id were supplied
+  // (defensive: half-wire ⇒ no gate, mirrors policy-gate convention).
+  const governance_overhead = options.governance_overhead
+  const turn_id = options.turn_id
+  const overheadGateActive =
+    governance_overhead !== undefined &&
+    typeof turn_id === 'string' &&
+    turn_id.length > 0
+
   for (const step of workflow.step_graph) {
+    // M9 Group HH (T-162). HS-2 overhead-termination — after every step
+    // transition (i.e. at the start of every subsequent iteration), check
+    // governance overhead. ≥25% red zone → halt run with state='failed' +
+    // failure_reason='hs2_overhead_exceeded' + TERMINATE provenance. We
+    // check here (start of iteration) rather than after-success so the
+    // current step never starts I/O when the prior step's accumulated
+    // overhead already breached the threshold.
+    if (overheadGateActive) {
+      const report = governance_overhead!.report(turn_id as string)
+      if (report.overhead_pct >= 0.25) {
+        // Emit TERMINATE provenance via OTel — using existing enum;
+        // codex M9 pre-dispatch P1.1 fold rejected new HARD_STOP enum.
+        await emitStepEvent(otel_emitter, 'TERMINATE', {
+          trace_id,
+          workflow_id: workflow.id,
+          step_id: step.step_id,
+          agent_identity,
+          actor,
+          attributes: {
+            reason: 'hs2_overhead_exceeded',
+            overhead_pct: report.overhead_pct,
+            threshold: 0.25,
+          },
+        })
+        return {
+          workflow_id: workflow.id,
+          visited_step_ids,
+          completed_step_ids,
+          step_outputs,
+          state: 'failed',
+          failure_reason: 'hs2_overhead_exceeded',
+          partial,
+          ...(child_workflows.length > 0 ? { child_workflows } : {}),
+          ...(child_edges.length > 0 ? { child_edges } : {}),
+        }
+      }
+    }
+
     // Per-step dispatch context — derived snapshot, not a live reference.
     // `completed_step_ids` here is the rollback-correct view (success-only),
     // NOT visited; failed-continue steps are excluded.
@@ -655,6 +782,65 @@ export async function executeStepGraph(
     })
 
     let result: StepDispatchResult
+
+    // M9 Group FF (T-153). Cross-tenant boundary gate — runtime-derived,
+    // not annotation-driven (codex re-review P1 fold). Resolve the step's
+    // effective tenant and compare against the operating tenant context.
+    //
+    // Effective-tenant derivation:
+    //   - skill_ref step: resolved Skill's `custody_owner` (the tenant
+    //     that owns the Skill's state). If the Skill is unregistered or
+    //     has no custody_owner, fall through to the workflow's own
+    //     custody_owner (defensive — unresolved skill_ref is handled at
+    //     T-073 via M5 failure-policy).
+    //   - action step: the parent Workflow's own `custody_owner`.
+    //   - When neither resolves, no cross-tenant op is possible at this
+    //     step (single-tenant default at v1.0).
+    //
+    // Decision: if effective_tenant !== tenant_context_id AND tenant gate
+    // active, call TenantIsolation.assertCrossTenantAllowed. The throw is
+    // caught + translated into a synthetic step failure with errMsg
+    //   `cross_tenant_boundary:<source>:<target>:<operation>`
+    // so the existing M5 failure-policy switch (rollback / escalate /
+    // pause / abort / continue per step.on_failure) handles it uniformly.
+    let crossTenantDeniedError: Error | null = null
+    if (tenantGateActive) {
+      let effective_tenant: string | null = null
+      if (typeof step.skill_ref === 'string' && skill_engine !== undefined) {
+        const resolved = skill_engine.resolve(step.skill_ref)
+        if (resolved !== null && typeof resolved.custody_owner === 'string') {
+          effective_tenant = resolved.custody_owner
+        }
+      }
+      if (effective_tenant === null && typeof workflow.custody_owner === 'string') {
+        effective_tenant = workflow.custody_owner
+      }
+      if (effective_tenant !== null && effective_tenant !== tenant_context_id) {
+        try {
+          TenantIsolation.assertCrossTenantAllowed({
+            source_tenant: tenant_context_id as string,
+            target_tenant: effective_tenant,
+            operation:
+              typeof step.skill_ref === 'string'
+                ? `invoke_skill:${step.skill_ref}`
+                : `step_action:${String(step.action ?? 'unknown')}`,
+            delegates_to_edges,
+          })
+        } catch (raw) {
+          if (raw instanceof CrossTenantBoundaryError) {
+            crossTenantDeniedError = new Error(
+              `cross_tenant_boundary:${raw.source_tenant}:${raw.target_tenant}:${raw.operation}`,
+            )
+          } else {
+            // Non-CrossTenantBoundaryError thrown — surface as step failure
+            // so executor stays crash-free; this should be reachable only
+            // via test-time misuse (passing garbage edges).
+            const msg = raw instanceof Error ? raw.message : String(raw)
+            crossTenantDeniedError = new Error(`cross_tenant_boundary:assertion_error:${msg}`)
+          }
+        }
+      }
+    }
 
     // M7 Group V (T-094). Policy gate — runs BEFORE the step's normal dispatch.
     //
@@ -743,7 +929,15 @@ export async function executeStepGraph(
       }
     }
 
-    if (policyDenied) {
+    if (crossTenantDeniedError !== null) {
+      // M9 Group FF (T-153). Cross-tenant boundary deny — synthesized step
+      // failure routed via the existing M5 failure-policy switch (dispatcher
+      // NOT called; the violating I/O never runs). Per the codex re-review
+      // P1 fold convention, this fires BEFORE the policy gate so a charter
+      // policy never has to reason about cross-tenant — sovereignty deny is
+      // structural, policy is content.
+      result = { kind: 'failure', error: crossTenantDeniedError }
+    } else if (policyDenied) {
       // Synthesize a failure StepDispatchResult and let the existing failure-
       // policy switch route per step.on_failure. The dispatcher is NOT called
       // for this step — policy gate fires before any I/O for the step.
