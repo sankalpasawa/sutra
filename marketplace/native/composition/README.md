@@ -15,9 +15,11 @@ import { buildGovernanceTurnEmitWorkflow } from './composition/index.js'
 import { executeStepGraph } from './src/engine/step-graph-executor.js'
 
 // 1. Build with your Tenant context.
+//    domain_id must match the D-numbered hierarchy: D0, D1, D1.D2, D1.D2.D3, ...
+//    (per createDomain() contract; M2.1 schema).
 const { domain, charter, workflow } = buildGovernanceTurnEmitWorkflow({
   tenant_id: 'T-yourtenant',
-  domain_id: 'D1.D2-yourdomain',
+  domain_id: 'D1.D2',
 })
 
 // 2. Stub or wire your dispatcher (Activity boundary per M5/M6 contract).
