@@ -38,7 +38,7 @@ export type {
 export { CredentialLoader } from './credential-loader.js';
 export type {
   CredentialBundle,
-  SlackPatBundle,
+  SlackBotBundle,
   GmailOAuthBundle,
   ComposioToolkitBundle,
   CredentialLoaderOpts,

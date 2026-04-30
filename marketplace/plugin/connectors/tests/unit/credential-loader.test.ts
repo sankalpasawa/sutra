@@ -36,7 +36,7 @@ import { SecretStoreAge } from '../../lib/secret-store-age.js';
 import {
   CredentialLoader,
   type CredentialBundle,
-  type SlackPatBundle,
+  type SlackBotBundle,
   type GmailOAuthBundle,
   type ComposioToolkitBundle,
 } from '../../lib/credential-loader.js';
@@ -109,8 +109,8 @@ describe('CredentialLoader — load() error paths', () => {
 
 describe('CredentialLoader — .json migration fallback', () => {
   it('falls back to .json plaintext + emits MIGRATION_PENDING beacon', async () => {
-    const bundle: SlackPatBundle = {
-      kind: 'slack-pat',
+    const bundle: SlackBotBundle = {
+      type: 'slack-bot',
       token: 'xoxb-test-pat-1234',
       obtained_at: 1745971200000,
     };
@@ -121,7 +121,7 @@ describe('CredentialLoader — .json migration fallback', () => {
     const result = await loader.load('slack');
 
     expect(result).toEqual(bundle);
-    expect(result.kind).toBe('slack-pat');
+    expect(result.type).toBe('slack-bot');
 
     // Audit beacon emitted
     expect(existsSync(auditLogPath)).toBe(true);
@@ -164,7 +164,7 @@ describe('CredentialLoader — .age round-trip (requires age binary)', () => {
       writeFileSync(recipientPath, m[1] + '\n', { mode: 0o644 });
 
       const bundle: GmailOAuthBundle = {
-        kind: 'gmail-oauth',
+        type: 'gmail-oauth',
         clientId: 'client-id-test',
         clientSecret: 'client-secret-test',
         accessToken: 'access-token-test',
@@ -180,7 +180,7 @@ describe('CredentialLoader — .age round-trip (requires age binary)', () => {
 
       const round = await loader.load('gmail');
       expect(round).toEqual(bundle);
-      expect(round.kind).toBe('gmail-oauth');
+      expect(round.type).toBe('gmail-oauth');
     },
   );
 
@@ -195,13 +195,13 @@ describe('CredentialLoader — .age round-trip (requires age binary)', () => {
       if (!m) return;
       writeFileSync(recipientPath, m[1] + '\n', { mode: 0o644 });
 
-      const ageBundle: SlackPatBundle = {
-        kind: 'slack-pat',
+      const ageBundle: SlackBotBundle = {
+        type: 'slack-bot',
         token: 'xoxb-from-age',
         obtained_at: 1745971200000,
       };
-      const jsonBundle: SlackPatBundle = {
-        kind: 'slack-pat',
+      const jsonBundle: SlackBotBundle = {
+        type: 'slack-bot',
         token: 'xoxb-from-json-stale',
         obtained_at: 1745000000000,
       };
@@ -232,7 +232,7 @@ describe('CredentialLoader — .age round-trip (requires age binary)', () => {
 describe('CredentialLoader — discriminated union narrowing', () => {
   it('narrows ComposioToolkitBundle.kind === "composio" to access .toolkit', async () => {
     const bundle: ComposioToolkitBundle = {
-      kind: 'composio',
+      type: 'composio',
       toolkit: 'GITHUB',
       obtained_at: 1745971200000,
     };
@@ -243,12 +243,12 @@ describe('CredentialLoader — discriminated union narrowing', () => {
     const result: CredentialBundle = await loader.load('github');
 
     // Type-narrow without `as` — discriminant on `kind`
-    if (result.kind === 'composio') {
+    if (result.type === 'composio') {
       expect(result.toolkit).toBe('GITHUB');
       expect(result.obtained_at).toBe(1745971200000);
     } else {
       throw new Error(
-        `expected kind='composio', got ${result.kind satisfies 'slack-pat' | 'gmail-oauth'}`,
+        `expected type='composio', got ${result.type satisfies 'slack-bot' | 'gmail-oauth'}`,
       );
     }
   });

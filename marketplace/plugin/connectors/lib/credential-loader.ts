@@ -9,9 +9,9 @@
  * Wave 3 of Core/Connectors Hardening.
  *
  * Discriminated union (codex-load-bearing — Gmail-shape fit):
- *   - SlackPatBundle        kind='slack-pat'    token (xoxb-/xoxp-)
- *   - GmailOAuthBundle      kind='gmail-oauth'  full OAuth state + refresh
- *   - ComposioToolkitBundle kind='composio'     toolkit identifier
+ *   - SlackBotBundle        type='slack-bot'    token (xoxb-/xoxp-)
+ *   - GmailOAuthBundle      type='gmail-oauth'  full OAuth state + refresh
+ *   - ComposioToolkitBundle type='composio'     toolkit identifier
  *
  * Migration policy:
  *   - load() reads .age FIRST. Falls back to .json when .age missing.
@@ -33,17 +33,29 @@ import type { SecretStoreAge } from './secret-store-age.js';
 import { CredentialNotFoundError } from './errors.js';
 
 // ---------------------------------------------------------------------------
-// Discriminated union — credential bundles per connector kind
+// Discriminated union — credential bundles per connector type.
+//
+// IMPORTANT: discriminator field is `type` (NOT `kind`) and values match the
+// shipped backend contracts in lib/backends/*.ts so that credentials saved
+// through CredentialLoader stay compatible with existing call.mjs +
+// verify-connection.mjs consumers that hard-check `cred.type`.
+//
+// Shipped contracts (verbatim):
+//   - slack-direct.ts: { type: 'slack-bot', token: string }
+//   - gmail-direct.ts: { type: 'gmail-oauth', clientId, clientSecret, accessToken, refreshToken, expiresAt }
+//
+// `obtained_at` is added by the loader for audit/forensics; callers can
+// ignore it unless they need it.
 // ---------------------------------------------------------------------------
 
-export interface SlackPatBundle {
-  readonly kind: 'slack-pat';
+export interface SlackBotBundle {
+  readonly type: 'slack-bot';
   readonly token: string;
   readonly obtained_at: number;
 }
 
 export interface GmailOAuthBundle {
-  readonly kind: 'gmail-oauth';
+  readonly type: 'gmail-oauth';
   readonly clientId: string;
   readonly clientSecret: string;
   readonly accessToken: string;
@@ -53,13 +65,13 @@ export interface GmailOAuthBundle {
 }
 
 export interface ComposioToolkitBundle {
-  readonly kind: 'composio';
+  readonly type: 'composio';
   readonly toolkit: string;
   readonly obtained_at: number;
 }
 
 export type CredentialBundle =
-  | SlackPatBundle
+  | SlackBotBundle
   | GmailOAuthBundle
   | ComposioToolkitBundle;
 
@@ -133,7 +145,7 @@ export class CredentialLoader {
     if (typeof connector_name !== 'string' || connector_name.length === 0) {
       throw new Error('CredentialLoader.save: connector_name required');
     }
-    if (!bundle || typeof bundle !== 'object' || typeof bundle.kind !== 'string') {
+    if (!bundle || typeof bundle !== 'object' || typeof bundle.type !== 'string') {
       throw new Error('CredentialLoader.save: bundle must be a CredentialBundle');
     }
     const agePath = join(this.#keyDir, `${connector_name}.age`);
