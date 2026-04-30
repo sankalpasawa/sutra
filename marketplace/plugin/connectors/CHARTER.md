@@ -248,6 +248,36 @@ A `FreezeRule` is push-active immediately. The cache `watch()` callback fires on
 - Lift `@deprecated` from `FleetPolicy.tierOverrides` in `types.ts`
 - Charter amendment to update §7 prose
 
+### TODO-CONNECTORS-005 — Browser-control connector for OAuth bootstrap (co-work)
+
+**Why deferred:** every OAuth bootstrap step (creating a Slack app, getting a Gmail token via the OAuth playground, etc.) is human-only by OAuth design — Claude cannot click "Allow" on a consent screen because it has no logged-in browser session. Today the founder does this once per provider (3-10 min each). Path B (self-host Composio) eliminates this for most providers but adds Postgres + Redis runtime.
+
+**Why this charter row exists:** founder direction 2026-04-30 — long-term goal is Claude-and-founder co-working with proper consent boundaries, where Claude can drive the founder's authenticated browser session for OAuth dances, then operate against the resulting tokens. Sometimes the only way to provision an OAuth app for an obscure SaaS is to click through their UI; a browser connector lets Claude do that step instead of the founder.
+
+**Trigger conditions to revisit (any one):**
+- Onboarding the 3rd direct-OAuth connector (i.e., 2 already used the manual click-through; founder time on bootstrap is now non-trivial)
+- OR the founder's existing direct-OAuth providers exceed ~10 (token rotation / reauth becomes tedious)
+- OR a Sutra client (T2/T3) needs OAuth bootstrap on their machine and we want it self-service
+
+**Action when triggered:**
+- Codex consult on browser-connector security model
+- Build `lib/backends/browser-direct.ts` using Playwright with `userDataDir` pointing at the founder's existing Chrome profile (so Claude inherits real logins, doesn't need credentials in-band)
+- Storage of "what the connector is allowed to do" — must integrate with PERMISSIONS charter (every browser action subject to depth + tier + approval gate, like every other connector)
+- Hardening: deny-list of destructive UI patterns ("Delete account", "Revoke all sessions", etc.) backed by codex review of the click-script
+- Audit trail: every navigation + click logged to `.enforcement/connector-audit.jsonl` like any other connector call
+- v0 scope: read-only flows (creating apps, copying tokens). Mutations (sending DMs, modifying account settings) require depth ≥4 + approval token, same model as other backends.
+
+**What it explicitly is NOT:**
+- A keylogger or general remote-control surface — it operates inside Sutra's policy/audit boundary, every action governed
+- A way to bypass MFA/2FA — the founder still does any TOTP/security-key step at session start; Claude operates inside the authenticated session
+- A substitute for OAuth — it AUTOMATES the OAuth dance; the consent step is still the founder's authentication, just with Claude driving the click sequence per founder's instruction
+
+**Required charter clarifications before build:**
+- Which Chrome profile (default vs dedicated `~/.sutra-connectors/chrome-profile/`)
+- Default depth floor for any browser action (proposed: 3; UI mutations: 5 + approval)
+- Per-domain allow-list (api.slack.com, accounts.google.com, etc. — refuse navigation outside)
+- Screenshot retention + redaction for audit (PRIVACY charter alignment)
+
 ### Push cadence
 
 No fixed cadence in v0. Asawa pushes when policy needs to change. Clients refresh on session start and on `watch()` notification. The 6-month TODO-CONNECTORS-001 checkpoint may revisit cadence if a compliance-driven model is needed.

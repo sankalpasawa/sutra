@@ -34,6 +34,11 @@ case "$SUBCMD" in
     [ -f "$CONNECTORS_DIR/scripts/verify-connection.mjs" ] || { echo "connectors module not installed" >&2; exit 1; }
     exec node "$CONNECTORS_DIR/scripts/verify-connection.mjs" "$@"
     ;;
+  call)
+    CONNECTORS_DIR="$PLUGIN_ROOT/connectors"
+    [ -f "$CONNECTORS_DIR/scripts/call.mjs" ] || { echo "connectors module not installed" >&2; exit 1; }
+    exec node "$CONNECTORS_DIR/scripts/call.mjs" "$@"
+    ;;
   update)
     echo "Refreshing marketplace + updating plugin..."
     claude plugin marketplace update sutra
