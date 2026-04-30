@@ -20,6 +20,18 @@ export interface ConnectorCallContext {
   readonly ts: number;
   readonly sessionId: string;
   readonly approvalToken?: string;
+  /**
+   * Native-compat (Mode B) fields — optional in legacy mode, REQUIRED when
+   * the Router is constructed with mode='native-compat' (M1.3).
+   *  - idempotency_key: caller-supplied unique id; backends/rev-hooks dedupe.
+   *  - signal:          AbortSignal threaded through Router → adapter →
+   *                     backend.fetch() so cancellation propagates to network.
+   *  - event_id:        opaque trace id for cross-system correlation.
+   * Adding these as optional keeps Mode A (legacy) call sites untouched.
+   */
+  readonly idempotency_key?: string;
+  readonly signal?: AbortSignal;
+  readonly event_id?: string;
 }
 
 export interface ConnectorCallResult {
