@@ -34,6 +34,18 @@ For migrating an existing Tenant from Core hooks to Native primitives, see [`MIG
 /plugin install native@sutra-marketplace
 ```
 
+## Quick start — time-to-value (I-11)
+
+After install, run the dogfood script to walk the canonical first-time-user journey end-to-end (clean state → first Workflow execution → observable artifact) and measure wall-clock time-to-value:
+
+```bash
+npx tsx scripts/dogfood-time-to-value.ts
+```
+
+Emits structured gate JSONL to stdout (G-0..G-6) plus a `# DOGFOOD SUMMARY` block. Exit code `0` on PASS (≤30min per I-11), `1` on FAIL.
+
+For the script's full options (library mode, hermetic-fake-install for CI, artifact-path override) see [`scripts/README.md`](scripts/README.md). Asawa's measured time-to-value evidence (median-of-3) lives at [`holding/research/2026-04-30-native-asawa-dogfood-findings.md`](https://github.com/sankalpasawa/asawa-holding/blob/main/holding/research/2026-04-30-native-asawa-dogfood-findings.md) — closes PS-13.
+
 ## Operationalization
 
 1. Measurement: install count via Sutra Marketplace telemetry; Native session count vs Core

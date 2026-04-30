@@ -47,8 +47,12 @@ describe('M9 D5 invariants — register cross-reference', () => {
     expect(true).toBe(true)
   })
 
-  it.skip('I-11: time-to-value ≤30min for new Sutra adopter (M11/M12 — TODO)', () => {
-    // M11 dogfood + M12 default-composition rollout.
+  it('I-11: time-to-value ≤30min — REALIZED at tests/integration/m11-time-to-value.test.ts', () => {
+    // Per M11 D-NS-37 stub-removal: I-11 is now asserted in m11-time-to-value.test.ts
+    // (CI variant: real G-2..G-5 with hermetic fake-install; real-clock variant
+    // gated behind RUN_REAL_DOGFOOD=1). This delegating note exists so the
+    // M9 invariant register table is structurally complete even after the
+    // stub has moved to its proper home.
     expect(true).toBe(true)
   })
 })
