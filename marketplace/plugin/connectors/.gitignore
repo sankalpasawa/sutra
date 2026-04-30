@@ -1,7 +1,5 @@
-# Build artifacts emitted by `npm run build` (tsc -p tsconfig.build.json)
-# .js files alongside .ts sources are generated; .ts is canonical source.
-lib/*.js
-lib/**/*.js
+# .js files committed alongside .ts so plugin install path works without npm install.
+# `tsc -p tsconfig.build.json` regenerates them; release prerelease guard asserts parity.
 dist/
 node_modules/
 *.tsbuildinfo
