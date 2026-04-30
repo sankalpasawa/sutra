@@ -261,6 +261,37 @@ export class GovernanceOverhead {
   }
 
   /**
+   * M9 Group HH (T-161). Threshold-state band classifier:
+   *   - 'green'  → overhead_pct ∈ [0, 0.15)  (within budget)
+   *   - 'yellow' → overhead_pct ∈ [0.15, 0.25) (alert zone — OTel WARN)
+   *   - 'red'    → overhead_pct ∈ [0.25, ∞)  (HS-2: HARD-STOP zone)
+   *
+   * The HS-2 step-graph-executor wiring (Group HH T-162) reads this
+   * value at the top of every step iteration; `'red'` halts the run
+   * with state='failed' + failure_reason='hs2_overhead_exceeded' +
+   * TERMINATE provenance (codex M9 P1.1 fold — reuses existing failure
+   * pathway; no new enums).
+   *
+   * Bands are CLOSED at the lower bound and OPEN at the upper bound:
+   *   green:  [0, 0.15)   — strict-less-than 15% (matches the existing
+   *           threshold_tripped semantics: > 15% trips at endTurn).
+   *   yellow: [0.15, 0.25) — at-or-above 15%, strict-less-than 25%.
+   *   red:    [0.25, ∞)    — at-or-above 25%.
+   *
+   * Throws `TurnNotStartedError` if the turn has not been started.
+   */
+  getThresholdState(turn_id: string): 'green' | 'yellow' | 'red' {
+    const state = this.turns.get(turn_id)
+    if (state === undefined) {
+      throw new TurnNotStartedError(turn_id)
+    }
+    const report = this.buildReport(turn_id, state)
+    if (report.overhead_pct >= 0.25) return 'red'
+    if (report.overhead_pct >= 0.15) return 'yellow'
+    return 'green'
+  }
+
+  /**
    * End the turn: build the report, emit the alert if tripped, and clear
    * state from the Map (so subsequent `track()` on this `turn_id` will
    * throw). Throws `TurnNotStartedError` if the turn has not been started.

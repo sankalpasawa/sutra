@@ -701,16 +701,22 @@ export async function executeStepGraph(
   for (const step of workflow.step_graph) {
     // M9 Group HH (T-162). HS-2 overhead-termination — after every step
     // transition (i.e. at the start of every subsequent iteration), check
-    // governance overhead. ≥25% red zone → halt run with state='failed' +
+    // governance overhead. red zone (≥25%) → halt run with state='failed' +
     // failure_reason='hs2_overhead_exceeded' + TERMINATE provenance. We
     // check here (start of iteration) rather than after-success so the
     // current step never starts I/O when the prior step's accumulated
     // overhead already breached the threshold.
+    //
+    // Codex M9 pre-dispatch P1.1 fold: reuses existing TERMINATE
+    // DecisionKind + existing 'failed' Execution state + canonical
+    // failure_reason pattern. No new enums (would require coordinated
+    // D2/D3/D5 contract change), no new error class (caller already
+    // handles failed Execution).
     if (overheadGateActive) {
-      const report = governance_overhead!.report(turn_id as string)
-      if (report.overhead_pct >= 0.25) {
-        // Emit TERMINATE provenance via OTel — using existing enum;
-        // codex M9 pre-dispatch P1.1 fold rejected new HARD_STOP enum.
+      const band = governance_overhead!.getThresholdState(turn_id as string)
+      if (band === 'red') {
+        const report = governance_overhead!.report(turn_id as string)
+        // Emit TERMINATE provenance via OTel — using existing enum.
         await emitStepEvent(otel_emitter, 'TERMINATE', {
           trace_id,
           workflow_id: workflow.id,
