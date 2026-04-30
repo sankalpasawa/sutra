@@ -3,10 +3,14 @@
 - **Version**: v1.0
 - **Status**: instrumentation + safety guardrails (no behavior optimization)
 - **Build-layer**: L0 (fleet)
-- **Engine of record**: `sutra/os/engines/HUMAN-SUTRA-ENGINE.md` (Task 2.2, future)
-- **ADR (locked decisions)**: `sutra/os/decisions/ADR-001-h-sutra-9cell-grid.md` (Task 2.6, accepted at commit b88b7cc)
-- **Skill**: `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` (Task 2.4, future)
-- **Founder direction**: D42 in `holding/FOUNDER-DIRECTIONS.md` (Task 2.7, future)
+- **Engine of record**: `sutra/os/engines/HUMAN-SUTRA-ENGINE.md` (shipped at commit 192bea4)
+- **ADR (locked decisions)**: `sutra/os/decisions/ADR-001-h-sutra-9cell-grid.md` (accepted at commit b88b7cc)
+- **Skill**: `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` (shipped at commit 106a94a)
+- **Classifier**: `sutra/marketplace/plugin/skills/human-sutra/scripts/classify.sh` (shipped at commit 7a32af4)
+- **Founder direction**: D42 in `holding/FOUNDER-DIRECTIONS.md` (shipped at commit 8305df8)
+- **Quick-card**: shipped at commit a00cda3
+- **Activation doc**: `sutra/marketplace/plugin/skills/human-sutra/ACTIVATION.md` (shipped at commit a372f8b)
+- **Plugin manifest bump**: shipped at commit 9910910
 - **Codex verdicts**:
   - Prior DESIGN consult brief: `holding/research/2026-04-30-h-sutra-layer-codex-consult.md`
   - PLAN consult R2 PASS, DIRECTIVE-ID 1777572677: `.enforcement/codex-reviews/2026-05-01-h-sutra-v1.0-plan-consult.md`
