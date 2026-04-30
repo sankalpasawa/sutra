@@ -35,6 +35,15 @@ export type {
   EncryptOptions,
 } from './secret-store-age.js';
 
+export { CredentialLoader } from './credential-loader.js';
+export type {
+  CredentialBundle,
+  SlackPatBundle,
+  GmailOAuthBundle,
+  ComposioToolkitBundle,
+  CredentialLoaderOpts,
+} from './credential-loader.js';
+
 export {
   ConnectorError,
   ManifestError,
