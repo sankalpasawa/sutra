@@ -10,8 +10,13 @@
 # Spec: holding/research/2026-04-30-core-connectors-hardening-spec.md §M1.12
 
 canonical_version_surfaces:
+  # M1 surfaces (3) — bump-version.sh + check-version-drift.sh manage these.
   - sutra/marketplace/plugin/.claude-plugin/plugin.json (canonical)
   - sutra/marketplace/plugin/README.md (banner)
   - sutra/marketplace/plugin/connectors/package.json
-  - sutra/marketplace/plugin/connectors/QUICKSTART.md (test count line)
+  # QUICKSTART.md was originally listed but DEFERRED to M2 polish (per spec
+  # §M2.5). Current banner is "v0 shipped" prose, not a semver. M2 work
+  # converts it to a versioned banner and re-adds it to the drift check.
+deferred_to_m2:
+  - sutra/marketplace/plugin/connectors/QUICKSTART.md (semver banner)
 release_protocol: bump-version.sh <new-version>; check-version-drift.sh in CI

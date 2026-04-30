@@ -344,6 +344,18 @@ export class ConnectorRouter {
     // signal so an aborted call short-circuits the retry loop (NOT just
     // the in-flight fetch). Without this, an aborted Mode B call could
     // duplicate external writes (codex Wave 4 P1).
+    //
+    // M1 dispatch policy (codex M1 master P1.1 — explicit deferral):
+    //   manifest.integration { kind: 'composio' | 'direct', target } is
+    //   PARSED + VALIDATED by parseManifest() (Wave 1 M1.13) but Router
+    //   does NOT branch on it in M1. All M1 dispatch goes through the
+    //   single composio-shaped adapter — preserves the "keep what's built"
+    //   founder rule + zero behavior change for Slack-live in Testlify.
+    //   call.mjs maintains its own direct-backend path for Slack/Gmail
+    //   today (scripts/call.mjs:447-end). Wiring Router-dispatches-direct
+    //   based on manifest.integration is M2 polish / v1.1 work and lives
+    //   in the IntegrationAdapter refactor (spec §M2.2). The integration
+    //   field is shipped now as the schema seam for that future work.
     // ----------------------------------------------------------------------
     const toolName = extractToolName(ctx.capability);
     let rawResult: unknown;

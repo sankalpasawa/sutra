@@ -68,5 +68,5 @@ if [ "$drift" -eq 1 ]; then
   exit 1
 fi
 
-echo "version-drift: OK (canonical=$canon, all 4 surfaces synced)"
+echo "version-drift: OK (canonical=$canon, 3 M1 surfaces synced; QUICKSTART deferred to M2)"
 exit 0
