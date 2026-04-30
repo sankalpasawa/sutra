@@ -20,6 +20,12 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 import { CredentialLoader, SecretStoreAge } from '../lib/index.js';
+import { assertAgeAvailable } from './preflight-age.mjs';
+
+// M2 step 2 — defense in depth: connect.sh's age-keypair check is upstream,
+// but if save-credential.mjs is invoked directly we still want a clear error
+// before SecretStoreAge tries to spawn age and fails opaquely.
+assertAgeAvailable();
 
 const [, , connector, bundlePath] = process.argv;
 

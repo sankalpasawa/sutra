@@ -13,6 +13,56 @@ SUTRA_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SUTRA_BIN_DIR")"
 SCRIPTS_DIR="$PLUGIN_ROOT/scripts"
 
+# v2.10.1 — Connectors preflight. Fresh `/plugin install sutra@marketplace`
+# does NOT run `npm install` for nested package.json files, and does not
+# install the `age` system binary. Both are required for the connectors
+# subcommands (connect / connect-test / call). preflight_connectors()
+# checks both, prints install instructions and exits non-zero if missing,
+# OR runs `npm install --omit=dev` once if node_modules is the only gap.
+preflight_connectors() {
+  local CONNECTORS_DIR="$PLUGIN_ROOT/connectors"
+
+  # Check 1 — `age` CLI binary
+  if ! command -v age >/dev/null 2>&1; then
+    cat <<EOF >&2
+Sutra Connectors require the 'age' CLI for credential encryption at rest.
+
+Install:
+  brew install age          # macOS
+  apt install age           # Debian/Ubuntu
+  pacman -S age             # Arch
+  scoop install age         # Windows (scoop)
+
+Or download: https://github.com/FiloSottile/age/releases
+
+Then re-run your sutra command.
+EOF
+    exit 1
+  fi
+
+  # Check 2 — connectors node_modules. If missing, run npm install --omit=dev
+  # once. We deliberately use --omit=dev so vitest, typescript, etc. don't
+  # land on client machines (~25 MB saved).
+  if [ ! -d "$CONNECTORS_DIR/node_modules" ]; then
+    if ! command -v npm >/dev/null 2>&1; then
+      cat <<EOF >&2
+Sutra Connectors require Node.js (npm) for first-run dependency install.
+Install Node ≥18 from https://nodejs.org/ then re-run your sutra command.
+EOF
+      exit 1
+    fi
+    echo "Sutra Connectors first-run: installing runtime deps (yaml, nanoid, cockatiel)..." >&2
+    if ! ( cd "$CONNECTORS_DIR" && npm install --omit=dev --no-audit --no-fund --silent ) >&2; then
+      cat <<EOF >&2
+npm install failed in $CONNECTORS_DIR. Run manually:
+  cd "$CONNECTORS_DIR" && npm install --omit=dev
+EOF
+      exit 1
+    fi
+    echo "✓ Connectors deps installed." >&2
+  fi
+}
+
 SUBCMD="${1:-help}"
 [ $# -gt 0 ] && shift
 
@@ -27,16 +77,19 @@ case "$SUBCMD" in
   connect)
     CONNECTORS_DIR="$PLUGIN_ROOT/connectors"
     [ -x "$CONNECTORS_DIR/scripts/connect.sh" ] || { echo "connectors module not installed" >&2; exit 1; }
+    preflight_connectors
     exec bash "$CONNECTORS_DIR/scripts/connect.sh" "$@"
     ;;
   connect-test)
     CONNECTORS_DIR="$PLUGIN_ROOT/connectors"
     [ -f "$CONNECTORS_DIR/scripts/verify-connection.mjs" ] || { echo "connectors module not installed" >&2; exit 1; }
+    preflight_connectors
     exec node "$CONNECTORS_DIR/scripts/verify-connection.mjs" "$@"
     ;;
   call)
     CONNECTORS_DIR="$PLUGIN_ROOT/connectors"
     [ -f "$CONNECTORS_DIR/scripts/call.mjs" ] || { echo "connectors module not installed" >&2; exit 1; }
+    preflight_connectors
     exec node "$CONNECTORS_DIR/scripts/call.mjs" "$@"
     ;;
   update)

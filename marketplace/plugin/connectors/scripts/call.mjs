@@ -48,6 +48,12 @@ import {
   evaluatePolicy,
   parseManifest,
 } from "../lib/index.js";
+import { assertAgeAvailable } from "./preflight-age.mjs";
+
+// M2 step 2 — defense in depth: bin/sutra preflight catches this too, but
+// `node scripts/call.mjs ...` bypasses bin/sutra. Fail loudly before any
+// secret-store path tries to spawn age.
+assertAgeAvailable();
 
 // ───────────────────────────────────────────────────────────────────────────
 // Argv parsing — extract --dev-bypass (and its env gate) BEFORE positionals

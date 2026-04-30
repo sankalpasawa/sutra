@@ -12,7 +12,6 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "postinstall": "tsc -p tsconfig.build.json",
     "prerelease": "tsc -p tsconfig.build.json && node scripts/check-js-parity.mjs",
     "typecheck:full": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

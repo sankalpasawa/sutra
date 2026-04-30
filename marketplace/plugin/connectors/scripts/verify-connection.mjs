@@ -16,6 +16,12 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 import { CredentialLoader, SecretStoreAge } from "../lib/index.js";
+import { assertAgeAvailable } from "./preflight-age.mjs";
+
+// M2 step 2 — defense in depth: bin/sutra preflight catches this too, but
+// `node scripts/verify-connection.mjs ...` bypasses bin/sutra. Fail loudly
+// before any secret-store path tries to spawn age.
+assertAgeAvailable();
 
 const toolkit = process.argv[2];
 if (!toolkit) {
