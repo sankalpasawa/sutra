@@ -1,0 +1,20 @@
+{
+  "_comment_purpose": "Reference cutover_contract for DayFlow (T2-1 tier — first T2 cutover per Phase 3 rollout sequence). canary_window is 7d per CM3/D29 + CM9 first-onboarding precedent.",
+  "_comment_canonical_schema": "Validated by createCutoverContract from src/schemas/cutover-contract.ts — 5 required fields when non-null.",
+  "_comment_per_tenant_invariant": "DayFlow's signature daily ritual must survive — daily_pulse_continues_firing_at_scheduled_cadence is the Tenant-specific addition.",
+
+  "source_engine": "sutra-core-v2.9.1",
+  "target_engine": "sutra-native-v1.0",
+
+  "behavior_invariants": [
+    "every_governance_hook_emits_decision_provenance_with_policy_id_and_policy_version",
+    "no_charter_obligation_regression_vs_baseline",
+    "step_graph_terminal_state_matches_baseline_for_representative_workflows",
+    "daily_pulse_continues_firing_at_scheduled_cadence",
+    "android_apk_build_pipeline_unbroken"
+  ],
+
+  "rollback_gate": "behavior_invariants_violation_count > 0 OR overhead_termination_count_in_canary_window > 0 OR any_HARD_STOP_other_than_overhead_termination_fires",
+
+  "canary_window": "7d"
+}

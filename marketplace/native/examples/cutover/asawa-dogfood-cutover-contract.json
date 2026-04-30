@@ -1,0 +1,19 @@
+{
+  "_comment_purpose": "Reference cutover_contract for Asawa dogfood (T0 tier, M11 — Native running this very session). canary_window is tight (60s) because Asawa is the operator's own session — feedback loop is per-turn, not per-day.",
+  "_comment_canonical_schema": "Validated by createCutoverContract from src/schemas/cutover-contract.ts — 5 required fields when non-null.",
+  "_comment_baseline_artifact": ".enforcement/cutover/asawa-baseline.jsonl (captured during pre-cutover audit per MIGRATION.md §2.2)",
+
+  "source_engine": "sutra-core-v2.9.1",
+  "target_engine": "sutra-native-v1.0",
+
+  "behavior_invariants": [
+    "every_governance_hook_emits_decision_provenance_with_policy_id_and_policy_version",
+    "no_charter_obligation_regression_vs_baseline",
+    "step_graph_terminal_state_matches_baseline_for_representative_workflows",
+    "founder_ask_gate_latency_p95_within_baseline_plus_10pct"
+  ],
+
+  "rollback_gate": "behavior_invariants_violation_count > 0 OR overhead_termination_count_in_canary_window > 0 OR any_HARD_STOP_other_than_overhead_termination_fires",
+
+  "canary_window": "60s"
+}

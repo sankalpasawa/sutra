@@ -26,6 +26,8 @@ Status: under construction (M1 scaffold). See `holding/plans/native-v1.0-executi
 
 Native is self-contained. Does NOT depend on Core plugin internals. Core (existing fleet) keeps running unchanged. Both ship to clients via Sutra Marketplace.
 
+For migrating an existing Tenant from Core hooks to Native primitives, see [`MIGRATION.md`](MIGRATION.md) — the operator playbook that closes PS-3 ("cutover from Core to Native is undefined for existing companies"). Reference cutover_contract fixtures live at [`examples/cutover/`](examples/cutover/).
+
 ## Install (post-v1.0 release)
 
 ```
