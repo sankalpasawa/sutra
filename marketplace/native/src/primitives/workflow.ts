@@ -46,11 +46,18 @@ const VALID_OVERRIDE_ACTION: ReadonlySet<OverrideAction> = new Set([
   'escalate',
 ])
 
+// M8 Group BB (T-115). 'invoke_host_llm' added — host-LLM Activity dispatch.
 const VALID_STEP_ACTION: ReadonlySet<StepAction> = new Set([
   'spawn_sub_unit',
   'wait',
   'terminate',
+  'invoke_host_llm',
 ])
+
+// M8 Group BB (T-115; codex pivot review CHANGE #2 fold). Valid HostKind
+// values for `step.host` when `step.action === 'invoke_host_llm'`. Mirrored
+// at the runtime validator below.
+const VALID_HOST_KIND: ReadonlySet<'claude' | 'codex'> = new Set(['claude', 'codex'])
 
 const VALID_STEP_FAILURE_ACTION: ReadonlySet<StepFailureAction> = new Set([
   'rollback',
@@ -171,8 +178,33 @@ function validateStep(step: WorkflowStep, idx: number): void {
   }
   if (hasAction && !VALID_STEP_ACTION.has(step.action as StepAction)) {
     throw new Error(
-      `Workflow.step_graph[${idx}].action must be one of spawn_sub_unit|wait|terminate; got "${String(step.action)}"`,
+      `Workflow.step_graph[${idx}].action must be one of spawn_sub_unit|wait|terminate|invoke_host_llm; got "${String(step.action)}"`,
     )
+  }
+  // M8 Group BB (T-115; codex pivot review CHANGE #2 fold). Host-XOR rule —
+  // operational mirror of l2-boundary.ts canonical anchor (T-116 comment).
+  // `step.host` is REQUIRED iff `action === 'invoke_host_llm'`; FORBIDDEN
+  // for any other action AND when `skill_ref` is set. The XOR keeps the step
+  // contract canonical: dispatch-target ('what does this DO') is fully
+  // specified by `(skill_ref | action [+ host if action=invoke_host_llm])`.
+  const hasHost = step.host !== undefined && step.host !== null
+  if (step.action === 'invoke_host_llm') {
+    if (!hasHost) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].host is required when action='invoke_host_llm' (M8 Group BB; codex pivot review CHANGE #2 — host-XOR canonical at L2 BOUNDARY)`,
+      )
+    }
+    if (typeof step.host !== 'string' || !VALID_HOST_KIND.has(step.host as 'claude' | 'codex')) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].host must be 'claude' or 'codex' when action='invoke_host_llm'; got "${String(step.host)}"`,
+      )
+    }
+  } else {
+    if (hasHost) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].host is forbidden unless action='invoke_host_llm' (M8 Group BB; codex pivot review CHANGE #2 — host-XOR canonical at L2 BOUNDARY); got host="${String(step.host)}" with action="${String(step.action)}"`,
+      )
+    }
   }
   if (typeof step.step_id !== 'number' || !Number.isInteger(step.step_id)) {
     throw new Error(`Workflow.step_graph[${idx}].step_id must be an integer`)
@@ -415,6 +447,18 @@ export function isValidWorkflow(w: Workflow): boolean {
     if (typeof step.step_id !== 'number' || !Number.isInteger(step.step_id)) return false
     if (seenStepIds.has(step.step_id)) return false
     seenStepIds.add(step.step_id)
+    // M8 Group BB (T-115) — host-XOR rule mirror. Required iff action='invoke_host_llm';
+    // forbidden otherwise. Defensive validation for deserialized records (constructor
+    // enforces the same; validator must agree per V2 §3 HARD).
+    const hasHost = step.host !== undefined && step.host !== null
+    if (step.action === 'invoke_host_llm') {
+      if (!hasHost) return false
+      if (typeof step.host !== 'string' || !VALID_HOST_KIND.has(step.host as 'claude' | 'codex')) {
+        return false
+      }
+    } else if (hasHost) {
+      return false
+    }
   }
   // M4.4 — custody_owner must be null OR match T-<id> pattern.
   if (

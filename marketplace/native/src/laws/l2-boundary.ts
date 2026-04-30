@@ -31,6 +31,31 @@
  * the L2 BOUNDARY rule stated here. No new check is added at this layer —
  * the constructor + validator pair is already authoritative; this comment
  * records the canonical anchor relationship.
+ *
+ * ---------------------------------------------------------------------------
+ * M8 Group BB codex pivot review fold #2 — host-LLM step contract canonical
+ * at L2 BOUNDARY (2026-04-30; DIRECTIVE-ID 1777521736).
+ *
+ * The architecture pivot adds a third required structural slot: when
+ * `step.action === 'invoke_host_llm'`, the step contract MUST also specify
+ * `step.host: 'claude' | 'codex'` (the host CLI to dispatch to). Required
+ * iff action='invoke_host_llm'; forbidden otherwise.
+ *
+ * Why this is an L2 BOUNDARY rule (not a free-form attribute on inputs):
+ * "what does this step DO" must be FULLY specified by structural fields the
+ * boundary check can read. Burying host selection in `step.inputs` would let
+ * a step exist whose dispatch target is opaque until inputs are interpreted
+ * — that is exactly the "Environment is not a type" anti-pattern V2 §3 L2
+ * forbids. Codex pivot review CHANGE #2 made this canonical: host-XOR is L2
+ * BOUNDARY, mirrored at the workflow constructor + validator like the
+ * skill_ref/action XOR before it.
+ *
+ * Operational mirrors:
+ *   - `createWorkflow.validateStep` (src/primitives/workflow.ts):
+ *       throws when action='invoke_host_llm' && !host
+ *       throws when action!='invoke_host_llm' && host!==undefined
+ *   - `isValidWorkflow` (same file): defensive return-false on the same
+ *     conditions for deserialized records.
  * ---------------------------------------------------------------------------
  */
 

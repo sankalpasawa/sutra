@@ -28,7 +28,7 @@
 import { createHash } from 'node:crypto'
 
 import type { Workflow } from '../primitives/workflow.js'
-import type { DataRef } from '../types/index.js'
+import type { DataRef, HostKind } from '../types/index.js'
 import type { ForbiddenCouplingId } from '../laws/l4-terminal-check.js'
 import type { ActivityDescriptor } from './temporal-adapter.js'
 import {
@@ -43,6 +43,14 @@ import type { PolicyDispatcher } from './policy-dispatcher.js'
 import type { PolicyInput } from './opa-evaluator.js'
 import type { AgentIdentity } from '../types/agent-identity.js'
 import { OTelEmitter, type OTelEventKind } from './otel-emitter.js'
+// M8 Group BB (T-120). Host-LLM Activity dispatch — used when a step has
+// action='invoke_host_llm'. Imported as a function (not just type) because
+// the executor calls it directly to dispatch the host CLI subprocess.
+import {
+  hostLLMActivity,
+  HostUnavailableError,
+  type HostLLMResult,
+} from './host-llm-activity.js'
 
 // =============================================================================
 // trace_id derivation (M8 Group Z T-108; D-NS-26)
@@ -76,6 +84,19 @@ function deriveTraceId(workflow_id: string): string {
   workflowRunSeq.set(workflow_id, seq)
   const hash = createHash('sha256').update(`${workflow_id}:${seq}`).digest('hex')
   return hash.slice(0, 32)
+}
+
+/**
+ * M8 Group BB (T-120). Read-only accessor for the current per-Workflow
+ * run_seq — used by the host-LLM dispatch branch to feed `workflow_run_seq`
+ * into invocation_id derivation so a replay produces the same id.
+ *
+ * Returns 0 if the Workflow has not been seen yet (defensive; the executor
+ * always calls deriveTraceId BEFORE the host-LLM branch fires, so the
+ * counter is non-zero by the time this is read in practice).
+ */
+function getWorkflowRunSeq(workflow_id: string): number {
+  return workflowRunSeq.get(workflow_id) ?? 0
 }
 
 /**
@@ -581,6 +602,82 @@ export async function executeStepGraph(
       // policy switch route per step.on_failure. The dispatcher is NOT called
       // for this step — policy gate fires before any I/O for the step.
       result = { kind: 'failure', error: policyDenyError as Error }
+    } else if (step.action === 'invoke_host_llm') {
+      // M8 Group BB (T-120). Host-LLM Activity dispatch — Claude --bare
+      // first-class + codex advisory. The step contract was validated at
+      // primitive-mint (`createWorkflow.validateStep` enforces host-XOR);
+      // here we trust step.host is one of 'claude' | 'codex'.
+      //
+      // Prompt resolution (v1.0): the FIRST step input's `locator` field
+      // carries the prompt string. Rationale: DataRef is the shared
+      // input/output envelope across the engine; using `locator` keeps the
+      // host-LLM step shape uniform with other Activity steps. Steps with no
+      // inputs synthesize a step failure (`host_llm_invocation_failed:no_prompt`).
+      // Future versions may extend to a typed prompt schema; v1.0 keeps the
+      // contract simple — one input, one prompt.
+      const host = step.host as HostKind
+      const prompt =
+        step.inputs.length > 0 && typeof step.inputs[0]!.locator === 'string'
+          ? step.inputs[0]!.locator
+          : null
+      if (prompt === null) {
+        result = {
+          kind: 'failure',
+          error: new Error('host_llm_invocation_failed:no_prompt'),
+        }
+      } else {
+        try {
+          const hostResult: HostLLMResult = await hostLLMActivity({
+            prompt,
+            host,
+            workflow_run_seq: getWorkflowRunSeq(workflow.id),
+          })
+          // Provenance stamp (T-121) — emit HOST_LLM_INVOCATION OTel event.
+          // Carries host_kind + host_version + invocation_id +
+          // prompt_hash + response_hash. Replay-determinism: the same
+          // (prompt, host, version, run_seq) yields identical hashes +
+          // invocation_id, so a replay produces a bit-identical event
+          // record (modulo the optional agent_identity / actor surface).
+          await emitHostLLMInvocation(otel_emitter, {
+            trace_id,
+            workflow_id: workflow.id,
+            step_id: step.step_id,
+            agent_identity,
+            actor,
+            host_result: hostResult,
+            prompt,
+          })
+          // Wrap response in V2 §A11 DataRef envelope (codex pivot review
+          // fold #5 alignment with M6 Skill output convention). Downstream
+          // consumers see kind='host-llm-output' and can lift the response
+          // text from locator='inline:<JSON>'.
+          const dataRef: DataRef = {
+            kind: 'host-llm-output',
+            schema_ref: step.inputs[0]!.schema_ref ?? '',
+            locator: 'inline:' + JSON.stringify(hostResult.response),
+            version: '1',
+            mutability: 'immutable',
+            retention: 'session',
+            authoritative_status: 'authoritative',
+          }
+          result = { kind: 'ok', outputs: [dataRef] }
+        } catch (raw) {
+          // HostUnavailableError → host_llm_unavailable:<host>
+          // Other errors (subprocess failure, timeout) →
+          //   host_llm_invocation_failed:<reason>
+          // The executor synthesizes a step failure; the failure-policy
+          // switch downstream routes per step.on_failure exactly as for any
+          // other Activity failure (rollback / escalate / pause / abort /
+          // continue all reachable).
+          const errMsg =
+            raw instanceof HostUnavailableError
+              ? `host_llm_unavailable:${raw.host}`
+              : raw instanceof Error
+                ? `host_llm_invocation_failed:${raw.message}`
+                : `host_llm_invocation_failed:${String(raw)}`
+          result = { kind: 'failure', error: new Error(errMsg) }
+        }
+      }
     } else if (skill_engine !== undefined && typeof step.skill_ref === 'string') {
       // M6 Group P (T-073). Steps with `skill_ref` route through invokeSkill
       // when a SkillEngine is present in options. The adapter resolves the
@@ -889,6 +986,71 @@ async function emitStepEvent(
       ...(fields.agent_identity !== undefined ? { agent_identity: fields.agent_identity } : {}),
       ...(fields.actor !== undefined ? { actor: fields.actor } : {}),
       attributes: fields.attributes,
+    })
+  } catch {
+    // observability failure must NEVER break execution
+  }
+}
+
+/**
+ * M8 Group BB (T-121). Emit a HOST_LLM_INVOCATION OTel event per host-LLM
+ * Activity dispatch. Carries host_kind + host_version + invocation_id +
+ * prompt_hash + response_hash + tokens_used (when host reports).
+ *
+ * Provenance contract (codex pivot review fold #5):
+ *   - host_kind  + host_version : the FULL host identity at the moment of
+ *     the call. Replay verification uses this to detect "we ran the same
+ *     prompt against a different host_version" silently.
+ *   - invocation_id : sha256(prompt + host + version + run_seq).slice(0,32)
+ *     — same id on replay; downstream observability deduplicates.
+ *   - prompt_hash + response_hash : sha256 truncated to 32 hex chars.
+ *     Storing only hashes (not the text) keeps the OTel event compact and
+ *     respects "audit trail without exposing prompt/response surface".
+ *
+ * Hashes are clock-free + order-deterministic — replay produces a
+ * bit-identical event record.
+ */
+async function emitHostLLMInvocation(
+  emitter: OTelEmitter | undefined,
+  fields: {
+    trace_id: string
+    workflow_id: string
+    step_id: number
+    agent_identity?: AgentIdentity
+    actor?: string
+    host_result: {
+      host_kind: string
+      host_version: string
+      invocation_id: string
+      response: string
+      tokens_used?: number
+    }
+    prompt: string
+  },
+): Promise<void> {
+  if (emitter === undefined) return
+  const prompt_hash = createHash('sha256').update(fields.prompt).digest('hex').slice(0, 32)
+  const response_hash = createHash('sha256').update(fields.host_result.response).digest('hex').slice(0, 32)
+  try {
+    await emitter.emit({
+      decision_kind: 'HOST_LLM_INVOCATION',
+      trace_id: fields.trace_id,
+      workflow_id: fields.workflow_id,
+      step_id: fields.step_id,
+      ...(fields.agent_identity !== undefined ? { agent_identity: fields.agent_identity } : {}),
+      // Host-LLM provenance default actor — when caller did not supply one,
+      // tag with the activity's stable identifier so downstream observability
+      // can filter HOST_LLM_INVOCATION events without an explicit actor field
+      // on every executor caller.
+      actor: fields.actor ?? 'sutra-native:host-llm-activity',
+      attributes: {
+        host_kind: fields.host_result.host_kind,
+        host_version: fields.host_result.host_version,
+        invocation_id: fields.host_result.invocation_id,
+        prompt_hash,
+        response_hash,
+        tokens_used: fields.host_result.tokens_used ?? null,
+      },
     })
   } catch {
     // observability failure must NEVER break execution

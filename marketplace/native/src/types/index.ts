@@ -156,7 +156,29 @@ export type SchemaRef = string
 // Step graph — V2.3 §A11 (Workflow.step_graph[i])
 // -----------------------------------------------------------------------------
 
-export type StepAction = 'spawn_sub_unit' | 'wait' | 'terminate'
+// M8 Group BB (T-115; codex pivot review 2026-04-30 fold). Extended with
+// `'invoke_host_llm'` so a Workflow step can dispatch into a host-LLM Activity
+// (Claude `--bare` first-class; codex advisory). The host CLI selection lives
+// on a DEDICATED step contract field `WorkflowStep.host` (NOT step.inputs and
+// NOT an orthogonal step.host_kind tag): codex pivot review CHANGE #2 — the
+// step contract MUST be canonical at L2 BOUNDARY, not buried in inputs.
+export type StepAction = 'spawn_sub_unit' | 'wait' | 'terminate' | 'invoke_host_llm'
+
+/**
+ * M8 Group BB (T-115). Host-LLM kind selector for `action='invoke_host_llm'`
+ * steps. Two values at v1.0:
+ *   - 'claude' — Anthropic's Claude Code CLI (`claude --bare --print`); the
+ *     first-class host per the architecture pivot.
+ *   - 'codex' — OpenAI's codex CLI (`codex exec`); advisory at v1.0 — MCP
+ *     parity with Claude is NOT established (see host-llm-activity.ts module
+ *     comment for scope details).
+ *
+ * Required iff `step.action === 'invoke_host_llm'`; forbidden otherwise. The
+ * XOR rule is enforced at the L2 BOUNDARY law (canonical anchor) and mirrored
+ * at the constructor + validator (`createWorkflow.validateStep` +
+ * `isValidWorkflow`) per codex pivot review CHANGE #2.
+ */
+export type HostKind = 'claude' | 'codex'
 
 export type StepFailureAction =
   | 'rollback'
@@ -184,6 +206,19 @@ export interface WorkflowStep {
   outputs: DataRef[]
   on_failure: StepFailureAction
   policy_check?: boolean
+  /**
+   * M8 Group BB (T-115; codex pivot review CHANGE #2 fold). Host-LLM kind
+   * selector for `action='invoke_host_llm'`. Required iff action is
+   * 'invoke_host_llm'; forbidden for any other action and forbidden when
+   * skill_ref is set. Enforced at L2 BOUNDARY (canonical anchor) +
+   * createWorkflow.validateStep / isValidWorkflow (operational mirrors).
+   *
+   * NOT modeled as an orthogonal `host_kind` tag — codex pivot review #2:
+   * the step contract for "what does this step DO" must encode the host
+   * directly so L2 BOUNDARY captures the full dispatch decision in one
+   * structural check (no bury-in-inputs anti-pattern).
+   */
+  host?: HostKind
 }
 
 // -----------------------------------------------------------------------------

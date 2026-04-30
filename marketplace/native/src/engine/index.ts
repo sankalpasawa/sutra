@@ -148,6 +148,24 @@ export {
   type OverheadReport,
 } from './governance-overhead.js'
 
+// M8 Group BB — Host-LLM Activity (Claude --bare first-class + codex
+// advisory). The architecture pivot's load-bearing public surface: every
+// host-LLM dispatch flows through `hostLLMActivity` (asActivity-wrapped) so
+// the M5 F-12 boundary is preserved. The raw `invokeHostLLM` is INTENTIONALLY
+// NOT exported here (M7 P1.1 lesson — keep raw subprocess functions out of
+// the production import surface; consumers reach the I/O via the wrapped form).
+//
+// HostUnavailableError surfaces when a host CLI is missing on PATH at
+// dispatch time; the executor (T-120) translates this to a step failure with
+// `host_llm_unavailable:<host>` for the failure-policy switch.
+export {
+  hostLLMActivity,
+  HostUnavailableError,
+  type HostKind,
+  type HostLLMInvokeArgs,
+  type HostLLMResult,
+} from './host-llm-activity.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public
@@ -156,3 +174,7 @@ export {
 // `__resetWorkflowRunSeqForTest` (M8 Group Z T-108) is the trace_id seam —
 // also intentionally NOT on the public barrel; tests import directly from
 // './step-graph-executor.js'.
+//
+// `__set/resetHostAvailabilityForTest`, `__set/resetExecFileSyncStubForTest`,
+// `__deriveInvocationIdForTest` (M8 Group BB T-117..T-119) are also NOT on
+// the public barrel — tests import directly from './host-llm-activity.js'.

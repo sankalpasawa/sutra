@@ -65,6 +65,23 @@ describe('engine barrel — public surface', () => {
     expect(typeof emitter.flush).toBe('function')
   })
 
+  it('re-exports M8 Group BB — host-LLM Activity public surface', () => {
+    expect(typeof engine.hostLLMActivity).toBe('function')
+    expect(typeof engine.HostUnavailableError).toBe('function') // class is a function
+  })
+
+  it('does NOT re-export raw invokeHostLLM on the public barrel (M7 P1.1 lesson)', () => {
+    expect((engine as Record<string, unknown>).invokeHostLLM).toBeUndefined()
+  })
+
+  it('does NOT re-export host-LLM test seams on the public barrel', () => {
+    expect((engine as Record<string, unknown>).__setHostAvailabilityForTest).toBeUndefined()
+    expect((engine as Record<string, unknown>).__resetHostAvailabilityForTest).toBeUndefined()
+    expect((engine as Record<string, unknown>).__setExecFileSyncStubForTest).toBeUndefined()
+    expect((engine as Record<string, unknown>).__resetExecFileSyncStubForTest).toBeUndefined()
+    expect((engine as Record<string, unknown>).__deriveInvocationIdForTest).toBeUndefined()
+  })
+
   it('does NOT re-export test seams on the public barrel', () => {
     expect((engine as Record<string, unknown>).__setWorkflowContextProbeForTest).toBeUndefined()
     expect((engine as Record<string, unknown>).__resetWorkflowContextProbeForTest).toBeUndefined()
