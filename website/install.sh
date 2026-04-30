@@ -30,8 +30,9 @@ IFS=$'\n\t'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-SUTRA_VERSION="0.2.0"  # installer script version; plugin currently ships at v2.8.11
-SUTRA_MARKETPLACE="sankalpasawa/sutra"
+SUTRA_VERSION="2.9.1"  # tracks plugin version (sutra/marketplace/plugin/.claude-plugin/plugin.json .version)
+SUTRA_MARKETPLACE="sankalpasawa/sutra"   # source spec for `marketplace add` (GitHub path)
+SUTRA_MARKETPLACE_NAME="sutra"           # registered name in Claude (from marketplace.json .name)
 SUTRA_PLUGIN="core@sutra"
 SUTRA_HOME="${HOME}/.sutra"
 SUTRA_INSTALL_SENTINEL="${SUTRA_HOME}/installed-via-script"
@@ -196,7 +197,9 @@ step_marketplace_add() {
   # user (whose cache pre-dates the latest release) gets the cached version of
   # core@sutra at install/update time, not the actual latest. Idempotent.
   log "Refreshing marketplace cache to latest catalog…"
-  if ! claude plugin marketplace update "${SUTRA_MARKETPLACE}" 2>&1 | sed 's/^/[sutra]   /' >&2; then
+  # Update by registered name (from marketplace.json .name), not the GitHub source
+  # spec — `claude plugin marketplace update` rejects the latter with "not found".
+  if ! claude plugin marketplace update "${SUTRA_MARKETPLACE_NAME}" 2>&1 | sed 's/^/[sutra]   /' >&2; then
     warn "marketplace update returned non-zero (continuing — install/update step may still pull latest)."
   fi
 }
@@ -286,15 +289,68 @@ write_settings_with_jq() {
   rm -f "${tmp}"
 }
 
-write_settings_without_jq() {
-  # Safe fallback: only proceed if the file is absent or empty. Never blind-edit
-  # an existing non-empty JSON without jq — too easy to corrupt.
+write_settings_with_python() {
+  # Python 3 ships with macOS (>= 12, via /usr/bin/python3 stub) and most Linux
+  # distros, so this covers the common returning-user case where jq is missing
+  # and ~/.claude/settings.local.json already exists from prior Claude Code use.
   local settings_file="$1"
-  if [[ -s "${settings_file}" ]]; then
-    die "jq not found and ${settings_file} already exists. Install jq (brew install jq / apt-get install jq) and re-run, or manually paste the snippet from https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PERMISSIONS.md"
-  fi
+  local tmp
+  tmp="$(mktemp "${settings_file}.XXXXXX")"
+  local allow_json
+  allow_json="$(sutra_allow_entries_json)"
 
-  # Fresh file: emit a minimal valid JSON with the Sutra allowlist.
+  if ! python3 - "${settings_file}" "${tmp}" "${allow_json}" <<'PY'
+import json, os, sys
+src, dst, add_json = sys.argv[1], sys.argv[2], sys.argv[3]
+add_entries = json.loads(add_json)
+
+if os.path.exists(src) and os.path.getsize(src) > 0:
+    try:
+        with open(src) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        sys.stderr.write(f"existing {src} is not valid JSON: {e}\n")
+        sys.exit(2)
+else:
+    data = {}
+
+if not isinstance(data, dict):
+    sys.stderr.write(f"{src} root is not a JSON object\n")
+    sys.exit(2)
+
+perms = data.setdefault("permissions", {})
+if not isinstance(perms, dict):
+    sys.stderr.write(".permissions exists but is not an object\n")
+    sys.exit(2)
+
+allow = perms.setdefault("allow", [])
+if not isinstance(allow, list):
+    sys.stderr.write(".permissions.allow exists but is not an array\n")
+    sys.exit(2)
+
+seen = set(allow)
+for item in add_entries:
+    if item not in seen:
+        allow.append(item)
+        seen.add(item)
+perms["allow"] = allow
+
+with open(dst, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+  then
+    rm -f "${tmp}"
+    return 1
+  fi
+  mv "${tmp}" "${settings_file}"
+  return 0
+}
+
+write_settings_fresh() {
+  # Last-resort fallback: only safe when no existing file. Used when neither
+  # jq nor python3 is available AND settings.local.json doesn't yet exist.
+  local settings_file="$1"
   local allow
   allow="$(sutra_allow_entries_json)"
   cat > "${settings_file}" <<EOF
@@ -313,10 +369,19 @@ step_write_permissions() {
   if command -v jq >/dev/null 2>&1; then
     write_settings_with_jq "${CLAUDE_SETTINGS_FILE}"
     log "Allowlist merged into ${CLAUDE_SETTINGS_FILE} (via jq)."
-  else
-    warn "jq not found — using minimal-write fallback."
-    write_settings_without_jq "${CLAUDE_SETTINGS_FILE}"
+  elif command -v python3 >/dev/null 2>&1; then
+    log "jq not found — using python3 to merge JSON."
+    if write_settings_with_python "${CLAUDE_SETTINGS_FILE}"; then
+      log "Allowlist merged into ${CLAUDE_SETTINGS_FILE} (via python3)."
+    else
+      die "JSON merge failed. Install jq (brew install jq / apt-get install jq) and re-run, or manually paste the snippet from https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PERMISSIONS.md"
+    fi
+  elif [[ ! -s "${CLAUDE_SETTINGS_FILE}" ]]; then
+    warn "Neither jq nor python3 found — writing fresh settings file."
+    write_settings_fresh "${CLAUDE_SETTINGS_FILE}"
     log "Allowlist written to ${CLAUDE_SETTINGS_FILE}."
+  else
+    die "Neither jq nor python3 found, and ${CLAUDE_SETTINGS_FILE} already exists. Install one of: jq (brew install jq / apt-get install jq) or python3, then re-run. Or manually paste the snippet from https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PERMISSIONS.md"
   fi
 }
 

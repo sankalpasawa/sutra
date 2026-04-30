@@ -11,7 +11,9 @@
     ".": "./lib/index.ts"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "postinstall": "tsc -p tsconfig.build.json",
+    "typecheck:full": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:v0": "vitest run tests/integration/v0-scenarios.test.ts",
     "test:guard": "vitest run tests/unit/composio-adapter.test.ts",

@@ -1,0 +1,7 @@
+# Build artifacts emitted by `npm run build` (tsc -p tsconfig.build.json)
+# .js files alongside .ts sources are generated; .ts is canonical source.
+lib/*.js
+lib/**/*.js
+dist/
+node_modules/
+*.tsbuildinfo
