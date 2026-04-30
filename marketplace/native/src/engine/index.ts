@@ -87,12 +87,18 @@ export {
 // specific version via `get(policy_id, policy_version)` for audit / replay).
 export { OPABundleService } from './opa-bundle-service.js'
 
-// M7 Group V — OPA evaluator. `evaluate(policy, input)` shells out to the
-// OPA binary; `policyEvalActivity` is the asActivity-wrapped form that
-// preserves the M5 I/O boundary (codex r8 P1.1). `OPAUnavailableError`
+// M7 Group V — OPA evaluator. `policyEvalActivity` is the asActivity-wrapped
+// form that preserves the M5 I/O boundary (codex r8 P1.1). `OPAUnavailableError`
 // surfaces when the binary is missing — the runtime treats this as deny.
+//
+// Codex master review 2026-04-30 P1.1 fold (BLOCKER): the raw `evaluate()`
+// function is INTENTIONALLY OMITTED from this public barrel. Workflow code
+// must reach the OPA shell-out ONLY through `policyEvalActivity` (or via
+// `makePolicyDispatcher().dispatch_policy_eval(...)` which wraps the same).
+// `evaluate()` is reachable only by importing directly from
+// `./opa-evaluator.js` (test code, internal) and additionally enforces the
+// F-12 guard at runtime (defense-in-depth — see opa-evaluator.ts).
 export {
-  evaluate,
   policyEvalActivity,
   OPAUnavailableError,
   type PolicyAllow,

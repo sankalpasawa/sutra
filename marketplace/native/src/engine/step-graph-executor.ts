@@ -149,6 +149,16 @@ export interface ExecuteOptions {
   policy_dispatcher?: PolicyDispatcher
   /** M7 Group V (T-094). Compiled policy bound to the Workflow's parent Charter. */
   compiled_policy?: CompiledPolicy
+  /**
+   * M7 codex master review 2026-04-30 P2.3 fold (CHANGE). Optional tenant
+   * identifier surfaced to policy evaluation via
+   * `PolicyInput.execution_context.tenant_id`. Charters that encode tenant
+   * isolation (e.g. `input.execution_context.tenant_id == "T-tenant-a"`)
+   * read this field directly. Default: undefined; production code populates
+   * from process/session context (M11 dogfood will wire). Tests pass an
+   * explicit value to exercise cross-tenant deny scenarios (A-7.e).
+   */
+  tenant_id?: string
 }
 
 /**
@@ -402,12 +412,26 @@ export async function executeStepGraph(
           completed_step_ids: [...completed_step_ids],
           autonomy_level: workflow.autonomy_level,
           recursion_depth,
+          // P2.3 fold: tenant_id is the cross-tenant decision surface.
+          // Undefined when the operator does not declare a tenant — Charters
+          // that read it then see `null`/missing and can encode their own
+          // policy ("require tenant_id" → deny when absent). Spread-only so
+          // we don't add `tenant_id: undefined` to the JSON (clean OPA input).
+          ...(options.tenant_id !== undefined ? { tenant_id: options.tenant_id } : {}),
         },
       }
       try {
+        // Codex master review 2026-04-30 P2.1 fold: the dispatcher now takes
+        // a bundle reference (policy_id + optional policy_version) — the
+        // bundle service is the live source of truth for the compiled
+        // policy. Carry policy_id from the supplied compiled_policy so the
+        // executor's existing public surface (compiled_policy in options)
+        // stays the operator-facing contract; the dispatcher handles
+        // bundle.get() under the hood.
         const decision = await policy_dispatcher!.dispatch_policy_eval({
           kind: 'policy_eval',
-          policy: compiled_policy!,
+          policy_id: compiled_policy!.policy_id,
+          policy_version: compiled_policy!.policy_version,
           input: policyInput,
         })
         if (decision.kind === 'deny') {

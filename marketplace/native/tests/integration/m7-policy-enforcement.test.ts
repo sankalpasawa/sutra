@@ -118,6 +118,14 @@ const okDispatcher: ActivityDispatcher = (descriptor): StepDispatchResult => ({
  * Wire a compiled Charter into the bundle service and produce a dispatcher
  * pointed at the real OPA binary. Returns the dispatcher + compiled policy
  * for direct attachment to executeStepGraph options.
+ *
+ * Codex master review 2026-04-30 P2.1 fold (CHANGE): the dispatcher now
+ * fetches CompiledPolicy via OPABundleService.get(policy_id, policy_version)
+ * at runtime — bundle is the live source of truth. `makePolicyDispatcher`
+ * takes the bundle as its only argument; tests register the policy with
+ * the bundle BEFORE invoking executeStepGraph (the executor still receives
+ * compiled_policy in options to surface policy_id/version on the dispatch
+ * command, but the dispatcher does the actual lookup).
  */
 function wirePolicy(
   charter: Charter,
@@ -125,15 +133,7 @@ function wirePolicy(
   const policy = compileCharter(charter)
   const bundle = new OPABundleService()
   bundle.register(policy)
-  const dispatcher = makePolicyDispatcher()
-  // The dispatcher routes through `policyEvalActivity(policy, input)`. The
-  // bundle service is the source of truth for "which policy is active"; we
-  // pass the compiled policy explicitly to executeStepGraph so the executor
-  // has direct access (the dispatcher's `dispatch_policy_eval(cmd)` accepts
-  // the compiled policy on the command — no bundle look-up needed in the
-  // current API). Bundle is wired here to pin the contract that "registering
-  // a policy" is the deployment surface even when the executor uses the
-  // policy directly.
+  const dispatcher = makePolicyDispatcher(bundle)
   return { policy, dispatcher }
 }
 
@@ -294,30 +294,27 @@ describe('M7 A-7.d — deny + rollback compensates only prior SUCCESS (not denie
 // =============================================================================
 
 describe('M7 A-7.e — tenant isolation via execution_context.tenant_id', () => {
-  it('charter requires workflow.tenant_id == execution_context.tenant_id → denies cross-tenant', async () => {
-    // The PolicyInput shape (defined in opa-evaluator.ts) carries `workflow`,
-    // `step`, `execution_context`. We extend our test Workflow with a
-    // `tenant_id` field via `custody_owner` (V2.1 §A4 — D-NS-11 explicit
-    // declaration). The execution_context has its own tenant_id — set when
-    // the executor builds PolicyInput (currently the executor's
-    // execution_context shape pins visited / completed / autonomy_level /
-    // recursion_depth; tenant_id is NOT in the shipped shape per M5).
+  it('charter requires execution_context.tenant_id == workflow.custody_owner → denies cross-tenant', async () => {
+    // Codex master review 2026-04-30 P2.3 fold (CHANGE): A-7.e now exercises
+    // the REAL tenant-isolation surface — `input.execution_context.tenant_id`
+    // — rather than the prior surrogate (`input.workflow.custody_owner`).
+    // The executor's PolicyInput now carries tenant_id when supplied via
+    // ExecuteOptions.tenant_id; the Charter encodes the cross-tenant
+    // isolation rule.
     //
-    // Because the executor's execution_context omits tenant_id today, this
-    // test exercises the tenant isolation discipline at the CHARTER level:
-    // the Charter encodes tenant binding via `input.workflow.custody_owner`
-    // — when that value matches the expected tenant the policy allows;
-    // otherwise denies. The negative case (workflow.custody_owner from
-    // tenant-A vs charter expecting tenant-B) is the canonical isolation
-    // failure.
+    // Charter rule (allow predicate): tenant binding holds when
+    // execution_context.tenant_id matches the workflow's declared
+    // custody_owner. The negative scenario sets a DIFFERENT tenant_id
+    // (T-tenant-b) on the execution_context than the workflow's
+    // custody_owner (T-tenant-a) → cross-tenant access attempt → deny.
     const charter = charterAllowing(
-      'input.workflow.custody_owner == "T-tenant-a"',
+      'input.execution_context.tenant_id == input.workflow.custody_owner',
       'C-m7e',
     )
     const { policy, dispatcher } = wirePolicy(charter)
 
-    // Workflow declares custody_owner='T-tenant-b' — does NOT match the
-    // policy's tenant binding ⇒ deny.
+    // Workflow custody_owner='T-tenant-a'. Execution context tenant_id will
+    // be 'T-tenant-b' (set via ExecuteOptions below) — does NOT match ⇒ deny.
     const w = createWorkflow({
       id: 'W-m7e',
       preconditions: '',
@@ -338,12 +335,13 @@ describe('M7 A-7.e — tenant isolation via execution_context.tenant_id', () => 
       failure_policy: 'abort',
       stringency: 'task',
       interfaces_with: [],
-      custody_owner: 'T-tenant-b',
+      custody_owner: 'T-tenant-a',
     })
 
     const result = await executeStepGraph(w, okDispatcher, {
       policy_dispatcher: dispatcher,
       compiled_policy: policy,
+      tenant_id: 'T-tenant-b',
     })
 
     expect(result.state).toBe('failed')

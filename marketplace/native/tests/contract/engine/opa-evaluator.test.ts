@@ -27,6 +27,8 @@ import { describe, it, expect, afterAll } from 'vitest'
 import {
   evaluate,
   policyEvalActivity,
+  __setEvaluateF12ProbeForTest,
+  __resetEvaluateF12ProbeForTest,
   type PolicyDecision,
 } from '../../../src/engine/opa-evaluator.js'
 import { compileCharter } from '../../../src/engine/charter-rego-compiler.js'
@@ -117,9 +119,18 @@ describe('opa-evaluator — obligation deny path', () => {
     expect(decision.kind).toBe('deny')
     if (decision.kind === 'deny') {
       expect(decision.rule_name).toBe('deny')
-      // Reason is the stringified Rego SET key — '{"obligation":"must_hold"}'.
+      // Codex master review 2026-04-30 P1.2 fold (BLOCKER): the raw Rego SET
+      // key is `{"obligation":"must_hold"}` — sanitizer escapes `:` to `\:`
+      // so the reason can flow into the M5 canonical failure_reason envelope
+      // without breaking the colon-delimited audit format. The keywords
+      // (`must_hold`, `obligation`) still appear in the sanitized output.
       expect(decision.reason).toContain('must_hold')
       expect(decision.reason).toContain('obligation')
+      // Sanitizer contract: NO unescaped `:` in the reason after sanitization.
+      // Every `:` must be preceded by `\` (escape). We verify by stripping
+      // escaped colons and asserting no raw `:` remains.
+      const stripped = decision.reason.replace(/\\:/g, '')
+      expect(stripped).not.toContain(':')
       expect(decision.policy_version).toBe(policy.policy_version)
     }
   })
@@ -170,5 +181,36 @@ describe('policyEvalActivity — F-12 boundary', () => {
       execution_context: {},
     })
     expect(decision.kind).toBe('allow')
+  })
+})
+
+// =============================================================================
+// Codex master review 2026-04-30 P1.1 fold (BLOCKER) — raw evaluate() F-12
+// =============================================================================
+//
+// Defense-in-depth: the public engine barrel no longer re-exports `evaluate`
+// (consumers reach the OPA path only via policyEvalActivity / dispatcher).
+// However, internal/test code still imports `evaluate` directly. This guard
+// trips when evaluate() is called from inside a Workflow context — the
+// Workflow code can't bypass the Activity boundary even if it imports the
+// raw function.
+describe('opa-evaluator — raw evaluate() F-12 guard (P1.1 fold)', () => {
+  afterAll(() => {
+    __resetEvaluateF12ProbeForTest()
+  })
+
+  it('throws F-12 error when evaluate() is called from a simulated Workflow context', () => {
+    // Simulate Workflow context — probe returns true.
+    __setEvaluateF12ProbeForTest(() => true)
+    const charter = charterWithAllow('input.step.step_id == 1')
+    const policy = compileCharter(charter)
+    expect(() =>
+      evaluate(policy, {
+        step: { step_id: 1 },
+        workflow: { id: 'W-test' },
+        execution_context: {},
+      }),
+    ).toThrowError(/F-12/)
+    __resetEvaluateF12ProbeForTest()
   })
 })

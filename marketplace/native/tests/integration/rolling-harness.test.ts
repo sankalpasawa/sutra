@@ -529,7 +529,8 @@ describe('M5.5 rolling harness — M7 policy surfaces (Charter compile + bundle 
       interfaces_with: [],
     })
 
-    const dispatcher = makePolicyDispatcher()
+    // P2.1 fold: makePolicyDispatcher takes the bundle service.
+    const dispatcher = makePolicyDispatcher(bundle)
     const dispatch: ActivityDispatcher = (descriptor): StepDispatchResult => ({
       kind: 'ok',
       outputs: [`m55-m7-step-${descriptor.step_id}`],

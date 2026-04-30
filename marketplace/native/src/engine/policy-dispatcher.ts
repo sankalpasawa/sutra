@@ -30,7 +30,7 @@
  *  - .enforcement/codex-reviews/2026-04-30-m7-plan-pre-dispatch.md P1.1
  */
 
-import type { CompiledPolicy } from './charter-rego-compiler.js'
+import type { OPABundleService } from './opa-bundle-service.js'
 import {
   policyEvalActivity,
   type PolicyDecision,
@@ -41,10 +41,18 @@ import {
  * Discriminated command shape. v1.0 only carries `policy_eval`; future
  * dispatchable commands (e.g. `policy_compile_refresh`) extend the union
  * without breaking existing handlers.
+ *
+ * Codex master review 2026-04-30 P2.1 fold (CHANGE): commands now carry a
+ * BUNDLE REFERENCE (`policy_id` + optional `policy_version`) rather than a
+ * full `CompiledPolicy` payload. The dispatcher looks the policy up via
+ * `OPABundleService.get(...)` at runtime — making the bundle service the
+ * live policy source of truth (matching the M7 stated runtime model).
  */
 export interface PolicyEvalCommand {
   readonly kind: 'policy_eval'
-  readonly policy: CompiledPolicy
+  readonly policy_id: string
+  /** Optional version pin. When omitted, the bundle's latest is used. */
+  readonly policy_version?: string
   readonly input: PolicyInput
 }
 
@@ -60,25 +68,49 @@ export interface PolicyDispatcher {
    * Evaluate a compiled policy against a policy input. Returns the
    * deterministic `PolicyDecision` per `OPAEvaluator.evaluate` semantics
    * (deny-wins). Throws `OPAUnavailableError` if the OPA binary is missing.
+   *
+   * Bundle-lookup failure (no policy registered for `policy_id` / version):
+   * synthesizes a deny per sovereignty discipline (the runtime never
+   * fabricates an "approval" when policy resolution fails).
    */
   dispatch_policy_eval(cmd: PolicyEvalCommand): Promise<PolicyDecision>
 }
 
 /**
  * Default factory. Returns a `PolicyDispatcher` whose `dispatch_policy_eval`
+ * resolves the policy via `bundleService.get(policy_id, policy_version)` and
  * routes through the Activity-wrapped evaluator. Tests inject their own
  * `PolicyDispatcher` directly when they want to assert allow/deny paths
  * without invoking the OPA binary.
  *
- * The factory is parameter-less by design — the OPA binary location is a
- * runtime concern, not a configuration knob. If a future deployment needs
- * to point at a different OPA binary (e.g. WASM-based eval), a separate
- * factory variant ships at that point.
+ * Codex master review 2026-04-30 P2.1 fold (CHANGE): the factory now takes
+ * `bundleService` as its single required parameter — the bundle is the
+ * policy source of truth at evaluation time.
  */
-export function makePolicyDispatcher(): PolicyDispatcher {
+export function makePolicyDispatcher(bundleService: OPABundleService): PolicyDispatcher {
+  if (typeof bundleService !== 'object' || bundleService === null) {
+    throw new TypeError(
+      'makePolicyDispatcher: bundleService must be an OPABundleService instance',
+    )
+  }
   return {
     dispatch_policy_eval: async (cmd: PolicyEvalCommand): Promise<PolicyDecision> => {
-      return policyEvalActivity(cmd.policy, cmd.input)
+      const policy = bundleService.get(cmd.policy_id, cmd.policy_version)
+      if (policy === null) {
+        // Sovereignty discipline: missing policy ⇒ synthetic deny. No
+        // approval is fabricated when the runtime cannot prove authorization.
+        // The reason carries the missing policy_id for operator diagnosis;
+        // policy_version surfaces "unknown" since no compiled record exists.
+        const missingId = cmd.policy_id
+        const versionPart = cmd.policy_version ?? 'latest'
+        return {
+          kind: 'deny',
+          rule_name: 'bundle_lookup_failure',
+          reason: `no_policy_for_id:${missingId}@${versionPart}`,
+          policy_version: 'unknown',
+        }
+      }
+      return policyEvalActivity(policy, cmd.input)
     },
   }
 }

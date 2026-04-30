@@ -45,7 +45,11 @@ import type {
   ConstraintOwnerScope,
 } from '../../src/types/index.js'
 
-const OPA_BIN = '/opt/homebrew/bin/opa'
+// Codex master review 2026-04-30 P2.2 fold: use `opa` from PATH (matching the
+// runtime evaluator at src/engine/opa-evaluator.ts) instead of a hardcoded
+// /opt/homebrew/bin/opa path. CI installs OPA via brew (or equivalent); the
+// runtime + property test now share a single binary-discovery surface.
+const OPA_BIN = 'opa'
 
 // -----------------------------------------------------------------------------
 // Curated predicate pools

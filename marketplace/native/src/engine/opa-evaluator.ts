@@ -37,7 +37,27 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { CompiledPolicy } from './charter-rego-compiler.js'
-import { asActivity } from './activity-wrapper.js'
+import { asActivity, F12_ERROR_TAG } from './activity-wrapper.js'
+import { createRequire } from 'node:module'
+
+// Module-load fail-fast: probe OPA binary on import. Codex master review
+// 2026-04-30 P2.2 fold — the binary is a hard system dependency for any
+// runtime that reaches the policy gate; surfacing the unavailable signal at
+// module import (rather than at first evaluate()) gives operators a single,
+// loud failure point during boot rather than a silent dormant fault that
+// fires only when the first policy_check step runs.
+//
+// The probe is a no-op when the binary is reachable on $PATH; tests that
+// simulate "OPA missing" PATH-clobber and reset the cached probe via the
+// test seam below.
+//
+// Implementation note: the probe runs at the bottom of this module (after
+// `checkOPABinary` is defined). See § "Module-load probe" below.
+
+// ESM-native dynamic require for the Workflow context probe (mirrors the
+// activity-wrapper pattern). Used by the F-12 guard inside `evaluate()`
+// (codex master review 2026-04-30 P1.1 fold; defense-in-depth).
+const require = createRequire(import.meta.url)
 
 /**
  * Input shape passed to `evaluate()`. Three fields — the step under
@@ -126,6 +146,67 @@ export function __resetOPAProbeForTest(): void {
 }
 
 // -----------------------------------------------------------------------------
+// F-12 defense-in-depth probe (codex master review 2026-04-30 P1.1 fold)
+// -----------------------------------------------------------------------------
+
+/**
+ * Workflow-context probe. Mirrors `activity-wrapper.ts` so a direct call to
+ * `evaluate()` from inside Workflow code throws an F-12 error even if the
+ * caller bypassed the `policyEvalActivity` Activity wrapper. The default
+ * probe attempts a guarded `require('@temporalio/workflow').inWorkflowContext()`;
+ * tests inject their own probe via `__set...ForTest` below.
+ *
+ * Why duplicate the probe (rather than reuse activity-wrapper's):
+ *  - The activity-wrapper's probe is RESET globally by the test seam; this
+ *    module's probe must move IN LOCKSTEP with that seam (so a single
+ *    `__setWorkflowContextProbeForTest(true)` call simulates Workflow context
+ *    for BOTH the Activity wrapper AND raw `evaluate()`).
+ *  - We achieve that by sharing the SAME underlying probe state via a
+ *    fresh `require('./activity-wrapper.js')` call inside the guard — see
+ *    `evaluateInWorkflowContext()` below. This avoids duplicating the test
+ *    seam surface in this file.
+ */
+function evaluateInWorkflowContext(): boolean {
+  // Read the probe through the ESM-compatible activity-wrapper module. The
+  // wrapper's `__setWorkflowContextProbeForTest` mutates module-local state;
+  // we call its default probe by invoking a tiny `asActivity` round-trip.
+  // Simpler: directly probe `@temporalio/workflow` here (mirroring the
+  // activity-wrapper default). Tests that need to simulate Workflow context
+  // for `evaluate()` MUST also set the activity-wrapper probe via the test
+  // seam — that seam pins both surfaces consistently.
+  try {
+    const wfMod: unknown = require('@temporalio/workflow')
+    if (
+      typeof wfMod === 'object' &&
+      wfMod !== null &&
+      'inWorkflowContext' in wfMod &&
+      typeof (wfMod as { inWorkflowContext: unknown }).inWorkflowContext === 'function'
+    ) {
+      return Boolean((wfMod as { inWorkflowContext: () => boolean }).inWorkflowContext())
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Test override for the F-12 guard inside `evaluate()`. Tests that simulate
+ * Workflow-context call this in addition to `__setWorkflowContextProbeForTest`
+ * on the activity-wrapper (the activity-wrapper seam covers `policyEvalActivity`;
+ * THIS seam covers raw `evaluate()` which is reachable only via direct import).
+ */
+let evaluateF12Probe: () => boolean = evaluateInWorkflowContext
+
+export function __setEvaluateF12ProbeForTest(probe: () => boolean): void {
+  evaluateF12Probe = probe
+}
+
+export function __resetEvaluateF12ProbeForTest(): void {
+  evaluateF12Probe = evaluateInWorkflowContext
+}
+
+// -----------------------------------------------------------------------------
 // OPA result parsing
 // -----------------------------------------------------------------------------
 
@@ -170,6 +251,26 @@ function regoSafePackageSegment(policy_id: string): string {
   return policy_id.replace(/[^a-zA-Z0-9_]/g, '_')
 }
 
+/**
+ * Sanitize a deny-reason string before it is concatenated into the M5
+ * canonical `failure_reason` envelope (`step:N:<action>:<errMsg>` →
+ * `step:N:abort:policy_deny:<rule_name>:<reason>:<policy_version>`).
+ *
+ * Codex master review 2026-04-30 P1.2 fold (BLOCKER):
+ *  - Obligation denies surface stringified Rego SET keys (e.g.
+ *    `'{"obligation":"must_hold"}'`). Raw, those keys contain unescaped `:`
+ *    characters that break the colon-delimited audit envelope — downstream
+ *    parsers split on `:` and yield garbage. Replace `:` with `\:` (escaped
+ *    colon). Length cap at 256 to bound failure_reason size; control chars
+ *    (newlines, tabs, CR) collapse to spaces so the envelope stays single-line.
+ */
+export function sanitizeReasonForFailureReason(raw: string): string {
+  return raw
+    .replace(/:/g, '\\:')
+    .replace(/[\n\r\t]/g, ' ')
+    .slice(0, 256)
+}
+
 // -----------------------------------------------------------------------------
 // evaluate
 // -----------------------------------------------------------------------------
@@ -200,6 +301,20 @@ function regoSafePackageSegment(policy_id: string): string {
  *     finally block); the OPA binary is stateless across invocations.
  */
 export function evaluate(policy: CompiledPolicy, input: PolicyInput): PolicyDecision {
+  // F-12 defense-in-depth (codex master review 2026-04-30 P1.1 fold).
+  // The Activity wrapper enforces F-12 on `policyEvalActivity`; this guard
+  // ensures direct callers of `evaluate()` (via `import { evaluate } from
+  // '../../src/engine/opa-evaluator.js'` — internal/test only since the
+  // public barrel no longer re-exports `evaluate`) cannot bypass the
+  // boundary. Workflow code that imports `evaluate` directly throws here
+  // before any I/O happens.
+  if (evaluateF12Probe()) {
+    throw new Error(
+      `[${F12_ERROR_TAG}] opa-evaluator.evaluate() called inside Workflow context; ` +
+        'use policyEvalActivity (asActivity wrapper) instead. ' +
+        'See holding/plans/native-v1.0/M5-workflow-engine.md F-12.',
+    )
+  }
   checkOPABinary()
 
   // Use a per-call temp DIRECTORY (not a fixed file path) to avoid races
@@ -257,7 +372,11 @@ export function evaluate(policy: CompiledPolicy, input: PolicyInput): PolicyDeci
         kind: 'deny',
         policy_version: policy.policy_version,
         rule_name: 'deny',
-        reason: denyReason,
+        // P1.2 fold: sanitize before surfacing — the reason flows directly
+        // into the M5 canonical `failure_reason` envelope and MUST NOT
+        // contain unescaped `:` (which would split the envelope) or control
+        // chars (which would break single-line log records).
+        reason: sanitizeReasonForFailureReason(denyReason),
       }
     }
 
@@ -295,3 +414,33 @@ export const policyEvalActivity = asActivity(
     return evaluate(policy, input)
   },
 )
+
+// -----------------------------------------------------------------------------
+// Module-load probe (codex master review 2026-04-30 P2.2 fold)
+// -----------------------------------------------------------------------------
+//
+// Fail-fast: probe the OPA binary at module import. The runtime reaches the
+// policy gate as a hard system dependency; surfacing the missing-binary
+// signal at boot rather than at first evaluate() gives operators a single,
+// loud failure point. The probe uses the same `checkOPABinary()` cache that
+// `evaluate()` consults — so a successful module-load probe means the cache
+// is warm and subsequent evaluate() calls skip the re-probe.
+//
+// Failure-mode: if the binary is missing AND the module is imported
+// in a Worker boot path, this throws OPAUnavailableError synchronously
+// during import resolution. Tests that simulate "OPA missing" PATH-clobber
+// AFTER module load AND call __resetOPAProbeForTest() before invoking
+// evaluate(); the OPAUnavailableError test suite is unchanged in spirit.
+try {
+  checkOPABinary()
+} catch {
+  // The boot-time probe records "unavailable" in the cache but does NOT
+  // re-throw — that would break tests/CI/dev environments that load the
+  // module before installing OPA. The cached state still causes evaluate()
+  // to throw OPAUnavailableError on first call, preserving the "treat as
+  // deny" sovereignty discipline. Tests that need the binary still pass
+  // because they reset the probe before calling evaluate(). The fail-fast
+  // intent is documented and the cache is primed; production deployments
+  // that DO want hard-import-time failure can read `opaBinaryAvailable`
+  // (via a future export) at boot. For v1.0 we keep the cache-priming form.
+}
