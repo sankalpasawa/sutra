@@ -20,7 +20,10 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "nanoid": "^5.0.0",
+    "cockatiel": "^3.1.0"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^1.0.0",
