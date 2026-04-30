@@ -409,14 +409,39 @@ export async function runDogfood(options: RunDogfoodOptions = {}): Promise<Dogfo
   })
 
   // -------------------------------------------------------------------------
-  // G-5 — observable artifact written
+  // G-5 — observable artifact emitted (codex master P1 fold: G-5 + G-6 are
+  // appended to gates[] BEFORE the file is written, so the persisted
+  // artifact contains all 8 gate records — not a stale snapshot stopping
+  // at G-4).
   // -------------------------------------------------------------------------
   mkdirSync(artifactDir, { recursive: true })
   const artifactPath = resolve(artifactDir, 'result.json')
+
+  emit({
+    gate: 'G-5',
+    label: 'observable artifact emitted',
+    ts: Date.now(),
+    notes: artifactPath,
+  })
+
+  // -------------------------------------------------------------------------
+  // G-6 — total wall-clock + verdict (binary per D-NS-50). total_ms now
+  // captures everything through the G-5 emit, so the persisted artifact's
+  // total_ms reflects the actual end-of-measurement timestamp before write.
+  // -------------------------------------------------------------------------
   const ended_at = Date.now()
   const total_ms = ended_at - t0
   const verdict: 'PASS' | 'FAIL' = total_ms <= I_11_THRESHOLD_MS ? 'PASS' : 'FAIL'
 
+  emit({
+    gate: 'G-6',
+    label: `total wall-clock (verdict ${verdict}; PS-13 ${verdict === 'PASS' ? 'CLOSED' : 'OPEN_FALSIFIED'})`,
+    ts: Date.now(),
+    notes: `total_ms=${total_ms} threshold_ms=${I_11_THRESHOLD_MS}`,
+  })
+
+  // Build result_summary AFTER all 8 gates have been pushed onto gates[],
+  // so the persisted file contains the full record set including G-5 + G-6.
   const result_summary: DogfoodResult = {
     runid,
     started_at: t0,
@@ -438,24 +463,8 @@ export async function runDogfood(options: RunDogfoodOptions = {}): Promise<Dogfo
     },
   }
 
+  // Final write — captures all 8 gates including G-5 + G-6 verdict.
   writeFileSync(artifactPath, JSON.stringify(result_summary, null, 2) + '\n', 'utf-8')
-
-  emit({
-    gate: 'G-5',
-    label: 'observable artifact written',
-    ts: Date.now(),
-    notes: artifactPath,
-  })
-
-  // -------------------------------------------------------------------------
-  // G-6 — total wall-clock + verdict (binary per D-NS-50)
-  // -------------------------------------------------------------------------
-  emit({
-    gate: 'G-6',
-    label: `total wall-clock (verdict ${verdict}; PS-13 ${result_summary.ps_13_status})`,
-    ts: Date.now(),
-    notes: `total_ms=${total_ms} threshold_ms=${I_11_THRESHOLD_MS}`,
-  })
 
   return result_summary
 }
