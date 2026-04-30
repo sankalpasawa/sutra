@@ -2,13 +2,13 @@
 # Sutra Connectors — check-version-drift.sh (M1.12)
 #
 # Reads the canonical version from plugin/.claude-plugin/plugin.json and
-# compares it to all other version surfaces. Exits 1 on drift; 0 if synced.
+# compares it to 3 active surfaces (4th deferred to M2). Exits 1 on drift; 0 if synced.
 #
 # Surfaces compared:
 #   1. plugin/.claude-plugin/plugin.json   (CANONICAL)
 #   2. plugin/README.md                    (banner: **vX.Y.Z**)
 #   3. plugin/connectors/package.json      ("version" field)
-#   4. plugin/connectors/QUICKSTART.md     (vX.Y.Z anywhere in status line)
+#   4. (deferred to M2 step 5: plugin/connectors/QUICKSTART.md banner)
 #
 # Spec: holding/research/2026-04-30-core-connectors-hardening-spec.md §M1.12
 set -euo pipefail

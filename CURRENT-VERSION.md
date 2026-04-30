@@ -1,5 +1,35 @@
 # Sutra — Current Version
 
+## v2.10.2 (2026-05-01) — plugin coverage trial: paused assistant layer removed; D32 posttool dispatcher wired; override-audit lib promoted; output-behavior-lint wired
+
+**What this is**: companion to `sutra` issue #49 (plugin self-inventory). Closes the "Tier 1 SHIPPED-BROKEN" + first slice of "Tier 2 SHIPPED-DEAD" findings from the audit. Net plugin diff: −888 / +296 / 8 files / 1 new lib.
+
+### What changed
+
+- **5 paused assistant-* hooks DELETED**: `assistant-decommission.sh` / `assistant-explain.sh` / `assistant-feedback.sh` / `assistant-observer.sh` / `assistant-kill-switch.sh`. Layer paused per D37; all 5 referenced `$REPO_ROOT/holding/state/...` paths absent on T4 machines (vinit#8 evidence).
+- **D32 posttool dispatcher WIRED**: `dispatcher-posttool.sh` in PostToolUse (no matcher). Hot-reload registry — silent-exits without `os/SUTRA-CONFIG.md` + `os/hooks/posttool-registry.jsonl`. Clients can add custom posttool hooks via registry without plugin reinstall.
+- **`output-behavior-lint.sh` WIRED in Stop**: silent advisory scanning the assistant transcript for "Never ask to run" + "No HTML unless asked" violations. Writes to `.enforcement/routing-misses.log` (mkdir -p safe). Exits 0 always; needs python3.
+- **`override-audit.sh` PROMOTED to plugin**: `cascade-check.sh` and `codex-review-gate.sh` source via `[ -f $REPO_ROOT/... ] || _OA_LIB="$(dirname "$0")/lib/override-audit.sh"` — the dirname fallback now resolves on user machines. Was silently degrading to no-lib else-branch.
+
+### Why this matters
+
+Plugin coverage audit (companion to #49) found 5 categories of drift between the holding-daily-use and plugin-shipped surfaces. v2.10.2 closes Tier 1 and opens the first wedge of Tier 2. Remaining work: dispatcher portability charter (Tier 2 unblock) covers `dispatcher-pretool.sh` (16 holding-refs) + `dispatcher-stop.sh` (57 holding-refs) — both Asawa-coupled by HOOK_LOG paths, hardcoded company-name switch cases, and `FOUNDER-DIRECTIONS.md` reads.
+
+### Validation
+
+- `jq -e .` parses `hooks.json` — VALID.
+- `grep -l "assistant-{decommission,explain,feedback,observer,kill-switch}"` across `plugin/hooks/` + `hooks.json` — **0 matches**.
+- `realpath dirname/lib/override-audit.sh` from inside `cascade-check.sh` — **RESOLVED**.
+- 5 fleet-effect scenarios in CHANGELOG matrix hand-checked.
+
+### Operator notes
+
+- No migration needed. Plugin auto-updates via marketplace.
+- If you had `~/.sutra-assistant-enabled`: now a no-op file. Safe to `rm`.
+- `output-behavior-lint` needs python3 to lint; absent → hook exits 0 silently.
+
+---
+
 ## v2.10.1 (2026-05-01) — cascade-check.sh silent-block fix + tracking-artifact whitelist
 
 **What this is**: companion fix to v2.10.0. The same drift family Vinit reported in #43 (silent hook diagnostics) had a *second* instance — `hooks/cascade-check.sh`. Caught during the v2.10.0 release session itself: two `cascade-check.sh` PostToolUse firings emitted `Failed with non-blocking status code: No stderr output` while editing `holding/research/2026-04-22-sutra-official-marketplace-submission.md`.

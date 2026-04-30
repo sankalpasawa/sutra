@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Sutra Connectors — bump-version.sh (M1.12)
 #
-# Atomic version bump across the four canonical version surfaces. On any
+# Atomic version bump across 3 active surfaces (4th deferred to M2). On any
 # failure mid-way, restores from .bak files via trap.
 #
 # Surfaces:
 #   1. plugin/.claude-plugin/plugin.json            (canonical "version" field)
 #   2. plugin/README.md                             (banner: **vX.Y.Z**)
 #   3. plugin/connectors/package.json               ("version" field)
-#   4. plugin/connectors/QUICKSTART.md              (test-count banner — version line)
+#   4. (deferred to M2 step 5: plugin/connectors/QUICKSTART.md when banner ships)
 #
 # Usage:
 #   bash connectors/scripts/bump-version.sh 2.10.0

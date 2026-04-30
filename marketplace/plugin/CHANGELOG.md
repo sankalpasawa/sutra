@@ -1,5 +1,59 @@
 # Changelog
 
+## v2.10.2 — 2026-05-01
+
+**Plugin coverage trial: paused assistant layer removed; D32 posttool dispatcher wired; override-audit lib promoted; `output-behavior-lint` wired in Stop.**
+
+Companion to `sutra` issue #49 (plugin self-inventory). Closes the "Tier 1 SHIPPED-BROKEN" + first slice of "Tier 2 SHIPPED-DEAD" findings from the audit. Net: **−888 lines, +296 lines, 8 files changed, 1 new lib**.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `hooks/assistant-decommission.sh` | DELETED. Paused per D37; referenced `$REPO_ROOT/holding/state/...` paths absent on T4 machines (vinit#8 evidence). |
+| `hooks/assistant-explain.sh` | DELETED. Same reason as above. |
+| `hooks/assistant-feedback.sh` | DELETED. Same. |
+| `hooks/assistant-observer.sh` | DELETED. Same. |
+| `hooks/assistant-kill-switch.sh` | DELETED. Was wired in Stop, exec'd the now-deleted observer; default-off so harmless silent-exit for everyone except opted-in users running the paused layer. Removing it finishes the D37 pause cleanly. |
+| `hooks/hooks.json` | (a) Unwired `assistant-kill-switch.sh` from Stop. (b) NEW: wired `dispatcher-posttool.sh` in PostToolUse (no matcher) — D32 hot-reload registry, silent-exits without `os/SUTRA-CONFIG.md` + `os/hooks/posttool-registry.jsonl`. (c) NEW: wired `output-behavior-lint.sh` in Stop — silent advisory scanning transcript for "Never ask to run" + "No HTML unless asked" violations, writes to `.enforcement/routing-misses.log` (mkdir -p safe). |
+| `hooks/lib/override-audit.sh` | NEW. Promoted from `holding/hooks/lib/`. `cascade-check.sh` and `codex-review-gate.sh` source via `[ -f $REPO_ROOT/... ] || _OA_LIB="$(dirname "$0")/lib/override-audit.sh"` — the dirname fallback now resolves on user machines instead of degrading to the no-lib else-branch. |
+| `.claude-plugin/plugin.json` | `version: 2.10.1` → `2.10.2`. |
+| `CHANGELOG.md` | This entry. |
+
+### Behavior matrix (fleet impact)
+
+| Scenario | v2.10.1 | v2.10.2 |
+|---|---|---|
+| T4 default install (no opt-in to assistant layer) | 5 phantom assistant-* scripts on disk; kill-switch silently exits | Cleanly absent. -887 lines of disk weight removed. |
+| T4 user with `~/.sutra-assistant-enabled` | kill-switch exec'd dead observer → broken | Layer fully gone; no enable surface remains. Revive via `holding/research/2026-04-24-assistant-layer-design.md` when un-paused. |
+| Client with `os/SUTRA-CONFIG.md` + `os/hooks/posttool-registry.jsonl` | Custom posttool hooks would not fire (no dispatcher wired) | Hot-reload dispatcher fires registered hooks per matcher; no plugin reinstall required to add new hooks |
+| Stop-event behavioral linting | Lived in `holding/hooks/dispatcher-stop.sh` only — Asawa-only | Fires on every fleet Stop; flags "please run", "could you run", `<!DOCTYPE html>` in assistant text when last user message didn't request HTML. Silent advisory; exits 0; needs python3. |
+| `cascade-check.sh` / `codex-review-gate.sh` override audit | Fell through to no-lib else-branch on user machines (degraded but not broken) | Lib resolves via plugin path; full audit incl. PROTO-004 / D13 / D29 typed override rows |
+
+### What's deferred (next phase: dispatcher portability charter)
+
+| Item | Holding refs | Reason |
+|---|---|---|
+| Wire `dispatcher-pretool.sh` | 16 | HOOK_LOG path, hardcoded company switch cases dayflow/maze/ppr/jarvis/billu/paisa, holding/checkpoints/ whitelist |
+| Wire `dispatcher-stop.sh` | 57 | Reads FOUNDER-DIRECTIONS.md, DIRECTION-ENFORCEMENT.md, ESTIMATION-LOG.jsonl, holding/checkpoints/ |
+| Delete 4 Asawa-only hooks (architecture-awareness / research-cadence-check / rtk-health-check / principle-regression) | various | Referenced by deferred dispatchers; can't safely remove until charter resolves |
+| Wire ~17 other unwired hooks | mixed | Most have ≥1 holding-coupling; triage as part of charter |
+
+### Validation
+
+- `jq -e .` parses `hooks.json` — VALID.
+- `grep -l "assistant-{decommission,explain,feedback,observer,kill-switch}"` across `plugin/hooks/` + `hooks.json` — **0 matches**.
+- `realpath dirname/lib/override-audit.sh` from inside `cascade-check.sh` — **RESOLVED**.
+- Five fleet-effect scenarios in matrix above hand-checked.
+
+### Operator notes
+
+- No migration needed. Plugin auto-updates via marketplace pipeline.
+- If you had `~/.sutra-assistant-enabled` set: now a no-op file (assistant layer gone). Safe to `rm` it.
+- New `output-behavior-lint` requires `python3`; absent → hook exits 0 silently.
+
+---
+
 ## v2.10.1 — 2026-05-01
 
 **`cascade-check.sh` silent-block fix + tracking-artifact whitelist.**

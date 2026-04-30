@@ -334,6 +334,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-budget-check.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/output-behavior-lint.sh",
+            "timeout": 8
           }
         ]
       }
