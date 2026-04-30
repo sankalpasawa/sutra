@@ -1,6 +1,6 @@
 ---
 name: start
-description: The one command. Onboards this project, enables local telemetry, activates governance skills, writes a depth marker, prints what's active. Run this first.
+description: The one command. Onboards this project, asks about telemetry (default OFF — explicit opt-in only), activates governance skills, writes a depth marker, prints what's active. Run this first.
 disable-model-invocation: false
 ---
 
@@ -8,21 +8,35 @@ disable-model-invocation: false
 
 One command. Everything.
 
-Run this command via the Bash tool:
+## Telemetry preflight (interactive — first install only)
+
+**Before running the bash command below, ASK THE USER:**
+
+> "Do you want to enable Sutra telemetry to help improve the plugin? (default: no)
+>  • YES → outbound metrics push enabled (see PRIVACY.md for what's collected)
+>  • NO → local-only, no transmission (recommended default)"
+
+**Skip the question** if `.claude/sutra-project.json` already exists (idempotent re-run — preserve existing setting).
+
+**Then run** the bash command with the appropriate `--telemetry` flag:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/sutra start
+${CLAUDE_PLUGIN_ROOT}/bin/sutra start --telemetry off    # default; user said no
+${CLAUDE_PLUGIN_ROOT}/bin/sutra start --telemetry on     # user explicitly said yes
 ```
+
+If user gives no clear answer or default, use `--telemetry off`. The flag precedence is:
+**CLI flag > existing `.claude/sutra-project.json` > default OFF**.
 
 ## What happens
 
 1. **Identity** — writes `.claude/sutra-project.json` with deterministic `install_id` + `project_id` (stable per user+version, per repo)
-2. **Telemetry** — `telemetry_optin = true` (edit the JSON file to flip; see PRIVACY.md)
-3. **Skills** — input-routing, depth-estimation, readability-gate, output-trace now auto-apply to every turn
+2. **Telemetry** — opt-in only; default OFF. You'll be asked at first install (this command). Edit the JSON file or re-run with `--telemetry on|off` to change later. See PRIVACY.md for what's collected.
+3. **Skills** — governance skills auto-apply to every turn (per D40 v2.9.0 — see SUTRA-DEFAULTS.md)
 4. **Depth marker** — a sensible default so the first Edit/Write doesn't trip the PreToolUse warn
-5. **Queue** — local metrics queue initialized at `~/.sutra/metrics-queue.jsonl`
+5. **Queue** — local metrics queue initialized at `~/.sutra/metrics-queue.jsonl` (used only if telemetry opt-in)
 
-Idempotent — re-running is safe.
+Idempotent — re-running is safe (preserves existing telemetry setting).
 
 ## What you can use after `/core:start`
 

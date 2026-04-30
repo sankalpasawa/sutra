@@ -19,14 +19,22 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(realpath "$0")")")}"
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$PROJECT_ROOT"
 
-# Resolve args (profile + force)
+# Resolve args (profile + force + telemetry)
+# v2.9.1+: --telemetry on|off is the explicit opt-in/out switch per founder
+# direction 2026-04-30 ("when installing Sutra, give an option to switch on
+# the telemetry"). When unset, telemetry defaults OFF (privacy-by-default,
+# matches PRIVACY.md v2.0 contract). Profile no longer auto-controls
+# telemetry — decoupled.
 PROFILE_ARG=""
 FORCE=0
+TELEMETRY_FLAG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE_ARG="${2:-}"; shift 2 ;;
     --profile=*) PROFILE_ARG="${1#*=}"; shift ;;
     --force) FORCE=1; shift ;;
+    --telemetry) TELEMETRY_FLAG="${2:-}"; shift 2 ;;
+    --telemetry=*) TELEMETRY_FLAG="${1#*=}"; shift ;;
     *) shift ;;
   esac
 done
@@ -100,13 +108,22 @@ case "$PROFILE" in
     ;;
 esac
 
-# Profile-dependent telemetry default
-case "$PROFILE" in
-  individual) TELEMETRY_DEFAULT=0 ;;
-  project|company) TELEMETRY_DEFAULT=1 ;;
+# Telemetry default resolution (v2.9.1+ — decoupled from profile per founder
+# direction 2026-04-30):
+#   1. --telemetry on|off CLI flag wins
+#   2. Else: 0 (off — privacy-by-default, matches PRIVACY.md v2.0 contract)
+#   3. Existing .claude/sutra-project.json setting takes precedence over
+#      either of the above (handled inside onboard.sh — idempotent preserve)
+case "$TELEMETRY_FLAG" in
+  on|true|yes|1)  TELEMETRY_DEFAULT=1 ;;
+  off|false|no|0|"") TELEMETRY_DEFAULT=0 ;;
+  *)
+    echo "Invalid --telemetry value: $TELEMETRY_FLAG. Use on|off." >&2
+    exit 2
+    ;;
 esac
 
-# Step 1 — onboard (with profile-dependent telemetry default)
+# Step 1 — onboard (with explicit-opt-in telemetry default)
 SUTRA_AUTO_OPTIN="$TELEMETRY_DEFAULT" bash "$PLUGIN_ROOT/scripts/onboard.sh" >/dev/null 2>&1
 
 # Step 2 — patch .claude/sutra-project.json to persist the profile + telemetry

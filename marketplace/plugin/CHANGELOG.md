@@ -1,5 +1,51 @@
 # Changelog
 
+## v2.9.1 — 2026-04-30
+
+**Telemetry: explicit opt-in during install (founder direction).**
+
+Founder direction (2026-04-30): "when installing Sutra, give an option to switch on the telemetry — do this for the plugin." Currently `/core:start` runs onboarding silently — the user has no visible say in whether telemetry is on. v2.9.1 makes it an **explicit interactive choice** at first install.
+
+### Behavior change
+
+- `/core:start` now asks the user **before** running onboard:
+  > "Do you want to enable Sutra telemetry to help improve the plugin? (default: no)"
+- If user says **yes** → invokes onboard with `--telemetry on`
+- If user says **no** (or default) → invokes onboard with `--telemetry off`
+- Idempotent: skip prompt if `.claude/sutra-project.json` already exists (preserve existing setting)
+
+### Precedence (codex review verdict ADVISORY → fold)
+
+```
+CLI flag (--telemetry on|off) > existing .claude/sutra-project.json > default OFF
+```
+
+### What changed
+
+| File | Change |
+|---|---|
+| `commands/start.md` | Frontmatter description fixed (no longer claims "enables local telemetry"); body adds preflight instruction telling Claude to ASK before running; body item 2 fixed (was "telemetry_optin = true" — wrong since v2.0; now "opt-in only; default OFF"); body item 5 clarifies queue is used only if opt-in. |
+| `scripts/start.sh` | New `--telemetry on\|off` CLI flag parsing. Profile-based telemetry default REMOVED (decoupled — profile governs governance enforcement only, not telemetry). New default = OFF (matches PRIVACY.md v2.0 contract; previously project/company profiles silently auto-opted-in). |
+
+### Why default OFF (not profile-based)
+
+Per codex consult on this design: "Keep default no. That matches PRIVACY.md v2.0 and onboard.sh's current default-false behavior. 'Ask explicitly with no default-yes' is the safest phrasing." The previous profile-based auto-opt-in for project/company silently contradicted PRIVACY.md and bypassed user consent. v2.9.1 fixes the contract gap.
+
+### Backwards compatibility
+
+- **Existing installs**: unchanged — `onboard.sh` preserves whatever `telemetry_optin` was already in `.claude/sutra-project.json`. No silent flip.
+- **New installs of `individual` profile**: was OFF; still OFF.
+- **New installs of `project`/`company` profile**: was silently ON; **now OFF unless user explicitly says yes**. Behavior change.
+- **Non-interactive callers** (CI, scripts): use `--telemetry on` to get the prior default-on behavior; otherwise default OFF.
+
+### How to flip later
+
+- Edit `.claude/sutra-project.json` directly (`telemetry_optin: true|false`)
+- Or re-run `/core:start --telemetry on` (or `off`)
+- `/core:status` shows current setting
+
+---
+
 ## v2.9.0 — 2026-04-30
 
 **D40 governance parity — every Sutra plugin client inherits Asawa's per-turn discipline by default.**
