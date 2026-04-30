@@ -31,8 +31,10 @@ For migrating an existing Tenant from Core hooks to Native primitives, see [`MIG
 ## Install (post-v1.0 release)
 
 ```
-/plugin install native@sutra-marketplace
+/plugin install sutra@asawa-marketplace
 ```
+
+(Canonical install string per `plugin.json` `marketplace` field. Reconciled at M12 GA prep per D-NS-56 — codex M11 dogfood findings §3.1 caught the prior drift between PS-13 wording / plugin.json / README.)
 
 ## Quick start — time-to-value (I-11)
 
