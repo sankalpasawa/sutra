@@ -1,0 +1,12 @@
+{
+  "ordering": {
+    "UserPromptSubmit": {
+      "human-sutra": {
+        "after": ["input-routing"],
+        "before": ["blueprint"],
+        "purpose": "h-sutra consumes input-routing's TYPE field via translation table; blueprint reads h-sutra's classification for the per-task BLUEPRINT block"
+      }
+    }
+  },
+  "_note": "Other skill ordering remains auto-discovered. This file is the explicit registry for h-sutra v1.0 only; expand as ADR-NNN demands. The active runtime hook registry (PreToolUse / PostToolUse / SessionStart / Stop / etc.) lives at hooks/hooks.json — that is the file the Claude Code harness consumes for command-hook execution. This top-level hooks.json is the explicit *skill ordering* registry referenced by SKILL.md and ACTIVATION.md."
+}

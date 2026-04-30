@@ -16,7 +16,16 @@ Skill ordering on `UserPromptSubmit`:
 2. **`human-sutra`** ← this skill (consumes input-routing's TYPE)
 3. `blueprint` — emits per-task plan preview
 
-Ordering is documented in SKILL.md description (`AFTER input-routing`); explicit hook wiring in settings.json deferred to v1.1 if auto-discovery proves insufficient.
+Explicit ordering ships in `sutra/marketplace/plugin/hooks.json` (top-level) under
+`ordering.UserPromptSubmit.human-sutra` with `after: ["input-routing"]` and
+`before: ["blueprint"]`. SKILL.md description also documents the constraint as a
+secondary signal. Note: the active runtime command-hook registry lives at
+`hooks/hooks.json` (PreToolUse / PostToolUse / SessionStart / Stop) — that's a
+separate concern from skill ordering.
+
+If a future Claude Code version exposes `settings.json` skill-ordering wiring
+that supersedes top-level `hooks.json`, the registry migrates there with an
+ADR-NNN. Current shape is the explicit ordering surface for v1.0.
 
 ## Smoke verification
 

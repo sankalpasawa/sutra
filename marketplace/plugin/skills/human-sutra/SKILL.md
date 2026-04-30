@@ -18,19 +18,28 @@ V1.0 runtime for the H↔Sutra Interaction Layer. Wraps `scripts/classify.sh` an
 ## When this skill fires
 
 - Every founder turn at `UserPromptSubmit`.
-- **Order constraint**: AFTER `input-routing` (consumes its `TYPE`), BEFORE `blueprint` (so the header tag lands above the BLUEPRINT block and below the Input Routing block).
-- For now this skill auto-triggers via the description match; explicit `UserPromptSubmit` hook wiring is deferred to Task 2.8.
+- **Skill execution order** (when this skill RUNS): AFTER `input-routing` (consumes its `TYPE` via translation table), BEFORE `blueprint` (which reads h-sutra's classification for the per-task BLUEPRINT block). Explicit ordering is registered in `sutra/marketplace/plugin/hooks.json` (top-level) under `ordering.UserPromptSubmit.human-sutra`.
+- **Header position in response** (where the OUTPUT lands): the header tag is the FIRST text in the response, ABOVE the existing Input Routing block. It is a SEPARATE single line prepended above Input Routing — it NEVER replaces the Input Routing block.
+- These are two independent properties: execution order governs WHEN the skill runs in the per-turn skill chain; header position governs WHERE its output appears in the rendered response.
 
-Per-turn block stack:
+Per-turn block stack (response output order, top to bottom):
 
 ```
-1. INPUT ROUTING block          (skill: core:input-routing)
-2. [HUMAN-SUTRA HEADER TAG]     (skill: human-sutra)            <- THIS ONE
+1. [HUMAN-SUTRA HEADER TAG]     (skill: human-sutra)            <- FIRST text in response
+2. INPUT ROUTING block          (skill: core:input-routing)
 3. DEPTH + ESTIMATION block     (skill: core:depth-estimation)
 4. BLUEPRINT block              (skill: core:blueprint)
 5. BUILD-LAYER block            (when editing protected paths)
 6. ... tool calls ...
 7. OUTPUT TRACE one-liner       (skill: core:output-trace)
+```
+
+Skill execution order on `UserPromptSubmit` (when each skill runs, independent of output position):
+
+```
+input-routing  →  human-sutra  →  blueprint
+                   (consumes TYPE,  (reads h-sutra
+                    emits header)    classification)
 ```
 
 ## Classification procedure
@@ -50,7 +59,7 @@ Step-by-step inside the skill runtime:
 
 ## Header emission
 
-The header is the FIRST text in the response, ABOVE the existing Input Routing block. It NEVER replaces the Input Routing block — that backward-compat invariant is non-negotiable.
+The header is the FIRST text in the response — a SEPARATE single line prepended ABOVE the existing Input Routing block. It NEVER replaces the Input Routing block — that backward-compat invariant is non-negotiable. (Note: this is the response-output position, distinct from skill-execution-order — see "When this skill fires" above.)
 
 Format:
 
@@ -149,6 +158,6 @@ Before producing the header tag, the skill MUST verify:
 - [ ] Classifier exit code captured (and JSON parse attempted).
 - [ ] Header format matches exactly: one line, bracketed, ` · ` separators, uppercase keys, no extra whitespace, no missing required fields.
 - [ ] Log row append committed (or deliberately skipped per Failure policy with a stderr warning).
-- [ ] Header tag is the FIRST text in the response, ABOVE Input Routing — never below, never replacing it.
+- [ ] Header tag is the FIRST text in the response, prepended ABOVE Input Routing as a SEPARATE single line — never below, never replacing it. (Charter §Stage 3 invariant.)
 
 If any check fails, do not emit a malformed header. Emit `[H-SUTRA-FAIL · self-check]` and continue with the rest of the per-turn block stack.
