@@ -2,6 +2,7 @@
 # scripts/classify.sh — classify a turn input into 9-cell × 3-tag schema
 # Input: $1 or stdin
 # Output: JSON to stdout
+# Task 2.3 — H↔Sutra Layer v1.0 (charter f65725a, ADR-001 b88b7cc)
 
 set -u
 
