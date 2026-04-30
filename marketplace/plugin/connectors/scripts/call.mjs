@@ -432,13 +432,13 @@ function emitDevBypassBeacon() {
     argv: process.argv,
     sutra_dev: process.env.SUTRA_DEV,
   };
-  try {
-    const parent = dirname(AUDIT_LOG_PATH);
-    if (parent.length > 0) mkdirSync(parent, { recursive: true });
-    appendFileSync(AUDIT_LOG_PATH, JSON.stringify(beacon) + "\n");
-  } catch {
-    /* best-effort */
-  }
+  // FAIL-LOUD: if the beacon cannot be written, refuse to proceed. The
+  // tamper-evident audit trail is the whole reason --dev-bypass exists
+  // gated behind SUTRA_DEV=1; running the bypass with no forensic record
+  // would defeat the gate (codex Wave 6 P1).
+  const parent = dirname(AUDIT_LOG_PATH);
+  if (parent.length > 0) mkdirSync(parent, { recursive: true });
+  appendFileSync(AUDIT_LOG_PATH, JSON.stringify(beacon) + "\n");
 }
 
 // ───────────────────────────────────────────────────────────────────────────
