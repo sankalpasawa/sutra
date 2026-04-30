@@ -333,16 +333,24 @@ export class ConnectorRouter {
     // ----------------------------------------------------------------------
     // Step 4: Composio adapter call.
     //   - Mode A (legacy): single attempt, no retry, no signal threading.
-    //   - Mode B (native-compat): cockatiel retry policy (3 attempts, expo
-    //     backoff 100ms→5s) wraps the call; AbortSignal short-circuits via
-    //     adapter → backend.fetch().
+    //   - Mode B (native-compat): cockatiel retry policy (3 total attempts =
+    //     1 initial + 2 retries, expo backoff 100ms→5s) wraps the call;
+    //     AbortSignal short-circuits the retry loop AND the in-flight fetch.
+    //
+    // Cockatiel 3.x semantics: maxAttempts is the retry count (NOT total).
+    // Total executions = 1 initial + maxAttempts retries. So maxAttempts: 2
+    // gives 3 total attempts (matches the documented "3 attempts" contract).
+    // ctx.signal is passed to policy.execute() as cockatiel's parent abort
+    // signal so an aborted call short-circuits the retry loop (NOT just
+    // the in-flight fetch). Without this, an aborted Mode B call could
+    // duplicate external writes (codex Wave 4 P1).
     // ----------------------------------------------------------------------
     const toolName = extractToolName(ctx.capability);
     let rawResult: unknown;
     try {
       if (this.#mode === 'native-compat') {
         const policy = retry(handleAll, {
-          maxAttempts: 3,
+          maxAttempts: 2,
           backoff: new ExponentialBackoff({ initialDelay: 100, maxDelay: 5000 }),
         });
         // exactOptionalPropertyTypes — only set `signal` when defined.
@@ -350,13 +358,19 @@ export class ConnectorRouter {
         // this is purely a type-narrowing courtesy.
         const adapterOpts: { signal?: AbortSignal } = {};
         if (ctx.signal !== undefined) adapterOpts.signal = ctx.signal;
-        rawResult = await policy.execute(() =>
-          this.#adapter.call(
-            manifest.composioToolkit,
-            toolName,
-            ctx.args as Record<string, unknown>,
-            adapterOpts,
-          ),
+        // Pass ctx.signal as cockatiel's parent abort signal so abort
+        // short-circuits the retry loop (NOT just the in-flight fetch).
+        const executeContext =
+          ctx.signal !== undefined ? { signal: ctx.signal } : undefined;
+        rawResult = await policy.execute(
+          () =>
+            this.#adapter.call(
+              manifest.composioToolkit,
+              toolName,
+              ctx.args as Record<string, unknown>,
+              adapterOpts,
+            ),
+          executeContext as never,
         );
       } else {
         rawResult = await this.#adapter.call(
