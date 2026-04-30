@@ -40,10 +40,16 @@ EOF
     exit 1
   fi
 
-  # Check 2 — connectors node_modules. If missing, run npm install --omit=dev
-  # once. We deliberately use --omit=dev so vitest, typescript, etc. don't
-  # land on client machines (~25 MB saved).
-  if [ ! -d "$CONNECTORS_DIR/node_modules" ]; then
+  # Check 2 — connectors node_modules. If missing OR partial (any of the
+  # three runtime deps not resolved), run npm install --omit=dev once. We
+  # deliberately use --omit=dev so vitest, typescript, etc. don't land on
+  # client machines (~25 MB saved). Per-dep check (codex M2 master review
+  # P2) protects against partial/interrupted installs that would otherwise
+  # leave a present-but-broken node_modules tree and silently fail later.
+  if [ ! -d "$CONNECTORS_DIR/node_modules" ] \
+     || [ ! -d "$CONNECTORS_DIR/node_modules/yaml" ] \
+     || [ ! -d "$CONNECTORS_DIR/node_modules/nanoid" ] \
+     || [ ! -d "$CONNECTORS_DIR/node_modules/cockatiel" ]; then
     if ! command -v npm >/dev/null 2>&1; then
       cat <<EOF >&2
 Sutra Connectors require Node.js (npm) for first-run dependency install.
