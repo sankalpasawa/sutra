@@ -86,7 +86,7 @@ The cutover engine (P-B1, deferred to M11+) drives this sequence. Until the engi
 1. **Validate** the cutover_contract (`createCutoverContract` parse) → emit `decision_kind='AUDIT'` provenance record.
 2. **Activate target engine in parallel** with source — Native runs alongside Core for the canary_window. Both emit DecisionProvenance to the same OTel sink. → emit `decision_kind='EXECUTE'` provenance record.
 3. **Observe behavior_invariants** continuously through canary_window. For each predicate violation, emit `decision_kind='AUDIT'` provenance record with the violation details.
-4. **Evaluate rollback_gate** continuously. When the predicate trips, jump to §6 (Rollback).
+4. **Evaluate rollback_gate** continuously (predicate semantics in §6). When the predicate trips, jump to §10 (Failure handling + escalation) — specifically §10.A (rollback succeeds) or §10.B (HS-5 — rollback fails).
 5. **Finalize** — at canary_window end, if `rollback_gate` did NOT trip AND `success_metrics` (from Charter, if defined) hold: emit `decision_kind='APPROVE'` provenance record. Disable source engine. Cutover succeeds.
 
 | Gate | DecisionProvenance `decision_kind` | When |
