@@ -75,3 +75,58 @@ export class ForbiddenComposioApiError extends ConnectorError {
     this.api = api;
   }
 }
+
+export class IdempotencyKeyRequiredError extends ConnectorError {
+  constructor(message: string) {
+    super(message, 'idempotency-key-required');
+    this.name = 'IdempotencyKeyRequiredError';
+  }
+}
+
+export class PayloadTooLargeError extends ConnectorError {
+  readonly bytes: number;
+  readonly maxBytes: number;
+  constructor(message: string, bytes: number, maxBytes: number) {
+    super(message, 'payload-too-large');
+    this.name = 'PayloadTooLargeError';
+    this.bytes = bytes;
+    this.maxBytes = maxBytes;
+  }
+}
+
+export class CredentialNotFoundError extends ConnectorError {
+  readonly connector: string;
+  constructor(connector: string) {
+    super(`No credential found for connector: ${connector}`, 'credential-not-found');
+    this.name = 'CredentialNotFoundError';
+    this.connector = connector;
+  }
+}
+
+export class SecretStoreSafetyError extends ConnectorError {
+  constructor(message: string) {
+    super(message, 'secret-store-safety');
+    this.name = 'SecretStoreSafetyError';
+  }
+}
+
+export class SecretStoreTimeoutError extends ConnectorError {
+  constructor(message: string) {
+    super(message, 'secret-store-timeout');
+    this.name = 'SecretStoreTimeoutError';
+  }
+}
+
+export class SecretStoreDecryptError extends ConnectorError {
+  constructor(message: string) {
+    super(message, 'secret-store-decrypt');
+    this.name = 'SecretStoreDecryptError';
+  }
+}
+
+export class AbortError extends ConnectorError {
+  constructor(message: string) {
+    super(message, 'aborted');
+    this.name = 'AbortError';
+  }
+}
