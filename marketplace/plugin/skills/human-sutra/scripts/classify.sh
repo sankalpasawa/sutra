@@ -11,6 +11,11 @@ IR_TYPE="${IR_TYPE:-}"
 RETRY_COUNT="${RETRY_COUNT:-0}"
 IRREVERSIBLE_HINT="${IRREVERSIBLE_HINT:-0}"
 
+# turn_id — stable per-turn correlation key. Accepts caller override (so SKILL.md
+# can pass parent turn_id for subagent re-entry / retry dedup); otherwise derive
+# from timestamp + first 200 chars of input.
+TURN_ID="${TURN_ID:-$(printf '%s%s' "$(date -u +%FT%TZ)" "${INPUT:0:200}" | shasum -a 256 | cut -d' ' -f1 | head -c 12)}"
+
 # Translation table: Input Routing TYPE → verb (preferred path)
 case "$IR_TYPE" in
   question)    VERB=QUERY ;;
@@ -122,10 +127,18 @@ if [ "${#MIXED_ACTS_TMP[@]}" -gt 0 ]; then
   MIXED_JSON="[$MIXED_JSON]"
 fi
 
-# Output JSON
+# Stage 1 pass = inverse of stage_1_fail (Charter §Logging schema)
+if [ "$STAGE_1_FAIL" = "true" ]; then
+  STAGE_1_PASS=false
+else
+  STAGE_1_PASS=true
+fi
+
+# Output JSON — field names match Charter §Logging schema
 cat <<EOF
 {
   "ts": "$(date -u +%FT%TZ)",
+  "turn_id": "$TURN_ID",
   "direction": "INBOUND",
   "verb": "$VERB",
   "principal_act": "$VERB",
@@ -135,13 +148,13 @@ cat <<EOF
   "channel": "$CHANNEL",
   "reversibility": "$REVERSIBILITY",
   "decision_risk": "$RISK",
-  "stage_1_fail": $STAGE_1_FAIL,
+  "stage_1_pass": $STAGE_1_PASS,
   "retry_counter": $RETRY_COUNT,
   "retry_saturated": $RETRY_SATURATED,
   "bounded_retry_action": $([ "$BOUNDED_RETRY_ACTION" = "null" ] && printf 'null' || printf '"%s"' "$BOUNDED_RETRY_ACTION"),
   "emission_stage": "$EMISSION_STAGE",
-  "expected_emission_type": "$EMIT_TYPE",
+  "stage_3_emission_type": "$EMIT_TYPE",
   "out_query_guardrails": $GUARDRAILS,
-  "ir_type": "$IR_TYPE"
+  "input_routing_type": "$IR_TYPE"
 }
 EOF
