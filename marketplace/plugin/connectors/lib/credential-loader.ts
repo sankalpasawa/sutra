@@ -22,12 +22,21 @@
 
 import {
   appendFileSync,
+  closeSync,
   existsSync,
+  fsyncSync,
+  lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  renameSync,
+  writeSync,
 } from 'node:fs';
+import { constants as fsConstants } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as os from 'node:os';
+
+const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fsConstants;
 
 import type { SecretStoreAge } from './secret-store-age.js';
 import { CredentialNotFoundError } from './errors.js';
@@ -139,7 +148,20 @@ export class CredentialLoader {
 
   // -------------------------------------------------------------------------
   // save — encrypts bundle JSON via secret-store-age to <keyDir>/<connector>.age
-  //   - does NOT auto-delete .json on save (explicit migration script does)
+  //   AND dual-writes <keyDir>/<connector>.json plaintext during the migration
+  //   window so existing consumers (scripts/call.mjs + verify-connection.mjs)
+  //   that read .json directly stay functional until Wave 5 (M1.10) migrates
+  //   them onto CredentialLoader.load().
+  //
+  // Migration policy (per spec §M1.8 + §5):
+  //   - Wave 3 (this file)  : save() dual-writes .age + .json
+  //   - Wave 5 (M1.10)      : connect.sh + verify-connection.mjs use loader
+  //   - Wave 6 (M1.11)      : call.mjs reroutes through Router
+  //   - M2 polish           : drop .json writer once all consumers on .age
+  //
+  // The .json path uses the same atomic-write + symlink-refusal discipline
+  // as secret-store-age (mirrors `sutra_safe_write` from privacy-sanitize.sh)
+  // so it does not regress safety while the migration window is open.
   // -------------------------------------------------------------------------
   async save(connector_name: string, bundle: CredentialBundle): Promise<void> {
     if (typeof connector_name !== 'string' || connector_name.length === 0) {
@@ -149,12 +171,55 @@ export class CredentialLoader {
       throw new Error('CredentialLoader.save: bundle must be a CredentialBundle');
     }
     const agePath = join(this.#keyDir, `${connector_name}.age`);
+    const jsonPath = join(this.#keyDir, `${connector_name}.json`);
     const plaintext = Buffer.from(JSON.stringify(bundle), 'utf8');
     const encryptOpts =
       this.#signal !== undefined ? { signal: this.#signal } : {};
+
+    // 1. Encrypted .age write (canonical going forward)
     await this.#secretStore.encrypt(agePath, plaintext, encryptOpts);
-    // NB: do NOT auto-delete the legacy .json — migration script owns cleanup
-    // after the grace period (per spec §M1.8 + §5).
+
+    // 2. Migration-window .json write (atomic + symlink-safe; same discipline
+    //    as sutra_safe_write).
+    this.#writeJsonShadow(jsonPath, plaintext);
+  }
+
+  // -------------------------------------------------------------------------
+  // private — atomic + symlink-safe .json write for migration shadow path
+  //   Mirrors sutra_safe_write semantics from plugin/lib/privacy-sanitize.sh:
+  //     - lstat target; refuse symlink
+  //     - lstat parent; refuse symlinked parent
+  //     - mkdir parent recursive 0o700
+  //     - openSync EXCL + NOFOLLOW + 0o600
+  //     - fsync, atomic rename
+  // -------------------------------------------------------------------------
+  #writeJsonShadow(target: string, plaintext: Buffer): void {
+    if (existsSync(target)) {
+      const st = lstatSync(target);
+      if (st.isSymbolicLink()) {
+        throw new Error(`CredentialLoader.save: refusing symlink target: ${target}`);
+      }
+    }
+    const parent = dirname(target);
+    if (existsSync(parent)) {
+      const ps = lstatSync(parent);
+      if (ps.isSymbolicLink()) {
+        throw new Error(`CredentialLoader.save: refusing symlinked parent: ${parent}`);
+      }
+    }
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    const tmp = `${target}.tmp.${process.pid}`;
+    const flags =
+      // eslint-disable-next-line no-bitwise
+      O_WRONLY | O_CREAT | O_EXCL | (O_NOFOLLOW ?? 0);
+    const fd = openSync(tmp, flags, 0o600);
+    try {
+      writeSync(fd, plaintext);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tmp, target);
   }
 
   // -------------------------------------------------------------------------
