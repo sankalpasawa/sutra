@@ -49,10 +49,10 @@ Step-by-step inside the skill runtime:
 1. **Read the Input Routing TYPE.** Either parse it from the prior `input-routing` skill block in this turn OR set the `IR_TYPE` env var when invoking `classify.sh` directly. Accepted values: `direction | task | feedback | new-concept | question`.
 2. **Invoke the classifier.** Pass the founder's raw input on `stdin` (or as `$1`) and the routing type via env:
    ```bash
-   IR_TYPE="$ir_type" \
+   IR_TYPE="$input_routing_type" \
      bash sutra/marketplace/plugin/skills/human-sutra/scripts/classify.sh "$INPUT"
    ```
-3. **Capture stdout JSON** and parse with `jq`. Required fields: `direction`, `verb`, `principal_act`, `mixed_acts`, `tense`, `timing`, `channel`, `reversibility`, `decision_risk`, `stage_1_fail`, `expected_emission_type`, `ir_type`.
+3. **Capture stdout JSON** and parse with `jq`. Required fields: `turn_id`, `direction`, `verb`, `principal_act`, `mixed_acts`, `tense`, `timing`, `channel`, `reversibility`, `decision_risk`, `stage_1_pass`, `stage_3_emission_type`, `input_routing_type`.
 4. **Check the classifier exit code.**
    - Exit `0` and parseable JSON → proceed to Header emission + Logging.
    - Non-zero exit OR `jq` parse failure OR `jq` missing → **fail-CLOSED for the log row** (skip the append; emit a single-line stderr warning) and **fail-OPEN for downstream** (do not block input-routing, blueprint, or any other skill).
@@ -67,7 +67,7 @@ Format:
 [<DIRECTION>·<VERB> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]
 ```
 
-When `mixed_acts` is non-empty, render as `<VERB>(<MIXED1>[,<MIXED2>])`. When `tense` is non-null, prepend ` · TENSE:<tense>` between VERB and TIMING. On `stage_1_fail=true` with `retry_saturated=false`, emit the Stage-1 fail tag instead.
+When `mixed_acts` is non-empty, render as `<VERB>(<MIXED1>[,<MIXED2>])`. When `tense` is non-null, prepend ` · TENSE:<tense>` between VERB and TIMING. On `stage_1_pass=false` with `retry_saturated=false`, emit the Stage-1 fail tag instead.
 
 | # | Scenario | Header |
 |---|----------|--------|
@@ -103,7 +103,7 @@ Schema (one row per turn):
 | `channel` | string | `in-band` / `out-of-band` |
 | `reversibility` | string | `reversible` / `irreversible` |
 | `decision_risk` | string | `low` / `medium` / `high` |
-| `stage_1_pass` | bool | `!classifier.stage_1_fail` |
+| `stage_1_pass` | bool | `true` when Stage-1 confidence gate passes; mirrors `classifier.stage_1_pass` |
 | `stage_3_emission_type` | string | `OUT-ASSERT` / `OUT-QUERY` |
 | `input_routing_type` | string | from `IR_TYPE` |
 

@@ -12,12 +12,12 @@ assert_equals "$(printf '%s' "$out" | jq -r '.emission_stage')" "STAGE_3" "emiss
 
 # Negative: DIRECT path on reversible action does NOT emit OUT-QUERY
 out=$(printf 'add slack connector' | bash "$CLASSIFY" 2>/dev/null)
-emit_type=$(printf '%s' "$out" | jq -r '.expected_emission_type')
+emit_type=$(printf '%s' "$out" | jq -r '.stage_3_emission_type')
 assert_equals "$emit_type" "OUT-ASSERT" "DIRECT+reversible → OUT-ASSERT (not OUT-QUERY)"
 
 # Positive: irreversible DIRECT → OUT-QUERY with all 3 guardrails
 out=$(printf 'push v1.0.1 to origin/main' | bash "$CLASSIFY" 2>/dev/null)
-emit_type=$(printf '%s' "$out" | jq -r '.expected_emission_type')
+emit_type=$(printf '%s' "$out" | jq -r '.stage_3_emission_type')
 assert_equals "$emit_type" "OUT-QUERY" "DIRECT+irreversible → OUT-QUERY"
 
 # Guardrails on OUT-QUERY: named-var, why, one-turn-answerable
@@ -28,7 +28,7 @@ done
 
 # Negative: ASSERT path → OUT-ASSERT (acknowledgment), not OUT-QUERY
 out=$(printf 'this is wrong' | bash "$CLASSIFY" 2>/dev/null)
-emit_type=$(printf '%s' "$out" | jq -r '.expected_emission_type')
+emit_type=$(printf '%s' "$out" | jq -r '.stage_3_emission_type')
 assert_equals "$emit_type" "OUT-ASSERT" "ASSERT path → OUT-ASSERT (no leakage to OUT-QUERY)"
 
 # No Stage 1 or Stage 2 leakage: classifier never sets stage_1_emit or stage_2_emit fields
