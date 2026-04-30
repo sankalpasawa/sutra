@@ -155,6 +155,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-counter.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatcher-posttool.sh",
+            "timeout": 8
           }
         ]
       },
@@ -319,11 +324,6 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-abandonment.sh",
             "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/assistant-kill-switch.sh",
-            "timeout": 5
           },
           {
             "type": "command",
