@@ -180,6 +180,22 @@ export {
   type AssertCrossTenantAllowedInput,
 } from './tenant-isolation.js'
 
+// M9 Group GG (T-156..T-160). CadenceScheduler — per-cadence callback
+// dispatcher with deterministic clock injection. Supports every_n_minutes /
+// every_n_hours / every_day_at / cron (escape hatch). I-12 invariant: per-hour
+// cadence fires within ±5 minutes (`CADENCE_JITTER_MS`).
+export {
+  CadenceScheduler,
+  CADENCE_JITTER_MS,
+  type CadenceSpec,
+  type CadenceCallback,
+  type CadenceHandle,
+  type CadenceSchedulerOptions,
+  type TickReport,
+  type TickFireEntry,
+  type TickErrorEntry,
+} from './cadence-scheduler.js'
+
 // Note: `__set/resetWorkflowContextProbeForTest` are intentionally NOT
 // re-exported here — they live in `./_test_seams.ts` and are reachable only
 // by test code that imports from that path directly. This keeps the public
