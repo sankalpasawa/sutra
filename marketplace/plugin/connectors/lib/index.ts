@@ -28,6 +28,12 @@ export { evaluatePolicy, consumeApproval } from './policy.js';
 export { AuditSink } from './audit.js';
 export { FleetPolicyCache } from './fleet-policy.js';
 export { ComposioAdapter, FORBIDDEN_COMPOSIO_APIS } from './composio-adapter.js';
+export { SecretStoreAge } from './secret-store-age.js';
+export type {
+  SecretStoreAgeConfig,
+  DecryptOptions,
+  EncryptOptions,
+} from './secret-store-age.js';
 
 export {
   ConnectorError,

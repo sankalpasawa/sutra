@@ -1,7 +1,7 @@
 {
   "name": "native",
-  "version": "1.0.1",
-  "description": "Sutra Native — TypeScript-native Sutra Engine source preview (V2.4 architecture). v1.0.1 ships the engine source tree only — package.json has no main/exports, sources ship as .ts, bin/ + skills/ absent. Hook activation + npm-style library entrypoint both land in v1.x. Use today via direct submodule + tsx/bun.",
+  "version": "1.0.2",
+  "description": "Sutra Native — TypeScript-native Sutra Engine source preview (V2.4 architecture). v1.0.2 ships SBOM-v1.0.1.txt + SBOM-v1.0.2.txt for supply-chain integrity (closes E2E harness Phase 3 advisory). v1.0.1 ships the engine source tree only — package.json has no main/exports, sources ship as .ts, bin/ + skills/ absent. Hook activation + npm-style library entrypoint both land in v1.x. Use today via direct submodule + tsx/bun.",
   "author": "Sutra",
   "license": "Apache-2.0",
   "marketplace": "sutra"

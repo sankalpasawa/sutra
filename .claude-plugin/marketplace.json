@@ -30,8 +30,8 @@
     },
     {
       "name": "native",
-      "description": "Sutra Native — TypeScript-native Sutra Engine SOURCE PREVIEW (V2.4 architecture). v1.0.1 ships the engine source tree only: 4 primitives (Domain / Charter / Workflow / Execution) + 6 laws + Skill Engine R4 contract + Workflow Engine 5-stage runtime + 3 default-composition seed Workflows + threat model with 3 runtime-tested attack classes. INSTALLATION SEMANTICS AT v1.0.1: catalog-discoverable source preview only — package.json has no main/exports/types entry, sources ship as .ts (not compiled), bin/ + skills/ directories absent. The engine is consumable via direct git submodule + tsx/bun runtime today (see marketplace/native/composition/README.md). Hook-activated plugin surface (PreToolUse/PostToolUse/Stop shims) + npm-style library entrypoint (main/exports + compiled .js) BOTH land in v1.x. v1.0.1 = preview install for evaluation; v1.x = runtime activation.",
-      "version": "1.0.1",
+      "description": "Sutra Native — TypeScript-native Sutra Engine SOURCE PREVIEW (V2.4 architecture). v1.0.2 ships SBOM-v1.0.1.txt + SBOM-v1.0.2.txt supply-chain manifests so the E2E harness's Phase 3 verifies cleanly. Engine surface unchanged from v1.0.1: 4 primitives (Domain / Charter / Workflow / Execution) + 6 laws + Skill Engine R4 contract + Workflow Engine 5-stage runtime + 3 default-composition seed Workflows + threat model with 3 runtime-tested attack classes. INSTALLATION SEMANTICS: catalog-discoverable source preview only — package.json has no main/exports/types entry, sources ship as .ts (not compiled), bin/ + skills/ directories absent. The engine is consumable via direct git submodule + tsx/bun runtime today (see marketplace/native/composition/README.md). Hook-activated plugin surface (PreToolUse/PostToolUse/Stop shims) + npm-style library entrypoint (main/exports + compiled .js) BOTH land in v1.x. v1.0.x = preview install for evaluation; v1.x = runtime activation.",
+      "version": "1.0.2",
       "author": {
         "name": "Sutra",
         "url": "https://sutra.os"
