@@ -1,0 +1,17 @@
+# Sutra Connectors — Architecture inventory (M1.12)
+#
+# Authoritative list of where the version string lives across the plugin and
+# the connectors module, plus the release protocol that keeps them in sync.
+#
+# Canonical surface = plugin/.claude-plugin/plugin.json. All other surfaces
+# must agree with the canonical value. Drift is detected by
+# scripts/check-version-drift.sh (runs in CI / pre-release).
+#
+# Spec: holding/research/2026-04-30-core-connectors-hardening-spec.md §M1.12
+
+canonical_version_surfaces:
+  - sutra/marketplace/plugin/.claude-plugin/plugin.json (canonical)
+  - sutra/marketplace/plugin/README.md (banner)
+  - sutra/marketplace/plugin/connectors/package.json
+  - sutra/marketplace/plugin/connectors/QUICKSTART.md (test count line)
+release_protocol: bump-version.sh <new-version>; check-version-drift.sh in CI
