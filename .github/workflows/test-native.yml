@@ -43,6 +43,17 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ./marketplace/native/package-lock.json
 
+      - name: Install OPA
+        # package.json declares engines.opa >=1.0.0 — Native's OPA-evaluator
+        # contract tests shell out to the `opa` binary. ubuntu-latest doesn't
+        # ship it, so install pinned 1.5.0 here. Pin tightens supply-chain
+        # surface; bump alongside engines.opa when needed.
+        run: |
+          curl -fsSL -o /usr/local/bin/opa \
+            https://openpolicyagent.org/downloads/v1.15.2/opa_linux_amd64_static
+          chmod +x /usr/local/bin/opa
+          opa version
+
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
