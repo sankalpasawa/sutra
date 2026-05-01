@@ -211,6 +211,10 @@ Every change to this skill ships as a numbered ADR plus a regression test, per C
 
 ## Self-check
 
+Two phases. Pre-header runs before emitting the bracketed tag at the top of the response. Pre-completion runs before the response is sent (i.e. during composition, after tool calls, before the final OUTPUT TRACE one-liner). Splitting them avoids the temporal impossibility of asking the model to verify an end-of-response artifact before producing the start-of-response artifact (codex F3, ADR-002 review 2026-05-02).
+
+### Pre-header self-check
+
 Before producing the header tag, the skill MUST verify:
 
 - [ ] Input Routing block already present in the response, OR `IR_TYPE` env var supplied to the classifier.
@@ -218,6 +222,13 @@ Before producing the header tag, the skill MUST verify:
 - [ ] Header format matches exactly: one line, bracketed, ` · ` separators, uppercase keys, no extra whitespace, no missing required fields.
 - [ ] Log row append committed (or deliberately skipped per Failure policy with a stderr warning).
 - [ ] Header tag is the FIRST text in the response, prepended ABOVE Input Routing as a SEPARATE single line — never below, never replacing it. (Charter §Stage 3 invariant.)
-- [ ] OUT-DIRECT-3CHECK annotation present near the END of the response (ADR-002 §Visible audit signal): `OUT-DIRECT-3CHECK: <state> | original_out_form=<val> | demoted=<bool>`. Required every turn — `N/A` is valid when no OUT-DIRECT was drafted.
 
 If any check fails, do not emit a malformed header. Emit `[H-SUTRA-FAIL · self-check]` and continue with the rest of the per-turn block stack.
+
+### Pre-completion self-check (ADR-002 §Visible audit signal)
+
+Before the response is sent, the skill MUST verify:
+
+- [ ] OUT-DIRECT-3CHECK annotation present near the END of the response: `OUT-DIRECT-3CHECK: <state> | original_out_form=<val> | demoted=<bool>`. Required every turn — `N/A` is valid when no OUT-DIRECT was drafted.
+
+If missing, append the annotation before sending. Failure mode: if the model forgets, the founder loses per-turn audit signal — the JSONL log row remains as backstop, but visible auditability is degraded.

@@ -320,8 +320,10 @@ esac
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
 mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null || true
 # ADR-003 §4: row schema includes tool_class · tool_family (null for non-MCP) ·
-# decision_basis. jq used to emit proper null when MATCHED_TOOL_FAMILY is empty.
-jq -nc \
+# decision_basis. Split jq emit from append so silent telemetry-loss surfaces
+# on stderr instead of being swallowed (codex F2: observability over 2>/dev/null
+# || true). Permission decision still proceeds even on telemetry failure.
+_ROW=$(jq -nc \
   --argjson ts "$(date +%s)" \
   --arg tool "$TOOL" \
   --arg pattern "$MATCHED_PATTERN" \
@@ -337,7 +339,14 @@ jq -nc \
     tool_class: $tool_class,
     tool_family: (if $tool_family == "" then null else $tool_family end),
     decision_basis: $decision_basis
-  }' >> "$REPO_ROOT/.enforcement/permission-gate.jsonl" 2>/dev/null || true
+  }' 2>/dev/null) || _ROW=""
+
+if [ -n "$_ROW" ]; then
+  printf '%s\n' "$_ROW" >> "$REPO_ROOT/.enforcement/permission-gate.jsonl" 2>/dev/null \
+    || echo "permission-gate: ADR-003 telemetry append failed (path=$REPO_ROOT/.enforcement/permission-gate.jsonl)" >&2
+else
+  echo "permission-gate: ADR-003 telemetry jq emit failed (tool=$TOOL pattern=$MATCHED_PATTERN)" >&2
+fi
 
 RULE_CONTENT="${MATCHED_PATTERN#*\(}"
 RULE_CONTENT="${RULE_CONTENT%\)}"

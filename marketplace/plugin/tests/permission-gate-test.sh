@@ -206,6 +206,20 @@ else
 fi
 rm -rf "$_TMP"
 
+# Codex F1 fold: MCP family mapping regression test. Without this, the manual
+# server-prefix table in permission-gate.sh can silently drift to "unknown".
+echo "[28] permission-gate.jsonl row has ADR-003 §4 fields (MCP slack read → family=slack)"
+_TMP=$(mktemp -d)
+printf '%s' '{"tool_name":"mcp__claude_ai_Slack__slack_search_channels","tool_input":{"query":"general"}}' \
+  | CLAUDE_PROJECT_DIR="$_TMP" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" >/dev/null 2>&1
+_LAST=$(tail -n 1 "$_TMP/.enforcement/permission-gate.jsonl" 2>/dev/null)
+if printf '%s' "$_LAST" | jq -e '.tool_class == "mcp" and .tool_family == "slack"' >/dev/null 2>&1; then
+  _result "ADR-003 fields (MCP slack read)" present present
+else
+  _result "ADR-003 fields (MCP slack read)" present "missing or wrong: $_LAST"
+fi
+rm -rf "$_TMP"
+
 # --- Report ---
 
 echo ""
