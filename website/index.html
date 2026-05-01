@@ -315,22 +315,30 @@
     font-size: 13px;
   }
 
-  /* Install */
+  /* Install / Core (1st gen) */
   .install-section {
-    padding: 120px 0;
+    padding: 120px 0 56px;
     border-top: 1px solid var(--border);
-    text-align: center;
   }
   .install-section h2 {
     font-size: 48px;
     font-weight: 900;
     letter-spacing: -1.5px;
     margin-bottom: 14px;
+    line-height: 1.1;
+  }
+  .install-section h2 em {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-weight: 600;
+    color: var(--accent-bright);
   }
   .install-section .install-sub {
     font-size: 17px;
     color: var(--muted);
-    margin-bottom: 40px;
+    margin-bottom: 32px;
+    max-width: 580px;
+    line-height: 1.65;
   }
   .install-cta {
     background: var(--card);
@@ -338,8 +346,63 @@
     border-radius: 14px;
     padding: 32px;
     max-width: 600px;
-    margin: 0 auto;
+    margin: 0;
     text-align: left;
+  }
+  /* Shared generation badge — used by both #core and #native */
+  .gen-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--accent-dim);
+    border: 1px solid rgba(196,149,106,0.3);
+    color: var(--accent-bright);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    margin-bottom: 22px;
+  }
+  .gen-badge .badge-dot {
+    width: 7px;
+    height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--accent);
+    animation: gen-pulse 2s ease-in-out infinite;
+  }
+  @keyframes gen-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  /* Bridge between generations */
+  .gen-bridge {
+    padding: 32px 0 56px;
+    text-align: center;
+  }
+  .gen-bridge-label {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 22px;
+    color: var(--accent-bright);
+    display: block;
+    margin-bottom: 10px;
+    letter-spacing: -0.3px;
+  }
+  .gen-bridge-text {
+    font-size: 15px;
+    color: var(--muted);
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.7;
+  }
+  .gen-arrow {
+    display: inline-block;
+    color: var(--accent);
+    font-size: 24px;
+    margin-bottom: 16px;
+    opacity: 0.6;
   }
   .install-code-wrap {
     position: relative;
@@ -393,39 +456,12 @@
   }
   .install-hint a { color: var(--accent); text-decoration: none; }
 
-  /* Native section — the deployable Sutra plugin (parallel to #install) */
+  /* Native section — the deployable Sutra plugin (2nd gen) */
   .native-section {
-    padding: 120px 0;
-    border-top: 1px solid var(--border);
+    padding: 56px 0 120px;
     background:
       radial-gradient(ellipse at top, rgba(196,149,106,0.05), transparent 60%),
       var(--bg);
-  }
-  .native-section .badge-eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    border-radius: 999px;
-    background: var(--accent-dim);
-    border: 1px solid rgba(196,149,106,0.3);
-    color: var(--accent-bright);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 1.5px;
-    margin-bottom: 22px;
-  }
-  .native-section .badge-eyebrow .badge-dot {
-    width: 7px;
-    height: 7px;
-    background: var(--accent);
-    border-radius: 50%;
-    box-shadow: 0 0 10px var(--accent);
-    animation: native-pulse 2s ease-in-out infinite;
-  }
-  @keyframes native-pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.8); }
   }
   .native-section h2 {
     font-size: 48px;
@@ -583,7 +619,7 @@
   <div class="container-wide">
     <div class="logo">sutra</div>
     <div>
-      <a class="nav-link" href="#install">Install</a>
+      <a class="nav-link" href="#core">Core</a>
       <a class="nav-link" href="#native">Native</a>
       <a class="nav-link" href="https://github.com/sankalpasawa/sutra">GitHub</a>
     </div>
@@ -685,29 +721,80 @@
   </div>
 </section>
 
-<section class="install-section" id="install">
-  <div class="container">
-    <h2>One command.</h2>
-    <p class="install-sub">macOS or Linux. Idempotent. Privacy-first. Free.</p>
+<!-- Core — the agentic Chief of Staff inside Claude Code (1st gen) -->
+<section class="install-section" id="core">
+  <div class="container-wide">
+    <div class="gen-badge"><span class="badge-dot"></span> FIRST GENERATION &middot; LIVE ON CLAUDE CODE MARKETPLACE</div>
+    <h2>Core. The agentic <em>Chief of Staff</em> inside Claude Code.</h2>
+    <p class="install-sub">Skills, hooks, and governance for any Claude Code project. Markdown-first. Runs inline &mdash; no infrastructure, no servers, no daemons. Free.</p>
 
     <div class="install-cta">
       <div class="install-code-wrap">
         <div class="install-code" id="install-cmd">curl -fsSL https://sankalpasawa.github.io/sutra/install.sh | bash</div>
         <button class="copy-btn" id="copy-btn" aria-label="Copy install command">Copy</button>
       </div>
+      <div class="install-hint" style="text-align: left;">
+        Then in any project: <code class="inline">cd your/project &amp;&amp; claude</code> &rarr; <code class="inline">/core:start</code>.
+      </div>
     </div>
 
-    <div class="install-hint">
-      Then in any project: <code class="inline">cd your/project &amp;&amp; claude</code> → <code class="inline">/core:start</code>. <a href="https://github.com/sankalpasawa/sutra">Source →</a>
+    <div class="cap-row" style="margin-top: 48px;">
+      <div class="cap-tile">
+        <div class="cap-tile-num">10</div>
+        <h4>Skills</h4>
+        <p>Input routing &middot; depth estimation &middot; blueprint &middot; readability gate &middot; learn &middot; feedback &middot; onboarding.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">67</div>
+        <h4>Governance hooks</h4>
+        <p>Pre-tool / post-tool / session-start enforcement points. All opt-in via SUTRA-CONFIG.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">10</div>
+        <h4>Slash commands</h4>
+        <p>/core:start &middot; /core:permissions &middot; /core:status &middot; /core:depth-check &middot; /core:learn &middot; /core:sbom.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">0</div>
+        <h4>Network calls</h4>
+        <p>Telemetry stays local-first JSONL. Signal-not-content. Kill-switchable. No cloud.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">&le;2</div>
+        <h4>Permission prompts</h4>
+        <p>First-session target. Auto-approve persists Sutra-scope to <code class="inline">settings.local.json</code>.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">MIT</div>
+        <h4>License</h4>
+        <p>Free. Open. Source on GitHub. Composable with any Claude Code project.</p>
+      </div>
+    </div>
+
+    <div class="native-trust" style="margin-top: 32px;">
+      <span class="pill">v2.12.0 production</span>
+      <span class="pill">Claude Code marketplace</span>
+      <span class="pill">MIT license</span>
+      <span class="pill">privacy-first telemetry</span>
+      <span class="pill">macOS &middot; Linux</span>
     </div>
   </div>
 </section>
 
-<!-- Native — the deployable Sutra plugin (the runtime that operates a whole company) -->
+<!-- Bridge between generations -->
+<div class="gen-bridge">
+  <div class="container-wide">
+    <span class="gen-arrow">&darr;</span>
+    <span class="gen-bridge-label">The next generation</span>
+    <p class="gen-bridge-text">Core lives <em>inside</em> Claude Code &mdash; skills, hooks, prompt discipline. Native lifts the same governance onto a proper runtime: TypeScript primitives, durable workflows, decision provenance by construction. Same OS, deeper roots.</p>
+  </div>
+</div>
+
+<!-- Native — the deployable Sutra runtime (2nd gen) -->
 <section class="native-section" id="native">
   <div class="container-wide">
-    <div class="badge-eyebrow"><span class="badge-dot"></span> NATIVE v1.0 &middot; SOURCE PREVIEW LIVE</div>
-    <h2>The plugin that runs <em>a whole company.</em></h2>
+    <div class="gen-badge"><span class="badge-dot"></span> SECOND GENERATION &middot; SOURCE PREVIEW LIVE</div>
+    <h2>Native. The runtime that runs <em>a whole company.</em></h2>
     <p class="native-sub">One founder. One LLM. Everything else autonomous. Native is the V2.4 Sutra Engine &mdash; 4 primitives, 6 laws, decision provenance built in. Ships on commodity infrastructure (Anthropic Claude SDK, Temporal, OPA, OpenTelemetry) with ~1,700 lines of Sutra glue.</p>
 
     <div class="native-cta">
@@ -769,7 +856,7 @@
 
 <footer>
   <div class="container">
-    Sutra by Asawa Inc. &middot; v2.8.11 &middot; <a href="https://github.com/sankalpasawa/sutra">github</a> &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PRIVACY.md">privacy</a>
+    Sutra by Asawa Inc. &middot; Core v2.12.0 &middot; Native v1.0.2 &middot; <a href="https://github.com/sankalpasawa/sutra">github</a> &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PRIVACY.md">privacy</a>
   </div>
 </footer>
 
