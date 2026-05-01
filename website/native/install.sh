@@ -338,7 +338,7 @@ cat <<EOF
   ${C_BOLD}Read next${C_RESET}
     README           ${TARGET_DIR}/README.md
     Migration        ${TARGET_DIR}/MIGRATION.md         (Core → Native cutover)
-    Sutra OS         https://sutra-os.vercel.app
+    Sutra OS         https://sankalpasawa.github.io/sutra/
 
   ${C_BOLD}Feedback${C_RESET}
     gh issues        github.com/sankalpasawa/sutra/issues
