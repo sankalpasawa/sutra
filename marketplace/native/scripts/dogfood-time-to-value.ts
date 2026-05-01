@@ -306,7 +306,12 @@ export async function runDogfood(options: RunDogfoodOptions = {}): Promise<Dogfo
   const here = dirname(fileURLToPath(import.meta.url))
   const packageRoot = resolve(here, '..')
   const runid = `${Date.now()}-${Math.floor(Math.random() * 1000)}`
-  const artifactDir = options.artifactDir ?? resolve(packageRoot, '..', '..', '..', '.enforcement', `dogfood-${runid}`)
+  // Default lands INSIDE the package root so the dogfood works identically in
+  // both deployment shapes: standalone install (`/tmp/.../native/.enforcement/`)
+  // AND in-tree from asawa-holding (`sutra/marketplace/native/.enforcement/`).
+  // Earlier `..` * 3 ancestor traversal assumed asawa-holding layout and broke
+  // first-install at G-5 with mkdir on `/.enforcement/` (codex M12 §5.2).
+  const artifactDir = options.artifactDir ?? resolve(packageRoot, '.enforcement', `dogfood-${runid}`)
 
   const t0 = Date.now()
   const gates: GateRecord[] = []
