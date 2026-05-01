@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.14.1 — 2026-05-01
+
+**Per-turn-discipline reminder expanded to enumerate ALL 5 per-turn blocks (vinit feedback on v2.14.0).**
+
+vinit reported on v2.14.0: "didn't show BLUEPRINT or H-Sutra layer." Diagnosis: `per-turn-discipline-prompt.sh` only nudged Input Routing + Depth+Estimation; BLUEPRINT, H-Sutra header tag, OUTPUT TRACE, and BUILD-LAYER marker had no hook reminder. On a T4 client without `CLAUDE.md` governance context, Claude had nothing telling it to emit those 3 blocks visibly. v2.14.1 closes the nudge gap.
+
+### What changed
+
+- `hooks/per-turn-discipline-prompt.sh`: read 8 additional jq fields from `sutra-defaults.json`, emit full 7-row block stack on stderr.
+- Block stack order in the new emission: `[H-SUTRA HEADER]` → `INPUT ROUTING` → `DEPTH + ESTIMATION` → `BLUEPRINT` → `BUILD-LAYER marker` → tool calls → `OUTPUT TRACE`. Plus the existing Codex-consult-at-Depth-≥3 line.
+- H-Sutra header is hardcoded in this hook; `sutra-defaults.json` doesn't have a `human_sutra` block key yet — adding it is a v2.15.0 candidate.
+
+### Smoke test
+
+```
+$ echo '{"prompt":"v2.14.1 smoke"}' | bash hooks/per-turn-discipline-prompt.sh
+[Sutra defaults · D40 v1.0.2] Per-turn block stack (emit in this order, top to bottom):
+  1. [H-SUTRA HEADER]   single bracketed line, FIRST text in response   (skill: core:human-sutra)
+  2. INPUT ROUTING      fields: INPUT / TYPE / EXISTING HOME / ROUTE / FIT CHECK / ACTION
+  3. DEPTH + ESTIMATION fields: TASK, DEPTH, EFFORT, COST, IMPACT
+  4. BLUEPRINT          fields: Doing / Steps / Scale / Stops if / Switch
+  5. BUILD-LAYER marker fields: BUILD-LAYER / ACTIVATION-SCOPE / TARGET-PATH
+  6. ... tool calls (Edit / Write / Bash / Agent) ...
+  7. OUTPUT TRACE       > route: <skill> > <domain> > <nodes> > <terminal>
+```
+
+### Governance-parity audit (NOT shipped, v2.15.x backlog)
+
+These Asawa-side disciplines are NOT yet nudged on T4: skill-explain card (D40 G3), subagent dispatch contract briefing visibility, readability gate (tables/numbers/ASCII boxes), Karpathy right-effort discipline, Customer Focus First, Highlight decisions, No fabrication, Table Shape (Impact + Effort columns), PROTO-006 process discipline, Capability Map (D43) classification at-creation. Pattern is consistent: most exist as Asawa-only memory entries or `sutra-defaults.json` schema with no matching hook emission. Each is a candidate for a future bump.
+
+---
+
 ## v2.14.0 — 2026-05-01
 
 **H-Sutra Layer v1.0 ships to fleet (D42 visibility-before-influence) + marketplace catchup over v2.12.0 / v2.13.0 / post-v2.13.0 H-Sutra fold.**

@@ -1,5 +1,57 @@
 # Sutra — Current Version
 
+## v2.14.1 (2026-05-01) — per-turn-discipline reminder expanded to full 5-block stack (vinit feedback)
+
+**What this is**: vinit reported that v2.14.0 "didn't show BLUEPRINT or H-Sutra layer" on his fleet machine. Diagnosis: v2.14.0 shipped the H-Sutra log-write infrastructure correctly, but the `per-turn-discipline-prompt.sh` stderr nudge only enumerated Input Routing + Depth+Estimation (plus the Codex-consult line). BLUEPRINT, H-Sutra header tag, OUTPUT TRACE, and BUILD-LAYER marker were left as model-side-only disciplines with NO hook nudge — so on a T4 client without `CLAUDE.md` governance, Claude had nothing telling it to emit those blocks. v2.14.1 closes the nudge gap.
+
+**Fix**: the hook now reads all 5 `per_turn_blocks` keys from `sutra-defaults.json` and emits the full per-turn block stack in response-output order (1. [H-SUTRA HEADER] · 2. INPUT ROUTING · 3. DEPTH + ESTIMATION · 4. BLUEPRINT · 5. BUILD-LAYER marker · 6. tool calls · 7. OUTPUT TRACE). H-Sutra header is hardcoded in the hook for v2.14.1 because `sutra-defaults.json` doesn't have a `human_sutra` block key yet — adding that key is a v2.15.0 candidate.
+
+**What changed**
+
+| File | Change |
+|---|---|
+| `marketplace/plugin/hooks/per-turn-discipline-prompt.sh` | +18 net lines: read 8 additional jq fields (IR_SKILL, DEPTH_SKILL, BP_FIELDS, BP_SKILL, BL_FIELDS, BL_HOOK, OT_FORMAT, OT_SKILL); rewrite stderr emission to enumerate the full 7-row block stack + Codex consult line. Same kill-switches; same fail-open posture. |
+| `marketplace/plugin/.claude-plugin/plugin.json` | version 2.14.0 → 2.14.1 |
+| `.claude-plugin/marketplace.json` | version 2.14.0 → 2.14.1 + description preamble |
+| `marketplace/plugin/SBOM-v2.14.1.txt` | NEW |
+
+**Smoke test**
+
+```
+$ echo '{"prompt":"v2.14.1 smoke"}' | bash hooks/per-turn-discipline-prompt.sh
+[Sutra defaults · D40 v1.0.2] Per-turn block stack (emit in this order, top to bottom):
+  1. [H-SUTRA HEADER]   single bracketed line, FIRST text in response   (skill: core:human-sutra)
+  2. INPUT ROUTING      fields: INPUT / TYPE / EXISTING HOME / ROUTE / FIT CHECK / ACTION   (skill: core:input-routing)
+  3. DEPTH + ESTIMATION fields: TASK, DEPTH, EFFORT, COST, IMPACT   (skill: core:depth-estimation)
+  4. BLUEPRINT          fields: Doing / Steps / Scale / Stops if / Switch   (skill: core:blueprint; emit ONLY when tool calls planned)
+  5. BUILD-LAYER marker fields: BUILD-LAYER / ACTIVATION-SCOPE / TARGET-PATH   (only when editing D38-protected paths; hook: build-layer-check.sh)
+  6. ... tool calls (Edit / Write / Bash / Agent) ...
+  7. OUTPUT TRACE       > route: <skill> > <domain> > <nodes> > <terminal>   (skill: core:output-trace)
+
+  Codex consult: Depth >= 3 with Edit/Write/MultiEdit planned → consult codex first (skill: core:codex-sutra)
+```
+
+**What still NOT shipped to T4** (parity audit, separate v2.15.x backlog)
+
+These Asawa-side disciplines exist in `CLAUDE.md` but have no plugin hook reminder:
+
+| Asawa discipline | Plugin coverage | Notes |
+|---|---|---|
+| Skill-explain card (D40 G3) | `sutra-defaults.json` has the schema; **no hook emits the reminder** | T4 model has no nudge to emit 4-line WHAT/WHY/EXPECT/ASKS card before invoking a skill |
+| Subagent dispatch contract | `sutra-defaults.json` lists briefing blocks; hook `subagent-dispatch-brief.sh` registered but T4 visibility unverified | Per `feedback_subagent_dispatch_contract` — every Agent dispatch should brief 5 Sutra blocks |
+| Readability gate (tables/numbers/ASCII boxes) | `sutra-defaults.json` has output_discipline keys but **no hook emits this reminder** | Asawa enforces at output time; T4 model gets no signal |
+| Karpathy right-effort discipline | Memory-only on Asawa side | No plugin coverage at all |
+| Customer Focus First (Doctrine Principle 0) | Memory-only on Asawa side | No plugin coverage |
+| Highlight decisions (ASCII box) | Part of readability gate; no hook reminder | T4 model not nudged |
+| No fabrication / no operational capacity | Memory-only on Asawa side | No plugin coverage |
+| Table Shape (Impact + Effort columns) | CLAUDE.md mandates for task lists | No hook reminder |
+| Process Discipline (PROTO-006) | Memory-only anchor | No plugin coverage |
+| Capability Map (D43) | Just-ratified today; deferred PreToolUse hook in TODO #5 | T4 model has no awareness |
+
+The pattern is consistent: most Asawa-side disciplines exist as either (a) memory-only entries or (b) `sutra-defaults.json` schema entries with no corresponding hook emission. v2.14.1 closes the per-turn-block-stack subset (5 of these). The rest are v2.15.x candidates per founder priority.
+
+---
+
 ## v2.14.0 (2026-05-01) — H-Sutra Layer v1.0 ships to fleet + marketplace catchup
 
 **What this is**: catch-up release that closes the merged≠shipping gap D43 ratified hours earlier today. Three previous-merged-but-never-marketplaced versions (v2.12.0 dispatcher portability, v2.13.0 python3 removal, post-v2.13.0 H-Sutra fold) consolidate under one shippable pointer. The marketplace `version` field was stuck at `2.11.1` while the dev tree advanced; cached plugin runtimes never received any of those changes. v2.14.0 unsticks the pointer.

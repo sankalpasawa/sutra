@@ -49,19 +49,42 @@ if [ ! -r "$DEFAULTS_JSON" ] || ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-# Consume canonical surface (D40 G6 — single source of truth)
+# Consume canonical surface (D40 G6 — single source of truth).
+# v2.14.1: enumerate ALL 5 per-turn blocks so T4 fleet sees the full block stack
+# (vinit feedback 2026-05-01: BLUEPRINT + H-Sutra header invisible on v2.14.0
+# because reminder only echoed IR + Depth, leaving 3 disciplines model-side-only
+# with no nudge). H-Sutra header is hardcoded here because sutra-defaults.json
+# has no .per_turn_blocks.human_sutra entry yet — adding that key is a v2.15.0
+# candidate; v2.14.1 keeps surgical scope per Karpathy.
 IR_FIELDS=$(jq -r '.per_turn_blocks.input_routing.fields | join(" / ")' "$DEFAULTS_JSON" 2>/dev/null)
+IR_SKILL=$(jq -r '.per_turn_blocks.input_routing.skill' "$DEFAULTS_JSON" 2>/dev/null)
 DEPTH_FIELDS=$(jq -r '.per_turn_blocks.depth_estimation.fields_pre | join(", ")' "$DEFAULTS_JSON" 2>/dev/null)
+DEPTH_SKILL=$(jq -r '.per_turn_blocks.depth_estimation.skill' "$DEFAULTS_JSON" 2>/dev/null)
+BP_FIELDS=$(jq -r '.per_turn_blocks.blueprint.fields | join(" / ")' "$DEFAULTS_JSON" 2>/dev/null)
+BP_SKILL=$(jq -r '.per_turn_blocks.blueprint.skill' "$DEFAULTS_JSON" 2>/dev/null)
+BL_FIELDS=$(jq -r '.per_turn_blocks.build_layer.fields | join(" / ")' "$DEFAULTS_JSON" 2>/dev/null)
+BL_HOOK=$(jq -r '.per_turn_blocks.build_layer.hook' "$DEFAULTS_JSON" 2>/dev/null)
+OT_FORMAT=$(jq -r '.per_turn_blocks.output_trace.format' "$DEFAULTS_JSON" 2>/dev/null)
+OT_SKILL=$(jq -r '.per_turn_blocks.output_trace.skill' "$DEFAULTS_JSON" 2>/dev/null)
 DEPTH_THRESHOLD=$(jq -r '.consult_policy.depth_threshold' "$DEFAULTS_JSON" 2>/dev/null)
 CONSULT_TOOLS=$(jq -r '.consult_policy.applies_to_tools | join("/")' "$DEFAULTS_JSON" 2>/dev/null)
 KILL_FILE=$(jq -r '.kill_switches.per_turn_discipline_prompt.file' "$DEFAULTS_JSON" 2>/dev/null)
 
-# Emit derived reminder (changes if json changes)
+# Emit derived reminder (changes if json changes). Full per-turn block stack
+# in response-output order. Mirrors what skills/human-sutra/SKILL.md already
+# documents — duplicated here so T4 model gets a hook-side nudge without
+# needing CLAUDE.md governance context.
 {
-  printf '\n[Sutra defaults · D40 v1.0.1] Per-turn discipline (sourced from sutra-defaults.json):\n'
-  printf '  - Input Routing fields: %s\n' "${IR_FIELDS:-INPUT/TYPE/...}"
-  printf '  - Depth + Estimation fields: %s\n' "${DEPTH_FIELDS:-TASK/DEPTH/...}"
-  printf '  - Depth >= %s with %s planned: consult codex first (core:codex-sutra)\n' "${DEPTH_THRESHOLD:-3}" "${CONSULT_TOOLS:-Edit/Write/MultiEdit}"
+  printf '\n[Sutra defaults · D40 v1.0.2] Per-turn block stack (emit in this order, top to bottom):\n'
+  printf '  1. [H-SUTRA HEADER]   single bracketed line, FIRST text in response   (skill: core:human-sutra)\n'
+  printf '  2. INPUT ROUTING      fields: %s   (skill: %s)\n' "${IR_FIELDS:-INPUT/TYPE/...}" "${IR_SKILL:-core:input-routing}"
+  printf '  3. DEPTH + ESTIMATION fields: %s   (skill: %s)\n' "${DEPTH_FIELDS:-TASK/DEPTH/...}" "${DEPTH_SKILL:-core:depth-estimation}"
+  printf '  4. BLUEPRINT          fields: %s   (skill: %s; emit ONLY when tool calls planned)\n' "${BP_FIELDS:-Doing/Steps/Scale/Stops if/Switch}" "${BP_SKILL:-core:blueprint}"
+  printf '  5. BUILD-LAYER marker fields: %s   (only when editing D38-protected paths; hook: %s)\n' "${BL_FIELDS:-LAYER/SCOPE/TARGET-PATH/...}" "${BL_HOOK:-build-layer-check.sh}"
+  printf '  6. ... tool calls (Edit / Write / Bash / Agent) ...\n'
+  printf '  7. OUTPUT TRACE       %s   (skill: %s)\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}" "${OT_SKILL:-core:output-trace}"
+  printf '\n'
+  printf '  Codex consult: Depth >= %s with %s planned → consult codex first (skill: core:codex-sutra)\n' "${DEPTH_THRESHOLD:-3}" "${CONSULT_TOOLS:-Edit/Write/MultiEdit}"
   printf '  See %s/SUTRA-DEFAULTS.md (human) / sutra-defaults.json (machine)\n' "$DEFAULTS_DIR"
   printf '  Kill-switch: touch %s\n\n' "${KILL_FILE:-~/.per-turn-discipline-disabled}"
 } >&2
