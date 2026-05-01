@@ -1,5 +1,10 @@
 # .js files committed alongside .ts so plugin install path works without npm install.
 # `tsc -p tsconfig.build.json` regenerates them; release prerelease guard asserts parity.
-dist/
-node_modules/
+#
+# node_modules/ committed too (production deps only — yaml, cockatiel, nanoid;
+# ~2.2 MB, 3 top-level dirs, zero transitive). Same reason: `/plugin install
+# core@sutra` and `/plugin update core@sutra` ship a fully-working connectors
+# stack with no first-call npm install. bump-version.sh refreshes node_modules
+# pre-tag via `npm install --omit=dev` so each release carries fresh deps.
+/dist/
 *.tsbuildinfo
