@@ -34,3 +34,14 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 
 # Test gate (D1 — verify before commit)
 bash "$REPO_ROOT/hooks/pre-commit-test-gate.sh"
+
+# Hook-path validator (v2.10.0 manifest-vs-source-tree drift guard).
+# Closes the regression class behind vinit#43: manifest declared a hook
+# whose .sh file was never `git add`'d. Validator reads hooks/hooks.json,
+# expands every ${CLAUDE_PLUGIN_ROOT} command, and confirms each path
+# exists on disk AND is git-tracked. Skips silently if validator absent
+# (e.g. older sutra checkouts pre-v2.10.0).
+VALIDATOR="$REPO_ROOT/marketplace/plugin/scripts/validate-hook-paths.sh"
+if [ -x "$VALIDATOR" ]; then
+  bash "$VALIDATOR"
+fi
