@@ -1,5 +1,39 @@
 # Changelog
 
+## v2.14.0 — 2026-05-01
+
+**H-Sutra Layer v1.0 ships to fleet (D42 visibility-before-influence) + marketplace catchup over v2.12.0 / v2.13.0 / post-v2.13.0 H-Sutra fold.**
+
+D42 shipped H-Sutra Layer v1.0 to the dev tree earlier today (commits b88b7cc / f65725a / 192bea4 / a00cda3 / 7a32af4 / 106a94a + af84f15 fold) but the marketplace `version` field was stuck at 2.11.1 — cached plugin runtimes never received the per-turn-discipline H-Sutra block, so `holding/state/interaction/log.jsonl` went silent after 10:18Z while founder kept using sessions. This is exactly the merged≠shipping anti-pattern D43 ratified hours earlier today. v2.14.0 unsticks the pointer.
+
+### What ships
+
+| File | Change | Origin |
+|---|---|---|
+| `hooks/per-turn-discipline-prompt.sh` | +79 lines folded — invokes `skills/human-sutra/scripts/classify.sh`, derives `IR_TYPE` from prompt heuristics, appends a 9-cell + 3-tag + reversibility JSONL row to `holding/state/interaction/log.jsonl` (Asawa override) or `.sutra/h-sutra.jsonl` (default). Fail-open stderr-only; never blocks the prompt. | af84f15 |
+| `skills/human-sutra/{SKILL.md, ACTIVATION.md, scripts/classify.sh, references/, tests/}` | Activated end-to-end (skill files were in 2.11.0/2.11.1 cache as scaffold, but no hook called classify.sh until the v2.14.0 fold) | D42 ship commits + post-fold |
+| `scripts/_sutra_project_lib.sh` + `scripts/start.sh` + `scripts/onboard.sh` | python3 removed from bootstrap; bash/jq port with identical 4-subcommand surface and identical atomic-write contract | v2.13.0 (ac4e81c + 70893df) |
+| 6 Asawa-coupled hooks (dispatcher-pretool / dispatcher-stop / architecture-awareness / +3) | EXTRACTED from plugin to `holding/hooks/` (Asawa-only L2); ~890 LoC dead weight removed from T4 fleet on-disk footprint | v2.12.0 (9f5a0a0) |
+| `marketplace.json` | `version` 2.11.1 → 2.14.0 + description preamble freshened (was 3 versions stale at v2.10.1) | v2.14.0 |
+| `.claude-plugin/plugin.json` | `version` 2.13.0 → 2.14.0 | v2.14.0 |
+| `SBOM-v2.14.0.txt` | NEW supply-chain manifest (SHA256 per shipped file) | v2.14.0 |
+
+### Why catchup vs three separate releases
+
+v2.12.0 (dispatcher portability) and v2.13.0 (python3 removal) were merged to the dev tree but the `marketplace.json` pointer was never bumped past 2.11.1 — both versions were therefore phantom-shipped per D43's definition (merged but not released). v2.14.0 ships all three deltas in one marketplace pointer move with retroactive `core-v2.12.0` and `core-v2.13.0` tags so the version archaeology stays clean.
+
+### Tags
+
+- `core-v2.12.0` retroactive at `9f5a0a0` (dispatcher portability)
+- `core-v2.13.0` retroactive at `70893df` (python3 removal)
+- `core-v2.14.0` at HEAD (H-Sutra v1.0 + marketplace catchup)
+
+### Verification
+
+After `/plugin update` clients will see `~/.claude/plugins/cache/sutra/core/2.14.0/` materialize. The H-Sutra log starts appending from the next UserPromptSubmit. Smoke check: `tail -1 holding/state/interaction/log.jsonl` (or `~/.sutra/h-sutra.jsonl` on non-Asawa clients) should advance per turn after the update.
+
+---
+
 ## v2.13.0 — 2026-05-01
 
 **Remove python3 from /core:start bootstrap path entirely (vinit#38 escalation).**

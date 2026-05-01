@@ -1,5 +1,39 @@
 # Sutra — Current Version
 
+## v2.14.0 (2026-05-01) — H-Sutra Layer v1.0 ships to fleet + marketplace catchup
+
+**What this is**: catch-up release that closes the merged≠shipping gap D43 ratified hours earlier today. Three previous-merged-but-never-marketplaced versions (v2.12.0 dispatcher portability, v2.13.0 python3 removal, post-v2.13.0 H-Sutra fold) consolidate under one shippable pointer. The marketplace `version` field was stuck at `2.11.1` while the dev tree advanced; cached plugin runtimes never received any of those changes. v2.14.0 unsticks the pointer.
+
+**Headline**: H-Sutra Layer v1.0 (D42 visibility-before-influence) starts firing on every UserPromptSubmit across the Sutra fleet (Asawa + T4). Each turn is classified into the 9-cell CQRS-extended grid (3 verbs DIRECT/QUERY/ASSERT × 3 directions INBOUND/INTERNAL/OUTBOUND) + 3 orthogonal tags (TENSE/TIMING/CHANNEL) + REVERSIBILITY, then appended to `holding/state/interaction/log.jsonl` (when running in Asawa) or `.sutra/h-sutra.jsonl` (default). Stage-1 gate, OUT-QUERY guardrails, bounded retry + irreversible-domain denylist all carry over from the v1.0 charter. v1.0 = instrumentation only — no behavior optimization until 100–500 turns of log evidence accrue.
+
+### What changed (vs v2.11.1 cached)
+
+| Surface | Change | Origin |
+|---|---|---|
+| `marketplace/plugin/hooks/per-turn-discipline-prompt.sh` | +79 lines: H-Sutra classifier invocation + JSONL append | af84f15 (post-v2.13.0) |
+| `marketplace/plugin/skills/human-sutra/{SKILL.md, ACTIVATION.md, scripts/classify.sh, tests/}` | NEW skill (already in 2.11.0/2.11.1 cache as scaffold; activated by per-turn-discipline fold) | D42 ship commits b88b7cc/f65725a/192bea4/a00cda3/7a32af4/106a94a |
+| `marketplace/plugin/scripts/_sutra_project_lib.sh` + `start.sh` + `onboard.sh` | python3 removal — bash/jq port of the bootstrap path; sandbox-tested PATH-stripped (rc=0, identity preserved) | v2.13.0 (ac4e81c + 70893df) |
+| 6 Asawa-coupled hooks (`dispatcher-pretool` / `dispatcher-stop` / `architecture-awareness` / +3) | EXTRACTED from plugin to holding/ — ~890 lines of dead weight removed from T4 fleet on-disk footprint | v2.12.0 (9f5a0a0) |
+| `.claude-plugin/marketplace.json` | `version` field 2.11.1 → 2.14.0 (catches up over 12.0/13.0); description preamble freshened | v2.14.0 |
+| `marketplace/plugin/.claude-plugin/plugin.json` | `version` field 2.13.0 → 2.14.0 | v2.14.0 |
+| `SBOM-v2.14.0.txt` | NEW — SHA256 per shipped file | v2.14.0 |
+
+### Resume trigger this fixes
+
+D42 (today, 2026-05-01) shipped the H-Sutra Layer v1.0 to the dev tree but the marketplace was never bumped. Founder caught the gap on this session ("Push tip plug-in, bump everything, bump to the marketplace as well") — diagnostic showed cached plugin `core@2.11.1` had the skill scaffold but not the per-turn-discipline fold, so log.jsonl went silent after 10:18Z today even though founder kept using sessions. v2.14.0 hits `/plugin update` paths across Asawa + T4 fleet and the H-Sutra logging block fires from the next UserPromptSubmit forward.
+
+### Codex consult
+
+Not run for this release — surgical version-bump on top of three already-converged underlying releases (v2.12.0/v2.13.0/H-Sutra fold each codex-reviewed at their own ship). Per Karpathy surgical-scope discipline. Post-ship review on request.
+
+### Tags
+
+- `core-v2.12.0` retroactive at `9f5a0a0` (dispatcher portability)
+- `core-v2.13.0` retroactive at `70893df` (python3 removal)
+- `core-v2.14.0` at HEAD (H-Sutra v1.0 + marketplace catchup)
+
+---
+
 ## v2.13.0 (2026-05-01) — remove python3 from /core:start bootstrap entirely (vinit#38 escalation)
 
 **What this is**: durable fix for vinit#38 (filed by Vinit on behalf of @abhishekshah, 2026-04-28; escalation 2026-05-01). v2.8.11 moved python3 from stdin-heredoc to file-form to dodge SIGKILL from macOS sandbox/EDR agents. That fixed one class. The 2026-05-01 escalation showed `python3 -c "print('hello')"` itself exits 137 on the same client — the binary is killed regardless of how it's invoked (quarantine xattr, AV process-name killer, codesign mismatch). File-form vs heredoc is irrelevant when python3 itself can't survive exec.
