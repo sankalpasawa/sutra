@@ -1,5 +1,53 @@
 # Sutra — Current Version
 
+## v2.15.1 (2026-05-01) — systemic fix for the recurring nudge-skip pattern
+
+**What this is**: founder caught H-Sutra header not rendering in another session even on v2.15.0 and directed: "systemically fix it." Three preceding releases — v2.14.1 (BLUEPRINT-not-showing), v2.15.0 (4-discipline parity), this turn (H-Sutra header) — all had the same root cause: hook reminder phrased as `(skill: X)` parenthetical, which the model misread as "invoke skill X" rather than "emit text directly." When skill auto-discovery didn't fire for a turn, the block was silently skipped. v2.15.1 closes the pattern, not just the instance.
+
+**Three changes, one fix**
+
+| Layer | Change |
+|---|---|
+| Schema canonical (`sutra-defaults.json`) | NEW `.per_turn_blocks.human_sutra_header` key — promotes H-Sutra header from hardcoded hook-only to canonical schema entry. Closes the v2.14.1 deferred TODO. |
+| Hook nudge (`per-turn-discipline-prompt.sh`) | Phrasing changed from `(skill: X)` parenthetical to imperative `MUST emit literal text` / `MUST invoke skill`. 7 numbered "MUST emit" lines for the per-turn block stack + 4 "Conditionals (apply when triggered)" lines for codex consult / skill-explain card / readability gate / Karpathy right-effort. New format reads `.format` and `.format_stage_1_fail` from sutra-defaults instead of hardcoding the H-Sutra format. |
+| Asawa governance (`CLAUDE.md`) | NEW "H-Sutra Header" section above "Input Routing" in Mandatory Blocks. Header note added at the top of Mandatory Blocks: "Canonical schema: `sutra/marketplace/plugin/sutra-defaults.json` `.per_turn_blocks.*`. CLAUDE.md sections below mirror that schema." Future per-turn block additions update the schema once and both surfaces (CLAUDE.md + plugin nudge) follow. |
+
+**Why imperative phrasing matters**
+
+The earlier "(skill: core:human-sutra)" suffix was a hint that the model interpreted as a Skill-tool invocation directive. Skill invocation requires intent-matching the user's prompt against the skill description, which doesn't always fire (e.g., for a bare "hello" greeting). When auto-discovery didn't fire, the model emitted nothing for that block. v2.15.1's `MUST emit as FIRST line of response — literal bracketed text, NOT a skill invocation` removes the ambiguity: emit the text directly, no Skill tool needed.
+
+**What changed in this commit**
+
+- `marketplace/plugin/sutra-defaults.json`: NEW `human_sutra_header` block (format + format_with_tense + format_stage_1_fail + emission_mode + emission_note + log paths + skill_reference)
+- `marketplace/plugin/hooks/per-turn-discipline-prompt.sh`: rewrote stderr emission with imperative phrasing; reads new schema key; 7 MUST-emit lines + 4 conditionals
+- `CLAUDE.md` (Asawa root): new H-Sutra Header section + canonical-schema pointer to sutra-defaults.json
+- `marketplace/plugin/.claude-plugin/plugin.json`: 2.15.0 → 2.15.1
+- `.claude-plugin/marketplace.json`: 2.15.0 → 2.15.1 + description preamble
+- `marketplace/plugin/SBOM-v2.15.1.txt`: NEW
+
+**Smoke test (new imperative phrasing)**
+
+```
+[Sutra defaults · D40 v1.0.3] Per-turn block stack — MUST emit in this order:
+  1. H-SUTRA HEADER     MUST emit as FIRST line of response — literal bracketed text, NOT a skill invocation:
+                        Format: [<DIRECTION>·<VERB> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]
+                        On Stage-1 fail: [STAGE-1-FAIL · CLARIFY · attempt:1/1]
+  2. INPUT ROUTING      MUST emit literal block with fields: INPUT / TYPE / EXISTING HOME / ROUTE / FIT CHECK / ACTION
+  3. DEPTH + ESTIMATION MUST emit literal block with fields: TASK, DEPTH, EFFORT, COST, IMPACT
+  4. BLUEPRINT          MUST emit literal block IF tool calls planned ...
+  5. BUILD-LAYER marker MUST emit IF editing D38 paths ...
+  6. ... tool calls (Edit / Write / Bash / Agent) ...
+  7. OUTPUT TRACE       MUST emit literal one-liner ...
+
+  Conditionals (apply when triggered):
+  - Codex consult: IF Depth >= 3 with Edit/Write/MultiEdit planned → invoke core:codex-sutra skill BEFORE the Edit
+  - Skill-explain: BEFORE invoking any Skill, emit 4-line card with: SKILL / WHAT / WHY / EXPECT / ASKS
+  - Readability gate: format output per: tables_preferred_over_prose, ...
+  - Right-effort (Karpathy): BEFORE Edit/Write, apply: think first / simpler-alt / surgical scope / verify-loop
+```
+
+---
+
 ## v2.15.0 (2026-05-01) — governance-parity bump: 4 Asawa-side disciplines ship to T4 fleet
 
 **What this is**: founder direction 2026-05-01 in this session — "ship everything to clients" — closes 4 of the v2.14.1 audit gaps. Three of them ship as expanded per-turn-discipline-prompt.sh stderr emissions; the fourth (subagent dispatch briefing) was already shipping in v2.14.1 via `subagent-dispatch-brief.sh` PreToolUse:Task hook and is verified here.

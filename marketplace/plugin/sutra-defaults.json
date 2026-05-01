@@ -6,6 +6,20 @@
   "issued": "2026-04-30",
   "source_direction": "D40",
   "per_turn_blocks": {
+    "human_sutra_header": {
+      "$comment": "v2.15.1: promoted from hardcoded hook reminder to canonical schema entry, closing the v2.14.1 deferred TODO. Direct emission — NOT a skill invocation. Format per skills/human-sutra/SKILL.md §Header emission.",
+      "required": true,
+      "position": "FIRST line of response, before any other text",
+      "format": "[<DIRECTION>·<VERB> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]",
+      "format_with_tense": "[<DIRECTION>·<VERB> · TENSE:<tense> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]",
+      "format_stage_1_fail": "[STAGE-1-FAIL · CLARIFY · attempt:1/1]",
+      "emission_mode": "direct_text",
+      "$emission_note": "Emit the literal bracketed line as the FIRST text of your response. Do NOT invoke a separate skill via Skill tool — the hook nudge `(format: ...)` is the directive, not `(skill: X)`.",
+      "skill_reference": "core:human-sutra",
+      "log_path_asawa": "holding/state/interaction/log.jsonl",
+      "log_path_default": ".sutra/h-sutra.jsonl",
+      "soft_hint_hook": "per-turn-discipline-prompt.sh"
+    },
     "input_routing": {
       "required": true,
       "applies_to_turn_types": ["question", "task", "direction", "feedback", "new_concept"],

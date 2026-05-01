@@ -1,5 +1,31 @@
 # Changelog
 
+## v2.15.1 — 2026-05-01
+
+**Systemic fix for the recurring nudge-skip pattern (founder direction "systemically fix it").**
+
+Three preceding releases (v2.14.1 BLUEPRINT-not-showing → v2.15.0 4-discipline parity → this H-Sutra-header-not-showing) all had the same root cause: hook reminder phrased as `(skill: X)` parenthetical, which the model misread as "invoke skill X" rather than "emit text directly." When skill auto-discovery didn't fire, the block was silently skipped. v2.15.1 closes the pattern, not just the instance.
+
+### What changed
+
+- `sutra-defaults.json`: NEW `.per_turn_blocks.human_sutra_header` key (format + format_with_tense + format_stage_1_fail + emission_mode + emission_note + log paths + skill_reference). Closes the v2.14.1 deferred TODO.
+- `hooks/per-turn-discipline-prompt.sh`: rewrote stderr emission with imperative phrasing — `MUST emit literal text` / `MUST invoke skill` instead of `(skill: X)` parenthetical. Reads new schema key for H-Sutra format. 7 numbered "MUST emit" lines for per-turn block stack + 4 "Conditionals" lines.
+- Asawa CLAUDE.md (separate commit): NEW H-Sutra Header section above Input Routing; canonical-schema pointer at top of Mandatory Blocks pointing to sutra-defaults.json so future block additions update one place.
+
+### Why imperative phrasing matters
+
+`(skill: core:human-sutra)` was a hint the model treated as a Skill-tool invocation directive. Skill invocation requires intent-matching the user's prompt against the skill description — doesn't always fire (e.g., bare "hello"). When auto-discovery didn't fire, the model emitted nothing for that block. v2.15.1's `MUST emit as FIRST line of response — literal bracketed text, NOT a skill invocation` removes the ambiguity.
+
+### Files
+
+- `sutra-defaults.json`
+- `hooks/per-turn-discipline-prompt.sh`
+- `.claude-plugin/plugin.json`: 2.15.0 → 2.15.1
+- `.claude-plugin/marketplace.json`: 2.15.0 → 2.15.1 + description preamble
+- `SBOM-v2.15.1.txt`: NEW
+
+---
+
 ## v2.15.0 — 2026-05-01
 
 **Governance-parity bump: 4 Asawa-side disciplines ship to T4 fleet.**
