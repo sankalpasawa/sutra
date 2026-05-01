@@ -1,5 +1,58 @@
 # Changelog
 
+## v2.13.0 — 2026-05-01
+
+**Remove python3 from /core:start bootstrap path entirely (vinit#38 escalation).**
+
+v2.8.11 moved python3 from stdin-heredoc to file-form to dodge SIGKILL from macOS sandbox/EDR agents (vinit#38 first report). That fixed the heredoc class but not all of them. On 2026-05-01 user @abhishekshah reported that `python3 -c "print('hello')"` itself exits 137 on his machine — the binary is killed regardless of how it's invoked (quarantine xattr, AV process-name killer, codesign mismatch). File-form vs heredoc is irrelevant when python3 can't survive exec. v2.13.0 removes python3 from the bootstrap entirely.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `scripts/_sutra_project_lib.py` | RETIRED → `archive/2026-05-01-py3-removed-from-bootstrap/`. Zero live callers after this release. |
+| `scripts/_sutra_project_lib.sh` | NEW. Bash/jq port of all 4 subcommands (`patch-profile`, `write-onboard`, `stamp-identity`, `banner`). Atomic write via `mktemp` + `mv -f` (rename(2) atomic on same fs). Validates JSON before patching so empty/corrupt files surface a `rc=2` actionable error instead of silently writing a stale-shaped object. |
+| `scripts/start.sh` | Upfront `jq` health gate with install hints (brew/apt/dnf/source). 2 lib calls switched from .py to .sh. `sutra_run_python` wrapper deleted (the 137 trap is moot once python3 is gone). |
+| `scripts/onboard.sh` | 4 inline `python3 -c` reads (VERSION, EXISTING_OPTIN, FIRST_SEEN, EXISTING_IDENTITY) replaced with `jq -r` equivalents. 2 lib calls switched from .py to .sh. Falls back to "unknown" version when jq is unavailable so direct `/sutra-onboard` calls don't brick on legacy machines. |
+| `.claude-plugin/plugin.json` | `version: 2.12.0` → `2.13.0`. |
+| `archive/2026-05-01-py3-removed-from-bootstrap/README.md` | NEW. Lineage doc for the retired .py — explains why archived, replacement, and why kept rather than deleted. |
+
+### Why this fix is durable
+
+The previous fix attempts (heredoc → file form, atomic write, 137 diagnostic trap) all assumed python3 itself would run. That assumption breaks the moment a Mac's Endpoint Security / AV / Gatekeeper config refuses to let `python3` exec at all. jq has no equivalent process-name-based killers in the wild because it isn't a scripting interpreter that EDR vendors heuristically flag. Plus jq is a single static binary — `which jq` returning a path is a reliable proxy for "this will work."
+
+### Sandbox acceptance
+
+Tested with PATH symlinked from /usr/bin + /bin minus all `python3*`:
+
+| Check | Result |
+|---|---|
+| `start.sh` rc | 0 |
+| `.claude/sutra-project.json` valid JSON | yes |
+| All 7 required fields present | yes |
+| Profile patch (`--profile company`) sticks | yes |
+| Telemetry flag (`--telemetry on`) patches | yes |
+| `install_id` stable across re-runs | yes |
+| `first_seen` preserved across re-runs | yes |
+| Identity block preserved across re-onboard | yes |
+| jq missing → actionable install hint, rc=127 | yes |
+| Empty/corrupt JSON → rc=2 with recover instruction | yes |
+| No leftover `.sutra-*.tmp` files after normal runs | yes |
+
+### Scope discipline (Karpathy surgical-scope)
+
+Test files (`tests/**/*.sh`) and other plugin hooks (`hooks/**/*.sh`) still call python3 in places. They're left as-is intentionally — those code paths run on developer machines with working python3, not on broken-python3 client machines. Migrating them would be churn without user-visible benefit. If a future user report shows a hook also dying with 137, we'll migrate that hook on demand. The bootstrap path is the one that bricks first-session installs, which is why it's the one that gets the python3-free guarantee.
+
+### What clients on broken-python3 macOS need to do
+
+1. `/core:update` to v2.13.0.
+2. Confirm `which jq` returns a path (most macs already have it via Xcode CLT or Homebrew). If not: `brew install jq`.
+3. `/core:start` — bootstrap completes, no python3 invoked.
+
+If they prefer to debug the underlying python3 SIGKILL (recommended for general system health, not required for Sutra), the original diagnostic remains useful: `xattr $(which python3); codesign -dv $(which python3); log show --last 5m --predicate 'process == "python3"' --info`.
+
+---
+
 ## v2.12.0 — 2026-05-01
 
 **Dispatcher portability charter — extract Asawa-coupled hooks from plugin to holding/.**

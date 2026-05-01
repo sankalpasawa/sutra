@@ -18,7 +18,16 @@ if [ -f "$PLUGIN_ROOT/lib/identity.sh" ]; then
   source "$PLUGIN_ROOT/lib/identity.sh"
 fi
 
-VERSION=$(python3 -c "import json; print(json.load(open('$PLUGIN_ROOT/.claude-plugin/plugin.json'))['version'])" 2>/dev/null || echo "unknown")
+# v2.13.0: jq replaces python3 (vinit#38 escalation — see start.sh for context).
+# onboard.sh assumes start.sh's upfront jq health gate has already run, OR that
+# this script is being invoked directly (legacy /sutra-onboard slash command).
+# Either way, fall back to "unknown" when jq is unavailable so re-onboarding
+# from python-broken machines doesn't brick on a missing dep.
+if command -v jq >/dev/null 2>&1; then
+  VERSION=$(jq -r '.version' "$PLUGIN_ROOT/.claude-plugin/plugin.json" 2>/dev/null || echo "unknown")
+else
+  VERSION="unknown"
+fi
 
 cd "$PROJECT_ROOT"
 
@@ -35,9 +44,11 @@ mkdir -p .claude
 #   2) Else if $SUTRA_AUTO_OPTIN is 1/true/yes → default to true.
 #   3) Else → default to false (privacy-safe default for external users).
 EXISTING_OPTIN=false
-if [ -f .claude/sutra-project.json ]; then
-  EXISTING_OPTIN=$(python3 -c "import json; d=json.load(open('.claude/sutra-project.json')); print('true' if d.get('telemetry_optin') else 'false')" 2>/dev/null || echo false)
-else
+if [ -f .claude/sutra-project.json ] && command -v jq >/dev/null 2>&1; then
+  if [ "$(jq -r '.telemetry_optin // false' .claude/sutra-project.json 2>/dev/null)" = "true" ]; then
+    EXISTING_OPTIN=true
+  fi
+elif [ ! -f .claude/sutra-project.json ]; then
   case "${SUTRA_AUTO_OPTIN:-}" in
     1|true|TRUE|yes|YES) EXISTING_OPTIN=true ;;
   esac
@@ -48,17 +59,16 @@ FIRST_SEEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # .claude/sutra-project.json unconditionally; a re-onboard would silently erase
 # a previously stamped identity. Codex caught this at ship — 2026-04-24.
 EXISTING_IDENTITY_JSON=""
-if [ -f .claude/sutra-project.json ]; then
-  FIRST_SEEN=$(python3 -c "import json; print(json.load(open('.claude/sutra-project.json')).get('first_seen', ''))" 2>/dev/null)
+if [ -f .claude/sutra-project.json ] && command -v jq >/dev/null 2>&1; then
+  FIRST_SEEN=$(jq -r '.first_seen // ""' .claude/sutra-project.json 2>/dev/null)
   [ -z "$FIRST_SEEN" ] && FIRST_SEEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  EXISTING_IDENTITY_JSON=$(python3 -c "import json; d=json.load(open('.claude/sutra-project.json')); ident=d.get('identity'); print(json.dumps(ident) if ident else '')" 2>/dev/null || echo "")
+  # jq -c outputs nothing for null/missing identity (// empty), so we only
+  # propagate a non-empty value. write-onboard treats "" as no identity.
+  EXISTING_IDENTITY_JSON=$(jq -c '.identity // empty' .claude/sutra-project.json 2>/dev/null || echo "")
 fi
 
-# v2.8.11 (vinit#38): moved from python3 stdin-heredoc to file-execution form +
-# atomic write (the helper writes via tempfile + os.replace internally, so a
-# SIGKILL mid-write leaves the prior valid file content untouched rather than
-# producing a 0-byte corrupted .claude/sutra-project.json).
-python3 "$PLUGIN_ROOT/scripts/_sutra_project_lib.py" write-onboard \
+# v2.13.0: bash/jq lib replaces python3 (atomic write via mktemp+mv inside).
+bash "$PLUGIN_ROOT/scripts/_sutra_project_lib.sh" write-onboard \
     "$INSTALL_ID" "$PROJECT_ID" "$NAME" "$FIRST_SEEN" "$VERSION" "$EXISTING_OPTIN" "$EXISTING_IDENTITY_JSON"
 
 queue_init
@@ -73,9 +83,8 @@ if [ "$EXISTING_OPTIN" = "true" ] \
    && declare -f capture_identity >/dev/null 2>&1; then
   IDENTITY_JSON=$(capture_identity "$VERSION" 2>/dev/null)
   if [ -n "$IDENTITY_JSON" ]; then
-    # v2.8.11 (vinit#38): moved from python3 stdin-heredoc to file-execution
-    # form + atomic write. Best-effort per onboard.sh contract — silent failure.
-    python3 "$PLUGIN_ROOT/scripts/_sutra_project_lib.py" stamp-identity "$IDENTITY_JSON" 2>/dev/null || true
+    # v2.13.0: bash/jq lib. Best-effort per onboard.sh contract — silent failure.
+    bash "$PLUGIN_ROOT/scripts/_sutra_project_lib.sh" stamp-identity "$IDENTITY_JSON" 2>/dev/null || true
     # Also cache for push.sh staleness check. Uses SUTRA_HOME (set by queue.sh).
     SUTRA_HOME_DIR="${SUTRA_HOME:-$HOME/.sutra}"
     mkdir -p "$SUTRA_HOME_DIR" 2>/dev/null

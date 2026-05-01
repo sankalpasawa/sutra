@@ -1,5 +1,31 @@
 # Sutra — Current Version
 
+## v2.13.0 (2026-05-01) — remove python3 from /core:start bootstrap entirely (vinit#38 escalation)
+
+**What this is**: durable fix for vinit#38 (filed by Vinit on behalf of @abhishekshah, 2026-04-28; escalation 2026-05-01). v2.8.11 moved python3 from stdin-heredoc to file-form to dodge SIGKILL from macOS sandbox/EDR agents. That fixed one class. The 2026-05-01 escalation showed `python3 -c "print('hello')"` itself exits 137 on the same client — the binary is killed regardless of how it's invoked (quarantine xattr, AV process-name killer, codesign mismatch). File-form vs heredoc is irrelevant when python3 itself can't survive exec.
+
+**Fix**: remove python3 from the bootstrap path entirely. `_sutra_project_lib.py` retired to `archive/2026-05-01-py3-removed-from-bootstrap/`. Replaced by `_sutra_project_lib.sh` (bash/jq) with identical 4-subcommand surface and identical atomic-write contract (mktemp + mv on same fs; rename(2) atomic). `start.sh` adds upfront jq health gate with install hints. `onboard.sh` 4 inline `python3 -c` reads replaced with jq.
+
+**Sandbox acceptance**: PATH stripped of all `python3*` → bootstrap rc=0, valid JSON, all 7 required fields, profile/telemetry patches stick, install_id + first_seen stable across re-runs, identity preserved, jq-missing case returns actionable install hint with rc=127, corrupt-JSON case returns rc=2.
+
+**Codex consult**: not run (mechanical port — same surface, same atomic-write semantics, same idempotency). Codex post-ship review available on request.
+
+### What changed
+
+- `marketplace/plugin/scripts/_sutra_project_lib.sh` — NEW (bash/jq port of all 4 commands)
+- `marketplace/plugin/scripts/_sutra_project_lib.py` — RETIRED to `archive/2026-05-01-py3-removed-from-bootstrap/`
+- `marketplace/plugin/scripts/start.sh` — upfront jq health gate; sutra_run_python wrapper deleted; lib calls switched .py → .sh
+- `marketplace/plugin/scripts/onboard.sh` — 4 inline python3 -c → jq; lib calls switched .py → .sh
+- `marketplace/plugin/.claude-plugin/plugin.json` — version `2.12.0` → `2.13.0`
+
+### What clients on broken-python3 macOS do
+
+1. `/core:update` to v2.13.0
+2. `which jq` (most macs have it; if not: `brew install jq`)
+3. `/core:start` — works, no python3 invoked
+
+---
+
 ## v2.12.0 (2026-05-01) — dispatcher portability charter: 6 Asawa-coupled hooks extracted from plugin to holding/
 
 **What this is**: closes Tier 2 SHIPPED-DEAD findings from the plugin coverage audit (companion to `sutra` issue #49). 6 plugin hooks were heavily Asawa-coupled (hardcoded portfolio company names + holding/ paths) and never wired in `plugin/hooks/hooks.json`. T4 fleet was carrying ~890 lines of dead weight on disk for files it never executed.

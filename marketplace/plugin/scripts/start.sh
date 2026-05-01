@@ -19,6 +19,34 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(realpath "$0")")")}"
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$PROJECT_ROOT"
 
+# v2.13.0 (vinit#38 escalation): jq replaces python3 in the bootstrap path.
+# Why: v2.8.11 already moved python3 from heredoc to file form to dodge SIGKILL
+# from macOS sandbox/EDR agents, but a 2026-05-01 report (@abhishekshah) showed
+# `python3 -c "print('hello')"` itself exits 137 — the python3 binary is killed
+# regardless of how it's invoked (quarantine xattr, AV process-name killer, or
+# codesign mismatch). File-form vs heredoc is irrelevant when python3 itself
+# can't survive exec. jq is widely available, fast, and not subject to these
+# heuristics. We fail fast with an install hint if jq is missing rather than
+# silently half-bootstrapping.
+if ! command -v jq >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+sutra start: jq is required but not found on PATH.
+
+Sutra's bootstrap reads/writes .claude/sutra-project.json. We use jq because
+python3 is killed by some macOS sandbox/EDR agents (vinit#38), leaving the
+project state half-written.
+
+Install:
+  macOS:    brew install jq
+  Debian:   sudo apt-get install jq
+  RHEL:     sudo dnf install jq
+  Other:    https://jqlang.org/download/
+
+Then re-run /core:start.
+EOF
+  exit 127
+fi
+
 # Resolve args (profile + force + telemetry)
 # v2.9.1+: --telemetry on|off is the explicit opt-in/out switch per founder
 # direction 2026-04-30 ("when installing Sutra, give an option to switch on
@@ -126,43 +154,10 @@ esac
 # Step 1 — onboard (with explicit-opt-in telemetry default)
 SUTRA_AUTO_OPTIN="$TELEMETRY_DEFAULT" bash "$PLUGIN_ROOT/scripts/onboard.sh" >/dev/null 2>&1
 
-# Step 2 — patch .claude/sutra-project.json to persist the profile + telemetry
-# v2.8.11 (vinit#38): moved from python3 stdin-heredoc to file-execution form +
-# atomic write. Some macOS sandbox/EDR setups SIGKILL stdin-fed python3.
-sutra_run_python() {
-  local label="$1"; shift
-  python3 "$@"
-  local rc=$?
-  if [ "$rc" -eq 137 ]; then
-    cat >&2 <<SIGKILL_HINT
-sutra: $label was SIGKILLed (exit 137). This typically means a macOS
-sandbox/EDR tool (Endpoint Security, MDM/Jamf, Gatekeeper, Crowdstrike,
-SentinelOne, etc.) is killing python3 launches from Claude Code's bash
-environment. v2.8.11 already moved python3 calls from heredoc form to
-file form, which sidesteps most heuristic killers. If you still see 137:
-
-  1. Try /core:start from Terminal.app (outside Claude Code) to confirm
-     the fix landed.
-  2. Check for an Endpoint Detection agent on your Mac:
-       ps -ef | grep -iE '(jamf|crowdstrike|sentinel|esp|carbonblack)'
-  3. Check python3 codesign:
-       codesign -d --verbose=4 \$(which python3)
-  4. Report at https://github.com/sankalpasawa/sutra/issues/38 with
-     the above output.
-
-Repro: vinit#38 documented identical symptoms on a v2.8.10 machine
-(user @abhishekshah). The atomic-write protections in v2.8.11 ensure
-your sutra-project.json was NOT corrupted by this kill — re-running
-/core:start after the diagnostic above will pick up where you left off.
-SIGKILL_HINT
-    exit 137
-  fi
-  return $rc
-}
-
+# Step 2 — patch .claude/sutra-project.json to persist the profile + telemetry.
+# v2.13.0: bash/jq lib (no python3). Atomic writes via mktemp+mv inside the lib.
 if [ -f .claude/sutra-project.json ]; then
-  sutra_run_python "patch-profile (step 2)" \
-    "$PLUGIN_ROOT/scripts/_sutra_project_lib.py" patch-profile "$PROFILE" "$TELEMETRY_DEFAULT"
+  bash "$PLUGIN_ROOT/scripts/_sutra_project_lib.sh" patch-profile "$PROFILE" "$TELEMETRY_DEFAULT"
 fi
 
 # Step 3 — depth marker so the next Edit/Write won't trip PreToolUse warn
@@ -295,11 +290,9 @@ GOVBLOCK
 
 ensure_project_claude_md
 
-# Step 4 — activation banner + next steps
-# v2.8.11 (vinit#38): moved from python3 stdin-heredoc to file-execution form.
+# Step 4 — activation banner + next steps. v2.13.0: bash/jq lib.
 if [ -f .claude/sutra-project.json ]; then
-  sutra_run_python "banner (step 4)" \
-    "$PLUGIN_ROOT/scripts/_sutra_project_lib.py" banner
+  bash "$PLUGIN_ROOT/scripts/_sutra_project_lib.sh" banner
 else
   echo "onboard failed — check CLAUDE_PROJECT_DIR and plugin install"
   exit 1
