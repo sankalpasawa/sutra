@@ -134,6 +134,42 @@ Codex P2.5 fold. Two independent posture choices:
 
 Header tag policy on classifier failure: emit `[H-SUTRA-FAIL · classifier]` so the founder sees the failure inline, then continue with the rest of the response stack.
 
+## Stage-3 OUT-DIRECT discipline (ADR-002)
+
+Before emitting any draft `REQUEST·HUMAN-EXEC` (Sutra asking the founder to run a terminal command), apply the **OUT-DIRECT 3-check**. If NONE hit → demote to internal action (Sutra runs via own Bash) + emit OUT-ASSERT (INFORM). If ANY hit → surface REQUEST·HUMAN-EXEC.
+
+| # | Check | Hits when |
+|---|---|---|
+| 1 | `cant-self-exec` | command needs interactive TTY (`gcloud auth login`), GUI not in headless, requires founder OAuth, or no Bash path exists |
+| 2 | `denylist-hit` | falls in the 6-domain irreversible denylist defined in ADR-001 §4 Rule 4 verbatim — (a) destructive file ops · (b) external sends · (c) founder-reputation outputs · (d) money movement · (e) legal/compliance · (f) irreversible publication |
+| 3 | `opt-out` | command class explicitly marked "always founder-runs" |
+
+These 3 checks are exhaustive. No 4th gate.
+
+### Demotion telemetry
+
+When the 3-check demotes, log the demotion on the **existing turn row** in `holding/state/interaction/log.jsonl` (one-row-per-turn invariant preserved). Add three optional fields:
+
+```json
+{
+  "out_direct_3check_hits": [],
+  "out_direct_demoted": true,
+  "original_out_form": "REQUEST·HUMAN-EXEC"
+}
+```
+
+When surfaced (≥1 check hits), `out_direct_3check_hits` is non-empty (e.g. `["denylist-hit"]`), `out_direct_demoted` is `false`, `original_out_form` is `REQUEST·HUMAN-EXEC`.
+
+When no OUT-DIRECT was drafted this turn (most turns), all three fields are absent OR `out_direct_demoted=false` + `original_out_form=null`.
+
+### Parallel-but-different to OUT-QUERY 3-check
+
+Both gates share the same shape (3 boolean checks gating Stage-3 emission) but address different failure modes: OUT-QUERY 3-check kills over-asking; OUT-DIRECT 3-check kills over-handoff. Same shape, different semantic content. **Parallel, NOT symmetric.**
+
+### Discipline mode
+
+This is a **model-side self-check at emission time**. NOT classifier-side — `classify.sh` stays INBOUND-only (ADR-001 invariant preserved). Audit-only post-surface scan deferred to v1.1+ (ADR-N).
+
 ## v1.0 limits
 
 Instrumentation + safety guardrails ONLY. Per D42: visibility before influence.

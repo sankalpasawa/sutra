@@ -1,5 +1,53 @@
 # Changelog
 
+## v2.16.0 — 2026-05-01
+
+**Sutra now self-executes terminal commands by default.**
+
+Before this release, Sutra often asked you to run terminal commands yourself. After v2.16.0, Sutra runs the command itself — unless one of three things is true:
+
+1. **The command needs a real terminal** — interactive auth like `gcloud auth login`, GUI tools, or anything that won't work in headless mode.
+2. **The command is on the danger list** — force-pushes, recursive deletes outside safe paths, publishing to npm / Play Store / App Store, sending emails, money movement, or legal/compliance actions.
+3. **You've explicitly marked the command class as "always ask me"** — opt-out for specific commands you want to keep approving by hand.
+
+If any of those hit, Sutra surfaces the command normally. Otherwise it runs the command and tells you what it did.
+
+Founder direction D43: *"when Sutra asked me to do some terminal things, for Sutra to do those things on its own."* The v1.0 H-Sutra layer already had a guardrail for over-*asking* (the OUT-QUERY 3-check from ADR-001). v2.16.0 adds the matching guardrail for over-*handoff* — the OUT-DIRECT 3-check.
+
+### What ships
+
+- New OUT-DIRECT sub-form `REQUEST·HUMAN-EXEC` (Sutra asking founder to run a terminal command) — joins existing `ASK·LATER` / `HANDOFF` / `CASCADE`.
+- New Stage-3 OUT-DIRECT 3-check, parallel-but-different to OUT-QUERY 3-check:
+  - **cant-self-exec** — interactive TTY / GUI / founder OAuth required, or no Bash path.
+  - **denylist-hit** — falls in ADR-001 §4 Rule 4's 6-domain irreversible denylist verbatim (no fork).
+  - **opt-out** — command class explicitly marked "always founder-runs".
+- Default: NONE hit → demote to internal action (Sutra runs via own Bash) + OUT-ASSERT (INFORM). ANY hit → surface REQUEST·HUMAN-EXEC normally.
+- Demotion telemetry: 3 new optional fields on the **existing** turn row in `holding/state/interaction/log.jsonl` (`out_direct_3check_hits` · `out_direct_demoted` · `original_out_form`). One-row-per-turn invariant preserved.
+- 2 new fixtures (#14 demoted-good-case, #15 surfaced-denylist-case) + new regression test `tests/test-out-direct-3check.sh`. All 94 human-sutra tests green pre-commit.
+
+### Why this is a safety floor, not behavior optimization
+
+Codex R2 verdict (PASS, DIRECTIVE-ID 1777640243): the OUT-DIRECT 3-check is a *floor* analogous to OUT-QUERY 3-check, not a "v1.1+ behavior optimization." Both kill specific pathologies — over-asking and over-handoff — at Stage 3. Charter §v1.0 limits updated from "4 safety guardrails" → "5 safety guardrails."
+
+### Files
+
+- `sutra/os/decisions/ADR-002-out-direct-3check.md` (NEW — ADR text)
+- `sutra/os/charters/HUMAN-SUTRA-LAYER.md` (extended — §OUT-DIRECT 3-check + new sub-form + 3 optional log fields + v1.0 limits update)
+- `sutra/marketplace/plugin/skills/human-sutra/SKILL.md` (extended — §Stage-3 OUT-DIRECT discipline)
+- `sutra/marketplace/plugin/skills/human-sutra/tests/fixtures.json` (+2 rows: #14, #15)
+- `sutra/marketplace/plugin/skills/human-sutra/tests/test-out-direct-3check.sh` (NEW — 17 assertions)
+- `holding/FOUNDER-DIRECTIONS.md` (D43 appended)
+- `.claude-plugin/plugin.json`: 2.15.1 → 2.16.0
+- `.enforcement/codex-reviews/2026-05-01-adr-002-r1-consult.md` (CHANGES-REQUIRED with 7 findings)
+- `.enforcement/codex-reviews/2026-05-01-adr-002-r2-consult.md` (PASS — all 7 folded correctly)
+- `holding/research/2026-05-01-adr-002-out-direct-3check-design-brief.md` (R1-folded, R2-PASSed)
+
+### Codex convergence
+
+R1 CHANGES-REQUIRED (1 P1 surface gate inconsistency between §1 and §2 / 4 P2: "symmetric" overstates · demotion telemetry must reuse turn row · PostToolUse hook is wrong layer · denylist must reuse ADR-001 verbatim / 2 P3: skip schema_version · row #10/#15 mirror cases) → all 7 folded → R2 PASS verbatim: *"No new findings. All seven R1 folds are closed from the text provided. ... CODEX-VERDICT: PASS"*. DIRECTIVE-ID 1777640243.
+
+---
+
 ## v2.15.1 — 2026-05-01
 
 **Systemic fix for the recurring nudge-skip pattern (founder direction "systemically fix it").**

@@ -39,7 +39,9 @@ Two axes, three values each, nine cells.
 |---|---|---|---|
 | **INBOUND** (founder → Sutra) | IN-QUERY (`"what is X?"`) | IN-ASSERT (`"you missed Y"`) | IN-DIRECT (`"do X"` / `"build it"`) |
 | **INTERNAL** (Sutra ↔ Sutra) | INT-QUERY (subagent asks main for context) | INT-ASSERT (codex verdict / subagent result) | INT-DIRECT (main dispatches subagent) |
-| **OUTBOUND** (Sutra → founder) | OUT-QUERY (CLARIFY) | OUT-ASSERT (INFORM / DISAGREE / ACK) | OUT-DIRECT (ASK·LATER / HANDOFF / CASCADE) |
+| **OUTBOUND** (Sutra → founder) | OUT-QUERY (CLARIFY) | OUT-ASSERT (INFORM / DISAGREE / ACK) | OUT-DIRECT (ASK·LATER / HANDOFF / CASCADE / **REQUEST·HUMAN-EXEC***) |
+
+\* `REQUEST·HUMAN-EXEC` added by ADR-002 — gated by Stage-3 OUT-DIRECT 3-check (see § below).
 
 Verbs are CQRS-extended: **QUERY** (read, no state change), **ASSERT** (declare a fact / claim), **DIRECT** (request state change / action). MECE holds because every act is exactly one of {read, tell, ask-to-act} along exactly one of {founder→sutra, sutra↔sutra, sutra→founder}.
 
@@ -246,7 +248,7 @@ These emit only when the cell + gate condition triggers:
 |---|---|---|
 | OUT-QUERY | Stage 1 FAIL (1st attempt) · OR · DIRECT + irreversible/denylist | CLARIFY (must satisfy 3 guardrails below) |
 | OUT-ASSERT | every Stage-3 emission of factual content (default form) | INFORM · DISAGREE · ACK |
-| OUT-DIRECT | scheduling work · handoffs · cascades to next session | ASK·LATER · HANDOFF · CASCADE |
+| OUT-DIRECT | scheduling work · handoffs · cascades to next session · founder-execution requests (ADR-002) | ASK·LATER · HANDOFF · CASCADE · REQUEST·HUMAN-EXEC (ADR-002) |
 
 ### OUT-QUERY guardrails (codex P1.2 fold)
 
@@ -257,6 +259,31 @@ Every OUT-QUERY MUST satisfy ALL three before it surfaces. Failure of any one de
 3. **One-turn-answerable** — the founder can answer in a single message (yes/no · A/B/C · a name · a path) — not a multi-step deliberation.
 
 If any of (1)/(2)/(3) fails, demote to OUT-ASSERT (INFORM) and proceed-with-assumption. This kills the over-asking pathology at the surface layer.
+
+### OUT-DIRECT 3-check (ADR-002)
+
+When Stage 2 drafts a `REQUEST·HUMAN-EXEC` (Sutra asking the founder to run a terminal command), Stage 3 evaluates 3 checks before surfacing. **If NONE hit → demote** to internal action (Sutra runs the command via its own Bash) + emit OUT-ASSERT (INFORM what was done). **If ANY hit → surface** REQUEST·HUMAN-EXEC.
+
+1. **Cant-self-exec** — command needs interactive TTY (`gcloud auth login`), GUI not in headless, requires founder OAuth, or no Bash path exists.
+2. **Denylist-hit** — falls in the **6-domain irreversible denylist defined above (Rule 4 of bounded-retry — same denylist, no fork)**: (a) destructive file ops · (b) external sends · (c) founder-reputation outputs · (d) money movement · (e) legal/compliance · (f) irreversible publication.
+3. **Founder-opt-out** — command class explicitly marked "always founder-runs".
+
+These 3 checks are **exhaustive**. No 4th gate. ("Connectors" / "first-time edits" are approval/scope concerns under ADR-003, not execution-handoff under ADR-002.)
+
+#### Parallel-but-different to OUT-QUERY 3-check
+
+Both gates have 3 boolean conditions blocking Stage-3 emission. **Different failure modes:**
+
+| 3-check | Failure mode it prevents |
+|---|---|
+| OUT-QUERY (above) | over-asking — gating execution on a question that should have proceeded with a stated assumption |
+| OUT-DIRECT (this section) | over-handoff — kicking execution to the founder when Sutra could safely run it itself |
+
+OUT-QUERY 3-check evaluates **question quality**. OUT-DIRECT 3-check evaluates **execution-handoff conditions**. Same shape, different semantic content. **Parallel, NOT symmetric.**
+
+#### Demotion telemetry
+
+Demotion logs on the **existing turn row** (one-row-per-turn invariant preserved — see § Logging schema for the 3 new optional fields `out_direct_3check_hits`, `out_direct_demoted`, `original_out_form`).
 
 ### Channels
 
@@ -291,6 +318,9 @@ Fields:
 | `stage_1_pass` | bool | true = classifier resolved cleanly |
 | `stage_3_emission_type` | `OUT-QUERY` \| `OUT-ASSERT` \| `OUT-DIRECT` \| `none` | what Stage 3 actually surfaced |
 | `input_routing_type` | `direction` \| `task` \| `feedback` \| `new-concept` \| `question` \| `null` | source TYPE we translated from (null for INT-*) |
+| `out_direct_3check_hits` | array of strings (values: `cant-self-exec` \| `denylist-hit` \| `opt-out`) | ADR-002. Empty `[]` when 3-check demoted; non-empty when surfaced. Optional — legacy rows omit. |
+| `out_direct_demoted` | bool | ADR-002. true when 3-check demoted (REQUEST·HUMAN-EXEC → internal action + OUT-ASSERT INFORM); false when surfaced or N/A. Optional — legacy rows omit. |
+| `original_out_form` | string \| null | ADR-002. The OUT-DIRECT sub-form considered before the gate (e.g. `REQUEST·HUMAN-EXEC`); null when no OUT-DIRECT was drafted this turn. Disambiguates `out_direct_demoted=false` between "surfaced" and "not applicable". Optional — legacy rows omit. |
 
 Example row:
 
@@ -337,13 +367,15 @@ The header tag occupies one line. Founder reads it in <2s. Aggregation across tu
 - 9-cell classification (3 verbs × 3 directions)
 - 3 orthogonal tags (tense / timing / channel)
 - REVERSIBILITY + decision_risk as execution metadata
-- 4 safety guardrails:
+- 5 safety guardrails:
   - Classification precedence DIRECT > QUERY > ASSERT
   - Stage-3-only emission invariant
-  - OUT-QUERY guardrails (named-var · why · one-turn-answerable)
+  - OUT-QUERY guardrails (named-var · why · one-turn-answerable) — kills over-asking
+  - **OUT-DIRECT 3-check (ADR-002)** (cant-self-exec · denylist-hit · opt-out) — kills over-handoff
   - Bounded retry (1 CLARIFY attempt) + irreversible-domain denylist (6 categories)
-- Logging to `holding/state/interaction/log.jsonl`
+- Logging to `holding/state/interaction/log.jsonl` (with optional ADR-002 telemetry fields)
 - Header tag in every response
+- New OUT-DIRECT sub-form `REQUEST·HUMAN-EXEC` (ADR-002)
 
 **Deliberately deferred** to v1.1+ (NOT in scope; require ADR-002+ with regression test):
 

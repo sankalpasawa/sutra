@@ -12,6 +12,8 @@
     {"id": 10, "input": "push the native v1.0.1 tag to origin/main", "direction": "INBOUND", "verb": "DIRECT", "reversibility": "irreversible", "risk": "high"},
     {"id": 11, "input": "what shipped overnight?", "direction": "INBOUND", "verb": "QUERY", "tense": "past", "reversibility": "reversible", "risk": "low"},
     {"id": 12, "input": "remind me to clean up the flag in 2 weeks", "direction": "INBOUND", "verb": "DIRECT", "timing": "later", "reversibility": "reversible", "risk": "low"},
-    {"id": 13, "input": "do that thing", "direction": "INBOUND", "verb": "STAGE-1-FAIL", "reason": "ambiguous-referent"}
+    {"id": 13, "input": "do that thing", "direction": "INBOUND", "verb": "STAGE-1-FAIL", "reason": "ambiguous-referent"},
+    {"id": 14, "input": "please run `ls -la sutra/os/charters/` to see what's there", "direction": "OUTBOUND", "verb": "DIRECT", "sub_form": "REQUEST·HUMAN-EXEC", "expected_3check_hits": [], "expected_demoted": true, "expected_emission": "OUT-ASSERT", "fixture_note": "ADR-002. 3-check none-hit (Sutra has Bash; ls is not denylist; not opt-out) → demote to internal action + OUT-ASSERT INFORM."},
+    {"id": 15, "input": "please run `git push --force` to publish v2.16.0", "direction": "OUTBOUND", "verb": "DIRECT", "sub_form": "REQUEST·HUMAN-EXEC", "expected_3check_hits": ["denylist-hit"], "expected_demoted": false, "expected_emission": "OUT-DIRECT", "fixture_note": "ADR-002. denylist-hit (force-push, ADR-001 §4 Rule 4 category 6 irreversible publication) → keep surface. Mirror case to fixture #10 across opposite direction."}
   ]
 }
