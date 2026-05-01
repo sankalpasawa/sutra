@@ -2,7 +2,7 @@
   "fixtures": [
     {"id": 1, "input": "I want to build a human Sutra layer", "direction": "INBOUND", "verb": "DIRECT", "reversibility": "reversible", "risk": "medium"},
     {"id": 2, "input": "What is a core restructure phase 0 to 6?", "direction": "INBOUND", "verb": "QUERY", "tense": "past", "reversibility": "reversible", "risk": "low"},
-    {"id": 3, "input": "I think that is done now. So is it done already?", "direction": "INBOUND", "verb": "ASSERT", "mixed_acts": ["QUERY"], "reversibility": "reversible", "risk": "low"},
+    {"id": 3, "input": "I think that is done now. So is it done already?", "direction": "INBOUND", "verb": "QUERY", "mixed_acts": ["ASSERT"], "reversibility": "reversible", "risk": "low", "fixture_note": "Mixed-act hybrid; per ADR-001 precedence DIRECT > QUERY > ASSERT, the trailing interrogative wins principal=QUERY with the epistemic stance recorded as mixed_acts=[ASSERT] (mid-phase fold 2026-05-01 — original ASSERT label conflated principal with stance)."},
     {"id": 4, "input": "lets build it for core plugin, solve for native later", "direction": "INBOUND", "verb": "DIRECT", "timing": "now", "reversibility": "reversible", "risk": "medium"},
     {"id": 5, "input": "what do we have right now in place", "direction": "INBOUND", "verb": "QUERY", "tense": "present", "reversibility": "reversible", "risk": "low"},
     {"id": 6, "input": "Lets redesign the above block diagram", "direction": "INBOUND", "verb": "DIRECT", "reversibility": "reversible", "risk": "low"},

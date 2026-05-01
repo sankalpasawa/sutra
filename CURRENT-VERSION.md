@@ -1,5 +1,37 @@
 # Sutra — Current Version
 
+## v2.11.1 (2026-05-01) — `feedback-channel-guard.sh` false-positive fix
+
+**What this is**: third release in the same drift family as v2.10.0 (inbox-display packaging drift) and v2.10.1 (cascade-check stdout-vs-stderr drift). Surfaced when filing the Anthropic submission-pin update at `anthropics/claude-plugins-official` — the hook blocked because the issue body contained `https://github.com/sankalpasawa/sutra/...` URLs.
+
+### Root cause
+
+The hook's `SUTRA_TARGET` literal-substring check ran against `CMD_LOWER` (full command including quoted body content). So any `gh issue create` whose `--body` mentioned a Sutra URL triggered the Sutra-target match — even when `--repo` explicitly targeted a different repository. Same drift class as v2.8.8 (vinit#17), which fixed the ACTION match by switching to `CMD_HEAD` (command stripped at first quoted value) but missed the TARGET match.
+
+### Fix
+
+`CMD_HEAD` lifted out of the action-match block; both `SUTRA_TARGET` and ACTION matches now use `CMD_HEAD`. Body content can no longer trigger the gate.
+
+### Validation
+
+| Surface | Result |
+|---|---|
+| `tests/unit/test-feedback-channel-guard.sh` (NEW, 9 cases) | 9/9 PASS |
+| Full unit suite | 15/15 PASS — zero regressions |
+| Reproduction: `gh issue create --repo anthropics/claude-plugins-official --body "...sankalpasawa/sutra/issues/43..."` | Pre-fix: BLOCKED (false positive). Post-fix: PASSES, hook exits 0. |
+
+### Threat model
+
+Unchanged. Every previously-blocked Sutra-targeted write still blocks; only the false-positive on body content is closed. Adversarial obfuscation explicitly out of scope per v2.6.2 single-trusted-operator threat model.
+
+### Three drift fixes in one day
+
+- v2.10.0 — `inbox-display.sh` packaging drift (vinit#43)
+- v2.10.1 — `cascade-check.sh` stdout-vs-stderr drift
+- v2.11.1 — `feedback-channel-guard.sh` matcher-scope drift
+
+---
+
 ## v2.10.2 (2026-05-01) — plugin coverage trial: paused assistant layer removed; D32 posttool dispatcher wired; override-audit lib promoted; output-behavior-lint wired
 
 **What this is**: companion to `sutra` issue #49 (plugin self-inventory). Closes the "Tier 1 SHIPPED-BROKEN" + first slice of "Tier 2 SHIPPED-DEAD" findings from the audit. Net plugin diff: −888 / +296 / 8 files / 1 new lib.

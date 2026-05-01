@@ -67,14 +67,25 @@ case "$CMD_LOWER" in
   *) exit 0 ;;
 esac
 
+# Strip everything from the first quoted value onward — flag bodies cannot
+# influence target or action matching. Lifted out of the action-match block
+# (was at line 122 in v2.10.x) so the SUTRA_TARGET literal-substring check
+# also benefits. v2.11.1 fix for false-positive trigger when body text
+# referenced sankalpasawa/sutra URLs (e.g., gh issue create --repo other/repo
+# --body '... see https://github.com/sankalpasawa/sutra/issues/N ...' was
+# blocked because the body string matched).
+CMD_HEAD=$(printf '%s' "$CMD_LOWER" | sed -E "s/[[:space:]]['\"].*$//")
+
 # Determine "Sutra-targeted":
-#   Path A: literal `sankalpasawa/sutra` substring in the command (covers
+#   Path A: literal `sankalpasawa/sutra` substring in CMD_HEAD (covers
 #           --repo flag, OWNER/REPO positional, gh api repos/.../...).
+#           CMD_HEAD excludes quoted body content so URLs in --title/--body
+#           don't cause false-positive blocks.
 #   Path B: command lacks an explicit --repo flag AND we're inside a
 #           sankalpasawa/sutra* checkout (gh infers from git remote — this
 #           is the most realistic LLM-bypass path codex flagged 2026-04-27).
 SUTRA_TARGET=0
-case "$CMD_LOWER" in
+case "$CMD_HEAD" in
   *sankalpasawa/sutra*) SUTRA_TARGET=1 ;;
 esac
 
@@ -110,12 +121,9 @@ fi
 # "..." body content, producing false positives when message text mentioned
 # "gh issue create" or "gh issue comment" as concepts. Now we look at the
 # command structure: gh <noun> <verb> ... and only match on <noun> <verb>.
+# v2.11.1 — CMD_HEAD now computed earlier (above SUTRA_TARGET check);
+# this section reuses it.
 BLOCK=0
-
-# Strip everything from the first quoted value onward — flag bodies cannot
-# influence the action match. (We tolerate flags before the quoted body
-# because gh tools accept --repo / -R before --comment.)
-CMD_HEAD=$(printf '%s' "$CMD_LOWER" | sed -E "s/[[:space:]]['\"].*$//")
 
 # Parse tokens; find 'gh' position; capture next two tokens (noun + verb).
 # shellcheck disable=SC2206

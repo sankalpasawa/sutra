@@ -33,9 +33,14 @@ assert_equals() {
 }
 
 assert_grep() {
+  # Accepts either a regular file path OR a process substitution (FIFO).
+  # The prior `[ -f "$file" ]` precondition rejected FIFOs and false-failed
+  # tests like `assert_grep <(printf …) …`. grep itself handles both kinds
+  # of inputs natively, so we let it decide. (Mid-phase fold R4 2026-05-01,
+  # codex consult session 019de1c4-2b41-7931-80b7-b22e797668ff.)
   local file="$1" pattern="$2" desc="$3"
   TESTS=$((TESTS+1))
-  if [ -f "$file" ] && grep -qE "$pattern" "$file" 2>/dev/null; then
+  if grep -qE "$pattern" "$file" 2>/dev/null; then
     PASS=$((PASS+1))
     printf 'ok %d - %s\n' "$TESTS" "$desc"
   else

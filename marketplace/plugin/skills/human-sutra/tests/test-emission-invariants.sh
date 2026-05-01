@@ -20,8 +20,11 @@ out=$(printf 'push v1.0.1 to origin/main' | bash "$CLASSIFY" 2>/dev/null)
 emit_type=$(printf '%s' "$out" | jq -r '.stage_3_emission_type')
 assert_equals "$emit_type" "OUT-QUERY" "DIRECT+irreversible → OUT-QUERY"
 
-# Guardrails on OUT-QUERY: named-var, why, one-turn-answerable
-guardrails=$(printf '%s' "$out" | jq -r '.out_query_guardrails')
+# Guardrails on OUT-QUERY: named-var, why, one-turn-answerable.
+# Use jq -c so the rendered JSON has no whitespace, matching the literal
+# pattern below. -r alone would pretty-print and the colon-space would
+# break the no-space pattern.
+guardrails=$(printf '%s' "$out" | jq -c '.out_query_guardrails')
 for g in named_var why one_turn_answerable; do
   assert_grep <(printf '%s' "$guardrails") "\"$g\":\"required\"" "OUT-QUERY guardrail $g required"
 done

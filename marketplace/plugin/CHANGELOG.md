@@ -1,5 +1,40 @@
 # Changelog
 
+## v2.11.1 — 2026-05-01
+
+**`feedback-channel-guard.sh` false-positive fix.**
+
+Caught during the v2.10.0/v2.10.1 release session: filing an Anthropic submission-pin update at `anthropics/claude-plugins-official` was blocked by `feedback-channel-guard.sh` because the issue body included `https://github.com/sankalpasawa/sutra/...` URLs. The hook's `SUTRA_TARGET` literal-substring check ran against `CMD_LOWER` (full command including `--body "..."`), so any body text mentioning a Sutra URL false-positive-triggered the gate — even when `--repo` explicitly targeted a different repository.
+
+Same drift class as v2.8.8 (vinit#17), which fixed the ACTION match by switching to `CMD_HEAD` (command stripped at first quoted value) but missed the TARGET match.
+
+### Fix
+
+| Item | Change |
+|---|---|
+| `hooks/feedback-channel-guard.sh` | `CMD_HEAD` computation lifted out of the action-match block to right after `CMD_LOWER` declaration. The `SUTRA_TARGET` `*sankalpasawa/sutra*` case-match now operates on `CMD_HEAD` instead of `CMD_LOWER` — body content can no longer trigger the gate. Path B (git-remote inference inside a sutra checkout) still uses `CMD_LOWER` to detect the explicit `--repo`/`-R` flag presence (intentional — that's a structural check, not a body check). |
+| `tests/unit/test-feedback-channel-guard.sh` | NEW. 9 cases covering: v2.11.1 false-positive (foreign --repo + body URL → exit 0), literal Sutra --repo (block), gh api POST against Sutra issues (block), read-only gh against Sutra (pass), non-gh (pass), bypass file (pass), bypass env var (pass), gh pr create against Sutra (block), unrelated external repo (pass). |
+
+### Validation
+
+- 9/9 new cases pass
+- 15/15 full unit suite pass — zero regressions from v2.10.x / v2.11.0
+- Real-world reproduction: `gh issue create --repo anthropics/claude-plugins-official --body "...sankalpasawa/sutra/issues/43..."` now exits 0, hook accepts.
+
+### Threat model
+
+Unchanged. The hook still blocks every previously-blocked Sutra-targeted write; only the false-positive path on body content is closed. Adversarial obfuscation remains explicitly out of scope per the original v2.6.2 design (single-trusted-operator threat model).
+
+### Related drift in this release window
+
+- v2.10.0 fixed `inbox-display.sh` packaging drift (vinit#43)
+- v2.10.1 fixed `cascade-check.sh` stdout-vs-stderr drift
+- v2.11.1 fixes `feedback-channel-guard.sh` matcher-scope drift (this release)
+
+Three instances of the same hook-output / hook-matcher drift family, all closed in one day.
+
+---
+
 ## v2.10.2 — 2026-05-01
 
 **Plugin coverage trial: paused assistant layer removed; D32 posttool dispatcher wired; override-audit lib promoted; `output-behavior-lint` wired in Stop.**
