@@ -1,6 +1,6 @@
 # Sutra Connectors — Quickstart
 
-**Version:** v2.11.0
+**Version:** v2.11.1
 
 ---
 
@@ -13,17 +13,17 @@ Sutra Connectors is a governed bridge from your Sutra session to provider APIs (
 ## Prereqs
 
 - Node.js ≥18 (Sutra plugin requires it; check with `node --version`)
-- `age` binary (encryption-at-rest for credentials)
+- `age` binary (encryption-at-rest for credentials) — **on macOS with brew, Sutra auto-installs this on first connectors command**; other OSes see install table below
 
 Install `age` for your OS:
 
-| OS | Command |
-|---|---|
-| macOS | `brew install age` |
-| Debian / Ubuntu | `sudo apt install age` |
-| Arch | `sudo pacman -S age` |
-| Windows (scoop) | `scoop install age` |
-| Manual | https://github.com/FiloSottile/age/releases |
+| OS | Command | Auto-install? |
+|---|---|---|
+| macOS | `brew install age` | ✅ — Sutra runs this if brew is present |
+| Debian / Ubuntu | `sudo apt install age` | ❌ (sudo) — install manually |
+| Arch | `sudo pacman -S age` | ❌ (sudo) — install manually |
+| Windows (scoop) | `scoop install age` | ❌ — install manually |
+| Manual | https://github.com/FiloSottile/age/releases | — |
 
 Verify: `age --version` should print `1.x.x`.
 
@@ -37,6 +37,8 @@ Verify: `age --version` should print `1.x.x`.
 ```
 
 (`/plugin install sutra@marketplace` also works; `core@sutra` is the canonical form.)
+
+> **Runtime npm deps are pre-bundled.** As of v2.11.1, the plugin ships `connectors/node_modules/` (yaml, cockatiel, nanoid; ~2.2 MB) inside the plugin tree, so `/plugin install` and `/plugin update` both deliver a fully-working connectors stack with **zero first-call npm install delay**. No `npm install` step required.
 
 ---
 
@@ -113,8 +115,8 @@ All `--key=value` args are forwarded to the provider API. See the per-connector 
 | `age: command not found` | Install `age` (see Prereqs). |
 | `No credential found for connector: slack` | Re-run `sutra connect slack`. |
 | `Slack API error: invalid_auth` | Token revoked or expired — re-run `sutra connect slack`. |
-| `node_modules missing` | Preflight auto-installs on first call. If it fails, run manually: `cd ~/.claude/plugins/cache/sutra/core/<version>/connectors && npm install --omit=dev` |
-| First call feels slow | Preflight runs `npm install --omit=dev` once on the first `sutra call|connect|connect-test`. Subsequent calls have no overhead. |
+| `node_modules missing` | Should not happen on v2.11.0+ (deps pre-bundled). Recovery: `cd ~/.claude/plugins/cache/sutra/core/<version>/connectors && npm install --omit=dev` |
+| First call feels slow | Should be instant on v2.11.1+ (deps pre-bundled). On older versions preflight ran `npm install --omit=dev` on first call — bump to v2.11.1 to remove the delay. |
 
 ---
 
@@ -165,4 +167,4 @@ Fields: `ts`, `depth`, `tier`, `capability`, `outcome`, `redactedArgsHash` (sha2
 
 ---
 
-**Sutra Connectors v2.10.1** · See [CHARTER.md](./CHARTER.md) for governance contract · See [ARCHITECTURE.yaml](./ARCHITECTURE.yaml) for module structure.
+**Sutra Connectors v2.11.1** · See [CHARTER.md](./CHARTER.md) for governance contract · See [ARCHITECTURE.yaml](./ARCHITECTURE.yaml) for module structure.

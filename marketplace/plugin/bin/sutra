@@ -22,9 +22,24 @@ SCRIPTS_DIR="$PLUGIN_ROOT/scripts"
 preflight_connectors() {
   local CONNECTORS_DIR="$PLUGIN_ROOT/connectors"
 
-  # Check 1 — `age` CLI binary
+  # Check 1 — `age` CLI binary. On macOS with brew available we auto-install
+  # (user-scope, no sudo). On Linux/Windows we print instructions and exit;
+  # auto-install via apt/scoop typically requires sudo or per-shell scoop init,
+  # which we won't trigger from a Sutra subcommand.
   if ! command -v age >/dev/null 2>&1; then
-    cat <<EOF >&2
+    if [ "$(uname -s)" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
+      echo "Sutra Connectors: 'age' missing — installing via brew (one-time)..." >&2
+      if ! brew install age >&2; then
+        cat <<EOF >&2
+brew install age failed. Install manually then re-run your sutra command:
+  brew install age          # macOS
+  https://github.com/FiloSottile/age/releases   (manual download)
+EOF
+        exit 1
+      fi
+      echo "✓ age installed." >&2
+    else
+      cat <<EOF >&2
 Sutra Connectors require the 'age' CLI for credential encryption at rest.
 
 Install:
@@ -37,7 +52,8 @@ Or download: https://github.com/FiloSottile/age/releases
 
 Then re-run your sutra command.
 EOF
-    exit 1
+      exit 1
+    fi
   fi
 
   # Check 2 — connectors node_modules. If missing OR partial (any of the

@@ -91,3 +91,20 @@ echo "  $PLUGIN_JSON"
 echo "  $PLUGIN_README"
 echo "  $CONN_PKG"
 echo "  $CONN_QS"
+
+# 5. Refresh connectors/node_modules/ with production-only deps so the next
+#    release tag carries fresh runtime deps. The plugin commits node_modules
+#    to git (per .gitignore) so `/plugin install core@sutra` and `/plugin
+#    update core@sutra` both deliver a fully-working stack with zero
+#    first-call npm install. Ship-step 9 contract: deps in tree, not on demand.
+if command -v npm >/dev/null 2>&1; then
+  echo "bump-version: refreshing $CONN_DIR/node_modules (production deps)..." >&2
+  ( cd "$CONN_DIR" \
+    && rm -rf node_modules \
+    && npm install --omit=dev --no-audit --no-fund --silent ) || {
+      echo "bump-version: WARNING — node_modules refresh failed; commit may ship stale deps" >&2
+    }
+  echo "✓ node_modules refreshed (yaml, cockatiel, nanoid)" >&2
+else
+  echo "bump-version: WARNING — npm not found; cannot refresh node_modules" >&2
+fi
