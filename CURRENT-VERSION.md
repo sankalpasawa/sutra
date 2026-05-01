@@ -1,5 +1,62 @@
 # Sutra — Current Version
 
+## v2.15.0 (2026-05-01) — governance-parity bump: 4 Asawa-side disciplines ship to T4 fleet
+
+**What this is**: founder direction 2026-05-01 in this session — "ship everything to clients" — closes 4 of the v2.14.1 audit gaps. Three of them ship as expanded per-turn-discipline-prompt.sh stderr emissions; the fourth (subagent dispatch briefing) was already shipping in v2.14.1 via `subagent-dispatch-brief.sh` PreToolUse:Task hook and is verified here.
+
+**The 4 disciplines now reaching T4 fleet**:
+
+| # | Discipline | Mechanism | Status before v2.15.0 |
+|---|---|---|---|
+| 1 | **Skill-explain card** (D40 G3 — 4-line SKILL/WHAT/WHY/EXPECT/ASKS before invoking any skill) | `per-turn-discipline-prompt.sh` reads `.skill_explanation.template_lines` from sutra-defaults.json and emits a reminder line on every UserPromptSubmit | schema present in sutra-defaults.json since v2.9.0; **no hook reminder** — pure convention on Asawa side via [Explain skills on first use] memory |
+| 2 | **Subagent dispatch briefing** (5-block + 4-line footer when invoking Task tool) | `subagent-dispatch-brief.sh` PreToolUse:Task hook (already shipping v2.14.1) — **verified** emitting `§Sutra discipline (mandatory)` prefix + 5 numbered blocks + 4-line footer reminder | shipped in v2.14.1; "T4 visibility unverified" note in v2.14.1 audit was overcautious |
+| 3 | **Readability gate** (tables>prose, numbers>adjectives, ASCII boxes for decisions, no unicode boxes, progress bars for scores) | `per-turn-discipline-prompt.sh` reads `.output_discipline.*` boolean keys from sutra-defaults.json and emits a reminder line | schema present since v2.9.0; **no hook reminder** — Asawa-only enforcement at output time |
+| 4 | **Karpathy right-effort discipline** (think first / simpler-alt / surgical scope / verify-loop) | NEW `.right_effort` schema key added to sutra-defaults.json + reminder line in per-turn-discipline-prompt.sh | Asawa-only memory ("Right-Effort Discipline (Karpathy)" in CLAUDE.md, sourced from github.com/forrestchang/andrej-karpathy-skills 2026-04-27); **no plugin coverage at all** before v2.15.0 |
+
+**What changed in this commit**
+
+| File | Change |
+|---|---|
+| `marketplace/plugin/sutra-defaults.json` | NEW `right_effort` section (Karpathy 4 principles + applies_before + kill_switch + comment lineage). Schema version bumped 1.0.4 → 1.0.5 not yet applied (deferred — v2.15.x backlog tracking). |
+| `marketplace/plugin/hooks/per-turn-discipline-prompt.sh` | +6 jq reads (SE_LINES, SE_SKILL, RG_PRACTICES, RG_SKILL, RE_PRINCIPLES, RE_TOOLS) + 3 new printf lines after the Codex-consult line. Same kill-switches; same fail-open posture. |
+| `marketplace/plugin/.claude-plugin/plugin.json` | version 2.14.1 → 2.15.0 |
+| `.claude-plugin/marketplace.json` | version 2.14.1 → 2.15.0 + description preamble |
+| `marketplace/plugin/SBOM-v2.15.0.txt` | NEW |
+
+**Smoke test (per-turn hook expanded)**
+
+```
+[Sutra defaults · D40 v1.0.2] Per-turn block stack (emit in this order, top to bottom):
+  1. [H-SUTRA HEADER]   single bracketed line, FIRST text in response   (skill: core:human-sutra)
+  2. INPUT ROUTING      fields: INPUT / TYPE / EXISTING HOME / ROUTE / FIT CHECK / ACTION   ...
+  3. DEPTH + ESTIMATION fields: TASK, DEPTH, EFFORT, COST, IMPACT   ...
+  4. BLUEPRINT          fields: Doing / Steps / Scale / Stops if / Switch   ...
+  5. BUILD-LAYER marker fields: BUILD-LAYER / ACTIVATION-SCOPE / TARGET-PATH   ...
+  6. ... tool calls (Edit / Write / Bash / Agent) ...
+  7. OUTPUT TRACE       > route: <skill> > <domain> > <nodes> > <terminal>   ...
+
+  Codex consult: Depth >= 3 with Edit/Write/MultiEdit planned → consult codex first
+  Skill-explain card: emit 4-line SKILL / WHAT / WHY / EXPECT / ASKS before invoking any skill   ←  NEW v2.15.0
+  Readability gate: tables_preferred_over_prose, numbers_preferred_over_adjectives, decisions_in_ascii_boxes, ...   ←  NEW v2.15.0
+  Right-effort discipline (Karpathy): think first / simpler-alt / surgical scope / verify-loop — apply before Edit/Write   ←  NEW v2.15.0
+```
+
+**Smoke test (subagent dispatch hook — item #2 verify)**
+
+```
+[Sutra defaults · D40 v1.0.4] Subagent dispatch reminder (sourced from sutra-defaults.json):
+  When invoking the Task tool, prefix the dispatched prompt with this exact line:
+    §Sutra discipline (mandatory)
+  Followed by the 5 numbered blocks: Input Routing / Depth + Estimation / Build-Layer (if D38) / Operationalization 6-section / Codex review per layer
+  End the dispatched prompt with the 4-line footer: TRIAGE / ESTIMATE / ACTUAL / OS TRACE
+```
+
+**Remaining backlog (v2.16.x)**
+
+Capability Map (D43) classification gate, Customer Focus First (Doctrine Principle 0), No-fabrication, Table Shape (Impact + Effort columns), PROTO-006 process discipline. Each candidate for future bumps.
+
+---
+
 ## v2.14.1 (2026-05-01) — per-turn-discipline reminder expanded to full 5-block stack (vinit feedback)
 
 **What this is**: vinit reported that v2.14.0 "didn't show BLUEPRINT or H-Sutra layer" on his fleet machine. Diagnosis: v2.14.0 shipped the H-Sutra log-write infrastructure correctly, but the `per-turn-discipline-prompt.sh` stderr nudge only enumerated Input Routing + Depth+Estimation (plus the Codex-consult line). BLUEPRINT, H-Sutra header tag, OUTPUT TRACE, and BUILD-LAYER marker were left as model-side-only disciplines with NO hook nudge — so on a T4 client without `CLAUDE.md` governance, Claude had nothing telling it to emit those blocks. v2.14.1 closes the nudge gap.

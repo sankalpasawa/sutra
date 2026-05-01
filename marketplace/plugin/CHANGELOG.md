@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.15.0 — 2026-05-01
+
+**Governance-parity bump: 4 Asawa-side disciplines ship to T4 fleet.**
+
+Founder direction this session: "ship everything to clients." Closes 4 of the v2.14.1 audit gaps. Three ship as expanded `per-turn-discipline-prompt.sh` stderr emissions; the fourth (subagent dispatch briefing) was already shipping in v2.14.1 via `subagent-dispatch-brief.sh` PreToolUse:Task hook and is verified here.
+
+### What ships
+
+| # | Discipline | Mechanism |
+|---|---|---|
+| 1 | Skill-explain card (D40 G3) | per-turn-discipline-prompt.sh reads `.skill_explanation.template_lines` from sutra-defaults.json, emits reminder line on every UserPromptSubmit |
+| 2 | Subagent dispatch briefing | subagent-dispatch-brief.sh PreToolUse:Task — already in v2.14.1; verified emitting 5-block briefing + 4-line footer |
+| 3 | Readability gate (tables>prose, numbers>adjectives, ASCII boxes, no unicode boxes, progress bars) | per-turn-discipline-prompt.sh reads `.output_discipline.*` boolean keys, emits reminder line |
+| 4 | Karpathy right-effort discipline (think first / simpler-alt / surgical scope / verify-loop) | NEW `.right_effort` key in sutra-defaults.json + reminder line in per-turn-discipline-prompt.sh |
+
+### Files
+
+- `sutra-defaults.json`: NEW `right_effort` section (4 principles + applies_before + kill_switch + lineage comment)
+- `hooks/per-turn-discipline-prompt.sh`: +6 jq reads + 3 new printf lines after Codex-consult line
+- `.claude-plugin/plugin.json`: 2.14.1 → 2.15.0
+- `.claude-plugin/marketplace.json`: 2.14.1 → 2.15.0 + description preamble
+- `SBOM-v2.15.0.txt`: NEW
+
+### Remaining audit backlog (v2.16.x)
+
+Capability Map (D43) classification gate, Customer Focus First, No-fabrication, Table Shape (Impact + Effort columns), PROTO-006 process discipline.
+
+---
+
 ## v2.14.1 — 2026-05-01
 
 **Per-turn-discipline reminder expanded to enumerate ALL 5 per-turn blocks (vinit feedback on v2.14.0).**

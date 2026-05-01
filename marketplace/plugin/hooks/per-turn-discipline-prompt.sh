@@ -69,6 +69,16 @@ OT_SKILL=$(jq -r '.per_turn_blocks.output_trace.skill' "$DEFAULTS_JSON" 2>/dev/n
 DEPTH_THRESHOLD=$(jq -r '.consult_policy.depth_threshold' "$DEFAULTS_JSON" 2>/dev/null)
 CONSULT_TOOLS=$(jq -r '.consult_policy.applies_to_tools | join("/")' "$DEFAULTS_JSON" 2>/dev/null)
 KILL_FILE=$(jq -r '.kill_switches.per_turn_discipline_prompt.file' "$DEFAULTS_JSON" 2>/dev/null)
+# v2.15.0: 3 governance disciplines added to nudge — skill-explain card,
+# readability gate, Karpathy right-effort. Each was Asawa-side memory or
+# defaults-schema-only with no T4 visibility. Founder direction: "ship
+# everything to clients" (2026-05-01).
+SE_LINES=$(jq -r '.skill_explanation.template_lines | join(" / ")' "$DEFAULTS_JSON" 2>/dev/null)
+SE_SKILL=$(jq -r '.skill_explanation.skill' "$DEFAULTS_JSON" 2>/dev/null)
+RG_PRACTICES=$(jq -r '[.output_discipline | to_entries[] | select(.value == true) | .key] | join(", ")' "$DEFAULTS_JSON" 2>/dev/null)
+RG_SKILL=$(jq -r '.output_discipline.skill' "$DEFAULTS_JSON" 2>/dev/null)
+RE_PRINCIPLES=$(jq -r '.right_effort.principles_short | join(" / ")' "$DEFAULTS_JSON" 2>/dev/null)
+RE_TOOLS=$(jq -r '.right_effort.applies_before | join("/")' "$DEFAULTS_JSON" 2>/dev/null)
 
 # Emit derived reminder (changes if json changes). Full per-turn block stack
 # in response-output order. Mirrors what skills/human-sutra/SKILL.md already
@@ -85,6 +95,9 @@ KILL_FILE=$(jq -r '.kill_switches.per_turn_discipline_prompt.file' "$DEFAULTS_JS
   printf '  7. OUTPUT TRACE       %s   (skill: %s)\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}" "${OT_SKILL:-core:output-trace}"
   printf '\n'
   printf '  Codex consult: Depth >= %s with %s planned → consult codex first (skill: core:codex-sutra)\n' "${DEPTH_THRESHOLD:-3}" "${CONSULT_TOOLS:-Edit/Write/MultiEdit}"
+  printf '  Skill-explain card: emit 4-line %s before invoking any skill (skill: %s)\n' "${SE_LINES:-SKILL/WHAT/WHY/EXPECT/ASKS}" "${SE_SKILL:-core:skill-explain}"
+  printf '  Readability gate: %s (skill: %s)\n' "${RG_PRACTICES:-tables_preferred_over_prose, numbers_preferred_over_adjectives, decisions_in_ascii_boxes}" "${RG_SKILL:-core:readability-gate}"
+  printf '  Right-effort discipline (Karpathy): %s — apply before %s\n' "${RE_PRINCIPLES:-think first / simpler-alt / surgical scope / verify-loop}" "${RE_TOOLS:-Edit/Write}"
   printf '  See %s/SUTRA-DEFAULTS.md (human) / sutra-defaults.json (machine)\n' "$DEFAULTS_DIR"
   printf '  Kill-switch: touch %s\n\n' "${KILL_FILE:-~/.per-turn-discipline-disabled}"
 } >&2

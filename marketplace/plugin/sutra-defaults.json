@@ -106,6 +106,22 @@
     "progress_bars_for_scores": true,
     "skill": "core:readability-gate"
   },
+  "right_effort": {
+    "$comment": "Karpathy right-effort discipline (CLAUDE.md). Source: github.com/forrestchang/andrej-karpathy-skills (try-before-buy 2026-04-27). v2.15.0 promotes this from Asawa-only memory to plugin-shipped governance default per fleet-parity audit.",
+    "principles": [
+      "think_first: state assumptions; if multiple interpretations exist, ask. No silent guesses.",
+      "simpler_alt: if 200 lines could be 50, rewrite. No speculative abstractions.",
+      "surgical_scope: only changed lines that trace to the request. No drive-by refactors.",
+      "verify_loop: task = success criteria + verification. 'Make X work' → 'test passes'."
+    ],
+    "principles_short": ["think first", "simpler-alt", "surgical scope", "verify-loop"],
+    "applies_before": ["Edit", "Write"],
+    "soft_hint_hook": "per-turn-discipline-prompt.sh",
+    "kill_switch": {
+      "env": "RIGHT_EFFORT_DISABLED=1",
+      "file": "~/.right-effort-disabled"
+    }
+  },
   "build_layer_categories": {
     "D38_PLUGIN_RUNTIME": {
       "paths": ["sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin}/**"],
