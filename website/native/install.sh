@@ -164,61 +164,134 @@ fi
 
 # ---------------------------------------------------------------------------
 # Step 2 — target directory
+#
+# Behavior matrix (founder direction 2026-05-01: "if it's already done go
+# with it; if something NEW has to be created, ask"):
+#
+#   * empty / nonexistent          → fresh install (steps 3-4 run)
+#   * existing Native, same ver    → reuse silently (steps 3-4 skip)
+#   * existing Native, diff ver    → ask "Upgrade in place?" (default N)
+#   * existing non-Native dir      → ask "Overwrite?" (default N)
+#
+# In NON_INTERACTIVE mode (-y), prompts default to N to preserve user
+# agency — `-y` was originally consent for the install banner, not a
+# blanket consent for destructive in-place upgrades / overwrites.
 # ---------------------------------------------------------------------------
 step "2/5  Preparing target directory"
 
+ALREADY_INSTALLED=0
+EXPECTED_VERSION="${NATIVE_VERSION#v}"
+
+read_installed_version() {
+  local manifest="$1"
+  [ -f "$manifest" ] || return 1
+  sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -n1
+}
+
 if [ -e "$TARGET_DIR" ]; then
-  if [ -d "$TARGET_DIR/.git" ] || [ -f "$TARGET_DIR/package.json" ]; then
-    warn "$TARGET_DIR already populated — refusing to overwrite"
-    say  "       remove it (rm -rf $TARGET_DIR) or set SUTRA_NATIVE_TARGET to install elsewhere"
-    exit 2
+  installed_manifest="$TARGET_DIR/.claude-plugin/plugin.json"
+  installed_version="$(read_installed_version "$installed_manifest" || true)"
+
+  if [ -n "$installed_version" ] && [ -f "$TARGET_DIR/package.json" ]; then
+    if [ "$installed_version" = "$EXPECTED_VERSION" ]; then
+      ALREADY_INSTALLED=1
+      ok "Native v${installed_version} already installed at $TARGET_DIR — reusing"
+    else
+      warn "$TARGET_DIR has Native v${installed_version}; this installer ships v${EXPECTED_VERSION}"
+      if [ "$NON_INTERACTIVE" -eq 1 ]; then
+        ALREADY_INSTALLED=1
+        ok "non-interactive: keeping v${installed_version} (set SUTRA_NATIVE_TARGET to install fresh elsewhere)"
+      else
+        printf '%sUpgrade in place (replace v%s with v%s)?%s [y/N] ' \
+          "$C_BOLD" "$installed_version" "$EXPECTED_VERSION" "$C_RESET"
+        reply=""
+        read -r reply </dev/tty || reply=""
+        case "${reply:-n}" in
+          [Yy]*)
+            rm -rf "$TARGET_DIR"
+            ok "removed v${installed_version} for upgrade"
+            ;;
+          *)
+            ALREADY_INSTALLED=1
+            ok "keeping existing v${installed_version}"
+            ;;
+        esac
+      fi
+    fi
+  elif [ -d "$TARGET_DIR/.git" ] || [ -f "$TARGET_DIR/package.json" ]; then
+    warn "$TARGET_DIR exists but isn't a Native install (no .claude-plugin/plugin.json)"
+    if [ "$NON_INTERACTIVE" -eq 1 ]; then
+      fail "set SUTRA_NATIVE_TARGET=<path> to install elsewhere, or remove this directory manually"
+    fi
+    printf '%sOverwrite this directory?%s [y/N] ' "$C_BOLD" "$C_RESET"
+    reply=""
+    read -r reply </dev/tty || reply=""
+    case "${reply:-n}" in
+      [Yy]*)
+        rm -rf "$TARGET_DIR"
+        ok "overwrite consented — directory removed"
+        ;;
+      *)
+        fail "aborted — set SUTRA_NATIVE_TARGET=<path> to install elsewhere"
+        ;;
+    esac
   fi
 fi
 
-mkdir -p "$(dirname "$TARGET_DIR")"
-ok "parent ready — $(dirname "$TARGET_DIR")"
+if [ "$ALREADY_INSTALLED" -ne 1 ]; then
+  mkdir -p "$(dirname "$TARGET_DIR")"
+  ok "parent ready — $(dirname "$TARGET_DIR")"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 3 — sparse clone of sutra/marketplace/native
 # ---------------------------------------------------------------------------
 step "3/5  Downloading Native source preview"
 
-TMP_DIR="$(mktemp -d -t sutra-native-XXXXXX)"
-trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
+if [ "$ALREADY_INSTALLED" -eq 1 ]; then
+  ok "skipped — using existing install at $TARGET_DIR"
+else
+  TMP_DIR="$(mktemp -d -t sutra-native-XXXXXX)"
+  trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
-# Sparse + shallow clone keeps download tiny
-git clone \
-  --filter=blob:none \
-  --depth 1 \
-  --sparse \
-  --quiet \
-  "$SUTRA_REPO" \
-  "$TMP_DIR/sutra"
+  # Sparse + shallow clone keeps download tiny
+  git clone \
+    --filter=blob:none \
+    --depth 1 \
+    --sparse \
+    --quiet \
+    "$SUTRA_REPO" \
+    "$TMP_DIR/sutra"
 
-(
-  cd "$TMP_DIR/sutra"
-  # --quiet is not supported by older git sparse-checkout (pre-2.43)
-  # so we suppress its progress output explicitly instead.
-  git sparse-checkout set marketplace/native >/dev/null
-)
+  (
+    cd "$TMP_DIR/sutra"
+    # --quiet is not supported by older git sparse-checkout (pre-2.43)
+    # so we suppress its progress output explicitly instead.
+    git sparse-checkout set marketplace/native >/dev/null
+  )
 
-if [ ! -d "$TMP_DIR/sutra/marketplace/native" ]; then
-  fail "sparse-clone returned no marketplace/native — repo layout drift?"
+  if [ ! -d "$TMP_DIR/sutra/marketplace/native" ]; then
+    fail "sparse-clone returned no marketplace/native — repo layout drift?"
+  fi
+
+  mv "$TMP_DIR/sutra/marketplace/native" "$TARGET_DIR"
+  ok "source installed — $TARGET_DIR"
 fi
-
-mv "$TMP_DIR/sutra/marketplace/native" "$TARGET_DIR"
-ok "source installed — $TARGET_DIR"
 
 # ---------------------------------------------------------------------------
 # Step 4 — npm install
 # ---------------------------------------------------------------------------
 step "4/5  Installing npm dependencies"
 
-(
-  cd "$TARGET_DIR"
-  npm install --silent --no-audit --no-fund --loglevel=error
-)
-ok "node_modules ready"
+if [ "$ALREADY_INSTALLED" -eq 1 ] && [ -d "$TARGET_DIR/node_modules" ]; then
+  ok "skipped — node_modules already present"
+else
+  (
+    cd "$TARGET_DIR"
+    npm install --silent --no-audit --no-fund --loglevel=error
+  )
+  ok "node_modules ready"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 5 — register Sutra marketplace with Claude Code (optional)
