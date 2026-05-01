@@ -254,7 +254,7 @@ cat <<EOF
     npx tsx scripts/dogfood-time-to-value.ts
 
     ${C_BLUE}# 2. Install the plugin in Claude Code${C_RESET}
-    claude
+    claude -n native
     /plugin install native@sutra
 
   ${C_BOLD}Read next${C_RESET}
@@ -267,5 +267,49 @@ cat <<EOF
     discord          run /core:start in Claude Code, then /core:join-discord
 
 EOF
+
+# ---------------------------------------------------------------------------
+# Step 6 — optional auto-launch into Claude Code with Native session
+#
+# Default N per codex consult 2026-05-01: curl|bash flow already grants the
+# user agency once; auto-launching another interactive tool is a higher
+# blast-radius action that the user should opt INTO, not have to opt OUT of.
+# Captures `claude` exit code and prints fallback manual commands on failure
+# or early exit. Skipped entirely when -y/--yes is set.
+# ---------------------------------------------------------------------------
+launch_claude_native() {
+  if [ "$CLAUDE_CLI" -ne 1 ]; then
+    return 0
+  fi
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    return 0
+  fi
+
+  printf '%sLaunch Claude Code with Native session now?%s [y/N] ' "$C_BOLD" "$C_RESET"
+  local reply=""
+  read -r reply </dev/tty || reply=""
+  case "${reply:-n}" in
+    [Yy]*) ;;
+    *) return 0 ;;
+  esac
+
+  say ""
+  say "${C_GREY}launching: cd ${TARGET_DIR} && claude -n native '/plugin install native@sutra'${C_RESET}"
+  say ""
+
+  local rc=0
+  ( cd "$TARGET_DIR" && claude -n native "/plugin install native@sutra" ) || rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo
+    warn "Claude Code exited with status $rc — plugin install may not have completed."
+    say  "       Re-run manually:"
+    say  "         cd \"$TARGET_DIR\""
+    say  "         claude -n native"
+    say  "         /plugin install native@sutra"
+  fi
+}
+
+launch_claude_native
 
 exit 0

@@ -274,7 +274,7 @@ function buildVinitFixture() {
 
 function readMarketplaceString(): string {
   const here = dirname(fileURLToPath(import.meta.url))
-  const pluginJsonPath = resolve(here, '..', 'plugin.json')
+  const pluginJsonPath = resolve(here, '..', '.claude-plugin', 'plugin.json')
   const raw = readFileSync(pluginJsonPath, 'utf-8')
   const parsed = JSON.parse(raw) as { marketplace?: string }
   return parsed.marketplace ?? 'unknown'

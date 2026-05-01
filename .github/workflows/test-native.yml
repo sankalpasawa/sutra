@@ -1,0 +1,53 @@
+name: Test Sutra Native
+
+# Runs vitest on the Native package whenever its source, the installer, or
+# this workflow itself changes. Catches the class of regressions that the
+# M11 dogfood ENOENT (2026-05-01) belonged to: manifest path drift,
+# missing `marketplace` field, and installer↔manifest string drift.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'marketplace/native/**'
+      - 'website/native/install.sh'
+      - '.github/workflows/test-native.yml'
+  pull_request:
+    paths:
+      - 'marketplace/native/**'
+      - 'website/native/install.sh'
+      - '.github/workflows/test-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./marketplace/native
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ./marketplace/native/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run vitest
+        run: npm test
