@@ -236,7 +236,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "Bash|Write|Edit|MultiEdit",
+        "matcher": "Bash|Write|Edit|MultiEdit|mcp__.*",
         "hooks": [
           {
             "type": "command",

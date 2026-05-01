@@ -1,5 +1,7 @@
 # Charter: Permissions
 
+> **Sibling discipline to HUMAN-SUTRA-LAYER.md** (ADR-003, 2026-05-01). Different actor: Claude Code harness here vs H-Sutra Stage-3 model emission there. Both close founder-friction gaps where the founder must approve / do something the system could safely handle. ADR-001 §4 Rule 4's 6-domain irreversible denylist (semantic categories) is distinct from the 6 Bash detector categories below (technical Trust Mode patterns) — see ADR-003 §4 for the disambiguation.
+
 **Objective**: Every Sutra operation that is architecturally safe executes without prompting the user; every request Sutra makes is human-readable and auditable.
 **DRI**: Sutra-OS
 **Contributors**: Engineering (hook), Marketplace (manifest), Governance (audit)
@@ -108,6 +110,53 @@ Helper: `sutra/marketplace/plugin/lib/sh_trust_mode.py` — Python regex/case de
 **Recovery model (why this is safe enough)**: anything NOT in the 6 categories is recoverable via local fs, git, Time Machine. The 6 catch every irreversible / shared-state / privilege-elevating operation. Approval fatigue (50 blind-approves per session) was a worse security mode than the 6-prompt baseline.
 
 **Exit ramp**: if threat model changes (multi-user, prompt injection, untrusted env), restore the v2.4 Tier 1.5 strict-allowlist matcher from git history (last commit before v2.7.0 — `sh_lex_check.py` + `_match_bash_compositional` + env-shadowing guards) and re-register it ahead of Trust Mode in `permission-gate.sh`'s dispatch.
+
+### Tier 1.7 — MCP tool auto-approve (ADR-003, v2.17.0+)
+
+**Threat model**: same as Trust Mode (single trusted local operator on a personally managed machine, no adversarial prompt/file/environment injection).
+
+**Decision rule**: auto-approve MCP tools matching the read-verb allowlist regex; explicit per-vendor mutator/send denylist always overrides; everything else falls through to prompt (safe default). Implementation: `lib/mcp_trust_mode.py` (separate from `sh_trust_mode.py` to keep shell vs MCP semantics decoupled).
+
+**Allowlist (read-class)** — verbs include `search`, `list`, `get`, `read`, `fetch`, `query`, `describe`, `enrich`, `match`, `status`, `info`, `view`, `metadata`, `count`, `index`, `profile`, `resolve`, `open`, `outline`, `availability`, `preview`, `download`. Anchored regex; drift-prone names like `get_or_create`, `read_write`, `fetch_and_delete` will NOT match (fall through to prompt).
+
+**Denylist (mutator/send-class, always prompts)** by vendor family:
+
+| Vendor | Tools that prompt |
+|---|---|
+| Slack | `slack_send_message`, `slack_send_message_draft`, `slack_schedule_message`, `slack_create_canvas`, `slack_update_canvas` |
+| Gmail | `create_draft`, `update_draft`, send-class (`*_send_*`, `*_forward_*`, send-draft execution), `delete_thread`, `delete_message`, `archive_*`, label mutations (`label_message`, `label_thread`, `unlabel_message`, `unlabel_thread`, `create_label`, `apply_labels_*`, `batch_modify_*`, `bulk_label_*`) |
+| Google Drive | `create_file`, `copy_file`, `batch_update_*`, `import_*`, `template-copy_*`, `duplicate-sheet_*` |
+| Google Calendar | `create_event`, `update_event`, `delete_event`, `respond_to_event` |
+| Apollo | `apollo_*_create`, `apollo_*_update`, `apollo_emailer_campaigns_*`, `apollo_organizations_bulk_enrich` |
+| Atlassian Rovo | `createJiraIssue`, `editJiraIssue`, `transitionJiraIssue`, `addCommentToJiraIssue`, `addWorklogToJiraIssue`, `createConfluencePage`, `updateConfluencePage`, `createConfluenceFooterComment`, `createConfluenceInlineComment`, `createIssueLink` |
+| HubSpot | `manage_crm_objects`, `submit_feedback` |
+| Read.ai | (none — passive reads `list_meetings`, `get_meeting_by_id` auto-approve) |
+| Playwright stateful | `browser_click`, `browser_drag`, `browser_drop`, `browser_evaluate`, `browser_fill_form`, `browser_file_upload`, `browser_handle_dialog`, `browser_hover`, `browser_navigate`, `browser_navigate_back`, `browser_press_key`, `browser_resize`, `browser_run_code_unsafe`, `browser_select_option`, `browser_tabs`, `browser_type`, `browser_wait_for`, `browser_close` |
+
+**Decision precedence**: prompt-list ALWAYS wins over allowlist regex. Anything not matched by either falls through to prompt.
+
+### Tier 1.8 — First-time Edit/Write inside cwd (ADR-003, v2.17.0+)
+
+**Threat model**: deliberate widening of Tier 3 (acknowledged — see ADR-003 §3.2 honesty section). Same single-trusted-operator threat model as Trust Mode; recovery via git/backups/fs trash.
+
+**Decision rule**: auto-approve `Edit`/`Write`/`MultiEdit` to paths inside cwd-tree, EXCEPT entries in the prompt-list below.
+
+**Prompt-list** (overrides allow):
+- `.claude/settings*.json` (Claude Code hardcoded guard — not bypassable anyway)
+- `.env*` (secrets surface)
+- `.git/**` (repo metadata)
+- `.npmrc`, `.pypirc` (publish auth)
+- `**/credentials.json`, `**/secrets.yaml`, `**/.secret*` (generic secret patterns)
+- `.github/workflows/**`, `.circleci/**`, `.gitlab-ci.yml` (CI config)
+- `vercel.json`, `fly.toml`, `render.yaml`, `netlify.toml` (deploy config)
+- `docker-compose*.yml`, `docker-compose*.yaml` (container orchestration)
+- `k8s/**`, `helm/**/values*.y*ml` (Kubernetes + Helm)
+- `.terraform/**`, `*.tfvars`, `*.tf` (infrastructure-as-code)
+- `Pulumi.*` (Pulumi config)
+- `wrangler.toml`, `railway.json`, `firebase.json` (Cloudflare/Railway/Firebase deploy)
+- `cloudbuild.yaml`, `app.yaml` (GCP)
+- `supabase/**` (Supabase backend config)
+- Anything outside cwd (cross-company / cross-project — Tier 3 preserved)
 
 ### Tier 2 — Permissible when feature enabled in `os/SUTRA-CONFIG.md`
 

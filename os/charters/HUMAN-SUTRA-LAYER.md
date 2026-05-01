@@ -360,6 +360,17 @@ The header tag occupies one line. Founder reads it in <2s. Aggregation across tu
 
 ---
 
+## Related disciplines (ADR-003, 2026-05-01)
+
+H-Sutra handles **founder-visible model emission** (Stage-3 OUT-* surface). It is NOT the only discipline that closes founder-friction gaps. Sibling charters address the same goal from different actors:
+
+| Charter | Actor | Friction class |
+|---|---|---|
+| `HUMAN-SUTRA-LAYER.md` (this file) | the model (Stage-3 emission) | over-asking (OUT-QUERY 3-check, ADR-001 Rule 3) + over-handoff (OUT-DIRECT 3-check, ADR-002) |
+| `PERMISSIONS.md` | the Claude Code harness (PermissionRequest dialog) | recurring permission prompts (Trust Mode + ADR-003 MCP allowlist + first-time-edit allow) |
+
+The two are siblings, not subordinate. ADR-001's 3-direction MECE invariant is preserved — PERMISSIONS.md is NOT a sub-form within H-Sutra's grid, it is a separate discipline that the founder reads alongside this charter.
+
 ## v1.0 limits
 
 **Deliberately included** (in scope):

@@ -1,5 +1,50 @@
 # Changelog
 
+## v2.17.0 — 2026-05-01
+
+**Connector tools and routine project edits no longer prompt every time.**
+
+Two coverage gaps in the existing permission system are closed:
+
+1. **MCP connector tools** — Slack search/list/get, Apollo enrich/search, Atlassian search/get, Gmail search/list, Google Drive read/search, etc. now auto-approve on read-class verbs. Mutator/send tools (Slack send-message, Gmail create-draft, Atlassian create-issue, Drive copy-file, Calendar create-event, Apollo organization-create, HubSpot manage-crm, etc.) still prompt — by an explicit per-vendor denylist. Playwright observational tools (snapshot, screenshot, console-messages) auto-approve when their verb is in the read-list; stateful tools (click, fill-form, navigate, run-code-unsafe) still prompt.
+
+2. **First-time Edit/Write inside cwd** — routine project edits no longer trigger a permission prompt the first time. The prompt-list still gates: secrets (`.env*`, `credentials.json`, `secrets.yaml`), repo metadata (`.git/`), publish auth (`.npmrc`, `.pypirc`), CI configs (`.github/workflows/`, `.circleci/`, `.gitlab-ci.yml`), deploy configs (`vercel.json`, `fly.toml`, `render.yaml`, `netlify.toml`), container/orchestration (`docker-compose*.yml`, `k8s/`, `helm/values*.yaml`), infrastructure-as-code (`.terraform/`, `*.tfvars`, `Pulumi.*`), Cloudflare/Railway/Firebase/GCP deploy configs, Supabase backend, and anything outside cwd.
+
+### Why
+
+Founder direction D44: *"for the permissions, create it as a separate ADR... auto approve them unless they are very big operations or delete... like connectors, first-time edits."* Sister to D43 (ADR-002 OUT-DIRECT 3-check, ships in v2.16.0) — same friction class (founder-side approval), different actor (harness vs model).
+
+### What changed under the hood
+
+- **New module** `sutra/marketplace/plugin/lib/mcp_trust_mode.py` (~190 LOC). Reads PermissionRequest payload on stdin; returns `{prompt: bool, category, reason}`. Read-verb allowlist regex + per-vendor mutator/send denylist. Anchored regex to keep drift-prone names like `get_or_create`, `read_write`, `fetch_and_delete` falling through to prompt.
+- **Hook dispatch** `permission-gate.sh` extended with `_match_mcp` (calls the helper) and `_match_first_time_edit` (path-based allow + prompt-list).
+- **Hook config** `hooks.json` PermissionRequest matcher widened: `Bash|Write|Edit|MultiEdit` → `Bash|Write|Edit|MultiEdit|mcp__.*`.
+- **Charter** `PERMISSIONS.md` adds Tier 1.7 (MCP) and Tier 1.8 (first-time-edit). Sibling banner clarifies relationship to HUMAN-SUTRA-LAYER.md.
+- **Cross-link** in `HUMAN-SUTRA-LAYER.md` § Related disciplines points to PERMISSIONS.md as a sibling charter.
+- **Telemetry** `.enforcement/permission-gate.jsonl` schema extended with `tool_class` and `decision_basis` fields.
+
+### Files
+
+- `sutra/os/decisions/ADR-003-permissions-mcp-and-first-time-edit.md` (new)
+- `sutra/os/charters/PERMISSIONS.md` (sibling banner + Tier 1.7 + Tier 1.8)
+- `sutra/os/charters/HUMAN-SUTRA-LAYER.md` (Related disciplines cross-link)
+- `sutra/marketplace/plugin/lib/mcp_trust_mode.py` (new)
+- `sutra/marketplace/plugin/hooks/permission-gate.sh` (extended dispatch)
+- `sutra/marketplace/plugin/hooks/hooks.json` (matcher widened)
+- `.claude-plugin/plugin.json`: 2.16.0 → 2.17.0
+- `.claude-plugin/marketplace.json`: 2.16.0 → 2.17.0
+
+### Architectural note (codex caught this)
+
+The original brief modeled `REQUEST·HUMAN-APPROVE` as a Stage-3 OUT-DIRECT sub-form within H-Sutra. Codex R1 flagged this as a P1 blocker — Stage 3 owns founder-visible *model emission*, not harness permission dialogs (different actor). Fix: PERMISSIONS.md is a **sibling discipline** to HUMAN-SUTRA-LAYER.md, not a sub-form. ADR-001's 3-direction MECE invariant is preserved.
+
+### Verification
+
+- `lib/mcp_trust_mode.py` smoke-tested: Slack search auto-approves; Slack send-message prompts; Atlassian createJiraIssue prompts; Playwright click prompts; ambiguous names (e.g. `get_or_create`) fall through to prompt.
+- Codex R1 CHANGES-REQUIRED (2 P1 architectural / 2 P2 / 2 P3) → all 6 folded → R2 ADVISORY (4 tighten-before-ship items folded into implementation directly per `[Converge and proceed]`). DIRECTIVE-ID 1777641500.
+
+---
+
 ## v2.16.0 — 2026-05-01
 
 **Sutra now self-executes terminal commands by default.**

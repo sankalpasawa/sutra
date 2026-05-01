@@ -54,7 +54,10 @@ _has_combinator() {
 }
 
 # ---- match logic: returns 0 if in scope, 1 otherwise. Sets MATCHED_PATTERN. ----
+# ADR-003 telemetry: also sets MATCHED_TOOL_CLASS + MATCHED_DECISION_BASIS.
 MATCHED_PATTERN=""
+MATCHED_TOOL_CLASS=""
+MATCHED_DECISION_BASIS=""
 
 _match_bash() {
   local c="$1"
@@ -150,6 +153,80 @@ _match_write() {
 }
 
 
+# ---- ADR-003: MCP Trust Mode (v2.17.0+) ----
+# Calls lib/mcp_trust_mode.py with the PermissionRequest payload on stdin.
+# Returns "auto-approve" if the helper says prompt=false; "no match" otherwise.
+_match_mcp() {
+  local helper="${CLAUDE_PLUGIN_ROOT:-}/lib/mcp_trust_mode.py"
+  [ -f "$helper" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+
+  local _to=""
+  if command -v timeout >/dev/null 2>&1; then _to="timeout 2"
+  elif command -v gtimeout >/dev/null 2>&1; then _to="gtimeout 2"
+  fi
+
+  local out
+  out=$(printf '%s' "$_JSON" | $_to python3 "$helper" 2>/dev/null) || return 1
+  [ -z "$out" ] && return 1
+
+  local prompt category
+  prompt=$(printf '%s' "$out" | jq -r 'if .prompt == false then "false" else "true" end' 2>/dev/null)
+  if [ "$prompt" = "false" ]; then
+    category=$(printf '%s' "$out" | jq -r '.category // "mcp-allowlist"' 2>/dev/null)
+    MATCHED_PATTERN="${TOOL}"
+    MATCHED_DECISION_BASIS="$category"
+    MATCHED_TOOL_CLASS="mcp"
+    return 0
+  fi
+  return 1
+}
+
+# ---- ADR-003: First-time Edit/Write inside cwd (v2.17.0+) ----
+# Auto-approves Edit/Write to paths inside cwd-tree EXCEPT entries in the
+# prompt-list (secrets, deploy/CI configs, repo metadata).
+_match_first_time_edit() {
+  local f="$1"
+  local root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+  # Resolve to a path relative to cwd-tree.
+  case "$f" in
+    /*)
+      case "$f" in
+        "$root"/*) f="${f#$root/}" ;;
+        *) return 1 ;;  # outside cwd → fall through to prompt
+      esac
+      ;;
+  esac
+
+  # Defense: reject path traversal.
+  case "$f" in *..*) return 1 ;; esac
+
+  # Prompt-list (overrides allow).
+  case "$f" in
+    .claude/settings*.json|.claude/settings*.local.json) return 1 ;;
+    .env|.env.*|*/.env|*/.env.*) return 1 ;;
+    .git/*|*/.git/*) return 1 ;;
+    .npmrc|*/.npmrc|.pypirc|*/.pypirc) return 1 ;;
+    *credentials.json|*/credentials.json|*secrets.yaml|*/secrets.yaml|*.secret*|*/.secret*) return 1 ;;
+    .github/workflows/*|.circleci/*|.gitlab-ci.yml|*/.gitlab-ci.yml) return 1 ;;
+    vercel.json|fly.toml|render.yaml|netlify.toml) return 1 ;;
+    docker-compose*.yml|docker-compose*.yaml|*/docker-compose*.yml|*/docker-compose*.yaml) return 1 ;;
+    k8s/*|*/k8s/*|helm/*/values*.yml|helm/*/values*.yaml|*/helm/*/values*.yml|*/helm/*/values*.yaml) return 1 ;;
+    .terraform/*|*/.terraform/*|*.tfvars|*.tf) return 1 ;;
+    Pulumi.*|*/Pulumi.*) return 1 ;;
+    wrangler.toml|railway.json|firebase.json) return 1 ;;
+    cloudbuild.yaml|app.yaml) return 1 ;;
+    supabase/*|*/supabase/*) return 1 ;;
+  esac
+
+  # Allow.
+  MATCHED_PATTERN="${TOOL}(${f})"
+  MATCHED_DECISION_BASIS="first-time-edit-allow"
+  MATCHED_TOOL_CLASS="edit-first-time"
+  return 0
+}
+
 # ---- Trust Mode (v2.5+; sole Bash matcher post-v2.7.0) ----
 # After Tier 1 falls through (no narrow allowlist match), Trust Mode
 # auto-approves EVERYTHING except commands matching one of the prompt
@@ -189,16 +266,33 @@ case "$TOOL" in
   Bash)
     [ -z "$CMD" ] && exit 0
     if _match_bash "$CMD"; then
-      :   # Tier 1: narrow allowlist (sutra, plugin lifecycle, markers)
+      MATCHED_TOOL_CLASS="bash"
+      MATCHED_DECISION_BASIS="tier-1"
     elif _match_bash_trust_mode "$CMD"; then
-      :   # Trust Mode: denylist (sole Bash matcher post-v2.7.0)
+      MATCHED_TOOL_CLASS="bash"
+      MATCHED_DECISION_BASIS="trust-mode-allowlist"
     else
       exit 0
     fi
     ;;
   Write|Edit|MultiEdit)
     [ -z "$FILE" ] && exit 0
-    _match_write "$FILE" || exit 0
+    if _match_write "$FILE"; then
+      MATCHED_TOOL_CLASS="write"
+      MATCHED_DECISION_BASIS="tier-1"
+    elif _match_first_time_edit "$FILE"; then
+      :   # ADR-003: first-time edit inside cwd-tree (sets vars internally)
+    else
+      exit 0
+    fi
+    ;;
+  mcp__*)
+    # ADR-003: MCP tool auto-approve via lib/mcp_trust_mode.py
+    if _match_mcp; then
+      :   # mcp_trust_mode helper sets MATCHED_PATTERN + tool_class + basis
+    else
+      exit 0
+    fi
     ;;
   *)
     exit 0
@@ -208,8 +302,8 @@ esac
 # ---- we have a match: emit allow decision + persist rule ----
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
 mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null || true
-printf '{"ts":%s,"tool":"%s","pattern":"%s","decision":"allow","persisted":true}\n' \
-  "$(date +%s)" "$TOOL" "$MATCHED_PATTERN" \
+printf '{"ts":%s,"tool":"%s","pattern":"%s","decision":"allow","persisted":true,"tool_class":"%s","decision_basis":"%s"}\n' \
+  "$(date +%s)" "$TOOL" "$MATCHED_PATTERN" "$MATCHED_TOOL_CLASS" "$MATCHED_DECISION_BASIS" \
   >> "$REPO_ROOT/.enforcement/permission-gate.jsonl" 2>/dev/null || true
 
 RULE_CONTENT="${MATCHED_PATTERN#*\(}"
