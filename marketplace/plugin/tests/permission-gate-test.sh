@@ -92,9 +92,9 @@ echo "[11] Write(../escape/file) — traversal"
 out=$(_run '{"tool_name":"Write","tool_input":{"file_path":"../escape/file"}}')
 _result "write traversal" EMPTY "$(_classify "$out")"
 
-echo "[12] Write(src/app.ts) — normal project file"
+echo "[12] Write(src/app.ts) — normal project file (ADR-003 first-time-edit auto-approve)"
 out=$(_run '{"tool_name":"Write","tool_input":{"file_path":"src/app.ts"}}')
-_result "write src/app.ts" EMPTY "$(_classify "$out")"
+_result "write src/app.ts" ALLOW "$(_classify "$out")"
 
 # --- Shell-combinator injection: should reject ---
 
@@ -167,6 +167,44 @@ if printf '%s' "$out" | grep -q '"ruleContent":"claude plugin update core\*"' ; 
 else
   _result "core-variant rule content" correct "mismatch: $(printf '%s' "$out" | grep -o '"ruleContent":"[^"]*"')"
 fi
+
+# --- ADR-003 §4 telemetry schema fields (tool_class, tool_family, decision_basis) ---
+
+echo "[25] permission-gate.jsonl row has ADR-003 §4 fields (Bash tier-1)"
+_TMP=$(mktemp -d)
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"sutra start"}}' \
+  | CLAUDE_PROJECT_DIR="$_TMP" "$HOOK" >/dev/null 2>&1
+_LAST=$(tail -n 1 "$_TMP/.enforcement/permission-gate.jsonl" 2>/dev/null)
+if printf '%s' "$_LAST" | jq -e '.tool_class == "bash" and .tool_family == null and .decision_basis == "tier-1"' >/dev/null 2>&1; then
+  _result "ADR-003 fields (bash tier-1)" present present
+else
+  _result "ADR-003 fields (bash tier-1)" present "missing or wrong: $_LAST"
+fi
+rm -rf "$_TMP"
+
+echo "[26] permission-gate.jsonl row has ADR-003 §4 fields (Bash trust-mode)"
+_TMP=$(mktemp -d)
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git log --oneline -3"}}' \
+  | CLAUDE_PROJECT_DIR="$_TMP" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" >/dev/null 2>&1
+_LAST=$(tail -n 1 "$_TMP/.enforcement/permission-gate.jsonl" 2>/dev/null)
+if printf '%s' "$_LAST" | jq -e '.tool_class == "bash" and .tool_family == null and (.decision_basis | startswith("trust-mode"))' >/dev/null 2>&1; then
+  _result "ADR-003 fields (bash trust-mode)" present present
+else
+  _result "ADR-003 fields (bash trust-mode)" present "missing or wrong: $_LAST"
+fi
+rm -rf "$_TMP"
+
+echo "[27] permission-gate.jsonl row has ADR-003 §4 fields (Write tier-1)"
+_TMP=$(mktemp -d)
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":".claude/depth-registered"}}' \
+  | CLAUDE_PROJECT_DIR="$_TMP" "$HOOK" >/dev/null 2>&1
+_LAST=$(tail -n 1 "$_TMP/.enforcement/permission-gate.jsonl" 2>/dev/null)
+if printf '%s' "$_LAST" | jq -e '.tool_class == "write" and .tool_family == null and .decision_basis == "tier-1"' >/dev/null 2>&1; then
+  _result "ADR-003 fields (write tier-1)" present present
+else
+  _result "ADR-003 fields (write tier-1)" present "missing or wrong: $_LAST"
+fi
+rm -rf "$_TMP"
 
 # --- Report ---
 

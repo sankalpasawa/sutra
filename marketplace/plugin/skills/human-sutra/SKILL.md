@@ -25,13 +25,14 @@ V1.0 runtime for the H↔Sutra Interaction Layer. Wraps `scripts/classify.sh` an
 Per-turn block stack (response output order, top to bottom):
 
 ```
-1. [HUMAN-SUTRA HEADER TAG]     (skill: human-sutra)            <- FIRST text in response
-2. INPUT ROUTING block          (skill: core:input-routing)
-3. DEPTH + ESTIMATION block     (skill: core:depth-estimation)
-4. BLUEPRINT block              (skill: core:blueprint)
-5. BUILD-LAYER block            (when editing protected paths)
+1. [HUMAN-SUTRA HEADER TAG]      (skill: human-sutra)            <- FIRST text in response
+2. INPUT ROUTING block           (skill: core:input-routing)
+3. DEPTH + ESTIMATION block      (skill: core:depth-estimation)
+4. BLUEPRINT block               (skill: core:blueprint)
+5. BUILD-LAYER block             (when editing protected paths)
 6. ... tool calls ...
-7. OUTPUT TRACE one-liner       (skill: core:output-trace)
+7. OUT-DIRECT-3CHECK annotation  (this skill, ADR-002 §Visible audit signal)
+8. OUTPUT TRACE one-liner        (skill: core:output-trace)
 ```
 
 Skill execution order on `UserPromptSubmit` (when each skill runs, independent of output position):
@@ -170,6 +171,28 @@ Both gates share the same shape (3 boolean checks gating Stage-3 emission) but a
 
 This is a **model-side self-check at emission time**. NOT classifier-side — `classify.sh` stays INBOUND-only (ADR-001 invariant preserved). Audit-only post-surface scan deferred to v1.1+ (ADR-N).
 
+### Visible per-turn audit signal
+
+The OUT-DIRECT 3-check is model-side discipline (honor system). To make it auditable without reading logs, the model MUST emit a single-line annotation per turn at the END of the response (between tool-call output and the OUTPUT TRACE one-liner):
+
+```
+OUT-DIRECT-3CHECK: <state> | original_out_form=<value> | demoted=<true|false>
+```
+
+| State | When | original_out_form | demoted |
+|---|---|---|---|
+| `N/A` | No OUT-DIRECT was drafted (most turns) | `null` | `false` |
+| `hits=[]` | OUT-DIRECT drafted, no checks hit → demoted to internal action | `REQUEST·HUMAN-EXEC` | `true` |
+| `hits=[<check>...]` | OUT-DIRECT drafted, ≥1 check hit → surfaced | `REQUEST·HUMAN-EXEC` | `false` |
+
+Examples:
+
+- N/A turn: `OUT-DIRECT-3CHECK: N/A | original_out_form=null | demoted=false`
+- Demoted: `OUT-DIRECT-3CHECK: hits=[] | original_out_form=REQUEST·HUMAN-EXEC | demoted=true`
+- Surfaced: `OUT-DIRECT-3CHECK: hits=[cant-self-exec] | original_out_form=REQUEST·HUMAN-EXEC | demoted=false`
+
+The annotation reflects the same state captured in `out_direct_3check_hits` / `out_direct_demoted` / `original_out_form` JSONL fields. Visible annotation = founder-facing audit signal; JSONL row = post-hoc audit signal. Same underlying truth, two surfaces.
+
 ## v1.0 limits
 
 Instrumentation + safety guardrails ONLY. Per D42: visibility before influence.
@@ -195,5 +218,6 @@ Before producing the header tag, the skill MUST verify:
 - [ ] Header format matches exactly: one line, bracketed, ` · ` separators, uppercase keys, no extra whitespace, no missing required fields.
 - [ ] Log row append committed (or deliberately skipped per Failure policy with a stderr warning).
 - [ ] Header tag is the FIRST text in the response, prepended ABOVE Input Routing as a SEPARATE single line — never below, never replacing it. (Charter §Stage 3 invariant.)
+- [ ] OUT-DIRECT-3CHECK annotation present near the END of the response (ADR-002 §Visible audit signal): `OUT-DIRECT-3CHECK: <state> | original_out_form=<val> | demoted=<bool>`. Required every turn — `N/A` is valid when no OUT-DIRECT was drafted.
 
 If any check fails, do not emit a malformed header. Emit `[H-SUTRA-FAIL · self-check]` and continue with the rest of the per-turn block stack.

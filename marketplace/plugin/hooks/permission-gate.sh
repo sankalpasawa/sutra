@@ -54,9 +54,11 @@ _has_combinator() {
 }
 
 # ---- match logic: returns 0 if in scope, 1 otherwise. Sets MATCHED_PATTERN. ----
-# ADR-003 telemetry: also sets MATCHED_TOOL_CLASS + MATCHED_DECISION_BASIS.
+# ADR-003 §4 telemetry: also sets MATCHED_TOOL_CLASS + MATCHED_TOOL_FAMILY +
+# MATCHED_DECISION_BASIS. tool_family is null for non-MCP rows.
 MATCHED_PATTERN=""
 MATCHED_TOOL_CLASS=""
+MATCHED_TOOL_FAMILY=""
 MATCHED_DECISION_BASIS=""
 
 _match_bash() {
@@ -290,6 +292,21 @@ case "$TOOL" in
     # ADR-003: MCP tool auto-approve via lib/mcp_trust_mode.py
     if _match_mcp; then
       :   # mcp_trust_mode helper sets MATCHED_PATTERN + tool_class + basis
+      # ADR-003 §4: parse tool_family from mcp__<server>__<tool>
+      _family="${TOOL#mcp__}"; _family="${_family%%__*}"
+      case "$_family" in
+        claude_ai_Slack)            MATCHED_TOOL_FAMILY="slack" ;;
+        claude_ai_Gmail)            MATCHED_TOOL_FAMILY="gmail" ;;
+        claude_ai_Apollo_io)        MATCHED_TOOL_FAMILY="apollo" ;;
+        claude_ai_Atlassian_Rovo)   MATCHED_TOOL_FAMILY="atlassian" ;;
+        claude_ai_HubSpot)          MATCHED_TOOL_FAMILY="hubspot" ;;
+        claude_ai_Google_Drive)     MATCHED_TOOL_FAMILY="drive" ;;
+        claude_ai_Google_Calendar)  MATCHED_TOOL_FAMILY="calendar" ;;
+        claude_ai_Read_ai)          MATCHED_TOOL_FAMILY="read_ai" ;;
+        playwright)                 MATCHED_TOOL_FAMILY="playwright" ;;
+        context7)                   MATCHED_TOOL_FAMILY="context7" ;;
+        *)                          MATCHED_TOOL_FAMILY="unknown" ;;
+      esac
     else
       exit 0
     fi
@@ -302,9 +319,25 @@ esac
 # ---- we have a match: emit allow decision + persist rule ----
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
 mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null || true
-printf '{"ts":%s,"tool":"%s","pattern":"%s","decision":"allow","persisted":true,"tool_class":"%s","decision_basis":"%s"}\n' \
-  "$(date +%s)" "$TOOL" "$MATCHED_PATTERN" "$MATCHED_TOOL_CLASS" "$MATCHED_DECISION_BASIS" \
-  >> "$REPO_ROOT/.enforcement/permission-gate.jsonl" 2>/dev/null || true
+# ADR-003 §4: row schema includes tool_class · tool_family (null for non-MCP) ·
+# decision_basis. jq used to emit proper null when MATCHED_TOOL_FAMILY is empty.
+jq -nc \
+  --argjson ts "$(date +%s)" \
+  --arg tool "$TOOL" \
+  --arg pattern "$MATCHED_PATTERN" \
+  --arg tool_class "$MATCHED_TOOL_CLASS" \
+  --arg tool_family "$MATCHED_TOOL_FAMILY" \
+  --arg decision_basis "$MATCHED_DECISION_BASIS" \
+  '{
+    ts: $ts,
+    tool: $tool,
+    pattern: $pattern,
+    decision: "allow",
+    persisted: true,
+    tool_class: $tool_class,
+    tool_family: (if $tool_family == "" then null else $tool_family end),
+    decision_basis: $decision_basis
+  }' >> "$REPO_ROOT/.enforcement/permission-gate.jsonl" 2>/dev/null || true
 
 RULE_CONTENT="${MATCHED_PATTERN#*\(}"
 RULE_CONTENT="${RULE_CONTENT%\)}"
