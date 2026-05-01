@@ -2,8 +2,13 @@
 # Sutra Native — one-line installer
 #
 # Usage:
-#   curl -fsSL https://sutra-os.vercel.app/native/install | bash
-#   curl -fsSL https://sutra-os.vercel.app/native/install | bash -s -- -y   # non-interactive
+#   curl -fsSL https://sankalpasawa.github.io/sutra/native/install.sh | bash
+#   curl -fsSL https://sankalpasawa.github.io/sutra/native/install.sh | bash -s -- -y   # non-interactive
+#
+# Hosted on GitHub Pages (deploy-website.yml) since 2026-05-01 — the
+# sutra-os.vercel.app/native/install URL is paused while the Vercel
+# token is rotated; raw.githubusercontent.com/sankalpasawa/sutra/main/
+# website/native/install.sh is also always-live as a fallback.
 #
 # What this does:
 #   1. Verifies prerequisites (git, node ≥20)
