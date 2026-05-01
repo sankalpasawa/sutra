@@ -66,4 +66,83 @@ KILL_FILE=$(jq -r '.kill_switches.per_turn_discipline_prompt.file' "$DEFAULTS_JS
   printf '  Kill-switch: touch %s\n\n' "${KILL_FILE:-~/.per-turn-discipline-disabled}"
 } >&2
 
+# ──────────────────────────────────────────────────────────────────────────
+# H-Sutra classification (folded 2026-05-01 per codex consult P2.7).
+# Canonical channel: UserPromptSubmit stdin JSON {prompt: "..."} (codex P2 #4).
+# Failures stay off stdout to avoid Claude-context pollution (codex P2 #5).
+# Concurrency: mkdir-based advisory lock for shared-FS portability (codex P2 #6).
+# Per [Never bypass governance]: every turn is logged; fail-open never silent
+# (stderr diagnostic on infra failure).
+# ──────────────────────────────────────────────────────────────────────────
+HSUTRA_INPUT_JSON=""
+if [ ! -t 0 ]; then
+  HSUTRA_INPUT_JSON=$(cat 2>/dev/null || true)
+fi
+HSUTRA_PROMPT=""
+if [ -n "$HSUTRA_INPUT_JSON" ]; then
+  HSUTRA_PROMPT=$(printf '%s' "$HSUTRA_INPUT_JSON" | jq -r '.prompt // empty' 2>/dev/null || true)
+fi
+[ -z "$HSUTRA_PROMPT" ] && exit 0
+
+HSUTRA_CLASSIFIER="$DEFAULTS_DIR/skills/human-sutra/scripts/classify.sh"
+if [ ! -r "$HSUTRA_CLASSIFIER" ]; then
+  printf '[h-sutra] classifier missing at %s — row skipped.\n' "$HSUTRA_CLASSIFIER" >&2
+  exit 0
+fi
+
+# Self-derive IR_TYPE from prompt heuristics (no dependency on input-routing
+# cache — codex P1 #1). classify.sh applies its own ADR-001 precedence after.
+HSUTRA_LC=$(printf '%s' "$HSUTRA_PROMPT" | tr '[:upper:]' '[:lower:]')
+HSUTRA_IR_TYPE="task"
+case "$HSUTRA_LC" in
+  *"?"*) HSUTRA_IR_TYPE="question" ;;
+esac
+if printf '%s' "$HSUTRA_LC" | grep -qE '\b(missed|wrong|broken|error|failed|didn.?t|wasn.?t|isn.?t|not yet)\b'; then
+  HSUTRA_IR_TYPE="feedback"
+fi
+if printf '%s' "$HSUTRA_LC" | grep -qE '\b(should|must|always|never|going forward|from now on)\b'; then
+  HSUTRA_IR_TYPE="direction"
+fi
+
+HSUTRA_JSON=$(IR_TYPE="$HSUTRA_IR_TYPE" bash "$HSUTRA_CLASSIFIER" "$HSUTRA_PROMPT" 2>/dev/null || true)
+if [ -z "$HSUTRA_JSON" ]; then
+  printf '[h-sutra] classifier returned empty; row skipped.\n' >&2
+  exit 0
+fi
+
+# Log path: Asawa override > default. mkdir -p the parent on first append.
+HSUTRA_LOG="$REPO_ROOT/.sutra/h-sutra.jsonl"
+if [ -f "$REPO_ROOT/holding/state/interaction/log.jsonl" ]; then
+  HSUTRA_LOG="$REPO_ROOT/holding/state/interaction/log.jsonl"
+fi
+mkdir -p "$(dirname "$HSUTRA_LOG")" 2>/dev/null || true
+
+HSUTRA_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+HSUTRA_TURN_ID=$(printf '%s' "${HSUTRA_TS}|${HSUTRA_PROMPT}" | shasum -a 256 2>/dev/null | cut -c1-12)
+HSUTRA_ROW=$(printf '%s' "$HSUTRA_JSON" | jq -c \
+  --arg ts "$HSUTRA_TS" \
+  --arg turn_id "$HSUTRA_TURN_ID" \
+  --arg ir_type "$HSUTRA_IR_TYPE" \
+  '{ts:$ts, turn_id:$turn_id, direction:.direction, verb:.verb, principal_act:.principal_act, mixed_acts:.mixed_acts, tense:.tense, timing:.timing, channel:.channel, reversibility:.reversibility, decision_risk:.decision_risk, stage_1_pass:(.stage_1_fail==false), stage_3_emission_type:.stage_3_emission_type, input_routing_type:$ir_type}' 2>/dev/null || true)
+if [ -z "$HSUTRA_ROW" ]; then
+  printf '[h-sutra] row build failed; skipped.\n' >&2
+  exit 0
+fi
+
+# mkdir-based advisory lock (flock not always available on macOS).
+HSUTRA_LOCK="$HSUTRA_LOG.lock"
+HSUTRA_LOCKED=0
+for _ in 1 2 3 4 5; do
+  if mkdir "$HSUTRA_LOCK" 2>/dev/null; then HSUTRA_LOCKED=1; break; fi
+  sleep 0.2 2>/dev/null || sleep 1
+done
+if [ "$HSUTRA_LOCKED" = "1" ]; then
+  if ! tail -n 10 "$HSUTRA_LOG" 2>/dev/null | grep -qF "\"turn_id\":\"$HSUTRA_TURN_ID\""; then
+    printf '%s\n' "$HSUTRA_ROW" >> "$HSUTRA_LOG"
+  fi
+  rmdir "$HSUTRA_LOCK" 2>/dev/null || true
+else
+  printf '[h-sutra] log lock contended; row %s skipped.\n' "$HSUTRA_TURN_ID" >&2
+fi
+
 exit 0

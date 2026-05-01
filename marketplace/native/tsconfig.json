@@ -1,4 +1,5 @@
 {
+  "_doc": "Typecheck-only config. module=ESNext + moduleResolution=bundler matches existing src/ imports and vitest/vite toolchain. Wave 1.x will migrate src/ to NodeNext-compatible imports (esp. Ajv default-import: change `import Ajv from 'ajv'` → `import * as AjvNs from 'ajv'; const Ajv = AjvNs.default;` or use named imports). Once src/ is NodeNext-clean, unify with tsconfig.build.json. See holding/plans/native-v1.x/PLAN.md Wave 1.x TODO.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -6,11 +7,8 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "./dist",
-    "declaration": true,
-    "sourceMap": true,
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/**/*", "composition/**/*", "tests/**/*"]
+  "include": ["src/**/*.ts", "composition/**/*.ts", "tests/**/*.ts"]
 }

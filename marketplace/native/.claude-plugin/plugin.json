@@ -1,0 +1,24 @@
+{
+  "name": "native",
+  "version": "1.0.2",
+  "description": "Sutra Native — TypeScript-native Sutra Engine. v1.0.x = catalog-discoverable source preview; v1.1+ = runtime-active per holding/plans/native-v1.x/PLAN.md (daemon-centric architecture: sutra-native daemon owns Temporal/OPA/workflow state; observational hooks bridge Claude Code session events into daemon sink; bin/ is control plane; main/exports is consumer contract). 4 primitives (Domain/Charter/Workflow/Execution) + 6 laws + Skill Engine R4 + Workflow Engine 5-stage runtime + threat model with 3 runtime-tested attack classes. INSTALLATION SEMANTICS: catalog-discoverable source preview at v1.0.x — package.json has no main/exports/types, sources ship as .ts (not compiled), bin/ + skills/ + hooks/ absent. Hook-activated plugin surface lands in v1.1 Wave 1; library entrypoint lands in v1.1 Wave 3 per codex strategy consult 2026-05-01 (CHANGES-REQUIRED → folded daemon-centric framing). Use today via direct submodule + tsx/bun.",
+  "author": {
+    "name": "Sutra",
+    "url": "https://sutra.os"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/sankalpasawa/sutra",
+  "keywords": [
+    "sutra-engine",
+    "workflow-engine",
+    "skill-engine",
+    "governance",
+    "primitives",
+    "charter",
+    "tenant-isolation",
+    "opa",
+    "temporal",
+    "typescript-native",
+    "daemon-centric"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "_doc": "Shipping/emit config per codex strategy consult 2026-05-01 (CHANGES-REQUIRED P1: pair module+moduleResolution; both must be NodeNext for Node 20+ ESM runtime). Currently `npm run build` will fail on Ajv default-import in src/engine/skill-engine.ts + step-graph-executor.ts — Ajv default export is CJS-shaped and NodeNext requires explicit interop pattern. Wave 1.x TODO: fix src/ Ajv (and possibly opentelemetry/temporal) imports for NodeNext compatibility, then this config will build cleanly. See holding/plans/native-v1.x/PLAN.md.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false,
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts", "composition/**/*.ts"],
+  "exclude": ["tests/**/*", "dist/**/*", "node_modules/**/*"]
+}

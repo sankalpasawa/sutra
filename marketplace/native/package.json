@@ -9,8 +9,9 @@
   "scripts": {
     "test": "vitest --run",
     "test:watch": "vitest",
-    "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@temporalio/testing": "^1.16.1",
