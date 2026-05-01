@@ -393,6 +393,149 @@
   }
   .install-hint a { color: var(--accent); text-decoration: none; }
 
+  /* Native section — the deployable Sutra plugin (parallel to #install) */
+  .native-section {
+    padding: 120px 0;
+    border-top: 1px solid var(--border);
+    background:
+      radial-gradient(ellipse at top, rgba(196,149,106,0.05), transparent 60%),
+      var(--bg);
+  }
+  .native-section .badge-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--accent-dim);
+    border: 1px solid rgba(196,149,106,0.3);
+    color: var(--accent-bright);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    margin-bottom: 22px;
+  }
+  .native-section .badge-eyebrow .badge-dot {
+    width: 7px;
+    height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--accent);
+    animation: native-pulse 2s ease-in-out infinite;
+  }
+  @keyframes native-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  .native-section h2 {
+    font-size: 48px;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    margin-bottom: 14px;
+    line-height: 1.1;
+  }
+  .native-section h2 em {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-weight: 600;
+    color: var(--accent-bright);
+  }
+  .native-section .native-sub {
+    font-size: 17px;
+    color: var(--muted);
+    margin-bottom: 40px;
+    max-width: 580px;
+    line-height: 1.65;
+  }
+  .native-cta {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px;
+    max-width: 600px;
+    margin: 0 0 48px;
+  }
+  .native-cta-foot {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 14px;
+    line-height: 1.65;
+  }
+  .native-cta-foot code {
+    font-family: 'SF Mono', monospace;
+    color: var(--accent);
+    background: var(--bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  .cap-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    max-width: 920px;
+    margin: 0 0 36px;
+  }
+  .cap-tile {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 20px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .cap-tile:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .cap-tile-num {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 4px;
+    line-height: 1;
+  }
+  .cap-tile h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    letter-spacing: 0.2px;
+  }
+  .cap-tile p {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.55;
+  }
+  .native-trust {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .native-trust .pill {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.4px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .native-section .native-foot-link {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .native-section .native-foot-link a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .native-section .native-foot-link a:hover {
+    color: var(--accent-bright);
+  }
+
   /* Footer */
   footer {
     padding: 36px 0;
@@ -423,6 +566,14 @@
     .install-section { padding: 72px 0; }
     .install-section h2 { font-size: 32px; }
     .privacy { padding: 24px; }
+
+    .native-section { padding: 72px 0; }
+    .native-section h2 { font-size: 30px; line-height: 1.2; }
+    .native-section .native-sub { font-size: 15px; }
+    .native-cta { padding: 22px; }
+    .cap-row { grid-template-columns: 1fr; gap: 10px; }
+    .cap-tile { padding: 18px 16px; }
+    .native-trust .pill { font-size: 10px; padding: 5px 10px; }
   }
 </style>
 </head>
@@ -433,6 +584,7 @@
     <div class="logo">sutra</div>
     <div>
       <a class="nav-link" href="#install">Install</a>
+      <a class="nav-link" href="#native">Native</a>
       <a class="nav-link" href="https://github.com/sankalpasawa/sutra">GitHub</a>
     </div>
   </div>
@@ -551,6 +703,70 @@
   </div>
 </section>
 
+<!-- Native — the deployable Sutra plugin (the runtime that operates a whole company) -->
+<section class="native-section" id="native">
+  <div class="container-wide">
+    <div class="badge-eyebrow"><span class="badge-dot"></span> NATIVE v1.0 &middot; SOURCE PREVIEW LIVE</div>
+    <h2>The plugin that runs <em>a whole company.</em></h2>
+    <p class="native-sub">One founder. One LLM. Everything else autonomous. Native is the V2.4 Sutra Engine &mdash; 4 primitives, 6 laws, decision provenance built in. Ships on commodity infrastructure (Anthropic Claude SDK, Temporal, OPA, OpenTelemetry) with ~1,700 lines of Sutra glue.</p>
+
+    <div class="native-cta">
+      <div class="install-code-wrap">
+        <div class="install-code" id="native-cmd">curl -fsSL sutra-os.vercel.app/native/install | bash</div>
+        <button class="copy-btn" id="native-copy-btn" type="button" aria-label="Copy Native install command">Copy</button>
+      </div>
+      <div class="native-cta-foot">
+        Creates <code>./sutra/native/</code> in your current directory &middot; ~5&nbsp;MB engine source &middot; sparse-clones <code>github.com/sankalpasawa/sutra</code> &middot; runs <code>npm install</code> &middot; registers Sutra marketplace with Claude Code if present.
+      </div>
+    </div>
+
+    <div class="cap-row">
+      <div class="cap-tile">
+        <div class="cap-tile-num">04</div>
+        <h4>Primitives</h4>
+        <p>Domain &middot; Charter &middot; Workflow &middot; Execution.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">06</div>
+        <h4>Laws</h4>
+        <p>DATA &middot; BOUNDARY &middot; ACTIVATION &middot; COMMITMENT &middot; META &middot; REFLEXIVITY.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">09</div>
+        <h4>Capabilities</h4>
+        <p>Identity, authority, durability, coordination, tools, telemetry, skills, repo, LLM.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">&infin;</div>
+        <h4>Decision provenance</h4>
+        <p>Every governance decision logged &amp; queryable. Audit trail by construction.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">&le;30m</div>
+        <h4>Time to value</h4>
+        <p>Install to first Workflow execution. Measured, gated, enforced.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">&le;15%</div>
+        <h4>Governance overhead</h4>
+        <p>Of session tokens. Discipline that pays for itself.</p>
+      </div>
+    </div>
+
+    <div class="native-trust">
+      <span class="pill">v1.0.2 source preview</span>
+      <span class="pill">412 tests passing</span>
+      <span class="pill">Architecture LOCKED</span>
+      <span class="pill">Codex ADVISORY-cleared</span>
+      <span class="pill">Apache 2.0</span>
+    </div>
+
+    <div class="native-foot-link">
+      Engine source: <a href="https://github.com/sankalpasawa/sutra/tree/main/marketplace/native">github.com/sankalpasawa/sutra/marketplace/native</a> &middot; v1.x lands hook activation + npm-style entrypoint.
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="container">
     Sutra by Asawa Inc. &middot; v2.8.11 &middot; <a href="https://github.com/sankalpasawa/sutra">github</a> &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PRIVACY.md">privacy</a>
@@ -589,6 +805,22 @@
         }, 1800);
       });
     });
+
+    // Native section — same copy mechanism, separate IDs
+    var nbtn = document.getElementById('native-copy-btn');
+    var ncmd = document.getElementById('native-cmd');
+    if (nbtn && ncmd) {
+      nbtn.addEventListener('click', function () {
+        copyText(ncmd.textContent.trim()).then(function () {
+          nbtn.textContent = 'Copied!';
+          nbtn.classList.add('copied');
+          setTimeout(function () {
+            nbtn.textContent = 'Copy';
+            nbtn.classList.remove('copied');
+          }, 1800);
+        });
+      });
+    }
   })();
 </script>
 
