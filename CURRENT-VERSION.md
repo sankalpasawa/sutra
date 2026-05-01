@@ -1,5 +1,45 @@
 # Sutra — Current Version
 
+## v2.12.0 (2026-05-01) — dispatcher portability charter: 6 Asawa-coupled hooks extracted from plugin to holding/
+
+**What this is**: closes Tier 2 SHIPPED-DEAD findings from the plugin coverage audit (companion to `sutra` issue #49). 6 plugin hooks were heavily Asawa-coupled (hardcoded portfolio company names + holding/ paths) and never wired in `plugin/hooks/hooks.json`. T4 fleet was carrying ~890 lines of dead weight on disk for files it never executed.
+
+**Codex consult 2026-05-01**: CODEX-VERDICT ADVISORY. Per codex P1: atomic — add holding-side first, rewire settings, verify, delete plugin copies last.
+
+### What changed
+
+- 6 hooks extracted from `sutra/marketplace/plugin/hooks/` to `holding/hooks/` with L2 (single-instance:asawa-holding) build-layer markers:
+  - `dispatcher-pretool.sh` (548 lines, 16 holding/ refs, hardcoded company switch cases)
+  - `dispatcher-stop.sh` (953 lines, 57 holding/ refs, reads FOUNDER-DIRECTIONS.md / DIRECTION-ENFORCEMENT.md / ESTIMATION-LOG.jsonl / checkpoints/)
+  - `architecture-awareness.sh` (51 lines)
+  - `research-cadence-check.sh` (135 lines)
+  - `rtk-health-check.sh` (88 lines)
+  - `principle-regression.sh` (250 lines)
+- Asawa local `.claude/settings.json` lines 73 + 283 rewired from `sutra/marketplace/plugin/hooks/dispatcher-{pretool,stop}.sh` to `holding/hooks/dispatcher-{pretool,stop}.sh`.
+- Plugin version `2.11.1` → `2.12.0`.
+
+### Why this matters
+
+Plugin = generic fleet primitives. Holding = Asawa-specific governance. Hardcoded portfolio company names that wouldn't generalize were a clear "instance-only" signal — they didn't belong in fleet plugin. Decouples Asawa specifics from Sutra OS source code; future T4 plugin installs are slimmer; future Sutra OS work doesn't carry Asawa baggage.
+
+### What's NOT changed (fleet behavior)
+
+These 6 hooks were never wired in `plugin/hooks/hooks.json` — fleet sessions never executed them. Functional behavior on T4 is **identical** before/after this release. Only on-disk footprint changes.
+
+### Validation
+
+- `jq -e .` parses `hooks.json` — VALID.
+- 6 dangling refs in remaining plugin hooks are all `# Source:` / `# Wired from:` comments — historical attribution, not exec dependencies.
+- Holding-side dispatcher smoke test: both run with stub stdin, exit 0.
+- `holding/hooks/verify-policy-coverage.sh:189` `is_dispatcher_inlined()` already handles missing plugin-side files via `[ -f "$d" ] || continue` — no update required.
+
+### Operator notes
+
+- T4 / T3 / T2 users: no action needed. Plugin auto-updates via marketplace.
+- Asawa: `.claude/settings.json` rewiring shipped in same atomic commit; no migration step.
+
+---
+
 ## v2.11.1 (2026-05-01) — `feedback-channel-guard.sh` false-positive fix
 
 **What this is**: third release in the same drift family as v2.10.0 (inbox-display packaging drift) and v2.10.1 (cascade-check stdout-vs-stderr drift). Surfaced when filing the Anthropic submission-pin update at `anthropics/claude-plugins-official` — the hook blocked because the issue body contained `https://github.com/sankalpasawa/sutra/...` URLs.

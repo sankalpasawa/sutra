@@ -1,5 +1,48 @@
 # Changelog
 
+## v2.12.0 — 2026-05-01
+
+**Dispatcher portability charter — extract Asawa-coupled hooks from plugin to holding/.**
+
+Closes Tier 2 SHIPPED-DEAD findings from the plugin coverage audit (companion to issue #49). 6 plugin hooks were heavily Asawa-coupled (hardcoded portfolio company names dayflow|maze|ppr|jarvis|billu|paisa, holding/FOUNDER-DIRECTIONS.md reads, holding/checkpoints/ writes) — never wired in plugin/hooks/hooks.json (T4 fleet had ~890 lines of dead weight on disk). Extracted to `holding/hooks/` as L2 single-instance:asawa-holding files; Asawa wires from local `.claude/settings.json`. Plugin slimmer, separation cleaner.
+
+**Codex consult 2026-05-01: CODEX-VERDICT ADVISORY** (acceptable extraction; sequence per codex P1: add holding-side first, rewire settings, verify, delete plugin copies last — atomic).
+
+### What changed (plugin)
+
+| File | Change |
+|---|---|
+| `hooks/dispatcher-pretool.sh` | DELETED (548 lines). 16 holding/ refs; hardcoded company switch cases at lines 117/488. Extracted to `holding/hooks/dispatcher-pretool.sh` with L2 marker. |
+| `hooks/dispatcher-stop.sh` | DELETED (953 lines). 57 holding/ refs (FOUNDER-DIRECTIONS.md, DIRECTION-ENFORCEMENT.md, ESTIMATION-LOG.jsonl, holding/checkpoints/). Extracted to holding/. |
+| `hooks/architecture-awareness.sh` | DELETED (51 lines). Echoed "check holding/SYSTEM-MAP.md" — useless on T4. Extracted to holding/. |
+| `hooks/research-cadence-check.sh` | DELETED (135 lines). Scans `holding/research/` for staleness — useless on T4. Extracted to holding/. |
+| `hooks/rtk-health-check.sh` | DELETED (88 lines). Writes `holding/observability/rtk-gain-log.md` — Asawa observability dir. Extracted to holding/. |
+| `hooks/principle-regression.sh` | DELETED (250 lines). Asawa principle codes (P11/D6/D13). Extracted to holding/. |
+| `.claude-plugin/plugin.json` | `version: 2.11.1` → `2.12.0`. |
+
+### What this means for fleet
+
+| User class | Behavior |
+|---|---|
+| T4 default (no Asawa context) | These 6 files no longer ship. Plugin is ~890 lines lighter. None of them were ever wired in plugin/hooks/hooks.json, so functional behavior is identical (zero hooks fire that didn't before). |
+| Asawa T1 | Local `.claude/settings.json` updated to point `dispatcher-pretool` + `dispatcher-stop` invocations at `holding/hooks/...` paths. The other 4 hooks were called *from* the dispatchers — they continue to work because the dispatchers' relative-path calls now resolve inside `holding/hooks/`. |
+| T2/T3 (owned + projects) | No effect — these clients don't wire dispatchers. |
+
+### Validation
+
+- `jq -e .` parses `hooks.json` — VALID (no Stop or PreToolUse references to deleted files; dispatcher-posttool wire from v2.10.2 unaffected).
+- 6 dangling refs in remaining plugin hooks are all comments (`# Source: holding/hooks/dispatcher-stop.sh section 16`) — historical attribution, not exec dependencies.
+- Holding-side smoke test: both `dispatcher-pretool.sh` and `dispatcher-stop.sh` run with stub stdin, exit 0.
+- Asawa `.claude/settings.json` line 73 + 283 updated atomically (pre-delete, per codex P1).
+
+### What's NOT in this release
+
+- No fleet behavior change — these 6 hooks were never wired.
+- No T4 functional gain (yet) — Tier 2 wins ship as separate batches.
+- The `is_dispatcher_inlined()` check in `holding/hooks/verify-policy-coverage.sh:189` already gracefully handles missing plugin-side dispatchers via `[ -f "$d" ] || continue` — no update required.
+
+---
+
 ## v2.11.1 — 2026-05-01
 
 **`feedback-channel-guard.sh` false-positive fix.**
