@@ -1,6 +1,6 @@
 # Sutra Connectors — Quickstart
 
-**Version:** v2.11.1
+**Version:** v2.12.0
 
 ---
 
@@ -167,4 +167,4 @@ Fields: `ts`, `depth`, `tier`, `capability`, `outcome`, `redactedArgsHash` (sha2
 
 ---
 
-**Sutra Connectors v2.11.1** · See [CHARTER.md](./CHARTER.md) for governance contract · See [ARCHITECTURE.yaml](./ARCHITECTURE.yaml) for module structure.
+**Sutra Connectors v2.12.0** · See [CHARTER.md](./CHARTER.md) for governance contract · See [ARCHITECTURE.yaml](./ARCHITECTURE.yaml) for module structure.
