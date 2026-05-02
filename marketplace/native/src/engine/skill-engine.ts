@@ -21,7 +21,11 @@
  *   - holding/research/2026-04-28-v2-architecture-spec.md §A11 (Skill + return_contract)
  */
 
-import Ajv, { type AnySchema, type ValidateFunction } from 'ajv'
+// Ajv 8.x ships as CJS; under TS NodeNext the default-import resolves
+// to the module namespace, not the class. `{ default as Ajv }` makes
+// NodeNext synthesize the CJS default into a named binding so the
+// constructor + type usage below works unchanged.
+import { Ajv, type AnySchema, type ValidateFunction } from 'ajv'
 import type { Workflow } from '../primitives/workflow.js'
 
 /**

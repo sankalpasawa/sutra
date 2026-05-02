@@ -27,7 +27,11 @@
 
 import { createHash } from 'node:crypto'
 
-import Ajv from 'ajv'
+// Ajv 8.x ships as CJS; under TS NodeNext the default-import resolves
+// to the module namespace, not the class. `{ default as Ajv }` peels
+// the synthesized CJS default into a named binding so `new Ajv(...)`
+// remains constructable. See skill-engine.ts comment for detail.
+import { Ajv } from 'ajv'
 
 import type { Workflow } from '../primitives/workflow.js'
 import type { DataRef, HostKind } from '../types/index.js'
