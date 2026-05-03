@@ -35,7 +35,7 @@ import { createWorkflow } from '../primitives/workflow.js';
 import { executeWorkflow } from '../runtime/lite-executor.js';
 import { listCharters, listDomains, listWorkflows, loadWorkflow, persistCharter, persistDomain, persistWorkflow, } from '../persistence/user-kit.js';
 import { formatEvent } from '../renderers/terminal-events.js';
-const VERSION = '1.2.1';
+const VERSION = '1.2.2';
 export async function main(ctx) {
     const sub = ctx.argv[0] ?? 'help';
     // v1.2.1: main is async to allow `await cmdRun(...)` for invoke_host_llm

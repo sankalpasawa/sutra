@@ -23,5 +23,5 @@ export { ENGINE_EVENT_TYPES, isEngineEvent } from './types/engine-event.js';
 // Starter kit
 export { loadStarterKit, STARTER_DOMAINS, STARTER_CHARTERS, STARTER_WORKFLOWS, STARTER_TRIGGERS, STARTER_WORKFLOW_CHARTER_MAP, ONBOARDING_WORKFLOW } from './starter-kit/index.js';
 /** Library version (sync with package.json + plugin.json + marketplace.json + cli/sutra-native.ts:VERSION). Enforced by tests/contract/version-sync.test.ts. */
-export const NATIVE_VERSION = '1.2.1';
+export const NATIVE_VERSION = '1.2.2';
 //# sourceMappingURL=index.js.map
