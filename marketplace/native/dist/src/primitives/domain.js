@@ -1,0 +1,117 @@
+/**
+ * DOMAIN — V2 spec §1 Primitive 1
+ *
+ * Bounded authority + accountability container.
+ * The only primitive that contains another primitive (Domain.contains(Charter), per L5 META).
+ *
+ * Source-of-truth: holding/research/2026-04-28-v2-architecture-spec.md §1 P1
+ */
+/**
+ * Tenant id pattern (must match `src/schemas/tenant.ts` TENANT_ID_PATTERN).
+ * Duplicated here to keep `domain.ts` zero-dependency on zod at the type layer.
+ */
+const TENANT_ID_PATTERN = /^T-[a-z0-9-]+$/;
+/** Default tenant when none specified — single-tenant v1.0 baseline. */
+export const DEFAULT_TENANT_ID = 'T-default';
+/**
+ * D-numbered hierarchy id pattern.
+ * - Root domain is 'D0'
+ * - Sub-domains are 'D1', 'D2', ...
+ * - Nested sub-domains are 'D1.D2', 'D1.D2.D3', ...
+ *
+ * Note: the V2 spec text used \.D (literal D) — the M2.1 plan example regex
+ * had a stray \D escape that would never match. This regex matches the spec.
+ */
+const D_ID_PATTERN = /^D\d+(\.D\d+)*$/;
+/**
+ * Construct a Domain after validating the D-numbered id shape.
+ * Returns a frozen object so primitive instances are immutable by default.
+ */
+export function createDomain(spec) {
+    if (!D_ID_PATTERN.test(spec.id)) {
+        throw new Error(`Domain.id must match D-numbered hierarchy pattern (D0, D1, D1.D2, ...); got "${spec.id}"`);
+    }
+    if (!Array.isArray(spec.principles)) {
+        throw new Error('Domain.principles must be an array');
+    }
+    if (!Array.isArray(spec.accountable)) {
+        throw new Error('Domain.accountable must be an array');
+    }
+    // V2 spec §1 P1 — D0 root invariant: id='D0' iff parent_id=null
+    if (spec.id === 'D0' && spec.parent_id !== null) {
+        throw new Error('Domain.parent_id must be null when id="D0" (root domain has no parent)');
+    }
+    // V2 spec §1 P1 — non-root: parent_id (when non-null) must match D-id pattern
+    if (spec.parent_id !== null) {
+        if (typeof spec.parent_id !== 'string' || !D_ID_PATTERN.test(spec.parent_id)) {
+            throw new Error(`Domain.parent_id must match D-numbered hierarchy pattern (D0, D1, D1.D2, ...); got "${String(spec.parent_id)}"`);
+        }
+    }
+    // V2 spec §1 P1 — Domain.principles is Constraint{durability=durable}
+    for (const p of spec.principles) {
+        if (p.durability !== 'durable') {
+            throw new Error(`Domain.principles[].durability must be "durable" (V2 §1 P1); got "${String(p.durability)}" on principle "${String(p.name)}"`);
+        }
+    }
+    // M4.1 — D4 §1.1: tenant_id required (Tenant→Domain ownership). Default
+    // applied when caller omits.
+    const tenantId = spec.tenant_id ?? DEFAULT_TENANT_ID;
+    if (typeof tenantId !== 'string' || !TENANT_ID_PATTERN.test(tenantId)) {
+        throw new Error(`Domain.tenant_id must match T-<id> pattern (M4.1; D4 §1.1); got "${String(tenantId)}"`);
+    }
+    return Object.freeze({
+        ...spec,
+        principles: [...spec.principles],
+        accountable: [...spec.accountable],
+        tenant_id: tenantId,
+    });
+}
+/**
+ * Predicate: is this Domain shape valid against V2 §1 P1?
+ *
+ * Used by:
+ * - registry validation
+ * - L5 META containment-edge checks
+ *
+ * Validates V2 §1 P1 invariants:
+ * - id matches D-numbered pattern
+ * - id='D0' ⇒ parent_id=null
+ * - non-root: parent_id matches D-numbered pattern
+ * - principles[*].durability === 'durable'
+ */
+export function isValidDomain(d) {
+    if (typeof d !== 'object' || d === null)
+        return false;
+    if (typeof d.id !== 'string' || !D_ID_PATTERN.test(d.id))
+        return false;
+    if (typeof d.name !== 'string')
+        return false;
+    if (d.parent_id !== null && typeof d.parent_id !== 'string')
+        return false;
+    if (!Array.isArray(d.principles))
+        return false;
+    if (typeof d.intelligence !== 'string')
+        return false;
+    if (!Array.isArray(d.accountable))
+        return false;
+    if (typeof d.authority !== 'string')
+        return false;
+    // V2 §1 P1 — D0 root invariant
+    if (d.id === 'D0' && d.parent_id !== null)
+        return false;
+    // V2 §1 P1 — non-root parent_id pattern
+    if (d.parent_id !== null && !D_ID_PATTERN.test(d.parent_id))
+        return false;
+    // V2 §1 P1 — principles must be durable
+    for (const p of d.principles) {
+        if (typeof p !== 'object' || p === null)
+            return false;
+        if (p.durability !== 'durable')
+            return false;
+    }
+    // M4.1 — D4 §1.1: tenant_id required + pattern-checked
+    if (typeof d.tenant_id !== 'string' || !TENANT_ID_PATTERN.test(d.tenant_id))
+        return false;
+    return true;
+}
+//# sourceMappingURL=domain.js.map

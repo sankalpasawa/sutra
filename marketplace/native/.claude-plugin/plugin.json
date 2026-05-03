@@ -1,8 +1,8 @@
 {
   "name": "native",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "marketplace": "native@sutra",
-  "description": "Sutra Native — TypeScript-native Sutra Engine. v1.0.x = catalog-discoverable source preview; v1.1+ = runtime-active per holding/plans/native-v1.x/PLAN.md (daemon-centric architecture: sutra-native daemon owns Temporal/OPA/workflow state; observational hooks bridge Claude Code session events into daemon sink; bin/ is control plane; main/exports is consumer contract). 4 primitives (Domain/Charter/Workflow/Execution) + 6 laws + Skill Engine R4 + Workflow Engine 5-stage runtime + threat model with 3 runtime-tested attack classes. INSTALLATION SEMANTICS: catalog-discoverable source preview at v1.0.x — package.json has no main/exports/types, sources ship as .ts (not compiled), bin/ + skills/ + hooks/ absent. Hook-activated plugin surface lands in v1.1 Wave 1; library entrypoint lands in v1.1 Wave 3 per codex strategy consult 2026-05-01 (CHANGES-REQUIRED → folded daemon-centric framing). Use today via direct submodule + tsx/bun.",
+  "description": "Sutra Native v1.1.0 — runtime-active founder workflow engine for Claude Code. SessionStart hook auto-activates the engine; founder input flows H-Sutra log → HSutraConnector → Router (deterministic + optional LLM fallback) → LiteExecutor (synchronous step_graph runner) → RendererRegistry (8 default terminal renderers) → SUCCESS Execution. Ships compiled dist/ + bin/sutra-native CLI + library exports (@sutra/native main/exports/types) + D3 starter kit (5 Domains, 6 Charters, 10 Workflows including W-onboarding-tour, 5 TriggerSpecs) + SBOM-v1.1.0.txt. 1207 contract+integration tests; 5 codex master reviews folded inline. Intake dependency: install core@sutra first so H-Sutra events land in the JSONL log Native subscribes to. Deferred to v1.2: full Temporal-backed executor (current LiteExecutor is no-Temporal synchronous); advanced operator skills.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"
@@ -20,6 +20,7 @@
     "opa",
     "temporal",
     "typescript-native",
-    "daemon-centric"
+    "daemon-centric",
+    "runtime-active"
   ]
 }

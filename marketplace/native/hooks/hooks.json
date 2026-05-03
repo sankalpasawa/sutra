@@ -1,0 +1,27 @@
+{
+  "description": "Sutra Native v1.1.0-wave1 — runtime activation hooks. SessionStart auto-starts the Native engine (best-effort, logs to ~/.sutra-native/native.log). Stop performs graceful teardown.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-stop.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

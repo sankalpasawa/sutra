@@ -1,6 +1,29 @@
 {
   "name": "@sutra/native",
-  "version": "1.0.2",
+  "version": "1.1.0",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    },
+    "./starter-kit": {
+      "import": "./dist/src/starter-kit/index.js",
+      "types": "./dist/src/starter-kit/index.d.ts"
+    },
+    "./runtime": {
+      "import": "./dist/src/runtime/native-engine.js",
+      "types": "./dist/src/runtime/native-engine.d.ts"
+    }
+  },
+  "files": [
+    "dist/",
+    "bin/",
+    "hooks/",
+    ".claude-plugin/",
+    "src/"
+  ],
   "type": "module",
   "engines": {
     "node": ">=20",

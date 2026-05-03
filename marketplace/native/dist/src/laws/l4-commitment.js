@@ -1,0 +1,176 @@
+/**
+ * L4 COMMITMENT law — V2 spec §3 row L4
+ *
+ * Rule: "operationalizes(W,C) iff every workflow step traces to an
+ *        obligation/invariant AND all charter obligations have explicit
+ *        coverage or declared gap."
+ *
+ * Mechanization: Coverage matrix auto-generated; gaps must be marked
+ *                `gap_status='accepted'` to clear.
+ *
+ * For M3, L4 covers two relations:
+ *   1. tracesAllSteps(W, C): every step in W.step_graph either traces to a
+ *      Charter obligation/invariant OR declares an accepted gap.
+ *   2. coversAllObligations(W, C): every Charter obligation either has a
+ *      step that traces to it OR is marked gap_status='accepted'.
+ *
+ * The two predicates compose into `operationalizes(W, C)`.
+ *
+ * Tracing requires per-step metadata not on the V2 base Workflow shape — we
+ * accept an opt-in extended step shape `WorkflowStepWithCoverage` and a
+ * Charter `coverage_decisions` side-table; both are SOFT layers that the
+ * Workflow Engine populates pre-terminate (M5).
+ *
+ * Source-of-truth: holding/research/2026-04-28-v2-architecture-spec.md §3 L4
+ */
+function obligationNames(c) {
+    const names = new Set();
+    for (const o of c.obligations) {
+        if (typeof o.name === 'string' && o.name.length > 0)
+            names.add(o.name);
+    }
+    return names;
+}
+function invariantNames(c) {
+    const names = new Set();
+    for (const i of c.invariants) {
+        if (typeof i.name === 'string' && i.name.length > 0)
+            names.add(i.name);
+    }
+    return names;
+}
+/** All trace targets a step is allowed to point at: obligations ∪ invariants. */
+function allowedTraceNames(c) {
+    const out = new Set([...obligationNames(c), ...invariantNames(c)]);
+    return out;
+}
+function isAcceptedGap(s) {
+    return s.gap_status === 'accepted';
+}
+function isAcceptedDecision(d) {
+    return d.gap_status === 'accepted';
+}
+export const l4Commitment = {
+    /**
+     * Predicate: every step in W traces to a Charter obligation/invariant
+     * OR declares an accepted gap.
+     *
+     * Inputs:
+     * - `w`: the Workflow (used for step_id list)
+     * - `charter`: the Charter (provides allowed trace target names)
+     * - `coverage`: per-step coverage metadata (one StepCoverage per step_id)
+     *
+     * Returns false if any step has no entry in `coverage.step_coverage`.
+     */
+    tracesAllSteps(w, charter, coverage) {
+        if (typeof w !== 'object' || w === null)
+            return false;
+        if (typeof charter !== 'object' || charter === null)
+            return false;
+        if (!Array.isArray(w.step_graph))
+            return false;
+        if (!Array.isArray(coverage.step_coverage))
+            return false;
+        const allowed = allowedTraceNames(charter);
+        const byStepId = new Map();
+        for (const sc of coverage.step_coverage) {
+            if (typeof sc.step_id !== 'number')
+                return false;
+            byStepId.set(sc.step_id, sc);
+        }
+        for (const step of w.step_graph) {
+            const sc = byStepId.get(step.step_id);
+            if (!sc)
+                return false;
+            if (isAcceptedGap(sc))
+                continue;
+            // Must trace to ≥ 1 allowed name (obligation/invariant).
+            if (!Array.isArray(sc.traces_to) || sc.traces_to.length === 0)
+                return false;
+            const everyTraceAllowed = sc.traces_to.every((t) => allowed.has(t));
+            if (!everyTraceAllowed)
+                return false;
+        }
+        return true;
+    },
+    /**
+     * Predicate: every Charter obligation either has a step trace OR has
+     * gap_status='accepted'.
+     *
+     * Codex M3 P1 fix 2026-04-28: shape-check is insufficient. A
+     * `covered_by_step` integer that doesn't refer to a real step in
+     * `workflow.step_graph` — or refers to a step whose `traces_to` does NOT
+     * include this obligation — must be rejected. Otherwise a Workflow can
+     * fabricate coverage decisions and pass `operationalizes` with no real
+     * coverage edge.
+     *
+     * `workflow` is OPTIONAL for backwards-compat: when absent we keep the old
+     * shape-only behavior (used by tests that exercise charter+coverage in
+     * isolation, e.g. "missing decision → false"). `operationalizes` always
+     * passes a workflow so the relation-check is enforced for the composed
+     * predicate.
+     */
+    coversAllObligations(charter, coverage, workflow) {
+        if (typeof charter !== 'object' || charter === null)
+            return false;
+        if (!Array.isArray(coverage.obligation_coverage))
+            return false;
+        const obligations = obligationNames(charter);
+        const byName = new Map();
+        for (const d of coverage.obligation_coverage) {
+            if (typeof d.obligation_name !== 'string')
+                return false;
+            byName.set(d.obligation_name, d);
+        }
+        // Build relation-check side-tables when workflow + per-step coverage
+        // are available. This is the codex-mandated path: shape-only acceptance
+        // of a numeric covered_by_step is unsound.
+        const stepIdSet = workflow && Array.isArray(workflow.step_graph)
+            ? new Set(workflow.step_graph
+                .map((s) => s.step_id)
+                .filter((n) => typeof n === 'number'))
+            : null;
+        const stepCoverageById = Array.isArray(coverage.step_coverage)
+            ? new Map(coverage.step_coverage.map((sc) => [sc.step_id, sc]))
+            : null;
+        for (const oblig of obligations) {
+            const decision = byName.get(oblig);
+            if (!decision)
+                return false;
+            if (isAcceptedDecision(decision))
+                continue;
+            // Must point at a real step.
+            if (typeof decision.covered_by_step !== 'number')
+                return false;
+            // Relation-check (codex M3 P1):
+            // (a) covered_by_step MUST exist in workflow.step_graph[*].step_id
+            // (b) the referenced step's traces_to MUST include this obligation
+            if (stepIdSet !== null) {
+                if (!stepIdSet.has(decision.covered_by_step))
+                    return false;
+            }
+            if (stepCoverageById !== null) {
+                const sc = stepCoverageById.get(decision.covered_by_step);
+                if (!sc)
+                    return false;
+                if (!Array.isArray(sc.traces_to))
+                    return false;
+                if (!sc.traces_to.includes(oblig))
+                    return false;
+            }
+        }
+        return true;
+    },
+    /**
+     * `operationalizes(W, C)` per V2 §3 L4: AND of the two predicates above.
+     *
+     * Codex M3 P1 fix 2026-04-28: passes Workflow to coversAllObligations so
+     * the relation-check (covered_by_step exists + step.traces_to includes
+     * obligation) runs for the composed predicate.
+     */
+    operationalizes(w, charter, coverage) {
+        return (this.tracesAllSteps(w, charter, coverage) &&
+            this.coversAllObligations(charter, coverage, w));
+    },
+};
+//# sourceMappingURL=l4-commitment.js.map

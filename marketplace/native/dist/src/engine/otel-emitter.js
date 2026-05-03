@@ -1,0 +1,171 @@
+/**
+ * OTelEmitter — M8 Group Z (T-105).
+ *
+ * Universal evidence-emit gateway. Every consequential decision in the
+ * Native runtime — policy allow/deny, skill resolve/miss/cap, step
+ * start/complete/fail, failure-policy outcome — flows through this emitter
+ * via an `OTelEventRecord`. Emitted records collect into the configured
+ * `OTelExporter`; tests use `InMemoryOTelExporter`; production uses an
+ * OTLP HTTP exporter (M11 dogfood will wire the real implementation; the
+ * shell stub here lets the runtime "emit nowhere" without a hard dep on
+ * a live collector).
+ *
+ * Why a SEPARATE record shape (NOT raw DecisionProvenance):
+ * - DecisionProvenance (src/schemas/decision-provenance.ts) pins the strict
+ *   D2 §2.1 schema with a closed `decision_kind` enum (DECIDE / EXECUTE /
+ *   OVERRIDE / APPROVE / REJECT / DELEGATE / TERMINATE / AUDIT). Group Z
+ *   needs a broader event-kind set (POLICY_ALLOW, STEP_START, …) that the
+ *   OTel layer carries WITHOUT polluting the constitutional decision shape.
+ * - The OTel record is the OBSERVABILITY event; DecisionProvenance is the
+ *   CONSTITUTIONAL artifact. Each can reference the other; they are not
+ *   the same type.
+ * - Group BB (host-LLM provenance) emits decision_kind='HOST_LLM_INVOCATION'
+ *   on this same OTelEventRecord shape — the open-ended enum lives here.
+ *
+ * Replay-determinism (V2 §A11; codex master 2026-04-30 P1.1 fold):
+ * - The emitter does NOT generate timestamps inside the constructor — the
+ *   caller supplies a stable timestamp (or omits to let the Activity
+ *   boundary stamp). The in-memory exporter does no I/O at emit-time.
+ * - `trace_id` is supplied by the caller (executor builds it deterministic
+ *   per D-NS-26: sha256(workflow.id + run_seq); see step-graph-executor).
+ *
+ * Spec source:
+ *  - holding/plans/native-v1.0/M8-hooks-otel-mcp.md Group Z T-105
+ *  - holding/research/2026-04-29-native-d2-decision-provenance-spec.md §2.1
+ *  - .enforcement/codex-reviews/2026-04-30-architecture-pivot-rereview.md
+ */
+/**
+ * In-memory exporter for tests. Collects records into a public array; resets
+ * on demand. Synchronous semantics under the async API — Promise.resolve()-only.
+ *
+ * Use:
+ *   const exporter = new InMemoryOTelExporter()
+ *   const emitter = new OTelEmitter(exporter)
+ *   await emitter.emit({ decision_kind: 'POLICY_ALLOW', trace_id: 'abc', attributes: {} })
+ *   expect(exporter.records).toHaveLength(1)
+ */
+export class InMemoryOTelExporter {
+    /**
+     * Collected records, in insertion order. Mutable internally so the
+     * emitter can append; consumers should treat as read-only — the field
+     * is `readonly` from the outside (TS prevents reassignment but not
+     * mutation). Tests assert against this directly.
+     */
+    records = [];
+    /**
+     * Append the provided records. Pure synchronous append wrapped in a
+     * resolved Promise — the async signature is for API parity with
+     * production exporters that flush over the network.
+     */
+    async export(records) {
+        for (const r of records)
+            this.records.push(r);
+    }
+    /** No-op — in-memory exporter has no buffer. */
+    async flush() {
+        // intentional no-op
+    }
+    /**
+     * Test convenience: clear collected records between cases. Mutates the
+     * `records` array in-place (callers holding a reference will see the
+     * mutation; this is intentional for the test seam).
+     */
+    reset() {
+        this.records.length = 0;
+    }
+}
+/**
+ * No-op exporter for production callers without a wired collector. Drops
+ * every record on the floor. Discovers itself via the OTelEmitter default
+ * factory — `OTelEmitter.disabled()` returns an emitter wired to this
+ * exporter so callers can stay branch-free at the emit site.
+ */
+export class NoopOTelExporter {
+    async export(_records) {
+        // intentional no-op
+    }
+    async flush() {
+        // intentional no-op
+    }
+}
+/**
+ * OTLP HTTP exporter — minimal stub.
+ *
+ * v1.0 ships the SHELL only: the constructor accepts an endpoint URL but
+ * the implementation does NOT yet POST. M11 dogfood will wire a real
+ * OTLP HTTP exporter via `@opentelemetry/sdk-node` (already in deps).
+ *
+ * Why ship a stub now: the production code-path can already call
+ * `new OTLPHttpExporter(url)` so wiring is a one-line config change at
+ * M11 — no executor refactor at activation time. Until then, the stub
+ * silently no-ops (records are discarded) so misconfiguration cannot
+ * accidentally break execution.
+ *
+ * Codex master review note: the stub is INTENTIONALLY non-functional. A
+ * lying "I sent it" exporter would silently swallow audit data. The
+ * documented contract here is "drops records; M11 will replace" — the
+ * runtime never claims to have exported.
+ */
+export class OTLPHttpExporter {
+    endpoint;
+    constructor(endpoint) {
+        this.endpoint = endpoint;
+        if (typeof endpoint !== 'string' || endpoint.length === 0) {
+            throw new TypeError('OTLPHttpExporter: endpoint must be a non-empty string');
+        }
+    }
+    async export(_records) {
+        // M11 dogfood will replace with a real OTLP HTTP POST. Until then,
+        // drop the records — observability is a non-blocking concern.
+    }
+    async flush() {
+        // M11 dogfood will replace with a buffer drain. Until then, no-op.
+    }
+}
+/**
+ * The OTel emission gateway. Single method `emit(record)` enqueues to the
+ * configured exporter; `flush()` delegates to the exporter for shutdown
+ * draining.
+ *
+ * Construction:
+ *   new OTelEmitter(new InMemoryOTelExporter())   // tests
+ *   new OTelEmitter(new NoopOTelExporter())       // production stub
+ *   OTelEmitter.disabled()                         // sugar for NoopOTelExporter
+ */
+export class OTelEmitter {
+    exporter;
+    constructor(exporter) {
+        this.exporter = exporter;
+        if (typeof exporter !== 'object' || exporter === null) {
+            throw new TypeError('OTelEmitter: exporter must be an OTelExporter instance');
+        }
+        if (typeof exporter.export !== 'function' || typeof exporter.flush !== 'function') {
+            throw new TypeError('OTelEmitter: exporter must implement export(records) and flush()');
+        }
+    }
+    /**
+     * Emit one OTel event. Records are forwarded to the exporter as a
+     * single-element batch — this keeps the wire shape consistent with
+     * future batched-emit codepaths without changing the emit() call site.
+     *
+     * Idempotent for in-memory exporters; HTTP exporters MAY dedupe at the
+     * collector but that is an exporter concern, not the emitter's.
+     */
+    async emit(record) {
+        await this.exporter.export([record]);
+    }
+    /** Drain any buffered records — called at shutdown / between tests. */
+    async flush() {
+        await this.exporter.flush();
+    }
+    /**
+     * Sugar: build an emitter wired to a NoopOTelExporter. Use as the default
+     * when no observability collector is configured — keeps emit-call-sites
+     * branch-free instead of forcing every call site to write
+     * `if (emitter) emitter.emit(...)`.
+     */
+    static disabled() {
+        return new OTelEmitter(new NoopOTelExporter());
+    }
+}
+//# sourceMappingURL=otel-emitter.js.map

@@ -1,0 +1,70 @@
+/**
+ * SKILL ENGINE — M6 Group O (T-064..T-068).
+ *
+ * Resolves skill_ref → Workflow at execution time. A Skill is a Workflow with
+ * `reuse_tag=true` (V2.3 §A11). Per codex P1.2 (2026-04-30) the canonical form
+ * of `return_contract` is a JSON Schema STRING; the engine compiles each
+ * schema once at register-time via ajv and caches the compiled validator for
+ * fast child-output validation by Group P (skill-invocation adapter).
+ *
+ * Surface:
+ *   register(skill)      — validate (Skill + non-empty + parseable JSON Schema),
+ *                          insert into registry, cache compiled ajv validator
+ *   unregister(skill_ref)— remove registry entry + cached validator (silent on miss)
+ *   resolve(skill_ref)   — Workflow on hit; null on miss
+ *   validateOutputs(...) — used by Group P at child completion to gate outputs
+ *                          against the cached return_contract validator
+ *
+ * Sources of truth:
+ *   - holding/plans/native-v1.0/M6-skill-engine.md Group O
+ *   - .enforcement/codex-reviews/2026-04-30-m6-plan-pre-dispatch.md (P1.2 + P2.1)
+ *   - holding/research/2026-04-28-v2-architecture-spec.md §A11 (Skill + return_contract)
+ */
+import type { Workflow } from '../primitives/workflow.js';
+/**
+ * Result of `validateOutputs()`. A discriminated union so callers in Group P
+ * can branch on `valid` without optional-property gymnastics.
+ */
+export type ValidateOutputsResult = {
+    valid: true;
+} | {
+    valid: false;
+    errors: string;
+};
+export declare class SkillEngine {
+    private readonly registry;
+    private readonly validatorCache;
+    private readonly ajv;
+    constructor();
+    /**
+     * Register a Skill (Workflow with reuse_tag=true) under its `id`.
+     *
+     * Codex P1.2 rejection paths (HARD):
+     *   (a) reuse_tag !== true        → not a Skill
+     *   (b) return_contract empty/null → V2 §A11 violation
+     *   (c) return_contract not valid JSON Schema → ajv.compile throws
+     *
+     * On success, the compiled validator is cached so Group P can validate
+     * child-execution outputs in O(1) without re-compiling per invocation.
+     */
+    register(skill: Workflow): void;
+    /**
+     * Unregister a Skill by id (== skill_ref). Removes both the registry entry
+     * AND the cached validator. Silent no-op if id is unknown — keeps cleanup
+     * idempotent for parent executors that don't track registration state.
+     */
+    unregister(skill_ref: string): void;
+    /**
+     * Resolve a skill_ref to its registered Workflow. Returns `null` on miss
+     * (per codex P1.4 → Group P synthesizes a step-failure with the M5 canonical
+     * failure-format on null resolution).
+     */
+    resolve(skill_ref: string): Workflow | null;
+    /**
+     * Validate child-execution outputs against the cached return_contract.
+     * Used by Group P at child completion. Returns a discriminated union so
+     * callers can extract `errors` only when invalid.
+     */
+    validateOutputs(skill_ref: string, outputs: unknown): ValidateOutputsResult;
+}
+//# sourceMappingURL=skill-engine.d.ts.map

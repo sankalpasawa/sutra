@@ -1,0 +1,1 @@
+{"version":3,"file":"governance-turn-emit.d.ts","sourceRoot":"","sources":["../../composition/governance-turn-emit.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;GAkBG;AAOH,MAAM,WAAW,yBAAyB;IACxC,0DAA0D;IAC1D,SAAS,EAAE,MAAM,CAAA;IACjB,gCAAgC;IAChC,SAAS,EAAE,MAAM,CAAA;IACjB,6CAA6C;IAC7C,UAAU,CAAC,EAAE,MAAM,CAAA;CACpB;AAED,wBAAgB,+BAA+B,CAAC,IAAI,EAAE,yBAAyB;;;;EAmD9E"}

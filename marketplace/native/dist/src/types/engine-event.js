@@ -1,0 +1,106 @@
+/**
+ * EngineEvent — D2 step 4 of vertical slice.
+ *
+ * The discriminated union of events the Native engine emits to its terminal
+ * (and, in v1.1+, to OpenTelemetry sinks). Renderers in renderer-registry.ts
+ * consume these to produce human-readable lines for the founder.
+ *
+ * v1.0 ships 8 event types covering the founder's "what's happening" view:
+ *   1. routing_decision     — Router.route() emitted a decision
+ *   2. workflow_started     — Workflow execution began
+ *   3. workflow_completed   — Workflow execution finished successfully
+ *   4. workflow_failed      — Workflow execution terminated with failure
+ *   5. artifact_registered  — ArtifactCatalog.register() persisted an asset
+ *   6. policy_decision      — OPA POLICY_ALLOW or POLICY_DENY emission
+ *   7. step_started         — Workflow step (within an execution) began
+ *   8. step_completed       — Workflow step finished
+ *
+ * Per softened I-NPD-1: events are pure data — no closures, no mutable
+ * references — so they can be JSONL-serialized for replay. Renderers are
+ * pure functions of (event, ctx) → string; the registry lets operators
+ * override per-event_type.
+ */
+/** Runtime allow-list mirroring EngineEventType — kept in sync. */
+export const ENGINE_EVENT_TYPES = new Set([
+    'routing_decision',
+    'workflow_started',
+    'workflow_completed',
+    'workflow_failed',
+    'artifact_registered',
+    'policy_decision',
+    'step_started',
+    'step_completed',
+]);
+// -----------------------------------------------------------------------------
+// Per-variant validators (codex P1 fold 2026-05-03) — guard MUST validate the
+// full union shape, not just the discriminator + ts_ms. Failing at intake is
+// non-recoverable; render-time TypeError on a bad payload is worse.
+// -----------------------------------------------------------------------------
+const ROUTING_MODES = new Set(['exact', 'llm-fallback', 'no-match']);
+const POLICY_VERDICTS = new Set(['ALLOW', 'DENY']);
+function isStr(v) { return typeof v === 'string'; }
+function isNonEmptyStr(v) { return typeof v === 'string' && v.length > 0; }
+function isStrOrNull(v) { return v === null || typeof v === 'string'; }
+function isNonNegInt(v) {
+    return typeof v === 'number' && Number.isInteger(v) && v >= 0;
+}
+function isFiniteNonNegNumber(v) {
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0;
+}
+const VARIANT_VALIDATORS = {
+    routing_decision: (v) => isStrOrNull(v.turn_id) &&
+        isStr(v.mode) && ROUTING_MODES.has(v.mode) &&
+        isStrOrNull(v.workflow_id) &&
+        isStrOrNull(v.trigger_id) &&
+        isNonNegInt(v.attempts_count),
+    workflow_started: (v) => isNonEmptyStr(v.workflow_id) && isNonEmptyStr(v.execution_id),
+    workflow_completed: (v) => isNonEmptyStr(v.workflow_id) &&
+        isNonEmptyStr(v.execution_id) &&
+        isFiniteNonNegNumber(v.duration_ms),
+    workflow_failed: (v) => isNonEmptyStr(v.workflow_id) &&
+        isNonEmptyStr(v.execution_id) &&
+        isStr(v.reason),
+    artifact_registered: (v) => isNonEmptyStr(v.domain_id) &&
+        isNonEmptyStr(v.content_sha256) &&
+        isNonEmptyStr(v.asset_kind) &&
+        (v.producer_execution_id === undefined || isNonEmptyStr(v.producer_execution_id)),
+    policy_decision: (v) => isStr(v.verdict) && POLICY_VERDICTS.has(v.verdict) &&
+        isNonEmptyStr(v.rule_id) &&
+        (v.workflow_id === undefined || isNonEmptyStr(v.workflow_id)) &&
+        (v.reason === undefined || isStr(v.reason)),
+    step_started: (v) => isNonEmptyStr(v.workflow_id) &&
+        isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.step_id) &&
+        isNonNegInt(v.step_index) &&
+        isNonNegInt(v.step_count),
+    step_completed: (v) => isNonEmptyStr(v.workflow_id) &&
+        isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.step_id) &&
+        isNonNegInt(v.step_index) &&
+        isNonNegInt(v.step_count) &&
+        isFiniteNonNegNumber(v.duration_ms),
+};
+/**
+ * Sound type guard for the EngineEvent discriminated union. Validates:
+ *   - type ∈ ENGINE_EVENT_TYPES
+ *   - ts_ms is a finite non-negative number
+ *   - the per-variant required fields are present + correctly typed
+ *
+ * Codex P1 fold 2026-05-03: previously this guard only validated type +
+ * ts_ms, so payloads like `{ type: 'workflow_started', ts_ms: 1 }` (missing
+ * workflow_id + execution_id) passed as EngineEvent. That was unsound —
+ * downstream renderers crash when reading missing fields. The variant
+ * validator above closes the hole.
+ */
+export function isEngineEvent(value) {
+    if (typeof value !== 'object' || value === null)
+        return false;
+    const v = value;
+    if (typeof v.type !== 'string' || !ENGINE_EVENT_TYPES.has(v.type))
+        return false;
+    if (typeof v.ts_ms !== 'number' || !Number.isFinite(v.ts_ms) || v.ts_ms < 0)
+        return false;
+    const validator = VARIANT_VALIDATORS[v.type];
+    return validator(v);
+}
+//# sourceMappingURL=engine-event.js.map

@@ -1,5 +1,8 @@
 node_modules/
-dist/
+# dist/ committed at v1.1.0 — codex consult 2026-05-03 ruled commit-dist
+# (option a) over postinstall (option b) for the /plugin install contract:
+# install consumes repo contents, not an npm publish artifact, so the
+# bin/sutra-native shim needs dist/src/cli/sutra-native.js in-place.
 coverage/
 .DS_Store
 *.log

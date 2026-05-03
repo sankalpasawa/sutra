@@ -30,8 +30,8 @@
     },
     {
       "name": "native",
-      "description": "Sutra Native — TypeScript-native Sutra Engine SOURCE PREVIEW (V2.4 architecture). v1.0.2 ships SBOM-v1.0.1.txt + SBOM-v1.0.2.txt supply-chain manifests so the E2E harness's Phase 3 verifies cleanly. Engine surface unchanged from v1.0.1: 4 primitives (Domain / Charter / Workflow / Execution) + 6 laws + Skill Engine R4 contract + Workflow Engine 5-stage runtime + 3 default-composition seed Workflows + threat model with 3 runtime-tested attack classes. INSTALLATION SEMANTICS: catalog-discoverable source preview only — package.json has no main/exports/types entry, sources ship as .ts (not compiled), bin/ + skills/ directories absent. The engine is consumable via direct git submodule + tsx/bun runtime today (see marketplace/native/composition/README.md). Hook-activated plugin surface (PreToolUse/PostToolUse/Stop shims) + npm-style library entrypoint (main/exports + compiled .js) BOTH land in v1.x. v1.0.x = preview install for evaluation; v1.x = runtime activation.",
-      "version": "1.0.2",
+      "description": "Sutra Native v1.1.0 — runtime-active founder workflow engine for Claude Code. On install, hooks/session-start.sh auto-activates the engine; founder input flows Sutra Core H-Sutra log → HSutraConnector → Router (deterministic predicates + optional LLM fallback) → LiteExecutor (synchronous step_graph runner) → RendererRegistry (8 default terminal renderers) and lands a SUCCESS Execution end-to-end. Ships compiled dist/ (CJS+TS types via package.json main/exports/types), bin/sutra-native CLI control plane (start/stop/status/version), SBOM-v1.1.0.txt, and the curated D3 starter kit (5 Domains, 6 Charters, 10 Workflows including W-onboarding-tour, 5 TriggerSpecs). 1207 contract+integration tests; 5 codex master reviews folded inline (D2.2/D2.3/D2.4/D5/D3 + v1.1.0 publish-pass consult). Intake dependency: install core@sutra first so H-Sutra events land in the JSONL log Native subscribes to. Wave-3 (deferred): full Temporal-backed executor (current LiteExecutor is synchronous no-Temporal), advanced operator skills, public-API stability commitment.",
+      "version": "1.1.0",
       "author": {
         "name": "Sutra",
         "url": "https://sutra.os"
@@ -49,7 +49,9 @@
         "tenant-isolation",
         "opa",
         "temporal",
-        "typescript-native"
+        "typescript-native",
+        "runtime-active",
+        "daemon-centric"
       ]
     }
   ]
