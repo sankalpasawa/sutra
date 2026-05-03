@@ -14,23 +14,25 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 |---|---|---|---|---|---|
 | PROTO-000 | Every Change Must Ship With Implementation | validate.mjs | (none) | 0 | FOUNDATION |
 | PROTO-004 | Keys in Env Vars Only | dispatcher-pretool.sh | asawa | 0 | OK |
-| PROTO-006 | Process Discipline | CLAUDE.md (memory-only — orphan) | (none) | — | DRIFT |
+| PROTO-006 | Process Discipline | CLAUDE.md (memory-only) | asawa | — | MEMORY |
 | PROTO-009 | Narration Is Not Artifact | dispatcher-pretool.sh | asawa | 0 | OK |
-| PROTO-013 | Sutra Version Deploy | (free-text: D27 depth-5 gate (current); compiler upg…) | (unverified) | — | DRIFT |
+| PROTO-013 | Sutra Version Deploy | dispatcher-pretool.sh | asawa | 0 | OK |
 | PROTO-014 | Sutra Version Check (Client-Side) | CLAUDE.md (memory-only) | asawa | — | MEMORY |
 | PROTO-015 | Verify Before Commit | estimation-enforcement.sh | asawa sutra | 0 | OK |
 | PROTO-017 | Policy-to-Implementation Coverage | validate.mjs | (none) | 0 | FOUNDATION |
 | PROTO-019 | Codex Directive Enforcement | codex-directive-detect.sh codex-directive-gate.sh | asawa sutra | 0 | OK |
-| PROTO-020 | Plugin Identity Capture | identity.sh(NOT-REGISTERED) | (none) | 0 | DRIFT |
+| PROTO-020 | Plugin Identity Capture | identity.sh | (none) | 0 | FOUNDATION |
 | PROTO-021 | BUILD-LAYER Declaration | build-layer-check.sh | asawa | 0 | OK |
 | PROTO-022 | Completion Status Protocol | completion-protocol-check.sh | asawa sutra | 0 | OK |
-| PROTO-023 | Centralized Config (`sutra-config`) | sutra-config(NOT-REGISTERED) | (none) | 0 | DRIFT |
+| PROTO-023 | Centralized Config (`sutra-config`) | sutra-config | (none) | 0 | FOUNDATION |
+| PROTO-024 | Client→Team Feedback Fan-in (V1) | feedback.sh privacy-sanitize.sh | (none) | 0 | FOUNDATION |
+| PROTO-025 | Structural-Move Authorization (extends PROTO-021) | structural-move-check.sh | asawa | 0 | OK |
 | MANIFEST hook: enforce-boundaries.sh | MANIFEST-v1.9.md | enforce-boundaries.sh | sutra asawa | 0 | OK |
 | MANIFEST hook: session-logger.sh | MANIFEST-v1.9.md | session-logger.sh | sutra asawa | 0 | OK |
 | MANIFEST hook: log-triage.sh | MANIFEST-v1.9.md | log-triage.sh | sutra asawa | 0 | OK |
 | MANIFEST hook: artifact-check.sh | MANIFEST-v1.9.md | artifact-check.sh | sutra asawa | 0 | OK |
 | MANIFEST hook: compliance-tracker.sh | MANIFEST-v1.9.md | compliance-tracker.sh | sutra asawa | 0 | OK |
-| MANIFEST hook: depth-enforcement.sh | MANIFEST-v1.9.md | depth-enforcement.sh | (none) | 0 | DRIFT |
+| MANIFEST hook: depth-marker-pretool.sh | MANIFEST-v1.9.md | depth-marker-pretool.sh | sutra asawa | 0 | OK |
 | MANIFEST hook: estimation-enforcement.sh | MANIFEST-v1.9.md | estimation-enforcement.sh | sutra asawa | 0 | OK |
 | MANIFEST hook: measurement-logger.sh | MANIFEST-v1.9.md | measurement-logger.sh | sutra asawa | 0 | OK |
 | MANIFEST hook: resilience.sh | MANIFEST-v1.9.md | resilience.sh | (none) | 0 | DRIFT |
@@ -39,20 +41,76 @@ Rows marked `DRIFT` violate PROTO-000 + PROTO-017.
 | MANIFEST hook: cascade-warning.sh | MANIFEST-v1.9.md | cascade-warning.sh | sutra | 0 | OK |
 | MANIFEST hook: codex-review-gate.sh | MANIFEST-v1.9.md | codex-review-gate.sh | (none) | 0 | DRIFT |
 
+## Charter Coverage (P4 extension)
+
+| Charter | Mechanisms (count) | Status | Notes |
+|---|---|---|---|
+| TOKENS | 3 | ACTIVE | Token measurement + budget enforcement live. RTK active. con |
+| SPEED | 2 | PARTIAL | W1 latency collector shipped (commit eff65f7). Per-phase tax |
+| PERMISSIONS | 2 | ACTIVE | v1.13.0 ships PERMISSIONS charter + permission-gate hook. v2 |
+| PEDAGOGY | 1 | PARTIAL | Charter shipped v2.1.0. Skill /core:learn live. Production t |
+| SECURITY | 2 | ACTIVE | Charter shipped v2.1.0. PROTO-004 keys-in-env HARD-enforced. |
+| PRIVACY | 2 | ACTIVE | Privacy v2.0 shipped (commit df312f4) — signals-not-conten |
+| FEEDBACK | 5 | ACTIVE | PROTO-024 ships V1 (plugin v2.2.0). Auto-capture hooks + man |
+| OPERATIONALIZATION | 3 | ACTIVE | D30b §12 Standing Instructions abstraction live. ops-compli |
+| ASSISTANT | 5 | DESIGN_PARTIAL | v1.0 ships 1/7 capabilities by design (Vision-vs-Reality tab |
+| BLUEPRINT | 2 | ACTIVE | V1 hook shipped 2026-04-28 (codex round-5 narrowed scope: HA |
+
+**Charter rate**: 7 / 9 ACTIVE = 77% (PARTIAL=2, DRAFT=0, DEFERRED=0)
+
+## Direction Coverage (P4 extension)
+
+| Direction | Mechanisms (count) | Status |
+|---|---|---|
+| D1 Simplicity Through Human Confidence | 1 | PARTIAL |
+| D2 Thoroughness Scales With the Change | 2 | IMPLEMENTED |
+| D3 Every Task Has a Sutra Path | 2 | IMPLEMENTED |
+| D4 Model Directions as Living Forces | 2 | IMPLEMENTED |
+| D5 External Research at Every Level | 3 | IMPLEMENTED |
+| D6 Directions with Regression Tests | 1 | PARTIAL |
+| D7 Expand Then Contract | 0 | UNIMPLEMENTED |
+| D8 Output-Driven Metrics | 1 | IMPLEMENTED |
+| D9 Recursive Estimation Engine | 2 | IMPLEMENTED |
+| D10 Test Everything in Production | 1 | IMPLEMENTED |
+| D11 Fix Process Not Instance | 1 | IMPLEMENTED |
+| D12 Architecture Awareness | 1 | IMPLEMENTED |
+| D13 Cascade Downstream | 2 | IMPLEMENTED |
+| D14 Don't Stop | 0 | IMPLEMENTED |
+| D15 70/20/10 Products First | 1 | IMPLEMENTED |
+| D16 Executive Docs as HTML | 0 | PARTIAL |
+| D17 Don't Miss Parallel Statements | 0 | UNIMPLEMENTED |
+| D18 Packaging Before Launch | 1 | PARTIAL |
+| D19 Daily Satisfaction Report | 1 | IMPLEMENTED |
+| D20 Escalate Competing Priorities | 1 | IMPLEMENTED |
+| D21 Speed of Building Is a Factor | 1 | IMPLEMENTED |
+| D22 OS Deploys by Judgment | 0 | PARTIAL |
+| D23 Push Back With Approval Gates | 1 | IMPLEMENTED |
+| D24 Parallelization While Evolving | 1 | IMPLEMENTED |
+| D25 Technical / Scientific Rigor | 0 | UNIMPLEMENTED |
+| D26 Gear = Decomposition Granularity | 1 | IMPLEMENTED |
+| D27 Sutra→Company Depth 5 | 1 | IMPLEMENTED |
+| D28 Per-Turn Routing & Depth | 2 | IMPLEMENTED |
+| D29 Sutra Plugin = Sutra, Asawa hidden | 1 | PARTIAL |
+| D30a Ship Is Not Done — Operationalize | 2 | IMPLEMENTED |
+| D30b Policy Ships With Mechanism | 2 | IMPLEMENTED |
+| D31 Sutra Owns Authority — No Skip | 1 | IMPLEMENTED |
+| D32 Hot-Reloadable Hooks, Default Off | 2 | IMPLEMENTED |
+| D33 External Clients Firewalled | 1 | IMPLEMENTED |
+| D34 Asawa Client Taxonomy (4 tiers) | 1 | IMPLEMENTED |
+
+**Direction rate**: 26 / 35 IMPLEMENTED = 74% (PARTIAL=6, UNIMPLEMENTED=3, RETIRED=0)
+
 ## Per-client declared ⟶ installed+executable+registered
 
 | Client | Declared | Installed+exec | Registered | Gap (not-fully-deployed) |
 |---|---|---|---|---|
 | sutra | — | — | — | (none — OK) |
 
-## Scanner warnings
-
-- Protocol Index missing rows for: PROTO-024 PROTO-025 — scanner cannot score them. Fix PROTOCOLS.md index table.
-
 ---
 
-**Summary**: OK=16, FOUNDATION=2 (lib/bin — non-hook), MEMORY=1 (memory-only — LLM-enforced), DRIFT=7, RETIRED=11 (excluded from drift — intentionally unenforced)
-**Application rate** (excl RETIRED): (OK + FOUNDATION) / (OK + FOUNDATION + MEMORY + DRIFT) = 18 / 26 = 69%
+**Summary**: OK=19, FOUNDATION=5 (lib/bin — non-hook), MEMORY=2 (memory-only — LLM-enforced), DRIFT=2, RETIRED=11 (excluded from drift — intentionally unenforced)
+**Application rate (RAW)** (strict; excl RETIRED): (OK + FOUNDATION) / (OK + FOUNDATION + MEMORY + DRIFT) = 24 / 28 = 85%
+**Application rate (INTENT-ADJUSTED)** (counts MEMORY; excludes helper-class rows): (OK + FOUNDATION + MEMORY) / adj-denom = 26 / 27 = 96%
 **Regenerate**: `bash holding/hooks/verify-policy-coverage.sh --write`
 
 ### Parsing caveat (known limitation)

@@ -145,8 +145,12 @@ Per founder 2026-04-20: no env-var override. No OPS_PLAN_ACK. Only escape is rev
 | 11 | Charter-aware upgrade-clients.sh extension (shared w/ Tokens) | V2 | TODO |
 | 12 | Propagate to DayFlow + Billu | V2 | TODO |
 | 13 | Q2 review | — | TODO |
+| 14 | **Reclassify charter → engine** per founder direction 2026-04-28: "operationalize is not a charter, but a higher abstraction layer that sits at any place." Move to `sutra/os/engines/OPERATIONALIZATION-ENGINE.md` (peer to BLUEPRINT-ENGINE / ESTIMATION-ENGINE). Tier 2 + Tier 3 framing per 2026-04-28 conversation. | V3 | TODO |
+| 15 | **Default-strict scope inversion** per founder direction 2026-04-28: invert §5.1 from include-list of enforced paths to exempt-list (current §5.2 stays; everything else becomes a member of the artifact-class taxonomy by default). Closes the scope-mismatch failure mode that let `holding/scripts/sync-feedback-from-gh.sh` ship without an ops block on 2026-04-28. | V3 | TODO |
+| 16 | **CLAUDE.md mandatory-block entry** for OPERATIONALIZATION alongside cascade-check / build-layer / blueprint, so contributors see the trigger at session start instead of post-hoc. Currently the charter's "enforced at git boundary" framing is invisible to in-session writes. | V3 | TODO |
+| 17 | **Registry-coverage telemetry**: Analytics dept emits "% of `*.sh` paths edited that triggered the hook" so registry holes surface before they bite (the 2026-04-28 sync-feedback case had hook hits = 0 over 8 days; nobody noticed). | V3 | TODO |
 
-Deferred to V3: quality lint, system-emits-typed-data, active registry quarterly kill.
+Deferred to V3: quality lint, system-emits-typed-data, active registry quarterly kill, items 14-17 above (charter→engine reclassification + scope-default-strict + CLAUDE.md trigger + registry-coverage telemetry).
 
 ---
 
@@ -320,6 +324,18 @@ standing_instructions:
 | Iteration | If V1 cadence-poll threshold latency >5min consistently → promote threshold to event-driven daemon |
 | DRI | CEO of Sutra (charter); engine maintenance shared with Engineering on hook bugs |
 | Decommission | Standing Instructions abstraction retires only if (a) Sutra discontinues automation surface, or (b) replaced by a more general workflow primitive |
+
+### 12.11 Follow-up TODOs (parked 2026-04-28; pick up next)
+
+Captured by founder direction 2026-04-28 ("Add these as to-dos to the charter. We'll pick it up next."). Three items, ordered by effort:
+
+| # | Effort | Action | Trigger to unpark | Acceptance |
+|---|---|---|---|---|
+| **T1** | ~30s | Activate the new live SI: `bash holding/hooks/standing-instructions/engine.sh install ops-compliance-rollup`. Plist already generated; this `launchctl load`s it so it fires every 6h going forward. | Founder explicit "install it" OR resumed work on this charter. | `launchctl list \| grep sutra.si.ops-compliance-rollup` returns the plist; first 6h fire produces a fresh `.analytics/ops-compliance-latest.json`. |
+| **T2** | ~5 min | Add the next live SI. Two candidates already named in the charter: (a) **privacy-secrets-p0** (threshold trigger — fires when `.enforcement/proto-004-blocks.jsonl` post-cutover count > 0; severity P0; sink `founder-notify`); or (b) **speed-rca-trigger** (dependency trigger — fires when `holding/LATENCY-LOG.jsonl` reaches 50 task entries; sink `holding/research/<date>-speed-rca.md`). Either one exercises a non-cadence trigger type and proves the abstraction beyond the cadence path. | Founder picks the second SI to instantiate, OR a real KR1/SPEED-W2 signal needs surfacing. | Registry entry added, `engine.sh compile` produces a plist, plist plutil-clean. For threshold variant: runner script reads metric file and exits 0 (no fire) when below breach. |
+| **T3** | ~30 days | **L0 plugin promotion**: move engine + lib + runners from `holding/hooks/standing-instructions/` → `sutra/marketplace/plugin/runtime/standing-instructions/` so fleet inherits. Holding L1 copy retained for 30d stability window then retired. Mirrors the cascade-check.sh promotion pattern (which retired its holding copy 30d after L0 ship). | 30d clean operation on Sutra-self with zero engine bugs in `.enforcement/standing-instructions.log`. Earliest unpark: 2026-05-28. | Plugin path live; charter §13 updated; holding/hooks/standing-instructions/ retains a redirect comment; tier-2/3 clients see the engine on next plugin update. |
+
+These three items fully complete the V1 → V2 transition for Standing Instructions. Beyond T3, V2 work begins (event-driven threshold daemon, fswatch dependency runtime, charter-aware `upgrade-clients.sh` extension).
 
 ## 13. Related files
 

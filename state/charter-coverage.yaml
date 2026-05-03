@@ -103,14 +103,15 @@ charters:
       - sutra/marketplace/plugin/hooks/assistant-explain.sh
       - sutra/marketplace/plugin/hooks/assistant-feedback.sh
       - sutra/marketplace/plugin/hooks/assistant-decommission.sh
-    status: PARTIAL
+    status: DESIGN_PARTIAL
     last_updated: 2026-04-27
-    notes: "v1.0 ships 1/7 capabilities (Vision-vs-Reality table in ASSISTANT.md). assistant-observer wired PostToolUse this session. S2-S5 stubbed."
+    notes: "v1.0 ships 1/7 capabilities by design (Vision-vs-Reality table). S2-S5 deliberately deferred per resume triggers in charter. NOT execution debt — reclassified DESIGN_PARTIAL per codex round-4 to stop conflating spec-intent with shipping incompleteness. Counts as covered in Intent-Adjusted view."
 
   - id: BLUEPRINT
     file: sutra/os/engines/BLUEPRINT-ENGINE.md
     mechanisms:
       - sutra/marketplace/plugin/skills/blueprint/SKILL.md
-    status: PARTIAL
-    last_updated: 2026-04-27
-    notes: "V1 = skill at sutra/marketplace/plugin/skills/blueprint/. Engine charter at sutra/os/engines/BLUEPRINT-ENGINE.md. Hook (blueprint-check.sh) not yet shipped."
+      - holding/hooks/blueprint-check.sh
+    status: ACTIVE
+    last_updated: 2026-04-28
+    notes: "V1 hook shipped 2026-04-28 (codex round-5 narrowed scope: HARD on foundational doc paths only; SOFT advisory elsewhere; env+fs kill-switch only). Skill emits the block; hook enforces emission on charter/protocol/direction/engine/design-plan edits."

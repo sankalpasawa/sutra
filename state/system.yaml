@@ -829,3 +829,22 @@ standing_instructions:
     plist: "~/Library/LaunchAgents/os.sutra.ops-compliance-rollup.plist"
     created: 2026-04-27
     last_fire: null
+
+  # ── New (D36 follow-up — 2026-04-28) ──────────────────────────────────────
+
+  - id: feedback-sync
+    owner_charter: sutra/os/charters/OPERATIONALIZATION.md  # parented here until charter→engine reclassification (Roadmap §6 #14)
+    description: On-demand sync of github.com/sankalpasawa/sutra issues → sutra/marketplace/feedback-inbox/ + regenerate FEEDBACK-LOG.md. Trigger = founder utterance "bring me the issues from marketplace" (or peer phrase) — Claude runs the script then presents. No cadence; no launchd.
+    trigger:
+      type: on_demand
+      spec:
+        invoked_by: "founder utterance — Claude detects intent and runs script"
+    command: "bash holding/scripts/sync-feedback-from-gh.sh"
+    output_sink: ".analytics/feedback-sync.out.log"
+    on_failure: ".enforcement/standing-instructions.log"
+    severity: P2
+    status: on_demand   # 2026-04-28: founder switched from cadence to on-demand — no operational capacity for human-ritual hourly background machinery
+    plist: null   # uninstalled 2026-04-28; on-demand triggering doesn't need launchd
+    created: 2026-04-28
+    deactivated_cadence: 2026-04-28   # ran hourly for ~1h before founder direction change
+    last_fire: null

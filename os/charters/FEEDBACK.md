@@ -163,10 +163,85 @@ When you spot a problem with the feedback flow itself (scrub gap, transport bug,
 4. Ship under PROTO-024 V1.x patch (small) or V2 ship (transport rework)
 5. Update charter section + verdict log if the fix is governance-relevant
 
+## Close-Loop Layer V0 (added 2026-04-28)
+
+**Problem:** PROTO-024 V1 (collaborator-visible inbox) lets users *send* feedback. It does not let us *answer*. When a fix ships, the gh issue stays open, the user never hears back, and credibility erodes ("Sutra ships but doesn't communicate"). The 2026-04-27 vinit case is canonical: 13 issues filed, #2 fixed same-day in plugin v1.14.0/v1.15.0, no feedback to vinit, gh issue still OPEN 4 days later.
+
+**Layer purpose:** When a fix ships that addresses a marketplace gh issue, (a) close the loop on gh AND (b) deliver a "your issue is fixed" message that the user sees in their NEXT Sutra session — small, concrete, non-technical.
+
+### Architecture (Option 1 + Option 2 fallback)
+
+```
+Fix ships → close-marketplace-feedback.sh runs (Asawa side)
+      ↓
+      ├─→ gh issue comment + gh issue close (loop closed on github)
+      ├─→ if install_id known (plugin-filed via `sutra feedback --public`):
+      │     write clients/<install_id>/inbox/<ts>-<#>.md to sutra-data git rail
+      │     (delivered to user's plugin via existing pull-on-startup)
+      └─→ if install_id NOT known (legacy gh-UI filer):
+            plugin's gh-API fallback queries closed-by-user issues on session
+            start, displays close comment
+
+Plugin on session start (inbox-display.sh hook):
+  1. Pull sutra-data → read clients/<install_id>/inbox/ → display unread
+  2. If gh auth working → check `--author $(gh api user)` closed:>last-seen,
+     display new ones (covers gh-UI filers without server-side mapping)
+  3. Mark all displayed items as read; verify gh_author match before display
+```
+
+### Tone — locked
+
+Format: `<acknowledge> + <what changes for them> + <how they get it>`
+
+- 1-3 sentences, plain English a non-developer understands
+- Outcome-framed ("what your world looks like after"), NOT mechanism-framed
+- NO version numbers, commit shas, hook names, file paths, internal protocol refs
+- Acknowledge user's role; state update path
+
+Memory `feedback_close_loop_tone_template.md` carries the worked example. V0 enforcement = founder review at draft time; V1 will add a pre-post lint hook (defer until ≥3 close-outs and observed drift).
+
+### Components shipped 2026-04-28
+
+| Component | Path | Purpose |
+|---|---|---|
+| Close-out script | `holding/scripts/close-marketplace-feedback.sh` | Posts comment + closes + delivers + ledger |
+| Tone memory | `feedback_close_loop_tone_template.md` (memory) | Locked tone format + drafting rules |
+| Mapping recorder | `sutra/marketplace/plugin/scripts/feedback.sh` (extended) | Records `{install_id, issue_number, title, ts}` after `gh issue create` succeeds |
+| Inbox display hook | `sutra/marketplace/plugin/hooks/inbox-display.sh` (new, SessionStart) | Pulls sutra-data, displays inbox + gh-API fallback |
+| Hook registration | `sutra/marketplace/plugin/hooks/hooks.json` | Registers inbox-display under SessionStart |
+| Ledger | `.analytics/marketplace-closeouts.jsonl` | Audit + KPI source |
+| Privacy disclosure | `sutra/marketplace/plugin/PRIVACY.md` | inbox/ is collaborator-visible until V2 encryption |
+
+### Operationalization (V0 — same shape as §11)
+
+**1. Measurement:** close-loop coverage % = `count(marketplace_fixes_with_closeout_within_24h) / count(marketplace_fixes_shipped)`. Source: `.analytics/marketplace-closeouts.jsonl` ⋈ git log of fixes with `closes #N` / `fixes #N` (sankalpasawa/sutra). Rolling 7d, denom≥2. Target Q2: ≥80%; warn <60%; breach <40%.
+
+**2. Adoption:** Manual invocation by founder/Claude after each marketplace-issue fix. Tone-template memory triggers Claude to draft at fix-ship time; founder reviews; script posts. No cron — per-event.
+
+**3. Monitoring / escalation:** Daily Pulse panel (when surfaced) shows shipped-but-not-closed-out fixes. Warn if >0 fixes older than 24h without closeout. Breach if >3 unclosed-out accumulate.
+
+**4. Iteration trigger:** Revise when (a) ≥3 close-outs and tone drift observed → ship V1 lint hook; (b) gh-author fallback fails for ≥1 user with gh auth → debug; (c) inbox file delivery fails → audit mapping flow; (d) coverage <80% sustained 7d → process review.
+
+**5. DRI:** Asawa CEO (close-out posting decisions, comment text). Sutra-OS as implementer. Engineering for plugin-side hooks. Analytics for KPI rollup.
+
+**6. Decommission:** Retire when (a) gh issues sunset / migrate forge → re-target; (b) PROTO-024 V2 encrypted channel ships with native close-loop UX → script redundant; (c) feedback volume justifies dedicated app → script + ledger retire together. Founder approval + 14d deprecation banner required.
+
+### Failure modes + mitigations (this layer)
+
+| Risk | Mitigation |
+|---|---|
+| Wrong-user delivery (privacy P0) — install_id↔issue mapping bug delivers to wrong user | Two-factor: inbox file carries `gh_author` field; plugin verifies match against `gh api user --jq .login` before displaying. Mismatch → log + skip + alert |
+| Race / duplicate close-outs | Idempotency via ledger pre-check: `grep -q "issue:N" ledger` → skip retry |
+| Replay (user sees same announcement 3 times) | Plugin moves displayed files to `inbox/read/`; never re-displays |
+| gh API rate limit on fallback | 1h local cache of `closed:>last-seen` query; graceful skip on 429 |
+| Privacy leak in gh comment | Tone-lint warns on `~/.sutra/`, file paths, version numbers, internal terms; founder review enforces V0 |
+| Abuse — fake fix close-out | Ledger captures `posted_by=$USER` from env; founder review at draft time |
+| Silent display hook failure | Hook stderr → `.enforcement/inbox-display.log`; failure visible in Daily Pulse |
+
 ## Pointers
 
 - **Protocol spec**: `sutra/layer2-operating-system/PROTOCOLS.md` §PROTO-024
 - **User-facing privacy**: `sutra/marketplace/plugin/PRIVACY.md`
-- **Sister charters**: `PRIVACY.md` (data collection rules), `SECURITY.md` (channel hardening), `OPERATIONALIZATION.md` (the 6-section ops template this charter follows)
-- **Codex review**: `.enforcement/codex-reviews/2026-04-25-proto-024-feedback-fanin-and-reset-hook-fix.md`
-- **Memory**: `feedback_never_bypass_governance.md` — the meta-rule that landed during PROTO-024 V1 ship and applies here too
+- **Sister charters**: `PRIVACY.md` (data collection rules), `SECURITY.md` (channel hardening), `OPERATIONALIZATION.md` (the 6-section ops template this charter follows; engine reclassification pending — Roadmap §6 #14)
+- **Codex review**: `.enforcement/codex-reviews/2026-04-25-proto-024-feedback-fanin-and-reset-hook-fix.md` (V1); Close-Loop V0 codex review deferred — gstack /codex consult template hung on stdin 2026-04-28; retry post-implementation
+- **Memory**: `feedback_never_bypass_governance.md` (meta-rule), `project_feedback_canonical_channel.md` (D36 channel), `feedback_marketplace_sync_on_demand.md` (sync trigger), `feedback_close_loop_tone_template.md` (close-out tone)

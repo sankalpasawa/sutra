@@ -41,9 +41,10 @@ directions:
 
   - id: D5
     name: External Research at Every Level
-    mechanisms: [holding/research/]
-    status: PARTIAL
-    notes: "LaunchAgent cron on weekly/bi-weekly cadence missing."
+    mechanisms: [holding/research/, holding/hooks/standing-instructions/runners/research-cadence-check.sh, holding/hooks/standing-instructions/engine.sh]
+    status: IMPLEMENTED
+    last_audited: 2026-04-27
+    notes: "Standing-instructions engine (D30b §12) runs research-cadence-check on launchd cadence. Per OPERATIONALIZATION charter abstraction."
 
   - id: D6
     name: Directions with Regression Tests
@@ -197,9 +198,10 @@ directions:
 
   - id: D32
     name: Hot-Reloadable Hooks, Default Off
-    mechanisms: [sutra/os/SUTRA-CONFIG.md]
-    status: PARTIAL
-    notes: "Shipped to dayflow+sutra-self; not yet in marketplace plugin."
+    mechanisms: [sutra/os/SUTRA-CONFIG.md, sutra/marketplace/plugin/hooks/hooks.json]
+    status: IMPLEMENTED
+    last_audited: 2026-04-27
+    notes: "Marketplace plugin hooks.json supports default-OFF + hot-reload via SUTRA-CONFIG.md enabled_hooks flags. Plugin migration (dogfood Phase 3, 2026-04-23) propagated pattern to fleet."
 
   - id: D33
     name: External Clients Firewalled
