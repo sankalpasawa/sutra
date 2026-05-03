@@ -97,6 +97,13 @@ RE_TOOLS=$(jq -r '.right_effort.applies_before | join("/")' "$DEFAULTS_JSON" 2>/
 # gets the same imperative without needing CLAUDE.md governance context.
 {
   printf '\n[Sutra defaults · D40 v1.0.3] Per-turn block stack — MUST emit in this order:\n'
+  printf '\n'
+  printf '  TOPIC-GATING FORBIDDEN. Emit the full per-turn discipline blocks for every user input,\n'
+  printf '  regardless of topic. Personal, research, lifestyle, emotional, chitchat, greetings —\n'
+  printf '  every input receives the same block stack. For lightweight inputs, keep block CONTENT\n'
+  printf '  minimal (one-word fields ok) but PRESENCE is mandatory. Structure universality, not\n'
+  printf '  depth universality. Founder direction: "sutra for anything and everything" (D45-cand).\n'
+  printf '\n'
   printf '  1. H-SUTRA HEADER     MUST emit as FIRST line of response — literal bracketed text, NOT a skill invocation:\n'
   printf '                        Format: %s\n' "${HS_FORMAT:-[<DIRECTION>·<VERB> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]}"
   printf '                        On Stage-1 fail: %s\n' "${HS_FAIL:-[STAGE-1-FAIL · CLARIFY · attempt:1/1]}"
@@ -168,11 +175,24 @@ mkdir -p "$(dirname "$HSUTRA_LOG")" 2>/dev/null || true
 
 HSUTRA_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 HSUTRA_TURN_ID=$(printf '%s' "${HSUTRA_TS}|${HSUTRA_PROMPT}" | shasum -a 256 2>/dev/null | cut -c1-12)
+
+# Optional input_text capture for Native v1.2 organic-emergence detector.
+# Default OFF for T4 privacy / log-size; opt-in per-cohort via env flag.
+# Truncated to 500 chars to bound log growth (most patterns surface from
+# short utterances; long inputs are rarely the repeating-pattern case).
+HSUTRA_INPUT_TEXT=""
+case "${SUTRA_HSUTRA_CAPTURE_INPUT:-}" in
+  on|1|true|yes)
+    HSUTRA_INPUT_TEXT=$(printf '%s' "$HSUTRA_PROMPT" | head -c 500)
+    ;;
+esac
+
 HSUTRA_ROW=$(printf '%s' "$HSUTRA_JSON" | jq -c \
   --arg ts "$HSUTRA_TS" \
   --arg turn_id "$HSUTRA_TURN_ID" \
   --arg ir_type "$HSUTRA_IR_TYPE" \
-  '{ts:$ts, turn_id:$turn_id, direction:.direction, verb:.verb, principal_act:.principal_act, mixed_acts:.mixed_acts, tense:.tense, timing:.timing, channel:.channel, reversibility:.reversibility, decision_risk:.decision_risk, stage_1_pass:(.stage_1_fail==false), stage_3_emission_type:.stage_3_emission_type, input_routing_type:$ir_type}' 2>/dev/null || true)
+  --arg input_text "$HSUTRA_INPUT_TEXT" \
+  '{ts:$ts, turn_id:$turn_id, direction:.direction, verb:.verb, principal_act:.principal_act, mixed_acts:.mixed_acts, tense:.tense, timing:.timing, channel:.channel, reversibility:.reversibility, decision_risk:.decision_risk, stage_1_pass:(.stage_1_fail==false), stage_3_emission_type:.stage_3_emission_type, input_routing_type:$ir_type} + (if $input_text == "" then {} else {input_text:$input_text} end)' 2>/dev/null || true)
 if [ -z "$HSUTRA_ROW" ]; then
   printf '[h-sutra] row build failed; skipped.\n' >&2
   exit 0
