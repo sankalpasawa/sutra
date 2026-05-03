@@ -15,6 +15,7 @@
 import { type Charter } from '../primitives/charter.js';
 import { type Domain } from '../primitives/domain.js';
 import { type Workflow } from '../primitives/workflow.js';
+import { type TriggerSpec } from '../types/trigger-spec.js';
 export interface UserKitOptions {
     /** Override storage root. Defaults to $SUTRA_NATIVE_HOME or ~/.sutra-native. */
     readonly home?: string;
@@ -31,10 +32,14 @@ export declare function listCharters(opts?: UserKitOptions): Charter[];
 export declare function persistWorkflow(w: Workflow, opts?: UserKitOptions): string;
 export declare function loadWorkflow(id: string, opts?: UserKitOptions): Workflow | null;
 export declare function listWorkflows(opts?: UserKitOptions): Workflow[];
+export declare function persistTrigger(t: TriggerSpec, opts?: UserKitOptions): string;
+export declare function loadTrigger(id: string, opts?: UserKitOptions): TriggerSpec | null;
+export declare function listTriggers(opts?: UserKitOptions): TriggerSpec[];
 export interface UserKit {
     readonly domains: ReadonlyArray<Domain>;
     readonly charters: ReadonlyArray<Charter>;
     readonly workflows: ReadonlyArray<Workflow>;
+    readonly triggers: ReadonlyArray<TriggerSpec>;
 }
 export declare function loadUserKit(opts?: UserKitOptions): UserKit;
 //# sourceMappingURL=user-kit.d.ts.map

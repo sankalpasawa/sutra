@@ -30,6 +30,9 @@ export const ENGINE_EVENT_TYPES = new Set([
     'policy_decision',
     'step_started',
     'step_completed',
+    'pattern_proposed',
+    'proposal_approved',
+    'proposal_rejected',
 ]);
 // -----------------------------------------------------------------------------
 // Per-variant validators (codex P1 fold 2026-05-03) — guard MUST validate the
@@ -79,6 +82,16 @@ const VARIANT_VALIDATORS = {
         isNonNegInt(v.step_index) &&
         isNonNegInt(v.step_count) &&
         isFiniteNonNegNumber(v.duration_ms),
+    pattern_proposed: (v) => isNonEmptyStr(v.pattern_id) &&
+        isNonEmptyStr(v.normalized_phrase) &&
+        isNonNegInt(v.evidence_count) &&
+        isNonEmptyStr(v.proposed_workflow_id) &&
+        isNonEmptyStr(v.proposed_trigger_id),
+    proposal_approved: (v) => isNonEmptyStr(v.pattern_id) &&
+        isNonEmptyStr(v.registered_workflow_id) &&
+        isNonEmptyStr(v.registered_trigger_id),
+    proposal_rejected: (v) => isNonEmptyStr(v.pattern_id) &&
+        isStr(v.reason),
 };
 /**
  * Sound type guard for the EngineEvent discriminated union. Validates:

@@ -70,6 +70,20 @@ export const defaultRenderStepStarted = (e, ctx) => {
 export const defaultRenderStepCompleted = (e, ctx) => {
     return `${cellPrefix(ctx)}[${e.workflow_id}] step ${e.step_index}/${e.step_count} ✓ ${e.step_id} in ${e.duration_ms}ms`;
 };
+// -----------------------------------------------------------------------------
+// SPEC v1.2 §4.6 — organic emergence v1 renderers
+// -----------------------------------------------------------------------------
+export const defaultRenderPatternProposed = (e, ctx) => {
+    const phrase = sanitizeForTerminal(e.normalized_phrase);
+    return `${cellPrefix(ctx)}[native] pattern ${e.pattern_id} seen ${e.evidence_count}×: "${phrase}". Type "approve ${e.pattern_id}" to register, or "reject ${e.pattern_id}" to drop.`;
+};
+export const defaultRenderProposalApproved = (e, ctx) => {
+    return `${cellPrefix(ctx)}[native] approved ${e.pattern_id}. Registered ${e.registered_workflow_id} + ${e.registered_trigger_id}. Next match routes deterministically.`;
+};
+export const defaultRenderProposalRejected = (e, ctx) => {
+    const reason = e.reason ? `: ${sanitizeForTerminal(e.reason)}` : '';
+    return `${cellPrefix(ctx)}[native] rejected ${e.pattern_id}${reason}.`;
+};
 /** Map of every EngineEventType to its default renderer. Frozen at module load. */
 export const DEFAULT_RENDERERS = Object.freeze({
     routing_decision: defaultRenderRoutingDecision,
@@ -80,6 +94,9 @@ export const DEFAULT_RENDERERS = Object.freeze({
     policy_decision: defaultRenderPolicyDecision,
     step_started: defaultRenderStepStarted,
     step_completed: defaultRenderStepCompleted,
+    pattern_proposed: defaultRenderPatternProposed,
+    proposal_approved: defaultRenderProposalApproved,
+    proposal_rejected: defaultRenderProposalRejected,
 });
 // -----------------------------------------------------------------------------
 // RendererRegistry

@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { createCharter } from '../primitives/charter.js';
 import { createDomain } from '../primitives/domain.js';
 import { createWorkflow } from '../primitives/workflow.js';
+import { isTriggerSpec } from '../types/trigger-spec.js';
 export function userKitRoot(opts = {}) {
     const env = opts.env ?? process.env;
     if (opts.home)
@@ -110,11 +111,38 @@ export function listWorkflows(opts = {}) {
         .filter((f) => f.endsWith('.json'))
         .map((f) => createWorkflow(readJson(join(dir, f))));
 }
+// ---------------------------------------------------------------------------
+// TriggerSpec (v1.2 — organic emergence)
+// ---------------------------------------------------------------------------
+export function persistTrigger(t, opts = {}) {
+    const dir = entityDir('triggers', opts);
+    ensureDir(dir);
+    const path = join(dir, `${t.id}.json`);
+    writeJson(path, t);
+    return path;
+}
+export function loadTrigger(id, opts = {}) {
+    const path = join(entityDir('triggers', opts), `${id}.json`);
+    if (!existsSync(path))
+        return null;
+    const raw = readJson(path);
+    return isTriggerSpec(raw) ? raw : null;
+}
+export function listTriggers(opts = {}) {
+    const dir = entityDir('triggers', opts);
+    if (!existsSync(dir))
+        return [];
+    return readdirSync(dir)
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => readJson(join(dir, f)))
+        .filter(isTriggerSpec);
+}
 export function loadUserKit(opts = {}) {
     return {
         domains: listDomains(opts),
         charters: listCharters(opts),
         workflows: listWorkflows(opts),
+        triggers: listTriggers(opts),
     };
 }
 //# sourceMappingURL=user-kit.js.map

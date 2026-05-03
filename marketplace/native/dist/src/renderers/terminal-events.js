@@ -23,6 +23,12 @@ export function formatEvent(e) {
             return `[policy_decision]    rule=${e.rule_id}  verdict=${e.verdict}${e.reason ? '  reason=' + e.reason : ''}`;
         case 'artifact_registered':
             return `[artifact_registered] domain=${e.domain_id}  kind=${e.asset_kind}  sha=${e.content_sha256.slice(0, 12)}`;
+        case 'pattern_proposed':
+            return `[pattern_proposed]   ${e.pattern_id}  evidence=${e.evidence_count}  phrase="${e.normalized_phrase}"  workflow=${e.proposed_workflow_id}`;
+        case 'proposal_approved':
+            return `[proposal_approved]  ${e.pattern_id}  workflow=${e.registered_workflow_id}  trigger=${e.registered_trigger_id}`;
+        case 'proposal_rejected':
+            return `[proposal_rejected]  ${e.pattern_id}  reason=${e.reason}`;
         default: {
             const exhaustive = e;
             return `[unknown_event] ${JSON.stringify(exhaustive)}`;

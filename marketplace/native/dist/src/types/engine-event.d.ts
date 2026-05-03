@@ -21,7 +21,7 @@
  * override per-event_type.
  */
 import type { HSutraEvent } from './h-sutra-event.js';
-export type EngineEventType = 'routing_decision' | 'workflow_started' | 'workflow_completed' | 'workflow_failed' | 'artifact_registered' | 'policy_decision' | 'step_started' | 'step_completed';
+export type EngineEventType = 'routing_decision' | 'workflow_started' | 'workflow_completed' | 'workflow_failed' | 'artifact_registered' | 'policy_decision' | 'step_started' | 'step_completed' | 'pattern_proposed' | 'proposal_approved' | 'proposal_rejected';
 /** Runtime allow-list mirroring EngineEventType — kept in sync. */
 export declare const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType>;
 export interface RoutingDecisionEvent {
@@ -88,7 +88,34 @@ export interface StepCompletedEvent {
     readonly step_count: number;
     readonly duration_ms: number;
 }
-export type EngineEvent = RoutingDecisionEvent | WorkflowStartedEvent | WorkflowCompletedEvent | WorkflowFailedEvent | ArtifactRegisteredEvent | PolicyDecisionEvent | StepStartedEvent | StepCompletedEvent;
+/**
+ * Organic emergence v1 events (SPEC v1.2 §4.6) — emitted when the
+ * pattern-detector surfaces a candidate or the founder approves/rejects via
+ * the next-utterance command.
+ */
+export interface PatternProposedEvent {
+    readonly type: 'pattern_proposed';
+    readonly ts_ms: number;
+    readonly pattern_id: string;
+    readonly normalized_phrase: string;
+    readonly evidence_count: number;
+    readonly proposed_workflow_id: string;
+    readonly proposed_trigger_id: string;
+}
+export interface ProposalApprovedEvent {
+    readonly type: 'proposal_approved';
+    readonly ts_ms: number;
+    readonly pattern_id: string;
+    readonly registered_workflow_id: string;
+    readonly registered_trigger_id: string;
+}
+export interface ProposalRejectedEvent {
+    readonly type: 'proposal_rejected';
+    readonly ts_ms: number;
+    readonly pattern_id: string;
+    readonly reason: string;
+}
+export type EngineEvent = RoutingDecisionEvent | WorkflowStartedEvent | WorkflowCompletedEvent | WorkflowFailedEvent | ArtifactRegisteredEvent | PolicyDecisionEvent | StepStartedEvent | StepCompletedEvent | PatternProposedEvent | ProposalApprovedEvent | ProposalRejectedEvent;
 /**
  * Sound type guard for the EngineEvent discriminated union. Validates:
  *   - type ∈ ENGINE_EVENT_TYPES

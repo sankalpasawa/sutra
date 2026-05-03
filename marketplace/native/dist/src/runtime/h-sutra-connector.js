@@ -101,6 +101,10 @@ export class HSutraConnector {
             this.listeners = this.listeners.filter((l) => l !== listener);
         };
     }
+    /** Resolved absolute path to the H-Sutra log JSONL this connector watches. */
+    getLogPath() {
+        return this.logPath;
+    }
     getCachedEvent(turn_id) {
         this.evictExpired();
         const entry = this.cache.get(turn_id);

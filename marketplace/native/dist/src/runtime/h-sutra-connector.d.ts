@@ -74,6 +74,8 @@ export declare class HSutraConnector {
     start(): void;
     stop(): void;
     onEvent(listener: HSutraEventListener): () => void;
+    /** Resolved absolute path to the H-Sutra log JSONL this connector watches. */
+    getLogPath(): string;
     getCachedEvent(turn_id: string): HSutraEvent | null;
     getStats(): HSutraConnectorStats;
     /**
