@@ -1,6 +1,6 @@
 ---
 name: blueprint
-description: Use before any Edit/Write/Bash/Agent tool call - emits a BLUEPRINT block (Doing / Steps / Scale / Stops-if / Switch) so the founder sees the plan before Claude takes action. Honors 3-level kill-switch (env / fs / SUTRA-CONFIG). Engine of record at sutra/os/engines/BLUEPRINT-ENGINE.md.
+description: Use before tool calls that MUTATE state (Edit/Write/MultiEdit), branch (Agent), or run multi-step plans. Skip for read-only single-call turns and pure questions. Emits BLUEPRINT block (Doing / Steps / Scale / Stops-if / Switch) so the founder sees the plan before Claude takes action. Honors 3-level kill-switch (env / fs / SUTRA-CONFIG). Task-shape gate per D-UX-2 codex ADVISORY 2026-05-04 (was "any tool call"; revised to mutation/branching/multi-step). Engine of record at sutra/os/engines/BLUEPRINT-ENGINE.md.
 ---
 
 # BLUEPRINT — Pre-task Plan Preview
@@ -10,14 +10,16 @@ Every founder turn that will result in any tool call gets a BLUEPRINT block. Emi
 ## The block
 
 ```
-┌─ BLUEPRINT ─────────────────────────────────────────────────┐
-│ Doing: <plain-English task statement>                        │
-│ Steps: 1) <step> 2) <step> 3) <step>                         │
-│ Scale: <files>, <time>, <cost>                               │
-│ Stops if: <abort condition>                                  │
-│ Switch: ON | OFF (override: BLUEPRINT_ACK=1 reason)          │
-└──────────────────────────────────────────────────────────────┘
++--- BLUEPRINT --------------------------------------------------+
+| Doing: <plain-English task statement>                          |
+| Steps: 1) <step> 2) <step> 3) <step>                           |
+| Scale: <files>, <time>, <cost>                                 |
+| Stops if: <abort condition>                                    |
+| Switch: ON | OFF (override: BLUEPRINT_ACK=1 reason)            |
++----------------------------------------------------------------+
 ```
+
+ASCII-only per CLAUDE.md (D-UX-1 codex 2026-05-04: "ASCII everywhere; unicode buys nothing here and violates the written rule plus terminal/log portability"). Native renderer at sutra/marketplace/native/src/renderers/terminal-events.ts is the canonical reference (line 6: "no unicode box-drawing — readable in any terminal + log file").
 
 Five fields, all required:
 

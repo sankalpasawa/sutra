@@ -59,8 +59,15 @@
       "log_path": "holding/ESTIMATION-LOG.jsonl"
     },
     "blueprint": {
-      "required_when": "tool_calls_planned",
-      "skip_when": "pure_question_turn",
+      "$comment": "Trigger refined per D-UX-2 codex ADVISORY 2026-05-04 (was 'tool_calls_planned'; raw tool count is the wrong abstraction per codex P2). Now task-shape based: emit when state-mutating tool calls planned (Edit/Write/MultiEdit), branching (Agent dispatch), or multi-step plans (>=3 distinct steps). Skip for read-only single-call turns and pure-question turns.",
+      "required_when": "task_shape IN [mutation, branching, multi_step]",
+      "skip_when": "pure_question_turn OR read_only_single_call",
+      "task_shape_definitions": {
+        "mutation": "Edit, Write, or MultiEdit tool call planned",
+        "branching": "Agent (subagent dispatch) or conditional execution planned",
+        "multi_step": ">=3 distinct steps that depend on each other or change scope mid-flight",
+        "read_only_single_call": "single Read, Grep, Glob, or BashOutput call with no follow-up planned"
+      },
       "fields": [
         "Doing",
         "Steps",
@@ -68,6 +75,8 @@
         "Stops if",
         "Switch"
       ],
+      "ascii_only": true,
+      "$ascii_comment": "Per D-UX-1 codex ADVISORY 2026-05-04: ASCII boxes only (no unicode box-drawing). Native renderer is canonical reference.",
       "skill": "core:blueprint",
       "hook": "blueprint-check.sh"
     },
