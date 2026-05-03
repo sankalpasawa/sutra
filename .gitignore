@@ -1,2 +1,9 @@
 .DS_Store
 node_modules/
+
+# Exception: connectors module ships production runtime deps (yaml, cockatiel,
+# nanoid; ~2.2 MB) committed so /plugin install + /plugin update both deliver
+# a fully-working stack without npm install. See connectors/.gitignore for
+# the full rationale.
+!marketplace/plugin/connectors/node_modules/
+!marketplace/plugin/connectors/node_modules/**

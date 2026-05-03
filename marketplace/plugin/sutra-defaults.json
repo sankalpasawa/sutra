@@ -1,20 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sutra-os.dev/schemas/sutra-defaults.json",
-  "$comment": "Canonical machine-readable policy surface. See SUTRA-DEFAULTS.md for human-readable equivalent. Per founder direction D40. v1.0.1: codex CHANGES-REQUIRED fold — kill_switches comprehensive, hooks now consume this file at runtime via jq, harness rewired.",
+  "$comment": "Canonical machine-readable policy surface. See SUTRA-DEFAULTS.md for human-readable equivalent. Per founder direction D40. v1.0.1: codex CHANGES-REQUIRED fold \u2014 kill_switches comprehensive, hooks now consume this file at runtime via jq, harness rewired.",
   "version": "1.0.4",
   "issued": "2026-04-30",
   "source_direction": "D40",
   "per_turn_blocks": {
     "human_sutra_header": {
-      "$comment": "v2.15.1: promoted from hardcoded hook reminder to canonical schema entry, closing the v2.14.1 deferred TODO. Direct emission — NOT a skill invocation. Format per skills/human-sutra/SKILL.md §Header emission.",
+      "$comment": "v2.15.1: promoted from hardcoded hook reminder to canonical schema entry, closing the v2.14.1 deferred TODO. Direct emission \u2014 NOT a skill invocation. Format per skills/human-sutra/SKILL.md \u00a7Header emission.",
       "required": true,
       "position": "FIRST line of response, before any other text",
-      "format": "[<DIRECTION>·<VERB> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]",
-      "format_with_tense": "[<DIRECTION>·<VERB> · TENSE:<tense> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]",
-      "format_stage_1_fail": "[STAGE-1-FAIL · CLARIFY · attempt:1/1]",
+      "format": "[<DIRECTION>\u00b7<VERB> \u00b7 TIMING:<...> \u00b7 CHANNEL:<...> \u00b7 REV:<...> \u00b7 RISK:<...>]",
+      "format_with_tense": "[<DIRECTION>\u00b7<VERB> \u00b7 TENSE:<tense> \u00b7 TIMING:<...> \u00b7 CHANNEL:<...> \u00b7 REV:<...> \u00b7 RISK:<...>]",
+      "format_stage_1_fail": "[STAGE-1-FAIL \u00b7 CLARIFY \u00b7 attempt:1/1]",
       "emission_mode": "direct_text",
-      "$emission_note": "Emit the literal bracketed line as the FIRST text of your response. Do NOT invoke a separate skill via Skill tool — the hook nudge `(format: ...)` is the directive, not `(skill: X)`.",
+      "$emission_note": "Emit the literal bracketed line as the FIRST text of your response. Do NOT invoke a separate skill via Skill tool \u2014 the hook nudge `(format: ...)` is the directive, not `(skill: X)`.",
       "skill_reference": "core:human-sutra",
       "log_path_asawa": "holding/state/interaction/log.jsonl",
       "log_path_default": ".sutra/h-sutra.jsonl",
@@ -22,15 +22,38 @@
     },
     "input_routing": {
       "required": true,
-      "applies_to_turn_types": ["question", "task", "direction", "feedback", "new_concept"],
-      "fields": ["INPUT", "TYPE", "EXISTING HOME", "ROUTE", "FIT CHECK", "ACTION"],
+      "applies_to_turn_types": [
+        "question",
+        "task",
+        "direction",
+        "feedback",
+        "new_concept"
+      ],
+      "fields": [
+        "INPUT",
+        "TYPE",
+        "EXISTING HOME",
+        "ROUTE",
+        "FIT CHECK",
+        "ACTION"
+      ],
       "skill": "core:input-routing",
       "soft_hint_hook": "per-turn-discipline-prompt.sh"
     },
     "depth_estimation": {
       "required": true,
-      "fields_pre": ["TASK", "DEPTH", "EFFORT", "COST", "IMPACT"],
-      "fields_post": ["TRIAGE", "ESTIMATE", "ACTUAL"],
+      "fields_pre": [
+        "TASK",
+        "DEPTH",
+        "EFFORT",
+        "COST",
+        "IMPACT"
+      ],
+      "fields_post": [
+        "TRIAGE",
+        "ESTIMATE",
+        "ACTUAL"
+      ],
       "skill": "core:depth-estimation",
       "auto_captured_by": "estimation-collector.sh",
       "log_path": "holding/ESTIMATION-LOG.jsonl"
@@ -38,18 +61,35 @@
     "blueprint": {
       "required_when": "tool_calls_planned",
       "skip_when": "pure_question_turn",
-      "fields": ["Doing", "Steps", "Scale", "Stops if", "Switch"],
+      "fields": [
+        "Doing",
+        "Steps",
+        "Scale",
+        "Stops if",
+        "Switch"
+      ],
       "skill": "core:blueprint",
       "hook": "blueprint-check.sh"
     },
     "build_layer": {
       "required_when": "path_in_D38_categories",
-      "fields": ["BUILD-LAYER", "ACTIVATION-SCOPE", "TARGET-PATH"],
+      "fields": [
+        "BUILD-LAYER",
+        "ACTIVATION-SCOPE",
+        "TARGET-PATH"
+      ],
       "marker_file": ".claude/build-layer-registered",
       "marker_schema_keys": [
-        "LAYER", "SCOPE", "TARGET_PATH",
-        "WHY_NOT_L0_KIND", "WHY_NOT_L0_REASON",
-        "PROMOTE_TO", "PROMOTE_BY", "OWNER", "ACCEPTANCE", "TS"
+        "LAYER",
+        "SCOPE",
+        "TARGET_PATH",
+        "WHY_NOT_L0_KIND",
+        "WHY_NOT_L0_REASON",
+        "PROMOTE_TO",
+        "PROMOTE_BY",
+        "OWNER",
+        "ACCEPTANCE",
+        "TS"
       ],
       "hook": "build-layer-check.sh"
     },
@@ -62,7 +102,11 @@
   },
   "consult_policy": {
     "depth_threshold": 3,
-    "applies_to_tools": ["Edit", "Write", "MultiEdit"],
+    "applies_to_tools": [
+      "Edit",
+      "Write",
+      "MultiEdit"
+    ],
     "consult_skill": "core:codex-sutra",
     "max_call_duration_minutes": 5,
     "convergence_pattern": "claude_and_codex_agree_then_execute_end_to_end",
@@ -78,7 +122,13 @@
     ]
   },
   "skill_explanation": {
-    "template_lines": ["SKILL", "WHAT", "WHY", "EXPECT", "ASKS"],
+    "template_lines": [
+      "SKILL",
+      "WHAT",
+      "WHY",
+      "EXPECT",
+      "ASKS"
+    ],
     "required_before": "skill_invocation",
     "enforcement": "convention_only",
     "reason_no_enforcement": "Claude Code lacks PreSkillUse hook",
@@ -104,9 +154,16 @@
       "Operationalization 6-section ops block",
       "Codex review per layer"
     ],
-    "footer_lines": ["TRIAGE", "ESTIMATE", "ACTUAL", "OS_TRACE"],
+    "footer_lines": [
+      "TRIAGE",
+      "ESTIMATE",
+      "ACTUAL",
+      "OS_TRACE"
+    ],
     "hook": "subagent-dispatch-brief.sh",
-    "applies_to_tools": ["Task"],
+    "applies_to_tools": [
+      "Task"
+    ],
     "kill_switch": {
       "env": "SUBAGENT_BRIEF_DISABLED=1",
       "file": "~/.subagent-brief-disabled"
@@ -126,10 +183,18 @@
       "think_first: state assumptions; if multiple interpretations exist, ask. No silent guesses.",
       "simpler_alt: if 200 lines could be 50, rewrite. No speculative abstractions.",
       "surgical_scope: only changed lines that trace to the request. No drive-by refactors.",
-      "verify_loop: task = success criteria + verification. 'Make X work' → 'test passes'."
+      "verify_loop: task = success criteria + verification. 'Make X work' \u2192 'test passes'."
     ],
-    "principles_short": ["think first", "simpler-alt", "surgical scope", "verify-loop"],
-    "applies_before": ["Edit", "Write"],
+    "principles_short": [
+      "think first",
+      "simpler-alt",
+      "surgical scope",
+      "verify-loop"
+    ],
+    "applies_before": [
+      "Edit",
+      "Write"
+    ],
     "soft_hint_hook": "per-turn-discipline-prompt.sh",
     "kill_switch": {
       "env": "RIGHT_EFFORT_DISABLED=1",
@@ -138,18 +203,24 @@
   },
   "build_layer_categories": {
     "D38_PLUGIN_RUNTIME": {
-      "paths": ["sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin}/**"],
+      "paths": [
+        "sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin}/**"
+      ],
       "rule": "LAYER must be L0",
       "enforcement": "HARD",
       "hook_exit_on_violation": 2
     },
     "D38_SHARED_RUNTIME": {
-      "paths": ["sutra/hooks/**"],
+      "paths": [
+        "sutra/hooks/**"
+      ],
       "rule": "LAYER must be L0",
       "enforcement": "HARD"
     },
     "D38_HOLDING_IMPL": {
-      "paths": ["holding/{hooks,scripts,skills,commands,bin}/**"],
+      "paths": [
+        "holding/{hooks,scripts,skills,commands,bin}/**"
+      ],
       "rule": "L0 forbidden (lying); L1 needs full promotion fields; L2 needs WHY_NOT_L0_KIND=instance-only + WHY_NOT_L0_REASON",
       "enforcement": "HARD"
     },
@@ -164,23 +235,31 @@
       "enforcement": "HARD"
     },
     "SOFT": {
-      "paths": ["everywhere else not whitelisted"],
+      "paths": [
+        "everywhere else not whitelisted"
+      ],
       "rule": "advisory only",
       "enforcement": "SOFT"
     },
     "WHITELIST": {
       "paths": [
-        ".claude/", ".enforcement/", ".analytics/",
-        "holding/checkpoints/", "holding/TODO.md",
+        ".claude/",
+        ".enforcement/",
+        ".analytics/",
+        "holding/checkpoints/",
+        "holding/TODO.md",
         "holding/hooks/hook-log.jsonl",
-        "holding/research/", "holding/state/",
-        "sutra/archive/", "*.lock", "memory files"
+        "holding/research/",
+        "holding/state/",
+        "sutra/archive/",
+        "*.lock",
+        "memory files"
       ],
       "rule": "no advisory, no block"
     }
   },
   "kill_switches": {
-    "$comment": "Escape-hatch surface for D40-introduced defaults (G1-G4 + blueprint). Pre-existing defaults (depth_estimation, output_trace, output_discipline, build_layer) keep their own kill paths in their respective hook scripts and are not re-listed here. Per codex CHANGES-REQUIRED fold v1.0.2 — scope claim made honest.",
+    "$comment": "Escape-hatch surface for D40-introduced defaults (G1-G4 + blueprint). Pre-existing defaults (depth_estimation, output_trace, output_discipline, build_layer) keep their own kill paths in their respective hook scripts and are not re-listed here. Per codex CHANGES-REQUIRED fold v1.0.2 \u2014 scope claim made honest.",
     "all_defaults": {
       "env": "SUTRA_DEFAULTS_DISABLED=1",
       "file": "~/.sutra-defaults-disabled",
@@ -195,24 +274,24 @@
     "per_turn_discipline_prompt": {
       "env": "SUTRA_DEFAULTS_DISABLED=1",
       "file": "~/.per-turn-discipline-disabled",
-      "scope": "G1 — UserPromptSubmit reminder hook"
+      "scope": "G1 \u2014 UserPromptSubmit reminder hook"
     },
     "consult_before_edit": {
       "env": "CONSULT_BEFORE_EDIT_DISABLED=1",
       "file": "~/.consult-before-edit-disabled",
       "founder_override_phrase": "skip consult, just edit",
-      "scope": "G2 — codex consult policy at Depth >= 3"
+      "scope": "G2 \u2014 codex consult policy at Depth >= 3"
     },
     "skill_explanation_card": {
       "env": "SKILL_EXPLAIN_DISABLED=1",
       "file": "~/.skill-explain-disabled",
       "founder_override_phrase": "skip skill cards",
-      "scope": "G3 — 5-line skill card (SKILL/WHAT/WHY/EXPECT/ASKS)"
+      "scope": "G3 \u2014 5-line skill card (SKILL/WHAT/WHY/EXPECT/ASKS)"
     },
     "subagent_dispatch_brief": {
       "env": "SUBAGENT_BRIEF_DISABLED=1",
       "file": "~/.subagent-brief-disabled",
-      "scope": "G4 — PreToolUse Task briefing hook"
+      "scope": "G4 \u2014 PreToolUse Task briefing hook"
     }
   },
   "applies_to_tiers": {
@@ -233,9 +312,9 @@
     "treatment": "soft guidance only; back with deterministic checks where possible",
     "principle": "skills/docs EXPLAIN; hooks ENFORCE; one policy substrate consumed everywhere",
     "review_findings_folded": [
-      "v1.0.1 — kill_switches surfaced comprehensively",
-      "v1.0.1 — hooks now consume this json at runtime via jq (was hardcoded reminders)",
-      "v1.0.1 — acceptance harness rewritten with multiline regex + absence checks + temporal ordering"
+      "v1.0.1 \u2014 kill_switches surfaced comprehensively",
+      "v1.0.1 \u2014 hooks now consume this json at runtime via jq (was hardcoded reminders)",
+      "v1.0.1 \u2014 acceptance harness rewritten with multiline regex + absence checks + temporal ordering"
     ]
   },
   "compliance_test_contract": {
@@ -252,26 +331,42 @@
         "type": "pure_question",
         "input_example": "What does this repo do?",
         "verification": "multiline regex: INPUT block + DEPTH block both present",
-        "expected_output_includes": ["INPUT", "TYPE", "DEPTH"]
+        "expected_output_includes": [
+          "INPUT",
+          "TYPE",
+          "DEPTH"
+        ]
       },
       {
         "id": "Q2",
         "type": "depth_3_plan_no_edit",
         "verification": "consult mention present AND no Edit/Write/MultiEdit tool calls in log",
-        "expected_output_includes": ["consult"],
-        "expected_no_tool_calls": ["Edit", "Write", "MultiEdit"]
+        "expected_output_includes": [
+          "consult"
+        ],
+        "expected_no_tool_calls": [
+          "Edit",
+          "Write",
+          "MultiEdit"
+        ]
       },
       {
         "id": "Q3",
         "type": "depth_3_edit_request",
-        "verification": "temporal ordering — first consult mention BEFORE first Edit/Write line",
+        "verification": "temporal ordering \u2014 first consult mention BEFORE first Edit/Write line",
         "expected_behavior": "consult_before_edit"
       },
       {
         "id": "Q4",
         "type": "skill_explain_request",
         "verification": "multiline regex: all 5 lines (SKILL+WHAT+WHY+EXPECT+ASKS) in sequence",
-        "expected_output_includes": ["SKILL:", "WHAT:", "WHY:", "EXPECT:", "ASKS:"]
+        "expected_output_includes": [
+          "SKILL:",
+          "WHAT:",
+          "WHY:",
+          "EXPECT:",
+          "ASKS:"
+        ]
       },
       {
         "id": "Q5",
@@ -299,5 +394,22 @@
     "codex_consult": ".enforcement/codex-reviews/2026-04-30-d40-governance-parity-consult.md",
     "tier_taxonomy": "D34 in holding/FOUNDER-DIRECTIONS.md",
     "build_layer_protocol": "PROTO-021 + D38"
+  },
+  "topic_gating": {
+    "$comment": "v2.18.0 fix per founder direction 'sutra for anything and everything' (D45-candidate, 2026-05-03). Discovered in fresh T4 dogfood: Claude topic-gated a personal question into 'I'll be brief' prose, skipping all per-turn blocks. Codex consult session 019ded1b: simpler stronger phrasing + structure-universal-not-depth-universal.",
+    "policy": "forbidden",
+    "rule": "All required per_turn_blocks must appear on every turn. Block CONTENT may be brief when the turn is brief; OMISSION is never permitted regardless of topic.",
+    "structure_universality_not_depth_universality": true,
+    "rationale": "Founder direction 2026-05-03: 'sutra for anything and everything'. Discipline applies to every input regardless of topic.",
+    "applies_to": "all per_turn_blocks (h-sutra header, input-routing, depth-estimation, blueprint, output-trace)",
+    "no_exemptions_for": [
+      "personal / lifestyle questions",
+      "research / non-coding questions",
+      "emotional / relationship topics",
+      "general curiosity",
+      "chitchat / greetings (use minimal-content variants, not omission)"
+    ],
+    "minimal_content_pattern": "For trivial inputs (greetings, single-word replies), keep INPUT/TYPE/ROUTE fields one-word each. The blocks remain present.",
+    "hard_validator_status": "deferred (P1, promote-by 2026-05-17). Soft guidance alone gives ~60-75% compliance per codex; hard validator gate would close the remaining gap."
   }
 }

@@ -1,6 +1,6 @@
 ---
 name: input-routing
-description: Use on every user message, before Edit/Write/Bash. Emits 5-line routing block (TYPE/HOME/ROUTE/FIT/ACTION) classifying direction/task/feedback/new-concept/question.
+description: Use on every user message — NO topic exemptions. Personal, research, non-coding, emotional, chitchat all receive identical routing block. Emits 5-line routing block (TYPE/HOME/ROUTE/FIT/ACTION) classifying direction/task/feedback/new-concept/question. Structure universality, not depth universality — for lightweight inputs, keep field content minimal but never omit the block. Per founder direction "sutra for anything and everything" (D45-candidate, 2026-05-03).
 ---
 
 # Input Routing

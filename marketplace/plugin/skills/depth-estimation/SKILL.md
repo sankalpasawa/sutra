@@ -1,6 +1,6 @@
 ---
 name: depth-estimation
-description: Use at start of multi-step tasks, before tool calls. Emits DEPTH block (1-5 rating, TASK/EFFORT/COST/IMPACT) + writes marker for pretool hook.
+description: Use on every turn — multi-step or single; coding or non-coding; substantive or chitchat. NO topic exemptions. Emits DEPTH block (1-5 rating, TASK/EFFORT/COST/IMPACT) + writes marker for pretool hook. For lightweight turns, keep field content brief (one-word EFFORT, $0 COST) but never omit the block. Structure universality per founder direction "sutra for anything and everything" (D45-candidate, 2026-05-03).
 ---
 
 # Depth Estimation
