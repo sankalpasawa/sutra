@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { main, formatBanner, formatStatus, usage } from '../../../src/cli/sutra-native.js'
+import { main, formatBanner, formatStatus, usage, detectHostKind } from '../../../src/cli/sutra-native.js'
 
 interface Captured {
   stdout: string
@@ -212,6 +212,63 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
       expect(u).toContain('status')
       expect(u).toContain('version')
       expect(u).toContain('help')
+    })
+
+    it('usage documents CLAUDECODE env var (v1.1.3+)', () => {
+      const u = usage()
+      expect(u).toContain('CLAUDECODE')
+      // Legacy CLAUDE_SESSION_ID still listed as fallback
+      expect(u).toContain('CLAUDE_SESSION_ID')
+    })
+  })
+
+  /**
+   * detectHostKind — host detection helper extracted in v1.1.3 for unit
+   * testability. cmdStart now delegates to detectHostKind(env). The previous
+   * inline check (CLAUDE_SESSION_ID only) mis-attributed every Claude Code
+   * session as host=cli because Claude Code v2.x does NOT export
+   * CLAUDE_SESSION_ID to Bash tool calls. Codex consult 2026-05-03 verdict
+   * CHANGES-REQUIRED → folded.
+   */
+  describe('detectHostKind (v1.1.3 host detection contract)', () => {
+    it('returns claude-code when CLAUDECODE === "1" (primary signal)', () => {
+      expect(detectHostKind({ CLAUDECODE: '1' } as NodeJS.ProcessEnv)).toBe('claude-code')
+    })
+
+    it('returns cli when CLAUDECODE !== "1" and CLAUDE_SESSION_ID unset', () => {
+      expect(detectHostKind({} as NodeJS.ProcessEnv)).toBe('cli')
+      expect(detectHostKind({ CLAUDECODE: '0' } as NodeJS.ProcessEnv)).toBe('cli')
+      expect(detectHostKind({ CLAUDECODE: '' } as NodeJS.ProcessEnv)).toBe('cli')
+    })
+
+    it('returns claude-code when only legacy CLAUDE_SESSION_ID is set', () => {
+      // Legacy fallback path — CC may not actually export this in Bash tool
+      // calls today, but slash commands / hooks / future versions might.
+      expect(detectHostKind({ CLAUDE_SESSION_ID: 'sess-abc' } as NodeJS.ProcessEnv)).toBe('claude-code')
+    })
+
+    it('CLAUDECODE takes precedence when both signals present', () => {
+      // If a future hook sets both, CLAUDECODE='1' is canonical.
+      expect(
+        detectHostKind({ CLAUDECODE: '1', CLAUDE_SESSION_ID: 'sess-abc' } as NodeJS.ProcessEnv),
+      ).toBe('claude-code')
+    })
+
+    it('returns cli when CLAUDECODE present but not "1" and no CLAUDE_SESSION_ID', () => {
+      // Strict equality — only CLAUDECODE='1' counts; truthy strings like
+      // 'true' or '0' do NOT (Anthropic documents the value as "1").
+      expect(detectHostKind({ CLAUDECODE: 'true' } as NodeJS.ProcessEnv)).toBe('cli')
+    })
+
+    it('does NOT inspect AI_AGENT or CLAUDE_CODE_* env vars', () => {
+      // Codex P2 advisory 2026-05-03: these are weak/non-canonical signals;
+      // detector intentionally narrow to keep cardinality stable.
+      expect(
+        detectHostKind({
+          AI_AGENT: 'claude-code/2.1.126/agent',
+          CLAUDE_CODE_ENTRYPOINT: 'cli',
+        } as NodeJS.ProcessEnv),
+      ).toBe('cli')
     })
   })
 })

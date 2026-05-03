@@ -38,6 +38,26 @@ declare function cmdCreateWorkflow(ctx: CommandContext): number;
 declare function cmdList(ctx: CommandContext): number;
 declare function cmdRun(ctx: CommandContext): number;
 /**
+ * detectHostKind — classify the runtime context that invoked sutra-native.
+ *
+ * Returns 'claude-code' when the process is running inside a Claude Code
+ * session, 'cli' otherwise. Used as telemetry provenance, not a trust
+ * boundary — callers MUST NOT make security decisions on the result.
+ *
+ * Detection signals (in priority order):
+ *   1. CLAUDECODE === '1' — documented Claude Code env flag (v2.x+).
+ *      Verified via `env | grep CLAUDE` inside Claude Code Bash tool calls.
+ *   2. CLAUDE_SESSION_ID — legacy fallback. Was the v1.1.0-1.1.2 detector
+ *      but Claude Code does NOT actually export this var to Bash tool calls
+ *      (verified Claude Code v2.1.126); kept for forward compatibility in
+ *      case the harness starts setting it, or for hooks/slash invocations
+ *      that explicitly inject it.
+ *
+ * Codex consult 2026-05-03: defer codex-cli host detection to a separate
+ * patch — CODEX_HOME / OPENAI_API_KEY are weak, non-canonical signals.
+ */
+export declare function detectHostKind(env: NodeJS.ProcessEnv): 'claude-code' | 'cli';
+/**
  * cmdStart — v1.1.1 daemon mode: spawn detached child running the engine.
  *
  * The child runs `sutra-native daemon` which calls NativeEngine.start()

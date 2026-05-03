@@ -54,7 +54,7 @@ import { formatEvent } from '../renderers/terminal-events.js'
 import type { EngineEvent } from '../types/engine-event.js'
 import type { StepAction, StepFailureAction, WorkflowStep } from '../types/index.js'
 
-const VERSION = '1.1.2'
+const VERSION = '1.1.3'
 
 interface CommandContext {
   readonly argv: ReadonlyArray<string>
@@ -435,6 +435,31 @@ function cmdStop(ctx: CommandContext): number {
 }
 
 /**
+ * detectHostKind — classify the runtime context that invoked sutra-native.
+ *
+ * Returns 'claude-code' when the process is running inside a Claude Code
+ * session, 'cli' otherwise. Used as telemetry provenance, not a trust
+ * boundary — callers MUST NOT make security decisions on the result.
+ *
+ * Detection signals (in priority order):
+ *   1. CLAUDECODE === '1' — documented Claude Code env flag (v2.x+).
+ *      Verified via `env | grep CLAUDE` inside Claude Code Bash tool calls.
+ *   2. CLAUDE_SESSION_ID — legacy fallback. Was the v1.1.0-1.1.2 detector
+ *      but Claude Code does NOT actually export this var to Bash tool calls
+ *      (verified Claude Code v2.1.126); kept for forward compatibility in
+ *      case the harness starts setting it, or for hooks/slash invocations
+ *      that explicitly inject it.
+ *
+ * Codex consult 2026-05-03: defer codex-cli host detection to a separate
+ * patch — CODEX_HOME / OPENAI_API_KEY are weak, non-canonical signals.
+ */
+export function detectHostKind(env: NodeJS.ProcessEnv): 'claude-code' | 'cli' {
+  if (env.CLAUDECODE === '1') return 'claude-code'
+  if (env.CLAUDE_SESSION_ID) return 'claude-code'
+  return 'cli'
+}
+
+/**
  * cmdStart — v1.1.1 daemon mode: spawn detached child running the engine.
  *
  * The child runs `sutra-native daemon` which calls NativeEngine.start()
@@ -446,7 +471,7 @@ function cmdStop(ctx: CommandContext): number {
  * Code session output.
  */
 function cmdStart(ctx: CommandContext): number {
-  const hostKind = ctx.env.CLAUDE_SESSION_ID ? 'claude-code' : 'cli'
+  const hostKind = detectHostKind(ctx.env)
   const pidPath = ctx.env.SUTRA_NATIVE_PID ?? defaultPidPath()
   const nativeHome = ctx.env.SUTRA_NATIVE_HOME ?? `${ctx.env.HOME}/.sutra-native`
   const logPath = `${nativeHome}/native.log`
@@ -666,7 +691,8 @@ function usage(): string {
     'Environment:',
     '  SUTRA_NATIVE_HOME  Base dir (default: ~/.sutra-native; user-kit at $HOME/user-kit/)',
     '  SUTRA_NATIVE_PID   Override PID file path entirely',
-    '  CLAUDE_SESSION_ID  Auto-set when invoked from /start-native slash',
+    '  CLAUDECODE         Set to "1" by Claude Code v2.x; flips host_kind=claude-code',
+    '  CLAUDE_SESSION_ID  Legacy fallback (pre-v1.1.3); same effect when set',
     '',
     'See: holding/plans/native-productization-v1.0/SPEC.md',
     '',
