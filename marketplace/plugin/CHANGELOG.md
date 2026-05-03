@@ -1,5 +1,46 @@
 # Changelog
 
+## v2.18.0 — 2026-05-03
+
+**Opt-in telemetry push restored. Default OFF posture preserved.**
+
+Founder direction: "make it on if the user said yes" (2026-05-03). The `--telemetry on` flag (added v2.9.1) persisted `telemetry_optin=true` to `.claude/sutra-project.json`, but `scripts/push.sh:19-24` had a hard gate from the v2.0 privacy reset that bailed out unconditionally unless `SUTRA_LEGACY_TELEMETRY=1`. Net effect: opt-in flag was theater — no transport regardless of consent. v2.18.0 lifts the gate and honors the opt-in.
+
+### What changed
+
+1. **`scripts/push.sh`** — drops the v2.0 hard gate. `SUTRA_TELEMETRY=0` short-circuits BEFORE the `telemetry_optin` check (uniform with capture path). All `python3` JSON probes (5 sites) replaced with `jq` to match `start.sh` v2.13.0 EDR-killed-python3 fix. Manifest writer (lines 77-95) replaced with atomic `jq | mktemp | mv -f` pattern. Missing jq → exit 127 with install hint. New `SUTRA_DATA_REMOTE` env override for testability and self-host paths.
+2. **`scripts/_sutra_project_lib.sh:180-186`** — banner branches on 3 telemetry states: `SUTRA_TELEMETRY=0` kill-switched / opt-in ENABLED / off. Old "local-only — push disabled in v2.0 privacy model" wording removed (no longer accurate when opt-in=true).
+3. **`scripts/go.sh`** — full jq migration (write + read paths). Without this, `/sutra-go` silently failed on EDR-killed-python3 hosts — toggle reported success but `telemetry_optin` stayed false.
+4. **`scripts/status.sh`** — jq for sutra-project.json read, with graceful "(jq missing)" fallback. Surfaces `SUTRA_TELEMETRY=0` kill-switch state explicitly.
+5. **`hooks/flush-telemetry.sh:97-107`** — jq replaces python3 OPTIN probe; `SUTRA_TELEMETRY=0` short-circuit added BEFORE the read. Non-blocking nohup/disown semantics preserved.
+6. **`hooks/posttool-counter.sh`** — `SUTRA_TELEMETRY=0` early exit before any tool-name parsing or `.counters` write. Closes the kill-switch hole on the capture rail (per codex R4: PRIVACY.md amendment claims "stops both capture and push uniformly" — needed both rails to actually do that).
+7. **`hooks/emit-metric.sh`** — `SUTRA_TELEMETRY=0` early exit before any metric write. Same R4 finding.
+8. **`PRIVACY.md`** — version bump 2.0 → 2.18; top-of-doc amendment **explicitly supersedes** the v2.0 changelog "no outbound transmission in v2 default mode" sentence AND the "Tier-specific defaults" T1/T2 auto-consent paragraph (both stale post v2.9.1 decoupling). Discloses on opt-in: WHAT pushed (telemetry rows + manifest with `install_id`/`project_id`/`project_name_optional`/`sutra_version`/`push_count`/`first_seen`/`last_seen`), CADENCE (every Stop), DESTINATION (collaborator-visible `sankalpasawa/sutra-data` per PROTO-024 V1), KILL-SWITCH (`SUTRA_TELEMETRY=0` uniform across capture and push).
+9. **`tests/integration/test-onboard-to-push.sh`** — full rewrite. Calls `push.sh` directly via `SUTRA_DATA_REMOTE` override against a local bare repo. Asserts: `--telemetry on` triggers push; `SUTRA_TELEMETRY=0` + `telemetry_optin=true` skips push with structured reason; jq absent → exit 127; `telemetry_optin=false` skips push. No python3 in test path.
+10. **`.claude-plugin/plugin.json`**, **`marketplace.json`** — 2.17.0 → 2.18.0.
+
+### Codex review (5 rounds, converged at PASS)
+
+- **R1** CHANGES-REQUIRED: [P1] `SUTRA_TELEMETRY=0` not honored by push.sh; [P2] manifest leakage (`project_name_optional` + stable IDs) on collaborator-visible repo needs explicit disclosure; [P2] python3 fragility contradicts v2.13.0 jq migration.
+- **R2** CHANGES-REQUIRED: [P1] `flush-telemetry.sh:101` also uses python3 OPTIN probe — same EDR fragility on the trigger side.
+- **R3** CHANGES-REQUIRED: [P1] `scripts/go.sh` (opt-in toggle) and [P2] `scripts/status.sh` also use python3 — silent toggle failure on EDR-kill hosts.
+- **R4** CHANGES-REQUIRED: [P1] If PRIVACY.md amendment claims `SUTRA_TELEMETRY=0` stops both capture and push uniformly, then `hooks/posttool-counter.sh` AND `hooks/emit-metric.sh` need early exits — otherwise the documented kill-switch is a lie.
+- **R5** PASS: "13-file design closes the remaining R1-R4 defects... Proceed to edits exactly as specified."
+
+Verdict file: `.enforcement/codex-reviews/2026-05-03-v2.18.0-opt-in-push.md` (DIRECTIVE-ID 1777800873).
+
+### Deferred (codex-accepted, tracked separately)
+
+- `hooks/flush-telemetry.sh:23,76` (session_id parsing + per-tool counter parsing) — same file but different domain (NOT opt-in control); deferred to keep diff surgical.
+- `hooks/emit-metric.sh:43` (VERSION read with "unknown" fallback) — not opt-in path; the new SUTRA_TELEMETRY=0 guard at top of file makes the codepath unreachable when telemetry is off.
+- `hooks/output-behavior-lint.sh`, `hooks/bash-summary-pretool.sh`, `hooks/posttool-counter.sh:17-18` (post-guard JSON parsing) — different domains; broader python3 sweep tracked separately.
+
+### Threat-model honesty
+
+This release **restores** outbound transport for opted-in users. That is a deliberate policy expansion vs v2.0's "no transport" framing. PRIVACY.md amendment makes the disclosure prominent (top-of-doc, table format) and supersedes — not silently amends — the prior contract.
+
+---
+
 ## v2.17.0 — 2026-05-01
 
 **Connector tools and routine project edits no longer prompt every time.**

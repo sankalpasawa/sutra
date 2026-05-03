@@ -1,8 +1,35 @@
 # Sutra — Privacy
 
-*Version: plugin v2.0.0 · Updated: 2026-04-24 · License: MIT*
+*Version: plugin v2.18.0 · Updated: 2026-05-03 · License: MIT*
 
 Sutra helps you build. To do that well, it learns from how you work — locally, on your machine, with strict limits.
+
+## v2.18.0 amendment — opt-in transport restored (2026-05-03)
+
+**TL;DR**: default is **OFF**. Nothing leaves your machine without explicit opt-in. If you opt in via `--telemetry on`, signals push to a Sutra-team GitHub repo on every Stop event. `SUTRA_TELEMETRY=0` is the single kill-switch and disables both local capture AND outbound push uniformly.
+
+**What changed from v2.0**: v2.0 framed itself as "no outbound transmission in default mode" and treated push as deprecated infrastructure. That was incomplete — the `--telemetry on` flag (added v2.9.1) persisted opt-in but never actually transmitted because a hard gate in `scripts/push.sh` blocked all pushes regardless of consent. v2.18.0 honors the opt-in.
+
+**On the opt-in path** (when you ran `/core:start --telemetry on` or `/sutra-go`):
+
+| Aspect | Detail |
+|---|---|
+| **WHAT pushed** | Local metric queue (`~/.sutra/metrics-queue.jsonl`, schema-validated rows: `install_id`, `project_id`, `ts`, `sutra_version`, `tier`, `dept`, `metric`, `value`, `unit`, `window`) PLUS a small manifest file with `install_id`, `project_id`, `project_name_optional`, `sutra_version`, `push_count`, `first_seen`, `last_seen` |
+| **CADENCE** | Automatic on every Stop event when opted in. Async, fire-and-forget. Failed pushes preserve the queue for next attempt. |
+| **DESTINATION** | `sankalpasawa/sutra-data` — **PRIVATE on GitHub but COLLABORATOR-VISIBLE** (same disclosure as PROTO-024 V1 §"Say something directly" below). Every install that has push access can read every other install's `clients/<install_id>/` directory. |
+| **NOT pushed** | Identity stamping (removed v2.2.0 — no `github_login`, `git_user_name`, `git_user_email`, hostname, etc. crosses the wire on this rail). Source code, prompts, file content — all stay local per the v2.0 "signals not content" capture model. |
+| **KILL-SWITCH** | `SUTRA_TELEMETRY=0` (env var) disables both **capture** (no rows enter the queue) AND **push** (push.sh / flush-telemetry.sh / posttool-counter.sh / emit-metric.sh all early-exit on this). Setting this AFTER opting in stops further transmission immediately even if `telemetry_optin=true` remains in `.claude/sutra-project.json`. |
+
+**To opt out completely** after opting in:
+```
+SUTRA_TELEMETRY=0     # env (single session) OR put in your shell profile
+rm -rf ~/.sutra/      # delete everything Sutra has written locally
+```
+The `telemetry_optin=true` flag in `.claude/sutra-project.json` becomes inert under `SUTRA_TELEMETRY=0`.
+
+**Codex review**: 5-round consult chain converged at PASS — see `.enforcement/codex-reviews/2026-05-03-v2.18.0-opt-in-push.md` for the verdict trail.
+
+---
 
 ## What we capture
 
@@ -91,6 +118,28 @@ What that means precisely:
 
 **Why this is honest, not hidden**: the codex review on 2026-04-25 (`.enforcement/codex-reviews/2026-04-25-proto-024-feedback-fanin-and-reset-hook-fix.md`) flagged that calling V1 "private" would be inaccurate. PROTO-024 V1 ships with HONEST wording: collaborator-visible inbox, not a private channel.
 
+### Close-Loop Layer (v2.8.0, 2026-04-28)
+
+When you file a public issue at `sankalpasawa/sutra` (via `/sutra feedback --public` or directly on github.com), and we later ship a fix, we want to tell you in a way you'll actually see — not bury the announcement in a github email you might miss. Two things happen:
+
+1. **Mapping recorded.** When `/sutra feedback --public` succeeds, the plugin writes `{install_id, issue_number, title, ts}` to two places:
+   - Local: `~/.sutra/feedback/manual/sent.jsonl` (your machine only)
+   - Server-pushed: `clients/<install_id>/feedback-mapping.jsonl` in `sankalpasawa/sutra-data` (collaborator-visible like the rest of that repo — same disclosure as PROTO-024 V1 above)
+
+   This is needed so the close-out can reach the right plugin install. The mapping does NOT include the body of your feedback — that's already in the public gh issue.
+
+2. **Inbox display on session start.** A new `inbox-display.sh` hook runs on every Sutra session start. It does two things:
+   - Reads `clients/<install_id>/inbox/` from `sankalpasawa/sutra-data` for any close-out messages addressed to your install. Verifies the message's `gh_author` field matches your `gh api user --jq .login` BEFORE displaying (privacy two-factor — fence against wrong-user delivery if mapping has a bug).
+   - If `gh auth` is set up on your machine, also queries the gh API for issues authored by you that closed since last-seen, displays close-out comments. This covers feedback filed via gh-UI directly (no plugin involvement, no mapping).
+
+**Disclosure same as PROTO-024 V1:** the inbox files at `clients/<install_id>/inbox/<ts>-<#>.md` are collaborator-visible to anyone with push access to `sankalpasawa/sutra-data`. They contain the close-out comment text (which is also publicly visible on the gh issue) plus your `gh_author` username. V2 will encrypt.
+
+**Kill-switches:**
+- `SUTRA_INBOX_DISABLED=1` — env var, single-session
+- `~/.sutra-inbox-disabled` — file presence, persistent
+
+If you don't want close-out messages displayed, set either kill-switch. The hook soft-fails (exit 0) regardless of any error path, so it never blocks session start.
+
 ## What we don't promise
 
 - We don't promise OS-level backups will exclude `~/.sutra/`. They might include it. That's outside Sutra's control.
@@ -99,7 +148,9 @@ What that means precisely:
 
 ## Tier-specific defaults
 
-If you're running Sutra inside an Asawa-owned setup (T1 internal / T2 owned portfolio), auto-capture persists by default and fan-in to the Sutra team is implicit — your operator has already consented on your behalf. T3 client-owned projects and T4 external fleet installs follow the strictest model described above.
+> **[SUPERSEDED in v2.18.0 — 2026-05-03]** The paragraph below was written when telemetry coupled to the install profile (T1/T2 auto-consent / T3-T4 strict). v2.9.1 decoupled the two — telemetry is now controlled by an explicit `--telemetry on|off` flag, default OFF for ALL tiers. v2.18.0 honors that opt-in by actually transmitting (see top-of-doc amendment). The original tier-default text is preserved below for historical accuracy only; it no longer reflects current behavior.
+
+~~If you're running Sutra inside an Asawa-owned setup (T1 internal / T2 owned portfolio), auto-capture persists by default and fan-in to the Sutra team is implicit — your operator has already consented on your behalf. T3 client-owned projects and T4 external fleet installs follow the strictest model described above.~~
 
 ## Questions or problems
 
@@ -135,7 +186,7 @@ What changed from v1.9.0:
 - **In-memory-until-consent** for external installs: new `~/.sutra/feedback/auto/` path is not written until first `/sutra feedback` grants consent.
 - **Legacy telemetry DEPRECATED**: the previous model (`telemetry_optin = true` in `.claude/sutra-project.json`, identity stamping into `manifest.json`, push to `sankalpasawa/sutra-data` on every Stop event) is superseded. It remains available gated behind `SUTRA_LEGACY_TELEMETRY=1` for compatibility with existing T1/T2 workflows; new installs get the v2 model.
 - **New hardening**: `0700`/`0600` permissions, atomic writes, append-locked JSONL, symlink-refusal for `~/.sutra/`.
-- **Scope reduction**: no outbound transmission in v2 default mode. No GitHub push, no transport layer. Sutra's improvement loop runs through manual `/sutra feedback` only until a consent-gated fan-in design ships in a future version.
+- **Scope reduction**: ~~no outbound transmission in v2 default mode. No GitHub push, no transport layer.~~ **[SUPERSEDED in v2.18.0 — 2026-05-03]** This was true at v2.0 and remained accidentally true through v2.17 because a hard gate in `scripts/push.sh` blocked all pushes regardless of consent. v2.9.1 added the `--telemetry on|off` opt-in flag but did not lift the v2.0 transport block — net effect was opt-in theater. v2.18.0 lifts the block and honors the opt-in: when you explicitly run `--telemetry on`, push to `sankalpasawa/sutra-data` resumes on every Stop event. **Default OFF posture is unchanged.** See top-of-doc v2.18.0 amendment for the full opt-in disclosure (what's pushed, cadence, destination, kill-switch).
 
 ---
 

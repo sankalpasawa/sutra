@@ -44,9 +44,11 @@ export interface HSutraConnectorOptions {
     readonly log_path?: string;
 }
 /**
- * Resolve the H-Sutra log path. Asawa override (holding/state/interaction/
- * log.jsonl) takes priority if it exists; otherwise default (.sutra/
- * h-sutra.jsonl). Both relative to process.cwd().
+ * Resolve the H-Sutra log path. Resolution order:
+ *   1. SUTRA_HSUTRA_LOG_PATH env override (codex P1 fold 2026-05-03,
+ *      DIRECTIVE-ID 1777802035 — needed for L3 daemon-test isolation)
+ *   2. Asawa override: holding/state/interaction/log.jsonl (under cwd)
+ *   3. Default: .sutra/h-sutra.jsonl (under cwd)
  */
 export declare function resolveHSutraLogPath(cwd?: string): string;
 export declare class HSutraConnector {

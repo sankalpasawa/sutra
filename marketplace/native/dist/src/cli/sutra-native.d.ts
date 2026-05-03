@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /**
- * sutra-native CLI — D4 SKELETON entrypoint.
+ * sutra-native CLI — v1.1.1 entrypoint (daemon mode).
  *
- * Subcommands at v1.0 (D4 SKELETON):
- *   start      — acquire PID lock + print activation banner (foreground exit;
- *                D2 will fold the H-Sutra subscriber + router into the same
- *                process or fork a daemon)
+ * Subcommands at v1.1.1:
+ *   start      — fork a detached daemon child that runs NativeEngine until
+ *                SIGTERM; parent acquires PID lock for the DAEMON pid +
+ *                returns. Idempotent (lock contention → exit 1).
+ *   stop       — read PID file, send SIGTERM to daemon, release lock.
+ *   daemon     — INTERNAL: run NativeEngine in foreground until signal.
+ *                Spawned by cmdStart; not for direct human use (but valid).
  *   status     — read PID file; report running | stopped | stale-lock
- *   version    — print version from package.json
+ *   version    — print version
  *   help       — print usage
  *
  * Exit codes:
@@ -16,13 +19,10 @@
  *   2 = unknown subcommand / usage error
  *   3 = io error
  *
- * Per founder direction 2026-05-02: when "start Native" fires, both the
- * slash command (/start-native) and the CLI (sutra-native start) execute
- * the same activation path. Slash command lives at
- * .claude-plugin/commands/start-native.md.
- *
- * Per codex master review cadence (post-D4 wiring): this file's PID/lock +
- * banner contract is gated by a master review before D2 begins.
+ * v1.1.1 fix: v1.1.0 cmdStart only acquired the PID lock + printed banner;
+ * the engine never subscribed to H-Sutra log so "hello" went nowhere.
+ * cmdStart now spawns a detached daemon child via child_process.spawn that
+ * runs NativeEngine.start() until SIGTERM. PID lock records the DAEMON pid.
  */
 import { type StatusReport } from '../runtime/lifecycle.js';
 interface CommandContext {
@@ -32,9 +32,20 @@ interface CommandContext {
     readonly stderr: (s: string) => void;
 }
 export declare function main(ctx: CommandContext): number;
+/**
+ * cmdStart — v1.1.1 daemon mode: spawn detached child running the engine.
+ *
+ * The child runs `sutra-native daemon` which calls NativeEngine.start()
+ * + blocks until signaled. Parent records the CHILD pid in the lock file
+ * so cmdStop can later kill the right process.
+ *
+ * Stdout/stderr of the child are appended to ~/.sutra-native/native.log
+ * so the founder can tail it for telemetry without polluting the Claude
+ * Code session output.
+ */
 declare function cmdStart(ctx: CommandContext): number;
 declare function cmdStatus(ctx: CommandContext): number;
-declare function formatBanner(hostKind: string, pidPath: string): string;
+declare function formatBanner(hostKind: string, pidPath: string, daemonPid?: number, logPath?: string): string;
 declare function formatStatus(r: StatusReport, pidPath: string): string;
 declare function usage(): string;
 export { cmdStart, cmdStatus, formatBanner, formatStatus, usage };

@@ -7,6 +7,12 @@
 
 set -u
 
+# v2.18.0 (2026-05-03): SUTRA_TELEMETRY=0 kill-switch — emission must be off
+# end-to-end. Early exit BEFORE sourcing libs or any metric write so the
+# documented "stops both capture and push uniformly" claim in PRIVACY.md
+# is factually accurate. Per codex R4 finding.
+[ "${SUTRA_TELEMETRY:-1}" = "0" ] && exit 0
+
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(realpath "$0")")")}"
 source "$PLUGIN_ROOT/lib/project-id.sh"
 source "$PLUGIN_ROOT/lib/queue.sh"

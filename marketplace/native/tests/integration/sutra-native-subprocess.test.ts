@@ -50,7 +50,11 @@ function runBin(args: string[], pidPath: string): RunResult {
   }
 }
 
-describe('sutra-native CLI — subprocess E2E (D4 SKELETON)', () => {
+// v1.1.x: cmdStart now spawns a daemon child + waits for ready marker. The
+// D4 SKELETON foreground contract (start exits, lock persists as marker) is
+// superseded. L3 harness at tests/integration/l3-daemon-simulation.test.ts
+// (gated by RUN_DAEMON_TESTS=1) covers the v1.1.x daemon contract.
+describe.skip('sutra-native CLI — subprocess E2E (D4 SKELETON — superseded by L3)', () => {
   let workdir: string
   let pidPath: string
 

@@ -95,10 +95,15 @@ for tool, n in c.most_common():
 fi
 
 # ── v1.1.3 auto-push (async, fire-and-forget) ──────────────────────────
-# If telemetry_optin is true in the project, push the queue in the BACKGROUND.
-# Stop hook stays light (no blocking wait). Queue preserved if push fails.
-if [ -f "$PROJECT_ROOT/.claude/sutra-project.json" ]; then
-  OPTIN=$(python3 -c "import json; print('true' if json.load(open('$PROJECT_ROOT/.claude/sutra-project.json')).get('telemetry_optin') else 'false')" 2>/dev/null)
+# v2.18.0 (2026-05-03): SUTRA_TELEMETRY=0 short-circuits BEFORE the OPTIN
+# read; jq replaces python3 for the OPTIN probe (matches start.sh v2.13.0
+# EDR-killed-python3 fix). If jq is missing here, skip silently — this hook
+# is on the Stop event and must remain non-blocking. push.sh itself fails
+# loudly on missing jq with an actionable install hint.
+if [ "${SUTRA_TELEMETRY:-1}" != "0" ] \
+   && [ -f "$PROJECT_ROOT/.claude/sutra-project.json" ] \
+   && command -v jq >/dev/null 2>&1; then
+  OPTIN=$(jq -r '.telemetry_optin // false' "$PROJECT_ROOT/.claude/sutra-project.json" 2>/dev/null)
   if [ "$OPTIN" = "true" ] && [ -x "$PLUGIN_ROOT/scripts/push.sh" ]; then
     CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" CLAUDE_PROJECT_DIR="$PROJECT_ROOT" \
       nohup bash "$PLUGIN_ROOT/scripts/push.sh" >> "$SUTRA_HOME/auto-push.log" 2>&1 &

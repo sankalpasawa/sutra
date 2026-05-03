@@ -176,11 +176,17 @@ cmd_banner() {
   printf '   Project ID:      %s\n' "$project_id"
   printf '   Profile:         %s\n' "$profile"
 
+  # v2.18.0 (2026-05-03): opt-in transport restored. Banner branches on
+  # 3 states: kill-switched / enabled / off. Old "local-only — push disabled
+  # in v2.0 privacy model" wording removed because it's no longer accurate
+  # when telemetry_optin=true.
   local tel
-  if [ "$optin" = "true" ] && [ "${SUTRA_LEGACY_TELEMETRY:-}" = "1" ]; then
+  if [ "${SUTRA_TELEMETRY:-1}" = "0" ]; then
+    tel="off (SUTRA_TELEMETRY=0 kill-switch — capture and push disabled)"
+  elif [ "$optin" = "true" ] && [ "${SUTRA_LEGACY_TELEMETRY:-}" = "1" ]; then
     tel="on — legacy push active (SUTRA_LEGACY_TELEMETRY=1)"
   elif [ "$optin" = "true" ]; then
-    tel="local-only — push disabled in v2.0 privacy model (see PRIVACY.md)"
+    tel="ENABLED — push to sankalpasawa/sutra-data on Stop (SUTRA_TELEMETRY=0 to disable)"
   else
     tel="off"
   fi

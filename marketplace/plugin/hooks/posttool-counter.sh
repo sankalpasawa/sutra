@@ -7,6 +7,12 @@
 
 set -u
 
+# v2.18.0 (2026-05-03): SUTRA_TELEMETRY=0 kill-switch — capture must be off
+# end-to-end. Early exit BEFORE any JSON parsing or .counters file write so
+# the documented "stops both capture and push uniformly" claim in PRIVACY.md
+# is factually accurate. Per codex R4 finding.
+[ "${SUTRA_TELEMETRY:-1}" = "0" ] && exit 0
+
 _JSON=""
 if [ ! -t 0 ]; then
   _JSON=$(cat 2>/dev/null || true)

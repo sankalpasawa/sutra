@@ -13,15 +13,24 @@ cd "$PROJECT_ROOT"
 
 echo "── Sutra plugin status ────────────────────────────────────"
 
+# v2.18.0 (2026-05-03): jq replaces python3 for sutra-project.json read.
+# Status is display-only — graceful "(jq missing)" line if jq unavailable
+# rather than hard-fail. Matches start.sh v2.13.0 EDR-killed-python3 fix.
 if [ -f .claude/sutra-project.json ]; then
-  python3 -c "
-import json
-d = json.load(open('.claude/sutra-project.json'))
-for k,v in d.items():
-    print(f'  {k:20s} {v}')
-" 2>/dev/null
+  if command -v jq >/dev/null 2>&1; then
+    jq -r 'to_entries[] | "  \(.key | . + (" " * (20 - length))) \(.value)"' .claude/sutra-project.json 2>/dev/null \
+      || echo "  (jq parse failed — sutra-project.json may be corrupt)"
+  else
+    echo "  (jq missing — install: brew install jq / apt-get install jq)"
+  fi
 else
   echo "  (no .claude/sutra-project.json — run /sutra-onboard)"
+fi
+
+# Telemetry kill-switch state — surface explicitly so user understands transport behavior
+if [ "${SUTRA_TELEMETRY:-1}" = "0" ]; then
+  echo ""
+  echo "  ⚠ SUTRA_TELEMETRY=0 — capture and push are both DISABLED"
 fi
 
 echo ""

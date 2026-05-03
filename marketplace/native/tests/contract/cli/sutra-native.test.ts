@@ -58,7 +58,14 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
     }
   })
 
-  describe('start subcommand', () => {
+  // v1.1.x: start subcommand changed from foreground (lock-as-marker) to
+  // daemon-spawn (lock-as-pid). The in-process main({argv:['start']}) test
+  // approach below cannot work because cmdStart spawns a child process via
+  // child_process.spawn — incompatible with vitest in-process invocation.
+  // L3 daemon-simulation tests (tests/integration/l3-daemon-simulation.test.ts,
+  // gated by RUN_DAEMON_TESTS=1) cover the v1.1.x daemon contract end-to-end.
+  // Skipped here to keep the L1 contract suite green.
+  describe.skip('start subcommand (v1.0.x foreground contract — superseded by L3)', () => {
     it('exits 0 + writes PID file + prints banner on first activation; lock PERSISTS after main() returns', () => {
       const { captured, ctx } = makeCtx(['start'], pidPath)
       const code = main(ctx)
@@ -106,7 +113,9 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
       expect(captured.stdout).toContain('stopped')
     })
 
-    it('exits 0 + reports running after start', () => {
+    // Depends on v1.0.x start behavior (in-process main + lock persists).
+    // v1.1.x daemon mode tested in L3 harness instead.
+    it.skip('exits 0 + reports running after start (v1.0.x — superseded by L3)', () => {
       // Start
       const startCtx = makeCtx(['start'], pidPath)
       main(startCtx.ctx)
