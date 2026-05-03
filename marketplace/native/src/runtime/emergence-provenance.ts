@@ -58,6 +58,7 @@ export function buildEmergenceDecisionProvenance(
         version: '1.0.0',
         mutability: 'immutable',
         retention: 'permanent',
+        authoritative_status: 'authoritative',
       },
     ],
     authority_id: 'founder',
