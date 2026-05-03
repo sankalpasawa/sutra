@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { createCharter, type Charter } from '../primitives/charter.js'
 import { createDomain, type Domain } from '../primitives/domain.js'
 import { createWorkflow, type Workflow } from '../primitives/workflow.js'
+import { isTriggerSpec, type TriggerSpec } from '../types/trigger-spec.js'
 
 export interface UserKitOptions {
   /** Override storage root. Defaults to $SUTRA_NATIVE_HOME or ~/.sutra-native. */
@@ -35,7 +36,10 @@ export function userKitRoot(opts: UserKitOptions = {}): string {
   return `${home}/.sutra-native`
 }
 
-function entityDir(kind: 'domains' | 'charters' | 'workflows', opts: UserKitOptions = {}): string {
+function entityDir(
+  kind: 'domains' | 'charters' | 'workflows' | 'triggers' | 'proposals',
+  opts: UserKitOptions = {},
+): string {
   return join(userKitRoot(opts), 'user-kit', kind)
 }
 
@@ -130,6 +134,34 @@ export function listWorkflows(opts: UserKitOptions = {}): Workflow[] {
 }
 
 // ---------------------------------------------------------------------------
+// TriggerSpec (v1.2 — organic emergence)
+// ---------------------------------------------------------------------------
+
+export function persistTrigger(t: TriggerSpec, opts: UserKitOptions = {}): string {
+  const dir = entityDir('triggers', opts)
+  ensureDir(dir)
+  const path = join(dir, `${t.id}.json`)
+  writeJson(path, t)
+  return path
+}
+
+export function loadTrigger(id: string, opts: UserKitOptions = {}): TriggerSpec | null {
+  const path = join(entityDir('triggers', opts), `${id}.json`)
+  if (!existsSync(path)) return null
+  const raw = readJson(path)
+  return isTriggerSpec(raw) ? raw : null
+}
+
+export function listTriggers(opts: UserKitOptions = {}): TriggerSpec[] {
+  const dir = entityDir('triggers', opts)
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => readJson(join(dir, f)))
+    .filter(isTriggerSpec)
+}
+
+// ---------------------------------------------------------------------------
 // Aggregate
 // ---------------------------------------------------------------------------
 
@@ -137,6 +169,7 @@ export interface UserKit {
   readonly domains: ReadonlyArray<Domain>
   readonly charters: ReadonlyArray<Charter>
   readonly workflows: ReadonlyArray<Workflow>
+  readonly triggers: ReadonlyArray<TriggerSpec>
 }
 
 export function loadUserKit(opts: UserKitOptions = {}): UserKit {
@@ -144,5 +177,6 @@ export function loadUserKit(opts: UserKitOptions = {}): UserKit {
     domains: listDomains(opts),
     charters: listCharters(opts),
     workflows: listWorkflows(opts),
+    triggers: listTriggers(opts),
   }
 }

@@ -28,6 +28,9 @@ import {
   type PolicyDecisionEvent,
   type StepStartedEvent,
   type StepCompletedEvent,
+  type PatternProposedEvent,
+  type ProposalApprovedEvent,
+  type ProposalRejectedEvent,
 } from '../types/engine-event.js'
 
 export type Renderer<T extends EngineEvent = EngineEvent> = (event: T, ctx: RenderContext) => string
@@ -112,6 +115,24 @@ export const defaultRenderStepCompleted: Renderer<StepCompletedEvent> = (e, ctx)
   return `${cellPrefix(ctx)}[${e.workflow_id}] step ${e.step_index}/${e.step_count} ✓ ${e.step_id} in ${e.duration_ms}ms`
 }
 
+// -----------------------------------------------------------------------------
+// SPEC v1.2 §4.6 — organic emergence v1 renderers
+// -----------------------------------------------------------------------------
+
+export const defaultRenderPatternProposed: Renderer<PatternProposedEvent> = (e, ctx) => {
+  const phrase = sanitizeForTerminal(e.normalized_phrase)
+  return `${cellPrefix(ctx)}[native] pattern ${e.pattern_id} seen ${e.evidence_count}×: "${phrase}". Type "approve ${e.pattern_id}" to register, or "reject ${e.pattern_id}" to drop.`
+}
+
+export const defaultRenderProposalApproved: Renderer<ProposalApprovedEvent> = (e, ctx) => {
+  return `${cellPrefix(ctx)}[native] approved ${e.pattern_id}. Registered ${e.registered_workflow_id} + ${e.registered_trigger_id}. Next match routes deterministically.`
+}
+
+export const defaultRenderProposalRejected: Renderer<ProposalRejectedEvent> = (e, ctx) => {
+  const reason = e.reason ? `: ${sanitizeForTerminal(e.reason)}` : ''
+  return `${cellPrefix(ctx)}[native] rejected ${e.pattern_id}${reason}.`
+}
+
 /** Map of every EngineEventType to its default renderer. Frozen at module load. */
 export const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>> = Object.freeze({
   routing_decision: defaultRenderRoutingDecision as Renderer,
@@ -122,6 +143,9 @@ export const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>> = Ob
   policy_decision: defaultRenderPolicyDecision as Renderer,
   step_started: defaultRenderStepStarted as Renderer,
   step_completed: defaultRenderStepCompleted as Renderer,
+  pattern_proposed: defaultRenderPatternProposed as Renderer,
+  proposal_approved: defaultRenderProposalApproved as Renderer,
+  proposal_rejected: defaultRenderProposalRejected as Renderer,
 })
 
 // -----------------------------------------------------------------------------

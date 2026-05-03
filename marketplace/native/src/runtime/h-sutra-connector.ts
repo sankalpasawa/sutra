@@ -128,6 +128,11 @@ export class HSutraConnector {
     }
   }
 
+  /** Resolved absolute path to the H-Sutra log JSONL this connector watches. */
+  getLogPath(): string {
+    return this.logPath
+  }
+
   getCachedEvent(turn_id: string): HSutraEvent | null {
     this.evictExpired()
     const entry = this.cache.get(turn_id)

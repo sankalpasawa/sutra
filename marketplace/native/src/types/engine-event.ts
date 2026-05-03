@@ -32,6 +32,9 @@ export type EngineEventType =
   | 'policy_decision'
   | 'step_started'
   | 'step_completed'
+  | 'pattern_proposed'
+  | 'proposal_approved'
+  | 'proposal_rejected'
 
 /** Runtime allow-list mirroring EngineEventType — kept in sync. */
 export const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set([
@@ -43,6 +46,9 @@ export const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set([
   'policy_decision',
   'step_started',
   'step_completed',
+  'pattern_proposed',
+  'proposal_approved',
+  'proposal_rejected',
 ])
 
 export interface RoutingDecisionEvent {
@@ -117,6 +123,36 @@ export interface StepCompletedEvent {
   readonly duration_ms: number
 }
 
+/**
+ * Organic emergence v1 events (SPEC v1.2 §4.6) — emitted when the
+ * pattern-detector surfaces a candidate or the founder approves/rejects via
+ * the next-utterance command.
+ */
+export interface PatternProposedEvent {
+  readonly type: 'pattern_proposed'
+  readonly ts_ms: number
+  readonly pattern_id: string
+  readonly normalized_phrase: string
+  readonly evidence_count: number
+  readonly proposed_workflow_id: string
+  readonly proposed_trigger_id: string
+}
+
+export interface ProposalApprovedEvent {
+  readonly type: 'proposal_approved'
+  readonly ts_ms: number
+  readonly pattern_id: string
+  readonly registered_workflow_id: string
+  readonly registered_trigger_id: string
+}
+
+export interface ProposalRejectedEvent {
+  readonly type: 'proposal_rejected'
+  readonly ts_ms: number
+  readonly pattern_id: string
+  readonly reason: string
+}
+
 export type EngineEvent =
   | RoutingDecisionEvent
   | WorkflowStartedEvent
@@ -126,6 +162,9 @@ export type EngineEvent =
   | PolicyDecisionEvent
   | StepStartedEvent
   | StepCompletedEvent
+  | PatternProposedEvent
+  | ProposalApprovedEvent
+  | ProposalRejectedEvent
 
 // -----------------------------------------------------------------------------
 // Per-variant validators (codex P1 fold 2026-05-03) — guard MUST validate the
@@ -186,6 +225,19 @@ const VARIANT_VALIDATORS: Record<EngineEventType, (v: Record<string, unknown>) =
     isNonNegInt(v.step_index) &&
     isNonNegInt(v.step_count) &&
     isFiniteNonNegNumber(v.duration_ms),
+  pattern_proposed: (v) =>
+    isNonEmptyStr(v.pattern_id) &&
+    isNonEmptyStr(v.normalized_phrase) &&
+    isNonNegInt(v.evidence_count) &&
+    isNonEmptyStr(v.proposed_workflow_id) &&
+    isNonEmptyStr(v.proposed_trigger_id),
+  proposal_approved: (v) =>
+    isNonEmptyStr(v.pattern_id) &&
+    isNonEmptyStr(v.registered_workflow_id) &&
+    isNonEmptyStr(v.registered_trigger_id),
+  proposal_rejected: (v) =>
+    isNonEmptyStr(v.pattern_id) &&
+    isStr(v.reason),
 }
 
 /**
