@@ -83,15 +83,17 @@ If nothing is broken, omit the third signal. Do not pad.
 ### Status Board Format
 
 ```
-┌─────────────────────────────────┐
-│  COMPANY NAME — Status Board    │
-├─────────────────────────────────┤
-│  ✅ Feature X shipped (v1.2.1)  │
-│  ⏳ Feature Y — 70% complete    │
-│  🔲 Feature Z — not started     │
-│  ⚠️  Deploy blocked — DNS issue  │
-└─────────────────────────────────┘
++---------------------------------+
+|  COMPANY NAME — Status Board    |
++---------------------------------+
+|  [x] Feature X shipped (v1.2.1) |
+|  [.] Feature Y — 70% complete   |
+|  [ ] Feature Z — not started    |
+|  [!] Deploy blocked — DNS issue |
++---------------------------------+
 ```
+
+ASCII boxes only per D-UX-1 codex ADVISORY 2026-05-04 (matches CLAUDE.md "no unicode box-drawing" mandate + Native renderer convention at sutra/marketplace/native/src/renderers/terminal-events.ts line 6: "no unicode box-drawing — readable in any terminal + log file"). Icons may use unicode within text content (✅ ⏳ 🔲 ⚠️ etc.) — only box-drawing structural characters are restricted.
 
 ### Icon Set (Canonical)
 
