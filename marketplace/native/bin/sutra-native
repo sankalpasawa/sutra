@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# sutra-native — D4 SKELETON CLI shim
+#
+# Per founder direction (2026-05-02) + codex amendment 4 (DIRECTIVE-ID
+# 1777755369): activation contract early. This shim resolves the compiled
+# CLI under dist/ (production install) or falls back to tsx for dev mode.
+#
+# Subcommands forwarded to TS: start | status | version | help.
+# See src/cli/sutra-native.ts for behavior + exit codes.
+
+set -euo pipefail
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+NATIVE_ROOT="$( cd "$DIR/.." && pwd )"
+
+# Prefer compiled JS when shipped via plugin install; fall back to tsx for
+# in-repo dev use.
+#
+# tsc emit path: tsconfig.build.json includes both src/**/*.ts and
+# composition/**/*.ts, so the implicit rootDir is the package root → emit
+# preserves "src/" prefix as dist/src/cli/sutra-native.js. Codex master
+# review 2026-05-03 caught the prior wrong path (dist/cli/...).
+if [ -f "$NATIVE_ROOT/dist/src/cli/sutra-native.js" ]; then
+  exec node "$NATIVE_ROOT/dist/src/cli/sutra-native.js" "$@"
+elif command -v tsx >/dev/null 2>&1 && [ -f "$NATIVE_ROOT/src/cli/sutra-native.ts" ]; then
+  exec tsx "$NATIVE_ROOT/src/cli/sutra-native.ts" "$@"
+elif command -v bun >/dev/null 2>&1 && [ -f "$NATIVE_ROOT/src/cli/sutra-native.ts" ]; then
+  exec bun "$NATIVE_ROOT/src/cli/sutra-native.ts" "$@"
+else
+  echo "ERROR: sutra-native CLI not built." >&2
+  echo "  Run: cd $NATIVE_ROOT && npm run build" >&2
+  echo "  Or:  install tsx (npm i -g tsx) for dev mode." >&2
+  exit 3
+fi

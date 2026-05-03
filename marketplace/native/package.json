@@ -6,6 +6,9 @@
     "node": ">=20",
     "opa": ">=1.0.0"
   },
+  "bin": {
+    "sutra-native": "./bin/sutra-native"
+  },
   "scripts": {
     "test": "vitest --run",
     "test:watch": "vitest",
