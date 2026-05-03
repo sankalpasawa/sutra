@@ -13,8 +13,10 @@
  * a founder hand-edits the JSON.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+
+import { atomicWriteSync } from './atomic-write.js'
 
 import { createCharter, type Charter } from '../primitives/charter.js'
 import { createDomain, type Domain } from '../primitives/domain.js'
@@ -48,7 +50,7 @@ function ensureDir(dir: string): void {
 }
 
 function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8' })
+  atomicWriteSync(path, JSON.stringify(value, null, 2) + '\n')
 }
 
 function readJson(path: string): unknown {

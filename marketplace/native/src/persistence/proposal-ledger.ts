@@ -15,9 +15,10 @@
  * entry is preserved (audit trail) but won't be re-proposed.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { atomicWriteSync } from './atomic-write.js'
 import { userKitRoot, type UserKitOptions } from './user-kit.js'
 
 // ---------------------------------------------------------------------------
@@ -97,7 +98,7 @@ function ensureDir(dir: string): void {
 }
 
 function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8' })
+  atomicWriteSync(path, JSON.stringify(value, null, 2) + '\n')
 }
 
 function readJson(path: string): unknown {
