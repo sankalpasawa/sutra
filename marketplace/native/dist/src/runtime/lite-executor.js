@@ -38,6 +38,8 @@
  * emit() to the RendererRegistry + audit log.
  */
 import { hostLLMActivity, HostUnavailableError, } from '../engine/host-llm-activity.js';
+import { buildExecutionDecisionProvenance } from './execution-provenance.js';
+import { appendDecisionProvenanceLog } from './emergence-provenance.js';
 /**
  * Execute a Workflow async, emitting events along the way.
  * Returns when the workflow completes (success or failure).
@@ -61,6 +63,22 @@ export async function executeWorkflow(opts) {
         execution_id: opts.execution_id,
     };
     opts.emit(wfStarted);
+    // v1.2.2 N2 — write execution DP-record if user-kit configured.
+    if (opts.user_kit_options_for_dp) {
+        try {
+            appendDecisionProvenanceLog(buildExecutionDecisionProvenance({
+                workflow_id: wf.id,
+                execution_id: opts.execution_id,
+                stage: 'STARTED',
+                ts_ms: startTs,
+                outcome: 'execution started',
+                charter_id: opts.charter_id,
+            }), opts.user_kit_options_for_dp);
+        }
+        catch {
+            /* DP write failure is non-fatal; log silently to avoid cascading executor failure */
+        }
+    }
     let stepsCompleted = 0;
     let stepsFailed = 0;
     let failureReason;
@@ -80,12 +98,38 @@ export async function executeWorkflow(opts) {
             step_count: total,
         };
         opts.emit(stepStarted);
+        // v1.2.2 N4 (narrowed) — when step.policy_check=true AND a policy_dispatch
+        // is supplied by the caller (NativeEngine for routed turns), evaluate the
+        // gate and emit policy_decision. Direct cmdRun / raw callers leave
+        // policy_dispatch unset → step proceeds ungated (documented behavior).
         let stepError = null;
-        try {
-            await runStepAction(step, { dispatch, runSeq, onHostLLMResult });
+        if (step.policy_check === true && opts.policy_dispatch) {
+            try {
+                const verdict = opts.policy_dispatch(step);
+                const policyEvt = {
+                    type: 'policy_decision',
+                    ts_ms: now(),
+                    workflow_id: wf.id,
+                    rule_id: `step-policy:${stepId}`,
+                    verdict: verdict.allow ? 'ALLOW' : 'DENY',
+                    reason: verdict.reason,
+                };
+                opts.emit(policyEvt);
+                if (!verdict.allow) {
+                    stepError = new Error(`policy_denied:${verdict.reason}`);
+                }
+            }
+            catch (err) {
+                stepError = err instanceof Error ? err : new Error(String(err));
+            }
         }
-        catch (err) {
-            stepError = err instanceof Error ? err : new Error(String(err));
+        if (stepError === null) {
+            try {
+                await runStepAction(step, { dispatch, runSeq, onHostLLMResult });
+            }
+            catch (err) {
+                stepError = err instanceof Error ? err : new Error(String(err));
+            }
         }
         const stepEndTs = now();
         if (stepError === null) {
@@ -139,6 +183,21 @@ export async function executeWorkflow(opts) {
             reason: failureReason,
         };
         opts.emit(wfFailed);
+        // v1.2.2 N2 — DP-record at failure
+        if (opts.user_kit_options_for_dp) {
+            try {
+                appendDecisionProvenanceLog(buildExecutionDecisionProvenance({
+                    workflow_id: wf.id,
+                    execution_id: opts.execution_id,
+                    stage: 'FAILED',
+                    ts_ms: endTs,
+                    outcome: failureReason,
+                    failure_reason: failureReason,
+                    charter_id: opts.charter_id,
+                }), opts.user_kit_options_for_dp);
+            }
+            catch { /* non-fatal */ }
+        }
         return {
             status: 'failed',
             steps_completed: stepsCompleted,
@@ -155,6 +214,20 @@ export async function executeWorkflow(opts) {
         duration_ms: endTs - startTs,
     };
     opts.emit(wfCompleted);
+    // v1.2.2 N2 — DP-record at success
+    if (opts.user_kit_options_for_dp) {
+        try {
+            appendDecisionProvenanceLog(buildExecutionDecisionProvenance({
+                workflow_id: wf.id,
+                execution_id: opts.execution_id,
+                stage: 'COMPLETED',
+                ts_ms: endTs,
+                outcome: `success: ${stepsCompleted} step(s) completed in ${endTs - startTs}ms`,
+                charter_id: opts.charter_id,
+            }), opts.user_kit_options_for_dp);
+        }
+        catch { /* non-fatal */ }
+    }
     return {
         status: 'success',
         steps_completed: stepsCompleted,

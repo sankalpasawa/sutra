@@ -228,8 +228,11 @@ export class NativeEngine {
       return this.applyRejection(rejectMatch[1], rejectMatch[2] ?? 'no reason provided', evt)
     }
 
+    // v1.2.2 N7 (narrowed) — read evt.event_type with founder_input as default;
+    // cron path now reachable when scheduler injects { event_type: 'cron', ... }
+    const eventType = (evt as { event_type?: 'founder_input' | 'cron' }).event_type ?? 'founder_input'
     const decision = this.router.route({
-      event_type: 'founder_input',
+      event_type: eventType,
       input_text: evt.input_text,
       hsutra: evt,
     })
@@ -254,10 +257,18 @@ export class NativeEngine {
       }
 
       const executionId = `E-${evt.turn_id}-${++this.executionCounter}`
+      // v1.2.2 N2 — pass user-kit options so lite-executor writes DP-records
+      // for routed executions; cmdRun direct path leaves these unset (codex
+      // narrowing — keep direct executions ungated + non-DP).
+      // v1.2.2 N4 — also resolve the operating Charter id (via STARTER_WORKFLOW_CHARTER_MAP
+      // at v1.2.2; user-kit charter resolution is v1.x scope).
+      const charterId = STARTER_WORKFLOW_CHARTER_MAP.get(wf.id)
       await executeWorkflow({
         workflow: wf,
         execution_id: executionId,
         workflow_run_seq: this.executionCounter,
+        user_kit_options_for_dp: this.userKitOptions,
+        charter_id: charterId,
         emit: (engineEvt) => {
           this.emitEvent(engineEvt, evt)
           emitted++

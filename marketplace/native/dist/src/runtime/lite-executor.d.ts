@@ -41,6 +41,7 @@ import type { Workflow } from '../primitives/workflow.js';
 import type { WorkflowStep } from '../types/index.js';
 import type { EngineEvent } from '../types/engine-event.js';
 import { hostLLMActivity, type HostLLMResult } from '../engine/host-llm-activity.js';
+import type { UserKitOptions } from '../persistence/user-kit.js';
 export interface ExecuteOptions {
     readonly workflow: Workflow;
     readonly execution_id: string;
@@ -65,6 +66,30 @@ export interface ExecuteOptions {
      * derivation (see host-llm-activity.ts D-NS-26). Defaults to 0.
      */
     readonly workflow_run_seq?: number;
+    /**
+     * v1.2.2 (N2): when set, lite-executor writes a DecisionProvenance record
+     * to the user-kit DP log on workflow_started + workflow_completed/failed.
+     * When unset, no DP records are written (v1.2.1 behavior preserved for
+     * raw cmdRun / direct executeWorkflow callers per codex pre-dispatch fold).
+     */
+    readonly user_kit_options_for_dp?: UserKitOptions;
+    /**
+     * v1.2.2 (N2): optional charter id linking this execution to a Charter
+     * for the DP authority_id field. Defaults to 'native-runtime'.
+     */
+    readonly charter_id?: string;
+    /**
+     * v1.2.2 (N4 narrowed — routed-engine-only OPA gate): callable that
+     * adjudicates step.policy_check=true. When set AND a step has
+     * policy_check=true, lite-executor calls this and emits a policy_decision
+     * event before proceeding. NativeEngine wires this when routing exact-
+     * matches a trigger with a charter_id. Direct cmdRun / raw
+     * executeWorkflow callers leave this unset → ungated (codex narrowing).
+     */
+    readonly policy_dispatch?: (step: WorkflowStep) => {
+        allow: boolean;
+        reason: string;
+    };
 }
 export interface ExecutionResult {
     readonly status: 'success' | 'failed';
