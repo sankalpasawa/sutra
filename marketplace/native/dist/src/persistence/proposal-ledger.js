@@ -14,8 +14,9 @@
  * Status state machine: pending → approved | rejected. Once decided, the
  * entry is preserved (audit trail) but won't be re-proposed.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { atomicWriteSync } from './atomic-write.js';
 import { userKitRoot } from './user-kit.js';
 const PATTERN_ID_PATTERN = /^P-[0-9a-f]{8}$/;
 export function isProposalEntry(value) {
@@ -51,7 +52,7 @@ function ensureDir(dir) {
     mkdirSync(dir, { recursive: true });
 }
 function writeJson(path, value) {
-    writeFileSync(path, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8' });
+    atomicWriteSync(path, JSON.stringify(value, null, 2) + '\n');
 }
 function readJson(path) {
     return JSON.parse(readFileSync(path, 'utf8'));

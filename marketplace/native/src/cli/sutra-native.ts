@@ -54,7 +54,7 @@ import { formatEvent } from '../renderers/terminal-events.js'
 import type { EngineEvent } from '../types/engine-event.js'
 import type { StepAction, StepFailureAction, WorkflowStep } from '../types/index.js'
 
-const VERSION = '1.1.3'
+const VERSION = '1.2.1'
 
 interface CommandContext {
   readonly argv: ReadonlyArray<string>

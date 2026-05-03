@@ -12,8 +12,9 @@
  * so primitive validators run on disk content too — defense against drift if
  * a founder hand-edits the JSON.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { atomicWriteSync } from './atomic-write.js';
 import { createCharter } from '../primitives/charter.js';
 import { createDomain } from '../primitives/domain.js';
 import { createWorkflow } from '../primitives/workflow.js';
@@ -34,7 +35,7 @@ function ensureDir(dir) {
     mkdirSync(dir, { recursive: true });
 }
 function writeJson(path, value) {
-    writeFileSync(path, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8' });
+    atomicWriteSync(path, JSON.stringify(value, null, 2) + '\n');
 }
 function readJson(path) {
     return JSON.parse(readFileSync(path, 'utf8'));

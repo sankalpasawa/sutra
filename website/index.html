@@ -797,6 +797,8 @@
     <h2>Native. The runtime that runs <em>a whole company.</em></h2>
     <p class="native-sub">One founder. One LLM. Everything else autonomous. Native is the V2.4 Sutra Engine &mdash; 4 primitives, 6 laws, decision provenance built in. Ships on commodity infrastructure (Anthropic Claude SDK, Temporal, OPA, OpenTelemetry) with ~1,700 lines of Sutra glue.</p>
 
+    <p class="native-sub"><strong>v1.2 ships organic emergence</strong> &mdash; Native detects 4-utterance lexical patterns, proposes them as Workflows, and persists founder-approved patterns to disk so they survive daemon restart. <strong>v1.2.1 wires the host-LLM seam</strong>: invoke_host_llm steps now dispatch into <code>claude --bare</code> / <code>codex exec</code>, so post-approval Workflows do real work instead of no-op'ing.</p>
+
     <div class="native-cta">
       <div class="install-code-wrap">
         <div class="install-code" id="native-cmd">curl -fsSL sankalpasawa.github.io/sutra/native/install.sh | bash</div>
