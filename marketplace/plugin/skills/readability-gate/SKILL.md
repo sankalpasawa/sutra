@@ -1,6 +1,6 @@
 ---
 name: readability-gate
-description: Use before presenting output. Formats for readability — tables over prose, numbers over adjectives, decisions boxed, progress bars for scores.
+description: Use before presenting output. Formats for readability — tables over prose, numbers over adjectives, decisions boxed (ASCII only), progress bars for scores. ASCII-only boxes per D-UX-1 codex ADVISORY 2026-05-04.
 ---
 
 # Readability Gate
@@ -15,17 +15,19 @@ Every output passes through a readability check before display. The gate is a BE
 - Tables over paragraphs when 3+ rows of comparable data
 - Numbers over adjectives ("12 open PRs" beats "several open PRs")
 
-### Decisions (boxed for visibility)
+### Decisions (boxed for visibility — ASCII per CLAUDE.md)
 
 ```
-╭───────────────────────────────────────────────╮
-│ DECISION: [one-line summary]                  │
-│ Recommend: APPROVE / REVISE / DEFER           │
-│ Why: [1 sentence]                             │
-│ Trade-off: [1 sentence]                       │
-│ Verdict: APPROVE  /  REVISE  /  DEFER         │
-╰───────────────────────────────────────────────╯
++-----------------------------------------------+
+| DECISION: [one-line summary]                  |
+| Recommend: APPROVE / REVISE / DEFER           |
+| Why: [1 sentence]                             |
+| Trade-off: [1 sentence]                       |
+| Verdict: APPROVE  /  REVISE  /  DEFER         |
++-----------------------------------------------+
 ```
+
+Per D-UX-1 codex ADVISORY 2026-05-04: ASCII boxes only (no unicode box-drawing chars). Native renderer at sutra/marketplace/native/src/renderers/terminal-events.ts is canonical reference (line 6: "no unicode box-drawing — readable in any terminal + log file").
 
 ### Line budgets
 - Daily status ≤25 lines
