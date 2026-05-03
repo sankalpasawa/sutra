@@ -1,16 +1,29 @@
 /**
- * LiteExecutor — v1.1.0 synchronous Workflow.step_graph runner.
+ * LiteExecutor — v1.2.1 async Workflow.step_graph runner.
  *
  * Wave 2 lite path: takes a Workflow + Execution context, walks step_graph
  * in order, emits EngineEvents around each step, and produces a final
  * workflow_completed or workflow_failed. NO Temporal dependency at v1.1.0
  * (full Temporal-backed executor is v1.2+).
  *
- * Step actions supported at v1.1.0:
+ * Step actions supported at v1.2.1:
  *   - 'wait'             — no-op, succeed immediately
  *   - 'spawn_sub_unit'   — no-op stub (logs intent, succeeds)
- *   - 'invoke_host_llm'  — no-op stub (logs intent, succeeds)
+ *   - 'invoke_host_llm'  — DISPATCHES into hostLLMActivity (claude --bare /
+ *                          codex exec); see v1.2.1 contract block below.
  *   - 'terminate'        — emit workflow_completed early, success
+ *
+ * v1.2.1 host-LLM contract (DISPATCH-ONLY):
+ *   - LiteExecutor invokes hostLLMActivity and forwards the HostLLMResult
+ *     via the on_host_llm_result callback (default: no-op, preserving the
+ *     "PURE relative to emit()" contract below).
+ *   - LiteExecutor does NOT wrap the response in a DataRef envelope and
+ *     does NOT validate against step.return_contract. Workflows that need
+ *     DataRef wrapping or schema validation must use the full
+ *     step-graph-executor (engine/step-graph-executor.ts).
+ *   - This DISPATCH-ONLY scope closes P1.2 of DIRECTIVE 1777839055 (post-
+ *     approval workflow no longer hollow); broader contract alignment with
+ *     step-graph-executor is deferred to v1.x.
  *
  * step.on_failure semantics:
  *   - 'continue' → swallow the error, proceed to next step
@@ -20,11 +33,13 @@
  *   - 'escalate' → mapped to abort at v1.1.0 (no escalation channel yet)
  *
  * The executor is PURE relative to its emit() callback — it does NO I/O
- * itself. Caller (NativeEngine) wires emit() to the RendererRegistry +
- * audit log.
+ * itself except via the host_llm_dispatch hook (default = real
+ * hostLLMActivity; tests inject stubs). Caller (NativeEngine / CLI) wires
+ * emit() to the RendererRegistry + audit log.
  */
 
 import type { Workflow } from '../primitives/workflow.js'
+import type { WorkflowStep } from '../types/index.js'
 import type {
   EngineEvent,
   StepCompletedEvent,
@@ -33,6 +48,11 @@ import type {
   WorkflowFailedEvent,
   WorkflowStartedEvent,
 } from '../types/engine-event.js'
+import {
+  hostLLMActivity,
+  HostUnavailableError,
+  type HostLLMResult,
+} from '../engine/host-llm-activity.js'
 
 export interface ExecuteOptions {
   readonly workflow: Workflow
@@ -41,6 +61,23 @@ export interface ExecuteOptions {
   readonly emit: (event: EngineEvent) => void
   /** Optional clock for deterministic tests. Defaults to Date.now. */
   readonly now?: () => number
+  /**
+   * v1.2.1: dispatcher for action='invoke_host_llm'. Defaults to the real
+   * hostLLMActivity. Tests inject a stub returning a canned HostLLMResult.
+   */
+  readonly host_llm_dispatch?: typeof hostLLMActivity
+  /**
+   * v1.2.1: callback invoked once per successful invoke_host_llm step with
+   * the HostLLMResult and the originating WorkflowStep. Default = no-op
+   * (preserves "PURE relative to emit()" contract — caller decides what to
+   * do with the response).
+   */
+  readonly on_host_llm_result?: (result: HostLLMResult, step: WorkflowStep) => void
+  /**
+   * v1.2.1: forwarded to hostLLMActivity as workflow_run_seq for invocation_id
+   * derivation (see host-llm-activity.ts D-NS-26). Defaults to 0.
+   */
+  readonly workflow_run_seq?: number
 }
 
 export interface ExecutionResult {
@@ -52,16 +89,21 @@ export interface ExecutionResult {
 }
 
 /**
- * Execute a Workflow synchronously, emitting events along the way.
+ * Execute a Workflow async, emitting events along the way.
  * Returns when the workflow completes (success or failure).
+ *
+ * v1.2.1: invoke_host_llm steps await hostLLMActivity dispatch.
  *
  * Per softened I-NPD-1: every event is emitted via the caller's emit()
  * callback so the audit chain can be hooked from outside (replay-safe).
  */
-export function executeWorkflow(opts: ExecuteOptions): ExecutionResult {
+export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionResult> {
   const now = opts.now ?? Date.now
   const wf = opts.workflow
   const startTs = now()
+  const dispatch = opts.host_llm_dispatch ?? hostLLMActivity
+  const onHostLLMResult = opts.on_host_llm_result ?? (() => {})
+  const runSeq = opts.workflow_run_seq ?? 0
 
   const wfStarted: WorkflowStartedEvent = {
     type: 'workflow_started',
@@ -96,7 +138,7 @@ export function executeWorkflow(opts: ExecuteOptions): ExecutionResult {
 
     let stepError: Error | null = null
     try {
-      runStepAction(step.action ?? 'wait')
+      await runStepAction(step, { dispatch, runSeq, onHostLLMResult })
     } catch (err) {
       stepError = err instanceof Error ? err : new Error(String(err))
     }
@@ -179,14 +221,51 @@ export function executeWorkflow(opts: ExecuteOptions): ExecutionResult {
   }
 }
 
-/** v1.1.0 step action dispatch — all actions are no-op stubs. */
-function runStepAction(action: string): void {
+/** Dispatch context plumbed through executeWorkflow → runStepAction. */
+interface StepDispatchContext {
+  readonly dispatch: typeof hostLLMActivity
+  readonly runSeq: number
+  readonly onHostLLMResult: (result: HostLLMResult, step: WorkflowStep) => void
+}
+
+/**
+ * v1.2.1 step action dispatch.
+ *
+ * Preserves the v1.1.0 `step.action ?? 'wait'` fallback for steps without
+ * an explicit action (e.g. skill_ref-only steps).
+ */
+async function runStepAction(step: WorkflowStep, ctx: StepDispatchContext): Promise<void> {
+  const action = step.action ?? 'wait'
   switch (action) {
     case 'wait':
     case 'spawn_sub_unit':
-    case 'invoke_host_llm':
     case 'terminate':
       return
+    case 'invoke_host_llm': {
+      const host = step.host
+      if (host !== 'claude' && host !== 'codex') {
+        throw new Error(`host_llm_invocation_failed:invalid_host:${String(host)}`)
+      }
+      const prompt = step.inputs[0]?.locator
+      if (!prompt) {
+        throw new Error('host_llm_invocation_failed:no_prompt')
+      }
+      try {
+        const result = await ctx.dispatch({
+          prompt,
+          host,
+          workflow_run_seq: ctx.runSeq,
+        })
+        ctx.onHostLLMResult(result, step)
+        return
+      } catch (err) {
+        if (err instanceof HostUnavailableError) {
+          throw new Error(`host_llm_unavailable:${host}`)
+        }
+        const msg = err instanceof Error ? err.message : String(err)
+        throw new Error(`host_llm_invocation_failed:${msg}`)
+      }
+    }
     default:
       throw new Error(`unknown step action "${action}"`)
   }

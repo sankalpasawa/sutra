@@ -94,6 +94,15 @@ export class NativeEngine {
   private readonly onError: (err: Error) => void
   private executionCounter = 0
   private started = false
+  /**
+   * v1.2.1: serialization queue. The connector delivers events synchronously
+   * but handleHSutraEvent is now async (host-LLM dispatch may take seconds).
+   * Without this chain, two founder turns could overlap and collide on
+   * executionCounter / ledger state. Each event is appended to the chain so
+   * they run sequentially even when the connector fires faster than dispatch
+   * resolves. Codex master review (DIRECTIVE 1777839055) P1 fold.
+   */
+  private turnQueue: Promise<void> = Promise.resolve()
 
   // SPEC v1.2 §4.5 — proposer state
   private readonly proposerEnabled: boolean
@@ -160,11 +169,16 @@ export class NativeEngine {
     this.started = true
 
     this.connector.onEvent((evt) => {
-      try {
+      // v1.2.1 codex P1 fold: chain through turnQueue so events from the
+      // synchronous connector are serialized despite handleHSutraEvent now
+      // being async (host-LLM dispatch can take seconds).
+      this.turnQueue = this.turnQueue.then(() =>
         this.handleHSutraEvent(evt)
-      } catch (err) {
-        this.onError(err instanceof Error ? err : new Error(String(err)))
-      }
+          .then(() => undefined)
+          .catch((err) => {
+            this.onError(err instanceof Error ? err : new Error(String(err)))
+          }),
+      )
     })
 
     this.connector.start()
@@ -178,6 +192,16 @@ export class NativeEngine {
   }
 
   /**
+   * v1.2.1: await the queue of in-flight turns from the live connector path.
+   * Useful for tests that need to assert state after an async dispatch
+   * completes (since `handleHSutraEvent` returns immediately to the listener
+   * but the work continues on the queue chain).
+   */
+  async drain(): Promise<void> {
+    await this.turnQueue
+  }
+
+  /**
    * Process one founder event end-to-end:
    *   1. Router.route → RoutingDecision
    *   2. Emit routing_decision event → render line
@@ -185,8 +209,10 @@ export class NativeEngine {
    *   4. Emit each workflow/step event → render line
    *
    * Returns the count of EngineEvents emitted (useful for tests + telemetry).
+   *
+   * v1.2.1: async to support invoke_host_llm dispatch through executeWorkflow.
    */
-  handleHSutraEvent(evt: HSutraEvent): number {
+  async handleHSutraEvent(evt: HSutraEvent): Promise<number> {
     let emitted = 0
 
     // SPEC v1.2 §4.5(b) — approve/reject command parsing PRECEDES routing.
@@ -228,9 +254,10 @@ export class NativeEngine {
       }
 
       const executionId = `E-${evt.turn_id}-${++this.executionCounter}`
-      executeWorkflow({
+      await executeWorkflow({
         workflow: wf,
         execution_id: executionId,
+        workflow_run_seq: this.executionCounter,
         emit: (engineEvt) => {
           this.emitEvent(engineEvt, evt)
           emitted++
@@ -430,10 +457,13 @@ export class NativeEngine {
   }
 
   /**
-   * Public helper: run a single founder turn synchronously (no log file
-   * round-trip). Used by tests + the v1.1.0 demo path.
+   * Public helper: run a single founder turn (no log file round-trip).
+   * Used by tests + the v1.1.0 demo path.
+   *
+   * v1.2.1: async to forward host-LLM dispatch errors / completion ordering
+   * from handleHSutraEvent's executeWorkflow await.
    */
-  ingest(evt: HSutraEvent): number {
+  async ingest(evt: HSutraEvent): Promise<number> {
     return this.handleHSutraEvent(evt)
   }
 

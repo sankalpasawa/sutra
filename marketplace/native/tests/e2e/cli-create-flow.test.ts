@@ -31,10 +31,10 @@ interface CliResult {
   stderr: string
 }
 
-function runCli(argv: string[], home: string): CliResult {
+async function runCli(argv: string[], home: string): Promise<CliResult> {
   let stdout = ''
   let stderr = ''
-  const code = main({
+  const code = await main({
     argv,
     env: { ...process.env, SUTRA_NATIVE_HOME: home, HOME: home },
     stdout: (s) => {
@@ -60,8 +60,8 @@ describe('E2E CLI: create-domain → create-charter → create-workflow → list
     }
   })
 
-  it('create-domain persists D6 Health to user-kit/domains/', () => {
-    const r = runCli(['create-domain', '--id', 'D6', '--name', 'Health'], HOME_DIR)
+  it('create-domain persists D6 Health to user-kit/domains/', async () => {
+    const r = await runCli(['create-domain', '--id', 'D6', '--name', 'Health'], HOME_DIR)
     expect(r.code).toBe(0)
     expect(r.stdout).toContain('Domain D6')
     expect(r.stdout).toContain('Health')
@@ -73,8 +73,8 @@ describe('E2E CLI: create-domain → create-charter → create-workflow → list
     expect(persisted.tenant_id).toBe('T-default')
   })
 
-  it('create-charter persists C-sleep under D6', () => {
-    const r = runCli(
+  it('create-charter persists C-sleep under D6', async () => {
+    const r = await runCli(
       [
         'create-charter',
         '--id',
@@ -96,8 +96,8 @@ describe('E2E CLI: create-domain → create-charter → create-workflow → list
     expect(persisted.acl[0].domain_or_charter_id).toBe('D6')
   })
 
-  it('create-workflow persists W-checkin with wait → terminate', () => {
-    const r = runCli(
+  it('create-workflow persists W-checkin with wait → terminate', async () => {
+    const r = await runCli(
       ['create-workflow', '--id', 'W-checkin', '--steps', 'wait,terminate'],
       HOME_DIR,
     )
@@ -113,8 +113,8 @@ describe('E2E CLI: create-domain → create-charter → create-workflow → list
     expect(persisted.step_graph[1].action).toBe('terminate')
   })
 
-  it('list reports all three created entities', () => {
-    const r = runCli(['list'], HOME_DIR)
+  it('list reports all three created entities', async () => {
+    const r = await runCli(['list'], HOME_DIR)
     expect(r.code).toBe(0)
     expect(r.stdout).toContain('DOMAINS (1)')
     expect(r.stdout).toContain('D6')
@@ -125,16 +125,16 @@ describe('E2E CLI: create-domain → create-charter → create-workflow → list
     expect(r.stdout).toContain('W-checkin')
   })
 
-  it('list domains shows only domains', () => {
-    const r = runCli(['list', 'domains'], HOME_DIR)
+  it('list domains shows only domains', async () => {
+    const r = await runCli(['list', 'domains'], HOME_DIR)
     expect(r.code).toBe(0)
     expect(r.stdout).toContain('DOMAINS')
     expect(r.stdout).not.toContain('CHARTERS')
     expect(r.stdout).not.toContain('WORKFLOWS')
   })
 
-  it('run W-checkin executes via LiteExecutor and prints events', () => {
-    const r = runCli(['run', 'W-checkin', '--execution-id', 'E-cli-001'], HOME_DIR)
+  it('run W-checkin executes via LiteExecutor and prints events', async () => {
+    const r = await runCli(['run', 'W-checkin', '--execution-id', 'E-cli-001'], HOME_DIR)
     expect(r.code).toBe(0)
     expect(r.stdout).toContain('[workflow_started]')
     expect(r.stdout).toContain('W-checkin')
@@ -145,33 +145,33 @@ describe('E2E CLI: create-domain → create-charter → create-workflow → list
     expect(r.stdout).toMatch(/OK: \d+ step\(s\) completed/)
   })
 
-  it('run on missing workflow id exits 3 with helpful error', () => {
-    const r = runCli(['run', 'W-does-not-exist'], HOME_DIR)
+  it('run on missing workflow id exits 3 with helpful error', async () => {
+    const r = await runCli(['run', 'W-does-not-exist'], HOME_DIR)
     expect(r.code).toBe(3)
     expect(r.stderr).toContain('not found in user-kit')
     expect(r.stderr).toContain('list workflows')
   })
 
-  it('run with no positional arg exits 2', () => {
-    const r = runCli(['run'], HOME_DIR)
+  it('run with no positional arg exits 2', async () => {
+    const r = await runCli(['run'], HOME_DIR)
     expect(r.code).toBe(2)
     expect(r.stderr).toContain('workflow id required')
   })
 
-  it('create-domain rejects missing --name', () => {
-    const r = runCli(['create-domain', '--id', 'D-bad'], HOME_DIR)
+  it('create-domain rejects missing --name', async () => {
+    const r = await runCli(['create-domain', '--id', 'D-bad'], HOME_DIR)
     expect(r.code).toBe(2)
     expect(r.stderr).toContain('--name is required')
   })
 
-  it('create-domain rejects bad id pattern (D-ID validator)', () => {
-    const r = runCli(['create-domain', '--id', 'NotADomain', '--name', 'X'], HOME_DIR)
+  it('create-domain rejects bad id pattern (D-ID validator)', async () => {
+    const r = await runCli(['create-domain', '--id', 'NotADomain', '--name', 'X'], HOME_DIR)
     expect(r.code).toBe(2)
     expect(r.stderr).toContain('Domain.id')
   })
 
-  it('create-workflow rejects unknown step action', () => {
-    const r = runCli(
+  it('create-workflow rejects unknown step action', async () => {
+    const r = await runCli(
       ['create-workflow', '--id', 'W-bad', '--steps', 'wait,nonsense_action'],
       HOME_DIR,
     )
@@ -179,14 +179,14 @@ describe('E2E CLI: create-domain → create-charter → create-workflow → list
     expect(r.stderr).toContain('not one of')
   })
 
-  it('create-charter rejects missing --purpose', () => {
-    const r = runCli(['create-charter', '--id', 'C-noop'], HOME_DIR)
+  it('create-charter rejects missing --purpose', async () => {
+    const r = await runCli(['create-charter', '--id', 'C-noop'], HOME_DIR)
     expect(r.code).toBe(2)
     expect(r.stderr).toContain('--purpose is required')
   })
 
-  it('help lists the new founder-facing subcommands', () => {
-    const r = runCli(['help'], HOME_DIR)
+  it('help lists the new founder-facing subcommands', async () => {
+    const r = await runCli(['help'], HOME_DIR)
     expect(r.code).toBe(0)
     expect(r.stdout).toContain('create-domain')
     expect(r.stdout).toContain('create-charter')
@@ -209,8 +209,8 @@ describe('E2E CLI: empty user-kit edge cases', () => {
     }
   })
 
-  it('list on empty user-kit reports zero entities + hint', () => {
-    const r = runCli(['list'], HOME_DIR)
+  it('list on empty user-kit reports zero entities + hint', async () => {
+    const r = await runCli(['list'], HOME_DIR)
     expect(r.code).toBe(0)
     expect(r.stdout).toContain('DOMAINS (0)')
     expect(r.stdout).toContain('CHARTERS (0)')

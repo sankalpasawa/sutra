@@ -43,7 +43,7 @@ describe('v1.1.0 end-to-end — first founder input → first SUCCESS Execution'
     })
   }
 
-  it('ingest("hello") via T-onboarding fires the SUCCESS chain end-to-end', () => {
+  it('ingest("hello") via T-onboarding fires the SUCCESS chain end-to-end', async () => {
     const lines: string[] = []
     const engine = buildEngine(lines)
     const evt: HSutraEvent = {
@@ -52,7 +52,7 @@ describe('v1.1.0 end-to-end — first founder input → first SUCCESS Execution'
       input_text: 'hello',
     }
 
-    const emitted = engine.ingest(evt)
+    const emitted = await engine.ingest(evt)
 
     // Expected events (in order):
     //   routing_decision (mode=exact)
@@ -71,7 +71,7 @@ describe('v1.1.0 end-to-end — first founder input → first SUCCESS Execution'
     expect(lines[4]).toContain('completed')
   })
 
-  it('ingest("just chatting") with no matching trigger emits no-match only', () => {
+  it('ingest("just chatting") with no matching trigger emits no-match only', async () => {
     const lines: string[] = []
     const engine = buildEngine(lines)
     const evt: HSutraEvent = {
@@ -79,13 +79,13 @@ describe('v1.1.0 end-to-end — first founder input → first SUCCESS Execution'
       input_text: 'just chatting',
     }
 
-    const emitted = engine.ingest(evt)
+    const emitted = await engine.ingest(evt)
     expect(emitted).toBe(1)
     expect(lines).toHaveLength(1)
     expect(lines[0]).toContain('no-match')
   })
 
-  it('multi-step W-feature-build runs all steps with correct step_index/count', () => {
+  it('multi-step W-feature-build runs all steps with correct step_index/count', async () => {
     const lines: string[] = []
     const engine = buildEngine(lines)
     const evt: HSutraEvent = {
@@ -93,7 +93,7 @@ describe('v1.1.0 end-to-end — first founder input → first SUCCESS Execution'
       input_text: 'build a feature for the product',
     }
 
-    const emitted = engine.ingest(evt)
+    const emitted = await engine.ingest(evt)
     // routing_decision + workflow_started + (step_started + step_completed) * 3 + workflow_completed = 9
     expect(emitted).toBe(9)
     // Step 1, 2, 3 / 3 each appear in started + completed lines
@@ -134,7 +134,7 @@ describe('v1.1.0 end-to-end — first founder input → first SUCCESS Execution'
     expect(engine.ownerCharterOf('W-feature-build')).toBe('C-build-product')
   })
 
-  it('on_error sink fires when router matches an unknown workflow id (defensive)', () => {
+  it('on_error sink fires when router matches an unknown workflow id (defensive)', async () => {
     const errors: Error[] = []
     const lines: string[] = []
     // Inject a trigger pointing at a workflow that isn't loaded
@@ -153,7 +153,7 @@ describe('v1.1.0 end-to-end — first founder input → first SUCCESS Execution'
       write: (l) => lines.push(l),
       on_error: (e) => errors.push(e),
     })
-    engine.ingest({ turn_id: 't-bogus', input_text: 'anything' })
+    await engine.ingest({ turn_id: 't-bogus', input_text: 'anything' })
     expect(errors.length).toBeGreaterThan(0)
     expect(errors[0]?.message).toContain('not loaded')
   })

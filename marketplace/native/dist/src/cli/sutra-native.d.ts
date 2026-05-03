@@ -31,12 +31,12 @@ interface CommandContext {
     readonly stdout: (s: string) => void;
     readonly stderr: (s: string) => void;
 }
-export declare function main(ctx: CommandContext): number;
+export declare function main(ctx: CommandContext): Promise<number>;
 declare function cmdCreateDomain(ctx: CommandContext): number;
 declare function cmdCreateCharter(ctx: CommandContext): number;
 declare function cmdCreateWorkflow(ctx: CommandContext): number;
 declare function cmdList(ctx: CommandContext): number;
-declare function cmdRun(ctx: CommandContext): number;
+declare function cmdRun(ctx: CommandContext): Promise<number>;
 /**
  * detectHostKind — classify the runtime context that invoked sutra-native.
  *

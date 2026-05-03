@@ -66,7 +66,7 @@ describe('E2E — organic emergence vertical slice', () => {
     if (HOME && existsSync(HOME)) rmSync(HOME, { recursive: true, force: true })
   })
 
-  it('full propose → approve → re-route flow + restart reload', () => {
+  it('full propose → approve → re-route flow + restart reload', async () => {
     // Seed H-Sutra log with 4 repeated utterances within the detector window.
     writeLog(LOG, [
       makeHSutraRow('t1', 'track design partners', NOW - 4000),
@@ -115,7 +115,7 @@ describe('E2E — organic emergence vertical slice', () => {
 
     // 5th utterance — same phrase. The pattern detector should surface it.
     const trigger_event = makeEvent('t5', 'track design partners')
-    const emitted_first = engine.ingest(trigger_event)
+    const emitted_first = await engine.ingest(trigger_event)
     expect(emitted_first).toBeGreaterThanOrEqual(2) // routing_decision + pattern_proposed
 
     // Verify the pattern_proposed event landed
@@ -134,7 +134,7 @@ describe('E2E — organic emergence vertical slice', () => {
 
     // Founder approves via next utterance
     const approve_event = makeEvent('t6', `approve ${expected_pattern_id}`)
-    const emitted_approve = engine.ingest(approve_event)
+    const emitted_approve = await engine.ingest(approve_event)
     expect(emitted_approve).toBe(1)
 
     // Verify proposal_approved event + ledger flipped to 'approved'
@@ -157,7 +157,7 @@ describe('E2E — organic emergence vertical slice', () => {
 
     // Next matching utterance — should route mode='exact' now
     events.length = 0 // clear for clean assertion
-    engine.ingest(makeEvent('t7', 'I want to track design partners again'))
+    await engine.ingest(makeEvent('t7', 'I want to track design partners again'))
     const exact_routing = events.find((e) => e.type === 'routing_decision')
     expect(exact_routing).toBeDefined()
     if (exact_routing?.type !== 'routing_decision') throw new Error('type narrow')
@@ -177,7 +177,7 @@ describe('E2E — organic emergence vertical slice', () => {
     engine2.renderer.register('routing_decision', (e) => {
       reloaded_events.push(e); return ''
     })
-    engine2.ingest(makeEvent('t8', 'track design partners reloaded'))
+    await engine2.ingest(makeEvent('t8', 'track design partners reloaded'))
     const reloaded_routing = reloaded_events.find((e) => e.type === 'routing_decision')
     expect(reloaded_routing).toBeDefined()
     if (reloaded_routing?.type !== 'routing_decision') throw new Error('type narrow')
@@ -185,7 +185,7 @@ describe('E2E — organic emergence vertical slice', () => {
     expect(reloaded_routing.workflow_id).toBe(`W-emergent-${expected_pattern_id.slice(2)}`)
   })
 
-  it('reject path: ledger flips to rejected, no workflow persisted', () => {
+  it('reject path: ledger flips to rejected, no workflow persisted', async () => {
     writeLog(LOG, [
       makeHSutraRow('t1', 'shutdown daily review', NOW - 4000),
       makeHSutraRow('t2', 'shutdown daily review', NOW - 3000),
@@ -202,12 +202,12 @@ describe('E2E — organic emergence vertical slice', () => {
       connector_options: { log_path: LOG },
       write: () => {},
     })
-    engine.ingest(makeEvent('t5', 'shutdown daily review'))
+    await engine.ingest(makeEvent('t5', 'shutdown daily review'))
 
     const expected_id = patternIdFor(normalizeUtterance('shutdown daily review'))
     expect(listProposals({ home: HOME }, 'pending')).toHaveLength(1)
 
-    engine.ingest(makeEvent('t6', `reject ${expected_id} too generic`))
+    await engine.ingest(makeEvent('t6', `reject ${expected_id} too generic`))
 
     expect(listProposals({ home: HOME }, 'pending')).toHaveLength(0)
     expect(listProposals({ home: HOME }, 'rejected')).toHaveLength(1)
@@ -218,7 +218,7 @@ describe('E2E — organic emergence vertical slice', () => {
     expect(listTriggers({ home: HOME })).toHaveLength(0)
   })
 
-  it('proposer_enabled=false suppresses the no-match → propose path', () => {
+  it('proposer_enabled=false suppresses the no-match → propose path', async () => {
     writeLog(LOG, [
       makeHSutraRow('t1', 'review pipeline status', NOW - 4000),
       makeHSutraRow('t2', 'review pipeline status', NOW - 3000),
@@ -234,11 +234,11 @@ describe('E2E — organic emergence vertical slice', () => {
       connector_options: { log_path: LOG },
       write: () => {},
     })
-    engine.ingest(makeEvent('t5', 'review pipeline status'))
+    await engine.ingest(makeEvent('t5', 'review pipeline status'))
     expect(listProposals({ home: HOME })).toHaveLength(0)
   })
 
-  it('approve unknown pattern_id is a no-op (logs error, returns 0)', () => {
+  it('approve unknown pattern_id is a no-op (logs error, returns 0)', async () => {
     const errors: Error[] = []
     const engine = new NativeEngine({
       triggers: [],
@@ -250,7 +250,7 @@ describe('E2E — organic emergence vertical slice', () => {
       write: () => {},
       on_error: (e) => errors.push(e),
     })
-    const emitted = engine.ingest(makeEvent('t1', 'approve P-deadbeef'))
+    const emitted = await engine.ingest(makeEvent('t1', 'approve P-deadbeef'))
     expect(emitted).toBe(0)
     expect(errors.length).toBeGreaterThan(0)
     expect(errors[0].message).toMatch(/no pending proposal/)

@@ -59,6 +59,15 @@ export declare class NativeEngine {
     private readonly onError;
     private executionCounter;
     private started;
+    /**
+     * v1.2.1: serialization queue. The connector delivers events synchronously
+     * but handleHSutraEvent is now async (host-LLM dispatch may take seconds).
+     * Without this chain, two founder turns could overlap and collide on
+     * executionCounter / ledger state. Each event is appended to the chain so
+     * they run sequentially even when the connector fires faster than dispatch
+     * resolves. Codex master review (DIRECTIVE 1777839055) P1 fold.
+     */
+    private turnQueue;
     private readonly proposerEnabled;
     private readonly userKitOptions;
     private readonly patternDetectorOptions;
@@ -69,6 +78,13 @@ export declare class NativeEngine {
     /** Stop watching + release resources. Idempotent. */
     stop(): void;
     /**
+     * v1.2.1: await the queue of in-flight turns from the live connector path.
+     * Useful for tests that need to assert state after an async dispatch
+     * completes (since `handleHSutraEvent` returns immediately to the listener
+     * but the work continues on the queue chain).
+     */
+    drain(): Promise<void>;
+    /**
      * Process one founder event end-to-end:
      *   1. Router.route → RoutingDecision
      *   2. Emit routing_decision event → render line
@@ -76,8 +92,10 @@ export declare class NativeEngine {
      *   4. Emit each workflow/step event → render line
      *
      * Returns the count of EngineEvents emitted (useful for tests + telemetry).
+     *
+     * v1.2.1: async to support invoke_host_llm dispatch through executeWorkflow.
      */
-    handleHSutraEvent(evt: HSutraEvent): number;
+    handleHSutraEvent(evt: HSutraEvent): Promise<number>;
     /** SPEC v1.2 §4.5(c) — proposer pass. Returns count of events emitted. */
     private runProposerPass;
     /**
@@ -97,10 +115,13 @@ export declare class NativeEngine {
     /** SPEC v1.2 §4.5(b) — reject a pending proposal by pattern_id. */
     private applyRejection;
     /**
-     * Public helper: run a single founder turn synchronously (no log file
-     * round-trip). Used by tests + the v1.1.0 demo path.
+     * Public helper: run a single founder turn (no log file round-trip).
+     * Used by tests + the v1.1.0 demo path.
+     *
+     * v1.2.1: async to forward host-LLM dispatch errors / completion ordering
+     * from handleHSutraEvent's executeWorkflow await.
      */
-    ingest(evt: HSutraEvent): number;
+    ingest(evt: HSutraEvent): Promise<number>;
     /** Lookup the Charter that operationalizes a Workflow (v1.1.0 starter map). */
     ownerCharterOf(workflowId: string): string | undefined;
     private emitEvent;

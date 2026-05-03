@@ -121,7 +121,7 @@ describe('E2E: on-the-fly creation (Domain → Charter → Workflow → Executio
     expect(w.step_graph[1]?.action).toBe('terminate')
   })
 
-  it('LiteExecutor runs the dynamically-created Workflow and emits events', () => {
+  it('LiteExecutor runs the dynamically-created Workflow and emits events', async () => {
     const w = createWorkflow({
       id: 'W-evening-sleep-checkin-exec',
       preconditions: 'evening_event_emitted',
@@ -139,7 +139,7 @@ describe('E2E: on-the-fly creation (Domain → Charter → Workflow → Executio
     })
 
     const events: EngineEvent[] = []
-    const result = executeWorkflow({
+    const result = await executeWorkflow({
       workflow: w,
       execution_id: 'E-e2e-create-flow-001',
       emit: (e) => events.push(e),
@@ -152,7 +152,7 @@ describe('E2E: on-the-fly creation (Domain → Charter → Workflow → Executio
     expect(events.find((e) => e.type === 'step_started')).toBeDefined()
   })
 
-  it('full chain: D6 → C-sleep → W → execute → event chain intact', () => {
+  it('full chain: D6 → C-sleep → W → execute → event chain intact', async () => {
     const d6 = createDomain({
       id: 'D6',
       name: 'Health',
@@ -200,7 +200,7 @@ describe('E2E: on-the-fly creation (Domain → Charter → Workflow → Executio
     })
 
     const events: EngineEvent[] = []
-    const result = executeWorkflow({
+    const result = await executeWorkflow({
       workflow: wf,
       execution_id: 'E-chain-001',
       emit: (e) => events.push(e),

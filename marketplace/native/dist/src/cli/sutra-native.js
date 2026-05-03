@@ -36,8 +36,10 @@ import { executeWorkflow } from '../runtime/lite-executor.js';
 import { listCharters, listDomains, listWorkflows, loadWorkflow, persistCharter, persistDomain, persistWorkflow, } from '../persistence/user-kit.js';
 import { formatEvent } from '../renderers/terminal-events.js';
 const VERSION = '1.1.3';
-export function main(ctx) {
+export async function main(ctx) {
     const sub = ctx.argv[0] ?? 'help';
+    // v1.2.1: main is async to allow `await cmdRun(...)` for invoke_host_llm
+    // dispatch; sync subcommands auto-wrap in Promise.resolve when returned.
     switch (sub) {
         case 'start':
             return cmdStart(ctx);
@@ -56,7 +58,7 @@ export function main(ctx) {
         case 'list':
             return cmdList(ctx);
         case 'run':
-            return cmdRun(ctx);
+            return await cmdRun(ctx);
         case 'version':
         case '--version':
         case '-v':
@@ -264,7 +266,7 @@ function cmdList(ctx) {
         return 3;
     }
 }
-function cmdRun(ctx) {
+async function cmdRun(ctx) {
     const { positional, flags } = parseFlags(ctx.argv);
     const wfId = positional[0];
     if (!wfId) {
@@ -278,13 +280,25 @@ function cmdRun(ctx) {
             return 3;
         }
         const executionId = flags['execution-id'] ?? `E-${Date.now()}`;
+        // v1.2.1 codex P2 fold (DIRECTIVE 1777839055): forward a per-run sequence
+        // so invocation_id derivation does not collapse across repeated CLI runs
+        // (D-NS-26 contract). Founder may pin via --workflow-run-seq for replay
+        // determinism; default = high-resolution clock so two consecutive runs
+        // with the same prompt produce distinct invocation_ids.
+        const seqFlag = flags['workflow-run-seq'];
+        const workflowRunSeq = seqFlag !== undefined ? Number(seqFlag) : Date.now();
         const events = [];
-        const result = executeWorkflow({
+        const result = await executeWorkflow({
             workflow: wf,
             execution_id: executionId,
+            workflow_run_seq: workflowRunSeq,
             emit: (e) => {
                 events.push(e);
                 ctx.stdout(formatEvent(e) + '\n');
+            },
+            on_host_llm_result: (r) => {
+                ctx.stdout(`  host=${r.host_kind} v=${r.host_version} invocation=${r.invocation_id}\n`);
+                ctx.stdout(`  response: ${r.response}\n`);
             },
         });
         ctx.stdout(`\n${result.status === 'success' ? 'OK' : 'FAIL'}: ${result.steps_completed} step(s) completed, ${result.steps_failed} failed, ${result.duration_ms}ms\n`);
@@ -654,21 +668,29 @@ const isMain = process.argv[1] !== undefined &&
         process.argv[1].endsWith('/sutra-native'));
 if (isMain) {
     const sub = process.argv[2];
-    const exitCode = main({
+    // v1.2.1: main() is async to support invoke_host_llm dispatch through
+    // cmdRun → executeWorkflow → hostLLMActivity. Bootstrap awaits via .then.
+    main({
         argv: process.argv.slice(2),
         env: process.env,
         stdout: (s) => process.stdout.write(s),
         stderr: (s) => process.stderr.write(s),
+    })
+        .then((exitCode) => {
+        // Codex P1 fold 2026-05-03 (DIRECTIVE-ID: 1777802035): for the `daemon`
+        // subcommand, cmdDaemon installs SIGTERM/SIGINT handlers + a referenced
+        // setInterval that keeps the event loop alive. Calling process.exit here
+        // would kill the daemon microseconds after engine.start. Skip exit for
+        // daemon mode; let the signal handlers control teardown.
+        if (sub !== 'daemon') {
+            process.exit(exitCode);
+        }
+        // For daemon mode: function returns; event loop stays alive via the
+        // ref'd timer in cmdDaemon. process.exit fires from SIGTERM handler.
+    })
+        .catch((err) => {
+        process.stderr.write(`sutra-native: fatal: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.exit(99);
     });
-    // Codex P1 fold 2026-05-03 (DIRECTIVE-ID: 1777802035): for the `daemon`
-    // subcommand, cmdDaemon installs SIGTERM/SIGINT handlers + a referenced
-    // setInterval that keeps the event loop alive. Calling process.exit here
-    // would kill the daemon microseconds after engine.start. Skip exit for
-    // daemon mode; let the signal handlers control teardown.
-    if (sub !== 'daemon') {
-        process.exit(exitCode);
-    }
-    // For daemon mode: function returns; event loop stays alive via the ref'd
-    // timer in cmdDaemon. process.exit fires from SIGTERM handler.
 }
 //# sourceMappingURL=sutra-native.js.map

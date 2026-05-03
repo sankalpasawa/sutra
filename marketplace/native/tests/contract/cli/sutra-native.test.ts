@@ -66,9 +66,9 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
   // gated by RUN_DAEMON_TESTS=1) cover the v1.1.x daemon contract end-to-end.
   // Skipped here to keep the L1 contract suite green.
   describe.skip('start subcommand (v1.0.x foreground contract — superseded by L3)', () => {
-    it('exits 0 + writes PID file + prints banner on first activation; lock PERSISTS after main() returns', () => {
+    it('exits 0 + writes PID file + prints banner on first activation; lock PERSISTS after main() returns', async () => {
       const { captured, ctx } = makeCtx(['start'], pidPath)
-      const code = main(ctx)
+      const code = await main(ctx)
       expect(code).toBe(0)
       // Per codex master 2026-05-03: lock must persist after start returns
       // so /start-native is idempotent and status keeps reporting running.
@@ -79,26 +79,26 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
       expect(captured.stderr).toBe('')
     })
 
-    it('detects host_kind=cli when CLAUDE_SESSION_ID is unset', () => {
+    it('detects host_kind=cli when CLAUDE_SESSION_ID is unset', async () => {
       const { captured, ctx } = makeCtx(['start'], pidPath)
-      main(ctx)
+      await main(ctx)
       expect(captured.stdout).toContain('host=cli')
     })
 
-    it('detects host_kind=claude-code when CLAUDE_SESSION_ID is set', () => {
+    it('detects host_kind=claude-code when CLAUDE_SESSION_ID is set', async () => {
       const { captured, ctx } = makeCtx(['start'], pidPath, 'session-123')
-      main(ctx)
+      await main(ctx)
       expect(captured.stdout).toContain('host=claude-code')
     })
 
-    it('exits 1 with informative stderr when lock already held', () => {
+    it('exits 1 with informative stderr when lock already held', async () => {
       // First activation
       const first = makeCtx(['start'], pidPath)
-      expect(main(first.ctx)).toBe(0)
+      expect(await main(first.ctx)).toBe(0)
 
       // Second activation should hit lock_held_alive
       const second = makeCtx(['start'], pidPath)
-      const code = main(second.ctx)
+      const code = await main(second.ctx)
       expect(code).toBe(1)
       expect(second.captured.stderr).toContain('already running')
       expect(second.captured.stderr).toContain('pid=')
@@ -106,29 +106,29 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
   })
 
   describe('status subcommand', () => {
-    it('exits 0 + reports stopped when no lock', () => {
+    it('exits 0 + reports stopped when no lock', async () => {
       const { captured, ctx } = makeCtx(['status'], pidPath)
-      const code = main(ctx)
+      const code = await main(ctx)
       expect(code).toBe(0)
       expect(captured.stdout).toContain('stopped')
     })
 
     // Depends on v1.0.x start behavior (in-process main + lock persists).
     // v1.1.x daemon mode tested in L3 harness instead.
-    it.skip('exits 0 + reports running after start (v1.0.x — superseded by L3)', () => {
+    it.skip('exits 0 + reports running after start (v1.0.x — superseded by L3)', async () => {
       // Start
       const startCtx = makeCtx(['start'], pidPath)
-      main(startCtx.ctx)
+      await main(startCtx.ctx)
 
       // Status
       const { captured, ctx } = makeCtx(['status'], pidPath)
-      const code = main(ctx)
+      const code = await main(ctx)
       expect(code).toBe(0)
       expect(captured.stdout).toContain('running')
       expect(captured.stdout).toContain(`pid:        ${process.pid}`)
     })
 
-    it('reports STALE LOCK when PID file holds dead process', () => {
+    it('reports STALE LOCK when PID file holds dead process', async () => {
       writeFileSync(
         pidPath,
         JSON.stringify({
@@ -138,45 +138,45 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
         }),
       )
       const { captured, ctx } = makeCtx(['status'], pidPath)
-      expect(main(ctx)).toBe(0)
+      expect(await main(ctx)).toBe(0)
       expect(captured.stdout).toContain('STALE LOCK')
     })
   })
 
   describe('version / help / help', () => {
-    it('version subcommand prints version + exits 0', () => {
+    it('version subcommand prints version + exits 0', async () => {
       const { captured, ctx } = makeCtx(['version'], pidPath)
-      const code = main(ctx)
+      const code = await main(ctx)
       expect(code).toBe(0)
       expect(captured.stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/)
     })
 
-    it('--version flag works equivalently', () => {
+    it('--version flag works equivalently', async () => {
       const { captured, ctx } = makeCtx(['--version'], pidPath)
-      expect(main(ctx)).toBe(0)
+      expect(await main(ctx)).toBe(0)
       expect(captured.stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/)
     })
 
-    it('help subcommand prints usage + exits 0', () => {
+    it('help subcommand prints usage + exits 0', async () => {
       const { captured, ctx } = makeCtx(['help'], pidPath)
-      const code = main(ctx)
+      const code = await main(ctx)
       expect(code).toBe(0)
       expect(captured.stdout).toContain('Usage:')
       expect(captured.stdout).toContain('start')
       expect(captured.stdout).toContain('status')
     })
 
-    it('no subcommand defaults to help', () => {
+    it('no subcommand defaults to help', async () => {
       const { captured, ctx } = makeCtx([], pidPath)
-      expect(main(ctx)).toBe(0)
+      expect(await main(ctx)).toBe(0)
       expect(captured.stdout).toContain('Usage:')
     })
   })
 
   describe('unknown subcommand', () => {
-    it('exits 2 + prints error + usage to stderr', () => {
+    it('exits 2 + prints error + usage to stderr', async () => {
       const { captured, ctx } = makeCtx(['nonsense'], pidPath)
-      const code = main(ctx)
+      const code = await main(ctx)
       expect(code).toBe(2)
       expect(captured.stderr).toContain('unknown subcommand')
       expect(captured.stderr).toContain('nonsense')
@@ -184,14 +184,14 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
   })
 
   describe('helper functions', () => {
-    it('formatBanner contains version + host + pid', () => {
+    it('formatBanner contains version + host + pid', async () => {
       const banner = formatBanner('cli', '/tmp/test.pid')
       expect(banner).toContain('SUTRA-NATIVE')
       expect(banner).toContain('host=cli')
       expect(banner).toContain('PID file:')
     })
 
-    it('formatStatus(stopped) reports stopped', () => {
+    it('formatStatus(stopped) reports stopped', async () => {
       const out = formatStatus(
         {
           running: false,
@@ -206,7 +206,7 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
       expect(out).toContain('stopped')
     })
 
-    it('usage lists all subcommands', () => {
+    it('usage lists all subcommands', async () => {
       const u = usage()
       expect(u).toContain('start')
       expect(u).toContain('status')
@@ -214,7 +214,7 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
       expect(u).toContain('help')
     })
 
-    it('usage documents CLAUDECODE env var (v1.1.3+)', () => {
+    it('usage documents CLAUDECODE env var (v1.1.3+)', async () => {
       const u = usage()
       expect(u).toContain('CLAUDECODE')
       // Legacy CLAUDE_SESSION_ID still listed as fallback
@@ -241,13 +241,13 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
       expect(detectHostKind({ CLAUDECODE: '' } as NodeJS.ProcessEnv)).toBe('cli')
     })
 
-    it('returns claude-code when only legacy CLAUDE_SESSION_ID is set', () => {
+    it('returns claude-code when only legacy CLAUDE_SESSION_ID is set', async () => {
       // Legacy fallback path — CC may not actually export this in Bash tool
       // calls today, but slash commands / hooks / future versions might.
       expect(detectHostKind({ CLAUDE_SESSION_ID: 'sess-abc' } as NodeJS.ProcessEnv)).toBe('claude-code')
     })
 
-    it('CLAUDECODE takes precedence when both signals present', () => {
+    it('CLAUDECODE takes precedence when both signals present', async () => {
       // If a future hook sets both, CLAUDECODE='1' is canonical.
       expect(
         detectHostKind({ CLAUDECODE: '1', CLAUDE_SESSION_ID: 'sess-abc' } as NodeJS.ProcessEnv),
@@ -260,7 +260,7 @@ describe('sutra-native CLI — D4 SKELETON contract', () => {
       expect(detectHostKind({ CLAUDECODE: 'true' } as NodeJS.ProcessEnv)).toBe('cli')
     })
 
-    it('does NOT inspect AI_AGENT or CLAUDE_CODE_* env vars', () => {
+    it('does NOT inspect AI_AGENT or CLAUDE_CODE_* env vars', async () => {
       // Codex P2 advisory 2026-05-03: these are weak/non-canonical signals;
       // detector intentionally narrow to keep cardinality stable.
       expect(
