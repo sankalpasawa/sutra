@@ -36,6 +36,31 @@ ACTION: [proposed next action]
 - TYPE = "direction" → log to the project's directions file and model implications before acting
 - The LLM is the runtime. It is never the first responder.
 
+## Compact form (lightweight turns)
+
+For zero/low-risk turns (single read-only call, pure question, trivial reply), use the 3-field compact form. Structure stays per "structure universality" — fields just collapse.
+
+```
+INPUT (TYPE): [paraphrase]
+ROUTE: [where this goes]
+ACTION: [next action]
+```
+
+Skip EXISTING HOME when "none" or obvious. Skip FIT CHECK when "no change". Both still implied.
+
+Use compact form when:
+- Turn is a question (no tool calls planned)
+- Turn is a single read-only call (Read, Grep, Glob, BashOutput) with no follow-up
+- Turn is a trivial confirmation (e.g., "yes", "correct")
+
+Use full 6-field form when:
+- Tool calls will mutate state (Edit/Write/MultiEdit)
+- Multi-step plan with branching
+- Founder direction that changes future-work rules
+- New concept needing routing through new-thing protocol
+
+Per D-UX-2 codex ADVISORY 2026-05-04 + Q4 fold (zero/low-risk turn rule).
+
 ## Self-check
 
 After emitting the block, ask: does ROUTE point to an existing, named thing? If not, you classified a new concept as a task — reclassify.

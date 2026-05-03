@@ -37,6 +37,13 @@
         "FIT CHECK",
         "ACTION"
       ],
+      "compact_form": {
+        "$comment": "Per D-UX-2 codex ADVISORY 2026-05-04 + Q4 fold (zero/low-risk turn rule). Structure stays per 'structure universality' — fields collapse for lightweight turns.",
+        "fields": ["INPUT (TYPE)", "ROUTE", "ACTION"],
+        "use_when": "question OR read_only_single_call OR trivial_confirmation",
+        "skip_when": "mutation OR multi_step OR direction OR new_concept",
+        "implied_when_omitted": ["EXISTING HOME (=none)", "FIT CHECK (=no change)"]
+      },
       "skill": "core:input-routing",
       "soft_hint_hook": "per-turn-discipline-prompt.sh"
     },
