@@ -32,6 +32,11 @@ interface CommandContext {
     readonly stderr: (s: string) => void;
 }
 export declare function main(ctx: CommandContext): number;
+declare function cmdCreateDomain(ctx: CommandContext): number;
+declare function cmdCreateCharter(ctx: CommandContext): number;
+declare function cmdCreateWorkflow(ctx: CommandContext): number;
+declare function cmdList(ctx: CommandContext): number;
+declare function cmdRun(ctx: CommandContext): number;
 /**
  * cmdStart — v1.1.1 daemon mode: spawn detached child running the engine.
  *
@@ -48,5 +53,5 @@ declare function cmdStatus(ctx: CommandContext): number;
 declare function formatBanner(hostKind: string, pidPath: string, daemonPid?: number, logPath?: string): string;
 declare function formatStatus(r: StatusReport, pidPath: string): string;
 declare function usage(): string;
-export { cmdStart, cmdStatus, formatBanner, formatStatus, usage };
+export { cmdStart, cmdStatus, cmdCreateDomain, cmdCreateCharter, cmdCreateWorkflow, cmdList, cmdRun, formatBanner, formatStatus, usage, };
 //# sourceMappingURL=sutra-native.d.ts.map

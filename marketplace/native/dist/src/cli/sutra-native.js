@@ -29,7 +29,13 @@ import { existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node
 import { dirname, resolve } from 'node:path';
 import { acquirePidLock, defaultPidPath, getStatus, readPidLock, releasePidLock, } from '../runtime/lifecycle.js';
 import { NativeEngine } from '../runtime/native-engine.js';
-const VERSION = '1.1.1';
+import { createDomain } from '../primitives/domain.js';
+import { createCharter } from '../primitives/charter.js';
+import { createWorkflow } from '../primitives/workflow.js';
+import { executeWorkflow } from '../runtime/lite-executor.js';
+import { listCharters, listDomains, listWorkflows, loadWorkflow, persistCharter, persistDomain, persistWorkflow, } from '../persistence/user-kit.js';
+import { formatEvent } from '../renderers/terminal-events.js';
+const VERSION = '1.1.2';
 export function main(ctx) {
     const sub = ctx.argv[0] ?? 'help';
     switch (sub) {
@@ -41,6 +47,16 @@ export function main(ctx) {
             return cmdDaemon(ctx);
         case 'status':
             return cmdStatus(ctx);
+        case 'create-domain':
+            return cmdCreateDomain(ctx);
+        case 'create-charter':
+            return cmdCreateCharter(ctx);
+        case 'create-workflow':
+            return cmdCreateWorkflow(ctx);
+        case 'list':
+            return cmdList(ctx);
+        case 'run':
+            return cmdRun(ctx);
         case 'version':
         case '--version':
         case '-v':
@@ -54,6 +70,229 @@ export function main(ctx) {
         default:
             ctx.stderr(`sutra-native: unknown subcommand "${sub}"\n\n${usage()}`);
             return 2;
+    }
+}
+// ============================================================================
+// Founder-facing create / list / run subcommands (v1.1.2 — runtime kit)
+// ============================================================================
+/** Minimal --key value flag parser. argv[0] is the subcommand; flags follow. */
+function parseFlags(argv) {
+    const positional = [];
+    const flags = {};
+    for (let i = 1; i < argv.length; i++) {
+        const tok = argv[i];
+        if (tok.startsWith('--')) {
+            const key = tok.slice(2);
+            const next = argv[i + 1];
+            if (next === undefined || next.startsWith('--')) {
+                flags[key] = 'true';
+            }
+            else {
+                flags[key] = next;
+                i++;
+            }
+        }
+        else {
+            positional.push(tok);
+        }
+    }
+    return { positional, flags };
+}
+function require_(flags, key) {
+    const v = flags[key];
+    if (v === undefined || v === '') {
+        throw new Error(`--${key} is required`);
+    }
+    return v;
+}
+function cmdCreateDomain(ctx) {
+    const { flags } = parseFlags(ctx.argv);
+    try {
+        const id = require_(flags, 'id');
+        const name = require_(flags, 'name');
+        const parent = flags['parent'];
+        const d = createDomain({
+            id,
+            name,
+            parent_id: parent && parent !== 'none' ? parent : null,
+            principles: [],
+            intelligence: flags['intelligence'] ?? `${name} domain — created by founder.`,
+            accountable: (flags['accountable'] ?? 'founder').split(',').map((s) => s.trim()),
+            authority: flags['authority'] ?? `Decisions within ${name}.`,
+            tenant_id: flags['tenant'] ?? 'T-default',
+        });
+        const path = persistDomain(d, { env: ctx.env });
+        ctx.stdout(`+ Domain ${d.id} "${d.name}" created\n  persisted: ${path}\n`);
+        return 0;
+    }
+    catch (err) {
+        ctx.stderr(`create-domain failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 2;
+    }
+}
+function cmdCreateCharter(ctx) {
+    const { flags } = parseFlags(ctx.argv);
+    try {
+        const id = require_(flags, 'id');
+        const purpose = require_(flags, 'purpose');
+        const domainId = flags['domain'];
+        const c = createCharter({
+            id,
+            purpose,
+            scope_in: flags['scope-in'] ?? 'all_events',
+            scope_out: flags['scope-out'] ?? 'none',
+            obligations: [],
+            invariants: [],
+            success_metrics: flags['metrics'] ? flags['metrics'].split(',').map((s) => s.trim()) : ['adherence ≥ 1/wk'],
+            authority: flags['authority'] ?? 'Decisions within scope.',
+            termination: flags['termination'] ?? 'Founder explicitly opts out.',
+            constraints: [],
+            acl: domainId
+                ? [
+                    {
+                        domain_or_charter_id: domainId,
+                        access: 'append',
+                        reason: `${domainId} is the parent`,
+                    },
+                ]
+                : [],
+        });
+        const path = persistCharter(c, { env: ctx.env });
+        ctx.stdout(`+ Charter ${c.id} created${domainId ? ` (under ${domainId})` : ''}\n  persisted: ${path}\n`);
+        return 0;
+    }
+    catch (err) {
+        ctx.stderr(`create-charter failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 2;
+    }
+}
+const VALID_STEP_ACTIONS_CLI = new Set([
+    'wait',
+    'terminate',
+    'spawn_sub_unit',
+]);
+function cmdCreateWorkflow(ctx) {
+    const { flags } = parseFlags(ctx.argv);
+    try {
+        const id = require_(flags, 'id');
+        const stepsRaw = require_(flags, 'steps');
+        const stepNames = stepsRaw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+        if (stepNames.length === 0) {
+            throw new Error('--steps must list at least one action (e.g. wait,terminate)');
+        }
+        const stepGraph = stepNames.map((name, idx) => {
+            if (!VALID_STEP_ACTIONS_CLI.has(name)) {
+                throw new Error(`--steps[${idx}] "${name}" not one of: wait, terminate, spawn_sub_unit (CLI subset of v1.1.1 actions; invoke_host_llm requires --host)`);
+            }
+            const isLast = idx === stepNames.length - 1;
+            const onFailure = isLast ? 'abort' : 'continue';
+            return {
+                step_id: idx + 1,
+                action: name,
+                inputs: [],
+                outputs: [],
+                on_failure: onFailure,
+            };
+        });
+        const w = createWorkflow({
+            id,
+            preconditions: flags['preconditions'] ?? 'always',
+            step_graph: stepGraph,
+            inputs: [],
+            outputs: [],
+            state: [],
+            postconditions: flags['postconditions'] ?? 'completed',
+            failure_policy: flags['failure-policy'] ?? 'continue',
+            stringency: flags['stringency'] ?? 'process',
+            interfaces_with: [],
+        });
+        const path = persistWorkflow(w, { env: ctx.env });
+        ctx.stdout(`+ Workflow ${w.id} created (${stepGraph.length} step${stepGraph.length === 1 ? '' : 's'}: ${stepNames.join(' → ')})\n  persisted: ${path}\n`);
+        return 0;
+    }
+    catch (err) {
+        ctx.stderr(`create-workflow failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 2;
+    }
+}
+function cmdList(ctx) {
+    const { positional } = parseFlags(ctx.argv);
+    const what = positional[0] ?? 'all';
+    const opts = { env: ctx.env };
+    try {
+        const wantDomains = what === 'all' || what === 'domains';
+        const wantCharters = what === 'all' || what === 'charters';
+        const wantWorkflows = what === 'all' || what === 'workflows';
+        if (!wantDomains && !wantCharters && !wantWorkflows) {
+            ctx.stderr(`list: unknown target "${what}" (expected: domains|charters|workflows|all)\n`);
+            return 2;
+        }
+        const lines = [];
+        if (wantDomains) {
+            const ds = listDomains(opts);
+            lines.push(`DOMAINS (${ds.length}):`);
+            if (ds.length === 0)
+                lines.push('  (none — try: sutra-native create-domain --id D6 --name Health)');
+            for (const d of ds)
+                lines.push(`  ${d.id.padEnd(8)} ${d.name}`);
+        }
+        if (wantCharters) {
+            const cs = listCharters(opts);
+            lines.push(`CHARTERS (${cs.length}):`);
+            if (cs.length === 0)
+                lines.push('  (none)');
+            for (const c of cs) {
+                const parent = c.acl[0]?.domain_or_charter_id ?? '-';
+                lines.push(`  ${c.id.padEnd(28)} under ${parent.padEnd(8)} ${c.purpose}`);
+            }
+        }
+        if (wantWorkflows) {
+            const ws = listWorkflows(opts);
+            lines.push(`WORKFLOWS (${ws.length}):`);
+            if (ws.length === 0)
+                lines.push('  (none)');
+            for (const w of ws) {
+                const actions = w.step_graph.map((s) => s.action ?? s.skill_ref ?? '?').join('→');
+                lines.push(`  ${w.id.padEnd(36)} ${w.step_graph.length} step  [${actions}]`);
+            }
+        }
+        ctx.stdout(lines.join('\n') + '\n');
+        return 0;
+    }
+    catch (err) {
+        ctx.stderr(`list failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 3;
+    }
+}
+function cmdRun(ctx) {
+    const { positional, flags } = parseFlags(ctx.argv);
+    const wfId = positional[0];
+    if (!wfId) {
+        ctx.stderr('run: workflow id required (e.g. sutra-native run W-evening-checkin)\n');
+        return 2;
+    }
+    try {
+        const wf = loadWorkflow(wfId, { env: ctx.env });
+        if (!wf) {
+            ctx.stderr(`run: workflow "${wfId}" not found in user-kit (try: sutra-native list workflows)\n`);
+            return 3;
+        }
+        const executionId = flags['execution-id'] ?? `E-${Date.now()}`;
+        const events = [];
+        const result = executeWorkflow({
+            workflow: wf,
+            execution_id: executionId,
+            emit: (e) => {
+                events.push(e);
+                ctx.stdout(formatEvent(e) + '\n');
+            },
+        });
+        ctx.stdout(`\n${result.status === 'success' ? 'OK' : 'FAIL'}: ${result.steps_completed} step(s) completed, ${result.steps_failed} failed, ${result.duration_ms}ms\n`);
+        return result.status === 'success' ? 0 : 1;
+    }
+    catch (err) {
+        ctx.stderr(`run failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 3;
     }
 }
 /**
@@ -344,15 +583,34 @@ function usage() {
         'Usage:',
         '  sutra-native <subcommand> [options]',
         '',
-        'Subcommands:',
-        '  start      Activate Native (acquire PID lock, print banner)',
-        '  stop       Deactivate Native (release PID lock)',
-        '  status     Report current activation state',
-        '  version    Print version',
-        '  help       Print this usage',
+        'Lifecycle:',
+        '  start              Activate Native (acquire PID lock, print banner)',
+        '  stop               Deactivate Native (release PID lock)',
+        '  status             Report current activation state',
+        '  version            Print version',
+        '  help               Print this usage',
+        '',
+        'Runtime kit (founder-facing — v1.1.2+):',
+        '  create-domain --id <D-id> --name <name> [--parent <id>] [--accountable <csv>]',
+        '                     [--authority <text>] [--intelligence <text>]',
+        '                     Mint + persist a Domain in the user-kit.',
+        '  create-charter --id <C-id> --purpose <text> [--domain <D-id>]',
+        '                     [--scope-in <pred>] [--scope-out <pred>]',
+        '                     [--metrics <csv>] [--authority <text>] [--termination <text>]',
+        '                     Mint + persist a Charter; --domain links it under a Domain.',
+        '  create-workflow --id <W-id> --steps <action[,action...]>',
+        '                     [--preconditions <text>] [--postconditions <text>]',
+        '                     [--stringency task|process|protocol]',
+        '                     [--failure-policy continue|abort]',
+        '                     CLI step actions: wait | terminate | spawn_sub_unit',
+        '  list [domains|charters|workflows|all]',
+        '                     Show what is in the user-kit.',
+        '  run <W-id> [--execution-id <E-id>]',
+        '                     Load a persisted Workflow + run via LiteExecutor.',
+        '                     Each EngineEvent prints one line on stdout.',
         '',
         'Environment:',
-        '  SUTRA_NATIVE_HOME  Base dir for PID file (default: ~/.sutra-native)',
+        '  SUTRA_NATIVE_HOME  Base dir (default: ~/.sutra-native; user-kit at $HOME/user-kit/)',
         '  SUTRA_NATIVE_PID   Override PID file path entirely',
         '  CLAUDE_SESSION_ID  Auto-set when invoked from /start-native slash',
         '',
@@ -360,7 +618,7 @@ function usage() {
         '',
     ].join('\n');
 }
-export { cmdStart, cmdStatus, formatBanner, formatStatus, usage };
+export { cmdStart, cmdStatus, cmdCreateDomain, cmdCreateCharter, cmdCreateWorkflow, cmdList, cmdRun, formatBanner, formatStatus, usage, };
 // Auto-execute when called as bin (not when imported as a module).
 // Detection: process.argv[1] resolves to this file or the .js dist twin.
 const isMain = process.argv[1] !== undefined &&
