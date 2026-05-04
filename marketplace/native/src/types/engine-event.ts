@@ -46,6 +46,9 @@ export type EngineEventType =
   | 'workflow_rollback_partial'
   | 'workflow_escalated'
   | 'step_paused'
+  | 'precondition_check'
+  | 'postcondition_check'
+  | 'commitment_broken'
 
 /** Runtime allow-list mirroring EngineEventType — kept in sync. */
 export const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set([
@@ -71,6 +74,9 @@ export const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set([
   'workflow_rollback_partial',
   'workflow_escalated',
   'step_paused',
+  'precondition_check',
+  'postcondition_check',
+  'commitment_broken',
 ])
 
 export interface RoutingDecisionEvent {
@@ -305,6 +311,66 @@ export interface StepPausedEvent {
   readonly reason: string
 }
 
+/**
+ * v1.3.0 Wave 5 — admission + commitment gate events (codex W5 fold).
+ *
+ * Three events trace the PNC (Pre/Post/Commitment) axis:
+ *
+ *   - precondition_check  — emitted BEFORE workflow_started when the workflow
+ *                           declares parseable preconditions. verdict='pass'
+ *                           admits the run; verdict='fail' rejects WITHOUT
+ *                           emitting workflow_started or any step events;
+ *                           workflow_failed reason='precondition_failed:<expr>'
+ *                           is emitted INSTEAD (codex W5 BLOCKER 1: failed
+ *                           precondition is "not admitted", not "started then
+ *                           failed").
+ *
+ *   - postcondition_check — emitted AFTER all steps complete and BEFORE
+ *                           workflow_completed when the workflow declares
+ *                           parseable postconditions. verdict='fail' converts
+ *                           the run to workflow_failed reason=
+ *                           'postcondition_failed:<expr>' INSTEAD of
+ *                           workflow_completed.
+ *
+ *   - commitment_broken   — emitted when (a) workflow_failed fires AND
+ *                           (b) the workflow declares non-empty obligation_refs
+ *                           AND (c) the execution context has a charter_id
+ *                           AND (d) the named obligation exists on the Charter.
+ *                           NativeEngine looks up the Charter (it has charter
+ *                           context for routed runs) and emits one event per
+ *                           matched obligation (codex W5 BLOCKER 3: explicit
+ *                           workflow→obligation mapping; no heuristics on step
+ *                           text).
+ */
+export interface PreconditionCheckEvent {
+  readonly type: 'precondition_check'
+  readonly ts_ms: number
+  readonly workflow_id: string
+  readonly verdict: 'pass' | 'fail'
+  readonly expression: string
+  readonly reason?: string
+}
+
+export interface PostconditionCheckEvent {
+  readonly type: 'postcondition_check'
+  readonly ts_ms: number
+  readonly workflow_id: string
+  readonly verdict: 'pass' | 'fail'
+  readonly expression: string
+  readonly reason?: string
+}
+
+export interface CommitmentBrokenEvent {
+  readonly type: 'commitment_broken'
+  readonly ts_ms: number
+  readonly charter_id: string
+  readonly obligation_name: string
+  readonly workflow_id: string
+  readonly execution_id: string
+  /** Optional human-readable evidence (e.g. failure_reason) for audit. */
+  readonly evidence?: string
+}
+
 export type EngineEvent =
   | RoutingDecisionEvent
   | WorkflowStartedEvent
@@ -328,6 +394,9 @@ export type EngineEvent =
   | WorkflowRollbackPartialEvent
   | WorkflowEscalatedEvent
   | StepPausedEvent
+  | PreconditionCheckEvent
+  | PostconditionCheckEvent
+  | CommitmentBrokenEvent
 
 // -----------------------------------------------------------------------------
 // Per-variant validators (codex P1 fold 2026-05-03) — guard MUST validate the
@@ -452,6 +521,22 @@ const VARIANT_VALIDATORS: Record<EngineEventType, (v: Record<string, unknown>) =
     isNonEmptyStr(v.workflow_id) &&
     isNonNegInt(v.step_index) &&
     isStr(v.reason),
+  precondition_check: (v) =>
+    isNonEmptyStr(v.workflow_id) &&
+    isStr(v.verdict) && (v.verdict === 'pass' || v.verdict === 'fail') &&
+    isStr(v.expression) &&
+    (v.reason === undefined || isStr(v.reason)),
+  postcondition_check: (v) =>
+    isNonEmptyStr(v.workflow_id) &&
+    isStr(v.verdict) && (v.verdict === 'pass' || v.verdict === 'fail') &&
+    isStr(v.expression) &&
+    (v.reason === undefined || isStr(v.reason)),
+  commitment_broken: (v) =>
+    isNonEmptyStr(v.charter_id) &&
+    isNonEmptyStr(v.obligation_name) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonEmptyStr(v.execution_id) &&
+    (v.evidence === undefined || isStr(v.evidence)),
 }
 
 /**
