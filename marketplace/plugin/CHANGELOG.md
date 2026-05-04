@@ -2,6 +2,44 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.23.0 — 2026-05-04
+
+**Sutra Delivery OS Wave 3 ships: third first-party Generative+Procedural skill `core:deterministic-testing`.**
+
+Closes the I/O determinism scaffolding gap: `core:test-strategy` (W1) designs the strategy; `gstack gsd-add-tests` generates general tests; `superpowers:test-driven-development` is the workflow. Nothing in the surveyed ecosystem ships I/O-determinism-focused scaffolding (golden + snapshot + property + contract + drift detector) as a first-party skill. v2.23.0 fills it.
+
+### What changed
+
+1. **`sutra/marketplace/plugin/skills/deterministic-testing/`** — new skill directory.
+   - `SKILL.md` (~290 lines): generates I/O determinism test scaffolding for a function/API/skill/pipeline. 8-section output contract: golden fixtures, golden test runner, snapshot tests, property-based tests (≥1 invariant), contract tests, snapshot drift detector, FIXTURES.md (rotation policy), Open questions. Includes fixture decision matrix (8 subject types: pure function, stateful, HTTP own/third-party, DB query, LLM prompt, CLI tool, stream/pipeline) + property invariant patterns table (round-trip, idempotent, commutative, identity, bounded, schema-conforming, length/cardinality) + snapshot drift discipline (assert SHAPE not exact text).
+   - `evals/README.md` + `evals/{E1-pure-function,E2-http-api,E3-llm-prompt}.md`: 3 structural-assertion evals. E1 covers `parseURL`-style pure function with golden + property; E2 covers HTTP API with snapshot SHAPE assertion + contract + idempotency property; E3 covers LLM prompt with JSON Schema assertion + enum-membership constraint + no-exact-text-equality discipline.
+2. **`sutra/marketplace/plugin/.claude-plugin/plugin.json`** — version 2.22.0 → 2.23.0; description prepended.
+3. **`sutra/.claude-plugin/marketplace.json`** — catalog entry version 2.22.0 → 2.23.0; description synced.
+
+### Codex REVIEW chain
+
+Verdict: PASS-WITH-FIXES (no P0 blockers; 3 P1s folded inline).
+- **P1 #1**: E1 assertion 4 hard-coded "no-throw on arbitrary string input" as required property — too specific for the general skill contract. Fix: made it conditional on user prompt naming such an invariant.
+- **P1 #2**: E2 assertion 1 required full-body golden fixtures for an endpoint with `created_at` variability — would push toward brittle goldens against the SKILL's own SHAPE-not-text discipline. Fix: allow normalized fixtures or fixture+matcher pairs.
+- **P1 #3**: E3 assertion 9 required flake-mitigation guidance (reruns, statistical pass-rate) — not in SKILL contract. Fix: relaxed to "any acknowledgement of LLM variability"; specific mitigations not required.
+
+P2 items deferred to W3.1: tighten trigger phrasing further to "write/add/generate scaffolding for"; add locale/Unicode/timezone/line-ending/floating-point-formatting/iteration-order to pure-function anti-patterns; add unstable-IDs/DB-auto-increment/list-ordering to HTTP anti-patterns; add semantic-guardrail (enum membership / required-field coherence / refusal-path coverage) requirement for LLM tests beyond schema-only.
+
+Verdict file: `.enforcement/codex-reviews/2026-05-04-w3-deterministic-testing-build-review.md`.
+
+### Distinct from existing ecosystem skills
+
+- `core:test-strategy` (W1) — designs the test STRATEGY (pyramid, fixture choice, boundaries); this skill IMPLEMENTS the strategy as actual test files.
+- gstack `gsd-add-tests` — general test generation; this skill is I/O-determinism-focused (golden + snapshot + property + contract).
+- `superpowers:test-driven-development` — workflow (red-green-refactor); this skill is the artifact (test files + fixtures).
+- gstack `qa` — runs tests + fixes bugs; this skill writes the tests.
+
+### Downstream cascade (D13)
+
+T2/T3/T4 fleet receives via plugin update; additive, non-breaking. Wave plan continues: W4 incremental-architect (final wave). Self-score telemetry now optional + non-side-effecting.
+
+---
+
 ## v2.22.0 — 2026-05-04
 
 **Sutra Delivery OS Wave 2 ships: second first-party Generative skill `core:architect`.**
