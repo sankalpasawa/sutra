@@ -2,6 +2,45 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.22.0 — 2026-05-04
+
+**Sutra Delivery OS Wave 2 ships: second first-party Generative skill `core:architect`.**
+
+(Note: v2.21.0 was concurrently allocated by the CSM SessionStart banner work; this Delivery OS wave bumps to v2.22.0 to avoid the version collision.)
+
+Closes the architecture-authoring gap: gstack `plan-eng-review` reviews architecture but doesn't author; nothing in the surveyed ecosystem writes structured ARCHITECTURE.md as a first-party skill. v2.22.0 fills it with Sutra D38 Build-Layer integration as the distinctive value-add.
+
+### What changed
+
+1. **`sutra/marketplace/plugin/skills/architect/`** — new skill directory.
+   - `SKILL.md` (~340 lines): designs and authors a single ARCHITECTURE.md covering 9 sections — Purpose+scale+constraints, C4 L1 (System Context), C4 L2 (Container), C4 L3 (Component for 1-3 high-leverage containers only), ADRs (Status / Context / Decision / Consequences with no-theater rule), STRIDE threat model with system-specific top 5-10 risks, Scaling axes (load/data/team/geography), Sutra D38 Build-Layer table (the distinctive value-add), Open questions + noted limitations. Existing-codebase mode adds D38 enforcement-category mapping (PLUGIN-RUNTIME / SHARED-RUNTIME / HOLDING-IMPL / LEGACY-HARD / SOFT) so the architecture matches what the runtime hook checks at edit time.
+   - `evals/README.md` + `evals/{E1-greenfield-saas,E2-existing-codebase,E3-regulated-system}.md`: 3 structural-assertion evals. E1 covers blank-slate B2B SaaS with team-size taste check; E2 grounds in actual `sutra/marketplace/plugin/` directory and tests no-fabrication discipline (file-level path references required per L3 container); E3 covers regulated FinTech (RBI data-localization + DPDP consent) constraint-driven design.
+2. **`sutra/marketplace/plugin/.claude-plugin/plugin.json`** — version 2.21.0 → 2.22.0; description prepended.
+3. **`sutra/.claude-plugin/marketplace.json`** — catalog entry version 2.21.0 → 2.22.0; description synced.
+
+### Codex REVIEW chain
+
+Verdict: CHANGES-REQUIRED → all P0 + P1 folded.
+- **P0 #1**: eval contract drift — E2/E3 required "Open questions" entry but SKILL.md's section contract didn't include one (same drift class as W1's section 6 "skip" issue). Fix: added section 9 "Open questions + noted limitations" to the always-emit contract; never silently omitted.
+- **P0 #2**: D38 enforcement-mapping gap — E2 expected PLUGIN-RUNTIME / LEGACY-HARD / SOFT details but SKILL.md only defined L0/L1/L2 abstractly. Fix: added the 5-category enforcement-path mapping table to section 8, scoped to existing-codebase mode.
+- **P1 #1**: telemetry append to `skill-adoption-log.jsonl` was an ecosystem anti-pattern (creates side effects unrelated to user intent, may fail in constrained environments). Fix: made the append OPTIONAL and non-blocking — silently skip if sink unwritable or telemetry opted out.
+- **P1 #2**: "at least one component should be L1/L2" was build-layer cosplay — some systems legitimately are all-L0. Fix: reframed to "if all-L0, justify why everything generalizes."
+- **P1 #3**: E2 "no fabrication" test was gameable (could pass with only top-level directory references). Fix: each L3 section must cite at least one file-level path within the container being decomposed.
+
+Verdict file: `.enforcement/codex-reviews/2026-05-04-w2-architect-build-review.md`.
+
+### Distinct from existing ecosystem skills
+
+- gstack `plan-eng-review` — reviews an architecture proposal; this skill AUTHORS the architecture document.
+- gstack `gsd-plan-phase` — phase planning (decomposition into tasks); this skill is one level higher (system structure).
+- `core:incremental-architect` (W4) — evolves an existing architecture (migration patterns); this skill writes the original.
+
+### Downstream cascade (D13)
+
+T2/T3/T4 fleet receives via plugin update; additive, non-breaking. Self-score telemetry now optional + non-side-effecting per codex anti-pattern flag. Wave plan continues: W3 deterministic-testing, W4 incremental-architect.
+
+---
+
 ## v2.21.0 — 2026-05-04
 
 **CSM SessionStart banner — first execution of CSM TODO #2 visibility surface (D43).**
