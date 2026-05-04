@@ -73,7 +73,7 @@
       "log_path": "holding/ESTIMATION-LOG.jsonl"
     },
     "blueprint": {
-      "$comment": "Trigger refined per D-UX-2 codex ADVISORY 2026-05-04 (was 'tool_calls_planned'; raw tool count is the wrong abstraction per codex P2). Now task-shape based: emit when state-mutating tool calls planned (Edit/Write/MultiEdit), branching (Agent dispatch), or multi-step plans (>=3 distinct steps). Skip for read-only single-call turns and pure-question turns.",
+      "$comment": "Trigger refined per D-UX-2 codex ADVISORY 2026-05-04. Task-shape based: emit when state-mutating tool calls planned (Edit/Write/MultiEdit), branching (Agent dispatch), or multi-step plans (>=3 distinct steps). Skip for read-only single-call turns and pure-question turns. D48 (2026-05-05): added 'Output looks like' + 'Verified by' fields. Phased rollout: Wave 1 HARD on foundational paths via marker flags HAS_OUTPUT=1 + HAS_VERIFY=1; Wave 2 (T+14d, 2026-05-19) broadens HARD to all Edit/Write per founder 'every task' wording.",
       "required_when": "task_shape IN [mutation, branching, multi_step]",
       "skip_when": "pure_question_turn OR read_only_single_call",
       "task_shape_definitions": {
@@ -85,9 +85,51 @@
       "fields": [
         "Doing",
         "Steps",
+        "Output looks like",
+        "Verified by",
         "Scale",
         "Stops if",
         "Switch"
+      ],
+      "fields_added_d48": [
+        "Output looks like",
+        "Verified by"
+      ],
+      "trivial_verification_blocklist": [
+        "",
+        "works",
+        "passes",
+        "done",
+        "no errors",
+        "it runs",
+        "looks good",
+        "tested",
+        "verified"
+      ],
+      "marker_file": ".claude/blueprint-registered",
+      "marker_schema_keys": [
+        "HAS_OUTPUT",
+        "HAS_VERIFY",
+        "TS",
+        "TASK"
+      ],
+      "fail_flow": {
+        "$comment": "D48 (2026-05-05): on verification fail, file problem record + in-session LLM diagnoses + applies fix + re-runs Verified-by. Max 3 iterations before STOP-and-surface.",
+        "problem_record_path": "holding/state/problems/<ts>-<slug>.json",
+        "investigator": "in_session_llm",
+        "max_iterations": 3,
+        "on_cap": "stop_and_surface_to_founder"
+      },
+      "verification_kinds": [
+        "shell_test_runner",
+        "typecheck_lint",
+        "grep_contract",
+        "file_existence",
+        "http_deploy",
+        "hook_rerun_diff",
+        "multimodal_visual",
+        "llm_eval_codex",
+        "bundle_multi_step"
       ],
       "ascii_only": true,
       "$ascii_comment": "Per D-UX-1 codex ADVISORY 2026-05-04: ASCII boxes only (no unicode box-drawing). Native renderer is canonical reference.",

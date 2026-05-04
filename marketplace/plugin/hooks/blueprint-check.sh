@@ -90,6 +90,27 @@ if [ "$is_foundational" = "1" ]; then
     } >&2
     exit 2
   fi
+  # D48 (2026-05-05): foundational edits require Output + Verified-by fields.
+  # Marker must declare HAS_OUTPUT=1 + HAS_VERIFY=1 (model writes these when
+  # emitting BLUEPRINT with the new lines per skills/blueprint/SKILL.md).
+  # Use grep -q (exit-code only) — grep -c with || echo 0 fallback double-emits
+  # "0" when no match (grep outputs "0" AND fallback echo runs), making string
+  # compare unreliable. Iteration-1 fix during D48 ship (test cases [3] [4]).
+  HAS_OUTPUT=0
+  HAS_VERIFY=0
+  grep -q '^HAS_OUTPUT=1$' "$MARKER" 2>/dev/null && HAS_OUTPUT=1
+  grep -q '^HAS_VERIFY=1$' "$MARKER" 2>/dev/null && HAS_VERIFY=1
+  if [ "$HAS_OUTPUT" = "0" ] || [ "$HAS_VERIFY" = "0" ]; then
+    {
+      echo "BLUEPRINT-CHECK: foundational edit requires BLUEPRINT with"
+      echo "  'Output looks like:' AND 'Verified by:' fields (D48, 2026-05-05)."
+      echo "  File: $REL_PATH"
+      echo "  Marker flags: HAS_OUTPUT=$HAS_OUTPUT HAS_VERIFY=$HAS_VERIFY (need both =1)"
+      echo "  Re-emit BLUEPRINT with both lines + update marker."
+      echo "  Or override: BLUEPRINT_ACK=1 BLUEPRINT_ACK_REASON='<why>' <tool>"
+    } >&2
+    exit 2
+  fi
 else
   # SOFT elsewhere — advisory only (no blocking; build-layer-check.sh handles HARD)
   if [ ! -f "$MARKER" ]; then

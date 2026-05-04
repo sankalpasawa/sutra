@@ -1,7 +1,7 @@
 # Sutra — Blueprint Engine
 
-ENFORCEMENT: SOFT (V1 — skill-only, self-emitted) → HARD (V2+ — hook-enforced)
-STATUS: V1 SHIPPED 2026-04-27
+ENFORCEMENT: V1 SOFT (skill-only) → V2 HARD (hook-enforced; marker-flag gate D48)
+STATUS: V2 SHIPPED 2026-05-05 (Wave 1 — foundational paths only; Wave 2 broadens 2026-05-19)
 DRI: CEO of Asawa (founder direction); engine-of-record for all BLUEPRINT improvements.
 
 ---
@@ -41,23 +41,47 @@ The three powers an engine has that a skill alone does not are all **project-lev
 
 ---
 
-## The Block (V1 format)
+## The Block (V2 format — D48 2026-05-05)
 
-Generated once per founder turn, after INPUT ROUTING + DEPTH blocks, before any Edit/Write/Bash/Agent tool call.
+Generated once per founder turn, after INPUT ROUTING + DEPTH blocks, before any Edit/Write/Bash/Agent tool call. ASCII only (D-UX-1).
 
 ```
-┌─ BLUEPRINT ─────────────────────────────────────────────────┐
-│ Doing: <plain-English task statement>                        │
-│ Steps: 1) <step> 2) <step> 3) <step> ...                     │
-│ Scale: <files>, <time>, <cost>                               │
-│ Stops if: <abort condition>                                  │
-│ Switch: ON | OFF (override: BLUEPRINT_ACK=1 reason)          │
-└──────────────────────────────────────────────────────────────┘
++-- BLUEPRINT --------------------------------------------------+
+| Doing: <plain-English task statement>                         |
+| Steps: 1) <step> 2) <step> 3) <step>                          |
+| Output looks like: <concrete observable target>               |
+| Verified by: <runnable check - cmd, grep, file, screenshot>   |
+| Scale: <files>, <time>, <cost>                                |
+| Stops if: <abort condition>                                   |
+| Switch: ON | OFF (override: BLUEPRINT_ACK=1 reason)           |
++---------------------------------------------------------------+
 ```
 
-Five fields, all required: **Doing / Steps / Scale / Stops if / Switch**.
+Seven fields, all required: **Doing / Steps / Output looks like / Verified by / Scale / Stops if / Switch**. Output + Verified added per D48 — task-type work pre-declares target + runnable check. Trivial verification rejected: "works", "passes", "done", "no errors", "it runs", "looks good", "tested", "verified".
 
-For Depth ≥ 4 or branching tasks, the block may extend to a heavy-ASCII multi-step diagram with arrows and decision branches. For Depth 1-2 trivial work, the compact form above is sufficient. Founder-readability is the gate.
+For Depth ≥ 4 or branching tasks, the block may extend to a heavy-ASCII multi-step diagram. For Depth 1-2 trivial work, the compact form above is sufficient. Founder-readability is the gate.
+
+## Marker schema (V2)
+
+After emitting the block, write `.claude/blueprint-registered`:
+```
+HAS_OUTPUT=1
+HAS_VERIFY=1
+TASK=<task-slug>
+TS=<unix-timestamp>
+```
+
+Hook `blueprint-check.sh` reads marker; HARD-blocks foundational-path edits when `HAS_OUTPUT=0` or `HAS_VERIFY=0`. SOFT advisory elsewhere (Wave 1). Wave 2 (2026-05-19) broadens HARD to all Edit/Write if override rate clean.
+
+## State-mismatch flow (V2 — D48)
+
+When the `Verified by` cmd returns fail:
+1. File problem record at `holding/state/problems/<ts>-<slug>.json` (audit trail).
+2. In-session LLM (Claude) reads failure output, diagnoses root cause, picks fix.
+3. Apply fix via Edit/Write/Bash.
+4. Re-run `Verified by` cmd.
+5. Pass → attest, close problem, done. Fail → goto 1, iteration += 1.
+6. Hard cap = 3 iterations → STOP, surface boxed blocker to founder.
 
 ---
 
