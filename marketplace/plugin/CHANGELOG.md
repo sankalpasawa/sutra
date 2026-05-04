@@ -2,6 +2,42 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.27.0 — 2026-05-04
+
+**`/sutra-capability` skill ships — T4 fleet's on-demand CSM digest (D43 Layer 4, CSM TODO #3).**
+
+Per CSM TODO #3 (deadline 2026-06-01). Asawa CEO sessions get the SessionStart banner (v2.21.0); T4 fleet gets this skill — invoke `/sutra-capability` (or ask "what does this Sutra plugin ship?") and Claude emits a compact ASCII-table digest of capabilities grouped by category (per-turn blocks, output discipline, governance disciplines, enforcement hooks, backlog).
+
+### What this delivers
+
+For T4 fleet: visibility into the capability surface without needing access to Asawa's `holding/CAPABILITY-MAP.md`. The skill reads `${CLAUDE_PLUGIN_ROOT}/sutra-defaults.json` + `skills/` + `hooks/hooks.json` + `plugin.json` and assembles the digest from what's actually installed — no hardcoded list, no separate manifest to keep in sync.
+
+### What changed
+
+- **`sutra/marketplace/plugin/skills/sutra-capability/SKILL.md`** (new, ~80 lines). Frontmatter description triggers on capability/CSM/skills/hooks queries + literal `/sutra-capability` invocation. Body instructs Claude to read 4 plugin files and emit the digest using ASCII tables (no unicode box-drawing per `[Terminal box formatting]`).
+- **`.claude-plugin/plugin.json`** — `2.26.0` → `2.27.0`.
+- **`.claude-plugin/marketplace.json`** — `2.26.0` → `2.27.0`.
+
+### Coverage caveat baked in
+
+Per codex 2026-05-04 ADVISORY #4: skill output explicitly distinguishes:
+- `shipping` (Bucket A, runtime-enforced) vs
+- `shipping (policy-visible)` (Bucket A, schema declared, behavior not verified) vs
+- `proposed` (not yet shipping) vs
+- `DEFER` (cap-114, awaiting split consult).
+
+Founder reads `enforcement` field of schema entry (`convention_only` vs `hard_block`/`gate`/`pretooluse`) to disambiguate runtime enforcement.
+
+### Kill-switch
+
+`SUTRA_CAPABILITY_DIGEST_DISABLED=1` env or `~/.sutra-capability-disabled` file.
+
+### Codex
+
+Skill is content-only (no executable code); SKILL.md frontmatter + body. Per Sutra Engine charter §16 amendment B and `[Right-Effort Discipline]` (surgical scope), no pre-shipped consult required for content-only skill addition. Post-ship review covers Layer 4 + Layer 1+2+3 in the autonomous-push end-of-batch review.
+
+---
+
 ## v2.26.0 — 2026-05-04
 
 **4 Asawa-side disciplines moved from memory-only to plugin-canonical schema (D43 fleet-parity Layer 3).**
