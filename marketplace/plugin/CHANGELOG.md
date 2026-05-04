@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.20.0 — 2026-05-04
+
+**Sutra Delivery OS Wave 1 ships: first first-party Generative+Decisional skill `core:test-strategy`.**
+
+Founder direction 2026-05-04: "I need some skills in the testing framework... in figuring out input, test, output test ways to go about writing architecture and schemas... I want these to be incorporated as part of Sutra... and I want this to be provided to clients as well of Sutra. Add this to plugins as well." Yesterday's [skill-validation framework](../../../holding/research/2026-05-04-skill-validation-framework.md) identified 4 problem-mode gaps (Diagnostic / Generative / Reactive / Refining) — all 9 existing Sutra skills are Governance-mode. v2.20.0 closes the Generative+Decisional gap with the first of 4 Delivery OS skills.
+
+### What changed
+
+1. **`sutra/marketplace/plugin/skills/test-strategy/`** — new skill directory.
+   - `SKILL.md` (~250 lines): designs a TEST-STRATEGY.md document for any subject (function / module / system / AI prompt) before tests are written. Includes pyramid heuristics by domain (8 rows: pure compute / stateful service / API / CLI / LLM classifier / RAG / data pipeline / infra), fixture decision matrix (8 rows: own DB / managed DB / HTTP own / HTTP third-party / LLM / FS / clock / random), mock-vs-real boundary discipline, coverage targets matched to risk profile, AI eval-pack design (≥3 evals, baseline-without-skill, multi-model, structural+LLM-judge scoring, drift detection, fixture rotation), CI gate placement.
+   - `evals/README.md` + `evals/E1-payment-processing.md` + `evals/E2-llm-classifier.md` + `evals/E3-cli-tool.md`: 3 structural-assertion evals covering safety-critical / user-facing / internal-tooling risk profiles. No fragile specifics (per yesterday's codex P1 fold).
+2. **`sutra/marketplace/plugin/.claude-plugin/plugin.json`** — version 2.19.0 → 2.20.0; description prepended with v2.20.0 narrative.
+3. **`sutra/.claude-plugin/marketplace.json`** — catalog entry version 2.19.0 → 2.20.0; description prepended (sync with plugin.json per v2.18.2 contract test).
+
+### Codex review chain
+
+- **CONSULT** on the original 5-skill spec: verdict RESCOPE → cut `core:idea-to-delivery` (codex P0: "product thesis, not bounded skill"), rename `io-contract-test` → `deterministic-testing` (codex P1: name now matches 4-technique scope), promote `test-strategy` to W1 (codex P1: broader demand, easier eval). All folded. Verdict at `.enforcement/codex-reviews/2026-05-04-sutra-delivery-os-spec-consult.md`.
+- **REVIEW** on W1 build: verdict CHANGES-REQUIRED → all P0 (Anthropic-spec description shape: imperative second-person → third-person WHAT+WHEN; section contract: "7 sections" vs 8 listed → reconciled; section 6 "skip" vs eval expects placeholder → "always present, placeholder if no AI"; eval brittle specifics → loosened to structural-only) + all P1 (trigger discriminator added; fixture matrix DB rule corrected; own-DB threshold anti-pattern removed; infra pyramid softened) folded inline. Verdict at `.enforcement/codex-reviews/2026-05-04-w1-test-strategy-build-review.md`.
+
+### Distinct from existing ecosystem skills
+
+- gstack `gsd-add-tests` — generates the tests themselves; this skill plans BEFORE.
+- gstack `qa` / `qa-only` — runs tests; this skill plans them.
+- `superpowers:test-driven-development` — workflow (red-green-refactor); this skill is the strategy artifact.
+- `superpowers:writing-plans` — generic planning; this skill is testing-specific with pyramid heuristics.
+
+### Downstream cascade (D13)
+
+T2 owned (DayFlow / Billu / Paisa / PPR / Maze) + T3 projects (Testlify / Dharmik) + T4 fleet — receives skill via plugin update; additive, non-breaking. No client TODO updates required. Sutra plugin self-dogfoods on the next test-strategy authoring task. Self-score appended to `holding/research/skill-adoption-log.jsonl` as telemetry only (not a ship gate, per codex P2). Wave plan: W2 architect, W3 deterministic-testing, W4 incremental-architect — all per `holding/research/2026-05-04-sutra-delivery-os-skills-spec.md`.
+
+---
+
 ## v2.18.0 — 2026-05-03
 
 **Opt-in telemetry push restored. Default OFF posture preserved.**
