@@ -11,6 +11,11 @@
 # website/native/install.sh is also always-live as a fallback.
 #
 # What this does:
+#   0. (macOS only) Ensures Xcode Command Line Tools are installed before
+#      the first git invocation. On a fresh Mac /usr/bin/git is a stub that
+#      triggers a GUI dialog the first time it's used; this pre-flight
+#      detects + triggers + polls for CLT (max 20 min) so the rest of the
+#      install runs cleanly end-to-end.
 #   1. Verifies prerequisites (git, node ≥20)
 #   2. Creates ./sutra/native/ in your current directory
 #   3. Downloads the Sutra Native source preview (~5 MB)
@@ -33,6 +38,13 @@ SUTRA_REPO="https://github.com/sankalpasawa/sutra.git"
 TARGET_DIR="${SUTRA_NATIVE_TARGET:-$PWD/sutra/native}"
 NON_INTERACTIVE=0
 NATIVE_VERSION="v1.0.2"
+
+# Capture original argv as a bash ARRAY (preserves per-arg quoting; survives
+# paths with spaces / single-quotes / special chars) BEFORE the parse loop
+# mutates "$@". Used by the CLT pre-flight re-run hint so a recovery path
+# lands with EXACTLY the same target/mode as the failed install. Codex
+# review v1 P2 + v2 P2 fix (DIRECTIVE-ID 1777902391, 2026-05-04).
+declare -a _ORIG_ARGV_ARR=("$@")
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -67,6 +79,133 @@ warn() { printf '%swarn%s %s\n' "$C_GOLD" "$C_RESET" "$*"; }
 fail() { printf '%sfail%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 step() { printf '\n%s==>%s %s%s%s\n' "$C_BLUE" "$C_RESET" "$C_BOLD" "$*" "$C_RESET"; }
 hr()   { printf '%s%s%s\n' "$C_GREY" "------------------------------------------------------------" "$C_RESET"; }
+
+# ---------------------------------------------------------------------------
+# macOS Command Line Tools pre-flight
+#
+# On a fresh Mac, /usr/bin/git is a stub. The first `git` invocation triggers
+# a GUI dialog asking the user to install Command Line Tools (CLT). Without
+# this pre-flight, `require git` (Step 1 prereq) passes (the stub IS on PATH)
+# but the actual `git clone` in Step 3 hits the dialog and fails confusingly.
+#
+# Codex review 2026-05-04 (hardening — DIRECTIVE-ID 1777902391):
+#   * Readiness check uses `xcode-select -p` AND `xcrun --find git`. Path
+#     existence alone is not sufficient — after a macOS/Xcode update the
+#     dev dir can be stale ("invalid active developer path"), false-passing
+#     the check. xcrun --find git resolves through the active dev dir and
+#     exits 0 only if git is actually present and reachable.
+#   * `xcode-select --install` rc is captured + classified. On rc != 0 we
+#     fail loudly (no GUI session, stale-path collision) instead of
+#     swallowing the error and entering a 20-min poll that will never
+#     resolve. SSH / CI / remote-admin / headless Macs get an immediate
+#     actionable message.
+#   * Re-run hint preserves _ORIG_ARGV + SUTRA_NATIVE_TARGET so a recovery
+#     path lands in the same target as the failed install.
+#
+# No-op on Linux + when CLT/Xcode is usable. Honors -y by failing loudly.
+# ---------------------------------------------------------------------------
+_clt_ready() {
+  # Two-stage check: developer dir configured AND xcrun resolves git.
+  xcode-select -p >/dev/null 2>&1 \
+    && xcrun --find git >/dev/null 2>&1
+}
+
+_clt_rerun_hint() {
+  # Argv-preserving recovery hint. _ORIG_ARGV_ARR is a bash array captured
+  # before the parse loop mutates "$@". printf %q produces shell-safe
+  # quoting (paths with spaces / single-quotes / special chars survive
+  # round-trip). Codex review v2 P2 fix (DIRECTIVE-ID 1777902391, 2026-05-04).
+  local cmd="curl -fsSL https://sankalpasawa.github.io/sutra/native/install.sh | bash"
+  if [ "${#_ORIG_ARGV_ARR[@]}" -gt 0 ]; then
+    local args_quoted
+    args_quoted=$(printf ' %q' "${_ORIG_ARGV_ARR[@]}")
+    cmd="${cmd} -s --${args_quoted}"
+  fi
+  if [ -n "${SUTRA_NATIVE_TARGET:-}" ]; then
+    local nt_quoted
+    nt_quoted=$(printf '%q' "${SUTRA_NATIVE_TARGET}")
+    cmd="SUTRA_NATIVE_TARGET=${nt_quoted} ${cmd}"
+  fi
+  printf '%s' "${cmd}"
+}
+
+ensure_macos_clt() {
+  [ "$(uname -s)" = "Darwin" ] || return 0
+  if _clt_ready; then
+    return 0
+  fi
+
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    fail "macOS Command Line Tools missing or unusable — required for git. Run: xcode-select --install (wait for GUI to finish), then re-run this installer. If xcode-select reports CLT already installed, your developer dir may be stale: sudo xcode-select --reset && sudo xcode-select --install."
+  fi
+
+  echo
+  warn "macOS Command Line Tools not detected or not usable (required for git)."
+  say  "       Without a working CLT, the source-clone step would fail mid-install."
+  say  "       Triggering the CLT install now."
+  echo
+  say  "       Size:   ~700 MB download · ~2-3 GB installed · 5-15 min"
+  say  "       Scope:  CLT only (git, clang, make) — NOT full Xcode IDE (~15 GB)"
+  say  "       After:  install resumes automatically when CLT becomes usable."
+  echo
+
+  # Capture rc + stderr — Apple does not publish stable exit codes; classify
+  # by stderr signature.
+  trigger_out="$(xcode-select --install 2>&1)" || trigger_rc=$?
+  : "${trigger_rc:=0}"
+  if [ -n "${trigger_out}" ]; then
+    printf '%s\n' "${trigger_out}" | sed 's/^/       /' >&2
+  fi
+
+  if [ "${trigger_rc}" -ne 0 ]; then
+    # Any non-zero return means dialog did NOT open — the 20-min poll below
+    # would never see CLT become usable. Fail loud with actionable hint.
+    if printf '%s' "${trigger_out}" | grep -qiE 'not currently available|software update server|no display|cannot.*open.*window|requires.*ui|no UI'; then
+      hint="no GUI session available (SSH / CI / remote-admin / headless)"
+    elif printf '%s' "${trigger_out}" | grep -qiE 'already installed|already.*present'; then
+      hint="xcode-select reports CLT already installed but readiness check disagrees — likely a stale or broken developer dir"
+    else
+      hint="xcode-select --install returned rc=${trigger_rc} (see stderr above)"
+    fi
+    echo
+    warn "Cannot complete CLT pre-flight: ${hint}."
+    say  "       If stale developer dir:"
+    say  "         sudo xcode-select --reset"
+    say  "         sudo xcode-select --install"
+    say  "       Or install Command Line Tools manually:"
+    say  "         1. Connect to the Mac with GUI access (or VNC / Screen Sharing)"
+    say  "         2. Run: xcode-select --install   (accept the GUI dialog)"
+    say  "         3. OR install full Xcode from the Mac App Store"
+    say  "       Then re-run this installer:"
+    say  "         $(_clt_rerun_hint)"
+    fail "aborting — CLT pre-flight cannot complete in this environment."
+  fi
+
+  # rc=0: dialog opened. Poll for completion.
+  echo
+  say "       Polling for CLT completion (every 15s, max 20 min)..."
+  say "       Accept the GUI dialog. Ctrl+C is safe — re-running this installer is idempotent."
+  echo
+
+  local i=0
+  local max=80   # 80 * 15s = 20 min
+  while [ "$i" -lt "$max" ]; do
+    if _clt_ready; then
+      ok "Command Line Tools ready — $(xcode-select -p)"
+      return 0
+    fi
+    sleep 15
+    i=$((i+1))
+    if [ $((i % 4)) -eq 0 ]; then
+      printf '%s       waiting... %dm elapsed (max 20m)%s\n' "$C_GREY" $((i/4)) "$C_RESET" >&2
+    fi
+  done
+
+  warn "Timed out waiting for Command Line Tools (20 min)."
+  say  "       Once the GUI install finishes, re-run:"
+  say  "         $(_clt_rerun_hint)"
+  fail "aborting — re-run after CLT install completes."
+}
 
 banner() {
   printf '%s' "$C_GOLD"
@@ -130,6 +269,12 @@ fi
 # Step 1 — prerequisites
 # ---------------------------------------------------------------------------
 step "1/5  Checking prerequisites"
+
+# macOS-only pre-flight: triggers Xcode CLT install if missing, polls until
+# ready (max 20 min). Without this, `require git` passes on a fresh Mac (stub
+# git is on PATH) but Step 3's actual `git clone` triggers a GUI dialog and
+# fails confusingly. No-op on Linux and when CLT is already present.
+ensure_macos_clt
 
 require() {
   if ! command -v "$1" >/dev/null 2>&1; then

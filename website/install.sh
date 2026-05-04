@@ -63,7 +63,8 @@ IFS=$'\n\t'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-SUTRA_VERSION="0.5.0"  # this installer's version (NOT the plugin's — see header)
+SUTRA_VERSION="0.6.0"  # this installer's version (NOT the plugin's — see header)
+declare -a _ORIG_ARGV_ARR=()   # bash array — preserves quoting for paths with spaces/quotes; used by CLT pre-flight re-run hint
 SUTRA_MARKETPLACE="sankalpasawa/sutra"   # source spec for `marketplace add` (GitHub path)
 SUTRA_MARKETPLACE_NAME="sutra"           # registered name in Claude (from marketplace.json .name)
 SUTRA_PLUGIN="core@sutra"
@@ -178,39 +179,107 @@ has_tty() {
 # complete it. Detect missing CLT up-front, trigger the install with clear
 # scope/size messaging, and poll until ready.
 #
-# Detection uses `xcode-select -p` (cheap, no side effects) — NOT `git
-# --version`, which itself triggers the dialog and would defeat the purpose.
+# Codex review 2026-05-04 (v0.6.0 hardening — DIRECTIVE-ID 1777902391):
+#   * Readiness check uses `xcode-select -p` AND `xcrun --find git`. The
+#     former alone only proves a developer dir is configured, not usable —
+#     after a macOS/Xcode update the path can be stale ("invalid active
+#     developer path"), false-passing the check. xcrun --find git resolves
+#     through the active developer dir and exits 0 only if git is actually
+#     present and reachable.
+#   * `xcode-select --install` rc is captured + classified. On rc != 0 we
+#     fail loudly (no GUI session, stale-path collision, unknown error)
+#     instead of swallowing the error and entering a 20-min poll that will
+#     never resolve. SSH / CI / remote-admin / headless Macs get an
+#     immediate actionable message.
+#   * Re-run hint preserves the user's original argv + SUTRA_TARGET_DIR so
+#     a recovery path lands in the same target/mode as the failed install.
 #
-# No-op on Linux + when CLT or full Xcode is already present. Honors
-# NON_INTERACTIVE (-y) by failing loudly instead of triggering a GUI dialog
-# that nobody is there to accept.
+# No-op on Linux + when CLT or full Xcode is usable. Honors NON_INTERACTIVE
+# (-y) by failing loudly instead of triggering a GUI dialog nobody is
+# there to accept.
 # -----------------------------------------------------------------------------
+_clt_ready() {
+  # Two-stage check: developer dir configured AND xcrun can resolve git
+  # through it. Catches stale-path case (xcode-select -p returns a path,
+  # but the path is broken / xcrun can't find git there).
+  xcode-select -p >/dev/null 2>&1 \
+    && xcrun --find git >/dev/null 2>&1
+}
+
+_clt_rerun_hint() {
+  # Argv-preserving recovery hint. _ORIG_ARGV_ARR is captured by main() as a
+  # bash array (NOT a string) BEFORE parse_args mutates "$@". printf %q
+  # produces shell-safe single-shot-quoted output that survives paths with
+  # spaces, quotes, and special characters — addresses codex review v2 P2
+  # (DIRECTIVE-ID 1777902391, 2026-05-04).
+  local cmd="curl -fsSL https://sankalpasawa.github.io/sutra/install.sh | bash"
+  if [[ ${#_ORIG_ARGV_ARR[@]} -gt 0 ]]; then
+    local args_quoted
+    args_quoted=$(printf ' %q' "${_ORIG_ARGV_ARR[@]}")
+    cmd="${cmd} -s --${args_quoted}"
+  fi
+  if [[ -n "${SUTRA_TARGET_DIR:-}" ]]; then
+    local td_quoted
+    td_quoted=$(printf '%q' "${SUTRA_TARGET_DIR}")
+    cmd="SUTRA_TARGET_DIR=${td_quoted} ${cmd}"
+  fi
+  printf '%s' "${cmd}"
+}
+
 ensure_macos_clt() {
   [[ "$(uname -s)" == "Darwin" ]] || return 0
-  if xcode-select -p >/dev/null 2>&1; then
+  if _clt_ready; then
     return 0
   fi
 
   if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
-    die "macOS Command Line Tools missing — required for git. Run: xcode-select --install (wait for GUI to finish), then re-run this installer."
+    die "macOS Command Line Tools missing or unusable — required for git. Run: xcode-select --install (wait for GUI to finish), then re-run this installer. If xcode-select reports CLT already installed, your developer dir may be stale: sudo xcode-select --reset && sudo xcode-select --install."
   fi
 
   log ""
-  warn "macOS Command Line Tools not detected (required for git)."
-  log "  Marketplace add calls 'git clone' under the hood; without CLT it"
-  log "  would fail mid-install with a cryptic GUI dialog. Triggering the"
-  log "  CLT install now."
+  warn "macOS Command Line Tools not detected or not usable (required for git)."
+  log "  Marketplace add calls 'git clone' under the hood; without a working"
+  log "  CLT it would fail mid-install. Triggering the CLT install now."
   log ""
   log "  Size:   ~700 MB download · ~2-3 GB installed · 5-15 min"
   log "  Scope:  CLT only (git, clang, make) — NOT full Xcode IDE (~15 GB)"
-  log "  After:  install resumes automatically when CLT finishes."
+  log "  After:  install resumes automatically when CLT becomes usable."
   log ""
 
-  # Triggers the GUI dialog and returns immediately. Non-zero return is
-  # informational (e.g. CLT already installed — we already checked, so this
-  # case is rare; or no GUI subsystem on a headless Mac).
-  xcode-select --install 2>&1 | sed 's/^/[sutra]   /' >&2 || true
+  # Capture rc + stderr from `xcode-select --install`. Apple does not
+  # publish stable exit codes; we classify by stderr signature.
+  local trigger_out trigger_rc=0
+  trigger_out="$(xcode-select --install 2>&1)" || trigger_rc=$?
+  if [[ -n "${trigger_out}" ]]; then
+    printf '%s\n' "${trigger_out}" | sed 's/^/[sutra]   /' >&2
+  fi
 
+  if [[ ${trigger_rc} -ne 0 ]]; then
+    # Any non-zero return means the GUI dialog did not open, which means
+    # the 20-min poll below would never see CLT become usable. Fail loud.
+    local hint
+    if printf '%s' "${trigger_out}" | grep -qiE 'not currently available|software update server|no display|cannot.*open.*window|requires.*ui|no UI'; then
+      hint="no GUI session available (SSH / CI / remote-admin / headless)"
+    elif printf '%s' "${trigger_out}" | grep -qiE 'already installed|already.*present'; then
+      hint="xcode-select reports CLT already installed but readiness check disagrees — likely a stale or broken developer dir"
+    else
+      hint="xcode-select --install returned rc=${trigger_rc} (see stderr above)"
+    fi
+    log ""
+    warn "Cannot complete CLT pre-flight: ${hint}."
+    warn "  If stale developer dir:"
+    warn "    sudo xcode-select --reset"
+    warn "    sudo xcode-select --install"
+    warn "  Or install Command Line Tools manually:"
+    warn "    1. Connect to the Mac with GUI access (or VNC / Screen Sharing)"
+    warn "    2. Run: xcode-select --install   (accept the GUI dialog)"
+    warn "    3. OR install full Xcode from the Mac App Store"
+    warn "  Then re-run this installer:"
+    warn "    $(_clt_rerun_hint)"
+    die "aborting — CLT pre-flight cannot complete in this environment."
+  fi
+
+  # rc=0: dialog opened. Poll for completion.
   log ""
   log "Polling for CLT completion (every 15s, max 20 min)..."
   log "  Accept the GUI dialog. Ctrl+C is safe — re-running this installer is idempotent."
@@ -219,7 +288,7 @@ ensure_macos_clt() {
   local i=0
   local max=80   # 80 * 15s = 20 min
   while [[ ${i} -lt ${max} ]]; do
-    if xcode-select -p >/dev/null 2>&1; then
+    if _clt_ready; then
       ok "Command Line Tools ready: $(xcode-select -p)"
       return 0
     fi
@@ -232,7 +301,7 @@ ensure_macos_clt() {
 
   warn "Timed out waiting for Command Line Tools (20 min)."
   warn "  Once the GUI install finishes, re-run:"
-  warn "    curl -fsSL https://sankalpasawa.github.io/sutra/install.sh | bash"
+  warn "    $(_clt_rerun_hint)"
   die "aborting — re-run after CLT install completes."
 }
 
@@ -880,6 +949,13 @@ print_banner() {
 # Main
 # -----------------------------------------------------------------------------
 main() {
+  # Capture original argv as a bash ARRAY (preserves per-arg quoting; survives
+  # paths with spaces / single-quotes / special chars) BEFORE parse_args
+  # mutates "$@". Used by the CLT pre-flight re-run hint so a recovery path
+  # lands with EXACTLY the same target/mode as the failed install. Codex
+  # review v1 P2 + v2 P2 fix (DIRECTIVE-ID 1777902391, 2026-05-04).
+  _ORIG_ARGV_ARR=("$@")
+
   parse_args "$@"
 
   banner   # ASCII Sutra art + version-label clarification (replaces the old plain log line)
