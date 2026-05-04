@@ -35,6 +35,10 @@ export type EngineEventType =
   | 'pattern_proposed'
   | 'proposal_approved'
   | 'proposal_rejected'
+  | 'approval_requested'
+  | 'approval_granted'
+  | 'approval_denied'
+  | 'approval_already_handled'
 
 /** Runtime allow-list mirroring EngineEventType — kept in sync. */
 export const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set([
@@ -49,6 +53,10 @@ export const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set([
   'pattern_proposed',
   'proposal_approved',
   'proposal_rejected',
+  'approval_requested',
+  'approval_granted',
+  'approval_denied',
+  'approval_already_handled',
 ])
 
 export interface RoutingDecisionEvent {
@@ -153,6 +161,60 @@ export interface ProposalRejectedEvent {
   readonly reason: string
 }
 
+/**
+ * v1.3.0 Wave 2 — step-level approval gate events (codex W2 BLOCKER 1+3 fold).
+ *
+ * Founder centerpiece: "workflow is shown, then approval from founder, like
+ * how evolved that workflow should be from the steps point of view." The four
+ * events below trace the lifecycle:
+ *   - approval_requested        → executor paused at a step.requires_approval=true step
+ *   - approval_granted          → founder typed `approve E-<id>` (resume)
+ *   - approval_denied           → founder typed `reject E-<id> <reason>` (terminalize)
+ *   - approval_already_handled  → stale `approve|reject E-<id>` for an already-decided execution
+ *
+ * Persistence is the canonical source of truth (see
+ * src/persistence/execution-approval-ledger.ts mirroring proposal-ledger).
+ * These events are the human-facing audit transcript; the ledger record is
+ * the durable state machine.
+ */
+export interface ApprovalRequestedEvent {
+  readonly type: 'approval_requested'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly step_index: number
+  /** Truncated step description (action, host if any, first ~200 chars of inputs[0].locator). */
+  readonly prompt_summary: string
+}
+
+export interface ApprovalGrantedEvent {
+  readonly type: 'approval_granted'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly step_index: number
+}
+
+export interface ApprovalDeniedEvent {
+  readonly type: 'approval_denied'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly step_index: number
+  /** Founder-supplied free-form rejection reason. */
+  readonly reason: string
+}
+
+export interface ApprovalAlreadyHandledEvent {
+  readonly type: 'approval_already_handled'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly step_index: number
+  /** When the original decision (approve/reject) was committed to the ledger. */
+  readonly originally_decided_at_ms: number
+}
+
 export type EngineEvent =
   | RoutingDecisionEvent
   | WorkflowStartedEvent
@@ -165,6 +227,10 @@ export type EngineEvent =
   | PatternProposedEvent
   | ProposalApprovedEvent
   | ProposalRejectedEvent
+  | ApprovalRequestedEvent
+  | ApprovalGrantedEvent
+  | ApprovalDeniedEvent
+  | ApprovalAlreadyHandledEvent
 
 // -----------------------------------------------------------------------------
 // Per-variant validators (codex P1 fold 2026-05-03) — guard MUST validate the
@@ -238,6 +304,25 @@ const VARIANT_VALIDATORS: Record<EngineEventType, (v: Record<string, unknown>) =
   proposal_rejected: (v) =>
     isNonEmptyStr(v.pattern_id) &&
     isStr(v.reason),
+  approval_requested: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.step_index) &&
+    isStr(v.prompt_summary),
+  approval_granted: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.step_index),
+  approval_denied: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.step_index) &&
+    isStr(v.reason),
+  approval_already_handled: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.step_index) &&
+    isFiniteNonNegNumber(v.originally_decided_at_ms),
 }
 
 /**

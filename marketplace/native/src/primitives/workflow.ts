@@ -262,6 +262,24 @@ function validateStep(step: WorkflowStep, idx: number): void {
       )
     }
   }
+  // v1.3.0 Wave 2 (codex W2 BLOCKER 2 fold 2026-05-04). Step-level
+  // `requires_approval` is the operator-declared "pause this specific step
+  // for founder review" gate — STEP-level dimension orthogonal to the
+  // workflow-level `l6Reflexivity.requiresApproval(...)` gate at
+  // src/laws/l6-reflexivity.ts (which fires for `Workflow.modifies_sutra=true`
+  // and consults `reflexive_check` Constraints). Both can fire on the same
+  // Workflow simultaneously; L6 blocks dispatch entirely, step.requires_approval
+  // pauses mid-run via lite-executor.
+  //
+  // Defensive runtime check — `requires_approval` is optional (default
+  // undefined ⇒ no gate); when supplied it MUST be boolean. String "true"
+  // / numeric 1 are rejected (codex W2 fold: validate at primitive-mint AND
+  // at deserialization).
+  if (step.requires_approval !== undefined && typeof step.requires_approval !== 'boolean') {
+    throw new Error(
+      `Workflow.step_graph[${idx}].requires_approval must be a boolean when supplied; got "${typeof step.requires_approval}"`,
+    )
+  }
 }
 
 /** Validate expects_response_from is null or a non-empty string (BoundaryEndpointRef). */
@@ -517,6 +535,11 @@ export function isValidWorkflow(w: Workflow): boolean {
       if (step.action !== 'invoke_host_llm') {
         return false
       }
+    }
+    // v1.3.0 Wave 2 (codex W2 BLOCKER 2 fold). Defensive — step.requires_approval
+    // is optional; when supplied MUST be boolean. Mirrors createWorkflow.validateStep.
+    if (step.requires_approval !== undefined && typeof step.requires_approval !== 'boolean') {
+      return false
     }
   }
   // M4.4 — custody_owner must be null OR match T-<id> pattern.

@@ -23,6 +23,7 @@ const VALID_STATES: ReadonlySet<ExecutionState> = new Set([
   'failed',
   'declared_gap',
   'escalated',
+  'paused',
 ])
 
 /** Terminal states are immutable — once reached, no further transition allowed. */
@@ -36,12 +37,21 @@ const TERMINAL_STATES: ReadonlySet<ExecutionState> = new Set([
 /**
  * Allowed state-transition graph per V2 §1 P4 lifecycle:
  *   pending → running
- *   running → {success, failed, declared_gap, escalated}
+ *   running → {success, failed, declared_gap, escalated, paused}
+ *   paused  → {running, failed, escalated}        (v1.3.0 W2 codex W2 BLOCKER 1 fold)
  * All terminal states are sinks.
+ *
+ * v1.3.0 Wave 2 (codex W2 fold): `'paused'` is FIRST-CLASS — already used by
+ * the full step-graph executor at engine/step-graph-executor.ts:518 as the
+ * human-loop pause state. Wave 2 step-level `requires_approval` REUSES this
+ * state. Resume on founder `approve E-<id>` ⇒ paused→running. Reject on
+ * founder `reject E-<id>` ⇒ paused→failed. Auto-escalation policy can also
+ * promote paused→escalated.
  */
 const VALID_TRANSITIONS: Record<ExecutionState, ReadonlySet<ExecutionState>> = {
   pending: new Set<ExecutionState>(['running']),
-  running: new Set<ExecutionState>(['success', 'failed', 'declared_gap', 'escalated']),
+  running: new Set<ExecutionState>(['success', 'failed', 'declared_gap', 'escalated', 'paused']),
+  paused: new Set<ExecutionState>(['running', 'failed', 'escalated']),
   success: new Set<ExecutionState>(),
   failed: new Set<ExecutionState>(),
   declared_gap: new Set<ExecutionState>(),
@@ -100,7 +110,7 @@ export function createExecution(spec: ExecutionSpec): Execution {
   }
   if (!VALID_STATES.has(spec.state)) {
     throw new Error(
-      `Execution.state must be pending|running|success|failed|declared_gap|escalated; got "${String(spec.state)}"`,
+      `Execution.state must be pending|running|success|failed|declared_gap|escalated|paused; got "${String(spec.state)}"`,
     )
   }
   if (!Array.isArray(spec.logs) || !Array.isArray(spec.results)) {

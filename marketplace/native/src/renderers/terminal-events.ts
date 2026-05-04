@@ -32,6 +32,14 @@ export function formatEvent(e: EngineEvent): string {
       return `[proposal_approved]  ${e.pattern_id}  workflow=${e.registered_workflow_id}  trigger=${e.registered_trigger_id}`
     case 'proposal_rejected':
       return `[proposal_rejected]  ${e.pattern_id}  reason=${e.reason}`
+    case 'approval_requested':
+      return `[approval_requested] ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  prompt="${e.prompt_summary}"  Type "approve ${e.execution_id}" to resume or "reject ${e.execution_id} <reason>" to terminate.`
+    case 'approval_granted':
+      return `[approval_granted]   ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  resuming...`
+    case 'approval_denied':
+      return `[approval_denied]    ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  reason=${e.reason}`
+    case 'approval_already_handled':
+      return `[approval_already_handled] ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  originally_decided_at=${e.originally_decided_at_ms}`
     default: {
       const exhaustive: never = e
       return `[unknown_event] ${JSON.stringify(exhaustive)}`

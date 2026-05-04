@@ -27,7 +27,7 @@ export { TRIGGER_EVENT_TYPES, PREDICATE_TYPES, isPredicate, isTriggerSpec } from
 export type { RoutingDecision, RoutingMode, PredicateAttempt } from './types/routing-decision.js'
 export type { CatalogedAsset } from './types/asset-catalog.js'
 export { isCatalogedAsset, isAssetShape, SHA256_HEX_PATTERN, DOMAIN_ID_PATTERN, EXECUTION_ID_PATTERN } from './types/asset-catalog.js'
-export type { EngineEvent, EngineEventType, RenderContext, RoutingDecisionEvent, WorkflowStartedEvent, WorkflowCompletedEvent, WorkflowFailedEvent, ArtifactRegisteredEvent, PolicyDecisionEvent, StepStartedEvent, StepCompletedEvent } from './types/engine-event.js'
+export type { EngineEvent, EngineEventType, RenderContext, RoutingDecisionEvent, WorkflowStartedEvent, WorkflowCompletedEvent, WorkflowFailedEvent, ArtifactRegisteredEvent, PolicyDecisionEvent, StepStartedEvent, StepCompletedEvent, ApprovalRequestedEvent, ApprovalGrantedEvent, ApprovalDeniedEvent, ApprovalAlreadyHandledEvent } from './types/engine-event.js'
 export { ENGINE_EVENT_TYPES, isEngineEvent } from './types/engine-event.js'
 
 // Starter kit

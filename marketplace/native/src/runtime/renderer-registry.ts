@@ -31,6 +31,10 @@ import {
   type PatternProposedEvent,
   type ProposalApprovedEvent,
   type ProposalRejectedEvent,
+  type ApprovalRequestedEvent,
+  type ApprovalGrantedEvent,
+  type ApprovalDeniedEvent,
+  type ApprovalAlreadyHandledEvent,
 } from '../types/engine-event.js'
 
 export type Renderer<T extends EngineEvent = EngineEvent> = (event: T, ctx: RenderContext) => string
@@ -133,6 +137,33 @@ export const defaultRenderProposalRejected: Renderer<ProposalRejectedEvent> = (e
   return `${cellPrefix(ctx)}[native] rejected ${e.pattern_id}${reason}.`
 }
 
+// -----------------------------------------------------------------------------
+// v1.3.0 Wave 2 — step-level approval gate renderers (codex W2 fold).
+//
+// Style consistent with pattern_proposed / proposal_approved / proposal_rejected
+// above. The four lifecycle events trace founder-in-the-loop step approval:
+// REQUESTED (executor paused) → GRANTED (resume) | DENIED (terminate) | ALREADY_HANDLED
+// (stale duplicate approve/reject for an execution past its decision boundary).
+// -----------------------------------------------------------------------------
+
+export const defaultRenderApprovalRequested: Renderer<ApprovalRequestedEvent> = (e, ctx) => {
+  const summary = sanitizeForTerminal(e.prompt_summary)
+  return `${cellPrefix(ctx)}[${e.workflow_id}] PAUSED ${e.execution_id} at step ${e.step_index}: ${summary}. Type "approve ${e.execution_id}" to resume or "reject ${e.execution_id} <reason>" to terminate.`
+}
+
+export const defaultRenderApprovalGranted: Renderer<ApprovalGrantedEvent> = (e, ctx) => {
+  return `${cellPrefix(ctx)}[${e.workflow_id}] approved ${e.execution_id} at step ${e.step_index} — resuming.`
+}
+
+export const defaultRenderApprovalDenied: Renderer<ApprovalDeniedEvent> = (e, ctx) => {
+  const reason = sanitizeForTerminal(e.reason)
+  return `${cellPrefix(ctx)}[${e.workflow_id}] DENIED ${e.execution_id} at step ${e.step_index}: ${reason}`
+}
+
+export const defaultRenderApprovalAlreadyHandled: Renderer<ApprovalAlreadyHandledEvent> = (e, ctx) => {
+  return `${cellPrefix(ctx)}[${e.workflow_id}] approval for ${e.execution_id} (step ${e.step_index}) was already decided at ${e.originally_decided_at_ms} — no-op.`
+}
+
 /** Map of every EngineEventType to its default renderer. Frozen at module load. */
 export const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>> = Object.freeze({
   routing_decision: defaultRenderRoutingDecision as Renderer,
@@ -146,6 +177,10 @@ export const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>> = Ob
   pattern_proposed: defaultRenderPatternProposed as Renderer,
   proposal_approved: defaultRenderProposalApproved as Renderer,
   proposal_rejected: defaultRenderProposalRejected as Renderer,
+  approval_requested: defaultRenderApprovalRequested as Renderer,
+  approval_granted: defaultRenderApprovalGranted as Renderer,
+  approval_denied: defaultRenderApprovalDenied as Renderer,
+  approval_already_handled: defaultRenderApprovalAlreadyHandled as Renderer,
 })
 
 // -----------------------------------------------------------------------------
