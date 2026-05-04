@@ -352,12 +352,27 @@ async function runStepAction(step: WorkflowStep, ctx: StepDispatchContext): Prom
       if (!prompt) {
         throw new Error('host_llm_invocation_failed:no_prompt')
       }
+      // v1.3.0 W1.9 (codex W1.9 advisory fold): forward step.timeout_ms only
+      // when defined. Undefined leaves host-llm-activity's default (60_000ms)
+      // in effect; the args object's optional timeout_ms is omitted entirely
+      // (not set to `undefined`) so a callsite that explicitly sets
+      // `timeout_ms: undefined` is indistinguishable from "no timeout
+      // override declared".
       try {
-        const result = await ctx.dispatch({
+        const dispatchArgs: {
+          prompt: string
+          host: 'claude' | 'codex'
+          workflow_run_seq: number
+          timeout_ms?: number
+        } = {
           prompt,
           host,
           workflow_run_seq: ctx.runSeq,
-        })
+        }
+        if (step.timeout_ms !== undefined) {
+          dispatchArgs.timeout_ms = step.timeout_ms
+        }
+        const result = await ctx.dispatch(dispatchArgs)
         ctx.onHostLLMResult(result, step)
         return
       } catch (err) {

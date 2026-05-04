@@ -241,6 +241,18 @@ export interface WorkflowStep {
    * the envelope MUST advertise the response schema, not the prompt schema.
    */
   return_contract?: SchemaRef
+  /**
+   * v1.3.0 W1.9 (codex W1.9 advisory fold). Optional per-step timeout (ms)
+   * for action='invoke_host_llm'. Forwarded to hostLLMActivity. Defaults to
+   * host-llm-activity default (60_000ms) when unset. Ignored for non-
+   * invoke_host_llm steps.
+   *
+   * Additive field — no breaking change to existing serialized Workflows;
+   * `createWorkflow` propagates it via the spec spread, validators ignore
+   * unknown keys, and the dispatch site forwards `timeout_ms` only when
+   * defined (undefined ⇒ host-llm-activity default).
+   */
+  timeout_ms?: number
 }
 
 // -----------------------------------------------------------------------------

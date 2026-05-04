@@ -244,6 +244,24 @@ function validateStep(step: WorkflowStep, idx: number): void {
       )
     }
   }
+  // v1.3.0 W1.9 (codex W1.9 advisory fold). Step-level `timeout_ms` is
+  // optional; when supplied it MUST be a positive integer AND the step MUST
+  // have action='invoke_host_llm' (no other step kind dispatches to a
+  // host-llm Activity that consumes the timeout). The dispatch site in
+  // lite-executor forwards `timeout_ms` only when defined; undefined leaves
+  // the host-llm-activity default (60_000ms) in effect.
+  if (step.timeout_ms !== undefined) {
+    if (typeof step.timeout_ms !== 'number' || !Number.isInteger(step.timeout_ms) || step.timeout_ms <= 0) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].timeout_ms must be a positive integer when supplied; got "${String(step.timeout_ms)}"`,
+      )
+    }
+    if (step.action !== 'invoke_host_llm') {
+      throw new Error(
+        `Workflow.step_graph[${idx}].timeout_ms is only permitted when action='invoke_host_llm' (v1.3.0 W1.9); got action="${String(step.action)}"`,
+      )
+    }
+  }
 }
 
 /** Validate expects_response_from is null or a non-empty string (BoundaryEndpointRef). */
@@ -480,6 +498,20 @@ export function isValidWorkflow(w: Workflow): boolean {
     // is permitted only when action='invoke_host_llm' AND must be a non-empty string.
     if (step.return_contract !== undefined) {
       if (typeof step.return_contract !== 'string' || step.return_contract.length === 0) {
+        return false
+      }
+      if (step.action !== 'invoke_host_llm') {
+        return false
+      }
+    }
+    // v1.3.0 W1.9 (codex W1.9 advisory fold). Defensive — step.timeout_ms is
+    // permitted only when action='invoke_host_llm' AND must be a positive integer.
+    if (step.timeout_ms !== undefined) {
+      if (
+        typeof step.timeout_ms !== 'number' ||
+        !Number.isInteger(step.timeout_ms) ||
+        step.timeout_ms <= 0
+      ) {
         return false
       }
       if (step.action !== 'invoke_host_llm') {
