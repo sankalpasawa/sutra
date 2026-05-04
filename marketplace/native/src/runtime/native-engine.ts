@@ -84,6 +84,7 @@ import {
   BASELINE_PREDICATE_REGISTRY,
   type PredicateRegistry,
 } from './pnc-predicate.js'
+import { appendTelemetry } from '../persistence/telemetry-sink.js'
 
 export interface NativeEngineOptions {
   readonly connector_options?: HSutraConnectorOptions
@@ -118,6 +119,18 @@ export interface NativeEngineOptions {
   readonly write?: (line: string) => void
   /** Sink for non-fatal errors. Default: console.error. */
   readonly on_error?: (err: Error) => void
+  /**
+   * v1.3.0 W6 — durable telemetry sink. When set, every emitted EngineEvent
+   * is also persisted via appendTelemetry as a JSONL line under
+   * `<telemetry_sink_path>/runtime/telemetry/events.jsonl` with per-event
+   * fsync. Recovers seq monotonically across restart. When unset, behavior
+   * is identical to v1.3.0-w5 (renderer-only).
+   *
+   * The path is the HOME root (NOT the events.jsonl path). Reuses the same
+   * resolution as user-kit so a single $SUTRA_NATIVE_HOME drives both
+   * primitives + telemetry storage.
+   */
+  readonly telemetry_sink_path?: string
 
   // -------------------------------------------------------------------------
   // SPEC v1.2 §4.5 — organic emergence v1
@@ -205,6 +218,11 @@ export class NativeEngine {
   private readonly pncCtx: Readonly<Record<string, unknown>>
   private readonly write: (line: string) => void
   private readonly onError: (err: Error) => void
+  /**
+   * v1.3.0 W6 — when set, emitEvent also calls appendTelemetry with this
+   * HOME root. Undefined → renderer-only path (v1.3.0-w5 behavior).
+   */
+  private readonly telemetrySinkPath: string | undefined
   private executionCounter = 0
   private started = false
   /**
@@ -231,6 +249,9 @@ export class NativeEngine {
     this.renderer = new RendererRegistry()
     this.write = options.write ?? ((line) => console.log(line))
     this.onError = options.on_error ?? ((err) => console.error(`[native-engine] ${err.message}`))
+    // v1.3.0 W6 — opt-in durable telemetry sink. Undefined preserves
+    // v1.3.0-w5 behavior (no extra I/O on emit).
+    this.telemetrySinkPath = options.telemetry_sink_path
     this.nowMs = options.now_ms ?? (() => Date.now())
 
     // Proposer wiring — default OFF unless env says on; explicit option wins.
@@ -1104,6 +1125,16 @@ export class NativeEngine {
       if (line) this.write(line)
     } catch (err) {
       this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
+    // v1.3.0 W6 — durable telemetry sink. Wrapped in its own try/catch so
+    // a sink failure (disk full, permission, etc) never breaks the
+    // renderer path or aborts the workflow run. Routes through onError.
+    if (this.telemetrySinkPath) {
+      try {
+        appendTelemetry(event, { home: this.telemetrySinkPath })
+      } catch (err) {
+        this.onError(err instanceof Error ? err : new Error(String(err)))
+      }
     }
   }
 }
