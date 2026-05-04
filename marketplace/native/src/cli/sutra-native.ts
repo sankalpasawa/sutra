@@ -55,6 +55,8 @@ import {
 } from '../persistence/user-kit.js'
 import {
   listApprovals,
+  loadApproval,
+  updateApprovalStatus,
 } from '../persistence/execution-approval-ledger.js'
 import { CadenceScheduler, type CadenceSpec as SchedulerCadenceSpec } from '../engine/cadence-scheduler.js'
 import { formatEvent } from '../renderers/terminal-events.js'
@@ -597,7 +599,10 @@ function cmdWorkflow(ctx: CommandContext): number {
   if (sub === 'status') {
     return cmdWorkflowStatus(ctx)
   }
-  ctx.stderr(`workflow: unknown subcommand "${sub}" (expected: status)\n`)
+  if (sub === 'cancel') {
+    return cmdWorkflowCancel(ctx)
+  }
+  ctx.stderr(`workflow: unknown subcommand "${sub}" (expected: status|cancel)\n`)
   return 2
 }
 
@@ -764,6 +769,98 @@ function cmdWorkflowStatus(ctx: CommandContext): number {
   } catch (err) {
     ctx.stderr(`workflow status failed: ${err instanceof Error ? err.message : String(err)}\n`)
     return 3
+  }
+}
+
+/**
+ * v1.3.0 W3 (codex W3 BLOCKER 2 fold) — workflow cancel.
+ *
+ * Cancel was BLOCKED at W3 plan time until paused-execution machinery from
+ * W2 shipped. W2 ships the execution-approval-ledger so cancel-while-paused
+ * is now wireable: ledger pending → rejected with reason='cancelled'.
+ *
+ * Three paths:
+ *   - approval record exists, status='pending'    → updateApprovalStatus
+ *     to 'rejected' reason='cancelled'; engine emits workflow_failed
+ *     reason=cancelled on next dispatch (the rejection branch).
+ *   - approval record exists, status terminal     → idempotent no-op,
+ *     emits "already terminal" + exit 0.
+ *   - no approval record (running or unknown)     → write a marker at
+ *     runtime/cancellations/E-<id>.json so the engine can consume on
+ *     next ingest. Best-effort + auditable since lite-executor lacks
+ *     a cancel token (codex W3 advisory).
+ */
+function cmdWorkflowCancel(ctx: CommandContext): number {
+  const { positional } = parseFlags(ctx.argv.slice(1)) // strip 'cancel' verb
+  const targetExecId = positional[0]
+  if (!targetExecId) {
+    ctx.stderr('workflow cancel: execution id required (e.g. sutra-native workflow cancel E-t1-1)\n')
+    return 2
+  }
+  try {
+    const rec = loadApproval(targetExecId, { env: ctx.env })
+    if (rec) {
+      // Has approval record. Pending → cancellable via ledger transition.
+      if (rec.status === 'pending') {
+        try {
+          updateApprovalStatus(
+            targetExecId,
+            'rejected',
+            'cancelled',
+            { env: ctx.env },
+            Date.now(),
+          )
+        } catch (err) {
+          ctx.stderr(`workflow cancel: ledger update failed: ${err instanceof Error ? err.message : String(err)}\n`)
+          return 3
+        }
+        // Also write a cancellation marker so the running engine (if any)
+        // can correlate. Best-effort.
+        writeCancellationMarker(ctx, targetExecId, 'pending-rejected')
+        ctx.stdout(`+ Cancelled paused execution ${targetExecId}\n  ledger: pending → rejected (reason=cancelled)\n  engine emits workflow_failed reason=cancelled on next dispatch\n`)
+        return 0
+      }
+      // Already-decided — terminal-on-the-resume-side. Idempotent no-op.
+      ctx.stdout(
+        `workflow cancel: execution ${targetExecId} already terminal (status=${rec.status}); no action taken\n`,
+      )
+      return 0
+    }
+    // No approval record. Could be running or unknown. Best-effort marker
+    // (codex W3 fold: lite-executor lacks a cancel token, so this is
+    // auditable intent rather than mid-run termination).
+    writeCancellationMarker(ctx, targetExecId, 'no-record')
+    ctx.stdout(
+      `+ Cancellation marker recorded for ${targetExecId}\n  (no approval record; engine consumes marker on next ingest)\n`,
+    )
+    return 0
+  } catch (err) {
+    ctx.stderr(`workflow cancel failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    return 3
+  }
+}
+
+function writeCancellationMarker(ctx: CommandContext, execId: string, mode: string): void {
+  try {
+    const root = userKitRoot({ env: ctx.env })
+    const dir = join(root, 'runtime', 'cancellations')
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, `${execId}.json`)
+    writeFileSync(
+      path,
+      JSON.stringify(
+        {
+          execution_id: execId,
+          mode,
+          requested_at_ms: Date.now(),
+          requested_at_iso: new Date().toISOString(),
+        },
+        null,
+        2,
+      ) + '\n',
+    )
+  } catch (err) {
+    ctx.stderr(`workflow cancel: marker write failed: ${err instanceof Error ? err.message : String(err)}\n`)
   }
 }
 
@@ -1205,6 +1302,11 @@ function usage(): string {
     '                     List executions OR show one execution by E-id with',
     '                     state derivation (STARTED/COMPLETED/FAILED/paused),',
     '                     timestamps, durations, and pending approval prompt.',
+    '  workflow cancel <E-id>',
+    '                     Cancel a paused execution (ledger pending → rejected',
+    '                     reason=cancelled). For executions without an approval',
+    '                     record, writes a runtime/cancellations/<E-id>.json',
+    '                     marker the engine consumes on next ingest.',
     '',
     'Environment:',
     '  SUTRA_NATIVE_HOME  Base dir (default: ~/.sutra-native; user-kit at $HOME/user-kit/)',
@@ -1228,6 +1330,7 @@ export {
   cmdRun,
   cmdWorkflow,
   cmdWorkflowStatus,
+  cmdWorkflowCancel,
   formatBanner,
   formatStatus,
   usage,
