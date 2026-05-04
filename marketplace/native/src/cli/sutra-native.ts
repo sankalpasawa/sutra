@@ -107,6 +107,8 @@ export async function main(ctx: CommandContext): Promise<number> {
       return await cmdRun(ctx)
     case 'workflow':
       return cmdWorkflow(ctx)
+    case 'tenant':
+      return cmdTenant(ctx)
     case 'version':
     case '--version':
     case '-v':
@@ -865,6 +867,66 @@ function writeCancellationMarker(ctx: CommandContext, execId: string, mode: stri
 }
 
 /**
+ * v1.3.0 W3 (codex W3 BLOCKER 3 fold) — tenant list.
+ *
+ * `sutra-native tenant list` scans Domains (each carries `tenant_id`) and
+ * unions with Workflows where `custody_owner` is non-null. NO separate
+ * tenant registry file (codex W3: "scan Domains, not a registry file").
+ * Output sorted, deduplicated, with per-tenant counts.
+ *
+ * Codex W3 BLOCKER 3 closes the "where do tenants come from" question.
+ * Domains carry tenant_id (D4 §1.1) so the existence of a Domain implies
+ * the tenant. Workflows can carry a custody_owner=T-<id> (M4.4 / D-NS-11)
+ * which may add tenants not yet represented as Domains.
+ */
+function cmdTenant(ctx: CommandContext): number {
+  const sub = ctx.argv[1] ?? ''
+  if (sub === 'list') {
+    return cmdTenantList(ctx)
+  }
+  ctx.stderr(`tenant: unknown subcommand "${sub}" (expected: list)\n`)
+  return 2
+}
+
+function cmdTenantList(ctx: CommandContext): number {
+  try {
+    const opts = { env: ctx.env }
+    const domains = listDomains(opts)
+    const workflows = listWorkflows(opts)
+    const counts = new Map<string, { domains: number; workflows: number }>()
+    for (const d of domains) {
+      const t = d.tenant_id
+      const cur = counts.get(t) ?? { domains: 0, workflows: 0 }
+      cur.domains++
+      counts.set(t, cur)
+    }
+    for (const w of workflows) {
+      const t = w.custody_owner
+      if (!t) continue
+      const cur = counts.get(t) ?? { domains: 0, workflows: 0 }
+      cur.workflows++
+      counts.set(t, cur)
+    }
+    const sorted = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    if (sorted.length === 0) {
+      ctx.stdout('TENANTS (0): (none — try: sutra-native create-domain --tenant T-foo ...)\n')
+      return 0
+    }
+    const lines: string[] = []
+    lines.push(`TENANTS (${sorted.length}):`)
+    lines.push(`  ${'tenant_id'.padEnd(20)} ${'domains'.padStart(7)}  ${'workflows'.padStart(9)}`)
+    for (const [t, c] of sorted) {
+      lines.push(`  ${t.padEnd(20)} ${String(c.domains).padStart(7)}  ${String(c.workflows).padStart(9)}`)
+    }
+    ctx.stdout(lines.join('\n') + '\n')
+    return 0
+  } catch (err) {
+    ctx.stderr(`tenant list failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    return 3
+  }
+}
+
+/**
  * cmdDaemon — INTERNAL: run NativeEngine in foreground until SIGTERM.
  *
  * Spawned detached by cmdStart. Logs to ~/.sutra-native/native.log via
@@ -1307,6 +1369,9 @@ function usage(): string {
     '                     reason=cancelled). For executions without an approval',
     '                     record, writes a runtime/cancellations/<E-id>.json',
     '                     marker the engine consumes on next ingest.',
+    '  tenant list        List tenants by scanning Domain.tenant_id and',
+    '                     unioning with Workflow.custody_owner; per-tenant',
+    '                     domain + workflow counts.',
     '',
     'Environment:',
     '  SUTRA_NATIVE_HOME  Base dir (default: ~/.sutra-native; user-kit at $HOME/user-kit/)',
@@ -1331,6 +1396,8 @@ export {
   cmdWorkflow,
   cmdWorkflowStatus,
   cmdWorkflowCancel,
+  cmdTenant,
+  cmdTenantList,
   formatBanner,
   formatStatus,
   usage,
