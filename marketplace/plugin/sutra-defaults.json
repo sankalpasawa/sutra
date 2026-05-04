@@ -1,20 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sutra-os.dev/schemas/sutra-defaults.json",
-  "$comment": "Canonical machine-readable policy surface. See SUTRA-DEFAULTS.md for human-readable equivalent. Per founder direction D40. v1.0.1: codex CHANGES-REQUIRED fold \u2014 kill_switches comprehensive, hooks now consume this file at runtime via jq, harness rewired.",
-  "version": "1.0.5",
+  "$comment": "Canonical machine-readable policy surface. See SUTRA-DEFAULTS.md for human-readable equivalent. Per founder direction D40. v1.0.1: codex CHANGES-REQUIRED fold — kill_switches comprehensive, hooks now consume this file at runtime via jq, harness rewired.",
+  "version": "2.26.0",
   "issued": "2026-05-04",
   "source_direction": "D40",
   "per_turn_blocks": {
     "human_sutra_header": {
-      "$comment": "v2.15.1: promoted from hardcoded hook reminder to canonical schema entry, closing the v2.14.1 deferred TODO. Direct emission \u2014 NOT a skill invocation. Format per skills/human-sutra/SKILL.md \u00a7Header emission.",
+      "$comment": "v2.15.1: promoted from hardcoded hook reminder to canonical schema entry, closing the v2.14.1 deferred TODO. Direct emission — NOT a skill invocation. Format per skills/human-sutra/SKILL.md §Header emission.",
       "required": true,
       "position": "FIRST line of response, before any other text",
-      "format": "[<DIRECTION>\u00b7<VERB> \u00b7 TIMING:<...> \u00b7 CHANNEL:<...> \u00b7 REV:<...> \u00b7 RISK:<...>]",
-      "format_with_tense": "[<DIRECTION>\u00b7<VERB> \u00b7 TENSE:<tense> \u00b7 TIMING:<...> \u00b7 CHANNEL:<...> \u00b7 REV:<...> \u00b7 RISK:<...>]",
-      "format_stage_1_fail": "[STAGE-1-FAIL \u00b7 CLARIFY \u00b7 attempt:1/1]",
+      "format": "[<DIRECTION>·<VERB> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]",
+      "format_with_tense": "[<DIRECTION>·<VERB> · TENSE:<tense> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]",
+      "format_stage_1_fail": "[STAGE-1-FAIL · CLARIFY · attempt:1/1]",
       "emission_mode": "direct_text",
-      "$emission_note": "Emit the literal bracketed line as the FIRST text of your response. Do NOT invoke a separate skill via Skill tool \u2014 the hook nudge `(format: ...)` is the directive, not `(skill: X)`.",
+      "$emission_note": "Emit the literal bracketed line as the FIRST text of your response. Do NOT invoke a separate skill via Skill tool — the hook nudge `(format: ...)` is the directive, not `(skill: X)`.",
       "skill_reference": "core:human-sutra",
       "log_path_asawa": "holding/state/interaction/log.jsonl",
       "log_path_default": ".sutra/h-sutra.jsonl",
@@ -39,10 +39,17 @@
       ],
       "compact_form": {
         "$comment": "Per D-UX-2 codex ADVISORY 2026-05-04 + Q4 fold (zero/low-risk turn rule). Structure stays per 'structure universality' — fields collapse for lightweight turns.",
-        "fields": ["INPUT (TYPE)", "ROUTE", "ACTION"],
+        "fields": [
+          "INPUT (TYPE)",
+          "ROUTE",
+          "ACTION"
+        ],
         "use_when": "question OR read_only_single_call OR trivial_confirmation",
         "skip_when": "mutation OR multi_step OR direction OR new_concept",
-        "implied_when_omitted": ["EXISTING HOME (=none)", "FIT CHECK (=no change)"]
+        "implied_when_omitted": [
+          "EXISTING HOME (=none)",
+          "FIT CHECK (=no change)"
+        ]
       },
       "skill": "core:input-routing",
       "soft_hint_hook": "per-turn-discipline-prompt.sh"
@@ -191,7 +198,24 @@
     "decisions_in_ascii_boxes": true,
     "no_unicode_box_drawing": true,
     "progress_bars_for_scores": true,
-    "skill": "core:readability-gate"
+    "skill": "core:readability-gate",
+    "highlight_decisions": {
+      "$comment": "cap-113. Memory→fleet 2026-05-04 per CSM TODO #4 fold + codex 2026-05-04 ADVISORY (soft governance surfacing only — coverage = policy-visible, not behavior-verified).",
+      "rule": "Decisions needing input must be visually boxed (ASCII), impossible to miss.",
+      "format": "ASCII box; no unicode box-drawing chars per terminal-box-formatting memory",
+      "applies_to": "responses_with_decisions",
+      "enforcement": "convention_only",
+      "cap_id": "cap-113"
+    },
+    "table_shape": {
+      "$comment": "cap-115. Memory→fleet 2026-05-04. Bundled under output_discipline per codex ADVISORY #2 (no thin dedicated hooks).",
+      "rule": "Every task list (review/backlog/roadmap/recommendations) carries Impact + Effort columns. Severity/Priority/Score alone insufficient — they rank but do not frame.",
+      "minimum_header": "| # | Area/Task | Impact (who/what changes) | Effort (time, files) |",
+      "applies_to": "task_lists_3_or_more_rows",
+      "applies_to_relayed": "subagent_and_codex_output_reshape_before_presenting",
+      "enforcement": "convention_only",
+      "cap_id": "cap-115"
+    }
   },
   "right_effort": {
     "$comment": "Karpathy right-effort discipline (CLAUDE.md). Source: github.com/forrestchang/andrej-karpathy-skills (try-before-buy 2026-04-27). v2.15.0 promotes this from Asawa-only memory to plugin-shipped governance default per fleet-parity audit.",
@@ -199,7 +223,7 @@
       "think_first: state assumptions; if multiple interpretations exist, ask. No silent guesses.",
       "simpler_alt: if 200 lines could be 50, rewrite. No speculative abstractions.",
       "surgical_scope: only changed lines that trace to the request. No drive-by refactors.",
-      "verify_loop: task = success criteria + verification. 'Make X work' \u2192 'test passes'."
+      "verify_loop: task = success criteria + verification. 'Make X work' → 'test passes'."
     ],
     "principles_short": [
       "think first",
@@ -275,7 +299,7 @@
     }
   },
   "kill_switches": {
-    "$comment": "Escape-hatch surface for D40-introduced defaults (G1-G4 + blueprint). Pre-existing defaults (depth_estimation, output_trace, output_discipline, build_layer) keep their own kill paths in their respective hook scripts and are not re-listed here. Per codex CHANGES-REQUIRED fold v1.0.2 \u2014 scope claim made honest.",
+    "$comment": "Escape-hatch surface for D40-introduced defaults (G1-G4 + blueprint). Pre-existing defaults (depth_estimation, output_trace, output_discipline, build_layer) keep their own kill paths in their respective hook scripts and are not re-listed here. Per codex CHANGES-REQUIRED fold v1.0.2 — scope claim made honest.",
     "all_defaults": {
       "env": "SUTRA_DEFAULTS_DISABLED=1",
       "file": "~/.sutra-defaults-disabled",
@@ -290,24 +314,24 @@
     "per_turn_discipline_prompt": {
       "env": "SUTRA_DEFAULTS_DISABLED=1",
       "file": "~/.per-turn-discipline-disabled",
-      "scope": "G1 \u2014 UserPromptSubmit reminder hook"
+      "scope": "G1 — UserPromptSubmit reminder hook"
     },
     "consult_before_edit": {
       "env": "CONSULT_BEFORE_EDIT_DISABLED=1",
       "file": "~/.consult-before-edit-disabled",
       "founder_override_phrase": "skip consult, just edit",
-      "scope": "G2 \u2014 codex consult policy at Depth >= 3"
+      "scope": "G2 — codex consult policy at Depth >= 3"
     },
     "skill_explanation_card": {
       "env": "SKILL_EXPLAIN_DISABLED=1",
       "file": "~/.skill-explain-disabled",
       "founder_override_phrase": "skip skill cards",
-      "scope": "G3 \u2014 5-line skill card (SKILL/WHAT/WHY/EXPECT/ASKS)"
+      "scope": "G3 — 5-line skill card (SKILL/WHAT/WHY/EXPECT/ASKS)"
     },
     "subagent_dispatch_brief": {
       "env": "SUBAGENT_BRIEF_DISABLED=1",
       "file": "~/.subagent-brief-disabled",
-      "scope": "G4 \u2014 PreToolUse Task briefing hook"
+      "scope": "G4 — PreToolUse Task briefing hook"
     }
   },
   "applies_to_tiers": {
@@ -328,9 +352,9 @@
     "treatment": "soft guidance only; back with deterministic checks where possible",
     "principle": "skills/docs EXPLAIN; hooks ENFORCE; one policy substrate consumed everywhere",
     "review_findings_folded": [
-      "v1.0.1 \u2014 kill_switches surfaced comprehensively",
-      "v1.0.1 \u2014 hooks now consume this json at runtime via jq (was hardcoded reminders)",
-      "v1.0.1 \u2014 acceptance harness rewritten with multiline regex + absence checks + temporal ordering"
+      "v1.0.1 — kill_switches surfaced comprehensively",
+      "v1.0.1 — hooks now consume this json at runtime via jq (was hardcoded reminders)",
+      "v1.0.1 — acceptance harness rewritten with multiline regex + absence checks + temporal ordering"
     ]
   },
   "compliance_test_contract": {
@@ -369,7 +393,7 @@
       {
         "id": "Q3",
         "type": "depth_3_edit_request",
-        "verification": "temporal ordering \u2014 first consult mention BEFORE first Edit/Write line",
+        "verification": "temporal ordering — first consult mention BEFORE first Edit/Write line",
         "expected_behavior": "consult_before_edit"
       },
       {
@@ -427,5 +451,28 @@
     ],
     "minimal_content_pattern": "For trivial inputs (greetings, single-word replies), keep INPUT/TYPE/ROUTE fields one-word each. The blocks remain present.",
     "hard_validator_status": "deferred (P1, promote-by 2026-05-17). Soft guidance alone gives ~60-75% compliance per codex; hard validator gate would close the remaining gap."
+  },
+  "customer_focus_first": {
+    "$comment": "cap-112. Memory→fleet 2026-05-04. Founding Doctrine Principle 0. Per codex ADVISORY: ship as soft governance surfacing only.",
+    "rule": "Every output serves the person reading it. If the customer needs explanation to understand, fix it.",
+    "precedence": "Supersedes all other principles (Founding Doctrine P0)",
+    "source_doctrine": "~/Claude/root-os/FOUNDING-DOCTRINE.md Principle 0",
+    "applies_to": "all_responses",
+    "enforcement": "convention_only",
+    "coverage_note": "policy-visible, not behavior-verified",
+    "cap_id": "cap-112",
+    "kill_switch": {
+      "env": "CUSTOMER_FOCUS_DISABLED=1",
+      "file": "~/.customer-focus-disabled"
+    }
+  },
+  "process_discipline_proto006": {
+    "$comment": "cap-116. Memory→fleet 2026-05-04. PROTO-006 anchor moved from Asawa-only memory to plugin-canonical schema.",
+    "rule": "When in doubt about whether to ship: route via dispatcher — read SUTRA-CONFIG/CLAUDE.md, classify input (TYPE/ROUTE), emit Depth + BLUEPRINT, then act. No silent skips.",
+    "proto_id": "PROTO-006",
+    "applies_to": "pre_action_decision_points",
+    "enforcement": "convention_only",
+    "coverage_note": "policy-visible, not behavior-verified",
+    "cap_id": "cap-116"
   }
 }

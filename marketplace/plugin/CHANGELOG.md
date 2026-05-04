@@ -2,6 +2,53 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.26.0 — 2026-05-04
+
+**4 Asawa-side disciplines moved from memory-only to plugin-canonical schema (D43 fleet-parity Layer 3).**
+
+Per autonomous-push codex 2026-05-04 ADVISORY #2 + #4: bundle as schema entries (no thin dedicated hook nudges) under existing `output_discipline` / new top-level keys. Coverage = **policy-visible, not behavior-verified** — explicit caveat per ADVISORY #4.
+
+### What this delivers
+
+`sutra-defaults.json` v2.26.0 adds 4 schema entries previously Asawa-only memory:
+
+```
+.customer_focus_first                       (cap-112) — Founding Doctrine P0
+.process_discipline_proto006                (cap-116) — PROTO-006 anchor
+.output_discipline.highlight_decisions      (cap-113) — ASCII-box decisions
+.output_discipline.table_shape              (cap-115) — Impact + Effort columns mandatory
+```
+
+Each entry carries `enforcement: convention_only` + `coverage_note: "policy-visible, not behavior-verified"` + `cap_id` cross-reference to CAPABILITY-MAP.md for audit traceability.
+
+### Why no new hooks
+
+Codex ADVISORY #2 explicitly rejected new dedicated hook nudges:
+
+> That is the exact "hook injects prompt" creep risk. The safer shape is: add the schema rows; extend one existing soft-hint surface; keep enforcement advisory, not blocking.
+
+Models can emit headers cosmetically without reasoning with them — adding more nudge lines per turn dilutes the prompt without proven behavior change. Schema-only additions surface the discipline in `core:output-trace` skill output and CSM dashboards without per-turn token cost.
+
+### What changed under the hood
+
+- **`sutra-defaults.json`** — 4 new entries (2 top-level, 2 nested under `output_discipline`); version `1.0.5` → `2.26.0`.
+- **`.claude-plugin/plugin.json`** — `2.25.0` → `2.26.0`.
+- **`.claude-plugin/marketplace.json`** — `2.25.0` → `2.26.0`.
+
+### CSM impact (Asawa-side)
+
+`holding/CAPABILITY-MAP.md` cap-112/113/115/116 promoted `proposed` → `shipping (policy-visible)`. cap-114 (No fabrication / no operational capacity) marked `proposed (DEFER)` per codex ADVISORY #4 — two distinct disciplines bundled, requires own split consult before promotion. capability-audit.sh re-run confirms P=YES for all 4 promoted caps.
+
+### Coexistence note
+
+This commit ships in parallel with v2.21.0 / v2.22.0 / v2.23.0 / v2.24.0 / v2.25.0 from the parallel Sutra Delivery OS workstream + D38 L1→L0 promotion wave. v2.26.0 takes the next number to coexist cleanly with all those releases.
+
+### Codex
+
+Pre-shipped ADVISORY at `.enforcement/codex-reviews/2026-05-04-everything-push-consult.md` folded directly. Post-ship batch review covers Layer 1+2+3 at end of autonomous push.
+
+---
+
 ## v2.24.0 — 2026-05-04
 
 **Sutra Delivery OS Wave 4 (FINAL) ships: fourth first-party Decisional+Generative skill `core:incremental-architect` — migration planning.**
