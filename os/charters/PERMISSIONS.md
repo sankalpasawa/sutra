@@ -111,11 +111,29 @@ Helper: `sutra/marketplace/plugin/lib/sh_trust_mode.py` — Python regex/case de
 
 **Exit ramp**: if threat model changes (multi-user, prompt injection, untrusted env), restore the v2.4 Tier 1.5 strict-allowlist matcher from git history (last commit before v2.7.0 — `sh_lex_check.py` + `_match_bash_compositional` + env-shadowing guards) and re-register it ahead of Trust Mode in `permission-gate.sh`'s dispatch.
 
-### Tier 1.7 — MCP tool auto-approve (ADR-003, v2.17.0+)
+### Tier 1.7 — MCP tool auto-approve (ADR-003, v2.17.0+; AMENDED v2.32.0)
+
+**v2.32.0 amendment** (founder direction 2026-05-04 "do it"): rule flipped from "read-allowlist + mutator-prompt" to **catastrophic-only deny**, aligning with Bash Trust Mode (v2.6.1). The v2.17 posture prompted on every MCP mutation (every Slack send, every Jira create, every Drive create_file) — that asymmetry vs Bash's catastrophic-only rule produced ~95% of remaining MCP prompt friction with no incremental safety under the single-trusted-operator threat model. Catastrophic floor preserved: deletes, code execution, mass mutations, and per-vendor high-impact actions still prompt.
 
 **Threat model**: same as Trust Mode (single trusted local operator on a personally managed machine, no adversarial prompt/file/environment injection).
 
-**Decision rule**: auto-approve MCP tools matching the read-verb allowlist regex; explicit per-vendor mutator/send denylist always overrides; everything else falls through to prompt (safe default). Implementation: `lib/mcp_trust_mode.py` (separate from `sh_trust_mode.py` to keep shell vs MCP semantics decoupled).
+**Decision rule (v2.32.0+)**: auto-approve every MCP tool EXCEPT (a) catastrophic verb tokens, (b) bulk/mass mutators, (c) per-vendor explicit catastrophes. Implementation: `lib/mcp_trust_mode.py` (separate from `sh_trust_mode.py` to keep shell vs MCP semantics decoupled).
+
+**Catastrophic verb tokens (vendor-agnostic, always prompt)**: `delete`, `destroy`, `drop`, `purge`, `wipe`, `truncate`, `eradicate`, `expunge`, `uninstall`, `deauthorize`.
+
+**Bulk / mass mutation patterns (always prompt)**: `bulk_*`, `batch_modify`, `batch_delete`, `mass_*`, `apply_labels`, `bulk_label`.
+
+**Per-vendor explicit catastrophes (TIGHT — only true catastrophes that don't reduce to a verb token)**:
+
+| Vendor | Tool | Why prompt |
+|---|---|---|
+| Playwright | `browser_run_code_unsafe`, `browser_evaluate` | JavaScript code execution in user's browser context |
+| Gmail | `_forward_` | Data exfiltration risk (email forward to arbitrary recipient) |
+| Drive | `move_to_trash`, `_trash_` | Irreversible without restore action |
+
+**v2.17 → v2.32 net behavior change**: routine create/update/send across all vendors (Slack send-message, Gmail create-draft, Calendar create-event, Atlassian createJiraIssue, HubSpot manage_crm_objects, Apollo *_create, Drive create_file, Playwright browser_click/type/navigate, etc.) now **auto-approve**. Catastrophes (deletes, mass-mutations, code-exec, data-forward) still prompt.
+
+**v2.17 legacy decision rule (deprecated)**: read-verb allowlist regex + per-vendor mutator/send denylist + safe-default-prompt-on-fall-through. Preserved in git history (last commit before v2.32.0) for emergency reversion if threat model expands to multi-actor / untrusted-env. The v2.17 denylist (Slack send/canvas, Gmail send/forward/delete/archive/label-mutations, Drive create/copy/batch-update/import, Calendar create/update/delete/respond, Apollo create/update/campaigns, Atlassian create/edit/transition/comment/worklog, HubSpot manage-crm/feedback, Playwright stateful click/fill-form/navigate/run-code-unsafe) is now redundant — only the catastrophic subset survives in v2.32.
 
 **Allowlist (read-class)** — verbs include `search`, `list`, `get`, `read`, `fetch`, `query`, `describe`, `enrich`, `match`, `status`, `info`, `view`, `metadata`, `count`, `index`, `profile`, `resolve`, `open`, `outline`, `availability`, `preview`, `download`. Anchored regex; drift-prone names like `get_or_create`, `read_write`, `fetch_and_delete` will NOT match (fall through to prompt).
 
@@ -135,11 +153,11 @@ Helper: `sutra/marketplace/plugin/lib/sh_trust_mode.py` — Python regex/case de
 
 **Decision precedence**: prompt-list ALWAYS wins over allowlist regex. Anything not matched by either falls through to prompt.
 
-### Tier 1.8 — First-time Edit/Write inside cwd (ADR-003, v2.17.0+)
+### Tier 1.8 — First-time Edit/Write/NotebookEdit inside cwd (ADR-003, v2.17.0+; v2.32 includes NotebookEdit)
 
 **Threat model**: deliberate widening of Tier 3 (acknowledged — see ADR-003 §3.2 honesty section). Same single-trusted-operator threat model as Trust Mode; recovery via git/backups/fs trash.
 
-**Decision rule**: auto-approve `Edit`/`Write`/`MultiEdit` to paths inside cwd-tree, EXCEPT entries in the prompt-list below.
+**Decision rule**: auto-approve `Edit`/`Write`/`MultiEdit`/`NotebookEdit` (NotebookEdit added v2.32.0) to paths inside cwd-tree, EXCEPT entries in the prompt-list below.
 
 **Prompt-list** (overrides allow):
 - `.claude/settings*.json` (Claude Code hardcoded guard — not bypassable anyway)
@@ -158,6 +176,24 @@ Helper: `sutra/marketplace/plugin/lib/sh_trust_mode.py` — Python regex/case de
 - `supabase/**` (Supabase backend config)
 - Anything outside cwd (cross-company / cross-project — Tier 3 preserved)
 
+### Tier 1.9 — Web Trust Mode (v2.32.0+, WebFetch / WebSearch)
+
+**Threat model**: same as Trust Mode — single trusted local operator, no adversarial network. Public http(s) URLs auto-approve; internal/metadata/private endpoints prompt to defend against SSRF and cloud-metadata exfiltration.
+
+**Decision rule**: auto-approve `WebFetch` and `WebSearch` EXCEPT WebFetch URLs targeting (a) loopback hostnames (`localhost`, `ip6-localhost`, `ip6-loopback`), (b) IP addresses parsing as loopback / private / link-local / multicast / reserved (covers `127.0.0.0/8`, `0.0.0.0`, `::1`, `fc00::/7` ULA, `fe80::/10` link-local, `169.254.0.0/16` cloud metadata service, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` RFC1918), or (c) non-http schemes (`file://`, `ftp://`, `gopher://`, `dict://`, `ldap://`, `tftp://`, `jar://`).
+
+**Rationale**: cloud-metadata service (`169.254.169.254`) is the canonical SSRF exfiltration vector for AWS / GCP / Azure credentials; RFC1918 addresses enable LAN port scanning; `file://` enables local-file disclosure (`file:///etc/passwd`). All three classes prompt; everything else (public web docs, blog posts, GitHub, npm registry, etc.) auto-approves. WebSearch has no URL parameter and auto-approves unconditionally.
+
+Helper: `sutra/marketplace/plugin/lib/web_trust_mode.py` — Python URL classifier using `ipaddress` module for accurate private-range detection. Reads PermissionRequest JSON on stdin, prints `{"prompt": bool, "category": str, "reason": str}`. Fail-safe-to-prompt on parse errors.
+
+**Supersedes Tier 3 v2.17 line "Any network call other than `sutra push` (opt-in only)"** — that absolute network ban was a privacy floor designed before WebFetch was a recurring friction class. Net behavior: outbound writes (Bash `curl POST`, telemetry push) still gated separately; inbound reads (WebFetch on documentation URLs) auto-approve when targeting public hosts.
+
+### Tier 1.10 — Subagent dispatch (Task tool, v2.32.0+)
+
+**Threat model**: subagents inherit `PreToolUse` / `PostToolUse` hooks deterministically (verified empirically 2026-04-24, archived at `holding/research/2026-04-24-subagent-contract-archive.jsonl`). Governance is enforced *inside* the subagent context at the action point — not at dispatch time. Auto-approving `Task` does not widen any policy; the subagent's own tool calls go through the same `permission-gate.sh` dispatch.
+
+**Decision rule**: auto-approve every `Task` invocation with `MATCHED_PATTERN="Task"` and `decision_basis="task-auto-approve"`. Telemetry: `tool_class=task`, `tool_family=null`. No URL/path/command to validate at dispatch level.
+
 ### Tier 2 — Permissible when feature enabled in `os/SUTRA-CONFIG.md`
 
 | Feature | Additional patterns | Enabled by |
@@ -170,11 +206,12 @@ Helper: `sutra/marketplace/plugin/lib/sh_trust_mode.py` — Python regex/case de
 
 | Pattern | Why forbidden |
 |---|---|
-| Any path outside `.claude/`, `.enforcement/`, `.context/`, or plugin cache | Sutra is governance OS, not general-purpose filesystem tool. |
-| Any network call other than `sutra push` (opt-in) | Privacy floor (PRIVACY.md). |
+| Any path outside `.claude/`, `.enforcement/`, `.context/`, or plugin cache (governance writes only) | Sutra is governance OS, not general-purpose filesystem tool. (First-time-edit inside cwd is Tier 1.8, deliberately widened — see that section.) |
+| WebFetch to loopback / RFC1918 / 169.254.* / IPv6 ULA+link-local / non-http schemes | SSRF + cloud-metadata exfiltration defense (v2.32+). Replaces v2.17's "Any network call other than `sutra push`" absolute ban — see Tier 1.9. |
 | Any access to `~/.ssh`, `~/.aws`, `~/.gnupg`, Keychain | Credentials are never in Sutra's threat model. |
 | Any `sudo`, `su`, privilege escalation | Sutra runs at user-level only. |
-| Shell combinators widening scope past Sutra operations (`;`, `&&`, `||`, `|`, `&` backgrounding, backticks, `$(...)`, redirections, `bash -c`/`sh -c`, `eval`, `exec`, control chars including newlines and CR) | Defense against command-injection inside matched patterns. |
+| MCP catastrophic verbs / bulk patterns / per-vendor catastrophes (Playwright code-exec, Gmail forward, Drive trash) | Irreversible / large-scale / high-impact mutations on shared external state (v2.32+). See Tier 1.7 for the full catastrophic deny-list. |
+| Shell combinators widening scope past Sutra operations (`;`, `&&`, `||`, `|`, `&` backgrounding, backticks, `$(...)`, redirections, `bash -c`/`sh -c`, `eval`, `exec`, control chars including newlines and CR) — within Tier 1 match path only | Defense against command-injection inside matched patterns. Trust Mode (v2.5+) evaluates first-token only by design (single-trusted-operator threat model); compound commands like `sutra ;rm -rf /` reach Trust Mode where the first token determines decision. |
 
 **Any future hook that needs a permission outside Tier 1 must update this charter FIRST, then ship the hook.**
 

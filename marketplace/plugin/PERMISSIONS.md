@@ -1,6 +1,6 @@
 # Permissions — What Sutra Asks For and Why
 
-*Plugin version: 1.13.0 · Manifest updated: 2026-04-24*
+*Plugin version: 2.32.0 · Manifest updated: 2026-05-04*
 
 Claude Code prompts before running shell commands and writing files outside the project. Sutra needs a small, auditable set of permissions to do its job. Since v1.13.0, the plugin **auto-approves its own in-scope operations on first invocation** so you don't have to paste anything or click "Allow" repeatedly.
 
@@ -85,11 +85,14 @@ Sutra's `permission-gate.sh` refuses to auto-approve any of the following, even 
 
 | Pattern | Why forbidden |
 |---|---|
-| Any path outside `.claude/`, `.enforcement/`, `.context/`, or the plugin cache | Sutra is a governance OS, not a general-purpose filesystem tool |
-| Any network call other than `sutra push` (opt-in only) | Privacy floor — see `PRIVACY.md` |
+| Any path outside `.claude/`, `.enforcement/`, `.context/`, or the plugin cache (governance writes) | Sutra is a governance OS, not a general-purpose filesystem tool |
+| WebFetch to `localhost`, `127.0.0.0/8`, `::1`, `169.254.0.0/16` (cloud metadata), `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, IPv6 ULA/link-local; non-http schemes (`file://`, `ftp://`, etc.) | SSRF defense + cloud-metadata-service exfiltration protection (v2.32+) |
 | Any access to `~/.ssh`, `~/.aws`, `~/.gnupg`, system Keychain | Credentials are outside Sutra's threat model |
 | Any `sudo`, `su`, privilege escalation | Sutra runs at user-level only |
-| Shell combinators widening scope past Sutra operations: `;`, `&&`, `\|\|`, `\|`, backticks, `$(...)`, redirections | Defense against command-injection inside matched patterns. Example: `sutra status; rm -rf /` is rejected by the hook — it falls through to a normal prompt. |
+| MCP catastrophic verbs (`delete`/`destroy`/`drop`/`purge`/`wipe`/`truncate`/`eradicate`/`expunge`/`uninstall`/`deauthorize`) | Irreversible mutations on shared external state (v2.32+) |
+| MCP bulk patterns (`bulk_*`, `batch_modify`, `batch_delete`, `mass_*`, `apply_labels`, `bulk_label`) | Scale of mutation warrants explicit consent (v2.32+) |
+| MCP per-vendor catastrophes: Playwright `browser_run_code_unsafe`/`browser_evaluate` (JS code exec), Gmail `_forward_` (data exfil), Drive `move_to_trash`/`_trash_` | Vendor-specific high-impact mutations not caught by verb rule (v2.32+) |
+| Shell combinators widening scope past Sutra operations: `;`, `&&`, `\|\|`, `\|`, backticks, `$(...)`, redirections — within Tier 1 match path only | Defense against command-injection inside matched patterns. Example: `sutra status; rm -rf /` is rejected by Tier 1's `_match_bash`. Note: Trust Mode (v2.5+) evaluates first-token only by design (single-trusted-operator threat model). |
 
 ---
 
@@ -155,6 +158,10 @@ Never requested:
 
 | Date | Change | Why |
 |---|---|---|
+| 2026-05-04 | v2.32.0 — permission posture realigned to catastrophic-only across Bash/MCP/Web/Task. WebFetch/WebSearch/Task/NotebookEdit added to dispatch; MCP rule flipped from read-allowlist+mutator-prompt to catastrophic-only deny; new `lib/web_trust_mode.py` URL classifier | Founder direction: unify posture — Bash already catastrophic-only since v2.6.1; MCP+Web were asymmetric. ~95% reduction in remaining prompt friction |
+| 2026-05-01 | v2.17.0 — Tier 1.7 (MCP read-allowlist + mutator-prompt) + Tier 1.8 (first-time edit inside cwd) | Founder direction D44: routine connector reads + project edits no longer prompt |
+| 2026-04-28 | v2.7.0 — removed v2.4 Tier 1.5 compositional matcher; Trust Mode is sole Bash matcher | Codex consult: -50% LoC, single source of truth, drift-bug elimination |
+| 2026-04-25 | v2.5.0+v2.6.1 — Tier 1.6 Trust Mode (catastrophic-only Bash rule) | Approval-fatigue feedback; 6-category prompt floor |
 | 2026-04-24 | v1.13.0 — shipped `permission-gate.sh` (PermissionRequest hook) + PERMISSIONS charter | Founder direction: eliminate recurring prompts; make manifest human-readable |
 | 2026-04-22 | v1.5.1 — human-readable grouping + `/core:permissions` command | First-pass readability improvement |
 | 2026-04-20 | v1.3.0 — `bin/sutra` refactor collapsed per-script Bash prompts to one | Reduced surface from N scripts to one dispatcher |

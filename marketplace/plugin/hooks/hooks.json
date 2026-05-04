@@ -251,7 +251,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "Bash|Write|Edit|MultiEdit|mcp__.*",
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*|WebFetch|WebSearch|Task",
         "hooks": [
           {
             "type": "command",

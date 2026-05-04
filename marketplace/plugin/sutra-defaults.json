@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sutra-os.dev/schemas/sutra-defaults.json",
   "$comment": "Canonical machine-readable policy surface. See SUTRA-DEFAULTS.md for human-readable equivalent. Per founder direction D40. v1.0.1: codex CHANGES-REQUIRED fold — kill_switches comprehensive, hooks now consume this file at runtime via jq, harness rewired.",
-  "version": "2.28.0",
+  "version": "2.32.0",
   "issued": "2026-05-04",
   "source_direction": "D40",
   "per_turn_blocks": {

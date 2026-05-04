@@ -2,6 +2,36 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.32.0 — 2026-05-04
+
+**Permission posture realigned to catastrophic-only across Bash/MCP/Web/Task. Closes ~95% of remaining prompt friction; catastrophic floor preserved.**
+
+Founder direction 2026-05-04: "do it" — unify permission posture. Bash already catastrophic-only since v2.6.1; MCP (v2.17) was prompts-on-all-mutations; WebFetch/WebSearch/Task/NotebookEdit had no rule at all (always prompted). Three actors, three different trust postures, same threat model — the asymmetry was legacy from gates being drafted in isolation.
+
+### What changed
+
+1. **`hooks/permission-gate.sh`** — dispatch case-statement now covers `WebFetch`, `WebSearch`, `Task`, `NotebookEdit` in addition to `Bash|Write|Edit|MultiEdit|mcp__.*`. WebFetch/WebSearch route to the new `_match_web()` helper (calls `lib/web_trust_mode.py`); Task auto-approves with `task-auto-approve` decision basis (subagent inherits hooks deterministically per 2026-04-24 empirical verification); NotebookEdit folded into the existing `Write|Edit|MultiEdit` branch and reuses `_match_first_time_edit` (same prompt-list as Edit/Write).
+
+2. **`lib/web_trust_mode.py`** — NEW. Reads PermissionRequest JSON on stdin, classifies the URL, prints `{"prompt": <bool>, ...}`. Auto-approves public http(s) URLs. Prompts on: `localhost`/`ip6-localhost`/`ip6-loopback`, IP addresses that resolve as loopback/private/link-local/multicast/reserved (covers `127.0.0.0/8`, `0.0.0.0`, `::1`, `fc00::/7`, `fe80::/10`, `169.254.0.0/16` cloud metadata, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and non-http schemes (`file://`, `ftp://`, `gopher://`, `dict://`, `ldap://`, `tftp://`, `jar://`). WebSearch auto-approves unconditionally (no URL involved).
+
+3. **`lib/mcp_trust_mode.py`** — REWRITTEN. v2.17 rule was "auto-approve only read verbs; everything else prompts" with a per-vendor mutator denylist on top. New rule: auto-approve every MCP tool EXCEPT (a) catastrophic verb tokens (`delete`/`destroy`/`drop`/`purge`/`wipe`/`truncate`/`eradicate`/`expunge`/`uninstall`/`deauthorize`), (b) bulk/mass mutators (`bulk_*`/`batch_modify`/`batch_delete`/`mass_*`/`apply_labels`/`bulk_label`), (c) per-vendor explicit catastrophes (Playwright `browser_run_code_unsafe` + `browser_evaluate` for JS execution; Gmail `_forward_` for data exfil; Drive `move_to_trash` + `_trash_` as irreversible-without-restore). Routine create/update/send (Slack send-message, Gmail create-draft, Calendar create-event, Atlassian createJiraIssue, HubSpot manage_crm_objects, Apollo *_create, Drive create_file, Playwright browser_click/type/navigate, etc.) now auto-approve.
+
+4. **`hooks/hooks.json`** — PermissionRequest matcher expanded from `Bash|Write|Edit|MultiEdit|mcp__.*` to `Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*|WebFetch|WebSearch|Task`.
+
+5. **`PERMISSIONS.md`** + **`sutra/os/charters/PERMISSIONS.md`** — Tier 3 ceiling amended: removed "Any network call other than `sutra push` (opt-in)" line (replaced by Web Trust Mode deny-list at Tier 1.9). Added Tier 1.7 amendment (MCP catastrophic-only rule, supersedes v2.17 read-allowlist + mutator-prompt). Added Tier 1.9 (Web Trust Mode — WebFetch/WebSearch). Added Tier 1.10 (Task subagent dispatch + NotebookEdit fold). Audit trail entry for v2.32.0 in plugin manifest.
+
+6. **`tests/permission-gate-test.sh`** — added cases for WebFetch public/loopback/private/metadata/non-http, WebSearch unconditional allow, Task allow, NotebookEdit project file vs `.env`, MCP slack_send_message/Gmail create_draft/Playwright browser_click now ALLOW (was EMPTY in v2.17), MCP Gmail delete_thread + Playwright browser_run_code_unsafe still EMPTY (catastrophic).
+
+### Threat model rationale
+
+Single trusted local operator threat model already governs Bash (the most powerful tool surface). MCP and Web inherit the same posture under the same threat model. Catastrophic floor preserved: deletes, code execution, cloud metadata access, private network scanning, force-push, sudo, fetch-and-exec, infra CLI mutations, recursive deletes outside safe-paths, and credential file writes all still prompt.
+
+### Versions
+
+`2.31.0` → `2.32.0` (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `sutra-defaults.json`).
+
+---
+
 ## v2.31.0 — 2026-05-04
 
 **backfill-helper.sh known-values lookup for cap-001..011 + version-archaeology drift fix.**

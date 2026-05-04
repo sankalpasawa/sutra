@@ -229,6 +229,36 @@ _match_first_time_edit() {
   return 0
 }
 
+# ---- v2.32+ Web Trust Mode (WebFetch / WebSearch) ----
+# Calls lib/web_trust_mode.py with the PermissionRequest payload on stdin.
+# Auto-approves public http(s) URLs; prompts on localhost / RFC1918 /
+# 169.254.* (cloud metadata) / non-http schemes (SSRF defense).
+_match_web() {
+  local helper="${CLAUDE_PLUGIN_ROOT:-}/lib/web_trust_mode.py"
+  [ -f "$helper" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+
+  local _to=""
+  if command -v timeout >/dev/null 2>&1; then _to="timeout 2"
+  elif command -v gtimeout >/dev/null 2>&1; then _to="gtimeout 2"
+  fi
+
+  local out
+  out=$(printf '%s' "$_JSON" | $_to python3 "$helper" 2>/dev/null) || return 1
+  [ -z "$out" ] && return 1
+
+  local prompt pattern
+  prompt=$(printf '%s' "$out" | jq -r 'if .prompt == false then "false" else "true" end' 2>/dev/null)
+  if [ "$prompt" = "false" ]; then
+    pattern=$(printf '%s' "$out" | jq -r '.pattern // empty' 2>/dev/null)
+    [ -z "$pattern" ] && pattern="${TOOL}(trust-mode-auto-approve)"
+    MATCHED_PATTERN="$pattern"
+    MATCHED_DECISION_BASIS="web-trust-mode"
+    return 0
+  fi
+  return 1
+}
+
 # ---- Trust Mode (v2.5+; sole Bash matcher post-v2.7.0) ----
 # After Tier 1 falls through (no narrow allowlist match), Trust Mode
 # auto-approves EVERYTHING except commands matching one of the prompt
@@ -277,7 +307,7 @@ case "$TOOL" in
       exit 0
     fi
     ;;
-  Write|Edit|MultiEdit)
+  Write|Edit|MultiEdit|NotebookEdit)
     [ -z "$FILE" ] && exit 0
     if _match_write "$FILE"; then
       MATCHED_TOOL_CLASS="write"
@@ -287,6 +317,23 @@ case "$TOOL" in
     else
       exit 0
     fi
+    ;;
+  WebFetch|WebSearch)
+    # v2.32+ Web Trust Mode: lib/web_trust_mode.py classifier.
+    # Public http(s) URLs auto-approve; localhost/RFC1918/169.254.*/non-http prompt.
+    if _match_web; then
+      MATCHED_TOOL_CLASS="web"
+    else
+      exit 0
+    fi
+    ;;
+  Task)
+    # v2.32+ Subagent dispatch — auto-approve. Subagents inherit
+    # PreToolUse/PostToolUse hooks, so governance is enforced inside
+    # the subagent at the action point (verified empirically 2026-04-24).
+    MATCHED_PATTERN="Task"
+    MATCHED_TOOL_CLASS="task"
+    MATCHED_DECISION_BASIS="task-auto-approve"
     ;;
   mcp__*)
     # ADR-003: MCP tool auto-approve via lib/mcp_trust_mode.py
