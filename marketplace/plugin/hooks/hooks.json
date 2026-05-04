@@ -1,5 +1,5 @@
 {
-  "description": "Sutra governance hooks \u2014 depth-marker gate, estimation logging, version banners, + C3c token-compression bundle. Phase-1 activation adds: session-logger, artifact-check, estimation-enforcement, log-triage, log-skill-feedback, measurement-logger, compliance-tracker. v1.13.0 adds permission-gate (PermissionRequest meta-permission) per PERMISSIONS charter. v2.0.0 adds feedback-auto-override (privacy v2 signals-only capture; codex-reviewed DIRECTIVE-ID 1777036275).",
+  "description": "Sutra governance hooks — depth-marker gate, estimation logging, version banners, + C3c token-compression bundle. Phase-1 activation adds: session-logger, artifact-check, estimation-enforcement, log-triage, log-skill-feedback, measurement-logger, compliance-tracker. v1.13.0 adds permission-gate (PermissionRequest meta-permission) per PERMISSIONS charter. v2.0.0 adds feedback-auto-override (privacy v2 signals-only capture; codex-reviewed DIRECTIVE-ID 1777036275).",
   "hooks": {
     "SessionStart": [
       {
@@ -38,6 +38,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start-rotate.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-sessionstart-banner.sh",
+            "timeout": 3
           }
         ]
       }

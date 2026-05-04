@@ -1,5 +1,57 @@
 # Changelog
 
+> **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
+
+## v2.21.0 — 2026-05-04
+
+**CSM SessionStart banner — first execution of CSM TODO #2 visibility surface (D43).**
+
+Per D43 + codex P2 surfacing path (CSM TODO #2, deadline 2026-05-15). 5-line banner on SessionStart shows capability bucket counts, pending fleet-parity count, latest audit timestamp, recurring-instrument pointer, and how to run the audit on demand. Closes the visibility loop the audit instrument (`holding/scripts/capability-audit.sh`, shipped same day in commit da41958) opened.
+
+### What this delivers
+
+For Asawa CEO sessions: every session start emits one screen of CSM state, so capability gaps are visible without manual `cat holding/CAPABILITY-MAP.md`.
+
+```
+[CSM·D43] Buckets: 13 shipping · 15 proposed · 5 asawa-only · 6 sutra-internal
+[CSM·D43] Pending fleet-parity (cap-1xx proposed): 15; deadlines 2026-05-08 → 2026-06-01
+[CSM·D43] Latest audit: 2026-05-04T06:01:38Z (audit jsonl: 31 rows)
+[CSM·D43] Recurring instrument: holding/scripts/capability-audit.sh (L1, promote-to plugin/scripts/ by 2026-06-01)
+[CSM·D43] Run audit on demand: bash holding/scripts/capability-audit.sh
+```
+
+### Behavior modes
+
+- **Asawa-mode** (file `holding/CAPABILITY-MAP.md` present): full 5-line banner.
+- **T4-mode** (file absent per D33 firewall): silent skip (`exit 0` before any output).
+- **Kill-switch**: `CSM_BANNER_DISABLED=1` env or `~/.csm-banner-disabled` file.
+
+T4 fleet doesn't carry `CAPABILITY-MAP.md` — it's Asawa-internal governance per D33. T4 visibility into the capability surface ships separately via the `/sutra-capability` skill (CSM TODO #3, deadline 2026-06-01).
+
+### What changed under the hood
+
+- **New hook** `sutra/marketplace/plugin/hooks/csm-sessionstart-banner.sh` (~60 LOC). Reads `holding/CAPABILITY-MAP.md` for bucket/status counts (regex grep on cap-### table rows) and `holding/state/capability-map-audit.jsonl` for latest audit timestamp (jq path lookup). Soft-fail throughout (`set -u` only, never `-e`); never blocks SessionStart.
+- **`hooks/hooks.json`** — `SessionStart[0].hooks` array gains entry for the banner with timeout=3s. Now 8 entries total (was 7).
+- **`.claude-plugin/plugin.json`** — `2.20.0` → `2.21.0`.
+- **`.claude-plugin/marketplace.json`** — `2.20.0` → `2.21.0`.
+
+### Verification
+
+Banner tested in 3 modes pre-commit:
+- Asawa-mode: emits 5 lines with real counts (13 shipping / 15 proposed / 5 asawa-only / 6 sutra-internal).
+- T4-mode (no CAPABILITY-MAP.md): silent (exit 0).
+- Kill-switch (`CSM_BANNER_DISABLED=1`): silent (exit 0).
+
+### Codex
+
+Not pre-consulted. Mechanical surfacing hook, reversible, ~60 LOC, soft-fail by design. Per Sutra Engine charter §16 amendment B (codex review at abstraction-freeze points, not per micro-step) and `[Right-Effort Discipline]` (surgical scope only). Post-ship review available on request.
+
+### Coexistence note
+
+This commit ships in parallel with v2.20.0 (Sutra Delivery OS Wave 1, `core:test-strategy` skill — separate working-tree changes by parallel Delivery OS workstream). v2.21.0 takes the next number to avoid collision. Both releases stack cleanly: v2.20.0 ships the new skill, v2.21.0 ships the new hook + version bump.
+
+---
+
 ## v2.20.0 — 2026-05-04
 
 **Sutra Delivery OS Wave 1 ships: first first-party Generative+Decisional skill `core:test-strategy`.**
