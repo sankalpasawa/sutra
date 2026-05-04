@@ -80,6 +80,10 @@ import {
   appendDecisionProvenanceLog,
   buildEmergenceDecisionProvenance,
 } from './emergence-provenance.js'
+import {
+  BASELINE_PREDICATE_REGISTRY,
+  type PredicateRegistry,
+} from './pnc-predicate.js'
 
 export interface NativeEngineOptions {
   readonly connector_options?: HSutraConnectorOptions
@@ -94,6 +98,22 @@ export interface NativeEngineOptions {
    * starter-kit charters via loadStarterKit().
    */
   readonly charters?: ReadonlyArray<Charter>
+  /**
+   * v1.3.0 W5 — predicate atom registry for the PNC admission gate. Forwarded
+   * to lite-executor as `pnc_registry`. Default: `BASELINE_PREDICATE_REGISTRY`
+   * (always_true / always_false). Production deployments compose application-
+   * specific atoms (`is_morning_window`, `weekly_window`, etc.) via Map
+   * extension over the baseline.
+   */
+  readonly pnc_registry?: PredicateRegistry
+  /**
+   * v1.3.0 W5 — frozen evaluation context passed to PNC atom evaluators.
+   * Forwarded to lite-executor as `pnc_ctx`. Default: empty frozen object.
+   * Window markers (e.g. { time_of_day, iso_week }) belong here, NOT inside
+   * atom evaluator function bodies (codex W5 advisory E determinism — atoms
+   * read pre-computed markers; never call Date.now/random/I/O).
+   */
+  readonly pnc_ctx?: Readonly<Record<string, unknown>>
   /** Sink for rendered lines. Default: console.log. */
   readonly write?: (line: string) => void
   /** Sink for non-fatal errors. Default: console.error. */
@@ -174,6 +194,15 @@ export class NativeEngine {
    * emits one event per match.
    */
   private readonly chartersById: Map<string, Charter>
+  /**
+   * v1.3.0 W5 — predicate registry forwarded to lite-executor as `pnc_registry`
+   * on every routed run. Default = BASELINE_PREDICATE_REGISTRY.
+   */
+  private readonly pncRegistry: PredicateRegistry
+  /**
+   * v1.3.0 W5 — frozen PNC evaluation context. Default = empty frozen object.
+   */
+  private readonly pncCtx: Readonly<Record<string, unknown>>
   private readonly write: (line: string) => void
   private readonly onError: (err: Error) => void
   private executionCounter = 0
@@ -219,6 +248,8 @@ export class NativeEngine {
     const starterCharters = options.charters ?? kit.charters
     this.workflowsById = new Map(starterWorkflows.map((w) => [w.id, w]))
     this.chartersById = new Map(starterCharters.map((c) => [c.id, c]))
+    this.pncRegistry = options.pnc_registry ?? BASELINE_PREDICATE_REGISTRY
+    this.pncCtx = options.pnc_ctx ?? Object.freeze({})
 
     for (const t of starterTriggers) {
       try {
@@ -423,6 +454,9 @@ export class NativeEngine {
         workflow_run_seq: this.executionCounter,
         user_kit_options_for_dp: this.userKitOptions,
         charter_id: charterId,
+        // v1.3.0 W5 — wire PNC admission gate on routed runs.
+        pnc_registry: this.pncRegistry,
+        pnc_ctx: this.pncCtx,
         approval_persist: (rec) => {
           try {
             persistApproval(rec, this.userKitOptions)
@@ -838,6 +872,15 @@ export class NativeEngine {
         workflow_run_seq: this.executionCounter,
         user_kit_options_for_dp: this.userKitOptions,
         charter_id: charterId,
+        // v1.3.0 W5 — wire PNC admission gate on resumed runs too. Note: the
+        // precondition gate fires only when the executor enters at step 1;
+        // resume runs skip past step 1 via resume_from_step_index, so the
+        // precondition_check is NOT re-emitted on resume (correct semantics —
+        // the workflow was already admitted on the original run). The
+        // postcondition gate may still fire if the resumed run reaches the
+        // workflow_completed site.
+        pnc_registry: this.pncRegistry,
+        pnc_ctx: this.pncCtx,
         // Resume MUST skip steps 1..paused_step_index-1 so the gated step
         // (paused_step_index) is the first to execute. The bypass on
         // isResumeFirstStep skips its requires_approval gate.
@@ -942,6 +985,10 @@ export class NativeEngine {
         workflow_run_seq: this.executionCounter,
         user_kit_options_for_dp: this.userKitOptions,
         charter_id: charterId,
+        // v1.3.0 W5 — wire PNC gate on pause-resume too (postcondition only —
+        // precondition skipped because resume_from_step_index > 0).
+        pnc_registry: this.pncRegistry,
+        pnc_ctx: this.pncCtx,
         resume_from_step_index: rec.step_index,
         approval_persist: (r) => {
           persistApproval(r, this.userKitOptions)
