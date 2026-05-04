@@ -59,6 +59,8 @@ import {
   updateApprovalStatus,
 } from '../persistence/execution-approval-ledger.js'
 import { CadenceScheduler, type CadenceSpec as SchedulerCadenceSpec } from '../engine/cadence-scheduler.js'
+import { validateCutoverContract } from '../engine/cutover-validator.js'
+import { dryRunApplyCutover } from '../engine/cutover-applier.js'
 import { formatEvent } from '../renderers/terminal-events.js'
 import type { EngineEvent } from '../types/engine-event.js'
 import type { StepAction, StepFailureAction, WorkflowStep } from '../types/index.js'
@@ -109,6 +111,8 @@ export async function main(ctx: CommandContext): Promise<number> {
       return cmdWorkflow(ctx)
     case 'tenant':
       return cmdTenant(ctx)
+    case 'cutover':
+      return cmdCutover(ctx)
     case 'version':
     case '--version':
     case '-v':
@@ -926,6 +930,125 @@ function cmdTenantList(ctx: CommandContext): number {
   }
 }
 
+// ============================================================================
+// v1.3.0 W6 — cutover validate + dry-run subcommands
+// ============================================================================
+
+/**
+ * v1.3.0 W6 (cutover engine) — `sutra-native cutover validate <contract.json>`
+ * + `sutra-native cutover dry-run <contract.json>`.
+ *
+ * The cutover-validator + cutover-applier (dry-run) are pure functions over
+ * the CutoverContract zod-validated shape. The CLI is the founder-facing
+ * surface: read the JSON, run the validator/dry-run, print result, exit
+ *   0 — success
+ *   2 — validation error (contract structurally invalid)
+ *   3 — io error (file missing / unreadable / not JSON)
+ *
+ * Apply-with-rollback is DEFERRED to v1.x.1 per plan §6 + codex implicit
+ * advisory. v1.3.0 ships observe + plan; never mutate.
+ */
+function cmdCutover(ctx: CommandContext): number {
+  const sub = ctx.argv[1] ?? ''
+  if (sub === 'validate') {
+    return cmdCutoverValidate(ctx)
+  }
+  if (sub === 'dry-run') {
+    return cmdCutoverDryRun(ctx)
+  }
+  ctx.stderr(`cutover: unknown subcommand "${sub}" (expected: validate|dry-run)\n`)
+  return 2
+}
+
+function readContractFile(path: string): { ok: true; data: unknown } | { ok: false; reason: string } {
+  if (!existsSync(path)) {
+    return { ok: false, reason: `file not found: ${path}` }
+  }
+  let raw: string
+  try {
+    raw = readFileSync(path, 'utf8')
+  } catch (err) {
+    return { ok: false, reason: `read failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    return { ok: false, reason: `JSON parse failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  return { ok: true, data: parsed }
+}
+
+function cmdCutoverValidate(ctx: CommandContext): number {
+  const { positional } = parseFlags(ctx.argv.slice(1))
+  const path = positional[0]
+  if (!path) {
+    ctx.stderr('cutover validate: contract path required (e.g. sutra-native cutover validate ./cutover.json)\n')
+    return 2
+  }
+  const read = readContractFile(path)
+  if (!read.ok) {
+    ctx.stderr(`cutover validate: ${read.reason}\n`)
+    return 3
+  }
+  const result = validateCutoverContract(read.data)
+  if (result.valid) {
+    ctx.stdout(`+ Cutover contract VALID (${path})\n`)
+    return 0
+  }
+  ctx.stderr(`cutover validate: contract INVALID (${path}):\n`)
+  for (const e of result.errors) {
+    ctx.stderr(`  - ${e}\n`)
+  }
+  return 2
+}
+
+function cmdCutoverDryRun(ctx: CommandContext): number {
+  const { positional } = parseFlags(ctx.argv.slice(1))
+  const path = positional[0]
+  if (!path) {
+    ctx.stderr('cutover dry-run: contract path required (e.g. sutra-native cutover dry-run ./cutover.json)\n')
+    return 2
+  }
+  const read = readContractFile(path)
+  if (!read.ok) {
+    ctx.stderr(`cutover dry-run: ${read.reason}\n`)
+    return 3
+  }
+  const plan = dryRunApplyCutover(read.data)
+  if (!plan.valid) {
+    ctx.stderr(`cutover dry-run: contract INVALID (${path}):\n`)
+    for (const e of plan.errors) {
+      ctx.stderr(`  - ${e}\n`)
+    }
+    return 2
+  }
+  // Render the plan
+  const lines: string[] = []
+  lines.push(`CUTOVER PLAN (mode=${plan.mode})`)
+  if (plan.source_engine === '' && plan.target_engine === '') {
+    lines.push('  (no cutover required — contract is null)')
+  } else {
+    lines.push(`  source_engine:        ${plan.source_engine}`)
+    lines.push(`  target_engine:        ${plan.target_engine}`)
+    lines.push(`  canary_window:        ${plan.canary_window}${plan.canary_window_seconds !== null ? ` (${plan.canary_window_seconds}s)` : ''}`)
+    lines.push(`  rollback_gate:        ${plan.rollback_gate}`)
+    lines.push(`  behavior_invariants:  ${plan.behavior_invariants.length}`)
+    for (const inv of plan.behavior_invariants) {
+      lines.push(`    - ${inv}`)
+    }
+    lines.push(`  planned_mutations:    ${plan.planned_mutations.length}`)
+    for (const m of plan.planned_mutations) {
+      lines.push(`    [${m.target.padEnd(13)}] ${m.kind}${m.reversible ? ' (reversible)' : ''}`)
+      lines.push(`      ${m.description}`)
+    }
+  }
+  lines.push('')
+  lines.push('NOTE: dry-run only. Apply-with-rollback is deferred to v1.x.1.')
+  ctx.stdout(lines.join('\n') + '\n')
+  return 0
+}
+
 /**
  * cmdDaemon — INTERNAL: run NativeEngine in foreground until SIGTERM.
  *
@@ -1373,6 +1496,16 @@ function usage(): string {
     '                     unioning with Workflow.custody_owner; per-tenant',
     '                     domain + workflow counts.',
     '',
+    'Cutover engine (v1.3.0 W6 — observe + plan, dry-run only):',
+    '  cutover validate <contract.json>',
+    '                     Validate a CutoverContract structurally.',
+    '                     Exit 0=valid, 2=invalid, 3=io error.',
+    '  cutover dry-run <contract.json>',
+    '                     Print the parallel-canary mutation plan that',
+    '                     WOULD apply (zero side effects). Exit 0=plan,',
+    '                     2=invalid, 3=io error. Apply-with-rollback is',
+    '                     deferred to v1.x.1.',
+    '',
     'Environment:',
     '  SUTRA_NATIVE_HOME  Base dir (default: ~/.sutra-native; user-kit at $HOME/user-kit/)',
     '  SUTRA_NATIVE_PID   Override PID file path entirely',
@@ -1398,6 +1531,9 @@ export {
   cmdWorkflowCancel,
   cmdTenant,
   cmdTenantList,
+  cmdCutover,
+  cmdCutoverValidate,
+  cmdCutoverDryRun,
   formatBanner,
   formatStatus,
   usage,
