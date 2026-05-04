@@ -8,6 +8,11 @@
 #   curl -fsSL https://sankalpasawa.github.io/sutra/install.sh | bash -s -- -d ~/work/foo
 #
 # What it does (idempotent — safe to re-run):
+#   0. (macOS only) Ensures Xcode Command Line Tools are installed before any
+#      git invocation. On a fresh Mac /usr/bin/git is a stub that triggers a
+#      GUI dialog on first use; without this pre-flight, marketplace add
+#      fails with a cryptic rc=1. Polls until CLT is ready (max 20 min) or
+#      gives clean re-run instructions on timeout.
 #   1. Picks a project directory (default ./sutra). If it already exists,
 #      asks (S)tay / (N)ew name / (A)bort. Override via -d <dir> or
 #      $SUTRA_TARGET_DIR; -y reuses silently.
@@ -58,7 +63,7 @@ IFS=$'\n\t'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-SUTRA_VERSION="0.4.0"  # this installer's version (NOT the plugin's — see header)
+SUTRA_VERSION="0.5.0"  # this installer's version (NOT the plugin's — see header)
 SUTRA_MARKETPLACE="sankalpasawa/sutra"   # source spec for `marketplace add` (GitHub path)
 SUTRA_MARKETPLACE_NAME="sutra"           # registered name in Claude (from marketplace.json .name)
 SUTRA_PLUGIN="core@sutra"
@@ -161,6 +166,74 @@ trap on_error ERR
 # -----------------------------------------------------------------------------
 has_tty() {
   ( exec 9</dev/tty ) 2>/dev/null
+}
+
+# -----------------------------------------------------------------------------
+# macOS Command Line Tools pre-flight
+#
+# On a fresh Mac, /usr/bin/git is a stub. The first `git` invocation triggers
+# a GUI dialog asking the user to install Command Line Tools (CLT). Without
+# this pre-flight, marketplace add (Step 3) calls `git clone` internally and
+# the user gets a confusing dialog mid-install with rc=1 if they don't
+# complete it. Detect missing CLT up-front, trigger the install with clear
+# scope/size messaging, and poll until ready.
+#
+# Detection uses `xcode-select -p` (cheap, no side effects) — NOT `git
+# --version`, which itself triggers the dialog and would defeat the purpose.
+#
+# No-op on Linux + when CLT or full Xcode is already present. Honors
+# NON_INTERACTIVE (-y) by failing loudly instead of triggering a GUI dialog
+# that nobody is there to accept.
+# -----------------------------------------------------------------------------
+ensure_macos_clt() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 0
+  if xcode-select -p >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    die "macOS Command Line Tools missing — required for git. Run: xcode-select --install (wait for GUI to finish), then re-run this installer."
+  fi
+
+  log ""
+  warn "macOS Command Line Tools not detected (required for git)."
+  log "  Marketplace add calls 'git clone' under the hood; without CLT it"
+  log "  would fail mid-install with a cryptic GUI dialog. Triggering the"
+  log "  CLT install now."
+  log ""
+  log "  Size:   ~700 MB download · ~2-3 GB installed · 5-15 min"
+  log "  Scope:  CLT only (git, clang, make) — NOT full Xcode IDE (~15 GB)"
+  log "  After:  install resumes automatically when CLT finishes."
+  log ""
+
+  # Triggers the GUI dialog and returns immediately. Non-zero return is
+  # informational (e.g. CLT already installed — we already checked, so this
+  # case is rare; or no GUI subsystem on a headless Mac).
+  xcode-select --install 2>&1 | sed 's/^/[sutra]   /' >&2 || true
+
+  log ""
+  log "Polling for CLT completion (every 15s, max 20 min)..."
+  log "  Accept the GUI dialog. Ctrl+C is safe — re-running this installer is idempotent."
+  log ""
+
+  local i=0
+  local max=80   # 80 * 15s = 20 min
+  while [[ ${i} -lt ${max} ]]; do
+    if xcode-select -p >/dev/null 2>&1; then
+      ok "Command Line Tools ready: $(xcode-select -p)"
+      return 0
+    fi
+    sleep 15
+    i=$((i+1))
+    if [[ $((i % 4)) -eq 0 ]]; then
+      printf '%s[sutra]   waiting... %dm elapsed (max 20m)%s\n' "${C_GREY}" $((i/4)) "${C_RESET}" >&2
+    fi
+  done
+
+  warn "Timed out waiting for Command Line Tools (20 min)."
+  warn "  Once the GUI install finishes, re-run:"
+  warn "    curl -fsSL https://sankalpasawa.github.io/sutra/install.sh | bash"
+  die "aborting — re-run after CLT install completes."
 }
 
 # -----------------------------------------------------------------------------
@@ -817,6 +890,12 @@ main() {
   log "OS: ${os}"
   log "Shell rc: $(detect_shell_rc)"
   log "Target dir: ${TARGET_DIR}"
+
+  # macOS-only: ensure Xcode Command Line Tools are present BEFORE any step
+  # that invokes git. Without this, marketplace add (which calls `git clone`
+  # internally) would fail mid-install with a GUI dialog the user may not
+  # complete in time. No-op on Linux and when CLT is already installed.
+  ensure_macos_clt
 
   step_select_target
   step_install_claude
