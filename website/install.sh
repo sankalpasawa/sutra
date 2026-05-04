@@ -22,9 +22,12 @@
 #   8. Writes a sentinel at ~/.sutra/installed-via-script so the SessionStart
 #      hook auto-activates /core:start on the first session in this project.
 #   9. Merges the Sutra permission allowlist into ~/.claude/settings.local.json.
-#  10. Launches `claude` inside the chosen directory. The SessionStart hook
-#      fires /core:start; the just-installed plugin loads from cache. No
-#      manual /reload-plugins needed.
+#  10. Prints clear "Next: cd <target> && claude" instructions. Default is
+#      print-only — auto-exec under `curl ... | bash` is the textbook fragile
+#      pattern: claude's interactive UI may render but keystrokes drop in
+#      some terminals (rustup/bun/nvm avoid for the same reason). The
+#      --launch flag opts in to the exec path. The SessionStart hook fires
+#      /core:start on the first `claude` session in the project regardless.
 #
 # Re-run semantics (founder direction 2026-05-04, "the person might have used
 # it once, so you re-run everything"): every step is idempotent. Folder exists
@@ -52,7 +55,7 @@ IFS=$'\n\t'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-SUTRA_VERSION="0.2.0"  # this installer's version (NOT the plugin's — see header)
+SUTRA_VERSION="0.3.0"  # this installer's version (NOT the plugin's — see header)
 SUTRA_MARKETPLACE="sankalpasawa/sutra"   # source spec for `marketplace add` (GitHub path)
 SUTRA_MARKETPLACE_NAME="sutra"           # registered name in Claude (from marketplace.json .name)
 SUTRA_PLUGIN="core@sutra"
@@ -66,6 +69,7 @@ LAST_CMD=""
 # Target-directory selection state (resolved in step_select_target)
 TARGET_DIR=""
 NON_INTERACTIVE=0
+LAUNCH_OPT_IN=0
 TOTAL_STEPS=7
 
 if [[ "${SUTRA_INSTALL_VERBOSE:-0}" == "1" ]]; then
@@ -73,12 +77,60 @@ if [[ "${SUTRA_INSTALL_VERBOSE:-0}" == "1" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
-# Output helpers (no emojis per house style; stderr for logs)
+# ANSI color palette — modeled on Native installer (sutra/website/native/install.sh)
+#
+# Auto-disabled when neither stdout nor stderr is a TTY (piped logs) or when
+# NO_COLOR is set (https://no-color.org). Most prints go to stderr so we
+# enable colors if EITHER channel is interactive — codex P2-A fold (gating
+# only on `-t 1` would wrongly disable colors when stdout is redirected but
+# stderr stays interactive, which is the common `... 2>&1 | tee` shape).
 # -----------------------------------------------------------------------------
-log()  { printf '[sutra] %s\n' "$*" >&2; }
-warn() { printf '[sutra][warn] %s\n' "$*" >&2; }
-die()  { printf '[sutra][error] %s\n' "$*" >&2; exit 1; }
-step() { CURRENT_STEP="$1"; log "--- $1 ---"; }
+if { [ -t 1 ] || [ -t 2 ]; } && [ -z "${NO_COLOR:-}" ]; then
+  C_RESET=$'\033[0m'
+  C_DIM=$'\033[2m'
+  C_BOLD=$'\033[1m'
+  C_GOLD=$'\033[38;5;179m'
+  C_BLUE=$'\033[38;5;75m'
+  C_GREEN=$'\033[38;5;78m'
+  C_RED=$'\033[38;5;203m'
+  C_GREY=$'\033[38;5;245m'
+else
+  C_RESET= C_DIM= C_BOLD= C_GOLD= C_BLUE= C_GREEN= C_RED= C_GREY=
+fi
+
+# -----------------------------------------------------------------------------
+# Output helpers (no emojis per house style; stderr for logs unless noted)
+# -----------------------------------------------------------------------------
+say()  { printf '%s\n' "$*"; }                                                                # stdout, no prefix
+log()  { printf '%s[sutra]%s %s\n' "$C_GREY" "$C_RESET" "$*" >&2; }                           # routine info
+ok()   { printf '%s[sutra]%s %s ok %s %s\n' "$C_GREY" "$C_RESET" "$C_GREEN" "$C_RESET" "$*" >&2; }
+warn() { printf '%s[sutra]%s %swarn%s %s\n' "$C_GREY" "$C_RESET" "$C_GOLD" "$C_RESET" "$*" >&2; }
+die()  { printf '%s[sutra]%s %sfail%s %s\n' "$C_GREY" "$C_RESET" "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
+step() { CURRENT_STEP="$1"; printf '\n%s==>%s %s%s%s\n' "$C_BLUE" "$C_RESET" "$C_BOLD" "$1" "$C_RESET" >&2; }
+hr()   { printf '%s%s%s\n' "$C_GREY" "------------------------------------------------------------" "$C_RESET" >&2; }
+
+# -----------------------------------------------------------------------------
+# ASCII banner — printed once at the start of main(). Doubles as version-label
+# clarification: "installer script v0.3.0 · plugin: latest from marketplace"
+# closes founder confusion (2026-05-04, "why does it say 0.2.0?") that 0.x
+# refers to the installer, not the Sutra plugin (currently v2.27.0+).
+# -----------------------------------------------------------------------------
+banner() {
+  printf '%s' "$C_GOLD"
+  cat <<'BANNER'
+
+   ____        _
+  / ___| _   _| |_ _ __ __ _
+  \___ \| | | | __| '__/ _` |
+   ___) | |_| | |_| | | (_| |
+  |____/ \__,_|\__|_|  \__,_|
+BANNER
+  printf '%s\n' "$C_RESET"
+  printf '  %sSutra OS%s — chief of staff for founders building with Claude Code.\n' \
+    "$C_BOLD" "$C_RESET"
+  printf '  %sinstaller script v%s · will install latest %score@sutra%s from marketplace%s\n\n' \
+    "$C_GREY" "$SUTRA_VERSION" "$C_GOLD" "$C_GREY" "$C_RESET"
+}
 
 # -----------------------------------------------------------------------------
 # Error trap — shows which step died and the last command's exit code.
@@ -127,6 +179,10 @@ Usage:
 Flags (after `bash -s --`):
   -d, --dir <path>   Target directory (overrides $SUTRA_TARGET_DIR + default ./sutra)
   -y, --yes          Non-interactive: reuse existing dir, skip claude launch
+                     (precedence: -y always wins over --launch — automation safety)
+  --launch           After install, attempt `exec claude` in the target dir.
+                     OFF by default — auto-exec under curl|bash hangs in some
+                     terminals (rustup/bun/nvm avoid for the same reason).
   -h, --help         Print this help and exit
 
 Environment:
@@ -140,7 +196,9 @@ What it does (idempotent — safe to re-run):
   4. Installs OR updates the core@sutra plugin.
   5. Writes the first-run sentinel; the SessionStart hook auto-fires /core:start.
   6. Merges the Sutra permission allowlist into ~/.claude/settings.local.json.
-  7. Launches `claude` inside the chosen directory (skipped under -y / no claude / no tty).
+  7. Prints `cd <target> && claude` instructions. Default is print-only —
+     auto-exec under curl|bash hangs in some terminals (claude UI renders
+     but keystrokes drop). The --launch flag opts in to the exec path.
 
 Re-runs safely from any state: marketplace already added → continues + refreshes;
 plugin already installed → updates to latest; sentinel re-armed; permissions deduped.
@@ -153,6 +211,7 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -y|--yes) NON_INTERACTIVE=1 ;;
+      --launch) LAUNCH_OPT_IN=1 ;;
       -d|--dir)
         shift
         # Reject empty AND reject flag-shaped next tokens (e.g. `-d --yes`)
@@ -206,7 +265,7 @@ step_select_target() {
 
   if [[ ! -e "${TARGET_DIR}" ]]; then
     mkdir -p "${TARGET_DIR}"
-    log "Created: ${TARGET_DIR}"
+    ok "Created: ${TARGET_DIR}"
   else
     if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
       log "Folder exists, reusing (non-interactive): ${TARGET_DIR}"
@@ -237,7 +296,7 @@ step_select_target() {
             die "${TARGET_DIR} also exists — re-run and pick another name."
           fi
           mkdir -p "${TARGET_DIR}"
-          log "Created: ${TARGET_DIR}"
+          ok "Created: ${TARGET_DIR}"
           ;;
         *)
           log "Reusing existing folder: ${TARGET_DIR}"
@@ -339,7 +398,7 @@ step_install_claude() {
   rc_file="$(detect_shell_rc)"
 
   if command -v claude >/dev/null 2>&1; then
-    log "Claude Code already installed ($(command -v claude))."
+    ok "Claude Code already installed ($(command -v claude))."
   else
     log "Claude Code not found — installing via Anthropic installer."
     # Pipe through bash explicitly so set -e in parent shell doesn't fight sub-installer.
@@ -367,7 +426,7 @@ step_marketplace_add() {
   out="$(claude plugin marketplace add "${SUTRA_MARKETPLACE}" 2>&1)" || rc=$?
 
   if [[ ${rc} -eq 0 ]]; then
-    log "Marketplace added: ${SUTRA_MARKETPLACE}"
+    ok "Marketplace added: ${SUTRA_MARKETPLACE}"
   elif printf '%s' "${out}" | grep -iqE 'already (added|exists|present)|duplicate'; then
     log "Marketplace already added — continuing."
   else
@@ -395,7 +454,7 @@ step_plugin_install() {
   out="$(claude plugin install "${SUTRA_PLUGIN}" 2>&1)" || rc=$?
 
   if [[ ${rc} -eq 0 ]]; then
-    log "Plugin installed: ${SUTRA_PLUGIN}"
+    ok "Plugin installed: ${SUTRA_PLUGIN}"
   elif printf '%s' "${out}" | grep -iqE 'already (installed|present)'; then
     # Returning user — bump to whatever the just-refreshed marketplace cache
     # advertises. Without this, the user keeps whatever version was on disk,
@@ -417,7 +476,7 @@ step_plugin_install() {
   if [[ -d "${plugin_dir}" ]]; then
     local latest_version
     latest_version=$(ls -1 "${plugin_dir}" 2>/dev/null | sort -V | tail -1)
-    [[ -n "${latest_version}" ]] && log "Active core@sutra version: v${latest_version}"
+    [[ -n "${latest_version}" ]] && ok "Active core@sutra version: v${latest_version}"
   fi
 }
 
@@ -550,11 +609,11 @@ step_write_permissions() {
 
   if command -v jq >/dev/null 2>&1; then
     write_settings_with_jq "${CLAUDE_SETTINGS_FILE}"
-    log "Allowlist merged into ${CLAUDE_SETTINGS_FILE} (via jq)."
+    ok "Allowlist merged into ${CLAUDE_SETTINGS_FILE} (via jq)."
   elif command -v python3 >/dev/null 2>&1; then
     log "jq not found — using python3 to merge JSON."
     if write_settings_with_python "${CLAUDE_SETTINGS_FILE}"; then
-      log "Allowlist merged into ${CLAUDE_SETTINGS_FILE} (via python3)."
+      ok "Allowlist merged into ${CLAUDE_SETTINGS_FILE} (via python3)."
     else
       die "JSON merge failed. Install jq (brew install jq / apt-get install jq) and re-run, or manually paste the snippet from https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PERMISSIONS.md"
     fi
@@ -579,33 +638,41 @@ step_write_sentinel() {
   step "Step 5/${TOTAL_STEPS}: first-run sentinel"
   mkdir -p "${SUTRA_HOME}"
   date +%s > "${SUTRA_INSTALL_SENTINEL}"
-  log "Sentinel written: ${SUTRA_INSTALL_SENTINEL}"
+  ok "Sentinel written: ${SUTRA_INSTALL_SENTINEL}"
 }
 
 # -----------------------------------------------------------------------------
-# Step 7 — launch Claude Code inside the chosen directory
+# Step 7 — opt-in claude launch (--launch flag only)
 #
-# Founder direction 2026-05-04: "you directly launch it." The folder selection
-# in step 1 was the consent moment; do not ask a second time. Skip only when:
-#   * NON_INTERACTIVE (-y) — caller is scripting, return control with hint
-#   * `claude` not on PATH — install must have failed silently; warn + hint
-#   * /dev/tty unavailable — exec'ing claude without a TTY would hang
+# Founder direction 2026-05-04 (revised after hang report): the previous
+# default of `exec </dev/tty; exec claude` rendered claude's UI but dropped
+# keystrokes in some terminals (macOS Terminal.app confirmed). Auto-exec
+# under `curl ... | bash` is the textbook fragile pattern — rustup, bun,
+# nvm all avoid it for the same reason. Print-only is the safe default;
+# `--launch` opts in for power users who know their terminal handles it.
 #
-# We `exec </dev/tty` to re-attach stdin (the curl pipe owns stdin until now)
-# and then `exec claude` so the script process is replaced — claude inherits a
-# clean process tree and the install pipe terminates cleanly. After exec the
-# script does not return.
+# Precedence (codex P2-B fold):
+#   * NON_INTERACTIVE (-y) — always wins; never launch under automation
+#   * default (no --launch) — no-op; print_banner above is the canonical
+#     "Sutra ready, next: cd && claude" surface
+#   * --launch              — try the exec with explicit warning + escape hint
 # -----------------------------------------------------------------------------
 step_launch_claude() {
-  step "Step 7/${TOTAL_STEPS}: launch Claude Code"
-
   local hint_cmd="cd ${TARGET_DIR} && claude"
 
+  # -y wins. Skip silently — print_banner already printed the next-steps block.
   if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
-    log "Non-interactive (-y) — skipping launch."
-    log "  Next: ${hint_cmd}"
     return 0
   fi
+
+  # Default path: print_banner already covered the next steps above. No-op.
+  # (Codex P2-C fold — was duplicating the banner's guidance.)
+  if [[ ${LAUNCH_OPT_IN} -eq 0 ]]; then
+    return 0
+  fi
+
+  # --launch opt-in path.
+  step "Step 7/${TOTAL_STEPS}: launch Claude Code (--launch opt-in)"
 
   if ! command -v claude >/dev/null 2>&1; then
     warn "claude not on PATH after install — open a new terminal, then:"
@@ -619,47 +686,46 @@ step_launch_claude() {
     return 0
   fi
 
-  log "Launching Claude Code in ${TARGET_DIR}."
-  log "  /core:start auto-fires on the first session via the sentinel."
+  warn "--launch attempts exec claude. Some terminals drop keystrokes when"
+  warn "  the parent process was a curl|bash pipeline (claude's UI renders"
+  warn "  but Enter/numbers don't register). If that happens: Ctrl+C twice,"
+  warn "  then run: ${hint_cmd}"
   log ""
 
   # Reattach to TTY (curl|bash owns stdin) and exec claude so the script
-  # process is replaced — clean handoff, no orphan bash hanging around.
-  # has_tty above already proved /dev/tty is openable, so the redirect
-  # below cannot hard-fail the script. Trap chain is dropped on exec(),
-  # which is fine: the script's only on-disk state (sentinel, settings)
-  # was committed in earlier steps.
+  # process is replaced. has_tty above proved /dev/tty is openable so the
+  # redirect cannot hard-fail. Trap chain is dropped on exec(), which is
+  # fine: all on-disk state (sentinel, settings) was committed in earlier steps.
   cd "${TARGET_DIR}"
   exec </dev/tty
   exec claude
 }
 
 # -----------------------------------------------------------------------------
-# Final banner — only printed when launch is skipped (NON_INTERACTIVE / no
-# claude / no tty). When `exec claude` succeeds in step_launch_claude, this
-# is never reached.
+# Final banner — canonical "Sutra ready, here's the next step" surface
+# (codex P2-C fold: this is the single source of next-step guidance;
+# step_launch_claude no-ops on the default path so there's no duplication).
+# Always printed unless `--launch` opts in to exec claude AND the exec
+# succeeds (in which case the banner above is the user's last reference
+# before claude takes over the terminal).
 # -----------------------------------------------------------------------------
 print_banner() {
   CURRENT_STEP="banner"
-  cat <<BANNER
-
---------------------------------------------------------------------
-Sutra installed.
-
-Project directory: ${TARGET_DIR}
-
-Open Claude Code there:
-
-    cd ${TARGET_DIR} && claude
-
-First session will auto-activate Sutra (/core:start). Subsequent
-sessions are silent. Re-running this installer is safe — marketplace
-+ plugin will update to the latest catalog version.
-
-Docs:     https://github.com/sankalpasawa/sutra
-Support:  https://github.com/sankalpasawa/sutra/issues
---------------------------------------------------------------------
-BANNER
+  say ""
+  hr
+  printf '  %s%s ok %s  %s%sSutra installed%s\n' \
+    "$C_GREEN" "$C_BOLD" "$C_RESET" "$C_BOLD" "" "$C_RESET" >&2
+  hr
+  printf '  %sProject directory:%s %s\n\n' "$C_BOLD" "$C_RESET" "${TARGET_DIR}" >&2
+  printf '  %sNext — open Claude Code in your project:%s\n\n' "$C_BOLD" "$C_RESET" >&2
+  printf '    %scd %s && claude%s\n\n' "$C_GOLD" "${TARGET_DIR}" "$C_RESET" >&2
+  printf '  First session auto-fires %s/core:start%s.\n' "$C_GOLD" "$C_RESET" >&2
+  printf '  %sRe-running this installer is safe — marketplace + plugin update to latest.%s\n\n' \
+    "$C_GREY" "$C_RESET" >&2
+  printf '  %sDocs:%s     https://github.com/sankalpasawa/sutra\n' "$C_GREY" "$C_RESET" >&2
+  printf '  %sSupport:%s  https://github.com/sankalpasawa/sutra/issues\n' "$C_GREY" "$C_RESET" >&2
+  hr
+  say ""
 }
 
 # -----------------------------------------------------------------------------
@@ -668,8 +734,9 @@ BANNER
 main() {
   parse_args "$@"
 
+  banner   # ASCII Sutra art + version-label clarification (replaces the old plain log line)
+
   CURRENT_STEP="preflight"
-  log "Sutra installer v${SUTRA_VERSION}"
   local os
   os="$(detect_os)"
   log "OS: ${os}"

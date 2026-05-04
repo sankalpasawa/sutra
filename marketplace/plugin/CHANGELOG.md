@@ -2,6 +2,52 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.29.0 — 2026-05-04
+
+**cap-118 soft post-response lint hook ships — closes the lint follow-up codex flagged when cap-114 split landed in v2.28.0.**
+
+Per codex 2026-05-04 cap114-split-consult ADVISORY: cap-118 (`no_invented_human_ops_mechanisms`) needs a soft post-response lint to evidence-build toward full `shipping`. Schema landed in v2.28.0; this release wires the runtime detection.
+
+### What this delivers
+
+A Stop-event hook that scans the last assistant response in the transcript for codex-specified patterns indicating proposals of human-ops mechanisms (departments, weekly reviews, standups, manual KPI tracking, etc.). Soft-warn only — never blocks Stop event; never disrupts founder workflow.
+
+### Design (codex stability fold)
+
+- **Composite signal**: warn only when **≥2 distinct patterns** hit (single hits too noisy; reduces false-positive training-effect that codex flagged for the gate).
+- **Log to JSONL by default**: writes to `.enforcement/cap118-lint.jsonl`. Stderr emission opt-in via `LINT_VERBOSE=1` env. Prevents founder fatigue while accumulating evidence for the 100-turn audit threshold.
+- **Allowlist heuristics**:
+  - Skip lines starting with `>` (markdown quote) or containing `said:` / `wrote:` (attribution).
+  - Skip if `existing` / `already` / `currently` / `previously` / `legacy` / `deprecated` / `established` / `in place` appears within ~80 chars of the pattern (describing reality, not proposing).
+  - Skip if `do not` / `don't` / `avoid` / `never` / `stop` / `reject` / `forbid` appears within ~80 chars (critique-of-mechanism, not proposing).
+
+### Verification (3 scenarios pre-commit)
+
+- 3-pattern proposal text → LOGS + verbose stderr (works as designed).
+- Existing-reality description with `already` marker → silent (allowlist correctly fires).
+- Single pattern hit → silent (composite signal correctly enforces ≥2 threshold).
+
+### What changed under the hood
+
+- **`sutra/marketplace/plugin/hooks/csm-cap118-lint.sh`** (new, ~110 LOC). Stop-event hook. Reads `transcript_path` from Claude Code Stop payload, extracts last assistant text via `jq`, scans 8 codex-specified patterns with allowlist heuristics, logs hits to JSONL.
+- **`hooks/hooks.json`** — `Stop[0].hooks` array gains entry for the lint with timeout=3s. Now 14 entries total (was 13).
+- **`.claude-plugin/plugin.json`** — `2.28.0` → `2.29.0`.
+- **`.claude-plugin/marketplace.json`** — `2.28.0` → `2.29.0`.
+
+### Status path for cap-118
+
+Schema-only `shipping (policy-visible)` (v2.28.0) → schema + soft lint `shipping (policy-visible)` (this release) → full `shipping` post 100-turn audit + <5% false-positive rate (codex evidence bar).
+
+### Kill-switches
+
+`CSM_CAP118_LINT_DISABLED=1` env or `~/.csm-cap118-lint-disabled` file. `LINT_VERBOSE=1` enables stderr emission.
+
+### Codex
+
+Pre-shipped consult ADVISORY (2026-05-04) folded directly. All design choices (composite signal threshold, allowlist heuristics, log-not-stderr default) anchored to codex's stability + false-positive-aversion advice.
+
+---
+
 ## v2.28.0 — 2026-05-04
 
 **cap-114 split — `no_fabrication` (cap-114) + `no_invented_human_ops_mechanisms` (cap-118) ship as separate plugin-canonical schemas (D43 follow-up).**

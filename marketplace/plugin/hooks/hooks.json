@@ -43,6 +43,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-sessionstart-banner.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-token-snapshot.sh",
+            "timeout": 5
           }
         ]
       }
@@ -344,6 +349,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/output-behavior-lint.sh",
             "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-cap118-lint.sh",
+            "timeout": 3
           }
         ]
       }
