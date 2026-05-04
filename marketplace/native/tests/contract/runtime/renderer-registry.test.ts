@@ -46,8 +46,8 @@ import type { HSutraEvent } from '../../../src/types/h-sutra-event.js'
 const ts = 1700000000000
 
 describe('engine-event schema', () => {
-  it('ENGINE_EVENT_TYPES contains exactly the 15 expected types (v1.2 added 3, v1.3 W2 added 4)', () => {
-    expect(ENGINE_EVENT_TYPES.size).toBe(15)
+  it('ENGINE_EVENT_TYPES contains exactly the 22 expected types (v1.2 added 3, v1.3 W2 added 4, v1.3 W4 added 7)', () => {
+    expect(ENGINE_EVENT_TYPES.size).toBe(22)
     expect(ENGINE_EVENT_TYPES.has('routing_decision')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('workflow_started')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('workflow_completed')).toBe(true)
@@ -63,6 +63,13 @@ describe('engine-event schema', () => {
     expect(ENGINE_EVENT_TYPES.has('approval_granted')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('approval_denied')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('approval_already_handled')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('workflow_rollback_started')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('step_compensated')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('step_compensation_failed')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('workflow_rollback_complete')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('workflow_rollback_partial')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('workflow_escalated')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('step_paused')).toBe(true)
   })
 
   it('isEngineEvent accepts a valid event', () => {
@@ -87,10 +94,10 @@ describe('engine-event schema', () => {
 })
 
 describe('RendererRegistry — construction + defaults', () => {
-  it('registers all 15 defaults on construction (v1.2 added 3, v1.3 W2 added 4)', () => {
+  it('registers all 22 defaults on construction (v1.2 added 3, v1.3 W2 added 4, v1.3 W4 added 7)', () => {
     const r = new RendererRegistry()
     const types = r.getRegisteredTypes()
-    expect(types.length).toBe(15)
+    expect(types.length).toBe(22)
     for (const t of ENGINE_EVENT_TYPES) {
       expect(r.resolve(t)).toBe(DEFAULT_RENDERERS[t])
     }

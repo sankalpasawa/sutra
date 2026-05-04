@@ -40,6 +40,20 @@ export function formatEvent(e: EngineEvent): string {
       return `[approval_denied]    ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  reason=${e.reason}`
     case 'approval_already_handled':
       return `[approval_already_handled] ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  originally_decided_at=${e.originally_decided_at_ms}`
+    case 'workflow_rollback_started':
+      return `[workflow_rollback_started] ${e.workflow_id}  exec=${e.execution_id}  reason=${e.reason}`
+    case 'step_compensated':
+      return `[step_compensated]   ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  duration=${e.duration_ms}ms`
+    case 'step_compensation_failed':
+      return `[step_compensation_failed] ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  reason=${e.reason}`
+    case 'workflow_rollback_complete':
+      return `[workflow_rollback_complete] ${e.workflow_id}  exec=${e.execution_id}  steps_compensated=${e.steps_compensated}`
+    case 'workflow_rollback_partial':
+      return `[workflow_rollback_partial] ${e.workflow_id}  exec=${e.execution_id}  steps_compensated=${e.steps_compensated}  steps_failed=${e.steps_failed}`
+    case 'workflow_escalated':
+      return `[workflow_escalated] ${e.workflow_id}  exec=${e.execution_id}  reason=${e.reason}`
+    case 'step_paused':
+      return `[step_paused]        ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  reason=${e.reason}  Call resumeFromPause("${e.execution_id}") to continue.`
     default: {
       const exhaustive: never = e
       return `[unknown_event] ${JSON.stringify(exhaustive)}`

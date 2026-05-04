@@ -35,6 +35,13 @@ import {
   type ApprovalGrantedEvent,
   type ApprovalDeniedEvent,
   type ApprovalAlreadyHandledEvent,
+  type WorkflowRollbackStartedEvent,
+  type StepCompensatedEvent,
+  type StepCompensationFailedEvent,
+  type WorkflowRollbackCompleteEvent,
+  type WorkflowRollbackPartialEvent,
+  type WorkflowEscalatedEvent,
+  type StepPausedEvent,
 } from '../types/engine-event.js'
 
 export type Renderer<T extends EngineEvent = EngineEvent> = (event: T, ctx: RenderContext) => string
@@ -164,6 +171,45 @@ export const defaultRenderApprovalAlreadyHandled: Renderer<ApprovalAlreadyHandle
   return `${cellPrefix(ctx)}[${e.workflow_id}] approval for ${e.execution_id} (step ${e.step_index}) was already decided at ${e.originally_decided_at_ms} — no-op.`
 }
 
+// -----------------------------------------------------------------------------
+// v1.3.0 Wave 4 — on_failure machinery renderers (codex W4 fold).
+//
+// Style consistent with W2 approval-gate renderers above. Seven events trace
+// the pause/rollback/escalate lifecycles.
+// -----------------------------------------------------------------------------
+
+export const defaultRenderWorkflowRollbackStarted: Renderer<WorkflowRollbackStartedEvent> = (e, ctx) => {
+  const reason = sanitizeForTerminal(e.reason)
+  return `${cellPrefix(ctx)}[${e.workflow_id}] ROLLBACK ${e.execution_id} started: ${reason}`
+}
+
+export const defaultRenderStepCompensated: Renderer<StepCompensatedEvent> = (e, ctx) => {
+  return `${cellPrefix(ctx)}[${e.workflow_id}] step ${e.step_index} compensated ✓ in ${e.duration_ms}ms`
+}
+
+export const defaultRenderStepCompensationFailed: Renderer<StepCompensationFailedEvent> = (e, ctx) => {
+  const reason = sanitizeForTerminal(e.reason)
+  return `${cellPrefix(ctx)}[${e.workflow_id}] step ${e.step_index} compensation FAILED: ${reason}`
+}
+
+export const defaultRenderWorkflowRollbackComplete: Renderer<WorkflowRollbackCompleteEvent> = (e, ctx) => {
+  return `${cellPrefix(ctx)}[${e.workflow_id}] ROLLBACK ${e.execution_id} complete (${e.steps_compensated} compensated)`
+}
+
+export const defaultRenderWorkflowRollbackPartial: Renderer<WorkflowRollbackPartialEvent> = (e, ctx) => {
+  return `${cellPrefix(ctx)}[${e.workflow_id}] ROLLBACK ${e.execution_id} partial: ${e.steps_compensated} compensated, ${e.steps_failed} failed — review out-of-band`
+}
+
+export const defaultRenderWorkflowEscalated: Renderer<WorkflowEscalatedEvent> = (e, ctx) => {
+  const reason = sanitizeForTerminal(e.reason)
+  return `${cellPrefix(ctx)}[${e.workflow_id}] ESCALATED ${e.execution_id}: ${reason} — terminal, review out-of-band.`
+}
+
+export const defaultRenderStepPaused: Renderer<StepPausedEvent> = (e, ctx) => {
+  const reason = sanitizeForTerminal(e.reason)
+  return `${cellPrefix(ctx)}[${e.workflow_id}] PAUSED ${e.execution_id} at step ${e.step_index}: ${reason}. Call resumeFromPause("${e.execution_id}") to continue.`
+}
+
 /** Map of every EngineEventType to its default renderer. Frozen at module load. */
 export const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>> = Object.freeze({
   routing_decision: defaultRenderRoutingDecision as Renderer,
@@ -181,6 +227,13 @@ export const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>> = Ob
   approval_granted: defaultRenderApprovalGranted as Renderer,
   approval_denied: defaultRenderApprovalDenied as Renderer,
   approval_already_handled: defaultRenderApprovalAlreadyHandled as Renderer,
+  workflow_rollback_started: defaultRenderWorkflowRollbackStarted as Renderer,
+  step_compensated: defaultRenderStepCompensated as Renderer,
+  step_compensation_failed: defaultRenderStepCompensationFailed as Renderer,
+  workflow_rollback_complete: defaultRenderWorkflowRollbackComplete as Renderer,
+  workflow_rollback_partial: defaultRenderWorkflowRollbackPartial as Renderer,
+  workflow_escalated: defaultRenderWorkflowEscalated as Renderer,
+  step_paused: defaultRenderStepPaused as Renderer,
 })
 
 // -----------------------------------------------------------------------------
