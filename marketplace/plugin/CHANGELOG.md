@@ -2,6 +2,51 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.24.0 — 2026-05-04
+
+**Sutra Delivery OS Wave 4 (FINAL) ships: fourth first-party Decisional+Generative skill `core:incremental-architect` — migration planning.**
+
+Closes the migration-planning gap: nothing in the surveyed ecosystem ships a structured migration-planning skill (strangler fig / branch by abstraction / parallel-run / decompose-then-recompose / hybrid) with operational decommission gate enforcement and Fowler/Newman/Adzic-derived pre-planning checklist.
+
+### What changed
+
+1. **`sutra/marketplace/plugin/skills/incremental-architect/`** — new skill directory.
+   - `SKILL.md` (~170 lines): authors a MIGRATION-PLAN.md (9 sections incl. operational decommission gate with named approver + evidence artifact + observation window + final-deletion phase). Pre-planning checklist forces dependency-coupling map, data ownership boundaries, dual-write consistency strategy, schema evolution path, and thinnest viable slice. Description tightened to fire ONLY for live-state transitions (not routine library upgrades, feature-flag cleanup, vendor swaps without state migration).
+   - `evals/{README,E1-monolith-to-microservices,E2-database-replacement,E3-api-deprecation}.md`: 3 structural-only assertion evals (loosened from initial draft per codex P0; removed eval contract drift where assertions were stronger than SKILL contract).
+2. **`sutra/marketplace/plugin/.claude-plugin/plugin.json`** — version 2.23.0 → 2.24.0.
+3. **`sutra/.claude-plugin/marketplace.json`** — catalog entry version 2.23.0 → 2.24.0.
+
+### Codex REVIEW chain
+
+Verdict: CHANGES-REQUIRED → all P0 + P1 folded.
+- **P0**: eval contract drift — E1/E2/E3 each required domain-specific phase shapes and tastes not guaranteed by the SKILL contract (E1 routing-layer-as-phase-1, E2 specific phase names like parallel-read-verify, E3 warning-then-error specifics). Fix: loosened all three to structural-only assertions; removed phase-shape requirements not in SKILL.
+- **P1 #1**: trigger surface too broad — "replace a dependency", "introduce a new platform", "decommission a feature" could mis-fire on routine upgrades, feature-flag cleanup, vendor swaps. Fix: description now narrowed to "live-state transition, compatibility period, phased cutover, or retirement of an existing production path"; explicit Skip cases for routine upgrades / flag cleanup / vendor swaps.
+- **P1 #2**: decommission discipline was prose-only, not operationally enforced. Fix: gate now requires all 4 — named approver, evidence artifact, observation window default, final-deletion phase blocked on gate completion. A plan missing any of the 4 is decommission theater.
+- **P1 #3**: missing migration literature gap — Fowler/Newman seam-finding, Adzic thin-slice, distributed-monolith trap. Fix: added Pre-planning checklist (5 items: dependency/coupling map, data ownership boundaries, dual-write consistency, schema evolution path, thinnest viable slice) MUST run before phase plan; risk register MUST include at least one of hidden-coupling/dual-write/schema-evolution/distributed-monolith trap.
+
+Verdict file: `.enforcement/codex-reviews/2026-05-04-w4-incremental-architect-build-review.md`.
+
+### Distinct from existing ecosystem skills
+
+- `core:architect` (W2) — authors net-new architecture; this skill plans the evolution of an EXISTING architecture. If the to-state architecture isn't defined enough to phase, compose `core:architect` first then return here.
+- gstack `plan-eng-review` — reviews a plan; this skill AUTHORS the plan.
+- gstack `gsd-execute-phase` — executes phased work; this skill plans the phases.
+
+### Sutra Delivery OS expansion — COMPLETE
+
+Wave plan executed end-to-end:
+- W1 v2.20.0 — `core:test-strategy` (Decisional+Generative)
+- W2 v2.22.0 — `core:architect` (Generative; Sutra D38 Build-Layer integration as distinctive value)
+- W3 v2.23.0 — `core:deterministic-testing` (Generative+Procedural; golden + snapshot + property + contract + drift detector)
+- W4 v2.24.0 — `core:incremental-architect` (Decisional+Generative; migration planning with operational decommission gate)
+- ~~W5~~ `core:idea-to-delivery` — DEFERRED indefinitely per codex P0 ("product thesis, not bounded skill"); revival criteria documented in `holding/research/2026-05-04-sutra-delivery-os-skills-spec.md` §2.5
+
+3 of 4 problem-mode gaps from yesterday's skill-validation framework now closed (Generative + Procedural + Decisional). Diagnostic gap remains for future consideration.
+
+### Downstream cascade (D13)
+
+T2/T3/T4 fleet receives via plugin update; additive non-breaking. Single fleet pulse note recommended after v2.24.0 to surface the 4-wave Delivery OS expansion as a coherent story.
+
 ## v2.23.0 — 2026-05-04
 
 **Sutra Delivery OS Wave 3 ships: third first-party Generative+Procedural skill `core:deterministic-testing`.**
