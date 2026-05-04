@@ -14,7 +14,7 @@
 #                      holding/research/, holding/state/, holding/TODO.md,
 #                      holding/hooks/hook-log.jsonl, sutra/archive/, *.lock,
 #                      ~/.claude/projects/**/memory/**
-#   D38_PLUGIN_RUNTIME sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin}/**
+#   D38_PLUGIN_RUNTIME sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin,lib}/**
 #   D38_SHARED_RUNTIME sutra/hooks/** (git/runtime universals — codex carve-out)
 #   D38_HOLDING_IMPL   holding/{hooks,scripts,skills,commands,bin}/**
 #   LEGACY_HARD        holding/departments/**, holding/evolution/**,
@@ -98,13 +98,16 @@ esac
 # ── Path classification ─────────────────────────────────────────────────────
 PATH_CATEGORY="SOFT"
 
-# D38 PLUGIN_RUNTIME — sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin}/**
+# D38 PLUGIN_RUNTIME — sutra/marketplace/plugin/{hooks,scripts,skills,commands,bin,lib}/**
+# 2026-05-04 (codex consult 1777875522): added `lib/` for sourced shared libraries
+# (e.g., telemetry-shared-path.sh) — same L0 fleet semantics as hooks/ et al.
 for _prefix in \
     sutra/marketplace/plugin/hooks/ \
     sutra/marketplace/plugin/scripts/ \
     sutra/marketplace/plugin/skills/ \
     sutra/marketplace/plugin/commands/ \
-    sutra/marketplace/plugin/bin/; do
+    sutra/marketplace/plugin/bin/ \
+    sutra/marketplace/plugin/lib/; do
   if [[ "$REL_PATH" == "$_prefix"* ]]; then
     PATH_CATEGORY="D38_PLUGIN_RUNTIME"
     break

@@ -59,6 +59,19 @@ import {
   updateApprovalStatus,
   type ExecutionApprovalRecord,
 } from '../persistence/execution-approval-ledger.js'
+import {
+  listPauses,
+  loadPause,
+  markResumed as markPauseResumed,
+  persistPause,
+  type ExecutionPauseRecord,
+} from '../persistence/execution-pause-ledger.js'
+import {
+  listEscalations,
+  loadEscalation,
+  persistEscalation,
+  type ExecutionEscalationRecord,
+} from '../persistence/execution-escalation-ledger.js'
 import { detectPatterns, type PatternDetectorOptions } from './pattern-detector.js'
 import { buildProposal } from './proposal-builder.js'
 import {
@@ -239,6 +252,43 @@ export class NativeEngine {
       // pending-approvals dir might not exist on first boot — non-fatal.
       this.onError(err instanceof Error ? err : new Error(String(err)))
     }
+
+    // v1.3.0 W4 — boot-time reload of pending pause records. Same DO-NOT-
+    // AUTO-RESUME discipline as approvals: surface as informational logs;
+    // founder must explicitly call `resumeFromPause(execId)` (or future
+    // `resume E-<id>` utterance routing).
+    try {
+      const pendingPauses = listPauses(this.userKitOptions, 'pending')
+      if (pendingPauses.length > 0) {
+        this.onError(
+          new Error(
+            `[native-engine boot] ${pendingPauses.length} pending pause(s) on disk: ${pendingPauses
+              .map((r) => `${r.execution_id}@step${r.step_index}`)
+              .join(', ')}. Caller must explicitly resumeFromPause("E-<id>") to continue.`,
+          ),
+        )
+      }
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
+
+    // v1.3.0 W4 — boot-time reload of escalation records. Escalations are
+    // TERMINAL by design (codex W4 advisory #3) — surface as informational
+    // logs only; never auto-anything.
+    try {
+      const escalations = listEscalations(this.userKitOptions)
+      if (escalations.length > 0) {
+        this.onError(
+          new Error(
+            `[native-engine boot] ${escalations.length} escalation(s) on disk: ${escalations
+              .map((r) => `${r.execution_id}@step${r.step_index}`)
+              .join(', ')}. Escalations are terminal — review out-of-band.`,
+          ),
+        )
+      }
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
   }
 
   /** Begin watching the H-Sutra log + processing events. Idempotent. */
@@ -363,6 +413,15 @@ export class NativeEngine {
             // is the right founder-facing surface (no silent drop).
             throw err
           }
+        },
+        // v1.3.0 W4 — wire pause/escalation persist callbacks. Re-throws on
+        // failure so lite-executor surfaces as workflow_failed reason
+        // pause_persist_failed:<msg> / escalation_persist_failed:<msg>.
+        pause_persist: (rec) => {
+          persistPause(rec, this.userKitOptions)
+        },
+        escalation_persist: (rec) => {
+          persistEscalation(rec, this.userKitOptions)
         },
         emit: (engineEvt) => {
           this.emitEvent(engineEvt, evt)
@@ -593,6 +652,27 @@ export class NativeEngine {
       this.emitEvent(handledEvt, evt)
       return 1
     }
+    // v1.3.0 W4 (codex W4 advisory #3 mutual exclusion). Reject approve when
+    // the same execId has a non-terminal pause OR any escalation record.
+    // Approval and pause are different gates that shouldn't mix.
+    const escRec = loadEscalation(execId, this.userKitOptions)
+    if (escRec) {
+      this.onError(
+        new Error(
+          `applyExecutionApproval: execution "${execId}" already escalated at step ${escRec.step_index} — escalated runs cannot be approved (mutual exclusion)`,
+        ),
+      )
+      return 0
+    }
+    const pauseRec = loadPause(execId, this.userKitOptions)
+    if (pauseRec && pauseRec.status === 'pending') {
+      this.onError(
+        new Error(
+          `applyExecutionApproval: execution "${execId}" has a pending pause at step ${pauseRec.step_index} — cannot mix approval + pause gates (mutual exclusion)`,
+        ),
+      )
+      return 0
+    }
 
     // Atomic transition pending → approved (advisory E ordering: ledger
     // first, then runtime resume, then markResumed on completion).
@@ -733,6 +813,15 @@ export class NativeEngine {
         approval_persist: (r) => {
           persistApproval(r, this.userKitOptions)
         },
+        // v1.3.0 W4 — wire pause/escalation persist on resumed runs too;
+        // a downstream step in the resumed remainder may hit on_failure=
+        // 'pause' or 'escalate'.
+        pause_persist: (r) => {
+          persistPause(r, this.userKitOptions)
+        },
+        escalation_persist: (r) => {
+          persistEscalation(r, this.userKitOptions)
+        },
         emit: (engineEvt) => {
           this.emitEvent(engineEvt, evt)
           emitted++
@@ -744,6 +833,101 @@ export class NativeEngine {
     // Ledger transition approved → resumed (terminal sink for the resume side).
     try {
       markResumed(rec.execution_id, this.userKitOptions, this.nowMs())
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
+    return emitted
+  }
+
+  /**
+   * v1.3.0 W4 — programmatic resume of an on_failure='pause' execution.
+   *
+   * Called by callers / external surfaces (future `resume E-<id>` utterance
+   * routing). Loads the ExecutionPauseRecord; on status='pending' continues
+   * the workflow run from step_index+1 (the failed step is NOT re-run —
+   * pause means "human took over, move on").
+   *
+   * Codex W4 advisory #3 mutual exclusion guards (CHECKED IN ORDER):
+   *   1. No pause record on disk for execId          → throws (caller bug)
+   *   2. Pause record status !== 'pending'           → throws (already
+   *      resumed/terminalized — distinguishable from #4 case)
+   *   3. Escalation record exists for SAME execId    → throws (mutually
+   *      exclusive — escalated runs are terminal by design)
+   *   4. Approval record exists for SAME execId in non-terminal state
+   *      → throws (mixed transition — approval and pause are different
+   *      gates and shouldn't combine accidentally)
+   *
+   * Returns the count of EngineEvents emitted by the resumed run (matches
+   * the resumeApproved return contract).
+   */
+  async resumeFromPause(execId: string): Promise<number> {
+    const rec = loadPause(execId, this.userKitOptions)
+    if (!rec) {
+      throw new Error(`resumeFromPause: no pause record found with id "${execId}"`)
+    }
+    if (rec.status !== 'pending') {
+      throw new Error(
+        `resumeFromPause: pause record "${execId}" is in status "${rec.status}" — only pending pauses may be resumed`,
+      )
+    }
+    // Mutual exclusion — escalations are terminal by design.
+    const escRec = loadEscalation(execId, this.userKitOptions)
+    if (escRec) {
+      throw new Error(
+        `resumeFromPause: execution "${execId}" already escalated at step ${escRec.step_index} — escalated runs cannot be resumed (codex W4 advisory #3 mutual exclusion)`,
+      )
+    }
+    // Mutual exclusion — approval gate is a different surface; reject mixed
+    // transitions where the same execId has both a pending pause AND a
+    // non-terminal approval record.
+    const apprRec = loadApproval(execId, this.userKitOptions)
+    if (apprRec && apprRec.status !== 'resumed' && apprRec.status !== 'terminal') {
+      throw new Error(
+        `resumeFromPause: execution "${execId}" has a non-terminal approval record (status=${apprRec.status}) — approval and pause gates cannot mix (codex W4 advisory #3 mutual exclusion)`,
+      )
+    }
+
+    const wf = this.workflowsById.get(rec.workflow_id)
+    if (!wf) {
+      throw new Error(
+        `resumeFromPause: workflow "${rec.workflow_id}" no longer loaded; cannot resume "${execId}"`,
+      )
+    }
+
+    let emitted = 0
+    const charterId = STARTER_WORKFLOW_CHARTER_MAP.get(wf.id)
+    // Resume MUST skip steps 1..rec.step_index (the failed step is NOT
+    // re-run — pause semantics). The next iteration starts at step_index+1.
+    try {
+      await executeWorkflowResume({
+        workflow: wf,
+        execution_id: rec.execution_id,
+        workflow_run_seq: this.executionCounter,
+        user_kit_options_for_dp: this.userKitOptions,
+        charter_id: charterId,
+        resume_from_step_index: rec.step_index,
+        approval_persist: (r) => {
+          persistApproval(r, this.userKitOptions)
+        },
+        pause_persist: (r) => {
+          persistPause(r, this.userKitOptions)
+        },
+        escalation_persist: (r) => {
+          persistEscalation(r, this.userKitOptions)
+        },
+        emit: (engineEvt) => {
+          // No HSutraEvent context — emit with hsutra=null so the renderer
+          // skips cell prefixing (matches in-process programmatic call).
+          this.emitEvent(engineEvt, null)
+          emitted++
+        },
+      })
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
+    // Ledger transition pending → resumed (terminal sink).
+    try {
+      markPauseResumed(rec.execution_id, this.userKitOptions, this.nowMs())
     } catch (err) {
       this.onError(err instanceof Error ? err : new Error(String(err)))
     }
