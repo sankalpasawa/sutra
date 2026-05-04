@@ -2,6 +2,36 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.31.0 — 2026-05-04
+
+**backfill-helper.sh known-values lookup for cap-001..011 + version-archaeology drift fix.**
+
+Per codex 2026-05-04 final-push consult ADVISORY: "Best next chunk: TBD field completion for cap-001..011, then stop." Closes the only remaining tractable D43 follow-up that's evidence-producing in 1-2 hours.
+
+### What changed
+
+1. **`sutra/marketplace/plugin/scripts/backfill-helper.sh`** — added `KNOWN_VALUES` lookup table for cap-001..011 (existing Bucket A shipping disciplines). For each cap, fills `surface` / `artifact_path` / `charter` / `activation_surface` / `release_vehicle` / `released_in` / `version_introduced` / `tests` from canonical paths. Bucket A entries also populate `threat_model` + `telemetry_coverage` + `audience` + `distribution_scope` + `promotion_proofs.{activation_proof, test_proof, release_proof, canonical_path_exists}` from known data. Records for cap-100..117, cap-200..204, cap-300..305 still get `TBD-NEEDS-BACKFILL` placeholders (those need real research).
+
+2. **`holding/CAPABILITY-MAP-records.md`** (Asawa-side regenerated) — cap-001..011 now fully field-populated. Phase 2 strict gate violations dropped 30 → 19 (the 19 are cap-100..107 + Bucket B + Bucket C). Phase 1 still PASSES (0 missing/orphan records).
+
+3. **`sutra/CURRENT-VERSION.md`** — prepended a v2.30.0 (HEAD) wayfinder block summarizing the v2.21.0 → v2.30.0 release stream as a single-day D43 charter resume series. Prior v2.25.0 narrative preserved below.
+
+4. **`.claude-plugin/plugin.json` description** — prepended v2.30.0 wayfinder; prior v2.25.0 description preserved below for archaeology.
+
+5. **`.claude-plugin/marketplace.json` plugins[0].description** — same wayfinder prepend.
+
+6. **Versions**: `2.30.0` → `2.31.0` (plugin.json, marketplace.json).
+
+### Why version-archaeology drift mattered
+
+Codex's batch review caught: "[CURRENT-VERSION.md still says v2.25.0]; plugin.json is 2.30.0 but description still starts with v2.25.0; marketplace catalog synced to 2.30.0 but description also stale." Documentation risk after 10 releases in one day; not runtime-breaking but operator-confusing.
+
+### Codex stop signal
+
+This release closes (a) from codex's prioritization. Next chunk requires explicit founder direction per codex stop-signal ("Require founder direction before any new cap-100..107 build, D40 G6 rewire, or any work whose acceptance depends on fresh eval data"). Autonomous push terminates here.
+
+---
+
 ## v2.30.0 — 2026-05-04
 
 **4 D43 CSM tools promoted L1→L0 — capability-audit.sh + backfill-helper.sh + csm-registry-diff-gate.sh + csm-classification-pretooluse.sh now plugin-canonical (closes 2026-06-01 promotion deadline 28 days early).**

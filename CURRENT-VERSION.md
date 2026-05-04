@@ -1,5 +1,26 @@
 # Sutra — Current Version
 
+## v2.30.0 (2026-05-04, HEAD) — D43 charter resume series complete
+
+**Wayfinder for the v2.21.0 → v2.30.0 stream shipped 2026-05-04** (10 plugin releases in one session; full per-version detail in `marketplace/plugin/CHANGELOG.md`):
+
+| Version | Headline | Direction |
+|---|---|---|
+| v2.21.0 | CSM SessionStart banner (Asawa-mode 5-line summary) | D43 (CSM TODO #2) |
+| v2.22.0 | Sutra Delivery OS Wave 1 — `core:test-strategy` skill | (parallel) |
+| v2.23.0 | Sutra Delivery OS Wave 2 — `core:architect` skill | (parallel) |
+| v2.24.0 | Sutra Delivery OS Wave 3 — `core:deterministic-testing` skill | (parallel) |
+| v2.25.0 | D38 L1→L0 promotion wave (6-wave A-F execution) | D38 |
+| v2.26.0 | 4 Asawa disciplines memory→schema (cap-112/113/115/116) | D43 (Layer 3) |
+| v2.27.0 | `/sutra-capability` skill (T4 fleet CSM digest) | D43 (CSM TODO #3) |
+| v2.28.0 | cap-114 split — `no_fabrication` + `no_invented_human_ops_mechanisms` (cap-118 NEW) | D43 |
+| v2.29.0 | cap-118 soft post-response lint hook | D43 |
+| v2.30.0 | 4 D43 CSM tools L1→L0 promotion (capability-audit + backfill + gate + classification) | D43 (28d ahead of 2026-06-01) |
+
+**D43 charter status**: All 5 CSM TODOs closed (#1 gate / #2 banner / #3 skill / #4 backfill 40 records / #5 classification hook). 8 disciplines on plugin canonical surface (cap-108/110/112/113/114/115/116/118; 6 are policy-visible, 2 fully shipping). Phase 1 strict gate PASSES; Phase 2 blocks on 19 TBD records (cap-100..107 + Bucket B + Bucket C — research follow-up; cap-001..011 fully field-completed in v2.30.0 backfill helper update).
+
+---
+
 ## v2.25.0 (2026-05-04) — D38 L1→L0 promotion wave closes acceptance criterion
 
 **What this is**: founder direction "shift these L1s to L0s. Run the entire framework. Ship them." Six-wave execution (A-F) over a single session, codex consult 1777875522 PASS-with-CHANGES converged. Closes D38 §Acceptance ("Existing Asawa-side artifacts have a documented disposition within 14 days, target 2026-05-12") **8 days ahead of deadline**.
