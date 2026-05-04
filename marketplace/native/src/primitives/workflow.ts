@@ -142,6 +142,31 @@ export interface Workflow {
    * to v1.x.
    */
   autonomy_level: WorkflowAutonomyLevel
+
+  // ---- v1.3.0 W5 — Charter obligation linkage (codex W5 BLOCKER 3 fold) ----
+  /**
+   * Names of Charter obligations this Workflow fulfills. When the workflow's
+   * execution fails (workflow_failed), NativeEngine consults the operating
+   * Charter's obligations list and emits `commitment_broken` for each
+   * obligation whose name appears here.
+   *
+   * Per codex W5 BLOCKER 3: the workflow→obligation mapping MUST be
+   * declarative — no heuristics on step text, no inference. An empty array
+   * means the workflow makes no Charter-level commitments; a non-empty array
+   * declares exactly which obligation_names this workflow promises to deliver.
+   *
+   * Optional on the TS shape so existing callers / fixtures that construct
+   * Workflow directly (bypassing createWorkflow) compile without source-level
+   * changes; createWorkflow defaults absent values to `[]`. The runtime
+   * commitment_broken emission path treats `undefined` and `[]` identically
+   * (no obligations declared).
+   *
+   * Default: empty array (the workflow does not fulfill any obligations).
+   * Each entry MUST be a non-empty string. The runtime does NOT validate
+   * cross-references to a Charter at primitive-mint time (the Charter may
+   * not be loaded yet); the join happens at emission time in NativeEngine.
+   */
+  obligation_refs?: ReadonlyArray<string>
 }
 
 /**
@@ -149,12 +174,12 @@ export interface Workflow {
  */
 export type WorkflowSpec = Omit<
   Workflow,
-  'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level'
+  'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level' | 'obligation_refs'
 > &
   Partial<
     Pick<
       Workflow,
-      'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level'
+      'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level' | 'obligation_refs'
     >
   >
 
@@ -475,6 +500,25 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     )
   }
 
+  // v1.3.0 W5 (codex W5 BLOCKER 3 fold) — obligation_refs: list of
+  // Charter.obligations names this Workflow fulfills. Default empty array
+  // (no commitments). Each entry MUST be a non-empty string; cross-reference
+  // to a Charter is checked at emission time in NativeEngine, not here.
+  const obligationRefs: ReadonlyArray<string> = spec.obligation_refs ?? []
+  if (!Array.isArray(obligationRefs)) {
+    throw new Error(
+      `Workflow.obligation_refs must be an array; got "${typeof obligationRefs}"`,
+    )
+  }
+  for (let i = 0; i < obligationRefs.length; i++) {
+    const ref = obligationRefs[i]
+    if (typeof ref !== 'string' || ref.length === 0) {
+      throw new Error(
+        `Workflow.obligation_refs[${i}] must be a non-empty string (codex W5 BLOCKER 3 — explicit workflow→obligation mapping); got "${typeof ref === 'string' ? '<empty>' : typeof ref}"`,
+      )
+    }
+  }
+
   const out: Workflow = {
     ...spec,
     step_graph: spec.step_graph.map((s) => ({ ...s, inputs: [...s.inputs], outputs: [...s.outputs] })),
@@ -490,6 +534,7 @@ export function createWorkflow(spec: WorkflowSpec): Workflow {
     custody_owner: custodyOwner,
     extension_ref: extensionRef,
     autonomy_level: autonomyLevel,
+    obligation_refs: [...obligationRefs],
   }
   return Object.freeze(out)
 }
@@ -651,6 +696,17 @@ export function isValidWorkflow(w: Workflow): boolean {
     !VALID_AUTONOMY_LEVEL.has(w.autonomy_level as WorkflowAutonomyLevel)
   ) {
     return false
+  }
+  // v1.3.0 W5 (codex W5 BLOCKER 3 fold) — obligation_refs may be undefined OR
+  // an array. When supplied as an array, each entry MUST be a non-empty
+  // string. Empty array is valid (no commitments). Optional shape keeps
+  // legacy callers (test fixtures / direct primitive construction bypassing
+  // createWorkflow) compatible; createWorkflow always populates the field.
+  if (w.obligation_refs !== undefined) {
+    if (!Array.isArray(w.obligation_refs)) return false
+    for (const ref of w.obligation_refs) {
+      if (typeof ref !== 'string' || ref.length === 0) return false
+    }
   }
   return true
 }

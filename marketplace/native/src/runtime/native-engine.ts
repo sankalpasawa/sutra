@@ -21,6 +21,7 @@
  */
 
 import type { Workflow } from '../primitives/workflow.js'
+import type { Charter } from '../primitives/charter.js'
 import type { TriggerSpec } from '../types/trigger-spec.js'
 import type { HSutraEvent } from '../types/h-sutra-event.js'
 import type {
@@ -32,6 +33,7 @@ import type {
   ApprovalGrantedEvent,
   ApprovalDeniedEvent,
   ApprovalAlreadyHandledEvent,
+  CommitmentBrokenEvent,
 } from '../types/engine-event.js'
 import { HSutraConnector, type HSutraConnectorOptions } from './h-sutra-connector.js'
 import { Router } from './router.js'
@@ -85,6 +87,13 @@ export interface NativeEngineOptions {
   /** Replace the starter triggers + workflows. Default: load the v1.1.0 starter kit. */
   readonly triggers?: ReadonlyArray<TriggerSpec>
   readonly workflows?: ReadonlyArray<Workflow>
+  /**
+   * v1.3.0 W5 (codex W5 BLOCKER 3 fold). Replace the starter charters. Used by
+   * the commitment_broken emission path: NativeEngine looks up Charter.obligations
+   * by name when a workflow declares obligation_refs and fails. Default:
+   * starter-kit charters via loadStarterKit().
+   */
+  readonly charters?: ReadonlyArray<Charter>
   /** Sink for rendered lines. Default: console.log. */
   readonly write?: (line: string) => void
   /** Sink for non-fatal errors. Default: console.error. */
@@ -157,6 +166,14 @@ export class NativeEngine {
   readonly catalog: ArtifactCatalog
   readonly renderer: RendererRegistry
   private readonly workflowsById: Map<string, Workflow>
+  /**
+   * v1.3.0 W5 — Charter map keyed by Charter.id, populated from starter-kit
+   * (or options.charters override). Read by the commitment_broken emission
+   * path on workflow_failed: looks up the operating Charter by id, walks its
+   * obligations, matches against the failing workflow's obligation_refs, and
+   * emits one event per match.
+   */
+  private readonly chartersById: Map<string, Charter>
   private readonly write: (line: string) => void
   private readonly onError: (err: Error) => void
   private executionCounter = 0
@@ -199,7 +216,9 @@ export class NativeEngine {
 
     const starterTriggers = options.triggers ?? kit.triggers
     const starterWorkflows = options.workflows ?? kit.workflows
+    const starterCharters = options.charters ?? kit.charters
     this.workflowsById = new Map(starterWorkflows.map((w) => [w.id, w]))
+    this.chartersById = new Map(starterCharters.map((c) => [c.id, c]))
 
     for (const t of starterTriggers) {
       try {
@@ -426,6 +445,21 @@ export class NativeEngine {
         emit: (engineEvt) => {
           this.emitEvent(engineEvt, evt)
           emitted++
+          // v1.3.0 W5 (codex W5 BLOCKER 3 fold) — listen for workflow_failed
+          // on routed runs and emit commitment_broken when (a) the workflow
+          // declares non-empty obligation_refs AND (b) charter_id is set AND
+          // (c) the named obligation exists on the Charter.obligations list.
+          //
+          // Why HERE (NativeEngine) and NOT in lite-executor (codex W5
+          // architectural note): lite-executor doesn't have the Charter map.
+          // The mapping is workflow→obligation_refs (declared on Workflow) AND
+          // charter→obligations (declared on Charter); only NativeEngine has
+          // both halves loaded. Plus charter context is per-RUN (set when
+          // routing exact-matches a trigger with a charter_id) — exactly what
+          // this listener has via the closure.
+          if (engineEvt.type === 'workflow_failed') {
+            this.emitCommitmentBrokenIfApplicable(wf, charterId, executionId, engineEvt.reason, evt)
+          }
         },
       })
       return emitted
@@ -825,6 +859,9 @@ export class NativeEngine {
         emit: (engineEvt) => {
           this.emitEvent(engineEvt, evt)
           emitted++
+          if (engineEvt.type === 'workflow_failed') {
+            this.emitCommitmentBrokenIfApplicable(wf, charterId, rec.execution_id, engineEvt.reason, evt)
+          }
         },
       })
     } catch (err) {
@@ -920,6 +957,9 @@ export class NativeEngine {
           // skips cell prefixing (matches in-process programmatic call).
           this.emitEvent(engineEvt, null)
           emitted++
+          if (engineEvt.type === 'workflow_failed') {
+            this.emitCommitmentBrokenIfApplicable(wf, charterId, rec.execution_id, engineEvt.reason, null)
+          }
         },
       })
     } catch (err) {
@@ -948,6 +988,67 @@ export class NativeEngine {
   /** Lookup the Charter that operationalizes a Workflow (v1.1.0 starter map). */
   ownerCharterOf(workflowId: string): string | undefined {
     return STARTER_WORKFLOW_CHARTER_MAP.get(workflowId)
+  }
+
+  /**
+   * v1.3.0 W5 (codex W5 BLOCKER 3 fold) — emit commitment_broken events when
+   * (a) a routed workflow fails AND (b) the workflow declares non-empty
+   * obligation_refs AND (c) charter_id is set in execution context AND
+   * (d) the named obligation exists on the Charter's obligations list.
+   *
+   * Per codex: workflow→obligation mapping is DECLARATIVE. We never infer from
+   * step text. The match is a literal name comparison: workflow.obligation_refs
+   * (Workflow primitive declaration) ∩ charter.obligations[].name (Charter
+   * declaration). Each intersection emits one commitment_broken event.
+   *
+   * Skip rules:
+   *   - charterId undefined         → no Charter context for this run; skip.
+   *     (cmdRun direct path / no STARTER_WORKFLOW_CHARTER_MAP entry.)
+   *   - obligation_refs empty       → workflow makes no Charter-level
+   *     commitments; skip silently.
+   *   - charter not loaded by id    → cross-reference failure; log + skip.
+   *   - obligation_name not on charter → declared but missing from Charter;
+   *     log + skip (the workflow promised something the Charter doesn't track).
+   */
+  private emitCommitmentBrokenIfApplicable(
+    wf: Workflow,
+    charterId: string | undefined,
+    executionId: string,
+    failureReason: string,
+    hsutra: HSutraEvent | null,
+  ): void {
+    if (!charterId) return
+    if (!wf.obligation_refs || wf.obligation_refs.length === 0) return
+    const charter = this.chartersById.get(charterId)
+    if (!charter) {
+      this.onError(
+        new Error(
+          `[commitment_broken] charter "${charterId}" not loaded; cannot resolve obligations for workflow "${wf.id}" (codex W5 BLOCKER 3 declarative mapping)`,
+        ),
+      )
+      return
+    }
+    const obligationNames = new Set(charter.obligations.map((c) => c.name))
+    for (const ref of wf.obligation_refs) {
+      if (!obligationNames.has(ref)) {
+        this.onError(
+          new Error(
+            `[commitment_broken] workflow "${wf.id}" declares obligation_ref "${ref}" but charter "${charterId}" has no obligation by that name; skipping (codex W5 BLOCKER 3 — declarative join)`,
+          ),
+        )
+        continue
+      }
+      const evt: CommitmentBrokenEvent = {
+        type: 'commitment_broken',
+        ts_ms: this.nowMs(),
+        charter_id: charterId,
+        obligation_name: ref,
+        workflow_id: wf.id,
+        execution_id: executionId,
+        evidence: failureReason,
+      }
+      this.emitEvent(evt, hsutra)
+    }
   }
 
   private emitEvent(event: EngineEvent, hsutra: HSutraEvent | null): void {
