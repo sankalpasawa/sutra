@@ -288,6 +288,42 @@ export interface WorkflowStep {
    * run unchanged.
    */
   requires_approval?: boolean
+
+  /**
+   * v1.3.0 Wave 4 (codex W4 advisory fold #1, 2026-05-04). Optional
+   * step-local compensation action invoked during reverse-walk rollback when
+   * a step with `on_failure='rollback'` fails. The reverse-walk visits
+   * COMPLETED predecessor steps and dispatches `compensate_action` on those
+   * that have one defined.
+   *
+   * Codex W4 advisory #1: compensation lives on `WorkflowStep` — NOT on a
+   * parallel `Workflow.compensation_step_graph[]`. Step-local because:
+   *   - rollback trigger is step-local (a specific step failed)
+   *   - reverse-walk is over completed CONCRETE steps that ran successfully
+   *   - the execution context already has the step instance in scope
+   *
+   * Action subset: `wait`, `invoke_host_llm`, or `spawn_sub_unit`. NOT
+   * `terminate` (early-out makes no sense for compensation). When
+   * `action='invoke_host_llm'`, `host` is REQUIRED; otherwise FORBIDDEN —
+   * mirrors the same XOR discipline as the parent step contract per L2
+   * BOUNDARY.
+   *
+   * Best-effort rollback semantics (codex W4 advisory #2):
+   *   - reverse-walk i-1 .. 0 over completed steps
+   *   - each step with compensate_action runs through runStepAction-like dispatch
+   *   - success → emit step_compensated; failure → emit step_compensation_failed
+   *   - steps WITHOUT compensate_action are skipped silently (best-effort)
+   *   - terminal event: workflow_rollback_complete (all attempted compensations
+   *     succeeded OR there were none) | workflow_rollback_partial (mixed)
+   *
+   * Additive field — does not break v1.2/v1.3-w2 deserialized Workflows.
+   */
+  compensate_action?: {
+    readonly action: 'wait' | 'invoke_host_llm' | 'spawn_sub_unit'
+    readonly inputs: DataRef[]
+    readonly host?: HostKind
+    readonly timeout_ms?: number
+  }
 }
 
 // -----------------------------------------------------------------------------

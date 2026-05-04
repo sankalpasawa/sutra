@@ -39,6 +39,13 @@ export type EngineEventType =
   | 'approval_granted'
   | 'approval_denied'
   | 'approval_already_handled'
+  | 'workflow_rollback_started'
+  | 'step_compensated'
+  | 'step_compensation_failed'
+  | 'workflow_rollback_complete'
+  | 'workflow_rollback_partial'
+  | 'workflow_escalated'
+  | 'step_paused'
 
 /** Runtime allow-list mirroring EngineEventType — kept in sync. */
 export const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set([
@@ -57,6 +64,13 @@ export const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set([
   'approval_granted',
   'approval_denied',
   'approval_already_handled',
+  'workflow_rollback_started',
+  'step_compensated',
+  'step_compensation_failed',
+  'workflow_rollback_complete',
+  'workflow_rollback_partial',
+  'workflow_escalated',
+  'step_paused',
 ])
 
 export interface RoutingDecisionEvent {
@@ -215,6 +229,82 @@ export interface ApprovalAlreadyHandledEvent {
   readonly originally_decided_at_ms: number
 }
 
+/**
+ * v1.3.0 Wave 4 — on_failure machinery events (codex W4 advisory #2 fold).
+ *
+ * Seven events trace pause/rollback/escalate lifecycles with explicit failure
+ * semantics for compensation. Distinct events (not overloaded workflow_failed)
+ * because: (a) operator UX wants to see "rolled back, X compensated, Y failed"
+ * separately from "step crashed", (b) replay/audit needs to disambiguate
+ * "compensation succeeded but workflow ultimately failed" from "workflow
+ * failed without rollback attempted".
+ *
+ * Mutual exclusion (codex W4 advisory #3): pause/escalate/rollback states are
+ * mutually exclusive per execution — resumeFromPause rejects runs already
+ * escalated or in rollback (NativeEngine guard, not type-level).
+ */
+export interface WorkflowRollbackStartedEvent {
+  readonly type: 'workflow_rollback_started'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  /** The originating step failure that triggered the rollback (1-based step_index). */
+  readonly reason: string
+}
+
+export interface StepCompensatedEvent {
+  readonly type: 'step_compensated'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly step_index: number
+  readonly duration_ms: number
+}
+
+export interface StepCompensationFailedEvent {
+  readonly type: 'step_compensation_failed'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly step_index: number
+  readonly reason: string
+}
+
+export interface WorkflowRollbackCompleteEvent {
+  readonly type: 'workflow_rollback_complete'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  /** Number of step compensations that ran successfully (may be 0 — best-effort). */
+  readonly steps_compensated: number
+}
+
+export interface WorkflowRollbackPartialEvent {
+  readonly type: 'workflow_rollback_partial'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly steps_compensated: number
+  readonly steps_failed: number
+}
+
+export interface WorkflowEscalatedEvent {
+  readonly type: 'workflow_escalated'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly reason: string
+}
+
+export interface StepPausedEvent {
+  readonly type: 'step_paused'
+  readonly ts_ms: number
+  readonly execution_id: string
+  readonly workflow_id: string
+  readonly step_index: number
+  readonly reason: string
+}
+
 export type EngineEvent =
   | RoutingDecisionEvent
   | WorkflowStartedEvent
@@ -231,6 +321,13 @@ export type EngineEvent =
   | ApprovalGrantedEvent
   | ApprovalDeniedEvent
   | ApprovalAlreadyHandledEvent
+  | WorkflowRollbackStartedEvent
+  | StepCompensatedEvent
+  | StepCompensationFailedEvent
+  | WorkflowRollbackCompleteEvent
+  | WorkflowRollbackPartialEvent
+  | WorkflowEscalatedEvent
+  | StepPausedEvent
 
 // -----------------------------------------------------------------------------
 // Per-variant validators (codex P1 fold 2026-05-03) — guard MUST validate the
@@ -323,6 +420,38 @@ const VARIANT_VALIDATORS: Record<EngineEventType, (v: Record<string, unknown>) =
     isNonEmptyStr(v.workflow_id) &&
     isNonNegInt(v.step_index) &&
     isFiniteNonNegNumber(v.originally_decided_at_ms),
+  workflow_rollback_started: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isStr(v.reason),
+  step_compensated: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.step_index) &&
+    isFiniteNonNegNumber(v.duration_ms),
+  step_compensation_failed: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.step_index) &&
+    isStr(v.reason),
+  workflow_rollback_complete: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.steps_compensated),
+  workflow_rollback_partial: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.steps_compensated) &&
+    isNonNegInt(v.steps_failed),
+  workflow_escalated: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isStr(v.reason),
+  step_paused: (v) =>
+    isNonEmptyStr(v.execution_id) &&
+    isNonEmptyStr(v.workflow_id) &&
+    isNonNegInt(v.step_index) &&
+    isStr(v.reason),
 }
 
 /**

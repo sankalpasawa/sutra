@@ -280,6 +280,62 @@ function validateStep(step: WorkflowStep, idx: number): void {
       `Workflow.step_graph[${idx}].requires_approval must be a boolean when supplied; got "${typeof step.requires_approval}"`,
     )
   }
+
+  // v1.3.0 Wave 4 (codex W4 advisory #1 fold). Defensive — step.compensate_action
+  // is optional; when supplied it MUST be a structured object with action ∈
+  // {wait, invoke_host_llm, spawn_sub_unit}, inputs array, and host XOR
+  // semantics mirroring the parent step.
+  if (step.compensate_action !== undefined) {
+    const ca = step.compensate_action
+    if (typeof ca !== 'object' || ca === null) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].compensate_action must be an object when supplied; got "${typeof ca}"`,
+      )
+    }
+    if (
+      ca.action !== 'wait' &&
+      ca.action !== 'invoke_host_llm' &&
+      ca.action !== 'spawn_sub_unit'
+    ) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].compensate_action.action must be one of wait|invoke_host_llm|spawn_sub_unit; got "${String(ca.action)}"`,
+      )
+    }
+    if (!Array.isArray(ca.inputs)) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].compensate_action.inputs must be an array`,
+      )
+    }
+    const caHasHost = ca.host !== undefined && ca.host !== null
+    if (ca.action === 'invoke_host_llm') {
+      if (!caHasHost) {
+        throw new Error(
+          `Workflow.step_graph[${idx}].compensate_action.host is required when action='invoke_host_llm' (mirrors parent-step host-XOR rule)`,
+        )
+      }
+      if (typeof ca.host !== 'string' || !VALID_HOST_KIND.has(ca.host as 'claude' | 'codex')) {
+        throw new Error(
+          `Workflow.step_graph[${idx}].compensate_action.host must be 'claude' or 'codex' when action='invoke_host_llm'; got "${String(ca.host)}"`,
+        )
+      }
+    } else if (caHasHost) {
+      throw new Error(
+        `Workflow.step_graph[${idx}].compensate_action.host is forbidden unless action='invoke_host_llm'; got host="${String(ca.host)}" with action="${String(ca.action)}"`,
+      )
+    }
+    if (ca.timeout_ms !== undefined) {
+      if (typeof ca.timeout_ms !== 'number' || !Number.isInteger(ca.timeout_ms) || ca.timeout_ms <= 0) {
+        throw new Error(
+          `Workflow.step_graph[${idx}].compensate_action.timeout_ms must be a positive integer when supplied; got "${String(ca.timeout_ms)}"`,
+        )
+      }
+      if (ca.action !== 'invoke_host_llm') {
+        throw new Error(
+          `Workflow.step_graph[${idx}].compensate_action.timeout_ms is only permitted when action='invoke_host_llm'; got action="${String(ca.action)}"`,
+        )
+      }
+    }
+  }
 }
 
 /** Validate expects_response_from is null or a non-empty string (BoundaryEndpointRef). */
@@ -540,6 +596,39 @@ export function isValidWorkflow(w: Workflow): boolean {
     // is optional; when supplied MUST be boolean. Mirrors createWorkflow.validateStep.
     if (step.requires_approval !== undefined && typeof step.requires_approval !== 'boolean') {
       return false
+    }
+    // v1.3.0 Wave 4 (codex W4 advisory #1 fold). Defensive — step.compensate_action
+    // is optional; when supplied MUST be structured object with action ∈
+    // {wait, invoke_host_llm, spawn_sub_unit}, inputs array, and host XOR
+    // semantics mirroring parent-step host-XOR rule.
+    if (step.compensate_action !== undefined) {
+      const ca = step.compensate_action
+      if (typeof ca !== 'object' || ca === null) return false
+      if (
+        ca.action !== 'wait' &&
+        ca.action !== 'invoke_host_llm' &&
+        ca.action !== 'spawn_sub_unit'
+      ) return false
+      if (!Array.isArray(ca.inputs)) return false
+      const caHasHost = ca.host !== undefined && ca.host !== null
+      if (ca.action === 'invoke_host_llm') {
+        if (!caHasHost) return false
+        if (typeof ca.host !== 'string' || !VALID_HOST_KIND.has(ca.host as 'claude' | 'codex')) {
+          return false
+        }
+      } else if (caHasHost) {
+        return false
+      }
+      if (ca.timeout_ms !== undefined) {
+        if (
+          typeof ca.timeout_ms !== 'number' ||
+          !Number.isInteger(ca.timeout_ms) ||
+          ca.timeout_ms <= 0
+        ) {
+          return false
+        }
+        if (ca.action !== 'invoke_host_llm') return false
+      }
     }
   }
   // M4.4 — custody_owner must be null OR match T-<id> pattern.
