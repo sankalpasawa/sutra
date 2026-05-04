@@ -48,6 +48,13 @@ import type {
   WorkflowFailedEvent,
   WorkflowStartedEvent,
   ApprovalRequestedEvent,
+  StepPausedEvent,
+  WorkflowEscalatedEvent,
+  WorkflowRollbackStartedEvent,
+  WorkflowRollbackCompleteEvent,
+  WorkflowRollbackPartialEvent,
+  StepCompensatedEvent,
+  StepCompensationFailedEvent,
 } from '../types/engine-event.js'
 import {
   hostLLMActivity,
@@ -59,6 +66,8 @@ import { appendDecisionProvenanceLog } from './emergence-provenance.js'
 import type { UserKitOptions } from '../persistence/user-kit.js'
 import type { PolicyDecisionEvent } from '../types/engine-event.js'
 import type { ExecutionApprovalRecord } from '../persistence/execution-approval-ledger.js'
+import type { ExecutionPauseRecord } from '../persistence/execution-pause-ledger.js'
+import type { ExecutionEscalationRecord } from '../persistence/execution-escalation-ledger.js'
 
 export interface ExecuteOptions {
   readonly workflow: Workflow
@@ -118,6 +127,24 @@ export interface ExecuteOptions {
    * always durable.)
    */
   readonly approval_persist?: (rec: ExecutionApprovalRecord) => void
+  /**
+   * v1.3.0 Wave 4 (codex W4 fold). Optional callback invoked once when the
+   * executor pauses at a `step.on_failure='pause'` step that FAILED. The
+   * NativeEngine wires this to `persistPause(record)` so the durable
+   * ExecutionPauseRecord{status:'pending'} survives daemon restart.
+   *
+   * Default = no-op (preserves "PURE relative to emit()" contract — direct
+   * `executeWorkflow` callers without an injected persist callback get the
+   * paused ExecutionResult but no on-disk ledger entry).
+   */
+  readonly pause_persist?: (rec: ExecutionPauseRecord) => void
+  /**
+   * v1.3.0 Wave 4 (codex W4 fold). Optional callback invoked once when the
+   * executor escalates at a `step.on_failure='escalate'` step that FAILED.
+   * The NativeEngine wires this to `persistEscalation(record)` so the
+   * durable ExecutionEscalationRecord audit trail survives daemon restart.
+   */
+  readonly escalation_persist?: (rec: ExecutionEscalationRecord) => void
   /**
    * v1.3.0 Wave 2. When set, the executor skips steps whose 1-based
    * step_index is `<= resume_from_step_index` and emits no events for them.
@@ -201,6 +228,15 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
   let stepsFailed = 0
   let failureReason: string | undefined
   let pausedAtStepIndex: number | undefined
+  // v1.3.0 W4: track ordered list of completed-step indices (1-based) for
+  // rollback reverse-walk. We append on success; rollback iterates this in
+  // reverse to find candidates with compensate_action.
+  const completedStepIndices: number[] = []
+  // v1.3.0 W4: result-status override when on_failure handler short-circuits
+  // the loop. 'paused' for on_failure='pause', 'failed' otherwise. Default
+  // 'failed' if failureReason set without explicit override.
+  let resultStatusOverride: 'success' | 'failed' | 'paused' | undefined
+  let pausedFromFailureAtStepIndex: number | undefined
 
   const total = wf.step_graph.length
   // v1.3.0 W2: resume_from_step_index = N means skip steps with stepIndex <= N
@@ -326,6 +362,7 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
     const stepEndTs = now()
     if (stepError === null) {
       stepsCompleted++
+      completedStepIndices.push(stepIndex)
       const stepCompleted: StepCompletedEvent = {
         type: 'step_completed',
         ts_ms: stepEndTs,
@@ -345,6 +382,7 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
     } else {
       stepsFailed++
       const onFailure = step.on_failure ?? 'abort'
+      const baseReason = `step ${stepIndex}/${total} (${stepId}) failed: ${stepError.message}`
       if (onFailure === 'continue') {
         // Swallow + proceed; emit step_completed with the failure-as-duration.
         const stepCompleted: StepCompletedEvent = {
@@ -360,8 +398,122 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
         opts.emit(stepCompleted)
         continue
       }
-      // abort / rollback / pause / escalate — all map to terminate-failed at v1.1.0
-      failureReason = `step ${stepIndex}/${total} (${stepId}) failed: ${stepError.message} [on_failure=${onFailure}]`
+      if (onFailure === 'abort') {
+        failureReason = `${baseReason} [on_failure=abort]`
+        break
+      }
+      if (onFailure === 'pause') {
+        // v1.3.0 W4 — on_failure='pause' machinery. Persist a durable
+        // ExecutionPauseRecord{status:'pending'} via opts.pause_persist
+        // (NativeEngine wires this), emit step_paused, and short-circuit
+        // with status='paused'. Resume continues from step_index+1.
+        const pauseRec: ExecutionPauseRecord = {
+          execution_id: opts.execution_id,
+          workflow_id: wf.id,
+          step_index: stepIndex,
+          status: 'pending',
+          reason: stepError.message,
+          created_at_ms: now(),
+        }
+        try {
+          opts.pause_persist?.(pauseRec)
+        } catch (err) {
+          // Persist failure converts to workflow_failed (no silent drop).
+          failureReason = `pause_persist_failed:${err instanceof Error ? err.message : String(err)} [orig=${baseReason}]`
+          break
+        }
+        const pausedEvt: StepPausedEvent = {
+          type: 'step_paused',
+          ts_ms: now(),
+          execution_id: opts.execution_id,
+          workflow_id: wf.id,
+          step_index: stepIndex,
+          reason: stepError.message,
+        }
+        opts.emit(pausedEvt)
+        resultStatusOverride = 'paused'
+        pausedFromFailureAtStepIndex = stepIndex
+        break
+      }
+      if (onFailure === 'escalate') {
+        // v1.3.0 W4 — on_failure='escalate' machinery. Persist a durable
+        // ExecutionEscalationRecord via opts.escalation_persist (NativeEngine
+        // wires this), emit workflow_escalated, and return failed with
+        // reason='escalated:<orig>'.
+        const escRec: ExecutionEscalationRecord = {
+          execution_id: opts.execution_id,
+          workflow_id: wf.id,
+          step_index: stepIndex,
+          reason: stepError.message,
+          created_at_ms: now(),
+        }
+        try {
+          opts.escalation_persist?.(escRec)
+        } catch (err) {
+          failureReason = `escalation_persist_failed:${err instanceof Error ? err.message : String(err)} [orig=${baseReason}]`
+          break
+        }
+        const escEvt: WorkflowEscalatedEvent = {
+          type: 'workflow_escalated',
+          ts_ms: now(),
+          execution_id: opts.execution_id,
+          workflow_id: wf.id,
+          reason: stepError.message,
+        }
+        opts.emit(escEvt)
+        failureReason = `escalated:${baseReason}`
+        resultStatusOverride = 'failed'
+        break
+      }
+      if (onFailure === 'rollback') {
+        // v1.3.0 W4 — on_failure='rollback' machinery (codex W4 advisory #1
+        // step-local + #2 best-effort). Emit workflow_rollback_started, then
+        // reverse-walk completedStepIndices i-1..0; for each step with
+        // compensate_action defined, dispatch via runStepAction-equivalent.
+        // Track success/fail counts. After walk: emit
+        // workflow_rollback_complete (all attempted compensations succeeded
+        // OR there were none) | workflow_rollback_partial (mixed).
+        const rollbackStartedEvt: WorkflowRollbackStartedEvent = {
+          type: 'workflow_rollback_started',
+          ts_ms: now(),
+          execution_id: opts.execution_id,
+          workflow_id: wf.id,
+          reason: stepError.message,
+        }
+        opts.emit(rollbackStartedEvt)
+        const rollbackOutcome = await runRollbackReverseWalk(
+          wf,
+          opts.execution_id,
+          completedStepIndices,
+          { dispatch, runSeq, onHostLLMResult, now, emit: opts.emit },
+        )
+        if (rollbackOutcome.failed === 0) {
+          const completeEvt: WorkflowRollbackCompleteEvent = {
+            type: 'workflow_rollback_complete',
+            ts_ms: now(),
+            execution_id: opts.execution_id,
+            workflow_id: wf.id,
+            steps_compensated: rollbackOutcome.compensated,
+          }
+          opts.emit(completeEvt)
+          failureReason = `rollback_complete:${baseReason} [compensated=${rollbackOutcome.compensated}]`
+        } else {
+          const partialEvt: WorkflowRollbackPartialEvent = {
+            type: 'workflow_rollback_partial',
+            ts_ms: now(),
+            execution_id: opts.execution_id,
+            workflow_id: wf.id,
+            steps_compensated: rollbackOutcome.compensated,
+            steps_failed: rollbackOutcome.failed,
+          }
+          opts.emit(partialEvt)
+          failureReason = `rollback_partial:${rollbackOutcome.compensated}/${rollbackOutcome.compensated + rollbackOutcome.failed}:${baseReason}`
+        }
+        resultStatusOverride = 'failed'
+        break
+      }
+      // Defensive: unknown on_failure value (validator should catch first).
+      failureReason = `${baseReason} [on_failure=${onFailure}]`
       break
     }
   }
@@ -381,6 +533,20 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
       steps_failed: stepsFailed,
       duration_ms: endTs - startTs,
       paused_step_index: pausedAtStepIndex,
+    }
+  }
+
+  // v1.3.0 W4: paused-from-failure short-circuit — on_failure='pause' handler
+  // persisted an ExecutionPauseRecord and emitted step_paused. Don't emit
+  // workflow_completed or workflow_failed; the workflow is suspended awaiting
+  // founder resume via NativeEngine.resumeFromPause.
+  if (resultStatusOverride === 'paused' && pausedFromFailureAtStepIndex !== undefined) {
+    return {
+      status: 'paused',
+      steps_completed: stepsCompleted,
+      steps_failed: stepsFailed,
+      duration_ms: endTs - startTs,
+      paused_step_index: pausedFromFailureAtStepIndex,
     }
   }
 
@@ -534,6 +700,122 @@ function buildPromptSummary(step: WorkflowStep): string {
   const locator = step.inputs?.[0]?.locator ?? ''
   const truncated = locator.length > 200 ? locator.slice(0, 200) + '…' : locator
   return locator ? `${what} input="${truncated}"` : what
+}
+
+/**
+ * v1.3.0 Wave 4 — reverse-walk over completed step indices, dispatching
+ * `compensate_action` on each step that has one defined. Returns counts of
+ * successful + failed compensations.
+ *
+ * Codex W4 advisory #2 best-effort semantics:
+ *   - Steps without compensate_action are skipped silently (counted as neither
+ *     compensated nor failed).
+ *   - A compensate_action that throws produces step_compensation_failed but
+ *     does NOT abort the reverse-walk — we keep going and try every remaining
+ *     completed step (best-effort).
+ */
+async function runRollbackReverseWalk(
+  wf: Workflow,
+  execution_id: string,
+  completedStepIndices: number[],
+  ctx: StepDispatchContext & { now: () => number; emit: (e: EngineEvent) => void },
+): Promise<{ compensated: number; failed: number }> {
+  let compensated = 0
+  let failed = 0
+  // Reverse iteration: i-1 .. 0 over the completed-step list (which is
+  // already in ascending step_index order since we appended on success).
+  for (let i = completedStepIndices.length - 1; i >= 0; i--) {
+    const stepIndex = completedStepIndices[i]!
+    // step_index is 1-based; step_graph is 0-based.
+    const step = wf.step_graph[stepIndex - 1]
+    if (!step || !step.compensate_action) continue
+    const ca = step.compensate_action
+    const compStartTs = ctx.now()
+    try {
+      await runCompensateAction(ca, ctx)
+      const compEndTs = ctx.now()
+      compensated++
+      const okEvt: StepCompensatedEvent = {
+        type: 'step_compensated',
+        ts_ms: compEndTs,
+        execution_id,
+        workflow_id: wf.id,
+        step_index: stepIndex,
+        duration_ms: compEndTs - compStartTs,
+      }
+      ctx.emit(okEvt)
+    } catch (err) {
+      failed++
+      const reason = err instanceof Error ? err.message : String(err)
+      const failEvt: StepCompensationFailedEvent = {
+        type: 'step_compensation_failed',
+        ts_ms: ctx.now(),
+        execution_id,
+        workflow_id: wf.id,
+        step_index: stepIndex,
+        reason,
+      }
+      ctx.emit(failEvt)
+      // Best-effort: continue reverse-walk to attempt remaining compensations.
+    }
+  }
+  return { compensated, failed }
+}
+
+/**
+ * v1.3.0 Wave 4 — dispatch a step's compensate_action. Mirrors runStepAction
+ * for the {wait, invoke_host_llm, spawn_sub_unit} subset (no `terminate`).
+ */
+async function runCompensateAction(
+  ca: NonNullable<WorkflowStep['compensate_action']>,
+  ctx: StepDispatchContext,
+): Promise<void> {
+  switch (ca.action) {
+    case 'wait':
+    case 'spawn_sub_unit':
+      return
+    case 'invoke_host_llm': {
+      const host = ca.host
+      if (host !== 'claude' && host !== 'codex') {
+        throw new Error(`compensate_invocation_failed:invalid_host:${String(host)}`)
+      }
+      const prompt = ca.inputs[0]?.locator
+      if (!prompt) {
+        throw new Error('compensate_invocation_failed:no_prompt')
+      }
+      try {
+        const dispatchArgs: {
+          prompt: string
+          host: 'claude' | 'codex'
+          workflow_run_seq: number
+          timeout_ms?: number
+        } = {
+          prompt,
+          host,
+          workflow_run_seq: ctx.runSeq,
+        }
+        if (ca.timeout_ms !== undefined) {
+          dispatchArgs.timeout_ms = ca.timeout_ms
+        }
+        const result = await ctx.dispatch(dispatchArgs)
+        // Compensation results are not currently surfaced via on_host_llm_result
+        // (the callback is for the primary forward path). We discard `result`
+        // here intentionally — the audit trail lives in step_compensated.
+        void result
+        return
+      } catch (err) {
+        if (err instanceof HostUnavailableError) {
+          throw new Error(`compensate_host_unavailable:${host}`)
+        }
+        const msg = err instanceof Error ? err.message : String(err)
+        throw new Error(`compensate_invocation_failed:${msg}`)
+      }
+    }
+    default: {
+      const exhaustive: never = ca.action
+      throw new Error(`compensate_unknown_action:${String(exhaustive)}`)
+    }
+  }
 }
 
 /**
