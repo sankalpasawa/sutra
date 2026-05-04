@@ -1,5 +1,36 @@
 # Sutra — Current Version
 
+## v2.25.0 (2026-05-04) — D38 L1→L0 promotion wave closes acceptance criterion
+
+**What this is**: founder direction "shift these L1s to L0s. Run the entire framework. Ship them." Six-wave execution (A-F) over a single session, codex consult 1777875522 PASS-with-CHANGES converged. Closes D38 §Acceptance ("Existing Asawa-side artifacts have a documented disposition within 14 days, target 2026-05-12") **8 days ahead of deadline**.
+
+**The six waves**
+
+| Wave | Scope | Commits |
+|---|---|---|
+| A | D38 PLUGIN-RUNTIME expanded to include `plugin/lib/**`; FOUNDER-DIRECTIONS.md amended in lockstep with build-layer-check.sh | sutra `4784cae` + asawa `6ceeeb5` |
+| B | Removed dangling `assistant-kill-switch.sh` Stop hook ref from `.claude/settings.json` (file deleted 2026-04-27 D37 pause; settings ref orphaned until now) | asawa `9769db8` |
+| C | 24 holding/ files stamped with normalized D38 multi-line marker schema; 6 weak-marker upgrades + 4 unclassified→L2 + 12 Bucket-D classics + 2 unaccounted; each got a file-specific WHY_NOT_L0_REASON per codex's "don't reuse the same generic sentence" requirement | asawa `48797ff` |
+| D-1 | Reclassify `migration-dryrun.sh` L1→L2 (mid-wave discovery: hardcoded billu\|paisa\|ppr\|maze portfolio inventory + Asawa git URLs would hard-fail on T4 fleet — refactor-then-promote needed before fleet-safe) | asawa `f854265` |
+| D-2 | Promote `session-token-snapshot.sh` L1→L0 to plugin/hooks/ as SessionStart hook; LOG_FILE auto-picks holding/ vs .sutra/ for fleet-safety; COMPANY fall-through uses repo basename not 'asawa' default; 4-line shim at holding/ with 7-day TTL retire-by 2026-05-11 | sutra `045605b` + asawa `eec96c1` |
+| D-3 | Promote `telemetry-shared-path.sh` L1→L0 to plugin/lib/ as sourced library; activation contract is call-site sourcing + source-compatible shim (no hooks.json registration per codex); shim at holding/ with 7-day TTL | sutra `beb48a1` + asawa `96f78ed` |
+| E | THIS RELEASE — plugin v2.24.0→v2.25.0 bump shipping all A-D commits as one release window per codex atomicity requirement | sutra/asawa current commits |
+| F | plugin-promotion-ledger.md refresh + verify (lands next commit) | TBD |
+
+**Codex consult verdict**: 1777875522 — CHANGES-REQUIRED on 2 of 5 decisions. All folded:
+- Decision 2 (telemetry → plugin/lib/): PASS conditional on `plugin/lib/**` being added to D38 → done in Wave A
+- Decision 4 (atomicity): per-artifact commits, single release window → done (no intermediate trunk states without release)
+- Decision 5 (marker schema): use normalized `LAYER=`/`SCOPE=`/`TARGET_PATH=` (not prose) → done across all 24 stamps
+- Plus 3 required edits: dangling settings.json ref removed (Wave B); dispatcher reclassification recorded (Wave C — was Bucket A, became Bucket D); telemetry checklist re-language (committed inline in Wave D-3)
+
+**Mid-wave rescope**: original plan was 3 promotions. On deeper inspection of `migration-dryrun.sh`, its hardcoded portfolio inventory would HARD-FAIL on T4 fleet (errors on unknown client). Per memory `feedback_infra_default_strict` ("when in doubt, pick the strictest viable") + judgment authority granted by founder ("you and codex can decide and do it"), reclassified L1→L2 instead of promoting a broken binary. Net wave: 2 promotions + 1 reclassify + 24 marker stamps.
+
+**Vinit gh#6/#7/#8 phantom-feature class** (plugin advertised features that lived only in Asawa) is now structurally impossible: plugin IS where we build for the surfaces in this wave. Path-shims at holding/ have 7-day retire-by dates — no permanent two-copy mirrors.
+
+**Codex consult artifacts**: `.enforcement/codex-reviews/2026-05-04-l1-l0-promotion-wave-1777875522.{md,consult.md}`.
+
+---
+
 ## v2.15.1 (2026-05-01) — systemic fix for the recurring nudge-skip pattern
 
 **What this is**: founder caught H-Sutra header not rendering in another session even on v2.15.0 and directed: "systemically fix it." Three preceding releases — v2.14.1 (BLUEPRINT-not-showing), v2.15.0 (4-discipline parity), this turn (H-Sutra header) — all had the same root cause: hook reminder phrased as `(skill: X)` parenthetical, which the model misread as "invoke skill X" rather than "emit text directly." When skill auto-discovery didn't fire for a turn, the block was silently skipped. v2.15.1 closes the pattern, not just the instance.
