@@ -26,8 +26,8 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import {
   acquirePidLock,
   defaultPidPath,
@@ -44,13 +44,21 @@ import { executeWorkflow } from '../runtime/lite-executor.js'
 import {
   listCharters,
   listDomains,
+  listTriggers,
   listWorkflows,
   loadWorkflow,
   persistCharter,
   persistDomain,
   persistTrigger,
   persistWorkflow,
+  userKitRoot,
 } from '../persistence/user-kit.js'
+import {
+  listApprovals,
+  loadApproval,
+  updateApprovalStatus,
+} from '../persistence/execution-approval-ledger.js'
+import { CadenceScheduler, type CadenceSpec as SchedulerCadenceSpec } from '../engine/cadence-scheduler.js'
 import { formatEvent } from '../renderers/terminal-events.js'
 import type { EngineEvent } from '../types/engine-event.js'
 import type { StepAction, StepFailureAction, WorkflowStep } from '../types/index.js'
@@ -62,7 +70,7 @@ import {
   type TriggerSpec,
 } from '../types/trigger-spec.js'
 
-const VERSION = '1.2.2'
+const VERSION = '1.3.0-w3'
 
 interface CommandContext {
   readonly argv: ReadonlyArray<string>
@@ -587,6 +595,7 @@ function cmdDaemon(ctx: CommandContext): number {
     connector_options: intakeLog ? { log_path: intakeLog } : {},
     write: (line) => ctx.stdout(line + '\n'),
     on_error: (err) => ctx.stderr(`[native-engine] ${err.message}\n`),
+    user_kit_options: { env: ctx.env },
   })
 
   ctx.stdout(`sutra-native daemon: starting (pid=${process.pid}, v=${VERSION})\n`)
@@ -599,6 +608,71 @@ function cmdDaemon(ctx: CommandContext): number {
   ctx.stdout(
     `sutra-native daemon: subscribed (intake_log=${intakeLog ?? 'default cwd resolution'})\n`,
   )
+
+  // v1.3.0 W3 (codex W3 BLOCKER 1 fold) — cron daemon scheduler tick.
+  //
+  // Read every persisted TriggerSpec; for each event_type='cron' trigger
+  // with a machine-readable `cadence_spec`, register it with a fresh
+  // CadenceScheduler instance whose callback synthesizes a cron HSutraEvent
+  // and dispatches via engine.handleHSutraEvent. The Router treats cron
+  // events distinctly from founder_input — predicate matching against
+  // cron-typed triggers is the dispatch path.
+  //
+  // Triggers without a cadence_spec are LOGGED + SKIPPED (codex W3 fold:
+  // "trigger T-foo has no cadence_spec; cron trigger inactive") so the
+  // operator surface is honest about which prose-only cron triggers are
+  // dormant until upgraded.
+  //
+  // The scheduler ticks every 60_000ms (codex advisory: minute-scale jitter
+  // tolerated by the ±5min jitter band on cadence-scheduler.ts). The
+  // existing keep-alive setInterval is replaced by the tick interval —
+  // the same timer keeps the event loop alive AND drives the scheduler.
+  const scheduler = new CadenceScheduler({ clock: () => Date.now() })
+  scheduler.start()
+
+  let cronTickSeq = 0
+  const dispatchCron = (trigger: TriggerSpec): (() => Promise<void>) => {
+    return async () => {
+      cronTickSeq++
+      const turnId = `cron-${trigger.id}-${Date.now()}-${cronTickSeq}`
+      try {
+        await engine.handleHSutraEvent({
+          turn_id: turnId,
+          ts: new Date().toISOString(),
+          event_type: 'cron',
+          input_text: '',
+          // tag the trigger id so observers can correlate; harmless extra field
+          // (HSutraEvent allows pass-through extras)
+          cron_trigger_id: trigger.id,
+        } as never)
+      } catch (err) {
+        ctx.stderr(`[cron] dispatch failed for ${trigger.id}: ${err instanceof Error ? err.message : String(err)}\n`)
+      }
+    }
+  }
+
+  let registeredCron = 0
+  let inactiveCron = 0
+  try {
+    const triggers = listTriggers({ env: ctx.env })
+    for (const t of triggers) {
+      if (t.event_type !== 'cron') continue
+      if (!t.cadence_spec) {
+        ctx.stderr(`[cron] trigger ${t.id} has no cadence_spec; cron trigger inactive\n`)
+        inactiveCron++
+        continue
+      }
+      try {
+        scheduler.register(t.cadence_spec as SchedulerCadenceSpec, dispatchCron(t))
+        registeredCron++
+      } catch (err) {
+        ctx.stderr(`[cron] failed to register ${t.id}: ${err instanceof Error ? err.message : String(err)}\n`)
+      }
+    }
+  } catch (err) {
+    ctx.stderr(`[cron] listTriggers failed: ${err instanceof Error ? err.message : String(err)}\n`)
+  }
+  ctx.stdout(`sutra-native daemon: cron scheduler armed (registered=${registeredCron}, inactive=${inactiveCron})\n`)
 
   // Codex P1 fold 2026-05-03 (DIRECTIVE-ID: 1777802035): write a readiness
   // marker so the parent cmdStart can detect successful initialization
@@ -614,6 +688,7 @@ function cmdDaemon(ctx: CommandContext): number {
 
   const shutdown = (signal: string) => {
     ctx.stdout(`sutra-native daemon: received ${signal}; tearing down\n`)
+    try { scheduler.stop() } catch { /* best-effort */ }
     try { engine.stop() } catch { /* best-effort */ }
     try { if (existsSync(readyPath)) unlinkSync(readyPath) } catch { /* best-effort */ }
     process.exit(0)
@@ -621,12 +696,15 @@ function cmdDaemon(ctx: CommandContext): number {
   process.on('SIGTERM', () => shutdown('SIGTERM'))
   process.on('SIGINT', () => shutdown('SIGINT'))
 
-  // Codex P1 fold 2026-05-03: REFERENCED setInterval (NOT .unref()) so the
-  // event loop does NOT exit. Without this, fs.watch persistent:false in
-  // the connector lets the loop empty + Node implicitly exits the daemon
-  // microseconds after engine.start returns. This timer holds the loop
-  // open until SIGTERM/SIGINT calls process.exit.
-  setInterval(() => {}, 60_000)
+  // v1.3.0 W3 — REFERENCED 60s tick interval drives the cron scheduler AND
+  // keeps the event loop alive (codex advisory: 60s tick is the right
+  // cadence; CadenceScheduler tolerates minute-scale jitter via its ±5min
+  // I-12 jitter band). Replaces the v1.2.x keep-alive no-op timer.
+  setInterval(() => {
+    void scheduler.tick().catch((err) => {
+      ctx.stderr(`[cron] scheduler.tick failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    })
+  }, 60_000)
 
   // Unreachable under normal operation (signal handlers exit). Return 0
   // for type completeness.
