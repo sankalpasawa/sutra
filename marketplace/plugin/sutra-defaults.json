@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sutra-os.dev/schemas/sutra-defaults.json",
   "$comment": "Canonical machine-readable policy surface. See SUTRA-DEFAULTS.md for human-readable equivalent. Per founder direction D40. v1.0.1: codex CHANGES-REQUIRED fold — kill_switches comprehensive, hooks now consume this file at runtime via jq, harness rewired.",
-  "version": "2.26.0",
+  "version": "2.28.0",
   "issued": "2026-05-04",
   "source_direction": "D40",
   "per_turn_blocks": {
@@ -474,5 +474,62 @@
     "enforcement": "convention_only",
     "coverage_note": "policy-visible, not behavior-verified",
     "cap_id": "cap-116"
+  },
+  "no_fabrication": {
+    "$comment": "cap-114. Truthfulness rule per codex 2026-05-04 cap114-split-consult ADVISORY. Covers attribution/paraphrase + factual grounding, not just filesystem facts. Schema-only enforcement (hard hook = theater per codex).",
+    "rule": "Use only founder words + memory + grep-verifiable infra. Surface gaps as questions, never fill with own opinions/defaults. Applies to attribution + paraphrase + factual claims, not just filesystem references.",
+    "applies_to": "factual_claims_in_responses_including_attribution_and_paraphrase",
+    "not_applies_to": "proposals_or_recommendations_about_existing_reality (cap-118 covers those)",
+    "examples_good": [
+      "memory says X — confirming with grep → verified, OR memory was wrong, actual is Y",
+      "I do not see this in the codebase; should I create it or did you mean a different file?",
+      "founder said exactly Z; my paraphrase risks drift — quoting verbatim"
+    ],
+    "examples_bad": [
+      "paraphrasing \"you said you wanted X\" when founder did not say X",
+      "v2.5.0 was released last Tuesday without checking",
+      "the CSM has 27 stubs (without grep-verifying the actual count)"
+    ],
+    "evidence_for_full_shipping": "Claim-extraction or judge-backed eval (e.g., LLM judge or structural claim-grep audit on H-Sutra log ≥100 turns). Grep-verifiable audit alone insufficient.",
+    "coverage_note": "policy-visible (codex 2026-05-04: full shipping reserved until claim-extraction eval lands)",
+    "enforcement": "convention_only",
+    "cap_id": "cap-114"
+  },
+  "no_invented_human_ops_mechanisms": {
+    "$comment": "cap-118 (renamed from no_operational_capacity_claims per codex 2026-05-04 ADVISORY: name was leaking into truthfulness; this is narrower — about INVENTING human ritual structure, not about claim correctness).",
+    "rule": "Do not invent human-run operating mechanisms (weekly rituals, manual KPI tracking, new operations departments, scheduled human reviews, standup ceremonies, owner-appointment patterns) when the established operating model is automated/abstracted.",
+    "applies_to": "proposals_and_recommendations_about_team_operations",
+    "not_applies_to": "descriptions_of_existing_reality_or_quoted_critique (those are factual claims, cap-114 territory)",
+    "examples_good": [
+      "the audit script runs on demand; founder runs it before promotion decisions",
+      "this could be automated by a hook on PreToolUse",
+      "automate via CronCreate trigger so no human babysit"
+    ],
+    "examples_bad": [
+      "we should create an Analytics Department to review weekly KPIs",
+      "set up a Monday standup to review the backlog",
+      "appoint an owner who reviews this every Friday",
+      "schedule a manual quarterly compliance review"
+    ],
+    "lint_patterns_to_flag": [
+      "department",
+      "weekly review",
+      "standup",
+      "manual KPI",
+      "every (Monday|Tuesday|Wednesday|Thursday|Friday|day)",
+      "appoint an owner",
+      "monthly review",
+      "quarterly review"
+    ],
+    "lint_allowlist_contexts": [
+      "quoting founder verbatim",
+      "describing existing infrastructure (not proposing)",
+      "critique-of-existing-mechanism (cap-114 territory if factual)"
+    ],
+    "evidence_for_full_shipping": "100-turn audit + lightweight post-response lint pass with low false-positive rate (<5%). Lint deferred to follow-up commit; schema-only this turn.",
+    "coverage_note": "policy-visible (full shipping unblocks when lint lands and 100-turn audit clean)",
+    "enforcement": "convention_only",
+    "enforcement_planned": "soft post-response lint (Stop event hook) — DEFERRED to follow-up commit",
+    "cap_id": "cap-118"
   }
 }

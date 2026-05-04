@@ -2,6 +2,61 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.28.0 — 2026-05-04
+
+**cap-114 split — `no_fabrication` (cap-114) + `no_invented_human_ops_mechanisms` (cap-118) ship as separate plugin-canonical schemas (D43 follow-up).**
+
+Per codex 2026-05-04 cap114-split-consult ADVISORY (verdict file `.enforcement/codex-reviews/2026-05-04-cap114-split-consult.md`). Fold:
+
+1. **cap-114 renamed `no_fabrication`** — covers attribution/paraphrase + factual grounding (not just filesystem facts per codex). Status `proposed (DEFER)` → `shipping (policy-visible)`.
+
+2. **cap-118 NEW `no_invented_human_ops_mechanisms`** — codex specifically rejected the original "no_unsupported_operational_capacity_claims" name as bleeding back into truthfulness. New name draws clean boundary: cap-114 = "is this claim true / grounded?", cap-118 = "is this proposing forbidden human-ritual structure?".
+
+### What this delivers
+
+`sutra-defaults.json` v2.28.0 adds two top-level keys (codex confirmed top-level placement vs nested under output_discipline / consult_policy — the rules govern proposal *content* across all turns, not response shape):
+
+```
+.no_fabrication                       (cap-114) — truthfulness/attribution
+.no_invented_human_ops_mechanisms     (cap-118) — no human-ritual proposals
+```
+
+Each schema entry carries:
+- `rule` — declarative behavior rule
+- `applies_to` + `not_applies_to` — scope boundary (codex P0)
+- `examples_good` (3 each) + `examples_bad` (3 each) — codex required 3-5
+- `evidence_for_full_shipping` — what unlocks full `shipping` from `policy-visible`
+- `coverage_note` — explicit policy-visible caveat per codex
+- `enforcement: convention_only` (cap-114) / `convention_only` + planned soft lint (cap-118)
+- `cap_id` cross-reference to CAPABILITY-MAP.md
+
+### Why no hooks (yet)
+
+- **cap-114**: schema-only. Hard hook = theater (codex: "untestable structurally without LLM-judge eval").
+- **cap-118**: schema-first; soft post-response lint **deferred to follow-up commit**. Codex specified lint patterns (`department`, `weekly review`, `standup`, `manual KPI`, `every Friday`, `appoint an owner`, etc.) and allowlist contexts (quoting founder verbatim, describing existing infrastructure, critique-of-existing-mechanism).
+
+### Status path
+
+Both promoted `proposed (DEFER)` → `shipping (policy-visible)`. Full `shipping` requires:
+- cap-114: claim-extraction or LLM-judge eval on H-Sutra log ≥100 turns. Grep-verifiable audit alone insufficient.
+- cap-118: 100-turn audit + soft lint with <5% false-positive rate. Reachable earlier than cap-114 because violation class is narrower and structurally detectable.
+
+### What changed under the hood
+
+- **`sutra-defaults.json`** — 2 new top-level entries (~50 lines schema each).
+- **`.claude-plugin/plugin.json`** — `2.27.0` → `2.28.0`.
+- **`.claude-plugin/marketplace.json`** — `2.27.0` → `2.28.0`.
+
+### CSM impact (Asawa-side)
+
+`holding/CAPABILITY-MAP.md` cap-114 row updated: status `proposed (DEFER)` → `shipping (policy-visible)`; new cap-118 row added with same status. Notes reference codex consult. capability-audit.sh DISCIPLINES_BACKLOG config updated to point at new schema paths.
+
+### Codex
+
+Pre-shipped consult ADVISORY folded directly. All 5 codex prerequisites (final names, examples, scope boundaries, status path, cap-118 lint deferred) addressed.
+
+---
+
 ## v2.27.0 — 2026-05-04
 
 **`/sutra-capability` skill ships — T4 fleet's on-demand CSM digest (D43 Layer 4, CSM TODO #3).**
