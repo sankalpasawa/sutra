@@ -11,8 +11,21 @@
  */
 
 // Runtime engine
-export { NativeEngine, createDefaultEngine, type NativeEngineOptions } from './runtime/native-engine.js'
+export { NativeEngine, createDefaultEngine, parseApprovalUtterance, type NativeEngineOptions, type ApprovalUtterance } from './runtime/native-engine.js'
 export { executeWorkflow, executeWorkflowResume, type ExecuteOptions, type ExecutionResult } from './runtime/lite-executor.js'
+
+// v1.3.0 W2 — execution-approval-ledger public surface for callers writing
+// custom Native daemons / inspecting pending approvals on disk.
+export {
+  persistApproval,
+  loadApproval,
+  listApprovals,
+  updateApprovalStatus,
+  markResumed,
+  isExecutionApprovalRecord,
+  type ExecutionApprovalRecord,
+  type ExecutionApprovalStatus,
+} from './persistence/execution-approval-ledger.js'
 
 // Composable runtime modules
 export { HSutraConnector, resolveHSutraLogPath, type HSutraConnectorOptions, type HSutraConnectorStats } from './runtime/h-sutra-connector.js'

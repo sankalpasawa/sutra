@@ -29,12 +29,15 @@ import type {
   PatternProposedEvent,
   ProposalApprovedEvent,
   ProposalRejectedEvent,
+  ApprovalGrantedEvent,
+  ApprovalDeniedEvent,
+  ApprovalAlreadyHandledEvent,
 } from '../types/engine-event.js'
 import { HSutraConnector, type HSutraConnectorOptions } from './h-sutra-connector.js'
 import { Router } from './router.js'
 import { ArtifactCatalog, type ArtifactCatalogOptions } from './artifact-catalog.js'
 import { RendererRegistry } from './renderer-registry.js'
-import { executeWorkflow } from './lite-executor.js'
+import { executeWorkflow, executeWorkflowResume } from './lite-executor.js'
 import { loadStarterKit, STARTER_WORKFLOW_CHARTER_MAP } from '../starter-kit/index.js'
 import {
   listTriggers as listUserKitTriggers,
@@ -48,6 +51,14 @@ import {
   persistProposal,
   updateProposalStatus,
 } from '../persistence/proposal-ledger.js'
+import {
+  listApprovals,
+  loadApproval,
+  markResumed,
+  persistApproval,
+  updateApprovalStatus,
+  type ExecutionApprovalRecord,
+} from '../persistence/execution-approval-ledger.js'
 import { detectPatterns, type PatternDetectorOptions } from './pattern-detector.js'
 import { buildProposal } from './proposal-builder.js'
 import {
@@ -81,8 +92,51 @@ export interface NativeEngineOptions {
   readonly now_ms?: () => number
 }
 
-const APPROVE_RE = /^\s*approve\s+(P-[0-9a-f]{8})\s*$/i
-const REJECT_RE = /^\s*reject\s+(P-[0-9a-f]{8})(?:\s+(.+))?$/i
+// v1.3.0 W2 (codex W2 advisory C fold) — centralized namespace dispatcher.
+// PROPOSAL approvals (P-<sha8>) and EXECUTION approvals (E-<id>) flow through
+// the SAME parser so future namespaces (R-<id> for runs, etc.) plug in cleanly.
+//
+// Pattern: `(approve|reject) (P-XXXXXXXX|E-...) [reason]`
+//   - P namespace: P-<sha8> (8 lowercase hex). Reason optional on reject.
+//   - E namespace: E-<turn_id>-<seq> (alphanumeric + hyphens; matches NativeEngine's
+//     executionId construction). Reason optional on reject.
+//
+// Returned `id` is namespace-prefixed (e.g., 'P-deadbeef' or 'E-t1-1') so
+// downstream loaders (loadProposal / loadApproval) work directly with it.
+const APPROVAL_RE = /^\s*(approve|reject)\s+([PE]-[A-Za-z0-9_-]+)(?:\s+(.+))?\s*$/i
+
+export interface ApprovalUtterance {
+  readonly namespace: 'P' | 'E'
+  readonly id: string
+  readonly action: 'approve' | 'reject'
+  readonly reason?: string
+}
+
+/**
+ * Parse a founder utterance for approve/reject commands across ALL namespaces.
+ *
+ * Returns null when text doesn't match the approval grammar. Returns parsed
+ * components when it does. Caller dispatches based on `namespace`:
+ *   - 'P' → applyApproval / applyRejection (proposal-ledger)
+ *   - 'E' → applyExecutionApproval / applyExecutionRejection (execution-approval-ledger)
+ *
+ * Codex W2 advisory C fold (2026-05-04): a single parser keeps the H-Sutra
+ * surface coherent and lets unit tests verify "approve P-deadbeef" vs
+ * "approve E-t1-1" with one set of regex assertions.
+ */
+export function parseApprovalUtterance(text: string): ApprovalUtterance | null {
+  if (typeof text !== 'string') return null
+  const m = APPROVAL_RE.exec(text.trim())
+  if (!m) return null
+  const action = m[1].toLowerCase() as 'approve' | 'reject'
+  const id = m[2]
+  const namespace = id.startsWith('P-') ? 'P' : 'E'
+  const reason = m[3]?.trim()
+  const out: ApprovalUtterance = reason
+    ? { namespace, id, action, reason }
+    : { namespace, id, action }
+  return out
+}
 
 export class NativeEngine {
   readonly connector: HSutraConnector
@@ -161,6 +215,30 @@ export class NativeEngine {
         this.onError(err instanceof Error ? err : new Error(String(err)))
       }
     }
+
+    // v1.3.0 W2 (codex W2 BLOCKER 3 fold) — boot-time reload of pending
+    // execution approvals. Per codex advisory: "the pending approval state
+    // must survive restart, but DO NOT auto-resume — founder must explicitly
+    // approve". So we only LIST + log; resumption is gated on the founder's
+    // next `approve E-<id>` utterance.
+    //
+    // The list is logged via onError as informational (no dedicated info
+    // sink at v1.3.0; codex P1 wave-2 will add structured operator logging).
+    try {
+      const pendingApprovals = listApprovals(this.userKitOptions, 'pending')
+      if (pendingApprovals.length > 0) {
+        this.onError(
+          new Error(
+            `[native-engine boot] ${pendingApprovals.length} pending step approval(s) on disk: ${pendingApprovals
+              .map((r) => `${r.execution_id}@step${r.step_index}`)
+              .join(', ')}. Founder must explicitly "approve E-<id>" or "reject E-<id> <reason>" to resume.`,
+          ),
+        )
+      }
+    } catch (err) {
+      // pending-approvals dir might not exist on first boot — non-fatal.
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
   }
 
   /** Begin watching the H-Sutra log + processing events. Idempotent. */
@@ -215,17 +293,22 @@ export class NativeEngine {
   async handleHSutraEvent(evt: HSutraEvent): Promise<number> {
     let emitted = 0
 
-    // SPEC v1.2 §4.5(b) — approve/reject command parsing PRECEDES routing.
-    // Founder input "approve P-xxxxxxxx" or "reject P-xxxxxxxx [reason]" is
-    // handled as a control command, not a domain workflow trigger.
-    const text = (evt.input_text ?? '').trim()
-    const approveMatch = APPROVE_RE.exec(text)
-    if (approveMatch) {
-      return this.applyApproval(approveMatch[1], evt)
-    }
-    const rejectMatch = REJECT_RE.exec(text)
-    if (rejectMatch) {
-      return this.applyRejection(rejectMatch[1], rejectMatch[2] ?? 'no reason provided', evt)
+    // SPEC v1.2 §4.5(b) + v1.3.0 W2 — approve/reject command parsing PRECEDES
+    // routing. Single parser handles BOTH namespaces (codex W2 advisory C):
+    //   - P-<sha8> → proposal lifecycle (emergence v1)
+    //   - E-<id>   → execution-approval lifecycle (step-level approval gate)
+    const text = evt.input_text ?? ''
+    const utt = parseApprovalUtterance(text)
+    if (utt) {
+      if (utt.namespace === 'P') {
+        return utt.action === 'approve'
+          ? this.applyApproval(utt.id, evt)
+          : this.applyRejection(utt.id, utt.reason ?? 'no reason provided', evt)
+      }
+      // namespace === 'E' — v1.3.0 W2 step-level approval gate
+      return utt.action === 'approve'
+        ? await this.applyExecutionApproval(utt.id, evt)
+        : this.applyExecutionRejection(utt.id, utt.reason ?? 'no reason provided', evt)
     }
 
     // v1.2.2 N7 (narrowed) — read evt.event_type with founder_input as default;
@@ -262,6 +345,8 @@ export class NativeEngine {
       // narrowing — keep direct executions ungated + non-DP).
       // v1.2.2 N4 — also resolve the operating Charter id (via STARTER_WORKFLOW_CHARTER_MAP
       // at v1.2.2; user-kit charter resolution is v1.x scope).
+      // v1.3.0 W2 — wire approval_persist callback so a paused step writes
+      // a durable ExecutionApprovalRecord to runtime/pending-approvals/.
       const charterId = STARTER_WORKFLOW_CHARTER_MAP.get(wf.id)
       await executeWorkflow({
         workflow: wf,
@@ -269,6 +354,16 @@ export class NativeEngine {
         workflow_run_seq: this.executionCounter,
         user_kit_options_for_dp: this.userKitOptions,
         charter_id: charterId,
+        approval_persist: (rec) => {
+          try {
+            persistApproval(rec, this.userKitOptions)
+          } catch (err) {
+            // Re-throw — lite-executor turns persist failures into
+            // workflow_failed reason=approval_persist_failed:<msg>, which
+            // is the right founder-facing surface (no silent drop).
+            throw err
+          }
+        },
         emit: (engineEvt) => {
           this.emitEvent(engineEvt, evt)
           emitted++
@@ -465,6 +560,194 @@ export class NativeEngine {
     }
     this.emitEvent(rejectedEvt, evt)
     return 1
+  }
+
+  /**
+   * v1.3.0 W2 (codex W2 BLOCKER 3 + advisory C/D fold) — `approve E-<id>`
+   * branch.
+   *
+   * Loads the ExecutionApprovalRecord; on status='pending' flips to
+   * 'approved', emits approval_granted, then resumes the workflow run via
+   * resumeApproved. On any other status (already-approved, resumed,
+   * rejected, terminal) emits approval_already_handled with the original
+   * decided_at_ms — never throws (advisory D: stale approve is no-op,
+   * distinguishable from "never existed").
+   */
+  private async applyExecutionApproval(execId: string, evt: HSutraEvent): Promise<number> {
+    const rec = loadApproval(execId, this.userKitOptions)
+    if (!rec) {
+      this.onError(
+        new Error(`applyExecutionApproval: no approval record for "${execId}"`),
+      )
+      return 0
+    }
+    if (rec.status !== 'pending') {
+      const handledEvt: ApprovalAlreadyHandledEvent = {
+        type: 'approval_already_handled',
+        ts_ms: this.nowMs(),
+        execution_id: rec.execution_id,
+        workflow_id: rec.workflow_id,
+        step_index: rec.step_index,
+        originally_decided_at_ms: rec.decided_at_ms ?? rec.created_at_ms,
+      }
+      this.emitEvent(handledEvt, evt)
+      return 1
+    }
+
+    // Atomic transition pending → approved (advisory E ordering: ledger
+    // first, then runtime resume, then markResumed on completion).
+    let updated: ExecutionApprovalRecord
+    try {
+      updated = updateApprovalStatus(
+        execId,
+        'approved',
+        `founder approved via "approve ${execId}"`,
+        this.userKitOptions,
+        this.nowMs(),
+      )
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+      return 0
+    }
+
+    const grantedEvt: ApprovalGrantedEvent = {
+      type: 'approval_granted',
+      ts_ms: this.nowMs(),
+      execution_id: updated.execution_id,
+      workflow_id: updated.workflow_id,
+      step_index: updated.step_index,
+    }
+    this.emitEvent(grantedEvt, evt)
+    let emitted = 1
+
+    // Resume the workflow run from the paused step. The lite-executor
+    // bypass at isResumeFirstStep skips the requires_approval gate exactly
+    // once (for the step that was paused), so the workflow continues.
+    try {
+      emitted += await this.resumeApproved(updated, evt)
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
+    return emitted
+  }
+
+  /**
+   * v1.3.0 W2 — `reject E-<id> <reason>` branch.
+   *
+   * Loads the record; on pending flips to 'rejected', emits approval_denied
+   * AND a workflow_failed (reason='approval_denied:<reason>') so the audit
+   * trail shows the workflow terminated. On any other status emits
+   * approval_already_handled (advisory D).
+   */
+  private applyExecutionRejection(execId: string, reason: string, evt: HSutraEvent): number {
+    const rec = loadApproval(execId, this.userKitOptions)
+    if (!rec) {
+      this.onError(
+        new Error(`applyExecutionRejection: no approval record for "${execId}"`),
+      )
+      return 0
+    }
+    if (rec.status !== 'pending') {
+      const handledEvt: ApprovalAlreadyHandledEvent = {
+        type: 'approval_already_handled',
+        ts_ms: this.nowMs(),
+        execution_id: rec.execution_id,
+        workflow_id: rec.workflow_id,
+        step_index: rec.step_index,
+        originally_decided_at_ms: rec.decided_at_ms ?? rec.created_at_ms,
+      }
+      this.emitEvent(handledEvt, evt)
+      return 1
+    }
+
+    let updated: ExecutionApprovalRecord
+    try {
+      updated = updateApprovalStatus(
+        execId,
+        'rejected',
+        reason,
+        this.userKitOptions,
+        this.nowMs(),
+      )
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+      return 0
+    }
+
+    const deniedEvt: ApprovalDeniedEvent = {
+      type: 'approval_denied',
+      ts_ms: this.nowMs(),
+      execution_id: updated.execution_id,
+      workflow_id: updated.workflow_id,
+      step_index: updated.step_index,
+      reason,
+    }
+    this.emitEvent(deniedEvt, evt)
+    // Also emit workflow_failed so the audit trail closes the loop.
+    const failedEvt: EngineEvent = {
+      type: 'workflow_failed',
+      ts_ms: this.nowMs(),
+      workflow_id: updated.workflow_id,
+      execution_id: updated.execution_id,
+      reason: `approval_denied:${reason}`,
+    }
+    this.emitEvent(failedEvt, evt)
+    return 2
+  }
+
+  /**
+   * v1.3.0 W2 — resume an approved-and-paused execution.
+   *
+   * Looks up the original Workflow by workflow_id, then calls
+   * executeWorkflowResume with resume_from_step_index = (paused_step_index - 1)
+   * so the gated step IS the first step to run. The lite-executor bypass
+   * skips its requires_approval gate exactly once.
+   *
+   * On completion (success or failure), markResumed flips the ledger entry
+   * to 'resumed' so subsequent approve/reject for this execution returns
+   * approval_already_handled.
+   */
+  private async resumeApproved(rec: ExecutionApprovalRecord, evt: HSutraEvent): Promise<number> {
+    const wf = this.workflowsById.get(rec.workflow_id)
+    if (!wf) {
+      this.onError(
+        new Error(`resumeApproved: workflow "${rec.workflow_id}" no longer loaded; cannot resume "${rec.execution_id}"`),
+      )
+      return 0
+    }
+    let emitted = 0
+    const charterId = STARTER_WORKFLOW_CHARTER_MAP.get(wf.id)
+    try {
+      await executeWorkflowResume({
+        workflow: wf,
+        execution_id: rec.execution_id,
+        workflow_run_seq: this.executionCounter,
+        user_kit_options_for_dp: this.userKitOptions,
+        charter_id: charterId,
+        // Resume MUST skip steps 1..paused_step_index-1 so the gated step
+        // (paused_step_index) is the first to execute. The bypass on
+        // isResumeFirstStep skips its requires_approval gate.
+        resume_from_step_index: rec.step_index - 1,
+        // Wire approval_persist again so a SECOND requires_approval=true
+        // step downstream can pause the resumed run.
+        approval_persist: (r) => {
+          persistApproval(r, this.userKitOptions)
+        },
+        emit: (engineEvt) => {
+          this.emitEvent(engineEvt, evt)
+          emitted++
+        },
+      })
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
+    // Ledger transition approved → resumed (terminal sink for the resume side).
+    try {
+      markResumed(rec.execution_id, this.userKitOptions, this.nowMs())
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)))
+    }
+    return emitted
   }
 
   /**
