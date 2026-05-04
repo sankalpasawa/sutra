@@ -22,12 +22,15 @@
 #   8. Writes a sentinel at ~/.sutra/installed-via-script so the SessionStart
 #      hook auto-activates /core:start on the first session in this project.
 #   9. Merges the Sutra permission allowlist into ~/.claude/settings.local.json.
-#  10. Prints clear "Next: cd <target> && claude" instructions. Default is
-#      print-only — auto-exec under `curl ... | bash` is the textbook fragile
-#      pattern: claude's interactive UI may render but keystrokes drop in
-#      some terminals (rustup/bun/nvm avoid for the same reason). The
-#      --launch flag opts in to the exec path. The SessionStart hook fires
-#      /core:start on the first `claude` session in the project regardless.
+#  10. Runs `sutra start` against the target directory — handles the telemetry
+#      consent prompt + writes .claude/sutra-project.json — OUTSIDE of claude
+#      so the user gets one prompt during install, not a nested prompt
+#      inside their first claude session.
+#  11. Auto-launches `claude` in the target directory. Founder direction
+#      2026-05-04 ("include sutra start and start claude. Include them by
+#      default"). Robust handoff: `stty sane` + full /dev/tty reattach for
+#      stdin/stdout/stderr before exec — closes the keystroke-drop hang
+#      observed under macOS Terminal.app. --no-launch opts out.
 #
 # Re-run semantics (founder direction 2026-05-04, "the person might have used
 # it once, so you re-run everything"): every step is idempotent. Folder exists
@@ -55,7 +58,7 @@ IFS=$'\n\t'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-SUTRA_VERSION="0.3.0"  # this installer's version (NOT the plugin's — see header)
+SUTRA_VERSION="0.4.0"  # this installer's version (NOT the plugin's — see header)
 SUTRA_MARKETPLACE="sankalpasawa/sutra"   # source spec for `marketplace add` (GitHub path)
 SUTRA_MARKETPLACE_NAME="sutra"           # registered name in Claude (from marketplace.json .name)
 SUTRA_PLUGIN="core@sutra"
@@ -69,8 +72,8 @@ LAST_CMD=""
 # Target-directory selection state (resolved in step_select_target)
 TARGET_DIR=""
 NON_INTERACTIVE=0
-LAUNCH_OPT_IN=0
-TOTAL_STEPS=7
+NO_LAUNCH=0
+TOTAL_STEPS=8
 
 if [[ "${SUTRA_INSTALL_VERBOSE:-0}" == "1" ]]; then
   set -x
@@ -178,11 +181,11 @@ Usage:
 
 Flags (after `bash -s --`):
   -d, --dir <path>   Target directory (overrides $SUTRA_TARGET_DIR + default ./sutra)
-  -y, --yes          Non-interactive: reuse existing dir, skip claude launch
-                     (precedence: -y always wins over --launch — automation safety)
-  --launch           After install, attempt `exec claude` in the target dir.
-                     OFF by default — auto-exec under curl|bash hangs in some
-                     terminals (rustup/bun/nvm avoid for the same reason).
+  -y, --yes          Non-interactive: reuse existing dir, skip sutra start + claude launch
+                     (precedence: -y always wins — automation safety)
+  --no-launch        Skip the auto-launch step (still runs sutra start). Use when
+                     you want to inspect the install before opening claude, or
+                     when curl|bash → exec claude misbehaves on your terminal.
   -h, --help         Print this help and exit
 
 Environment:
@@ -194,11 +197,12 @@ What it does (idempotent — safe to re-run):
   2. Installs Claude Code if missing (Anthropic installer).
   3. Adds the Sutra marketplace (refreshes cache to latest catalog).
   4. Installs OR updates the core@sutra plugin.
-  5. Writes the first-run sentinel; the SessionStart hook auto-fires /core:start.
+  5. Writes the first-run sentinel.
   6. Merges the Sutra permission allowlist into ~/.claude/settings.local.json.
-  7. Prints `cd <target> && claude` instructions. Default is print-only —
-     auto-exec under curl|bash hangs in some terminals (claude UI renders
-     but keystrokes drop). The --launch flag opts in to the exec path.
+  7. Runs `sutra start` (telemetry consent + project onboarding outside claude).
+  8. Auto-launches `claude` in the target directory (founder direction
+     2026-05-04 "include them by default"). Robust hand-off via stty sane +
+     full /dev/tty re-attach. Skip with --no-launch.
 
 Re-runs safely from any state: marketplace already added → continues + refreshes;
 plugin already installed → updates to latest; sentinel re-armed; permissions deduped.
@@ -211,7 +215,7 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -y|--yes) NON_INTERACTIVE=1 ;;
-      --launch) LAUNCH_OPT_IN=1 ;;
+      --no-launch) NO_LAUNCH=1 ;;
       -d|--dir)
         shift
         # Reject empty AND reject flag-shaped next tokens (e.g. `-d --yes`)
@@ -642,37 +646,108 @@ step_write_sentinel() {
 }
 
 # -----------------------------------------------------------------------------
-# Step 7 — opt-in claude launch (--launch flag only)
+# Step 7 — sutra start (telemetry consent + project onboarding outside claude)
 #
-# Founder direction 2026-05-04 (revised after hang report): the previous
-# default of `exec </dev/tty; exec claude` rendered claude's UI but dropped
-# keystrokes in some terminals (macOS Terminal.app confirmed). Auto-exec
-# under `curl ... | bash` is the textbook fragile pattern — rustup, bun,
-# nvm all avoid it for the same reason. Print-only is the safe default;
-# `--launch` opts in for power users who know their terminal handles it.
+# Founder direction 2026-05-04 ("include sutra start and start claude.
+# Include them by default"): runs `bin/sutra start` against the target dir
+# so onboarding happens DURING install, not as a nested prompt inside the
+# user's first claude session. Idempotent — sutra start is a no-op when
+# .claude/sutra-project.json already exists.
 #
-# Precedence (codex P2-B fold):
-#   * NON_INTERACTIVE (-y) — always wins; never launch under automation
-#   * default (no --launch) — no-op; print_banner above is the canonical
-#     "Sutra ready, next: cd && claude" surface
-#   * --launch              — try the exec with explicit warning + escape hint
+# Resolves the plugin's bin/sutra by globbing the install cache. Falls
+# back to a soft skip with hint if the binary can't be located (cache
+# layout drift, sparse install, etc.). Skipped under -y (automation) or
+# when /dev/tty is unavailable (sutra start is interactive).
+# -----------------------------------------------------------------------------
+resolve_sutra_bin() {
+  # Most common: ~/.claude/plugins/cache/sutra/core/<version>/bin/sutra
+  # Take the latest version if multiple exist (last-segment sort).
+  local candidate
+  candidate=$(ls -1 "${HOME}/.claude/plugins/cache/sutra/core"/*/bin/sutra 2>/dev/null | sort -V | tail -1)
+  if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+    printf '%s' "${candidate}"
+    return 0
+  fi
+  # Defensive fallback — older / alternate cache shapes.
+  for candidate in \
+    "${HOME}/.claude/plugins/cache/sankalpasawa/sutra/plugin/bin/sutra" \
+    "${HOME}/.claude/plugins/cache/sutra/plugin/bin/sutra" \
+    "${HOME}/.claude/plugins/marketplaces/sankalpasawa/sutra/marketplace/plugin/bin/sutra"
+  do
+    [[ -x "${candidate}" ]] && { printf '%s' "${candidate}"; return 0; }
+  done
+  return 1
+}
+
+step_sutra_start() {
+  step "Step 7/${TOTAL_STEPS}: sutra start (telemetry consent + onboarding)"
+
+  if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    log "Non-interactive (-y) — skipping sutra start (will fire on first claude session)."
+    return 0
+  fi
+
+  local sutra_bin
+  if ! sutra_bin=$(resolve_sutra_bin); then
+    warn "Could not locate plugin bin/sutra — skipping sutra start."
+    warn "  Run /core:start once you're inside claude to onboard the project."
+    return 0
+  fi
+
+  if ! has_tty; then
+    log "No usable /dev/tty — skipping interactive sutra start."
+    log "  /core:start will fire on first claude session via SessionStart hook."
+    return 0
+  fi
+
+  log "Resolved: ${sutra_bin}"
+  log "Running sutra start in ${TARGET_DIR} (telemetry prompt may appear)..."
+  log ""
+
+  # Run from the target dir; reattach stdin to /dev/tty for the consent prompt.
+  # Captures exit code; non-zero is a soft warning (claude can still run /core:start).
+  if ( cd "${TARGET_DIR}" && "${sutra_bin}" start </dev/tty ); then
+    ok "sutra start completed"
+  else
+    warn "sutra start exited non-zero — re-run /core:start inside claude if needed."
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Step 8 — auto-launch Claude Code (default ON; --no-launch opts out)
+#
+# Founder direction 2026-05-04 ("include them by default"): reverses the
+# v0.3.0 print-only default. The keystroke-drop hang in v0.2.0 was caused
+# by an incomplete fd handoff — `exec </dev/tty; exec claude` redirected
+# only stdin (fd 0) but claude's interactive UI also uses fd 1 (output)
+# and fd 2 (raw mode tcsetattr ioctl). Robust v0.4.0 handoff:
+#   1. `stty sane </dev/tty` resets canonical mode + sane echo/erase
+#   2. `exec claude </dev/tty >/dev/tty 2>/dev/tty` reattaches all 3 fds
+#      AND replaces the script process in one syscall — claude inherits
+#      a clean tty for input, output, AND control.
+#
+# Skipped when:
+#   * NON_INTERACTIVE (-y) — automation safety
+#   * NO_LAUNCH (--no-launch) — explicit opt-out
+#   * claude not on PATH — install must have failed silently; print hint
+#   * /dev/tty unopenable — headless / sandboxed; print hint
 # -----------------------------------------------------------------------------
 step_launch_claude() {
+  step "Step 8/${TOTAL_STEPS}: launch Claude Code"
+
   local hint_cmd="cd ${TARGET_DIR} && claude"
 
-  # -y wins. Skip silently — print_banner already printed the next-steps block.
   if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    log "Non-interactive (-y) — skipping launch."
+    log "  Next: ${hint_cmd}"
     return 0
   fi
 
-  # Default path: print_banner already covered the next steps above. No-op.
-  # (Codex P2-C fold — was duplicating the banner's guidance.)
-  if [[ ${LAUNCH_OPT_IN} -eq 0 ]]; then
+  if [[ ${NO_LAUNCH} -eq 1 ]]; then
+    log "--no-launch — skipping launch."
+    log "  Next: ${hint_cmd}"
     return 0
   fi
-
-  # --launch opt-in path.
-  step "Step 7/${TOTAL_STEPS}: launch Claude Code (--launch opt-in)"
 
   if ! command -v claude >/dev/null 2>&1; then
     warn "claude not on PATH after install — open a new terminal, then:"
@@ -686,19 +761,19 @@ step_launch_claude() {
     return 0
   fi
 
-  warn "--launch attempts exec claude. Some terminals drop keystrokes when"
-  warn "  the parent process was a curl|bash pipeline (claude's UI renders"
-  warn "  but Enter/numbers don't register). If that happens: Ctrl+C twice,"
-  warn "  then run: ${hint_cmd}"
+  log ""
+  log "Launching Claude Code (sutra start completed; project onboarded)..."
+  log "  If keystrokes don't reach claude (rare): Ctrl+C twice, then run: ${hint_cmd}"
   log ""
 
-  # Reattach to TTY (curl|bash owns stdin) and exec claude so the script
-  # process is replaced. has_tty above proved /dev/tty is openable so the
-  # redirect cannot hard-fail. Trap chain is dropped on exec(), which is
-  # fine: all on-disk state (sentinel, settings) was committed in earlier steps.
+  # Robust handoff: stty sane resets terminal mode; the 3-fd redirect
+  # AND exec happen in one syscall so claude inherits a clean tty for
+  # input/output/control. Trap chain is dropped on exec(), which is fine
+  # — all on-disk state (sentinel, settings, sutra-project.json) was
+  # committed in earlier steps.
   cd "${TARGET_DIR}"
-  exec </dev/tty
-  exec claude
+  stty sane </dev/tty 2>/dev/null || true
+  exec claude </dev/tty >/dev/tty 2>/dev/tty
 }
 
 # -----------------------------------------------------------------------------
@@ -755,9 +830,10 @@ main() {
   # every turn forever (vinit#8 evidence + asawa@Rameshs report 2026-05-01).
   step_write_sentinel
   step_write_permissions
-  # Print the fallback banner THEN attempt to exec claude. If the launch
-  # exec's, the banner is the user's last printed reference. If the launch
-  # is skipped (-y / no claude / no tty), the banner is the explicit hint.
+  step_sutra_start
+  # Print the banner THEN exec claude. The banner is the user's last visual
+  # reference before claude takes over the terminal (under default auto-launch),
+  # or their explicit hint to paste manually (under -y / --no-launch / no tty).
   print_banner
   step_launch_claude
 }
