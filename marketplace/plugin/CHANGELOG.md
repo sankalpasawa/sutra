@@ -2,6 +2,57 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.30.0 — 2026-05-04
+
+**4 D43 CSM tools promoted L1→L0 — capability-audit.sh + backfill-helper.sh + csm-registry-diff-gate.sh + csm-classification-pretooluse.sh now plugin-canonical (closes 2026-06-01 promotion deadline 28 days early).**
+
+Per codex 2026-05-04 batch review explicit guidance: "your future promotion of the classification hook should copy [the existing D38 promotion wave's] relative-path handling and registration shape." This release promotes all 4 D43 CSM tools at once.
+
+### What this delivers
+
+D43 capability-axis tooling moves from Asawa-only `holding/` (L1 staging) to plugin-shipped `sutra/marketplace/plugin/{scripts,hooks}/` (L0 fleet). Every plugin install now carries:
+
+- **`scripts/capability-audit.sh`** — 4-state matrix audit (R/P/A/C + Status column)
+- **`scripts/backfill-helper.sh`** — generates 40 YAML records from CSM table
+- **`scripts/csm-registry-diff-gate.sh`** — Phase 1/2 strict gate (warn/strict-phase1/strict-phase2/report)
+- **`hooks/csm-classification-pretooluse.sh`** — at-creation soft-warn for new plugin source files
+
+### Asawa-mode gate (L0-fleet-safe)
+
+Each tool now silently `exit 0` on T4 (no `holding/CAPABILITY-MAP.md`):
+
+```bash
+ROOT="${ROOT:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+[ -f "$ROOT/holding/CAPABILITY-MAP.md" ] || exit 0
+```
+
+The tools only activate when `CAPABILITY-MAP.md` is present (Asawa T1 only); T4 fleet receives them as no-ops. Asawa governance remains intact; T4 surface is the `/sutra-capability` skill (v2.27.0).
+
+### What changed under the hood
+
+- **`sutra/marketplace/plugin/scripts/`** — 3 new files (capability-audit.sh, backfill-helper.sh, csm-registry-diff-gate.sh). Hardcoded `ROOT="/Users/abhishekasawa/..."` removed; replaced with `CLAUDE_PROJECT_DIR` + `git rev-parse` fallback.
+- **`sutra/marketplace/plugin/hooks/csm-classification-pretooluse.sh`** — new file (already had Asawa-mode gate by design).
+- **`hooks/hooks.json`** — `PreToolUse[Edit|Write|MultiEdit]` matcher gains `csm-classification-pretooluse.sh` entry. Activation-wired.
+- **`.claude-plugin/plugin.json`** — `2.29.0` → `2.30.0`.
+- **`.claude-plugin/marketplace.json`** — `2.29.0` → `2.30.0`.
+
+### Asawa-side (separate Asawa commit)
+
+The 4 originals at `holding/{scripts,hooks}/` become path-relative shims that `exec` the plugin canonical. Retire-by 2026-06-01. Path-relative resolution (script's own `__dirname` → `../..` → project root) avoids CLAUDE_PROJECT_DIR brittleness when invoked from submodule context.
+
+### Verification
+
+- 3 plugin-canonical scripts run successfully from project root with `CLAUDE_PROJECT_DIR=/Users/abhishekasawa/Claude/asawa-holding`.
+- 3 plugin-canonical scripts silently `exit 0` from `/tmp` (T4-mode simulation).
+- 3 holding/ shims correctly re-`exec` plugin canonical and emit identical output.
+- 1 hook (csm-classification-pretooluse) WARNs on new fake plugin source path via shim.
+
+### Codex
+
+Pre-shipped batch-review guidance (2026-05-04) folded directly. Coexistence with v2.25.0 D38 L1→L0 wave verified — no conflict (orthogonal moves; existing `build-layer-check.sh` + `hooks.json` matcher patterns followed).
+
+---
+
 ## v2.29.0 — 2026-05-04
 
 **cap-118 soft post-response lint hook ships — closes the lint follow-up codex flagged when cap-114 split landed in v2.28.0.**

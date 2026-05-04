@@ -144,6 +144,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/input-classification-gate.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-classification-pretooluse.sh",
+            "timeout": 3
           }
         ]
       },
