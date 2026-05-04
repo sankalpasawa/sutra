@@ -42,6 +42,9 @@ import {
   type WorkflowRollbackPartialEvent,
   type WorkflowEscalatedEvent,
   type StepPausedEvent,
+  type PreconditionCheckEvent,
+  type PostconditionCheckEvent,
+  type CommitmentBrokenEvent,
 } from '../types/engine-event.js'
 
 export type Renderer<T extends EngineEvent = EngineEvent> = (event: T, ctx: RenderContext) => string
@@ -210,6 +213,22 @@ export const defaultRenderStepPaused: Renderer<StepPausedEvent> = (e, ctx) => {
   return `${cellPrefix(ctx)}[${e.workflow_id}] PAUSED ${e.execution_id} at step ${e.step_index}: ${reason}. Call resumeFromPause("${e.execution_id}") to continue.`
 }
 
+// v1.3.0 W5 — PNC + commitment renderers (codex W5 fold).
+export const defaultRenderPreconditionCheck: Renderer<PreconditionCheckEvent> = (e, ctx) => {
+  const reasonPart = e.reason ? `  reason=${sanitizeForTerminal(e.reason)}` : ''
+  return `${cellPrefix(ctx)}[${e.workflow_id}] PRECONDITION ${e.verdict.toUpperCase()}: ${e.expression}${reasonPart}`
+}
+
+export const defaultRenderPostconditionCheck: Renderer<PostconditionCheckEvent> = (e, ctx) => {
+  const reasonPart = e.reason ? `  reason=${sanitizeForTerminal(e.reason)}` : ''
+  return `${cellPrefix(ctx)}[${e.workflow_id}] POSTCONDITION ${e.verdict.toUpperCase()}: ${e.expression}${reasonPart}`
+}
+
+export const defaultRenderCommitmentBroken: Renderer<CommitmentBrokenEvent> = (e, ctx) => {
+  const evidence = e.evidence ? `  evidence=${sanitizeForTerminal(e.evidence)}` : ''
+  return `${cellPrefix(ctx)}[${e.workflow_id}] COMMITMENT_BROKEN charter=${e.charter_id} obligation=${e.obligation_name} exec=${e.execution_id}${evidence}`
+}
+
 /** Map of every EngineEventType to its default renderer. Frozen at module load. */
 export const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>> = Object.freeze({
   routing_decision: defaultRenderRoutingDecision as Renderer,
@@ -234,6 +253,9 @@ export const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>> = Ob
   workflow_rollback_partial: defaultRenderWorkflowRollbackPartial as Renderer,
   workflow_escalated: defaultRenderWorkflowEscalated as Renderer,
   step_paused: defaultRenderStepPaused as Renderer,
+  precondition_check: defaultRenderPreconditionCheck as Renderer,
+  postcondition_check: defaultRenderPostconditionCheck as Renderer,
+  commitment_broken: defaultRenderCommitmentBroken as Renderer,
 })
 
 // -----------------------------------------------------------------------------

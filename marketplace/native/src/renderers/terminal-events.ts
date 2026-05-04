@@ -54,6 +54,12 @@ export function formatEvent(e: EngineEvent): string {
       return `[workflow_escalated] ${e.workflow_id}  exec=${e.execution_id}  reason=${e.reason}`
     case 'step_paused':
       return `[step_paused]        ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  reason=${e.reason}  Call resumeFromPause("${e.execution_id}") to continue.`
+    case 'precondition_check':
+      return `[precondition_check] ${e.workflow_id}  verdict=${e.verdict}  expr=${e.expression}${e.reason ? '  reason=' + e.reason : ''}`
+    case 'postcondition_check':
+      return `[postcondition_check] ${e.workflow_id}  verdict=${e.verdict}  expr=${e.expression}${e.reason ? '  reason=' + e.reason : ''}`
+    case 'commitment_broken':
+      return `[commitment_broken]  charter=${e.charter_id}  obligation=${e.obligation_name}  workflow=${e.workflow_id}  exec=${e.execution_id}${e.evidence ? '  evidence=' + e.evidence : ''}`
     default: {
       const exhaustive: never = e
       return `[unknown_event] ${JSON.stringify(exhaustive)}`

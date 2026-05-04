@@ -46,8 +46,8 @@ import type { HSutraEvent } from '../../../src/types/h-sutra-event.js'
 const ts = 1700000000000
 
 describe('engine-event schema', () => {
-  it('ENGINE_EVENT_TYPES contains exactly the 22 expected types (v1.2 added 3, v1.3 W2 added 4, v1.3 W4 added 7)', () => {
-    expect(ENGINE_EVENT_TYPES.size).toBe(22)
+  it('ENGINE_EVENT_TYPES contains exactly the 25 expected types (v1.2 added 3, v1.3 W2 added 4, v1.3 W4 added 7, v1.3 W5 added 3)', () => {
+    expect(ENGINE_EVENT_TYPES.size).toBe(25)
     expect(ENGINE_EVENT_TYPES.has('routing_decision')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('workflow_started')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('workflow_completed')).toBe(true)
@@ -94,10 +94,10 @@ describe('engine-event schema', () => {
 })
 
 describe('RendererRegistry — construction + defaults', () => {
-  it('registers all 22 defaults on construction (v1.2 added 3, v1.3 W2 added 4, v1.3 W4 added 7)', () => {
+  it('registers all 25 defaults on construction (v1.2 added 3, v1.3 W2 added 4, v1.3 W4 added 7, v1.3 W5 added 3)', () => {
     const r = new RendererRegistry()
     const types = r.getRegisteredTypes()
-    expect(types.length).toBe(22)
+    expect(types.length).toBe(25)
     for (const t of ENGINE_EVENT_TYPES) {
       expect(r.resolve(t)).toBe(DEFAULT_RENDERERS[t])
     }
