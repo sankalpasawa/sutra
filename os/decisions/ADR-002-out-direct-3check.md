@@ -10,7 +10,7 @@
   - Fixtures (extended): `sutra/marketplace/plugin/skills/human-sutra/tests/fixtures.json` (rows #14, #15)
   - Test (new): `sutra/marketplace/plugin/skills/human-sutra/tests/test-out-direct-3check.sh`
   - Design brief (R1-folded): `holding/research/2026-05-01-adr-002-out-direct-3check-design-brief.md`
-  - D-direction: D43 in `holding/FOUNDER-DIRECTIONS.md`
+  - D-direction: D46 in `holding/FOUNDER-DIRECTIONS.md` (renumbered from D43 on 2026-05-04 to resolve duplicate-D43 namespace; pre-rename references in CHANGELOG remain D43 historically)
   - Codex verdicts (R1 CHANGES-REQUIRED → R2 PASS): `.enforcement/codex-reviews/2026-05-01-adr-002-r{1,2}-consult.md` (DIRECTIVE-ID 1777640243)
   - Recurring memory cited: `[Never ask to run]` — *"execute directly. Only ask on high-sensitivity cascading changes."*
 

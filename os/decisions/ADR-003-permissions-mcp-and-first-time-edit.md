@@ -13,7 +13,7 @@
   - Hook config (extended): `sutra/marketplace/plugin/hooks/hooks.json` (matcher widened)
   - Tests (extended): `sutra/marketplace/plugin/tests/permission-gate-test.sh`
   - Design brief (R1-folded, R2-ADVISORY): `holding/research/2026-05-01-adr-003-permissions-h-sutra-fold-design-brief.md`
-  - D-direction: D44 in `holding/FOUNDER-DIRECTIONS.md`
+  - D-direction: D47 in `holding/FOUNDER-DIRECTIONS.md` (renumbered from D44 on 2026-05-04 to resolve duplicate-D44 namespace; pre-rename references in CHANGELOG remain D44 historically)
   - Codex verdicts: `.enforcement/codex-reviews/2026-05-01-adr-003-r{1,2}-consult.md` (DIRECTIVE-ID 1777641500)
   - Two prior permission audits: `.enforcement/permission-audit-log.md` §2026-04-17 + §2026-04-22
 
