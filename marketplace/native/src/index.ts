@@ -12,7 +12,7 @@
 
 // Runtime engine
 export { NativeEngine, createDefaultEngine, type NativeEngineOptions } from './runtime/native-engine.js'
-export { executeWorkflow, type ExecuteOptions, type ExecutionResult } from './runtime/lite-executor.js'
+export { executeWorkflow, executeWorkflowResume, type ExecuteOptions, type ExecutionResult } from './runtime/lite-executor.js'
 
 // Composable runtime modules
 export { HSutraConnector, resolveHSutraLogPath, type HSutraConnectorOptions, type HSutraConnectorStats } from './runtime/h-sutra-connector.js'

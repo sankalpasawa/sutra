@@ -46,8 +46,8 @@ import type { HSutraEvent } from '../../../src/types/h-sutra-event.js'
 const ts = 1700000000000
 
 describe('engine-event schema', () => {
-  it('ENGINE_EVENT_TYPES contains exactly the 11 expected types (v1.2 added 3)', () => {
-    expect(ENGINE_EVENT_TYPES.size).toBe(11)
+  it('ENGINE_EVENT_TYPES contains exactly the 15 expected types (v1.2 added 3, v1.3 W2 added 4)', () => {
+    expect(ENGINE_EVENT_TYPES.size).toBe(15)
     expect(ENGINE_EVENT_TYPES.has('routing_decision')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('workflow_started')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('workflow_completed')).toBe(true)
@@ -59,6 +59,10 @@ describe('engine-event schema', () => {
     expect(ENGINE_EVENT_TYPES.has('pattern_proposed')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('proposal_approved')).toBe(true)
     expect(ENGINE_EVENT_TYPES.has('proposal_rejected')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('approval_requested')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('approval_granted')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('approval_denied')).toBe(true)
+    expect(ENGINE_EVENT_TYPES.has('approval_already_handled')).toBe(true)
   })
 
   it('isEngineEvent accepts a valid event', () => {
@@ -83,10 +87,10 @@ describe('engine-event schema', () => {
 })
 
 describe('RendererRegistry — construction + defaults', () => {
-  it('registers all 11 defaults on construction (v1.2 added 3)', () => {
+  it('registers all 15 defaults on construction (v1.2 added 3, v1.3 W2 added 4)', () => {
     const r = new RendererRegistry()
     const types = r.getRegisteredTypes()
-    expect(types.length).toBe(11)
+    expect(types.length).toBe(15)
     for (const t of ENGINE_EVENT_TYPES) {
       expect(r.resolve(t)).toBe(DEFAULT_RENDERERS[t])
     }

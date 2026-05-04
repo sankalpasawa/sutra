@@ -47,6 +47,7 @@ import type {
   WorkflowCompletedEvent,
   WorkflowFailedEvent,
   WorkflowStartedEvent,
+  ApprovalRequestedEvent,
 } from '../types/engine-event.js'
 import {
   hostLLMActivity,
@@ -57,6 +58,7 @@ import { buildExecutionDecisionProvenance } from './execution-provenance.js'
 import { appendDecisionProvenanceLog } from './emergence-provenance.js'
 import type { UserKitOptions } from '../persistence/user-kit.js'
 import type { PolicyDecisionEvent } from '../types/engine-event.js'
+import type { ExecutionApprovalRecord } from '../persistence/execution-approval-ledger.js'
 
 export interface ExecuteOptions {
   readonly workflow: Workflow
@@ -103,14 +105,52 @@ export interface ExecuteOptions {
    * executeWorkflow callers leave this unset → ungated (codex narrowing).
    */
   readonly policy_dispatch?: (step: WorkflowStep) => { allow: boolean; reason: string }
+  /**
+   * v1.3.0 Wave 2 (codex W2 BLOCKER 3 fold). Optional callback invoked once
+   * when the executor pauses at a `step.requires_approval=true` step. The
+   * NativeEngine wires this to `persistApproval(record)` so the durable
+   * ExecutionApprovalRecord{status:'pending'} survives daemon restart.
+   *
+   * Default = no-op (preserves "PURE relative to emit()" contract — direct
+   * `executeWorkflow` callers without an injected persist callback get the
+   * paused ExecutionResult but no on-disk ledger entry. The NativeEngine
+   * routed path always supplies this so the founder-facing surface is
+   * always durable.)
+   */
+  readonly approval_persist?: (rec: ExecutionApprovalRecord) => void
+  /**
+   * v1.3.0 Wave 2. When set, the executor skips steps whose 1-based
+   * step_index is `<= resume_from_step_index` and emits no events for them.
+   * Used by NativeEngine.resumeApproved after `approve E-<id>` flips the
+   * ledger entry: the original paused step's index is the value here, so
+   * the executor resumes at the NEXT step.
+   *
+   * Required > 0 when set; 0 / undefined ⇒ start from step 1 (normal run).
+   * Out-of-range values (e.g., > step_graph.length) cause the run to
+   * complete immediately as success with steps_completed=0 — the caller
+   * should validate before invoking.
+   */
+  readonly resume_from_step_index?: number
 }
 
 export interface ExecutionResult {
-  readonly status: 'success' | 'failed'
+  /**
+   * v1.3.0 Wave 2 (codex W2 BLOCKER 1 fold). 'paused' is canonical state per
+   * the extended ExecutionState union; lite-executor returns it (with
+   * steps_completed = step_index BEFORE the paused step) when a step has
+   * requires_approval=true and the executor pauses.
+   */
+  readonly status: 'success' | 'failed' | 'paused'
   readonly steps_completed: number
   readonly steps_failed: number
   readonly duration_ms: number
   readonly reason?: string
+  /**
+   * v1.3.0 Wave 2. When status='paused', the 1-based step_index of the
+   * step the executor paused at (the requires_approval=true step that has
+   * NOT YET run). Undefined for non-paused results.
+   */
+  readonly paused_step_index?: number
 }
 
 /**
@@ -160,12 +200,83 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
   let stepsCompleted = 0
   let stepsFailed = 0
   let failureReason: string | undefined
+  let pausedAtStepIndex: number | undefined
 
   const total = wf.step_graph.length
+  // v1.3.0 W2: resume_from_step_index = N means skip steps with stepIndex <= N
+  // (the originally-paused step is N+1's predecessor; resumeApproved passes
+  // the paused step's index so the next iteration starts at N+1).
+  const resumeFrom = opts.resume_from_step_index ?? 0
 
   for (let i = 0; i < total; i++) {
     const step = wf.step_graph[i]!
     const stepIndex = i + 1
+
+    // v1.3.0 W2 resume path — skip steps already completed in the original
+    // run. No events emitted for skipped steps (they were already audited
+    // pre-pause; replaying would corrupt the transcript).
+    if (stepIndex <= resumeFrom) {
+      continue
+    }
+
+    // v1.3.0 W2 (codex W2 BLOCKER 3 fold) — step-level approval gate.
+    // BEFORE running step action, check requires_approval. When true:
+    //   1. Build prompt_summary (action, host if any, locator first ~200 chars).
+    //   2. Build ExecutionApprovalRecord{status:'pending'}.
+    //   3. Call opts.approval_persist?.(record) — NativeEngine wires this to
+    //      the runtime/pending-approvals ledger via atomic-write.
+    //   4. Emit approval_requested event.
+    //   5. Return ExecutionResult{status:'paused'} early.
+    // The pause point is BEFORE step_started so the founder transcript shows
+    // [approval_requested] not [step_started] for the gated step (avoids
+    // confusing "started but never completed" lines in the audit log).
+    //
+    // Resume bypass: the gate fires only when stepIndex > resumeFrom. On
+    // resume, executeWorkflowResume passes resume_from_step_index = N-1
+    // (skip steps 1..N-1, RUN step N) — but step N still has
+    // requires_approval=true. The caller (NativeEngine.resumeApproved) sets
+    // resume_from_step_index = paused_step_index (i.e., skip past the paused
+    // step too) ONLY if the founder's approval is interpreted as "approve and
+    // skip"; otherwise we want the gated step to RUN after approval. The
+    // canonical interpretation per founder centerpiece directive: approval
+    // means "yes, run this step". So we set resume_from_step_index = N-1
+    // (the gated step's predecessor) AND the executor must NOT re-pause on
+    // step N. Bypass: when stepIndex === resumeFrom + 1 (the FIRST executed
+    // step on resume), skip the requires_approval gate. This matches the
+    // semantics: the gate already fired pre-resume; firing again is a bug.
+    const isResumeFirstStep = resumeFrom > 0 && stepIndex === resumeFrom + 1
+    if (step.requires_approval === true && !isResumeFirstStep) {
+      const promptSummary = buildPromptSummary(step)
+      const record: ExecutionApprovalRecord = {
+        execution_id: opts.execution_id,
+        workflow_id: wf.id,
+        step_index: stepIndex,
+        prompt_summary: promptSummary,
+        status: 'pending',
+        created_at_ms: now(),
+      }
+      try {
+        opts.approval_persist?.(record)
+      } catch (err) {
+        // Persist failure is fatal — without a durable ledger entry, the
+        // founder's `approve E-<id>` would have nothing to load. Convert to
+        // workflow_failed rather than silently dropping the gate.
+        failureReason = `approval_persist_failed:${err instanceof Error ? err.message : String(err)}`
+        break
+      }
+      const approvalEvt: ApprovalRequestedEvent = {
+        type: 'approval_requested',
+        ts_ms: now(),
+        execution_id: opts.execution_id,
+        workflow_id: wf.id,
+        step_index: stepIndex,
+        prompt_summary: promptSummary,
+      }
+      opts.emit(approvalEvt)
+      pausedAtStepIndex = stepIndex
+      break
+    }
+
     const stepStartTs = now()
     const stepId = step.skill_ref ?? `step-${step.step_id}`
 
@@ -256,6 +367,23 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
   }
 
   const endTs = now()
+
+  // v1.3.0 W2: paused short-circuit — pausedAtStepIndex set means the
+  // executor hit a requires_approval=true step and broke out of the loop
+  // BEFORE running it. Don't emit workflow_completed or workflow_failed;
+  // the workflow is suspended awaiting founder approval. Caller (NativeEngine)
+  // detects status='paused' and persists the ledger entry via the
+  // approval_persist callback already invoked above.
+  if (pausedAtStepIndex !== undefined) {
+    return {
+      status: 'paused',
+      steps_completed: stepsCompleted,
+      steps_failed: stepsFailed,
+      duration_ms: endTs - startTs,
+      paused_step_index: pausedAtStepIndex,
+    }
+  }
+
   if (failureReason) {
     const wfFailed: WorkflowFailedEvent = {
       type: 'workflow_failed',
@@ -386,4 +514,59 @@ async function runStepAction(step: WorkflowStep, ctx: StepDispatchContext): Prom
     default:
       throw new Error(`unknown step action "${action}"`)
   }
+}
+
+/**
+ * v1.3.0 Wave 2 — build a human-friendly summary of a paused step for the
+ * founder UI. Truncates inputs[0].locator at 200 chars; includes action + host
+ * when present; falls back to skill_ref/step_id when no action.
+ *
+ * The summary is what the founder sees in the [approval_requested] line and
+ * the persisted ExecutionApprovalRecord.prompt_summary field — keep it
+ * compact + informative.
+ */
+function buildPromptSummary(step: WorkflowStep): string {
+  const what = step.skill_ref
+    ? `skill=${step.skill_ref}`
+    : step.action === 'invoke_host_llm'
+      ? `invoke_host_llm host=${step.host ?? '?'}`
+      : `action=${step.action ?? '?'}`
+  const locator = step.inputs?.[0]?.locator ?? ''
+  const truncated = locator.length > 200 ? locator.slice(0, 200) + '…' : locator
+  return locator ? `${what} input="${truncated}"` : what
+}
+
+/**
+ * v1.3.0 Wave 2 — resume an approved-and-paused workflow run.
+ *
+ * Convenience wrapper that calls executeWorkflow with resume_from_step_index
+ * set. Used by NativeEngine.resumeApproved after the founder's `approve E-<id>`
+ * utterance has flipped the ledger entry pending → approved.
+ *
+ * Semantics: the original pause happened BEFORE the gated step ran. To RUN
+ * that step on resume, the caller passes
+ * `resume_from_step_index = paused_step_index - 1` (skip steps 1..N-1; run
+ * starting at step N). The executor's loop logic skips steps with
+ * stepIndex <= resumeFrom, so the gated step (N) is the first to execute.
+ *
+ * The gated step's `requires_approval=true` flag is BYPASSED on the first
+ * step of a resume run via the `isResumeFirstStep` guard in executeWorkflow
+ * — otherwise the gate would re-fire and the workflow would loop forever.
+ *
+ * The original execution_id is preserved so the audit transcript ties back
+ * to the original workflow_started event.
+ */
+export async function executeWorkflowResume(
+  opts: ExecuteOptions & { resume_from_step_index: number },
+): Promise<ExecutionResult> {
+  if (
+    typeof opts.resume_from_step_index !== 'number' ||
+    !Number.isInteger(opts.resume_from_step_index) ||
+    opts.resume_from_step_index < 0
+  ) {
+    throw new Error(
+      `executeWorkflowResume: resume_from_step_index must be a non-negative integer; got "${String(opts.resume_from_step_index)}"`,
+    )
+  }
+  return executeWorkflow(opts)
 }
