@@ -48,11 +48,19 @@ import {
   loadWorkflow,
   persistCharter,
   persistDomain,
+  persistTrigger,
   persistWorkflow,
 } from '../persistence/user-kit.js'
 import { formatEvent } from '../renderers/terminal-events.js'
 import type { EngineEvent } from '../types/engine-event.js'
 import type { StepAction, StepFailureAction, WorkflowStep } from '../types/index.js'
+import {
+  TRIGGER_EVENT_TYPES,
+  type CadenceSpec,
+  type Predicate,
+  type TriggerEventType,
+  type TriggerSpec,
+} from '../types/trigger-spec.js'
 
 const VERSION = '1.2.2'
 
@@ -83,6 +91,8 @@ export async function main(ctx: CommandContext): Promise<number> {
       return cmdCreateCharter(ctx)
     case 'create-workflow':
       return cmdCreateWorkflow(ctx)
+    case 'create-trigger':
+      return cmdCreateTrigger(ctx)
     case 'list':
       return cmdList(ctx)
     case 'run':
@@ -307,6 +317,162 @@ function cmdCreateWorkflow(ctx: CommandContext): number {
     return 0
   } catch (err) {
     ctx.stderr(`create-workflow failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    return 2
+  }
+}
+
+/**
+ * v1.3.0 W1.8 (codex W1.8 + W3 fold) — `sutra-native create-trigger`.
+ *
+ * Mints a TriggerSpec + persists to user-kit/triggers/<T-id>.json.
+ *
+ * Flags:
+ *   --id <T-id>                                      required
+ *   --workflow-id <W-id>                             required; verified
+ *                                                     against the user-kit
+ *                                                     via loadWorkflow
+ *   --event-type <founder_input|cron|file_drop|webhook>
+ *                                                     required; validated
+ *                                                     against TRIGGER_EVENT_TYPES
+ *   --match-all "<csv>" XOR --match-any "<csv>"       required when
+ *                                                     event-type='founder_input';
+ *                                                     mutually exclusive
+ *   --cadence-spec <json-string>                      accepted for cron
+ *                                                     (W3 fold; W1 just
+ *                                                     persists, W3 wires)
+ *   --charter-id <C-id>                              optional
+ *   --domain-id <D-id>                               optional
+ *   --description <text>                             optional
+ *
+ * Predicate construction (codex W1.8 fold):
+ *   - founder_input + --match-all "kw1,kw2"  → AND of contains predicates
+ *   - founder_input + --match-any "kw1,kw2"  → OR of contains predicates
+ *   - cron                                    → always_true
+ *
+ * Errors exit 2 (usage error) or 3 (io error). codex W1.8 mandates
+ * EXPLICIT errors for the validation paths (workflow not found, both
+ * match flags set, neither match flag set).
+ */
+function cmdCreateTrigger(ctx: CommandContext): number {
+  const { flags } = parseFlags(ctx.argv)
+  try {
+    const id = require_(flags, 'id')
+    if (!id.startsWith('T-')) {
+      throw new Error(`--id must match T-<slug> pattern; got "${id}"`)
+    }
+    const workflowId = require_(flags, 'workflow-id')
+    const eventTypeRaw = require_(flags, 'event-type')
+    if (!TRIGGER_EVENT_TYPES.has(eventTypeRaw as TriggerEventType)) {
+      throw new Error(
+        `--event-type must be one of: ${Array.from(TRIGGER_EVENT_TYPES).join('|')}; got "${eventTypeRaw}"`,
+      )
+    }
+    const eventType = eventTypeRaw as TriggerEventType
+
+    // Verify the target workflow exists. Codex W1.8 fold: --workflow-id
+    // is REQUIRED + must reference a real workflow, otherwise the trigger
+    // is a dangling reference at runtime.
+    const target = loadWorkflow(workflowId, { env: ctx.env })
+    if (!target) {
+      throw new Error(
+        `--workflow-id "${workflowId}" not found in user-kit (try: sutra-native list workflows)`,
+      )
+    }
+
+    const matchAllRaw = flags['match-all']
+    const matchAnyRaw = flags['match-any']
+    const hasMatchAll = matchAllRaw !== undefined && matchAllRaw !== 'true'
+    const hasMatchAny = matchAnyRaw !== undefined && matchAnyRaw !== 'true'
+    // Codex W1.8 fold: XOR with EXPLICIT error messages for both fail
+    // modes. Both set / neither set are distinct configuration mistakes
+    // and surface different errors.
+    if (hasMatchAll && hasMatchAny) {
+      throw new Error(
+        '--match-all and --match-any are mutually exclusive (pick one)',
+      )
+    }
+    if (eventType === 'founder_input' && !hasMatchAll && !hasMatchAny) {
+      throw new Error(
+        'event-type=founder_input requires --match-all or --match-any (csv of keywords)',
+      )
+    }
+
+    let predicate: Predicate
+    if (hasMatchAll) {
+      const kws = matchAllRaw!.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+      if (kws.length === 0) {
+        throw new Error('--match-all must list at least one keyword')
+      }
+      predicate = {
+        type: 'and',
+        clauses: kws.map((value) => ({ type: 'contains', value }) as Predicate),
+      }
+    } else if (hasMatchAny) {
+      const kws = matchAnyRaw!.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+      if (kws.length === 0) {
+        throw new Error('--match-any must list at least one keyword')
+      }
+      predicate = {
+        type: 'or',
+        clauses: kws.map((value) => ({ type: 'contains', value }) as Predicate),
+      }
+    } else {
+      // event-type !== founder_input + neither match flag set → always_true.
+      // Cron triggers fire on cadence ticks, not predicate matches.
+      predicate = { type: 'always_true' }
+    }
+
+    // Codex W3 fold: --cadence-spec accepted for cron triggers; persisted
+    // verbatim. W3 wires CadenceScheduler.register-from-trigger; W1 just
+    // ships the field so on-disk triggers are forward-compatible.
+    let cadenceSpec: CadenceSpec | undefined
+    const cadenceRaw = flags['cadence-spec']
+    if (cadenceRaw !== undefined && cadenceRaw !== 'true') {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(cadenceRaw)
+      } catch {
+        throw new Error(`--cadence-spec must be valid JSON; got "${cadenceRaw}"`)
+      }
+      if (typeof parsed !== 'object' || parsed === null) {
+        throw new Error(`--cadence-spec must be a JSON object; got "${cadenceRaw}"`)
+      }
+      const kind = (parsed as { kind?: unknown }).kind
+      if (
+        kind !== 'every_n_minutes' &&
+        kind !== 'every_n_hours' &&
+        kind !== 'every_day_at' &&
+        kind !== 'cron'
+      ) {
+        throw new Error(
+          `--cadence-spec.kind must be every_n_minutes|every_n_hours|every_day_at|cron; got "${String(kind)}"`,
+        )
+      }
+      cadenceSpec = parsed as CadenceSpec
+    }
+
+    const charterId = flags['charter-id']
+    const domainId = flags['domain-id']
+    const description = flags['description']
+
+    const t: TriggerSpec = {
+      id,
+      event_type: eventType,
+      route_predicate: predicate,
+      target_workflow: workflowId,
+      ...(domainId && domainId !== 'true' ? { domain_id: domainId } : {}),
+      ...(charterId && charterId !== 'true' ? { charter_id: charterId } : {}),
+      ...(description && description !== 'true' ? { description } : {}),
+      ...(cadenceSpec ? { cadence_spec: cadenceSpec } : {}),
+    }
+
+    const path = persistTrigger(t, { env: ctx.env })
+    ctx.stdout(
+      `+ Trigger ${t.id} created (event_type=${t.event_type}, target=${workflowId}, predicate=${predicate.type})\n  persisted: ${path}\n`,
+    )
+    return 0
+  } catch (err) {
+    ctx.stderr(`create-trigger failed: ${err instanceof Error ? err.message : String(err)}\n`)
     return 2
   }
 }
@@ -753,6 +919,13 @@ function usage(): string {
     '                       --host-N <claude|codex>     required',
     '                       --prompt-N <text>           required',
     '                       --timeout-N <ms>            optional (positive integer)',
+    '  create-trigger --id <T-id> --workflow-id <W-id> --event-type <type>',
+    '                     [--match-all "<csv>" | --match-any "<csv>"]',
+    '                     [--cadence-spec <json>] [--charter-id <C-id>]',
+    '                     [--domain-id <D-id>] [--description <text>]',
+    '                     event-type: founder_input|cron|file_drop|webhook',
+    '                     founder_input requires --match-all XOR --match-any.',
+    '                     cron accepts --cadence-spec (W1.8 + W3 fold).',
     '  list [domains|charters|workflows|all]',
     '                     Show what is in the user-kit.',
     '  run <W-id> [--execution-id <E-id>]',
@@ -776,6 +949,7 @@ export {
   cmdCreateDomain,
   cmdCreateCharter,
   cmdCreateWorkflow,
+  cmdCreateTrigger,
   cmdList,
   cmdRun,
   formatBanner,

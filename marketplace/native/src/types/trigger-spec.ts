@@ -50,6 +50,26 @@ export type Predicate =
   | { readonly type: 'or'; readonly clauses: ReadonlyArray<Predicate> }
   | { readonly type: 'not'; readonly clause: Predicate }
 
+/**
+ * v1.3.0 W1.8 + W3 fold (codex): payload for cron triggers. The CadenceSpec
+ * shape is owned by `src/engine/cadence-scheduler.ts` (4 kinds:
+ * every_n_minutes / every_n_hours / every_day_at / cron). It's redeclared
+ * here as a structural type — kept identical to the scheduler's CadenceSpec
+ * so trigger-spec stays zero-runtime-dependency on the scheduler module
+ * (which pulls async machinery this primitive should not).
+ *
+ * v1.3 W1.8 scope: TriggerSpec ACCEPTS + PERSISTS cadence_spec; the actual
+ * scheduler wiring (CadenceScheduler.register-from-trigger) is W3 work.
+ * Shipping the field early closes the codex W3 fold "TriggerSpec lacks
+ * cadence payload" so when W3 lands, on-disk triggers are forward-
+ * compatible.
+ */
+export type CadenceSpec =
+  | { readonly kind: 'every_n_minutes'; readonly n: number }
+  | { readonly kind: 'every_n_hours'; readonly n: number }
+  | { readonly kind: 'every_day_at'; readonly hour_utc: number; readonly minute_utc: number }
+  | { readonly kind: 'cron'; readonly expression: string }
+
 export interface TriggerSpec {
   /** Stable id, e.g. 'T-build-product'. */
   readonly id: string
@@ -65,6 +85,12 @@ export interface TriggerSpec {
   readonly charter_id?: string
   /** Free-form description for operators. */
   readonly description?: string
+  /**
+   * v1.3.0 W1.8 + W3 fold (codex). When event_type='cron', the cadence
+   * scheduler payload describing the firing schedule. Persisted at v1.3 W1
+   * — actually consumed by CadenceScheduler at v1.3 W3.
+   */
+  readonly cadence_spec?: CadenceSpec
 }
 
 /** Runtime allow-list of Predicate.type literals — kept in sync with Predicate union. */
