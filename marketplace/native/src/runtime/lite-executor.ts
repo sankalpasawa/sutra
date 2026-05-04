@@ -64,10 +64,19 @@ import {
 import { buildExecutionDecisionProvenance } from './execution-provenance.js'
 import { appendDecisionProvenanceLog } from './emergence-provenance.js'
 import type { UserKitOptions } from '../persistence/user-kit.js'
-import type { PolicyDecisionEvent } from '../types/engine-event.js'
+import type {
+  PolicyDecisionEvent,
+  PreconditionCheckEvent,
+  PostconditionCheckEvent,
+} from '../types/engine-event.js'
 import type { ExecutionApprovalRecord } from '../persistence/execution-approval-ledger.js'
 import type { ExecutionPauseRecord } from '../persistence/execution-pause-ledger.js'
 import type { ExecutionEscalationRecord } from '../persistence/execution-escalation-ledger.js'
+import {
+  parsePNC,
+  evaluatePNC,
+  type PredicateRegistry,
+} from './pnc-predicate.js'
 
 export interface ExecuteOptions {
   readonly workflow: Workflow
@@ -158,6 +167,34 @@ export interface ExecuteOptions {
    * should validate before invoking.
    */
   readonly resume_from_step_index?: number
+  /**
+   * v1.3.0 Wave 5 (codex W5 BLOCKER 1+2 fold). Optional registry of atom
+   * evaluators consulted when parsing wf.preconditions / wf.postconditions
+   * as a JSON-shaped PNCPredicate. When the registry is undefined OR the
+   * pre/postcondition string is not parseable JSON-Predicate, the gate is
+   * SKIPPED (legacy back-compat for free-form preconditions like
+   * "is_morning_window AND no_pulse_today" already in the starter kit).
+   *
+   * When the registry is supplied AND the string IS a parseable PNCPredicate:
+   *   - precondition fail ⇒ workflow_failed reason='precondition_failed:<expr>'
+   *     emitted instead of workflow_started; NO step events.
+   *   - postcondition fail ⇒ workflow_failed reason='postcondition_failed:<expr>'
+   *     emitted instead of workflow_completed.
+   *
+   * NativeEngine wires this for routed runs; direct cmdRun / raw
+   * executeWorkflow callers leave it undefined → no PNC gate (preserves
+   * v1.2.x admission behavior).
+   */
+  readonly pnc_registry?: PredicateRegistry
+  /**
+   * v1.3.0 Wave 5. Frozen evaluation context passed to PNC atom evaluators.
+   * Defaults to an empty frozen object. Window markers (e.g.
+   * { time_of_day: 'morning', iso_week: '2026-W18' }) belong here, not in
+   * the atom evaluator function bodies (codex W5 advisory E: predicate
+   * determinism — atoms must not call Date.now/random/I/O; they read
+   * pre-computed markers from this snapshot).
+   */
+  readonly pnc_ctx?: Readonly<Record<string, unknown>>
 }
 
 export interface ExecutionResult {
@@ -196,6 +233,79 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
   const dispatch = opts.host_llm_dispatch ?? hostLLMActivity
   const onHostLLMResult = opts.on_host_llm_result ?? (() => {})
   const runSeq = opts.workflow_run_seq ?? 0
+  const pncCtx: Readonly<Record<string, unknown>> = opts.pnc_ctx ?? Object.freeze({})
+
+  // v1.3.0 W5 (codex W5 BLOCKER 1 fold) — precondition admission gate.
+  //
+  // Per codex: a failed precondition is "workflow not admitted", NOT "started
+  // then failed". The semantic distinction matters for replay/audit (rejected
+  // runs never enter the workflow lifecycle) and for the founder UI (no
+  // confusing [workflow_started]+[workflow_failed] pair on a rejected gate).
+  //
+  // Gate skip rules (legacy back-compat):
+  //   - opts.pnc_registry undefined ⇒ skip (NativeEngine routed-only feature).
+  //   - wf.preconditions parses to JSON-Predicate ⇒ EVALUATE.
+  //   - wf.preconditions is empty / free-form / not JSON ⇒ skip silently
+  //     (existing starter-kit "is_morning_window AND no_pulse_today" strings
+  //     stay valid; admission proceeds without precondition_check emission).
+  //
+  // When EVALUATED:
+  //   - verdict='pass' ⇒ emit precondition_check{verdict:'pass'} THEN
+  //     workflow_started, then proceed normally.
+  //   - verdict='fail' ⇒ emit precondition_check{verdict:'fail'} THEN
+  //     workflow_failed reason='precondition_failed:<expr>'. NO step events.
+  //     NO workflow_started. Return ExecutionResult{status:'failed'}.
+  if (opts.pnc_registry) {
+    const parseResult = parsePNC(wf.preconditions)
+    if (parseResult.ok && parseResult.predicate) {
+      const evalResult = evaluatePNC(parseResult.predicate, pncCtx, opts.pnc_registry)
+      const checkEvt: PreconditionCheckEvent = {
+        type: 'precondition_check',
+        ts_ms: startTs,
+        workflow_id: wf.id,
+        verdict: evalResult.verdict ? 'pass' : 'fail',
+        expression: wf.preconditions,
+        ...(evalResult.reason !== undefined ? { reason: evalResult.reason } : {}),
+      }
+      opts.emit(checkEvt)
+      if (!evalResult.verdict) {
+        const failureReason = `precondition_failed:${evalResult.reason ?? 'verdict_false'}`
+        const wfFailed: WorkflowFailedEvent = {
+          type: 'workflow_failed',
+          ts_ms: startTs,
+          workflow_id: wf.id,
+          execution_id: opts.execution_id,
+          reason: failureReason,
+        }
+        opts.emit(wfFailed)
+        // DP-record the rejection so audit captures admission failures the
+        // same way as runtime failures.
+        if (opts.user_kit_options_for_dp) {
+          try {
+            appendDecisionProvenanceLog(
+              buildExecutionDecisionProvenance({
+                workflow_id: wf.id,
+                execution_id: opts.execution_id,
+                stage: 'FAILED',
+                ts_ms: startTs,
+                outcome: failureReason,
+                failure_reason: failureReason,
+                charter_id: opts.charter_id,
+              }),
+              opts.user_kit_options_for_dp,
+            )
+          } catch { /* non-fatal */ }
+        }
+        return {
+          status: 'failed',
+          steps_completed: 0,
+          steps_failed: 0,
+          duration_ms: 0,
+          reason: failureReason,
+        }
+      }
+    }
+  }
 
   const wfStarted: WorkflowStartedEvent = {
     type: 'workflow_started',
@@ -582,6 +692,63 @@ export async function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionRe
       steps_failed: stepsFailed,
       duration_ms: endTs - startTs,
       reason: failureReason,
+    }
+  }
+
+  // v1.3.0 W5 — postcondition gate. After all steps succeed and BEFORE
+  // emitting workflow_completed, evaluate wf.postconditions when a registry
+  // is supplied AND the postconditions string parses as JSON-Predicate.
+  // verdict='fail' converts the run to workflow_failed reason=
+  // 'postcondition_failed:<expr>' INSTEAD of workflow_completed. verdict=
+  // 'pass' emits postcondition_check{verdict:'pass'} then proceeds to the
+  // normal workflow_completed emission.
+  if (opts.pnc_registry) {
+    const parseResult = parsePNC(wf.postconditions)
+    if (parseResult.ok && parseResult.predicate) {
+      const evalResult = evaluatePNC(parseResult.predicate, pncCtx, opts.pnc_registry)
+      const checkEvt: PostconditionCheckEvent = {
+        type: 'postcondition_check',
+        ts_ms: endTs,
+        workflow_id: wf.id,
+        verdict: evalResult.verdict ? 'pass' : 'fail',
+        expression: wf.postconditions,
+        ...(evalResult.reason !== undefined ? { reason: evalResult.reason } : {}),
+      }
+      opts.emit(checkEvt)
+      if (!evalResult.verdict) {
+        const failureReason = `postcondition_failed:${evalResult.reason ?? 'verdict_false'}`
+        const wfFailed: WorkflowFailedEvent = {
+          type: 'workflow_failed',
+          ts_ms: endTs,
+          workflow_id: wf.id,
+          execution_id: opts.execution_id,
+          reason: failureReason,
+        }
+        opts.emit(wfFailed)
+        if (opts.user_kit_options_for_dp) {
+          try {
+            appendDecisionProvenanceLog(
+              buildExecutionDecisionProvenance({
+                workflow_id: wf.id,
+                execution_id: opts.execution_id,
+                stage: 'FAILED',
+                ts_ms: endTs,
+                outcome: failureReason,
+                failure_reason: failureReason,
+                charter_id: opts.charter_id,
+              }),
+              opts.user_kit_options_for_dp,
+            )
+          } catch { /* non-fatal */ }
+        }
+        return {
+          status: 'failed',
+          steps_completed: stepsCompleted,
+          steps_failed: stepsFailed,
+          duration_ms: endTs - startTs,
+          reason: failureReason,
+        }
+      }
     }
   }
 
