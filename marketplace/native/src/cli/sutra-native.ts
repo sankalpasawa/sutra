@@ -203,10 +203,15 @@ function cmdCreateCharter(ctx: CommandContext): number {
   }
 }
 
+// v1.3.0 W1.7 (codex W1.7 fold): CLI now accepts 'invoke_host_llm' steps in
+// addition to the v1.1.x trio. invoke_host_llm requires per-step --host-N
+// (1-indexed), --prompt-N, and optionally --timeout-N flags. Other step
+// actions ignore the per-step host/prompt/timeout flags.
 const VALID_STEP_ACTIONS_CLI: ReadonlySet<StepAction> = new Set([
   'wait',
   'terminate',
   'spawn_sub_unit',
+  'invoke_host_llm',
 ])
 
 function cmdCreateWorkflow(ctx: CommandContext): number {
@@ -221,11 +226,59 @@ function cmdCreateWorkflow(ctx: CommandContext): number {
     const stepGraph: WorkflowStep[] = stepNames.map((name, idx) => {
       if (!VALID_STEP_ACTIONS_CLI.has(name as StepAction)) {
         throw new Error(
-          `--steps[${idx}] "${name}" not one of: wait, terminate, spawn_sub_unit (CLI subset of v1.1.1 actions; invoke_host_llm requires --host)`,
+          `--steps[${idx}] "${name}" not one of: wait, terminate, spawn_sub_unit, invoke_host_llm`,
         )
       }
       const isLast = idx === stepNames.length - 1
       const onFailure: StepFailureAction = isLast ? 'abort' : 'continue'
+      // v1.3.0 W1.7 (codex W1.7 fold): per-step --host-N / --prompt-N /
+      // --timeout-N flags are 1-indexed by step position. Each
+      // invoke_host_llm step REQUIRES its own --host-N + --prompt-N pair so
+      // multi-step workflows can mix hosts (e.g. step 1 = claude, step 2 =
+      // codex). Codex pivot review CHANGE #2 — the step contract for "what
+      // does this step DO" must encode the host directly, not as a workflow-
+      // wide global, so the CLI scaffolding mirrors the in-memory shape.
+      if (name === 'invoke_host_llm') {
+        const stepNum = idx + 1
+        const hostFlag = `host-${stepNum}`
+        const promptFlag = `prompt-${stepNum}`
+        const timeoutFlag = `timeout-${stepNum}`
+        const host = require_(flags, hostFlag)
+        if (host !== 'claude' && host !== 'codex') {
+          throw new Error(
+            `--${hostFlag} must be 'claude' or 'codex'; got "${host}"`,
+          )
+        }
+        const prompt = require_(flags, promptFlag)
+        const step: WorkflowStep = {
+          step_id: stepNum,
+          action: 'invoke_host_llm',
+          host: host as 'claude' | 'codex',
+          inputs: [
+            {
+              kind: 'host-llm-prompt',
+              schema_ref: 'prompt/v1',
+              locator: prompt,
+              version: '1.0.0',
+              mutability: 'immutable',
+              retention: 'permanent',
+            },
+          ],
+          outputs: [],
+          on_failure: onFailure,
+        }
+        const timeoutRaw = flags[timeoutFlag]
+        if (timeoutRaw !== undefined && timeoutRaw !== 'true') {
+          const timeout = Number(timeoutRaw)
+          if (!Number.isInteger(timeout) || timeout <= 0) {
+            throw new Error(
+              `--${timeoutFlag} must be a positive integer (ms); got "${timeoutRaw}"`,
+            )
+          }
+          step.timeout_ms = timeout
+        }
+        return step
+      }
       return {
         step_id: idx + 1,
         action: name as StepAction,
@@ -695,7 +748,11 @@ function usage(): string {
     '                     [--preconditions <text>] [--postconditions <text>]',
     '                     [--stringency task|process|protocol]',
     '                     [--failure-policy continue|abort]',
-    '                     CLI step actions: wait | terminate | spawn_sub_unit',
+    '                     CLI step actions: wait | terminate | spawn_sub_unit | invoke_host_llm',
+    '                     For each invoke_host_llm step at position N (1-indexed):',
+    '                       --host-N <claude|codex>     required',
+    '                       --prompt-N <text>           required',
+    '                       --timeout-N <ms>            optional (positive integer)',
     '  list [domains|charters|workflows|all]',
     '                     Show what is in the user-kit.',
     '  run <W-id> [--execution-id <E-id>]',
