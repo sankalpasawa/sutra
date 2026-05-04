@@ -26,7 +26,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import {
   acquirePidLock,
@@ -55,8 +55,6 @@ import {
 } from '../persistence/user-kit.js'
 import {
   listApprovals,
-  loadApproval,
-  updateApprovalStatus,
 } from '../persistence/execution-approval-ledger.js'
 import { CadenceScheduler, type CadenceSpec as SchedulerCadenceSpec } from '../engine/cadence-scheduler.js'
 import { formatEvent } from '../renderers/terminal-events.js'
@@ -105,6 +103,8 @@ export async function main(ctx: CommandContext): Promise<number> {
       return cmdList(ctx)
     case 'run':
       return await cmdRun(ctx)
+    case 'workflow':
+      return cmdWorkflow(ctx)
     case 'version':
     case '--version':
     case '-v':
@@ -577,6 +577,196 @@ async function cmdRun(ctx: CommandContext): Promise<number> {
   }
 }
 
+// ============================================================================
+// v1.3.0 W3 — operator surface: workflow + tenant subcommands
+// ============================================================================
+
+/**
+ * v1.3.0 W3 (operator surface dispatcher).
+ *
+ * `sutra-native workflow status [E-id]`     — list executions or show one
+ * `sutra-native workflow cancel <E-id>`     — cancel a paused/unknown execution
+ *                                              (added in W3.cancel commit)
+ *
+ * Status reads decision-provenance.jsonl (workflow STARTED / COMPLETED /
+ * FAILED records) and unions in pending approval ledger entries to surface
+ * paused executions.
+ */
+function cmdWorkflow(ctx: CommandContext): number {
+  const sub = ctx.argv[1] ?? ''
+  if (sub === 'status') {
+    return cmdWorkflowStatus(ctx)
+  }
+  ctx.stderr(`workflow: unknown subcommand "${sub}" (expected: status)\n`)
+  return 2
+}
+
+interface DPRecord {
+  readonly id?: string
+  readonly decision_kind?: string
+  readonly scope?: string
+  readonly outcome?: string
+  readonly timestamp?: string
+  readonly evidence?: ReadonlyArray<{ locator?: string }>
+  readonly next_action_ref?: string | null
+}
+
+interface ExecutionRow {
+  execution_id: string
+  workflow_id?: string
+  started_at?: string
+  ended_at?: string
+  state: 'STARTED' | 'COMPLETED' | 'FAILED' | 'paused'
+  outcome?: string
+}
+
+interface ExecutionApprovalSummary {
+  workflow_id: string
+  step_index: number
+  prompt_summary: string
+  created_at_ms: number
+}
+
+/**
+ * Read the user-kit DecisionProvenance JSONL and group EXECUTION-scope rows
+ * by execution_id. Each record's evidence locator is `cas://execution/<id>/<stage>`.
+ */
+function loadExecutionDPRecords(env: NodeJS.ProcessEnv): Map<string, DPRecord[]> {
+  const root = userKitRoot({ env })
+  const dpPath = join(root, 'user-kit', 'decision-provenance.jsonl')
+  const byExec = new Map<string, DPRecord[]>()
+  if (!existsSync(dpPath)) return byExec
+  let raw: string
+  try {
+    raw = readFileSync(dpPath, 'utf8')
+  } catch {
+    return byExec
+  }
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    let parsed: DPRecord
+    try {
+      parsed = JSON.parse(line) as DPRecord
+    } catch {
+      continue
+    }
+    if (parsed.scope !== 'EXECUTION' || parsed.decision_kind !== 'EXECUTE') continue
+    // Extract execution_id from evidence locator: cas://execution/<id>/<stage>
+    const locator = parsed.evidence?.[0]?.locator ?? ''
+    const m = /^cas:\/\/execution\/([^/]+)\/(started|completed|failed)$/.exec(locator)
+    if (!m) continue
+    const execId = m[1]!
+    const list = byExec.get(execId) ?? []
+    list.push(parsed)
+    byExec.set(execId, list)
+  }
+  return byExec
+}
+
+function deriveExecutionRow(execId: string, dpRecords: DPRecord[]): ExecutionRow {
+  const row: ExecutionRow = {
+    execution_id: execId,
+    state: 'STARTED',
+  }
+  for (const rec of dpRecords) {
+    const locator = rec.evidence?.[0]?.locator ?? ''
+    const m = /^cas:\/\/execution\/([^/]+)\/(started|completed|failed)$/.exec(locator)
+    if (!m) continue
+    const stage = m[2]!
+    if (stage === 'started') {
+      row.started_at = rec.timestamp
+    } else if (stage === 'completed') {
+      row.ended_at = rec.timestamp
+      row.state = 'COMPLETED'
+      row.outcome = rec.outcome
+    } else if (stage === 'failed') {
+      row.ended_at = rec.timestamp
+      row.state = 'FAILED'
+      row.outcome = rec.outcome
+    }
+  }
+  return row
+}
+
+function cmdWorkflowStatus(ctx: CommandContext): number {
+  const { positional } = parseFlags(ctx.argv.slice(1)) // strip 'status' verb
+  const targetExecId = positional[0]
+  try {
+    const byExec = loadExecutionDPRecords(ctx.env)
+    const pendingApprovals = listApprovals({ env: ctx.env }, 'pending')
+    const pausedById = new Map<string, ExecutionApprovalSummary>()
+    for (const rec of pendingApprovals) {
+      pausedById.set(rec.execution_id, {
+        workflow_id: rec.workflow_id,
+        step_index: rec.step_index,
+        prompt_summary: rec.prompt_summary,
+        created_at_ms: rec.created_at_ms,
+      })
+    }
+
+    if (targetExecId) {
+      const dpRecords = byExec.get(targetExecId) ?? []
+      const paused = pausedById.get(targetExecId)
+      if (dpRecords.length === 0 && !paused) {
+        ctx.stderr(`workflow status: execution "${targetExecId}" not found (no DP records, no pending approval)\n`)
+        return 3
+      }
+      const row: ExecutionRow = dpRecords.length > 0 ? deriveExecutionRow(targetExecId, dpRecords) : { execution_id: targetExecId, state: 'STARTED' }
+      if (paused) {
+        row.state = 'paused'
+      }
+      const lines: string[] = []
+      lines.push(`EXECUTION ${row.execution_id}`)
+      lines.push(`  state:        ${row.state}`)
+      if (row.started_at) lines.push(`  started_at:   ${row.started_at}`)
+      if (row.ended_at) lines.push(`  ended_at:     ${row.ended_at}`)
+      if (row.started_at && row.ended_at) {
+        const dur = new Date(row.ended_at).getTime() - new Date(row.started_at).getTime()
+        lines.push(`  duration_ms:  ${dur}`)
+      }
+      if (row.outcome) lines.push(`  outcome:      ${row.outcome}`)
+      if (paused) {
+        lines.push(`  paused_step:  ${paused.step_index}`)
+        lines.push(`  prompt:       ${paused.prompt_summary}`)
+        lines.push(`  paused_since: ${new Date(paused.created_at_ms).toISOString()}`)
+        lines.push(`  to resume:    sutra-native (founder utterance) "approve ${row.execution_id}"`)
+      }
+      // Provenance trail
+      if (dpRecords.length > 0) {
+        lines.push('  DP records:')
+        for (const rec of dpRecords) {
+          lines.push(`    [${rec.timestamp}] ${rec.outcome ?? '(no outcome)'}`)
+        }
+      }
+      ctx.stdout(lines.join('\n') + '\n')
+      return 0
+    }
+
+    // No target — list all
+    const allIds = new Set<string>([...byExec.keys(), ...pausedById.keys()])
+    if (allIds.size === 0) {
+      ctx.stdout('workflow status: no executions found\n')
+      return 0
+    }
+    const lines: string[] = []
+    lines.push(`EXECUTIONS (${allIds.size}):`)
+    const sorted = [...allIds].sort()
+    for (const execId of sorted) {
+      const dpRecords = byExec.get(execId) ?? []
+      const row: ExecutionRow = dpRecords.length > 0 ? deriveExecutionRow(execId, dpRecords) : { execution_id: execId, state: 'STARTED' }
+      const paused = pausedById.get(execId)
+      if (paused) row.state = 'paused'
+      const ts = row.ended_at ?? row.started_at ?? '-'
+      lines.push(`  ${execId.padEnd(36)} ${row.state.padEnd(10)} ${ts}`)
+    }
+    ctx.stdout(lines.join('\n') + '\n')
+    return 0
+  } catch (err) {
+    ctx.stderr(`workflow status failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    return 3
+  }
+}
+
 /**
  * cmdDaemon — INTERNAL: run NativeEngine in foreground until SIGTERM.
  *
@@ -1010,6 +1200,12 @@ function usage(): string {
     '                     Load a persisted Workflow + run via LiteExecutor.',
     '                     Each EngineEvent prints one line on stdout.',
     '',
+    'Operator surface (v1.3.0 W3):',
+    '  workflow status [<E-id>]',
+    '                     List executions OR show one execution by E-id with',
+    '                     state derivation (STARTED/COMPLETED/FAILED/paused),',
+    '                     timestamps, durations, and pending approval prompt.',
+    '',
     'Environment:',
     '  SUTRA_NATIVE_HOME  Base dir (default: ~/.sutra-native; user-kit at $HOME/user-kit/)',
     '  SUTRA_NATIVE_PID   Override PID file path entirely',
@@ -1030,6 +1226,8 @@ export {
   cmdCreateTrigger,
   cmdList,
   cmdRun,
+  cmdWorkflow,
+  cmdWorkflowStatus,
   formatBanner,
   formatStatus,
   usage,
