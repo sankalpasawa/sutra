@@ -7,6 +7,20 @@ description: >-
   default (license-bound; opt-in per-tenant).
 composioToolkit: gmail
 
+# Maps claude.ai MCP tool names → Sutra capability strings.
+# Used by hooks/mcp-connector-gate.sh for governance enforcement.
+mcp_tool_map:
+  mcp__claude_ai_Gmail__search_threads: 'gmail:list-messages:*'
+  mcp__claude_ai_Gmail__get_thread: 'gmail:get-thread:*'
+  mcp__claude_ai_Gmail__list_drafts: 'gmail:list-messages:*'
+  mcp__claude_ai_Gmail__list_labels: 'gmail:list-messages:*'
+  mcp__claude_ai_Gmail__create_draft: 'gmail:send-message:*'
+  mcp__claude_ai_Gmail__create_label: 'gmail:modify-labels:*'
+  mcp__claude_ai_Gmail__label_message: 'gmail:modify-labels:*'
+  mcp__claude_ai_Gmail__label_thread: 'gmail:modify-labels:*'
+  mcp__claude_ai_Gmail__unlabel_message: 'gmail:modify-labels:*'
+  mcp__claude_ai_Gmail__unlabel_thread: 'gmail:modify-labels:*'
+
 capabilities:
   # READ — list messages, fetch thread, fetch single message
   - id: gmail:list-messages:*

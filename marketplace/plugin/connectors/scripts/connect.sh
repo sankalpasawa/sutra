@@ -212,6 +212,56 @@ SLACK_HELP
     fi
     echo "✔ saved Slack credential (encrypted: $CRED_AGE_FILE; shadow: $CRED_FILE)"
     echo "  Verify with: sutra connect-test slack"
+
+    # ── MCP server registration ───────────────────────────────────────────────
+    # Register sutra-slack in ~/.claude/settings.json so Claude Code spawns the
+    # MCP server on next session start. Uses python3 for safe atomic JSON update.
+    MCP_SERVER_ABS="$(cd "$CONNECTORS_ROOT" && pwd)/mcp-servers/slack.mjs"
+    CLAUDE_SETTINGS="${HOME}/.claude/settings.json"
+
+    echo ""
+    echo "── Registering Slack MCP server ─────────────────────────────────────"
+    if python3 - <<PYEOF
+import json, os, sys
+
+settings_path = os.path.expanduser('~/.claude/settings.json')
+mcp_path = '${MCP_SERVER_ABS}'
+
+if not os.path.exists(settings_path):
+    print('  Note: ~/.claude/settings.json not found.')
+    print('  Add manually to your Claude Code settings → mcpServers:')
+    print('    "sutra-slack": { "command": "node", "args": ["' + mcp_path + '"] }')
+    sys.exit(0)
+
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except Exception as e:
+    print(f'  Warning: could not read settings.json ({e}) — skipping MCP registration.')
+    sys.exit(0)
+
+settings.setdefault('mcpServers', {})['sutra-slack'] = {
+    'command': 'node',
+    'args': [mcp_path]
+}
+
+tmp = settings_path + '.sutra-tmp'
+with open(tmp, 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+os.replace(tmp, settings_path)
+print('  registered sutra-slack in ~/.claude/settings.json')
+PYEOF
+    then
+      echo ""
+      echo "  What's next:"
+      echo "    1. Restart Claude Code (new session activates the MCP server)"
+      echo "    2. You'll have 3 new tools in your next session:"
+      echo "         sutra_slack_read_channel   — read messages from any channel"
+      echo "         sutra_slack_post_message   — post messages (confirm before use)"
+      echo "         sutra_slack_get_user       — look up a user by ID"
+      echo "    3. Try: \"Read the last 10 messages from #general\""
+    fi
     ;;
 
   gmail)

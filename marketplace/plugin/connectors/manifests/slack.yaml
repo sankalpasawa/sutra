@@ -13,10 +13,51 @@ description: >-
 composioToolkit: slack
 
 integration:
-  kind: 'direct'
-  target: 'slack-direct'
+  kind: 'mcp-server'
+  target: 'sutra-slack'
+  server_path: 'connectors/mcp-servers/slack.mjs'
+  registered_as: 'sutra-slack'        # key in ~/.claude/settings.json mcpServers
+  registered_by: 'connect.sh'         # auto-wired on `sutra connect slack`
+
+# Maps claude.ai MCP tool names → Sutra capability strings.
+# Used by hooks/mcp-connector-gate.sh for governance enforcement.
+mcp_tool_map:
+  mcp__claude_ai_Slack__slack_read_channel: 'slack:read-channel:#*'
+  mcp__claude_ai_Slack__slack_read_thread: 'slack:read-channel:#*'
+  mcp__claude_ai_Slack__slack_search_channels: 'slack:read-channel:#*'
+  mcp__claude_ai_Slack__slack_search_public: 'slack:read-channel:#public-*'
+  mcp__claude_ai_Slack__slack_search_public_and_private: 'slack:read-channel:#*'
+  mcp__claude_ai_Slack__slack_read_user_profile: 'slack:get-user:*'
+  mcp__claude_ai_Slack__slack_read_canvas: 'slack:read-canvas:*'
+  mcp__claude_ai_Slack__slack_send_message: 'slack:post-message:#*'
+  mcp__claude_ai_Slack__slack_schedule_message: 'slack:post-message:#*'
+  mcp__claude_ai_Slack__slack_send_message_draft: 'slack:post-message:#*'
+  mcp__claude_ai_Slack__slack_create_canvas: 'slack:write-canvas:*'
+  mcp__claude_ai_Slack__slack_update_canvas: 'slack:write-canvas:*'
 
 capabilities:
+  # ---- USER + CANVAS ----
+  - id: 'slack:get-user:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'slack:read-canvas:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'slack:write-canvas:*'
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
   # ---- READ ----
   - id: 'slack:read-channel:#*'
     action: read
@@ -97,17 +138,23 @@ capabilities:
 tierAccess:
   # T1 (Asawa): full fleet incl. post + public-launch
   T1:
+    - 'slack:get-user:*'
+    - 'slack:read-canvas:*'
+    - 'slack:write-canvas:*'
     - 'slack:read-channel:#*'
     - 'slack:post-message:#*'
     - 'slack:post-message:#public-launch'
 
   # T2 (DayFlow / Billu / Paisa): read own scoped channels, post with approval
   T2:
+    - 'slack:get-user:*'
+    - 'slack:read-canvas:*'
     - 'slack:read-channel:#dayflow-eng'
     - 'slack:post-message:#*'
 
   # T3 (Testlify / Dharmik): read only their own product channels
   T3:
+    - 'slack:get-user:*'
     - 'slack:read-channel:#testlify-status'
     - 'slack:read-channel:#dharmik-build'
 

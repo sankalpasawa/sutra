@@ -1,0 +1,69 @@
+# Sutra Connectors — Google Calendar manifest (v0)
+# Schema: holding/research/2026-04-30-connectors-LLD.md §2.2
+# Validator: sutra/marketplace/plugin/connectors/lib/manifest.ts (validateManifest)
+
+schemaVersion: '1'
+name: google-calendar
+description: >-
+  Google Calendar connector via claude.ai MCP. Read events and calendars,
+  create and update events with approval. T1 full access, T2 read + create
+  with approval, T3/T4 blocked.
+composioToolkit: googlecalendar
+
+# Maps claude.ai MCP tool names → Sutra capability strings.
+# Used by hooks/mcp-connector-gate.sh for governance enforcement.
+mcp_tool_map:
+  mcp__claude_ai_Google_Calendar__list_events: 'gcal:read-event:*'
+  mcp__claude_ai_Google_Calendar__get_event: 'gcal:read-event:*'
+  mcp__claude_ai_Google_Calendar__list_calendars: 'gcal:read-event:*'
+  mcp__claude_ai_Google_Calendar__suggest_time: 'gcal:read-event:*'
+  mcp__claude_ai_Google_Calendar__create_event: 'gcal:write-event:*'
+  mcp__claude_ai_Google_Calendar__update_event: 'gcal:write-event:*'
+  mcp__claude_ai_Google_Calendar__respond_to_event: 'gcal:write-event:*'
+  mcp__claude_ai_Google_Calendar__delete_event: 'gcal:delete-event:*'
+
+capabilities:
+  - id: 'gcal:read-event:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'gcal:write-event:*'
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
+  - id: 'gcal:delete-event:*'
+    action: admin
+    resourcePattern: '*'
+    minDepth: 4
+    approvalRequired: true
+    costEstimate: free
+
+tierAccess:
+  T1:
+    - 'gcal:read-event:*'
+    - 'gcal:write-event:*'
+    - 'gcal:delete-event:*'
+  T2:
+    - 'gcal:read-event:*'
+    - 'gcal:write-event:*'
+  T3: []
+  T4: []
+
+auditFields:
+  - eventId
+  - calendarId
+  - summary
+  - start
+  - end
+
+redactPaths:
+  - 'attendees[*].email'
+  - 'organizer.email'
+  - 'conferenceData.entryPoints[*].uri'
+  - 'description'

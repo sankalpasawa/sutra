@@ -1,0 +1,45 @@
+# Sutra Connectors — Read.ai manifest (v0)
+# Schema: holding/research/2026-04-30-connectors-LLD.md §2.2
+# Validator: sutra/marketplace/plugin/connectors/lib/manifest.ts (validateManifest)
+
+schemaVersion: '1'
+name: read-ai
+description: >-
+  Read.ai meeting intelligence connector via claude.ai MCP.
+  Read meeting summaries, transcripts, and insights.
+  All operations are read-only. T1 full access, T2 read with approval,
+  T3/T4 blocked (meeting content is confidential).
+composioToolkit: readai
+
+# Maps claude.ai MCP tool names → Sutra capability strings.
+# Used by hooks/mcp-connector-gate.sh for governance enforcement.
+mcp_tool_map:
+  mcp__claude_ai_Read_ai__list_meetings: 'readai:read-meeting:*'
+  mcp__claude_ai_Read_ai__get_meeting_by_id: 'readai:read-meeting:*'
+
+capabilities:
+  - id: 'readai:read-meeting:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+tierAccess:
+  T1:
+    - 'readai:read-meeting:*'
+  T2:
+    - 'readai:read-meeting:*'
+  T3: []
+  T4: []
+
+auditFields:
+  - meetingId
+  - title
+  - date
+
+redactPaths:
+  - 'transcript'
+  - 'summary.key_questions'
+  - 'attendees[*].email'
+  - 'speaker_analytics[*].name'

@@ -1,0 +1,102 @@
+# Sutra Connectors — Atlassian (Jira + Confluence) manifest (v0)
+# Schema: holding/research/2026-04-30-connectors-LLD.md §2.2
+# Validator: sutra/marketplace/plugin/connectors/lib/manifest.ts (validateManifest)
+
+schemaVersion: '1'
+name: atlassian
+description: >-
+  Atlassian Jira + Confluence connector via claude.ai MCP (Rovo).
+  Read issues, pages, and search across Jira and Confluence.
+  Write operations (create/edit issues, create pages) require depth >= 3.
+  T1 full access, T2 read only, T3/T4 blocked.
+composioToolkit: jira
+
+# Maps claude.ai MCP tool names → Sutra capability strings.
+# Used by hooks/mcp-connector-gate.sh for governance enforcement.
+mcp_tool_map:
+  mcp__claude_ai_Atlassian_Rovo__search: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getJiraIssue: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getJiraIssueRemoteIssueLinks: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getJiraIssueTypeMetaWithFields: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getJiraProjectIssueTypesMetadata: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getTransitionsForJiraIssue: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getVisibleJiraProjects: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__lookupJiraAccountId: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getAccessibleAtlassianResources: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__atlassianUserInfo: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getIssueLinkTypes: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__searchJiraIssuesUsingJql: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__fetch: 'atlassian:read-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__getConfluencePage: 'atlassian:read-page:*'
+  mcp__claude_ai_Atlassian_Rovo__getConfluencePageDescendants: 'atlassian:read-page:*'
+  mcp__claude_ai_Atlassian_Rovo__getConfluencePageFooterComments: 'atlassian:read-page:*'
+  mcp__claude_ai_Atlassian_Rovo__getConfluencePageInlineComments: 'atlassian:read-page:*'
+  mcp__claude_ai_Atlassian_Rovo__getPagesInConfluenceSpace: 'atlassian:read-page:*'
+  mcp__claude_ai_Atlassian_Rovo__getConfluenceSpaces: 'atlassian:read-page:*'
+  mcp__claude_ai_Atlassian_Rovo__getConfluenceCommentChildren: 'atlassian:read-page:*'
+  mcp__claude_ai_Atlassian_Rovo__searchConfluenceUsingCql: 'atlassian:read-page:*'
+  mcp__claude_ai_Atlassian_Rovo__createJiraIssue: 'atlassian:write-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__editJiraIssue: 'atlassian:write-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__transitionJiraIssue: 'atlassian:write-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__addCommentToJiraIssue: 'atlassian:write-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__addWorklogToJiraIssue: 'atlassian:write-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__createIssueLink: 'atlassian:write-issue:*'
+  mcp__claude_ai_Atlassian_Rovo__createConfluencePage: 'atlassian:write-page:*'
+  mcp__claude_ai_Atlassian_Rovo__createConfluenceFooterComment: 'atlassian:write-page:*'
+  mcp__claude_ai_Atlassian_Rovo__createConfluenceInlineComment: 'atlassian:write-page:*'
+  mcp__claude_ai_Atlassian_Rovo__updateConfluencePage: 'atlassian:write-page:*'
+
+capabilities:
+  - id: 'atlassian:read-issue:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'atlassian:read-page:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'atlassian:write-issue:*'
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
+  - id: 'atlassian:write-page:*'
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
+tierAccess:
+  T1:
+    - 'atlassian:read-issue:*'
+    - 'atlassian:read-page:*'
+    - 'atlassian:write-issue:*'
+    - 'atlassian:write-page:*'
+  T2:
+    - 'atlassian:read-issue:*'
+    - 'atlassian:read-page:*'
+  T3: []
+  T4: []
+
+auditFields:
+  - issueKey
+  - projectKey
+  - pageId
+  - spaceKey
+  - accountId
+
+redactPaths:
+  - 'fields.description'
+  - 'body.storage.value'
+  - 'comments[*].body'
+  - 'emailAddress'
+  - 'author.emailAddress'

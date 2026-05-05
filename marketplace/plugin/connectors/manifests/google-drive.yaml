@@ -1,0 +1,60 @@
+# Sutra Connectors — Google Drive manifest (v0)
+# Schema: holding/research/2026-04-30-connectors-LLD.md §2.2
+# Validator: sutra/marketplace/plugin/connectors/lib/manifest.ts (validateManifest)
+
+schemaVersion: '1'
+name: google-drive
+description: >-
+  Google Drive connector via claude.ai MCP. Search, read, and list files with
+  Sutra tier scoping. Write operations (create, copy) require depth >= 3 and
+  approval. T1 full access, T2 read only, T3/T4 blocked.
+composioToolkit: googledrive
+
+# Maps claude.ai MCP tool names → Sutra capability strings.
+# Used by hooks/mcp-connector-gate.sh for governance enforcement.
+mcp_tool_map:
+  mcp__claude_ai_Google_Drive__search_files: 'gdrive:read-file:*'
+  mcp__claude_ai_Google_Drive__list_recent_files: 'gdrive:read-file:*'
+  mcp__claude_ai_Google_Drive__get_file_metadata: 'gdrive:read-file:*'
+  mcp__claude_ai_Google_Drive__get_file_permissions: 'gdrive:read-file:*'
+  mcp__claude_ai_Google_Drive__read_file_content: 'gdrive:read-file:*'
+  mcp__claude_ai_Google_Drive__download_file_content: 'gdrive:read-file:*'
+  mcp__claude_ai_Google_Drive__create_file: 'gdrive:write-file:*'
+  mcp__claude_ai_Google_Drive__copy_file: 'gdrive:write-file:*'
+
+capabilities:
+  - id: 'gdrive:read-file:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'gdrive:write-file:*'
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
+tierAccess:
+  T1:
+    - 'gdrive:read-file:*'
+    - 'gdrive:write-file:*'
+  T2:
+    - 'gdrive:read-file:*'
+  T3: []
+  T4: []
+
+auditFields:
+  - fileId
+  - name
+  - mimeType
+  - parents
+
+redactPaths:
+  - 'owners[*].emailAddress'
+  - 'sharingUser.emailAddress'
+  - 'permissions[*].emailAddress'
+  - 'content'
+  - 'body'

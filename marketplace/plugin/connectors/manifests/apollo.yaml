@@ -1,0 +1,106 @@
+# Sutra Connectors — Apollo.io manifest (v0)
+# Schema: holding/research/2026-04-30-connectors-LLD.md §2.2
+# Validator: sutra/marketplace/plugin/connectors/lib/manifest.ts (validateManifest)
+
+schemaVersion: '1'
+name: apollo
+description: >-
+  Apollo.io connector via claude.ai MCP. Search and enrich contacts,
+  companies, and people. Sequence management (add/remove contacts) requires
+  depth >= 3 and approval. T1 full access, T2 search + enrich only, T3/T4 blocked.
+composioToolkit: apollo
+
+# Maps claude.ai MCP tool names → Sutra capability strings.
+# Used by hooks/mcp-connector-gate.sh for governance enforcement.
+mcp_tool_map:
+  mcp__claude_ai_Apollo_io__apollo_contacts_search: 'apollo:search-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_mixed_people_api_search: 'apollo:search-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_mixed_companies_search: 'apollo:search-companies:*'
+  mcp__claude_ai_Apollo_io__apollo_organizations_enrich: 'apollo:enrich-org:*'
+  mcp__claude_ai_Apollo_io__apollo_organizations_bulk_enrich: 'apollo:enrich-org:*'
+  mcp__claude_ai_Apollo_io__apollo_organizations_job_postings: 'apollo:search-companies:*'
+  mcp__claude_ai_Apollo_io__apollo_people_match: 'apollo:search-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_people_bulk_match: 'apollo:search-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_users_api_profile: 'apollo:search-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_email_accounts_index: 'apollo:read-sequences:*'
+  mcp__claude_ai_Apollo_io__apollo_emailer_campaigns_search: 'apollo:read-sequences:*'
+  mcp__claude_ai_Apollo_io__apollo_analytics_sync_report: 'apollo:read-sequences:*'
+  mcp__claude_ai_Apollo_io__apollo_contacts_create: 'apollo:write-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_contacts_update: 'apollo:write-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_accounts_create: 'apollo:write-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_accounts_update: 'apollo:write-contacts:*'
+  mcp__claude_ai_Apollo_io__apollo_emailer_campaigns_add_contact_ids: 'apollo:write-sequences:*'
+  mcp__claude_ai_Apollo_io__apollo_emailer_campaigns_remove_or_stop_contact_ids: 'apollo:write-sequences:*'
+
+capabilities:
+  - id: 'apollo:search-contacts:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: cents
+
+  - id: 'apollo:search-companies:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: cents
+
+  - id: 'apollo:enrich-org:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: cents
+
+  - id: 'apollo:read-sequences:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'apollo:write-contacts:*'
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
+  - id: 'apollo:write-sequences:*'
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
+tierAccess:
+  T1:
+    - 'apollo:search-contacts:*'
+    - 'apollo:search-companies:*'
+    - 'apollo:enrich-org:*'
+    - 'apollo:read-sequences:*'
+    - 'apollo:write-contacts:*'
+    - 'apollo:write-sequences:*'
+  T2:
+    - 'apollo:search-contacts:*'
+    - 'apollo:search-companies:*'
+    - 'apollo:enrich-org:*'
+  T3: []
+  T4: []
+
+auditFields:
+  - contactId
+  - organizationId
+  - campaignId
+  - email
+
+redactPaths:
+  - 'email'
+  - 'phone_numbers[*].raw_number'
+  - 'personal_emails[*]'
+  - 'contacts[*].email'
+  - 'contacts[*].phone_numbers'
+  - 'people[*].email'
+  - 'people[*].phone_numbers'

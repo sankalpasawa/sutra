@@ -1,0 +1,73 @@
+# Sutra Connectors — HubSpot manifest (v0)
+# Schema: holding/research/2026-04-30-connectors-LLD.md §2.2
+# Validator: sutra/marketplace/plugin/connectors/lib/manifest.ts (validateManifest)
+
+schemaVersion: '1'
+name: hubspot
+description: >-
+  HubSpot CRM connector via claude.ai MCP. Read contacts, companies, deals,
+  campaigns, and analytics. CRM mutations (manage_crm_objects) require depth >= 3
+  and approval. T1 full access, T2 read only, T3/T4 blocked.
+composioToolkit: hubspot
+
+# Maps claude.ai MCP tool names → Sutra capability strings.
+# Used by hooks/mcp-connector-gate.sh for governance enforcement.
+mcp_tool_map:
+  mcp__claude_ai_HubSpot__get_crm_objects: 'hubspot:read-crm:*'
+  mcp__claude_ai_HubSpot__search_crm_objects: 'hubspot:read-crm:*'
+  mcp__claude_ai_HubSpot__get_properties: 'hubspot:read-crm:*'
+  mcp__claude_ai_HubSpot__search_properties: 'hubspot:read-crm:*'
+  mcp__claude_ai_HubSpot__get_user_details: 'hubspot:read-crm:*'
+  mcp__claude_ai_HubSpot__get_organization_details: 'hubspot:read-crm:*'
+  mcp__claude_ai_HubSpot__get_campaign_analytics: 'hubspot:read-analytics:*'
+  mcp__claude_ai_HubSpot__get_campaign_asset_metrics: 'hubspot:read-analytics:*'
+  mcp__claude_ai_HubSpot__get_campaign_contacts_by_type: 'hubspot:read-analytics:*'
+  mcp__claude_ai_HubSpot__search_owners: 'hubspot:read-crm:*'
+  mcp__claude_ai_HubSpot__tool_guidance: 'hubspot:read-crm:*'
+  mcp__claude_ai_HubSpot__manage_crm_objects: 'hubspot:write-crm:*'
+  mcp__claude_ai_HubSpot__submit_feedback: 'hubspot:write-crm:*'
+
+capabilities:
+  - id: 'hubspot:read-crm:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'hubspot:read-analytics:*'
+    action: read
+    resourcePattern: '*'
+    minDepth: 1
+    approvalRequired: false
+    costEstimate: free
+
+  - id: 'hubspot:write-crm:*'
+    action: write
+    resourcePattern: '*'
+    minDepth: 3
+    approvalRequired: true
+    costEstimate: free
+
+tierAccess:
+  T1:
+    - 'hubspot:read-crm:*'
+    - 'hubspot:read-analytics:*'
+    - 'hubspot:write-crm:*'
+  T2:
+    - 'hubspot:read-crm:*'
+    - 'hubspot:read-analytics:*'
+  T3: []
+  T4: []
+
+auditFields:
+  - objectType
+  - objectId
+  - properties
+
+redactPaths:
+  - 'results[*].properties.email'
+  - 'results[*].properties.phone'
+  - 'results[*].properties.mobilephone'
+  - 'properties.email'
+  - 'properties.phone'
