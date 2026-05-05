@@ -31,7 +31,7 @@
           },
           {
             "type": "command",
-            "command": "bash -c 'mkdir -p \"${HOME}/.sutra\" 2>/dev/null; ( nohup \"${CLAUDE_PLUGIN_ROOT}/hooks/inbox-display.sh\" </dev/null >>\"${HOME}/.sutra/inbox-display-async.log\" 2>&1 & )'",
+            "command": "bash -c 'mkdir -p \"${HOME}/.sutra\" 2>/dev/null; : > \"${HOME}/.sutra/inbox-display-async.log\"; ( nohup \"${CLAUDE_PLUGIN_ROOT}/hooks/inbox-display.sh\" </dev/null >>\"${HOME}/.sutra/inbox-display-async.log\" 2>&1 & )'",
             "timeout": 2
           },
           {

@@ -2,6 +2,28 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+## v2.33.0 — 2026-05-05
+
+**Inbox-display.sh now async — SessionStart latency cuts 5-8s in real-world worst case.**
+
+Founder direction 2026-05-05: "make the user boot up experience better." inbox-display.sh was the largest blocking offender at SessionStart (8s timeout, 3-5 gh API calls + remote cache fetch). Backgrounded via portable wrapper; orphan-process risk bounded; log file growth bounded. Codex review round 1 CHANGES-REQUIRED → 3 fixes applied → round 2 PASS.
+
+### What changed
+
+1. **`hooks/hooks.json`** — SessionStart entry for inbox-display.sh wrapped in `bash -c 'mkdir -p "${HOME}/.sutra"; : > "${HOME}/.sutra/inbox-display-async.log"; ( nohup ... </dev/null >>... 2>&1 & )'`. Wrapper exits in <100ms after backgrounding the actual hook. Timeout reduced 8 → 2 (wrapper time, not hook time). The log truncate (`: > log`) bounds disk growth on recurring sessions per codex round-1 finding.
+
+2. **`hooks/inbox-display.sh`** — line 71 unbounded `git pull -q` replaced with portable poll-and-kill pattern (background fork → 5s wait loop → SIGTERM if still alive → wait + log). Bounds the orphan-process risk that backgrounding introduced (without this, a hung git would leak a detached process per session start). No GNU `timeout` dependency — POSIX-portable across macOS and Linux.
+
+3. **Visibility trade-off documented**: inbox content no longer renders at session start. It writes to `~/.sutra/inbox-display-async.log` (truncated per session). V0 close-loop layer is rarely populated today, so the trade-off is acceptable for the latency gain. Kill-switch `SUTRA_INBOX_DISABLED=1` unchanged.
+
+### Threat model rationale
+
+Backgrounding any hook converts a bounded foreground risk (cap = hook timeout) into a potentially unbounded background risk if the hook itself has unbounded operations. The orphan bound on line 71 of inbox-display.sh closes that gap explicitly. Codex flagged this in round-1 review (CHANGES-REQUIRED); the fix shipped before round-2 PASS.
+
+### Versions
+
+- core@2.33.0 (2026-05-05)
+
 ## v2.32.0 — 2026-05-04
 
 **Permission posture realigned to catastrophic-only across Bash/MCP/Web/Task. Closes ~95% of remaining prompt friction; catastrophic floor preserved.**

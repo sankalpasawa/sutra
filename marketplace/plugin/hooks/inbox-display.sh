@@ -68,7 +68,22 @@ fi
 displayed_count=0
 if [ -n "$install_id" ] && [ -d "$CACHE/.git" ]; then
   # Refresh cache (best-effort, quiet)
-  (cd "$CACHE" && git pull -q 2>/dev/null) || log "git pull failed; reading cached inbox"
+  (
+    cd "$CACHE" || exit 1
+    git pull -q 2>/dev/null &
+    git_pid=$!
+    waited=0
+    while kill -0 "$git_pid" 2>/dev/null && [ "$waited" -lt 5 ]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if kill -0 "$git_pid" 2>/dev/null; then
+      kill "$git_pid" 2>/dev/null || true
+      wait "$git_pid" 2>/dev/null || true
+      exit 124
+    fi
+    wait "$git_pid"
+  ) || log "git pull failed/timed out; reading cached inbox"
 
   INBOX_DIR="$CACHE/clients/$install_id/inbox"
   if [ -d "$INBOX_DIR" ]; then
