@@ -72,7 +72,7 @@ import {
   type TriggerSpec,
 } from '../types/trigger-spec.js'
 
-const VERSION = '1.3.0'
+const VERSION = '1.4.0'
 
 interface CommandContext {
   readonly argv: ReadonlyArray<string>

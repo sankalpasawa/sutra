@@ -251,6 +251,22 @@ cmd_banner() {
     rtk_status="active"
   fi
   printf '   RTK rewrite:     %s\n' "$rtk_status"
+
+  # v2.34.0 (D53 fleet phase, 2026-05-06): Context7 plugin recommend.
+  # Read-only probe of user-scope plugin registry. Recommend opt-in install
+  # if not present or registry unreadable. NO silent install — D50 P1-1
+  # precedent forbids silent expansion of consent scope on user settings.
+  # Codex consult thread 019dfd37-5203-7552-a944-2a8bd9f50751 ADVISORY.
+  local context7_status="recommended — claude plugin install context7@claude-plugins-official"
+  if [ -f "$HOME/.claude/plugins/installed_plugins.json" ] && command -v jq >/dev/null 2>&1; then
+    # Codex P2-1 fold (review 2026-05-06): require scope="user" entry, not
+    # any presence. installed_plugins.json may carry project-scope entries
+    # too; the recommend wording specifies "user scope" so probe matches.
+    if jq -e 'any(.plugins["context7@claude-plugins-official"][]?; .scope=="user")' "$HOME/.claude/plugins/installed_plugins.json" >/dev/null 2>&1; then
+      context7_status="enabled — latest library/framework docs available"
+    fi
+  fi
+  printf '   Context7:        %s\n' "$context7_status"
   echo
   echo "   Skills loaded:   input-routing, depth-estimation, readability-gate, output-trace"
 

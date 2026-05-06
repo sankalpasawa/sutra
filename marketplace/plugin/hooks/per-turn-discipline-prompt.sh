@@ -123,20 +123,57 @@ RE_TOOLS=$(jq -r '.right_effort.applies_before | join("/")' "$DEFAULTS_JSON" 2>/
 } >&2
 
 # ──────────────────────────────────────────────────────────────────────────
-# H-Sutra classification (folded 2026-05-01 per codex consult P2.7).
-# Canonical channel: UserPromptSubmit stdin JSON {prompt: "..."} (codex P2 #4).
-# Failures stay off stdout to avoid Claude-context pollution (codex P2 #5).
-# Concurrency: mkdir-based advisory lock for shared-FS portability (codex P2 #6).
-# Per [Never bypass governance]: every turn is logged; fail-open never silent
-# (stderr diagnostic on infra failure).
+# H-Sutra classification — v2 (D49 codex round-1..5 fold, 2026-05-06).
+#
+# Refactored: canonical classify+write logic moved to the shared library at
+# `lib/h-sutra-classify-and-write.sh`. This wrapper handles ONLY:
+#   - stdin JSON parse (prompt + session_id)
+#   - SUTRA_HSUTRA_LOG_PATH env override → Asawa override → default fallback
+#   - sourcing the lib + calling h_sutra_classify_and_write
+#
+# Behavioral parity with v1:
+#   - same row schema (15 fields + optional input_text), now also emits .risk
+#     alias for native predicate.ts:97 consumer
+#   - same dedupe (tail-grep last 10 turn_ids)
+#   - same mkdir-based locks (per-turn arbitration + per-log dedupe)
+#   - same fail-open semantics (exit 0 on infra failure)
+# Adds:
+#   - per-turn arbitration lock so co-installed core+native produce ONE row
+#   - sanitized session_id + bounded length + age-based stale-lock recovery
+#   - SUTRA_HSUTRA_LOG_PATH env override (round-3 P1-2 fold; existing Native
+#     consumer contract at h-sutra-connector.ts:54)
+#
+# Source: D49 entry in holding/FOUNDER-DIRECTIONS.md (2026-05-06).
 # ──────────────────────────────────────────────────────────────────────────
+
+# Single H-Sutra env break-glass (D49 codex review P2-B fold) — honored by
+# BOTH core and native wrappers so the advertised single override actually
+# disables H-Sutra producer in co-installed setups, not just standalone
+# native. Loud-log on use.
+if [ -n "${SUTRA_HSUTRA_FORCE_DISABLE:-}" ]; then
+  TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  printf '[%s] [h-sutra-core] DISABLED via SUTRA_HSUTRA_FORCE_DISABLE=1\n' "$TS" >&2
+  exit 0
+fi
+
+# Shared lib — function-only; sourcing has no side effects.
+HSUTRA_LIB="$DEFAULTS_DIR/lib/h-sutra-classify-and-write.sh"
+if [ ! -r "$HSUTRA_LIB" ]; then
+  printf '[h-sutra] lib missing at %s — row skipped.\n' "$HSUTRA_LIB" >&2
+  exit 0
+fi
+# shellcheck source=../lib/h-sutra-classify-and-write.sh
+. "$HSUTRA_LIB"
+
 HSUTRA_INPUT_JSON=""
 if [ ! -t 0 ]; then
   HSUTRA_INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 HSUTRA_PROMPT=""
+HSUTRA_SESSION_ID=""
 if [ -n "$HSUTRA_INPUT_JSON" ]; then
   HSUTRA_PROMPT=$(printf '%s' "$HSUTRA_INPUT_JSON" | jq -r '.prompt // empty' 2>/dev/null || true)
+  HSUTRA_SESSION_ID=$(printf '%s' "$HSUTRA_INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
 fi
 [ -z "$HSUTRA_PROMPT" ] && exit 0
 
@@ -146,72 +183,15 @@ if [ ! -r "$HSUTRA_CLASSIFIER" ]; then
   exit 0
 fi
 
-# Self-derive IR_TYPE from prompt heuristics (no dependency on input-routing
-# cache — codex P1 #1). classify.sh applies its own ADR-001 precedence after.
-HSUTRA_LC=$(printf '%s' "$HSUTRA_PROMPT" | tr '[:upper:]' '[:lower:]')
-HSUTRA_IR_TYPE="task"
-case "$HSUTRA_LC" in
-  *"?"*) HSUTRA_IR_TYPE="question" ;;
-esac
-if printf '%s' "$HSUTRA_LC" | grep -qE '\b(missed|wrong|broken|error|failed|didn.?t|wasn.?t|isn.?t|not yet)\b'; then
-  HSUTRA_IR_TYPE="feedback"
-fi
-if printf '%s' "$HSUTRA_LC" | grep -qE '\b(should|must|always|never|going forward|from now on)\b'; then
-  HSUTRA_IR_TYPE="direction"
-fi
-
-HSUTRA_JSON=$(IR_TYPE="$HSUTRA_IR_TYPE" bash "$HSUTRA_CLASSIFIER" "$HSUTRA_PROMPT" 2>/dev/null || true)
-if [ -z "$HSUTRA_JSON" ]; then
-  printf '[h-sutra] classifier returned empty; row skipped.\n' >&2
-  exit 0
-fi
-
-# Log path: Asawa override > default. mkdir -p the parent on first append.
-HSUTRA_LOG="$REPO_ROOT/.sutra/h-sutra.jsonl"
-if [ -f "$REPO_ROOT/holding/state/interaction/log.jsonl" ]; then
+# Log path resolution — env override > Asawa override > default
+if [ -n "${SUTRA_HSUTRA_LOG_PATH:-}" ]; then
+  HSUTRA_LOG="$SUTRA_HSUTRA_LOG_PATH"
+elif [ -f "$REPO_ROOT/holding/state/interaction/log.jsonl" ]; then
   HSUTRA_LOG="$REPO_ROOT/holding/state/interaction/log.jsonl"
-fi
-mkdir -p "$(dirname "$HSUTRA_LOG")" 2>/dev/null || true
-
-HSUTRA_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-HSUTRA_TURN_ID=$(printf '%s' "${HSUTRA_TS}|${HSUTRA_PROMPT}" | shasum -a 256 2>/dev/null | cut -c1-12)
-
-# Optional input_text capture for Native v1.2 organic-emergence detector.
-# Default OFF for T4 privacy / log-size; opt-in per-cohort via env flag.
-# Truncated to 500 chars to bound log growth (most patterns surface from
-# short utterances; long inputs are rarely the repeating-pattern case).
-HSUTRA_INPUT_TEXT=""
-case "${SUTRA_HSUTRA_CAPTURE_INPUT:-}" in
-  on|1|true|yes)
-    HSUTRA_INPUT_TEXT=$(printf '%s' "$HSUTRA_PROMPT" | head -c 500)
-    ;;
-esac
-
-HSUTRA_ROW=$(printf '%s' "$HSUTRA_JSON" | jq -c \
-  --arg ts "$HSUTRA_TS" \
-  --arg turn_id "$HSUTRA_TURN_ID" \
-  --arg ir_type "$HSUTRA_IR_TYPE" \
-  --arg input_text "$HSUTRA_INPUT_TEXT" \
-  '{ts:$ts, turn_id:$turn_id, direction:.direction, verb:.verb, principal_act:.principal_act, mixed_acts:.mixed_acts, tense:.tense, timing:.timing, channel:.channel, reversibility:.reversibility, decision_risk:.decision_risk, stage_1_pass:(.stage_1_fail==false), stage_3_emission_type:.stage_3_emission_type, input_routing_type:$ir_type} + (if $input_text == "" then {} else {input_text:$input_text} end)' 2>/dev/null || true)
-if [ -z "$HSUTRA_ROW" ]; then
-  printf '[h-sutra] row build failed; skipped.\n' >&2
-  exit 0
-fi
-
-# mkdir-based advisory lock (flock not always available on macOS).
-HSUTRA_LOCK="$HSUTRA_LOG.lock"
-HSUTRA_LOCKED=0
-for _ in 1 2 3 4 5; do
-  if mkdir "$HSUTRA_LOCK" 2>/dev/null; then HSUTRA_LOCKED=1; break; fi
-  sleep 0.2 2>/dev/null || sleep 1
-done
-if [ "$HSUTRA_LOCKED" = "1" ]; then
-  if ! tail -n 10 "$HSUTRA_LOG" 2>/dev/null | grep -qF "\"turn_id\":\"$HSUTRA_TURN_ID\""; then
-    printf '%s\n' "$HSUTRA_ROW" >> "$HSUTRA_LOG"
-  fi
-  rmdir "$HSUTRA_LOCK" 2>/dev/null || true
 else
-  printf '[h-sutra] log lock contended; row %s skipped.\n' "$HSUTRA_TURN_ID" >&2
+  HSUTRA_LOG="$REPO_ROOT/.sutra/h-sutra.jsonl"
 fi
+
+h_sutra_classify_and_write "$HSUTRA_PROMPT" "$HSUTRA_CLASSIFIER" "$HSUTRA_LOG" "$HSUTRA_SESSION_ID" || true
 
 exit 0

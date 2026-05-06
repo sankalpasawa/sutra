@@ -1,5 +1,5 @@
 {
-  "description": "Sutra Native v1.1.0-wave1 — runtime activation hooks. SessionStart auto-starts the Native engine (best-effort, logs to ~/.sutra-native/native.log). Stop performs graceful teardown.",
+  "description": "Sutra Native v1.4 — runtime activation + standalone H-Sutra producer (D49). SessionStart auto-starts the Native engine (best-effort, logs to ~/.sutra-native/native.log). Stop performs graceful teardown. UserPromptSubmit fires per-turn-h-sutra.sh: classifies utterance + writes JSONL row that Native's HSutraConnector tails. Co-installed with core@sutra: arbitration intrinsic to lib (first producer wins per-turn lock).",
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +8,17 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-h-sutra.sh",
+            "timeout": 3
           }
         ]
       }

@@ -58,6 +58,19 @@ if [ -f .claude/sutra-project.json ] && jq -e . .claude/sutra-project.json >/dev
   printf '  project_name:    %s\n' "$project_name"
   printf '  sutra_version:   %s\n' "$sutra_version"
   printf '  telemetry_optin: %s\n' "$optin"
+
+  # v2.34.0 (D53 fleet phase, codex P2-1 fold): /sutra-go path also surfaces
+  # context7 recommend. Same shape as cmd_banner — read-only probe, opt-in
+  # only, no silent install.
+  context7_status="recommended — claude plugin install context7@claude-plugins-official"
+  if [ -f "$HOME/.claude/plugins/installed_plugins.json" ]; then
+    # Codex P2-1 fold (review 2026-05-06): require scope="user" entry.
+    if jq -e 'any(.plugins["context7@claude-plugins-official"][]?; .scope=="user")' "$HOME/.claude/plugins/installed_plugins.json" >/dev/null 2>&1; then
+      context7_status="enabled — latest library/framework docs available"
+    fi
+  fi
+  printf '  Context7:        %s\n' "$context7_status"
+
   echo
   echo 'Auto-emission is ON. Telemetry auto-pushes on Stop; run `sutra push` manually if needed.'
   echo 'Kill-switch: SUTRA_TELEMETRY=0 disables both capture and push uniformly.'
