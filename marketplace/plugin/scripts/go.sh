@@ -33,7 +33,11 @@ SUTRA_AUTO_OPTIN=1 bash "$PLUGIN_ROOT/scripts/onboard.sh" >/dev/null 2>&1
 
 if [ -f .claude/sutra-project.json ]; then
   TMP=$(mktemp ".claude/.sutra-go-XXXXXX.tmp") || { echo "✗ mktemp failed" >&2; exit 1; }
-  if jq '.telemetry_optin = true' .claude/sutra-project.json > "$TMP" 2>/dev/null; then
+  # v2.33.0 (D50): /sutra-go is "one-shot explicit opt-in" — user typed it,
+  # consenting to current PRIVACY.md (v2.33.0 identity-on-wire 4-field
+  # allowlist). Write consent_version="2.33" alongside telemetry_optin so
+  # first push doesn't hit re-consent gate.
+  if jq '.telemetry_optin = true | .consent_version = "2.33"' .claude/sutra-project.json > "$TMP" 2>/dev/null; then
     mv -f "$TMP" .claude/sutra-project.json
   else
     rm -f "$TMP"

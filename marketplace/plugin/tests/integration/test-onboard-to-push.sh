@@ -42,16 +42,26 @@ export SUTRA_DATA_REMOTE="$BARE"
 
 # Pre-seed sutra-project.json with the fields push.sh requires (mirrors what
 # /core:start --telemetry on would have written via _sutra_project_lib.sh)
+# v2.33.0 (D50): consent_version="2.33" added so push passes re-consent gate.
+# Without it, push.sh blocks identity-on-wire transmission and exits 0
+# (queue preserved). Test asserts the SUCCESS path, so consent must be set.
+# Also: project also needs git config for capture_identity to produce a
+# stable git_user_name in the manifest.
 cat > "$CLAUDE_PROJECT_DIR/.claude/sutra-project.json" <<JSON
 {
   "install_id": "testinstall0001",
   "project_id": "testproject0001",
-  "project_name": "v218-integration-test",
-  "first_seen": "2026-05-03T00:00:00Z",
-  "sutra_version": "2.18.0",
-  "telemetry_optin": true
+  "project_name": "v233-integration-test",
+  "first_seen": "2026-05-06T00:00:00Z",
+  "sutra_version": "2.33.0",
+  "telemetry_optin": true,
+  "consent_version": "2.33"
 }
 JSON
+# v2.33.0: project needs git config for deterministic capture_identity.
+git -C "$CLAUDE_PROJECT_DIR" init --quiet 2>/dev/null || true
+git -C "$CLAUDE_PROJECT_DIR" config user.name "test-onboard-to-push" 2>/dev/null || true
+git -C "$CLAUDE_PROJECT_DIR" config user.email "test-otp@example.com" 2>/dev/null || true
 
 source "$PLUGIN_ROOT/lib/queue.sh"
 
@@ -94,11 +104,17 @@ if [ -f "$MAN" ]; then
       _no "manifest missing field: $f"
     fi
   done
-  # Identity-stamping must NOT be present (v2.2.0 PII fix preserved)
-  if jq -e '.identity' "$MAN" >/dev/null 2>&1; then
-    _no "manifest.identity present — v2.2.0 PII fix regressed"
+  # v2.33.0 (D50): identity NOW present on opt-in path with consent_version>=2.33.
+  # Allowlist: exactly 4 fields (git_user_name, github_login, github_id,
+  # git_user_email_hash). Codex P1-2 fold — no extras like hostname_hash, os_*,
+  # arch, shell_name, locale, tz, captured_at, captured_by_version.
+  if ! jq -e '.identity' "$MAN" >/dev/null 2>&1; then
+    _no "manifest.identity absent — v2.33.0 contract regressed"
   else
-    _ok "manifest has no identity stamp (v2.2.0 fix preserved)"
+    _ok "manifest has identity stamp (v2.33.0 opt-in + consent path)"
+    KEYS=$(jq -r '.identity | keys | sort | join(",")' "$MAN")
+    EXPECTED="git_user_email_hash,git_user_name,github_id,github_login"
+    [ "$KEYS" = "$EXPECTED" ] && _ok "identity has exactly 4 allowlisted keys" || _no "identity keys = '$KEYS' (expected '$EXPECTED')"
   fi
   [ "$MAN_OK" = "1" ] && _ok "manifest has all v2.18 fields" || true
 else
@@ -154,5 +170,5 @@ case "$OPTOUT_OUT" in *"telemetry_optin is false"*) _ok "opt-out skip message su
 # ─── Cleanup + report ──────────────────────────────────────────────────
 rm -rf "$WORK" "$CLONE2"
 echo ""
-echo "test-onboard-to-push (v2.18.0): $PASS passed, $FAIL failed"
+echo "test-onboard-to-push (v2.33.0): $PASS passed, $FAIL failed"
 exit $FAIL

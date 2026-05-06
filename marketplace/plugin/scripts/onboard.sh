@@ -59,17 +59,24 @@ FIRST_SEEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # .claude/sutra-project.json unconditionally; a re-onboard would silently erase
 # a previously stamped identity. Codex caught this at ship — 2026-04-24.
 EXISTING_IDENTITY_JSON=""
+EXISTING_CONSENT_VERSION=""
 if [ -f .claude/sutra-project.json ] && command -v jq >/dev/null 2>&1; then
   FIRST_SEEN=$(jq -r '.first_seen // ""' .claude/sutra-project.json 2>/dev/null)
   [ -z "$FIRST_SEEN" ] && FIRST_SEEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   # jq -c outputs nothing for null/missing identity (// empty), so we only
   # propagate a non-empty value. write-onboard treats "" as no identity.
   EXISTING_IDENTITY_JSON=$(jq -c '.identity // empty' .claude/sutra-project.json 2>/dev/null || echo "")
+  # v2.33.0 (D50): preserve existing consent_version across re-onboard.
+  # Re-onboard MUST NOT auto-stamp 2.33 on a pre-v2.33 opt-in; that would
+  # silently widen the consent scope. Only --telemetry on (patch-profile)
+  # writes 2.33 fresh — the user-action path that constitutes re-consent.
+  EXISTING_CONSENT_VERSION=$(jq -r '.consent_version // ""' .claude/sutra-project.json 2>/dev/null || echo "")
 fi
 
 # v2.13.0: bash/jq lib replaces python3 (atomic write via mktemp+mv inside).
+# v2.33.0: 8th arg = existing consent_version (preserved; not auto-stamped).
 bash "$PLUGIN_ROOT/scripts/_sutra_project_lib.sh" write-onboard \
-    "$INSTALL_ID" "$PROJECT_ID" "$NAME" "$FIRST_SEEN" "$VERSION" "$EXISTING_OPTIN" "$EXISTING_IDENTITY_JSON"
+    "$INSTALL_ID" "$PROJECT_ID" "$NAME" "$FIRST_SEEN" "$VERSION" "$EXISTING_OPTIN" "$EXISTING_IDENTITY_JSON" "$EXISTING_CONSENT_VERSION"
 
 queue_init
 

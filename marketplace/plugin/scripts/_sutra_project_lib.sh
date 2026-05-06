@@ -89,10 +89,22 @@ cmd_patch_profile() {
     1|true|TRUE|yes|YES) optin=true ;;
     *) optin=false ;;
   esac
-  if ! out=$(jq --arg p "$profile" --argjson t "$optin" \
-        '.profile = $p | .telemetry_optin = $t' "$PROJECT_JSON" 2>/dev/null); then
-    echo "-- $PROJECT_JSON jq transform failed; not patched" >&2
-    return 2
+  # v2.33.0 (D50): opting in via --telemetry on writes consent_version="2.33".
+  # This is the marker push.sh reads to gate identity-on-wire transmission.
+  # Only set on opt-in (true); leave consent_version untouched on opt-out so
+  # downgrading telemetry_optin doesn't lose the prior consent ack.
+  if [ "$optin" = "true" ]; then
+    if ! out=$(jq --arg p "$profile" --argjson t "$optin" --arg cv "2.33" \
+          '.profile = $p | .telemetry_optin = $t | .consent_version = $cv' "$PROJECT_JSON" 2>/dev/null); then
+      echo "-- $PROJECT_JSON jq transform failed; not patched" >&2
+      return 2
+    fi
+  else
+    if ! out=$(jq --arg p "$profile" --argjson t "$optin" \
+          '.profile = $p | .telemetry_optin = $t' "$PROJECT_JSON" 2>/dev/null); then
+      echo "-- $PROJECT_JSON jq transform failed; not patched" >&2
+      return 2
+    fi
   fi
   printf '%s\n' "$out" | atomic_write "$PROJECT_JSON"
 }
@@ -101,8 +113,11 @@ cmd_write_onboard() {
   local install_id="${1:-}" project_id="${2:-}" name="${3:-}"
   local first_seen="${4:-}" version="${5:-}" optin_str="${6:-false}"
   local existing_identity="${7:-}"
+  # v2.33.0 (D50): preserve existing consent_version across re-onboard.
+  # 8th positional arg; empty string means "no prior consent recorded".
+  local existing_consent_version="${8:-}"
   if [ -z "$install_id" ] || [ -z "$project_id" ] || [ -z "$name" ]; then
-    echo "usage: write-onboard <install_id> <project_id> <name> <first_seen> <version> <optin_str> [identity_json]" >&2
+    echo "usage: write-onboard <install_id> <project_id> <name> <first_seen> <version> <optin_str> [identity_json] [consent_version]" >&2
     return 2
   fi
   _require_jq || return $?
@@ -114,26 +129,65 @@ cmd_write_onboard() {
 
   mkdir -p "$(dirname "$PROJECT_JSON")"
 
+  # Build base object (always-present fields).
+  local base_jq='{install_id:$install_id, project_id:$project_id, project_name:$name, first_seen:$first_seen, sutra_version:$version, telemetry_optin:$optin}'
+  # Conditional add: identity (legacy local stamp, preserved across re-runs).
+  if [ -n "$existing_identity" ] && printf '%s' "$existing_identity" | jq -e . >/dev/null 2>&1; then
+    base_jq="$base_jq + {identity:\$identity}"
+  fi
+  # Conditional add: consent_version (v2.33.0 D50 — only set if previously
+  # recorded). Re-onboard MUST NOT auto-stamp consent_version=2.33 on existing
+  # pre-v2.33 opt-ins; that would defeat the re-consent gate. Only the
+  # explicit --telemetry on path (cmd_patch_profile) writes 2.33 fresh.
+  if [ -n "$existing_consent_version" ]; then
+    base_jq="$base_jq + {consent_version:\$consent_version}"
+  fi
+
   local out
   if [ -n "$existing_identity" ] && printf '%s' "$existing_identity" | jq -e . >/dev/null 2>&1; then
-    out=$(jq -n \
-      --arg install_id "$install_id" \
-      --arg project_id "$project_id" \
-      --arg name "$name" \
-      --arg first_seen "$first_seen" \
-      --arg version "$version" \
-      --argjson optin "$optin" \
-      --argjson identity "$existing_identity" \
-      '{install_id:$install_id, project_id:$project_id, project_name:$name, first_seen:$first_seen, sutra_version:$version, telemetry_optin:$optin, identity:$identity}')
+    if [ -n "$existing_consent_version" ]; then
+      out=$(jq -n \
+        --arg install_id "$install_id" \
+        --arg project_id "$project_id" \
+        --arg name "$name" \
+        --arg first_seen "$first_seen" \
+        --arg version "$version" \
+        --argjson optin "$optin" \
+        --argjson identity "$existing_identity" \
+        --arg consent_version "$existing_consent_version" \
+        "$base_jq")
+    else
+      out=$(jq -n \
+        --arg install_id "$install_id" \
+        --arg project_id "$project_id" \
+        --arg name "$name" \
+        --arg first_seen "$first_seen" \
+        --arg version "$version" \
+        --argjson optin "$optin" \
+        --argjson identity "$existing_identity" \
+        "$base_jq")
+    fi
   else
-    out=$(jq -n \
-      --arg install_id "$install_id" \
-      --arg project_id "$project_id" \
-      --arg name "$name" \
-      --arg first_seen "$first_seen" \
-      --arg version "$version" \
-      --argjson optin "$optin" \
-      '{install_id:$install_id, project_id:$project_id, project_name:$name, first_seen:$first_seen, sutra_version:$version, telemetry_optin:$optin}')
+    if [ -n "$existing_consent_version" ]; then
+      out=$(jq -n \
+        --arg install_id "$install_id" \
+        --arg project_id "$project_id" \
+        --arg name "$name" \
+        --arg first_seen "$first_seen" \
+        --arg version "$version" \
+        --argjson optin "$optin" \
+        --arg consent_version "$existing_consent_version" \
+        "$base_jq")
+    else
+      out=$(jq -n \
+        --arg install_id "$install_id" \
+        --arg project_id "$project_id" \
+        --arg name "$name" \
+        --arg first_seen "$first_seen" \
+        --arg version "$version" \
+        --argjson optin "$optin" \
+        "$base_jq")
+    fi
   fi
   printf '%s\n' "$out" | atomic_write "$PROJECT_JSON"
 }
