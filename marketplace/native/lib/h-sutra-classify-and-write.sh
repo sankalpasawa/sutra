@@ -117,7 +117,7 @@ h_sutra_classify_and_write() {
       channel:.channel,
       reversibility:.reversibility,
       decision_risk:.decision_risk,
-      risk:.decision_risk,
+      risk:(.decision_risk | ascii_upcase),
       stage_1_pass:(.stage_1_fail==false),
       stage_3_emission_type:.stage_3_emission_type,
       input_routing_type:$ir_type}

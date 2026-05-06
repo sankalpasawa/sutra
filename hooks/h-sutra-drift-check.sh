@@ -18,27 +18,33 @@
 
 set -uo pipefail
 
-REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+# Resolve sutra repo root from script location (codex review P2-A fold).
+# `git rev-parse --show-toplevel` resolves to sutra repo root in standalone
+# clone — prefixing every path with another `sutra/` doubled the prefix.
+# Script-relative resolution is invariant across standalone + submodule.
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SUTRA_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
-CANONICAL_CLASSIFY="$REPO_ROOT/sutra/marketplace/plugin/skills/human-sutra/scripts/classify.sh"
-CANONICAL_LIB="$REPO_ROOT/sutra/marketplace/plugin/lib/h-sutra-classify-and-write.sh"
-NATIVE_CLASSIFY="$REPO_ROOT/sutra/marketplace/native/scripts/classify.sh"
-NATIVE_LIB="$REPO_ROOT/sutra/marketplace/native/lib/h-sutra-classify-and-write.sh"
-LOCK_FILE="$REPO_ROOT/sutra/marketplace/native/.h-sutra-sync.lock"
+CANONICAL_CLASSIFY="$SUTRA_ROOT/marketplace/plugin/skills/human-sutra/scripts/classify.sh"
+CANONICAL_LIB="$SUTRA_ROOT/marketplace/plugin/lib/h-sutra-classify-and-write.sh"
+NATIVE_CLASSIFY="$SUTRA_ROOT/marketplace/native/scripts/classify.sh"
+NATIVE_LIB="$SUTRA_ROOT/marketplace/native/lib/h-sutra-classify-and-write.sh"
+LOCK_FILE="$SUTRA_ROOT/marketplace/native/.h-sutra-sync.lock"
 
 # Kill-switch
 [ -n "${H_SUTRA_DRIFT_DISABLED:-}" ] && exit 0
 [ -f "$HOME/.h-sutra-drift-disabled" ] && exit 0
 
-# Resolve canonical/mirror paths relative to repo (for `git diff --name-only --cached`)
-canonical_classify_rel="sutra/marketplace/plugin/skills/human-sutra/scripts/classify.sh"
-canonical_lib_rel="sutra/marketplace/plugin/lib/h-sutra-classify-and-write.sh"
-native_classify_rel="sutra/marketplace/native/scripts/classify.sh"
-native_lib_rel="sutra/marketplace/native/lib/h-sutra-classify-and-write.sh"
-lock_rel="sutra/marketplace/native/.h-sutra-sync.lock"
+# Resolve canonical/mirror paths relative to sutra repo root (for `git diff --name-only --cached`).
+# Codex review P2-A fold: paths now relative to SUTRA_ROOT, not asawa-holding.
+canonical_classify_rel="marketplace/plugin/skills/human-sutra/scripts/classify.sh"
+canonical_lib_rel="marketplace/plugin/lib/h-sutra-classify-and-write.sh"
+native_classify_rel="marketplace/native/scripts/classify.sh"
+native_lib_rel="marketplace/native/lib/h-sutra-classify-and-write.sh"
+lock_rel="marketplace/native/.h-sutra-sync.lock"
 
 # Are any of the 4 H-Sutra artifacts (or the lock) staged for commit?
-staged_files=$(cd "$REPO_ROOT" && git diff --name-only --cached 2>/dev/null || true)
+staged_files=$(cd "$SUTRA_ROOT" && git diff --name-only --cached 2>/dev/null || true)
 relevant_staged=0
 for f in "$canonical_classify_rel" "$canonical_lib_rel" "$native_classify_rel" "$native_lib_rel" "$lock_rel"; do
   if printf '%s\n' "$staged_files" | grep -qF "$f"; then
@@ -111,7 +117,7 @@ fi
 # Executable-bit check — git-index mode (round-4 P2-2 fold)
 # Only check files actually tracked in git (skip if not yet committed)
 for rel in "$canonical_classify_rel" "$canonical_lib_rel" "$native_classify_rel" "$native_lib_rel"; do
-  mode=$(cd "$REPO_ROOT" && git ls-files -s -- "$rel" 2>/dev/null | awk '{print $1}' | head -1)
+  mode=$(cd "$SUTRA_ROOT" && git ls-files -s -- "$rel" 2>/dev/null | awk '{print $1}' | head -1)
   if [ -n "$mode" ] && [ "$mode" != "100755" ]; then
     printf '[h-sutra-drift] BLOCKED — git index mode for %s is %s; expected 100755.\n' "$rel" "$mode" >&2
     printf '  Run: chmod +x %s && git update-index --chmod=+x %s\n' "$rel" "$rel" >&2

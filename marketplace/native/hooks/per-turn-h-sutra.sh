@@ -47,6 +47,12 @@ fi
 # shellcheck source=../lib/h-sutra-classify-and-write.sh
 . "$HSUTRA_LIB"
 
+# Hard preflight — jq is required (no silent no-op per codex review P1 fold)
+if ! command -v jq >/dev/null 2>&1; then
+  printf '[h-sutra-native] jq required but not on PATH — row skipped (loud-fail). Install jq to enable H-Sutra producer.\n' >&2
+  exit 0
+fi
+
 # Stdin JSON parse
 HSUTRA_INPUT_JSON=""
 if [ ! -t 0 ]; then
@@ -54,7 +60,7 @@ if [ ! -t 0 ]; then
 fi
 HSUTRA_PROMPT=""
 HSUTRA_SESSION_ID=""
-if [ -n "$HSUTRA_INPUT_JSON" ] && command -v jq >/dev/null 2>&1; then
+if [ -n "$HSUTRA_INPUT_JSON" ]; then
   HSUTRA_PROMPT=$(printf '%s' "$HSUTRA_INPUT_JSON" | jq -r '.prompt // empty' 2>/dev/null || true)
   HSUTRA_SESSION_ID=$(printf '%s' "$HSUTRA_INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
 fi
