@@ -198,7 +198,7 @@ describe('Router — D2 step 2 contract', () => {
     })
 
     it('fallback receives event_type-filtered triggers only', async () => {
-      const fallback = vi.fn(async () => ({
+      const fallback = vi.fn<Parameters<LLMFallback>, ReturnType<LLMFallback>>(async () => ({
         workflow_id: null,
         prompt_hash: 'h',
         model: 'm',
