@@ -51,7 +51,7 @@ describe('verify (orchestrator)', () => {
     expect(rubricResults.every(x => x.status === 'PASS')).toBe(true)
   })
 
-  it('verdict FAIL when tier-1 fails', async () => {
+  it('verdict FAIL when tier-1 fails — halts, downstream tiers skipped', async () => {
     const judge = async () => JSON.stringify({
       'Outcome-Fidelity': { score: 5, max: 5, evidence: '' },
       'Constraint-Honor': { score: 5, max: 5, evidence: '' },
@@ -60,6 +60,20 @@ describe('verify (orchestrator)', () => {
     })
     const r = await verify({ ...goodC, confidence: 0.2 }, goodRun, { judge })
     expect(r.verdict).toBe('FAIL')
+    // Tier-1 halt: only schema-tier results, downstream tiers didn't run.
+    expect(r.results.every(x => x.tier === 'schema')).toBe(true)
+    expect(r.results.length).toBe(3)
+  })
+
+  it('verdict PARTIAL when only tier-4 (rubric) fails', async () => {
+    const judge = async () => JSON.stringify({
+      'Outcome-Fidelity':    { score: 1, max: 5, evidence: 'soft fail' },  // FAIL
+      'Constraint-Honor':    { score: 5, max: 5, evidence: '' },
+      'Cross-Stage-Drift':   { score: 5, max: 5, evidence: '' },
+      'Acceptance-Coverage': { score: 5, max: 5, evidence: '' },
+    })
+    const r = await verify(goodC, goodRun, { judge })
+    expect(r.verdict).toBe('PARTIAL')  // hard tiers pass; only soft tier fails
   })
 
   it('verdict FAIL when tier-2 non-goal violated', async () => {

@@ -79,6 +79,14 @@ describe('runTier2Artifact (strict v1 grammar)', () => {
     expect(r.find(x => x.id === 'tier-2/hard-constraint/5-pages')!.status).toBe('FAIL')
   })
 
+  it('count pattern PASS with "exactly N unit" prefix', () => {
+    const r = runTier2Artifact(
+      c({ hard_constraints: ['exactly 5 pages'] }),
+      run([{ stage: 'tech', content: 'The site has 5 pages.' }]),
+    )
+    expect(r.find(x => x.id === 'tier-2/hard-constraint/exactly-5-pages')!.status).toBe('PASS')
+  })
+
   it('non-grammar constraint emits SKIPPED deferred-to-rubric', () => {
     const r = runTier2Artifact(
       c({ hard_constraints: ['shipping plan fits 4-week timeline'] }),

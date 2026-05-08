@@ -59,4 +59,43 @@ function validateContractShape(c: unknown): asserts c is GoalContract {
   ) {
     throw new Error('execution_preferences must be object')
   }
+
+  // Deep validation (codex P1 #2 fold 2026-05-08).
+  // String fields must be non-null strings.
+  for (const f of ['situation', 'motivation', 'outcome', 'beneficiary'] as const) {
+    if (typeof obj[f] !== 'string') throw new Error(`${f} must be string`)
+  }
+
+  // confidence must be in [0, 1] and finite.
+  if (
+    typeof obj.confidence !== 'number' ||
+    obj.confidence < 0 ||
+    obj.confidence > 1 ||
+    !Number.isFinite(obj.confidence)
+  ) {
+    throw new Error('confidence must be number in [0, 1]')
+  }
+
+  // acceptance_examples[i] shape: { given, when, then } all strings.
+  for (const [i, ex] of (obj.acceptance_examples as unknown[]).entries()) {
+    if (typeof ex !== 'object' || ex === null) throw new Error(`acceptance_examples[${i}] must be object`)
+    const e = ex as Record<string, unknown>
+    for (const k of ['given', 'when', 'then'] as const) {
+      if (typeof e[k] !== 'string') throw new Error(`acceptance_examples[${i}].${k} must be string`)
+    }
+  }
+
+  // evidence_required[i] shape: { stage, field } both strings.
+  for (const [i, ev] of (obj.evidence_required as unknown[]).entries()) {
+    if (typeof ev !== 'object' || ev === null) throw new Error(`evidence_required[${i}] must be object`)
+    const e = ev as Record<string, unknown>
+    for (const k of ['stage', 'field'] as const) {
+      if (typeof e[k] !== 'string') throw new Error(`evidence_required[${i}].${k} must be string`)
+    }
+  }
+
+  // ambiguity_flags elements must be strings.
+  for (const [i, f] of (obj.ambiguity_flags as unknown[]).entries()) {
+    if (typeof f !== 'string') throw new Error(`ambiguity_flags[${i}] must be string`)
+  }
 }

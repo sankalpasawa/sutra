@@ -33,7 +33,7 @@ const PROPAGATION_THRESHOLD = 0.2
 
 const FORBID_PREFIXES = ['no ', 'without ', 'do not ']
 const REQUIRE_PREFIX = 'must include '
-const COUNT_RE = /^(\d+)\s+(\w+)$/
+const COUNT_RE = /^(?:exactly\s+)?(\d+)\s+(\w+)$/
 
 export function runTier2Artifact(contract: GoalContract, run: NativeRun): AssertionResult[] {
   const out: AssertionResult[] = []

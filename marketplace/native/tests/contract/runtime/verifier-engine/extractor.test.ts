@@ -54,4 +54,24 @@ describe('extract', () => {
     await expect(extract('test', async () => withNull, { max_retries: 0 })).rejects.toThrow(/execution_preferences/i)
     await expect(extract('test', async () => withArr,  { max_retries: 0 })).rejects.toThrow(/execution_preferences/i)
   })
+
+  it('rejects null situation field', async () => {
+    const bad = JSON.stringify({ ...JSON.parse(VALID), situation: null })
+    await expect(extract('test', async () => bad, { max_retries: 0 })).rejects.toThrow(/situation.*string/i)
+  })
+
+  it('rejects confidence out of range', async () => {
+    const bad = JSON.stringify({ ...JSON.parse(VALID), confidence: 1.5 })
+    await expect(extract('test', async () => bad, { max_retries: 0 })).rejects.toThrow(/confidence.*0.*1/i)
+  })
+
+  it('rejects acceptance_examples with missing field', async () => {
+    const bad = JSON.stringify({ ...JSON.parse(VALID), acceptance_examples: [{ given: 'x', when: 'y' }] })  // missing then
+    await expect(extract('test', async () => bad, { max_retries: 0 })).rejects.toThrow(/acceptance_examples.*then/i)
+  })
+
+  it('rejects evidence_required with non-string stage', async () => {
+    const bad = JSON.stringify({ ...JSON.parse(VALID), evidence_required: [{ stage: 42, field: 'x' }] })
+    await expect(extract('test', async () => bad, { max_retries: 0 })).rejects.toThrow(/evidence_required.*stage/i)
+  })
 })
