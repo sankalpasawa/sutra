@@ -1,0 +1,8 @@
+{
+  "id": "pets-site",
+  "profile_id": "pet-owner-casual",
+  "goal_seed": {
+    "deliverable": "website",
+    "subject": "pets"
+  }
+}
