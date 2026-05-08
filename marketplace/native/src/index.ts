@@ -54,4 +54,4 @@ export type {
 } from './runtime/verifier-engine/index.js'
 
 /** Library version (sync with package.json + plugin.json + marketplace.json + cli/sutra-native.ts:VERSION). Enforced by tests/contract/version-sync.test.ts. */
-export const NATIVE_VERSION = '1.5.0'
+export const NATIVE_VERSION = '1.5.1'

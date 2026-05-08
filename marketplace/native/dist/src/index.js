@@ -28,5 +28,5 @@ export { loadStarterKit, STARTER_DOMAINS, STARTER_CHARTERS, STARTER_WORKFLOWS, S
 // Verifier Engine v1 — Wave 5.2 ship
 export { VerifierEngine, generateUtterance } from './runtime/verifier-engine/index.js';
 /** Library version (sync with package.json + plugin.json + marketplace.json + cli/sutra-native.ts:VERSION). Enforced by tests/contract/version-sync.test.ts. */
-export const NATIVE_VERSION = '1.5.0';
+export const NATIVE_VERSION = '1.5.1';
 //# sourceMappingURL=index.js.map

@@ -28,5 +28,5 @@ export { loadStarterKit, type StarterKit, STARTER_DOMAINS, STARTER_CHARTERS, STA
 export { VerifierEngine, generateUtterance } from './runtime/verifier-engine/index.js';
 export type { GoalContract, AssertionReport, AssertionResult, NativeRun, LLMDispatch, JudgeDispatch, UserProfile, Scenario, } from './runtime/verifier-engine/index.js';
 /** Library version (sync with package.json + plugin.json + marketplace.json + cli/sutra-native.ts:VERSION). Enforced by tests/contract/version-sync.test.ts. */
-export declare const NATIVE_VERSION = "1.5.0";
+export declare const NATIVE_VERSION = "1.5.1";
 //# sourceMappingURL=index.d.ts.map

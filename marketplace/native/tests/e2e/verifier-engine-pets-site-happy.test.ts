@@ -4,6 +4,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { VerifierEngine, generateUtterance } from '../../src/runtime/verifier-engine/index.js'
 import type { UserProfile, Scenario } from '../../src/types/user-profile.js'
+import { makeLiveDispatch, generateArtifactsLive } from './helpers/live-llm-dispatch.js'
+
+const LIVE = process.env.LIVE_LLM === '1'
 
 const SCENARIO_DIR = resolve(__dirname, 'scenarios/pets-site')
 const PROFILES_DIR = resolve(__dirname, 'user-profiles')
@@ -18,8 +21,8 @@ describe('Verifier Engine v1 — pets-site happy-path E2E (AC §9.5)', () => {
     expect(utterance).toBe('I want a website for my pets')
 
     const engine = new VerifierEngine({
-      llm: async () => goldenContract,
-      judge: async () => JSON.stringify({
+      llm: LIVE ? makeLiveDispatch('extract') : async () => goldenContract,
+      judge: LIVE ? makeLiveDispatch('judge') : async () => JSON.stringify({
         'Outcome-Fidelity': { score: 4, max: 5, evidence: 'pet showcase outcome captured' },
         'Constraint-Honor': { score: 5, max: 5, evidence: 'no hard constraints, non-goals honored' },
         'Cross-Stage-Drift': { score: 5, max: 5, evidence: 'pet showcase consistent across stages' },
@@ -28,15 +31,17 @@ describe('Verifier Engine v1 — pets-site happy-path E2E (AC §9.5)', () => {
     })
 
     const contract = await engine.extract(utterance)
-    expect(contract.beneficiary).toContain('self')
+    if (!LIVE) expect(contract.beneficiary).toContain('self')
 
-    const artifactsDir = resolve(SCENARIO_DIR, 'artifacts.fixture')
-    const artifacts = readdirSync(artifactsDir).map(f => ({
-      stage: f.replace(/\.md$/, ''),
-      path: f,
-      content: readFileSync(resolve(artifactsDir, f), 'utf8'),
-      sha256: 'fixture',
-    }))
+    const stages = ['vision','prd','design','tech'] as const
+    const artifacts = LIVE
+      ? await generateArtifactsLive(utterance, contract, stages)
+      : readdirSync(resolve(SCENARIO_DIR, 'artifacts.fixture')).map(f => ({
+          stage: f.replace(/\.md$/, ''),
+          path: f,
+          content: readFileSync(resolve(SCENARIO_DIR, 'artifacts.fixture', f), 'utf8'),
+          sha256: 'fixture',
+        }))
     const run = {
       run_id: 'pets-site-happy', scenario_id: 'pets-site',
       events: [
@@ -48,12 +53,16 @@ describe('Verifier Engine v1 — pets-site happy-path E2E (AC §9.5)', () => {
     }
 
     const report = await engine.verify(contract, run)
-    expect(report.verdict).toBe('PASS')
+    if (!LIVE) {
+      expect(report.verdict).toBe('PASS')
+    } else {
+      console.log(`\n>>> LIVE MODE verdict: ${report.verdict}`)
+    }
 
     const out = engine.format(report, utterance, run)
     expect(out.transcript).toContain('USER')
     expect(out.transcript).toContain('I want a website for my pets')
-    expect(out.report).toContain('VERDICT: PASS')
+    if (!LIVE) expect(out.report).toContain('VERDICT: PASS')
 
     // AC §9.5 — print BOTH sides:
     //   USER INPUT (what user typed) + LLM CAPTURED INTENT (extractor output)
