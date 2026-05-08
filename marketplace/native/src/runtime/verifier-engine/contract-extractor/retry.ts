@@ -52,5 +52,11 @@ function validateContractShape(c: unknown): asserts c is GoalContract {
   for (const f of ['hard_constraints','non_goals','acceptance_examples','evidence_required','ambiguity_flags']) {
     if (!Array.isArray(obj[f])) throw new Error(`${f} must be array`)
   }
-  if (typeof obj.execution_preferences !== 'object') throw new Error('execution_preferences must be object')
+  if (
+    typeof obj.execution_preferences !== 'object' ||
+    obj.execution_preferences === null ||
+    Array.isArray(obj.execution_preferences)
+  ) {
+    throw new Error('execution_preferences must be object')
+  }
 }

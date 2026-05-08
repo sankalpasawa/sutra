@@ -47,4 +47,11 @@ describe('extract', () => {
     await extract('build a meditation app', llm)
     expect(prompt_seen).toContain('build a meditation app')
   })
+
+  it('rejects execution_preferences=null and array', async () => {
+    const withNull = JSON.stringify({ ...JSON.parse(VALID), execution_preferences: null })
+    const withArr  = JSON.stringify({ ...JSON.parse(VALID), execution_preferences: [] })
+    await expect(extract('test', async () => withNull, { max_retries: 0 })).rejects.toThrow(/execution_preferences/i)
+    await expect(extract('test', async () => withArr,  { max_retries: 0 })).rejects.toThrow(/execution_preferences/i)
+  })
 })
