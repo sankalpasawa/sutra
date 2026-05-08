@@ -40,6 +40,7 @@
 import { hostLLMActivity, HostUnavailableError, } from '../engine/host-llm-activity.js';
 import { buildExecutionDecisionProvenance } from './execution-provenance.js';
 import { appendDecisionProvenanceLog } from './emergence-provenance.js';
+import { parsePNC, evaluatePNC, } from './pnc-predicate.js';
 /**
  * Execute a Workflow async, emitting events along the way.
  * Returns when the workflow completes (success or failure).
@@ -56,6 +57,76 @@ export async function executeWorkflow(opts) {
     const dispatch = opts.host_llm_dispatch ?? hostLLMActivity;
     const onHostLLMResult = opts.on_host_llm_result ?? (() => { });
     const runSeq = opts.workflow_run_seq ?? 0;
+    const pncCtx = opts.pnc_ctx ?? Object.freeze({});
+    // v1.3.0 W5 (codex W5 BLOCKER 1 fold) — precondition admission gate.
+    //
+    // Per codex: a failed precondition is "workflow not admitted", NOT "started
+    // then failed". The semantic distinction matters for replay/audit (rejected
+    // runs never enter the workflow lifecycle) and for the founder UI (no
+    // confusing [workflow_started]+[workflow_failed] pair on a rejected gate).
+    //
+    // Gate skip rules (legacy back-compat):
+    //   - opts.pnc_registry undefined ⇒ skip (NativeEngine routed-only feature).
+    //   - wf.preconditions parses to JSON-Predicate ⇒ EVALUATE.
+    //   - wf.preconditions is empty / free-form / not JSON ⇒ skip silently
+    //     (existing starter-kit "is_morning_window AND no_pulse_today" strings
+    //     stay valid; admission proceeds without precondition_check emission).
+    //
+    // When EVALUATED:
+    //   - verdict='pass' ⇒ emit precondition_check{verdict:'pass'} THEN
+    //     workflow_started, then proceed normally.
+    //   - verdict='fail' ⇒ emit precondition_check{verdict:'fail'} THEN
+    //     workflow_failed reason='precondition_failed:<expr>'. NO step events.
+    //     NO workflow_started. Return ExecutionResult{status:'failed'}.
+    if (opts.pnc_registry) {
+        const parseResult = parsePNC(wf.preconditions);
+        if (parseResult.ok && parseResult.predicate) {
+            const evalResult = evaluatePNC(parseResult.predicate, pncCtx, opts.pnc_registry);
+            const checkEvt = {
+                type: 'precondition_check',
+                ts_ms: startTs,
+                workflow_id: wf.id,
+                verdict: evalResult.verdict ? 'pass' : 'fail',
+                expression: wf.preconditions,
+                ...(evalResult.reason !== undefined ? { reason: evalResult.reason } : {}),
+            };
+            opts.emit(checkEvt);
+            if (!evalResult.verdict) {
+                const failureReason = `precondition_failed:${evalResult.reason ?? 'verdict_false'}`;
+                const wfFailed = {
+                    type: 'workflow_failed',
+                    ts_ms: startTs,
+                    workflow_id: wf.id,
+                    execution_id: opts.execution_id,
+                    reason: failureReason,
+                };
+                opts.emit(wfFailed);
+                // DP-record the rejection so audit captures admission failures the
+                // same way as runtime failures.
+                if (opts.user_kit_options_for_dp) {
+                    try {
+                        appendDecisionProvenanceLog(buildExecutionDecisionProvenance({
+                            workflow_id: wf.id,
+                            execution_id: opts.execution_id,
+                            stage: 'FAILED',
+                            ts_ms: startTs,
+                            outcome: failureReason,
+                            failure_reason: failureReason,
+                            charter_id: opts.charter_id,
+                        }), opts.user_kit_options_for_dp);
+                    }
+                    catch { /* non-fatal */ }
+                }
+                return {
+                    status: 'failed',
+                    steps_completed: 0,
+                    steps_failed: 0,
+                    duration_ms: 0,
+                    reason: failureReason,
+                };
+            }
+        }
+    }
     const wfStarted = {
         type: 'workflow_started',
         ts_ms: startTs,
@@ -82,10 +153,88 @@ export async function executeWorkflow(opts) {
     let stepsCompleted = 0;
     let stepsFailed = 0;
     let failureReason;
+    let pausedAtStepIndex;
+    // v1.3.0 W4: track ordered list of completed-step indices (1-based) for
+    // rollback reverse-walk. We append on success; rollback iterates this in
+    // reverse to find candidates with compensate_action.
+    const completedStepIndices = [];
+    // v1.3.0 W4: result-status override when on_failure handler short-circuits
+    // the loop. 'paused' for on_failure='pause', 'failed' otherwise. Default
+    // 'failed' if failureReason set without explicit override.
+    let resultStatusOverride;
+    let pausedFromFailureAtStepIndex;
     const total = wf.step_graph.length;
+    // v1.3.0 W2: resume_from_step_index = N means skip steps with stepIndex <= N
+    // (the originally-paused step is N+1's predecessor; resumeApproved passes
+    // the paused step's index so the next iteration starts at N+1).
+    const resumeFrom = opts.resume_from_step_index ?? 0;
     for (let i = 0; i < total; i++) {
         const step = wf.step_graph[i];
         const stepIndex = i + 1;
+        // v1.3.0 W2 resume path — skip steps already completed in the original
+        // run. No events emitted for skipped steps (they were already audited
+        // pre-pause; replaying would corrupt the transcript).
+        if (stepIndex <= resumeFrom) {
+            continue;
+        }
+        // v1.3.0 W2 (codex W2 BLOCKER 3 fold) — step-level approval gate.
+        // BEFORE running step action, check requires_approval. When true:
+        //   1. Build prompt_summary (action, host if any, locator first ~200 chars).
+        //   2. Build ExecutionApprovalRecord{status:'pending'}.
+        //   3. Call opts.approval_persist?.(record) — NativeEngine wires this to
+        //      the runtime/pending-approvals ledger via atomic-write.
+        //   4. Emit approval_requested event.
+        //   5. Return ExecutionResult{status:'paused'} early.
+        // The pause point is BEFORE step_started so the founder transcript shows
+        // [approval_requested] not [step_started] for the gated step (avoids
+        // confusing "started but never completed" lines in the audit log).
+        //
+        // Resume bypass: the gate fires only when stepIndex > resumeFrom. On
+        // resume, executeWorkflowResume passes resume_from_step_index = N-1
+        // (skip steps 1..N-1, RUN step N) — but step N still has
+        // requires_approval=true. The caller (NativeEngine.resumeApproved) sets
+        // resume_from_step_index = paused_step_index (i.e., skip past the paused
+        // step too) ONLY if the founder's approval is interpreted as "approve and
+        // skip"; otherwise we want the gated step to RUN after approval. The
+        // canonical interpretation per founder centerpiece directive: approval
+        // means "yes, run this step". So we set resume_from_step_index = N-1
+        // (the gated step's predecessor) AND the executor must NOT re-pause on
+        // step N. Bypass: when stepIndex === resumeFrom + 1 (the FIRST executed
+        // step on resume), skip the requires_approval gate. This matches the
+        // semantics: the gate already fired pre-resume; firing again is a bug.
+        const isResumeFirstStep = resumeFrom > 0 && stepIndex === resumeFrom + 1;
+        if (step.requires_approval === true && !isResumeFirstStep) {
+            const promptSummary = buildPromptSummary(step);
+            const record = {
+                execution_id: opts.execution_id,
+                workflow_id: wf.id,
+                step_index: stepIndex,
+                prompt_summary: promptSummary,
+                status: 'pending',
+                created_at_ms: now(),
+            };
+            try {
+                opts.approval_persist?.(record);
+            }
+            catch (err) {
+                // Persist failure is fatal — without a durable ledger entry, the
+                // founder's `approve E-<id>` would have nothing to load. Convert to
+                // workflow_failed rather than silently dropping the gate.
+                failureReason = `approval_persist_failed:${err instanceof Error ? err.message : String(err)}`;
+                break;
+            }
+            const approvalEvt = {
+                type: 'approval_requested',
+                ts_ms: now(),
+                execution_id: opts.execution_id,
+                workflow_id: wf.id,
+                step_index: stepIndex,
+                prompt_summary: promptSummary,
+            };
+            opts.emit(approvalEvt);
+            pausedAtStepIndex = stepIndex;
+            break;
+        }
         const stepStartTs = now();
         const stepId = step.skill_ref ?? `step-${step.step_id}`;
         const stepStarted = {
@@ -134,6 +283,7 @@ export async function executeWorkflow(opts) {
         const stepEndTs = now();
         if (stepError === null) {
             stepsCompleted++;
+            completedStepIndices.push(stepIndex);
             const stepCompleted = {
                 type: 'step_completed',
                 ts_ms: stepEndTs,
@@ -153,6 +303,7 @@ export async function executeWorkflow(opts) {
         else {
             stepsFailed++;
             const onFailure = step.on_failure ?? 'abort';
+            const baseReason = `step ${stepIndex}/${total} (${stepId}) failed: ${stepError.message}`;
             if (onFailure === 'continue') {
                 // Swallow + proceed; emit step_completed with the failure-as-duration.
                 const stepCompleted = {
@@ -168,12 +319,152 @@ export async function executeWorkflow(opts) {
                 opts.emit(stepCompleted);
                 continue;
             }
-            // abort / rollback / pause / escalate — all map to terminate-failed at v1.1.0
-            failureReason = `step ${stepIndex}/${total} (${stepId}) failed: ${stepError.message} [on_failure=${onFailure}]`;
+            if (onFailure === 'abort') {
+                failureReason = `${baseReason} [on_failure=abort]`;
+                break;
+            }
+            if (onFailure === 'pause') {
+                // v1.3.0 W4 — on_failure='pause' machinery. Persist a durable
+                // ExecutionPauseRecord{status:'pending'} via opts.pause_persist
+                // (NativeEngine wires this), emit step_paused, and short-circuit
+                // with status='paused'. Resume continues from step_index+1.
+                const pauseRec = {
+                    execution_id: opts.execution_id,
+                    workflow_id: wf.id,
+                    step_index: stepIndex,
+                    status: 'pending',
+                    reason: stepError.message,
+                    created_at_ms: now(),
+                };
+                try {
+                    opts.pause_persist?.(pauseRec);
+                }
+                catch (err) {
+                    // Persist failure converts to workflow_failed (no silent drop).
+                    failureReason = `pause_persist_failed:${err instanceof Error ? err.message : String(err)} [orig=${baseReason}]`;
+                    break;
+                }
+                const pausedEvt = {
+                    type: 'step_paused',
+                    ts_ms: now(),
+                    execution_id: opts.execution_id,
+                    workflow_id: wf.id,
+                    step_index: stepIndex,
+                    reason: stepError.message,
+                };
+                opts.emit(pausedEvt);
+                resultStatusOverride = 'paused';
+                pausedFromFailureAtStepIndex = stepIndex;
+                break;
+            }
+            if (onFailure === 'escalate') {
+                // v1.3.0 W4 — on_failure='escalate' machinery. Persist a durable
+                // ExecutionEscalationRecord via opts.escalation_persist (NativeEngine
+                // wires this), emit workflow_escalated, and return failed with
+                // reason='escalated:<orig>'.
+                const escRec = {
+                    execution_id: opts.execution_id,
+                    workflow_id: wf.id,
+                    step_index: stepIndex,
+                    reason: stepError.message,
+                    created_at_ms: now(),
+                };
+                try {
+                    opts.escalation_persist?.(escRec);
+                }
+                catch (err) {
+                    failureReason = `escalation_persist_failed:${err instanceof Error ? err.message : String(err)} [orig=${baseReason}]`;
+                    break;
+                }
+                const escEvt = {
+                    type: 'workflow_escalated',
+                    ts_ms: now(),
+                    execution_id: opts.execution_id,
+                    workflow_id: wf.id,
+                    reason: stepError.message,
+                };
+                opts.emit(escEvt);
+                failureReason = `escalated:${baseReason}`;
+                resultStatusOverride = 'failed';
+                break;
+            }
+            if (onFailure === 'rollback') {
+                // v1.3.0 W4 — on_failure='rollback' machinery (codex W4 advisory #1
+                // step-local + #2 best-effort). Emit workflow_rollback_started, then
+                // reverse-walk completedStepIndices i-1..0; for each step with
+                // compensate_action defined, dispatch via runStepAction-equivalent.
+                // Track success/fail counts. After walk: emit
+                // workflow_rollback_complete (all attempted compensations succeeded
+                // OR there were none) | workflow_rollback_partial (mixed).
+                const rollbackStartedEvt = {
+                    type: 'workflow_rollback_started',
+                    ts_ms: now(),
+                    execution_id: opts.execution_id,
+                    workflow_id: wf.id,
+                    reason: stepError.message,
+                };
+                opts.emit(rollbackStartedEvt);
+                const rollbackOutcome = await runRollbackReverseWalk(wf, opts.execution_id, completedStepIndices, { dispatch, runSeq, onHostLLMResult, now, emit: opts.emit });
+                if (rollbackOutcome.failed === 0) {
+                    const completeEvt = {
+                        type: 'workflow_rollback_complete',
+                        ts_ms: now(),
+                        execution_id: opts.execution_id,
+                        workflow_id: wf.id,
+                        steps_compensated: rollbackOutcome.compensated,
+                    };
+                    opts.emit(completeEvt);
+                    failureReason = `rollback_complete:${baseReason} [compensated=${rollbackOutcome.compensated}]`;
+                }
+                else {
+                    const partialEvt = {
+                        type: 'workflow_rollback_partial',
+                        ts_ms: now(),
+                        execution_id: opts.execution_id,
+                        workflow_id: wf.id,
+                        steps_compensated: rollbackOutcome.compensated,
+                        steps_failed: rollbackOutcome.failed,
+                    };
+                    opts.emit(partialEvt);
+                    failureReason = `rollback_partial:${rollbackOutcome.compensated}/${rollbackOutcome.compensated + rollbackOutcome.failed}:${baseReason}`;
+                }
+                resultStatusOverride = 'failed';
+                break;
+            }
+            // Defensive: unknown on_failure value (validator should catch first).
+            failureReason = `${baseReason} [on_failure=${onFailure}]`;
             break;
         }
     }
     const endTs = now();
+    // v1.3.0 W2: paused short-circuit — pausedAtStepIndex set means the
+    // executor hit a requires_approval=true step and broke out of the loop
+    // BEFORE running it. Don't emit workflow_completed or workflow_failed;
+    // the workflow is suspended awaiting founder approval. Caller (NativeEngine)
+    // detects status='paused' and persists the ledger entry via the
+    // approval_persist callback already invoked above.
+    if (pausedAtStepIndex !== undefined) {
+        return {
+            status: 'paused',
+            steps_completed: stepsCompleted,
+            steps_failed: stepsFailed,
+            duration_ms: endTs - startTs,
+            paused_step_index: pausedAtStepIndex,
+        };
+    }
+    // v1.3.0 W4: paused-from-failure short-circuit — on_failure='pause' handler
+    // persisted an ExecutionPauseRecord and emitted step_paused. Don't emit
+    // workflow_completed or workflow_failed; the workflow is suspended awaiting
+    // founder resume via NativeEngine.resumeFromPause.
+    if (resultStatusOverride === 'paused' && pausedFromFailureAtStepIndex !== undefined) {
+        return {
+            status: 'paused',
+            steps_completed: stepsCompleted,
+            steps_failed: stepsFailed,
+            duration_ms: endTs - startTs,
+            paused_step_index: pausedFromFailureAtStepIndex,
+        };
+    }
     if (failureReason) {
         const wfFailed = {
             type: 'workflow_failed',
@@ -205,6 +496,60 @@ export async function executeWorkflow(opts) {
             duration_ms: endTs - startTs,
             reason: failureReason,
         };
+    }
+    // v1.3.0 W5 — postcondition gate. After all steps succeed and BEFORE
+    // emitting workflow_completed, evaluate wf.postconditions when a registry
+    // is supplied AND the postconditions string parses as JSON-Predicate.
+    // verdict='fail' converts the run to workflow_failed reason=
+    // 'postcondition_failed:<expr>' INSTEAD of workflow_completed. verdict=
+    // 'pass' emits postcondition_check{verdict:'pass'} then proceeds to the
+    // normal workflow_completed emission.
+    if (opts.pnc_registry) {
+        const parseResult = parsePNC(wf.postconditions);
+        if (parseResult.ok && parseResult.predicate) {
+            const evalResult = evaluatePNC(parseResult.predicate, pncCtx, opts.pnc_registry);
+            const checkEvt = {
+                type: 'postcondition_check',
+                ts_ms: endTs,
+                workflow_id: wf.id,
+                verdict: evalResult.verdict ? 'pass' : 'fail',
+                expression: wf.postconditions,
+                ...(evalResult.reason !== undefined ? { reason: evalResult.reason } : {}),
+            };
+            opts.emit(checkEvt);
+            if (!evalResult.verdict) {
+                const failureReason = `postcondition_failed:${evalResult.reason ?? 'verdict_false'}`;
+                const wfFailed = {
+                    type: 'workflow_failed',
+                    ts_ms: endTs,
+                    workflow_id: wf.id,
+                    execution_id: opts.execution_id,
+                    reason: failureReason,
+                };
+                opts.emit(wfFailed);
+                if (opts.user_kit_options_for_dp) {
+                    try {
+                        appendDecisionProvenanceLog(buildExecutionDecisionProvenance({
+                            workflow_id: wf.id,
+                            execution_id: opts.execution_id,
+                            stage: 'FAILED',
+                            ts_ms: endTs,
+                            outcome: failureReason,
+                            failure_reason: failureReason,
+                            charter_id: opts.charter_id,
+                        }), opts.user_kit_options_for_dp);
+                    }
+                    catch { /* non-fatal */ }
+                }
+                return {
+                    status: 'failed',
+                    steps_completed: stepsCompleted,
+                    steps_failed: stepsFailed,
+                    duration_ms: endTs - startTs,
+                    reason: failureReason,
+                };
+            }
+        }
     }
     const wfCompleted = {
         type: 'workflow_completed',
@@ -257,12 +602,22 @@ async function runStepAction(step, ctx) {
             if (!prompt) {
                 throw new Error('host_llm_invocation_failed:no_prompt');
             }
+            // v1.3.0 W1.9 (codex W1.9 advisory fold): forward step.timeout_ms only
+            // when defined. Undefined leaves host-llm-activity's default (60_000ms)
+            // in effect; the args object's optional timeout_ms is omitted entirely
+            // (not set to `undefined`) so a callsite that explicitly sets
+            // `timeout_ms: undefined` is indistinguishable from "no timeout
+            // override declared".
             try {
-                const result = await ctx.dispatch({
+                const dispatchArgs = {
                     prompt,
                     host,
                     workflow_run_seq: ctx.runSeq,
-                });
+                };
+                if (step.timeout_ms !== undefined) {
+                    dispatchArgs.timeout_ms = step.timeout_ms;
+                }
+                const result = await ctx.dispatch(dispatchArgs);
                 ctx.onHostLLMResult(result, step);
                 return;
             }
@@ -277,5 +632,156 @@ async function runStepAction(step, ctx) {
         default:
             throw new Error(`unknown step action "${action}"`);
     }
+}
+/**
+ * v1.3.0 Wave 2 — build a human-friendly summary of a paused step for the
+ * founder UI. Truncates inputs[0].locator at 200 chars; includes action + host
+ * when present; falls back to skill_ref/step_id when no action.
+ *
+ * The summary is what the founder sees in the [approval_requested] line and
+ * the persisted ExecutionApprovalRecord.prompt_summary field — keep it
+ * compact + informative.
+ */
+function buildPromptSummary(step) {
+    const what = step.skill_ref
+        ? `skill=${step.skill_ref}`
+        : step.action === 'invoke_host_llm'
+            ? `invoke_host_llm host=${step.host ?? '?'}`
+            : `action=${step.action ?? '?'}`;
+    const locator = step.inputs?.[0]?.locator ?? '';
+    const truncated = locator.length > 200 ? locator.slice(0, 200) + '…' : locator;
+    return locator ? `${what} input="${truncated}"` : what;
+}
+/**
+ * v1.3.0 Wave 4 — reverse-walk over completed step indices, dispatching
+ * `compensate_action` on each step that has one defined. Returns counts of
+ * successful + failed compensations.
+ *
+ * Codex W4 advisory #2 best-effort semantics:
+ *   - Steps without compensate_action are skipped silently (counted as neither
+ *     compensated nor failed).
+ *   - A compensate_action that throws produces step_compensation_failed but
+ *     does NOT abort the reverse-walk — we keep going and try every remaining
+ *     completed step (best-effort).
+ */
+async function runRollbackReverseWalk(wf, execution_id, completedStepIndices, ctx) {
+    let compensated = 0;
+    let failed = 0;
+    // Reverse iteration: i-1 .. 0 over the completed-step list (which is
+    // already in ascending step_index order since we appended on success).
+    for (let i = completedStepIndices.length - 1; i >= 0; i--) {
+        const stepIndex = completedStepIndices[i];
+        // step_index is 1-based; step_graph is 0-based.
+        const step = wf.step_graph[stepIndex - 1];
+        if (!step || !step.compensate_action)
+            continue;
+        const ca = step.compensate_action;
+        const compStartTs = ctx.now();
+        try {
+            await runCompensateAction(ca, ctx);
+            const compEndTs = ctx.now();
+            compensated++;
+            const okEvt = {
+                type: 'step_compensated',
+                ts_ms: compEndTs,
+                execution_id,
+                workflow_id: wf.id,
+                step_index: stepIndex,
+                duration_ms: compEndTs - compStartTs,
+            };
+            ctx.emit(okEvt);
+        }
+        catch (err) {
+            failed++;
+            const reason = err instanceof Error ? err.message : String(err);
+            const failEvt = {
+                type: 'step_compensation_failed',
+                ts_ms: ctx.now(),
+                execution_id,
+                workflow_id: wf.id,
+                step_index: stepIndex,
+                reason,
+            };
+            ctx.emit(failEvt);
+            // Best-effort: continue reverse-walk to attempt remaining compensations.
+        }
+    }
+    return { compensated, failed };
+}
+/**
+ * v1.3.0 Wave 4 — dispatch a step's compensate_action. Mirrors runStepAction
+ * for the {wait, invoke_host_llm, spawn_sub_unit} subset (no `terminate`).
+ */
+async function runCompensateAction(ca, ctx) {
+    switch (ca.action) {
+        case 'wait':
+        case 'spawn_sub_unit':
+            return;
+        case 'invoke_host_llm': {
+            const host = ca.host;
+            if (host !== 'claude' && host !== 'codex') {
+                throw new Error(`compensate_invocation_failed:invalid_host:${String(host)}`);
+            }
+            const prompt = ca.inputs[0]?.locator;
+            if (!prompt) {
+                throw new Error('compensate_invocation_failed:no_prompt');
+            }
+            try {
+                const dispatchArgs = {
+                    prompt,
+                    host,
+                    workflow_run_seq: ctx.runSeq,
+                };
+                if (ca.timeout_ms !== undefined) {
+                    dispatchArgs.timeout_ms = ca.timeout_ms;
+                }
+                const result = await ctx.dispatch(dispatchArgs);
+                // Compensation results are not currently surfaced via on_host_llm_result
+                // (the callback is for the primary forward path). We discard `result`
+                // here intentionally — the audit trail lives in step_compensated.
+                void result;
+                return;
+            }
+            catch (err) {
+                if (err instanceof HostUnavailableError) {
+                    throw new Error(`compensate_host_unavailable:${host}`);
+                }
+                const msg = err instanceof Error ? err.message : String(err);
+                throw new Error(`compensate_invocation_failed:${msg}`);
+            }
+        }
+        default: {
+            const exhaustive = ca.action;
+            throw new Error(`compensate_unknown_action:${String(exhaustive)}`);
+        }
+    }
+}
+/**
+ * v1.3.0 Wave 2 — resume an approved-and-paused workflow run.
+ *
+ * Convenience wrapper that calls executeWorkflow with resume_from_step_index
+ * set. Used by NativeEngine.resumeApproved after the founder's `approve E-<id>`
+ * utterance has flipped the ledger entry pending → approved.
+ *
+ * Semantics: the original pause happened BEFORE the gated step ran. To RUN
+ * that step on resume, the caller passes
+ * `resume_from_step_index = paused_step_index - 1` (skip steps 1..N-1; run
+ * starting at step N). The executor's loop logic skips steps with
+ * stepIndex <= resumeFrom, so the gated step (N) is the first to execute.
+ *
+ * The gated step's `requires_approval=true` flag is BYPASSED on the first
+ * step of a resume run via the `isResumeFirstStep` guard in executeWorkflow
+ * — otherwise the gate would re-fire and the workflow would loop forever.
+ *
+ * The original execution_id is preserved so the audit transcript ties back
+ * to the original workflow_started event.
+ */
+export async function executeWorkflowResume(opts) {
+    if (typeof opts.resume_from_step_index !== 'number' ||
+        !Number.isInteger(opts.resume_from_step_index) ||
+        opts.resume_from_step_index < 0) {
+        throw new Error(`executeWorkflowResume: resume_from_step_index must be a non-negative integer; got "${String(opts.resume_from_step_index)}"`);
+    }
+    return executeWorkflow(opts);
 }
 //# sourceMappingURL=lite-executor.js.map

@@ -63,11 +63,34 @@ export interface Workflow {
      * to v1.x.
      */
     autonomy_level: WorkflowAutonomyLevel;
+    /**
+     * Names of Charter obligations this Workflow fulfills. When the workflow's
+     * execution fails (workflow_failed), NativeEngine consults the operating
+     * Charter's obligations list and emits `commitment_broken` for each
+     * obligation whose name appears here.
+     *
+     * Per codex W5 BLOCKER 3: the workflow→obligation mapping MUST be
+     * declarative — no heuristics on step text, no inference. An empty array
+     * means the workflow makes no Charter-level commitments; a non-empty array
+     * declares exactly which obligation_names this workflow promises to deliver.
+     *
+     * Optional on the TS shape so existing callers / fixtures that construct
+     * Workflow directly (bypassing createWorkflow) compile without source-level
+     * changes; createWorkflow defaults absent values to `[]`. The runtime
+     * commitment_broken emission path treats `undefined` and `[]` identically
+     * (no obligations declared).
+     *
+     * Default: empty array (the workflow does not fulfill any obligations).
+     * Each entry MUST be a non-empty string. The runtime does NOT validate
+     * cross-references to a Charter at primitive-mint time (the Charter may
+     * not be loaded yet); the join happens at emission time in NativeEngine.
+     */
+    obligation_refs?: ReadonlyArray<string>;
 }
 /**
  * The fields a caller may omit; createWorkflow fills sensible V2-compliant defaults.
  */
-export type WorkflowSpec = Omit<Workflow, 'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level'> & Partial<Pick<Workflow, 'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level'>>;
+export type WorkflowSpec = Omit<Workflow, 'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level' | 'obligation_refs'> & Partial<Pick<Workflow, 'expects_response_from' | 'on_override_action' | 'reuse_tag' | 'return_contract' | 'modifies_sutra' | 'custody_owner' | 'extension_ref' | 'autonomy_level' | 'obligation_refs'>>;
 /**
  * Construct a Workflow with V2.x-compliant defaults applied for omitted optional fields.
  * Returns a frozen object.

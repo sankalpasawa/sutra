@@ -33,6 +33,20 @@ export const ENGINE_EVENT_TYPES = new Set([
     'pattern_proposed',
     'proposal_approved',
     'proposal_rejected',
+    'approval_requested',
+    'approval_granted',
+    'approval_denied',
+    'approval_already_handled',
+    'workflow_rollback_started',
+    'step_compensated',
+    'step_compensation_failed',
+    'workflow_rollback_complete',
+    'workflow_rollback_partial',
+    'workflow_escalated',
+    'step_paused',
+    'precondition_check',
+    'postcondition_check',
+    'commitment_broken',
 ]);
 // -----------------------------------------------------------------------------
 // Per-variant validators (codex P1 fold 2026-05-03) — guard MUST validate the
@@ -92,6 +106,59 @@ const VARIANT_VALIDATORS = {
         isNonEmptyStr(v.registered_trigger_id),
     proposal_rejected: (v) => isNonEmptyStr(v.pattern_id) &&
         isStr(v.reason),
+    approval_requested: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.step_index) &&
+        isStr(v.prompt_summary),
+    approval_granted: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.step_index),
+    approval_denied: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.step_index) &&
+        isStr(v.reason),
+    approval_already_handled: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.step_index) &&
+        isFiniteNonNegNumber(v.originally_decided_at_ms),
+    workflow_rollback_started: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isStr(v.reason),
+    step_compensated: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.step_index) &&
+        isFiniteNonNegNumber(v.duration_ms),
+    step_compensation_failed: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.step_index) &&
+        isStr(v.reason),
+    workflow_rollback_complete: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.steps_compensated),
+    workflow_rollback_partial: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.steps_compensated) &&
+        isNonNegInt(v.steps_failed),
+    workflow_escalated: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isStr(v.reason),
+    step_paused: (v) => isNonEmptyStr(v.execution_id) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonNegInt(v.step_index) &&
+        isStr(v.reason),
+    precondition_check: (v) => isNonEmptyStr(v.workflow_id) &&
+        isStr(v.verdict) && (v.verdict === 'pass' || v.verdict === 'fail') &&
+        isStr(v.expression) &&
+        (v.reason === undefined || isStr(v.reason)),
+    postcondition_check: (v) => isNonEmptyStr(v.workflow_id) &&
+        isStr(v.verdict) && (v.verdict === 'pass' || v.verdict === 'fail') &&
+        isStr(v.expression) &&
+        (v.reason === undefined || isStr(v.reason)),
+    commitment_broken: (v) => isNonEmptyStr(v.charter_id) &&
+        isNonEmptyStr(v.obligation_name) &&
+        isNonEmptyStr(v.workflow_id) &&
+        isNonEmptyStr(v.execution_id) &&
+        (v.evidence === undefined || isStr(v.evidence)),
 };
 /**
  * Sound type guard for the EngineEvent discriminated union. Validates:

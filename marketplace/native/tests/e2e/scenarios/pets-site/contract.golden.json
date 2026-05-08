@@ -21,6 +21,6 @@
     "facets": ["display", "showcase"]
   },
   "confidence": 0.82,
-  "ambiguity_flags": ["unspecified: page count, audience size"],
+  "ambiguity_flags": [],
   "clarification_required": false
 }

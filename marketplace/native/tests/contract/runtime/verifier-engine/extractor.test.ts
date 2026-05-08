@@ -74,4 +74,24 @@ describe('extract', () => {
     const bad = JSON.stringify({ ...JSON.parse(VALID), evidence_required: [{ stage: 42, field: 'x' }] })
     await expect(extract('test', async () => bad, { max_retries: 0 })).rejects.toThrow(/evidence_required.*stage/i)
   })
+
+  it('auto-corrects clarification_required when ambiguity_flags non-empty', async () => {
+    const inconsistent = JSON.stringify({
+      ...JSON.parse(VALID),
+      ambiguity_flags: ['unclear scope'],
+      clarification_required: false,
+    })
+    const c = await extract('test', async () => inconsistent)
+    expect(c.clarification_required).toBe(true)  // auto-corrected
+  })
+
+  it('auto-corrects clarification_required when confidence below 0.6', async () => {
+    const lowConf = JSON.stringify({
+      ...JSON.parse(VALID),
+      confidence: 0.4,
+      clarification_required: false,
+    })
+    const c = await extract('test', async () => lowConf)
+    expect(c.clarification_required).toBe(true)
+  })
 })

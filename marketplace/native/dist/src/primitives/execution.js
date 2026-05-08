@@ -16,6 +16,7 @@ const VALID_STATES = new Set([
     'failed',
     'declared_gap',
     'escalated',
+    'paused',
 ]);
 /** Terminal states are immutable — once reached, no further transition allowed. */
 const TERMINAL_STATES = new Set([
@@ -27,12 +28,21 @@ const TERMINAL_STATES = new Set([
 /**
  * Allowed state-transition graph per V2 §1 P4 lifecycle:
  *   pending → running
- *   running → {success, failed, declared_gap, escalated}
+ *   running → {success, failed, declared_gap, escalated, paused}
+ *   paused  → {running, failed, escalated}        (v1.3.0 W2 codex W2 BLOCKER 1 fold)
  * All terminal states are sinks.
+ *
+ * v1.3.0 Wave 2 (codex W2 fold): `'paused'` is FIRST-CLASS — already used by
+ * the full step-graph executor at engine/step-graph-executor.ts:518 as the
+ * human-loop pause state. Wave 2 step-level `requires_approval` REUSES this
+ * state. Resume on founder `approve E-<id>` ⇒ paused→running. Reject on
+ * founder `reject E-<id>` ⇒ paused→failed. Auto-escalation policy can also
+ * promote paused→escalated.
  */
 const VALID_TRANSITIONS = {
     pending: new Set(['running']),
-    running: new Set(['success', 'failed', 'declared_gap', 'escalated']),
+    running: new Set(['success', 'failed', 'declared_gap', 'escalated', 'paused']),
+    paused: new Set(['running', 'failed', 'escalated']),
     success: new Set(),
     failed: new Set(),
     declared_gap: new Set(),
@@ -50,7 +60,7 @@ export function createExecution(spec) {
         throw new Error(`Execution.workflow_id must match pattern W-<hash>; got "${spec.workflow_id}"`);
     }
     if (!VALID_STATES.has(spec.state)) {
-        throw new Error(`Execution.state must be pending|running|success|failed|declared_gap|escalated; got "${String(spec.state)}"`);
+        throw new Error(`Execution.state must be pending|running|success|failed|declared_gap|escalated|paused; got "${String(spec.state)}"`);
     }
     if (!Array.isArray(spec.logs) || !Array.isArray(spec.results)) {
         throw new Error('Execution.logs and Execution.results must be arrays');

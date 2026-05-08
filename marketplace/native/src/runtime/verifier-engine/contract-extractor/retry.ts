@@ -33,6 +33,16 @@ export async function validateAndRetry(
     try {
       const candidate = JSON.parse(unwrapJson(raw))
       validateContractShape(candidate)
+      // SPEC §6 invariant: clarification_required must be true if confidence < 0.6
+      // OR ambiguity_flags is non-empty. Auto-correct here so downstream tiers
+      // see a coherent contract. Mutate via mutable view; GoalContract uses
+      // readonly fields so we go through `unknown` to satisfy the compiler.
+      const mutable = candidate as unknown as Record<string, unknown>
+      const conf = mutable.confidence as number
+      const flags = mutable.ambiguity_flags as readonly string[]
+      if ((conf < 0.6 || flags.length > 0) && !mutable.clarification_required) {
+        mutable.clarification_required = true
+      }
       return candidate as GoalContract
     } catch (e) {
       last_error = e instanceof Error ? e.message : String(e)

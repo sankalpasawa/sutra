@@ -84,6 +84,72 @@ export const defaultRenderProposalRejected = (e, ctx) => {
     const reason = e.reason ? `: ${sanitizeForTerminal(e.reason)}` : '';
     return `${cellPrefix(ctx)}[native] rejected ${e.pattern_id}${reason}.`;
 };
+// -----------------------------------------------------------------------------
+// v1.3.0 Wave 2 — step-level approval gate renderers (codex W2 fold).
+//
+// Style consistent with pattern_proposed / proposal_approved / proposal_rejected
+// above. The four lifecycle events trace founder-in-the-loop step approval:
+// REQUESTED (executor paused) → GRANTED (resume) | DENIED (terminate) | ALREADY_HANDLED
+// (stale duplicate approve/reject for an execution past its decision boundary).
+// -----------------------------------------------------------------------------
+export const defaultRenderApprovalRequested = (e, ctx) => {
+    const summary = sanitizeForTerminal(e.prompt_summary);
+    return `${cellPrefix(ctx)}[${e.workflow_id}] PAUSED ${e.execution_id} at step ${e.step_index}: ${summary}. Type "approve ${e.execution_id}" to resume or "reject ${e.execution_id} <reason>" to terminate.`;
+};
+export const defaultRenderApprovalGranted = (e, ctx) => {
+    return `${cellPrefix(ctx)}[${e.workflow_id}] approved ${e.execution_id} at step ${e.step_index} — resuming.`;
+};
+export const defaultRenderApprovalDenied = (e, ctx) => {
+    const reason = sanitizeForTerminal(e.reason);
+    return `${cellPrefix(ctx)}[${e.workflow_id}] DENIED ${e.execution_id} at step ${e.step_index}: ${reason}`;
+};
+export const defaultRenderApprovalAlreadyHandled = (e, ctx) => {
+    return `${cellPrefix(ctx)}[${e.workflow_id}] approval for ${e.execution_id} (step ${e.step_index}) was already decided at ${e.originally_decided_at_ms} — no-op.`;
+};
+// -----------------------------------------------------------------------------
+// v1.3.0 Wave 4 — on_failure machinery renderers (codex W4 fold).
+//
+// Style consistent with W2 approval-gate renderers above. Seven events trace
+// the pause/rollback/escalate lifecycles.
+// -----------------------------------------------------------------------------
+export const defaultRenderWorkflowRollbackStarted = (e, ctx) => {
+    const reason = sanitizeForTerminal(e.reason);
+    return `${cellPrefix(ctx)}[${e.workflow_id}] ROLLBACK ${e.execution_id} started: ${reason}`;
+};
+export const defaultRenderStepCompensated = (e, ctx) => {
+    return `${cellPrefix(ctx)}[${e.workflow_id}] step ${e.step_index} compensated ✓ in ${e.duration_ms}ms`;
+};
+export const defaultRenderStepCompensationFailed = (e, ctx) => {
+    const reason = sanitizeForTerminal(e.reason);
+    return `${cellPrefix(ctx)}[${e.workflow_id}] step ${e.step_index} compensation FAILED: ${reason}`;
+};
+export const defaultRenderWorkflowRollbackComplete = (e, ctx) => {
+    return `${cellPrefix(ctx)}[${e.workflow_id}] ROLLBACK ${e.execution_id} complete (${e.steps_compensated} compensated)`;
+};
+export const defaultRenderWorkflowRollbackPartial = (e, ctx) => {
+    return `${cellPrefix(ctx)}[${e.workflow_id}] ROLLBACK ${e.execution_id} partial: ${e.steps_compensated} compensated, ${e.steps_failed} failed — review out-of-band`;
+};
+export const defaultRenderWorkflowEscalated = (e, ctx) => {
+    const reason = sanitizeForTerminal(e.reason);
+    return `${cellPrefix(ctx)}[${e.workflow_id}] ESCALATED ${e.execution_id}: ${reason} — terminal, review out-of-band.`;
+};
+export const defaultRenderStepPaused = (e, ctx) => {
+    const reason = sanitizeForTerminal(e.reason);
+    return `${cellPrefix(ctx)}[${e.workflow_id}] PAUSED ${e.execution_id} at step ${e.step_index}: ${reason}. Call resumeFromPause("${e.execution_id}") to continue.`;
+};
+// v1.3.0 W5 — PNC + commitment renderers (codex W5 fold).
+export const defaultRenderPreconditionCheck = (e, ctx) => {
+    const reasonPart = e.reason ? `  reason=${sanitizeForTerminal(e.reason)}` : '';
+    return `${cellPrefix(ctx)}[${e.workflow_id}] PRECONDITION ${e.verdict.toUpperCase()}: ${e.expression}${reasonPart}`;
+};
+export const defaultRenderPostconditionCheck = (e, ctx) => {
+    const reasonPart = e.reason ? `  reason=${sanitizeForTerminal(e.reason)}` : '';
+    return `${cellPrefix(ctx)}[${e.workflow_id}] POSTCONDITION ${e.verdict.toUpperCase()}: ${e.expression}${reasonPart}`;
+};
+export const defaultRenderCommitmentBroken = (e, ctx) => {
+    const evidence = e.evidence ? `  evidence=${sanitizeForTerminal(e.evidence)}` : '';
+    return `${cellPrefix(ctx)}[${e.workflow_id}] COMMITMENT_BROKEN charter=${e.charter_id} obligation=${e.obligation_name} exec=${e.execution_id}${evidence}`;
+};
 /** Map of every EngineEventType to its default renderer. Frozen at module load. */
 export const DEFAULT_RENDERERS = Object.freeze({
     routing_decision: defaultRenderRoutingDecision,
@@ -97,6 +163,20 @@ export const DEFAULT_RENDERERS = Object.freeze({
     pattern_proposed: defaultRenderPatternProposed,
     proposal_approved: defaultRenderProposalApproved,
     proposal_rejected: defaultRenderProposalRejected,
+    approval_requested: defaultRenderApprovalRequested,
+    approval_granted: defaultRenderApprovalGranted,
+    approval_denied: defaultRenderApprovalDenied,
+    approval_already_handled: defaultRenderApprovalAlreadyHandled,
+    workflow_rollback_started: defaultRenderWorkflowRollbackStarted,
+    step_compensated: defaultRenderStepCompensated,
+    step_compensation_failed: defaultRenderStepCompensationFailed,
+    workflow_rollback_complete: defaultRenderWorkflowRollbackComplete,
+    workflow_rollback_partial: defaultRenderWorkflowRollbackPartial,
+    workflow_escalated: defaultRenderWorkflowEscalated,
+    step_paused: defaultRenderStepPaused,
+    precondition_check: defaultRenderPreconditionCheck,
+    postcondition_check: defaultRenderPostconditionCheck,
+    commitment_broken: defaultRenderCommitmentBroken,
 });
 // -----------------------------------------------------------------------------
 // RendererRegistry

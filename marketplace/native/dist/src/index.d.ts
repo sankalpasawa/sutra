@@ -9,8 +9,9 @@
  * require a major version bump. Internal modules (src/engine/**, source-
  * preview surface) are NOT re-exported here and may change at any time.
  */
-export { NativeEngine, createDefaultEngine, type NativeEngineOptions } from './runtime/native-engine.js';
-export { executeWorkflow, type ExecuteOptions, type ExecutionResult } from './runtime/lite-executor.js';
+export { NativeEngine, createDefaultEngine, parseApprovalUtterance, type NativeEngineOptions, type ApprovalUtterance } from './runtime/native-engine.js';
+export { executeWorkflow, executeWorkflowResume, type ExecuteOptions, type ExecutionResult } from './runtime/lite-executor.js';
+export { persistApproval, loadApproval, listApprovals, updateApprovalStatus, markResumed, isExecutionApprovalRecord, type ExecutionApprovalRecord, type ExecutionApprovalStatus, } from './persistence/execution-approval-ledger.js';
 export { HSutraConnector, resolveHSutraLogPath, type HSutraConnectorOptions, type HSutraConnectorStats } from './runtime/h-sutra-connector.js';
 export { Router, computePromptHash, buildFallbackPrompt, type RouterOptions, type RouteRequest, type LLMFallback } from './runtime/router.js';
 export { ArtifactCatalog, computeContentSha256, resolveDefaultRoot, type ArtifactCatalogOptions, type RegisterRequest } from './runtime/artifact-catalog.js';
@@ -21,9 +22,11 @@ export { TRIGGER_EVENT_TYPES, PREDICATE_TYPES, isPredicate, isTriggerSpec } from
 export type { RoutingDecision, RoutingMode, PredicateAttempt } from './types/routing-decision.js';
 export type { CatalogedAsset } from './types/asset-catalog.js';
 export { isCatalogedAsset, isAssetShape, SHA256_HEX_PATTERN, DOMAIN_ID_PATTERN, EXECUTION_ID_PATTERN } from './types/asset-catalog.js';
-export type { EngineEvent, EngineEventType, RenderContext, RoutingDecisionEvent, WorkflowStartedEvent, WorkflowCompletedEvent, WorkflowFailedEvent, ArtifactRegisteredEvent, PolicyDecisionEvent, StepStartedEvent, StepCompletedEvent } from './types/engine-event.js';
+export type { EngineEvent, EngineEventType, RenderContext, RoutingDecisionEvent, WorkflowStartedEvent, WorkflowCompletedEvent, WorkflowFailedEvent, ArtifactRegisteredEvent, PolicyDecisionEvent, StepStartedEvent, StepCompletedEvent, ApprovalRequestedEvent, ApprovalGrantedEvent, ApprovalDeniedEvent, ApprovalAlreadyHandledEvent } from './types/engine-event.js';
 export { ENGINE_EVENT_TYPES, isEngineEvent } from './types/engine-event.js';
 export { loadStarterKit, type StarterKit, STARTER_DOMAINS, STARTER_CHARTERS, STARTER_WORKFLOWS, STARTER_TRIGGERS, STARTER_WORKFLOW_CHARTER_MAP, ONBOARDING_WORKFLOW } from './starter-kit/index.js';
+export { VerifierEngine, generateUtterance } from './runtime/verifier-engine/index.js';
+export type { GoalContract, AssertionReport, AssertionResult, NativeRun, LLMDispatch, JudgeDispatch, UserProfile, Scenario, } from './runtime/verifier-engine/index.js';
 /** Library version (sync with package.json + plugin.json + marketplace.json + cli/sutra-native.ts:VERSION). Enforced by tests/contract/version-sync.test.ts. */
-export declare const NATIVE_VERSION = "1.2.2";
+export declare const NATIVE_VERSION = "1.5.0";
 //# sourceMappingURL=index.d.ts.map

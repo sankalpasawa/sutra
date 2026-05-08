@@ -62,7 +62,7 @@ describe('verify (orchestrator)', () => {
     expect(r.verdict).toBe('FAIL')
     // Tier-1 halt: only schema-tier results, downstream tiers didn't run.
     expect(r.results.every(x => x.tier === 'schema')).toBe(true)
-    expect(r.results.length).toBe(3)
+    expect(r.results.length).toBe(4)
   })
 
   it('verdict PARTIAL when only tier-4 (rubric) fails', async () => {

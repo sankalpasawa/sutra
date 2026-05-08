@@ -45,4 +45,13 @@ describe('runTier1Schema', () => {
     const r = runTier1Schema({ ...baseC(), clarification_required: true, ambiguity_flags: ['ugh'] })
     expect(r.find(x => x.id === 'tier-1/clarification-not-required')!.status).toBe('FAIL')
   })
+
+  it('FAIL when ambiguity_flags non-empty but clarification_required false', () => {
+    const r = runTier1Schema({
+      ...baseC(),
+      ambiguity_flags: ['unclear thing'],
+      clarification_required: false,
+    })
+    expect(r.find(x => x.id === 'tier-1/ambiguity-coherence')!.status).toBe('FAIL')
+  })
 })

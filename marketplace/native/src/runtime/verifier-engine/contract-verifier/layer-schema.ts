@@ -43,5 +43,14 @@ export function runTier1Schema(contract: GoalContract): AssertionResult[] {
         ? `clarification required; flags: ${contract.ambiguity_flags.join('; ')}`
         : 'no clarification required',
     },
+    {
+      id: 'tier-1/ambiguity-coherence',
+      tier: 'schema',
+      axis: 'Outcome-Fidelity',
+      status: (contract.ambiguity_flags.length > 0 && !contract.clarification_required) ? 'FAIL' : 'PASS',
+      message: (contract.ambiguity_flags.length > 0 && !contract.clarification_required)
+        ? `SPEC §6 violated: ambiguity_flags non-empty but clarification_required=false`
+        : `ambiguity coherence ok`,
+    },
   ]
 }
