@@ -25,6 +25,15 @@ export type AssertionAxis =
 
 export type AssertionStatus = 'PASS' | 'FAIL' | 'SKIPPED'
 
+/**
+ * Verdict semantics:
+ *   PASS    = no FAIL rows
+ *   PARTIAL = only tier-4 (rubric/soft) FAIL — hard tiers all PASS
+ *   FAIL    = any hard-tier (schema|artifact|behavior) FAIL
+ *
+ * Hard-vs-soft tier classification is enforced in verify() orchestrator
+ * (see contract-verifier/verifier.ts in later task).
+ */
 export type Verdict = 'PASS' | 'FAIL' | 'PARTIAL'
 
 export interface AssertionResult {
@@ -50,9 +59,22 @@ export interface AssertionReport {
   readonly verdict: Verdict
 }
 
+export interface NativeEvent {
+  readonly type: string
+  readonly ts: number
+  readonly payload?: unknown
+}
+
+export interface NativeArtifact {
+  readonly stage: string
+  readonly path: string
+  readonly content: string
+  readonly sha256: string
+}
+
 export interface NativeRun {
   readonly run_id: string
   readonly scenario_id: string
-  readonly events: readonly { type: string; ts: number; payload?: unknown }[]
-  readonly artifacts: readonly { stage: string; path: string; content: string; sha256: string }[]
+  readonly events: readonly NativeEvent[]
+  readonly artifacts: readonly NativeArtifact[]
 }
