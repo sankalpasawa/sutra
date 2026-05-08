@@ -1,0 +1,26 @@
+{
+  "situation": "user has pets they care about and wants an online place to share them",
+  "motivation": "create a presentable web home for pet content",
+  "outcome": "publicly viewable site that showcases the user's pets",
+  "beneficiary": "self plus visitors interested in pets",
+  "hard_constraints": [],
+  "non_goals": ["e-commerce checkout", "service-booking platform"],
+  "acceptance_examples": [
+    {
+      "given": "site deployed",
+      "when": "a visitor opens the homepage",
+      "then": "pet content is the first visible thing"
+    }
+  ],
+  "evidence_required": [
+    { "stage": "design", "field": "§Visual-direction" },
+    { "stage": "tech",   "field": "§Hosting-plan" }
+  ],
+  "execution_preferences": {
+    "voice": "first-person-casual",
+    "facets": ["display", "showcase"]
+  },
+  "confidence": 0.82,
+  "ambiguity_flags": ["unspecified: page count, audience size"],
+  "clarification_required": false
+}
