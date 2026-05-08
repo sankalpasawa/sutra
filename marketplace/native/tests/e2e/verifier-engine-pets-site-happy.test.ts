@@ -55,8 +55,19 @@ describe('Verifier Engine v1 — pets-site happy-path E2E (AC §9.5)', () => {
     expect(out.transcript).toContain('I want a website for my pets')
     expect(out.report).toContain('VERDICT: PASS')
 
-    // AC §9.5 — print transcript + report so operator sees both sides
-    console.log('\n=== TRANSCRIPT ===\n' + out.transcript)
-    console.log('\n=== REPORT ===\n' + out.report)
+    // AC §9.5 — print BOTH sides:
+    //   USER INPUT (what user typed) + LLM CAPTURED INTENT (extractor output)
+    //   + LLM GENERATED ARTIFACTS (per-stage content) + VERIFIER REPORT.
+    console.log('\n=== USER INPUT ===')
+    console.log(`> ${utterance}`)
+    console.log('\n=== LLM CAPTURED INTENT (GoalContract) ===')
+    console.log(JSON.stringify(contract, null, 2))
+    console.log('\n=== LLM GENERATED ARTIFACTS ===')
+    for (const a of artifacts) {
+      console.log(`\n--- ${a.stage}.md (${a.content.length} chars) ---`)
+      console.log(a.content)
+    }
+    console.log('\n=== EVENT TRANSCRIPT ===\n' + out.transcript)
+    console.log('\n=== VERIFIER REPORT ===\n' + out.report)
   })
 })

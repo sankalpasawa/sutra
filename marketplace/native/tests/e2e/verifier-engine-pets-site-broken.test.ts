@@ -47,7 +47,19 @@ describe('Verifier Engine v1 — pets-site broken-fixture E2E (AC §9.6 — fail
     expect(report.results.filter(r => r.tier === 'schema').every(r => r.status === 'PASS')).toBe(true)
 
     const out = engine.format(report, utterance, run)
-    console.log('\n=== TRANSCRIPT ===\n' + out.transcript)
-    console.log('\n=== REPORT ===\n' + out.report)
+    // AC §9.6 — print BOTH sides:
+    //   USER INPUT + LLM CAPTURED INTENT + LLM GENERATED ARTIFACTS (broken)
+    //   + VERIFIER REPORT (showing where constraint failed).
+    console.log('\n=== USER INPUT ===')
+    console.log(`> ${utterance}`)
+    console.log('\n=== LLM CAPTURED INTENT (GoalContract) ===')
+    console.log(JSON.stringify(contract, null, 2))
+    console.log('\n=== LLM GENERATED ARTIFACTS (BROKEN VARIANT) ===')
+    for (const a of artifacts) {
+      console.log(`\n--- ${a.stage}.md (${a.content.length} chars) ---`)
+      console.log(a.content)
+    }
+    console.log('\n=== EVENT TRANSCRIPT ===\n' + out.transcript)
+    console.log('\n=== VERIFIER REPORT ===\n' + out.report)
   })
 })
