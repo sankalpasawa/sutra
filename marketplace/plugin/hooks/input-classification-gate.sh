@@ -14,16 +14,35 @@ if echo "$FILE_PATH" | grep -qE '(memory/|checkpoints/|\.lock|TODO\.md)'; then
   exit 0
 fi
 
-# Check for classification marker
-SESSION_ID="${CLAUDE_SESSION_ID:-default}"
-MARKER="/tmp/asawa-input-classified-${SESSION_ID}"
+# Check for classification marker (per-turn; wiped by reset-turn-markers.sh on
+# UserPromptSubmit). Convention aligned with .claude/depth-registered and
+# .claude/blueprint-registered. Prior path /tmp/asawa-input-classified-${SID}
+# was broken — no writer existed in any skill or hook (2026-05-10 root-cause fix
+# during SOFT-to-HARD blanket flip; founder direction Option A).
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+MARKER="$REPO_ROOT/.claude/input-routed"
 
 if [[ -f "$MARKER" ]]; then
   exit 0
 fi
 
-echo "BLOCKED: Classify this input through INPUT-ROUTING protocol before acting. Output the classification block first."
-exit 1
+# Override path (honor-system; audit-logged)
+if [[ "${INPUT_ROUTING_ACK:-0}" == "1" ]]; then
+  mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+  REASON=$(printf '%s' "${INPUT_ROUTING_ACK_REASON:-no-reason}" | tr -d '"\\' | tr '\n\r' '  ')
+  printf '{"ts":%s,"event":"input-routing-override","reason":"%s"}\n' "$(date +%s)" "$REASON" \
+    >> "$REPO_ROOT/.enforcement/input-routing-overrides.jsonl"
+  exit 0
+fi
+
+cat >&2 <<EOF
+BLOCKED: emit Input Routing block before Edit/Write (CLAUDE.md Mandatory Blocks).
+Required: INPUT / TYPE / EXISTING HOME / ROUTE / FIT CHECK / ACTION lines.
+Then write marker via Bash (Write tool is itself blocked by this hook):
+  printf "TS=%s TASK=<slug>\n" "\$(date +%s)" > .claude/input-routed
+Override (one call): INPUT_ROUTING_ACK=1 INPUT_ROUTING_ACK_REASON='<why>' <tool>
+EOF
+exit 2
 
 # ============================================================================
 # ## Operationalization

@@ -112,10 +112,19 @@ if [ "$is_foundational" = "1" ]; then
     exit 2
   fi
 else
-  # SOFT elsewhere — advisory only (no blocking; build-layer-check.sh handles HARD)
+  # HARD on every path (founder direction 2026-05-10 — blanket SOFT→HARD flip,
+  # Option A). Prior behavior: advisory only on non-foundational. Founder
+  # explicitly removed the soft path. Bootstrap rule: marker is wiped per-turn
+  # by reset-turn-markers.sh; model must emit BLUEPRINT before first Edit/Write
+  # of every turn (CLAUDE.md Mandatory Blocks).
   if [ ! -f "$MARKER" ]; then
-    echo "BLUEPRINT-CHECK (advisory): consider emitting BLUEPRINT block for $REL_PATH" >&2
-    # exit 0 — soft, doesn't block
+    {
+      echo "BLUEPRINT-CHECK: Edit/Write requires BLUEPRINT block (HARD as of 2026-05-10)."
+      echo "  File: $REL_PATH"
+      echo "  Emit per-task BLUEPRINT block with Output + Verified-by fields."
+      echo "  Or override: BLUEPRINT_ACK=1 BLUEPRINT_ACK_REASON='<why>' <tool>"
+    } >&2
+    exit 2
   fi
 fi
 

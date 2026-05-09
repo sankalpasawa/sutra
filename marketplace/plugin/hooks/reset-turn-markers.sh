@@ -47,6 +47,7 @@ rm -f .claude/input-routed \
       .claude/depth-assessed \
       .claude/sutra-deploy-depth5 \
       .claude/build-layer-registered \
+      .claude/blueprint-registered \
       .claude/structure-first-active \
       2>/dev/null
 
