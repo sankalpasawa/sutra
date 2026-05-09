@@ -1,6 +1,6 @@
 # Native Canon Migration Plan — 1-file → 127-file decomposition
 
-**Status**: DRAFT v1.1 (codex consult round-4 CHANGES-REQUIRED 2026-05-09 → 4 P1 + 3 P2 fixes applied; pending founder approval)
+**Status**: RATIFIED v1.1 (2026-05-09 — codex round-4 CHANGES-REQUIRED → 4 P1 + 3 P2 fixes applied; codex round-5 ADVISORY ✓ confirmed fixes hold; founder approved 2026-05-09 + MQ1-MQ4 locked w/ defaults; Phase 0 ready to start). Non-blocking note from round-5: decommission-hook override path should be founder-restricted in Phase 0 implementation.
 **Authored**: 2026-05-09
 **Author**: claude-drafted via `core:incremental-architect` skill
 **Owner**: CEO of Asawa (founder: sankalpasawa)
@@ -313,10 +313,10 @@ Without all conditions satisfied, Phase 13 cannot complete. Migration stays in c
 
 | # | Question | Default if unanswered |
 |---|---|---|
-| MQ1 | Codex review per-file OR per-bucket-batch? | per-bucket-batch (cheaper, faster; founder can spot-check per-file) |
-| MQ2 | Subagent parallelism level — 4 or 8 concurrent? | 4 (safer; codex queue tolerance unknown for higher) |
-| MQ3 | When part file mentions another part (cross-bucket link), use relative path or absolute `sutra/os/native/` path? | relative path (portable across worktrees) |
-| MQ4 | Engine doc post-Phase-12 — strict INDEX (links only) OR INDEX + brief executive summary (1 para per bucket)? | INDEX + brief summary per bucket (~5 lines each = readable as standalone) |
+| MQ1 | ✅ ANSWERED 2026-05-09 — Codex review per-bucket-batch (founder accepted default; faster + cheaper; spot-check per-file when needed). | n/a |
+| MQ2 | ✅ ANSWERED 2026-05-09 — Subagent parallelism = 4 concurrent (founder accepted default; codex queue tolerance unknown for higher; revisit at Phase 6 if needed). | n/a |
+| MQ3 | ✅ ANSWERED 2026-05-09 — Cross-bucket links use relative paths (founder accepted default; portable across worktrees). | n/a |
+| MQ4 | ✅ ANSWERED 2026-05-09 — Engine post-Phase-12 = INDEX + brief 1-para summary per bucket (founder accepted default; ~5 lines per bucket; readable standalone). | n/a |
 | MQ5 | Should the 14d decommission window run in parallel with new feature work (Phase B Feature Specs continuing) OR pause feature work? | **FLIPPED per codex round-4 P1.2 fix**: PAUSE canon feature work during 14d window (preserves single-git-revert rollback honesty; non-canon work continues). Original default was parallel; codex flagged this breaks rollback contract. |
 
 **Noted limitations**:
