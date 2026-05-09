@@ -59,6 +59,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-override.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/structure-first-reminder.sh",
+            "timeout": 3
           }
         ]
       },

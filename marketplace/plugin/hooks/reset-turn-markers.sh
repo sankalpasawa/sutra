@@ -39,6 +39,7 @@ rm -f .claude/input-routed \
       .claude/depth-assessed \
       .claude/sutra-deploy-depth5 \
       .claude/build-layer-registered \
+      .claude/structure-first-active \
       2>/dev/null
 
 mkdir -p .enforcement 2>/dev/null
