@@ -2,6 +2,55 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+> **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
+
+## v2.35.0 — 2026-05-09
+
+**D55 Structure-First Default + Restructure-on-Add — hard enforcement hook fires on every tool call. Fleet-wide.**
+
+Founder direction 2026-05-09: "Make sure by default there is structuring applied everywhere whenever you go about doing something. And then make sure that when we add new things, you structure the existing things with the new things and see if there are simplifications required. Make this as a hard. This code which has to run on every command."
+
+### What changed
+
+1. **NEW `hooks/structure-first-reminder.sh`** — PreToolUse hook (no matcher = every tool call). Emits two-clause reminder to stderr once per founder turn (dedupe via per-turn marker `.claude/structure-first-active`). Audit-logged to `holding/hooks/hook-log.jsonl`. Fail-open exit 0 (soft guidance per D40 hook-injects-prompt caveat).
+
+2. **`hooks/hooks.json`** — `structure-first-reminder.sh` added to the existing PreToolUse no-matcher block alongside `feedback-auto-override.sh`. Fires before every Read/Edit/Write/Bash/Task/MCP/WebFetch/WebSearch tool call.
+
+3. **`hooks/reset-turn-markers.sh`** — `.claude/structure-first-active` added to the per-turn `rm -f` list so the dedupe marker wipes on every `UserPromptSubmit`, allowing the reminder to re-fire at the start of each new founder turn.
+
+### Two clauses (the D55 direction)
+
+- **Clause 1 — Structure-First Default**: structure is the default shape of every action, not output-time polish. Tables > prose for ≥3 comparable rows. Numbers > adjectives; progress bars for scores. Decisions in ASCII-boxed callouts (no unicode box-drawing). Impact + Effort columns on every task list. Applies action-time, not only at output.
+
+- **Clause 2 — Restructure-on-Add**: adding ANY new thing (file, section, direction, protocol, hook, skill, dep) fires four mandatory steps — **Survey** existing structure the new thing touches → **Reorg** new+existing into one coherent shape → **Simplify** (dedupe, merge, delete redundancy) → **Surface** in turn output what was added/restructured/simplified/deleted.
+
+### Kill-switches
+
+- Per-session: `touch ~/.structure-first-disabled` (or `~/.sutra-defaults-disabled` for all D40+D55 defaults).
+- Per-call: `STRUCTURE_FIRST_ACK=1 STRUCTURE_FIRST_ACK_REASON='<why>' <cmd>` — audit-logged.
+- Permanent revoke: founder utterance "stop structure-first" / "drop D55" → revert for that session; permanent removal is a follow-up commit.
+
+### Verification gap recognized
+
+The prior source-side commit (`sutra 888b790`, 2026-05-09 earlier) shipped the hook + registration but did NOT bump the plugin version. As a result the runtime plugin cache (`~/.claude/plugins/cache/sutra/core/2.34.0/`) never picked up the hook — PreToolUse fired without it for the rest of that session. Verified-by check in the originating BLUEPRINT covered source-side artifacts (file present, hook registered, smoke test runs) but not runtime-side (real PreToolUse calls the hook). v2.35.0 closes the gap: this version bump triggers a fresh cache pull on `/plugin update sutra@core`. Asawa memory `feedback_verify_before_commit.md` updated to require **runtime test** (new session + real tool call + log inspection) on any hook/skill/plugin ship.
+
+### Asawa-side governance (separate repo)
+
+- `asawa-holding/holding/FOUNDER-DIRECTIONS.md` §D55 — full direction-of-record (entry landed in asawa-holding `104b037`).
+- `asawa-holding/CLAUDE.md` Core Behaviors — D55 bullet alongside D51/D52/D53.
+- `asawa-holding/sutra/CLAUDE.md` Inherited Governance — D55 section so Sutra sessions load it at startup.
+- Memory `feedback_structure_first_d55.md` + `MEMORY.md` row.
+
+### Fleet propagation
+
+T2 (DayFlow/Billu/Paisa/PPR/Maze), T3 (Testlify/Dharmik), T4 fleet receive the hook on next `/plugin update sutra@core` + session restart. Without the version bump in this release, those installs would stay on v2.34.0 forever. D33 client firewall preserved — pull-model distribution, no push.
+
+### Versions
+
+`2.34.0` → `2.35.0` (`.claude-plugin/plugin.json` description + version field). Marketplace registry refresh follows on push.
+
+---
+
 ## v2.32.0 — 2026-05-04
 
 **Permission posture realigned to catastrophic-only across Bash/MCP/Web/Task. Closes ~95% of remaining prompt friction; catastrophic floor preserved.**
