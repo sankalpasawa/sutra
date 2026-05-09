@@ -67,4 +67,3 @@ Indicators that move N* (per §11.3 + §14.9):
 - NATIVE-ENGINE.md §11.5 + D41 (v1 → v2 expansion trigger)
 - NATIVE-ENGINE.md §4 I-11 (time-to-first-Execution invariant)
 - NATIVE-ENGINE.md §14.3 (JTBD outcomes #1+#2)
-- holding/PRODUCT-DOC-STANDARD.md (L2 layer spec — Sean Ellis Amplitude + Google OKR + Sinek/Collins)
