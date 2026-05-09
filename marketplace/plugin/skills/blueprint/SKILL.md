@@ -10,11 +10,14 @@ Every founder turn that will result in any tool call gets a BLUEPRINT block. Emi
 ## The block
 
 ```
-+--- BLUEPRINT --------------------------------------------------+
++--- BLUEPRINT (V2.1) -------------------------------------------+
 | Doing: <plain-English task statement>                          |
-| Steps: 1) <step> 2) <step> 3) <step>                           |
+| Steps:                                                         |
+|   1) <step>       Verify: <runnable check>                     |
+|   2) <step>       Verify: <runnable check>                     |
+|   3) <step>       Verify: <runnable check>                     |
 | Output looks like: <concrete observable target>                |
-| Verified by: <runnable check - cmd, grep, file, screenshot>    |
+| Verified by (overall): <bundle check spanning all steps>       |
 | Scale: <files>, <time>, <cost>                                 |
 | Stops if: <abort condition>                                    |
 | Switch: ON | OFF (override: BLUEPRINT_ACK=1 reason)            |
@@ -23,7 +26,9 @@ Every founder turn that will result in any tool call gets a BLUEPRINT block. Emi
 
 ASCII-only per CLAUDE.md (D-UX-1 codex 2026-05-04). Native renderer at sutra/marketplace/native/src/renderers/terminal-events.ts is the canonical reference.
 
-Seven fields, all required (Output + Verified added per D48, 2026-05-05):
+Per-step `Verify:` (V2.1, 2026-05-10 per founder direction "All three layered") is required at D3+. Each step in the Steps list gets its own runnable check. Failure triggers fix-loop (max 3 iter) BEFORE the next step runs. At D1-D2, compact one-line `Steps: 1) ... 2) ... 3) ...` form without per-step Verify still works.
+
+Seven fields, all required (Output + Verified added per D48, 2026-05-05; per-step Verify added per V2.1 2026-05-10):
 
 - **Doing** — one plain-English sentence. No jargon. No protocol IDs. No filenames unless central.
 - **Steps** — numbered, max 6. If more, group. Use `→` for sequence inside a step if needed.

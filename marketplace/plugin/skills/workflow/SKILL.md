@@ -110,6 +110,18 @@ Edit at Depth 3+? → ALL 8 steps including consult (4)
   honesty fix on sutra-learn classification)
 - Companion skills: see the 7 governance skills referenced in each step
 
+## 3-Layer Verification Stack (founder direction 2026-05-10)
+
+Per-node verification composes 3 orthogonal layers, all firing at D3+:
+
+| Layer | What | When | Source |
+|---|---|---|---|
+| L1 | BLUEPRINT per-step Verify | each step in Steps list of BLUEPRINT box | `core:blueprint` V2.1 |
+| L2 | PHASE-EXIT-VERIFY | end of each PHASE-* node (OBJECTIVE→OBSERVE etc.) | method-registry: `PHASE-EXIT-VERIFY` |
+| L3 | VERIFY-* family | end of full task (MEASURE phase) | method-registry: `VERIFY-BASIC/EVIDENCE/STAGED/MULTISTAGE` |
+
+Three granularities. Each layer's failure triggers its own fix-loop. L1 fails → fix this step. L2 fails → re-shape or re-plan upstream. L3 fails → full-task re-execute. Founder direction "All three (layered)" picked 2026-05-10.
+
 ## Operationalization
 
 1. **Measurement**: count `/core:workflow` invocations in `.enforcement/d40-compliance.log`

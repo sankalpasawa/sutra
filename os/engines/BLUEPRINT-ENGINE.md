@@ -85,6 +85,41 @@ When the `Verified by` cmd returns fail:
 
 ---
 
+## V2.1 — Per-step Verify (founder direction 2026-05-10)
+
+For D3+ tasks with multi-step Steps lists, each step gets its OWN inline Verify in the same fix-loop semantics. Block format:
+
+```
++-- BLUEPRINT (V2.1 with per-step Verify) ----------------------+
+| Doing: <task statement>                                       |
+| Steps:                                                        |
+|   1) <step>       Verify: <runnable check>                    |
+|   2) <step>       Verify: <runnable check>                    |
+|   3) <step>       Verify: <runnable check>                    |
+| Output looks like: <observable target>                        |
+| Verified by (overall): <bundle check>                         |
+| Scale: <files>, <time>, <cost>                                |
+| Stops if: <abort condition>                                   |
+| Switch: ON | OFF                                              |
++---------------------------------------------------------------+
+```
+
+Each per-step `Verify:` is a runnable check (same kinds as overall Verified-by). Failure of any step's Verify triggers the same fix-loop semantics (max 3 iterations, then STOP) BEFORE the next step runs. Composes with 2 other verification layers — see §3-Layer Verification Stack below.
+
+### 3-Layer Verification Stack
+
+| Layer | What | When | Depth gate |
+|---|---|---|---|
+| L1 | BLUEPRINT per-step Verify | each step in Steps list | D3+ |
+| L2 | PHASE-EXIT-VERIFY (method-registry) | end of each PHASE-* node | D3+ |
+| L3 | VERIFY-* family (existing) | end of full task (MEASURE phase) | D2-D5 graduated |
+
+Three orthogonal granularities. L1 fails → fix this step. L2 fails → re-shape or re-plan upstream. L3 fails → full-task re-execute. Each layer composes — failure at smaller unit doesn't necessarily bubble up; failure at larger unit can bypass smaller.
+
+Source: founder direction 2026-05-10 "All three (layered)" choice on per-node verification design.
+
+---
+
 ## When It Fires
 
 - Every founder turn that will result in any Edit / Write / Bash / Agent tool call
