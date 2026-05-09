@@ -6,20 +6,28 @@
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
 cd "$REPO_ROOT" || exit 0
 
-# Synthetic-turn detection (2026-04-25 root-cause fix).
+# Synthetic-turn detection (2026-04-25 root-cause fix; 2026-05-09 stdin instr).
 # Claude Code injects reminders (READ-BEFORE-EDIT, MEMORY.md linter, task-list
 # prompts, PreToolUse hook context) as synthetic UserPromptSubmit turns. These
 # MUST NOT wipe per-turn markers — only REAL founder input resets markers.
 # Preserves original design intent of PROTO-governance and prevents the
 # hook-interaction cascade that blocks multi-tool edits in sutra/** / holding/**.
-PROMPT=$(jq -r '.prompt // empty' 2>/dev/null)
+#
+# 2026-05-09 D55 fix: stdin was consumed twice (jq + case) under some Claude
+# Code payload formats, producing false-positive empty-prompt skips that broke
+# per-turn marker reset (structure-first dedupe carried across whole session).
+# Capture stdin ONCE into STDIN_RAW; parse from variable; log payload on skip
+# so root-cause is observable from routing-misses.log.
+STDIN_RAW="$(cat 2>/dev/null)"
+PROMPT=$(printf '%s' "$STDIN_RAW" | jq -r '.prompt // empty' 2>/dev/null)
 case "$PROMPT" in
   "")
-    # Empty PROMPT = stdin had no .prompt field or jq failed → synthetic.
-    # Root-cause fix 2026-04-25: was falling through to rm -f, caused 2052:1
-    # wipe:skip ratio blocking multi-tool Sutra edits.
+    # Empty PROMPT = stdin had no .prompt field, jq failed, or payload truly
+    # empty → treated as synthetic. Log stdin metadata so we can disambiguate.
     mkdir -p .enforcement 2>/dev/null
-    echo "{\"ts\":$(date +%s),\"event\":\"reset-skipped-empty-prompt\"}" >> .enforcement/routing-misses.log
+    STDIN_BYTES=${#STDIN_RAW}
+    STDIN_HEAD=$(printf '%s' "$STDIN_RAW" | head -c 200 | tr -d '\n' | sed 's/"/\\"/g')
+    echo "{\"ts\":$(date +%s),\"event\":\"reset-skipped-empty-prompt\",\"stdin_bytes\":${STDIN_BYTES},\"stdin_head\":\"${STDIN_HEAD}\"}" >> .enforcement/routing-misses.log
     exit 0
     ;;
   *"<system-reminder>"*|\
