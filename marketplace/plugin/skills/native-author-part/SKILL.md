@@ -26,6 +26,38 @@ This skill writes ONE canon part-file at a time under `sutra/os/native/<bucket>/
 | `source-anchor` | optional | derived | `§N.M` reference within `NATIVE-ENGINE.md`. If omitted, skill greps for canonical anchor pattern. |
 | `force` | optional | false | overwrite existing file if true; reject otherwise. |
 
+## Source-fidelity rules (HARD — codex round-6 PoC findings, 2026-05-09)
+
+Every claim in a part-file MUST trace to a canon source. Codex round-6 found the PoC files invented behavior not in canon — these rules prevent recurrence in the 122 bulk-authored files.
+
+| # | Rule | Why |
+|---|---|---|
+| F1 | EVERY substantive claim in a part-file MUST cite a canon anchor (`NATIVE-ENGINE.md §N.M` OR `ADR-NNN`). No claim is unanchored. | Audit-trail to source; downstream reviewers can verify. |
+| F2 | If canon is silent on an implementation detail (specialized state names, escalation thresholds, metric debits, retry semantics), the part-file MUST mark the gap explicitly ("NOT specified in canon; runtime implementation choice; future ADR may codify") rather than inventing the detail. | Codex round-6 P1.3: HS-1 PoC invented `paused_hs1`, fire-count threshold, N* debit — none in canon. |
+| F3 | Fail-mode defaults FOLLOW canon hardstops (HS-1..HS-8). If a part-file describes failure behavior, it MUST match the parent hardstop. NO fail-open invention. | Codex round-6 P1.2: workflow_started PoC wrote fail-open semantics conflicting with HS-4. |
+| F4 | Lifecycle / terminal-state claims for primitives + events MUST trace to canon invariants (I-1..I-N). E.g., I-14 specifies exact terminal-event set for Workflow Executions. | Codex round-6 P1.1: workflow PoC contradicted I-14 by treating rollback-started as terminal. |
+| F5 | If the part conceptually overlaps an existing canon entity (Asset/DataRef for B9, etc.), the part-file MUST cite the extension relationship per canon (§12.13 for B9), NOT promote the concept to a new §2 primitive without explicit canon authorization. | Codex round-6 P2.1: B9 PoC materialized "Artifact" as new primitive; canon says extend existing. |
+
+## Slug naming convention (HARD)
+
+File names use bare canonical slugs per `sutra/os/native/MIGRATION-PLAN.md` §3 phase rosters. NO `-spec` / `-step` / `-impl` suffixes (codex round-6 P1.4 finding).
+
+| Bucket | Slug pattern | Examples |
+|---|---|---|
+| blocks | `<B-id>-<kebab-name>.md` | `B9-closed-loop-artifact.md`, `7d-lifecycle-orchestrator.md` |
+| pillars | `P<N>-<kebab-name>.md` | `P14-outcomes-drive-design.md` |
+| events | `<event_type>.md` (snake_case as in §3.2 exactly) | `workflow_started.md`, `artifact_registered.md` |
+| primitives | `<bare-noun>.md` (single canonical noun, NO suffix) | `workflow.md`, `step.md` (NOT `workflow-step.md`), `trigger.md` (NOT `trigger-spec.md`), `tenant.md` |
+| hardstops | `HS-<N>-<kebab-name>.md` | `HS-1-reflexive-check.md`, `HS-4-audit-unwritable.md` |
+| open-questions | `Q<N>-<kebab-name>.md` | `Q4-pattern-emergence-k.md` |
+| doc-layers | `L<N>-<kebab-name>.md` | `L1-philosophy.md` |
+| surfaces | `<lowercase-name>.md` | `route.md`, `tenant.md` (NB: tenant surface vs Tenant primitive — surface lives in `surfaces/`, primitive in `primitives/`) |
+| impl-phases | `phase-<letter>-<kebab-name>.md` | `phase-A-prd-docs.md` |
+| metrics | `<kebab-name>.md` | `north-star-ohs-per-week.md` |
+| decisions | (LINK only — no new file; references existing `sutra/os/decisions/ADR-NNN-*.md`) | n/a |
+
+Cross-references between part-files use relative paths (per MQ3 ratified 2026-05-09): `../primitives/workflow.md` from `../blocks/B9.md` etc.
+
 ## 11 Bucket templates
 
 ### Template 1: blocks (B1-B18 + 7a-7e + F1) — L8 Feature Spec (Google PRD + Lenny Rachitsky)

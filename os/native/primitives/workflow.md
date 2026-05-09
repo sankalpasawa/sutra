@@ -47,13 +47,19 @@ type Workflow = {
 
 ## Lifecycle (created → terminal states)
 
+Per canon I-14: every Execution has EXACTLY ONE terminal event from the set `{workflow_completed, workflow_failed, approval_requested}`. Rollback events (`workflow_rollback_started` → `workflow_rollback_complete` | `workflow_rollback_partial`) are RECOVERY transitions that occur AFTER `workflow_failed` under `failure_policy='rollback'` — they are NOT themselves terminal.
+
 1. **Mint**: operator (or pattern emergence post-approval) emits Workflow JSON; LiteExecutor validates schema + invariants; content-addressed id computed; row persisted to user-kit registry.
 2. **Dormant**: Workflow exists in registry; not yet triggered. May be triggered by matching TriggerSpec OR by direct `run` CLI invocation.
 3. **Triggered**: TriggerSpec matched OR operator runs explicitly; LiteExecutor instantiates an Execution.
 4. **Running** (Execution state): `preconditions` cleared; `workflow_started` event emits; step[0] dispatches.
 5. **Step transition**: each `WorkflowStep` dispatches → emits `step_started` / `step_completed` / `step_paused` per outcome.
-6. **Terminal**: one of `workflow_completed` (success), `workflow_failed` (failure), or `workflow_rollback_started` → eventual rollback completion per failure_policy.
-7. **Decommission**: Workflow registry entry can be `deprecated=true` to prevent new Executions; existing Executions complete or are rolled back; no field overwrite (immutability).
+6. **Terminal (per I-14, exactly one)**:
+   - `workflow_completed` (success — all steps + postconditions cleared), OR
+   - `workflow_failed` (failure — step fail OR postcondition fail; may trigger rollback recovery per `failure_policy`), OR
+   - `approval_requested` (pause-awaiting-approval — step with `requires_approval=true` reached; Execution pinned at this state until founder utterance resolves).
+7. **Recovery (post-terminal, if failed + `failure_policy='rollback'`)**: `workflow_rollback_started` → step compensations → `workflow_rollback_complete` OR `workflow_rollback_partial`. These are NOT terminal events themselves; the original terminal remains `workflow_failed`.
+8. **Decommission**: Workflow registry entry can be `deprecated=true` to prevent new Executions; existing Executions reach terminal independently; no field overwrite (immutability).
 
 ## Serialization (JSONL row shape)
 
@@ -67,14 +73,16 @@ Canonical form for content-addressing: JSON keys sorted alphabetically, no white
 
 ## Cross-primitive references
 
-- **Charter** (`sutra/os/native/primitives/charter.md`): Workflow inherits stringency + on_override_action from Charter when interfaces_with includes a Charter id.
-- **Domain** (`sutra/os/native/primitives/domain.md`): Workflow `custody_owner` is a Tenant; Domain principles govern which Workflows are mint-allowed per Tenant.
-- **WorkflowStep** (`primitives/workflow-step.md`): step_graph is a list of WorkflowStep entries.
-- **TriggerSpec** (`primitives/trigger-spec.md`): defines WHEN the Workflow fires.
-- **ExecutionResult** (`primitives/execution-result.md`): runtime instantiation of a Workflow.
-- **Tenant** (`primitives/tenant.md`): isolation boundary; custody_owner refs.
-- **DecisionProvenance** (`primitives/decision-provenance.md`): every gate decision on this Workflow emits a typed row.
-- **EngineEvent** (`primitives/engine-event.md`): 6 of 26 events directly reference Workflow (`workflow_started`, `workflow_completed`, `workflow_failed`, `workflow_rollback_started`, `workflow_rollback_complete`, `workflow_rollback_partial`).
+Per MIGRATION-PLAN.md §3 Phase 5 primitives roster slug naming (bare names, no -spec/-step suffixes):
+
+- **Charter** (`../primitives/charter.md`): Workflow inherits stringency + on_override_action from Charter when interfaces_with includes a Charter id.
+- **Domain** (`../primitives/domain.md`): Workflow `custody_owner` is a Tenant; Domain principles govern which Workflows are mint-allowed per Tenant.
+- **Step** (`../primitives/step.md`): step_graph is a list of Step entries.
+- **Trigger** (`../primitives/trigger.md`): defines WHEN the Workflow fires.
+- **ExecutionResult** (`../primitives/execution-result.md`): runtime instantiation of a Workflow.
+- **Tenant** (`../primitives/tenant.md`): isolation boundary; custody_owner refs.
+- **DecisionProvenance** (`../primitives/decision-provenance.md`): every gate decision on this Workflow emits a typed row.
+- **EngineEvent** (`../primitives/engine-event.md`): 6 of 26 events directly reference Workflow (`workflow_started`, `workflow_completed`, `workflow_failed`, `workflow_rollback_started`, `workflow_rollback_complete`, `workflow_rollback_partial`).
 
 ## References
 

@@ -57,23 +57,25 @@ The operator never loses prior decisions, learnings, or in-flight context. The n
 
 ## Data model
 
-Artifact (typed primitive — references `sutra/os/native/primitives/asset.md` + `primitives/data-ref.md`):
+Per canon §12.13: B9 does NOT introduce a new §2 primitive. Instead, it EXTENDS the existing runtime substrate of **Asset + DataRef + EngineEvent** (referenced in §2 + §3.2 + plus runtime structures defined in implementation code). The conceptual "Artifact" is an ALIAS for an entry-pair: an `artifact_registered` EngineEvent (#9 per §3.2) + the underlying Asset/DataRef row it references.
 
-```typescript
-type Artifact = {
-  id: string;                        // content-addressed UUIDv7
-  type: 'utterance' | 'llm_output' | 'artifact_doc' | 'decision' | 'metric_observation' | string;
-  body_ref: DataRef;                 // pointer to actual content (file, blob, inline)
-  tenant_id: string;                 // multi-tenant isolation per Tenant primitive
-  lineage_parent_id: string | null;  // chain backward through prior steps/utterances
-  execution_id?: string;             // which Execution emitted this (if step-emitted)
-  workflow_id?: string;              // which Workflow produced it
-  ts_ms: number;                     // emission time
-  agent_identity: string;            // who emitted (operator | claude | codex | host-LLM)
-  retention: 'session' | 'execution' | 'tenant_permanent';
-  return_contract_ref?: string;      // if step-emitted, the Workflow's return_contract JSON Schema id
-};
+Conceptual shape (alias; not a separate §2 primitive):
+
 ```
+Artifact (alias) = {
+  // Identity comes from the artifact_registered event
+  event.id (from EngineEvent §2.7)
+  event.payload.artifact_id
+  event.payload.lineage_parent_id   // chain backward
+  event.ts_ms
+  event.agent_identity
+
+  // Body comes from Asset/DataRef runtime structures
+  asset_or_dataref_ref               // pointer to actual content
+}
+```
+
+If/when v2+ requires Artifact as a first-class typed primitive (vs. event-aliased view), a new §2.10+ primitive entry + ADR-018+ will codify it. v1 stays minimal — the closed-loop property holds via `artifact_registered` events + existing Asset/DataRef substrate.
 
 ## Edge cases
 
@@ -95,7 +97,7 @@ Metrics affected (cross-refs `sutra/os/native/metrics/north-star-ohs-per-week.md
 
 ## Dependencies
 
-- **Primitives** (cross-refs `sutra/os/native/primitives/*.md`): Asset, DataRef, Tenant, EngineEvent, Workflow, ExecutionResult, DecisionProvenance.
+- **Primitives** (cross-refs `../primitives/*.md` per slug convention — no -spec/-step suffixes): Tenant, EngineEvent, Workflow, ExecutionResult, DecisionProvenance. (Asset + DataRef are runtime substrate referenced by B9 but are NOT §2 primitives in canon — they live in implementation code; see §12.13 for the extension note.)
 - **Events**: `artifact_registered` (#9), `routing_decision` (#1), `workflow_started` (#2), `step_completed` (#6).
 - **Surfaces**: ROUTE (consumes Artifacts for matching), RUN (emits Artifacts per step), AUDIT (persists Artifact rows), TENANT (enforces per-Tenant catalog).
 - **Hardstops that fire here**: HS-4 (audit log unwritable; v1 fail-closed semantic).

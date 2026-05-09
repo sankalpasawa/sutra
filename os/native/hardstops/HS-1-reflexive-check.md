@@ -30,35 +30,28 @@ Observable state at trigger time:
 
 ## Decision (fail-mode)
 
-**HARD reject + Founder ASK gate.**
+**HARD reject + Founder ASK gate** (per canon §6.9 row HS-1 + §7 STRIDE Elevation-of-Privilege row + §4 F-7).
 
 - LiteExecutor rejects the step dispatch (no host-LLM call fires).
-- Execution enters `state='paused_hs1'` (specialized pause, NOT a regular pause).
-- `policy_decision` event emits with `outcome='deny'`, `policy_id='HS-1'`, `policy_version='1.0'`.
-- DecisionProvenance row written with `reason='HS-1: reflexive_check Constraint violated; modifies_sutra=true without authorization'`.
-- Founder ASK gate fires: native daemon surfaces the rejected step + provenance to founder via approval primitive.
-- Workflow does NOT auto-retry; founder MUST explicitly clear `reflexive_check` Constraint via signed approval utterance before resumption.
+- `policy_decision` event emits (per §3.2 row #8) with `outcome='deny'`, `policy_id='HS-1'`.
+- DecisionProvenance row written with `reason` referencing F-7 violation.
+- Founder ASK gate fires: native daemon surfaces the rejected step + provenance to founder via approval primitive (per ADR-009).
+- Workflow does NOT auto-retry; founder must clear `reflexive_check` Constraint via explicit approval before resumption.
+
+(Implementation details — specialized state names, escalation thresholds, N* impact — are NOT specified in canon §6.9. Runtime implementation chooses these; this part-file is the spec, not the implementation. Future ADR may codify implementation choices.)
 
 ## Recovery path
 
-To resume after HS-1:
-
-1. Founder reviews the rejected step + provenance reason.
-2. Founder evaluates: is the modification legitimate (e.g., authorized plugin update) OR malicious (e.g., Workflow attempting unauthorized hook modification)?
-3. **If legitimate**: founder utterance `approve reflexive E-<execution-id> reason="<justification>"` → `reflexive_check.cleared = true` for THIS Execution only; LiteExecutor resumes step.
-4. **If malicious**: founder utterance `reject E-<execution-id> reason="reflexive boundary violation"` → Workflow terminates; rejection logged immutably; `policy_decision` event emits with `outcome='reject'`.
-
-Override is per-Execution, not per-Workflow — clearance does NOT persist across Executions of the same Workflow.
+Per canon §6.9 row HS-1, recovery requires the Founder ASK gate to clear. Specific utterance forms + per-Execution-vs-per-Workflow scope of the clearance are implementation choices NOT specified in canon — to be codified in a future ADR if/when ambiguity costs founder time. v1.0 default: founder utterance approves clearance; LiteExecutor resumes.
 
 ## Downstream effects
 
-When HS-1 fires:
-- Current Execution state pinned at `paused_hs1`; no further steps dispatch until founder responds.
-- Sibling Executions of the SAME Workflow continue independently (HS-1 is per-Execution scope).
-- Sibling Executions of OTHER Workflows continue independently.
-- AUDIT surface persists the rejection to immutable log.
-- Telemetry: `hs1_fire_count` counter increments; >3 fires/24h in same Tenant escalates to founder via dedicated alert channel.
-- Operator-Hours-Saved (N*) metric receives `-0.5h` adjustment (debit) for the paused work pending founder review.
+Per canon §6.9 + §7 + F-7, the directly canon-specified downstream effects are:
+- LiteExecutor hard-rejects the step dispatch (no host-LLM call fires).
+- AUDIT surface persists the rejection (DecisionProvenance JSONL).
+- Founder ASK gate is the unblocking mechanism (no auto-retry; no auto-escalation).
+
+Specialized runtime states (e.g., a distinct `paused_hs1` Execution state), per-tenant fire-count escalation thresholds, and N* metric debit semantics are NOT specified in canon. Runtime implementations may choose these; this part-file does not codify them. If/when an implementation choice becomes important enough to lock down, a new ADR records it.
 
 ## STRIDE relevance
 

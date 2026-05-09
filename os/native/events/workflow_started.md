@@ -68,7 +68,7 @@ LiteExecutor (single emitter — exclusive owner). Fires after:
 
 - **Idempotent on replay**: emission is informational only — no side effects on replay (state already in Execution JSONL row).
 - **Audit-critical**: required for replayable Execution reconstruction. If `workflow_started` is missing from audit log but Execution JSONL row exists, the row is considered orphaned (operator HITL required).
-- **No retry semantics**: if emission fails (all 3 channels per HS-4), Execution still proceeds; failure beacon emitted via stderr; audit consistency restored on next successful emit.
+- **Fail-closed on emission failure** (per canon HS-4): if emission fails across all 3 durability channels (primary JSONL + tmp-fallback + stderr beacon), HS-4 fires — governance hooks BLOCK; Execution does NOT proceed; stderr beacon emits as last-resort observability; founder HITL required to clear. There is no fail-open semantic — silent fail-open would compromise audit integrity, which is the foundation of Native's trust model.
 
 ## References
 
