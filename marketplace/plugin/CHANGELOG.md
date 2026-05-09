@@ -4,6 +4,69 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.35.2 — 2026-05-09
+
+**Major bug fix: `reset-turn-markers.sh` registration moved Stop → UserPromptSubmit. Per-turn marker discipline was silently broken fleet-wide; ALL per-turn markers persisted entire sessions instead of clearing per turn.**
+
+### The bug
+
+`hooks/hooks.json` registered `reset-turn-markers.sh` on the **Stop** event. The script body, however, was designed for **UserPromptSubmit** — its first executable line is:
+
+```bash
+PROMPT=$(jq -r '.prompt // empty' 2>/dev/null)
+```
+
+`.prompt` only exists in `UserPromptSubmit` event stdin. `Stop` event stdin has `.stop_hook_active`, `.session_id`, etc. — but **no `.prompt` field**. So every Stop fire returned empty PROMPT, fell into the case branch that treats empty prompt as a "synthetic turn", logged `reset-skipped-empty-prompt`, and exited without clearing any markers.
+
+### Impact
+
+| Marker | Wiped between turns? |
+|---|---|
+| `.claude/depth-registered` | NO (was supposed to per CLAUDE.md Marker Lifecycle) |
+| `.claude/input-routed` | NO |
+| `.claude/build-layer-registered` | NO |
+| `.claude/sutra-deploy-depth5` | NO |
+| `.claude/depth-assessed` | NO |
+| `.claude/structure-first-active` (new in v2.35.0) | NO |
+
+Result: any hook that dedupes via per-turn markers (including the new D55 `structure-first-reminder`) emitted ONCE per session instead of once per turn. `per-turn-discipline-prompt.sh` may have been similarly affected for its dedupe logic.
+
+### Evidence — routing-misses.log forensic
+
+A representative sample from `holding/state/.../routing-misses.log` shows hundreds of `reset-skipped-empty-prompt` events and **zero** `markers-cleared` events. The script ran every turn but never did its job.
+
+### The fix
+
+`hooks/hooks.json` — `reset-turn-markers.sh` moved from `Stop[0].hooks[0]` to `UserPromptSubmit[0].hooks[0]` (placed FIRST in the UserPromptSubmit chain so subsequent hooks see fresh marker state).
+
+Why first: `per-turn-discipline-prompt.sh` and other UserPromptSubmit hooks may read or assume specific marker state. The reset must precede them.
+
+### Why this matches the script's design
+
+- Script header comment: `"UserPromptSubmit hook — clears per-turn routing/depth markers..."`
+- Script body: synthetic-turn case patterns (`*"<system-reminder>"*`, `*"<local-command-caveat>"*`, `*"READ-BEFORE-EDIT REMINDER"*`) are all things that appear in `UserPromptSubmit` prompt content, never in `Stop` stdin
+- `holding/CLAUDE.md` Marker Lifecycle section: "Wiped only by `reset-turn-markers.sh` on `UserPromptSubmit`"
+
+All three sources said UserPromptSubmit. Only `hooks.json` said Stop. That's the drift.
+
+### When did this regress
+
+Unknown without git archaeology on hooks.json. Could have been the original registration (bug from day 1) or moved later. Out of scope for this hotfix; surfacing the question here for future blame-driven cleanup.
+
+### Discovery path
+
+Founder relaunched a v2.35.0 session to test D55 visibility. D55 reminder failed to visibly fire. New-session diagnostic traced to `.claude/structure-first-active` marker mtime persisting from prior turn (3+ minutes old). `routing-misses.log` showed `reset-skipped-empty-prompt` was the only event reset-turn-markers had been emitting. Root cause: event-registration mismatch.
+
+### Versions
+
+`2.35.1` → `2.35.2` (`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` + `hooks/hooks.json`).
+
+### Note on D55 verify state
+
+D55 `structure-first-reminder.sh` install was correct since v2.35.0. v2.35.1 fixed an unrelated permission bug. v2.35.2 now fixes the dedupe-persistence bug that prevented the D55 reminder from being visible across consecutive turns. Real-runtime visibility verification (founder makes tool call in v2.35.2+ session → log row with real fields → reminder visible turn-to-turn) is the final outstanding D55 check.
+
+---
+
 ## v2.35.1 — 2026-05-09
 
 **chmod +x fix for `hooks/session-token-snapshot.sh` — pre-existing bug surfaced in v2.35.0 install logs.**
