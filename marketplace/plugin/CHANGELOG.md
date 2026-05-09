@@ -4,6 +4,63 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.35.3 — 2026-05-09
+
+**Layer-2 bug fix on the same hook: `reset-turn-markers.sh` stdin handling. v2.35.2 fixed event registration; v2.35.3 fixes the stdin double-read that still made every real turn skip.**
+
+### What v2.35.2 fixed (recap)
+
+v2.35.2 moved registration from `Stop` → `UserPromptSubmit`. Correct event.
+
+### What v2.35.2 missed
+
+Even on the correct event, the script's first executable line:
+
+```bash
+PROMPT=$(jq -r '.prompt // empty' 2>/dev/null)
+```
+
+`jq` reads stdin inside the `$(...)` substitution. Under Claude Code's actual `UserPromptSubmit` payload shape, this returned EMPTY for `.prompt` on real founder turns. So every real turn STILL hit the synthetic-skip branch (`case "$PROMPT" in "")`) and never reached the `rm -f` block.
+
+### Evidence (forensic)
+
+`grep -E "markers-cleared|reset-skipped" routing-misses.log` showed ALL recent UserPromptSubmit hits logged `reset-skipped-empty-prompt` — zero `markers-cleared`. Same pathology as the v2.35.2 bug target, different cause.
+
+Founder live diagnostic (2026-05-09):
+- `.claude/structure-first-active` marker mtime 3+ minutes old (carried across turns)
+- All recent routing-misses.log entries: `reset-skipped-empty-prompt`
+- Root cause: `jq` consumed stdin in `$(...)`; under Claude Code's actual payload format, returned empty
+
+### The fix
+
+Capture stdin once into a variable, parse from variable:
+
+```bash
+STDIN_RAW="$(cat 2>/dev/null)"
+PROMPT=$(printf '%s' "$STDIN_RAW" | jq -r '.prompt // empty' 2>/dev/null)
+```
+
+Plus instrumentation — on every skip-empty event, log `stdin_bytes` + first-200-char head so future regressions are observable.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `bash -n reset-turn-markers.sh` | PASS |
+| `echo '{"prompt":"hi"}' \| bash reset-turn-markers.sh` → marker removed | PASS |
+| `echo '' \| bash reset-turn-markers.sh` → logs `{stdin_bytes:0,stdin_head:""}` | PASS |
+| Live UserPromptSubmit during release session → `markers-cleared` event in routing-misses.log | PASS (observed) |
+
+### Versions
+
+`2.35.2` → `2.35.3` (`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` + `hooks/reset-turn-markers.sh`).
+
+### D55 status
+
+D55 `structure-first-reminder.sh` dedupe-per-turn semantics now functional fleet-wide. Per-turn marker reset works as documented in CLAUDE.md Marker Lifecycle.
+
+---
+
 ## v2.35.2 — 2026-05-09
 
 **Major bug fix: `reset-turn-markers.sh` registration moved Stop → UserPromptSubmit. Per-turn marker discipline was silently broken fleet-wide; ALL per-turn markers persisted entire sessions instead of clearing per turn.**
