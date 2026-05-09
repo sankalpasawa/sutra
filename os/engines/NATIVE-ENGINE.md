@@ -475,7 +475,7 @@ Numbered backlog for v1.x and beyond. Each row carries an open question + pointe
 | **Top-5 v1 outcomes** | (1) closed-loop artifact (B9) · (2) pre/post LLM validation (B7) · (3) lifecycle orchestrator (7d) · (4) explanation control (B5) · (5) person formation (B18). |
 | **Top-3 risks** | codex/OpenAI dep · T4 fleet adoption signal · audit-log unwritability. |
 | **N\* metric** | Operator-Hours-Saved per week ≥3 within 14d of install (see §11). |
-| **Status** | DRAFT v1.1 — codex consult round-3 CHANGES-REQUIRED 2026-05-09 (5 blockers/advisories addressed in content edit; Q11-Q14 answered §12.4; P13 falsification tightened §10.3). Pending founder signoff on §14.10 Q1/Q4/Q5/Q6/Q8 before RATIFIED flip. 18 capability blocks identified; v1 ships every block as stub minimum (P3); top-5 get full impl per §14.15.2. |
+| **Status** | RATIFIED v1.1 (2026-05-09 — codex consult round-3 CHANGES-REQUIRED resolved; 5 blockers/advisories addressed; Q11-Q14 answered §12.4; P13 falsification tightened §10.3; §14.10 Q1/Q4/Q5/Q6/Q8 founder signoff complete). 18 capability blocks identified; v1 ships every block as stub minimum (P3); top-5 get full impl per §14.15.2. |
 
 **Goals (v1):** every utterance routes through typed classifier · every consequential decision emits DecisionProvenance · pattern repeats ≥4 → propose → approve → registered · cross-tenant ops gated · 1-command install (D49).
 
@@ -487,7 +487,7 @@ Numbered backlog for v1.x and beyond. Each row carries an open question + pointe
 
 ## 14. PRD (full) — L6 per holding/PRODUCT-DOC-STANDARD.md
 
-**Status:** DRAFT v1.1 (claude-drafted from canon + directions + memory + agent research; founder reviewed 2026-05-09 — content accepted incl. all goals/risks/metrics/JTBD/non-goals/solution-overview; pending Q1/Q4/Q5/Q6/Q8 founder signoff per codex consult round-3 CHANGES-REQUIRED 2026-05-09 before RATIFIED flip)
+**Status:** RATIFIED v1.1 (2026-05-09 — claude-drafted from canon + directions + memory + agent research; founder reviewed in-session; all goals/risks/metrics/JTBD/non-goals/solution-overview accepted; Q1/Q4/Q5/Q6/Q8 founder signoff complete per codex consult round-3 gate)
 **Pipeline layer:** L6 (Asawa PRD template, influenced by Google-style PM/design docs)
 **Pre-§10-§13 note:** Per codex Applied-To-Native rec (2026-05-09), Native is implementation-heavy + D54-canon-forced; PRD lands here BEFORE L1 Philosophy (§10) / L2 Vision (§11) / L3 Mission (§12) / L4 Strategy Map (§13), which derive from the validated problem space defined here. Subsequent turns backfill §10-§13.
 
@@ -618,14 +618,14 @@ Runtime contracts: §1-§9 (already canonical). Strategic context: §10-§13 (ne
 
 | # | Question | Default if unanswered |
 |---|---|---|
-| Q1 | "founder-running-portfolio" primary persona, or operator-class single-company as primary for fleet revenue? | primary = founder-portfolio; secondary = operator-class |
-| Q2 | NG7 (non-technical users) — hard rule or eventual-target? | hard rule for v1; revisit at v3 |
-| Q3 | NG6 (NOT memory) — should Native integrate memory via Mem0 / Composio rather than disclaim? | disclaim claim; integrate via connector |
-| Q4 | Pattern emergence threshold k=4 — right number or tunable? | k=4 default; per-tenant configurable in v2 |
-| Q5 | Approval primitive — single-founder approval only, or multi-party quorum for portfolio-wide ops? | single-founder v1; multi-party deferred per OS-15 |
-| Q6 | Multi-business pricing — per-Tenant subscription, outcome-based, or seat-based? | per-Tenant subscription v1; outcome-based experiment v2 |
-| Q7 | Native v1 → v2 trigger — time-based or signal-based? | signal: ≥3 T4 clients green for 14d (per D41 revert) |
-| Q8 | Founder-input checkpoints — every layer or batched? | every founder-owned layer (L1/L2/L3/L4/L6/L7/L11/L14) |
+| Q1 | ✅ ANSWERED 2026-05-09 — primary = founder-portfolio (solo founder operating 1-N companies, terminal-fluent); secondary = operator-class (single-company manager-IC). v1 wedge validates the tighter-feedback primary; v2 expansion to secondary once PMF lands. | n/a |
+| Q2 | ✅ ANSWERED 2026-05-09 — NG7 (non-technical users without terminal fluency) is HARD RULE for v1. Revisit at v3 once terminal-CoS PMF is established and web/app surfaces (Q9 v2+ deferred) come online. | n/a |
+| Q3 | ✅ ANSWERED 2026-05-09 — disclaim NG6 ("Native is NOT a memory product"); integrate Mem0/Composio via Native Connector primitive. Memory is commoditized substrate; Native's claim is governance + multi-tenant + emergence + audit + closed-loop artifact (§14.6 NG6, §13.2). | n/a |
+| Q4 | ✅ ANSWERED 2026-05-09 — k=4 default for pattern emergence proposal threshold; per-tenant configurable in v2 once usage data lands per D45 organic emergence. | n/a |
+| Q5 | ✅ ANSWERED 2026-05-09 — single-founder approval v1 (matches founder-portfolio wedge); multi-party quorum deferred per OS-15 to v2+ when portfolio scale demands cross-approver workflows. | n/a |
+| Q6 | ✅ ANSWERED 2026-05-09 — per-Tenant subscription v1 (simplest revenue model; flat-rate per-company); outcome-based experiment v2+ once N* (OHS/wk) measurement proves and Sierra-style pricing maturity allows. | n/a |
+| Q7 | ✅ ANSWERED 2026-05-09 — signal-based v1→v2 trigger per D41 revert: ≥3 T4 clients green for 14d post-onboard OR ≥1 T2 portfolio co blocked on Native upgrade. Time-based deferred (premature without signal). | n/a |
+| Q8 | ✅ ANSWERED 2026-05-09 — every founder-owned layer (L1/L2/L3/L4/L6/L7/L11/L14) gets a founder checkpoint. 8 explicit gates per product-doc cycle. Highest quality; founder time investment accepted; matches Phase A kickoff framework §14.15.1. | n/a |
 | Q9 | ✅ ANSWERED 2026-05-09 — stay terminal-only v1; web/app surfaces deferred v2+ | Smaller v1 TAM accepted; broader TAM via web/app comes after PMF |
 | Q10 | ✅ ANSWERED 2026-05-09 — founder-portfolio v1 wedge; "any manager-IC" v2+ TAM expansion | v1 ships for the narrower segment; v2+ expands once v1 PMF signal lands |
 
@@ -1182,7 +1182,7 @@ Per P12 (deterministic surface around stochastic core): all non-LLM-non-action c
 
 ## 10. Philosophy / POV (L1 per holding/PRODUCT-DOC-STANDARD.md)
 
-**Status:** DRAFT v1 (claude-drafted from founder voice rounds r1-r6 + Founding Doctrine + capability rounds §12.X; founder reviewed 2026-05-09 — content accepted incl. 7 new falsifications P5/P6/P7/P8/P10/P11/P13 + P13 tightening per codex consult round-3; Status flip to RATIFIED v1 pending §14.10 Q1/Q4/Q5/Q6/Q8 founder signoff per codex CHANGES-REQUIRED 2026-05-09)
+**Status:** RATIFIED v1 (2026-05-09 — claude-drafted from founder voice rounds r1-r6 + Founding Doctrine + capability rounds §12.X; founder reviewed in-session; 7 new falsifications P5/P6/P7/P8/P10/P11/P13 + P13 tightening applied per codex consult round-3; §14.10 Q1/Q4/Q5/Q6/Q8 signoff complete 2026-05-09)
 **Pipeline layer:** L1 (WHY belief system per Sinek Golden Circle)
 **Writing method:** 1-page POV (Sinek) + falsification tests (Founding Doctrine convention)
 
@@ -1244,7 +1244,7 @@ Native's 14 pillars MUST also pass the 6 Doctrine tests (Customer Focus First / 
 
 ## 11. Vision + North Star Metric (L2 per holding/PRODUCT-DOC-STANDARD.md)
 
-**Status:** DRAFT v1 (claude-drafted from §14 PRD problem space + founder voice + agent A3 landscape; founder reviewed 2026-05-09 — content accepted (Vision paragraph + OHS/wk N* + leading inputs + 5-yr winning targets + v2 trigger); Status flip to RATIFIED v1 pending §14.10 Q1/Q4/Q5/Q6/Q8 founder signoff per codex consult round-3 CHANGES-REQUIRED 2026-05-09)
+**Status:** RATIFIED v1 (2026-05-09 — claude-drafted from §14 PRD problem space + founder voice + agent A3 landscape; founder reviewed in-session; Vision paragraph + OHS/wk N* + leading inputs + 5-yr winning targets + v2 trigger all accepted; §14.10 Q1/Q4/Q5/Q6/Q8 signoff complete)
 **Pipeline layer:** L2 (5-year future state + N* metric per Sinek/Collins + Sean Ellis Amplitude N* playbook)
 **Writing method:** 1-paragraph future-state narrative + N* metric block + leading inputs
 
@@ -1296,7 +1296,7 @@ When trigger fires, scope expands from "founder-portfolio v1 wedge" → "any man
 
 ## 13. Strategy Map (L4 per holding/PRODUCT-DOC-STANDARD.md)
 
-**Status:** DRAFT v1 (claude-drafted from agent A3 external landscape + A4 framework picks + founder voice; founder reviewed 2026-05-09 — content accepted (Wardley map + Build/Buy/Host + competitive positioning + 5-yr defensible position + strategic bets + anti-bets); Status flip to RATIFIED v1 pending §14.10 Q1/Q4/Q5/Q6/Q8 founder signoff per codex consult round-3 CHANGES-REQUIRED 2026-05-09)
+**Status:** RATIFIED v1 (2026-05-09 — claude-drafted from agent A3 external landscape + A4 framework picks + founder voice; founder reviewed in-session; Wardley map + Build/Buy/Host + competitive positioning + 5-yr defensible position + strategic bets + anti-bets all accepted; §14.10 Q1/Q4/Q5/Q6/Q8 signoff complete)
 **Pipeline layer:** L4 (Wardley value-chain map + competitive positioning per Wardley + Geoffrey Moore)
 **Writing method:** Wardley value chain (anchor=user need; Y=stack; X=evolution stage genesis→commodity) + build/buy/host boundary table + competitive comp + strategic bets
 
@@ -1382,7 +1382,7 @@ USER NEED: manager-IC operating multi-stranded judgment work
 
 ## 12. Mission (L3 per holding/PRODUCT-DOC-STANDARD.md)
 
-**Status:** DRAFT v1 (claude-drafted from founder high-level capability list 2026-05-09 + §14 PRD problem statement; founder reviewed 2026-05-09 — Q11/Q12/Q13/Q14 answered + Q12 P7-tightening applied per codex consult round-3 CHANGES-REQUIRED; Status flip to RATIFIED v1 pending §14.10 Q1/Q4/Q5/Q6/Q8 founder signoff)
+**Status:** RATIFIED v1 (2026-05-09 — claude-drafted from founder high-level capability list 2026-05-09 + §14 PRD problem statement; founder reviewed in-session; Q11/Q12/Q13/Q14 answered + Q12 P7-tightening applied per codex consult round-3; §14.10 Q1/Q4/Q5/Q6/Q8 signoff complete)
 **Pipeline layer:** L3 (present-tense operating promise — what the product does for whom TODAY)
 
 ### 12.1 Founder voice — high-level capability list (verbatim, 2026-05-09)
