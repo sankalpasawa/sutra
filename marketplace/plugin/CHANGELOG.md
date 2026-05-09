@@ -4,6 +4,34 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.35.1 — 2026-05-09
+
+**chmod +x fix for `hooks/session-token-snapshot.sh` — pre-existing bug surfaced in v2.35.0 install logs.**
+
+### What changed
+
+`marketplace/plugin/hooks/session-token-snapshot.sh` was tracked at git mode `100644` (non-executable). Every cache install since at least v2.34.0 propagated the non-exec bit. The result: SessionStart hook failed silently (non-blocking) on every session start fleet-wide for weeks — log line `SessionStart:startup hook error / Failed with non-blocking status code: ... Permission denied` appeared but the harness kept going, so nobody noticed until founder relaunched a session into v2.35.0 and read the startup output.
+
+Fix is a one-line `git update-index --chmod=+x marketplace/plugin/hooks/session-token-snapshot.sh` — file now ships at mode `100755`.
+
+### Survey result
+
+`find sutra/marketplace/plugin/hooks -name "*.sh" ! -perm -u+x` returned exactly **1 file** (the one fixed). All other 72 `.sh` files in `hooks/` source are correctly executable. No other ship-stoppers in source `bin/` or `scripts/` either (one stray `.pyc` in `scripts/__pycache__/` — gitignore territory, not a release blocker).
+
+### Why a patch bump, not a v2.36.0
+
+This is a true bug fix — file mode metadata correction, no functional code changes, no API/behavior change. Patch semantics apply.
+
+### Note: D55 still pending real-runtime verification
+
+D55 `structure-first-reminder.sh` is correctly installed in v2.35.0 cache (registered in `hooks/hooks.json` PreToolUse[0], file mode `100755`). At time of writing, the new session that picked up v2.35.0 had not yet executed any model-side tool calls (only `/doctor` and a user message), so the hook has had no opportunity to fire. v2.35.1 is unrelated to that pending verification — D55 verify is a separate task that completes when the next real tool call in a v2.35.1+ session writes a row to `holding/hooks/hook-log.jsonl` with non-`"unknown"` `tool` + `session` fields.
+
+### Versions
+
+`2.35.0` → `2.35.1` (`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`).
+
+---
+
 ## v2.35.0 — 2026-05-09
 
 **D55 Structure-First Default + Restructure-on-Add — hard enforcement hook fires on every tool call. Fleet-wide.**
