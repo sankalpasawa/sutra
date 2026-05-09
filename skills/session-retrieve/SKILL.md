@@ -106,26 +106,29 @@ Example: slug `-Users-me-Code-my-project` → launch dir `/Users/me/Code/my-proj
 
 ## Output format (mandatory — readability gate)
 
+Single table. Each row = one session. Each `Resume` cell = ONE copy-paste line (`cd <root> && claude -r <id>`). No multi-line resume blocks — founder copies the whole line in one click.
+
 ```
-## N Abruptly-Closed Sessions — <date> (<time-window>)
+## N Sessions — <date> (<time-window>)
 
-| # | Session ID | Task summary | How it died |
-|---|---|---|---|
-| 1 | <id-short> | <one-line what it was doing> | API-err | mid-tool-use |
-
-## Resume commands
-
-All N sessions launch from `<project-root>`:
-
-cd <project-root>
-claude -r <id1>   # <task summary 1>
-claude -r <id2>   # <task summary 2>
+| # | Session | Summary | Closed | Resume (copy whole line) |
+|---|---|---|---|---|
+| 1 | <id-short> | <one-line what it was doing> | clean \| API-err \| mid-tool-use | `cd <project-root> && claude -r <full-id>` |
+| 2 | <id-short> | <one-line what it was doing> | clean \| API-err \| mid-tool-use | `cd <project-root> && claude -r <full-id>` |
 
 ## Priority recommendation
 
 1. <session> first — <reason, e.g., uncommitted edits visible in `git status`>
 2. <session> next — <blocking decision / downstream dependency>
 ```
+
+**Resume-column rules** (D-format-2026-05-09):
+- Single line — `cd <root> && claude -r <id>` joined with `&&`. NEVER two lines.
+- Full session ID (UUID), not abbreviated — paste must actually work.
+- Full absolute project root (decoded from slug, not the `cwd` field).
+- Wrap in single backticks so terminal renders as inline code → one-click copy.
+- No trailing `# comment` inside the command — task lives in the Summary column.
+- One row per session, even when multiple sessions share a root. Founder copies per-row; do not dedupe into a shared `cd` block (defeats single-click paste).
 
 ## Rules
 
