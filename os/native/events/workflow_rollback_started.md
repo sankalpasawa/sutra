@@ -12,7 +12,7 @@ authored: 2026-05-09
 
 ## Purpose
 
-Signals that `failure_policy='rollback'` was initiated for an Execution (per §3.2 row #19 + §6.5 + ADR-011). Steps will be compensated in reverse order. Per I-14 this is NOT a terminal event — the Execution proceeds to either `workflow_rollback_complete` (#22) or `workflow_rollback_partial` (#23) as the terminal.
+Signals that `failure_policy='rollback'` was initiated for an Execution (per §3.2 row #19 + §6.5 + ADR-011). Steps will be compensated in reverse order. This event is NOT terminal under any reading. The Execution then proceeds to either `workflow_rollback_complete` (#22) or `workflow_rollback_partial` (#23); per §6.5 those are rollback-terminal events, but I-14 strict reading lists only `workflow_completed` / `workflow_failed` / `approval_requested` as terminal — known canon ambiguity (runtime implementation choice in classifying I-14 strictly vs. recognizing §6.5 as the operative semantic).
 
 ## Schema (CloudEvents 1.0 form)
 
@@ -50,7 +50,7 @@ LiteExecutor (exclusive emitter). Fires when:
 ## Ordering invariants
 
 - Always preceded by `workflow_started` (#2) for the same `execution_id`.
-- Per I-14, NOT a terminal event — the Execution terminates via either `workflow_rollback_complete` (#22) or `workflow_rollback_partial` (#23).
+- This event is itself non-terminal under any reading. The Execution then transitions to either `workflow_rollback_complete` (#22) or `workflow_rollback_partial` (#23) — see Purpose for the I-14 vs §6.5 ambiguity in classifying those as terminal.
 - Causal predecessor of zero-or-more `step_compensated` (#20) / `step_compensation_failed` (#21) events.
 
 ## Replayability
@@ -62,7 +62,7 @@ LiteExecutor (exclusive emitter). Fires when:
 ## References
 
 - NATIVE-ENGINE.md §3.2 row #19.
-- NATIVE-ENGINE.md §4 I-14 (terminal-event set — rollback-started is NOT terminal).
+- NATIVE-ENGINE.md §4 I-14 (terminal-event set — rollback-started is non-terminal; rollback-complete/-partial classification is a known canon ambiguity).
 - NATIVE-ENGINE.md §6.5 on_failure machinery (rollback policy).
 - ADR-011 — failure_policy enum.
 - ADR-013 — 3-channel audit durability.
