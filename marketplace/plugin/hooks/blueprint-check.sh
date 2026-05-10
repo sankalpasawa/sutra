@@ -87,8 +87,23 @@ MARKER="$REPO_ROOT/.claude/blueprint-registered"
 # marker is wiped per-turn by reset-turn-markers; model must emit BLUEPRINT
 # with per-step Verify before first Edit/Write of every D3+ turn.
 if [ -f "$MARKER" ]; then
-  DEPTH=$(grep -oE 'DEPTH=[0-9]+' "$REPO_ROOT/.claude/depth-registered" 2>/dev/null | head -1 | sed 's/DEPTH=//')
-  if [ -n "$DEPTH" ] && [ "$DEPTH" -ge 3 ] 2>/dev/null; then
+  DEPTH_FILE="$REPO_ROOT/.claude/depth-registered"
+  # Fail-closed depth detection (codex P1.1 fold, round-1 CHANGES-REQUIRED 2026-05-10):
+  # If depth marker is missing, malformed, or unparseable as integer → default to D5.
+  # Rationale: hard enforcement gate cannot silently downgrade on "unknown depth"
+  # or every malformed marker becomes a fail-open bypass.
+  DEPTH=""
+  if [ -f "$DEPTH_FILE" ]; then
+    DEPTH=$(grep -oE '^DEPTH=[0-9]+' "$DEPTH_FILE" 2>/dev/null | head -1 | sed 's/DEPTH=//')
+  fi
+  # Integer-shape check (no error suppression — explicit)
+  case "$DEPTH" in
+    ''|*[!0-9]*)
+      DEPTH=5  # unparseable / missing / non-integer → strictest default
+      echo "blueprint-check V2.2: depth marker unparseable or missing, defaulting to D5 (fail-closed per codex P1.1)" >&2
+      ;;
+  esac
+  if [ "$DEPTH" -ge 3 ]; then
     HAS_PER_STEP=0
     grep -q '^HAS_PER_STEP_VERIFY=1$' "$MARKER" 2>/dev/null && HAS_PER_STEP=1
     if [ "$HAS_PER_STEP" = "0" ]; then

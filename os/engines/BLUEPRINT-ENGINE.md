@@ -114,15 +114,17 @@ Each per-step `Verify:` is a runnable check (same kinds as overall Verified-by).
 
 ### 3-Layer Verification Stack
 
-| Layer | What | When | Depth gate |
-|---|---|---|---|
-| L1 | BLUEPRINT per-step Verify | each step in Steps list | D3+ |
-| L2 | PHASE-EXIT-VERIFY (method-registry) | end of each PHASE-* node | D3+ |
-| L3 | VERIFY-* family (existing) | end of full task (MEASURE phase) | D2-D5 graduated |
+| Layer | What | When | Depth gate | Enforcement (today) |
+|---|---|---|---|---|
+| L1 | BLUEPRINT per-step Verify | each step in Steps list | D3+ | **HARD** — `blueprint-check.sh` V2.2 requires `HAS_PER_STEP_VERIFY=1` |
+| L2 | PHASE-EXIT-VERIFY (method-registry) | end of each PHASE-* node | D3+ | **CONVENTION ONLY** — no hook fires; method-registry row + per-turn discipline |
+| L3 | VERIFY-* family (existing) | end of full task (MEASURE phase) | **D2-D5 graduated** | Convention (no hook) |
 
 Three orthogonal granularities. L1 fails → fix this step. L2 fails → re-shape or re-plan upstream. L3 fails → full-task re-execute. Each layer composes — failure at smaller unit doesn't necessarily bubble up; failure at larger unit can bypass smaller.
 
-Source: founder direction 2026-05-10 "All three (layered)" choice on per-node verification design.
+**Enforcement honesty** (codex P2.2 fold round-1 2026-05-10): Only L1 has runtime enforcement. L2 + L3 are documented discipline — the method-registry rows describe what SHOULD fire, but no hook checks them. L2 future enforcement requires text-scan of model response (different architecture from marker-check); L3 is task-shape dependent and likely stays discipline-only.
+
+Source: founder direction 2026-05-10 "All three (layered)" choice on per-node verification design; "force it" choice on L1 enforcement at V2.2.
 
 ---
 

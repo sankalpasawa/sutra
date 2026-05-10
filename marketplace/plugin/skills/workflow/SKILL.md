@@ -112,15 +112,19 @@ Edit at Depth 3+? → ALL 8 steps including consult (4)
 
 ## 3-Layer Verification Stack (founder direction 2026-05-10)
 
-Per-node verification composes 3 orthogonal layers, all firing at D3+:
+Per-node verification composes 3 orthogonal layers with distinct depth gating + enforcement status:
 
-| Layer | What | When | Source |
-|---|---|---|---|
-| L1 | BLUEPRINT per-step Verify | each step in Steps list of BLUEPRINT box | `core:blueprint` V2.1 |
-| L2 | PHASE-EXIT-VERIFY | end of each PHASE-* node (OBJECTIVE→OBSERVE etc.) | method-registry: `PHASE-EXIT-VERIFY` |
-| L3 | VERIFY-* family | end of full task (MEASURE phase) | method-registry: `VERIFY-BASIC/EVIDENCE/STAGED/MULTISTAGE` |
+| Layer | What | When | Depth gate | Enforcement (today) | Source |
+|---|---|---|---|---|---|
+| L1 | BLUEPRINT per-step Verify | each step in Steps list of BLUEPRINT box | D3+ | **HARD** via `blueprint-check.sh` V2.2 — marker must carry `HAS_PER_STEP_VERIFY=1` | `core:blueprint` V2.1 |
+| L2 | PHASE-EXIT-VERIFY | end of each PHASE-* node (OBJECTIVE→OBSERVE etc.) | D3+ | **CONVENTION ONLY** — method-registry row exists; **no hook fires**. Discipline-level only. | method-registry: `PHASE-EXIT-VERIFY` |
+| L3 | VERIFY-* family | end of full task (MEASURE phase) | **D2-D5 graduated** (BASIC@D2 → EVIDENCE@D3 → STAGED@D4 → MULTISTAGE@D5) | Convention (no hook) | method-registry: `VERIFY-BASIC/EVIDENCE/STAGED/MULTISTAGE` |
 
-Three granularities. Each layer's failure triggers its own fix-loop. L1 fails → fix this step. L2 fails → re-shape or re-plan upstream. L3 fails → full-task re-execute. Founder direction "All three (layered)" picked 2026-05-10.
+Three granularities. Each layer's failure triggers its own fix-loop. L1 fails → fix this step. L2 fails → re-shape or re-plan upstream. L3 fails → full-task re-execute.
+
+**Enforcement honesty** (codex P2.2 fold, 2026-05-10): Only L1 has a hook backing it today. L2 + L3 are method-registry rows + per-turn discipline — they "describe what should fire" but no runtime check enforces them. Future ship may add L2 hook (text-scan model response for PHASE-* boundaries); L3 hooks are deferred indefinitely as VERIFY-* is task-shape dependent.
+
+Founder direction "All three (layered)" picked 2026-05-10. "Force it" picked L1 enforcement at V2.2.
 
 ## Operationalization
 
