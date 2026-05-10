@@ -79,6 +79,31 @@ esac
 
 MARKER="$REPO_ROOT/.claude/blueprint-registered"
 
+# ── V2.2 (2026-05-10): D3+ per-step Verify check (L1 of 3-Layer Stack) ──
+# Founder direction "force it" — per-step Verify enforced at D3+.
+# Marker must declare HAS_PER_STEP_VERIFY=1 (set when model emits BLUEPRINT
+# with inline `Verify:` on each step in the Steps list per skill V2.1).
+# Composes with existing HAS_OUTPUT/HAS_VERIFY checks. Bootstrap rule:
+# marker is wiped per-turn by reset-turn-markers; model must emit BLUEPRINT
+# with per-step Verify before first Edit/Write of every D3+ turn.
+if [ -f "$MARKER" ]; then
+  DEPTH=$(grep -oE 'DEPTH=[0-9]+' "$REPO_ROOT/.claude/depth-registered" 2>/dev/null | head -1 | sed 's/DEPTH=//')
+  if [ -n "$DEPTH" ] && [ "$DEPTH" -ge 3 ] 2>/dev/null; then
+    HAS_PER_STEP=0
+    grep -q '^HAS_PER_STEP_VERIFY=1$' "$MARKER" 2>/dev/null && HAS_PER_STEP=1
+    if [ "$HAS_PER_STEP" = "0" ]; then
+      {
+        echo "BLUEPRINT-CHECK V2.2: D${DEPTH} requires per-step Verify in BLUEPRINT Steps."
+        echo "  File: $REL_PATH"
+        echo "  Emit BLUEPRINT Steps with inline 'Verify:' on each step (V2.1 format)."
+        echo "  Then set HAS_PER_STEP_VERIFY=1 in .claude/blueprint-registered marker."
+        echo "  Or override: BLUEPRINT_ACK=1 BLUEPRINT_ACK_REASON='<why>' <tool>"
+      } >&2
+      exit 2
+    fi
+  fi
+fi
+
 if [ "$is_foundational" = "1" ]; then
   # HARD on foundational paths
   if [ ! -f "$MARKER" ]; then

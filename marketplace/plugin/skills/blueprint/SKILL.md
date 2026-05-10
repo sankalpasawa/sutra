@@ -44,11 +44,17 @@ Write `.claude/blueprint-registered` with:
 ```
 HAS_OUTPUT=1
 HAS_VERIFY=1
+HAS_PER_STEP_VERIFY=1   # V2.2 (2026-05-10) — set ONLY when D3+ AND every Step in Steps list has inline `Verify:`
 TASK=<task-slug>
 TS=<unix-timestamp>
 ```
 
-`HAS_OUTPUT=1` and `HAS_VERIFY=1` are honor-system flags — set them only when the BLUEPRINT actually contains both new lines with non-trivial values. Hook `blueprint-check.sh` reads the marker and rejects edits to foundational paths (charters, protocols, FOUNDER-DIRECTIONS, sutra/os/engines, design plans) when either flag is missing.
+`HAS_OUTPUT=1`, `HAS_VERIFY=1`, and `HAS_PER_STEP_VERIFY=1` are honor-system flags — set them only when the BLUEPRINT actually carries the corresponding content. Hook `blueprint-check.sh` (V2.2) reads the marker and:
+
+- Rejects edits to foundational paths when `HAS_OUTPUT=0` or `HAS_VERIFY=0`.
+- Rejects ALL Edit/Write at D3+ when `HAS_PER_STEP_VERIFY=0` (founder direction "force it" 2026-05-10).
+
+At D1-D2 the compact one-line Steps form without per-step Verify is sufficient — `HAS_PER_STEP_VERIFY` flag not required.
 
 ## Verification kinds (pick one for `Verified by`)
 

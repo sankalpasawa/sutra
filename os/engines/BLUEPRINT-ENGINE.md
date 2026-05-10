@@ -61,17 +61,23 @@ Seven fields, all required: **Doing / Steps / Output looks like / Verified by / 
 
 For Depth ≥ 4 or branching tasks, the block may extend to a heavy-ASCII multi-step diagram. For Depth 1-2 trivial work, the compact form above is sufficient. Founder-readability is the gate.
 
-## Marker schema (V2)
+## Marker schema (V2.2 — 2026-05-10)
 
 After emitting the block, write `.claude/blueprint-registered`:
 ```
 HAS_OUTPUT=1
 HAS_VERIFY=1
+HAS_PER_STEP_VERIFY=1   # V2.2 — required at D3+ when BLUEPRINT Steps include inline Verify per step
 TASK=<task-slug>
 TS=<unix-timestamp>
 ```
 
-Hook `blueprint-check.sh` reads marker; HARD-blocks foundational-path edits when `HAS_OUTPUT=0` or `HAS_VERIFY=0`. SOFT advisory elsewhere (Wave 1). Wave 2 (2026-05-19) broadens HARD to all Edit/Write if override rate clean.
+Hook `blueprint-check.sh` enforcement (V2.2):
+- ALWAYS — marker must exist (every Edit/Write per the SOFT→HARD blanket flip 2026-05-10)
+- FOUNDATIONAL paths — HAS_OUTPUT=1 + HAS_VERIFY=1 both required
+- D3+ tasks — HAS_PER_STEP_VERIFY=1 required (reads depth from `.claude/depth-registered`)
+
+At D1-D2, per-step Verify is optional — the compact `Steps: 1) ... 2) ... 3) ...` form is sufficient. At D3+, every step in Steps gets its own inline `Verify:` and the marker carries the flag.
 
 ## State-mismatch flow (V2 — D48)
 
