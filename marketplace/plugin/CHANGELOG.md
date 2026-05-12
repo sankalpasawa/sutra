@@ -4,6 +4,52 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.36.0 — 2026-05-12
+
+**3-Layer Verification Stack + V2.2 L1 hook enforcement** (founder-direction trajectory across one session).
+
+### Direction trajectory
+
+- **"convert them into hard hooks"** — 6 SOFT hooks flipped HARD: `blueprint-check.sh` (was SOFT advisory on non-foundational), `input-classification-gate.sh` (HARD + marker contract bug fix — was reading `/tmp/asawa-input-classified-${SESSION_ID}` with no writer; now reads `.claude/input-routed`), `depth-marker-pretool.sh` (via `profile=company`), 4 Stop-hook `|| true` wrappers removed from `.claude/settings.json`. `reset-turn-markers.sh` now also wipes `.claude/blueprint-registered` (lifecycle gap closed). `operationalization-check` enabled in `asawa-holding/os/SUTRA-CONFIG.md`.
+- **"all three (layered)"** — L1 BLUEPRINT per-step Verify (skill V2.1 block format with inline `Verify:` per Step) + L2 `PHASE-EXIT-VERIFY` method-registry row (convention only, no hook) + L3 `VERIFY-*` family (existing, convention only). 3-Layer Verification Stack documented in `BLUEPRINT-ENGINE.md` + `skills/workflow/SKILL.md` + `CLAUDE.md`.
+- **"force it"** — V2.2 hook enforcement. `blueprint-check.sh` reads DEPTH from `.claude/depth-registered` and HARD-blocks D3+ Edit/Write when marker lacks `HAS_PER_STEP_VERIFY=1`.
+
+### Codex review arc (4 rounds, final PASS)
+
+| Round | Verdict | Action |
+|---|---|---|
+| R1 | CHANGES-REQUIRED (2P1+2P2) | Folded P2.1 (doc coherence) + P2.2 (L2 enforcement-status honesty) + partial P1.1 (depth-parse fail-closed). Accepted P1.2 (fleet hard-stop) as intentional forcing function. |
+| R2 | CHANGES-REQUIRED (1P1) | R1 regex `^DEPTH=[0-9]+` still parsed `DEPTH=3garbage` as `3`. Folded with whitespace-boundary `^DEPTH=[0-9]+([[:space:]]|$)`. |
+| R3 | CHANGES-REQUIRED (1P1) | R2 boundary still parsed `DEPTH=3 junk`, `DEPTH=3<TAB>garbage`, `DEPTH=3 TASK=`. Folded with strict 2-regex full-line shape validation. |
+| **R4** | **PASS** (0 findings) | "Both accepted shapes fully anchored. Old boundary-only acceptance problem is gone." |
+
+### Final hook regex (V2.2 R3-fold)
+
+```bash
+# Form A — canonical 3-token single-line per CLAUDE.md marker spec
+grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$'
+# Form B — multi-line 1-token fallback
+grep -E '^DEPTH=[0-9]+$'
+# Anything else → DEPTH empty → integer-shape check → D5 fail-closed → block
+```
+
+12-scenario smoke test all PASS (4 fail-closed cases + 4 canonical/multi-line accepts + 4 regression).
+
+### Breaking change
+
+Every D3+ Edit/Write across fleet HARD-blocks unless `.claude/blueprint-registered` carries `HAS_PER_STEP_VERIFY=1` + valid `DEPTH=N` marker. Recovery is 1 tool-call cycle (error message shows fix). Bootstrap pattern documented in memory: write markers via Bash before first Edit/Write of every turn — `depth-marker-pretool.sh` only matches `Edit|Write` tools, not `Bash`.
+
+### Deferred
+
+- L2 (`PHASE-EXIT-VERIFY`) hook enforcement — requires text-scan of model response (different architecture from marker-check), not in scope.
+- L3 (`VERIFY-*`) hook enforcement — task-shape dependent, stays convention-only.
+- 5 charter/engine/protocol files lacking `## Operationalization` section (HUMAN-SUTRA-LAYER, SUTRA-ENGINE, HUMAN-SUTRA-ENGINE, NATIVE-ENGINE, PROTOCOLS) — backfill is a separate project.
+
+### Files changed
+
+Sutra: `marketplace/plugin/hooks/{blueprint-check,input-classification-gate,reset-turn-markers}.sh`, `marketplace/plugin/skills/blueprint/SKILL.md`, `marketplace/plugin/skills/workflow/SKILL.md`, `os/engines/BLUEPRINT-ENGINE.md`, `os/engines/method-registry.jsonl`, `.claude-plugin/plugin.json`, `CURRENT-VERSION.md`, `CHANGELOG.md`.
+Asawa: `.claude/settings.json`, `.claude/sutra-project.json`, `os/SUTRA-CONFIG.md`, `CLAUDE.md`, `sutra/` submodule pointer.
+
 ## v2.35.3 — 2026-05-09
 
 **Layer-2 bug fix on the same hook: `reset-turn-markers.sh` stdin handling. v2.35.2 fixed event registration; v2.35.3 fixes the stdin double-read that still made every real turn skip.**

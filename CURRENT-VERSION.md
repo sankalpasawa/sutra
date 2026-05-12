@@ -1,6 +1,37 @@
 # Sutra — Current Version
 
-## v2.30.0 (2026-05-04, HEAD) — D43 charter resume series complete
+## v2.36.0 (2026-05-12, HEAD) — 3-Layer Verification Stack + V2.2 L1 hook enforcement
+
+Founder-direction trajectory across one session (2026-05-10 → 2026-05-12):
+
+| Founder direction | Ship |
+|---|---|
+| "convert them into hard hooks" | 6 SOFT hooks flipped HARD (blueprint-check, input-classification-gate, depth-marker-pretool via `profile=company`, 4× Stop-hook `\|\| true` removed) + input-classification marker bug fixed |
+| "all three (layered)" | L1 BLUEPRINT per-step Verify (skill V2.1) + L2 PHASE-EXIT-VERIFY (method-registry, convention only) + L3 VERIFY-* family (existing, convention only) |
+| "force it" | V2.2 hook enforcement — `blueprint-check.sh` HARD-blocks D3+ Edit/Write without `HAS_PER_STEP_VERIFY=1` |
+
+**Codex review arc** (4 rounds, final PASS):
+- R1 CHANGES-REQUIRED — 2P1 + 2P2. Folded 3, accepted 1 (P1.2 fleet-hardstop as intentional forcing function).
+- R2 CHANGES-REQUIRED — 1P1, regex `^DEPTH=[0-9]+` still parses `DEPTH=3garbage`. Folded with whitespace-boundary.
+- R3 CHANGES-REQUIRED — 1P1, boundary regex still parses `DEPTH=3 junk`. Folded with strict 2-regex full-line shape validation.
+- R4 **PASS** — 0 findings. "Both accepted shapes fully anchored."
+
+**Final hook regex (V2.2 R3-fold)**:
+```bash
+# Form A (canonical 3-token single-line per CLAUDE.md spec)
+grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$'
+# Form B (multi-line 1-token fallback)
+grep -E '^DEPTH=[0-9]+$'
+# Anything else → DEPTH empty → D5 fail-closed → block
+```
+
+**BREAKING** — every D3+ Edit/Write across fleet HARD-blocks unless `.claude/blueprint-registered` carries `HAS_PER_STEP_VERIFY=1` + valid `DEPTH=N` marker. Recovery is 1 tool-call cycle (error message shows fix). Bootstrap pattern documented in memory (`feedback_hook_bootstrap_deadlock.md` + `project_per_node_verification_layers.md`).
+
+**Files changed**: `marketplace/plugin/hooks/blueprint-check.sh`, `input-classification-gate.sh`, `reset-turn-markers.sh`, `os/engines/BLUEPRINT-ENGINE.md`, `os/engines/method-registry.jsonl`, `marketplace/plugin/skills/blueprint/SKILL.md`, `marketplace/plugin/skills/workflow/SKILL.md`. Plus asawa-holding `.claude/settings.json`, `.claude/sutra-project.json`, `os/SUTRA-CONFIG.md`, `CLAUDE.md`.
+
+---
+
+## v2.30.0 (2026-05-04) — D43 charter resume series complete
 
 **Wayfinder for the v2.21.0 → v2.30.0 stream shipped 2026-05-04** (10 plugin releases in one session; full per-version detail in `marketplace/plugin/CHANGELOG.md`):
 
