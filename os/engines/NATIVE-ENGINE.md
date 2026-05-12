@@ -1,6 +1,6 @@
 # Sutra — Native Engine (INDEX)
 
-**Status**: RATIFIED v2 (2026-05-09 — Phase 12.2 cutover landed; was 1888-line monolithic doc → 116-line INDEX). Pre-cutover snapshot tag: `pre-engine-rewrite` on Sutra HEAD. Pre-cutover archive: `holding/research/_archive/native-v1.x/INDEX-shadow-pre-cutover.md`. 14d decommission window per MIGRATION-PLAN.md §3 Phase 13 — feature-work on canon FORBIDDEN until 2026-05-23.
+**Status**: RATIFIED v2 (2026-05-09 — Phase 12.2 cutover landed; was 1888-line monolithic doc → 116-line INDEX). Pre-cutover snapshot tag: `pre-engine-rewrite` on Sutra HEAD. Pre-cutover archive: `holding/research/_archive/native-v1.x/INDEX-shadow-pre-cutover.md`. (14d decommission window + Phase 13 gate RETIRED 2026-05-12 per founder direction — canon writes resume normally; see MIGRATION-PLAN.md §3 Phase 13 + §6 retirement banners.)
 **Canon scope**: this INDEX + 113 part files under `sutra/os/native/<bucket>/` + 14 ADRs at `sutra/os/decisions/ADR-004..017`. All three together = Native v1 canon.
 **Governance**: per D54 (Native canon-only), forward writes route via `holding/skills/updating-native-canon.md`. Forbidden paths: `holding/research/*native*.md` + `holding/plans/native-*.md`. Migration: `sutra/os/native/MIGRATION-PLAN.md` (RATIFIED v1.1).
 **Reading order**: start with §3 Bucket Map, then §4 §-anchor Remap to find the topic you came for, then §6 Reading Order for first-pass coverage.
@@ -106,11 +106,11 @@ For first-pass coverage of Native canon:
 ## 7. Governance Rules
 
 - **D54 canon-only**: forward Native writes go to this INDEX, the 11 bucket directories, or the ADR directory. Forbidden: `holding/research/*native*.md`, `holding/plans/native-*.md`. Decision-tree skill: `holding/skills/updating-native-canon.md`.
-- **MIGRATION-PLAN authority**: `sutra/os/native/MIGRATION-PLAN.md` (RATIFIED v1.1) is the operating contract for canon-shape evolution. Phase 13 decommission gate enforced via `holding/hooks/native-migration-decommission-gate.sh`.
+- **MIGRATION-PLAN authority**: `sutra/os/native/MIGRATION-PLAN.md` (RATIFIED v1.1) is the operating contract for canon-shape evolution. (Phase 13 decommission gate RETIRED 2026-05-12 — see MIGRATION-PLAN.md §3 Phase 13 + §6 retirement banners; hook script deleted same day.)
 - **Connectedness audit**: `holding/scripts/native-connectedness-audit.sh` — run before any cutover or major restructure to verify bucket completeness + link integrity + orphan-detection.
 - **Codex review per change**: per PROTO-019 + D40 G2, every part-file authoring or amendment requires codex `consult` mode review at ADVISORY-or-better verdict before merge.
 - **No new monolithic engine doc**: this INDEX is the only sutra/os/engines/NATIVE-ENGINE.md content post-cutover. Do not append new content here — append to the appropriate bucket file and (if needed) update the §-anchor remap row.
 
 ---
 
-**Last updated**: 2026-05-09 — Phase 12.2 cutover landed. Pre-cutover snapshot at git tag `pre-engine-rewrite`. 14d decommission window in progress — feature-work on canon paused until 2026-05-23.
+**Last updated**: 2026-05-13 — Phase 12.2 cutover landed 2026-05-09; Phase 13 decommission gate RETIRED 2026-05-12 per founder direction (14d window dropped; canon writes resume normally). Pre-cutover snapshot at git tag `pre-engine-rewrite`.

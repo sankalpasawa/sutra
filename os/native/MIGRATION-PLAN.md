@@ -176,7 +176,10 @@
 - Duration: ~15 min.
 - Rollback: restore engine doc from git tag `pre-migration-v1` set at Phase 0; revert plugin version.
 
-### Phase 13 — Decommission gate (14d observation + final-deletion)
+### Phase 13 — Decommission gate (14d observation + final-deletion) — RETIRED 2026-05-12
+
+> **STATUS: RETIRED 2026-05-12** per founder direction. Hook `holding/hooks/native-migration-decommission-gate.sh` deleted; 14d observation window dropped. Rationale: hook was dormant (grep of `.claude/settings*.json` returned empty — not in PreToolUse chain despite TODO.md L33 claim of registration); Phase 12.2 cutover already achieved canonical INDEX shrink; the contemplated "final-deletion" had no content to act on (script self-admitted at its lines 73-74). Canon writes resume normally from 2026-05-12. Codex round (directive 1778610507) returned ADVISORY confirming preservation-with-banner approach. Historical content below preserved for audit trail.
+
 - Scope: 14-day observation window. Founder + T4 fleet read new canon shape. Bug reports / drift signals collected. **NEW FEATURE WORK ON CANON FORBIDDEN during the 14d window** (codex round-4 P1.2 fix — preserves "single git revert per phase" rollback honesty; pre-existing in-flight non-canon work continues; canon edits queue for post-window). Then: final-deletion phase removes any duplicated content from engine doc that was kept temporarily for safety. Engine doc = pure INDEX permanently.
 - **Critical-bug threshold** (codex round-4 P1.3 fix): 0 P1 bugs filed against decomp AND 0 T4 fleet critical-reader-failure reports during 14d. Any P1 → window restarts from day 0.
 - Entry: Phase 12.2 complete.
@@ -225,7 +228,9 @@
 
 ---
 
-## 6. Decommission gate (mechanically enforced — codex round-4 P1.3 fix)
+## 6. Decommission gate (mechanically enforced — codex round-4 P1.3 fix) — RETIRED 2026-05-12
+
+> **STATUS: RETIRED 2026-05-12** per founder direction. Hook `holding/hooks/native-migration-decommission-gate.sh` deleted; mechanical enforcement removed. Historical gate contract preserved below for audit trail.
 
 ```
 +--- DECOMMISSION GATE (operational; CI-enforced) ---------+
@@ -317,7 +322,7 @@ Without all conditions satisfied, Phase 13 cannot complete. Migration stays in c
 | MQ2 | ✅ ANSWERED 2026-05-09 — Subagent parallelism = 4 concurrent (founder accepted default; codex queue tolerance unknown for higher; revisit at Phase 6 if needed). | n/a |
 | MQ3 | ✅ ANSWERED 2026-05-09 — Cross-bucket links use relative paths (founder accepted default; portable across worktrees). | n/a |
 | MQ4 | ✅ ANSWERED 2026-05-09 — Engine post-Phase-12 = INDEX + brief 1-para summary per bucket (founder accepted default; ~5 lines per bucket; readable standalone). | n/a |
-| MQ5 | Should the 14d decommission window run in parallel with new feature work (Phase B Feature Specs continuing) OR pause feature work? | **FLIPPED per codex round-4 P1.2 fix**: PAUSE canon feature work during 14d window (preserves single-git-revert rollback honesty; non-canon work continues). Original default was parallel; codex flagged this breaks rollback contract. |
+| MQ5 | Should the 14d decommission window run in parallel with new feature work (Phase B Feature Specs continuing) OR pause feature work? | **FLIPPED per codex round-4 P1.2 fix**: PAUSE canon feature work during 14d window (preserves single-git-revert rollback honesty; non-canon work continues). Original default was parallel; codex flagged this breaks rollback contract. **RETIRED 2026-05-12** — 14d window dropped per founder direction; canon writes resume normally. |
 
 **Noted limitations**:
 
