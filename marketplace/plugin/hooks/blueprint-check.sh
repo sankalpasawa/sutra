@@ -94,7 +94,18 @@ if [ -f "$MARKER" ]; then
   # or every malformed marker becomes a fail-open bypass.
   DEPTH=""
   if [ -f "$DEPTH_FILE" ]; then
-    DEPTH=$(grep -oE '^DEPTH=[0-9]+' "$DEPTH_FILE" 2>/dev/null | head -1 | sed 's/DEPTH=//')
+    # End-anchored regex (codex R2 P1 fold): require entire line matches
+    # DEPTH=<digits> with no trailing junk. Prior `^DEPTH=[0-9]+` matched
+    # `DEPTH=3garbage` as `3` — fail-open class. Now `DEPTH=3junk` produces
+    # no match → DEPTH="" → integer-shape check below routes to D5 default.
+    # Whitespace-boundary regex (codex R2 P1 fold + canonical-format reconcile):
+    # require DEPTH=<digits> followed by whitespace OR end-of-line. Handles:
+    #   - canonical single-line `DEPTH=N TASK=<slug> TS=<unix>` → match (N=digits, space after)
+    #   - multi-line `DEPTH=N\n...` → match (N=digits, EOL after)
+    #   - `DEPTH=3garbage` → NO match → DEPTH="" → fail-closed D5
+    #   - `DEPTH=03oops` → NO match → fail-closed
+    # End-only anchor `$` would have broken the canonical single-line format.
+    DEPTH=$(grep -E '^DEPTH=[0-9]+([[:space:]]|$)' "$DEPTH_FILE" 2>/dev/null | head -1 | sed -E 's/^DEPTH=([0-9]+).*$/\1/')
   fi
   # Integer-shape check (no error suppression — explicit)
   case "$DEPTH" in
