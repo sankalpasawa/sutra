@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# deepseek-claude — launch Claude Code with DeepSeek as the model backend.
+#
+# Reads key from ~/.config/deepseek/auth.token (chmod 600 required).
+# Defaults to ISOLATED state at ~/.claude-deepseek (cp -r ~/.claude on first
+# launch). Symlink mode available via --symlink with banner warning.
+#
+# Logs every launch to .enforcement/deepseek-shim/launch-log.jsonl (when run
+# from a git repo).
+#
+# Per design v1-min (codex r4 ADVISORY 2026-05-10):
+# - r2-P1.1 fold: ANTHROPIC_MODEL defaults to `deepseek-v4-pro` (no [1m]
+#   suffix — that's a Claude-Code-side tag the API doesn't recognize).
+# - r2-P1.3 fold: cp -r is the safe default; symlink leaks state.
+# - TODO[v2-shim-scrub] No outbound scrubbing on this path. Every file
+#   claude reads in this session can travel to DeepSeek's servers.
+# - TODO[v2-shim-keychain] Key is in a chmod 600 file, not keychain.
+# - TODO[v2-shim-conflict] No detection of concurrent claude-on-Anthropic.
+
+set -euo pipefail
+
+readonly KEY_FILE="${DEEPSEEK_TOKEN_FILE:-$HOME/.config/deepseek/auth.token}"
+readonly CONFIG_DIR="$HOME/.claude-deepseek"
+readonly DEFAULT_MODEL="deepseek-v4-pro"
+readonly DEFAULT_HAIKU="deepseek-v4-flash"
+
+USE_SYMLINK=0
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --symlink) USE_SYMLINK=1 ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+
+# --- Key file checks ---------------------------------------------------------
+
+if [ ! -r "$KEY_FILE" ]; then
+  cat >&2 <<EOF
+deepseek-claude: no key at $KEY_FILE
+
+Setup:
+  mkdir -p "$(dirname "$KEY_FILE")" && chmod 700 "$(dirname "$KEY_FILE")"
+  printf 'sk-...\n' > "$KEY_FILE" && chmod 600 "$KEY_FILE"
+
+Override file location via DEEPSEEK_TOKEN_FILE env var.
+EOF
+  exit 1
+fi
+
+# Enforce chmod 600
+PERM=$(stat -f '%Lp' "$KEY_FILE" 2>/dev/null || stat -c '%a' "$KEY_FILE")
+if [ "$PERM" != "600" ]; then
+  echo "deepseek-claude: $KEY_FILE perms $PERM — chmod 600 required" >&2
+  echo "Fix: chmod 600 \"$KEY_FILE\"" >&2
+  exit 1
+fi
+
+KEY_AGE_DAYS=$(( ( $(date +%s) - $(stat -f '%m' "$KEY_FILE" 2>/dev/null || stat -c '%Y' "$KEY_FILE") ) / 86400 ))
+
+# --- Config dir isolation (r2-P1.3 fold) -------------------------------------
+
+ISOLATION_MODE=""
+if [ ! -e "$CONFIG_DIR" ]; then
+  if [ "$USE_SYMLINK" = "1" ]; then
+    cat >&2 <<'BANNER'
+deepseek-claude: --symlink flag used. Creating ln -s ~/.claude ~/.claude-deepseek.
+
+WARNING: Symlink mode means DeepSeek-backed sessions share state (SQLite,
+history, plans, settings.local) with your Anthropic-backed Claude sessions.
+Cross-provider state bleed is the price of this mode. Recommended only for
+testing config changes that should apply to both providers.
+
+For isolated state (the default), exit, `rm ~/.claude-deepseek`, and re-run
+without --symlink.
+BANNER
+    ln -s "$HOME/.claude" "$CONFIG_DIR"
+    ISOLATION_MODE=symlink
+  else
+    echo "deepseek-claude: first launch — copying ~/.claude → $CONFIG_DIR (one-time, isolated state)" >&2
+    cp -r "$HOME/.claude" "$CONFIG_DIR"
+    ISOLATION_MODE=copy
+  fi
+elif [ -L "$CONFIG_DIR" ]; then
+  cat >&2 <<EOF
+deepseek-claude: $CONFIG_DIR exists as a symlink to $(readlink "$CONFIG_DIR").
+
+This is the unsafe legacy mode. DeepSeek-backed and Anthropic-backed
+sessions share state. To switch to isolated state (recommended):
+
+  rm "$CONFIG_DIR"
+  $0 $*
+
+To keep symlink mode anyway, re-run with --symlink:
+  $0 --symlink $*
+
+Refusing to launch.
+EOF
+  exit 1
+else
+  ISOLATION_MODE=existing_dir
+fi
+
+# --- Telemetry ---------------------------------------------------------------
+
+# Only log when invoked from inside a git repo (the wider audit context).
+if git rev-parse --show-toplevel >/dev/null 2>&1; then
+  REPO_ROOT=$(git rev-parse --show-toplevel)
+  LOG_DIR="$REPO_ROOT/.enforcement/deepseek-shim"
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  MODEL="${DEEPSEEK_MODEL:-$DEFAULT_MODEL}"
+  COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+  printf '{"ts":"%s","model":"%s","isolation_mode":"%s","key_age_days":%d,"commit":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$MODEL" \
+    "$ISOLATION_MODE" \
+    "$KEY_AGE_DAYS" \
+    "$COMMIT" \
+    >> "$LOG_DIR/launch-log.jsonl" 2>/dev/null || true
+fi
+
+# --- Env + exec --------------------------------------------------------------
+
+export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
+export ANTHROPIC_AUTH_TOKEN="$(cat "$KEY_FILE")"
+export ANTHROPIC_MODEL="${DEEPSEEK_MODEL:-$DEFAULT_MODEL}"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="$ANTHROPIC_MODEL"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="$ANTHROPIC_MODEL"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="${DEEPSEEK_HAIKU_MODEL:-$DEFAULT_HAIKU}"
+export CLAUDE_CODE_SUBAGENT_MODEL="$ANTHROPIC_MODEL"
+export CLAUDE_CODE_EFFORT_LEVEL="${DEEPSEEK_EFFORT:-max}"
+export CLAUDE_CONFIG_DIR="$CONFIG_DIR"
+
+# Echo what we're launching with
+cat >&2 <<EOF
+deepseek-claude: launching claude with backend → $ANTHROPIC_BASE_URL
+  model:           $ANTHROPIC_MODEL
+  haiku fallback:  $ANTHROPIC_DEFAULT_HAIKU_MODEL
+  config dir:      $CLAUDE_CONFIG_DIR ($ISOLATION_MODE)
+  key age:         ${KEY_AGE_DAYS}d
+EOF
+
+exec claude "${ARGS[@]}"

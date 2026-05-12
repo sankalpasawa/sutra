@@ -382,6 +382,52 @@
     "override_path": "~/.sutra/overrides.json",
     "tier_definitions_source": "D34 in holding/FOUNDER-DIRECTIONS.md"
   },
+  "deepseek": {
+    "$comment": "Added 2026-05-10 per founder direction. v1-min ships peer-reviewer skill (skills/deepseek/) + backend-swap shim (bin/deepseek-claude). Codex r4 ADVISORY (4 rounds: r1→CR 5P1+4P2 → r2→CR 3P1+1P2 → r3→ADV-conditional → r4→ADV clean). See .enforcement/codex-reviews/2026-05-10-deepseek-sutra-design.md.",
+    "version": "1.0.0",
+    "endpoint": "https://api.deepseek.com/anthropic",
+    "auth": {
+      "header": "x-api-key",
+      "token_file": "~/.config/deepseek/auth.token",
+      "token_file_perms_required": "600"
+    },
+    "models": {
+      "default": "deepseek-v4-pro",
+      "fallback_haiku": "deepseek-v4-flash",
+      "context_window_tokens": 1000000
+    },
+    "thinking": {
+      "default_budget_tokens": 32000,
+      "default_effort": "high"
+    },
+    "limits": {
+      "wall_seconds_hard_cap": 900,
+      "stall_warn_seconds": 300,
+      "progress_warn_seconds": 600
+    },
+    "log_paths": {
+      "skill_gate_log": ".enforcement/deepseek-reviews/gate-log.jsonl",
+      "shim_launch_log": ".enforcement/deepseek-shim/launch-log.jsonl"
+    },
+    "kill_switch": "~/.deepseek-disabled",
+    "model_downgrade_policy": {
+      "pro_to_flash": "FAIL with reason=model_downgrade",
+      "model_aliased": "ADVISORY (versioned alias of requested base)",
+      "model_unexpected": "ADVISORY (unknown mismatch)",
+      "response_model_missing": "ADVISORY",
+      "accept_downgrade_env": "DEEPSEEK_ACCEPT_DOWNGRADE=1"
+    },
+    "v1_deferred_to_v2": {
+      "outbound_scrubber": "TODO[v2-scrubber] — binary/secret/path-allowlist",
+      "consult_session_continuity": "TODO[v2-session] — UUID dirs, branch isolation, replay redaction",
+      "preflight_token_budget": "TODO[v2-preflight] — estimate-then-gate before HTTP send",
+      "preflight_cost_cap": "TODO[v2-preflight] — same",
+      "canonical_event_schema": "TODO[v2-schema] — unify with codex-sutra gate-log",
+      "shim_outbound_scrub": "TODO[v2-shim-scrub]",
+      "shim_keychain_storage": "TODO[v2-shim-keychain]",
+      "shim_concurrent_session_detect": "TODO[v2-shim-conflict]"
+    }
+  },
   "codex_caveats": {
     "hook_injects_prompt_is_fragile": true,
     "failure_modes": [
