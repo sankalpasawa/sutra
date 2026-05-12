@@ -98,14 +98,23 @@ if [ -f "$MARKER" ]; then
     # DEPTH=<digits> with no trailing junk. Prior `^DEPTH=[0-9]+` matched
     # `DEPTH=3garbage` as `3` — fail-open class. Now `DEPTH=3junk` produces
     # no match → DEPTH="" → integer-shape check below routes to D5 default.
-    # Whitespace-boundary regex (codex R2 P1 fold + canonical-format reconcile):
-    # require DEPTH=<digits> followed by whitespace OR end-of-line. Handles:
-    #   - canonical single-line `DEPTH=N TASK=<slug> TS=<unix>` → match (N=digits, space after)
-    #   - multi-line `DEPTH=N\n...` → match (N=digits, EOL after)
-    #   - `DEPTH=3garbage` → NO match → DEPTH="" → fail-closed D5
-    #   - `DEPTH=03oops` → NO match → fail-closed
-    # End-only anchor `$` would have broken the canonical single-line format.
-    DEPTH=$(grep -E '^DEPTH=[0-9]+([[:space:]]|$)' "$DEPTH_FILE" 2>/dev/null | head -1 | sed -E 's/^DEPTH=([0-9]+).*$/\1/')
+    # Strict full-line shape validation (codex R3 P1 fold):
+    # Two accepted forms, both end-anchored — NO trailing junk permitted.
+    # Form A (canonical single-line per CLAUDE.md): `DEPTH=N TASK=<slug> TS=<unix>`
+    # Form B (multi-line single-token):              `DEPTH=N` on its own line
+    # Prior boundary-only regex still parsed `DEPTH=3 junk`, `DEPTH=3 TASK=`,
+    # and `DEPTH=3<TAB>garbage` as `3` — same fail-open class. R3 fold rejects
+    # anything that does not match one of the two canonical shapes exactly.
+    DEPTH=""
+    _DEPTH_LINE_A=$(grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$' "$DEPTH_FILE" 2>/dev/null | head -1)
+    if [ -n "$_DEPTH_LINE_A" ]; then
+      DEPTH=$(printf '%s' "$_DEPTH_LINE_A" | sed -E 's/^DEPTH=([0-9]+).*$/\1/')
+    else
+      _DEPTH_LINE_B=$(grep -E '^DEPTH=[0-9]+$' "$DEPTH_FILE" 2>/dev/null | head -1)
+      if [ -n "$_DEPTH_LINE_B" ]; then
+        DEPTH=$(printf '%s' "$_DEPTH_LINE_B" | sed -E 's/^DEPTH=([0-9]+)$/\1/')
+      fi
+    fi
   fi
   # Integer-shape check (no error suppression — explicit)
   case "$DEPTH" in
