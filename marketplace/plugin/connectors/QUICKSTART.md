@@ -36,7 +36,7 @@ Verify: `age --version` should print `1.x.x`.
 /plugin install core@sutra
 ```
 
-(`/plugin install sutra@marketplace` also works; `core@sutra` is the canonical form.)
+(`core@sutra` is the only correct form — `sutra@marketplace` will fail with "Plugin not found in any marketplace" because the package name inside the marketplace is `core`.)
 
 > **Runtime npm deps are pre-bundled.** As of v2.11.1, the plugin ships `connectors/node_modules/` (yaml, cockatiel, nanoid; ~2.2 MB) inside the plugin tree, so `/plugin install` and `/plugin update` both deliver a fully-working connectors stack with **zero first-call npm install delay**. No `npm install` step required.
 

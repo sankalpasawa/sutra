@@ -12,7 +12,7 @@ This doc explains: how the auto-approve mechanism works, exactly which patterns 
 
 | Phase | Before v1.13 | From v1.13 onward |
 |---|---|---|
-| 1. `/plugin install sutra@marketplace` | 1 consent (Claude Code native) | 1 consent (unchanged) |
+| 1. `/plugin marketplace add sankalpasawa/sutra` + `/plugin install core@sutra` | 2 consents (Claude Code native) | 2 consents (unchanged) |
 | 2. First `/core:start` | ~8 individual prompts | **Auto-approved** by `permission-gate.sh` hook + each rule persisted to `.claude/settings.local.json` |
 | 3. Next hook fires (marker writes, mkdir) | ~5 more prompts | **Auto-approved + persisted** |
 | 4. Second session onward | Re-prompts (unless user pasted snippet) | **Zero hook invocations** — Claude Code's native allow-list catches the persisted rules directly |
