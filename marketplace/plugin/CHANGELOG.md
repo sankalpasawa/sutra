@@ -4,6 +4,18 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.0 — 2026-05-13
+
+**Anti-glaze-tone skill** — brutally honest, no-flattery register for founder↔Claude sessions.
+
+- New skill at `marketplace/plugin/skills/anti-glaze-tone/SKILL.md`.
+- 16 rules adopted (verify own work, lead with counterargument, banned glaze phrases, confidence levels, accuracy > approval). 5 rejected (preserves Founding Doctrine P0 + D51 caveman).
+- Asawa+Sutra: auto-active via CLAUDE.md (commits `25a728b`, `76fdcd9`). T2/T3/T4 fleet: opt-in.
+- Plugin description field collapsed from ~14KB accumulated narrative to ~227 chars; CURRENT-VERSION.md trimmed from 797 → 12 lines.
+- `/core:update` now prints a `/reload-plugins` reminder.
+
+Source: @aiedge_ Anti-Glaze System Prompt. Founder-approved composition 2026-05-12.
+
 ## v2.36.0 — 2026-05-12
 
 **3-Layer Verification Stack + V2.2 L1 hook enforcement** (founder-direction trajectory across one session).

@@ -21,4 +21,6 @@ claude plugin marketplace update sutra
 claude plugin update core@sutra
 ```
 
+**After this command, run `/reload-plugins` to apply the new code to your current session** (or restart Claude Code). Without this, the new version is downloaded but not active in the running session.
+
 Most Claude Code sessions auto-update on startup. Run this mid-session if you want the latest without waiting for a restart.
