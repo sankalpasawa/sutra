@@ -62,38 +62,87 @@ Surfacing the gaps explicitly is the contract — silent omission would not be.
 
 ## Pre-flight (Step 0)
 
+### Key resolution order (canonical-first, backwards-compatible)
+
+| Priority | Path | Format | Notes |
+|---|---|---|---|
+| 1 | `$DEEPSEEK_TOKEN_FILE` (env override) | JSON or plain text (auto-detect by `.json` suffix) | Explicit operator override |
+| 2 | `~/.sutra-connectors/oauth/deepseek.json` | JSON `{savedAt, token, type}` | **Canonical** — matches slack.json precedent (2026-05-01) |
+| 3 | `~/.config/deepseek/auth.token` | Plain text | Legacy, kept for backwards compatibility |
+
+First readable path wins. Fleet members can use either path; canonical is
+recommended for parity with other Sutra connectors.
+
+### Pre-flight bash
+
 ```bash
 # Reap orphan temp files >24h
 find /tmp/deepseek-* -mmin +1440 -delete 2>/dev/null || true
 
-# Verify key file
-KEY_FILE="${DEEPSEEK_TOKEN_FILE:-$HOME/.config/deepseek/auth.token}"
-if [ ! -r "$KEY_FILE" ]; then
-  echo "deepseek: key not found at $KEY_FILE"
-  echo "Setup: mkdir -p \"\$(dirname \"$KEY_FILE\")\" && chmod 700 \"\$(dirname \"$KEY_FILE\")\""
-  echo "       printf 'sk-...\n' > \"$KEY_FILE\" && chmod 600 \"$KEY_FILE\""
-  # SKIPPED verdict (not silent exit)
+# Key resolution (canonical-first)
+KEY_FILE=""
+KEY_SRC=""
+if [ -n "${DEEPSEEK_TOKEN_FILE:-}" ] && [ -r "$DEEPSEEK_TOKEN_FILE" ]; then
+  KEY_FILE="$DEEPSEEK_TOKEN_FILE"; KEY_SRC=env
+elif [ -r "$HOME/.sutra-connectors/oauth/deepseek.json" ]; then
+  KEY_FILE="$HOME/.sutra-connectors/oauth/deepseek.json"; KEY_SRC=canonical
+elif [ -r "$HOME/.config/deepseek/auth.token" ]; then
+  KEY_FILE="$HOME/.config/deepseek/auth.token"; KEY_SRC=legacy
+fi
+
+if [ -z "$KEY_FILE" ]; then
+  cat <<'SETUP'
+deepseek: no key found. Setup (canonical, recommended):
+
+  mkdir -p ~/.sutra-connectors/oauth && chmod 700 ~/.sutra-connectors/oauth
+  SAVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  jq -nc --arg t "sk-YOUR-KEY-HERE" --arg s "$SAVED_AT" \
+    '{savedAt:$s, token:$t, type:"api_key"}' \
+    > ~/.sutra-connectors/oauth/deepseek.json
+  chmod 600 ~/.sutra-connectors/oauth/deepseek.json
+
+Get a key at https://platform.deepseek.com → API Keys.
+SETUP
   COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
   printf '{"skill":"deepseek","mode":"preflight","ts":"%s","verdict":"SKIPPED","reason":"not_configured","commit":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$COMMIT" >> .enforcement/deepseek-reviews/gate-log.jsonl
   exit 0
 fi
 
-# Check kill-switch
+# Kill-switch check
 if [ -e "$HOME/.deepseek-disabled" ]; then
-  printf '{"skill":"deepseek","mode":"preflight","ts":"%s","verdict":"SKIPPED","reason":"kill_switch","commit":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+  printf '{"skill":"deepseek","mode":"preflight","ts":"%s","verdict":"SKIPPED","reason":"kill_switch","commit":"%s","key_src":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" "$KEY_SRC" \
     >> .enforcement/deepseek-reviews/gate-log.jsonl
   exit 0
 fi
 
-# Permission enforcement
+# Permission enforcement (both file shapes)
 PERM=$(stat -f '%Lp' "$KEY_FILE" 2>/dev/null || stat -c '%a' "$KEY_FILE")
 if [ "$PERM" != "600" ]; then
-  echo "deepseek: $KEY_FILE has perms $PERM — chmod 600 required"
+  echo "deepseek: $KEY_FILE has perms $PERM — chmod 600 required" >&2
+  exit 1
+fi
+
+# Extract token: JSON canonical uses jq .token; plain text uses file contents
+if [[ "$KEY_FILE" == *.json ]]; then
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "deepseek: jq required to read canonical JSON keystore; install jq or use legacy path" >&2
+    exit 1
+  fi
+  DEEPSEEK_TOKEN=$(jq -r '.token' "$KEY_FILE")
+else
+  DEEPSEEK_TOKEN=$(cat "$KEY_FILE")
+fi
+
+if [ -z "$DEEPSEEK_TOKEN" ] || [ "$DEEPSEEK_TOKEN" = "null" ]; then
+  echo "deepseek: token empty/null in $KEY_FILE (KEY_SRC=$KEY_SRC)" >&2
   exit 1
 fi
 ```
+
+All downstream curl invocations use `$DEEPSEEK_TOKEN` (the resolved string),
+not `$(cat "$KEY_FILE")` — covers both file shapes uniformly.
 
 ---
 
@@ -179,10 +228,11 @@ REQUEST_JSON=$(jq -nc \
     stream: true
   }')
 
-# Launch curl in its own process group
+# Launch curl in its own process group — uses $DEEPSEEK_TOKEN
+# (resolved by pre-flight, works for both JSON canonical + plain text legacy)
 if command -v setsid >/dev/null 2>&1; then
   setsid bash -c "curl -sS --max-time 900 \
-    -H \"x-api-key: \$(cat \"$KEY_FILE\")\" \
+    -H \"x-api-key: $DEEPSEEK_TOKEN\" \
     -H \"Content-Type: application/json\" \
     -H \"anthropic-version: 2023-06-01\" \
     -d @<(echo \"\$REQUEST_JSON\") \
@@ -193,7 +243,7 @@ else
   nohup python3 -c "
 import os, subprocess, json
 os.setsid()
-req = open('$KEY_FILE').read().strip()
+req = '$DEEPSEEK_TOKEN'
 body = '''$REQUEST_JSON'''
 r = subprocess.run(['curl','-sS','--max-time','900',
   '-H', f'x-api-key: {req}',

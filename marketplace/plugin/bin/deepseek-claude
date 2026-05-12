@@ -19,7 +19,21 @@
 
 set -euo pipefail
 
-readonly KEY_FILE="${DEEPSEEK_TOKEN_FILE:-$HOME/.config/deepseek/auth.token}"
+# Key resolution (canonical-first; matches skill SKILL.md preflight)
+# Priority:
+#   1. $DEEPSEEK_TOKEN_FILE  (env override)
+#   2. ~/.sutra-connectors/oauth/deepseek.json  (canonical, slack.json shape)
+#   3. ~/.config/deepseek/auth.token  (legacy plain-text)
+KEY_FILE=""
+KEY_SRC=""
+if [ -n "${DEEPSEEK_TOKEN_FILE:-}" ] && [ -r "$DEEPSEEK_TOKEN_FILE" ]; then
+  KEY_FILE="$DEEPSEEK_TOKEN_FILE"; KEY_SRC=env
+elif [ -r "$HOME/.sutra-connectors/oauth/deepseek.json" ]; then
+  KEY_FILE="$HOME/.sutra-connectors/oauth/deepseek.json"; KEY_SRC=canonical
+elif [ -r "$HOME/.config/deepseek/auth.token" ]; then
+  KEY_FILE="$HOME/.config/deepseek/auth.token"; KEY_SRC=legacy
+fi
+
 readonly CONFIG_DIR="$HOME/.claude-deepseek"
 readonly DEFAULT_MODEL="deepseek-v4-pro"
 readonly DEFAULT_HAIKU="deepseek-v4-flash"
@@ -35,24 +49,50 @@ done
 
 # --- Key file checks ---------------------------------------------------------
 
-if [ ! -r "$KEY_FILE" ]; then
-  cat >&2 <<EOF
-deepseek-claude: no key at $KEY_FILE
+if [ -z "$KEY_FILE" ]; then
+  cat >&2 <<'SETUP'
+deepseek-claude: no key found in any known location.
 
-Setup:
-  mkdir -p "$(dirname "$KEY_FILE")" && chmod 700 "$(dirname "$KEY_FILE")"
-  printf 'sk-...\n' > "$KEY_FILE" && chmod 600 "$KEY_FILE"
+Setup (canonical, recommended — matches slack.json precedent):
+  mkdir -p ~/.sutra-connectors/oauth && chmod 700 ~/.sutra-connectors/oauth
+  SAVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  jq -nc --arg t "sk-YOUR-KEY-HERE" --arg s "$SAVED_AT" \
+    '{savedAt:$s, token:$t, type:"api_key"}' \
+    > ~/.sutra-connectors/oauth/deepseek.json
+  chmod 600 ~/.sutra-connectors/oauth/deepseek.json
 
-Override file location via DEEPSEEK_TOKEN_FILE env var.
-EOF
+Setup (legacy plain-text — also works):
+  mkdir -p ~/.config/deepseek && chmod 700 ~/.config/deepseek
+  printf 'sk-...\n' > ~/.config/deepseek/auth.token
+  chmod 600 ~/.config/deepseek/auth.token
+
+Or override path with DEEPSEEK_TOKEN_FILE env var.
+Get a key at https://platform.deepseek.com → API Keys.
+SETUP
   exit 1
 fi
 
-# Enforce chmod 600
+# Enforce chmod 600 on whichever path resolved
 PERM=$(stat -f '%Lp' "$KEY_FILE" 2>/dev/null || stat -c '%a' "$KEY_FILE")
 if [ "$PERM" != "600" ]; then
   echo "deepseek-claude: $KEY_FILE perms $PERM — chmod 600 required" >&2
   echo "Fix: chmod 600 \"$KEY_FILE\"" >&2
+  exit 1
+fi
+
+# Extract token: JSON canonical via jq .token, plain text via cat
+if [[ "$KEY_FILE" == *.json ]]; then
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "deepseek-claude: jq required for canonical JSON keystore; install jq or use legacy path" >&2
+    exit 1
+  fi
+  DEEPSEEK_TOKEN=$(jq -r '.token' "$KEY_FILE")
+else
+  DEEPSEEK_TOKEN=$(cat "$KEY_FILE")
+fi
+
+if [ -z "$DEEPSEEK_TOKEN" ] || [ "$DEEPSEEK_TOKEN" = "null" ]; then
+  echo "deepseek-claude: token empty/null in $KEY_FILE (KEY_SRC=$KEY_SRC)" >&2
   exit 1
 fi
 
@@ -110,11 +150,12 @@ if git rev-parse --show-toplevel >/dev/null 2>&1; then
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   MODEL="${DEEPSEEK_MODEL:-$DEFAULT_MODEL}"
   COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
-  printf '{"ts":"%s","model":"%s","isolation_mode":"%s","key_age_days":%d,"commit":"%s"}\n' \
+  printf '{"ts":"%s","model":"%s","isolation_mode":"%s","key_age_days":%d,"key_src":"%s","commit":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "$MODEL" \
     "$ISOLATION_MODE" \
     "$KEY_AGE_DAYS" \
+    "$KEY_SRC" \
     "$COMMIT" \
     >> "$LOG_DIR/launch-log.jsonl" 2>/dev/null || true
 fi
@@ -122,7 +163,7 @@ fi
 # --- Env + exec --------------------------------------------------------------
 
 export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
-export ANTHROPIC_AUTH_TOKEN="$(cat "$KEY_FILE")"
+export ANTHROPIC_AUTH_TOKEN="$DEEPSEEK_TOKEN"
 export ANTHROPIC_MODEL="${DEEPSEEK_MODEL:-$DEFAULT_MODEL}"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="$ANTHROPIC_MODEL"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="$ANTHROPIC_MODEL"
@@ -137,6 +178,7 @@ deepseek-claude: launching claude with backend → $ANTHROPIC_BASE_URL
   model:           $ANTHROPIC_MODEL
   haiku fallback:  $ANTHROPIC_DEFAULT_HAIKU_MODEL
   config dir:      $CLAUDE_CONFIG_DIR ($ISOLATION_MODE)
+  key src:         $KEY_SRC  ($KEY_FILE)
   key age:         ${KEY_AGE_DAYS}d
 EOF
 
