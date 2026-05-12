@@ -213,5 +213,5 @@ main() {
 }
 
 # Hard guarantee: never bubble a failure up to SessionStart.
-main 2>/dev/null || true
+(main) 2>/dev/null || true
 exit 0
