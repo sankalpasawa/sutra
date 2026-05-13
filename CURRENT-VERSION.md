@@ -1,6 +1,15 @@
 # Sutra — Current Version
 
-## v2.39.2 (2026-05-13, HEAD)
+## v2.39.3 (2026-05-13, HEAD)
+
+**Add `prd-discipline` skill** — product-document writing discipline.
+
+- New skill at `sutra/marketplace/plugin/skills/prd-discipline/SKILL.md`.
+- 5 invariants: STRUCTURED · VISUAL FIRST · RESTRUCTURE-ON-BULK · CONNECTED · GAP-SURFACING.
+- Composes with ADR-020 Layer-B Product Authoring Template.
+- Run `/reload-plugins` to activate in-session.
+
+## v2.39.2 (2026-05-13)
 
 **Remove 15-min hard cap on `codex-sutra` + `deepseek` skills** (founder D2026-05-13).
 

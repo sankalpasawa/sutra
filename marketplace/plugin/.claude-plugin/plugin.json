@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.2",
-  "description": "v2.39.2 (2026-05-13) — codex-sutra + deepseek skills: 15-min wall-clock hard cap removed (founder D2026-05-13). Heartbeat warnings + founder Ctrl-C interrupt replace auto-kill. Operating system for building with AI. See CHANGELOG.md for release history.",
+  "version": "2.39.3",
+  "description": "v2.39.3 (2026-05-13) — adds prd-discipline skill: 5 invariants for product-document writing (structured · visual first · restructure-on-bulk · connected · gap-surfacing). Composes with ADR-020 Layer-B authoring template. Operating system for building with AI. See CHANGELOG.md for release history.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

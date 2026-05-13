@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.3 — 2026-05-13
+
+**Add `prd-discipline` skill** — product-document writing discipline.
+
+- New skill at `skills/prd-discipline/SKILL.md` codifies 5 invariants: STRUCTURED · VISUAL FIRST · RESTRUCTURE-ON-BULK (D55 4-step) · CONNECTED (anchor cross-ref discipline) · GAP-SURFACING (TODO/Q markers, never fabricate).
+- Composes with ADR-020 Layer-B Product Authoring Template (ADR-020 = WHAT sections; this skill = HOW to write/maintain them).
+- Authored from R1-R11 Native PRD review evidence (codex+deepseek verdicts 2026-05-12 to 2026-05-13). Formal subagent TDD baseline pass queued as follow-up.
+
 ## v2.39.2 — 2026-05-13
 
 **Remove 15-min hard cap on `codex-sutra` + `deepseek` skills** (founder D2026-05-13).
