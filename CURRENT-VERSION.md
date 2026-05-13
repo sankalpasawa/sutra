@@ -1,6 +1,15 @@
 # Sutra — Current Version
 
-## v2.39.3 (2026-05-13, HEAD)
+## v2.39.4 (2026-05-13, HEAD)
+
+**`prd-discipline` skill v2** — REFACTOR pass plugs 5 baseline-test rationalizations.
+
+- Skill body at `sutra/marketplace/plugin/skills/prd-discipline/SKILL.md`.
+- v2 additions: §1 namespace-collision check + naming-with-alternatives · §3 scale-undershoot surface · §4 canon-typed-entity rule · §5 TODO-is-not-an-alibi.
+- Baseline test at `.enforcement/skill-tests/2026-05-13-prd-discipline-baseline.md`.
+- Run `/reload-plugins` to activate.
+
+## v2.39.3 (2026-05-13)
 
 **Add `prd-discipline` skill** — product-document writing discipline.
 

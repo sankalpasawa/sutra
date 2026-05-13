@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.4 — 2026-05-13
+
+**`prd-discipline` skill v2** — REFACTOR pass per superpowers:writing-skills TDD discipline.
+
+- TDD baseline subagent at `.enforcement/skill-tests/2026-05-13-prd-discipline-baseline.md` wrote a Senior Expert Layer-B PRD WITHOUT loading the skill. Captured 5 named rationalizations.
+- v2 plugs all 5: §1 +namespace-collision check + naming-with-alternatives · §3 +scale-undershoot surface · §4 +canon-typed-entity rule · §5 +TODO-is-not-an-alibi.
+- 4 new rationalization rows + sharpened red flags + v2 testing-trail section.
+
 ## v2.39.3 — 2026-05-13
 
 **Add `prd-discipline` skill** — product-document writing discipline.

@@ -35,7 +35,17 @@ Section shape is declared BEFORE any content lands. No ad-hoc prose appended at 
 - New facts join an existing section OR explicitly declare a new sub-section
 - Reject "wherever it fits" content additions
 
-**Why**: orphan facts decay. Operators cannot find or audit what has no home.
+**Namespace-collision check** (v2 — from baseline test 2026-05-13): before naming a new series identifier (Pillar `P-N`, Block `B-N`, Hardstop `HS-N`, ADR `ADR-N`, Open Question `Q-N`, Direction `D-N`, EngineEvent name), grep canon for existing reservations:
+
+```bash
+grep -rE "^P[0-9]+|HS-[0-9]+|ADR-[0-9]+|Q[0-9]+" sutra/os/native/ sutra/os/decisions/
+```
+
+Do NOT reuse a series prefix that canon already owns. If you must extend a canon series, declare the next free number; if the new thing is a different concept, pick a new prefix.
+
+**Naming with alternatives** (v2): when introducing a new name (product, pillar, primitive, module), capture 2-3 alternatives + reasoning in `§Open questions`. Names are reversible at v1; far easier to refactor with the alternatives recorded than to rediscover them later.
+
+**Why**: orphan facts decay. Operators cannot find or audit what has no home. Namespace collisions surface late and force expensive rename ripples.
 
 ### 2. VISUAL FIRST
 
@@ -70,6 +80,8 @@ Triggers:
 
 Do NOT keep adding to a bulk section. Restructure FIRST, then add.
 
+**Scale-undershoot rule** (v2 — from baseline test 2026-05-13): if the authored content falls SIGNIFICANTLY short of the declared scale (e.g., 770 lines vs 1500-2500 target), do NOT silently compress and ship. Surface a META-TODO in your **response** (not silently in the doc): "Content short of declared scale — sections X / Y / Z are thin; founder should ratify the trim OR I should extend." Silent compression hides the gap; explicit surface lets founder choose.
+
 ### 4. CONNECTED
 
 Every section cross-references the sections it depends on or extends. No orphans.
@@ -80,6 +92,8 @@ Every section cross-references the sections it depends on or extends. No orphans
 - Cross-cutting concerns appear in a single overlay section + are cited from each affected section
 
 Audit check: every `href="#X"` must match an `id="X"` in the same doc. Zero misses.
+
+**Canon-typed-entity rule** (v2 — from baseline test 2026-05-13): when referencing a canon-typed entity (EngineEvent name, HS-N hardstop, primitive name, ADR number, Pillar P-N, Surface name, Doc-layer L-N, Open-question Q-N), resolve the identifier to a canon path BEFORE writing. No invented EngineEvent names. No invented HS codes. No invented ADR numbers. If the entity does not yet exist in canon, mark `TODO(canon): <entity-kind> for <purpose>` and stop — do not invent the name.
 
 ### 5. GAP-SURFACING (not gap-filling)
 
@@ -98,6 +112,8 @@ Forbidden:
 - Padding a section with restatements of adjacent content
 - Inferring founder intent from convention when the source is silent
 - "Reasonable example" placeholders that read as real content
+
+**TODO is not an alibi** (v2 — from baseline test 2026-05-13): writing `TODO: confirm X = <invented-Y>` where `<invented-Y>` is a plausible value you made up is STILL fabrication. The TODO marker does NOT license filling in a guess next to the question. The form is `TODO(<owner>): <question>` and the answer field STAYS EMPTY. If you find yourself drafting the answer "to help the founder", stop. The placeholder anchors thinking; an empty marker preserves the choice.
 
 If the gap is large, surface it to the founder in the response — NOT in the artifact body.
 
@@ -151,6 +167,10 @@ Both compose. Either alone is insufficient.
 | "This section is short enough to skip the 4-step" | The 4-step is action-time default, not a section-size gate |
 | "Adding one section won't trigger bulk" | The trigger is content scan-ability, not size; check ALL signals |
 | "Mark as TODO loses momentum" | Fabricated content costs more momentum when peer review catches it |
+| "TODO with a guess is better than empty" | The guess anchors founder thinking. Empty placeholder is the honest form. Strip the guess. |
+| "I'll use a placeholder name and refactor later" | Names propagate fast through cross-refs. Name with alternatives recorded OR mark TODO(name). |
+| "Scale undershoot is fine, the content is dense" | If you fell short of declared scale, surface that in your response — let founder decide trim vs extend. |
+| "EngineEvent / HS code name is obvious from context" | Resolve to canon path BEFORE writing. Invented identifier names propagate as if real. |
 
 ## Verification checklist (per section)
 
@@ -180,4 +200,16 @@ Both compose. Either alone is insufficient.
 
 ## Testing this skill
 
-This skill was authored from R1-R11 PRD-review evidence (Native PRD codex+deepseek verdicts, 2026-05-12 to 2026-05-13). Formal subagent baseline test queued as follow-up: dispatch a subagent to write a product PRD WITHOUT the skill, document rationalizations, verify this skill addresses them, plug new loopholes.
+**v1 (2026-05-13)** — authored from R1-R11 PRD-review evidence (Native PRD codex+deepseek verdicts).
+
+**v2 (2026-05-13)** — refactored from formal TDD baseline subagent test at `.enforcement/skill-tests/2026-05-13-prd-discipline-baseline.md`. Subagent wrote a Senior Expert Layer-B PRD WITHOUT loading this skill and captured 5 named rationalizations:
+
+| # | Rationalization observed | Plugged in v2 |
+|---|---|---|
+| 1 | Scale undershoot silently absorbed (770 vs 1500-2500 lines) | §3 Scale-undershoot rule |
+| 2 | Pillar namespace collision (P1-P5 vs canonical P1-P14) | §1 Namespace-collision check |
+| 3 | Fabrication-as-completion (TODO + invented answer) | §5 TODO-is-not-an-alibi rule |
+| 4 | EngineEvent names invented without canon check | §4 Canon-typed-entity rule |
+| 5 | Product name "Senior Expert" never interrogated; alternatives unrecorded | §1 Naming-with-alternatives rule |
+
+v3 follow-up: re-run baseline subagent test WITH v2 skill loaded; capture any new rationalizations the v2 rules don't yet address; plug those.

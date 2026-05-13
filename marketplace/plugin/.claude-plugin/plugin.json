@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.3",
-  "description": "v2.39.3 (2026-05-13) — adds prd-discipline skill: 5 invariants for product-document writing (structured · visual first · restructure-on-bulk · connected · gap-surfacing). Composes with ADR-020 Layer-B authoring template. Operating system for building with AI. See CHANGELOG.md for release history.",
+  "version": "2.39.4",
+  "description": "v2.39.4 (2026-05-13) — prd-discipline skill v2: plugs 5 baseline-test rationalizations (namespace-collision check · naming-with-alternatives · scale-undershoot surface · canon-typed-entity resolution · TODO-is-not-an-alibi). Refactored from TDD subagent baseline. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"
