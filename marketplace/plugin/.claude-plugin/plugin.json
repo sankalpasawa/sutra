@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.0",
-  "description": "v2.39.0 (2026-05-13) — anti-glaze-tone skill: brutally honest, no-flattery register for founder<>Claude sessions; opt-in per session or via CLAUDE.md. Operating system for building with AI. See CHANGELOG.md for release history.",
+  "version": "2.39.1",
+  "description": "v2.39.1 (2026-05-13) — cache-invalidating patch over v2.39.0: ships concise description, /core:update reload reminder. Operating system for building with AI. See CHANGELOG.md for release history.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

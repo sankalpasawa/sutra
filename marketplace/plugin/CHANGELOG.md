@@ -4,6 +4,12 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.1 — 2026-05-13
+
+**Cache-invalidating patch over v2.39.0.** Same content; version field was the only thing missing to propagate the housekeeping fixes (concise plugin.json description, /core:update reload reminder).
+
+Lesson: any content change in a release artifact requires a patch-bump even without a feature change — marketplace cache keys on version, not content hash.
+
 ## v2.39.0 — 2026-05-13
 
 **Anti-glaze-tone skill** — brutally honest, no-flattery register for founder↔Claude sessions.

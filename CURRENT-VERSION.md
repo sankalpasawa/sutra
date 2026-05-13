@@ -1,12 +1,15 @@
 # Sutra — Current Version
 
-## v2.39.0 (2026-05-13, HEAD)
+## v2.39.1 (2026-05-13, HEAD)
 
-**Anti-glaze-tone skill** — brutally honest, no-flattery register for founder↔Claude sessions.
+**Patch over v2.39.0** — cache-invalidating bump so /core:update propagates the housekeeping fixes.
 
-- Skill at `marketplace/plugin/skills/anti-glaze-tone/SKILL.md`
-- 16 rules adopted, 5 rejected (preserves Founding Doctrine P0 + D51 caveman)
-- Asawa+Sutra: auto-active via CLAUDE.md. T2/T3/T4 fleet: opt-in via `/anti-glaze-tone` or CLAUDE.md reference.
-- Source: @aiedge_ Anti-Glaze System Prompt; founder-approved composition 2026-05-12.
+Ships from v2.39.0 (same content; version field was the only thing missing):
+- Anti-glaze-tone skill at `marketplace/plugin/skills/anti-glaze-tone/SKILL.md`.
+- Plugin description compressed from ~14KB → ~200 chars.
+- CURRENT-VERSION.md trimmed from 797 → 12 lines.
+- `/core:update` prints `/reload-plugins` reminder.
+
+Lesson: any content change in a release artifact (description, CHANGELOG, skill) requires a patch-bump even without a feature change — otherwise marketplace cache won't invalidate.
 
 For prior release history, see `marketplace/plugin/CHANGELOG.md`.
