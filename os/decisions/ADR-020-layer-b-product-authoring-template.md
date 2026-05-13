@@ -30,12 +30,14 @@ A new Layer-B Product PRD MUST include the following section set (modeled on the
 | 8 | **§Distribution + onboarding** | Tier-by-tier install responsibility (per §6.3.1 matrix); operator onboarding journey specific to this product | §6 Distribution sections specialized |
 | 9 | **§Observability** | Per-pillar metrics + accuracy KPI + operator satisfaction signals (per §7.1.A analog) | §7 Observability specialized |
 | 10 | **§Open questions** | Open questions for THIS product's future (analog of §C.6 FQ1-FQ3) | §C.6 in CoS |
+| 11 | **§Resilience contract** | Operator-visible failure behavior — which shared hardstops (HS-1..HS-8) specialize for this product; any product-specific hardstops beyond the shared 8; recovery + escalation contract per pillar (analog of §4.10 in CoS) | §4.10 in CoS |
+| 12 | **§Activation + versioning** | Per-product version strategy (v1/v1.5/v2 scope); deferred-capability activation gates for any v2+ tag in this product PRD (analog of §1.4.5 + §C.1 in CoS); cutover plan when product graduates v1→v1.5→v2 | §1.4.5 + §C.1 in CoS |
 
 ### Required canon additions per new Layer-B Product
 
 | # | Canon location | What lives there |
 |---|----------------|------------------|
-| 1 | `sutra/os/decisions/ADR-NNN-<product>-pattern.md` | Doctrine ADR analogous to ADR-018 (CoS gets agentic-systems-pattern; new product gets its own pattern ADR) |
+| 1 | `sutra/os/decisions/ADR-NNN-<product>-pattern.md` | Per-product specialization of ADR-018 (NOT a re-author). See §Pattern ADR layering below for the boundary rule. |
 | 2 | `sutra/os/native/blocks/<product-block-NNN>.md` | L8 Feature specs for this product's blocks (analog of B1-B18 for CoS) |
 | 3 | `sutra/os/native/open-questions/Q-NNN.md` | Per-product open questions if any extend canon-level questions |
 | 4 | (optional) `sutra/os/native/pillars/P-NNN.md` | NEW pillar files ONLY if this product introduces canon-level doctrine not yet in P1-P14 |
@@ -46,9 +48,27 @@ A new Layer-B Product PRD MUST include the following section set (modeled on the
 - All 10 primitives (Domain · Charter · Workflow · Step · Trigger · ExecutionResult · EngineEvent · Tenant · Approval · DecisionProvenance)
 - All 26 EngineEvents
 - All 6 surfaces (ROUTE · RUN · GATE · EMERGE · AUDIT · TENANT)
-- All 8 hardstops (HS-1..HS-8)
-- ADR-018 agentic-systems-pattern (operator-in-loop + deterministic guardrails)
+- All 8 hardstops (HS-1..HS-8) — operator-visible failure behavior baseline
+- ADR-018 agentic-systems-pattern — operator-in-loop + deterministic-surface-stochastic-core INVARIANT (the WHAT)
 - ADR-019 design ↔ product ↔ tech bridge
+
+### Pattern ADR layering (ADR-018 ↔ ADR-NNN boundary)
+
+R11 codex P2 flagged this layering as previously ambiguous. The boundary rule, made explicit:
+
+| Layer | ADR | What it carries | Audience |
+|---|---|---|---|
+| **Shared invariant** | **ADR-018** (single source-of-truth) | The agentic-systems-pattern itself: operator-in-loop on consequential decisions + deterministic guardrails around stochastic reasoning. Does NOT name specific decisions or guardrails. | All Layer-B Products inherit unchanged. |
+| **Per-product specialization** | **ADR-NNN-<product>-pattern.md** (one per Product) | Specialization of ADR-018 for THIS Product: (a) enumerate which decisions THIS Product gates to operator vs auto-executes, (b) the specific deterministic guardrails THIS Product adds beyond ADR-018's baseline, (c) any product-specific HOW preference (per §HOW preferences section). | This Product's PRD readers + Forge implementers. |
+
+**Litmus tests** (use these when authoring ADR-NNN to stay on the right side of the boundary):
+
+- WRONG: ADR-NNN re-states "operator-in-loop on consequential decisions" — that's ADR-018's job; ADR-NNN inherits it.
+- RIGHT: ADR-NNN says "for SeniorExpert, 'consequential' = any external-spend > $X OR any client-comms; auto-executes only research/synthesis tasks; deterministic guardrail: every decision row carries a verification-citation."
+- WRONG: ADR-NNN says "use deterministic guardrails" — already ADR-018.
+- RIGHT: ADR-NNN names the specific guardrails (e.g., "ProjectManager: every milestone update MUST be diff-reconciled against the immediately prior milestone; no overwrite without operator sign-off").
+
+Boundary self-check: if a sentence in ADR-NNN would still be TRUE if you swapped "this Product" for any other Layer-B Product, it belongs in ADR-018, not ADR-NNN. Move it up.
 
 ## Consequences
 
