@@ -55,7 +55,11 @@ Cross-effects on in-flight Executions that depend on shipped artifacts, on the c
 
 HS-7 does NOT map directly to a STRIDE class in §7. The closest §7 row is "Denial of Service / Per-step / per-host hang" which cites HS-7 in its invariant-guard column — but HS-7 itself guards an operational queue-health surface (codex review pipeline), not a specific attack class. Treat as: **operational queue-health gate, shipment-scope**.
 
-Per §7 row "Per-step / per-host hang" mitigation column: "Per-step timeout configurable; 15-min hard cap on codex per `core:codex-sutra`; daemon kills wedged child on timeout". HS-7 sits adjacent — when codex itself is healthy but the codex *review backlog* signals process-health collapse.
+Per §7 row "Per-step / per-host hang" mitigation column: "Per-step timeout configurable; 15-min hard cap on codex per `core:codex-sutra`; daemon kills wedged child on timeout".
+
+**Amendment (founder D2026-05-13, `core:codex-sutra` v2.39.2)**: the codex hard cap has been removed. `core:codex-sutra` now polls indefinitely with stall + heartbeat warnings — codex exits naturally or the founder interrupts with Ctrl-C. Per-step daemon timeout in NATIVE-ENGINE §7 still applies as a separate, daemon-owned gate; HS-7 itself is unchanged (it watches review-backlog health, not per-call duration).
+
+HS-7 sits adjacent — when codex itself is healthy but the codex *review backlog* signals process-health collapse.
 
 ## References
 

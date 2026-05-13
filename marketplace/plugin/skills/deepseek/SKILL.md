@@ -50,7 +50,7 @@ rounds. Final verdict ADVISORY. Trail at:
 |---|---|---|
 | TODO[v2-scrubber] | No outbound data scrubbing (binary excl / secret regex / path allowlist). v1 sends payload as-is. | Add `bin/deepseek-payload-scrub.sh` per design §B (file -b --mime-type, AWS/JWT/PEM/.env regex, ≤500 KB cap with AskUserQuestion). |
 | TODO[v2-session] | Consult session continuity disabled. Every `/deepseek consult` starts fresh. | Add UUID-scoped per-repo per-branch session dirs `.context/deepseek-sessions/<uuid>/`, replay redaction, --new-session flag. |
-| TODO[v2-preflight] | No pre-flight token/cost budgeting. v1 relies on API cap + 15 min wall. | Estimate input tokens + estimated_cost preflight gate before HTTP send. |
+| TODO[v2-preflight] | No pre-flight token/cost budgeting. v1 has no wall-clock cap (D2026-05-13) — relies on API-side timeouts only. | Estimate input tokens + estimated_cost preflight gate before HTTP send. |
 | TODO[v2-schema] | Separate gate-logs per skill (codex-reviews/ vs deepseek-reviews/). | Unify under canonical `sutra/os/engines/PEER-REVIEW-EVENT-SCHEMA.md`. |
 | TODO[v2-shim-scrub] | Shim path (`deepseek-claude`) has no outbound scrubbing. | Pre-launch warning; eventually wrap claude-code stdin/stdout. |
 | TODO[v2-shim-keychain] | Key stored at `~/.config/deepseek/auth.token` (chmod 600). | Optional macOS Keychain item. |
@@ -231,7 +231,7 @@ REQUEST_JSON=$(jq -nc \
 # Launch curl in its own process group — uses $DEEPSEEK_TOKEN
 # (resolved by pre-flight, works for both JSON canonical + plain text legacy)
 if command -v setsid >/dev/null 2>&1; then
-  setsid bash -c "curl -sS --max-time 900 \
+  setsid bash -c "curl -sS \
     -H \"x-api-key: $DEEPSEEK_TOKEN\" \
     -H \"Content-Type: application/json\" \
     -H \"anthropic-version: 2023-06-01\" \
@@ -245,7 +245,7 @@ import os, subprocess, json
 os.setsid()
 req = '$DEEPSEEK_TOKEN'
 body = '''$REQUEST_JSON'''
-r = subprocess.run(['curl','-sS','--max-time','900',
+r = subprocess.run(['curl','-sS',
   '-H', f'x-api-key: {req}',
   '-H', 'Content-Type: application/json',
   '-H', 'anthropic-version: 2023-06-01',
@@ -260,32 +260,34 @@ fi
 DEEPSEEK_PID=$!
 PGID=$DEEPSEEK_PID
 
-# Poll loop (5 min stall warn / 10 min progress warn / 15 min hard kill)
+# Poll loop — no wall-clock hard cap (D2026-05-13).
+# Stall warn at 5 min no-progress; heartbeat every 10 min.
+# Founder Ctrl-C → SIGINT trap forwards to process group.
 START=$(date +%s)
 LAST_BYTES=0
 STALL_POLLS=0
-KILLED=""
+INTERRUPTED=""
+LAST_HEARTBEAT_BUCKET=0
 
-while [ ! -s "$TMPNAT" ] && [ -z "$KILLED" ]; do
+trap 'INTERRUPTED=1; kill -TERM "-$PGID" 2>/dev/null; sleep 2; kill -KILL "-$PGID" 2>/dev/null' INT
+
+while [ ! -s "$TMPNAT" ] && [ -z "$INTERRUPTED" ]; do
   sleep 30
   NOW=$(date +%s); ELAPSED=$((NOW-START))
   BYTES=$(wc -c < "$TMPRESP" 2>/dev/null || echo 0)
   if [ "$BYTES" = "$LAST_BYTES" ]; then STALL_POLLS=$((STALL_POLLS+1));
   else STALL_POLLS=0; LAST_BYTES=$BYTES; fi
-  [ $STALL_POLLS -eq 10 ] && echo "deepseek: no output for 5 min — may be stuck."
-  [ $ELAPSED -ge 600 ] && [ $ELAPSED -lt 630 ] && echo "deepseek still running at 10 min. Hard cap: 15 min."
-  if [ $ELAPSED -ge 900 ]; then
-    kill -TERM "-$PGID" 2>/dev/null
-    sleep 5
-    kill -KILL "-$PGID" 2>/dev/null
-    KILLED=timeout
-    break
+  [ $STALL_POLLS -eq 10 ] && echo "deepseek: no output for 5 min — may be stuck. Founder can interrupt with Ctrl-C."
+  HEARTBEAT_BUCKET=$((ELAPSED/600))
+  if [ "$HEARTBEAT_BUCKET" -ne "$LAST_HEARTBEAT_BUCKET" ] && [ "$HEARTBEAT_BUCKET" -gt 0 ]; then
+    LAST_HEARTBEAT_BUCKET=$HEARTBEAT_BUCKET
+    echo "deepseek still running at $((HEARTBEAT_BUCKET*10)) min. No hard cap; Ctrl-C to interrupt."
   fi
 done
 
 # Wrapper writes final TMPDONE
-if [ "$KILLED" = "timeout" ]; then
-  echo "EXIT:124 REASON:timeout" > "$TMPDONE"
+if [ -n "$INTERRUPTED" ]; then
+  echo "EXIT:130 REASON:interrupted" > "$TMPDONE"
 elif [ -s "$TMPNAT" ]; then
   NAT_EXIT=$(cat "$TMPNAT")
   if [ "$NAT_EXIT" = "0" ]; then
@@ -441,7 +443,7 @@ v2 unifies the schema across codex-sutra + deepseek under
 | Model alias | response.model versioned alias | (continue) + advisory log | model_aliased |
 | Model absent | response.model not in response | ADVISORY | response_model_missing |
 | No verdict markers (review/design-review) | grep | FAIL | malformed_output |
-| Hard cap timeout | wrapper kill | FAIL | timeout |
+| Founder interrupt (Ctrl-C / SIGINT) | wrapper trap fires during poll | FAIL | interrupted |
 | Log-write fail | append fails | FAIL + stderr beacon | log_write_failed |
 
 Stderr beacon: `DEEPSEEK-RESULT verdict=<v> reason=<r> commit=<sha>` —
@@ -451,7 +453,10 @@ last-resort durable signal when gate-log.jsonl is unwritable.
 
 ## Important rules
 
-- **Hard cap 15 min.** Wrapper-enforced via `kill -TERM -<pgid>` after 900 s.
+- **No wall-clock hard cap** (founder D2026-05-13). Wrapper polls indefinitely
+  with stall + heartbeat warnings. Curl runs without `--max-time`; the
+  DeepSeek API's own server-side timeout is the only network bound. Founder
+  Ctrl-C → SIGINT trap forwards SIGTERM/SIGKILL to the whole process group.
 - **Read-only.** v1 makes HTTP calls only; never writes to repo files (except
   `.enforcement/deepseek-reviews/gate-log.jsonl` and `/tmp/deepseek-*`).
 - **Verbatim presentation.** Output goes inside `DEEPSEEK SAYS` block unmodified.

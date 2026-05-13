@@ -1,15 +1,16 @@
 # Sutra — Current Version
 
-## v2.39.1 (2026-05-13, HEAD)
+## v2.39.2 (2026-05-13, HEAD)
 
-**Patch over v2.39.0** — cache-invalidating bump so /core:update propagates the housekeeping fixes.
+**Remove 15-min hard cap on `codex-sutra` + `deepseek` skills** (founder D2026-05-13).
 
-Ships from v2.39.0 (same content; version field was the only thing missing):
-- Anti-glaze-tone skill at `marketplace/plugin/skills/anti-glaze-tone/SKILL.md`.
-- Plugin description compressed from ~14KB → ~200 chars.
-- CURRENT-VERSION.md trimmed from 797 → 12 lines.
-- `/core:update` prints `/reload-plugins` reminder.
+- 900-s wrapper kill removed from both skills; replaced with SIGINT trap (founder Ctrl-C → SIGTERM/SIGKILL on the whole process group).
+- Heartbeat warnings now fire every 10 min during long-running calls (was one-shot at 10 min). Stall warn at 5 min no-progress unchanged.
+- `deepseek`: `curl --max-time 900` flag removed — DeepSeek API server-side timeout is the only network bound.
+- `sutra-defaults.json`: `deepseek.limits.wall_seconds_hard_cap` is now `null`.
+- Fail-closed: `Hard-cap timeout / reason=timeout / exit 124` → `Founder interrupt (Ctrl-C) / reason=interrupted / exit 130`.
+- Native canon: `phase-D-codex-review.md` + `HS-7-codex-queue-stale.md` updated with amendment line. HS-7 itself unchanged (watches review-backlog health, not per-call duration).
 
-Lesson: any content change in a release artifact (description, CHANGELOG, skill) requires a patch-bump even without a feature change — otherwise marketplace cache won't invalidate.
+Rationale: long-reasoning runs were being killed before completion. Founder Ctrl-C is the only interrupt path now; stall + heartbeat keep silent hangs observable.
 
 For prior release history, see `marketplace/plugin/CHANGELOG.md`.

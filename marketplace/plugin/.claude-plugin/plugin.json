@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.1",
-  "description": "v2.39.1 (2026-05-13) — cache-invalidating patch over v2.39.0: ships concise description, /core:update reload reminder. Operating system for building with AI. See CHANGELOG.md for release history.",
+  "version": "2.39.2",
+  "description": "v2.39.2 (2026-05-13) — codex-sutra + deepseek skills: 15-min wall-clock hard cap removed (founder D2026-05-13). Heartbeat warnings + founder Ctrl-C interrupt replace auto-kill. Operating system for building with AI. See CHANGELOG.md for release history.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

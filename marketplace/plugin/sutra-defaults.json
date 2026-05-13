@@ -401,9 +401,10 @@
       "default_effort": "high"
     },
     "limits": {
-      "wall_seconds_hard_cap": 900,
+      "wall_seconds_hard_cap": null,
       "stall_warn_seconds": 300,
-      "progress_warn_seconds": 600
+      "heartbeat_interval_seconds": 600,
+      "_note": "wall_seconds_hard_cap=null per founder D2026-05-13 — no automatic kill; stall + heartbeat are notifications only; founder Ctrl-C is the only interrupt path"
     },
     "log_paths": {
       "skill_gate_log": ".enforcement/deepseek-reviews/gate-log.jsonl",

@@ -4,6 +4,18 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.2 — 2026-05-13
+
+**Remove 15-min hard cap on `codex-sutra` + `deepseek` skills** (founder D2026-05-13).
+
+- `skills/codex-sutra/SKILL.md`: 900-s wrapper kill removed; replaced with SIGINT trap (founder Ctrl-C → SIGTERM/SIGKILL to whole process group). Heartbeat now fires every 10 min instead of one-shot at 10 min. Stall warn unchanged (5 min no-progress).
+- `skills/deepseek/SKILL.md`: same poll-loop change. `curl --max-time 900` flag removed; DeepSeek API server-side timeout is the only network bound.
+- `sutra-defaults.json`: `deepseek.limits.wall_seconds_hard_cap` set to `null`; `progress_warn_seconds` renamed to `heartbeat_interval_seconds`.
+- Fail-closed tables: `Hard-cap timeout / reason=timeout / exit 124` rows replaced by `Founder interrupt (Ctrl-C) / reason=interrupted / exit 130`.
+- Native canon refs updated: `sutra/os/native/impl-phases/phase-D-codex-review.md` + `sutra/os/native/hardstops/HS-7-codex-queue-stale.md` carry an amendment line — HS-7 itself is unchanged (it watches review-backlog health, not per-call duration).
+
+Rationale: long-reasoning runs (`high`/`xhigh` effort on large diffs or design docs) were being killed before completion. Without a cap, founder retains the interrupt path via Ctrl-C; the wrapper still surfaces stall + heartbeat so silent hangs remain observable.
+
 ## v2.39.1 — 2026-05-13
 
 **Cache-invalidating patch over v2.39.0.** Same content; version field was the only thing missing to propagate the housekeeping fixes (concise plugin.json description, /core:update reload reminder).

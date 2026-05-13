@@ -19,7 +19,7 @@ Phase C produced a PR diff for a block (or block extension). PROTO-019 directive
 - Cadence: per-PR; PROTO-019 directive gate. (Per §14.15.1 phase-D box "Cadence" row.)
 
 ## Duration (target wall-clock)
-NOT specified in canon. Per-PR; bounded by codex CLI 15-min hard cap (per `core:codex-sutra` skill).
+NOT specified in canon. Per-PR; unbounded (founder D2026-05-13 removed the 15-min hard cap in `core:codex-sutra`). Codex runs until natural exit or founder Ctrl-C interrupt.
 
 ## DRI
 Claude dispatches; codex returns. (Per §14.15.1 phase-D box "Owner" row.)

@@ -6,8 +6,9 @@ description: |
   Sutra-owned wrapper for the OpenAI Codex CLI. Three modes — Review (diff
   pass/fail gate), Challenge (adversarial), Consult (Q&A with session
   continuity). Forked from gstack /codex (source SHA: see "Upstream sync"
-  section). Hard cap raised from 5 min to 15 min, with 10-min progress warn
-  and 5-min stall warn. Use when invoked by the founder or by PROTO-019 hooks
+  section). No wall-clock hard cap (founder D2026-05-13); periodic stall
+  + heartbeat warnings only — codex runs until it returns or the founder
+  interrupts. Use when invoked by the founder or by PROTO-019 hooks
   for the codex-by-codex review path. NOT auto-invoked.
 allowed-tools:
   - Bash
@@ -23,19 +24,23 @@ upstream-source:
 
 ## Why this skill exists
 
-Sutra needs an owned, controlled-cap codex review primitive for PROTO-019
-v2's codex-by-codex path. The gstack `/codex` skill enforces a 5-minute
-Bash timeout (`timeout: 300000`) — too short for "high" reasoning effort on
-medium diffs. codex-sutra uses background execution with a 15-minute hard
-cap enforced by the wrapper's own polling logic.
+Sutra needs an owned codex review primitive for PROTO-019 v2's codex-by-codex
+path. The gstack `/codex` skill enforces a 5-minute Bash timeout
+(`timeout: 300000`) — too short for "high" reasoning effort on medium diffs.
+codex-sutra uses background execution with **no wall-clock hard cap**
+(founder direction D2026-05-13); the wrapper polls indefinitely with periodic
+stall + heartbeat warnings. Codex runs until it returns or the founder
+interrupts.
 
 ## What changed vs gstack /codex
 
 This is **not** a one-line change. Five functional changes:
 
-1. **Hard cap 5m → 15m** (the explicit ask).
+1. **Removed wall-clock hard cap entirely** (D2026-05-13). gstack's 5-minute
+   Bash timeout dropped; no replacement cap. Wrapper polls forever with
+   stall + heartbeat warnings.
 2. **Foreground `timeout: 300000` → background + polling** (Bash foreground
-   maxes at 10 min; 15-min cap requires bg).
+   maxes at 10 min; uncapped runs require bg + polling regardless).
 3. **Log path** `~/.gstack/.../review-log` → `.enforcement/codex-reviews/gate-log.jsonl` (PROTO-019 path).
 4. **Boundary list extended** to exclude `sutra/marketplace/plugin/skills/`
    and `sutra/marketplace/plugin/hooks/` (Sutra skill files).
@@ -96,21 +101,22 @@ Reference as **the boundary** below.
 
 ## Liveness & process-lifecycle policy
 
-Codex runs unbounded by Bash, capped by wrapper polling. Three thresholds,
-all enforced in the polling loop:
+Codex runs unbounded by Bash and unbounded by wrapper polling (D2026-05-13:
+no wall-clock hard cap). The wrapper surfaces stall + heartbeat warnings so
+the founder can decide whether to interrupt:
 
 | Threshold | Trigger | Action |
 |---|---|---|
-| **Stall warn** | 5 min with no new bytes appended to `$TMPRESP` | Surface: "codex-sutra: no output for 5 min — codex may be stuck. Continuing to poll. Founder can interrupt." |
-| **Progress warn** | 10 min wall-clock elapsed | Surface: "codex-sutra still running at 10 min. Hard cap: 15 min. Last line: <tail>." |
-| **Hard kill** | 15 min wall-clock elapsed | `kill -TERM` the bg process group, wait 5 s, `kill -KILL` if still alive. Set `KILLED=timeout` flag. Proceed to gate verdict (FAIL, reason: timeout). |
+| **Stall warn** | 5 min with no new bytes appended to `$TMPRESP` (one-shot at 5 min, re-arms after fresh bytes) | Surface: "codex-sutra: no output for 5 min — codex may be stuck. Continuing to poll. Founder can interrupt with Ctrl-C." |
+| **Heartbeat** | Every 10 min of wall-clock elapsed (10, 20, 30, ...) | Surface: "codex-sutra still running at <N> min. No hard cap; founder can interrupt with Ctrl-C. Last line: <tail>." |
 
-Polling cadence: every 30 s.
+Polling cadence: every 30 s. There is no automatic kill — the bg process
+exits naturally or the founder interrupts.
 
 Exit detection: the polling loop waits on `[ -s "$TMPNAT" ]` (subshell
 writes its exit code there on natural completion). `$TMPDONE` is the
 *authoritative final state* and is written by the wrapper alone after
-either natural exit or hard-cap kill — never used as the polling signal.
+either natural exit or founder interrupt — never used as the polling signal.
 
 Stuck detection: compare `wc -c < "$TMPRESP"` between polls. If unchanged
 for 10 consecutive polls (5 min), trigger stall warn.
@@ -139,7 +145,7 @@ maps to `GATE: FAIL` with a `reason` field, written to gate-log.jsonl.
 | codex crash (non-zero exit) | `EXIT:N` in `$TMPDONE`, N != 0 | FAIL | `codex_exit_<N>` |
 | Empty response | `$TMPRESP` size 0 after exit | FAIL | `empty_response` |
 | Malformed output (no recognizable verdict markers in review mode) | grep for `[P1]`/`[P2]` returns nothing AND no "no findings" line | FAIL | `malformed_output` |
-| Hard-cap timeout | wrapper-killed at 15 min | FAIL | `timeout` |
+| Founder interrupt (Ctrl-C / SIGINT) | wrapper receives SIGINT during poll loop | FAIL | `interrupted` |
 | Log-write failure | `printf >> gate-log.jsonl` exit non-zero | FAIL (and surface to founder) | `log_write_failed` |
 | Session-id write failure | consult mode, write to `.context/codex-session-id` fails | ADVISORY (continue, log warning) | `session_persist_failed` |
 
@@ -339,10 +345,10 @@ wrapper writes `$TMPDONE` (the authoritative final state). This eliminates
 races where two writers could clobber each other.
 
 **Process-group rule.** Codex runs in its own process group via `setsid`
-(or python `os.setsid()` fallback on macOS without `setsid`). On hard-cap
-timeout the wrapper signals the *entire group* with `kill -TERM -<pgid>`
-so codex and any children terminate together. Closes the hole where
-killing only the subshell PID could leave codex running past the cap.
+(or python `os.setsid()` fallback on macOS without `setsid`). If the founder
+interrupts (Ctrl-C → SIGINT in the wrapper's poll loop), the wrapper signals
+the *entire group* with `kill -TERM -<pgid>` so codex and any children
+terminate together. There is no automatic kill — interrupt is founder-driven.
 
 **Stdin rule.** Codex always launched with `</dev/null`. Without it,
 `codex exec` waits on stdin and hangs forever even when the prompt is
@@ -378,32 +384,32 @@ PGID=$CODEX_PID  # session leader: pgid == pid
 START=$(date +%s)
 LAST_BYTES=0
 STALL_POLLS=0
-KILLED=""
+INTERRUPTED=""
+LAST_HEARTBEAT_BUCKET=0
 
-while [ ! -s "$TMPNAT" ] && [ -z "$KILLED" ]; do
+# Founder Ctrl-C → forward to whole process group, then exit poll loop.
+trap 'INTERRUPTED=1; kill -TERM "-$PGID" 2>/dev/null; sleep 2; kill -KILL "-$PGID" 2>/dev/null' INT
+
+while [ ! -s "$TMPNAT" ] && [ -z "$INTERRUPTED" ]; do
   sleep 30
   NOW=$(date +%s); ELAPSED=$((NOW-START))
   BYTES=$(wc -c < "$TMPRESP" 2>/dev/null || echo 0)
   if [ "$BYTES" = "$LAST_BYTES" ]; then STALL_POLLS=$((STALL_POLLS+1));
   else STALL_POLLS=0; LAST_BYTES=$BYTES; fi
-  # Stall warn at 5 min no-progress (10 polls of 30 s)
-  [ $STALL_POLLS -eq 10 ] && echo "codex-sutra: no output for 5 min — may be stuck."
-  # Progress warn at 10 min wall (one-shot window)
-  [ $ELAPSED -ge 600 ] && [ $ELAPSED -lt 630 ] && echo "codex-sutra still running at 10 min. Hard cap: 15 min."
-  # Hard kill at 15 min wall — kill the whole process group
-  if [ $ELAPSED -ge 900 ]; then
-    kill -TERM "-$PGID" 2>/dev/null
-    sleep 5
-    kill -KILL "-$PGID" 2>/dev/null
-    sleep 2  # let OS reap; subshell's $TMPNAT write (if any) is irrelevant
-    KILLED=timeout
-    break
+  # Stall warn at 5 min no-progress (10 polls of 30 s), one-shot per stall window
+  [ $STALL_POLLS -eq 10 ] && echo "codex-sutra: no output for 5 min — codex may be stuck. Founder can interrupt with Ctrl-C."
+  # Heartbeat every 10 min of wall-clock (10, 20, 30, ...)
+  HEARTBEAT_BUCKET=$((ELAPSED/600))
+  if [ "$HEARTBEAT_BUCKET" -ne "$LAST_HEARTBEAT_BUCKET" ] && [ "$HEARTBEAT_BUCKET" -gt 0 ]; then
+    LAST_HEARTBEAT_BUCKET=$HEARTBEAT_BUCKET
+    LAST_LINE=$(tail -c 200 "$TMPRESP" 2>/dev/null | tail -n 1)
+    echo "codex-sutra still running at $((HEARTBEAT_BUCKET*10)) min. No hard cap; Ctrl-C to interrupt. Last line: $LAST_LINE"
   fi
 done
 
 # WRAPPER is the single writer of TMPDONE (authoritative final state).
-if [ "$KILLED" = "timeout" ]; then
-  echo "EXIT:124 REASON:timeout" > "$TMPDONE"
+if [ -n "$INTERRUPTED" ]; then
+  echo "EXIT:130 REASON:interrupted" > "$TMPDONE"
 elif [ -s "$TMPNAT" ]; then
   NAT_EXIT=$(cat "$TMPNAT")
   if [ "$NAT_EXIT" = "0" ]; then
@@ -442,7 +448,7 @@ fail-open from the hook's POV. Three channels in priority order:
 Skill exit code mirrors the verdict:
 - PASS / ADVISORY → exit 0
 - CHANGES-REQUIRED / FAIL → exit 1
-- Hard-cap timeout → exit 124
+- Founder interrupt (Ctrl-C) → exit 130
 
 PROTO-019 hooks treat **non-zero exit + no readable verdict file** as
 FAIL with `reason=infra_silent`. The skill must never exit 0 without
@@ -468,7 +474,7 @@ One JSON object per line. POSIX append (`>>`) is atomic for writes <PIPE_BUF
   "reason": "<string|null>",
   "commit": "<short-sha|null>",
   "wall_seconds": <int>,
-  "killed": "timeout|null"
+  "killed": "interrupted|null"
 }
 ```
 
@@ -543,7 +549,10 @@ list). Sync is for upstream improvements, not lockstep.
 
 ## Important rules
 
-- **Hard cap 15 min.** Wrapper-enforced via `kill -TERM -<pgid>` after 900 s.
+- **No wall-clock hard cap** (founder D2026-05-13). Wrapper polls indefinitely
+  with periodic stall + heartbeat warnings. Codex exits naturally or the
+  founder interrupts with Ctrl-C (wrapper forwards SIGTERM/SIGKILL to the
+  whole process group).
 - **Read-only codex.** Always `-s read-only`. Wrapper writes only to
   `.enforcement/codex-reviews/`, `.context/codex-session-id`, and `/tmp/codex-sutra-*`.
 - **Verbatim presentation.** Codex output goes inside `CODEX-SUTRA SAYS`
