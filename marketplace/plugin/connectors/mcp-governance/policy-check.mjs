@@ -2,11 +2,11 @@
 /**
  * Sutra MCP Policy Check
  *
- * Called by hooks/mcp-connector-gate.sh on every claude.ai MCP tool invocation.
+ * Called by hooks/mcp-governance-gate.sh on every claude.ai MCP tool invocation.
  * Loads connector manifests, maps tool name → capability, enforces tier + depth.
  *
  * Usage:
- *   node mcp-policy-check.mjs --tool <mcp_tool_name> [options]
+ *   node policy-check.mjs --tool <mcp_tool_name> [options]
  *
  * Options:
  *   --tool           claude.ai MCP tool name (e.g. mcp__claude_ai_Slack__slack_send_message)

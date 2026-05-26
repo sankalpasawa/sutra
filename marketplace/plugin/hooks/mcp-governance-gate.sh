@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Sutra — MCP Connector Gate  (PreToolUse · matcher: mcp__claude_ai)
+# Sutra — MCP Governance Gate  (PreToolUse · matcher: mcp__claude_ai)
 #
 # Fires on every claude.ai MCP tool invocation. Delegates to
-# connectors/scripts/mcp-policy-check.mjs which:
+# connectors/mcp-governance/policy-check.mjs which:
 #   1. Finds the matching connector manifest via mcp_tool_map
 #   2. Checks tier access (T1–T4) against manifest tierAccess
 #   3. Checks depth floor against manifest capability minDepth
@@ -37,7 +37,7 @@ esac
 
 # ── Locate policy checker ─────────────────────────────────────────────────────
 
-POLICY_CHECK="${CLAUDE_PLUGIN_ROOT}/connectors/scripts/mcp-policy-check.mjs"
+POLICY_CHECK="${CLAUDE_PLUGIN_ROOT}/connectors/mcp-governance/policy-check.mjs"
 
 if [ ! -f "$POLICY_CHECK" ]; then
   # Missing policy checker: fail-open, warn loudly.

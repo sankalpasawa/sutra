@@ -167,7 +167,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/mcp-connector-gate.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/mcp-governance-gate.sh",
             "timeout": 5
           }
         ]
