@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.4",
-  "description": "v2.39.4 (2026-05-13) — prd-discipline skill v2: plugs 5 baseline-test rationalizations (namespace-collision check · naming-with-alternatives · scale-undershoot surface · canon-typed-entity resolution · TODO-is-not-an-alibi). Refactored from TDD subagent baseline. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.5",
+  "description": "v2.39.5 (2026-05-28) — h-sutra-enforce hook now distinguishes a malformed (mis-cased) header from a missing one, so the redo guidance says 'DIRECTION·VERB must be UPPERCASE' instead of the misleading 'header missing'. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.39.4 (2026-05-13, HEAD)
+## v2.39.5 (2026-05-28, HEAD)
+
+**`h-sutra-enforce` hook — actionable mis-cased-header error.** Malformed (Title-case/lowercase DIRECTION·VERB) headers now report "DIRECTION·VERB must be UPPERCASE" with a canonical example, instead of the misleading "header missing". Valid-header pass/block logic unchanged (regression-tested).
+
+## v2.39.4 (2026-05-13)
 
 **`prd-discipline` skill v2** — REFACTOR pass plugs 5 baseline-test rationalizations.
 

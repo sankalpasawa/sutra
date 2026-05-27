@@ -5,6 +5,8 @@
 # WHY_NOT_L0_KIND=n/a
 # WHY_NOT_L0_REASON=n/a
 # TS=2026-05-12
+# VERSION=v5 (2026-05-28: malformed-vs-missing diagnostic — case errors now
+#            report "DIRECTION·VERB must be UPPERCASE" instead of "header missing")
 # VERSION=v4 (filters tool_result user rows; first-text-of-current-turn semantic)
 #
 # h-sutra-enforce.sh — Stop hook. Identifies the LAST HUMAN user message
@@ -127,17 +129,31 @@ if printf '%s' "$FIRST_LINE" | grep -qE "$HEADER_RE"; then
   exit 0
 fi
 
-audit_log "block" "$FIRST200" "header_missing_layer_fired"
+# --- Block branch: diagnose MALFORMED vs MISSING (v5, 2026-05-28) ---
+# A first line that is bracket+middot shaped but fails the strict match is
+# almost always a CASE error (Title-case/lowercase DIRECTION·VERB). Earlier
+# versions reported "header missing" in that case, which is misleading and
+# sent at least one author chasing a phantom tool-turn bug. Distinguish so
+# the redo guidance is actionable.
+if printf '%s' "$FIRST_LINE" | grep -qE '^\[[^]·]+·[^]·]+'; then
+  REASON_CODE="header_malformed_layer_fired"
+  DIAG="Your first line IS an H-Sutra header but it FAILED the canonical format — almost always a CASE error. DIRECTION and VERB must be UPPERCASE letters/digits/hyphens (or DIRECTION may be Dnn, e.g. D48). Canonical example: [INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low]. DIRECTION in {INBOUND|INTERNAL|OUTBOUND} or an UPPERCASE actor (e.g. ASAWA, FOUNDER); VERB in {QUERY|ASSERT|DIRECT|...} UPPERCASE. Re-emit the SAME header with DIRECTION and VERB fully UPPERCASE."
+else
+  REASON_CODE="header_missing_layer_fired"
+  DIAG="No H-Sutra header found as the first text. Emit it as the literal FIRST line before any other text."
+fi
+
+audit_log "block" "$FIRST200" "$REASON_CODE"
 
 FIRST_ESC=$(printf '%s' "$FIRST200" | tr -d '\n' | sed 's/\\/\\\\/g; s/"/\\"/g')
-printf '{"ts":"%s","session_id":"%s","violation":"h_sutra_header_missing","layer":"h-sutra","layer_fired":true,"first_line_observed":"%s","action":"stop_blocked_force_redo"}\n' \
-  "$NOW" "$SESSION_ID" "$FIRST_ESC" \
+printf '{"ts":"%s","session_id":"%s","violation":"h_sutra_header_invalid","reason_code":"%s","layer":"h-sutra","layer_fired":true,"first_line_observed":"%s","action":"stop_blocked_force_redo"}\n' \
+  "$NOW" "$SESSION_ID" "$REASON_CODE" "$FIRST_ESC" \
   >> "$VIOLATIONS_LOG" 2>/dev/null
 
 cat <<JSON
 {
   "decision": "block",
-  "reason": "H-Sutra layer FIRED: first text of this turn did not start with the H-Sutra header.\n\nPer CLAUDE.md §Mandatory Blocks, EVERY response must start with the H-Sutra header as the literal FIRST text:\n  [<DIRECTION>·<VERB> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]\n\nOr Stage-1-fail variant:\n  [STAGE-1-FAIL · CLARIFY · attempt:1/1]\n\nFirst 200 chars of your turn's first text: '${FIRST_ESC}'\n\nRedo: emit the H-Sutra header as the LITERAL FIRST line, then continue with Input Routing + Depth blocks per CLAUDE.md."
+  "reason": "H-Sutra layer FIRED.\n\n${DIAG}\n\nFormat: [<DIRECTION>·<VERB> · TIMING:<...> · CHANNEL:<...> · REV:<...> · RISK:<...>]  (or [STAGE-1-FAIL · CLARIFY · attempt:1/1]).\n\nFirst 200 chars observed: '${FIRST_ESC}'\n\nRedo with the corrected header as the literal FIRST line, then continue with Input Routing + Depth blocks per CLAUDE.md."
 }
 JSON
 exit 0

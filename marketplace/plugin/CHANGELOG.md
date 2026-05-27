@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.5 — 2026-05-28
+
+**`h-sutra-enforce` hook — actionable error on mis-cased headers.**
+
+- Block branch now splits MALFORMED (bracket+middot but fails strict match — almost always Title-case/lowercase DIRECTION·VERB) from MISSING (no header).
+- Malformed → "DIRECTION·VERB must be UPPERCASE" + canonical example. Was misreporting these as "header missing".
+- Pass/block logic for valid headers unchanged (regression-tested). Audit + violations logs gain `reason_code`.
+
 ## v2.39.4 — 2026-05-13
 
 **`prd-discipline` skill v2** — REFACTOR pass per superpowers:writing-skills TDD discipline.
