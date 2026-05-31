@@ -4,6 +4,15 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.6 — 2026-05-31
+
+**Prompt-capture hook (UserPromptSubmit) — fleet L0.**
+
+- New `hooks/capture-prompt.sh` appends every founder prompt as JSONL to the project's `holding/state/prompts/<YYYY-MM>.jsonl` (schema: ts, session_id, prompt).
+- Lossless, non-blocking; kill via env `PROMPT_CAPTURE_DISABLED=1` or `~/.prompt-capture-disabled`. No network.
+- Registered in `hooks/hooks.json` UserPromptSubmit after `per-turn-discipline-prompt.sh`.
+- Promoted from Asawa-local L1 (was at `holding/hooks/capture-prompt.sh`); Asawa L1 copy retired same day.
+
 ## v2.39.5 — 2026-05-28
 
 **`h-sutra-enforce` hook — actionable error on mis-cased headers.**

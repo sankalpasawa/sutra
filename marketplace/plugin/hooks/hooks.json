@@ -298,6 +298,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-discipline-prompt.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/capture-prompt.sh",
+            "timeout": 3
           }
         ]
       }
