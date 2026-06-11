@@ -6,7 +6,7 @@
 
 ## Context
 
-The Native first-layer schema (§1.0, LOCKED) has 8 blocks: UI · Host (Claude CLI) · Orchestration · System of Process · System of Record · Authority+Tenancy · Compute · External World. The Sutra plugin — 76 hooks, 21 skills, 6 per-turn governance blocks, sutra-defaults.json — ships to every fleet install but had no declared home in the block diagram. The Host block's second-order draft carried this as open gap #4. The Sutra→Native parity ledger (147 concepts, 2026-06-12) needed the placement settled to anchor ~30 plugin-implemented concepts.
+The Native first-layer schema (§1.0, LOCKED) has 8 blocks: UI · Host (Claude CLI) · Orchestration · System of Process · System of Record · Authority+Tenancy · Compute · External World. The Sutra plugin — 76 hooks, 21 skills, 6 per-turn governance blocks, sutra-defaults.json — ships to every fleet install but had no declared home in the block diagram. The Host block's second-order draft carried this as open gap #4. The Sutra→Native parity ledger (148 concepts, 2026-06-12) needed the placement settled to anchor ~30 plugin-implemented concepts.
 
 ## Decision
 
