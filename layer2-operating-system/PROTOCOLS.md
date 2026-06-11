@@ -18,7 +18,7 @@ _Last reconciled from system.yaml: **2026-04-18** · 22 protocols total + 2 hand
 | ID | Name | yaml_status | enforcement | mechanism | test | last_updated |
 |----|------|-------------|-------------|-----------|------|--------------|
 | PROTO-000 | Every Change Must Ship With Implementation | ACTIVE | SOFT | validate.mjs inverse coverage + test runner (current); doct… | — | 2026-04-18 |
-| PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/dispatcher-pretool.sh Check 5 (PreToolUse exi… | sutra/package/tests/test-d28-routing-gate.sh | 2026-04-18 |
+| PROTO-004 | Keys in Env Vars Only | ACTIVE | HARD | holding/hooks/dispatcher-pretool.sh Check 5 (PreToolUse exi… | holding/hooks/tests/test-d28-routing-gate.sh | 2026-04-18 |
 | PROTO-006 | Process Discipline | ACTIVE | SOFT | CLAUDE.md + dispatcher routing check | — | 2026-04-18 |
 | PROTO-009 | Narration Is Not Artifact | ACTIVE | SOFT | dispatcher-pretool.sh | — | 2026-04-18 |
 | PROTO-013 | Sutra Version Deploy | ACTIVE | SOFT | holding/hooks/dispatcher-pretool.sh (D27 depth-5 gate) | — | 2026-04-18 |
@@ -38,11 +38,11 @@ _Last reconciled from system.yaml: **2026-04-18** · 22 protocols total + 2 hand
 | PROTO-018 | Auto-Propagation on Version Bump | RETIRED | — | — | — | 2026-04-18 |
 | PROTO-019 | Codex Directive Enforcement | ACTIVE | HARD | sutra/marketplace/plugin/hooks/codex-directive-{detect,gate}.sh | sutra/marketplace/plugin/tests/unit/test-codex-directive-*.sh + integration/test-codex-directive-e2e.sh | 2026-04-23 |
 | PROTO-020 | Plugin Identity Capture | ACTIVE | SOFT | lib/identity.sh | sutra/marketplace/plugin/tests/unit/test-identity… | 2026-04-18 |
-| PROTO-021 | BUILD-LAYER Declaration | ACTIVE | HARD-ON-CODE / SOFT-ON-DOCS | holding/hooks/build-layer-check.sh (PreToolUse Edit\|Write) | holding/hooks/tests/test-build-layer-check.sh | 2026-04-18 |
+| PROTO-021 | BUILD-LAYER Declaration | ACTIVE | HARD-ON-CODE / SOFT-ON-DOCS | sutra/marketplace/plugin/hooks/build-layer-check.sh (PreToolUse Edit\|Write; promoted from holding/hooks per D38 Wave 1) | holding/hooks/tests/test-build-layer-check.sh | 2026-04-18 |
 | PROTO-022 | Completion Status Protocol | ACTIVE | SOFT | sutra/marketplace/plugin/hooks/completion-protocol-check.sh (PostToolUse Task) | sutra/marketplace/plugin/tests/unit/test-completion-protocol.sh | 2026-04-24 |
 | PROTO-023 | Centralized Config (`sutra-config`) | ACTIVE | FOUNDATION (read-surface) | bin/sutra-config | sutra/marketplace/plugin/tests/unit/test-sutra-config.sh | 2026-04-24 |
 | PROTO-024 | Client→Team Feedback Fan-in (V1) | ACTIVE | SOFT | scripts/feedback.sh + lib/privacy-sanitize.sh | sutra/marketplace/plugin/tests/unit/test-feedback.sh | 2026-04-27 |
-| PROTO-025 | Structural-Move Authorization (extends PROTO-021) | ACTIVE | HARD-ON-CODE | holding/hooks/structural-move-check.sh | holding/hooks/structural-move-check.test.sh | 2026-04-27 |
+| PROTO-025 | Structural-Move Authorization (extends PROTO-021) | ACTIVE | HARD-ON-CODE | sutra/marketplace/plugin/hooks/structural-move-check.sh (promoted per D38) | holding/hooks/structural-move-check.test.sh | 2026-04-27 |
 
 **Status legend**: ACTIVE = shipped and enforced per mechanism · RETIRED = removed, see `reason` in system.yaml · ABSORBED = folded into another protocol (see pointer below)
 
@@ -657,7 +657,7 @@ commit-time gating. Codex review of that implementation (2026-04-15) found
 12 blocking findings including stale-PENDING state, pathspec injection on
 `$SCOPE`, advisory-only behavior masquerading as enforcement, and logic
 that created a fresh PENDING marker on every invocation. The old script
-remains at `holding/hooks/codex-review-gate.sh` (archived, unregistered
+remained at `holding/hooks/codex-review-gate.sh` (HISTORICAL — file since removed; path note fixed 2026-06-12 parity T0.6b) (archived, unregistered
 from .claude/settings.json) and `sutra/marketplace/plugin/hooks/codex-review-gate.sh`
 (pending removal next plugin minor). v2 replaces the entire mechanism.
 
@@ -698,7 +698,7 @@ check:   Did the author emit a BUILD-LAYER block for the current turn before
          Default aspiration is L0; picking L1 requires promotion contract;
          picking L2 requires REASON field (one-line specificity claim).
 
-enforce: holding/hooks/build-layer-check.sh fires as PreToolUse on Edit|Write.
+enforce: sutra/marketplace/plugin/hooks/build-layer-check.sh fires as PreToolUse on Edit|Write (promoted from holding/hooks per D38).
          Enforcement bifurcated per founder + Codex decision 2026-04-23:
            (a) HARD on authored code paths — exit 2 blocks the tool call
                when declaration missing. Paths:
@@ -709,7 +709,7 @@ enforce: holding/hooks/build-layer-check.sh fires as PreToolUse on Edit|Write.
            (b) SOFT on research/docs and elsewhere — stderr advisory,
                never blocks.
          Marker `.claude/build-layer-registered` persists within a turn;
-         cleared by holding/hooks/reset-turn-markers.sh on UserPromptSubmit.
+         cleared by sutra/marketplace/plugin/hooks/reset-turn-markers.sh on UserPromptSubmit (promoted from holding/hooks per D38).
          Override: BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>' <tool>.
          Override writes audit row to .enforcement/build-layer-ledger.jsonl
          with event=override.
@@ -1087,7 +1087,7 @@ RELATES:
 1. `.claude/build-layer-registered` marker present (same marker as PROTO-021 — emit BUILD-LAYER block once per turn).
 2. `BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>' <cmd>` (logged).
 
-**Hook**: `holding/hooks/structural-move-check.sh` (PreToolUse Bash). Promotion to `sutra/marketplace/plugin/hooks/structural-move-check.sh` by 2026-05-27 after 30-day clean operation.
+**Hook**: `sutra/marketplace/plugin/hooks/structural-move-check.sh` (PreToolUse Bash). Promotion COMPLETED (was holding/hooks/, promoted per the 2026-05-27 plan; path fixed 2026-06-12 parity T0.6b).
 
 **Ledger**: `.enforcement/build-layer-ledger.jsonl` — events `structural-block` / `structural-override` / `structural-allow-marker`.
 
@@ -1096,7 +1096,7 @@ RELATES:
 **Why a separate hook (not extend `build-layer-check.sh`)**: PROTO-021 fires on `Edit|Write` event class; PROTO-025 fires on `Bash` event class. Single-responsibility per hook keeps each focused. They share path list, marker, override env, and ledger — same authorization model, two trigger surfaces.
 
 **Spec / design**:
-- Hook: `holding/hooks/structural-move-check.sh`
+- Hook: `sutra/marketplace/plugin/hooks/structural-move-check.sh`
 - Test: `holding/hooks/structural-move-check.test.sh` (7 cases — block / override / marker / soft / non-structural / bash-c-evasion / cp-non-destructive — all pass)
 - Design doc: `holding/research/2026-04-27-structural-move-protocol-design.md`
 
