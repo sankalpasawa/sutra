@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.6",
-  "description": "v2.39.6 (2026-05-31) — prompt-capture hook promoted to plugin L0 (fleet-wide): every UserPromptSubmit appends a lossless JSONL row to the project's `holding/state/prompts/<YYYY-MM>.jsonl` so the prompt trail survives the session transcript. Non-blocking; kill via PROMPT_CAPTURE_DISABLED=1. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.7",
+  "description": "v2.39.7 (2026-06-11) — H-Sutra Stop hook no longer false-fires on turns that invoke a Skill: is_human_user() now filters isMeta user rows (skill invocations + stop-hook feedback are role:user/isMeta=true, not human turns), so the header check targets the real first response. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

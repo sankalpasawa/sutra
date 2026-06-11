@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.7 — 2026-06-11
+
+**`h-sutra-enforce` hook (v6) — stop false-firing on Skill-invoking turns.**
+
+- `is_human_user()` now returns False for `isMeta:true` user rows. Skill invocations and stop-hook feedback are recorded as `role:user`/`isMeta:true` (no `promptSource`) — not human turns.
+- v4/v5 counted them as human, so any turn invoking a Skill reset the turn boundary to the skill-injection row and checked the assistant's post-skill narration (no header) → spurious block.
+- Reproduced + verified against a live transcript prefix: v5 blocks, v6 passes on the real header row.
+
 ## v2.39.6 — 2026-05-31
 
 **Prompt-capture hook (UserPromptSubmit) — fleet L0.**

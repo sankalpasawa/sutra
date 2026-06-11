@@ -5,6 +5,9 @@
 # WHY_NOT_L0_KIND=n/a
 # WHY_NOT_L0_REASON=n/a
 # TS=2026-05-12
+# VERSION=v6 (2026-06-11: filter isMeta user rows — skill invocations + stop-hook
+#            feedback are role:user/isMeta=True, NOT human turns; v4/v5 false-fired
+#            the header check on post-skill narration of skill-invoking turns)
 # VERSION=v5 (2026-05-28: malformed-vs-missing diagnostic — case errors now
 #            report "DIRECTION·VERB must be UPPERCASE" instead of "header missing")
 # VERSION=v4 (filters tool_result user rows; first-text-of-current-turn semantic)
@@ -83,6 +86,15 @@ except: sys.exit(0)
 
 def is_human_user(r):
     if r.get("role") != "user" and r.get("type") != "user":
+        return False
+    # v6 (2026-06-11): Skill invocations AND stop-hook feedback are recorded
+    # as role:user rows with isMeta=True (no promptSource). They are NOT human
+    # turns. v4/v5 counted them as human, so on any turn that invoked a Skill
+    # the current-turn boundary reset to the skill-injection row and the hook
+    # checked the assistant POST-skill narration (no header) instead of the
+    # real first response. Filtering isMeta restores true-human-turn semantics.
+    # (NOTE: no apostrophes in this block — it lives inside python3 -c '...'.)
+    if r.get("isMeta") is True:
         return False
     content = r.get("message", {}).get("content") or r.get("content")
     if isinstance(content, str): return True
