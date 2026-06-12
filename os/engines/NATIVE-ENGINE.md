@@ -88,6 +88,11 @@ Use this table when something cites "per NATIVE-ENGINE.md §X.Y" written before 
 | [ADR-015](../decisions/ADR-015-standalone-h-sutra-in-native.md) | H-Sutra in Native | governance integration |
 | [ADR-016](../decisions/ADR-016-replica-as-isolated-user-kit.md) | Replica as isolated user-kit | dev / test isolation |
 | [ADR-017](../decisions/ADR-017-cron-daemon-cadence-tick.md) | Cron daemon cadence | cadence scheduling |
+| [ADR-018](../decisions/ADR-018-agentic-systems-pattern.md) | Agentic systems pattern | designing agent loops |
+| [ADR-019](../decisions/ADR-019-design-product-tech-bridge.md) | Design↔product↔tech bridge | doc-layer navigation |
+| [ADR-020](../decisions/ADR-020-layer-b-product-authoring-template.md) | Layer-B product authoring template | product authoring (PROPOSED) |
+| [ADR-021](../decisions/ADR-021-sutra-plugin-host-residency.md) | Sutra plugin host residency | plugin placement in §1.0 schema |
+| [ADR-022](../decisions/ADR-022-full-loop-six-mechanisms.md) | Full-loop six mechanisms | roadmap: record→system + organic growth |
 
 ## 6. Reading Order
 
