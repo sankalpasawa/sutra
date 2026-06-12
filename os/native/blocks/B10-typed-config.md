@@ -87,6 +87,35 @@ Cross-refs:
 - **Two typed predicates contradict** → conflict-resolution NOT specified in canon (gap per F2).
 - **Operator mutates Domain config mid-Workflow** → routed via 7e classification.
 
+## Per-instance operational knob surface (PROTO-023 port)
+
+**Amendment (2026-06-12 — port of ACTIVE PROTO-023 "Centralized Config")**: B10 above covers *declarative typed config per primitive layer* — Domain/Charter typed-predicate arrays consumed by B11 at prompt-build time (what the engine reasons WITH). PROTO-023 adds a second, distinct config domain that B10 did not state: the *operational knob surface* — one shell-sourceable per-instance file holding every kill-switch, opt-in, and threshold, readable by every policy hook via a single `source`. Relationship: typed per-layer config constrains the problem the engine constructs; the knob surface configures the runtime machinery itself (which hardstops/hooks are on, with what thresholds). Same config domain, disjoint consumers — B11 PromptBuilder vs policy hooks + daemon. Neither subsumes the other; both are required.
+
+Production precedent (`$HOME/.sutra/config.env`):
+
+- One shell-sourceable KEY=VALUE file per instance; per-instance under `$HOME` respects the D33 client firewall.
+- CLI `sutra/marketplace/plugin/bin/sutra-config`: `get` (strips inline comments + quotes) / `set` (validates keys, shell-escapes values, preserves inline comments via awk in-place edit) / `list` / `init` (idempotent defaults) / `path`.
+- Key conventions ported verbatim: UPPERCASE_ALNUM_UNDERSCORE keys starting with a letter; `SUTRA_` prefix; **additive, not exclusive** — pre-existing env-var overrides keep working (backward compat).
+- Initial key registry: kill-switches (`SUTRA_RTK_ENABLED`, `SUTRA_CODEX_DIRECTIVE_ENABLED`, `SUTRA_ESTIMATION_COLLECTOR_ENABLED`, `SUTRA_COMPLETION_PROTOCOL_ENABLED`), thresholds (`SUTRA_CODEX_TIMEOUT_MS=600000`, `SUTRA_DEPTH_DEFAULT=5`, `SUTRA_BUILD_LAYER_DEFAULT=L0`), observability (`SUTRA_TELEMETRY=off`), tier (`SUTRA_TIER=governance`).
+
+Native shape:
+
+- Daemon AND host-side hooks read the same file; the CLI re-lands as a `sutra-native config get|set|list` subcommand writing the same file.
+- **Adoption mandate (closes the known production weakness)**: production never closed the adoption loop — 1 of ~75 hooks sources the file (`completion-protocol-check.sh` L27-L29). Native mandates (and lints) that every hardstop/hook declares its kill-switch key in this registry.
+
+Acceptance criteria (knob surface):
+
+| # | Given | When | Then |
+|---|---|---|---|
+| K1 | Any user-controllable knob (kill-switch / opt-in / threshold) | a policy hook starts | knob readable via the single sourceable per-instance file |
+| K2 | Valid key written then read | `config set` → `config get` round-trip | value preserved; comments + other keys untouched; `init` idempotent |
+| K3 | Pre-existing env-var override set alongside the file | hook evaluates knob | env var still honored (additive, never exclusive) |
+| K4 | New Native hardstop/hook ships without a declared kill-switch key | registry lint | rejected — every hardstop/hook declares its key |
+
+**Falsification test**: a kill-switch, opt-in, or threshold exists that a policy hook cannot reach via the single sourceable per-instance file, OR a shipped Native hardstop/hook has no declared kill-switch key in the registry — either observation proves the knob surface violated.
+
+Provenance: port of ACTIVE PROTO-023 (FOUNDATION tier — read-surface, no enforcement; origin gstack-patterns-review 2026-04-24, which found 6 scattered config locations; codex ranked consolidation top-1 ROI). Amendment parity-source (deviation from the NATIVE-ENGINE.md-anchor norm — this content is a canon gap; source is the protocol corpus): `sutra/layer2-operating-system/PROTOCOLS.md` §PROTO-023 L878-938, sha256 `5178cd7a6d1fbfd8b0953b7099e46b70d1b992d2ea5a4b6f9ba061d889c4cd8d`.
+
 ## Telemetry
 
 Events (canon-existing only):
@@ -115,3 +144,6 @@ Metrics affected (cross-ref `../metrics/north-star-ohs-per-week.md`):
 - NATIVE-ENGINE.md §10.2 P10 (Typed config at every primitive layer).
 - Q30 (§12.15) — structured typed predicates v1; free-form notes allowed.
 - ADR-012 (PNC typed predicates).
+- `sutra/layer2-operating-system/PROTOCOLS.md` §PROTO-023 (ACTIVE, FOUNDATION) — operational knob surface source.
+- `sutra/marketplace/plugin/bin/sutra-config` + `sutra/marketplace/plugin/tests/unit/test-sutra-config.sh` — production CLI + test.
+- `sutra/marketplace/plugin/hooks/completion-protocol-check.sh` L27-L29 — sole production sourcing consumer (adoption-gap evidence).

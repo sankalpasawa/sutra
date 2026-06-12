@@ -75,6 +75,28 @@ Cross-refs:
 - **Many runtimes waiting on same lock** → ordering / fairness NOT specified in canon (gap per F2).
 - **Filesystem doesn't support atomic file rename** → portability assumption fails; canon assumes POSIX-style fsync per ADR-013.
 
+## Completion barrier (COMPLETION-BARRIER sub-spec)
+
+**Amendment (2026-06-12 — lesson-port from RETIRED PROTO-002 "Wait for Parallel Completion")**: locks (above) serialize access to shared artifacts; the completion barrier is the join rule for fan-out. An orchestrating Execution MUST NOT transition to synthesis or any terminal state while any `sibling_group` member Execution is non-terminal (§2.6 state enum), and MUST NOT substitute its own work for an unfinished sibling's output. PROTO-002 check text verbatim: *"ALL agents complete? → proceed. No? → wait. Never substitute own work."*
+
+- **Barrier semantics**: synthesis is gated on ALL fan-out Executions reaching a terminal state. The daemon owns Execution rows with terminal states, so the barrier is a first-class invariant — block or queue the orchestrator step on violation, never warn-and-proceed. This is deliberately NOT a port of production's /tmp-mtime heuristic (output files modified <60s + background-job count + `.running` markers), which is a workaround for not owning the execution substrate.
+- **Never-substitute rule**: a missing or failed sibling output is surfaced as missing/failed in the synthesis input set; the orchestrator never fabricates a stand-in. Production hook warning verbatim: "Do NOT write synthesis/output until ALL agents complete. Read ALL agent outputs before proceeding. Do NOT substitute your own work for pending agent work."
+- **Host-LLM advisory analog**: outside daemon control (host-LLM sessions), a SOFT advisory analog of the production hook remains the right shape — warn, exit 0, never block.
+- **Origin incidents (rationale, ported with the lesson)**: Maze HOD 2026-04-04 — orchestrator wrote report over 3 running agents, missed 6 bugs. Dharmik SEO audit 2026-04-07 — orchestrator compiled before 4 agents returned, incomplete JS analysis.
+
+Living evidence (production, fleet-shipped): `sutra/marketplace/plugin/hooks/agent-completion-check.sh` — PostToolUse on `Bash|Edit|Write` (hooks.json L236-L243), SOFT exit-0; fast-path skip unless `/tmp/claude-agent-*` or `/tmp/claude-tasks` markers exist; on any running-sibling signal it prints the PROTO-002 warning block restating the rule.
+
+Acceptance criteria (barrier):
+
+| # | Given | When | Then |
+|---|---|---|---|
+| B1 | Orchestrating Execution with sibling_group fan-out; ≥1 sibling non-terminal | orchestrator attempts synthesis/terminal transition | transition blocked or queued; never proceeds with substituted work |
+| B2 | All sibling_group Executions terminal | orchestrator proceeds to synthesis | allowed; failed siblings surfaced as failed in synthesis inputs, never back-filled |
+
+**Falsification test**: the audit log shows an orchestrating Execution reaching synthesis/terminal state while a `sibling_group` member Execution is still non-terminal, OR a synthesis artifact contains orchestrator-fabricated content standing in for a sibling output that never arrived — either observation proves the barrier violated.
+
+Provenance: lesson-port from RETIRED PROTO-002 — retired as a protocol ("agent-execution concern, not a system invariant") but the lesson ships fleet-wide as living hook text. Amendment parity-source (deviation from the NATIVE-ENGINE.md-anchor norm — this content is a canon gap; source is the protocol corpus): `sutra/layer2-operating-system/PROTOCOLS.md` §PROTO-002 L132-143, sha256 `b33aeb22699dc457977ab5f314a7621dff793f2808ee5a4f896f44ee885b1570`.
+
 ## Telemetry
 
 Events (canon-existing only):
@@ -99,3 +121,5 @@ Metrics affected (cross-ref `../metrics/north-star-ohs-per-week.md`):
 - Q33 (§12.19) — file-based locks v1; OCC v2 if perf signal lands.
 - §8 OS-3 (cross-process replay deferred).
 - §8 OS-22 (A2A cross-process workflow comm deferred v2).
+- `sutra/layer2-operating-system/PROTOCOLS.md` §PROTO-002 (RETIRED) — completion-barrier lesson source.
+- `sutra/marketplace/plugin/hooks/agent-completion-check.sh` + `sutra/marketplace/plugin/hooks/hooks.json` L236-L243 — living production evidence (SOFT PostToolUse warning).
