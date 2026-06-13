@@ -88,7 +88,7 @@ auditable: terminal rows trace to workflow_completed/workflow_failed EngineEvent
 ## Open gaps
 
 - **No step-total in canon.** `step_index` exists (step_started.md payload) but NO total-step / `total_steps` field exists on any event or primitive. The "progress" denominator must be derived (e.g. from the Workflow's declared Step count at mint) or omitted. Resolve before coding.
-- **Plain-words-failure anchor.** The "no stack trace / plain operator words" rule (used in AC#3) lives in the frozen monolith §2.F G.x error cluster, NOT in any canon part-file (G.2/G2 in canon = the D40 codex-consult gate, unrelated). Blocked on the UI-block canon-migration prerequisite (components/INDEX.md).
+- **Plain-words-failure anchor (RESOLVED 2026-06-13).** The "no stack trace / plain operator words" rule (AC#3) is now anchored in canon at [`arch-blocks/ui.md`](../arch-blocks/ui.md) G.2 (authored per ADR-024). That anchor tracks the unlocked §1.0.1 source (SHA-sentineled); promotes to authoritative on UI-block §1.0.1 lock. (Note: the unrelated canon 'D40 G2' = codex-consult gate — distinct from this UI G.2.)
 - Live System-of-Process → render transport (poll vs stream) — runtime choice; spec fixes the contract (truth-class + freshness), not the mechanism.
 - Retention window for recent terminal rows — binding config per Deployment.
 

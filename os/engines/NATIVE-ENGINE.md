@@ -29,6 +29,7 @@ Native is Sutra's runtime engine — typed primitives + 26 EngineEvents + 6 surf
 | [doc-layers/](../native/doc-layers/) | 8 | Founder-owned doc layers L1/L2/L3/L4/L6/L7/L11/L14 — purpose + producer + consumer + cadence | [L1-philosophy.md](../native/doc-layers/L1-philosophy.md) |
 | [impl-phases/](../native/impl-phases/) | 5 | §14.15.1 Phase A-E — gate + duration + DRI + acceptance criteria + dependencies | (see directory) |
 | [metrics/](../native/metrics/) | 1 | North Star — OHS/wk (operator-hours-saved per week) | [north-star-ohs-per-week.md](../native/metrics/north-star-ohs-per-week.md) |
+| [arch-blocks/](../native/arch-blocks/) | 1+7 | §1.0 architecture blocks — UI authored (DRAFT); Host/Orchestration/SoP/SoR/Authority+Tenancy/Compute/External-World SEED-pending; per ADR-024 | [ui.md](../native/arch-blocks/ui.md) |
 | [components/](../native/components/) | 4 | UI Kit — HLD (INDEX: placement + exposure matrix) + LLD component specs C1-C3 (Approval Inbox, Charter+Domain Browser, What's-Running Board); render-only, per ADR-023 | [INDEX.md](../native/components/INDEX.md) |
 | ADRs | 20 | Decision rationale — `sutra/os/decisions/ADR-004..023` (004-017 v1 canon; 018-023 post-cutover) | [ADR-004-registry-and-effector-split.md](../decisions/ADR-004-registry-and-effector-split.md) |
 

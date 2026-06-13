@@ -9,7 +9,7 @@ authored: 2026-06-13
 
 # C1: Approval Inbox (UI Kit component)
 
-> **PARKED — LLD.** Gated behind HLD lock (components/INDEX.md). Dual-lane verdict: PASS-WITH-MODIFY. **Provenance note:** F.1/F.2/F.5 trust gates + the reversibility taxonomy cited below live ONLY in the frozen monolith `master/index.html` §2.F, NOT yet in any canon part-file — pulled in via ADR-023 Context, pending the UI-block canon-migration prerequisite (components/INDEX.md). Deferred must-fixes (Edge cases + Telemetry L8 sections) handled at unpark. Inherits P6 (default-quiet · operator-tunable · no surface inversion) per ADR-023 Decision 4.
+> **PARKED — LLD.** Gated behind HLD lock (components/INDEX.md). Dual-lane verdict: PASS-WITH-MODIFY. **Provenance (anchor exists):** F.1/F.2/F.5 + reversibility taxonomy + M5 now anchor to canon [`arch-blocks/ui.md`](../arch-blocks/ui.md) (DRAFT, unreviewed — tracks the unlocked §1.0.1 source via SHA sentinel; dual-lane review of ui.md is a TODO). Deferred must-fixes (Edge cases + Telemetry L8 sections) handled at unpark. Inherits P6 (default-quiet · operator-tunable · no surface inversion) per ADR-023 Decision 4.
 
 ## 1-line summary
 
