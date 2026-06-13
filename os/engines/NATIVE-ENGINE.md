@@ -95,6 +95,7 @@ Use this table when something cites "per NATIVE-ENGINE.md §X.Y" written before 
 | [ADR-021](../decisions/ADR-021-sutra-plugin-host-residency.md) | Sutra plugin host residency | plugin placement in §1.0 schema |
 | [ADR-022](../decisions/ADR-022-full-loop-six-mechanisms.md) | Full-loop six mechanisms | roadmap: record→system + organic growth |
 | [ADR-023](../decisions/ADR-023-platform-ui-kit-exposure-contract.md) | Platform UI Kit + exposure contract | operator-facing governance UI |
+| [ADR-024](../decisions/ADR-024-arch-block-canon-fork.md) | §1.0 arch-block canon fork (PROPOSED) | migrating architecture blocks into canon |
 
 ## 6. Reading Order
 
