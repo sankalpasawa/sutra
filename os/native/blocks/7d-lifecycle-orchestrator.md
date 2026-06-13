@@ -39,7 +39,7 @@ The operator picks a piece of work and Native carries it through the full lifecy
 2. Lifecycle orchestrator initializes ExecutionResult with `lifecycle_phase=OBJECTIVE`.
 3. Phase OBJECTIVE captures intent (per B1 Intent Layer) → emits artifact → transitions to OBSERVE.
 4. Phase OBSERVE gathers context (per 7a context-structuring) → emits artifact → transitions to SHAPE.
-5. Phase SHAPE decomposes (per B2 Decomposition Layer) → emits artifact → transitions to PLAN.
+5. Phase SHAPE runs two ordered sub-steps — **FRAME → DECOMPOSE** (per ADR-025): first FRAME picks the lens(es)/POV that matter for this problem (per HOW §3 Lens primitive; family viewpoint/concern/time/ownership/scale/certainty), recording the choice + rationale in DecisionProvenance; then DECOMPOSE splits along that frame (per B2 Decomposition Layer, lens carried as B11 context) → emits artifact → transitions to PLAN.
 6. Phase PLAN constructs the problem (per B11 PromptBuilder) → emits artifact → transitions to EXECUTE.
 7. Phase EXECUTE runs the Workflow steps (host-LLM dispatch per §5.1) → emits per-step artifacts → transitions to MEASURE.
 8. Phase MEASURE evaluates pre/post predicates (per B7) → emits result → transitions to OPERATIONALIZE if green.
@@ -103,9 +103,9 @@ Metrics affected (cross-ref `../metrics/north-star-ohs-per-week.md`):
 - **Events**: `workflow_started`, `step_started`, `step_completed`, `artifact_registered`, `workflow_completed`, `workflow_failed`.
 - **Surfaces**: `run` (executes phases), `gate` (per-cycle approval per Q13), `audit` (persists per-phase events), `emerge` (LEARN phase may propose new Workflow per ADR-010).
 - **Hardstops**: HS-1 (reflexive-check on mutating Sutra mid-lifecycle), HS-4 (audit log unwritable).
-- **Blocks (downstream)**: B1 (OBJECTIVE phase consumes B1 Intent), B2 (SHAPE phase consumes B2 Decomposition), 7a (OBSERVE consumes 7a Context Structuring), B11 (PLAN consumes B11 PromptBuilder), B7 (MEASURE consumes B7 pre/post), B19 (LEARN consumes B19 Learning Loop).
+- **Blocks (downstream)**: B1 (OBJECTIVE phase consumes B1 Intent), B2 (SHAPE phase consumes B2 Decomposition — after the FRAME sub-step per ADR-025), 7a (OBSERVE consumes 7a Context Structuring), B11 (PLAN consumes B11 PromptBuilder; also carries the SHAPE frame-lens into B2), B7 (MEASURE consumes B7 pre/post), B19 (LEARN consumes B19 Learning Loop).
 - **Pillars**: P8 (Lifecycle is the unit of value), P14 (Outcomes drive design).
-- **ADRs**: ADR-017 (cadence scheduler — used by OPERATIONALIZE), ADR-009 (approval gate — used per Q13).
+- **ADRs**: ADR-017 (cadence scheduler — used by OPERATIONALIZE), ADR-009 (approval gate — used per Q13), ADR-025 (SHAPE = Frame → Decompose; FRAME sub-step uses HOW §3 Lens primitive before B2).
 
 ## References
 
@@ -116,5 +116,6 @@ Metrics affected (cross-ref `../metrics/north-star-ohs-per-week.md`):
 - NATIVE-ENGINE.md §6.4 cadence scheduling + ADR-017.
 - NATIVE-ENGINE.md §6.5 on_failure (canon fail-mode 7d uses).
 - D30a (Sutra 8-phase TASK-LIFECYCLE) — referenced by §12.6.
+- ADR-025 (SHAPE = Frame → Decompose) — restores the explicit FRAME sub-step the v1.2.1 lifecycle had; wires HOW §3 Lens into SHAPE ahead of B2. Design-forward.
 - Q13 (§12.4) — gated v1 per-cycle approval; autonomous v2+ once trust signal.
 - Q16 (§12.7) — Sutra 8-phase becomes Native canon as ExecutionResult.lifecycle_phase.
