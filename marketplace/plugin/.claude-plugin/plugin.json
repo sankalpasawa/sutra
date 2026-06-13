@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.8",
-  "description": "v2.39.8 (2026-06-13) — H-Sutra Stop hook stops forcing a redo for a misplaced-but-valid header: a correctly-formed header within the opening lines (not line 1) now passes with a soft nudge; only an absent or malformed/case-error header still blocks. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.9",
+  "description": "v2.39.9 (2026-06-14) - the Flow: a work-resolution spine shipped as skills (core:flow + workflow-type-resolve + lens + cynefin) plus a SOFT flow-gate hook that nudges when work skips classify/resolve. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

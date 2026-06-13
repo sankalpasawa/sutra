@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.9 — 2026-06-14
+
+**The Flow — end-to-end work-resolution spine, shipped as skills + a soft gate.**
+
+- New skills: `core:flow` (orchestrator: classify -> resolve workflow type -> follow/construct -> inner-engine-on-every-step -> run atom -> close), `core:workflow-type-resolve` (FOLLOW vs CONSTRUCT, child->platform), `core:lens` (value<->axis generic engine), `core:cynefin` (certainty gate).
+- New hook `flow-gate.sh` (PreToolUse, **SOFT** — always exit 0): nudges + logs when construct work skips the flow markers. HARD promotion (company profile) documented, not enabled. Test: 25/25 incl. never-exit-2.
+- Canon: ADR-026 (guidance-first resolution) + ADR-027 (value<->axis single primitive).
+
 ## v2.39.7 — 2026-06-11
 
 **`h-sutra-enforce` hook (v6) — stop false-firing on Skill-invoking turns.**
