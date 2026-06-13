@@ -136,8 +136,24 @@ FIRST200=$(printf '%s' "$FIRST_TEXT_OF_TURN" | head -c 200)
 
 HEADER_RE='^\[(D[0-9]+|[A-Z0-9-]+)·([A-Z0-9-]+)( · (TIMING|TENSE|CHANNEL|REV|RISK|attempt):[^]·]+)*\]|^\[STAGE-1-FAIL · CLARIFY( · attempt:[0-9]+/[0-9]+)?\]'
 
-if printf '%s' "$FIRST_LINE" | grep -qE "$HEADER_RE"; then
+# v7 (2026-06-13, founder-directed): a VALID header that is merely MISPLACED
+# (present within the first N non-empty lines, but not line 1) now PASSES with a
+# non-blocking nudge instead of forcing a full-response redo. Only a genuinely
+# ABSENT or MALFORMED (case-error) header still blocks. Rationale: a
+# correctly-formed header on line 2 carries the full scannable info; the redo
+# round-trip was pure friction (4 redos in one session, all misplaced-but-valid).
+# Tunable: SUTRA_HSUTRA_HEADER_SCAN_LINES (default 8). HDR_POS = 1-based index of
+# the first valid header among the opening non-empty lines (empty if none).
+SCAN_N="${SUTRA_HSUTRA_HEADER_SCAN_LINES:-8}"
+HDR_POS=$(printf '%s\n' "$FIRST_TEXT_OF_TURN" | awk 'NF' | head -n "$SCAN_N" | grep -nE "$HEADER_RE" | head -1 | cut -d: -f1)
+
+if [ "${HDR_POS:-}" = "1" ]; then
   audit_log "pass" "$FIRST200" "header_matched"
+  exit 0
+elif [ -n "${HDR_POS:-}" ]; then
+  # valid header present but not the first non-empty line -> SOFT pass + nudge
+  audit_log "pass" "$FIRST200" "header_present_not_first_soft pos=${HDR_POS}"
+  printf 'H-Sutra (soft): valid header found at opening line %s, not line 1 -- PASSED, no redo. Next turn, put the bracketed header as the literal first text.\n' "$HDR_POS" >&2
   exit 0
 fi
 

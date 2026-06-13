@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.7",
-  "description": "v2.39.7 (2026-06-11) — H-Sutra Stop hook no longer false-fires on turns that invoke a Skill: is_human_user() now filters isMeta user rows (skill invocations + stop-hook feedback are role:user/isMeta=true, not human turns), so the header check targets the real first response. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.8",
+  "description": "v2.39.8 (2026-06-13) — H-Sutra Stop hook stops forcing a redo for a misplaced-but-valid header: a correctly-formed header within the opening lines (not line 1) now passes with a soft nudge; only an absent or malformed/case-error header still blocks. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"
