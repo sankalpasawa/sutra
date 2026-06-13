@@ -71,6 +71,10 @@ User-kit registry rows at `~/.sutra-native/user-kit/workflows/<id>.json` (single
 
 Canonical form for content-addressing: JSON keys sorted alphabetically, no whitespace, UTF-8 encoded. SHA256 of canonical form = `W-<hex>`.
 
+## Workflow-type resolution (ADR-026)
+
+A reusable Workflow (`reuse_tag=true`) is a **workflow type** — the unit of high-level guidance. When an input arrives, shape resolves **guidance-first**: look up a matching workflow type, checking **child** scope (`custody_owner = <tenant>`, L2) **before** **platform** (`custody_owner = null`, L0). If a type matches, its steps are **followed** (mandatory skeleton); if none matches, the steps are **constructed**. In BOTH cases the inner engine — factors (B8) + lens (HOW §3) + Cynefin — shapes each step; guidance constrains the outer steps, it never replaces the inner engine. See `../decisions/ADR-026-workflow-type-guidance-first-resolution.md`.
+
 ## Cross-primitive references
 
 Per MIGRATION-PLAN.md §3 Phase 5 primitives roster slug naming (bare names, no -spec/-step suffixes):
