@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.11",
-  "description": "v2.39.11 (2026-06-14) - core:flow now activates on EVERY input/type (structure universality); trivial turns take a 1-step fast-path (classify->answer), only substantive work pays the full spine; flow-gate widened to Task/Agent dispatch. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.12",
+  "description": "v2.39.12 (2026-06-14) - flow-gate is now HARD (exit 2) fleet-wide: an Edit/Write to a non-whitelisted path, or a Task/Agent dispatch, that skipped core:flow classify+resolve is blocked (overrides: FLOW_ACK=1 / FLOW_DISABLED=1 / ~/.flow-disabled); flow-* markers now wiped per-turn. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

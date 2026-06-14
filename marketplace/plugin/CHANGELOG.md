@@ -4,6 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.12 — 2026-06-14
+
+**Flow gate HARD, fleet-wide.** `flow-gate.sh` now exits 2 (blocks) when an Edit/Write to a non-whitelisted path, or a Task/Agent dispatch, skipped `core:flow` classify+resolve — same enforcement shape as `input-classification-gate.sh` + `depth-marker-pretool.sh`.
+- Escape hatches: `FLOW_ACK=1 FLOW_ACK_REASON='<why>'` (audit-logged), `FLOW_DISABLED=1`, `touch ~/.flow-disabled`.
+- `reset-turn-markers.sh` now wipes `flow-classified/inner/type-resolved/closed` per-turn — fixes stale markers from a prior session silently satisfying the gate.
+- Founder direction 2026-06-14; risk (heavier skill than a routing block) accepted over the company-profile-gated alternative.
+
 ## v2.39.11 — 2026-06-14
 
 **Flow on EVERY input + fast-path; gate widened to Task/Agent.**

@@ -74,6 +74,10 @@ rm -f .claude/input-routed \
       .claude/build-layer-registered \
       .claude/blueprint-registered \
       .claude/structure-first-active \
+      .claude/flow-classified \
+      .claude/flow-inner \
+      .claude/flow-type-resolved \
+      .claude/flow-closed \
       2>/dev/null
 
 # Record this reset's timestamp so future bursts can be detected

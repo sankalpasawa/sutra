@@ -3,13 +3,13 @@
 #
 # Canon:   sutra/os/decisions/ADR-026-the-flow.md, ADR-027-generic-engine.md
 # Skill:   sutra/marketplace/plugin/skills/flow/SKILL.md (core:flow)
-# Event:   PreToolUse on Edit|Write
-# Enforcement: SOFT-FIRST -- v1 ALWAYS exits 0. Advisory nudge to stderr +
-#              append to .enforcement/flow-gate.jsonl when substantive
-#              CONSTRUCT work proceeds without the Flow markers. NEVER exits 2
-#              in v1 (must not break any fleet client). A clearly-commented
-#              HARD-PROMOTION block below shows the future company-profile path
-#              -- it is intentionally NOT wired.
+# Event:   PreToolUse on Edit|Write + Task/Agent dispatch
+# Enforcement: HARD (v2.39.12, fleet-wide; founder direction 2026-06-14). EXITS 2
+#              -- blocks substantive CONSTRUCT work (Edit/Write to a non-whitelisted
+#              path, or Task/Agent dispatch) that skipped classify+resolve. Mirrors
+#              input-classification-gate.sh (input-routed) + depth-marker-pretool.sh
+#              (depth-registered). Escape hatches preserve fleet survivability:
+#              FLOW_ACK=1 (audit-logged override), FLOW_DISABLED=1, ~/.flow-disabled.
 #
 # What it checks: an Edit/Write to a non-whitelisted path means substantive
 #   construct work. The Flow spine wants that work to have been CLASSIFIED
@@ -76,9 +76,15 @@ if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
 fi
 if [ "$TOOL_NAME" = "Task" ] || [ "$TOOL_NAME" = "Agent" ]; then
   if [ ! -f "$REPO_ROOT/.claude/flow-classified" ]; then
-    printf '\n[FLOW] dispatching work (%s) without classifying first -- run core:flow (classify + resolve). SOFT.\n\n' "$TOOL_NAME" >&2
+    {
+      printf '\nFLOW-GATE (HARD): dispatching work (%s) requires classify first.\n' "$TOOL_NAME"
+      printf '  Run core:flow to classify the input + resolve a workflow type,\n'
+      printf '  then re-attempt the dispatch.\n'
+      printf "  Override: FLOW_ACK=1 FLOW_ACK_REASON='<why>' <tool>\n\n"
+    } >&2
     mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
-    printf '{"ts":"%s","event":"flow-gate-nudge","tool":"%s","reason":"dispatch-without-classify"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TOOL_NAME" >> "$REPO_ROOT/.enforcement/flow-gate.jsonl" 2>/dev/null
+    printf '{"ts":"%s","event":"flow-gate-block","tool":"%s","reason":"dispatch-without-classify","mode":"hard"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TOOL_NAME" >> "$REPO_ROOT/.enforcement/flow-gate.jsonl" 2>/dev/null
+    exit 2
   fi
   exit 0
 fi
@@ -107,64 +113,56 @@ if [ -f "$CLASSIFIED" ] && [ -f "$RESOLVED" ]; then
   exit 0
 fi
 
-# -- Markers missing on a non-whitelisted path: advisory nudge + log --------
+# -- Markers missing on a non-whitelisted path: HARD block + log -----------
 MISSING=""
 [ -f "$CLASSIFIED" ] || MISSING="${MISSING}classify "
 [ -f "$RESOLVED" ]   || MISSING="${MISSING}resolve "
 MISSING="${MISSING% }"
 
-echo "FLOW: classify + resolve a workflow type before constructing -- run core:flow (missing: ${MISSING})" >&2
-
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 SAFE_REL=$(printf '%s' "$REL_PATH" | tr -d '\n\r' | tr '"\\' "''" | head -c 500)
 mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
-printf '{"ts":"%s","event":"flow-gate-nudge","path":"%s","missing":"%s","mode":"soft","session":"%s"}\n' \
+printf '{"ts":"%s","event":"flow-gate-block","path":"%s","missing":"%s","mode":"hard","session":"%s"}\n' \
   "$TS" "$SAFE_REL" "$MISSING" "${CLAUDE_SESSION_ID:-unknown}" \
   >> "$REPO_ROOT/.enforcement/flow-gate.jsonl" 2>/dev/null
 
-# SOFT-FIRST: v1 always exits 0. Nudge only -- never break a fleet client.
-exit 0
+{
+  echo "FLOW-GATE (HARD): construct work requires classify + resolve first."
+  echo "  File: $REL_PATH"
+  echo "  Missing markers: ${MISSING}"
+  echo "  Run core:flow to classify the input + resolve a workflow type,"
+  echo "  then re-attempt the Edit/Write."
+  echo "  Override: FLOW_ACK=1 FLOW_ACK_REASON='<why>' <tool>"
+} >&2
+
+# HARD (v2.39.12, fleet-wide per founder direction 2026-06-14): block construct
+# work that skipped classify+resolve. core:flow writes its markers via Bash,
+# which is NOT gated here (matcher = Edit|Write + Task), so no bootstrap deadlock.
+exit 2
 
 # ===========================================================================
-# HARD PROMOTION (FUTURE, DO NOT ENABLE IN V1)
+# HARD ACTIVATION RECORD (v2.39.12, 2026-06-14)
 # ===========================================================================
-# When the Flow discipline has soaked across the fleet and a client opts into
-# the company profile, this hook would HARD-block construct work that skipped
-# classify+resolve. The activation is gated on an explicit userConfig profile
-# so it can NEVER fire for default fleet installs. The block below is reference
-# only -- it is unreachable (after `exit 0` above) and intentionally inert.
+# The live paths above now EXIT 2 (HARD), fleet-wide, per founder direction
+# 2026-06-14 ("hard implementation of Flow, the way Input Routing is" +
+# "fleet-wide adoption of the hard gate"). Chosen over the safer company-profile
+# -gated sketch by explicit founder decision, with the fleet-disruption risk
+# (core:flow is heavier than a routing block) labeled and accepted.
 #
-# Sketch of the future hard path (mirrors blueprint-check.sh exit-2 shape):
+# Registration: flow-gate.sh is registered RAW in hooks.json (PreToolUse
+# Edit|Write group + Task group) -- NOT wrapped in sutra-stderr-capture.sh --
+# so exit 2 propagates and blocks the tool call, same as depth-marker-pretool.sh
+# and blueprint-check.sh. (An earlier version of this file warned about a capture
+# wrapper swallowing the exit code; that warning was STALE -- the wrapper is not
+# applied to this hook. Verified at hooks.json Edit|Write + Task registrations.)
 #
-#   PROFILE=""
-#   CFG="$REPO_ROOT/.claude/sutra-project.json"
-#   if [ -f "$CFG" ] && command -v jq >/dev/null 2>&1; then
-#     PROFILE=$(jq -r '.userConfig.profile // empty' "$CFG" 2>/dev/null)
-#   fi
-#   if [ "$PROFILE" = "company" ]; then
-#     {
-#       echo "FLOW-GATE (HARD): construct work requires classify + resolve first."
-#       echo "  File: $REL_PATH"
-#       echo "  Missing markers: ${MISSING}"
-#       echo "  Run core:flow to classify the input + resolve a workflow type,"
-#       echo "  then re-attempt the Edit/Write."
-#       echo "  Override: FLOW_ACK=1 FLOW_ACK_REASON='<why>' <tool>"
-#     } >&2
-#     exit 2
-#   fi
+# Fleet survivability / rollback:
+#   - Per-call override:  FLOW_ACK=1 FLOW_ACK_REASON='<why>' <tool>  (audit-logged)
+#   - Per-shell kill:     FLOW_DISABLED=1
+#   - Per-machine kill:   touch ~/.flow-disabled
+#   - Full rollback:      revert this single commit.
 #
-# WRAPPER NOTE for the future integrator: the v1 hooks.json registration wraps
-# this hook in hooks/lib/sutra-stderr-capture.sh, which ALWAYS exits 0 and does
-# NOT propagate the inner hook's exit code. To activate the HARD path above, the
-# wrapper must be changed to forward $RC (or this hook must be registered without
-# the capture wrapper). Until then the wrapper would swallow any exit 2 -- which
-# is by design for v1 SOFT-first and an extra safety net against accidental hard
-# blocks on the fleet.
-#
-# Promotion criteria (do not flip without founder sign-off):
-#   1. >=30d of soft operation with low false-positive nudge rate
-#      (audited from .enforcement/flow-gate.jsonl).
-#   2. core:flow skill stable across a release cycle (markers written reliably).
-#   3. Explicit opt-in via userConfig.profile=company in .claude/sutra-project.json.
-# Until all three hold, the live code path above terminates at `exit 0`.
+# No bootstrap deadlock: core:flow writes its markers (.claude/flow-classified,
+# flow-type-resolved) via Bash, and this gate matches only Edit|Write + Task --
+# Bash escapes it, so the skill can always write the markers that unlock the gate.
 # ===========================================================================
