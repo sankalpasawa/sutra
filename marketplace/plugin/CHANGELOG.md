@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.11 — 2026-06-14
+
+**Flow on EVERY input + fast-path; gate widened to Task/Agent.**
+
+- `per_turn_blocks.flow.applies_to_turn_types` = all 5 types; Flow activates every turn (structure universality, D45).
+- Cost-proportional: trivial input -> 1-step fast-path (classify->answer, Mode-1 atom); only substantive pays the full spine.
+- `flow-gate.sh` widened to fire on Task/Agent dispatch (not just Edit/Write) — fixes the workflow/subagent gap.
+
 ## v2.39.10 — 2026-06-14
 
 **Flow auto-activation — `core:flow` now fires per turn, gated by the classified TYPE.**

@@ -65,20 +65,20 @@
       "applies_to_turn_types": [
         "task",
         "direction",
-        "new_concept"
-      ],
-      "applies_if_substantive": [
+        "new_concept",
         "question",
         "feedback"
       ],
-      "skip_when": "trivial OR conversational OR pure_read_only OR yes_no",
+      "applies_if_substantive": [],
+      "skip_when": "never skip — Flow runs on EVERY input. Trivial -> 1-step fast-path (classify->answer, Mode-1 atom), NOT the full spine.",
       "what": "invoke core:flow — resolve a workflow type (child->platform) -> FOLLOW or CONSTRUCT -> inner engine on every step -> run Work-Atom -> close; the TYPE selects the lifecycle",
       "skill": "core:flow",
       "emission_mode": "skill_invocation",
       "enforcement_hook": "flow-gate.sh",
       "soft_hint_hook": "per-turn-discipline-prompt.sh",
       "$required_note": "required:false means 'not every turn' (type_gated), NOT optional-to-ignore — when applies_to_turn_types matches, invocation is expected. Codex review P2 2026-06-14.",
-      "$over_activation_guard": "skip-dominant: when the TYPE-gate is ambiguous (trivial task / read-only), SKIP. core:flow resolves Mode-1 atoms one-shot; do not run the full spine on small work. Codex+DeepSeek convergent P2 2026-06-14."
+      "$over_activation_guard": "skip-dominant: when the TYPE-gate is ambiguous (trivial task / read-only), SKIP. core:flow resolves Mode-1 atoms one-shot; do not run the full spine on small work. Codex+DeepSeek convergent P2 2026-06-14.",
+      "cost_model": "structure-universal, depth-proportional (D45): every input activates Flow; trivial collapses to a 1-step fast-path; only substantive work pays the full spine. Founder 2026-06-14 ('run flow on every input, every type; minimize the cost')."
     },
     "depth_estimation": {
       "required": true,

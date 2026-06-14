@@ -116,15 +116,14 @@ FLOW_SKILL=$(jq -r '.per_turn_blocks.flow.skill // "core:flow"' "$DEFAULTS_JSON"
   printf '  5. BUILD-LAYER marker MUST emit IF editing D38 paths (sutra/marketplace/plugin/** etc). Fields: %s\n' "${BL_FIELDS:-LAYER/SCOPE/TARGET-PATH/...}"
   printf '  6. ... tool calls (Edit / Write / Bash / Agent) ...\n'
   printf '  7. OUTPUT TRACE       MUST emit literal one-liner: %s\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}"
-  printf '\n  FLOW ACTIVATION (TYPE-gated, v2.39.10) — after Input Routing sets the TYPE:\n'
-  printf '  MUST invoke %s via the Skill tool for WORK-BEARING turns (%s; substantive %s too).\n' "${FLOW_SKILL:-core:flow}" "${FLOW_TYPES:-task / direction / new_concept}" "${FLOW_SUBST:-question/feedback}"
-  printf '  It runs the work-resolution spine for that TYPE: resolve a workflow type\n'
-  printf '  (child->platform) -> FOLLOW or CONSTRUCT -> inner engine on every step ->\n'
-  printf '  run Work-Atom -> close.\n'
-  printf '  GATE (skip-dominant): the TYPE-gate is model-judged, so skip AGGRESSIVELY when\n'
-  printf '  there are no steps to resolve — pure-trivial / conversational / read-only / yes-no.\n'
-  printf '  core:flow resolves CHEAPLY for small work (Mode 1 = one-shot, no full spine); do not\n'
-  printf '  pay spine overhead on atomic tasks.\n'
+  printf '\n  FLOW ACTIVATION (EVERY input, v2.39.11) -- after Input Routing sets the TYPE:\n'
+  printf '  MUST invoke %s via the Skill tool for EVERY turn type (%s) -- structure universality (D45).\n' "${FLOW_SKILL:-core:flow}" "${FLOW_TYPES:-task / direction / new_concept / question / feedback}"
+  printf '  Cost scales with the work -- not every turn pays the full spine:\n'
+  printf '  - TRIVIAL (one-liner, yes/no, read-only, chitchat) -> FAST-PATH: classify -> answer in\n'
+  printf '    ONE step (Mode-1 atom; no workflow-type lookup, no heavy inner-engine).\n'
+  printf '  - SUBSTANTIVE -> full spine: resolve workflow type -> FOLLOW/CONSTRUCT -> inner engine\n'
+  printf '    every step -> run Work-Atom -> close.\n'
+  printf '  Backstop: flow-gate.sh (Edit/Write + Task/Agent dispatch).\n'
   printf '  Backstop: flow-gate.sh (PreToolUse, SOFT).\n'
   printf '\n  Conditionals (apply when triggered):\n'
   printf '  - Codex consult: IF Depth >= %s with %s planned → invoke %s skill BEFORE the Edit\n' "${DEPTH_THRESHOLD:-3}" "${CONSULT_TOOLS:-Edit/Write/MultiEdit}" "${CONSULT_SKILL:-core:codex-sutra}"

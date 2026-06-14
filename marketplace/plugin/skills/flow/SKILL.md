@@ -11,8 +11,8 @@ description: |
   walks the per-turn governance sequence; flow walks the full resolution
   spine and recurses into sub-steps. Use when a unit of work is substantive
   enough to need explicit resolution (multi-step, ambiguous shape, or
-  "how do I even do this"). Skip for trivial or conversational turns —
-  a one-liner answer, a single read, a yes/no — where the spine is overhead.
+  "how do I even do this"). Fast-path for trivial turns (Flow still runs, collapses to one step) —
+  a one-liner answer, a single read, a yes/no — so the spine is one cheap step, not overhead.
 allowed-tools: ["Bash"]
 ---
 
@@ -49,9 +49,8 @@ a problem is run through the same spine.
 - Onboarding, audit, or pedagogy: showing the full resolution spine on a
   real unit of work.
 
-**When to skip**: trivial or conversational turns. A one-line answer, a
-single read-only call, a yes/no confirmation, chitchat. The spine has cost;
-do not pay it for work that has no steps to resolve. (Per-turn governance —
+**Fast-path (cost-proportional, v2.39.11) — Flow runs on EVERY input (D45)**: trivial turns take a 1-step fast-path, not a skip. A one-line answer, a
+single read-only call, a yes/no confirmation, chitchat. These take the FAST-PATH — classify then answer in one step (Mode-1 atom); only substantive work pays the full spine. (Per-turn governance —
 Input Routing, Depth, H-Sutra header — still applies to those turns; that is
 `core:workflow` / the per-turn block stack, not `flow`.)
 

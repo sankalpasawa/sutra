@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.39.10 (2026-06-14, HEAD)
+## v2.39.11 (2026-06-14, HEAD)
+
+**Flow on EVERY input/type + 1-step fast-path for trivial; gate widened to Task/Agent.** sutra-defaults all-types + cost_model, per-turn reminder, flow-gate Task branch.
+
+## v2.39.10 (2026-06-14)
 
 **Flow auto-activation — core:flow fires per turn, TYPE-gated** (work-bearing turns run the spine; trivial skip). sutra-defaults.json per_turn_blocks.flow + per-turn-discipline-prompt.sh reminder + flow-gate backstop.
 

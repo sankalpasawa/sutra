@@ -68,6 +68,20 @@ if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
   FILE_PATH=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 fi
 [ -z "$FILE_PATH" ] && FILE_PATH="${TOOL_INPUT_file_path:-}"
+# -- Widen (v2.39.11): also catch construct-via-delegation (Task/Agent dispatch),
+#    not just Edit/Write. Gap fixed: a workflow/subagent dispatch had skipped the gate.
+TOOL_NAME=""
+if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
+  TOOL_NAME=$(printf '%s' "$PAYLOAD" | jq -r '.tool_name // empty' 2>/dev/null)
+fi
+if [ "$TOOL_NAME" = "Task" ] || [ "$TOOL_NAME" = "Agent" ]; then
+  if [ ! -f "$REPO_ROOT/.claude/flow-classified" ]; then
+    printf '\n[FLOW] dispatching work (%s) without classifying first -- run core:flow (classify + resolve). SOFT.\n\n' "$TOOL_NAME" >&2
+    mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+    printf '{"ts":"%s","event":"flow-gate-nudge","tool":"%s","reason":"dispatch-without-classify"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TOOL_NAME" >> "$REPO_ROOT/.enforcement/flow-gate.jsonl" 2>/dev/null
+  fi
+  exit 0
+fi
 [ -z "$FILE_PATH" ] && exit 0
 REL_PATH="${FILE_PATH#"$REPO_ROOT"/}"
 
