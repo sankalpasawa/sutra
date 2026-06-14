@@ -71,13 +71,14 @@
       ],
       "applies_if_substantive": [],
       "skip_when": "never skip — Flow runs on EVERY input. Trivial -> 1-step fast-path (classify->answer, Mode-1 atom), NOT the full spine.",
-      "what": "invoke core:flow — resolve a workflow type (child->platform) -> FOLLOW or CONSTRUCT -> inner engine on every step -> run Work-Atom -> close; the TYPE selects the lifecycle",
+      "what": "EVERY turn: emit a literal one-line FLOW fast-path block as TEXT (like the H-Sutra header) — no Skill call. SUBSTANTIVE/multi-step/mutation turns: ALSO invoke core:flow — resolve a workflow type (child->platform) -> FOLLOW or CONSTRUCT -> inner engine on every step -> run Work-Atom -> close; the TYPE selects the lifecycle",
       "skill": "core:flow",
-      "emission_mode": "skill_invocation",
+      "emission_mode": "literal_text_fastpath | skill_invocation_substantive",
+      "fastpath_literal_format": "FLOW: <type> · fast-path · <n> atom · classify->answer  — emitted as literal text every turn, same reliability class as the H-Sutra header. v2.39.13 fix: emission_mode was 'skill_invocation' (the only per-turn block requiring a Skill tool call), which the model rationalized skipping on light turns while the literal-text blocks (header/routing/depth) fired reliably. Converting the fast-path to literal text closes that gap.",
       "enforcement_hook": "flow-gate.sh",
       "soft_hint_hook": "per-turn-discipline-prompt.sh",
-      "$required_note": "required:false means 'not every turn' (type_gated), NOT optional-to-ignore — when applies_to_turn_types matches, invocation is expected. Codex review P2 2026-06-14.",
-      "$over_activation_guard": "skip-dominant: when the TYPE-gate is ambiguous (trivial task / read-only), SKIP. core:flow resolves Mode-1 atoms one-shot; do not run the full spine on small work. Codex+DeepSeek convergent P2 2026-06-14.",
+      "$required_note": "Flow is now a literal-text block (fast-path) on EVERY turn — same emission class as H-Sutra header / Input Routing / Depth, which is WHY those fire reliably and skill_invocation did not. The core:flow Skill is invoked ADDITIONALLY on substantive/multi-step/mutation turns. Codex review P2 2026-06-14; emission-mode literal-text fix 2026-06-14 (v2.39.13).",
+      "$over_activation_guard": "cost-proportional, NOT skip: on trivial/read-only/question turns emit the one-line literal FLOW fast-path block (cheap, always present) — do NOT omit it; reserve the full core:flow Skill spine for substantive/multi-step/mutation work — do NOT run the heavy spine on small work. Codex+DeepSeek convergent P2 2026-06-14; literal-text fix 2026-06-14 (v2.39.13).",
       "cost_model": "structure-universal, depth-proportional (D45): every input activates Flow; trivial collapses to a 1-step fast-path; only substantive work pays the full spine. Founder 2026-06-14 ('run flow on every input, every type; minimize the cost')."
     },
     "depth_estimation": {

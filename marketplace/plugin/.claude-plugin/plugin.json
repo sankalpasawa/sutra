@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.12",
-  "description": "v2.39.12 (2026-06-14) - flow-gate is now HARD (exit 2) fleet-wide: an Edit/Write to a non-whitelisted path, or a Task/Agent dispatch, that skipped core:flow classify+resolve is blocked (overrides: FLOW_ACK=1 / FLOW_DISABLED=1 / ~/.flow-disabled); flow-* markers now wiped per-turn. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.13",
+  "description": "v2.39.13 (2026-06-14) - Flow now fires every turn like the H-Sutra header: emission_mode for the per-turn Flow block changed from skill_invocation (the only block needing a Skill tool call, which got skipped on light turns) to a literal-text fast-path emitted as text every turn; the core:flow Skill is invoked only on substantive/multi-step/mutation turns. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

@@ -116,15 +116,17 @@ FLOW_SKILL=$(jq -r '.per_turn_blocks.flow.skill // "core:flow"' "$DEFAULTS_JSON"
   printf '  5. BUILD-LAYER marker MUST emit IF editing D38 paths (sutra/marketplace/plugin/** etc). Fields: %s\n' "${BL_FIELDS:-LAYER/SCOPE/TARGET-PATH/...}"
   printf '  6. ... tool calls (Edit / Write / Bash / Agent) ...\n'
   printf '  7. OUTPUT TRACE       MUST emit literal one-liner: %s\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}"
-  printf '\n  FLOW ACTIVATION (EVERY input, v2.39.11) -- after Input Routing sets the TYPE:\n'
-  printf '  MUST invoke %s via the Skill tool for EVERY turn type (%s) -- structure universality (D45).\n' "${FLOW_SKILL:-core:flow}" "${FLOW_TYPES:-task / direction / new_concept / question / feedback}"
+  printf '\n  FLOW ACTIVATION (EVERY input, v2.39.13 -- literal-text fast-path) -- after Input Routing sets the TYPE:\n'
+  printf '  MUST emit a literal one-line FLOW fast-path block as TEXT for EVERY turn type (%s) -- structure universality (D45).\n' "${FLOW_TYPES:-task / direction / new_concept / question / feedback}"
+  printf '  SAME emission class as the H-Sutra header (literal text, NOT a skill invocation) -- this is\n'
+  printf '  why the header fires reliably and skill_invocation got skipped. Format:\n'
+  printf '    FLOW: <type> · fast-path · <n> atom · classify->answer\n'
   printf '  Cost scales with the work -- not every turn pays the full spine:\n'
-  printf '  - TRIVIAL (one-liner, yes/no, read-only, chitchat) -> FAST-PATH: classify -> answer in\n'
-  printf '    ONE step (Mode-1 atom; no workflow-type lookup, no heavy inner-engine).\n'
-  printf '  - SUBSTANTIVE -> full spine: resolve workflow type -> FOLLOW/CONSTRUCT -> inner engine\n'
-  printf '    every step -> run Work-Atom -> close.\n'
-  printf '  Backstop: flow-gate.sh (Edit/Write + Task/Agent dispatch).\n'
-  printf '  Backstop: flow-gate.sh (PreToolUse, SOFT).\n'
+  printf '  - TRIVIAL (one-liner, yes/no, read-only, chitchat) -> JUST the literal FLOW line above\n'
+  printf '    (Mode-1 atom; no workflow-type lookup, no heavy inner-engine, no Skill call).\n'
+  printf '  - SUBSTANTIVE/multi-step/mutation -> ALSO invoke %s via the Skill tool: full spine ->\n' "${FLOW_SKILL:-core:flow}"
+  printf '    resolve workflow type -> FOLLOW/CONSTRUCT -> inner engine every step -> Work-Atom -> close.\n'
+  printf '  Backstop: flow-gate.sh (PreToolUse on Edit/Write + Task/Agent dispatch, HARD fleet-wide).\n'
   printf '\n  Conditionals (apply when triggered):\n'
   printf '  - Codex consult: IF Depth >= %s with %s planned → invoke %s skill BEFORE the Edit\n' "${DEPTH_THRESHOLD:-3}" "${CONSULT_TOOLS:-Edit/Write/MultiEdit}" "${CONSULT_SKILL:-core:codex-sutra}"
   printf '  - Skill-explain: BEFORE invoking any Skill, emit 4-line card with: %s\n' "${SE_LINES:-SKILL/WHAT/WHY/EXPECT/ASKS}"
