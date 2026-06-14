@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.13",
-  "description": "v2.39.13 (2026-06-14) - Flow now fires every turn like the H-Sutra header: emission_mode for the per-turn Flow block changed from skill_invocation (the only block needing a Skill tool call, which got skipped on light turns) to a literal-text fast-path emitted as text every turn; the core:flow Skill is invoked only on substantive/multi-step/mutation turns. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.14",
+  "description": "v2.39.14 (2026-06-14) - D61: core:flow FIRES the FULL six-stage spine on EVERY input, the way Input Routing fires every turn (firing at UserPromptSubmit via per-turn-discipline-prompt.sh; emission_mode skill_invocation_always). No fast-path, no trivial collapse. Supersedes the v2.39.13 literal-text fast-path. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

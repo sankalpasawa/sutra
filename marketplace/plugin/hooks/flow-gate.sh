@@ -3,7 +3,8 @@
 #
 # Canon:   sutra/os/decisions/ADR-026-the-flow.md, ADR-027-generic-engine.md
 # Skill:   sutra/marketplace/plugin/skills/flow/SKILL.md (core:flow)
-# Event:   PreToolUse on Edit|Write + Task/Agent dispatch
+# Event:   PreToolUse on Edit|Write + Task/Agent dispatch (BACKSTOP only; Flow
+#          FIRES at UserPromptSubmit via per-turn-discipline-prompt.sh, D61)
 # Enforcement: HARD (v2.39.12, fleet-wide; founder direction 2026-06-14). EXITS 2
 #              -- blocks substantive CONSTRUCT work (Edit/Write to a non-whitelisted
 #              path, or Task/Agent dispatch) that skipped classify+resolve. Mirrors
@@ -74,6 +75,13 @@ TOOL_NAME=""
 if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
   TOOL_NAME=$(printf '%s' "$PAYLOAD" | jq -r '.tool_name // empty' 2>/dev/null)
 fi
+# flow-gate is a BACKSTOP for construct/dispatch mutations, NOT the firing
+# mechanism. Flow FIRES on every input at UserPromptSubmit
+# (per-turn-discipline-prompt.sh emits the full-spine activation, D61) — the
+# same place Input Routing fires. This hook only catches the case where a
+# mutation/dispatch slipped through without classify. Do NOT gate WebSearch/
+# WebFetch/Bash here: gating is not how Flow fires (founder D61, 2026-06-14),
+# and gating Bash would deadlock the marker bootstrap.
 if [ "$TOOL_NAME" = "Task" ] || [ "$TOOL_NAME" = "Agent" ]; then
   if [ ! -f "$REPO_ROOT/.claude/flow-classified" ]; then
     {

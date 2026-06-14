@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.14 — 2026-06-14
+
+**D61 — Flow FIRES full-manner on EVERY input.** `core:flow` now fires on every input — the complete six-stage spine, every TYPE — the way Input Routing / the H-Sutra header fire every turn. The firing is universal; it is NOT a downstream tool gate.
+- Firing mechanism: `per-turn-discipline-prompt.sh` (UserPromptSubmit) now invokes the full `core:flow` Skill every turn; `sutra-defaults.json .per_turn_blocks.flow` emission_mode → `skill_invocation_always`. The v2.39.13 literal-text fast-path (trivial-turn collapse) is REMOVED — every input pays the full spine.
+- `flow-gate.sh` stays a mutation backstop only (Edit/Write + Task/Agent). The brief WebSearch/WebFetch gating is REVERTED — gating is not how Flow fires (founder: "it is not web search gating; it is flow that should be fired").
+- Cost optimization (cheaper head for trivial turns) explicitly DEFERRED by founder ("optimizations can be done later"). Kill-switches unchanged (`FLOW_ACK=1` / `FLOW_DISABLED=1` / `~/.flow-disabled`).
+- Founder direction D61, 2026-06-14.
+
 ## v2.39.12 — 2026-06-14
 
 **Flow gate HARD, fleet-wide.** `flow-gate.sh` now exits 2 (blocks) when an Edit/Write to a non-whitelisted path, or a Task/Agent dispatch, skipped `core:flow` classify+resolve — same enforcement shape as `input-classification-gate.sh` + `depth-marker-pretool.sh`.

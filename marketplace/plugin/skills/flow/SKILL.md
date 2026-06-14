@@ -11,8 +11,10 @@ description: |
   walks the per-turn governance sequence; flow walks the full resolution
   spine and recurses into sub-steps. Use when a unit of work is substantive
   enough to need explicit resolution (multi-step, ambiguous shape, or
-  "how do I even do this"). Fast-path for trivial turns (Flow still runs, collapses to one step) —
-  a one-liner answer, a single read, a yes/no — so the spine is one cheap step, not overhead.
+  "how do I even do this"). Runs on EVERY input in FULL, by default — the
+  complete six-stage spine walks on every turn regardless of TYPE, the way
+  Input Routing does. No fast-path, no skip (founder D61, 2026-06-14: Flow
+  universal + full-manner like Input Routing). Cost optimization deferred.
 allowed-tools: ["Bash"]
 ---
 
@@ -49,10 +51,17 @@ a problem is run through the same spine.
 - Onboarding, audit, or pedagogy: showing the full resolution spine on a
   real unit of work.
 
-**Fast-path (cost-proportional, v2.39.11) — Flow runs on EVERY input (D45)**: trivial turns take a 1-step fast-path, not a skip. A one-line answer, a
-single read-only call, a yes/no confirmation, chitchat. These take the FAST-PATH — classify then answer in one step (Mode-1 atom); only substantive work pays the full spine. (Per-turn governance —
-Input Routing, Depth, H-Sutra header — still applies to those turns; that is
-`core:workflow` / the per-turn block stack, not `flow`.)
+**Full-manner on EVERY input (D61, 2026-06-14) — supersedes the v2.39.11 fast-path**:
+Flow runs the COMPLETE six-stage spine on every input, regardless of TYPE —
+the way Input Routing fires on every turn. There is no fast-path collapse and
+no "trivial turn skips to an answer" exit: a one-line answer, a single read, a
+yes/no, chitchat all walk classify -> resolve -> inner -> work-atom -> close in
+full, with all four markers written. The founder chose universal + full-manner
+over cost-proportional explicitly; **cost optimization (a cheaper head for
+trivial turns) is DEFERRED, not designed-in**. Until that optimization ships,
+pay the full spine every turn. (Per-turn governance — Input Routing, Depth,
+H-Sutra header — still also applies; that is the `core:workflow` block stack,
+layered on top of, not replaced by, `flow`.)
 
 ## The spine
 
@@ -93,8 +102,10 @@ input
 
 Classify the input before doing anything. Delegate to `core:input-routing`
 for the TYPE (direction | task | feedback | new concept | question) and to
-`core:human-sutra` for the 9-cell header tag. The classification decides
-whether the spine even runs (a pure question short-circuits to an answer).
+`core:human-sutra` for the 9-cell header tag. Classification labels the input;
+it does NOT decide whether the spine runs — under D61 the full spine runs on
+every input regardless of TYPE. A pure question still walks all six stages
+(resolve -> inner -> atom -> close), it does not short-circuit to an answer.
 
 Write the marker:
 
