@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.14",
-  "description": "v2.39.14 (2026-06-14) - D61: core:flow FIRES the FULL six-stage spine on EVERY input, the way Input Routing fires every turn (firing at UserPromptSubmit via per-turn-discipline-prompt.sh; emission_mode skill_invocation_always). No fast-path, no trivial collapse. Supersedes the v2.39.13 literal-text fast-path. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.15",
+  "description": "v2.39.15 (2026-06-14) - D61 floor: flow-stop-check.sh (Stop event) forces a redo when core:flow did not fire on a no-tool turn — loop-safe via stop_hook_active (exactly one forced redo, never traps a client). Completes 'Flow fires on EVERY input': flow-gate floors mutations, flow-stop-check floors no-tool turns. Builds on v2.39.14 (full-spine firing). Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

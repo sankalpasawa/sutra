@@ -4,6 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.15 — 2026-06-14
+
+**D61 floor — `flow-stop-check.sh` (Stop event).** Forces a redo when `core:flow` did not fire on a turn (no `.claude/flow-classified` marker). This floors pure no-tool turns (a one-line answer, yes/no, chitchat) that PreToolUse gates cannot reach. HARD, fleet-wide (founder direction).
+- **Loop-safe:** honors `stop_hook_active` — the first miss blocks (one forced redo); the re-invoked turn passes. A client can NEVER infinite-loop, even if a marker write fails. Net: every miss gets exactly one redo, then proceeds.
+- Together with `flow-gate.sh` (floors mutations) this completes "Flow fires on EVERY input." Kill-switches shared: `FLOW_ACK=1` / `FLOW_DISABLED=1` / `~/.flow-disabled`.
+- Founder direction D61, 2026-06-14 ("HARD fleet-wide now").
+
 ## v2.39.14 — 2026-06-14
 
 **D61 — Flow FIRES full-manner on EVERY input.** `core:flow` now fires on every input — the complete six-stage spine, every TYPE — the way Input Routing / the H-Sutra header fire every turn. The firing is universal; it is NOT a downstream tool gate.
