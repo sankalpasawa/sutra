@@ -170,3 +170,17 @@ These conventions emerged from Asawa's day-to-day operation as the holding compa
 Per D40: every Sutra plugin client inherits these defaults so the discipline ships, not just the skills. Per Codex's caveat: hooks injecting prompt text are **soft guidance only** — fragility includes prompt dilution, prompt collision, token bloat, cosmetic emission, and subagent drift. Where deterministic checks exist, they back the soft hints.
 
 **Source-of-truth chain**: D40 (`holding/FOUNDER-DIRECTIONS.md`) → this file (human-readable) → `sutra-defaults.json` (machine-readable) → hooks/skills consume json.
+
+## Flow activation (v2.39.10) — TYPE-gated, per turn
+
+`core:flow` auto-activates every turn, gated by the TYPE that Input Routing + H-Sutra assign. After classification, **work-bearing** turns invoke the Flow's work-resolution spine; trivial turns skip.
+
+| TYPE | Flow activates? |
+|---|---|
+| task / direction / new_concept | **yes** — run the spine |
+| question / feedback | yes **if substantive** (multi-step); trivial → skip |
+| conversational / pure read-only / yes-no | skip |
+
+The spine: resolve a workflow type (child→platform) → FOLLOW or CONSTRUCT → inner engine (factors + lens + Cynefin) on every step → run Work-Atom → close. The TYPE selects the lifecycle.
+
+**Enforcement**: SOFT. The per-turn reminder (`per-turn-discipline-prompt.sh`, reading `per_turn_blocks.flow`) nudges; `flow-gate.sh` (PreToolUse) logs when construct work skips the flow markers. HARD promotion = `company` profile. Kill-switch: `~/.per-turn-discipline-disabled`.

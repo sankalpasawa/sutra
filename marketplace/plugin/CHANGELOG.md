@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.10 — 2026-06-14
+
+**Flow auto-activation — `core:flow` now fires per turn, gated by the classified TYPE.**
+
+- Added `per_turn_blocks.flow` to `sutra-defaults.json` (the canonical per-turn surface); `per-turn-discipline-prompt.sh` now emits a FLOW-activation reminder every turn.
+- After Input Routing + H-Sutra classify the TYPE, work-bearing turns (task / direction / new_concept, substantive question/feedback) invoke `core:flow`; trivial/conversational/read-only turns skip.
+- SOFT (reminder + `flow-gate.sh` backstop). Kill-switch: `~/.per-turn-discipline-disabled`.
+
 ## v2.39.9 — 2026-06-14
 
 **The Flow — end-to-end work-resolution spine, shipped as skills + a soft gate.**

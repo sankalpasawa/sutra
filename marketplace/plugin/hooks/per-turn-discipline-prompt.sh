@@ -86,6 +86,9 @@ RG_PRACTICES=$(jq -r '[.output_discipline | to_entries[] | select(.value == true
 RG_SKILL=$(jq -r '.output_discipline.skill' "$DEFAULTS_JSON" 2>/dev/null)
 RE_PRINCIPLES=$(jq -r '.right_effort.principles_short | join(" / ")' "$DEFAULTS_JSON" 2>/dev/null)
 RE_TOOLS=$(jq -r '.right_effort.applies_before | join("/")' "$DEFAULTS_JSON" 2>/dev/null)
+FLOW_TYPES=$(jq -r '(.per_turn_blocks.flow.applies_to_turn_types // []) | join(" / ")' "$DEFAULTS_JSON" 2>/dev/null)
+FLOW_SUBST=$(jq -r '(.per_turn_blocks.flow.applies_if_substantive // []) | join("/")' "$DEFAULTS_JSON" 2>/dev/null)
+FLOW_SKILL=$(jq -r '.per_turn_blocks.flow.skill // "core:flow"' "$DEFAULTS_JSON" 2>/dev/null)
 
 # Emit derived reminder (changes if json changes). v2.15.1 systemic fix:
 # imperative phrasing — every line states emission mode explicitly (DIRECT
@@ -113,6 +116,16 @@ RE_TOOLS=$(jq -r '.right_effort.applies_before | join("/")' "$DEFAULTS_JSON" 2>/
   printf '  5. BUILD-LAYER marker MUST emit IF editing D38 paths (sutra/marketplace/plugin/** etc). Fields: %s\n' "${BL_FIELDS:-LAYER/SCOPE/TARGET-PATH/...}"
   printf '  6. ... tool calls (Edit / Write / Bash / Agent) ...\n'
   printf '  7. OUTPUT TRACE       MUST emit literal one-liner: %s\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}"
+  printf '\n  FLOW ACTIVATION (TYPE-gated, v2.39.10) — after Input Routing sets the TYPE:\n'
+  printf '  MUST invoke %s via the Skill tool for WORK-BEARING turns (%s; substantive %s too).\n' "${FLOW_SKILL:-core:flow}" "${FLOW_TYPES:-task / direction / new_concept}" "${FLOW_SUBST:-question/feedback}"
+  printf '  It runs the work-resolution spine for that TYPE: resolve a workflow type\n'
+  printf '  (child->platform) -> FOLLOW or CONSTRUCT -> inner engine on every step ->\n'
+  printf '  run Work-Atom -> close.\n'
+  printf '  GATE (skip-dominant): the TYPE-gate is model-judged, so skip AGGRESSIVELY when\n'
+  printf '  there are no steps to resolve — pure-trivial / conversational / read-only / yes-no.\n'
+  printf '  core:flow resolves CHEAPLY for small work (Mode 1 = one-shot, no full spine); do not\n'
+  printf '  pay spine overhead on atomic tasks.\n'
+  printf '  Backstop: flow-gate.sh (PreToolUse, SOFT).\n'
   printf '\n  Conditionals (apply when triggered):\n'
   printf '  - Codex consult: IF Depth >= %s with %s planned → invoke %s skill BEFORE the Edit\n' "${DEPTH_THRESHOLD:-3}" "${CONSULT_TOOLS:-Edit/Write/MultiEdit}" "${CONSULT_SKILL:-core:codex-sutra}"
   printf '  - Skill-explain: BEFORE invoking any Skill, emit 4-line card with: %s\n' "${SE_LINES:-SKILL/WHAT/WHY/EXPECT/ASKS}"

@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.39.9 (2026-06-14, HEAD)
+## v2.39.10 (2026-06-14, HEAD)
+
+**Flow auto-activation — core:flow fires per turn, TYPE-gated** (work-bearing turns run the spine; trivial skip). sutra-defaults.json per_turn_blocks.flow + per-turn-discipline-prompt.sh reminder + flow-gate backstop.
+
+## v2.39.9 (2026-06-14)
 
 **The Flow — work-resolution spine shipped as skills (core:flow + workflow-type-resolve + lens + cynefin) + SOFT flow-gate hook.** Canon ADR-026 + ADR-027. See plugin CHANGELOG.
 

@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.9",
-  "description": "v2.39.9 (2026-06-14) - the Flow: a work-resolution spine shipped as skills (core:flow + workflow-type-resolve + lens + cynefin) plus a SOFT flow-gate hook that nudges when work skips classify/resolve. Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.10",
+  "description": "v2.39.10 (2026-06-14) - core:flow now auto-activates per turn, gated by the H-Sutra-classified TYPE: work-bearing turns (task/direction/new_concept, substantive question/feedback) run the work-resolution spine; trivial turns skip. Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"
