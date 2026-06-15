@@ -116,14 +116,19 @@ FLOW_SKILL=$(jq -r '.per_turn_blocks.flow.skill // "core:flow"' "$DEFAULTS_JSON"
   printf '  5. BUILD-LAYER marker MUST emit IF editing D38 paths (sutra/marketplace/plugin/** etc). Fields: %s\n' "${BL_FIELDS:-LAYER/SCOPE/TARGET-PATH/...}"
   printf '  6. ... tool calls (Edit / Write / Bash / Agent) ...\n'
   printf '  7. OUTPUT TRACE       MUST emit literal one-liner: %s\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}"
-  printf '\n  FLOW ACTIVATION (EVERY input, D61 -- FULL manner, no fast-path) -- after Input Routing sets the TYPE:\n'
-  printf '  MUST invoke %s via the Skill tool on EVERY turn type (%s) and walk the FULL six-stage spine:\n' "${FLOW_SKILL:-core:flow}" "${FLOW_TYPES:-task / direction / new_concept / question / feedback}"
-  printf '    classify -> resolve workflow type (child->platform) -> FOLLOW/CONSTRUCT -> inner engine every step -> Work-Atom -> close.\n'
-  printf '  Flow FIRES on every input the way Input Routing / the H-Sutra header fire every turn -- it is the\n'
-  printf '  firing that is universal, not a downstream tool gate.\n'
-  printf '  D61 (2026-06-14) REMOVED the v2.39.13 literal-text fast-path: there is NO "trivial -> just a text\n'
-  printf '  line, no Skill call" tier. Every input pays the full spine; cost optimization is DEFERRED by founder.\n'
-  printf '  Backstop (not the firing): flow-gate.sh (PreToolUse on Edit/Write + Task/Agent dispatch, HARD fleet-wide).\n'
+  printf '\n  FLOW ACTIVATION (EVERY input, D61 amended 2026-06-15) -- after Input Routing sets the TYPE:\n'
+  printf '  MUST emit the FLOW block as LITERAL TEXT every turn (the way Input Routing / the H-Sutra header are\n'
+  printf '  literal text -- NOT a Skill call). This is the firing, and it is what makes Flow as reliable as Input\n'
+  printf '  Routing: a hook can nudge + floor a miss, but NO hook can force a Skill on the first pass. The block\n'
+  printf '  reports the honest resolved spine for THIS unit:\n'
+  printf '    [1] TYPE/cell  [2] FOLLOW <skill>|CONSTRUCT  [3] steps  [4] inner: lens/cynefin/factors  [5] mode  [6] close\n'
+  printf '  Then write the flow markers (.claude/flow-classified, flow-type-resolved) via the WRITE TOOL\n'
+  printf '  (Claude Code rolls back Bash writes to .claude/) so the floors read real state.\n'
+  printf '  Invoke the FULL %s Skill (deep recursive spine) ONLY for substantive/multi-step/ambiguous work (%s) --\n' "${FLOW_SKILL:-core:flow}" "${FLOW_SUBST:-multi_step/ambiguous_shape/unknown_how/heavy}"
+  printf '  not every trivial turn. Inline block = per-turn floor; Skill = deep mode.\n'
+  printf '  HONESTY BAR: state what ACTUALLY resolved -- an honest 1-step ATOM block on a trivial turn is correct;\n'
+  printf '  do NOT claim a recursive walk / cynefin / factors you did not run (that is the theater D61 forbids).\n'
+  printf '  Floors (not the firing): flow-gate.sh (PreToolUse Edit/Write+Task) + flow-stop-check.sh (Stop, no-tool turns), HARD fleet-wide.\n'
   printf '\n  Conditionals (apply when triggered):\n'
   printf '  - Codex consult: IF Depth >= %s with %s planned → invoke %s skill BEFORE the Edit\n' "${DEPTH_THRESHOLD:-3}" "${CONSULT_TOOLS:-Edit/Write/MultiEdit}" "${CONSULT_SKILL:-core:codex-sutra}"
   printf '  - Skill-explain: BEFORE invoking any Skill, emit 4-line card with: %s\n' "${SE_LINES:-SKILL/WHAT/WHY/EXPECT/ASKS}"

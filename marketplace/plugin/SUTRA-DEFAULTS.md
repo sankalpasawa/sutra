@@ -171,16 +171,15 @@ Per D40: every Sutra plugin client inherits these defaults so the discipline shi
 
 **Source-of-truth chain**: D40 (`holding/FOUNDER-DIRECTIONS.md`) → this file (human-readable) → `sutra-defaults.json` (machine-readable) → hooks/skills consume json.
 
-## Flow activation (v2.39.10) — TYPE-gated, per turn
+## Flow activation (v2.39.16) — INLINE block every turn, Skill for substantive work
 
-`core:flow` auto-activates every turn, gated by the TYPE that Input Routing + H-Sutra assign. After classification, **work-bearing** turns invoke the Flow's work-resolution spine; trivial turns skip.
+`core:flow` FIRES on EVERY input — the way Input Routing fires — by emitting an INLINE FLOW block (literal text the model emits), NOT by invoking the Skill tool. A hook cannot force a Skill on the first pass, so the per-turn artifact is literal text (D61, amended 2026-06-15). The full `core:flow` Skill (deep recursive spine) is reserved for substantive / multi-step / ambiguous / unknown-how work.
 
-| TYPE | Flow activates? |
+| Turn | What fires |
 |---|---|
-| task / direction / new_concept | **yes** — run the spine |
-| question / feedback | yes **if substantive** (multi-step); trivial → skip |
-| conversational / pure read-only / yes-no | skip |
+| every input (task / direction / new_concept / question / feedback / chitchat) | INLINE FLOW block (literal text) + write flow markers via the Write tool |
+| substantive / multi-step / ambiguous / unknown-how | additionally invoke the full `core:flow` Skill (deep recursive spine) |
 
-The spine: resolve a workflow type (child→platform) → FOLLOW or CONSTRUCT → inner engine (factors + lens + Cynefin) on every step → run Work-Atom → close. The TYPE selects the lifecycle.
+The block reports the honest resolved spine for the unit: [1] TYPE/cell → [2] FOLLOW a workflow type (child→platform) or CONSTRUCT → [3] steps → [4] inner engine (factors + lens + Cynefin) → [5] mode per step → [6] close. **Honesty bar**: state what ACTUALLY resolved — an honest 1-step ATOM block on a trivial turn is correct; faking the full spine is theater.
 
-**Enforcement**: SOFT. The per-turn reminder (`per-turn-discipline-prompt.sh`, reading `per_turn_blocks.flow`) nudges; `flow-gate.sh` (PreToolUse) logs when construct work skips the flow markers. HARD promotion = `company` profile. Kill-switch: `~/.per-turn-discipline-disabled`.
+**Enforcement**: HARD, fleet-wide, via two FLOORS (not the firing). `flow-gate.sh` (PreToolUse) blocks an Edit/Write/Task that skipped classify+resolve. `flow-stop-check.sh` (Stop) forces one redo when Flow didn't fire on a no-tool turn (loop-safe via `stop_hook_active`). Both depend on markers persisting — write them via the Write tool (Claude Code rolls back sandboxed Bash writes to `.claude/`). Kill-switches: `FLOW_DISABLED=1` / `~/.flow-disabled` / `FLOW_ACK=1`.

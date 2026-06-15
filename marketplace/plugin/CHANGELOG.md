@@ -4,6 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.39.16 — 2026-06-15
+
+**D61 amendment — Flow fires via the INLINE block, not a Skill invocation.** The v2.39.14 contract ("invoke `core:flow` every turn") could not hold: no Claude Code hook can force a Skill on the first pass, so on no-tool turns the model skipped it. Flow now fires the way Input Routing fires — an INLINE FLOW block (literal text the model emits) on every input + markers written via the Write tool. The full `core:flow` Skill is the DEEP mode (substantive / multi-step / ambiguous work only).
+- **Marker-persistence fix:** marker writes must use the Write tool — Claude Code rolls back sandboxed Bash writes to `.claude/`, which made `flow-gate` / `flow-stop-check` read stale state (block a classified mutation / force a spurious redo). SKILL.md + sutra-defaults now mandate it.
+- Floors unchanged: `flow-gate.sh` (mutations) + `flow-stop-check.sh` (no-tool turns), HARD fleet-wide. `emission_mode` → `inline_block_every_turn_plus_skill_for_substantive`.
+- True "fires by construction" (model cannot skip) requires the spine as CODE outside the model — the Native engine. Deferred. Founder direction D61 amendment, 2026-06-15.
+
 ## v2.39.15 — 2026-06-14
 
 **D61 floor — `flow-stop-check.sh` (Stop event).** Forces a redo when `core:flow` did not fire on a turn (no `.claude/flow-classified` marker). This floors pure no-tool turns (a one-line answer, yes/no, chitchat) that PreToolUse gates cannot reach. HARD, fleet-wide (founder direction).

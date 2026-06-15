@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.15",
-  "description": "v2.39.15 (2026-06-14) - D61 floor: flow-stop-check.sh (Stop event) forces a redo when core:flow did not fire on a no-tool turn — loop-safe via stop_hook_active (exactly one forced redo, never traps a client). Completes 'Flow fires on EVERY input': flow-gate floors mutations, flow-stop-check floors no-tool turns. Builds on v2.39.14 (full-spine firing). Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.16",
+  "description": "v2.39.16 (2026-06-15) - D61 amendment: Flow fires via an INLINE block (literal text, like Input Routing), not a Skill invocation — a hook cannot force a Skill, so skill-every-turn was skipped on no-tool turns; the full core:flow Skill is the deep mode for substantive work. Marker-persistence fix: marker writes use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/). Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"

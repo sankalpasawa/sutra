@@ -11,10 +11,12 @@ description: |
   walks the per-turn governance sequence; flow walks the full resolution
   spine and recurses into sub-steps. Use when a unit of work is substantive
   enough to need explicit resolution (multi-step, ambiguous shape, or
-  "how do I even do this"). Runs on EVERY input in FULL, by default — the
-  complete six-stage spine walks on every turn regardless of TYPE, the way
-  Input Routing does. No fast-path, no skip (founder D61, 2026-06-14: Flow
-  universal + full-manner like Input Routing). Cost optimization deferred.
+  "how do I even do this"). FIRES on EVERY input — but as an INLINE FLOW block
+  (literal text, the way Input Routing fires), not a Skill call. The full
+  recursive Skill spine is the DEEP mode, invoked only for substantive /
+  multi-step / ambiguous work (founder D61, 2026-06-14; firing-mechanism
+  amended 2026-06-15: inline block, not skill-invocation-every-turn — a hook
+  cannot force a Skill, but inline literal text reaches Input-Routing reliability).
 allowed-tools: ["Bash"]
 ---
 
@@ -51,23 +53,55 @@ a problem is run through the same spine.
 - Onboarding, audit, or pedagogy: showing the full resolution spine on a
   real unit of work.
 
-**Full-manner on EVERY input (D61, 2026-06-14) — supersedes the v2.39.11 fast-path**:
-Flow runs the COMPLETE six-stage spine on every input, regardless of TYPE —
-the way Input Routing fires on every turn. There is no fast-path collapse and
-no "trivial turn skips to an answer" exit: a one-line answer, a single read, a
-yes/no, chitchat all walk classify -> resolve -> inner -> work-atom -> close in
-full, with all four markers written. The founder chose universal + full-manner
-over cost-proportional explicitly; **cost optimization (a cheaper head for
-trivial turns) is DEFERRED, not designed-in**. Until that optimization ships,
-pay the full spine every turn. (Per-turn governance — Input Routing, Depth,
-H-Sutra header — still also applies; that is the `core:workflow` block stack,
-layered on top of, not replaced by, `flow`.)
+**Fires on EVERY input via the INLINE FLOW block (D61, 2026-06-14; firing-mechanism amended 2026-06-15)**:
+Flow FIRES on every input the way Input Routing fires — by emitting an INLINE
+FLOW block as literal text (see "The resolved-path FLOW block" below), NOT by
+invoking the Skill tool. This is the firing, and it is what makes Flow as
+reliable as Input Routing: a hook can inject a nudge and floor a miss, but no
+hook can force a Skill invocation on the first pass — so the per-turn artifact
+must be literal text the model emits, not a tool it must choose to call. Every
+input — a one-line answer, a single read, a yes/no, chitchat — emits the inline
+block (its honest resolved spine) and writes the flow markers (sandbox-safe; see
+the callout under "The spine").
+
+The FULL recursive Skill spine (`Skill(core:flow)` + the six stages + recursion
+into sub-steps) is the DEEP mode — invoke it only for substantive / multi-step /
+ambiguous / unknown-how work, not on every trivial turn. Inline block = the
+per-turn floor (always); the Skill = the deep mode (when the work warrants it).
+
+**HONESTY BAR (the anti-theater rule)**: the inline block states what ACTUALLY
+resolved for this unit. On a trivial turn that is genuinely TYPE + a CONSTRUCT/
+FOLLOW decision + one ATOM step + an honest inner read + close — do NOT claim a
+recursive walk, a cynefin domain, or factor counts you did not actually run. An
+honest 1-step ATOM block is correct; a block that fakes the full spine is the
+theater D61 forbids.
+
+**Why amended (2026-06-15)**: the v2.39.14 contract was "invoke the Skill every
+turn in full." A hook cannot force a Skill, so on no-tool turns the model skipped
+it. The only true "fires every time by construction" is the spine running as CODE
+outside the model (the Native engine) — the long game. Until then, inline literal
+text + the two floors (flow-gate, flow-stop-check) is the most reliable in-session
+firing. (Per-turn governance — Input Routing, Depth, H-Sutra header — still also
+applies; that is the `core:workflow` block stack, layered on top of, not replaced
+by, `flow`.)
 
 ## The spine
 
 A numbered procedure. Walk it top to bottom for the unit of work. Each stage
 delegates judgment to an existing skill and writes a marker the hook reads.
 Markers live under `$CLAUDE_PROJECT_DIR/.claude/`.
+
+**Marker writes MUST persist to the real filesystem (read before writing any marker)**:
+the `.claude/flow-*` markers are read by hooks that run OUTSIDE the assistant tool
+sandbox — `flow-gate.sh` (PreToolUse) and `flow-stop-check.sh` (Stop). A sandboxed
+`printf > .claude/flow-*` is ROLLED BACK when the Bash call ends: the same call sees
+the file, the next call and every hook do not. If a marker does not persist, the
+hooks read stale state and either block a mutation that WAS classified (flow-gate)
+or force a spurious redo on a turn where Flow DID fire (flow-stop-check). Therefore
+EVERY marker write below MUST bypass the sandbox so it lands on the real FS the
+hooks read: in Claude Code, run the Bash tool with `dangerouslyDisableSandbox: true`
+for each marker write, then confirm it persisted in a SEPARATE call. (On a host
+without a write sandbox this is a no-op — the write already persists.)
 
 ```
 input
@@ -289,23 +323,33 @@ skill that already owns that judgment.
 | [6] Close | this skill (`core:flow`) | `.claude/flow-closed` |
 | predecessor | `core:workflow` (per-turn governance sequence) | — |
 
-## Enforcement — the flow-gate hook
+## Enforcement — two floors (NOT the firing)
 
-The four markers are not decorative. The `flow-gate` hook reads them on
-`PreToolUse` and checks the spine was walked before a mutation lands.
+The markers are not decorative. Two hooks read them and floor a miss. Neither
+is the firing mechanism (the inline FLOW block is — see above); they are
+backstops that catch a turn that skipped it.
 
-- **Today (SOFT)**: the hook is advisory. Missing markers produce a stderr
-  nudge and a JSONL row in `.enforcement/flow-gate.jsonl`. It never blocks —
-  every fleet client keeps working.
-- **Company profile (HARD, future)**: when a client's userConfig sets
-  `profile=company`, the same hook promotes to a hard gate (exit 2) on
-  missing markers. That promotion is described in the hook and NOT active in
-  v1.
+- **`flow-gate.sh` — mutation floor (PreToolUse, HARD fleet-wide, v2.39.12)**:
+  an Edit/Write to a non-whitelisted path, or a Task/Agent dispatch, that
+  skipped classify+resolve exits 2 (blocks) and logs `.enforcement/flow-gate.jsonl`.
+  Catches construct/dispatch mutations only — a pure no-tool turn calls no tool,
+  so it cannot reach there.
+- **`flow-stop-check.sh` — no-tool floor (Stop, HARD fleet-wide, v2.39.15)**:
+  at turn-end, if `.claude/flow-classified` is absent, it returns
+  `{"decision":"block"}` and forces exactly one redo. This floors the pure
+  no-tool turns flow-gate cannot — a one-line answer, yes/no, chitchat.
+  Loop-safe via `stop_hook_active` (the re-invoked turn passes; never traps).
 
-Kill-switches (both disable the hook entirely): env `FLOW_DISABLED=1` or the
-file `$HOME/.flow-disabled`. Override for a single mutation: `FLOW_ACK=1`
-(audit-logged to `.enforcement/flow-gate-ledger.jsonl`). Skills explain;
-hooks enforce — this skill writes the markers, the hook reads them.
+**Both floors depend on the markers PERSISTING** — see the sandbox callout under
+"The spine". A marker written via sandboxed Bash is rolled back, so flow-gate
+would block a mutation that was actually classified, and flow-stop-check would
+force a spurious redo on a turn where Flow fired. Write markers via the Write
+tool (or `dangerouslyDisableSandbox`), then they land on the real FS the hooks read.
+
+Kill-switches (disable both hooks): env `FLOW_DISABLED=1` or file
+`$HOME/.flow-disabled`. Override for one call: `FLOW_ACK=1 FLOW_ACK_REASON='<why>'`
+(audit-logged). Skills explain; hooks enforce — this skill writes the markers,
+the hooks read them.
 
 ## Self-check
 

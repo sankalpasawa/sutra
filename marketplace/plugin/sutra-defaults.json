@@ -55,7 +55,7 @@
       "soft_hint_hook": "per-turn-discipline-prompt.sh"
     },
     "flow": {
-      "$comment": "D61 (v2.39.14, 2026-06-14): core:flow FIRES on every input — full six-stage spine, every TYPE — the way Input Routing fires every turn. Firing happens at UserPromptSubmit (per-turn-discipline-prompt.sh); flow-gate.sh is a mutation backstop only, NOT the firing mechanism. Supersedes v2.39.13's literal-text fast-path. Founder: 'it is flow that should be fired' + 'full manner' + 'optimizations can be done later'.",
+      "$comment": "D61 (v2.39.14, 2026-06-14) + AMENDMENT (v2.39.16, 2026-06-15): core:flow FIRES on every input the way Input Routing fires — but via an INLINE FLOW block (literal text the model emits), NOT a Skill invocation. A hook cannot force a Skill on the first pass, so skill-every-turn was skipped on no-tool turns; inline literal text reaches Input-Routing reliability. The full core:flow Skill is the DEEP mode for substantive/multi-step/ambiguous work. Firing at UserPromptSubmit (per-turn-discipline-prompt.sh); flow-gate.sh + flow-stop-check.sh are floors, NOT the firing. True 'fires by construction' deferred to the Native engine (spine as code).",
       "required": false,
       "activation": "type_gated",
       "activates_after": [
@@ -69,16 +69,24 @@
         "question",
         "feedback"
       ],
-      "applies_if_substantive": [],
-      "skip_when": "never skip — Flow runs the FULL six-stage spine on EVERY input (D61). No fast-path, no trivial-turn collapse, no literal-text-only tier.",
-      "what": "EVERY turn: invoke core:flow via the Skill tool and walk the full spine — classify -> resolve a workflow type (child->platform) -> FOLLOW or CONSTRUCT -> inner engine on every step -> run Work-Atom -> close. The TYPE selects the lifecycle; it does NOT decide whether the spine runs.",
+      "applies_if_substantive": [
+        "multi_step",
+        "ambiguous_shape",
+        "unknown_how",
+        "heavy"
+      ],
+      "skip_when": "never skip the INLINE block — it fires on EVERY input (D61). The full Skill spine is invoked only for substantive work (see applies_if_substantive); on trivial turns the inline block IS the firing, no Skill call.",
+      "what": "EVERY turn: emit the INLINE FLOW block as literal text (Unit / [1] TYPE+cell / [2] FOLLOW|CONSTRUCT / [3] steps / [4] inner lens+cynefin+factors / [5] mode / [6] close) reporting the HONEST resolved spine for this unit, then write the flow markers via the Write tool. Invoke the full core:flow Skill (deep recursive spine) only for substantive/multi-step/ambiguous/unknown-how work.",
       "skill": "core:flow",
-      "emission_mode": "skill_invocation_always",
-      "enforcement_hook": "flow-gate.sh",
+      "emission_mode": "inline_block_every_turn_plus_skill_for_substantive",
+      "invoke_skill_when": "multi-step OR ambiguous shape OR unknown-how OR heavy work — NOT every trivial turn",
+      "marker_write": "MUST use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/); a reverted marker makes the floors read stale state. Markers: .claude/flow-classified + .claude/flow-type-resolved (+ flow-inner, flow-closed for the Skill spine).",
+      "honesty_bar": "the inline block states what ACTUALLY resolved. An honest 1-step ATOM block on a trivial turn is correct; claiming a recursive walk / cynefin / factor counts not actually run is the theater D61 forbids.",
+      "enforcement_hook": "flow-gate.sh (PreToolUse mutation floor) + flow-stop-check.sh (Stop no-tool floor)",
       "soft_hint_hook": "per-turn-discipline-prompt.sh",
-      "$required_note": "Flow FIRES on every input at UserPromptSubmit (per-turn-discipline-prompt.sh) the same way the H-Sutra header / Input Routing fire — the firing is universal, not a downstream tool gate. The full core:flow Skill spine runs on EVERY turn type (D61, 2026-06-14). Supersedes the v2.39.13 literal-text fast-path.",
-      "$over_activation_guard": "D61 (2026-06-14): full spine on EVERY input by founder direction; NO fast-path / NO trivial collapse. Cost optimization (a cheaper head for trivial turns) is DEFERRED, not designed-in. Until it ships, pay the full spine every turn. Kill-switches: FLOW_DISABLED=1 / ~/.flow-disabled / FLOW_ACK=1.",
-      "cost_model": "structure-universal AND depth-full (D61): every input fires the full core:flow spine. Founder 2026-06-14 chose universal + full-manner over cost-proportional ('optimizations can be done later'); cost optimization deferred."
+      "$required_note": "Flow FIRES on every input via the inline block (literal text), the same mechanism as the H-Sutra header / Input Routing — those fire reliably because they are text the model emits, not a tool it must invoke. AMENDMENT 2026-06-15: supersedes v2.39.14 skill_invocation_always.",
+      "$over_activation_guard": "Inline block on EVERY input (cheap, ~Input-Routing reliability). Full Skill only for substantive work. Kill-switches: FLOW_DISABLED=1 / ~/.flow-disabled / FLOW_ACK=1.",
+      "cost_model": "structure-universal (inline block every turn, cheap) + depth-on-demand (full Skill only when work warrants). AMENDMENT 2026-06-15 replaces v2.39.14 depth-full-every-turn: a hook cannot force a Skill, so inline-text-every-turn + Skill-for-substantive is both more reliable AND cheaper. True determinism = Native engine (deferred)."
     },
     "depth_estimation": {
       "required": true,
