@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sutra — Claude Code</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+<style>
+  :root { --bg:#0d1117; --panel:#10151c; --line:#21262d; --fg:#c9d1d9; --dim:#8b949e; --hi:#58a6ff;
+          --low:#3fb950; --high:#f85149; --tlf:#5a9bd4; --tlf-deep:#2C5F8A; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
+              font:13px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  /* grid is LOCKED: 240px sidebar | 1fr terminal, rows auto|1fr — never change (keeps #term stable) */
+  #app { display:grid; grid-template-columns:240px 1fr; grid-template-rows:auto 1fr; height:100vh; }
+  header { grid-column:1/3; display:flex; align-items:center; gap:12px;
+           height:48px; padding:0 16px; white-space:nowrap; overflow:hidden;   /* fixed height: terminal can't shrink */
+           border-bottom:1px solid var(--line); background:var(--panel); }
+  header .logo { font-weight:700; font-size:15px; letter-spacing:.3px; }
+  header .logo span { color:var(--hi); }
+  header .badge { font-size:11px; color:#cfe2ff; background:#2c5f8a44; border:1px solid var(--tlf-deep);
+                  border-radius:6px; padding:2px 8px; }
+  header .wd { color:var(--dim); font-size:12px; }
+  header .spacer { flex:1; }
+  .navbtn { color:var(--hi); text-decoration:none; font-size:12px; border:1px solid var(--line);
+            border-radius:8px; padding:4px 10px; background:transparent; cursor:pointer; font:inherit; }
+  .navbtn:hover { border-color:var(--hi); }
+  header #status { font-size:12px; }
+  header #status.live::before { content:"\25CF"; color:var(--low); margin-right:5px; }
+  header #status.down::before { content:"\25CF"; color:var(--high); margin-right:5px; }
+  header .brand-tlf { font-size:11px; color:var(--dim); border-left:1px solid var(--line); padding-left:12px; }
+  header .brand-tlf b { color:var(--tlf); font-weight:700; }
+
+  aside { border-right:1px solid var(--line); background:var(--panel); padding:14px 12px;
+          overflow-y:auto; display:flex; flex-direction:column; }
+  aside h4 { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+             margin:16px 4px 8px; font-weight:600; }
+  aside h4:first-child { margin-top:0; }
+  .btn { display:block; width:100%; text-align:left; background:transparent; color:var(--fg);
+         border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0; cursor:pointer; font:inherit; }
+  .btn:hover { border-color:var(--hi); background:#1f6feb18; }
+  .btn small { color:var(--dim); display:block; font-size:11px; margin-top:2px; }
+  .hint { color:var(--dim); font-size:11px; margin:8px 4px; line-height:1.5; }
+  .zone-specific { border-top:1px dashed var(--line); margin-top:10px; padding-top:2px; }
+  .zone-specific h4 { color:var(--tlf); }
+  .sidebar-foot { margin-top:auto; padding:12px 4px 2px; border-top:1px solid var(--line);
+                  color:var(--dim); font-size:11px; }
+  .sidebar-foot b { color:var(--hi); }  .sidebar-foot .t { color:var(--tlf); }
+  main { padding:8px 14px; overflow:hidden; }
+  #term { width:100%; height:100%; }   /* FROZEN — do not add max-width / center / lineHeight / change font. Any of these resizes the terminal and re-breaks rendering. */
+
+  /* FAQ slide-over — position:fixed, never affects layout/terminal */
+  #faq { position:fixed; inset:0; background:#000a; display:none; z-index:50; }
+  #faq.open { display:block; }
+  #faq .panel { position:absolute; right:0; top:0; height:100%; width:min(540px,92vw); background:var(--panel);
+                border-left:1px solid var(--line); padding:22px 24px; overflow-y:auto; }
+  #faq h2 { margin:0 0 2px; font-size:16px; } #faq .sub { color:var(--dim); font-size:12px; margin-bottom:8px; }
+  #faq .close { position:absolute; right:18px; top:18px; }
+  #faq .qa { margin:15px 0; }
+  #faq .q { font-weight:600; } #faq .a { color:var(--dim); margin-top:3px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">&#10022; <span>Sutra</span></div>
+    <span class="badge" id="dept">workspace</span>
+    <div class="wd" id="wd">Claude Code</div>
+    <div class="spacer"></div>
+    <a class="navbtn" href="/sessions">Sessions</a>
+    <button class="navbtn" id="faq-open">? FAQ</button>
+    <div id="status" class="down">connecting&hellip;</div>
+    <div class="brand-tlf">by <b>Testlify</b></div>
+  </header>
+
+  <aside>
+    <!-- GENERIC zone (same for everyone) — everyday plain-English asks -->
+    <h4>Everyday</h4>
+    <button class="btn" data-href="/sessions">Continue last session <small>pick up where you left off</small></button>
+    <button class="btn" data-insert="Summarize what you just did, in plain English.">Summarize what happened</button>
+    <button class="btn" data-insert="Show me what changed, and offer to undo it.">What changed? / Undo</button>
+    <button class="btn" data-insert="Turn this into a clean, shareable document.">Make a document</button>
+    <button class="btn" data-insert="I'm not sure what to do next. Guide me step by step.">I'm stuck — help</button>
+    <button class="btn" data-insert="Draft a reply to this — I'll review before it's sent.">&#9993;&#65039; Draft a reply</button>
+    <button class="btn" data-insert="Rewrite this so it reads natural and human, not like AI.">&#129529; Make it sound human</button>
+    <button class="btn" data-insert="Check this for mistakes — facts, grammar, and tone.">&#128269; Check for mistakes</button>
+    <button class="btn" data-insert="Explain this simply, like I'm new to it.">&#128161; Explain this simply</button>
+
+    <!-- SPECIFIC zone (department-keyed via ?dept= ; defaults to universal. P2 will source from /api/profile) -->
+    <div class="zone-specific" id="specific">
+      <h4>Your tasks</h4>
+      <div class="hint" id="dept-hint" style="margin-top:0">Tuned to your role.</div>
+      <div id="dept-buttons"></div>
+    </div>
+
+    <h4>Commands</h4>
+    <button class="btn" data-cmd="/help">What can you do? <small>list commands</small></button>
+    <button class="btn" data-cmd="/core:learn">Learn Sutra <small>guided tour</small></button>
+    <button class="btn" data-cmd="/compact">Free up space <small>compress context</small></button>
+    <button class="btn" data-cmd="/clear">Start fresh <small>clear context</small></button>
+
+    <h4>Keys</h4>
+    <button class="btn" data-key="ctrlc">Ctrl-C <small>stop current</small></button>
+    <button class="btn" data-key="shifttab">Shift-Tab <small>cycle mode (plan)</small></button>
+
+    <h4>Session</h4>
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:12px;cursor:pointer">
+      <input type="checkbox" id="caveman" checked /> Caveman mode
+    </label>
+    <div class="hint" style="margin-top:0">Token-saving replies. Auto-on. Sutra (/core:start) fires automatically each session.</div>
+    <button class="btn" id="restart">&#8635; Restart session <small>apply toggle</small></button>
+
+    <div class="sidebar-foot">powered by <b>&#10022; Sutra</b> &middot; <span class="t">Testlify</span></div>
+  </aside>
+
+  <main><div id="term"></div></main>
+</div>
+
+<!-- FAQ overlay -->
+<div id="faq">
+  <div class="panel">
+    <button class="navbtn close" id="faq-close">close ✕</button>
+    <h2>Sutra — FAQ</h2>
+    <div class="sub">The quick answers. Just type what you want; the rest is automatic.</div>
+    <div class="qa"><div class="q">Why the [brackets] before replies?</div><div class="a">Sutra's governance header — it shows how your request was read (direction, risk). Cosmetic; ignore it.</div></div>
+    <div class="qa"><div class="q">What is "caveman mode"?</div><div class="a">Shorter replies that save tokens. On by default. Toggle it in the sidebar, then Restart session.</div></div>
+    <div class="qa"><div class="q">What is /core:start?</div><div class="a">It turns Sutra on. It runs automatically each session — you don't need to.</div></div>
+    <div class="qa"><div class="q">Why did it say BLOCKED or "not allowed"?</div><div class="a">A safety gate fired. It will tell you exactly how to proceed — read the message and follow it.</div></div>
+    <div class="qa"><div class="q">Is this costing me money?</div><div class="a">No extra charge. It runs on your existing Claude plan — same as the terminal. No per-message API billing.</div></div>
+    <div class="qa"><div class="q">How do I start?</div><div class="a">Type what you want in plain English in the box and press Enter. Or click a button on the left.</div></div>
+    <div class="qa"><div class="q">What does "depth" mean?</div><div class="a">Sutra's effort rating for a task, 1 (quick) to 5 (exhaustive). Just context.</div></div>
+    <div class="qa"><div class="q">It stopped or got interrupted?</div><div class="a">Open Sessions (top right) and click Resume to pick up the conversation.</div></div>
+    <div class="qa"><div class="q">What can it actually do?</div><div class="a">Read and edit files, run code and commands, research, and write documents — in the folder it's pointed at.</div></div>
+    <div class="qa"><div class="q">How do I stop it mid-task?</div><div class="a">Click Ctrl-C in the Keys section (or press Ctrl-C).</div></div>
+    <div class="qa"><div class="q">Keyboard shortcuts (in the Claude window)</div><div class="a">
+      <b>Ctrl-C</b> &mdash; stop what it's doing<br>
+      <b>Ctrl-A</b> &mdash; jump to start of the line<br>
+      <b>Ctrl-E</b> &mdash; jump to end of the line<br>
+      <b>Ctrl-W</b> &mdash; delete the word before the cursor<br>
+      <b>Ctrl-U</b> &mdash; clear the whole line<br>
+      <b>Ctrl-L</b> &mdash; clear the screen<br>
+      <b>Shift-Tab</b> &mdash; switch mode (e.g. plan mode)<br>
+      <b>&uarr; / &darr;</b> &mdash; previous / next in history<br>
+      <b>Mouse drag</b> &mdash; select text to copy<br>
+      <br>
+      Note: Mac shortcuts like <b>Cmd</b>-arrow or <b>Option</b>-arrow (jump/select by word) don't work here &mdash; this is a terminal, not a text box. Use the Ctrl keys above instead.
+    </div></div>
+    <div id="faq-extra"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.js"></script>
+<script>
+  const ESC = String.fromCharCode(27), ETX = String.fromCharCode(3);
+  const KEYS = { ctrlc: ETX, shifttab: ESC + "[Z" };
+
+  const statusEl = document.getElementById("status");
+  const term = new Terminal({
+    cursorBlink: true, fontSize: 14, scrollback: 6000,
+    allowProposedApi: true,                         // required for the unicode width API (#1)
+    fontFamily: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace',
+    theme: { background:"#0d1117", foreground:"#c9d1d9", cursor:"#58a6ff", selectionBackground:"#1f6feb55" },
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  try { term.loadAddon(new Unicode11Addon.Unicode11Addon()); } catch (_) {}   // Unicode 11 width tables (#1)
+  term.open(document.getElementById("term"));
+  try { term.unicode.activeVersion = "11"; } catch (_) {}                      // the load-bearing line (#1)
+  function refit() { try { fit.fit(); sendResize(); } catch (_) {} }
+  let resizeTimer;
+  function debouncedRefit() { clearTimeout(resizeTimer); resizeTimer = setTimeout(refit, 150); }
+  fit.fit();
+  setTimeout(refit, 350);
+  window.addEventListener("load", refit);
+
+  let ws;
+  function sendResize() {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "r", c: term.cols, r: term.rows }));
+  }
+  function connect() {
+    const q = new URLSearchParams(location.search);
+    const p = new URLSearchParams();
+    if (q.get("resume")) p.set("resume", q.get("resume"));
+    if (q.get("cwd")) p.set("cwd", q.get("cwd"));
+    const cav = document.getElementById("caveman");
+    p.set("caveman", cav && cav.checked ? "1" : "0");
+    const qs = p.toString();
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/term" + (qs ? "?" + qs : ""));
+    ws.binaryType = "arraybuffer";                  // receive raw PTY bytes (#3)
+    ws.onopen = () => { statusEl.className = "live"; statusEl.textContent = "live"; sendResize(); term.focus(); };
+    ws.onclose = () => { statusEl.className = "down"; statusEl.textContent = "reconnecting…"; setTimeout(connect, 1500); };
+    ws.onmessage = (e) => term.write(typeof e.data === "string" ? e.data : new Uint8Array(e.data));
+  }
+  term.onData((d) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d })); });
+  window.addEventListener("resize", debouncedRefit);
+  new ResizeObserver(debouncedRefit).observe(document.getElementById("term"));
+
+  function send(d) { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d })); term.focus(); }
+  document.querySelectorAll(".btn").forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.cmd != null) send(b.dataset.cmd + "\n");      // slash command + Enter
+      else if (b.dataset.insert != null) send(b.dataset.insert);  // text, no Enter — user reviews
+      else if (b.dataset.key != null) send(KEYS[b.dataset.key] || ""); // control key
+      else if (b.dataset.href != null) location.href = b.dataset.href; // navigate
+    };
+  });
+
+  document.getElementById("restart").onclick = () => {
+    if (ws) { ws.onclose = null; try { ws.close(); } catch (_) {} }   // suppress auto-reconnect
+    term.reset();
+    connect();
+  };
+
+  // FAQ overlay (chrome only — no terminal impact)
+  const faqEl = document.getElementById("faq");
+  document.getElementById("faq-open").onclick = () => faqEl.classList.add("open");
+  document.getElementById("faq-close").onclick = () => faqEl.classList.remove("open");
+  faqEl.onclick = (e) => { if (e.target === faqEl) faqEl.classList.remove("open"); };
+
+  // Department-keyed "Your tasks" — chosen by ?dept=<key>, defaults to universal.
+  // Buttons paste a plain-English prompt (data-insert: no Enter; user reviews then sends).
+  // Source: reference_sutra_dept_tasks.md ("3 problems/day" per dept). P2 will source from /api/profile.
+  // Prompts are repo-grounded "gold" prompts (researched 2026-06-16 from the proven skill repos
+  // per dept: boraoztunc/skills, AgricIDaniel/claude-seo, Apollo plugin, anthropics HR plugin,
+  // TomGranot/hubspot-admin-skills, blader/humanizer, Anthropic claude-code best-practices).
+  // Each encodes role + grounded-only constraints + a [PLACEHOLDER] + an output format. data-insert: pasted, no Enter.
+  const DEPT_TASKS = {
+    universal: { label: "workspace", buttons: [
+      ["Draft a reply to the message below in my voice — plain and specific, no filler openers, no buzzwords; I'll review before it's sent. Flag in [VERIFY] anything you're unsure of. Message + context: [paste it]", "Draft a reply"],
+      ["Summarize the text below in 5 plain-English bullets, then one line on what to do next. Use only what's in the text — don't add facts. Text: [paste it]", "Summarize a doc"],
+      ["Research the topic below and give me the key points, each with a dated, named source; mark anything you can't verify as 'unverified' rather than guessing. Topic: [what to research]", "Research a topic"],
+    ]},
+    marketing: { label: "Marketing", buttons: [
+      ["Act as a B2B competitive-intel analyst. Brief this week's changes for our competitor set [list competitors], using only facts from a dated, named source (their site, pricing, changelog, G2) — write 'unverified' rather than inventing, and never describe a feature they don't ship. Output a table: Competitor | What changed | Source+date | Confidence | So-what for us.", "Competitor brief"],
+      ["Repurpose the source below into (a) a ~150-word LinkedIn post, (b) a 5-7 post X thread, (c) a 100-word newsletter intro — every claim faithful to the source, no new stats. Match this voice: [paste 1-2 of our posts]. Then humanize: cut em dashes, the rule of three, and AI-tells (delve/leverage/robust/unlock), vary sentence length. Source: [paste asset]", "Repurpose + humanize"],
+      ["Act as a technical SEO editor. Optimize the draft below for primary keyword [keyword] without changing meaning or inventing facts: give 3 title options (<60 chars), question-based H2s, a meta description (<155 chars), and 3-5 internal links with anchor text. Flag thin sections instead of padding. Draft: [paste it]", "SEO pre-publish"],
+    ]},
+    sales: { label: "Sales / BD", buttons: [
+      ["Act as my SDR research analyst. Find accounts matching this ICP [paste ICP], each with one concrete buying signal (funding, exec hire, job post, launch) and a source line; drop anyone already in our CRM or worked in 90 days and list those separately. Output a ranked table (Account | Signal | Source | Why-now | Owner), then a one-line personalized opener for the top 5. List accounts with no real signal rather than guessing.", "Prospecting digest"],
+      ["Using only our CRM history and the transcript below, produce: (1) a pre-call brief — overview, last 3 interactions, open opps, likely pains in their own words, 3 discovery questions; (2) a post-call follow-up email in my voice plus a CRM note with next step + date. Don't invent commitments or dates — write 'not discussed' for anything missing. Input: [paste transcript / account notes]", "Brief + follow-up"],
+      ["Act as our RFP specialist. Answer each requirement below using only verified facts from our product docs and approved past answers — never invent capabilities, integrations, certs, or pricing. Tag each answer GROUNDED (cite source), ASSERTABLE (true but uncited — flag), or GAP (can't substantiate — say so). Output a table (Requirement | Answer | Status | Source), then list GAPs as open items. RFP: [paste it]", "Ground RFP answers"],
+    ]},
+    cs: { label: "Customer Success", buttons: [
+      ["Act as my CS co-pilot. Using only the CRM record, email thread, and ticket history below — never invent facts, write 'not in record' for anything missing — give a scannable brief led by 'The 2 things that matter today', then bullets for open commitments + owners, renewal/expansion status, last 3 interactions, and unresolved tickets. No advice on how I should feel about the account. Input: [paste account history]", "Pre-call brief"],
+      ["Draft a FIRST DRAFT reply only — you never send. Match my voice from the thread: plain, specific, no filler greetings, no circle-back/synergy buzzwords — a customer has called out template replies before. Address what they asked: [paste their message + thread + any commitments I made]. Output the draft body only; flag [VERIFY] on any claim, date, or number you're unsure of.", "Reply first draft"],
+      ["Turn my call notes into a CRM write-up — facts only, do NOT assess sentiment, mood, or churn (I judge that). Extract every commitment with an explicit owner (us/them) and due date ('no date given' if absent), plus a factual recap under 100 words. Use only what's in my notes; put anything ambiguous under 'Needs confirmation'. Output: Commitments table (Item | Owner | Due), then the note, then Needs confirmation. Notes: [paste them]", "Post-call capture"],
+    ]},
+    hr: { label: "HR / People", buttons: [
+      ["Act as a recruiter who RANKS and EVIDENCES candidates but never decides, rejects, or contacts anyone. Score each resume only against the rubric below; ignore name, age, gender, school prestige, address, and grad year, and flag if any appear. Output a table: anonymized ID (redact names/emails/phones), 2-sentence summary, per-criterion score, weighted /10, evidence quote, gaps, suggested disposition (a recommendation only). Rank best first, then add a 4/5ths-rule bias note. A human makes and sends every decision. Input: [paste job spec + rubric, then resumes]", "Screen resumes"],
+      ["Act as a hiring-panel facilitator turning interviewer notes into a defensible synthesis — no hire/no-hire verdict. From the notes below produce: (a) a one-page role spec (mission, top 5 competencies, must vs nice-to-have); (b) a STAR kit of 6-8 questions mapped to competencies with strong-vs-weak answer cues; (c) a 1-4 scorecard per competency, separating CONSENSUS, DISAGREEMENT, and EVIDENCE GAPS. Redact PII to an ID; tie every judgment to a quote. Scores inform a human decision. Notes: [paste them]", "Synthesize interviews"],
+      ["Prepare onboarding materials and emails as DRAFTS ONLY — never imply anything was sent. Generate (a) a first-week checklist and a 30/60/90 ramp plan with measurable milestones, and (b) three labeled email drafts — offer, welcome, rejection — where the rejection is respectful, gives no individualized adverse-action reasoning, and notes a human reviewed it (GDPR Art.22). Use {{Candidate}}/{{Manager}} placeholders, then humanize so they read warm. Input: [role, start date, manager, comp, which emails]", "Onboarding + drafts"],
+    ]},
+    finance: { label: "Finance / Data", buttons: [
+      ["Act as a financial data analyst. From the data below, compute a week-over-week variance report (one metric per row: prior, current, absolute change, % change). Show each formula (e.g. pct = (current - prior) / prior), use only numbers in the source so the math is reproducible, and flag missing values or zero denominators instead of guessing. Output a table sorted by largest % change, then a 3-4 sentence narrative on the top movers only. Data: [paste CSV or path]", "Variance report"],
+      ["Act as a careful data analyst. Inspect each numeric column in the data below for anomalies; state the method and threshold for each flag (e.g. IQR fences, z-score over 3) so it's reproducible. Flag suspicious rows — do not conclude a cause, delete, or correct anything. For each: row ID, value, why it tripped, and a one-line 'could mean (needs human check)'. Output a table ranked by severity plus a tally of flagged-of-total. Data: [paste CSV or path]", "Flag outliers"],
+      ["Act as a meticulous data cleaner. Find duplicates in two passes, kept separate: (a) exact on normalized email, (b) fuzzy on name + email-domain with a similarity score. Never silently drop or auto-merge — give a proposed action per group (keep / merge-candidate / review) with a reason, leaving originals intact for human approval. Separately flag malformed emails, blank required fields, impossible values. Output two tables (Duplicate groups; Data-quality flags) + a one-line tally. Data: [paste sheet or path]", "Clean & dedupe"],
+    ]},
+    devpm: { label: "Dev / PM", buttons: [
+      ["Act as a senior engineer onboarding a teammate. Explore READ-ONLY (don't edit) and explain [file, module, or 'the whole repo']: what it does, structure, entry points, key data flows, and external services. Read the actual files and CLAUDE.md first; say so if unsure rather than guess. Output: (a) a 3-sentence summary, (b) a component map one line each, (c) the 5 files to read first and why, (d) non-obvious gotchas.", "Explain this project"],
+      ["Act as a staff engineer in plan mode — do NOT write code yet. Change I want: [describe it + constraints]. Read the relevant files and existing patterns first, then give a reviewable plan: exact files to add/modify (what changes in each), approach + key decisions, top 3 risks, and what must NOT change. End with a step-by-step task list and a verification step (tests/commands that prove it works). Keep it minimal — no speculative refactors. Wait for my approval before coding.", "Plan a change"],
+      ["Act as a debugging specialist. Bug: [symptom — expected vs actual, error, likely location]. In strict order, showing work: (1) reproduce and write a FAILING test; (2) trace input to output and explain the ROOT CAUSE in plain English, then pause for my confirmation; (3) apply the smallest fix for the root cause — don't suppress the error or refactor unrelated code; (4) run the failing test + the suite and show output proving it works. Report root cause, the diff, and test evidence.", "Find & fix a bug"],
+    ]},
+  };
+  (function renderDept() {
+    const key = (new URLSearchParams(location.search).get("dept") || "universal").toLowerCase();
+    const set = DEPT_TASKS[key] || DEPT_TASKS.universal;
+    const badge = document.getElementById("dept");
+    if (badge) badge.textContent = set.label;
+    const wrap = document.getElementById("dept-buttons");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    set.buttons.forEach(([prompt, label]) => {
+      const b = document.createElement("button");
+      b.className = "btn";
+      b.dataset.insert = prompt;
+      b.textContent = label;
+      b.onclick = () => send(b.dataset.insert);   // data-insert: paste, no Enter
+      wrap.appendChild(b);
+    });
+  })();
+
+  connect();
+</script>
+</body>
+</html>

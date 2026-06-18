@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sutra UI — Governance Dashboard</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#21262d; --fg:#c9d1d9; --dim:#8b949e;
+          --hi:#58a6ff; --low:#3fb950; --med:#d29922; --high:#f85149; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:13px/1.5 "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  header { padding:12px 18px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  .dim { color:var(--dim); }
+  .tabs { display:flex; gap:4px; margin-left:auto; }
+  .tab { padding:5px 12px; border:1px solid var(--line); border-radius:6px;
+         background:var(--panel); color:var(--dim); cursor:pointer; font-size:12px; }
+  .tab.active { color:var(--fg); border-color:var(--hi); }
+  .tab .badge { color:var(--dim); }
+  #status { font-size:12px; }
+  #status.live::before { content:"\25CF"; color:var(--low); margin-right:5px; }
+  #status.down::before { content:"\25CF"; color:var(--high); margin-right:5px; }
+  .wrap { padding:14px 18px; }
+  .panel { display:none; } .panel.active { display:block; }
+  .count { color:var(--dim); margin-bottom:8px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:600; position:sticky; top:0; background:var(--bg); }
+  td.txt { color:var(--fg); max-width:0; width:48%; }
+  .risk { font-weight:600; }
+  .risk.LOW { color:var(--low); } .risk.MED,.risk.MEDIUM { color:var(--med); }
+  .risk.HIGH,.risk.CRITICAL { color:var(--high); }
+  .verb { color:var(--hi); }
+  .ts { color:var(--dim); white-space:nowrap; }
+  .action { color:var(--high); font-weight:600; }       /* a block is red */
+  .viol { color:var(--med); }
+  button { background:var(--panel); color:var(--fg); border:1px solid var(--line);
+           border-radius:6px; padding:4px 10px; cursor:pointer; font:inherit; }
+  button:hover { border-color:var(--hi); }
+  tr.new { animation: flash 1s ease-out; }
+  @keyframes flash { from { background:#1f6feb33; } to { background:transparent; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sutra&nbsp;UI</h1>
+  <span class="dim" id="subtitle">turn feed&nbsp;·&nbsp;.sutra/h-sutra.jsonl</span>
+  <div class="tabs">
+    <div class="tab active" data-panel="turns">Turn Feed <span class="badge" id="badge-turns">0</span></div>
+    <div class="tab" data-panel="violations">Violations <span class="badge" id="badge-violations">0</span></div>
+    <div class="tab" data-panel="state">State</div>
+  </div>
+  <span id="status" class="down">connecting…</span>
+</header>
+
+<div class="wrap">
+  <!-- Panel A: turn feed -->
+  <section class="panel active" id="panel-turns">
+    <div class="count" id="count-turns">0 turns</div>
+    <table>
+      <thead><tr><th>ts</th><th>dir</th><th>verb</th><th>risk</th><th>route</th><th>input</th></tr></thead>
+      <tbody id="rows-turns"></tbody>
+    </table>
+  </section>
+
+  <!-- Panel B: governance violations / blocks -->
+  <section class="panel" id="panel-violations">
+    <div class="count" id="count-violations">0 violations</div>
+    <table>
+      <thead><tr><th>ts</th><th>violation</th><th>reason</th><th>action</th><th>first line observed</th></tr></thead>
+      <tbody id="rows-violations"></tbody>
+    </table>
+  </section>
+
+  <!-- Panel C: current persistent governance state -->
+  <section class="panel" id="panel-state">
+    <div class="count"><button id="state-refresh">&#8635; refresh</button> <span id="state-when" class="dim"></span></div>
+    <table>
+      <thead><tr><th>marker</th><th>value</th></tr></thead>
+      <tbody id="rows-state"></tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+  function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+  // tab switching
+  document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    document.getElementById("panel-" + t.dataset.panel).classList.add("active");
+    const subs = {
+      turns: "turn feed · .sutra/h-sutra.jsonl",
+      violations: "governance blocks · .enforcement/governance-violations.jsonl",
+      state: "current state · .claude/ persistent markers"
+    };
+    document.getElementById("subtitle").textContent = subs[t.dataset.panel] || "";
+    if (t.dataset.panel === "state") loadState();
+  });
+
+  const statusEl = document.getElementById("status");
+
+  // generic SSE panel wiring
+  function wirePanel(name, render) {
+    const body = document.getElementById("rows-" + name);
+    const count = document.getElementById("count-" + name);
+    const badge = document.getElementById("badge-" + name);
+    let n = 0, backlogDone = false;
+    const es = new EventSource("/sse/" + name);
+    es.onopen = () => { statusEl.className = "live"; statusEl.textContent = "live"; };
+    es.onerror = () => { statusEl.className = "down"; statusEl.textContent = "reconnecting…"; };
+    es.onmessage = e => {
+      if (!e.data) return;
+      let d; try { d = JSON.parse(e.data); } catch (_) { return; }
+      const tr = document.createElement("tr");
+      if (backlogDone) tr.className = "new";
+      tr.innerHTML = render(d);
+      body.prepend(tr);
+      n++; count.textContent = n + " " + name; badge.textContent = n;
+    };
+    setTimeout(() => { backlogDone = true; }, 1500);
+  }
+
+  wirePanel("turns", d => {
+    const risk = esc(d.risk || d.decision_risk || "");
+    return `<td class="ts">${esc(d.ts)}</td><td>${esc(d.direction)}</td>` +
+           `<td class="verb">${esc(d.verb)}</td><td class="risk ${risk}">${risk}</td>` +
+           `<td>${esc(d.input_routing_type || d.principal_act || "")}</td>` +
+           `<td class="txt">${esc(d.input_text || "")}</td>`;
+  });
+
+  wirePanel("violations", d => {
+    return `<td class="ts">${esc(d.ts)}</td>` +
+           `<td class="viol">${esc(d.violation)}</td>` +
+           `<td>${esc(d.reason_code || d.reason || "")}</td>` +
+           `<td class="action">${esc(d.action || "")}</td>` +
+           `<td class="txt">${esc(d.first_line_observed || "")}</td>`;
+  });
+
+  // Panel C: state snapshot (GET on demand — state changes slowly, no SSE)
+  async function loadState() {
+    try {
+      const r = await fetch("/api/state");
+      const d = await r.json();
+      const body = document.getElementById("rows-state");
+      body.innerHTML = "";
+      Object.keys(d).forEach(k => {
+        let v = d[k];
+        if (v && /^\d{9,}$/.test(v)) {            // unix ts -> humanize
+          v = v + "  (" + new Date(parseInt(v,10)*1000).toISOString().replace(".000Z","Z") + ")";
+        }
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td class="verb">${esc(k)}</td>` +
+          `<td class="txt"><pre style="margin:0;white-space:pre-wrap;font:inherit">${esc(v==null?"(absent)":v)}</pre></td>`;
+        body.appendChild(tr);
+      });
+      document.getElementById("state-when").textContent = "as of " + new Date().toLocaleTimeString();
+    } catch (_) {}
+  }
+  document.getElementById("state-refresh").onclick = loadState;
+  setInterval(() => {
+    if (document.getElementById("panel-state").classList.contains("active")) loadState();
+  }, 5000);
+</script>
+</body>
+</html>

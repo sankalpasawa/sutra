@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sutra — Chat</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#21262d; --fg:#c9d1d9; --dim:#8b949e;
+          --hi:#58a6ff; --you:#1f6feb; --ai:#161b22; --low:#3fb950; --high:#f85149; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--fg); display:flex; flex-direction:column;
+         font:14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding:12px 18px; border-bottom:1px solid var(--line); display:flex;
+           align-items:center; gap:12px; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  header .dim { color:var(--dim); font-size:12px; }
+  header a { color:var(--hi); font-size:12px; text-decoration:none; margin-left:auto; }
+  #status { font-size:12px; }
+  #status.live::before { content:"\25CF"; color:var(--low); margin-right:5px; }
+  #status.down::before { content:"\25CF"; color:var(--high); margin-right:5px; }
+  #thread { flex:1; overflow-y:auto; padding:20px 18px; display:flex; flex-direction:column; gap:14px; }
+  .msg { max-width:780px; width:fit-content; padding:10px 14px; border-radius:12px;
+         white-space:pre-wrap; word-wrap:break-word; }
+  .msg.you { align-self:flex-end; background:var(--you); color:#fff; border-bottom-right-radius:4px; }
+  .msg.ai  { align-self:flex-start; background:var(--ai); border:1px solid var(--line);
+             border-bottom-left-radius:4px; font:13px/1.55 ui-monospace, Menlo, monospace; }
+  .msg.ai .tool { color:var(--dim); font-style:italic; }
+  .msg.err { align-self:flex-start; background:#3d1418; border:1px solid var(--high); color:#ffb4ab; }
+  .empty { color:var(--dim); text-align:center; margin-top:40px; }
+  form { display:flex; gap:8px; padding:12px 18px; border-top:1px solid var(--line); }
+  textarea { flex:1; resize:none; background:var(--panel); color:var(--fg);
+             border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+             font:14px/1.4 inherit; max-height:160px; }
+  button { background:var(--you); color:#fff; border:0; border-radius:8px;
+           padding:0 18px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sutra Chat</h1>
+  <span class="dim">claude · max plan · background terminal</span>
+  <span id="status" class="down">connecting…</span>
+  <a href="/panels" target="_blank">governance panels →</a>
+</header>
+
+<div id="thread"><div class="empty" id="empty">Ask anything. Runs Claude Code in the background — no terminal needed.</div></div>
+
+<form id="form">
+  <textarea id="input" rows="1" placeholder="Message Sutra…  (Enter to send, Shift+Enter for newline)" autofocus></textarea>
+  <button id="send" type="submit">Send</button>
+</form>
+
+<script>
+  const thread = document.getElementById("thread");
+  const form = document.getElementById("form");
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("send");
+  const statusEl = document.getElementById("status");
+  const emptyEl = document.getElementById("empty");
+
+  let ws, aiBubble = null, busy = false;
+
+  function connect() {
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/chat");
+    ws.onopen  = () => { statusEl.className = "live"; statusEl.textContent = "ready"; };
+    ws.onclose = () => { statusEl.className = "down"; statusEl.textContent = "reconnecting…"; setTimeout(connect, 1500); };
+    ws.onmessage = (e) => {
+      let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+      if (m.type === "start") {
+        aiBubble = addBubble("ai", "");
+      } else if (m.type === "token") {
+        if (!aiBubble) aiBubble = addBubble("ai", "");
+        aiBubble.textContent += m.text;
+        scroll();
+      } else if (m.type === "tool") {
+        if (!aiBubble) aiBubble = addBubble("ai", "");
+        const t = document.createElement("div");
+        t.className = "tool"; t.textContent = "⚙ running " + m.name + "…";
+        aiBubble.appendChild(t); scroll();
+      } else if (m.type === "session") {
+        statusEl.textContent = "ready · session " + String(m.id).slice(0, 8);
+      } else if (m.type === "done") {
+        finish();
+      } else if (m.type === "error") {
+        addBubble("err", m.detail || "error");
+        finish();
+      }
+    };
+  }
+
+  function addBubble(cls, text) {
+    if (emptyEl) emptyEl.remove();
+    const d = document.createElement("div");
+    d.className = "msg " + cls; d.textContent = text;
+    thread.appendChild(d); scroll();
+    return d;
+  }
+  function scroll() { thread.scrollTop = thread.scrollHeight; }
+  function finish() { busy = false; sendBtn.disabled = false; aiBubble = null; input.focus(); }
+
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text || busy || !ws || ws.readyState !== 1) return;
+    addBubble("you", text);
+    ws.send(JSON.stringify({ message: text }));
+    input.value = ""; input.style.height = "auto";
+    busy = true; sendBtn.disabled = true;
+  };
+  // Enter sends, Shift+Enter newline; auto-grow
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+  });
+  input.addEventListener("input", () => {
+    input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 160) + "px";
+  });
+
+  connect();
+</script>
+</body>
+</html>
