@@ -134,7 +134,12 @@ fi
 FIRST_LINE=$(printf '%s' "$FIRST_TEXT_OF_TURN" | head -1)
 FIRST200=$(printf '%s' "$FIRST_TEXT_OF_TURN" | head -c 200)
 
-HEADER_RE='^\[(D[0-9]+|[A-Z0-9-]+)·([A-Z0-9-]+)( · (TIMING|TENSE|CHANNEL|REV|RISK|attempt):[^]·]+)*\]|^\[STAGE-1-FAIL · CLARIFY( · attempt:[0-9]+/[0-9]+)?\]'
+# v8 (2026-06-19, founder-directed): DIRECTION·VERB now case-insensitive
+# ([A-Za-z0-9-] not [A-Z0-9-]). Postel's law — emit UPPERCASE, accept any case.
+# Kills the "case-error" block class (was 4/28 violations). Confirmed safe:
+# nothing downstream parses the header value by case (grep audit 2026-06-19) —
+# the hook is the sole consumer; dashboard + loggers display/log raw.
+HEADER_RE='^\[(D[0-9]+|[A-Za-z0-9-]+)·([A-Za-z0-9-]+)( · (TIMING|TENSE|CHANNEL|REV|RISK|attempt):[^]·]+)*\]|^\[STAGE-1-FAIL · CLARIFY( · attempt:[0-9]+/[0-9]+)?\]'
 
 # v7 (2026-06-13, founder-directed): a VALID header that is merely MISPLACED
 # (present within the first N non-empty lines, but not line 1) now PASSES with a
