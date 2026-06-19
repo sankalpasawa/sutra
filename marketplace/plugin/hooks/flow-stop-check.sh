@@ -71,6 +71,23 @@ if [ -f "$REPO_ROOT/.claude/flow-classified" ]; then
   exit 0
 fi
 
+# -- Honor the project enforce profile (2026-06-19, founder-directed) -------
+# Mirrors h-sutra-enforce.sh v9 + the depth-marker profile convention: the Stop
+# layers were the only ones ignoring .profile. profile=company keeps the HARD
+# redo; individual/project/unknown get warn+log, NO forced redo. Banner's
+# "Enforce: warn-only" becomes true for the loud layers too.
+FL_PROFILE="individual"
+FL_CONFIG="$REPO_ROOT/.claude/sutra-project.json"
+if [ -f "$FL_CONFIG" ] && command -v jq >/dev/null 2>&1; then
+  _fp=$(jq -r '.profile // empty' "$FL_CONFIG" 2>/dev/null); [ -n "$_fp" ] && FL_PROFILE="$_fp"
+fi
+if [ "$FL_PROFILE" != "company" ]; then
+  printf '{"ts":"%s","event":"flow-stop-warn","session":"%s","reason":"flow-did-not-fire","mode":"warn","profile":"%s"}\n' \
+    "$NOW" "$SESSION_ID" "$FL_PROFILE" >> "$LEDGER" 2>/dev/null
+  printf 'FLOW (warn, profile=%s): core:flow did not fire this turn. Walk the spine next turn (no redo forced).\n' "$FL_PROFILE" >&2
+  exit 0
+fi
+
 # -- Missing: Flow did not fire -> force exactly one redo (HARD, D61) -------
 printf '{"ts":"%s","event":"flow-stop-block","session":"%s","reason":"flow-did-not-fire","mode":"hard"}\n' \
   "$NOW" "$SESSION_ID" >> "$LEDGER" 2>/dev/null

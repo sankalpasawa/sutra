@@ -176,6 +176,22 @@ else
   DIAG="No H-Sutra header found as the first text. Emit it as the literal FIRST line before any other text."
 fi
 
+# v9 (2026-06-19, founder-directed): honor the project enforce profile.
+# Stop hooks were the ONLY layer ignoring .profile — depth-marker et al. are
+# already warn-only for individual/project. profile=company keeps the HARD
+# redo; every other profile (individual/project/unknown) gets warn+log+nudge,
+# NO forced redo. Makes the "Enforce: warn-only" banner actually true.
+HS_PROFILE="individual"
+HS_CONFIG="$REPO_ROOT/.claude/sutra-project.json"
+if [ -f "$HS_CONFIG" ] && command -v jq >/dev/null 2>&1; then
+  _hp=$(jq -r '.profile // empty' "$HS_CONFIG" 2>/dev/null); [ -n "$_hp" ] && HS_PROFILE="$_hp"
+fi
+if [ "$HS_PROFILE" != "company" ]; then
+  audit_log "warn" "$FIRST200" "${REASON_CODE%_layer_fired}_warn profile=$HS_PROFILE"
+  printf 'H-Sutra (warn, profile=%s): %s\n' "$HS_PROFILE" "$DIAG" >&2
+  exit 0
+fi
+
 audit_log "block" "$FIRST200" "$REASON_CODE"
 
 FIRST_ESC=$(printf '%s' "$FIRST200" | tr -d '\n' | sed 's/\\/\\\\/g; s/"/\\"/g')
