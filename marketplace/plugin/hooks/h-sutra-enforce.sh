@@ -181,10 +181,16 @@ fi
 # already warn-only for individual/project. profile=company keeps the HARD
 # redo; every other profile (individual/project/unknown) gets warn+log+nudge,
 # NO forced redo. Makes the "Enforce: warn-only" banner actually true.
+# FAIL-OPEN BY DESIGN: no sutra-project.json / no jq => HS_PROFILE=individual =>
+# WARN. HARD is opt-in via profile=company; no fail-closed default (founder:
+# minimize forced redos). (h-sutra also exits "skipped" earlier if jq is absent,
+# since transcript parsing needs jq — so jq-less hosts never reach a hard block.)
 HS_PROFILE="individual"
 HS_CONFIG="$REPO_ROOT/.claude/sutra-project.json"
 if [ -f "$HS_CONFIG" ] && command -v jq >/dev/null 2>&1; then
-  _hp=$(jq -r '.profile // empty' "$HS_CONFIG" 2>/dev/null); [ -n "$_hp" ] && HS_PROFILE="$_hp"
+  _hp=$(jq -r '.profile // empty' "$HS_CONFIG" 2>/dev/null)
+  _hp=$(printf '%s' "$_hp" | tr -cd 'a-zA-Z0-9_-')   # bare token only (defense-in-depth; audit_log also sed-escapes)
+  [ -n "$_hp" ] && HS_PROFILE="$_hp"
 fi
 if [ "$HS_PROFILE" != "company" ]; then
   audit_log "warn" "$FIRST200" "${REASON_CODE%_layer_fired}_warn profile=$HS_PROFILE"
