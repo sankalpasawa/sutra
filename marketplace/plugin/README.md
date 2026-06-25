@@ -113,3 +113,18 @@ MIT.
 ## Issues / feedback
 
 <https://github.com/sankalpasawa/sutra/issues>
+
+## Loop / tool-budget guard (A6)
+
+`hooks/loop-budget-guard.sh` runs on every tool call (PreToolUse) and blocks runaway
+agents and infinite loops before execution. Fail-open: any internal error exits 0, so a
+broken guard never breaks a session.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `SUTRA_TOOL_BUDGET` | 250 | total tool-call ceiling per session |
+| `SUTRA_REPEAT_LIMIT` | 8 | identical-call run length that trips a loop block |
+| `SUTRA_REPEAT_WINDOW` | 2×REPEAT (16) | detection window — a signature recurring ≥ REPEAT times within the last WINDOW calls trips (catches alternating A/B loops, not just consecutive runs) |
+| `LOOP_GUARD_ACK=1` | — | one-shot override: record but do not block this call |
+
+Kill-switches (any one): `LOOP_BUDGET_GUARD_DISABLED=1`, `SUTRA_BYPASS=1`, or `touch ~/.loop-budget-guard-disabled`.

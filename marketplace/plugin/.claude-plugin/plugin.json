@@ -1,7 +1,7 @@
 {
   "name": "core",
-  "version": "2.39.16",
-  "description": "v2.39.16 (2026-06-15) - D61 amendment: Flow fires via an INLINE block (literal text, like Input Routing), not a Skill invocation — a hook cannot force a Skill, so skill-every-turn was skipped on no-tool turns; the full core:flow Skill is the deep mode for substantive work. Marker-persistence fix: marker writes use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/). Operating system for building with AI. See CHANGELOG.md.",
+  "version": "2.39.17",
+  "description": "v2.39.16 (2026-06-15) - D61 amendment: Flow fires via an INLINE block (literal text, like Input Routing), not a Skill invocation \u2014 a hook cannot force a Skill, so skill-every-turn was skipped on no-tool turns; the full core:flow Skill is the deep mode for substantive work. Marker-persistence fix: marker writes use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/). Operating system for building with AI. See CHANGELOG.md.",
   "author": {
     "name": "Sutra",
     "url": "https://sutra.os"
