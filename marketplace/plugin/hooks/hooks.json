@@ -97,6 +97,11 @@
           },
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/blueprint-text-validate.sh",
+            "timeout": 8
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
             "timeout": 5
           }
