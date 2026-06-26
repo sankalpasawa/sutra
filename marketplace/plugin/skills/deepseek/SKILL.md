@@ -9,9 +9,10 @@ description: |
   (single doc). Mirrors codex-sutra structurally; uses DeepSeek as the second
   AI lane for second-opinion + convergence under PROTO-019 v2 (deferred).
   v1-min ships factually correct transport + downgrade defense + auditable
-  SKIPPED logging. Governance machinery (scrubber, session-machine, preflight
-  budgeting, schema unification) is deferred to v2 with documented TODO markers
-  (see "Known v1 limitations" below).
+  SKIPPED logging + outbound egress scrubbing (A10, wired 2026-06-26).
+  Remaining governance machinery (session-machine, preflight budgeting, schema
+  unification) is deferred to v2 with documented TODO markers (see "Known v1
+  limitations" below).
 allowed-tools:
   - Bash
   - BashOutput
@@ -48,7 +49,7 @@ rounds. Final verdict ADVISORY. Trail at:
 
 | Marker | Limitation | v2 plan |
 |---|---|---|
-| TODO[v2-scrubber] | No outbound data scrubbing (binary excl / secret regex / path allowlist). v1 sends payload as-is. | Add `bin/deepseek-payload-scrub.sh` per design §B (file -b --mime-type, AWS/JWT/PEM/.env regex, ≤500 KB cap with AskUserQuestion). |
+| ~~TODO[v2-scrubber]~~ **DONE (A10)** | ~~No outbound data scrubbing~~ — payload now routed through `bin/peer-review-payload-scrub.sh` (file -b --mime-type binary excl, NUL guard, AWS/JWT/PEM/GitHub/OpenAI/Slack/Stripe/DB regex, ≤500 KB cap, fail-closed) BEFORE egress in the launcher. | Shipped. Size-cap (exit 3) AskUserQuestion + per-call redaction count surfaced on stderr. |
 | TODO[v2-session] | Consult session continuity disabled. Every `/deepseek consult` starts fresh. | Add UUID-scoped per-repo per-branch session dirs `.context/deepseek-sessions/<uuid>/`, replay redaction, --new-session flag. |
 | TODO[v2-preflight] | No pre-flight token/cost budgeting. v1 has no wall-clock cap (D2026-05-13) — relies on API-side timeouts only. | Estimate input tokens + estimated_cost preflight gate before HTTP send. |
 | TODO[v2-schema] | Separate gate-logs per skill (codex-reviews/ vs deepseek-reviews/). | Unify under canonical `sutra/os/engines/PEER-REVIEW-EVENT-SCHEMA.md`. |
@@ -214,11 +215,32 @@ TMPERR=/tmp/deepseek-err.$$.${TS}.txt
 TMPDONE=/tmp/deepseek-done.$$.${TS}        # WRAPPER WRITES ONLY
 TMPNAT=/tmp/deepseek-natural.$$.${TS}      # SUBSHELL WRITES ONLY
 
+# --- A10 outbound scrub (mandatory, fail-closed) — closes the leak that was ---
+# --- TODO[v2-scrubber]. The assembled prompt (boundary + diff + embedded files) ---
+# --- is routed through the egress scrubber BEFORE any byte leaves the machine. ---
+PROMPT_FILE_SCRUBBED="/tmp/deepseek-prompt-scrubbed.$$.${TS}.txt"
+SCRUB="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT unset}/bin/peer-review-payload-scrub.sh"
+if "$SCRUB" "$PROMPT_FILE" > "$PROMPT_FILE_SCRUBBED" 2>/tmp/deepseek-scrub-err.$$.${TS}; then
+  cat "/tmp/deepseek-scrub-err.$$.${TS}" >&2     # surface "SCRUB redacted=<N> bytes=<B>"
+else
+  SCRUB_EXIT=$?
+  rm -f "$PROMPT_FILE_SCRUBBED"
+  case "$SCRUB_EXIT" in
+    3) echo "deepseek: payload exceeds scrub size cap — AskUserQuestion (truncate vs abort) before any egress." >&2 ;;
+    4) echo "deepseek: payload classified non-text/binary — refusing egress." >&2 ;;
+    *) echo "deepseek: scrub failed (exit $SCRUB_EXIT) — refusing egress." >&2 ;;
+  esac
+  printf '{"skill":"deepseek","mode":"egress","ts":"%s","verdict":"SKIPPED","reason":"scrub_exit_%s","commit":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRUB_EXIT" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+    >> .enforcement/deepseek-reviews/gate-log.jsonl
+  exit 0
+fi
+
 REQUEST_JSON=$(jq -nc \
   --arg model "${DEEPSEEK_MODEL:-deepseek-v4-pro}" \
   --argjson budget "${DEEPSEEK_THINKING_BUDGET:-32000}" \
   --arg effort "${DEEPSEEK_EFFORT:-high}" \
-  --rawfile prompt "$PROMPT_FILE" \
+  --rawfile prompt "$PROMPT_FILE_SCRUBBED" \
   '{
     model: $model,
     max_tokens: 8192,
