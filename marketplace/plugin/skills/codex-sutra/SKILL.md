@@ -337,6 +337,44 @@ case.
 
 ---
 
+## Outbound scrub (mandatory, all modes — A10)
+
+Every mode (Review / Challenge / Consult / Design-review) assembles its prompt
+(boundary + persona + any embedded file/plan content) into a temp `$PROMPT_FILE`,
+then routes it through the egress scrubber BEFORE handing it to `codex exec`:
+
+```bash
+PROMPT_FILE_SCRUBBED="/tmp/codex-sutra-prompt-scrubbed.$$.$(date +%s).txt"
+SCRUB="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT unset}/bin/peer-review-payload-scrub.sh"
+if "$SCRUB" "$PROMPT_FILE" > "$PROMPT_FILE_SCRUBBED" 2>/tmp/codex-sutra-scrub-err.$$; then
+  cat /tmp/codex-sutra-scrub-err.$$ >&2            # "SCRUB redacted=<N> bytes=<B>"
+  SCRUBBED_PROMPT=$(cat "$PROMPT_FILE_SCRUBBED")
+else
+  SCRUB_EXIT=$?
+  case "$SCRUB_EXIT" in
+    3) echo "codex-sutra: payload exceeds scrub size cap — AskUserQuestion (truncate vs abort) before egress." >&2 ;;
+    4) echo "codex-sutra: payload classified non-text/binary — refusing egress." >&2 ;;
+    *) echo "codex-sutra: scrub failed (exit $SCRUB_EXIT) — refusing egress." >&2 ;;
+  esac
+  printf '{"skill":"codex-sutra","mode":"egress","ts":"%s","verdict":"SKIPPED","reason":"scrub_exit_%s","commit":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRUB_EXIT" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+    >> .enforcement/codex-reviews/gate-log.jsonl
+  exit 0
+fi
+```
+
+All four `codex exec "<prompt>"` invocations in Steps 2A–2D pass `"$SCRUBBED_PROMPT"`
+as `<prompt>` — never the raw `$PROMPT_FILE` content.
+
+**Scope + residual exposure (honest).** This scrubs only the content Claude
+*embeds* in the prompt — design-review file contents (2D) and consult plan text
+(2C). It does NOT scrub what codex reads *itself*: `codex exec -s read-only -C
+$REPO_ROOT` is an agent that runs `git diff` and reads source files inside its
+sandbox, then sends that context to OpenAI. Prompt-scrubbing cannot intercept
+that path. Closing it requires codex-side redaction or running codex against a
+pre-scrubbed worktree — tracked as `TODO[v2-codex-sandbox-scrub]`. The deepseek
+lane has no such gap (pure API; the assembled prompt IS the entire payload).
+
 ## The launcher pattern (used by all four modes)
 
 **Single-writer rule.** The wrapper owns the final disposition. The bg
