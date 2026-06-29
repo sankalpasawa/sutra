@@ -173,17 +173,52 @@ def declutter(line):
 
 lines = [declutter(l) for l in turn_text.splitlines()]
 
-# Locate the BLUEPRINT block: the region from a line containing BLUEPRINT inside
-# an ASCII box header (+-- BLUEPRINT) to the next box-closing line (+---...).
+# Locate the BLUEPRINT block. F1 fix (2026-06-29): detection used to require
+# "BLUEPRINT" + "+--" on the SAME line, so a validly-emitted block in any other
+# shape (title on its own line, markdown "**BLUEPRINT**" / "## BLUEPRINT", a
+# differently-drawn border) was reported "missing" -> BLOCK. A false-block of a
+# PRESENT block contradicts the very reliability goal A4 exists to serve. Now we
+# try three anchors, narrowest-false-positive first:
+#   (a) ASCII box header line: "BLUEPRINT" + "+--" together.
+#   (b) a standalone BLUEPRINT heading line (after stripping #, *, |, spaces).
+#   (c) field-set fallback: a "Doing:" line that co-occurs with an
+#       "Output looks like:" OR "Verified by" line anywhere in the turn.
+# Prose like "the BLUEPRINT block" never matches (a) or (b) on its own, and (c)
+# requires the actual field set to be present.
+src = turn_text.splitlines()
+
+def _heading_is_blueprint(raw):
+    s = re.sub(r"[#*|>_`\s-]", "", raw).upper()
+    return s == "BLUEPRINT"
+
 start = None
-for i, raw in enumerate(turn_text.splitlines()):
+# (a) box header
+for i, raw in enumerate(src):
     if "BLUEPRINT" in raw and "+--" in raw:
         start = i; break
+# (b) standalone heading
 if start is None:
-    # No box header found. Marker said a block exists -> the visible text lacks it.
+    for i, raw in enumerate(src):
+        if "BLUEPRINT" in raw.upper() and _heading_is_blueprint(raw):
+            start = i; break
+# (c) field-set fallback (anchor on the Doing: line)
+if start is None:
+    has_doing = has_out = False
+    doing_idx = None
+    for i, raw in enumerate(src):
+        d = declutter(raw)
+        if doing_idx is None and re.match(r"^Doing\b[^:]*:", d, re.IGNORECASE):
+            doing_idx = i; has_doing = True
+        if re.match(r"^(Output looks like|Verified by)\b[^:]*:", d, re.IGNORECASE):
+            has_out = True
+    if has_doing and has_out:
+        start = doing_idx
+
+if start is None:
+    # No BLUEPRINT indication at all. Marker claimed a block -> the visible text
+    # genuinely lacks it.
     print("missing\tno_blueprint_block_found"); sys.exit(0)
 
-src = turn_text.splitlines()
 end = len(src)
 for j in range(start+1, len(src)):
     if re.match(r"^\s*\+-{3,}\+?\s*$", src[j]):

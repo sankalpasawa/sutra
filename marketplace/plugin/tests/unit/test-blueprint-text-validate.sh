@@ -96,6 +96,25 @@ jq -nc --arg t "$TRIV" '{type:"assistant",message:{role:"assistant",content:[{ty
 ERR=$(printf '%s' "$(jq -nc --arg fp "$D11/$FOUND" --arg tr "$D11/t.jsonl" '{tool_input:{file_path:$fp},transcript_path:$tr}')" | CLAUDE_PROJECT_DIR="$D11" bash "$HOOK" 2>&1 1>/dev/null)
 if printf '%s' "$ERR" | grep -qi "trivial"; then _ok "trivial-verify repair message mentions the problem"; else _no "repair message missing trivial detail: $ERR"; fi
 
+# 12) F1: markdown-heading BLUEPRINT block (no ASCII box) -> pass (0)
+MD_BLOCK='## BLUEPRINT
+Doing: add a charter section for X
+Steps:
+  1) edit the charter       Verify: grep finds new section
+Output looks like: charter has a new ## X section
+Verified by (overall): bash tests/run-all.sh exits 0'
+OUT=$(run_case "$FOUND" "$MD_BLOCK" 5); assert_exit "F1: markdown-heading block passes" 0 "$OUT"
+
+# 13) F1: field-set-only block (no BLUEPRINT title at all) -> pass (0)
+FIELDS_ONLY='Here is the plan.
+Doing: refactor the parser
+Output looks like: parser handles edge case Y, tests green
+Verified by (overall): bash tests/parser_test.sh exits 0'
+OUT=$(run_case "$FOUND" "$FIELDS_ONLY" 2); assert_exit "F1: field-set-only block passes" 0 "$OUT"
+
+# 14) F1 guard: prose merely mentioning BLUEPRINT, no fields -> still blocks (2)
+OUT=$(run_case "$FOUND" "I will emit a BLUEPRINT block shortly, editing now." 5); assert_exit "F1 guard: bare mention still blocks" 2 "$OUT"
+
 echo ""
 echo "blueprint-text-validate: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
