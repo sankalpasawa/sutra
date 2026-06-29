@@ -33,6 +33,14 @@ RC=0
 run_case() {
   local atext="$1" active="${2:-false}"; shift 2 || shift $#
   local D; D=$(mktemp -d -t ptv-XXXXXX)
+  # The profile gate force-redos ONLY for profile=company; individual/project
+  # warn. Default the fixture to company so these cases exercise the validation
+  # logic (block path). Override with PTV_PROFILE=<profile> to test warn paths;
+  # PTV_PROFILE=none writes no config (fail-open default = individual).
+  if [ "${PTV_PROFILE:-company}" != "none" ]; then
+    mkdir -p "$D/.claude"
+    printf '{"profile":"%s"}\n' "${PTV_PROFILE:-company}" > "$D/.claude/sutra-project.json"
+  fi
   local TR="$D/t.jsonl"
   jq -nc '{type:"user",message:{role:"user",content:"go"}}' > "$TR"
   jq -nc --arg t "$atext" '{type:"assistant",message:{role:"assistant",content:[{type:"text",text:$t}]}}' >> "$TR"
@@ -107,6 +115,23 @@ OUT=$(run_case "$BOXED"); if is_block "$OUT"; then _no "boxed depth should pass:
 
 # 12) empty turn text -> pass (fail-open / skip)
 OUT=$(run_case ""); if is_block "$OUT"; then _no "empty turn should pass"; else _ok "empty turn fail-open passes"; fi
+
+# --- Profile gate (mirror PR #72): only company force-redos ---
+BROKEN='INPUT: x
+ROUTE: y
+no depth, no trace here'
+
+# 13) profile=company + malformed -> BLOCK (force redo)
+OUT=$(PTV_PROFILE=company run_case "$BROKEN"); if is_block "$OUT"; then _ok "profile=company blocks malformed turn"; else _no "company should block: $OUT"; fi
+
+# 14) profile=project + malformed -> WARN (no block)
+OUT=$(PTV_PROFILE=project run_case "$BROKEN"); if is_block "$OUT"; then _no "profile=project should warn, not block: $OUT"; else _ok "profile=project warns (no redo)"; fi
+
+# 15) profile=individual + malformed -> WARN (no block)
+OUT=$(PTV_PROFILE=individual run_case "$BROKEN"); if is_block "$OUT"; then _no "profile=individual should warn: $OUT"; else _ok "profile=individual warns (no redo)"; fi
+
+# 16) no config at all + malformed -> WARN (fail-open default = individual)
+OUT=$(PTV_PROFILE=none run_case "$BROKEN"); if is_block "$OUT"; then _no "no-config should fail-open to warn: $OUT"; else _ok "no-config fails open to warn (default individual)"; fi
 
 echo ""
 echo "perturn-text-validate: $PASS passed, $FAIL failed"

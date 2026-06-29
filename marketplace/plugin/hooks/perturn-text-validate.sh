@@ -189,12 +189,41 @@ case "$STATUS" in
   ok|"") exit 0 ;;
 esac
 
-# ── Block branch: ONE consolidated repair message ──
+# ── Profile gate (mirror depth-marker-pretool.sh + PR #72) ──
+# Only the `company` profile force-redos. individual / project / unknown WARN
+# (classify + audit-log, no decision:block) — consistent with every other Stop
+# and PreToolUse layer, which already warn for non-company. Without this, this
+# hook would be the lone Stop layer still forcing redos on individual/project
+# sessions. Profile token is sanitized to [a-zA-Z0-9_-] (PR #72 review) so a
+# crafted value cannot forge the audit JSON row. Fail-open: no config / no jq ->
+# default `individual` -> warn.
+CONFIG="$REPO_ROOT/.claude/sutra-project.json"
+PROFILE="individual"
+if [ -f "$CONFIG" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    _PROFILE_READ=$(jq -r '.profile // empty' "$CONFIG" 2>/dev/null)
+  else
+    _PROFILE_READ=$(sed -n 's/.*"profile"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -1)
+  fi
+  _PROFILE_READ=$(printf '%s' "$_PROFILE_READ" | tr -cd 'a-zA-Z0-9_-')
+  [ -n "$_PROFILE_READ" ] && PROFILE="$_PROFILE_READ"
+fi
+
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
 MSG_ESC=$(printf '%s' "$MESSAGE" | tr -d '\n' | sed 's/\\/\\\\/g; s/"/\\"/g' | head -c 500)
-printf '{"ts":"%s","session_id":"%s","violation":"perturn_block_text_invalid","layer":"perturn-text","detail":"%s","action":"stop_blocked_force_redo"}\n' \
-  "$NOW" "$SESSION_ID" "$MSG_ESC" >> "$AUDIT" 2>/dev/null
+
+if [ "$PROFILE" != "company" ]; then
+  # WARN-only: classification + audit still run; no forced redo.
+  printf '{"ts":"%s","session_id":"%s","violation":"perturn_block_text_invalid","layer":"perturn-text","profile":"%s","detail":"%s","action":"warn_no_redo"}\n' \
+    "$NOW" "$SESSION_ID" "$PROFILE" "$MSG_ESC" >> "$AUDIT" 2>/dev/null
+  echo "perturn-text-validate (warn, profile=$PROFILE): malformed governance block(s) -> $MESSAGE" >&2
+  exit 0
+fi
+
+# ── company profile: HARD block with ONE consolidated repair message ──
+printf '{"ts":"%s","session_id":"%s","violation":"perturn_block_text_invalid","layer":"perturn-text","profile":"%s","detail":"%s","action":"stop_blocked_force_redo"}\n' \
+  "$NOW" "$SESSION_ID" "$PROFILE" "$MSG_ESC" >> "$AUDIT" 2>/dev/null
 
 cat <<JSON
 {
