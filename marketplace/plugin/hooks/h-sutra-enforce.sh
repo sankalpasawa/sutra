@@ -134,7 +134,7 @@ fi
 FIRST_LINE=$(printf '%s' "$FIRST_TEXT_OF_TURN" | head -1)
 FIRST200=$(printf '%s' "$FIRST_TEXT_OF_TURN" | head -c 200)
 
-HEADER_RE='^\[(D[0-9]+|[A-Z0-9-]+)·([A-Z0-9-]+)( · (TIMING|TENSE|CHANNEL|REV|RISK|attempt):[^]·]+)*\]|^\[STAGE-1-FAIL · CLARIFY( · attempt:[0-9]+/[0-9]+)?\]'
+HEADER_RE='^\[(D[0-9]+|[A-Z0-9-]+)·([A-Z0-9+/_-]+)( · (TIMING|TENSE|CHANNEL|REV|RISK|attempt):[^]·]+)*\]|^\[STAGE-1-FAIL · CLARIFY( · attempt:[0-9]+/[0-9]+)?\]'
 
 # v7 (2026-06-13, founder-directed): a VALID header that is merely MISPLACED
 # (present within the first N non-empty lines, but not line 1) now PASSES with a
