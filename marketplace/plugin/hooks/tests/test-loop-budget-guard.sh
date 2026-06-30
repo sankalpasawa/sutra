@@ -94,6 +94,33 @@ echo "=== Case 10: LOOP_GUARD_COUNT_AGENTS=1 restores counting ==="
   [ "$r" -eq 2 ] || { echo "  FAIL: with COUNT_AGENTS=1, 3rd identical Agent should block (got $r)"; exit 1; }
   echo "  PASS: opt-in counting blocks looping Agent dispatch" ) || FAIL=1
 
+echo "=== Case 11: per-turn reset (loopguard-turn-reset.sh) clears the budget ==="
+# Budget-bound session: exhaust the budget so the guard blocks; a REAL user
+# prompt (UserPromptSubmit) should reset the counter so the next call passes.
+RESET="$(cd "$(dirname "$HOOK")" && pwd)/loopguard-turn-reset.sh"
+( export SUTRA_TOOL_BUDGET=3
+  run_hook "$(js Bash a sTurn)" >/dev/null; run_hook "$(js Bash b sTurn)" >/dev/null
+  run_hook "$(js Bash c sTurn)" >/dev/null
+  run_hook "$(js Bash d sTurn)"; rb=$?
+  [ "$rb" -eq 2 ] || { echo "  FAIL: 4th call should block before reset (got $rb)"; exit 1; }
+  # Real user prompt -> reset hook truncates the counter
+  printf '{"prompt":"next real task","session_id":"sTurn"}' \
+    | LOOP_GUARD_STATE_DIR="$STATE" bash "$RESET"
+  [ ! -s "$STATE/sTurn.loopguard" ] || { echo "  FAIL: reset did not truncate counter"; exit 1; }
+  run_hook "$(js Bash e sTurn)"; ra=$?
+  [ "$ra" -eq 0 ] || { echo "  FAIL: call after reset should pass (got $ra)"; exit 1; }
+  echo "  PASS: real-turn reset clears the budget; next turn passes" ) || FAIL=1
+
+echo "=== Case 12: reset SKIPS synthetic turns (no mid-turn wipe) ==="
+( export SUTRA_TOOL_BUDGET=3
+  run_hook "$(js Bash a sSyn)" >/dev/null; run_hook "$(js Bash b sSyn)" >/dev/null
+  # Synthetic UserPromptSubmit (system-reminder) must NOT reset
+  printf '{"prompt":"<system-reminder>blah</system-reminder>","session_id":"sSyn"}' \
+    | LOOP_GUARD_STATE_DIR="$STATE" bash "$RESET"
+  n=$(wc -l < "$STATE/sSyn.loopguard" | tr -d ' ')
+  [ "$n" = "2" ] || { echo "  FAIL: synthetic turn wrongly reset counter (lines=$n)"; exit 1; }
+  echo "  PASS: synthetic turn does NOT reset (counter intact)" ) || FAIL=1
+
 echo
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || echo "SOME FAILED"
 exit $FAIL
