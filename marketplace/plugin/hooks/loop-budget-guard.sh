@@ -101,6 +101,21 @@ SIGNATURE=$(printf '%s\n' "$PARSED" | sed -n '2p')
 [ -z "$SID" ] && exit 0
 [ -z "$SIGNATURE" ] && exit 0
 
+# ── Exempt agent-orchestration tools (A6 multi-agent fix, 2026-06-30) ─────────
+# Agent / Task / Workflow dispatches are deliberate BRANCHING, and a fan-out of
+# N similar agents is legitimate parallelism — not a runaway loop. Counting them
+# toward the per-session tool budget or the repeat detector false-blocks
+# multi-agent workflows (the orchestrator's dispatches, and identical parallel
+# sub-tasks, look like a "loop" to a tool+args signature that has no per-agent
+# dimension). The agents' OWN tool calls (Bash/Read/Write/…) are still recorded,
+# so a genuine runaway INSIDE an agent is still caught. Set
+# LOOP_GUARD_COUNT_AGENTS=1 to count dispatches too (old behavior).
+if [ "${LOOP_GUARD_COUNT_AGENTS:-0}" != "1" ]; then
+  case "${SIGNATURE%%:*}" in
+    Agent|Task|Workflow) exit 0 ;;
+  esac
+fi
+
 # Sanitize session id for filesystem use.
 SID_SAFE=$(printf '%s' "$SID" | tr -c 'A-Za-z0-9._-' '_')
 

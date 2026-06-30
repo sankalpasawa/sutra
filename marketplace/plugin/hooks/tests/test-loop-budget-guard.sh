@@ -76,6 +76,24 @@ else
   fail "expected sanitized flat filename not found"
 fi
 
+echo "=== Case 9: agent-orchestration tools are EXEMPT (multi-agent fix) ==="
+# With a tiny budget + repeat limit, many identical Agent/Task/Workflow
+# dispatches must STILL pass and must NOT be recorded — a fan-out is not a loop.
+( export SUTRA_TOOL_BUDGET=3 SUTRA_REPEAT_LIMIT=2
+  ok=1
+  for i in 1 2 3 4 5 6 7 8 9 10; do run_hook "$(js Agent dispatch sAgent)" >/dev/null || { ok=0; break; }; done
+  for t in Task Workflow; do for i in 1 2 3 4 5; do run_hook "$(js "$t" same sAgent)" >/dev/null || { ok=0; break; }; done; done
+  [ "$ok" -eq 1 ] || { echo "  FAIL: agent-dispatch tool was blocked (should be exempt)"; exit 1; }
+  [ ! -f "$STATE/sAgent.loopguard" ] || { echo "  FAIL: agent dispatch was recorded (should be exempt)"; exit 1; }
+  echo "  PASS: Agent/Task/Workflow dispatches exempt — not blocked, not recorded" ) || FAIL=1
+
+echo "=== Case 10: LOOP_GUARD_COUNT_AGENTS=1 restores counting ==="
+( export SUTRA_REPEAT_LIMIT=3 LOOP_GUARD_COUNT_AGENTS=1
+  run_hook "$(js Agent z sCount)" >/dev/null; run_hook "$(js Agent z sCount)" >/dev/null
+  run_hook "$(js Agent z sCount)"; r=$?
+  [ "$r" -eq 2 ] || { echo "  FAIL: with COUNT_AGENTS=1, 3rd identical Agent should block (got $r)"; exit 1; }
+  echo "  PASS: opt-in counting blocks looping Agent dispatch" ) || FAIL=1
+
 echo
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || echo "SOME FAILED"
 exit $FAIL
