@@ -186,6 +186,23 @@ ensure_project_claude_md() {
 
 Apply these behaviors in every response in this project. The block is marker-delimited and managed by the plugin; manual edits inside will be overwritten on the next `/core:start`.
 
+## H-Sutra Header — the LITERAL FIRST line of every response
+
+Every response MUST begin with this bracketed header as its first text — before any prose, any other block, or any tool call. This is hard-enforced by the `h-sutra-enforce` Stop hook; a response whose first line is not a valid header is blocked and redone.
+
+```
+[<DIRECTION>·<VERB> · TIMING:<when> · CHANNEL:<how> · REV:<reversibility> · RISK:<level>]
+```
+
+- **DIRECTION** (UPPERCASE): `INBOUND` (from the user) · `INTERNAL` · `OUTBOUND` (to a third party) — or an UPPERCASE actor (e.g. `FOUNDER`, `ASAWA`) or a decision id (e.g. `D48`).
+- **VERB** (UPPERCASE): `QUERY` · `ASSERT` · `DIRECT` (add others as needed).
+- **TIMING**: `now` · `later` · `scheduled`.  **CHANNEL**: `in-band` · `out-of-band` · `cli`.  **REV**: `reversible` · `irreversible` · `none`.  **RISK**: `low` · `med` · `high`.
+- DIRECTION and VERB must be **UPPERCASE** (letters/digits/hyphens). Case errors are the most common cause of a block.
+
+Example: `[INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low]`
+
+If you must stop and clarify before acting, use: `[STAGE-1-FAIL · CLARIFY · attempt:1/1]`
+
 ## Input Routing — emit BEFORE any response or tool call
 
 ```

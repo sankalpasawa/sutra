@@ -168,7 +168,7 @@ if printf '%s' "$FIRST_LINE" | grep -qE '^\[[^]·]+·[^]·]+'; then
   DIAG="Your first line IS an H-Sutra header but it FAILED the canonical format — almost always a CASE error. DIRECTION and VERB must be UPPERCASE letters/digits/hyphens (or DIRECTION may be Dnn, e.g. D48). Canonical example: [INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low]. DIRECTION in {INBOUND|INTERNAL|OUTBOUND} or an UPPERCASE actor (e.g. ASAWA, FOUNDER); VERB in {QUERY|ASSERT|DIRECT|...} UPPERCASE. Re-emit the SAME header with DIRECTION and VERB fully UPPERCASE."
 else
   REASON_CODE="header_missing_layer_fired"
-  DIAG="No H-Sutra header found as the first text. Emit it as the literal FIRST line before any other text."
+  DIAG="No H-Sutra header found as the first text. Emit it as the literal FIRST line before any other text. Format documented in CLAUDE.md section 'H-Sutra Header' (written by /core:start)."
 fi
 
 audit_log "block" "$FIRST200" "$REASON_CODE"
