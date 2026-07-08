@@ -53,6 +53,16 @@ if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
 fi
 [ -z "$FILE_PATH" ] && FILE_PATH="$TOOL_INPUT_file_path"
 [ -z "$FILE_PATH" ] && exit 0
+
+# ── Out-of-repo guard (2026-07-08, Testlify field incident) ──
+# Absolute paths OUTSIDE $REPO_ROOT never strip below, so REL_PATH stays
+# absolute and NO whitelist/foundational pattern can match — the hook then
+# HARD-blocks files it was never scoped to govern (~/.claude/** memory files,
+# sibling repos, user documents). Repo governance ends at the repo boundary.
+case "$FILE_PATH" in
+  "$REPO_ROOT"/*) ;;   # inside repo — governed
+  /*) exit 0 ;;        # absolute path outside repo — out of scope
+esac
 REL_PATH="${FILE_PATH#$REPO_ROOT/}"
 
 # ── FOUNDATIONAL paths (HARD-block without marker) ──
