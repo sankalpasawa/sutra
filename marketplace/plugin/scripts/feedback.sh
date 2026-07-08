@@ -30,9 +30,11 @@ source "$LIB"
 
 PUBLIC=0
 NO_FANOUT=0
+ASSUME_YES=0
 while [ $# -gt 0 ]; do
   case "${1:-}" in
     --public) PUBLIC=1; shift ;;
+    --yes|-y) ASSUME_YES=1; shift ;;   # #62: non-interactive confirm for automation
     --no-fanout) NO_FANOUT=1; shift ;;
     --) shift; break ;;
     *) break ;;
@@ -85,6 +87,11 @@ Flags:
              Asks for 'yes' confirmation (issue is PUBLIC + permanent).
              Falls back to local-only capture if gh missing / not authed /
              user cancels.
+  --yes, -y  Confirm the --public post non-interactively (for automation /
+             Claude Code `!` / pipelines that have no TTY). Still runs the
+             scrubber and prints the PUBLIC warning — only skips the blocking
+             prompt. Use so you don't have to fall back to the sentinel-bypass
+             (which skips the scrubber + confirm entirely).
 EOF
   # v2.8.9 — empty-input is not a failure; printing usage IS the action.
   # Per vinit#16: prior `exit 1` made the slash-command invocation report
@@ -253,8 +260,18 @@ if [ "$PUBLIC" = "1" ]; then
   echo "   body:    <scrubbed content above>"
   echo "   visible: PUBLIC (this is permanent; GitHub issues are public)"
   echo ""
-  printf "   confirm with 'yes' (anything else cancels): "
-  read -r CONFIRM
+  if [ "$ASSUME_YES" = "1" ]; then
+    # #62: explicit non-interactive intent (--yes). Skips the TTY-blocking read so
+    # automation / Claude Code `!` / pipelines can use the SANCTIONED channel
+    # (still scrubbed via $SCRUBBED, still shows the PUBLIC warning above) instead
+    # of falling back to the sentinel-bypass that skips both scrubber and confirm.
+    CONFIRM=yes
+    echo "   (--yes: confirmed non-interactively)"
+  else
+    printf "   confirm with 'yes' (anything else cancels): "
+    # EOF-safe (#62): non-TTY / empty stdin -> "" -> cancels cleanly, never hangs.
+    read -r CONFIRM || CONFIRM=""
+  fi
   if [ "$CONFIRM" = "yes" ]; then
     # v2.6.1: Title carries plugin version; no --label flag.
     # Why: prior --label "feedback,v${PLUGIN_VERSION}" failed every public post
