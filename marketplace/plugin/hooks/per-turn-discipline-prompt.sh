@@ -113,6 +113,10 @@ FLOW_SKILL=$(jq -r '.per_turn_blocks.flow.skill // "core:flow"' "$DEFAULTS_JSON"
   printf '  2. INPUT ROUTING      MUST emit literal block with fields: %s\n' "${IR_FIELDS:-INPUT/TYPE/...}"
   printf '  3. DEPTH + ESTIMATION MUST emit literal block with fields: %s\n' "${DEPTH_FIELDS:-TASK/DEPTH/...}"
   printf '  4. BLUEPRINT          MUST emit literal block IF tool calls planned (Edit/Write/Bash/Agent). Fields: %s\n' "${BP_FIELDS:-Doing/Steps/Scale/Stops if/Switch}"
+  printf '                        THEN write .claude/blueprint-registered via the WRITE TOOL (Claude Code rolls\n'
+  printf '                        back Bash writes to .claude/) with: HAS_OUTPUT=1 / HAS_VERIFY=1 (+ HAS_PER_STEP_VERIFY=1\n'
+  printf '                        at D3+ when every Step carries inline Verify:). blueprint-check.sh reads ONLY this\n'
+  printf '                        marker -- emitting the prose block alone does NOT unblock Edit/Write.\n'
   printf '  5. BUILD-LAYER marker MUST emit IF editing D38 paths (sutra/marketplace/plugin/** etc). Fields: %s\n' "${BL_FIELDS:-LAYER/SCOPE/TARGET-PATH/...}"
   printf '  6. ... tool calls (Edit / Write / Bash / Agent) ...\n'
   printf '  7. OUTPUT TRACE       MUST emit literal one-liner: %s\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}"
