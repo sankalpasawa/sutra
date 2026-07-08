@@ -199,6 +199,42 @@
       "format": "> route: <skill> > <domain> > <nodes> > <terminal>"
     }
   },
+  "block_text_validation": {
+    "$comment": "A4 (2026-06-29): field-level contracts the TEXT validators consume — the reframed A4 (validate the block the USER sees, not the self-asserted marker). Consumed by perturn-text-validate.sh (Stop: routing+depth+trace) and blueprint-text-validate.sh (PreToolUse). Hooks read these via jq with hardcoded fallbacks so a missing/!jq host fails OPEN (D40). Presence + enum/range only — block CONTENT may be minimal on trivial turns (structure universality, see topic_gating); validators check the block EXISTS and is well-formed, never that it is rich.",
+    "enabled": true,
+    "input_routing": {
+      "anchor": "INPUT",
+      "required_fields": ["INPUT", "TYPE", "ROUTE"],
+      "full_fields": ["INPUT", "TYPE", "EXISTING HOME", "ROUTE", "FIT CHECK", "ACTION"],
+      "type_enum": ["direction", "task", "feedback", "new concept", "question"],
+      "$compact_note": "Compact form 'INPUT (TYPE)' satisfies INPUT+TYPE in one line per per_turn_blocks.input_routing.compact_form."
+    },
+    "depth_estimation": {
+      "anchor_regex": "DEPTH:[[:space:]]*[0-9]",
+      "required_fields": ["TASK", "DEPTH", "EFFORT", "COST", "IMPACT"],
+      "depth_min": 1,
+      "depth_max": 5
+    },
+    "output_trace": {
+      "anchor_regex": "^OS( TRACE)?:",
+      "segment_sep": ">",
+      "min_segments": 3
+    },
+    "loop_safety": {
+      "$comment": "Validators block at most ONCE per turn by honoring Claude Code's stop_hook_active flag (same mechanism as h-sutra-enforce.sh + flow-stop-check.sh). First miss -> one forced redo; on the re-invoked turn stop_hook_active=true -> PASS. A marker-write failure can never infinite-loop.",
+      "mechanism": "stop_hook_active"
+    },
+    "kill_switches": {
+      "perturn_text_validate": {
+        "env": "PERTURN_TEXT_VALIDATE_DISABLED=1",
+        "file": "~/.perturn-text-validate-disabled"
+      },
+      "blueprint_text_validate": {
+        "env": "BLUEPRINT_TEXT_VALIDATE_DISABLED=1",
+        "file": "~/.blueprint-text-validate-disabled"
+      }
+    }
+  },
   "consult_policy": {
     "depth_threshold": 3,
     "applies_to_tools": [

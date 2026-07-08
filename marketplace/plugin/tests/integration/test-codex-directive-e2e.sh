@@ -27,19 +27,19 @@ _no() { FAIL=$((FAIL+1)); echo "  X   $1"; }
   P=$(jq -nc '{prompt:"use codex to review the migration plan",hook_event_name:"UserPromptSubmit"}')
   printf '%s' "$P" | CLAUDE_PROJECT_DIR="$D" bash "$DETECT"
 
-  if [ ! -f "$D/.claude/codex-directive-pending" ]; then
+  if [ ! -f "$D/.claude/codex-directive-pending-no-sid" ]; then
     _no "[A] detect did not write marker on positive prompt"
     rm -rf "$D"
   else
     _ok "[A] step 1: directive detected, marker written"
 
-    DIRECTIVE_ID=$(grep DIRECTIVE-ID "$D/.claude/codex-directive-pending" | awk '{print $2}')
+    DIRECTIVE_ID=$(grep DIRECTIVE-ID "$D/.claude/codex-directive-pending-no-sid" | awk '{print $2}')
 
     # Step 2: Claude tries to Edit — gate must block
     PAYLOAD=$(jq -nc '{tool_name:"Edit",tool_input:{file_path:"/tmp/foo.md"}}')
     printf '%s' "$PAYLOAD" | CLAUDE_PROJECT_DIR="$D" bash "$GATE" 2>/dev/null
     rc=$?
-    if [ "$rc" -eq 2 ] && [ -f "$D/.claude/codex-directive-pending" ]; then
+    if [ "$rc" -eq 2 ] && [ -f "$D/.claude/codex-directive-pending-no-sid" ]; then
       _ok "[A] step 2: gate blocked Edit with no verdict (exit 2)"
     else
       _no "[A] step 2: gate allowed Edit unexpectedly (exit $rc)"
@@ -60,10 +60,10 @@ EOF
     # Step 4: Claude retries Edit — gate clears marker and allows
     printf '%s' "$PAYLOAD" | CLAUDE_PROJECT_DIR="$D" bash "$GATE" 2>/dev/null
     rc=$?
-    if [ "$rc" -eq 0 ] && [ ! -f "$D/.claude/codex-directive-pending" ]; then
+    if [ "$rc" -eq 0 ] && [ ! -f "$D/.claude/codex-directive-pending-no-sid" ]; then
       _ok "[A] step 4: PASS verdict cleared marker, Edit allowed"
     else
-      _no "[A] step 4: exit=$rc marker_still=$([ -f $D/.claude/codex-directive-pending ] && echo yes || echo no)"
+      _no "[A] step 4: exit=$rc marker_still=$([ -f $D/.claude/codex-directive-pending-no-sid ] && echo yes || echo no)"
     fi
 
     # Verify audit trail has both detection + clearance
@@ -84,7 +84,7 @@ EOF
 
   P=$(jq -nc '{prompt:"codex should check the security model"}')
   printf '%s' "$P" | CLAUDE_PROJECT_DIR="$D" bash "$DETECT"
-  DIRECTIVE_ID=$(grep DIRECTIVE-ID "$D/.claude/codex-directive-pending" 2>/dev/null | awk '{print $2}')
+  DIRECTIVE_ID=$(grep DIRECTIVE-ID "$D/.claude/codex-directive-pending-no-sid" 2>/dev/null | awk '{print $2}')
 
   if [ -z "$DIRECTIVE_ID" ]; then
     _no "[B] detect failed for 'codex should check'"
@@ -100,7 +100,7 @@ EOF
     PAYLOAD=$(jq -nc '{tool_name:"Write",tool_input:{}}')
     printf '%s' "$PAYLOAD" | CLAUDE_PROJECT_DIR="$D" bash "$GATE" 2>/dev/null
     rc=$?
-    if [ "$rc" -eq 2 ] && [ -f "$D/.claude/codex-directive-pending" ]; then
+    if [ "$rc" -eq 2 ] && [ -f "$D/.claude/codex-directive-pending-no-sid" ]; then
       _ok "[B] FAIL verdict keeps blocking (marker survives)"
     else
       _no "[B] FAIL scenario: exit=$rc"
@@ -117,13 +117,13 @@ EOF
   P=$(jq -nc '{prompt:"use codex to audit the rollout"}')
   printf '%s' "$P" | CLAUDE_PROJECT_DIR="$D" bash "$DETECT"
 
-  if [ -f "$D/.claude/codex-directive-pending" ]; then
+  if [ -f "$D/.claude/codex-directive-pending-no-sid" ]; then
     PAYLOAD=$(jq -nc '{tool_name:"Edit",tool_input:{}}')
     printf '%s' "$PAYLOAD" | \
       CLAUDE_PROJECT_DIR="$D" CODEX_DIRECTIVE_ACK=1 CODEX_DIRECTIVE_REASON="founder-verified-manually" \
       bash "$GATE" 2>/dev/null
     rc=$?
-    if [ "$rc" -eq 0 ] && [ ! -f "$D/.claude/codex-directive-pending" ] \
+    if [ "$rc" -eq 0 ] && [ ! -f "$D/.claude/codex-directive-pending-no-sid" ] \
        && grep -q founder-verified-manually "$D/.enforcement/codex-reviews/gate-log.jsonl" 2>/dev/null; then
       _ok "[C] override clears marker + logs reason"
     else

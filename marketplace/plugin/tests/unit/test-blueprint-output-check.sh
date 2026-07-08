@@ -38,6 +38,12 @@ trap "rm -rf $_TMP" EXIT
 mkdir -p "$_TMP/.claude" "$_TMP/sutra/os/charters" "$_TMP/holding"
 MARKER="$_TMP/.claude/blueprint-registered"
 
+# These cases exercise the D48 HAS_OUTPUT/HAS_VERIFY flag logic only. The
+# separate V2.2 D3+ per-step-Verify gate fail-closes depth to 5 when no depth
+# marker exists, which would fire on every case here. Pin depth to 2 (< 3) so
+# the per-step gate is out of scope — it has its own coverage.
+printf 'DEPTH=2 TASK=test TS=1730000000\n' > "$_TMP/.claude/depth-registered"
+
 _run_capture_exit() {
   local file_path="$1"
   printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$file_path" \
@@ -71,11 +77,14 @@ printf 'HAS_OUTPUT=1\nTS=1730000000\nTASK=test\n' > "$MARKER"
 exit_code=$(_run_capture_exit "$_TMP/holding/FOUNDER-DIRECTIONS.md")
 _result "no HAS_VERIFY blocked" "2" "$exit_code"
 
-# --- [5] non-foundational path -> SOFT advisory regardless
-echo "[5] non-foundational + no marker -> soft advisory (exit 0)"
+# --- [5] non-foundational path + no marker -> HARD block (exit 2)
+# Was SOFT (exit 0); blueprint-check.sh flipped to HARD on every path on
+# 2026-05-10 (founder direction, Option A — blanket SOFT->HARD). Bare Edit/Write
+# with no BLUEPRINT marker is blocked regardless of path now.
+echo "[5] non-foundational + no marker -> HARD block (exit 2)"
 rm -f "$MARKER"
 exit_code=$(_run_capture_exit "$_TMP/some/random/file.txt")
-_result "non-foundational soft" "0" "$exit_code"
+_result "non-foundational hard (no marker)" "2" "$exit_code"
 
 # --- [6] override -> bypass
 echo "[6] BLUEPRINT_ACK=1 -> bypass"
