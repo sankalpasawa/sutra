@@ -184,7 +184,7 @@ ensure_project_claude_md() {
   block=$(cat <<'GOVBLOCK'
 # Sutra governance (auto-managed by /core:start)
 
-Apply these behaviors in every response in this project. The block is marker-delimited and managed by the plugin; manual edits inside will be overwritten on the next `/core:start`.
+Apply these behaviors in EVERY response in this project. Marker-delimited, managed by the plugin; manual edits inside are overwritten on the next `/core:start`. Enforcement is HARD, fleet-wide (D63): the per-turn blocks below are floored by Stop / PreToolUse hooks — a turn that skips a required block is blocked and redone once (loop-safe). Enforcement activates only AFTER `/core:start` (which writes this block), so you always have the contract before it is enforced. Per-block kill-switches: see SUTRA-DEFAULTS.md.
 
 ## H-Sutra Header — the LITERAL FIRST line of every response
 
@@ -224,12 +224,35 @@ COST: ~$X (~Y% of $200 plan)
 IMPACT: [what this changes and for whom]
 ```
 
+## FLOW — inline block every turn, after Input Routing (HARD)
+
+Emit as literal text (NOT a skill call): the honest resolved spine —
+[1] TYPE/cell · [2] FOLLOW <skill> | CONSTRUCT · [3] steps · [4] inner lens/cynefin/factors · [5] mode · [6] close.
+Invoke the full core:flow skill only for substantive / multi-step / ambiguous work.
+Floor: flow-stop-check.sh (Stop) + flow-gate.sh (PreToolUse Edit|Write|Task).
+
+## BLUEPRINT — before Edit/Write/Bash/Agent when tool calls are planned (HARD)
+
+Doing / Steps (each with a `Verify:` check at Depth >= 3) / Output-looks-like / Verified-by / Scale / Stops-if.
+Floor: blueprint-check.sh (PreToolUse; HARD on foundational paths).
+
+## Build-Layer marker — editing plugin / hooks / scripts / skills paths (HARD)
+
+Declare L0 | L1 | L2 + activation scope before the edit. Floor: build-layer-check.sh.
+
+## Codex consult — at Depth >= 3 before Edit/Write (HARD, degrades)
+
+Run a real codex consult (/core:codex-sutra) before the first Depth-3+ Edit/Write; a successful run writes the satisfying marker. On machines without the codex binary the gate degrades to pass (never bricks). Floor: codex-consult-gate.sh (PreToolUse Edit|Write).
+
 ## Readability Gate — apply at output time
 
 - Tables over paragraphs when ≥3 rows of comparable data
 - Numbers over adjectives
 - Progress bars for scores: `Name ▓▓▓▓▓▓░░░░ 0.6 STATUS`
 - Decisions in boxed callouts (impossible to miss)
+- Structure-First (D55): when adding anything — survey > reorganize > simplify > surface
+- Skill-explain: a 4-line WHAT / WHY / EXPECT / ASKS card before invoking any skill
+- Right-effort (Karpathy): think-first, simpler-alt, surgical-scope, verify-loop before Edit
 
 ## Output Trace — one line at end of every response
 

@@ -78,6 +78,7 @@ rm -f .claude/input-routed \
       .claude/flow-inner \
       .claude/flow-type-resolved \
       .claude/flow-closed \
+      .claude/codex-consulted \
       2>/dev/null
 
 # Record this reset's timestamp so future bursts can be detected

@@ -4,6 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.40.0 — 2026-07-20
+
+**D63 — per-turn governance stack goes HARD, fleet-wide.** The soft-nudge blocks (Flow / BLUEPRINT / H-Sutra / Structure-First) become contract + hook enforced. New `per-turn-hard-gate.sh` (Stop, transcript-inspecting, loop-safe) floors Input Routing + Depth on no-tool turns; new `codex-consult-gate.sh` (Depth ≥ 3 Edit/Write) degrades to pass without the codex binary; new `codex-consult-marker.sh` (PostToolUse) writes its satisfying marker on a real consult.
+- **Contract + enforcement activate together:** `/core:start` template expanded 4 → 9 blocks; both new hooks stay silent until `/core:start` has written the contract (`sutra-project.json` gate) — no ambush of un-onboarded users.
+- **Codex challenge (CHANGES-REQUIRED) folded:** fresh-install gate, line-anchored grep (defeats the token-mention spoof), the marker writer, honest ACK message, de-stickied `codex-unavailable`.
+- Kill: `PER_TURN_HARD_DISABLED=1` / `CODEX_CONSULT_DISABLED=1` (+ `~/.` files). Founder direction D63, 2026-07-20.
+
 ## v2.39.16 — 2026-06-15
 
 **D61 amendment — Flow fires via the INLINE block, not a Skill invocation.** The v2.39.14 contract ("invoke `core:flow` every turn") could not hold: no Claude Code hook can force a Skill on the first pass, so on no-tool turns the model skipped it. Flow now fires the way Input Routing fires — an INLINE FLOW block (literal text the model emits) on every input + markers written via the Write tool. The full `core:flow` Skill is the DEEP mode (substantive / multi-step / ambiguous work only).

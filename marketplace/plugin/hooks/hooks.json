@@ -99,6 +99,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-gate.sh",
+            "timeout": 5
           }
         ]
       },
@@ -272,6 +277,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-marker.sh",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "PermissionRequest": [
@@ -409,6 +424,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-stop-check.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-hard-gate.sh",
+            "timeout": 8
           }
         ]
       }
