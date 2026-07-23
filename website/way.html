@@ -119,6 +119,29 @@
   .loop-center strong { display: block; font-family: 'Fraunces', Georgia, serif; color: var(--text); font-size: 17px; font-weight: 600; margin-bottom: 2px; }
   .loop-caption { color: var(--muted); font-size: 13px; text-align: center; max-width: 480px; }
 
+  /* ---- terrain (the approach) ---- */
+  .terrain-band { padding: 0 0 12px; }
+  .terrain-fig { max-width: 860px; margin: 0 auto; padding: 0 24px; text-align: center; }
+  .terrain-svg { width: 100%; height: auto; display: block; margin-top: 22px; }
+  .t-contour { fill: none; stroke: var(--border); }
+  .t-trail { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 1 7; stroke-linecap: round; opacity: 0.7; }
+  .t-path { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 1 9; stroke-linecap: round; }
+  .t-path-fog { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 1 11; stroke-linecap: round; opacity: 0.4; }
+  .t-orbit { fill: none; stroke: var(--accent); stroke-dasharray: 3 5; opacity: 0.45; }
+  .t-wp { fill: var(--card); stroke: var(--accent); stroke-width: 1.5; }
+  .t-mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.12em; fill: var(--accent-bright); }
+  .t-mono-muted { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; fill: var(--muted); }
+  .t-here-label { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.12em; fill: var(--green); }
+  .t-settle { fill: var(--accent); }
+  .t-settle-label { font-family: 'Inter', sans-serif; font-size: 12.5px; fill: var(--muted); }
+  .t-here-dot { fill: var(--green); }
+  .t-here-pulse { fill: none; stroke: var(--green); stroke-width: 1.5;
+    animation: tpulse 2.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes tpulse { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(2.4); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .t-here-pulse { animation: none; opacity: 0.35; } }
+  .t-caption { color: var(--muted); font-size: 13.5px; max-width: 620px; margin: 14px auto 0; text-wrap: balance; }
+  .t-caption strong { color: var(--accent-bright); font-weight: 600; }
+
   /* ---- origin + punch ---- */
   .origin {
     color: var(--muted); font-size: 13.5px; text-align: center;
@@ -179,6 +202,69 @@
   <h1>How Sutra is getting built.</h1>
   <p class="hero-sub">Not a roadmap executed — <em>a system grown</em>. Five stages, one loop, in the open. <span style="color: var(--accent-bright);">Sutra</span> means <em>thread</em>; this is the thread so far.</p>
 </header>
+
+<section class="terrain-band">
+  <div class="terrain-fig">
+    <div class="eyebrow">The approach · Effectuation</div>
+    <svg class="terrain-svg" viewBox="0 0 1000 430" role="img" aria-label="A terrain map. Settled ground on the left holds the first company, the plugin, and the canon. A dotted path walks through four waypoints — try, learn, choose, build — to a pulsing 'we are here' marker, then fades into unexplored fog toward Native.">
+      <defs>
+        <linearGradient id="fogg" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#0C0B09" stop-opacity="0"/>
+          <stop offset="1" stop-color="#0C0B09" stop-opacity="0.92"/>
+        </linearGradient>
+      </defs>
+
+      <!-- contours -->
+      <path class="t-contour" d="M110,320 C90,250 190,205 280,225 C370,245 380,330 300,355 C215,382 130,385 110,320 Z" opacity="0.8"/>
+      <path class="t-contour" d="M155,315 C145,270 210,240 275,255 C335,270 340,320 285,338 C225,357 165,355 155,315 Z" opacity="0.5"/>
+      <path class="t-contour" d="M480,250 C500,180 640,160 710,195 C775,228 740,290 650,295 C560,300 465,305 480,250 Z" opacity="0.7"/>
+      <path class="t-contour" d="M530,245 C550,200 645,190 695,215 C740,238 715,272 645,272 C580,272 515,278 530,245 Z" opacity="0.4"/>
+      <path class="t-contour" d="M330,120 C360,80 450,75 500,100 C545,122 520,160 450,162 C385,164 305,152 330,120 Z" opacity="0.5"/>
+
+      <!-- fog of the unexplored -->
+      <rect x="700" y="0" width="300" height="430" fill="url(#fogg)"/>
+
+      <!-- settled ground: walked trails + settlements -->
+      <path class="t-trail" d="M150,330 C185,345 215,352 255,352"/>
+      <path class="t-trail" d="M255,352 C290,340 310,318 328,300"/>
+      <circle class="t-settle" cx="150" cy="330" r="5"/>
+      <text class="t-settle-label" x="150" y="356" text-anchor="middle">first company</text>
+      <circle class="t-settle" cx="255" cy="352" r="5"/>
+      <text class="t-settle-label" x="255" y="378" text-anchor="middle">the plugin</text>
+      <circle class="t-settle" cx="328" cy="300" r="5"/>
+      <text class="t-settle-label" x="328" y="280" text-anchor="middle">the canon</text>
+
+      <!-- the walked path -->
+      <path class="t-path" d="M328,300 C370,298 390,290 415,285 C460,276 480,268 505,262 C550,252 570,250 595,247 C640,240 655,238 675,236 C695,234 705,232 716,231"/>
+
+      <!-- waypoints: try -> learn -> choose -> build -->
+      <circle class="t-orbit" cx="425" cy="283" r="15"/>
+      <circle class="t-wp" cx="425" cy="283" r="4.5"/>
+      <text class="t-mono" x="425" y="256" text-anchor="middle">TRY</text>
+      <circle class="t-orbit" cx="515" cy="260" r="15"/>
+      <circle class="t-wp" cx="515" cy="260" r="4.5"/>
+      <text class="t-mono" x="515" y="296" text-anchor="middle">LEARN</text>
+      <circle class="t-orbit" cx="605" cy="245" r="15"/>
+      <circle class="t-wp" cx="605" cy="245" r="4.5"/>
+      <text class="t-mono" x="605" y="218" text-anchor="middle">CHOOSE</text>
+      <circle class="t-orbit" cx="685" cy="234" r="15"/>
+      <circle class="t-wp" cx="685" cy="234" r="4.5"/>
+      <text class="t-mono" x="685" y="270" text-anchor="middle">BUILD</text>
+
+      <!-- we are here: the strongest signal -->
+      <circle class="t-here-pulse" cx="720" cy="230" r="11"/>
+      <circle class="t-here-dot" cx="720" cy="230" r="7"/>
+      <text class="t-here-label" x="720" y="200" text-anchor="middle">WE ARE HERE</text>
+
+      <!-- into the fog -->
+      <path class="t-path-fog" d="M720,230 C770,222 810,218 862,212"/>
+      <polygon points="862,206 876,212 862,218" fill="#8C857D" opacity="0.6"/>
+      <text class="t-mono-muted" x="876" y="186" text-anchor="end">TOWARD NATIVE</text>
+      <text class="t-mono-muted" x="865" y="105" text-anchor="middle" opacity="0.8">UNEXPLORED</text>
+    </svg>
+    <p class="t-caption"><strong>No market map is handed to you.</strong> You learn the terrain by walking it &mdash; try, learn, choose, build &mdash; then walk again from the new position. The ground behind us is settled: a portfolio, the plugin, the canon. Ahead is fog, and that's the point.</p>
+  </div>
+</section>
 
 <main class="container">
   <div class="journey">
