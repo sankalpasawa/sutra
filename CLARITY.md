@@ -15,6 +15,7 @@ OPEN questions become action items (§6). Audience scripts (§5) are derived fro
 | What is the goal? | ANSWERED | One command gives any founder the operating system to run companies with AI: governance, memory, discipline, evolution loop. | `PRODUCT-VISION.md` ("Holding Company as a Service", 30-min Tier 1). |
 | Short-term summary? | ANSWERED | Ship Native v1 (Sutra as a real engine, not markdown discipline) + keep the plugin fleet healthy + Testlify/client revenue. | Q2 focus ledger; Native S1–S8 roadmap; PM sheet A003–A013. |
 | What does he do daily? | ANSWERED | A four-step loop: **discover** new Claude Code capabilities → **understand** them → **fold them into Sutra** (plugin + canon) → keep a **1:1 parity map on top of Claude Code** as it evolves. Then dogfood across the portfolio and ship fleet-wide. | Release cadence (v2.40.0), 22 shipping capability buckets. |
+| What is the method? | ANSWERED | **Effectuation** (Sarasvathy): means-first (Claude Code fluency + operating companies + client work), affordable loss (services fund the build), committed partners shape the canon, surprises fold into the product, control over prediction. One fixed point: the Native vision stays steady; mechanisms update weekly. | Session evidence: daily loop, D-direction amendments, client-funded build. Risk: "not purely effectual" — correct answer: effectual posture, fixed vision — that IS the expert pattern. |
 | What else needs to be done? | OPEN | → §6 action table. | — |
 
 ## 2 · Strategic (long-term)
