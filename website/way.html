@@ -17,6 +17,8 @@
     --green: #5A9E6F;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body {
     background: var(--bg); color: var(--text);
     font-family: 'Inter', -apple-system, sans-serif;
@@ -141,6 +143,11 @@
   @media (prefers-reduced-motion: reduce) { .t-here-pulse { animation: none; opacity: 0.35; } }
   .t-caption { color: var(--muted); font-size: 13.5px; max-width: 620px; margin: 14px auto 0; text-wrap: balance; }
   .t-caption strong { color: var(--accent-bright); font-weight: 600; }
+  .t-link { cursor: pointer; }
+  .t-link .t-hit { fill: transparent; }
+  .t-link:hover .t-mono, .t-link:focus .t-mono { fill: var(--text); }
+  .t-link:hover .t-orbit, .t-link:focus .t-orbit { opacity: 0.9; }
+  .stage[id] { scroll-margin-top: 28px; }
 
   /* ---- origin + punch ---- */
   .origin {
@@ -224,52 +231,60 @@
       <!-- fog of the unexplored -->
       <rect x="700" y="0" width="300" height="430" fill="url(#fogg)"/>
 
-      <!-- settled ground: walked trails + settlements -->
-      <path class="t-trail" d="M150,330 C185,345 215,352 255,352"/>
-      <path class="t-trail" d="M255,352 C290,340 310,318 328,300"/>
-      <circle class="t-settle" cx="150" cy="330" r="5"/>
-      <text class="t-settle-label" x="150" y="356" text-anchor="middle">first company</text>
-      <circle class="t-settle" cx="255" cy="352" r="5"/>
-      <text class="t-settle-label" x="255" y="378" text-anchor="middle">the plugin</text>
-      <circle class="t-settle" cx="328" cy="300" r="5"/>
-      <text class="t-settle-label" x="328" y="280" text-anchor="middle">the canon</text>
+      <!-- the walked path through the five stages -->
+      <path class="t-path" d="M140,315 C185,300 225,286 270,272 C315,258 360,250 405,246 C450,243 495,248 540,252 C580,255 620,245 655,235 C682,228 705,228 726,228"/>
 
-      <!-- the walked path -->
-      <path class="t-path" d="M328,300 C370,298 390,290 415,285 C460,276 480,268 505,262 C550,252 570,250 595,247 C640,240 655,238 675,236 C695,234 705,232 716,231"/>
-
-      <!-- waypoints: try -> learn -> choose -> build -->
-      <circle class="t-orbit" cx="425" cy="283" r="15"/>
-      <circle class="t-wp" cx="425" cy="283" r="4.5"/>
-      <text class="t-mono" x="425" y="256" text-anchor="middle">TRY</text>
-      <circle class="t-orbit" cx="515" cy="260" r="15"/>
-      <circle class="t-wp" cx="515" cy="260" r="4.5"/>
-      <text class="t-mono" x="515" y="296" text-anchor="middle">LEARN</text>
-      <circle class="t-orbit" cx="605" cy="245" r="15"/>
-      <circle class="t-wp" cx="605" cy="245" r="4.5"/>
-      <text class="t-mono" x="605" y="218" text-anchor="middle">CHOOSE</text>
-      <circle class="t-orbit" cx="685" cy="234" r="15"/>
-      <circle class="t-wp" cx="685" cy="234" r="4.5"/>
-      <text class="t-mono" x="685" y="270" text-anchor="middle">BUILD</text>
+      <!-- waypoints = the five stages below (click to read) -->
+      <a class="t-link" href="#stage-1" aria-label="Stage 01 — Build one">
+        <rect class="t-hit" x="82" y="288" width="116" height="70"/>
+        <circle class="t-orbit" cx="140" cy="315" r="17"/>
+        <circle class="t-wp" cx="140" cy="315" r="5"/>
+        <text class="t-mono" x="140" y="347" text-anchor="middle">01 BUILD ONE</text>
+      </a>
+      <a class="t-link" href="#stage-2" aria-label="Stage 02 — See the horizontal">
+        <rect class="t-hit" x="196" y="226" width="148" height="66"/>
+        <circle class="t-orbit" cx="270" cy="272" r="17"/>
+        <circle class="t-wp" cx="270" cy="272" r="5"/>
+        <text class="t-mono" x="270" y="243" text-anchor="middle">02 SEE HORIZONTAL</text>
+      </a>
+      <a class="t-link" href="#stage-3" aria-label="Stage 03 — Design the system">
+        <rect class="t-hit" x="331" y="224" width="148" height="70"/>
+        <circle class="t-orbit" cx="405" cy="246" r="17"/>
+        <circle class="t-wp" cx="405" cy="246" r="5"/>
+        <text class="t-mono" x="405" y="282" text-anchor="middle">03 DESIGN SYSTEM</text>
+      </a>
+      <a class="t-link" href="#stage-4" aria-label="Stage 04 — Explore on the fly">
+        <rect class="t-hit" x="482" y="206" width="116" height="66"/>
+        <circle class="t-orbit" cx="540" cy="252" r="17"/>
+        <circle class="t-wp" cx="540" cy="252" r="5"/>
+        <text class="t-mono" x="540" y="223" text-anchor="middle">04 EXPLORE</text>
+      </a>
+      <a class="t-link" href="#stage-5" aria-label="Stage 05 — Ground in real organizations">
+        <rect class="t-hit" x="591" y="213" width="128" height="70"/>
+        <circle class="t-orbit" cx="655" cy="235" r="17"/>
+        <circle class="t-wp" cx="655" cy="235" r="5"/>
+        <text class="t-mono" x="655" y="269" text-anchor="middle">05 REAL ORGS</text>
+      </a>
 
       <!-- we are here: the strongest signal -->
-      <circle class="t-here-pulse" cx="720" cy="230" r="11"/>
-      <circle class="t-here-dot" cx="720" cy="230" r="7"/>
-      <text class="t-here-label" x="720" y="200" text-anchor="middle">WE ARE HERE</text>
+      <circle class="t-here-pulse" cx="728" cy="228" r="11"/>
+      <circle class="t-here-dot" cx="728" cy="228" r="7"/>
+      <text class="t-here-label" x="728" y="198" text-anchor="middle">WE ARE HERE</text>
 
       <!-- into the fog -->
-      <path class="t-path-fog" d="M720,230 C770,222 810,218 862,212"/>
+      <path class="t-path-fog" d="M728,228 C775,221 815,217 862,212"/>
       <polygon points="862,206 876,212 862,218" fill="#8C857D" opacity="0.6"/>
       <text class="t-mono-muted" x="876" y="186" text-anchor="end">TOWARD NATIVE</text>
       <text class="t-mono-muted" x="865" y="105" text-anchor="middle" opacity="0.8">UNEXPLORED</text>
     </svg>
-    <p class="t-caption"><strong>No market map is handed to you.</strong> You learn the terrain by walking it &mdash; try, learn, choose, build &mdash; then walk again from the new position. The ground behind us is settled: a portfolio, the plugin, the canon. Ahead is fog, and that's the point.</p>
+    <p class="t-caption"><strong>The map is the story &mdash; click any waypoint to read that stage.</strong> The method is effectuation: no market map is handed to you. You learn the terrain by walking it, then walk again from the new position. Ahead is fog, and that's the point.</p>
   </div>
 </section>
 
 <main class="container">
   <div class="journey">
 
-    <div class="stage reveal">
+    <div class="stage reveal" id="stage-1">
       <div class="stage-knot" aria-hidden="true"></div>
       <div class="stage-label">Stage 01 · Build one</div>
       <h2>We ran one real company end-to-end with AI.</h2>
@@ -281,7 +296,7 @@
       </div>
     </div>
 
-    <div class="stage reveal">
+    <div class="stage reveal" id="stage-2">
       <div class="stage-knot" aria-hidden="true"></div>
       <div class="stage-label">Stage 02 · See the horizontal</div>
       <h2>The second company needed exactly the same things.</h2>
@@ -293,7 +308,7 @@
       </div>
     </div>
 
-    <div class="stage reveal">
+    <div class="stage reveal" id="stage-3">
       <div class="stage-knot" aria-hidden="true"></div>
       <div class="stage-label">Stage 03 · Design the system</div>
       <h2>Horizontal systems can't be feature piles.</h2>
@@ -305,7 +320,7 @@
       </div>
     </div>
 
-    <div class="stage reveal">
+    <div class="stage reveal" id="stage-4">
       <div class="stage-knot" aria-hidden="true"></div>
       <div class="stage-label">Stage 04 · Explore on the fly</div>
       <h2>The frontier moves weekly. So does the system.</h2>
@@ -329,7 +344,7 @@
       </div>
     </div>
 
-    <div class="stage reveal" style="padding-bottom: 24px;">
+    <div class="stage reveal" id="stage-5" style="padding-bottom: 24px;">
       <div class="stage-knot" aria-hidden="true"></div>
       <div class="stage-label">Stage 05 · Ground in real organizations</div>
       <h2>The market speaks through committed partners.</h2>
