@@ -148,6 +148,18 @@
   .t-link:hover .t-mono, .t-link:focus .t-mono { fill: var(--text); }
   .t-link:hover .t-orbit, .t-link:focus .t-orbit { opacity: 0.9; }
   .stage[id] { scroll-margin-top: 28px; }
+  .t-grid { stroke: var(--border); opacity: 0.45; stroke-width: 0.5; fill: none; }
+  .t-compass circle { fill: none; stroke: var(--muted); opacity: 0.5; }
+  .t-compass path { fill: var(--muted); opacity: 0.65; }
+  .t-compass text { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: var(--muted); letter-spacing: 0.1em; }
+  .t-marks { stroke: var(--muted); opacity: 0.3; stroke-width: 1; fill: none; }
+  .t-marks-dot { fill: var(--muted); opacity: 0.3; }
+  .t-island { fill: none; stroke: var(--muted); stroke-dasharray: 4 6; opacity: 0.5; }
+  .t-island-label { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; fill: var(--muted); letter-spacing: 0.1em; opacity: 0.9; }
+  .t-native-blob { fill: rgba(196, 149, 106, 0.07); stroke: var(--accent-bright); stroke-dasharray: 6 6; stroke-width: 1.5; }
+  .t-native-label { font-family: 'JetBrains Mono', monospace; font-size: 17px; font-weight: 600; letter-spacing: 0.2em; fill: var(--accent-bright); }
+  .t-native-sub { font-family: 'Inter', sans-serif; font-size: 11px; fill: var(--muted); }
+  @media (max-width: 480px) { .t-grid, .t-compass, .t-marks, .t-marks-dot { display: none; } }
 
   /* ---- origin + punch ---- */
   .origin {
@@ -213,57 +225,102 @@
 <section class="terrain-band">
   <div class="terrain-fig">
     <div class="eyebrow">The approach · Effectuation</div>
-    <svg class="terrain-svg" viewBox="0 0 1000 430" role="img" aria-label="A terrain map. Settled ground on the left holds the first company, the plugin, and the canon. A dotted path walks through four waypoints — try, learn, choose, build — to a pulsing 'we are here' marker, then fades into unexplored fog toward Native.">
+    <svg class="terrain-svg" viewBox="0 0 1000 480" role="img" aria-label="A detailed terrain map. A compass rose and faint survey grid frame three contoured ranges. A dotted walked path crosses five clickable waypoints — build one, see horizontal, design system, explore, real orgs — to a pulsing 'we are here' marker. Beyond it, fog: the highlighted NATIVE territory (the OS an entire company runs on) and unexplored islands named agent economies, AGI, autonomous companies, living canon, and multi-agent orgs.">
       <defs>
         <linearGradient id="fogg" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stop-color="#0C0B09" stop-opacity="0"/>
-          <stop offset="1" stop-color="#0C0B09" stop-opacity="0.92"/>
+          <stop offset="1" stop-color="#0C0B09" stop-opacity="0.94"/>
         </linearGradient>
       </defs>
 
-      <!-- contours -->
-      <path class="t-contour" d="M110,320 C90,250 190,205 280,225 C370,245 380,330 300,355 C215,382 130,385 110,320 Z" opacity="0.8"/>
-      <path class="t-contour" d="M155,315 C145,270 210,240 275,255 C335,270 340,320 285,338 C225,357 165,355 155,315 Z" opacity="0.5"/>
-      <path class="t-contour" d="M480,250 C500,180 640,160 710,195 C775,228 740,290 650,295 C560,300 465,305 480,250 Z" opacity="0.7"/>
-      <path class="t-contour" d="M530,245 C550,200 645,190 695,215 C740,238 715,272 645,272 C580,272 515,278 530,245 Z" opacity="0.4"/>
-      <path class="t-contour" d="M330,120 C360,80 450,75 500,100 C545,122 520,160 450,162 C385,164 305,152 330,120 Z" opacity="0.5"/>
+      <!-- survey grid -->
+      <path class="t-grid" d="M100,0 V480 M200,0 V480 M300,0 V480 M400,0 V480 M500,0 V480 M600,0 V480 M700,0 V480 M800,0 V480 M900,0 V480 M0,80 H1000 M0,160 H1000 M0,240 H1000 M0,320 H1000 M0,400 H1000"/>
+
+      <!-- compass rose -->
+      <g class="t-compass" transform="translate(60,66)">
+        <circle r="16"/>
+        <path d="M0,-13 L3.5,0 L0,13 L-3.5,0 Z"/>
+        <text y="-26" text-anchor="middle">N</text>
+      </g>
+
+      <!-- western range -->
+      <path class="t-contour" d="M110,340 C85,265 190,215 285,235 C380,255 395,345 305,375 C215,405 135,410 110,340 Z" opacity="0.85"/>
+      <path class="t-contour" d="M145,335 C130,280 205,245 280,262 C350,278 358,338 292,360 C222,383 158,382 145,335 Z" opacity="0.6"/>
+      <path class="t-contour" d="M180,330 C172,297 222,272 272,283 C318,293 322,330 278,345 C230,361 186,360 180,330 Z" opacity="0.4"/>
+      <path class="t-contour" d="M212,324 C210,305 240,292 268,299 C293,305 294,326 266,334 C240,342 214,341 212,324 Z" opacity="0.25"/>
+      <!-- northern ridge -->
+      <path class="t-contour" d="M350,130 C380,85 470,78 525,105 C575,128 548,170 470,172 C400,174 322,166 350,130 Z" opacity="0.55"/>
+      <path class="t-contour" d="M385,128 C405,100 470,96 508,114 C542,130 522,155 468,156 C420,157 368,152 385,128 Z" opacity="0.35"/>
+      <path class="t-contour" d="M418,126 C430,112 468,110 492,121 C512,131 500,144 466,144 C438,144 408,140 418,126 Z" opacity="0.2"/>
+      <!-- eastern range -->
+      <path class="t-contour" d="M480,270 C500,200 640,180 710,215 C775,248 740,308 650,313 C560,318 462,322 480,270 Z" opacity="0.7"/>
+      <path class="t-contour" d="M525,262 C545,218 645,206 697,232 C742,254 718,288 648,290 C580,292 508,296 525,262 Z" opacity="0.45"/>
+      <path class="t-contour" d="M565,255 C580,228 645,222 682,240 C712,255 695,275 645,276 C598,277 552,278 565,255 Z" opacity="0.28"/>
+      <!-- islets -->
+      <path class="t-contour" d="M78,150 C88,128 128,126 148,140 C165,152 152,170 118,170 C95,170 70,166 78,150 Z" opacity="0.35"/>
+      <path class="t-contour" d="M292,440 C300,424 336,422 352,433 C366,443 355,456 328,456 C308,456 285,453 292,440 Z" opacity="0.3"/>
+
+      <!-- elevation marks -->
+      <path class="t-marks" d="M330,205 h8 M334,201 v8 M555,150 h8 M559,146 v8 M175,235 h8 M179,231 v8 M620,352 h8 M624,348 v8 M420,335 h8 M424,331 v8"/>
+      <circle class="t-marks-dot" cx="250" cy="180" r="1.5"/>
+      <circle class="t-marks-dot" cx="470" cy="218" r="1.5"/>
+      <circle class="t-marks-dot" cx="360" cy="385" r="1.5"/>
+      <circle class="t-marks-dot" cx="605" cy="140" r="1.5"/>
 
       <!-- fog of the unexplored -->
-      <rect x="700" y="0" width="300" height="430" fill="url(#fogg)"/>
+      <rect x="680" y="0" width="320" height="480" fill="url(#fogg)"/>
+      <text class="t-mono-muted" x="850" y="28" text-anchor="middle" opacity="0.85">UNEXPLORED</text>
+
+      <!-- unexplored satellite territories -->
+      <ellipse class="t-island" cx="790" cy="58" rx="46" ry="16"/>
+      <text class="t-island-label" x="790" y="62" text-anchor="middle">AGENT ECONOMIES</text>
+      <ellipse class="t-island" cx="915" cy="92" rx="30" ry="17"/>
+      <text class="t-island-label" x="915" y="96" text-anchor="middle">AGI</text>
+      <ellipse class="t-island" cx="878" cy="168" rx="64" ry="18"/>
+      <text class="t-island-label" x="878" y="172" text-anchor="middle">AUTONOMOUS COMPANIES</text>
+      <ellipse class="t-island" cx="908" cy="398" rx="48" ry="17"/>
+      <text class="t-island-label" x="908" y="402" text-anchor="middle">LIVING CANON</text>
+      <ellipse class="t-island" cx="792" cy="448" rx="56" ry="16"/>
+      <text class="t-island-label" x="792" y="452" text-anchor="middle">MULTI-AGENT ORGS</text>
+
+      <!-- NATIVE: known but not conquered -->
+      <path class="t-native-blob" d="M830,240 C845,215 900,210 935,228 C965,244 962,282 925,296 C885,311 838,306 826,280 C819,264 820,252 830,240 Z"/>
+      <text class="t-native-label" x="888" y="260" text-anchor="middle">NATIVE</text>
+      <text class="t-native-sub" x="888" y="279" text-anchor="middle">the OS an entire company runs on</text>
 
       <!-- the walked path through the five stages -->
       <path class="t-path" d="M140,315 C185,300 225,286 270,272 C315,258 360,250 405,246 C450,243 495,248 540,252 C580,255 620,245 655,235 C682,228 705,228 726,228"/>
 
       <!-- waypoints = the five stages below (click to read) -->
-      <a class="t-link" href="#stage-1" aria-label="Stage 01 — Build one">
+      <a class="t-link" href="#stage-1" aria-label="Stage one — Build one">
         <rect class="t-hit" x="82" y="288" width="116" height="70"/>
         <circle class="t-orbit" cx="140" cy="315" r="17"/>
         <circle class="t-wp" cx="140" cy="315" r="5"/>
-        <text class="t-mono" x="140" y="347" text-anchor="middle">01 BUILD ONE</text>
+        <text class="t-mono" x="140" y="347" text-anchor="middle">BUILD ONE</text>
       </a>
-      <a class="t-link" href="#stage-2" aria-label="Stage 02 — See the horizontal">
+      <a class="t-link" href="#stage-2" aria-label="Stage two — See the horizontal">
         <rect class="t-hit" x="196" y="226" width="148" height="66"/>
         <circle class="t-orbit" cx="270" cy="272" r="17"/>
         <circle class="t-wp" cx="270" cy="272" r="5"/>
-        <text class="t-mono" x="270" y="243" text-anchor="middle">02 SEE HORIZONTAL</text>
+        <text class="t-mono" x="270" y="243" text-anchor="middle">SEE HORIZONTAL</text>
       </a>
-      <a class="t-link" href="#stage-3" aria-label="Stage 03 — Design the system">
+      <a class="t-link" href="#stage-3" aria-label="Stage three — Design the system">
         <rect class="t-hit" x="331" y="224" width="148" height="70"/>
         <circle class="t-orbit" cx="405" cy="246" r="17"/>
         <circle class="t-wp" cx="405" cy="246" r="5"/>
-        <text class="t-mono" x="405" y="282" text-anchor="middle">03 DESIGN SYSTEM</text>
+        <text class="t-mono" x="405" y="282" text-anchor="middle">DESIGN SYSTEM</text>
       </a>
-      <a class="t-link" href="#stage-4" aria-label="Stage 04 — Explore on the fly">
+      <a class="t-link" href="#stage-4" aria-label="Stage four — Explore on the fly">
         <rect class="t-hit" x="482" y="206" width="116" height="66"/>
         <circle class="t-orbit" cx="540" cy="252" r="17"/>
         <circle class="t-wp" cx="540" cy="252" r="5"/>
-        <text class="t-mono" x="540" y="223" text-anchor="middle">04 EXPLORE</text>
+        <text class="t-mono" x="540" y="223" text-anchor="middle">EXPLORE</text>
       </a>
-      <a class="t-link" href="#stage-5" aria-label="Stage 05 — Ground in real organizations">
+      <a class="t-link" href="#stage-5" aria-label="Stage five — Ground in real organizations">
         <rect class="t-hit" x="591" y="213" width="128" height="70"/>
         <circle class="t-orbit" cx="655" cy="235" r="17"/>
         <circle class="t-wp" cx="655" cy="235" r="5"/>
-        <text class="t-mono" x="655" y="269" text-anchor="middle">05 REAL ORGS</text>
+        <text class="t-mono" x="655" y="269" text-anchor="middle">REAL ORGS</text>
       </a>
 
       <!-- we are here: the strongest signal -->
@@ -271,11 +328,9 @@
       <circle class="t-here-dot" cx="728" cy="228" r="7"/>
       <text class="t-here-label" x="728" y="198" text-anchor="middle">WE ARE HERE</text>
 
-      <!-- into the fog -->
-      <path class="t-path-fog" d="M728,228 C775,221 815,217 862,212"/>
-      <polygon points="862,206 876,212 862,218" fill="#8C857D" opacity="0.6"/>
-      <text class="t-mono-muted" x="876" y="186" text-anchor="end">TOWARD NATIVE</text>
-      <text class="t-mono-muted" x="865" y="105" text-anchor="middle" opacity="0.8">UNEXPLORED</text>
+      <!-- into the fog, toward Native -->
+      <path class="t-path-fog" d="M728,228 C765,228 795,236 824,250"/>
+      <polygon points="820,242 836,252 818,258" fill="#8C857D" opacity="0.6"/>
     </svg>
     <p class="t-caption"><strong>The map is the story &mdash; click any waypoint to read that stage.</strong> The method is effectuation: no market map is handed to you. You learn the terrain by walking it, then walk again from the new position. Ahead is fog, and that's the point.</p>
   </div>
@@ -366,9 +421,7 @@
   <h2>Software stopped being the scarce thing. <em>Knowing how to run a company through it</em> is what's scarce now — and we're building that into an installable system, in the open.</h2>
   <p class="punch-sub">We think that's a revolution in how companies get built. If you want to build it with us —</p>
   <div class="punch-ctas">
-    <a class="btn btn-primary" href="index.html#core">Install Sutra</a>
-    <a class="btn" href="index.html#canon">Read the canon</a>
-    <a class="btn" href="https://github.com/sankalpasawa/sutra">Contribute on GitHub</a>
+    <a class="btn btn-primary" href="https://chat.whatsapp.com/EsnoDwz3tn4CbAtkD3cpu4">Join us on WhatsApp</a>
   </div>
 </section>
 
