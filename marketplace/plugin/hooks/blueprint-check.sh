@@ -4,8 +4,13 @@
 # Charter: sutra/os/engines/BLUEPRINT-ENGINE.md
 # Skill:   sutra/marketplace/plugin/skills/blueprint/SKILL.md
 # Event:   PreToolUse on Edit|Write
-# Enforcement: SOFT — exit 0 with stderr warning unless on FOUNDATIONAL paths.
-#              HARD on FOUNDATIONAL paths only.
+# Enforcement (updated per #68, 2026-07-06 — was stale, claimed SOFT while shipping HARD):
+#   - FOUNDATIONAL paths: HARD — require the marker + HAS_OUTPUT=1 + HAS_VERIFY=1 (D48).
+#   - Non-foundational paths: HARD at DEPTH>=3 (require the marker); DEPTH<=2 is EXEMPT
+#     (#68 D4 — cheap typo/one-line edits carry no pre-spend BLUEPRINT ceremony).
+#     Depth unknown/unparseable -> fail-closed to require (D5 default).
+#   The 2026-05-10 blanket SOFT->HARD flip (Option A) is real; #68 D4 adds the
+#   depth gate so the tax lands only where pre-spend visibility is worth it.
 #
 # Why narrower than build-layer-check.sh:
 #   build-layer-check.sh already HARD-blocks holding/hooks/**,
@@ -153,9 +158,10 @@ if [ "$is_foundational" = "1" ]; then
   # HARD on foundational paths
   if [ ! -f "$MARKER" ]; then
     {
-      echo "BLUEPRINT-CHECK: foundational artifact edit requires BLUEPRINT block."
+      echo "BLUEPRINT-CHECK: foundational artifact edit requires a BLUEPRINT block."
       echo "  File: $REL_PATH"
-      echo "  Emit per-task BLUEPRINT block (see CLAUDE.md Mandatory Blocks)."
+      echo "  Emit a per-task BLUEPRINT block with 'Output looks like' + 'Verified by'."
+      echo "  Format: the core:blueprint skill (SKILL.md) / SUTRA-DEFAULTS.md."
       echo "  Or override: BLUEPRINT_ACK=1 BLUEPRINT_ACK_REASON='<why>' <tool>"
     } >&2
     exit 2
@@ -182,16 +188,33 @@ if [ "$is_foundational" = "1" ]; then
     exit 2
   fi
 else
-  # HARD on every path (founder direction 2026-05-10 — blanket SOFT→HARD flip,
-  # Option A). Prior behavior: advisory only on non-foundational. Founder
-  # explicitly removed the soft path. Bootstrap rule: marker is wiped per-turn
-  # by reset-turn-markers.sh; model must emit BLUEPRINT before first Edit/Write
-  # of every turn (CLAUDE.md Mandatory Blocks).
+  # Non-foundational path. HARD only at DEPTH>=3 (#68 D4, 2026-07-06). Cheap
+  # D<=2 edits (typo / single-line / config tweak) are EXEMPT — they carry no
+  # pre-spend BLUEPRINT ceremony (~4.2k tokens/day of pure tax removed). Depth is
+  # read fail-closed (missing/malformed -> D5) so an unknown depth still requires
+  # the block. The 2026-05-10 SOFT->HARD flip (Option A) stands; D4 only narrows
+  # WHERE the tax lands. Foundational paths (above) always require it, any depth.
+  _NFD="$REPO_ROOT/.claude/depth-registered"; NF_DEPTH=""
+  if [ -f "$_NFD" ]; then
+    _a=$(grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$' "$_NFD" 2>/dev/null | head -1)
+    if [ -n "$_a" ]; then NF_DEPTH=$(printf '%s' "$_a" | sed -E 's/^DEPTH=([0-9]+).*$/\1/');
+    else
+      _b=$(grep -E '^DEPTH=[0-9]+$' "$_NFD" 2>/dev/null | head -1)
+      [ -n "$_b" ] && NF_DEPTH=$(printf '%s' "$_b" | sed -E 's/^DEPTH=([0-9]+)$/\1/')
+    fi
+  fi
+  case "$NF_DEPTH" in ''|*[!0-9]*) NF_DEPTH=5 ;; esac   # fail-closed to strictest
+  if [ "$NF_DEPTH" -le 2 ]; then
+    exit 0   # #68 D4: cheap edit — exempt from the BLUEPRINT tax
+  fi
   if [ ! -f "$MARKER" ]; then
     {
-      echo "BLUEPRINT-CHECK: Edit/Write requires BLUEPRINT block (HARD as of 2026-05-10)."
+      echo "BLUEPRINT-CHECK: Edit/Write at D${NF_DEPTH} requires a BLUEPRINT block."
       echo "  File: $REL_PATH"
-      echo "  Emit per-task BLUEPRINT block with Output + Verified-by fields."
+      echo "  Emit a per-task BLUEPRINT block (Doing / Steps / Scale / Stops-if / Switch)."
+      echo "  Format: the core:blueprint skill (SKILL.md) / SUTRA-DEFAULTS.md."
+      echo "  (D<=2 edits are exempt; 'Output looks like' + 'Verified by' are required"
+      echo "   only on FOUNDATIONAL paths, not here.)"
       echo "  Or override: BLUEPRINT_ACK=1 BLUEPRINT_ACK_REASON='<why>' <tool>"
     } >&2
     exit 2
