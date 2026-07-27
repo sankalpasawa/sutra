@@ -67,19 +67,51 @@ mkdir -p .enforcement 2>/dev/null
 printf '{"ts":%s,"event":"clearing-with-context","prompt_head":"%s"}\n' \
   "$NOW" "$STDIN_HEAD_CLR" >> .enforcement/routing-misses.log
 
-rm -f .claude/input-routed \
-      .claude/depth-registered \
-      .claude/depth-assessed \
-      .claude/sutra-deploy-depth5 \
-      .claude/build-layer-registered \
-      .claude/blueprint-registered \
-      .claude/structure-first-active \
-      .claude/flow-classified \
-      .claude/flow-inner \
-      .claude/flow-type-resolved \
-      .claude/flow-closed \
-      .claude/codex-consulted \
-      2>/dev/null
+# ── Session-scoped clear (2026-07-27) ──────────────────────────────────────
+# These markers are per-repo single-slot files. When two Claude Code sessions
+# work in the same repo, each session's reset wiped the OTHER session's live
+# markers, and every downstream gate (depth, blueprint, build-layer, flow) then
+# hard-blocked a session that had in fact emitted its blocks.
+#
+# Observed live 2026-07-27: session c2360700 logged markers-cleared while
+# session e52b2379 was mid-edit; e52b2379's next Edit was blocked for "INPUT
+# ROUTING MISSING" on a turn whose routing block had been emitted and written.
+# An unknown share of the historical flow-gate-block / flow-stop-block volume
+# is this race, not genuine misses — which is why the pass-logging added in the
+# same release matters before anyone tunes on that data.
+#
+# Session-scoped markers (<name>-<SID>, written by per-turn-discipline-prompt.sh)
+# are cleared ONLY for this session. Legacy single-slot markers are cleared
+# only when unowned or owned by this session — a marker stamped SESSION=<other>
+# belongs to a live peer and is left alone.
+SID=$(printf '%s' "$STDIN_RAW" | jq -r '.session_id // empty' 2>/dev/null)
+SID=$(printf '%s' "$SID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
+
+LEGACY_MARKERS="input-routed depth-registered depth-assessed sutra-deploy-depth5
+                build-layer-registered blueprint-registered structure-first-active
+                flow-classified flow-inner flow-type-resolved flow-closed
+                codex-consulted"
+
+for m in $LEGACY_MARKERS; do
+  f=".claude/$m"
+  [ -f "$f" ] || continue
+  OWNER=$(grep -o 'SESSION=[A-Za-z0-9_-]*' "$f" 2>/dev/null | head -1 | cut -d= -f2)
+  if [ -z "$OWNER" ] || [ -z "$SID" ] || [ "$OWNER" = "$SID" ]; then
+    rm -f "$f" 2>/dev/null
+  else
+    printf '{"ts":%s,"event":"reset-skipped-foreign-marker","marker":"%s","owner":"%s","self":"%s"}\n' \
+      "$NOW" "$m" "$OWNER" "$SID" >> .enforcement/routing-misses.log 2>/dev/null
+  fi
+done
+
+# Session-scoped copies: only ever this session's.
+if [ -n "$SID" ]; then
+  rm -f .claude/flow-classified-"$SID" \
+        .claude/flow-type-resolved-"$SID" \
+        .claude/flow-inner-"$SID" \
+        .claude/flow-closed-"$SID" \
+        2>/dev/null
+fi
 
 # Record this reset's timestamp so future bursts can be detected
 mkdir -p .claude 2>/dev/null

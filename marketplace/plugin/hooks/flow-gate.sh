@@ -64,6 +64,23 @@ fi
 
 # -- Parse target file_path from PreToolUse stdin JSON ----------------------
 PAYLOAD=$(cat 2>/dev/null || true)
+
+# -- Session-scoped marker resolution (2026-07-27) --------------------------
+# Markers used to be single-slot per repo. Two Claude Code sessions in one repo
+# overwrote and deleted each other's markers — observed live 2026-07-27, where
+# a foreign session's reset wiped this session's marker mid-turn and produced a
+# spurious block. Prefer the session-scoped marker (written deterministically
+# by per-turn-discipline-prompt.sh), then fall back to the legacy single-slot
+# path so model-written markers and un-upgraded installs keep working.
+SID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null)
+SID=$(printf '%s' "$SID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
+[ -z "$SID" ] && SID="${CLAUDE_SESSION_ID:-}"
+flow_marker_exists() {
+  # $1 = base marker name (e.g. flow-classified)
+  { [ -n "$SID" ] && [ -f "$REPO_ROOT/.claude/$1-$SID" ]; } && return 0
+  [ -f "$REPO_ROOT/.claude/$1" ]
+}
+
 FILE_PATH=""
 if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
   FILE_PATH=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
@@ -83,7 +100,7 @@ fi
 # WebFetch/Bash here: gating is not how Flow fires (founder D61, 2026-06-14),
 # and gating Bash would deadlock the marker bootstrap.
 if [ "$TOOL_NAME" = "Task" ] || [ "$TOOL_NAME" = "Agent" ]; then
-  if [ ! -f "$REPO_ROOT/.claude/flow-classified" ]; then
+  if ! flow_marker_exists flow-classified; then
     {
       printf '\nFLOW-GATE (HARD): dispatching work (%s) requires classify first.\n' "$TOOL_NAME"
       printf '  Run core:flow to classify the input + resolve a workflow type,\n'
@@ -112,19 +129,28 @@ case "$REL_PATH" in
 esac
 
 # -- Marker check (classify + resolve must precede CONSTRUCT) ----------------
-CLASSIFIED="$REPO_ROOT/.claude/flow-classified"
-RESOLVED="$REPO_ROOT/.claude/flow-type-resolved"
-
-if [ -f "$CLASSIFIED" ] && [ -f "$RESOLVED" ]; then
+if flow_marker_exists flow-classified && flow_marker_exists flow-type-resolved; then
   # Spine walked: classified + a workflow type resolved. Let the construct
-  # proceed silently. The inner engine + per-Work-Atom verify carry the rest.
+  # proceed. The inner engine + per-Work-Atom verify carry the rest.
+  #
+  # PASS LOGGING (2026-07-27): this branch used to `exit 0` silently, so the
+  # ledger recorded ONLY failures. With no denominator the fire-rate was
+  # unmeasurable — 60 recorded blocks could have been 60% or 0.6% of turns,
+  # and there was no way to tell a genuine miss from the cross-session marker
+  # race. Log the pass so the rate is computable and any future tuning has a
+  # denominator. Fail-open: logging never blocks.
+  mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+  SAFE_PASS_REL=$(printf '%s' "$REL_PATH" | tr -d '\n\r' | tr '"\\' "''" | head -c 500)
+  printf '{"ts":"%s","event":"flow-gate-pass","path":"%s","session":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SAFE_PASS_REL" "${SID:-unknown}" \
+    >> "$REPO_ROOT/.enforcement/flow-gate.jsonl" 2>/dev/null
   exit 0
 fi
 
 # -- Markers missing on a non-whitelisted path: HARD block + log -----------
 MISSING=""
-[ -f "$CLASSIFIED" ] || MISSING="${MISSING}classify "
-[ -f "$RESOLVED" ]   || MISSING="${MISSING}resolve "
+flow_marker_exists flow-classified    || MISSING="${MISSING}classify "
+flow_marker_exists flow-type-resolved || MISSING="${MISSING}resolve "
 MISSING="${MISSING% }"
 
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)

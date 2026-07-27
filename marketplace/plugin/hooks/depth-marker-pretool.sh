@@ -25,6 +25,38 @@ if [ -f "$MARKER" ]; then
   exit 0
 fi
 
+# ── Governance-state whitelist (2026-07-27 bootstrap-deadlock fix) ──────────
+# The per-turn markers themselves live under .claude/ and .enforcement/.
+# Gating those writes on a depth marker is circular: the model cannot write
+# .claude/depth-registered because .claude/depth-registered is missing.
+# Observed live 2026-07-27: a Write of .claude/flow-classified was blocked
+# here, which is also why flow-gate / flow-stop-check then fired on turns that
+# had in fact walked the spine. Governance state is never substantive work.
+_STDIN_PAYLOAD="$(cat 2>/dev/null)"
+if [ -n "$_STDIN_PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
+  _FILE_PATH=$(printf '%s' "$_STDIN_PAYLOAD" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+  if [ -n "$_FILE_PATH" ]; then
+    _REL="${_FILE_PATH#"$PROJECT_ROOT"/}"
+    # Scoped to the exact per-turn marker set — NOT a blanket .claude/* pass.
+    # A blanket pass would also unblock .claude/CLAUDE.md and
+    # .claude/settings.json, i.e. the files that define the agent's own
+    # governance, letting turn 0 rewrite the contract and escape every later
+    # depth check. (DeepSeek consult 2026-07-27, finding 3a.)
+    case "$_REL" in
+      .claude/depth-registered|.claude/depth-assessed|\
+      .claude/input-routed|.claude/blueprint-registered|\
+      .claude/build-layer-registered|.claude/codex-consulted|\
+      .claude/estimation-logged|.claude/structure-first-active|\
+      .claude/sutra-deploy-depth5|.claude/.last-reset-ts|\
+      .claude/flow-classified|.claude/flow-classified-*|\
+      .claude/flow-type-resolved|.claude/flow-type-resolved-*|\
+      .claude/flow-inner|.claude/flow-closed|\
+      .claude/codex-directive-pending-*|.claude/heartbeats/*|\
+      .enforcement/*|.analytics/*) exit 0 ;;
+    esac
+  fi
+fi
+
 # Read profile from project config; default to individual
 PROFILE="individual"
 if [ -f "$CONFIG" ]; then

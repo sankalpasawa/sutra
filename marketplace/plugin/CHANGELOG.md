@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.41.0 (2026-07-27) — Flow fires by construction
+
+- **Root cause**: `per-turn-discipline-prompt.sh` wrote the whole per-turn contract to **stderr**. For UserPromptSubmit only **stdout** reaches the model, so the contract (incl. FLOW activation) never arrived. Now emitted as `hookSpecificOutput.additionalContext`.
+- **Flow now fires hook-side**: the classifier already runs every turn; it now writes `.claude/flow-classified-<session>` itself. Model no longer has to remember.
+- **Markers are session-scoped**: concurrent sessions in one repo were deleting each other's markers, causing spurious hard blocks. `reset-turn-markers.sh` now clears only its own session's.
+- **`flow-gate-pass` logged**: the ledger recorded only failures, so fire-rate was unmeasurable. Passes now logged.
+- **Bootstrap deadlock fixed**: `depth-marker-pretool.sh` no longer gates writes to the per-turn markers themselves (scoped list, not blanket `.claude/*`).
+
 ## v2.40.0 — 2026-07-20
 
 **D63 — per-turn governance stack goes HARD, fleet-wide.** The soft-nudge blocks (Flow / BLUEPRINT / H-Sutra / Structure-First) become contract + hook enforced. New `per-turn-hard-gate.sh` (Stop, transcript-inspecting, loop-safe) floors Input Routing + Depth on no-tool turns; new `codex-consult-gate.sh` (Depth ≥ 3 Edit/Write) degrades to pass without the codex binary; new `codex-consult-marker.sh` (PostToolUse) writes its satisfying marker on a real consult.

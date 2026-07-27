@@ -98,7 +98,7 @@ FLOW_SKILL=$(jq -r '.per_turn_blocks.flow.skill // "core:flow"' "$DEFAULTS_JSON"
 # emit literal text" or "MUST invoke <skill>". Mirrors what
 # skills/human-sutra/SKILL.md documents — duplicated here so T4 model
 # gets the same imperative without needing CLAUDE.md governance context.
-{
+_sutra_per_turn_block() {
   printf '\n[Sutra defaults · D40 v1.0.3] Per-turn block stack — MUST emit in this order:\n'
   printf '\n'
   printf '  TOPIC-GATING FORBIDDEN. Emit the full per-turn discipline blocks for every user input,\n'
@@ -140,7 +140,51 @@ FLOW_SKILL=$(jq -r '.per_turn_blocks.flow.skill // "core:flow"' "$DEFAULTS_JSON"
   printf '  - Right-effort (Karpathy): BEFORE %s, apply: %s\n' "${RE_TOOLS:-Edit/Write}" "${RE_PRINCIPLES:-think first / simpler-alt / surgical scope / verify-loop}"
   printf '\n  Canonical schema: %s/sutra-defaults.json  (human-readable: SUTRA-DEFAULTS.md)\n' "$DEFAULTS_DIR"
   printf '  Kill-switch: touch %s\n\n' "${KILL_FILE:-~/.per-turn-discipline-disabled}"
-} >&2
+}
+
+# ── Emission path (2026-07-27 root-cause fix) ───────────────────────────────
+# This block used to be written to STDERR (`} >&2`). Per the Claude Code hook
+# contract, for UserPromptSubmit ONLY STDOUT is added to the model's context:
+#
+#   "For most events, stdout is written to the debug log but not shown in the
+#    transcript. The exceptions are UserPromptSubmit, UserPromptExpansion and
+#    SessionStart, where stdout is added as context that Claude can see and
+#    act on."
+#
+# stderr on exit 0 is not shown to the model at all. So for the entire life of
+# this hook the per-turn contract — H-Sutra, Input Routing, Depth, BLUEPRINT,
+# Build-Layer, FLOW ACTIVATION — was emitted into a stream the model cannot
+# read. Flow fired only where CLAUDE.md happened to restate it; T4 fleet
+# clients (no CLAUDE.md governance) received nothing at all. That is the root
+# cause of the flow-gate / flow-stop-check block volume, NOT model indiscipline.
+#
+# Fix: emit as hookSpecificOutput.additionalContext on stdout, which Claude
+# Code wraps in a system-reminder and inserts alongside the submitted prompt.
+# Fail-open to stderr when jq is unavailable (no worse than the old behavior).
+# FAIL-OPEN CONTRACT: this hook must never fail a user turn and must never
+# emit anything to stdout except the single JSON object. Any jq failure (NUL
+# byte in the block, OOM, malformed arg) degrades to the old stderr path
+# rather than exiting non-zero or emitting a partial payload — a truncated
+# object on stdout is worse than none, since Claude Code would drop the whole
+# hookSpecificOutput and silently reinstate the original bug.
+_BLOCK_TEXT="$(_sutra_per_turn_block)"
+_JSON_OUT=""
+if command -v jq >/dev/null 2>&1; then
+  _JSON_OUT="$(jq -nc --arg ctx "$_BLOCK_TEXT" \
+    '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$ctx}}' 2>/dev/null)" || _JSON_OUT=""
+fi
+if [ -n "$_JSON_OUT" ]; then
+  printf '%s\n' "$_JSON_OUT"
+else
+  printf '%s' "$_BLOCK_TEXT" >&2
+fi
+
+# STDOUT LOCK: everything after this point is diagnostics or side-effects and
+# must NOT reach fd 1 — stray output would concatenate onto the JSON above and
+# invalidate it. Redirect fd 1 to fd 2 for the remainder of the script so any
+# present or future stdout write lands on stderr instead of corrupting the
+# payload. (DeepSeek consult 2026-07-27, finding 1.)
+exec 1>&2
 
 # ──────────────────────────────────────────────────────────────────────────
 # H-Sutra classification — v2 (D49 codex round-1..5 fold, 2026-05-06).
@@ -213,5 +257,66 @@ else
 fi
 
 h_sutra_classify_and_write "$HSUTRA_PROMPT" "$HSUTRA_CLASSIFIER" "$HSUTRA_LOG" "$HSUTRA_SESSION_ID" || true
+
+# ──────────────────────────────────────────────────────────────────────────
+# FLOW FIRING — deterministic, hook-side (2026-07-27, D61 amendment 3)
+#
+# Previously the flow markers were written by the MODEL, on instruction. That
+# instruction went to stderr and never arrived (see the emission-path note
+# above), so the markers were frequently absent and the floors fired on turns
+# that had in fact walked the spine.
+#
+# The classifier already runs on every real prompt, one line up, and derives a
+# speech-act verb deterministically. That is enough to write the classify
+# marker without asking the model for anything. Flow now FIRES by construction:
+# stage 1 (classify) is executed by this hook, every turn, before the model
+# acts. Stage 2 (resolve) is left PENDING for the model to refine — a hook
+# cannot know whether an existing workflow type FOLLOWs or steps must be
+# CONSTRUCTed.
+#
+# Markers are SESSION-SCOPED (.claude/flow-<name>-<SID>), matching the pattern
+# codex-directive-detect.sh already uses. Concurrent sessions in one repo were
+# clobbering each other's single-slot markers — observed live 2026-07-27, where
+# a foreign session's content (older TS, different UNIT) overwrote this
+# session's marker mid-turn and produced a spurious flow-stop-block.
+#
+# Fail-open throughout: every write is `|| true`. A marker that fails to write
+# degrades to the pre-existing behavior (floor fires, model re-walks), never to
+# a failed turn.
+_FLOW_SID=$(printf '%s' "$HSUTRA_SESSION_ID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
+[ -z "$_FLOW_SID" ] && _FLOW_SID="no-sid"
+
+_FLOW_VERB=$(bash "$HSUTRA_CLASSIFIER" "$HSUTRA_PROMPT" 2>/dev/null \
+  | jq -r '.verb // empty' 2>/dev/null)
+
+# verb -> Flow TYPE. classify.sh derives verb reliably; its ir_type field is an
+# echoed INPUT, not a derived output, so it is deliberately not used here.
+case "$_FLOW_VERB" in
+  QUERY)  _FLOW_TYPE="question"  ;;
+  DIRECT) _FLOW_TYPE="direction" ;;
+  ASSERT) _FLOW_TYPE="feedback"  ;;
+  *)      _FLOW_TYPE="task"      ;;
+esac
+
+mkdir -p "$REPO_ROOT/.claude" 2>/dev/null || true
+{
+  printf 'TYPE=%s\n' "$_FLOW_TYPE"
+  printf 'VERB=%s\n' "${_FLOW_VERB:-UNKNOWN}"
+  printf 'SESSION=%s\n' "$_FLOW_SID"
+  printf 'FIRED_BY=hook\n'
+  printf 'TS=%s\n' "$(date +%s)"
+} > "$REPO_ROOT/.claude/flow-classified-$_FLOW_SID" 2>/dev/null || true
+
+{
+  printf 'RESOLVE=PENDING\n'
+  printf 'SESSION=%s\n' "$_FLOW_SID"
+  printf 'FIRED_BY=hook\n'
+  printf 'TS=%s\n' "$(date +%s)"
+} > "$REPO_ROOT/.claude/flow-type-resolved-$_FLOW_SID" 2>/dev/null || true
+
+mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null || true
+printf '{"ts":"%s","event":"flow-fired-by-hook","session":"%s","type":"%s","verb":"%s"}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$_FLOW_SID" "$_FLOW_TYPE" "${_FLOW_VERB:-UNKNOWN}" \
+  >> "$REPO_ROOT/.enforcement/flow-gate.jsonl" 2>/dev/null || true
 
 exit 0
