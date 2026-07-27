@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # marker-lib.sh — session-scoped governance markers (P1 concurrency fix).
+# Scheme A (dir) + FAIL-CLOSED (founder decision 2026-07-27, DeepSeek-backed;
+# resolves project_marker_scheme_reconcile).
 #
-# Markers live under .claude/sessions/<session-id>/ so two agent sessions in one
-# repo never share a path (no cross-session reset-wipe, no clobber). See
-# holding/research/2026-07-27-sutra-concurrency-systemic-review.md.
+# Markers live under .claude/sessions/<session-id>/ so N sessions in one repo each
+# get their OWN dir — concurrency is preserved (no locks, no serialization; sessions
+# never block each other). FAIL-CLOSED: there is NO global fallback read. A missing
+# session marker means "not done" and the gate BLOCKS; a stale global marker can
+# never silently satisfy a hard gate (the D2 silent-bypass defect).
 #
-# DESIGN (DeepSeek 2026-07-27 MODIFY absorbed): PURE session-scoping — set/has/
-# read/reset all operate ONLY on the current session's dir, so a turn-reset makes
-# has() correctly return false (per-turn semantics hold). No shared "default"
-# (falls back to CLAUDE_PID -> per-process-distinct). Atomic writes. GC excludes
-# the current session. Migrate each marker's writer + reader TOGETHER (lockstep);
-# untouched markers stay on their legacy global path and behave as before.
+# Session id: CLAUDE_CODE_SESSION_ID (model Bash env) == stdin .session_id (hooks),
+# both the raw session UUID -> model-write and hook-read resolve the SAME dir
+# (SID-PROOF-OK 2026-07-27). Hooks call sutra_sid_from_stdin first.
 
 _sutra_sid() {
   if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then printf '%s' "$CLAUDE_CODE_SESSION_ID"; return; fi
@@ -20,7 +21,6 @@ _sutra_sid() {
   printf 'pid-%s' "$PPID"
 }
 _sutra_root() { printf '%s' "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; }
-_sutra_global() { printf '%s/.claude/%s' "$(_sutra_root)" "$1"; }
 sutra_marker_dir()  { local d; d="$(_sutra_root)/.claude/sessions/$(_sutra_sid "${1:-}")"; mkdir -p "$d" 2>/dev/null; printf '%s' "$d"; }
 sutra_marker_set()  { local dir name; dir="$(sutra_marker_dir)"; name="$1"; shift; local t="$dir/.$name.tmp.$$"; printf '%s\n' "$*" > "$t" && mv -f "$t" "$dir/$name"; }
 sutra_marker_has()  { [ -f "$(sutra_marker_dir)/$1" ]; }
@@ -33,12 +33,8 @@ sutra_marker_gc()   {
     [ "$(basename "$dd")" = "$cur" ] && continue; rm -rf "$dd" 2>/dev/null
   done
 }
-
-# READ path (backward-compatible): session dir -> legacy global -> legacy -<sid> suffix.
-sutra_marker_rpath() {
-  local name="$1" sid; sid="$(_sutra_sid "${2:-}")"
-  local a b c; a="$(sutra_marker_dir "${2:-}")/$name"; b="$(_sutra_global "$name")"; c="$(_sutra_root)/.claude/$name-$sid"
-  if [ -f "$a" ]; then printf '%s' "$a"; elif [ -f "$b" ]; then printf '%s' "$b"; else printf '%s' "$c"; fi
+sutra_sid_from_stdin() {
+  [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && return 0
+  local sid; sid=$(printf '%s' "${1:-}" | jq -r '.session_id // empty' 2>/dev/null | tr -cd 'a-zA-Z0-9_-' | head -c 64)
+  [ -n "$sid" ] && export CLAUDE_CODE_SESSION_ID="$sid"; return 0
 }
-sutra_marker_rhas()  { [ -f "$(sutra_marker_rpath "$1" "${2:-}")" ]; }
-sutra_marker_rread() { cat "$(sutra_marker_rpath "$1" "${2:-}")" 2>/dev/null; }
