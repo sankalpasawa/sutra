@@ -15,11 +15,12 @@
 _sutra_sid() {
   if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then printf '%s' "$CLAUDE_CODE_SESSION_ID"; return; fi
   if [ -n "${CLAUDE_SESSION_ID:-}" ];      then printf '%s' "$CLAUDE_SESSION_ID"; return; fi
-  if [ -n "${1:-}" ];                      then printf 'sid-%s' "$1"; return; fi
+  if [ -n "${1:-}" ];                      then printf '%s' "$1"; return; fi
   if [ -n "${CLAUDE_PID:-}" ];             then printf 'pid-%s' "$CLAUDE_PID"; return; fi
   printf 'pid-%s' "$PPID"
 }
 _sutra_root() { printf '%s' "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; }
+_sutra_global() { printf '%s/.claude/%s' "$(_sutra_root)" "$1"; }
 sutra_marker_dir()  { local d; d="$(_sutra_root)/.claude/sessions/$(_sutra_sid "${1:-}")"; mkdir -p "$d" 2>/dev/null; printf '%s' "$d"; }
 sutra_marker_set()  { local dir name; dir="$(sutra_marker_dir)"; name="$1"; shift; local t="$dir/.$name.tmp.$$"; printf '%s\n' "$*" > "$t" && mv -f "$t" "$dir/$name"; }
 sutra_marker_has()  { [ -f "$(sutra_marker_dir)/$1" ]; }
@@ -32,3 +33,12 @@ sutra_marker_gc()   {
     [ "$(basename "$dd")" = "$cur" ] && continue; rm -rf "$dd" 2>/dev/null
   done
 }
+
+# READ path (backward-compatible): session dir -> legacy global -> legacy -<sid> suffix.
+sutra_marker_rpath() {
+  local name="$1" sid; sid="$(_sutra_sid "${2:-}")"
+  local a b c; a="$(sutra_marker_dir "${2:-}")/$name"; b="$(_sutra_global "$name")"; c="$(_sutra_root)/.claude/$name-$sid"
+  if [ -f "$a" ]; then printf '%s' "$a"; elif [ -f "$b" ]; then printf '%s' "$b"; else printf '%s' "$c"; fi
+}
+sutra_marker_rhas()  { [ -f "$(sutra_marker_rpath "$1" "${2:-}")" ]; }
+sutra_marker_rread() { cat "$(sutra_marker_rpath "$1" "${2:-}")" 2>/dev/null; }
