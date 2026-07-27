@@ -7,10 +7,15 @@
 #
 #   [1] absolute path OUTSIDE $CLAUDE_PROJECT_DIR -> exit 0 (out of scope)
 #   [2] ~/.claude/** style path outside repo -> exit 0 (was HARD-blocked)
-#   [3] inside-repo non-foundational + no marker -> still HARD exit 2 (unchanged)
-#   [4] inside-repo foundational + no marker -> still HARD exit 2 (unchanged)
-#   [5] per-turn-discipline-prompt.sh output names .claude/blueprint-registered
-#   [6] per-turn-discipline-prompt.sh output names HAS_OUTPUT/HAS_VERIFY flags
+#   [3] inside-repo non-foundational -> exit 0  (v3, 2026-07-27: PreToolUse no
+#       longer gates ordinary files; per-turn-hard-gate.sh floors them at Stop)
+#   [4] inside-repo foundational + no BLUEPRINT -> still HARD exit 2
+#   [5] per-turn-discipline-prompt.sh does NOT tell the model to write a marker
+#   [6] per-turn-discipline-prompt.sh states the emitted block IS the contract
+#
+# [5] and [6] inverted on 2026-07-27: #80 taught the marker contract as the fix.
+# v3 removes the marker from the contract entirely, so teaching it would now be
+# teaching a lie — the divergence itself was the bug.
 
 set -u
 
@@ -64,10 +69,10 @@ echo "[2] outside-repo .claude memory path -> out of scope (exit 0)"
 exit_code=$(_run_capture_exit "$_OUTSIDE/.claude/projects/x/memory/note.md")
 _result "outside .claude exempt" "0" "$exit_code"
 
-# --- [3] inside repo, non-foundational, no marker -> still blocked
-echo "[3] inside-repo non-foundational + no marker -> HARD (exit 2)"
+# --- [3] inside repo, non-foundational -> handed to the Stop floor (v3)
+echo "[3] inside-repo non-foundational -> not gated here (exit 0)"
 exit_code=$(_run_capture_exit "$_TMP/some/random/file.txt")
-_result "inside repo still hard" "2" "$exit_code"
+_result "ordinary file handed to Stop floor" "0" "$exit_code"
 
 # --- [4] inside repo, foundational, no marker -> still blocked
 echo "[4] inside-repo foundational + no marker -> HARD (exit 2)"
@@ -77,19 +82,19 @@ _result "foundational still hard" "2" "$exit_code"
 # --- [5]+[6] per-turn prompt teaches the marker contract
 # Fresh-install gate: hook is silent without .claude/sutra-project.json.
 # CLAUDE_PLUGIN_ROOT points it at the real sutra-defaults.json.
-echo "[5] per-turn prompt names the marker file"
+echo "[5] per-turn prompt does NOT ask the model to write a marker"
 printf '{"install_id":"test","project_id":"test"}\n' > "$_TMP/.claude/sutra-project.json"
 PROMPT_OUT=$(printf '{"prompt":"do a thing"}' \
   | CLAUDE_PROJECT_DIR="$_TMP" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$PROMPT_HOOK" 2>&1)
 case "$PROMPT_OUT" in
-  *".claude/blueprint-registered"*) _result "prompt names marker" "yes" "yes" ;;
-  *) _result "prompt names marker" "yes" "no" ;;
+  *"write .claude/blueprint-registered"*) _result "prompt drops the marker instruction" "yes" "no" ;;
+  *) _result "prompt drops the marker instruction" "yes" "yes" ;;
 esac
 
-echo "[6] per-turn prompt names the marker flags"
+echo "[6] per-turn prompt states the emitted block is the contract"
 case "$PROMPT_OUT" in
-  *"HAS_OUTPUT=1"*"HAS_VERIFY=1"*) _result "prompt names flags" "yes" "yes" ;;
-  *) _result "prompt names flags" "yes" "no" ;;
+  *"EMITTED BLOCK IS THE CONTRACT"*) _result "prompt states text contract" "yes" "yes" ;;
+  *) _result "prompt states text contract" "yes" "no" ;;
 esac
 
 # --- Report

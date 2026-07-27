@@ -38,23 +38,32 @@ Seven fields, all required (Output + Verified added per D48, 2026-05-05; per-ste
 - **Stops if** — what condition aborts the plan and triggers re-blueprint
 - **Switch** — `ON` normally; `OFF` if any kill-switch level is active
 
-## Marker write (after emitting the block)
+## No marker to write (v3, 2026-07-27)
 
-Write `.claude/blueprint-registered` with:
-```
-HAS_OUTPUT=1
-HAS_VERIFY=1
-HAS_PER_STEP_VERIFY=1   # V2.2 (2026-05-10) — set ONLY when D3+ AND every Step in Steps list has inline `Verify:`
-TASK=<task-slug>
-TS=<unix-timestamp>
-```
+**The emitted block is the contract.** Earlier versions asked you to write a
+`.claude/blueprint-registered` marker after emitting the block, and
+`blueprint-check.sh` read only that marker. That divergence — the gate looking
+at a receipt while the contract said "emit the block" — is what produced #68,
+the 2026-07-08 Testlify field incident (a correct block, blocked twice, then a
+model-discovered Bash bypass), and a third repeat on 2026-07-27. Removed.
 
-`HAS_OUTPUT=1`, `HAS_VERIFY=1`, and `HAS_PER_STEP_VERIFY=1` are honor-system flags — set them only when the BLUEPRINT actually carries the corresponding content. Hook `blueprint-check.sh` (V2.2) reads the marker and:
+What reads the block now:
 
-- Rejects edits to foundational paths when `HAS_OUTPUT=0` or `HAS_VERIFY=0`.
-- Rejects ALL Edit/Write at D3+ when `HAS_PER_STEP_VERIFY=0` (founder direction "force it" 2026-05-10).
+| Where | Hook | What it checks |
+|---|---|---|
+| Before the edit, **foundational paths only** | `blueprint-check.sh` | the BLUEPRINT in your response text: non-empty `Doing:`, concrete `Output looks like:`, runnable `Verified by:`, and at D3+ an inline `Verify:` on every numbered Step |
+| End of turn, **any turn that mutated a governed file** | `per-turn-hard-gate.sh` | that a BLUEPRINT block is present at all — one redo, loop-safe |
 
-At D1-D2 the compact one-line Steps form without per-step Verify is sufficient — `HAS_PER_STEP_VERIFY` flag not required.
+Foundational = charters, protocols, `FOUNDER-DIRECTIONS.md`, engine specs,
+`*-design.md` / `*-plan.md`. The list lives in `sutra-defaults.json` under
+`per_turn_blocks.blueprint.foundational_paths` and can be overridden per repo
+with `.blueprint_foundational_paths[]` in `.claude/sutra-project.json`.
+
+`blueprint-check.sh` still writes `.claude/blueprint-registered` — as its own
+per-turn cache, so a multi-edit turn validates once. Do not write it yourself;
+nothing asks you to.
+
+At D1-D2 the compact one-line Steps form without per-step Verify is sufficient.
 
 ## Verification kinds (pick one for `Verified by`)
 

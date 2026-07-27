@@ -7,7 +7,7 @@
 #   [2] foundational + no marker -> exit 2 (existing behavior preserved)
 #   [3] foundational + missing HAS_OUTPUT -> exit 2 (D48 new)
 #   [4] foundational + missing HAS_VERIFY -> exit 2 (D48 new)
-#   [5] non-foundational + no marker -> exit 0 (SOFT advisory only)
+#   [5] non-foundational -> exit 0 (v3: handed to the per-turn-hard-gate Stop floor)
 #   [6] BLUEPRINT_ACK=1 override -> exit 0 (bypass)
 
 set -u
@@ -37,6 +37,12 @@ _TMP=$(mktemp -d)
 trap "rm -rf $_TMP" EXIT
 mkdir -p "$_TMP/.claude" "$_TMP/sutra/os/charters" "$_TMP/holding"
 MARKER="$_TMP/.claude/blueprint-registered"
+# Pin depth to 2 so the V2.2 D3+ per-step-Verify rule (fail-closed to D5 when no
+# depth marker exists) stays out of scope — it has its own coverage in
+# test-blueprint-text-first.sh. Without this, [1] failed on pristine HEAD: the
+# fixture's two-flag marker can never satisfy a D5 edit. (Fixed 2026-07-27; the
+# stale expectation is the one #80 flagged as pre-existing.)
+printf 'DEPTH=2 TASK=test TS=1730000000\n' > "$_TMP/.claude/depth-registered"
 
 _run_capture_exit() {
   local file_path="$1"
@@ -72,10 +78,10 @@ exit_code=$(_run_capture_exit "$_TMP/holding/FOUNDER-DIRECTIONS.md")
 _result "no HAS_VERIFY blocked" "2" "$exit_code"
 
 # --- [5] non-foundational path -> SOFT advisory regardless
-echo "[5] non-foundational + no marker -> soft advisory (exit 0)"
+echo "[5] non-foundational -> not gated here (exit 0)"
 rm -f "$MARKER"
 exit_code=$(_run_capture_exit "$_TMP/some/random/file.txt")
-_result "non-foundational soft" "0" "$exit_code"
+_result "non-foundational handed to Stop floor" "0" "$exit_code"
 
 # --- [6] override -> bypass
 echo "[6] BLUEPRINT_ACK=1 -> bypass"

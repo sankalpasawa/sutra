@@ -140,12 +140,29 @@
         "tested",
         "verified"
       ],
+      "$enforcement_comment": "v3 (2026-07-27, #68 + the 2026-07-08 Testlify field incident): enforcement is TEXT-FIRST. blueprint-check.sh validates the BLUEPRINT block in the turn's response text -- the block the USER sees -- on FOUNDATIONAL paths only. Ordinary files are floored at Stop by per-turn-hard-gate.sh (one redo, loop-safe) on any turn that mutated a governed file. The model is NEVER asked to write a marker; see marker_file below.",
+      "enforcement_source": "turn_text",
+      "pretool_scope": "foundational_paths",
+      "stop_floor_hook": "per-turn-hard-gate.sh",
+      "foundational_paths": [
+        "sutra/os/charters/*.md",
+        "sutra/layer2-operating-system/protocols/*.md",
+        "sutra/layer2-operating-system/PROTOCOLS.md",
+        "holding/FOUNDER-DIRECTIONS.md",
+        "holding/research/*-design.md",
+        "holding/research/*-plan.md",
+        "sutra/os/engines/*.md"
+      ],
+      "$foundational_paths_comment": "The documents where pre-spend visibility is real -- charters, protocols, founder directions, engine specs, design/plan docs. One glob per entry ('|' alternation is not re-parsed out of a shell variable in a case pattern). These defaults describe the Asawa repo layout; a client whose governing docs live elsewhere overrides them with .blueprint_foundational_paths[] in .claude/sutra-project.json. Precedence: project json > this file > the hook's hardcoded fallback. Before v3 this list was hardcoded in the hook, so on every install except Asawa's the set was empty.",
       "marker_file": ".claude/blueprint-registered",
+      "$marker_comment": "v3: a per-turn CACHE the hook writes for itself after a passing text validation, so a multi-Edit turn pays one transcript walk instead of N. It is NOT a contract the model satisfies -- that divergence (gate reads marker, contract says emit text) caused #68, #80 and a repeat on 2026-07-27, including a model-discovered Bash bypass. Still wiped per turn by reset-turn-markers.sh. Best-effort: a failed cache write costs one re-validation, never a block.",
       "marker_schema_keys": [
+        "VALIDATED_FROM",
         "HAS_OUTPUT",
         "HAS_VERIFY",
-        "TS",
-        "TASK"
+        "HAS_PER_STEP_VERIFY",
+        "DEPTH",
+        "TS"
       ],
       "fail_flow": {
         "$comment": "D48 (2026-05-05): on verification fail, file problem record + in-session LLM diagnoses + applies fix + re-runs Verified-by. Max 3 iterations before STOP-and-surface.",
