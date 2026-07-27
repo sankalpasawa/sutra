@@ -283,6 +283,20 @@ h_sutra_classify_and_write "$HSUTRA_PROMPT" "$HSUTRA_CLASSIFIER" "$HSUTRA_LOG" "
 # Fail-open throughout: every write is `|| true`. A marker that fails to write
 # degrades to the pre-existing behavior (floor fires, model re-walks), never to
 # a failed turn.
+# Scheme A (marker-lib) is the single marker authority as of 2026-07-27. The flat
+# `.claude/<name>-<sid>` suffix scheme this hook originally wrote is DELETED — see
+# project_marker_scheme_reconcile. marker-lib dual-writes the legacy global path
+# during migration, so readers not yet on sutra_marker_has still find these.
+# Sourced defensively: `set -u` is active (line 25) and a stray RETURN trap or an
+# unbound var inside a sourced file would otherwise abort the whole hook mid-turn.
+# A governance hook must never fail the user's turn — degrade, never die.
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" || true
+  sutra_sid_from_stdin "$HSUTRA_INPUT_JSON" || true
+  set -u
+fi
 _FLOW_SID=$(printf '%s' "$HSUTRA_SESSION_ID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
 [ -z "$_FLOW_SID" ] && _FLOW_SID="no-sid"
 
@@ -299,20 +313,23 @@ case "$_FLOW_VERB" in
 esac
 
 mkdir -p "$REPO_ROOT/.claude" 2>/dev/null || true
-{
-  printf 'TYPE=%s\n' "$_FLOW_TYPE"
-  printf 'VERB=%s\n' "${_FLOW_VERB:-UNKNOWN}"
-  printf 'SESSION=%s\n' "$_FLOW_SID"
-  printf 'FIRED_BY=hook\n'
-  printf 'TS=%s\n' "$(date +%s)"
-} > "$REPO_ROOT/.claude/flow-classified-$_FLOW_SID" 2>/dev/null || true
-
-{
-  printf 'RESOLVE=PENDING\n'
-  printf 'SESSION=%s\n' "$_FLOW_SID"
-  printf 'FIRED_BY=hook\n'
-  printf 'TS=%s\n' "$(date +%s)"
-} > "$REPO_ROOT/.claude/flow-type-resolved-$_FLOW_SID" 2>/dev/null || true
+if command -v sutra_marker_set >/dev/null 2>&1; then
+  sutra_marker_set flow-classified \
+    "$(printf 'TYPE=%s\nVERB=%s\nSESSION=%s\nFIRED_BY=hook\nTS=%s' \
+       "$_FLOW_TYPE" "${_FLOW_VERB:-UNKNOWN}" "$_FLOW_SID" "$(date +%s)")" || true
+  sutra_marker_set flow-type-resolved \
+    "$(printf 'RESOLVE=PENDING\nSESSION=%s\nFIRED_BY=hook\nTS=%s' \
+       "$_FLOW_SID" "$(date +%s)")" || true
+else
+  # marker-lib unavailable: fall back to the legacy global path so the floor still
+  # sees a marker. Never leave the turn with no marker at all.
+  printf 'TYPE=%s\nVERB=%s\nSESSION=%s\nFIRED_BY=hook\nTS=%s\n' \
+    "$_FLOW_TYPE" "${_FLOW_VERB:-UNKNOWN}" "$_FLOW_SID" "$(date +%s)" \
+    > "$REPO_ROOT/.claude/flow-classified" 2>/dev/null || true
+  printf 'RESOLVE=PENDING\nSESSION=%s\nFIRED_BY=hook\nTS=%s\n' \
+    "$_FLOW_SID" "$(date +%s)" \
+    > "$REPO_ROOT/.claude/flow-type-resolved" 2>/dev/null || true
+fi
 
 mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null || true
 printf '{"ts":"%s","event":"flow-fired-by-hook","session":"%s","type":"%s","verb":"%s"}\n' \

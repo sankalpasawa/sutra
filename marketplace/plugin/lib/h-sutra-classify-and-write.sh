@@ -98,7 +98,15 @@ h_sutra_classify_and_write() {
   if ! mkdir "$arbiter_lock" 2>/dev/null; then
     return 0
   fi
-  trap 'rmdir "$arbiter_lock" 2>/dev/null' RETURN
+  # NOTE (2026-07-27): a RETURN trap fires on EVERY function return AND on every
+  # `source`/`.` completion in the same shell — not just this function's. It also
+  # outlives this function unless cleared. With `set -u` (per-turn-discipline-prompt.sh
+  # sets it) the caller then dies with "arbiter_lock: unbound variable" the next time
+  # it sources anything, because `arbiter_lock` is `local` and long out of scope.
+  # That killed the caller silently mid-hook. Two fixes, both required:
+  #   1. `${arbiter_lock:-}` so the expansion is safe even out of scope.
+  #   2. clear the trap on the way out so it cannot fire for unrelated returns.
+  trap 'rmdir "${arbiter_lock:-}" 2>/dev/null; trap - RETURN' RETURN
 
   local row
   row=$(printf '%s' "$classifier_json" | jq -c \

@@ -4,6 +4,15 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.41.2 (2026-07-27) — marker reconciliation: scheme A wins, guards restored
+
+- **Scheme B deleted.** `.claude/<name>-<sid>` flat-suffix removed from flow-gate / flow-stop-check / per-turn-discipline-prompt. `marker-lib` (`.claude/sessions/<sid>/<name>`) is the single marker authority.
+- **Four guards restored** in `reset-turn-markers.sh`, dropped by the P1 rewrite (90→17 lines): empty-prompt, synthetic-turn, 3s burst, forensics. Without them every system-reminder wiped markers mid-turn — for single-session users too.
+- **Adoption bridge**: `sutra_marker_has` adopts a legacy global into the session dir so reader/writer migration is order-independent and no stale install is bricked. Bounded — `sutra_marker_reset` now deletes the global twin, so an adopted marker cannot survive its turn.
+- **Legacy clear is ownership-aware**: a peer session's stamped global marker is no longer deleted by another session's reset.
+- **RETURN-trap bug fixed** in `lib/h-sutra-classify-and-write.sh`: the trap referenced a `local` var and fired on every later `source`, killing the caller under `set -u`.
+- **Fail-open hardened**: every `marker-lib` source is guarded; a broken lib degrades the gate instead of failing the user's turn.
+
 ## v2.41.0 (2026-07-27) — Flow fires by construction
 
 - **Root cause**: `per-turn-discipline-prompt.sh` wrote the whole per-turn contract to **stderr**. For UserPromptSubmit only **stdout** reaches the model, so the contract (incl. FLOW activation) never arrived. Now emitted as `hookSpecificOutput.additionalContext`.

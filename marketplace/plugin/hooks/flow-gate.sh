@@ -75,9 +75,28 @@ PAYLOAD=$(cat 2>/dev/null || true)
 SID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null)
 SID=$(printf '%s' "$SID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
 [ -z "$SID" ] && SID="${CLAUDE_SESSION_ID:-}"
+
+# Scheme A (marker-lib) is the single marker authority as of 2026-07-27; the flat
+# `.claude/<name>-<sid>` suffix scheme is DELETED. sutra_marker_has reads the
+# session dir and, transitionally, adopts a legacy global marker written by a
+# not-yet-migrated writer (bounded: reset clears both every turn).
+# Sourced defensively (DeepSeek consult 2026-07-27, finding 4): this script runs
+# under `set -u`. An unbound var or a stray RETURN trap inside the sourced lib would
+# abort THIS hook, and an aborted PreToolUse hook blocks the user's tool call. A
+# governance gate may block on missing discipline; it must never block because its
+# own infrastructure errored. Degrade to the legacy path instead.
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" || true
+  sutra_sid_from_stdin "$PAYLOAD" || true
+  set -u
+fi
 flow_marker_exists() {
-  # $1 = base marker name (e.g. flow-classified)
-  { [ -n "$SID" ] && [ -f "$REPO_ROOT/.claude/$1-$SID" ]; } && return 0
+  if command -v sutra_marker_has >/dev/null 2>&1; then
+    sutra_marker_has "$1"; return $?
+  fi
+  # lib missing: legacy global only (fail-open on infrastructure, not on discipline)
   [ -f "$REPO_ROOT/.claude/$1" ]
 }
 

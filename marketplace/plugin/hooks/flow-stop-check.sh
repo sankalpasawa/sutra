@@ -71,13 +71,22 @@ fi
 # this, a peer session's reset could delete the single-slot marker mid-turn and
 # this hook would force a redo on a turn that HAD fired — observed live
 # 2026-07-27 (session c2360700 cleared markers while e52b2379 was mid-work).
-_SC_SID=$(printf '%s' "$STDIN_PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null)
-_SC_SID=$(printf '%s' "$_SC_SID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
-[ -z "$_SC_SID" ] && _SC_SID="${CLAUDE_SESSION_ID:-}"
-if [ -n "$_SC_SID" ] && [ -f "$REPO_ROOT/.claude/flow-classified-$_SC_SID" ]; then
-  exit 0
-fi
-if [ -f "$REPO_ROOT/.claude/flow-classified" ]; then
+# Scheme A (marker-lib) is the single marker authority as of 2026-07-27; the flat
+# `.claude/flow-classified-<sid>` suffix scheme this hook briefly read is DELETED.
+# Sourced defensively — see flow-gate.sh (DeepSeek consult 2026-07-27, finding 4).
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" || true
+  sutra_sid_from_stdin "$STDIN_PAYLOAD" || true
+  set -u
+  if command -v sutra_marker_has >/dev/null 2>&1; then
+    sutra_marker_has flow-classified && exit 0
+  elif [ -f "$REPO_ROOT/.claude/flow-classified" ]; then
+    exit 0
+  fi
+elif [ -f "$REPO_ROOT/.claude/flow-classified" ]; then
+  # lib missing: legacy global only (fail-open on infrastructure, not on discipline)
   exit 0
 fi
 
