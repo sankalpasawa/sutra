@@ -21,6 +21,11 @@
 - **`flow-gate-pass` logged**: the ledger recorded only failures, so fire-rate was unmeasurable. Passes now logged.
 - **Bootstrap deadlock fixed**: `depth-marker-pretool.sh` no longer gates writes to the per-turn markers themselves (scoped list, not blanket `.claude/*`).
 
+## v2.43.1 (2026-07-28) — guard-regression test
+
+- **`hooks/reset-guard-test.sh`**: fails if the per-turn marker reset guards are deleted or weakened. Asserts synthetic-turn / empty-prompt / burst preservation, a control that a real prompt still clears, and fail-open when `marker-lib` is broken.
+- Proven by negative control: GREEN on this build, RED (exit 1) on a reconstructed guard-less `reset-turn-markers.sh` — the refactor that collapsed it 90→17 lines and would have wiped markers on every system-reminder.
+
 ## v2.43.0 — 2026-07-28
 
 **REMOVED — H-Sutra header Stop enforcement.**
