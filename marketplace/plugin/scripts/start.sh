@@ -184,11 +184,11 @@ ensure_project_claude_md() {
   block=$(cat <<'GOVBLOCK'
 # Sutra governance (auto-managed by /core:start)
 
-Apply these behaviors in EVERY response in this project. Marker-delimited, managed by the plugin; manual edits inside are overwritten on the next `/core:start`. Enforcement is HARD, fleet-wide (D63): the per-turn blocks below are floored by Stop / PreToolUse hooks — a turn that skips a required block is blocked and redone once (loop-safe). Enforcement activates only AFTER `/core:start` (which writes this block), so you always have the contract before it is enforced. Per-block kill-switches: see SUTRA-DEFAULTS.md.
+Apply these behaviors in EVERY response in this project. Marker-delimited, managed by the plugin; manual edits inside are overwritten on the next `/core:start`. Enforcement is HARD for Input Routing, Depth, FLOW and BLUEPRINT (D63): those blocks are floored by Stop / PreToolUse hooks — a turn that skips one is blocked and redone once (loop-safe). **The H-Sutra header is convention only** — its Stop hook was removed on 2026-07-28. Enforcement activates only AFTER `/core:start` (which writes this block), so you always have the contract before it is enforced. Per-block kill-switches: see SUTRA-DEFAULTS.md.
 
 ## H-Sutra Header — the LITERAL FIRST line of every response
 
-Every response MUST begin with this bracketed header as its first text — before any prose, any other block, or any tool call. This is hard-enforced by the `h-sutra-enforce` Stop hook; a response whose first line is not a valid header is blocked and redone.
+Every response MUST begin with this bracketed header as its first text — before any prose, any other block, or any tool call. **Convention only, not enforced** (2026-07-28): the `h-sutra-enforce` Stop hook was removed. Nothing blocks or redoes a response for a missing or malformed header; the header is still logged for classification by `per-turn-discipline-prompt.sh`.
 
 ```
 [<DIRECTION>·<VERB> · TIMING:<when> · CHANNEL:<how> · REV:<reversibility> · RISK:<level>]

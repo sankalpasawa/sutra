@@ -22,13 +22,13 @@
 # Why a Stop hook: Input Routing (input-classification-gate.sh) and Depth
 # (depth-marker-pretool.sh) are floored at PreToolUse on Edit|Write only. A
 # pure no-tool turn fires no tool, so those gates never run -> the blocks were
-# soft on exactly the turns that skip tools. H-Sutra (h-sutra-enforce.sh) and
-# Flow (flow-stop-check.sh) already floor at Stop; this hook closes the same
-# hole for Input Routing + Depth. Together the four Class-A blocks now fire on
-# EVERY turn.
+# soft on exactly the turns that skip tools. Flow (flow-stop-check.sh) already
+# floors at Stop; this hook closes the same hole for Input Routing + Depth.
+# (The H-Sutra Stop layer was removed 2026-07-28 -- the header is convention
+# only now, so this hook and flow-stop-check.sh are the Stop floors.)
 #
 # TRANSCRIPT-BASED (not marker-based): checks the ACTUAL response text for the
-# blocks, mirroring h-sutra-enforce.sh. This is stronger than a proxy marker
+# blocks, rather than a marker file. This is stronger than a proxy marker
 # (a marker can be written without emitting the block) and adds no per-turn
 # marker bookkeeping tax. Cost: one python transcript walk (~tens of ms).
 #
@@ -109,7 +109,7 @@ command -v python3 >/dev/null 2>&1 || { log_row "skipped" "no_python3"; exit 0; 
 
 # -- Concatenate ALL assistant text of the CURRENT TURN --------------------
 # Current turn = everything after the last HUMAN user row (filtering isMeta +
-# tool_result rows, same semantics as h-sutra-enforce.sh v6). Lenient by
+# tool_result rows -- the shared turn-text semantics). Lenient by
 # design: we accept the blocks anywhere in the turn's text, not just line 1,
 # to avoid false-positive redos.
 TURN_RAW=$(TRANSCRIPT_FOR_PY="$TRANSCRIPT_PATH" python3 -c '

@@ -21,6 +21,17 @@
 - **`flow-gate-pass` logged**: the ledger recorded only failures, so fire-rate was unmeasurable. Passes now logged.
 - **Bootstrap deadlock fixed**: `depth-marker-pretool.sh` no longer gates writes to the per-turn markers themselves (scoped list, not blanket `.claude/*`).
 
+## v2.43.0 — 2026-07-28
+
+**REMOVED — H-Sutra header Stop enforcement.**
+
+- `hooks/h-sutra-enforce.sh` **deleted**; its `hooks.json` Stop registration removed. No block, no warning, no forced redo for a missing or malformed header, on any profile.
+- **Survives:** the header as a convention (`/core:start` docs, `per-turn-discipline-prompt.sh` per-turn ask, `core:human-sutra` skill) and the 9-cell classification log rail — that rail is written by `per-turn-discipline-prompt.sh`, not by the deleted hook.
+- **Dies with it:** `.enforcement/h-sutra-audit.jsonl` enforcement telemetry; the `SUTRA_HSUTRA_ENFORCE_DISABLED=1` and `~/.h-sutra-enforce-disabled` kill-switches (now inert).
+- **Still HARD at Stop:** `per-turn-hard-gate.sh` (Input Routing, Depth, BLUEPRINT on mutating turns), `flow-stop-check.sh` (Flow, `profile=company`).
+- `sutra-defaults.json`: `per_turn_blocks.human_sutra_header.enforcement = "convention_only"`. `/core:start` template no longer claims hard enforcement — re-run `/core:start` after updating.
+- Stale comments in `per-turn-hard-gate.sh`, `flow-stop-check.sh` and `blueprint-check.sh` that referenced the deleted hook were corrected rather than left pointing at a missing file.
+
 ## v2.42.0 — 2026-07-28
 
 **Text-first BLUEPRINT gate (#81) + profile-honoring Stop layers (#72).**

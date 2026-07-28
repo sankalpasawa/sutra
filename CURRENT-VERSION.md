@@ -1,6 +1,18 @@
 # Sutra — Current Version
 
-## v2.42.0 (2026-07-28, HEAD)
+## v2.43.0 (2026-07-28, HEAD)
+
+**Removed: the H-Sutra header Stop enforcement layer.** `hooks/h-sutra-enforce.sh` is deleted and its Stop registration is gone. No profile gets a block, a warning, or a forced redo for a missing or malformed header any more. Founder direction, 2026-07-28 — the layer had produced repeated forced redos for a formatting slip that changes nothing about the work.
+
+**What survives.** The header is still a convention: `/core:start` documents the format, `per-turn-discipline-prompt.sh` still asks for it on every turn, the `core:human-sutra` skill is untouched, and the 9-cell classification log rail (`holding/state/interaction/log.jsonl` / `.sutra/h-sutra.jsonl`) keeps recording — that rail was always written by `per-turn-discipline-prompt.sh`, never by the enforcer.
+
+**What dies with it.** The `.enforcement/h-sutra-audit.jsonl` enforcement telemetry, and the `SUTRA_HSUTRA_ENFORCE_DISABLED=1` / `~/.h-sutra-enforce-disabled` kill-switches (nothing left to disable — the sentinel file is now inert and can be deleted).
+
+**Stop floors that remain HARD.** `per-turn-hard-gate.sh` (Input Routing, Depth, and BLUEPRINT on mutating turns) and `flow-stop-check.sh` (Flow, `profile=company` only). `sutra-defaults.json` now records `per_turn_blocks.human_sutra_header.enforcement = convention_only`, and the `/core:start` CLAUDE.md template no longer claims the header is hard-enforced. Re-run `/core:start` after updating to regenerate the block.
+
+Unit suites unchanged at 21/23 — `test-codex-directive-detect.sh` and `test-codex-directive-gate.sh` stay red, pre-existing and off this path.
+
+## v2.42.0 (2026-07-28)
 
 **Two Stop layers stop punishing correct behavior.**
 
