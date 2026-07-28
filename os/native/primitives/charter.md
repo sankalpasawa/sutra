@@ -19,6 +19,8 @@ The Charter primitive is the content-addressed contract that declares purpose, s
 ```typescript
 type Charter = {
   id: string;                 // C-hash — content-addressed (sha256 of canonical form)
+  title: string;              // non-empty, <=60 chars — human-readable name (ADR-028)
+  domain_ref: string;         // stable id of the ONE Domain this Charter lives in (ADR-028)
   purpose: string;            // non-empty
   scope_in: string[];         // explicit in-scope items
   scope_out: string[];        // explicit out-of-scope items
@@ -37,6 +39,8 @@ type Charter = {
 
 - **Content-addressed id**: `id = sha256(canonical_form(charter))`. Any field change yields a new Charter id (immutable; new mint required). (NATIVE-ENGINE.md §2.2 row `id: content-addressed`.)
 - **Non-empty purpose**: `purpose` MUST be non-empty (NATIVE-ENGINE.md §2.2).
+- **Non-empty title (ADR-028)**: `title` MUST be non-empty and ≤60 chars. It is what the operator reads in the printed PLACEMENT block; a Charter identified only by `C-<hash>` is unreadable at the point of use. `title` joins the canonical form, so it is fixed at mint like every other field.
+- **Exactly one home Domain (ADR-028)**: `domain_ref` MUST resolve to exactly one Domain, by that Domain's **stable id** — never by its positional `D3.D2.D7` path, which changes under restructure (placement.md I-P8). This settles a three-way canon contradiction: `charter.md` previously said Charters scope to Domain**s** (plural) via `authority`+ACL, B4 said a Charter **lives in** one Domain and is rejected without a parent, and C2 rendered Domain→many-Charters. B4's reading is now canonical and stored explicitly rather than inferred at read time. A Domain still hosts many Charters; a Charter still lives in one Domain.
 - **I-2 (obligations rule)**: `obligations` has ≥1 entry OR is explicitly empty + reasoned. An empty obligations array WITHOUT a reasoning entry is a HARD reject at mint time (NATIVE-ENGINE.md §4 + §2.2).
 - **F-10 (machine-checkable typed fields)**: `invariants`, `success_metrics`, `constraints` MUST be typed (not free prose) so terminal_check can evaluate them. (NATIVE-ENGINE.md §2.2 row `typed; machine-checkable per F-10`.)
 - **Cutover_contract validity (I-10)**: when `cutover_contract !== null`, its `behavior_invariants` MUST be observed throughout `canary_window` (NATIVE-ENGINE.md §4 I-10).
@@ -65,7 +69,8 @@ Index at `~/.sutra-native/user-kit/charters/INDEX.jsonl` enumerates `{id, ts_min
 
 ## Cross-primitive references
 
-- **Domain** (`../primitives/domain.md`): Charter scopes to Domains via `authority` and ACL; Charters inherit principles from the Domain tree they attach to.
+- **Domain** (`../primitives/domain.md`): Charter lives in exactly one Domain via `domain_ref` (stable id, ADR-028); it inherits the principles of that Domain and its ancestors. `authority` and ACL continue to govern what the Charter may decide and who may read it — they no longer carry the home relationship, which is now stored.
+- **Placement** (`../primitives/placement.md`): every Placement cites a `charter_id`; a Domain with no Charter gets a stub minted with `obligations: []` plus a stated reason, satisfying I-2 without fabricating promises (ADR-028 Decision 5).
 - **Workflow** (`../primitives/workflow.md`): Workflows reference Charters through `interfaces_with`; Workflow `stringency` + `on_override_action` are influenced by referenced Charter terms.
 - **EngineEvent** (`../primitives/engine-event.md`): `commitment_broken` event (§3.2 #25) references Charter obligation ids; I-16 enforces referential integrity.
 - **DecisionProvenance** (`../primitives/decision-provenance.md`): obligation/invariant evaluations emit DecisionProvenance citing the Charter id.

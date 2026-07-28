@@ -23,9 +23,11 @@ Domains are MECE (Mutually Exclusive, Collectively Exhaustive) per user — ever
 - Together the user's Domains cover the operator's full surface (collectively exhaustive).
 
 **Out of scope (v1)**:
-- Dynamic Domain reorganization mid-Workflow — not specified in canon (gap per F2).
-- Auto-creating new Domains from emergent patterns — defers to canon ADR-010 organic emergence + ADR-006 Tenant isolation.
+- Dynamic Domain reorganization mid-Workflow — now owned by [B20](./B20-domain-restructure.md) (operator-invoked restructure).
+- ~~Auto-creating new Domains from emergent patterns — defers to canon ADR-010 organic emergence~~ — **SUPERSEDED by [ADR-028](../../decisions/ADR-028-mandatory-work-placement.md) / [B19](./B19-work-placement.md)**. The original deferral was broken: ADR-010 proposes **Workflows** at k≥4, never Domains, so this hole had no owner. B19 now owns Domain auto-creation, at k=1, system-decided, never operator-gated.
 - Cross-user Domain federation — multi-human-org per B14.
+
+**Scope extension (ADR-028)**: B3 bound only **Workflows**, and only at registration time. Work executed outside a registered Workflow — inline utterances, ad-hoc edits, commits — was never bound to any Domain. [B19](./B19-work-placement.md) extends the binding to every unit of work via the [Placement](../primitives/placement.md) primitive, and [B20](./B20-domain-restructure.md) makes this block's MECE assertion mechanically checkable for the first time.
 
 ## User outcome
 
@@ -54,9 +56,12 @@ Per §12.9 row B3: EXTEND existing Domain (§2.1) with MECE-validation invariant
 
 Canon §2.1 Domain primitive carries `tenant_id`. B3 adds invariant (declared, not new field): "exactly-one Domain per Workflow; non-overlapping per Tenant".
 
+**Defect fix (ADR-028)**: the UX flow above and the cross-ref below originally cited `Workflow.domain_id` — a field that did not exist on the Workflow primitive. B3's MECE check was therefore specified against a phantom and could never have run. The field is now materialised as `Workflow.domain_ref`, keyed on the Domain's **stable** id rather than its positional D-path (placement.md I-P8). Read every `domain_id` reference in this file as `domain_ref`.
+
 Cross-refs:
 - `../primitives/domain.md` (host)
-- `../primitives/workflow.md` (Workflow.domain_id)
+- `../primitives/workflow.md` (`Workflow.domain_ref` — materialised by ADR-028)
+- `../primitives/placement.md` (extends the binding from Workflows to every unit of work)
 - `../primitives/tenant.md` (Tenant boundary)
 
 ## Edge cases

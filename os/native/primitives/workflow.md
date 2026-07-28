@@ -19,6 +19,7 @@ The Workflow primitive is the unit of named, gated, audited operator work in Nat
 ```typescript
 type Workflow = {
   id: string;                         // content-addressed W-hash (sha256 of canonical form)
+  domain_ref: string;                 // stable id of the ONE Domain this Workflow lives in (B3 / ADR-028)
   preconditions: Predicate[];         // typed PNC; parsed per ADR-012; not free prose
   postconditions: Predicate[];        // typed PNC; same parser
   step_graph: WorkflowStep[];         // terminal_check T1-T6 must pass (I-5)
@@ -39,6 +40,7 @@ type Workflow = {
 ## Invariants (must hold)
 
 - **I-5 (terminal check)**: `step_graph` MUST be reachable from step[0] via the failure_policy edges. T1-T6 terminal checks enforce no orphan steps, no unreachable terminal, no infinite loops without explicit `continue` policy.
+- **B3 MECE binding (defect fix, ADR-028)**: `domain_ref` MUST resolve to exactly one Domain, and the Workflow's scope MUST NOT overlap another Domain's — checked at registration per B3. **This field did not previously exist.** B3 lines 38 and 59 specified the MECE check against `Workflow.domain_id`, a field absent from this primitive, so the check was written against a phantom and could never have run. ADR-028 materialises it as `domain_ref` (stable id, not the positional D-path, per placement.md I-P8).
 - **F-13 (reuse_tag implies return_contract)**: `reuse_tag=true` requires non-null `return_contract`. Mint-time rejection.
 - **F-7 (reflexive boundary)**: `modifies_sutra=true` Workflows REQUIRE `reflexive_check` Constraint cleared before mint. HS-1 fires otherwise. L6 REFLEXIVITY law guards.
 - **Content-addressed id**: `id = sha256(canonical_form(workflow))` — any field change yields a new Workflow id (immutable; new mint required).
