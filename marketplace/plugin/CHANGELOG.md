@@ -21,6 +21,18 @@
 - **`flow-gate-pass` logged**: the ledger recorded only failures, so fire-rate was unmeasurable. Passes now logged.
 - **Bootstrap deadlock fixed**: `depth-marker-pretool.sh` no longer gates writes to the per-turn markers themselves (scoped list, not blanket `.claude/*`).
 
+## v2.42.0 — 2026-07-28
+
+**Text-first BLUEPRINT gate (#81) + profile-honoring Stop layers (#72).**
+
+- **`blueprint-check.sh` v3 reads the emitted block, not a marker.** The gate had only ever read `.claude/blueprint-registered` while the contract said "emit the block" — so a correct, complete BLUEPRINT in the response could be HARD-blocked, and re-emitting it could never help. Cause of #68, the 2026-07-08 Testlify incident (which taught a Bash + `BLUEPRINT_ACK` bypass) and its 2026-07-27 repeat. v3 validates the block in the turn's response text; the marker is demoted to a per-turn cache the hook writes for itself. Validator ported from #73 with credit, plus parsing fixes for the canonical bulleted shape (`- Doing:`) and single-line `Steps: 1) … 2) …`.
+- **PreToolUse scope narrows to foundational paths**, restoring the codex round-5 scoping the 2026-05-10 blanket SOFT→HARD flip erased. Ordinary files are floored at Stop by a new BLUEPRINT arm in `per-turn-hard-gate.sh`, armed only on turns that mutated a governed file (one redo, loop-safe). Supersedes #78's depth gate.
+- **Foundational globs become configuration** — `per_turn_blocks.blueprint.foundational_paths` in `sutra-defaults.json`, overridable per repo via `blueprint_foundational_paths[]` in `.claude/sutra-project.json`. They were hardcoded to the Asawa repo layout, so on every other install the set was silently empty.
+- **`h-sutra-enforce.sh` v8/v9 + `flow-stop-check.sh` honor `.profile`.** Case-insensitive `DIRECTION·VERB`; forced redo only at `profile=company`, warn + log otherwise. Fail-open: no config or no `jq` → warn.
+- **Catalog drift fixed** — `marketplace.json` said 2.39.20 while source said 2.41.2. Both now 2.42.0; `test-validate-manifest-json.sh` green.
+- Kill-switches unchanged: `BLUEPRINT_DISABLED=1` / `~/.blueprint-disabled`, `SUTRA_HSUTRA_ENFORCE_DISABLED=1` / `~/.h-sutra-enforce-disabled`, `PER_TURN_HARD_DISABLED=1` / `~/.per-turn-hard-disabled`.
+- Pre-existing red suites carried unchanged from the parent commit: `test-codex-directive-detect.sh`, `test-codex-directive-gate.sh`.
+
 ## v2.40.0 — 2026-07-20
 
 **D63 — per-turn governance stack goes HARD, fleet-wide.** The soft-nudge blocks (Flow / BLUEPRINT / H-Sutra / Structure-First) become contract + hook enforced. New `per-turn-hard-gate.sh` (Stop, transcript-inspecting, loop-safe) floors Input Routing + Depth on no-tool turns; new `codex-consult-gate.sh` (Depth ≥ 3 Edit/Write) degrades to pass without the codex binary; new `codex-consult-marker.sh` (PostToolUse) writes its satisfying marker on a real consult.
