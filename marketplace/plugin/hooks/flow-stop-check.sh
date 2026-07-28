@@ -4,7 +4,12 @@
 # Canon:   holding/FOUNDER-DIRECTIONS.md §D61 (2026-06-14)
 # Skill:   sutra/marketplace/plugin/skills/flow/SKILL.md (core:flow)
 # Event:   Stop (end of every assistant turn)
-# Enforcement: HARD, fleet-wide (founder direction 2026-06-14, "HARD fleet-wide now").
+# Enforcement: profile-gated (2026-06-19, was unconditional HARD 2026-06-14).
+#   profile=company        -> HARD redo (force one redo on miss)
+#   individual/project/etc -> warn+log, NO redo
+# FAIL-OPEN BY DESIGN: when sutra-project.json is absent OR jq is unavailable,
+# profile defaults to "individual" => WARN. HARD is opt-in via profile=company;
+# there is intentionally no fail-closed default (founder: minimize forced redos).
 #
 # Why a Stop hook: D61 requires core:flow to FIRE on EVERY input, including pure
 # no-tool turns (a one-line answer, a yes/no, chitchat). PreToolUse gates
@@ -87,6 +92,25 @@ if [ -f "$_MARKER_LIB" ]; then
   fi
 elif [ -f "$REPO_ROOT/.claude/flow-classified" ]; then
   # lib missing: legacy global only (fail-open on infrastructure, not on discipline)
+  exit 0
+fi
+
+# -- Honor the project enforce profile (2026-06-19, founder-directed) -------
+# Mirrors h-sutra-enforce.sh v9 + the depth-marker profile convention: the Stop
+# layers were the only ones ignoring .profile. profile=company keeps the HARD
+# redo; individual/project/unknown get warn+log, NO forced redo. Banner's
+# "Enforce: warn-only" becomes true for the loud layers too.
+FL_PROFILE="individual"
+FL_CONFIG="$REPO_ROOT/.claude/sutra-project.json"
+if [ -f "$FL_CONFIG" ] && command -v jq >/dev/null 2>&1; then
+  _fp=$(jq -r '.profile // empty' "$FL_CONFIG" 2>/dev/null)
+  _fp=$(printf '%s' "$_fp" | tr -cd 'a-zA-Z0-9_-')   # profile is a bare token; strip anything else so it can't break the ledger JSON
+  [ -n "$_fp" ] && FL_PROFILE="$_fp"
+fi
+if [ "$FL_PROFILE" != "company" ]; then
+  printf '{"ts":"%s","event":"flow-stop-warn","session":"%s","reason":"flow-did-not-fire","mode":"warn","profile":"%s"}\n' \
+    "$NOW" "$SESSION_ID" "$FL_PROFILE" >> "$LEDGER" 2>/dev/null
+  printf 'FLOW (warn, profile=%s): core:flow did not fire this turn. Walk the spine next turn (no redo forced).\n' "$FL_PROFILE" >&2
   exit 0
 fi
 
