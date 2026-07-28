@@ -96,8 +96,8 @@ elif [ -f "$REPO_ROOT/.claude/flow-classified" ]; then
 fi
 
 # -- Honor the project enforce profile (2026-06-19, founder-directed) -------
-# Mirrors h-sutra-enforce.sh v9 + the depth-marker profile convention: the Stop
-# layers were the only ones ignoring .profile. profile=company keeps the HARD
+# Follows the depth-marker profile convention: the Stop layers were the only
+# ones ignoring .profile. profile=company keeps the HARD
 # redo; individual/project/unknown get warn+log, NO forced redo. Banner's
 # "Enforce: warn-only" becomes true for the loud layers too.
 FL_PROFILE="individual"

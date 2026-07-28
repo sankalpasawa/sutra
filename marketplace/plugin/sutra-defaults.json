@@ -18,7 +18,9 @@
       "skill_reference": "core:human-sutra",
       "log_path_asawa": "holding/state/interaction/log.jsonl",
       "log_path_default": ".sutra/h-sutra.jsonl",
-      "soft_hint_hook": "per-turn-discipline-prompt.sh"
+      "soft_hint_hook": "per-turn-discipline-prompt.sh",
+      "enforcement": "convention_only",
+      "$enforcement_comment": "2026-07-28: the h-sutra-enforce.sh Stop hook was REMOVED (founder direction). Nothing blocks or forces a redo for a missing/malformed header. The header is still requested every turn and still logged for 9-cell classification by per-turn-discipline-prompt.sh -- it is a convention with a log rail, not a gate. Previously: HARD Stop block, one redo, profile-gated after #72."
     },
     "input_routing": {
       "required": true,

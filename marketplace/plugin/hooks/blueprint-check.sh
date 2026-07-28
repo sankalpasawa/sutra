@@ -226,7 +226,7 @@ fi
 
 # ── TEXT validation of the BLUEPRINT the user sees ──
 # Ported from PR #73 (Manoranjan Baral), blueprint-text-validate.sh. Turn-text
-# extraction matches h-sutra-enforce.sh / per-turn-hard-gate.sh: everything
+# extraction matches per-turn-hard-gate.sh: everything
 # after the last HUMAN user row (isMeta and tool_result rows are not human).
 VERDICT=$(TRANSCRIPT_FOR_PY="$TRANSCRIPT_PATH" BP_DEPTH="$DEPTH" python3 -c '
 import os, sys, json, re
