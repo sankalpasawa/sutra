@@ -4,6 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.44.1 (2026-07-29) — placement wiring + Stop floor
+
+- `per-turn-discipline-prompt.sh` now emits PLACEMENT as block 6, reading the repo's live enforcement mode.
+- `reset-turn-markers.sh` clears `placement-registered` each turn (own marker only; a peer session's is preserved).
+- New `placement-stop-check.sh` closes the no-tool-turn hole; loop-guarded on `stop_hook_active`.
+- Simulation: 27 end-to-end assertions across 8 lifecycle scenarios, all passing.
+
 ## v2.44.0 (2026-07-29) — placement: every unit of work gets an address
 
 - ADR-028 lands in the plugin: new `per_turn_blocks.placement` (required, fleet-wide) — one Domain + one Charter stamped before work runs.
