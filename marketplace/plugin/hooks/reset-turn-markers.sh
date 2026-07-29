@@ -106,7 +106,8 @@ fi
 # alone; that peer's own reset will clear it.
 for m in input-routed depth-registered depth-assessed sutra-deploy-depth5 \
          build-layer-registered blueprint-registered structure-first-active \
-         flow-classified flow-inner flow-type-resolved flow-closed codex-consulted; do
+         flow-classified flow-inner flow-type-resolved flow-closed codex-consulted \
+         placement-registered; do
   f=".claude/$m"
   [ -f "$f" ] || continue
   owner=$(grep -o 'SESSION=[A-Za-z0-9_-]*' "$f" 2>/dev/null | head -1 | cut -d= -f2)

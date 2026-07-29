@@ -73,6 +73,16 @@ BL_FIELDS=$(jq -r '.per_turn_blocks.build_layer.fields | join(" / ")' "$DEFAULTS
 BL_HOOK=$(jq -r '.per_turn_blocks.build_layer.hook' "$DEFAULTS_JSON" 2>/dev/null)
 OT_FORMAT=$(jq -r '.per_turn_blocks.output_trace.format' "$DEFAULTS_JSON" 2>/dev/null)
 OT_SKILL=$(jq -r '.per_turn_blocks.output_trace.skill' "$DEFAULTS_JSON" 2>/dev/null)
+# -- PLACEMENT (ADR-028). The compact one-liner is the mandatory shape; the
+#    ancestor tree renders only on mint. Enforcement mode is read live from the
+#    repo so the prompt tells the truth about whether this repo is warn or hard.
+PL_COMPACT=$(jq -r '.per_turn_blocks.placement.shapes.compact // empty' "$DEFAULTS_JSON" 2>/dev/null | sed 's/  *—.*$//')
+PL_PROMOTE=$(jq -r '.per_turn_blocks.placement.enforcement_ladder.promote_after_compliant_turns // 50' "$DEFAULTS_JSON" 2>/dev/null)
+PL_MODE="warn"
+if [ -n "${REPO_ROOT:-}" ] && [ -f "$REPO_ROOT/.claude/placement-mode" ]; then
+  PL_MODE=$(tr -d '[:space:]' < "$REPO_ROOT/.claude/placement-mode" 2>/dev/null)
+  case "$PL_MODE" in hard|warn) ;; *) PL_MODE="warn" ;; esac
+fi
 DEPTH_THRESHOLD=$(jq -r '.consult_policy.depth_threshold' "$DEFAULTS_JSON" 2>/dev/null)
 CONSULT_TOOLS=$(jq -r '.consult_policy.applies_to_tools | join("/")' "$DEFAULTS_JSON" 2>/dev/null)
 KILL_FILE=$(jq -r '.kill_switches.per_turn_discipline_prompt.file' "$DEFAULTS_JSON" 2>/dev/null)
@@ -119,8 +129,15 @@ _sutra_per_turn_block() {
   printf '                        "Output looks like:" + a runnable "Verified by:" (+ inline Verify: on every Step\n'
   printf '                        at D3+). Ordinary files are floored at Stop by per-turn-hard-gate.sh.\n'
   printf '  5. BUILD-LAYER marker MUST emit IF editing D38 paths (sutra/marketplace/plugin/** etc). Fields: %s\n' "${BL_FIELDS:-LAYER/SCOPE/TARGET-PATH/...}"
-  printf '  6. ... tool calls (Edit / Write / Bash / Agent) ...\n'
-  printf '  7. OUTPUT TRACE       MUST emit literal one-liner: %s\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}"
+  printf '  6. PLACEMENT          MUST emit literal one-line block (ADR-028) — every unit of work carries an address:\n'
+  printf '                        %s\n' "${PL_COMPACT:-PLACEMENT: D0 > D3 <name> > D3.D2 <name> | \"<charter title>\"}"
+  printf '                        Expand to the full ancestor tree ONLY when a Domain or Charter was minted this turn.\n'
+  printf '                        The system decides the taxonomy — never ask the operator, never block on a missing\n'
+  printf '                        domain: if nothing matches, mint under the deepest matching ancestor and continue.\n'
+  printf '                        THEN write .claude/placement-registered via the WRITE TOOL. Enforcement is %s\n' "${PL_MODE:-warn}"
+  printf '                        in this repo (promotes to HARD after %s compliant turns).\n' "${PL_PROMOTE:-50}"
+  printf '  7. ... tool calls (Edit / Write / Bash / Agent) ...\n'
+  printf '  8. OUTPUT TRACE       MUST emit literal one-liner: %s\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}"
   printf '\n  FLOW ACTIVATION (EVERY input, D61 amended 2026-06-15) -- after Input Routing sets the TYPE:\n'
   printf '  MUST emit the FLOW block as LITERAL TEXT every turn (the way Input Routing / the H-Sutra header are\n'
   printf '  literal text -- NOT a Skill call). This is the firing, and it is what makes Flow as reliable as Input\n'

@@ -434,6 +434,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-hard-gate.sh",
             "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-stop-check.sh",
+            "timeout": 5
           }
         ]
       }
