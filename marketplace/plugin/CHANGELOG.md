@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.45.0 (2026-07-29) — the placement engine: addresses are now computed
+
+- `lib/placement_engine.py` — registry (domains/charters/placements), deterministic classifier, restructure ops, MECE report, bulk discovery scan.
+- Addresses are COMPUTED and PERSISTED. Until now the block was hand-written text with nothing behind it.
+- deepseek P1 folds: flock(2) not O_EXCL (a crashed agent can no longer wedge minting); append-only INDEX + CURRENT read tail-first; per-process seq nonce so identical re-placements cannot collide; adjacency weighted 10x above lexical overlap.
+- Verified: MOVE re-mints 0 placement rows; 12 racing minters produce exactly 1 domain; scan of 323 real files derived a 46-node nested tree in 0.7s.
+- Tests: 19 engine assertions + 38 gate/renderer + 27 simulation = 84 green.
+
 ## v2.44.1 (2026-07-29) — placement wiring + Stop floor
 
 - `per-turn-discipline-prompt.sh` now emits PLACEMENT as block 6, reading the repo's live enforcement mode.
