@@ -4,6 +4,15 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.46.0 (2026-07-30) — the last mile: the block is engine output
+
+- `hooks/placement-resolve.sh` (UserPromptSubmit) runs the engine and hands the model the exact line to emit. The PLACEMENT block is no longer composed from imagination.
+- READ-ONLY at prompt time: utterance-only evidence never mints. Minting a domain per novel phrasing would shred the tree in a day.
+- Fixed two P1s found by dogfooding, not by tests: confidence was `best/total`, which returns 1.0 whenever one domain scores at all (the floor could never fire, I-P9 was dead code); and adjacency compared absolute vs relative paths as strings, so the strongest signal silently never fired.
+- Confidence floor set from measurement (OQ-028-2): 0.45. Path evidence lands 0.70-0.99; a lone shared word lands 0.40 and now floor-holds at the ancestor.
+- `tests/placement-demo.sh` — visual end-to-end demo of every surface.
+- 84 assertions green.
+
 ## v2.45.0 (2026-07-29) — the placement engine: addresses are now computed
 
 - `lib/placement_engine.py` — registry (domains/charters/placements), deterministic classifier, restructure ops, MECE report, bulk discovery scan.

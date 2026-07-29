@@ -57,7 +57,14 @@ PLACEMENTS = os.path.join(HOME, "placements")
 CURRENT = os.path.join(PLACEMENTS, "CURRENT.jsonl")
 DOMAIN_INDEX = os.path.join(DOMAINS, "INDEX.jsonl")
 
-CONFIDENCE_FLOOR = float(os.environ.get("PLACEMENT_CONFIDENCE_FLOOR", "0.35"))
+#: Set from measurement, not taste (OQ-028-2). Against a 46-domain registry
+#: derived from the real plugin tree:
+#:   path evidence, correct answer ...... 0.70 - 0.99   (4/4 correct)
+#:   utterance only, correct answer ..... 0.49
+#:   utterance only, WRONG answer ....... 0.40   ("gate" matching "Readability Gate")
+#: 0.45 sits in the gap: path-backed work resolves, and a lone shared word
+#: floor-holds at the ancestor instead of confidently asserting nonsense.
+CONFIDENCE_FLOOR = float(os.environ.get("PLACEMENT_CONFIDENCE_FLOOR", "0.45"))
 AUTO_MERGE_THRESHOLD = float(os.environ.get("PLACEMENT_AUTO_MERGE", "0.85"))
 
 _SEQ = [0]  # per-process nonce; see fold 2
@@ -361,21 +368,43 @@ def gather_evidence(utterance="", paths=None, artifacts=None):
     }
 
 
+def _norm_path(p):
+    """Absolute, symlink-resolved. Callers pass a mix of absolute and repo-
+    relative paths; comparing them as raw strings means the adjacency signal —
+    the strongest one we have — silently never fires. Observed live: a real file
+    path scored as though it were unseen because the registry held it absolute
+    and the query passed it relative."""
+    if not p:
+        return ""
+    try:
+        return os.path.realpath(os.path.abspath(os.path.expanduser(p)))
+    except OSError:
+        return p
+
+
 def _adjacent_domain_votes(paths):
     """Strongest signal (fold 4): what domain do neighbouring files already
     resolve to? Weighted an order of magnitude above lexical overlap."""
     if not paths:
         return {}
+    norm = {_norm_path(p) for p in paths if p}
+    dirs = {os.path.dirname(p) for p in norm if p}
+    tails = {os.sep.join(p.split(os.sep)[-2:]) for p in norm if p}
     votes = {}
-    dirs = {os.path.dirname(p) for p in paths if p}
     for row in _read_jsonl(CURRENT):
-        wid = row.get("work_ref_id") or ""
-        if not wid:
+        raw = row.get("work_ref_id") or ""
+        if not raw:
             continue
-        if wid in paths:
-            votes[row["domain_ref"]] = votes.get(row["domain_ref"], 0) + 10.0
+        wid = _norm_path(raw)
+        ref = row.get("domain_ref")
+        if not ref:
+            continue
+        if wid in norm:
+            votes[ref] = votes.get(ref, 0) + 10.0            # same file
         elif os.path.dirname(wid) in dirs:
-            votes[row["domain_ref"]] = votes.get(row["domain_ref"], 0) + 4.0
+            votes[ref] = votes.get(ref, 0) + 4.0             # same directory
+        elif os.sep.join(wid.split(os.sep)[-2:]) in tails:
+            votes[ref] = votes.get(ref, 0) + 2.0             # same trailing dir/file
     return votes
 
 
@@ -399,20 +428,44 @@ def score_domains(evidence, tenant_id, domains=None):
     return scored
 
 
+#: score at which absolute evidence is considered half-convincing. An adjacency
+#: hit contributes 10.0, so a real neighbour match saturates; a single shared
+#: word contributes ~1.0 and does not.
+_ABS_HALF = 2.0
+#: a lone candidate is WEAK evidence, not perfect evidence. See below.
+_SOLO_MARGIN = 0.30
+
+
 def classify(evidence, tenant_id, domains=None):
-    """-> (domain_ref|None, confidence, mode) where mode is match|floor|none."""
+    """-> (domain_ref|None, confidence, mode) where mode is match|floor|none.
+
+    Confidence blends ABSOLUTE evidence strength with the MARGIN over the
+    runner-up. It is deliberately not `best / total`: that formulation returns
+    1.0 whenever exactly one domain scores above zero, however feeble the match.
+    Observed live — "fix the placement gate hook" matched "Readability Gate" on
+    the single shared token "gate" and reported confidence 1.0, which meant the
+    floor could never fire and I-P9 was unreachable code. A lone weak candidate
+    must score LOW, not perfect.
+    """
     domains = domains if domains is not None else load_domains()
     scored = score_domains(evidence, tenant_id, domains)
     if not scored:
         return None, 0.0, "none"
-    best = max(sorted(scored.items()), key=lambda kv: (kv[1], kv[0]))
-    total = sum(scored.values()) or 1.0
-    confidence = min(1.0, best[1] / total)
+
+    ranked = sorted(scored.items(), key=lambda kv: (-kv[1], kv[0]))
+    best_ref, best_score = ranked[0]
+    second = ranked[1][1] if len(ranked) > 1 else 0.0
+
+    conf_abs = best_score / (best_score + _ABS_HALF)      # saturating, never 1.0
+    conf_margin = ((best_score - second) / (best_score + second)
+                   if second > 0 else _SOLO_MARGIN)
+    confidence = round(min(1.0, 0.6 * conf_abs + 0.4 * conf_margin), 4)
+
     if confidence < CONFIDENCE_FLOOR:
-        # I-P9: place at the deepest confident ancestor, do NOT mint noise
-        parent = domains[best[0]].get("parent_ref")
-        return (parent or best[0]), confidence, "floor"
-    return best[0], confidence, "match"
+        # I-P9: hold at the ancestor, do NOT mint noise off a weak signal
+        parent = domains[best_ref].get("parent_ref")
+        return (parent or best_ref), confidence, "floor"
+    return best_ref, confidence, "match"
 
 
 # ---------------------------------------------------------------- resolve ---
@@ -505,6 +558,38 @@ def resolve(work_ref, utterance="", paths=None, artifacts=None,
     p = write_placement(work_ref, ref, charter_id, origin, confidence,
                         created, tenant_id, phase=phase)
     return {"placement": p, "reused": False, "mode": mode}
+
+
+def classify_only(utterance="", paths=None, artifacts=None, tenant_id="T-local"):
+    """Read-only resolution. Matches against the existing tree; NEVER mints.
+
+    This is what runs at prompt time, where the only evidence is the utterance.
+    Minting from an utterance alone would create a domain per novel phrasing and
+    blow the tree apart within a day — the exact drift the confidence floor
+    exists to prevent. Real minting happens once work touches actual paths.
+    """
+    domains = load_domains()
+    if not domains:
+        return {"resolved": False, "reason": "empty-registry",
+                "chain": [], "charter": {}, "confidence": 0.0}
+    evidence = gather_evidence(utterance, paths, artifacts)
+    ref, confidence, mode = classify(evidence, tenant_id, domains)
+    if ref is None or mode == "none":
+        return {"resolved": False, "reason": "no-match",
+                "chain": [], "charter": {}, "confidence": round(confidence, 4)}
+    chs = charters_for(ref)
+    charter = {}
+    if chs:
+        c = sorted(chs, key=lambda x: x["id"])[0]
+        charter = {"id": c["id"], "title": c.get("title", ""),
+                   "promise": c.get("purpose", "")}
+    return {
+        "resolved": True, "mode": mode, "domain_ref": ref,
+        "confidence": round(confidence, 4),
+        "chain": [{k: v for k, v in n.items() if k != "ref"}
+                  for n in ancestor_chain(ref, domains)],
+        "charter": charter, "created": {"domains": [], "charters": []}, "units": 1,
+    }
 
 
 def render_payload(placement):
@@ -750,6 +835,11 @@ def main(argv):
         r = resolve({"kind": kind, "id": wid}, utterance=utt, paths=paths, tenant_id=tenant)
         _out({"placement": r["placement"], "reused": r.get("reused"),
               "render": render_payload(r["placement"])})
+    elif cmd == "classify":
+        # read-only; used by the per-turn hook. Never mints.
+        utt = argv[2] if len(argv) > 2 else ""
+        paths = argv[3:] if len(argv) > 3 else []
+        _out(classify_only(utt, paths, tenant_id=tenant))
     elif cmd == "tree":
         domains = load_domains()
         _out({"domains": [{"ref": r, "path": domain_path(r, domains),
