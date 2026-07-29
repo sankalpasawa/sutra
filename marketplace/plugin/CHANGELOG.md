@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.44.0 (2026-07-29) — placement: every unit of work gets an address
+
+- ADR-028 lands in the plugin: new `per_turn_blocks.placement` (required, fleet-wide) — one Domain + one Charter stamped before work runs.
+- Ships in **WARN** mode. `placement-gate.sh` logs and exits 0; auto-promotes to HARD after 50 compliant turns per repo. A new HARD gate on day zero would have deadlocked every install.
+- COMPACT one-line render is the default shape; the ancestor tree renders only when a Domain or Charter was minted.
+- Bash-mutation classifier is explicit (redirection checked before the read-only allowlist); repo-local kill-switch `.claude/placement-disabled`.
+- Tests: `tests/unit/placement.test.sh` — 38 assertions, renderer + gate + classifier.
+
 ## v2.41.2 (2026-07-27) — marker reconciliation: scheme A wins, guards restored
 
 - **Scheme B deleted.** `.claude/<name>-<sid>` flat-suffix removed from flow-gate / flow-stop-check / per-turn-discipline-prompt. `marker-lib` (`.claude/sessions/<sid>/<name>`) is the single marker authority.

@@ -211,6 +211,55 @@
       ],
       "hook": "build-layer-check.sh"
     },
+    "placement": {
+      "$comment": "ADR-028 (2026-07-29): every unit of work carries an address — one Domain, one Charter — stamped before it executes. The system decides the taxonomy; the operator is never asked and never blocked. If nothing matches, a Domain (and a Charter stub) is minted and work continues. Shipped required:true fleet-wide per founder direction 2026-07-28, but enforcement starts in WARN mode per deepseek P1 — see enforcement_ladder.",
+      "required": true,
+      "activation": "every_turn",
+      "activates_after": [
+        "input_routing",
+        "human_sutra_header"
+      ],
+      "default_shape": "compact",
+      "shapes": {
+        "compact": "PLACEMENT: D0 > D3 <name> > D3.D2 <name> | \"<charter title>\"  — ONE line. The mandatory per-turn form when the address already existed.",
+        "expanded": "Full ancestor tree with [NEW] markers + charter promise/scope. Fires ONLY when a Domain or Charter was minted this turn.",
+        "summary": "One aggregate line. Fires when >20 units are placed in a single turn (bulk edit, B22 scan)."
+      },
+      "shape_rule": "compact unless created.domains or created.charters is non-empty; summary above the bulk threshold. Never walk the tree on the common path — that cost is why compact is the default (deepseek P1, 2026-07-29).",
+      "bulk_threshold": 20,
+      "marker_file": ".claude/placement-registered",
+      "marker_schema_keys": [
+        "DOMAIN_REF",
+        "DOMAIN_PATH",
+        "CHARTER_ID",
+        "ORIGIN",
+        "CONFIDENCE",
+        "CREATED_DOMAINS",
+        "CREATED_CHARTERS",
+        "TS"
+      ],
+      "marker_write": "MUST use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/). Session-namespaced when CLAUDE_SESSION_ID is present, so concurrent sessions in one repo do not clobber each other.",
+      "enforcement_ladder": {
+        "mode_file": ".claude/placement-mode",
+        "default_mode": "warn",
+        "modes": {
+          "warn": "gate logs and exits 0 — never blocks. The shipping default.",
+          "hard": "gate exits 2 on a missing marker, like flow-gate and blueprint-check."
+        },
+        "promote_after_compliant_turns": 50,
+        "rationale": "A new HARD gate shipped fleet-wide would deadlock repos on day zero: the model has never been required to emit this block, and the first miss blocks the next Edit with an opaque exit-2. Warn-first keeps the block on for everyone while compliance is measured, then flips. Per deepseek consult 2026-07-29 (CHANGES-REQUIRED, P1)."
+      },
+      "gate_semantics": "PRESENCE only. The gate never parses the block's content — a malformed placement passes and is caught by a separate lint pass, not at the tool-execution boundary (deepseek P2). The gate blocks on a missing DECLARATION, never on a missing domain; the mint path guarantees a declaration always resolves.",
+      "enforcement_hook": "placement-gate.sh (PreToolUse) + placement-stop-check.sh (Stop, no-tool turns)",
+      "renderer": "lib/placement-render.sh",
+      "kill_switches": {
+        "repo_local": ".claude/placement-disabled",
+        "global": "~/.placement-disabled",
+        "env": "PLACEMENT_ACK=1 PLACEMENT_ACK_REASON='<why>'",
+        "note": "repo_local takes precedence and is preferred — the global file disables the feature for every project the operator owns."
+      },
+      "canon": "sutra/os/decisions/ADR-028-mandatory-work-placement.md · sutra/os/native/primitives/placement.md · blocks B19-B22"
+    },
     "output_trace": {
       "required": true,
       "default_verbosity": "L1",

@@ -47,7 +47,25 @@ Every task below closed, plus: the PLACEMENT block prints on every turn in this 
 | F1.10 | Bump plugin version (marketplace cache keys on version) | `jq .version` incremented |
 | F1.11 | CHANGELOG entry ≤5 lines | file diff |
 
-## W2 — Sutra plugin: the hook floor (9 tasks)
+## W2 — Sutra plugin: the hook floor (9 + 5 tasks)
+
+> **Peer-review fold (deepseek consult 2026-07-29, CHANGES-REQUIRED).** Three P1s
+> changed this workstream before any code landed:
+>
+> | # | Finding | Fold |
+> |---|---|---|
+> | P1 | A new HARD gate shipped fleet-wide deadlocks on day zero — the model has never been required to emit this block, so the first miss blocks the next Edit with an opaque exit-2 | **Warn-first ladder** (F2.10-F2.12). `required: true` from day one, but enforcement starts at WARN and only flips to HARD once a repo clears a compliance threshold. On by default; punishing later |
+> | P1 | Six mandatory blocks, one rendering a tree, pushes all-present compliance toward 70% — ~30% of turns would false-positive block | **COMPACT is the mandatory shape** (F1.4 is now the required render; F1.3 EXPANDED fires only when something was minted). No tree walk on the common path |
+> | P1 | "Bash-mutation" is undefined — the gate needs a command classifier or it is either too broad or too narrow | **Explicit classifier** (F2.13), specified before the gate exists |
+>
+> Two P2s also folded: repo-local kill-switch (F2.14) rather than the global
+> `~/.placement-disabled`, and no content parsing in the gate — presence only,
+> with validity handled by a separate lint pass.
+>
+> Rejected from the review: deepseek claimed no-tool-turn enforcement is impossible
+> because "a hook can't block 'no tool'". False — Claude Code Stop hooks do exactly
+> that; `flow-stop-check.sh` and `h-sutra-enforce.sh` ship today and both blocked
+> this very build session. F2.4 stands as written.
 
 | # | Task | Verify |
 |---|---|---|
@@ -60,6 +78,11 @@ Every task below closed, plus: the PLACEMENT block prints on every turn in this 
 | F2.7 | Bootstrap-safe: hook must not self-gate its own install | fresh-repo install test |
 | F2.8 | **Concurrent-session safe**: markers namespaced per session id | two sessions, no clobber |
 | F2.9 | Log rows to `.enforcement/placement/gate-log.jsonl` | rows append, valid JSON |
+| F2.10 | **Warn-first ladder**: gate reads `.claude/placement-mode` (`warn` \| `hard`); default `warn` | no marker + warn mode → exit 0 with stderr notice |
+| F2.11 | Compliance counter: each turn that emits the block increments a per-repo count | counter file increments; survives restart |
+| F2.12 | Auto-promote warn→hard once the repo clears the threshold (default 50 compliant turns, operator-overridable) | at threshold-1 exit 0; at threshold exit 2 |
+| F2.13 | **Bash-mutation classifier**: explicit allow/deny lists. Read-only verbs (`ls cat grep find git status git log git diff wc head tail jq stat` …) never gate. Mutating verbs (`rm mv cp mkdir touch tee sed -i git commit git push git checkout` …) do. Redirection (`>`, `>>`) into a tracked path counts as mutation | fixture of 30 commands classifies correctly, 0 misses |
+| F2.14 | **Repo-local kill-switch** `.claude/placement-disabled` takes precedence; global `~/.placement-disabled` retained but documented as fleet-wide | repo-local disables one repo only |
 
 > F2.8 is not optional. This build was blocked twice by two sessions fighting over per-repo markers. Shipping a new per-turn gate with the same defect would multiply the problem fleet-wide.
 
