@@ -84,16 +84,21 @@ repo with Pages):
   homes. Optional fields, defaulted at render time (no migration needed):
   `kind: standing|project`, `status: active|shipped|retired|paused`,
   `artifacts: [repo paths]`.
-- Every department page carries a **Charters** section — always, empty state
-  included ("no active charters yet"). Grouping: Standing | Projects (status
-  tag on each) | "Linked here (owned elsewhere)" with a link to the owner.
-- **Cross-cutting lane chart** on a parent page: columns = its direct
-  children; a row = any charter whose owner+links, each rolled UP to its
-  child-of-this-page ancestor, touch >= 2 distinct columns (set-deduped;
-  owner wins a shared column; a charter owned by the page itself shows
-  linked columns only). O = owner cell, L = linked cell — text markers, not
-  color alone. The lane stays horizontal at that level: sub-department
-  detail never renders on the parent page.
+- Every department page carries ONE **Charters table** — always, empty state
+  included. Rows = union of own + linked-in + cross-cutting charters, ONE
+  canonical row per charter (relationship precedence own > linked > cross),
+  grouped by relationship with subtle separator rows. Columns: Charter
+  (clickable name -> the charter's own page; hover = purpose) | Kind |
+  Status (dot + text) | Owner ("here" or a link) | one O/L column per direct
+  child (owner+links rolled UP to child-of-this-page; set-deduped, owner
+  wins a shared column; >= 2 columns admits a cross-cutting row; legend
+  "O owner / L linked"). Status filter buttons (aria-pressed) compose with
+  the page search; a "no charters match" row appears when both filter out.
+- **Per-charter structured pages** (`C-<id>.html`, content-addressed =
+  stable): breadcrumb + owner up-link, then labelled rows only — Purpose /
+  Kind / Status / Owner / Linked / Artifacts / Scope-in and Obligations when
+  non-empty. No prose blocks; the horizontal table stays at the parent
+  level and never descends into sub-departments.
 
 ## Grounding (ADR-028 — the mandate)
 

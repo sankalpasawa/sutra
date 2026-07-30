@@ -8,6 +8,11 @@
 
 - ADR-audit F1/F2: schema now tolerates extra keys + string-form verify, matching validator R1/R2 and fixture f1 (validator + fixtures unchanged). F3-F5: ADR-029 amended (flag ladder off/experimental/on; matcher v0-floor cross-ref; mechanical-floor scoping) + ADR-026 open item narrowed (v0 floor shipped; judgment layer open). Audit: holding/research/2026-07-30-adr-026-027-029-consistency-audit.md.
 
+## v2.56.0 (2026-07-30) — one charter table + per-charter pages
+
+- Own, linked, and cross-cutting charters merge into ONE table per department (canonical row per charter, relationship-grouped, O/L child columns, status filter buttons composing with search, "no charters match" empty state).
+- Charter names click through to NEW per-charter structured pages (C-<id>.html, stable ids): breadcrumb + owner up-link + labelled rows (Purpose/Kind/Status/Owner/Linked/Artifacts/Scope/Obligations when non-empty). 154 pages total, 0 broken links.
+
 ## v2.55.0 (2026-07-30) — charter chips: readable, minimal, mobile-friendly
 
 - Charters render as status-dotted TAGS (design tokens from D0). Density heuristic: <= 3 in a group and short purposes -> mini-cards with the one-liner visible; more -> compact chips with hover tooltip (desktop) + native tap-to-expand panel (mobile/keyboard) carrying purpose, links, artifacts.

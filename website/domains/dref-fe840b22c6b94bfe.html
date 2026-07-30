@@ -39,28 +39,26 @@ p.withheld{font-size:.85rem;margin-top:6px}
 .st{font:600 .62rem/1 ui-monospace,monospace;border-radius:4px;padding:2px 5px;margin-left:6px;border:1px solid var(--line);color:var(--mut)}
 .st-active{border-color:var(--acc);color:var(--acc)}
 .st-retired{opacity:.65}
-.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
-.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .64rem/1 ui-monospace,monospace;color:var(--mut);margin-right:8px}
+.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .64rem/1 ui-monospace,monospace;color:var(--mut)}
 .chdot i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block}
 .chdot.st-active i{background:var(--acc)}
 .chdot.st-shipped i{background:var(--mut)}
 .chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
-.chcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-height:36px;flex:1 1 260px;max-width:420px}
-.chcard b{font-size:.88rem}
-.chline{color:var(--mut);font-size:.8rem;margin-top:4px;max-width:52ch}
-.chd{position:relative}
-.chd summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 14px;min-height:36px;font-size:.84rem}
-.chd summary::-webkit-details-marker{display:none}
-.chd summary:hover{border-color:var(--acc);background:var(--accbg)}
-.chd summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-.chd[open] summary{border-color:var(--acc);border-radius:10px 10px 0 0}
-.chd b{font-weight:600}
-.chpanel{border:1px solid var(--acc);border-top:none;border-radius:0 0 10px 10px;background:var(--card);padding:10px 14px;font-size:.8rem;max-width:420px}
-.chpanel p{color:var(--mut);margin-bottom:4px}
+.chfil{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.chfil button{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 12px;min-height:30px;cursor:pointer}
+.chfil button:hover{border-color:var(--acc)}
+.chfil button[aria-pressed="true"]{background:var(--accbg);border-color:var(--acc);color:var(--acc)}
+.chfil button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.chtab thead th{text-align:left}
+.chtab tbody th a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--acc)}
+.chtab tbody th a:hover{color:var(--acc)}
+.chtab tr.grp td{font:600 .66rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;padding:10px 8px 4px;border-bottom:none;text-align:left}
+.chtab td.ckind{font:400 .74rem/1 ui-monospace,monospace;color:var(--mut);text-align:left}
+.chtab td.cown{text-align:left;font-size:.78rem}
+.chtab td.cown a{color:var(--acc);text-decoration:none}
+.cown-here{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
+.chtab tr.chnone td{color:var(--mut);font-style:italic;text-align:left}
 .chpath{display:block;font:400 .7rem/1.5 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
-a.chlinkchip{display:inline-flex;align-items:center;background:var(--card);border:1px dashed var(--line);border-radius:999px;padding:8px 14px;min-height:36px;font-size:.84rem;color:inherit;text-decoration:none}
-a.chlinkchip:hover{border-color:var(--acc);background:var(--accbg)}
-.chowner{font-size:.7rem;color:var(--mut);margin-left:8px}
 .chrow{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .chlabel{font:600 .66rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px}
 .chmini{font-size:.74rem;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:default}
@@ -113,24 +111,41 @@ a.tnode:hover{background:var(--accbg)}
 #q:focus{outline:2px solid var(--acc)}
 .hidden{display:none !important}
 @media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}
-.chips.dense .chd,.chips.dense .chd summary,a.chlinkchip{width:100%}
-.chd summary{min-height:44px}a.chlinkchip{min-height:44px}
-.chcard{max-width:none;flex-basis:100%}.chpanel{max-width:none}}
+.chtab tbody th{white-space:nowrap}.chtab tr.chtr{height:44px}
+.chfil button{min-height:40px}}
 </style></head><body><div class="layout">
 <nav><input id="q" type="search" placeholder="Search domains..." autocomplete="off"><a class="sub up" href="dref-fff096d1b4564315.html">&lsaquo; up to Skills Catalog</a></nav>
 <main>
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <a href="dref-fff096d1b4564315.html">Skills Catalog</a> &rsaquo; <b>Domains Module</b></p>
 <h1>Domains Module</h1>
 <p class="rootdesc">core:domains — the org tree on every surface. Files (1): domains.</p>
-<section class="chsec"><h2 class="chh">Charters</h2><h3 class="chg">Standing</h3><div class="chips"><div class="chcard"><span class="chdot st-active"><i></i>active</span><b>Domains Module Charter</b><p class="chline">The company&#x27;s structure is visible, searchable, and grounded everywhere.</p></div></div></section>
-
+<section class="chsec"><h2 class="chh">Charters</h2><div class="lanewrap"><table class="lanetab chtab"><thead><tr><th scope="col">Charter</th><th scope="col">Kind</th><th scope="col">Status</th><th scope="col">Owner</th></tr></thead><tbody><tr class="grp"><td colspan="4">Own</td></tr><tr class="chtr" data-status="active"><th scope="row"><a href="C-02461e98afe6f5ac.html" title="The company&#x27;s structure is visible, searchable, and grounded everywhere.">Domains Module Charter</a></th><td class="ckind">standing</td><td><span class="chdot st-active"><i></i>active</span></td><td class="cown"><span class="cown-here">here</span></td></tr><tr class="chnone hidden"><td colspan="4">no charters match</td></tr></tbody></table></div></section>
 
 <div class="info empty">leaf domain — no children</div>
 <footer>0 children &middot; 3 levels per page &middot; sutra/website/index.html (detected 2026-07-30)</footer>
 </main>
 <script>
-(function(){var q=document.getElementById('q');if(!q)return;
-q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+(function(){var q=document.getElementById('q');var FIL='all';
+function chApply(){var v=q?q.value.trim().toLowerCase():'';
+ document.querySelectorAll('tr.chtr').forEach(function(r){
+  var okS=(FIL==='all')||r.getAttribute('data-status')===FIL;
+  var a=r.querySelector('a[title]');
+  var t=(r.textContent+' '+(a?a.getAttribute('title'):'')).toLowerCase();
+  r.classList.toggle('hidden',!(okS&&(!v||t.indexOf(v)>=0)));});
+ document.querySelectorAll('tr.grp').forEach(function(g){
+  var n=g.nextElementSibling,any=false;
+  while(n&&!n.classList.contains('grp')){
+   if(n.classList.contains('chtr')&&!n.classList.contains('hidden'))any=true;
+   n=n.nextElementSibling;}
+  g.classList.toggle('hidden',!any);});
+ var anyrow=document.querySelector('tr.chtr:not(.hidden)');
+ document.querySelectorAll('tr.chnone').forEach(function(e){
+  e.classList.toggle('hidden',!!anyrow);});}
+document.querySelectorAll('.chfil button').forEach(function(b){
+ b.addEventListener('click',function(){FIL=b.getAttribute('data-st');
+  document.querySelectorAll('.chfil button').forEach(function(x){
+   x.setAttribute('aria-pressed',x===b?'true':'false');});chApply();});});
+if(q)q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
 document.querySelectorAll('section.dept').forEach(function(sec){
  var any=false;
  sec.querySelectorAll('.info').forEach(function(b){
@@ -142,14 +157,6 @@ document.querySelectorAll('section.dept').forEach(function(sec){
 document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
  var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
  n.classList.toggle('hidden',!hit);});
-document.querySelectorAll('.chsec .chd, .chsec .chcard, .chsec a.chlinkchip').forEach(function(ch){
- var s=ch.querySelector('summary[title]');
- var txt=(ch.textContent+' '+((s?s.getAttribute('title'):ch.getAttribute('title'))||'')).toLowerCase();
- ch.classList.toggle('hidden',!(!v||txt.indexOf(v)>=0));});
-document.querySelectorAll('.chsec .chips').forEach(function(g){
- var any=g.querySelector('.chd:not(.hidden),.chcard:not(.hidden),a.chlinkchip:not(.hidden)');
- g.classList.toggle('hidden',!any);
- var h=g.previousElementSibling;
- if(h&&h.classList.contains('chg'))h.classList.toggle('hidden',!any);});});})();
+chApply();});})();
 </script>
 </div></body></html>

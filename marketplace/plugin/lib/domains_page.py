@@ -322,34 +322,9 @@ def build_site(out_dir, label="Domains", window=2):
                 % ", ".join('<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"]))
                             for r in links))
 
-    def ch_panel(c):
-        arts = "".join('<code class="chpath">%s</code>' % esc(a) for a in c["artifacts"][:6])
-        more = ('<span class="chart-n">+%d more</span>' % (len(c["artifacts"]) - 6)) \
-            if len(c["artifacts"]) > 6 else ""
-        return ('<div class="chpanel"><p>%s</p>%s%s%s</div>'
-                % (esc(c.get("purpose", "")), _links_html(c), arts, more))
-
-    def ch_card(c):
-        """Mini-card mode: chip + visible one-liner (no hover needed)."""
-        return ('<div class="chcard">%s<b>%s</b>%s'
-                '<p class="chline">%s</p>%s</div>'
-                % (st_dot(c), esc(c["title"]), _art_n(c),
-                   esc(c.get("purpose", "")), _links_html(c)))
-
-    def ch_compact(c):
-        """Dense mode: status + title + artifact count stay scannable
-        (codex fold); purpose hovers on the closed summary + opens on tap."""
-        return ('<details class="chd"><summary title="%s">%s<b>%s</b>%s</summary>%s</details>'
-                % (esc(c.get("purpose", "")), st_dot(c), esc(c["title"]),
-                   _art_n(c), ch_panel(c)))
-
-    def ch_group(label_g, chs):
-        if not chs:
-            return ""
-        dense = len(chs) > 3 or sum(len(c.get("purpose", "")) for c in chs) > 320
-        body = "".join((ch_compact if dense else ch_card)(c) for c in chs)
-        return ('<h3 class="chg">%s</h3><div class="chips%s">%s</div>'
-                % (label_g, " dense" if dense else "", body))
+    def cname(cid):
+        """Charter page filename — content-addressed id, stable forever."""
+        return cid + ".html"
 
     def charter_line(ref):
         """L2 compact form: standing titles as tiny hover chips + project count."""
@@ -363,29 +338,99 @@ def build_site(out_dir, label="Domains", window=2):
                     % (fname(ref), len(proj), "s" if len(proj) > 1 else ""))
         return ('<p class="chrow"><span class="chlabel">Charter</span>%s</p>' % out) if out else ""
 
-    def charters_section(ref):
-        """L1: ALWAYS present — the word CHARTER on every department page."""
-        chs = owned_by.get(ref, [])
-        standing = [c for c in chs if c["kind"] == "standing"]
-        proj = [c for c in chs if c["kind"] == "project"]
-        inbound = [c for c in linked_to.get(ref, [])
-                   if c.get("domain_ref") in domains and c.get("domain_ref") not in hidden]
-        h = ['<section class="chsec"><h2 class="chh">Charters</h2>']
-        h.append(ch_group("Standing", standing))
-        h.append(ch_group("Projects", proj))
-        if not standing and not proj:
-            h.append('<p class="chempty">none yet</p>')
-        if inbound:
-            linkchips = "".join(
-                '<a class="chd chlinkchip" href="%s" title="%s">%s<b>%s</b>'
-                '<span class="chowner">owned by %s</span></a>'
-                % (fname(c["domain_ref"]), esc(c.get("purpose", "")), st_dot(c),
-                   esc(c["title"]), esc(domains[c["domain_ref"]]["name"]))
-                for c in inbound)
-            h.append('<h3 class="chg">Linked</h3>'
-                     '<div class="chips dense">%s</div>' % linkchips)
-        h.append('</section>')
-        return "".join(h)
+    def charter_table(page_ref, tops):
+        """ONE structured surface (founder 2026-07-30): own + linked +
+        cross-cutting charters in the same table. Canonical row per charter
+        (codex P1): relationship precedence own > linked > cross; child O/L
+        cells aggregated regardless of which relation admitted the row.
+        Charter names click through to their structured page."""
+        tset = set(tops)
+
+        def cols_for(c):
+            cols = {}
+            for r in set([c.get("domain_ref")] + c["linked_domain_refs"]):
+                if r == page_ref or r not in domains:
+                    continue
+                col = child_of(page_ref, r)
+                if col not in tset:
+                    continue
+                role = "O" if r == c.get("domain_ref") else "L"
+                if cols.get(col) != "O":
+                    cols[col] = role
+            return cols
+
+        RELS = [("own", "Own"), ("linked", "Linked"), ("cross", "Cross-cutting below")]
+        picked = []
+        for c in all_ch:
+            owner = c.get("domain_ref")
+            if owner in hidden or owner not in domains:
+                continue
+            cols = cols_for(c)
+            if owner == page_ref:
+                rel = "own"
+            elif page_ref in c["linked_domain_refs"]:
+                rel = "linked"
+            elif len(cols) >= 2:
+                rel = "cross"
+            else:
+                continue
+            picked.append((c, rel, cols))
+        if not picked:
+            return ('<section class="chsec"><h2 class="chh">Charters</h2>'
+                    '<p class="chempty">none yet</p></section>')
+
+        show_cols = bool(tops) and any(cols for _, _, cols in picked)
+        ncols = 4 + (len(tops) if show_cols else 0)
+        relrank = {"own": 0, "linked": 1, "cross": 2}
+        picked.sort(key=lambda t: (relrank[t[1]],
+                                   0 if t[0]["kind"] == "standing" else 1,
+                                   t[0]["title"].lower()))
+        body = []
+        cur_rel = None
+        for c, rel, cols in picked:
+            if rel != cur_rel:
+                cur_rel = rel
+                label_r = dict(RELS)[rel]
+                body.append('<tr class="grp"><td colspan="%d">%s</td></tr>'
+                            % (ncols, label_r))
+            owner = c.get("domain_ref")
+            own_cell = ('<span class="cown-here">here</span>' if owner == page_ref
+                        else '<a href="%s">%s</a>' % (fname(owner), esc(domains[owner]["name"])))
+            cells = ""
+            if show_cols:
+                for t in tops:
+                    m = cols.get(t)
+                    if m == "O":
+                        cells += ('<td class="lo" title="owner: %s">O</td>'
+                                  % esc(domains[t]["name"]))
+                    elif m == "L":
+                        cells += ('<td class="ll" title="linked: %s">L</td>'
+                                  % esc(domains[t]["name"]))
+                    else:
+                        cells += '<td class="ln"></td>'
+            body.append(
+                '<tr class="chtr" data-status="%s"><th scope="row">'
+                '<a href="%s" title="%s">%s</a></th>'
+                '<td class="ckind">%s</td><td>%s</td><td class="cown">%s</td>%s</tr>'
+                % (c["status"], cname(c["id"]), esc(c.get("purpose", "")),
+                   esc(c["title"]), c["kind"], st_dot(c), own_cell, cells))
+        childh = "".join('<th scope="col">%s</th>' % esc(domains[t]["name"])
+                         for t in tops) if show_cols else ""
+        statuses = sorted({c["status"] for c, _, _ in picked})
+        fil = ""
+        if len(picked) > 4 and len(statuses) > 1:
+            btns = '<button data-st="all" aria-pressed="true">all</button>' + "".join(
+                '<button data-st="%s" aria-pressed="false">%s</button>' % (s, s)
+                for s in statuses)
+            fil = '<div class="chfil">%s</div>' % btns
+        legend = ('<p class="lanenote">O owner &middot; L linked</p>' if show_cols else "")
+        return ('<section class="chsec"><h2 class="chh">Charters</h2>%s%s'
+                '<div class="lanewrap"><table class="lanetab chtab">'
+                '<thead><tr><th scope="col">Charter</th><th scope="col">Kind</th>'
+                '<th scope="col">Status</th><th scope="col">Owner</th>%s</tr></thead>'
+                '<tbody>%s<tr class="chnone hidden"><td colspan="%d">no charters match</td></tr>'
+                '</tbody></table></div></section>'
+                % (legend, fil, childh, "".join(body), ncols))
 
     def child_of(page_ref, ref):
         """Roll a deep ref UP to the direct child of page_ref it sits under."""
@@ -398,51 +443,37 @@ def build_site(out_dir, label="Domains", window=2):
             cur = par
         return None
 
-    def lane_chart(page_ref, tops):
-        """Horizontal figure (founder 2026-07-30): rows = charters that touch
-        >= 2 of THIS page's direct children after roll-up; never descends
-        into sub-departments. Codex P1 folds: refs are set-deduped per child
-        column (owner wins a shared column); a charter owned by the page
-        itself renders with linked columns only."""
-        tset = set(tops)
-        if len(tops) < 2:
-            return ""
-        rows = []
-        for c in all_ch:
-            owner = c.get("domain_ref")
-            cols = {}
-            for r in set([owner] + c["linked_domain_refs"]):
-                if r == page_ref or r not in domains:
-                    continue
-                col = child_of(page_ref, r)
-                if col not in tset:
-                    continue
-                role = "O" if r == owner else "L"
-                if cols.get(col) != "O":
-                    cols[col] = role
-            if len(cols) < 2:
-                continue
-            cells = []
-            for t in tops:
-                m = cols.get(t)
-                if m == "O":
-                    cells.append('<td class="lo" aria-label="Owner: %s">O</td>' % esc(c["title"]))
-                elif m == "L":
-                    cells.append('<td class="ll" aria-label="Linked: %s">L</td>' % esc(c["title"]))
-                else:
-                    cells.append('<td class="ln"></td>')
-            touched = ", ".join(domains[t]["name"] for t in tops if t in cols)
-            rows.append('<tr title="%s touches: %s"><th scope="row">%s%s</th>%s</tr>'
-                        % (esc(c["title"]), esc(touched), esc(c["title"]), st_tag(c),
-                           "".join(cells)))
-        if not rows:
-            return ""
-        head = "".join('<th scope="col">%s</th>' % esc(domains[t]["name"]) for t in tops)
-        return ('<section class="lanes"><h2 class="chh">Cross-cutting charters</h2>'
-                '<p class="lanenote">O owner &middot; L linked</p>'
-                '<div class="lanewrap"><table class="lanetab">'
-                '<thead><tr><th scope="col"></th>%s</tr></thead><tbody>%s</tbody></table>'
-                '</div></section>' % (head, "".join(rows)))
+    def charter_page(c):
+        """Structured per-charter page (founder 2026-07-30): every field a
+        labelled row, nothing prose-shaped. Codex fold: explicit owner
+        up-link beside the breadcrumb."""
+        owner = c.get("domain_ref")
+        oname = esc(domains[owner]["name"])
+        rows = [("Purpose", esc(c.get("purpose", ""))),
+                ("Kind", c["kind"]),
+                ("Status", st_dot(c)),
+                ("Owner", '<a href="%s">%s</a>' % (fname(owner), oname))]
+        links = [r for r in c["linked_domain_refs"] if r in domains and r not in hidden]
+        if links:
+            rows.append(("Linked", ", ".join(
+                '<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"])) for r in links)))
+        if c["artifacts"]:
+            rows.append(("Artifacts", "".join(
+                '<code class="chpath">%s</code>' % esc(a) for a in c["artifacts"])))
+        for fld, lab in (("scope_in", "Scope in"), ("obligations", "Obligations")):
+            vals = c.get(fld) or []
+            if vals:
+                rows.append((lab, "".join('<code class="chpath">%s</code>' % esc(str(v))
+                                          for v in vals)))
+        dl = "".join('<div class="chdlrow"><dt>%s</dt><dd>%s</dd></div>' % (k, v)
+                     for k, v in rows)
+        return CH_TMPL % dict(
+            title=esc(c["title"]) + " · Charter",
+            crumb=crumb(owner) + " &rsaquo; <b>%s</b>" % esc(c["title"]),
+            uplink='<a class="sub up" href="%s">&lsaquo; %s</a>' % (fname(owner), oname),
+            name=esc(c["title"]), cid=c["id"], dl=dl,
+            **{k: T[k] for k in ("bg", "card", "ink", "muted", "line",
+                                 "accent", "accent_bg", "font")})
 
     def org_diagram(page_ref, ref):
         """Diagram at ANY cascading level. Child boxes are clickable: they
@@ -572,8 +603,7 @@ def build_site(out_dir, label="Domains", window=2):
             title="%s · %s" % (esc(pd["name"]), label), crumb=crumb(page_ref),
             uplink=uplink, rail="".join(rail), root=esc(pd["name"]),
             rootdesc=esc(pd.get("description", "")),
-            rootchs=charters_section(page_ref) + withheld_note(page_ref),
-            lanes=lane_chart(page_ref, tops),
+            rootchs=charter_table(page_ref, tops) + withheld_note(page_ref),
             rootdiag=rootdiag, sections=body_main, n=len(kids.get(page_ref, [])),
             layers=window + 1, label_l=label.lower(), src=esc(T.get("source", "")),
             **{k: T[k] for k in ("bg", "card", "ink", "muted", "line",
@@ -585,6 +615,11 @@ def build_site(out_dir, label="Domains", window=2):
         if ref in hidden:                        # no page for withheld names
             continue
         open(os.path.join(out_dir, fname(ref)), "w").write(page_for(ref))
+        made += 1
+    for c in all_ch:                             # one structured page per charter
+        if c.get("domain_ref") in hidden or c.get("domain_ref") not in domains:
+            continue
+        open(os.path.join(out_dir, cname(c["id"])), "w").write(charter_page(c))
         made += 1
     return made
 
@@ -632,28 +667,26 @@ p.withheld{font-size:.85rem;margin-top:6px}
 .st{font:600 .62rem/1 ui-monospace,monospace;border-radius:4px;padding:2px 5px;margin-left:6px;border:1px solid var(--line);color:var(--mut)}
 .st-active{border-color:var(--acc);color:var(--acc)}
 .st-retired{opacity:.65}
-.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
-.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .64rem/1 ui-monospace,monospace;color:var(--mut);margin-right:8px}
+.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .64rem/1 ui-monospace,monospace;color:var(--mut)}
 .chdot i{width:7px;height:7px;border-radius:50%%;background:var(--line);display:inline-block}
 .chdot.st-active i{background:var(--acc)}
 .chdot.st-shipped i{background:var(--mut)}
 .chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
-.chcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-height:36px;flex:1 1 260px;max-width:420px}
-.chcard b{font-size:.88rem}
-.chline{color:var(--mut);font-size:.8rem;margin-top:4px;max-width:52ch}
-.chd{position:relative}
-.chd summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 14px;min-height:36px;font-size:.84rem}
-.chd summary::-webkit-details-marker{display:none}
-.chd summary:hover{border-color:var(--acc);background:var(--accbg)}
-.chd summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-.chd[open] summary{border-color:var(--acc);border-radius:10px 10px 0 0}
-.chd b{font-weight:600}
-.chpanel{border:1px solid var(--acc);border-top:none;border-radius:0 0 10px 10px;background:var(--card);padding:10px 14px;font-size:.8rem;max-width:420px}
-.chpanel p{color:var(--mut);margin-bottom:4px}
+.chfil{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.chfil button{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 12px;min-height:30px;cursor:pointer}
+.chfil button:hover{border-color:var(--acc)}
+.chfil button[aria-pressed="true"]{background:var(--accbg);border-color:var(--acc);color:var(--acc)}
+.chfil button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.chtab thead th{text-align:left}
+.chtab tbody th a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--acc)}
+.chtab tbody th a:hover{color:var(--acc)}
+.chtab tr.grp td{font:600 .66rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;padding:10px 8px 4px;border-bottom:none;text-align:left}
+.chtab td.ckind{font:400 .74rem/1 ui-monospace,monospace;color:var(--mut);text-align:left}
+.chtab td.cown{text-align:left;font-size:.78rem}
+.chtab td.cown a{color:var(--acc);text-decoration:none}
+.cown-here{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
+.chtab tr.chnone td{color:var(--mut);font-style:italic;text-align:left}
 .chpath{display:block;font:400 .7rem/1.5 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
-a.chlinkchip{display:inline-flex;align-items:center;background:var(--card);border:1px dashed var(--line);border-radius:999px;padding:8px 14px;min-height:36px;font-size:.84rem;color:inherit;text-decoration:none}
-a.chlinkchip:hover{border-color:var(--acc);background:var(--accbg)}
-.chowner{font-size:.7rem;color:var(--mut);margin-left:8px}
 .chrow{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .chlabel{font:600 .66rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px}
 .chmini{font-size:.74rem;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:default}
@@ -706,9 +739,8 @@ a.tnode:hover{background:var(--accbg)}
 #q:focus{outline:2px solid var(--acc)}
 .hidden{display:none !important}
 @media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}
-.chips.dense .chd,.chips.dense .chd summary,a.chlinkchip{width:100%%}
-.chd summary{min-height:44px}a.chlinkchip{min-height:44px}
-.chcard{max-width:none;flex-basis:100%%}.chpanel{max-width:none}}
+.chtab tbody th{white-space:nowrap}.chtab tr.chtr{height:44px}
+.chfil button{min-height:40px}}
 </style></head><body><div class="layout">
 <nav><input id="q" type="search" placeholder="Search domains..." autocomplete="off">%(uplink)s%(rail)s</nav>
 <main>
@@ -717,13 +749,31 @@ a.tnode:hover{background:var(--accbg)}
 <p class="rootdesc">%(rootdesc)s</p>
 %(rootchs)s
 %(rootdiag)s
-%(lanes)s
 %(sections)s
 <footer>%(n)d children &middot; %(layers)d levels per page &middot; %(src)s</footer>
 </main>
 <script>
-(function(){var q=document.getElementById('q');if(!q)return;
-q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+(function(){var q=document.getElementById('q');var FIL='all';
+function chApply(){var v=q?q.value.trim().toLowerCase():'';
+ document.querySelectorAll('tr.chtr').forEach(function(r){
+  var okS=(FIL==='all')||r.getAttribute('data-status')===FIL;
+  var a=r.querySelector('a[title]');
+  var t=(r.textContent+' '+(a?a.getAttribute('title'):'')).toLowerCase();
+  r.classList.toggle('hidden',!(okS&&(!v||t.indexOf(v)>=0)));});
+ document.querySelectorAll('tr.grp').forEach(function(g){
+  var n=g.nextElementSibling,any=false;
+  while(n&&!n.classList.contains('grp')){
+   if(n.classList.contains('chtr')&&!n.classList.contains('hidden'))any=true;
+   n=n.nextElementSibling;}
+  g.classList.toggle('hidden',!any);});
+ var anyrow=document.querySelector('tr.chtr:not(.hidden)');
+ document.querySelectorAll('tr.chnone').forEach(function(e){
+  e.classList.toggle('hidden',!!anyrow);});}
+document.querySelectorAll('.chfil button').forEach(function(b){
+ b.addEventListener('click',function(){FIL=b.getAttribute('data-st');
+  document.querySelectorAll('.chfil button').forEach(function(x){
+   x.setAttribute('aria-pressed',x===b?'true':'false');});chApply();});});
+if(q)q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
 document.querySelectorAll('section.dept').forEach(function(sec){
  var any=false;
  sec.querySelectorAll('.info').forEach(function(b){
@@ -735,16 +785,45 @@ document.querySelectorAll('section.dept').forEach(function(sec){
 document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
  var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
  n.classList.toggle('hidden',!hit);});
-document.querySelectorAll('.chsec .chd, .chsec .chcard, .chsec a.chlinkchip').forEach(function(ch){
- var s=ch.querySelector('summary[title]');
- var txt=(ch.textContent+' '+((s?s.getAttribute('title'):ch.getAttribute('title'))||'')).toLowerCase();
- ch.classList.toggle('hidden',!(!v||txt.indexOf(v)>=0));});
-document.querySelectorAll('.chsec .chips').forEach(function(g){
- var any=g.querySelector('.chd:not(.hidden),.chcard:not(.hidden),a.chlinkchip:not(.hidden)');
- g.classList.toggle('hidden',!any);
- var h=g.previousElementSibling;
- if(h&&h.classList.contains('chg'))h.classList.toggle('hidden',!any);});});})();
+chApply();});})();
 </script>
+</div></body></html>
+"""
+
+
+CH_TMPL = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>%(title)s</title>
+<style>
+:root{--bg:%(bg)s;--card:%(card)s;--ink:%(ink)s;--mut:%(muted)s;--line:%(line)s;--acc:%(accent)s;--accbg:%(accent_bg)s}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 %(font)s}
+.wrap{max-width:760px;margin:0 auto;padding:36px 20px}
+.crumb{font-size:.85rem;color:var(--mut);margin-bottom:8px}
+.crumb a{color:var(--acc);text-decoration:none}
+a.up{display:inline-block;color:var(--acc);text-decoration:none;font-size:.85rem;margin-bottom:16px}
+h1{font-size:1.4rem;letter-spacing:-.01em;margin-bottom:4px}
+.cid{font:400 .72rem/1 ui-monospace,monospace;color:var(--mut);margin-bottom:18px}
+.chdl{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 0}
+.chdlrow{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 16px;border-bottom:1px dotted var(--line)}
+.chdlrow:last-child{border-bottom:none}
+dt{font:600 .7rem/1.8 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+dd{font-size:.9rem}
+dd a{color:var(--acc);text-decoration:none}
+.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
+.chdot i{width:7px;height:7px;border-radius:50%%;background:var(--line);display:inline-block}
+.chdot.st-active i{background:var(--acc)}
+.chdot.st-shipped i{background:var(--mut)}
+.chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
+.chpath{display:block;font:400 .74rem/1.7 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
+@media(max-width:560px){.chdlrow{grid-template-columns:1fr;gap:2px}}
+</style></head><body><div class="wrap">
+<p class="crumb">%(crumb)s</p>
+%(uplink)s
+<h1>%(name)s</h1>
+<p class="cid">%(cid)s</p>
+<dl class="chdl">%(dl)s</dl>
 </div></body></html>
 """
 
