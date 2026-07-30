@@ -1,0 +1,10 @@
+{
+  "ts": 1785340800,
+  "trace_id": "flow-20260730-a8f7",
+  "unit": "rotate connector credentials for slack and github",
+  "status": "done",
+  "close": {
+    "measure": "bash verify-connections.sh exits 0",
+    "learned": "old creds were sk-abcdefghijklmnop plus ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6 and xoxb-FAKE0000000000-NOT-A-REAL-TOKEN; all rotated and revoked"
+  }
+}

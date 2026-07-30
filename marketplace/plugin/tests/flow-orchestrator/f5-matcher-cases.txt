@@ -1,0 +1,3 @@
+review this diff with codex before merge :: RESOLUTION=FOLLOW
+challenge the migration plan adversarially with deepseek :: RESOLUTION=FOLLOW
+flarblegarble quantum cheese :: RESOLUTION=CONSTRUCT

@@ -5,6 +5,10 @@
   "version": "2.32.0",
   "issued": "2026-05-04",
   "source_direction": "D40",
+  "feature_flags": {
+    "$comment": "Off-by-default feature toggles. flow_orchestrator_mode per D62 / ADR-029: 'off' means zero behavior change -- the flow skill runs exactly as documented pre-D62; 'on' enables the orchestrator/worker split (return contracts validated by bin/validate-return-contract.sh, sole-writer ledger via bin/flow-ledger-append.sh). Asserted by tests/flow-orchestrator/f8-flag-and-docs.sh.",
+    "flow_orchestrator_mode": "off"
+  },
   "per_turn_blocks": {
     "human_sutra_header": {
       "$comment": "v2.15.1: promoted from hardcoded hook reminder to canonical schema entry, closing the v2.14.1 deferred TODO. Direct emission — NOT a skill invocation. Format per skills/human-sutra/SKILL.md §Header emission.",

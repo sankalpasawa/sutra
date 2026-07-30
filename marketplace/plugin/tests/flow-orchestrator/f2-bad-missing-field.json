@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "atom_id": "A8-02",
+  "status": "done",
+  "result": "Wrote fixture f2 without a verify command or trace id.",
+  "confidence": "high",
+  "files_touched": [
+    "sutra/marketplace/plugin/tests/flow-orchestrator/f2-bad-missing-field.json"
+  ],
+  "duration_s": 30,
+  "learned": "Missing-field fixture: verify and trace_id are absent on purpose."
+}

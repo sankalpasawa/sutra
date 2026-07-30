@@ -226,3 +226,44 @@ skill owns ONE station: the FOLLOW-vs-CONSTRUCT decision and its marker.
   `core:depth-estimation`, and `core:blueprint` — it does not replace or
   duplicate them. Classification happens upstream; depth + blueprint still
   fire on the actual mutating steps once they are shaped.
+
+## Deterministic matcher v0 (ADR-026 matching function)
+
+`bin/workflow-type-match.sh` is the deterministic FLOOR under Step 2. It
+scans the same two scopes this skill describes — CHILD first
+(`.claude/skills/*/SKILL.md`, `skills/*.md`, `holding/skills/*.md`,
+`.claude/commands/*.md`, `commands/*.md` under `$CLAUDE_PROJECT_DIR`), then
+PLATFORM (`$CLAUDE_PLUGIN_ROOT/skills/*/SKILL.md`, falling back to
+`sutra/marketplace/plugin/skills/*/SKILL.md`) — extracts each candidate's
+name + front-matter description (or first paragraph), and scores by token
+overlap: intent is lowercase-tokenized, tokens <= 3 chars dropped, then
+`score = 3 * (intent tokens in name) + 1 * (intent tokens in description)`.
+Score >= 2 is a match; highest score wins; ties go to child scope, then
+LC_ALL=C alphabetical. Fully deterministic: no network, no date, sorted
+iteration, LC_ALL=C.
+
+Invocation (intent as plain args):
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-sutra/marketplace/plugin}/bin/workflow-type-match.sh" onboard a new company
+```
+
+Output is EXACTLY ONE line, in the same shape as the resolution marker:
+
+```
+RESOLUTION=FOLLOW:<name> SCOPE=<child|platform> SCORE=<n>
+RESOLUTION=CONSTRUCT SCOPE=none SCORE=0
+```
+
+Two boundaries to respect:
+
+- **Floor, not ceiling.** Skill judgment may OVERRIDE the matcher's answer
+  in either direction — accept a below-threshold candidate or reject an
+  above-threshold one — but only with a stated reason in the
+  WORKFLOW-TYPE RESOLVE block (e.g. "matcher scored 4 on keyword overlap,
+  but the candidate's purpose does not fit — CONSTRUCT"). Step 2's rule
+  stands: match on PURPOSE; the matcher only measures token overlap.
+- **v0 is token-overlap only.** It cannot see synonyms or purpose ("onboard
+  a company" will not match a candidate that never says "onboard").
+  Semantic matching is the recorded v2 path; until then the matcher is a
+  cheap, reproducible first pass — never the final judge.

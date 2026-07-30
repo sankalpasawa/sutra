@@ -4,6 +4,12 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.53.0 (2026-07-30) — Flow orchestrator mode (D62/ADR-029)
+
+- Flag-gated Work-Atom dispatch for core:flow deep mode (feature_flags.flow_orchestrator_mode, default off); return-contract schema + validator bin/validate-return-contract.sh.
+- Matcher v0 (ADR-026) via bin/workflow-type-match.sh + factors v0 (B8) via bin/flow-factors.sh + redacting flow ledger bin/flow-ledger-append.sh.
+- 8-fixture suite tests/flow-orchestrator/ wired into run-all.sh.
+
 ## v2.52.1 (2026-07-30) — Core Plugin repository complete + minimal L3 summaries
 
 - Core Plugin subtree is now the full grounded repository: 26 families covering all 194 plugin files (89 hooks, 26 skills, 16 libs, 10 commands, 5 bin, 42 tests + hook-nested strays), each family with an inclusion rule, file enumeration, and a minted charter. Coverage asserted by script: 0 unmapped, 0 double-mapped; idempotent re-seed.

@@ -1,7 +1,7 @@
 ---
 name: flow
 preamble-tier: 2
-version: 1.0.0
+version: 1.1.0
 description: |
   Orchestrator skill that walks the end-to-end work-resolution spine on one
   unit of work: classify the input TYPE, resolve a matching workflow type
@@ -350,6 +350,36 @@ Kill-switches (disable both hooks): env `FLOW_DISABLED=1` or file
 `$HOME/.flow-disabled`. Override for one call: `FLOW_ACK=1 FLOW_ACK_REASON='<why>'`
 (audit-logged). Skills explain; hooks enforce — this skill writes the markers,
 the hooks read them.
+
+## Orchestrator mode (D62 / ADR-029)
+
+Flag-gated multi-worker mode for the spine. Canon: `sutra/os/decisions/ADR-029-flow-orchestrator-mode.md` (D62 bootstrap). OFF by default — check before activating any of the machinery below:
+
+```bash
+jq -r '.feature_flags.flow_orchestrator_mode // "off"' \
+  "$(dirname "$0")/../../sutra-defaults.json"   # plugin root sutra-defaults.json
+```
+
+When the flag is `off` (the shipped default) there is ZERO behavior change: this skill runs exactly as documented above, single-lane, and nothing in this section applies. When `on`:
+
+**Boundary**: one orchestrator per unit, N worker Work-Atoms. The orchestrator owns classify / resolve / dispatch / validate / failure disposition / CLOSE. Each worker owns exactly one atom and never dispatches sub-workers; recursion routes back through the orchestrator.
+
+**Return contract**: every worker returns ONE JSON object per
+`references/return-contract.schema.json`, validated by
+`bin/validate-return-contract.sh` (VALID exit 0 / INVALID exit 1; stdin or file arg):
+
+- required: `atom_id`, `status` (`done`/`failed`/`blocked`/`partial`), `result` (<= 4000 chars — bounded summary, never a transcript), `verify` (runnable check, string or `{check, result: PASS/FAIL/WAIVED}`), `confidence` (`high`/`moderate`/`low`), `trace_id`
+- optional: `evidence` (<= 2000 chars), `files_touched`, `risks` (<= 10), `followups`, `note` (<= 500 chars)
+
+An invalid return is a worker failure, not a formatting nit.
+
+**Failure policy**: a worker gets max 3 attempts at its atom (initial + 2 retries, each retry states what changed), then STOPS and returns. The orchestrator then picks exactly one of the ADR-011 closed five-set: `rollback` / `escalate` / `pause` / `abort` / `continue`. No improvised sixth path.
+
+**Factors**: `bin/flow-factors.sh "<unit>"` emits the deterministic mechanical factors (`unit_factors.steps_est` etc.) feeding stage [4]; byte-identical on repeat runs by contract.
+
+**Ledger (sole writer)**: the orchestrator — never a worker — appends one row per unit at CLOSE via `bin/flow-ledger-append.sh` (caps 2048 chars/string, 8192 bytes/row; 6-pattern secret redaction). Close checklist + row schema: `references/flow-ledger.md`.
+
+Acceptance suite: `tests/flow-orchestrator/run.sh` (fixtures f1..f8; 8/8 required).
 
 ## Self-check
 

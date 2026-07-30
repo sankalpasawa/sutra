@@ -21,6 +21,7 @@ _run() {
 echo "═══ Sutra plugin tests ═══"
 for f in unit/test-*.sh; do [ -f "$f" ] && _run "$f"; done
 for f in integration/test-*.sh; do [ -f "$f" ] && _run "$f"; done
+[ -f flow-orchestrator/run.sh ] && _run flow-orchestrator/run.sh
 [ -f smoke.sh ] && _run smoke.sh
 
 PASS=$((TOTAL-FAIL))

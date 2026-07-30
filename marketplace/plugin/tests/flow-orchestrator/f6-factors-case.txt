@@ -1,0 +1,4 @@
+unit: Wire the ledger redaction filter into the append path and add a --dry-run flag
+expect: output parses as JSON (jq .)
+expect: unit_factors.steps_est is an integer
+expect: double-run byte-identical (determinism)
