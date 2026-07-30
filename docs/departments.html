@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sutra &middot; Company Departments</title>
+<style>
+:root{--bg:#fafaf9;--card:#fff;--ink:#1c1917;--mut:#78716c;--line:#e7e5e4;--acc:#1d4ed8}
+@media(prefers-color-scheme:dark){:root{--bg:#111;--card:#1b1b1b;--ink:#f5f5f4;--mut:#a8a29e;--line:#2e2b29;--acc:#7ea2ff}}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,'Segoe UI',Roboto,sans-serif;padding:40px 20px}
+.wrap{max-width:980px;margin:0 auto}
+h1{font-size:1.7rem;letter-spacing:-.01em}
+.sub{color:var(--mut);margin:6px 0 28px;font-size:.95rem}
+.root{border:2px solid var(--acc);border-radius:12px;padding:14px 20px;display:inline-block;font-weight:700;margin-bottom:26px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.card h2{font-size:1.05rem;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.count{font-size:.72rem;font-weight:600;color:var(--acc);border:1px solid var(--acc);border-radius:999px;padding:1px 8px;margin-left:8px}
+ul{list-style:none;padding-left:0}
+li ul{padding-left:18px;border-left:2px solid var(--line);margin:4px 0 4px 7px}
+.dept{padding:3px 0}
+.leaf .name::before{content:"&#8226; ";color:var(--mut)}
+.withheld{color:var(--mut);font-style:italic;padding:3px 0}
+footer{margin-top:30px;color:var(--mut);font-size:.8rem}
+</style></head><body><div class="wrap">
+<h1>Sutra &middot; Company Departments</h1>
+<p class="sub">The operating structure &mdash; every unit of work in the Sutra system carries an address in this tree (ADR-028 work placement). Generated from the live registry.</p>
+<div class="root">Asawa Inc.</div>
+<div class="grid"><section class="card"><h2>Sutra OS <span class="count">4</span></h2><ul><li class="leaf"><div class="dept"><span class="name">Core Plugin</span></div></li><li class="leaf"><div class="dept"><span class="name">Native Engine</span></div></li><li class="leaf"><div class="dept"><span class="name">Websites &amp; Docs</span></div></li><li class="leaf"><div class="dept"><span class="name">Marketplace &amp; Distribution</span></div></li></ul></section><section class="card"><h2>Holding Departments <span class="count">9</span></h2><ul><li class="leaf"><div class="dept"><span class="name">Analytics</span></div></li><li class="leaf"><div class="dept"><span class="name">Brand</span></div></li><li class="leaf"><div class="dept"><span class="name">Compliance</span></div></li><li class="leaf"><div class="dept"><span class="name">Doctrine</span></div></li><li class="leaf"><div class="dept"><span class="name">Fleet</span></div></li><li class="leaf"><div class="dept"><span class="name">Observability</span></div></li><li class="leaf"><div class="dept"><span class="name">PM</span></div></li><li class="leaf"><div class="dept"><span class="name">Research</span></div></li><li class="leaf"><div class="dept"><span class="name">Website</span></div></li></ul></section><section class="card"><h2>Portfolio (T2) <span class="count">6</span></h2><ul><li class="leaf"><div class="dept"><span class="name">DayFlow</span></div></li><li class="leaf"><div class="dept"><span class="name">Billu</span></div></li><li class="leaf"><div class="dept"><span class="name">Paisa</span></div></li><li class="leaf"><div class="dept"><span class="name">PPR</span></div></li><li class="leaf"><div class="dept"><span class="name">Maze</span></div></li><li class="leaf"><div class="dept"><span class="name">Reflection</span></div></li></ul></section><section class="card"><h2>Client Projects (T3) <span class="count">2</span></h2><ul><li class="withheld">2 client projects &mdash; names withheld</li></ul></section><section class="card"><h2>Fleet (T4) <span class="count">0</span></h2><ul><li class="leaf empty">no sub-departments yet</li></ul></section></div>
+<footer>27 departments &middot; generated 2026-07-30 from the placement registry &middot; MECE: every area has exactly one home</footer>
+</div></body></html>
