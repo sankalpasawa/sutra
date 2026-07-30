@@ -258,6 +258,25 @@ def charters_for(domain_ref):
     return out
 
 
+def pick_charter(domain_ref, evidence_terms=None):
+    """A Domain hosts MANY charters; each charter lives in one Domain.
+    Which one a work unit runs under = best evidence overlap between the
+    turn's terms and each charter's title/purpose/scope_in; deterministic
+    tie-break by id. With one charter this degrades to that charter."""
+    chs = charters_for(domain_ref)
+    if not chs:
+        return None
+    if len(chs) == 1 or not evidence_terms:
+        return sorted(chs, key=lambda c: c["id"])[0]
+    ev = set(evidence_terms)
+    def score(c):
+        toks = tokenize(c.get("title",""), c.get("purpose",""),
+                        *(c.get("scope_in") or []))
+        return (len(ev & toks), c["id"])
+    best = sorted(chs, key=lambda c: (-score(c)[0], c["id"]))[0]
+    return best
+
+
 def mint_charter_stub(domain_ref, title, purpose, scope_in, scope_out, tenant_id):
     """Descriptive fields only. obligations stays EMPTY with a stated reason —
     the system never fabricates promises the operator did not make
@@ -572,9 +591,9 @@ def resolve(work_ref, utterance="", paths=None, artifacts=None,
     else:
         origin = "matched"
 
-    chs = charters_for(ref)
-    if chs:
-        charter_id = sorted(c["id"] for c in chs)[0]
+    picked = pick_charter(ref, ev_terms)
+    if picked:
+        charter_id = picked["id"]
     else:
         domains = load_domains()
         nm = domains.get(ref, {}).get("name", "Work")
@@ -606,12 +625,12 @@ def classify_only(utterance="", paths=None, artifacts=None, tenant_id="T-local")
     if ref is None or mode == "none":
         return {"resolved": False, "reason": "no-match",
                 "chain": [], "charter": {}, "confidence": round(confidence, 4)}
-    chs = charters_for(ref)
     charter = {}
-    if chs:
-        c = sorted(chs, key=lambda x: x["id"])[0]
+    c = pick_charter(ref, sorted(evidence["terms"] | evidence["path_terms"]))
+    if c:
         charter = {"id": c["id"], "title": c.get("title", ""),
-                   "promise": c.get("purpose", "")}
+                   "promise": c.get("purpose", ""),
+                   "of": len(charters_for(ref))}
     return {
         "resolved": True, "mode": mode, "domain_ref": ref,
         "confidence": round(confidence, 4),
@@ -916,6 +935,41 @@ def main(argv):
                          name=(argv[4] if len(argv) > 4 else None), tenant_id=tenant))
     elif cmd == "scan":
         _out(scan(argv[2] if len(argv) > 2 else ".", tenant))
+    elif cmd == "lint":
+        # Groundedness lint (grounding rung 5). SEPARATE from the gate by
+        # dual-lane decision: the gate checks presence; this checks truth.
+        # Always exits 0 — visibility, never blockage.
+        issues = []
+        repo = os.environ.get("CLAUDE_PROJECT_DIR", ".")
+        mpath = os.path.join(repo, ".claude", "placement-registered")
+        domains = load_domains()
+        if os.path.exists(mpath):
+            kv = {}
+            for line in open(mpath):
+                if "=" in line:
+                    k, v = line.strip().split("=", 1); kv[k] = v
+            ref = kv.get("DOMAIN_REF", "")
+            if ref and ref not in domains and ref != "unresolved":
+                issues.append("marker DOMAIN_REF %r does not resolve" % ref)
+            cid = kv.get("CHARTER_ID", "")
+            if cid and cid != "unresolved" and not os.path.exists(
+                    os.path.join(CHARTERS, cid + ".json")):
+                issues.append("marker CHARTER_ID %r does not resolve" % cid)
+            if kv.get("ORIGIN") not in ("matched", "minted", "backfilled",
+                                        "unresolved", None, ""):
+                issues.append("marker ORIGIN %r not legal" % kv.get("ORIGIN"))
+            if kv.get("SOURCE") != "engine":
+                issues.append("marker is %s-written, not engine output"
+                              % (kv.get("SOURCE") or "hand"))
+        else:
+            issues.append("no placement marker on disk")
+        rows = _read_jsonl(CURRENT)[-50:]
+        bad = sum(1 for r in rows if r.get("domain_ref") not in domains)
+        if bad:
+            issues.append("%d/%d recent CURRENT rows cite unresolvable domains"
+                          % (bad, len(rows)))
+        _out({"ok": not issues, "issues": issues,
+              "checked_rows": len(rows), "domains": len(domains)})
     elif cmd == "stats":
         _out({"home": HOME, "domains": len(load_domains()),
               "charters": len(os.listdir(CHARTERS)) if os.path.isdir(CHARTERS) else 0,

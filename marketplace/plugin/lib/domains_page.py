@@ -48,38 +48,83 @@ def build(out_path, label="Domains", title=None):
     def esc(s): return html.escape(s or "")
 
     def charter_line(ref):
-        chs = E.charters_for(ref)
-        if not chs:
+        # a domain hosts MANY charters — render every one (founder 2026-07-30)
+        chs = sorted(E.charters_for(ref), key=lambda x: x["id"])
+        return "".join('<p class="charter"><span>Charter</span> %s — %s</p>'
+                       % (esc(c.get("title", "")), esc(c.get("purpose", "")))
+                       for c in chs)
+
+    def org_diagram(parent_name, child_names):
+        if not child_names:
             return ""
-        c = sorted(chs, key=lambda x: x["id"])[0]
-        return ('<p class="charter"><span>Charter</span> %s — %s</p>'
-                % (esc(c.get("title", "")), esc(c.get("purpose", ""))))
+        boxes = "".join('<div class="tnode">%s</div>' % esc(n) for n in child_names)
+        return ('<div class="tree"><div class="tnode troot">%s</div>'
+                '<div class="tdown"></div><div class="tkids">%s</div></div>'
+                % (esc(parent_name), boxes))
 
     tops = kids.get(root, [])
     rail, sections = [], []
+
+    def dpath_idx(idx):                       # [1,2] -> "D1.2" / anchor "d1-2"
+        return "D" + ".".join(str(x) for x in idx), "d" + "-".join(str(x) for x in idx)
+
+    def nav_entry(ref, idx, depth):
+        d = domains[ref]
+        ch = [] if d.get("public_names_withheld") else kids.get(ref, [])
+        label_i, anchor = dpath_idx(idx)
+        if ch:
+            inner = "".join(nav_entry(c, idx + [j], depth + 1)
+                            for j, c in enumerate(ch, 1))
+            return ('<details class="navgrp"%s><summary><span class="chip">%s</span>'
+                    '<a href="#%s">%s</a></summary><div class="navkids">%s</div></details>'
+                    % (" open" if depth < 2 else "", label_i, anchor, esc(d["name"]), inner))
+        return ('<a class="sub" href="#%s"><span class="chip">%s</span>%s</a>'
+                % (anchor, label_i, esc(d["name"])))
+
+    def node_block(ref, idx, depth):
+        """One domain as a dotted block: chip, name, desc, charters — and if it
+        has children, its OWN cascading diagram + child blocks inside, at any
+        depth (founder 2026-07-30: the entire structure is cascading)."""
+        d = domains[ref]
+        ch = [] if d.get("public_names_withheld") else kids.get(ref, [])
+        label_i, anchor = dpath_idx(idx)
+        body = ('<span class="chip">%s</span><b>%s</b><p>%s</p>%s'
+                % (label_i, esc(d["name"]), esc(d.get("description", "")), charter_line(ref)))
+        if d.get("public_names_withheld") and kids.get(ref):
+            body += ('<p class="withheld">%d entries — names withheld on the public page</p>'
+                     % len(kids.get(ref, [])))
+        if ch:
+            inner = "".join(node_block(c, idx + [j], depth + 1)
+                            for j, c in enumerate(ch, 1))
+            body += ('<details class="cascade"%s><summary>%d sub-domains</summary>'
+                     '%s<div class="grid">%s</div></details>'
+                     % (" open" if depth < 2 else "",
+                        len(ch), org_diagram(d["name"], [domains[c]["name"] for c in ch]),
+                        inner))
+        return '<div class="info" id="%s">%s</div>' % (anchor, body)
+
     for i, t in enumerate(tops, 1):
         d = domains[t]
-        ch = kids.get(t, [])
-        a = "d%d" % i
-        rail.append('<a href="#%s"><span class="chip">D%d</span>%s</a>' % (a, i, esc(d["name"])))
+        ch = [] if d.get("public_names_withheld") else kids.get(t, [])
+        label_i, anchor = dpath_idx([i])
+        rail.append(nav_entry(t, [i], 1))
         if d.get("public_names_withheld"):
             blocks = ('<div class="info withheld">%d entries — names withheld on the public page</div>'
-                      % len(ch))
+                      % len(kids.get(t, [])))
         elif ch:
-            blocks = "".join(
-                '<div class="info"><span class="chip">D%d.%d</span><b>%s</b><p>%s</p>%s</div>'
-                % (i, j, esc(domains[c]["name"]), esc(domains[c].get("description", "")),
-                   charter_line(c))
-                for j, c in enumerate(ch, 1))
+            blocks = "".join(node_block(c, [i, j], 2) for j, c in enumerate(ch, 1))
         else:
             blocks = '<div class="info empty">no sub-%s yet</div>' % label.lower()
+        diag = "" if d.get("public_names_withheld") else org_diagram(
+            d["name"], [domains[c]["name"] for c in ch])
         sections.append(
-            '<section id="%s" class="dept"><header><span class="chip big">D%d</span>'
+            '<section id="%s" class="dept"><header><span class="chip big">%s</span>'
             '<div><h2>%s</h2><p class="desc">%s</p>%s</div><span class="count">%d</span>'
-            '</header><div class="grid">%s</div></section>'
-            % (a, i, esc(d["name"]), esc(d.get("description", "")), charter_line(t),
-               len(ch), blocks))
+            '</header>%s<div class="grid">%s</div></section>'
+            % (anchor, label_i, esc(d["name"]), esc(d.get("description", "")),
+               charter_line(t), len(kids.get(t, [])), diag, blocks))
 
+    rootdiag = org_diagram(rootd["name"], [domains[t]["name"] for t in tops])
     page = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -109,18 +154,40 @@ h1{font-size:1.65rem;letter-spacing:-.01em}
 .info b{display:inline-block;margin-left:8px;font-size:.95rem}
 .info p{color:var(--mut);font-size:.85rem;margin-top:6px}
 .info.withheld,.info.empty{color:var(--mut);font-style:italic}
+.cascade{margin-top:10px;border-top:1px dotted var(--line);padding-top:8px}
+.cascade summary{cursor:pointer;font-size:.78rem;color:var(--acc);list-style:none}
+.cascade summary::before{content:"\25B8 ";font-size:.7rem}
+.cascade[open] summary::before{content:"\25BE "}
+.cascade .grid{margin-top:10px;grid-template-columns:1fr}
+.navgrp summary a{color:var(--ink);text-decoration:none}
 footer{color:var(--mut);font-size:.8rem;margin-top:8px}
+.navgrp summary{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;list-style:none}
+.navgrp summary::before{content:"\25B8";font-size:.7rem;color:var(--mut)}
+.navgrp[open] summary::before{content:"\25BE"}
+.navgrp summary:hover{background:var(--accbg)}
+.navkids{margin-left:14px;border-left:2px solid var(--line);padding-left:8px}
+.navkids a.sub{font-size:.85rem;padding:5px 6px}
+.tree{margin:6px 0 18px;text-align:center}
+.tnode{display:inline-block;background:var(--card);border:1.5px solid var(--acc);border-radius:8px;padding:6px 14px;font-size:.85rem;font-weight:600}
+.tnode.troot{background:var(--accbg)}
+.tdown{width:2px;height:14px;background:var(--line);margin:0 auto}
+.tkids{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;position:relative;padding-top:14px}
+.tkids::before{content:"";position:absolute;top:0;left:12%%;right:12%%;height:2px;background:var(--line)}
+.tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
+.tkids .tnode::before{content:"";position:absolute;top:-14px;left:50%%;width:2px;height:14px;background:var(--line)}
 @media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}}
 </style></head><body><div class="layout">
 <nav>%(rail)s</nav>
 <main>
 <h1>%(root)s</h1>
 <p class="rootdesc">%(rootdesc)s</p>
+%(rootdiag)s
 %(sections)s
 <footer>%(n)d %(label_l)s · two levels of depth · generated from the live placement registry (ADR-028) · design tokens: %(src)s</footer>
 </main></div></body></html>
 """ % dict(title=esc(title or "%s · %s" % (rootd["name"], label)), rail="".join(rail),
            root=esc(rootd["name"]), rootdesc=esc(rootd.get("description", "")),
+           rootdiag=rootdiag,
            sections="".join(sections), n=len(domains), label_l=label.lower(),
            src=esc(T.get("source", "")), **{k: T[k] for k in
            ("bg", "card", "ink", "muted", "line", "accent", "accent_bg", "font")})

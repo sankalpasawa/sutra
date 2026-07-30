@@ -240,6 +240,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/process-fix-check.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-scope-audit.sh",
+            "timeout": 8
           }
         ]
       },
@@ -295,6 +300,16 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-marker.sh",
             "timeout": 3
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-scope-audit.sh",
+            "timeout": 8
           }
         ]
       }
@@ -444,6 +459,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-stop-check.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-lint.sh",
+            "timeout": 8
           }
         ]
       }

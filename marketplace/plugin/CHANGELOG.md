@@ -4,6 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.49.0 (2026-07-30) — grounding rungs 4+5, multi-charter, recursive cascade
+
+- Rung 4 `context-scope-audit.sh` (PostToolUse): cross-charter file reach is audit-logged per canon Q28 — never blocked.
+- Rung 5 `placement-lint.sh` (Stop, advisory) + engine `lint`: checks the placement is TRUE (refs resolve, origin legal, engine-written) — separate from the gate by dual-lane decision; first run flagged a real hand-written marker.
+- Multi-charter domains: `pick_charter()` selects by evidence overlap (deterministic tie-break); page renders ALL charters per domain.
+- Domains page v3: recursive cascade at ANY depth — collapsible left index with guide lines, an org-chart diagram at every level, description+charter blocks nesting all the way down (4-level fixture proven).
+
 ## v2.48.0 (2026-07-30) — core:domains fleet feature + grounding v1
 
 - Terminology locked: internally DOMAINS always; "departments" is a user-facing synonym. Skill renamed core:domains.
