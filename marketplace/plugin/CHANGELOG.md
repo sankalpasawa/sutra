@@ -4,6 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.47.0 (2026-07-30) — dual-lane review complete: codex folds
+
+- Codex F7.1 exhaustive review (CHANGES-REQUIRED): 11 findings folded. Key: unresolved prompt-turns now write an engine marker so HARD mode can never block on "engine found no match" (I-P3); write_placement hard-rejects non-resolving refs (I-P2) and runs under flock (I-P5); restructure is locked, MOVE rejects cycles, DELETE re-parents children; `python3 -c`/`node -e`/`make`/`rsync`/`tar -x`/`npm run` now gate as mutations; promotion counts SOURCE=engine markers only — hand-written compliance no longer earns HARD.
+- One documented dual-lane disagreement retained (presence-only gate; deepseek advised against parsing). Reconciliation: `.enforcement/codex-reviews/2026-07-30-adr028-f72-reconciliation.md`.
+- `tests/placement-eval.sh` — measured precision: 55% utterance-only top-1 (20 hand-labelled cases), 0 wrong (misses abstain); 200/200 path-evidence consistency.
+- 57 unit assertions green post-folds.
+
 ## v2.46.0 (2026-07-30) — the last mile: the block is engine output
 
 - `hooks/placement-resolve.sh` (UserPromptSubmit) runs the engine and hands the model the exact line to emit. The PLACEMENT block is no longer composed from imagination.

@@ -115,6 +115,14 @@ is_mutating_bash() {
     sed\ -i*|perl\ -i*|*\ --delete*|find\ *-delete*|find\ *-exec\ rm*) return 0 ;;
     git\ commit*|git\ push*|git\ checkout*|git\ reset*|git\ rebase*|git\ merge*|git\ apply*|git\ am*|git\ mv*|git\ rm*|git\ clean*|git\ stash*|git\ restore*|git\ cherry-pick*|git\ tag*|git\ branch\ -d*) return 0 ;;
     npm\ i*|npm\ install*|npm\ publish*|pip\ install*|brew\ install*|cargo\ publish*) return 0 ;;
+    # (3b) codex F7.1 fold: interpreter/build escape hatches. `python3 -c`,
+    # `node -e`, `make`, `rsync`, `tar -x`, `npm run` etc. can all write the
+    # workspace; treating them as read-only made hard mode porous exactly
+    # where automation writes files. Deny-biased per the stated policy.
+    python\ -c*|python3\ -c*|node\ -e*|node\ --eval*|perl\ -e*|ruby\ -e*) return 0 ;;
+    make|make\ *|rsync\ *|tar\ x*|tar\ -x*|tar\ *-x*|unzip\ *) return 0 ;;
+    npm\ run*|npm\ exec*|npx\ *|yarn\ *|pnpm\ *|cargo\ build*|cargo\ run*|go\ build*|go\ run*) return 0 ;;
+    dd\ *|install\ *|patch\ *) return 0 ;;
   esac
   return 1
 }
@@ -142,8 +150,19 @@ MODE="warn"
 [ -f "$MODE_FILE" ] && MODE=$(tr -d '[:space:]' < "$MODE_FILE" 2>/dev/null)
 case "$MODE" in hard|warn) ;; *) MODE="warn" ;; esac
 
+placement_marker_engine_sourced() {
+  # Codex F7.1 fold (+ own dogfood finding): promotion used to count marker
+  # PRESENCE, so 50 hand-written markers earned HARD — compliance theatre.
+  # Only engine-written markers (SOURCE=engine) advance the ladder now.
+  grep -qs 'SOURCE=engine' "$REPO_ROOT/.claude/placement-registered" && return 0
+  grep -qs 'SOURCE=engine' "$REPO_ROOT/.claude/sessions/"*/placement-registered 2>/dev/null
+}
+
 if placement_marker_exists; then
-  # compliant turn -- count it, and auto-promote once the repo has earned it
+  # compliant turn -- count it toward promotion ONLY if the engine wrote it
+  if [ "$MODE" = "warn" ] && ! placement_marker_engine_sourced; then
+    exit 0
+  fi
   if [ "$MODE" = "warn" ]; then
     mkdir -p "$(dirname "$COUNT_FILE")" 2>/dev/null
     N=0; [ -f "$COUNT_FILE" ] && N=$(tr -cd '0-9' < "$COUNT_FILE" 2>/dev/null)

@@ -66,6 +66,14 @@ else
   REASON=$(printf '%s' "$RESULT" | jq -r '.reason // "unknown"' 2>/dev/null)
   BODY=$(printf 'The placement engine could NOT resolve this turn to an existing domain (reason: %s).\nSay so plainly in your PLACEMENT block rather than inventing a path, e.g.:\n\n  PLACEMENT: unresolved (%s) — address assigned when this work touches files\n\nDo NOT fabricate a D-path. An honest "unresolved" is correct; an invented\naddress is the exact failure this feature exists to remove.\n' \
          "$REASON" "$REASON")
+  # I-P3 (codex F7.1, 2026-07-30): an unresolved DECLARATION is still a
+  # declaration. Without this marker, hard mode turns "engine could not match
+  # the utterance" into a blocked Edit — never-blocks violated by the hook
+  # layer while the engine honoured it. Unresolved is recorded, work proceeds,
+  # and the real address lands when the work touches actual paths.
+  mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
+  printf 'DOMAIN_REF=unresolved\nCHARTER_ID=unresolved\nORIGIN=unresolved\nREASON=%s\nCONFIDENCE=0.0\nSOURCE=engine\nTS=%s\n' \
+    "$REASON" "$(date +%s)" > "$REPO_ROOT/.claude/placement-registered" 2>/dev/null
 fi
 
 jq -nc --arg c "$(printf '\n[Placement · ADR-028]\n%s\n' "$BODY")" \

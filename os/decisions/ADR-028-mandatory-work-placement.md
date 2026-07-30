@@ -75,6 +75,8 @@ deepseek consult, 2026-07-27, `deepseek-v4-pro`, verdict **CHANGES-REQUIRED**. A
 
 Where canon departs from the review: deepseek rated finding 5 as potentially P1 on access-control grounds. Canon keeps it P2 — Placement is an *address*, not an authorization; Charter ACL already governs access. The post-close correction ships regardless.
 
+**Codex lane (F7.1, 2026-07-30)**: exhaustive review, verdict CHANGES-REQUIRED, 15 P1 flags. Eleven folded same day (I-P2 write-boundary enforcement, I-P3 unresolved-marker fix, flocked write_placement + restructure, pid nonce, stale-vote dedupe, I-D4 evidence floor, move cycle-check, delete child re-parenting, interpreter/build gate coverage, SOURCE=engine promotion counting). One documented dual-lane disagreement retained: the gate checks marker PRESENCE only — deepseek explicitly advised against gate-side parsing; codex flags the fabricated-marker residual. Both positions + deferrals recorded in `.enforcement/codex-reviews/2026-07-30-adr028-f72-reconciliation.md`.
+
 ## Falsification tests
 
 | # | Falsifier | Anchor |

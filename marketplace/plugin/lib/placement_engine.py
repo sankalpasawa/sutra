@@ -211,8 +211,12 @@ def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted"):
         for ref, d in domains.items():
             if d.get("parent_ref") == parent_ref and d.get("name", "").strip().lower() == norm:
                 return ref, False
+        # I-D4 (codex F7.1): a system-minted Domain must carry non-empty
+        # mint_evidence — unauditable authority otherwise. Derive from the name
+        # as a floor rather than rejecting (rejecting would break I-P3).
+        evidence = [e for e in (evidence or []) if e] or [norm]
         ref = "dref-" + _sha({"p": parent_ref, "n": norm, "t": tenant_id, "ts": _now_ms(),
-                              "seq": _SEQ[0]})[:16]
+                              "seq": _SEQ[0], "pid": os.getpid()})[:16]
         _SEQ[0] += 1
         doc = {
             "ref": ref,
@@ -310,29 +314,52 @@ def all_placements():
 
 def write_placement(work_ref, domain_ref, charter_id, origin, confidence,
                     created, tenant_id, supersedes=None, phase="pre-flight"):
+    """Durable placement write.
+
+    Codex F7.1 folds (2026-07-30):
+    - I-P2 enforced AT THE WRITE BOUNDARY: domain_ref and charter_id must
+      resolve or the write is a hard reject. Callers behaving is not an
+      invariant; the primitive refusing bad refs is.
+    - flock around the supersede-check + write so two processes resolving the
+      same new work cannot both land unsuperseded "current" rows (I-P5).
+    - id body carries os.getpid(): _SEQ alone is per-process, so two processes
+      could still collide inside one millisecond with identical content.
+    """
     _ensure_dirs()
-    _SEQ[0] += 1
-    body = {
-        "work_ref": work_ref,
-        "domain_ref": domain_ref,
-        "charter_id": charter_id,
-        "origin": origin,
-        "confidence": round(float(confidence), 4),
-        "created": created,
-        "supersedes": supersedes,
-        "phase": phase,
-        "tenant_id": tenant_id,
-        "ts_ms": _now_ms(),
-        "seq": _SEQ[0],          # fold 2: guarantees uniqueness within a ms
-    }
-    pid = "PL-" + _sha(body)[:16]
-    body["id"] = pid
-    with open(os.path.join(PLACEMENTS, pid + ".json"), "w", encoding="utf-8") as fh:
-        json.dump(body, fh, sort_keys=True, indent=2)
-    _append_jsonl(CURRENT, {"work_ref_id": work_ref.get("id"),
-                            "work_ref_kind": work_ref.get("kind"),
-                            "placement_id": pid, "domain_ref": domain_ref,
-                            "ts_ms": body["ts_ms"]})
+    domains = load_domains()
+    if domain_ref not in domains:
+        raise ValueError("I-P2 reject: domain_ref %r does not resolve" % domain_ref)
+    if not charter_id or not os.path.exists(os.path.join(CHARTERS, charter_id + ".json")):
+        raise ValueError("I-P2 reject: charter_id %r does not resolve" % charter_id)
+
+    with _lock("CURRENT"):
+        prior = current_placement(work_ref.get("id"))
+        if supersedes is None and prior:
+            supersedes = prior          # never leave two unsuperseded currents
+        _SEQ[0] += 1
+        body = {
+            "work_ref": work_ref,
+            "domain_ref": domain_ref,
+            "charter_id": charter_id,
+            "origin": origin,
+            "confidence": round(float(confidence), 4),
+            "created": created,
+            "supersedes": supersedes,
+            "phase": phase,
+            "tenant_id": tenant_id,
+            "ts_ms": _now_ms(),
+            "seq": _SEQ[0],
+            "pid": os.getpid(),      # process-unique component of the id hash
+        }
+        pid_ = "PL-" + _sha(body)[:16]
+        body["id"] = pid_
+        with open(os.path.join(PLACEMENTS, pid_ + ".json"), "w", encoding="utf-8") as fh:
+            json.dump(body, fh, sort_keys=True, indent=2)
+        _append_jsonl(CURRENT, {"work_ref_id": work_ref.get("id"),
+                                "work_ref_kind": work_ref.get("kind"),
+                                "tenant_id": tenant_id,
+                                "placement_id": pid_, "domain_ref": domain_ref,
+                                "ts_ms": body["ts_ms"]})
     return body
 
 
@@ -390,15 +417,17 @@ def _adjacent_domain_votes(paths):
     norm = {_norm_path(p) for p in paths if p}
     dirs = {os.path.dirname(p) for p in norm if p}
     tails = {os.sep.join(p.split(os.sep)[-2:]) for p in norm if p}
-    votes = {}
+    # Codex F7.1 fold: CURRENT is append-only history — a re-placed file has
+    # many rows. Voting over ALL of them let stale (superseded) placements
+    # outvote the current one. Last row per work_ref wins; only currents vote.
+    latest = {}
     for row in _read_jsonl(CURRENT):
         raw = row.get("work_ref_id") or ""
-        if not raw:
-            continue
+        if raw and row.get("domain_ref"):
+            latest[raw] = row["domain_ref"]
+    votes = {}
+    for raw, ref in latest.items():
         wid = _norm_path(raw)
-        ref = row.get("domain_ref")
-        if not ref:
-            continue
         if wid in norm:
             votes[ref] = votes.get(ref, 0) + 10.0            # same file
         elif os.path.dirname(wid) in dirs:
@@ -662,8 +691,31 @@ def _save_domain(d):
         json.dump(d, fh, sort_keys=True, indent=2)
 
 
+def _is_descendant(candidate, ancestor, domains):
+    """True if `candidate` sits anywhere under `ancestor` in the tree."""
+    seen, cur = set(), candidate
+    while cur and cur in domains and cur not in seen:
+        if cur == ancestor:
+            return True
+        seen.add(cur)
+        cur = domains[cur].get("parent_ref")
+    return False
+
+
 def restructure(op, ref, target=None, name=None, tenant_id="T-local"):
-    """rename | move | merge | delete. MOVE re-mints ZERO placements (I-P8)."""
+    """rename | move | merge | delete. MOVE re-mints ZERO placements (I-P8).
+
+    Codex F7.1 folds (2026-07-30): the whole operation runs under a global
+    restructure lock (mint was flocked; restructure was ordinary multi-file
+    writes — lost updates under concurrency). MOVE rejects cycles (re-parenting
+    under one's own descendant orphans the subtree from the root). DELETE
+    re-parents CHILD DOMAINS, not just placements — children were orphaned.
+    """
+    with _lock("RESTRUCTURE"):
+        return _restructure_locked(op, ref, target, name, tenant_id)
+
+
+def _restructure_locked(op, ref, target=None, name=None, tenant_id="T-local"):
     domains = load_domains()
     if ref not in domains:
         return {"ok": False, "error": "unknown domain ref"}
@@ -678,6 +730,8 @@ def restructure(op, ref, target=None, name=None, tenant_id="T-local"):
     elif op == "move":
         if target not in domains:
             return {"ok": False, "error": "unknown target"}
+        if target == ref or _is_descendant(target, ref, domains):
+            return {"ok": False, "error": "cycle: target is inside the moved subtree"}
         d["parent_ref"] = target
         d["touched_by_operator"] = True
         _save_domain(d)
@@ -712,6 +766,11 @@ def restructure(op, ref, target=None, name=None, tenant_id="T-local"):
                                 p.get("confidence", 0.5), {"domains": [], "charters": []},
                                 tenant_id, supersedes=p["id"], phase="post-close")
                 moved += 1
+        # children re-parent to the deleted node's parent — never orphaned
+        for cref, cd in domains.items():
+            if cd.get("parent_ref") == ref:
+                cd["parent_ref"] = parent
+                _save_domain(cd)
         os.remove(os.path.join(DOMAINS, ref + ".json"))
     else:
         return {"ok": False, "error": "unknown op"}
