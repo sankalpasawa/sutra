@@ -245,8 +245,26 @@ def build_site(out_dir, label="Domains", window=3):
     T = dict(NEUTRAL)
     T.update(domains[root].get("design") or {})
 
+    # Privacy parity with the flat renderer (codex fold 2026-07-30): a
+    # `public_names_withheld` domain hides its children's names, and no page
+    # is generated for any hidden descendant — a ref-named page would leak
+    # the very names the flag withholds.
+    hidden = set()
+    def _hide(ref):
+        for c in kids.get(ref, []):
+            hidden.add(c); _hide(c)
+    for r, d in domains.items():
+        if d.get("public_names_withheld"):
+            _hide(r)
+
     def esc(s): return html.escape(s or "")
     def fname(ref): return "index.html" if ref == root else ref + ".html"
+    def vis_kids(ref):
+        return [] if domains[ref].get("public_names_withheld") else kids.get(ref, [])
+    def withheld_note(ref):
+        n = len(kids.get(ref, []))
+        return ('<p class="withheld">%d entries — names withheld on the public page</p>' % n) \
+            if domains[ref].get("public_names_withheld") and n else ""
 
     def charter_line(ref):
         chs = sorted(E.charters_for(ref), key=lambda x: x["id"])
@@ -258,7 +276,7 @@ def build_site(out_dir, label="Domains", window=3):
         """Diagram at ANY cascading level. Child boxes are clickable: they
         anchor to the child's block on THIS page, or open its page when the
         child has its own subtree beyond the window."""
-        ch = kids.get(ref, [])
+        ch = vis_kids(ref)
         if not ch:
             return ""
         boxes = "".join('<a class="tnode" href="#%s">%s</a>'
@@ -282,17 +300,17 @@ def build_site(out_dir, label="Domains", window=3):
 
     def page_for(page_ref):
         pd = domains[page_ref]
-        tops = kids.get(page_ref, [])
+        tops = vis_kids(page_ref)
 
         # per-page anchor table for this page's window
         anchor_of.clear()
         def assign(ref, idx, depth):
             anchor_of[ref] = dpath_idx(idx)[1]
             if depth < window:
-                for j, c in enumerate(kids.get(ref, []), 1):
+                for j, c in enumerate(vis_kids(ref), 1):
                     assign(c, idx + [j], depth + 1)
                 return
-            for c in kids.get(ref, []):          # beyond window: anchor at parent
+            for c in vis_kids(ref):              # beyond window: anchor at parent
                 anchor_of[c] = dpath_idx(idx)[1]
         for i, t in enumerate(tops, 1):
             assign(t, [i], 1)
@@ -303,7 +321,7 @@ def build_site(out_dir, label="Domains", window=3):
 
         def nav_entry(ref, idx, depth):
             d = domains[ref]
-            ch = kids.get(ref, [])
+            ch = vis_kids(ref)
             label_i, anchor = dpath_idx(idx)
             if ch and depth < window:
                 inner = "".join(nav_entry(c, idx + [j], depth + 1)
@@ -322,11 +340,12 @@ def build_site(out_dir, label="Domains", window=3):
 
         def node_block(ref, idx, depth):
             d = domains[ref]
-            ch = kids.get(ref, [])
+            ch = vis_kids(ref)
             label_i, anchor = dpath_idx(idx)
             name_html = '<a class="dlink" href="%s">%s</a>' % (fname(ref), esc(d["name"]))
-            body = ('<span class="chip">%s</span><b>%s</b><p>%s</p>%s'
-                    % (label_i, name_html, esc(d.get("description", "")), charter_line(ref)))
+            body = ('<span class="chip">%s</span><b>%s</b><p>%s</p>%s%s'
+                    % (label_i, name_html, esc(d.get("description", "")),
+                       charter_line(ref), withheld_note(ref)))
             if ch and depth < window:
                 inner = "".join(node_block(c, idx + [j], depth + 1)
                                 for j, c in enumerate(ch, 1))
@@ -340,11 +359,14 @@ def build_site(out_dir, label="Domains", window=3):
         rail, sections = [], []
         for i, t in enumerate(tops, 1):
             d = domains[t]
-            ch = kids.get(t, [])
+            ch = vis_kids(t)
             label_i, anchor = dpath_idx([i])
             rail.append(nav_entry(t, [i], 1))
             if ch:
                 blocks = "".join(node_block(c, [i, j], 2) for j, c in enumerate(ch, 1))
+            elif d.get("public_names_withheld") and kids.get(t):
+                blocks = ('<div class="info withheld">%d entries — names withheld '
+                          'on the public page</div>' % len(kids.get(t, [])))
             else:
                 blocks = '<div class="info empty">no sub-%s yet</div>' % label.lower()
             sections.append(
@@ -363,16 +385,21 @@ def build_site(out_dir, label="Domains", window=3):
         return SITE_TMPL % dict(
             title="%s · %s" % (esc(pd["name"]), label), crumb=crumb(page_ref),
             uplink=uplink, rail="".join(rail), root=esc(pd["name"]),
-            rootdesc=esc(pd.get("description", "")), rootchs=charter_line(page_ref),
+            rootdesc=esc(pd.get("description", "")),
+            rootchs=charter_line(page_ref) + withheld_note(page_ref),
             rootdiag=rootdiag, sections=body_main, n=len(kids.get(page_ref, [])),
             window=window, label_l=label.lower(), src=esc(T.get("source", "")),
             **{k: T[k] for k in ("bg", "card", "ink", "muted", "line",
                                  "accent", "accent_bg", "font")})
 
     anchor_of = {}
+    made = 0
     for ref in domains:
+        if ref in hidden:                        # no page for withheld names
+            continue
         open(os.path.join(out_dir, fname(ref)), "w").write(page_for(ref))
-    return len(domains)
+        made += 1
+    return made
 
 
 # Zoom-page template: SAME two-column anatomy as the flat page (left index +
@@ -409,7 +436,8 @@ h1{font-size:1.65rem;letter-spacing:-.01em}
 .info:target{border-color:var(--acc)}
 .info b{display:inline-block;margin-left:8px;font-size:.95rem}
 .info p{color:var(--mut);font-size:.85rem;margin-top:6px}
-.info.empty{color:var(--mut);font-style:italic}
+.info.empty,.info.withheld,p.withheld{color:var(--mut);font-style:italic}
+p.withheld{font-size:.85rem;margin-top:6px}
 a.dlink{color:inherit;text-decoration:none}
 a.dlink:hover{color:var(--acc)}
 .cascade{margin-top:10px;border-top:1px dotted var(--line);padding-top:8px}

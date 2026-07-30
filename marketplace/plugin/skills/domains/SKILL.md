@@ -38,10 +38,23 @@ ASCII only, one screen, big groups collapsed to top-3 + count. Anchored ask
 On "publish the domains/departments page" (or first ask about departments in a
 repo with Pages):
 
-1. Generate with the fleet generator — `<plugin>/lib/domains_page.py OUT.html
-   --label Departments`. It renders: left index rail, clickable anchored
-   sections, one-line description AND charter line per domain, dotted child
-   blocks, two levels of depth.
+1. Generate with the fleet generator. **Default publish shape = the zoom
+   site**: `<plugin>/lib/domains_page.py OUTDIR --site --label Departments`
+   — one page PER domain, rooted at itself, from the same registry and the
+   same privacy settings as the flat renderer. `OUTDIR` is the Pages
+   artifact root; `index.html` = the root domain; every other page is named
+   by its stable ref (`dref-<16hex>` — engine-generated, unique and
+   filename-safe by construction), so links survive restructure/reparenting.
+   Each zoom page shows its domain + 3 descendant levels and preserves the
+   same sections as the flat render scoped to that window: left index rail,
+   search box, an org diagram at every cascading level, dotted blocks,
+   one-line descriptions, ALL charters. Breadcrumbs + the up-link navigate
+   to ancestors (outside the window is fine); clicking a domain opens ITS
+   page, starting the next window ("a container means open me" — Native IA
+   principle 4). Deeper text is one click away, never inlined.
+   The flat single-page render (`OUT.html`, no `--site`) is generated ONLY
+   on an explicit "one page please" ask — never as a silent replacement for
+   the zoom site.
 2. **Design system comes from D0** (the root domain's `design` field:
    bg/card/ink/muted/line/accent/accent_bg/font + `source`). Detection order
    when D0.design is absent: detect tokens from the company's own site CSS

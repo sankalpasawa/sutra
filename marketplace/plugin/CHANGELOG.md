@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.51.2 (2026-07-30) — zoom-site contract in SKILL.md + privacy parity (codex folds)
+
+- SKILL.md publish contract: zoom site is the default publish shape; flat page only on explicit ask; exact 3-descendant-level window; ref filenames documented as unique/filename-safe by construction.
+- build_site honors public_names_withheld like the flat renderer: hidden descendants get NO pages, withheld notes render, links stay unbroken (verified: flag on Core Plugin -> 27 pages, 0 leaks, 0 broken).
+
 ## v2.51.1 (2026-07-30) — zoom pages keep every standing page feature
 
 - Regression fix: first zoom cut dropped the left-hand index, search, and per-level diagrams. Every zoom page now carries the full page anatomy — sticky left index (clickable, counts, collapsible), search box, an org diagram at EVERY cascading level in the window, dotted blocks, descriptions, all charters — plus breadcrumbs, up-link, and open-links at the window edge.
