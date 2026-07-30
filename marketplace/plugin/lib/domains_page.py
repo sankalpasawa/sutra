@@ -299,29 +299,69 @@ def build_site(out_dir, label="Domains", window=2):
     def st_tag(c):
         return '<span class="st st-%s">%s</span>' % (c["status"], c["status"])
 
-    def ch_pill(c):
-        links = [r for r in c["linked_domain_refs"] if r in domains and r not in hidden]
-        lk = ('<span class="chlinks">linked: %s</span>'
-              % ", ".join('<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"]))
-                          for r in links)) if links else ""
-        art = ('<span class="chart-n">%d artifact%s</span>'
-               % (len(c["artifacts"]), "s" if len(c["artifacts"]) != 1 else "")) \
-            if c["artifacts"] else ""
-        return ('<p class="charter"><span>Charter</span> %s%s — %s%s%s</p>'
-                % (esc(c.get("title", "")), st_tag(c), esc(c.get("purpose", "")), art, lk))
+    # Charter TAGS (founder 2026-07-30: prose pills unreadable). Density
+    # heuristic (codex fold): a group shows visible one-liners only when it
+    # has <= 3 charters AND their purposes fit a small budget; otherwise
+    # compact chips — purpose on hover (desktop, title attr on the CLOSED
+    # summary only) and tap-to-expand (native <details>, works on touch).
+    def st_dot(c):
+        return '<span class="chdot st-%s"><i></i>%s</span>' % (c["status"], c["status"])
+
+    def _art_n(c):
+        n = len(c["artifacts"])
+        return ('<span class="chart-n">%d</span>' % n) if n else ""
+
+    def _links_of(c):
+        return [r for r in c["linked_domain_refs"] if r in domains and r not in hidden]
+
+    def _links_html(c):
+        links = _links_of(c)
+        if not links:
+            return ""
+        return ('<span class="chlinks">linked: %s</span>'
+                % ", ".join('<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"]))
+                            for r in links))
+
+    def ch_panel(c):
+        arts = "".join('<code class="chpath">%s</code>' % esc(a) for a in c["artifacts"][:6])
+        more = ('<span class="chart-n">+%d more</span>' % (len(c["artifacts"]) - 6)) \
+            if len(c["artifacts"]) > 6 else ""
+        return ('<div class="chpanel"><p>%s</p>%s%s%s</div>'
+                % (esc(c.get("purpose", "")), _links_html(c), arts, more))
+
+    def ch_card(c):
+        """Mini-card mode: chip + visible one-liner (no hover needed)."""
+        return ('<div class="chcard">%s<b>%s</b>%s'
+                '<p class="chline">%s</p>%s</div>'
+                % (st_dot(c), esc(c["title"]), _art_n(c),
+                   esc(c.get("purpose", "")), _links_html(c)))
+
+    def ch_compact(c):
+        """Dense mode: status + title + artifact count stay scannable
+        (codex fold); purpose hovers on the closed summary + opens on tap."""
+        return ('<details class="chd"><summary title="%s">%s<b>%s</b>%s</summary>%s</details>'
+                % (esc(c.get("purpose", "")), st_dot(c), esc(c["title"]),
+                   _art_n(c), ch_panel(c)))
+
+    def ch_group(label_g, chs):
+        if not chs:
+            return ""
+        dense = len(chs) > 3 or sum(len(c.get("purpose", "")) for c in chs) > 320
+        body = "".join((ch_compact if dense else ch_card)(c) for c in chs)
+        return ('<h3 class="chg">%s</h3><div class="chips%s">%s</div>'
+                % (label_g, " dense" if dense else "", body))
 
     def charter_line(ref):
-        """L2 compact form: standing pills + a count link for projects."""
+        """L2 compact form: standing titles as tiny hover chips + project count."""
         chs = owned_by.get(ref, [])
         standing = [c for c in chs if c["kind"] == "standing"]
         proj = [c for c in chs if c["kind"] == "project"]
-        out = "".join('<p class="charter"><span>Charter</span> %s — %s</p>'
-                      % (esc(c.get("title", "")), esc(c.get("purpose", "")))
-                      for c in standing)
+        out = "".join('<span class="chmini" title="%s">%s</span>'
+                      % (esc(c.get("purpose", "")), esc(c["title"])) for c in standing)
         if proj:
-            out += ('<p class="charter chnote"><a href="%s">%d project charter%s &rsaquo;</a></p>'
+            out += ('<a class="chmini chmore" href="%s">%d project%s &rsaquo;</a>'
                     % (fname(ref), len(proj), "s" if len(proj) > 1 else ""))
-        return out
+        return ('<p class="chrow"><span class="chlabel">Charter</span>%s</p>' % out) if out else ""
 
     def charters_section(ref):
         """L1: ALWAYS present — the word CHARTER on every department page."""
@@ -331,20 +371,19 @@ def build_site(out_dir, label="Domains", window=2):
         inbound = [c for c in linked_to.get(ref, [])
                    if c.get("domain_ref") in domains and c.get("domain_ref") not in hidden]
         h = ['<section class="chsec"><h2 class="chh">Charters</h2>']
-        if standing:
-            h.append('<h3 class="chg">Standing</h3>')
-            h += [ch_pill(c) for c in standing]
-        if proj:
-            h.append('<h3 class="chg">Projects</h3>')
-            h += [ch_pill(c) for c in proj]
+        h.append(ch_group("Standing", standing))
+        h.append(ch_group("Projects", proj))
         if not standing and not proj:
-            h.append('<p class="chempty">no active charters yet</p>')
+            h.append('<p class="chempty">none yet</p>')
         if inbound:
-            h.append('<h3 class="chg">Linked here (owned elsewhere)</h3>')
-            h += ['<p class="charter chlink-in"><span>Charter</span> %s%s — owned by '
-                  '<a href="%s">%s</a></p>'
-                  % (esc(c.get("title", "")), st_tag(c), fname(c["domain_ref"]),
-                     esc(domains[c["domain_ref"]]["name"])) for c in inbound]
+            linkchips = "".join(
+                '<a class="chd chlinkchip" href="%s" title="%s">%s<b>%s</b>'
+                '<span class="chowner">owned by %s</span></a>'
+                % (fname(c["domain_ref"]), esc(c.get("purpose", "")), st_dot(c),
+                   esc(c["title"]), esc(domains[c["domain_ref"]]["name"]))
+                for c in inbound)
+            h.append('<h3 class="chg">Linked</h3>'
+                     '<div class="chips dense">%s</div>' % linkchips)
         h.append('</section>')
         return "".join(h)
 
@@ -400,8 +439,7 @@ def build_site(out_dir, label="Domains", window=2):
             return ""
         head = "".join('<th scope="col">%s</th>' % esc(domains[t]["name"]) for t in tops)
         return ('<section class="lanes"><h2 class="chh">Cross-cutting charters</h2>'
-                '<p class="lanenote">O = owner column, L = linked. Rows stay horizontal '
-                'at this level — sub-department detail lives on the child pages.</p>'
+                '<p class="lanenote">O owner &middot; L linked</p>'
                 '<div class="lanewrap"><table class="lanetab">'
                 '<thead><tr><th scope="col"></th>%s</tr></thead><tbody>%s</tbody></table>'
                 '</div></section>' % (head, "".join(rows)))
@@ -589,15 +627,40 @@ h1{font-size:1.65rem;letter-spacing:-.01em}
 p.withheld{font-size:.85rem;margin-top:6px}
 .chsec{margin:16px 0 4px}
 .chh{font-size:1.02rem;margin-bottom:4px}
-.chg{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px}
+.chg{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px}
 .chempty{color:var(--mut);font-style:italic;font-size:.85rem}
 .st{font:600 .62rem/1 ui-monospace,monospace;border-radius:4px;padding:2px 5px;margin-left:6px;border:1px solid var(--line);color:var(--mut)}
 .st-active{border-color:var(--acc);color:var(--acc)}
 .st-retired{opacity:.65}
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
+.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .64rem/1 ui-monospace,monospace;color:var(--mut);margin-right:8px}
+.chdot i{width:7px;height:7px;border-radius:50%%;background:var(--line);display:inline-block}
+.chdot.st-active i{background:var(--acc)}
+.chdot.st-shipped i{background:var(--mut)}
+.chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
+.chcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-height:36px;flex:1 1 260px;max-width:420px}
+.chcard b{font-size:.88rem}
+.chline{color:var(--mut);font-size:.8rem;margin-top:4px;max-width:52ch}
+.chd{position:relative}
+.chd summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 14px;min-height:36px;font-size:.84rem}
+.chd summary::-webkit-details-marker{display:none}
+.chd summary:hover{border-color:var(--acc);background:var(--accbg)}
+.chd summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.chd[open] summary{border-color:var(--acc);border-radius:10px 10px 0 0}
+.chd b{font-weight:600}
+.chpanel{border:1px solid var(--acc);border-top:none;border-radius:0 0 10px 10px;background:var(--card);padding:10px 14px;font-size:.8rem;max-width:420px}
+.chpanel p{color:var(--mut);margin-bottom:4px}
+.chpath{display:block;font:400 .7rem/1.5 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
+a.chlinkchip{display:inline-flex;align-items:center;background:var(--card);border:1px dashed var(--line);border-radius:999px;padding:8px 14px;min-height:36px;font-size:.84rem;color:inherit;text-decoration:none}
+a.chlinkchip:hover{border-color:var(--acc);background:var(--accbg)}
+.chowner{font-size:.7rem;color:var(--mut);margin-left:8px}
+.chrow{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chlabel{font:600 .66rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px}
+.chmini{font-size:.74rem;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:default}
+a.chmini{color:var(--acc);text-decoration:none;cursor:pointer}
 .chlinks{display:block;font-size:.75rem;color:var(--mut);margin-top:2px}
 .chlinks a{color:var(--acc);text-decoration:none}
-.chart-n{font-size:.72rem;color:var(--mut);margin-left:8px}
-.chnote a{color:var(--acc);text-decoration:none;font-size:.78rem}
+.chart-n{font:600 .64rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:2px 6px;margin-left:8px}
 .lanes{margin:12px 0 8px}
 .lanenote{font-size:.75rem;color:var(--mut);margin-bottom:8px}
 .lanewrap{overflow-x:auto}
@@ -642,7 +705,10 @@ a.tnode:hover{background:var(--accbg)}
 #q{width:100%%;margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.9rem}
 #q:focus{outline:2px solid var(--acc)}
 .hidden{display:none !important}
-@media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}
+.chips.dense .chd,.chips.dense .chd summary,a.chlinkchip{width:100%%}
+.chd summary{min-height:44px}a.chlinkchip{min-height:44px}
+.chcard{max-width:none;flex-basis:100%%}.chpanel{max-width:none}}
 </style></head><body><div class="layout">
 <nav><input id="q" type="search" placeholder="Search domains..." autocomplete="off">%(uplink)s%(rail)s</nav>
 <main>
@@ -653,7 +719,7 @@ a.tnode:hover{background:var(--accbg)}
 %(rootdiag)s
 %(lanes)s
 %(sections)s
-<footer>%(n)d direct children · %(layers)d levels of D per page · click any %(label_l)s to zoom into its page · design tokens: %(src)s</footer>
+<footer>%(n)d children &middot; %(layers)d levels per page &middot; %(src)s</footer>
 </main>
 <script>
 (function(){var q=document.getElementById('q');if(!q)return;
@@ -668,7 +734,16 @@ document.querySelectorAll('section.dept').forEach(function(sec){
  if(v)sec.querySelectorAll('details.cascade').forEach(function(d){d.open=true;});});
 document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
  var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
- n.classList.toggle('hidden',!hit);});});})();
+ n.classList.toggle('hidden',!hit);});
+document.querySelectorAll('.chsec .chd, .chsec .chcard, .chsec a.chlinkchip').forEach(function(ch){
+ var s=ch.querySelector('summary[title]');
+ var txt=(ch.textContent+' '+((s?s.getAttribute('title'):ch.getAttribute('title'))||'')).toLowerCase();
+ ch.classList.toggle('hidden',!(!v||txt.indexOf(v)>=0));});
+document.querySelectorAll('.chsec .chips').forEach(function(g){
+ var any=g.querySelector('.chd:not(.hidden),.chcard:not(.hidden),a.chlinkchip:not(.hidden)');
+ g.classList.toggle('hidden',!any);
+ var h=g.previousElementSibling;
+ if(h&&h.classList.contains('chg'))h.classList.toggle('hidden',!any);});});})();
 </script>
 </div></body></html>
 """

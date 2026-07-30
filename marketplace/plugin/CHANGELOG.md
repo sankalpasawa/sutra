@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.55.0 (2026-07-30) — charter chips: readable, minimal, mobile-friendly
+
+- Charters render as status-dotted TAGS (design tokens from D0). Density heuristic: <= 3 in a group and short purposes -> mini-cards with the one-liner visible; more -> compact chips with hover tooltip (desktop) + native tap-to-expand panel (mobile/keyboard) carrying purpose, links, artifacts.
+- Minimal text pass (founder): lane note -> "O owner / L linked", terse footer, "Linked" group, chips over prose. Search filters chips (incl. hover text) and hides empty groups. Mobile: full-row 44px targets, full-width panels. Codex folds: summary CSS normalized + focus-visible, artifact count stays on compact chips, title-attr only on closed summaries.
+
 ## v2.54.0 (2026-07-30) — charter layer: projects are charters + cross-cutting lanes
 
 - Every department page now carries a Charters section (empty state included): Standing | Projects with status tags, artifact counts, linked-department pills, and a "Linked here (owned elsewhere)" group. One owner per charter; links are references, never homes.

@@ -34,15 +34,40 @@ h1{font-size:1.65rem;letter-spacing:-.01em}
 p.withheld{font-size:.85rem;margin-top:6px}
 .chsec{margin:16px 0 4px}
 .chh{font-size:1.02rem;margin-bottom:4px}
-.chg{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px}
+.chg{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px}
 .chempty{color:var(--mut);font-style:italic;font-size:.85rem}
 .st{font:600 .62rem/1 ui-monospace,monospace;border-radius:4px;padding:2px 5px;margin-left:6px;border:1px solid var(--line);color:var(--mut)}
 .st-active{border-color:var(--acc);color:var(--acc)}
 .st-retired{opacity:.65}
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
+.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .64rem/1 ui-monospace,monospace;color:var(--mut);margin-right:8px}
+.chdot i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block}
+.chdot.st-active i{background:var(--acc)}
+.chdot.st-shipped i{background:var(--mut)}
+.chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
+.chcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-height:36px;flex:1 1 260px;max-width:420px}
+.chcard b{font-size:.88rem}
+.chline{color:var(--mut);font-size:.8rem;margin-top:4px;max-width:52ch}
+.chd{position:relative}
+.chd summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 14px;min-height:36px;font-size:.84rem}
+.chd summary::-webkit-details-marker{display:none}
+.chd summary:hover{border-color:var(--acc);background:var(--accbg)}
+.chd summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.chd[open] summary{border-color:var(--acc);border-radius:10px 10px 0 0}
+.chd b{font-weight:600}
+.chpanel{border:1px solid var(--acc);border-top:none;border-radius:0 0 10px 10px;background:var(--card);padding:10px 14px;font-size:.8rem;max-width:420px}
+.chpanel p{color:var(--mut);margin-bottom:4px}
+.chpath{display:block;font:400 .7rem/1.5 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
+a.chlinkchip{display:inline-flex;align-items:center;background:var(--card);border:1px dashed var(--line);border-radius:999px;padding:8px 14px;min-height:36px;font-size:.84rem;color:inherit;text-decoration:none}
+a.chlinkchip:hover{border-color:var(--acc);background:var(--accbg)}
+.chowner{font-size:.7rem;color:var(--mut);margin-left:8px}
+.chrow{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chlabel{font:600 .66rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px}
+.chmini{font-size:.74rem;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:default}
+a.chmini{color:var(--acc);text-decoration:none;cursor:pointer}
 .chlinks{display:block;font-size:.75rem;color:var(--mut);margin-top:2px}
 .chlinks a{color:var(--acc);text-decoration:none}
-.chart-n{font-size:.72rem;color:var(--mut);margin-left:8px}
-.chnote a{color:var(--acc);text-decoration:none;font-size:.78rem}
+.chart-n{font:600 .64rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:2px 6px;margin-left:8px}
 .lanes{margin:12px 0 8px}
 .lanenote{font-size:.75rem;color:var(--mut);margin-bottom:8px}
 .lanewrap{overflow-x:auto}
@@ -87,18 +112,21 @@ a.tnode:hover{background:var(--accbg)}
 #q{width:100%;margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.9rem}
 #q:focus{outline:2px solid var(--acc)}
 .hidden{display:none !important}
-@media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}
+.chips.dense .chd,.chips.dense .chd summary,a.chlinkchip{width:100%}
+.chd summary{min-height:44px}a.chlinkchip{min-height:44px}
+.chcard{max-width:none;flex-basis:100%}.chpanel{max-width:none}}
 </style></head><body><div class="layout">
 <nav><input id="q" type="search" placeholder="Search domains..." autocomplete="off"><a class="sub up" href="index.html">&lsaquo; up to Asawa Inc.</a><a class="sub" href="#d1"><span class="chip">D1</span>DayFlow</a><a class="sub" href="#d2"><span class="chip">D2</span>Billu</a><a class="sub" href="#d3"><span class="chip">D3</span>Paisa</a><a class="sub" href="#d4"><span class="chip">D4</span>PPR</a><a class="sub" href="#d5"><span class="chip">D5</span>Maze</a><a class="sub" href="#d6"><span class="chip">D6</span>Reflection</a></nav>
 <main>
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <b>Portfolio (T2)</b></p>
 <h1>Portfolio (T2)</h1>
 <p class="rootdesc">Products Asawa owns and operates end to end.</p>
-<section class="chsec"><h2 class="chh">Charters</h2><h3 class="chg">Standing</h3><p class="charter"><span>Charter</span> Portfolio (T2) Charter<span class="st st-active">active</span> — Asawa org: Portfolio (T2).</p></section>
+<section class="chsec"><h2 class="chh">Charters</h2><h3 class="chg">Standing</h3><div class="chips"><div class="chcard"><span class="chdot st-active"><i></i>active</span><b>Portfolio (T2) Charter</b><p class="chline">Asawa org: Portfolio (T2).</p></div></div></section>
 <div class="tree"><div class="tnode troot">Portfolio (T2)</div><div class="tdown"></div><div class="tkids"><a class="tnode" href="#d1">DayFlow</a><a class="tnode" href="#d2">Billu</a><a class="tnode" href="#d3">Paisa</a><a class="tnode" href="#d4">PPR</a><a class="tnode" href="#d5">Maze</a><a class="tnode" href="#d6">Reflection</a></div></div>
-<section class="lanes"><h2 class="chh">Cross-cutting charters</h2><p class="lanenote">O = owner column, L = linked. Rows stay horizontal at this level — sub-department detail lives on the child pages.</p><div class="lanewrap"><table class="lanetab"><thead><tr><th scope="col"></th><th scope="col">DayFlow</th><th scope="col">Billu</th><th scope="col">Paisa</th><th scope="col">PPR</th><th scope="col">Maze</th><th scope="col">Reflection</th></tr></thead><tbody><tr title="Evolution Protocol touches: DayFlow, Maze"><th scope="row">Evolution Protocol<span class="st st-retired">retired</span></th><td class="ll" aria-label="Linked: Evolution Protocol">L</td><td class="ln"></td><td class="ln"></td><td class="ln"></td><td class="ll" aria-label="Linked: Evolution Protocol">L</td><td class="ln"></td></tr><tr title="Portfolio spin-off (D33 standalone clients) touches: Billu, Paisa, Maze"><th scope="row">Portfolio spin-off (D33 standalone clients)<span class="st st-active">active</span></th><td class="ln"></td><td class="ll" aria-label="Linked: Portfolio spin-off (D33 standalone clients)">L</td><td class="ll" aria-label="Linked: Portfolio spin-off (D33 standalone clients)">L</td><td class="ln"></td><td class="ll" aria-label="Linked: Portfolio spin-off (D33 standalone clients)">L</td><td class="ln"></td></tr></tbody></table></div></section>
-<section id="d1" class="dept"><header><span class="chip big">D1</span><div><h2><a class="dlink" href="dref-e3636af91d8e1dbf.html">DayFlow</a></h2><p class="desc">Daily-flow product; Play Store release in progress.</p><p class="charter"><span>Charter</span> DayFlow Charter — Asawa org: DayFlow.</p><p class="charter chnote"><a href="dref-e3636af91d8e1dbf.html">2 project charters &rsaquo;</a></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d2" class="dept"><header><span class="chip big">D2</span><div><h2><a class="dlink" href="dref-4d27ed15bca9a1f3.html">Billu</a></h2><p class="desc">Personal assistant project (wake-word shims).</p><p class="charter"><span>Charter</span> Billu Charter — Asawa org: Billu.</p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d3" class="dept"><header><span class="chip big">D3</span><div><h2><a class="dlink" href="dref-f91dc3443f004bf9.html">Paisa</a></h2><p class="desc">India digital personal-loan product (MVP stage).</p><p class="charter"><span>Charter</span> Paisa Charter — Asawa org: Paisa.</p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d4" class="dept"><header><span class="chip big">D4</span><div><h2><a class="dlink" href="dref-0ec30fc40262efa5.html">PPR</a></h2><p class="desc">Deprioritized this quarter (Q2 focus).</p><p class="charter"><span>Charter</span> PPR Charter — Asawa org: PPR.</p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d5" class="dept"><header><span class="chip big">D5</span><div><h2><a class="dlink" href="dref-fe3449e97c099c26.html">Maze</a></h2><p class="desc">Deprioritized this quarter (Q2 focus).</p><p class="charter"><span>Charter</span> Maze Charter — Asawa org: Maze.</p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d6" class="dept"><header><span class="chip big">D6</span><div><h2><a class="dlink" href="dref-5a07793f5cef7527.html">Reflection</a></h2><p class="desc">Personal reflection product.</p><p class="charter"><span>Charter</span> Reflection Charter — Asawa org: Reflection.</p><p class="charter chnote"><a href="dref-5a07793f5cef7527.html">1 project charter &rsaquo;</a></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section>
-<footer>6 direct children · 3 levels of D per page · click any departments to zoom into its page · design tokens: sutra/website/index.html (detected 2026-07-30)</footer>
+<section class="lanes"><h2 class="chh">Cross-cutting charters</h2><p class="lanenote">O owner &middot; L linked</p><div class="lanewrap"><table class="lanetab"><thead><tr><th scope="col"></th><th scope="col">DayFlow</th><th scope="col">Billu</th><th scope="col">Paisa</th><th scope="col">PPR</th><th scope="col">Maze</th><th scope="col">Reflection</th></tr></thead><tbody><tr title="Evolution Protocol touches: DayFlow, Maze"><th scope="row">Evolution Protocol<span class="st st-retired">retired</span></th><td class="ll" aria-label="Linked: Evolution Protocol">L</td><td class="ln"></td><td class="ln"></td><td class="ln"></td><td class="ll" aria-label="Linked: Evolution Protocol">L</td><td class="ln"></td></tr><tr title="Portfolio spin-off (D33 standalone clients) touches: Billu, Paisa, Maze"><th scope="row">Portfolio spin-off (D33 standalone clients)<span class="st st-active">active</span></th><td class="ln"></td><td class="ll" aria-label="Linked: Portfolio spin-off (D33 standalone clients)">L</td><td class="ll" aria-label="Linked: Portfolio spin-off (D33 standalone clients)">L</td><td class="ln"></td><td class="ll" aria-label="Linked: Portfolio spin-off (D33 standalone clients)">L</td><td class="ln"></td></tr></tbody></table></div></section>
+<section id="d1" class="dept"><header><span class="chip big">D1</span><div><h2><a class="dlink" href="dref-e3636af91d8e1dbf.html">DayFlow</a></h2><p class="desc">Daily-flow product; Play Store release in progress.</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Asawa org: DayFlow.">DayFlow Charter</span><a class="chmini chmore" href="dref-e3636af91d8e1dbf.html">2 projects &rsaquo;</a></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d2" class="dept"><header><span class="chip big">D2</span><div><h2><a class="dlink" href="dref-4d27ed15bca9a1f3.html">Billu</a></h2><p class="desc">Personal assistant project (wake-word shims).</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Asawa org: Billu.">Billu Charter</span></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d3" class="dept"><header><span class="chip big">D3</span><div><h2><a class="dlink" href="dref-f91dc3443f004bf9.html">Paisa</a></h2><p class="desc">India digital personal-loan product (MVP stage).</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Asawa org: Paisa.">Paisa Charter</span></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d4" class="dept"><header><span class="chip big">D4</span><div><h2><a class="dlink" href="dref-0ec30fc40262efa5.html">PPR</a></h2><p class="desc">Deprioritized this quarter (Q2 focus).</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Asawa org: PPR.">PPR Charter</span></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d5" class="dept"><header><span class="chip big">D5</span><div><h2><a class="dlink" href="dref-fe3449e97c099c26.html">Maze</a></h2><p class="desc">Deprioritized this quarter (Q2 focus).</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Asawa org: Maze.">Maze Charter</span></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d6" class="dept"><header><span class="chip big">D6</span><div><h2><a class="dlink" href="dref-5a07793f5cef7527.html">Reflection</a></h2><p class="desc">Personal reflection product.</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Asawa org: Reflection.">Reflection Charter</span><a class="chmini chmore" href="dref-5a07793f5cef7527.html">1 project &rsaquo;</a></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section>
+<footer>6 children &middot; 3 levels per page &middot; sutra/website/index.html (detected 2026-07-30)</footer>
 </main>
 <script>
 (function(){var q=document.getElementById('q');if(!q)return;
@@ -113,6 +141,15 @@ document.querySelectorAll('section.dept').forEach(function(sec){
  if(v)sec.querySelectorAll('details.cascade').forEach(function(d){d.open=true;});});
 document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
  var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
- n.classList.toggle('hidden',!hit);});});})();
+ n.classList.toggle('hidden',!hit);});
+document.querySelectorAll('.chsec .chd, .chsec .chcard, .chsec a.chlinkchip').forEach(function(ch){
+ var s=ch.querySelector('summary[title]');
+ var txt=(ch.textContent+' '+((s?s.getAttribute('title'):ch.getAttribute('title'))||'')).toLowerCase();
+ ch.classList.toggle('hidden',!(!v||txt.indexOf(v)>=0));});
+document.querySelectorAll('.chsec .chips').forEach(function(g){
+ var any=g.querySelector('.chd:not(.hidden),.chcard:not(.hidden),a.chlinkchip:not(.hidden)');
+ g.classList.toggle('hidden',!any);
+ var h=g.previousElementSibling;
+ if(h&&h.classList.contains('chg'))h.classList.toggle('hidden',!any);});});})();
 </script>
 </div></body></html>
