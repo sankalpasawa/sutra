@@ -935,6 +935,64 @@ def main(argv):
                          name=(argv[4] if len(argv) > 4 else None), tenant_id=tenant))
     elif cmd == "scan":
         _out(scan(argv[2] if len(argv) > 2 else ".", tenant))
+    elif cmd == "search":
+        # Search the whole module surface: domain names, descriptions, charter
+        # titles/purposes. Read-only; ranked by match count.
+        q = " ".join(argv[2:]).strip().lower()
+        if not q:
+            _out({"error": "usage: search <terms>"}); return 2
+        terms = [t for t in re.split(r"\s+", q) if t]
+        domains = load_domains()
+        hits = []
+        for ref, d in domains.items():
+            chs = charters_for(ref)
+            hay = " ".join([d.get("name", ""), d.get("description", "")] +
+                           [c.get("title", "") + " " + c.get("purpose", "")
+                            for c in chs]).lower()
+            n = sum(hay.count(t) for t in terms)
+            if n:
+                hits.append({"path": domain_path(ref, domains), "name": d["name"],
+                             "description": d.get("description", ""),
+                             "charters": [c.get("title", "") for c in chs],
+                             "score": n})
+        hits.sort(key=lambda h: (-h["score"], h["path"]))
+        _out({"query": q, "hits": hits[:20], "total": len(hits)})
+    elif cmd == "touch":
+        # On-touch minting + post-close correction (ADR-028 phase F, task 8).
+        # First touch of an unaddressed file -> durable backfill/mint. Touch of
+        # a file whose evidence now resolves elsewhere at >= floor confidence
+        # -> superseding row with phase=post-close (I-P5: append, never mutate).
+        f = argv[2] if len(argv) > 2 else ""
+        if not f:
+            _out({"error": "usage: touch <file>"}); return 2
+        fid = _norm_path(f)
+        existing_pid = current_placement(fid)
+        evidence = gather_evidence("", [f])
+        domains = load_domains()
+        ref, conf, mode = classify(evidence, tenant, domains)
+        if not existing_pid:
+            r = resolve({"kind": "file", "id": fid}, utterance="", paths=[f],
+                        tenant_id=tenant)
+            _out({"action": "backfilled", "placement": r["placement"]["id"],
+                  "domain_ref": r["placement"]["domain_ref"]})
+        else:
+            cur = None
+            for pl in all_placements():
+                if pl.get("id") == existing_pid:
+                    cur = pl; break
+            cur_ref = cur.get("domain_ref") if cur else None
+            if (ref and mode == "match" and cur_ref and ref != cur_ref
+                    and conf >= CONFIDENCE_FLOOR):
+                picked = pick_charter(ref, sorted(evidence["terms"] | evidence["path_terms"]))
+                body = write_placement({"kind": "file", "id": fid}, ref,
+                                       picked["id"] if picked else cur["charter_id"],
+                                       "matched", conf, {"domains": [], "charters": []},
+                                       tenant, supersedes=existing_pid,
+                                       phase="post-close")
+                _out({"action": "post-close-supersede", "from": cur_ref,
+                      "to": ref, "placement": body["id"]})
+            else:
+                _out({"action": "reused", "placement": existing_pid})
     elif cmd == "lint":
         # Groundedness lint (grounding rung 5). SEPARATE from the gate by
         # dual-lane decision: the gate checks presence; this checks truth.

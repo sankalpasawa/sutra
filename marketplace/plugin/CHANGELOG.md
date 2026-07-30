@@ -4,6 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.50.0 (2026-07-30) — ledger close: on-touch minting, post-close, file ACKs, search
+
+- `placement-touch.sh` (PostToolUse): every edited file gets a DURABLE placement — backfill/mint on first touch, post-close supersede when evidence moves. Fresh machines populate the tree by working; no manual scan.
+- File-based one-shot overrides (`.claude/placement-ack`, consumed on use) replace the unreachable env ACKs in both placement gates; printed messages now show the hatch that works.
+- loop-budget-guard (holding L1): budget keyed per agent identity when visible — workflow subagents stop inheriting the parent session's spent budget (verify before promotion).
+- Search everywhere: engine `search <terms>` (names, descriptions, charters, ranked) + live search box on the published page (filters sections, blocks, and the index).
+
 ## v2.49.0 (2026-07-30) — grounding rungs 4+5, multi-charter, recursive cascade
 
 - Rung 4 `context-scope-audit.sh` (PostToolUse): cross-charter file reach is audit-logged per canon Q28 — never blocked.

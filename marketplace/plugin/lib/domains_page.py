@@ -181,16 +181,36 @@ footer{color:var(--mut);font-size:.8rem;margin-top:8px}
 .tkids::before{content:"";position:absolute;top:0;left:12%%;right:12%%;height:2px;background:var(--line)}
 .tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
 .tkids .tnode::before{content:"";position:absolute;top:-14px;left:50%%;width:2px;height:14px;background:var(--line)}
+#q{width:100%%;margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.9rem}
+#q:focus{outline:2px solid var(--acc)}
+.hidden{display:none !important}
+mark{background:var(--accbg);color:inherit;border-radius:3px}
 @media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}}
 </style></head><body><div class="layout">
-<nav>%(rail)s</nav>
+<nav><input id="q" type="search" placeholder="Search domains..." autocomplete="off">%(rail)s</nav>
 <main>
 <h1>%(root)s</h1>
 <p class="rootdesc">%(rootdesc)s</p>
 %(rootdiag)s
 %(sections)s
 <footer>%(n)d %(label_l)s · two levels of depth · generated from the live placement registry (ADR-028) · design tokens: %(src)s</footer>
-</main></div></body></html>
+</main>
+<script>
+(function(){var q=document.getElementById('q');if(!q)return;
+q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+document.querySelectorAll('section.dept').forEach(function(sec){
+ var any=false;
+ sec.querySelectorAll('.info').forEach(function(b){
+  var hit=!v||b.textContent.toLowerCase().indexOf(v)>=0;
+  b.classList.toggle('hidden',!hit);if(hit)any=true;});
+ var selfHit=!v||sec.querySelector('header').textContent.toLowerCase().indexOf(v)>=0;
+ sec.classList.toggle('hidden',!(any||selfHit));
+ if(v)sec.querySelectorAll('details.cascade').forEach(function(d){d.open=true;});});
+document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
+ var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
+ n.classList.toggle('hidden',!hit);});});})();
+</script>
+</div></body></html>
 """ % dict(title=esc(title or "%s · %s" % (rootd["name"], label)), rail="".join(rail),
            root=esc(rootd["name"]), rootdesc=esc(rootd.get("description", "")),
            rootdiag=rootdiag,

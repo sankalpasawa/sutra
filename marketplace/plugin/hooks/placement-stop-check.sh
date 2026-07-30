@@ -37,6 +37,14 @@ _log() { mkdir -p "$(dirname "$LEDGER")" 2>/dev/null; printf '%s\n' "$1" >> "$LE
 [ -n "${PLACEMENT_DISABLED:-}" ] && exit 0
 [ -f "$REPO_ROOT/.claude/placement-disabled" ] && exit 0
 [ -f "$HOME/.placement-disabled" ] && exit 0
+# File-based one-shot override (env ACKs never reach hook processes; the
+# WORKING escape hatch is a file, consumed on use).
+if [ -f "$REPO_ROOT/.claude/placement-ack" ]; then
+  REASON=$(head -c 200 "$REPO_ROOT/.claude/placement-ack" 2>/dev/null | tr -d '\n\r' | tr '"' "'")
+  command rm -f "$REPO_ROOT/.claude/placement-ack"
+  _log "{\"ts\":\"$TS\",\"event\":\"placement-ack-file\",\"reason\":\"$REASON\"}"
+  exit 0
+fi
 if [ "${PLACEMENT_ACK:-0}" = "1" ]; then
   REASON=$(printf '%s' "${PLACEMENT_ACK_REASON:-no-reason}" | tr -d '\n\r' | tr '"\\' "''" | head -c 500)
   _log "{\"ts\":\"$TS\",\"event\":\"placement-stop-override\",\"reason\":\"$REASON\"}"
@@ -84,7 +92,7 @@ if [ "$MODE" = "hard" ]; then
     printf 'Expand to the full ancestor tree ONLY if a Domain or Charter was minted.\n'
     printf 'Never block on a missing domain — mint under the deepest matching\n'
     printf 'ancestor and continue. The system decides the taxonomy, not the operator.\n\n'
-    printf "If intentional: PLACEMENT_ACK=1 PLACEMENT_ACK_REASON='<why>'\n"
+    printf "If intentional (one-shot): echo reason > .claude/placement-ack\n"
     printf '(or PLACEMENT_DISABLED=1 / touch .claude/placement-disabled)\n\n'
   } >&2
   exit 2

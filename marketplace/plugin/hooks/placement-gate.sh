@@ -54,6 +54,14 @@ _log() { mkdir -p "$(dirname "$LEDGER")" 2>/dev/null; printf '%s\n' "$1" >> "$LE
 [ -f "$HOME/.placement-disabled" ] && exit 0
 
 # -- Override (audit-logged bypass) -----------------------------------------
+# File-based one-shot override (env ACKs never reach hook processes; the
+# WORKING escape hatch is a file, consumed on use).
+if [ -f "$REPO_ROOT/.claude/placement-ack" ]; then
+  REASON=$(head -c 200 "$REPO_ROOT/.claude/placement-ack" 2>/dev/null | tr -d '\n\r' | tr '"' "'")
+  command rm -f "$REPO_ROOT/.claude/placement-ack"
+  _log "{\"ts\":\"$TS\",\"event\":\"placement-ack-file\",\"reason\":\"$REASON\"}"
+  exit 0
+fi
 if [ "${PLACEMENT_ACK:-0}" = "1" ]; then
   REASON=$(printf '%s' "${PLACEMENT_ACK_REASON:-no-reason}" | tr -d '\n\r' | tr '"\\' "''" | head -c 500)
   _log "{\"ts\":\"$TS\",\"event\":\"placement-override\",\"reason\":\"$REASON\",\"session\":\"${CLAUDE_SESSION_ID:-unknown}\"}"
@@ -187,7 +195,7 @@ if [ "$MODE" = "hard" ]; then
     printf '  Every unit of work carries one Domain + one Charter before it runs (ADR-028).\n'
     printf '  Emit the PLACEMENT block, then write .claude/placement-registered via the Write tool.\n'
     printf '  Nothing here blocks on a MISSING DOMAIN — if none matches, mint one and continue.\n'
-    printf "  Override: PLACEMENT_ACK=1 PLACEMENT_ACK_REASON='<why>' <tool>\n"
+    printf "  Override (one-shot): echo reason > .claude/placement-ack\n"
     printf '  Disable for this repo only: touch .claude/placement-disabled\n\n'
   } >&2
   exit 2
