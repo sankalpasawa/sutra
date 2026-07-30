@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.51.0 (2026-07-30) — drill-down zoom pages + Core Plugin detailed out
+
+- Site mode (`domains_page.py --site`): one minimal page PER domain, rooted at itself, 3-level window, breadcrumbs up, click-to-zoom down (Native IA principle 4). Filenames = stable refs, so links survive restructure. Text is on-demand by construction — each page carries only its window.
+- Core Plugin detailed to 3 levels from the real repo (Governance Hooks -> Placement Gates / Per-Turn Floors; Skills Catalog -> Review Lanes / Domains Module; Engine Library -> Placement Engine / Page Generators; Commands & Tests), a charter per node. 37 zoom pages, 0 broken links.
+
 ## v2.50.0 (2026-07-30) — ledger close: on-touch minting, post-close, file ACKs, search
 
 - `placement-touch.sh` (PostToolUse): every edited file gets a DURABLE placement — backfill/mint on first touch, post-close supersede when evidence moves. Fresh machines populate the tree by working; no manual scan.

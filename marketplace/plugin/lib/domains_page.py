@@ -222,10 +222,131 @@ document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
     return out_path, len(domains)
 
 
+def build_site(out_dir, label="Domains", window=3):
+    """Drill-down zoom site (founder 2026-07-30): every domain gets its OWN
+    page, rooted at itself, showing `window` levels below; deeper content is
+    one click away on the child's page. Filenames = stable refs (I-P8: they
+    survive restructure). index.html = the true root."""
+    import shutil
+    domains = E.load_domains()
+    kids = {}
+    root = None
+    for r, d in domains.items():
+        p_ = d.get("parent_ref")
+        if p_ is None:
+            root = r
+        kids.setdefault(p_, []).append(r)
+    for v in kids.values():
+        v.sort(key=lambda r: domains[r].get("ts_minted_ms", 0))
+    os.makedirs(out_dir, exist_ok=True)
+    T = dict(NEUTRAL); T.update(domains[root].get("design") or {})
+
+    def esc(s_): return html.escape(s_ or "")
+    def fname(ref): return "index.html" if ref == root else ref + ".html"
+    def charters_html(ref):
+        return "".join('<p class="charter"><span>Charter</span> %s — %s</p>'
+                       % (esc(c.get("title","")), esc(c.get("purpose","")))
+                       for c in sorted(E.charters_for(ref), key=lambda x: x["id"]))
+    def crumb(ref):
+        chain, cur, seen = [], ref, set()
+        while cur and cur in domains and cur not in seen:
+            seen.add(cur); chain.append(cur); cur = domains[cur].get("parent_ref")
+        chain.reverse()
+        return " &rsaquo; ".join(
+            ('<a href="%s">%s</a>' % (fname(c), esc(domains[c]["name"])))
+            if c != ref else "<b>%s</b>" % esc(domains[c]["name"])
+            for c in chain)
+    def render_node(ref, idx, depth):
+        d = domains[ref]; ch = kids.get(ref, [])
+        label_i = "D" + ".".join(map(str, idx))
+        openlink = (' <a class="openlink" href="%s">open &rsaquo;</a>' % fname(ref)) if ch else ""
+        body = ('<span class="chip">%s</span><b>%s</b>%s<p>%s</p>%s'
+                % (label_i, esc(d["name"]), openlink,
+                   esc(d.get("description","")), charters_html(ref)))
+        if ch and depth < window:
+            inner = "".join(render_node(c, idx+[j], depth+1)
+                            for j, c in enumerate(ch, 1))
+            body += '<div class="grid nest">%s</div>' % inner
+        elif ch:
+            body += ('<p class="more"><a href="%s">%d more inside &rsaquo;</a></p>'
+                     % (fname(ref), len(ch)))
+        return '<div class="info">%s</div>' % body
+    def page_for(ref):
+        d = domains[ref]; ch = kids.get(ref, [])
+        diag = ""
+        if ch:
+            boxes = "".join('<a class="tnode" href="%s">%s</a>'
+                            % (fname(c), esc(domains[c]["name"])) for c in ch)
+            diag = ('<div class="tree"><div class="tnode troot">%s</div>'
+                    '<div class="tdown"></div><div class="tkids">%s</div></div>'
+                    % (esc(d["name"]), boxes))
+        blocks = "".join(render_node(c, [j], 1) for j, c in enumerate(ch, 1))                  or '<div class="info empty">leaf domain — no children</div>'
+        return CSS_PAGE % dict(
+            title=esc(d["name"]) + " · " + label, crumb=crumb(ref),
+            name=esc(d["name"]), desc=esc(d.get("description","")),
+            charters=charters_html(ref), diag=diag, blocks=blocks,
+            n=len(ch), src=esc(T.get("source","")),
+            **{k: T[k] for k in ("bg","card","ink","muted","line","accent","accent_bg","font")})
+    for ref in domains:
+        open(os.path.join(out_dir, fname(ref)), "w").write(page_for(ref))
+    return len(domains)
+
+
+CSS_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>%(title)s</title>
+<style>
+:root{--bg:%(bg)s;--card:%(card)s;--ink:%(ink)s;--mut:%(muted)s;--line:%(line)s;--acc:%(accent)s;--accbg:%(accent_bg)s}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 %(font)s}
+.wrap{max-width:880px;margin:0 auto;padding:36px 20px}
+.crumb{font-size:.85rem;color:var(--mut);margin-bottom:18px}
+.crumb a{color:var(--acc);text-decoration:none}
+h1{font-size:1.5rem;letter-spacing:-.01em}
+.desc{color:var(--mut);margin:6px 0 4px;max-width:60ch}
+.charter{font-size:.8rem;color:var(--mut);margin-top:6px;max-width:60ch}
+.charter span{font:600 .68rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px;margin-right:6px}
+.tree{margin:22px 0;text-align:center}
+.tnode{display:inline-block;background:var(--card);border:1.5px solid var(--acc);border-radius:8px;padding:6px 14px;font-size:.85rem;font-weight:600;color:var(--ink);text-decoration:none}
+a.tnode:hover{background:var(--accbg)}
+.tnode.troot{background:var(--accbg)}
+.tdown{width:2px;height:14px;background:var(--line);margin:0 auto}
+.tkids{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;position:relative;padding-top:14px}
+.tkids::before{content:"";position:absolute;top:0;left:12%%;right:12%%;height:2px;background:var(--line)}
+.tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
+.tkids .tnode::before{content:"";position:absolute;top:-14px;left:50%%;width:2px;height:14px;background:var(--line)}
+.grid{display:grid;gap:12px;margin-top:18px}
+.grid.nest{margin:10px 0 0 14px;border-left:2px solid var(--line);padding-left:12px}
+.info{border:1.5px dashed var(--line);border-radius:10px;padding:12px 14px;background:var(--card)}
+.info b{margin-left:8px;font-size:.95rem}
+.info p{color:var(--mut);font-size:.85rem;margin-top:6px}
+.info.empty{color:var(--mut);font-style:italic}
+.chip{font:600 .72rem/1 ui-monospace,monospace;color:var(--ink);background:var(--accbg);border:1px solid var(--acc);border-radius:6px;padding:3px 7px}
+.openlink{font-size:.78rem;color:var(--acc);text-decoration:none;margin-left:8px}
+.more a{font-size:.8rem;color:var(--acc)}
+footer{color:var(--mut);font-size:.78rem;margin-top:26px}
+</style></head><body><div class="wrap">
+<p class="crumb">%(crumb)s</p>
+<h1>%(name)s</h1>
+<p class="desc">%(desc)s</p>
+%(charters)s
+%(diag)s
+<div class="grid">%(blocks)s</div>
+<footer>%(n)d direct children · window: 3 levels · click any box to zoom · design: %(src)s</footer>
+</div></body></html>
+"""
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     label = "Departments" if "--label" not in " ".join(sys.argv) else \
         sys.argv[sys.argv.index("--label") + 1]
-    out = args[0] if args else "domains.html"
-    p, n = build(out, label=label)
-    print("wrote %s (%d domains)" % (p, n))
+    if "--site" in sys.argv:
+        out = args[0] if args else "domains"
+        n = build_site(out, label=label)
+        print("site: %d zoom pages in %s/" % (n, out))
+    else:
+        out = args[0] if args else "domains.html"
+        p, n = build(out, label=label)
+        print("wrote %s (%d domains)" % (p, n))
