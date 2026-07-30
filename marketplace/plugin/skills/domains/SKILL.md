@@ -77,6 +77,24 @@ repo with Pages):
    its children's names ("N entries — names withheld"). Client/third-party
    names default to withheld unless the operator says otherwise.
 
+## Charter layer (founder 2026-07-30: past projects ARE charters)
+
+- A charter has exactly ONE owner (`domain_ref` — the standing invariant);
+  `linked_domain_refs` are references to other departments it touches, never
+  homes. Optional fields, defaulted at render time (no migration needed):
+  `kind: standing|project`, `status: active|shipped|retired|paused`,
+  `artifacts: [repo paths]`.
+- Every department page carries a **Charters** section — always, empty state
+  included ("no active charters yet"). Grouping: Standing | Projects (status
+  tag on each) | "Linked here (owned elsewhere)" with a link to the owner.
+- **Cross-cutting lane chart** on a parent page: columns = its direct
+  children; a row = any charter whose owner+links, each rolled UP to its
+  child-of-this-page ancestor, touch >= 2 distinct columns (set-deduped;
+  owner wins a shared column; a charter owned by the page itself shows
+  linked columns only). O = owner cell, L = linked cell — text markers, not
+  color alone. The lane stays horizontal at that level: sub-department
+  detail never renders on the parent page.
+
 ## Grounding (ADR-028 — the mandate)
 
 Every unit of plugin work must ground in this registry: the per-turn PLACEMENT

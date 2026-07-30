@@ -19,7 +19,7 @@ Reads the registry at $SUTRA_NATIVE_HOME (default ~/.sutra-native/user-kit).
 Third-party names: any domain with `public_names_withheld` true on the parent
 hides child names on the public page.
 """
-import sys, os, html
+import sys, os, html, json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import placement_engine as E  # noqa: E402
@@ -272,11 +272,139 @@ def build_site(out_dir, label="Domains", window=2):
         return ('<p class="withheld">%d entries — names withheld on the public page</p>' % n) \
             if domains[ref].get("public_names_withheld") and n else ""
 
+    # ---- charter layer (founder 2026-07-30: past projects ARE charters) ----
+    # One owner (domain_ref, the existing invariant) + linked_domain_refs as
+    # references, never homes. Render-time defaults keep the pre-existing
+    # stub charters valid with zero migration (codex fold).
+    all_ch = []
+    for fn in os.listdir(E.CHARTERS):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            c = json.load(open(os.path.join(E.CHARTERS, fn)))
+        except (ValueError, OSError):
+            continue
+        c.setdefault("kind", "standing")
+        c.setdefault("status", "active")
+        c.setdefault("linked_domain_refs", [])
+        c.setdefault("artifacts", [])
+        all_ch.append(c)
+    all_ch.sort(key=lambda c: c.get("id", ""))
+    owned_by, linked_to = {}, {}
+    for c in all_ch:
+        owned_by.setdefault(c.get("domain_ref"), []).append(c)
+        for lr in c["linked_domain_refs"]:
+            linked_to.setdefault(lr, []).append(c)
+
+    def st_tag(c):
+        return '<span class="st st-%s">%s</span>' % (c["status"], c["status"])
+
+    def ch_pill(c):
+        links = [r for r in c["linked_domain_refs"] if r in domains and r not in hidden]
+        lk = ('<span class="chlinks">linked: %s</span>'
+              % ", ".join('<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"]))
+                          for r in links)) if links else ""
+        art = ('<span class="chart-n">%d artifact%s</span>'
+               % (len(c["artifacts"]), "s" if len(c["artifacts"]) != 1 else "")) \
+            if c["artifacts"] else ""
+        return ('<p class="charter"><span>Charter</span> %s%s — %s%s%s</p>'
+                % (esc(c.get("title", "")), st_tag(c), esc(c.get("purpose", "")), art, lk))
+
     def charter_line(ref):
-        chs = sorted(E.charters_for(ref), key=lambda x: x["id"])
-        return "".join('<p class="charter"><span>Charter</span> %s — %s</p>'
-                       % (esc(c.get("title", "")), esc(c.get("purpose", "")))
-                       for c in chs)
+        """L2 compact form: standing pills + a count link for projects."""
+        chs = owned_by.get(ref, [])
+        standing = [c for c in chs if c["kind"] == "standing"]
+        proj = [c for c in chs if c["kind"] == "project"]
+        out = "".join('<p class="charter"><span>Charter</span> %s — %s</p>'
+                      % (esc(c.get("title", "")), esc(c.get("purpose", "")))
+                      for c in standing)
+        if proj:
+            out += ('<p class="charter chnote"><a href="%s">%d project charter%s &rsaquo;</a></p>'
+                    % (fname(ref), len(proj), "s" if len(proj) > 1 else ""))
+        return out
+
+    def charters_section(ref):
+        """L1: ALWAYS present — the word CHARTER on every department page."""
+        chs = owned_by.get(ref, [])
+        standing = [c for c in chs if c["kind"] == "standing"]
+        proj = [c for c in chs if c["kind"] == "project"]
+        inbound = [c for c in linked_to.get(ref, [])
+                   if c.get("domain_ref") in domains and c.get("domain_ref") not in hidden]
+        h = ['<section class="chsec"><h2 class="chh">Charters</h2>']
+        if standing:
+            h.append('<h3 class="chg">Standing</h3>')
+            h += [ch_pill(c) for c in standing]
+        if proj:
+            h.append('<h3 class="chg">Projects</h3>')
+            h += [ch_pill(c) for c in proj]
+        if not standing and not proj:
+            h.append('<p class="chempty">no active charters yet</p>')
+        if inbound:
+            h.append('<h3 class="chg">Linked here (owned elsewhere)</h3>')
+            h += ['<p class="charter chlink-in"><span>Charter</span> %s%s — owned by '
+                  '<a href="%s">%s</a></p>'
+                  % (esc(c.get("title", "")), st_tag(c), fname(c["domain_ref"]),
+                     esc(domains[c["domain_ref"]]["name"])) for c in inbound]
+        h.append('</section>')
+        return "".join(h)
+
+    def child_of(page_ref, ref):
+        """Roll a deep ref UP to the direct child of page_ref it sits under."""
+        cur, seen = ref, set()
+        while cur in domains and cur not in seen:
+            seen.add(cur)
+            par = domains[cur].get("parent_ref")
+            if par == page_ref:
+                return cur
+            cur = par
+        return None
+
+    def lane_chart(page_ref, tops):
+        """Horizontal figure (founder 2026-07-30): rows = charters that touch
+        >= 2 of THIS page's direct children after roll-up; never descends
+        into sub-departments. Codex P1 folds: refs are set-deduped per child
+        column (owner wins a shared column); a charter owned by the page
+        itself renders with linked columns only."""
+        tset = set(tops)
+        if len(tops) < 2:
+            return ""
+        rows = []
+        for c in all_ch:
+            owner = c.get("domain_ref")
+            cols = {}
+            for r in set([owner] + c["linked_domain_refs"]):
+                if r == page_ref or r not in domains:
+                    continue
+                col = child_of(page_ref, r)
+                if col not in tset:
+                    continue
+                role = "O" if r == owner else "L"
+                if cols.get(col) != "O":
+                    cols[col] = role
+            if len(cols) < 2:
+                continue
+            cells = []
+            for t in tops:
+                m = cols.get(t)
+                if m == "O":
+                    cells.append('<td class="lo" aria-label="Owner: %s">O</td>' % esc(c["title"]))
+                elif m == "L":
+                    cells.append('<td class="ll" aria-label="Linked: %s">L</td>' % esc(c["title"]))
+                else:
+                    cells.append('<td class="ln"></td>')
+            touched = ", ".join(domains[t]["name"] for t in tops if t in cols)
+            rows.append('<tr title="%s touches: %s"><th scope="row">%s%s</th>%s</tr>'
+                        % (esc(c["title"]), esc(touched), esc(c["title"]), st_tag(c),
+                           "".join(cells)))
+        if not rows:
+            return ""
+        head = "".join('<th scope="col">%s</th>' % esc(domains[t]["name"]) for t in tops)
+        return ('<section class="lanes"><h2 class="chh">Cross-cutting charters</h2>'
+                '<p class="lanenote">O = owner column, L = linked. Rows stay horizontal '
+                'at this level — sub-department detail lives on the child pages.</p>'
+                '<div class="lanewrap"><table class="lanetab">'
+                '<thead><tr><th scope="col"></th>%s</tr></thead><tbody>%s</tbody></table>'
+                '</div></section>' % (head, "".join(rows)))
 
     def org_diagram(page_ref, ref):
         """Diagram at ANY cascading level. Child boxes are clickable: they
@@ -406,7 +534,8 @@ def build_site(out_dir, label="Domains", window=2):
             title="%s · %s" % (esc(pd["name"]), label), crumb=crumb(page_ref),
             uplink=uplink, rail="".join(rail), root=esc(pd["name"]),
             rootdesc=esc(pd.get("description", "")),
-            rootchs=charter_line(page_ref) + withheld_note(page_ref),
+            rootchs=charters_section(page_ref) + withheld_note(page_ref),
+            lanes=lane_chart(page_ref, tops),
             rootdiag=rootdiag, sections=body_main, n=len(kids.get(page_ref, [])),
             layers=window + 1, label_l=label.lower(), src=esc(T.get("source", "")),
             **{k: T[k] for k in ("bg", "card", "ink", "muted", "line",
@@ -458,6 +587,26 @@ h1{font-size:1.65rem;letter-spacing:-.01em}
 .info p{color:var(--mut);font-size:.85rem;margin-top:6px}
 .info.empty,.info.withheld,p.withheld{color:var(--mut);font-style:italic}
 p.withheld{font-size:.85rem;margin-top:6px}
+.chsec{margin:16px 0 4px}
+.chh{font-size:1.02rem;margin-bottom:4px}
+.chg{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px}
+.chempty{color:var(--mut);font-style:italic;font-size:.85rem}
+.st{font:600 .62rem/1 ui-monospace,monospace;border-radius:4px;padding:2px 5px;margin-left:6px;border:1px solid var(--line);color:var(--mut)}
+.st-active{border-color:var(--acc);color:var(--acc)}
+.st-retired{opacity:.65}
+.chlinks{display:block;font-size:.75rem;color:var(--mut);margin-top:2px}
+.chlinks a{color:var(--acc);text-decoration:none}
+.chart-n{font-size:.72rem;color:var(--mut);margin-left:8px}
+.chnote a{color:var(--acc);text-decoration:none;font-size:.78rem}
+.lanes{margin:12px 0 8px}
+.lanenote{font-size:.75rem;color:var(--mut);margin-bottom:8px}
+.lanewrap{overflow-x:auto}
+.lanetab{border-collapse:collapse;width:100%%;font-size:.8rem}
+.lanetab thead th{text-align:center;color:var(--mut);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.lanetab tbody th{text-align:left;font-weight:500;color:var(--ink);white-space:nowrap;padding:6px 8px;border-bottom:1px dotted var(--line)}
+.lanetab td{text-align:center;padding:6px 4px;border-bottom:1px dotted var(--line);min-width:44px}
+.lanetab td.lo{background:var(--acc);color:var(--card);font-weight:700;border-radius:4px}
+.lanetab td.ll{background:var(--accbg);color:var(--acc);font-weight:600;border-radius:4px}
 a.info.summary{display:block;color:inherit;text-decoration:none}
 a.info.summary:hover{border-color:var(--acc);background:var(--accbg)}
 .summary .more{display:inline-block;font-size:.78rem;color:var(--acc);margin-top:6px}
@@ -502,6 +651,7 @@ a.tnode:hover{background:var(--accbg)}
 <p class="rootdesc">%(rootdesc)s</p>
 %(rootchs)s
 %(rootdiag)s
+%(lanes)s
 %(sections)s
 <footer>%(n)d direct children · %(layers)d levels of D per page · click any %(label_l)s to zoom into its page · design tokens: %(src)s</footer>
 </main>

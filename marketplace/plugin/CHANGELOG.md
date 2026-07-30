@@ -4,6 +4,12 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.54.0 (2026-07-30) — charter layer: projects are charters + cross-cutting lanes
+
+- Every department page now carries a Charters section (empty state included): Standing | Projects with status tags, artifact counts, linked-department pills, and a "Linked here (owned elsewhere)" group. One owner per charter; links are references, never homes.
+- Cross-cutting lane chart on parent pages: columns = direct children, rows = charters touching >= 2 columns after roll-up (O = owner, L = linked, text markers + aria labels); lanes never descend into sub-departments. Codex P1 folds: per-column set-dedup, parent-owned case defined.
+- 42 project charters mined from real history (holding/plans, holding/evolution, 29 ADRs + 6 engines, project memory) by a 4-agent workflow; artifact paths verified on disk; seeding idempotent.
+
 ## v2.53.1 (2026-07-30) — flow_orchestrator_mode off -> experimental
 
 - ADR-029 rollout step 2, asawa-holding opt-in; f8 fixture now enum-checks the flag (off|experimental|on).
