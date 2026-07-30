@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.52.0 (2026-07-30) — exactly 3 levels of D per page (consistency layer)
+
+- Every zoom page now shows exactly 3 layers from one shared template: L1 page domain (summary + charters + diagram), L2 children (full blocks + charters + diagram), L3 grandchildren (summary-only clickable cards — details never inline on the first page; clicking repeats the same template one level down).
+- Codex ADVISORY folds: whole L3 card clickable; "open > N inside" only when N > 0; leaf empty state kept; left nav sticky + minimal — grandchild groups collapsed unless page has <= 6 grandchildren.
+
 ## v2.51.2 (2026-07-30) — zoom-site contract in SKILL.md + privacy parity (codex folds)
 
 - SKILL.md publish contract: zoom site is the default publish shape; flat page only on explicit ask; exact 3-descendant-level window; ref filenames documented as unique/filename-safe by construction.

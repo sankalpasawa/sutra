@@ -222,14 +222,20 @@ document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
     return out_path, len(domains)
 
 
-def build_site(out_dir, label="Domains", window=3):
+def build_site(out_dir, label="Domains", window=2):
     """Drill-down zoom site (founder 2026-07-30): every domain gets its OWN
-    page rooted at itself. Each page keeps EVERY standing page feature —
-    left-hand clickable index, search, an org diagram at every cascading
-    level, dotted blocks, one-line descriptions, ALL charters — plus the
-    zoom layer: breadcrumbs up, a `window`-level depth cut, and "open"
-    links down to the child domain's own page. Filenames are stable refs
-    (they survive restructure). index.html = the root domain."""
+    page rooted at itself, ALL pages from one template (consistency layer).
+    Exactly window+1 = 3 levels of D per page:
+      L1 page domain — h1 + description + charters + diagram of children
+      L2 children    — full dotted blocks: description + charters + diagram
+      L3 grandkids   — SUMMARY only: whole card clickable, name + one-liner
+                       + "open > N inside" (only when N > 0); charters live
+                       one click away on the grandchild's own page
+    Clicking any domain opens ITS page, which repeats the same template one
+    level down. Left nav is sticky + minimal: children visible, grandchild
+    groups collapsed unless the page has <= 6 of them (codex fold). Search
+    on every page. Filenames are stable refs (survive restructure).
+    index.html = the root domain."""
     domains = E.load_domains()
     if not domains:
         raise SystemExit("registry empty — run a scan or seed the org tree first")
@@ -315,9 +321,10 @@ def build_site(out_dir, label="Domains", window=3):
         for i, t in enumerate(tops, 1):
             assign(t, [i], 1)
 
-        def open_link(ref, ch):
-            return ('<p class="more"><a href="%s">open %s &rsaquo; %d inside</a></p>'
-                    % (fname(ref), esc(domains[ref]["name"]), len(ch)))
+        # Minimal nav (codex fold): grandchild groups collapsed by default,
+        # auto-expanded only when the whole page has few of them.
+        n_grandkids = sum(len(vis_kids(c)) for c in tops)
+        nav_open = " open" if n_grandkids <= 6 else ""
 
         def nav_entry(ref, idx, depth):
             d = domains[ref]
@@ -329,7 +336,7 @@ def build_site(out_dir, label="Domains", window=3):
                 return ('<details class="navgrp"%s><summary><span class="chip">%s</span>'
                         '<a href="#%s">%s</a><span class="navcount">%d</span></summary>'
                         '<div class="navkids">%s</div></details>'
-                        % (" open" if depth < 2 else "", label_i, anchor, esc(d["name"]),
+                        % (nav_open, label_i, anchor, esc(d["name"]),
                            len(ch), inner))
             if ch:                               # window edge: nav jumps to its page
                 return ('<a class="sub" href="%s"><span class="chip">%s</span>%s '
@@ -342,18 +349,26 @@ def build_site(out_dir, label="Domains", window=3):
             d = domains[ref]
             ch = vis_kids(ref)
             label_i, anchor = dpath_idx(idx)
+            if depth >= window:
+                # L3 summary card: whole card clickable (codex fold); no
+                # charters, no cascade — details live on the child's page.
+                # "open > N inside" only when N > 0 (codex fold).
+                more = ('<span class="more">open &rsaquo; %d inside</span>'
+                        % len(ch)) if ch else ""
+                return ('<a class="info summary" id="%s" href="%s">'
+                        '<span class="chip">%s</span><b>%s</b><p>%s</p>%s%s</a>'
+                        % (anchor, fname(ref), label_i, esc(d["name"]),
+                           esc(d.get("description", "")), withheld_note(ref), more))
             name_html = '<a class="dlink" href="%s">%s</a>' % (fname(ref), esc(d["name"]))
             body = ('<span class="chip">%s</span><b>%s</b><p>%s</p>%s%s'
                     % (label_i, name_html, esc(d.get("description", "")),
                        charter_line(ref), withheld_note(ref)))
-            if ch and depth < window:
+            if ch:
                 inner = "".join(node_block(c, idx + [j], depth + 1)
                                 for j, c in enumerate(ch, 1))
                 body += ('<details class="cascade" open><summary>%d sub-domains</summary>'
                          '%s<div class="grid">%s</div></details>'
                          % (len(ch), org_diagram(page_ref, ref), inner))
-            elif ch:
-                body += open_link(ref, ch)
             return '<div class="info" id="%s">%s</div>' % (anchor, body)
 
         rail, sections = [], []
@@ -388,7 +403,7 @@ def build_site(out_dir, label="Domains", window=3):
             rootdesc=esc(pd.get("description", "")),
             rootchs=charter_line(page_ref) + withheld_note(page_ref),
             rootdiag=rootdiag, sections=body_main, n=len(kids.get(page_ref, [])),
-            window=window, label_l=label.lower(), src=esc(T.get("source", "")),
+            layers=window + 1, label_l=label.lower(), src=esc(T.get("source", "")),
             **{k: T[k] for k in ("bg", "card", "ink", "muted", "line",
                                  "accent", "accent_bg", "font")})
 
@@ -438,6 +453,9 @@ h1{font-size:1.65rem;letter-spacing:-.01em}
 .info p{color:var(--mut);font-size:.85rem;margin-top:6px}
 .info.empty,.info.withheld,p.withheld{color:var(--mut);font-style:italic}
 p.withheld{font-size:.85rem;margin-top:6px}
+a.info.summary{display:block;color:inherit;text-decoration:none}
+a.info.summary:hover{border-color:var(--acc);background:var(--accbg)}
+.summary .more{display:inline-block;font-size:.78rem;color:var(--acc);margin-top:6px}
 a.dlink{color:inherit;text-decoration:none}
 a.dlink:hover{color:var(--acc)}
 .cascade{margin-top:10px;border-top:1px dotted var(--line);padding-top:8px}
@@ -480,7 +498,7 @@ a.tnode:hover{background:var(--accbg)}
 %(rootchs)s
 %(rootdiag)s
 %(sections)s
-<footer>%(n)d direct children · %(window)d-level window · click a %(label_l)s to zoom into its page · design tokens: %(src)s</footer>
+<footer>%(n)d direct children · %(layers)d levels of D per page · click any %(label_l)s to zoom into its page · design tokens: %(src)s</footer>
 </main>
 <script>
 (function(){var q=document.getElementById('q');if(!q)return;

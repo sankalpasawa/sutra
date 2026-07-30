@@ -45,13 +45,18 @@ repo with Pages):
    artifact root; `index.html` = the root domain; every other page is named
    by its stable ref (`dref-<16hex>` — engine-generated, unique and
    filename-safe by construction), so links survive restructure/reparenting.
-   Each zoom page shows its domain + 3 descendant levels and preserves the
-   same sections as the flat render scoped to that window: left index rail,
-   search box, an org diagram at every cascading level, dotted blocks,
-   one-line descriptions, ALL charters. Breadcrumbs + the up-link navigate
-   to ancestors (outside the window is fine); clicking a domain opens ITS
-   page, starting the next window ("a container means open me" — Native IA
-   principle 4). Deeper text is one click away, never inlined.
+   **Every page shows exactly 3 levels of D** (consistency layer — one
+   template for all pages): L1 the page's own domain (h1 + description +
+   charters + diagram of children); L2 children (full dotted blocks —
+   description + charters + diagram of their children); L3 grandchildren
+   (SUMMARY only — whole card clickable, name + one-line description +
+   "open › N inside" when N > 0; their charters and internals live on their
+   own page, one click away, never inlined on the first page). Left index
+   rail is sticky + minimal: children visible, grandchild groups collapsed
+   unless the page has ≤ 6 grandchildren. Search box on every page.
+   Breadcrumbs + the up-link navigate to ancestors; clicking any domain
+   opens ITS page, which repeats the identical template one level down
+   ("a container means open me" — Native IA principle 4).
    The flat single-page render (`OUT.html`, no `--site`) is generated ONLY
    on an explicit "one page please" ask — never as a silent replacement for
    the zoom site.
