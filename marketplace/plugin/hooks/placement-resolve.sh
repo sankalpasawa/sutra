@@ -57,8 +57,18 @@ if [ "$RESOLVED" = "true" ]; then
   CONF=$(printf '%s' "$RESULT" | jq -r '.confidence' 2>/dev/null)
   REF=$(printf '%s' "$RESULT" | jq -r '.domain_ref' 2>/dev/null)
   CID=$(printf '%s' "$RESULT" | jq -r '.charter.id // ""' 2>/dev/null)
-  BODY=$(printf 'The placement engine resolved THIS turn to a real address.\nEmit this line VERBATIM as your PLACEMENT block — do not compose your own:\n\n  %s\n\n  (domain_ref=%s confidence=%s — engine output, read-only match, nothing minted)\n' \
-         "$LINE" "$REF" "$CONF")
+  # Grounding mandate (founder 2026-07-30): the resolved domain's charter rides
+  # into every turn so the work is framed by — and answerable to — the charter
+  # it runs under, not just tagged with an address.
+  CTITLE=$(printf '%s' "$RESULT" | jq -r '.charter.title // ""' 2>/dev/null)
+  CPROMISE=$(printf '%s' "$RESULT" | jq -r '.charter.promise // ""' 2>/dev/null | head -c 300)
+  GROUND=""
+  if [ -n "$CTITLE" ]; then
+    GROUND=$(printf '\nGROUNDING — this turn runs under Charter "%s": %s\nFrame the work by this charter; cite the domain in recommendations; if the\nwork contradicts the charter'"'"'s purpose, say so rather than proceeding silently.\n' \
+             "$CTITLE" "$CPROMISE")
+  fi
+  BODY=$(printf 'The placement engine resolved THIS turn to a real address.\nEmit this line VERBATIM as your PLACEMENT block — do not compose your own:\n\n  %s\n\n  (domain_ref=%s confidence=%s — engine output, read-only match, nothing minted)\n%s' \
+         "$LINE" "$REF" "$CONF" "$GROUND")
   mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
   printf 'DOMAIN_REF=%s\nCHARTER_ID=%s\nORIGIN=matched\nCONFIDENCE=%s\nSOURCE=engine\nTS=%s\n' \
     "$REF" "$CID" "$CONF" "$(date +%s)" > "$REPO_ROOT/.claude/placement-registered" 2>/dev/null
