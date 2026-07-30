@@ -76,8 +76,10 @@ def build(out_path, label="Domains", title=None):
             inner = "".join(nav_entry(c, idx + [j], depth + 1)
                             for j, c in enumerate(ch, 1))
             return ('<details class="navgrp"%s><summary><span class="chip">%s</span>'
-                    '<a href="#%s">%s</a></summary><div class="navkids">%s</div></details>'
-                    % (" open" if depth < 2 else "", label_i, anchor, esc(d["name"]), inner))
+                    '<a href="#%s">%s</a><span class="navcount">%d</span></summary>'
+                    '<div class="navkids">%s</div></details>'
+                    % (" open" if depth < 2 else "", label_i, anchor, esc(d["name"]),
+                       len(ch), inner))
         return ('<a class="sub" href="#%s"><span class="chip">%s</span>%s</a>'
                 % (anchor, label_i, esc(d["name"])))
 
@@ -159,7 +161,11 @@ h1{font-size:1.65rem;letter-spacing:-.01em}
 .cascade summary::before{content:"\25B8 ";font-size:.7rem}
 .cascade[open] summary::before{content:"\25BE "}
 .cascade .grid{margin-top:10px;grid-template-columns:1fr}
-.navgrp summary a{color:var(--ink);text-decoration:none}
+.navgrp summary a{color:var(--ink);text-decoration:none;flex:1}
+.navgrp summary a:hover{color:var(--acc)}
+.navcount{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+.navkids{margin:2px 0 6px 14px}
+.navkids .navgrp summary{padding:5px 6px;font-size:.88rem}
 footer{color:var(--mut);font-size:.8rem;margin-top:8px}
 .navgrp summary{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;list-style:none}
 .navgrp summary::before{content:"\25B8";font-size:.7rem;color:var(--mut)}
