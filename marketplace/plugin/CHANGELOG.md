@@ -4,6 +4,10 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.47.1 (2026-07-30) — core:departments module
+
+- New skill `core:departments`: on-demand MECE department view. "Show/give me the (various|relevant) departments" -> whole-tree weight view, boxes two-across; "departments around <thing>" -> YOU-ARE-HERE neighborhood. Engine supplies every number; the model only draws. LLM-rendered v1 by founder decision (ship fast); deterministic `orgchart` renderer recorded as the v2 hardening path.
+
 ## v2.47.0 (2026-07-30) — dual-lane review complete: codex folds
 
 - Codex F7.1 exhaustive review (CHANGES-REQUIRED): 11 findings folded. Key: unresolved prompt-turns now write an engine marker so HARD mode can never block on "engine found no match" (I-P3); write_placement hard-rejects non-resolving refs (I-P2) and runs under flock (I-P5); restructure is locked, MOVE rejects cycles, DELETE re-parents children; `python3 -c`/`node -e`/`make`/`rsync`/`tar -x`/`npm run` now gate as mutations; promotion counts SOURCE=engine markers only — hand-written compliance no longer earns HARD.
