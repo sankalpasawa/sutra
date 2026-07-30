@@ -353,12 +353,17 @@ def build_site(out_dir, label="Domains", window=2):
                 # L3 summary card: whole card clickable (codex fold); no
                 # charters, no cascade — details live on the child's page.
                 # "open > N inside" only when N > 0 (codex fold).
+                # Summary text is MINIMAL: file enumerations and long tails
+                # stay on the domain's own page (founder: details on click).
+                brief = (d.get("description", "") or "").split(" Files (")[0]
+                if len(brief) > 160:
+                    brief = brief[:157].rstrip() + "..."
                 more = ('<span class="more">open &rsaquo; %d inside</span>'
                         % len(ch)) if ch else ""
                 return ('<a class="info summary" id="%s" href="%s">'
                         '<span class="chip">%s</span><b>%s</b><p>%s</p>%s%s</a>'
                         % (anchor, fname(ref), label_i, esc(d["name"]),
-                           esc(d.get("description", "")), withheld_note(ref), more))
+                           esc(brief), withheld_note(ref), more))
             name_html = '<a class="dlink" href="%s">%s</a>' % (fname(ref), esc(d["name"]))
             body = ('<span class="chip">%s</span><b>%s</b><p>%s</p>%s%s'
                     % (label_i, name_html, esc(d.get("description", "")),

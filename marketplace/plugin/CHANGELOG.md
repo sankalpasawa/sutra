@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.52.1 (2026-07-30) — Core Plugin repository complete + minimal L3 summaries
+
+- Core Plugin subtree is now the full grounded repository: 26 families covering all 194 plugin files (89 hooks, 26 skills, 16 libs, 10 commands, 5 bin, 42 tests + hook-nested strays), each family with an inclusion rule, file enumeration, and a minted charter. Coverage asserted by script: 0 unmapped, 0 double-mapped; idempotent re-seed.
+- L3 summary cards clamp their text before file enumerations (~160 chars) — details stay on the domain's own page, per the 3-layer contract.
+
 ## v2.52.0 (2026-07-30) — exactly 3 levels of D per page (consistency layer)
 
 - Every zoom page now shows exactly 3 layers from one shared template: L1 page domain (summary + charters + diagram), L2 children (full blocks + charters + diagram), L3 grandchildren (summary-only clickable cards — details never inline on the first page; clicking repeats the same template one level down).
