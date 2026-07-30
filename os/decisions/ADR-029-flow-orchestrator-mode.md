@@ -4,12 +4,14 @@
 
 ACCEPTED 2026-07-30. Founder direction D62 (`holding/FOUNDER-DIRECTIONS.md` §D62 — well-formed Work-Atom units + coherent growth). Ships OFF by default behind `feature_flags.flow_orchestrator_mode` in `sutra/marketplace/plugin/sutra-defaults.json`.
 
+**Amended 2026-07-30 (post-audit, same day)**: Decision 5 now defines the full flag ladder `off` / `experimental` / `on`. The current shipped flag value is `"experimental"` — effective only in opt-in repos (currently asawa-holding), where operation is production discipline per the D62 amendment ("It's not an experiment. It is hardened already."); every other install behaves as `"off"`. The "Ships OFF" sentence above is the original accept-time text, preserved.
+
 Runtime surfaces of record:
 
 - `sutra/marketplace/plugin/skills/flow/SKILL.md` §Orchestrator mode (D62 / ADR-029)
 - `sutra/marketplace/plugin/skills/flow/references/return-contract.schema.json`
 - `sutra/marketplace/plugin/skills/flow/references/flow-ledger.md`
-- `sutra/marketplace/plugin/bin/validate-return-contract.sh` · `bin/flow-factors.sh` · `bin/flow-ledger-append.sh` · `bin/workflow-type-match.sh`
+- `sutra/marketplace/plugin/bin/validate-return-contract.sh` · `bin/flow-factors.sh` · `bin/flow-ledger-append.sh` · `bin/workflow-type-match.sh` (the matcher is the deterministic v0 floor that narrows ADR-026's open matching-function item — see ADR-026 Consequences, amended 2026-07-30; the skill-judgment override layer remains open)
 - Acceptance suite: `sutra/marketplace/plugin/tests/flow-orchestrator/run.sh` (fixtures f1..f8)
 
 ## Context
@@ -57,13 +59,19 @@ Eight sub-decisions define the mode.
 
 **Decision 4 — Failure policy (worker max 3, orchestrator five-option).** A worker gets at most 3 attempts at its atom (initial + 2 retries); each retry must carry what changed. On the third failure — or an invalid return contract, or a `blocked` status — the worker STOPS and returns; it never improvises a fourth path. The orchestrator then picks exactly one of the ADR-011 closed 5-set: `rollback` / `escalate` / `pause` / `abort` / `continue`. No sixth option without a new ADR.
 
-**Decision 5 — feature_flags.** The mode is gated by `feature_flags.flow_orchestrator_mode` in `sutra/marketplace/plugin/sutra-defaults.json`. Value `"off"` (the shipped default) means ZERO behavior change: `core:flow` runs exactly as documented pre-D62, and no orchestrator machinery activates. Value `"on"` enables Decisions 1-4 and 6-8. Read with:
+**Decision 5 — feature_flags (amended 2026-07-30: three-rung ladder).** The mode is gated by `feature_flags.flow_orchestrator_mode` in `sutra/marketplace/plugin/sutra-defaults.json`. Three values:
+
+- `"off"` — ZERO behavior change: `core:flow` runs exactly as documented pre-D62; no orchestrator machinery activates.
+- `"experimental"` — the current shipped flag value: orchestrator machinery (Decisions 1-4, 6-8) effective ONLY in repos that have opted in (currently asawa-holding); every other install behaves as `"off"`. Founder ruling 2026-07-30: opted-in operation is production discipline, not a trial (D62 amendment).
+- `"on"` — enables Decisions 1-4 and 6-8 fleet-wide. The experimental→on flip is an explicit founder call after soak.
+
+Read with:
 
 ```bash
 jq -r '.feature_flags.flow_orchestrator_mode // "off"' sutra-defaults.json
 ```
 
-**Decision 6 — Substrate.** The mode ships as plugin L0 (D38 PLUGIN-RUNTIME): executable `bin/` scripts + fixtures, not prose-only convention. Scripts are bash + python3-stdlib only — no network, no non-stdlib dependencies; deterministic where the contract demands it (`bin/flow-factors.sh`: `LC_ALL=C`, no clock, byte-identical double runs, pinned by fixture f6). Skills/docs EXPLAIN; scripts/hooks ENFORCE — one policy substrate consumed everywhere.
+**Decision 6 — Substrate.** The mode ships as plugin L0 (D38 PLUGIN-RUNTIME): executable `bin/` scripts + fixtures, not prose-only convention. Scripts are bash + python3-stdlib only — no network, no non-stdlib dependencies; deterministic where the contract demands it (`bin/flow-factors.sh`: `LC_ALL=C`, no clock, byte-identical double runs, pinned by fixture f6). Skills/docs EXPLAIN; scripts/hooks ENFORCE — one policy substrate consumed everywhere. These scripts are mechanical floors feeding the spine, NOT the ADR-027 axis engine: the `mint`/`pick` generator and reflexivity detector remain theory (FQ1 PROPOSED) per ADR-027.
 
 **Decision 7 — Close checklist.** The orchestrator appends the unit's ledger row at CLOSE only when all of the following hold (mirrored in `skills/flow/references/flow-ledger.md`):
 

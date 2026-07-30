@@ -43,7 +43,7 @@ Workflow shape resolves in this order:
 - `primitives/workflow.md` gains a "Workflow-type resolution" WHAT-note pointing here (charter says WHAT, ADR says WHY).
 - The Native router model (work-atom.html §B) must gain a **Stage 0** above its tier/certainty/lens axes — it currently assumes TYPE=task with no workflow-type lookup. Flagged on that page.
 - `flow.html` §0 renders this as the canonical spine (rename "high-level guidance" → "workflow type"; inner-engine band shown as always-on).
-- Open: the **matching** function (how an input selects which workflow type applies) is unspecified — v2 runtime scope. The `dials` inside the inner engine remain PROPOSED pending their own ADR.
+- Open (amended 2026-07-30, narrowed): the **matching** function's deterministic v0 floor shipped per ADR-029 (`bin/workflow-type-match.sh`, fixture f5); the skill-judgment override layer above the floor remains open. The `dials` inside the inner engine remain PROPOSED pending their own ADR.
 
 ## References
 

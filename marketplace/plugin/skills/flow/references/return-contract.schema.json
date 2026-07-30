@@ -1,11 +1,11 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://sutra.dev/schemas/return-contract.schema.json",
-  "$comment": "Work-Atom return contract, per ADR-029. This file is the contract of record; bin/validate-return-contract.sh hardcodes the same rules.",
+  "$comment": "Work-Atom return contract, per ADR-029. This file is the contract of record; bin/validate-return-contract.sh hardcodes the same rules. Aligned 2026-07-30 (ADR audit F1/F2 + codex folds): extra keys tolerated at top level and inside verify, verify accepts string|object — matching validator rules R1/R2 and fixture f1.",
   "title": "Work-Atom Return Contract",
   "description": "Structured return payload every Work-Atom worker emits back to the orchestrator.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": ["atom_id", "status", "result", "verify", "confidence", "trace_id"],
   "properties": {
     "atom_id": {
@@ -28,25 +28,33 @@
       "description": "Observable proof supporting the result (command output, file excerpt, diff hunk)."
     },
     "verify": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["check", "result"],
-      "properties": {
-        "check": {
+      "anyOf": [
+        {
           "type": "string",
-          "description": "The runnable check that was executed."
+          "minLength": 1,
+          "description": "String form: the runnable check command (validator rule R1)."
         },
-        "result": {
-          "type": "string",
-          "enum": ["PASS", "FAIL", "WAIVED"],
-          "description": "Outcome of the check."
-        },
-        "detail": {
-          "type": "string",
-          "description": "Optional detail on the check outcome."
+        {
+          "type": "object",
+          "required": ["check", "result"],
+          "properties": {
+            "check": {
+              "type": "string",
+              "description": "The runnable check that was executed."
+            },
+            "result": {
+              "type": "string",
+              "enum": ["PASS", "FAIL", "WAIVED"],
+              "description": "Outcome of the check."
+            },
+            "detail": {
+              "type": "string",
+              "description": "Optional detail on the check outcome."
+            }
+          }
         }
-      },
-      "description": "Self-verification record: the check run and its outcome."
+      ],
+      "description": "Self-verification: either the runnable check (string form) or the record {check, result[, detail]} (object form)."
     },
     "files_touched": {
       "type": "array",

@@ -4,6 +4,10 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.55.1 (2026-07-30) — return-contract schema aligned to operative contract
+
+- ADR-audit F1/F2: schema now tolerates extra keys + string-form verify, matching validator R1/R2 and fixture f1 (validator + fixtures unchanged). F3-F5: ADR-029 amended (flag ladder off/experimental/on; matcher v0-floor cross-ref; mechanical-floor scoping) + ADR-026 open item narrowed (v0 floor shipped; judgment layer open). Audit: holding/research/2026-07-30-adr-026-027-029-consistency-audit.md.
+
 ## v2.55.0 (2026-07-30) — charter chips: readable, minimal, mobile-friendly
 
 - Charters render as status-dotted TAGS (design tokens from D0). Density heuristic: <= 3 in a group and short purposes -> mini-cards with the one-liner visible; more -> compact chips with hover tooltip (desktop) + native tap-to-expand panel (mobile/keyboard) carrying purpose, links, artifacts.
