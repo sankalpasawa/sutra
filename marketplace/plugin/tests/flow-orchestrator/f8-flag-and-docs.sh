@@ -16,20 +16,20 @@ say() { echo "f8: $1"; RC=1; }
 
 command -v jq >/dev/null 2>&1 || { say "jq not available"; exit "$RC"; }
 
-# Assertion 1: orchestrator flag in sutra-defaults.json is "off".
-# Key name is matched by path component containing "orchestrator" (parallel
-# build agent owns the exact key); at least one such scalar must equal "off"
-# and none may equal "on".
+# Assertion 1: orchestrator flag in sutra-defaults.json is a valid ladder
+# value: "off" | "experimental" | "on" (ADR-029 rollout ladder). Key name is
+# matched by path component containing "orchestrator" (parallel build agent
+# owns the exact key); every such scalar must be in the enum. The fixture
+# pins enum validity, not the current rung, so it survives ladder steps.
 if [ -f "$DEFAULTS" ]; then
   vals="$(jq -r 'paths(scalars) as $p
                  | select(any($p[]; tostring | test("orchestrator")))
                  | getpath($p) | tostring' "$DEFAULTS" 2>/dev/null)"
   if [ -z "$vals" ]; then
     say "no orchestrator-keyed value found in sutra-defaults.json"
-  elif printf '%s\n' "$vals" | grep -qx "on"; then
-    say "orchestrator flag is 'on' in sutra-defaults.json (expected 'off')"
-  elif ! printf '%s\n' "$vals" | grep -qx "off"; then
-    say "orchestrator flag not 'off' (values: $(printf '%s' "$vals" | tr '\n' ' '))"
+  else
+    bad="$(printf '%s\n' "$vals" | grep -vx -e "off" -e "experimental" -e "on" || true)"
+    [ -n "$bad" ] && say "orchestrator flag not in enum off|experimental|on (values: $(printf '%s' "$bad" | tr '\n' ' '))"
   fi
 else
   say "missing $DEFAULTS"

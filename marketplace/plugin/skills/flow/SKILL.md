@@ -360,7 +360,7 @@ jq -r '.feature_flags.flow_orchestrator_mode // "off"' \
   "$(dirname "$0")/../../sutra-defaults.json"   # plugin root sutra-defaults.json
 ```
 
-When the flag is `off` (the shipped default) there is ZERO behavior change: this skill runs exactly as documented above, single-lane, and nothing in this section applies. When `on`:
+When the flag is `off` (the shipped default) there is ZERO behavior change: this skill runs exactly as documented above, single-lane, and nothing in this section applies. `experimental` = orchestrator dispatch active only where the operating repo has opted in (currently asawa-holding); operators elsewhere treat it as `off` unless they opt in. When `on`:
 
 **Boundary**: one orchestrator per unit, N worker Work-Atoms. The orchestrator owns classify / resolve / dispatch / validate / failure disposition / CLOSE. Each worker owns exactly one atom and never dispatches sub-workers; recursion routes back through the orchestrator.
 

@@ -4,6 +4,10 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.53.1 (2026-07-30) — flow_orchestrator_mode off -> experimental
+
+- ADR-029 rollout step 2, asawa-holding opt-in; f8 fixture now enum-checks the flag (off|experimental|on).
+
 ## v2.53.0 (2026-07-30) — Flow orchestrator mode (D62/ADR-029)
 
 - Flag-gated Work-Atom dispatch for core:flow deep mode (feature_flags.flow_orchestrator_mode, default off); return-contract schema + validator bin/validate-return-contract.sh.
