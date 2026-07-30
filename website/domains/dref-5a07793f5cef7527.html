@@ -6,14 +6,52 @@
 :root{--bg:#f5f0e8;--card:#fdfaf4;--ink:#2a2622;--mut:#8c857d;--line:#e3dccf;--acc:#c4956a;--accbg:#f3e7d8}
 *{box-sizing:border-box;margin:0}
 body{background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,'Segoe UI',Georgia,serif}
-.wrap{max-width:880px;margin:0 auto;padding:36px 20px}
-.crumb{font-size:.85rem;color:var(--mut);margin-bottom:18px}
+.layout{max-width:1100px;margin:0 auto;padding:40px 20px;display:grid;grid-template-columns:220px 1fr;gap:34px}
+nav{position:sticky;top:24px;align-self:start;font-size:.92rem}
+nav a{display:flex;align-items:center;gap:8px;color:var(--ink);text-decoration:none;padding:7px 8px;border-radius:8px}
+nav a:hover{background:var(--accbg)}
+nav a.up{color:var(--acc);font-size:.85rem}
+.crumb{font-size:.85rem;color:var(--mut);margin-bottom:14px}
 .crumb a{color:var(--acc);text-decoration:none}
-h1{font-size:1.5rem;letter-spacing:-.01em}
-.desc{color:var(--mut);margin:6px 0 4px;max-width:60ch}
-.charter{font-size:.8rem;color:var(--mut);margin-top:6px;max-width:60ch}
+.chip{font:600 .72rem/1 ui-monospace,Menlo,monospace;color:var(--ink);background:var(--accbg);border:1px solid var(--acc);border-radius:6px;padding:3px 7px;flex:none}
+.chip.big{font-size:.85rem;padding:6px 10px}
+h1{font-size:1.65rem;letter-spacing:-.01em}
+.rootdesc{color:var(--mut);margin:6px 0 10px;max-width:60ch}
+.dept{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:22px;scroll-margin-top:20px}
+.dept:target{border-color:var(--acc)}
+.dept header{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}
+.dept h2{font-size:1.12rem}
+.desc{color:var(--mut);font-size:.92rem;margin-top:2px;max-width:58ch}
+.charter{font-size:.8rem;color:var(--mut);margin-top:6px;max-width:58ch}
 .charter span{font:600 .68rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px;margin-right:6px}
-.tree{margin:22px 0;text-align:center}
+.count{margin-left:auto;font:600 .75rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.info{border:1.5px dashed var(--line);border-radius:10px;padding:12px 14px;scroll-margin-top:20px}
+.info:target{border-color:var(--acc)}
+.info b{display:inline-block;margin-left:8px;font-size:.95rem}
+.info p{color:var(--mut);font-size:.85rem;margin-top:6px}
+.info.empty{color:var(--mut);font-style:italic}
+a.dlink{color:inherit;text-decoration:none}
+a.dlink:hover{color:var(--acc)}
+.cascade{margin-top:10px;border-top:1px dotted var(--line);padding-top:8px}
+.cascade summary{cursor:pointer;font-size:.78rem;color:var(--acc);list-style:none}
+.cascade summary::before{content:"B8 ";font-size:.7rem}
+.cascade[open] summary::before{content:"BE "}
+.cascade .grid{margin-top:10px;grid-template-columns:1fr}
+.more a{font-size:.8rem;color:var(--acc);text-decoration:none}
+.more{margin-top:8px}
+.navgrp summary a{color:var(--ink);text-decoration:none;flex:1}
+.navgrp summary a:hover{color:var(--acc)}
+.navcount{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+.navgrp summary{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;list-style:none}
+.navgrp summary::before{content:"B8";font-size:.7rem;color:var(--mut)}
+.navgrp[open] summary::before{content:"BE"}
+.navgrp summary:hover{background:var(--accbg)}
+.navkids{margin:2px 0 6px 14px;border-left:2px solid var(--line);padding-left:8px}
+.navkids a.sub{font-size:.85rem;padding:5px 6px}
+.navkids .navgrp summary{padding:5px 6px;font-size:.88rem}
+footer{color:var(--mut);font-size:.8rem;margin-top:8px}
+.tree{margin:6px 0 18px;text-align:center}
 .tnode{display:inline-block;background:var(--card);border:1.5px solid var(--acc);border-radius:8px;padding:6px 14px;font-size:.85rem;font-weight:600;color:var(--ink);text-decoration:none}
 a.tnode:hover{background:var(--accbg)}
 .tnode.troot{background:var(--accbg)}
@@ -22,22 +60,34 @@ a.tnode:hover{background:var(--accbg)}
 .tkids::before{content:"";position:absolute;top:0;left:12%;right:12%;height:2px;background:var(--line)}
 .tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
 .tkids .tnode::before{content:"";position:absolute;top:-14px;left:50%;width:2px;height:14px;background:var(--line)}
-.grid{display:grid;gap:12px;margin-top:18px}
-.grid.nest{margin:10px 0 0 14px;border-left:2px solid var(--line);padding-left:12px}
-.info{border:1.5px dashed var(--line);border-radius:10px;padding:12px 14px;background:var(--card)}
-.info b{margin-left:8px;font-size:.95rem}
-.info p{color:var(--mut);font-size:.85rem;margin-top:6px}
-.info.empty{color:var(--mut);font-style:italic}
-.chip{font:600 .72rem/1 ui-monospace,monospace;color:var(--ink);background:var(--accbg);border:1px solid var(--acc);border-radius:6px;padding:3px 7px}
-.openlink{font-size:.78rem;color:var(--acc);text-decoration:none;margin-left:8px}
-.more a{font-size:.8rem;color:var(--acc)}
-footer{color:var(--mut);font-size:.78rem;margin-top:26px}
-</style></head><body><div class="wrap">
+#q{width:100%;margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.9rem}
+#q:focus{outline:2px solid var(--acc)}
+.hidden{display:none !important}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}}
+</style></head><body><div class="layout">
+<nav><input id="q" type="search" placeholder="Search domains..." autocomplete="off"><a class="sub up" href="dref-0f35a0033d64c72c.html">&lsaquo; up to Portfolio (T2)</a></nav>
+<main>
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-0f35a0033d64c72c.html">Portfolio (T2)</a> &rsaquo; <b>Reflection</b></p>
 <h1>Reflection</h1>
-<p class="desc">Personal reflection product.</p>
+<p class="rootdesc">Personal reflection product.</p>
 <p class="charter"><span>Charter</span> Reflection Charter — Asawa org: Reflection.</p>
 
-<div class="grid"><div class="info empty">leaf domain — no children</div></div>
-<footer>0 direct children · window: 3 levels · click any box to zoom · design: sutra/website/index.html (detected 2026-07-30)</footer>
+<div class="info empty">leaf domain — no children</div>
+<footer>0 direct children · 3-level window · click a departments to zoom into its page · design tokens: sutra/website/index.html (detected 2026-07-30)</footer>
+</main>
+<script>
+(function(){var q=document.getElementById('q');if(!q)return;
+q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+document.querySelectorAll('section.dept').forEach(function(sec){
+ var any=false;
+ sec.querySelectorAll('.info').forEach(function(b){
+  var hit=!v||b.textContent.toLowerCase().indexOf(v)>=0;
+  b.classList.toggle('hidden',!hit);if(hit)any=true;});
+ var selfHit=!v||sec.querySelector('header').textContent.toLowerCase().indexOf(v)>=0;
+ sec.classList.toggle('hidden',!(any||selfHit));
+ if(v)sec.querySelectorAll('details.cascade').forEach(function(d){d.open=true;});});
+document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
+ var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
+ n.classList.toggle('hidden',!hit);});});})();
+</script>
 </div></body></html>

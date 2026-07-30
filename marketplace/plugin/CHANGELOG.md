@@ -4,6 +4,10 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.51.1 (2026-07-30) — zoom pages keep every standing page feature
+
+- Regression fix: first zoom cut dropped the left-hand index, search, and per-level diagrams. Every zoom page now carries the full page anatomy — sticky left index (clickable, counts, collapsible), search box, an org diagram at EVERY cascading level in the window, dotted blocks, descriptions, all charters — plus breadcrumbs, up-link, and open-links at the window edge.
+
 ## v2.51.0 (2026-07-30) — drill-down zoom pages + Core Plugin detailed out
 
 - Site mode (`domains_page.py --site`): one minimal page PER domain, rooted at itself, 3-level window, breadcrumbs up, click-to-zoom down (Native IA principle 4). Filenames = stable refs, so links survive restructure. Text is on-demand by construction — each page carries only its window.

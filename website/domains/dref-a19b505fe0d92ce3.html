@@ -6,14 +6,52 @@
 :root{--bg:#f5f0e8;--card:#fdfaf4;--ink:#2a2622;--mut:#8c857d;--line:#e3dccf;--acc:#c4956a;--accbg:#f3e7d8}
 *{box-sizing:border-box;margin:0}
 body{background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,'Segoe UI',Georgia,serif}
-.wrap{max-width:880px;margin:0 auto;padding:36px 20px}
-.crumb{font-size:.85rem;color:var(--mut);margin-bottom:18px}
+.layout{max-width:1100px;margin:0 auto;padding:40px 20px;display:grid;grid-template-columns:220px 1fr;gap:34px}
+nav{position:sticky;top:24px;align-self:start;font-size:.92rem}
+nav a{display:flex;align-items:center;gap:8px;color:var(--ink);text-decoration:none;padding:7px 8px;border-radius:8px}
+nav a:hover{background:var(--accbg)}
+nav a.up{color:var(--acc);font-size:.85rem}
+.crumb{font-size:.85rem;color:var(--mut);margin-bottom:14px}
 .crumb a{color:var(--acc);text-decoration:none}
-h1{font-size:1.5rem;letter-spacing:-.01em}
-.desc{color:var(--mut);margin:6px 0 4px;max-width:60ch}
-.charter{font-size:.8rem;color:var(--mut);margin-top:6px;max-width:60ch}
+.chip{font:600 .72rem/1 ui-monospace,Menlo,monospace;color:var(--ink);background:var(--accbg);border:1px solid var(--acc);border-radius:6px;padding:3px 7px;flex:none}
+.chip.big{font-size:.85rem;padding:6px 10px}
+h1{font-size:1.65rem;letter-spacing:-.01em}
+.rootdesc{color:var(--mut);margin:6px 0 10px;max-width:60ch}
+.dept{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:22px;scroll-margin-top:20px}
+.dept:target{border-color:var(--acc)}
+.dept header{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}
+.dept h2{font-size:1.12rem}
+.desc{color:var(--mut);font-size:.92rem;margin-top:2px;max-width:58ch}
+.charter{font-size:.8rem;color:var(--mut);margin-top:6px;max-width:58ch}
 .charter span{font:600 .68rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px;margin-right:6px}
-.tree{margin:22px 0;text-align:center}
+.count{margin-left:auto;font:600 .75rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.info{border:1.5px dashed var(--line);border-radius:10px;padding:12px 14px;scroll-margin-top:20px}
+.info:target{border-color:var(--acc)}
+.info b{display:inline-block;margin-left:8px;font-size:.95rem}
+.info p{color:var(--mut);font-size:.85rem;margin-top:6px}
+.info.empty{color:var(--mut);font-style:italic}
+a.dlink{color:inherit;text-decoration:none}
+a.dlink:hover{color:var(--acc)}
+.cascade{margin-top:10px;border-top:1px dotted var(--line);padding-top:8px}
+.cascade summary{cursor:pointer;font-size:.78rem;color:var(--acc);list-style:none}
+.cascade summary::before{content:"B8 ";font-size:.7rem}
+.cascade[open] summary::before{content:"BE "}
+.cascade .grid{margin-top:10px;grid-template-columns:1fr}
+.more a{font-size:.8rem;color:var(--acc);text-decoration:none}
+.more{margin-top:8px}
+.navgrp summary a{color:var(--ink);text-decoration:none;flex:1}
+.navgrp summary a:hover{color:var(--acc)}
+.navcount{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+.navgrp summary{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;list-style:none}
+.navgrp summary::before{content:"B8";font-size:.7rem;color:var(--mut)}
+.navgrp[open] summary::before{content:"BE"}
+.navgrp summary:hover{background:var(--accbg)}
+.navkids{margin:2px 0 6px 14px;border-left:2px solid var(--line);padding-left:8px}
+.navkids a.sub{font-size:.85rem;padding:5px 6px}
+.navkids .navgrp summary{padding:5px 6px;font-size:.88rem}
+footer{color:var(--mut);font-size:.8rem;margin-top:8px}
+.tree{margin:6px 0 18px;text-align:center}
 .tnode{display:inline-block;background:var(--card);border:1.5px solid var(--acc);border-radius:8px;padding:6px 14px;font-size:.85rem;font-weight:600;color:var(--ink);text-decoration:none}
 a.tnode:hover{background:var(--accbg)}
 .tnode.troot{background:var(--accbg)}
@@ -22,22 +60,34 @@ a.tnode:hover{background:var(--accbg)}
 .tkids::before{content:"";position:absolute;top:0;left:12%;right:12%;height:2px;background:var(--line)}
 .tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
 .tkids .tnode::before{content:"";position:absolute;top:-14px;left:50%;width:2px;height:14px;background:var(--line)}
-.grid{display:grid;gap:12px;margin-top:18px}
-.grid.nest{margin:10px 0 0 14px;border-left:2px solid var(--line);padding-left:12px}
-.info{border:1.5px dashed var(--line);border-radius:10px;padding:12px 14px;background:var(--card)}
-.info b{margin-left:8px;font-size:.95rem}
-.info p{color:var(--mut);font-size:.85rem;margin-top:6px}
-.info.empty{color:var(--mut);font-style:italic}
-.chip{font:600 .72rem/1 ui-monospace,monospace;color:var(--ink);background:var(--accbg);border:1px solid var(--acc);border-radius:6px;padding:3px 7px}
-.openlink{font-size:.78rem;color:var(--acc);text-decoration:none;margin-left:8px}
-.more a{font-size:.8rem;color:var(--acc)}
-footer{color:var(--mut);font-size:.78rem;margin-top:26px}
-</style></head><body><div class="wrap">
+#q{width:100%;margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.9rem}
+#q:focus{outline:2px solid var(--acc)}
+.hidden{display:none !important}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}}
+</style></head><body><div class="layout">
+<nav><input id="q" type="search" placeholder="Search domains..." autocomplete="off"><a class="sub up" href="index.html">&lsaquo; up to Asawa Inc.</a><details class="navgrp" open><summary><span class="chip">D1</span><a href="#d1">Core Plugin</a><span class="navcount">4</span></summary><div class="navkids"><details class="navgrp"><summary><span class="chip">D1.1</span><a href="#d1-1">Governance Hooks</a><span class="navcount">2</span></summary><div class="navkids"><a class="sub" href="#d1-1-1"><span class="chip">D1.1.1</span>Placement Gates</a><a class="sub" href="#d1-1-2"><span class="chip">D1.1.2</span>Per-Turn Floors</a></div></details><details class="navgrp"><summary><span class="chip">D1.2</span><a href="#d1-2">Skills Catalog</a><span class="navcount">2</span></summary><div class="navkids"><a class="sub" href="#d1-2-1"><span class="chip">D1.2.1</span>Review Lanes</a><a class="sub" href="#d1-2-2"><span class="chip">D1.2.2</span>Domains Module</a></div></details><details class="navgrp"><summary><span class="chip">D1.3</span><a href="#d1-3">Engine Library</a><span class="navcount">2</span></summary><div class="navkids"><a class="sub" href="#d1-3-1"><span class="chip">D1.3.1</span>Placement Engine</a><a class="sub" href="#d1-3-2"><span class="chip">D1.3.2</span>Page Generators</a></div></details><a class="sub" href="#d1-4"><span class="chip">D1.4</span>Commands &amp; Tests</a></div></details><a class="sub" href="#d2"><span class="chip">D2</span>Native Engine</a><a class="sub" href="#d3"><span class="chip">D3</span>Websites &amp; Docs</a><a class="sub" href="#d4"><span class="chip">D4</span>Marketplace &amp; Distribution</a></nav>
+<main>
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <b>Sutra OS</b></p>
 <h1>Sutra OS</h1>
-<p class="desc">The operating system company - builds and ships the Sutra plugin, the Native engine, and the canon.</p>
+<p class="rootdesc">The operating system company - builds and ships the Sutra plugin, the Native engine, and the canon.</p>
 <p class="charter"><span>Charter</span> Sutra OS Charter — Asawa org: Sutra OS.</p>
-<div class="tree"><div class="tnode troot">Sutra OS</div><div class="tdown"></div><div class="tkids"><a class="tnode" href="dref-052a1898edf3ca6f.html">Core Plugin</a><a class="tnode" href="dref-4c6d97f6a680b3a7.html">Native Engine</a><a class="tnode" href="dref-c031fe396afba594.html">Websites &amp; Docs</a><a class="tnode" href="dref-a43142457d19b0f4.html">Marketplace &amp; Distribution</a></div></div>
-<div class="grid"><div class="info"><span class="chip">D1</span><b>Core Plugin</b> <a class="openlink" href="dref-052a1898edf3ca6f.html">open &rsaquo;</a><p>The Claude Code plugin: governance skills, hooks, and per-turn discipline shipped to every install.</p><p class="charter"><span>Charter</span> Core Plugin Charter — Asawa org: Core Plugin.</p><div class="grid nest"><div class="info"><span class="chip">D1.1</span><b>Governance Hooks</b> <a class="openlink" href="dref-93db7bfc02ae6707.html">open &rsaquo;</a><p>The per-turn gates and floors that enforce Sutra discipline.</p><p class="charter"><span>Charter</span> Governance Hooks Charter — Every mutation and every turn passes the discipline floors deterministically.</p><div class="grid nest"><div class="info"><span class="chip">D1.1.1</span><b>Placement Gates</b><p>placement-gate, stop-check, touch, resolve — the ADR-028 enforcement set.</p><p class="charter"><span>Charter</span> Placement Gates Charter — Every unit of work carries a resolvable address before it runs.</p></div><div class="info"><span class="chip">D1.1.2</span><b>Per-Turn Floors</b><p>h-sutra, flow, depth, blueprint floors at PreToolUse and Stop.</p><p class="charter"><span>Charter</span> Per-Turn Floors Charter — No turn ships without its governance stack.</p></div></div></div><div class="info"><span class="chip">D1.2</span><b>Skills Catalog</b> <a class="openlink" href="dref-fff096d1b4564315.html">open &rsaquo;</a><p>The ~30 core:* skills — governance, review lanes, modules.</p><p class="charter"><span>Charter</span> Skills Catalog Charter — Each discipline is invocable, explained, and versioned as a skill.</p><div class="grid nest"><div class="info"><span class="chip">D1.2.1</span><b>Review Lanes</b><p>codex-sutra + deepseek — the dual-AI review primitives.</p><p class="charter"><span>Charter</span> Review Lanes Charter — Substantive changes get an independent second opinion before shipping.</p></div><div class="info"><span class="chip">D1.2.2</span><b>Domains Module</b><p>core:domains — the org tree on every surface.</p><p class="charter"><span>Charter</span> Domains Module Charter — The company&#x27;s structure is visible, searchable, and grounded everywhere.</p></div></div></div><div class="info"><span class="chip">D1.3</span><b>Engine Library</b> <a class="openlink" href="dref-ec0cf6dc51b98a18.html">open &rsaquo;</a><p>The deterministic engines under lib/.</p><p class="charter"><span>Charter</span> Engine Library Charter — Stochastic reasoning rides on deterministic, testable primitives.</p><div class="grid nest"><div class="info"><span class="chip">D1.3.1</span><b>Placement Engine</b><p>Registry, classifier, restructure, MECE, search, touch.</p><p class="charter"><span>Charter</span> Placement Engine Charter — Addresses are computed and persisted, never invented.</p></div><div class="info"><span class="chip">D1.3.2</span><b>Page Generators</b><p>domains_page + renderers for the published surfaces.</p><p class="charter"><span>Charter</span> Page Generators Charter — Published pages regenerate from data; none are hand-edited.</p></div></div></div><div class="info"><span class="chip">D1.4</span><b>Commands &amp; Tests</b><p>Slash commands plus the unit/integration/smoke suites.</p><p class="charter"><span>Charter</span> Commands &amp; Tests Charter — Every shipped behavior has a runnable check.</p></div></div></div><div class="info"><span class="chip">D2</span><b>Native Engine</b><p>The Native runtime and its canon - engines, primitives, and ADRs under sutra/os.</p><p class="charter"><span>Charter</span> Native Engine Charter — Asawa org: Native Engine.</p></div><div class="info"><span class="chip">D3</span><b>Websites &amp; Docs</b><p>Public sites and documentation - the Sutra site and the Native doc portal.</p><p class="charter"><span>Charter</span> Websites &amp; Docs Charter — Asawa org: Websites &amp; Docs.</p></div><div class="info"><span class="chip">D4</span><b>Marketplace &amp; Distribution</b><p>Plugin packaging, releases, install flow, and fleet distribution (D29).</p><p class="charter"><span>Charter</span> Marketplace &amp; Distribution Charter — Asawa org: Marketplace &amp; Distribution.</p></div></div>
-<footer>4 direct children · window: 3 levels · click any box to zoom · design: sutra/website/index.html (detected 2026-07-30)</footer>
+<div class="tree"><div class="tnode troot">Sutra OS</div><div class="tdown"></div><div class="tkids"><a class="tnode" href="#d1">Core Plugin</a><a class="tnode" href="#d2">Native Engine</a><a class="tnode" href="#d3">Websites &amp; Docs</a><a class="tnode" href="#d4">Marketplace &amp; Distribution</a></div></div>
+<section id="d1" class="dept"><header><span class="chip big">D1</span><div><h2><a class="dlink" href="dref-052a1898edf3ca6f.html">Core Plugin</a></h2><p class="desc">The Claude Code plugin: governance skills, hooks, and per-turn discipline shipped to every install.</p><p class="charter"><span>Charter</span> Core Plugin Charter — Asawa org: Core Plugin.</p></div><span class="count">4</span></header><div class="tree"><div class="tnode troot">Core Plugin</div><div class="tdown"></div><div class="tkids"><a class="tnode" href="#d1-1">Governance Hooks</a><a class="tnode" href="#d1-2">Skills Catalog</a><a class="tnode" href="#d1-3">Engine Library</a><a class="tnode" href="#d1-4">Commands &amp; Tests</a></div></div><div class="grid"><div class="info" id="d1-1"><span class="chip">D1.1</span><b><a class="dlink" href="dref-93db7bfc02ae6707.html">Governance Hooks</a></b><p>The per-turn gates and floors that enforce Sutra discipline.</p><p class="charter"><span>Charter</span> Governance Hooks Charter — Every mutation and every turn passes the discipline floors deterministically.</p><details class="cascade" open><summary>2 sub-domains</summary><div class="tree"><div class="tnode troot">Governance Hooks</div><div class="tdown"></div><div class="tkids"><a class="tnode" href="#d1-1-1">Placement Gates</a><a class="tnode" href="#d1-1-2">Per-Turn Floors</a></div></div><div class="grid"><div class="info" id="d1-1-1"><span class="chip">D1.1.1</span><b><a class="dlink" href="dref-3b5211fe3db77180.html">Placement Gates</a></b><p>placement-gate, stop-check, touch, resolve — the ADR-028 enforcement set.</p><p class="charter"><span>Charter</span> Placement Gates Charter — Every unit of work carries a resolvable address before it runs.</p></div><div class="info" id="d1-1-2"><span class="chip">D1.1.2</span><b><a class="dlink" href="dref-a97da8f7f1b5b5c7.html">Per-Turn Floors</a></b><p>h-sutra, flow, depth, blueprint floors at PreToolUse and Stop.</p><p class="charter"><span>Charter</span> Per-Turn Floors Charter — No turn ships without its governance stack.</p></div></div></details></div><div class="info" id="d1-2"><span class="chip">D1.2</span><b><a class="dlink" href="dref-fff096d1b4564315.html">Skills Catalog</a></b><p>The ~30 core:* skills — governance, review lanes, modules.</p><p class="charter"><span>Charter</span> Skills Catalog Charter — Each discipline is invocable, explained, and versioned as a skill.</p><details class="cascade" open><summary>2 sub-domains</summary><div class="tree"><div class="tnode troot">Skills Catalog</div><div class="tdown"></div><div class="tkids"><a class="tnode" href="#d1-2-1">Review Lanes</a><a class="tnode" href="#d1-2-2">Domains Module</a></div></div><div class="grid"><div class="info" id="d1-2-1"><span class="chip">D1.2.1</span><b><a class="dlink" href="dref-1597f7cd73b8ffae.html">Review Lanes</a></b><p>codex-sutra + deepseek — the dual-AI review primitives.</p><p class="charter"><span>Charter</span> Review Lanes Charter — Substantive changes get an independent second opinion before shipping.</p></div><div class="info" id="d1-2-2"><span class="chip">D1.2.2</span><b><a class="dlink" href="dref-fe840b22c6b94bfe.html">Domains Module</a></b><p>core:domains — the org tree on every surface.</p><p class="charter"><span>Charter</span> Domains Module Charter — The company&#x27;s structure is visible, searchable, and grounded everywhere.</p></div></div></details></div><div class="info" id="d1-3"><span class="chip">D1.3</span><b><a class="dlink" href="dref-ec0cf6dc51b98a18.html">Engine Library</a></b><p>The deterministic engines under lib/.</p><p class="charter"><span>Charter</span> Engine Library Charter — Stochastic reasoning rides on deterministic, testable primitives.</p><details class="cascade" open><summary>2 sub-domains</summary><div class="tree"><div class="tnode troot">Engine Library</div><div class="tdown"></div><div class="tkids"><a class="tnode" href="#d1-3-1">Placement Engine</a><a class="tnode" href="#d1-3-2">Page Generators</a></div></div><div class="grid"><div class="info" id="d1-3-1"><span class="chip">D1.3.1</span><b><a class="dlink" href="dref-bba6d8192111e328.html">Placement Engine</a></b><p>Registry, classifier, restructure, MECE, search, touch.</p><p class="charter"><span>Charter</span> Placement Engine Charter — Addresses are computed and persisted, never invented.</p></div><div class="info" id="d1-3-2"><span class="chip">D1.3.2</span><b><a class="dlink" href="dref-e04aeae47092e0ec.html">Page Generators</a></b><p>domains_page + renderers for the published surfaces.</p><p class="charter"><span>Charter</span> Page Generators Charter — Published pages regenerate from data; none are hand-edited.</p></div></div></details></div><div class="info" id="d1-4"><span class="chip">D1.4</span><b><a class="dlink" href="dref-7a94b1e8624109b4.html">Commands &amp; Tests</a></b><p>Slash commands plus the unit/integration/smoke suites.</p><p class="charter"><span>Charter</span> Commands &amp; Tests Charter — Every shipped behavior has a runnable check.</p></div></div></section><section id="d2" class="dept"><header><span class="chip big">D2</span><div><h2><a class="dlink" href="dref-4c6d97f6a680b3a7.html">Native Engine</a></h2><p class="desc">The Native runtime and its canon - engines, primitives, and ADRs under sutra/os.</p><p class="charter"><span>Charter</span> Native Engine Charter — Asawa org: Native Engine.</p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d3" class="dept"><header><span class="chip big">D3</span><div><h2><a class="dlink" href="dref-c031fe396afba594.html">Websites &amp; Docs</a></h2><p class="desc">Public sites and documentation - the Sutra site and the Native doc portal.</p><p class="charter"><span>Charter</span> Websites &amp; Docs Charter — Asawa org: Websites &amp; Docs.</p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d4" class="dept"><header><span class="chip big">D4</span><div><h2><a class="dlink" href="dref-a43142457d19b0f4.html">Marketplace &amp; Distribution</a></h2><p class="desc">Plugin packaging, releases, install flow, and fleet distribution (D29).</p><p class="charter"><span>Charter</span> Marketplace &amp; Distribution Charter — Asawa org: Marketplace &amp; Distribution.</p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section>
+<footer>4 direct children · 3-level window · click a departments to zoom into its page · design tokens: sutra/website/index.html (detected 2026-07-30)</footer>
+</main>
+<script>
+(function(){var q=document.getElementById('q');if(!q)return;
+q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+document.querySelectorAll('section.dept').forEach(function(sec){
+ var any=false;
+ sec.querySelectorAll('.info').forEach(function(b){
+  var hit=!v||b.textContent.toLowerCase().indexOf(v)>=0;
+  b.classList.toggle('hidden',!hit);if(hit)any=true;});
+ var selfHit=!v||sec.querySelector('header').textContent.toLowerCase().indexOf(v)>=0;
+ sec.classList.toggle('hidden',!(any||selfHit));
+ if(v)sec.querySelectorAll('details.cascade').forEach(function(d){d.open=true;});});
+document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
+ var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
+ n.classList.toggle('hidden',!hit);});});})();
+</script>
 </div></body></html>
