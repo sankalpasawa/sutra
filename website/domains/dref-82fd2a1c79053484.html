@@ -52,8 +52,9 @@ p.withheld{font-size:.85rem;margin-top:6px}
 .chtab thead th{text-align:left}
 .chtab tbody th a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--acc)}
 .chtab tbody th a:hover{color:var(--acc)}
-.chtab tr.grp td{font:600 .66rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;padding:10px 8px 4px;border-bottom:none;text-align:left}
 .chtab td.ckind{font:400 .74rem/1 ui-monospace,monospace;color:var(--mut);text-align:left}
+.ctxt.ohide{opacity:0}
+tr.obreak th,tr.obreak td{border-top:2px solid var(--line)}
 .chtab td.cown{text-align:left;font-size:.78rem}
 .chtab td.cown a{color:var(--acc);text-decoration:none}
 .cown-here{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
@@ -119,25 +120,29 @@ a.tnode:hover{background:var(--accbg)}
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-839bfc68fefda5c2.html">Holding Departments</a> &rsaquo; <b>Research</b></p>
 <h1>Research</h1>
 <p class="rootdesc">Research notes and briefs that ground decisions.</p>
-<section class="chsec"><h2 class="chh">Charters</h2><div class="lanewrap"><table class="lanetab chtab"><thead><tr><th scope="col">Charter</th><th scope="col">Kind</th><th scope="col">Status</th><th scope="col">Owner</th></tr></thead><tbody><tr class="grp"><td colspan="4">Own</td></tr><tr class="chtr" data-status="active"><th scope="row"><a href="C-e6d4da045b9fae6b.html" title="Asawa org: Research.">Research Charter</a></th><td class="ckind">standing</td><td><span class="chdot st-active"><i></i>active</span></td><td class="cown"><span class="cown-here">here</span></td></tr><tr class="chtr" data-status="paused"><th scope="row"><a href="C-f8f19ab01905402d.html" title="Install and evaluate Paperclip (MIT control plane for AI-agent companies) as the closest structural adjacency to Sutra and record strategic posture options; posture explicitly parked pending founder decision.">Paperclip competitive eval</a></th><td class="ckind">project</td><td><span class="chdot st-paused"><i></i>paused</span></td><td class="cown"><span class="cown-here">here</span></td></tr><tr class="grp"><td colspan="4">Linked</td></tr><tr class="chtr" data-status="shipped"><th scope="row"><a href="C-414781ed26a03ff1.html" title="Formalize the Native runtime engine as ratified canon: registry-and-effector split, host-LLM selection, tenant isolation, typed decision provenance, approval gates, organic emergence at k&gt;=4, closed on_failure 5-set, typed PNC predicates, fsync&#x27;d JSONL telemetry, depth-router workflow, vendored H-Sutra producer, isolated Asawa replica, and daemon-side cadence scheduling.">Native Engine formalization v1.0 (ADR-004..017)</a></th><td class="ckind">project</td><td><span class="chdot st-shipped"><i></i>shipped</span></td><td class="cown"><a href="dref-4c6d97f6a680b3a7.html">Native Engine</a></td></tr><tr class="chtr" data-status="retired"><th scope="row"><a href="C-c8f00c2a4aac8662.html" title="Build the Native workflow engine v1.0-v1.2 (laws, schemas, workflow/skill engines, OPA compiler, hooks/OTel/MCP, dogfood, canary release, organic emergence) via milestone plans M3-M12.">Native v1.x Engine Build (archived family)</a></th><td class="ckind">project</td><td><span class="chdot st-retired"><i></i>retired</span></td><td class="cown"><a href="dref-4c6d97f6a680b3a7.html">Native Engine</a></td></tr><tr class="chnone hidden"><td colspan="4">no charters match</td></tr></tbody></table></div></section>
+<section class="chsec"><h2 class="chh">Charters</h2><div class="chfil"><button data-st="all" aria-pressed="false">all</button><button data-st="active" aria-pressed="true">active</button><button data-st="paused" aria-pressed="false">paused</button><button data-st="retired" aria-pressed="false">retired</button><button data-st="shipped" aria-pressed="false">shipped</button></div><div class="lanewrap"><table class="lanetab chtab" data-deffil="active"><thead><tr><th scope="col">Owner</th><th scope="col">Charter</th><th scope="col">Kind</th><th scope="col">Status</th></tr></thead><tbody><tr class="chtr obreak" data-status="active" data-owner="dref-82fd2a1c79053484"><td class="cown" data-o="1"><span class="ctxt"><span class="cown-here" aria-label="Owned by this department">here</span></span></td><th scope="row"><a href="C-e6d4da045b9fae6b.html" title="Asawa org: Research.">Research Charter</a></th><td class="ckind">standing</td><td><span class="chdot st-active"><i></i>active</span></td></tr><tr class="chtr" data-status="paused" data-owner="dref-82fd2a1c79053484"><td class="cown" data-o="1"><span class="ctxt ohide"><span class="cown-here" aria-label="Owned by this department">here</span></span></td><th scope="row"><a href="C-f8f19ab01905402d.html" title="Install and evaluate Paperclip (MIT control plane for AI-agent companies) as the closest structural adjacency to Sutra and record strategic posture options; posture explicitly parked pending founder decision.">Paperclip competitive eval</a></th><td class="ckind">project</td><td><span class="chdot st-paused"><i></i>paused</span></td></tr><tr class="chtr obreak" data-status="shipped" data-owner="dref-4c6d97f6a680b3a7"><td class="cown" data-o="1"><span class="ctxt"><a href="dref-4c6d97f6a680b3a7.html">Native Engine</a></span></td><th scope="row"><a href="C-414781ed26a03ff1.html" title="Formalize the Native runtime engine as ratified canon: registry-and-effector split, host-LLM selection, tenant isolation, typed decision provenance, approval gates, organic emergence at k&gt;=4, closed on_failure 5-set, typed PNC predicates, fsync&#x27;d JSONL telemetry, depth-router workflow, vendored H-Sutra producer, isolated Asawa replica, and daemon-side cadence scheduling.">Native Engine formalization v1.0 (ADR-004..017)</a></th><td class="ckind">project</td><td><span class="chdot st-shipped"><i></i>shipped</span></td></tr><tr class="chtr" data-status="retired" data-owner="dref-4c6d97f6a680b3a7"><td class="cown" data-o="1"><span class="ctxt ohide"><a href="dref-4c6d97f6a680b3a7.html">Native Engine</a></span></td><th scope="row"><a href="C-c8f00c2a4aac8662.html" title="Build the Native workflow engine v1.0-v1.2 (laws, schemas, workflow/skill engines, OPA compiler, hooks/OTel/MCP, dogfood, canary release, organic emergence) via milestone plans M3-M12.">Native v1.x Engine Build (archived family)</a></th><td class="ckind">project</td><td><span class="chdot st-retired"><i></i>retired</span></td></tr><tr class="chnone hidden"><td colspan="4">no charters match</td></tr></tbody></table></div></section>
 
 <div class="info empty">leaf domain — no children</div>
 <footer>0 children &middot; 3 levels per page &middot; sutra/website/index.html (detected 2026-07-30)</footer>
 </main>
 <script>
-(function(){var q=document.getElementById('q');var FIL='all';
+(function(){var q=document.getElementById('q');
+var tb=document.querySelector('table.chtab');
+var FIL=tb?(tb.getAttribute('data-deffil')||'all'):'all';
 function chApply(){var v=q?q.value.trim().toLowerCase():'';
  document.querySelectorAll('tr.chtr').forEach(function(r){
   var okS=(FIL==='all')||r.getAttribute('data-status')===FIL;
   var a=r.querySelector('a[title]');
   var t=(r.textContent+' '+(a?a.getAttribute('title'):'')).toLowerCase();
   r.classList.toggle('hidden',!(okS&&(!v||t.indexOf(v)>=0)));});
- document.querySelectorAll('tr.grp').forEach(function(g){
-  var n=g.nextElementSibling,any=false;
-  while(n&&!n.classList.contains('grp')){
-   if(n.classList.contains('chtr')&&!n.classList.contains('hidden'))any=true;
-   n=n.nextElementSibling;}
-  g.classList.toggle('hidden',!any);});
+ var seen={};
+ document.querySelectorAll('tr.chtr').forEach(function(r){
+  var s=r.querySelector('td.cown .ctxt');if(!s)return;
+  s.classList.add('ohide');r.classList.remove('obreak');});
+ document.querySelectorAll('tr.chtr:not(.hidden)').forEach(function(r){
+  var o=r.getAttribute('data-owner');var s=r.querySelector('td.cown .ctxt');
+  if(!s)return;
+  if(!seen[o]){seen[o]=1;s.classList.remove('ohide');r.classList.add('obreak');}});
  var anyrow=document.querySelector('tr.chtr:not(.hidden)');
  document.querySelectorAll('tr.chnone').forEach(function(e){
   e.classList.toggle('hidden',!!anyrow);});}
@@ -157,6 +162,7 @@ document.querySelectorAll('section.dept').forEach(function(sec){
 document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
  var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
  n.classList.toggle('hidden',!hit);});
-chApply();});})();
+chApply();});
+chApply();})();
 </script>
 </div></body></html>

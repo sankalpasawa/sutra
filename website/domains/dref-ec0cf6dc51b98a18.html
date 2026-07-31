@@ -52,8 +52,9 @@ p.withheld{font-size:.85rem;margin-top:6px}
 .chtab thead th{text-align:left}
 .chtab tbody th a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--acc)}
 .chtab tbody th a:hover{color:var(--acc)}
-.chtab tr.grp td{font:600 .66rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;padding:10px 8px 4px;border-bottom:none;text-align:left}
 .chtab td.ckind{font:400 .74rem/1 ui-monospace,monospace;color:var(--mut);text-align:left}
+.ctxt.ohide{opacity:0}
+tr.obreak th,tr.obreak td{border-top:2px solid var(--line)}
 .chtab td.cown{text-align:left;font-size:.78rem}
 .chtab td.cown a{color:var(--acc);text-decoration:none}
 .cown-here{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
@@ -119,25 +120,29 @@ a.tnode:hover{background:var(--accbg)}
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <b>Engine Library</b></p>
 <h1>Engine Library</h1>
 <p class="rootdesc">The deterministic engines under lib/.</p>
-<section class="chsec"><h2 class="chh">Charters</h2><div class="lanewrap"><table class="lanetab chtab"><thead><tr><th scope="col">Charter</th><th scope="col">Kind</th><th scope="col">Status</th><th scope="col">Owner</th></tr></thead><tbody><tr class="grp"><td colspan="4">Own</td></tr><tr class="chtr" data-status="active"><th scope="row"><a href="C-c80ea22c83e2348f.html" title="Stochastic reasoning rides on deterministic, testable primitives.">Engine Library Charter</a></th><td class="ckind">standing</td><td><span class="chdot st-active"><i></i>active</span></td><td class="cown"><span class="cown-here">here</span></td></tr><tr class="chnone hidden"><td colspan="4">no charters match</td></tr></tbody></table></div></section>
+<section class="chsec"><h2 class="chh">Charters</h2><div class="lanewrap"><table class="lanetab chtab" data-deffil="all"><thead><tr><th scope="col">Owner</th><th scope="col">Charter</th><th scope="col">Kind</th><th scope="col">Status</th></tr></thead><tbody><tr class="chtr obreak" data-status="active" data-owner="dref-ec0cf6dc51b98a18"><td class="cown" data-o="1"><span class="ctxt"><span class="cown-here" aria-label="Owned by this department">here</span></span></td><th scope="row"><a href="C-c80ea22c83e2348f.html" title="Stochastic reasoning rides on deterministic, testable primitives.">Engine Library Charter</a></th><td class="ckind">standing</td><td><span class="chdot st-active"><i></i>active</span></td></tr><tr class="chnone hidden"><td colspan="4">no charters match</td></tr></tbody></table></div></section>
 <div class="tree"><div class="tnode troot">Engine Library</div><div class="tdown"></div><div class="tkids"><a class="tnode" href="#d1">Placement Engine</a><a class="tnode" href="#d2">Page Generators</a><a class="tnode" href="#d3">Identity &amp; Trust</a><a class="tnode" href="#d4">Runtime Utilities</a></div></div>
 <section id="d1" class="dept"><header><span class="chip big">D1</span><div><h2><a class="dlink" href="dref-bba6d8192111e328.html">Placement Engine</a></h2><p class="desc">Registry, classifier, restructure, MECE, search, touch. Files (2): placement_engine.py, placement-render.sh.</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Addresses are computed and persisted, never invented.">Placement Engine Charter</span></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d2" class="dept"><header><span class="chip big">D2</span><div><h2><a class="dlink" href="dref-e04aeae47092e0ec.html">Page Generators</a></h2><p class="desc">domains_page + renderers for the published surfaces. Files (1): domains_page.py.</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Published pages regenerate from data; none are hand-edited.">Page Generators Charter</span></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d3" class="dept"><header><span class="chip big">D3</span><div><h2><a class="dlink" href="dref-01278d7baebf617b.html">Identity &amp; Trust</a></h2><p class="desc">Who is acting and what may egress: identity, project id, customer-box detection, trust modes, privacy sanitize, override audit. Files (8): identity.sh, project-id.sh, is_customer_box.sh, mcp_trust_mode.py, sh_trust_mode.py, web_trust_mode.py, privacy-sanitize.sh, override-audit.sh.</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Every privileged action resolves WHO first; trust modes and sanitizers gate what leaves the machine.">Identity before authority</span></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section><section id="d4" class="dept"><header><span class="chip big">D4</span><div><h2><a class="dlink" href="dref-007bd0fd6525f15c.html">Runtime Utilities</a></h2><p class="desc">Shared runtime services used by multiple hooks (queue, telemetry paths, manifest parsing, h-sutra classify). EXCLUDES identity, placement, page generation, and test helpers — those have their own homes. Files (5): queue.sh, telemetry-shared-path.sh, parse-manifest-registry.sh, h-sutra-classify-and-write.sh, sutra-stderr-capture.sh.</p><p class="chrow"><span class="chlabel">Charter</span><span class="chmini" title="Cross-hook services live in one place with one owner; no copy-paste plumbing in hooks.">Shared plumbing, one home</span></p></div><span class="count">0</span></header><div class="grid"><div class="info empty">no sub-departments yet</div></div></section>
 <footer>4 children &middot; 3 levels per page &middot; sutra/website/index.html (detected 2026-07-30)</footer>
 </main>
 <script>
-(function(){var q=document.getElementById('q');var FIL='all';
+(function(){var q=document.getElementById('q');
+var tb=document.querySelector('table.chtab');
+var FIL=tb?(tb.getAttribute('data-deffil')||'all'):'all';
 function chApply(){var v=q?q.value.trim().toLowerCase():'';
  document.querySelectorAll('tr.chtr').forEach(function(r){
   var okS=(FIL==='all')||r.getAttribute('data-status')===FIL;
   var a=r.querySelector('a[title]');
   var t=(r.textContent+' '+(a?a.getAttribute('title'):'')).toLowerCase();
   r.classList.toggle('hidden',!(okS&&(!v||t.indexOf(v)>=0)));});
- document.querySelectorAll('tr.grp').forEach(function(g){
-  var n=g.nextElementSibling,any=false;
-  while(n&&!n.classList.contains('grp')){
-   if(n.classList.contains('chtr')&&!n.classList.contains('hidden'))any=true;
-   n=n.nextElementSibling;}
-  g.classList.toggle('hidden',!any);});
+ var seen={};
+ document.querySelectorAll('tr.chtr').forEach(function(r){
+  var s=r.querySelector('td.cown .ctxt');if(!s)return;
+  s.classList.add('ohide');r.classList.remove('obreak');});
+ document.querySelectorAll('tr.chtr:not(.hidden)').forEach(function(r){
+  var o=r.getAttribute('data-owner');var s=r.querySelector('td.cown .ctxt');
+  if(!s)return;
+  if(!seen[o]){seen[o]=1;s.classList.remove('ohide');r.classList.add('obreak');}});
  var anyrow=document.querySelector('tr.chtr:not(.hidden)');
  document.querySelectorAll('tr.chnone').forEach(function(e){
   e.classList.toggle('hidden',!!anyrow);});}
@@ -157,6 +162,7 @@ document.querySelectorAll('section.dept').forEach(function(sec){
 document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
  var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
  n.classList.toggle('hidden',!hit);});
-chApply();});})();
+chApply();});
+chApply();})();
 </script>
 </div></body></html>

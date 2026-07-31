@@ -12,6 +12,11 @@
 
 - Marker concurrency core (Scheme A, founder-ratified): self-only adoption + ownership-safe reset kill cross-session contamination; 8 gates read session-first via marker-lib; 3 writers SESSION-stamped; 6-scenario two-session fixture gates it. Root cause: holding/research/2026-07-30-marker-race-root-cause.md.
 
+## v2.58.0 (2026-07-31) — owner-first merged table, active default, GitHub artifacts
+
+- Charter table restructured: Owner is the FIRST column; same-owner rows merge visually ("here" block first, then owners by name) — JS-safe merge that recomputes to first-visible under filter/search, screen readers still hear owner per row. Status filter defaults to ACTIVE (falls back to all when a page has no active charters).
+- Charter pages: artifacts (and scope entries) are now GitHub blob links resolved from the repo's actual remotes (submodule-aware, fleet-generic), opening in a new tab; Scope-in/out rows carry hover explainers and are skipped when they duplicate the artifact list.
+
 ## v2.57.0 (2026-07-31) — SOFT auto-refresh for the domains site
 
 - New Stop hook domains-site-refresh.sh: on registry drift, regenerates the zoom site + commits + pushes. Never blocks (exit 0 every path), 60-min debounce, full-content fingerprint, non-blocking lock, push-only, prompts off, 120s/60s caps, stamp written only after successful regen. Dormant fleet-wide until a repo opts in via .claude/domains-autopublish (D33-safe).

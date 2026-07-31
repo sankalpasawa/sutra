@@ -52,8 +52,9 @@ p.withheld{font-size:.85rem;margin-top:6px}
 .chtab thead th{text-align:left}
 .chtab tbody th a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--acc)}
 .chtab tbody th a:hover{color:var(--acc)}
-.chtab tr.grp td{font:600 .66rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;padding:10px 8px 4px;border-bottom:none;text-align:left}
 .chtab td.ckind{font:400 .74rem/1 ui-monospace,monospace;color:var(--mut);text-align:left}
+.ctxt.ohide{opacity:0}
+tr.obreak th,tr.obreak td{border-top:2px solid var(--line)}
 .chtab td.cown{text-align:left;font-size:.78rem}
 .chtab td.cown a{color:var(--acc);text-decoration:none}
 .cown-here{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
@@ -119,25 +120,29 @@ a.tnode:hover{background:var(--accbg)}
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <a href="dref-93db7bfc02ae6707.html">Governance Hooks</a> &rsaquo; <b>Telemetry Collectors</b></p>
 <h1>Telemetry Collectors</h1>
 <p class="rootdesc">Record measurements ONLY (latency, estimates, triage, counts, time). Never block, never audit — collection is the whole job. Files (9): emit-metric.sh, estimation-collector.sh, latency-collector.sh, triage-collector.sh, log-triage.sh, posttool-counter.sh, measurement-logger.sh, time-allocation-tracker.sh, flush-telemetry.sh.</p>
-<section class="chsec"><h2 class="chh">Charters</h2><div class="lanewrap"><table class="lanetab chtab"><thead><tr><th scope="col">Charter</th><th scope="col">Kind</th><th scope="col">Status</th><th scope="col">Owner</th></tr></thead><tbody><tr class="grp"><td colspan="4">Own</td></tr><tr class="chtr" data-status="active"><th scope="row"><a href="C-0cefac312f066255.html" title="Every governed action leaves a measurement; optimization waits for data, never taste.">Measured, not guessed</a></th><td class="ckind">standing</td><td><span class="chdot st-active"><i></i>active</span></td><td class="cown"><span class="cown-here">here</span></td></tr><tr class="chnone hidden"><td colspan="4">no charters match</td></tr></tbody></table></div></section>
+<section class="chsec"><h2 class="chh">Charters</h2><div class="lanewrap"><table class="lanetab chtab" data-deffil="all"><thead><tr><th scope="col">Owner</th><th scope="col">Charter</th><th scope="col">Kind</th><th scope="col">Status</th></tr></thead><tbody><tr class="chtr obreak" data-status="active" data-owner="dref-c135388c75286f5d"><td class="cown" data-o="1"><span class="ctxt"><span class="cown-here" aria-label="Owned by this department">here</span></span></td><th scope="row"><a href="C-0cefac312f066255.html" title="Every governed action leaves a measurement; optimization waits for data, never taste.">Measured, not guessed</a></th><td class="ckind">standing</td><td><span class="chdot st-active"><i></i>active</span></td></tr><tr class="chnone hidden"><td colspan="4">no charters match</td></tr></tbody></table></div></section>
 
 <div class="info empty">leaf domain — no children</div>
 <footer>0 children &middot; 3 levels per page &middot; sutra/website/index.html (detected 2026-07-30)</footer>
 </main>
 <script>
-(function(){var q=document.getElementById('q');var FIL='all';
+(function(){var q=document.getElementById('q');
+var tb=document.querySelector('table.chtab');
+var FIL=tb?(tb.getAttribute('data-deffil')||'all'):'all';
 function chApply(){var v=q?q.value.trim().toLowerCase():'';
  document.querySelectorAll('tr.chtr').forEach(function(r){
   var okS=(FIL==='all')||r.getAttribute('data-status')===FIL;
   var a=r.querySelector('a[title]');
   var t=(r.textContent+' '+(a?a.getAttribute('title'):'')).toLowerCase();
   r.classList.toggle('hidden',!(okS&&(!v||t.indexOf(v)>=0)));});
- document.querySelectorAll('tr.grp').forEach(function(g){
-  var n=g.nextElementSibling,any=false;
-  while(n&&!n.classList.contains('grp')){
-   if(n.classList.contains('chtr')&&!n.classList.contains('hidden'))any=true;
-   n=n.nextElementSibling;}
-  g.classList.toggle('hidden',!any);});
+ var seen={};
+ document.querySelectorAll('tr.chtr').forEach(function(r){
+  var s=r.querySelector('td.cown .ctxt');if(!s)return;
+  s.classList.add('ohide');r.classList.remove('obreak');});
+ document.querySelectorAll('tr.chtr:not(.hidden)').forEach(function(r){
+  var o=r.getAttribute('data-owner');var s=r.querySelector('td.cown .ctxt');
+  if(!s)return;
+  if(!seen[o]){seen[o]=1;s.classList.remove('ohide');r.classList.add('obreak');}});
  var anyrow=document.querySelector('tr.chtr:not(.hidden)');
  document.querySelectorAll('tr.chnone').forEach(function(e){
   e.classList.toggle('hidden',!!anyrow);});}
@@ -157,6 +162,7 @@ document.querySelectorAll('section.dept').forEach(function(sec){
 document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
  var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
  n.classList.toggle('hidden',!hit);});
-chApply();});})();
+chApply();});
+chApply();})();
 </script>
 </div></body></html>

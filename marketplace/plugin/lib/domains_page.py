@@ -19,7 +19,7 @@ Reads the registry at $SUTRA_NATIVE_HOME (default ~/.sutra-native/user-kit).
 Third-party names: any domain with `public_names_withheld` true on the parent
 hides child names on the public page.
 """
-import sys, os, html, json
+import sys, os, html, json, subprocess
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import placement_engine as E  # noqa: E402
@@ -326,6 +326,69 @@ def build_site(out_dir, label="Domains", window=2):
         """Charter page filename — content-addressed id, stable forever."""
         return cid + ".html"
 
+    # ---- GitHub links for artifacts (founder 2026-07-31) -------------------
+    # Resolved from the repo's ACTUAL remotes at build time — fleet-generic,
+    # submodule-aware, zero hardcoded URLs. Absolute/machine-local paths stay
+    # plain text (they have no web home).
+    def _remote_web(repo_dir):
+        try:
+            url = subprocess.check_output(
+                ["git", "-C", repo_dir, "remote", "get-url", "origin"],
+                text=True, stderr=subprocess.DEVNULL).strip()
+        except Exception:
+            return None
+        if url.endswith(".git"):
+            url = url[:-4]
+        if url.startswith("git@"):
+            url = "https://" + url[4:].replace(":", "/", 1)
+        return url if url.startswith("https://") else None
+
+    def _repo_branch(repo_dir):
+        try:
+            b = subprocess.check_output(
+                ["git", "-C", repo_dir, "rev-parse", "--abbrev-ref", "HEAD"],
+                text=True, stderr=subprocess.DEVNULL).strip()
+            return b if b and b != "HEAD" else "main"
+        except Exception:
+            return "main"
+
+    _work_root = None
+    try:
+        _work_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:
+        pass
+    _art_repos = []                              # (prefix, web, branch) longest-first
+    if _work_root:
+        try:
+            for line in subprocess.check_output(
+                    ["git", "-C", _work_root, "submodule", "status"],
+                    text=True, stderr=subprocess.DEVNULL).splitlines():
+                sub = line.split()[1] if len(line.split()) > 1 else ""
+                if not sub:
+                    continue
+                w = _remote_web(os.path.join(_work_root, sub))
+                if w:
+                    _art_repos.append((sub + "/", w, _repo_branch(os.path.join(_work_root, sub))))
+        except Exception:
+            pass
+        w = _remote_web(_work_root)
+        if w:
+            _art_repos.append(("", w, _repo_branch(_work_root)))
+        _art_repos.sort(key=lambda t: -len(t[0]))
+
+    def art_html(path):
+        """Artifact as a GitHub blob link when a remote covers it; new tab
+        always (founder). Plain text otherwise."""
+        if not os.path.isabs(path):
+            for prefix, web, branch in _art_repos:
+                if path.startswith(prefix):
+                    url = "%s/blob/%s/%s" % (web, branch, path[len(prefix):])
+                    return ('<a class="chpath" href="%s" target="_blank" '
+                            'rel="noopener">%s</a>' % (esc(url), esc(path)))
+        return '<code class="chpath">%s</code>' % esc(path)
+
     def charter_line(ref):
         """L2 compact form: standing titles as tiny hover chips + project count."""
         chs = owned_by.get(ref, [])
@@ -359,43 +422,45 @@ def build_site(out_dir, label="Domains", window=2):
                     cols[col] = role
             return cols
 
-        RELS = [("own", "Own"), ("linked", "Linked"), ("cross", "Cross-cutting below")]
         picked = []
         for c in all_ch:
             owner = c.get("domain_ref")
             if owner in hidden or owner not in domains:
                 continue
             cols = cols_for(c)
-            if owner == page_ref:
-                rel = "own"
-            elif page_ref in c["linked_domain_refs"]:
-                rel = "linked"
-            elif len(cols) >= 2:
-                rel = "cross"
-            else:
-                continue
-            picked.append((c, rel, cols))
+            if owner == page_ref or page_ref in c["linked_domain_refs"] \
+                    or len(cols) >= 2:
+                picked.append((c, cols))
         if not picked:
             return ('<section class="chsec"><h2 class="chh">Charters</h2>'
                     '<p class="chempty">none yet</p></section>')
 
-        show_cols = bool(tops) and any(cols for _, _, cols in picked)
+        show_cols = bool(tops) and any(cols for _, cols in picked)
         ncols = 4 + (len(tops) if show_cols else 0)
-        relrank = {"own": 0, "linked": 1, "cross": 2}
-        picked.sort(key=lambda t: (relrank[t[1]],
+        # Owner grouping IS the structure (founder 2026-07-31): "here" block
+        # first, then owners by name; standing before projects within a block.
+        def _oname(c):
+            return "" if c["domain_ref"] == page_ref else domains[c["domain_ref"]]["name"].lower()
+        picked.sort(key=lambda t: (0 if t[0]["domain_ref"] == page_ref else 1,
+                                   _oname(t[0]),
                                    0 if t[0]["kind"] == "standing" else 1,
                                    t[0]["title"].lower()))
         body = []
-        cur_rel = None
-        for c, rel, cols in picked:
-            if rel != cur_rel:
-                cur_rel = rel
-                label_r = dict(RELS)[rel]
-                body.append('<tr class="grp"><td colspan="%d">%s</td></tr>'
-                            % (ncols, label_r))
+        prev_owner = object()
+        for c, cols in picked:
             owner = c.get("domain_ref")
-            own_cell = ('<span class="cown-here">here</span>' if owner == page_ref
-                        else '<a href="%s">%s</a>' % (fname(owner), esc(domains[owner]["name"])))
+            first = owner != prev_owner
+            prev_owner = owner
+            if owner == page_ref:
+                otxt = ('<span class="cown-here" aria-label="Owned by this '
+                        'department">here</span>')
+            else:
+                otxt = '<a href="%s">%s</a>' % (fname(owner), esc(domains[owner]["name"]))
+            # Visual merge, JS-safe (codex): every row keeps its owner cell
+            # (screen readers hear it); repeats are hidden VISUALLY only and
+            # recomputed to first-VISIBLE after any filter/search pass.
+            own_cell = ('<td class="cown" data-o="1"><span class="ctxt%s">%s</span></td>'
+                        % ("" if first else " ohide", otxt))
             cells = ""
             if show_cols:
                 for t in tops:
@@ -409,28 +474,35 @@ def build_site(out_dir, label="Domains", window=2):
                     else:
                         cells += '<td class="ln"></td>'
             body.append(
-                '<tr class="chtr" data-status="%s"><th scope="row">'
-                '<a href="%s" title="%s">%s</a></th>'
-                '<td class="ckind">%s</td><td>%s</td><td class="cown">%s</td>%s</tr>'
-                % (c["status"], cname(c["id"]), esc(c.get("purpose", "")),
-                   esc(c["title"]), c["kind"], st_dot(c), own_cell, cells))
+                '<tr class="chtr%s" data-status="%s" data-owner="%s">%s'
+                '<th scope="row"><a href="%s" title="%s">%s</a></th>'
+                '<td class="ckind">%s</td><td>%s</td>%s</tr>'
+                % (" obreak" if first else "", c["status"], owner, own_cell,
+                   cname(c["id"]), esc(c.get("purpose", "")), esc(c["title"]),
+                   c["kind"], st_dot(c), cells))
         childh = "".join('<th scope="col">%s</th>' % esc(domains[t]["name"])
                          for t in tops) if show_cols else ""
-        statuses = sorted({c["status"] for c, _, _ in picked})
+        statuses = sorted({c["status"] for c, _ in picked})
+        # Default = active; fall back to all when nothing is active (codex:
+        # an empty first paint on a non-empty page is not acceptable).
+        deffil = "active" if any(c["status"] == "active" for c, _ in picked) else "all"
         fil = ""
-        if len(picked) > 4 and len(statuses) > 1:
-            btns = '<button data-st="all" aria-pressed="true">all</button>' + "".join(
-                '<button data-st="%s" aria-pressed="false">%s</button>' % (s, s)
-                for s in statuses)
+        if len(statuses) > 1:
+            btns = "".join(
+                '<button data-st="%s" aria-pressed="%s">%s</button>'
+                % (s, "true" if s == deffil else "false", s)
+                for s in ["all"] + statuses)
             fil = '<div class="chfil">%s</div>' % btns
+        else:
+            deffil = "all"
         legend = ('<p class="lanenote">O owner &middot; L linked</p>' if show_cols else "")
         return ('<section class="chsec"><h2 class="chh">Charters</h2>%s%s'
-                '<div class="lanewrap"><table class="lanetab chtab">'
-                '<thead><tr><th scope="col">Charter</th><th scope="col">Kind</th>'
-                '<th scope="col">Status</th><th scope="col">Owner</th>%s</tr></thead>'
+                '<div class="lanewrap"><table class="lanetab chtab" data-deffil="%s">'
+                '<thead><tr><th scope="col">Owner</th><th scope="col">Charter</th>'
+                '<th scope="col">Kind</th><th scope="col">Status</th>%s</tr></thead>'
                 '<tbody>%s<tr class="chnone hidden"><td colspan="%d">no charters match</td></tr>'
                 '</tbody></table></div></section>'
-                % (legend, fil, childh, "".join(body), ncols))
+                % (legend, fil, deffil, childh, "".join(body), ncols))
 
     def child_of(page_ref, ref):
         """Roll a deep ref UP to the direct child of page_ref it sits under."""
@@ -458,13 +530,20 @@ def build_site(out_dir, label="Domains", window=2):
             rows.append(("Linked", ", ".join(
                 '<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"])) for r in links)))
         if c["artifacts"]:
-            rows.append(("Artifacts", "".join(
-                '<code class="chpath">%s</code>' % esc(a) for a in c["artifacts"])))
-        for fld, lab in (("scope_in", "Scope in"), ("obligations", "Obligations")):
+            rows.append(("Artifacts", "".join(art_html(a) for a in c["artifacts"])))
+        # Scope in = the boundary this charter governs (what work under it may
+        # touch); Scope out = explicit exclusions. Skip when it just repeats
+        # the artifact list (seeded stubs) — duplication is noise.
+        for fld, lab, hint in (
+                ("scope_in", "Scope in",
+                 "the boundary this charter governs — work under it stays inside these"),
+                ("scope_out", "Scope out", "explicitly excluded from this charter"),
+                ("obligations", "Obligations", "promises the operator recorded")):
             vals = c.get(fld) or []
-            if vals:
-                rows.append((lab, "".join('<code class="chpath">%s</code>' % esc(str(v))
-                                          for v in vals)))
+            if not vals or set(map(str, vals)) == set(map(str, c["artifacts"])):
+                continue
+            rows.append(('<span title="%s">%s</span>' % (esc(hint), lab),
+                         "".join(art_html(str(v)) for v in vals)))
         dl = "".join('<div class="chdlrow"><dt>%s</dt><dd>%s</dd></div>' % (k, v)
                      for k, v in rows)
         return CH_TMPL % dict(
@@ -680,8 +759,9 @@ p.withheld{font-size:.85rem;margin-top:6px}
 .chtab thead th{text-align:left}
 .chtab tbody th a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--acc)}
 .chtab tbody th a:hover{color:var(--acc)}
-.chtab tr.grp td{font:600 .66rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;padding:10px 8px 4px;border-bottom:none;text-align:left}
 .chtab td.ckind{font:400 .74rem/1 ui-monospace,monospace;color:var(--mut);text-align:left}
+.ctxt.ohide{opacity:0}
+tr.obreak th,tr.obreak td{border-top:2px solid var(--line)}
 .chtab td.cown{text-align:left;font-size:.78rem}
 .chtab td.cown a{color:var(--acc);text-decoration:none}
 .cown-here{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
@@ -753,19 +833,23 @@ a.tnode:hover{background:var(--accbg)}
 <footer>%(n)d children &middot; %(layers)d levels per page &middot; %(src)s</footer>
 </main>
 <script>
-(function(){var q=document.getElementById('q');var FIL='all';
+(function(){var q=document.getElementById('q');
+var tb=document.querySelector('table.chtab');
+var FIL=tb?(tb.getAttribute('data-deffil')||'all'):'all';
 function chApply(){var v=q?q.value.trim().toLowerCase():'';
  document.querySelectorAll('tr.chtr').forEach(function(r){
   var okS=(FIL==='all')||r.getAttribute('data-status')===FIL;
   var a=r.querySelector('a[title]');
   var t=(r.textContent+' '+(a?a.getAttribute('title'):'')).toLowerCase();
   r.classList.toggle('hidden',!(okS&&(!v||t.indexOf(v)>=0)));});
- document.querySelectorAll('tr.grp').forEach(function(g){
-  var n=g.nextElementSibling,any=false;
-  while(n&&!n.classList.contains('grp')){
-   if(n.classList.contains('chtr')&&!n.classList.contains('hidden'))any=true;
-   n=n.nextElementSibling;}
-  g.classList.toggle('hidden',!any);});
+ var seen={};
+ document.querySelectorAll('tr.chtr').forEach(function(r){
+  var s=r.querySelector('td.cown .ctxt');if(!s)return;
+  s.classList.add('ohide');r.classList.remove('obreak');});
+ document.querySelectorAll('tr.chtr:not(.hidden)').forEach(function(r){
+  var o=r.getAttribute('data-owner');var s=r.querySelector('td.cown .ctxt');
+  if(!s)return;
+  if(!seen[o]){seen[o]=1;s.classList.remove('ohide');r.classList.add('obreak');}});
  var anyrow=document.querySelector('tr.chtr:not(.hidden)');
  document.querySelectorAll('tr.chnone').forEach(function(e){
   e.classList.toggle('hidden',!!anyrow);});}
@@ -785,7 +869,8 @@ document.querySelectorAll('section.dept').forEach(function(sec){
 document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
  var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
  n.classList.toggle('hidden',!hit);});
-chApply();});})();
+chApply();});
+chApply();})();
 </script>
 </div></body></html>
 """
@@ -817,6 +902,9 @@ dd a{color:var(--acc);text-decoration:none}
 .chdot.st-shipped i{background:var(--mut)}
 .chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
 .chpath{display:block;font:400 .74rem/1.7 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
+a.chpath{color:var(--acc);text-decoration:none}
+a.chpath:hover{text-decoration:underline}
+dt span[title]{cursor:help;border-bottom:1px dotted var(--mut)}
 @media(max-width:560px){.chdlrow{grid-template-columns:1fr;gap:2px}}
 </style></head><body><div class="wrap">
 <p class="crumb">%(crumb)s</p>
