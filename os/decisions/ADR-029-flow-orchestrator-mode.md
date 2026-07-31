@@ -4,7 +4,7 @@
 
 ACCEPTED 2026-07-30. Founder direction D62 (`holding/FOUNDER-DIRECTIONS.md` §D62 — well-formed Work-Atom units + coherent growth). Ships OFF by default behind `feature_flags.flow_orchestrator_mode` in `sutra/marketplace/plugin/sutra-defaults.json`.
 
-**Amended 2026-07-30 (post-audit, same day)**: Decision 5 now defines the full flag ladder `off` / `experimental` / `on`. The current shipped flag value is `"experimental"` — effective only in opt-in repos (currently asawa-holding), where operation is production discipline per the D62 amendment ("It's not an experiment. It is hardened already."); every other install behaves as `"off"`. The "Ships OFF" sentence above is the original accept-time text, preserved. **Second amendment (2026-07-31)**: flag flipped to `"on"` fleet-wide by explicit founder direction ("Do all of them.", soak waived), shipped in v2.56.1 alongside the codex-gate memory carve-out and cache sync that mooted the soak objection.
+**Amended 2026-07-30 (post-audit, same day)**: Decision 5 now defines the full flag ladder `off` / `experimental` / `on`. The current shipped flag value is `"experimental"` — effective only in opt-in repos (currently asawa-holding), where operation is production discipline per the D62 amendment ("It's not an experiment. It is hardened already."); every other install behaves as `"off"`. The "Ships OFF" sentence above is the original accept-time text, preserved. **Second amendment (2026-07-31)**: flag flipped to `"on"` fleet-wide by explicit founder direction ("Do all of them.", soak waived), shipped in v2.58.1 alongside the codex-gate memory carve-out and cache sync that mooted the soak objection.
 
 Runtime surfaces of record:
 

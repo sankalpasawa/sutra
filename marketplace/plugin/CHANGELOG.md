@@ -4,13 +4,13 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.58.1 (2026-07-31) — codex-gate memory carve-out + orchestrator fleet ON
+
+- codex-consult-gate.sh exempts ~/.claude/** (memory files) — scoped narrower than blueprint v2.39.20 to avoid mv-ingress bypass; regression test hooks/codex-gate-outofrepo-test.sh (3 cases). flow_orchestrator_mode -> "on" fleet-wide (founder-directed; ADR-029 D5 second amendment). ADR-026/027 posture notes + cross-refs; ADR-029 D3 return_contract naming note. Head reordered newest-first (v2.55.1 moved below v2.56.0).
+
 ## v2.58.0 (2026-07-31) — marker concurrency core (Scheme A)
 
 - Marker concurrency core (Scheme A, founder-ratified): self-only adoption + ownership-safe reset kill cross-session contamination; 8 gates read session-first via marker-lib; 3 writers SESSION-stamped; 6-scenario two-session fixture gates it. Root cause: holding/research/2026-07-30-marker-race-root-cause.md.
-
-## v2.55.1 (2026-07-30) — return-contract schema aligned to operative contract
-
-- ADR-audit F1/F2: schema now tolerates extra keys + string-form verify, matching validator R1/R2 and fixture f1 (validator + fixtures unchanged). F3-F5: ADR-029 amended (flag ladder off/experimental/on; matcher v0-floor cross-ref; mechanical-floor scoping) + ADR-026 open item narrowed (v0 floor shipped; judgment layer open). Audit: holding/research/2026-07-30-adr-026-027-029-consistency-audit.md.
 
 ## v2.57.0 (2026-07-31) — SOFT auto-refresh for the domains site
 
@@ -21,6 +21,10 @@
 
 - Own, linked, and cross-cutting charters merge into ONE table per department (canonical row per charter, relationship-grouped, O/L child columns, status filter buttons composing with search, "no charters match" empty state).
 - Charter names click through to NEW per-charter structured pages (C-<id>.html, stable ids): breadcrumb + owner up-link + labelled rows (Purpose/Kind/Status/Owner/Linked/Artifacts/Scope/Obligations when non-empty). 154 pages total, 0 broken links.
+
+## v2.55.1 (2026-07-30) — return-contract schema aligned to operative contract
+
+- ADR-audit F1/F2: schema now tolerates extra keys + string-form verify, matching validator R1/R2 and fixture f1 (validator + fixtures unchanged). F3-F5: ADR-029 amended (flag ladder off/experimental/on; matcher v0-floor cross-ref; mechanical-floor scoping) + ADR-026 open item narrowed (v0 floor shipped; judgment layer open). Audit: holding/research/2026-07-30-adr-026-027-029-consistency-audit.md.
 
 ## v2.55.0 (2026-07-30) — charter chips: readable, minimal, mobile-friendly
 

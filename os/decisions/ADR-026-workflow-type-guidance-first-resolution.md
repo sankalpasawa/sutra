@@ -1,6 +1,6 @@
 # ADR-026: Workflow shape resolves guidance-first via workflow-type lookup; inner engine always runs
 
-**Status**: Accepted — founder direction (2026-06-14). Design-forward: renders in canon (this ADR + `workflow.md` note) and website (`platform/flow.html` §0) now; runtime build follows the D54 route with the rest of Native (PLANNED-v2 posture, mirrors ADR-025).
+**Status**: Accepted — founder direction (2026-06-14). Design-forward: renders in canon (this ADR + `workflow.md` note) and website (`platform/flow.html` §0) now; runtime build follows the D54 route with the rest of Native (PLANNED-v2 posture, mirrors ADR-025). **Posture note (2026-07-31)**: partially superseded — ADR-029 shipped runtime floors for this spine (workflow-type matcher v0, factors v0, orchestrator mode); PLANNED-v2 stands only for the unshipped remainder.
 **Date**: 2026-06-14
 **Context anchor**: founder direction this session — "if there is high-level guidance on how the workflow should be, that is how we take it … the high-level guidance can be defined at a platform level and at a child level … if not defined, using the factors and everything we go about how we have done those things"; then the correction — "when you have high-level guidance, within that you also have to run factors, lenses, Cynefin dials … but you have to ensure you follow those steps of the guidance as well."
 
@@ -52,4 +52,6 @@ Workflow shape resolves in this order:
 - `ADR-025-shape-frame-then-decompose.md` — FRAME (lens) inside SHAPE.
 - `ADR-001-h-sutra-9cell-grid.md` + Input Routing skill — Stage-0 classification.
 - `../native/blocks/7d-lifecycle-orchestrator.md` — the task workflow type (8-phase).
+- `ADR-027-value-axis-single-primitive.md` — same-day generalization of the inner-engine lens into the generic axis engine (unification: its Decision 5).
+- `ADR-029-flow-orchestrator-mode.md` — runtime floors for this spine (matcher v0, factors v0, orchestrator mode).
 - Website: `holding/website/native/platform/flow.html` §0 (render).

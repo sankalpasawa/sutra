@@ -1,6 +1,6 @@
 # ADR-027: value⇄axis is the single primitive — axes are minted, the cross is a runtime product (nothing hard-coded)
 
-**Status**: Accepted — founder direction (2026-06-14, "do both"). Design-forward: renders in canon (this ADR) and website (`platform/flow.html` §H) now; runtime build follows the D54 route with the rest of Native (PLANNED-v2; mirrors ADR-025/026).
+**Status**: Accepted — founder direction (2026-06-14, "do both"). Design-forward: renders in canon (this ADR) and website (`platform/flow.html` §H) now; runtime build follows the D54 route with the rest of Native (PLANNED-v2; mirrors ADR-025/026). **Posture note (2026-07-31)**: PLANNED-v2 stands for the axis engine itself (`mint`/`pick` + reflexivity remain theory, FQ1), while ADR-029 shipped mechanical floors adjacent to this spine — floors, not the engine (ADR-029 Decision 6).
 **Date**: 2026-06-14
 **Context anchor**: founder direction this session — "make it happen in a very generic way so I don't have to hard-code the axis name and we don't have to hard-code the cross product."
 
@@ -27,7 +27,7 @@ The engine hard-codes exactly **one** primitive and a small generator; everythin
    - **UP** generalize: value → member of an axis above. Stop: **reflexivity** (describes itself). [labelled "Reflection"]
    - **ACROSS** reframe: classify the same value by a different axis. Stop: **decision test**. [labelled "the lens family"]
 
-5. **Unification with the workflow recursion (flow §G / ADR-026 spine).** The recursion modes ARE `value⇄axis`:
+5. **Unification with the workflow recursion (flow §G / ADR-026 spine; the numbered modes live in flow §G — ADR-026's text defines the resolution order, not numbered modes).** The recursion modes ARE `value⇄axis`:
    - Mode 2 (step → sub-workflow) = DOWN (decompose).
    - Mode 3 (how-of-how) = UP (generalize / climb to design the method).
    - the lens at each block = ACROSS (reframe).

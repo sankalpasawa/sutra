@@ -79,6 +79,14 @@ fi
 [ -z "$FILE_PATH" ] && exit 0
 REL_PATH="${FILE_PATH#"$REPO_ROOT"/}"
 
+# -- Memory-scope carve-out (2026-07-31; scoped NARROWER than blueprint-check's
+# blanket v2.39.20 out-of-repo guard to avoid an edit-outside-then-mv-in
+# bypass): ~/.claude/** (memory files, session state) can never match a repo
+# whitelist and was blocked by accident. All other out-of-repo paths still gate.
+case "$FILE_PATH" in
+  "$HOME"/.claude/*) log_row "pass" "memory-scope path=${FILE_PATH}"; exit 0 ;;
+esac
+
 # -- Session-scoped marker resolution (2026-07-30 marker-race fix) ----------
 # Markers are read via marker-lib: session dir .claude/sessions/<sid>/ first,
 # with self-only adoption of an unstamped or self-stamped legacy global. A
