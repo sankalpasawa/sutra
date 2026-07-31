@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.61.0 (2026-07-31) — the whole lifecycle as one pipeline CLI
+
+- New lib/domains_pipeline.py: init / structure skeleton+apply / charters skeleton+apply / projects (delegates to charters_seed) / design show+set / publish / autopublish on|off / status. Every stage idempotent with per-row outcome reports; LLM only fills grounded skeletons. Consent boundary: publish never enables automation — autopublish is its own explicit command (codex fold).
+- Verified: new-client e2e on a fresh registry (init -> 3 depts + 1 rejection -> 3 charters -> tokens -> 7-page branded site -> full re-run 0 mutations) and a live run on the Asawa registry (status accurate, 154-page regen).
+
 ## v2.60.0 (2026-07-31) — marker migration complete
 
 - Marker migration complete: gate self-whitelist + out-of-repo guard (double-brick fix), dispatcher-pretool session-first, P4 telemetry readers on marker-lib, P5 instruction sweep (legacy write instructions: 0 remaining), fixture s7 strict-readiness.

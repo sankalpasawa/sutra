@@ -100,6 +100,28 @@ repo with Pages):
   non-empty. No prose blocks; the horizontal table stays at the parent
   level and never descends into sub-departments.
 
+## The pipeline (canonical flow — founder 2026-07-31: "the entire thing
+## runs systematically via scripts")
+
+`<plugin>/lib/domains_pipeline.py` is the ONE entry point for the whole
+lifecycle. Every stage is idempotent, prints JSON, and reports per-row
+outcomes. The LLM's only job between calls is filling grounded skeletons —
+never inventing structure the scripts could derive.
+
+| Stage | Command | LLM fills |
+|---|---|---|
+| 1 Root | `init "<Company>" --tenant <T>` | nothing |
+| 2 Departments | `structure skeleton` -> `structure apply f.json` | business-form names + one-line descriptions |
+| 3 Standing charters | `charters skeleton` -> `charters apply f.json` | title + purpose per uncovered department |
+| 4 Past projects | `projects discover` -> `projects apply f.json` | rows from real documents (grounding floor enforced) |
+| 5 Design | `design show` / `design set tokens.json` | full token set + source (detect from their site CSS) |
+| 6 Publish | `publish <site_dir> [--label L] [--commit]` | nothing |
+| 7 Automation | `autopublish on <site_dir>` — EXPLICIT operator consent, publish never enables it | nothing |
+| Anytime | `status` — coverage dashboard | nothing |
+
+Restructure (move/rename) stays a separate explicit operator op via the
+engine CLI — higher blast radius, never folded into apply.
+
 ## Mining past projects into charters (fleet playbook — founder 2026-07-31)
 
 On "add my past projects as charters" (or equivalents), run the SAME flow
