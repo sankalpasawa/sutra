@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.59.1 (2026-07-31) — verify-then-link artifacts + templatized file summaries
+
+- Charter artifacts/scope link ONLY when resolved against git-tracked files (abs paths under the work root normalize; bare filenames resolve by unique suffix and display the match; directories link to tree/ with tracked-file counts; unresolvable entries render muted, never a 404 link).
+- Every linked file shows a one-line summary derived from its content (md heading / docstring / first meaningful comment, boilerplate skipped) — templatized, zero hardcoding. GH links open in a new tab; path segments URL-encoded. Verified: 248 links, 5/5 sampled URLs return 200.
+
 ## v2.59.0 (2026-07-31) — version reconcile
 
 - Reconciles the parallel-session version collision (2.58.0 owner-first table vs 2.58.1): this release carries BOTH change sets; no code delta beyond the version field.

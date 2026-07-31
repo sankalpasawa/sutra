@@ -19,7 +19,7 @@ Reads the registry at $SUTRA_NATIVE_HOME (default ~/.sutra-native/user-kit).
 Third-party names: any domain with `public_names_withheld` true on the parent
 hides child names on the public page.
 """
-import sys, os, html, json, subprocess
+import sys, os, html, json, subprocess, urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import placement_engine as E  # noqa: E402
@@ -378,16 +378,115 @@ def build_site(out_dir, label="Domains", window=2):
             _art_repos.append(("", w, _repo_branch(_work_root)))
         _art_repos.sort(key=lambda t: -len(t[0]))
 
-    def art_html(path):
-        """Artifact as a GitHub blob link when a remote covers it; new tab
-        always (founder). Plain text otherwise."""
-        if not os.path.isabs(path):
-            for prefix, web, branch in _art_repos:
-                if path.startswith(prefix):
-                    url = "%s/blob/%s/%s" % (web, branch, path[len(prefix):])
-                    return ('<a class="chpath" href="%s" target="_blank" '
-                            'rel="noopener">%s</a>' % (esc(url), esc(path)))
-        return '<code class="chpath">%s</code>' % esc(path)
+    # Verify-then-link (founder + codex 2026-07-31): an artifact links ONLY
+    # when it resolves to a git-TRACKED file/dir — never a 404. Absolute
+    # paths under the work root normalize to repo-relative; bare filenames
+    # resolve by UNIQUE suffix (and show the matched path); directories link
+    # to tree/. Every linked file carries a one-line content-derived summary
+    # — templatized, zero hardcoding.
+    _tracked = set()
+    if _work_root:
+        def _ls(repo_dir, prefix=""):
+            try:
+                for ln in subprocess.check_output(
+                        ["git", "-C", repo_dir, "ls-files"],
+                        text=True, stderr=subprocess.DEVNULL).splitlines():
+                    if ln:
+                        _tracked.add(prefix + ln)
+            except Exception:
+                pass
+        _ls(_work_root)
+        for _p, _w, _b in _art_repos:
+            if _p:
+                _ls(os.path.join(_work_root, _p), _p)
+
+    def _norm_art(p):
+        p = (p or "").split("#")[0].strip().replace("\\", "/")
+        while "//" in p:
+            p = p.replace("//", "/")
+        if p.startswith("./"):
+            p = p[2:]
+        if _work_root and os.path.isabs(p):
+            wr = _work_root.rstrip("/") + "/"
+            if p.startswith(wr):
+                p = p[len(wr):]
+            else:
+                return None                      # machine-local, no web home
+        return p.rstrip("/")
+
+    def _resolve_art(p0):
+        p = _norm_art(p0)
+        if not p or os.path.isabs(p) or not _work_root:
+            return None, None
+        if p in _tracked:
+            return p, "file"
+        if os.path.isdir(os.path.join(_work_root, p)) and \
+                any(t.startswith(p + "/") for t in _tracked):
+            return p, "dir"
+        cands = [t for t in _tracked if t.endswith("/" + p)]
+        if len(cands) == 1:
+            return cands[0], "file"
+        return None, None
+
+    def _gh_url(path, kind):
+        for prefix, web, branch in _art_repos:
+            if path.startswith(prefix) or prefix == "":
+                rel = path[len(prefix):] if prefix else path
+                enc = "/".join(urllib.parse.quote(seg) for seg in rel.split("/"))
+                return "%s/%s/%s/%s" % (web, "tree" if kind == "dir" else "blob",
+                                        urllib.parse.quote(branch), enc)
+        return None
+
+    _SUM_SKIP = ("#!", "# -*-", "# shellcheck", "# spdx", "# copyright",
+                 "# license", "// eslint", "<!--")
+
+    def _summary(path, kind):
+        if kind == "dir":
+            return "directory - %d tracked files" % sum(
+                1 for t in _tracked if t.startswith(path + "/"))
+        try:
+            with open(os.path.join(_work_root, path), "r", errors="replace") as fh:
+                head = fh.read(2048).splitlines()
+        except Exception:
+            return ""
+        in_fm = False
+        for i, ln in enumerate(head):
+            s = ln.strip()
+            if i == 0 and s == "---":
+                in_fm = True
+                continue
+            if in_fm:
+                in_fm = s != "---"
+                continue
+            if not s or set(s) <= set("#/-=* "):
+                continue
+            if any(s.lower().startswith(k) for k in _SUM_SKIP):
+                continue
+            for pre in ("#", "//", '"""', "'''"):
+                if s.startswith(pre):
+                    s = s[len(pre):].strip("#/\"' ").strip()
+                    break
+            if s:
+                return s[:110]
+        return ""
+
+    def art_html(orig):
+        path, kind = _resolve_art(orig)
+        if not path:
+            return ('<code class="chpath dead" title="not found in the '
+                    'published repos">%s</code>' % esc(orig))
+        url = _gh_url(path, kind)
+        if not url:
+            return '<code class="chpath">%s</code>' % esc(orig)
+        summ = _summary(path, kind)
+        label = esc(path)
+        if _norm_art(orig) != path:              # suffix-resolved: show the match
+            label = '%s <span class="chres">&rarr; %s</span>' % (esc(orig), esc(path))
+        out = ('<a class="chpath" href="%s" target="_blank" rel="noopener" '
+               'title="%s">%s</a>' % (esc(url), esc(summ or path), label))
+        if summ:
+            out += '<span class="chsum">%s</span>' % esc(summ)
+        return out
 
     def charter_line(ref):
         """L2 compact form: standing titles as tiny hover chips + project count."""
@@ -904,6 +1003,9 @@ dd a{color:var(--acc);text-decoration:none}
 .chpath{display:block;font:400 .74rem/1.7 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
 a.chpath{color:var(--acc);text-decoration:none}
 a.chpath:hover{text-decoration:underline}
+.chpath.dead{opacity:.55}
+.chsum{display:block;font-size:.72rem;color:var(--mut);margin:0 0 8px 12px;font-style:italic}
+.chres{color:var(--mut);font-size:.72rem}
 dt span[title]{cursor:help;border-bottom:1px dotted var(--mut)}
 @media(max-width:560px){.chdlrow{grid-template-columns:1fr;gap:2px}}
 </style></head><body><div class="wrap">
