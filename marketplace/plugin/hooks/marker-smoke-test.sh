@@ -9,7 +9,10 @@ CLAUDE_CODE_SESSION_ID=alpha sutra_marker_set depth-registered "DEPTH=5 alpha"
 CLAUDE_CODE_SESSION_ID=beta  sutra_marker_set depth-registered "DEPTH=3 beta"
 CLAUDE_CODE_SESSION_ID=beta  sutra_marker_reset
 CLAUDE_CODE_SESSION_ID=alpha sutra_marker_has depth-registered || fail "alpha wiped by beta reset (the bug)"
-[ "$(CLAUDE_CODE_SESSION_ID=alpha sutra_marker_read depth-registered)" = "DEPTH=5 alpha" ] || fail "alpha value corrupted"
+# Contract: caller body is line 1; sutra_marker_set APPENDS SESSION=/TS= stamps
+# (never prepends). Assert the first line exactly + the auto-stamp presence.
+[ "$(CLAUDE_CODE_SESSION_ID=alpha sutra_marker_read depth-registered | head -1)" = "DEPTH=5 alpha" ] || fail "alpha value corrupted"
+CLAUDE_CODE_SESSION_ID=alpha sutra_marker_read depth-registered | grep -q '^SESSION=alpha$' || fail "alpha marker missing SESSION= auto-stamp"
 CLAUDE_CODE_SESSION_ID=beta  sutra_marker_has depth-registered && fail "beta marker survived its own reset"
 CLAUDE_CODE_SESSION_ID=alpha sutra_marker_gc
 CLAUDE_CODE_SESSION_ID=alpha sutra_marker_has depth-registered || fail "GC deleted the current session"

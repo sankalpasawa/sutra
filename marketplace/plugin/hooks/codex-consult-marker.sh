@@ -36,12 +36,26 @@ fi
 
 # Real codex consult invocation? (specific subcommands, not bare "codex")
 if printf '%s' "$CMD" | grep -qE 'codex[[:space:]]+(exec|review|resume)'; then
-  mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
   SID="unknown"
   if command -v jq >/dev/null 2>&1 && [ -n "$PAYLOAD" ]; then
     SID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // "unknown"' 2>/dev/null)
   fi
-  printf 'CONSULT=codex-cli SESSION=%s TS=%s SOURCE=codex-consult-marker\n' \
-    "$SID" "$(date +%s)" > "$REPO_ROOT/.claude/codex-consulted" 2>/dev/null
+  # Phase-2 marker-race fix (holding/research/2026-07-30-marker-race-root-cause.md
+  # §6 phase 2): the marker previously landed ONLY at the legacy global
+  # .claude/codex-consulted — SESSION= was stamped in the CONTENT but the PATH
+  # was shared, so session A's consult satisfied session B's D3+ gate. Source
+  # marker-lib defensively and write session-scoped (dual-write keeps the
+  # legacy global twin for un-migrated readers). Fail-open on missing lib.
+  MARKER_LIB="$(cd "$(dirname "$0")" && pwd)/marker-lib.sh"
+  if [ -f "$MARKER_LIB" ]; then . "$MARKER_LIB" 2>/dev/null || true; fi
+  command -v sutra_sid_from_stdin >/dev/null 2>&1 && sutra_sid_from_stdin "$PAYLOAD"
+  BODY="$(printf 'CONSULT=codex-cli SESSION=%s TS=%s SOURCE=codex-consult-marker' \
+    "$SID" "$(date +%s)")"
+  if command -v sutra_marker_write >/dev/null 2>&1; then
+    sutra_marker_write codex-consulted "$BODY" 2>/dev/null || true
+  else
+    mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
+    printf '%s\n' "$BODY" > "$REPO_ROOT/.claude/codex-consulted" 2>/dev/null
+  fi
 fi
 exit 0

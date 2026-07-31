@@ -4,7 +4,7 @@
 
 ACCEPTED 2026-07-30. Founder direction D62 (`holding/FOUNDER-DIRECTIONS.md` §D62 — well-formed Work-Atom units + coherent growth). Ships OFF by default behind `feature_flags.flow_orchestrator_mode` in `sutra/marketplace/plugin/sutra-defaults.json`.
 
-**Amended 2026-07-30 (post-audit, same day)**: Decision 5 now defines the full flag ladder `off` / `experimental` / `on`. The current shipped flag value is `"experimental"` — effective only in opt-in repos (currently asawa-holding), where operation is production discipline per the D62 amendment ("It's not an experiment. It is hardened already."); every other install behaves as `"off"`. The "Ships OFF" sentence above is the original accept-time text, preserved.
+**Amended 2026-07-30 (post-audit, same day)**: Decision 5 now defines the full flag ladder `off` / `experimental` / `on`. The current shipped flag value is `"experimental"` — effective only in opt-in repos (currently asawa-holding), where operation is production discipline per the D62 amendment ("It's not an experiment. It is hardened already."); every other install behaves as `"off"`. The "Ships OFF" sentence above is the original accept-time text, preserved. **Second amendment (2026-07-31)**: flag flipped to `"on"` fleet-wide by explicit founder direction ("Do all of them.", soak waived), shipped in v2.56.1 alongside the codex-gate memory carve-out and cache sync that mooted the soak objection.
 
 Runtime surfaces of record:
 
@@ -55,15 +55,15 @@ Eight sub-decisions define the mode.
 | `followups` | array | no | surfaced follow-up work |
 | `note` | string | no | max 500 chars |
 
-`bin/validate-return-contract.sh` hardcodes these rules (VALID/exit 0, INVALID/exit 1; stdin or file argument). Extra keys are tolerated; the six required fields, both enums, and the length caps are not negotiable. A return that fails validation is treated as a worker failure (Decision 4).
+`bin/validate-return-contract.sh` hardcodes these rules (VALID/exit 0, INVALID/exit 1; stdin or file argument). Extra keys are tolerated; the six required fields, both enums, and the length caps are not negotiable. A return that fails validation is treated as a worker failure (Decision 4). Naming note: this worker-return contract is distinct from the `return_contract` field on the reusable-Workflow primitive (F-13, `primitives/workflow.md`, ADR-026 context) — that field names a per-workflow output schema; same term, two artifacts.
 
 **Decision 4 — Failure policy (worker max 3, orchestrator five-option).** A worker gets at most 3 attempts at its atom (initial + 2 retries); each retry must carry what changed. On the third failure — or an invalid return contract, or a `blocked` status — the worker STOPS and returns; it never improvises a fourth path. The orchestrator then picks exactly one of the ADR-011 closed 5-set: `rollback` / `escalate` / `pause` / `abort` / `continue`. No sixth option without a new ADR.
 
 **Decision 5 — feature_flags (amended 2026-07-30: three-rung ladder).** The mode is gated by `feature_flags.flow_orchestrator_mode` in `sutra/marketplace/plugin/sutra-defaults.json`. Three values:
 
 - `"off"` — ZERO behavior change: `core:flow` runs exactly as documented pre-D62; no orchestrator machinery activates.
-- `"experimental"` — the current shipped flag value: orchestrator machinery (Decisions 1-4, 6-8) effective ONLY in repos that have opted in (currently asawa-holding); every other install behaves as `"off"`. Founder ruling 2026-07-30: opted-in operation is production discipline, not a trial (D62 amendment).
-- `"on"` — enables Decisions 1-4 and 6-8 fleet-wide. The experimental→on flip is an explicit founder call after soak.
+- `"experimental"` — opt-in rung: orchestrator machinery (Decisions 1-4, 6-8) effective ONLY in repos that have opted in; every other install behaves as `"off"`. Founder ruling 2026-07-30: opted-in operation is production discipline, not a trial (D62 amendment).
+- `"on"` — the current shipped flag value (explicit founder call, 2026-07-31): enables Decisions 1-4 and 6-8 fleet-wide.
 
 Read with:
 
@@ -103,3 +103,23 @@ jq -r '.feature_flags.flow_orchestrator_mode // "off"' sutra-defaults.json
 | − | Contract validator duplicates schema rules by design (dependency-free) — schema edits require a matching validator edit |
 | − | Sole-writer ledger serializes CLOSE — parallel units in one repo must close through one orchestrator lane |
 | 0 | `verify`-as-string is accepted alongside the object form (fixture-pinned); tightening to object-only would be a contract change requiring fixture + validator + schema in one commit |
+
+## Addendum 2026-07-30 — marker state under concurrency
+
+Orchestrator mode surfaced a race the original text never addressed: per-repo governance
+markers (`.claude/<name>`) are single-slot shared state, and concurrent sessions plus
+worker spawns clobbered each other's markers (19 events on 2026-07-30, including one
+confirmed cross-session adoption). Root cause and migration plan:
+`holding/research/2026-07-30-marker-race-root-cause.md`. Three clarifications, binding:
+
+1. **Workers never write shared marker state.** Decision 1 ("Workers ... never write
+   shared state") is made concrete for markers: a worker's marker writes land only in
+   its OWN session dir; any dual-written legacy global twin is SESSION-stamped so a
+   peer never adopts it and a peer's reset never deletes it.
+2. **Orchestrator dispatch state lives in orchestrator context + the ledger**
+   (Decision 8), never in per-repo markers. Markers carry one session's per-turn
+   governance discipline; they are not a dispatch or coordination channel.
+3. **Marker authority = Scheme A session dirs** (`.claude/sessions/<session-id>/<name>`,
+   `hooks/marker-lib.sh`), ratified by founder 2026-07-30 — resolves the paused
+   scheme-reconciliation decision. Writers go through `sutra_marker_write`; unstamped
+   markers are treated as legacy during migration.

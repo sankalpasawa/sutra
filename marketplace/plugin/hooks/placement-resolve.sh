@@ -39,6 +39,28 @@ PAYLOAD=$(cat 2>/dev/null || true)
 PROMPT=$(printf '%s' "$PAYLOAD" | jq -r '.prompt // empty' 2>/dev/null)
 [ -z "$PROMPT" ] && exit 0                       # synthetic turn — not real work
 
+# Phase-2 marker-race fix (holding/research/2026-07-30-marker-race-root-cause.md
+# §6 phase 2): this writer was sid-blind — it wrote ONLY the legacy global
+# .claude/placement-registered, while its own gates (placement-gate.sh,
+# placement-stop-check.sh) read session-aware, so the marker reached them only
+# via the ADOPT bridge. Source marker-lib defensively and write through
+# sutra_marker_write: the marker lands session-scoped + SESSION-stamped, and
+# dual-write keeps the legacy global twin for un-migrated readers. Fail-open:
+# a missing lib falls back to the legacy write (stamped best-effort).
+MARKER_LIB="$PLUGIN_DIR/hooks/marker-lib.sh"
+if [ -f "$MARKER_LIB" ]; then . "$MARKER_LIB" 2>/dev/null || true; fi
+command -v sutra_sid_from_stdin >/dev/null 2>&1 && sutra_sid_from_stdin "$PAYLOAD"
+
+_placement_marker_write() {
+  if command -v sutra_marker_write >/dev/null 2>&1; then
+    sutra_marker_write placement-registered "$1" 2>/dev/null || true
+  else
+    mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
+    printf '%s\nSESSION=%s\n' "$1" "${CLAUDE_CODE_SESSION_ID:-}" \
+      > "$REPO_ROOT/.claude/placement-registered" 2>/dev/null
+  fi
+}
+
 # Skip synthetic/system turns (same list the marker reset guards on)
 case "$PROMPT" in
   *"<system-reminder>"*|*"<local-command-caveat>"*|*"hook additional context"*) exit 0 ;;
@@ -69,9 +91,8 @@ if [ "$RESOLVED" = "true" ]; then
   fi
   BODY=$(printf 'The placement engine resolved THIS turn to a real address.\nEmit this line VERBATIM as your PLACEMENT block — do not compose your own:\n\n  %s\n\n  (domain_ref=%s confidence=%s — engine output, read-only match, nothing minted)\n%s' \
          "$LINE" "$REF" "$CONF" "$GROUND")
-  mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
-  printf 'DOMAIN_REF=%s\nCHARTER_ID=%s\nORIGIN=matched\nCONFIDENCE=%s\nSOURCE=engine\nTS=%s\n' \
-    "$REF" "$CID" "$CONF" "$(date +%s)" > "$REPO_ROOT/.claude/placement-registered" 2>/dev/null
+  _placement_marker_write "$(printf 'DOMAIN_REF=%s\nCHARTER_ID=%s\nORIGIN=matched\nCONFIDENCE=%s\nSOURCE=engine\nTS=%s' \
+    "$REF" "$CID" "$CONF" "$(date +%s)")"
 else
   REASON=$(printf '%s' "$RESULT" | jq -r '.reason // "unknown"' 2>/dev/null)
   BODY=$(printf 'The placement engine could NOT resolve this turn to an existing domain (reason: %s).\nSay so plainly in your PLACEMENT block rather than inventing a path, e.g.:\n\n  PLACEMENT: unresolved (%s) — address assigned when this work touches files\n\nDo NOT fabricate a D-path. An honest "unresolved" is correct; an invented\naddress is the exact failure this feature exists to remove.\n' \
@@ -81,9 +102,8 @@ else
   # the utterance" into a blocked Edit — never-blocks violated by the hook
   # layer while the engine honoured it. Unresolved is recorded, work proceeds,
   # and the real address lands when the work touches actual paths.
-  mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
-  printf 'DOMAIN_REF=unresolved\nCHARTER_ID=unresolved\nORIGIN=unresolved\nREASON=%s\nCONFIDENCE=0.0\nSOURCE=engine\nTS=%s\n' \
-    "$REASON" "$(date +%s)" > "$REPO_ROOT/.claude/placement-registered" 2>/dev/null
+  _placement_marker_write "$(printf 'DOMAIN_REF=unresolved\nCHARTER_ID=unresolved\nORIGIN=unresolved\nREASON=%s\nCONFIDENCE=0.0\nSOURCE=engine\nTS=%s' \
+    "$REASON" "$(date +%s)")"
 fi
 
 jq -nc --arg c "$(printf '\n[Placement · ADR-028]\n%s\n' "$BODY")" \

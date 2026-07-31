@@ -86,7 +86,7 @@
       "skill": "core:flow",
       "emission_mode": "inline_block_every_turn_plus_skill_for_substantive",
       "invoke_skill_when": "multi-step OR ambiguous shape OR unknown-how OR heavy work — NOT every trivial turn",
-      "marker_write": "MUST use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/); a reverted marker makes the floors read stale state. Markers: .claude/flow-classified + .claude/flow-type-resolved (+ flow-inner, flow-closed for the Skill spine).",
+      "marker_write": "MUST use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/); a reverted marker makes the floors read stale state. Write to the session dir .claude/sessions/<session-id>/<name> (session-id = CLAUDE_CODE_SESSION_ID) and include a SESSION=<session-id> line; unstamped markers are treated as legacy. Markers: flow-classified + flow-type-resolved (+ flow-inner, flow-closed for the Skill spine).",
       "honesty_bar": "the inline block states what ACTUALLY resolved. An honest 1-step ATOM block on a trivial turn is correct; claiming a recursive walk / cynefin / factor counts not actually run is the theater D61 forbids.",
       "enforcement_hook": "flow-gate.sh (PreToolUse mutation floor) + flow-stop-check.sh (Stop no-tool floor)",
       "soft_hint_hook": "per-turn-discipline-prompt.sh",
@@ -168,8 +168,10 @@
         "HAS_VERIFY",
         "HAS_PER_STEP_VERIFY",
         "DEPTH",
+        "SESSION",
         "TS"
       ],
+      "$session_comment": "SESSION=<session-id> stamps the owning session (marker-race root cause, holding/research/2026-07-30-marker-race-root-cause.md). Unstamped markers are treated as LEGACY: adoptable by any session on read and never deleted by a peer's reset. sutra_marker_write (hooks/marker-lib.sh) stamps it automatically when absent.",
       "fail_flow": {
         "$comment": "D48 (2026-05-05): on verification fail, file problem record + in-session LLM diagnoses + applies fix + re-runs Verified-by. Max 3 iterations before STOP-and-surface.",
         "problem_record_path": "holding/state/problems/<ts>-<slug>.json",
@@ -211,8 +213,10 @@
         "PROMOTE_BY",
         "OWNER",
         "ACCEPTANCE",
+        "SESSION",
         "TS"
       ],
+      "$session_comment": "SESSION=<session-id> stamps the owning session (marker-race root cause, holding/research/2026-07-30-marker-race-root-cause.md). Unstamped markers are treated as LEGACY: adoptable by any session on read and never deleted by a peer's reset. Write the marker to .claude/sessions/<session-id>/build-layer-registered via the Write tool.",
       "hook": "build-layer-check.sh"
     },
     "placement": {
@@ -240,9 +244,11 @@
         "CONFIDENCE",
         "CREATED_DOMAINS",
         "CREATED_CHARTERS",
+        "SESSION",
         "TS"
       ],
-      "marker_write": "MUST use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/). Session-namespaced when CLAUDE_SESSION_ID is present, so concurrent sessions in one repo do not clobber each other.",
+      "$session_comment": "SESSION=<session-id> stamps the owning session (marker-race root cause, holding/research/2026-07-30-marker-race-root-cause.md). Unstamped markers are treated as LEGACY: adoptable by any session on read and never deleted by a peer's reset.",
+      "marker_write": "MUST use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/). Write to the session dir .claude/sessions/<session-id>/placement-registered (session-id = CLAUDE_CODE_SESSION_ID) and include a SESSION=<session-id> line, so concurrent sessions in one repo do not clobber each other. Unstamped markers are treated as legacy.",
       "enforcement_ladder": {
         "mode_file": ".claude/placement-mode",
         "default_mode": "warn",

@@ -129,12 +129,17 @@ _sutra_per_turn_block() {
   printf '                        "Output looks like:" + a runnable "Verified by:" (+ inline Verify: on every Step\n'
   printf '                        at D3+). Ordinary files are floored at Stop by per-turn-hard-gate.sh.\n'
   printf '  5. BUILD-LAYER marker MUST emit IF editing D38 paths (sutra/marketplace/plugin/** etc). Fields: %s\n' "${BL_FIELDS:-LAYER/SCOPE/TARGET-PATH/...}"
+  printf '                        MARKER WRITES ARE SESSION-SCOPED: write every marker file via the WRITE TOOL to\n'
+  printf '                        .claude/sessions/<session-id>/<name> (session-id = CLAUDE_CODE_SESSION_ID env) and\n'
+  printf '                        include a SESSION=<session-id> line in the content. Unstamped markers are treated\n'
+  printf '                        as legacy; never write the shared .claude/<name> path directly.\n'
   printf '  6. PLACEMENT          MUST emit literal one-line block (ADR-028) — every unit of work carries an address:\n'
   printf '                        %s\n' "${PL_COMPACT:-PLACEMENT: D0 > D3 <name> > D3.D2 <name> | \"<charter title>\"}"
   printf '                        Expand to the full ancestor tree ONLY when a Domain or Charter was minted this turn.\n'
   printf '                        The system decides the taxonomy — never ask the operator, never block on a missing\n'
   printf '                        domain: if nothing matches, mint under the deepest matching ancestor and continue.\n'
-  printf '                        THEN write .claude/placement-registered via the WRITE TOOL. Enforcement is %s\n' "${PL_MODE:-warn}"
+  printf '                        THEN write .claude/sessions/<session-id>/placement-registered via the WRITE TOOL\n'
+  printf '                        (include a SESSION=<session-id> line). Enforcement is %s\n' "${PL_MODE:-warn}"
   printf '                        in this repo (promotes to HARD after %s compliant turns).\n' "${PL_PROMOTE:-50}"
   printf '  7. ... tool calls (Edit / Write / Bash / Agent) ...\n'
   printf '  8. OUTPUT TRACE       MUST emit literal one-liner: %s\n' "${OT_FORMAT:-> route: <skill> > <domain> > <nodes> > <terminal>}"
@@ -144,8 +149,9 @@ _sutra_per_turn_block() {
   printf '  Routing: a hook can nudge + floor a miss, but NO hook can force a Skill on the first pass. The block\n'
   printf '  reports the honest resolved spine for THIS unit:\n'
   printf '    [1] TYPE/cell  [2] FOLLOW <skill>|CONSTRUCT  [3] steps  [4] inner: lens/cynefin/factors  [5] mode  [6] close\n'
-  printf '  Then write the flow markers (.claude/flow-classified, flow-type-resolved) via the WRITE TOOL\n'
-  printf '  (Claude Code rolls back Bash writes to .claude/) so the floors read real state.\n'
+  printf '  Then write the flow markers (flow-classified, flow-type-resolved) via the WRITE TOOL to\n'
+  printf '  .claude/sessions/<session-id>/<name> with a SESSION=<session-id> line (Claude Code rolls back\n'
+  printf '  Bash writes to .claude/; unstamped markers are treated as legacy) so the floors read real state.\n'
   printf '  Invoke the FULL %s Skill (deep recursive spine) ONLY for substantive/multi-step/ambiguous work (%s) --\n' "${FLOW_SKILL:-core:flow}" "${FLOW_SUBST:-multi_step/ambiguous_shape/unknown_how/heavy}"
   printf '  not every trivial turn. Inline block = per-turn floor; Skill = deep mode.\n'
   printf '  HONESTY BAR: state what ACTUALLY resolved -- an honest 1-step ATOM block on a trivial turn is correct;\n'

@@ -56,9 +56,36 @@ case "$PROMPT" in
     ;;
 esac
 
+# -- Resolve session identity BEFORE guard 3 --------------------------------
+# marker-lib is sourced here (moved up from the clear step) so the burst-guard
+# stamp can be SESSION-SCOPED. Sourced defensively — see flow-gate.sh
+# (DeepSeek consult 2026-07-27, finding 4).
+LIB="$(dirname "$0")/marker-lib.sh"
+SELF_SID=""
+LIB_LOADED=0
+if [ -f "$LIB" ]; then
+  set +u
+  . "$LIB" || true
+  command -v sutra_sid_from_stdin >/dev/null 2>&1 && { sutra_sid_from_stdin "$STDIN_RAW" || true; LIB_LOADED=1; }
+  SELF_SID="${CLAUDE_CODE_SESSION_ID:-}"
+  set -u
+fi
+
 # -- Guard 3: burst guard — real prompts arrive >> 3s apart ------------------
+# SESSION-SCOPED stamp (2026-07-30, marker-race root-cause doc section 5 point 2
+# / plan phase 6): the old repo-global .claude/.last-reset-ts meant two sessions'
+# real prompts within 3s suppressed each other's resets (stale-pass inverse bug).
+# The stamp now lives INSIDE the session dir, so the guard only debounces THIS
+# session's own prompt bursts. Dotfile name is deliberate: sutra_marker_reset_own
+# wipes "$d"/* (glob skips dotfiles), so the stamp survives the marker clear
+# below. Fallback to the legacy global path only when marker-lib could not be
+# loaded (no session dir resolvable).
 NOW=$(date +%s)
-LAST_RESET_FILE=".claude/.last-reset-ts"
+if [ "$LIB_LOADED" = "1" ]; then
+  LAST_RESET_FILE="$(sutra_marker_dir)/.last-reset-ts"
+else
+  LAST_RESET_FILE=".claude/.last-reset-ts"
+fi
 if [ -f "$LAST_RESET_FILE" ]; then
   LAST=$(cat "$LAST_RESET_FILE" 2>/dev/null)
   if [ -n "$LAST" ] && [ "$LAST" -gt 0 ] 2>/dev/null; then
@@ -80,15 +107,12 @@ printf '{"ts":%s,"event":"clearing-with-context","prompt_head":"%s"}\n' \
   "$NOW" "$STDIN_HEAD_CLR" >> .enforcement/routing-misses.log
 
 # -- Session-scoped clear (authoritative) -----------------------------------
-# Sourced defensively — see flow-gate.sh (DeepSeek consult 2026-07-27, finding 4).
-LIB="$(dirname "$0")/marker-lib.sh"
-SELF_SID=""
-if [ -f "$LIB" ]; then
+# marker-lib already sourced above (before guard 3); sid already resolved.
+# sutra_marker_reset delegates to sutra_marker_reset_own: wipes THIS session's
+# dir + only self-stamped globals; never unstamped or foreign-stamped ones.
+if [ "$LIB_LOADED" = "1" ]; then
   set +u
-  . "$LIB" || true
-  sutra_sid_from_stdin "$STDIN_RAW" || true
   command -v sutra_marker_reset >/dev/null 2>&1 && sutra_marker_reset
-  SELF_SID="${CLAUDE_CODE_SESSION_ID:-}"
   set -u
 fi
 
@@ -100,10 +124,16 @@ fi
 # global marker, and any of B's readers still on the global path then hard-block
 # on a turn where B did emit its blocks (DeepSeek consult 2026-07-27, finding 2).
 #
-# So: only clear a legacy global that is UNOWNED (no SESSION= stamp — e.g. written
-# by a model following an older CLAUDE.md govblock, where nobody else can be relying
-# on it) or OWNED BY THIS SESSION. A marker stamped with a peer's session id is left
-# alone; that peer's own reset will clear it.
+# So (pinned contract, 2026-07-30, marker-race root-cause doc): delete a legacy
+# global ONLY when it is provably OURS -- SESSION= stamp present AND equal to this
+# session's sid. NEVER delete an unstamped global (its owner is unprovable; a peer
+# on an un-migrated govblock may be relying on it) and NEVER a foreign-stamped one
+# (that peer's own reset clears it). When SELF_SID resolves empty, delete NOTHING --
+# ownership cannot be established, so no delete is safe. This mirrors
+# sutra_marker_reset_own in marker-lib.sh exactly. Consequence, documented per
+# codex consult 2026-07-30: an unstamped global is never cleared by this hook;
+# it disappears only when a stamped writer (sutra_marker_set stamps every write)
+# overwrites it and that writer's own reset later clears it.
 for m in input-routed depth-registered depth-assessed sutra-deploy-depth5 \
          build-layer-registered blueprint-registered structure-first-active \
          flow-classified flow-inner flow-type-resolved flow-closed codex-consulted \
@@ -111,10 +141,10 @@ for m in input-routed depth-registered depth-assessed sutra-deploy-depth5 \
   f=".claude/$m"
   [ -f "$f" ] || continue
   owner=$(grep -o 'SESSION=[A-Za-z0-9_-]*' "$f" 2>/dev/null | head -1 | cut -d= -f2)
-  if [ -z "$owner" ] || [ -z "$SELF_SID" ] || [ "$owner" = "$SELF_SID" ]; then
+  if [ -n "$SELF_SID" ] && [ -n "$owner" ] && [ "$owner" = "$SELF_SID" ]; then
     rm -f "$f" 2>/dev/null
   else
-    printf '{"ts":%s,"event":"reset-skipped-foreign-global","marker":"%s","owner":"%s","self":"%s"}\n' \
+    printf '{"ts":%s,"event":"reset-skipped-unowned-or-foreign-global","marker":"%s","owner":"%s","self":"%s"}\n' \
       "$NOW" "$m" "$owner" "$SELF_SID" >> .enforcement/routing-misses.log 2>/dev/null
   fi
 done

@@ -35,6 +35,11 @@
 #      multi-Edit turn pays one transcript walk, not N. The model is never
 #      asked to write it. reset-turn-markers.sh still wipes it per turn.
 #      Best-effort: a failed cache write costs a re-validation, never a block.
+#      2026-07-30 (marker-race fix): the cache is read AND written via
+#      marker-lib — session dir .claude/sessions/<sid>/, self-only adoption,
+#      SESSION-stamped on write — so one session's cache (or depth marker) can
+#      no longer satisfy or corrupt a concurrent session's gate. Legacy path
+#      fallback only when the lib is unavailable.
 #   3. PRETOOL SCOPE = FOUNDATIONAL ONLY — restores the codex round-5 scoping
 #      that the 2026-05-10 blanket SOFT->HARD flip erased. Ordinary files are
 #      floored at Stop by per-turn-hard-gate.sh (one redo, loop-safe), the same
@@ -93,6 +98,22 @@ if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
 fi
 [ -z "$FILE_PATH" ] && FILE_PATH="$TOOL_INPUT_file_path"
 [ -z "$FILE_PATH" ] && exit 0
+
+# ── Session-scoped marker resolution (2026-07-30 marker-race fix) ──
+# Sourced defensively (flow-gate.sh pattern): on lib failure degrade to the
+# legacy path — the gate must never block because its infrastructure errored.
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  . "$_MARKER_LIB" 2>/dev/null || true
+  command -v sutra_sid_from_stdin >/dev/null 2>&1 && { sutra_sid_from_stdin "$PAYLOAD" || true; }
+fi
+_bp_marker_read() {
+  if command -v sutra_marker_read >/dev/null 2>&1; then
+    sutra_marker_read "$1" 2>/dev/null; return $?
+  fi
+  # lib missing: legacy global (fail-open on infrastructure, not on discipline)
+  cat "$REPO_ROOT/.claude/$1" 2>/dev/null
+}
 
 # ── Out-of-repo guard (2026-07-08, Testlify field incident) ──
 # Absolute paths OUTSIDE $REPO_ROOT never strip below, so REL_PATH stays
@@ -163,28 +184,34 @@ MARKER="$REPO_ROOT/.claude/blueprint-registered"
 # Two accepted shapes, both end-anchored, no trailing junk:
 #   Form A: `DEPTH=N TASK=<slug> TS=<unix>`   Form B: `DEPTH=N`
 # Anything else -> DEPTH=5 (strictest). A malformed marker must never be a
-# fail-open bypass.
-DEPTH_FILE="$REPO_ROOT/.claude/depth-registered"
+# fail-open bypass. Read session-scoped via marker-lib: a FOREIGN session's
+# depth marker is a miss -> DEPTH=5, same fail-closed branch as a missing file.
+DEPTH_CONTENT="$(_bp_marker_read depth-registered)" || DEPTH_CONTENT=""
 DEPTH=""
-if [ -f "$DEPTH_FILE" ]; then
-  _A=$(grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$' "$DEPTH_FILE" 2>/dev/null | head -1)
+if [ -n "$DEPTH_CONTENT" ]; then
+  _A=$(printf '%s\n' "$DEPTH_CONTENT" | grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$' 2>/dev/null | head -1)
   if [ -n "$_A" ]; then
     DEPTH=$(printf '%s' "$_A" | sed -E 's/^DEPTH=([0-9]+).*$/\1/')
   else
-    _B=$(grep -E '^DEPTH=[0-9]+$' "$DEPTH_FILE" 2>/dev/null | head -1)
+    _B=$(printf '%s\n' "$DEPTH_CONTENT" | grep -E '^DEPTH=[0-9]+$' 2>/dev/null | head -1)
     [ -n "$_B" ] && DEPTH=$(printf '%s' "$_B" | sed -E 's/^DEPTH=([0-9]+)$/\1/')
   fi
 fi
 case "$DEPTH" in ''|*[!0-9]*) DEPTH=5 ;; esac
 
-# ── Per-turn cache hit: this turn already validated. ──
-if [ -f "$MARKER" ] && grep -q '^VALIDATED_FROM=text$' "$MARKER" 2>/dev/null; then
+# ── Per-turn cache read (session-scoped) + cache hit ──
+BP_CACHE=""
+BP_CACHE_PRESENT=0
+if BP_CACHE="$(_bp_marker_read blueprint-registered)"; then
+  BP_CACHE_PRESENT=1
+fi
+if [ "$BP_CACHE_PRESENT" = "1" ] && printf '%s\n' "$BP_CACHE" | grep -q '^VALIDATED_FROM=text$' 2>/dev/null; then
   exit 0
 fi
 
 legacy_marker_check() {
   # Degradation path only (no transcript / no python3). Pre-v3 semantics.
-  if [ ! -f "$MARKER" ]; then
+  if [ "$BP_CACHE_PRESENT" != "1" ]; then
     {
       echo "BLUEPRINT-CHECK: foundational artifact edit requires a BLUEPRINT block."
       echo "  File: $REL_PATH"
@@ -197,8 +224,8 @@ legacy_marker_check() {
     exit 2
   fi
   HAS_OUTPUT=0; HAS_VERIFY=0
-  grep -q '^HAS_OUTPUT=1$' "$MARKER" 2>/dev/null && HAS_OUTPUT=1
-  grep -q '^HAS_VERIFY=1$' "$MARKER" 2>/dev/null && HAS_VERIFY=1
+  printf '%s\n' "$BP_CACHE" | grep -q '^HAS_OUTPUT=1$' 2>/dev/null && HAS_OUTPUT=1
+  printf '%s\n' "$BP_CACHE" | grep -q '^HAS_VERIFY=1$' 2>/dev/null && HAS_VERIFY=1
   if [ "$HAS_OUTPUT" = "0" ] || [ "$HAS_VERIFY" = "0" ]; then
     {
       echo "BLUEPRINT-CHECK: foundational edit requires 'Output looks like:' AND"
@@ -208,7 +235,7 @@ legacy_marker_check() {
     } >&2
     exit 2
   fi
-  if [ "$DEPTH" -ge 3 ] && ! grep -q '^HAS_PER_STEP_VERIFY=1$' "$MARKER" 2>/dev/null; then
+  if [ "$DEPTH" -ge 3 ] && ! printf '%s\n' "$BP_CACHE" | grep -q '^HAS_PER_STEP_VERIFY=1$' 2>/dev/null; then
     {
       echo "BLUEPRINT-CHECK: D${DEPTH} requires an inline 'Verify:' on every Step."
       echo "  File: $REL_PATH  (degraded mode: transcript unreadable)"
@@ -391,13 +418,21 @@ case "$STATUS" in
     # Cache the pass for the rest of this turn (best-effort; wiped by
     # reset-turn-markers.sh on the next UserPromptSubmit). A failed write costs
     # one extra transcript walk on the next Edit — never a block.
+    # 2026-07-30: written via sutra_marker_write (session dir + SESSION stamp +
+    # dual-written legacy twin while migration flags are on) so a concurrent
+    # session can neither consume nor clobber this session's cache.
     mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
-    {
+    _BP_BODY=$(
       printf 'VALIDATED_FROM=text\n'
       printf 'HAS_OUTPUT=1\nHAS_VERIFY=1\n'
       [ "$DEPTH" -ge 3 ] && printf 'HAS_PER_STEP_VERIFY=1\n'
-      printf 'DEPTH=%s\nTS=%s\n' "$DEPTH" "$(date +%s)"
-    } > "$MARKER" 2>/dev/null
+      printf 'DEPTH=%s\nTS=%s' "$DEPTH" "$(date +%s)"
+    )
+    if command -v sutra_marker_write >/dev/null 2>&1; then
+      sutra_marker_write blueprint-registered "$_BP_BODY" 2>/dev/null || true
+    else
+      printf '%s\n' "$_BP_BODY" > "$MARKER" 2>/dev/null
+    fi
     exit 0
     ;;
   skip|"")

@@ -30,7 +30,11 @@
 #   xargs ... rm/mv
 #   bash -c '...', sh -c '...', eval '...'  (heuristic: log+block on HARD)
 #
-# Marker:  .claude/build-layer-registered (shared with PROTO-021)
+# Marker:  build-layer-registered (shared with PROTO-021), read via marker-lib
+#          (2026-07-30 marker-race fix: session dir .claude/sessions/<sid>/
+#          first, self-only adoption of unstamped/self-stamped legacy global;
+#          a foreign-stamped global — a concurrent session's authorization —
+#          is IGNORED. Legacy path fallback only when the lib is unavailable.)
 # Override: BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>' <tool call>
 # Ledger:  .enforcement/build-layer-ledger.jsonl
 #          event=structural-block | structural-override | structural-allow-marker
@@ -48,15 +52,27 @@ mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
 
 # ── Extract command from TOOL_INPUT_command env or stdin JSON ─────────────────
 CMD="${TOOL_INPUT_command:-}"
-if [ -z "$CMD" ] && [ ! -t 0 ]; then
-  _JSON=$(cat 2>/dev/null)
-  if [ -n "$_JSON" ]; then
-    if command -v jq >/dev/null 2>&1; then
-      CMD=$(printf '%s' "$_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null)
-    else
-      CMD=$(printf '%s' "$_JSON" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | head -1)
-    fi
+_JSON=""
+if [ ! -t 0 ]; then
+  _JSON=$(cat 2>/dev/null) || _JSON=""
+fi
+if [ -z "$CMD" ] && [ -n "$_JSON" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    CMD=$(printf '%s' "$_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null)
+  else
+    CMD=$(printf '%s' "$_JSON" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | head -1)
   fi
+fi
+
+# ── Session-scoped marker resolution (2026-07-30 marker-race fix) ─────────────
+# Sourced defensively (flow-gate.sh pattern) — this script runs under `set -u`;
+# a lib error must degrade to the legacy path, never abort the hook.
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" || true
+  sutra_sid_from_stdin "$_JSON" || true
+  set -u
 fi
 
 # No command → not relevant
@@ -128,9 +144,22 @@ if [ "${BUILD_LAYER_ACK:-0}" = "1" ]; then
   exit 0
 fi
 
-# ── Marker check ──────────────────────────────────────────────────────────────
-if [ -f "$MARKER" ]; then
-  MARKER_AGE=$(( TS - $(stat -f %m "$MARKER" 2>/dev/null || stat -c %Y "$MARKER" 2>/dev/null || echo $TS) ))
+# ── Marker check (session-scoped via marker-lib; legacy path fallback) ────────
+_SMC_MARKER_FILE="$MARKER"
+_SMC_MARKER_PRESENT=0
+if command -v sutra_marker_read >/dev/null 2>&1; then
+  if sutra_marker_read build-layer-registered >/dev/null 2>&1; then
+    _SMC_MARKER_PRESENT=1
+    if command -v sutra_marker_path >/dev/null 2>&1; then
+      _SMC_MARKER_FILE="$(sutra_marker_path build-layer-registered)"
+    fi
+  fi
+elif [ -f "$MARKER" ]; then
+  # lib missing: legacy global (fail-open on infrastructure, not on discipline)
+  _SMC_MARKER_PRESENT=1
+fi
+if [ "$_SMC_MARKER_PRESENT" = "1" ]; then
+  MARKER_AGE=$(( TS - $(stat -f %m "$_SMC_MARKER_FILE" 2>/dev/null || stat -c %Y "$_SMC_MARKER_FILE" 2>/dev/null || echo $TS) ))
   echo "{\"ts\":$TS,\"event\":\"structural-allow-marker\",\"command\":\"$SAFE_CMD\",\"hard_path\":\"$SAFE_HIT\",\"marker_age_sec\":$MARKER_AGE}" >> "$LEDGER"
   exit 0
 fi

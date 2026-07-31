@@ -160,10 +160,22 @@ if [ -f .claude/sutra-project.json ]; then
   bash "$PLUGIN_ROOT/scripts/_sutra_project_lib.sh" patch-profile "$PROFILE" "$TELEMETRY_DEFAULT"
 fi
 
-# Step 3 — depth marker so the next Edit/Write won't trip PreToolUse warn
+# Step 3 — depth marker so the next Edit/Write won't trip PreToolUse warn.
+# Phase-2 marker-race fix (holding/research/2026-07-30-marker-race-root-cause.md
+# §6 phase 2): this bootstrap was sid-blind — it wrote only the legacy global
+# .claude/depth-registered, unstamped, which any concurrent session's reset
+# could delete as "unowned". Source marker-lib defensively and write via
+# sutra_marker_write (session-scoped + SESSION-stamped; dual-write keeps the
+# legacy global twin for un-migrated readers). Fail-open fallback stamps
+# SESSION= best-effort so the marker is never left unowned.
 mkdir -p .claude
-if [ ! -f .claude/depth-registered ]; then
-  echo "DEPTH=3 TASK=sutra-start TS=$(date +%s)" > .claude/depth-registered
+MARKER_LIB="$PLUGIN_ROOT/hooks/marker-lib.sh"
+if [ -f "$MARKER_LIB" ]; then . "$MARKER_LIB" 2>/dev/null || true; fi
+if command -v sutra_marker_write >/dev/null 2>&1; then
+  sutra_marker_has depth-registered 2>/dev/null || \
+    sutra_marker_write depth-registered "DEPTH=3 TASK=sutra-start" 2>/dev/null || true
+elif [ ! -f .claude/depth-registered ]; then
+  echo "DEPTH=3 TASK=sutra-start SESSION=${CLAUDE_CODE_SESSION_ID:-} TS=$(date +%s)" > .claude/depth-registered
 fi
 
 # Step 3.5 — write/update managed governance block in .claude/CLAUDE.md

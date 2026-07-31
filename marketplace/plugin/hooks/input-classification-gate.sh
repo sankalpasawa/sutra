@@ -1,10 +1,22 @@
 #!/usr/bin/env bash
 # PreToolUse hook: blocks Write/Edit until input has been classified.
 # Fires on: Write, Edit
-# Speed-critical — no subshells, no external commands beyond test/grep.
+# 2026-07-30 (marker-race fix, root-cause doc §2 input-routed row): reads the
+# PreToolUse stdin JSON for tool_name / file_path / session_id — the argv form
+# is kept as a fallback for legacy invocations. Previously this gate was
+# argv-only and structurally could not see a session id; the marker read is now
+# routed through marker-lib (session dir .claude/sessions/<sid>/input-routed,
+# with self-only adoption of an unstamped or self-stamped legacy global).
 
-TOOL_NAME="$1"
-FILE_PATH="$2"
+TOOL_NAME="${1:-}"
+FILE_PATH="${2:-}"
+
+PAYLOAD=""
+[ ! -t 0 ] && PAYLOAD="$(cat 2>/dev/null)"
+if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
+  [ -z "$TOOL_NAME" ] && TOOL_NAME=$(printf '%s' "$PAYLOAD" | jq -r '.tool_name // empty' 2>/dev/null)
+  [ -z "$FILE_PATH" ] && FILE_PATH=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+fi
 
 # Only gate Write and Edit
 [[ "$TOOL_NAME" != "Write" && "$TOOL_NAME" != "Edit" ]] && exit 0
@@ -22,7 +34,18 @@ fi
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 MARKER="$REPO_ROOT/.claude/input-routed"
 
-if [[ -f "$MARKER" ]]; then
+# Session-scoped marker read via marker-lib (defensive sourcing, flow-gate.sh
+# pattern): a foreign-stamped legacy global can no longer satisfy this gate.
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  . "$_MARKER_LIB" 2>/dev/null || true
+  command -v sutra_sid_from_stdin >/dev/null 2>&1 && { sutra_sid_from_stdin "$PAYLOAD" || true; }
+fi
+
+if command -v sutra_marker_read >/dev/null 2>&1; then
+  sutra_marker_read input-routed >/dev/null 2>&1 && exit 0
+elif [[ -f "$MARKER" ]]; then
+  # lib missing: legacy global (fail-open on infrastructure, not on discipline)
   exit 0
 fi
 

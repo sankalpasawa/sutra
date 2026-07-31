@@ -79,6 +79,29 @@ fi
 [ -z "$FILE_PATH" ] && exit 0
 REL_PATH="${FILE_PATH#"$REPO_ROOT"/}"
 
+# -- Session-scoped marker resolution (2026-07-30 marker-race fix) ----------
+# Markers are read via marker-lib: session dir .claude/sessions/<sid>/ first,
+# with self-only adoption of an unstamped or self-stamped legacy global. A
+# foreign-stamped global (a concurrent session's state) is IGNORED — this
+# closes the cross-session consult leak where session A's codex-consulted
+# satisfied session B's D3+ gate (root-cause doc §2, codex-consulted row).
+# Sourced defensively (flow-gate.sh pattern): this script runs under `set -u`;
+# a lib error must degrade to the legacy path, never abort the hook.
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" || true
+  sutra_sid_from_stdin "$PAYLOAD" || true
+  set -u
+fi
+_ccg_marker_read() {
+  if command -v sutra_marker_read >/dev/null 2>&1; then
+    sutra_marker_read "$1" 2>/dev/null; return $?
+  fi
+  # lib missing: legacy global (fail-open on infrastructure, not on discipline)
+  cat "$REPO_ROOT/.claude/$1" 2>/dev/null
+}
+
 # -- Whitelist: docs / ledgers / ephemeral state are not substantive edits --
 case "$REL_PATH" in
   .claude/*|.enforcement/*|.analytics/*)            exit 0 ;;
@@ -90,15 +113,15 @@ case "$REL_PATH" in
 esac
 
 # -- Depth gate: only bite at Depth >= 3 -----------------------------------
-DEPTH_MARKER="$REPO_ROOT/.claude/depth-registered"
+DEPTH_CONTENT="$(_ccg_marker_read depth-registered)" || DEPTH_CONTENT=""
 DEPTH_N=""
-[ -f "$DEPTH_MARKER" ] && DEPTH_N=$(grep -oE 'DEPTH=[0-9]+' "$DEPTH_MARKER" 2>/dev/null | head -1 | cut -d= -f2)
+[ -n "$DEPTH_CONTENT" ] && DEPTH_N=$(printf '%s' "$DEPTH_CONTENT" | grep -oE 'DEPTH=[0-9]+' 2>/dev/null | head -1 | cut -d= -f2)
 # Unknown/unparseable depth -> do not block (the depth gate owns that failure).
 [ -z "$DEPTH_N" ] && exit 0
 [ "$DEPTH_N" -lt 3 ] 2>/dev/null && exit 0
 
-# -- Already satisfied this turn? ------------------------------------------
-[ -f "$REPO_ROOT/.claude/codex-consulted" ] && { log_row "pass" "consult-marker-present"; exit 0; }
+# -- Already satisfied this turn? (session-scoped; foreign global ignored) --
+_ccg_marker_read codex-consulted >/dev/null 2>&1 && { log_row "pass" "consult-marker-present"; exit 0; }
 
 # -- Degradation: codex binary absent -> pass (never brick a codex-less box) -
 # Re-checked EVERY call (codex challenge P2 "sticky" fix): no persisted

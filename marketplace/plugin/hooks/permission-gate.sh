@@ -116,6 +116,15 @@ _match_bash() {
       MATCHED_PATTERN="Bash($c)"; return 0 ;;
   esac
 
+  # --- Tier 1: session-scoped marker files (marker-lib Scheme A, 2026-07-30
+  #     marker-race fix migration plan Phase 3). Traversal rejected explicitly;
+  #     combinators were already rejected above. ---
+  case "$c" in
+    *'..'*) ;;
+    'touch .claude/sessions/'*)
+      MATCHED_PATTERN='Bash(touch .claude/sessions/*)'; return 0 ;;
+  esac
+
   return 1
 }
 
@@ -143,6 +152,10 @@ _match_write() {
     '.claude/sutra-estimation.log'|\
     '.claude/codex-directive-pending')
       MATCHED_PATTERN="Write($f)"; return 0 ;;
+    '.claude/sessions/'*)
+      # Session-scoped marker home (marker-lib Scheme A, 2026-07-30 marker-race
+      # fix migration plan Phase 3). Traversal rejected above.
+      MATCHED_PATTERN='Write(.claude/sessions/**)'; return 0 ;;
     '.claude/logs/'*)
       MATCHED_PATTERN='Write(.claude/logs/*)'; return 0 ;;
     '.enforcement/codex-reviews/'*)

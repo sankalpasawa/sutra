@@ -1,16 +1,19 @@
 #!/bin/bash
-# Unit test: hooks/flow-gate.sh  (the Flow PreToolUse soft-enforcement gate)
+# Unit test: hooks/flow-gate.sh  (the Flow PreToolUse enforcement gate)
 #
-# Contract under test (CURRENT-Sutra "the Flow" spine; ADR-026 + ADR-027):
-#   The hook is a PreToolUse advisory gate. On an Edit/Write to a path that is
-#   NOT whitelisted, if the Flow spine markers in $REPO_ROOT/.claude/ are
-#   missing, the hook nudges (stderr) + appends a row to
-#   $REPO_ROOT/.enforcement/flow-gate.jsonl. It is SOFT-FIRST in v1: it must
-#   ALWAYS exit 0 and must NEVER exit 2 (breaking exit 2 would break every
-#   fleet client). The integrator wraps it as:
-#     hooks/lib/sutra-stderr-capture.sh hooks/flow-gate.sh
-#   so the hook reads PreToolUse JSON on stdin, writes nudges to stderr, and
-#   exits with a code (always 0 in v1).
+# Contract under test (HARD since v2.39.12, founder direction 2026-06-14;
+# ADR-026 + ADR-027; expectations re-pinned 2026-07-30 -- the suite previously
+# asserted the retired v1 SOFT contract):
+#   The hook is a PreToolUse HARD gate. On an Edit/Write to a path that is NOT
+#   whitelisted, if the Flow spine markers (flow-classified + flow-type-resolved;
+#   session dir via marker-lib, with transitional adoption of an unstamped or
+#   self-stamped legacy global) are missing, the hook EXITS 2 -- blocking the
+#   tool call -- writes the nudge to stderr, and appends a "flow-gate-block" row
+#   to $REPO_ROOT/.enforcement/flow-gate.jsonl. When both markers ARE present it
+#   exits 0 and appends a "flow-gate-pass" row (pass logging added 2026-07-27 so
+#   the fire-rate has a denominator). Kill-switches and FLOW_ACK bypass with
+#   exit 0 and no block. Registered RAW in hooks.json (NOT stderr-capture
+#   wrapped) so exit 2 propagates.
 #
 # Markers walked by the spine (written by the flow/resolver/lens/cynefin skills):
 #   .claude/flow-classified     TYPE=<type> CELL=<9cell> TS=<unix>
@@ -22,13 +25,14 @@
 # Override: FLOW_ACK=1 -> append a JSON line to .enforcement/flow-gate-ledger.jsonl, exit 0
 #
 # Cases:
-#   A  markers present (construct path)         -> exit 0, no nudge
-#   B  markers absent, construct path           -> exit 0 (SOFT) + nudge + flow-gate.jsonl row
-#   C  whitelisted path (.claude/x)             -> exit 0, no nudge
-#   D  FLOW_DISABLED=1                           -> exit 0, no nudge
-#   E  $HOME/.flow-disabled present (temp HOME)  -> exit 0, no nudge
+#   A  markers present (construct path)         -> exit 0, no nudge, pass row
+#   B  markers absent, construct path           -> exit 2 (HARD) + nudge + block row
+#   C  whitelisted path (.claude/x)             -> exit 0, no nudge, no row
+#   D  FLOW_DISABLED=1                           -> exit 0, no nudge, no row
+#   E  $HOME/.flow-disabled present (temp HOME)  -> exit 0, no nudge, no row
 #   F  FLOW_ACK=1                                -> exit 0 + flow-gate-ledger.jsonl row
-#   CRITICAL: across ALL cases the hook NEVER exits 2.
+#   CRITICAL: exit 2 is observed ONLY where a block is expected (case B);
+#             whitelist, kill-switch, override and defensive paths never exit 2.
 #
 # Test isolation note:
 #   Every case runs with an ISOLATED $HOME (a fresh temp dir) so that a real
@@ -128,7 +132,7 @@ _err_size() { wc -c < "$ERR_FILE" 2>/dev/null | tr -d ' '; }
 _cleanup_invoke() { rm -f "$OUT_FILE" "$ERR_FILE"; OUT_FILE=""; ERR_FILE=""; }
 
 echo "==============================================================="
-echo "  flow-gate.sh -- Flow soft-gate unit test"
+echo "  flow-gate.sh -- Flow HARD-gate unit test"
 echo "==============================================================="
 
 # ---------------------------------------------------------------------------
@@ -153,13 +157,14 @@ else
 fi
 rm -f /tmp/flow-gate-syntax.err
 
-# Track that exit 2 is NEVER observed across the whole run.
+# Track that exit 2 is NEVER observed where a block is NOT expected. Case B is
+# the only expected-block case (HARD contract) and does not call this guard.
 SAW_EXIT_2=0
-_guard_never_2() {
+_guard_no_unexpected_2() {
   # $1 = case label, $2 = observed RC
   if [ "$2" = "2" ]; then
     SAW_EXIT_2=1
-    _fail "$1 NEVER exit 2" "hook exited 2 (SOFT-FIRST violated)"
+    _fail "$1 no unexpected exit 2" "hook exited 2 where no block is expected"
   fi
 }
 
@@ -171,37 +176,37 @@ echo "[A] markers present -> exit 0, silent"
 REPO_A=$(_mkrepo)
 _seed_markers "$REPO_A"
 _invoke "$REPO_A/holding/foo.ts" "$REPO_A" ""
-_guard_never_2 "A" "$RC"
+_guard_no_unexpected_2 "A" "$RC"
 ESZ=$(_err_size)
 if [ "$RC" = "0" ]; then _pass "A exit 0"; else _fail "A exit 0" "got rc=$RC"; fi
 if [ "${ESZ:-0}" -eq 0 ]; then _pass "A no nudge on stderr"; else _fail "A no nudge" "stderr=$ESZ bytes: $(cat "$ERR_FILE")"; fi
-# A construct path with markers present must NOT append a flow-gate.jsonl row.
-if [ ! -s "$REPO_A/.enforcement/flow-gate.jsonl" ]; then
-  _pass "A no flow-gate.jsonl row"
+# Markers present -> hook appends a "flow-gate-pass" row (pass logging, 2026-07-27).
+if grep -q '"event":"flow-gate-pass"' "$REPO_A/.enforcement/flow-gate.jsonl" 2>/dev/null; then
+  _pass "A flow-gate-pass row appended"
 else
-  _fail "A no flow-gate.jsonl row" "row appended despite markers present"
+  _fail "A flow-gate-pass row" "no flow-gate-pass row in flow-gate.jsonl"
 fi
 _cleanup_invoke
 
 # ---------------------------------------------------------------------------
-# CASE B -- markers absent on construct path -> exit 0 SOFT + nudge + jsonl row
+# CASE B -- markers absent on construct path -> exit 2 HARD + nudge + block row
 # ---------------------------------------------------------------------------
 echo ""
-echo "[B] markers absent, construct path -> exit 0 (SOFT) + nudge + jsonl row"
+echo "[B] markers absent, construct path -> exit 2 (HARD) + nudge + block row"
 REPO_B=$(_mkrepo)   # .claude/ exists but NO markers seeded
 _invoke "$REPO_B/holding/foo.ts" "$REPO_B" ""
-_guard_never_2 "B" "$RC"
+# Case B is the one expected-block case: no _guard_no_unexpected_2 call here.
 ESZ=$(_err_size)
-if [ "$RC" = "0" ]; then _pass "B exit 0 (SOFT, never blocks)"; else _fail "B exit 0" "got rc=$RC (SOFT-FIRST requires 0)"; fi
+if [ "$RC" = "2" ]; then _pass "B exit 2 (HARD block)"; else _fail "B exit 2" "got rc=$RC (HARD contract requires 2)"; fi
 if [ "${ESZ:-0}" -gt 0 ]; then
   _pass "B nudge written to stderr ($ESZ bytes)"
 else
-  _fail "B nudge on stderr" "stderr empty -- expected an advisory nudge"
+  _fail "B nudge on stderr" "stderr empty -- expected the block nudge"
 fi
-if [ -s "$REPO_B/.enforcement/flow-gate.jsonl" ]; then
-  _pass "B row appended to .enforcement/flow-gate.jsonl"
+if grep -q '"event":"flow-gate-block"' "$REPO_B/.enforcement/flow-gate.jsonl" 2>/dev/null; then
+  _pass "B flow-gate-block row appended to .enforcement/flow-gate.jsonl"
 else
-  _fail "B flow-gate.jsonl row" "no row appended"
+  _fail "B flow-gate-block row" "no flow-gate-block row appended"
 fi
 _cleanup_invoke
 
@@ -212,7 +217,7 @@ echo ""
 echo "[C] whitelisted path (.claude/x) -> exit 0, silent"
 REPO_C=$(_mkrepo)   # no markers; path itself is whitelisted so gate must not fire
 _invoke "$REPO_C/.claude/x" "$REPO_C" ""
-_guard_never_2 "C" "$RC"
+_guard_no_unexpected_2 "C" "$RC"
 ESZ=$(_err_size)
 if [ "$RC" = "0" ]; then _pass "C exit 0"; else _fail "C exit 0" "got rc=$RC"; fi
 if [ "${ESZ:-0}" -eq 0 ]; then _pass "C no nudge on stderr"; else _fail "C no nudge" "stderr=$ESZ bytes: $(cat "$ERR_FILE")"; fi
@@ -230,7 +235,7 @@ echo ""
 echo "[D] FLOW_DISABLED=1 kill-switch -> exit 0, silent"
 REPO_D=$(_mkrepo)   # construct path + no markers, but kill-switch must short-circuit
 _invoke "$REPO_D/holding/foo.ts" "$REPO_D" "FLOW_DISABLED=1"
-_guard_never_2 "D" "$RC"
+_guard_no_unexpected_2 "D" "$RC"
 ESZ=$(_err_size)
 if [ "$RC" = "0" ]; then _pass "D exit 0"; else _fail "D exit 0" "got rc=$RC"; fi
 if [ "${ESZ:-0}" -eq 0 ]; then _pass "D no nudge on stderr"; else _fail "D no nudge" "stderr=$ESZ bytes: $(cat "$ERR_FILE")"; fi
@@ -251,7 +256,7 @@ TMP_HOME=$(mktemp -d)
 _track "$TMP_HOME"
 touch "$TMP_HOME/.flow-disabled"
 _invoke "$REPO_E/holding/foo.ts" "$REPO_E" "" "$TMP_HOME"
-_guard_never_2 "E" "$RC"
+_guard_no_unexpected_2 "E" "$RC"
 ESZ=$(_err_size)
 if [ "$RC" = "0" ]; then _pass "E exit 0"; else _fail "E exit 0" "got rc=$RC"; fi
 if [ "${ESZ:-0}" -eq 0 ]; then _pass "E no nudge on stderr"; else _fail "E no nudge" "stderr=$ESZ bytes: $(cat "$ERR_FILE")"; fi
@@ -269,7 +274,7 @@ echo ""
 echo "[F] FLOW_ACK=1 override -> exit 0 + flow-gate-ledger.jsonl row"
 REPO_F=$(_mkrepo)   # construct path + no markers; override path engaged
 _invoke "$REPO_F/holding/foo.ts" "$REPO_F" "FLOW_ACK=1"
-_guard_never_2 "F" "$RC"
+_guard_no_unexpected_2 "F" "$RC"
 if [ "$RC" = "0" ]; then _pass "F exit 0"; else _fail "F exit 0" "got rc=$RC"; fi
 if [ -s "$REPO_F/.enforcement/flow-gate-ledger.jsonl" ]; then
   _pass "F row appended to .enforcement/flow-gate-ledger.jsonl"
@@ -299,7 +304,7 @@ for payload in '' '{}' 'not json' '{"tool_input":{}}'; do
   printf '%s' "$payload" \
     | env CLAUDE_PROJECT_DIR="$REPO_G" HOME="$CLEAN_HOME" bash "$HOOK" 1>"$OUT_FILE" 2>"$ERR_FILE"
   drc=$?
-  _guard_never_2 "defensive[${payload:0:12}]" "$drc"
+  _guard_no_unexpected_2 "defensive[${payload:0:12}]" "$drc"
   if [ "$drc" = "0" ]; then
     _pass "defensive exit 0 on input: [${payload:0:20}]"
   else
@@ -309,14 +314,15 @@ for payload in '' '{}' 'not json' '{"tool_input":{}}'; do
 done
 
 # ---------------------------------------------------------------------------
-# CRITICAL -- global SOFT-FIRST assertion across the whole run
+# CRITICAL -- no UNEXPECTED exit 2 across the whole run (case B is the only
+# expected-block case and is excluded from the guard)
 # ---------------------------------------------------------------------------
 echo ""
-echo "[CRITICAL] SOFT-FIRST: hook never exited 2 in any case"
+echo "[CRITICAL] HARD contract: exit 2 only where a block is expected (case B)"
 if [ "$SAW_EXIT_2" -eq 0 ]; then
-  _pass "no exit 2 observed across all cases"
+  _pass "no unexpected exit 2 observed across all guarded cases"
 else
-  _fail "no exit 2 observed" "at least one case exited 2 -- v1 must be soft-only"
+  _fail "no unexpected exit 2 observed" "hook exited 2 in a guarded (non-block) case"
 fi
 
 # ---------------------------------------------------------------------------
