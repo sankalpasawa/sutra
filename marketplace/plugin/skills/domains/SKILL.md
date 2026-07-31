@@ -100,6 +100,31 @@ repo with Pages):
   non-empty. No prose blocks; the horizontal table stays at the parent
   level and never descends into sub-departments.
 
+## Mining past projects into charters (fleet playbook — founder 2026-07-31)
+
+On "add my past projects as charters" (or equivalents), run the SAME flow
+that built Asawa's project history — programmatic where possible:
+
+1. `python3 <plugin>/lib/charters_seed.py discover` — deterministic scan of
+   the client repo (git-tracked only) for history sources: plans/, decisions/,
+   ADRs, RFCs, architecture docs, evolution/, roadmaps, postmortems,
+   changelogs. Output: sources + one skeleton row per source.
+2. READ each source (parallel subagents fine) and fill the rows. Grounding
+   rules — the script enforces the floor, you enforce the truth:
+   - never invent: title/purpose/status come from the documents;
+   - status ONLY from evidence (shipped/retired/paused/active) — the script
+     REJECTS missing status rather than defaulting;
+   - exactly ONE `owner_domain` from the client's org tree (dref, full path
+     "A > B > C", or unique name); `linked` only with documented reach;
+   - `artifacts` = repo-relative files you actually read; a row with zero
+     valid artifacts is REJECTED (grounding floor).
+3. `python3 <plugin>/lib/charters_seed.py apply candidates.json --tenant <T>`
+   — validates, resolves, dedups (same owner + same title -> SKIP, never a
+   silent update), mints `kind=project` charters with status/links/artifacts,
+   prints a JSON report (minted / skipped / rejected / warnings).
+4. Surface the report to the operator; the auto-refresh hook (or a manual
+   regen) publishes the updated pages.
+
 ## Auto-refresh (SOFT, opt-in — founder 2026-07-31)
 
 `hooks/domains-site-refresh.sh` (Stop event) keeps the published site fresh:
