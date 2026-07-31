@@ -471,6 +471,15 @@
             "timeout": 8
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/domains-site-refresh.sh",
+            "timeout": 150
+          }
+        ]
       }
     ]
   }

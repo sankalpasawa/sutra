@@ -4,9 +4,18 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.57.0 (2026-07-31) — marker concurrency core (Scheme A)
+
+- Marker concurrency core (Scheme A, founder-ratified): self-only adoption + ownership-safe reset kill cross-session contamination; 8 gates read session-first via marker-lib; 3 writers SESSION-stamped; 6-scenario two-session fixture gates it. Root cause: holding/research/2026-07-30-marker-race-root-cause.md.
+
 ## v2.55.1 (2026-07-30) — return-contract schema aligned to operative contract
 
 - ADR-audit F1/F2: schema now tolerates extra keys + string-form verify, matching validator R1/R2 and fixture f1 (validator + fixtures unchanged). F3-F5: ADR-029 amended (flag ladder off/experimental/on; matcher v0-floor cross-ref; mechanical-floor scoping) + ADR-026 open item narrowed (v0 floor shipped; judgment layer open). Audit: holding/research/2026-07-30-adr-026-027-029-consistency-audit.md.
+
+## v2.57.0 (2026-07-31) — SOFT auto-refresh for the domains site
+
+- New Stop hook domains-site-refresh.sh: on registry drift, regenerates the zoom site + commits + pushes. Never blocks (exit 0 every path), 60-min debounce, full-content fingerprint, non-blocking lock, push-only, prompts off, 120s/60s caps, stamp written only after successful regen. Dormant fleet-wide until a repo opts in via .claude/domains-autopublish (D33-safe).
+- Verified live: forced drift -> regen + commit + push; no drift -> no-op; drift-under-debounce -> deferred. All exits 0.
 
 ## v2.56.0 (2026-07-30) — one charter table + per-charter pages
 

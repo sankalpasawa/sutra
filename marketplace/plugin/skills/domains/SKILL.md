@@ -100,6 +100,19 @@ repo with Pages):
   non-empty. No prose blocks; the horizontal table stays at the parent
   level and never descends into sub-departments.
 
+## Auto-refresh (SOFT, opt-in — founder 2026-07-31)
+
+`hooks/domains-site-refresh.sh` (Stop event) keeps the published site fresh:
+on registry drift (full-content sha256 of INDEX + domains + charters) it
+regenerates the zoom site, commits, and pushes — debounced to once per hour,
+non-blocking lock, push-only (never pull/rebase), exit 0 on EVERY path. It is
+DORMANT until the repo opts in with `.claude/domains-autopublish`
+(`SITE_DIR=<repo-relative>`, `LABEL=<label>`) — a client's site never
+auto-pushes without their opt-in (D33). Latency bound: registry change ->
+live page within ~60 min + Pages deploy. Privacy consequence: minted content
+publishes automatically, so `public_names_withheld` must be set AT MINT TIME.
+Last failure (if any): `.claude/domains-refresh.err`.
+
 ## Grounding (ADR-028 — the mandate)
 
 Every unit of plugin work must ground in this registry: the per-turn PLACEMENT
