@@ -27,14 +27,42 @@ if command -v jq >/dev/null 2>&1 && [ -n "$STDIN_RAW" ]; then
   TRANSCRIPT_PATH=$(printf '%s' "$STDIN_RAW" | jq -r '.transcript_path // empty' 2>/dev/null)
 fi
 
+# --- B2 marker-race P4: session-first marker reads --------------------
+# Root cause: holding/research/2026-07-30-marker-race-root-cause.md (Phase 4,
+# phase-exit-audit.sh:31-70). Session dir first via marker-lib;
+# foreign-stamped globals ignored. Audit only -- NEVER blocks; legacy global
+# path is the fallback when marker-lib is unavailable. Sourced defensively
+# (set -u).
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" 2>/dev/null || true
+  if command -v sutra_sid_from_stdin >/dev/null 2>&1; then
+    sutra_sid_from_stdin "$STDIN_RAW" 2>/dev/null || true
+  fi
+  set -u
+fi
+_b2_marker_path() {
+  if command -v sutra_marker_has >/dev/null 2>&1; then
+    if sutra_marker_has "$1" 2>/dev/null; then sutra_marker_path "$1"; fi
+    return 0
+  fi
+  [ -f "$REPO_ROOT/.claude/$1" ] && printf '%s' "$REPO_ROOT/.claude/$1"
+  return 0
+}
+
 DEPTH=""
-if [ -f ".claude/depth-registered" ]; then
-  _LA=$(grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$' .claude/depth-registered 2>/dev/null | head -1)
+_DEPTH_FILE="$(_b2_marker_path depth-registered)"
+# Accept DEPTH=N anywhere on the line (session-stamped rows may append
+# SESSION=/TS= fields on the same line); strict-line forms kept first for
+# canonical markers.
+if [ -n "$_DEPTH_FILE" ] && [ -f "$_DEPTH_FILE" ]; then
+  _LA=$(grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$' "$_DEPTH_FILE" 2>/dev/null | head -1)
   if [ -n "$_LA" ]; then
     DEPTH=$(printf '%s' "$_LA" | sed -E 's/^DEPTH=([0-9]+).*$/\1/')
   else
-    _LB=$(grep -E '^DEPTH=[0-9]+$' .claude/depth-registered 2>/dev/null | head -1)
-    [ -n "$_LB" ] && DEPTH=$(printf '%s' "$_LB" | sed -E 's/^DEPTH=([0-9]+)$/\1/')
+    _LB=$(grep -E '^DEPTH=[0-9]+' "$_DEPTH_FILE" 2>/dev/null | head -1)
+    [ -n "$_LB" ] && DEPTH=$(printf '%s' "$_LB" | sed -E 's/^DEPTH=([0-9]+).*$/\1/')
   fi
 fi
 case "$DEPTH" in ''|*[!0-9]*) DEPTH=5 ;; esac
@@ -67,7 +95,8 @@ for PHASE in OBJECTIVE OBSERVE SHAPE PLAN EXECUTE MEASURE LEARN; do
 done
 
 COMPRESSION_INFERRED="unknown"
-if [ -f ".claude/blueprint-registered" ] && grep -q '^HAS_PER_STEP_VERIFY=1$' .claude/blueprint-registered 2>/dev/null; then
+_BP_FILE="$(_b2_marker_path blueprint-registered)"
+if [ -n "$_BP_FILE" ] && grep -q '^HAS_PER_STEP_VERIFY=1$' "$_BP_FILE" 2>/dev/null; then
   MC=$(printf '%s' "$PHASES_MISSING" | tr ',' '\n' | grep -c .)
   if [ "${MC:-0}" -ge 4 ] 2>/dev/null; then COMPRESSION_INFERRED="yes"; else COMPRESSION_INFERRED="no"; fi
 fi

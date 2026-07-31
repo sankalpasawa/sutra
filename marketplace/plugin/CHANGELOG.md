@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.60.0 (2026-07-31) — marker migration complete
+
+- Marker migration complete: gate self-whitelist + out-of-repo guard (double-brick fix), dispatcher-pretool session-first, P4 telemetry readers on marker-lib, P5 instruction sweep (legacy write instructions: 0 remaining), fixture s7 strict-readiness.
+- ADOPT=0 default flip attempted then reverted: s7 strict passes standalone, but default=0 reddens fixture s1/s4/s5 (transitional adoption + crash-recovery re-adopt). Strict flip deferred until fleet govblock migration + fixture rework. Suites final: marker-concurrency 7/7, flow-gate 25/25, hook-integration 6/6.
+
 ## v2.59.1 (2026-07-31) — verify-then-link artifacts + templatized file summaries
 
 - Charter artifacts/scope link ONLY when resolved against git-tracked files (abs paths under the work root normalize; bare filenames resolve by unique suffix and display the match; directories link to tree/ with tracked-file counts; unresolvable entries render muted, never a 404 link).

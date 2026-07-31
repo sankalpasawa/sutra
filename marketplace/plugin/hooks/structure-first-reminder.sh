@@ -54,13 +54,41 @@ if [ -z "${SUTRA_DISCIPLINE_PRE_ACTIVATION:-}" ] && [ ! -f "$REPO_ROOT/.claude/s
   exit 0
 fi
 
+# --- B2 marker-race P4: session-first marker read/write --------------------
+# Root cause: holding/research/2026-07-30-marker-race-root-cause.md (Phase 4,
+# structure-first-reminder.sh:61). The per-turn dedupe marker is BOTH read and
+# written by this hook, so both sides route through marker-lib: a peer
+# session's marker can no longer suppress this session's once-per-turn
+# reminder. Advisory only -- NEVER blocks; legacy global path is the fallback
+# when marker-lib is unavailable. Sourced defensively (set -u).
+_B2_STDIN=""
+if [ ! -t 0 ]; then _B2_STDIN=$(cat 2>/dev/null || true); fi
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" 2>/dev/null || true
+  if command -v sutra_sid_from_stdin >/dev/null 2>&1; then
+    sutra_sid_from_stdin "$_B2_STDIN" 2>/dev/null || true
+  fi
+  set -u
+fi
+_b2_marker_path() {
+  if command -v sutra_marker_has >/dev/null 2>&1; then
+    if sutra_marker_has "$1" 2>/dev/null; then sutra_marker_path "$1"; fi
+    return 0
+  fi
+  [ -f "$REPO_ROOT/.claude/$1" ] && printf '%s' "$REPO_ROOT/.claude/$1"
+  return 0
+}
+
 # --- Per-turn dedupe -------------------------------------------------------
-# reset-turn-markers.sh (Stop event) wipes .claude/structure-first-active.
-# First tool call of a new turn finds no marker → emit + write marker.
-# Subsequent tool calls find marker → silent no-op.
+# reset-turn-markers.sh (Stop event) wipes structure-first-active (session
+# dir + self-stamped global twin). First tool call of a new turn finds no
+# marker -> emit + write marker. Subsequent tool calls find marker -> no-op.
 ACTIVE_MARKER="$REPO_ROOT/.claude/structure-first-active"
-if [ -f "$ACTIVE_MARKER" ]; then
-  grep -q '^EMITTED=true$' "$ACTIVE_MARKER" 2>/dev/null && exit 0
+_AM_PATH="$(_b2_marker_path structure-first-active)"
+if [ -n "$_AM_PATH" ]; then
+  grep -q '^EMITTED=true$' "$_AM_PATH" 2>/dev/null && exit 0
 fi
 
 # --- Emit reminder ---------------------------------------------------------
@@ -83,13 +111,22 @@ Full direction: holding/FOUNDER-DIRECTIONS.md §D55
 REMINDER
 
 # --- Write per-turn marker ------------------------------------------------
-mkdir -p "$(dirname "$ACTIVE_MARKER")" 2>/dev/null
-{
-  echo "STRUCTURE_FIRST=ON"
-  echo "TURN_TS=$(date +%s)"
-  echo "EMITTED=true"
-  echo "RESTRUCTURE_APPLIED=false"
-} > "$ACTIVE_MARKER" 2>/dev/null
+# Session-first via sutra_marker_set (stamps SESSION=, dual-writes the legacy
+# global for not-yet-migrated readers); legacy path only when lib is absent.
+if command -v sutra_marker_set >/dev/null 2>&1; then
+  sutra_marker_set structure-first-active "STRUCTURE_FIRST=ON
+TURN_TS=$(date +%s)
+EMITTED=true
+RESTRUCTURE_APPLIED=false" 2>/dev/null || true
+else
+  mkdir -p "$(dirname "$ACTIVE_MARKER")" 2>/dev/null
+  {
+    echo "STRUCTURE_FIRST=ON"
+    echo "TURN_TS=$(date +%s)"
+    echo "EMITTED=true"
+    echo "RESTRUCTURE_APPLIED=false"
+  } > "$ACTIVE_MARKER" 2>/dev/null
+fi
 
 # --- Audit log -------------------------------------------------------------
 LOG="${REPO_ROOT}/holding/hooks/hook-log.jsonl"

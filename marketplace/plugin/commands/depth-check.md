@@ -24,12 +24,12 @@ COST: ~$X (~Y% of session budget)
 IMPACT: [what this changes and for whom]
 ```
 
-4. Write the marker:
+4. Write the marker. Markers are SESSION-SCOPED — they live in the session dir, stamped with a `SESSION=` line:
 
 ```!
-mkdir -p .claude && echo "DEPTH=N TASK=<slug> TS=$(date +%s)" > .claude/depth-registered
+mkdir -p ".claude/sessions/${CLAUDE_CODE_SESSION_ID}" && printf 'DEPTH=N TASK=<slug> SESSION=%s TS=%s\n' "$CLAUDE_CODE_SESSION_ID" "$(date +%s)" > ".claude/sessions/${CLAUDE_CODE_SESSION_ID}/depth-registered"
 ```
 
-Replace `N` and `<slug>` with the chosen values.
+Replace `N` and `<slug>` with the chosen values. (`sutra-marker set depth-registered "DEPTH=N TASK=<slug>"` is equivalent — it resolves the same session dir. The legacy shared global marker is maintained by marker-lib dual-write, never written directly.)
 
 5. Confirm: "Depth gate set. Proceed with the task."

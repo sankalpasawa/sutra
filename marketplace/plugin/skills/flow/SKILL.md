@@ -89,12 +89,19 @@ by, `flow`.)
 
 A numbered procedure. Walk it top to bottom for the unit of work. Each stage
 delegates judgment to an existing skill and writes a marker the hook reads.
-Markers live under `$CLAUDE_PROJECT_DIR/.claude/`.
+Markers are SESSION-SCOPED: they live under
+`$CLAUDE_PROJECT_DIR/.claude/sessions/<session-id>/` (session-id =
+`CLAUDE_CODE_SESSION_ID` env; `<sdir>` below abbreviates that directory).
+Every marker carries a `SESSION=<session-id>` field. The legacy shared
+globals directly under `.claude/` are maintained by marker-lib dual-write —
+the model NEVER writes them directly. Primary write path is the
+`sutra-marker set <name> <content>` CLI (plugin `bin/`; resolves the same
+session dir as the hooks); the printf forms below are the manual fallback.
 
 **Marker writes MUST persist to the real filesystem (read before writing any marker)**:
-the `.claude/flow-*` markers are read by hooks that run OUTSIDE the assistant tool
+the `<sdir>/flow-*` markers are read by hooks that run OUTSIDE the assistant tool
 sandbox — `flow-gate.sh` (PreToolUse) and `flow-stop-check.sh` (Stop). A sandboxed
-`printf > .claude/flow-*` is ROLLED BACK when the Bash call ends: the same call sees
+`printf > <sdir>/flow-*` is ROLLED BACK when the Bash call ends: the same call sees
 the file, the next call and every hook do not. If a marker does not persist, the
 hooks read stale state and either block a mutation that WAS classified (flow-gate)
 or force a spurious redo on a turn where Flow DID fire (flow-stop-check). Therefore
@@ -107,17 +114,17 @@ without a write sandbox this is a no-op — the write already persists.)
 input
   |
   v
-[1] CLASSIFY TYPE ------------------> writes .claude/flow-classified
+[1] CLASSIFY TYPE ------------------> writes <sdir>/flow-classified
   |   (core:input-routing + core:human-sutra)
   v
-[2] RESOLVE A WORKFLOW TYPE --------> writes .claude/flow-type-resolved
+[2] RESOLVE A WORKFLOW TYPE --------> writes <sdir>/flow-type-resolved
   |   (core:workflow-type-resolve)
   |   child scope FIRST, then platform
   v
 [3] FOLLOW the matched type   OR   CONSTRUCT the steps
   |   (matched -> mandatory skeleton)  (none -> build the step_graph)
   v
-[4] for EVERY step: INNER ENGINE ---> writes .claude/flow-inner
+[4] for EVERY step: INNER ENGINE ---> writes <sdir>/flow-inner
   |   (core:depth-estimation factors + core:lens + core:cynefin)
   |   a workflow type constrains the OUTER steps; it NEVER turns
   |   the inner engine off (ADR-026 D4)
@@ -128,7 +135,7 @@ input
   |   verify pre/post (core:blueprint)
   |   (a step that is itself a problem -> recurse: section "The recursion")
   v
-[6] CLOSE --------------------------> writes .claude/flow-closed
+[6] CLOSE --------------------------> writes <sdir>/flow-closed
       measure (did it meet the GOAL?) + learn (note for next time)
 ```
 
@@ -141,16 +148,20 @@ it does NOT decide whether the spine runs — under D61 the full spine runs on
 every input regardless of TYPE. A pure question still walks all six stages
 (resolve -> inner -> atom -> close), it does not short-circuit to an answer.
 
-Write the marker:
+Write the marker (primary: `sutra-marker set flow-classified "TYPE=<type> CELL=<cell> SESSION=$CLAUDE_CODE_SESSION_ID TS=$(date +%s)"`; manual fallback):
 
 ```bash
-mkdir -p "${CLAUDE_PROJECT_DIR:-.}/.claude"
-printf 'TYPE=%s CELL=%s TS=%s\n' "$TYPE" "$CELL" "$(date +%s)" \
-  > "${CLAUDE_PROJECT_DIR:-.}/.claude/flow-classified"
+sdir="${CLAUDE_PROJECT_DIR:-.}/.claude/sessions/${CLAUDE_CODE_SESSION_ID:?set by harness}"
+mkdir -p "$sdir"
+printf 'TYPE=%s CELL=%s SESSION=%s TS=%s\n' \
+  "$TYPE" "$CELL" "$CLAUDE_CODE_SESSION_ID" "$(date +%s)" \
+  > "$sdir/flow-classified"
 ```
 
 Replace `$TYPE` with the routing type and `$CELL` with the H-Sutra 9-cell
-header value for this turn (for example `INBOUND-DIRECT`).
+header value for this turn (for example `INBOUND-DIRECT`). Do NOT write the
+legacy shared `.claude/flow-classified` — that global twin is maintained by
+marker-lib dual-write, not by the model.
 
 ### Stage 2 — RESOLVE A WORKFLOW TYPE
 
@@ -168,11 +179,12 @@ Delegate the lookup to `core:workflow-type-resolve`. Outcomes:
 - A type matches -> `RESOLUTION=FOLLOW:<skill>` and `SCOPE=child|platform`.
 - Nothing matches -> `RESOLUTION=CONSTRUCT` and `SCOPE=none`.
 
-Write the marker:
+Write the marker (primary: `sutra-marker set flow-type-resolved ...`; manual fallback):
 
 ```bash
-printf 'RESOLUTION=%s SCOPE=%s TS=%s\n' "$RESOLUTION" "$SCOPE" "$(date +%s)" \
-  > "${CLAUDE_PROJECT_DIR:-.}/.claude/flow-type-resolved"
+printf 'RESOLUTION=%s SCOPE=%s SESSION=%s TS=%s\n' \
+  "$RESOLUTION" "$SCOPE" "$CLAUDE_CODE_SESSION_ID" "$(date +%s)" \
+  > "${CLAUDE_PROJECT_DIR:-.}/.claude/sessions/${CLAUDE_CODE_SESSION_ID:?}/flow-type-resolved"
 ```
 
 `$RESOLUTION` is `FOLLOW:<skill-name>` or `CONSTRUCT`. `$SCOPE` is `child`,
@@ -215,9 +227,9 @@ three directions of that one move, and they are data, not schema.
 Write the marker (once per step, or once for the unit if steps share a lens):
 
 ```bash
-printf 'LENS=%s CYNEFIN=%s FACTORS=%s TS=%s\n' \
-  "$LENS_AXES" "$CYNEFIN_DOMAIN" "$FACTOR_COUNT" "$(date +%s)" \
-  > "${CLAUDE_PROJECT_DIR:-.}/.claude/flow-inner"
+printf 'LENS=%s CYNEFIN=%s FACTORS=%s SESSION=%s TS=%s\n' \
+  "$LENS_AXES" "$CYNEFIN_DOMAIN" "$FACTOR_COUNT" "$CLAUDE_CODE_SESSION_ID" "$(date +%s)" \
+  > "${CLAUDE_PROJECT_DIR:-.}/.claude/sessions/${CLAUDE_CODE_SESSION_ID:?}/flow-inner"
 ```
 
 `$LENS_AXES` is a short comma-separated list of the axes you picked,
@@ -247,12 +259,12 @@ After the last step:
 - **Learn**: one note for next time — what to reuse, what to change, whether
   a CONSTRUCTed shape should be promoted into a reusable workflow type.
 
-Write the marker:
+Write the marker (primary: `sutra-marker set flow-closed ...`; manual fallback):
 
 ```bash
-printf 'MEASURED=%s LEARNED=%s TS=%s\n' \
-  "$MEASURED_CHECK" "$LEARNED_NOTE" "$(date +%s)" \
-  > "${CLAUDE_PROJECT_DIR:-.}/.claude/flow-closed"
+printf 'MEASURED=%s LEARNED=%s SESSION=%s TS=%s\n' \
+  "$MEASURED_CHECK" "$LEARNED_NOTE" "$CLAUDE_CODE_SESSION_ID" "$(date +%s)" \
+  > "${CLAUDE_PROJECT_DIR:-.}/.claude/sessions/${CLAUDE_CODE_SESSION_ID:?}/flow-closed"
 ```
 
 ## The recursion
@@ -315,12 +327,12 @@ skill that already owns that judgment.
 
 | Stage | Owns the judgment | Marker written |
 |---|---|---|
-| [1] Classify TYPE | `core:input-routing` + `core:human-sutra` | `.claude/flow-classified` |
-| [2] Resolve a workflow type | `core:workflow-type-resolve` | `.claude/flow-type-resolved` |
+| [1] Classify TYPE | `core:input-routing` + `core:human-sutra` | `<sdir>/flow-classified` |
+| [2] Resolve a workflow type | `core:workflow-type-resolve` | `<sdir>/flow-type-resolved` |
 | [3] Follow / Construct | this skill (`core:flow`) | (uses [2]'s marker) |
-| [4] Inner engine | `core:depth-estimation` + `core:lens` + `core:cynefin` | `.claude/flow-inner` |
+| [4] Inner engine | `core:depth-estimation` + `core:lens` + `core:cynefin` | `<sdir>/flow-inner` |
 | [5] Work-Atom run + verify | `core:blueprint` (pre/post) | (verified in-line) |
-| [6] Close | this skill (`core:flow`) | `.claude/flow-closed` |
+| [6] Close | this skill (`core:flow`) | `<sdir>/flow-closed` |
 | predecessor | `core:workflow` (per-turn governance sequence) | — |
 
 ## Enforcement — two floors (NOT the firing)
@@ -335,7 +347,7 @@ backstops that catch a turn that skipped it.
   Catches construct/dispatch mutations only — a pure no-tool turn calls no tool,
   so it cannot reach there.
 - **`flow-stop-check.sh` — no-tool floor (Stop, HARD fleet-wide, v2.39.15)**:
-  at turn-end, if `.claude/flow-classified` is absent, it returns
+  at turn-end, if this session's `flow-classified` marker is absent, it returns
   `{"decision":"block"}` and forces exactly one redo. This floors the pure
   no-tool turns flow-gate cannot — a one-line answer, yes/no, chitchat.
   Loop-safe via `stop_hook_active` (the re-invoked turn passes; never traps).
@@ -385,14 +397,14 @@ Acceptance suite: `tests/flow-orchestrator/run.sh` (fixtures f1..f8; 8/8 require
 
 Before claiming the unit is resolved, verify:
 
-- [ ] `.claude/flow-classified` written with a real TYPE + cell.
-- [ ] `.claude/flow-type-resolved` written — either `FOLLOW:<skill>` with a
+- [ ] `<sdir>/flow-classified` written with a real TYPE + cell + `SESSION=`.
+- [ ] `<sdir>/flow-type-resolved` written — either `FOLLOW:<skill>` with a
       scope, or `CONSTRUCT`.
 - [ ] The inner engine ran on EVERY step (not just the first) — a FOLLOWed
-      skeleton did not switch it off. `.claude/flow-inner` written.
+      skeleton did not switch it off. `<sdir>/flow-inner` written.
 - [ ] Every step bottomed out at an ATOM or was explicitly escalated. No open
       recursion.
-- [ ] `.claude/flow-closed` written with a runnable measure + a learn note.
+- [ ] `<sdir>/flow-closed` written with a runnable measure + a learn note.
 - [ ] The resolved-path FLOW block was emitted for this unit.
 
 If a check fails, do not claim resolution — finish the missing stage first.

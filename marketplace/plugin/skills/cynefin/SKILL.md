@@ -10,8 +10,9 @@ description: |
   inner-engine certainty pass on EVERY step before you commit to a how: it tells
   you whether to code a fixed sequence, ask an expert LLM, run parallel probes,
   or act-to-stabilize then escalate. Skip only on a pure-question turn with no
-  step to execute, or once the domain is already pinned in .claude/flow-inner for
-  this step. Writes CYNEFIN=<domain> to .claude/flow-inner.
+  step to execute, or once the domain is already pinned in the session's
+  flow-inner marker for this step. Writes CYNEFIN=<domain> to
+  .claude/sessions/<session-id>/flow-inner.
 allowed-tools: ["Bash"]
 ---
 
@@ -189,11 +190,14 @@ Complicated step.
 ## Write the marker
 
 After you classify, record the domain so the inner-engine pass is visible to the
-flow-gate hook. The marker file is `.claude/flow-inner`. Its canonical shape is a
-SINGLE line carrying every inner-engine field for this step:
+flow-gate hook. The marker file is SESSION-SCOPED:
+`.claude/sessions/$CLAUDE_CODE_SESSION_ID/flow-inner` (the legacy shared
+`.claude/flow-inner` twin is maintained by marker-lib dual-write — never write it
+directly). Its canonical shape is a SINGLE line carrying every inner-engine field
+for this step:
 
 ```
-LENS=<axes> CYNEFIN=<domain> FACTORS=<n> TS=<unix>
+LENS=<axes> CYNEFIN=<domain> FACTORS=<n> SESSION=<session-id> TS=<unix>
 ```
 
 The lens pass (`core:lens`) and the factors pass write their own fields onto
@@ -206,22 +210,22 @@ replace the `CYNEFIN=` field in place; leave the other fields untouched:
 
 ```bash
 DOM="<domain>"     # one of: clear complicated complex chaotic
-CLAUDE_DIR="${CLAUDE_PROJECT_DIR:-.}/.claude"
-F="$CLAUDE_DIR/flow-inner"
-mkdir -p "$CLAUDE_DIR"
+SDIR="${CLAUDE_PROJECT_DIR:-.}/.claude/sessions/${CLAUDE_CODE_SESSION_ID:?}"
+F="$SDIR/flow-inner"
+mkdir -p "$SDIR"
 if [ -s "$F" ] && grep -q 'CYNEFIN=' "$F"; then
-  # replace the existing CYNEFIN= token, preserve LENS=/FACTORS=/TS=
+  # replace the existing CYNEFIN= token, preserve LENS=/FACTORS=/SESSION=/TS=
   sed -i.bak "s/CYNEFIN=[^ ]*/CYNEFIN=$DOM/" "$F" && rm -f "$F.bak"
 elif [ -s "$F" ]; then
   # line exists but has no CYNEFIN field yet: append the token to that line
   sed -i.bak "1s/[[:space:]]*$/ CYNEFIN=$DOM/" "$F" && rm -f "$F.bak"
 else
   # Case B -- nothing written yet: create the line with just your field
-  printf 'CYNEFIN=%s TS=%s\n' "$DOM" "$(date +%s)" > "$F"
+  printf 'CYNEFIN=%s SESSION=%s TS=%s\n' "$DOM" "$CLAUDE_CODE_SESSION_ID" "$(date +%s)" > "$F"
 fi
 ```
 
-The hook reads the value of `CYNEFIN=` from `.claude/flow-inner`; a single
+The hook reads the value of `CYNEFIN=` from this session's `flow-inner`; a single
 coherent line is what it expects. If you only have the domain to record (no lens
 or factors pass yet), Case B's one-line `CYNEFIN=<domain> TS=<unix>` is correct
 on its own — the other passes will add their fields to the same line.

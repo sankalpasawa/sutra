@@ -27,7 +27,7 @@ Most mistakes come from misclassifying the input. If you treat a direction as a 
 
 ## How Sutra enforces it
 
-Before any Edit/Write, a hook checks `.claude/input-routed`. Missing → blocked. The routing block is output text, but the marker proves you wrote it.
+Before any Edit/Write, a hook checks the session-scoped marker `.claude/sessions/<session-id>/input-routed` (session-id = `CLAUDE_CODE_SESSION_ID`; the marker carries a `SESSION=<session-id>` line). Missing → blocked. The routing block is output text, but the marker proves you wrote it. The legacy shared global twin is maintained by marker-lib dual-write, not written by the model.
 
 Whitelist (skip classification): memory files, checkpoints, TODO checkboxes, git operations.
 

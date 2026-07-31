@@ -49,7 +49,7 @@ Step 2  MINT axes ...................... interrogative x mechanism
 Step 3  PICK axes ...................... keep only what passes the test
 Step 4  CROSS .......................... product of the picked axes
 Step 5  APPLY .......................... DOWN | UP | ACROSS for this step
-Step 6  RECORD ......................... write LENS=... to .claude/flow-inner
+Step 6  RECORD ......................... write LENS=... to <session-dir>/flow-inner
 ```
 
 ### Step 1 — STATE the primitive
@@ -179,14 +179,21 @@ A single step may apply more than one direction; record all axes used.
 Write the chosen axes to the inner marker so the Flow gate can see the inner
 engine ran for this step:
 
+The marker is SESSION-SCOPED (`.claude/sessions/$CLAUDE_CODE_SESSION_ID/flow-inner`;
+the legacy shared `.claude/flow-inner` twin is maintained by marker-lib dual-write,
+never written directly). Primary: `sutra-marker set flow-inner "<content>"`; manual
+fallback:
+
 ```bash
-mkdir -p "${CLAUDE_PROJECT_DIR:-.}/.claude"
-printf 'LENS=%s CYNEFIN=%s FACTORS=%s TS=%s\n' \
+sdir="${CLAUDE_PROJECT_DIR:-.}/.claude/sessions/${CLAUDE_CODE_SESSION_ID:?}"
+mkdir -p "$sdir"
+printf 'LENS=%s CYNEFIN=%s FACTORS=%s SESSION=%s TS=%s\n' \
   "<comma-separated-picked-axes>" \
   "<cynefin-domain-or-unset>" \
   "<count-of-picked-axes>" \
+  "$CLAUDE_CODE_SESSION_ID" \
   "$(date +%s)" \
-  > "${CLAUDE_PROJECT_DIR:-.}/.claude/flow-inner"
+  > "$sdir/flow-inner"
 ```
 
 `LENS` is the comma-separated list of the axes you PICKED (not the ones you
@@ -303,6 +310,6 @@ next step mints its own.
 - Feeds the step_graph when you go DOWN (sub-values become sub-steps; each
   recurses through the same spine).
 - The `CYNEFIN` field is carried so a cynefin pass and this lens pass write the
-  same `.claude/flow-inner` marker coherently.
+  same session `flow-inner` marker coherently.
 - Halting: DOWN must bottom out at an ATOM (Flow MODE 1) or the step escalates
   to a human. Never split a value the decision test calls atomic.

@@ -95,7 +95,9 @@ sutra_marker_write(){ sutra_marker_set "$@"; }
 # regardless of SUTRA_MARKER_ADOPT — no flag value ever adopts foreign state.
 #
 # Strict mode: SUTRA_MARKER_ADOPT=0 disables adoption entirely -> pure fail-closed.
-# Flip that default once the govblock migration has landed fleet-wide.
+# Flip attempt 2026-07-31: s7 strict-readiness PASSES standalone, but default=0
+# reddens s1/s4/s5 (transitional adoption + crash-recovery re-adopt asserted under
+# default env). Flip deferred until fleet govblock migration + fixture rework.
 sutra_marker_has()  {
   local d g owner sid; d="$(sutra_marker_dir)"
   [ -f "$d/$1" ] && return 0

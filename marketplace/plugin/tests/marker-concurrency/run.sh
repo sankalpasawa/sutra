@@ -24,9 +24,21 @@
 #   s5 self-stamped global -> self adoption works (crash-recovery path)
 #   s6 stale-TS guard -> apply whatever staleness rule marker-lib has (verified
 #      2026-07-30: it has NONE for TS= fields -- see s6 note; nothing asserted)
+#   s7 strict mode (SUTRA_MARKER_ADOPT=0) -> global path never consulted
+#      (marker-lib.sh sutra_marker_has short-circuits on the ADOPT flag BEFORE
+#      the owner check): (i) self-stamped global not adopted -- the s5
+#      crash-recovery path is LOST in strict; actual lib behavior asserted
+#      for consistency + printed; (ii) foreign-stamped global ignored (no
+#      contamination row asserted -- the strict short-circuit returns before
+#      the logging branch); (iii) fresh session, zero markers -> clean MISS,
+#      not a crash; (iv) placement round-trip: placement-resolve.sh writes
+#      session-stamped (v2.58.0+), placement-gate.sh (hard mode) reads via
+#      sutra_marker_has and must PASS with ADOPT=0 -- THE strict-mode blocker
+#      check from the root-cause doc (section 2, placement-registered row:
+#      strict mode must not blind the gates now that the writer is sid-aware).
 #
-# Output: one PASS/FAIL line per scenario + summary "marker-concurrency: N/6 PASS".
-# Exit 0 only on full 6/6 pass.
+# Output: one PASS/FAIL line per scenario + summary "marker-concurrency: N/7 PASS".
+# Exit 0 only on full 7/7 pass.
 #
 # Companion file hook-integration.sh (archived earlier fixture) exercises the
 # LIVE hooks (flow-gate, reset-turn-markers) at the same contract; this file is
@@ -38,7 +50,7 @@ set -u
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 LIB="$PLUGIN_ROOT/hooks/marker-lib.sh"
-[ -f "$LIB" ] || { echo "marker-concurrency: FATAL missing $LIB"; echo "marker-concurrency: 0/6 PASS"; exit 1; }
+[ -f "$LIB" ] || { echo "marker-concurrency: FATAL missing $LIB"; echo "marker-concurrency: 0/7 PASS"; exit 1; }
 
 # mktemp sandbox -- the suite never touches the real repo's .claude/.
 T=$(mktemp -d) || exit 1
@@ -196,6 +208,94 @@ s6() { # stale-TS guard -- apply whatever staleness rule marker-lib has
 s6; report s6 $? "stale-TS: lib has no TS staleness rule; behavior observed, nothing asserted"
 
 # ---------------------------------------------------------------------------
-echo "marker-concurrency: $PASS_N/6 PASS"
-[ "$PASS_N" -eq 6 ] || exit 1
+# Strict-mode env wrapper: same subshell scoping as as_a/as_b, plus
+# SUTRA_MARKER_ADOPT=0. First arg = sid to impersonate.
+as_strict() { local sid="$1"; shift; ( export CLAUDE_CODE_SESSION_ID="$sid" SUTRA_MARKER_ADOPT=0; "$@" ); }
+
+s7() { # strict mode (SUTRA_MARKER_ADOPT=0) -> global path never consulted
+  local SIDS="sessS" SIDF="sessF" SIDP="sessP"
+  local DIRS_="$T/.claude/sessions/$SIDS"
+  local rc out err observed
+
+  # (i) self-stamped global under strict. Lib inspection (marker-lib.sh:102):
+  # sutra_marker_has short-circuits on the ADOPT flag BEFORE the owner check,
+  # so the s5 crash-recovery path is expected LOST. Per brief: assert the
+  # ACTUAL behavior for internal consistency (rc must match the filesystem
+  # effect) and PRINT it -- do not hard-code the expectation.
+  printf 'RECOVER=1\nSESSION=%s\nTS=%s\n' "$SIDS" "$(date +%s)" > "$GLOBAL/strict-own" \
+    || { FAIL_MSG="could not plant self-stamped global"; return 1; }
+  if as_strict "$SIDS" sutra_marker_read strict-own >/dev/null 2>&1; then rc=0; else rc=1; fi
+  if [ "$rc" -eq 0 ]; then
+    observed="ADOPT=0 still ADOPTED own self-stamped global (strict short-circuit NOT active -- flag not honored)"
+    [ -f "$DIRS_/strict-own" ] \
+      || { FAIL_MSG="read hit but no session-dir copy (rc/filesystem inconsistent)"; return 1; }
+  else
+    observed="ADOPT=0 MISSED own self-stamped global (s5 crash-recovery path LOST in strict; session dir sole authority)"
+    [ ! -f "$DIRS_/strict-own" ] \
+      || { FAIL_MSG="read missed but global was still copied into session dir (rc/filesystem inconsistent)"; return 1; }
+  fi
+  echo "  s7 NOTE(i): $observed"
+
+  # (ii) foreign-stamped global under strict: ignored, same outcome as s1.
+  # No contamination row asserted -- the strict short-circuit (marker-lib.sh:102)
+  # returns before the logging branch.
+  printf 'X=1\nSESSION=%s\nTS=%s\n' "$SIDA" "$(date +%s)" > "$GLOBAL/strict-foreign" \
+    || { FAIL_MSG="could not plant foreign-stamped global"; return 1; }
+  if as_strict "$SIDS" sutra_marker_read strict-foreign >/dev/null 2>&1; then
+    FAIL_MSG="strict session READ a foreign-stamped global (ADOPT=0 consulted the global path)"; return 1
+  fi
+  [ ! -f "$DIRS_/strict-foreign" ] \
+    || { FAIL_MSG="foreign global copied into strict session's dir"; return 1; }
+
+  # (iii) fresh session, zero markers anywhere -> clean MISS, not a crash.
+  out=$(as_strict "$SIDF" sutra_marker_read never-written-marker 2>/dev/null); rc=$?
+  [ "$rc" -ne 0 ] \
+    || { FAIL_MSG="fresh strict session HIT a marker that was never written"; return 1; }
+  [ -z "$out" ] \
+    || { FAIL_MSG="miss produced stdout output: $out"; return 1; }
+  err=$(as_strict "$SIDF" sutra_marker_has never-written-marker 2>&1 >/dev/null) || true
+  [ -z "$err" ] \
+    || { FAIL_MSG="strict miss emitted stderr noise (crash, not clean miss): $err"; return 1; }
+
+  # (iv) placement round-trip under strict -- THE strict-mode blocker check
+  # (root-cause doc section 2, placement-registered row): placement-resolve.sh
+  # writes session-stamped since v2.58.0, so its own sid-aware gate must PASS
+  # with ADOPT=0 and the global twin deleted (session dir alone satisfies it).
+  local PLACE_RESOLVE="$PLUGIN_ROOT/hooks/placement-resolve.sh"
+  local PLACE_GATE="$PLUGIN_ROOT/hooks/placement-gate.sh"
+  [ -f "$PLACE_RESOLVE" ] && [ -f "$PLACE_GATE" ] \
+    || { FAIL_MSG="placement hooks missing from plugin root"; return 1; }
+  command -v python3 >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
+    || { FAIL_MSG="python3+jq required for placement round-trip (infrastructure, not lib, missing)"; return 1; }
+  printf '{"prompt":"s7 strict placement round-trip probe"}' | (
+    export CLAUDE_PROJECT_DIR="$T" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+           CLAUDE_CODE_SESSION_ID="$SIDP" SUTRA_MARKER_ADOPT=0 HOME="$T"
+    unset PLACEMENT_DISABLED 2>/dev/null || true
+    bash "$PLACE_RESOLVE" >/dev/null 2>&1
+  )
+  [ -f "$T/.claude/sessions/$SIDP/placement-registered" ] \
+    || { FAIL_MSG="placement-resolve did not write a session-scoped marker (sid-blind writer regression)"; return 1; }
+  grep -q "SESSION=$SIDP" "$T/.claude/sessions/$SIDP/placement-registered" \
+    || { FAIL_MSG="placement marker missing SESSION=$SIDP stamp"; return 1; }
+  rm -f "$GLOBAL/placement-registered"      # strict: session dir alone must satisfy
+  printf 'hard\n' > "$T/.claude/placement-mode"
+  printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"},"session_id":"%s"}' \
+      "$T/workfile.txt" "$SIDP" | (
+    export CLAUDE_PROJECT_DIR="$T" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+           CLAUDE_CODE_SESSION_ID="$SIDP" SUTRA_MARKER_ADOPT=0 HOME="$T"
+    unset PLACEMENT_DISABLED PLACEMENT_ACK 2>/dev/null || true
+    bash "$PLACE_GATE" >/dev/null 2>&1
+  )
+  rc=$?
+  rm -f "$T/.claude/placement-mode"
+  [ "$rc" -eq 0 ] \
+    || { FAIL_MSG="placement-gate (hard) exit $rc with ADOPT=0 despite session-stamped engine marker -- strict-mode flip would hard-block every turn"; return 1; }
+  echo "  s7 NOTE(iv): placement round-trip PASSED under ADOPT=0 (gate satisfied by session dir alone, global twin deleted)"
+  return 0
+}
+s7; report s7 $? "strict ADOPT=0: global never consulted; fresh-session clean miss; placement round-trip green"
+
+# ---------------------------------------------------------------------------
+echo "marker-concurrency: $PASS_N/7 PASS"
+[ "$PASS_N" -eq 7 ] || exit 1
 exit 0

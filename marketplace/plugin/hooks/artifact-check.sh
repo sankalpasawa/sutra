@@ -30,10 +30,37 @@ if [ -z "$REPO_ROOT" ]; then
   exit 0
 fi
 
+# --- B2 marker-race P4: session-first marker reads --------------------
+# Root cause: holding/research/2026-07-30-marker-race-root-cause.md (Phase 4,
+# artifact-check.sh:35). Reads route through marker-lib (session dir first,
+# self-only adoption of legacy globals; foreign-stamped globals ignored).
+# Telemetry/advisory only -- NEVER blocks; falls back to the legacy global
+# path when marker-lib is unavailable. Sourced defensively (a lib error must
+# not abort this hook).
+_B2_STDIN=""
+if [ ! -t 0 ]; then _B2_STDIN=$(cat 2>/dev/null || true); fi
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  . "$_MARKER_LIB" 2>/dev/null || true
+  if command -v sutra_sid_from_stdin >/dev/null 2>&1; then
+    sutra_sid_from_stdin "$_B2_STDIN" 2>/dev/null || true
+  fi
+fi
+_b2_marker_path() {
+  # Echo the session-first path of marker $1; empty output = absent for this
+  # session. Always returns 0 (fail-open).
+  if command -v sutra_marker_has >/dev/null 2>&1; then
+    if sutra_marker_has "$1" 2>/dev/null; then sutra_marker_path "$1"; fi
+    return 0
+  fi
+  [ -f "$REPO_ROOT/.claude/$1" ] && printf '%s' "$REPO_ROOT/.claude/$1"
+  return 0
+}
+
 # ─── Read depth registration ───────────────────────────────────────────
 # Format: DEPTH_LEVEL TIMESTAMP TASK_DESCRIPTION
-DEPTH_FILE="$REPO_ROOT/.claude/depth-registered"
-if [ ! -f "$DEPTH_FILE" ]; then
+DEPTH_FILE="$(_b2_marker_path depth-registered)"
+if [ -z "$DEPTH_FILE" ] || [ ! -f "$DEPTH_FILE" ]; then
   exit 0
 fi
 
@@ -72,8 +99,8 @@ fi
 
 # ─── Depth 4+: Check estimation log marker ─────────────────────────────
 if [ "$DEPTH_LEVEL" -ge 4 ]; then
-  ESTIMATION_MARKER="$REPO_ROOT/.claude/estimation-logged"
-  if [ ! -f "$ESTIMATION_MARKER" ]; then
+  ESTIMATION_MARKER="$(_b2_marker_path estimation-logged)"
+  if [ -z "$ESTIMATION_MARKER" ] || [ ! -f "$ESTIMATION_MARKER" ]; then
     MISSING="$MISSING\n  - .claude/estimation-logged (no estimation log entry for this task)"
   fi
 fi

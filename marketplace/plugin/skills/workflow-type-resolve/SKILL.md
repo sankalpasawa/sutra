@@ -146,29 +146,36 @@ Emit this block verbatim into your response (ASCII only):
 
 Then write the marker so the Flow hook can confirm this station was walked.
 Writing the marker is MANDATORY on BOTH branches — the `flow-gate` hook
-reads `.claude/flow-type-resolved` to verify the resolver ran. Run exactly
-ONE of the two commands below:
+reads this session's `flow-type-resolved` marker to verify the resolver ran.
+Markers are SESSION-SCOPED: they live at
+`.claude/sessions/$CLAUDE_CODE_SESSION_ID/<name>` and carry a `SESSION=` field.
+The legacy shared `.claude/flow-type-resolved` twin is maintained by marker-lib
+dual-write — never write it directly. Primary path is
+`sutra-marker set flow-type-resolved "<content>"`; manual fallback below. Run
+exactly ONE of the two commands:
 
 ```bash
-mkdir -p "${CLAUDE_PROJECT_DIR:-.}/.claude"
+sdir="${CLAUDE_PROJECT_DIR:-.}/.claude/sessions/${CLAUDE_CODE_SESSION_ID:?}"
+mkdir -p "$sdir"
 
 # --- FOLLOW branch (replace name + scope with what you resolved) ---
-printf 'RESOLUTION=FOLLOW:%s SCOPE=%s TS=%s\n' \
-  "core:sutra-onboard" "platform" "$(date +%s)" \
-  > "${CLAUDE_PROJECT_DIR:-.}/.claude/flow-type-resolved"
+printf 'RESOLUTION=FOLLOW:%s SCOPE=%s SESSION=%s TS=%s\n' \
+  "core:sutra-onboard" "platform" "$CLAUDE_CODE_SESSION_ID" "$(date +%s)" \
+  > "$sdir/flow-type-resolved"
 
 # --- CONSTRUCT branch (use INSTEAD OF the FOLLOW line above) ---
-# printf 'RESOLUTION=CONSTRUCT SCOPE=none TS=%s\n' "$(date +%s)" \
-#   > "${CLAUDE_PROJECT_DIR:-.}/.claude/flow-type-resolved"
+# printf 'RESOLUTION=CONSTRUCT SCOPE=none SESSION=%s TS=%s\n' \
+#   "$CLAUDE_CODE_SESSION_ID" "$(date +%s)" \
+#   > "$sdir/flow-type-resolved"
 ```
 
 Marker contract (write EXACTLY one of these forms — note the SINGLE-SPACE
 field separators, no commas):
 
 ```
-.claude/flow-type-resolved
-  FOLLOW    : RESOLUTION=FOLLOW:<skill> SCOPE=child|platform TS=<unix>
-  CONSTRUCT : RESOLUTION=CONSTRUCT SCOPE=none TS=<unix>
+.claude/sessions/<session-id>/flow-type-resolved
+  FOLLOW    : RESOLUTION=FOLLOW:<skill> SCOPE=child|platform SESSION=<session-id> TS=<unix>
+  CONSTRUCT : RESOLUTION=CONSTRUCT SCOPE=none SESSION=<session-id> TS=<unix>
 ```
 
 Replace `core:sutra-onboard` / `platform` with the workflow type and scope

@@ -21,6 +21,29 @@ fi
 # Only gate Write and Edit
 [[ "$TOOL_NAME" != "Write" && "$TOOL_NAME" != "Edit" ]] && exit 0
 
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+
+# Repo-boundary guard (2026-07-31; mirrors the codex-consult-gate v2.58.1
+# memory-scope carve-out, generalized): a file_path OUTSIDE the project dir
+# (e.g. ~/.claude/** memory files, session state, cross-repo notes) can never
+# match a repo whitelist and is not this repo's turn discipline to gate.
+# In-repo paths and empty/unresolvable paths still fall through to the gate.
+if [[ -n "$FILE_PATH" && "$FILE_PATH" != "$REPO_ROOT"/* ]]; then
+  exit 0
+fi
+
+# Governance-marker self-whitelist (2026-07-31): a gate must never block the
+# Write of the very marker that satisfies it. The 2026-07-31 double-brick
+# incidents: this gate blocked the Write tool's write of
+# .claude/sessions/<sid>/input-routed (and depth-registered) -- the exact
+# marker whose absence caused the block -- an unrecoverable loop unless the
+# model fell back to Bash printf. Session-dir marker paths and the legacy
+# global marker twins exit 0 here.
+case "$FILE_PATH" in
+  */.claude/sessions/*) exit 0 ;;
+  */.claude/*-registered|*/.claude/input-routed) exit 0 ;;
+esac
+
 # Whitelist: system-maintenance paths skip classification
 if echo "$FILE_PATH" | grep -qE '(memory/|checkpoints/|\.lock|TODO\.md)'; then
   exit 0
@@ -31,7 +54,7 @@ fi
 # .claude/blueprint-registered. Prior path /tmp/asawa-input-classified-${SID}
 # was broken — no writer existed in any skill or hook (2026-05-10 root-cause fix
 # during SOFT-to-HARD blanket flip; founder direction Option A).
-REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+# (REPO_ROOT resolved above, at the repo-boundary guard.)
 MARKER="$REPO_ROOT/.claude/input-routed"
 
 # Session-scoped marker read via marker-lib (defensive sourcing, flow-gate.sh

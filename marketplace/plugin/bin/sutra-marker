@@ -6,6 +6,7 @@
 #
 # Usage:
 #   sutra-marker set   <name> [content...]   # atomic write to session dir
+#   sutra-marker write <name> [content...]   # alias of set (pinned ADR-029 contract)
 #   sutra-marker has   <name>                # exit 0 if present
 #   sutra-marker read  <name>                # print content
 #   sutra-marker path  <name>                # print absolute path
@@ -19,11 +20,11 @@ LIB="$_here/../hooks/marker-lib.sh"
 . "$LIB"
 cmd="${1:-}"; shift || true
 case "$cmd" in
-  set)   name="$1"; shift || true; sutra_marker_set "$name" "$*";;
+  set|write) name="$1"; shift || true; sutra_marker_set "$name" "$*";;
   has)   sutra_marker_has "$1";;
   read)  sutra_marker_read "$1";;
   path)  sutra_marker_path "$1";;
   reset) sutra_marker_reset;;
   gc)    sutra_marker_gc;;
-  *) echo "usage: sutra-marker set|has|read|path|reset|gc <name> [content]" >&2; exit 2;;
+  *) echo "usage: sutra-marker set|write|has|read|path|reset|gc <name> [content]" >&2; exit 2;;
 esac

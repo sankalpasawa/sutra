@@ -31,13 +31,13 @@ IMPACT: [what this changes and for whom]
 
 ## Depth marker
 
-After emitting the block, write the marker so the pretool hook can verify it exists before Edit/Write:
+After emitting the block, write the marker so the pretool hook can verify it exists before Edit/Write. Markers are SESSION-SCOPED: write via the **Write tool** to `.claude/sessions/<session-id>/depth-registered` (session-id = `CLAUDE_CODE_SESSION_ID` env), and include a `SESSION=` line:
 
-```bash
-mkdir -p .claude && echo "DEPTH=N TASK=<slug> TS=$(date +%s)" > .claude/depth-registered
+```
+DEPTH=N TASK=<slug> SESSION=<session-id> TS=<unix>
 ```
 
-Replace `N` with the chosen depth and `<slug>` with a short task identifier.
+Replace `N` with the chosen depth and `<slug>` with a short task identifier. Equivalent CLI (resolves the same session dir as the hooks): `sutra-marker set depth-registered "DEPTH=N TASK=<slug> TS=$(date +%s)"`. Do NOT write the legacy shared global marker directly — that twin is maintained by marker-lib dual-write, not by the model.
 
 ## Post-task triage
 

@@ -13,7 +13,34 @@ command -v python3 >/dev/null 2>&1 || exit 0
 PAYLOAD=$(cat 2>/dev/null || true)
 FILE=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 [ -z "$FILE" ] && exit 0
-TURN_REF=$(grep -o 'DOMAIN_REF=[^ ]*' "$REPO_ROOT/.claude/placement-registered" 2>/dev/null | head -1 | cut -d= -f2)
+# --- B2 marker-race P4: session-first marker reads --------------------
+# Root cause: holding/research/2026-07-30-marker-race-root-cause.md (Phase 4,
+# context-scope-audit.sh:16). Session dir first via marker-lib;
+# foreign-stamped globals ignored. Audit only -- NEVER blocks; legacy global
+# path is the fallback when marker-lib is unavailable. Sourced defensively
+# (set -u).
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" 2>/dev/null || true
+  if command -v sutra_sid_from_stdin >/dev/null 2>&1; then
+    sutra_sid_from_stdin "$PAYLOAD" 2>/dev/null || true
+  fi
+  set -u
+fi
+_b2_marker_path() {
+  if command -v sutra_marker_has >/dev/null 2>&1; then
+    if sutra_marker_has "$1" 2>/dev/null; then sutra_marker_path "$1"; fi
+    return 0
+  fi
+  [ -f "$REPO_ROOT/.claude/$1" ] && printf '%s' "$REPO_ROOT/.claude/$1"
+  return 0
+}
+TURN_REF=""
+_PL_FILE="$(_b2_marker_path placement-registered)"
+if [ -n "$_PL_FILE" ]; then
+  TURN_REF=$(grep -o 'DOMAIN_REF=[^ ]*' "$_PL_FILE" 2>/dev/null | head -1 | cut -d= -f2)
+fi
 [ -z "$TURN_REF" ] || [ "$TURN_REF" = "unresolved" ] && exit 0
 PLUGIN_DIR="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 python3 - "$FILE" "$TURN_REF" "$REPO_ROOT" "$PLUGIN_DIR" <<'PY' 2>/dev/null
