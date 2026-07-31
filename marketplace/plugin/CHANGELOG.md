@@ -4,6 +4,10 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.59.0 (2026-07-31) — version reconcile
+
+- Reconciles the parallel-session version collision (2.58.0 owner-first table vs 2.58.1): this release carries BOTH change sets; no code delta beyond the version field.
+
 ## v2.58.1 (2026-07-31) — codex-gate memory carve-out + orchestrator fleet ON
 
 - codex-consult-gate.sh exempts ~/.claude/** (memory files) — scoped narrower than blueprint v2.39.20 to avoid mv-ingress bypass; regression test hooks/codex-gate-outofrepo-test.sh (3 cases). flow_orchestrator_mode -> "on" fleet-wide (founder-directed; ADR-029 D5 second amendment). ADR-026/027 posture notes + cross-refs; ADR-029 D3 return_contract naming note. Head reordered newest-first (v2.55.1 moved below v2.56.0).
