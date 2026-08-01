@@ -94,11 +94,26 @@ repo with Pages):
   wins a shared column; >= 2 columns admits a cross-cutting row; legend
   "O owner / L linked"). Status filter buttons (aria-pressed) compose with
   the page search; a "no charters match" row appears when both filter out.
-- **Per-charter structured pages** (`C-<id>.html`, content-addressed =
-  stable): breadcrumb + owner up-link, then labelled rows only — Purpose /
-  Kind / Status / Owner / Linked / Artifacts / Scope-in and Obligations when
-  non-empty. No prose blocks; the horizontal table stays at the parent
-  level and never descends into sub-departments.
+- **Per-charter pages** (`C-<id>.html`, content-addressed = stable) render
+  the founder-approved consumer template (v6, 2026-08-01) — customer
+  language only, every section renders ONLY when its data exists (sparse
+  charters degrade gracefully): status badge + title + purpose subtitle +
+  owner/works-with byline -> **Goals** (numbered) -> **How it's measuring
+  up** (metric cards, honest bars: "<N" targets are lower-is-better margin)
+  -> **Where this fits** (owner -> charter · linked teams · "one of N
+  charters") -> **Progress** (milestone track in ARRAY ORDER, fill to the
+  `now` dot; active todos as tap-open task tables Done/In-progress/
+  Remaining with n/m pills; done todos folded with done_at + done_how) ->
+  **Key documents** (artifacts UNION scope_in, deduped on resolved path,
+  friendly titles + content summaries, new tab) -> **The fine print**
+  (authored-only: We promise / Never changes / Out of scope / Reviewed).
+  Optional charter fields feeding it — filled ONLY via validated
+  skeleton->apply (charters_seed.validate_extras; no fabrication):
+  `goals[]`, `metrics[{label,current,target}]`,
+  `milestones[{label,target,status: done|now|planned|dropped,done_when}]`,
+  `todos[{title,status: open|in-progress|done|dropped,impact,effort,cost,
+  done_when,done_at(done only),done_how,milestone(label match),
+  tasks[{label,done}]}]`.
 
 ## The pipeline (canonical flow — founder 2026-07-31: "the entire thing
 ## runs systematically via scripts")

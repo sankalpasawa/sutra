@@ -195,8 +195,22 @@ def charters_apply(path, tenant):
                              "reason": "already has a charter"})
             continue
         E.mint_charter_stub(ref, title, purpose, [], [], tenant)
+        import charters_seed as CS
+        warn = []
+        extras = CS.validate_extras(r, warn, "row[%d]" % i)
+        if extras:
+            for c in E.charters_for(ref):
+                if c.get("title", "").strip().lower() == title.lower():
+                    fp = os.path.join(E.CHARTERS, c["id"] + ".json")
+                    c2 = json.load(open(fp))
+                    c2.update(extras)
+                    json.dump(c2, open(fp, "w"), sort_keys=True, indent=2)
+                    break
         minted += 1
-        outcomes.append({"row": i, "domain": ref, "outcome": "minted"})
+        o = {"row": i, "domain": ref, "outcome": "minted"}
+        if warn:
+            o["warnings"] = warn
+        outcomes.append(o)
     return _out({"stage": "charters", "minted": minted, "outcomes": outcomes})
 
 

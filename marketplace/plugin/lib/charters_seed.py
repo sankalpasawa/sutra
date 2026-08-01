@@ -39,6 +39,73 @@ SRC_PAT = re.compile(
     r"(^|/)(plans?|decisions?|adrs?|rfcs?|architecture|evolution|roadmaps?"
     r"|postmortems?|changelog)", re.I)
 STATUSES = {"active", "shipped", "retired", "paused"}
+MILE_ST = {"done", "now", "planned", "dropped"}
+TODO_ST = {"open", "in-progress", "done", "dropped"}
+
+
+def validate_extras(row, warn, tag):
+    """Optional charter-page fields (founder-approved v6, 2026-08-01).
+    Codex validation floor: statuses from closed enums, done_at only on done
+    todos, tasks are {label, done}; invalid entries drop with a warning —
+    never a crash, never silent."""
+    out = {}
+    goals = [str(g).strip() for g in (row.get("goals") or []) if str(g).strip()]
+    if goals:
+        out["goals"] = goals[:6]
+    mets = []
+    for m in (row.get("metrics") or []):
+        if str(m.get("label", "")).strip() and m.get("current") is not None:
+            mets.append({"label": str(m["label"]).strip()[:60],
+                         "current": str(m["current"]).strip()[:20],
+                         "target": str(m.get("target", "")).strip()[:20]})
+        else:
+            warn.append(tag + ": metric dropped (label+current required)")
+    if mets:
+        out["metrics"] = mets[:6]
+    miles = []
+    for m in (row.get("milestones") or []):
+        if str(m.get("label", "")).strip() and m.get("status") in MILE_ST:
+            miles.append({"label": str(m["label"]).strip()[:40],
+                          "target": str(m.get("target", "")).strip()[:20],
+                          "status": m["status"],
+                          "done_when": str(m.get("done_when", "")).strip()[:120]})
+        else:
+            warn.append(tag + ": milestone dropped (label + status in %s)" % sorted(MILE_ST))
+    if miles:
+        out["milestones"] = miles[:8]
+    mlabels = {m["label"] for m in miles}
+    todos = []
+    for t in (row.get("todos") or []):
+        title = str(t.get("title", "")).strip()
+        st = t.get("status")
+        if not title or st not in TODO_ST:
+            warn.append(tag + ": todo dropped (title + status in %s)" % sorted(TODO_ST))
+            continue
+        item = {"title": title[:80], "status": st}
+        for k in ("impact", "effort", "cost", "done_when", "done_how"):
+            if str(t.get(k, "")).strip():
+                item[k] = str(t[k]).strip()[:160]
+        if t.get("done_at"):
+            if st == "done":
+                item["done_at"] = str(t["done_at"]).strip()[:20]
+            else:
+                warn.append(tag + ": done_at dropped (todo not done)")
+        if t.get("milestone"):
+            if str(t["milestone"]) in mlabels:
+                item["milestone"] = str(t["milestone"])
+            else:
+                warn.append(tag + ": todo milestone tag dropped (no such milestone)")
+        tasks = []
+        for x in (t.get("tasks") or []):
+            if str(x.get("label", "")).strip():
+                tasks.append({"label": str(x["label"]).strip()[:100],
+                              "done": bool(x.get("done"))})
+        if tasks:
+            item["tasks"] = tasks[:20]
+        todos.append(item)
+    if todos:
+        out["todos"] = todos[:20]
+    return out
 
 
 def _root(argroot=None):
@@ -200,6 +267,7 @@ def apply_file(path, tenant):
             skipped += 1
             continue
         E.mint_charter_stub(owner, title, purpose, arts[:10], [], tenant)
+        extras = validate_extras(r, warnings, tag)
         for c in E.charters_for(owner):
             if c.get("title", "").strip().lower() == title.lower():
                 fp = os.path.join(E.CHARTERS, c["id"] + ".json")
@@ -208,6 +276,7 @@ def apply_file(path, tenant):
                 c2["status"] = status
                 c2["linked_domain_refs"] = links
                 c2["artifacts"] = arts
+                c2.update(extras)
                 json.dump(c2, open(fp, "w"), sort_keys=True, indent=2)
                 break
         minted += 1

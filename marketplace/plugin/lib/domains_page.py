@@ -614,42 +614,204 @@ def build_site(out_dir, label="Domains", window=2):
             cur = par
         return None
 
+    def _num(s):
+        try:
+            return float(str(s).replace("%", "").replace("<", "").replace(">", "").strip())
+        except ValueError:
+            return None
+
+    def _metric_bar(cur, tgt):
+        """Honest bar semantics (codex fold): '<N' targets are lower-is-better
+        — the bar shows margin WITHIN target; '0' target met only at 0."""
+        cv, tv = _num(cur), _num(tgt)
+        if cv is None or tv is None:
+            return ""
+        t = str(tgt).strip()
+        if t.startswith("<"):
+            w = 0 if tv == 0 else max(5, min(100, int((1 - cv / tv) * 100)))
+            if cv >= tv:
+                w = 0
+        elif tv == 0:
+            w = 100 if cv == 0 else 0
+        else:
+            w = max(0, min(100, int(cv / tv * 100)))
+        return '<div class="bar"><i style="width:%d%%"></i></div>' % w
+
+    def _doc_entry(raw):
+        path, kind = _resolve_art(raw)
+        if not path:
+            return None
+        url = _gh_url(path, kind)
+        if not url:
+            return None
+        summ = _summary(path, kind)
+        base = os.path.basename(path.rstrip("/"))
+        base = os.path.splitext(base)[0].replace("-", " ").replace("_", " ").strip()
+        title = (base[:1].upper() + base[1:]) if base else path
+        return (path, '<a class="doc" href="%s" target="_blank" rel="noopener">'
+                      '<span class="arr">&#8599;</span><b>%s</b><span>%s</span></a>'
+                % (esc(url), esc(title), esc(summ or path)))
+
     def charter_page(c):
-        """Structured per-charter page (founder 2026-07-30): every field a
-        labelled row, nothing prose-shaped. Codex fold: explicit owner
-        up-link beside the breadcrumb."""
+        """Consumer charter page (founder-approved mock v6, 2026-08-01).
+        Every section renders ONLY when its data exists — all 98 pre-existing
+        sparse charters degrade to header + documents + fine print (codex:
+        no empty shells). No internal field names on the page; the
+        translation lives in the section labels."""
         owner = c.get("domain_ref")
         oname = esc(domains[owner]["name"])
-        rows = [("Purpose", esc(c.get("purpose", ""))),
-                ("Kind", c["kind"]),
-                ("Status", st_dot(c)),
-                ("Owner", '<a href="%s">%s</a>' % (fname(owner), oname))]
+        goals = [g for g in (c.get("goals") or []) if str(g).strip()]
+        metrics = c.get("metrics") or []
+        miles = c.get("milestones") or []
+        todos = c.get("todos") or []
         links = [r for r in c["linked_domain_refs"] if r in domains and r not in hidden]
-        if links:
-            rows.append(("Linked", ", ".join(
-                '<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"])) for r in links)))
-        if c["artifacts"]:
-            rows.append(("Artifacts", "".join(art_html(a) for a in c["artifacts"])))
-        # Scope in = the boundary this charter governs (what work under it may
-        # touch); Scope out = explicit exclusions. Skip when it just repeats
-        # the artifact list (seeded stubs) — duplication is noise.
-        for fld, lab, hint in (
-                ("scope_in", "Scope in",
-                 "the boundary this charter governs — work under it stays inside these"),
-                ("scope_out", "Scope out", "explicitly excluded from this charter"),
-                ("obligations", "Obligations", "promises the operator recorded")):
-            vals = c.get(fld) or []
-            if not vals or set(map(str, vals)) == set(map(str, c["artifacts"])):
+        S = []
+
+        if goals:
+            rows = "".join('<div class="goal"><span class="n">%d</span>%s</div>'
+                           % (i, esc(str(g))) for i, g in enumerate(goals, 1))
+            S.append('<section><div class="sh">Goals</div>'
+                     '<div class="card">%s</div></section>' % rows)
+
+        cells = []
+        for m in metrics:
+            lbl = str(m.get("label") or "").strip()
+            cur = str(m.get("current") if m.get("current") is not None else "").strip()
+            if not lbl or not cur:
                 continue
-            rows.append(('<span title="%s">%s</span>' % (esc(hint), lab),
-                         "".join(art_html(str(v)) for v in vals)))
-        dl = "".join('<div class="chdlrow"><dt>%s</dt><dd>%s</dd></div>' % (k, v)
-                     for k, v in rows)
+            tgt = str(m.get("target") if m.get("target") is not None else "").strip()
+            cells.append('<div class="metric"><div class="num">%s</div>'
+                         '<div class="lbl">%s</div>%s%s</div>'
+                         % (esc(cur), esc(lbl), _metric_bar(cur, tgt),
+                            ('<div class="tgt">target %s</div>' % esc(tgt)) if tgt else ""))
+        if cells:
+            S.append('<section><div class="sh">How it&#39;s measuring up</div>'
+                     '<div class="mgrid">%s</div></section>' % "".join(cells))
+
+        n_sib = len(owned_by.get(owner, []))
+        linknodes = "".join(
+            '<a class="lnode" href="%s">%s<small>works with</small></a>'
+            % (fname(r), esc(domains[r]["name"])) for r in links)
+        S.append('<section><div class="sh">Where this fits</div><div class="land">'
+                 '<a class="lnode" href="%s">%s<small>owning team</small></a>'
+                 '<span class="larr">&rarr;</span>'
+                 '<span class="lnode me">%s<small>this charter</small></span>'
+                 '%s%s<span class="lmore">one of <a href="%s">%d charter%s</a> in %s</span>'
+                 '</div></section>'
+                 % (fname(owner), oname, esc(c["title"]),
+                    '<span class="larr">&middot;</span>' if linknodes else "", linknodes,
+                    fname(owner), n_sib, "s" if n_sib != 1 else "", oname))
+
+        prog = []
+        if miles:
+            # Trust array order (codex): never sort; fill runs to the 'now'
+            # dot, else through the last 'done'.
+            n = len(miles)
+            fill_idx = next((i for i, m in enumerate(miles)
+                             if m.get("status") == "now"), None)
+            if fill_idx is None:
+                dones = [i for i, m in enumerate(miles) if m.get("status") == "done"]
+                fill_idx = dones[-1] if dones else 0
+            fillw = 0 if n < 2 else int(fill_idx / (n - 1) * 100)
+            dots = []
+            for m in miles:
+                st = m.get("status", "planned")
+                cls = {"done": "done", "now": "now"}.get(st, "plan")
+                dots.append('<div class="mile %s"%s><i></i><b>%s</b>'
+                            '<span class="when">%s</span></div>'
+                            % (cls, (' title="%s"' % esc(m["done_when"]))
+                               if m.get("done_when") else "",
+                               esc(str(m.get("label", ""))), esc(str(m.get("target", "")))))
+            prog.append('<div class="track"><span class="fill" style="width:%d%%"></span>%s</div>'
+                        % (fillw, "".join(dots)))
+        active = [t for t in todos if t.get("status") in ("open", "in-progress")
+                  and str(t.get("title", "")).strip()]
+        shipped = [t for t in todos if t.get("status") == "done"
+                   and str(t.get("title", "")).strip()]
+        if active or shipped:
+            now_lab = next((m.get("label") for m in miles if m.get("status") == "now"), None)
+            card = ['<div class="pgroup">Happening now%s</div>'
+                    % (" &middot; " + esc(str(now_lab)) if now_lab else "")]
+            for j, t in enumerate(active):
+                tasks = [x for x in (t.get("tasks") or [])
+                         if str(x.get("label", "")).strip()]
+                dcount = sum(1 for x in tasks if x.get("done"))
+                frac = ('<span class="frac">%d/%d done</span>' % (dcount, len(tasks))) \
+                    if tasks else ""
+                doing = t.get("status") == "in-progress"
+                trs = ""
+                for x in tasks:
+                    if x.get("done"):
+                        trs += ('<tr><td class="tdone">%s</td><td class="st">'
+                                '<span class="chip done">Done</span></td></tr>' % esc(x["label"]))
+                    elif x.get("doing"):
+                        trs += ('<tr><td>%s</td><td class="st">'
+                                '<span class="chip doing">In progress</span></td></tr>' % esc(x["label"]))
+                    else:
+                        trs += ('<tr><td>%s</td><td class="st">'
+                                '<span class="chip rem">Remaining</span></td></tr>' % esc(x["label"]))
+                body = ('<table class="tasktab">%s</table>' % trs) if trs else \
+                    ('<table class="tasktab"><tr><td>%s</td><td class="st"></td></tr></table>'
+                     % esc(str(t.get("done_when") or t.get("impact") or "")))
+                card.append('<details class="item%s"%s><summary><i></i><b>%s</b>%s'
+                            '<span class="caret">&#9656;</span></summary>%s</details>'
+                            % (" doing" if doing else "", " open" if j == 0 and doing else "",
+                               esc(t["title"]), frac, body))
+            if shipped:
+                rows = "".join(
+                    '<div class="shipped"><i></i><div><b>%s</b><p>%s%s</p></div></div>'
+                    % (esc(t["title"]),
+                       ('<span class="date">%s</span> &mdash; ' % esc(t["done_at"]))
+                       if t.get("done_at") else "",
+                       esc(str(t.get("done_how", "")))) for t in shipped)
+                card.append('<details class="fold"><summary>%d shipped &mdash; see them'
+                            '</summary>%s</details>' % (len(shipped), rows))
+            prog.append('<div class="card">%s</div>' % "".join(card))
+        if prog:
+            S.append('<section><div class="sh">Progress</div>%s</section>' % "".join(prog))
+
+        # Key documents = artifacts UNION scope_in, deduped on RESOLVED path.
+        seen_docs, docs = set(), []
+        for raw in list(c["artifacts"]) + [str(v) for v in (c.get("scope_in") or [])]:
+            e = _doc_entry(raw)
+            if e and e[0] not in seen_docs:
+                seen_docs.add(e[0])
+                docs.append(e[1])
+        if docs:
+            S.append('<section><div class="sh">Key documents</div>'
+                     '<div class="card">%s</div></section>' % "".join(docs))
+
+        fps = []
+        if c.get("obligations"):
+            fps.append(("We promise", " ".join(esc(str(v)) for v in c["obligations"]), ""))
+        if c.get("invariants"):
+            fps.append(("Never changes", " &middot; ".join(esc(str(v)) for v in c["invariants"]), ""))
+        sm = c.get("success_metrics") or []
+        if sm and not cells:
+            fps.append(("How we measure success",
+                        "".join('<span class="pill">%s</span>' % esc(str(v)) for v in sm), ""))
+        so = [str(v) for v in (c.get("scope_out") or []) if str(v).strip()]
+        if so:
+            fps.append(("Out of scope", " &middot; ".join(esc(v) for v in so), " mut"))
+        if c.get("termination"):
+            fps.append(("Reviewed", esc(str(c["termination"])), " mut"))
+        if fps:
+            fcells = "".join('<div class="fcell"><div class="k">%s</div>'
+                             '<div class="v%s">%s</div></div>' % (k, m, v)
+                             for k, v, m in fps)
+            S.append('<section class="fpsec"><div class="sh">The fine print</div>'
+                     '<div class="fp">%s</div></section>' % fcells)
+
+        byline = ('Owned by <a href="%s">%s</a>' % (fname(owner), oname))
+        if links:
+            byline += " &middot; works with " + ", ".join(
+                '<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"])) for r in links)
         return CH_TMPL % dict(
             title=esc(c["title"]) + " · Charter",
-            crumb=crumb(owner) + " &rsaquo; <b>%s</b>" % esc(c["title"]),
-            uplink='<a class="sub up" href="%s">&lsaquo; %s</a>' % (fname(owner), oname),
-            name=esc(c["title"]), cid=c["id"], dl=dl,
+            crumb=crumb(owner) + " / <b>%s</b>" % esc(c["title"]),
+            status=c["status"], name=esc(c["title"]),
+            sub=esc(c.get("purpose", "")), byline=byline,
+            body="".join(S),
             **{k: T[k] for k in ("bg", "card", "ink", "muted", "line",
                                  "accent", "accent_bg", "font")})
 
@@ -980,40 +1142,110 @@ CH_TMPL = """<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>%(title)s</title>
 <style>
-:root{--bg:%(bg)s;--card:%(card)s;--ink:%(ink)s;--mut:%(muted)s;--line:%(line)s;--acc:%(accent)s;--accbg:%(accent_bg)s}
+:root{--bg:%(bg)s;--card:%(card)s;--ink:%(ink)s;--mut:%(muted)s;--line:%(line)s;--acc:%(accent)s;--accbg:%(accent_bg)s;--ok:#8a9a7b;--okbg:#eef1e8}
 *{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--ink);font:16px/1.55 %(font)s}
-.wrap{max-width:760px;margin:0 auto;padding:36px 20px}
-.crumb{font-size:.85rem;color:var(--mut);margin-bottom:8px}
-.crumb a{color:var(--acc);text-decoration:none}
-a.up{display:inline-block;color:var(--acc);text-decoration:none;font-size:.85rem;margin-bottom:16px}
-h1{font-size:1.4rem;letter-spacing:-.01em;margin-bottom:4px}
-.cid{font:400 .72rem/1 ui-monospace,monospace;color:var(--mut);margin-bottom:18px}
-.chdl{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 0}
-.chdlrow{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 16px;border-bottom:1px dotted var(--line)}
-.chdlrow:last-child{border-bottom:none}
-dt{font:600 .7rem/1.8 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
-dd{font-size:.9rem}
-dd a{color:var(--acc);text-decoration:none}
-.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
-.chdot i{width:7px;height:7px;border-radius:50%%;background:var(--line);display:inline-block}
-.chdot.st-active i{background:var(--acc)}
-.chdot.st-shipped i{background:var(--mut)}
-.chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
-.chpath{display:block;font:400 .74rem/1.7 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
-a.chpath{color:var(--acc);text-decoration:none}
-a.chpath:hover{text-decoration:underline}
-.chpath.dead{opacity:.55}
-.chsum{display:block;font-size:.72rem;color:var(--mut);margin:0 0 8px 12px;font-style:italic}
-.chres{color:var(--mut);font-size:.72rem}
-dt span[title]{cursor:help;border-bottom:1px dotted var(--mut)}
-@media(max-width:560px){.chdlrow{grid-template-columns:1fr;gap:2px}}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 %(font)s}
+.wrap{max-width:680px;margin:0 auto;padding:48px 24px 64px}
+.crumb{font-size:.8rem;color:var(--mut);margin-bottom:28px}
+.crumb a{color:var(--mut);text-decoration:none}
+.crumb a:hover{color:var(--acc)}
+.crumb b{color:var(--ink);font-weight:500}
+.badge{display:inline-block;font-size:.72rem;font-weight:600;color:var(--acc);background:var(--accbg);border-radius:999px;padding:4px 12px;margin-bottom:14px;text-transform:capitalize}
+h1{font-size:1.75rem;line-height:1.25;letter-spacing:-.02em;font-weight:700;margin-bottom:10px}
+.sub{font-size:1.02rem;color:var(--mut);max-width:52ch;margin-bottom:6px}
+.byline{font-size:.8rem;color:var(--mut);margin-bottom:36px}
+.byline a{color:var(--acc);text-decoration:none}
+section{margin-bottom:44px}
+.sh{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.goal{display:flex;gap:14px;padding:16px 20px;border-top:1px solid var(--line);font-size:.94rem}
+.goal:first-child{border-top:none}
+.goal .n{flex:none;width:26px;height:26px;border-radius:50%%;background:var(--accbg);color:var(--acc);font-weight:700;font-size:.8rem;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.metric{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px}
+.metric .num{font-size:1.6rem;font-weight:700;letter-spacing:-.02em}
+.metric .lbl{font-size:.78rem;color:var(--mut);margin:2px 0 10px}
+.bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%%;background:var(--acc);border-radius:3px}
+.metric .tgt{font-size:.68rem;color:var(--mut);margin-top:6px}
+.land{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.84rem}
+.lnode{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 14px;text-decoration:none;color:var(--ink)}
+.lnode:hover{border-color:var(--acc)}
+.lnode.me{border:1.5px solid var(--acc);background:var(--accbg);font-weight:600}
+.lnode small{display:block;font-size:.66rem;color:var(--mut);font-weight:400}
+.larr{color:var(--mut);font-size:.8rem}
+.lmore{font-size:.78rem;color:var(--mut)}
+.lmore a{color:var(--acc);text-decoration:none}
+.track{position:relative;display:flex;justify-content:space-between;margin:8px 2px 26px}
+.track::before{content:"";position:absolute;top:8px;left:12px;right:12px;height:2px;background:var(--line);border-radius:2px}
+.track .fill{position:absolute;top:8px;left:12px;max-width:calc(100%% - 24px);height:2px;background:var(--acc);border-radius:2px}
+.mile{position:relative;flex:1;text-align:center;padding-top:30px;font-size:.8rem;min-width:0}
+.mile i{position:absolute;top:0;left:50%%;transform:translateX(-50%%);width:18px;height:18px;border-radius:50%%;border:2px solid var(--acc);background:var(--acc)}
+.mile.done i::after{content:"\2713";position:absolute;inset:0;color:var(--card);font-size:.6rem;line-height:14px;text-align:center;font-weight:700}
+.mile.now i{background:var(--card);box-shadow:0 0 0 4px var(--accbg)}
+.mile.plan i{background:var(--card);border-color:var(--line)}
+.mile b{display:block;font-weight:600;line-height:1.35;padding:0 4px}
+.mile.now b{color:var(--acc)}
+.mile.plan b{color:var(--mut);font-weight:500}
+.mile .when{color:var(--mut);font-size:.72rem}
+.pgroup{padding:12px 18px 4px;font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--acc)}
+details.item{border-top:1px solid var(--line)}
+details.item:first-of-type{border-top:none}
+details.item summary{list-style:none;cursor:pointer;display:flex;gap:12px;align-items:center;padding:11px 18px}
+details.item summary::-webkit-details-marker{display:none}
+details.item summary:hover{background:var(--accbg)}
+details.item summary i{flex:none;width:9px;height:9px;border-radius:50%%;border:2px solid var(--line);background:var(--card)}
+details.item.doing summary i{border-color:var(--acc);background:var(--accbg)}
+details.item summary b{font-size:.88rem;font-weight:600;min-width:0;flex:1}
+.frac{flex:none;font-size:.7rem;color:var(--mut);background:var(--bg);border-radius:999px;padding:3px 9px;white-space:nowrap}
+details.item.doing .frac{color:var(--acc);background:var(--accbg)}
+details.item summary .caret{flex:none;color:var(--mut);font-size:.7rem;transition:transform .15s}
+details.item[open] summary .caret{transform:rotate(90deg)}
+.tasktab{width:100%%;border-collapse:collapse;font-size:.8rem}
+.tasktab td{padding:8px 18px 8px 39px;border-top:1px dotted var(--line)}
+.tasktab td.st{width:110px;text-align:right;padding-right:18px;padding-left:0}
+.chip{display:inline-block;font-size:.68rem;font-weight:600;border-radius:999px;padding:3px 10px}
+.chip.done{color:var(--ok);background:var(--okbg)}
+.chip.doing{color:var(--acc);background:var(--accbg)}
+.chip.rem{color:var(--mut);background:var(--bg)}
+.tasktab td.tdone{color:var(--mut);text-decoration:line-through;text-decoration-color:var(--line)}
+details.fold summary{list-style:none;cursor:pointer;padding:12px 18px;font-size:.8rem;color:var(--mut);border-top:1px solid var(--line);text-align:center}
+details.fold summary::-webkit-details-marker{display:none}
+details.fold summary:hover{color:var(--acc)}
+.shipped{display:flex;gap:12px;align-items:flex-start;padding:11px 18px;border-top:1px dotted var(--line)}
+.shipped i{flex:none;width:9px;height:9px;border-radius:50%%;border:2px solid var(--ok);background:var(--ok);margin-top:6px}
+.shipped b{font-size:.86rem;font-weight:600;display:block}
+.shipped p{font-size:.8rem;color:var(--mut)}
+.shipped p .date{color:var(--ink);font-weight:500}
+.doc{display:block;padding:14px 20px;border-top:1px solid var(--line);text-decoration:none;color:inherit}
+.doc:first-child{border-top:none}
+.doc:hover{background:var(--accbg)}
+.doc b{font-size:.9rem;font-weight:600;display:block}
+.doc span{font-size:.8rem;color:var(--mut)}
+.doc .arr{float:right;color:var(--acc);font-size:.8rem;margin-top:8px}
+.fp{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.fcell{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px}
+.fcell .k{font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:6px}
+.fcell .v{font-size:.85rem}
+.fcell .v.mut{color:var(--mut)}
+.pill{display:inline-block;background:var(--bg);border-radius:999px;padding:4px 12px;font-size:.8rem;margin:3px 6px 0 0}
+footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
+@media(max-width:560px){
+ .wrap{padding:32px 18px 48px}
+ h1{font-size:1.45rem}
+ .track{flex-direction:column;gap:18px}
+ .track::before,.track .fill{display:none}
+ .mile{text-align:left;padding:0 0 0 30px}
+ .mile i{left:0;transform:none}
+ .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb">%(crumb)s</p>
-%(uplink)s
+<span class="badge">%(status)s</span>
 <h1>%(name)s</h1>
-<p class="cid">%(cid)s</p>
-<dl class="chdl">%(dl)s</dl>
+<p class="sub">%(sub)s</p>
+<p class="byline">%(byline)s</p>
+%(body)s
+<footer>generated from the live registry</footer>
 </div></body></html>
 """
 

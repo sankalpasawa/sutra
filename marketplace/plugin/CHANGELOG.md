@@ -4,6 +4,12 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.62.0 (2026-08-01) — consumer charter pages (founder-approved v6)
+
+- Charter pages redesigned to the approved product template: Goals -> metric cards with honest progress bars -> landscape strip -> merged Progress (milestone track + drill-down task tables Done/In-progress/Remaining + shipped fold) -> Key documents (artifacts U scope_in, friendly titles, new tab) -> concise fine print. Customer language only; every section data-gated so all sparse charters degrade cleanly.
+- Four optional charter fields (goals/metrics/milestones/todos+tasks) with validated skeleton->apply (closed status enums, done_at only on done, milestone label matching, task shape) in charters_seed + pipeline. Placement ADR-028 populated as the worked example from true ledger state.
+- Withheld-domain fix: pages of hidden descendants are also PRUNED from the output dir (stale-file leak closed).
+
 ## v2.61.0 (2026-07-31) — the whole lifecycle as one pipeline CLI
 
 - New lib/domains_pipeline.py: init / structure skeleton+apply / charters skeleton+apply / projects (delegates to charters_seed) / design show+set / publish / autopublish on|off / status. Every stage idempotent with per-row outcome reports; LLM only fills grounded skeletons. Consent boundary: publish never enables automation — autopublish is its own explicit command (codex fold).
