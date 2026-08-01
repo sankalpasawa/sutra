@@ -3,35 +3,133 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Compliance Charter · Charter</title>
 <style>
-:root{--bg:#f5f0e8;--card:#fdfaf4;--ink:#2a2622;--mut:#8c857d;--line:#e3dccf;--acc:#c4956a;--accbg:#f3e7d8}
+:root{--bg:#f5f0e8;--card:#fdfaf4;--ink:#2a2622;--mut:#8c857d;--line:#e3dccf;--acc:#c4956a;--accbg:#f3e7d8;--ok:#8a9a7b;--okbg:#eef1e8}
 *{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,'Segoe UI',Georgia,serif}
-.wrap{max-width:760px;margin:0 auto;padding:36px 20px}
-.crumb{font-size:.85rem;color:var(--mut);margin-bottom:8px}
-.crumb a{color:var(--acc);text-decoration:none}
-a.up{display:inline-block;color:var(--acc);text-decoration:none;font-size:.85rem;margin-bottom:16px}
-h1{font-size:1.4rem;letter-spacing:-.01em;margin-bottom:4px}
-.cid{font:400 .72rem/1 ui-monospace,monospace;color:var(--mut);margin-bottom:18px}
-.chdl{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 0}
-.chdlrow{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 16px;border-bottom:1px dotted var(--line)}
-.chdlrow:last-child{border-bottom:none}
-dt{font:600 .7rem/1.8 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
-dd{font-size:.9rem}
-dd a{color:var(--acc);text-decoration:none}
-.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
-.chdot i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block}
-.chdot.st-active i{background:var(--acc)}
-.chdot.st-shipped i{background:var(--mut)}
-.chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
-.chpath{display:block;font:400 .74rem/1.7 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
-a.chpath{color:var(--acc);text-decoration:none}
-a.chpath:hover{text-decoration:underline}
-dt span[title]{cursor:help;border-bottom:1px dotted var(--mut)}
-@media(max-width:560px){.chdlrow{grid-template-columns:1fr;gap:2px}}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,'Segoe UI',Georgia,serif}
+.wrap{max-width:680px;margin:0 auto;padding:48px 24px 64px}
+.crumb{font-size:.8rem;color:var(--mut);margin-bottom:28px}
+.crumb a{color:var(--mut);text-decoration:none}
+.crumb a:hover{color:var(--acc)}
+.crumb b{color:var(--ink);font-weight:500}
+.badge{display:inline-block;font-size:.72rem;font-weight:600;color:var(--acc);background:var(--accbg);border-radius:999px;padding:4px 12px;margin-bottom:14px;text-transform:capitalize}
+h1{font-size:1.75rem;line-height:1.25;letter-spacing:-.02em;font-weight:700;margin-bottom:10px}
+.sub{font-size:1.02rem;color:var(--mut);max-width:52ch;margin-bottom:6px}
+.byline{font-size:.8rem;color:var(--mut);margin-bottom:36px}
+.byline a{color:var(--acc);text-decoration:none}
+section{margin-bottom:44px}
+.sh{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.goal{display:flex;gap:14px;padding:16px 20px;border-top:1px solid var(--line);font-size:.94rem}
+.goal:first-child{border-top:none}
+.goal .n{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accbg);color:var(--acc);font-weight:700;font-size:.8rem;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.metric{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px}
+.metric .num{font-size:1.6rem;font-weight:700;letter-spacing:-.02em}
+.metric .lbl{font-size:.78rem;color:var(--mut);margin:2px 0 10px}
+.bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:3px}
+.metric .tgt{font-size:.68rem;color:var(--mut);margin-top:6px}
+.land{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.84rem}
+.lnode{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 14px;text-decoration:none;color:var(--ink)}
+.lnode:hover{border-color:var(--acc)}
+.lnode.me{border:1.5px solid var(--acc);background:var(--accbg);font-weight:600}
+.lnode small{display:block;font-size:.66rem;color:var(--mut);font-weight:400}
+.larr{color:var(--mut);font-size:.8rem}
+.lmore{font-size:.78rem;color:var(--mut)}
+.lmore a{color:var(--acc);text-decoration:none}
+.track{position:relative;display:flex;justify-content:space-between;margin:8px 2px 26px}
+.track::before{content:"";position:absolute;top:8px;left:12px;right:12px;height:2px;background:var(--line);border-radius:2px}
+.track .fill{position:absolute;top:8px;left:12px;max-width:calc(100% - 24px);height:2px;background:var(--acc);border-radius:2px}
+.mile{position:relative;flex:1;text-align:center;padding-top:30px;font-size:.8rem;min-width:0}
+.mile i{position:absolute;top:0;left:50%;transform:translateX(-50%);width:18px;height:18px;border-radius:50%;border:2px solid var(--acc);background:var(--acc)}
+.mile.done i::after{content:"¹3";position:absolute;inset:0;color:var(--card);font-size:.6rem;line-height:14px;text-align:center;font-weight:700}
+.mile.now i{background:var(--card);box-shadow:0 0 0 4px var(--accbg)}
+.mile.plan i{background:var(--card);border-color:var(--line)}
+.mile b{display:block;font-weight:600;line-height:1.35;padding:0 4px}
+.mile.now b{color:var(--acc)}
+.mile.plan b{color:var(--mut);font-weight:500}
+.mile .when{color:var(--mut);font-size:.72rem}
+.pgroup{padding:12px 18px 4px;font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--acc)}
+details.item{border-top:1px solid var(--line)}
+details.item:first-of-type{border-top:none}
+details.item summary{list-style:none;cursor:pointer;display:flex;gap:12px;align-items:center;padding:11px 18px}
+details.item summary::-webkit-details-marker{display:none}
+details.item summary:hover{background:var(--accbg)}
+details.item summary i{flex:none;width:9px;height:9px;border-radius:50%;border:2px solid var(--line);background:var(--card)}
+details.item.doing summary i{border-color:var(--acc);background:var(--accbg)}
+details.item summary b{font-size:.88rem;font-weight:600;min-width:0;flex:1}
+.frac{flex:none;font-size:.7rem;color:var(--mut);background:var(--bg);border-radius:999px;padding:3px 9px;white-space:nowrap}
+details.item.doing .frac{color:var(--acc);background:var(--accbg)}
+details.item summary .caret{flex:none;color:var(--mut);font-size:.7rem;transition:transform .15s}
+details.item[open] summary .caret{transform:rotate(90deg)}
+.tasktab{width:100%;border-collapse:collapse;font-size:.8rem}
+.tasktab td{padding:8px 18px 8px 39px;border-top:1px dotted var(--line)}
+.tasktab td.st{width:110px;text-align:right;padding-right:18px;padding-left:0}
+.chip{display:inline-block;font-size:.68rem;font-weight:600;border-radius:999px;padding:3px 10px}
+.chip.done{color:var(--ok);background:var(--okbg)}
+.chip.doing{color:var(--acc);background:var(--accbg)}
+.chip.rem{color:var(--mut);background:var(--bg)}
+.tasktab td.tdone{color:var(--mut);text-decoration:line-through;text-decoration-color:var(--line)}
+details.fold summary{list-style:none;cursor:pointer;padding:12px 18px;font-size:.8rem;color:var(--mut);border-top:1px solid var(--line);text-align:center}
+details.fold summary::-webkit-details-marker{display:none}
+details.fold summary:hover{color:var(--acc)}
+.shipped{display:flex;gap:12px;align-items:flex-start;padding:11px 18px;border-top:1px dotted var(--line)}
+.shipped i{flex:none;width:9px;height:9px;border-radius:50%;border:2px solid var(--ok);background:var(--ok);margin-top:6px}
+.shipped b{font-size:.86rem;font-weight:600;display:block}
+.shipped p{font-size:.8rem;color:var(--mut)}
+.shipped p .date{color:var(--ink);font-weight:500}
+.doc{display:block;padding:14px 20px;border-top:1px solid var(--line);text-decoration:none;color:inherit}
+.doc:first-child{border-top:none}
+.doc:hover{background:var(--accbg)}
+.doc b{font-size:.9rem;font-weight:600;display:block}
+.doc span{font-size:.8rem;color:var(--mut)}
+.doc .arr{float:right;color:var(--acc);font-size:.8rem;margin-top:8px}
+.fp{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.fcell{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px}
+.fcell .k{font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:6px}
+.fcell .v{font-size:.85rem}
+.fcell .v.mut{color:var(--mut)}
+.pill{display:inline-block;background:var(--bg);border-radius:999px;padding:4px 12px;font-size:.8rem;margin:3px 6px 0 0}
+footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
+@media(max-width:560px){
+ .wrap{padding:32px 18px 48px}
+ h1{font-size:1.45rem}
+ .track{flex-direction:column;gap:18px}
+ .track::before,.track .fill{display:none}
+ .mile{text-align:left;padding:0 0 0 30px}
+ .mile i{left:0;transform:none}
+ .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
-<p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-839bfc68fefda5c2.html">Holding Departments</a> &rsaquo; <b>Compliance</b> &rsaquo; <b>Compliance Charter</b></p>
-<a class="sub up" href="dref-92048f6242ce08fa.html">&lsaquo; Compliance</a>
+<p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-839bfc68fefda5c2.html">Holding Departments</a> &rsaquo; <b>Compliance</b> / <b>Compliance Charter</b></p>
+<span class="badge" data-cid="C-be7a3d07b741523f">active</span>
 <h1>Compliance Charter</h1>
-<p class="cid">C-be7a3d07b741523f</p>
-<dl class="chdl"><div class="chdlrow"><dt>Purpose</dt><dd>Asawa org: Compliance.</dd></div><div class="chdlrow"><dt>Kind</dt><dd>standing</dd></div><div class="chdlrow"><dt>Status</dt><dd><span class="chdot st-active"><i></i>active</span></dd></div><div class="chdlrow"><dt>Owner</dt><dd><a href="dref-92048f6242ce08fa.html">Compliance</a></dd></div><div class="chdlrow"><dt><span title="the boundary this charter governs — work under it stays inside these">Scope in</span></dt><dd><a class="chpath" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/departments/compliance" target="_blank" rel="noopener">holding/departments/compliance</a></dd></div></dl>
+<p class="sub">Asawa org: Compliance.</p>
+<p class="byline">Owned by <a href="dref-92048f6242ce08fa.html">Compliance</a></p>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/tree/main/holding/departments/compliance" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Compliance</b><span>directory - 3 tracked files</span></a></div></section>
+<footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>
