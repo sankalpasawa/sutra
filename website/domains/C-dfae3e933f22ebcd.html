@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <b>Governance Hooks</b> / <b>Governance Hooks Charter</b></p>
-<span class="badge">active</span>
+<span class="badge" data-cid="C-dfae3e933f22ebcd">active</span>
 <h1>Governance Hooks Charter</h1>
 <p class="sub">Every mutation and every turn passes the discipline floors deterministically.</p>
 <p class="byline">Owned by <a href="dref-93db7bfc02ae6707.html">Governance Hooks</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-93db7bfc02ae6707.html">Governance Hooks<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Governance Hooks Charter<small>this charter</small></span><span class="lmore">one of <a href="dref-93db7bfc02ae6707.html">1 charter</a> in Governance Hooks</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/tree/main/marketplace/plugin/hooks" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Hooks</b><span>directory - 97 tracked files</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/tree/main/marketplace/plugin/hooks" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Hooks</b><span>directory - 97 tracked files</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

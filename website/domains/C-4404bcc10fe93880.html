@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <a href="dref-93db7bfc02ae6707.html">Governance Hooks</a> &rsaquo; <b>Codex Directives</b> / <b>Second opinions are structural</b></p>
-<span class="badge">active</span>
+<span class="badge" data-cid="C-4404bcc10fe93880">active</span>
 <h1>Second opinions are structural</h1>
 <p class="sub">Depth-3+ edits and founder directives route through codex before execution; verdicts are logged, never asserted.</p>
 <p class="byline">Owned by <a href="dref-92d1cf204f5779ca.html">Codex Directives</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-92d1cf204f5779ca.html">Codex Directives<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Second opinions are structural<small>this charter</small></span><span class="lmore">one of <a href="dref-92d1cf204f5779ca.html">1 charter</a> in Codex Directives</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-consult-gate.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex consult gate</b><span>LAYER=L0</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-consult-marker.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex consult marker</b><span>LAYER=L0</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-directive-detect.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex directive detect</b><span>PROTO-019 v3: Codex directive detector (UserPromptSubmit hook)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-directive-gate.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex directive gate</b><span>PROTO-019 v3: Codex directive gate (PreToolUse hook)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-directive-sweep.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex directive sweep</b><span>PROTO-019 v3: Codex directive sweep (SessionStart hook)</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-consult-gate.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex consult gate</b><span>LAYER=L0</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-consult-marker.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex consult marker</b><span>LAYER=L0</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-directive-detect.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex directive detect</b><span>PROTO-019 v3: Codex directive detector (UserPromptSubmit hook)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-directive-gate.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex directive gate</b><span>PROTO-019 v3: Codex directive gate (PreToolUse hook)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/codex-directive-sweep.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Codex directive sweep</b><span>PROTO-019 v3: Codex directive sweep (SessionStart hook)</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

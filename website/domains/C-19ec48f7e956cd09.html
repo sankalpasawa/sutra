@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <a href="dref-ec0cf6dc51b98a18.html">Engine Library</a> &rsaquo; <b>Runtime Utilities</b> / <b>Shared plumbing, one home</b></p>
-<span class="badge">active</span>
+<span class="badge" data-cid="C-19ec48f7e956cd09">active</span>
 <h1>Shared plumbing, one home</h1>
 <p class="sub">Cross-hook services live in one place with one owner; no copy-paste plumbing in hooks.</p>
 <p class="byline">Owned by <a href="dref-007bd0fd6525f15c.html">Runtime Utilities</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-007bd0fd6525f15c.html">Runtime Utilities<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Shared plumbing, one home<small>this charter</small></span><span class="lmore">one of <a href="dref-007bd0fd6525f15c.html">1 charter</a> in Runtime Utilities</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/queue.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Queue</b><span>Sutra: queue.sh — local metric queue. Layer B rows only.</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/lib/sutra-stderr-capture.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Sutra stderr capture</b><span>LAYER=L0</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/queue.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Queue</b><span>Sutra: queue.sh — local metric queue. Layer B rows only.</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/lib/sutra-stderr-capture.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Sutra stderr capture</b><span>LAYER=L0</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

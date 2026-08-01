@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <a href="dref-ec0cf6dc51b98a18.html">Engine Library</a> &rsaquo; <b>Identity &amp; Trust</b> / <b>Identity before authority</b></p>
-<span class="badge">active</span>
+<span class="badge" data-cid="C-b9d019fe31a35d75">active</span>
 <h1>Identity before authority</h1>
 <p class="sub">Every privileged action resolves WHO first; trust modes and sanitizers gate what leaves the machine.</p>
 <p class="byline">Owned by <a href="dref-01278d7baebf617b.html">Identity &amp; Trust</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-01278d7baebf617b.html">Identity &amp; Trust<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Identity before authority<small>this charter</small></span><span class="lmore">one of <a href="dref-01278d7baebf617b.html">1 charter</a> in Identity &amp; Trust</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/identity.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Identity</b><span>Sutra plugin — identity.sh (v1.9.0+)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/project-id.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Project id</b><span>Sutra: project-id.sh — compute install_id + project_id.</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/is_customer_box.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Is customer box</b><span>is_customer_box.sh — detect whether the current $CLAUDE_PROJECT_DIR is a</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/mcp_trust_mode.py" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Mcp trust mode</b><span>mcp_trust_mode.py - MCP catastrophic-only auto-approve (v2.32+, ADR-003 amended)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/sh_trust_mode.py" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Sh trust mode</b><span>sh_trust_mode.py — Trust Mode for Sutra permission-gate v2.5+</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/web_trust_mode.py" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Web trust mode</b><span>web_trust_mode.py - WebFetch / WebSearch URL classifier for permission-gate v2.32+</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/privacy-sanitize.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Privacy sanitize</b><span>sutra/marketplace/plugin/lib/privacy-sanitize.sh</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/identity.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Identity</b><span>Sutra plugin — identity.sh (v1.9.0+)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/project-id.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Project id</b><span>Sutra: project-id.sh — compute install_id + project_id.</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/is_customer_box.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Is customer box</b><span>is_customer_box.sh — detect whether the current $CLAUDE_PROJECT_DIR is a</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/mcp_trust_mode.py" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Mcp trust mode</b><span>mcp_trust_mode.py - MCP catastrophic-only auto-approve (v2.32+, ADR-003 amended)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/sh_trust_mode.py" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Sh trust mode</b><span>sh_trust_mode.py — Trust Mode for Sutra permission-gate v2.5+</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/web_trust_mode.py" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Web trust mode</b><span>web_trust_mode.py - WebFetch / WebSearch URL classifier for permission-gate v2.32+</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/lib/privacy-sanitize.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Privacy sanitize</b><span>sutra/marketplace/plugin/lib/privacy-sanitize.sh</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

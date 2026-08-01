@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <b>Core Plugin</b> / <b>Assistant Interaction Layer v1 (Billu)</b></p>
-<span class="badge">paused</span>
+<span class="badge" data-cid="C-7147196a7e50f806">paused</span>
 <h1>Assistant Interaction Layer v1 (Billu)</h1>
 <p class="sub">Build a Sutra Interaction Layer (observer + explain narrative over hook events, personal-assistant surface named Billu) above the 5 foundational blocks; paused by founder directive D57 with a bug list gating re-enable, and known-phantom for marketplace consumers.</p>
 <p class="byline">Owned by <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &middot; works with <a href="dref-4d27ed15bca9a1f3.html">Billu</a>, <a href="dref-a43142457d19b0f4.html">Marketplace &amp; Distribution</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-052a1898edf3ca6f.html">Core Plugin<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Assistant Interaction Layer v1 (Billu)<small>this charter</small></span><span class="larr">&middot;</span><a class="lnode" href="dref-4d27ed15bca9a1f3.html">Billu<small>works with</small></a><a class="lnode" href="dref-a43142457d19b0f4.html">Marketplace &amp; Distribution<small>works with</small></a><span class="lmore">one of <a href="dref-052a1898edf3ca6f.html">17 charters</a> in Core Plugin</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/research/2026-04-24-assistant-layer-design.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>2026 04 24 assistant layer design</b><span>Sutra Assistant — Interaction Layer Design</span></a><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/scripts/assistant-explain.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Assistant explain</b><span>BUILD-LAYER: L1 (single-instance:asawa-holding)</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/research/2026-04-24-assistant-layer-design.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>2026 04 24 assistant layer design</b><span>Sutra Assistant — Interaction Layer Design</span></a><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/scripts/assistant-explain.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Assistant explain</b><span>BUILD-LAYER: L1 (single-instance:asawa-holding)</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

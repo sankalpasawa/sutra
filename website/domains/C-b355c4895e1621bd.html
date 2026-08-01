@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <a href="dref-93db7bfc02ae6707.html">Governance Hooks</a> &rsaquo; <b>Compliance Sensors</b> / <b>Governance watches itself</b></p>
-<span class="badge">active</span>
+<span class="badge" data-cid="C-b355c4895e1621bd">active</span>
 <h1>Governance watches itself</h1>
 <p class="sub">Compliance drift is detected by sensors, not by operator memory; every audit leaves a row.</p>
 <p class="byline">Owned by <a href="dref-3639f6dbd743ca49.html">Compliance Sensors</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-3639f6dbd743ca49.html">Compliance Sensors<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Governance watches itself<small>this charter</small></span><span class="lmore">one of <a href="dref-3639f6dbd743ca49.html">1 charter</a> in Compliance Sensors</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/policy-only-sensor.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Policy only sensor</b><span>D30 — Policy Ships With Mechanism (portfolio sensor)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/phase-exit-audit.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Phase exit audit</b><span>phase-exit-audit.sh — L2 PHASE-EXIT-VERIFY audit-only Stop hook (V1)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/csm-cap118-lint.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Csm cap118 lint</b><span>csm-cap118-lint.sh — Stop-event hook for cap-118 (no_invented_human_ops_mechanisms).</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/csm-sessionstart-banner.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Csm sessionstart banner</b><span>csm-sessionstart-banner.sh — SessionStart hook (CSM TODO #2, D43).</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/tripwire-hook-sizes.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Tripwire hook sizes</b><span>Tripwire: watches for hook files being emptied. Logs + restores.</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/policy-only-sensor.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Policy only sensor</b><span>D30 — Policy Ships With Mechanism (portfolio sensor)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/phase-exit-audit.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Phase exit audit</b><span>phase-exit-audit.sh — L2 PHASE-EXIT-VERIFY audit-only Stop hook (V1)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/csm-cap118-lint.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Csm cap118 lint</b><span>csm-cap118-lint.sh — Stop-event hook for cap-118 (no_invented_human_ops_mechanisms).</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/csm-sessionstart-banner.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Csm sessionstart banner</b><span>csm-sessionstart-banner.sh — SessionStart hook (CSM TODO #2, D43).</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/tripwire-hook-sizes.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Tripwire hook sizes</b><span>Tripwire: watches for hook files being emptied. Logs + restores.</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

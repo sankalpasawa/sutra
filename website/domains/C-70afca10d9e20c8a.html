@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <a href="dref-052a1898edf3ca6f.html">Core Plugin</a> &rsaquo; <a href="dref-93db7bfc02ae6707.html">Governance Hooks</a> &rsaquo; <b>Session Lifecycle</b> / <b>Sessions start ready and end recorded</b></p>
-<span class="badge">active</span>
+<span class="badge" data-cid="C-70afca10d9e20c8a">active</span>
 <h1>Sessions start ready and end recorded</h1>
 <p class="sub">Every session boots with governance active and leaves a durable trail (checkpoints, logs, rotations).</p>
 <p class="byline">Owned by <a href="dref-c3a8a9a8c681ffaa.html">Session Lifecycle</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-c3a8a9a8c681ffaa.html">Session Lifecycle<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Sessions start ready and end recorded<small>this charter</small></span><span class="lmore">one of <a href="dref-c3a8a9a8c681ffaa.html">1 charter</a> in Session Lifecycle</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/sessionstart-auto-activate.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Sessionstart auto activate</b><span>sessionstart-auto-activate.sh — one-shot first-run /core:start activator</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/sessionstart-privacy-notice.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Sessionstart privacy notice</b><span>sutra/marketplace/plugin/hooks/sessionstart-privacy-notice.sh</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/session-start-rotate.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Session start rotate</b><span>SessionStart hook — rotate tracked logs past threshold (Tokens charter C2).</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/capture-prompt.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Capture prompt</b><span>capture-prompt.sh — UserPromptSubmit hook (PROMPT-CAPTURE)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/inbox-display.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Inbox display</b><span>inbox-display.sh — Close-Loop Layer V0 (FEEDBACK charter §N).</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/update-banner.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Update banner</b><span>Sutra: update-banner — SessionStart hook</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/governance-live-banner.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Governance live banner</b><span>LAYER=L0</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/sessionstart-auto-activate.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Sessionstart auto activate</b><span>sessionstart-auto-activate.sh — one-shot first-run /core:start activator</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/sessionstart-privacy-notice.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Sessionstart privacy notice</b><span>sutra/marketplace/plugin/hooks/sessionstart-privacy-notice.sh</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/session-start-rotate.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Session start rotate</b><span>SessionStart hook — rotate tracked logs past threshold (Tokens charter C2).</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/capture-prompt.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Capture prompt</b><span>capture-prompt.sh — UserPromptSubmit hook (PROMPT-CAPTURE)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/inbox-display.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Inbox display</b><span>inbox-display.sh — Close-Loop Layer V0 (FEEDBACK charter §N).</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/update-banner.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Update banner</b><span>Sutra: update-banner — SessionStart hook</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/hooks/governance-live-banner.sh" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Governance live banner</b><span>LAYER=L0</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

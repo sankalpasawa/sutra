@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <b>Native Engine</b> / <b>Native Gap Decision Pack v1</b></p>
-<span class="badge">shipped</span>
+<span class="badge" data-cid="C-bc52e007a8882f36">shipped</span>
 <h1>Native Gap Decision Pack v1</h1>
 <p class="sub">Extract the 51 open gaps from the Native PRD page, cluster them into 17 decision clusters grounded in Sutra implementation and Native docs, and separate resolvable decisions from founder items.</p>
 <p class="byline">Owned by <a href="dref-4c6d97f6a680b3a7.html">Native Engine</a> &middot; works with <a href="dref-c031fe396afba594.html">Websites &amp; Docs</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-4c6d97f6a680b3a7.html">Native Engine<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Native Gap Decision Pack v1<small>this charter</small></span><span class="larr">&middot;</span><a class="lnode" href="dref-c031fe396afba594.html">Websites &amp; Docs<small>works with</small></a><span class="lmore">one of <a href="dref-4c6d97f6a680b3a7.html">11 charters</a> in Native Engine</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/plans/gap-decision-pack-v1/RESULTS-2026-06-12.json" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>RESULTS 2026 06 12</b><span>{</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/plans/gap-decision-pack-v1/RESULTS-2026-06-12.json" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>RESULTS 2026 06 12</b><span>{</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

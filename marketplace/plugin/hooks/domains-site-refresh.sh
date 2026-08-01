@@ -44,11 +44,7 @@ KIT="${SUTRA_NATIVE_HOME:-$HOME/.sutra-native/user-kit}"
 [ -d "$KIT/domains" ] || exit 0
 STATE="$REPO_ROOT/.claude"
 
-# -- debounce first: cheapest guard, bounds worst-case latency at ~60 min ----
 NOW=$(date +%s)
-LAST=$(cat "$STATE/domains-refresh-last" 2>/dev/null)
-case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
-[ $((NOW - LAST)) -lt 3600 ] && exit 0
 
 # -- drift: full-content fingerprint (mtimes lie; content does not) ----------
 FP=$( { cat "$KIT/domains/INDEX.jsonl" "$KIT"/domains/*.json \
@@ -57,16 +53,56 @@ FP=$( { cat "$KIT/domains/INDEX.jsonl" "$KIT"/domains/*.json \
 STAMP="$REPO_ROOT/$SITE_DIR/.registry-stamp"
 [ "$(cat "$STAMP" 2>/dev/null)" = "$FP" ] && exit 0
 
+GEN="${CLAUDE_PLUGIN_ROOT:-}/lib/domains_page.py"
+[ -f "$GEN" ] || GEN="$REPO_ROOT/sutra/marketplace/plugin/lib/domains_page.py"
+[ -f "$GEN" ] || exit 0
+ERR="$STATE/domains-refresh.err"
+
+# -- FAST LANE (founder 2026-08-01: data on the fly): push ONLY registry.json
+# on drift, lightly coalesced (3 min, codex fold) — pages hydrate it on load.
+# Full page regen keeps the 60-min debounce below. Freshness honesty: numbers
+# show after GitHub Pages publishes the push (usually ~1 min, up to ~10).
+FLAST=$(cat "$STATE/domains-fastlane-last" 2>/dev/null)
+case "$FLAST" in ''|*[!0-9]*) FLAST=0 ;; esac
+FSTAMP=$(cat "$STATE/domains-fastlane-fp" 2>/dev/null)
+if [ "$FSTAMP" != "$FP" ] && [ $((NOW - FLAST)) -ge 180 ]; then
+  if python3 - "$GEN" "$REPO_ROOT/$SITE_DIR" >/dev/null 2>>"$ERR" <<'PYEOF'
+import subprocess, sys
+subprocess.run([sys.executable, sys.argv[1], sys.argv[2], "--export-registry"],
+               check=True, timeout=60)
+PYEOF
+  then
+    printf '%s\n' "$FP" > "$STATE/domains-fastlane-fp" 2>/dev/null
+    printf '%s\n' "$NOW" > "$STATE/domains-fastlane-last" 2>/dev/null
+    SREPO=$(git -C "$REPO_ROOT/$SITE_DIR" rev-parse --show-toplevel 2>/dev/null)
+    if [ -n "$SREPO" ]; then
+      export GIT_TERMINAL_PROMPT=0
+      git -C "$SREPO" add -- "$REPO_ROOT/$SITE_DIR/registry.json" >/dev/null 2>&1
+      if git -C "$SREPO" commit -q -m "chore(domains): fast-lane data refresh" >/dev/null 2>&1; then
+        python3 - "$SREPO" >/dev/null 2>>"$ERR" <<'PYEOF'
+import subprocess, sys
+try:
+    subprocess.run(["git", "-C", sys.argv[1], "push", "-q", "origin", "HEAD"], timeout=60)
+except Exception:
+    pass
+PYEOF
+        echo "domains-site-refresh: fast-lane data pushed (registry.json)" >&2
+      fi
+    fi
+  fi
+fi
+
+# -- debounce for the FULL regen: bounds worst-case layout latency at ~60 min -
+LAST=$(cat "$STATE/domains-refresh-last" 2>/dev/null)
+case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
+[ $((NOW - LAST)) -lt 3600 ] && exit 0
+
 # -- non-blocking lock: concurrent session skips silently --------------------
 LOCK="$STATE/domains-refresh.lock"
 mkdir "$LOCK" 2>/dev/null || exit 0
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
 # -- regen (120s cap); stamp ONLY on success ---------------------------------
-GEN="${CLAUDE_PLUGIN_ROOT:-}/lib/domains_page.py"
-[ -f "$GEN" ] || GEN="$REPO_ROOT/sutra/marketplace/plugin/lib/domains_page.py"
-[ -f "$GEN" ] || exit 0
-ERR="$STATE/domains-refresh.err"
 python3 - "$GEN" "$REPO_ROOT/$SITE_DIR" "$LABEL" >/dev/null 2>"$ERR" <<'PYEOF'
 import subprocess, sys
 gen, out, label = sys.argv[1], sys.argv[2], sys.argv[3]

@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <b>Native Engine</b> / <b>Native 8-block architecture placement (ADR-021..024)</b></p>
-<span class="badge">active</span>
+<span class="badge" data-cid="C-c542af9a93ae1c4c">active</span>
 <h1>Native 8-block architecture placement (ADR-021..024)</h1>
 <p class="sub">Settle where capabilities live in Native&#x27;s locked 8-block first-layer schema: the Sutra plugin as host-resident governance, six full-loop system-of-work mechanisms folded into canon, a render-only platform UI kit with per-block exposure contracts, and the (deferred) migration of the 8 architecture blocks into an arch-blocks canon bucket.</p>
 <p class="byline">Owned by <a href="dref-4c6d97f6a680b3a7.html">Native Engine</a> &middot; works with <a href="dref-c031fe396afba594.html">Websites &amp; Docs</a>, <a href="dref-052a1898edf3ca6f.html">Core Plugin</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-4c6d97f6a680b3a7.html">Native Engine<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Native 8-block architecture placement (ADR-021..024)<small>this charter</small></span><span class="larr">&middot;</span><a class="lnode" href="dref-c031fe396afba594.html">Websites &amp; Docs<small>works with</small></a><a class="lnode" href="dref-052a1898edf3ca6f.html">Core Plugin<small>works with</small></a><span class="lmore">one of <a href="dref-4c6d97f6a680b3a7.html">11 charters</a> in Native Engine</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/os/decisions/ADR-021-sutra-plugin-host-residency.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>ADR 021 sutra plugin host residency</b><span>ADR-021: Sutra Plugin Host Residency</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/os/decisions/ADR-022-full-loop-six-mechanisms.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>ADR 022 full loop six mechanisms</b><span>ADR-022: Full-Loop Six Mechanisms (System-of-Work Science Adoption)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/os/decisions/ADR-023-platform-ui-kit-exposure-contract.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>ADR 023 platform ui kit exposure contract</b><span>ADR-023: Platform UI Kit + Per-Block Exposure Contract</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/os/decisions/ADR-024-arch-block-canon-fork.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>ADR 024 arch block canon fork</b><span>ADR-024: §1.0 Architecture-Block Canon Migration (FORK — founder decision)</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/os/decisions/ADR-021-sutra-plugin-host-residency.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>ADR 021 sutra plugin host residency</b><span>ADR-021: Sutra Plugin Host Residency</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/os/decisions/ADR-022-full-loop-six-mechanisms.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>ADR 022 full loop six mechanisms</b><span>ADR-022: Full-Loop Six Mechanisms (System-of-Work Science Adoption)</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/os/decisions/ADR-023-platform-ui-kit-exposure-contract.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>ADR 023 platform ui kit exposure contract</b><span>ADR-023: Platform UI Kit + Per-Block Exposure Contract</span></a><a class="doc" href="https://github.com/sankalpasawa/sutra/blob/main/os/decisions/ADR-024-arch-block-canon-fork.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>ADR 024 arch block canon fork</b><span>ADR-024: §1.0 Architecture-Block Canon Migration (FORK — founder decision)</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

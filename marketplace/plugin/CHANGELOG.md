@@ -4,6 +4,12 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.63.0 (2026-08-01) — on-the-fly data + landscape section removed
+
+- Charter pages hydrate volatile data (status, metric currents, milestone states, task done-states, fraction pills) from a single registry.json fetched fresh on every page load — textContent-only, enum-allowlisted, count-validated per section, silent static fallback. Structural changes still regen.
+- Auto-refresh hook gains a FAST LANE: on any registry drift it exports + pushes ONLY registry.json (3-min coalescing); full page regen keeps the 60-min debounce. Data freshness = next page load after Pages publishes the push.
+- "Where this fits" section removed (founder: not earning its place — the byline already carries owner + works-with).
+
 ## v2.62.0 (2026-08-01) — consumer charter pages (founder-approved v6)
 
 - Charter pages redesigned to the approved product template: Goals -> metric cards with honest progress bars -> landscape strip -> merged Progress (milestone track + drill-down task tables Done/In-progress/Remaining + shipped fold) -> Key documents (artifacts U scope_in, friendly titles, new tab) -> concise fine print. Customer language only; every section data-gated so all sparse charters degrade cleanly.

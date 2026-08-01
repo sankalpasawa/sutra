@@ -101,10 +101,35 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-a19b505fe0d92ce3.html">Sutra OS</a> &rsaquo; <b>Native Engine</b> / <b>Native v1.x Engine Build (archived family)</b></p>
-<span class="badge">retired</span>
+<span class="badge" data-cid="C-c8f00c2a4aac8662">retired</span>
 <h1>Native v1.x Engine Build (archived family)</h1>
 <p class="sub">Build the Native workflow engine v1.0-v1.2 (laws, schemas, workflow/skill engines, OPA compiler, hooks/OTel/MCP, dogfood, canary release, organic emergence) via milestone plans M3-M12.</p>
 <p class="byline">Owned by <a href="dref-4c6d97f6a680b3a7.html">Native Engine</a> &middot; works with <a href="dref-82fd2a1c79053484.html">Research</a></p>
-<section><div class="sh">Where this fits</div><div class="land"><a class="lnode" href="dref-4c6d97f6a680b3a7.html">Native Engine<small>owning team</small></a><span class="larr">&rarr;</span><span class="lnode me">Native v1.x Engine Build (archived family)<small>this charter</small></span><span class="larr">&middot;</span><a class="lnode" href="dref-82fd2a1c79053484.html">Research<small>works with</small></a><span class="lmore">one of <a href="dref-4c6d97f6a680b3a7.html">11 charters</a> in Native Engine</span></div></section><section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/plans/native-v1.0/INDEX.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>INDEX</b><span>&gt; **MOVED 2026-05-07** — see `holding/research/_archive/native-v1.x/holding/plans/native-v1.0/INDEX.md` and `h</span></a><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/plans/native-v1.x/PLAN.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>PLAN</b><span>&gt; **MOVED 2026-05-07** — see `holding/research/_archive/native-v1.x/holding/plans/native-v1.x/PLAN.md` and `ho</span></a><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/plans/native-v1.2/organic-emergence-v1-SPEC.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Organic emergence v1 SPEC</b><span>&gt; **MOVED 2026-05-07** — see `holding/research/_archive/native-v1.x/holding/plans/native-v1.2/organic-emergenc</span></a><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/research/_archive/native-v1.x/INDEX.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>INDEX</b><span>Archive INDEX — Native v1.x</span></a></div></section>
+<section><div class="sh">Key documents</div><div class="card"><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/plans/native-v1.0/INDEX.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>INDEX</b><span>&gt; **MOVED 2026-05-07** — see `holding/research/_archive/native-v1.x/holding/plans/native-v1.0/INDEX.md` and `h</span></a><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/plans/native-v1.x/PLAN.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>PLAN</b><span>&gt; **MOVED 2026-05-07** — see `holding/research/_archive/native-v1.x/holding/plans/native-v1.x/PLAN.md` and `ho</span></a><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/plans/native-v1.2/organic-emergence-v1-SPEC.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>Organic emergence v1 SPEC</b><span>&gt; **MOVED 2026-05-07** — see `holding/research/_archive/native-v1.x/holding/plans/native-v1.2/organic-emergenc</span></a><a class="doc" href="https://github.com/sankalpasawa/asawa-holding/blob/main/holding/research/_archive/native-v1.x/INDEX.md" target="_blank" rel="noopener"><span class="arr">&#8599;</span><b>INDEX</b><span>Archive INDEX — Native v1.x</span></a></div></section>
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>

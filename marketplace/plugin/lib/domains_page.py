@@ -680,27 +680,13 @@ def build_site(out_dir, label="Domains", window=2):
             if not lbl or not cur:
                 continue
             tgt = str(m.get("target") if m.get("target") is not None else "").strip()
-            cells.append('<div class="metric"><div class="num">%s</div>'
+            cells.append('<div class="metric"><div class="num" data-m="%d">%s</div>'
                          '<div class="lbl">%s</div>%s%s</div>'
-                         % (esc(cur), esc(lbl), _metric_bar(cur, tgt),
+                         % (len(cells), esc(cur), esc(lbl), _metric_bar(cur, tgt),
                             ('<div class="tgt">target %s</div>' % esc(tgt)) if tgt else ""))
         if cells:
             S.append('<section><div class="sh">How it&#39;s measuring up</div>'
                      '<div class="mgrid">%s</div></section>' % "".join(cells))
-
-        n_sib = len(owned_by.get(owner, []))
-        linknodes = "".join(
-            '<a class="lnode" href="%s">%s<small>works with</small></a>'
-            % (fname(r), esc(domains[r]["name"])) for r in links)
-        S.append('<section><div class="sh">Where this fits</div><div class="land">'
-                 '<a class="lnode" href="%s">%s<small>owning team</small></a>'
-                 '<span class="larr">&rarr;</span>'
-                 '<span class="lnode me">%s<small>this charter</small></span>'
-                 '%s%s<span class="lmore">one of <a href="%s">%d charter%s</a> in %s</span>'
-                 '</div></section>'
-                 % (fname(owner), oname, esc(c["title"]),
-                    '<span class="larr">&middot;</span>' if linknodes else "", linknodes,
-                    fname(owner), n_sib, "s" if n_sib != 1 else "", oname))
 
         prog = []
         if miles:
@@ -717,9 +703,9 @@ def build_site(out_dir, label="Domains", window=2):
             for m in miles:
                 st = m.get("status", "planned")
                 cls = {"done": "done", "now": "now"}.get(st, "plan")
-                dots.append('<div class="mile %s"%s><i></i><b>%s</b>'
+                dots.append('<div class="mile %s" data-mi="%d"%s><i></i><b>%s</b>'
                             '<span class="when">%s</span></div>'
-                            % (cls, (' title="%s"' % esc(m["done_when"]))
+                            % (cls, len(dots), (' title="%s"' % esc(m["done_when"]))
                                if m.get("done_when") else "",
                                esc(str(m.get("label", ""))), esc(str(m.get("target", "")))))
             prog.append('<div class="track"><span class="fill" style="width:%d%%"></span>%s</div>'
@@ -740,22 +726,22 @@ def build_site(out_dir, label="Domains", window=2):
                     if tasks else ""
                 doing = t.get("status") == "in-progress"
                 trs = ""
-                for x in tasks:
+                for ti, x in enumerate(tasks):
                     if x.get("done"):
-                        trs += ('<tr><td class="tdone">%s</td><td class="st">'
-                                '<span class="chip done">Done</span></td></tr>' % esc(x["label"]))
+                        trs += ('<tr data-task="%d"><td class="tdone">%s</td><td class="st">'
+                                '<span class="chip done">Done</span></td></tr>' % (ti, esc(x["label"])))
                     elif x.get("doing"):
-                        trs += ('<tr><td>%s</td><td class="st">'
-                                '<span class="chip doing">In progress</span></td></tr>' % esc(x["label"]))
+                        trs += ('<tr data-task="%d"><td>%s</td><td class="st">'
+                                '<span class="chip doing">In progress</span></td></tr>' % (ti, esc(x["label"])))
                     else:
-                        trs += ('<tr><td>%s</td><td class="st">'
-                                '<span class="chip rem">Remaining</span></td></tr>' % esc(x["label"]))
+                        trs += ('<tr data-task="%d"><td>%s</td><td class="st">'
+                                '<span class="chip rem">Remaining</span></td></tr>' % (ti, esc(x["label"])))
                 body = ('<table class="tasktab">%s</table>' % trs) if trs else \
                     ('<table class="tasktab"><tr><td>%s</td><td class="st"></td></tr></table>'
                      % esc(str(t.get("done_when") or t.get("impact") or "")))
-                card.append('<details class="item%s"%s><summary><i></i><b>%s</b>%s'
+                card.append('<details class="item%s" data-item="%d"%s><summary><i></i><b>%s</b>%s'
                             '<span class="caret">&#9656;</span></summary>%s</details>'
-                            % (" doing" if doing else "", " open" if j == 0 and doing else "",
+                            % (" doing" if doing else "", j, " open" if j == 0 and doing else "",
                                esc(t["title"]), frac, body))
             if shipped:
                 rows = "".join(
@@ -807,6 +793,7 @@ def build_site(out_dir, label="Domains", window=2):
             byline += " &middot; works with " + ", ".join(
                 '<a href="%s">%s</a>' % (fname(r), esc(domains[r]["name"])) for r in links)
         return CH_TMPL % dict(
+            cid=c["id"],
             title=esc(c["title"]) + " · Charter",
             crumb=crumb(owner) + " / <b>%s</b>" % esc(c["title"]),
             status=c["status"], name=esc(c["title"]),
@@ -949,6 +936,37 @@ def build_site(out_dir, label="Domains", window=2):
             **{k: T[k] for k in ("bg", "card", "ink", "muted", "line",
                                  "accent", "accent_bg", "font")})
 
+
+    def export_registry(out_dir):
+        """Volatile data view for on-the-fly hydration (founder 2026-08-01).
+        Mirrors EXACTLY what the pages rendered, in the same order —
+        hydration is patch-only and count-validated (codex fold)."""
+        out = {}
+        for c in all_ch:
+            if c.get("domain_ref") in hidden or c.get("domain_ref") not in domains:
+                continue
+            row = {"status": c["status"]}
+            mets = [str(m.get("current", "")).strip()
+                    for m in (c.get("metrics") or [])
+                    if str(m.get("label", "")).strip() and m.get("current") is not None]
+            if mets:
+                row["metrics"] = mets
+            mis = [m.get("status", "planned") for m in (c.get("milestones") or [])]
+            if mis:
+                row["milestones"] = mis
+            acts = [t for t in (c.get("todos") or [])
+                    if t.get("status") in ("open", "in-progress")
+                    and str(t.get("title", "")).strip()]
+            items = [[bool(x.get("done")) for x in (t.get("tasks") or [])
+                      if str(x.get("label", "")).strip()] for t in acts]
+            if items:
+                row["items"] = items
+            out[c["id"]] = row
+        payload = {"charters": out}
+        with open(os.path.join(out_dir, "registry.json"), "w") as fh:
+            json.dump(payload, fh, sort_keys=True)
+        return len(out)
+
     anchor_of = {}
     made = 0
     for ref in domains:
@@ -961,6 +979,7 @@ def build_site(out_dir, label="Domains", window=2):
             continue
         open(os.path.join(out_dir, cname(c["id"])), "w").write(charter_page(c))
         made += 1
+    export_registry(out_dir)
     return made
 
 
@@ -1240,21 +1259,99 @@ footer{color:var(--mut);font-size:.75rem;text-align:center;margin-top:48px}
  .tasktab td{padding-left:18px}}
 </style></head><body><div class="wrap">
 <p class="crumb">%(crumb)s</p>
-<span class="badge">%(status)s</span>
+<span class="badge" data-cid="%(cid)s">%(status)s</span>
 <h1>%(name)s</h1>
 <p class="sub">%(sub)s</p>
 <p class="byline">%(byline)s</p>
 %(body)s
 <footer>generated from the live registry</footer>
+<script>
+(function(){var b=document.querySelector('[data-cid]');if(!b)return;
+fetch('registry.json?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})
+.then(function(d){var c=d.charters&&d.charters[b.getAttribute('data-cid')];if(!c)return;
+var ST={active:1,shipped:1,retired:1,paused:1};
+if(c.status&&ST[c.status])b.textContent=c.status;
+var nums=document.querySelectorAll('[data-m]');
+if(c.metrics&&nums.length===c.metrics.length)
+ nums.forEach(function(el,i){el.textContent=c.metrics[i];});
+var MS={done:'done',now:'now',planned:'plan',dropped:'plan'};
+var mi=document.querySelectorAll('[data-mi]');
+if(c.milestones&&mi.length===c.milestones.length)
+ mi.forEach(function(el,i){var s=MS[c.milestones[i]];if(!s)return;
+  el.classList.remove('done','now','plan');el.classList.add(s);});
+var dets=document.querySelectorAll('[data-item]');
+if(c.items&&dets.length===c.items.length)
+ dets.forEach(function(det,i){var rows=det.querySelectorAll('[data-task]');
+  var st=c.items[i];if(!st||rows.length!==st.length)return;var n=0;
+  rows.forEach(function(tr,j){var td=tr.querySelector('td');var chip=tr.querySelector('.chip');
+   if(!td||!chip)return;
+   if(st[j]){n++;td.classList.add('tdone');chip.className='chip done';chip.textContent='Done';}
+   else{td.classList.remove('tdone');if(chip.className!=='chip doing'){chip.className='chip rem';chip.textContent='Remaining';}}});
+  var f=det.querySelector('.frac');if(f&&st.length)f.textContent=n+'/'+st.length+' done';});
+}).catch(function(){});})();
+</script>
 </div></body></html>
 """
+
+
+def export_registry_only(out_dir):
+    """Fast-lane export (hook): write ONLY registry.json — the volatile view —
+    without regenerating pages. Same shapes/order as build_site's export."""
+    domains = E.load_domains()
+    kids = {}
+    for r, d in domains.items():
+        kids.setdefault(d.get("parent_ref"), []).append(r)
+    hidden = set()
+
+    def _hide(ref):
+        for c2 in kids.get(ref, []):
+            hidden.add(c2)
+            _hide(c2)
+    for r, d in domains.items():
+        if d.get("public_names_withheld"):
+            _hide(r)
+    out = {}
+    for fn in os.listdir(E.CHARTERS):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            c = json.load(open(os.path.join(E.CHARTERS, fn)))
+        except (ValueError, OSError):
+            continue
+        c.setdefault("status", "active")
+        if c.get("domain_ref") in hidden or c.get("domain_ref") not in domains:
+            continue
+        row = {"status": c["status"]}
+        mets = [str(m.get("current", "")).strip()
+                for m in (c.get("metrics") or [])
+                if str(m.get("label", "")).strip() and m.get("current") is not None]
+        if mets:
+            row["metrics"] = mets
+        mis = [m.get("status", "planned") for m in (c.get("milestones") or [])]
+        if mis:
+            row["milestones"] = mis
+        acts = [t for t in (c.get("todos") or [])
+                if t.get("status") in ("open", "in-progress")
+                and str(t.get("title", "")).strip()]
+        items = [[bool(x.get("done")) for x in (t.get("tasks") or [])
+                  if str(x.get("label", "")).strip()] for t in acts]
+        if items:
+            row["items"] = items
+        out[c.get("id", fn[:-5])] = row
+    with open(os.path.join(out_dir, "registry.json"), "w") as fh:
+        json.dump({"charters": out}, fh, sort_keys=True)
+    return len(out)
 
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     label = "Departments" if "--label" not in " ".join(sys.argv) else \
         sys.argv[sys.argv.index("--label") + 1]
-    if "--site" in sys.argv:
+    if "--export-registry" in sys.argv:
+        out = args[0] if args else "domains"
+        n = export_registry_only(out)
+        print("registry.json: %d charters -> %s/" % (n, out))
+    elif "--site" in sys.argv:
         out = args[0] if args else "domains"
         n = build_site(out, label=label)
         print("site: %d zoom pages in %s/" % (n, out))
