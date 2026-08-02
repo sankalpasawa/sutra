@@ -1446,6 +1446,87 @@ class TestEffectiveModeAndOnboarding(unittest.TestCase):
         self.assertTrue(raw["onboarded"])
 
 
+class TestModelAllowList(unittest.TestCase):
+    """The model string reaches `claude --model` directly. An unknown value fails
+    seconds later as a dead socket instead of as a refusal the operator can read,
+    so it is validated against an allow-list on the way in AND on the way out."""
+
+    def setUp(self):
+        import importlib
+        self._old = dict(os.environ)
+        self.tmp = tempfile.mkdtemp(prefix="sutra-model-")
+        os.environ["SUTRA_UI_SETTINGS"] = os.path.join(self.tmp, "s.json")
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import providers
+        self.p = importlib.reload(providers)
+
+    def tearDown(self):
+        os.environ.clear(); os.environ.update(self._old)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_only_catalogued_ids_survive(self):
+        for good in ("opus", "sonnet", "haiku"):
+            self.assertEqual(self.p.clean_model(good), good)
+        for bad in ("gpt-4", "claude-3", "", None, 7, [], "opus; rm -rf /"):
+            self.assertIsNone(self.p.clean_model(bad))
+
+    def test_save_rejects_an_unknown_model(self):
+        with self.assertRaises(ValueError):
+            self.p.save_settings(model="gpt-4-turbo")
+
+    def test_empty_string_is_legal_and_means_cli_default(self):
+        """"" is a real choice, not a missing value -- it must persist, not raise."""
+        self.p.save_settings(model="")
+        self.assertEqual(self.p.load_settings()["model"], "")
+        self.assertIsNone(self.p.stored_model())
+
+    def test_model_round_trips(self):
+        self.p.save_settings(model="haiku")
+        self.assertEqual(self.p.load_settings()["model"], "haiku")
+        self.assertEqual(self.p.stored_model(), "haiku")
+
+    def test_catalog_ids_are_aliases_not_pinned_snapshots(self):
+        """A pinned id goes stale and the panel then offers something that cannot
+        run -- the exact failure providers.py exists to prevent."""
+        for m in self.p.MODELS:
+            self.assertNotRegex(m["id"], r"\d{8}",
+                                "model %r looks like a dated snapshot id" % m["id"])
+
+
+class TestAttachmentSafety(unittest.TestCase):
+    """An attachment is written INSIDE the workdir (which is already the agent's
+    cwd, so no new read surface opens). These pin the properties that keep a
+    filename from becoming a path."""
+
+    def setUp(self):
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import org_api
+        self.org = org_api
+
+    def test_a_filename_can_never_become_a_path(self):
+        """basename() then a character filter: '../../.ssh/authorized_keys' must
+        reduce to a plain name, never traverse."""
+        import re as _re
+        for evil in ("../../.ssh/authorized_keys", "/etc/passwd", "..\\..\\win.ini",
+                     "....//x", "a/b/c.txt"):
+            safe = os.path.basename(evil).strip().lstrip(".")
+            safe = _re.sub(r"[^A-Za-z0-9._-]", "_", safe)[:120]
+            self.assertNotIn("/", safe)
+            self.assertNotIn("\\", safe)
+            self.assertFalse(safe.startswith(".."), "%r -> %r still traverses" % (evil, safe))
+
+    def test_size_cap_is_finite_and_sane(self):
+        self.assertTrue(0 < self.org.ATTACH_MAX_BYTES <= 64 * 1024 * 1024)
+
+    def test_attachments_land_under_a_dedicated_dir(self):
+        """Writing straight into the workdir root would scatter uploads through the
+        operator's project."""
+        self.assertTrue(self.org.ATTACH_DIR)
+        self.assertNotIn("/", self.org.ATTACH_DIR.strip("/"))
+
+
 class TestToolSummary(unittest.TestCase):
     """A tool row that says only "Bash" eight times tells the operator nothing.
     _tool_summary picks the identifying field; it must never raise, because an

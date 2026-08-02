@@ -24,9 +24,12 @@ SAFETY (see marketplace/plugin/sutra-ui -- ground truth for this module):
     The active root is logged loudly at import so a running server is never
     ambiguous about which registry it reads and writes.
 """
+import base64
+import binascii
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -807,6 +810,9 @@ def api_settings_get():
         ],
         "unsafe_modes_allowed": unlocked,
         "unsafe_modes_env": providers.UNSAFE_MODES_ENV,
+        # An allow-list, not free text: the value reaches `claude --model`, where an
+        # unknown string fails as a dead socket seconds later instead of a refusal.
+        "models": list(providers.MODELS),
         "providers": providers.discover_providers(),
     }
 
@@ -816,6 +822,7 @@ class SettingsRequest(BaseModel):
     permission_mode: Optional[str] = None
     workdir: Optional[str] = None
     onboarded: Optional[bool] = None
+    model: Optional[str] = None
 
 
 @router.post("/settings")
@@ -828,17 +835,18 @@ def api_settings_post(req: SettingsRequest):
     a mode was applied when it was not.
     """
     if (req.provider is None and req.permission_mode is None
-            and req.workdir is None and req.onboarded is None):
+            and req.workdir is None and req.onboarded is None and req.model is None):
         raise HTTPException(
             status_code=400,
             detail="nothing to update -- send at least one of: provider, "
-                   "permission_mode, workdir, onboarded")
+                   "permission_mode, workdir, onboarded, model")
     try:
         settings = providers.save_settings(
             provider=req.provider,
             permission_mode=req.permission_mode,
             workdir=req.workdir,
             onboarded=req.onboarded,
+            model=req.model,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -846,6 +854,81 @@ def api_settings_post(req: SettingsRequest):
         raise HTTPException(status_code=500,
                             detail="could not write settings: %s" % exc)
     return {"settings": settings}
+
+
+# =========================================================== attachments =====
+# A file the operator attaches has to be readable BY THE SUBPROCESS, which runs
+# with cwd=<workdir>. So it is written INSIDE the workdir and referenced by a
+# relative path -- no new read surface is opened, because the agent could already
+# read anything under its own cwd.
+#
+# Transport is base64 in a JSON body rather than multipart on purpose:
+# UploadFile requires `python-multipart`, and requirements.txt is deliberately
+# three packages. A dependency is a permanent cost; base64 is a 33% size cost on
+# a path that is already capped.
+
+ATTACH_DIR = ".sutra-attachments"
+ATTACH_MAX_BYTES = 12 * 1024 * 1024      # 12 MB decoded
+
+
+class AttachRequest(BaseModel):
+    name: str
+    content_b64: str
+
+
+@router.post("/attach")
+def api_attach(req: AttachRequest):
+    """Write one attachment under <workdir>/.sutra-attachments and return its
+    relative path, which the composer references as @<path>."""
+    wd = providers.load_settings().get("workdir") or ""
+    if not wd or not providers.workdir_allowed(wd):
+        raise HTTPException(status_code=400,
+                            detail="the configured workdir is outside the allowed root; "
+                                   "set it in Settings first")
+
+    # basename() only -- "../../.ssh/authorized_keys" must become
+    # "authorized_keys", never traverse. Then a conservative character filter:
+    # the name ends up on disk and in a shell-adjacent @reference.
+    safe = os.path.basename(req.name or "").strip().lstrip(".")
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", safe)[:120]
+    if not safe:
+        raise HTTPException(status_code=400, detail="attachment needs a usable filename")
+
+    try:
+        blob = base64.b64decode(req.content_b64 or "", validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(status_code=400, detail="content_b64 is not valid base64")
+    if not blob:
+        raise HTTPException(status_code=400, detail="attachment is empty")
+    if len(blob) > ATTACH_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="attachment is larger than %d MB"
+                            % (ATTACH_MAX_BYTES // (1024 * 1024)))
+
+    dest_dir = os.path.join(wd, ATTACH_DIR)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        target = os.path.join(dest_dir, safe)
+        # Never overwrite: two screenshots both named Screenshot.png are two
+        # different files, and silently replacing the first loses the operator's data.
+        stem, ext = os.path.splitext(safe)
+        n = 1
+        while os.path.exists(target):
+            target = os.path.join(dest_dir, "%s-%d%s" % (stem, n, ext))
+            n += 1
+        # Belt-and-braces: the resolved path must still be inside the workdir even
+        # after symlink resolution.
+        if not os.path.realpath(target).startswith(os.path.realpath(wd) + os.sep):
+            raise HTTPException(status_code=400, detail="attachment path escapes the workdir")
+        with open(target, "wb") as fh:
+            fh.write(blob)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="could not write attachment: %s" % exc)
+
+    rel = os.path.relpath(target, wd)
+    return {"path": rel, "abs": target, "bytes": len(blob),
+            "ref": "@" + rel}
 
 
 # ================================================================== git =====
