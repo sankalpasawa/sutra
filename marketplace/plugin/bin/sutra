@@ -13,7 +13,7 @@ SUTRA_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SUTRA_BIN_DIR")"
 SCRIPTS_DIR="$PLUGIN_ROOT/scripts"
 
-# v2.10.1 — Connectors preflight. Fresh `/plugin install sutra@marketplace`
+# v2.10.1 — Connectors preflight. Fresh `/plugin install core@sutra`
 # does NOT run `npm install` for nested package.json files, and does not
 # install the `age` system binary. Both are required for the connectors
 # subcommands (connect / connect-test / call). preflight_connectors()

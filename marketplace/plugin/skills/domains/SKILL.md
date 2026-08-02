@@ -1,0 +1,202 @@
+---
+name: domains
+description: >
+  The Domains module (ADR-028): on-demand MECE view of a company's domain tree
+  ("departments" is the user-facing synonym — internally the word is DOMAINS,
+  always). Fires on "show/give me the (various|relevant) departments|domains",
+  "departments around <thing>", "publish the departments/domains page", or
+  /domains. Three surfaces: in-chat view, neighborhood view, and the company's
+  own published GitHub Pages page in ITS design system.
+---
+
+# domains — the company's org tree, everywhere it's asked for
+
+## Terminology (locked, founder 2026-07-30)
+
+Internally: **domains**, always — files, code, registry, skill names. Users may
+say "departments"; treat it as a synonym on input, and pages may display
+"Departments" as a label. Never introduce a third term.
+
+## Data source (never invent)
+
+Everything renders from the placement engine's registry ($SUTRA_NATIVE_HOME,
+default `~/.sutra-native/user-kit`): domains (`tree`), `description` fields,
+charters (title + purpose), counts from CURRENT.jsonl. If the registry is
+empty: offer to seed (org form, operator-authored) or scan (technical form) —
+and say which form the render came from. Never fabricate a domain, count,
+description, or charter.
+
+## Surface 1 — in-chat view (CLI)
+
+STANDARD LAYOUT: two levels of depth, index on the left (D1, D1.1 ...), each
+domain's one-line `description` under its name, charter title when present.
+ASCII only, one screen, big groups collapsed to top-3 + count. Anchored ask
+("around X") -> ancestor chain with `<== YOU ARE HERE` + siblings + children.
+
+## Surface 2 — the published page (per company, THEIR GitHub Pages)
+
+On "publish the domains/departments page" (or first ask about departments in a
+repo with Pages):
+
+1. Generate with the fleet generator. **Default publish shape = the zoom
+   site**: `<plugin>/lib/domains_page.py OUTDIR --site --label Departments
+   --tenant T-local` — one page PER domain, rooted at itself, from the same
+   registry and the same privacy settings as the flat renderer. **`--tenant`
+   is required on every publish path** (design §6): it filters the build's
+   INPUT SET, so a second tenant's domains are absent from the artifact rather
+   than suppressed inside it, and the generator refuses to run without it.
+   `OUTDIR` is the Pages
+   artifact root; `index.html` = the root domain; every other page is named
+   by its stable ref (`dref-<16hex>` — engine-generated, unique and
+   filename-safe by construction), so links survive restructure/reparenting.
+   **Every page shows exactly 3 levels of D** (consistency layer — one
+   template for all pages): L1 the page's own domain (h1 + description +
+   charters + diagram of children); L2 children (full dotted blocks —
+   description + charters + diagram of their children); L3 grandchildren
+   (SUMMARY only — whole card clickable, name + one-line description +
+   "open › N inside" when N > 0; their charters and internals live on their
+   own page, one click away, never inlined on the first page). Left index
+   rail is sticky + minimal: children visible, grandchild groups collapsed
+   unless the page has ≤ 6 grandchildren. Search box on every page.
+   Breadcrumbs + the up-link navigate to ancestors; clicking any domain
+   opens ITS page, which repeats the identical template one level down
+   ("a container means open me" — Native IA principle 4).
+   The flat single-page render (`OUT.html`, no `--site`) is generated ONLY
+   on an explicit "one page please" ask — never as a silent replacement for
+   the zoom site.
+2. **Design system comes from D0** (the root domain's `design` field:
+   bg/card/ink/muted/line/accent/accent_bg/font + `source`). Detection order
+   when D0.design is absent: detect tokens from the company's own site CSS
+   (record `source`), else neutral fallback — and SAY it's the fallback.
+   Write detected tokens back to D0 so the design is data.
+3. Publish into THE CLIENT'S OWN repo, from inside their session (D33: the
+   plugin is the only channel — never push cross-repo). Detect their Pages
+   setup first: workflow-deployed (find the upload-pages-artifact path) vs
+   branch-deployed (docs/ or root). Commit + push only on their explicit ask.
+4. Remember the URL: write it to the D0 domain (`page_url`). Every subsequent
+   "show me the departments/domains" answers with THAT URL first, then offers
+   the in-chat view. Edits: change the registry (descriptions, structure via
+   restructure, charters), regenerate, push — the page is never hand-edited.
+5. Public-page privacy: any domain with `public_names_withheld: true` hides
+   its children's names ("N entries — names withheld"). Client/third-party
+   names default to withheld unless the operator says otherwise.
+
+## Charter layer (founder 2026-07-30: past projects ARE charters)
+
+- A charter has exactly ONE owner (`domain_ref` — the standing invariant);
+  `linked_domain_refs` are references to other departments it touches, never
+  homes. Optional fields, defaulted at render time (no migration needed):
+  `kind: standing|project`, `status: active|shipped|retired|paused`,
+  `artifacts: [repo paths]`.
+- Every department page carries ONE **Charters table** — always, empty state
+  included. Rows = union of own + linked-in + cross-cutting charters, ONE
+  canonical row per charter (relationship precedence own > linked > cross),
+  grouped by relationship with subtle separator rows. Columns: Charter
+  (clickable name -> the charter's own page; hover = purpose) | Kind |
+  Status (dot + text) | Owner ("here" or a link) | one O/L column per direct
+  child (owner+links rolled UP to child-of-this-page; set-deduped, owner
+  wins a shared column; >= 2 columns admits a cross-cutting row; legend
+  "O owner / L linked"). Status filter buttons (aria-pressed) compose with
+  the page search; a "no charters match" row appears when both filter out.
+- **Per-charter pages** (`C-<id>.html`, content-addressed = stable) render
+  the founder-approved consumer template (v6, 2026-08-01) — customer
+  language only, every section renders ONLY when its data exists (sparse
+  charters degrade gracefully): status badge + title + purpose subtitle +
+  owner/works-with byline -> **Goals** (numbered) -> **How it's measuring
+  up** (metric cards, honest bars: "<N" targets are lower-is-better margin)
+  -> **Where this fits** (owner -> charter · linked teams · "one of N
+  charters") -> **Progress** (milestone track in ARRAY ORDER, fill to the
+  `now` dot; active todos as tap-open task tables Done/In-progress/
+  Remaining with n/m pills; done todos folded with done_at + done_how) ->
+  **Key documents** (artifacts UNION scope_in, deduped on resolved path,
+  friendly titles + content summaries, new tab) -> **The fine print**
+  (authored-only: We promise / Never changes / Out of scope / Reviewed).
+  Optional charter fields feeding it — filled ONLY via validated
+  skeleton->apply (charters_seed.validate_extras; no fabrication):
+  `goals[]`, `metrics[{label,current,target}]`,
+  `milestones[{label,target,status: done|now|planned|dropped,done_when}]`,
+  `todos[{title,status: open|in-progress|done|dropped,impact,effort,cost,
+  done_when,done_at(done only),done_how,milestone(label match),
+  tasks[{label,done}]}]`.
+
+## The pipeline (canonical flow — founder 2026-07-31: "the entire thing
+## runs systematically via scripts")
+
+`<plugin>/lib/domains_pipeline.py` is the ONE entry point for the whole
+lifecycle. Every stage is idempotent, prints JSON, and reports per-row
+outcomes. The LLM's only job between calls is filling grounded skeletons —
+never inventing structure the scripts could derive.
+
+| Stage | Command | LLM fills |
+|---|---|---|
+| 1 Root | `init "<Company>" --tenant <T>` | nothing |
+| 2 Departments | `structure skeleton` -> `structure apply f.json` | business-form names + one-line descriptions |
+| 3 Standing charters | `charters skeleton` -> `charters apply f.json` | title + purpose per uncovered department |
+| 4 Past projects | `projects discover` -> `projects apply f.json` | rows from real documents (grounding floor enforced) |
+| 5 Design | `design show` / `design set tokens.json` | full token set + source (detect from their site CSS) |
+| 6 Publish | `publish <site_dir> [--label L] [--commit]` | nothing |
+| 7 Automation | `autopublish on <site_dir>` — EXPLICIT operator consent, publish never enables it | nothing |
+| Anytime | `status` — coverage dashboard | nothing |
+
+Restructure (move/rename) stays a separate explicit operator op via the
+engine CLI — higher blast radius, never folded into apply.
+
+## Mining past projects into charters (fleet playbook — founder 2026-07-31)
+
+On "add my past projects as charters" (or equivalents), run the SAME flow
+that built Asawa's project history — programmatic where possible:
+
+1. `python3 <plugin>/lib/charters_seed.py discover` — deterministic scan of
+   the client repo (git-tracked only) for history sources: plans/, decisions/,
+   ADRs, RFCs, architecture docs, evolution/, roadmaps, postmortems,
+   changelogs. Output: sources + one skeleton row per source.
+2. READ each source (parallel subagents fine) and fill the rows. Grounding
+   rules — the script enforces the floor, you enforce the truth:
+   - never invent: title/purpose/status come from the documents;
+   - status ONLY from evidence (shipped/retired/paused/active) — the script
+     REJECTS missing status rather than defaulting;
+   - exactly ONE `owner_domain` from the client's org tree (dref, full path
+     "A > B > C", or unique name); `linked` only with documented reach;
+   - `artifacts` = repo-relative files you actually read; a row with zero
+     valid artifacts is REJECTED (grounding floor).
+3. `python3 <plugin>/lib/charters_seed.py apply candidates.json --tenant <T>`
+   — validates, resolves, dedups (same owner + same title -> SKIP, never a
+   silent update), mints `kind=project` charters with status/links/artifacts,
+   prints a JSON report (minted / skipped / rejected / warnings).
+4. Surface the report to the operator; the auto-refresh hook (or a manual
+   regen) publishes the updated pages.
+
+## Auto-refresh (SOFT, opt-in — founder 2026-07-31)
+
+`hooks/domains-site-refresh.sh` (Stop event) keeps the published site fresh:
+on registry drift (full-content sha256 of INDEX + domains + charters) it
+regenerates the zoom site, commits, and pushes — debounced to once per hour,
+non-blocking lock, push-only (never pull/rebase), exit 0 on EVERY path. It is
+DORMANT until the repo opts in with `.claude/domains-autopublish`
+(`SITE_DIR=<repo-relative>`, `LABEL=<label>`) — a client's site never
+auto-pushes without their opt-in (D33). Latency bound: registry change ->
+live page within ~60 min + Pages deploy. Privacy consequence: minted content
+publishes automatically, so `public_names_withheld` must be set AT MINT TIME.
+Last failure (if any): `.claude/domains-refresh.err`.
+
+## Grounding (ADR-028 — the mandate)
+
+Every unit of plugin work must ground in this registry: the per-turn PLACEMENT
+resolves against it, and `placement-resolve.sh` injects the resolved domain's
+CHARTER (title + purpose) into each turn's context — treat that charter text
+as the frame for the turn's work and cite the domain when making
+recommendations. If a turn's work contradicts its charter's purpose, say so
+out loud rather than proceeding silently.
+
+## v2 hardening (recorded, deferred by founder)
+
+Deterministic renderer in the engine (`orgchart`) + golden tests; B4
+context_scope enforcement (retrieval filtered by the charter's artifact
+boundary); groundedness lint pass.
+
+## Mode C — search ("search the domains for <terms>")
+
+Run `python3 <plugin>/lib/placement_engine.py search <terms>` — matches domain
+names, descriptions, and charter titles/purposes; present ranked hits with
+their D-paths. The published page has the same feature client-side (the search
+box above the index filters sections, blocks, and the nav live).

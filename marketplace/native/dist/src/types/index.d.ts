@@ -167,6 +167,87 @@ export interface WorkflowStep {
      * the envelope MUST advertise the response schema, not the prompt schema.
      */
     return_contract?: SchemaRef;
+    /**
+     * v1.3.0 W1.9 (codex W1.9 advisory fold). Optional per-step timeout (ms)
+     * for action='invoke_host_llm'. Forwarded to hostLLMActivity. Defaults to
+     * host-llm-activity default (60_000ms) when unset. Ignored for non-
+     * invoke_host_llm steps.
+     *
+     * Additive field — no breaking change to existing serialized Workflows;
+     * `createWorkflow` propagates it via the spec spread, validators ignore
+     * unknown keys, and the dispatch site forwards `timeout_ms` only when
+     * defined (undefined ⇒ host-llm-activity default).
+     */
+    timeout_ms?: number;
+    /**
+     * v1.3.0 Wave 2 (codex W2 BLOCKER 2 fold 2026-05-04). Founder centerpiece
+     * directive: "workflow is shown, then approval from founder, like how
+     * evolved that workflow should be from the steps point of view." When
+     * `true`, the lite executor PAUSES BEFORE running this step, persists a
+     * durable `ExecutionApprovalRecord{status:'pending'}` to
+     * `<SUTRA_NATIVE_HOME>/runtime/pending-approvals/E-<id>.json`, emits an
+     * `approval_requested` EngineEvent, and returns
+     * `ExecutionResult{status:'paused'}` to the caller. Founder resumes via
+     * `approve E-<id>` (or terminalizes via `reject E-<id> <reason>`) routed
+     * through `NativeEngine.handleHSutraEvent`.
+     *
+     * RECONCILIATION WITH L6 REFLEXIVITY (workflow-level gate):
+     * `step.requires_approval` is a NEW STEP-LEVEL gate orthogonal to the
+     * canonical workflow-level approval source-of-truth at
+     * `src/laws/l6-reflexivity.ts:48` `l6Reflexivity.requiresApproval(...)`.
+     *   - L6 fires when `Workflow.modifies_sutra=true` AND a `reflexive_check`
+     *     Constraint demands founder/meta-charter authorization for the
+     *     ENTIRE Workflow before any step runs (V2.1 §A6).
+     *   - `step.requires_approval` is the operator-declared "pause this
+     *     SPECIFIC step for founder review" gate. Unrelated to
+     *     `modifies_sutra`; can fire on any step in any Workflow.
+     *   - BOTH gates can fire simultaneously: an L6-gated Workflow may also
+     *     mark individual steps as requires_approval. L6 blocks dispatch
+     *     entirely; step.requires_approval pauses mid-run. They compose.
+     *   - Validator rule: `step.requires_approval` must be a boolean when
+     *     supplied (forbid string "true"/numeric 1 etc.); default undefined ⇒
+     *     false (no pause).
+     *
+     * Additive field — does not break v1.2 deserialized Workflows; the
+     * lite-executor pause path is opt-in via this flag, so legacy step graphs
+     * run unchanged.
+     */
+    requires_approval?: boolean;
+    /**
+     * v1.3.0 Wave 4 (codex W4 advisory fold #1, 2026-05-04). Optional
+     * step-local compensation action invoked during reverse-walk rollback when
+     * a step with `on_failure='rollback'` fails. The reverse-walk visits
+     * COMPLETED predecessor steps and dispatches `compensate_action` on those
+     * that have one defined.
+     *
+     * Codex W4 advisory #1: compensation lives on `WorkflowStep` — NOT on a
+     * parallel `Workflow.compensation_step_graph[]`. Step-local because:
+     *   - rollback trigger is step-local (a specific step failed)
+     *   - reverse-walk is over completed CONCRETE steps that ran successfully
+     *   - the execution context already has the step instance in scope
+     *
+     * Action subset: `wait`, `invoke_host_llm`, or `spawn_sub_unit`. NOT
+     * `terminate` (early-out makes no sense for compensation). When
+     * `action='invoke_host_llm'`, `host` is REQUIRED; otherwise FORBIDDEN —
+     * mirrors the same XOR discipline as the parent step contract per L2
+     * BOUNDARY.
+     *
+     * Best-effort rollback semantics (codex W4 advisory #2):
+     *   - reverse-walk i-1 .. 0 over completed steps
+     *   - each step with compensate_action runs through runStepAction-like dispatch
+     *   - success → emit step_compensated; failure → emit step_compensation_failed
+     *   - steps WITHOUT compensate_action are skipped silently (best-effort)
+     *   - terminal event: workflow_rollback_complete (all attempted compensations
+     *     succeeded OR there were none) | workflow_rollback_partial (mixed)
+     *
+     * Additive field — does not break v1.2/v1.3-w2 deserialized Workflows.
+     */
+    compensate_action?: {
+        readonly action: 'wait' | 'invoke_host_llm' | 'spawn_sub_unit';
+        readonly inputs: DataRef[];
+        readonly host?: HostKind;
+        readonly timeout_ms?: number;
+    };
 }
 export type WorkflowStringency = 'task' | 'process' | 'protocol';
 export type WorkflowAutonomyLevel = 'manual' | 'semi' | 'autonomous';
@@ -174,6 +255,18 @@ export type OverrideAction = 'pause' | 'splice' | 'restart' | 'escalate';
 /**
  * V2.4 §A12 failure semantics extends the original §1 set with declared_gap +
  * escalated; both surface from terminal_check predicates and L4/L6 mechanics.
+ *
+ * v1.3.0 Wave 2 (codex W2 BLOCKER 1 fold 2026-05-04): `'paused'` is the
+ * canonical, FIRST-CLASS state for executions awaiting an out-of-band signal —
+ * already used by the full step-graph executor (engine/step-graph-executor.ts
+ * line 518) as the human-loop pause state. Wave 2 step-level
+ * `requires_approval` gating REUSES this state (no third lifecycle invented)
+ * and propagates it through `ExecutionResult.status` in the lite executor so
+ * callers can disambiguate "paused awaiting founder approval" from
+ * `'success' | 'failed'`. Resume of a paused execution is the founder's
+ * `approve E-<id>` utterance routed through `NativeEngine.handleHSutraEvent`,
+ * which loads the durable `ExecutionApprovalRecord` from the
+ * runtime/pending-approvals/ ledger and re-enters `executeWorkflowResume`.
  */
-export type ExecutionState = 'pending' | 'running' | 'success' | 'failed' | 'declared_gap' | 'escalated';
+export type ExecutionState = 'pending' | 'running' | 'success' | 'failed' | 'declared_gap' | 'escalated' | 'paused';
 //# sourceMappingURL=index.d.ts.map

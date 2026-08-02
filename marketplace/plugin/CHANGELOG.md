@@ -2,6 +2,608 @@
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
+> **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
+
+## v2.64.0 (2026-08-02) — Sutra UI panel (PR #85) + security hardening
+
+- Sutra UI ships: local governance panel (FastAPI + static panel.html), Electron desktop shell, org API, provider selector, installer.
+- Hardening applied before fleet distribution — `/ws/chat` and `/ws/term` rejected any Origin, so any page the operator visited could drive the local agent and inject into the PTY. Both now reject non-loopback Origins before `accept()`, plus TrustedHostMiddleware against DNS rebinding.
+- `acceptEdits` / `bypassPermissions` were settable over the unauthenticated settings endpoint and reached the agent spawn. Now require `SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1` and are clamped at point of use, so a stale or hand-edited settings.json cannot raise the ceiling.
+- Agent workdir confined to `$HOME` (`SUTRA_UI_WORKDIR_ROOT` widens it); `openExternal` restricted to http(s); `npx --no-install`; `fixture_seed.py` refuses the live registry.
+- 14 new guard tests (`test_ws_origin_guard.py`); 146 tests green across python, engine, and node suites.
+
+## v2.63.0 (2026-08-01) — on-the-fly data + landscape section removed
+
+- Charter pages hydrate volatile data (status, metric currents, milestone states, task done-states, fraction pills) from a single registry.json fetched fresh on every page load — textContent-only, enum-allowlisted, count-validated per section, silent static fallback. Structural changes still regen.
+- Auto-refresh hook gains a FAST LANE: on any registry drift it exports + pushes ONLY registry.json (3-min coalescing); full page regen keeps the 60-min debounce. Data freshness = next page load after Pages publishes the push.
+- "Where this fits" section removed (founder: not earning its place — the byline already carries owner + works-with).
+
+## v2.62.0 (2026-08-01) — consumer charter pages (founder-approved v6)
+
+- Charter pages redesigned to the approved product template: Goals -> metric cards with honest progress bars -> landscape strip -> merged Progress (milestone track + drill-down task tables Done/In-progress/Remaining + shipped fold) -> Key documents (artifacts U scope_in, friendly titles, new tab) -> concise fine print. Customer language only; every section data-gated so all sparse charters degrade cleanly.
+- Four optional charter fields (goals/metrics/milestones/todos+tasks) with validated skeleton->apply (closed status enums, done_at only on done, milestone label matching, task shape) in charters_seed + pipeline. Placement ADR-028 populated as the worked example from true ledger state.
+- Withheld-domain fix: pages of hidden descendants are also PRUNED from the output dir (stale-file leak closed).
+
+## v2.61.0 (2026-07-31) — the whole lifecycle as one pipeline CLI
+
+- New lib/domains_pipeline.py: init / structure skeleton+apply / charters skeleton+apply / projects (delegates to charters_seed) / design show+set / publish / autopublish on|off / status. Every stage idempotent with per-row outcome reports; LLM only fills grounded skeletons. Consent boundary: publish never enables automation — autopublish is its own explicit command (codex fold).
+- Verified: new-client e2e on a fresh registry (init -> 3 depts + 1 rejection -> 3 charters -> tokens -> 7-page branded site -> full re-run 0 mutations) and a live run on the Asawa registry (status accurate, 154-page regen).
+
+## v2.60.0 (2026-07-31) — marker migration complete
+
+- Marker migration complete: gate self-whitelist + out-of-repo guard (double-brick fix), dispatcher-pretool session-first, P4 telemetry readers on marker-lib, P5 instruction sweep (legacy write instructions: 0 remaining), fixture s7 strict-readiness.
+- ADOPT=0 default flip attempted then reverted: s7 strict passes standalone, but default=0 reddens fixture s1/s4/s5 (transitional adoption + crash-recovery re-adopt). Strict flip deferred until fleet govblock migration + fixture rework. Suites final: marker-concurrency 7/7, flow-gate 25/25, hook-integration 6/6.
+
+## v2.60.0 (2026-07-31) — programmatic charter mining for the fleet
+
+- New lib/charters_seed.py: `discover` (deterministic scan for history sources -> per-source skeleton rows) + `apply` (validate/resolve/dedup/mint project charters; grounding floor rejects rows without real git-tracked evidence; no status defaults; strict-skip on existing; JSON report). The LLM only reads documents and fills rows — everything mechanical is script-owned.
+- SKILL.md mining playbook: discover -> read + fill under grounding rules -> apply -> report -> auto-refresh publishes. Tested: 5-case validation matrix + idempotent re-run on a temp registry.
+
+## v2.59.1 (2026-07-31) — verify-then-link artifacts + templatized file summaries
+
+- Charter artifacts/scope link ONLY when resolved against git-tracked files (abs paths under the work root normalize; bare filenames resolve by unique suffix and display the match; directories link to tree/ with tracked-file counts; unresolvable entries render muted, never a 404 link).
+- Every linked file shows a one-line summary derived from its content (md heading / docstring / first meaningful comment, boilerplate skipped) — templatized, zero hardcoding. GH links open in a new tab; path segments URL-encoded. Verified: 248 links, 5/5 sampled URLs return 200.
+
+## v2.59.0 (2026-07-31) — version reconcile
+
+- Reconciles the parallel-session version collision (2.58.0 owner-first table vs 2.58.1): this release carries BOTH change sets; no code delta beyond the version field.
+
+## v2.58.1 (2026-07-31) — codex-gate memory carve-out + orchestrator fleet ON
+
+- codex-consult-gate.sh exempts ~/.claude/** (memory files) — scoped narrower than blueprint v2.39.20 to avoid mv-ingress bypass; regression test hooks/codex-gate-outofrepo-test.sh (3 cases). flow_orchestrator_mode -> "on" fleet-wide (founder-directed; ADR-029 D5 second amendment). ADR-026/027 posture notes + cross-refs; ADR-029 D3 return_contract naming note. Head reordered newest-first (v2.55.1 moved below v2.56.0).
+
+## v2.58.0 (2026-07-31) — marker concurrency core (Scheme A)
+
+- Marker concurrency core (Scheme A, founder-ratified): self-only adoption + ownership-safe reset kill cross-session contamination; 8 gates read session-first via marker-lib; 3 writers SESSION-stamped; 6-scenario two-session fixture gates it. Root cause: holding/research/2026-07-30-marker-race-root-cause.md.
+
+## v2.58.0 (2026-07-31) — owner-first merged table, active default, GitHub artifacts
+
+- Charter table restructured: Owner is the FIRST column; same-owner rows merge visually ("here" block first, then owners by name) — JS-safe merge that recomputes to first-visible under filter/search, screen readers still hear owner per row. Status filter defaults to ACTIVE (falls back to all when a page has no active charters).
+- Charter pages: artifacts (and scope entries) are now GitHub blob links resolved from the repo's actual remotes (submodule-aware, fleet-generic), opening in a new tab; Scope-in/out rows carry hover explainers and are skipped when they duplicate the artifact list.
+
+## v2.57.0 (2026-07-31) — SOFT auto-refresh for the domains site
+
+- New Stop hook domains-site-refresh.sh: on registry drift, regenerates the zoom site + commits + pushes. Never blocks (exit 0 every path), 60-min debounce, full-content fingerprint, non-blocking lock, push-only, prompts off, 120s/60s caps, stamp written only after successful regen. Dormant fleet-wide until a repo opts in via .claude/domains-autopublish (D33-safe).
+- Verified live: forced drift -> regen + commit + push; no drift -> no-op; drift-under-debounce -> deferred. All exits 0.
+
+## v2.56.0 (2026-07-30) — one charter table + per-charter pages
+
+- Own, linked, and cross-cutting charters merge into ONE table per department (canonical row per charter, relationship-grouped, O/L child columns, status filter buttons composing with search, "no charters match" empty state).
+- Charter names click through to NEW per-charter structured pages (C-<id>.html, stable ids): breadcrumb + owner up-link + labelled rows (Purpose/Kind/Status/Owner/Linked/Artifacts/Scope/Obligations when non-empty). 154 pages total, 0 broken links.
+
+## v2.55.1 (2026-07-30) — return-contract schema aligned to operative contract
+
+- ADR-audit F1/F2: schema now tolerates extra keys + string-form verify, matching validator R1/R2 and fixture f1 (validator + fixtures unchanged). F3-F5: ADR-029 amended (flag ladder off/experimental/on; matcher v0-floor cross-ref; mechanical-floor scoping) + ADR-026 open item narrowed (v0 floor shipped; judgment layer open). Audit: holding/research/2026-07-30-adr-026-027-029-consistency-audit.md.
+
+## v2.55.0 (2026-07-30) — charter chips: readable, minimal, mobile-friendly
+
+- Charters render as status-dotted TAGS (design tokens from D0). Density heuristic: <= 3 in a group and short purposes -> mini-cards with the one-liner visible; more -> compact chips with hover tooltip (desktop) + native tap-to-expand panel (mobile/keyboard) carrying purpose, links, artifacts.
+- Minimal text pass (founder): lane note -> "O owner / L linked", terse footer, "Linked" group, chips over prose. Search filters chips (incl. hover text) and hides empty groups. Mobile: full-row 44px targets, full-width panels. Codex folds: summary CSS normalized + focus-visible, artifact count stays on compact chips, title-attr only on closed summaries.
+
+## v2.54.0 (2026-07-30) — charter layer: projects are charters + cross-cutting lanes
+
+- Every department page now carries a Charters section (empty state included): Standing | Projects with status tags, artifact counts, linked-department pills, and a "Linked here (owned elsewhere)" group. One owner per charter; links are references, never homes.
+- Cross-cutting lane chart on parent pages: columns = direct children, rows = charters touching >= 2 columns after roll-up (O = owner, L = linked, text markers + aria labels); lanes never descend into sub-departments. Codex P1 folds: per-column set-dedup, parent-owned case defined.
+- 42 project charters mined from real history (holding/plans, holding/evolution, 29 ADRs + 6 engines, project memory) by a 4-agent workflow; artifact paths verified on disk; seeding idempotent.
+
+## v2.53.1 (2026-07-30) — flow_orchestrator_mode off -> experimental
+
+- ADR-029 rollout step 2, asawa-holding opt-in; f8 fixture now enum-checks the flag (off|experimental|on).
+
+## v2.53.0 (2026-07-30) — Flow orchestrator mode (D62/ADR-029)
+
+- Flag-gated Work-Atom dispatch for core:flow deep mode (feature_flags.flow_orchestrator_mode, default off); return-contract schema + validator bin/validate-return-contract.sh.
+- Matcher v0 (ADR-026) via bin/workflow-type-match.sh + factors v0 (B8) via bin/flow-factors.sh + redacting flow ledger bin/flow-ledger-append.sh.
+- 8-fixture suite tests/flow-orchestrator/ wired into run-all.sh.
+
+## v2.52.1 (2026-07-30) — Core Plugin repository complete + minimal L3 summaries
+
+- Core Plugin subtree is now the full grounded repository: 26 families covering all 194 plugin files (89 hooks, 26 skills, 16 libs, 10 commands, 5 bin, 42 tests + hook-nested strays), each family with an inclusion rule, file enumeration, and a minted charter. Coverage asserted by script: 0 unmapped, 0 double-mapped; idempotent re-seed.
+- L3 summary cards clamp their text before file enumerations (~160 chars) — details stay on the domain's own page, per the 3-layer contract.
+
+## v2.52.0 (2026-07-30) — exactly 3 levels of D per page (consistency layer)
+
+- Every zoom page now shows exactly 3 layers from one shared template: L1 page domain (summary + charters + diagram), L2 children (full blocks + charters + diagram), L3 grandchildren (summary-only clickable cards — details never inline on the first page; clicking repeats the same template one level down).
+- Codex ADVISORY folds: whole L3 card clickable; "open > N inside" only when N > 0; leaf empty state kept; left nav sticky + minimal — grandchild groups collapsed unless page has <= 6 grandchildren.
+
+## v2.51.2 (2026-07-30) — zoom-site contract in SKILL.md + privacy parity (codex folds)
+
+- SKILL.md publish contract: zoom site is the default publish shape; flat page only on explicit ask; exact 3-descendant-level window; ref filenames documented as unique/filename-safe by construction.
+- build_site honors public_names_withheld like the flat renderer: hidden descendants get NO pages, withheld notes render, links stay unbroken (verified: flag on Core Plugin -> 27 pages, 0 leaks, 0 broken).
+
+## v2.51.1 (2026-07-30) — zoom pages keep every standing page feature
+
+- Regression fix: first zoom cut dropped the left-hand index, search, and per-level diagrams. Every zoom page now carries the full page anatomy — sticky left index (clickable, counts, collapsible), search box, an org diagram at EVERY cascading level in the window, dotted blocks, descriptions, all charters — plus breadcrumbs, up-link, and open-links at the window edge.
+
+## v2.51.0 (2026-07-30) — drill-down zoom pages + Core Plugin detailed out
+
+- Site mode (`domains_page.py --site`): one minimal page PER domain, rooted at itself, 3-level window, breadcrumbs up, click-to-zoom down (Native IA principle 4). Filenames = stable refs, so links survive restructure. Text is on-demand by construction — each page carries only its window.
+- Core Plugin detailed to 3 levels from the real repo (Governance Hooks -> Placement Gates / Per-Turn Floors; Skills Catalog -> Review Lanes / Domains Module; Engine Library -> Placement Engine / Page Generators; Commands & Tests), a charter per node. 37 zoom pages, 0 broken links.
+
+## v2.50.0 (2026-07-30) — ledger close: on-touch minting, post-close, file ACKs, search
+
+- `placement-touch.sh` (PostToolUse): every edited file gets a DURABLE placement — backfill/mint on first touch, post-close supersede when evidence moves. Fresh machines populate the tree by working; no manual scan.
+- File-based one-shot overrides (`.claude/placement-ack`, consumed on use) replace the unreachable env ACKs in both placement gates; printed messages now show the hatch that works.
+- loop-budget-guard (holding L1): budget keyed per agent identity when visible — workflow subagents stop inheriting the parent session's spent budget (verify before promotion).
+- Search everywhere: engine `search <terms>` (names, descriptions, charters, ranked) + live search box on the published page (filters sections, blocks, and the index).
+
+## v2.49.0 (2026-07-30) — grounding rungs 4+5, multi-charter, recursive cascade
+
+- Rung 4 `context-scope-audit.sh` (PostToolUse): cross-charter file reach is audit-logged per canon Q28 — never blocked.
+- Rung 5 `placement-lint.sh` (Stop, advisory) + engine `lint`: checks the placement is TRUE (refs resolve, origin legal, engine-written) — separate from the gate by dual-lane decision; first run flagged a real hand-written marker.
+- Multi-charter domains: `pick_charter()` selects by evidence overlap (deterministic tie-break); page renders ALL charters per domain.
+- Domains page v3: recursive cascade at ANY depth — collapsible left index with guide lines, an org-chart diagram at every level, description+charter blocks nesting all the way down (4-level fixture proven).
+
+## v2.48.0 (2026-07-30) — core:domains fleet feature + grounding v1
+
+- Terminology locked: internally DOMAINS always; "departments" is a user-facing synonym. Skill renamed core:domains.
+- Fleet page generator `lib/domains_page.py`: per-company GitHub Pages publication with charters per domain, design system carried by D0 (`design` tokens, detected from the company's own site; Sutra's warm cream/amber seeded from website/index.html). URL remembered on D0 (`page_url`); subsequent asks answer with the URL. Client edits = registry edits + regenerate; never hand-edit the page.
+- Grounding v1: placement-resolve now injects the resolved domain's CHARTER (title + promise) into every turn's context — work is framed by its charter, not just tagged.
+
+## v2.47.2 (2026-07-30) — departments v2: standardized two-depth layout
+
+- Module contract standardized: left index, one-line description per department (from registry `description` fields — 25 added), two levels of depth. Web surface generated by `website/generate-departments.py`; entity-code render bug fixed.
+
+## v2.47.1 (2026-07-30) — core:departments module
+
+- New skill `core:departments`: on-demand MECE department view. "Show/give me the (various|relevant) departments" -> whole-tree weight view, boxes two-across; "departments around <thing>" -> YOU-ARE-HERE neighborhood. Engine supplies every number; the model only draws. LLM-rendered v1 by founder decision (ship fast); deterministic `orgchart` renderer recorded as the v2 hardening path.
+
+## v2.47.0 (2026-07-30) — dual-lane review complete: codex folds
+
+- Codex F7.1 exhaustive review (CHANGES-REQUIRED): 11 findings folded. Key: unresolved prompt-turns now write an engine marker so HARD mode can never block on "engine found no match" (I-P3); write_placement hard-rejects non-resolving refs (I-P2) and runs under flock (I-P5); restructure is locked, MOVE rejects cycles, DELETE re-parents children; `python3 -c`/`node -e`/`make`/`rsync`/`tar -x`/`npm run` now gate as mutations; promotion counts SOURCE=engine markers only — hand-written compliance no longer earns HARD.
+- One documented dual-lane disagreement retained (presence-only gate; deepseek advised against parsing). Reconciliation: `.enforcement/codex-reviews/2026-07-30-adr028-f72-reconciliation.md`.
+- `tests/placement-eval.sh` — measured precision: 55% utterance-only top-1 (20 hand-labelled cases), 0 wrong (misses abstain); 200/200 path-evidence consistency.
+- 57 unit assertions green post-folds.
+
+## v2.46.0 (2026-07-30) — the last mile: the block is engine output
+
+- `hooks/placement-resolve.sh` (UserPromptSubmit) runs the engine and hands the model the exact line to emit. The PLACEMENT block is no longer composed from imagination.
+- READ-ONLY at prompt time: utterance-only evidence never mints. Minting a domain per novel phrasing would shred the tree in a day.
+- Fixed two P1s found by dogfooding, not by tests: confidence was `best/total`, which returns 1.0 whenever one domain scores at all (the floor could never fire, I-P9 was dead code); and adjacency compared absolute vs relative paths as strings, so the strongest signal silently never fired.
+- Confidence floor set from measurement (OQ-028-2): 0.45. Path evidence lands 0.70-0.99; a lone shared word lands 0.40 and now floor-holds at the ancestor.
+- `tests/placement-demo.sh` — visual end-to-end demo of every surface.
+- 84 assertions green.
+
+## v2.45.0 (2026-07-29) — the placement engine: addresses are now computed
+
+- `lib/placement_engine.py` — registry (domains/charters/placements), deterministic classifier, restructure ops, MECE report, bulk discovery scan.
+- Addresses are COMPUTED and PERSISTED. Until now the block was hand-written text with nothing behind it.
+- deepseek P1 folds: flock(2) not O_EXCL (a crashed agent can no longer wedge minting); append-only INDEX + CURRENT read tail-first; per-process seq nonce so identical re-placements cannot collide; adjacency weighted 10x above lexical overlap.
+- Verified: MOVE re-mints 0 placement rows; 12 racing minters produce exactly 1 domain; scan of 323 real files derived a 46-node nested tree in 0.7s.
+- Tests: 19 engine assertions + 38 gate/renderer + 27 simulation = 84 green.
+
+## v2.44.1 (2026-07-29) — placement wiring + Stop floor
+
+- `per-turn-discipline-prompt.sh` now emits PLACEMENT as block 6, reading the repo's live enforcement mode.
+- `reset-turn-markers.sh` clears `placement-registered` each turn (own marker only; a peer session's is preserved).
+- New `placement-stop-check.sh` closes the no-tool-turn hole; loop-guarded on `stop_hook_active`.
+- Simulation: 27 end-to-end assertions across 8 lifecycle scenarios, all passing.
+
+## v2.44.0 (2026-07-29) — placement: every unit of work gets an address
+
+- ADR-028 lands in the plugin: new `per_turn_blocks.placement` (required, fleet-wide) — one Domain + one Charter stamped before work runs.
+- Ships in **WARN** mode. `placement-gate.sh` logs and exits 0; auto-promotes to HARD after 50 compliant turns per repo. A new HARD gate on day zero would have deadlocked every install.
+- COMPACT one-line render is the default shape; the ancestor tree renders only when a Domain or Charter was minted.
+- Bash-mutation classifier is explicit (redirection checked before the read-only allowlist); repo-local kill-switch `.claude/placement-disabled`.
+- Tests: `tests/unit/placement.test.sh` — 38 assertions, renderer + gate + classifier.
+
+## v2.41.2 (2026-07-27) — marker reconciliation: scheme A wins, guards restored
+
+- **Scheme B deleted.** `.claude/<name>-<sid>` flat-suffix removed from flow-gate / flow-stop-check / per-turn-discipline-prompt. `marker-lib` (`.claude/sessions/<sid>/<name>`) is the single marker authority.
+- **Four guards restored** in `reset-turn-markers.sh`, dropped by the P1 rewrite (90→17 lines): empty-prompt, synthetic-turn, 3s burst, forensics. Without them every system-reminder wiped markers mid-turn — for single-session users too.
+- **Adoption bridge**: `sutra_marker_has` adopts a legacy global into the session dir so reader/writer migration is order-independent and no stale install is bricked. Bounded — `sutra_marker_reset` now deletes the global twin, so an adopted marker cannot survive its turn.
+- **Legacy clear is ownership-aware**: a peer session's stamped global marker is no longer deleted by another session's reset.
+- **RETURN-trap bug fixed** in `lib/h-sutra-classify-and-write.sh`: the trap referenced a `local` var and fired on every later `source`, killing the caller under `set -u`.
+- **Fail-open hardened**: every `marker-lib` source is guarded; a broken lib degrades the gate instead of failing the user's turn.
+
+## v2.41.0 (2026-07-27) — Flow fires by construction
+
+- **Root cause**: `per-turn-discipline-prompt.sh` wrote the whole per-turn contract to **stderr**. For UserPromptSubmit only **stdout** reaches the model, so the contract (incl. FLOW activation) never arrived. Now emitted as `hookSpecificOutput.additionalContext`.
+- **Flow now fires hook-side**: the classifier already runs every turn; it now writes `.claude/flow-classified-<session>` itself. Model no longer has to remember.
+- **Markers are session-scoped**: concurrent sessions in one repo were deleting each other's markers, causing spurious hard blocks. `reset-turn-markers.sh` now clears only its own session's.
+- **`flow-gate-pass` logged**: the ledger recorded only failures, so fire-rate was unmeasurable. Passes now logged.
+- **Bootstrap deadlock fixed**: `depth-marker-pretool.sh` no longer gates writes to the per-turn markers themselves (scoped list, not blanket `.claude/*`).
+
+## v2.43.1 (2026-07-28) — guard-regression test
+
+- **`hooks/reset-guard-test.sh`**: fails if the per-turn marker reset guards are deleted or weakened. Asserts synthetic-turn / empty-prompt / burst preservation, a control that a real prompt still clears, and fail-open when `marker-lib` is broken.
+- Proven by negative control: GREEN on this build, RED (exit 1) on a reconstructed guard-less `reset-turn-markers.sh` — the refactor that collapsed it 90→17 lines and would have wiped markers on every system-reminder.
+
+## v2.43.0 — 2026-07-28
+
+**REMOVED — H-Sutra header Stop enforcement.**
+
+- `hooks/h-sutra-enforce.sh` **deleted**; its `hooks.json` Stop registration removed. No block, no warning, no forced redo for a missing or malformed header, on any profile.
+- **Survives:** the header as a convention (`/core:start` docs, `per-turn-discipline-prompt.sh` per-turn ask, `core:human-sutra` skill) and the 9-cell classification log rail — that rail is written by `per-turn-discipline-prompt.sh`, not by the deleted hook.
+- **Dies with it:** `.enforcement/h-sutra-audit.jsonl` enforcement telemetry; the `SUTRA_HSUTRA_ENFORCE_DISABLED=1` and `~/.h-sutra-enforce-disabled` kill-switches (now inert).
+- **Still HARD at Stop:** `per-turn-hard-gate.sh` (Input Routing, Depth, BLUEPRINT on mutating turns), `flow-stop-check.sh` (Flow, `profile=company`).
+- `sutra-defaults.json`: `per_turn_blocks.human_sutra_header.enforcement = "convention_only"`. `/core:start` template no longer claims hard enforcement — re-run `/core:start` after updating.
+- Stale comments in `per-turn-hard-gate.sh`, `flow-stop-check.sh` and `blueprint-check.sh` that referenced the deleted hook were corrected rather than left pointing at a missing file.
+
+## v2.42.0 — 2026-07-28
+
+**Text-first BLUEPRINT gate (#81) + profile-honoring Stop layers (#72).**
+
+- **`blueprint-check.sh` v3 reads the emitted block, not a marker.** The gate had only ever read `.claude/blueprint-registered` while the contract said "emit the block" — so a correct, complete BLUEPRINT in the response could be HARD-blocked, and re-emitting it could never help. Cause of #68, the 2026-07-08 Testlify incident (which taught a Bash + `BLUEPRINT_ACK` bypass) and its 2026-07-27 repeat. v3 validates the block in the turn's response text; the marker is demoted to a per-turn cache the hook writes for itself. Validator ported from #73 with credit, plus parsing fixes for the canonical bulleted shape (`- Doing:`) and single-line `Steps: 1) … 2) …`.
+- **PreToolUse scope narrows to foundational paths**, restoring the codex round-5 scoping the 2026-05-10 blanket SOFT→HARD flip erased. Ordinary files are floored at Stop by a new BLUEPRINT arm in `per-turn-hard-gate.sh`, armed only on turns that mutated a governed file (one redo, loop-safe). Supersedes #78's depth gate.
+- **Foundational globs become configuration** — `per_turn_blocks.blueprint.foundational_paths` in `sutra-defaults.json`, overridable per repo via `blueprint_foundational_paths[]` in `.claude/sutra-project.json`. They were hardcoded to the Asawa repo layout, so on every other install the set was silently empty.
+- **`h-sutra-enforce.sh` v8/v9 + `flow-stop-check.sh` honor `.profile`.** Case-insensitive `DIRECTION·VERB`; forced redo only at `profile=company`, warn + log otherwise. Fail-open: no config or no `jq` → warn.
+- **Catalog drift fixed** — `marketplace.json` said 2.39.20 while source said 2.41.2. Both now 2.42.0; `test-validate-manifest-json.sh` green.
+- Kill-switches unchanged: `BLUEPRINT_DISABLED=1` / `~/.blueprint-disabled`, `SUTRA_HSUTRA_ENFORCE_DISABLED=1` / `~/.h-sutra-enforce-disabled`, `PER_TURN_HARD_DISABLED=1` / `~/.per-turn-hard-disabled`.
+- Pre-existing red suites carried unchanged from the parent commit: `test-codex-directive-detect.sh`, `test-codex-directive-gate.sh`.
+
+## v2.40.0 — 2026-07-20
+
+**D63 — per-turn governance stack goes HARD, fleet-wide.** The soft-nudge blocks (Flow / BLUEPRINT / H-Sutra / Structure-First) become contract + hook enforced. New `per-turn-hard-gate.sh` (Stop, transcript-inspecting, loop-safe) floors Input Routing + Depth on no-tool turns; new `codex-consult-gate.sh` (Depth ≥ 3 Edit/Write) degrades to pass without the codex binary; new `codex-consult-marker.sh` (PostToolUse) writes its satisfying marker on a real consult.
+- **Contract + enforcement activate together:** `/core:start` template expanded 4 → 9 blocks; both new hooks stay silent until `/core:start` has written the contract (`sutra-project.json` gate) — no ambush of un-onboarded users.
+- **Codex challenge (CHANGES-REQUIRED) folded:** fresh-install gate, line-anchored grep (defeats the token-mention spoof), the marker writer, honest ACK message, de-stickied `codex-unavailable`.
+- Kill: `PER_TURN_HARD_DISABLED=1` / `CODEX_CONSULT_DISABLED=1` (+ `~/.` files). Founder direction D63, 2026-07-20.
+
+## v2.39.16 — 2026-06-15
+
+**D61 amendment — Flow fires via the INLINE block, not a Skill invocation.** The v2.39.14 contract ("invoke `core:flow` every turn") could not hold: no Claude Code hook can force a Skill on the first pass, so on no-tool turns the model skipped it. Flow now fires the way Input Routing fires — an INLINE FLOW block (literal text the model emits) on every input + markers written via the Write tool. The full `core:flow` Skill is the DEEP mode (substantive / multi-step / ambiguous work only).
+- **Marker-persistence fix:** marker writes must use the Write tool — Claude Code rolls back sandboxed Bash writes to `.claude/`, which made `flow-gate` / `flow-stop-check` read stale state (block a classified mutation / force a spurious redo). SKILL.md + sutra-defaults now mandate it.
+- Floors unchanged: `flow-gate.sh` (mutations) + `flow-stop-check.sh` (no-tool turns), HARD fleet-wide. `emission_mode` → `inline_block_every_turn_plus_skill_for_substantive`.
+- True "fires by construction" (model cannot skip) requires the spine as CODE outside the model — the Native engine. Deferred. Founder direction D61 amendment, 2026-06-15.
+
+## v2.39.15 — 2026-06-14
+
+**D61 floor — `flow-stop-check.sh` (Stop event).** Forces a redo when `core:flow` did not fire on a turn (no `.claude/flow-classified` marker). This floors pure no-tool turns (a one-line answer, yes/no, chitchat) that PreToolUse gates cannot reach. HARD, fleet-wide (founder direction).
+- **Loop-safe:** honors `stop_hook_active` — the first miss blocks (one forced redo); the re-invoked turn passes. A client can NEVER infinite-loop, even if a marker write fails. Net: every miss gets exactly one redo, then proceeds.
+- Together with `flow-gate.sh` (floors mutations) this completes "Flow fires on EVERY input." Kill-switches shared: `FLOW_ACK=1` / `FLOW_DISABLED=1` / `~/.flow-disabled`.
+- Founder direction D61, 2026-06-14 ("HARD fleet-wide now").
+
+## v2.39.14 — 2026-06-14
+
+**D61 — Flow FIRES full-manner on EVERY input.** `core:flow` now fires on every input — the complete six-stage spine, every TYPE — the way Input Routing / the H-Sutra header fire every turn. The firing is universal; it is NOT a downstream tool gate.
+- Firing mechanism: `per-turn-discipline-prompt.sh` (UserPromptSubmit) now invokes the full `core:flow` Skill every turn; `sutra-defaults.json .per_turn_blocks.flow` emission_mode → `skill_invocation_always`. The v2.39.13 literal-text fast-path (trivial-turn collapse) is REMOVED — every input pays the full spine.
+- `flow-gate.sh` stays a mutation backstop only (Edit/Write + Task/Agent). The brief WebSearch/WebFetch gating is REVERTED — gating is not how Flow fires (founder: "it is not web search gating; it is flow that should be fired").
+- Cost optimization (cheaper head for trivial turns) explicitly DEFERRED by founder ("optimizations can be done later"). Kill-switches unchanged (`FLOW_ACK=1` / `FLOW_DISABLED=1` / `~/.flow-disabled`).
+- Founder direction D61, 2026-06-14.
+
+## v2.39.12 — 2026-06-14
+
+**Flow gate HARD, fleet-wide.** `flow-gate.sh` now exits 2 (blocks) when an Edit/Write to a non-whitelisted path, or a Task/Agent dispatch, skipped `core:flow` classify+resolve — same enforcement shape as `input-classification-gate.sh` + `depth-marker-pretool.sh`.
+- Escape hatches: `FLOW_ACK=1 FLOW_ACK_REASON='<why>'` (audit-logged), `FLOW_DISABLED=1`, `touch ~/.flow-disabled`.
+- `reset-turn-markers.sh` now wipes `flow-classified/inner/type-resolved/closed` per-turn — fixes stale markers from a prior session silently satisfying the gate.
+- Founder direction 2026-06-14; risk (heavier skill than a routing block) accepted over the company-profile-gated alternative.
+
+## v2.39.11 — 2026-06-14
+
+**Flow on EVERY input + fast-path; gate widened to Task/Agent.**
+
+- `per_turn_blocks.flow.applies_to_turn_types` = all 5 types; Flow activates every turn (structure universality, D45).
+- Cost-proportional: trivial input -> 1-step fast-path (classify->answer, Mode-1 atom); only substantive pays the full spine.
+- `flow-gate.sh` widened to fire on Task/Agent dispatch (not just Edit/Write) — fixes the workflow/subagent gap.
+
+## v2.39.10 — 2026-06-14
+
+**Flow auto-activation — `core:flow` now fires per turn, gated by the classified TYPE.**
+
+- Added `per_turn_blocks.flow` to `sutra-defaults.json` (the canonical per-turn surface); `per-turn-discipline-prompt.sh` now emits a FLOW-activation reminder every turn.
+- After Input Routing + H-Sutra classify the TYPE, work-bearing turns (task / direction / new_concept, substantive question/feedback) invoke `core:flow`; trivial/conversational/read-only turns skip.
+- SOFT (reminder + `flow-gate.sh` backstop). Kill-switch: `~/.per-turn-discipline-disabled`.
+
+## v2.39.9 — 2026-06-14
+
+**The Flow — end-to-end work-resolution spine, shipped as skills + a soft gate.**
+
+- New skills: `core:flow` (orchestrator: classify -> resolve workflow type -> follow/construct -> inner-engine-on-every-step -> run atom -> close), `core:workflow-type-resolve` (FOLLOW vs CONSTRUCT, child->platform), `core:lens` (value<->axis generic engine), `core:cynefin` (certainty gate).
+- New hook `flow-gate.sh` (PreToolUse, **SOFT** — always exit 0): nudges + logs when construct work skips the flow markers. HARD promotion (company profile) documented, not enabled. Test: 25/25 incl. never-exit-2.
+- Canon: ADR-026 (guidance-first resolution) + ADR-027 (value<->axis single primitive).
+
+## v2.39.7 — 2026-06-11
+
+**`h-sutra-enforce` hook (v6) — stop false-firing on Skill-invoking turns.**
+
+- `is_human_user()` now returns False for `isMeta:true` user rows. Skill invocations and stop-hook feedback are recorded as `role:user`/`isMeta:true` (no `promptSource`) — not human turns.
+- v4/v5 counted them as human, so any turn invoking a Skill reset the turn boundary to the skill-injection row and checked the assistant's post-skill narration (no header) → spurious block.
+- Reproduced + verified against a live transcript prefix: v5 blocks, v6 passes on the real header row.
+
+## v2.39.6 — 2026-05-31
+
+**Prompt-capture hook (UserPromptSubmit) — fleet L0.**
+
+- New `hooks/capture-prompt.sh` appends every founder prompt as JSONL to the project's `holding/state/prompts/<YYYY-MM>.jsonl` (schema: ts, session_id, prompt).
+- Lossless, non-blocking; kill via env `PROMPT_CAPTURE_DISABLED=1` or `~/.prompt-capture-disabled`. No network.
+- Registered in `hooks/hooks.json` UserPromptSubmit after `per-turn-discipline-prompt.sh`.
+- Promoted from Asawa-local L1 (was at `holding/hooks/capture-prompt.sh`); Asawa L1 copy retired same day.
+
+## v2.39.5 — 2026-05-28
+
+**`h-sutra-enforce` hook — actionable error on mis-cased headers.**
+
+- Block branch now splits MALFORMED (bracket+middot but fails strict match — almost always Title-case/lowercase DIRECTION·VERB) from MISSING (no header).
+- Malformed → "DIRECTION·VERB must be UPPERCASE" + canonical example. Was misreporting these as "header missing".
+- Pass/block logic for valid headers unchanged (regression-tested). Audit + violations logs gain `reason_code`.
+
+## v2.39.4 — 2026-05-13
+
+**`prd-discipline` skill v2** — REFACTOR pass per superpowers:writing-skills TDD discipline.
+
+- TDD baseline subagent at `.enforcement/skill-tests/2026-05-13-prd-discipline-baseline.md` wrote a Senior Expert Layer-B PRD WITHOUT loading the skill. Captured 5 named rationalizations.
+- v2 plugs all 5: §1 +namespace-collision check + naming-with-alternatives · §3 +scale-undershoot surface · §4 +canon-typed-entity rule · §5 +TODO-is-not-an-alibi.
+- 4 new rationalization rows + sharpened red flags + v2 testing-trail section.
+
+## v2.39.3 — 2026-05-13
+
+**Add `prd-discipline` skill** — product-document writing discipline.
+
+- New skill at `skills/prd-discipline/SKILL.md` codifies 5 invariants: STRUCTURED · VISUAL FIRST · RESTRUCTURE-ON-BULK (D55 4-step) · CONNECTED (anchor cross-ref discipline) · GAP-SURFACING (TODO/Q markers, never fabricate).
+- Composes with ADR-020 Layer-B Product Authoring Template (ADR-020 = WHAT sections; this skill = HOW to write/maintain them).
+- Authored from R1-R11 Native PRD review evidence (codex+deepseek verdicts 2026-05-12 to 2026-05-13). Formal subagent TDD baseline pass queued as follow-up.
+
+## v2.39.2 — 2026-05-13
+
+**Remove 15-min hard cap on `codex-sutra` + `deepseek` skills** (founder D2026-05-13).
+
+- `skills/codex-sutra/SKILL.md`: 900-s wrapper kill removed; replaced with SIGINT trap (founder Ctrl-C → SIGTERM/SIGKILL to whole process group). Heartbeat now fires every 10 min instead of one-shot at 10 min. Stall warn unchanged (5 min no-progress).
+- `skills/deepseek/SKILL.md`: same poll-loop change. `curl --max-time 900` flag removed; DeepSeek API server-side timeout is the only network bound.
+- `sutra-defaults.json`: `deepseek.limits.wall_seconds_hard_cap` set to `null`; `progress_warn_seconds` renamed to `heartbeat_interval_seconds`.
+- Fail-closed tables: `Hard-cap timeout / reason=timeout / exit 124` rows replaced by `Founder interrupt (Ctrl-C) / reason=interrupted / exit 130`.
+- Native canon refs updated: `sutra/os/native/impl-phases/phase-D-codex-review.md` + `sutra/os/native/hardstops/HS-7-codex-queue-stale.md` carry an amendment line — HS-7 itself is unchanged (it watches review-backlog health, not per-call duration).
+
+Rationale: long-reasoning runs (`high`/`xhigh` effort on large diffs or design docs) were being killed before completion. Without a cap, founder retains the interrupt path via Ctrl-C; the wrapper still surfaces stall + heartbeat so silent hangs remain observable.
+
+## v2.39.1 — 2026-05-13
+
+**Cache-invalidating patch over v2.39.0.** Same content; version field was the only thing missing to propagate the housekeeping fixes (concise plugin.json description, /core:update reload reminder).
+
+Lesson: any content change in a release artifact requires a patch-bump even without a feature change — marketplace cache keys on version, not content hash.
+
+## v2.39.0 — 2026-05-13
+
+**Anti-glaze-tone skill** — brutally honest, no-flattery register for founder↔Claude sessions.
+
+- New skill at `marketplace/plugin/skills/anti-glaze-tone/SKILL.md`.
+- 16 rules adopted (verify own work, lead with counterargument, banned glaze phrases, confidence levels, accuracy > approval). 5 rejected (preserves Founding Doctrine P0 + D51 caveman).
+- Asawa+Sutra: auto-active via CLAUDE.md (commits `25a728b`, `76fdcd9`). T2/T3/T4 fleet: opt-in.
+- Plugin description field collapsed from ~14KB accumulated narrative to ~227 chars; CURRENT-VERSION.md trimmed from 797 → 12 lines.
+- `/core:update` now prints a `/reload-plugins` reminder.
+
+Source: @aiedge_ Anti-Glaze System Prompt. Founder-approved composition 2026-05-12.
+
+## v2.36.0 — 2026-05-12
+
+**3-Layer Verification Stack + V2.2 L1 hook enforcement** (founder-direction trajectory across one session).
+
+### Direction trajectory
+
+- **"convert them into hard hooks"** — 6 SOFT hooks flipped HARD: `blueprint-check.sh` (was SOFT advisory on non-foundational), `input-classification-gate.sh` (HARD + marker contract bug fix — was reading `/tmp/asawa-input-classified-${SESSION_ID}` with no writer; now reads `.claude/input-routed`), `depth-marker-pretool.sh` (via `profile=company`), 4 Stop-hook `|| true` wrappers removed from `.claude/settings.json`. `reset-turn-markers.sh` now also wipes `.claude/blueprint-registered` (lifecycle gap closed). `operationalization-check` enabled in `asawa-holding/os/SUTRA-CONFIG.md`.
+- **"all three (layered)"** — L1 BLUEPRINT per-step Verify (skill V2.1 block format with inline `Verify:` per Step) + L2 `PHASE-EXIT-VERIFY` method-registry row (convention only, no hook) + L3 `VERIFY-*` family (existing, convention only). 3-Layer Verification Stack documented in `BLUEPRINT-ENGINE.md` + `skills/workflow/SKILL.md` + `CLAUDE.md`.
+- **"force it"** — V2.2 hook enforcement. `blueprint-check.sh` reads DEPTH from `.claude/depth-registered` and HARD-blocks D3+ Edit/Write when marker lacks `HAS_PER_STEP_VERIFY=1`.
+
+### Codex review arc (4 rounds, final PASS)
+
+| Round | Verdict | Action |
+|---|---|---|
+| R1 | CHANGES-REQUIRED (2P1+2P2) | Folded P2.1 (doc coherence) + P2.2 (L2 enforcement-status honesty) + partial P1.1 (depth-parse fail-closed). Accepted P1.2 (fleet hard-stop) as intentional forcing function. |
+| R2 | CHANGES-REQUIRED (1P1) | R1 regex `^DEPTH=[0-9]+` still parsed `DEPTH=3garbage` as `3`. Folded with whitespace-boundary `^DEPTH=[0-9]+([[:space:]]|$)`. |
+| R3 | CHANGES-REQUIRED (1P1) | R2 boundary still parsed `DEPTH=3 junk`, `DEPTH=3<TAB>garbage`, `DEPTH=3 TASK=`. Folded with strict 2-regex full-line shape validation. |
+| **R4** | **PASS** (0 findings) | "Both accepted shapes fully anchored. Old boundary-only acceptance problem is gone." |
+
+### Final hook regex (V2.2 R3-fold)
+
+```bash
+# Form A — canonical 3-token single-line per CLAUDE.md marker spec
+grep -E '^DEPTH=[0-9]+[[:space:]]+TASK=[^[:space:]]+[[:space:]]+TS=[0-9]+$'
+# Form B — multi-line 1-token fallback
+grep -E '^DEPTH=[0-9]+$'
+# Anything else → DEPTH empty → integer-shape check → D5 fail-closed → block
+```
+
+12-scenario smoke test all PASS (4 fail-closed cases + 4 canonical/multi-line accepts + 4 regression).
+
+### Breaking change
+
+Every D3+ Edit/Write across fleet HARD-blocks unless `.claude/blueprint-registered` carries `HAS_PER_STEP_VERIFY=1` + valid `DEPTH=N` marker. Recovery is 1 tool-call cycle (error message shows fix). Bootstrap pattern documented in memory: write markers via Bash before first Edit/Write of every turn — `depth-marker-pretool.sh` only matches `Edit|Write` tools, not `Bash`.
+
+### Deferred
+
+- L2 (`PHASE-EXIT-VERIFY`) hook enforcement — requires text-scan of model response (different architecture from marker-check), not in scope.
+- L3 (`VERIFY-*`) hook enforcement — task-shape dependent, stays convention-only.
+- 5 charter/engine/protocol files lacking `## Operationalization` section (HUMAN-SUTRA-LAYER, SUTRA-ENGINE, HUMAN-SUTRA-ENGINE, NATIVE-ENGINE, PROTOCOLS) — backfill is a separate project.
+
+### Files changed
+
+Sutra: `marketplace/plugin/hooks/{blueprint-check,input-classification-gate,reset-turn-markers}.sh`, `marketplace/plugin/skills/blueprint/SKILL.md`, `marketplace/plugin/skills/workflow/SKILL.md`, `os/engines/BLUEPRINT-ENGINE.md`, `os/engines/method-registry.jsonl`, `.claude-plugin/plugin.json`, `CURRENT-VERSION.md`, `CHANGELOG.md`.
+Asawa: `.claude/settings.json`, `.claude/sutra-project.json`, `os/SUTRA-CONFIG.md`, `CLAUDE.md`, `sutra/` submodule pointer.
+
+## v2.35.3 — 2026-05-09
+
+**Layer-2 bug fix on the same hook: `reset-turn-markers.sh` stdin handling. v2.35.2 fixed event registration; v2.35.3 fixes the stdin double-read that still made every real turn skip.**
+
+### What v2.35.2 fixed (recap)
+
+v2.35.2 moved registration from `Stop` → `UserPromptSubmit`. Correct event.
+
+### What v2.35.2 missed
+
+Even on the correct event, the script's first executable line:
+
+```bash
+PROMPT=$(jq -r '.prompt // empty' 2>/dev/null)
+```
+
+`jq` reads stdin inside the `$(...)` substitution. Under Claude Code's actual `UserPromptSubmit` payload shape, this returned EMPTY for `.prompt` on real founder turns. So every real turn STILL hit the synthetic-skip branch (`case "$PROMPT" in "")`) and never reached the `rm -f` block.
+
+### Evidence (forensic)
+
+`grep -E "markers-cleared|reset-skipped" routing-misses.log` showed ALL recent UserPromptSubmit hits logged `reset-skipped-empty-prompt` — zero `markers-cleared`. Same pathology as the v2.35.2 bug target, different cause.
+
+Founder live diagnostic (2026-05-09):
+- `.claude/structure-first-active` marker mtime 3+ minutes old (carried across turns)
+- All recent routing-misses.log entries: `reset-skipped-empty-prompt`
+- Root cause: `jq` consumed stdin in `$(...)`; under Claude Code's actual payload format, returned empty
+
+### The fix
+
+Capture stdin once into a variable, parse from variable:
+
+```bash
+STDIN_RAW="$(cat 2>/dev/null)"
+PROMPT=$(printf '%s' "$STDIN_RAW" | jq -r '.prompt // empty' 2>/dev/null)
+```
+
+Plus instrumentation — on every skip-empty event, log `stdin_bytes` + first-200-char head so future regressions are observable.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `bash -n reset-turn-markers.sh` | PASS |
+| `echo '{"prompt":"hi"}' \| bash reset-turn-markers.sh` → marker removed | PASS |
+| `echo '' \| bash reset-turn-markers.sh` → logs `{stdin_bytes:0,stdin_head:""}` | PASS |
+| Live UserPromptSubmit during release session → `markers-cleared` event in routing-misses.log | PASS (observed) |
+
+### Versions
+
+`2.35.2` → `2.35.3` (`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` + `hooks/reset-turn-markers.sh`).
+
+### D55 status
+
+D55 `structure-first-reminder.sh` dedupe-per-turn semantics now functional fleet-wide. Per-turn marker reset works as documented in CLAUDE.md Marker Lifecycle.
+
+---
+
+## v2.35.2 — 2026-05-09
+
+**Major bug fix: `reset-turn-markers.sh` registration moved Stop → UserPromptSubmit. Per-turn marker discipline was silently broken fleet-wide; ALL per-turn markers persisted entire sessions instead of clearing per turn.**
+
+### The bug
+
+`hooks/hooks.json` registered `reset-turn-markers.sh` on the **Stop** event. The script body, however, was designed for **UserPromptSubmit** — its first executable line is:
+
+```bash
+PROMPT=$(jq -r '.prompt // empty' 2>/dev/null)
+```
+
+`.prompt` only exists in `UserPromptSubmit` event stdin. `Stop` event stdin has `.stop_hook_active`, `.session_id`, etc. — but **no `.prompt` field**. So every Stop fire returned empty PROMPT, fell into the case branch that treats empty prompt as a "synthetic turn", logged `reset-skipped-empty-prompt`, and exited without clearing any markers.
+
+### Impact
+
+| Marker | Wiped between turns? |
+|---|---|
+| `.claude/depth-registered` | NO (was supposed to per CLAUDE.md Marker Lifecycle) |
+| `.claude/input-routed` | NO |
+| `.claude/build-layer-registered` | NO |
+| `.claude/sutra-deploy-depth5` | NO |
+| `.claude/depth-assessed` | NO |
+| `.claude/structure-first-active` (new in v2.35.0) | NO |
+
+Result: any hook that dedupes via per-turn markers (including the new D55 `structure-first-reminder`) emitted ONCE per session instead of once per turn. `per-turn-discipline-prompt.sh` may have been similarly affected for its dedupe logic.
+
+### Evidence — routing-misses.log forensic
+
+A representative sample from `holding/state/.../routing-misses.log` shows hundreds of `reset-skipped-empty-prompt` events and **zero** `markers-cleared` events. The script ran every turn but never did its job.
+
+### The fix
+
+`hooks/hooks.json` — `reset-turn-markers.sh` moved from `Stop[0].hooks[0]` to `UserPromptSubmit[0].hooks[0]` (placed FIRST in the UserPromptSubmit chain so subsequent hooks see fresh marker state).
+
+Why first: `per-turn-discipline-prompt.sh` and other UserPromptSubmit hooks may read or assume specific marker state. The reset must precede them.
+
+### Why this matches the script's design
+
+- Script header comment: `"UserPromptSubmit hook — clears per-turn routing/depth markers..."`
+- Script body: synthetic-turn case patterns (`*"<system-reminder>"*`, `*"<local-command-caveat>"*`, `*"READ-BEFORE-EDIT REMINDER"*`) are all things that appear in `UserPromptSubmit` prompt content, never in `Stop` stdin
+- `holding/CLAUDE.md` Marker Lifecycle section: "Wiped only by `reset-turn-markers.sh` on `UserPromptSubmit`"
+
+All three sources said UserPromptSubmit. Only `hooks.json` said Stop. That's the drift.
+
+### When did this regress
+
+Unknown without git archaeology on hooks.json. Could have been the original registration (bug from day 1) or moved later. Out of scope for this hotfix; surfacing the question here for future blame-driven cleanup.
+
+### Discovery path
+
+Founder relaunched a v2.35.0 session to test D55 visibility. D55 reminder failed to visibly fire. New-session diagnostic traced to `.claude/structure-first-active` marker mtime persisting from prior turn (3+ minutes old). `routing-misses.log` showed `reset-skipped-empty-prompt` was the only event reset-turn-markers had been emitting. Root cause: event-registration mismatch.
+
+### Versions
+
+`2.35.1` → `2.35.2` (`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` + `hooks/hooks.json`).
+
+### Note on D55 verify state
+
+D55 `structure-first-reminder.sh` install was correct since v2.35.0. v2.35.1 fixed an unrelated permission bug. v2.35.2 now fixes the dedupe-persistence bug that prevented the D55 reminder from being visible across consecutive turns. Real-runtime visibility verification (founder makes tool call in v2.35.2+ session → log row with real fields → reminder visible turn-to-turn) is the final outstanding D55 check.
+
+---
+
+## v2.35.1 — 2026-05-09
+
+**chmod +x fix for `hooks/session-token-snapshot.sh` — pre-existing bug surfaced in v2.35.0 install logs.**
+
+### What changed
+
+`marketplace/plugin/hooks/session-token-snapshot.sh` was tracked at git mode `100644` (non-executable). Every cache install since at least v2.34.0 propagated the non-exec bit. The result: SessionStart hook failed silently (non-blocking) on every session start fleet-wide for weeks — log line `SessionStart:startup hook error / Failed with non-blocking status code: ... Permission denied` appeared but the harness kept going, so nobody noticed until founder relaunched a session into v2.35.0 and read the startup output.
+
+Fix is a one-line `git update-index --chmod=+x marketplace/plugin/hooks/session-token-snapshot.sh` — file now ships at mode `100755`.
+
+### Survey result
+
+`find sutra/marketplace/plugin/hooks -name "*.sh" ! -perm -u+x` returned exactly **1 file** (the one fixed). All other 72 `.sh` files in `hooks/` source are correctly executable. No other ship-stoppers in source `bin/` or `scripts/` either (one stray `.pyc` in `scripts/__pycache__/` — gitignore territory, not a release blocker).
+
+### Why a patch bump, not a v2.36.0
+
+This is a true bug fix — file mode metadata correction, no functional code changes, no API/behavior change. Patch semantics apply.
+
+### Note: D55 still pending real-runtime verification
+
+D55 `structure-first-reminder.sh` is correctly installed in v2.35.0 cache (registered in `hooks/hooks.json` PreToolUse[0], file mode `100755`). At time of writing, the new session that picked up v2.35.0 had not yet executed any model-side tool calls (only `/doctor` and a user message), so the hook has had no opportunity to fire. v2.35.1 is unrelated to that pending verification — D55 verify is a separate task that completes when the next real tool call in a v2.35.1+ session writes a row to `holding/hooks/hook-log.jsonl` with non-`"unknown"` `tool` + `session` fields.
+
+### Versions
+
+`2.35.0` → `2.35.1` (`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`).
+
+---
+
+## v2.35.0 — 2026-05-09
+
+**D55 Structure-First Default + Restructure-on-Add — hard enforcement hook fires on every tool call. Fleet-wide.**
+
+Founder direction 2026-05-09: "Make sure by default there is structuring applied everywhere whenever you go about doing something. And then make sure that when we add new things, you structure the existing things with the new things and see if there are simplifications required. Make this as a hard. This code which has to run on every command."
+
+### What changed
+
+1. **NEW `hooks/structure-first-reminder.sh`** — PreToolUse hook (no matcher = every tool call). Emits two-clause reminder to stderr once per founder turn (dedupe via per-turn marker `.claude/structure-first-active`). Audit-logged to `holding/hooks/hook-log.jsonl`. Fail-open exit 0 (soft guidance per D40 hook-injects-prompt caveat).
+
+2. **`hooks/hooks.json`** — `structure-first-reminder.sh` added to the existing PreToolUse no-matcher block alongside `feedback-auto-override.sh`. Fires before every Read/Edit/Write/Bash/Task/MCP/WebFetch/WebSearch tool call.
+
+3. **`hooks/reset-turn-markers.sh`** — `.claude/structure-first-active` added to the per-turn `rm -f` list so the dedupe marker wipes on every `UserPromptSubmit`, allowing the reminder to re-fire at the start of each new founder turn.
+
+### Two clauses (the D55 direction)
+
+- **Clause 1 — Structure-First Default**: structure is the default shape of every action, not output-time polish. Tables > prose for ≥3 comparable rows. Numbers > adjectives; progress bars for scores. Decisions in ASCII-boxed callouts (no unicode box-drawing). Impact + Effort columns on every task list. Applies action-time, not only at output.
+
+- **Clause 2 — Restructure-on-Add**: adding ANY new thing (file, section, direction, protocol, hook, skill, dep) fires four mandatory steps — **Survey** existing structure the new thing touches → **Reorg** new+existing into one coherent shape → **Simplify** (dedupe, merge, delete redundancy) → **Surface** in turn output what was added/restructured/simplified/deleted.
+
+### Kill-switches
+
+- Per-session: `touch ~/.structure-first-disabled` (or `~/.sutra-defaults-disabled` for all D40+D55 defaults).
+- Per-call: `STRUCTURE_FIRST_ACK=1 STRUCTURE_FIRST_ACK_REASON='<why>' <cmd>` — audit-logged.
+- Permanent revoke: founder utterance "stop structure-first" / "drop D55" → revert for that session; permanent removal is a follow-up commit.
+
+### Verification gap recognized
+
+The prior source-side commit (`sutra 888b790`, 2026-05-09 earlier) shipped the hook + registration but did NOT bump the plugin version. As a result the runtime plugin cache (`~/.claude/plugins/cache/sutra/core/2.34.0/`) never picked up the hook — PreToolUse fired without it for the rest of that session. Verified-by check in the originating BLUEPRINT covered source-side artifacts (file present, hook registered, smoke test runs) but not runtime-side (real PreToolUse calls the hook). v2.35.0 closes the gap: this version bump triggers a fresh cache pull on `/plugin update sutra@core`. Asawa memory `feedback_verify_before_commit.md` updated to require **runtime test** (new session + real tool call + log inspection) on any hook/skill/plugin ship.
+
+### Asawa-side governance (separate repo)
+
+- `asawa-holding/holding/FOUNDER-DIRECTIONS.md` §D55 — full direction-of-record (entry landed in asawa-holding `104b037`).
+- `asawa-holding/CLAUDE.md` Core Behaviors — D55 bullet alongside D51/D52/D53.
+- `asawa-holding/sutra/CLAUDE.md` Inherited Governance — D55 section so Sutra sessions load it at startup.
+- Memory `feedback_structure_first_d55.md` + `MEMORY.md` row.
+
+### Fleet propagation
+
+T2 (DayFlow/Billu/Paisa/PPR/Maze), T3 (Testlify/Dharmik), T4 fleet receive the hook on next `/plugin update sutra@core` + session restart. Without the version bump in this release, those installs would stay on v2.34.0 forever. D33 client firewall preserved — pull-model distribution, no push.
+
+### Versions
+
+`2.34.0` → `2.35.0` (`.claude-plugin/plugin.json` description + version field). Marketplace registry refresh follows on push.
+
+---
+
 ## v2.32.0 — 2026-05-04
 
 **Permission posture realigned to catastrophic-only across Bash/MCP/Web/Task. Closes ~95% of remaining prompt friction; catastrophic floor preserved.**

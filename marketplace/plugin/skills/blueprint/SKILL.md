@@ -10,11 +10,14 @@ Every founder turn that will result in any tool call gets a BLUEPRINT block. Emi
 ## The block
 
 ```
-+--- BLUEPRINT --------------------------------------------------+
++--- BLUEPRINT (V2.1) -------------------------------------------+
 | Doing: <plain-English task statement>                          |
-| Steps: 1) <step> 2) <step> 3) <step>                           |
+| Steps:                                                         |
+|   1) <step>       Verify: <runnable check>                     |
+|   2) <step>       Verify: <runnable check>                     |
+|   3) <step>       Verify: <runnable check>                     |
 | Output looks like: <concrete observable target>                |
-| Verified by: <runnable check - cmd, grep, file, screenshot>    |
+| Verified by (overall): <bundle check spanning all steps>       |
 | Scale: <files>, <time>, <cost>                                 |
 | Stops if: <abort condition>                                    |
 | Switch: ON | OFF (override: BLUEPRINT_ACK=1 reason)            |
@@ -23,7 +26,9 @@ Every founder turn that will result in any tool call gets a BLUEPRINT block. Emi
 
 ASCII-only per CLAUDE.md (D-UX-1 codex 2026-05-04). Native renderer at sutra/marketplace/native/src/renderers/terminal-events.ts is the canonical reference.
 
-Seven fields, all required (Output + Verified added per D48, 2026-05-05):
+Per-step `Verify:` (V2.1, 2026-05-10 per founder direction "All three layered") is required at D3+. Each step in the Steps list gets its own runnable check. Failure triggers fix-loop (max 3 iter) BEFORE the next step runs. At D1-D2, compact one-line `Steps: 1) ... 2) ... 3) ...` form without per-step Verify still works.
+
+Seven fields, all required (Output + Verified added per D48, 2026-05-05; per-step Verify added per V2.1 2026-05-10):
 
 - **Doing** — one plain-English sentence. No jargon. No protocol IDs. No filenames unless central.
 - **Steps** — numbered, max 6. If more, group. Use `→` for sequence inside a step if needed.
@@ -33,17 +38,32 @@ Seven fields, all required (Output + Verified added per D48, 2026-05-05):
 - **Stops if** — what condition aborts the plan and triggers re-blueprint
 - **Switch** — `ON` normally; `OFF` if any kill-switch level is active
 
-## Marker write (after emitting the block)
+## No marker to write (v3, 2026-07-27)
 
-Write `.claude/blueprint-registered` with:
-```
-HAS_OUTPUT=1
-HAS_VERIFY=1
-TASK=<task-slug>
-TS=<unix-timestamp>
-```
+**The emitted block is the contract.** Earlier versions asked you to write a
+`.claude/blueprint-registered` marker after emitting the block, and
+`blueprint-check.sh` read only that marker. That divergence — the gate looking
+at a receipt while the contract said "emit the block" — is what produced #68,
+the 2026-07-08 Testlify field incident (a correct block, blocked twice, then a
+model-discovered Bash bypass), and a third repeat on 2026-07-27. Removed.
 
-`HAS_OUTPUT=1` and `HAS_VERIFY=1` are honor-system flags — set them only when the BLUEPRINT actually contains both new lines with non-trivial values. Hook `blueprint-check.sh` reads the marker and rejects edits to foundational paths (charters, protocols, FOUNDER-DIRECTIONS, sutra/os/engines, design plans) when either flag is missing.
+What reads the block now:
+
+| Where | Hook | What it checks |
+|---|---|---|
+| Before the edit, **foundational paths only** | `blueprint-check.sh` | the BLUEPRINT in your response text: non-empty `Doing:`, concrete `Output looks like:`, runnable `Verified by:`, and at D3+ an inline `Verify:` on every numbered Step |
+| End of turn, **any turn that mutated a governed file** | `per-turn-hard-gate.sh` | that a BLUEPRINT block is present at all — one redo, loop-safe |
+
+Foundational = charters, protocols, `FOUNDER-DIRECTIONS.md`, engine specs,
+`*-design.md` / `*-plan.md`. The list lives in `sutra-defaults.json` under
+`per_turn_blocks.blueprint.foundational_paths` and can be overridden per repo
+with `.blueprint_foundational_paths[]` in `.claude/sutra-project.json`.
+
+`blueprint-check.sh` still writes `.claude/blueprint-registered` — as its own
+per-turn cache, so a multi-edit turn validates once. Do not write it yourself;
+nothing asks you to.
+
+At D1-D2 the compact one-line Steps form without per-step Verify is sufficient.
 
 ## Verification kinds (pick one for `Verified by`)
 

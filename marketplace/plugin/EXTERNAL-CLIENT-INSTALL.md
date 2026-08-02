@@ -59,10 +59,11 @@ If you need something Asawa has: send feedback via `.enforcement/feedback-upstre
 ## Day-1 checklist for external clients
 
 1. `cd ~/Claude/<your-company>/`
-2. `/plugin install sutra@marketplace`
-3. Edit `os/SUTRA-CONFIG.md`: set `tier`, pick hooks/extensions
-4. Start a session — plugin auto-activates
-5. Work normally. Plugin enforces Boundary + Runtime Gates automatically
+2. `/plugin marketplace add sankalpasawa/sutra` (one-time per machine)
+3. `/plugin install core@sutra` (the package name is `core`, not `sutra` — `sutra@marketplace` will fail)
+4. Edit `os/SUTRA-CONFIG.md`: set `tier`, pick hooks/extensions
+5. Start a session — plugin auto-activates
+6. Work normally. Plugin enforces Boundary + Runtime Gates automatically
 
 ---
 

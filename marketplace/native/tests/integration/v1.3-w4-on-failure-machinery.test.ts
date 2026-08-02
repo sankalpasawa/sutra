@@ -154,11 +154,10 @@ function makeStubDispatch() {
       throw new Error(`stub_failure:${args.prompt}`)
     }
     return {
-      stdout: 'ok',
-      stderr: '',
+      response: 'ok',
+      host_kind: args.host,
+      host_version: '0.0.0-stub',
       exit_code: 0,
-      host: args.host,
-      duration_ms: 1,
       invocation_id: `inv-${args.workflow_run_seq}`,
     }
   }

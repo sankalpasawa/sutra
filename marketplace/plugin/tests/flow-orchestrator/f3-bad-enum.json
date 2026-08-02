@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "trace_id": "flow-20260730-a8f3",
+  "atom_id": "A8-03",
+  "status": "finished",
+  "result": "Wrote fixture f3 with out-of-enum status and confidence values.",
+  "verify": "jq . sutra/marketplace/plugin/tests/flow-orchestrator/f3-bad-enum.json",
+  "confidence": "sky-high",
+  "files_touched": [
+    "sutra/marketplace/plugin/tests/flow-orchestrator/f3-bad-enum.json"
+  ],
+  "duration_s": 30,
+  "learned": "Bad-enum fixture: status 'finished' and confidence 'sky-high' are not in the enums."
+}

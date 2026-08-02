@@ -43,7 +43,7 @@ export function buildExecutionDecisionProvenance(input) {
         decision_kind: 'EXECUTE',
         scope: 'EXECUTION',
         outcome: input.outcome,
-        next_action_ref: input.stage === 'STARTED' ? input.execution_id : null,
+        next_action_ref: null,
     });
 }
 //# sourceMappingURL=execution-provenance.js.map

@@ -10,8 +10,11 @@
  * preview surface) are NOT re-exported here and may change at any time.
  */
 // Runtime engine
-export { NativeEngine, createDefaultEngine } from './runtime/native-engine.js';
-export { executeWorkflow } from './runtime/lite-executor.js';
+export { NativeEngine, createDefaultEngine, parseApprovalUtterance } from './runtime/native-engine.js';
+export { executeWorkflow, executeWorkflowResume } from './runtime/lite-executor.js';
+// v1.3.0 W2 — execution-approval-ledger public surface for callers writing
+// custom Native daemons / inspecting pending approvals on disk.
+export { persistApproval, loadApproval, listApprovals, updateApprovalStatus, markResumed, isExecutionApprovalRecord, } from './persistence/execution-approval-ledger.js';
 // Composable runtime modules
 export { HSutraConnector, resolveHSutraLogPath } from './runtime/h-sutra-connector.js';
 export { Router, computePromptHash, buildFallbackPrompt } from './runtime/router.js';
@@ -22,6 +25,8 @@ export { isCatalogedAsset, isAssetShape, SHA256_HEX_PATTERN, DOMAIN_ID_PATTERN, 
 export { ENGINE_EVENT_TYPES, isEngineEvent } from './types/engine-event.js';
 // Starter kit
 export { loadStarterKit, STARTER_DOMAINS, STARTER_CHARTERS, STARTER_WORKFLOWS, STARTER_TRIGGERS, STARTER_WORKFLOW_CHARTER_MAP, ONBOARDING_WORKFLOW } from './starter-kit/index.js';
+// Verifier Engine v1 — Wave 5.2 ship
+export { VerifierEngine, generateUtterance } from './runtime/verifier-engine/index.js';
 /** Library version (sync with package.json + plugin.json + marketplace.json + cli/sutra-native.ts:VERSION). Enforced by tests/contract/version-sync.test.ts. */
-export const NATIVE_VERSION = '1.2.2';
+export const NATIVE_VERSION = '1.5.1';
 //# sourceMappingURL=index.js.map

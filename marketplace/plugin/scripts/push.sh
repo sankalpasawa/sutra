@@ -61,6 +61,42 @@ if [ "$OPTIN" != "true" ]; then
   exit 0
 fi
 
+# v2.33.0 (D50): re-consent gate — codex P1-1 fold. Pre-v2.33 opt-ins consented
+# under PRIVACY.md v2.18.0 ("identity NOT pushed"); they must NOT silently
+# begin pushing identity on first post-upgrade push. Block when consent_version
+# missing or older than 2.33. User re-runs /core:start --telemetry on to write
+# consent_version="2.33" and acknowledge the new disclosure.
+CONSENT_VERSION=$(jq -r '.consent_version // ""' .claude/sutra-project.json 2>/dev/null)
+# Numeric MAJ.MIN compare. Future bumps (2.34, 3.0, ...) work natively.
+_consent_ok=0
+if [ -n "$CONSENT_VERSION" ]; then
+  _cv_maj="${CONSENT_VERSION%%.*}"
+  _cv_min="${CONSENT_VERSION#*.}"
+  if [ "$_cv_maj" -eq "$_cv_maj" ] 2>/dev/null && [ "$_cv_min" -eq "$_cv_min" ] 2>/dev/null; then
+    if [ "$_cv_maj" -gt 2 ] || { [ "$_cv_maj" -eq 2 ] && [ "$_cv_min" -ge 33 ]; }; then
+      _consent_ok=1
+    fi
+  fi
+fi
+if [ "$_consent_ok" -eq 0 ]; then
+  cat >&2 <<'EOF'
+✗ identity-on-wire requires re-consent for v2.33+. Push blocked.
+
+  Existing opt-in (under PRIVACY.md v2.18.0 'identity NOT pushed') must
+  re-acknowledge before identity crosses the wire. PRIVACY.md v2.33.0
+  amendment discloses 4 identity fields on the collaborator-visible
+  sankalpasawa/sutra-data repo: git_user_name, github_login, github_id,
+  git_user_email_hash.
+
+  To re-consent:    /core:start --telemetry on
+  To opt out:       set telemetry_optin=false in .claude/sutra-project.json
+                    OR set SUTRA_TELEMETRY=0 (kill-switch, both rails)
+
+  Queue preserved; no rows leaked. Retry next push after re-consent.
+EOF
+  exit 0
+fi
+
 INSTALL_ID=$(jq -r '.install_id // empty' .claude/sutra-project.json)
 PROJECT_ID=$(jq -r '.project_id // empty' .claude/sutra-project.json)
 PROJECT_NAME=$(jq -r '.project_name // ""' .claude/sutra-project.json)
@@ -98,16 +134,27 @@ DEST="$CACHE/clients/$INSTALL_ID"
 mkdir -p "$DEST"
 cp "$(queue_file)" "$DEST/telemetry-$TS.jsonl"
 
-# v2.2.0 (PROTO-024 H2 fix): identity capture REMOVED from push path. The
-# legacy block stamped github_login/github_id/git_user_name into remote
-# manifest.json, which leaked PII for any T4 stranger that pushed. Identity
-# is now captured local-only (lib/identity.sh callers other than push) and
-# never crosses the D33 boundary on this rail. Future versions may join
-# identity server-side via a different transport (see PROTO-024 V2 plan).
-#
-# v2.18.0: manifest fields written are install_id, project_id,
-# project_name_optional, sutra_version, push_count, first_seen, last_seen.
-# PRIVACY.md v2.18 amendment discloses these on the opt-in path.
+# v2.33.0 (D50): identity-on-wire with strict 4-field allowlist (codex P1-2
+# fold). Reverses v2.2.0 PROTO-024 H2 strip ONLY for the 4 fields founder
+# explicitly authorized. capture_identity() emits 14 fields; we extract ONLY
+# git_user_name, github_login, github_id, git_user_email_hash. The other 10
+# (hostname_hash, os_name, os_version, os_pretty, arch, shell_name, locale,
+# tz, captured_at, captured_by_version) stay local. Re-consent gate above
+# ensures pre-v2.33 opt-ins re-acknowledge before identity crosses (codex
+# P1-1 fold). Log hygiene (codex P2-3 #6): NEVER print IDENTITY_4 to
+# stdout/stderr.
+IDENTITY_4="{}"
+if declare -f capture_identity >/dev/null 2>&1; then
+  _identity_full=$(capture_identity "$VERSION" 2>/dev/null)
+  if [ -n "$_identity_full" ] && printf '%s' "$_identity_full" | jq -e . >/dev/null 2>&1; then
+    _identity_4=$(printf '%s' "$_identity_full" | jq '{git_user_name, github_login, github_id, git_user_email_hash}' 2>/dev/null)
+    [ -n "$_identity_4" ] && IDENTITY_4="$_identity_4"
+  fi
+fi
+# Manifest fields written on opt-in v2.33+ path: install_id, project_id,
+# project_name_optional, sutra_version, push_count, first_seen, last_seen,
+# identity:{git_user_name, github_login, github_id, git_user_email_hash}.
+# PRIVACY.md v2.33.0 amendment discloses these.
 
 MANIFEST="$DEST/manifest.json"
 NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -118,13 +165,15 @@ if [ -f "$MANIFEST" ] && jq -e . "$MANIFEST" >/dev/null 2>&1; then
      --arg project_name "$PROJECT_NAME" \
      --arg version "$VERSION" \
      --arg now "$NOW_ISO" \
+     --argjson identity "$IDENTITY_4" \
      '.install_id = (.install_id // $install_id)
       | .first_seen = (.first_seen // $now)
       | .last_seen = $now
       | .push_count = ((.push_count // 0) + 1)
       | .project_id = $project_id
       | .project_name_optional = $project_name
-      | .sutra_version = $version' \
+      | .sutra_version = $version
+      | .identity = $identity' \
      "$MANIFEST" > "$TMP"
 else
   jq -n --arg install_id "$INSTALL_ID" \
@@ -132,9 +181,10 @@ else
         --arg project_name "$PROJECT_NAME" \
         --arg version "$VERSION" \
         --arg now "$NOW_ISO" \
+        --argjson identity "$IDENTITY_4" \
         '{install_id:$install_id, first_seen:$now, last_seen:$now, push_count:1,
           project_id:$project_id, project_name_optional:$project_name,
-          sutra_version:$version}' > "$TMP"
+          sutra_version:$version, identity:$identity}' > "$TMP"
 fi
 mv -f "$TMP" "$MANIFEST" || { rm -f "$TMP"; echo "✗ manifest atomic-mv failed"; exit 1; }
 

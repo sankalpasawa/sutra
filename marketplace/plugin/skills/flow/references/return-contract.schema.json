@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sutra.dev/schemas/return-contract.schema.json",
+  "$comment": "Work-Atom return contract, per ADR-029. This file is the contract of record; bin/validate-return-contract.sh hardcodes the same rules. Aligned 2026-07-30 (ADR audit F1/F2 + codex folds): extra keys tolerated at top level and inside verify, verify accepts string|object — matching validator rules R1/R2 and fixture f1.",
+  "title": "Work-Atom Return Contract",
+  "description": "Structured return payload every Work-Atom worker emits back to the orchestrator.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["atom_id", "status", "result", "verify", "confidence", "trace_id"],
+  "properties": {
+    "atom_id": {
+      "type": "string",
+      "description": "Identifier of the atom this return belongs to (e.g. A4-01)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["done", "failed", "blocked", "partial"],
+      "description": "Terminal state of the atom."
+    },
+    "result": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "What was produced. Concrete, not aspirational."
+    },
+    "evidence": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Observable proof supporting the result (command output, file excerpt, diff hunk)."
+    },
+    "verify": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "description": "String form: the runnable check command (validator rule R1)."
+        },
+        {
+          "type": "object",
+          "required": ["check", "result"],
+          "properties": {
+            "check": {
+              "type": "string",
+              "description": "The runnable check that was executed."
+            },
+            "result": {
+              "type": "string",
+              "enum": ["PASS", "FAIL", "WAIVED"],
+              "description": "Outcome of the check."
+            },
+            "detail": {
+              "type": "string",
+              "description": "Optional detail on the check outcome."
+            }
+          }
+        }
+      ],
+      "description": "Self-verification: either the runnable check (string form) or the record {check, result[, detail]} (object form)."
+    },
+    "files_touched": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Absolute paths of files created or modified."
+    },
+    "risks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 10,
+      "description": "Known risks introduced or discovered (max 10)."
+    },
+    "followups": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Follow-up work items surfaced by this atom."
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "moderate", "low"],
+      "description": "Worker's confidence in the result."
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Correlation id tying this return to the orchestrator's dispatch record."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Optional short free-form note."
+    }
+  }
+}

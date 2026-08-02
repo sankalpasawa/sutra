@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paisa · Departments</title>
+<style>
+:root{--bg:#f5f0e8;--card:#fdfaf4;--ink:#2a2622;--mut:#8c857d;--line:#e3dccf;--acc:#c4956a;--accbg:#f3e7d8}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,'Segoe UI',Georgia,serif}
+.layout{max-width:1100px;margin:0 auto;padding:40px 20px;display:grid;grid-template-columns:220px 1fr;gap:34px}
+nav{position:sticky;top:24px;align-self:start;font-size:.92rem}
+nav a{display:flex;align-items:center;gap:8px;color:var(--ink);text-decoration:none;padding:7px 8px;border-radius:8px}
+nav a:hover{background:var(--accbg)}
+nav a.up{color:var(--acc);font-size:.85rem}
+.crumb{font-size:.85rem;color:var(--mut);margin-bottom:14px}
+.crumb a{color:var(--acc);text-decoration:none}
+.chip{font:600 .72rem/1 ui-monospace,Menlo,monospace;color:var(--ink);background:var(--accbg);border:1px solid var(--acc);border-radius:6px;padding:3px 7px;flex:none}
+.chip.big{font-size:.85rem;padding:6px 10px}
+h1{font-size:1.65rem;letter-spacing:-.01em}
+.rootdesc{color:var(--mut);margin:6px 0 10px;max-width:60ch}
+.dept{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:22px;scroll-margin-top:20px}
+.dept:target{border-color:var(--acc)}
+.dept header{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}
+.dept h2{font-size:1.12rem}
+.desc{color:var(--mut);font-size:.92rem;margin-top:2px;max-width:58ch}
+.charter{font-size:.8rem;color:var(--mut);margin-top:6px;max-width:58ch}
+.charter span{font:600 .68rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px;margin-right:6px}
+.count{margin-left:auto;font:600 .75rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.info{border:1.5px dashed var(--line);border-radius:10px;padding:12px 14px;scroll-margin-top:20px}
+.info:target{border-color:var(--acc)}
+.info b{display:inline-block;margin-left:8px;font-size:.95rem}
+.info p{color:var(--mut);font-size:.85rem;margin-top:6px}
+.info.empty,.info.withheld,p.withheld{color:var(--mut);font-style:italic}
+p.withheld{font-size:.85rem;margin-top:6px}
+.chsec{margin:16px 0 4px}
+.chh{font-size:1.02rem;margin-bottom:4px}
+.chg{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px}
+.chempty{color:var(--mut);font-style:italic;font-size:.85rem}
+.st{font:600 .62rem/1 ui-monospace,monospace;border-radius:4px;padding:2px 5px;margin-left:6px;border:1px solid var(--line);color:var(--mut)}
+.st-active{border-color:var(--acc);color:var(--acc)}
+.st-retired{opacity:.65}
+.chdot{display:inline-flex;align-items:center;gap:5px;font:600 .64rem/1 ui-monospace,monospace;color:var(--mut)}
+.chdot i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block}
+.chdot.st-active i{background:var(--acc)}
+.chdot.st-shipped i{background:var(--mut)}
+.chdot.st-retired i,.chdot.st-paused i{background:transparent;border:1.5px solid var(--mut)}
+.chfil{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.chfil button{font:600 .7rem/1 ui-monospace,monospace;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 12px;min-height:30px;cursor:pointer}
+.chfil button:hover{border-color:var(--acc)}
+.chfil button[aria-pressed="true"]{background:var(--accbg);border-color:var(--acc);color:var(--acc)}
+.chfil button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.chtab thead th{text-align:left}
+.chtab tbody th a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--acc)}
+.chtab tbody th a:hover{color:var(--acc)}
+.chtab td.ckind{font:400 .74rem/1 ui-monospace,monospace;color:var(--mut);text-align:left}
+.ctxt.ohide{opacity:0}
+tr.obreak th,tr.obreak td{border-top:2px solid var(--line)}
+.chtab td.cown{text-align:left;font-size:.78rem}
+.chtab td.cown a{color:var(--acc);text-decoration:none}
+.cown-here{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut)}
+.chtab tr.chnone td{color:var(--mut);font-style:italic;text-align:left}
+.chpath{display:block;font:400 .7rem/1.5 ui-monospace,monospace;color:var(--mut);overflow-wrap:anywhere}
+.chrow{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chlabel{font:600 .66rem/1 ui-monospace,monospace;color:var(--acc);border:1px dotted var(--acc);border-radius:5px;padding:2px 6px}
+.chmini{font-size:.74rem;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:default}
+a.chmini{color:var(--acc);text-decoration:none;cursor:pointer}
+.chlinks{display:block;font-size:.75rem;color:var(--mut);margin-top:2px}
+.chlinks a{color:var(--acc);text-decoration:none}
+.chart-n{font:600 .64rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:2px 6px;margin-left:8px}
+.lanes{margin:12px 0 8px}
+.lanenote{font-size:.75rem;color:var(--mut);margin-bottom:8px}
+.lanewrap{overflow-x:auto}
+.lanetab{border-collapse:collapse;width:100%;font-size:.8rem}
+.lanetab thead th{text-align:center;color:var(--mut);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.lanetab tbody th{text-align:left;font-weight:500;color:var(--ink);white-space:nowrap;padding:6px 8px;border-bottom:1px dotted var(--line)}
+.lanetab td{text-align:center;padding:6px 4px;border-bottom:1px dotted var(--line);min-width:44px}
+.lanetab td.lo{background:var(--acc);color:var(--card);font-weight:700;border-radius:4px}
+.lanetab td.ll{background:var(--accbg);color:var(--acc);font-weight:600;border-radius:4px}
+a.info.summary{display:block;color:inherit;text-decoration:none}
+a.info.summary:hover{border-color:var(--acc);background:var(--accbg)}
+.summary .more{display:inline-block;font-size:.78rem;color:var(--acc);margin-top:6px}
+a.dlink{color:inherit;text-decoration:none}
+a.dlink:hover{color:var(--acc)}
+.cascade{margin-top:10px;border-top:1px dotted var(--line);padding-top:8px}
+.cascade summary{cursor:pointer;font-size:.78rem;color:var(--acc);list-style:none}
+.cascade summary::before{content:"B8 ";font-size:.7rem}
+.cascade[open] summary::before{content:"BE "}
+.cascade .grid{margin-top:10px;grid-template-columns:1fr}
+.more a{font-size:.8rem;color:var(--acc);text-decoration:none}
+.more{margin-top:8px}
+.navgrp summary a{color:var(--ink);text-decoration:none;flex:1}
+.navgrp summary a:hover{color:var(--acc)}
+.navcount{font:600 .68rem/1 ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+.navgrp summary{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;list-style:none}
+.navgrp summary::before{content:"B8";font-size:.7rem;color:var(--mut)}
+.navgrp[open] summary::before{content:"BE"}
+.navgrp summary:hover{background:var(--accbg)}
+.navkids{margin:2px 0 6px 14px;border-left:2px solid var(--line);padding-left:8px}
+.navkids a.sub{font-size:.85rem;padding:5px 6px}
+.navkids .navgrp summary{padding:5px 6px;font-size:.88rem}
+footer{color:var(--mut);font-size:.8rem;margin-top:8px}
+.tree{margin:6px 0 18px;text-align:center}
+.tnode{display:inline-block;background:var(--card);border:1.5px solid var(--acc);border-radius:8px;padding:6px 14px;font-size:.85rem;font-weight:600;color:var(--ink);text-decoration:none}
+a.tnode:hover{background:var(--accbg)}
+.tnode.troot{background:var(--accbg)}
+.tdown{width:2px;height:14px;background:var(--line);margin:0 auto}
+.tkids{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;position:relative;padding-top:14px}
+.tkids::before{content:"";position:absolute;top:0;left:12%;right:12%;height:2px;background:var(--line)}
+.tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
+.tkids .tnode::before{content:"";position:absolute;top:-14px;left:50%;width:2px;height:14px;background:var(--line)}
+#q{width:100%;margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.9rem}
+#q:focus{outline:2px solid var(--acc)}
+.hidden{display:none !important}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;display:flex;flex-wrap:wrap;gap:4px}
+.chtab tbody th{white-space:nowrap}.chtab tr.chtr{height:44px}
+.chfil button{min-height:40px}}
+</style></head><body><div class="layout">
+<nav><input id="q" type="search" placeholder="Search domains..." autocomplete="off"><a class="sub up" href="dref-0f35a0033d64c72c.html">&lsaquo; up to Portfolio (T2)</a></nav>
+<main>
+<p class="crumb"><a href="index.html">Asawa Inc.</a> &rsaquo; <a href="dref-0f35a0033d64c72c.html">Portfolio (T2)</a> &rsaquo; <b>Paisa</b></p>
+<h1>Paisa</h1>
+<p class="rootdesc">India digital personal-loan product (MVP stage).</p>
+<section class="chsec"><h2 class="chh">Charters</h2><div class="lanewrap"><table class="lanetab chtab" data-deffil="all"><thead><tr><th scope="col">Owner</th><th scope="col">Charter</th><th scope="col">Kind</th><th scope="col">Status</th></tr></thead><tbody><tr class="chtr obreak" data-status="active" data-owner="dref-f91dc3443f004bf9"><td class="cown" data-o="1"><span class="ctxt"><span class="cown-here" aria-label="Owned by this department">here</span></span></td><th scope="row"><a href="C-8d86a51b862f6713.html" title="Asawa org: Paisa.">Paisa Charter</a></th><td class="ckind">standing</td><td><span class="chdot st-active"><i></i>active</span></td></tr><tr class="chtr obreak" data-status="active" data-owner="dref-839bfc68fefda5c2"><td class="cown" data-o="1"><span class="ctxt"><a href="dref-839bfc68fefda5c2.html">Holding Departments</a></span></td><th scope="row"><a href="C-c4870c03b0b62447.html" title="Decouple portfolio companies (Billu/Paisa/PPR/Maze) from asawa-holding submodules into standalone repos at ~/Claude/&lt;name&gt;/ running the Sutra plugin, per the D33 firewall; Phases 1-2 shipped, founder-driven Phases 3-4 pending.">Portfolio spin-off (D33 standalone clients)</a></th><td class="ckind">project</td><td><span class="chdot st-active"><i></i>active</span></td></tr><tr class="chnone hidden"><td colspan="4">no charters match</td></tr></tbody></table></div></section>
+
+<div class="info empty">leaf domain — no children</div>
+<footer>0 children &middot; 3 levels per page &middot; sutra/website/index.html (detected 2026-07-30)</footer>
+</main>
+<script>
+(function(){var q=document.getElementById('q');
+var tb=document.querySelector('table.chtab');
+var FIL=tb?(tb.getAttribute('data-deffil')||'all'):'all';
+function chApply(){var v=q?q.value.trim().toLowerCase():'';
+ document.querySelectorAll('tr.chtr').forEach(function(r){
+  var okS=(FIL==='all')||r.getAttribute('data-status')===FIL;
+  var a=r.querySelector('a[title]');
+  var t=(r.textContent+' '+(a?a.getAttribute('title'):'')).toLowerCase();
+  r.classList.toggle('hidden',!(okS&&(!v||t.indexOf(v)>=0)));});
+ var seen={};
+ document.querySelectorAll('tr.chtr').forEach(function(r){
+  var s=r.querySelector('td.cown .ctxt');if(!s)return;
+  s.classList.add('ohide');r.classList.remove('obreak');});
+ document.querySelectorAll('tr.chtr:not(.hidden)').forEach(function(r){
+  var o=r.getAttribute('data-owner');var s=r.querySelector('td.cown .ctxt');
+  if(!s)return;
+  if(!seen[o]){seen[o]=1;s.classList.remove('ohide');r.classList.add('obreak');}});
+ var anyrow=document.querySelector('tr.chtr:not(.hidden)');
+ document.querySelectorAll('tr.chnone').forEach(function(e){
+  e.classList.toggle('hidden',!!anyrow);});}
+document.querySelectorAll('.chfil button').forEach(function(b){
+ b.addEventListener('click',function(){FIL=b.getAttribute('data-st');
+  document.querySelectorAll('.chfil button').forEach(function(x){
+   x.setAttribute('aria-pressed',x===b?'true':'false');});chApply();});});
+if(q)q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+document.querySelectorAll('section.dept').forEach(function(sec){
+ var any=false;
+ sec.querySelectorAll('.info').forEach(function(b){
+  var hit=!v||b.textContent.toLowerCase().indexOf(v)>=0;
+  b.classList.toggle('hidden',!hit);if(hit)any=true;});
+ var selfHit=!v||sec.querySelector('header').textContent.toLowerCase().indexOf(v)>=0;
+ sec.classList.toggle('hidden',!(any||selfHit));
+ if(v)sec.querySelectorAll('details.cascade').forEach(function(d){d.open=true;});});
+document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
+ var hit=!v||n.textContent.toLowerCase().indexOf(v)>=0;
+ n.classList.toggle('hidden',!hit);});
+chApply();});
+chApply();})();
+</script>
+</div></body></html>

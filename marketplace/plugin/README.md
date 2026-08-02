@@ -12,7 +12,7 @@ Operating system for building with AI. Governance + observability for Claude Cod
 - **Output trace** — every response ends with a one-line OS trace
 - **RTK auto-rewrite (opt-in)** — PreToolUse hook wraps voluminous bash (`git status`/`log`/`diff`/`blame`/`show`) with `rtk` for 30-60% tool-output reduction. **Requires `rtk` binary installed separately** (not bundled with the plugin); inactive when binary missing — start banner shows live status. Kill-switch: `~/.rtk-disabled` or `RTK_DISABLED=1`.
 - **MCP output compression** — PostToolUse hook replaces large MCP tool outputs (≥4KB, ≥80 lines) with head+error+tail summaries (~50% cut)
-- **codex-sutra (opt-in)** — `/codex-sutra review|challenge|consult|design-review` invokes the OpenAI Codex CLI as a second-opinion reviewer for PROTO-019 codex-by-codex review. 15-min hard cap (raised from gstack /codex's 5-min), fail-closed semantics, three-channel result durability. **Requires `codex` CLI installed separately** (not bundled with the plugin): `npm install -g @openai/codex`. Step 0 detects missing CLI and stops gracefully — no auto-install. Replaces gstack `/codex` for PROTO-019 review path; gstack `/codex` remains for non-PROTO-019 use.
+- **codex-sutra (opt-in)** — `/codex-sutra review|challenge|consult|design-review` invokes the OpenAI Codex CLI as a second-opinion reviewer for PROTO-019 codex-by-codex review. No wall-clock hard cap (v2.39.2, D2026-05-13) — gstack /codex's 5-min cap removed; wrapper polls with stall + heartbeat warnings; founder Ctrl-C is the only interrupt path. Fail-closed semantics, three-channel result durability. **Requires `codex` CLI installed separately** (not bundled with the plugin): `npm install -g @openai/codex`. Step 0 detects missing CLI and stops gracefully — no auto-install. Replaces gstack `/codex` for PROTO-019 review path; gstack `/codex` remains for non-PROTO-019 use.
 - **Per-profile enforcement** — `individual` / `project` / `company` profiles via `/core:start --profile` (v1.6.0+); `company` hard-blocks on missing depth markers
 - **Local telemetry (v2.0+ privacy model)** — signals captured to `~/.sutra/metrics-queue.jsonl` locally; **push to a data store is disabled by default**. Legacy push available via `SUTRA_LEGACY_TELEMETRY=1`. See `PRIVACY.md`.
 
@@ -113,3 +113,18 @@ MIT.
 ## Issues / feedback
 
 <https://github.com/sankalpasawa/sutra/issues>
+
+## Loop / tool-budget guard (A6)
+
+`hooks/loop-budget-guard.sh` runs on every tool call (PreToolUse) and blocks runaway
+agents and infinite loops before execution. Fail-open: any internal error exits 0, so a
+broken guard never breaks a session.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `SUTRA_TOOL_BUDGET` | 250 | total tool-call ceiling per session |
+| `SUTRA_REPEAT_LIMIT` | 8 | identical-call run length that trips a loop block |
+| `SUTRA_REPEAT_WINDOW` | 2×REPEAT (16) | detection window — a signature recurring ≥ REPEAT times within the last WINDOW calls trips (catches alternating A/B loops, not just consecutive runs) |
+| `LOOP_GUARD_ACK=1` | — | one-shot override: record but do not block this call |
+
+Kill-switches (any one): `LOOP_BUDGET_GUARD_DISABLED=1`, `SUTRA_BYPASS=1`, or `touch ~/.loop-budget-guard-disabled`.

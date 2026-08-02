@@ -61,17 +61,23 @@ Seven fields, all required: **Doing / Steps / Output looks like / Verified by / 
 
 For Depth ≥ 4 or branching tasks, the block may extend to a heavy-ASCII multi-step diagram. For Depth 1-2 trivial work, the compact form above is sufficient. Founder-readability is the gate.
 
-## Marker schema (V2)
+## Marker schema (V2.2 — 2026-05-10)
 
 After emitting the block, write `.claude/blueprint-registered`:
 ```
 HAS_OUTPUT=1
 HAS_VERIFY=1
+HAS_PER_STEP_VERIFY=1   # V2.2 — required at D3+ when BLUEPRINT Steps include inline Verify per step
 TASK=<task-slug>
 TS=<unix-timestamp>
 ```
 
-Hook `blueprint-check.sh` reads marker; HARD-blocks foundational-path edits when `HAS_OUTPUT=0` or `HAS_VERIFY=0`. SOFT advisory elsewhere (Wave 1). Wave 2 (2026-05-19) broadens HARD to all Edit/Write if override rate clean.
+Hook `blueprint-check.sh` enforcement (V2.2):
+- ALWAYS — marker must exist (every Edit/Write per the SOFT→HARD blanket flip 2026-05-10)
+- FOUNDATIONAL paths — HAS_OUTPUT=1 + HAS_VERIFY=1 both required
+- D3+ tasks — HAS_PER_STEP_VERIFY=1 required (reads depth from `.claude/depth-registered`)
+
+At D1-D2, per-step Verify is optional — the compact `Steps: 1) ... 2) ... 3) ...` form is sufficient. At D3+, every step in Steps gets its own inline `Verify:` and the marker carries the flag.
 
 ## State-mismatch flow (V2 — D48)
 
@@ -82,6 +88,43 @@ When the `Verified by` cmd returns fail:
 4. Re-run `Verified by` cmd.
 5. Pass → attest, close problem, done. Fail → goto 1, iteration += 1.
 6. Hard cap = 3 iterations → STOP, surface boxed blocker to founder.
+
+---
+
+## V2.1 — Per-step Verify (founder direction 2026-05-10)
+
+For D3+ tasks with multi-step Steps lists, each step gets its OWN inline Verify in the same fix-loop semantics. Block format:
+
+```
++-- BLUEPRINT (V2.1 with per-step Verify) ----------------------+
+| Doing: <task statement>                                       |
+| Steps:                                                        |
+|   1) <step>       Verify: <runnable check>                    |
+|   2) <step>       Verify: <runnable check>                    |
+|   3) <step>       Verify: <runnable check>                    |
+| Output looks like: <observable target>                        |
+| Verified by (overall): <bundle check>                         |
+| Scale: <files>, <time>, <cost>                                |
+| Stops if: <abort condition>                                   |
+| Switch: ON | OFF                                              |
++---------------------------------------------------------------+
+```
+
+Each per-step `Verify:` is a runnable check (same kinds as overall Verified-by). Failure of any step's Verify triggers the same fix-loop semantics (max 3 iterations, then STOP) BEFORE the next step runs. Composes with 2 other verification layers — see §3-Layer Verification Stack below.
+
+### 3-Layer Verification Stack
+
+| Layer | What | When | Depth gate | Enforcement (today) |
+|---|---|---|---|---|
+| L1 | BLUEPRINT per-step Verify | each step in Steps list | D3+ | **HARD** — `blueprint-check.sh` V2.2 requires `HAS_PER_STEP_VERIFY=1` |
+| L2 | PHASE-EXIT-VERIFY (method-registry) | end of each PHASE-* node | D3+ | **CONVENTION ONLY** — no hook fires; method-registry row + per-turn discipline |
+| L3 | VERIFY-* family (existing) | end of full task (MEASURE phase) | **D2-D5 graduated** | Convention (no hook) |
+
+Three orthogonal granularities. L1 fails → fix this step. L2 fails → re-shape or re-plan upstream. L3 fails → full-task re-execute. Each layer composes — failure at smaller unit doesn't necessarily bubble up; failure at larger unit can bypass smaller.
+
+**Enforcement honesty** (codex P2.2 fold round-1 2026-05-10): Only L1 has runtime enforcement. L2 + L3 are documented discipline — the method-registry rows describe what SHOULD fire, but no hook checks them. L2 future enforcement requires text-scan of model response (different architecture from marker-check); L3 is task-shape dependent and likely stays discipline-only.
+
+Source: founder direction 2026-05-10 "All three (layered)" choice on per-node verification design; "force it" choice on L1 enforcement at V2.2.
 
 ---
 

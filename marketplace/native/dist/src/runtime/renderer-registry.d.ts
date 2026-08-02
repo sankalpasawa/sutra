@@ -14,7 +14,7 @@
  * so the audit trail can record which event types were rendered with the
  * default vs an operator-supplied function.
  */
-import { type EngineEvent, type EngineEventType, type RenderContext, type RoutingDecisionEvent, type WorkflowStartedEvent, type WorkflowCompletedEvent, type WorkflowFailedEvent, type ArtifactRegisteredEvent, type PolicyDecisionEvent, type StepStartedEvent, type StepCompletedEvent, type PatternProposedEvent, type ProposalApprovedEvent, type ProposalRejectedEvent } from '../types/engine-event.js';
+import { type EngineEvent, type EngineEventType, type RenderContext, type RoutingDecisionEvent, type WorkflowStartedEvent, type WorkflowCompletedEvent, type WorkflowFailedEvent, type ArtifactRegisteredEvent, type PolicyDecisionEvent, type StepStartedEvent, type StepCompletedEvent, type PatternProposedEvent, type ProposalApprovedEvent, type ProposalRejectedEvent, type ApprovalRequestedEvent, type ApprovalGrantedEvent, type ApprovalDeniedEvent, type ApprovalAlreadyHandledEvent, type WorkflowRollbackStartedEvent, type StepCompensatedEvent, type StepCompensationFailedEvent, type WorkflowRollbackCompleteEvent, type WorkflowRollbackPartialEvent, type WorkflowEscalatedEvent, type StepPausedEvent, type PreconditionCheckEvent, type PostconditionCheckEvent, type CommitmentBrokenEvent } from '../types/engine-event.js';
 export type Renderer<T extends EngineEvent = EngineEvent> = (event: T, ctx: RenderContext) => string;
 /**
  * Map an EngineEventType discriminator to its specific event variant — used
@@ -40,6 +40,20 @@ export declare const defaultRenderStepCompleted: Renderer<StepCompletedEvent>;
 export declare const defaultRenderPatternProposed: Renderer<PatternProposedEvent>;
 export declare const defaultRenderProposalApproved: Renderer<ProposalApprovedEvent>;
 export declare const defaultRenderProposalRejected: Renderer<ProposalRejectedEvent>;
+export declare const defaultRenderApprovalRequested: Renderer<ApprovalRequestedEvent>;
+export declare const defaultRenderApprovalGranted: Renderer<ApprovalGrantedEvent>;
+export declare const defaultRenderApprovalDenied: Renderer<ApprovalDeniedEvent>;
+export declare const defaultRenderApprovalAlreadyHandled: Renderer<ApprovalAlreadyHandledEvent>;
+export declare const defaultRenderWorkflowRollbackStarted: Renderer<WorkflowRollbackStartedEvent>;
+export declare const defaultRenderStepCompensated: Renderer<StepCompensatedEvent>;
+export declare const defaultRenderStepCompensationFailed: Renderer<StepCompensationFailedEvent>;
+export declare const defaultRenderWorkflowRollbackComplete: Renderer<WorkflowRollbackCompleteEvent>;
+export declare const defaultRenderWorkflowRollbackPartial: Renderer<WorkflowRollbackPartialEvent>;
+export declare const defaultRenderWorkflowEscalated: Renderer<WorkflowEscalatedEvent>;
+export declare const defaultRenderStepPaused: Renderer<StepPausedEvent>;
+export declare const defaultRenderPreconditionCheck: Renderer<PreconditionCheckEvent>;
+export declare const defaultRenderPostconditionCheck: Renderer<PostconditionCheckEvent>;
+export declare const defaultRenderCommitmentBroken: Renderer<CommitmentBrokenEvent>;
 /** Map of every EngineEventType to its default renderer. Frozen at module load. */
 export declare const DEFAULT_RENDERERS: Readonly<Record<EngineEventType, Renderer>>;
 export declare class RendererRegistry {

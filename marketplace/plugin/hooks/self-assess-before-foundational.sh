@@ -27,8 +27,32 @@ fi
 
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
 
+# --- B2 marker-race P4: session-first marker reads --------------------
+# Root cause: holding/research/2026-07-30-marker-race-root-cause.md (Phase 4,
+# self-assess-before-foundational.sh:31). Session dir first via marker-lib;
+# foreign-stamped globals ignored. Advisory only -- NEVER blocks; legacy
+# global path is the fallback when marker-lib is unavailable. Sourced
+# defensively (set -u).
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" 2>/dev/null || true
+  if command -v sutra_sid_from_stdin >/dev/null 2>&1; then
+    sutra_sid_from_stdin "$_JSON" 2>/dev/null || true
+  fi
+  set -u
+fi
+_b2_marker_path() {
+  if command -v sutra_marker_has >/dev/null 2>&1; then
+    if sutra_marker_has "$1" 2>/dev/null; then sutra_marker_path "$1"; fi
+    return 0
+  fi
+  [ -f "$REPO_ROOT/.claude/$1" ] && printf '%s' "$REPO_ROOT/.claude/$1"
+  return 0
+}
+
 # Read depth marker
-DEPTH_FILE="$REPO_ROOT/.claude/depth-registered"
+DEPTH_FILE="$(_b2_marker_path depth-registered)"
 [ -f "$DEPTH_FILE" ] || exit 0
 DEPTH=$(grep -oE 'DEPTH=[0-9]+' "$DEPTH_FILE" 2>/dev/null | head -1 | cut -d= -f2)
 TASK=$(grep -oE 'TASK=[^[:space:]]+' "$DEPTH_FILE" 2>/dev/null | head -1 | cut -d= -f2)
@@ -54,10 +78,15 @@ case "$FILE_PATH" in
 esac
 
 # Check for self-assess marker matching the current task slug
+# (session-first; the suggested dismissal write path is the session dir when
+# marker-lib is available, else the legacy global)
 SLUG="${TASK:-unknown}"
 ASSESS_MARKER="$REPO_ROOT/.claude/self-assessed-$SLUG"
+if command -v sutra_marker_path >/dev/null 2>&1; then
+  ASSESS_MARKER="$(sutra_marker_path "self-assessed-$SLUG" 2>/dev/null || printf '%s' "$ASSESS_MARKER")"
+fi
 
-if [ ! -f "$ASSESS_MARKER" ]; then
+if [ -z "$(_b2_marker_path "self-assessed-$SLUG")" ]; then
   mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
   _SAFE=$(printf '%s' "$FILE_PATH" | tr -d '"\\' | tr '\n\r' '  ')
   echo "{\"ts\":$(date +%s),\"event\":\"proto005-warn\",\"file\":\"$_SAFE\",\"depth\":$DEPTH,\"task\":\"$SLUG\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"

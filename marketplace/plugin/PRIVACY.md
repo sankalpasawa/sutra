@@ -1,10 +1,47 @@
 # Sutra — Privacy
 
-*Version: plugin v2.18.0 · Updated: 2026-05-03 · License: MIT*
+*Version: plugin v2.33.0 · Updated: 2026-05-06 · License: MIT*
 
 Sutra helps you build. To do that well, it learns from how you work — locally, on your machine, with strict limits.
 
+## v2.33.0 amendment — identity-on-wire on opt-in path (2026-05-06)
+
+**TL;DR**: default is **OFF**. Anonymous remains the default. Nothing leaves your machine without explicit opt-in. **What changed in v2.33.0**: when you opt in via `--telemetry on`, four identity fields now cross the wire alongside the metric rows. Existing opt-ins from before v2.33.0 must re-acknowledge this expanded disclosure before identity is pushed (re-consent gate).
+
+**Why this changed**: founder direction 2026-05-06 — fleet visibility. Going from 11% identified to 100% identified on the opt-in rail makes feedback-routing, version-skew triage, and bug reproduction tractable. The privacy posture is deliberately relaxed; revisit scheduled 2026-09-01 (4 months).
+
+**On the opt-in path** (when you ran `/core:start --telemetry on` or `/sutra-go` AND have `consent_version="2.33"` or later in `.claude/sutra-project.json`):
+
+| Aspect | Detail |
+|---|---|
+| **WHAT pushed (NEW in v2.33.0)** | Same metric rows as v2.18.0 PLUS a 4-field identity block on `manifest.json`: `git_user_name`, `github_login`, `github_id`, `git_user_email_hash` (sha256[:16]). |
+| **WHAT NOT pushed (codex P1-2 fold)** | `hostname_hash`, `os_name`, `os_version`, `os_pretty`, `arch`, `shell_name`, `locale`, `tz`, `captured_at`, `captured_by_version` — these stay local-only. The legacy v1.9.0 14-field identity block is NOT restored. |
+| **CADENCE** | Automatic on every Stop event when opted in AND re-consent satisfied. Async, fire-and-forget. Failed pushes preserve the queue for next attempt. |
+| **DESTINATION** | `sankalpasawa/sutra-data` — **PRIVATE on GitHub but COLLABORATOR-VISIBLE**. **NEW DISCLOSURE**: every install with push access can now read every other install's `github_login` and `git_user_name` (was anonymous-to-anonymous through v2.32; is name-to-name from v2.33.0 forward, on opt-in only). |
+| **RE-CONSENT GATE (NEW)** | Pre-v2.33.0 opt-ins consented under PRIVACY.md v2.18.0 ("identity NOT pushed"). On first push after upgrade, `push.sh` checks `.claude/sutra-project.json` for `consent_version >= "2.33"`. If missing or older, push exits 0 with re-consent instructions; queue preserved. User re-runs `/core:start --telemetry on` to write `consent_version="2.33"` and acknowledge this expanded disclosure. |
+| **KILL-SWITCH** | `SUTRA_TELEMETRY=0` (env var) — unchanged from v2.18.0; short-circuits BEFORE the opt-in check (push.sh:27 ordering preserved); disables capture AND push uniformly. Setting this AFTER opting in stops further transmission immediately. |
+
+**To opt out completely** (unchanged from v2.18.0):
+```
+SUTRA_TELEMETRY=0     # env (single session) OR put in your shell profile
+rm -rf ~/.sutra/      # delete everything Sutra has written locally
+```
+The `telemetry_optin=true` flag in `.claude/sutra-project.json` becomes inert under `SUTRA_TELEMETRY=0`.
+
+**To revoke v2.33+ identity disclosure but keep telemetry rows**:
+- Edit `.claude/sutra-project.json`: set `consent_version="2.18"` (downgrade marker). Push.sh will block on the re-consent gate; queue preserves; metric rows do not transmit until you either re-consent at v2.33+ or set `telemetry_optin=false`. There is currently no v2.33+ path that pushes telemetry rows without identity — the consent contract is bundled.
+
+**Codex review chain**: 2026-05-06 consult thread `019dfc2e-5715-73c1-8b14-42d1c3bbfce5` returned CHANGES-REQUIRED on the initial plan (2 P1 blockers: (a) silent re-consent gap, (b) overly-broad strip-reversal); both folded into the shipped design. Verdict file: `.enforcement/codex-reviews/2026-05-06-v2.33.0-identity-on-wire.md`. Codex REVIEW pass on the diff is required before founder approval gate.
+
+**Revisit 2026-09-01**: review re-consent silent-rate (if >30%, UX problem); trust hits among T4 fleet; decide whether to (a) narrow allowlist further, (b) add client-side encryption (PROTO-024 V2 plan referenced in push.sh:106), (c) extend the relaxed posture.
+
+**Founder direction**: D50 (FOUNDER-DIRECTIONS.md, 2026-05-06).
+
+---
+
 ## v2.18.0 amendment — opt-in transport restored (2026-05-03)
+
+> **[v2.18.0 'identity NOT pushed' line is SUPERSEDED by v2.33.0 amendment above.]** The original v2.18.0 disclosure read "Identity stamping (removed v2.2.0 — no `github_login`, `git_user_name`, `git_user_email`, hostname, etc. crosses the wire on this rail)." That is true through v2.32.x. From v2.33.0 forward, on the opt-in path AND when `consent_version >= "2.33"`, the 4-field identity allowlist crosses (see top of this doc). Existing opt-ins are protected by the re-consent gate.
 
 **TL;DR**: default is **OFF**. Nothing leaves your machine without explicit opt-in. If you opt in via `--telemetry on`, signals push to a Sutra-team GitHub repo on every Stop event. `SUTRA_TELEMETRY=0` is the single kill-switch and disables both local capture AND outbound push uniformly.
 

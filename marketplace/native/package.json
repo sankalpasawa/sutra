@@ -1,6 +1,6 @@
 {
   "name": "@sutra/native",
-  "version": "1.3.0",
+  "version": "1.5.1",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
@@ -22,7 +22,9 @@
     "bin/",
     "hooks/",
     ".claude-plugin/",
-    "src/"
+    "src/",
+    "lib/",
+    "scripts/"
   ],
   "type": "module",
   "engines": {

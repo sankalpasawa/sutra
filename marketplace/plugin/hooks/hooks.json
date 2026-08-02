@@ -1,53 +1,58 @@
 {
-  "description": "Sutra governance hooks — depth-marker gate, estimation logging, version banners, + C3c token-compression bundle. Phase-1 activation adds: session-logger, artifact-check, estimation-enforcement, log-triage, log-skill-feedback, measurement-logger, compliance-tracker. v1.13.0 adds permission-gate (PermissionRequest meta-permission) per PERMISSIONS charter. v2.0.0 adds feedback-auto-override (privacy v2 signals-only capture; codex-reviewed DIRECTIVE-ID 1777036275).",
+  "description": "Sutra governance hooks \u2014 depth-marker gate, estimation logging, version banners, + C3c token-compression bundle. Phase-1 activation adds: session-logger, artifact-check, estimation-enforcement, log-triage, log-skill-feedback, measurement-logger, compliance-tracker. v1.13.0 adds permission-gate (PermissionRequest meta-permission) per PERMISSIONS charter. v2.0.0 adds feedback-auto-override (privacy v2 signals-only capture; codex-reviewed DIRECTIVE-ID 1777036275).",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/update-banner.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/update-banner.sh",
             "timeout": 3
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-activate.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-activate.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.sh",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-privacy-notice.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-privacy-notice.sh",
             "timeout": 3
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-sweep.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-sweep.sh",
             "timeout": 3
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/inbox-display.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/inbox-display.sh",
             "timeout": 8
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start-rotate.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-start-rotate.sh",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-sessionstart-banner.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/csm-sessionstart-banner.sh",
             "timeout": 3
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-token-snapshot.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-token-snapshot.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/governance-live-banner.sh",
+            "timeout": 3
           }
         ]
       }
@@ -58,6 +63,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-override.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/structure-first-reminder.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/loop-budget-guard.sh",
             "timeout": 3
           }
         ]
@@ -78,6 +93,21 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/blueprint-check.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-gate.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-gate.sh",
             "timeout": 5
           }
         ]
@@ -108,6 +138,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/structural-move-check.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-gate.sh",
             "timeout": 5
           }
         ]
@@ -159,6 +194,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/subagent-dispatch-brief.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
+            "timeout": 5
           }
         ]
       }
@@ -200,6 +240,16 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/process-fix-check.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-scope-audit.sh",
+            "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-touch.sh",
+            "timeout": 10
           }
         ]
       },
@@ -247,6 +297,26 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-marker.sh",
+            "timeout": 3
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-scope-audit.sh",
+            "timeout": 8
+          }
+        ]
       }
     ],
     "PermissionRequest": [
@@ -266,6 +336,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/loopguard-turn-reset.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-detect.sh",
             "timeout": 3
           },
@@ -283,6 +363,16 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-discipline-prompt.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/capture-prompt.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-resolve.sh",
+            "timeout": 10
           }
         ]
       }
@@ -292,8 +382,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh",
-            "timeout": 3
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/phase-exit-audit.sh",
+            "timeout": 5
           },
           {
             "type": "command",
@@ -359,6 +449,35 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-cap118-lint.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-stop-check.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-hard-gate.sh",
+            "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-stop-check.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-lint.sh",
+            "timeout": 8
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/domains-site-refresh.sh",
+            "timeout": 150
           }
         ]
       }

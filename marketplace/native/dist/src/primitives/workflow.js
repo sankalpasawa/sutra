@@ -115,6 +115,74 @@ function validateStep(step, idx) {
             throw new Error(`Workflow.step_graph[${idx}].return_contract is only permitted when action='invoke_host_llm' (codex M8 P2.1 fold); got action="${String(step.action)}"`);
         }
     }
+    // v1.3.0 W1.9 (codex W1.9 advisory fold). Step-level `timeout_ms` is
+    // optional; when supplied it MUST be a positive integer AND the step MUST
+    // have action='invoke_host_llm' (no other step kind dispatches to a
+    // host-llm Activity that consumes the timeout). The dispatch site in
+    // lite-executor forwards `timeout_ms` only when defined; undefined leaves
+    // the host-llm-activity default (60_000ms) in effect.
+    if (step.timeout_ms !== undefined) {
+        if (typeof step.timeout_ms !== 'number' || !Number.isInteger(step.timeout_ms) || step.timeout_ms <= 0) {
+            throw new Error(`Workflow.step_graph[${idx}].timeout_ms must be a positive integer when supplied; got "${String(step.timeout_ms)}"`);
+        }
+        if (step.action !== 'invoke_host_llm') {
+            throw new Error(`Workflow.step_graph[${idx}].timeout_ms is only permitted when action='invoke_host_llm' (v1.3.0 W1.9); got action="${String(step.action)}"`);
+        }
+    }
+    // v1.3.0 Wave 2 (codex W2 BLOCKER 2 fold 2026-05-04). Step-level
+    // `requires_approval` is the operator-declared "pause this specific step
+    // for founder review" gate — STEP-level dimension orthogonal to the
+    // workflow-level `l6Reflexivity.requiresApproval(...)` gate at
+    // src/laws/l6-reflexivity.ts (which fires for `Workflow.modifies_sutra=true`
+    // and consults `reflexive_check` Constraints). Both can fire on the same
+    // Workflow simultaneously; L6 blocks dispatch entirely, step.requires_approval
+    // pauses mid-run via lite-executor.
+    //
+    // Defensive runtime check — `requires_approval` is optional (default
+    // undefined ⇒ no gate); when supplied it MUST be boolean. String "true"
+    // / numeric 1 are rejected (codex W2 fold: validate at primitive-mint AND
+    // at deserialization).
+    if (step.requires_approval !== undefined && typeof step.requires_approval !== 'boolean') {
+        throw new Error(`Workflow.step_graph[${idx}].requires_approval must be a boolean when supplied; got "${typeof step.requires_approval}"`);
+    }
+    // v1.3.0 Wave 4 (codex W4 advisory #1 fold). Defensive — step.compensate_action
+    // is optional; when supplied it MUST be a structured object with action ∈
+    // {wait, invoke_host_llm, spawn_sub_unit}, inputs array, and host XOR
+    // semantics mirroring the parent step.
+    if (step.compensate_action !== undefined) {
+        const ca = step.compensate_action;
+        if (typeof ca !== 'object' || ca === null) {
+            throw new Error(`Workflow.step_graph[${idx}].compensate_action must be an object when supplied; got "${typeof ca}"`);
+        }
+        if (ca.action !== 'wait' &&
+            ca.action !== 'invoke_host_llm' &&
+            ca.action !== 'spawn_sub_unit') {
+            throw new Error(`Workflow.step_graph[${idx}].compensate_action.action must be one of wait|invoke_host_llm|spawn_sub_unit; got "${String(ca.action)}"`);
+        }
+        if (!Array.isArray(ca.inputs)) {
+            throw new Error(`Workflow.step_graph[${idx}].compensate_action.inputs must be an array`);
+        }
+        const caHasHost = ca.host !== undefined && ca.host !== null;
+        if (ca.action === 'invoke_host_llm') {
+            if (!caHasHost) {
+                throw new Error(`Workflow.step_graph[${idx}].compensate_action.host is required when action='invoke_host_llm' (mirrors parent-step host-XOR rule)`);
+            }
+            if (typeof ca.host !== 'string' || !VALID_HOST_KIND.has(ca.host)) {
+                throw new Error(`Workflow.step_graph[${idx}].compensate_action.host must be 'claude' or 'codex' when action='invoke_host_llm'; got "${String(ca.host)}"`);
+            }
+        }
+        else if (caHasHost) {
+            throw new Error(`Workflow.step_graph[${idx}].compensate_action.host is forbidden unless action='invoke_host_llm'; got host="${String(ca.host)}" with action="${String(ca.action)}"`);
+        }
+        if (ca.timeout_ms !== undefined) {
+            if (typeof ca.timeout_ms !== 'number' || !Number.isInteger(ca.timeout_ms) || ca.timeout_ms <= 0) {
+                throw new Error(`Workflow.step_graph[${idx}].compensate_action.timeout_ms must be a positive integer when supplied; got "${String(ca.timeout_ms)}"`);
+            }
+            if (ca.action !== 'invoke_host_llm') {
+                throw new Error(`Workflow.step_graph[${idx}].compensate_action.timeout_ms is only permitted when action='invoke_host_llm'; got action="${String(ca.action)}"`);
+            }
+        }
+    }
 }
 /** Validate expects_response_from is null or a non-empty string (BoundaryEndpointRef). */
 function validateExpectsResponseFrom(value) {
@@ -217,6 +285,20 @@ export function createWorkflow(spec) {
     if (!VALID_AUTONOMY_LEVEL.has(autonomyLevel)) {
         throw new Error(`Workflow.autonomy_level must be manual|semi|autonomous; got "${String(autonomyLevel)}"`);
     }
+    // v1.3.0 W5 (codex W5 BLOCKER 3 fold) — obligation_refs: list of
+    // Charter.obligations names this Workflow fulfills. Default empty array
+    // (no commitments). Each entry MUST be a non-empty string; cross-reference
+    // to a Charter is checked at emission time in NativeEngine, not here.
+    const obligationRefs = spec.obligation_refs ?? [];
+    if (!Array.isArray(obligationRefs)) {
+        throw new Error(`Workflow.obligation_refs must be an array; got "${typeof obligationRefs}"`);
+    }
+    for (let i = 0; i < obligationRefs.length; i++) {
+        const ref = obligationRefs[i];
+        if (typeof ref !== 'string' || ref.length === 0) {
+            throw new Error(`Workflow.obligation_refs[${i}] must be a non-empty string (codex W5 BLOCKER 3 — explicit workflow→obligation mapping); got "${typeof ref === 'string' ? '<empty>' : typeof ref}"`);
+        }
+    }
     const out = {
         ...spec,
         step_graph: spec.step_graph.map((s) => ({ ...s, inputs: [...s.inputs], outputs: [...s.outputs] })),
@@ -232,6 +314,7 @@ export function createWorkflow(spec) {
         custody_owner: custodyOwner,
         extension_ref: extensionRef,
         autonomy_level: autonomyLevel,
+        obligation_refs: [...obligationRefs],
     };
     return Object.freeze(out);
 }
@@ -329,6 +412,58 @@ export function isValidWorkflow(w) {
                 return false;
             }
         }
+        // v1.3.0 W1.9 (codex W1.9 advisory fold). Defensive — step.timeout_ms is
+        // permitted only when action='invoke_host_llm' AND must be a positive integer.
+        if (step.timeout_ms !== undefined) {
+            if (typeof step.timeout_ms !== 'number' ||
+                !Number.isInteger(step.timeout_ms) ||
+                step.timeout_ms <= 0) {
+                return false;
+            }
+            if (step.action !== 'invoke_host_llm') {
+                return false;
+            }
+        }
+        // v1.3.0 Wave 2 (codex W2 BLOCKER 2 fold). Defensive — step.requires_approval
+        // is optional; when supplied MUST be boolean. Mirrors createWorkflow.validateStep.
+        if (step.requires_approval !== undefined && typeof step.requires_approval !== 'boolean') {
+            return false;
+        }
+        // v1.3.0 Wave 4 (codex W4 advisory #1 fold). Defensive — step.compensate_action
+        // is optional; when supplied MUST be structured object with action ∈
+        // {wait, invoke_host_llm, spawn_sub_unit}, inputs array, and host XOR
+        // semantics mirroring parent-step host-XOR rule.
+        if (step.compensate_action !== undefined) {
+            const ca = step.compensate_action;
+            if (typeof ca !== 'object' || ca === null)
+                return false;
+            if (ca.action !== 'wait' &&
+                ca.action !== 'invoke_host_llm' &&
+                ca.action !== 'spawn_sub_unit')
+                return false;
+            if (!Array.isArray(ca.inputs))
+                return false;
+            const caHasHost = ca.host !== undefined && ca.host !== null;
+            if (ca.action === 'invoke_host_llm') {
+                if (!caHasHost)
+                    return false;
+                if (typeof ca.host !== 'string' || !VALID_HOST_KIND.has(ca.host)) {
+                    return false;
+                }
+            }
+            else if (caHasHost) {
+                return false;
+            }
+            if (ca.timeout_ms !== undefined) {
+                if (typeof ca.timeout_ms !== 'number' ||
+                    !Number.isInteger(ca.timeout_ms) ||
+                    ca.timeout_ms <= 0) {
+                    return false;
+                }
+                if (ca.action !== 'invoke_host_llm')
+                    return false;
+            }
+        }
     }
     // M4.4 — custody_owner must be null OR match T-<id> pattern.
     if (w.custody_owner !== null &&
@@ -344,6 +479,19 @@ export function isValidWorkflow(w) {
     if (typeof w.autonomy_level !== 'string' ||
         !VALID_AUTONOMY_LEVEL.has(w.autonomy_level)) {
         return false;
+    }
+    // v1.3.0 W5 (codex W5 BLOCKER 3 fold) — obligation_refs may be undefined OR
+    // an array. When supplied as an array, each entry MUST be a non-empty
+    // string. Empty array is valid (no commitments). Optional shape keeps
+    // legacy callers (test fixtures / direct primitive construction bypassing
+    // createWorkflow) compatible; createWorkflow always populates the field.
+    if (w.obligation_refs !== undefined) {
+        if (!Array.isArray(w.obligation_refs))
+            return false;
+        for (const ref of w.obligation_refs) {
+            if (typeof ref !== 'string' || ref.length === 0)
+                return false;
+        }
     }
     return true;
 }

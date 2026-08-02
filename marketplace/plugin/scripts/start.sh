@@ -160,10 +160,22 @@ if [ -f .claude/sutra-project.json ]; then
   bash "$PLUGIN_ROOT/scripts/_sutra_project_lib.sh" patch-profile "$PROFILE" "$TELEMETRY_DEFAULT"
 fi
 
-# Step 3 — depth marker so the next Edit/Write won't trip PreToolUse warn
+# Step 3 — depth marker so the next Edit/Write won't trip PreToolUse warn.
+# Phase-2 marker-race fix (holding/research/2026-07-30-marker-race-root-cause.md
+# §6 phase 2): this bootstrap was sid-blind — it wrote only the legacy global
+# .claude/depth-registered, unstamped, which any concurrent session's reset
+# could delete as "unowned". Source marker-lib defensively and write via
+# sutra_marker_write (session-scoped + SESSION-stamped; dual-write keeps the
+# legacy global twin for un-migrated readers). Fail-open fallback stamps
+# SESSION= best-effort so the marker is never left unowned.
 mkdir -p .claude
-if [ ! -f .claude/depth-registered ]; then
-  echo "DEPTH=3 TASK=sutra-start TS=$(date +%s)" > .claude/depth-registered
+MARKER_LIB="$PLUGIN_ROOT/hooks/marker-lib.sh"
+if [ -f "$MARKER_LIB" ]; then . "$MARKER_LIB" 2>/dev/null || true; fi
+if command -v sutra_marker_write >/dev/null 2>&1; then
+  sutra_marker_has depth-registered 2>/dev/null || \
+    sutra_marker_write depth-registered "DEPTH=3 TASK=sutra-start" 2>/dev/null || true
+elif [ ! -f .claude/depth-registered ]; then
+  echo "DEPTH=3 TASK=sutra-start SESSION=${CLAUDE_CODE_SESSION_ID:-} TS=$(date +%s)" > .claude/depth-registered
 fi
 
 # Step 3.5 — write/update managed governance block in .claude/CLAUDE.md
@@ -184,7 +196,24 @@ ensure_project_claude_md() {
   block=$(cat <<'GOVBLOCK'
 # Sutra governance (auto-managed by /core:start)
 
-Apply these behaviors in every response in this project. The block is marker-delimited and managed by the plugin; manual edits inside will be overwritten on the next `/core:start`.
+Apply these behaviors in EVERY response in this project. Marker-delimited, managed by the plugin; manual edits inside are overwritten on the next `/core:start`. Enforcement is HARD for Input Routing, Depth, FLOW and BLUEPRINT (D63): those blocks are floored by Stop / PreToolUse hooks — a turn that skips one is blocked and redone once (loop-safe). **The H-Sutra header is convention only** — its Stop hook was removed on 2026-07-28. Enforcement activates only AFTER `/core:start` (which writes this block), so you always have the contract before it is enforced. Per-block kill-switches: see SUTRA-DEFAULTS.md.
+
+## H-Sutra Header — the LITERAL FIRST line of every response
+
+Every response MUST begin with this bracketed header as its first text — before any prose, any other block, or any tool call. **Convention only, not enforced** (2026-07-28): the `h-sutra-enforce` Stop hook was removed. Nothing blocks or redoes a response for a missing or malformed header; the header is still logged for classification by `per-turn-discipline-prompt.sh`.
+
+```
+[<DIRECTION>·<VERB> · TIMING:<when> · CHANNEL:<how> · REV:<reversibility> · RISK:<level>]
+```
+
+- **DIRECTION** (UPPERCASE): `INBOUND` (from the user) · `INTERNAL` · `OUTBOUND` (to a third party) — or an UPPERCASE actor (e.g. `FOUNDER`, `ASAWA`) or a decision id (e.g. `D48`).
+- **VERB** (UPPERCASE): `QUERY` · `ASSERT` · `DIRECT` (add others as needed).
+- **TIMING**: `now` · `later` · `scheduled`.  **CHANNEL**: `in-band` · `out-of-band` · `cli`.  **REV**: `reversible` · `irreversible` · `none`.  **RISK**: `low` · `med` · `high`.
+- DIRECTION and VERB must be **UPPERCASE** (letters/digits/hyphens). Case errors are the most common cause of a block.
+
+Example: `[INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low]`
+
+If you must stop and clarify before acting, use: `[STAGE-1-FAIL · CLARIFY · attempt:1/1]`
 
 ## Input Routing — emit BEFORE any response or tool call
 
@@ -207,12 +236,35 @@ COST: ~$X (~Y% of $200 plan)
 IMPACT: [what this changes and for whom]
 ```
 
+## FLOW — inline block every turn, after Input Routing (HARD)
+
+Emit as literal text (NOT a skill call): the honest resolved spine —
+[1] TYPE/cell · [2] FOLLOW <skill> | CONSTRUCT · [3] steps · [4] inner lens/cynefin/factors · [5] mode · [6] close.
+Invoke the full core:flow skill only for substantive / multi-step / ambiguous work.
+Floor: flow-stop-check.sh (Stop) + flow-gate.sh (PreToolUse Edit|Write|Task).
+
+## BLUEPRINT — before Edit/Write/Bash/Agent when tool calls are planned (HARD)
+
+Doing / Steps (each with a `Verify:` check at Depth >= 3) / Output-looks-like / Verified-by / Scale / Stops-if.
+Floor: blueprint-check.sh (PreToolUse; HARD on foundational paths).
+
+## Build-Layer marker — editing plugin / hooks / scripts / skills paths (HARD)
+
+Declare L0 | L1 | L2 + activation scope before the edit. Floor: build-layer-check.sh.
+
+## Codex consult — at Depth >= 3 before Edit/Write (HARD, degrades)
+
+Run a real codex consult (/core:codex-sutra) before the first Depth-3+ Edit/Write; a successful run writes the satisfying marker. On machines without the codex binary the gate degrades to pass (never bricks). Floor: codex-consult-gate.sh (PreToolUse Edit|Write).
+
 ## Readability Gate — apply at output time
 
 - Tables over paragraphs when ≥3 rows of comparable data
 - Numbers over adjectives
 - Progress bars for scores: `Name ▓▓▓▓▓▓░░░░ 0.6 STATUS`
 - Decisions in boxed callouts (impossible to miss)
+- Structure-First (D55): when adding anything — survey > reorganize > simplify > surface
+- Skill-explain: a 4-line WHAT / WHY / EXPECT / ASKS card before invoking any skill
+- Right-effort (Karpathy): think-first, simpler-alt, surgical-scope, verify-loop before Edit
 
 ## Output Trace — one line at end of every response
 

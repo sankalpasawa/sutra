@@ -25,17 +25,22 @@
  * runs NativeEngine.start() until SIGTERM. PID lock records the DAEMON pid.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { acquirePidLock, defaultPidPath, getStatus, readPidLock, releasePidLock, } from '../runtime/lifecycle.js';
 import { NativeEngine } from '../runtime/native-engine.js';
 import { createDomain } from '../primitives/domain.js';
 import { createCharter } from '../primitives/charter.js';
 import { createWorkflow } from '../primitives/workflow.js';
 import { executeWorkflow } from '../runtime/lite-executor.js';
-import { listCharters, listDomains, listWorkflows, loadWorkflow, persistCharter, persistDomain, persistWorkflow, } from '../persistence/user-kit.js';
+import { listCharters, listDomains, listTriggers, listWorkflows, loadWorkflow, persistCharter, persistDomain, persistTrigger, persistWorkflow, userKitRoot, } from '../persistence/user-kit.js';
+import { listApprovals, loadApproval, updateApprovalStatus, } from '../persistence/execution-approval-ledger.js';
+import { CadenceScheduler } from '../engine/cadence-scheduler.js';
+import { validateCutoverContract } from '../engine/cutover-validator.js';
+import { dryRunApplyCutover } from '../engine/cutover-applier.js';
 import { formatEvent } from '../renderers/terminal-events.js';
-const VERSION = '1.2.2';
+import { TRIGGER_EVENT_TYPES, } from '../types/trigger-spec.js';
+const VERSION = '1.5.1';
 export async function main(ctx) {
     const sub = ctx.argv[0] ?? 'help';
     // v1.2.1: main is async to allow `await cmdRun(...)` for invoke_host_llm
@@ -55,10 +60,18 @@ export async function main(ctx) {
             return cmdCreateCharter(ctx);
         case 'create-workflow':
             return cmdCreateWorkflow(ctx);
+        case 'create-trigger':
+            return cmdCreateTrigger(ctx);
         case 'list':
             return cmdList(ctx);
         case 'run':
             return await cmdRun(ctx);
+        case 'workflow':
+            return cmdWorkflow(ctx);
+        case 'tenant':
+            return cmdTenant(ctx);
+        case 'cutover':
+            return cmdCutover(ctx);
         case 'version':
         case '--version':
         case '-v':
@@ -168,10 +181,15 @@ function cmdCreateCharter(ctx) {
         return 2;
     }
 }
+// v1.3.0 W1.7 (codex W1.7 fold): CLI now accepts 'invoke_host_llm' steps in
+// addition to the v1.1.x trio. invoke_host_llm requires per-step --host-N
+// (1-indexed), --prompt-N, and optionally --timeout-N flags. Other step
+// actions ignore the per-step host/prompt/timeout flags.
 const VALID_STEP_ACTIONS_CLI = new Set([
     'wait',
     'terminate',
     'spawn_sub_unit',
+    'invoke_host_llm',
 ]);
 function cmdCreateWorkflow(ctx) {
     const { flags } = parseFlags(ctx.argv);
@@ -184,10 +202,54 @@ function cmdCreateWorkflow(ctx) {
         }
         const stepGraph = stepNames.map((name, idx) => {
             if (!VALID_STEP_ACTIONS_CLI.has(name)) {
-                throw new Error(`--steps[${idx}] "${name}" not one of: wait, terminate, spawn_sub_unit (CLI subset of v1.1.1 actions; invoke_host_llm requires --host)`);
+                throw new Error(`--steps[${idx}] "${name}" not one of: wait, terminate, spawn_sub_unit, invoke_host_llm`);
             }
             const isLast = idx === stepNames.length - 1;
             const onFailure = isLast ? 'abort' : 'continue';
+            // v1.3.0 W1.7 (codex W1.7 fold): per-step --host-N / --prompt-N /
+            // --timeout-N flags are 1-indexed by step position. Each
+            // invoke_host_llm step REQUIRES its own --host-N + --prompt-N pair so
+            // multi-step workflows can mix hosts (e.g. step 1 = claude, step 2 =
+            // codex). Codex pivot review CHANGE #2 — the step contract for "what
+            // does this step DO" must encode the host directly, not as a workflow-
+            // wide global, so the CLI scaffolding mirrors the in-memory shape.
+            if (name === 'invoke_host_llm') {
+                const stepNum = idx + 1;
+                const hostFlag = `host-${stepNum}`;
+                const promptFlag = `prompt-${stepNum}`;
+                const timeoutFlag = `timeout-${stepNum}`;
+                const host = require_(flags, hostFlag);
+                if (host !== 'claude' && host !== 'codex') {
+                    throw new Error(`--${hostFlag} must be 'claude' or 'codex'; got "${host}"`);
+                }
+                const prompt = require_(flags, promptFlag);
+                const step = {
+                    step_id: stepNum,
+                    action: 'invoke_host_llm',
+                    host: host,
+                    inputs: [
+                        {
+                            kind: 'host-llm-prompt',
+                            schema_ref: 'prompt/v1',
+                            locator: prompt,
+                            version: '1.0.0',
+                            mutability: 'immutable',
+                            retention: 'permanent',
+                        },
+                    ],
+                    outputs: [],
+                    on_failure: onFailure,
+                };
+                const timeoutRaw = flags[timeoutFlag];
+                if (timeoutRaw !== undefined && timeoutRaw !== 'true') {
+                    const timeout = Number(timeoutRaw);
+                    if (!Number.isInteger(timeout) || timeout <= 0) {
+                        throw new Error(`--${timeoutFlag} must be a positive integer (ms); got "${timeoutRaw}"`);
+                    }
+                    step.timeout_ms = timeout;
+                }
+                return step;
+            }
             return {
                 step_id: idx + 1,
                 action: name,
@@ -214,6 +276,144 @@ function cmdCreateWorkflow(ctx) {
     }
     catch (err) {
         ctx.stderr(`create-workflow failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 2;
+    }
+}
+/**
+ * v1.3.0 W1.8 (codex W1.8 + W3 fold) — `sutra-native create-trigger`.
+ *
+ * Mints a TriggerSpec + persists to user-kit/triggers/<T-id>.json.
+ *
+ * Flags:
+ *   --id <T-id>                                      required
+ *   --workflow-id <W-id>                             required; verified
+ *                                                     against the user-kit
+ *                                                     via loadWorkflow
+ *   --event-type <founder_input|cron|file_drop|webhook>
+ *                                                     required; validated
+ *                                                     against TRIGGER_EVENT_TYPES
+ *   --match-all "<csv>" XOR --match-any "<csv>"       required when
+ *                                                     event-type='founder_input';
+ *                                                     mutually exclusive
+ *   --cadence-spec <json-string>                      accepted for cron
+ *                                                     (W3 fold; W1 just
+ *                                                     persists, W3 wires)
+ *   --charter-id <C-id>                              optional
+ *   --domain-id <D-id>                               optional
+ *   --description <text>                             optional
+ *
+ * Predicate construction (codex W1.8 fold):
+ *   - founder_input + --match-all "kw1,kw2"  → AND of contains predicates
+ *   - founder_input + --match-any "kw1,kw2"  → OR of contains predicates
+ *   - cron                                    → always_true
+ *
+ * Errors exit 2 (usage error) or 3 (io error). codex W1.8 mandates
+ * EXPLICIT errors for the validation paths (workflow not found, both
+ * match flags set, neither match flag set).
+ */
+function cmdCreateTrigger(ctx) {
+    const { flags } = parseFlags(ctx.argv);
+    try {
+        const id = require_(flags, 'id');
+        if (!id.startsWith('T-')) {
+            throw new Error(`--id must match T-<slug> pattern; got "${id}"`);
+        }
+        const workflowId = require_(flags, 'workflow-id');
+        const eventTypeRaw = require_(flags, 'event-type');
+        if (!TRIGGER_EVENT_TYPES.has(eventTypeRaw)) {
+            throw new Error(`--event-type must be one of: ${Array.from(TRIGGER_EVENT_TYPES).join('|')}; got "${eventTypeRaw}"`);
+        }
+        const eventType = eventTypeRaw;
+        // Verify the target workflow exists. Codex W1.8 fold: --workflow-id
+        // is REQUIRED + must reference a real workflow, otherwise the trigger
+        // is a dangling reference at runtime.
+        const target = loadWorkflow(workflowId, { env: ctx.env });
+        if (!target) {
+            throw new Error(`--workflow-id "${workflowId}" not found in user-kit (try: sutra-native list workflows)`);
+        }
+        const matchAllRaw = flags['match-all'];
+        const matchAnyRaw = flags['match-any'];
+        const hasMatchAll = matchAllRaw !== undefined && matchAllRaw !== 'true';
+        const hasMatchAny = matchAnyRaw !== undefined && matchAnyRaw !== 'true';
+        // Codex W1.8 fold: XOR with EXPLICIT error messages for both fail
+        // modes. Both set / neither set are distinct configuration mistakes
+        // and surface different errors.
+        if (hasMatchAll && hasMatchAny) {
+            throw new Error('--match-all and --match-any are mutually exclusive (pick one)');
+        }
+        if (eventType === 'founder_input' && !hasMatchAll && !hasMatchAny) {
+            throw new Error('event-type=founder_input requires --match-all or --match-any (csv of keywords)');
+        }
+        let predicate;
+        if (hasMatchAll) {
+            const kws = matchAllRaw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+            if (kws.length === 0) {
+                throw new Error('--match-all must list at least one keyword');
+            }
+            predicate = {
+                type: 'and',
+                clauses: kws.map((value) => ({ type: 'contains', value })),
+            };
+        }
+        else if (hasMatchAny) {
+            const kws = matchAnyRaw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+            if (kws.length === 0) {
+                throw new Error('--match-any must list at least one keyword');
+            }
+            predicate = {
+                type: 'or',
+                clauses: kws.map((value) => ({ type: 'contains', value })),
+            };
+        }
+        else {
+            // event-type !== founder_input + neither match flag set → always_true.
+            // Cron triggers fire on cadence ticks, not predicate matches.
+            predicate = { type: 'always_true' };
+        }
+        // Codex W3 fold: --cadence-spec accepted for cron triggers; persisted
+        // verbatim. W3 wires CadenceScheduler.register-from-trigger; W1 just
+        // ships the field so on-disk triggers are forward-compatible.
+        let cadenceSpec;
+        const cadenceRaw = flags['cadence-spec'];
+        if (cadenceRaw !== undefined && cadenceRaw !== 'true') {
+            let parsed;
+            try {
+                parsed = JSON.parse(cadenceRaw);
+            }
+            catch {
+                throw new Error(`--cadence-spec must be valid JSON; got "${cadenceRaw}"`);
+            }
+            if (typeof parsed !== 'object' || parsed === null) {
+                throw new Error(`--cadence-spec must be a JSON object; got "${cadenceRaw}"`);
+            }
+            const kind = parsed.kind;
+            if (kind !== 'every_n_minutes' &&
+                kind !== 'every_n_hours' &&
+                kind !== 'every_day_at' &&
+                kind !== 'cron') {
+                throw new Error(`--cadence-spec.kind must be every_n_minutes|every_n_hours|every_day_at|cron; got "${String(kind)}"`);
+            }
+            cadenceSpec = parsed;
+        }
+        const charterId = flags['charter-id'];
+        const domainId = flags['domain-id'];
+        const description = flags['description'];
+        const t = {
+            id,
+            event_type: eventType,
+            route_predicate: predicate,
+            target_workflow: workflowId,
+            ...(domainId && domainId !== 'true' ? { domain_id: domainId } : {}),
+            ...(charterId && charterId !== 'true' ? { charter_id: charterId } : {}),
+            ...(description && description !== 'true' ? { description } : {}),
+            ...(cadenceSpec ? { cadence_spec: cadenceSpec } : {}),
+        };
+        const path = persistTrigger(t, { env: ctx.env });
+        ctx.stdout(`+ Trigger ${t.id} created (event_type=${t.event_type}, target=${workflowId}, predicate=${predicate.type})\n  persisted: ${path}\n`);
+        return 0;
+    }
+    catch (err) {
+        ctx.stderr(`create-trigger failed: ${err instanceof Error ? err.message : String(err)}\n`);
         return 2;
     }
 }
@@ -309,6 +509,433 @@ async function cmdRun(ctx) {
         return 3;
     }
 }
+// ============================================================================
+// v1.3.0 W3 — operator surface: workflow + tenant subcommands
+// ============================================================================
+/**
+ * v1.3.0 W3 (operator surface dispatcher).
+ *
+ * `sutra-native workflow status [E-id]`     — list executions or show one
+ * `sutra-native workflow cancel <E-id>`     — cancel a paused/unknown execution
+ *                                              (added in W3.cancel commit)
+ *
+ * Status reads decision-provenance.jsonl (workflow STARTED / COMPLETED /
+ * FAILED records) and unions in pending approval ledger entries to surface
+ * paused executions.
+ */
+function cmdWorkflow(ctx) {
+    const sub = ctx.argv[1] ?? '';
+    if (sub === 'status') {
+        return cmdWorkflowStatus(ctx);
+    }
+    if (sub === 'cancel') {
+        return cmdWorkflowCancel(ctx);
+    }
+    ctx.stderr(`workflow: unknown subcommand "${sub}" (expected: status|cancel)\n`);
+    return 2;
+}
+/**
+ * Read the user-kit DecisionProvenance JSONL and group EXECUTION-scope rows
+ * by execution_id. Each record's evidence locator is `cas://execution/<id>/<stage>`.
+ */
+function loadExecutionDPRecords(env) {
+    const root = userKitRoot({ env });
+    const dpPath = join(root, 'user-kit', 'decision-provenance.jsonl');
+    const byExec = new Map();
+    if (!existsSync(dpPath))
+        return byExec;
+    let raw;
+    try {
+        raw = readFileSync(dpPath, 'utf8');
+    }
+    catch {
+        return byExec;
+    }
+    for (const line of raw.split('\n')) {
+        if (!line.trim())
+            continue;
+        let parsed;
+        try {
+            parsed = JSON.parse(line);
+        }
+        catch {
+            continue;
+        }
+        if (parsed.scope !== 'EXECUTION' || parsed.decision_kind !== 'EXECUTE')
+            continue;
+        // Extract execution_id from evidence locator: cas://execution/<id>/<stage>
+        const locator = parsed.evidence?.[0]?.locator ?? '';
+        const m = /^cas:\/\/execution\/([^/]+)\/(started|completed|failed)$/.exec(locator);
+        if (!m)
+            continue;
+        const execId = m[1];
+        const list = byExec.get(execId) ?? [];
+        list.push(parsed);
+        byExec.set(execId, list);
+    }
+    return byExec;
+}
+function deriveExecutionRow(execId, dpRecords) {
+    const row = {
+        execution_id: execId,
+        state: 'STARTED',
+    };
+    for (const rec of dpRecords) {
+        const locator = rec.evidence?.[0]?.locator ?? '';
+        const m = /^cas:\/\/execution\/([^/]+)\/(started|completed|failed)$/.exec(locator);
+        if (!m)
+            continue;
+        const stage = m[2];
+        if (stage === 'started') {
+            row.started_at = rec.timestamp;
+        }
+        else if (stage === 'completed') {
+            row.ended_at = rec.timestamp;
+            row.state = 'COMPLETED';
+            row.outcome = rec.outcome;
+        }
+        else if (stage === 'failed') {
+            row.ended_at = rec.timestamp;
+            row.state = 'FAILED';
+            row.outcome = rec.outcome;
+        }
+    }
+    return row;
+}
+function cmdWorkflowStatus(ctx) {
+    const { positional } = parseFlags(ctx.argv.slice(1)); // strip 'status' verb
+    const targetExecId = positional[0];
+    try {
+        const byExec = loadExecutionDPRecords(ctx.env);
+        const pendingApprovals = listApprovals({ env: ctx.env }, 'pending');
+        const pausedById = new Map();
+        for (const rec of pendingApprovals) {
+            pausedById.set(rec.execution_id, {
+                workflow_id: rec.workflow_id,
+                step_index: rec.step_index,
+                prompt_summary: rec.prompt_summary,
+                created_at_ms: rec.created_at_ms,
+            });
+        }
+        if (targetExecId) {
+            const dpRecords = byExec.get(targetExecId) ?? [];
+            const paused = pausedById.get(targetExecId);
+            if (dpRecords.length === 0 && !paused) {
+                ctx.stderr(`workflow status: execution "${targetExecId}" not found (no DP records, no pending approval)\n`);
+                return 3;
+            }
+            const row = dpRecords.length > 0 ? deriveExecutionRow(targetExecId, dpRecords) : { execution_id: targetExecId, state: 'STARTED' };
+            if (paused) {
+                row.state = 'paused';
+            }
+            const lines = [];
+            lines.push(`EXECUTION ${row.execution_id}`);
+            lines.push(`  state:        ${row.state}`);
+            if (row.started_at)
+                lines.push(`  started_at:   ${row.started_at}`);
+            if (row.ended_at)
+                lines.push(`  ended_at:     ${row.ended_at}`);
+            if (row.started_at && row.ended_at) {
+                const dur = new Date(row.ended_at).getTime() - new Date(row.started_at).getTime();
+                lines.push(`  duration_ms:  ${dur}`);
+            }
+            if (row.outcome)
+                lines.push(`  outcome:      ${row.outcome}`);
+            if (paused) {
+                lines.push(`  paused_step:  ${paused.step_index}`);
+                lines.push(`  prompt:       ${paused.prompt_summary}`);
+                lines.push(`  paused_since: ${new Date(paused.created_at_ms).toISOString()}`);
+                lines.push(`  to resume:    sutra-native (founder utterance) "approve ${row.execution_id}"`);
+            }
+            // Provenance trail
+            if (dpRecords.length > 0) {
+                lines.push('  DP records:');
+                for (const rec of dpRecords) {
+                    lines.push(`    [${rec.timestamp}] ${rec.outcome ?? '(no outcome)'}`);
+                }
+            }
+            ctx.stdout(lines.join('\n') + '\n');
+            return 0;
+        }
+        // No target — list all
+        const allIds = new Set([...byExec.keys(), ...pausedById.keys()]);
+        if (allIds.size === 0) {
+            ctx.stdout('workflow status: no executions found\n');
+            return 0;
+        }
+        const lines = [];
+        lines.push(`EXECUTIONS (${allIds.size}):`);
+        const sorted = [...allIds].sort();
+        for (const execId of sorted) {
+            const dpRecords = byExec.get(execId) ?? [];
+            const row = dpRecords.length > 0 ? deriveExecutionRow(execId, dpRecords) : { execution_id: execId, state: 'STARTED' };
+            const paused = pausedById.get(execId);
+            if (paused)
+                row.state = 'paused';
+            const ts = row.ended_at ?? row.started_at ?? '-';
+            lines.push(`  ${execId.padEnd(36)} ${row.state.padEnd(10)} ${ts}`);
+        }
+        ctx.stdout(lines.join('\n') + '\n');
+        return 0;
+    }
+    catch (err) {
+        ctx.stderr(`workflow status failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 3;
+    }
+}
+/**
+ * v1.3.0 W3 (codex W3 BLOCKER 2 fold) — workflow cancel.
+ *
+ * Cancel was BLOCKED at W3 plan time until paused-execution machinery from
+ * W2 shipped. W2 ships the execution-approval-ledger so cancel-while-paused
+ * is now wireable: ledger pending → rejected with reason='cancelled'.
+ *
+ * Three paths:
+ *   - approval record exists, status='pending'    → updateApprovalStatus
+ *     to 'rejected' reason='cancelled'; engine emits workflow_failed
+ *     reason=cancelled on next dispatch (the rejection branch).
+ *   - approval record exists, status terminal     → idempotent no-op,
+ *     emits "already terminal" + exit 0.
+ *   - no approval record (running or unknown)     → write a marker at
+ *     runtime/cancellations/E-<id>.json so the engine can consume on
+ *     next ingest. Best-effort + auditable since lite-executor lacks
+ *     a cancel token (codex W3 advisory).
+ */
+function cmdWorkflowCancel(ctx) {
+    const { positional } = parseFlags(ctx.argv.slice(1)); // strip 'cancel' verb
+    const targetExecId = positional[0];
+    if (!targetExecId) {
+        ctx.stderr('workflow cancel: execution id required (e.g. sutra-native workflow cancel E-t1-1)\n');
+        return 2;
+    }
+    try {
+        const rec = loadApproval(targetExecId, { env: ctx.env });
+        if (rec) {
+            // Has approval record. Pending → cancellable via ledger transition.
+            if (rec.status === 'pending') {
+                try {
+                    updateApprovalStatus(targetExecId, 'rejected', 'cancelled', { env: ctx.env }, Date.now());
+                }
+                catch (err) {
+                    ctx.stderr(`workflow cancel: ledger update failed: ${err instanceof Error ? err.message : String(err)}\n`);
+                    return 3;
+                }
+                // Also write a cancellation marker so the running engine (if any)
+                // can correlate. Best-effort.
+                writeCancellationMarker(ctx, targetExecId, 'pending-rejected');
+                ctx.stdout(`+ Cancelled paused execution ${targetExecId}\n  ledger: pending → rejected (reason=cancelled)\n  engine emits workflow_failed reason=cancelled on next dispatch\n`);
+                return 0;
+            }
+            // Already-decided — terminal-on-the-resume-side. Idempotent no-op.
+            ctx.stdout(`workflow cancel: execution ${targetExecId} already terminal (status=${rec.status}); no action taken\n`);
+            return 0;
+        }
+        // No approval record. Could be running or unknown. Best-effort marker
+        // (codex W3 fold: lite-executor lacks a cancel token, so this is
+        // auditable intent rather than mid-run termination).
+        writeCancellationMarker(ctx, targetExecId, 'no-record');
+        ctx.stdout(`+ Cancellation marker recorded for ${targetExecId}\n  (no approval record; engine consumes marker on next ingest)\n`);
+        return 0;
+    }
+    catch (err) {
+        ctx.stderr(`workflow cancel failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 3;
+    }
+}
+function writeCancellationMarker(ctx, execId, mode) {
+    try {
+        const root = userKitRoot({ env: ctx.env });
+        const dir = join(root, 'runtime', 'cancellations');
+        mkdirSync(dir, { recursive: true });
+        const path = join(dir, `${execId}.json`);
+        writeFileSync(path, JSON.stringify({
+            execution_id: execId,
+            mode,
+            requested_at_ms: Date.now(),
+            requested_at_iso: new Date().toISOString(),
+        }, null, 2) + '\n');
+    }
+    catch (err) {
+        ctx.stderr(`workflow cancel: marker write failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+}
+/**
+ * v1.3.0 W3 (codex W3 BLOCKER 3 fold) — tenant list.
+ *
+ * `sutra-native tenant list` scans Domains (each carries `tenant_id`) and
+ * unions with Workflows where `custody_owner` is non-null. NO separate
+ * tenant registry file (codex W3: "scan Domains, not a registry file").
+ * Output sorted, deduplicated, with per-tenant counts.
+ *
+ * Codex W3 BLOCKER 3 closes the "where do tenants come from" question.
+ * Domains carry tenant_id (D4 §1.1) so the existence of a Domain implies
+ * the tenant. Workflows can carry a custody_owner=T-<id> (M4.4 / D-NS-11)
+ * which may add tenants not yet represented as Domains.
+ */
+function cmdTenant(ctx) {
+    const sub = ctx.argv[1] ?? '';
+    if (sub === 'list') {
+        return cmdTenantList(ctx);
+    }
+    ctx.stderr(`tenant: unknown subcommand "${sub}" (expected: list)\n`);
+    return 2;
+}
+function cmdTenantList(ctx) {
+    try {
+        const opts = { env: ctx.env };
+        const domains = listDomains(opts);
+        const workflows = listWorkflows(opts);
+        const counts = new Map();
+        for (const d of domains) {
+            const t = d.tenant_id;
+            const cur = counts.get(t) ?? { domains: 0, workflows: 0 };
+            cur.domains++;
+            counts.set(t, cur);
+        }
+        for (const w of workflows) {
+            const t = w.custody_owner;
+            if (!t)
+                continue;
+            const cur = counts.get(t) ?? { domains: 0, workflows: 0 };
+            cur.workflows++;
+            counts.set(t, cur);
+        }
+        const sorted = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        if (sorted.length === 0) {
+            ctx.stdout('TENANTS (0): (none — try: sutra-native create-domain --tenant T-foo ...)\n');
+            return 0;
+        }
+        const lines = [];
+        lines.push(`TENANTS (${sorted.length}):`);
+        lines.push(`  ${'tenant_id'.padEnd(20)} ${'domains'.padStart(7)}  ${'workflows'.padStart(9)}`);
+        for (const [t, c] of sorted) {
+            lines.push(`  ${t.padEnd(20)} ${String(c.domains).padStart(7)}  ${String(c.workflows).padStart(9)}`);
+        }
+        ctx.stdout(lines.join('\n') + '\n');
+        return 0;
+    }
+    catch (err) {
+        ctx.stderr(`tenant list failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        return 3;
+    }
+}
+// ============================================================================
+// v1.3.0 W6 — cutover validate + dry-run subcommands
+// ============================================================================
+/**
+ * v1.3.0 W6 (cutover engine) — `sutra-native cutover validate <contract.json>`
+ * + `sutra-native cutover dry-run <contract.json>`.
+ *
+ * The cutover-validator + cutover-applier (dry-run) are pure functions over
+ * the CutoverContract zod-validated shape. The CLI is the founder-facing
+ * surface: read the JSON, run the validator/dry-run, print result, exit
+ *   0 — success
+ *   2 — validation error (contract structurally invalid)
+ *   3 — io error (file missing / unreadable / not JSON)
+ *
+ * Apply-with-rollback is DEFERRED to v1.x.1 per plan §6 + codex implicit
+ * advisory. v1.3.0 ships observe + plan; never mutate.
+ */
+function cmdCutover(ctx) {
+    const sub = ctx.argv[1] ?? '';
+    if (sub === 'validate') {
+        return cmdCutoverValidate(ctx);
+    }
+    if (sub === 'dry-run') {
+        return cmdCutoverDryRun(ctx);
+    }
+    ctx.stderr(`cutover: unknown subcommand "${sub}" (expected: validate|dry-run)\n`);
+    return 2;
+}
+function readContractFile(path) {
+    if (!existsSync(path)) {
+        return { ok: false, reason: `file not found: ${path}` };
+    }
+    let raw;
+    try {
+        raw = readFileSync(path, 'utf8');
+    }
+    catch (err) {
+        return { ok: false, reason: `read failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    }
+    catch (err) {
+        return { ok: false, reason: `JSON parse failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    return { ok: true, data: parsed };
+}
+function cmdCutoverValidate(ctx) {
+    const { positional } = parseFlags(ctx.argv.slice(1));
+    const path = positional[0];
+    if (!path) {
+        ctx.stderr('cutover validate: contract path required (e.g. sutra-native cutover validate ./cutover.json)\n');
+        return 2;
+    }
+    const read = readContractFile(path);
+    if (!read.ok) {
+        ctx.stderr(`cutover validate: ${read.reason}\n`);
+        return 3;
+    }
+    const result = validateCutoverContract(read.data);
+    if (result.valid) {
+        ctx.stdout(`+ Cutover contract VALID (${path})\n`);
+        return 0;
+    }
+    ctx.stderr(`cutover validate: contract INVALID (${path}):\n`);
+    for (const e of result.errors) {
+        ctx.stderr(`  - ${e}\n`);
+    }
+    return 2;
+}
+function cmdCutoverDryRun(ctx) {
+    const { positional } = parseFlags(ctx.argv.slice(1));
+    const path = positional[0];
+    if (!path) {
+        ctx.stderr('cutover dry-run: contract path required (e.g. sutra-native cutover dry-run ./cutover.json)\n');
+        return 2;
+    }
+    const read = readContractFile(path);
+    if (!read.ok) {
+        ctx.stderr(`cutover dry-run: ${read.reason}\n`);
+        return 3;
+    }
+    const plan = dryRunApplyCutover(read.data);
+    if (!plan.valid) {
+        ctx.stderr(`cutover dry-run: contract INVALID (${path}):\n`);
+        for (const e of plan.errors) {
+            ctx.stderr(`  - ${e}\n`);
+        }
+        return 2;
+    }
+    // Render the plan
+    const lines = [];
+    lines.push(`CUTOVER PLAN (mode=${plan.mode})`);
+    if (plan.source_engine === '' && plan.target_engine === '') {
+        lines.push('  (no cutover required — contract is null)');
+    }
+    else {
+        lines.push(`  source_engine:        ${plan.source_engine}`);
+        lines.push(`  target_engine:        ${plan.target_engine}`);
+        lines.push(`  canary_window:        ${plan.canary_window}${plan.canary_window_seconds !== null ? ` (${plan.canary_window_seconds}s)` : ''}`);
+        lines.push(`  rollback_gate:        ${plan.rollback_gate}`);
+        lines.push(`  behavior_invariants:  ${plan.behavior_invariants.length}`);
+        for (const inv of plan.behavior_invariants) {
+            lines.push(`    - ${inv}`);
+        }
+        lines.push(`  planned_mutations:    ${plan.planned_mutations.length}`);
+        for (const m of plan.planned_mutations) {
+            lines.push(`    [${m.target.padEnd(13)}] ${m.kind}${m.reversible ? ' (reversible)' : ''}`);
+            lines.push(`      ${m.description}`);
+        }
+    }
+    lines.push('');
+    lines.push('NOTE: dry-run only. Apply-with-rollback is deferred to v1.x.1.');
+    ctx.stdout(lines.join('\n') + '\n');
+    return 0;
+}
 /**
  * cmdDaemon — INTERNAL: run NativeEngine in foreground until SIGTERM.
  *
@@ -326,6 +953,7 @@ function cmdDaemon(ctx) {
         connector_options: intakeLog ? { log_path: intakeLog } : {},
         write: (line) => ctx.stdout(line + '\n'),
         on_error: (err) => ctx.stderr(`[native-engine] ${err.message}\n`),
+        user_kit_options: { env: ctx.env },
     });
     ctx.stdout(`sutra-native daemon: starting (pid=${process.pid}, v=${VERSION})\n`);
     try {
@@ -336,6 +964,72 @@ function cmdDaemon(ctx) {
         return 3;
     }
     ctx.stdout(`sutra-native daemon: subscribed (intake_log=${intakeLog ?? 'default cwd resolution'})\n`);
+    // v1.3.0 W3 (codex W3 BLOCKER 1 fold) — cron daemon scheduler tick.
+    //
+    // Read every persisted TriggerSpec; for each event_type='cron' trigger
+    // with a machine-readable `cadence_spec`, register it with a fresh
+    // CadenceScheduler instance whose callback synthesizes a cron HSutraEvent
+    // and dispatches via engine.handleHSutraEvent. The Router treats cron
+    // events distinctly from founder_input — predicate matching against
+    // cron-typed triggers is the dispatch path.
+    //
+    // Triggers without a cadence_spec are LOGGED + SKIPPED (codex W3 fold:
+    // "trigger T-foo has no cadence_spec; cron trigger inactive") so the
+    // operator surface is honest about which prose-only cron triggers are
+    // dormant until upgraded.
+    //
+    // The scheduler ticks every 60_000ms (codex advisory: minute-scale jitter
+    // tolerated by the ±5min jitter band on cadence-scheduler.ts). The
+    // existing keep-alive setInterval is replaced by the tick interval —
+    // the same timer keeps the event loop alive AND drives the scheduler.
+    const scheduler = new CadenceScheduler({ clock: () => Date.now() });
+    scheduler.start();
+    let cronTickSeq = 0;
+    const dispatchCron = (trigger) => {
+        return async () => {
+            cronTickSeq++;
+            const turnId = `cron-${trigger.id}-${Date.now()}-${cronTickSeq}`;
+            try {
+                await engine.handleHSutraEvent({
+                    turn_id: turnId,
+                    ts: new Date().toISOString(),
+                    event_type: 'cron',
+                    input_text: '',
+                    // tag the trigger id so observers can correlate; harmless extra field
+                    // (HSutraEvent allows pass-through extras)
+                    cron_trigger_id: trigger.id,
+                });
+            }
+            catch (err) {
+                ctx.stderr(`[cron] dispatch failed for ${trigger.id}: ${err instanceof Error ? err.message : String(err)}\n`);
+            }
+        };
+    };
+    let registeredCron = 0;
+    let inactiveCron = 0;
+    try {
+        const triggers = listTriggers({ env: ctx.env });
+        for (const t of triggers) {
+            if (t.event_type !== 'cron')
+                continue;
+            if (!t.cadence_spec) {
+                ctx.stderr(`[cron] trigger ${t.id} has no cadence_spec; cron trigger inactive\n`);
+                inactiveCron++;
+                continue;
+            }
+            try {
+                scheduler.register(t.cadence_spec, dispatchCron(t));
+                registeredCron++;
+            }
+            catch (err) {
+                ctx.stderr(`[cron] failed to register ${t.id}: ${err instanceof Error ? err.message : String(err)}\n`);
+            }
+        }
+    }
+    catch (err) {
+        ctx.stderr(`[cron] listTriggers failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+    ctx.stdout(`sutra-native daemon: cron scheduler armed (registered=${registeredCron}, inactive=${inactiveCron})\n`);
     // Codex P1 fold 2026-05-03 (DIRECTIVE-ID: 1777802035): write a readiness
     // marker so the parent cmdStart can detect successful initialization
     // (vs spawning a doomed child). Parent polls existsSync(readyPath); we
@@ -351,6 +1045,10 @@ function cmdDaemon(ctx) {
     const shutdown = (signal) => {
         ctx.stdout(`sutra-native daemon: received ${signal}; tearing down\n`);
         try {
+            scheduler.stop();
+        }
+        catch { /* best-effort */ }
+        try {
             engine.stop();
         }
         catch { /* best-effort */ }
@@ -363,12 +1061,15 @@ function cmdDaemon(ctx) {
     };
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
-    // Codex P1 fold 2026-05-03: REFERENCED setInterval (NOT .unref()) so the
-    // event loop does NOT exit. Without this, fs.watch persistent:false in
-    // the connector lets the loop empty + Node implicitly exits the daemon
-    // microseconds after engine.start returns. This timer holds the loop
-    // open until SIGTERM/SIGINT calls process.exit.
-    setInterval(() => { }, 60_000);
+    // v1.3.0 W3 — REFERENCED 60s tick interval drives the cron scheduler AND
+    // keeps the event loop alive (codex advisory: 60s tick is the right
+    // cadence; CadenceScheduler tolerates minute-scale jitter via its ±5min
+    // I-12 jitter band). Replaces the v1.2.x keep-alive no-op timer.
+    setInterval(() => {
+        void scheduler.tick().catch((err) => {
+            ctx.stderr(`[cron] scheduler.tick failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        });
+    }, 60_000);
     // Unreachable under normal operation (signal handlers exit). Return 0
     // for type completeness.
     return 0;
@@ -642,12 +1343,47 @@ function usage() {
         '                     [--preconditions <text>] [--postconditions <text>]',
         '                     [--stringency task|process|protocol]',
         '                     [--failure-policy continue|abort]',
-        '                     CLI step actions: wait | terminate | spawn_sub_unit',
+        '                     CLI step actions: wait | terminate | spawn_sub_unit | invoke_host_llm',
+        '                     For each invoke_host_llm step at position N (1-indexed):',
+        '                       --host-N <claude|codex>     required',
+        '                       --prompt-N <text>           required',
+        '                       --timeout-N <ms>            optional (positive integer)',
+        '  create-trigger --id <T-id> --workflow-id <W-id> --event-type <type>',
+        '                     [--match-all "<csv>" | --match-any "<csv>"]',
+        '                     [--cadence-spec <json>] [--charter-id <C-id>]',
+        '                     [--domain-id <D-id>] [--description <text>]',
+        '                     event-type: founder_input|cron|file_drop|webhook',
+        '                     founder_input requires --match-all XOR --match-any.',
+        '                     cron accepts --cadence-spec (W1.8 + W3 fold).',
         '  list [domains|charters|workflows|all]',
         '                     Show what is in the user-kit.',
         '  run <W-id> [--execution-id <E-id>]',
         '                     Load a persisted Workflow + run via LiteExecutor.',
         '                     Each EngineEvent prints one line on stdout.',
+        '',
+        'Operator surface (v1.3.0 W3):',
+        '  workflow status [<E-id>]',
+        '                     List executions OR show one execution by E-id with',
+        '                     state derivation (STARTED/COMPLETED/FAILED/paused),',
+        '                     timestamps, durations, and pending approval prompt.',
+        '  workflow cancel <E-id>',
+        '                     Cancel a paused execution (ledger pending → rejected',
+        '                     reason=cancelled). For executions without an approval',
+        '                     record, writes a runtime/cancellations/<E-id>.json',
+        '                     marker the engine consumes on next ingest.',
+        '  tenant list        List tenants by scanning Domain.tenant_id and',
+        '                     unioning with Workflow.custody_owner; per-tenant',
+        '                     domain + workflow counts.',
+        '',
+        'Cutover engine (v1.3.0 W6 — observe + plan, dry-run only):',
+        '  cutover validate <contract.json>',
+        '                     Validate a CutoverContract structurally.',
+        '                     Exit 0=valid, 2=invalid, 3=io error.',
+        '  cutover dry-run <contract.json>',
+        '                     Print the parallel-canary mutation plan that',
+        '                     WOULD apply (zero side effects). Exit 0=plan,',
+        '                     2=invalid, 3=io error. Apply-with-rollback is',
+        '                     deferred to v1.x.1.',
         '',
         'Environment:',
         '  SUTRA_NATIVE_HOME  Base dir (default: ~/.sutra-native; user-kit at $HOME/user-kit/)',
@@ -659,7 +1395,7 @@ function usage() {
         '',
     ].join('\n');
 }
-export { cmdStart, cmdStatus, cmdCreateDomain, cmdCreateCharter, cmdCreateWorkflow, cmdList, cmdRun, formatBanner, formatStatus, usage, };
+export { cmdStart, cmdStatus, cmdCreateDomain, cmdCreateCharter, cmdCreateWorkflow, cmdCreateTrigger, cmdList, cmdRun, cmdWorkflow, cmdWorkflowStatus, cmdWorkflowCancel, cmdTenant, cmdTenantList, cmdCutover, cmdCutoverValidate, cmdCutoverDryRun, formatBanner, formatStatus, usage, };
 // Auto-execute when called as bin (not when imported as a module).
 // Detection: process.argv[1] resolves to this file or the .js dist twin.
 const isMain = process.argv[1] !== undefined &&

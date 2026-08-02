@@ -1,27 +1,49 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook — clears per-turn routing/depth markers so each new
-# founder prompt requires a fresh Input Routing block + Depth block.
-# Root cause fix for 2026-04-15 miss: markers were session-scoped, not turn-scoped.
+# UserPromptSubmit — clears per-turn markers so each prompt requires fresh blocks.
+#
+# P1 (2026-07-27): clears THIS session's marker dir (marker-lib) AND, transitionally,
+# the legacy repo-global list (until every writer moves to the session dir). Once
+# fully migrated, drop the global block. TODO[p1-dropglobal].
+#
+# Clearing BOTH is what makes the transition safe: a global marker written by an
+# un-migrated writer is still cleared on every real turn, so there is no permanent
+# "marker present forever" pass while the migration is in flight.
+#
+# GUARD RESTORATION (2026-07-27): the P1 rewrite collapsed this file 90 -> 17 lines
+# and dropped four guards that existed for measured reasons. Without them this hook
+# fires on every SYNTHETIC UserPromptSubmit — Claude Code injects reminders
+# (system-reminder blocks, READ-BEFORE-EDIT, linter notices, task-list nudges,
+# PreToolUse hook context) as synthetic prompt events — wiping markers between an
+# assistant's own tool calls and hard-blocking the next Edit/Write for "missing"
+# markers that were in fact written. That regression hits SINGLE-session users too,
+# not just concurrent ones. Restored below; do not remove without replacing the
+# behavior they encode.
+#   1. empty-prompt skip        (2026-04-25 root-cause fix)
+#   2. synthetic-turn detection (2026-05-09 stdin instrumentation)
+#   3. burst guard, 3s          (2026-05-12, Gap #17 of testlify-deployment-gaps)
+#   4. forensics logging        (so the case patterns can be refined from data)
+#
+# Also fixed: the rewrite sourced marker-lib but never called sutra_sid_from_stdin,
+# so _sutra_sid fell through to pid-$PPID and the reset could clear a directory
+# belonging to no live session (or, worse, the wrong one).
 
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo ".")}"
 cd "$REPO_ROOT" || exit 0
 
-# Synthetic-turn detection (2026-04-25 root-cause fix).
-# Claude Code injects reminders (READ-BEFORE-EDIT, MEMORY.md linter, task-list
-# prompts, PreToolUse hook context) as synthetic UserPromptSubmit turns. These
-# MUST NOT wipe per-turn markers — only REAL founder input resets markers.
-# Preserves original design intent of PROTO-governance and prevents the
-# hook-interaction cascade that blocks multi-tool edits in sutra/** / holding/**.
-PROMPT=$(jq -r '.prompt // empty' 2>/dev/null)
+STDIN_RAW="$(cat 2>/dev/null)"
+PROMPT=$(printf '%s' "$STDIN_RAW" | jq -r '.prompt // empty' 2>/dev/null)
+
+# -- Guard 1: empty prompt = not a real turn --------------------------------
 case "$PROMPT" in
   "")
-    # Empty PROMPT = stdin had no .prompt field or jq failed → synthetic.
-    # Root-cause fix 2026-04-25: was falling through to rm -f, caused 2052:1
-    # wipe:skip ratio blocking multi-tool Sutra edits.
     mkdir -p .enforcement 2>/dev/null
-    echo "{\"ts\":$(date +%s),\"event\":\"reset-skipped-empty-prompt\"}" >> .enforcement/routing-misses.log
+    STDIN_BYTES=${#STDIN_RAW}
+    STDIN_HEAD=$(printf '%s' "$STDIN_RAW" | head -c 200 | tr -d '\n' | sed 's/"/\\"/g')
+    printf '{"ts":%s,"event":"reset-skipped-empty-prompt","stdin_bytes":%s,"stdin_head":"%s"}\n' \
+      "$(date +%s)" "$STDIN_BYTES" "$STDIN_HEAD" >> .enforcement/routing-misses.log
     exit 0
     ;;
+  # -- Guard 2: synthetic turns MUST NOT wipe markers ----------------------
   *"<system-reminder>"*|\
   *"PreToolUse:"*"hook additional context"*|\
   *"was modified, either by the user or by a linter"*|\
@@ -29,19 +51,106 @@ case "$PROMPT" in
   *"task tools haven't been used recently"*|\
   *"<local-command-caveat>"*)
     mkdir -p .enforcement 2>/dev/null
-    echo "{\"ts\":$(date +%s),\"event\":\"reset-skipped-synthetic-turn\"}" >> .enforcement/routing-misses.log
+    printf '{"ts":%s,"event":"reset-skipped-synthetic-turn"}\n' "$(date +%s)" >> .enforcement/routing-misses.log
     exit 0
     ;;
 esac
 
-rm -f .claude/input-routed \
-      .claude/depth-registered \
-      .claude/depth-assessed \
-      .claude/sutra-deploy-depth5 \
-      .claude/build-layer-registered \
-      2>/dev/null
+# -- Resolve session identity BEFORE guard 3 --------------------------------
+# marker-lib is sourced here (moved up from the clear step) so the burst-guard
+# stamp can be SESSION-SCOPED. Sourced defensively — see flow-gate.sh
+# (DeepSeek consult 2026-07-27, finding 4).
+LIB="$(dirname "$0")/marker-lib.sh"
+SELF_SID=""
+LIB_LOADED=0
+if [ -f "$LIB" ]; then
+  set +u
+  . "$LIB" || true
+  command -v sutra_sid_from_stdin >/dev/null 2>&1 && { sutra_sid_from_stdin "$STDIN_RAW" || true; LIB_LOADED=1; }
+  SELF_SID="${CLAUDE_CODE_SESSION_ID:-}"
+  set -u
+fi
 
+# -- Guard 3: burst guard — real prompts arrive >> 3s apart ------------------
+# SESSION-SCOPED stamp (2026-07-30, marker-race root-cause doc section 5 point 2
+# / plan phase 6): the old repo-global .claude/.last-reset-ts meant two sessions'
+# real prompts within 3s suppressed each other's resets (stale-pass inverse bug).
+# The stamp now lives INSIDE the session dir, so the guard only debounces THIS
+# session's own prompt bursts. Dotfile name is deliberate: sutra_marker_reset_own
+# wipes "$d"/* (glob skips dotfiles), so the stamp survives the marker clear
+# below. Fallback to the legacy global path only when marker-lib could not be
+# loaded (no session dir resolvable).
+NOW=$(date +%s)
+if [ "$LIB_LOADED" = "1" ]; then
+  LAST_RESET_FILE="$(sutra_marker_dir)/.last-reset-ts"
+else
+  LAST_RESET_FILE=".claude/.last-reset-ts"
+fi
+if [ -f "$LAST_RESET_FILE" ]; then
+  LAST=$(cat "$LAST_RESET_FILE" 2>/dev/null)
+  if [ -n "$LAST" ] && [ "$LAST" -gt 0 ] 2>/dev/null; then
+    DELTA=$(( NOW - LAST ))
+    if [ "$DELTA" -ge 0 ] && [ "$DELTA" -lt 3 ] 2>/dev/null; then
+      mkdir -p .enforcement 2>/dev/null
+      STDIN_HEAD_BG=$(printf '%s' "$STDIN_RAW" | head -c 200 | tr -d '\n' | sed 's/"/\\"/g')
+      printf '{"ts":%s,"event":"reset-skipped-burst-guard","last_reset_ago_s":%s,"prompt_head":"%s"}\n' \
+        "$NOW" "$DELTA" "$STDIN_HEAD_BG" >> .enforcement/routing-misses.log
+      exit 0
+    fi
+  fi
+fi
+
+# -- Guard 4: forensics on every actual clear -------------------------------
+STDIN_HEAD_CLR=$(printf '%s' "$STDIN_RAW" | head -c 300 | tr -d '\n' | sed 's/"/\\"/g')
 mkdir -p .enforcement 2>/dev/null
-echo "{\"ts\":$(date +%s),\"event\":\"markers-cleared\"}" >> .enforcement/routing-misses.log
+printf '{"ts":%s,"event":"clearing-with-context","prompt_head":"%s"}\n' \
+  "$NOW" "$STDIN_HEAD_CLR" >> .enforcement/routing-misses.log
 
+# -- Session-scoped clear (authoritative) -----------------------------------
+# marker-lib already sourced above (before guard 3); sid already resolved.
+# sutra_marker_reset delegates to sutra_marker_reset_own: wipes THIS session's
+# dir + only self-stamped globals; never unstamped or foreign-stamped ones.
+if [ "$LIB_LOADED" = "1" ]; then
+  set +u
+  command -v sutra_marker_reset >/dev/null 2>&1 && sutra_marker_reset
+  set -u
+fi
+
+# -- Legacy repo-global clear (transitional, OWNERSHIP-AWARE) ---------------
+# TODO[p1-dropglobal]: delete once every writer uses sutra_marker_set / sutra-marker.
+#
+# A blanket `rm -f .claude/<marker>` here is session-agnostic and re-creates the
+# original bug in a smaller form: session A's reset deletes session B's legacy
+# global marker, and any of B's readers still on the global path then hard-block
+# on a turn where B did emit its blocks (DeepSeek consult 2026-07-27, finding 2).
+#
+# So (pinned contract, 2026-07-30, marker-race root-cause doc): delete a legacy
+# global ONLY when it is provably OURS -- SESSION= stamp present AND equal to this
+# session's sid. NEVER delete an unstamped global (its owner is unprovable; a peer
+# on an un-migrated govblock may be relying on it) and NEVER a foreign-stamped one
+# (that peer's own reset clears it). When SELF_SID resolves empty, delete NOTHING --
+# ownership cannot be established, so no delete is safe. This mirrors
+# sutra_marker_reset_own in marker-lib.sh exactly. Consequence, documented per
+# codex consult 2026-07-30: an unstamped global is never cleared by this hook;
+# it disappears only when a stamped writer (sutra_marker_set stamps every write)
+# overwrites it and that writer's own reset later clears it.
+for m in input-routed depth-registered depth-assessed sutra-deploy-depth5 \
+         build-layer-registered blueprint-registered structure-first-active \
+         flow-classified flow-inner flow-type-resolved flow-closed codex-consulted \
+         placement-registered; do
+  f=".claude/$m"
+  [ -f "$f" ] || continue
+  owner=$(grep -o 'SESSION=[A-Za-z0-9_-]*' "$f" 2>/dev/null | head -1 | cut -d= -f2)
+  if [ -n "$SELF_SID" ] && [ -n "$owner" ] && [ "$owner" = "$SELF_SID" ]; then
+    rm -f "$f" 2>/dev/null
+  else
+    printf '{"ts":%s,"event":"reset-skipped-unowned-or-foreign-global","marker":"%s","owner":"%s","self":"%s"}\n' \
+      "$NOW" "$m" "$owner" "$SELF_SID" >> .enforcement/routing-misses.log 2>/dev/null
+  fi
+done
+
+mkdir -p .claude 2>/dev/null
+echo "$NOW" > "$LAST_RESET_FILE" 2>/dev/null
+
+printf '{"ts":%s,"event":"markers-cleared","scope":"session+legacy"}\n' "$NOW" >> .enforcement/routing-misses.log
 exit 0

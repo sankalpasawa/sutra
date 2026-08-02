@@ -189,14 +189,12 @@ describe('v1.3.0 W6 #4 — telemetry sink segregation across tenants', () => {
       ts_ms: 1000,
       workflow_id: 'W-a',
       execution_id: 'E-a-1',
-      step_count: 1,
     }
     const eb: EngineEvent = {
       type: 'workflow_started',
       ts_ms: 2000,
       workflow_id: 'W-b',
       execution_id: 'E-b-1',
-      step_count: 1,
     }
 
     appendTelemetry(ea, { home: homeA })

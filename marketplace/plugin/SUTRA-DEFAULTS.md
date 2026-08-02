@@ -170,3 +170,16 @@ These conventions emerged from Asawa's day-to-day operation as the holding compa
 Per D40: every Sutra plugin client inherits these defaults so the discipline ships, not just the skills. Per Codex's caveat: hooks injecting prompt text are **soft guidance only** — fragility includes prompt dilution, prompt collision, token bloat, cosmetic emission, and subagent drift. Where deterministic checks exist, they back the soft hints.
 
 **Source-of-truth chain**: D40 (`holding/FOUNDER-DIRECTIONS.md`) → this file (human-readable) → `sutra-defaults.json` (machine-readable) → hooks/skills consume json.
+
+## Flow activation (v2.39.16) — INLINE block every turn, Skill for substantive work
+
+`core:flow` FIRES on EVERY input — the way Input Routing fires — by emitting an INLINE FLOW block (literal text the model emits), NOT by invoking the Skill tool. A hook cannot force a Skill on the first pass, so the per-turn artifact is literal text (D61, amended 2026-06-15). The full `core:flow` Skill (deep recursive spine) is reserved for substantive / multi-step / ambiguous / unknown-how work.
+
+| Turn | What fires |
+|---|---|
+| every input (task / direction / new_concept / question / feedback / chitchat) | INLINE FLOW block (literal text) + write flow markers via the Write tool |
+| substantive / multi-step / ambiguous / unknown-how | additionally invoke the full `core:flow` Skill (deep recursive spine) |
+
+The block reports the honest resolved spine for the unit: [1] TYPE/cell → [2] FOLLOW a workflow type (child→platform) or CONSTRUCT → [3] steps → [4] inner engine (factors + lens + Cynefin) → [5] mode per step → [6] close. **Honesty bar**: state what ACTUALLY resolved — an honest 1-step ATOM block on a trivial turn is correct; faking the full spine is theater.
+
+**Enforcement**: HARD, fleet-wide, via two FLOORS (not the firing). `flow-gate.sh` (PreToolUse) blocks an Edit/Write/Task that skipped classify+resolve. `flow-stop-check.sh` (Stop) forces one redo when Flow didn't fire on a no-tool turn (loop-safe via `stop_hook_active`). Both depend on markers persisting — write them via the Write tool (Claude Code rolls back sandboxed Bash writes to `.claude/`). Kill-switches: `FLOW_DISABLED=1` / `~/.flow-disabled` / `FLOW_ACK=1`.

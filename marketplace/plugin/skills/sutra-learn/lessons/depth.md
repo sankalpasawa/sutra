@@ -18,7 +18,7 @@ Writing the depth down BEFORE acting makes the choice visible. Visible choices g
 
 ## How Sutra enforces it
 
-Before Edit/Write, the depth-marker hook checks `.claude/depth-registered`. If it's missing, you get a block with:
+Before Edit/Write, the depth-marker hook checks your session's marker at `.claude/sessions/<session-id>/depth-registered` (session-id = `CLAUDE_CODE_SESSION_ID`; write it with `sutra-marker set depth-registered ...` and include a `SESSION=` line — the legacy shared `.claude/depth-registered` twin is maintained by marker-lib dual-write, not by you). If it's missing, you get a block with:
 
 ```
 BLOCKED — DEPTH BLOCK MISSING

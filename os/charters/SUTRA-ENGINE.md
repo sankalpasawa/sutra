@@ -9,6 +9,9 @@
 
 ---
 
+> **Engine spec (mechanism):** See `sutra/os/engines/NATIVE-ENGINE.md` for the canonical Native runtime contract — primitives, contract surface, invariants, integrations, ops, threat model, open seams. This charter is doctrine; the engine spec is mechanism.
+> **Decision rationale:** See `sutra/os/decisions/ADR-004*..ADR-017*.md` for the 14 ADRs underlying current Native primitives and integrations.
+
 ## Core Objective
 
 **Build and ship Native — the deployable plugin clients install — based on the Native Architecture (internal V2.x spec).** Every activity in this charter serves that ship.

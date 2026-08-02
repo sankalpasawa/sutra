@@ -3,6 +3,13 @@
 #
 # v2.0 (2026-04-28): D38 amendment — structured marker schema + plugin-first
 # decision logic per codex consult DIRECTIVE-ID 1777362899 (verdict ADVISORY).
+# 2026-07-30 (marker-race fix, root-cause doc §2 build-layer-registered row):
+# the marker is read via marker-lib — session dir .claude/sessions/<sid>/
+# first, with self-only adoption of an unstamped or self-stamped legacy
+# global. A foreign-stamped global (a concurrent session's declaration) can no
+# longer satisfy this gate. Legacy path fallback only when the lib itself is
+# unavailable. All decision logic, exit codes and messages are unchanged —
+# only the read source moved.
 #
 # Direction:    PROTO-021 (sutra/layer2-operating-system/PROTOCOLS.md §PROTO-021 D38 Amendment)
 #               D38 (holding/FOUNDER-DIRECTIONS.md §D38)
@@ -64,15 +71,17 @@ set -uo pipefail
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 FILE_PATH="${TOOL_INPUT_file_path:-}"
 
-# Stdin-JSON fallback
-if [ -z "$FILE_PATH" ] && [ ! -t 0 ]; then
-  _JSON=$(cat 2>/dev/null)
-  if [ -n "$_JSON" ]; then
-    if command -v jq >/dev/null 2>&1; then
-      FILE_PATH=$(printf '%s' "$_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
-    else
-      FILE_PATH=$(printf '%s' "$_JSON" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-    fi
+# Stdin JSON — always captured when present (2026-07-30): the session id
+# (marker-lib) needs it even when TOOL_INPUT_file_path is already set.
+_JSON=""
+if [ ! -t 0 ]; then
+  _JSON=$(cat 2>/dev/null) || _JSON=""
+fi
+if [ -z "$FILE_PATH" ] && [ -n "$_JSON" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    FILE_PATH=$(printf '%s' "$_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+  else
+    FILE_PATH=$(printf '%s' "$_JSON" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
   fi
 fi
 
@@ -81,6 +90,17 @@ REL_PATH="${FILE_PATH#$REPO_ROOT/}"
 LEDGER="$REPO_ROOT/.enforcement/build-layer-ledger.jsonl"
 MARKER="$REPO_ROOT/.claude/build-layer-registered"
 mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+
+# ── Session-scoped marker resolution (2026-07-30 marker-race fix) ───────────
+# Sourced defensively (flow-gate.sh pattern) — this script runs under `set -u`;
+# a lib error must degrade to the legacy path, never abort the hook.
+_MARKER_LIB="$(dirname "$0")/marker-lib.sh"
+if [ -f "$_MARKER_LIB" ]; then
+  set +u
+  . "$_MARKER_LIB" || true
+  sutra_sid_from_stdin "$_JSON" || true
+  set -u
+fi
 
 # ── Whitelist ───────────────────────────────────────────────────────────────
 case "$REL_PATH" in
@@ -143,17 +163,30 @@ if [ "$PATH_CATEGORY" = "SOFT" ]; then
   esac
 fi
 
-# ── Marker field extraction (bash 3.2 compatible — no associative arrays) ──
-# Each field read via grep on the marker file. Fields default to empty string
-# when missing; downstream callers must handle empty-vs-NONE explicitly.
+# ── Marker read (session-scoped via marker-lib; legacy path fallback) ───────
+# Presence + content resolved ONCE here; get_marker_field parses the resolved
+# content. Fields default to empty string when missing; downstream callers
+# must handle empty-vs-NONE explicitly.
 # Schema convention: ONE KEY PER LINE — values are single-line strings.
 # Multi-line values are NOT supported (reader takes the first physical line
 # matching ^KEY=). If a future field needs prose, store as JSON or use a
 # referenced sidecar file rather than embedded newlines.
+_MARKER_PRESENT=0
+_MARKER_CONTENT=""
+if command -v sutra_marker_read >/dev/null 2>&1; then
+  if _MARKER_CONTENT=$(sutra_marker_read build-layer-registered 2>/dev/null); then
+    _MARKER_PRESENT=1
+  fi
+elif [ -f "$MARKER" ]; then
+  # lib missing: legacy global (fail-open on infrastructure, not on discipline)
+  _MARKER_CONTENT=$(cat "$MARKER" 2>/dev/null || true)
+  _MARKER_PRESENT=1
+fi
+
 get_marker_field() {
   local key="$1"
-  [ -f "$MARKER" ] || { echo ""; return; }
-  grep -E "^${key}=" "$MARKER" 2>/dev/null | head -1 | sed "s/^${key}=//"
+  [ "$_MARKER_PRESENT" = "1" ] || { echo ""; return; }
+  printf '%s\n' "$_MARKER_CONTENT" | grep -E "^${key}=" 2>/dev/null | head -1 | sed "s/^${key}=//"
 }
 
 M_LAYER=$(get_marker_field LAYER)
@@ -268,7 +301,7 @@ block_legacy_proto021() {
 # ── Decision logic ──────────────────────────────────────────────────────────
 case "$PATH_CATEGORY" in
   D38_PLUGIN_RUNTIME|D38_SHARED_RUNTIME)
-    if [ ! -f "$MARKER" ]; then
+    if [ "$_MARKER_PRESENT" != "1" ]; then
       block_d38 "marker missing — canonical plugin/runtime path requires LAYER=L0 declaration"
     fi
     if [ "$LAYER_NORM" != "L0" ]; then
@@ -277,7 +310,7 @@ case "$PATH_CATEGORY" in
     ;;
 
   D38_HOLDING_IMPL)
-    if [ ! -f "$MARKER" ]; then
+    if [ "$_MARKER_PRESENT" != "1" ]; then
       block_d38 "marker missing — holding implementation surface requires structured BUILD-LAYER block"
     fi
     case "$LAYER_NORM" in
@@ -314,13 +347,13 @@ case "$PATH_CATEGORY" in
     ;;
 
   LEGACY_HARD)
-    if [ ! -f "$MARKER" ]; then
+    if [ "$_MARKER_PRESENT" != "1" ]; then
       block_legacy_proto021
     fi
     ;;
 
   SOFT)
-    if [ ! -f "$MARKER" ]; then
+    if [ "$_MARKER_PRESENT" != "1" ]; then
       echo "{\"ts\":$TS,\"event\":\"advisory\",\"file\":\"$(_jsafe "$REL_PATH")\",\"category\":\"SOFT\"}" >> "$LEDGER"
       echo "  [build-layer] Reminder: declare BUILD-LAYER block before Edit/Write on non-whitelisted paths." >&2
     fi

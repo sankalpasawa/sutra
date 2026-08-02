@@ -42,6 +42,10 @@ import type { WorkflowStep } from '../types/index.js';
 import type { EngineEvent } from '../types/engine-event.js';
 import { hostLLMActivity, type HostLLMResult } from '../engine/host-llm-activity.js';
 import type { UserKitOptions } from '../persistence/user-kit.js';
+import type { ExecutionApprovalRecord } from '../persistence/execution-approval-ledger.js';
+import type { ExecutionPauseRecord } from '../persistence/execution-pause-ledger.js';
+import type { ExecutionEscalationRecord } from '../persistence/execution-escalation-ledger.js';
+import { type PredicateRegistry } from './pnc-predicate.js';
 export interface ExecuteOptions {
     readonly workflow: Workflow;
     readonly execution_id: string;
@@ -90,13 +94,97 @@ export interface ExecuteOptions {
         allow: boolean;
         reason: string;
     };
+    /**
+     * v1.3.0 Wave 2 (codex W2 BLOCKER 3 fold). Optional callback invoked once
+     * when the executor pauses at a `step.requires_approval=true` step. The
+     * NativeEngine wires this to `persistApproval(record)` so the durable
+     * ExecutionApprovalRecord{status:'pending'} survives daemon restart.
+     *
+     * Default = no-op (preserves "PURE relative to emit()" contract — direct
+     * `executeWorkflow` callers without an injected persist callback get the
+     * paused ExecutionResult but no on-disk ledger entry. The NativeEngine
+     * routed path always supplies this so the founder-facing surface is
+     * always durable.)
+     */
+    readonly approval_persist?: (rec: ExecutionApprovalRecord) => void;
+    /**
+     * v1.3.0 Wave 4 (codex W4 fold). Optional callback invoked once when the
+     * executor pauses at a `step.on_failure='pause'` step that FAILED. The
+     * NativeEngine wires this to `persistPause(record)` so the durable
+     * ExecutionPauseRecord{status:'pending'} survives daemon restart.
+     *
+     * Default = no-op (preserves "PURE relative to emit()" contract — direct
+     * `executeWorkflow` callers without an injected persist callback get the
+     * paused ExecutionResult but no on-disk ledger entry).
+     */
+    readonly pause_persist?: (rec: ExecutionPauseRecord) => void;
+    /**
+     * v1.3.0 Wave 4 (codex W4 fold). Optional callback invoked once when the
+     * executor escalates at a `step.on_failure='escalate'` step that FAILED.
+     * The NativeEngine wires this to `persistEscalation(record)` so the
+     * durable ExecutionEscalationRecord audit trail survives daemon restart.
+     */
+    readonly escalation_persist?: (rec: ExecutionEscalationRecord) => void;
+    /**
+     * v1.3.0 Wave 2. When set, the executor skips steps whose 1-based
+     * step_index is `<= resume_from_step_index` and emits no events for them.
+     * Used by NativeEngine.resumeApproved after `approve E-<id>` flips the
+     * ledger entry: the original paused step's index is the value here, so
+     * the executor resumes at the NEXT step.
+     *
+     * Required > 0 when set; 0 / undefined ⇒ start from step 1 (normal run).
+     * Out-of-range values (e.g., > step_graph.length) cause the run to
+     * complete immediately as success with steps_completed=0 — the caller
+     * should validate before invoking.
+     */
+    readonly resume_from_step_index?: number;
+    /**
+     * v1.3.0 Wave 5 (codex W5 BLOCKER 1+2 fold). Optional registry of atom
+     * evaluators consulted when parsing wf.preconditions / wf.postconditions
+     * as a JSON-shaped PNCPredicate. When the registry is undefined OR the
+     * pre/postcondition string is not parseable JSON-Predicate, the gate is
+     * SKIPPED (legacy back-compat for free-form preconditions like
+     * "is_morning_window AND no_pulse_today" already in the starter kit).
+     *
+     * When the registry is supplied AND the string IS a parseable PNCPredicate:
+     *   - precondition fail ⇒ workflow_failed reason='precondition_failed:<expr>'
+     *     emitted instead of workflow_started; NO step events.
+     *   - postcondition fail ⇒ workflow_failed reason='postcondition_failed:<expr>'
+     *     emitted instead of workflow_completed.
+     *
+     * NativeEngine wires this for routed runs; direct cmdRun / raw
+     * executeWorkflow callers leave it undefined → no PNC gate (preserves
+     * v1.2.x admission behavior).
+     */
+    readonly pnc_registry?: PredicateRegistry;
+    /**
+     * v1.3.0 Wave 5. Frozen evaluation context passed to PNC atom evaluators.
+     * Defaults to an empty frozen object. Window markers (e.g.
+     * { time_of_day: 'morning', iso_week: '2026-W18' }) belong here, not in
+     * the atom evaluator function bodies (codex W5 advisory E: predicate
+     * determinism — atoms must not call Date.now/random/I/O; they read
+     * pre-computed markers from this snapshot).
+     */
+    readonly pnc_ctx?: Readonly<Record<string, unknown>>;
 }
 export interface ExecutionResult {
-    readonly status: 'success' | 'failed';
+    /**
+     * v1.3.0 Wave 2 (codex W2 BLOCKER 1 fold). 'paused' is canonical state per
+     * the extended ExecutionState union; lite-executor returns it (with
+     * steps_completed = step_index BEFORE the paused step) when a step has
+     * requires_approval=true and the executor pauses.
+     */
+    readonly status: 'success' | 'failed' | 'paused';
     readonly steps_completed: number;
     readonly steps_failed: number;
     readonly duration_ms: number;
     readonly reason?: string;
+    /**
+     * v1.3.0 Wave 2. When status='paused', the 1-based step_index of the
+     * step the executor paused at (the requires_approval=true step that has
+     * NOT YET run). Undefined for non-paused results.
+     */
+    readonly paused_step_index?: number;
 }
 /**
  * Execute a Workflow async, emitting events along the way.
@@ -108,4 +196,27 @@ export interface ExecutionResult {
  * callback so the audit chain can be hooked from outside (replay-safe).
  */
 export declare function executeWorkflow(opts: ExecuteOptions): Promise<ExecutionResult>;
+/**
+ * v1.3.0 Wave 2 — resume an approved-and-paused workflow run.
+ *
+ * Convenience wrapper that calls executeWorkflow with resume_from_step_index
+ * set. Used by NativeEngine.resumeApproved after the founder's `approve E-<id>`
+ * utterance has flipped the ledger entry pending → approved.
+ *
+ * Semantics: the original pause happened BEFORE the gated step ran. To RUN
+ * that step on resume, the caller passes
+ * `resume_from_step_index = paused_step_index - 1` (skip steps 1..N-1; run
+ * starting at step N). The executor's loop logic skips steps with
+ * stepIndex <= resumeFrom, so the gated step (N) is the first to execute.
+ *
+ * The gated step's `requires_approval=true` flag is BYPASSED on the first
+ * step of a resume run via the `isResumeFirstStep` guard in executeWorkflow
+ * — otherwise the gate would re-fire and the workflow would loop forever.
+ *
+ * The original execution_id is preserved so the audit transcript ties back
+ * to the original workflow_started event.
+ */
+export declare function executeWorkflowResume(opts: ExecuteOptions & {
+    resume_from_step_index: number;
+}): Promise<ExecutionResult>;
 //# sourceMappingURL=lite-executor.d.ts.map

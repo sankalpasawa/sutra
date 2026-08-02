@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sutra — Your agentic Chief of Staff</title>
-<meta name="description" content="Sutra is the agentic Chief of Staff for founders building with Claude Code. Filters what reaches you, shows the bill before the work, surfaces every decision. One command to install.">
-<meta property="og:title" content="Sutra — Your agentic Chief of Staff">
-<meta property="og:description" content="For founders. Filters what reaches you. Shows the bill before the work. Surfaces every decision.">
+<title>Sutra — The operating system for AI-native companies</title>
+<meta name="description" content="Software development is solved. Running your company isn't. Sutra is the operating system for AI-native companies — an agentic Chief of Staff inside Claude Code, specified by the Sutra Native canon. One command to install.">
+<meta property="og:title" content="Sutra — The operating system for AI-native companies">
+<meta property="og:description" content="Software development is solved. Running your company isn't. Company-first, not code-first — an agentic Chief of Staff inside Claude Code.">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cormorant+Garamond:ital,wght@1,500;1,600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,500..600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -55,11 +55,27 @@
     align-items: center;
   }
   .logo {
-    font-size: 16px;
-    font-weight: 600;
-    letter-spacing: 1.4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    text-decoration: none;
+  }
+  .logo-mark {
+    display: flex;
     color: var(--accent);
-    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .logo-mark svg {
+    width: 30px;
+    height: 30px;
+    display: block;
+  }
+  .logo-word {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    color: var(--text);
   }
   .nav-link {
     font-size: 13px;
@@ -101,7 +117,7 @@
   .hero-badge .badge-version {
     color: var(--accent);
     font-weight: 600;
-    font-family: 'SF Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
   }
   .hero-badge .badge-sep {
@@ -116,7 +132,7 @@
   }
   .hero h1 .accent {
     color: var(--accent);
-    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-family: 'Fraunces', Georgia, serif;
     font-style: italic;
     font-weight: 500;
     letter-spacing: -0.5px;
@@ -242,7 +258,7 @@
     border-color: var(--accent);
   }
   .three-card-num {
-    font-family: 'SF Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
     color: var(--accent);
     font-weight: 700;
@@ -307,7 +323,7 @@
 
   /* Inline code */
   code.inline {
-    font-family: 'SF Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     color: var(--green);
     background: var(--bg);
     padding: 2px 7px;
@@ -328,7 +344,7 @@
     line-height: 1.1;
   }
   .install-section h2 em {
-    font-family: 'Cormorant Garamond', serif;
+    font-family: 'Fraunces', serif;
     font-style: italic;
     font-weight: 600;
     color: var(--accent-bright);
@@ -349,7 +365,7 @@
     margin: 0;
     text-align: left;
   }
-  /* Shared generation badge — used by both #core and #native */
+  /* Product badge — #core */
   .gen-badge {
     display: inline-flex;
     align-items: center;
@@ -376,34 +392,6 @@
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(0.8); }
   }
-  /* Bridge between generations */
-  .gen-bridge {
-    padding: 32px 0 56px;
-    text-align: center;
-  }
-  .gen-bridge-label {
-    font-family: 'Cormorant Garamond', serif;
-    font-style: italic;
-    font-size: 22px;
-    color: var(--accent-bright);
-    display: block;
-    margin-bottom: 10px;
-    letter-spacing: -0.3px;
-  }
-  .gen-bridge-text {
-    font-size: 15px;
-    color: var(--muted);
-    max-width: 600px;
-    margin: 0 auto;
-    line-height: 1.7;
-  }
-  .gen-arrow {
-    display: inline-block;
-    color: var(--accent);
-    font-size: 24px;
-    margin-bottom: 16px;
-    opacity: 0.6;
-  }
   .install-code-wrap {
     position: relative;
     background: var(--bg);
@@ -414,7 +402,7 @@
   .install-code-wrap:hover { border-color: var(--accent); }
   .install-code {
     padding: 20px 60px 20px 22px;
-    font-family: 'SF Mono', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 14px;
     color: var(--green);
     user-select: all;
@@ -456,56 +444,6 @@
   }
   .install-hint a { color: var(--accent); text-decoration: none; }
 
-  /* Native section — the deployable Sutra plugin (2nd gen) */
-  .native-section {
-    padding: 56px 0 120px;
-    background:
-      radial-gradient(ellipse at top, rgba(196,149,106,0.05), transparent 60%),
-      var(--bg);
-  }
-  .native-section h2 {
-    font-size: 48px;
-    font-weight: 900;
-    letter-spacing: -1.5px;
-    margin-bottom: 14px;
-    line-height: 1.1;
-  }
-  .native-section h2 em {
-    font-family: 'Cormorant Garamond', serif;
-    font-style: italic;
-    font-weight: 600;
-    color: var(--accent-bright);
-  }
-  .native-section .native-sub {
-    font-size: 17px;
-    color: var(--muted);
-    margin-bottom: 40px;
-    max-width: 580px;
-    line-height: 1.65;
-  }
-  .native-cta {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 32px;
-    max-width: 600px;
-    margin: 0 0 48px;
-  }
-  .native-cta-foot {
-    font-size: 12px;
-    color: var(--muted);
-    margin-top: 14px;
-    line-height: 1.65;
-  }
-  .native-cta-foot code {
-    font-family: 'SF Mono', monospace;
-    color: var(--accent);
-    background: var(--bg);
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-size: 11px;
-  }
-
   .cap-row {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -525,7 +463,7 @@
     transform: translateY(-2px);
   }
   .cap-tile-num {
-    font-family: 'Cormorant Garamond', serif;
+    font-family: 'Fraunces', serif;
     font-style: italic;
     font-size: 28px;
     font-weight: 600;
@@ -560,17 +498,72 @@
     border: 1px solid var(--border);
     color: var(--muted);
   }
-  .native-section .native-foot-link {
-    font-size: 13px;
+  /* Pull-quote bands */
+  .pull-quote {
+    padding: 72px 24px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+  }
+  .pull-quote .pq-line {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 34px;
+    letter-spacing: -0.5px;
+    color: var(--accent-bright);
+    line-height: 1.25;
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .pull-quote .pq-attr {
+    margin-top: 14px;
+    font-size: 12px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
     color: var(--muted);
   }
-  .native-section .native-foot-link a {
-    color: var(--accent);
-    text-decoration: none;
+
+  /* Tile status chips */
+  .tile-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.3px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    color: var(--muted);
   }
-  .native-section .native-foot-link a:hover {
-    color: var(--accent-bright);
+  .tile-status::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
   }
+  .tile-status.ships { color: var(--green); }
+  .tile-status.ships::before { background: var(--green); box-shadow: 0 0 8px rgba(90, 158, 111, 0.5); }
+  .tile-status.canon { color: var(--accent); }
+  .tile-status.canon::before { background: var(--accent); }
+
+  /* Canon band depth + north star */
+  #canon {
+    background: radial-gradient(ellipse at top, rgba(196, 149, 106, 0.05), transparent 55%);
+  }
+  .north-star {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    font-size: 26px;
+    color: var(--text);
+    text-align: center;
+    max-width: 640px;
+    margin: 56px auto 0;
+    line-height: 1.4;
+  }
+  .north-star strong { color: var(--accent-bright); }
+  .company-pill { transition: border-color 0.2s; }
+  .company-pill:hover { border-color: var(--accent); }
 
   /* Footer */
   footer {
@@ -603,13 +596,12 @@
     .install-section h2 { font-size: 32px; }
     .privacy { padding: 24px; }
 
-    .native-section { padding: 72px 0; }
-    .native-section h2 { font-size: 30px; line-height: 1.2; }
-    .native-section .native-sub { font-size: 15px; }
-    .native-cta { padding: 22px; }
     .cap-row { grid-template-columns: 1fr; gap: 10px; }
     .cap-tile { padding: 18px 16px; }
     .native-trust .pill { font-size: 10px; padding: 5px 10px; }
+    .pull-quote { padding: 48px 20px; }
+    .pull-quote .pq-line { font-size: 24px; }
+    .north-star { font-size: 20px; }
   }
 </style>
 </head>
@@ -617,10 +609,11 @@
 
 <nav>
   <div class="container-wide">
-    <div class="logo">sutra</div>
+    <a class="logo" href="#" aria-label="Sutra"><span class="logo-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320"><g ><circle cx="160.00" cy="11.20" r="2.72" fill="currentColor"/><circle cx="163.90" cy="11.25" r="0.90" fill="currentColor"/><circle cx="167.79" cy="11.40" r="0.90" fill="currentColor"/><circle cx="171.67" cy="11.66" r="0.90" fill="currentColor"/><circle cx="175.55" cy="12.02" r="1.60" fill="currentColor"/><circle cx="179.42" cy="12.47" r="0.90" fill="currentColor"/><circle cx="183.28" cy="13.03" r="0.90" fill="currentColor"/><circle cx="187.12" cy="13.69" r="0.90" fill="currentColor"/><circle cx="190.94" cy="14.45" r="2.72" fill="currentColor"/><circle cx="194.74" cy="15.31" r="0.90" fill="currentColor"/><circle cx="198.51" cy="16.27" r="0.90" fill="currentColor"/><circle cx="202.26" cy="17.33" r="0.90" fill="currentColor"/><circle cx="205.98" cy="18.48" r="1.60" fill="currentColor"/><circle cx="209.67" cy="19.73" r="0.90" fill="currentColor"/><circle cx="213.33" cy="21.08" r="0.90" fill="currentColor"/><circle cx="216.94" cy="22.53" r="0.90" fill="currentColor"/><circle cx="220.52" cy="24.06" r="2.72" fill="currentColor"/><circle cx="224.06" cy="25.70" r="0.90" fill="currentColor"/><circle cx="227.55" cy="27.42" r="0.90" fill="currentColor"/><circle cx="231.00" cy="29.23" r="0.90" fill="currentColor"/><circle cx="234.40" cy="31.14" r="1.60" fill="currentColor"/><circle cx="237.75" cy="33.13" r="0.90" fill="currentColor"/><circle cx="241.04" cy="35.21" r="0.90" fill="currentColor"/><circle cx="244.28" cy="37.37" r="0.90" fill="currentColor"/><circle cx="247.46" cy="39.62" r="2.72" fill="currentColor"/><circle cx="250.58" cy="41.95" r="0.90" fill="currentColor"/><circle cx="253.64" cy="44.36" r="0.90" fill="currentColor"/><circle cx="256.64" cy="46.85" r="0.90" fill="currentColor"/><circle cx="259.57" cy="49.42" r="1.60" fill="currentColor"/><circle cx="262.43" cy="52.06" r="0.90" fill="currentColor"/><circle cx="265.22" cy="54.78" r="0.90" fill="currentColor"/><circle cx="267.94" cy="57.57" r="0.90" fill="currentColor"/><circle cx="270.58" cy="60.43" r="2.72" fill="currentColor"/><circle cx="273.15" cy="63.36" r="0.90" fill="currentColor"/><circle cx="275.64" cy="66.36" r="0.90" fill="currentColor"/><circle cx="278.05" cy="69.42" r="0.90" fill="currentColor"/><circle cx="280.38" cy="72.54" r="1.60" fill="currentColor"/><circle cx="282.63" cy="75.72" r="0.90" fill="currentColor"/><circle cx="284.79" cy="78.96" r="0.90" fill="currentColor"/><circle cx="286.87" cy="82.25" r="0.90" fill="currentColor"/><circle cx="288.86" cy="85.60" r="2.72" fill="currentColor"/><circle cx="290.77" cy="89.00" r="0.90" fill="currentColor"/><circle cx="292.58" cy="92.45" r="0.90" fill="currentColor"/><circle cx="294.30" cy="95.94" r="0.90" fill="currentColor"/><circle cx="295.94" cy="99.48" r="1.60" fill="currentColor"/><circle cx="297.47" cy="103.06" r="0.90" fill="currentColor"/><circle cx="298.92" cy="106.67" r="0.90" fill="currentColor"/><circle cx="300.27" cy="110.33" r="0.90" fill="currentColor"/><circle cx="301.52" cy="114.02" r="2.72" fill="currentColor"/><circle cx="302.67" cy="117.74" r="0.90" fill="currentColor"/><circle cx="303.73" cy="121.49" r="0.90" fill="currentColor"/><circle cx="304.69" cy="125.26" r="0.90" fill="currentColor"/><circle cx="305.55" cy="129.06" r="1.60" fill="currentColor"/><circle cx="306.31" cy="132.88" r="0.90" fill="currentColor"/><circle cx="306.97" cy="136.72" r="0.90" fill="currentColor"/><circle cx="307.53" cy="140.58" r="0.90" fill="currentColor"/><circle cx="307.98" cy="144.45" r="2.72" fill="currentColor"/><circle cx="308.34" cy="148.33" r="0.90" fill="currentColor"/><circle cx="308.60" cy="152.21" r="0.90" fill="currentColor"/><circle cx="308.75" cy="156.10" r="0.90" fill="currentColor"/><circle cx="308.80" cy="160.00" r="1.60" fill="currentColor"/><circle cx="308.75" cy="163.90" r="0.90" fill="currentColor"/><circle cx="308.60" cy="167.79" r="0.90" fill="currentColor"/><circle cx="308.34" cy="171.67" r="0.90" fill="currentColor"/><circle cx="307.98" cy="175.55" r="2.72" fill="currentColor"/><circle cx="307.53" cy="179.42" r="0.90" fill="currentColor"/><circle cx="306.97" cy="183.28" r="0.90" fill="currentColor"/><circle cx="306.31" cy="187.12" r="0.90" fill="currentColor"/><circle cx="305.55" cy="190.94" r="1.60" fill="currentColor"/><circle cx="304.69" cy="194.74" r="0.90" fill="currentColor"/><circle cx="303.73" cy="198.51" r="0.90" fill="currentColor"/><circle cx="302.67" cy="202.26" r="0.90" fill="currentColor"/><circle cx="301.52" cy="205.98" r="2.72" fill="currentColor"/><circle cx="300.27" cy="209.67" r="0.90" fill="currentColor"/><circle cx="298.92" cy="213.33" r="0.90" fill="currentColor"/><circle cx="297.47" cy="216.94" r="0.90" fill="currentColor"/><circle cx="295.94" cy="220.52" r="1.60" fill="currentColor"/><circle cx="294.30" cy="224.06" r="0.90" fill="currentColor"/><circle cx="292.58" cy="227.55" r="0.90" fill="currentColor"/><circle cx="290.77" cy="231.00" r="0.90" fill="currentColor"/><circle cx="288.86" cy="234.40" r="2.72" fill="currentColor"/><circle cx="286.87" cy="237.75" r="0.90" fill="currentColor"/><circle cx="284.79" cy="241.04" r="0.90" fill="currentColor"/><circle cx="282.63" cy="244.28" r="0.90" fill="currentColor"/><circle cx="280.38" cy="247.46" r="1.60" fill="currentColor"/><circle cx="278.05" cy="250.58" r="0.90" fill="currentColor"/><circle cx="275.64" cy="253.64" r="0.90" fill="currentColor"/><circle cx="273.15" cy="256.64" r="0.90" fill="currentColor"/><circle cx="270.58" cy="259.57" r="2.72" fill="currentColor"/><circle cx="267.94" cy="262.43" r="0.90" fill="currentColor"/><circle cx="265.22" cy="265.22" r="0.90" fill="currentColor"/><circle cx="262.43" cy="267.94" r="0.90" fill="currentColor"/><circle cx="259.57" cy="270.58" r="1.60" fill="currentColor"/><circle cx="256.64" cy="273.15" r="0.90" fill="currentColor"/><circle cx="253.64" cy="275.64" r="0.90" fill="currentColor"/><circle cx="250.58" cy="278.05" r="0.90" fill="currentColor"/><circle cx="247.46" cy="280.38" r="2.72" fill="currentColor"/><circle cx="244.28" cy="282.63" r="0.90" fill="currentColor"/><circle cx="241.04" cy="284.79" r="0.90" fill="currentColor"/><circle cx="237.75" cy="286.87" r="0.90" fill="currentColor"/><circle cx="234.40" cy="288.86" r="1.60" fill="currentColor"/><circle cx="231.00" cy="290.77" r="0.90" fill="currentColor"/><circle cx="227.55" cy="292.58" r="0.90" fill="currentColor"/><circle cx="224.06" cy="294.30" r="0.90" fill="currentColor"/><circle cx="220.52" cy="295.94" r="2.72" fill="currentColor"/><circle cx="216.94" cy="297.47" r="0.90" fill="currentColor"/><circle cx="213.33" cy="298.92" r="0.90" fill="currentColor"/><circle cx="209.67" cy="300.27" r="0.90" fill="currentColor"/><circle cx="205.98" cy="301.52" r="1.60" fill="currentColor"/><circle cx="202.26" cy="302.67" r="0.90" fill="currentColor"/><circle cx="198.51" cy="303.73" r="0.90" fill="currentColor"/><circle cx="194.74" cy="304.69" r="0.90" fill="currentColor"/><circle cx="190.94" cy="305.55" r="2.72" fill="currentColor"/><circle cx="187.12" cy="306.31" r="0.90" fill="currentColor"/><circle cx="183.28" cy="306.97" r="0.90" fill="currentColor"/><circle cx="179.42" cy="307.53" r="0.90" fill="currentColor"/><circle cx="175.55" cy="307.98" r="1.60" fill="currentColor"/><circle cx="171.67" cy="308.34" r="0.90" fill="currentColor"/><circle cx="167.79" cy="308.60" r="0.90" fill="currentColor"/><circle cx="163.90" cy="308.75" r="0.90" fill="currentColor"/><circle cx="160.00" cy="308.80" r="2.72" fill="currentColor"/><circle cx="156.10" cy="308.75" r="0.90" fill="currentColor"/><circle cx="152.21" cy="308.60" r="0.90" fill="currentColor"/><circle cx="148.33" cy="308.34" r="0.90" fill="currentColor"/><circle cx="144.45" cy="307.98" r="1.60" fill="currentColor"/><circle cx="140.58" cy="307.53" r="0.90" fill="currentColor"/><circle cx="136.72" cy="306.97" r="0.90" fill="currentColor"/><circle cx="132.88" cy="306.31" r="0.90" fill="currentColor"/><circle cx="129.06" cy="305.55" r="2.72" fill="currentColor"/><circle cx="125.26" cy="304.69" r="0.90" fill="currentColor"/><circle cx="121.49" cy="303.73" r="0.90" fill="currentColor"/><circle cx="117.74" cy="302.67" r="0.90" fill="currentColor"/><circle cx="114.02" cy="301.52" r="1.60" fill="currentColor"/><circle cx="110.33" cy="300.27" r="0.90" fill="currentColor"/><circle cx="106.67" cy="298.92" r="0.90" fill="currentColor"/><circle cx="103.06" cy="297.47" r="0.90" fill="currentColor"/><circle cx="99.48" cy="295.94" r="2.72" fill="currentColor"/><circle cx="95.94" cy="294.30" r="0.90" fill="currentColor"/><circle cx="92.45" cy="292.58" r="0.90" fill="currentColor"/><circle cx="89.00" cy="290.77" r="0.90" fill="currentColor"/><circle cx="85.60" cy="288.86" r="1.60" fill="currentColor"/><circle cx="82.25" cy="286.87" r="0.90" fill="currentColor"/><circle cx="78.96" cy="284.79" r="0.90" fill="currentColor"/><circle cx="75.72" cy="282.63" r="0.90" fill="currentColor"/><circle cx="72.54" cy="280.38" r="2.72" fill="currentColor"/><circle cx="69.42" cy="278.05" r="0.90" fill="currentColor"/><circle cx="66.36" cy="275.64" r="0.90" fill="currentColor"/><circle cx="63.36" cy="273.15" r="0.90" fill="currentColor"/><circle cx="60.43" cy="270.58" r="1.60" fill="currentColor"/><circle cx="57.57" cy="267.94" r="0.90" fill="currentColor"/><circle cx="54.78" cy="265.22" r="0.90" fill="currentColor"/><circle cx="52.06" cy="262.43" r="0.90" fill="currentColor"/><circle cx="49.42" cy="259.57" r="2.72" fill="currentColor"/><circle cx="46.85" cy="256.64" r="0.90" fill="currentColor"/><circle cx="44.36" cy="253.64" r="0.90" fill="currentColor"/><circle cx="41.95" cy="250.58" r="0.90" fill="currentColor"/><circle cx="39.62" cy="247.46" r="1.60" fill="currentColor"/><circle cx="37.37" cy="244.28" r="0.90" fill="currentColor"/><circle cx="35.21" cy="241.04" r="0.90" fill="currentColor"/><circle cx="33.13" cy="237.75" r="0.90" fill="currentColor"/><circle cx="31.14" cy="234.40" r="2.72" fill="currentColor"/><circle cx="29.23" cy="231.00" r="0.90" fill="currentColor"/><circle cx="27.42" cy="227.55" r="0.90" fill="currentColor"/><circle cx="25.70" cy="224.06" r="0.90" fill="currentColor"/><circle cx="24.06" cy="220.52" r="1.60" fill="currentColor"/><circle cx="22.53" cy="216.94" r="0.90" fill="currentColor"/><circle cx="21.08" cy="213.33" r="0.90" fill="currentColor"/><circle cx="19.73" cy="209.67" r="0.90" fill="currentColor"/><circle cx="18.48" cy="205.98" r="2.72" fill="currentColor"/><circle cx="17.33" cy="202.26" r="0.90" fill="currentColor"/><circle cx="16.27" cy="198.51" r="0.90" fill="currentColor"/><circle cx="15.31" cy="194.74" r="0.90" fill="currentColor"/><circle cx="14.45" cy="190.94" r="1.60" fill="currentColor"/><circle cx="13.69" cy="187.12" r="0.90" fill="currentColor"/><circle cx="13.03" cy="183.28" r="0.90" fill="currentColor"/><circle cx="12.47" cy="179.42" r="0.90" fill="currentColor"/><circle cx="12.02" cy="175.55" r="2.72" fill="currentColor"/><circle cx="11.66" cy="171.67" r="0.90" fill="currentColor"/><circle cx="11.40" cy="167.79" r="0.90" fill="currentColor"/><circle cx="11.25" cy="163.90" r="0.90" fill="currentColor"/><circle cx="11.20" cy="160.00" r="1.60" fill="currentColor"/><circle cx="11.25" cy="156.10" r="0.90" fill="currentColor"/><circle cx="11.40" cy="152.21" r="0.90" fill="currentColor"/><circle cx="11.66" cy="148.33" r="0.90" fill="currentColor"/><circle cx="12.02" cy="144.45" r="2.72" fill="currentColor"/><circle cx="12.47" cy="140.58" r="0.90" fill="currentColor"/><circle cx="13.03" cy="136.72" r="0.90" fill="currentColor"/><circle cx="13.69" cy="132.88" r="0.90" fill="currentColor"/><circle cx="14.45" cy="129.06" r="1.60" fill="currentColor"/><circle cx="15.31" cy="125.26" r="0.90" fill="currentColor"/><circle cx="16.27" cy="121.49" r="0.90" fill="currentColor"/><circle cx="17.33" cy="117.74" r="0.90" fill="currentColor"/><circle cx="18.48" cy="114.02" r="2.72" fill="currentColor"/><circle cx="19.73" cy="110.33" r="0.90" fill="currentColor"/><circle cx="21.08" cy="106.67" r="0.90" fill="currentColor"/><circle cx="22.53" cy="103.06" r="0.90" fill="currentColor"/><circle cx="24.06" cy="99.48" r="1.60" fill="currentColor"/><circle cx="25.70" cy="95.94" r="0.90" fill="currentColor"/><circle cx="27.42" cy="92.45" r="0.90" fill="currentColor"/><circle cx="29.23" cy="89.00" r="0.90" fill="currentColor"/><circle cx="31.14" cy="85.60" r="2.72" fill="currentColor"/><circle cx="33.13" cy="82.25" r="0.90" fill="currentColor"/><circle cx="35.21" cy="78.96" r="0.90" fill="currentColor"/><circle cx="37.37" cy="75.72" r="0.90" fill="currentColor"/><circle cx="39.62" cy="72.54" r="1.60" fill="currentColor"/><circle cx="41.95" cy="69.42" r="0.90" fill="currentColor"/><circle cx="44.36" cy="66.36" r="0.90" fill="currentColor"/><circle cx="46.85" cy="63.36" r="0.90" fill="currentColor"/><circle cx="49.42" cy="60.43" r="2.72" fill="currentColor"/><circle cx="52.06" cy="57.57" r="0.90" fill="currentColor"/><circle cx="54.78" cy="54.78" r="0.90" fill="currentColor"/><circle cx="57.57" cy="52.06" r="0.90" fill="currentColor"/><circle cx="60.43" cy="49.42" r="1.60" fill="currentColor"/><circle cx="63.36" cy="46.85" r="0.90" fill="currentColor"/><circle cx="66.36" cy="44.36" r="0.90" fill="currentColor"/><circle cx="69.42" cy="41.95" r="0.90" fill="currentColor"/><circle cx="72.54" cy="39.62" r="2.72" fill="currentColor"/><circle cx="75.72" cy="37.37" r="0.90" fill="currentColor"/><circle cx="78.96" cy="35.21" r="0.90" fill="currentColor"/><circle cx="82.25" cy="33.13" r="0.90" fill="currentColor"/><circle cx="85.60" cy="31.14" r="1.60" fill="currentColor"/><circle cx="89.00" cy="29.23" r="0.90" fill="currentColor"/><circle cx="92.45" cy="27.42" r="0.90" fill="currentColor"/><circle cx="95.94" cy="25.70" r="0.90" fill="currentColor"/><circle cx="99.48" cy="24.06" r="2.72" fill="currentColor"/><circle cx="103.06" cy="22.53" r="0.90" fill="currentColor"/><circle cx="106.67" cy="21.08" r="0.90" fill="currentColor"/><circle cx="110.33" cy="19.73" r="0.90" fill="currentColor"/><circle cx="114.02" cy="18.48" r="1.60" fill="currentColor"/><circle cx="117.74" cy="17.33" r="0.90" fill="currentColor"/><circle cx="121.49" cy="16.27" r="0.90" fill="currentColor"/><circle cx="125.26" cy="15.31" r="0.90" fill="currentColor"/><circle cx="129.06" cy="14.45" r="2.72" fill="currentColor"/><circle cx="132.88" cy="13.69" r="0.90" fill="currentColor"/><circle cx="136.72" cy="13.03" r="0.90" fill="currentColor"/><circle cx="140.58" cy="12.47" r="0.90" fill="currentColor"/><circle cx="144.45" cy="12.02" r="1.60" fill="currentColor"/><circle cx="148.33" cy="11.66" r="0.90" fill="currentColor"/><circle cx="152.21" cy="11.40" r="0.90" fill="currentColor"/><circle cx="156.10" cy="11.25" r="0.90" fill="currentColor"/></g><g transform="rotate(0 160 160)"><path d="M 139.2 140.8&#10;          C 114.24 104.96000000000001 159 38.400000000000006 160 38.400000000000006&#10;          C 161 38.400000000000006 205.76 104.96000000000001 180.8 140.8 Z" fill="none" stroke="currentColor" stroke-width="1"/></g><g transform="rotate(45 160 160)"><path d="M 139.2 140.8&#10;          C 114.24 104.96000000000001 159 38.400000000000006 160 38.400000000000006&#10;          C 161 38.400000000000006 205.76 104.96000000000001 180.8 140.8 Z" fill="none" stroke="currentColor" stroke-width="1"/></g><g transform="rotate(90 160 160)"><path d="M 139.2 140.8&#10;          C 114.24 104.96000000000001 159 38.400000000000006 160 38.400000000000006&#10;          C 161 38.400000000000006 205.76 104.96000000000001 180.8 140.8 Z" fill="none" stroke="currentColor" stroke-width="1"/></g><g transform="rotate(135 160 160)"><path d="M 139.2 140.8&#10;          C 114.24 104.96000000000001 159 38.400000000000006 160 38.400000000000006&#10;          C 161 38.400000000000006 205.76 104.96000000000001 180.8 140.8 Z" fill="none" stroke="currentColor" stroke-width="1"/></g><g transform="rotate(180 160 160)"><path d="M 139.2 140.8&#10;          C 114.24 104.96000000000001 159 38.400000000000006 160 38.400000000000006&#10;          C 161 38.400000000000006 205.76 104.96000000000001 180.8 140.8 Z" fill="none" stroke="currentColor" stroke-width="1"/></g><g transform="rotate(225 160 160)"><path d="M 139.2 140.8&#10;          C 114.24 104.96000000000001 159 38.400000000000006 160 38.400000000000006&#10;          C 161 38.400000000000006 205.76 104.96000000000001 180.8 140.8 Z" fill="none" stroke="currentColor" stroke-width="1"/></g><g transform="rotate(270 160 160)"><path d="M 139.2 140.8&#10;          C 114.24 104.96000000000001 159 38.400000000000006 160 38.400000000000006&#10;          C 161 38.400000000000006 205.76 104.96000000000001 180.8 140.8 Z" fill="none" stroke="currentColor" stroke-width="1"/></g><g transform="rotate(315 160 160)"><path d="M 139.2 140.8&#10;          C 114.24 104.96000000000001 159 38.400000000000006 160 38.400000000000006&#10;          C 161 38.400000000000006 205.76 104.96000000000001 180.8 140.8 Z" fill="none" stroke="currentColor" stroke-width="1"/></g><g transform="rotate(22.5 160 160)"><path d="M 145.44 147.2&#10;          C 127.968 127.48799999999999 159 90.87999999999998 160 90.87999999999998&#10;          C 161 90.87999999999998 192.03199999999998 127.48799999999999 174.56 147.2 Z" fill="none" stroke="currentColor" stroke-width="0.8"/></g><g transform="rotate(67.5 160 160)"><path d="M 145.44 147.2&#10;          C 127.968 127.48799999999999 159 90.87999999999998 160 90.87999999999998&#10;          C 161 90.87999999999998 192.03199999999998 127.48799999999999 174.56 147.2 Z" fill="none" stroke="currentColor" stroke-width="0.8"/></g><g transform="rotate(112.5 160 160)"><path d="M 145.44 147.2&#10;          C 127.968 127.48799999999999 159 90.87999999999998 160 90.87999999999998&#10;          C 161 90.87999999999998 192.03199999999998 127.48799999999999 174.56 147.2 Z" fill="none" stroke="currentColor" stroke-width="0.8"/></g><g transform="rotate(157.5 160 160)"><path d="M 145.44 147.2&#10;          C 127.968 127.48799999999999 159 90.87999999999998 160 90.87999999999998&#10;          C 161 90.87999999999998 192.03199999999998 127.48799999999999 174.56 147.2 Z" fill="none" stroke="currentColor" stroke-width="0.8"/></g><g transform="rotate(202.5 160 160)"><path d="M 145.44 147.2&#10;          C 127.968 127.48799999999999 159 90.87999999999998 160 90.87999999999998&#10;          C 161 90.87999999999998 192.03199999999998 127.48799999999999 174.56 147.2 Z" fill="none" stroke="currentColor" stroke-width="0.8"/></g><g transform="rotate(247.5 160 160)"><path d="M 145.44 147.2&#10;          C 127.968 127.48799999999999 159 90.87999999999998 160 90.87999999999998&#10;          C 161 90.87999999999998 192.03199999999998 127.48799999999999 174.56 147.2 Z" fill="none" stroke="currentColor" stroke-width="0.8"/></g><g transform="rotate(292.5 160 160)"><path d="M 145.44 147.2&#10;          C 127.968 127.48799999999999 159 90.87999999999998 160 90.87999999999998&#10;          C 161 90.87999999999998 192.03199999999998 127.48799999999999 174.56 147.2 Z" fill="none" stroke="currentColor" stroke-width="0.8"/></g><g transform="rotate(337.5 160 160)"><path d="M 145.44 147.2&#10;          C 127.968 127.48799999999999 159 90.87999999999998 160 90.87999999999998&#10;          C 161 90.87999999999998 192.03199999999998 127.48799999999999 174.56 147.2 Z" fill="none" stroke="currentColor" stroke-width="0.8"/></g><circle cx="160" cy="160" r="7.039999999999999" fill="currentColor"/></svg></span><span class="logo-word">sutra</span></a>
     <div>
+      <a class="nav-link" href="way.html">The Way</a>
       <a class="nav-link" href="#core">Core</a>
-      <a class="nav-link" href="#native">Native</a>
+      <a class="nav-link" href="#canon">Canon</a>
       <a class="nav-link" href="https://github.com/sankalpasawa/sutra">GitHub</a>
     </div>
   </div>
@@ -630,16 +623,47 @@
   <div class="container">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      <span class="badge-version">v2.8.11</span>
+      <span class="badge-version">v2.40.0</span>
       <span class="badge-sep">·</span>
       <span>live on Claude Code marketplace</span>
     </div>
-    <h1>Your <span class="accent">agentic Chief of Staff.</span></h1>
+    <h1>Software development is solved. <span class="accent">Running your company isn&rsquo;t.</span></h1>
     <p class="hero-sub">
-      Sutra sits between you and Claude. <strong>Filters what reaches you. Shows the bill before the work. Surfaces every decision.</strong>
+      Sutra is the operating system for AI-native companies &mdash; an agentic <strong>Chief of Staff inside Claude Code</strong>. Company-first, not code-first.
     </p>
   </div>
 </section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-label">The need</div>
+    <h2>You have an idea. Now what?</h2>
+    <p class="section-sub">You open your terminal. The agents start shipping. Three hours later you have features nobody asked for, a bill you never approved &mdash; and the one decision that mattered is 400 messages up the scroll-back.</p>
+
+    <div class="three-cards">
+      <div class="three-card">
+        <div class="three-card-num">01</div>
+        <h3>The code writes itself now.</h3>
+        <p>Claude ships features while you sleep. Software development &mdash; the part every tool keeps optimizing &mdash; is the solved part.</p>
+      </div>
+      <div class="three-card">
+        <div class="three-card-num">02</div>
+        <h3>The company still runs on vibes.</h3>
+        <p>What to build, for who, at what cost, decided why &mdash; that lives in your head and your chat history. Building the wrong product is still what kills companies.</p>
+      </div>
+      <div class="three-card">
+        <div class="three-card-num">03</div>
+        <h3>More tooling won&rsquo;t fix it.</h3>
+        <p>A faster model just gives you faster tangents. Your developers got an agent. Your company needs an operating system.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="pull-quote">
+  <div class="pq-line">&ldquo;The unit of value is not a task. It&rsquo;s the whole lifecycle.&rdquo;</div>
+  <div class="pq-attr">The Sutra canon &middot; Pillar P8</div>
+</div>
 
 <section class="flow-section">
   <div class="container-wide">
@@ -667,7 +691,7 @@
 
 <section class="section">
   <div class="container">
-    <div class="section-label">What a Chief of Staff actually does</div>
+    <div class="section-label">The solution</div>
     <h2>Three jobs. Every session.</h2>
     <p class="section-sub">Not a faster AI. A disciplined one. The kind that turns a 50,000-token tangent into a one-line fix.</p>
 
@@ -693,13 +717,46 @@
 
 <section class="section">
   <div class="container">
+    <div class="section-label">The impact</div>
+    <h2>What changes when the company runs on an OS.</h2>
+    <p class="section-sub">The same discipline, every turn, every session, every company.</p>
+
+    <div class="three-cards">
+      <div class="three-card">
+        <div class="three-card-num">01</div>
+        <h3>The bill arrives before the work.</h3>
+        <p>Time, files, dollars &mdash; on screen before any edit. The 30-minute refactor you didn&rsquo;t ask for dies before it starts.</p>
+      </div>
+      <div class="three-card">
+        <div class="three-card-num">02</div>
+        <h3>Decisions stop dying in scroll-back.</h3>
+        <p>Every decision is surfaced on one screen and lands in a local log. Six months later you still know exactly why.</p>
+      </div>
+      <div class="three-card">
+        <div class="three-card-num">03</div>
+        <h3>Discipline compounds.</h3>
+        <p>Routing, depth checks, and verification fire on every single turn &mdash; and the same operating manual runs six companies today.</p>
+      </div>
+    </div>
+
+    <p class="north-star">One number Sutra is built to move: <strong>hours per week you no longer think about.</strong></p>
+  </div>
+</section>
+
+<div class="pull-quote">
+  <div class="pq-line">&ldquo;Governance, not just tooling.&rdquo;</div>
+  <div class="pq-attr">The Sutra thesis</div>
+</div>
+
+<section class="section">
+  <div class="container">
     <div class="section-label">Privacy</div>
     <h2>Your code stays on your laptop.</h2>
 
     <div class="privacy">
       <div class="privacy-label">No-content guarantee</div>
       <div class="privacy-text">
-        <strong>Sutra captures nothing about what you're building, by default.</strong> No file contents. No prompts. No code. Only anonymous signals — kept locally in <code class="inline">~/.sutra/</code>. Nothing transmitted unless you opt in. Delete the folder to wipe it all.
+        <strong>Sutra captures nothing about what you're building, by default.</strong> No file contents. No prompts. No code. Only anonymous signals — in-memory until you consent, persisted locally in <code class="inline">~/.sutra/</code> only once you do. Nothing transmitted unless you opt in. Delete the folder to wipe it all.
       </div>
     </div>
   </div>
@@ -721,10 +778,10 @@
   </div>
 </section>
 
-<!-- Core — the agentic Chief of Staff inside Claude Code (1st gen) -->
+<!-- Core — the Sutra plugin inside Claude Code -->
 <section class="install-section" id="core">
   <div class="container-wide">
-    <div class="gen-badge"><span class="badge-dot"></span> FIRST GENERATION &middot; LIVE ON CLAUDE CODE MARKETPLACE</div>
+    <div class="gen-badge"><span class="badge-dot"></span> THE SUTRA PLUGIN &middot; LIVE ON CLAUDE CODE MARKETPLACE</div>
     <h2>Core. The agentic <em>Chief of Staff</em> inside Claude Code.</h2>
     <p class="install-sub">Skills, hooks, and governance for any Claude Code project. Markdown-first. Runs inline &mdash; no infrastructure, no servers, no daemons. Free.</p>
 
@@ -740,14 +797,14 @@
 
     <div class="cap-row" style="margin-top: 48px;">
       <div class="cap-tile">
-        <div class="cap-tile-num">10</div>
+        <div class="cap-tile-num">25</div>
         <h4>Skills</h4>
-        <p>Input routing &middot; depth estimation &middot; blueprint &middot; readability gate &middot; learn &middot; feedback &middot; onboarding.</p>
+        <p>Input routing &middot; depth estimation &middot; blueprint &middot; flow &middot; codex review &middot; readability gate &middot; learn &middot; feedback &middot; onboarding.</p>
       </div>
       <div class="cap-tile">
-        <div class="cap-tile-num">67</div>
-        <h4>Governance hooks</h4>
-        <p>Pre-tool / post-tool / session-start enforcement points. All opt-in via SUTRA-CONFIG.</p>
+        <div class="cap-tile-num">83</div>
+        <h4>Governance hook scripts</h4>
+        <p>Pre-tool / post-tool / session-start / stop enforcement points. Config-tunable via SUTRA-CONFIG; core per-turn floors ship hard.</p>
       </div>
       <div class="cap-tile">
         <div class="cap-tile-num">10</div>
@@ -756,8 +813,8 @@
       </div>
       <div class="cap-tile">
         <div class="cap-tile-num">0</div>
-        <h4>Network calls</h4>
-        <p>Telemetry stays local-first JSONL. Signal-not-content. Kill-switchable. No cloud.</p>
+        <h4>Network calls by default</h4>
+        <p>Local-first JSONL telemetry. Signal, not content. Outbound only if you opt in &mdash; kill-switchable.</p>
       </div>
       <div class="cap-tile">
         <div class="cap-tile-num">&le;2</div>
@@ -772,7 +829,7 @@
     </div>
 
     <div class="native-trust" style="margin-top: 32px;">
-      <span class="pill">v2.12.0 production</span>
+      <span class="pill">v2.40.0 production</span>
       <span class="pill">Claude Code marketplace</span>
       <span class="pill">MIT license</span>
       <span class="pill">privacy-first telemetry</span>
@@ -781,84 +838,117 @@
   </div>
 </section>
 
-<!-- Bridge between generations -->
-<div class="gen-bridge">
+<!-- Canon — the Native documentation is the spec of record; the plugin is the shipping implementation -->
+<section class="section" id="canon">
   <div class="container-wide">
-    <span class="gen-arrow">&darr;</span>
-    <span class="gen-bridge-label">The next generation</span>
-    <p class="gen-bridge-text">Core lives <em>inside</em> Claude Code &mdash; skills, hooks, prompt discipline. Native lifts the same governance onto a proper runtime: TypeScript primitives, durable workflows, decision provenance by construction. Same OS, deeper roots.</p>
-  </div>
-</div>
-
-<!-- Native — the deployable Sutra runtime (2nd gen) -->
-<section class="native-section" id="native">
-  <div class="container-wide">
-    <div class="gen-badge"><span class="badge-dot"></span> SECOND GENERATION &middot; SOURCE PREVIEW LIVE</div>
-    <h2>Native. The runtime that runs <em>a whole company.</em></h2>
-    <p class="native-sub">One founder. One LLM. Everything else autonomous. Native is the V2.4 Sutra Engine &mdash; 4 primitives, 6 laws, decision provenance built in. Ships on commodity infrastructure (Anthropic Claude SDK, Temporal, OPA, OpenTelemetry) with ~1,700 lines of Sutra glue.</p>
-
-    <p class="native-sub"><strong>v1.2 ships organic emergence</strong> &mdash; Native detects 4-utterance lexical patterns, proposes them as Workflows, and persists founder-approved patterns to disk so they survive daemon restart. <strong>v1.2.1 wires the host-LLM seam</strong>: invoke_host_llm steps now dispatch into <code>claude --bare</code> / <code>codex exec</code>, so post-approval Workflows do real work instead of no-op'ing.</p>
-
-    <div class="native-cta">
-      <div class="install-code-wrap">
-        <div class="install-code" id="native-cmd">curl -fsSL sankalpasawa.github.io/sutra/native/install.sh | bash</div>
-        <button class="copy-btn" id="native-copy-btn" type="button" aria-label="Copy Native install command">Copy</button>
-      </div>
-      <div class="native-cta-foot">
-        Creates <code>./sutra/native/</code> in your current directory &middot; ~5&nbsp;MB engine source &middot; sparse-clones <code>github.com/sankalpasawa/sutra</code> &middot; runs <code>npm install</code> &middot; registers Sutra marketplace with Claude Code if present &middot; <strong>re-run safe</strong> (existing installs at the same version reuse silently; upgrades and overwrites prompt before mutating).
-      </div>
-    </div>
+    <div class="section-label">The Sutra canon</div>
+    <h2>Documented like a system.<br>Shipped as a plugin.</h2>
+    <p class="section-sub">Sutra is specified by its canon &mdash; 22 pillars, 10 primitives, 6 surfaces, 9 hardstops &mdash; the documentation of record for the whole operating system. The plugin is today&rsquo;s shipping implementation of that spec inside Claude Code. The language below is the canon&rsquo;s; the claims are what ships.</p>
 
     <div class="cap-row">
       <div class="cap-tile">
-        <div class="cap-tile-num">04</div>
-        <h4>Primitives</h4>
-        <p>Domain &middot; Charter &middot; Workflow &middot; Execution.</p>
+        <div class="cap-tile-num">ROUTE</div>
+        <div class="tile-status ships">Ships today</div>
+        <h4>One decision per input</h4>
+        <p>Canon: every operator utterance is classified before any action fires &mdash; no silent-skip path. <strong>In the plugin today:</strong> Input Routing + Flow blocks classify every turn before any tool runs.</p>
       </div>
       <div class="cap-tile">
-        <div class="cap-tile-num">06</div>
-        <h4>Laws</h4>
-        <p>DATA &middot; BOUNDARY &middot; ACTIVATION &middot; COMMITMENT &middot; META &middot; REFLEXIVITY.</p>
+        <div class="cap-tile-num">GATE</div>
+        <div class="tile-status ships">Ships today</div>
+        <h4>Approval before consequence</h4>
+        <p>Canon: execution pauses at approval-required steps until the founder decides. <strong>In the plugin today:</strong> pre-tool and stop hooks block edits until depth, blueprint, and review contracts are met.</p>
       </div>
       <div class="cap-tile">
-        <div class="cap-tile-num">09</div>
-        <h4>Capabilities</h4>
-        <p>Identity, authority, durability, coordination, tools, telemetry, skills, repo, LLM.</p>
+        <div class="cap-tile-num">RUN</div>
+        <div class="tile-status canon">Canon &middot; runtime</div>
+        <h4>Typed, verified execution</h4>
+        <p>Canon: workflows fire step by step with typed execution logs, timeouts, and failure policy. <em>Canon scope: Native runtime.</em> The plugin&rsquo;s analog is BLUEPRINT &mdash; per-step verification before the next step runs.</p>
       </div>
       <div class="cap-tile">
-        <div class="cap-tile-num">&infin;</div>
-        <h4>Decision provenance</h4>
-        <p>Every governance decision logged &amp; queryable. Audit trail by construction.</p>
+        <div class="cap-tile-num">AUDIT</div>
+        <div class="tile-status ships">Ships today</div>
+        <h4>Every decision on the record</h4>
+        <p>Canon: every state transition persists as a replayable, typed event. <strong>In the plugin today:</strong> local JSONL logs record routing, depth, gate verdicts, and reviews &mdash; on your disk.</p>
       </div>
       <div class="cap-tile">
-        <div class="cap-tile-num">&le;30m</div>
-        <h4>Time to value</h4>
-        <p>Install to first Workflow execution. Measured, gated, enforced.</p>
+        <div class="cap-tile-num">EMERGE</div>
+        <div class="tile-status canon">Canon &middot; runtime</div>
+        <h4>Patterns become process</h4>
+        <p>Canon: repeated unmatched behavior is proposed back to the founder as a new workflow. <em>Canon scope: Native runtime.</em> The plugin&rsquo;s analog is the feedback + learn loop.</p>
       </div>
       <div class="cap-tile">
-        <div class="cap-tile-num">&le;15%</div>
-        <h4>Governance overhead</h4>
-        <p>Of session tokens. Discipline that pays for itself.</p>
+        <div class="cap-tile-num">TENANT</div>
+        <div class="tile-status canon">Canon &middot; runtime</div>
+        <h4>Boundaries fail closed</h4>
+        <p>Canon: per-company isolation with private audit logs; crossing a boundary needs explicit delegation. <em>Canon scope: Native runtime.</em> The plugin&rsquo;s analog is per-project boundary hooks.</p>
       </div>
     </div>
 
-    <div class="native-trust">
-      <span class="pill">v1.0.2 source preview</span>
-      <span class="pill">412 tests passing</span>
-      <span class="pill">Architecture LOCKED</span>
-      <span class="pill">Codex ADVISORY-cleared</span>
-      <span class="pill">Apache 2.0</span>
+    <p class="section-sub" style="margin-bottom: 36px;">Six of the canon&rsquo;s 22 pillars, as they reach you through the plugin:</p>
+
+    <div class="cap-row">
+      <div class="cap-tile">
+        <div class="cap-tile-num">P0</div>
+        <h4>Customer focus first</h4>
+        <p>Every output is judged by whether the person reading it can understand it without extra explanation. Supersedes all other principles.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">P1</div>
+        <h4>Artifact-first</h4>
+        <p>Nothing evaporates as chat &mdash; results land as typed, logged, reusable artifacts the system can consume again.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">P11</div>
+        <h4>Constrained problems</h4>
+        <p>Context, constraints, and expected output are deliberately constructed for every AI call &mdash; no ambient state.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">P15</div>
+        <h4>Right effort</h4>
+        <p>Before anything changes: state assumptions, prefer the simpler version, touch only what the request needs, verify the result.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">P17</div>
+        <h4>Architecture awareness</h4>
+        <p>Survey the existing architecture before creating anything new, so additions fit the system instead of fragmenting it.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">P18</div>
+        <h4>Packaging before launch</h4>
+        <p>Installation is part of the product: a couple of commands plus one activation step, hardened before anything launches.</p>
+      </div>
     </div>
 
-    <div class="native-foot-link">
-      Engine source: <a href="https://github.com/sankalpasawa/sutra/tree/main/marketplace/native">github.com/sankalpasawa/sutra/marketplace/native</a> &middot; v1.x lands hook activation + npm-style entrypoint.
+    <p class="section-sub" style="margin-bottom: 36px;">And the hardstops &mdash; the lines the system will not cross:</p>
+
+    <div class="cap-row">
+      <div class="cap-tile">
+        <div class="cap-tile-num">HS-9</div>
+        <div class="tile-status ships">Ships today</div>
+        <h4>Secrets never land in files</h4>
+        <p>A pre-write hook denies any edit that would put key-shaped secret material into a committable file. <strong>Enforced in the plugin.</strong></p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">HS-2</div>
+        <div class="tile-status canon">Canon contract</div>
+        <h4>Governance pays for itself</h4>
+        <p>Canon contract: discipline machinery soft-targets &le;15% of turn tokens and hard-stops past 25%. The plugin&rsquo;s governance is built to that bar.</p>
+      </div>
+      <div class="cap-tile">
+        <div class="cap-tile-num">HS-6</div>
+        <div class="tile-status canon">Canon contract</div>
+        <h4>Failure never degrades silently</h4>
+        <p>Canon contract: three governance-hook failures in one turn suspend the session until the founder clears it.</p>
+      </div>
     </div>
+
+    <div class="install-hint">Read the canon: <a href="https://github.com/sankalpasawa/sutra/tree/main/os/native">github.com/sankalpasawa/sutra/os/native</a></div>
   </div>
 </section>
 
 <footer>
   <div class="container">
-    Sutra by Asawa Inc. &middot; Core v2.12.0 &middot; Native v1.0.2 &middot; <a href="https://github.com/sankalpasawa/sutra">github</a> &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PRIVACY.md">privacy</a>
+    Sutra by Asawa Inc. &middot; v2.40.0 &middot; <a href="https://github.com/sankalpasawa/sutra">github</a> &middot; <a href="https://github.com/sankalpasawa/sutra/blob/main/marketplace/plugin/PRIVACY.md">privacy</a> &middot; <a href="https://github.com/sankalpasawa/sutra/tree/main/os/native">canon</a>
   </div>
 </footer>
 
@@ -895,21 +985,6 @@
       });
     });
 
-    // Native section — same copy mechanism, separate IDs
-    var nbtn = document.getElementById('native-copy-btn');
-    var ncmd = document.getElementById('native-cmd');
-    if (nbtn && ncmd) {
-      nbtn.addEventListener('click', function () {
-        copyText(ncmd.textContent.trim()).then(function () {
-          nbtn.textContent = 'Copied!';
-          nbtn.classList.add('copied');
-          setTimeout(function () {
-            nbtn.textContent = 'Copy';
-            nbtn.classList.remove('copied');
-          }, 1800);
-        });
-      });
-    }
   })();
 </script>
 

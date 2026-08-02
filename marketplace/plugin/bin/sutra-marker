@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# sutra-marker — agent-facing CLI for session-scoped governance markers.
+# Resolves the SAME session dir as the hooks' marker-lib.sh so the agent and
+# the hooks agree on where markers live (closes the Write-tool literal-path gap
+# per DeepSeek 2026-07-27). On PATH via the plugin bin dir after reload.
+#
+# Usage:
+#   sutra-marker set   <name> [content...]   # atomic write to session dir
+#   sutra-marker write <name> [content...]   # alias of set (pinned ADR-029 contract)
+#   sutra-marker has   <name>                # exit 0 if present
+#   sutra-marker read  <name>                # print content
+#   sutra-marker path  <name>                # print absolute path
+#   sutra-marker reset                       # clear THIS session only
+#   sutra-marker gc                          # sweep idle >24h dirs (not current)
+set -euo pipefail
+_here="$(cd "$(dirname "$0")" && pwd)"
+LIB="$_here/../hooks/marker-lib.sh"
+[ -f "$LIB" ] || LIB="$HOME/.claude/plugins/cache/sutra/core/2.40.0/hooks/marker-lib.sh"
+# shellcheck disable=SC1090
+. "$LIB"
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  set|write) name="$1"; shift || true; sutra_marker_set "$name" "$*";;
+  has)   sutra_marker_has "$1";;
+  read)  sutra_marker_read "$1";;
+  path)  sutra_marker_path "$1";;
+  reset) sutra_marker_reset;;
+  gc)    sutra_marker_gc;;
+  *) echo "usage: sutra-marker set|write|has|read|path|reset|gc <name> [content]" >&2; exit 2;;
+esac

@@ -29,6 +29,34 @@ export function formatEvent(e) {
             return `[proposal_approved]  ${e.pattern_id}  workflow=${e.registered_workflow_id}  trigger=${e.registered_trigger_id}`;
         case 'proposal_rejected':
             return `[proposal_rejected]  ${e.pattern_id}  reason=${e.reason}`;
+        case 'approval_requested':
+            return `[approval_requested] ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  prompt="${e.prompt_summary}"  Type "approve ${e.execution_id}" to resume or "reject ${e.execution_id} <reason>" to terminate.`;
+        case 'approval_granted':
+            return `[approval_granted]   ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  resuming...`;
+        case 'approval_denied':
+            return `[approval_denied]    ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  reason=${e.reason}`;
+        case 'approval_already_handled':
+            return `[approval_already_handled] ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  originally_decided_at=${e.originally_decided_at_ms}`;
+        case 'workflow_rollback_started':
+            return `[workflow_rollback_started] ${e.workflow_id}  exec=${e.execution_id}  reason=${e.reason}`;
+        case 'step_compensated':
+            return `[step_compensated]   ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  duration=${e.duration_ms}ms`;
+        case 'step_compensation_failed':
+            return `[step_compensation_failed] ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  reason=${e.reason}`;
+        case 'workflow_rollback_complete':
+            return `[workflow_rollback_complete] ${e.workflow_id}  exec=${e.execution_id}  steps_compensated=${e.steps_compensated}`;
+        case 'workflow_rollback_partial':
+            return `[workflow_rollback_partial] ${e.workflow_id}  exec=${e.execution_id}  steps_compensated=${e.steps_compensated}  steps_failed=${e.steps_failed}`;
+        case 'workflow_escalated':
+            return `[workflow_escalated] ${e.workflow_id}  exec=${e.execution_id}  reason=${e.reason}`;
+        case 'step_paused':
+            return `[step_paused]        ${e.workflow_id}  exec=${e.execution_id}  step=${e.step_index}  reason=${e.reason}  Call resumeFromPause("${e.execution_id}") to continue.`;
+        case 'precondition_check':
+            return `[precondition_check] ${e.workflow_id}  verdict=${e.verdict}  expr=${e.expression}${e.reason ? '  reason=' + e.reason : ''}`;
+        case 'postcondition_check':
+            return `[postcondition_check] ${e.workflow_id}  verdict=${e.verdict}  expr=${e.expression}${e.reason ? '  reason=' + e.reason : ''}`;
+        case 'commitment_broken':
+            return `[commitment_broken]  charter=${e.charter_id}  obligation=${e.obligation_name}  workflow=${e.workflow_id}  exec=${e.execution_id}${e.evidence ? '  evidence=' + e.evidence : ''}`;
         default: {
             const exhaustive = e;
             return `[unknown_event] ${JSON.stringify(exhaustive)}`;

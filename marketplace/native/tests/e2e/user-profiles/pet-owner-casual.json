@@ -1,0 +1,6 @@
+{
+  "id": "pet-owner-casual",
+  "voice": "first-person-casual",
+  "communication_style": "direct, warm, plain-spoken",
+  "utterance_template": "I want a {{deliverable}} for my {{subject}}"
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "trace_id": "flow-20260730-a8f1",
+  "atom_id": "A8-01",
+  "status": "done",
+  "result": "Created tests/flow-orchestrator/ with 8 fixtures and a runner; registered the runner in tests/run-all.sh.",
+  "verify": "bash sutra/marketplace/plugin/tests/flow-orchestrator/run.sh",
+  "confidence": "high",
+  "files_touched": [
+    "sutra/marketplace/plugin/tests/flow-orchestrator/run.sh",
+    "sutra/marketplace/plugin/tests/run-all.sh"
+  ],
+  "duration_s": 240,
+  "learned": "run-all.sh globs unit/ and integration/ only; new subdirs need explicit registration."
+}

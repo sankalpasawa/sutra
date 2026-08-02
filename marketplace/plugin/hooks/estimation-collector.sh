@@ -53,6 +53,33 @@ if ! grep -qE "^[[:space:]]+estimation-collector:[[:space:]]+true" "$_CFG" 2>/de
 # Asawa keeps holding/ESTIMATION-LOG.jsonl via ESTIMATION_LOG_OVERRIDE env.
 LOG_FILE="${ESTIMATION_LOG_OVERRIDE:-$REPO_ROOT/.enforcement/estimation-log.jsonl}"
 
+# ─── Clock-skew detection (Gap #7 fix 2026-05-12) ──────────────────────────
+# Tracks wall-clock delta between consecutive estimation fires in this repo.
+# If now - prev > 1h since last fire, mark CLOCK_SKEW_SUSPECTED=true. Emits
+# sidecar JSONL row per fire so analytics can join on session/repo + filter
+# clock-jumped rows without touching the main ESTIMATION-LOG.jsonl schema.
+CLOCK_SKEW_SUSPECTED=false
+CLOCK_SKEW_LAST_TS_FILE="$REPO_ROOT/.enforcement/.estimation-last-ts"
+NOW_EPOCH=$(date +%s)
+DELTA_S=0
+if [ -f "$CLOCK_SKEW_LAST_TS_FILE" ]; then
+  LAST_TS=$(cat "$CLOCK_SKEW_LAST_TS_FILE" 2>/dev/null | tr -d '[:space:]')
+  if [ -n "$LAST_TS" ] && [ "$LAST_TS" -gt 0 ] 2>/dev/null; then
+    DELTA_S=$(( NOW_EPOCH - LAST_TS ))
+    if [ "$DELTA_S" -gt 3600 ] 2>/dev/null; then
+      CLOCK_SKEW_SUSPECTED=true
+    fi
+  fi
+fi
+mkdir -p "$(dirname "$CLOCK_SKEW_LAST_TS_FILE")" 2>/dev/null
+echo "$NOW_EPOCH" > "$CLOCK_SKEW_LAST_TS_FILE" 2>/dev/null
+printf '{"ts":%s,"event":"estimation-fire","clock_skew_suspected":%s,"delta_s_since_prev":%s,"repo":"%s"}
+' \
+  "$NOW_EPOCH" "$CLOCK_SKEW_SUSPECTED" "$DELTA_S" "$(basename "$REPO_ROOT")" \
+  >> "$REPO_ROOT/.enforcement/clock-skew-sidecar.jsonl" 2>/dev/null
+# ─── End clock-skew detection ──────────────────────────────────────────────
+
+
 # ─── 1. Locate transcript ─────────────────────────────────────────────────────
 TRANSCRIPT_PATH=""
 STDIN_SESSION_ID=""

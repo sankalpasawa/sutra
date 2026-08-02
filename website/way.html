@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Way — How Sutra is getting built</title>
+<meta name="description" content="Not a roadmap executed — a system grown. Five stages, one loop, in the open: how Sutra is getting built.">
+<meta property="og:title" content="The Way — How Sutra is getting built">
+<meta property="og:description" content="Not a roadmap executed — a system grown. Five stages, one loop, in the open.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,500..600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0C0B09; --surface: #161412; --card: #1C1A17; --border: #2A2622;
+    --text: #F5F0E8; --muted: #8C857D;
+    --accent: #C4956A; --accent-bright: #E0B486; --accent-dim: rgba(196, 149, 106, 0.12);
+    --green: #5A9E6F;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+
+  nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 32px; border-bottom: 1px solid var(--border);
+  }
+  .logo-word {
+    font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 600;
+    color: var(--text); text-decoration: none; letter-spacing: 0.01em;
+  }
+  .nav-links { display: flex; gap: 24px; }
+  .nav-link {
+    color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500;
+  }
+  .nav-link:hover, .nav-link.active { color: var(--accent-bright); }
+
+  .hero { padding: 96px 0 72px; text-align: center; }
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.22em; color: var(--accent); text-transform: uppercase;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 600;
+    font-size: clamp(38px, 6vw, 60px); line-height: 1.1; margin: 20px 0 18px;
+    text-wrap: balance;
+  }
+  .hero-sub { color: var(--muted); font-size: 18px; max-width: 560px; margin: 0 auto; text-wrap: balance; }
+  .hero-sub em { color: var(--accent-bright); font-style: normal; }
+
+  /* ---- the thread ---- */
+  .journey { position: relative; padding: 48px 0 24px; }
+  .journey::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 27px;
+    width: 1px; background: linear-gradient(180deg, transparent, var(--accent) 6%, var(--accent) 94%, transparent);
+    opacity: 0.5;
+  }
+  .stage {
+    position: relative; padding: 0 0 56px 76px;
+  }
+  .stage-knot {
+    position: absolute; left: 16px; top: 4px; width: 23px; height: 23px;
+    border-radius: 50%; background: var(--bg); border: 1px solid var(--accent);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stage-knot::after {
+    content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  }
+  .stage-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.18em; color: var(--accent); text-transform: uppercase;
+  }
+  .stage h2 {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 600;
+    font-size: clamp(24px, 3.4vw, 32px); line-height: 1.2; margin: 10px 0 14px; text-wrap: balance;
+  }
+  .stage-story { color: var(--text); opacity: 0.92; max-width: 640px; margin-bottom: 18px; }
+  .stage-facts { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; max-width: 640px; }
+  .fact { display: grid; grid-template-columns: 110px 1fr; background: var(--card); }
+  .fact-k {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase;
+    padding: 12px 0 12px 16px; align-self: center;
+  }
+  .fact-v { font-size: 14.5px; padding: 12px 16px 12px 8px; color: var(--text); opacity: 0.9; }
+  .fact-v strong { color: var(--accent-bright); font-weight: 600; }
+
+  /* ---- the loop ---- */
+  .loop-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 26px 0 6px; max-width: 640px; }
+  .loop {
+    position: relative; width: 340px; height: 340px; margin: 12px 0;
+  }
+  .loop-ring {
+    position: absolute; inset: 52px; border: 1px dashed var(--accent); border-radius: 50%; opacity: 0.55;
+    animation: spin 80s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .loop-ring { animation: none; } .reveal { transition: none !important; } }
+  .loop-node {
+    position: absolute; left: 50%; top: 50%;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--card); border: 1px solid var(--accent); border-radius: 999px;
+    padding: 7px 14px; color: var(--accent-bright); white-space: nowrap;
+    transform: translate(-50%, -50%);
+  }
+  .loop-node.n1 { top: 8%; }
+  .loop-node.n2 { top: 36%; left: 88%; }
+  .loop-node.n3 { top: 84%; left: 76%; }
+  .loop-node.n4 { top: 84%; left: 24%; }
+  .loop-node.n5 { top: 36%; left: 12%; }
+  .loop-center {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.45;
+  }
+  .loop-center strong { display: block; font-family: 'Fraunces', Georgia, serif; color: var(--text); font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+  .loop-caption { color: var(--muted); font-size: 13px; text-align: center; max-width: 480px; }
+
+  /* ---- terrain (the approach) ---- */
+  .terrain-band { padding: 0 0 12px; }
+  .terrain-fig { max-width: 860px; margin: 0 auto; padding: 0 24px; text-align: center; }
+  .terrain-svg { width: 100%; height: auto; display: block; margin-top: 22px; }
+  .t-contour { fill: none; stroke: var(--border); }
+  .t-trail { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 1 7; stroke-linecap: round; opacity: 0.7; }
+  .t-path { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 1 9; stroke-linecap: round; }
+  .t-path-fog { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 1 11; stroke-linecap: round; opacity: 0.4; }
+  .t-orbit { fill: none; stroke: var(--accent); stroke-dasharray: 3 5; opacity: 0.45; }
+  .t-wp { fill: var(--card); stroke: var(--accent); stroke-width: 1.5; }
+  .t-mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.12em; fill: var(--accent-bright); }
+  .t-mono-muted { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; fill: var(--muted); }
+  .t-here-label { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.12em; fill: var(--green); }
+  .t-settle { fill: var(--accent); }
+  .t-settle-label { font-family: 'Inter', sans-serif; font-size: 12.5px; fill: var(--muted); }
+  .t-here-dot { fill: var(--green); }
+  .t-here-pulse { fill: none; stroke: var(--green); stroke-width: 1.5;
+    animation: tpulse 2.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes tpulse { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(2.4); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .t-here-pulse { animation: none; opacity: 0.35; } }
+  .t-caption { color: var(--muted); font-size: 13.5px; max-width: 620px; margin: 14px auto 0; text-wrap: balance; }
+  .t-caption strong { color: var(--accent-bright); font-weight: 600; }
+  .t-link { cursor: pointer; }
+  .t-link .t-hit { fill: transparent; }
+  .t-link:hover .t-mono, .t-link:focus .t-mono { fill: var(--text); }
+  .t-link:hover .t-orbit, .t-link:focus .t-orbit { opacity: 0.9; }
+  .stage[id] { scroll-margin-top: 28px; }
+  .t-grid { stroke: var(--border); opacity: 0.45; stroke-width: 0.5; fill: none; }
+  .t-compass circle { fill: none; stroke: var(--muted); opacity: 0.5; }
+  .t-compass path { fill: var(--muted); opacity: 0.65; }
+  .t-compass text { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: var(--muted); letter-spacing: 0.1em; }
+  .t-marks { stroke: var(--muted); opacity: 0.3; stroke-width: 1; fill: none; }
+  .t-marks-dot { fill: var(--muted); opacity: 0.3; }
+  .t-island { fill: none; stroke: var(--muted); stroke-dasharray: 4 6; opacity: 0.5; }
+  .t-island-label { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; fill: var(--muted); letter-spacing: 0.1em; opacity: 0.9; }
+  .t-native-blob { fill: rgba(196, 149, 106, 0.07); stroke: var(--accent-bright); stroke-dasharray: 6 6; stroke-width: 1.5; }
+  .t-native-label { font-family: 'JetBrains Mono', monospace; font-size: 17px; font-weight: 600; letter-spacing: 0.2em; fill: var(--accent-bright); }
+  .t-native-sub { font-family: 'Inter', sans-serif; font-size: 11px; fill: var(--muted); }
+  @media (max-width: 480px) { .t-grid, .t-compass, .t-marks, .t-marks-dot { display: none; } }
+
+  /* ---- origin + punch ---- */
+  .origin {
+    color: var(--muted); font-size: 13.5px; text-align: center;
+    padding: 8px 0 56px; max-width: 520px; margin: 0 auto;
+  }
+  .punch {
+    border-top: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--surface), var(--bg));
+    text-align: center; padding: 88px 24px 96px;
+  }
+  .punch h2 {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 600;
+    font-size: clamp(30px, 4.6vw, 46px); line-height: 1.15; max-width: 720px;
+    margin: 0 auto 14px; text-wrap: balance;
+  }
+  .punch h2 em { color: var(--accent-bright); font-style: italic; }
+  .punch-sub { color: var(--muted); font-size: 17px; margin-bottom: 36px; }
+  .punch-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; text-decoration: none; font-weight: 600; font-size: 15px;
+    padding: 13px 26px; border-radius: 10px; border: 1px solid var(--border); color: var(--text);
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent-bright); }
+  .btn-primary { background: var(--green); border-color: var(--green); color: #0C0B09; }
+  .btn-primary:hover { filter: brightness(1.08); color: #0C0B09; }
+
+  footer { border-top: 1px solid var(--border); padding: 28px 24px; text-align: center; color: var(--muted); font-size: 13px; }
+  footer a { color: var(--muted); }
+
+  .reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (max-width: 560px) {
+    .journey::before { left: 19px; }
+    .stage { padding-left: 56px; }
+    .stage-knot { left: 8px; }
+    .fact { grid-template-columns: 92px 1fr; }
+    .loop { width: 300px; height: 300px; }
+    .loop-node.n2 { left: 86%; }
+    .loop-node.n5 { left: 14%; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="logo-word" href="index.html">sutra</a>
+  <div class="nav-links">
+    <a class="nav-link active" href="way.html">The Way</a>
+    <a class="nav-link" href="index.html#core">Core</a>
+    <a class="nav-link" href="index.html#canon">Canon</a>
+    <a class="nav-link" href="https://github.com/sankalpasawa/sutra">GitHub</a>
+  </div>
+</nav>
+
+<header class="hero container">
+  <div class="eyebrow">The Way</div>
+  <h1>How Sutra is getting built.</h1>
+  <p class="hero-sub">We didn&rsquo;t start with a map &mdash; we made one by walking: one company, then many, then the system they all run on. Ahead is fog &mdash; Native, and territories no one has touched. <em>That fog is exactly the point.</em></p>
+</header>
+
+<section class="terrain-band">
+  <div class="terrain-fig">
+    <div class="eyebrow">The approach · Effectuation</div>
+    <svg class="terrain-svg" viewBox="0 0 1000 480" role="img" aria-label="A detailed terrain map. A compass rose and faint survey grid frame three contoured ranges. A dotted walked path crosses five clickable waypoints — build one, see horizontal, design system, explore, real orgs — to a pulsing 'we are here' marker. Beyond it, fog: the highlighted NATIVE territory (the OS an entire company runs on) and unexplored islands named agent economies, AGI, autonomous companies, living canon, and multi-agent orgs.">
+      <defs>
+        <linearGradient id="fogg" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#0C0B09" stop-opacity="0"/>
+          <stop offset="1" stop-color="#0C0B09" stop-opacity="0.94"/>
+        </linearGradient>
+      </defs>
+
+      <!-- survey grid -->
+      <path class="t-grid" d="M100,0 V480 M200,0 V480 M300,0 V480 M400,0 V480 M500,0 V480 M600,0 V480 M700,0 V480 M800,0 V480 M900,0 V480 M0,80 H1000 M0,160 H1000 M0,240 H1000 M0,320 H1000 M0,400 H1000"/>
+
+      <!-- compass rose -->
+      <g class="t-compass" transform="translate(60,66)">
+        <circle r="16"/>
+        <path d="M0,-13 L3.5,0 L0,13 L-3.5,0 Z"/>
+        <text y="-26" text-anchor="middle">N</text>
+      </g>
+
+      <!-- western range -->
+      <path class="t-contour" d="M110,340 C85,265 190,215 285,235 C380,255 395,345 305,375 C215,405 135,410 110,340 Z" opacity="0.85"/>
+      <path class="t-contour" d="M145,335 C130,280 205,245 280,262 C350,278 358,338 292,360 C222,383 158,382 145,335 Z" opacity="0.6"/>
+      <path class="t-contour" d="M180,330 C172,297 222,272 272,283 C318,293 322,330 278,345 C230,361 186,360 180,330 Z" opacity="0.4"/>
+      <path class="t-contour" d="M212,324 C210,305 240,292 268,299 C293,305 294,326 266,334 C240,342 214,341 212,324 Z" opacity="0.25"/>
+      <!-- northern ridge -->
+      <path class="t-contour" d="M350,130 C380,85 470,78 525,105 C575,128 548,170 470,172 C400,174 322,166 350,130 Z" opacity="0.55"/>
+      <path class="t-contour" d="M385,128 C405,100 470,96 508,114 C542,130 522,155 468,156 C420,157 368,152 385,128 Z" opacity="0.35"/>
+      <path class="t-contour" d="M418,126 C430,112 468,110 492,121 C512,131 500,144 466,144 C438,144 408,140 418,126 Z" opacity="0.2"/>
+      <!-- eastern range -->
+      <path class="t-contour" d="M480,270 C500,200 640,180 710,215 C775,248 740,308 650,313 C560,318 462,322 480,270 Z" opacity="0.7"/>
+      <path class="t-contour" d="M525,262 C545,218 645,206 697,232 C742,254 718,288 648,290 C580,292 508,296 525,262 Z" opacity="0.45"/>
+      <path class="t-contour" d="M565,255 C580,228 645,222 682,240 C712,255 695,275 645,276 C598,277 552,278 565,255 Z" opacity="0.28"/>
+      <!-- islets -->
+      <path class="t-contour" d="M78,150 C88,128 128,126 148,140 C165,152 152,170 118,170 C95,170 70,166 78,150 Z" opacity="0.35"/>
+      <path class="t-contour" d="M292,440 C300,424 336,422 352,433 C366,443 355,456 328,456 C308,456 285,453 292,440 Z" opacity="0.3"/>
+
+      <!-- elevation marks -->
+      <path class="t-marks" d="M330,205 h8 M334,201 v8 M555,150 h8 M559,146 v8 M175,235 h8 M179,231 v8 M620,352 h8 M624,348 v8 M420,335 h8 M424,331 v8"/>
+      <circle class="t-marks-dot" cx="250" cy="180" r="1.5"/>
+      <circle class="t-marks-dot" cx="470" cy="218" r="1.5"/>
+      <circle class="t-marks-dot" cx="360" cy="385" r="1.5"/>
+      <circle class="t-marks-dot" cx="605" cy="140" r="1.5"/>
+
+      <!-- fog of the unexplored -->
+      <rect x="680" y="0" width="320" height="480" fill="url(#fogg)"/>
+      <text class="t-mono-muted" x="850" y="28" text-anchor="middle" opacity="0.85">UNEXPLORED</text>
+
+      <!-- unexplored satellite territories -->
+      <ellipse class="t-island" cx="790" cy="58" rx="46" ry="16"/>
+      <text class="t-island-label" x="790" y="62" text-anchor="middle">AGENT ECONOMIES</text>
+      <ellipse class="t-island" cx="915" cy="92" rx="30" ry="17"/>
+      <text class="t-island-label" x="915" y="96" text-anchor="middle">AGI</text>
+      <ellipse class="t-island" cx="878" cy="168" rx="64" ry="18"/>
+      <text class="t-island-label" x="878" y="172" text-anchor="middle">AUTONOMOUS COMPANIES</text>
+      <ellipse class="t-island" cx="908" cy="398" rx="48" ry="17"/>
+      <text class="t-island-label" x="908" y="402" text-anchor="middle">LIVING CANON</text>
+      <ellipse class="t-island" cx="792" cy="448" rx="56" ry="16"/>
+      <text class="t-island-label" x="792" y="452" text-anchor="middle">MULTI-AGENT ORGS</text>
+
+      <!-- NATIVE: known but not conquered -->
+      <path class="t-native-blob" d="M830,240 C845,215 900,210 935,228 C965,244 962,282 925,296 C885,311 838,306 826,280 C819,264 820,252 830,240 Z"/>
+      <text class="t-native-label" x="888" y="260" text-anchor="middle">NATIVE</text>
+      <text class="t-native-sub" x="888" y="279" text-anchor="middle">the OS an entire company runs on</text>
+
+      <!-- the walked path through the five stages -->
+      <path class="t-path" d="M140,315 C185,300 225,286 270,272 C315,258 360,250 405,246 C450,243 495,248 540,252 C580,255 620,245 655,235 C682,228 705,228 726,228"/>
+
+      <!-- waypoints = the five stages below (click to read) -->
+      <a class="t-link" href="#stage-1" aria-label="Stage one — Build one">
+        <rect class="t-hit" x="82" y="288" width="116" height="70"/>
+        <circle class="t-orbit" cx="140" cy="315" r="17"/>
+        <circle class="t-wp" cx="140" cy="315" r="5"/>
+        <text class="t-mono" x="140" y="347" text-anchor="middle">BUILD ONE</text>
+      </a>
+      <a class="t-link" href="#stage-2" aria-label="Stage two — See the horizontal">
+        <rect class="t-hit" x="196" y="226" width="148" height="66"/>
+        <circle class="t-orbit" cx="270" cy="272" r="17"/>
+        <circle class="t-wp" cx="270" cy="272" r="5"/>
+        <text class="t-mono" x="270" y="243" text-anchor="middle">SEE HORIZONTAL</text>
+      </a>
+      <a class="t-link" href="#stage-3" aria-label="Stage three — Design the system">
+        <rect class="t-hit" x="331" y="224" width="148" height="70"/>
+        <circle class="t-orbit" cx="405" cy="246" r="17"/>
+        <circle class="t-wp" cx="405" cy="246" r="5"/>
+        <text class="t-mono" x="405" y="282" text-anchor="middle">DESIGN SYSTEM</text>
+      </a>
+      <a class="t-link" href="#stage-4" aria-label="Stage four — Explore on the fly">
+        <rect class="t-hit" x="482" y="206" width="116" height="66"/>
+        <circle class="t-orbit" cx="540" cy="252" r="17"/>
+        <circle class="t-wp" cx="540" cy="252" r="5"/>
+        <text class="t-mono" x="540" y="223" text-anchor="middle">EXPLORE</text>
+      </a>
+      <a class="t-link" href="#stage-5" aria-label="Stage five — Ground in real organizations">
+        <rect class="t-hit" x="591" y="213" width="128" height="70"/>
+        <circle class="t-orbit" cx="655" cy="235" r="17"/>
+        <circle class="t-wp" cx="655" cy="235" r="5"/>
+        <text class="t-mono" x="655" y="269" text-anchor="middle">REAL ORGS</text>
+      </a>
+
+      <!-- we are here: the strongest signal -->
+      <circle class="t-here-pulse" cx="728" cy="228" r="11"/>
+      <circle class="t-here-dot" cx="728" cy="228" r="7"/>
+      <text class="t-here-label" x="728" y="198" text-anchor="middle">WE ARE HERE</text>
+
+      <!-- into the fog, toward Native -->
+      <path class="t-path-fog" d="M728,228 C765,228 795,236 824,250"/>
+      <polygon points="820,242 836,252 818,258" fill="#8C857D" opacity="0.6"/>
+    </svg>
+    <p class="t-caption"><strong>Click a waypoint to read that stage.</strong> The method has a name: effectuation. Start with what you have, work with whoever commits, and let surprises steer.</p>
+  </div>
+</section>
+
+<main class="container">
+  <div class="journey">
+
+    <div class="stage reveal" id="stage-1">
+      <div class="stage-knot" aria-hidden="true"></div>
+      <div class="stage-label">Stage 01 · Build one</div>
+      <h2>We ran one real company end-to-end with AI.</h2>
+      <p class="stage-story">A consumer product — built, shipped, distributed, supported — with AI doing the software work. The code was never the problem. Keeping decisions, priorities, and quality coherent across hundreds of sessions was.</p>
+      <div class="stage-facts">
+        <div class="fact"><div class="fact-k">Did</div><div class="fact-v">One product operated fully through AI sessions</div></div>
+        <div class="fact"><div class="fact-k">Learned</div><div class="fact-v"><strong>Operating discipline is the bottleneck</strong> — not code</div></div>
+        <div class="fact"><div class="fact-k">Added</div><div class="fact-v">The first per-turn discipline: classify every input, size every task</div></div>
+      </div>
+    </div>
+
+    <div class="stage reveal" id="stage-2">
+      <div class="stage-knot" aria-hidden="true"></div>
+      <div class="stage-label">Stage 02 · See the horizontal</div>
+      <h2>The second company needed exactly the same things.</h2>
+      <p class="stage-story">Same governance. Same memory. Same loops. Nothing about the discipline was company-specific — which meant it wasn't a feature of one company. It was an operating system waiting to be extracted.</p>
+      <div class="stage-facts">
+        <div class="fact"><div class="fact-k">Did</div><div class="fact-v">Extracted the discipline; installed it in company two, then six more</div></div>
+        <div class="fact"><div class="fact-k">Learned</div><div class="fact-v"><strong>It's an OS, not a feature</strong> — horizontal beats vertical</div></div>
+        <div class="fact"><div class="fact-k">Added</div><div class="fact-v">The plugin: one-command install, firewalled per company</div></div>
+      </div>
+    </div>
+
+    <div class="stage reveal" id="stage-3">
+      <div class="stage-knot" aria-hidden="true"></div>
+      <div class="stage-label">Stage 03 · Design the system</div>
+      <h2>Horizontal systems can't be feature piles.</h2>
+      <p class="stage-story">They demand systemic design. So taste and judgment became build materials, written down as canon: what gets automated, what stays human, and — hardest — what the system refuses to do.</p>
+      <div class="stage-facts">
+        <div class="fact"><div class="fact-k">Did</div><div class="fact-v">Wrote the canon: pillars, primitives, a ledger of ratified decisions</div></div>
+        <div class="fact"><div class="fact-k">Learned</div><div class="fact-v"><strong>Taste is infrastructure</strong> — a canon that can say no</div></div>
+        <div class="fact"><div class="fact-k">Added</div><div class="fact-v">Hardstops: the lines that don't move under pressure</div></div>
+      </div>
+    </div>
+
+    <div class="stage reveal" id="stage-4">
+      <div class="stage-knot" aria-hidden="true"></div>
+      <div class="stage-label">Stage 04 · Explore on the fly</div>
+      <h2>The frontier moves weekly. So does the system.</h2>
+      <p class="stage-story">New AI capabilities land constantly. Each one runs the same loop — and surprises get folded into the product instead of defended against. The loop beats the roadmap.</p>
+      <div class="loop-wrap">
+        <div class="loop" role="img" aria-label="The operating loop: discover, understand, fold in, dogfood, ship — repeating weekly.">
+          <div class="loop-ring"></div>
+          <div class="loop-node n1">Discover</div>
+          <div class="loop-node n2">Understand</div>
+          <div class="loop-node n3">Fold in</div>
+          <div class="loop-node n4">Dogfood</div>
+          <div class="loop-node n5">Ship</div>
+          <div class="loop-center"><strong>every week</strong>across a real portfolio</div>
+        </div>
+        <p class="loop-caption">Discover what's newly possible → understand it → fold it into the canon → dogfood it on real companies → ship it to the fleet. Repeat.</p>
+      </div>
+      <div class="stage-facts">
+        <div class="fact"><div class="fact-k">Did</div><div class="fact-v">Folded each new capability in within days of it existing</div></div>
+        <div class="fact"><div class="fact-k">Learned</div><div class="fact-v"><strong>The loop beats the roadmap</strong> — surprises are ingredients</div></div>
+        <div class="fact"><div class="fact-k">Added</div><div class="fact-v">Release cadence + feedback ledgers: the loop, institutionalized</div></div>
+      </div>
+    </div>
+
+    <div class="stage reveal" id="stage-5" style="padding-bottom: 24px;">
+      <div class="stage-knot" aria-hidden="true"></div>
+      <div class="stage-label">Stage 05 · Ground in real organizations</div>
+      <h2>The market speaks through committed partners.</h2>
+      <p class="stage-story">Working inside operating businesses — a hiring platform among them — tells us what an operating system must actually do, not what a deck imagines. Whoever commits, shapes the canon. Today: the plugin ships free. Next: Native — the same discipline, rebuilt as a real engine.</p>
+      <div class="stage-facts">
+        <div class="fact"><div class="fact-k">Did</div><div class="fact-v">Deployed inside client organizations; let their needs steer</div></div>
+        <div class="fact"><div class="fact-k">Learned</div><div class="fact-v"><strong>Committed partners &gt; market forecasts</strong></div></div>
+        <div class="fact"><div class="fact-k">Next</div><div class="fact-v">Native: from discipline in prompts to discipline in an engine</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="origin">Started by one founder. Built in public — with the clients, operators, and contributors who commit.</p>
+</main>
+
+<section class="punch">
+  <div class="eyebrow" style="margin-bottom: 18px;">The invitation</div>
+  <h2>Software stopped being the scarce thing. <em>Knowing how to run a company through it</em> is what's scarce now — and we're building that into an installable system, in the open.</h2>
+  <p class="punch-sub">We think that's a revolution in how companies get built. If you want to build it with us —</p>
+  <div class="punch-ctas">
+    <a class="btn btn-primary" href="https://chat.whatsapp.com/EsnoDwz3tn4CbAtkD3cpu4">Join us on WhatsApp</a>
+  </div>
+</section>
+
+<footer>
+  <a href="index.html">sutra</a> · the operating system for AI-native companies
+</footer>
+
+<script>
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); obs.unobserve(e.target); } });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+</script>
+
+</body>
+</html>

@@ -5,6 +5,10 @@
   "version": "2.32.0",
   "issued": "2026-05-04",
   "source_direction": "D40",
+  "feature_flags": {
+    "$comment": "Feature toggles (ladder off -> experimental -> on, canonized in ADR-029 Decision 5, amended 2026-07-30). flow_orchestrator_mode per D62 / ADR-029: 'off' means zero behavior change -- the flow skill runs exactly as documented pre-D62; 'experimental' means orchestrator dispatch is active only where the operating repo has opted in -- everywhere else treats it as 'off'; 'on' (current shipped value, founder-directed 2026-07-31, ADR-029 D5 second amendment) enables the orchestrator/worker split fleet-wide (return contracts validated by bin/validate-return-contract.sh, sole-writer ledger via bin/flow-ledger-append.sh). Asserted by tests/flow-orchestrator/f8-flag-and-docs.sh.",
+    "flow_orchestrator_mode": "on"
+  },
   "per_turn_blocks": {
     "human_sutra_header": {
       "$comment": "v2.15.1: promoted from hardcoded hook reminder to canonical schema entry, closing the v2.14.1 deferred TODO. Direct emission — NOT a skill invocation. Format per skills/human-sutra/SKILL.md §Header emission.",
@@ -18,7 +22,9 @@
       "skill_reference": "core:human-sutra",
       "log_path_asawa": "holding/state/interaction/log.jsonl",
       "log_path_default": ".sutra/h-sutra.jsonl",
-      "soft_hint_hook": "per-turn-discipline-prompt.sh"
+      "soft_hint_hook": "per-turn-discipline-prompt.sh",
+      "enforcement": "convention_only",
+      "$enforcement_comment": "2026-07-28: the h-sutra-enforce.sh Stop hook was REMOVED (founder direction). Nothing blocks or forces a redo for a missing/malformed header. The header is still requested every turn and still logged for 9-cell classification by per-turn-discipline-prompt.sh -- it is a convention with a log rail, not a gate. Previously: HARD Stop block, one redo, profile-gated after #72."
     },
     "input_routing": {
       "required": true,
@@ -53,6 +59,40 @@
       },
       "skill": "core:input-routing",
       "soft_hint_hook": "per-turn-discipline-prompt.sh"
+    },
+    "flow": {
+      "$comment": "D61 (v2.39.14, 2026-06-14) + AMENDMENT (v2.39.16, 2026-06-15): core:flow FIRES on every input the way Input Routing fires — but via an INLINE FLOW block (literal text the model emits), NOT a Skill invocation. A hook cannot force a Skill on the first pass, so skill-every-turn was skipped on no-tool turns; inline literal text reaches Input-Routing reliability. The full core:flow Skill is the DEEP mode for substantive/multi-step/ambiguous work. Firing at UserPromptSubmit (per-turn-discipline-prompt.sh); flow-gate.sh + flow-stop-check.sh are floors, NOT the firing. True 'fires by construction' deferred to the Native engine (spine as code).",
+      "required": false,
+      "activation": "type_gated",
+      "activates_after": [
+        "input_routing",
+        "human_sutra_header"
+      ],
+      "applies_to_turn_types": [
+        "task",
+        "direction",
+        "new_concept",
+        "question",
+        "feedback"
+      ],
+      "applies_if_substantive": [
+        "multi_step",
+        "ambiguous_shape",
+        "unknown_how",
+        "heavy"
+      ],
+      "skip_when": "never skip the INLINE block — it fires on EVERY input (D61). The full Skill spine is invoked only for substantive work (see applies_if_substantive); on trivial turns the inline block IS the firing, no Skill call.",
+      "what": "EVERY turn: emit the INLINE FLOW block as literal text (Unit / [1] TYPE+cell / [2] FOLLOW|CONSTRUCT / [3] steps / [4] inner lens+cynefin+factors / [5] mode / [6] close) reporting the HONEST resolved spine for this unit, then write the flow markers via the Write tool. Invoke the full core:flow Skill (deep recursive spine) only for substantive/multi-step/ambiguous/unknown-how work.",
+      "skill": "core:flow",
+      "emission_mode": "inline_block_every_turn_plus_skill_for_substantive",
+      "invoke_skill_when": "multi-step OR ambiguous shape OR unknown-how OR heavy work — NOT every trivial turn",
+      "marker_write": "MUST use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/); a reverted marker makes the floors read stale state. Write to the session dir .claude/sessions/<session-id>/<name> (session-id = CLAUDE_CODE_SESSION_ID) and include a SESSION=<session-id> line; unstamped markers are treated as legacy. Markers: flow-classified + flow-type-resolved (+ flow-inner, flow-closed for the Skill spine).",
+      "honesty_bar": "the inline block states what ACTUALLY resolved. An honest 1-step ATOM block on a trivial turn is correct; claiming a recursive walk / cynefin / factor counts not actually run is the theater D61 forbids.",
+      "enforcement_hook": "flow-gate.sh (PreToolUse mutation floor) + flow-stop-check.sh (Stop no-tool floor)",
+      "soft_hint_hook": "per-turn-discipline-prompt.sh",
+      "$required_note": "Flow FIRES on every input via the inline block (literal text), the same mechanism as the H-Sutra header / Input Routing — those fire reliably because they are text the model emits, not a tool it must invoke. AMENDMENT 2026-06-15: supersedes v2.39.14 skill_invocation_always.",
+      "$over_activation_guard": "Inline block on EVERY input (cheap, ~Input-Routing reliability). Full Skill only for substantive work. Kill-switches: FLOW_DISABLED=1 / ~/.flow-disabled / FLOW_ACK=1.",
+      "cost_model": "structure-universal (inline block every turn, cheap) + depth-on-demand (full Skill only when work warrants). AMENDMENT 2026-06-15 replaces v2.39.14 depth-full-every-turn: a hook cannot force a Skill, so inline-text-every-turn + Skill-for-substantive is both more reliable AND cheaper. True determinism = Native engine (deferred)."
     },
     "depth_estimation": {
       "required": true,
@@ -106,13 +146,32 @@
         "tested",
         "verified"
       ],
+      "$enforcement_comment": "v3 (2026-07-27, #68 + the 2026-07-08 Testlify field incident): enforcement is TEXT-FIRST. blueprint-check.sh validates the BLUEPRINT block in the turn's response text -- the block the USER sees -- on FOUNDATIONAL paths only. Ordinary files are floored at Stop by per-turn-hard-gate.sh (one redo, loop-safe) on any turn that mutated a governed file. The model is NEVER asked to write a marker; see marker_file below.",
+      "enforcement_source": "turn_text",
+      "pretool_scope": "foundational_paths",
+      "stop_floor_hook": "per-turn-hard-gate.sh",
+      "foundational_paths": [
+        "sutra/os/charters/*.md",
+        "sutra/layer2-operating-system/protocols/*.md",
+        "sutra/layer2-operating-system/PROTOCOLS.md",
+        "holding/FOUNDER-DIRECTIONS.md",
+        "holding/research/*-design.md",
+        "holding/research/*-plan.md",
+        "sutra/os/engines/*.md"
+      ],
+      "$foundational_paths_comment": "The documents where pre-spend visibility is real -- charters, protocols, founder directions, engine specs, design/plan docs. One glob per entry ('|' alternation is not re-parsed out of a shell variable in a case pattern). These defaults describe the Asawa repo layout; a client whose governing docs live elsewhere overrides them with .blueprint_foundational_paths[] in .claude/sutra-project.json. Precedence: project json > this file > the hook's hardcoded fallback. Before v3 this list was hardcoded in the hook, so on every install except Asawa's the set was empty.",
       "marker_file": ".claude/blueprint-registered",
+      "$marker_comment": "v3: a per-turn CACHE the hook writes for itself after a passing text validation, so a multi-Edit turn pays one transcript walk instead of N. It is NOT a contract the model satisfies -- that divergence (gate reads marker, contract says emit text) caused #68, #80 and a repeat on 2026-07-27, including a model-discovered Bash bypass. Still wiped per turn by reset-turn-markers.sh. Best-effort: a failed cache write costs one re-validation, never a block.",
       "marker_schema_keys": [
+        "VALIDATED_FROM",
         "HAS_OUTPUT",
         "HAS_VERIFY",
-        "TS",
-        "TASK"
+        "HAS_PER_STEP_VERIFY",
+        "DEPTH",
+        "SESSION",
+        "TS"
       ],
+      "$session_comment": "SESSION=<session-id> stamps the owning session (marker-race root cause, holding/research/2026-07-30-marker-race-root-cause.md). Unstamped markers are treated as LEGACY: adoptable by any session on read and never deleted by a peer's reset. sutra_marker_write (hooks/marker-lib.sh) stamps it automatically when absent.",
       "fail_flow": {
         "$comment": "D48 (2026-05-05): on verification fail, file problem record + in-session LLM diagnoses + applies fix + re-runs Verified-by. Max 3 iterations before STOP-and-surface.",
         "problem_record_path": "holding/state/problems/<ts>-<slug>.json",
@@ -154,9 +213,62 @@
         "PROMOTE_BY",
         "OWNER",
         "ACCEPTANCE",
+        "SESSION",
         "TS"
       ],
+      "$session_comment": "SESSION=<session-id> stamps the owning session (marker-race root cause, holding/research/2026-07-30-marker-race-root-cause.md). Unstamped markers are treated as LEGACY: adoptable by any session on read and never deleted by a peer's reset. Write the marker to .claude/sessions/<session-id>/build-layer-registered via the Write tool.",
       "hook": "build-layer-check.sh"
+    },
+    "placement": {
+      "$comment": "ADR-028 (2026-07-29): every unit of work carries an address — one Domain, one Charter — stamped before it executes. The system decides the taxonomy; the operator is never asked and never blocked. If nothing matches, a Domain (and a Charter stub) is minted and work continues. Shipped required:true fleet-wide per founder direction 2026-07-28, but enforcement starts in WARN mode per deepseek P1 — see enforcement_ladder.",
+      "required": true,
+      "activation": "every_turn",
+      "activates_after": [
+        "input_routing",
+        "human_sutra_header"
+      ],
+      "default_shape": "compact",
+      "shapes": {
+        "compact": "PLACEMENT: D0 > D3 <name> > D3.D2 <name> | \"<charter title>\"  — ONE line. The mandatory per-turn form when the address already existed.",
+        "expanded": "Full ancestor tree with [NEW] markers + charter promise/scope. Fires ONLY when a Domain or Charter was minted this turn.",
+        "summary": "One aggregate line. Fires when >20 units are placed in a single turn (bulk edit, B22 scan)."
+      },
+      "shape_rule": "compact unless created.domains or created.charters is non-empty; summary above the bulk threshold. Never walk the tree on the common path — that cost is why compact is the default (deepseek P1, 2026-07-29).",
+      "bulk_threshold": 20,
+      "marker_file": ".claude/placement-registered",
+      "marker_schema_keys": [
+        "DOMAIN_REF",
+        "DOMAIN_PATH",
+        "CHARTER_ID",
+        "ORIGIN",
+        "CONFIDENCE",
+        "CREATED_DOMAINS",
+        "CREATED_CHARTERS",
+        "SESSION",
+        "TS"
+      ],
+      "$session_comment": "SESSION=<session-id> stamps the owning session (marker-race root cause, holding/research/2026-07-30-marker-race-root-cause.md). Unstamped markers are treated as LEGACY: adoptable by any session on read and never deleted by a peer's reset.",
+      "marker_write": "MUST use the Write tool (Claude Code rolls back sandboxed Bash writes to .claude/). Write to the session dir .claude/sessions/<session-id>/placement-registered (session-id = CLAUDE_CODE_SESSION_ID) and include a SESSION=<session-id> line, so concurrent sessions in one repo do not clobber each other. Unstamped markers are treated as legacy.",
+      "enforcement_ladder": {
+        "mode_file": ".claude/placement-mode",
+        "default_mode": "warn",
+        "modes": {
+          "warn": "gate logs and exits 0 — never blocks. The shipping default.",
+          "hard": "gate exits 2 on a missing marker, like flow-gate and blueprint-check."
+        },
+        "promote_after_compliant_turns": 50,
+        "rationale": "A new HARD gate shipped fleet-wide would deadlock repos on day zero: the model has never been required to emit this block, and the first miss blocks the next Edit with an opaque exit-2. Warn-first keeps the block on for everyone while compliance is measured, then flips. Per deepseek consult 2026-07-29 (CHANGES-REQUIRED, P1)."
+      },
+      "gate_semantics": "PRESENCE only. The gate never parses the block's content — a malformed placement passes and is caught by a separate lint pass, not at the tool-execution boundary (deepseek P2). The gate blocks on a missing DECLARATION, never on a missing domain; the mint path guarantees a declaration always resolves.",
+      "enforcement_hook": "placement-gate.sh (PreToolUse) + placement-stop-check.sh (Stop, no-tool turns)",
+      "renderer": "lib/placement-render.sh",
+      "kill_switches": {
+        "repo_local": ".claude/placement-disabled",
+        "global": "~/.placement-disabled",
+        "env": "PLACEMENT_ACK=1 PLACEMENT_ACK_REASON='<why>'",
+        "note": "repo_local takes precedence and is preferred — the global file disables the feature for every project the operator owns."
+      },
+      "canon": "sutra/os/decisions/ADR-028-mandatory-work-placement.md · sutra/os/native/primitives/placement.md · blocks B19-B22"
     },
     "output_trace": {
       "required": true,
@@ -381,6 +493,53 @@
     "T3_T4": "RECOMMENDED",
     "override_path": "~/.sutra/overrides.json",
     "tier_definitions_source": "D34 in holding/FOUNDER-DIRECTIONS.md"
+  },
+  "deepseek": {
+    "$comment": "Added 2026-05-10 per founder direction. v1-min ships peer-reviewer skill (skills/deepseek/) + backend-swap shim (bin/deepseek-claude). Codex r4 ADVISORY (4 rounds: r1→CR 5P1+4P2 → r2→CR 3P1+1P2 → r3→ADV-conditional → r4→ADV clean). See .enforcement/codex-reviews/2026-05-10-deepseek-sutra-design.md.",
+    "version": "1.0.0",
+    "endpoint": "https://api.deepseek.com/anthropic",
+    "auth": {
+      "header": "x-api-key",
+      "token_file": "~/.config/deepseek/auth.token",
+      "token_file_perms_required": "600"
+    },
+    "models": {
+      "default": "deepseek-v4-pro",
+      "fallback_haiku": "deepseek-v4-flash",
+      "context_window_tokens": 1000000
+    },
+    "thinking": {
+      "default_budget_tokens": 32000,
+      "default_effort": "high"
+    },
+    "limits": {
+      "wall_seconds_hard_cap": null,
+      "stall_warn_seconds": 300,
+      "heartbeat_interval_seconds": 600,
+      "_note": "wall_seconds_hard_cap=null per founder D2026-05-13 — no automatic kill; stall + heartbeat are notifications only; founder Ctrl-C is the only interrupt path"
+    },
+    "log_paths": {
+      "skill_gate_log": ".enforcement/deepseek-reviews/gate-log.jsonl",
+      "shim_launch_log": ".enforcement/deepseek-shim/launch-log.jsonl"
+    },
+    "kill_switch": "~/.deepseek-disabled",
+    "model_downgrade_policy": {
+      "pro_to_flash": "FAIL with reason=model_downgrade",
+      "model_aliased": "ADVISORY (versioned alias of requested base)",
+      "model_unexpected": "ADVISORY (unknown mismatch)",
+      "response_model_missing": "ADVISORY",
+      "accept_downgrade_env": "DEEPSEEK_ACCEPT_DOWNGRADE=1"
+    },
+    "v1_deferred_to_v2": {
+      "outbound_scrubber": "TODO[v2-scrubber] — binary/secret/path-allowlist",
+      "consult_session_continuity": "TODO[v2-session] — UUID dirs, branch isolation, replay redaction",
+      "preflight_token_budget": "TODO[v2-preflight] — estimate-then-gate before HTTP send",
+      "preflight_cost_cap": "TODO[v2-preflight] — same",
+      "canonical_event_schema": "TODO[v2-schema] — unify with codex-sutra gate-log",
+      "shim_outbound_scrub": "TODO[v2-shim-scrub]",
+      "shim_keychain_storage": "TODO[v2-shim-keychain]",
+      "shim_concurrent_session_detect": "TODO[v2-shim-conflict]"
+    }
   },
   "codex_caveats": {
     "hook_injects_prompt_is_fragile": true,

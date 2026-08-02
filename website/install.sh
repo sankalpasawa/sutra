@@ -358,6 +358,7 @@ parse_args() {
     case "$1" in
       -y|--yes) NON_INTERACTIVE=1 ;;
       --no-launch) NO_LAUNCH=1 ;;
+      --ui) UI_MODE=1 ;;          # opt in to the browser UI (Testlify onboarding). Public default is terminal.
       -d|--dir)
         shift
         # Reject empty AND reject flag-shaped next tokens (e.g. `-d --yes`)
@@ -919,6 +920,101 @@ step_launch_claude() {
 }
 
 # -----------------------------------------------------------------------------
+# Step 8 (DEFAULT) — open Sutra in the browser
+#
+# Founder direction 2026-06-18: after install, open the browser UI so people
+# can start working immediately, no terminal. Runs the browser UI bundled
+# inside the plugin (.../sutra-ui/) via a stable venv at ~/.sutra/ui-venv. It
+# drives the logged-in `claude` CLI in a PTY => SAME Max-plan billing, NEVER
+# the API (the UI refuses to start if ANTHROPIC_API_KEY is set). Falls back to
+# terminal `claude` if anything's missing. Opt out with --no-ui.
+# -----------------------------------------------------------------------------
+step_launch_ui() {
+  step "Step 8/${TOTAL_STEPS}: open Sutra in your browser"
+
+  local uidir venv url helper
+  uidir="$(ls -d "${HOME}"/.claude/plugins/cache/sutra/core/*/sutra-ui 2>/dev/null | sort -V | tail -1)"
+  venv="${HOME}/.sutra/ui-venv"
+  url="http://127.0.0.1:7681/"
+
+  # --- guards: fall back to terminal claude if the browser path isn't viable ---
+  if [[ -z "${uidir}" || ! -f "${uidir}/app.py" ]]; then
+    warn "Browser UI not found in the plugin — using the terminal instead."
+    step_launch_claude; return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 not found (needed for the browser UI) — using the terminal instead."
+    step_launch_claude; return 0
+  fi
+  if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    warn "ANTHROPIC_API_KEY is set — the browser UI bills your Max plan, not the API."
+    warn "  Unset it to use the browser UI; using the terminal for now."
+    step_launch_claude; return 0
+  fi
+
+  # one-time dependency setup (stable venv survives plugin updates)
+  if [[ ! -x "${venv}/bin/python" ]]; then
+    log "Setting up the browser UI (one-time, ~30s)…"
+    if ! python3 -m venv "${venv}" >/dev/null 2>&1; then
+      warn "Could not create the UI environment — using the terminal instead."
+      step_launch_claude; return 0
+    fi
+    if ! "${venv}/bin/pip" install -q --disable-pip-version-check -r "${uidir}/requirements.txt" >/dev/null 2>&1; then
+      warn "Could not install UI dependencies — using the terminal instead."
+      step_launch_claude; return 0
+    fi
+  fi
+
+  # drop a stable re-launch helper so reopening later is just: sutra-ui
+  helper="${HOME}/.local/bin/sutra-ui"
+  mkdir -p "${HOME}/.local/bin"
+  cat > "${helper}" <<'LAUNCHER'
+#!/usr/bin/env bash
+# Reopen Sutra in your browser. Drives the logged-in `claude` (Max plan), never the API.
+set -euo pipefail
+UIDIR="$(ls -d "${HOME}"/.claude/plugins/cache/sutra/core/*/sutra-ui 2>/dev/null | sort -V | tail -1)"
+VENV="${HOME}/.sutra/ui-venv"
+{ [ -n "${UIDIR}" ] && [ -x "${VENV}/bin/python" ]; } || { echo "Sutra UI not set up — re-run the installer."; exit 1; }
+[ -n "${ANTHROPIC_API_KEY:-}" ] && { echo "Unset ANTHROPIC_API_KEY — the browser UI bills your Max plan, not the API."; exit 2; }
+URL="http://127.0.0.1:7681/"
+WORK="${SUTRA_UI_WORKDIR:-$PWD}"
+# already running? just open the browser to it.
+if curl -fsS -o /dev/null --max-time 1 "${URL}" 2>/dev/null; then
+  { command -v open >/dev/null 2>&1 && open "${URL}"; } || { command -v xdg-open >/dev/null 2>&1 && xdg-open "${URL}"; }
+  echo "Sutra already running — opened ${URL}"; exit 0
+fi
+( sleep 2; { command -v open >/dev/null 2>&1 && open "${URL}"; } || { command -v xdg-open >/dev/null 2>&1 && xdg-open "${URL}"; } ) >/dev/null 2>&1 &
+cd "${UIDIR}"
+exec env SUTRA_UI_WORKDIR="${WORK}" "${VENV}/bin/python" -m uvicorn app:app --host 127.0.0.1 --port 7681 --log-level warning
+LAUNCHER
+  chmod +x "${helper}"
+
+  # under automation / explicit opt-out: don't take over the terminal, just say how
+  if [[ ${NON_INTERACTIVE} -eq 1 || ${NO_LAUNCH} -eq 1 ]]; then
+    log "Browser UI ready. Open it any time with:  sutra-ui"
+    return 0
+  fi
+
+  # already running on this port? don't start a second server — just open the browser.
+  if curl -fsS -o /dev/null --max-time 1 "${url}" 2>/dev/null; then
+    log "Sutra is already running — opening it: ${url}  (reopen any time with: sutra-ui)"
+    { command -v open >/dev/null 2>&1 && open "${url}"; } || { command -v xdg-open >/dev/null 2>&1 && xdg-open "${url}"; }
+    return 0
+  fi
+
+  log ""
+  log "Opening Sutra in your browser: ${url}"
+  log "  Keep THIS window open — it runs Sutra. Press Ctrl-C to stop."
+  log "  Reopen any time with:  sutra-ui"
+  log ""
+
+  # open the browser shortly after the server binds, then hand this window to the server
+  ( sleep 2; { command -v open >/dev/null 2>&1 && open "${url}"; } || { command -v xdg-open >/dev/null 2>&1 && xdg-open "${url}"; } ) >/dev/null 2>&1 &
+  cd "${uidir}"
+  exec env SUTRA_UI_WORKDIR="${TARGET_DIR}" "${venv}/bin/python" -m uvicorn app:app --host 127.0.0.1 --port 7681 --log-level warning
+}
+
+# -----------------------------------------------------------------------------
 # Final banner — canonical "Sutra ready, here's the next step" surface
 # (codex P2-C fold: this is the single source of next-step guidance;
 # step_launch_claude no-ops on the default path so there's no duplication).
@@ -934,8 +1030,13 @@ print_banner() {
     "$C_GREEN" "$C_BOLD" "$C_RESET" "$C_BOLD" "" "$C_RESET" >&2
   hr
   printf '  %sProject directory:%s %s\n\n' "$C_BOLD" "$C_RESET" "${TARGET_DIR}" >&2
-  printf '  %sNext — open Claude Code in your project:%s\n\n' "$C_BOLD" "$C_RESET" >&2
-  printf '    %scd %s && claude%s\n\n' "$C_GOLD" "${TARGET_DIR}" "$C_RESET" >&2
+  if [[ ${UI_MODE:-0} -eq 1 ]]; then
+    printf '  %sSutra is opening in your browser…%s  reopen any time with %ssutra-ui%s\n\n' \
+      "$C_BOLD" "$C_RESET" "$C_GOLD" "$C_RESET" >&2
+  else
+    printf '  %sNext — open Claude Code in your project:%s\n\n' "$C_BOLD" "$C_RESET" >&2
+    printf '    %scd %s && claude%s\n\n' "$C_GOLD" "${TARGET_DIR}" "$C_RESET" >&2
+  fi
   printf '  First session auto-fires %s/core:start%s.\n' "$C_GOLD" "$C_RESET" >&2
   printf '  %sRe-running this installer is safe — marketplace + plugin update to latest.%s\n\n' \
     "$C_GREY" "$C_RESET" >&2
@@ -990,7 +1091,11 @@ main() {
   # reference before claude takes over the terminal (under default auto-launch),
   # or their explicit hint to paste manually (under -y / --no-launch / no tty).
   print_banner
-  step_launch_claude
+  if [[ ${UI_MODE:-0} -eq 1 ]]; then
+    step_launch_ui            # --ui (Testlify): open Sutra in the browser; falls back to terminal if needed
+  else
+    step_launch_claude        # public default: classic terminal Claude Code (unchanged)
+  fi
 }
 
 main "$@"
