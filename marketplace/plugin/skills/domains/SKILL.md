@@ -39,9 +39,13 @@ On "publish the domains/departments page" (or first ask about departments in a
 repo with Pages):
 
 1. Generate with the fleet generator. **Default publish shape = the zoom
-   site**: `<plugin>/lib/domains_page.py OUTDIR --site --label Departments`
-   — one page PER domain, rooted at itself, from the same registry and the
-   same privacy settings as the flat renderer. `OUTDIR` is the Pages
+   site**: `<plugin>/lib/domains_page.py OUTDIR --site --label Departments
+   --tenant T-local` — one page PER domain, rooted at itself, from the same
+   registry and the same privacy settings as the flat renderer. **`--tenant`
+   is required on every publish path** (design §6): it filters the build's
+   INPUT SET, so a second tenant's domains are absent from the artifact rather
+   than suppressed inside it, and the generator refuses to run without it.
+   `OUTDIR` is the Pages
    artifact root; `index.html` = the root domain; every other page is named
    by its stable ref (`dref-<16hex>` — engine-generated, unique and
    filename-safe by construction), so links survive restructure/reparenting.

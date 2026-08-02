@@ -1,0 +1,3221 @@
+<title>Sutra</title>
+
+<style>
+  :root{--serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--r:10px}
+  :root,[data-theme="dark"]{
+    --bg:#0C0B09;--surface:#161412;--card:#1C1A17;--line:#2A2622;--line-soft:#221F1C;
+    --ink:#F5F0E8;--muted:#8C857D;--faint:#6E6860;
+    --acc:#C4956A;--acc-bg:rgba(196,149,106,.12);--on-acc:#0C0B09;
+    --ok:#5A9E6F;--warn:#C9A227;--block:#B8574B;
+    --ok-bg:rgba(90,158,111,.13);--warn-bg:rgba(201,162,39,.13);--block-bg:rgba(184,87,75,.14);
+    --ok-line:rgba(90,158,111,.32);--warn-line:rgba(201,162,39,.3);--block-line:rgba(184,87,75,.38);
+    --inset:#161412;--bubble:#161412;--th-bg:#161412;--knob:#0C0B09;--vld-tx:#8C857D;
+    --sepia:rgba(196,149,106,.06);
+    --shadow:0 1px 2px rgba(0,0,0,.16),0 18px 44px -18px rgba(0,0,0,.42)}
+  @media (prefers-color-scheme:light){:root:not([data-theme]){
+    --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
+    --ink:#1c1917;--muted:#78716c;--faint:#a8a29e;
+    --acc:#8A5D2E;--acc-bg:#f6efe7;--on-acc:#ffffff;
+    --ok:#3f7d54;--warn:#8a6d12;--block:#9c3f34;
+    --ok-bg:#eef4ef;--warn-bg:#f8f3e4;--block-bg:#faeeec;
+    --ok-line:#cfe0d4;--warn-line:#e8dcbb;--block-line:#eccfc9;
+    --inset:#fafaf9;--bubble:#f5f4f2;--th-bg:#fafaf9;--knob:#ffffff;--vld-tx:#57534e;
+    --sepia:#faf6ef;
+    --shadow:0 1px 2px rgba(28,25,23,.05),0 18px 44px -20px rgba(28,25,23,.16)}}
+  [data-theme="light"]{
+    --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
+    --ink:#1c1917;--muted:#78716c;--faint:#a8a29e;
+    --acc:#8A5D2E;--acc-bg:#f6efe7;--on-acc:#ffffff;
+    --ok:#3f7d54;--warn:#8a6d12;--block:#9c3f34;
+    --ok-bg:#eef4ef;--warn-bg:#f8f3e4;--block-bg:#faeeec;
+    --ok-line:#cfe0d4;--warn-line:#e8dcbb;--block-line:#eccfc9;
+    --inset:#fafaf9;--bubble:#f5f4f2;--th-bg:#fafaf9;--knob:#ffffff;--vld-tx:#57534e;
+    --sepia:#faf6ef;
+    --shadow:0 1px 2px rgba(28,25,23,.05),0 18px 44px -20px rgba(28,25,23,.16)}
+
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;
+       -webkit-font-smoothing:antialiased;margin:0;overflow:hidden}
+  /* Desktop panel: fill the window. A centred 1320px column left ~35% of a
+   1990px display as background -- read as dead space next to the panes,
+   which is exactly what it was. Capped generously so it stays readable on
+   an ultrawide instead of stretching a chart to 3000px. */
+  .wrap{max-width:none;margin:0;padding:0;height:100vh;overflow:hidden}
+  .mast{display:flex;align-items:center;gap:11px;margin-bottom:16px;flex-wrap:wrap}
+  .mast svg{width:30px;height:30px;color:var(--acc);flex:none}
+  .mast h1{font-family:var(--serif);font-size:31px;font-weight:600;letter-spacing:-.02em;margin:0;line-height:1}
+  .mast .cap{font-size:12px;color:var(--muted);margin-left:auto;max-width:44ch;text-align:right}
+
+  /* Rail collapse gives its column BACK to the panes rather than leaving a
+     224px gutter behind: grid-template-columns drops to a single track. */
+  .app.railcol{grid-template-columns:1fr}
+  .app.railcol .rail{display:none}
+  .railtog{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+    margin-left:auto;border:1px solid transparent;border-radius:6px;background:none;
+    color:var(--faint);cursor:pointer;flex:0 0 auto;transition:background .12s,color .12s,border-color .12s}
+  /* ITEM 4 — every icon control answers the pointer. */
+  .railtog:hover{color:var(--acc);background:var(--acc-bg);border-color:var(--acc)}
+  .railtog:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  /* Reachability while the rail is gone. */
+  .railshow{position:fixed;top:11px;left:11px;z-index:60;display:none;
+    align-items:center;justify-content:center;width:26px;height:26px;
+    border:1px solid var(--line);border-radius:7px;background:var(--card);
+    color:var(--faint);cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+  .railshow:hover{color:var(--acc);background:var(--acc-bg);border-color:var(--acc)}
+  .app.railcol .railshow{display:inline-flex}
+  .app.railcol{padding-left:46px}
+  /* Rail section headers are buttons, not labels -- they collapse their body. */
+  .grp{display:flex;align-items:center;gap:6px;width:100%;background:none;border:0;
+    cursor:pointer;text-align:left;font:inherit}
+  .grp .chev{margin-left:auto;transition:transform .12s ease;flex:0 0 auto;opacity:.55}
+  .grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+  .grp:hover .chev{opacity:1}
+  .rsec[hidden]{display:none}
+  /* Tenant switcher popover, anchored to the rail footer. */
+  .tmenuwrap{position:relative;display:flex;min-width:0}
+  .tmenu{position:absolute;bottom:calc(100% + 7px);left:0;z-index:40;min-width:212px;
+    background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px;
+    box-shadow:0 10px 30px rgba(0,0,0,.34)}
+  .tmenu[hidden]{display:none}
+  .tmenu .th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+    padding:5px 7px 4px}
+  .tmenu button{display:flex;align-items:center;gap:7px;width:100%;padding:6px 7px;border:0;
+    border-radius:6px;background:none;color:var(--ink);font:inherit;font-size:12px;
+    cursor:pointer;text-align:left}
+  .tmenu button:hover{background:var(--hover)}
+  .tmenu button .tm2{margin-left:auto;font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .tmenu .cur{color:var(--acc)}
+  .tmenu .note{padding:6px 7px 4px;font-size:10.5px;color:var(--faint);line-height:1.45;
+    border-top:1px solid var(--line-soft);margin-top:4px}
+  .app{display:grid;grid-template-columns:224px 1fr;gap:9px;background:var(--surface);
+       border:0;border-radius:0;padding:9px;height:100vh;min-height:0;box-shadow:none;
+       /* padding must live INSIDE 100vh or the app is 18px taller than the window */
+       box-sizing:border-box}
+  @media(max-width:860px){.app{grid-template-columns:1fr;height:auto}.rail{max-height:290px}}
+
+  /* rail */
+  .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
+        display:flex;flex-direction:column;min-height:0}
+  .rtop{display:flex;align-items:center;gap:8px;padding:11px 11px 9px}
+  .rmark{width:19px;height:19px;border-radius:5px;background:var(--acc);color:var(--on-acc);
+         display:grid;place-items:center;font:700 12px/1 var(--serif);flex:none}
+  .rtop b{font-size:13px;font-weight:600}
+  .rtop .tn{margin-left:auto;font:600 8.5px/1 var(--mono);color:var(--acc);background:var(--acc-bg);
+            border:1px solid var(--acc);border-radius:4px;padding:3px 5px}
+  .rscroll{overflow-y:auto;flex:1;min-height:0;padding-bottom:6px}
+  .grp{padding:9px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.1em;
+       color:var(--faint);text-transform:uppercase}
+  .nav{list-style:none;margin:0;padding:0 6px}
+  .nav button{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;width:100%;
+    background:none;border:0;color:var(--muted);font:400 12.5px/1.4 var(--sans);cursor:pointer;text-align:left}
+  .nav button svg{width:14px;height:14px;flex:none;opacity:.8}
+  .nav button .ct{margin-left:auto;font:500 10px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .nav button:hover:not(:disabled){background:var(--acc-bg);color:var(--ink)}
+  .nav button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .nav button[aria-current="true"]{background:var(--acc-bg);color:var(--ink);font-weight:500}
+  .nav button[aria-current="true"] svg{color:var(--acc);opacity:1}
+  .nav button:disabled{opacity:.42;cursor:not-allowed}
+  .nav button .ct.w{color:var(--warn)}
+  .nav button .dis{margin-left:auto;font:600 8px/1 var(--mono);color:var(--faint);
+                   border:1px dashed var(--line);border-radius:4px;padding:2px 4px}
+
+  .stree{list-style:none;margin:0;padding:0 6px;font-size:12px}
+  .stree button{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;width:100%;
+    background:none;border:0;color:var(--muted);font:inherit;cursor:pointer;text-align:left}
+  .stree button:hover{background:var(--acc-bg);color:var(--ink)}
+  .stree .kid{padding-left:20px}
+  .stree .n{margin-left:auto;font:500 9px/1 var(--mono);color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--acc);flex:none}
+  .dot.run{background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
+  .dot.held{background:var(--warn)}
+  .rfoot{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;align-items:center;gap:7px}
+  .av{width:21px;height:21px;border-radius:50%;background:var(--acc-bg);color:var(--acc);
+      display:grid;place-items:center;font:700 8.5px/1 var(--sans);border:1px solid var(--acc);flex:none}
+  .rfoot span{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ib{background:none;border:0;padding:3px;border-radius:4px;color:var(--faint);cursor:pointer;display:flex}
+  .ib:hover{color:var(--ink);background:var(--acc-bg)}
+  .ib:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .ico-moon{display:none}
+  @media (prefers-color-scheme:light){:root:not([data-theme]) .ico-sun{display:none}
+    :root:not([data-theme]) .ico-moon{display:block}}
+  [data-theme="light"] .ico-sun{display:none}[data-theme="light"] .ico-moon{display:block}
+  [data-theme="dark"] .ico-sun{display:block}[data-theme="dark"] .ico-moon{display:none}
+
+  /* main */
+  .main{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
+        display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .mhead{display:flex;align-items:center;gap:9px;padding:10px 13px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+  .mhead h2{font-size:13.5px;font-weight:600;margin:0;letter-spacing:-.01em}
+  .mhead .src{font:500 9.5px/1 var(--mono);color:var(--faint)}
+  .mhead .sp{margin-left:auto}
+  .body{flex:1;overflow-y:auto;padding:14px 16px;min-height:0;font-size:12.5px}
+  .cols{display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:14px;align-items:start}
+  .cols>*{min-width:0}
+  @media(max-width:1080px){.cols{grid-template-columns:1fr}}
+
+  h3.sec{font:600 10px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;
+         color:var(--faint);margin:0 0 9px}
+  h3.sec + *{margin-top:0}
+  .body p{color:var(--muted);margin:0 0 10px}
+  code{font-family:var(--mono);font-size:11px;background:var(--acc-bg);color:var(--acc);
+       padding:1px 4px;border-radius:4px}
+
+  .btn{background:var(--inset);border:1px solid var(--line);color:var(--muted);
+       font:500 11px/1 var(--sans);padding:6px 10px;border-radius:6px;cursor:pointer}
+  .btn:hover{border-color:var(--acc);color:var(--ink)}
+  .btn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .btn[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .btn.pri{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .seg button{background:none;border:0;padding:5px 11px;font:500 11px/1 var(--sans);
+              color:var(--muted);cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--acc-bg);color:var(--acc)}
+  .seg button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+
+  /* tree */
+  .tree{list-style:none;margin:0;padding:0}
+  .tree ul{list-style:none;margin:0;padding-left:17px;border-left:1px solid var(--line-soft)}
+  .node{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:7px;margin:1px 0;
+        border:1px solid transparent;cursor:pointer;background:none;width:100%;text-align:left;
+        color:inherit;font:inherit}
+  .node:hover{background:var(--acc-bg)}
+  .node:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .node[aria-selected="true"]{background:var(--acc-bg);border-color:var(--acc)}
+  .node .dp{font:600 9.5px/1 var(--mono);color:var(--acc);flex:none;min-width:26px}
+  .node .nm{font-weight:500;font-size:12.5px}
+  .node .de{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+            white-space:nowrap;flex:1;min-width:0}
+  .node .tag{font:600 8.5px/1 var(--mono);padding:3px 5px;border-radius:4px;flex:none}
+  .tag.t-ret{background:var(--block-bg);color:var(--block)}
+  .tag.t-noc{background:var(--warn-bg);color:var(--warn)}
+  .tag.t-ten{background:var(--warn-bg);color:var(--warn)}
+  .node.retired .nm{text-decoration:line-through;color:var(--faint)}
+  .node.acme{border-left:2px solid var(--warn)}
+  /* draft-mode drag */
+  .node.drg{opacity:.45}
+  .node.ring{outline:2px solid var(--block);outline-offset:-2px;
+             background:color-mix(in srgb,var(--block) 4%,transparent);cursor:not-allowed}
+  .node.ok-t{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 40%,transparent)}
+    .canvas{min-width:0}
+  .canvas.draft{background:var(--sepia);border-radius:8px;padding:9px;border:1px dashed var(--line)}
+
+  /* inspector */
+  .insp{background:var(--inset);border:1px solid var(--line-soft);border-radius:9px;padding:12px 13px}
+  .insp h4{font-family:var(--serif);font-size:16px;font-weight:600;margin:0 0 2px}
+  .insp .sub{font-size:11px;color:var(--faint);font-family:var(--mono);margin-bottom:10px}
+  .kv{display:flex;gap:9px;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:11.5px}
+  .kv:last-child{border-bottom:0}
+  .kv b{color:var(--faint);font-weight:500;min-width:82px;flex:none;font-size:10.5px;
+        text-transform:uppercase;letter-spacing:.05em}
+  .kv span{color:var(--ink)}
+
+  /* tables */
+  .tw{overflow-x:auto;border:1px solid var(--line);border-radius:9px}
+  table{border-collapse:collapse;width:100%;font-size:12px;min-width:520px}
+  th{text-align:left;font:600 9px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;
+     color:var(--muted);padding:9px 11px;border-bottom:1px solid var(--line);background:var(--th-bg);
+     white-space:nowrap;cursor:pointer;user-select:none}
+  th:hover{color:var(--ink)}
+  td{padding:8px 11px;border-bottom:1px solid var(--line-soft);color:var(--muted);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:var(--acc-bg)}
+  tbody tr.sel{background:var(--acc-bg)}
+  td.k{color:var(--ink);font-weight:500}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  .pill{font:600 8.5px/1 var(--mono);padding:3px 6px;border-radius:4px;white-space:nowrap;display:inline-block}
+  .p-ok{background:var(--ok-bg);color:var(--ok)}
+  .p-warn{background:var(--warn-bg);color:var(--warn)}
+  .p-block{background:var(--block-bg);color:var(--block)}
+  .p-acc{background:var(--acc-bg);color:var(--acc)}
+  .p-mut{background:var(--inset);color:var(--muted);border:1px solid var(--line)}
+
+  .facets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px;align-items:center}
+  .facets .fl{font:600 9px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;
+              color:var(--faint);margin-right:2px}
+  input[type=search],input[type=text]{background:var(--inset);border:1px solid var(--line);
+    color:var(--ink);border-radius:6px;padding:6px 9px;font:400 12px/1.3 var(--sans);min-width:0}
+  input:focus-visible{outline:2px solid var(--acc);outline-offset:-1px}
+
+  .note{border-left:2px solid var(--acc);background:var(--acc-bg);padding:10px 12px;
+        border-radius:0 7px 7px 0;font-size:11.5px;color:var(--muted);margin:11px 0}
+  .note b{color:var(--ink)}
+  .note.w{border-color:var(--warn);background:var(--warn-bg)}
+  .note.b{border-color:var(--block);background:var(--block-bg)}
+  .zero{text-align:center;padding:34px 18px;color:var(--muted)}
+  .zero h4{font-family:var(--serif);font-size:17px;color:var(--ink);margin:0 0 6px;font-weight:600}
+  .zero p{max-width:46ch;margin:0 auto 12px}
+
+  .cmd{font-family:var(--mono);font-size:10.5px;color:var(--muted);background:var(--inset);
+       border:1px solid var(--line);border-radius:7px;padding:9px 11px;overflow-x:auto;
+       white-space:nowrap;display:flex;align-items:center;gap:9px}
+  .cmd .p{color:var(--acc);flex:none}
+  .cmd .t{flex:1;min-width:0;overflow-x:auto}
+
+  /* diff rail */
+  .diff .r{display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:11.5px;
+           border-bottom:1px solid var(--line-soft)}
+  .diff .r:last-child{border-bottom:0}
+  .op{font:700 8px/1 var(--mono);letter-spacing:.05em;padding:3.5px 5px;border-radius:4px;
+      flex:none;width:46px;text-align:center;background:var(--acc-bg);color:var(--acc)}
+  .metrics{display:flex;gap:13px;flex-wrap:wrap;padding:9px 11px;border-radius:8px;
+           background:var(--inset);border:1px solid var(--line-soft);margin:10px 0}
+  .metrics div{font:500 10px/1.45 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .metrics div b{display:block;color:var(--ink);font-size:13.5px;font-weight:600}
+  .metrics div b .ar{color:var(--faint);font-weight:400}
+  .metrics div.chg b{color:var(--acc)}
+  .findbar{display:flex;gap:12px;align-items:center;font:500 11px/1 var(--mono);
+           padding:8px 11px;border-radius:7px;background:var(--inset);border:1px solid var(--line-soft)}
+
+  .tl{list-style:none;margin:0;padding:0;position:relative}
+  .tl::before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:1px;background:var(--line)}
+  .tl li{position:relative;padding:0 0 12px 24px}
+  .tl li::before{content:"";position:absolute;left:4px;top:6px;width:7px;height:7px;border-radius:50%;
+                 background:var(--acc);border:2px solid var(--card)}
+  .tl li.legacy::before{background:var(--faint)}
+  .tl .when{font:500 9.5px/1 var(--mono);color:var(--faint)}
+  .tl .what{font-size:12px;color:var(--ink);margin-top:3px}
+  .tl .det{font-size:11px;color:var(--muted);margin-top:3px}
+  .sepiaband{background:var(--sepia);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;margin-top:8px}
+
+  details.code{border:1px solid var(--line-soft);border-radius:7px;margin-bottom:6px;overflow:hidden}
+  details.code summary{padding:8px 11px;cursor:pointer;display:flex;align-items:center;gap:9px;
+                       font-size:11.5px;list-style:none}
+  details.code summary::-webkit-details-marker{display:none}
+  details.code summary:hover{background:var(--acc-bg)}
+  details.code .in{padding:2px 11px 10px 11px;font-size:11.5px;color:var(--muted)}
+  details.code.nc{border-style:dashed;opacity:.85}
+  details.code.nc summary{color:var(--faint)}
+  .cid{font:700 9.5px/1 var(--mono);flex:none;width:58px}
+
+  .legend{font-size:10.5px;color:var(--faint);border-top:1px dashed var(--line);
+          margin-top:10px;padding-top:8px;line-height:1.5}
+  .kbd{font:600 9px/1 var(--mono);border:1px solid var(--line);border-radius:3px;padding:2px 4px;color:var(--muted)}
+
+  /* ── tiled panes: browse pane + session panes, newest on the right ── */
+  .panes{display:flex;gap:11px;min-width:0;overflow-x:auto;overflow-y:hidden}
+  /* NO max-width here. A hard 640px cap on .pane stranded the row the moment a
+     neighbour collapsed: rail at 38px + one session pane frozen at 640px left
+     588px of a 1281px row simply unclaimed, and nothing could grow into it.
+     The cap was really a READING-WIDTH control, so it now lives on the
+     transcript column (.pb) where it belongs -- the pane fills, the prose
+     stays legible. */
+  .pane{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
+        display:flex;flex-direction:column;min-height:0;min-width:0;flex:1 0 380px}
+  /* Session panes only: the browse pane's body holds charts/lists that must
+     use every pixel, so it is excluded. */
+  .pane:not(.browse) .pb > *{max-width:78ch;margin-left:auto;margin-right:auto}
+  .pane.browse{flex:1 1 480px;max-width:none;min-width:0;container-type:inline-size}
+  /* the inspector column yields when session panes squeeze the browse pane —
+     the width that matters is the PANE's, not the viewport's */
+  @container (max-width:760px){ .cols{grid-template-columns:minmax(0,1fr)} }
+  @container (max-width:520px){ .ocard{min-width:104px;max-width:132px} }
+  .ph{display:flex;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+  .ph h3{font-size:12.5px;font-weight:600;margin:0;letter-spacing:-.01em;white-space:nowrap;
+         overflow:hidden;text-overflow:ellipsis;max-width:190px}
+  .ph .src{font:500 9px/1 var(--mono);color:var(--faint)}
+  .pb{flex:1;overflow-y:auto;overflow-x:hidden;padding:13px 14px;min-height:0;min-width:0;font-size:12.5px}
+  .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;align-items:center;gap:8px}
+  .pc input{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
+  .pc input::placeholder{color:var(--faint)}
+  .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
+        display:grid;place-items:center;cursor:pointer;flex:none}
+  .send:hover{background:var(--acc);color:var(--on-acc)}
+  .send:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .tabs{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-left:auto}
+  .tabs button{background:none;border:0;padding:4px 9px;font:500 10.5px/1 var(--sans);color:var(--muted);cursor:pointer}
+  .tabs button[aria-pressed="true"]{background:var(--acc-bg);color:var(--acc)}
+
+  /* turns */
+  .turn{margin-bottom:14px}
+  .turn .u{background:var(--bubble);border:1px solid var(--line-soft);border-radius:11px;
+           padding:8px 11px;width:fit-content;max-width:92%;margin-left:auto;font-size:12px}
+  .turn .a{margin-top:9px;font-size:12px;color:var(--muted)}
+  .turn .fchip{display:inline-flex;align-items:center;gap:5px;font:600 9.5px/1 var(--mono);
+               padding:4px 7px;border-radius:5px;border:1px solid var(--acc);background:var(--acc-bg);
+               color:var(--acc);margin-bottom:7px}
+  .turn .fchip.held{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+
+  /* ── org chart: top-down, expandable ── */
+  .chartwrap{overflow-x:auto;overflow-y:hidden;max-width:100%;padding:6px 2px 14px}
+  .chart,.chart ul{list-style:none;margin:0;padding:0}
+  .chart ul{display:flex;justify-content:center;gap:12px}
+  .chart li{position:relative;display:flex;flex-direction:column;align-items:center;padding-top:20px}
+  .chart>li{padding-top:0}
+  /* vertical stub up from each node into the connector row */
+  .chart li::before{content:"";position:absolute;top:0;left:50%;width:1px;height:20px;background:var(--line)}
+  .chart>li::before{display:none}
+  /* horizontal bar spanning the sibling row */
+  .chart li::after{content:"";position:absolute;top:0;height:1px;background:var(--line)}
+  .chart li:first-child::after{left:50%;right:-6px}
+  .chart li:last-child::after{left:-6px;right:50%}
+  .chart li:only-child::after{display:none}
+  .chart li:not(:first-child):not(:last-child)::after{left:-6px;right:-6px}
+  .chart>li::after{display:none}
+  /* stub down from a node that has visible children */
+  .chart li.haskids>.ocard::after{content:"";position:absolute;bottom:-20px;left:50%;width:1px;
+    height:20px;background:var(--line)}
+  .chart li>ul{padding-top:0;margin-top:20px}
+
+  .ocard{position:relative;background:var(--card);border:1px solid var(--line);border-radius:9px;
+         padding:8px 10px;min-width:132px;max-width:172px;cursor:pointer;text-align:left;
+         color:inherit;font:inherit;display:block}
+  .ocard:hover{border-color:var(--acc);background:var(--acc-bg)}
+  .ocard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .ocard[aria-selected="true"]{border-color:var(--acc);background:var(--acc-bg)}
+  .ocard .odp{font:600 9px/1 var(--mono);color:var(--acc)}
+  .ocard .onm{font-size:12px;font-weight:600;margin-top:3px;line-height:1.25}
+  .ocard .ometa{font:500 9px/1.3 var(--mono);color:var(--muted);margin-top:4px;
+                display:flex;gap:6px;flex-wrap:wrap}
+  .ocard.retired{border-style:dashed;opacity:.62}
+  .ocard.retired .onm{text-decoration:line-through}
+  .ocard.acme{border-left:3px solid var(--warn)}
+  .ocard.ring{outline:2px solid var(--block);outline-offset:-2px;
+              background:color-mix(in srgb,var(--block) 5%,transparent);cursor:not-allowed}
+  .ocard.drg{opacity:.4}
+  .ocard.hit{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
+  .ocard .turnbadge{position:absolute;top:-7px;right:-7px;min-width:17px;height:17px;
+    border-radius:99px;background:var(--acc);color:var(--on-acc);font:700 9px/17px var(--mono);
+    text-align:center;padding:0 4px}
+  .ocard .below{color:var(--acc);font-weight:600}
+  .ocard[data-kids="1"]{cursor:pointer}
+  .ocard[data-kids="1"]:hover{border-color:var(--acc)}
+
+  /* ── Claude-style recents ── */
+  .rgrp{padding:10px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.09em;
+        color:var(--faint);text-transform:uppercase}
+  .rlist{list-style:none;margin:0;padding:0 6px}
+  .rlist button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:6px;
+                padding:6px 8px;cursor:pointer;color:var(--muted)}
+  .rlist button:hover{background:var(--acc-bg);color:var(--ink)}
+  .rlist button[aria-current="true"]{background:var(--acc-bg);color:var(--ink)}
+  .rlist .t{font-size:12px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;
+            text-overflow:ellipsis;display:block}
+  .rlist .m{font:500 9px/1.4 var(--mono);color:var(--faint);display:flex;gap:5px;margin-top:2px}
+  /* Two-tab rail: Home is the organisation surface, Code is the work surface.
+     Sessions used to compete with the org nav for the same scroll column. */
+  .rtabs{display:flex;gap:3px;padding:2px 10px 8px}
+  .rtabs button{flex:1;background:none;border:1px solid var(--line);border-radius:6px;
+    padding:6px 0;font:600 11px/1 var(--sans);color:var(--faint);cursor:pointer}
+  .rtabs button:hover{color:var(--ink)}
+  .rtabs button[aria-selected="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .rtab[hidden]{display:none}
+  .rtab .newBtn{margin-top:2px}
+  /* Rendered transcript text. Sized to sit inside the 78ch reading column. */
+  .md{overflow-wrap:anywhere}
+  .md .md-p{margin:0 0 8px}
+  .md .md-p:last-child{margin-bottom:0}
+  .md .md-h{margin:12px 0 6px;font-weight:650;line-height:1.3;font-size:1.05em}
+  .md h1.md-h{font-size:1.3em} .md h2.md-h{font-size:1.18em} .md h3.md-h{font-size:1.07em}
+  .md .md-l{margin:0 0 8px;padding-left:20px}
+  .md .md-l li{margin:2px 0}
+  .md .md-q{margin:0 0 8px;padding:2px 0 2px 10px;border-left:2px solid var(--line);color:var(--muted)}
+  .md .md-hr{border:0;border-top:1px solid var(--line-soft);margin:12px 0}
+  .md .md-code{background:var(--acc-bg);border:1px solid var(--line-soft);border-radius:4px;
+    padding:1px 4px;font-family:var(--mono);font-size:.92em}
+  .md .md-pre{background:var(--code-bg,rgba(0,0,0,.22));border:1px solid var(--line-soft);
+    border-radius:7px;padding:9px 11px;margin:0 0 8px;overflow-x:auto}
+  .md .md-pre code{font-family:var(--mono);font-size:.92em;background:none;border:0;padding:0;white-space:pre}
+  .md .md-a{color:var(--acc);text-decoration:underline;text-underline-offset:2px}
+  .md .md-a:hover{text-decoration-thickness:2px}
+  /* A wide table scrolls INSIDE its own box; the pane never scrolls sideways. */
+  .md .md-tw{overflow-x:auto;margin:0 0 8px}
+  .md .md-t{border-collapse:collapse;font-size:.95em;min-width:100%}
+  .md .md-t th,.md .md-t td{border:1px solid var(--line-soft);padding:4px 8px;text-align:left;vertical-align:top}
+  .md .md-t th{background:var(--acc-bg);font-weight:650}
+  .rtoggle{display:flex;gap:3px;padding:4px 8px 6px}
+  .rtoggle button{flex:1;background:none;border:1px solid var(--line);border-radius:5px;
+    padding:4px 6px;font:500 9.5px/1 var(--sans);color:var(--muted);cursor:pointer}
+  .rtoggle button[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .newBtn{margin:0 10px 10px;padding:8px 11px;border-radius:7px;border:0;width:calc(100% - 20px);
+    background:var(--ink);color:var(--bg);font:600 12px/1 var(--sans);display:flex;
+    align-items:center;justify-content:center;gap:7px;cursor:pointer}
+  .newBtn:hover{background:var(--acc);color:var(--on-acc)}
+  .newBtn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+
+  /* ══ operator-adjustable layout ══
+     The pane row used to be fixed: the browse pane always took the same share
+     and no pane could be got out of the way. These rules add exactly three
+     affordances — collapse a pane to a header strip, drag the browse/session
+     divider, and stack instead of overflowing at narrow widths — reusing the
+     existing .pane/.ph/.pb vocabulary rather than inventing a second one. */
+  .pane.collapsed{flex:0 0 38px;min-width:38px;max-width:38px}
+  .pane.collapsed .pb,.pane.collapsed .pc,.pane.collapsed .tabs,
+  .pane.collapsed .src,.pane.collapsed [data-close]{display:none}
+  .pane.collapsed .ph{flex-direction:column;align-items:center;height:100%;
+    padding:9px 4px;border-bottom:0;flex-wrap:nowrap;gap:9px}
+  .pane.collapsed .ph h3{writing-mode:vertical-rl;max-width:none;max-height:100%;
+    font-size:11.5px;overflow:hidden;text-overflow:ellipsis}
+  .pfold{background:none;border:0;padding:3px;border-radius:4px;color:var(--faint);
+    cursor:pointer;display:flex;flex:none}
+  .pfold:hover{color:var(--ink);background:var(--acc-bg)}
+  .pfold:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .pfold svg{transition:transform .12s ease}
+  .pane.collapsed .pfold svg{transform:rotate(180deg)}
+  /* the divider is a real <button> so it is keyboard-reachable, not a bare div */
+  .pdiv{flex:0 0 9px;align-self:stretch;position:relative;cursor:col-resize;
+        background:none;border:0;padding:0;border-radius:4px}
+  .pdiv::after{content:"";position:absolute;inset:0 3px;border-radius:3px;background:var(--line-soft)}
+  .pdiv:hover::after,.pdiv.dragging::after{background:var(--acc)}
+  .pdiv:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+
+  /* collapsible sections INSIDE the browse pane (Departments, Charters, …) */
+  .fold{border:1px solid var(--line-soft);border-radius:9px;margin-bottom:11px;overflow:hidden}
+  .fold>.fh{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;
+    padding:8px 11px;cursor:pointer;text-align:left;color:var(--faint);
+    font:600 9.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase}
+  .fold>.fh:hover{background:var(--acc-bg);color:var(--ink)}
+  .fold>.fh:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .fold>.fh .cv{margin-left:auto;font:500 9.5px/1 var(--mono);color:var(--muted);
+                text-transform:none;letter-spacing:0}
+  .fold>.fh svg{width:11px;height:11px;flex:none;transition:transform .12s ease}
+  .fold[data-open="0"]>.fh svg{transform:rotate(-90deg)}
+  .fold>.fc{padding:11px}
+  .fold[data-open="0"]>.fc{display:none}
+
+  /* Narrow viewport: stack the panes instead of scrolling sideways. Same
+     breakpoint as .app's own stack (860px) so the rail moving to the top and
+     the panes going vertical happen together, rather than leaving a 40px band
+     where the rail has stacked but the panes still scroll horizontally. */
+  @media(max-width:860px){
+    .panes{flex-direction:column;overflow-x:hidden;overflow-y:auto}
+    .pane{flex:0 0 auto!important;width:auto!important;max-width:none;min-height:230px}
+    .pane.collapsed{flex:0 0 auto!important;min-width:0;max-width:none;min-height:0}
+    .pane.collapsed .ph{flex-direction:row;height:auto;padding:9px 11px;
+      border-bottom:1px solid var(--line-soft)}
+    .pane.collapsed .ph h3{writing-mode:horizontal-tb;max-width:190px}
+    .pane.collapsed .pfold svg{transform:rotate(-90deg)}
+    .pdiv{display:none}
+    .app{height:auto}
+  }
+
+  /* ── tenant chooser ── */
+  .tgate{display:grid;gap:9px;max-width:560px}
+  .tcard{display:block;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;
+    background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:11px 13px}
+  .tcard:hover{border-color:var(--acc);background:var(--acc-bg)}
+  .tcard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .tcard[aria-current="true"]{border-color:var(--acc);background:var(--acc-bg)}
+  .tcard .tid{font:600 12.5px/1 var(--mono);color:var(--ink)}
+  .tcard .tm{font:500 10px/1.45 var(--mono);color:var(--muted);margin-top:5px;
+             display:flex;gap:9px;flex-wrap:wrap}
+
+  /* ── a selectable option that can also be refused, with the refusal shown ── */
+  .opt{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;cursor:pointer;
+    color:inherit;font:inherit;background:var(--inset);border:1px solid var(--line);
+    border-radius:9px;padding:10px 12px;margin-bottom:7px}
+  .opt:hover:not(:disabled){border-color:var(--acc);background:var(--acc-bg)}
+  .opt:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .opt[aria-checked="true"]{border-color:var(--acc);background:var(--acc-bg)}
+  .opt:disabled{cursor:not-allowed;opacity:.7;border-style:dashed}
+  .opt .rd{width:13px;height:13px;border-radius:50%;border:1px solid var(--line);
+           flex:none;margin-top:2px}
+  .opt[aria-checked="true"] .rd{border-color:var(--acc);background:var(--acc);
+           box-shadow:inset 0 0 0 2.5px var(--card)}
+  .opt .oi{min-width:0;flex:1}
+  .opt .on{font-size:12.5px;font-weight:600;color:var(--ink);display:flex;
+           align-items:center;gap:7px;flex-wrap:wrap}
+  .opt .od{font-size:11px;color:var(--muted);margin-top:3px}
+  .opt .why{font:500 10px/1.5 var(--mono);color:var(--block);margin-top:5px;
+            white-space:normal;overflow-wrap:anywhere}
+  .rfoot .tsw{background:none;border:0;padding:0;margin:0;color:var(--muted);font:inherit;
+    font-size:10.5px;cursor:pointer;text-align:left;min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .rfoot .tsw:hover{color:var(--acc)}
+  .rfoot .tsw:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+</style>
+
+<div class="wrap">
+  
+
+
+  <div class="app" id="app">
+    <nav class="rail" aria-label="Sutra">
+      <div class="rtop">
+        <div class="rmark">s</div><b>Sutra</b><span class="tn" id="tenantChip">—</span>
+        <button class="railtog" id="railToggle" type="button"
+                aria-label="Hide the sidebar" aria-pressed="false" title="Hide the sidebar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.8" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>
+          </svg>
+        </button>
+      </div>
+      <div class="rtabs" role="tablist" aria-label="Sidebar">
+        <button type="button" role="tab" id="tabBtnHome" data-railtab="home"
+                aria-selected="true" aria-controls="tabHome">Home</button>
+        <button type="button" role="tab" id="tabBtnCode" data-railtab="code"
+                aria-selected="false" aria-controls="tabCode">Code</button>
+      </div>
+      <div class="rscroll">
+       <div class="rtab" id="tabHome" role="tabpanel" aria-labelledby="tabBtnHome">
+        <button class="grp" type="button" data-railsec="org" aria-expanded="true"
+                aria-controls="secOrg">Organization
+          <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="rsec" id="secOrg"><ul class="nav" id="navOrg"></ul></div>
+        <button class="grp" type="button" data-railsec="change" aria-expanded="true"
+                aria-controls="secChange">Change
+          <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="rsec" id="secChange"><ul class="nav" id="navChange"></ul></div>
+        <button class="grp" type="button" data-railsec="runtime" aria-expanded="true"
+                aria-controls="secRuntime">Runtime
+          <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="rsec" id="secRuntime"><ul class="nav" id="navRuntime"></ul></div>
+       </div>
+       <div class="rtab" id="tabCode" role="tabpanel" aria-labelledby="tabBtnCode" hidden>
+        <button class="newBtn" id="newSession" type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          New session
+        </button>
+        <div class="rtoggle">
+          <button type="button" data-sgroup="recent">Recent</button>
+          <button type="button" data-sgroup="dept">By department</button>
+        </div>
+        <div id="sessions"></div>
+       </div>
+      </div>
+      <div class="rfoot">
+        <div class="av">TC</div>
+        <div class="tmenuwrap">
+          <button class="tsw" id="tenantSwitch" type="button" aria-haspopup="menu"
+                  aria-expanded="false"
+                  title="Switch workspace — every request is scoped to it">—</button>
+          <div class="tmenu" id="tenantMenu" role="menu" hidden></div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:2px">
+          <button class="ib" id="themeBtn" type="button" aria-label="Switch theme">
+            <svg class="ico-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
+            <svg class="ico-moon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 019.8 4a8.4 8.4 0 102.4 16.4A8.3 8.3 0 0020 14.2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <button class="railshow" id="railShow" type="button"
+            aria-label="Show the sidebar" title="Show the sidebar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>
+      </svg>
+    </button>
+    <div class="panes" id="panes"></div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════ live data — fetched from the real backend ══════════════════════
+   No seed. DOMAINS/CHARTERS/PLACEMENTS/INDEX are populated by loadOrg() from /api/org/*
+   against placement_engine.py's real registry, scoped to the tenant chosen on the landing
+   screen. Which registry is read is decided SERVER-SIDE by org_api.py's SUTRA_NATIVE_HOME
+   resolution — never chosen here, and there is no fixture default.
+   SESSIONS are not derived from any of this: they come from GET /api/sessions, which reads
+   ~/.claude/projects/**.jsonl. See adoptRealSessions(). */
+const API = "";                        // same-origin
+let DOMAINS = [], CHARTERS = [], PLACEMENTS = [], INDEX = [];
+/* Real slash commands, read from ~/.claude by GET /api/skills. Never a
+   hardcoded list: the Skills screen used to render ten invented strings
+   and claim "31 total". */
+let SKILLS = [], SKILLS_META = {};
+/* Real tenants (GET /api/tenants — derived from tenant_id observed on domains and
+   placements, with the engine's own counts), the live provider table
+   (GET /api/providers) and the panel's settings (GET /api/settings). All three
+   are fetched; none is a literal in this file. */
+let TENANTS = [], PROVIDERS = [], SETTINGS = null, PERM_MODES = [];
+const PLANS = [{ plan_id: "sutra-ui-draft", base: {} }];  // this tier manages exactly one draft
+/* tenant_id is no longer a constant. It is whatever the operator picked on the
+   tenant screen (see boot()), and it is what every ?tenant= below carries. */
+let META = { tenant_id: null, generated_ms: 0, history_complete_from_ms: 0 };
+
+/* ══════════════════════ persisted UI state ══════════════════════
+   Three things survive a reload, because all three are decisions the operator
+   made about THIS machine and re-making them every load is friction, not
+   safety: the chosen tenant, which panes/sections are collapsed, and the
+   browse-pane width. Nothing about the REGISTRY is cached here — only layout.
+   A corrupt/absent value degrades to the default; it never throws. */
+const LS_TENANT = "sutra.panel.tenant";
+const LS_LAYOUT = "sutra.panel.layout";
+function lsGet(key, fallback){
+  try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
+  catch (e) { return fallback; }
+}
+function lsSet(key, value){
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+}
+function loadLayout(){
+  const raw = lsGet(LS_LAYOUT, null);
+  const out = { paneCollapsed:{}, folds:{}, browseW:null,
+                railCollapsed:false, railSections:{}, railTab:"home" };
+  if (raw && typeof raw === "object"){
+    if (raw.paneCollapsed && typeof raw.paneCollapsed === "object") out.paneCollapsed = raw.paneCollapsed;
+    if (raw.folds && typeof raw.folds === "object") out.folds = raw.folds;
+    if (typeof raw.railCollapsed === "boolean") out.railCollapsed = raw.railCollapsed;
+    if (raw.railSections && typeof raw.railSections === "object") out.railSections = raw.railSections;
+    if (raw.railTab === "home" || raw.railTab === "code") out.railTab = raw.railTab;
+    if (typeof raw.browseW === "number" && raw.browseW > 120) out.browseW = raw.browseW;
+  }
+  return out;
+}
+function saveLayout(){ lsSet(LS_LAYOUT, S.ui); }
+/* The ceiling a browse-pane width has to respect to leave the session pane
+   visible. wireDivider()'s limit() enforces it DURING a drag; render() has to
+   enforce the same bound when it restores a width from localStorage, because
+   the window may be narrower now than it was when the width was stored.
+   Below the 860px breakpoint the panes stack vertically and the width is
+   overridden by CSS anyway, so the value is returned untouched there. */
+/* Mirrors `.pane{flex:1 0 380px}`. flex-SHRINK is 0, so an open session pane
+   cannot be squeezed below 380px -- reserving anything less than this (the
+   divider used to reserve a flat 170) hands the browse pane width that the
+   session pane then refuses to give up, and .panes overflows. */
+const PANE_MIN = 380, PANE_MIN_COLLAPSED = 38, BROWSE_MIN = 240;
+
+/* The widest the browse pane may be while every OTHER pane still fits.
+   Measured from the live DOM rather than assumed, so it tracks how many
+   session panes are open and whether any of them is collapsed. */
+/* Border width of an element, in the units flex-basis is expressed in.
+   .pane is border-box-less (1px border, content-box), so a `flex:0 0 380px`
+   pane actually occupies 382. Reserving the basis alone leaves the container
+   short by exactly the borders and .panes overflows by a few pixels -- close
+   enough to look like a rendering artefact and stay unfixed. */
+function _borderX(el){
+  const o = el.offsetWidth, c = el.clientWidth;
+  return (typeof o === "number" && typeof c === "number" && o > 0) ? (o - c) : 0;
+}
+
+function browseMax(){
+  const panes = document.getElementById("panes");
+  if (!panes) return Infinity;
+  const avail = panes.getBoundingClientRect().width;
+  if (!avail) return Infinity;
+  const kids = panes.querySelectorAll(".pane:not(.browse), .pdiv");
+  let reserved = 0, n = 0;
+  for (let i = 0; i < kids.length; i++){
+    const el = kids[i];
+    n++;
+    if (el.classList.contains("pdiv")) reserved += el.getBoundingClientRect().width || 9;
+    else reserved += (el.classList.contains("collapsed")
+                       ? PANE_MIN_COLLAPSED : PANE_MIN) + _borderX(el);
+  }
+  const gap = (typeof getComputedStyle === "function")
+    ? (parseFloat(getComputedStyle(panes).gap) || 0) : 11;
+  const browse = panes.querySelector(".pane.browse");
+  /* the ceiling is a flex-BASIS, so it too has to leave room for its own border */
+  const own = browse ? _borderX(browse) : 0;
+  return Math.max(BROWSE_MIN, Math.floor(avail - reserved - gap * n - own));
+}
+
+function clampBrowseW(w){
+  if (typeof w !== "number" || !(w > 0)) return w;
+  /* The stacking breakpoint keys on the VIEWPORT (@media max-width:860px), not
+     on the panes container -- at a 980px window the container is only ~660px
+     wide, so testing the container would skip the clamp in exactly the case
+     that needs it. Below the breakpoint the panes stack and .pane's width is
+     `auto !important`, so the stored value is left alone. */
+  const vw = (typeof window !== "undefined" && window.innerWidth) || 0;
+  if (vw && vw <= 860) return w;
+  const max = browseMax();
+  return (max === Infinity) ? w : Math.min(w, max);
+}
+const CONFIDENCE_FLOOR = 0.45;         // mirrors placement_engine.py:67
+const DAY = 86400000;
+let NOW = Date.now();
+const DEPTH_BAND = 4, STALE_MS = 180*DAY, AGING_MS = 90*DAY, PROJECT_IDLE_MS = 30*DAY;
+
+/* A 400 from /api/providers/active or /api/settings carries the SPECIFIC reason
+   the write was refused ("binary 'codex' not on PATH…"). Throwing only the
+   status code discarded exactly the sentence the operator needs, so read the
+   body's `detail` when there is one. */
+async function _fail(r, path){
+  let detail = "";
+  try { const j = await r.json(); detail = (j && (j.detail || j.message)) || ""; } catch (e) {}
+  if (detail && typeof detail !== "string") { try { detail = JSON.stringify(detail); } catch (e) { detail = ""; } }
+  return new Error(detail ? (detail + " (" + path + " -> " + r.status + ")")
+                          : (path + " -> " + r.status));
+}
+async function apiGet(path){
+  const r = await fetch(API + path);
+  if (!r.ok) throw await _fail(r, path);
+  return r.json();
+}
+async function apiPost(path, body){
+  const r = await fetch(API + path, { method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body||{}) });
+  if (!r.ok) throw await _fail(r, path);
+  return r.json();
+}
+/* THE tenant scope, in one place. Every registry read/write below goes through
+   it, so "which tenant am I looking at" cannot drift between two endpoints.
+   With `showAcme` on, the scope widens to all_tenants=true — that is a
+   deliberate, visible toggle, not a default. */
+function scopeQ(){
+  return S.showAcme ? "all_tenants=true"
+                    : "tenant=" + encodeURIComponent(S.tenant || "");
+}
+const tenantQ = () => "tenant=" + encodeURIComponent(S.tenant || "");
+
+/* ══════════════════════ derivations/* ══════════════════════ derivations ══════════════════════ */
+const byRef = r => DOMAINS.find(d => d.ref === r);
+const st = d => d.status || "active";
+const isLive = d => st(d) !== "retired";
+/* live_refs(): drops retired only. frozen stays classifiable. */
+const live = () => DOMAINS.filter(isLive);
+/* tenant_refs(): the §6 chokepoint. Default view is the tenant of record. */
+const inTenant = (d, t) => d.tenant_id === t;
+
+function isDescendant(ref, ancestorRef){
+  let n = byRef(ref);
+  while (n && n.parent_ref){ if (n.parent_ref === ancestorRef) return true; n = byRef(n.parent_ref); }
+  return false;
+}
+/* domain_path() computes over the UNFILTERED map — retired siblings keep their ordinal
+   permanently (§2.1). Passing a filtered list here is the bug the doc names. */
+function dPath(ref, all){
+  all = all || DOMAINS;
+  const chain = []; let n = all.find(d=>d.ref===ref);
+  while (n){ chain.unshift(n); n = n.parent_ref ? all.find(d=>d.ref===n.parent_ref) : null; }
+  let out = "D0";
+  for (let i=1;i<chain.length;i++){
+    const sibs = all.filter(d=>d.parent_ref===chain[i-1].ref)
+                    .sort((a,b)=>a.ts_minted_ms-b.ts_minted_ms);
+    out = (i===1?"D":out+".") + (sibs.findIndex(s=>s.ref===chain[i].ref)+1);
+  }
+  return out;
+}
+const chartersOf = ref => CHARTERS.filter(c=>c.domain_ref===ref);
+const placementsOf = ref => PLACEMENTS.filter(p=>p.domain_ref===ref);
+/* Derived from edges at CALL time, never from status -- and never precomputed.
+   The old `new Set(CHARTERS.map(...))` ran at script-parse time, when CHARTERS
+   was still the empty array declared at the top of this file. loadOrg() REPLACES
+   that array minutes later, so the set stayed permanently empty and the
+   "superseded" pill could never render -- not on the Charters table, not in the
+   Departments inspector, not in the charter preview's Superseded row. */
+const isSuperseded = c => !!c && CHARTERS.some(x => x.supersedes === c.id);
+/* §4.6 freshness derived at render from max(placement.ts_ms) — never stored. */
+function lastRouted(cid){
+  const ts = PLACEMENTS.filter(p=>p.charter_id===cid).map(p=>p.ts_ms);
+  return ts.length ? Math.max(...ts) : null;
+}
+function band(ms){
+  if (ms === null) return {k:"never", cls:"p-mut", txt:"never routed"};
+  const age = NOW - ms;
+  if (age > STALE_MS) return {k:"stale", cls:"p-block", txt:"stale " + Math.round(age/DAY) + "d"};
+  if (age > AGING_MS) return {k:"aging", cls:"p-warn", txt:"aging " + Math.round(age/DAY) + "d"};
+  return {k:"fresh", cls:"p-ok", txt:"fresh " + Math.round(age/DAY) + "d"};
+}
+/* Function words only — articles, prepositions, conjunctions, pronouns, auxiliaries.
+   Content verbs ("draft", "fix", "review") are NOT stripped: they carry routing signal.
+   Without this, "the"/"for" inflate the denominator and drag a clear match under the floor. */
+const STOP = new Set(("a an the this that these those and or but if then so of to in on at by for "+
+  "from with about into over under is are was were be been being do does did have has had "+
+  "i we you it they my our your their me us them can could should would will shall may might "+
+  "please need want just").split(" "));
+const tok = s => new Set((String(s||"").toLowerCase().match(/[a-z0-9]+/g) || [])
+                          .filter(w => w.length>1 && !STOP.has(w)));
+function jac(a,b){ const i=[...a].filter(x=>b.has(x)).length; const u=new Set([...a,...b]).size;
+                   return u? i/u : 0; }
+const fmt = ms => new Date(ms).toISOString().slice(0,10);
+
+/* ══════════════════════ simulate() — real backend, memoized on ops ══════════════════════
+   The ORG-001/002/.../020 predicates now live server-side in reorg_sim.py, calling the SAME
+   functions the CLI's own validation would (mece_report/lint_full/classify, not a JS
+   reimplementation). This is a SYNCHRONOUS cache reader backed by an async fetch, so the rest
+   of render() stays synchronous: first call for a given ops[] kicks off the real POST and
+   returns a "pending" placeholder; render() gets called again once it resolves. Ring painting
+   during drag stays fully client-side (blockCodesForMove below) — that is the per-hover
+   budget §8.5.9 specifies; simulate() is the full validation pass, run on drop/edit, not on
+   every pixel of mouse movement. */
+/* The key must cover everything the ANSWER depends on. ops alone did not:
+   ORG-010 fires purely from the base the server compares against the file, so
+   two different bases share findings under an ops-only key. */
+function simKey(ops){
+  return JSON.stringify({ ops: ops || [], base: (S.draft && S.draft.base) || null });
+}
+/* pending:true means NOTHING IS KNOWN YET. Every consumer must render that as
+   "checking…"/"—", never as 0 — a fabricated all-clear is the one answer this
+   screen must never give. */
+function emptySim(){
+  return { domains2: DOMAINS.slice(), findings: [], maxDepth: 0, pending: true, error: null };
+}
+/* A cache key cannot express "the registry moved underneath us": ops and base
+   are byte-identical before and after a composer turn writes a placement, yet
+   the findings are not. Every registry mutation drops the cache and bumps the
+   generation; a response from a superseded generation is discarded rather than
+   cached, or it would immediately re-poison the cache it was cleared from. */
+function invalidateSim(){
+  S.simCache = {};
+  S.simPending = new Set();
+  S.simGen++;
+}
+/* Read once, in one place: a metric that came out of a pending or failed
+   simulation renders as an em-dash. Never 0 for unknown. */
+const simNum = (sim, v) => (sim.pending || sim.error) ? "—" : v;
+function simulate(ops){
+  ops = ops || [];
+  const key = simKey(ops);
+  if (S.simCache[key]) return S.simCache[key];
+  if (!S.simPending.has(key)){
+    S.simPending.add(key);
+    const gen = S.simGen;
+    /* now_ms: the client's clock, so the server's ORG-009/ORG-020 staleness
+       bands and this page's freshness pills measure from ONE instant. */
+    apiPost("/api/org/simulate", { ops, base: S.draft && S.draft.base, now_ms: NOW })
+      .then(sim => {
+        if (gen !== S.simGen) return;   /* the registry moved; this answer is stale */
+        // server returns domains2 as a {ref: domain} dict; client code calls
+        // array methods (.filter) on it, so normalize to an array here, once.
+        S.simCache[key] = { domains2: Object.values(sim.domains2), findings: sim.findings,
+                             maxDepth: sim.max_depth, notChecked: sim.not_checked,
+                             pending: false, error: null };
+        S.simPending.delete(key);
+        render();
+      })
+      .catch(err => {
+        S.simPending.delete(key);
+        if (gen !== S.simGen) return;
+        /* CACHE the failure. Dropping the in-flight guard and caching nothing
+           meant the very next render() re-issued the same doomed POST — an
+           unbounded retry storm — behind a Health screen showing "Nothing
+           flagged" in green, an all-clear the server never sent. */
+        S.simCache[key] = { domains2: DOMAINS.slice(), findings: [], maxDepth: 0,
+                             notChecked: null, pending: false,
+                             /* the raw reason; every consumer already frames it
+                                with its own "Validation could not run." heading */
+                             error: err.message || "the simulate request failed" };
+        console.error("simulate() failed:", err);
+        render();
+      });
+  }
+  return emptySim();
+}
+
+/* ring codes for a MOVE/* ring codes for a MOVE — reads the in-memory domains array only. That is the
+   per-hover budget, and why ORG-001/002/004/009 are not ring codes. */
+function blockCodesForMove(src, t){
+  const c = [];
+  if (t.ref===src.ref || isDescendant(t.ref, src.ref))
+    c.push({code:"ORG-006", subject:t.name+" is inside "+src.name});
+  if (st(t) !== "active") c.push({code:"ORG-016", subject:t.name+" is "+st(t)});
+  if (t.tenant_id !== src.tenant_id) c.push({code:"ORG-017", subject:t.tenant_id+" ≠ "+src.tenant_id});
+  const norm = s => s.trim().toLowerCase().replace(/\s+/g," ");
+  if (DOMAINS.some(d=>d.ref!==src.ref && d.parent_ref===t.ref && st(d)!=="retired" && norm(d.name)===norm(src.name)))
+    c.push({code:"ORG-018", subject:'a live sibling is already named "'+src.name+'"'});
+  return c;
+}
+
+/* codes that cannot be evaluated — never 0, never passed, never a green tick */
+const NOT_CHECKED = [
+  ["ORG-005","authority.ceilings has no writer (0 occurrences). Ph4."],
+  ["ORG-011","no applied plan exists; revert has no target. Apply is CLI-only (§5.1)."],
+  ["ORG-012","origin='unrouted' has no writer (0 occurrences). Floor-held shown separately — a different signal."],
+  ["ORG-013","filesystem marker, not observable from a browser. Markers >24h downgrade to warn."],
+  ["ORG-014","Workflow.domain_ref unpopulated. Ph4."],
+  ["ORG-019","last_routed_ms has no writer (0 occurrences). Freshness derived at render instead."]
+];
+
+/* ══════════════════════ classify — the entry point's engine ══════════════════════
+   Real POST /api/classify against the actual engine (org_api.py: gather_evidence + classify()
+   [NEVER resolve()] + a pick_charter walk + exactly one write_placement() call). No client-side
+   scoring reimplementation — the confidence numbers here ARE the real engine's numbers. */
+async function runTurn(text, ts){
+  const stamp = ts || Date.now();
+  let r;
+  try {
+    const res = await apiPost("/api/classify?" + tenantQ(), { text });
+    if (!res.domain_ref) {
+      // mode "none": classify() found no candidate at all; nothing was written.
+      r = { mode: res.mode || "none", domain: null, confidence: res.confidence || 0,
+            matched: [], blocked: res.blocked, text, ts_ms: stamp };
+    } else {
+      const domain = byRef(res.domain_ref) || { ref: res.domain_ref, name: res.domain_name };
+      r = { mode: res.mode, domain, confidence: res.confidence,
+            matched: res.matched_terms || [], charter: res.charter, text, ts_ms: stamp };
+      if (res.placement) {
+        // mode is derived read-side by /api/org/placements too; match that here so a
+        // freshly-classified row renders identically to one fetched from the list endpoint.
+        const p = { ...res.placement, mode: res.mode === "floor" ? "floor" : "match" };
+        PLACEMENTS.unshift(p);
+        r.placement = p;
+        /* the registry just changed: ORG-004/ORG-009/ORG-020 all read
+           placements, and the cache is keyed on ops+base, neither of which
+           moved. Without this, findings are frozen at their pre-turn values
+           for the rest of the session. */
+        invalidateSim();
+      }
+      if (res.blocked) r.blocked = res.blocked;  // e.g. no charter reachable — still shows the route
+    }
+  } catch (e) {
+    r = { mode: "none", domain: null, confidence: 0, matched: [],
+          blocked: "request failed — " + e.message, text, ts_ms: stamp };
+  }
+  return r;
+}
+let SID = 0;
+/* Start a session, or append a turn to an existing one. Appending is what makes the routing
+   path visible: turn 2 can resolve somewhere turn 1 did not. */
+async function runTask(text, sessionId){
+  const r = await runTurn(text);
+  let s = sessionId && S.sessions.find(x=>x.id===sessionId);
+  if (!s){
+    s = { id:"s-"+(++SID), title:text.length>46?text.slice(0,46)+"…":text,
+          created_ms: r.ts_ms, turns:[], local:true, loadState:"live" };
+    S.sessions.unshift(s);
+    if (!S.openPanes.includes(s.id)) S.openPanes.push(s.id);
+    if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
+  }
+  s.turns.push(r);
+  s.updated_ms = r.ts_ms;
+  return { session:s, result:r };
+}
+/* ══════════════════════ sessions — the REAL ones ══════════════════════
+   seedSessions() used to live here. It grouped PLACEMENT rows by the first path
+   segment of work_ref and presented each group as a session titled
+   "Scratchpad — 3 turns", stamped seeded:true. No such session ever existed:
+   the titles were manufactured from file paths and the "turns" were placement
+   records replayed as if they were a conversation. It is deleted, not repaired.
+
+   The real source already existed and is what runs now:
+     GET /api/sessions          -> session_reader.list_sessions(), which reads
+                                   ~/.claude/projects/<encoded-cwd>/<id>.jsonl
+     GET /api/sessions/{id}     -> the parsed transcript for one of them
+
+   The list endpoint returns {id, title, project, cwd, branch, mtime, size}. It
+   deliberately does NOT return a turn count — it reads only the head of each
+   file. So the rail shows the fields that exist and says "transcript unread"
+   for the one that does not, rather than printing a number nobody counted. The
+   count appears once the pane is opened and the transcript is actually read. */
+function adoptRealSessions(rows){
+  /* Sessions started IN the panel are held in memory only (they are live
+     websocket threads, not files yet), so a refresh of the list must not drop
+     them. Everything else is replaced wholesale by what is on disk. */
+  const local = S.sessions.filter(s => s.local);
+  const real = (rows || []).map(r => ({
+    id: r.id,
+    title: r.title || "(no prompt)",
+    real: true, local: false,
+    project: r.project || "", cwd: r.cwd || "", branch: r.branch || "",
+    /* mtime is seconds since epoch; the rail's date buckets are in ms. This is
+       the file's last write — genuinely "updated", not a fabricated "created". */
+    created_ms: (r.mtime || 0) * 1000, updated_ms: (r.mtime || 0) * 1000,
+    size: r.size || 0,
+    turns: [], loadState: "unread", loadError: null,
+    /* the jsonl filename IS the Claude session id, so continuing this session
+       from the composer resumes the real thread rather than starting a cold one */
+    claude_session: r.id
+  }));
+  S.sessions = local.concat(real)
+    .sort((a,b)=>(b.updated_ms||b.created_ms)-(a.updated_ms||a.created_ms));
+}
+
+/* Fold a transcript's message list into the panel's turn shape.
+   A turn is one user prompt plus everything the assistant said before the next
+   prompt. These turns carry NO domain/charter/confidence, because none was ever
+   computed for them: they ran in the terminal, before and outside this panel.
+   Leaving those fields null is the point — the pane renders "not routed through
+   the panel" rather than inventing a placement to fill the slot. */
+function transcriptTurns(messages){
+  const out = [];
+  (messages || []).forEach(m => {
+    const ts = m.ts ? Date.parse(m.ts) : 0;
+    if (m.role === "user"){
+      out.push({ text: m.text || "", ts_ms: ts || 0, transcript: true,
+                 domain: null, mode: "transcript", confidence: 0, matched: [],
+                 response: "", tools: [] });
+      return;
+    }
+    let cur = out[out.length - 1];
+    if (!cur){
+      /* an assistant block before any recorded prompt — say so, do not invent
+         a prompt for it */
+      cur = { text: "", orphan: true, ts_ms: ts || 0, transcript: true,
+              domain: null, mode: "transcript", confidence: 0, matched: [],
+              response: "", tools: [] };
+      out.push(cur);
+    }
+    if (m.text) cur.response = cur.response ? (cur.response + "\n\n" + m.text) : m.text;
+    if (m.tools && m.tools.length) cur.tools = (cur.tools || []).concat(m.tools);
+    if (!cur.ts_ms) cur.ts_ms = ts || 0;
+  });
+  return out;
+}
+
+/* Read one transcript, once, on demand. Opening a pane is the trigger; the list
+   endpoint never reads message bodies. Every terminal state is explicit so the
+   pane can say which one it is in — "empty" and "error" are different facts and
+   neither is "0 turns". */
+function ensureTranscript(s){
+  if (!s || !s.real || s.loadState !== "unread") return;
+  s.loadState = "loading";
+  apiGet("/api/sessions/" + encodeURIComponent(s.id))
+    .then(d => {
+      s.turns = transcriptTurns(d && d.messages);
+      s.cwd = (d && d.cwd) || s.cwd;
+      s.branch = (d && d.branch) || s.branch;
+      s.loadState = s.turns.length ? "ok" : "empty";
+      render();
+    })
+    .catch(e => { s.loadState = "error"; s.loadError = e.message; render(); });
+}
+
+/* ══════════════════════ the execution channel — where the studio stops being a viewer ══════
+   Until now a turn was classified, a placement was written, the charter was shown — and then
+   nothing ran. This is the missing half: one WebSocket to /ws/chat per STUDIO SESSION, opened
+   lazily on the first send and reused, so the server's `--resume` threads every turn of that
+   session into one Claude conversation.
+
+   The sockets live in a module-level Map, deliberately NOT on S: S is JSON-serialized into the
+   draft (saveDraft), and a WebSocket is neither serializable nor meaningful to persist. The
+   Claude session id IS stored on the session object (a plain string) so reopening a closed pane
+   can resume the same thread. */
+const CLAUDE_SOCKETS = new Map();
+
+/* Re-rendering on every token would rebuild the whole pane tree per character and fight the
+   focus/caret restoration in render() — the composer would thrash while the operator types.
+   Tokens accumulate on the turn; the DOM catches up ~10x/sec. */
+let _renderTimer = null;
+function scheduleRender(){
+  if (_renderTimer) return;
+  _renderTimer = setTimeout(()=>{ _renderTimer = null; render(); }, 100);
+}
+
+/* ── grounding injection ──
+   THIS is the point of Sutra. What reaches Claude is never the raw utterance: it is the
+   utterance under the placement the engine just resolved, mirroring what
+   marketplace/plugin/hooks/placement-resolve.sh injects per turn in the real product. A weak
+   route (mode "floor") says so, and an unresolved route says THAT, rather than quietly sending
+   a bare prompt and letting the UI imply a grounding that never happened. */
+function groundingPrefix(t){
+  const L = [];
+  const conf = (t && typeof t.confidence === "number") ? t.confidence.toFixed(2) : "0.00";
+  if (t && t.domain){
+    const ct = t.charter && t.charter.title ? t.charter.title : "";
+    L.push('PLACEMENT: ' + dPath(t.domain.ref) + ' ' + (t.domain.name || "") +
+           (ct ? ' | "' + ct + '"' : ' | (no charter reachable from this department)'));
+    if (t.charter && t.charter.purpose) L.push('CHARTER PURPOSE: ' + t.charter.purpose);
+    L.push('(confidence ' + conf + ', mode ' + (t.mode === "floor" ? "floor" : "match") + ')');
+    if (t.mode === "floor")
+      L.push('Held at ancestor -- no department claims this. The routing is weak, not ' +
+             'authoritative: treat the placement as provisional and say so if this work ' +
+             'plainly belongs somewhere else.');
+    if (t.blocked) L.push('Routing note: ' + t.blocked);
+  } else {
+    L.push('PLACEMENT: unresolved -- no department could be resolved for this turn.');
+    L.push('(confidence ' + conf + ', mode ' + ((t && t.mode) || "none") + ')');
+    if (t && t.blocked) L.push('Reason: ' + t.blocked);
+    L.push('Do not invent an address. Proceed, and name the gap if it matters.');
+  }
+  return L.join("\n") + "\n\n";
+}
+
+function claudeWsUrl(){
+  return (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/chat";
+}
+/* Every turn this channel still owes a reply gets the REAL reason it will not arrive.
+   Silence and a spinner that never stops are the failure modes this replaces. */
+function failChannel(ch, detail){
+  const hit = ch.pending.splice(0);
+  if (ch.turn) hit.push(ch.turn);
+  ch.turn = null;
+  hit.forEach(t=>{ t.streaming = false; if (!t.error) t.error = ch.lastError || detail; });
+  if (hit.length) scheduleRender();
+}
+function claudeChannel(s){
+  let ch = CLAUDE_SOCKETS.get(s.id);
+  if (ch && (ch.ws.readyState === WebSocket.CONNECTING || ch.ws.readyState === WebSocket.OPEN))
+    return ch;
+  const ws = new WebSocket(claudeWsUrl());
+  ch = { ws:ws, sid:s.id, open:false, queue:[], pending:[], turn:null, last:null, lastError:null };
+  CLAUDE_SOCKETS.set(s.id, ch);
+  ws.onopen = ()=>{ ch.open = true; ch.queue.splice(0).forEach(m=>ws.send(m)); };
+  ws.onmessage = ev=>{
+    let f; try { f = JSON.parse(ev.data); } catch (e) { return; }
+    if (f.type === "start"){
+      /* the server emits exactly one "start" per message, in order — that is the
+         demarcation that binds the next token stream to the right queued turn */
+      ch.turn = ch.pending.shift() || ch.turn;
+      if (ch.turn){ ch.turn.streaming = true; ch.last = ch.turn; }
+    } else if (f.type === "provider"){
+      /* the server states, per connect, which binary it resolved and which
+         permission mode it will run under -- including whether that mode
+         writes files without asking. Dropping this frame meant the pane could
+         not say what it was actually about to do. */
+      s.channel = f;
+    } else if (f.type === "session"){
+      s.claude_session = f.id;
+      if (ch.turn) ch.turn.claude_session = f.id;
+    } else if (f.type === "token"){
+      if (ch.turn) ch.turn.response = (ch.turn.response || "") + f.text;
+    } else if (f.type === "tool"){
+      if (ch.turn){ (ch.turn.tools = ch.turn.tools || []).push(f.name || "tool"); }
+    } else if (f.type === "done"){
+      if (ch.turn) ch.turn.streaming = false;
+      ch.turn = null;
+    } else if (f.type === "error"){
+      ch.lastError = f.detail || "claude failed with no detail";
+      /* the stored thread id was rejected -- forget it, or every following message
+         re-sends the same dead id and the channel fails identically forever */
+      if (f.resume_reset) s.claude_session = null;
+      const t = ch.turn || ch.last;
+      if (t){ t.streaming = false; t.error = ch.lastError; ch.turn = null; }
+      else failChannel(ch, ch.lastError);   /* refused before any turn started */
+    }
+    scheduleRender();
+  };
+  ws.onclose = ev=>{
+    if (CLAUDE_SOCKETS.get(s.id) === ch) CLAUDE_SOCKETS.delete(s.id);
+    failChannel(ch, "the Claude channel closed before the reply finished" +
+      (ev && ev.code ? " (code " + ev.code + ")" : "") + " — is the server still running?");
+  };
+  return ch;
+}
+/* Closing the pane closes the socket — the pane IS the session's lifetime here. */
+function closeClaudeChannel(sid){
+  const ch = CLAUDE_SOCKETS.get(sid);
+  if (!ch) return;
+  CLAUDE_SOCKETS.delete(sid);
+  failChannel(ch, "pane closed before the reply finished");
+  try { ch.ws.close(); } catch (e) {}
+}
+/* Run the turn. Fire-and-forget by design: tokens arrive on the socket and land on the
+   turn object, which re-renders on the throttle. */
+function askClaude(s, turn){
+  if (!turn) return;
+  turn.response = turn.response || "";
+  turn.tools = turn.tools || [];
+  turn.error = null;
+  turn.streaming = true;
+  turn.sent = groundingPrefix(turn) + turn.text;   /* exactly what the model receives */
+  let ch;
+  try { ch = claudeChannel(s); }
+  catch (e){
+    turn.streaming = false;
+    turn.error = "could not open the Claude channel: " + e.message;
+    scheduleRender(); return;
+  }
+  ch.pending.push(turn);
+  const frame = JSON.stringify({ message: turn.sent, resume: s.claude_session || null });
+  if (ch.open) ch.ws.send(frame); else ch.queue.push(frame);
+  scheduleRender();
+}
+/* classify -> file the placement -> run Claude under that placement. The classify
+   round-trip is awaited (a turn cannot be grounded before it has an address); the
+   Claude run is not (it streams into the pane). */
+async function submitTurn(text, sessionId){
+  const { session, result } = await runTask(text, sessionId);
+  render();
+  askClaude(session, result);
+}
+
+/* ══════════════════════ state ══════════════════════ */
+const S = {
+  screen:"departments", sel:null, view:"live", showRetired:false, showAcme:false,
+  /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
+     successive turns may land in different ones, which is how a session traces a path
+     through the org. Departments do NOT hand work to each other — no such channel exists. */
+  sessions:[], openPanes:[], sgroup:"recent", sessTab:{}, collapsed:new Set(),
+  /* sid -> the operator has deliberately scrolled AWAY from the newest turn.
+     Two weaker designs failed first: a one-shot Set was consumed by an early
+     render before the transcript loaded, and a turn-COUNT key skipped re-pinning
+     when render() rebuilt #panes with the same turns and reset scrollTop to 0.
+     What actually matters is INTENT, so that is what is stored. */
+  userScrolled:new Map(),
+  draft:{ ops:[], base:{...PLANS[0].base}, rationale:"", plan_origin:"studio-drag", validated_at_ms:null },
+  drift:false, sort:{col:"title",dir:1}, cf:{kind:new Set(),status:new Set()}, q:"",
+  pmode:"all", selCharter:null, drag:null,
+  /* simGen: bumped by invalidateSim() so an in-flight simulate() response from
+     before a registry mutation is discarded instead of cached.
+     renderDirty: a render() deferred because a drag is in progress (B11). */
+  simCache:{}, simPending:new Set(), simGen:0, renderDirty:false, loaded:false,
+  /* Knowledge search + the composer's "/" palette. searchHits is null until
+     a query runs, so the rail shows no count rather than a misleading 0. */
+  sq:"", searchRes:null, searchHits:null, searchBusy:false, palette:null,
+  /* Composer text per session. render() rebuilds the pane from a template, so
+     text living only in the DOM is lost on ANY re-render that is not focus-
+     restored -- which is every re-render triggered by something other than the
+     operator typing (opening the palette, a simulate() response, a token frame).
+     Keeping it in state makes it survive unconditionally. */
+  composerText:{},
+  /* tenant: the scope EVERY registry request carries (?tenant=). null means the
+     choice has not been made yet and the tenant gate is what renders.
+     gate: the chooser is open on purpose (rail footer), even though a tenant
+     is already selected. */
+  tenant:null, gate:false, tenantsError:null,
+  /* Layout the operator adjusted, restored from localStorage on load:
+       paneCollapsed[<"browse"|sessionId>] -> true
+       folds[<fold key>]                   -> 0 (closed) | 1 (open)
+       browseW                             -> px width of the browse pane */
+  ui: loadLayout(),
+  /* Settings screen: the in-flight/failed state of a POST, so a refused write
+     shows the server's reason instead of silently doing nothing. */
+  setBusy:null, setError:null, setOk:null
+};
+/* The real draft lives server-side at DRAFTS_DIR (outside SUTRA_NATIVE_HOME) -- boot()
+   fetches it into S.draft on startup. saveDraft() posts the current S.draft back; callers
+   already treat it as fire-and-forget (they call render() right after), so this stays async
+   without needing every call site to await it. */
+/* Writes are CHAINED, never concurrent. The rationale field posted on every
+   keystroke with no ordering guarantee, so a slow early request could land
+   after a fast later one and the server would keep the older text — the field
+   silently reverting a word or two behind what was typed. Structural edits
+   (drop/revert/discard/rebase) flush immediately; typing debounces. */
+let _draftChain = Promise.resolve();
+let _draftTimer = null;
+function _postDraft(){
+  const body = { ops: S.draft.ops.slice(), rationale: S.draft.rationale, base: S.draft.base };
+  _draftChain = _draftChain
+    .then(() => apiPost("/api/org/draft", body))
+    .catch(err => console.error("saveDraft failed:", err));  /* keep the chain alive */
+  return _draftChain;
+}
+function saveDraft(){
+  if (_draftTimer){ clearTimeout(_draftTimer); _draftTimer = null; }
+  return _postDraft();
+}
+function saveDraftSoon(){
+  if (_draftTimer) clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(()=>{ _draftTimer = null; _postDraft(); }, 300);
+}
+async function loadDraft(){
+  try {
+    const d = await apiGet("/api/org/draft");
+    if (d && Array.isArray(d.ops)) {
+      S.draft = { ops:d.ops, base:d.base||{}, rationale:d.rationale||"",
+                  plan_origin:"studio-drag", validated_at_ms:null };
+    }
+  } catch (e) { console.error("loadDraft failed:", e); }
+}
+
+const el = (h)=>{ const t=document.createElement("template"); t.innerHTML=h.trim(); return t.content; };
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+
+/* ══════════════════════ markdown, rendered safely ══════════════════════
+   Transcript text is UNTRUSTED — it is whatever was typed into a session or
+   returned by a model. Turning it into HTML is a new injection surface, so the
+   ordering here is not stylistic, it is the whole safety argument:
+
+     1. esc() the ENTIRE input first. After this line no '<' survives, so no
+        markup in the source can ever become an element.
+     2. Only then apply markdown, and only ever by wrapping already-inert text
+        in tags THIS function authors.
+
+   Nothing takes a different path to innerHTML. Links are scheme-checked
+   against http/https, so `javascript:` and `data:` URLs cannot survive even
+   though the surrounding text is inert. Parked spans use \u0000 sentinels,
+   which cannot appear in escaped output, so later passes cannot corrupt them. */
+const MD_URL_OK = /^https?:\/\//i;
+
+function mdHtml(src){
+  let t = esc(src).replace(/\r\n?/g, "\n");
+  const slot = [];
+  const park = html => "\u0000" + (slot.push(html) - 1) + "\u0000";
+
+  t = t.replace(/```[ \t]*([A-Za-z0-9_+.#-]*)\n([\s\S]*?)```/g,
+    (m, lang, code) => park('<pre class="md-pre"><code>' + code.replace(/\n+$/, "") + "</code></pre>"));
+  t = t.replace(/`([^`\n]+)`/g, (m, c) => park('<code class="md-code">' + c + "</code>"));
+  t = t.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
+    MD_URL_OK.test(url)
+      ? park('<a class="md-a" href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + "</a>")
+      : m);
+  t = t.replace(/(^|[\s(])(https?:\/\/[^\s<>()\[\]]+)/g, (m, pre, url) =>
+    pre + park('<a class="md-a" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + "</a>"));
+
+  const inline = x => x
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>")
+    .replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+
+  const rows = t.split("\n");
+  const out = [];
+  const isTableSep = l => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.indexOf("-") !== -1 && l.indexOf("|") !== -1;
+  const cells = l => l.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(c => inline(c.trim()));
+  let i = 0;
+  while (i < rows.length){
+    const line = rows[i];
+
+    if (!line.trim()){ i++; continue; }
+    if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)){ out.push("<hr class=\"md-hr\">"); i++; continue; }
+
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h){ const n = h[1].length; out.push("<h" + n + ' class="md-h">' + inline(h[2].trim()) + "</h" + n + ">"); i++; continue; }
+
+    /* table: a header row followed by a |---|---| separator */
+    if (line.indexOf("|") !== -1 && i + 1 < rows.length && isTableSep(rows[i + 1])){
+      const head = cells(line);
+      i += 2;
+      const body = [];
+      while (i < rows.length && rows[i].indexOf("|") !== -1 && rows[i].trim()){ body.push(cells(rows[i])); i++; }
+      out.push('<div class="md-tw"><table class="md-t"><thead><tr>'
+        + head.map(c => "<th>" + c + "</th>").join("")
+        + "</tr></thead><tbody>"
+        + body.map(r => "<tr>" + r.map(c => "<td>" + c + "</td>").join("") + "</tr>").join("")
+        + "</tbody></table></div>");
+      continue;
+    }
+
+    if (/^\s*&gt;\s?/.test(line)){
+      const buf = [];
+      while (i < rows.length && /^\s*&gt;\s?/.test(rows[i])){ buf.push(rows[i].replace(/^\s*&gt;\s?/, "")); i++; }
+      out.push('<blockquote class="md-q">' + inline(buf.join(" ")) + "</blockquote>");
+      continue;
+    }
+
+    const ul = /^\s*[-*+]\s+(.*)$/, ol = /^\s*\d+[.)]\s+(.*)$/;
+    if (ul.test(line) || ol.test(line)){
+      const ordered = ol.test(line);
+      const re = ordered ? ol : ul;
+      const items = [];
+      while (i < rows.length && re.test(rows[i])){ items.push(inline(rows[i].match(re)[1])); i++; }
+      const tag = ordered ? "ol" : "ul";
+      out.push("<" + tag + ' class="md-l">' + items.map(x => "<li>" + x + "</li>").join("") + "</" + tag + ">");
+      continue;
+    }
+
+    const para = [];
+    while (i < rows.length && rows[i].trim()
+           && !/^(#{1,6})\s/.test(rows[i]) && !ul.test(rows[i]) && !ol.test(rows[i])
+           && !/^\s*&gt;\s?/.test(rows[i]) && !/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(rows[i])){
+      para.push(rows[i]); i++;
+    }
+    out.push('<p class="md-p">' + inline(para.join("\n")).replace(/\n/g, "<br>") + "</p>");
+  }
+
+  return out.join("").replace(/\u0000(\d+)\u0000/g, (m, n) => slot[Number(n)]);
+}
+
+/* ══════════════════════ rail ══════════════════════ */
+const ICON = {
+  dept:'<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="2" y="16" width="6" height="5" rx="1"/><rect x="16" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/>',
+  chart:'<path d="M4 4h11l5 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v6h6M7 14h8M7 17h5"/>',
+  plc:'<path d="M3 7h7l2 3h9"/><path d="M3 7v11a1 1 0 001 1h16a1 1 0 001-1v-8"/><circle cx="16.5" cy="14.5" r="2.2"/>',
+  know:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4.3-4.3"/>',
+  reorg:'<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6h4a3 3 0 013 3v.8M8.5 18h4a3 3 0 003-3v-.8"/>',
+  hist:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>',
+  health:'<path d="M3 13h4l2.5 6 4-14 2.5 8h5"/>',
+  skills:'<path d="M12 3l7.5 4.3v8.6L12 20.2 4.5 15.9V7.3z"/><path d="M12 12l7.5-4.4M12 12v8.2M12 12L4.5 7.6"/>',
+  ten:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M8 5V3M16 5V3"/>',
+  gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
+  chevron:'<path d="M6 9l6 6 6-6"/>'
+};
+function railSpec(){
+  const sim = S.loaded ? simulate(S.draft.ops) : null;
+  /* "0 open issues" and "we have not been told yet" are different facts, and a
+     green-looking 0 for the second is the more expensive lie. Before the
+     registry has been read at all (tenant gate), every count is withheld for
+     the same reason -- a 0 there would be a claim about a tenant nobody has
+     loaded yet. */
+  const openIssues = !sim ? undefined
+    : sim.pending ? "…" : (sim.error ? "!" : sim.findings.length);
+  const c = v => S.loaded ? v : undefined;
+  return {
+    org:[
+      {id:"departments",n:"Departments",i:"dept", c:c(live().filter(d=>inTenant(d,META.tenant_id)).length)},
+      {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
+      {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
+      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)}
+    ],
+    change:[
+      {id:"reorg",  n:"Reorg plans", i:"reorg", c:PLANS.length},
+      {id:"history",n:"History",     i:"hist"},
+      {id:"health", n:"Health",      i:"health",c:openIssues, warn:true}
+    ],
+    runtime:[
+      {id:"skills",  n:"Skills",   i:"skills",c:(SKILLS.length||undefined)},
+      /* Settings is not a count -- it is provider + permission mode + workdir,
+         all three of which are single values with a live server behind them. */
+      {id:"settings",n:"Settings", i:"gear"}
+    ]
+  };
+}
+/* The workspace switcher. Deliberately worded as SCOPE, not isolation:
+   placement_engine's own tenant_refs() docstring says "MISROUTING GUARD, not
+   isolation ... Do not describe it with the word isolation" -- all tenants
+   share one registry directory. Calling this a boundary in the UI would claim
+   a guarantee the engine explicitly disclaims. */
+function renderTenantMenu(){
+  const menu = document.getElementById("tenantMenu");
+  if (!menu) return;
+  const rows = (TENANTS || []).map(r=>`
+    <button type="button" role="menuitem" data-pick-tenant="${esc(r.tenant_id)}"
+            ${r.tenant_id===S.tenant?'aria-current="true"':""}>
+      <span class="${r.tenant_id===S.tenant?"cur":""}">${esc(r.tenant_id)}</span>
+      <span class="tm2">${r.domains} dept · ${r.placements} plc</span>
+    </button>`).join("");
+  menu.innerHTML = `<div class="th">Workspace</div>${rows ||
+      '<div class="note">No workspaces found in the registry.</div>'}
+    <div class="note">Switching re-scopes every screen — departments, charters and
+      placements are all read at this scope.</div>`;
+}
+
+function renderRail(){
+  const spec = railSpec();
+  const mk = items => items.map(it=>`
+    <li><button type="button" data-screen="${it.id}" ${it.disabled?"disabled":""}
+        aria-current="${S.screen===it.id}"
+        ${it.disabled?'title="§8.5.3 — an item appears in the rail only if a file backs it. The FTS5 derived index (§7.3) does not exist yet."':""}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${ICON[it.i]}</svg>
+      ${esc(it.n)}
+      ${it.disabled?`<span class="dis">${esc(it.dis)}</span>`
+        :(it.c!==undefined?`<span class="ct ${it.warn?"w":""}">${it.c}</span>`:"")}
+    </button></li>`).join("");
+  navOrg.innerHTML = mk(spec.org);
+  navChange.innerHTML = mk(spec.change);
+  navRuntime.innerHTML = mk(spec.runtime);
+
+  /* Section collapse. Default is EXPANDED, so a fresh install shows the whole
+     rail; only an explicit collapse is persisted. */
+  document.querySelectorAll("[data-railsec]").forEach(btn=>{
+    const key = btn.dataset.railsec;
+    const open = S.ui.railSections[key] !== false;
+    btn.setAttribute("aria-expanded", String(open));
+    const body = document.getElementById(btn.getAttribute("aria-controls"));
+    if (body) body.hidden = !open;
+  });
+
+  /* Tab visibility. Home is the default so a fresh install lands on the org
+     surface; only an explicit switch is persisted. */
+  const tab = (S.ui.railTab === "code") ? "code" : "home";
+  document.querySelectorAll("[data-railtab]").forEach(b=>
+    b.setAttribute("aria-selected", String(b.dataset.railtab === tab)));
+  const home = document.getElementById("tabHome"), code = document.getElementById("tabCode");
+  if (home) home.hidden = tab !== "home";
+  if (code) code.hidden = tab !== "code";
+
+  renderTenantMenu();
+
+  /* Sessions, two ways.
+     RECENT is the familiar shape — date buckets, newest first.
+     BY DEPARTMENT is the one only Sutra can offer: every turn already resolved to exactly one
+     accountable department, so the session list and the org chart are the same tree. */
+  document.querySelectorAll("[data-sgroup]").forEach(b=>
+    b.setAttribute("aria-pressed", String(S.sgroup===b.dataset.sgroup)));
+
+  const bucket = ms => {
+    const d = Math.floor((NOW - ms)/DAY);
+    return d<=0 ? "Today" : d===1 ? "Yesterday" : d<=7 ? "Previous 7 days"
+         : d<=30 ? "Previous 30 days" : "Older";
+  };
+  const deptsOf = s => [...new Set(s.turns.filter(t=>t.domain).map(t=>dPath(t.domain.ref)))];
+  /* The list endpoint reads only the head of each .jsonl, so it has no turn
+     count to give. Say "transcript unread" until the pane actually reads it --
+     printing a 0, or reusing the file size as a turn count, would both be
+     numbers nobody counted. `project` and the file size ARE real, so those are
+     what the unread row carries. */
+  const kb = n => n >= 1048576 ? (Math.round(n/104857.6)/10) + " MB"
+               : n >= 1024      ? (Math.round(n/102.4)/10) + " KB"
+                                : n + " B";
+  const sessMeta = s => {
+    if (!s.real) return `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
+    if (s.loadState === "ok" || s.loadState === "empty")
+      return `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
+    if (s.loadState === "loading") return `<span>reading transcript…</span>`;
+    if (s.loadState === "error") return `<span style="color:var(--block)">unreadable</span>`;
+    return `<span>transcript unread</span><span>${kb(s.size||0)}</span>`;
+  };
+  /* `project` is the ENCODED directory name (slashes turned into dashes), which
+     reads as gibberish in a 200px rail. `cwd` is the same directory unencoded
+     and is returned by the same endpoint, so prefer its last segment and fall
+     back to the encoded form only when cwd is absent. */
+  const projOf = s => {
+    const c = (s.cwd || "").replace(/\/+$/, "");
+    if (c) return c.slice(c.lastIndexOf("/") + 1);
+    return (s.project || "").replace(/^-+|-+$/g, "");
+  };
+
+  let html = "";
+  if (S.sgroup === "recent"){
+    const order = ["Today","Yesterday","Previous 7 days","Previous 30 days","Older"];
+    const g = {};
+    S.sessions.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
+    html = order.filter(k=>g[k]).map(k=>`
+      <div class="rgrp">${k}</div>
+      <ul class="rlist">${g[k].map(s=>{
+        const ds = deptsOf(s);
+        const held = s.turns.some(t=>t.mode==="floor");
+        return `<li><button type="button" data-open="${s.id}"
+            aria-current="${S.openPanes.includes(s.id)}"
+            title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
+          <span class="t">${esc(s.title)}</span>
+          <span class="m">${sessMeta(s)}
+            <span>${s.real ? esc(projOf(s)) : (ds.length?esc(ds.join(" → ")):"—")}</span>
+            ${held?'<span style="color:var(--warn)">held</span>':""}</span>
+        </button></li>`;}).join("")}</ul>`).join("");
+    if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+      No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.</p>`;
+  } else {
+    const g = {};
+    S.sessions.forEach(s=>s.turns.forEach(t=>{
+      if (!t.domain) return; (g[t.domain.ref]=g[t.domain.ref]||[]).push({s,t}); }));
+    html = Object.entries(g)
+      .sort((a,b)=>dPath(a[0]).localeCompare(dPath(b[0]),undefined,{numeric:true}))
+      .map(([ref,items])=>{
+        const d = byRef(ref); if(!d) return "";
+        const held = items.filter(x=>x.t.mode==="floor").length;
+        const uniq = [...new Map(items.map(x=>[x.s.id,x.s])).values()];
+        return `<div class="rgrp">${esc(dPath(ref))} ${esc(d.name)}${held?` · ${held} held`:""}</div>
+          <ul class="rlist">${uniq.map(s=>`<li><button type="button" data-open="${s.id}"
+              aria-current="${S.openPanes.includes(s.id)}">
+            <span class="t">${esc(s.title)}</span>
+            <span class="m"><span>${items.filter(x=>x.s.id===s.id).length} turn(s) here</span></span>
+          </button></li>`).join("")}</ul>`;
+      }).join("");
+    if (!html) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+      Nothing filed yet. Transcripts read from <code>~/.claude/projects</code> ran outside
+      this panel, so no department was ever resolved for them — they group under Recent only.</p>`;
+  }
+  document.getElementById("sessions").innerHTML = html;
+
+  /* the tenant is a live selection now, so the chip and the footer switch both
+     read it rather than repeating a hardcoded "T-local" */
+  const chip = document.getElementById("tenantChip");
+  if (chip) chip.textContent = S.tenant || "no tenant";
+  const sw = document.getElementById("tenantSwitch");
+  if (sw) sw.textContent = (S.tenant || "choose a tenant") + " · switch";
+}
+
+/* ══════════════════════ screens ══════════════════════ */
+const SCREENS = {};
+
+/* ── collapsible section ──────────────────────────────────────────────────
+   Panels inside the browse pane are no longer permanently fixed. Each one is
+   a fold whose open/closed state is keyed and persisted, so the operator's
+   layout survives a reload. The header ALWAYS carries a summary of what is
+   inside (`summary`), because a collapsed section that hides its own count is
+   indistinguishable from an empty one. Default is open: nothing disappears
+   until the operator says so. */
+function foldOpen(key, dflt){
+  const v = S.ui.folds[key];
+  return v === undefined ? (dflt !== false) : !!v;
+}
+function fold(key, title, summary, inner, dflt){
+  const open = foldOpen(key, dflt);
+  return `<section class="fold" data-open="${open?1:0}">
+    <button class="fh" type="button" data-fold="${esc(key)}" aria-expanded="${open}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           aria-hidden="true">${ICON.chevron}</svg>
+      ${esc(title)}<span class="cv">${summary==null?"":esc(String(summary))}</span>
+    </button>
+    <div class="fc">${inner}</div>
+  </section>`;
+}
+
+/* ── S1 Departments ── */
+SCREENS.departments = () => {
+  const t = META.tenant_id;
+  const vis = DOMAINS.filter(d=>(S.showAcme || inTenant(d,t)) && (S.showRetired || isLive(d)));
+  const roots = vis.filter(d=>!d.parent_ref || !vis.find(p=>p.ref===d.parent_ref));
+  /* Tenant of record leads its own org chart. Both tenants' roots are "D0"
+     (D-numbering is per tenant), so a path sort ties and whichever row the
+     server happened to yield first won -- which could be T-acme's. The server
+     now orders this deliberately; sort defensively here too, because "whose
+     org is this" must not depend on a remote sort key. Array#sort is stable,
+     so everything else keeps its order. */
+  roots.sort((a,b)=>(inTenant(a,t)?0:1)-(inTenant(b,t)?0:1));
+  const kids = ref => vis.filter(d=>d.parent_ref===ref)
+                         .sort((a,b)=>a.ts_minted_ms-b.ts_minted_ms);
+  const draft = S.view==="draft";
+
+  /* turn counts per department, so a node shows how much has actually been filed here */
+  const turnsOn = ref => S.sessions.reduce((n,s)=>
+    n + s.turns.filter(x=>x.domain && x.domain.ref===ref).length, 0);
+
+  const subtreeN = r => kids(r).reduce((a,c)=>a+1+subtreeN(c.ref),0);
+  const card = d => {
+    const cs = chartersOf(d.ref).filter(c=>c.status!=="retired");
+    const ret = st(d)==="retired";
+    const acme = d.tenant_id!==t;
+    const n = turnsOn(d.ref);
+    /* collapsed subtree count lives on the tile — nothing disappears silently */
+    const hidden = (kids(d.ref).length && S.collapsed.has(d.ref)) ? subtreeN(d.ref) : 0;
+    return `<button class="ocard ${ret?"retired":""} ${acme?"acme":""}" data-ref="${d.ref}"
+        data-kids="${kids(d.ref).length?1:0}"
+        ${draft && !ret ? 'draggable="true"' : ''} aria-selected="${S.sel===d.ref}">
+      ${n?`<span class="turnbadge">${n}</span>`:""}
+      <span class="odp">${esc(dPath(d.ref))}</span>
+      <span class="onm">${esc(d.name)}</span>
+      <span class="ometa">
+        <span>${cs.length?cs.length+" chr":'<span style="color:var(--warn)">no charter</span>'}</span>
+        <span>${placementsOf(d.ref).length} plc</span>
+        ${ret?'<span style="color:var(--block)">retired</span>':""}
+        ${acme?`<span style="color:var(--warn)">${esc(d.tenant_id)}</span>`:""}
+        ${hidden?`<span class="below">${hidden} below</span>`:""}
+      </span>
+    </button>`;
+  };
+  /* expandable: a node with children carries a +/− control; collapsed subtrees are
+     summarised on the control so nothing disappears silently */
+  const branch = d => {
+    const ks = kids(d.ref);
+    const open = ks.length && !S.collapsed.has(d.ref);
+    return `<li class="${open?"haskids":""}">
+      ${card(d)}
+      ${open?`<ul>${ks.map(branch).join("")}</ul>`:""}
+    </li>`;
+  };
+
+  const sel = S.sel && byRef(S.sel);
+  let insp = `<div class="insp"><div class="zero" style="padding:20px 8px">
+      <p>Select a department to inspect it.</p></div></div>`;
+  if (sel){
+    const cs = chartersOf(sel.ref), ps = placementsOf(sel.ref);
+    const open = ps.filter(p=>p.phase==="open");
+    const oldest = open.length ? Math.min(...open.map(p=>p.ts_ms)) : null;
+    const succ = (sel.successor_refs||[]).map(r=>byRef(r)).filter(Boolean);
+    insp = `<div class="insp">
+      <h4>${esc(sel.name)}</h4>
+      <div class="sub">${esc(dPath(sel.ref))} · ${esc(sel.ref)}</div>
+      ${sel.description?`<p style="font-size:11.5px">${esc(sel.description)}</p>`:
+        `<p style="font-size:11.5px;color:var(--faint)">No description — system-minted nodes carry none.</p>`}
+      <div class="kv"><b>Status</b><span>${esc(st(sel))}${sel.retired_at_ms?" · "+fmt(sel.retired_at_ms):""}</span></div>
+      <div class="kv"><b>Tenant</b><span>${esc(sel.tenant_id)}</span></div>
+      <div class="kv"><b>Charters</b><span>${cs.length||"none"}</span></div>
+      <div class="kv"><b>Placements</b><span class="num">${ps.length}</span></div>
+      ${succ.length?`<div class="kv"><b>Succeeded by</b><span>${succ.map(s=>esc(s.name)).join(" · ")}</span></div>`:""}
+      ${sel.retire_reason_code?`<div class="kv"><b>Reason</b><span>${esc(sel.retire_reason_code)} <span class="pill p-mut">private</span></span></div>`:""}
+      <h3 class="sec" style="margin:13px 0 7px">Currently</h3>
+      ${open.length? `<p style="font-size:11.5px;margin:0">${open.length} open work unit${open.length>1?"s":""}${oldest?`, oldest opened ${fmt(oldest)}`:""}.</p>`
+                   : `<p style="font-size:11.5px;margin:0;color:var(--faint)">Nothing open.</p>`}
+      ${cs.length? `<h3 class="sec" style="margin:13px 0 7px">Charters</h3>` +
+        cs.map(c=>`<div class="kv"><b>${esc(c.kind)}</b><span>${esc(c.title)}
+          ${isSuperseded(c)?'<span class="pill p-mut">superseded</span>':""}</span></div>`).join("")
+        : `<h3 class="sec" style="margin:13px 0 7px">Charters</h3>
+           <p style="font-size:11.5px;color:var(--warn);margin:0">No charter yet — this department
+           can be routed to, but nothing frames what it owns.</p>`}
+    </div>`;
+  }
+
+  const sim = simulate(S.draft.ops);
+  return `
+    <div class="facets">
+      <span class="fl">View</span>
+      <span class="seg">
+        <button type="button" data-view="live"  aria-pressed="${!draft}">Live</button>
+        <button type="button" data-view="draft" aria-pressed="${draft}">Draft${S.draft.ops.length?` · ${S.draft.ops.length}`:""}</button>
+      </span>
+${DOMAINS.some(d=>st(d)==="retired")
+        ? `<button class="btn" data-toggle="showRetired" aria-pressed="${S.showRetired}">Show retired</button>` : ""}
+      ${TENANTS.length > 1
+        /* condition on the TENANT LIST, not on the rows already fetched: under
+           ?tenant= the fetched rows are all one tenant by construction, so the
+           old test could never be true and the scope could never be widened */
+        ? `<button class="btn" data-toggle="showAcme" aria-pressed="${S.showAcme}">Show other tenants</button>` : ""}
+    </div>
+    ${draft?`<div class="note w"><b>Draft — nothing on this canvas touches the registry.</b>
+       Drag a department onto another to compose a MOVE. Every other operation is a checklist,
+       and there is no Apply button in this tier.</div>`:""}
+    <div class="cols">
+      <div>
+        ${fold("dept.chart", "Org chart",
+          `${vis.length} shown · ${S.collapsed.size} subtree${S.collapsed.size===1?"":"s"} collapsed`, `
+          <div class="canvas ${draft?"draft":""}">
+            <div class="chartwrap">
+              <ul class="chart">${roots.map(branch).join("")}</ul>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn" data-expall="1">Expand all</button>
+            <button class="btn" data-collall="1">Collapse to top level</button>
+            <span style="font-size:10.5px;color:var(--faint);align-self:center">
+              a badge on a node counts turns filed there</span>
+          </div>
+          ${draft?`<div class="legend">A ring means <b style="color:var(--block)">blocked</b>.
+            The absence of a ring is not a promise — ORG-001/002/004/009 are not evaluated per hover,
+            and ORG-005/012/019 cannot be evaluated at all. D-paths are greyed during a drag and
+            <b>recomputed at apply</b>. Sibling gaps and whitespace are not drop targets.
+            <span id="dragStatus"></span></div>`:""}`)}
+        <div class="note"><b>Note.</b> This registry has no
+          <code>D0.design</code>, so its published site would render in the generator's
+          <code>NEUTRAL</code> fallback — accent <code>#1d4ed8</code>, blue — while this shell is bronze.
+          Sutra's own published pages are not Sutra-branded until the tokens are written to D0.</div>
+      </div>
+      <div>
+        ${fold("dept.insp", "Inspector", sel ? dPath(sel.ref) + " " + sel.name : "nothing selected", insp)}
+        ${fold("dept.metrics", "Metrics", null, `
+          <div class="metrics" style="margin:0">
+            <div>live<b>${live().filter(d=>inTenant(d,META.tenant_id)).length}</b></div>
+            <div>retired<b>${DOMAINS.filter(d=>!isLive(d)).length}</b></div>
+            <div>max depth<b>${simNum(sim, sim.maxDepth)}</b></div>
+            <div>findings<b>${simNum(sim, sim.findings.length)}</b></div>
+          </div>`)}
+      </div>
+    </div>`;
+};
+
+/* ── S2 Charters ── */
+SCREENS.charters = () => {
+  const kinds = [...new Set(CHARTERS.map(c=>c.kind))];
+  const stats = [...new Set(CHARTERS.map(c=>c.status))];
+  let rows = CHARTERS.filter(c=>{
+    if (S.cf.kind.size && !S.cf.kind.has(c.kind)) return false;
+    if (S.cf.status.size && !S.cf.status.has(c.status)) return false;
+    if (S.q && !(c.title+" "+c.purpose).toLowerCase().includes(S.q.toLowerCase())) return false;
+    return true;
+  });
+  const col = S.sort.col, dir = S.sort.dir;
+  rows.sort((a,b)=>{
+    const v = x => col==="fresh" ? (lastRouted(x.id)||0)
+              : col==="owner" ? (byRef(x.domain_ref)?dPath(x.domain_ref):"")
+              : String(x[col]||"");
+    const A=v(a),B=v(b); return (A>B?1:A<B?-1:0)*dir;
+  });
+  const sel = S.selCharter && CHARTERS.find(c=>c.id===S.selCharter);
+  const fbtn = (g,v)=>`<button class="btn" data-facet="${g}" data-val="${v}"
+      aria-pressed="${S.cf[g].has(v)}">${esc(v)}</button>`;
+  const th = (k,l)=>`<th data-sort="${k}">${l}${col===k?(dir>0?" ▲":" ▼"):""}</th>`;
+
+  let prev = `<div class="insp"><div class="zero" style="padding:20px 8px"><p>Select a charter.</p></div></div>`;
+  if (sel){
+    const owner = byRef(sel.domain_ref), lr = lastRouted(sel.id), b = band(lr);
+    const ps = PLACEMENTS.filter(p=>p.charter_id===sel.id);
+    prev = `<div class="insp">
+      <h4>${esc(sel.title)}</h4><div class="sub">${esc(sel.id)}</div>
+      <p style="font-size:11.5px">${esc(sel.purpose)}</p>
+      <div class="kv"><b>Owner</b><span>${owner?esc(dPath(owner.ref)+" "+owner.name):"—"}
+        ${owner&&st(owner)==="retired"?'<span class="pill p-block">tombstone</span>':""}</span></div>
+      <div class="kv"><b>Kind</b><span>${esc(sel.kind)} · ${esc(sel.status)}</span></div>
+      <div class="kv"><b>Freshness</b><span><span class="pill ${b.cls}">${b.txt}</span></span></div>
+      <div class="kv"><b>Superseded</b><span>${isSuperseded(sel)?"yes — derived from edges":"no"}</span></div>
+      <div class="kv"><b>Routed</b><span class="num">${ps.length}</span></div>
+      ${sel.scope_in&&sel.scope_in.length?`<h3 class="sec" style="margin:13px 0 6px">Scope in</h3>
+        <p style="font-size:11.5px;margin:0">${sel.scope_in.map(esc).join(" · ")}</p>`:""}
+      ${sel.scope_out&&sel.scope_out.length?`<h3 class="sec" style="margin:11px 0 6px">Out of scope</h3>
+        <p style="font-size:11.5px;margin:0">${sel.scope_out.map(esc).join(" · ")}</p>`:""}
+      <div class="legend">Freshness is derived at render from <code>max(placement.ts_ms)</code>.
+        It is never stored — <code>last_routed_ms</code> has no writer.</div>
+    </div>`;
+  }
+  return `
+    <div class="facets">
+      <span class="fl">Kind</span>${kinds.map(k=>fbtn("kind",k)).join("")}
+      <span class="fl" style="margin-left:8px">Status</span>${stats.map(s=>fbtn("status",s)).join("")}
+      <input type="search" id="q" placeholder="Search title and purpose…" value="${esc(S.q)}" style="margin-left:auto;width:210px">
+    </div>
+    <div class="cols"><div>
+      ${fold("chart.table", "Charters", `${rows.length} of ${CHARTERS.length}`, `
+      <div class="tw"><table><thead><tr>
+        ${th("title","Charter")}${th("kind","Kind")}${th("status","Status")}${th("owner","Owner")}${th("fresh","Freshness")}
+      </tr></thead><tbody>
+      ${rows.length? rows.map(c=>{
+        const o = byRef(c.domain_ref), b = band(lastRouted(c.id));
+        return `<tr data-charter="${c.id}" class="${S.selCharter===c.id?"sel":""}">
+          <td class="k">${esc(c.title)}${isSuperseded(c)?' <span class="pill p-mut">superseded</span>':""}</td>
+          <td>${esc(c.kind)}</td>
+          <td><span class="pill ${c.status==="active"?"p-ok":"p-mut"}">${esc(c.status)}</span></td>
+          <td>${o?esc(dPath(o.ref)+" "+o.name):"—"}${o&&st(o)==="retired"?' <span class="pill p-block">tombstone</span>':""}</td>
+          <td><span class="pill ${b.cls}">${b.txt}</span></td></tr>`;}).join("")
+        : `<tr><td colspan="5"><div class="zero"><h4>No charter matches</h4>
+             <p>Clear a filter to widen the search. The facet rail never disappears.</p></div></td></tr>`}
+      </tbody></table></div>
+      <p style="margin:9px 0 0;font-size:11px;color:var(--faint)">${rows.length} of ${CHARTERS.length}</p>`)}
+    </div><div>${fold("chart.prev", "Preview", sel ? sel.title : "nothing selected", prev)}</div></div>`;
+};
+
+/* ── S3 Placements ── */
+SCREENS.placements = () => {
+  const modes = ["all","match","floor"];
+  let rows = PLACEMENTS.filter(p=>S.pmode==="all"||p.mode===S.pmode);
+  if (S.showAcme===false) rows = rows.filter(p=>p.tenant_id===META.tenant_id);
+  rows = rows.slice().sort((a,b)=>b.ts_ms-a.ts_ms);
+  const held = PLACEMENTS.filter(p=>p.mode==="floor");
+  return `
+    <div class="facets">
+      <span class="fl">Mode</span>
+      <span class="seg">${modes.map(m=>`<button type="button" data-pmode="${m}" aria-pressed="${S.pmode===m}">${m}</button>`).join("")}</span>
+      ${TENANTS.length > 1 ? `<button class="btn" data-toggle="showAcme" aria-pressed="${S.showAcme}"
+          style="margin-left:auto">Show other tenants</button>`
+        : `<span style="margin-left:auto;font-size:10.5px;color:var(--faint)">one tenant in this
+            registry — nothing to widen to</span>`}
+    </div>
+    ${held.length?`<div class="note w"><b>${held.length} held at ancestor.</b>
+      These resolved below the ${CONFIDENCE_FLOOR} confidence floor, so the engine held them at the
+      nearest live ancestor rather than guessing. They are not "unrouted" — that value has no writer.
+      A run of these is the signal that the org is missing a department.</div>`:""}
+    <div class="tw"><table><thead><tr>
+      <th>Work</th><th>Filed to</th><th>Charter</th><th>Confidence</th><th>Mode</th><th>When</th>
+    </tr></thead><tbody>
+    ${rows.map(p=>{
+      const d = byRef(p.domain_ref); const floor = p.mode==="floor";
+      return `<tr class="${p.tenant_id!==META.tenant_id?"":""}" style="${p.tenant_id!==META.tenant_id?"border-left:2px solid var(--warn)":""}">
+        <td class="k">${esc(p.work_ref.id)}</td>
+        <td>${d?esc(dPath(d.ref)+" "+d.name):'<span class="pill p-block">unresolvable</span>'}</td>
+        <td>${esc(p.charter_id||"—")}</td>
+        <td class="num">${p.confidence.toFixed(2)}
+          ${floor?'<span class="pill p-warn">held</span>':""}</td>
+        <td>${esc(p.mode)}</td>
+        <td class="num">${fmt(p.ts_ms)}</td></tr>`;}).join("")}
+    </tbody></table></div>
+    <div class="note" style="margin-top:12px"><b>Why an unfiled queue can exist at all.</b>
+      <code>write_placement</code> rejects a null <code>charter_id</code>, so a floor placement is only
+      recordable because the root holds a charter. A registry whose root has no charter cannot record
+      one at all.</div>`;
+};
+
+/* ── S4 Knowledge (disabled) ── */
+SCREENS.knowledge = () => {
+  const r = S.searchRes;
+  const body = !S.sq
+    ? `<div class="zero"><h4>Search the registry</h4>
+        <p>Departments, charters and filed work. Matches on names, descriptions,
+        routing evidence, charter purpose and scope, and work paths — and tells you
+        which field hit, so a result is explainable rather than an opaque rank.</p></div>`
+    : S.searchBusy && !r
+      ? `<p style="color:var(--muted)">Searching…</p>`
+      : (!r || !r.results.length)
+        ? `<div class="zero"><h4>No matches for “${esc(S.sq)}”</h4>
+            <p>Nothing in the registry contains that term.</p></div>`
+        : `<div class="facets">${Object.entries(r.counts).map(([k,n])=>
+             `<span class="pill p-acc">${esc(k)} ${n}</span>`).join(" ")}
+             ${r.truncated?`<span class="pill p-warn">showing first ${r.results.length}</span>`:""}</div>
+           <div class="tw"><table><thead><tr>
+             <th>Kind</th><th>Result</th><th>Matched on</th><th>Detail</th>
+           </tr></thead><tbody>
+           ${r.results.map(x=>`<tr ${x.kind==="domain"?`data-goto-domain="${esc(x.ref)}"`:""}
+               style="${x.kind==="domain"?"cursor:pointer":""}">
+             <td><span class="pill ${x.kind==="domain"?"p-acc":x.kind==="charter"?"p-ok":"p-mut"}">${esc(x.kind)}</span></td>
+             <td class="k">${esc(x.path?x.path+" ":"")}${esc(x.title||"")}
+               ${x.owner_retired?'<span class="pill p-block">tombstone</span>':""}
+               ${x.status==="retired"?'<span class="pill p-block">retired</span>':""}</td>
+             <td>${(x.matched_on||[]).map(f=>`<code>${esc(f)}</code>`).join(" ")}</td>
+             <td>${esc((x.subtitle||"").slice(0,90))}</td></tr>`).join("")}
+           </tbody></table></div>`;
+  return `
+    <div class="facets">
+      <input type="search" id="sq" placeholder="Search departments, charters, filed work…"
+             value="${esc(S.sq)}" style="width:100%;max-width:460px">
+    </div>
+    ${body}`;
+};
+
+/* ── S5 Reorg ── */
+SCREENS.reorg = () => {
+  const sim = simulate(S.draft.ops);
+  const base = simulate([]);
+  const blocking = sim.findings.filter(f=>f.sev==="block");
+  const warns = sim.findings.filter(f=>f.sev==="warn");
+  const ops = S.draft.ops;
+  /* Either half of this screen can be un-answered: the draft simulation and
+     the base simulation are two separate round trips. If either is pending or
+     failed, every derived number on the strip is unknown — say so. */
+  const pend = sim.pending || base.pending;
+  const err  = sim.error || base.error;
+  const n = v => (pend || err) ? "—" : v;
+  return `
+    <div class="facets">
+      <span class="fl">Plan</span><code>${esc(PLANS[0].plan_id)}</code>
+      <span class="pill p-mut">plan_origin: studio-drag</span>
+      <span class="pill p-mut">validated_at_ms: null</span>
+      <button class="btn" id="rebase" ${S.drift?"":"disabled"}>Rebase draft</button>
+      <button class="btn" id="discard">Discard draft</button>
+    </div>
+    ${S.drift?`<div class="note b"><b>Registry changed since this draft captured its base.</b>
+      1 event appended. <code>ORG-010</code> will block at apply. Rebasing re-captures the base and
+      re-probes every op — the studio never silently refreshes it.</div>`:""}
+    <div class="cols"><div>
+      <h3 class="sec">Diff rail</h3>
+      <div class="tw diff">
+        ${ops.length? ops.map((o,i)=>{
+          const s=byRef(o.ref), t=byRef(o.target);
+          return `<div class="r"><span class="op">MOVE</span>
+            <b style="color:var(--ink)">${esc(s?s.name:o.ref)}</b>
+            <span>→ ${esc(t?t.name:o.target)}</span>
+            <button class="btn" data-revert="${i}" style="margin-left:auto;padding:3px 7px">revert</button></div>`;
+        }).join("")
+        : `<div class="zero" style="padding:26px 12px"><h4>No operations yet</h4>
+             <p>Switch Departments to <b>Draft</b> and drag a department onto a new parent.
+             MOVE is the only gesture — every other operation needs per-item disposition a drop
+             cannot carry.</p></div>`}
+      </div>
+      <div class="metrics">
+        <div class="${!pend && !err && sim.domains2.filter(isLive).length!==base.domains2.filter(isLive).length?"chg":""}">departments<b>${n(base.domains2.filter(isLive).length)} <span class="ar">→</span> ${n(sim.domains2.filter(isLive).length)}</b></div>
+        <div class="${!pend && !err && sim.findings.filter(f=>f.code==="ORG-001").length!==base.findings.filter(f=>f.code==="ORG-001").length?"chg":""}">overlaps<b>${n(base.findings.filter(f=>f.code==="ORG-001").length)} <span class="ar">→</span> ${n(sim.findings.filter(f=>f.code==="ORG-001").length)}</b></div>
+        <div class="${!pend && !err && sim.maxDepth!==base.maxDepth?"chg":""}">max depth<b>${n(base.maxDepth)} <span class="ar">→</span> ${n(sim.maxDepth)}</b></div>
+        <div>charters<b>${CHARTERS.length} <span class="ar">→</span> ${CHARTERS.length}</b></div>
+      </div>
+      <div class="findbar">
+        ${err ? `<span style="color:var(--block)">✗ validation failed</span>`
+          : pend ? `<span style="color:var(--muted)">checking…</span>`
+          : `<span style="color:var(--block)">✗ ${blocking.length} blocking</span>
+             <span style="color:var(--warn)">⚠ ${warns.length} warning</span>`}
+        <span style="color:var(--muted)">${ops.length} changes</span>
+      </div>
+      <h3 class="sec" style="margin-top:14px">Rationale</h3>
+      <input type="text" id="rat" placeholder="Required — becomes the changelog message"
+             value="${esc(S.draft.rationale)}" style="width:100%">
+      ${!S.draft.rationale && ops.length?`<p style="color:var(--block);font-size:11px;margin-top:6px">
+        A rationale is required before this plan is complete.</p>`:""}
+      <h3 class="sec" style="margin-top:14px">Effective</h3>
+      <p style="font-size:11.5px">now (immediate) — <span class="pill p-mut">label, not a control</span>
+        There is no scheduler: a Claude Code plugin has no daemon, and a back- or forward-dated stamp
+        would corrupt the monotonic ordering replay depends on.</p>
+      <h3 class="sec" style="margin-top:14px">There is no Apply button in this tier</h3>
+      <p style="font-size:11.5px">Not disabled, not behind a confirm — absent. <code>org apply</code>
+        is the only authority and it re-validates against freshly loaded state inside the RESTRUCTURE
+        flock. The hazard is staleness: the tree gains system-minted siblings while you drag.</p>
+      <div class="cmd"><span class="p">$</span><span class="t">placement_engine.py org plan --import ~/.sutra-ui/drafts/${esc(PLANS[0].plan_id)}.json</span>
+        <button class="btn" id="copyCmd" style="padding:3px 8px">copy</button></div>
+    </div><div>
+      <h3 class="sec">Findings</h3>
+      ${err? `<div class="note b"><b>Validation could not run.</b> ${esc(err)}<br>
+        This list is empty because nothing was checked — not because nothing was found.
+        Reload once the backend is answering.</div>`
+      : pend? `<p style="color:var(--muted)">Checking… the validation pass is running
+        server-side against a fresh read of the registry. No count until it answers.</p>`
+      : sim.findings.length? sim.findings.map(f=>`
+        <details class="code"><summary>
+          <span class="cid" style="color:var(--${f.sev==="block"?"block":"warn"})">${f.code}</span>
+          <span class="pill ${f.sev==="block"?"p-block":"p-warn"}">${f.sev}</span>
+          <span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis">${esc(f.subject)}</span>
+        </summary><div class="in">${esc(f.subject)}</div></details>`).join("")
+      : `<p style="color:var(--muted)">Nothing flagged on the current tree.</p>`}
+      <div class="legend">All predicates live in one <code>simulate()</code>. Rings, the metric strip,
+        Health and this list read the same <code>findings[]</code>.<br><br>
+        Validation runs <b>server-side</b>: <code>POST /api/org/simulate</code> calls
+        <code>reorg_sim.simulate()</code>, which reads the registry through the same
+        <code>placement_engine</code> functions the CLI uses. Zero rules live in JS — the
+        browser renders <code>findings[]</code>, it does not compute them.</div>
+    </div></div>`;
+};
+
+/* ── S6 History ── */
+SCREENS.history = () => {
+  const rows = INDEX.slice().sort((a,b)=>b.ts_ms-a.ts_ms);
+  const label = e => e.event==="domain_minted" ? `Minted ${e.name||e.ref.slice(0,12)}`
+    : e.op==="retire" ? `Retired ${(e.before&&e.before.name)||e.ref.slice(0,12)}`
+    : e.op==="rename" ? `Renamed ${e.ref.slice(0,12)}…`
+    : `${e.op||e.event} ${e.ref?e.ref.slice(0,12)+"…":""}`;
+  if (!rows.length) return `<div class="zero"><h4>No history yet</h4>
+    <p>Nothing has been minted, renamed, moved or retired in this registry.
+    <code>domains/INDEX.jsonl</code> is empty.</p></div>`;
+  return `
+    <ul class="tl">
+      ${rows.map(e=>{
+        const legacy = e.event==="domain_restructured" && !e.before;
+        return `<li class="${legacy?"legacy":""}">
+          <div class="when">${fmt(e.ts_ms)}${e.reorg_id?" · "+esc(e.reorg_id):""}</div>
+          <div class="what">${esc(label(e))}</div>
+          ${legacy?`<div class="det" style="color:var(--faint)">Legacy row — records that a change
+            happened, not what it changed from. Enriched events carry before/after.</div>`:""}
+          ${e.before&&e.after?`<div class="det">${esc(e.before.name)} → ${esc(e.after.name||e.before.name)}
+            ${e.placements_repointed?` · ${e.placements_repointed} placement(s) repointed`:""}</div>`:""}
+          ${e.event==="domain_restructured"&&!("tenant_id" in e)?`<div class="det" style="color:var(--faint)">
+            No tenant_id on this event type — history cannot be partitioned by tenant.</div>`:""}
+        </li>`;}).join("")}
+    </ul>
+    <div class="sepiaband">
+      ${META.history_complete_from_ms
+        ? `<b style="font-size:11.5px">Reconstructed before ${fmt(META.history_complete_from_ms)}.</b>
+           <p style="margin:5px 0 0;font-size:11px">Rows prior to this date record that a change
+           happened but not what it changed from. An as-of view before this date exits 2 rather
+           than guessing — and as-of is private-report only.
+           ${META.legacy_events?`<br>${META.legacy_events} legacy row(s) below the line.`:""}</p>`
+        : `<b style="font-size:11.5px">No reconstructable history yet.</b>
+           <p style="margin:5px 0 0;font-size:11px">Not one event carries a before/after snapshot,
+           so nothing here can be replayed to reconstruct prior state — every row records only
+           <i>that</i> something changed. An as-of view would exit 2 at any date.</p>`}
+      <p style="margin:6px 0 0;font-size:10.5px;color:var(--faint)">This boundary is
+      <b>derived</b> at read time from the earliest enriched event — it is not a stored
+      field, because the engine has no such field to store.</p>
+    </div>`;
+};
+
+/* ── S7 Health ── */
+SCREENS.health = () => {
+  const sim = simulate(S.draft.ops);
+  const groups = {};
+  sim.findings.forEach(f=>(groups[f.code]=groups[f.code]||[]).push(f));
+  const held = PLACEMENTS.filter(p=>p.mode==="floor").length;
+  return `
+    <h3 class="sec">Evaluated</h3>
+    ${sim.error? `<div class="note b"><b>Validation could not run.</b> ${esc(sim.error)}<br>
+      Nothing below this line was evaluated. An empty findings list here is the
+      absence of an answer, not a clean bill of health.</div>`
+     : sim.pending? `<p style="color:var(--muted)">Checking… the validation pass is running
+      server-side. No count, no green tick, until it answers.</p>`
+     : Object.keys(groups).length? Object.entries(groups).sort().map(([code,fs])=>`
+      <details class="code"><summary>
+        <span class="cid" style="color:var(--${fs[0].sev==="block"?"block":"warn"})">${code}</span>
+        <span class="pill ${fs[0].sev==="block"?"p-block":"p-warn"}">${fs[0].sev}</span>
+        <span style="color:var(--muted)">${fs.length} subject${fs.length>1?"s":""}</span>
+      </summary><div class="in">${fs.map(f=>"· "+esc(f.subject)).join("<br>")}</div></details>`).join("")
+     : `<p style="color:var(--ok)">Nothing flagged.</p>`}
+
+    <div class="legend">ORG-015 was dropped, not deferred — D-path is display-only and canon
+      disclaims it as an identifier, so a code protecting it would teach the operator to defend a
+      number the system does not promise.</div>`;
+};
+
+/* ── S8 Skills ──
+   Grouped BY PROVIDER, because the entries are not interchangeable: a claude
+   slash command is typed and runs; a codex SKILL.md is selected by that model
+   and cannot be typed here; ~/.codex/AGENTS.md is standing instructions that
+   are always loaded and never invoked at all. Flattening the three into one
+   "commands" table would imply every row is runnable, and on this machine only
+   the claude rows are. The per-provider header carries installed/configured and
+   the server's own `note`, so a group with zero entries always says why. */
+SCREENS.skills = () => {
+  const q = (S.q||"").toLowerCase();
+  const provs = SKILLS_META.providers || [];
+  if (!provs.length && !SKILLS.length) return `<div class="zero"><h4>No capability files found</h4>
+    <p>Nothing readable under any configured assistant's config directory.
+    Install a plugin and reload.</p></div>`;
+  const match = k => !q ||
+    ((k.slash||"") + " " + (k.name||"") + " " + (k.description||"")).toLowerCase().includes(q);
+
+  const KINDNOTE = {
+    instructions: "always loaded as standing instructions — there is nothing to invoke",
+    skill: "selected by the model, not typed",
+    command: "typed in the composer",
+    prompt: "typed in that assistant's own TUI"
+  };
+
+  const group = p => {
+    const items = SKILLS.filter(k => k.provider === p.id);
+    const shown = items.filter(match);
+    const state = p.runnable
+      ? `<span class="pill p-ok">runnable</span>`
+      : `<span class="pill p-block">not runnable</span>`;
+    const body = !items.length
+      ? `<div class="zero" style="padding:18px 10px">
+           <h4>Nothing read for ${esc(p.name)}</h4>
+           <p>${esc(p.note || "no capability files")}</p></div>`
+      : !shown.length
+        ? `<p style="color:var(--faint);margin:0">No entry here matches “${esc(S.q)}”.</p>`
+        : `<div class="tw"><table><thead><tr>
+             <th>Entry</th><th>Kind</th><th>Source</th><th>Runnable</th><th>What it does</th>
+           </tr></thead><tbody>
+           ${shown.map(k=>`<tr>
+             <td class="k">${k.slash
+                 ? `<code>${esc(k.slash)}</code>`
+                 : `<span style="color:var(--ink)">${esc(k.name)}</span>
+                    <span class="pill p-mut">no slash</span>`}</td>
+             <td>${esc(k.kind)}${k.always_loaded?' <span class="pill p-warn">always loaded</span>':""}</td>
+             <td>${esc(k.source)}</td>
+             <td>${k.runnable ? `<span class="pill p-ok">yes</span>`
+                   : `<span class="pill p-block">no</span>
+                      <div style="font:500 9.5px/1.4 var(--mono);color:var(--faint);margin-top:3px">
+                        ${esc(k.runnable_reason || KINDNOTE[k.kind] || "")}</div>`}</td>
+             <td>${esc((k.description||"").slice(0,150))}</td></tr>`).join("")}
+           </tbody></table></div>
+           <p style="margin:9px 0 0;font-size:11px;color:var(--faint)">
+             ${shown.length} of ${items.length} · ${p.runnable_entries} runnable</p>`;
+    return fold("skills." + p.id, p.name,
+      `${items.length} entr${items.length===1?"y":"ies"}`,
+      `<div class="facets" style="margin-bottom:9px">
+         ${state}
+         <span class="pill ${p.installed?"p-ok":"p-mut"}">binary ${p.installed?"on PATH":"missing"}</span>
+         <span class="pill ${p.configured?"p-ok":"p-mut"}">config ${esc(p.config_dir)}${p.configured?"":" absent"}</span>
+       </div>
+       ${p.reason?`<div class="note w" style="margin-top:0"><b>Why nothing here runs.</b>
+          ${esc(p.reason)}</div>`:""}
+       ${p.note?`<p style="font-size:11px;color:var(--muted)">${esc(p.note)}</p>`:""}
+       ${body}`,
+      /* a provider with nothing to show starts folded — it is context, not content */
+      items.length > 0);
+  };
+
+  return `
+    <p>Every capability file each configured assistant actually exposes, read from its own
+      config directory at request time — not a curated list. Only entries with a slash
+      <i>and</i> a binary on PATH are offered in the composer's <code>/</code> palette.</p>
+    <div class="facets">
+      ${Object.entries(SKILLS_META.by_provider||{}).map(([k,n])=>
+        `<span class="pill p-acc">${esc(k)} ${n}</span>`).join(" ")}
+      ${Object.entries(SKILLS_META.by_kind||{}).map(([k,n])=>
+        `<span class="pill p-mut">${esc(k)} ${n}</span>`).join(" ")}
+      <span class="pill p-ok">${SKILLS_META.runnable==null?"—":SKILLS_META.runnable} runnable</span>
+      <input type="search" id="q" placeholder="Filter entries…" value="${esc(S.q)}"
+             style="margin-left:auto;width:200px">
+    </div>
+    ${provs.map(group).join("")}`;
+};
+
+/* ── S9 Tenants ──
+   The counts are the SERVER's (GET /api/tenants runs tenant_refs/charters_for/
+   all_placements per tenant); they are no longer re-derived here from whatever
+   subset the current scope happened to fetch, which under a ?tenant= scope
+   would have reported every other tenant as zero. */
+SCREENS.tenants = () => {
+  if (!TENANTS.length) return `<div class="zero"><h4>No tenants</h4>
+    <p>${esc(S.tenantsError || "GET /api/tenants returned nothing.")}</p></div>`;
+  return `
+    <div class="facets">
+      <span class="fl">Viewing</span><code>${esc(S.tenant||"—")}</code>
+      <button class="btn" id="openGate" style="margin-left:auto">Switch tenant…</button>
+    </div>
+    <div class="note w"><b>Filtering is a scope, not a boundary.</b> Every request this panel makes
+      carries <code>?tenant=</code>, and the engine's own <code>tenant_refs()</code> narrows the read.
+      That is a misrouting guard — it is not access control, and the site generator still ignores
+      <code>tenant_id</code>.</div>
+    <div class="tw"><table><thead><tr>
+      <th>Tenant</th><th>Root</th><th>Domains</th><th>Charters</th><th>Placements</th><th></th>
+    </tr></thead><tbody>
+    ${TENANTS.map(r=>`<tr class="${r.tenant_id===S.tenant?"sel":""}">
+      <td class="k">${esc(r.tenant_id)}
+        ${r.is_default?' <span class="pill p-acc">of record</span>':""}
+        ${r.tenant_id===S.tenant?' <span class="pill p-ok">viewing</span>':""}</td>
+      <td>${r.root_name?esc(r.root_name):'<span style="color:var(--faint)">none</span>'}</td>
+      <td class="num">${r.domains}${r.domains_retired?` <span class="pill p-mut">${r.domains_retired} retired</span>`:""}</td>
+      <td class="num">${r.charters}</td>
+      <td class="num">${r.placements}</td>
+      <td>${r.tenant_id===S.tenant?"":
+          `<button class="btn" data-pick-tenant="${esc(r.tenant_id)}">View</button>`}</td>
+    </tr>`).join("")}
+    </tbody></table></div>
+    <p style="margin-top:11px;font-size:11.5px;color:var(--muted)">There is no tenant table in the
+      engine — a tenant is a <code>tenant_id</code> observed on a domain or a placement, so this list
+      is derived on every request. The tenant of record (<code>PLACEMENT_TENANT</code>) is always
+      listed even at zero counts, because it is where an unscoped write would land.</p>`;
+};
+
+/* ── S10 Settings ──
+   Every control here acts. The provider list is the live one from
+   GET /api/providers: `claude` is selectable, and the two that cannot run are
+   RENDERED AND DISABLED with the server's exact `reason` beside them — not
+   omitted. Hiding them would answer "can I use codex?" with silence; a
+   selectable-but-broken entry would answer it with a dead websocket ten seconds
+   later. Disabled-with-the-reason is the only version that answers it now. */
+SCREENS.settings = () => {
+  if (!SETTINGS) return `<div class="zero"><h4>Settings unavailable</h4>
+    <p>${esc(S.setError || "GET /api/settings has not answered.")}</p></div>`;
+  const st = SETTINGS;
+  const active = st.provider;
+  const banner = S.setError
+    ? `<div class="note b"><b>The last change was refused.</b> ${esc(S.setError)}</div>`
+    : S.setOk ? `<div class="note"><b>Saved.</b> ${esc(S.setOk)}</div>` : "";
+
+  const provRow = p => `
+    <button class="opt" type="button" role="radio"
+        aria-checked="${active===p.id}" data-prov="${esc(p.id)}"
+        ${p.runnable?"":"disabled"}
+        ${S.setBusy==="prov:"+p.id?"aria-busy=\"true\"":""}>
+      <span class="rd" aria-hidden="true"></span>
+      <span class="oi">
+        <span class="on">${esc(p.name)} <code>${esc(p.id)}</code>
+          ${p.default?'<span class="pill p-mut">catalog default</span>':""}
+          ${active===p.id?'<span class="pill p-ok">active</span>':""}
+          ${S.setBusy==="prov:"+p.id?'<span class="pill p-acc">saving…</span>':""}</span>
+        <span class="od">binary <code>${esc(p.bin)}</code>
+          ${p.installed?`at <code>${esc(p.bin_path||"")}</code>`:"— not on PATH"} ·
+          config <code>${esc(p.config_dir)}</code>${p.configured?"":" — absent"}</span>
+        ${p.reason?`<span class="why">unavailable: ${esc(p.reason)}</span>`:""}
+      </span>
+    </button>`;
+
+  const modeRow = m => `
+    <button class="opt" type="button" role="radio"
+        aria-checked="${st.permission_mode===m.id}" data-pmode-set="${esc(m.id)}"
+        ${S.setBusy==="mode:"+m.id?"aria-busy=\"true\"":""}>
+      <span class="rd" aria-hidden="true"></span>
+      <span class="oi">
+        <span class="on"><code>${esc(m.id)}</code>
+          ${m.default?'<span class="pill p-mut">default</span>':""}
+          ${m.writes_files?'<span class="pill p-block">writes files</span>':'<span class="pill p-ok">read-only</span>'}
+          ${st.permission_mode===m.id?'<span class="pill p-ok">active</span>':""}
+          ${S.setBusy==="mode:"+m.id?'<span class="pill p-acc">saving…</span>':""}</span>
+        <span class="od">${esc(m.note||"")}</span>
+      </span>
+    </button>`;
+
+  const writes = (PERM_MODES.find(m=>m.id===st.permission_mode)||{}).writes_files;
+
+  return `
+    ${banner}
+    ${fold("set.prov", "Provider", esc(active||"none runnable"), `
+      <p style="margin-bottom:9px">Which AI CLI this panel drives. A provider is offered only when
+        its binary is on PATH, it has a config directory, <i>and</i> this build has an adapter for it;
+        the others stay listed, disabled, with the exact reason — so "can I use this one?" is answered
+        here rather than by a chat that fails later. Installing a CLI is not enough on its own:
+        the chat channel speaks Claude's stream-json protocol.</p>
+      <div role="radiogroup" aria-label="Provider">${PROVIDERS.map(provRow).join("")}</div>
+      <div class="kv"><b>Resolved via</b><span>${esc(st.provider_source||"—")}${
+        st.provider_stored?` · stored <code>${esc(st.provider_stored)}</code>`:""}</span></div>
+      ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-bottom:0">
+        <b>An override was NOT honoured.</b>
+        ${st.provider_ignored.map(i=>`<div><code>${esc(i.source)}</code> asked for
+          <code>${esc(i.id)}</code> — ${esc(i.reason)}</div>`).join("")}</div>`:""}
+      ${PROVIDERS.filter(p=>p.runnable).length<2?`<p style="font-size:11px;color:var(--faint);margin:9px 0 0">
+        ${PROVIDERS.filter(p=>p.runnable).length} of ${PROVIDERS.length} catalogued providers can run on
+        this machine. The rest are shown above, disabled, with their reason — never silently missing.</p>`:""}`)}
+
+    ${fold("set.mode", "Permission mode", esc(st.permission_mode||"—"), `
+      ${writes?`<div class="note b"><b>This mode lets the agent write files without asking.</b>
+        With <code>${esc(st.permission_mode)}</code> selected, a session started from this panel can
+        create, change and delete files under the workdir below — and
+        <code>bypassPermissions</code> also auto-approves shell commands. Nothing will prompt you
+        per edit.</div>`:`<div class="note"><b>Read-only planning.</b> The agent proposes edits and
+        you approve each one. Choosing <code>acceptEdits</code> below removes that prompt.</div>`}
+      <div role="radiogroup" aria-label="Permission mode">${PERM_MODES.map(modeRow).join("")}</div>`)}
+
+    ${fold("set.workdir", "Workdir", null, `
+      <div class="kv"><b>Workdir</b><span><code>${esc(st.workdir||"—")}</code></span></div>
+      <div class="kv"><b>Settings file</b><span><code>${esc(st.settings_path||"—")}</code>
+        ${st.settings_file_exists?'<span class="pill p-ok">exists</span>'
+                                 :'<span class="pill p-mut">not written yet</span>'}</span></div>
+      ${Object.keys(st.invalid_stored_values||{}).length?`<div class="note w">
+        <b>Ignored values in the settings file.</b>
+        ${Object.entries(st.invalid_stored_values).map(([k,v])=>
+          `<div><code>${esc(k)}</code> = <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
+        These were not silently corrected — the documented default is in force instead.</div>`:""}
+      <p style="font-size:11px;color:var(--faint);margin:9px 0 0">Every session this panel starts runs
+        with this directory as its cwd. It is displayed, not edited here: changing it mid-session would
+        move the agent out from under the transcript it is writing.</p>`)}`;
+};
+
+/* ── Staged department creation (§3.3). Four collapsible sections and a completion meter —
+   NOT a Next/Back wizard. Nothing is minted at any step; the last step renders a CLI string. */
+/* ══════════════════════ render ══════════════════════ */
+const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
+  placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
+  reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
+  health:["Health","lint · mece · verify-charters · stats"],
+  skills:["Skills","~/.claude · ~/.codex — read at request time"],
+  tenants:["Tenants","GET /api/tenants — derived, no tenant table"],
+  settings:["Settings","~/.sutra-ui/settings.json · PATH"]};
+/* ── a session's routing path, as a chart ──
+   Honest model: the path is SUCCESSIVE PLACEMENT, not delegation. Each turn resolves to
+   exactly one accountable department; departments never invoke one another (no such channel
+   exists). The vertical chain is the ancestor path, which is real and is how charters are
+   inherited; the numbered badges are which turn landed where. */
+function routingChart(s){
+  const touched = [...new Set(s.turns.filter(t=>t.domain).map(t=>t.domain.ref))];
+  if (!touched.length) return s.turns.length
+    ? `<div class="zero"><h4>No turn here carries a placement</h4>
+        <p>Every turn in this session was read from a transcript on disk. They ran in the
+        terminal, outside Sutra, so nothing classified them and there is no routing path to
+        draw. Ask something below and that turn will have one.</p></div>`
+    : `<p style="color:var(--faint)">No turns yet.</p>`;
+  const chains = touched.map(ref=>{
+    const chain=[]; let n=byRef(ref);
+    while(n){ chain.unshift(n); n = n.parent_ref?byRef(n.parent_ref):null; }
+    return chain;
+  });
+  const keep = new Set(); chains.forEach(c=>c.forEach(n=>keep.add(n.ref)));
+  const roots = [...keep].map(byRef).filter(d=>!d.parent_ref||!keep.has(d.parent_ref));
+  const kids = ref => [...keep].map(byRef).filter(d=>d.parent_ref===ref)
+                        .sort((a,b)=>a.ts_minted_ms-b.ts_minted_ms);
+  const turnsAt = ref => s.turns.map((t,i)=>({t,i})).filter(x=>x.t.domain&&x.t.domain.ref===ref);
+  const node = d => {
+    const ts = turnsAt(d.ref);
+    const hit = ts.length>0;
+    return `<button class="ocard ${hit?"hit":""}" data-ref="${d.ref}" style="min-width:118px">
+      ${hit?`<span class="turnbadge">${ts.map(x=>x.i+1).join(",")}</span>`:""}
+      <span class="odp">${esc(dPath(d.ref))}</span>
+      <span class="onm">${esc(d.name)}</span>
+      ${hit?`<span class="ometa"><span>${ts.map(x=>x.t.mode==="floor"?"held":x.t.confidence.toFixed(2)).join(" · ")}</span></span>`
+           :`<span class="ometa"><span style="color:var(--faint)">passed through</span></span>`}
+    </button>`;
+  };
+  const branch = d => `<li class="${kids(d.ref).length?"haskids":""}">${node(d)}
+    ${kids(d.ref).length?`<ul>${kids(d.ref).map(branch).join("")}</ul>`:""}</li>`;
+  return `
+    <div class="chartwrap"><ul class="chart">${roots.map(branch).join("")}</ul></div>
+    <div class="legend" style="margin-top:4px">
+      Badges are turn numbers. A node with no badge is an <b>ancestor on the path</b>, not a
+      participant — it is shown because charters inherit down this chain.
+      <br><br><b>Departments do not hand work to each other.</b> There is no domain-to-domain
+      channel in the engine. This path is successive placement: each turn was classified
+      independently and filed to exactly one owner.
+    </div>`;
+}
+
+/* The assistant half of a turn, rendered with the panel's OWN vocabulary — .turn .a for
+   assistant prose, .pill for state, a compact tool row. Used for BOTH a live streaming
+   reply and an assistant block replayed out of a transcript: in the second case
+   `streaming` is false and `response` is already complete, so the same template renders
+   it with no special case. */
+function turnResponse(t){
+  const nTools = (t.tools && t.tools.length) || 0;
+  if (!t.streaming && !t.response && !t.error && !nTools) return "";
+  const state = t.streaming ? `<span class="pill p-acc">running…</span>`
+              : (t.error ? `<span class="pill p-block">failed</span>`
+                         : `<span class="pill p-ok">answered</span>`);
+  const tools = nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+      <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
+      ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
+    </div>` : "";
+  const waiting = (t.streaming && !t.response)
+    ? `<div style="margin-top:6px;color:var(--faint)">Claude is working…</div>` : "";
+  const body = t.response
+    ? `<div class="md" style="margin-top:6px;color:var(--ink)">${mdHtml(t.response)}${
+        t.streaming ? `<span style="color:var(--acc)">█</span>` : ""}</div>` : "";
+  /* the REAL failure text, never a fabricated answer and never nothing */
+  const err = t.error
+    ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>` : "";
+  return `<div class="a">${state}${tools}${waiting}${body}${err}</div>`;
+}
+/* One turn. Two provenances, told apart on purpose:
+   - a turn the PANEL ran carries a placement (or an honest reason it has none)
+   - a turn READ FROM A TRANSCRIPT carries none, because none was ever computed:
+     it ran in the terminal, outside Sutra. Filling that slot with "Unresolved —
+     no department could be resolved" would report a classification failure that
+     never happened. */
+function turnBlock(t, i){
+  if (t.transcript){
+    return `<div class="turn">
+      ${t.orphan
+        ? `<div class="a"><span class="pill p-warn">assistant message with no recorded prompt</span></div>`
+        : `<div class="u md">${mdHtml(t.text)}</div>`}
+      <div class="a">
+        <span class="pill p-mut">turn ${i+1} · from transcript</span>
+        <div style="margin-top:5px;color:var(--faint);font-size:11px">Read from
+          <code>~/.claude/projects</code>. This ran in the terminal, not through this panel,
+          so no placement was ever filed for it.</div>
+      </div>${turnResponse(t)}</div>`;
+  }
+  return `<div class="turn">
+    <div class="u md">${mdHtml(t.text)}</div>
+    <div class="a">
+      ${t.domain?`<span class="fchip ${t.mode==="floor"?"held":""}">turn ${i+1} · ${esc(dPath(t.domain.ref))} ${esc(t.domain.name)}${t.mode==="floor"?" · held at ancestor":" · "+t.confidence.toFixed(2)}</span><br>`:""}
+      ${!t.domain
+        /* mode "none": there is no department. The old template still printed
+           "Filed to ." — an empty owner dressed as a filing. Say what happened. */
+        ? `<b style="color:var(--block)">Unresolved</b> — no department could be
+           resolved, so this ran without a charter.${t.blocked?` <span style="color:var(--faint)">${esc(t.blocked)}</span>`:""}`
+        /* classified, but write_placement refused (no reachable charter, I-P2).
+           A department was chosen; nothing was filed. Both halves are true and
+           "Filed to X" alone is the false one. */
+        : (t.blocked && !t.placement
+          ? `Classified to <b style="color:var(--ink)">${esc(t.domain.name)}</b>, but
+             <b style="color:var(--block)">nothing was filed</b> —
+             <span style="color:var(--faint)">${esc(t.blocked)}</span>`
+          : (t.mode==="floor"
+            ? `No department claims this, so it was held at the nearest live ancestor rather than guessed.`
+            : `Filed to <b style="color:var(--ink)">${esc(t.domain.name)}</b>${t.matched&&t.matched.length?` on <code>${t.matched.map(esc).join("</code> <code>")}</code>`:""}.`))}
+      ${t.charter?`<div class="ground" style="margin-top:7px"><b>Grounding</b> —
+        <span style="color:var(--acc);font-family:var(--mono);font-size:10px">${esc(t.charter.id)}</span>
+        ${esc(t.charter.title)}<br><span style="font-style:italic">${esc(t.charter.purpose)}</span></div>`:""}
+    </div>${turnResponse(t)}</div>`;
+}
+
+/* Chat body. A real session that has no readable transcript gets an HONEST
+   empty state naming which of the four things happened — unread, reading,
+   unreadable, or genuinely empty. None of them fabricates a turn. */
+function sessionBody(s){
+  if (s.turns.length) return s.turns.map(turnBlock).join("");
+  if (s.real){
+    if (s.loadState === "loading")
+      return `<p style="color:var(--muted)">Reading the transcript…</p>`;
+    if (s.loadState === "error")
+      return `<div class="zero"><h4>The transcript could not be read</h4>
+        <p>${esc(s.loadError || "GET /api/sessions/" + s.id + " failed.")}</p>
+        <p style="color:var(--faint)">The session is listed because the file exists under
+        <code>~/.claude/projects</code>; nothing is shown because nothing could be parsed
+        out of it. No turns have been invented to fill the gap.</p></div>`;
+    if (s.loadState === "empty")
+      return `<div class="zero"><h4>No readable turns in this transcript</h4>
+        <p>The file parsed, but it holds no user or assistant messages — a session that was
+        opened and abandoned, or one whose content is entirely tool traffic.</p></div>`;
+    return `<p style="color:var(--muted)">Transcript not read yet.</p>`;
+  }
+  return `<div class="zero"><h4>Nothing asked yet</h4>
+    <p>Type below. The turn is classified and filed to a department before any work starts.</p></div>`;
+}
+
+function sessionPane(s){
+  const tab = S.sessTab[s.id] || "chat";
+  const collapsed = !!S.ui.paneCollapsed[s.id];
+  const last = s.turns[s.turns.length-1];
+  const chip = last && last.domain
+    ? `<span class="fchip ${last.mode==="floor"?"held":""}">${esc(dPath(last.domain.ref))} ${esc(last.domain.name)}${last.mode==="floor"?" · held":" · "+last.confidence.toFixed(2)}</span>`
+    : "";
+  /* what the server said it would actually run, from the ws "provider" frame */
+  const ch = s.channel;
+  const chanChip = ch ? `<span class="pill ${ch.writes_files?"p-block":"p-mut"}">${esc(ch.id)} ·
+      ${esc(ch.permission_mode||"")}${ch.writes_files?" · writes files":""}</span>` : "";
+  const body = tab==="route" ? routingChart(s) : sessionBody(s);
+  return `<section class="pane ${collapsed?"collapsed":""}" data-sess="${s.id}">
+    <div class="ph">
+      <button class="pfold" type="button" data-pane-fold="${esc(s.id)}"
+              aria-expanded="${!collapsed}"
+              aria-label="${collapsed?"Expand":"Collapse"} this session pane">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <span class="dot run" aria-hidden="true" style="width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none"></span>
+      <h3 title="${esc(s.title)}${s.real&&s.cwd?" — "+esc(s.cwd):""}">${esc(s.title)}</h3>
+      ${s.real?`<span class="src">transcript</span>`:""}
+      <span class="tabs">
+        <button type="button" data-tab="chat"  data-sid="${s.id}" aria-pressed="${tab==="chat"}">Chat</button>
+        <button type="button" data-tab="route" data-sid="${s.id}" aria-pressed="${tab==="route"}">Routing</button>
+      </span>
+      <button class="ib" data-close="${s.id}" aria-label="Close session">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
+    ${S.palette && S.palette.sid===s.id ? paletteHtml() : ""}
+    <div class="pc">
+      <input type="text" data-sask="${s.id}" value="${esc(S.composerText[s.id]||"")}"
+             placeholder="Ask anything — / for commands"
+             aria-label="Continue this session"/>
+      <button class="send" data-ssend="${s.id}" type="button" aria-label="Send">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div></section>`;
+}
+
+/* render() does a full innerHTML rebuild, and now some rebuilds are triggered by an
+   ASYNC event (a simulate()/loadOrg() fetch resolving) rather than direct user action --
+   unlike the earlier fully-synchronous build, a background render can now land while the
+   operator is mid-keystroke in the composer, the rationale field, search, or the create-
+   department form. Without this, that re-render silently wipes whatever they just typed
+   (the click-send handler reads an emptied input and no-ops with no error, no request,
+   no visible failure). Capture the focused input's identity + value + caret before
+   rebuilding, restore it after -- covers every text input uniformly, not just the ones
+   with bespoke keep() handlers. */
+function _focusedInputSelector(){
+  const el = document.activeElement;
+  if (!el || !(el.tagName === "INPUT" || el.tagName === "SELECT")) return null;
+  if (el.id) return "#" + el.id;
+  for (const attr of ["data-sask", "data-ssend"]) {
+    if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
+  }
+  return null;
+}
+/* ── "/" palette: real slash commands in the composer ──────────────────────
+   Typing "/" used to insert a character and offer nothing. The list is the same
+   catalog the Skills screen shows (GET /api/skills), so the palette can only ever
+   offer something that actually resolves -- and only the RUNNABLE half of it.
+   Rendered into the pane body, reusing .tw/.legend. */
+/* Only RUNNABLE slash commands are offered. Two filters, both necessary:
+     k.slash      -- codex's AGENTS.md and its SKILL.md entries have none. They
+                     are real capability files, but nothing is typed to invoke
+                     them, so a palette row for them would resolve to nothing.
+     k.runnable   -- the provider that resolves the command must have its binary
+                     on PATH. ~/.codex existing is not evidence that `codex` does.
+   The Skills screen still lists everything, disabled and with the reason. The
+   palette is the place where offering something means it will run. */
+const runnableCommands = () => SKILLS.filter(k => k.slash && k.runnable);
+function paletteFor(text){
+  const m = /(^|\s)\/([A-Za-z0-9:_-]*)$/.exec(text || "");
+  if (!m) return null;
+  const token = m[2].toLowerCase();
+  const items = runnableCommands().filter(k =>
+    k.slash.slice(1).toLowerCase().includes(token) ||
+    (k.name||"").toLowerCase().includes(token)).slice(0, 8);
+  return { token, items };
+}
+function paletteHtml(){
+  const p = S.palette;
+  if (!p || !p.items.length) return "";
+  return `<div class="tw" style="margin-bottom:9px">
+    <table><tbody>${p.items.map((k,i)=>`
+      <tr data-pal="${i}" class="${i===p.idx?"sel":""}" style="cursor:pointer">
+        <td class="k" style="white-space:nowrap"><code>${esc(k.slash)}</code></td>
+        <td>${esc((k.description||"").slice(0,72))}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="legend" style="padding:6px 9px">up/down to move · enter or tab to insert ·
+      esc to dismiss · ${p.items.length} of ${runnableCommands().length} runnable</div></div>`;
+}
+function applyPalette(sid, idx){
+  const p = S.palette; if (!p || !p.items[idx]) return;
+  const inp = document.querySelector('[data-sask="'+sid+'"]'); if (!inp) return;
+  /* Compute the new value FIRST, render, THEN write it back. Setting it before
+     render() lost it entirely: render() rebuilds the pane from the template and
+     only restores the value of the element that happened to be focused, so a
+     CLICKED palette row (input not focused) silently cleared the composer. */
+  const cur = S.composerText[sid] !== undefined ? S.composerText[sid] : inp.value;
+  const next = cur.replace(/(^|\s)\/[A-Za-z0-9:_-]*$/,
+                           (mm, pre)=> pre + p.items[idx].slash + " ");
+  S.composerText[sid] = next;
+  S.palette = null;
+  render();
+  const back = document.querySelector('[data-sask="'+sid+'"]');
+  if (back) { back.value = next; back.focus();
+              back.setSelectionRange(next.length, next.length); }
+}
+
+/* Knowledge search -- debounced, server-side. */
+let _sqT = null;
+function runSearch(q){
+  S.sq = q;
+  clearTimeout(_sqT);
+  if (!q.trim()){ S.searchRes = null; S.searchHits = null; S.searchBusy = false; render(); return; }
+  S.searchBusy = true;
+  _sqT = setTimeout(()=>{
+    apiGet("/api/org/search?q=" + encodeURIComponent(q) + "&limit=40&" + tenantQ())
+      .then(r => { S.searchRes = r; S.searchHits = r.results.length; S.searchBusy = false; render(); })
+      .catch(e => { S.searchRes = { query:q, results:[], counts:{}, error:e.message };
+                    S.searchHits = 0; S.searchBusy = false; render(); });
+  }, 250);
+}
+
+/* ══════════════════════ tenant gate ══════════════════════
+   Tenant-first: nothing about departments, charters or placements is fetched
+   or drawn until the scope those numbers belong to has been chosen, because
+   "2 domains, 38 placements" is meaningless without saying whose.
+
+   ONE-TENANT BEHAVIOUR (deliberate, and this registry is that case): when
+   GET /api/tenants returns exactly one row, boot() selects it and goes
+   straight to the panel. A chooser with a single option is not a choice — it
+   is a click charged on every load for no information. The chooser is still
+   reachable at any time from the rail footer, and it renders the same way for
+   one tenant as for ten, so the mechanism is visible rather than hidden.
+   With two or more tenants and nothing remembered, the gate blocks the load. */
+function tenantGateHtml(){
+  const cur = S.tenant;
+  const cards = TENANTS.map(r=>`
+    <button class="tcard" type="button" data-pick-tenant="${esc(r.tenant_id)}"
+            aria-current="${cur===r.tenant_id}">
+      <span class="tid">${esc(r.tenant_id)}
+        ${r.is_default?'<span class="pill p-acc">of record</span>':""}
+        ${cur===r.tenant_id?'<span class="pill p-ok">current</span>':""}</span>
+      <span class="tm">
+        <span>${r.domains} domain${r.domains===1?"":"s"}</span>
+        <span>${r.charters} charter${r.charters===1?"":"s"}</span>
+        <span>${r.placements} placement${r.placements===1?"":"s"}</span>
+        <span>${r.root_name?"root: "+esc(r.root_name):"no root"}</span>
+      </span>
+    </button>`).join("");
+  return `<section class="pane browse">
+    <div class="ph"><h3 style="max-width:none">Choose a tenant</h3>
+      <span class="src">GET /api/tenants</span></div>
+    <div class="pb">
+      <p>Every request this panel makes is scoped to one tenant. Pick the one you are
+        working in; it is remembered until you change it here.</p>
+      ${S.tenantsError?`<div class="note b"><b>Could not list tenants.</b>
+        ${esc(S.tenantsError)}</div>`:""}
+      ${TENANTS.length?`<div class="tgate">${cards}</div>`:`
+        <div class="zero"><h4>No tenants</h4><p>The registry reported none.</p></div>`}
+      ${TENANTS.length===1?`<p style="font-size:11px;color:var(--faint);margin-top:12px">
+        This registry holds exactly one tenant, so it is selected automatically on load —
+        you are seeing this screen because you asked for it. It is not padded with
+        placeholder tenants to make the list look fuller.</p>`:""}
+      ${S.tenant?`<div style="margin-top:14px">
+        <button class="btn" id="gateCancel">Keep <code>${esc(S.tenant)}</code> and go back</button>
+      </div>`:""}
+    </div></section>`;
+}
+
+function render(){
+  /* A drag is a live binding between the dragged node and the drop targets'
+     ondragover/ondrop handlers. render() replaces #panes wholesale, so a
+     background render (a simulate() fetch resolving mid-gesture) swaps every
+     node under the cursor for a fresh one with no handlers attached yet: the
+     drop then silently never fires and the operator's move is lost with no
+     error. Defer; dragend/drop flushes it. */
+  if (S.drag){ S.renderDirty = true; return; }
+  S.renderDirty = false;
+  const sel = _focusedInputSelector();
+  const prior = sel ? { sel, value: document.activeElement.value,
+    start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
+
+  renderRail();
+
+  /* No tenant GATE pane. Choosing a workspace is a footer control, not a
+     full-screen interstitial: with one tenant the interstitial was a click that
+     carried no information, and it hijacked every screen behind it. boot()
+     auto-selects, so S.tenant is set by the time we render. */
+  document.getElementById("app").classList.toggle("railcol", !!S.ui.railCollapsed);
+
+  const [t,src] = TITLES[S.screen];
+  const open = S.openPanes.map(id=>S.sessions.find(s=>s.id===id)).filter(Boolean);
+  const bCol = !!S.ui.paneCollapsed.browse;
+  /* a dragged width wins over the default flex ratio; without a drag the pane
+     keeps the original `flex:1 1 480px` and nothing about the layout changed.
+
+     CLAMPED to the CURRENT window, not the one it was dragged in. The width is
+     persisted, so a pane widened on a 1600px display came back at that width
+     on a 1000px one: the pane overflowed .panes, the session pane next to it
+     was pushed out of sight, and the only way back was a sideways scroll to
+     find a divider that was itself off-screen. Same ceiling the drag itself
+     uses (leave >=170px for the session pane), so the restored width can never
+     be one the drag would have refused. The stored value is left alone -- go
+     back to the wide display and the original width returns. */
+  /* A pinned width is only meaningful when there is ANOTHER expanded pane to
+     share the row with. Pinning unconditionally was the dead-space bug: with a
+     single pane (session closed, or every session pane collapsed) the browse
+     pane sat at its dragged width -- measured 453px inside a 1061px row, 608px
+     of the container simply unclaimed, because `flex:0 0 <px>` sets flex-grow
+     to 0 and nothing else was left to grow. The stored width is NOT discarded;
+     it is just not applied while it would strand space. Reopen a session and
+     the drag width returns. */
+  const expandedSessions = open.filter(s => !S.ui.paneCollapsed[s.id]).length;
+  const pinBrowse = !bCol && S.ui.browseW && expandedSessions > 0;
+  /* COLLAPSED emits NO inline flex. `.pane.collapsed` already pins the rail to
+     38px, but an inline style beats a stylesheet rule, so the old unconditional
+     `flex:1 1 auto` overrode it and the collapsed rail GREW to fill the row --
+     a 38px strip stretched across ~600px with its vertical label floating in
+     the middle. Letting the class own the collapsed width is the whole fix. */
+  const bStyle = bCol
+    ? ""
+    : pinBrowse
+      ? ` style="flex:0 0 ${clampBrowseW(S.ui.browseW)}px;max-width:none"`
+      : ` style="flex:1 1 auto;max-width:none"`;
+  document.getElementById("panes").innerHTML =
+    `<section class="pane browse ${bCol?"collapsed":""}"${bStyle}>
+       <div class="ph">
+         <button class="pfold" type="button" data-pane-fold="browse"
+                 aria-expanded="${!bCol}"
+                 aria-label="${bCol?"Expand":"Collapse"} the browse pane">
+           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+         </button>
+         <h3 style="max-width:none">${esc(t)}</h3>
+         </div>
+       <div class="pb" id="scBody"></div>
+     </section>`
+    + (open.length && !bCol
+        ? `<button class="pdiv" id="pdiv" type="button" role="separator"
+             aria-orientation="vertical" aria-label="Resize the browse pane
+             (left and right arrows adjust, home resets)"></button>` : "")
+    + open.map(sessionPane).join("");
+  document.getElementById("scBody").innerHTML = SCREENS[S.screen]();
+  wire();
+
+  if (prior) {
+    const el = document.querySelector(prior.sel);
+    if (el && (el.tagName === "INPUT")) {
+      el.value = prior.value;
+      el.focus();
+      if (typeof prior.start === "number" && el.setSelectionRange) {
+        try { el.setSelectionRange(prior.start, prior.end); } catch (e) {}
+      }
+    }
+  }
+  /* AFTER #panes is populated -- scrollHeight is meaningless before layout. */
+  scrollNewSessionsToNewest();
+}
+/* A transcript is a LOG: the interesting end is the newest turn. Opening a
+   60-turn session at turn 1 makes the operator scroll to find what just
+   happened. Scroll once per pane-open, then leave the scroll position alone so
+   a re-render (a streaming token, a sim result) never yanks the view back. */
+function scrollNewSessionsToNewest(){
+  const open = new Set(S.openPanes);
+  [...S.userScrolled.keys()].forEach(id => { if (!open.has(id)) S.userScrolled.delete(id); });
+  requestAnimationFrame(()=>{
+    document.querySelectorAll("#panes .pane[data-sess]").forEach(pane=>{
+      const sid = pane.dataset.sess;
+      const pb = pane.querySelector(".pb");
+      if (!pb || pb.__sutraBound) return;
+      pb.__sutraBound = true;
+      /* Distinguish OUR scroll from the operator's: only a scroll we did not
+         cause counts as intent. Landing back at the bottom clears it again. */
+      pb.addEventListener("scroll", ()=>{
+        if (pb.__pinning) return;
+        const atBottom = pb.scrollHeight - pb.clientHeight - pb.scrollTop < 24;
+        if (atBottom) S.userScrolled.delete(sid); else S.userScrolled.set(sid, true);
+      }, { passive:true });
+    });
+    /* Fixed timeouts do not work here. Transcripts range from 2 turns to ~1MB,
+       and layout finishes whenever it finishes -- a 120/400/900ms ladder pinned
+       three sessions and missed the largest. FOLLOW THE LAYOUT instead: poll
+       scrollHeight and re-pin every time it grows, stopping when it stops
+       changing, when the operator scrolls, or after a hard 4s ceiling so this
+       can never become a permanent timer. */
+    document.querySelectorAll("#panes .pane[data-sess]").forEach(pane=>{
+      const sid = pane.dataset.sess;
+      const pb = pane.querySelector(".pb");
+      if (!pb || pb.__pinTimer) return;
+      let lastH = -1, stable = 0, ticks = 0;
+      pb.__pinTimer = setInterval(()=>{
+        ticks++;
+        const done = () => { clearInterval(pb.__pinTimer); pb.__pinTimer = null; };
+        if (S.userScrolled.get(sid) || ticks > 40) return done();   // 4s ceiling
+        const h = pb.scrollHeight;
+        if (h <= pb.clientHeight + 1) return;                       // nothing yet
+        if (h === lastH){ if (++stable >= 3) done(); return; }       // settled
+        lastH = h; stable = 0;
+        pb.__pinning = true;
+        pb.scrollTop = h;                                            // newest turn is last
+        setTimeout(()=>{ pb.__pinning = false; }, 0);
+      }, 100);
+    });
+  });
+}
+
+/* Run whatever render() was deferred during a drag. Called from dragend and
+   from every early-return path in ondrop, so a deferred render can never be
+   stranded. */
+function flushRender(){ if (S.renderDirty) render(); }
+/* the tenant chooser is its own tiny wiring pass -- it renders instead of the
+   screens, so wire() (which assumes #scBody exists) must not run for it */
+function wireGate(){
+  const panes = document.getElementById("panes");
+  panes.querySelectorAll("[data-pick-tenant]").forEach(b=>
+    b.onclick = ()=>pickTenant(b.dataset.pickTenant));
+  const c = panes.querySelector("#gateCancel");
+  if (c) c.onclick = ()=>{ S.gate = false; render(); };
+}
+
+/* Drag the browse/session divider. The drag writes the width straight onto the
+   element instead of re-rendering per mousemove -- a full innerHTML rebuild at
+   60Hz would tear down the very button being dragged. State is persisted once,
+   on mouseup. Arrow keys do the same thing for keyboard users; Home clears the
+   override and returns the pane to its default flex ratio. */
+function wireDivider(){
+  const d = document.getElementById("pdiv");
+  if (!d) return;
+  const panes = document.getElementById("panes");
+  const browse = panes.querySelector(".pane.browse");
+  if (!browse) return;
+  const apply = w => { S.ui.browseW = Math.round(w);
+    browse.style.flex = "0 0 " + Math.round(w) + "px"; browse.style.maxWidth = "none"; };
+  /* The SAME ceiling render() applies to a restored width -- a drag must not
+     be able to reach a width the next reload would clamp away. */
+  const limit = browseMax;
+  d.onmousedown = e => {
+    e.preventDefault();
+    d.classList.add("dragging");
+    const startX = e.clientX, startW = browse.getBoundingClientRect().width;
+    const move = ev => apply(Math.max(BROWSE_MIN, Math.min(limit(), startW + (ev.clientX - startX))));
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      d.classList.remove("dragging");
+      saveLayout();
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  };
+  d.onkeydown = e => {
+    const cur = S.ui.browseW || browse.getBoundingClientRect().width;
+    if (e.key === "ArrowLeft"){ e.preventDefault(); apply(Math.max(BROWSE_MIN, cur - 24)); saveLayout(); }
+    else if (e.key === "ArrowRight"){ e.preventDefault(); apply(Math.min(limit(), cur + 24)); saveLayout(); }
+    else if (e.key === "Home"){ e.preventDefault(); S.ui.browseW = null; saveLayout(); render(); }
+  };
+}
+
+function wire(){
+  const scBody = document.getElementById("scBody");
+  const panes  = document.getElementById("panes");
+
+  /* ── layout affordances (collapse, fold, resize) ── */
+  panes.querySelectorAll("[data-pane-fold]").forEach(b=>b.onclick=()=>{
+    const id = b.dataset.paneFold;
+    if (S.ui.paneCollapsed[id]) delete S.ui.paneCollapsed[id];
+    else S.ui.paneCollapsed[id] = true;
+    saveLayout(); render(); });
+  scBody.querySelectorAll("[data-fold]").forEach(b=>b.onclick=()=>{
+    /* read the state off the button rather than recomputing the default -- some
+       folds ship closed (an empty provider group) and a hardcoded default here
+       would invert their first click */
+    S.ui.folds[b.dataset.fold] = b.getAttribute("aria-expanded") === "true" ? 0 : 1;
+    saveLayout(); render(); });
+  wireDivider();
+
+  /* ── tenant ── */
+  scBody.querySelectorAll("[data-pick-tenant]").forEach(b=>
+    b.onclick = ()=>pickTenant(b.dataset.pickTenant));
+  const og = scBody.querySelector("#openGate");
+  if (og) og.onclick = ()=>{ S.gate = true; render(); };
+
+  /* ── settings: every control posts, and reports the server's refusal ── */
+  scBody.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{
+    if (b.disabled) return;                       /* not runnable -- the reason is on screen */
+    S.setBusy = "prov:" + b.dataset.prov; S.setError = null; S.setOk = null; render();
+    apiPost("/api/providers/active", { id: b.dataset.prov })
+      .then(r=>{ PROVIDERS = r.providers || PROVIDERS;
+                 SETTINGS = r.settings || SETTINGS;
+                 S.setOk = "active provider is now " + r.active + "."; })
+      .catch(e=>{ S.setError = e.message; })
+      .then(()=>{ S.setBusy = null; render(); }); });
+  scBody.querySelectorAll("[data-pmode-set]").forEach(b=>b.onclick=()=>{
+    const m = b.dataset.pmodeSet;
+    S.setBusy = "mode:" + m; S.setError = null; S.setOk = null; render();
+    apiPost("/api/settings", { permission_mode: m })
+      .then(r=>{ SETTINGS = r.settings || SETTINGS;
+                 S.setOk = "permission mode is now " + (SETTINGS||{}).permission_mode + "."; })
+      .catch(e=>{ S.setError = e.message; })
+      .then(()=>{ S.setBusy = null; render(); }); });
+
+  const ea=scBody.querySelector("[data-expall]");
+  if(ea) ea.onclick=()=>{ S.collapsed.clear(); render(); };
+  const ca=scBody.querySelector("[data-collall]");
+  if(ca) ca.onclick=()=>{ live().forEach(d=>{ if(d.parent_ref) S.collapsed.add(d.ref); }); render(); };
+
+  /* session panes */
+  panes.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
+    S.sessTab[b.dataset.sid]=b.dataset.tab; render(); });
+  panes.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{
+    closeClaudeChannel(b.dataset.close);
+    S.openPanes = S.openPanes.filter(id=>id!==b.dataset.close); render(); });
+  /* the composer is NOT disabled while a turn runs: the reply streams in, and disabling
+     the input mid-stream blurred it and dropped whatever was being typed next */
+  panes.querySelectorAll("[data-ssend]").forEach(b=>b.onclick=()=>{
+    const inp=panes.querySelector('[data-sask="'+b.dataset.ssend+'"]');
+    if(inp && inp.value.trim()){ const t=inp.value.trim(); inp.value=""; S.composerText[b.dataset.ssend]=""; S.palette=null;
+      submitTurn(t, b.dataset.ssend); } });
+  panes.querySelectorAll("[data-sask]").forEach(inp=>{
+    const sid = inp.dataset.sask;
+    /* "/" opens the palette; it only ever lists commands that actually
+       resolve, because the source is GET /api/skills reading ~/.claude. */
+    inp.oninput = ()=>{
+      S.composerText[sid] = inp.value;
+      const p = paletteFor(inp.value);
+      const was = S.palette && S.palette.sid===sid;
+      if (p && p.items.length){ S.palette = { sid, items:p.items, idx:0, token:p.token }; render(); }
+      else if (was){ S.palette = null; render(); }
+    };
+    inp.onkeydown = e=>{
+      const pal = S.palette && S.palette.sid===sid ? S.palette : null;
+      if (pal){
+        if (e.key==="ArrowDown"){ e.preventDefault(); pal.idx=(pal.idx+1)%pal.items.length; render(); return; }
+        if (e.key==="ArrowUp"){ e.preventDefault(); pal.idx=(pal.idx-1+pal.items.length)%pal.items.length; render(); return; }
+        if (e.key==="Enter" || e.key==="Tab"){ e.preventDefault(); applyPalette(sid, pal.idx); return; }
+        if (e.key==="Escape"){ e.preventDefault(); S.palette=null; render(); return; }
+      }
+      if(e.key==="Enter" && inp.value.trim()){ e.preventDefault();
+        const t=inp.value.trim(); inp.value=""; S.composerText[sid]=""; S.palette=null;
+        submitTurn(t, sid); }
+    };
+  });
+  panes.querySelectorAll("[data-pal]").forEach(r=>r.onclick=()=>{
+    if (S.palette) applyPalette(S.palette.sid, +r.dataset.pal); });
+  panes.querySelectorAll('.pane:not(.browse) [data-ref]').forEach(n=>n.onclick=()=>{
+    S.screen="departments"; S.sel=n.dataset.ref; render(); });
+
+  scBody.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{S.view=b.dataset.view;render();});
+  scBody.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>{
+    S[b.dataset.toggle]=!S[b.dataset.toggle];
+    /* showAcme widens the scope SERVER-side (all_tenants=true). Under ?tenant=
+       the other tenants' rows were never fetched, so filtering locally would
+       render "none" as though that were a finding. Refetch instead. */
+    if (b.dataset.toggle === "showAcme"){ render(); refetchOrg(); }
+    else render(); });
+  scBody.querySelectorAll("[data-ref]").forEach(n=>{
+    /* the tile IS the control: selecting a department also opens or closes its subtree */
+    n.onclick=()=>{ const r=n.dataset.ref;
+      if (DOMAINS.some(k=>k.parent_ref===r))
+        S.collapsed.has(r) ? S.collapsed.delete(r) : S.collapsed.add(r);
+      S.sel=r; render(); };
+    if (n.getAttribute("draggable")==="true"){
+      n.ondragstart=e=>{ S.drag=n.dataset.ref; n.classList.add("drg");
+        e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",n.dataset.ref);
+        paintRings(n.dataset.ref); };
+      n.ondragend=()=>{ S.drag=null; clearRings(); flushRender(); };
+    }
+    n.ondragover=e=>{ if(!S.drag) return;
+      const src=byRef(S.drag), tgt=byRef(n.dataset.ref);
+      if (!src||!tgt) return;
+      if (blockCodesForMove(src,tgt).length) return;      /* no preventDefault ⇒ drop never fires */
+      e.preventDefault(); e.dataTransfer.dropEffect="move"; };
+    n.ondrop=e=>{ e.preventDefault(); if(!S.drag){ flushRender(); return; }
+      const src=byRef(S.drag), tgt=byRef(n.dataset.ref);
+      if (!src||!tgt) return;
+      if (src.parent_ref===tgt.ref){ clearRings(); S.drag=null; flushRender(); return; }  /* inert no-op */
+      if (blockCodesForMove(src,tgt).length){ clearRings(); S.drag=null; flushRender(); return; }
+      S.draft.ops.push({op:"move",ref:src.ref,target:tgt.ref}); saveDraft();
+      S.drag=null; render(); };
+  });
+  const sqEl=scBody.querySelector("#sq");
+  if(sqEl) sqEl.oninput=()=>runSearch(sqEl.value);
+  scBody.querySelectorAll("[data-goto-domain]").forEach(r=>r.onclick=()=>{
+    S.screen="departments"; S.sel=r.dataset.gotoDomain; render(); });
+  const q=scBody.querySelector("#q");
+  if(q) q.oninput=()=>{S.q=q.value; const p=q.selectionStart; render();
+    const n=scBody.querySelector("#q"); if(n){n.focus(); n.setSelectionRange(p,p);} };
+  scBody.querySelectorAll("[data-facet]").forEach(b=>b.onclick=()=>{
+    const g=S.cf[b.dataset.facet]; const v=b.dataset.val;
+    g.has(v)?g.delete(v):g.add(v); render(); });
+  scBody.querySelectorAll("[data-sort]").forEach(h=>h.onclick=()=>{
+    const c=h.dataset.sort; S.sort = {col:c, dir: S.sort.col===c ? -S.sort.dir : 1}; render(); });
+  scBody.querySelectorAll("[data-charter]").forEach(r=>r.onclick=()=>{S.selCharter=r.dataset.charter;render();});
+  scBody.querySelectorAll("[data-pmode]").forEach(b=>b.onclick=()=>{S.pmode=b.dataset.pmode;render();});
+  scBody.querySelectorAll("[data-revert]").forEach(b=>b.onclick=()=>{
+    S.draft.ops.splice(+b.dataset.revert,1); saveDraft(); render(); });
+  const rat=scBody.querySelector("#rat");
+  /* debounced + chained: one POST per pause, and writes cannot overtake each
+     other (an earlier keystroke's request landing last used to roll the stored
+     rationale backwards) */
+  if(rat) rat.oninput=()=>{S.draft.rationale=rat.value; saveDraftSoon();};
+  /* The drift-simulation dev control was removed: it was a developer
+   affordance on a product surface, and it was inverted -- it bumped a client-side
+   counter the server never compared against, so it did nothing, while Rebase (which
+   should CLEAR drift) was what actually triggered ORG-010. Real drift still surfaces:
+   the server compares the draft's captured base against the registry on every
+   simulate, so a concurrent mint raises ORG-010 without anyone faking it. */
+  const rb=scBody.querySelector("#rebase");
+  /* Rebase CLEARS drift: re-capture the registry's REAL fingerprint so the
+     POSTed base matches the file again and ORG-010 stops firing. It used to
+     write the locally-bumped count — i.e. rebasing CREATED the drift, and
+     saveDraft() persisted it server-side across reloads. */
+  if(rb) rb.onclick=()=>{ S.draft.base={...S.draft.base, domain_index_lines:META.domain_index_lines,
+    captured_ms:Date.now()}; S.drift=false; invalidateSim(); saveDraft(); render(); };
+  const dc=scBody.querySelector("#discard");
+  if(dc) dc.onclick=()=>{ S.draft={ops:[],base:{...PLANS[0].base},rationale:"",
+    plan_origin:"studio-drag",validated_at_ms:null}; S.drift=false;
+    invalidateSim(); saveDraft(); render(); };
+  const cc=scBody.querySelector("#copyCmd");
+  if(cc) cc.onclick=()=>{ const s="placement_engine.py org plan --import ~/.sutra-ui/drafts/"+PLANS[0].plan_id+".json";
+    try{ navigator.clipboard.writeText(s); cc.textContent="copied"; setTimeout(()=>cc.textContent="copy",1200);}catch(e){} };
+}
+function paintRings(srcRef){
+  const src = byRef(srcRef); if(!src) return;
+  const scBody = document.getElementById("scBody");
+  let n=0;
+  scBody.querySelectorAll("[data-ref]").forEach(node=>{
+    const t = byRef(node.dataset.ref); if(!t) return;
+    const codes = blockCodesForMove(src,t);
+    if (codes.length){ node.classList.add("ring"); n++;
+      node.title = codes.map(c=>c.code+" · "+c.subject).join("\n"); }
+    else if (t.ref!==src.ref) node.classList.add("ok-t");
+  });
+  const s=document.getElementById("dragStatus");
+  if(s) s.innerHTML = ` <b style="color:var(--block)">${n} blocked</b> for “${esc(src.name)}”.`;
+}
+function clearRings(){
+  const scBody = document.getElementById("scBody");
+  scBody.querySelectorAll("[data-ref]").forEach(n=>{
+    n.classList.remove("ring","drg","ok-t"); n.removeAttribute("title"); });
+  const s=document.getElementById("dragStatus"); if(s) s.textContent="";
+}
+document.querySelector(".rail").addEventListener("click", e=>{
+  /* The gate short-circuits render(), but the RAIL keeps rendering behind it,
+     so its buttons stay live. Navigating without clearing S.gate therefore set
+     the new screen and then drew the tenant chooser over it again -- the panel
+     looked stuck on "Choose a tenant" no matter what you clicked, with only the
+     one "go back" button able to escape. Any deliberate navigation is also an
+     answer to the chooser: dismiss it. S.tenant is already set in this state
+     (the gate was opened via `switch`, not by the no-tenant path), and when it
+     is NOT set render() re-opens the gate on its own, so this cannot strand the
+     panel tenant-less. */
+  const b = e.target.closest("[data-screen]");
+  if (b && !b.disabled){ S.gate=false; S.screen=b.dataset.screen; render(); return; }
+  const sg = e.target.closest("[data-sgroup]");
+  if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
+  const op = e.target.closest("[data-open]");
+  if (op){ const id=op.dataset.open; S.gate=false;
+    if (!S.openPanes.includes(id)) S.openPanes.push(id);
+    if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
+    /* opening a REAL session is what triggers the transcript read -- the list
+       endpoint only read each file's head, so until now the turns are unknown,
+       not empty */
+    ensureTranscript(S.sessions.find(s=>s.id===id));
+    render(); return; }
+  const g = e.target.closest("[data-goto]");
+  if (g){ S.screen="departments"; S.sel=g.dataset.goto; render(); }
+});
+/* New session: opens an empty pane on the right, exactly like the reference */
+document.getElementById("newSession").onclick = () => {
+  const s = { id:"s-"+(++SID), title:"New session", created_ms:NOW, updated_ms:NOW,
+              turns:[], local:true, loadState:"live" };
+  S.sessions.unshift(s);
+  S.openPanes.push(s.id);
+  if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
+  render();
+  const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
+};
+/* theme */
+(function(){
+  const r=document.documentElement, KEY="sutra.panel.theme";
+  const rd=()=>{try{return localStorage.getItem(KEY)}catch(e){return null}};
+  const wr=v=>{try{localStorage.setItem(KEY,v)}catch(e){}};
+  const saved=rd(); if(saved==="light"||saved==="dark") r.setAttribute("data-theme",saved);
+  const eff=()=>r.getAttribute("data-theme")||
+    (matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");
+  const lab=()=>themeBtn.setAttribute("aria-label","Switch to "+(eff()==="light"?"dark":"light")+" theme");
+  lab();
+  themeBtn.onclick=()=>{ const n=eff()==="light"?"dark":"light";
+    r.setAttribute("data-theme",n); wr(n); lab(); };
+})();
+/* ══════════════════════ bootstrap ══════════════════════
+   Order matters and is the whole point of "tenant-first": /api/tenants is read
+   BEFORE any registry endpoint, because every one of them is scoped by the
+   answer. Nothing about departments, charters or placements is fetched — let
+   alone drawn — until the scope is settled. */
+
+function backendError(e){
+  document.getElementById("panes").innerHTML =
+    `<section class="pane browse"><div class="pb">
+      <div class="zero"><h4>Could not reach the backend</h4>
+      <p>${esc(e.message)}</p>
+      <p style="color:var(--faint)">Is the server running? <code>uvicorn app:app</code> from
+      <code>sutra-ui/</code>.</p></div></div></section>`;
+  console.error(e);
+}
+
+/* Registry reads, all carrying the current scope. Separated from the runtime
+   reads below because switching tenants must redo these and need not redo those. */
+async function loadOrg(){
+  const q = scopeQ();
+  const [tree, charters, placements, history] = await Promise.all([
+    apiGet("/api/org/tree?include_retired=true&" + q),
+    apiGet("/api/org/charters?" + q),
+    apiGet("/api/org/placements?" + q),
+    apiGet("/api/org/history?" + tenantQ()),
+  ]);
+  DOMAINS = tree;
+  CHARTERS = charters;
+  PLACEMENTS = placements;
+  INDEX = history.events || [];
+  // history_complete_from_ms is DERIVED server-side (earliest event carrying a
+  // before/after snapshot), not a stored engine field -- see /api/org/history.
+  META.history_complete_from_ms = history.meta.history_complete_from_ms;
+  META.history_derived = history.meta.derived;
+  META.domain_index_lines = history.meta.domain_index_lines;
+  META.legacy_events = history.meta.legacy_events;
+  invalidateSim();
+}
+
+/* Machine state, not registry state: what can run, and how it is configured.
+   Tenant-independent, so a tenant switch does not refetch it. */
+async function loadRuntime(){
+  const [skills, provs, settings] = await Promise.all([
+    apiGet("/api/skills"),
+    apiGet("/api/providers"),
+    apiGet("/api/settings"),
+  ]);
+  SKILLS = skills.items || [];
+  SKILLS_META = { by_kind: skills.by_kind, by_source: skills.by_source,
+                  by_provider: skills.by_provider, total: skills.total,
+                  runnable: skills.runnable, providers: skills.providers || [] };
+  PROVIDERS = provs.providers || [];
+  SETTINGS = settings.settings || null;
+  PERM_MODES = settings.permission_modes || [];
+}
+
+/* The REAL sessions. session_reader.list_sessions() walks
+   ~/.claude/projects/<encoded-cwd>/*.jsonl, newest first. Nothing here is
+   derived from placements. */
+async function loadSessions(){
+  adoptRealSessions(await apiGet("/api/sessions?limit=100"));
+}
+
+function refetchOrg(){
+  loadOrg().then(render).catch(backendError);
+}
+
+function pickTenant(id){
+  if (!id) return;
+  const changed = id !== S.tenant;
+  S.tenant = id;
+  META.tenant_id = id;
+  S.gate = false;
+  lsSet(LS_TENANT, id);
+  if (!changed && S.loaded){ render(); return; }
+  /* A different tenant is a different scope. Selections, search results and the
+     memoized simulate() answers all belong to the old one; carrying them across
+     would attribute one tenant's findings to another. */
+  S.sel = null; S.selCharter = null;
+  S.searchRes = null; S.searchHits = null; S.sq = "";
+  S.showAcme = false;
+  S.loaded = false;
+  invalidateSim();
+  render();
+  loadOrg().then(()=>{ S.loaded = true; render(); }).catch(backendError);
+}
+
+async function boot(){
+  const panes = document.getElementById("panes");
+  panes.innerHTML = `<section class="pane browse"><div class="pb" style="display:flex;
+    align-items:center;justify-content:center;color:var(--faint);font-size:13px">
+    Reading tenants…</div></section>`;
+  try {
+    TENANTS = await apiGet("/api/tenants");
+  } catch (e) {
+    S.tenantsError = e.message;
+    TENANTS = [];
+    backendError(e);
+    return;
+  }
+
+  const stored = lsGet(LS_TENANT, null);
+  if (TENANTS.length === 1){
+    /* ONE TENANT: auto-select. See tenantGateHtml() -- a chooser with a single
+       option is a click that carries no information, and this registry has
+       exactly one tenant today. The chooser stays reachable from the rail
+       footer, so the behaviour is switchable rather than hidden. */
+    S.tenant = TENANTS[0].tenant_id;
+  } else if (stored && TENANTS.some(r=>r.tenant_id === stored)){
+    S.tenant = stored;
+  } else {
+    S.tenant = null;      /* two or more, nothing remembered -> the gate blocks */
+  }
+  if (S.tenant){ META.tenant_id = S.tenant; lsSet(LS_TENANT, S.tenant); }
+  if (!S.tenant){ render(); return; }
+
+  panes.innerHTML = `<section class="pane browse"><div class="pb" style="display:flex;
+    align-items:center;justify-content:center;color:var(--faint);font-size:13px">
+    Loading ${esc(S.tenant)}…</div></section>`;
+  try {
+    await Promise.all([loadOrg(), loadRuntime(), loadSessions()]);
+    await loadDraft();
+    /* A base persisted from an earlier session can ALREADY be stale — the
+       registry moved while nobody was looking. That is real drift: ORG-010
+       fires for it server-side, so the banner has to explain the finding and
+       Rebase (the only cure, and the control that is disabled unless S.drift)
+       has to be reachable. Derived from the two counts, never stored. */
+    S.drift = !!(S.draft.base && S.draft.base.domain_index_lines !== undefined &&
+                 S.draft.base.domain_index_lines !== META.domain_index_lines);
+
+    /* Open on two levels — root + its children. Deeper tiers collapse so the chart fits
+       the pane; clicking a collapsed tile is the only control (feedback #4). */
+    live().forEach(d=>{ if (d.parent_ref && DOMAINS.some(k=>k.parent_ref===d.ref)) S.collapsed.add(d.ref); });
+    /* Open the most recent REAL session so the pane model is visible on load, and
+       read its transcript — the pane shows what is in the file, or says plainly
+       that there was nothing to read. */
+    if (!S.openPanes.length && S.sessions.length){
+      S.openPanes.push(S.sessions[0].id);
+      ensureTranscript(S.sessions[0]);
+    }
+
+    S.loaded = true;
+    render();
+  } catch (e) {
+    backendError(e);
+  }
+}
+
+/* One click hides the whole sidebar and the panes take the freed column.
+   The toggle lives in the masthead so it stays reachable when the rail is gone. */
+const railToggle = document.getElementById("railToggle");
+const railShow = document.getElementById("railShow");
+if (railShow) railShow.onclick = ()=>{ railToggle.onclick(); };
+railToggle.onclick = ()=>{
+  S.ui.railCollapsed = !S.ui.railCollapsed;
+  railToggle.setAttribute("aria-pressed", String(!!S.ui.railCollapsed));
+  railToggle.setAttribute("aria-label", S.ui.railCollapsed ? "Show the sidebar" : "Hide the sidebar");
+  railToggle.title = railToggle.getAttribute("aria-label");
+  saveLayout();
+  render();
+};
+
+/* Rail sections collapse on a click anywhere on their header. */
+document.querySelector(".rail").addEventListener("click", e=>{
+  const tabBtn = e.target.closest("[data-railtab]");
+  if (tabBtn){
+    S.ui.railTab = tabBtn.dataset.railtab;
+    saveLayout();
+    renderRail();
+    return;
+  }
+  const sec = e.target.closest("[data-railsec]");
+  if (!sec) return;
+  const key = sec.dataset.railsec;
+  S.ui.railSections[key] = !(S.ui.railSections[key] !== false);
+  saveLayout();
+  renderRail();
+}, true);
+
+const tenantMenuEl = document.getElementById("tenantMenu");
+const tenantSwitchEl = document.getElementById("tenantSwitch");
+function closeTenantMenu(){
+  tenantMenuEl.hidden = true;
+  tenantSwitchEl.setAttribute("aria-expanded","false");
+}
+tenantSwitchEl.onclick = (e)=>{
+  e.stopPropagation();
+  const open = tenantMenuEl.hidden;
+  renderTenantMenu();
+  tenantMenuEl.hidden = !open;
+  tenantSwitchEl.setAttribute("aria-expanded", String(open));
+};
+tenantMenuEl.addEventListener("click", e=>{
+  const b = e.target.closest("[data-pick-tenant]");
+  if (!b) return;
+  closeTenantMenu();
+  pickTenant(b.dataset.pickTenant);
+});
+document.addEventListener("click", e=>{
+  if (tenantMenuEl.hidden) return;
+  if (!e.target.closest(".tmenuwrap")) closeTenantMenu();
+});
+document.addEventListener("keydown", e=>{ if (e.key === "Escape") closeTenantMenu(); });
+boot();
+</script>

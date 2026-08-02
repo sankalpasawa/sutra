@@ -84,10 +84,15 @@ def _resolve(spec, domains, by_name):
 
 
 def _set_field(ref, **fields):
-    fp = os.path.join(E.DOMAINS, ref + ".json")
-    d = json.load(open(fp))
-    d.update(fields)
-    json.dump(d, open(fp, "w"), sort_keys=True, indent=2)
+    """Route through the engine's single locked domain write path (§9 Phase 0).
+
+    This was an UNLOCKED json.load / json.dump pair: it raced every concurrent
+    restructure (both read, both write, second clobbers first — the exact
+    lost-update the flocks at placement_engine.py exist to prevent) and left no
+    audit row. `set_domain_fields` takes _lock('RESTRUCTURE') and appends
+    `domain_updated {ref, before, after, ts_ms}` with the changed fields only.
+    """
+    return E.set_domain_fields(ref, **fields)
 
 
 # ---------------------------------------------------------------- stages ----
@@ -143,8 +148,15 @@ def structure_apply(path, tenant):
             continue
         # MECE floor: engine mint is idempotent on (parent, name) — an
         # existing sibling of the same name returns its ref, no duplicate.
-        ref, created = E.mint_domain(parent, name, [desc or name.lower()],
-                                     tenant, origin="operator")
+        # ORG-016: mint refuses a frozen/retired parent (§9 Phase 0). That is a
+        # per-row rejection here, not a crash — this stage reports outcomes.
+        try:
+            ref, created = E.mint_domain(parent, name, [desc or name.lower()],
+                                         tenant, origin="operator")
+        except ValueError as e:
+            outcomes.append({"row": i, "name": name, "outcome": "rejected",
+                             "reason": str(e)})
+            continue
         fields = {"touched_by_operator": True}
         if desc:
             fields["description"] = desc
@@ -194,18 +206,13 @@ def charters_apply(path, tenant):
             outcomes.append({"row": i, "domain": ref, "outcome": "skipped",
                              "reason": "already has a charter"})
             continue
-        E.mint_charter_stub(ref, title, purpose, [], [], tenant)
         import charters_seed as CS
         warn = []
         extras = CS.validate_extras(r, warn, "row[%d]" % i)
-        if extras:
-            for c in E.charters_for(ref):
-                if c.get("title", "").strip().lower() == title.lower():
-                    fp = os.path.join(E.CHARTERS, c["id"] + ".json")
-                    c2 = json.load(open(fp))
-                    c2.update(extras)
-                    json.dump(c2, open(fp, "w"), sort_keys=True, indent=2)
-                    break
+        # ONE mint over the FULL body (§0.13): extras are operator-mutable and
+        # go to charters/<C-id>.page.json. Reopening the C-<hash> file to write
+        # todos back meant every todo tick changed the charter's identity.
+        E.mint_charter_stub(ref, title, purpose, [], [], tenant, extras=extras)
         minted += 1
         o = {"row": i, "domain": ref, "outcome": "minted"}
         if warn:
@@ -238,9 +245,12 @@ def design_set(path):
                  "new": {k: tok[k] for k in TOKEN_KEYS}})
 
 
-def publish(site_dir, label, commit):
+def publish(site_dir, label, commit, tenant="T-local"):
     import domains_page as P
-    n = P.build_site(site_dir, label=label)
+    # §6: the publish input set is ONE tenant's. Passed explicitly rather than
+    # left to the env var, so the pipeline's --tenant is what governs the
+    # public artifact.
+    n = P.build_site(site_dir, label=label, tenant_id=tenant)
     # stamp = the auto-refresh fingerprint (same recipe as the hook)
     import hashlib
     h = hashlib.sha256()
@@ -275,7 +285,7 @@ def publish(site_dir, label, commit):
                          "run explicitly"})
 
 
-def autopublish(mode, site_dir=None, label="Departments"):
+def autopublish(mode, site_dir=None, label="Departments", tenant="T-local"):
     root = subprocess.check_output(
         ["git", "rev-parse", "--show-toplevel"], text=True).strip()
     cfg = os.path.join(root, ".claude", "domains-autopublish")
@@ -287,26 +297,37 @@ def autopublish(mode, site_dir=None, label="Departments"):
         return _out({"error": "autopublish on requires <site_dir>"}, 2)
     os.makedirs(os.path.dirname(cfg), exist_ok=True)
     rel = os.path.relpath(os.path.abspath(site_dir), root)
-    open(cfg, "w").write("SITE_DIR=%s\nLABEL=%s\n" % (rel, label))
-    return _out({"stage": "autopublish", "result": "on", "site_dir": rel})
+    # TENANT is pinned AT CONSENT TIME (§6): the operator consents to publishing
+    # ONE tenant's registry, and the hook must not silently widen that later by
+    # picking up a different PLACEMENT_TENANT from some other session's env.
+    open(cfg, "w").write("SITE_DIR=%s\nLABEL=%s\nTENANT=%s\n" % (rel, label, tenant))
+    return _out({"stage": "autopublish", "result": "on", "site_dir": rel,
+                 "tenant": tenant})
 
 
 def status():
     domains = E.load_domains()
     root = _root_dom(domains)
     ch_all = []
-    for fn in os.listdir(E.CHARTERS):
-        if fn.endswith(".json"):
-            try:
-                ch_all.append(json.load(open(os.path.join(E.CHARTERS, fn))))
-            except (ValueError, OSError):
-                pass
+    # BODIES only. `charters/<C-id>.page.json` sidecars also end in `.json`
+    # (§2.2), so the old listdir loop double-counted every charter, inflated
+    # `standing` by one per sidecar (no `kind` -> the "standing" default) and
+    # put a None in `covered` from each sidecar's absent `domain_ref`. Every
+    # other consumer already moved to charter_body_files(); this one had not.
+    for fn in E.charter_body_files():
+        try:
+            ch_all.append(json.load(open(os.path.join(E.CHARTERS, fn))))
+        except (ValueError, OSError):
+            pass
     covered = {c.get("domain_ref") for c in ch_all}
-    no_desc = [domains[r]["name"] for r in domains
-               if not domains[r].get("description")]
-    no_charter = [domains[r]["name"] for r in domains if r not in covered]
+    # Coverage is a LIVE-tree question (I-D5): a tombstone with no description
+    # is not a gap the operator can close, and reporting it as one never clears.
+    live = E.live_refs(domains)
+    no_desc = [live[r]["name"] for r in live if not live[r].get("description")]
+    no_charter = [live[r]["name"] for r in live if r not in covered]
     return _out({"stage": "status",
                  "domains": len(domains),
+                 "domains_live": len(live),
                  "charters": {"total": len(ch_all),
                               "standing": sum(1 for c in ch_all
                                               if c.get("kind", "standing") == "standing"),
@@ -347,10 +368,10 @@ if __name__ == "__main__":
             sys.exit(design_set(a[2]))
         if a[:1] == ["publish"] and len(a) > 1:
             label = a[a.index("--label") + 1] if "--label" in a else "Departments"
-            sys.exit(publish(a[1], label, "--commit" in a))
+            sys.exit(publish(a[1], label, "--commit" in a, tenant))
         if a[:2] == ["autopublish", "on"] and len(a) > 2:
             label = a[a.index("--label") + 1] if "--label" in a else "Departments"
-            sys.exit(autopublish("on", a[2], label))
+            sys.exit(autopublish("on", a[2], label, tenant))
         if a[:2] == ["autopublish", "off"]:
             sys.exit(autopublish("off"))
         if a[:1] == ["status"]:

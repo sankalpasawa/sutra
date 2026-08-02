@@ -266,19 +266,15 @@ def apply_file(path, tenant):
         if title.lower() in existing:
             skipped += 1
             continue
-        E.mint_charter_stub(owner, title, purpose, arts[:10], [], tenant)
+        # ONE mint over the FULL body (§0.12): `kind` is hashed, everything the
+        # operator edits weekly lands in the sidecar. The post-mint reopen loop
+        # that used to live here is exactly why every project charter on disk
+        # failed to hash to its own id.
         extras = validate_extras(r, warnings, tag)
-        for c in E.charters_for(owner):
-            if c.get("title", "").strip().lower() == title.lower():
-                fp = os.path.join(E.CHARTERS, c["id"] + ".json")
-                c2 = json.load(open(fp))
-                c2["kind"] = "project"
-                c2["status"] = status
-                c2["linked_domain_refs"] = links
-                c2["artifacts"] = arts
-                c2.update(extras)
-                json.dump(c2, open(fp, "w"), sort_keys=True, indent=2)
-                break
+        E.mint_charter_stub(owner, title, purpose, arts[:10], [], tenant,
+                            kind="project", status=status,
+                            artifacts=arts, linked_domain_refs=links,
+                            extras=extras)
         minted += 1
     print(json.dumps({"minted": minted, "skipped_existing": skipped,
                       "rejected": rejected, "warnings": warnings}, indent=2))

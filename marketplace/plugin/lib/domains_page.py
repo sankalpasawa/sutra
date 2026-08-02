@@ -29,18 +29,71 @@ NEUTRAL = {"bg": "#fafaf9", "card": "#ffffff", "ink": "#1c1917", "muted": "#7871
            "font": "-apple-system,'Segoe UI',Roboto,sans-serif", "source": "neutral fallback"}
 
 
-def build(out_path, label="Domains", title=None):
-    domains = E.load_domains()
-    if not domains:
-        raise SystemExit("registry empty — run a scan or seed the org tree first")
-    kids, root = {}, None
-    for r, d in domains.items():
+def _tenant(tenant_id):
+    """§6: there is no unfiltered publish path. A publish surface with a
+    defaultable tenant is the performed barrier the design forbids — one
+    forgotten call site republishes a second tenant onto a public Pages repo —
+    so the default is the ACTIVE tenant, never None."""
+    return tenant_id or os.environ.get("PLACEMENT_TENANT", "T-local")
+
+
+def _render_set(tenant_id):
+    """-> (all_domains, live, kids, root, all_kids) for ONE tenant.
+
+    TENANT surface (§6): filter the INPUT SET, not the output. Second-tenant
+    domains must be absent from the build, not suppressed inside it.
+
+    RENDER surface (§2.1): `live_refs()` belongs at the five render surfaces,
+    and "the index-rail builder in domains_page.py" is one of them — the only
+    one that auto-commits to a PUBLIC GitHub Pages repo. Before I-D5 the merge
+    and delete paths called `os.remove()` on `domains/<ref>.json`, so a merged
+    department fell out of `load_domains()` and off the site implicitly; the row
+    now stays with `status='retired'`, and without this filter it keeps its own
+    dref-<id>.html page, its left-nav entry, its org-diagram node and its crumb.
+    §2.1's state table says retired = "in live tree: no (Archive tray)".
+
+    The FULL tenant map comes back alongside it for two reasons: the registry
+    export's `domain_ref not in domains` membership check must keep seeing
+    tombstones (§2.1's read-path table — otherwise every charter homed to a
+    retired domain vanishes from registry.json, killing §3.2.4's Archive tray),
+    and a LIVE child whose parent was retired would otherwise fall out of `kids`
+    and take its whole subtree off the site with no error. Those re-attach to
+    the nearest live ancestor.
+    """
+    all_domains = E.tenant_refs(E.load_domains(), tenant_id)
+    if not all_domains:
+        raise SystemExit("registry empty for tenant %s — run a scan or seed the "
+                         "org tree first" % tenant_id)
+    live = E.live_refs(all_domains)
+    roots = sorted(r for r, d in live.items() if d.get("parent_ref") is None)
+    if not roots:
+        raise SystemExit("tenant %s has no live root domain" % tenant_id)
+    if len(roots) > 1:
+        # LOUD, not last-wins: the old `for r, d in domains.items(): if p is
+        # None: root = r` made index.html nondeterministic across runs, and only
+        # the winner's subtree was walked — the other root and everything under
+        # it vanished from the published site silently.
+        raise SystemExit("tenant %s has %d parent-less live domains (%s) — a "
+                         "publish must not guess which one is the root; merge "
+                         "or retire the extras first"
+                         % (tenant_id, len(roots), ", ".join(roots)))
+    root = roots[0]
+    all_kids, kids = {}, {}
+    for r, d in all_domains.items():
+        all_kids.setdefault(d.get("parent_ref"), []).append(r)
+    for r, d in live.items():
         p = d.get("parent_ref")
-        if p is None:
-            root = r
+        if p is not None and p not in live:
+            p = E._nearest_live_ancestor(p, all_domains) or root
         kids.setdefault(p, []).append(r)
     for v in kids.values():
-        v.sort(key=lambda r: domains[r].get("ts_minted_ms", 0))
+        v.sort(key=lambda r: live[r].get("ts_minted_ms", 0))
+    return all_domains, live, kids, root, all_kids
+
+
+def build(out_path, label="Domains", title=None, tenant_id=None):
+    tenant_id = _tenant(tenant_id)
+    _all, domains, kids, root, _all_kids = _render_set(tenant_id)
     rootd = domains[root]
     T = dict(NEUTRAL)
     T.update(rootd.get("design") or {})
@@ -49,7 +102,7 @@ def build(out_path, label="Domains", title=None):
 
     def charter_line(ref):
         # a domain hosts MANY charters — render every one (founder 2026-07-30)
-        chs = sorted(E.charters_for(ref), key=lambda x: x["id"])
+        chs = sorted(E.charters_for(ref, tenant_id), key=lambda x: x["id"])
         return "".join('<p class="charter"><span>Charter</span> %s — %s</p>'
                        % (esc(c.get("title", "")), esc(c.get("purpose", "")))
                        for c in chs)
@@ -222,7 +275,7 @@ document.querySelectorAll('nav a.sub, nav details.navgrp').forEach(function(n){
     return out_path, len(domains)
 
 
-def build_site(out_dir, label="Domains", window=2):
+def build_site(out_dir, label="Domains", window=2, tenant_id=None):
     """Drill-down zoom site (founder 2026-07-30): every domain gets its OWN
     page rooted at itself, ALL pages from one template (consistency layer).
     Exactly window+1 = 3 levels of D per page:
@@ -235,18 +288,21 @@ def build_site(out_dir, label="Domains", window=2):
     level down. Left nav is sticky + minimal: children visible, grandchild
     groups collapsed unless the page has <= 6 of them (codex fold). Search
     on every page. Filenames are stable refs (survive restructure).
-    index.html = the root domain."""
-    domains = E.load_domains()
-    if not domains:
-        raise SystemExit("registry empty — run a scan or seed the org tree first")
-    kids, root = {}, None
-    for r, d in domains.items():
-        p_ = d.get("parent_ref")
-        if p_ is None:
-            root = r
-        kids.setdefault(p_, []).append(r)
-    for v in kids.values():
-        v.sort(key=lambda r: domains[r].get("ts_minted_ms", 0))
+    index.html = the root domain.
+
+    TENANT (§6): `tenant_id` filters the build's INPUT SET. A second tenant must
+    be ABSENT from the input, not filtered out of the output — every downstream
+    guard here (`domain_ref not in domains`) then excludes its charters,
+    its pages and its registry.json rows for free, with no per-surface filter to
+    forget. The CLI requires `--tenant`; the default is the active tenant, never
+    unfiltered.
+
+    RENDER (§2.1): `domains` is the LIVE set — a retired department gets no
+    page, no nav entry and no org-diagram node. `all_domains` keeps the
+    tombstones for the registry export's membership check only (see
+    `_render_set`)."""
+    tenant_id = _tenant(tenant_id)
+    all_domains, domains, kids, root, all_kids = _render_set(tenant_id)
     os.makedirs(out_dir, exist_ok=True)
     T = dict(NEUTRAL)
     T.update(domains[root].get("design") or {})
@@ -254,12 +310,13 @@ def build_site(out_dir, label="Domains", window=2):
     # Privacy parity with the flat renderer (codex fold 2026-07-30): a
     # `public_names_withheld` domain hides its children's names, and no page
     # is generated for any hidden descendant — a ref-named page would leak
-    # the very names the flag withholds.
+    # the very names the flag withholds. Walked over the FULL map: a retired
+    # descendant is still withheld in the registry export.
     hidden = set()
     def _hide(ref):
-        for c in kids.get(ref, []):
+        for c in all_kids.get(ref, []):
             hidden.add(c); _hide(c)
-    for r, d in domains.items():
+    for r, d in all_domains.items():
         if d.get("public_names_withheld"):
             _hide(r)
 
@@ -276,14 +333,20 @@ def build_site(out_dir, label="Domains", window=2):
     # One owner (domain_ref, the existing invariant) + linked_domain_refs as
     # references, never homes. Render-time defaults keep the pre-existing
     # stub charters valid with zero migration (codex fold).
+    # §2.2: the hashed body is joined with its mutable sidecar HERE, at render.
+    # The sidecar wins its own keys; the body is never written back — that
+    # rewrite is what broke content addressing (§0.12/§0.13). C-<id>.html
+    # naming is unchanged: the id still comes from the body.
     all_ch = []
-    for fn in os.listdir(E.CHARTERS):
-        if not fn.endswith(".json"):
-            continue
+    for fn in E.charter_body_files():
         try:
-            c = json.load(open(os.path.join(E.CHARTERS, fn)))
+            body = json.load(open(os.path.join(E.CHARTERS, fn)))
         except (ValueError, OSError):
             continue
+        if not isinstance(body, dict):
+            continue
+        body.setdefault("id", fn[:-len(".json")])
+        c = E.charter_view(body)
         c.setdefault("kind", "standing")
         c.setdefault("status", "active")
         c.setdefault("linked_domain_refs", [])
@@ -943,7 +1006,11 @@ def build_site(out_dir, label="Domains", window=2):
         hydration is patch-only and count-validated (codex fold)."""
         out = {}
         for c in all_ch:
-            if c.get("domain_ref") in hidden or c.get("domain_ref") not in domains:
+            # §2.1 read-path table: this membership check reads the FULL tenant
+            # map on purpose. Filtering it to live refs would drop every charter
+            # homed to a retired domain out of registry.json and kill §3.2.4's
+            # Archive tray and §4.2's tombstones — both P0.
+            if c.get("domain_ref") in hidden or c.get("domain_ref") not in all_domains:
                 continue
             row = {"status": c["status"]}
             mets = [str(m.get("current", "")).strip()
@@ -1294,10 +1361,19 @@ if(c.items&&dets.length===c.items.length)
 """
 
 
-def export_registry_only(out_dir):
+def export_registry_only(out_dir, tenant_id=None):
     """Fast-lane export (hook): write ONLY registry.json — the volatile view —
-    without regenerating pages. Same shapes/order as build_site's export."""
-    domains = E.load_domains()
+    without regenerating pages. Same shapes/order as build_site's export, and
+    the same tenant rule (§6): the INPUT SET is filtered, so a second tenant's
+    charters are absent rather than suppressed.
+
+    NOT live-filtered, deliberately, and this is the one publish surface where
+    that is correct: §2.1's read-path table names `export_registry_only` as a
+    consumer that must keep seeing tombstones, because a charter homed to a
+    retired domain still has to reach §3.2.4's Archive tray. The PAGES drop
+    retired departments (see `_render_set`); the registry keeps their rows."""
+    tenant_id = _tenant(tenant_id)
+    domains = E.tenant_refs(E.load_domains(), tenant_id)
     kids = {}
     for r, d in domains.items():
         kids.setdefault(d.get("parent_ref"), []).append(r)
@@ -1311,13 +1387,15 @@ def export_registry_only(out_dir):
         if d.get("public_names_withheld"):
             _hide(r)
     out = {}
-    for fn in os.listdir(E.CHARTERS):
-        if not fn.endswith(".json"):
-            continue
+    for fn in E.charter_body_files():
         try:
-            c = json.load(open(os.path.join(E.CHARTERS, fn)))
+            body = json.load(open(os.path.join(E.CHARTERS, fn)))
         except (ValueError, OSError):
             continue
+        if not isinstance(body, dict):
+            continue
+        body.setdefault("id", fn[:-len(".json")])
+        c = E.charter_view(body)        # body + sidecar; body never mutated
         c.setdefault("status", "active")
         if c.get("domain_ref") in hidden or c.get("domain_ref") not in domains:
             continue
@@ -1343,19 +1421,54 @@ def export_registry_only(out_dir):
     return len(out)
 
 
+#: flags that CONSUME the next argv token. Everything else that starts with
+#: "--" is a bare switch and everything left over is a positional.
+_VALUE_FLAGS = ("--label", "--tenant")
+
+
+def _parse_argv(argv):
+    """-> (positionals, {flag: value}). Consumes by POSITION, never by value.
+
+    Two fragilities this replaces, both of the same class as the engine's
+    `_flag()` (which existed for exactly this and was not used here):
+    `sys.argv[sys.argv.index('--tenant') + 1]` raised an uncaught IndexError
+    when the flag was last, and `[a for a in args if a != tenant]` stripped
+    EVERY positional equal to the tenant string — so an out-dir named after the
+    tenant was silently dropped and the site was written to ./domains/ instead.
+    """
+    pos, flags, i = [], {}, 0
+    while i < len(argv):
+        a = argv[i]
+        if a in _VALUE_FLAGS:
+            if i + 1 >= len(argv) or argv[i + 1].startswith("--"):
+                raise SystemExit("%s requires a value" % a)
+            flags[a] = argv[i + 1]
+            i += 2
+            continue
+        if not a.startswith("--"):
+            pos.append(a)
+        i += 1
+    return pos, flags
+
+
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    label = "Departments" if "--label" not in " ".join(sys.argv) else \
-        sys.argv[sys.argv.index("--label") + 1]
+    args, flags = _parse_argv(sys.argv[1:])
+    label = flags.get("--label", "Departments")
+    # §6: --tenant is REQUIRED on every publish path. A defaulted tenant on a
+    # public-artifact generator is how a second tenant reaches GitHub Pages.
+    if "--tenant" not in flags:
+        raise SystemExit("--tenant <T-id> is required (§6): a publish must name "
+                         "the tenant whose registry it is allowed to render")
+    tenant = flags["--tenant"]
     if "--export-registry" in sys.argv:
         out = args[0] if args else "domains"
-        n = export_registry_only(out)
-        print("registry.json: %d charters -> %s/" % (n, out))
+        n = export_registry_only(out, tenant_id=tenant)
+        print("registry.json: %d charters -> %s/ [%s]" % (n, out, tenant))
     elif "--site" in sys.argv:
         out = args[0] if args else "domains"
-        n = build_site(out, label=label)
-        print("site: %d zoom pages in %s/" % (n, out))
+        n = build_site(out, label=label, tenant_id=tenant)
+        print("site: %d zoom pages in %s/ [%s]" % (n, out, tenant))
     else:
         out = args[0] if args else "domains.html"
-        p, n = build(out, label=label)
-        print("wrote %s (%d domains)" % (p, n))
+        p, n = build(out, label=label, tenant_id=tenant)
+        print("wrote %s (%d domains) [%s]" % (p, n, tenant))

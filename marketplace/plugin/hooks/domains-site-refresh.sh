@@ -40,6 +40,16 @@ esac
 LABEL="${LABEL:-Domains}"
 case "$LABEL" in *'$'*|*'`'*|*';'*|*'|'*|*'&'*) LABEL="Domains" ;; esac
 
+# §6 tenant: the generator now REFUSES to publish without one — an
+# auto-committing public-Pages writer defaulting to "every tenant" is the worst
+# possible place to forget the boundary. Same selector the per-turn resolve hook
+# exports; validated as data, exactly like SITE_DIR and LABEL.
+TENANT=$(sed -n 's/^TENANT=//p' "$CFG" 2>/dev/null | head -1 | tr -d '\r')
+TENANT="${TENANT:-${PLACEMENT_TENANT:-T-local}}"
+case "$TENANT" in
+  ''|*'$'*|*'`'*|*';'*|*'|'*|*'&'*|*' '*) TENANT="T-local" ;;
+esac
+
 KIT="${SUTRA_NATIVE_HOME:-$HOME/.sutra-native/user-kit}"
 [ -d "$KIT/domains" ] || exit 0
 STATE="$REPO_ROOT/.claude"
@@ -66,10 +76,10 @@ FLAST=$(cat "$STATE/domains-fastlane-last" 2>/dev/null)
 case "$FLAST" in ''|*[!0-9]*) FLAST=0 ;; esac
 FSTAMP=$(cat "$STATE/domains-fastlane-fp" 2>/dev/null)
 if [ "$FSTAMP" != "$FP" ] && [ $((NOW - FLAST)) -ge 180 ]; then
-  if python3 - "$GEN" "$REPO_ROOT/$SITE_DIR" >/dev/null 2>>"$ERR" <<'PYEOF'
+  if python3 - "$GEN" "$REPO_ROOT/$SITE_DIR" "$TENANT" >/dev/null 2>>"$ERR" <<'PYEOF'
 import subprocess, sys
-subprocess.run([sys.executable, sys.argv[1], sys.argv[2], "--export-registry"],
-               check=True, timeout=60)
+subprocess.run([sys.executable, sys.argv[1], sys.argv[2], "--export-registry",
+                "--tenant", sys.argv[3]], check=True, timeout=60)
 PYEOF
   then
     printf '%s\n' "$FP" > "$STATE/domains-fastlane-fp" 2>/dev/null
@@ -103,11 +113,11 @@ mkdir "$LOCK" 2>/dev/null || exit 0
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
 # -- regen (120s cap); stamp ONLY on success ---------------------------------
-python3 - "$GEN" "$REPO_ROOT/$SITE_DIR" "$LABEL" >/dev/null 2>"$ERR" <<'PYEOF'
+python3 - "$GEN" "$REPO_ROOT/$SITE_DIR" "$LABEL" "$TENANT" >/dev/null 2>"$ERR" <<'PYEOF'
 import subprocess, sys
-gen, out, label = sys.argv[1], sys.argv[2], sys.argv[3]
-subprocess.run([sys.executable, gen, out, "--site", "--label", label],
-               check=True, timeout=120)
+gen, out, label, tenant = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+subprocess.run([sys.executable, gen, out, "--site", "--label", label,
+                "--tenant", tenant], check=True, timeout=120)
 PYEOF
 [ $? -ne 0 ] && exit 0
 printf '%s\n' "$FP" > "$STAMP" 2>/dev/null
