@@ -642,11 +642,13 @@ test("15. a corrupt/hostile stored layout degrades to defaults", () => {
   const prev = sandbox.localStorage._m["sutra.panel.layout"];
   try {
     sandbox.localStorage._m["sutra.panel.layout"] = "{not json";
-    deepEq(T.loadLayout(), { paneCollapsed: {}, folds: {}, browseW: null },
+    deepEq(T.loadLayout(), { paneCollapsed: {}, folds: {}, browseW: null,
+                             railCollapsed: false, railSections: {}, railTab: "home" },
       "unparseable layout must not take the panel down");
     sandbox.localStorage._m["sutra.panel.layout"] =
       JSON.stringify({ browseW: "700px", paneCollapsed: "nope", folds: 3 });
-    deepEq(T.loadLayout(), { paneCollapsed: {}, folds: {}, browseW: null },
+    deepEq(T.loadLayout(), { paneCollapsed: {}, folds: {}, browseW: null,
+                             railCollapsed: false, railSections: {}, railTab: "home" },
       "wrong types must be dropped, not applied");
     sandbox.localStorage._m["sutra.panel.layout"] = JSON.stringify({ browseW: 12 });
     assert.strictEqual(T.loadLayout().browseW, null,
