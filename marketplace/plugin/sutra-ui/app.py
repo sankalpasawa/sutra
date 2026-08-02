@@ -20,32 +20,104 @@ from fastapi.staticfiles import StaticFiles
 
 import log_reader as lr
 import session_reader as sr
+import org_api
+import providers
 
 app = FastAPI(title="Sutra UI", docs_url=None, redoc_url=None)
+app.include_router(org_api.router)
 HERE = Path(__file__).resolve().parent
 
 # persistent (non-transient) marker files for the state panel — see README §4
 STATE_MARKERS = ("active-role", "structure-first-active", ".last-reset-ts")
 
-# --- chat wrapper config: drives the `claude` CLI as a subprocess (Max-plan auth, no API key) ---
+# --- chat wrapper config: drives an AI CLI as a subprocess (Max-plan auth, no API key) ---
+# CLAUDE_BIN is the ws_term (PTY) default and the back-compatible env name.
+# ws_chat no longer uses it: it resolves the ACTIVE provider through
+# providers.py on every connect, so switching providers in the UI takes effect
+# on the next message instead of on the next server restart.
 CLAUDE_BIN = os.environ.get("SUTRA_UI_CLAUDE_BIN", "claude")
 WORKDIR = os.path.expanduser(os.environ.get("SUTRA_UI_WORKDIR", "~/sutra-ui-workspace"))
-PERM_MODE = os.environ.get("SUTRA_UI_PERMISSION_MODE", "acceptEdits")
+# Module-level default, kept for the env-var contract (SAFETY rule 4 /
+# test_perm_mode_default). The live value ws_chat sends is read per-connect
+# from ~/.sutra-ui/settings.json, which falls back to exactly this env var.
+PERM_MODE = os.environ.get("SUTRA_UI_PERMISSION_MODE", "plan")
 INIT_CMD = os.environ.get("SUTRA_UI_INIT", "/core:start")          # run every fresh session so Sutra fires
 AUTO_CAVEMAN = os.environ.get("SUTRA_UI_AUTO_CAVEMAN", "1") == "1"  # token-saving default (non-Max friendly)
 INIT_DELAY = float(os.environ.get("SUTRA_UI_INIT_DELAY", "3.5"))    # secs to let the TUI boot before typing
 
 
+def _ensure_workdir(path=None):
+    """Both socket handlers spawn a subprocess with cwd=<workdir>. If that
+    directory does not exist, create_subprocess_exec raises FileNotFoundError
+    BEFORE a single frame is written, the socket dies, and the operator sees a
+    UI that simply does nothing -- no error text, no output, no clue. WORKDIR
+    defaults to ~/sutra-ui-workspace, which nothing else on the system creates,
+    so on a fresh machine that was the guaranteed state. ws_chat did the
+    makedirs; ws_term did not. Both paths go through here now.
+
+    Returns the usable directory, or None if it cannot be created -- the caller
+    reports that to the client rather than dying mid-handshake."""
+    target = path or WORKDIR
+    try:
+        os.makedirs(target, exist_ok=True)
+    except OSError:
+        return None
+    return target if os.path.isdir(target) else None
+
+
+# Create it ONCE, at import, rather than only on the first socket connect.
+# The per-handler calls below stay (a directory can be removed while the server
+# runs), but doing it here means the failure is visible in the server's own
+# startup rather than as a socket that dies mid-handshake on the first message
+# the operator ever sends. None => could not be created; the handlers still
+# report that to the client instead of raising FileNotFoundError from
+# create_subprocess_exec.
+WORKDIR_READY = _ensure_workdir()
+
+
+def _panel_html() -> str:
+    """The Tier-3 org/reorg studio: the reviewed design shell, wired to the real
+    /api/org/* endpoints (org_api.py -> placement_engine.py). Markup and CSS
+    are byte-identical to the reviewed design; only the data layer differs
+    (seed constants replaced with fetch()).
+    """
+    return (HERE / "static" / "panel.html").read_text(encoding="utf-8")
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
+    """THE app. This previously served term.html (the xterm console), so the
+    front door showed a completely different UI from the studio, and the studio
+    was reachable only if you already knew to type /panel. Anyone who opened
+    the server saw the wrong product. The studio IS the app; the older
+    surfaces remain reachable under /legacy/* below.
+    """
+    return _panel_html()
+
+
+@app.get("/panel", response_class=HTMLResponse)
+def panel_page() -> str:
+    """Alias for /, so existing links and bookmarks keep working."""
+    return _panel_html()
+
+
+# --- legacy surfaces -------------------------------------------------------
+# Pre-existing dashboards, moved off the front door rather than deleted --
+# they are working tools that predate this work, not mine to remove. The old
+# paths still resolve so nothing that linked to them breaks.
+
+@app.get("/legacy/term", response_class=HTMLResponse)
+def legacy_term() -> str:
     return (HERE / "static" / "term.html").read_text(encoding="utf-8")
 
 
+@app.get("/legacy/panels", response_class=HTMLResponse)
 @app.get("/panels", response_class=HTMLResponse)
 def panels() -> str:
     return (HERE / "static" / "index.html").read_text(encoding="utf-8")
 
 
+@app.get("/legacy/sessions", response_class=HTMLResponse)
 @app.get("/sessions", response_class=HTMLResponse)
 def sessions_page() -> str:
     return (HERE / "static" / "sessions.html").read_text(encoding="utf-8")
@@ -128,37 +200,139 @@ async def sse(source: str):
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     """Chat <-> background `claude -p`. One subprocess per message; --resume keeps
-    the conversation. Inherits the logged-in Max subscription (no API key in env)."""
+    the conversation. Inherits the logged-in Max subscription (no API key in env).
+
+    Frames out: {"type":"start"} {"type":"session","id":...} {"type":"token","text":...}
+                {"type":"tool","name":...} {"type":"done","session":...}
+                {"type":"error","detail":...}
+    Frames in:  {"message": "<text>", "resume": "<claude session id>"|null}
+                `resume` seeds the thread when the browser reconnects a pane that
+                already has a Claude session (a new socket otherwise starts cold).
+    """
     await ws.accept()
-    os.makedirs(WORKDIR, exist_ok=True)
+    # Same refusal ws_term already makes: a key in the server env bills the API
+    # instead of the Max plan. Silently spending the operator's API credit
+    # because a stray key was exported is not an acceptable default.
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        await ws.send_json({"type": "error", "detail":
+            "Refused: ANTHROPIC_API_KEY is set in the server environment -- that bills "
+            "the API, not your Max plan. Unset it and restart the server."})
+        await ws.close()
+        return
+    # --- resolve the ACTIVE provider, per connect ------------------------
+    # Hardcoding CLAUDE_BIN meant the provider selector in the UI was
+    # decoration: whatever you picked, the server still spawned `claude`.
+    # Resolve it here instead, and REFUSE clearly rather than handing an
+    # unrunnable name to create_subprocess_exec -- which fails as a socket
+    # that dies mid-handshake with no text on screen.
+    detail = providers.active_provider_detail()
+    active_id = detail["id"]
+    if active_id is None:
+        lines = ["  - %s: %s" % (p["id"], p["reason"] or "?")
+                 for p in providers.discover_providers()]
+        await ws.send_json({"type": "error", "code": "no-provider", "detail":
+            "No AI provider is usable here -- a provider must be installed, "
+            "configured, AND have a chat adapter in this build:\n"
+            + "\n".join(lines)})
+        await ws.close()
+        return
+
+    prov = providers.provider_by_id(active_id)
+    if not prov["bin_path"]:
+        # Reachable if the binary disappears between the settings write and
+        # this connect (uninstall, PATH change, a stale settings.json).
+        await ws.send_json({"type": "error", "code": "provider-missing", "detail":
+            "Active provider %r cannot be started: %s" % (active_id, prov["reason"])})
+        await ws.close()
+        return
+
+    if active_id != "claude":
+        # Honest refusal instead of a confusing crash: the frames below parse
+        # Claude Code's `--output-format stream-json` protocol. Spawning
+        # another vendor's CLI with these flags would fail on argument
+        # parsing and report as though the provider were broken. No adapter
+        # has been written, so say that.
+        await ws.send_json({"type": "error", "code": "no-adapter", "detail":
+            "Active provider is %r (%s at %s). This chat channel speaks Claude "
+            "Code's --output-format stream-json protocol and no adapter has "
+            "been written for %s, so it is not being run rather than run "
+            "wrongly. Use the provider selector to switch to claude, or the "
+            "terminal tab." % (active_id, prov["name"], prov["bin_path"], active_id)})
+        await ws.close()
+        return
+
+    settings = providers.load_settings()
+    perm_mode = settings["permission_mode"]      # default "plan"
+    workdir = settings["workdir"] or WORKDIR
+    agent_bin = prov["bin_path"]
+
+    if _ensure_workdir(workdir) is None:
+        await ws.send_json({"type": "error", "detail":
+            "workdir %s does not exist and could not be created" % workdir})
+        await ws.close()
+        return
+
+    # One frame the client can render as a status line: which binary, which
+    # permission mode, and (when acceptEdits/bypassPermissions is on) the fact
+    # that this session may write files without asking.
+    await ws.send_json({
+        "type": "provider",
+        "id": active_id,
+        "name": prov["name"],
+        "bin": agent_bin,
+        "source": detail["source"],
+        "permission_mode": perm_mode,
+        "permission_note": providers.PERMISSION_MODE_NOTES.get(perm_mode),
+        "writes_files": perm_mode in ("acceptEdits", "bypassPermissions"),
+        "workdir": workdir,
+    })
+
     session_id = None
+    resume_unverified = False   # session id came from the client, not from a live run
+    dead_seeds = set()          # client-supplied ids claude has already rejected
     try:
         while True:
             raw = await ws.receive_text()
+            seed = None
             try:
-                msg = json.loads(raw).get("message", "")
+                payload = json.loads(raw)
+                msg = payload.get("message", "")
+                seed = payload.get("resume")
             except (ValueError, AttributeError):
                 msg = raw
             if not msg.strip():
                 continue
+            if (session_id is None and seed and isinstance(seed, str)
+                    and seed not in dead_seeds
+                    and "/" not in seed and ".." not in seed):
+                session_id, resume_unverified = seed, True
 
             args = [
-                CLAUDE_BIN, "-p", msg,
+                agent_bin, "-p", msg,
                 "--output-format", "stream-json",
                 "--verbose", "--include-partial-messages",
-                "--permission-mode", PERM_MODE,
+                "--permission-mode", perm_mode,
             ]
             if session_id:
                 args += ["--resume", session_id]
 
             await ws.send_json({"type": "start"})
-            proc = await asyncio.create_subprocess_exec(
-                *args, cwd=WORKDIR,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=dict(os.environ),          # no ANTHROPIC_API_KEY -> subscription auth
-            )
-            got_text = False
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *args, cwd=workdir,
+                    stdin=asyncio.subprocess.DEVNULL,   # inheriting uvicorn's stdin makes
+                    stdout=asyncio.subprocess.PIPE,     # claude wait 3s for piped input on
+                    stderr=asyncio.subprocess.PIPE,     # EVERY message -- 3s of dead air per turn
+                    env=dict(os.environ),      # no ANTHROPIC_API_KEY -> subscription auth
+                )
+            except OSError as e:
+                # Real cause, verbatim -- a dead socket taught the operator nothing.
+                await ws.send_json({"type": "error", "detail":
+                    "could not start %r in %s: %s" % (agent_bin, workdir, e)})
+                continue
+
+            got_text = got_result = False
+            result_error = None
             async for line in proc.stdout:
                 try:
                     ev = json.loads(line.decode("utf-8", "replace"))
@@ -174,20 +348,58 @@ async def ws_chat(ws: WebSocket):
                     if delta.get("type") == "text_delta" and delta.get("text"):
                         got_text = True
                         await ws.send_json({"type": "token", "text": delta["text"]})
-                elif t == "assistant" and not got_text:
-                    # fallback when partial deltas are absent: emit full text blocks
+                elif t == "assistant":
                     for blk in (ev.get("message") or {}).get("content", []):
-                        if blk.get("type") == "text" and blk.get("text"):
+                        # fallback when partial deltas are absent: emit full text blocks
+                        if blk.get("type") == "text" and blk.get("text") and not got_text:
                             await ws.send_json({"type": "token", "text": blk["text"]})
                         elif blk.get("type") == "tool_use":
+                            # tool_use blocks never arrive as text deltas, so this must
+                            # run regardless of got_text -- gating it behind the text
+                            # fallback meant a streaming turn reported zero tool calls.
                             await ws.send_json({"type": "tool", "name": blk.get("name", "")})
                 elif t == "result":
-                    await ws.send_json({"type": "done", "session": session_id})
+                    got_result = True
+                    # A `result` event is NOT proof of success: a failed run (stale
+                    # --resume, permission abort, API error) emits one with
+                    # is_error/subtype set and THEN exits non-zero. Sending "done"
+                    # here painted a failed turn as answered-with-empty-text, and the
+                    # real error arrived a frame later -- where the client attributed
+                    # it to whatever turn came next. Hold it and report once, below.
+                    if ev.get("is_error") or (ev.get("subtype") or "success") != "success":
+                        result_error = str(ev.get("result") or ev.get("subtype")
+                                           or "claude reported an error")[:600]
+                    else:
+                        await ws.send_json({"type": "done", "session": session_id})
 
             err = (await proc.stderr.read()).decode("utf-8", "replace")
             rc = await proc.wait()
-            if rc != 0:
-                await ws.send_json({"type": "error", "detail": (err[:600] or ("claude exited " + str(rc)))})
+            failed = (rc != 0) or (result_error is not None)
+            if failed:
+                # stderr carries the specific cause ("No conversation found with
+                # session ID: ..."); the result payload is the fallback.
+                detail = err.strip()[:600] or result_error or ("claude exited " + str(rc))
+                frame = {"type": "error", "detail": detail}
+                if resume_unverified:
+                    # The id the browser handed us may be stale or from another
+                    # machine. Drop it so the NEXT message starts a fresh thread
+                    # instead of failing identically forever -- and remember it, or
+                    # the client re-sends the same dead id on every message and the
+                    # channel never recovers. `resume_reset` tells the client to
+                    # forget it too.
+                    frame["detail"] = detail + (
+                        "  (resumed session %s was rejected -- the next message "
+                        "will start a new thread)" % session_id)
+                    frame["resume_reset"] = True
+                    dead_seeds.add(session_id)
+                    session_id = None
+                    resume_unverified = False
+                await ws.send_json(frame)
+            elif not got_result:
+                # process ended without a result event: still close the turn out
+                await ws.send_json({"type": "done", "session": session_id})
+            else:
+                resume_unverified = False
     except WebSocketDisconnect:
         pass
 
@@ -209,6 +421,9 @@ async def ws_term(ws: WebSocket):
     resume = ws.query_params.get("resume")
     req_cwd = ws.query_params.get("cwd")
     workdir = req_cwd if (req_cwd and os.path.isdir(req_cwd)) else WORKDIR
+    # ws_term never created WORKDIR: on a fresh machine the PTY spawn below
+    # raised FileNotFoundError and the terminal socket died on connect.
+    workdir = _ensure_workdir(workdir) or os.path.expanduser("~")
     args = [CLAUDE_BIN]
     if resume and "/" not in resume and ".." not in resume:
         args += ["--resume", resume]

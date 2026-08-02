@@ -27,7 +27,7 @@ The path by which the Domain tree gets corrected — five operator-invoked opera
 - Automatic invocation of the five *operator* operations. Those run only when the operator asks (ADR-028 Decision 1).
 - Editing Charter obligations. B20 moves Charters between Domains; it does not author promises.
 - Cross-tenant restructure — a Domain cannot move between Tenants (I-13).
-- Transactional undo; v1 offers reconstruction from superseded Placement rows.
+- Transactional undo; v1 offers reconstruction from superseded Placement rows, plus the one-time damage-recovery sweeps below.
 
 ## User outcome
 
@@ -78,7 +78,25 @@ The report is what makes P5's falsification test runnable instead of rhetorical.
 | **MERGE** | Fold Domain B into Domain A | Placements on B re-point to A; B's Charters re-home; B's principles append to A |
 | **SPLIT** | Divide A into A plus new children | Placements under A re-classify; ambiguous rows surface for operator choice |
 | **MOVE** | Re-parent a Domain and its subtree | Display paths change for the subtree. **Zero re-placement** (I-P8) |
-| **DELETE** | Remove a Domain | Its Placements re-point to the parent; its Charters re-home. Deleting the root is forbidden |
+| **DELETE** | Retire a Domain (I-D5: the row is stamped, never unlinked) | Its Placements re-point to the parent; its Charters re-home. Deleting the root is forbidden. The Charter half was **missing in code** until Phase 0; `repair` (§Damage recovery) is the sweep for Domains deleted before the fix |
+
+## Damage recovery — the v1 path for harm already done
+
+The five operations above describe how the tree gets corrected *going forward*. They do not address the registries that already ran the earlier build, where MERGE and DELETE called `os.remove()` on `domains/<ref>.json`. Deleting those calls (I-D5) stops new destruction; it recovers nothing. Two idempotent one-time verbs do, plus one diagnostic that proves when they are finished. **None of the three is part of the steady-state lifecycle** — they exist only because the damage predates the invariant, and each is safe to re-run at any time.
+
+| Verb | The damage it addresses | What it does | Blocks? |
+|---|---|---|---|
+| **`lint --full`** | The damage was invisible, not absent. The shipped lint samples `CURRENT.jsonl[-50:]` and always exits 0 ("visibility, never blockage") — and MERGE appends superseding rows for the *surviving* target before removing the source file, so on any realistic registry the stale rows fall outside that window and the check passes on corrupt data | Scans **every** `CURRENT.jsonl` row, every Placement body and every Charter body; groups dangling refs by ref with citation counts | **Yes — exit 2.** The sampled lane is unchanged and still exits 0 |
+| **`reconcile`** | Every Placement row and Charter citing a `domain_ref` whose file was unlinked. The ref is permanently unresolvable and I-D5 forbids deleting the history that cites it, so there is no other legal way to clear it | Mints one minimal **tombstone** per orphaned ref — `status='retired'`, `retire_reason_code='reconstructed'`, `name='[unrecovered] <ref>'` — so the ref resolves again as a node that accepts no new work, which is what it already was | No; exit 2 only if there is no live root to re-home under |
+| **`repair`** | DELETE re-pointed Placements and re-parented child Domains but had **no Charter loop**, unlike MERGE. Every Charter on a previously deleted Domain is already orphaned and unreachable through `charters_for()` — the operation table's DELETE row ("its Charters re-home") was never true in code | Re-homes each orphaned Charter to the first live node along `successor_refs`, else the nearest live ancestor, else the root. Mints a successor with `supersedes` set — never rewrites `domain_ref` inside the old content-addressed body | No |
+
+Rules that make them safe to run on a live registry:
+
+- **A tombstone is not a reconstruction.** Name, principles and `mint_evidence` are gone; the tombstone says `[unrecovered]` rather than pretending otherwise. `reconstructed` is refused as an operator `retire --reason`, because it asserts the row was never authored, only inferred.
+- **Tombstones never renumber anything.** `ts_minted_ms` is the sweep's own clock. Back-dating it from the INDEX would slot the tombstone into the middle of its parent's ts-ordered sibling list and shift every live sibling after it, violating D-number permanence.
+- **`repair` skips anything already superseded.** A legitimately merged Domain is retired with its Charters' successors already minted; without that guard, `repair` would mint a second successor for every Charter after every MERGE, forever.
+- **`repair` does not move Placements.** A current Placement citing an orphaned Charter still resolves once `reconcile` has tombstoned its Domain. Moving live work is `retire` / `charter reassign` — an operator verb with a disposition report — not a recovery sweep.
+- **Order and proof.** `reconcile` → `repair` → `lint --full`. The sequence is finished when `lint --full` exits 0; a ref resolving to a tombstone is grounded, so a legitimate `retire` never turns it red.
 
 ## UX flow (narrative)
 
@@ -104,12 +122,19 @@ The report is what makes P5's falsification test runnable instead of rhetorical.
 | 8 | Nobody invokes B20 for six months | time passes | operator operations never fire. AUTO consolidation still runs on system-minted nodes, so drift is bounded even under total operator neglect |
 | 9 | A restructure would move a Domain across Tenants | attempted | rejected per I-13; `tenant_boundary_violation` emitted |
 | 10 | MECE report run twice with no changes between | second run | identical violation set; the check is deterministic |
+| 11 | A registry carrying pre-I-D5 damage: >100 CURRENT rows, a `domain_ref` whose file was `os.remove`'d, the stale rows outside the last 50 | `lint` then `lint --full` | sampled lane exits 0 and reports nothing; `--full` exits **2** and names the ref with its full citation counts |
+| 12 | The same registry | `reconcile` | one tombstone per orphaned ref, `status='retired'`, `retire_reason_code='reconstructed'`; **zero** live siblings change their D-number; a second run mints nothing |
+| 13 | A Charter homed to a Domain deleted before the fix | `repair` | re-homed to the nearest live ancestor via a successor with `supersedes` set; original body untouched and still hashing to its own id; one `charter_repaired` event; a second run reports 0 moved |
+| 14 | A Domain merged *legitimately*, its Charters' successors already minted | `repair` | **zero** further re-homes — already-superseded Charters are skipped |
+| 15 | `reconcile` then `repair` have both run | `lint --full` | exits **0** — every cited ref resolves, tombstones included |
 
 ## Data model
 
 No new primitive. Operates on `../primitives/domain.md`; mints superseding `../primitives/placement.md` rows only where `domain_ref` genuinely changes.
 
 New event `domain_restructured` carries `{operation, tier: 'auto'|'operator', before_refs[], after_refs[], placements_repointed, charters_rehomed}`.
+
+Damage recovery adds two rows, both defined in `../primitives/domain.md` §Serialization: `domain_reconstructed` on `domains/INDEX.jsonl` (one per tombstone `reconcile` mints) and `charter_repaired` on `charters/INDEX.jsonl` (one per Charter `repair` re-homes, carrying `{id, successor_id, from_domain_ref, to_domain_ref, resolution, placements_citing}`). Every Domain field write outside these operations goes through one locked `_save_domain()` and appends `domain_updated {ref, before, after, ts_ms}`.
 
 ## Edge cases
 
