@@ -59,6 +59,31 @@ die()  { printf 'install.sh: %s\n' "$*" >&2; exit 2; }
 
 
 # --------------------------------------------------------------------------
+# preflight -- fail EARLY and in plain language.
+# This installer builds a macOS .app bundle: it drives sips + iconutil for the
+# icon, codesign for the signature, LaunchServices to register it and osascript
+# for the failure dialog. None of that exists on Linux, and the previous
+# behaviour was to run halfway and then die about a missing `sips`, which reads
+# like a bug in Sutra rather than an unsupported platform.
+# --------------------------------------------------------------------------
+if [ "$(uname -s)" != "Darwin" ]; then
+  die "macOS only.
+
+  This installer builds a .app bundle (sips / iconutil / codesign / osascript);
+  there is no Linux or Windows path yet.
+
+  You can still run the panel directly from this directory:
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+    .venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8330
+  then open http://127.0.0.1:8330"
+fi
+
+command -v python3 >/dev/null 2>&1 \
+  || die "python3 not found. Install Python 3.9 or newer, then re-run this script."
+
+
+# --------------------------------------------------------------------------
 # destination for the .app: /Applications only if it is writable WITHOUT sudo
 # --------------------------------------------------------------------------
 pick_apps_dir() {
@@ -605,6 +630,21 @@ APP="$APPS_DIR/$APP_NAME.app"
 # that is a footgun, not an upgrade. SUTRA_SKIP_ELECTRON=1 forces the fallback.
 SUTRA_ELECTRON_APP=""
 ARCH="$(uname -m)"
+# Say WHICH app is being installed. electron/node_modules is gitignored, so a
+# fresh clone never has it -- silently shipping the script bundle left people
+# thinking they had the desktop app when they did not.
+if [ "${SUTRA_SKIP_ELECTRON:-0}" = "1" ]; then
+  note "SUTRA_SKIP_ELECTRON=1 -- installed the script-based app on purpose."
+elif [ ! -d "$REPO/electron/node_modules" ]; then
+  note "Installed the SCRIPT-BASED app, not the Electron desktop app.
+    electron/node_modules is missing -- it is gitignored, so a fresh clone
+    never has it. To get the desktop app:
+      cd \"$REPO/electron\" && npm install
+      cd \"$REPO\" && ./install.sh"
+elif ! command -v npx >/dev/null 2>&1; then
+  note "Installed the SCRIPT-BASED app: npx (Node.js) was not found on PATH.
+    Install Node 18+ and re-run this script to get the Electron desktop app."
+fi
 if [ "${SUTRA_SKIP_ELECTRON:-0}" != "1" ] \
    && [ -d "$REPO/electron/node_modules" ] \
    && command -v npx >/dev/null 2>&1; then
