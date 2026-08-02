@@ -649,8 +649,11 @@ if [ "${SUTRA_SKIP_ELECTRON:-0}" != "1" ] \
    && [ -d "$REPO/electron/node_modules" ] \
    && command -v npx >/dev/null 2>&1; then
   say "building the Electron desktop shell"
+  # --no-install: without it, a missing local bin makes npx silently DOWNLOAD
+  # and run the deprecated legacy `electron-packager` package from the
+  # registry -- remote code execution during install, with output suppressed.
   if ( cd "$REPO/electron" \
-       && npx electron-packager . "$APP_NAME" --platform=darwin --arch="$ARCH" \
+       && npx --no-install electron-packager . "$APP_NAME" --platform=darwin --arch="$ARCH" \
             --out=dist --overwrite --app-bundle-id="$BUNDLE_ID" --app-version=1.0.0 \
             --icon=build/"$APP_NAME".icns --prune=true ) >/dev/null 2>&1; then
     SUTRA_ELECTRON_APP="$REPO/electron/dist/$APP_NAME-darwin-$ARCH/$APP_NAME.app"

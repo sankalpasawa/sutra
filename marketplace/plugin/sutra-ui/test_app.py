@@ -92,9 +92,15 @@ class TestApp(unittest.TestCase):
         cls.userdir = tempfile.mkdtemp(prefix="sutra-test-userdir-")
         cls._env_saved = {k: os.environ.get(k)
                           for k in ("SUTRA_UI_SETTINGS", "SUTRA_UI_DRAFTS",
-                                    "SUTRA_UI_PROVIDER", "SUTRA_UI_PERMISSION_MODE")}
+                                    "SUTRA_UI_PROVIDER", "SUTRA_UI_PERMISSION_MODE",
+                                    "SUTRA_UI_WORKDIR_ROOT")}
         os.environ["SUTRA_UI_SETTINGS"] = os.path.join(cls.userdir, "settings.json")
         os.environ["SUTRA_UI_DRAFTS"] = os.path.join(cls.userdir, "drafts")
+        # workdir is confined to $HOME by default (it becomes the spawned
+        # agent's cwd, so an arbitrary path is a read oracle). These tests use
+        # a tempdir, which is outside $HOME on macOS -- widen the root the same
+        # way an operator would when starting the server.
+        os.environ["SUTRA_UI_WORKDIR_ROOT"] = cls.userdir
         # An env override outranks settings.json in active_provider_detail(),
         # so leaving these set would make the provider/settings tests assert
         # the developer's shell config instead of the code under test.

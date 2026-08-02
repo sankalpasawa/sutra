@@ -58,6 +58,46 @@ PERMISSION_MODES = ("plan", "acceptEdits", "bypassPermissions")
 DEFAULT_PERMISSION_MODE = "plan"
 DEFAULT_WORKDIR = "~/sutra-ui-workspace"
 
+# Modes that let the spawned agent act without asking. The panel's settings
+# endpoint is unauthenticated by construction (it is a localhost control
+# plane), so anything that can reach the port could otherwise raise the
+# ceiling to "auto-approve shell commands" and the operator would only learn
+# about it from a status frame. Selecting these requires an explicit
+# server-side opt-in the operator sets when STARTING the server -- i.e. out of
+# band from anything reachable over the socket.
+UNSAFE_PERMISSION_MODES = ("acceptEdits", "bypassPermissions")
+UNSAFE_MODES_ENV = "SUTRA_UI_ALLOW_UNSAFE_PERM_MODES"
+
+
+def unsafe_modes_allowed():
+    return os.environ.get(UNSAFE_MODES_ENV, "") == "1"
+
+
+def effective_permission_mode(mode):
+    """Clamp a stored/env mode down to `plan` unless unsafe modes are enabled.
+
+    Gating only the WRITE path (save_settings) is not enough: a settings.json
+    left behind by an older build, edited by hand, or written by another local
+    process would still reach the subprocess spawn. Callers must pass the mode
+    through here at the point of USE, not trust what was persisted.
+    """
+    if mode in UNSAFE_PERMISSION_MODES and not unsafe_modes_allowed():
+        return DEFAULT_PERMISSION_MODE
+    return mode if mode in PERMISSION_MODES else DEFAULT_PERMISSION_MODE
+
+
+def workdir_allowed(path):
+    """True if `path` is inside a directory the panel may use as an agent cwd.
+
+    The workdir becomes the spawned agent's cwd, so an arbitrary path turns the
+    chat endpoint into a read oracle over anywhere on disk. Confine it to $HOME
+    (or an explicit operator-set root) unless unsafe modes are enabled.
+    """
+    root = os.path.realpath(os.path.expanduser(
+        os.environ.get("SUTRA_UI_WORKDIR_ROOT", "~")))
+    target = os.path.realpath(os.path.expanduser(path))
+    return target == root or target.startswith(root + os.sep)
+
 PERMISSION_MODE_NOTES = {
     "plan": "read-only planning: the agent proposes edits, you approve each one.",
     "acceptEdits": "the agent WRITES FILES without asking -- it can create, "
@@ -296,12 +336,22 @@ def save_settings(provider=None, permission_mode=None, workdir=None):
             raise ValueError(
                 "unknown permission_mode %r -- must be one of: %s"
                 % (permission_mode, ", ".join(PERMISSION_MODES)))
+        if permission_mode in UNSAFE_PERMISSION_MODES and not unsafe_modes_allowed():
+            raise ValueError(
+                "permission_mode %r auto-approves agent actions and cannot be set "
+                "over the API. Restart the server with %s=1 to enable it."
+                % (permission_mode, UNSAFE_MODES_ENV))
         raw["permission_mode"] = permission_mode
 
     if workdir is not None:
         if not isinstance(workdir, str) or not workdir.strip():
             raise ValueError("workdir must be a non-empty path string")
-        raw["workdir"] = os.path.expanduser(workdir.strip())
+        expanded = os.path.expanduser(workdir.strip())
+        if not workdir_allowed(expanded):
+            raise ValueError(
+                "workdir %r is outside the allowed root. Set SUTRA_UI_WORKDIR_ROOT "
+                "when starting the server to widen it." % expanded)
+        raw["workdir"] = expanded
 
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = SETTINGS_PATH.with_suffix(".json.tmp")

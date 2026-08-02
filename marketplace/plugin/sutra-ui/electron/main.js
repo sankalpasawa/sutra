@@ -144,12 +144,19 @@ function createWindow() {
 
   // Anything that is not our own origin opens in the real browser, never inside
   // the app shell.
+  // Hand the OS only http(s). The panel renders repo contents and agent
+  // output, so a link in it is not trusted input -- file://, smb:// or a
+  // registered custom-protocol URL passed to openExternal would let that
+  // content mount shares or launch handlers.
+  const openExternalSafe = (url) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+  };
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafe(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
-    if (!url.startsWith(ORIGIN)) { e.preventDefault(); shell.openExternal(url); }
+    if (!url.startsWith(ORIGIN)) { e.preventDefault(); openExternalSafe(url); }
   });
 
   win.loadURL(ORIGIN);

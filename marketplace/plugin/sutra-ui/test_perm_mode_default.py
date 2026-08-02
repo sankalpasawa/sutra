@@ -10,6 +10,7 @@ itself must still work (this test does not remove that escape hatch).
 import importlib
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -28,11 +29,7 @@ def _import_app_with_env(monkeypatch_env):
         # runs its module-level guard, or it silently defaults to the dev
         # fixture -- fine for this test's purposes, but keep it explicit and
         # never pointed at the real ~/.sutra-native by accident.
-        os.environ.setdefault(
-            "SUTRA_NATIVE_HOME",
-            "/private/tmp/claude-501/-Users-tchandrakar-Desktop-development-UI-design-documents-"
-            "/fd234fed-a5a8-471b-8052-40a955241b18/scratchpad/dev-registry",
-        )
+        os.environ.setdefault("SUTRA_NATIVE_HOME", tempfile.mkdtemp(prefix="sutra-ui-test-"))
         if "app" in sys.modules:
             del sys.modules["app"]
         if "org_api" in sys.modules:

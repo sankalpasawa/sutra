@@ -14,9 +14,12 @@ import struct
 import termios
 from pathlib import Path
 
+from urllib.parse import urlparse
+
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 import log_reader as lr
 import session_reader as sr
@@ -24,8 +27,61 @@ import org_api
 import providers
 
 app = FastAPI(title="Sutra UI", docs_url=None, redoc_url=None)
+
+# --- DNS-rebinding defence -------------------------------------------------
+# Binding to 127.0.0.1 keeps other machines out; it does NOT keep out a page
+# the operator visits. A hostile site can point its own DNS name at 127.0.0.1
+# and reach this server through the browser -- and then the Host header is the
+# attacker's name, not ours. Reject any Host that is not literal loopback.
+# TrustedHostMiddleware covers websocket scopes as well as http.
+ALLOWED_HOSTS = [h.strip() for h in
+                 os.environ.get("SUTRA_UI_ALLOWED_HOSTS", "127.0.0.1,localhost,[::1]").split(",")
+                 if h.strip()]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+
 app.include_router(org_api.router)
 HERE = Path(__file__).resolve().parent
+
+
+def _origin_ok(ws):
+    """Same-origin gate for the websockets.
+
+    The browser same-origin policy does NOT cover WebSocket handshakes and no
+    preflight is sent, so without this any page the operator visits can open
+    ws://127.0.0.1:<port>/ws/chat, drive the agent with its own prompt and read
+    every token frame back. /ws/term is worse -- it writes attacker bytes
+    straight into the PTY. Loopback binding stops other machines, not the
+    operator's own browser. Allow only loopback origins.
+
+    A missing Origin means a non-browser client (curl, the test suite, the
+    Electron shell). Per RFC 6455 a browser MUST send Origin on a cross-origin
+    handshake and a page cannot suppress it, so absent-Origin is not a
+    browser-reachable bypass.
+    """
+    origin = ws.headers.get("origin")
+    if not origin:
+        return True
+    extra = [o.strip() for o in
+             os.environ.get("SUTRA_UI_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    if origin in extra:
+        return True
+    try:
+        u = urlparse(origin)
+    except ValueError:
+        return False
+    return u.scheme in ("http", "https") and u.hostname in ("127.0.0.1", "localhost", "::1")
+
+
+async def _reject_cross_origin(ws):
+    """Deny a disallowed handshake BEFORE accept(). Returns True if rejected.
+
+    close() before accept() denies the handshake outright (the client sees a
+    403) -- never accept a socket we intend to refuse.
+    """
+    if _origin_ok(ws):
+        return False
+    await ws.close(code=1008)
+    return True
 
 # persistent (non-transient) marker files for the state panel — see README §4
 STATE_MARKERS = ("active-role", "structure-first-active", ".last-reset-ts")
@@ -209,6 +265,8 @@ async def ws_chat(ws: WebSocket):
                 `resume` seeds the thread when the browser reconnects a pane that
                 already has a Claude session (a new socket otherwise starts cold).
     """
+    if await _reject_cross_origin(ws):
+        return
     await ws.accept()
     # Same refusal ws_term already makes: a key in the server env bills the API
     # instead of the Max plan. Silently spending the operator's API credit
@@ -262,8 +320,13 @@ async def ws_chat(ws: WebSocket):
         return
 
     settings = providers.load_settings()
-    perm_mode = settings["permission_mode"]      # default "plan"
+    # Clamp at the point of USE, not just where it was written: a settings.json
+    # from an older build, hand-edited, or written by another local process
+    # would otherwise reach the spawn below with the ceiling raised.
+    perm_mode = providers.effective_permission_mode(settings["permission_mode"])
     workdir = settings["workdir"] or WORKDIR
+    if not providers.workdir_allowed(workdir):
+        workdir = WORKDIR
     agent_bin = prov["bin_path"]
 
     if _ensure_workdir(workdir) is None:
@@ -411,6 +474,8 @@ async def ws_term(ws: WebSocket):
     This renders the ACTUAL terminal (full parity) — it does NOT parse Claude's
     output. Drives the logged-in `claude` binary => Max-plan billing, no API key.
     """
+    if await _reject_cross_origin(ws):
+        return
     await ws.accept()
     if os.environ.get("ANTHROPIC_API_KEY"):
         await ws.send_text("\r\n\x1b[31mRefused: ANTHROPIC_API_KEY is set — that bills the API, not your Max plan.\x1b[0m\r\n")

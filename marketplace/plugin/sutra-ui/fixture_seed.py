@@ -596,6 +596,21 @@ def main(argv):
         sys.stderr.write("usage: fixture_seed.py <target_dir>\n")
         return 2
     target = os.path.abspath(argv[1])
+    # seed() DELETES domains/INDEX.jsonl, charters/INDEX.jsonl and
+    # placements/CURRENT.jsonl inside the target before rewriting them. Pointed
+    # at the operator's live registry that destroys the real placement pointer
+    # index and overlays fabricated departments on it, with no prompt and no
+    # backup. Refuse rather than rely on the caller passing a scratch dir.
+    live = os.path.realpath(os.path.expanduser(
+        os.environ.get("SUTRA_NATIVE_HOME", "~/.sutra-native/user-kit")))
+    real_target = os.path.realpath(target)
+    if real_target == live or real_target.startswith(live + os.sep) \
+            or real_target.startswith(os.path.realpath(
+                os.path.expanduser("~/.sutra-native")) + os.sep):
+        sys.stderr.write(
+            "refusing to seed %s -- that is the live registry, and seeding "
+            "deletes its index files. Pass a scratch directory.\n" % target)
+        return 2
     os.makedirs(target, exist_ok=True)
     result = seed(target)
     print(json.dumps({"target": target, **{k: v for k, v in result.items()

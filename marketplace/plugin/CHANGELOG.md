@@ -4,6 +4,14 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.64.0 (2026-08-02) — Sutra UI panel (PR #85) + security hardening
+
+- Sutra UI ships: local governance panel (FastAPI + static panel.html), Electron desktop shell, org API, provider selector, installer.
+- Hardening applied before fleet distribution — `/ws/chat` and `/ws/term` rejected any Origin, so any page the operator visited could drive the local agent and inject into the PTY. Both now reject non-loopback Origins before `accept()`, plus TrustedHostMiddleware against DNS rebinding.
+- `acceptEdits` / `bypassPermissions` were settable over the unauthenticated settings endpoint and reached the agent spawn. Now require `SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1` and are clamped at point of use, so a stale or hand-edited settings.json cannot raise the ceiling.
+- Agent workdir confined to `$HOME` (`SUTRA_UI_WORKDIR_ROOT` widens it); `openExternal` restricted to http(s); `npx --no-install`; `fixture_seed.py` refuses the live registry.
+- 14 new guard tests (`test_ws_origin_guard.py`); 146 tests green across python, engine, and node suites.
+
 ## v2.63.0 (2026-08-01) — on-the-fly data + landscape section removed
 
 - Charter pages hydrate volatile data (status, metric currents, milestone states, task done-states, fraction pills) from a single registry.json fetched fresh on every page load — textContent-only, enum-allowlisted, count-validated per section, silent static fallback. Structural changes still regen.
