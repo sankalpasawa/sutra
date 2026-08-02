@@ -389,16 +389,79 @@ async def ws_chat(ws: WebSocket):
     session_id = None
     resume_unverified = False   # session id came from the client, not from a live run
     dead_seeds = set()          # client-supplied ids claude has already rejected
+
+    # ---- interrupt --------------------------------------------------------
+    # The loop used to `await ws.receive_text()` and only THEN spawn, so nothing
+    # read the socket while a turn streamed: a stop sent mid-turn sat unread until
+    # the very turn it was meant to cancel had already finished. A button alone
+    # could not fix that -- the read must happen CONCURRENTLY with the subprocess.
+    #
+    # One reader task owns the socket, handles `stop` inline (the only frame that
+    # must act during a turn) and queues everything else for the main loop.
+    live = {"proc": None, "stopped": False}
+    inbox = asyncio.Queue()
+    reader_dead = asyncio.Event()
+
+    def _kill_live():
+        """Kill the process GROUP, not just the direct child.
+
+        `claude` spawns helpers; signalling only the parent leaves them holding
+        the stdout pipe, so the read loop never ends and the turn never actually
+        stops. The spawn below uses start_new_session=True, which makes the child
+        a group leader so this reaches its descendants too.
+        """
+        p = live["proc"]
+        if p is None or p.returncode is not None:
+            return False
+        try:
+            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                p.kill()
+            except (ProcessLookupError, OSError):
+                return False
+        return True
+
+    async def _reader():
+        try:
+            while True:
+                raw = await ws.receive_text()
+                try:
+                    payload = json.loads(raw)
+                except (ValueError, TypeError):
+                    payload = {"message": raw}
+                if not isinstance(payload, dict):
+                    payload = {"message": str(payload)}
+                if payload.get("type") == "stop":
+                    # Set the flag BEFORE killing: the stdout loop can end between
+                    # the signal and the assignment, and would then report the
+                    # operator's own interrupt as a crash.
+                    live["stopped"] = True
+                    _kill_live()
+                    continue
+                await inbox.put(payload)
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            reader_dead.set()
+
+    reader_task = asyncio.create_task(_reader())
+
     try:
         while True:
-            raw = await ws.receive_text()
-            seed = None
-            try:
-                payload = json.loads(raw)
-                msg = payload.get("message", "")
-                seed = payload.get("resume")
-            except (ValueError, AttributeError):
-                msg = raw
+            get_next = asyncio.ensure_future(inbox.get())
+            gone = asyncio.ensure_future(reader_dead.wait())
+            done, _ = await asyncio.wait({get_next, gone},
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if get_next not in done:
+                get_next.cancel()      # socket closed -- stop serving this channel
+                break
+            gone.cancel()
+            payload = get_next.result()
+            live["stopped"] = False
+            msg = payload.get("message", "")
+            seed = payload.get("resume")
+            model = payload.get("model")
             if not msg.strip():
                 continue
             if (session_id is None and seed and isinstance(seed, str)
@@ -414,8 +477,15 @@ async def ws_chat(ws: WebSocket):
             ]
             if session_id:
                 args += ["--resume", session_id]
+            # Model: per-message override wins over the stored setting, and BOTH are
+            # validated against the allow-list -- an arbitrary string here would be
+            # passed straight to the CLI, where a typo fails as a dead socket several
+            # seconds later instead of as a refusal now.
+            chosen_model = providers.clean_model(model) or providers.stored_model()
+            if chosen_model:
+                args += ["--model", chosen_model]
 
-            await ws.send_json({"type": "start"})
+            await ws.send_json({"type": "start", "model": chosen_model})
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *args, cwd=workdir,
@@ -423,7 +493,10 @@ async def ws_chat(ws: WebSocket):
                     stdout=asyncio.subprocess.PIPE,     # claude wait 3s for piped input on
                     stderr=asyncio.subprocess.PIPE,     # EVERY message -- 3s of dead air per turn
                     env=dict(os.environ),      # no ANTHROPIC_API_KEY -> subscription auth
+                    # own process group, so an interrupt can signal the whole tree
+                    start_new_session=True,
                 )
+                live["proc"] = proc
             except OSError as e:
                 # Real cause, verbatim -- a dead socket taught the operator nothing.
                 await ws.send_json({"type": "error", "detail":
@@ -514,6 +587,18 @@ async def ws_chat(ws: WebSocket):
 
             err = (await proc.stderr.read()).decode("utf-8", "replace")
             rc = await proc.wait()
+            live["proc"] = None
+
+            if live["stopped"]:
+                # SIGTERM makes rc non-zero, which the branch below would report as
+                # "claude exited -15" -- i.e. blaming the tool for the operator's own
+                # interrupt. A stop is a normal outcome and gets its own frame.
+                # The session id is KEPT: the thread is still resumable, the operator
+                # simply cut this turn short.
+                live["stopped"] = False
+                await ws.send_json({"type": "stopped", "session": session_id})
+                continue
+
             failed = (rc != 0) or (result_error is not None)
             if failed:
                 # stderr carries the specific cause ("No conversation found with
@@ -542,6 +627,13 @@ async def ws_chat(ws: WebSocket):
                 resume_unverified = False
     except WebSocketDisconnect:
         pass
+    finally:
+        # Without this the reader task outlives the channel: one leaked task per
+        # closed socket, each still awaiting receive_text() on a dead connection.
+        # Killing any still-running child too -- a disconnected browser must not
+        # leave a `claude` process running against the operator's plan.
+        reader_task.cancel()
+        _kill_live()
 
 
 @app.websocket("/ws/term")

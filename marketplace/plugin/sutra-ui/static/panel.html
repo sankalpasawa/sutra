@@ -575,6 +575,26 @@
     .dot,.trow.run .tstate,.working .ell::after{animation:none}
   }
 
+  /* ── composer: attachments, model, stop ─────────────────────────────────*/
+  .attrow{display:flex;flex-wrap:wrap;gap:5px;padding:0 11px 7px}
+  .att{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:3px 5px 3px 8px;
+    border:1px solid var(--line);border-radius:999px;background:var(--inset);max-width:260px}
+  .att.bad{border-color:var(--block-line);background:var(--block-bg)}
+  .att .attn{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .att .atts{color:var(--faint);flex:none}
+  .att.bad .atts{color:var(--block)}
+  .att .attx{border:0;background:none;color:var(--faint);cursor:pointer;font-size:14px;
+    line-height:1;padding:0 2px;font-family:inherit}
+  .att .attx:hover{color:var(--ink)}
+  .modelsel{flex:none;background:var(--inset);border:1px solid var(--line);border-radius:7px;
+    color:var(--muted);font:11px/1 var(--sans);padding:6px 5px;max-width:112px;cursor:pointer}
+  .modelsel:hover{color:var(--ink)}
+  /* Stop is destructive-ish and must not look like Send: same slot, different colour,
+     square glyph. Reusing the send arrow would make the two indistinguishable at a glance. */
+  .send.stop{background:var(--block);color:#fff}
+  .send.stop:hover{filter:brightness(1.1)}
+  [data-sask].dropping{outline:2px dashed var(--acc);outline-offset:2px}
+
   /* ── git ────────────────────────────────────────────────────────────────
      Diff colours are the only semantic colour here; everything else reuses the
      panel's existing tokens so a diff does not read as a different product. */
@@ -798,7 +818,21 @@ let SKILLS = [], SKILLS_META = {};
    placements, with the engine's own counts), the live provider table
    (GET /api/providers) and the panel's settings (GET /api/settings). All three
    are fetched; none is a literal in this file. */
-let TENANTS = [], PROVIDERS = [], SETTINGS = null, PERM_MODES = [];
+let TENANTS = [], PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
+
+/* True while a turn on this session is still streaming. The composer's send button
+   becomes a STOP button on exactly this condition, so the control that appears is
+   always the one that will act. */
+function streamingFor(sid){
+  const s = S.sessions.find(x=>x.id===sid);
+  return !!(s && (s.turns||[]).some(t=>t.streaming));
+}
+function fmtBytes(n){
+  if (typeof n !== "number") return "";
+  return n < 1024 ? n + " B"
+       : n < 1024*1024 ? (n/1024).toFixed(0) + " KB"
+       : (n/(1024*1024)).toFixed(1) + " MB";
+}
 const PLANS = [{ plan_id: "sutra-ui-draft", base: {} }];  // this tier manages exactly one draft
 /* tenant_id is no longer a constant. It is whatever the operator picked on the
    tenant screen (see boot()), and it is what every ?tenant= below carries. */
@@ -1364,6 +1398,14 @@ function claudeChannel(s){
         (ch.turn.toolRuns || []).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
       }
       ch.turn = null;
+    } else if (f.type === "stopped"){
+      /* The operator's own interrupt is NOT an error. It gets its own state so the
+         turn is not painted red and blamed on the tool. */
+      if (ch.turn){
+        ch.turn.streaming = false; ch.turn.thinking = false; ch.turn.stopped = true;
+        (ch.turn.toolRuns||[]).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
+      }
+      ch.turn = null;
     } else if (f.type === "error"){
       ch.lastError = f.detail || "claude failed with no detail";
       /* the stored thread id was rejected -- forget it, or every following message
@@ -1414,13 +1456,66 @@ function askClaude(s, turn){
     scheduleRender(); return;
   }
   ch.pending.push(turn);
-  const frame = JSON.stringify({ message: turn.sent, resume: s.claude_session || null });
+  /* The per-session model override, or undefined to let the server fall back to the
+     stored setting. Sent per message rather than per connection so a change applies
+     to the NEXT message without reconnecting and losing the thread. */
+  const model = S.model[s.id];
+  const frame = JSON.stringify({ message: turn.sent, resume: s.claude_session || null,
+                                 model: (model === undefined ? null : model) });
   if (ch.open) ch.ws.send(frame); else ch.queue.push(frame);
   scheduleRender();
 }
 /* classify -> file the placement -> run Claude under that placement. The classify
    round-trip is awaited (a turn cannot be grounded before it has an address); the
    Claude run is not (it streams into the pane). */
+/* ── attachments ─────────────────────────────────────────────────────────────
+   The file is uploaded into the workdir and referenced by RELATIVE PATH. It is not
+   inlined into the prompt: a PDF or screenshot is not text, and pasting bytes into
+   a message would corrupt both. The agent's cwd IS the workdir, so an @path is
+   something it can already read -- no new read surface is opened. */
+function composeWithAttachments(sid, text){
+  const ready = (S.attach[sid]||[]).filter(a=>a.ref && !a.error && !a.pending);
+  if (!text && !ready.length) return "";
+  /* Refs FIRST and on their own lines: appending them after the prose ran them into
+     the last sentence, and an @path glued to a word does not resolve. */
+  const refs = ready.map(a=>a.ref).join("\n");
+  S.attach[sid] = (S.attach[sid]||[]).filter(a=>a.pending);   /* keep in-flight ones */
+  return refs ? (refs + (text ? "\n\n" + text : "")) : text;
+}
+
+function pickAttachment(sid){
+  /* A hidden input, created per click and discarded: keeping one in the DOM meant
+     render() replaced it mid-dialog and the change event landed on a dead node. */
+  const el = document.createElement("input");
+  el.type = "file"; el.multiple = true; el.style.display = "none";
+  el.onchange = ()=>{ [...(el.files||[])].forEach(f=>uploadAttachment(sid, f)); el.remove(); };
+  document.body.appendChild(el);
+  el.click();
+}
+
+function uploadAttachment(sid, file){
+  const list = (S.attach[sid] = S.attach[sid] || []);
+  const entry = { name: file.name, bytes: file.size, pending: true, ref: null, error: null };
+  list.push(entry);
+  render();
+  const fr = new FileReader();
+  fr.onerror = ()=>{ entry.pending = false; entry.error = "could not read this file"; render(); };
+  fr.onload = ()=>{
+    /* Strip the data: URL prefix -- the server validates strict base64 and would
+       reject "data:image/png;base64,..." wholesale. */
+    const b64 = String(fr.result || "").split(",")[1] || "";
+    apiPost("/api/attach", { name: file.name, content_b64: b64 })
+      .then(r=>{ entry.pending = false; entry.ref = r.ref; entry.bytes = r.bytes;
+                 entry.name = r.path.split("/").pop(); })
+      /* The server's message names the real cause (too large / bad base64 / workdir
+         outside the root). Keep it on THIS entry so one rejection does not discard
+         the other attachments. */
+      .catch(e=>{ entry.pending = false; entry.error = e.message; })
+      .then(()=>render());
+  };
+  fr.readAsDataURL(file);
+}
+
 async function submitTurn(text, sessionId){
   const { session, result } = await runTask(text, sessionId);
   render();
@@ -1440,6 +1535,11 @@ const S = {
      a fetch is in flight, "" when git genuinely returned an empty diff -- the two are
      different answers and the screen renders them differently. */
   git:null, gitError:null, gitFile:null, gitDiff:null, gitDiffTruncated:false,
+  /* Per-session composer extras. `attach` holds one entry per pending file (each with
+     its own error, so one rejected upload does not discard the others). `model` is a
+     per-session OVERRIDE; undefined means "inherit the stored setting", which is why
+     it is not seeded with a value. */
+  attach:{}, model:{},
   /* null = "show the value in force"; a string = the operator is editing it. Kept in S
      because render() rebuilds the pane wholesale and would otherwise drop the keystrokes. */
   workdirDraft:null,
@@ -2693,6 +2793,7 @@ function turnResponse(t){
       ? `<span class="pill p-acc"><i class="dot"></i>${active ? active + " tool" + (active===1?"":"s") + " running"
                                                              : (t.thinking ? "thinking" : "running")}</span>`
       : (t.error ? `<span class="pill p-block">failed</span>`
+         : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
   /* Server-measured duration and cost, stated only when the server actually sent
      them. A turn replayed from a transcript has neither, and inventing a number
@@ -2833,13 +2934,36 @@ function sessionPane(s){
     </div>
     <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
     ${S.palette && S.palette.sid===s.id ? paletteHtml() : ""}
+    ${(S.attach[s.id]||[]).length ? `<div class="attrow">
+      ${(S.attach[s.id]||[]).map((a,i)=>`<span class="att ${a.error?"bad":""}">
+        <span class="attn">${esc(a.name)}</span>
+        <span class="atts">${a.error ? esc(a.error) : (a.pending ? "uploading…" : fmtBytes(a.bytes))}</span>
+        <button class="attx" type="button" data-attrm="${s.id}:${i}"
+                aria-label="Remove ${esc(a.name)}">&times;</button></span>`).join("")}
+    </div>` : ""}
     <div class="pc">
+      <button class="ib" data-attach="${s.id}" type="button"
+              aria-label="Attach a file" title="Attach a file (or drop / paste one)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.9" aria-hidden="true"><path d="M21 11l-8.5 8.5a4.6 4.6 0 01-6.5-6.5L14 4.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.1-2.1l7.9-7.9"/></svg>
+      </button>
       <input type="text" data-sask="${s.id}" value="${esc(S.composerText[s.id]||"")}"
              placeholder="Ask anything — / for commands"
              aria-label="Continue this session"/>
-      <button class="send" data-ssend="${s.id}" type="button" aria-label="Send">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-      </button>
+      <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
+              title="Model — applies to the next message">
+        ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
+          <option value="${esc(m.id)}" ${(S.model[s.id] ?? ((SETTINGS||{}).model||"")) === m.id ? "selected":""}
+          >${esc(m.name)}</option>`).join("")}
+      </select>
+      ${streamingFor(s.id)
+        ? `<button class="send stop" data-sstop="${s.id}" type="button" aria-label="Stop this turn"
+                   title="Stop — kills the running process">
+             <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+           </button>`
+        : `<button class="send" data-ssend="${s.id}" type="button" aria-label="Send">
+             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+           </button>`}
     </div></section>`;
 }
 
@@ -3366,9 +3490,43 @@ function wire(){
   /* the composer is NOT disabled while a turn runs: the reply streams in, and disabling
      the input mid-stream blurred it and dropped whatever was being typed next */
   panes.querySelectorAll("[data-ssend]").forEach(b=>b.onclick=()=>{
-    const inp=panes.querySelector('[data-sask="'+b.dataset.ssend+'"]');
-    if(inp && inp.value.trim()){ const t=inp.value.trim(); inp.value=""; S.composerText[b.dataset.ssend]=""; S.palette=null;
-      submitTurn(t, b.dataset.ssend); } });
+    const sid=b.dataset.ssend;
+    const inp=panes.querySelector('[data-sask="'+sid+'"]');
+    const text=(inp && inp.value.trim())||"";
+    const composed=composeWithAttachments(sid, text);
+    if(!composed) return;                       /* nothing typed AND nothing attached */
+    if(inp) inp.value=""; S.composerText[sid]=""; S.palette=null;
+    submitTurn(composed, sid); });
+
+  /* ── stop ── */
+  panes.querySelectorAll("[data-sstop]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.sstop;
+    const ch=CLAUDE_SOCKETS.get(sid);
+    if(!ch || !ch.open){
+      /* No live socket = nothing to interrupt. Say so rather than leaving a button
+         that silently does nothing. */
+      const s=S.sessions.find(x=>x.id===sid);
+      const t=s && (s.turns||[]).slice().reverse().find(x=>x.streaming);
+      if(t){ t.streaming=false; t.stopped=true; render(); }
+      return;
+    }
+    ch.ws.send(JSON.stringify({type:"stop"}));
+  });
+
+  /* ── model ── */
+  panes.querySelectorAll("[data-model]").forEach(sel=>sel.onchange=()=>{
+    /* Per-session only. Persisting it here would silently change the default for
+       every other session too; Settings is where the default lives. */
+    S.model[sel.dataset.model] = sel.value;
+  });
+
+  /* ── attachments ── */
+  panes.querySelectorAll("[data-attach]").forEach(b=>b.onclick=()=>pickAttachment(b.dataset.attach));
+  panes.querySelectorAll("[data-attrm]").forEach(b=>b.onclick=()=>{
+    const [sid, i] = b.dataset.attrm.split(":");
+    (S.attach[sid]||[]).splice(+i, 1);
+    render();
+  });
   panes.querySelectorAll("[data-sask]").forEach(inp=>{
     const sid = inp.dataset.sask;
     /* "/" opens the palette; it only ever lists commands that actually
@@ -3388,9 +3546,29 @@ function wire(){
         if (e.key==="Enter" || e.key==="Tab"){ e.preventDefault(); applyPalette(sid, pal.idx); return; }
         if (e.key==="Escape"){ e.preventDefault(); S.palette=null; render(); return; }
       }
-      if(e.key==="Enter" && inp.value.trim()){ e.preventDefault();
-        const t=inp.value.trim(); inp.value=""; S.composerText[sid]=""; S.palette=null;
-        submitTurn(t, sid); }
+      if(e.key==="Enter"){
+        /* Not gated on inp.value: an attachment with no typed text is a legitimate
+           message ("here is the file"), and the old guard silently swallowed it. */
+        const composed = composeWithAttachments(sid, inp.value.trim());
+        if(!composed) return;
+        e.preventDefault();
+        inp.value=""; S.composerText[sid]=""; S.palette=null;
+        submitTurn(composed, sid); }
+    };
+    /* Drop and paste land on the composer, which is where the operator aims. */
+    inp.ondragover = e=>{ e.preventDefault(); inp.classList.add("dropping"); };
+    inp.ondragleave = ()=>inp.classList.remove("dropping");
+    inp.ondrop = e=>{
+      const files = [...((e.dataTransfer && e.dataTransfer.files) || [])];
+      if (!files.length) return;                 /* let a plain text drop behave normally */
+      e.preventDefault(); inp.classList.remove("dropping");
+      files.forEach(f=>uploadAttachment(sid, f));
+    };
+    inp.onpaste = e=>{
+      const items = [...((e.clipboardData && e.clipboardData.files) || [])];
+      if (!items.length) return;                 /* pasted TEXT must still paste as text */
+      e.preventDefault();
+      items.forEach(f=>uploadAttachment(sid, f));
     };
   });
   panes.querySelectorAll("[data-pal]").forEach(r=>r.onclick=()=>{
@@ -3604,6 +3782,7 @@ async function loadRuntime(){
   PROVIDERS = provs.providers || [];
   SETTINGS = settings.settings || null;
   PERM_MODES = settings.permission_modes || [];
+  MODELS = settings.models || [];
 }
 
 /* Git is fetched on demand, not at boot: a workdir that is not a repository is a

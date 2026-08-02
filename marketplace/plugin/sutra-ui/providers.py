@@ -167,6 +167,37 @@ def workdir_allowed(path):
     target = os.path.realpath(os.path.expanduser(path))
     return target == root or target.startswith(root + os.sep)
 
+# Models offerable for a session. An ALLOW-LIST, not free text: the value is passed
+# straight to `claude --model`, where an unknown string fails several seconds later
+# as a dead socket rather than as a refusal the operator can read. `""` means "let
+# the CLI use its own default", which is the shipped behaviour and stays the default.
+#
+# These are ALIASES on purpose. Pinned ids go stale the moment a new snapshot ships,
+# and a panel that offers a retired id is offering something that cannot run -- the
+# same failure providers.py exists to prevent. The CLI resolves an alias to whatever
+# it currently points at.
+MODELS = (
+    {"id": "",       "name": "CLI default",  "note": "whatever `claude` is configured to use"},
+    {"id": "opus",   "name": "Opus",         "note": "most capable, slowest, highest cost"},
+    {"id": "sonnet", "name": "Sonnet",       "note": "balanced default for most work"},
+    {"id": "haiku",  "name": "Haiku",        "note": "fastest and cheapest, least capable"},
+)
+MODEL_IDS = frozenset(m["id"] for m in MODELS)
+
+
+def clean_model(value):
+    """A catalogued model id, or None. Never raises, never passes junk to the CLI."""
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    return v if (v and v in MODEL_IDS) else None
+
+
+def stored_model():
+    """The model chosen in Settings, or None for the CLI's own default."""
+    return clean_model(_raw_settings().get("model"))
+
+
 PERMISSION_MODE_NOTES = {
     "plan": "read-only planning: the agent proposes edits, you approve each one.",
     "acceptEdits": "the agent WRITES FILES without asking -- it can create, "
@@ -386,6 +417,9 @@ def load_settings():
         "permission_mode": mode,
         "workdir": workdir,
         "onboarded": onboarded,
+        # "" is a real, meaningful value here ("use the CLI's default"), so it is
+        # reported as "" rather than folded into null.
+        "model": stored_model() or "",
         # metadata -- the three keys above are the contract; these explain them
         "provider_source": detail["source"],
         "provider_stored": stored,
@@ -412,7 +446,8 @@ def load_settings():
     }
 
 
-def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None):
+def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None,
+                  model=None):
     """Merge a partial update into the settings file and return load_settings().
 
     Validates BEFORE writing: an unknown or unrunnable provider, or an unknown
@@ -457,6 +492,15 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
         if not isinstance(onboarded, bool):
             raise ValueError("onboarded must be a boolean")
         raw["onboarded"] = onboarded
+
+    if model is not None:
+        # "" is legal: it means "let the CLI choose", which is why this cannot use
+        # the truthiness of clean_model() alone.
+        if not isinstance(model, str) or (model.strip() and model.strip() not in MODEL_IDS):
+            raise ValueError(
+                "unknown model %r -- must be one of: %s (or \"\" for the CLI default)"
+                % (model, ", ".join(sorted(i for i in MODEL_IDS if i))))
+        raw["model"] = model.strip()
 
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = SETTINGS_PATH.with_suffix(".json.tmp")
