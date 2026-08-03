@@ -88,7 +88,12 @@
   .tmenu .cur{color:var(--acc)}
   .tmenu .note{padding:6px 7px 4px;font-size:10.5px;color:var(--faint);line-height:1.45;
     border-top:1px solid var(--line-soft);margin-top:4px}
-  .app{display:grid;grid-template-columns:224px 1fr;gap:9px;background:var(--surface);
+  /* Three columns: rail | panes | terminal. The terminal track is `auto`, and the
+     pane is [hidden] when closed, so the track collapses to zero width and the
+     layout is byte-identical to the two-column one until the terminal is opened.
+     It must be a GRID ITEM rather than a child of .panes: render() replaces
+     .panes wholesale and would kill the PTY. */
+  .app{display:grid;grid-template-columns:224px 1fr var(--termw, 0px);gap:9px;background:var(--surface);
        border:0;border-radius:0;padding:9px;height:100vh;min-height:0;box-shadow:none;
        /* padding must live INSIDE 100vh or the app is 18px taller than the window */
        box-sizing:border-box}
@@ -98,7 +103,10 @@
   .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
         display:flex;flex-direction:column;min-height:0}
   .rtop{display:flex;align-items:center;gap:8px;padding:11px 11px 9px}
-  .rmark{width:19px;height:19px;border-radius:5px;background:var(--acc);color:var(--on-acc);
+  /* The logo mark is BLACK on gold in BOTH themes. It does not follow --on-acc, which is
+     white in the light theme: that made the brand mark read white-on-gold in light mode and
+     black-on-gold in dark, i.e. two different logos. A logo is not a themed control. */
+  .rmark{width:19px;height:19px;border-radius:5px;background:var(--acc);color:#0A0908;
          display:grid;place-items:center;font:700 12px/1 var(--serif);flex:none}
   .rtop b{font-size:13px;font-weight:600}
   .rtop .tn{margin-left:auto;font:600 8.5px/1 var(--mono);color:var(--acc);background:var(--acc-bg);
@@ -219,6 +227,14 @@
   th:hover{color:var(--ink)}
   td{padding:8px 11px;border-bottom:1px solid var(--line-soft);color:var(--muted);vertical-align:top}
   tr:last-child td{border-bottom:0}
+  /* A free-text cell in a fixed-width pane sets the height of its whole row. The
+     Skills descriptions run to 150 chars, so each row grew to 5-6 lines while the
+     three narrow columns beside it stayed one line -- a table of mostly blank
+     space, with the description itself scrolled out of view past min-width. Clamp
+     the cell instead of shortening the data: the full text stays in `title`. */
+  td.desc{max-width:330px;min-width:180px;color:var(--faint);line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  td.whynot{max-width:220px}
   tbody tr:hover{background:var(--acc-bg)}
   tbody tr.sel{background:var(--acc-bg)}
   td.k{color:var(--ink);font-weight:500}
@@ -524,6 +540,184 @@
     text-overflow:ellipsis;white-space:nowrap}
   .rfoot .tsw:hover{color:var(--acc)}
   .rfoot .tsw:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  /* ── run state ──────────────────────────────────────────────────────────
+     There was previously ONE animation in this whole file, so a running turn and a
+     finished one looked identical and the operator could not tell whether anything
+     was happening. Every state below is driven by a frame the SERVER sent; nothing
+     here animates on a guess. */
+  @keyframes sutraPulse{0%,100%{opacity:.35}50%{opacity:1}}
+  @keyframes sutraSpin{to{transform:rotate(360deg)}}
+  @keyframes sutraEll{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+  .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;
+    margin-right:5px;vertical-align:middle;animation:sutraPulse 1.15s ease-in-out infinite}
+  .working{margin-top:6px;color:var(--faint);display:flex;align-items:center;font-size:12px}
+  .working .ell::after{content:"";animation:sutraEll 1.4s steps(1,end) infinite}
+  .toolRow{margin-top:7px;display:flex;flex-direction:column;gap:3px}
+  .trow{display:flex;align-items:baseline;gap:7px;font-size:11.5px;padding:3px 7px;
+    border:1px solid var(--line-soft);border-radius:6px;background:var(--inset);min-width:0}
+  .trow .tstate{flex:none;width:7px;height:7px;border-radius:50%;background:var(--faint)}
+  .trow.run .tstate{background:none;border:1.5px solid var(--acc);border-top-color:transparent;
+    width:9px;height:9px;animation:sutraSpin .7s linear infinite}
+  .trow.ok  .tstate{background:var(--ok)}
+  .trow.bad .tstate{background:var(--block)}
+  .trow.unk .tstate{background:var(--warn)}
+  .trow .tname{font:600 11.5px/1.5 var(--mono);color:var(--ink);flex:none}
+  .trow .tsum{color:var(--faint);font-family:var(--mono);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+  .trow .tverdict{margin-left:auto;flex:none;color:var(--faint);font-size:10px;
+    text-transform:uppercase;letter-spacing:.06em}
+  .trow.run .tverdict{color:var(--acc)}
+  .trow.bad .tverdict{color:var(--block)}
+  .trow.unk .tverdict{color:var(--warn)}
+  /* Respect the OS setting: a spinner is decoration, not information. The colour
+     and the verdict text carry the same state without motion. */
+  @media (prefers-reduced-motion: reduce){
+    .dot,.trow.run .tstate,.working .ell::after{animation:none}
+  }
+
+  /* ── side chat ──────────────────────────────────────────────────────────
+     Visually subordinate to the main transcript: inset, dimmer, a rule above it.
+     It must never read as a peer of the conversation it branches from. */
+  .sidewrap{border-top:1px solid var(--line);background:var(--inset);
+    display:flex;flex-direction:column;max-height:44%;min-height:0}
+  .sidehead{display:flex;align-items:baseline;gap:8px;padding:8px 11px 6px}
+  .sidehead b{font-size:11.5px}
+  .sidehead span{color:var(--faint);font-size:10.5px;line-height:1.4;flex:1;min-width:0}
+  .sidehead .ib{flex:none;align-self:flex-start}
+  .sidebody{overflow-y:auto;padding:0 11px;flex:1;min-height:0}
+  .sidebody .turn{margin-bottom:9px}
+  .sidezero{color:var(--faint);font-size:11.5px;line-height:1.5;margin:0 0 9px}
+  .sidewrap .pc{border-top:1px solid var(--line-soft)}
+
+  /* ── composer: attachments, model, stop ─────────────────────────────────*/
+  .attrow{display:flex;flex-wrap:wrap;gap:5px;padding:0 11px 7px}
+  .att{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:3px 5px 3px 8px;
+    border:1px solid var(--line);border-radius:999px;background:var(--inset);max-width:260px}
+  .att.bad{border-color:var(--block-line);background:var(--block-bg)}
+  .att .attn{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .att .atts{color:var(--faint);flex:none}
+  .att.bad .atts{color:var(--block)}
+  .att .attx{border:0;background:none;color:var(--faint);cursor:pointer;font-size:14px;
+    line-height:1;padding:0 2px;font-family:inherit}
+  .att .attx:hover{color:var(--ink)}
+  .modelsel{flex:none;background:var(--inset);border:1px solid var(--line);border-radius:7px;
+    color:var(--muted);font:11px/1 var(--sans);padding:6px 5px;max-width:112px;cursor:pointer}
+  .modelsel:hover{color:var(--ink)}
+  /* Stop is destructive-ish and must not look like Send: same slot, different colour,
+     square glyph. Reusing the send arrow would make the two indistinguishable at a glance. */
+  .send.stop{background:var(--block);color:#fff}
+  .send.stop:hover{filter:brightness(1.1)}
+  [data-sask].dropping{outline:2px dashed var(--acc);outline-offset:2px}
+
+  /* ── editor ─────────────────────────────────────────────────────────────
+     A textarea, deliberately: see the comment on SCREENS.editor. Monospace, tab
+     accepted as indentation, generous height. */
+  .fslist{display:flex;flex-direction:column;gap:3px;max-height:38vh;overflow-y:auto}
+  .fsf{display:flex;align-items:baseline;width:100%;text-align:left}
+  .fsf.sel{border-color:var(--acc);background:var(--acc-bg)}
+  .fsf .on{font-family:var(--mono);font-size:11.5px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .fsf .od{margin-left:auto;flex:none;color:var(--faint);font-size:10.5px}
+  .edbar{display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap}
+  .edbar .btn{margin-left:0}
+  .edbar .btn:first-of-type{margin-left:auto}
+  .edta{width:100%;min-height:46vh;resize:vertical;background:var(--inset);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--ink);
+    font:12px/1.6 var(--mono);white-space:pre;overflow-wrap:normal;overflow-x:auto;
+    tab-size:2}
+  .edta:focus{outline:2px solid var(--acc);outline-offset:-1px}
+
+  /* ── git ────────────────────────────────────────────────────────────────
+     Diff colours are the only semantic colour here; everything else reuses the
+     panel's existing tokens so a diff does not read as a different product. */
+  .gitf{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left}
+  .gitf.sel{border-color:var(--acc);background:var(--acc-bg)}
+  .gcode{flex:none;font:700 10px/1.6 var(--mono);color:var(--warn);background:var(--warn-bg);
+    border:1px solid var(--warn-line);border-radius:4px;padding:0 5px;min-width:22px;text-align:center}
+  .gcode.new{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-line)}
+  pre.diff{margin:0;padding:9px 11px;background:var(--inset);border:1px solid var(--line);
+    border-radius:8px;overflow-x:auto;font:11.5px/1.55 var(--mono);white-space:pre;
+    max-height:60vh;overflow-y:auto}
+  pre.diff span{display:block}
+  pre.diff .dadd{color:var(--ok);background:var(--ok-bg)}
+  pre.diff .ddel{color:var(--block);background:var(--block-bg)}
+  pre.diff .dhunk{color:var(--acc);background:var(--acc-bg)}
+  pre.diff .dh{color:var(--faint)}
+
+  /* ── terminal pane ──────────────────────────────────────────────────────
+     Sits to the RIGHT of the panes row, full height, its own column. It is a
+     sibling of #panes (see the markup) so render() cannot tear the PTY down. */
+  /* Width is owned by the GRID TRACK (--termw on .app), not by the pane: `flex` on a
+     grid item does nothing, and an `auto` track measured the iframe's intrinsic width
+     as zero, collapsing the pane to 0px. The track is an explicit pixel value the
+     drag handle writes, so the size is deterministic and adjustable. */
+  .termpane{position:relative;min-width:0;overflow:visible;display:flex;flex-direction:column;
+    border-left:1px solid var(--line);background:var(--surface);
+    border-radius:var(--r)}
+  .termpane[hidden]{display:none}
+  /* Drag handle. Mirrors .pdiv (the browse-pane divider) so resizing feels the same
+     in both places rather than introducing a second gesture vocabulary. */
+  .termgrip{position:absolute;left:-5px;top:0;bottom:0;width:10px;cursor:col-resize;
+    background:none;border:0;padding:0;z-index:2}
+  .termgrip:hover::after,.termgrip:focus-visible::after{content:"";position:absolute;
+    left:4px;top:0;bottom:0;width:2px;background:var(--acc);border-radius:2px}
+  body.termdrag{cursor:col-resize;user-select:none}
+  body.termdrag iframe{pointer-events:none}   /* the iframe would swallow mousemove */
+  .termpane .ph{display:flex;align-items:center;gap:7px}
+  .termpane .termcwd{margin-left:auto;font:500 10px/1 var(--mono);color:var(--faint);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
+  .termbody{padding:0;overflow:hidden;flex:1;min-height:0;display:flex}
+  .termbody iframe{border:0;width:100%;height:100%;flex:1;background:var(--bg)}
+  .termzero{padding:16px;font-size:12px;color:var(--muted)}
+  .sidetabs{flex:none}
+  .prevbar{display:flex;gap:6px;padding:8px 9px 0}
+  .prevbar .wdin{flex:1;min-width:0}
+  .prevnote{padding:6px 10px 8px;font-size:11px;color:var(--faint);line-height:1.45}
+  .prevframe{flex:1;min-height:0;display:flex}
+  .prevframe iframe{border:0;width:100%;height:100%;background:#fff}
+  #prevBody{flex-direction:column}
+  @media (max-width: 900px){ .termpane{flex:1 1 100%;border-left:0;border-top:1px solid var(--line)} }
+
+  /* ── workdir picker ─────────────────────────────────────────────────────
+     A text field rather than a native folder dialog: the server, not the browser,
+     is what has to be able to reach the path, and <input type="file" webkitdirectory>
+     hands back a sandboxed file list with no usable absolute path. In the Electron
+     shell a real chooser is possible, so the Browse button appears only there. */
+  .wdrow{display:flex;gap:7px;align-items:stretch}
+  .wdin{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);border-radius:7px;
+    padding:7px 10px;color:var(--ink);font:12px/1.4 var(--mono)}
+  .wdin:focus{outline:2px solid var(--acc);outline-offset:-1px}
+
+  /* ── onboarding ──────────────────────────────────────────────────────────
+     A first-run interstitial, not a tour. It states what this panel will do
+     with the operator's machine -- which CLI it drives, where it writes, what
+     authority the agent gets -- using the SAME live /api/providers and
+     /api/settings data the Settings screen renders. Nothing here is a mockup:
+     if claude is not on PATH, step 1 says so and the finish button still works,
+     because a panel that cannot chat can still browse the registry. */
+  .onb{position:fixed;inset:0;z-index:60;background:var(--bg);overflow:auto;
+    display:flex;align-items:flex-start;justify-content:center;padding:40px 20px}
+  .onb-card{width:100%;max-width:640px;background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--r);padding:28px 30px 24px}
+  .onb-card h1{font-family:var(--serif);font-size:25px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .onb-lede{color:var(--muted);font-size:13px;margin:0 0 22px}
+  .onb-step{display:flex;gap:13px;padding:15px 0;border-top:1px solid var(--line-soft)}
+  .onb-num{flex:none;width:22px;height:22px;border-radius:50%;background:var(--acc-bg);color:var(--acc);
+    font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .onb-b{flex:1;min-width:0}
+  .onb-b h3{font-size:13px;font-weight:600;margin:0 0 3px}
+  .onb-b p{font-size:12px;color:var(--muted);margin:0 0 7px}
+  .onb-fact{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;font-size:11.5px;
+    font-family:var(--mono);color:var(--faint);word-break:break-all}
+  .onb-foot{display:flex;gap:10px;align-items:center;justify-content:flex-end;
+    border-top:1px solid var(--line);padding-top:16px;margin-top:6px}
+  .onb-foot .sp{margin-right:auto;font-size:11px;color:var(--faint)}
+  .onb-go{background:var(--acc);color:var(--on-acc);border:none;border-radius:7px;
+    padding:9px 17px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .onb-go:hover{filter:brightness(1.08)}
+  .onb-skip{background:none;border:1px solid var(--line);color:var(--muted);border-radius:7px;
+    padding:9px 15px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .onb-skip:hover{color:var(--ink);border-color:var(--muted)}
 </style>
 
 <div class="wrap">
@@ -590,6 +784,14 @@
           <div class="tmenu" id="tenantMenu" role="menu" hidden></div>
         </div>
         <div style="margin-left:auto;display:flex;gap:2px">
+          <button class="ib" id="termBtn" type="button" aria-pressed="false"
+                  aria-label="Show the terminal" title="Terminal — the real claude TUI in a PTY">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.9" aria-hidden="true">
+              <rect x="2.5" y="4" width="19" height="16" rx="2"/>
+              <path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/>
+            </svg>
+          </button>
           <button class="ib" id="themeBtn" type="button" aria-label="Switch theme">
             <svg class="ico-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
             <svg class="ico-moon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 019.8 4a8.4 8.4 0 102.4 16.4A8.3 8.3 0 0020 14.2z"/></svg>
@@ -606,6 +808,50 @@
       </svg>
     </button>
     <div class="panes" id="panes"></div>
+
+    <!-- Terminal. Deliberately a SIBLING of #panes, not a child: render() sets
+         panes.innerHTML wholesale, which would destroy the iframe and with it the
+         PTY and whatever is running inside it, on every unrelated state change.
+         The <iframe> is created lazily on first open and then never re-created;
+         hiding is a CSS concern only. It points at /legacy/term, the existing,
+         working terminal (real `claude` TUI over a PTY) rather than a second
+         implementation of the same thing. -->
+    <section class="pane termpane" id="termPane" hidden aria-label="Terminal">
+      <button class="termgrip" id="termGrip" type="button" role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize the terminal (left and right arrows adjust, home resets)"></button>
+      <div class="ph">
+        <span class="tabs sidetabs">
+          <button type="button" id="sideTabTerm" aria-pressed="true">Terminal</button>
+          <button type="button" id="sideTabPrev" aria-pressed="false">Preview</button>
+        </span>
+        <span class="termcwd" id="termCwd"></span>
+        <button class="ib" id="termReload" type="button"
+                aria-label="Restart the terminal session" title="Restart the terminal session">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" aria-hidden="true"><path d="M20 11A8 8 0 106 17M20 5v6h-6"/></svg>
+        </button>
+        <button class="ib" id="termClose" type="button"
+                aria-label="Hide the terminal" title="Hide the terminal">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="pb termbody" id="termBody"></div>
+      <!-- Preview. Its own body, hidden rather than unmounted, for the same reason
+           the terminal iframe is mounted once: tearing down a running dev-server
+           view on every tab switch would reload the page and lose its state. -->
+      <div class="pb termbody" id="prevBody" hidden>
+        <div class="prevbar">
+          <input type="text" id="prevUrl" class="wdin" spellcheck="false"
+                 placeholder="http://localhost:3000" aria-label="Preview URL">
+          <button class="btn" type="button" id="prevGo">Open</button>
+        </div>
+        <div class="prevnote" id="prevNote">Point this at a dev server you are already
+          running. Loopback addresses only — this pane will not load a remote site.</div>
+        <div class="prevframe" id="prevFrame"></div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -627,7 +873,21 @@ let SKILLS = [], SKILLS_META = {};
    placements, with the engine's own counts), the live provider table
    (GET /api/providers) and the panel's settings (GET /api/settings). All three
    are fetched; none is a literal in this file. */
-let TENANTS = [], PROVIDERS = [], SETTINGS = null, PERM_MODES = [];
+let TENANTS = [], PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
+
+/* True while a turn on this session is still streaming. The composer's send button
+   becomes a STOP button on exactly this condition, so the control that appears is
+   always the one that will act. */
+function streamingFor(sid){
+  const s = S.sessions.find(x=>x.id===sid);
+  return !!(s && (s.turns||[]).some(t=>t.streaming));
+}
+function fmtBytes(n){
+  if (typeof n !== "number") return "";
+  return n < 1024 ? n + " B"
+       : n < 1024*1024 ? (n/1024).toFixed(0) + " KB"
+       : (n/(1024*1024)).toFixed(1) + " MB";
+}
 const PLANS = [{ plan_id: "sutra-ui-draft", base: {} }];  // this tier manages exactly one draft
 /* tenant_id is no longer a constant. It is whatever the operator picked on the
    tenant screen (see boot()), and it is what every ?tenant= below carries. */
@@ -641,6 +901,10 @@ let META = { tenant_id: null, generated_ms: 0, history_complete_from_ms: 0 };
    A corrupt/absent value degrades to the default; it never throws. */
 const LS_TENANT = "sutra.panel.tenant";
 const LS_LAYOUT = "sutra.panel.layout";
+const LS_TERM   = "sutra.panel.term";     /* terminal pane open/closed, per browser */
+const LS_TERMW  = "sutra.panel.termw";    /* its dragged width, in px */
+const LS_SIDETAB= "sutra.panel.sidetab";  /* terminal | preview */
+const LS_PREVURL= "sutra.panel.prevurl";  /* last previewed loopback URL */
 function lsGet(key, fallback){
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
   catch (e) { return fallback; }
@@ -1124,13 +1388,22 @@ function failChannel(ch, detail){
   hit.forEach(t=>{ t.streaming = false; if (!t.error) t.error = ch.lastError || detail; });
   if (hit.length) scheduleRender();
 }
-function claudeChannel(s){
-  let ch = CLAUDE_SOCKETS.get(s.id);
+/* A side chat gets its OWN socket under a synthetic key rather than the map being
+   re-keyed. Restructuring CLAUDE_SOCKETS would touch every call site on the live
+   chat path -- the one part of this app that already works -- to buy nothing the
+   suffix does not. `side` is the only difference: a separate key, and (in askClaude)
+   no resume, so the main thread is never continued or mutated. */
+function chanKey(sid, side){ return side ? sid + "::side" : sid; }
+
+function claudeChannel(s, side){
+  const key = chanKey(s.id, side);
+  let ch = CLAUDE_SOCKETS.get(key);
   if (ch && (ch.ws.readyState === WebSocket.CONNECTING || ch.ws.readyState === WebSocket.OPEN))
     return ch;
   const ws = new WebSocket(claudeWsUrl());
-  ch = { ws:ws, sid:s.id, open:false, queue:[], pending:[], turn:null, last:null, lastError:null };
-  CLAUDE_SOCKETS.set(s.id, ch);
+  ch = { ws:ws, sid:s.id, key:key, side:!!side, open:false, queue:[], pending:[],
+         turn:null, last:null, lastError:null };
+  CLAUDE_SOCKETS.set(key, ch);
   ws.onopen = ()=>{ ch.open = true; ch.queue.splice(0).forEach(m=>ws.send(m)); };
   ws.onmessage = ev=>{
     let f; try { f = JSON.parse(ev.data); } catch (e) { return; }
@@ -1146,14 +1419,64 @@ function claudeChannel(s){
          not say what it was actually about to do. */
       s.channel = f;
     } else if (f.type === "session"){
-      s.claude_session = f.id;
+      /* A SIDE channel must never write s.claude_session: that field is what the main
+         thread resumes from, and overwriting it with the branch's id would silently
+         redirect every later main message into the side conversation -- the exact
+         opposite of "the side discussion does not change the primary task".
+         The id is still kept on the turn, so the side chat can resume ITSELF. */
+      if (!ch.side) s.claude_session = f.id;
+      else ch.sideSession = f.id;
       if (ch.turn) ch.turn.claude_session = f.id;
     } else if (f.type === "token"){
       if (ch.turn) ch.turn.response = (ch.turn.response || "") + f.text;
+    } else if (f.type === "thinking"){
+      /* Presence only -- the server does not forward the thinking text, so the UI
+         says "thinking" and nothing more. */
+      if (ch.turn) ch.turn.thinking = true;
     } else if (f.type === "tool"){
-      if (ch.turn){ (ch.turn.tools = ch.turn.tools || []).push(f.name || "tool"); }
+      if (ch.turn){
+        /* Two parallel stores ON PURPOSE.
+           `tools`    -- flat names, the shape the TRANSCRIPT reader produces and a
+                         test pins. Left exactly as it was.
+           `toolRuns` -- live lifecycle keyed by the server's tool_use id, which is
+                         the only thing that can correlate a start with its end.
+           Merging them would either break transcript rendering or invent a
+           completion state for replayed turns that was never recorded. */
+        const runs = (ch.turn.toolRuns = ch.turn.toolRuns || []);
+        if (f.phase === "end"){
+          /* Match by id. A result whose start was never seen is NOT invented as a
+             finished tool -- it is dropped, because a row with no name is noise. */
+          const r = f.id && runs.find(x=>x.id === f.id);
+          if (r){ r.running = false; r.ok = f.ok !== false; r.endedAt = Date.now(); }
+        } else {
+          runs.push({ id:f.id, name:f.name || "tool", summary:f.summary || "",
+                      caller:f.caller || null, running:true, ok:null,
+                      startedAt: Date.now() });
+          ch.turn.thinking = false;      /* a tool call ends the thinking phase */
+          (ch.turn.tools = ch.turn.tools || []).push(f.name || "tool");
+        }
+      }
     } else if (f.type === "done"){
-      if (ch.turn) ch.turn.streaming = false;
+      if (ch.turn){
+        ch.turn.streaming = false;
+        ch.turn.thinking = false;
+        /* Server-measured, not client-timed: the wall clock here would include
+           queueing and render latency that the operator did not pay for. */
+        if (typeof f.duration_ms === "number") ch.turn.duration_ms = f.duration_ms;
+        if (typeof f.cost_usd === "number") ch.turn.cost_usd = f.cost_usd;
+        if (typeof f.num_turns === "number") ch.turn.num_turns = f.num_turns;
+        /* A tool still marked running when the turn ends never reported a result.
+           Mark it UNKNOWN rather than silently completing it. */
+        (ch.turn.toolRuns || []).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
+      }
+      ch.turn = null;
+    } else if (f.type === "stopped"){
+      /* The operator's own interrupt is NOT an error. It gets its own state so the
+         turn is not painted red and blamed on the tool. */
+      if (ch.turn){
+        ch.turn.streaming = false; ch.turn.thinking = false; ch.turn.stopped = true;
+        (ch.turn.toolRuns||[]).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
+      }
       ch.turn = null;
     } else if (f.type === "error"){
       ch.lastError = f.detail || "claude failed with no detail";
@@ -1161,29 +1484,42 @@ function claudeChannel(s){
          re-sends the same dead id and the channel fails identically forever */
       if (f.resume_reset) s.claude_session = null;
       const t = ch.turn || ch.last;
-      if (t){ t.streaming = false; t.error = ch.lastError; ch.turn = null; }
+      if (t){
+        t.streaming = false; t.thinking = false; t.error = ch.lastError;
+        /* Same rule as `done`: a tool that never reported is UNKNOWN, not failed.
+           Marking it failed would attribute the turn's error to a specific tool
+           that may well have succeeded before the failure happened elsewhere. */
+        (t.toolRuns || []).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
+        ch.turn = null;
+      }
       else failChannel(ch, ch.lastError);   /* refused before any turn started */
     }
     scheduleRender();
   };
   ws.onclose = ev=>{
-    if (CLAUDE_SOCKETS.get(s.id) === ch) CLAUDE_SOCKETS.delete(s.id);
+    /* Delete by the channel's OWN key. Deleting by s.id would evict the MAIN
+       channel when a side chat's socket closed. */
+    if (CLAUDE_SOCKETS.get(key) === ch) CLAUDE_SOCKETS.delete(key);
     failChannel(ch, "the Claude channel closed before the reply finished" +
       (ev && ev.code ? " (code " + ev.code + ")" : "") + " — is the server still running?");
   };
   return ch;
 }
-/* Closing the pane closes the socket — the pane IS the session's lifetime here. */
+/* Closing the pane closes the socket — the pane IS the session's lifetime here.
+   Both channels go: a side chat outliving its pane would keep a claude process
+   running with nothing rendering its output. */
 function closeClaudeChannel(sid){
-  const ch = CLAUDE_SOCKETS.get(sid);
-  if (!ch) return;
-  CLAUDE_SOCKETS.delete(sid);
-  failChannel(ch, "pane closed before the reply finished");
-  try { ch.ws.close(); } catch (e) {}
+  [chanKey(sid, false), chanKey(sid, true)].forEach(key=>{
+    const ch = CLAUDE_SOCKETS.get(key);
+    if (!ch) return;
+    CLAUDE_SOCKETS.delete(key);
+    failChannel(ch, "pane closed before the reply finished");
+    try { ch.ws.close(); } catch (e) {}
+  });
 }
 /* Run the turn. Fire-and-forget by design: tokens arrive on the socket and land on the
    turn object, which re-renders on the throttle. */
-function askClaude(s, turn){
+function askClaude(s, turn, side){
   if (!turn) return;
   turn.response = turn.response || "";
   turn.tools = turn.tools || [];
@@ -1191,20 +1527,96 @@ function askClaude(s, turn){
   turn.streaming = true;
   turn.sent = groundingPrefix(turn) + turn.text;   /* exactly what the model receives */
   let ch;
-  try { ch = claudeChannel(s); }
+  try { ch = claudeChannel(s, side); }
   catch (e){
     turn.streaming = false;
     turn.error = "could not open the Claude channel: " + e.message;
     scheduleRender(); return;
   }
   ch.pending.push(turn);
-  const frame = JSON.stringify({ message: turn.sent, resume: s.claude_session || null });
+  /* The per-session model override, or undefined to let the server fall back to the
+     stored setting. Sent per message rather than per connection so a change applies
+     to the NEXT message without reconnecting and losing the thread. */
+  const model = S.model[s.id];
+  /* A side chat never resumes the MAIN thread -- that is what makes it a branch
+     rather than a continuation. It does resume ITSELF (ch.sideSession, captured from
+     the first `session` frame), so a multi-turn side chat is still one conversation
+     instead of a series of strangers. */
+  const frame = JSON.stringify({ message: turn.sent,
+                                 resume: side ? (ch.sideSession || null)
+                                              : (s.claude_session || null),
+                                 model: (model === undefined ? null : model) });
   if (ch.open) ch.ws.send(frame); else ch.queue.push(frame);
   scheduleRender();
 }
 /* classify -> file the placement -> run Claude under that placement. The classify
    round-trip is awaited (a turn cannot be grounded before it has an address); the
    Claude run is not (it streams into the pane). */
+/* ── side chat ───────────────────────────────────────────────────────────────
+   Deliberately NOT routed through submitTurn(): that classifies the input and files
+   a placement (ADR-028). A side chat is exploratory -- "would OAuth be better?" --
+   and filing it would put a decision in the registry that the operator never made.
+   So no classify round-trip, and the turn carries no domain: turnBlock already
+   renders a turn with no placement honestly rather than inventing one. */
+function askSide(sid, text){
+  const s = S.sessions.find(x=>x.id===sid);
+  if (!s || !text) return;
+  const turn = { text: text, ts_ms: Date.now(), response: "", tools: [],
+                 error: null, streaming: true, side: true };
+  (S.sideTurns[sid] = S.sideTurns[sid] || []).push(turn);
+  S.sideText[sid] = "";
+  askClaude(s, turn, true);       /* true = side channel, never resumes the main thread */
+  render();
+}
+
+/* ── attachments ─────────────────────────────────────────────────────────────
+   The file is uploaded into the workdir and referenced by RELATIVE PATH. It is not
+   inlined into the prompt: a PDF or screenshot is not text, and pasting bytes into
+   a message would corrupt both. The agent's cwd IS the workdir, so an @path is
+   something it can already read -- no new read surface is opened. */
+function composeWithAttachments(sid, text){
+  const ready = (S.attach[sid]||[]).filter(a=>a.ref && !a.error && !a.pending);
+  if (!text && !ready.length) return "";
+  /* Refs FIRST and on their own lines: appending them after the prose ran them into
+     the last sentence, and an @path glued to a word does not resolve. */
+  const refs = ready.map(a=>a.ref).join("\n");
+  S.attach[sid] = (S.attach[sid]||[]).filter(a=>a.pending);   /* keep in-flight ones */
+  return refs ? (refs + (text ? "\n\n" + text : "")) : text;
+}
+
+function pickAttachment(sid){
+  /* A hidden input, created per click and discarded: keeping one in the DOM meant
+     render() replaced it mid-dialog and the change event landed on a dead node. */
+  const el = document.createElement("input");
+  el.type = "file"; el.multiple = true; el.style.display = "none";
+  el.onchange = ()=>{ [...(el.files||[])].forEach(f=>uploadAttachment(sid, f)); el.remove(); };
+  document.body.appendChild(el);
+  el.click();
+}
+
+function uploadAttachment(sid, file){
+  const list = (S.attach[sid] = S.attach[sid] || []);
+  const entry = { name: file.name, bytes: file.size, pending: true, ref: null, error: null };
+  list.push(entry);
+  render();
+  const fr = new FileReader();
+  fr.onerror = ()=>{ entry.pending = false; entry.error = "could not read this file"; render(); };
+  fr.onload = ()=>{
+    /* Strip the data: URL prefix -- the server validates strict base64 and would
+       reject "data:image/png;base64,..." wholesale. */
+    const b64 = String(fr.result || "").split(",")[1] || "";
+    apiPost("/api/attach", { name: file.name, content_b64: b64 })
+      .then(r=>{ entry.pending = false; entry.ref = r.ref; entry.bytes = r.bytes;
+                 entry.name = r.path.split("/").pop(); })
+      /* The server's message names the real cause (too large / bad base64 / workdir
+         outside the root). Keep it on THIS entry so one rejection does not discard
+         the other attachments. */
+      .catch(e=>{ entry.pending = false; entry.error = e.message; })
+      .then(()=>render());
+  };
+  fr.readAsDataURL(file);
+}
+
 async function submitTurn(text, sessionId){
   const { session, result } = await runTask(text, sessionId);
   render();
@@ -1214,6 +1626,43 @@ async function submitTurn(text, sessionId){
 /* ══════════════════════ state ══════════════════════ */
 const S = {
   screen:"departments", sel:null, view:"live", showRetired:false, showAcme:false,
+  /* first run. `onbDismissed` is per-load only; the persisted acknowledgement
+     is settings.onboarded, so "Not now" brings the disclosure back next launch.
+     runtimeError/sessionsError hold a subsystem that failed WITHOUT taking the
+     boot down with it (see boot()'s allSettled). */
+  onbDismissed:false, runtimeError:null, sessionsError:null,
+  /* git: loaded lazily when the screen is first opened, so a workdir that is not a
+     repository costs nothing until the operator actually asks. gitDiff is null while
+     a fetch is in flight, "" when git genuinely returned an empty diff -- the two are
+     different answers and the screen renders them differently. */
+  git:null, gitError:null, gitFile:null, gitDiff:null, gitDiffTruncated:false,
+  /* Per-session composer extras. `attach` holds one entry per pending file (each with
+     its own error, so one rejected upload does not discard the others). `model` is a
+     per-session OVERRIDE; undefined means "inherit the stored setting", which is why
+     it is not seeded with a value. */
+  attach:{}, model:{},
+  /* Side chats. Turns live HERE, never in s.turns: a branch that appeared in the main
+     transcript would not be a branch. Keyed by session id, per pane. */
+  sideOpen:{}, sideTurns:{}, sideText:{},
+  /* Skills catalog freshness. `etag` is committed only after the payload it
+     describes has been applied, so a stored signature always matches the data in
+     hand. `delta` is how many entries the last accepted refresh added or removed. */
+  cat:{ etag:null, readAt:0, lastCheckAt:0, fails:0, inflight:false, delta:0 },
+  /* editor. edText is null while a read is in flight and a STRING once loaded, so
+     "" (a genuinely empty file) is distinguishable from "not read yet". edBase is
+     what was loaded, so `dirty` is a comparison rather than a guess. */
+  fs:null, fsError:null, fsQuery:"",
+  edFile:null, edText:null, edBase:null, edBytes:null,
+  edBusy:false, edError:null, edOk:null,
+  /* null = "show the value in force"; a string = the operator is editing it. Kept in S
+     because render() rebuilds the pane wholesale and would otherwise drop the keystrokes. */
+  workdirDraft:null,
+  /* Terminal pane. The iframe is mounted ONCE and then only shown/hidden: re-creating
+     it on every render() would kill the PTY and the session inside it on any unrelated
+     state change. termCwd records the workdir the PTY was started with, so a later
+     workdir change can say plainly that the running terminal is still in the old one
+     rather than silently mislabelling it. */
+  termOpen:false, termCwd:null, termW:null, sideTab:"terminal",
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
      through the org. Departments do NOT hand work to each other — no such channel exists. */
@@ -1390,6 +1839,9 @@ function mdHtml(src){
 
 /* ══════════════════════ rail ══════════════════════ */
 const ICON = {
+  term:'<rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/>',
+  git:'<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="9" r="2.6"/><path d="M6 8.6v6.8M8.6 6H14a1.5 1.5 0 011.5 1.5v0"/>',
+  edit:'<path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/>',
   dept:'<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="2" y="16" width="6" height="5" rx="1"/><rect x="16" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/>',
   chart:'<path d="M4 4h11l5 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v6h6M7 14h8M7 17h5"/>',
   plc:'<path d="M3 7h7l2 3h9"/><path d="M3 7v11a1 1 0 001 1h16a1 1 0 001-1v-8"/><circle cx="16.5" cy="14.5" r="2.2"/>',
@@ -1422,10 +1874,23 @@ function railSpec(){
     change:[
       {id:"reorg",  n:"Reorg plans", i:"reorg", c:PLANS.length},
       {id:"history",n:"History",     i:"hist"},
+      /* Git sits in CHANGE because that is what it reports: what changed in the
+         working tree. The count is withheld until the screen has been opened --
+         a 0 before anything was read would be a claim about a repo nobody looked at. */
+      {id:"git",    n:"Git",         i:"git",   c:(S.git ? ((S.git.status||{}).files||[]).length : undefined)},
+      /* Editor sits next to Git: both are views of the same working tree, one shows
+         what changed and the other lets you change it. Count withheld until read. */
+      {id:"editor", n:"Editor",      i:"edit",  c:(S.fs ? S.fs.files.length : undefined)},
       {id:"health", n:"Health",      i:"health",c:openIssues, warn:true}
     ],
     runtime:[
       {id:"skills",  n:"Skills",   i:"skills",c:(SKILLS.length||undefined)},
+      /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
+         anyway. It shipped as a 19px unlabelled icon in the footer and the first
+         operator to use it reported "I don't see terminal": a control nobody can
+         find is not a shipped feature. The footer icon stays for muscle memory;
+         renderRail routes this id to termToggle() instead of setting S.screen. */
+      {id:"terminal",n:"Terminal", i:"term", toggle:true},
       /* Settings is not a count -- it is provider + permission mode + workdir,
          all three of which are single values with a live server behind them. */
       {id:"settings",n:"Settings", i:"gear"}
@@ -1456,7 +1921,7 @@ function renderRail(){
   const spec = railSpec();
   const mk = items => items.map(it=>`
     <li><button type="button" data-screen="${it.id}" ${it.disabled?"disabled":""}
-        aria-current="${S.screen===it.id}"
+        aria-current="${it.toggle ? (it.id==="terminal" && S.termOpen) : S.screen===it.id}"
         ${it.disabled?'title="§8.5.3 — an item appears in the rail only if a file backs it. The FTS5 derived index (§7.3) does not exist yet."':""}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${ICON[it.i]}</svg>
       ${esc(it.n)}
@@ -2095,11 +2560,11 @@ SCREENS.skills = () => {
                     <span class="pill p-mut">no slash</span>`}</td>
              <td>${esc(k.kind)}${k.always_loaded?' <span class="pill p-warn">always loaded</span>':""}</td>
              <td>${esc(k.source)}</td>
-             <td>${k.runnable ? `<span class="pill p-ok">yes</span>`
+             <td class="whynot">${k.runnable ? `<span class="pill p-ok">yes</span>`
                    : `<span class="pill p-block">no</span>
                       <div style="font:500 9.5px/1.4 var(--mono);color:var(--faint);margin-top:3px">
                         ${esc(k.runnable_reason || KINDNOTE[k.kind] || "")}</div>`}</td>
-             <td>${esc((k.description||"").slice(0,150))}</td></tr>`).join("")}
+             <td class="desc" title="${esc(k.description||"")}">${esc(k.description||"")}</td></tr>`).join("")}
            </tbody></table></div>
            <p style="margin:9px 0 0;font-size:11px;color:var(--faint)">
              ${shown.length} of ${items.length} · ${p.runnable_entries} runnable</p>`;
@@ -2179,9 +2644,147 @@ SCREENS.tenants = () => {
    omitted. Hiding them would answer "can I use codex?" with silence; a
    selectable-but-broken entry would answer it with a dead websocket ten seconds
    later. Disabled-with-the-reason is the only version that answers it now. */
+/* ── editor ──────────────────────────────────────────────────────────────────
+   A plain <textarea>, not a syntax-highlighting editor. CodeMirror/Monaco would be
+   ~300 KB of vendored JS in a project whose whole point is no build step and three
+   dependencies, and it would have to be loaded from a CDN -- which the Electron
+   shell may block and an offline machine certainly does. What the operator needs
+   here is "read what the agent changed and fix a line", and a textarea does that.
+
+   Saving is gated server-side (SUTRA_UI_ALLOW_EDIT). When it is off, the pane still
+   OPENS files -- reading exposes nothing the chat agent, whose cwd is this same
+   directory, cannot already read -- and says plainly why saving is unavailable. */
+SCREENS.editor = () => {
+  if (S.fsError) return `<div class="zero"><h4>Files unavailable</h4>
+    <p>${esc(S.fsError)}</p></div>`;
+  if (!S.fs) return `<div class="zero"><h4>Reading the workdir…</h4></div>`;
+
+  const q = (S.fsQuery||"").toLowerCase();
+  const files = S.fs.files.filter(f=>!q || f.path.toLowerCase().includes(q));
+  const open = S.edFile;
+  const dirty = open && S.edText !== null && S.edText !== S.edBase;
+
+  const gate = S.fs.editable ? "" : `<div class="note w">
+    <b>Saving is off.</b> This pane writes to your files and the panel is
+    unauthenticated by construction, so it is gated out of band. Restart with
+    <code>${esc(S.fs.edit_env||"SUTRA_UI_ALLOW_EDIT")}=1</code> to enable saving.
+    Opening files still works.</div>`;
+
+  const list = `<div class="fslist">${files.slice(0,600).map(f=>`
+    <button class="opt fsf ${open===f.path?"sel":""}" type="button" data-edopen="${esc(f.path)}">
+      <span class="oi"><span class="on">${esc(f.path)}</span>
+      <span class="od">${fmtBytes(f.bytes)}</span></span>
+    </button>`).join("")}</div>
+    ${files.length>600?`<p style="font-size:11px;color:var(--faint);margin:7px 0 0">
+      Showing 600 of ${files.length} matches — narrow the filter.</p>`:""}
+    ${S.fs.truncated?`<p class="note w" style="margin-top:7px">The tree was truncated at
+      ${S.fs.files.length} files. Files beyond that are not listed — this is a limit,
+      not an empty result.</p>`:""}`;
+
+  const pane = !open ? "" : `
+    ${fold("ed.file", "Editing", esc(open), `
+      <div class="edbar">
+        <span class="pill ${dirty?"p-warn":"p-mut"}">${dirty?"unsaved changes":"saved"}</span>
+        ${S.edBytes!=null?`<span class="pill p-mut">${fmtBytes(S.edBytes)} on load</span>`:""}
+        <button class="btn" type="button" data-edsave
+          ${(!dirty || !S.fs.editable || S.edBusy)?"disabled":""}>${
+            S.edBusy?"Saving…":"Save"}</button>
+        <button class="btn" type="button" data-edreload>Reload</button>
+      </div>
+      ${S.edError?`<div class="note b"><b>Not saved.</b> ${esc(S.edError)}</div>`:""}
+      ${S.edOk?`<div class="note"><b>Saved.</b> ${esc(S.edOk)}</div>`:""}
+      ${S.edText===null
+        ? `<p style="color:var(--faint)">Reading…</p>`
+        : `<textarea class="edta" data-edta spellcheck="false"
+             aria-label="Contents of ${esc(open)}">${esc(S.edText)}</textarea>`}`)}`;
+
+  return `${gate}
+    ${fold("ed.files", "Files", `${files.length}`, `
+      <input type="search" class="wdin" data-edfilter placeholder="Filter files…"
+             value="${esc(S.fsQuery||"")}" aria-label="Filter files" style="margin-bottom:8px">
+      ${files.length?list:`<p style="color:var(--faint);margin:0">No file matches
+        “${esc(S.fsQuery)}”.</p>`}`)}
+    ${pane}`;
+};
+
+/* ── git ─────────────────────────────────────────────────────────────────────
+   READ-ONLY, and says so. The endpoints behind this expose status/log/diff and
+   nothing that mutates a repository, so this screen deliberately offers no
+   stage/commit/push control -- an affordance that cannot work is worse than a
+   missing one. The repo is the configured workdir, never a path from here. */
+SCREENS.git = () => {
+  if (S.gitError) return `<div class="zero"><h4>Git unavailable</h4>
+    <p>${esc(S.gitError)}</p>
+    <p style="font-size:11px;color:var(--faint)">The repository is the workdir set in
+    Settings. Point it at a git checkout to use this screen.</p></div>`;
+  if (!S.git) return `<div class="zero"><h4>Reading the repository…</h4></div>`;
+
+  const st = S.git.status || {};
+  const files = st.files || [];
+  const sel = S.gitFile;
+  const CODE = {M:"modified", A:"added", D:"deleted", R:"renamed", C:"copied", "?":"untracked", U:"conflicted"};
+  const label = f => CODE[(f.y !== " " ? f.y : f.x)] || "changed";
+
+  const row = f => `<button class="opt gitf ${sel===f.path?"sel":""}" type="button"
+      data-gitfile="${esc(f.path)}">
+      <span class="gcode ${f.y==="?"||f.x==="?"?"new":""}">${esc((f.x+f.y).trim()||"?")}</span>
+      <span class="oi"><span class="on">${esc(f.path)}</span>
+      <span class="od">${esc(label(f))}${f.x!==" "&&f.x!=="?"?" · staged":""}</span></span>
+    </button>`;
+
+  const diff = S.gitDiff == null
+    ? (sel ? `<p style="color:var(--faint)">Reading diff…</p>` : "")
+    : (S.gitDiff.trim()
+        ? `<pre class="diff">${diffHtml(S.gitDiff)}</pre>${
+            S.gitDiffTruncated?`<p class="note w" style="margin-top:6px">This diff was
+            truncated at 400 KB. What is shown is the beginning of the real diff, not a
+            summary of it.</p>`:""}`
+        : `<p style="color:var(--faint)">No unstaged changes in this file. It may be
+           staged already — this view shows the working tree against the index.</p>`);
+
+  return `
+    <div class="note" style="margin-bottom:9px"><b>Read-only.</b> This screen runs
+      <code>git status</code>, <code>log</code> and <code>diff</code> against
+      <code>${esc(S.git.repo || "—")}</code>. There is no stage, commit or push here:
+      those write, and writes are gated separately.</div>
+
+    ${fold("git.files", "Working tree", `${files.length} changed`, files.length
+      ? `<div class="kv"><b>Branch</b><span><code>${esc(st.branch||"—")}</code></span></div>
+         <div role="list" style="margin-top:7px">${files.map(row).join("")}</div>`
+      : `<p style="color:var(--faint);margin:0">Nothing changed. The working tree is
+         clean relative to the index.</p>`)}
+
+    ${sel ? fold("git.diff", "Diff", esc(sel), diff) : ""}
+
+    ${fold("git.log", "Recent commits", `${(S.git.commits||[]).length}`, (S.git.commits||[]).length
+      ? `<div class="tw"><table><thead><tr><th>Commit</th><th>When</th><th>Author</th><th>Subject</th></tr></thead>
+         <tbody>${S.git.commits.map(c=>`<tr>
+           <td class="k"><code>${esc(c.short)}</code></td>
+           <td>${esc(c.when)}</td><td>${esc(c.author)}</td>
+           <td class="desc" title="${esc(c.subject)}">${esc(c.subject)}</td></tr>`).join("")}
+         </tbody></table></div>`
+      : `<p style="color:var(--faint);margin:0">No commits read.</p>`)}`;
+};
+
+/* Colour a unified diff. Line-based on purpose: a token-level differ would be a
+   second, subtly different opinion about what changed from the one git already
+   gave us, and this screen's job is to show git's answer. */
+function diffHtml(text){
+  return text.split("\n").slice(0, 4000).map(l=>{
+    const c = l.startsWith("+++") || l.startsWith("---") ? "dh"
+            : l.startsWith("@@") ? "dhunk"
+            : l.startsWith("+") ? "dadd"
+            : l.startsWith("-") ? "ddel"
+            : l.startsWith("diff ") || l.startsWith("index ") ? "dh" : "";
+    return `<span class="${c}">${esc(l)}</span>`;
+  }).join("\n");
+}
+
 SCREENS.settings = () => {
   if (!SETTINGS) return `<div class="zero"><h4>Settings unavailable</h4>
-    <p>${esc(S.setError || "GET /api/settings has not answered.")}</p></div>`;
+    <p>${esc(S.runtimeError || S.setError || "GET /api/settings has not answered.")}</p>
+    ${S.runtimeError?`<p style="font-size:11px;color:var(--faint)">The registry loaded; only the
+      runtime call failed, so the rest of the panel is still live. Reload to retry.</p>`:""}</div>`;
   const st = SETTINGS;
   const active = st.provider;
   const banner = S.setError
@@ -2206,22 +2809,34 @@ SCREENS.settings = () => {
       </span>
     </button>`;
 
+  /* `running` is the mode that actually reaches the spawn; `stored` is what is
+     on file. They diverge when an unsafe mode was written without the
+     out-of-band opt-in, and the row has to distinguish them -- labelling the
+     stored value "active" is precisely the claim that was false. */
+  const running = st.permission_mode_effective || st.permission_mode;
   const modeRow = m => `
     <button class="opt" type="button" role="radio"
-        aria-checked="${st.permission_mode===m.id}" data-pmode-set="${esc(m.id)}"
+        aria-checked="${running===m.id}" data-pmode-set="${esc(m.id)}"
+        ${m.settable===false?'data-pmode-locked="1"':""}
         ${S.setBusy==="mode:"+m.id?"aria-busy=\"true\"":""}>
       <span class="rd" aria-hidden="true"></span>
       <span class="oi">
         <span class="on"><code>${esc(m.id)}</code>
           ${m.default?'<span class="pill p-mut">default</span>':""}
           ${m.writes_files?'<span class="pill p-block">writes files</span>':'<span class="pill p-ok">read-only</span>'}
-          ${st.permission_mode===m.id?'<span class="pill p-ok">active</span>':""}
+          ${running===m.id?'<span class="pill p-ok">running</span>':""}
+          ${st.permission_mode===m.id&&running!==m.id?'<span class="pill p-warn">on file · not honoured</span>':""}
+          ${m.settable===false?'<span class="pill p-mut">locked</span>':""}
           ${S.setBusy==="mode:"+m.id?'<span class="pill p-acc">saving…</span>':""}</span>
         <span class="od">${esc(m.note||"")}</span>
+        ${m.settable===false?`<span class="why">gated: the server must be started with
+          <code>${esc(st.unsafe_modes_env||"SUTRA_UI_ALLOW_UNSAFE_PERM_MODES")}=1</code>
+          before this can be selected.</span>`:""}
       </span>
     </button>`;
 
-  const writes = (PERM_MODES.find(m=>m.id===st.permission_mode)||{}).writes_files;
+  /* Derived from what RUNS, not from what is stored. */
+  const writes = (PERM_MODES.find(m=>m.id===running)||{}).writes_files;
 
   return `
     ${banner}
@@ -2242,17 +2857,41 @@ SCREENS.settings = () => {
         ${PROVIDERS.filter(p=>p.runnable).length} of ${PROVIDERS.length} catalogued providers can run on
         this machine. The rest are shown above, disabled, with their reason — never silently missing.</p>`:""}`)}
 
-    ${fold("set.mode", "Permission mode", esc(st.permission_mode||"—"), `
+    ${fold("set.mode", "Permission mode", esc(running||"—"), `
+      ${st.permission_mode_clamped?`<div class="note w"><b>The stored mode is not the one running.</b>
+        <code>${esc(st.permission_mode)}</code> is on file, but sessions start as
+        <code>${esc(running)}</code>. ${esc(st.permission_mode_clamp_reason||"")}
+        <div style="margin-top:6px">To honour it, restart the server with
+        <code>${esc(st.unsafe_modes_env||"SUTRA_UI_ALLOW_UNSAFE_PERM_MODES")}=1</code> — the gate is
+        deliberately out of band, because this endpoint is unauthenticated and anything that can
+        reach the port could otherwise widen the agent's authority.</div></div>`:""}
       ${writes?`<div class="note b"><b>This mode lets the agent write files without asking.</b>
-        With <code>${esc(st.permission_mode)}</code> selected, a session started from this panel can
+        With <code>${esc(running)}</code> running, a session started from this panel can
         create, change and delete files under the workdir below — and
         <code>bypassPermissions</code> also auto-approves shell commands. Nothing will prompt you
         per edit.</div>`:`<div class="note"><b>Read-only planning.</b> The agent proposes edits and
         you approve each one. Choosing <code>acceptEdits</code> below removes that prompt.</div>`}
       <div role="radiogroup" aria-label="Permission mode">${PERM_MODES.map(modeRow).join("")}</div>`)}
 
-    ${fold("set.workdir", "Workdir", null, `
-      <div class="kv"><b>Workdir</b><span><code>${esc(st.workdir||"—")}</code></span></div>
+    ${fold("set.workdir", "Workdir", esc((st.workdir||"").split("/").pop()||"—"), `
+      <p style="margin-bottom:9px">The directory every session this panel starts uses as its
+        working directory. It is created if it does not exist. A change applies to the
+        <b>next</b> session — moving a running agent out from under the transcript it is
+        writing is not something this panel will do to you.</p>
+      <div class="wdrow">
+        <input type="text" class="wdin" data-workdir-input
+               value="${esc(S.workdirDraft !== null ? S.workdirDraft : (st.workdir||""))}"
+               spellcheck="false" autocapitalize="off" autocorrect="off"
+               aria-label="Working directory" placeholder="~/sutra-ui-workspace">
+        <button class="btn" type="button" data-workdir-save
+          ${S.setBusy==="workdir"?'aria-busy="true" disabled':""}>${
+            S.setBusy==="workdir"?"Saving…":"Use this directory"}</button>
+      </div>
+      <p style="font-size:11px;color:var(--faint);margin:7px 0 9px">Must sit inside
+        <code>${esc(st.workdir_root||"~")}</code>. The chat session runs with this as its cwd, so an
+        arbitrary path would turn this panel into a read oracle over the whole disk; widen the
+        root with <code>SUTRA_UI_WORKDIR_ROOT</code> when starting the server if you need to.</p>
+      <div class="kv"><b>In force</b><span><code>${esc(st.workdir||"—")}</code></span></div>
       <div class="kv"><b>Settings file</b><span><code>${esc(st.settings_path||"—")}</code>
         ${st.settings_file_exists?'<span class="pill p-ok">exists</span>'
                                  :'<span class="pill p-mut">not written yet</span>'}</span></div>
@@ -2260,10 +2899,7 @@ SCREENS.settings = () => {
         <b>Ignored values in the settings file.</b>
         ${Object.entries(st.invalid_stored_values).map(([k,v])=>
           `<div><code>${esc(k)}</code> = <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
-        These were not silently corrected — the documented default is in force instead.</div>`:""}
-      <p style="font-size:11px;color:var(--faint);margin:9px 0 0">Every session this panel starts runs
-        with this directory as its cwd. It is displayed, not edited here: changing it mid-session would
-        move the agent out from under the transcript it is writing.</p>`)}`;
+        These were not silently corrected — the documented default is in force instead.</div>`:""}`)}`;
 };
 
 /* ── Staged department creation (§3.3). Four collapsible sections and a completion meter —
@@ -2272,6 +2908,8 @@ SCREENS.settings = () => {
 const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
+  git:["Git","git status · log · diff — read-only, over the workdir"],
+  editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   tenants:["Tenants","GET /api/tenants — derived, no tenant table"],
@@ -2331,22 +2969,51 @@ function routingChart(s){
 function turnResponse(t){
   const nTools = (t.tools && t.tools.length) || 0;
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
-  const state = t.streaming ? `<span class="pill p-acc">running…</span>`
-              : (t.error ? `<span class="pill p-block">failed</span>`
-                         : `<span class="pill p-ok">answered</span>`);
-  const tools = nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+  const runs = t.toolRuns || [];
+  const active = runs.filter(r=>r.running).length;
+  const state = t.streaming
+      ? `<span class="pill p-acc"><i class="dot"></i>${active ? active + " tool" + (active===1?"":"s") + " running"
+                                                             : (t.thinking ? "thinking" : "running")}</span>`
+      : (t.error ? `<span class="pill p-block">failed</span>`
+         : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
+                 : `<span class="pill p-ok">answered</span>`);
+  /* Server-measured duration and cost, stated only when the server actually sent
+     them. A turn replayed from a transcript has neither, and inventing a number
+     there would be fabrication. */
+  const meta = (!t.streaming && (t.duration_ms != null || t.cost_usd != null))
+    ? `<span class="pill p-mut">${[
+         t.duration_ms != null ? (t.duration_ms/1000).toFixed(1) + "s" : null,
+         t.cost_usd != null ? "$" + Number(t.cost_usd).toFixed(4) : null,
+       ].filter(Boolean).join(" · ")}</span>` : "";
+
+  /* toolRuns (live, with lifecycle) is preferred; `tools` (flat names, which is all a
+     replayed transcript records) is the fallback. A replayed turn therefore shows what
+     ran but never claims a pass/fail it does not know. */
+  const tools = runs.length
+    ? `<div class="toolRow">${runs.slice(-12).map(r=>`
+         <div class="trow ${r.running?"run":(r.ok===false?"bad":(r.ok===null?"unk":"ok"))}">
+           <span class="tstate" aria-hidden="true"></span>
+           <span class="tname">${esc(r.name)}</span>
+           ${r.summary?`<span class="tsum">${esc(r.summary)}</span>`:""}
+           ${r.caller && r.caller!=="direct"?`<span class="pill p-acc">${esc(r.caller)}</span>`:""}
+           <span class="tverdict">${r.running ? "running"
+                                   : r.ok === false ? "error"
+                                   : r.ok === null ? "unknown"
+                                   : "done"}</span>
+         </div>`).join("")}</div>`
+    : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
       <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
       ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
-    </div>` : "";
-  const waiting = (t.streaming && !t.response)
-    ? `<div style="margin-top:6px;color:var(--faint)">Claude is working…</div>` : "";
+    </div>` : "");
+  const waiting = (t.streaming && !t.response && !runs.length)
+    ? `<div class="working"><i class="dot"></i>${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
   const body = t.response
     ? `<div class="md" style="margin-top:6px;color:var(--ink)">${mdHtml(t.response)}${
         t.streaming ? `<span style="color:var(--acc)">█</span>` : ""}</div>` : "";
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
     ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>` : "";
-  return `<div class="a">${state}${tools}${waiting}${body}${err}</div>`;
+  return `<div class="a">${state}${meta}${tools}${waiting}${body}${err}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)
@@ -2443,19 +3110,73 @@ function sessionPane(s){
         <button type="button" data-tab="chat"  data-sid="${s.id}" aria-pressed="${tab==="chat"}">Chat</button>
         <button type="button" data-tab="route" data-sid="${s.id}" aria-pressed="${tab==="route"}">Routing</button>
       </span>
+      <button class="ib" data-sidetoggle="${s.id}" type="button"
+              aria-pressed="${!!S.sideOpen[s.id]}"
+              aria-label="${S.sideOpen[s.id]?"Hide the side chat":"Open a side chat"}"
+              title="Side chat — ask something without touching this thread">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" aria-hidden="true">
+          <path d="M4 5h11a2 2 0 012 2v5a2 2 0 01-2 2H8l-4 3V5z"/><path d="M19 9h1a1 1 0 011 1v9l-3-2h-5"/>
+        </svg>
+      </button>
       <button class="ib" data-close="${s.id}" aria-label="Close session">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
     <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
+    ${S.sideOpen[s.id] ? `<div class="sidewrap">
+      <div class="sidehead">
+        <b>Side chat</b>
+        <span>separate thread — nothing here is sent to the conversation above, and it
+          is not filed as a placement</span>
+        <button class="ib" data-sideclose="${s.id}" type="button" aria-label="Close the side chat">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="sidebody">${
+        (S.sideTurns[s.id]||[]).length
+          ? (S.sideTurns[s.id]||[]).map(t=>`<div class="turn">
+              <div class="q">${esc(t.text)}</div>${turnResponse(t)}</div>`).join("")
+          : `<p class="sidezero">Ask something you do not want in the main thread —
+             “would OAuth be better here?” — and the answer stays in this box.</p>`}</div>
+      <div class="pc">
+        <input type="text" data-sideask="${s.id}" value="${esc(S.sideText[s.id]||"")}"
+               placeholder="Ask on the side…" aria-label="Side chat message"/>
+        <button class="send" data-sidesend="${s.id}" type="button" aria-label="Send on the side">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </div></div>` : ""}
     ${S.palette && S.palette.sid===s.id ? paletteHtml() : ""}
+    ${(S.attach[s.id]||[]).length ? `<div class="attrow">
+      ${(S.attach[s.id]||[]).map((a,i)=>`<span class="att ${a.error?"bad":""}">
+        <span class="attn">${esc(a.name)}</span>
+        <span class="atts">${a.error ? esc(a.error) : (a.pending ? "uploading…" : fmtBytes(a.bytes))}</span>
+        <button class="attx" type="button" data-attrm="${s.id}:${i}"
+                aria-label="Remove ${esc(a.name)}">&times;</button></span>`).join("")}
+    </div>` : ""}
     <div class="pc">
+      <button class="ib" data-attach="${s.id}" type="button"
+              aria-label="Attach a file" title="Attach a file (or drop / paste one)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.9" aria-hidden="true"><path d="M21 11l-8.5 8.5a4.6 4.6 0 01-6.5-6.5L14 4.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.1-2.1l7.9-7.9"/></svg>
+      </button>
       <input type="text" data-sask="${s.id}" value="${esc(S.composerText[s.id]||"")}"
              placeholder="Ask anything — / for commands"
              aria-label="Continue this session"/>
-      <button class="send" data-ssend="${s.id}" type="button" aria-label="Send">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-      </button>
+      <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
+              title="Model — applies to the next message">
+        ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
+          <option value="${esc(m.id)}" ${(S.model[s.id] ?? ((SETTINGS||{}).model||"")) === m.id ? "selected":""}
+          >${esc(m.name)}</option>`).join("")}
+      </select>
+      ${streamingFor(s.id)
+        ? `<button class="send stop" data-sstop="${s.id}" type="button" aria-label="Stop this turn"
+                   title="Stop — kills the running process">
+             <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+           </button>`
+        : `<button class="send" data-ssend="${s.id}" type="button" aria-label="Send">
+             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+           </button>`}
     </div></section>`;
 }
 
@@ -2492,25 +3213,49 @@ function _focusedInputSelector(){
    palette is the place where offering something means it will run. */
 const runnableCommands = () => SKILLS.filter(k => k.slash && k.runnable);
 function paletteFor(text){
+  /* Two palettes, one mechanism. "/" offers runnable commands; "@" offers real files
+     under the workdir. Sharing the machinery means the keyboard model (arrows, enter,
+     tab, escape) is identical for both -- two separate implementations would drift. */
+  const at = /(^|\s)@([^\s@]*)$/.exec(text || "");
+  if (at){
+    const token = at[2].toLowerCase();
+    /* Files come from the SAME /api/fs/tree the editor uses, so @ can only ever offer
+       a path that exists. Fetched on first use; until it answers the palette stays
+       shut rather than showing a stale or invented list. */
+    if (!S.fs){ loadFs(false); return null; }
+    const items = S.fs.files
+      .filter(f => !token || f.path.toLowerCase().includes(token))
+      /* Shallower paths first: with no token typed, the top of the project is a far
+         more useful default than whatever sorts first alphabetically. */
+      .sort((a,b)=> (a.path.split("/").length - b.path.split("/").length)
+                 || a.path.length - b.path.length)
+      .slice(0, 8)
+      .map(f => ({ ref: "@" + f.path, label: f.path, meta: fmtBytes(f.bytes) }));
+    return { token, items, kind: "file" };
+  }
   const m = /(^|\s)\/([A-Za-z0-9:_-]*)$/.exec(text || "");
   if (!m) return null;
   const token = m[2].toLowerCase();
   const items = runnableCommands().filter(k =>
     k.slash.slice(1).toLowerCase().includes(token) ||
-    (k.name||"").toLowerCase().includes(token)).slice(0, 8);
-  return { token, items };
+    (k.name||"").toLowerCase().includes(token)).slice(0, 8)
+    .map(k => ({ ref: k.slash, label: k.slash, meta: (k.description||"").slice(0,72) }));
+  return { token, items, kind: "command" };
 }
 function paletteHtml(){
   const p = S.palette;
   if (!p || !p.items.length) return "";
+  const total = p.kind === "file"
+    ? ((S.fs && S.fs.files.length) || 0) + " files"
+    : runnableCommands().length + " runnable";
   return `<div class="tw" style="margin-bottom:9px">
     <table><tbody>${p.items.map((k,i)=>`
       <tr data-pal="${i}" class="${i===p.idx?"sel":""}" style="cursor:pointer">
-        <td class="k" style="white-space:nowrap"><code>${esc(k.slash)}</code></td>
-        <td>${esc((k.description||"").slice(0,72))}</td></tr>`).join("")}
+        <td class="k" style="white-space:nowrap"><code>${esc(k.label)}</code></td>
+        <td>${esc(k.meta||"")}</td></tr>`).join("")}
     </tbody></table>
     <div class="legend" style="padding:6px 9px">up/down to move · enter or tab to insert ·
-      esc to dismiss · ${p.items.length} of ${runnableCommands().length} runnable</div></div>`;
+      esc to dismiss · ${p.items.length} of ${total}</div></div>`;
 }
 function applyPalette(sid, idx){
   const p = S.palette; if (!p || !p.items[idx]) return;
@@ -2520,8 +3265,11 @@ function applyPalette(sid, idx){
      only restores the value of the element that happened to be focused, so a
      CLICKED palette row (input not focused) silently cleared the composer. */
   const cur = S.composerText[sid] !== undefined ? S.composerText[sid] : inp.value;
-  const next = cur.replace(/(^|\s)\/[A-Za-z0-9:_-]*$/,
-                           (mm, pre)=> pre + p.items[idx].slash + " ");
+  /* Replace the token that OPENED this palette, not a hardcoded "/" pattern -- with
+     @ live, the wrong pattern would leave the "@frag" in place and append the path
+     after it. */
+  const pat = p.kind === "file" ? /(^|\s)@[^\s@]*$/ : /(^|\s)\/[A-Za-z0-9:_-]*$/;
+  const next = cur.replace(pat, (mm, pre)=> pre + p.items[idx].ref + " ");
   S.composerText[sid] = next;
   S.palette = null;
   render();
@@ -2592,6 +3340,100 @@ function tenantGateHtml(){
     </div></section>`;
 }
 
+/* ── first run ───────────────────────────────────────────────────────────────
+   Four facts the operator needs BEFORE the panel starts driving a CLI on their
+   machine, each read from the same endpoint the corresponding screen uses:
+   which assistant runs, where it works, what it is allowed to do, what it can
+   see. Every value is live -- there is no illustrative copy here, so a machine
+   with no `claude` on PATH is told that on step 1 instead of after its first
+   message dies. Dismissing writes settings.onboarded=true server-side; a
+   browser flag would re-show this on another browser and skip it after a
+   settings reset, and this is exactly the disclosure that must not be skipped. */
+function onboardingHtml(){
+  const st = SETTINGS || {};
+  const running = st.permission_mode_effective || st.permission_mode || "plan";
+  const runnable = PROVIDERS.filter(p=>p.runnable);
+  const active = PROVIDERS.find(p=>p.id===st.provider) || runnable[0] || null;
+  const blocked = PROVIDERS.filter(p=>!p.runnable);
+  const tn = (TENANTS||[]).find(t=>t.tenant_id===S.tenant) || {};
+  const writes = running !== "plan";
+
+  const step = (n, title, body) => `<div class="onb-step">
+    <span class="onb-num">${n}</span><div class="onb-b">${title}${body}</div></div>`;
+
+  return `<div class="onb" role="dialog" aria-modal="true" aria-label="Welcome to Sutra">
+    <div class="onb-card">
+      <h1>Welcome to Sutra</h1>
+      <p class="onb-lede">A reader for your placement registry — the departments, charters and
+        placements your work is filed into — with an assistant alongside it. Four things worth
+        knowing before you start. All of them are live readings from this machine, not examples.</p>
+
+      ${step(1, `<h3>${active
+          ? `It drives <code>${esc(active.name)}</code>`
+          : "No assistant can run here yet"}</h3>`,
+        active
+          ? `<p>Chat in this panel spawns your local <code>${esc(active.bin)}</code> CLI and bills as
+               your existing subscription — never an API key.</p>
+             <div class="onb-fact">${esc(active.bin_path||"")}</div>`
+          : `<p>None of the ${PROVIDERS.length} catalogued assistants is usable on this machine, so
+               chat is unavailable. Everything else — departments, charters, placements — still works.</p>
+             ${blocked.map(p=>`<div class="onb-fact">${esc(p.name)} — ${esc(p.reason||"")}</div>`).join("")}`)}
+
+      ${step(2, `<h3>It works in one directory</h3>`,
+        `<p>Every session this panel starts runs with this as its working directory. It is created
+           if it does not exist.</p>
+         <div class="onb-fact">${esc(st.workdir||"—")}</div>`)}
+
+      ${step(3, `<h3>${writes
+          ? "The assistant can change files"
+          : "The assistant proposes, you approve"}</h3>`,
+        `<p>${writes
+            ? `Sessions run as <code>${esc(running)}</code> — edits under the workdir are applied
+               without prompting you first.`
+            : `Sessions run as <code>${esc(running)}</code>: it reads and plans, and every edit needs
+               your approval. You can widen this in Settings.`}</p>
+         ${st.permission_mode_clamped?`<div class="onb-fact">note: <code>${esc(st.permission_mode)}</code>
+           is on file but is not honoured — sessions run as <code>${esc(running)}</code></div>`:""}`)}
+
+      ${step(4, `<h3>It reads what is already on your disk</h3>`,
+        `<p>The registry below, and every slash command your assistant can already resolve. Nothing
+           was seeded or invented for this screen.</p>
+         <div class="onb-fact">${esc(S.tenant||"—")} · ${tn.domains??0} departments ·
+           ${tn.charters??0} charters · ${tn.placements??0} placements ·
+           ${(SKILLS_META&&SKILLS_META.total)||0} commands</div>`)}
+
+      <div class="onb-foot">
+        <span class="sp">You can change any of this later in Settings.</span>
+        <button class="onb-skip" type="button" data-onb="later">Not now</button>
+        <button class="onb-go" type="button" data-onb="done">Start using Sutra</button>
+      </div>
+    </div></div>`;
+}
+
+/* Mounted OUTSIDE #app so render()'s wholesale replacement of #panes cannot
+   tear it down mid-interaction. */
+function renderOnboarding(){
+  let host = document.getElementById("onbHost");
+  const show = !!(SETTINGS && SETTINGS.onboarded === false && !S.onbDismissed);
+  if (!show){ if (host) host.remove(); return; }
+  if (!host){
+    host = document.createElement("div");
+    host.id = "onbHost";
+    document.body.appendChild(host);
+  }
+  host.innerHTML = onboardingHtml();
+  host.querySelectorAll("[data-onb]").forEach(b=>b.onclick=()=>{
+    /* "Not now" hides it for this load only and does NOT persist -- the
+       disclosure returns next launch, because it was never acknowledged. */
+    if (b.dataset.onb === "later"){ S.onbDismissed = true; renderOnboarding(); return; }
+    S.onbDismissed = true;
+    renderOnboarding();
+    apiPost("/api/settings", { onboarded: true })
+      .then(r=>{ SETTINGS = r.settings || SETTINGS; })
+      .catch(()=>{ /* the panel is usable either way; it simply shows again next launch */ });
+  });
+}
+
 function render(){
   /* A drag is a live binding between the dragged node and the drop targets'
      ondragover/ondrop handlers. render() replaces #panes wholesale, so a
@@ -2606,6 +3448,7 @@ function render(){
     start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
 
   renderRail();
+  renderOnboarding();
 
   /* No tenant GATE pane. Choosing a workspace is a footer control, not a
      full-screen interstitial: with one tenant the interstitial was a click that
@@ -2817,12 +3660,87 @@ function wire(){
       .then(()=>{ S.setBusy = null; render(); }); });
   scBody.querySelectorAll("[data-pmode-set]").forEach(b=>b.onclick=()=>{
     const m = b.dataset.pmodeSet;
+    const spec = PERM_MODES.find(x=>x.id===m) || {};
+    /* A gated mode is refused server-side with a 400. Firing the request anyway
+       turned "this is locked" into "settings are broken"; say which it is
+       without a round-trip. */
+    if (spec.settable === false){
+      const envName = (SETTINGS||{}).unsafe_modes_env || "SUTRA_UI_ALLOW_UNSAFE_PERM_MODES";
+      S.setOk = null;
+      S.setError = m + " auto-approves agent actions and is gated. Restart the server with "
+                 + envName + "=1 to make it selectable — the gate is out of band on purpose.";
+      render(); return;
+    }
+    /* Unlocked but still dangerous: the second gate is the operator saying yes. */
+    if (spec.writes_files && !window.confirm(
+        "Switch to " + m + "?\n\n" + (spec.note || "") +
+        "\n\nSessions started from this panel will act under that authority until you change it back.")){
+      return;
+    }
     S.setBusy = "mode:" + m; S.setError = null; S.setOk = null; render();
     apiPost("/api/settings", { permission_mode: m })
       .then(r=>{ SETTINGS = r.settings || SETTINGS;
-                 S.setOk = "permission mode is now " + (SETTINGS||{}).permission_mode + "."; })
+                 /* Report what will RUN, not what was written — they differ when clamped. */
+                 S.setOk = "permission mode is now "
+                         + ((SETTINGS||{}).permission_mode_effective || (SETTINGS||{}).permission_mode) + "."; })
       .catch(e=>{ S.setError = e.message; })
       .then(()=>{ S.setBusy = null; render(); }); });
+
+  /* ── editor ── */
+  scBody.querySelectorAll("[data-edopen]").forEach(b=>b.onclick=()=>openEdFile(b.dataset.edopen));
+  const edFilter = scBody.querySelector("[data-edfilter]");
+  if (edFilter) edFilter.oninput = ()=>{ S.fsQuery = edFilter.value; renderFilterOnly(); };
+  const edTa = scBody.querySelector("[data-edta]");
+  if (edTa){
+    /* No render() on input: a full rebuild on every keystroke would fight the caret
+       and make typing in a large file unusable. The dirty pill is updated directly. */
+    edTa.oninput = ()=>{
+      S.edText = edTa.value;
+      const pill = scBody.querySelector("[data-edsave]");
+      const dirty = S.edText !== S.edBase;
+      if (pill) pill.disabled = !dirty || !(S.fs&&S.fs.editable) || S.edBusy;
+      const chip = scBody.querySelector(".edbar .pill");
+      if (chip){ chip.textContent = dirty ? "unsaved changes" : "saved";
+                 chip.className = "pill " + (dirty ? "p-warn" : "p-mut"); }
+    };
+    edTa.onkeydown = e=>{
+      if ((e.metaKey || e.ctrlKey) && e.key === "s"){ e.preventDefault(); saveEdFile(); }
+    };
+  }
+  const edSave = scBody.querySelector("[data-edsave]");
+  if (edSave) edSave.onclick = ()=>saveEdFile();
+  const edReload = scBody.querySelector("[data-edreload]");
+  if (edReload) edReload.onclick = ()=>{ const p=S.edFile; S.edBase=S.edText; openEdFile(p); };
+
+  /* ── git ── */
+  scBody.querySelectorAll("[data-gitfile]").forEach(b=>b.onclick=()=>{
+    const p = b.dataset.gitfile;
+    /* Clicking the selected file again closes the diff rather than re-fetching it. */
+    if (S.gitFile === p){ S.gitFile = null; S.gitDiff = null; render(); return; }
+    loadGitDiff(p);
+  });
+
+  /* ── workdir ── */
+  const wdIn = scBody.querySelector("[data-workdir-input]");
+  if (wdIn){
+    wdIn.oninput = ()=>{ S.workdirDraft = wdIn.value; };   /* no render: it would fight the caret */
+    wdIn.onkeydown = e=>{ if (e.key === "Enter"){ e.preventDefault();
+      const b = scBody.querySelector("[data-workdir-save]"); if (b) b.click(); } };
+  }
+  const wdSave = scBody.querySelector("[data-workdir-save]");
+  if (wdSave) wdSave.onclick = ()=>{
+    const el = scBody.querySelector("[data-workdir-input]");
+    const want = (el ? el.value : "").trim();
+    if (!want){ S.setError = "a working directory is required"; S.setOk = null; render(); return; }
+    S.setBusy = "workdir"; S.setError = null; S.setOk = null; render();
+    apiPost("/api/settings", { workdir: want })
+      .then(r=>{ SETTINGS = r.settings || SETTINGS;
+                 /* Report what the SERVER stored (it expands ~ and resolves symlinks), not what
+                    was typed -- they differ, and echoing the input would misreport the result. */
+                 S.workdirDraft = null;
+                 S.setOk = "sessions will now start in " + ((SETTINGS||{}).workdir || want) + "."; })
+      .catch(e=>{ S.setError = e.message; })
+      .then(()=>{ S.setBusy = null; render(); }); };
 
   const ea=scBody.querySelector("[data-expall]");
   if(ea) ea.onclick=()=>{ S.collapsed.clear(); render(); };
@@ -2838,9 +3756,69 @@ function wire(){
   /* the composer is NOT disabled while a turn runs: the reply streams in, and disabling
      the input mid-stream blurred it and dropped whatever was being typed next */
   panes.querySelectorAll("[data-ssend]").forEach(b=>b.onclick=()=>{
-    const inp=panes.querySelector('[data-sask="'+b.dataset.ssend+'"]');
-    if(inp && inp.value.trim()){ const t=inp.value.trim(); inp.value=""; S.composerText[b.dataset.ssend]=""; S.palette=null;
-      submitTurn(t, b.dataset.ssend); } });
+    const sid=b.dataset.ssend;
+    const inp=panes.querySelector('[data-sask="'+sid+'"]');
+    const text=(inp && inp.value.trim())||"";
+    const composed=composeWithAttachments(sid, text);
+    if(!composed) return;                       /* nothing typed AND nothing attached */
+    if(inp) inp.value=""; S.composerText[sid]=""; S.palette=null;
+    submitTurn(composed, sid); });
+
+  /* ── side chat ── */
+  panes.querySelectorAll("[data-sidetoggle]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.sidetoggle;
+    S.sideOpen[sid] = !S.sideOpen[sid];
+    render();
+  });
+  panes.querySelectorAll("[data-sideclose]").forEach(b=>b.onclick=()=>{
+    /* Closing HIDES it; the turns stay in S.sideTurns so reopening does not lose the
+       branch. Discarding an operator's conversation on a close click would be a
+       destructive default. */
+    S.sideOpen[b.dataset.sideclose] = false; render();
+  });
+  panes.querySelectorAll("[data-sideask]").forEach(inp=>{
+    const sid = inp.dataset.sideask;
+    inp.oninput = ()=>{ S.sideText[sid] = inp.value; };
+    inp.onkeydown = e=>{
+      if (e.key === "Enter" && inp.value.trim()){
+        e.preventDefault(); const t = inp.value.trim(); inp.value = ""; askSide(sid, t); }
+    };
+  });
+  panes.querySelectorAll("[data-sidesend]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.sidesend;
+    const inp=panes.querySelector('[data-sideask="'+sid+'"]');
+    if (inp && inp.value.trim()){ const t=inp.value.trim(); inp.value=""; askSide(sid, t); }
+  });
+
+  /* ── stop ── */
+  panes.querySelectorAll("[data-sstop]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.sstop;
+    const ch=CLAUDE_SOCKETS.get(sid);
+    if(!ch || !ch.open){
+      /* No live socket = nothing to interrupt. Say so rather than leaving a button
+         that silently does nothing. */
+      const s=S.sessions.find(x=>x.id===sid);
+      const t=s && (s.turns||[]).slice().reverse().find(x=>x.streaming);
+      if(t){ t.streaming=false; t.stopped=true; render(); }
+      return;
+    }
+    ch.ws.send(JSON.stringify({type:"stop"}));
+  });
+
+  /* ── model ── */
+  panes.querySelectorAll("[data-model]").forEach(sel=>sel.onchange=()=>{
+    /* Per-session only. Persisting it here would silently change the default for
+       every other session too; Settings is where the default lives. */
+    S.model[sel.dataset.model] = sel.value;
+  });
+
+  /* ── attachments ── */
+  panes.querySelectorAll("[data-attach]").forEach(b=>b.onclick=()=>pickAttachment(b.dataset.attach));
+  panes.querySelectorAll("[data-attrm]").forEach(b=>b.onclick=()=>{
+    const [sid, i] = b.dataset.attrm.split(":");
+    (S.attach[sid]||[]).splice(+i, 1);
+    render();
+  });
   panes.querySelectorAll("[data-sask]").forEach(inp=>{
     const sid = inp.dataset.sask;
     /* "/" opens the palette; it only ever lists commands that actually
@@ -2849,7 +3827,8 @@ function wire(){
       S.composerText[sid] = inp.value;
       const p = paletteFor(inp.value);
       const was = S.palette && S.palette.sid===sid;
-      if (p && p.items.length){ S.palette = { sid, items:p.items, idx:0, token:p.token }; render(); }
+      if (p && p.items.length){ S.palette = { sid, items:p.items, idx:0, token:p.token,
+                                              kind:p.kind }; render(); }
       else if (was){ S.palette = null; render(); }
     };
     inp.onkeydown = e=>{
@@ -2860,9 +3839,29 @@ function wire(){
         if (e.key==="Enter" || e.key==="Tab"){ e.preventDefault(); applyPalette(sid, pal.idx); return; }
         if (e.key==="Escape"){ e.preventDefault(); S.palette=null; render(); return; }
       }
-      if(e.key==="Enter" && inp.value.trim()){ e.preventDefault();
-        const t=inp.value.trim(); inp.value=""; S.composerText[sid]=""; S.palette=null;
-        submitTurn(t, sid); }
+      if(e.key==="Enter"){
+        /* Not gated on inp.value: an attachment with no typed text is a legitimate
+           message ("here is the file"), and the old guard silently swallowed it. */
+        const composed = composeWithAttachments(sid, inp.value.trim());
+        if(!composed) return;
+        e.preventDefault();
+        inp.value=""; S.composerText[sid]=""; S.palette=null;
+        submitTurn(composed, sid); }
+    };
+    /* Drop and paste land on the composer, which is where the operator aims. */
+    inp.ondragover = e=>{ e.preventDefault(); inp.classList.add("dropping"); };
+    inp.ondragleave = ()=>inp.classList.remove("dropping");
+    inp.ondrop = e=>{
+      const files = [...((e.dataTransfer && e.dataTransfer.files) || [])];
+      if (!files.length) return;                 /* let a plain text drop behave normally */
+      e.preventDefault(); inp.classList.remove("dropping");
+      files.forEach(f=>uploadAttachment(sid, f));
+    };
+    inp.onpaste = e=>{
+      const items = [...((e.clipboardData && e.clipboardData.files) || [])];
+      if (!items.length) return;                 /* pasted TEXT must still paste as text */
+      e.preventDefault();
+      items.forEach(f=>uploadAttachment(sid, f));
     };
   });
   panes.querySelectorAll("[data-pal]").forEach(r=>r.onclick=()=>{
@@ -2976,7 +3975,16 @@ document.querySelector(".rail").addEventListener("click", e=>{
      is NOT set render() re-opens the gate on its own, so this cannot strand the
      panel tenant-less. */
   const b = e.target.closest("[data-screen]");
-  if (b && !b.disabled){ S.gate=false; S.screen=b.dataset.screen; render(); return; }
+  if (b && !b.disabled){
+    /* "terminal" is a PANE TOGGLE living in the nav, not a screen. Routing it
+       through S.screen would set S.screen to an id SCREENS has no entry for,
+       and render() would blank the browse pane. */
+    if (b.dataset.screen === "terminal"){ termToggle(); renderRail(); return; }
+    S.gate=false; S.screen=b.dataset.screen;
+    if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
+    if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
+    render(); return;
+  }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
   const op = e.target.closest("[data-open]");
@@ -3068,6 +4076,180 @@ async function loadRuntime(){
   PROVIDERS = provs.providers || [];
   SETTINGS = settings.settings || null;
   PERM_MODES = settings.permission_modes || [];
+  MODELS = settings.models || [];
+  /* Seed the freshness baseline from the SAME response that populated SKILLS, so the
+     first poll compares against what is actually on screen rather than re-fetching
+     a catalog the panel already has. */
+  S.cat.etag = skills.signature || null;
+  S.cat.readAt = Date.now();
+  S.cat.lastCheckAt = Date.now();
+}
+
+/* ── skills auto-refresh ─────────────────────────────────────────────────────
+   The catalog was read ONCE, in boot(). Installing a plugin or writing a new
+   command meant the palette kept offering yesterday's list until the app was
+   restarted -- and, worse, could keep offering a command that no longer resolves.
+
+   ETag, not a separate probe endpoint: /api/skills returns the signature of the
+   payload it is actually returning, from the same scan. A /signature endpoint would
+   scan twice and let the client store a fingerprint describing state it never
+   received -- a missed update that never self-corrects, because every later probe
+   matches the stored value.
+
+   Only /api/skills is polled. Re-fetching /api/settings on a timer would clobber a
+   permission-mode or workdir change the operator is in the middle of making. */
+const CAT_TICK_MS      = 20000;   /* how often we CONSIDER refreshing */
+const CAT_FOCUSED_MS   = 60000;   /* refresh at most this often while focused */
+const CAT_VISIBLE_MS   = 300000;  /* ... and far less often when merely visible */
+const CAT_BACKOFF      = [60000, 120000, 300000];
+
+async function loadSkills(){
+  const headers = S.cat.etag ? { "If-None-Match": S.cat.etag } : {};
+  const res = await fetch(API + "/api/skills", { headers });
+  if (res.status === 304) return false;              /* unchanged; nothing to apply */
+  if (!res.ok) throw new Error("/api/skills -> " + res.status);
+  const payload = await res.json();
+  /* Belt and braces against any cache that strips/ignores the 304: a 200 whose
+     signature equals the stored one is ALSO "unchanged", and applying it would
+     re-render for nothing. */
+  if (payload.signature && payload.signature === S.cat.etag) return false;
+  const before = SKILLS.length;
+  SKILLS = payload.items || [];
+  SKILLS_META = { by_kind: payload.by_kind, by_source: payload.by_source,
+                  by_provider: payload.by_provider, total: payload.total,
+                  runnable: payload.runnable, providers: payload.providers || [] };
+  /* Commit the signature only AFTER the data it describes has been applied. The
+     other order stores a fingerprint for a payload that was never installed. */
+  S.cat.etag = payload.signature || null;
+  S.cat.delta = SKILLS.length - before;
+  S.cat.readAt = Date.now();
+  return true;
+}
+
+/* Guarded at the CALLSITE, never inside render(). An early-return in render() --
+   symmetric with the S.drag guard -- would freeze the "/" palette outright: arrow
+   keys, escape and re-filtering all navigate BY calling render(). */
+function refreshCatalog(){
+  if (S.cat.inflight) return;
+  S.cat.inflight = true;
+  loadSkills()
+    .then(changed=>{
+      S.cat.fails = 0;
+      /* Defer the repaint while a palette is open or a drag is live: swapping the
+         list under an open palette moves the row the operator is about to pick. The
+         DATA is already swapped, so the palette cannot offer something stale. */
+      if (changed && !S.palette && !S.drag) render();
+      else if (changed) S.renderDirty = true;
+    })
+    .catch(()=>{ S.cat.fails++; })
+    .then(()=>{ S.cat.inflight = false; });
+}
+
+function catalogTick(){
+  /* Never poll a hidden window: a backgrounded app must not scan the disk every
+     minute for a palette nobody can see. */
+  if (document.visibilityState === "hidden") return;
+  const now = Date.now();
+  if (S.cat.fails){
+    const wait = CAT_BACKOFF[Math.min(S.cat.fails - 1, CAT_BACKOFF.length - 1)];
+    if (now - S.cat.lastCheckAt < wait) return;
+  } else {
+    const need = document.hasFocus() ? CAT_FOCUSED_MS : CAT_VISIBLE_MS;
+    if (now - S.cat.lastCheckAt < need) return;
+  }
+  S.cat.lastCheckAt = now;
+  refreshCatalog();
+}
+
+/* ── editor loaders ──────────────────────────────────────────────────────────
+   On demand, like git: walking a real project at boot would cost every operator
+   who never opens the editor. */
+async function loadFs(force){
+  if (S.fs && !force) return;
+  try { S.fs = await apiGet("/api/fs/tree"); S.fsError = null; }
+  catch (e) { S.fsError = e.message; S.fs = null; }
+  render();
+}
+
+/* Re-render ONLY the file list. A full render() on every filter keystroke would
+   rebuild the open <textarea> from S.edText -- losing the caret mid-edit, and
+   thrashing on a large file. Scoped DOM surgery is the right tool for a filter. */
+function renderFilterOnly(){
+  const host = document.querySelector(".fslist");
+  if (!host || !S.fs) return;
+  const q = (S.fsQuery||"").toLowerCase();
+  const files = S.fs.files.filter(f=>!q || f.path.toLowerCase().includes(q));
+  host.innerHTML = files.slice(0,600).map(f=>`
+    <button class="opt fsf ${S.edFile===f.path?"sel":""}" type="button" data-edopen="${esc(f.path)}">
+      <span class="oi"><span class="on">${esc(f.path)}</span>
+      <span class="od">${fmtBytes(f.bytes)}</span></span>
+    </button>`).join("");
+  host.querySelectorAll("[data-edopen]").forEach(b=>
+    b.onclick = ()=>openEdFile(b.dataset.edopen));
+}
+
+async function openEdFile(path){
+  /* Refuse to discard unsaved work silently. This is the only confirm() in the
+     editor path and it guards the one irreversible thing here. */
+  if (S.edFile && S.edText !== null && S.edText !== S.edBase &&
+      !window.confirm("Discard unsaved changes to " + S.edFile + "?")) return;
+  S.edFile = path; S.edText = null; S.edBase = null; S.edBytes = null;
+  S.edError = null; S.edOk = null;
+  render();
+  try {
+    const r = await apiGet("/api/fs/read?path=" + encodeURIComponent(path));
+    if (S.edFile !== path) return;                 /* a newer open won */
+    S.edText = r.text; S.edBase = r.text; S.edBytes = r.bytes;
+  } catch (e) {
+    if (S.edFile !== path) return;
+    S.edError = e.message; S.edText = null;
+  }
+  render();
+}
+
+async function saveEdFile(){
+  if (!S.edFile || S.edText === null) return;
+  S.edBusy = true; S.edError = null; S.edOk = null; render();
+  try {
+    /* base_bytes lets the SERVER detect that the file changed underneath -- most
+       likely because the agent wrote it while this pane was open. Saving blind
+       would discard that work with no warning. */
+    const r = await apiPost("/api/fs/write",
+      { path: S.edFile, text: S.edText, base_bytes: S.edBytes });
+    S.edBase = S.edText; S.edBytes = r.bytes;
+    S.edOk = r.path + " — " + fmtBytes(r.bytes);
+    loadFs(true);                                   /* sizes in the tree are now stale */
+  } catch (e) { S.edError = e.message; }
+  S.edBusy = false; render();
+}
+
+/* Git is fetched on demand, not at boot: a workdir that is not a repository is a
+   perfectly normal state and must not cost a failed request on every start. */
+async function loadGit(force){
+  if (S.git && !force) return;
+  try {
+    const [status, log] = await Promise.all([apiGet("/api/git/status"), apiGet("/api/git/log")]);
+    S.git = { repo: status.repo, status, commits: log.commits || [] };
+    S.gitError = null;
+  } catch (e) {
+    /* The server's message names the actual cause (not a repo / outside the root /
+       git not installed). Surfacing our own wording would lose that. */
+    S.gitError = e.message; S.git = null;
+  }
+  render();
+}
+
+async function loadGitDiff(path){
+  S.gitFile = path; S.gitDiff = null; S.gitDiffTruncated = false; render();
+  try {
+    const d = await apiGet("/api/git/diff?path=" + encodeURIComponent(path));
+    if (S.gitFile !== path) return;          /* a newer selection won; drop this one */
+    S.gitDiff = d.text || ""; S.gitDiffTruncated = !!d.truncated;
+  } catch (e) {
+    if (S.gitFile !== path) return;
+    S.gitDiff = ""; S.gitError = e.message;
+  }
+  render();
 }
 
 /* The REAL sessions. session_reader.list_sessions() walks
@@ -3134,7 +4316,16 @@ async function boot(){
     align-items:center;justify-content:center;color:var(--faint);font-size:13px">
     Loading ${esc(S.tenant)}…</div></section>`;
   try {
-    await Promise.all([loadOrg(), loadRuntime(), loadSessions()]);
+    /* allSettled, NOT all: these are three independent subsystems, and
+       Promise.all rejects the whole boot on the first failure — so a registry
+       hiccup discarded a perfectly good /api/skills and /api/settings response
+       and the panel came up blank. Only the registry is load-bearing; runtime
+       and sessions degrade to a stated error on their own screens. */
+    const [org, runtime, sessions] =
+      await Promise.allSettled([loadOrg(), loadRuntime(), loadSessions()]);
+    if (org.status === "rejected") throw org.reason;   /* the one hard dependency */
+    S.runtimeError  = runtime.status  === "rejected" ? String(runtime.reason  && runtime.reason.message  || runtime.reason)  : null;
+    S.sessionsError = sessions.status === "rejected" ? String(sessions.reason && sessions.reason.message || sessions.reason) : null;
     await loadDraft();
     /* A base persisted from an earlier session can ALREADY be stale — the
        registry moved while nobody was looking. That is real drift: ORG-010
@@ -3157,9 +4348,202 @@ async function boot(){
 
     S.loaded = true;
     render();
+    /* AFTER render + SETTINGS: termMount() reads SETTINGS.workdir for the PTY cwd,
+       so restoring the pane earlier would start the terminal in the wrong directory. */
+    S.termW = clampTermW(Number(lsGet(LS_TERMW, TERM_DEFAULT)) || TERM_DEFAULT);
+    S.sideTab = lsGet(LS_SIDETAB, "terminal") === "preview" ? "preview" : "terminal";
+    const lastPrev = lsGet(LS_PREVURL, "");
+    if (typeof lastPrev === "string" && lastPrev){
+      /* Restore the URL into the field but do NOT auto-load it: the dev server may be
+         gone, and a dead iframe on startup looks like a broken app. */
+      const f = document.getElementById("prevUrl"); if (f) f.value = lastPrev;
+    }
+    if (lsGet(LS_TERM, false) === true){ termToggle(true); sideTab(S.sideTab); }
   } catch (e) {
     backendError(e);
   }
+}
+
+/* ── terminal ────────────────────────────────────────────────────────────────
+   Mount-once, show/hide thereafter. The iframe carries a live WebSocket to a PTY
+   running `claude`; re-creating it on a render would kill that session, so the
+   only operations here are "create if absent" and "toggle hidden". */
+const termPaneEl  = document.getElementById("termPane");
+const termBodyEl  = document.getElementById("termBody");
+const termBtnEl   = document.getElementById("termBtn");
+const termCwdEl   = document.getElementById("termCwd");
+
+const TERM_MIN = 280, TERM_MAX_FRAC = 0.72, TERM_DEFAULT = 460;
+
+function clampTermW(px){
+  /* innerWidth can be 0 while the window is still being laid out (and is 0 in a
+     headless harness). Clamping against it then collapses every width to TERM_MIN
+     and, because clamping never grows a value back, the pane stays stuck narrow for
+     the rest of the session. With no trustworthy viewport, apply the floor only. */
+  const vw = (typeof innerWidth === "number" && innerWidth > TERM_MIN) ? innerWidth : 0;
+  const want = Math.max(TERM_MIN, Math.round(px));
+  return vw ? Math.min(Math.round(vw * TERM_MAX_FRAC), want) : want;
+}
+/* The GRID TRACK is the single source of truth for the pane width. An `auto` track
+   measured the iframe's intrinsic width as 0 and collapsed the pane; an explicit
+   pixel value is both deterministic and what the drag handle writes. */
+function applyTermW(px){
+  S.termW = clampTermW(px);
+  document.getElementById("app").style
+    .setProperty("--termw", S.termOpen ? S.termW + "px" : "0px");
+}
+
+function termMount(force){
+  const cwd = (SETTINGS && SETTINGS.workdir) || "";
+  const have = termBodyEl.querySelector("iframe");
+  if (have && !force) return;
+  if (have) have.remove();
+  const fr = document.createElement("iframe");
+  /* /legacy/term is the EXISTING terminal: it forwards ?cwd= to /ws/term, which
+     spawns the real TUI. Reusing that page beats a second terminal-emulator
+     integration that would drift from the first.
+
+     The word for that emulator is deliberately not written here: test_05b greps the
+     studio HTML for it to prove "/" is not serving the legacy console. The terminal
+     is an opt-in pane behind an iframe, so the guard still holds and stays strict. */
+  /* shell=1 -> the operator's OWN login shell (zsh on macOS), not the claude TUI:
+     this is a terminal, so it has to be able to run git, ls and a build.
+     embed=1 -> drops that page's own sidebar and header, which this pane already
+     draws, and whose 240px sidebar left the terminal about 120px at pane width. */
+  fr.src = "/legacy/term?embed=1&shell=1" + (cwd ? "&cwd=" + encodeURIComponent(cwd) : "");
+  fr.title = "Terminal";
+  termBodyEl.appendChild(fr);
+  S.termCwd = cwd;
+  termCwdEl.textContent = cwd;
+}
+
+function termToggle(on){
+  S.termOpen = on === undefined ? !S.termOpen : !!on;
+  termPaneEl.hidden = !S.termOpen;
+  applyTermW(S.termW || TERM_DEFAULT);   /* collapses the track to 0px when closed */
+  termBtnEl.setAttribute("aria-pressed", String(S.termOpen));
+  termBtnEl.setAttribute("aria-label", S.termOpen ? "Hide the terminal" : "Show the terminal");
+  /* Only mount the PTY when the terminal tab is the visible one -- opening the pane
+     on the Preview tab must not silently spawn a shell. */
+  if (S.termOpen && S.sideTab !== "preview") termMount(false);
+  /* The workdir can have changed since the PTY started. Say so rather than letting
+     the header imply the terminal followed the setting. */
+  if (S.termOpen && SETTINGS && S.termCwd && SETTINGS.workdir !== S.termCwd){
+    termCwdEl.textContent = S.termCwd + "  (workdir changed — restart to move)";
+  }
+  lsSet(LS_TERM, S.termOpen);   /* lsSet JSON-encodes; store the boolean, not "1" */
+}
+
+/* ── preview ─────────────────────────────────────────────────────────────────
+   An iframe onto a dev server the operator is ALREADY running. This pane does not
+   start servers: spawning arbitrary build commands is a different risk class from
+   showing a page, and `claude` in the terminal beside it can start one on request.
+
+   LOOPBACK ONLY. Without that check this becomes a general-purpose browser inside
+   the app -- it would load any URL, including one pasted from an untrusted source,
+   with the panel's own origin adjacent. */
+const prevBodyEl = document.getElementById("prevBody");
+const prevFrameEl = document.getElementById("prevFrame");
+const prevNoteEl = document.getElementById("prevNote");
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
+
+function previewOpen(raw){
+  let value = (raw || "").trim();
+  if (!value) return;
+  if (!/^https?:\/\//i.test(value)) value = "http://" + value;   /* bare "3000" is not a URL */
+  let u;
+  try { u = new URL(value); }
+  catch (e){ prevNoteEl.textContent = "That is not a URL I can parse: " + value; return; }
+  if (!LOOPBACK.has(u.hostname)){
+    prevNoteEl.textContent =
+      "Refused: " + u.hostname + " is not a loopback address. This pane shows a dev " +
+      "server running on this machine, not the open web.";
+    prevFrameEl.innerHTML = "";
+    return;
+  }
+  prevNoteEl.textContent = "Showing " + u.href + " — reload with Open.";
+  prevFrameEl.innerHTML = "";
+  const fr = document.createElement("iframe");
+  fr.src = u.href;
+  fr.title = "Preview of " + u.href;
+  prevFrameEl.appendChild(fr);
+  lsSet(LS_PREVURL, u.href);
+}
+
+function sideTab(which){
+  const term = which !== "preview";
+  document.getElementById("termBody").hidden = !term;
+  prevBodyEl.hidden = term;
+  document.getElementById("sideTabTerm").setAttribute("aria-pressed", String(term));
+  document.getElementById("sideTabPrev").setAttribute("aria-pressed", String(!term));
+  document.getElementById("termCwd").hidden = !term;
+  S.sideTab = term ? "terminal" : "preview";
+  if (term) termMount(false);
+  lsSet(LS_SIDETAB, S.sideTab);
+}
+document.getElementById("sideTabTerm").onclick = ()=>sideTab("terminal");
+document.getElementById("sideTabPrev").onclick = ()=>sideTab("preview");
+document.getElementById("prevGo").onclick = ()=>previewOpen(document.getElementById("prevUrl").value);
+document.getElementById("prevUrl").onkeydown = e=>{
+  if (e.key === "Enter"){ e.preventDefault(); previewOpen(e.target.value); } };
+
+termBtnEl.onclick = ()=>termToggle();
+document.getElementById("termClose").onclick = ()=>termToggle(false);
+document.getElementById("termReload").onclick = ()=>termMount(true);
+
+/* ── resize ──────────────────────────────────────────────────────────────────
+   Pointer events (not mouse) so a trackpad drag and a touch drag both work, with
+   setPointerCapture so the gesture survives the cursor crossing the iframe. The
+   iframe gets pointer-events:none for the duration via body.termdrag -- without it
+   the cross-document boundary swallows the move events and the drag dies halfway. */
+const termGripEl = document.getElementById("termGrip");
+termGripEl.addEventListener("pointerdown", e=>{
+  e.preventDefault();
+  const startX = e.clientX, startW = S.termW || TERM_DEFAULT;
+  document.body.classList.add("termdrag");
+  try { termGripEl.setPointerCapture(e.pointerId); } catch (_) {}
+  const move = ev => applyTermW(startW + (startX - ev.clientX));   /* drag left = wider */
+  const up = ()=>{
+    document.body.classList.remove("termdrag");
+    termGripEl.removeEventListener("pointermove", move);
+    termGripEl.removeEventListener("pointerup", up);
+    termGripEl.removeEventListener("pointercancel", up);
+    lsSet(LS_TERMW, S.termW);
+  };
+  termGripEl.addEventListener("pointermove", move);
+  termGripEl.addEventListener("pointerup", up);
+  termGripEl.addEventListener("pointercancel", up);
+});
+/* Keyboard parity with the browse divider: the pane must be resizable without a pointer. */
+termGripEl.addEventListener("keydown", e=>{
+  const step = e.shiftKey ? 64 : 16;
+  if (e.key === "ArrowLeft"){ e.preventDefault(); applyTermW((S.termW||TERM_DEFAULT) + step); }
+  else if (e.key === "ArrowRight"){ e.preventDefault(); applyTermW((S.termW||TERM_DEFAULT) - step); }
+  else if (e.key === "Home"){ e.preventDefault(); applyTermW(TERM_DEFAULT); }
+  else return;
+  lsSet(LS_TERMW, S.termW);
+});
+/* A width stored on a wide display must not exceed a narrower window later.
+   GUARDED: test_panel.js evaluates this script in a bare Node vm context that has a
+   stubbed `document` but no window globals, so an unguarded top-level
+   addEventListener throws ReferenceError and takes all 35 assertions down with it. */
+if (typeof addEventListener !== "undefined"){
+  addEventListener("resize", ()=>{ if (S.termOpen) applyTermW(S.termW || TERM_DEFAULT); });
+}
+
+/* Catalog freshness. ONE timer that decides whether to act, rather than several
+   listeners racing: `focus` and `visibilitychange` both fire on a single window
+   activation, and two listeners would run two concurrent scans that can land out of
+   order. Same guard as above -- the vm context has no window globals. */
+if (typeof setInterval !== "undefined" && typeof document !== "undefined"
+    && document.addEventListener){
+  setInterval(()=>{ try { catalogTick(); } catch (e) {} }, CAT_TICK_MS);
+  document.addEventListener("visibilitychange", ()=>{
+    /* Coming back to the window is the moment a stale palette is most likely and
+       most visible, so let the next tick act immediately instead of waiting out
+       the interval. */
+    if (document.visibilityState === "visible") S.cat.lastCheckAt = 0;
+  });
 }
 
 /* One click hides the whole sidebar and the panes take the freed column.

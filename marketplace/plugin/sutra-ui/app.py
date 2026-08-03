@@ -9,6 +9,7 @@ import fcntl
 import json
 import os
 import pty
+import shutil
 import signal
 import struct
 import termios
@@ -25,6 +26,14 @@ import log_reader as lr
 import session_reader as sr
 import org_api
 import providers
+
+# BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
+# so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
+# provider is usable here" on a machine where claude runs fine in any terminal.
+# No-op when PATH already resolves a catalogued binary, i.e. for CLI/dev launches.
+if providers.ensure_login_path():
+    print("[providers] PATH did not resolve any AI CLI; merged the login shell's PATH "
+          "(GUI launch). claude=%s" % (shutil.which("claude") or "still not found"))
 
 app = FastAPI(title="Sutra UI", docs_url=None, redoc_url=None)
 
@@ -100,6 +109,33 @@ PERM_MODE = os.environ.get("SUTRA_UI_PERMISSION_MODE", "plan")
 INIT_CMD = os.environ.get("SUTRA_UI_INIT", "/core:start")          # run every fresh session so Sutra fires
 AUTO_CAVEMAN = os.environ.get("SUTRA_UI_AUTO_CAVEMAN", "1") == "1"  # token-saving default (non-Max friendly)
 INIT_DELAY = float(os.environ.get("SUTRA_UI_INIT_DELAY", "3.5"))    # secs to let the TUI boot before typing
+
+
+def _tool_summary(inp, limit=120):
+    """One line describing what a tool was asked to do, or "".
+
+    The UI needs to say WHICH file was read or WHICH command ran -- a column of
+    identical "Bash" rows tells the operator nothing. The full input is not
+    forwarded: a Write's `content` is the whole file, and shipping it to the
+    browser on every call is both noise and an accidental data path.
+
+    Key order is deliberate: the most identifying field for the common tools
+    (command / file_path / pattern) first, then any short string field, then
+    nothing. Never raises -- a tool with an unexpected input shape must not take
+    the turn down.
+    """
+    if not isinstance(inp, dict):
+        return ""
+    for k in ("command", "file_path", "path", "pattern", "url", "query", "prompt",
+              "description", "notebook_path"):
+        v = inp.get(k)
+        if isinstance(v, str) and v.strip():
+            v = " ".join(v.split())
+            return v[:limit] + ("…" if len(v) > limit else "")
+    for v in inp.values():
+        if isinstance(v, str) and v.strip() and len(v) <= limit:
+            return " ".join(v.split())
+    return ""
 
 
 def _ensure_workdir(path=None):
@@ -353,16 +389,79 @@ async def ws_chat(ws: WebSocket):
     session_id = None
     resume_unverified = False   # session id came from the client, not from a live run
     dead_seeds = set()          # client-supplied ids claude has already rejected
+
+    # ---- interrupt --------------------------------------------------------
+    # The loop used to `await ws.receive_text()` and only THEN spawn, so nothing
+    # read the socket while a turn streamed: a stop sent mid-turn sat unread until
+    # the very turn it was meant to cancel had already finished. A button alone
+    # could not fix that -- the read must happen CONCURRENTLY with the subprocess.
+    #
+    # One reader task owns the socket, handles `stop` inline (the only frame that
+    # must act during a turn) and queues everything else for the main loop.
+    live = {"proc": None, "stopped": False}
+    inbox = asyncio.Queue()
+    reader_dead = asyncio.Event()
+
+    def _kill_live():
+        """Kill the process GROUP, not just the direct child.
+
+        `claude` spawns helpers; signalling only the parent leaves them holding
+        the stdout pipe, so the read loop never ends and the turn never actually
+        stops. The spawn below uses start_new_session=True, which makes the child
+        a group leader so this reaches its descendants too.
+        """
+        p = live["proc"]
+        if p is None or p.returncode is not None:
+            return False
+        try:
+            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                p.kill()
+            except (ProcessLookupError, OSError):
+                return False
+        return True
+
+    async def _reader():
+        try:
+            while True:
+                raw = await ws.receive_text()
+                try:
+                    payload = json.loads(raw)
+                except (ValueError, TypeError):
+                    payload = {"message": raw}
+                if not isinstance(payload, dict):
+                    payload = {"message": str(payload)}
+                if payload.get("type") == "stop":
+                    # Set the flag BEFORE killing: the stdout loop can end between
+                    # the signal and the assignment, and would then report the
+                    # operator's own interrupt as a crash.
+                    live["stopped"] = True
+                    _kill_live()
+                    continue
+                await inbox.put(payload)
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            reader_dead.set()
+
+    reader_task = asyncio.create_task(_reader())
+
     try:
         while True:
-            raw = await ws.receive_text()
-            seed = None
-            try:
-                payload = json.loads(raw)
-                msg = payload.get("message", "")
-                seed = payload.get("resume")
-            except (ValueError, AttributeError):
-                msg = raw
+            get_next = asyncio.ensure_future(inbox.get())
+            gone = asyncio.ensure_future(reader_dead.wait())
+            done, _ = await asyncio.wait({get_next, gone},
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if get_next not in done:
+                get_next.cancel()      # socket closed -- stop serving this channel
+                break
+            gone.cancel()
+            payload = get_next.result()
+            live["stopped"] = False
+            msg = payload.get("message", "")
+            seed = payload.get("resume")
+            model = payload.get("model")
             if not msg.strip():
                 continue
             if (session_id is None and seed and isinstance(seed, str)
@@ -378,8 +477,15 @@ async def ws_chat(ws: WebSocket):
             ]
             if session_id:
                 args += ["--resume", session_id]
+            # Model: per-message override wins over the stored setting, and BOTH are
+            # validated against the allow-list -- an arbitrary string here would be
+            # passed straight to the CLI, where a typo fails as a dead socket several
+            # seconds later instead of as a refusal now.
+            chosen_model = providers.clean_model(model) or providers.stored_model()
+            if chosen_model:
+                args += ["--model", chosen_model]
 
-            await ws.send_json({"type": "start"})
+            await ws.send_json({"type": "start", "model": chosen_model})
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *args, cwd=workdir,
@@ -387,7 +493,10 @@ async def ws_chat(ws: WebSocket):
                     stdout=asyncio.subprocess.PIPE,     # claude wait 3s for piped input on
                     stderr=asyncio.subprocess.PIPE,     # EVERY message -- 3s of dead air per turn
                     env=dict(os.environ),      # no ANTHROPIC_API_KEY -> subscription auth
+                    # own process group, so an interrupt can signal the whole tree
+                    start_new_session=True,
                 )
+                live["proc"] = proc
             except OSError as e:
                 # Real cause, verbatim -- a dead socket taught the operator nothing.
                 await ws.send_json({"type": "error", "detail":
@@ -416,11 +525,44 @@ async def ws_chat(ws: WebSocket):
                         # fallback when partial deltas are absent: emit full text blocks
                         if blk.get("type") == "text" and blk.get("text") and not got_text:
                             await ws.send_json({"type": "token", "text": blk["text"]})
+                        elif blk.get("type") == "thinking":
+                            # Presence only. The thinking TEXT is deliberately not
+                            # forwarded: it is the model's scratchpad, it is long, and
+                            # rendering it as if it were the answer misrepresents both.
+                            await ws.send_json({"type": "thinking"})
                         elif blk.get("type") == "tool_use":
                             # tool_use blocks never arrive as text deltas, so this must
                             # run regardless of got_text -- gating it behind the text
                             # fallback meant a streaming turn reported zero tool calls.
-                            await ws.send_json({"type": "tool", "name": blk.get("name", "")})
+                            #
+                            # phase=start + id: the id is what `tool_result` correlates
+                            # against (verified against a real `claude -p` run: tool_use.id
+                            # == tool_result.tool_use_id). Without it the UI could show
+                            # that a tool was CALLED but never that it finished, so every
+                            # tool appeared to run forever.
+                            await ws.send_json({
+                                "type": "tool",
+                                "phase": "start",
+                                "id": blk.get("id"),
+                                "name": blk.get("name", ""),
+                                "summary": _tool_summary(blk.get("input")),
+                                # Forwarded VERBATIM. Observed {"type":"direct"} for a
+                                # main-agent call; other shapes are not guessed at here,
+                                # and the client labels whatever actually arrives.
+                                "caller": (blk.get("caller") or {}).get("type"),
+                            })
+                elif t == "user":
+                    # tool_result lives on USER messages, not assistant ones. This branch
+                    # did not exist, so every tool result was dropped and completion was
+                    # unknowable by construction.
+                    for blk in (ev.get("message") or {}).get("content", []):
+                        if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                            await ws.send_json({
+                                "type": "tool",
+                                "phase": "end",
+                                "id": blk.get("tool_use_id"),
+                                "ok": not blk.get("is_error"),
+                            })
                 elif t == "result":
                     got_result = True
                     # A `result` event is NOT proof of success: a failed run (stale
@@ -433,10 +575,30 @@ async def ws_chat(ws: WebSocket):
                         result_error = str(ev.get("result") or ev.get("subtype")
                                            or "claude reported an error")[:600]
                     else:
-                        await ws.send_json({"type": "done", "session": session_id})
+                        # Carry the REAL measurements the result frame already has, so
+                        # the UI states duration and cost instead of estimating them.
+                        await ws.send_json({
+                            "type": "done",
+                            "session": session_id,
+                            "duration_ms": ev.get("duration_ms"),
+                            "num_turns": ev.get("num_turns"),
+                            "cost_usd": ev.get("total_cost_usd"),
+                        })
 
             err = (await proc.stderr.read()).decode("utf-8", "replace")
             rc = await proc.wait()
+            live["proc"] = None
+
+            if live["stopped"]:
+                # SIGTERM makes rc non-zero, which the branch below would report as
+                # "claude exited -15" -- i.e. blaming the tool for the operator's own
+                # interrupt. A stop is a normal outcome and gets its own frame.
+                # The session id is KEPT: the thread is still resumable, the operator
+                # simply cut this turn short.
+                live["stopped"] = False
+                await ws.send_json({"type": "stopped", "session": session_id})
+                continue
+
             failed = (rc != 0) or (result_error is not None)
             if failed:
                 # stderr carries the specific cause ("No conversation found with
@@ -465,6 +627,13 @@ async def ws_chat(ws: WebSocket):
                 resume_unverified = False
     except WebSocketDisconnect:
         pass
+    finally:
+        # Without this the reader task outlives the channel: one leaked task per
+        # closed socket, each still awaiting receive_text() on a dead connection.
+        # Killing any still-running child too -- a disconnected browser must not
+        # leave a `claude` process running against the operator's plan.
+        reader_task.cancel()
+        _kill_live()
 
 
 @app.websocket("/ws/term")
@@ -485,13 +654,36 @@ async def ws_term(ws: WebSocket):
     # optional: resume an existing session, in its original cwd
     resume = ws.query_params.get("resume")
     req_cwd = ws.query_params.get("cwd")
-    workdir = req_cwd if (req_cwd and os.path.isdir(req_cwd)) else WORKDIR
+    # CREATE the requested workdir rather than silently falling back to WORKDIR when it
+    # does not exist yet. The chat path already does this (_ensure_workdir before spawn),
+    # so the old isdir() test made the two disagree: the pane header said
+    # ~/sutra-work-verified while the shell prompt sat in ~/sutra-ui-workspace, with
+    # nothing on screen explaining the difference. Confined to the same root the settings
+    # writer validates against, so this cannot be pointed at an arbitrary path.
+    workdir = WORKDIR
+    if req_cwd and providers.workdir_allowed(req_cwd):
+        workdir = _ensure_workdir(req_cwd) or WORKDIR
     # ws_term never created WORKDIR: on a fresh machine the PTY spawn below
     # raised FileNotFoundError and the terminal socket died on connect.
     workdir = _ensure_workdir(workdir) or os.path.expanduser("~")
-    args = [CLAUDE_BIN]
-    if resume and "/" not in resume and ".." not in resume:
-        args += ["--resume", resume]
+
+    # ?shell=1 -> the operator's OWN login shell, not the claude TUI. This endpoint
+    # only ever ran `claude`, so the studio's terminal pane could not be used as a
+    # terminal: no git, no ls, no build. $SHELL is what Terminal.app itself uses
+    # (zsh on macOS since Catalina); falling back to /bin/zsh then /bin/sh keeps it
+    # working when $SHELL is unset, as it is under a launchd/Finder launch.
+    # `-l` makes it a LOGIN shell so the operator's PATH, aliases and rc files apply
+    # -- without it, `claude`, `node` and `brew` are typically not even on PATH here.
+    plain_shell = ws.query_params.get("shell") == "1"
+    if plain_shell:
+        sh = os.environ.get("SHELL") or "/bin/zsh"
+        if not os.path.isfile(sh):
+            sh = "/bin/zsh" if os.path.isfile("/bin/zsh") else "/bin/sh"
+        args = [sh, "-l"]
+    else:
+        args = [CLAUDE_BIN]
+        if resume and "/" not in resume and ".." not in resume:
+            args += ["--resume", resume]
 
     # Fix #2/#4: classic (non-alt-screen) renderer + correct TERM/locale reduce TUI corruption
     env = dict(os.environ)
@@ -525,7 +717,10 @@ async def ws_term(ws: WebSocket):
     # Auto-fire Sutra (/core:start) + token-saving caveman on each FRESH session.
     # Skipped on resume (already activated in the original session).
     async def autostart():
-        if resume:
+        # INIT_CMD and /caveman are claude SLASH COMMANDS. In shell mode they would be
+        # typed straight into the operator's zsh, which would run "/core:start" as a
+        # path and print "no such file or directory" into a brand-new terminal.
+        if resume or plain_shell:
             return
         caveman = ws.query_params.get("caveman", "1" if AUTO_CAVEMAN else "0") == "1"
         await asyncio.sleep(INIT_DELAY)

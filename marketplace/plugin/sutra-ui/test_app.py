@@ -9,6 +9,7 @@ scratchpad/dev-registry (that one is for manual/dev use only).
 
 Run: .venv/bin/python -m unittest test_app -v   (from inside sutra-ui/)
 """
+import hashlib
 import io
 import json
 import os
@@ -1359,6 +1360,435 @@ class TestChatRefusesApiKey(unittest.TestCase):
                 msg = msg.decode("utf-8", "replace")
             self.assertIn("Refused", msg)
             self.assertIn("ANTHROPIC_API_KEY", msg)
+
+
+class TestEffectiveModeAndOnboarding(unittest.TestCase):
+    """The stored permission mode is not always the one that runs, and the panel
+    used to report only the stored one -- so it rendered "nothing will prompt you
+    per edit" while ws_chat was in fact spawning `plan`. These tests pin the two
+    values apart, and pin the first-run flag that gates the onboarding.
+
+    providers.py is exercised directly (not over HTTP) so SUTRA_UI_SETTINGS can
+    point at a tempdir: the operator's real ~/.sutra-ui/settings.json must never
+    be read or written by the suite.
+    """
+
+    def setUp(self):
+        import importlib
+        self.tmp = tempfile.mkdtemp(prefix="sutra-ui-settings-")
+        self.path = os.path.join(self.tmp, "settings.json")
+        self._old = dict(os.environ)
+        os.environ["SUTRA_UI_SETTINGS"] = self.path
+        os.environ.pop("SUTRA_UI_ALLOW_UNSAFE_PERM_MODES", None)
+        os.environ.pop("SUTRA_UI_PERMISSION_MODE", None)
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import providers
+        self.providers = importlib.reload(providers)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._old)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, obj):
+        with io.open(self.path, "w", encoding="utf-8") as fh:
+            json.dump(obj, fh)
+
+    def test_unsafe_stored_mode_is_reported_as_clamped(self):
+        """A bypassPermissions on file without the opt-in must be reported as
+        NOT running -- this is the exact state that made the panel lie."""
+        self._write({"permission_mode": "bypassPermissions"})
+        s = self.providers.load_settings()
+        self.assertEqual(s["permission_mode"], "bypassPermissions")
+        self.assertEqual(s["permission_mode_effective"], "plan")
+        self.assertTrue(s["permission_mode_clamped"])
+        self.assertIn("SUTRA_UI_ALLOW_UNSAFE_PERM_MODES",
+                      s["permission_mode_clamp_reason"])
+
+    def test_safe_mode_is_never_marked_clamped(self):
+        self._write({"permission_mode": "plan"})
+        s = self.providers.load_settings()
+        self.assertEqual(s["permission_mode_effective"], "plan")
+        self.assertFalse(s["permission_mode_clamped"])
+        self.assertIsNone(s["permission_mode_clamp_reason"])
+
+    def test_opt_in_honours_the_stored_unsafe_mode(self):
+        """With the out-of-band env set, stored and effective must agree --
+        otherwise the escape hatch documented in the UI does not exist."""
+        import importlib
+        self._write({"permission_mode": "bypassPermissions"})
+        os.environ["SUTRA_UI_ALLOW_UNSAFE_PERM_MODES"] = "1"
+        prov = importlib.reload(self.providers)
+        s = prov.load_settings()
+        self.assertEqual(s["permission_mode_effective"], "bypassPermissions")
+        self.assertFalse(s["permission_mode_clamped"])
+        self.assertTrue(s["unsafe_modes_allowed"])
+
+    def test_onboarded_defaults_false_and_round_trips(self):
+        """First run is decided by the settings FILE, not a browser flag, so the
+        disclosure cannot be skipped by clearing localStorage."""
+        self.assertFalse(self.providers.load_settings()["onboarded"])
+        self.providers.save_settings(onboarded=True)
+        self.assertTrue(self.providers.load_settings()["onboarded"])
+
+    def test_onboarded_rejects_non_boolean(self):
+        with self.assertRaises(ValueError):
+            self.providers.save_settings(onboarded="yes")
+
+    def test_onboarding_write_preserves_other_settings(self):
+        """Dismissing onboarding must not reset the operator's provider/workdir."""
+        self._write({"permission_mode": "plan", "provider": "claude"})
+        self.providers.save_settings(onboarded=True)
+        with io.open(self.path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        self.assertEqual(raw["provider"], "claude")
+        self.assertEqual(raw["permission_mode"], "plan")
+        self.assertTrue(raw["onboarded"])
+
+
+class TestSkillsSignature(unittest.TestCase):
+    """The catalog was read once at boot, so a plugin update or a new command was
+    invisible until restart. Auto-refresh rests entirely on the signature being a
+    pure function of on-disk state -- a signature that drifts refreshes forever, and
+    one that misses a change never refreshes at all."""
+
+    def setUp(self):
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import org_api
+        self.org = org_api
+
+    def _sig(self, payload):
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:32]
+
+    def test_identical_payloads_hash_identically(self):
+        p = {"items": [{"slash": "/a", "runnable": True}], "total": 1}
+        self.assertEqual(self._sig(p), self._sig(dict(p)))
+
+    def test_a_runnable_flip_changes_the_signature(self):
+        """count and slash names stay identical when a provider leaves PATH -- this
+        is the case a count+mtime fingerprint cannot see."""
+        a = {"items": [{"slash": "/a", "runnable": True}], "total": 1}
+        b = {"items": [{"slash": "/a", "runnable": False}], "total": 1}
+        self.assertNotEqual(self._sig(a), self._sig(b))
+
+    def test_a_description_edit_changes_the_signature(self):
+        a = {"items": [{"slash": "/a", "description": "old"}]}
+        b = {"items": [{"slash": "/a", "description": "new"}]}
+        self.assertNotEqual(self._sig(a), self._sig(b))
+
+    def test_entries_with_slash_none_do_not_raise(self):
+        """7 of 44 entries on a real machine have slash=None; sorting those names
+        raises TypeError, which is why the whole payload is hashed instead."""
+        p = {"items": [{"slash": None, "name": "AGENTS.md"}, {"slash": "/a"}]}
+        self.assertEqual(len(self._sig(p)), 32)
+
+    def test_read_at_must_not_be_inside_the_digest(self):
+        """A clock in the digest makes every call a 'change' and the panel would
+        refresh on a loop forever."""
+        base = {"items": [], "total": 0}
+        one, two = dict(base), dict(base)
+        sig = self._sig(one)                      # hash BEFORE read_at is attached
+        one["read_at"], two["read_at"] = 1, 2
+        self.assertEqual(sig, self._sig(base),
+                         "read_at leaked into the digest")
+
+    def test_project_dir_is_the_workdir_not_the_environment(self):
+        """CLAUDE_PROJECT_DIR is set by nothing in this repo, so the project-local
+        .claude/commands tier was dead code."""
+        src = io.open(os.path.join(HERE, "org_api.py"), encoding="utf-8").read()
+        i = src.find("def api_skills")
+        body = src[i:i + 2500]
+        # Assert on the USE, not on the name: the identifier appears in the comment
+        # explaining why it was dropped, and a raw substring check fails on prose.
+        self.assertNotIn('environ.get("CLAUDE_PROJECT_DIR")', body,
+                         "api_skills still READS CLAUDE_PROJECT_DIR, which nothing sets")
+        self.assertIn("workdir_allowed", body,
+                      "project_dir must be validated through workdir_allowed")
+
+
+class TestEditorWriteGate(unittest.TestCase):
+    """The editor is the FIRST filesystem write path in this app. Reading is
+    ungated (it exposes nothing the chat agent's own cwd does not already);
+    WRITING is a different risk class and is gated out of band, like unsafe
+    permission modes. These pin the gate and the traversal guard."""
+
+    def setUp(self):
+        import importlib
+        self._old = dict(os.environ)
+        os.environ.pop("SUTRA_UI_ALLOW_EDIT", None)
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import providers, org_api
+        self.p = importlib.reload(providers)
+        self.org = org_api
+
+    def tearDown(self):
+        os.environ.clear(); os.environ.update(self._old)
+
+    def test_editing_is_off_by_default(self):
+        """A panel that could rewrite files the moment it starts is not a default
+        anyone opted into."""
+        self.assertFalse(self.p.editing_allowed())
+
+    def test_editing_turns_on_only_via_the_env_gate(self):
+        import importlib
+        os.environ[self.p.EDIT_ENV] = "1"
+        self.assertTrue(importlib.reload(self.p).editing_allowed())
+
+    def test_gate_is_exact_not_truthy(self):
+        """'0', 'false', 'no' must NOT enable writing -- a truthy check here would
+        turn a disabling value into an enabling one."""
+        import importlib
+        for v in ("0", "false", "no", "", "yes", "true"):
+            os.environ[self.p.EDIT_ENV] = v
+            got = importlib.reload(self.p).editing_allowed()
+            self.assertEqual(got, v == "1", "%r produced editing_allowed()=%s" % (v, got))
+
+    def test_write_endpoint_takes_base_bytes_for_conflict_detection(self):
+        """Without it, the agent writing a file while the pane is open would be
+        silently clobbered on save."""
+        self.assertIn("base_bytes", self.org.FsWriteRequest.model_fields)
+
+    def test_skip_dirs_cover_the_expensive_trees(self):
+        for d in (".git", "node_modules", "__pycache__"):
+            self.assertIn(d, self.org.FS_SKIP_DIRS)
+
+    def test_read_and_tree_limits_are_finite(self):
+        self.assertTrue(0 < self.org.FS_MAX_READ <= 16 * 1024 * 1024)
+        self.assertTrue(0 < self.org.FS_MAX_ENTRIES <= 100000)
+
+
+class TestModelAllowList(unittest.TestCase):
+    """The model string reaches `claude --model` directly. An unknown value fails
+    seconds later as a dead socket instead of as a refusal the operator can read,
+    so it is validated against an allow-list on the way in AND on the way out."""
+
+    def setUp(self):
+        import importlib
+        self._old = dict(os.environ)
+        self.tmp = tempfile.mkdtemp(prefix="sutra-model-")
+        os.environ["SUTRA_UI_SETTINGS"] = os.path.join(self.tmp, "s.json")
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import providers
+        self.p = importlib.reload(providers)
+
+    def tearDown(self):
+        os.environ.clear(); os.environ.update(self._old)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_only_catalogued_ids_survive(self):
+        for good in ("opus", "sonnet", "haiku"):
+            self.assertEqual(self.p.clean_model(good), good)
+        for bad in ("gpt-4", "claude-3", "", None, 7, [], "opus; rm -rf /"):
+            self.assertIsNone(self.p.clean_model(bad))
+
+    def test_save_rejects_an_unknown_model(self):
+        with self.assertRaises(ValueError):
+            self.p.save_settings(model="gpt-4-turbo")
+
+    def test_empty_string_is_legal_and_means_cli_default(self):
+        """"" is a real choice, not a missing value -- it must persist, not raise."""
+        self.p.save_settings(model="")
+        self.assertEqual(self.p.load_settings()["model"], "")
+        self.assertIsNone(self.p.stored_model())
+
+    def test_model_round_trips(self):
+        self.p.save_settings(model="haiku")
+        self.assertEqual(self.p.load_settings()["model"], "haiku")
+        self.assertEqual(self.p.stored_model(), "haiku")
+
+    def test_catalog_ids_are_aliases_not_pinned_snapshots(self):
+        """A pinned id goes stale and the panel then offers something that cannot
+        run -- the exact failure providers.py exists to prevent."""
+        for m in self.p.MODELS:
+            self.assertNotRegex(m["id"], r"\d{8}",
+                                "model %r looks like a dated snapshot id" % m["id"])
+
+
+class TestAttachmentSafety(unittest.TestCase):
+    """An attachment is written INSIDE the workdir (which is already the agent's
+    cwd, so no new read surface opens). These pin the properties that keep a
+    filename from becoming a path."""
+
+    def setUp(self):
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import org_api
+        self.org = org_api
+
+    def test_a_filename_can_never_become_a_path(self):
+        """basename() then a character filter: '../../.ssh/authorized_keys' must
+        reduce to a plain name, never traverse."""
+        import re as _re
+        for evil in ("../../.ssh/authorized_keys", "/etc/passwd", "..\\..\\win.ini",
+                     "....//x", "a/b/c.txt"):
+            safe = os.path.basename(evil).strip().lstrip(".")
+            safe = _re.sub(r"[^A-Za-z0-9._-]", "_", safe)[:120]
+            self.assertNotIn("/", safe)
+            self.assertNotIn("\\", safe)
+            self.assertFalse(safe.startswith(".."), "%r -> %r still traverses" % (evil, safe))
+
+    def test_size_cap_is_finite_and_sane(self):
+        self.assertTrue(0 < self.org.ATTACH_MAX_BYTES <= 64 * 1024 * 1024)
+
+    def test_attachments_land_under_a_dedicated_dir(self):
+        """Writing straight into the workdir root would scatter uploads through the
+        operator's project."""
+        self.assertTrue(self.org.ATTACH_DIR)
+        self.assertNotIn("/", self.org.ATTACH_DIR.strip("/"))
+
+
+class TestToolSummary(unittest.TestCase):
+    """A tool row that says only "Bash" eight times tells the operator nothing.
+    _tool_summary picks the identifying field; it must never raise, because an
+    unexpected input shape must not take a whole turn down."""
+
+    def setUp(self):
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import app
+        self.f = app._tool_summary
+
+    def test_prefers_the_identifying_field(self):
+        self.assertEqual(self.f({"command": "ls -1", "description": "list"}), "ls -1")
+        self.assertEqual(self.f({"file_path": "/tmp/x.py", "content": "..."}), "/tmp/x.py")
+        self.assertEqual(self.f({"pattern": "TODO"}), "TODO")
+
+    def test_never_forwards_a_whole_file(self):
+        """A Write's `content` is the entire file; it must not reach the browser."""
+        out = self.f({"file_path": "/tmp/a", "content": "x" * 50000})
+        self.assertEqual(out, "/tmp/a")
+        self.assertNotIn("xxxx", out)
+
+    def test_truncates_and_marks_it(self):
+        out = self.f({"command": "y" * 500})
+        self.assertLessEqual(len(out), 121)
+        self.assertTrue(out.endswith("…"))
+
+    def test_collapses_newlines_so_a_row_stays_one_line(self):
+        self.assertEqual(self.f({"command": "a\n  b\tc"}), "a b c")
+
+    def test_tolerates_junk_without_raising(self):
+        for junk in (None, [], "str", 3, {}, {"k": None}, {"k": {"nested": 1}}):
+            self.assertIsInstance(self.f(junk), str)
+
+
+class TestGitReadOnly(unittest.TestCase):
+    """The git surface is read-only BY CONSTRUCTION. These pin the two properties
+    that keep it so: the verb allow-list, and the fact that the repository path
+    can never come from the caller."""
+
+    def setUp(self):
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import org_api
+        self.org = org_api
+
+    def test_no_mutating_verb_is_reachable(self):
+        """Adding a mutating verb to GIT_CMDS is the single change that would turn
+        this endpoint into a write path. Fail loudly if one appears."""
+        banned = {"commit", "push", "add", "rm", "reset", "checkout", "merge",
+                  "rebase", "clean", "restore", "stash", "apply", "cherry-pick",
+                  "revert", "tag", "branch", "fetch", "pull", "gc", "worktree",
+                  "update-ref", "filter-branch", "config", "init", "clone"}
+        for view, argv in self.org.GIT_CMDS.items():
+            self.assertTrue(argv, "%s has an empty argv" % view)
+            self.assertNotIn(argv[0], banned,
+                             "git view %r runs mutating verb %r" % (view, argv[0]))
+
+    def test_every_view_is_a_known_read_verb(self):
+        for view, argv in self.org.GIT_CMDS.items():
+            self.assertIn(argv[0], {"status", "log", "diff", "show"},
+                          "unexpected verb %r for view %r" % (argv[0], view))
+
+    def test_repo_is_never_a_caller_supplied_parameter(self):
+        """api_git must not accept a repo/cwd override -- one would bypass
+        workdir_allowed and make this a read oracle over the filesystem."""
+        import inspect
+        params = set(inspect.signature(self.org.api_git).parameters)
+        self.assertEqual(params, {"what", "path"},
+                         "api_git gained a parameter; a repo/cwd override would "
+                         "bypass the workdir_allowed check")
+
+
+class TestLoginPathRepair(unittest.TestCase):
+    """A Finder-launched .app inherits launchd's PATH, so /opt/homebrew/bin is
+    absent and EVERY provider reported "binary not on PATH" on a machine where
+    the binary runs fine in any terminal. Chat was dead and the stated reason
+    pointed at the wrong thing.
+
+    These pin both halves: it repairs a GUI-style PATH, and it stays out of the
+    way when PATH is already fine (a login-shell spawn on every CLI start would
+    be pure latency plus running the operator's rc files for nothing).
+    """
+
+    def setUp(self):
+        import importlib
+        self._old = dict(os.environ)
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import providers
+        self.providers = importlib.reload(providers)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._old)
+
+    def test_no_op_when_path_already_resolves_a_provider(self):
+        """Must not spawn a login shell when it has nothing to fix."""
+        import importlib
+        real = shutil.which("claude") or shutil.which("codex")
+        if not real:
+            self.skipTest("no catalogued CLI on PATH here; nothing to no-op against")
+        prov = importlib.reload(self.providers)
+        called = {"n": 0}
+        prov._login_shell_path = lambda: (called.__setitem__("n", called["n"] + 1), None)[1]
+        self.assertFalse(prov.ensure_login_path())
+        self.assertEqual(called["n"], 0, "spawned a login shell despite PATH being usable")
+
+    def test_repairs_a_launchd_style_path(self):
+        import importlib
+        real = shutil.which("claude") or shutil.which("codex")
+        if not real:
+            self.skipTest("no catalogued CLI on PATH here to rediscover")
+        os.environ["PATH"] = "/usr/bin:/bin"
+        prov = importlib.reload(self.providers)
+        self.assertIsNone(shutil.which("claude"), "precondition: claude must be hidden")
+        prov._login_shell_path = lambda: os.path.dirname(real) + os.pathsep + "/usr/bin"
+        self.assertTrue(prov.ensure_login_path())
+        self.assertIn(os.path.dirname(real), os.environ["PATH"])
+
+    def test_runs_at_most_once(self):
+        import importlib
+        os.environ["PATH"] = "/usr/bin:/bin"
+        prov = importlib.reload(self.providers)
+        prov._login_shell_path = lambda: "/some/injected/dir"
+        self.assertTrue(prov.ensure_login_path())
+        self.assertFalse(prov.ensure_login_path(), "repaired PATH twice")
+
+    def test_ignores_rc_banner_noise_and_non_path_output(self):
+        """An rc file that prints a banner must not poison PATH."""
+        import importlib
+        os.environ["PATH"] = "/usr/bin:/bin"
+        prov = importlib.reload(self.providers)
+        prov._login_shell_path = lambda: None      # what the parser returns for junk
+        self.assertFalse(prov.ensure_login_path())
+        self.assertEqual(os.environ["PATH"], "/usr/bin:/bin")
+
+    def test_appends_so_an_explicit_path_still_wins(self):
+        """A PATH set deliberately for this process must keep precedence."""
+        import importlib
+        os.environ["PATH"] = "/usr/bin:/bin"
+        prov = importlib.reload(self.providers)
+        prov._login_shell_path = lambda: "/late/dir"
+        prov.ensure_login_path()
+        self.assertTrue(os.environ["PATH"].startswith("/usr/bin:/bin"),
+                        "login PATH was prepended; it must be appended")
 
 
 if __name__ == "__main__":

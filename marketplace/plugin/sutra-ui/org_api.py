@@ -24,15 +24,21 @@ SAFETY (see marketplace/plugin/sutra-ui -- ground truth for this module):
     The active root is logged loudly at import so a running server is never
     ambiguous about which registry it reads and writes.
 """
+import base64
+import binascii
+import hashlib
 import json
 import logging
 import os
+import re
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 logger = logging.getLogger("sutra-ui.org")
@@ -360,7 +366,7 @@ def org_history(tenant: Optional[str] = None):
 # ------------------------------------------------------------- GET /skills -
 
 @router.get("/skills")
-def api_skills():
+def api_skills(request: Request = None):
     """Every slash command `claude` can actually resolve here.
 
     The Skills screen previously rendered TEN HARDCODED STRINGS and claimed
@@ -386,19 +392,51 @@ def api_skills():
     plus the reason, so the palette can refuse to offer it.
     """
     import skills_catalog
-    bundle = skills_catalog.discover_all(
-        project_dir=os.environ.get("CLAUDE_PROJECT_DIR"))
+    # project_dir is the VALIDATED workdir, not CLAUDE_PROJECT_DIR. Nothing in this
+    # repo sets that variable (verified: not run.sh, sutra-ui.sh, install.sh or
+    # electron/main.js), so the project-local `.claude/commands` tier was dead code
+    # and a command the operator wrote for their own project never appeared.
+    wd = providers.load_settings().get("workdir") or ""
+    project_dir = wd if (wd and providers.workdir_allowed(wd) and os.path.isdir(wd)) else None
+
+    bundle = skills_catalog.discover_all(project_dir=project_dir)
     items = bundle["items"]
     by_kind, by_source, by_provider = {}, {}, {}
     for e in items:
         by_kind[e["kind"]] = by_kind.get(e["kind"], 0) + 1
         by_source[e["source"]] = by_source.get(e["source"], 0) + 1
         by_provider[e["provider"]] = by_provider.get(e["provider"], 0) + 1
-    return {"items": items, "total": len(items),
-            "by_kind": by_kind, "by_source": by_source,
-            "by_provider": by_provider,
-            "runnable": sum(1 for e in items if e.get("runnable")),
-            "providers": bundle["providers"]}
+    payload = {"items": items, "total": len(items),
+               "by_kind": by_kind, "by_source": by_source,
+               "by_provider": by_provider,
+               "runnable": sum(1 for e in items if e.get("runnable")),
+               "providers": bundle["providers"]}
+
+    # ---- change signature --------------------------------------------------
+    # Hash the payload THIS CALL IS ABOUT TO RETURN, from the SAME scan. A separate
+    # /signature endpoint would scan twice, and the client could then store a
+    # fingerprint describing state it never received -- a MISSED update that never
+    # self-corrects, because the next probe matches the stored value forever.
+    #
+    # Hash the whole payload, not count+mtime+slash-names:
+    #   * 7 of 44 entries here have slash=None, so sorting slash names raises TypeError
+    #   * max(mtime) is a monotone ceiling -- one file with a skewed-future mtime
+    #     permanently blinds every later edit
+    #   * neither notices a `runnable` flip, which is the doctrine-critical field
+    # Measured: the hash adds ~0.2ms to a ~4.4ms scan.
+    payload["signature"] = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:32]
+    # read_at is added AFTER hashing, so the clock never enters the digest and two
+    # identical scans always agree.
+    payload["read_at"] = int(time.time())
+
+    headers = {"ETag": payload["signature"], "Cache-Control": "no-cache"}
+    if request is not None and request.headers.get("if-none-match") == payload["signature"]:
+        # Unchanged: no body to parse, no re-render. Cache-Control is repeated here
+        # because a 304 without it can still be pinned by an intermediate cache.
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(payload, headers=headers)
 
 
 # ------------------------------------------------------------- GET /search -
@@ -789,14 +827,26 @@ def api_settings_get():
                          per-edit prompt. Choose it deliberately.
       bypassPermissions  everything auto-approved, including shell commands.
     """
+    unlocked = providers.unsafe_modes_allowed()
     return {
         "settings": providers.load_settings(),
         "permission_modes": [
             {"id": m, "note": providers.PERMISSION_MODE_NOTES.get(m),
              "default": m == providers.DEFAULT_PERMISSION_MODE,
-             "writes_files": m in ("acceptEdits", "bypassPermissions")}
+             "writes_files": m in providers.UNSAFE_PERMISSION_MODES,
+             # A control the server will refuse must say so BEFORE it is
+             # clicked. Without this the panel offered three modes, accepted
+             # clicks on all three, and answered two of them with a 400 -- which
+             # reads as "settings are broken" rather than "this is gated".
+             "settable": m not in providers.UNSAFE_PERMISSION_MODES or unlocked,
+             "requires_unlock": m in providers.UNSAFE_PERMISSION_MODES}
             for m in providers.PERMISSION_MODES
         ],
+        "unsafe_modes_allowed": unlocked,
+        "unsafe_modes_env": providers.UNSAFE_MODES_ENV,
+        # An allow-list, not free text: the value reaches `claude --model`, where an
+        # unknown string fails as a dead socket seconds later instead of a refusal.
+        "models": list(providers.MODELS),
         "providers": providers.discover_providers(),
     }
 
@@ -805,6 +855,8 @@ class SettingsRequest(BaseModel):
     provider: Optional[str] = None
     permission_mode: Optional[str] = None
     workdir: Optional[str] = None
+    onboarded: Optional[bool] = None
+    model: Optional[str] = None
 
 
 @router.post("/settings")
@@ -816,16 +868,19 @@ def api_settings_post(req: SettingsRequest):
     is rejected rather than silently downgraded, so the operator is never told
     a mode was applied when it was not.
     """
-    if req.provider is None and req.permission_mode is None and req.workdir is None:
+    if (req.provider is None and req.permission_mode is None
+            and req.workdir is None and req.onboarded is None and req.model is None):
         raise HTTPException(
             status_code=400,
             detail="nothing to update -- send at least one of: provider, "
-                   "permission_mode, workdir")
+                   "permission_mode, workdir, onboarded, model")
     try:
         settings = providers.save_settings(
             provider=req.provider,
             permission_mode=req.permission_mode,
             workdir=req.workdir,
+            onboarded=req.onboarded,
+            model=req.model,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -833,6 +888,312 @@ def api_settings_post(req: SettingsRequest):
         raise HTTPException(status_code=500,
                             detail="could not write settings: %s" % exc)
     return {"settings": settings}
+
+
+# ============================================================ filesystem =====
+# Backs the editor. Every path is resolved against the validated workdir and refused
+# if it escapes -- the workdir is the agent's own cwd, so READING opens no surface the
+# chat channel did not already have. WRITING is different in kind and is gated
+# out-of-band (providers.EDIT_ENV), the same way unsafe permission modes are.
+#
+# Directories that are always skipped: they are enormous, uninteresting to edit, and
+# walking them makes the tree endpoint unusable on a real project.
+FS_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
+                ".pytest_cache", "dist", "build", ".next", ".DS_Store", ".tox",
+                ".sutra-attachments"}
+FS_MAX_ENTRIES = 4000            # a tree bigger than this is truncated, and says so
+FS_MAX_READ = 2 * 1024 * 1024    # refuse to open something that is not editable text
+
+
+def _fs_root():
+    wd = providers.load_settings().get("workdir") or ""
+    if not wd or not providers.workdir_allowed(wd):
+        raise HTTPException(status_code=400,
+                            detail="the configured workdir is outside the allowed root; "
+                                   "set it in Settings first")
+    if not os.path.isdir(wd):
+        raise HTTPException(status_code=404, detail="workdir %s does not exist" % wd)
+    return os.path.realpath(wd)
+
+
+def _fs_resolve(rel):
+    """Resolve `rel` inside the workdir, or raise. realpath() FIRST, so a symlink
+    pointing outside the tree is caught rather than followed."""
+    root = _fs_root()
+    if not rel or not isinstance(rel, str):
+        raise HTTPException(status_code=400, detail="path is required")
+    target = os.path.realpath(os.path.join(root, rel))
+    if target != root and not target.startswith(root + os.sep):
+        raise HTTPException(status_code=400, detail="path %r escapes the workdir" % rel)
+    return root, target
+
+
+@router.get("/fs/tree")
+def api_fs_tree():
+    """Every editable file under the workdir, relative-path sorted."""
+    root = _fs_root()
+    out, truncated = [], False
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune in place -- os.walk only honours dirnames mutation, and descending
+        # into node_modules first and filtering after is what makes this unusable.
+        dirnames[:] = sorted(d for d in dirnames
+                             if d not in FS_SKIP_DIRS and not d.startswith(".git"))
+        for name in sorted(filenames):
+            if name.startswith("."):
+                continue
+            full = os.path.join(dirpath, name)
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                continue
+            out.append({"path": os.path.relpath(full, root), "bytes": size})
+            if len(out) >= FS_MAX_ENTRIES:
+                truncated = True
+                break
+        if truncated:
+            break
+    return {"root": root, "files": out, "truncated": truncated,
+            "editable": providers.editing_allowed(), "edit_env": providers.EDIT_ENV}
+
+
+@router.get("/fs/read")
+def api_fs_read(path: str):
+    """One file's text. Binary is refused rather than mangled into replacement chars."""
+    root, target = _fs_resolve(path)
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="%s is not a file" % path)
+    size = os.path.getsize(target)
+    if size > FS_MAX_READ:
+        raise HTTPException(status_code=413,
+                            detail="%s is %d bytes; the editor opens files under %d"
+                                   % (path, size, FS_MAX_READ))
+    raw = open(target, "rb").read()
+    if b"\x00" in raw:
+        # Decoding this with errors="replace" would render a lossy version that,
+        # if saved, would DESTROY the file. Refuse instead.
+        raise HTTPException(status_code=415,
+                            detail="%s looks binary; this editor only opens text" % path)
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=415,
+                            detail="%s is not valid UTF-8; this editor only opens text" % path)
+    return {"path": os.path.relpath(target, root), "text": text, "bytes": size,
+            "editable": providers.editing_allowed()}
+
+
+class FsWriteRequest(BaseModel):
+    path: str
+    text: str
+    # The bytes the client believed it was editing. A mismatch means the file changed
+    # underneath (the AGENT very likely wrote it), and blindly saving would discard
+    # that work with no warning.
+    base_bytes: Optional[int] = None
+
+
+@router.post("/fs/write")
+def api_fs_write(req: FsWriteRequest):
+    if not providers.editing_allowed():
+        raise HTTPException(
+            status_code=403,
+            detail="editing is disabled. This endpoint writes to your files and the "
+                   "panel is unauthenticated by construction, so it is gated out of "
+                   "band: restart the server with %s=1 to enable it." % providers.EDIT_ENV)
+    root, target = _fs_resolve(req.path)
+    if os.path.isdir(target):
+        raise HTTPException(status_code=400, detail="%s is a directory" % req.path)
+    if os.path.exists(target) and req.base_bytes is not None:
+        actual = os.path.getsize(target)
+        if actual != req.base_bytes:
+            raise HTTPException(
+                status_code=409,
+                detail="%s changed on disk since you opened it (%d bytes now, %d when "
+                       "loaded). Reload before saving, or your edit would discard that "
+                       "change." % (req.path, actual, req.base_bytes))
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        # tmp + replace: a crash mid-write must not leave a truncated source file.
+        tmp = target + ".sutra-tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(req.text)
+        os.replace(tmp, target)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="could not write: %s" % exc)
+    return {"path": os.path.relpath(target, root),
+            "bytes": os.path.getsize(target), "saved": True}
+
+
+# =========================================================== attachments =====
+# A file the operator attaches has to be readable BY THE SUBPROCESS, which runs
+# with cwd=<workdir>. So it is written INSIDE the workdir and referenced by a
+# relative path -- no new read surface is opened, because the agent could already
+# read anything under its own cwd.
+#
+# Transport is base64 in a JSON body rather than multipart on purpose:
+# UploadFile requires `python-multipart`, and requirements.txt is deliberately
+# three packages. A dependency is a permanent cost; base64 is a 33% size cost on
+# a path that is already capped.
+
+ATTACH_DIR = ".sutra-attachments"
+ATTACH_MAX_BYTES = 12 * 1024 * 1024      # 12 MB decoded
+
+
+class AttachRequest(BaseModel):
+    name: str
+    content_b64: str
+
+
+@router.post("/attach")
+def api_attach(req: AttachRequest):
+    """Write one attachment under <workdir>/.sutra-attachments and return its
+    relative path, which the composer references as @<path>."""
+    wd = providers.load_settings().get("workdir") or ""
+    if not wd or not providers.workdir_allowed(wd):
+        raise HTTPException(status_code=400,
+                            detail="the configured workdir is outside the allowed root; "
+                                   "set it in Settings first")
+
+    # basename() only -- "../../.ssh/authorized_keys" must become
+    # "authorized_keys", never traverse. Then a conservative character filter:
+    # the name ends up on disk and in a shell-adjacent @reference.
+    safe = os.path.basename(req.name or "").strip().lstrip(".")
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", safe)[:120]
+    if not safe:
+        raise HTTPException(status_code=400, detail="attachment needs a usable filename")
+
+    try:
+        blob = base64.b64decode(req.content_b64 or "", validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(status_code=400, detail="content_b64 is not valid base64")
+    if not blob:
+        raise HTTPException(status_code=400, detail="attachment is empty")
+    if len(blob) > ATTACH_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="attachment is larger than %d MB"
+                            % (ATTACH_MAX_BYTES // (1024 * 1024)))
+
+    dest_dir = os.path.join(wd, ATTACH_DIR)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        target = os.path.join(dest_dir, safe)
+        # Never overwrite: two screenshots both named Screenshot.png are two
+        # different files, and silently replacing the first loses the operator's data.
+        stem, ext = os.path.splitext(safe)
+        n = 1
+        while os.path.exists(target):
+            target = os.path.join(dest_dir, "%s-%d%s" % (stem, n, ext))
+            n += 1
+        # Belt-and-braces: the resolved path must still be inside the workdir even
+        # after symlink resolution.
+        if not os.path.realpath(target).startswith(os.path.realpath(wd) + os.sep):
+            raise HTTPException(status_code=400, detail="attachment path escapes the workdir")
+        with open(target, "wb") as fh:
+            fh.write(blob)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="could not write attachment: %s" % exc)
+
+    rel = os.path.relpath(target, wd)
+    return {"path": rel, "abs": target, "bytes": len(blob),
+            "ref": "@" + rel}
+
+
+# ================================================================== git =====
+# READ-ONLY, and structurally so: every command below is on an allow-list of
+# plumbing that cannot mutate a repository. There is no staging, commit, branch
+# or push here on purpose -- those are a new class of side effect and belong
+# behind their own out-of-band gate, the way UNSAFE_PERMISSION_MODES already is.
+# Adding a mutating verb to GIT_CMDS is the one change that would break that.
+#
+# The repository is ALWAYS the settings workdir, re-validated through
+# providers.workdir_allowed on every call. It is never taken from a query
+# parameter: a caller-supplied path would turn this into a read oracle over the
+# whole disk, which is exactly the hole the workdir picker closes.
+
+GIT_CMDS = {
+    "status": ["status", "--porcelain=v1", "--branch"],
+    "log":    ["log", "-n", "40", "--pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%s"],
+    "diff":   ["diff"],
+    "staged": ["diff", "--cached"],
+}
+GIT_MAX_BYTES = 400_000        # a diff bigger than this is truncated, and says so
+
+
+def _git_repo():
+    """The validated workdir, or an HTTPException. Never a client-supplied path."""
+    wd = providers.load_settings().get("workdir") or ""
+    if not wd or not providers.workdir_allowed(wd):
+        raise HTTPException(status_code=400,
+                            detail="the configured workdir is outside the allowed root; "
+                                   "set it in Settings first")
+    if not os.path.isdir(wd):
+        raise HTTPException(status_code=404, detail="workdir %s does not exist" % wd)
+    if not os.path.isdir(os.path.join(wd, ".git")):
+        # A plain directory is not an error the operator caused -- say what is true.
+        raise HTTPException(status_code=404,
+                            detail="%s is not a git repository (no .git directory)" % wd)
+    return wd
+
+
+@router.get("/git/{what}")
+def api_git(what: str, path: Optional[str] = None):
+    """status | log | diff | staged, for the configured workdir.
+
+    `path` narrows a diff to ONE file. It is resolved against the repo and
+    rejected if it escapes -- `../../etc/passwd` is a path traversal, not a
+    filename, and `--` stops it being read as a flag.
+    """
+    if what not in GIT_CMDS:
+        raise HTTPException(status_code=404, detail="unknown git view %r -- known: %s"
+                            % (what, ", ".join(sorted(GIT_CMDS))))
+    repo = _git_repo()
+    argv = ["git", "-C", repo] + list(GIT_CMDS[what])
+
+    if path:
+        target = os.path.realpath(os.path.join(repo, path))
+        if target != repo and not target.startswith(repo + os.sep):
+            raise HTTPException(status_code=400,
+                                detail="path %r escapes the repository" % path)
+        if what in ("diff", "staged"):
+            argv += ["--", os.path.relpath(target, repo)]
+
+    try:
+        out = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="git is not installed on this machine")
+    except subprocess.SubprocessError as exc:
+        raise HTTPException(status_code=500, detail="git failed: %s" % exc)
+
+    if out.returncode != 0:
+        raise HTTPException(status_code=500,
+                            detail=(out.stderr or "git exited %d" % out.returncode).strip()[:600])
+
+    text = out.stdout or ""
+    truncated = len(text.encode("utf-8", "replace")) > GIT_MAX_BYTES
+    if truncated:
+        text = text[:GIT_MAX_BYTES]
+
+    body = {"repo": repo, "view": what, "text": text, "truncated": truncated}
+    if what == "log":
+        # Parsed here rather than in the browser: the \x1f separator is a server
+        # implementation detail and should not leak into the client.
+        rows = []
+        for line in text.splitlines():
+            parts = line.split("\x1f")
+            if len(parts) == 5:
+                rows.append(dict(zip(("sha", "short", "author", "when", "subject"), parts)))
+        body["commits"] = rows
+    if what == "status":
+        files, branch = [], None
+        for line in text.splitlines():
+            if line.startswith("##"):
+                branch = line[2:].strip()
+                continue
+            if len(line) > 3:
+                files.append({"x": line[0], "y": line[1], "path": line[3:]})
+        body["branch"] = branch
+        body["files"] = files
+    return body
 
 
 # ============================================================= tenants ======

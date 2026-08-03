@@ -29,6 +29,7 @@ const { app, BrowserWindow, dialog, shell } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const http = require("http");
 const net = require("net");
 
@@ -87,11 +88,31 @@ function portBusy() {
   });
 }
 
+/* The editor's write path is gated by SUTRA_UI_ALLOW_EDIT, which the CLI operator
+ * sets when starting the server. A Finder-launched .app inherits launchd's
+ * environment, so there was NO WAY to enable editing in the desktop app at all --
+ * the gate was unreachable rather than merely off.
+ *
+ * The marker is read HERE, by the launcher, at start time. That keeps the property
+ * the gate exists for: the running server still trusts only its environment, so
+ * nothing reachable over the (unauthenticated) HTTP port can flip the gate on a
+ * live process. Creating the file takes effect on the NEXT launch, deliberately.
+ */
+const EDIT_MARKER = path.join(os.homedir(), ".sutra-ui", "allow-edit");
+
+function editEnv() {
+  try {
+    if (fs.existsSync(EDIT_MARKER)) return { SUTRA_UI_ALLOW_EDIT: "1" };
+  } catch (e) { /* unreadable marker = not enabled; never fail the launch over it */ }
+  return {};
+}
+
 function startBackend() {
   const child = spawn(
     PY,
     ["-m", "uvicorn", "app:app", "--host", HOST, "--port", String(PORT), "--log-level", "warning"],
-    { cwd: APP_DIR, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } }
+    { cwd: APP_DIR, stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ...editEnv() } }
   );
   let stderr = "";
   child.stderr.on("data", (d) => {

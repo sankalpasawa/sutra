@@ -38,7 +38,76 @@ Writes: exactly one file, ~/.sutra-ui/settings.json, via save_settings().
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
+
+# ------------------------------------------------------------ login PATH ---
+# A .app launched from Finder/Dock inherits launchd's PATH -- typically
+# /usr/bin:/bin:/usr/sbin:/sbin -- NOT the PATH from the operator's shell rc.
+# Every user-installed CLI lives outside that set: Homebrew puts `claude` in
+# /opt/homebrew/bin, npm -g in ~/.npm-global/bin, and so on. The result was a
+# desktop app reporting "binary 'claude' not on PATH (config found at ~/.claude)"
+# on a machine where `claude` runs fine in any terminal -- chat dead, with the
+# reason pointing at the wrong thing. This is a property of GUI LAUNCH, not of
+# the machine, so it is repaired here rather than documented as a limitation.
+_LOGIN_PATH_DONE = False
+
+
+def _login_shell_path():
+    """The PATH the operator's own login shell produces, or None.
+
+    Asking the shell beats hardcoding directories: it picks up nvm, asdf, pyenv
+    and hand-edited rc files, none of which are guessable. `-l` runs the login rc
+    chain, which is what Terminal.app itself does.
+    """
+    sh = os.environ.get("SHELL") or "/bin/zsh"
+    if not os.path.isfile(sh):
+        sh = "/bin/zsh" if os.path.isfile("/bin/zsh") else "/bin/sh"
+    try:
+        # `command -p echo` sidesteps an rc-defined echo alias mangling the output.
+        out = subprocess.run([sh, "-l", "-c", 'command -p echo "$PATH"'],
+                             capture_output=True, text=True, timeout=8)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines = [l.strip() for l in (out.stdout or "").splitlines() if l.strip()]
+    if not lines:
+        return None
+    # An rc file that prints a banner puts junk on earlier lines; PATH is the last
+    # thing echoed. Require it to actually look like a PATH before trusting it.
+    cand = lines[-1]
+    return cand if (os.pathsep in cand and cand.startswith("/")) else None
+
+
+def ensure_login_path():
+    """Merge the login shell's PATH into this process, once, only if needed.
+
+    A NO-OP when a catalogued binary already resolves: the CLI and dev-server
+    launches inherit a correct PATH, and spawning a login shell every start would
+    add latency and execute the operator's rc files for nothing. Only a GUI launch
+    needs this.
+
+    APPENDS rather than replaces, so a PATH deliberately set for this process still
+    takes precedence over whatever the rc files say.
+
+    Returns True only when it actually changed PATH.
+    """
+    global _LOGIN_PATH_DONE
+    if _LOGIN_PATH_DONE:
+        return False
+    _LOGIN_PATH_DONE = True
+
+    if any(shutil.which(spec["bin"]) for spec in _CATALOG):
+        return False                     # PATH already resolves something; leave it
+
+    extra = _login_shell_path()
+    if not extra:
+        return False
+    have = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+    added = [p for p in extra.split(os.pathsep) if p and p not in have]
+    if not added:
+        return False
+    os.environ["PATH"] = os.pathsep.join(have + added)
+    return True
 
 # ------------------------------------------------------------- settings ----
 # Outside SUTRA_NATIVE_HOME by design -- panel preferences are not governance
@@ -73,6 +142,21 @@ def unsafe_modes_allowed():
     return os.environ.get(UNSAFE_MODES_ENV, "") == "1"
 
 
+# The editor is the FIRST filesystem write path in this app. Everything else reads:
+# the registry API is read-only by test, the git surface read-only by allow-list. A
+# panel that can overwrite the operator's source files is a different risk class, so
+# it is gated exactly the way unsafe permission modes are -- OUT OF BAND, set when
+# starting the server, because this endpoint is unauthenticated by construction (a
+# localhost control plane) and anything able to reach the port could otherwise
+# rewrite files. Reading is NOT gated: it exposes nothing the chat agent, whose cwd
+# is the same directory, cannot already read.
+EDIT_ENV = "SUTRA_UI_ALLOW_EDIT"
+
+
+def editing_allowed():
+    return os.environ.get(EDIT_ENV, "") == "1"
+
+
 def effective_permission_mode(mode):
     """Clamp a stored/env mode down to `plan` unless unsafe modes are enabled.
 
@@ -97,6 +181,37 @@ def workdir_allowed(path):
         os.environ.get("SUTRA_UI_WORKDIR_ROOT", "~")))
     target = os.path.realpath(os.path.expanduser(path))
     return target == root or target.startswith(root + os.sep)
+
+# Models offerable for a session. An ALLOW-LIST, not free text: the value is passed
+# straight to `claude --model`, where an unknown string fails several seconds later
+# as a dead socket rather than as a refusal the operator can read. `""` means "let
+# the CLI use its own default", which is the shipped behaviour and stays the default.
+#
+# These are ALIASES on purpose. Pinned ids go stale the moment a new snapshot ships,
+# and a panel that offers a retired id is offering something that cannot run -- the
+# same failure providers.py exists to prevent. The CLI resolves an alias to whatever
+# it currently points at.
+MODELS = (
+    {"id": "",       "name": "CLI default",  "note": "whatever `claude` is configured to use"},
+    {"id": "opus",   "name": "Opus",         "note": "most capable, slowest, highest cost"},
+    {"id": "sonnet", "name": "Sonnet",       "note": "balanced default for most work"},
+    {"id": "haiku",  "name": "Haiku",        "note": "fastest and cheapest, least capable"},
+)
+MODEL_IDS = frozenset(m["id"] for m in MODELS)
+
+
+def clean_model(value):
+    """A catalogued model id, or None. Never raises, never passes junk to the CLI."""
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    return v if (v and v in MODEL_IDS) else None
+
+
+def stored_model():
+    """The model chosen in Settings, or None for the CLI's own default."""
+    return clean_model(_raw_settings().get("model"))
+
 
 PERMISSION_MODE_NOTES = {
     "plan": "read-only planning: the agent proposes edits, you approve each one.",
@@ -297,22 +412,57 @@ def load_settings():
     if stored and provider_by_id(stored) is None:
         invalid["provider"] = stored
 
+    # The mode that will ACTUALLY reach the subprocess spawn. `permission_mode`
+    # above is what is stored/requested; the two diverge whenever an unsafe mode
+    # is on file without the out-of-band opt-in. Reporting only the stored value
+    # let the panel state "nothing will prompt you per edit" while ws_chat was
+    # in fact spawning `plan` -- the UI asserted authority the agent did not
+    # have. Both values ship, and the UI renders the effective one.
+    effective = effective_permission_mode(mode)
+    clamped = effective != mode
+
+    # First run is a PROPERTY OF THE SETTINGS FILE, not a browser flag: the
+    # onboarding explains what this panel will do with the operator's machine
+    # (which CLI it drives, where it writes, what authority the agent gets), so
+    # clearing localStorage or opening it in another browser must not skip it.
+    onboarded = raw.get("onboarded") is True
+
     return {
         "provider": detail["id"],
         "permission_mode": mode,
         "workdir": workdir,
+        "onboarded": onboarded,
+        # "" is a real, meaningful value here ("use the CLI's default"), so it is
+        # reported as "" rather than folded into null.
+        "model": stored_model() or "",
         # metadata -- the three keys above are the contract; these explain them
         "provider_source": detail["source"],
         "provider_stored": stored,
         "provider_ignored": detail["ignored"],
         "permission_mode_note": PERMISSION_MODE_NOTES.get(mode),
+        # effective-vs-stored: what runs, whether it was clamped, and how to unlock
+        "permission_mode_effective": effective,
+        "permission_mode_effective_note": PERMISSION_MODE_NOTES.get(effective),
+        "permission_mode_clamped": clamped,
+        "permission_mode_clamp_reason": (
+            "%r auto-approves agent actions, so it is not honoured unless the "
+            "server was started with %s=1. The session runs as %r instead."
+            % (mode, UNSAFE_MODES_ENV, effective)) if clamped else None,
+        "unsafe_modes_allowed": unsafe_modes_allowed(),
+        "unsafe_modes_env": UNSAFE_MODES_ENV,
+        # The root a workdir must sit under. Surfaced so the picker can state the
+        # constraint UP FRONT rather than letting the operator type a path and
+        # discover the rule from a 400.
+        "workdir_root": os.path.realpath(os.path.expanduser(
+            os.environ.get("SUTRA_UI_WORKDIR_ROOT", "~"))),
         "settings_path": str(SETTINGS_PATH),
         "settings_file_exists": SETTINGS_PATH.exists(),
         "invalid_stored_values": invalid,
     }
 
 
-def save_settings(provider=None, permission_mode=None, workdir=None):
+def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None,
+                  model=None):
     """Merge a partial update into the settings file and return load_settings().
 
     Validates BEFORE writing: an unknown or unrunnable provider, or an unknown
@@ -352,6 +502,20 @@ def save_settings(provider=None, permission_mode=None, workdir=None):
                 "workdir %r is outside the allowed root. Set SUTRA_UI_WORKDIR_ROOT "
                 "when starting the server to widen it." % expanded)
         raw["workdir"] = expanded
+
+    if onboarded is not None:
+        if not isinstance(onboarded, bool):
+            raise ValueError("onboarded must be a boolean")
+        raw["onboarded"] = onboarded
+
+    if model is not None:
+        # "" is legal: it means "let the CLI choose", which is why this cannot use
+        # the truthiness of clean_model() alone.
+        if not isinstance(model, str) or (model.strip() and model.strip() not in MODEL_IDS):
+            raise ValueError(
+                "unknown model %r -- must be one of: %s (or \"\" for the CLI default)"
+                % (model, ", ".join(sorted(i for i in MODEL_IDS if i))))
+        raw["model"] = model.strip()
 
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = SETTINGS_PATH.with_suffix(".json.tmp")
