@@ -14,6 +14,29 @@ curl -fsSL https://sankalpasawa.github.io/sutra/install.sh | bash
 Then in any project: `cd your/project && claude` → `/core:start`.
 The story, pillars, and hardstops: **[sutra-os website](https://sutra-os.vercel.app)**.
 
+## Desktop app (optional)
+
+Sutra also ships a macOS desktop app — the placement registry (departments, charters,
+placements) with a Claude chat panel, terminal, git diff and file editor beside it. It
+drives your local `claude` CLI, so it **bills as your existing subscription, never the
+API**.
+
+```bash
+cd marketplace/plugin/sutra-ui && ./install.sh
+```
+
+```bash
+open -a Sutra
+```
+
+The installer builds a real Electron app at `/Applications/Sutra.app` (it runs
+`npm install` for you on first run) and a `sutra-ui` CLI that serves on a free port.
+Re-run `./install.sh` to update; `./install.sh --uninstall` removes both.
+
+macOS only today, and it needs the `claude` CLI already logged in. Full details —
+permission modes, the workdir picker, the gated editor, what each pane reads —
+are in **[`marketplace/plugin/sutra-ui/README.md`](marketplace/plugin/sutra-ui/README.md)**.
+
 ## What is Native?
 
 Native is Sutra rebuilt as a **real engine** — deterministic workflows and the Work-Atom
@@ -46,6 +69,7 @@ OPEN items — lives in **[CLARITY.md](CLARITY.md)**.
 | Path | What it is |
 |---|---|
 | `marketplace/plugin/` | The shipping Sutra plugin (skills, hooks, governance) |
+| `marketplace/plugin/sutra-ui/` | The macOS desktop app — registry, chat, terminal, git, editor |
 | `os/engines/NATIVE-ENGINE.md` | Native's canonical charter (source of truth) |
 | `os/decisions/` | ADRs — decision rationale of record |
 | `os/native/` | Native canon, one part-file per concern ([index](os/native/README.md)) |

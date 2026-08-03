@@ -19,10 +19,10 @@ exception is explicit: `POST /api/classify` appends a single placement row.
 Three commands. The installer builds `/Applications/Sutra.app` — a real Electron
 desktop app, not a browser tab pointed at localhost.
 
+From a clone of this repository:
+
 ```bash
-git clone https://github.com/tchandrakar/sutra.git
-cd sutra/marketplace/plugin/sutra-ui
-./install.sh
+cd marketplace/plugin/sutra-ui && ./install.sh
 ```
 
 ```bash
@@ -73,10 +73,9 @@ git pull && ./install.sh
 ## Install
 
 ```bash
-git clone https://github.com/tchandrakar/sutra.git
-cd sutra/marketplace/plugin/sutra-ui
+cd marketplace/plugin/sutra-ui
 
-cd electron && npm install && cd ..   # for the Electron desktop app
+cd electron && npm install && cd ..   # optional: install.sh does this for you
 ./install.sh
 ```
 
