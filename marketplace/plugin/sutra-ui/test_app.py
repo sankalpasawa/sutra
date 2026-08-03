@@ -9,6 +9,7 @@ scratchpad/dev-registry (that one is for manual/dev use only).
 
 Run: .venv/bin/python -m unittest test_app -v   (from inside sutra-ui/)
 """
+import hashlib
 import io
 import json
 import os
@@ -1444,6 +1445,69 @@ class TestEffectiveModeAndOnboarding(unittest.TestCase):
         self.assertEqual(raw["provider"], "claude")
         self.assertEqual(raw["permission_mode"], "plan")
         self.assertTrue(raw["onboarded"])
+
+
+class TestSkillsSignature(unittest.TestCase):
+    """The catalog was read once at boot, so a plugin update or a new command was
+    invisible until restart. Auto-refresh rests entirely on the signature being a
+    pure function of on-disk state -- a signature that drifts refreshes forever, and
+    one that misses a change never refreshes at all."""
+
+    def setUp(self):
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import org_api
+        self.org = org_api
+
+    def _sig(self, payload):
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:32]
+
+    def test_identical_payloads_hash_identically(self):
+        p = {"items": [{"slash": "/a", "runnable": True}], "total": 1}
+        self.assertEqual(self._sig(p), self._sig(dict(p)))
+
+    def test_a_runnable_flip_changes_the_signature(self):
+        """count and slash names stay identical when a provider leaves PATH -- this
+        is the case a count+mtime fingerprint cannot see."""
+        a = {"items": [{"slash": "/a", "runnable": True}], "total": 1}
+        b = {"items": [{"slash": "/a", "runnable": False}], "total": 1}
+        self.assertNotEqual(self._sig(a), self._sig(b))
+
+    def test_a_description_edit_changes_the_signature(self):
+        a = {"items": [{"slash": "/a", "description": "old"}]}
+        b = {"items": [{"slash": "/a", "description": "new"}]}
+        self.assertNotEqual(self._sig(a), self._sig(b))
+
+    def test_entries_with_slash_none_do_not_raise(self):
+        """7 of 44 entries on a real machine have slash=None; sorting those names
+        raises TypeError, which is why the whole payload is hashed instead."""
+        p = {"items": [{"slash": None, "name": "AGENTS.md"}, {"slash": "/a"}]}
+        self.assertEqual(len(self._sig(p)), 32)
+
+    def test_read_at_must_not_be_inside_the_digest(self):
+        """A clock in the digest makes every call a 'change' and the panel would
+        refresh on a loop forever."""
+        base = {"items": [], "total": 0}
+        one, two = dict(base), dict(base)
+        sig = self._sig(one)                      # hash BEFORE read_at is attached
+        one["read_at"], two["read_at"] = 1, 2
+        self.assertEqual(sig, self._sig(base),
+                         "read_at leaked into the digest")
+
+    def test_project_dir_is_the_workdir_not_the_environment(self):
+        """CLAUDE_PROJECT_DIR is set by nothing in this repo, so the project-local
+        .claude/commands tier was dead code."""
+        src = io.open(os.path.join(HERE, "org_api.py"), encoding="utf-8").read()
+        i = src.find("def api_skills")
+        body = src[i:i + 2500]
+        # Assert on the USE, not on the name: the identifier appears in the comment
+        # explaining why it was dropped, and a raw substring check fails on prose.
+        self.assertNotIn('environ.get("CLAUDE_PROJECT_DIR")', body,
+                         "api_skills still READS CLAUDE_PROJECT_DIR, which nothing sets")
+        self.assertIn("workdir_allowed", body,
+                      "project_dir must be validated through workdir_allowed")
 
 
 class TestEditorWriteGate(unittest.TestCase):

@@ -26,6 +26,7 @@ SAFETY (see marketplace/plugin/sutra-ui -- ground truth for this module):
 """
 import base64
 import binascii
+import hashlib
 import json
 import logging
 import os
@@ -36,7 +37,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 logger = logging.getLogger("sutra-ui.org")
@@ -364,7 +366,7 @@ def org_history(tenant: Optional[str] = None):
 # ------------------------------------------------------------- GET /skills -
 
 @router.get("/skills")
-def api_skills():
+def api_skills(request: Request = None):
     """Every slash command `claude` can actually resolve here.
 
     The Skills screen previously rendered TEN HARDCODED STRINGS and claimed
@@ -390,19 +392,51 @@ def api_skills():
     plus the reason, so the palette can refuse to offer it.
     """
     import skills_catalog
-    bundle = skills_catalog.discover_all(
-        project_dir=os.environ.get("CLAUDE_PROJECT_DIR"))
+    # project_dir is the VALIDATED workdir, not CLAUDE_PROJECT_DIR. Nothing in this
+    # repo sets that variable (verified: not run.sh, sutra-ui.sh, install.sh or
+    # electron/main.js), so the project-local `.claude/commands` tier was dead code
+    # and a command the operator wrote for their own project never appeared.
+    wd = providers.load_settings().get("workdir") or ""
+    project_dir = wd if (wd and providers.workdir_allowed(wd) and os.path.isdir(wd)) else None
+
+    bundle = skills_catalog.discover_all(project_dir=project_dir)
     items = bundle["items"]
     by_kind, by_source, by_provider = {}, {}, {}
     for e in items:
         by_kind[e["kind"]] = by_kind.get(e["kind"], 0) + 1
         by_source[e["source"]] = by_source.get(e["source"], 0) + 1
         by_provider[e["provider"]] = by_provider.get(e["provider"], 0) + 1
-    return {"items": items, "total": len(items),
-            "by_kind": by_kind, "by_source": by_source,
-            "by_provider": by_provider,
-            "runnable": sum(1 for e in items if e.get("runnable")),
-            "providers": bundle["providers"]}
+    payload = {"items": items, "total": len(items),
+               "by_kind": by_kind, "by_source": by_source,
+               "by_provider": by_provider,
+               "runnable": sum(1 for e in items if e.get("runnable")),
+               "providers": bundle["providers"]}
+
+    # ---- change signature --------------------------------------------------
+    # Hash the payload THIS CALL IS ABOUT TO RETURN, from the SAME scan. A separate
+    # /signature endpoint would scan twice, and the client could then store a
+    # fingerprint describing state it never received -- a MISSED update that never
+    # self-corrects, because the next probe matches the stored value forever.
+    #
+    # Hash the whole payload, not count+mtime+slash-names:
+    #   * 7 of 44 entries here have slash=None, so sorting slash names raises TypeError
+    #   * max(mtime) is a monotone ceiling -- one file with a skewed-future mtime
+    #     permanently blinds every later edit
+    #   * neither notices a `runnable` flip, which is the doctrine-critical field
+    # Measured: the hash adds ~0.2ms to a ~4.4ms scan.
+    payload["signature"] = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:32]
+    # read_at is added AFTER hashing, so the clock never enters the digest and two
+    # identical scans always agree.
+    payload["read_at"] = int(time.time())
+
+    headers = {"ETag": payload["signature"], "Cache-Control": "no-cache"}
+    if request is not None and request.headers.get("if-none-match") == payload["signature"]:
+        # Unchanged: no body to parse, no re-render. Cache-Control is repeated here
+        # because a 304 without it can still be pinned by an intermediate cache.
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(payload, headers=headers)
 
 
 # ------------------------------------------------------------- GET /search -
