@@ -162,6 +162,7 @@ minted lazily the first time work is placed under it.
 | `SUTRA_APPS_DIR` | `/Applications` | where the `.app` is installed |
 | `SUTRA_SKIP_ELECTRON` | `0` | `1` forces the script-based bundle |
 | `SUTRA_UI_ALLOW_UNSAFE_PERM_MODES` | `0` | `1` lets `acceptEdits` / `bypassPermissions` be selected |
+| `SUTRA_UI_ALLOW_EDIT` | `0` | `1` lets the Editor pane SAVE. The `.app` reads `~/.sutra-ui/allow-edit` instead |
 
 ### Permission mode: stored vs effective
 
@@ -180,6 +181,41 @@ per edit" while sessions were in fact spawning `plan`.
 ```bash
 SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1 sutra-ui
 ```
+
+### Editing files
+
+The Editor pane opens files under the workdir without any setting. **Saving** is off
+by default: it writes to your source, and this panel is unauthenticated by
+construction, so the gate is deliberately out of band.
+
+```bash
+SUTRA_UI_ALLOW_EDIT=1 sutra-ui
+```
+
+The desktop app cannot read your shell environment (a Finder launch inherits
+launchd's), so it reads a marker file at launch instead:
+
+```bash
+mkdir -p ~/.sutra-ui && touch ~/.sutra-ui/allow-edit
+```
+
+Then relaunch Sutra. The marker is read **by the launcher, at start** — a running
+server still trusts only its own environment, so nothing reachable over the HTTP
+port can turn saving on mid-session. Remove the file and relaunch to turn it off.
+
+### Skills stay current
+
+The panel re-reads `~/.claude` (and the other configured assistants) while it runs,
+so installing a plugin or writing a new command shows up without a restart.
+
+`GET /api/skills` returns a `signature` — a hash of the exact payload it is
+returning — and the same value as an `ETag`. The panel polls with `If-None-Match`
+and gets a bodyless `304` when nothing has changed. It never polls while the window
+is hidden, and backs off after failures.
+
+The signature covers the whole payload rather than a count or a timestamp, because
+the changes that matter are not all size changes: a provider dropping off `PATH`
+flips `runnable` on every entry while the count and the command names stay identical.
 
 ### First run
 

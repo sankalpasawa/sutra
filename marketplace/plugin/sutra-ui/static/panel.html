@@ -1644,6 +1644,10 @@ const S = {
   /* Side chats. Turns live HERE, never in s.turns: a branch that appeared in the main
      transcript would not be a branch. Keyed by session id, per pane. */
   sideOpen:{}, sideTurns:{}, sideText:{},
+  /* Skills catalog freshness. `etag` is committed only after the payload it
+     describes has been applied, so a stored signature always matches the data in
+     hand. `delta` is how many entries the last accepted refresh added or removed. */
+  cat:{ etag:null, readAt:0, lastCheckAt:0, fails:0, inflight:false, delta:0 },
   /* editor. edText is null while a read is in flight and a STRING once loaded, so
      "" (a genuinely empty file) is distinguishable from "not read yet". edBase is
      what was loaded, so `dirty` is a comparison rather than a guess. */
@@ -4073,6 +4077,88 @@ async function loadRuntime(){
   SETTINGS = settings.settings || null;
   PERM_MODES = settings.permission_modes || [];
   MODELS = settings.models || [];
+  /* Seed the freshness baseline from the SAME response that populated SKILLS, so the
+     first poll compares against what is actually on screen rather than re-fetching
+     a catalog the panel already has. */
+  S.cat.etag = skills.signature || null;
+  S.cat.readAt = Date.now();
+  S.cat.lastCheckAt = Date.now();
+}
+
+/* ── skills auto-refresh ─────────────────────────────────────────────────────
+   The catalog was read ONCE, in boot(). Installing a plugin or writing a new
+   command meant the palette kept offering yesterday's list until the app was
+   restarted -- and, worse, could keep offering a command that no longer resolves.
+
+   ETag, not a separate probe endpoint: /api/skills returns the signature of the
+   payload it is actually returning, from the same scan. A /signature endpoint would
+   scan twice and let the client store a fingerprint describing state it never
+   received -- a missed update that never self-corrects, because every later probe
+   matches the stored value.
+
+   Only /api/skills is polled. Re-fetching /api/settings on a timer would clobber a
+   permission-mode or workdir change the operator is in the middle of making. */
+const CAT_TICK_MS      = 20000;   /* how often we CONSIDER refreshing */
+const CAT_FOCUSED_MS   = 60000;   /* refresh at most this often while focused */
+const CAT_VISIBLE_MS   = 300000;  /* ... and far less often when merely visible */
+const CAT_BACKOFF      = [60000, 120000, 300000];
+
+async function loadSkills(){
+  const headers = S.cat.etag ? { "If-None-Match": S.cat.etag } : {};
+  const res = await fetch(API + "/api/skills", { headers });
+  if (res.status === 304) return false;              /* unchanged; nothing to apply */
+  if (!res.ok) throw new Error("/api/skills -> " + res.status);
+  const payload = await res.json();
+  /* Belt and braces against any cache that strips/ignores the 304: a 200 whose
+     signature equals the stored one is ALSO "unchanged", and applying it would
+     re-render for nothing. */
+  if (payload.signature && payload.signature === S.cat.etag) return false;
+  const before = SKILLS.length;
+  SKILLS = payload.items || [];
+  SKILLS_META = { by_kind: payload.by_kind, by_source: payload.by_source,
+                  by_provider: payload.by_provider, total: payload.total,
+                  runnable: payload.runnable, providers: payload.providers || [] };
+  /* Commit the signature only AFTER the data it describes has been applied. The
+     other order stores a fingerprint for a payload that was never installed. */
+  S.cat.etag = payload.signature || null;
+  S.cat.delta = SKILLS.length - before;
+  S.cat.readAt = Date.now();
+  return true;
+}
+
+/* Guarded at the CALLSITE, never inside render(). An early-return in render() --
+   symmetric with the S.drag guard -- would freeze the "/" palette outright: arrow
+   keys, escape and re-filtering all navigate BY calling render(). */
+function refreshCatalog(){
+  if (S.cat.inflight) return;
+  S.cat.inflight = true;
+  loadSkills()
+    .then(changed=>{
+      S.cat.fails = 0;
+      /* Defer the repaint while a palette is open or a drag is live: swapping the
+         list under an open palette moves the row the operator is about to pick. The
+         DATA is already swapped, so the palette cannot offer something stale. */
+      if (changed && !S.palette && !S.drag) render();
+      else if (changed) S.renderDirty = true;
+    })
+    .catch(()=>{ S.cat.fails++; })
+    .then(()=>{ S.cat.inflight = false; });
+}
+
+function catalogTick(){
+  /* Never poll a hidden window: a backgrounded app must not scan the disk every
+     minute for a palette nobody can see. */
+  if (document.visibilityState === "hidden") return;
+  const now = Date.now();
+  if (S.cat.fails){
+    const wait = CAT_BACKOFF[Math.min(S.cat.fails - 1, CAT_BACKOFF.length - 1)];
+    if (now - S.cat.lastCheckAt < wait) return;
+  } else {
+    const need = document.hasFocus() ? CAT_FOCUSED_MS : CAT_VISIBLE_MS;
+    if (now - S.cat.lastCheckAt < need) return;
+  }
+  S.cat.lastCheckAt = now;
+  refreshCatalog();
 }
 
 /* ── editor loaders ──────────────────────────────────────────────────────────
@@ -4440,9 +4526,24 @@ termGripEl.addEventListener("keydown", e=>{
 /* A width stored on a wide display must not exceed a narrower window later.
    GUARDED: test_panel.js evaluates this script in a bare Node vm context that has a
    stubbed `document` but no window globals, so an unguarded top-level
-   addEventListener throws ReferenceError and takes all 32 assertions down with it. */
+   addEventListener throws ReferenceError and takes all 35 assertions down with it. */
 if (typeof addEventListener !== "undefined"){
   addEventListener("resize", ()=>{ if (S.termOpen) applyTermW(S.termW || TERM_DEFAULT); });
+}
+
+/* Catalog freshness. ONE timer that decides whether to act, rather than several
+   listeners racing: `focus` and `visibilitychange` both fire on a single window
+   activation, and two listeners would run two concurrent scans that can land out of
+   order. Same guard as above -- the vm context has no window globals. */
+if (typeof setInterval !== "undefined" && typeof document !== "undefined"
+    && document.addEventListener){
+  setInterval(()=>{ try { catalogTick(); } catch (e) {} }, CAT_TICK_MS);
+  document.addEventListener("visibilitychange", ()=>{
+    /* Coming back to the window is the moment a stale palette is most likely and
+       most visible, so let the next tick act immediately instead of waiting out
+       the interval. */
+    if (document.visibilityState === "visible") S.cat.lastCheckAt = 0;
+  });
 }
 
 /* One click hides the whole sidebar and the panes take the freed column.
