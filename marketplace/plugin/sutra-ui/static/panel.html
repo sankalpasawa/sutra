@@ -595,6 +595,24 @@
   .send.stop:hover{filter:brightness(1.1)}
   [data-sask].dropping{outline:2px dashed var(--acc);outline-offset:2px}
 
+  /* ── editor ─────────────────────────────────────────────────────────────
+     A textarea, deliberately: see the comment on SCREENS.editor. Monospace, tab
+     accepted as indentation, generous height. */
+  .fslist{display:flex;flex-direction:column;gap:3px;max-height:38vh;overflow-y:auto}
+  .fsf{display:flex;align-items:baseline;width:100%;text-align:left}
+  .fsf.sel{border-color:var(--acc);background:var(--acc-bg)}
+  .fsf .on{font-family:var(--mono);font-size:11.5px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .fsf .od{margin-left:auto;flex:none;color:var(--faint);font-size:10.5px}
+  .edbar{display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap}
+  .edbar .btn{margin-left:0}
+  .edbar .btn:first-of-type{margin-left:auto}
+  .edta{width:100%;min-height:46vh;resize:vertical;background:var(--inset);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--ink);
+    font:12px/1.6 var(--mono);white-space:pre;overflow-wrap:normal;overflow-x:auto;
+    tab-size:2}
+  .edta:focus{outline:2px solid var(--acc);outline-offset:-1px}
+
   /* ── git ────────────────────────────────────────────────────────────────
      Diff colours are the only semantic colour here; everything else reuses the
      panel's existing tokens so a diff does not read as a different product. */
@@ -637,6 +655,13 @@
   .termbody{padding:0;overflow:hidden;flex:1;min-height:0;display:flex}
   .termbody iframe{border:0;width:100%;height:100%;flex:1;background:var(--bg)}
   .termzero{padding:16px;font-size:12px;color:var(--muted)}
+  .sidetabs{flex:none}
+  .prevbar{display:flex;gap:6px;padding:8px 9px 0}
+  .prevbar .wdin{flex:1;min-width:0}
+  .prevnote{padding:6px 10px 8px;font-size:11px;color:var(--faint);line-height:1.45}
+  .prevframe{flex:1;min-height:0;display:flex}
+  .prevframe iframe{border:0;width:100%;height:100%;background:#fff}
+  #prevBody{flex-direction:column}
   @media (max-width: 900px){ .termpane{flex:1 1 100%;border-left:0;border-top:1px solid var(--line)} }
 
   /* ── workdir picker ─────────────────────────────────────────────────────
@@ -782,7 +807,10 @@
               aria-orientation="vertical"
               aria-label="Resize the terminal (left and right arrows adjust, home resets)"></button>
       <div class="ph">
-        <h3 style="max-width:none">Terminal</h3>
+        <span class="tabs sidetabs">
+          <button type="button" id="sideTabTerm" aria-pressed="true">Terminal</button>
+          <button type="button" id="sideTabPrev" aria-pressed="false">Preview</button>
+        </span>
         <span class="termcwd" id="termCwd"></span>
         <button class="ib" id="termReload" type="button"
                 aria-label="Restart the terminal session" title="Restart the terminal session">
@@ -796,6 +824,19 @@
         </button>
       </div>
       <div class="pb termbody" id="termBody"></div>
+      <!-- Preview. Its own body, hidden rather than unmounted, for the same reason
+           the terminal iframe is mounted once: tearing down a running dev-server
+           view on every tab switch would reload the page and lose its state. -->
+      <div class="pb termbody" id="prevBody" hidden>
+        <div class="prevbar">
+          <input type="text" id="prevUrl" class="wdin" spellcheck="false"
+                 placeholder="http://localhost:3000" aria-label="Preview URL">
+          <button class="btn" type="button" id="prevGo">Open</button>
+        </div>
+        <div class="prevnote" id="prevNote">Point this at a dev server you are already
+          running. Loopback addresses only — this pane will not load a remote site.</div>
+        <div class="prevframe" id="prevFrame"></div>
+      </div>
     </section>
   </div>
 </div>
@@ -848,6 +889,8 @@ const LS_TENANT = "sutra.panel.tenant";
 const LS_LAYOUT = "sutra.panel.layout";
 const LS_TERM   = "sutra.panel.term";     /* terminal pane open/closed, per browser */
 const LS_TERMW  = "sutra.panel.termw";    /* its dragged width, in px */
+const LS_SIDETAB= "sutra.panel.sidetab";  /* terminal | preview */
+const LS_PREVURL= "sutra.panel.prevurl";  /* last previewed loopback URL */
 function lsGet(key, fallback){
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
   catch (e) { return fallback; }
@@ -1540,6 +1583,12 @@ const S = {
      per-session OVERRIDE; undefined means "inherit the stored setting", which is why
      it is not seeded with a value. */
   attach:{}, model:{},
+  /* editor. edText is null while a read is in flight and a STRING once loaded, so
+     "" (a genuinely empty file) is distinguishable from "not read yet". edBase is
+     what was loaded, so `dirty` is a comparison rather than a guess. */
+  fs:null, fsError:null, fsQuery:"",
+  edFile:null, edText:null, edBase:null, edBytes:null,
+  edBusy:false, edError:null, edOk:null,
   /* null = "show the value in force"; a string = the operator is editing it. Kept in S
      because render() rebuilds the pane wholesale and would otherwise drop the keystrokes. */
   workdirDraft:null,
@@ -1548,7 +1597,7 @@ const S = {
      state change. termCwd records the workdir the PTY was started with, so a later
      workdir change can say plainly that the running terminal is still in the old one
      rather than silently mislabelling it. */
-  termOpen:false, termCwd:null, termW:null,
+  termOpen:false, termCwd:null, termW:null, sideTab:"terminal",
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
      through the org. Departments do NOT hand work to each other — no such channel exists. */
@@ -1727,6 +1776,7 @@ function mdHtml(src){
 const ICON = {
   term:'<rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/>',
   git:'<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="9" r="2.6"/><path d="M6 8.6v6.8M8.6 6H14a1.5 1.5 0 011.5 1.5v0"/>',
+  edit:'<path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/>',
   dept:'<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="2" y="16" width="6" height="5" rx="1"/><rect x="16" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/>',
   chart:'<path d="M4 4h11l5 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v6h6M7 14h8M7 17h5"/>',
   plc:'<path d="M3 7h7l2 3h9"/><path d="M3 7v11a1 1 0 001 1h16a1 1 0 001-1v-8"/><circle cx="16.5" cy="14.5" r="2.2"/>',
@@ -1763,6 +1813,9 @@ function railSpec(){
          working tree. The count is withheld until the screen has been opened --
          a 0 before anything was read would be a claim about a repo nobody looked at. */
       {id:"git",    n:"Git",         i:"git",   c:(S.git ? ((S.git.status||{}).files||[]).length : undefined)},
+      /* Editor sits next to Git: both are views of the same working tree, one shows
+         what changed and the other lets you change it. Count withheld until read. */
+      {id:"editor", n:"Editor",      i:"edit",  c:(S.fs ? S.fs.files.length : undefined)},
       {id:"health", n:"Health",      i:"health",c:openIssues, warn:true}
     ],
     runtime:[
@@ -2526,6 +2579,69 @@ SCREENS.tenants = () => {
    omitted. Hiding them would answer "can I use codex?" with silence; a
    selectable-but-broken entry would answer it with a dead websocket ten seconds
    later. Disabled-with-the-reason is the only version that answers it now. */
+/* ── editor ──────────────────────────────────────────────────────────────────
+   A plain <textarea>, not a syntax-highlighting editor. CodeMirror/Monaco would be
+   ~300 KB of vendored JS in a project whose whole point is no build step and three
+   dependencies, and it would have to be loaded from a CDN -- which the Electron
+   shell may block and an offline machine certainly does. What the operator needs
+   here is "read what the agent changed and fix a line", and a textarea does that.
+
+   Saving is gated server-side (SUTRA_UI_ALLOW_EDIT). When it is off, the pane still
+   OPENS files -- reading exposes nothing the chat agent, whose cwd is this same
+   directory, cannot already read -- and says plainly why saving is unavailable. */
+SCREENS.editor = () => {
+  if (S.fsError) return `<div class="zero"><h4>Files unavailable</h4>
+    <p>${esc(S.fsError)}</p></div>`;
+  if (!S.fs) return `<div class="zero"><h4>Reading the workdir…</h4></div>`;
+
+  const q = (S.fsQuery||"").toLowerCase();
+  const files = S.fs.files.filter(f=>!q || f.path.toLowerCase().includes(q));
+  const open = S.edFile;
+  const dirty = open && S.edText !== null && S.edText !== S.edBase;
+
+  const gate = S.fs.editable ? "" : `<div class="note w">
+    <b>Saving is off.</b> This pane writes to your files and the panel is
+    unauthenticated by construction, so it is gated out of band. Restart with
+    <code>${esc(S.fs.edit_env||"SUTRA_UI_ALLOW_EDIT")}=1</code> to enable saving.
+    Opening files still works.</div>`;
+
+  const list = `<div class="fslist">${files.slice(0,600).map(f=>`
+    <button class="opt fsf ${open===f.path?"sel":""}" type="button" data-edopen="${esc(f.path)}">
+      <span class="oi"><span class="on">${esc(f.path)}</span>
+      <span class="od">${fmtBytes(f.bytes)}</span></span>
+    </button>`).join("")}</div>
+    ${files.length>600?`<p style="font-size:11px;color:var(--faint);margin:7px 0 0">
+      Showing 600 of ${files.length} matches — narrow the filter.</p>`:""}
+    ${S.fs.truncated?`<p class="note w" style="margin-top:7px">The tree was truncated at
+      ${S.fs.files.length} files. Files beyond that are not listed — this is a limit,
+      not an empty result.</p>`:""}`;
+
+  const pane = !open ? "" : `
+    ${fold("ed.file", "Editing", esc(open), `
+      <div class="edbar">
+        <span class="pill ${dirty?"p-warn":"p-mut"}">${dirty?"unsaved changes":"saved"}</span>
+        ${S.edBytes!=null?`<span class="pill p-mut">${fmtBytes(S.edBytes)} on load</span>`:""}
+        <button class="btn" type="button" data-edsave
+          ${(!dirty || !S.fs.editable || S.edBusy)?"disabled":""}>${
+            S.edBusy?"Saving…":"Save"}</button>
+        <button class="btn" type="button" data-edreload>Reload</button>
+      </div>
+      ${S.edError?`<div class="note b"><b>Not saved.</b> ${esc(S.edError)}</div>`:""}
+      ${S.edOk?`<div class="note"><b>Saved.</b> ${esc(S.edOk)}</div>`:""}
+      ${S.edText===null
+        ? `<p style="color:var(--faint)">Reading…</p>`
+        : `<textarea class="edta" data-edta spellcheck="false"
+             aria-label="Contents of ${esc(open)}">${esc(S.edText)}</textarea>`}`)}`;
+
+  return `${gate}
+    ${fold("ed.files", "Files", `${files.length}`, `
+      <input type="search" class="wdin" data-edfilter placeholder="Filter files…"
+             value="${esc(S.fsQuery||"")}" aria-label="Filter files" style="margin-bottom:8px">
+      ${files.length?list:`<p style="color:var(--faint);margin:0">No file matches
+        “${esc(S.fsQuery)}”.</p>`}`)}
+    ${pane}`;
+};
+
 /* ── git ─────────────────────────────────────────────────────────────────────
    READ-ONLY, and says so. The endpoints behind this expose status/log/diff and
    nothing that mutates a repository, so this screen deliberately offers no
@@ -2728,6 +2844,7 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],
+  editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   tenants:["Tenants","GET /api/tenants — derived, no tenant table"],
@@ -3000,25 +3117,49 @@ function _focusedInputSelector(){
    palette is the place where offering something means it will run. */
 const runnableCommands = () => SKILLS.filter(k => k.slash && k.runnable);
 function paletteFor(text){
+  /* Two palettes, one mechanism. "/" offers runnable commands; "@" offers real files
+     under the workdir. Sharing the machinery means the keyboard model (arrows, enter,
+     tab, escape) is identical for both -- two separate implementations would drift. */
+  const at = /(^|\s)@([^\s@]*)$/.exec(text || "");
+  if (at){
+    const token = at[2].toLowerCase();
+    /* Files come from the SAME /api/fs/tree the editor uses, so @ can only ever offer
+       a path that exists. Fetched on first use; until it answers the palette stays
+       shut rather than showing a stale or invented list. */
+    if (!S.fs){ loadFs(false); return null; }
+    const items = S.fs.files
+      .filter(f => !token || f.path.toLowerCase().includes(token))
+      /* Shallower paths first: with no token typed, the top of the project is a far
+         more useful default than whatever sorts first alphabetically. */
+      .sort((a,b)=> (a.path.split("/").length - b.path.split("/").length)
+                 || a.path.length - b.path.length)
+      .slice(0, 8)
+      .map(f => ({ ref: "@" + f.path, label: f.path, meta: fmtBytes(f.bytes) }));
+    return { token, items, kind: "file" };
+  }
   const m = /(^|\s)\/([A-Za-z0-9:_-]*)$/.exec(text || "");
   if (!m) return null;
   const token = m[2].toLowerCase();
   const items = runnableCommands().filter(k =>
     k.slash.slice(1).toLowerCase().includes(token) ||
-    (k.name||"").toLowerCase().includes(token)).slice(0, 8);
-  return { token, items };
+    (k.name||"").toLowerCase().includes(token)).slice(0, 8)
+    .map(k => ({ ref: k.slash, label: k.slash, meta: (k.description||"").slice(0,72) }));
+  return { token, items, kind: "command" };
 }
 function paletteHtml(){
   const p = S.palette;
   if (!p || !p.items.length) return "";
+  const total = p.kind === "file"
+    ? ((S.fs && S.fs.files.length) || 0) + " files"
+    : runnableCommands().length + " runnable";
   return `<div class="tw" style="margin-bottom:9px">
     <table><tbody>${p.items.map((k,i)=>`
       <tr data-pal="${i}" class="${i===p.idx?"sel":""}" style="cursor:pointer">
-        <td class="k" style="white-space:nowrap"><code>${esc(k.slash)}</code></td>
-        <td>${esc((k.description||"").slice(0,72))}</td></tr>`).join("")}
+        <td class="k" style="white-space:nowrap"><code>${esc(k.label)}</code></td>
+        <td>${esc(k.meta||"")}</td></tr>`).join("")}
     </tbody></table>
     <div class="legend" style="padding:6px 9px">up/down to move · enter or tab to insert ·
-      esc to dismiss · ${p.items.length} of ${runnableCommands().length} runnable</div></div>`;
+      esc to dismiss · ${p.items.length} of ${total}</div></div>`;
 }
 function applyPalette(sid, idx){
   const p = S.palette; if (!p || !p.items[idx]) return;
@@ -3028,8 +3169,11 @@ function applyPalette(sid, idx){
      only restores the value of the element that happened to be focused, so a
      CLICKED palette row (input not focused) silently cleared the composer. */
   const cur = S.composerText[sid] !== undefined ? S.composerText[sid] : inp.value;
-  const next = cur.replace(/(^|\s)\/[A-Za-z0-9:_-]*$/,
-                           (mm, pre)=> pre + p.items[idx].slash + " ");
+  /* Replace the token that OPENED this palette, not a hardcoded "/" pattern -- with
+     @ live, the wrong pattern would leave the "@frag" in place and append the path
+     after it. */
+  const pat = p.kind === "file" ? /(^|\s)@[^\s@]*$/ : /(^|\s)\/[A-Za-z0-9:_-]*$/;
+  const next = cur.replace(pat, (mm, pre)=> pre + p.items[idx].ref + " ");
   S.composerText[sid] = next;
   S.palette = null;
   render();
@@ -3446,6 +3590,32 @@ function wire(){
       .catch(e=>{ S.setError = e.message; })
       .then(()=>{ S.setBusy = null; render(); }); });
 
+  /* ── editor ── */
+  scBody.querySelectorAll("[data-edopen]").forEach(b=>b.onclick=()=>openEdFile(b.dataset.edopen));
+  const edFilter = scBody.querySelector("[data-edfilter]");
+  if (edFilter) edFilter.oninput = ()=>{ S.fsQuery = edFilter.value; renderFilterOnly(); };
+  const edTa = scBody.querySelector("[data-edta]");
+  if (edTa){
+    /* No render() on input: a full rebuild on every keystroke would fight the caret
+       and make typing in a large file unusable. The dirty pill is updated directly. */
+    edTa.oninput = ()=>{
+      S.edText = edTa.value;
+      const pill = scBody.querySelector("[data-edsave]");
+      const dirty = S.edText !== S.edBase;
+      if (pill) pill.disabled = !dirty || !(S.fs&&S.fs.editable) || S.edBusy;
+      const chip = scBody.querySelector(".edbar .pill");
+      if (chip){ chip.textContent = dirty ? "unsaved changes" : "saved";
+                 chip.className = "pill " + (dirty ? "p-warn" : "p-mut"); }
+    };
+    edTa.onkeydown = e=>{
+      if ((e.metaKey || e.ctrlKey) && e.key === "s"){ e.preventDefault(); saveEdFile(); }
+    };
+  }
+  const edSave = scBody.querySelector("[data-edsave]");
+  if (edSave) edSave.onclick = ()=>saveEdFile();
+  const edReload = scBody.querySelector("[data-edreload]");
+  if (edReload) edReload.onclick = ()=>{ const p=S.edFile; S.edBase=S.edText; openEdFile(p); };
+
   /* ── git ── */
   scBody.querySelectorAll("[data-gitfile]").forEach(b=>b.onclick=()=>{
     const p = b.dataset.gitfile;
@@ -3535,7 +3705,8 @@ function wire(){
       S.composerText[sid] = inp.value;
       const p = paletteFor(inp.value);
       const was = S.palette && S.palette.sid===sid;
-      if (p && p.items.length){ S.palette = { sid, items:p.items, idx:0, token:p.token }; render(); }
+      if (p && p.items.length){ S.palette = { sid, items:p.items, idx:0, token:p.token,
+                                              kind:p.kind }; render(); }
       else if (was){ S.palette = null; render(); }
     };
     inp.onkeydown = e=>{
@@ -3688,7 +3859,8 @@ document.querySelector(".rail").addEventListener("click", e=>{
        and render() would blank the browse pane. */
     if (b.dataset.screen === "terminal"){ termToggle(); renderRail(); return; }
     S.gate=false; S.screen=b.dataset.screen;
-    if (S.screen === "git") loadGit(false);   /* lazy: only when actually opened */
+    if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
+    if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -3783,6 +3955,68 @@ async function loadRuntime(){
   SETTINGS = settings.settings || null;
   PERM_MODES = settings.permission_modes || [];
   MODELS = settings.models || [];
+}
+
+/* ── editor loaders ──────────────────────────────────────────────────────────
+   On demand, like git: walking a real project at boot would cost every operator
+   who never opens the editor. */
+async function loadFs(force){
+  if (S.fs && !force) return;
+  try { S.fs = await apiGet("/api/fs/tree"); S.fsError = null; }
+  catch (e) { S.fsError = e.message; S.fs = null; }
+  render();
+}
+
+/* Re-render ONLY the file list. A full render() on every filter keystroke would
+   rebuild the open <textarea> from S.edText -- losing the caret mid-edit, and
+   thrashing on a large file. Scoped DOM surgery is the right tool for a filter. */
+function renderFilterOnly(){
+  const host = document.querySelector(".fslist");
+  if (!host || !S.fs) return;
+  const q = (S.fsQuery||"").toLowerCase();
+  const files = S.fs.files.filter(f=>!q || f.path.toLowerCase().includes(q));
+  host.innerHTML = files.slice(0,600).map(f=>`
+    <button class="opt fsf ${S.edFile===f.path?"sel":""}" type="button" data-edopen="${esc(f.path)}">
+      <span class="oi"><span class="on">${esc(f.path)}</span>
+      <span class="od">${fmtBytes(f.bytes)}</span></span>
+    </button>`).join("");
+  host.querySelectorAll("[data-edopen]").forEach(b=>
+    b.onclick = ()=>openEdFile(b.dataset.edopen));
+}
+
+async function openEdFile(path){
+  /* Refuse to discard unsaved work silently. This is the only confirm() in the
+     editor path and it guards the one irreversible thing here. */
+  if (S.edFile && S.edText !== null && S.edText !== S.edBase &&
+      !window.confirm("Discard unsaved changes to " + S.edFile + "?")) return;
+  S.edFile = path; S.edText = null; S.edBase = null; S.edBytes = null;
+  S.edError = null; S.edOk = null;
+  render();
+  try {
+    const r = await apiGet("/api/fs/read?path=" + encodeURIComponent(path));
+    if (S.edFile !== path) return;                 /* a newer open won */
+    S.edText = r.text; S.edBase = r.text; S.edBytes = r.bytes;
+  } catch (e) {
+    if (S.edFile !== path) return;
+    S.edError = e.message; S.edText = null;
+  }
+  render();
+}
+
+async function saveEdFile(){
+  if (!S.edFile || S.edText === null) return;
+  S.edBusy = true; S.edError = null; S.edOk = null; render();
+  try {
+    /* base_bytes lets the SERVER detect that the file changed underneath -- most
+       likely because the agent wrote it while this pane was open. Saving blind
+       would discard that work with no warning. */
+    const r = await apiPost("/api/fs/write",
+      { path: S.edFile, text: S.edText, base_bytes: S.edBytes });
+    S.edBase = S.edText; S.edBytes = r.bytes;
+    S.edOk = r.path + " — " + fmtBytes(r.bytes);
+    loadFs(true);                                   /* sizes in the tree are now stale */
+  } catch (e) { S.edError = e.message; }
+  S.edBusy = false; render();
 }
 
 /* Git is fetched on demand, not at boot: a workdir that is not a repository is a
@@ -3913,7 +4147,14 @@ async function boot(){
     /* AFTER render + SETTINGS: termMount() reads SETTINGS.workdir for the PTY cwd,
        so restoring the pane earlier would start the terminal in the wrong directory. */
     S.termW = clampTermW(Number(lsGet(LS_TERMW, TERM_DEFAULT)) || TERM_DEFAULT);
-    if (lsGet(LS_TERM, false) === true) termToggle(true);
+    S.sideTab = lsGet(LS_SIDETAB, "terminal") === "preview" ? "preview" : "terminal";
+    const lastPrev = lsGet(LS_PREVURL, "");
+    if (typeof lastPrev === "string" && lastPrev){
+      /* Restore the URL into the field but do NOT auto-load it: the dev server may be
+         gone, and a dead iframe on startup looks like a broken app. */
+      const f = document.getElementById("prevUrl"); if (f) f.value = lastPrev;
+    }
+    if (lsGet(LS_TERM, false) === true){ termToggle(true); sideTab(S.sideTab); }
   } catch (e) {
     backendError(e);
   }
@@ -3978,7 +4219,9 @@ function termToggle(on){
   applyTermW(S.termW || TERM_DEFAULT);   /* collapses the track to 0px when closed */
   termBtnEl.setAttribute("aria-pressed", String(S.termOpen));
   termBtnEl.setAttribute("aria-label", S.termOpen ? "Hide the terminal" : "Show the terminal");
-  if (S.termOpen) termMount(false);
+  /* Only mount the PTY when the terminal tab is the visible one -- opening the pane
+     on the Preview tab must not silently spawn a shell. */
+  if (S.termOpen && S.sideTab !== "preview") termMount(false);
   /* The workdir can have changed since the PTY started. Say so rather than letting
      the header imply the terminal followed the setting. */
   if (S.termOpen && SETTINGS && S.termCwd && SETTINGS.workdir !== S.termCwd){
@@ -3986,6 +4229,59 @@ function termToggle(on){
   }
   lsSet(LS_TERM, S.termOpen);   /* lsSet JSON-encodes; store the boolean, not "1" */
 }
+
+/* ── preview ─────────────────────────────────────────────────────────────────
+   An iframe onto a dev server the operator is ALREADY running. This pane does not
+   start servers: spawning arbitrary build commands is a different risk class from
+   showing a page, and `claude` in the terminal beside it can start one on request.
+
+   LOOPBACK ONLY. Without that check this becomes a general-purpose browser inside
+   the app -- it would load any URL, including one pasted from an untrusted source,
+   with the panel's own origin adjacent. */
+const prevBodyEl = document.getElementById("prevBody");
+const prevFrameEl = document.getElementById("prevFrame");
+const prevNoteEl = document.getElementById("prevNote");
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
+
+function previewOpen(raw){
+  let value = (raw || "").trim();
+  if (!value) return;
+  if (!/^https?:\/\//i.test(value)) value = "http://" + value;   /* bare "3000" is not a URL */
+  let u;
+  try { u = new URL(value); }
+  catch (e){ prevNoteEl.textContent = "That is not a URL I can parse: " + value; return; }
+  if (!LOOPBACK.has(u.hostname)){
+    prevNoteEl.textContent =
+      "Refused: " + u.hostname + " is not a loopback address. This pane shows a dev " +
+      "server running on this machine, not the open web.";
+    prevFrameEl.innerHTML = "";
+    return;
+  }
+  prevNoteEl.textContent = "Showing " + u.href + " — reload with Open.";
+  prevFrameEl.innerHTML = "";
+  const fr = document.createElement("iframe");
+  fr.src = u.href;
+  fr.title = "Preview of " + u.href;
+  prevFrameEl.appendChild(fr);
+  lsSet(LS_PREVURL, u.href);
+}
+
+function sideTab(which){
+  const term = which !== "preview";
+  document.getElementById("termBody").hidden = !term;
+  prevBodyEl.hidden = term;
+  document.getElementById("sideTabTerm").setAttribute("aria-pressed", String(term));
+  document.getElementById("sideTabPrev").setAttribute("aria-pressed", String(!term));
+  document.getElementById("termCwd").hidden = !term;
+  S.sideTab = term ? "terminal" : "preview";
+  if (term) termMount(false);
+  lsSet(LS_SIDETAB, S.sideTab);
+}
+document.getElementById("sideTabTerm").onclick = ()=>sideTab("terminal");
+document.getElementById("sideTabPrev").onclick = ()=>sideTab("preview");
+document.getElementById("prevGo").onclick = ()=>previewOpen(document.getElementById("prevUrl").value);
+document.getElementById("prevUrl").onkeydown = e=>{
+  if (e.key === "Enter"){ e.preventDefault(); previewOpen(e.target.value); } };
 
 termBtnEl.onclick = ()=>termToggle();
 document.getElementById("termClose").onclick = ()=>termToggle(false);

@@ -1446,6 +1446,58 @@ class TestEffectiveModeAndOnboarding(unittest.TestCase):
         self.assertTrue(raw["onboarded"])
 
 
+class TestEditorWriteGate(unittest.TestCase):
+    """The editor is the FIRST filesystem write path in this app. Reading is
+    ungated (it exposes nothing the chat agent's own cwd does not already);
+    WRITING is a different risk class and is gated out of band, like unsafe
+    permission modes. These pin the gate and the traversal guard."""
+
+    def setUp(self):
+        import importlib
+        self._old = dict(os.environ)
+        os.environ.pop("SUTRA_UI_ALLOW_EDIT", None)
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import providers, org_api
+        self.p = importlib.reload(providers)
+        self.org = org_api
+
+    def tearDown(self):
+        os.environ.clear(); os.environ.update(self._old)
+
+    def test_editing_is_off_by_default(self):
+        """A panel that could rewrite files the moment it starts is not a default
+        anyone opted into."""
+        self.assertFalse(self.p.editing_allowed())
+
+    def test_editing_turns_on_only_via_the_env_gate(self):
+        import importlib
+        os.environ[self.p.EDIT_ENV] = "1"
+        self.assertTrue(importlib.reload(self.p).editing_allowed())
+
+    def test_gate_is_exact_not_truthy(self):
+        """'0', 'false', 'no' must NOT enable writing -- a truthy check here would
+        turn a disabling value into an enabling one."""
+        import importlib
+        for v in ("0", "false", "no", "", "yes", "true"):
+            os.environ[self.p.EDIT_ENV] = v
+            got = importlib.reload(self.p).editing_allowed()
+            self.assertEqual(got, v == "1", "%r produced editing_allowed()=%s" % (v, got))
+
+    def test_write_endpoint_takes_base_bytes_for_conflict_detection(self):
+        """Without it, the agent writing a file while the pane is open would be
+        silently clobbered on save."""
+        self.assertIn("base_bytes", self.org.FsWriteRequest.model_fields)
+
+    def test_skip_dirs_cover_the_expensive_trees(self):
+        for d in (".git", "node_modules", "__pycache__"):
+            self.assertIn(d, self.org.FS_SKIP_DIRS)
+
+    def test_read_and_tree_limits_are_finite(self):
+        self.assertTrue(0 < self.org.FS_MAX_READ <= 16 * 1024 * 1024)
+        self.assertTrue(0 < self.org.FS_MAX_ENTRIES <= 100000)
+
+
 class TestModelAllowList(unittest.TestCase):
     """The model string reaches `claude --model` directly. An unknown value fails
     seconds later as a dead socket instead of as a refusal the operator can read,
