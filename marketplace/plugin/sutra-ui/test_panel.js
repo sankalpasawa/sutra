@@ -156,6 +156,7 @@ const EPILOGUE = `
   blockCodesForMove, isDescendant, railSpec, tok, jac, band, lastRouted, dPath,
   NOT_CHECKED, CONFIDENCE_FLOOR,
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
+  chanKey, paletteFor,
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
   get TENANTS(){ return TENANTS; },   set TENANTS(v){ TENANTS = v; }
 };
@@ -657,6 +658,40 @@ test("15. a corrupt/hostile stored layout degrades to defaults", () => {
     if (prev === undefined) delete sandbox.localStorage._m["sutra.panel.layout"];
     else sandbox.localStorage._m["sutra.panel.layout"] = prev;
   }
+});
+
+/* Side chats are a BRANCH, not a continuation. The promise is that nothing said on
+   the side reaches the main thread, and there are exactly two ways to break it:
+   share the socket, or resume the main session id. Both are pinned here. */
+test("16a. a side channel resolves to its OWN key, never the main one", () => {
+  assert.strictEqual(T.chanKey("S1", false), "S1");
+  assert.strictEqual(T.chanKey("S1", true), "S1::side");
+  assert.notStrictEqual(T.chanKey("S1", true), T.chanKey("S1", false),
+    "side and main resolved to the same channel key — they would share one socket");
+});
+
+test("16b. side turns are stored apart from the session's own turns", () => {
+  assert.ok(Object.prototype.hasOwnProperty.call(T.S, "sideTurns"),
+    "S.sideTurns missing — side turns would have to live in s.turns and appear " +
+    "in the main transcript");
+  assert.ok(Object.prototype.hasOwnProperty.call(T.S, "sideOpen"), "S.sideOpen missing");
+});
+
+test("17. the '@' palette offers files and '/' offers commands, each replacing its own token", () => {
+  const prevFs = T.S.fs;
+  try {
+    T.S.fs = { files: [{ path: "src/app.py", bytes: 10 }, { path: "README.md", bytes: 5 }] };
+    const at = T.paletteFor("look at @app");
+    assert.strictEqual(at && at.kind, "file", "@ did not open the file palette");
+    assert.strictEqual(at.items[0].ref, "@src/app.py");
+    /* No token: shallower paths first, so the top of the project is the default
+       rather than whatever sorts first alphabetically. */
+    const bare = T.paletteFor("see @");
+    assert.strictEqual(bare.items[0].label, "README.md");
+    /* An @ mid-word is not a mention (an email address must not open the palette). */
+    assert.strictEqual(T.paletteFor("mail me at a@b"), null,
+      "an embedded @ opened the file palette");
+  } finally { T.S.fs = prevFs; }
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */
