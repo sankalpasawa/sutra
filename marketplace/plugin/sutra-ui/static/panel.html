@@ -575,6 +575,20 @@
     .dot,.trow.run .tstate,.working .ell::after{animation:none}
   }
 
+  /* ── side chat ──────────────────────────────────────────────────────────
+     Visually subordinate to the main transcript: inset, dimmer, a rule above it.
+     It must never read as a peer of the conversation it branches from. */
+  .sidewrap{border-top:1px solid var(--line);background:var(--inset);
+    display:flex;flex-direction:column;max-height:44%;min-height:0}
+  .sidehead{display:flex;align-items:baseline;gap:8px;padding:8px 11px 6px}
+  .sidehead b{font-size:11.5px}
+  .sidehead span{color:var(--faint);font-size:10.5px;line-height:1.4;flex:1;min-width:0}
+  .sidehead .ib{flex:none;align-self:flex-start}
+  .sidebody{overflow-y:auto;padding:0 11px;flex:1;min-height:0}
+  .sidebody .turn{margin-bottom:9px}
+  .sidezero{color:var(--faint);font-size:11.5px;line-height:1.5;margin:0 0 9px}
+  .sidewrap .pc{border-top:1px solid var(--line-soft)}
+
   /* ── composer: attachments, model, stop ─────────────────────────────────*/
   .attrow{display:flex;flex-wrap:wrap;gap:5px;padding:0 11px 7px}
   .att{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:3px 5px 3px 8px;
@@ -1374,13 +1388,22 @@ function failChannel(ch, detail){
   hit.forEach(t=>{ t.streaming = false; if (!t.error) t.error = ch.lastError || detail; });
   if (hit.length) scheduleRender();
 }
-function claudeChannel(s){
-  let ch = CLAUDE_SOCKETS.get(s.id);
+/* A side chat gets its OWN socket under a synthetic key rather than the map being
+   re-keyed. Restructuring CLAUDE_SOCKETS would touch every call site on the live
+   chat path -- the one part of this app that already works -- to buy nothing the
+   suffix does not. `side` is the only difference: a separate key, and (in askClaude)
+   no resume, so the main thread is never continued or mutated. */
+function chanKey(sid, side){ return side ? sid + "::side" : sid; }
+
+function claudeChannel(s, side){
+  const key = chanKey(s.id, side);
+  let ch = CLAUDE_SOCKETS.get(key);
   if (ch && (ch.ws.readyState === WebSocket.CONNECTING || ch.ws.readyState === WebSocket.OPEN))
     return ch;
   const ws = new WebSocket(claudeWsUrl());
-  ch = { ws:ws, sid:s.id, open:false, queue:[], pending:[], turn:null, last:null, lastError:null };
-  CLAUDE_SOCKETS.set(s.id, ch);
+  ch = { ws:ws, sid:s.id, key:key, side:!!side, open:false, queue:[], pending:[],
+         turn:null, last:null, lastError:null };
+  CLAUDE_SOCKETS.set(key, ch);
   ws.onopen = ()=>{ ch.open = true; ch.queue.splice(0).forEach(m=>ws.send(m)); };
   ws.onmessage = ev=>{
     let f; try { f = JSON.parse(ev.data); } catch (e) { return; }
@@ -1396,7 +1419,13 @@ function claudeChannel(s){
          not say what it was actually about to do. */
       s.channel = f;
     } else if (f.type === "session"){
-      s.claude_session = f.id;
+      /* A SIDE channel must never write s.claude_session: that field is what the main
+         thread resumes from, and overwriting it with the branch's id would silently
+         redirect every later main message into the side conversation -- the exact
+         opposite of "the side discussion does not change the primary task".
+         The id is still kept on the turn, so the side chat can resume ITSELF. */
+      if (!ch.side) s.claude_session = f.id;
+      else ch.sideSession = f.id;
       if (ch.turn) ch.turn.claude_session = f.id;
     } else if (f.type === "token"){
       if (ch.turn) ch.turn.response = (ch.turn.response || "") + f.text;
@@ -1468,23 +1497,29 @@ function claudeChannel(s){
     scheduleRender();
   };
   ws.onclose = ev=>{
-    if (CLAUDE_SOCKETS.get(s.id) === ch) CLAUDE_SOCKETS.delete(s.id);
+    /* Delete by the channel's OWN key. Deleting by s.id would evict the MAIN
+       channel when a side chat's socket closed. */
+    if (CLAUDE_SOCKETS.get(key) === ch) CLAUDE_SOCKETS.delete(key);
     failChannel(ch, "the Claude channel closed before the reply finished" +
       (ev && ev.code ? " (code " + ev.code + ")" : "") + " — is the server still running?");
   };
   return ch;
 }
-/* Closing the pane closes the socket — the pane IS the session's lifetime here. */
+/* Closing the pane closes the socket — the pane IS the session's lifetime here.
+   Both channels go: a side chat outliving its pane would keep a claude process
+   running with nothing rendering its output. */
 function closeClaudeChannel(sid){
-  const ch = CLAUDE_SOCKETS.get(sid);
-  if (!ch) return;
-  CLAUDE_SOCKETS.delete(sid);
-  failChannel(ch, "pane closed before the reply finished");
-  try { ch.ws.close(); } catch (e) {}
+  [chanKey(sid, false), chanKey(sid, true)].forEach(key=>{
+    const ch = CLAUDE_SOCKETS.get(key);
+    if (!ch) return;
+    CLAUDE_SOCKETS.delete(key);
+    failChannel(ch, "pane closed before the reply finished");
+    try { ch.ws.close(); } catch (e) {}
+  });
 }
 /* Run the turn. Fire-and-forget by design: tokens arrive on the socket and land on the
    turn object, which re-renders on the throttle. */
-function askClaude(s, turn){
+function askClaude(s, turn, side){
   if (!turn) return;
   turn.response = turn.response || "";
   turn.tools = turn.tools || [];
@@ -1492,7 +1527,7 @@ function askClaude(s, turn){
   turn.streaming = true;
   turn.sent = groundingPrefix(turn) + turn.text;   /* exactly what the model receives */
   let ch;
-  try { ch = claudeChannel(s); }
+  try { ch = claudeChannel(s, side); }
   catch (e){
     turn.streaming = false;
     turn.error = "could not open the Claude channel: " + e.message;
@@ -1503,7 +1538,13 @@ function askClaude(s, turn){
      stored setting. Sent per message rather than per connection so a change applies
      to the NEXT message without reconnecting and losing the thread. */
   const model = S.model[s.id];
-  const frame = JSON.stringify({ message: turn.sent, resume: s.claude_session || null,
+  /* A side chat never resumes the MAIN thread -- that is what makes it a branch
+     rather than a continuation. It does resume ITSELF (ch.sideSession, captured from
+     the first `session` frame), so a multi-turn side chat is still one conversation
+     instead of a series of strangers. */
+  const frame = JSON.stringify({ message: turn.sent,
+                                 resume: side ? (ch.sideSession || null)
+                                              : (s.claude_session || null),
                                  model: (model === undefined ? null : model) });
   if (ch.open) ch.ws.send(frame); else ch.queue.push(frame);
   scheduleRender();
@@ -1511,6 +1552,23 @@ function askClaude(s, turn){
 /* classify -> file the placement -> run Claude under that placement. The classify
    round-trip is awaited (a turn cannot be grounded before it has an address); the
    Claude run is not (it streams into the pane). */
+/* ── side chat ───────────────────────────────────────────────────────────────
+   Deliberately NOT routed through submitTurn(): that classifies the input and files
+   a placement (ADR-028). A side chat is exploratory -- "would OAuth be better?" --
+   and filing it would put a decision in the registry that the operator never made.
+   So no classify round-trip, and the turn carries no domain: turnBlock already
+   renders a turn with no placement honestly rather than inventing one. */
+function askSide(sid, text){
+  const s = S.sessions.find(x=>x.id===sid);
+  if (!s || !text) return;
+  const turn = { text: text, ts_ms: Date.now(), response: "", tools: [],
+                 error: null, streaming: true, side: true };
+  (S.sideTurns[sid] = S.sideTurns[sid] || []).push(turn);
+  S.sideText[sid] = "";
+  askClaude(s, turn, true);       /* true = side channel, never resumes the main thread */
+  render();
+}
+
 /* ── attachments ─────────────────────────────────────────────────────────────
    The file is uploaded into the workdir and referenced by RELATIVE PATH. It is not
    inlined into the prompt: a PDF or screenshot is not text, and pasting bytes into
@@ -1583,6 +1641,9 @@ const S = {
      per-session OVERRIDE; undefined means "inherit the stored setting", which is why
      it is not seeded with a value. */
   attach:{}, model:{},
+  /* Side chats. Turns live HERE, never in s.turns: a branch that appeared in the main
+     transcript would not be a branch. Keyed by session id, per pane. */
+  sideOpen:{}, sideTurns:{}, sideText:{},
   /* editor. edText is null while a read is in flight and a STRING once loaded, so
      "" (a genuinely empty file) is distinguishable from "not read yet". edBase is
      what was loaded, so `dirty` is a comparison rather than a guess. */
@@ -3045,11 +3106,42 @@ function sessionPane(s){
         <button type="button" data-tab="chat"  data-sid="${s.id}" aria-pressed="${tab==="chat"}">Chat</button>
         <button type="button" data-tab="route" data-sid="${s.id}" aria-pressed="${tab==="route"}">Routing</button>
       </span>
+      <button class="ib" data-sidetoggle="${s.id}" type="button"
+              aria-pressed="${!!S.sideOpen[s.id]}"
+              aria-label="${S.sideOpen[s.id]?"Hide the side chat":"Open a side chat"}"
+              title="Side chat — ask something without touching this thread">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" aria-hidden="true">
+          <path d="M4 5h11a2 2 0 012 2v5a2 2 0 01-2 2H8l-4 3V5z"/><path d="M19 9h1a1 1 0 011 1v9l-3-2h-5"/>
+        </svg>
+      </button>
       <button class="ib" data-close="${s.id}" aria-label="Close session">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
     <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
+    ${S.sideOpen[s.id] ? `<div class="sidewrap">
+      <div class="sidehead">
+        <b>Side chat</b>
+        <span>separate thread — nothing here is sent to the conversation above, and it
+          is not filed as a placement</span>
+        <button class="ib" data-sideclose="${s.id}" type="button" aria-label="Close the side chat">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="sidebody">${
+        (S.sideTurns[s.id]||[]).length
+          ? (S.sideTurns[s.id]||[]).map(t=>`<div class="turn">
+              <div class="q">${esc(t.text)}</div>${turnResponse(t)}</div>`).join("")
+          : `<p class="sidezero">Ask something you do not want in the main thread —
+             “would OAuth be better here?” — and the answer stays in this box.</p>`}</div>
+      <div class="pc">
+        <input type="text" data-sideask="${s.id}" value="${esc(S.sideText[s.id]||"")}"
+               placeholder="Ask on the side…" aria-label="Side chat message"/>
+        <button class="send" data-sidesend="${s.id}" type="button" aria-label="Send on the side">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </div></div>` : ""}
     ${S.palette && S.palette.sid===s.id ? paletteHtml() : ""}
     ${(S.attach[s.id]||[]).length ? `<div class="attrow">
       ${(S.attach[s.id]||[]).map((a,i)=>`<span class="att ${a.error?"bad":""}">
@@ -3667,6 +3759,32 @@ function wire(){
     if(!composed) return;                       /* nothing typed AND nothing attached */
     if(inp) inp.value=""; S.composerText[sid]=""; S.palette=null;
     submitTurn(composed, sid); });
+
+  /* ── side chat ── */
+  panes.querySelectorAll("[data-sidetoggle]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.sidetoggle;
+    S.sideOpen[sid] = !S.sideOpen[sid];
+    render();
+  });
+  panes.querySelectorAll("[data-sideclose]").forEach(b=>b.onclick=()=>{
+    /* Closing HIDES it; the turns stay in S.sideTurns so reopening does not lose the
+       branch. Discarding an operator's conversation on a close click would be a
+       destructive default. */
+    S.sideOpen[b.dataset.sideclose] = false; render();
+  });
+  panes.querySelectorAll("[data-sideask]").forEach(inp=>{
+    const sid = inp.dataset.sideask;
+    inp.oninput = ()=>{ S.sideText[sid] = inp.value; };
+    inp.onkeydown = e=>{
+      if (e.key === "Enter" && inp.value.trim()){
+        e.preventDefault(); const t = inp.value.trim(); inp.value = ""; askSide(sid, t); }
+    };
+  });
+  panes.querySelectorAll("[data-sidesend]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.sidesend;
+    const inp=panes.querySelector('[data-sideask="'+sid+'"]');
+    if (inp && inp.value.trim()){ const t=inp.value.trim(); inp.value=""; askSide(sid, t); }
+  });
 
   /* ── stop ── */
   panes.querySelectorAll("[data-sstop]").forEach(b=>b.onclick=()=>{
