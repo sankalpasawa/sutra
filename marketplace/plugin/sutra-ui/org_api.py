@@ -856,6 +856,139 @@ def api_settings_post(req: SettingsRequest):
     return {"settings": settings}
 
 
+# ============================================================ filesystem =====
+# Backs the editor. Every path is resolved against the validated workdir and refused
+# if it escapes -- the workdir is the agent's own cwd, so READING opens no surface the
+# chat channel did not already have. WRITING is different in kind and is gated
+# out-of-band (providers.EDIT_ENV), the same way unsafe permission modes are.
+#
+# Directories that are always skipped: they are enormous, uninteresting to edit, and
+# walking them makes the tree endpoint unusable on a real project.
+FS_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
+                ".pytest_cache", "dist", "build", ".next", ".DS_Store", ".tox",
+                ".sutra-attachments"}
+FS_MAX_ENTRIES = 4000            # a tree bigger than this is truncated, and says so
+FS_MAX_READ = 2 * 1024 * 1024    # refuse to open something that is not editable text
+
+
+def _fs_root():
+    wd = providers.load_settings().get("workdir") or ""
+    if not wd or not providers.workdir_allowed(wd):
+        raise HTTPException(status_code=400,
+                            detail="the configured workdir is outside the allowed root; "
+                                   "set it in Settings first")
+    if not os.path.isdir(wd):
+        raise HTTPException(status_code=404, detail="workdir %s does not exist" % wd)
+    return os.path.realpath(wd)
+
+
+def _fs_resolve(rel):
+    """Resolve `rel` inside the workdir, or raise. realpath() FIRST, so a symlink
+    pointing outside the tree is caught rather than followed."""
+    root = _fs_root()
+    if not rel or not isinstance(rel, str):
+        raise HTTPException(status_code=400, detail="path is required")
+    target = os.path.realpath(os.path.join(root, rel))
+    if target != root and not target.startswith(root + os.sep):
+        raise HTTPException(status_code=400, detail="path %r escapes the workdir" % rel)
+    return root, target
+
+
+@router.get("/fs/tree")
+def api_fs_tree():
+    """Every editable file under the workdir, relative-path sorted."""
+    root = _fs_root()
+    out, truncated = [], False
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune in place -- os.walk only honours dirnames mutation, and descending
+        # into node_modules first and filtering after is what makes this unusable.
+        dirnames[:] = sorted(d for d in dirnames
+                             if d not in FS_SKIP_DIRS and not d.startswith(".git"))
+        for name in sorted(filenames):
+            if name.startswith("."):
+                continue
+            full = os.path.join(dirpath, name)
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                continue
+            out.append({"path": os.path.relpath(full, root), "bytes": size})
+            if len(out) >= FS_MAX_ENTRIES:
+                truncated = True
+                break
+        if truncated:
+            break
+    return {"root": root, "files": out, "truncated": truncated,
+            "editable": providers.editing_allowed(), "edit_env": providers.EDIT_ENV}
+
+
+@router.get("/fs/read")
+def api_fs_read(path: str):
+    """One file's text. Binary is refused rather than mangled into replacement chars."""
+    root, target = _fs_resolve(path)
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="%s is not a file" % path)
+    size = os.path.getsize(target)
+    if size > FS_MAX_READ:
+        raise HTTPException(status_code=413,
+                            detail="%s is %d bytes; the editor opens files under %d"
+                                   % (path, size, FS_MAX_READ))
+    raw = open(target, "rb").read()
+    if b"\x00" in raw:
+        # Decoding this with errors="replace" would render a lossy version that,
+        # if saved, would DESTROY the file. Refuse instead.
+        raise HTTPException(status_code=415,
+                            detail="%s looks binary; this editor only opens text" % path)
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=415,
+                            detail="%s is not valid UTF-8; this editor only opens text" % path)
+    return {"path": os.path.relpath(target, root), "text": text, "bytes": size,
+            "editable": providers.editing_allowed()}
+
+
+class FsWriteRequest(BaseModel):
+    path: str
+    text: str
+    # The bytes the client believed it was editing. A mismatch means the file changed
+    # underneath (the AGENT very likely wrote it), and blindly saving would discard
+    # that work with no warning.
+    base_bytes: Optional[int] = None
+
+
+@router.post("/fs/write")
+def api_fs_write(req: FsWriteRequest):
+    if not providers.editing_allowed():
+        raise HTTPException(
+            status_code=403,
+            detail="editing is disabled. This endpoint writes to your files and the "
+                   "panel is unauthenticated by construction, so it is gated out of "
+                   "band: restart the server with %s=1 to enable it." % providers.EDIT_ENV)
+    root, target = _fs_resolve(req.path)
+    if os.path.isdir(target):
+        raise HTTPException(status_code=400, detail="%s is a directory" % req.path)
+    if os.path.exists(target) and req.base_bytes is not None:
+        actual = os.path.getsize(target)
+        if actual != req.base_bytes:
+            raise HTTPException(
+                status_code=409,
+                detail="%s changed on disk since you opened it (%d bytes now, %d when "
+                       "loaded). Reload before saving, or your edit would discard that "
+                       "change." % (req.path, actual, req.base_bytes))
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        # tmp + replace: a crash mid-write must not leave a truncated source file.
+        tmp = target + ".sutra-tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(req.text)
+        os.replace(tmp, target)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="could not write: %s" % exc)
+    return {"path": os.path.relpath(target, root),
+            "bytes": os.path.getsize(target), "saved": True}
+
+
 # =========================================================== attachments =====
 # A file the operator attaches has to be readable BY THE SUBPROCESS, which runs
 # with cwd=<workdir>. So it is written INSIDE the workdir and referenced by a

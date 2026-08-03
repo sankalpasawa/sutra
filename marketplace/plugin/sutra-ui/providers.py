@@ -142,6 +142,21 @@ def unsafe_modes_allowed():
     return os.environ.get(UNSAFE_MODES_ENV, "") == "1"
 
 
+# The editor is the FIRST filesystem write path in this app. Everything else reads:
+# the registry API is read-only by test, the git surface read-only by allow-list. A
+# panel that can overwrite the operator's source files is a different risk class, so
+# it is gated exactly the way unsafe permission modes are -- OUT OF BAND, set when
+# starting the server, because this endpoint is unauthenticated by construction (a
+# localhost control plane) and anything able to reach the port could otherwise
+# rewrite files. Reading is NOT gated: it exposes nothing the chat agent, whose cwd
+# is the same directory, cannot already read.
+EDIT_ENV = "SUTRA_UI_ALLOW_EDIT"
+
+
+def editing_allowed():
+    return os.environ.get(EDIT_ENV, "") == "1"
+
+
 def effective_permission_mode(mode):
     """Clamp a stored/env mode down to `plan` unless unsafe modes are enabled.
 
