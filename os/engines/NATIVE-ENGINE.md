@@ -97,6 +97,7 @@ Use this table when something cites "per NATIVE-ENGINE.md §X.Y" written before 
 | [ADR-022](../decisions/ADR-022-full-loop-six-mechanisms.md) | Full-loop six mechanisms | roadmap: record→system + organic growth |
 | [ADR-023](../decisions/ADR-023-platform-ui-kit-exposure-contract.md) | Platform UI Kit + exposure contract | operator-facing governance UI |
 | [ADR-024](../decisions/ADR-024-arch-block-canon-fork.md) | §1.0 arch-block canon fork (PROPOSED) | migrating architecture blocks into canon |
+| [ADR-030](../decisions/ADR-030-four-problem-types.md) | Four Problem Types — T1 missing operationalisation · T2 the answer · T3 the workflow · T4 the question (doctrine lens, unwired) | classifying a unit at intake by what is missing; orthogonal to the Cynefin lens + ADR-026 workflow type |
 
 ## 6. Reading Order
 

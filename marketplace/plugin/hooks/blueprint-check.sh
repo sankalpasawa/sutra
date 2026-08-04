@@ -440,6 +440,46 @@ case "$STATUS" in
     # invent a violation out of a parsing gap — fall back to the marker.
     legacy_marker_check
     ;;
+  missing)
+    # ── Marker fallback for non-flushing harnesses (2026-08-04, codex ADVISORY) ──
+    # Under some harnesses (observed: Fable 5) assistant text reaches the
+    # transcript only at END of turn, so at PreToolUse time no BLUEPRINT can be
+    # visible even though the user is reading one live — the text gate becomes
+    # unsatisfiable, not strict. On the 'missing' verdict ONLY (no block found;
+    # NEVER for a visible-but-invalid block), accept the documented v2.2 session
+    # marker as liveness evidence: HAS_OUTPUT=1 + HAS_VERIFY=1 (+ per-step at
+    # D3+), plus an optional FILES= allowlist (comma-separated repo-relative
+    # paths) that, when present, must name the file being edited. The v3
+    # user-visibility invariant still holds at Stop: per-turn-hard-gate.sh
+    # validates the FINAL turn text, which does contain the block once the turn
+    # completes. Every fallback is audit-logged to .enforcement/.
+    if [ "$BP_CACHE_PRESENT" = "1" ] \
+       && printf '%s\n' "$BP_CACHE" | grep -q '^HAS_OUTPUT=1$' 2>/dev/null \
+       && printf '%s\n' "$BP_CACHE" | grep -q '^HAS_VERIFY=1$' 2>/dev/null; then
+      _STEP_OK=1
+      if [ "$DEPTH" -ge 3 ] && ! printf '%s\n' "$BP_CACHE" | grep -q '^HAS_PER_STEP_VERIFY=1$' 2>/dev/null; then
+        _STEP_OK=0
+      fi
+      _FILES_OK=1
+      _F_LINE=$(printf '%s\n' "$BP_CACHE" | grep '^FILES=' 2>/dev/null | head -1 | cut -d= -f2-)
+      if [ -n "$_F_LINE" ]; then
+        _FILES_OK=0
+        _OLD_IFS=$IFS; IFS=','
+        for _f in $_F_LINE; do
+          [ "$_f" = "$REL_PATH" ] && _FILES_OK=1 && break
+        done
+        IFS=$_OLD_IFS
+      fi
+      if [ "$_STEP_OK" = "1" ] && [ "$_FILES_OK" = "1" ]; then
+        NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+        printf '{"ts":"%s","event":"blueprint_marker_fallback","file":"%s","depth":%s,"files_field":"%s","note":"no BLUEPRINT visible in turn text (non-flushing harness); v2.2 marker accepted; Stop gate validates final text"}\n' \
+          "$NOW" "$REL_PATH" "$DEPTH" "${_F_LINE:-absent}" >> "$REPO_ROOT/.enforcement/blueprint-fallback.jsonl" 2>/dev/null
+        exit 0
+      fi
+    fi
+    # marker absent or insufficient -> fall through to the hard block below
+    ;;
 esac
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)

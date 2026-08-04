@@ -4,6 +4,11 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.64.1 (2026-08-04) — blueprint-check marker fallback for non-flushing harnesses
+
+- On the 'missing' verdict only, accept the documented v2.2 session marker (HAS_OUTPUT/HAS_VERIFY, per-step at D3+, optional FILES= allowlist) — under Fable 5 assistant text reaches the transcript only at end of turn, so the PreToolUse text gate was unsatisfiable, not strict.
+- Visible-but-invalid blocks still hard-fail; Stop-time per-turn-hard-gate keeps validating final text; every fallback audit-logged to .enforcement/blueprint-fallback.jsonl. Codex: ADVISORY.
+
 ## v2.64.0 (2026-08-02) — Sutra UI panel (PR #85) + security hardening
 
 - Sutra UI ships: local governance panel (FastAPI + static panel.html), Electron desktop shell, org API, provider selector, installer.
