@@ -440,6 +440,74 @@
   .md .md-t{border-collapse:collapse;font-size:.95em;min-width:100%}
   .md .md-t th,.md .md-t td{border:1px solid var(--line-soft);padding:4px 8px;text-align:left;vertical-align:top}
   .md .md-t th{background:var(--acc-bg);font-weight:650}
+  /* ── Directory view ────────────────────────────────────────────────────
+     A port of the PUBLISHED domains page (lib/domains_page.py -> the GitHub
+     Pages site) into the panel, so the in-app view and the published one read
+     as the same document. Every rule is scoped under .dpage: the generator uses
+     generic names (.chip .grid .info .count .tree .sub) and two of them already
+     mean something else in this file. */
+  .dpage{display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:start}
+  @container (max-width:720px){ .dpage{grid-template-columns:1fr} }
+  .dpage nav{position:sticky;top:0;align-self:start;font-size:12px;min-width:0}
+  .dpage nav a{display:flex;align-items:center;gap:7px;color:var(--ink);
+    text-decoration:none;padding:5px 6px;border-radius:7px}
+  .dpage nav a:hover{background:var(--acc-bg)}
+  .dpage .chip{font:600 10px/1 var(--mono);color:var(--ink);background:var(--acc-bg);
+    border:1px solid var(--acc);border-radius:5px;padding:2px 6px;flex:none}
+  .dpage .chip.big{font-size:11.5px;padding:5px 9px}
+  .dpage .dhead h1{font-family:var(--serif);font-size:20px;font-weight:600;margin:0}
+  .dpage .rootdesc{color:var(--muted);font-size:12.5px;margin:5px 0 16px;max-width:60ch}
+  .dpage .dept{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;
+    padding:15px 16px;margin-bottom:14px;scroll-margin-top:10px}
+  .dpage .dept:target{border-color:var(--acc)}
+  .dpage .dept header{display:flex;gap:11px;align-items:flex-start;margin-bottom:11px}
+  .dpage .dept h2{font-size:14px;margin:0;font-weight:650}
+  .dpage .desc{color:var(--muted);font-size:12px;margin-top:2px;max-width:58ch}
+  .dpage .charter{font-size:11.5px;color:var(--muted);margin-top:5px;max-width:58ch}
+  .dpage .charter span{font:600 9.5px/1 var(--mono);color:var(--acc);
+    border:1px dotted var(--acc);border-radius:4px;padding:2px 5px;margin-right:5px}
+  .dpage .count{margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted);
+    border:1px solid var(--line-soft);border-radius:999px;padding:3px 9px;flex:none}
+  .dpage .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}
+  .dpage .info{border:1.5px dashed var(--line-soft);border-radius:9px;padding:10px 12px;min-width:0}
+  .dpage .info b{display:inline-block;margin-left:7px;font-size:12.5px}
+  .dpage .info p{color:var(--muted);font-size:11.5px;margin-top:5px}
+  .dpage .info.empty{color:var(--muted);font-style:italic}
+  .dpage .cascade{margin-top:9px;border-top:1px dotted var(--line-soft);padding-top:7px}
+  .dpage .cascade summary{cursor:pointer;font-size:11px;color:var(--acc);list-style:none}
+  .dpage .cascade summary::-webkit-details-marker{display:none}
+  .dpage .cascade summary::before{content:"\25B8 ";font-size:9px}
+  .dpage .cascade[open] summary::before{content:"\25BE "}
+  .dpage .cascade .grid{margin-top:9px;grid-template-columns:1fr}
+  .dpage .navgrp summary{display:flex;align-items:center;gap:7px;padding:5px 6px;
+    border-radius:7px;cursor:pointer;list-style:none}
+  .dpage .navgrp summary::-webkit-details-marker{display:none}
+  .dpage .navgrp summary::before{content:"\25B8";font-size:9px;color:var(--faint)}
+  .dpage .navgrp[open] summary::before{content:"\25BE"}
+  .dpage .navgrp summary:hover{background:var(--acc-bg)}
+  .dpage .navgrp summary a{color:var(--ink);text-decoration:none;flex:1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dpage .navgrp summary a:hover{color:var(--acc)}
+  .dpage .navcount{font:600 9.5px/1 var(--mono);color:var(--muted);
+    border:1px solid var(--line-soft);border-radius:999px;padding:1px 6px}
+  .dpage .navkids{margin-left:11px;border-left:2px solid var(--line-soft);padding-left:7px}
+  .dpage .navkids a.dsub{font-size:11.5px;padding:4px 6px}
+  /* the org diagram: root box, connector, child boxes */
+  .dpage .dtree{margin:5px 0 14px;text-align:center}
+  .dpage .tnode{display:inline-block;background:var(--card);border:1.5px solid var(--acc);
+    border-radius:7px;padding:5px 11px;font-size:11.5px;font-weight:600}
+  .dpage .tnode.troot{background:var(--acc-bg)}
+  .dpage .tdown{width:2px;height:12px;background:var(--line);margin:0 auto}
+  .dpage .tkids{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;
+    position:relative;padding-top:12px}
+  .dpage .tkids::before{content:"";position:absolute;top:0;left:12%;right:12%;
+    height:2px;background:var(--line)}
+  .dpage .tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
+  .dpage .tkids .tnode::before{content:"";position:absolute;top:-12px;left:50%;
+    width:2px;height:12px;background:var(--line)}
+  .dpage .dq{width:100%;margin-bottom:8px;padding:6px 9px;border:1px solid var(--line-soft);
+    border-radius:7px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px}
+  .dpage .dq:focus{outline:2px solid var(--acc);outline-offset:1px}
   .rtoggle{display:flex;gap:3px;padding:4px 8px 6px}
   .rtoggle button{flex:1;background:none;border:1px solid var(--line);border-radius:5px;
     padding:4px 6px;font:500 9.5px/1 var(--sans);color:var(--muted);cursor:pointer}
@@ -1626,6 +1694,7 @@ async function submitTurn(text, sessionId){
 /* ══════════════════════ state ══════════════════════ */
 const S = {
   screen:"departments", sel:null, view:"live", showRetired:false, showAcme:false,
+  dirQ:"",                       /* Directory view search box */
   /* first run. `onbDismissed` is per-load only; the persisted acknowledgement
      is settings.onboarded, so "Not now" brings the disclosure back next launch.
      runtimeError/sessionsError hold a subsystem that failed WITHOUT taking the
@@ -2070,6 +2139,124 @@ function fold(key, title, summary, inner, dflt){
 }
 
 /* ── S1 Departments ── */
+/* ══════════════ Directory view ══════════════
+   A port of the PUBLISHED domains page — the one lib/domains_page.py generates
+   for GitHub Pages — so the in-app view and the published site are the same
+   document rendered twice, not two different opinions about the org.
+
+   Structure mirrored from domains_page.py build(): a sticky TOC rail, one
+   <section class="dept"> per top-level domain (chip / name / description /
+   charters / child count), an org diagram, and a grid of cascading .info
+   cards that recurse to any depth.
+
+   The D-path chip uses the ENGINE's own `path` field rather than recomputing an
+   index, so this view can never disagree with the rest of the panel about what
+   D-number a domain has. */
+function dirData(){
+  const live = DOMAINS.filter(d => S.showRetired || st(d) !== "retired");
+  const byRef = new Map(live.map(d => [d.ref, d]));
+  const kids = new Map();
+  live.forEach(d => {
+    const pr = d.parent_ref;
+    if (pr && byRef.has(pr)){ if (!kids.has(pr)) kids.set(pr, []); kids.get(pr).push(d); }
+  });
+  kids.forEach(v => v.sort((a,b) => String(a.path||"").localeCompare(String(b.path||""), undefined, {numeric:true})));
+  const root = live.find(d => !d.parent_ref || !byRef.has(d.parent_ref)) || null;
+  return { live, byRef, kids, root };
+}
+
+function dirChartersFor(ref){
+  return CHARTERS.filter(c => c.domain_ref === ref)
+    .sort((a,b) => String(a.id).localeCompare(String(b.id)));
+}
+
+function dirMatches(d, q){
+  if (!q) return true;
+  const hay = ((d.name||"") + " " + (d.description||"") + " " + (d.path||"")).toLowerCase();
+  return hay.indexOf(q) !== -1;
+}
+
+function domainsDirectory(){
+  const { kids, root } = dirData();
+  if (!root) return `<div class="zero"><h4>No domains</h4>
+    <p>This registry has no domains yet. One is minted the first time work is placed.</p></div>`;
+  const q = (S.dirQ || "").trim().toLowerCase();
+
+  const charterLines = ref => dirChartersFor(ref).map(c =>
+    `<p class="charter"><span>Charter</span> ${esc(c.title||"")}${
+      c.purpose ? " — " + esc(c.purpose) : ""}</p>`).join("");
+
+  const orgDiagram = (parentName, childNames) => !childNames.length ? "" :
+    `<div class="dtree"><div class="tnode troot">${esc(parentName)}</div>
+      <div class="tdown"></div>
+      <div class="tkids">${childNames.map(n=>`<div class="tnode">${esc(n)}</div>`).join("")}</div></div>`;
+
+  /* a subtree survives the filter if IT matches or any descendant does --
+     hiding a matching child because its parent did not match would make the
+     search look broken */
+  const subtreeMatches = d => dirMatches(d, q)
+    || (kids.get(d.ref)||[]).some(subtreeMatches);
+
+  const navEntry = (d, depth) => {
+    const ch = (kids.get(d.ref)||[]).filter(subtreeMatches);
+    const anchor = "dir-" + d.ref;
+    if (ch.length) return `<details class="navgrp"${depth<2?" open":""}>
+      <summary><span class="chip">${esc(d.path||"")}</span>
+        <a href="#${anchor}">${esc(d.name)}</a>
+        <span class="navcount">${(kids.get(d.ref)||[]).length}</span></summary>
+      <div class="navkids">${ch.map(c=>navEntry(c, depth+1)).join("")}</div></details>`;
+    return `<a class="dsub" href="#${anchor}"><span class="chip">${esc(d.path||"")}</span>${esc(d.name)}</a>`;
+  };
+
+  const nodeBlock = (d, depth) => {
+    const all = kids.get(d.ref)||[];
+    const ch = all.filter(subtreeMatches);
+    let body = `<span class="chip">${esc(d.path||"")}</span><b>${esc(d.name)}</b>
+      ${d.description?`<p>${esc(d.description)}</p>`:""}${charterLines(d.ref)}`;
+    if (ch.length){
+      body += `<details class="cascade"${depth<2?" open":""}>
+        <summary>${all.length} sub-domain${all.length===1?"":"s"}</summary>
+        ${orgDiagram(d.name, all.map(c=>c.name))}
+        <div class="grid">${ch.map(c=>nodeBlock(c, depth+1)).join("")}</div></details>`;
+    }
+    return `<div class="info" id="dir-${esc(d.ref)}">${body}</div>`;
+  };
+
+  const tops = (kids.get(root.ref)||[]).filter(subtreeMatches);
+  const rail = tops.map(t=>navEntry(t,1)).join("")
+    || `<p style="color:var(--faint);font-size:11.5px;padding:4px 6px">no match</p>`;
+
+  const sections = tops.map(t=>{
+    const all = kids.get(t.ref)||[];
+    const ch = all.filter(subtreeMatches);
+    const blocks = ch.length
+      ? ch.map(c=>nodeBlock(c,2)).join("")
+      : `<div class="info empty">no sub-departments yet</div>`;
+    return `<section id="dir-${esc(t.ref)}" class="dept">
+      <header><span class="chip big">${esc(t.path||"")}</span>
+        <div><h2>${esc(t.name)}</h2>
+          ${t.description?`<p class="desc">${esc(t.description)}</p>`:""}
+          ${charterLines(t.ref)}</div>
+        <span class="count">${all.length}</span></header>
+      ${orgDiagram(t.name, all.map(c=>c.name))}
+      <div class="grid">${blocks}</div></section>`;
+  }).join("") || `<div class="info empty">no departments under ${esc(root.name)} yet</div>`;
+
+  return `<div class="dpage">
+    <nav>
+      <input class="dq" id="dirQ" type="search" placeholder="Search domains…"
+             autocomplete="off" value="${esc(S.dirQ||"")}">
+      ${rail}
+    </nav>
+    <main>
+      <div class="dhead"><h1>${esc(root.name)}</h1></div>
+      ${root.description?`<p class="rootdesc">${esc(root.description)}</p>`:""}
+      ${charterLines(root.ref)}
+      ${orgDiagram(root.name, (kids.get(root.ref)||[]).map(c=>c.name))}
+      ${sections}
+    </main></div>`;
+}
+
 SCREENS.departments = () => {
   const t = META.tenant_id;
   const vis = DOMAINS.filter(d=>(S.showAcme || inTenant(d,t)) && (S.showRetired || isLive(d)));
@@ -2159,8 +2346,10 @@ SCREENS.departments = () => {
     <div class="facets">
       <span class="fl">View</span>
       <span class="seg">
-        <button type="button" data-view="live"  aria-pressed="${!draft}">Live</button>
+        <button type="button" data-view="live"  aria-pressed="${S.view==="live"}">Live</button>
         <button type="button" data-view="draft" aria-pressed="${draft}">Draft${S.draft.ops.length?` · ${S.draft.ops.length}`:""}</button>
+        <button type="button" data-view="dir"   aria-pressed="${S.view==="dir"}"
+                title="The published domains page layout, over this registry">Directory</button>
       </span>
 ${DOMAINS.some(d=>st(d)==="retired")
         ? `<button class="btn" data-toggle="showRetired" aria-pressed="${S.showRetired}">Show retired</button>` : ""}
@@ -2170,6 +2359,7 @@ ${DOMAINS.some(d=>st(d)==="retired")
            old test could never be true and the scope could never be widened */
         ? `<button class="btn" data-toggle="showAcme" aria-pressed="${S.showAcme}">Show other tenants</button>` : ""}
     </div>
+    ${S.view==="dir" ? domainsDirectory() : `
     ${draft?`<div class="note w"><b>Draft — nothing on this canvas touches the registry.</b>
        Drag a department onto another to compose a MOVE. Every other operation is a checklist,
        and there is no Apply button in this tier.</div>`:""}
@@ -2208,7 +2398,7 @@ ${DOMAINS.some(d=>st(d)==="retired")
             <div>findings<b>${simNum(sim, sim.findings.length)}</b></div>
           </div>`)}
       </div>
-    </div>`;
+    </div>`}`;
 };
 
 /* ── S2 Charters ── */
@@ -3870,6 +4060,10 @@ function wire(){
     S.screen="departments"; S.sel=n.dataset.ref; render(); });
 
   scBody.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{S.view=b.dataset.view;render();});
+  /* Directory search. render() restores focus + caret for the focused input,
+     so re-rendering per keystroke does not steal the cursor. */
+  const dq = scBody.querySelector("#dirQ");
+  if (dq) dq.oninput = ()=>{ S.dirQ = dq.value; render(); };
   scBody.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>{
     S[b.dataset.toggle]=!S[b.dataset.toggle];
     /* showAcme widens the scope SERVER-side (all_tenants=true). Under ?tenant=
