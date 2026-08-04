@@ -505,6 +505,39 @@
   .dpage .tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
   .dpage .tkids .tnode::before{content:"";position:absolute;top:-12px;left:50%;
     width:2px;height:12px;background:var(--line)}
+  .dpage .chsec{margin-top:18px;background:var(--card);border:1px solid var(--line-soft);
+    border-radius:12px;padding:15px 16px}
+  .dpage .chh{font-size:14px;margin:0 0 4px;font-weight:650}
+  .dpage .chempty{color:var(--muted);font-style:italic;font-size:12px}
+  .dpage .lanenote{color:var(--faint);font-size:11px;margin-bottom:6px}
+  .dpage .chdot{display:inline-flex;align-items:center;gap:5px;
+    font:600 10px/1 var(--mono);color:var(--muted)}
+  .dpage .chdot i{width:7px;height:7px;border-radius:50%;background:var(--line);
+    display:inline-block;flex:none}
+  .dpage .chdot.st-active i{background:var(--acc)}
+  .dpage .chdot.st-shipped i{background:var(--muted)}
+  .dpage .chdot.st-retired i,.dpage .chdot.st-paused i{background:transparent;
+    border:1.5px solid var(--muted)}
+  .dpage .chdot.st-retired{opacity:.65}
+  .dpage .chfil{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+  .dpage .chfil button{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface);
+    border:1px solid var(--line-soft);border-radius:999px;padding:5px 11px;cursor:pointer}
+  .dpage .chfil button:hover{border-color:var(--acc)}
+  .dpage .chfil button[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .dpage .chfil button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .dpage .lanewrap{overflow-x:auto}
+  .dpage .chtab{border-collapse:collapse;width:100%;font-size:12px}
+  .dpage .chtab thead th{text-align:left;font:600 10px/1 var(--mono);color:var(--faint);
+    text-transform:uppercase;letter-spacing:.06em;padding:0 8px 6px;white-space:nowrap}
+  .dpage .chtab tbody th{text-align:left;font-weight:600;padding:6px 8px;vertical-align:top}
+  .dpage .chtab tbody td{padding:6px 8px;vertical-align:top}
+  .dpage .chtab tbody th .cht{color:var(--ink);border-bottom:1px dotted var(--acc)}
+  .dpage .chtab td.ckind{font:400 11px/1 var(--mono);color:var(--muted)}
+  .dpage .chtab td.cown{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .dpage .ctxt.ohide{opacity:0}
+  .dpage tr.obreak th,.dpage tr.obreak td{border-top:1px solid var(--line-soft)}
+  .dpage .chpurp{color:var(--muted);font-size:11px;font-weight:400;margin-top:2px;max-width:52ch}
+  .dpage .chnone td{color:var(--muted);font-style:italic}
   .dpage .dq{width:100%;margin-bottom:8px;padding:6px 9px;border:1px solid var(--line-soft);
     border-radius:7px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px}
   .dpage .dq:focus{outline:2px solid var(--acc);outline-offset:1px}
@@ -1695,6 +1728,7 @@ async function submitTurn(text, sessionId){
 const S = {
   screen:"departments", sel:null, view:"live", showRetired:false, showAcme:false,
   dirQ:"",                       /* Directory view search box */
+  dirSt:null,                    /* Directory charter status filter (null = generator default) */
   /* first run. `onbDismissed` is per-load only; the persisted acknowledgement
      is settings.onboarded, so "Not now" brings the disclosure back next launch.
      runtimeError/sessionsError hold a subsystem that failed WITHOUT taking the
@@ -2176,6 +2210,70 @@ function dirMatches(d, q){
   return hay.indexOf(q) !== -1;
 }
 
+/* The Charters section, ported from domains_page.py build_site() charter_table():
+   Owner / Charter / Kind / Status, owner-grouped, with the status filter bar.
+
+   Two rules copied exactly from the generator, because they are load-bearing:
+   - the filter bar renders ONLY when more than one distinct status exists
+     (a one-button filter is a control that cannot change anything), and
+   - the default selection is "active" when any charter is active, else "all"
+     — the generator's comment is explicit that an empty first paint on a
+     non-empty page is not acceptable.
+
+   The per-child O/L lane columns are NOT ported: they exist on the published
+   SITE's per-domain zoom pages, where "the children of THIS page" is defined.
+   This is one page over the whole registry, so those columns have no referent
+   here. Owner is shown as a real column instead. */
+function dirCharterSection(byRef){
+  const q = (S.dirQ || "").trim().toLowerCase();
+  const all = CHARTERS.slice();
+  if (!all.length) return `<section class="chsec"><h2 class="chh">Charters</h2>
+    <p class="chempty">none yet</p></section>`;
+
+  const ownerName = c => (byRef.get(c.domain_ref) || {}).name || "—";
+  const ownerPath = c => (byRef.get(c.domain_ref) || {}).path || "";
+  const statuses = [...new Set(all.map(c => c.status).filter(Boolean))].sort();
+  const deffil = all.some(c => c.status === "active") ? "active" : "all";
+  const cur = S.dirSt || deffil;
+
+  const rows = all
+    .filter(c => cur === "all" || c.status === cur)
+    .filter(c => !q || ((c.title||"") + " " + (c.purpose||"") + " " + ownerName(c))
+                        .toLowerCase().indexOf(q) !== -1)
+    .sort((a,b) =>
+      ownerName(a).toLowerCase().localeCompare(ownerName(b).toLowerCase())
+      || ((a.kind==="standing"?0:1) - (b.kind==="standing"?0:1))
+      || String(a.title||"").toLowerCase().localeCompare(String(b.title||"").toLowerCase()));
+
+  let prevOwner = null;
+  const body = rows.map(c => {
+    const first = c.domain_ref !== prevOwner;
+    prevOwner = c.domain_ref;
+    /* the owner cell is ALWAYS present so a screen reader hears it on every
+       row; a repeat is hidden visually only (the generator's note) */
+    return `<tr class="chtr${first?" obreak":""}" data-status="${esc(c.status||"")}">
+      <td class="cown"><span class="ctxt${first?"":" ohide"}">
+        ${ownerPath(c)?`<span class="chip">${esc(ownerPath(c))}</span> `:""}${esc(ownerName(c))}</span></td>
+      <th scope="row"><span class="cht" title="${esc(c.purpose||"")}">${esc(c.title||"")}</span>
+        ${c.purpose?`<div class="chpurp">${esc(c.purpose)}</div>`:""}</th>
+      <td class="ckind">${esc(c.kind||"")}</td>
+      <td><span class="chdot st-${esc(c.status||"")}"><i></i>${esc(c.status||"")}</span></td></tr>`;
+  }).join("");
+
+  const fil = statuses.length > 1
+    ? `<div class="chfil">${["all"].concat(statuses).map(st_ =>
+        `<button type="button" data-chst="${esc(st_)}" aria-pressed="${cur===st_}">${esc(st_)}</button>`
+      ).join("")}</div>`
+    : "";
+
+  return `<section class="chsec"><h2 class="chh">Charters</h2>${fil}
+    <div class="lanewrap"><table class="chtab" data-deffil="${esc(deffil)}">
+      <thead><tr><th scope="col">Owner</th><th scope="col">Charter</th>
+        <th scope="col">Kind</th><th scope="col">Status</th></tr></thead>
+      <tbody>${body || `<tr class="chnone"><td colspan="4">no charters match</td></tr>`}</tbody>
+    </table></div></section>`;
+}
+
 function domainsDirectory(){
   const { kids, root } = dirData();
   if (!root) return `<div class="zero"><h4>No domains</h4>
@@ -2254,6 +2352,7 @@ function domainsDirectory(){
       ${charterLines(root.ref)}
       ${orgDiagram(root.name, (kids.get(root.ref)||[]).map(c=>c.name))}
       ${sections}
+      ${dirCharterSection(dirData().byRef)}
     </main></div>`;
 }
 
@@ -4064,6 +4163,8 @@ function wire(){
      so re-rendering per keystroke does not steal the cursor. */
   const dq = scBody.querySelector("#dirQ");
   if (dq) dq.oninput = ()=>{ S.dirQ = dq.value; render(); };
+  scBody.querySelectorAll("[data-chst]").forEach(b=>
+    b.onclick = ()=>{ S.dirSt = b.dataset.chst; render(); });
   scBody.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>{
     S[b.dataset.toggle]=!S[b.dataset.toggle];
     /* showAcme widens the scope SERVER-side (all_tenants=true). Under ?tenant=
