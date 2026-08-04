@@ -534,6 +534,12 @@
   .dpage .chtab tbody th .cht{color:var(--ink);border-bottom:1px dotted var(--acc)}
   .dpage .chtab td.ckind{font:400 11px/1 var(--mono);color:var(--muted)}
   .dpage .chtab td.cown{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .dpage .lanetab thead th.lane{text-align:center;color:var(--muted);font-weight:600;
+    padding:0 6px 6px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  .dpage .lanetab td.lo,.dpage .lanetab td.ll,.dpage .lanetab td.ln{
+    text-align:center;padding:6px 4px;min-width:40px}
+  .dpage .lanetab td.lo{background:var(--acc);color:var(--card);font-weight:700;border-radius:4px}
+  .dpage .lanetab td.ll{background:var(--acc-bg);color:var(--acc);font-weight:600;border-radius:4px}
   .dpage .ctxt.ohide{opacity:0}
   .dpage tr.obreak th,.dpage tr.obreak td{border-top:1px solid var(--line-soft)}
   .dpage .chpurp{color:var(--muted);font-size:11px;font-weight:400;margin-top:2px;max-width:52ch}
@@ -2224,7 +2230,40 @@ function dirMatches(d, q){
    SITE's per-domain zoom pages, where "the children of THIS page" is defined.
    This is one page over the whole registry, so those columns have no referent
    here. Owner is shown as a real column instead. */
-function dirCharterSection(byRef){
+/* Roll a deep ref UP to the direct child of pageRef it sits under.
+   Ported from domains_page.py child_of(), including its cycle guard: a
+   parent_ref loop in a damaged registry must not hang the renderer. */
+function dirChildOf(byRef, pageRef, ref){
+  let cur = ref; const seen = new Set();
+  while (byRef.has(cur) && !seen.has(cur)){
+    seen.add(cur);
+    const par = byRef.get(cur).parent_ref;
+    if (par === pageRef) return cur;
+    cur = par;
+  }
+  return null;
+}
+
+/* Which top-level department lanes this charter occupies, and in what role.
+   Ported from cols_for(): the charter's OWN domain scores "O", every
+   linked_domain_ref scores "L", both rolled up to the top-level department
+   they sit under — and O outranks L when a charter both owns and links into
+   the same lane. */
+function dirLanesFor(byRef, pageRef, tops, c){
+  const tset = new Set(tops.map(t => t.ref));
+  const cols = {};
+  const refs = new Set([c.domain_ref].concat(c.linked_domain_refs || []));
+  refs.forEach(r => {
+    if (!r || r === pageRef || !byRef.has(r)) return;
+    const col = dirChildOf(byRef, pageRef, r);
+    if (!col || !tset.has(col)) return;
+    const role = (r === c.domain_ref) ? "O" : "L";
+    if (cols[col] !== "O") cols[col] = role;
+  });
+  return cols;
+}
+
+function dirCharterSection(byRef, kids, root){
   const q = (S.dirQ || "").trim().toLowerCase();
   const all = CHARTERS.slice();
   if (!all.length) return `<section class="chsec"><h2 class="chh">Charters</h2>
@@ -2235,6 +2274,14 @@ function dirCharterSection(byRef){
   const statuses = [...new Set(all.map(c => c.status).filter(Boolean))].sort();
   const deffil = all.some(c => c.status === "active") ? "active" : "all";
   const cur = S.dirSt || deffil;
+
+  /* The lanes are the TOP-LEVEL departments, i.e. this page is the root's
+     charter table. show only when at least one charter actually lands in one,
+     matching the generator's `show_cols` guard. */
+  const pageRef = root ? root.ref : null;
+  const tops = (kids.get(pageRef) || []);
+  const laneOf = new Map(all.map(c => [c.id, dirLanesFor(byRef, pageRef, tops, c)]));
+  const showCols = tops.length > 0 && all.some(c => Object.keys(laneOf.get(c.id)||{}).length);
 
   const rows = all
     .filter(c => cur === "all" || c.status === cur)
@@ -2251,31 +2298,45 @@ function dirCharterSection(byRef){
     prevOwner = c.domain_ref;
     /* the owner cell is ALWAYS present so a screen reader hears it on every
        row; a repeat is hidden visually only (the generator's note) */
+    const lanes = laneOf.get(c.id) || {};
+    const laneCells = showCols ? tops.map(t => {
+      const m = lanes[t.ref];
+      if (m === "O") return `<td class="lo" title="owner: ${esc(t.name)}">O</td>`;
+      if (m === "L") return `<td class="ll" title="linked: ${esc(t.name)}">L</td>`;
+      return `<td class="ln"></td>`;
+    }).join("") : "";
     return `<tr class="chtr${first?" obreak":""}" data-status="${esc(c.status||"")}">
       <td class="cown"><span class="ctxt${first?"":" ohide"}">
         ${ownerPath(c)?`<span class="chip">${esc(ownerPath(c))}</span> `:""}${esc(ownerName(c))}</span></td>
       <th scope="row"><span class="cht" title="${esc(c.purpose||"")}">${esc(c.title||"")}</span>
         ${c.purpose?`<div class="chpurp">${esc(c.purpose)}</div>`:""}</th>
       <td class="ckind">${esc(c.kind||"")}</td>
-      <td><span class="chdot st-${esc(c.status||"")}"><i></i>${esc(c.status||"")}</span></td></tr>`;
+      <td><span class="chdot st-${esc(c.status||"")}"><i></i>${esc(c.status||"")}</span></td>
+      ${laneCells}</tr>`;
   }).join("");
 
-  const fil = statuses.length > 1
-    ? `<div class="chfil">${["all"].concat(statuses).map(st_ =>
-        `<button type="button" data-chst="${esc(st_)}" aria-pressed="${cur===st_}">${esc(st_)}</button>`
-      ).join("")}</div>`
+  /* The generator hides this bar below two distinct statuses. Here it is
+     ALWAYS shown (founder direction): the panel is a live tool, and a control
+     that disappears depending on the data reads as a missing feature. */
+  const fil = `<div class="chfil">${["all"].concat(statuses).map(st_ =>
+      `<button type="button" data-chst="${esc(st_)}" aria-pressed="${cur===st_}">${esc(st_)}</button>`
+    ).join("")}</div>`;
+  const laneHead = showCols
+    ? tops.map(t=>`<th scope="col" class="lane" title="${esc(t.name)}">${esc(t.path||t.name)}</th>`).join("")
     : "";
+  const legend = showCols ? `<p class="lanenote">O owner &middot; L linked</p>` : "";
+  const ncols = 4 + (showCols ? tops.length : 0);
 
-  return `<section class="chsec"><h2 class="chh">Charters</h2>${fil}
-    <div class="lanewrap"><table class="chtab" data-deffil="${esc(deffil)}">
+  return `<section class="chsec"><h2 class="chh">Charters</h2>${legend}${fil}
+    <div class="lanewrap"><table class="chtab lanetab" data-deffil="${esc(deffil)}">
       <thead><tr><th scope="col">Owner</th><th scope="col">Charter</th>
-        <th scope="col">Kind</th><th scope="col">Status</th></tr></thead>
-      <tbody>${body || `<tr class="chnone"><td colspan="4">no charters match</td></tr>`}</tbody>
+        <th scope="col">Kind</th><th scope="col">Status</th>${laneHead}</tr></thead>
+      <tbody>${body || `<tr class="chnone"><td colspan="${ncols}">no charters match</td></tr>`}</tbody>
     </table></div></section>`;
 }
 
 function domainsDirectory(){
-  const { kids, root } = dirData();
+  const { byRef, kids, root } = dirData();
   if (!root) return `<div class="zero"><h4>No domains</h4>
     <p>This registry has no domains yet. One is minted the first time work is placed.</p></div>`;
   const q = (S.dirQ || "").trim().toLowerCase();
@@ -2352,7 +2413,7 @@ function domainsDirectory(){
       ${charterLines(root.ref)}
       ${orgDiagram(root.name, (kids.get(root.ref)||[]).map(c=>c.name))}
       ${sections}
-      ${dirCharterSection(dirData().byRef)}
+      ${dirCharterSection(byRef, kids, root)}
     </main></div>`;
 }
 
