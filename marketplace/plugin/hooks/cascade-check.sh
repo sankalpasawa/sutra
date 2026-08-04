@@ -85,7 +85,7 @@ case "$FILE_PATH" in
           REASON=$(printf '%s' "$_REASON_RAW" | tr -d '"\\' | tr '\n\r' '  ')
           if [ -n "$REPO_ROOT" ]; then
             mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
-            echo "{\"ts\":$(date +%s),\"event\":\"cascade-override\",\"file\":\"$REL_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+            echo "{\"ts\":$(date +%s),\"event\":\"cascade-override\",\"file\":\"$REL_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/cascade.jsonl"
           fi
           echo "  D13 override accepted (CASCADE_ACK): $REASON"
           exit 0
@@ -95,7 +95,7 @@ case "$FILE_PATH" in
         REASON=$(printf '%s' "$_REASON_RAW" | tr -d '"\\' | tr '\n\r' '  ')
         if [ -n "$REPO_ROOT" ]; then
           mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
-          echo "{\"ts\":$(date +%s),\"event\":\"cascade-override\",\"file\":\"$REL_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+          echo "{\"ts\":$(date +%s),\"event\":\"cascade-override\",\"file\":\"$REL_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/cascade.jsonl"
         fi
         echo "  D13 override accepted (CASCADE_ACK): $REASON"
         exit 0
@@ -142,7 +142,7 @@ case "$FILE_PATH" in
     if [ -n "$REPO_ROOT" ]; then
       mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
       _SAFE_REL_PATH=$(printf '%s' "$REL_PATH" | tr -d '"\\' | tr '\n\r' '  ')
-      echo "{\"ts\":$(date +%s),\"event\":\"cascade-block\",\"file\":\"$_SAFE_REL_PATH\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+      echo "{\"ts\":$(date +%s),\"event\":\"cascade-block\",\"file\":\"$_SAFE_REL_PATH\"}" >> "$REPO_ROOT/.enforcement/cascade.jsonl"
     fi
     exit 2
     ;;

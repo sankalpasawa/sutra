@@ -9,7 +9,7 @@
 #   2. "No HTML unless asked" — flag `<!DOCTYPE html>` / `<html>` / `<body>`
 #      in assistant text when the last user message didn't request HTML.
 #
-# Findings are written to .enforcement/routing-misses.log as JSON rows.
+# Findings are written to .enforcement/output-behavior-lint.jsonl as JSON rows.
 # Advisory only: always exits 0, never blocks, never emits to stdout.
 #
 # Wired from: holding/hooks/dispatcher-stop.sh section 16.
@@ -24,7 +24,7 @@
 set -o pipefail
 
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-LOG_FILE="${OUTPUT_LINT_LOG:-$REPO_ROOT/.enforcement/routing-misses.log}"
+LOG_FILE="${OUTPUT_LINT_LOG:-$REPO_ROOT/.enforcement/output-behavior-lint.jsonl}"
 SCAN_TURNS="${OUTPUT_LINT_SCAN_TURNS:-3}"
 
 # ─── 1. Locate transcript ─────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ exit 0
 ## Operationalization
 #
 ### 1. Measurement mechanism
-# Findings count per rule in .enforcement/routing-misses.log.
+# Findings count per rule in .enforcement/output-behavior-lint.jsonl.
 # Target: downward trend as behavioral drift is caught earlier.
 #
 ### 2. Adoption mechanism

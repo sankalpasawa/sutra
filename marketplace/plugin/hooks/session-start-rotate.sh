@@ -26,6 +26,8 @@ LOGS=(
   "$REPO_ROOT/holding/ESTIMATION-LOG.jsonl:10000"
   "$REPO_ROOT/holding/TRIAGE-LOG.jsonl:10000"
   "$REPO_ROOT/.enforcement/routing-misses.log:10000"
+  "$REPO_ROOT/.enforcement/marker-resets.jsonl:10000"
+  "$REPO_ROOT/.enforcement/proto005-warnings.log:10000"
   "$REPO_ROOT/.enforcement/codex-reviews/gate-log.jsonl:10000"
   "$REPO_ROOT/.enforcement/proto-018-reminders.log:5000"
   "$REPO_ROOT/.enforcement/d30-policy-only.log:5000"
