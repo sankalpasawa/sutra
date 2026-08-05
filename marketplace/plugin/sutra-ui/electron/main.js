@@ -35,7 +35,7 @@
 "use strict";
 
 const { app, BrowserWindow, dialog, shell } = require("electron");
-const { spawn } = require("child_process");
+const { spawn, execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -116,13 +116,87 @@ function editEnv() {
   return {};
 }
 
+/* The environment a TERMINAL would have given us.
+ *
+ * A Finder-launched .app inherits launchd's environment, which is almost empty.
+ * The same bundle run from a shell works; run from Finder, `claude` HANGS --
+ * observed indefinitely, sampled blocked on a startup lock with no network
+ * connection ever opened, while the identical binary under a minimal env
+ * returns "Not logged in · Please run /login" immediately. Every DMG user
+ * launches from Finder, so without this the chat pane never answers for anyone
+ * who installed the normal way.
+ *
+ * So: ask the user's own login shell what the environment should be, once, and
+ * hand that to the backend. `-l` makes it read the profile that sets PATH and
+ * everything `claude` needs to find its runtime and its credentials.
+ *
+ * ANTHROPIC_API_KEY IS DELIBERATELY DROPPED. Importing a shell environment
+ * wholesale would import that too, and this app refuses to start when it is set
+ * -- for a real reason (it routes billing through the per-token API instead of
+ * the Max plan). A variable exported in someone's .zshrc must not silently
+ * change how the desktop app bills, nor block it from starting. The guard in
+ * boot() still applies to a key set for the APP ITSELF.
+ *
+ * Fails open: a shell that errors, hangs or prints junk costs us nothing but
+ * the default environment we already had.
+ */
+function loginShellEnv() {
+  const MARK = "__SUTRA_ENV__";
+  try {
+    const sh = process.env.SHELL || "/bin/zsh";
+    // The marker isolates the variables from anything a chatty profile prints.
+    const out = execFileSync(sh, ["-lc", `echo ${MARK}; command env`], {
+      encoding: "utf8",
+      timeout: 8000,
+      maxBuffer: 4 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const body = out.slice(out.lastIndexOf(MARK) + MARK.length);
+    const env = {};
+    for (const line of body.split("\n")) {
+      const eq = line.indexOf("=");
+      if (eq <= 0) continue;                 // continuation of a multi-line value
+      const k = line.slice(0, eq);
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+      env[k] = line.slice(eq + 1);
+    }
+    // Never inherited: see the note above.
+    delete env.ANTHROPIC_API_KEY;
+    // Ours win -- these describe THIS process, not the shell's.
+    delete env.PWD;
+    delete env.OLDPWD;
+    delete env.SHLVL;
+    delete env._;
+    return env;
+  } catch (e) {
+    console.error("[sutra] could not read the login shell environment:", e.message);
+    return {};
+  }
+}
+
+// Resolved once, lazily, because spawning a login shell costs ~100ms and the
+// answer cannot change while the app is running.
+let _shellEnv = null;
+function shellEnv() {
+  if (_shellEnv === null) _shellEnv = loginShellEnv();
+  return _shellEnv;
+}
+
 function startBackend() {
   const child = spawn(
     RUNTIME.python,
     ["-m", "uvicorn", "app:app", "--host", HOST, "--port", String(PORT), "--log-level", "warning"],
     { cwd: RUNTIME.appDir, stdio: ["ignore", "pipe", "pipe"],
       env: {
+        // THE SHELL WINS, and the order is the whole point. Spreading
+        // process.env last would put launchd's minimal PATH back on top of the
+        // login shell's -- which is exactly the variable `claude` needs -- and
+        // the fix would silently do nothing. shellEnv() has already had the
+        // variables we must control (ANTHROPIC_API_KEY, PWD, ...) removed, so
+        // letting the rest win reproduces the terminal launch that is verified
+        // to work.
         ...process.env,
+        ...shellEnv(),
         // The bundle is read-only once signed. Without this, every import in
         // every launch would try to write a .pyc, fail, and silently recompile
         // from source -- a slow start that looks like a hang.

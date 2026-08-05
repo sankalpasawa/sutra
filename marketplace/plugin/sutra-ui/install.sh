@@ -174,9 +174,19 @@ stage_runtime() {
   step "stage runtime"
   command -v rsync >/dev/null 2>&1 || die "rsync not found -- cannot stage the runtime"
   mkdir -p "$SRC" "$STAGE_LIB" || die "cannot create $SUTRA_STAGE"
-  rsync -a --delete \
+  # The excludes are not cosmetic. Without the electron/ ones the staged copy
+  # carried node_modules, a packaged dist/ and bundle-runtime.sh's 95MB payload/
+  # -- measured at 1.6GB for a runtime whose actual content is ~5MB of Python.
+  # The backend never reads any of them: it runs app.py out of this directory
+  # and the engine out of ../lib.
+  # --delete-excluded, not just --delete: plain --delete PROTECTS excluded paths
+  # already on the destination, so a stage that once copied electron/node_modules
+  # kept 1.5GB of it forever after the exclude was added.
+  rsync -a --delete --delete-excluded \
     --exclude '.venv/' --exclude '.git/' --exclude '__pycache__/' \
     --exclude '*.pyc' --exclude 'test_*' --exclude '.DS_Store' \
+    --exclude 'electron/node_modules/' --exclude 'electron/dist/' \
+    --exclude 'electron/payload/' \
     "$REPO"/ "$SRC"/ || die "staging $REPO -> $SRC failed"
   rsync -a --delete \
     --exclude '__pycache__/' --exclude '*.pyc' --exclude '.DS_Store' \
@@ -720,10 +730,18 @@ if [ "${SUTRA_SKIP_ELECTRON:-0}" != "1" ] \
   # --no-install: without it, a missing local bin makes npx silently DOWNLOAD
   # and run the deprecated legacy `electron-packager` package from the
   # registry -- remote code execution during install, with output suppressed.
+  # --ignore keeps BUILD OUTPUT out of the bundle. bundle-runtime.sh leaves a
+  # ~95MB payload/ (a whole CPython plus a copy of the plugin) beside main.js,
+  # and electron-packager would otherwise pack it into app.asar -- tripling the
+  # size of an install that does not use it. The DMG path passes the payload
+  # deliberately, via --extra-resource; this path is the CHECKOUT install and
+  # runs from the staged runtime instead (see provision.js resolveRuntime).
   if ( cd "$REPO/electron" \
        && npx --no-install electron-packager . "$APP_NAME" --platform=darwin --arch="$ARCH" \
             --out=dist --overwrite --app-bundle-id="$BUNDLE_ID" --app-version=1.0.0 \
-            --icon=build/"$APP_NAME".icns --prune=true ) >/dev/null 2>&1; then
+            --icon=build/"$APP_NAME".icns --prune=true \
+            --ignore='^/payload($|/)' --ignore='^/dist($|/)' --ignore='^/build($|/)' \
+     ) >/dev/null 2>&1; then
     SUTRA_ELECTRON_APP="$REPO/electron/dist/$APP_NAME-darwin-$ARCH/$APP_NAME.app"
     [ -d "$SUTRA_ELECTRON_APP" ] || SUTRA_ELECTRON_APP=""
   fi
