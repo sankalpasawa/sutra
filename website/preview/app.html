@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sutra — Desktop (DS UI v2.0)</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* layout-only; every visual decision lives in tokens.css (the DS) */
+  body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#e9e6e0;padding:20px}
+  .window{width:1300px;max-width:100%;height:780px;background:var(--bg);border:1px solid #ddd8cf;border-radius:14px;box-shadow:0 22px 64px rgba(12,10,8,.18);overflow:hidden;display:flex;position:relative}
+  .tag{position:absolute;top:12px;right:16px;font-size:10px;letter-spacing:.14em;color:var(--gold);z-index:20}
+  .pane{flex:1;overflow:auto;display:none}
+  .pane.on{display:block}
+  .homecol{max-width:660px;margin:0 auto;padding:0 24px;display:flex;flex-direction:column;min-height:100%}
+  .stack{display:flex;flex-direction:column;gap:var(--s3);margin-top:var(--s5)}
+  .chwrap{padding:20px 24px}
+  h2.pg{font-family:var(--font-display);font-size:20px;font-weight:500;margin-bottom:2px}
+  .pgsub{font-size:11.5px;color:var(--stone);margin-bottom:12px}
+  .slist{display:flex;gap:var(--s2);margin-bottom:var(--s3);flex-wrap:wrap}
+  .sit{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:11px;cursor:pointer}
+  .sit.on{border-color:var(--gold);background:#fdfaf4}
+  .sit .tt{font-weight:600;font-size:11.5px}
+  .sit .mm{font-size:9px;color:var(--stone)}
+  .panes2{display:flex;height:560px;border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden;background:var(--panel)}
+  .ctx{width:295px;border-right:1px solid var(--line);padding:13px;overflow:auto;background:#fbfaf7;font-size:11px}
+  .crumb{font-size:10px;color:var(--stone);margin-bottom:9px}
+  .crumb b{color:var(--gold)}
+  .cc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px}
+  .cc .k{font-size:9px;letter-spacing:var(--ls-label);font-weight:700;color:var(--gold)}
+  .cc .nm{font-family:var(--font-display);font-size:13px;margin:2px 0}
+  .chatcol{flex:1;display:flex;flex-direction:column;min-width:0}
+  .stream{flex:1;padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+  .mu{align-self:flex-end;max-width:72%;background:#f0ede5;border:1px solid var(--line);border-radius:11px 11px 3px 11px;padding:8px 12px;font-size:12.5px}
+  .ma{align-self:flex-start;max-width:86%;background:var(--bg);border:1px solid var(--line);border-radius:11px 11px 11px 3px;padding:10px 13px;font-size:12.5px}
+  .chips{display:flex;gap:5px;margin-bottom:7px;flex-wrap:wrap}
+  .bp{display:none;border:1px solid var(--gold);border-left:4px solid var(--gold);border-radius:9px;background:#fdfaf4;padding:9px 12px;font:10.5px var(--font-mono);white-space:pre-line;margin:6px 0}
+  .bp.open{display:block}
+  .depbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);font-size:11.5px}
+  .depframe{width:100%;height:calc(100% - 42px);border:0;background:#fff}
+  .setwrap{padding:20px 24px}
+  .sgrid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
+  .sc{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 16px}
+  .sc .k{font-size:var(--fs-label);letter-spacing:var(--ls-label);font-weight:700;color:var(--stone);margin-bottom:7px}
+  .srow{display:flex;align-items:center;gap:9px;font-size:12px;padding:3.5px 0}
+  .sm{font-size:10px;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="tag">DS UI v2.0 &middot; tokens.css &middot; 2026-08-05</div>
+
+  <nav class="ds-rail">
+    <div style="margin:0 0 16px 6px"><span class="ds-dot" style="background:var(--line)"></span> <span class="ds-dot" style="background:var(--line)"></span> <span class="ds-dot" style="background:var(--line)"></span></div>
+    <div class="brand">Sutra</div>
+    <div class="item on" data-t="home">&#9678; Right Now <span class="badge">3</span></div>
+    <div class="item" data-t="chats">&#9998; Chats</div>
+    <div class="item" data-t="depts">&#9639; Departments</div>
+    <div class="item" data-t="set">&#9881; Settings<span class="reddot" title="1 connection needs attention"></span></div>
+    <div class="foot">CEO of Asawa &middot; maker day<br>context 64% &middot; $8.40 today</div>
+  </nav>
+
+  <!-- RIGHT NOW -->
+  <section class="pane on" id="p-home"><div class="homecol">
+    <div class="ds-greet" style="margin-top:64px">Good morning, Sankalp.</div>
+    <div class="ds-sub" style="margin-top:8px"><b>3 decisions</b> are waiting on you. Everything else is handled.</div>
+
+    <div class="stack">
+      <div class="ds-decision" id="d1" onclick="openSession()"><span class="dot"></span><span class="t">Commit the Experience department<small>9 files, all local &middot; reversible &middot; 40 min</small></span><span class="act" onclick="approve(event,'d1')">Approve</span><span class="act q" onclick="event.stopPropagation()">diff</span></div>
+      <div class="ds-decision" id="d2" onclick="openSession()"><span class="dot"></span><span class="t">Ratify the Cockpit charter + V1 cut<small>5-min read &middot; reversible &middot; 35 min</small></span><span class="act" onclick="approve(event,'d2')">Approve</span><span class="act q" onclick="event.stopPropagation()">open</span></div>
+      <div class="ds-decision" id="d3" onclick="openSession()"><span class="dot"></span><span class="t">Unpause the "Why?" layer (D36)<small>direction change &middot; reversible &middot; 30 min</small></span><span class="act" onclick="approve(event,'d3')">Yes</span><span class="act q" onclick="event.stopPropagation()">later</span></div>
+    </div>
+
+    <div class="ds-composer" style="margin:32px 0 20px"><span class="ph">Ask or command Sutra&hellip;</span><span class="key">&#8984;K</span></div>
+
+    <div class="ds-quiet" style="padding-bottom:40px">
+      <span class="tok review" data-t="chats">review 2</span>
+      <span class="tok" data-t="chats">fyi 4</span>
+      <span class="tok done" data-t="depts">done 3 &#10003;</span>
+      <span class="tok" data-t="chats">radar 2</span>
+      <span class="tok alert" data-t="set">workflow registry unavailable &middot; refresh actions may be stale</span>
+    </div>
+  </div></section>
+
+  <!-- CHATS -->
+  <section class="pane" id="p-chats"><div class="chwrap">
+    <h2 class="pg">Chats</h2>
+    <div class="pgsub">Every card is a session &middot; context left, chat right (FIXED)</div>
+    <div class="slist">
+      <div class="sit on"><div class="tt">Cockpit build — DS UI</div><div class="mm">live now</div></div>
+      <div class="sit"><div class="tt">Native build S3</div><div class="mm">closed</div></div>
+      <div class="sit"><div class="tt">Nio follow-up</div><div class="mm">prep ready</div></div>
+      <div class="sit"><div class="tt">resume: caas deck</div><div class="mm">pinned</div></div>
+    </div>
+    <div class="panes2">
+      <aside class="ctx">
+        <div class="crumb">Asawa &rsaquo; <a data-t="depts" style="cursor:pointer">Departments</a> &rsaquo; <b><a data-t="depts" style="cursor:pointer;color:var(--gold)">#14 Experience</a></b> &rsaquo; desktop-app</div>
+        <div class="cc"><div class="k">CHARTER</div><div class="nm">Founder Cockpit</div><div style="font-size:10px;color:var(--alert);font-weight:700">DRAFT &middot; A1 A6 pending &middot; A5 RESOLVED</div></div>
+        <div class="cc" style="border-left:4px solid var(--decide)"><div class="k" style="color:var(--decide)">KEY DECISIONS</div><div style="padding:2px 0">DS UI v2.0: approve</div><div style="padding:2px 0">"code it" &rarr; T15 sutra-ui wiring</div></div>
+        <div class="cc" style="border-left:4px solid var(--done)"><div class="k" style="color:var(--done)">DONE &middot; PROOF</div><div style="padding:2px 0">tokens.css + app.html &#10003; &middot; DS published &#10003;</div></div>
+      </aside>
+      <div class="chatcol">
+        <div class="stream">
+          <div class="ds-atom"><span class="k">ATOM OPEN</span> &middot; Goal: DS UI running &middot; Done when: app.html consumes tokens.css, 4 tabs live</div>
+          <div class="mu">Go and make the UI of this design system, and then show me the HTML version.</div>
+          <div class="ma">
+            <div class="chips">
+              <span class="ds-chip">INBOUND&middot;DIRECT</span>
+              <span class="ds-chip" style="color:var(--done)">RISK low</span>
+              <span class="ds-chip plan" onclick="this.classList.toggle('open');document.getElementById('bp1').classList.toggle('open')">Plan &middot; 4 steps &middot; verify 4/4</span>
+            </div>
+            <div class="bp" id="bp1">Doing: DS UI — tokens.css (T1) + app.html
+1) atom+dispatch bind        [PASS]
+2) codex consult             [PASS — stable class names for T15]
+3) write tokens.css+app.html [PASS]
+4) open in Chrome            [PASS]</div>
+            This is the design system running: every visual rule you see comes from tokens.css — the same file the real app imports at T15. Click things.
+            <div class="ds-work"><b>&#10003; codex</b> — css-first seam approved; class names frozen for sutra-ui import</div>
+          </div>
+        </div>
+        <div class="ds-composer" style="margin:10px 14px 12px"><span class="ph">Continue this session&hellip;</span></div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- DEPARTMENTS -->
+  <section class="pane" id="p-depts">
+    <div class="depbar"><span style="font-weight:600">Departments &amp; Charters</span><span style="color:var(--stone);font-size:10.5px">Asawa Inc. &middot; Departments — the published domains site, exactly as on the web</span><a style="margin-left:auto;color:var(--review);cursor:pointer" href="../domains/index.html" target="_blank">open in browser &#8599;</a></div>
+    <iframe class="depframe" src="../domains/index.html" title="Asawa Inc. Departments — published domains site"></iframe>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="pane" id="p-set"><div class="setwrap">
+    <h2 class="pg">Settings</h2>
+    <div class="pgsub">Connections live here (moved off Home 2026-08-05)</div>
+    <div class="sgrid">
+      <div class="sc"><div class="k">CONNECTIONS</div>
+        <div class="srow"><span class="ds-dot warn"></span> Native workflows <span class="sm">registry empty &middot; refresh actions may be stale</span><span style="margin-left:auto;font-size:10.5px;color:var(--review);font-weight:600;cursor:pointer">fix</span></div>
+        <div class="srow"><span class="ds-dot ok"></span> Slack &middot; Gmail &middot; Calendar &middot; Drive <span class="sm">live</span></div>
+        <div class="srow"><span class="ds-dot ok"></span> GitHub &middot; Vercel &middot; DeepSeek &middot; Sheets <span class="sm">live</span></div>
+      </div>
+      <div class="sc"><div class="k">DAY RHYTHM</div>
+        <div class="srow">Maker day &middot; windows 11:30 + 16:00</div>
+        <div class="srow">GTD inbox pre-review &middot; escalation: irreversible + urgent only</div>
+      </div>
+      <div class="sc"><div class="k">TONE &amp; TRUST</div>
+        <div class="srow">Terse &middot; Straight-talk &middot; Auto-approve routine &middot; Autonomous push</div>
+      </div>
+      <div class="sc"><div class="k">KILL-SWITCHES</div>
+        <div class="srow">All governance gates &middot; 0 overrides active <span class="sm" style="margin-left:auto">audit log &rsaquo;</span></div>
+      </div>
+    </div>
+  </div></section>
+</div>
+
+<script>
+  const tabs={home:'p-home',chats:'p-chats',depts:'p-depts',set:'p-set'};
+  function go(t){
+    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+    document.getElementById(tabs[t]).classList.add('on');
+    document.querySelectorAll('.ds-rail .item').forEach(n=>n.classList.toggle('on',n.dataset.t===t));
+  }
+  document.querySelectorAll('[data-t]').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation();go(el.dataset.t)}));
+  function openSession(){ go('chats'); }
+  function approve(e,id){
+    e.stopPropagation();
+    const el=document.getElementById(id); el.classList.add('approved');
+    el.querySelectorAll('.act').forEach(b=>b.remove());
+    el.querySelector('.t').insertAdjacentHTML('beforeend',' <b style="color:var(--done)">approved &#10003; (audit logged)</b>');
+    const badge=document.querySelector('.ds-rail .badge');
+    badge.textContent=Math.max(0,parseInt(badge.textContent)-1);
+    const sub=document.querySelector('.ds-sub b');
+    sub.textContent=badge.textContent+' decisions';
+  }
+</script>
+</body>
+</html>
