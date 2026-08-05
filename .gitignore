@@ -7,3 +7,8 @@ node_modules/
 # the full rationale.
 !marketplace/plugin/connectors/node_modules/
 !marketplace/plugin/connectors/node_modules/**
+
+# Python bytecode. lib/ gained an importable module (org_import.py) and a test
+# suite, so running either now leaves __pycache__ directories in the tree.
+__pycache__/
+*.pyc
