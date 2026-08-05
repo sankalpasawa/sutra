@@ -772,9 +772,12 @@
 
     <p class="dl-note">
       <strong>Requires macOS 11 or newer.</strong>
-      If macOS says Sutra &ldquo;cannot be opened because the developer cannot be verified&rdquo;,
-      that build was not notarized &mdash; right-click Sutra, choose <em>Open</em>, then
-      <em>Open</em> again. You only do this once.
+      If macOS says <em>&ldquo;Apple could not verify Sutra is free of malware&rdquo;</em>, this
+      build is not yet notarized. That dialog offers only <em>Done</em> and <em>Move to
+      Bin</em> &mdash; do <strong>not</strong> move it to the bin. Click Done, then open
+      <em>System&nbsp;Settings &rarr; Privacy&nbsp;&amp;&nbsp;Security</em>, scroll to
+      <em>Security</em>, and click <em>Open&nbsp;Anyway</em> next to Sutra. Once per machine.
+      (The older right-click&nbsp;&rarr;&nbsp;Open trick stopped working in macOS&nbsp;15.)
       Prefer to build it yourself?
       <code>marketplace/plugin/sutra-ui/electron/make-dmg.sh</code> in the repo produces the
       same artifact.

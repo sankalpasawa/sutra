@@ -160,6 +160,26 @@ jobs:
           ./make-dmg.sh --arch ${{ matrix.arch }}
           rm -f "$RUNNER_TEMP/notary.p8"
 
+      # A release must never CLAIM notarization it did not get. make-dmg.sh
+      # degrades to ad-hoc on purpose (so a contributor without credentials can
+      # still build), and that same tolerance would let a real release ship
+      # silently unsigned -- every downloader then meets "Apple could not verify
+      # Sutra is free of malware", whose only buttons are Done and Move to Bin.
+      # When a signing certificate WAS supplied, the ticket must be stapled.
+      - name: A signed build must actually be notarized
+        if: env.HAVE_SIGNING_CERT == 'true'
+        working-directory: marketplace/plugin/sutra-ui/electron/dist
+        run: |
+          set -euo pipefail
+          dmg="$(ls *.dmg | head -1)"
+          if ! xcrun stapler validate "$dmg"; then
+            echo "::error::$dmg is NOT stapled. A certificate was provided, so this"
+            echo "build was expected to be notarized. Shipping it would hand every"
+            echo "downloader a Gatekeeper block. Check the notarytool log above."
+            exit 1
+          fi
+          echo "stapled: $dmg"
+
       # A stable asset name is what makes /releases/latest/download/... work
       # from the website without editing the page every release.
       - name: Name the asset for the website link

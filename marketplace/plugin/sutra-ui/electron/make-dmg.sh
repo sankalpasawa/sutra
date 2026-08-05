@@ -295,9 +295,14 @@ It serves a panel on http://127.0.0.1:8330 -- loopback only, never the network.
 It refuses to start if ANTHROPIC_API_KEY is set, so it always bills your Max
 plan rather than the per-token API.
 
-If macOS says Sutra "cannot be opened because the developer cannot be
-verified", this build was not notarized. Right-click Sutra -> Open -> Open.
-You only have to do that once.
+If macOS says "Apple could not verify Sutra is free of malware", this build is
+not notarized yet. That dialog offers only [Done] and [Move to Bin] -- do NOT
+move it to the bin. Click Done, then:
+
+    System Settings > Privacy & Security > scroll to Security
+    > "Open Anyway" next to Sutra
+
+Once per machine. (Right-click > Open stopped working in macOS 15.)
 TXT
 hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE_DIR" \
   -ov -format UDZO "$DMG" >/dev/null || die "hdiutil failed"
