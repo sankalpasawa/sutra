@@ -346,6 +346,45 @@ class TestApp(unittest.TestCase):
         for m in P.PERMISSION_MODES:
             self.assertTrue(P.PERMISSION_MODE_NOTES.get(m), "no note for %s" % m)
 
+    def test_03j_persistent_argv_takes_the_prompt_on_stdin(self):
+        """ONE PROCESS, MANY TURNS. A persistent run must NOT carry the message
+        as a positional argument -- that is the one-shot form, and passing both
+        would send the first message twice."""
+        import app as A
+        a = A.build_agent_args("claude", "hello", "plan", stream_input=True)
+        self.assertIn("--input-format", a)
+        self.assertEqual(a[a.index("--input-format") + 1], "stream-json")
+        self.assertNotIn("hello", a, "the prompt goes on stdin, not in argv")
+        self.assertEqual(a[1], "-p")
+
+    def test_03k_one_shot_argv_is_unchanged(self):
+        """The persistent path is additive: the one-shot form other callers and
+        tests rely on must be byte-identical to what it always was."""
+        import app as A
+        self.assertEqual(
+            A.build_agent_args("claude", "hello", "plan"),
+            ["claude", "-p", "hello", "--output-format", "stream-json",
+             "--verbose", "--include-partial-messages", "--permission-mode", "plan"])
+
+    def test_03l_spawn_time_options_change_the_spawn_key(self):
+        """model / permission mode / effort / budget are SPAWN-TIME flags: they
+        cannot change on a running process. The handler reuses a process only
+        while the argv would be identical, so these must actually differ --
+        otherwise a per-message override would be silently ignored."""
+        import app as A
+        base = A.build_agent_args("claude", "x", "plan", stream_input=True)
+        for label, kw in (
+            ("model", dict(model="haiku")),
+            ("perm", dict(perm_mode="acceptEdits")),
+            ("effort", dict(opts={"effort": "high"})),
+            ("budget", dict(opts={"max_budget_usd": 3})),
+        ):
+            kw.setdefault("perm_mode", "plan")
+            other = A.build_agent_args("claude", "x", kw.pop("perm_mode"),
+                                       stream_input=True, **kw)
+            self.assertNotEqual(tuple(base), tuple(other),
+                                "%s must force a respawn" % label)
+
     def test_04_dpaths_are_unique_per_tenant(self):
         # D-numbering is PER TENANT TREE, not global -- T-local's "Sutra Labs"
         # and T-acme's "Client Success" are each their own root and each

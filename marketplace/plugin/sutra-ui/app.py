@@ -158,16 +158,25 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 
 def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
-                     opts=None):
+                     opts=None, stream_input=False):
     """The full argv for one turn.
 
     Separated from the socket loop so it is testable without a subprocess, and
     so adding a flag cannot accidentally change the ordering of the ones that
     already work.
+
+    stream_input=True builds a PERSISTENT process: `-p` with no positional
+    prompt plus `--input-format stream-json`, so messages arrive on stdin as
+    JSON frames and one process serves many turns. Verified against the binary:
+    two messages, one process, one session id, both answered.
     """
     opts = opts if isinstance(opts, dict) else {}
-    args = [
-        agent_bin, "-p", msg,
+    args = [agent_bin, "-p"]
+    if stream_input:
+        args += ["--input-format", "stream-json"]
+    else:
+        args += [msg]
+    args += [
         "--output-format", "stream-json",
         "--verbose", "--include-partial-messages",
         "--permission-mode", perm_mode,
@@ -629,9 +638,40 @@ async def ws_chat(ws: WebSocket):
             chosen_model = providers.clean_model(model) or providers.stored_model()
             # Everything else the client may ask for this turn, validated in
             # build_agent_args rather than trusted here.
+            #
+            # ONE PROCESS, MANY TURNS. Every message used to spawn its own
+            # `claude -p <msg>` with stdin closed: ~3s of cold start per turn, a
+            # cross-process prompt-cache miss every time, and session continuity
+            # faked with --resume (whose failure is the bug that lost messages).
+            # A persistent process fed stream-json on stdin keeps one session id
+            # for the life of the pane.
+            #
+            # BUT the model, permission mode, effort and budget are SPAWN-TIME
+            # flags -- they cannot change on a running process. So the rule is:
+            # reuse while the argv would be identical, otherwise respawn and
+            # carry the thread across with --resume. That keeps per-message
+            # overrides working instead of silently ignoring them, which is what
+            # a naive "always reuse" would do.
             args = build_agent_args(agent_bin, msg, perm_mode,
-                                    session_id=session_id, model=chosen_model,
-                                    opts=payload.get("opts"))
+                                    session_id=None, model=chosen_model,
+                                    opts=payload.get("opts"), stream_input=True)
+            spawn_key = tuple(args)
+            proc = live.get("proc")
+            alive = proc is not None and proc.returncode is None
+            if alive and live.get("key") != spawn_key:
+                # a spawn-time option changed: end this process and carry the
+                # conversation over rather than dropping it
+                _kill_live()
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
+                alive = False
+            if not alive and session_id:
+                args = build_agent_args(agent_bin, msg, perm_mode,
+                                        session_id=session_id, model=chosen_model,
+                                        opts=payload.get("opts"), stream_input=True)
+                spawn_key = tuple(args)
 
             # EXACTLY ONE `start` PER OPERATOR MESSAGE. The client treats `start`
             # as the demarcation that binds the next token stream to the next
@@ -641,26 +681,57 @@ async def ws_chat(ws: WebSocket):
             # already on screen; it does not announce a new one.
             if not payload.get("_replay"):
                 await ws.send_json({"type": "start", "model": chosen_model})
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *args, cwd=workdir,
-                    stdin=asyncio.subprocess.DEVNULL,   # inheriting uvicorn's stdin makes
-                    stdout=asyncio.subprocess.PIPE,     # claude wait 3s for piped input on
-                    stderr=asyncio.subprocess.PIPE,     # EVERY message -- 3s of dead air per turn
-                    env=dict(os.environ),      # no ANTHROPIC_API_KEY -> subscription auth
-                    # own process group, so an interrupt can signal the whole tree
-                    start_new_session=True,
-                )
+            if not alive:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *args, cwd=workdir,
+                        # stdin is a PIPE now, not DEVNULL: it is the channel the
+                        # turns arrive on. (DEVNULL was there because a plain
+                        # inherited stdin made claude wait 3s for piped input on
+                        # every message -- with stream-json that wait IS the
+                        # feature.)
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=dict(os.environ),  # no ANTHROPIC_API_KEY -> subscription auth
+                        # own process group, so an interrupt can signal the whole tree
+                        start_new_session=True,
+                    )
+                except OSError as e:
+                    # Real cause, verbatim -- a dead socket taught the operator nothing.
+                    await ws.send_json({"type": "error", "detail":
+                        "could not start %r in %s: %s" % (agent_bin, workdir, e)})
+                    continue
                 live["proc"] = proc
-            except OSError as e:
-                # Real cause, verbatim -- a dead socket taught the operator nothing.
+                live["key"] = spawn_key
+            proc = live["proc"]
+
+            # The turn itself: one stream-json frame on stdin.
+            try:
+                proc.stdin.write((json.dumps({
+                    "type": "user",
+                    "message": {"role": "user",
+                                "content": [{"type": "text", "text": msg}]},
+                }) + "\n").encode("utf-8"))
+                await proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
+                # the process died between the liveness check and the write
+                live["proc"] = None
                 await ws.send_json({"type": "error", "detail":
-                    "could not start %r in %s: %s" % (agent_bin, workdir, e)})
+                    "the agent process closed before the message was sent (%s)" % e})
                 continue
 
             got_text = got_result = False
             result_error = None
-            async for line in proc.stdout:
+            # READ UNTIL THIS TURN'S `result`, not until EOF. The process is
+            # persistent now, so EOF only happens when it DIES -- an `async for`
+            # over stdout would simply never return.
+            eof = False
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    eof = True
+                    break
                 try:
                     ev = json.loads(line.decode("utf-8", "replace"))
                 except ValueError:
@@ -783,10 +854,27 @@ async def ws_chat(ws: WebSocket):
                             "num_turns": ev.get("num_turns"),
                             "cost_usd": ev.get("total_cost_usd"),
                         })
+                    # `result` closes THIS TURN. The process stays up for the
+                    # next one -- that is the whole point of the change.
+                    break
 
-            err = (await proc.stderr.read()).decode("utf-8", "replace")
-            rc = await proc.wait()
-            live["proc"] = None
+            # Do NOT read stderr to EOF or wait() here: both block forever on a
+            # process that is meant to outlive the turn. Only a dead process is
+            # drained and reaped.
+            err = ""
+            rc = 0
+            if eof:
+                try:
+                    err = (await asyncio.wait_for(proc.stderr.read(), 2)).decode(
+                        "utf-8", "replace")
+                except (asyncio.TimeoutError, Exception):
+                    err = ""
+                try:
+                    rc = await asyncio.wait_for(proc.wait(), 5)
+                except (asyncio.TimeoutError, Exception):
+                    rc = -1
+                live["proc"] = None
+                live["key"] = None
 
             if live["stopped"]:
                 # SIGTERM makes rc non-zero, which the branch below would report as
@@ -794,11 +882,22 @@ async def ws_chat(ws: WebSocket):
                 # interrupt. A stop is a normal outcome and gets its own frame.
                 # The session id is KEPT: the thread is still resumable, the operator
                 # simply cut this turn short.
+                #
+                # A stop now ends the whole PERSISTENT process, because that is
+                # the only way to interrupt a turn in flight. Clear it so the
+                # next message spawns a fresh one -- and because session_id is
+                # kept, that respawn carries --resume and the conversation
+                # continues where it was cut.
                 live["stopped"] = False
+                live["proc"] = None
+                live["key"] = None
                 await ws.send_json({"type": "stopped", "session": session_id})
                 continue
 
-            failed = (rc != 0) or (result_error is not None)
+            # rc is only meaningful when the process actually exited. A live
+            # process has no return code, so a turn fails when it SAID it failed
+            # or when the process died before producing a result.
+            failed = (result_error is not None) or (eof and not got_result) or (eof and rc != 0)
             if failed:
                 # stderr carries the specific cause ("No conversation found with
                 # session ID: ..."); the result payload is the fallback.
