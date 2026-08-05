@@ -157,6 +157,7 @@ const EPILOGUE = `
   NOT_CHECKED, CONFIDENCE_FLOOR,
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
   chanKey, paletteFor,
+  _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip,
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
   get TENANTS(){ return TENANTS; },   set TENANTS(v){ TENANTS = v; }
 };
@@ -692,6 +693,89 @@ test("17. the '@' palette offers files and '/' offers commands, each replacing i
     assert.strictEqual(T.paletteFor("mail me at a@b"), null,
       "an embedded @ opened the file palette");
   } finally { T.S.fs = prevFs; }
+});
+
+/* ── 18. scroll survives a re-render ────────────────────────────────────────
+   render() replaces #panes wholesale, so the browse pane's scroller comes back
+   as a fresh element at scrollTop 0. Clicking a Directory status filter part
+   way down the Charters table therefore threw the operator back to the top of
+   the page on every single click. Focus and caret were already saved across
+   the rebuild; scroll was not. */
+function withScroller(top, scrollHeight, clientHeight, fn) {
+  /* A real scroller CLAMPS: assigning a scrollTop past the end silently lands
+     at scrollHeight - clientHeight. The clamp is the whole reason the restore
+     needs a rAF pass, so a plain-object stub that stored 4000 verbatim would
+     test a browser that does not exist. */
+  const el = {
+    scrollHeight: scrollHeight, clientHeight: clientHeight, _t: 0,
+    get scrollTop() { return this._t; },
+    set scrollTop(v) {
+      this._t = Math.max(0, Math.min(v, Math.max(0, this.scrollHeight - this.clientHeight)));
+    },
+  };
+  el.scrollTop = top;
+  const prev = sandbox.document.querySelector;
+  sandbox.document.querySelector = (sel) =>
+    (sel.indexOf("browse") !== -1 ? el : prev.call(sandbox.document, sel));
+  const prevRAF = sandbox.requestAnimationFrame;
+  const queued = [];
+  sandbox.requestAnimationFrame = (cb) => queued.push(cb);
+  try { return fn(el, () => queued.splice(0).forEach((cb) => cb())); }
+  finally { sandbox.document.querySelector = prev; sandbox.requestAnimationFrame = prevRAF; }
+}
+
+test("18a. the scroll key separates the three views of one screen", () => {
+  const prev = [T.S.screen, T.S.view];
+  try {
+    T.S.screen = "departments"; T.S.view = "dir";
+    const dir = T._browseScrollKey();
+    T.S.view = "live";
+    assert.notStrictEqual(T._browseScrollKey(), dir,
+      "Live and Directory are different documents and must not share a position");
+    T.S.view = "dir";
+    assert.strictEqual(T._browseScrollKey(), dir, "the same view must key the same");
+  } finally { T.S.screen = prev[0]; T.S.view = prev[1]; }
+});
+
+test("18b. a position is restored across a rebuild of the same view", () => {
+  T.S.screen = "departments"; T.S.view = "dir";
+  withScroller(4000, 20000, 900, (el) => {
+    const saved = T._browseScrollState();
+    assert.strictEqual(saved.top, 4000);
+    el.scrollTop = 0;                       // what the innerHTML rebuild does
+    T._restoreBrowseScroll(saved);
+    assert.strictEqual(el.scrollTop, 4000, "the operator's position was lost");
+  });
+});
+
+test("18c. switching view does NOT restore -- a new document starts at the top", () => {
+  T.S.screen = "departments"; T.S.view = "dir";
+  withScroller(4000, 20000, 900, (el) => {
+    const saved = T._browseScrollState();
+    T.S.view = "live";                      // the operator switched views
+    el.scrollTop = 0;
+    T._restoreBrowseScroll(saved);
+    assert.strictEqual(el.scrollTop, 0, "an unrelated view inherited a stale offset");
+  });
+});
+
+test("18d. a filter that SHORTENS the page clamps to the real maximum, not 0", () => {
+  T.S.screen = "departments"; T.S.view = "dir";
+  withScroller(4000, 20000, 900, (el, flushRAF) => {
+    const saved = T._browseScrollState();
+    // the rebuild leaves a much shorter document; the browser clamps to 0
+    el.scrollHeight = 2000; el.scrollTop = 0;
+    T._restoreBrowseScroll(saved);
+    flushRAF();
+    assert.strictEqual(el.scrollTop, 1100, "should land at scrollHeight - clientHeight");
+  });
+});
+
+test("18e. an unscrolled pane saves nothing, so nothing is restored", () => {
+  T.S.screen = "departments"; T.S.view = "dir";
+  withScroller(0, 20000, 900, () => {
+    assert.strictEqual(T._browseScrollState(), null);
+  });
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

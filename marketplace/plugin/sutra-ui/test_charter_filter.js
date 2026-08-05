@@ -21,6 +21,7 @@ function slice(from, toAnchor) {
 }
 const escSrc = script.match(/const esc = [\s\S]*?\n/)[0];
 const src = escSrc
+  + slice('function dirChip', 'return parts.length < 2')
   + slice('function dirChildOf', 'return null;')
   + slice('function dirLanesFor', 'return cols;')
   + slice('function dirCharterSection', 'return `<section class="chsec"><h2 class="chh">Charters</h2>${legend}${fil}');
@@ -138,6 +139,41 @@ t('parent_ref cycle does not hang or throw', cycOk);
 h = render([ch('1', 'a', 'active'), ch('2', 'a', 'active'), ch('3', 'b', 'active')], DOMAINS, 'all');
 t('repeated owner is hidden VISUALLY but the cell stays in the DOM',
   (h.match(/class="cown"/g) || []).length === 3 && (h.match(/ctxt ohide/g) || []).length === 1);
+
+/* ── the published ROW SHAPE ───────────────────────────────────────────────
+   domains_page.py renders a charter row as ONE line -- owner, title, kind,
+   status, lanes -- with the purpose only in the title attribute. An earlier
+   version of this view rendered the purpose as a visible <div> as well, which
+   made every row three lines tall and, because a <th> with a max-width inside
+   a width:100% table overflows instead of wrapping, spilled the text across
+   the lane columns. These assertions are that bug, pinned. */
+h = render([ch('1', 'a', 'active')], DOMAINS, 'all');
+t('purpose is a tooltip, NOT a visible block', /title="p"/.test(h) && !/chpurp/.test(h));
+t('the row header holds only the title', /<th scope="row"><span class="cht"[^>]*>C 1<\/span><\/th>/.test(h));
+h = render([ch('r1', 'r', 'active'), ch('a1', 'a', 'active')], DOMAINS, 'all');
+t('a charter owned by the page itself renders as "here", like the generator',
+  /<span class="cown-here"[^>]*>here<\/span>/.test(h));
+t('other owners render as a bare name, with no D-path chip in the owner cell',
+  /<span class="ctxt[^"]*">Alpha<\/span>/.test(h));
+
+/* ── the published chip spelling ───────────────────────────────────────────
+   The engine renders a D-path as "D1.D1"; the published page renders the SAME
+   ordinals as "D1.1" (domains_page.py dpath_idx). This view is the published
+   page, so it shows the published spelling — re-spaced from d.path, never a
+   recomputed index. */
+const chip = new Function(slice('function dirChip', 'return parts.length < 2')
+  + '; return dirChip;')();
+t('dirChip: engine "D1.D1" renders as the published "D1.1"', chip('D1.D1') === 'D1.1');
+t('dirChip: four levels deep', chip('D1.D1.D1.D11') === 'D1.1.1.11');
+t('dirChip: a top-level path is unchanged', chip('D1') === 'D1' && chip('D0') === 'D0');
+t('dirChip: missing path stays empty, never "undefined"', chip(undefined) === '');
+t('dirChip: ordinals are NEVER recomputed — only the separator changes',
+  chip('D3.D6').replace(/[^0-9]/g, '') === 'D3.D6'.replace(/[^0-9]/g, ''));
+
+/* and the lane headers carry that spelling through */
+h = render([ch('1', 'a1', 'active', 'project')], DOMAINS, 'all');
+t('lane headers use the published chip spelling',
+  laneHdr(h).every(x => !/D\d+\.D/.test(x)));
 
 let bad = 0;
 for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? 'ok   ' : 'FAIL ') + '- ' + name); }
