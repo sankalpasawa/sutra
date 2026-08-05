@@ -1,3 +1,14 @@
+## 2.66.0
+
+- Daily auto-update. The first session each day refreshes the marketplace and
+  updates the plugin, then prints one line if the version moved. Later
+  sessions that day exit immediately with no network call.
+- Bounded by the hook-level timeout (macOS has no GNU timeout) and fail-open
+  throughout: a missing CLI, no network, a failed update or a killed hook all
+  exit 0 in silence. A broken updater must never stop a session starting.
+- The update applies to the NEXT session, not the running one, and the message
+  says so.
+
 ## 2.65.0
 
 - Dispatch runtime ships to the fleet. Every file change must now belong to a
