@@ -195,6 +195,35 @@ jobs:
           # exist and `set -e` would fail the whole build on a size lookup.
           echo "size=$(du -h "Sutra-${{ matrix.arch }}.dmg" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
+      # NEVER REPLACE A NOTARIZED ASSET WITH AN AD-HOC ONE.
+      #
+      # make-dmg.sh degrades to ad-hoc when no certificate is present, and the
+      # upload below clobbers by design (a re-run must be able to fix a bad
+      # asset). Together those are a downgrade path: run this workflow without
+      # APPLE_CERT_P12 against a tag whose release already carries notarized
+      # DMGs, and every downloader silently gets the Gatekeeper block back --
+      # "Apple could not verify", whose only buttons are Done and Move to Bin.
+      #
+      # So an unsigned build refuses to overwrite a signed one. It still uploads
+      # to a release that has no DMG yet, which is what a first release needs.
+      - name: Refuse to downgrade a notarized release
+        if: env.HAVE_SIGNING_CERT != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          existing="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY"                         --json assets --jq '[.assets[].name] | join(" ")' 2>/dev/null || true)"
+          case "$existing" in
+            *Sutra-*.dmg*)
+              echo "::error::Release $TAG already carries a DMG, and THIS build is"
+              echo "ad-hoc signed (no APPLE_CERT_P12 secret). Uploading would replace a"
+              echo "notarized download with an unsigned one and reinstate the Gatekeeper"
+              echo "block for every user. Add the signing secrets, or cut a new tag."
+              exit 1 ;;
+            *) echo "no DMG on $TAG yet — an unsigned first upload is allowed" ;;
+          esac
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}

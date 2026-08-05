@@ -728,6 +728,17 @@
   .send.stop{background:var(--block);color:#fff}
   .send.stop:hover{filter:brightness(1.1)}
   [data-sask].dropping{outline:2px dashed var(--acc);outline-offset:2px}
+  /* The composer is a TEXTAREA now. A textarea does not inherit the row's font
+     or vertical centring the way an <input> did, and it ships with a resize
+     grabber and a scrollbar that fight the auto-grow -- so all three are stated
+     here rather than left to the UA stylesheet.
+     `field-sizing:content` sizes it natively where supported; autoGrowComposer()
+     is the fallback everywhere else, and the two agree. */
+  textarea[data-sask]{
+    flex:1; min-width:0; resize:none; overflow-y:hidden;
+    font:inherit; line-height:1.45; padding:7px 9px;
+    max-height:200px; field-sizing:content;
+  }
 
   /* ── editor ─────────────────────────────────────────────────────────────
      A textarea, deliberately: see the comment on SCREENS.editor. Monospace, tab
@@ -3602,9 +3613,13 @@ function sessionPane(s){
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="1.9" aria-hidden="true"><path d="M21 11l-8.5 8.5a4.6 4.6 0 01-6.5-6.5L14 4.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.1-2.1l7.9-7.9"/></svg>
       </button>
-      <input type="text" data-sask="${s.id}" value="${esc(S.composerText[s.id]||"")}"
-             placeholder="Ask anything — / for commands"
-             aria-label="Continue this session"/>
+      <!-- A TEXTAREA, not <input type="text">. An input cannot hold a newline at
+           any price, so Shift+Enter, Ctrl+J and pasted multi-line text were not
+           "unimplemented" -- they were impossible. rows=1 keeps it looking like a
+           single line until there is a reason not to; autoGrowComposer() sizes it. -->
+      <textarea data-sask="${s.id}" rows="1"
+             placeholder="Ask anything — / for commands, Shift+Enter for a new line"
+             aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
       <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
               title="Model — applies to the next message">
         ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
@@ -3631,9 +3646,25 @@ function sessionPane(s){
    no visible failure). Capture the focused input's identity + value + caret before
    rebuilding, restore it after -- covers every text input uniformly, not just the ones
    with bespoke keep() handlers. */
+/* Size the composer to its content, up to a ceiling.
+   Reset to "auto" first: scrollHeight only SHRINKS correctly when the element is
+   not already holding a taller explicit height, so without the reset the box
+   grows and never comes back down after deleting a paragraph. */
+const COMPOSER_MAX_PX = 200;
+function autoGrowComposer(el){
+  if (!el || el.tagName !== "TEXTAREA") return;
+  el.style.height = "auto";
+  const want = Math.min(el.scrollHeight, COMPOSER_MAX_PX);
+  el.style.height = want + "px";
+  el.style.overflowY = el.scrollHeight > COMPOSER_MAX_PX ? "auto" : "hidden";
+}
+
 function _focusedInputSelector(){
   const el = document.activeElement;
-  if (!el || !(el.tagName === "INPUT" || el.tagName === "SELECT")) return null;
+  /* TEXTAREA belongs here: the composer is one now, and omitting it means the
+     caret jumps to the end on every background re-render while you type. */
+  if (!el || !(el.tagName === "INPUT" || el.tagName === "SELECT"
+               || el.tagName === "TEXTAREA")) return null;
   if (el.id) return "#" + el.id;
   for (const attr of ["data-sask", "data-ssend"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
@@ -3963,7 +3994,7 @@ function render(){
 
   if (prior) {
     const el = document.querySelector(prior.sel);
-    if (el && (el.tagName === "INPUT")) {
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
       el.value = prior.value;
       el.focus();
       if (typeof prior.start === "number" && el.setSelectionRange) {
@@ -4306,8 +4337,10 @@ function wire(){
     const sid = inp.dataset.sask;
     /* "/" opens the palette; it only ever lists commands that actually
        resolve, because the source is GET /api/skills reading ~/.claude. */
+    autoGrowComposer(inp);
     inp.oninput = ()=>{
       S.composerText[sid] = inp.value;
+      autoGrowComposer(inp);
       const p = paletteFor(inp.value);
       const was = S.palette && S.palette.sid===sid;
       if (p && p.items.length){ S.palette = { sid, items:p.items, idx:0, token:p.token,
@@ -4321,6 +4354,20 @@ function wire(){
         if (e.key==="ArrowUp"){ e.preventDefault(); pal.idx=(pal.idx-1+pal.items.length)%pal.items.length; render(); return; }
         if (e.key==="Enter" || e.key==="Tab"){ e.preventDefault(); applyPalette(sid, pal.idx); return; }
         if (e.key==="Escape"){ e.preventDefault(); S.palette=null; render(); return; }
+      }
+      /* Shift+Enter is a NEWLINE, Enter sends. Ctrl/Cmd+J too, because that is
+         what readline users reach for. Returning early leaves the default
+         behaviour -- in a textarea that inserts the newline for us. */
+      if (e.key === "Enter" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          const at = inp.selectionStart, to = inp.selectionEnd;
+          inp.value = inp.value.slice(0, at) + "\n" + inp.value.slice(to);
+          inp.selectionStart = inp.selectionEnd = at + 1;
+          S.composerText[sid] = inp.value;
+          autoGrowComposer(inp);
+        }
+        return;
       }
       if(e.key==="Enter"){
         /* Not gated on inp.value: an attachment with no typed text is a legitimate

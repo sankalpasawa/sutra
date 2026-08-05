@@ -811,6 +811,55 @@ test("19d. no id means no resume, never the string 'null'", () => {
   assert.strictEqual(T.resumableId(mkSess(undefined, "/repo", "/repo")), null);
 });
 
+/* ── 20. the composer can hold more than one line ──────────────────────────
+   It was <input type="text">, which cannot contain a newline at any price:
+   Shift+Enter, Ctrl+J and pasting a multi-line block were not "unimplemented",
+   they were impossible. These assertions are on the shipped markup, because the
+   element TYPE is the whole feature. */
+const panelHtml = fs.readFileSync(PANEL, "utf8");
+
+test("20a. the composer is a textarea, not an input", () => {
+  assert.ok(/<textarea data-sask=/.test(panelHtml),
+    "the composer must be a textarea or multiline is impossible");
+  assert.ok(!/<input type="text" data-sask=/.test(panelHtml),
+    "the old single-line input must be gone");
+});
+
+test("20b. its value is the element's CONTENT, not a value= attribute", () => {
+  /* a textarea ignores value="..."; leaving that in place would silently blank
+     the composer on every re-render */
+  const m = panelHtml.match(/<textarea data-sask=[\s\S]{0,320}?<\/textarea>/);
+  assert.ok(m, "composer markup not found");
+  assert.ok(/>\$\{esc\(S\.composerText/.test(m[0]),
+    "the draft text must be the textarea's content");
+  assert.ok(!/value="\$\{esc\(S\.composerText/.test(m[0]),
+    "a textarea ignores value=, so the draft would vanish");
+});
+
+test("20c. focus restore knows about TEXTAREA", () => {
+  /* _focusedInputSelector tested INPUT||SELECT only. Without TEXTAREA the caret
+     jumps to the end on every background re-render while you type. */
+  const fn = panelHtml.match(/function _focusedInputSelector\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/TEXTAREA/.test(fn), "_focusedInputSelector must accept TEXTAREA");
+});
+
+test("20d. Shift+Enter is a newline and Enter still sends", () => {
+  const h = panelHtml;
+  assert.ok(/e\.key === "Enter" && \(e\.shiftKey/.test(h),
+    "Shift+Enter must be handled before the send branch");
+  assert.ok(/if\(e\.key==="Enter"\)\{/.test(h), "Enter must still send");
+});
+
+test("20e. auto-grow resets height before measuring", () => {
+  /* scrollHeight only shrinks correctly when the element is not already holding a
+     taller explicit height -- without the reset the box grows and never returns */
+  const fn = panelHtml.match(/function autoGrowComposer\(el\)\{[\s\S]*?\n\}/)[0];
+  const reset = fn.indexOf('height = "auto"');
+  const measure = fn.indexOf("scrollHeight");
+  assert.ok(reset !== -1 && measure !== -1 && reset < measure,
+    "must set height:auto BEFORE reading scrollHeight");
+});
+
 /* ── report ────────────────────────────────────────────────────────────── */
 
 console.log("\n" + "-".repeat(60));

@@ -272,6 +272,59 @@ codesign "${SIGN_ARGS[@]}" "$APP" || die "signing the app bundle failed"
 codesign --verify --deep --strict --verbose=1 "$APP" 2>&1 | sed 's/^/  /' \
   || die "the signature does not verify"
 
+# macOS ships bash 3.2, which has no `mapfile`, so the credential arguments are
+# assembled by direct array assignment rather than read from a subshell.
+NARGS=()
+if [ -n "${SUTRA_NOTARY_PROFILE:-}" ]; then
+  NARGS=(--keychain-profile "$SUTRA_NOTARY_PROFILE")
+elif [ -n "${SUTRA_NOTARY_KEY:-}" ] && [ -n "${SUTRA_NOTARY_KEY_ID:-}" ] \
+     && [ -n "${SUTRA_NOTARY_ISSUER:-}" ]; then
+  NARGS=(--key "$SUTRA_NOTARY_KEY" --key-id "$SUTRA_NOTARY_KEY_ID"
+         --issuer "$SUTRA_NOTARY_ISSUER")
+elif [ -n "${SUTRA_APPLE_ID:-}" ] && [ -n "${SUTRA_APPLE_PASSWORD:-}" ] \
+     && [ -n "${SUTRA_TEAM_ID:-}" ]; then
+  NARGS=(--apple-id "$SUTRA_APPLE_ID" --password "$SUTRA_APPLE_PASSWORD"
+         --team-id "$SUTRA_TEAM_ID")
+fi
+
+# ------------------------------------------------- notarize the APP itself --
+# The ticket has to be stapled to the .app, not only to the disk image.
+#
+# Stapling the DMG alone is enough for Gatekeeper WHEN IT CAN REACH APPLE: the
+# app copied out of the image carries no ticket of its own, and acceptance then
+# depends on an online check. Measured on a real download:
+#
+#     spctl (app, quarantined)  -> accepted, source=Notarized Developer ID
+#     stapler validate (app)    -> "does not have a ticket stapled to it"
+#
+# That second line is the gap. A first launch with no network -- on a plane, a
+# locked-down machine, a fresh laptop before wifi -- has nothing local to prove
+# notarization with. Stapling the app closes it, at the cost of one extra
+# submission per build.
+#
+# The app is submitted as a ZIP because notarytool does not accept a bare
+# .app directory; the ticket is then stapled to the .app, and the DMG built
+# AROUND the already-stapled app below.
+if [ -n "$IDENTITY" ] && [ "$SKIP_NOTARIZE" != "1" ] && [ ${#NARGS[@]} -gt 0 ]; then
+  step "notarize the app"
+  APP_ZIP="$DIST/$APP_NAME-app-$ARCH.zip"
+  rm -f "$APP_ZIP"
+  /usr/bin/ditto -c -k --keepParent "$APP" "$APP_ZIP" \
+    || die "could not zip the app for notarization"
+  if xcrun notarytool submit "$APP_ZIP" "${NARGS[@]}" --wait; then
+    xcrun stapler staple "$APP" \
+      && echo "  ticket stapled to $APP_NAME.app" \
+      || note "the app was notarized but could not be stapled; the DMG ticket still applies online"
+  else
+    note "notarizing the APP failed -- continuing to the DMG, which is submitted
+    separately. The app inside will validate online but not offline."
+  fi
+  rm -f "$APP_ZIP"
+  # Stapling rewrites the bundle, so re-verify before it is packaged.
+  codesign --verify --deep --strict "$APP" >/dev/null 2>&1 \
+    || die "the app signature broke while stapling"
+fi
+
 # ------------------------------------------------------------------- dmg ---
 step "dmg"
 mkdir -p "$DIST"
@@ -312,21 +365,6 @@ echo "  $DMG  ($(du -sh "$DMG" | awk '{print $1}'))"
 
 # -------------------------------------------------------------- notarize ---
 step "notarize"
-# macOS ships bash 3.2, which has no `mapfile`, so the credential arguments are
-# assembled by direct array assignment rather than read from a subshell.
-NARGS=()
-if [ -n "${SUTRA_NOTARY_PROFILE:-}" ]; then
-  NARGS=(--keychain-profile "$SUTRA_NOTARY_PROFILE")
-elif [ -n "${SUTRA_NOTARY_KEY:-}" ] && [ -n "${SUTRA_NOTARY_KEY_ID:-}" ] \
-     && [ -n "${SUTRA_NOTARY_ISSUER:-}" ]; then
-  NARGS=(--key "$SUTRA_NOTARY_KEY" --key-id "$SUTRA_NOTARY_KEY_ID"
-         --issuer "$SUTRA_NOTARY_ISSUER")
-elif [ -n "${SUTRA_APPLE_ID:-}" ] && [ -n "${SUTRA_APPLE_PASSWORD:-}" ] \
-     && [ -n "${SUTRA_TEAM_ID:-}" ]; then
-  NARGS=(--apple-id "$SUTRA_APPLE_ID" --password "$SUTRA_APPLE_PASSWORD"
-         --team-id "$SUTRA_TEAM_ID")
-fi
-
 NOTARIZED=0
 if [ "$SKIP_NOTARIZE" = "1" ]; then
   note "--skip-notarize: not submitted to Apple."
