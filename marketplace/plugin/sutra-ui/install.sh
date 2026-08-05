@@ -753,9 +753,47 @@ if [ -n "$SUTRA_ELECTRON_APP" ]; then
   mkdir -p "$APPS_DIR"
   cp -R "$SUTRA_ELECTRON_APP" "$APP" || die "could not copy the Electron bundle to $APP"
   # --deep because the bundle carries the Electron framework and helper apps.
+  #
+  # SIGN WITH A STABLE IDENTITY WHEN ONE EXISTS. This is not cosmetic: an AD-HOC
+  # signature's designated requirement IS the cdhash, so every rebuild produces a
+  # different code identity. macOS TCC records permissions against that
+  # requirement, so each re-install invalidates every grant the app had.
+  #
+  # The symptom is not a permission error -- it is a HANG. `claude` runs as a
+  # child of this app, so a protected-folder access is attributed to the
+  # RESPONSIBLE process (Sutra.app):
+  #
+  #   responsible=os.sutra.ui  accessing=com.anthropic.claude-code
+  #   service=kTCCServiceSystemPolicyDesktopFolder
+  #   "Failed to match existing code requirement for subject os.sutra.ui"
+  #   AUTHREQ_PROMPTING
+  #
+  # claude then blocks on a prompt the operator may never see, and the chat pane
+  # simply never answers. Signing with a certificate makes the requirement follow
+  # the CERT rather than the bytes, so a grant survives every subsequent install.
   if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$APP" >/dev/null 2>&1 \
-      || note "codesign failed on the Electron bundle; it still runs."
+    SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+      | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+    [ -n "$SIGN_ID" ] || SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+      | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' | head -1)"
+    if [ -n "$SIGN_ID" ]; then
+      if codesign --force --deep --sign "$SIGN_ID" "$APP" >/dev/null 2>&1; then
+        say "signed with a stable identity: $SIGN_ID"
+        say "  (file-access permissions granted once will survive re-installs)"
+      else
+        codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+        note "signing with $SIGN_ID failed, so the app is AD-HOC signed. macOS will
+    re-ask for file access after every install, and the first chat message can
+    HANG on that prompt until it is answered."
+      fi
+    else
+      codesign --force --deep --sign - "$APP" >/dev/null 2>&1 \
+        || note "codesign failed on the Electron bundle; it still runs."
+      note "No signing certificate found, so the app is AD-HOC signed. Its code
+    identity changes on every install, which invalidates macOS file-access
+    grants: the FIRST chat message after each install can hang until you answer
+    a permission prompt. A free Apple Development certificate in Xcode fixes it."
+    fi
   fi
   touch "$APP"
   wrote "$APP"
