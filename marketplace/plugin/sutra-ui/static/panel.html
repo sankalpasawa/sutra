@@ -728,6 +728,13 @@
   .send.stop{background:var(--block);color:#fff}
   .send.stop:hover{filter:brightness(1.1)}
   [data-sask].dropping{outline:2px dashed var(--acc);outline-offset:2px}
+  .tout{background:none;border:1px solid var(--line);border-radius:5px;color:var(--muted);
+    font:600 9.5px/1 var(--mono);padding:2px 6px;cursor:pointer;margin-left:4px}
+  .tout:hover{border-color:var(--acc);color:var(--acc)}
+  .toutbody{margin:2px 0 6px 18px;padding:7px 9px;background:var(--inset);
+    border:1px solid var(--line-soft);border-radius:6px;color:var(--muted);
+    font:11px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;
+    max-height:260px;overflow:auto}
   /* The composer is a TEXTAREA now. A textarea does not inherit the row's font
      or vertical centring the way an <input> did, and it ships with a resize
      grabber and a scrollbar that fight the auto-grow -- so all three are stated
@@ -1574,6 +1581,14 @@ function claudeChannel(s, side){
       if (ch.turn) ch.turn.claude_session = f.id;
     } else if (f.type === "token"){
       if (ch.turn) ch.turn.response = (ch.turn.response || "") + f.text;
+    } else if (f.type === "retrying"){
+      /* A rate-limit backoff. Without this the pane went silent and a WAITING
+         turn was indistinguishable from a WEDGED one. */
+      if (ch.turn){ ch.turn.retrying = f.detail || "retrying"; }
+    } else if (f.type === "sysinit"){
+      /* What the session actually resolved, as opposed to what was requested --
+         they differ whenever a fallback or a settings default applies. */
+      ch.sysinit = f;
     } else if (f.type === "thinking"){
       /* Presence only -- the server does not forward the thinking text, so the UI
          says "thinking" and nothing more. */
@@ -1592,7 +1607,10 @@ function claudeChannel(s, side){
           /* Match by id. A result whose start was never seen is NOT invented as a
              finished tool -- it is dropped, because a row with no name is noise. */
           const r = f.id && runs.find(x=>x.id === f.id);
-          if (r){ r.running = false; r.ok = f.ok !== false; r.endedAt = Date.now(); }
+          if (r){ r.running = false; r.ok = f.ok !== false; r.endedAt = Date.now();
+                  /* what the tool RETURNED -- the server used to discard it, so a
+                     failing tool showed a red dot with no reason attached */
+                  if (f.output) r.output = f.output; }
         } else {
           runs.push({ id:f.id, name:f.name || "tool", summary:f.summary || "",
                       caller:f.caller || null, running:true, ok:null,
@@ -1811,6 +1829,7 @@ async function submitTurn(text, sessionId){
 /* ══════════════════════ state ══════════════════════ */
 const S = {
   screen:"departments", sel:null, view:"live", showRetired:false, showAcme:false,
+  toolOpen:{},                   /* tool_use id -> is its output expanded */
   dirQ:"",                       /* Directory view search box */
   dirSt:null,                    /* Directory charter status filter (null = generator default) */
   /* first run. `onbDismissed` is per-load only; the persisted acknowledgement
@@ -3448,16 +3467,26 @@ function turnResponse(t){
            <span class="tstate" aria-hidden="true"></span>
            <span class="tname">${esc(r.name)}</span>
            ${r.summary?`<span class="tsum">${esc(r.summary)}</span>`:""}
+           ${r.output?`<button class="tout" type="button" data-toolout="${esc(r.id||"")}"
+                        aria-expanded="${S.toolOpen&&S.toolOpen[r.id]?"true":"false"}"
+                        title="Show what this tool returned">${
+                          S.toolOpen&&S.toolOpen[r.id]?"hide":"output"}</button>`:""}
            ${r.caller && r.caller!=="direct"?`<span class="pill p-acc">${esc(r.caller)}</span>`:""}
            <span class="tverdict">${r.running ? "running"
                                    : r.ok === false ? "error"
                                    : r.ok === null ? "unknown"
                                    : "done"}</span>
-         </div>`).join("")}</div>`
+         </div>${r.output && S.toolOpen && S.toolOpen[r.id]
+           ? `<pre class="toutbody">${esc(r.output)}</pre>` : ""}`).join("")}</div>`
     : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
       <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
       ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
     </div>` : "");
+  /* A backoff is not a hang, and the difference has to be visible or the
+     operator kills a turn that was about to succeed. */
+  const retrying = t.retrying
+    ? `<div class="working"><i class="dot"></i>Rate limited — retrying<b class="ell"></b>
+         <span class="tsum">${esc(t.retrying)}</span></div>` : "";
   const waiting = (t.streaming && !t.response && !runs.length)
     ? `<div class="working"><i class="dot"></i>${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
   const body = t.response
@@ -3466,7 +3495,7 @@ function turnResponse(t){
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
     ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>` : "";
-  return `<div class="a">${state}${replayed}${meta}${tools}${waiting}${body}${err}</div>`;
+  return `<div class="a">${state}${replayed}${meta}${tools}${retrying}${waiting}${body}${err}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)
@@ -4279,6 +4308,11 @@ function wire(){
     submitTurn(composed, sid); });
 
   /* ── side chat ── */
+  panes.querySelectorAll("[data-toolout]").forEach(b=>b.onclick=()=>{
+    const id = b.dataset.toolout;
+    S.toolOpen[id] = !S.toolOpen[id];
+    render();
+  });
   panes.querySelectorAll("[data-sidetoggle]").forEach(b=>b.onclick=()=>{
     const sid=b.dataset.sidetoggle;
     S.sideOpen[sid] = !S.sideOpen[sid];

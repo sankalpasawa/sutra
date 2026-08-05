@@ -111,6 +111,42 @@ AUTO_CAVEMAN = os.environ.get("SUTRA_UI_AUTO_CAVEMAN", "1") == "1"  # token-savi
 INIT_DELAY = float(os.environ.get("SUTRA_UI_INIT_DELAY", "3.5"))    # secs to let the TUI boot before typing
 
 
+def _tool_output(content, limit=4000):
+    """A tool_result's content, flattened to text for display.
+
+    The block is either a plain string or a list of typed parts. Only text is
+    forwarded; an image is NAMED rather than inlined, because a base64 payload
+    would be megabytes over a websocket that is rendering a progress view.
+
+    Truncation is EXPLICIT. A silent cut would let someone read half a file and
+    believe it was the whole one, which is worse than showing less.
+    """
+    if content is None:
+        return None
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        parts = []
+        for c in content:
+            if isinstance(c, str):
+                parts.append(c)
+            elif isinstance(c, dict):
+                if c.get("type") == "text" and c.get("text"):
+                    parts.append(str(c["text"]))
+                elif c.get("type"):
+                    parts.append("[%s]" % c["type"])
+        text = "\n".join(parts)
+    else:
+        text = str(content)
+    text = text.strip()
+    if not text:
+        return None
+    if len(text) > limit:
+        return text[:limit] + ("\n… truncated, %d more characters"
+                               % (len(text) - limit))
+    return text
+
+
 def _tool_summary(inp, limit=120):
     """One line describing what a tool was asked to do, or "".
 
@@ -580,7 +616,51 @@ async def ws_chat(ws: WebSocket):
                                 "phase": "end",
                                 "id": blk.get("tool_use_id"),
                                 "ok": not blk.get("is_error"),
+                                # WHAT THE TOOL ACTUALLY RETURNED. This was dropped:
+                                # the frame carried {id, ok} and the whole content
+                                # array was discarded server-side, so an operator
+                                # could see that Read ran and never what it read,
+                                # and a failing tool showed a red dot with no reason
+                                # attached -- the one thing you need when a turn
+                                # goes wrong.
+                                "output": _tool_output(blk.get("content")),
                             })
+                elif t == "system":
+                    # THE FOURTH TYPE THE PARSER NEVER HANDLED. The dispatch knew
+                    # stream_event / assistant / user / result and silently
+                    # `continue`d past everything else, so two useful things were
+                    # invisible:
+                    #
+                    #   init      what the session actually resolved -- model,
+                    #             tool count, mcp servers, plugins. The panel
+                    #             showed the model it REQUESTED, never the one in
+                    #             force, and those differ whenever a fallback or
+                    #             a settings default applies.
+                    #   api_retry a rate-limit backoff. Claude waits and retries;
+                    #             with no frame for it the pane sat silent and
+                    #             the turn read as HUNG. "Waiting, retrying" and
+                    #             "wedged" look identical when nothing is sent.
+                    sub = ev.get("subtype")
+                    if sub == "init":
+                        await ws.send_json({
+                            "type": "sysinit",
+                            "model": ev.get("model"),
+                            "tools": len(ev.get("tools") or []),
+                            "mcp_servers": [
+                                {"name": m.get("name"), "status": m.get("status")}
+                                for m in (ev.get("mcp_servers") or [])
+                                if isinstance(m, dict)],
+                            "slash_commands": len(ev.get("slash_commands") or []),
+                            "permission_mode": ev.get("permissionMode"),
+                            "cwd": ev.get("cwd"),
+                        })
+                    elif sub == "api_retry":
+                        await ws.send_json({
+                            "type": "retrying",
+                            "detail": str(ev.get("message") or ev.get("error")
+                                          or "the API asked us to retry")[:300],
+                            "attempt": ev.get("attempt"),
+                        })
                 elif t == "result":
                     got_result = True
                     # A `result` event is NOT proof of success: a failed run (stale

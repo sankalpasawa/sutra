@@ -248,6 +248,44 @@ class TestApp(unittest.TestCase):
             roots = [d["ref"] for d in everything if d["parent_ref"] is None]
             self.assertIn(r["root_ref"], roots)
 
+    def test_03b_tool_output_is_forwarded_not_discarded(self):
+        """The server used to send {id, ok} and DISCARD the whole content array,
+        so an operator saw that Read ran and never what it read -- and a failing
+        tool showed a red dot with no reason attached."""
+        import app as A
+
+        # a plain string result
+        self.assertEqual(A._tool_output("hello"), "hello")
+        # the typed-parts shape the CLI actually emits
+        self.assertEqual(
+            A._tool_output([{"type": "text", "text": "line one"},
+                            {"type": "text", "text": "line two"}]),
+            "line one\nline two")
+        # a non-text part is NAMED, never inlined: a base64 image would be
+        # megabytes over a websocket rendering a progress view
+        self.assertEqual(A._tool_output([{"type": "image", "source": {"data": "AAAA"}}]),
+                         "[image]")
+        # nothing to show stays None rather than becoming an empty expander
+        self.assertIsNone(A._tool_output(None))
+        self.assertIsNone(A._tool_output("   "))
+        self.assertIsNone(A._tool_output([]))
+
+    def test_03c_tool_output_truncation_is_explicit(self):
+        """A silent cut would let someone read half a file and believe it was the
+        whole one -- worse than showing less."""
+        import app as A
+        out = A._tool_output("x" * 5000, limit=100)
+        self.assertTrue(out.startswith("x" * 100))
+        self.assertIn("truncated", out)
+        self.assertIn("4900", out, "must say HOW MUCH was cut")
+        self.assertLess(len(out), 200)
+
+    def test_03d_a_tool_that_returns_nothing_is_not_an_error(self):
+        """ok and output are independent: a successful tool may legitimately
+        return no content, and that must not render as a failure."""
+        import app as A
+        self.assertIsNone(A._tool_output(""))
+
     def test_04_dpaths_are_unique_per_tenant(self):
         # D-numbering is PER TENANT TREE, not global -- T-local's "Sutra Labs"
         # and T-acme's "Client Success" are each their own root and each
