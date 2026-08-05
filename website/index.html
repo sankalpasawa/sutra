@@ -683,13 +683,45 @@
 <!-- ══ Download ══════════════════════════════════════════════════════════
      The DMG is attached to a GitHub RELEASE, not committed to this site.
      GitHub Pages is served from the repository, and git rejects any pushed
-     file over 100 MB; a bundled Sutra.dmg is ~160 MB because it carries its
-     own CPython. Release assets have no such limit, so the link below points
+     file over 100 MB; a bundled Sutra.dmg is ~165 MB because it carries its
+     own CPython. Release assets have no such limit, so the links below point
      at the latest release and the page stays small.
 
      /releases/latest/download/<name> always resolves to the newest release
      carrying that asset name, so this markup does not need editing per
-     release -- only the asset has to keep its name. -->
+     release -- only the asset has to keep its name.
+
+     WHICH REPO: these point at tchandrakar/sutra because that is where the
+     release with these assets actually EXISTS today. The canonical home is
+     sankalpasawa/sutra, which is also where this page is served from -- but a
+     link is only worth having if it resolves, and pointing at a release that
+     has not been cut yet would ship a 404 as a download button. To move them:
+     cut the same release upstream, e.g.
+
+       gh release create v2.64.0-desktop --repo sankalpasawa/sutra \
+         --title "Sutra Desktop 2.64.0" \
+         Sutra-arm64.dmg Sutra-x86_64.dmg SHA256SUMS.txt
+
+     then swap the two hrefs below to sankalpasawa/sutra. -->
+<script>
+  /* Pick the right build for the visitor instead of asking them to know their
+     own CPU. navigator.userAgentData.getHighEntropyValues is the only reliable
+     signal (Chromium hides arm64 in the classic UA string on macOS), so this
+     is progressive: the primary button ships as Apple Silicon in the markup
+     and is only rewritten when a check positively says Intel. A visitor whose
+     browser refuses to answer keeps a working link and the second button. */
+  document.addEventListener("DOMContentLoaded", function () {
+    var btn = document.getElementById("dl-primary");
+    if (!btn || !navigator.userAgentData || !navigator.userAgentData.getHighEntropyValues) return;
+    navigator.userAgentData.getHighEntropyValues(["architecture"]).then(function (h) {
+      if (!h || h.architecture !== "x86") return;
+      btn.href = btn.href.replace("Sutra-arm64.dmg", "Sutra-x86_64.dmg");
+      var sub = btn.querySelector(".dl-sub");
+      if (sub) sub.textContent = "Intel · ~169 MB";
+      btn.firstChild.nodeValue = "Download Sutra for macOS ";
+    }).catch(function () { /* keep the default; never break the button */ });
+  });
+</script>
 <section class="section" id="download">
   <div class="container">
     <div class="section-label">Install</div>
@@ -702,15 +734,15 @@
     </p>
 
     <div class="dl-row">
-      <a class="dl-btn dl-primary"
-         href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">
+      <a class="dl-btn dl-primary" id="dl-primary"
+         href="https://github.com/tchandrakar/sutra/releases/latest/download/Sutra-arm64.dmg">
         Download Sutra for macOS
-        <span class="dl-sub">Apple Silicon (M1&ndash;M4) &middot; ~160&nbsp;MB</span>
+        <span class="dl-sub">Apple Silicon (M1&ndash;M4) &middot; ~161&nbsp;MB</span>
       </a>
       <a class="dl-btn dl-secondary"
-         href="https://github.com/sankalpasawa/sutra/releases/latest">
-        All downloads &amp; release notes
-        <span class="dl-sub">Intel build, checksums, changelog</span>
+         href="https://github.com/tchandrakar/sutra/releases/latest">
+        Intel build, checksums &amp; notes
+        <span class="dl-sub">Not sure which? Apple menu &rarr; About This Mac</span>
       </a>
     </div>
 

@@ -23,9 +23,10 @@
 #   APPLE_NOTARY_KEY      base64 of an App Store Connect .p8 key
 #   APPLE_NOTARY_KEY_ID / APPLE_NOTARY_ISSUER
 #
-# Runner note: macos-14+ images are Apple Silicon, so arm64 is the native
-# build. An Intel DMG needs a macos-13 runner; add it as a second matrix leg
-# when there is an Intel user to serve.
+# Runner note: macos-14+ images are Apple Silicon and macos-13 is Intel, so the
+# matrix below builds each arch NATIVELY. That matters beyond convenience: the
+# post-package check actually runs the bundled interpreter, and a cross-built
+# one can only be executed under Rosetta, which CI runners do not have.
 name: release-dmg
 
 on:
@@ -42,7 +43,15 @@ permissions:
 
 jobs:
   dmg:
-    runs-on: macos-14
+    strategy:
+      fail-fast: false        # an Intel failure must not delete the arm64 build
+      matrix:
+        include:
+          - arch: arm64
+            runs-on: macos-14   # Apple Silicon
+          - arch: x86_64
+            runs-on: macos-13   # Intel
+    runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +64,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/sutra-bundle
-          key: sutra-bundle-${{ runner.os }}-${{ runner.arch }}-v1
+          key: sutra-bundle-${{ runner.os }}-${{ matrix.arch }}-v1
 
       - name: Install Electron toolchain
         working-directory: marketplace/plugin/sutra-ui/electron
@@ -101,7 +110,7 @@ jobs:
 
       - name: Vendor the runtime
         working-directory: marketplace/plugin/sutra-ui/electron
-        run: ./bundle-runtime.sh --arch arm64
+        run: ./bundle-runtime.sh --arch ${{ matrix.arch }}
 
       - name: Build the DMG
         working-directory: marketplace/plugin/sutra-ui/electron
@@ -115,7 +124,7 @@ jobs:
             printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
             export SUTRA_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
           fi
-          ./make-dmg.sh --arch arm64
+          ./make-dmg.sh --arch ${{ matrix.arch }}
           rm -f "$RUNNER_TEMP/notary.p8"
 
       # A stable asset name is what makes /releases/latest/download/... work
@@ -126,23 +135,38 @@ jobs:
         run: |
           set -euo pipefail
           built="$(ls *.dmg | head -1)"
-          cp "$built" "Sutra-arm64.dmg"
-          shasum -a 256 "Sutra-arm64.dmg" > "Sutra-arm64.dmg.sha256"
+          cp "$built" "Sutra-${{ matrix.arch }}.dmg"
+          shasum -a 256 "Sutra-${{ matrix.arch }}.dmg" > "Sutra-${{ matrix.arch }}.dmg.sha256"
           echo "built=$built" >> "$GITHUB_OUTPUT"
-          echo "size=$(du -h "Sutra-arm64.dmg" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          # NOT a hardcoded Sutra-arm64.dmg: on the Intel leg that file does not
+          # exist and `set -e` would fail the whole build on a size lookup.
+          echo "size=$(du -h "Sutra-${{ matrix.arch }}.dmg" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: |
-            marketplace/plugin/sutra-ui/electron/dist/Sutra-arm64.dmg
-            marketplace/plugin/sutra-ui/electron/dist/Sutra-arm64.dmg.sha256
+            marketplace/plugin/sutra-ui/electron/dist/Sutra-${{ matrix.arch }}.dmg
+            marketplace/plugin/sutra-ui/electron/dist/Sutra-${{ matrix.arch }}.dmg.sha256
+          # IDENTICAL from both legs, and arch-neutral. Each leg uploads its own
+          # asset but they share one release, so a body that named "this" arch
+          # would be overwritten by whichever leg finished last and the release
+          # would describe only half of what it carries.
           body: |
-            **${{ steps.asset.outputs.built }}** — ${{ steps.asset.outputs.size }}, Apple Silicon.
+            Drag to Applications and open. Sutra carries its own Python runtime — no
+            Python, Node, Xcode or network needed to install. First launch also installs
+            the Sutra plugin for Claude Code and lists every path it writes.
 
-            Drag to Applications and open. Carries its own Python runtime: no Python,
-            Node, Xcode or network needed to install. First launch also installs the
-            Sutra plugin for Claude Code and lists every path it writes.
+            | Download | For |
+            |---|---|
+            | `Sutra-arm64.dmg` | Apple Silicon (M1–M4) |
+            | `Sutra-x86_64.dmg` | Intel |
 
-            Verify the download:
-            `shasum -a 256 -c Sutra-arm64.dmg.sha256`
+            Not sure which? Apple menu → About This Mac. "Apple M…" is arm64.
+
+            Verify your download:
+            `shasum -a 256 -c Sutra-<arch>.dmg.sha256`
+
+            The panel serves on 127.0.0.1:8330, loopback only, and refuses to start if
+            `ANTHROPIC_API_KEY` is set — so it always bills your Max plan rather than the
+            per-token API.
