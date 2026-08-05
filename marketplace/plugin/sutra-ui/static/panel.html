@@ -948,6 +948,14 @@
           <button type="button" id="sideTabTerm" aria-pressed="true">Terminal</button>
           <button type="button" id="sideTabPrev" aria-pressed="false">Preview</button>
         </span>
+        <!-- Shell vs the real Claude Code TUI. app.py:729 already spawns either;
+             only the shell was ever reachable. -->
+        <span class="tabs sidetabs" role="group" aria-label="Terminal runs">
+          <button type="button" id="termModeShell" aria-pressed="true"
+                  title="Your login shell — git, ls, builds">Shell</button>
+          <button type="button" id="termModeClaude" aria-pressed="false"
+                  title="The real Claude Code TUI: /mcp, /plugin, /context, /rewind, vim mode, plan approval">Claude</button>
+        </span>
         <span class="termcwd" id="termCwd"></span>
         <button class="ib" id="termReload" type="button"
                 aria-label="Restart the terminal session" title="Restart the terminal session">
@@ -4849,6 +4857,11 @@ async function boot(){
    Mount-once, show/hide thereafter. The iframe carries a live WebSocket to a PTY
    running `claude`; re-creating it on a render would kill that session, so the
    only operations here are "create if absent" and "toggle hidden". */
+/* Persisted so the pane comes back as the operator left it. Defaults to the
+   shell: that is what the pane did before this control existed, and a terminal
+   that silently starts an agent session would be a surprising default. */
+try { S.termMode = localStorage.getItem("sutra.termMode") || "shell"; }
+catch (e) { S.termMode = "shell"; }
 const termPaneEl  = document.getElementById("termPane");
 const termBodyEl  = document.getElementById("termBody");
 const termBtnEl   = document.getElementById("termBtn");
@@ -4887,15 +4900,42 @@ function termMount(force){
      The word for that emulator is deliberately not written here: test_05b greps the
      studio HTML for it to prove "/" is not serving the legacy console. The terminal
      is an opt-in pane behind an iframe, so the guard still holds and stays strict. */
-  /* shell=1 -> the operator's OWN login shell (zsh on macOS), not the claude TUI:
-     this is a terminal, so it has to be able to run git, ls and a build.
+  /* MODE, and it was hardcoded to `shell` -- which quietly made the single
+     highest-value thing this pane can do unreachable.
+
+     /ws/term already spawns EITHER the operator's login shell (?shell=1) or the
+     REAL claude TUI in a PTY (app.py:729, `args = [CLAUDE_BIN]`). Only the first
+     was ever requested. The second is Claude Code itself, at full fidelity --
+     every built-in slash command (/mcp, /plugin, /context, /compact, /config,
+     /permissions, /rewind, /usage), Shift+Tab mode cycling, vim mode, permission
+     prompts and plan approval -- none of which the chat pane can do, and all of
+     which the docs list as features. Reaching them costs one query parameter.
+
+     It is passthrough, not native parity: those commands run in a terminal
+     emulator rather than as panel UI. But "reachable today" beats "designed",
+     and it does not block building native versions later.
+
      embed=1 -> drops that page's own sidebar and header, which this pane already
      draws, and whose 240px sidebar left the terminal about 120px at pane width. */
-  fr.src = "/legacy/term?embed=1&shell=1" + (cwd ? "&cwd=" + encodeURIComponent(cwd) : "");
+  const shellMode = S.termMode !== "claude";
+  fr.src = "/legacy/term?embed=1" + (shellMode ? "&shell=1" : "")
+         + (cwd ? "&cwd=" + encodeURIComponent(cwd) : "");
   fr.title = "Terminal";
   termBodyEl.appendChild(fr);
   S.termCwd = cwd;
   termCwdEl.textContent = cwd;
+}
+
+/* Switch the terminal pane between the login shell and the real claude TUI.
+   force=true because the iframe src is only read at creation -- without it the
+   pane keeps whatever it was first mounted with and the toggle looks broken. */
+function termSetMode(mode){
+  if (S.termMode === mode) return;
+  S.termMode = mode;
+  try { localStorage.setItem("sutra.termMode", mode); } catch (e) {}
+  mountTerm(S.termCwd, true);
+  paintTermMode();
+  render();
 }
 
 function termToggle(on){
@@ -4962,6 +5002,19 @@ function sideTab(which){
   if (term) termMount(false);
   lsSet(LS_SIDETAB, S.sideTab);
 }
+/* Shell vs the real Claude TUI. Wired beside the sibling tabs because it is the
+   same kind of control: which thing this pane is showing. */
+document.getElementById("termModeShell").onclick  = ()=>termSetMode("shell");
+document.getElementById("termModeClaude").onclick = ()=>termSetMode("claude");
+function paintTermMode(){
+  const claude = S.termMode === "claude";
+  const a = document.getElementById("termModeShell");
+  const b = document.getElementById("termModeClaude");
+  if (a) a.setAttribute("aria-pressed", String(!claude));
+  if (b) b.setAttribute("aria-pressed", String(claude));
+}
+paintTermMode();
+
 document.getElementById("sideTabTerm").onclick = ()=>sideTab("terminal");
 document.getElementById("sideTabPrev").onclick = ()=>sideTab("preview");
 document.getElementById("prevGo").onclick = ()=>previewOpen(document.getElementById("prevUrl").value);
