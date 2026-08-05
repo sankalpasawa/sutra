@@ -286,6 +286,66 @@ class TestApp(unittest.TestCase):
         import app as A
         self.assertIsNone(A._tool_output(""))
 
+    def test_03e_arg_builder_baseline_is_unchanged(self):
+        """The spawn was a hardcoded list; it is a builder now. The flags that
+        already worked must come out in the same order -- a reorder here is a
+        behaviour change nobody asked for."""
+        import app as A
+        a = A.build_agent_args("claude", "hi", "plan")
+        self.assertEqual(a, ["claude", "-p", "hi", "--output-format", "stream-json",
+                             "--verbose", "--include-partial-messages",
+                             "--permission-mode", "plan"])
+
+    def test_03f_arg_builder_validates_everything(self):
+        """A value that reaches the CLI unchecked fails seconds later as a dead
+        socket, which reads as 'the panel is broken' rather than 'that was
+        wrong'."""
+        import app as A
+        a = A.build_agent_args("claude", "hi", "plan", opts={
+            "fallback_model": "not-a-model",   # not catalogued
+            "effort": "bogus",                 # not a level
+            "max_budget_usd": 0,               # 0 means "spend nothing" = a hang
+            "allowed_tools": [None, "", 123],  # junk, not stringified
+            "add_dir": ["/etc"],               # outside $HOME
+        })
+        self.assertNotIn("--fallback-model", a)
+        self.assertNotIn("--effort", a)
+        self.assertNotIn("--max-budget-usd", a)
+        self.assertNotIn("--allowedTools", a)
+        self.assertNotIn("--add-dir", a)
+
+    def test_03g_add_dir_is_confined_to_home(self):
+        """This is a loopback web app: a directory arriving over a socket must
+        not be able to hand the agent '/'."""
+        import app as A
+        home = os.path.expanduser("~")
+        a = A.build_agent_args("claude", "hi", "plan",
+                               opts={"add_dir": [home, "/etc", "/"]})
+        dirs = [a[i + 1] for i, v in enumerate(a) if v == "--add-dir"]
+        self.assertEqual(dirs, [os.path.realpath(home)])
+
+    def test_03h_fork_session_needs_a_resume(self):
+        """--fork-session forks a RESUMED thread. Alone the CLI ignores it, which
+        would make the toggle look broken."""
+        import app as A
+        self.assertNotIn("--fork-session",
+                         A.build_agent_args("claude", "hi", "plan",
+                                            opts={"fork_session": True}))
+        self.assertIn("--fork-session",
+                      A.build_agent_args("claude", "hi", "plan", session_id="S",
+                                         opts={"fork_session": True}))
+
+    def test_03i_all_six_permission_modes_are_reachable(self):
+        """The panel knew three; `claude --help` accepts six. auto/manual/dontAsk
+        were unreachable from the UI even though the CLI has always taken them."""
+        import providers as P
+        for m in ("plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"):
+            self.assertIn(m, P.PERMISSION_MODES, m)
+        # and every one of them explains itself, including the ones whose
+        # behaviour is limited until a persistent session channel exists
+        for m in P.PERMISSION_MODES:
+            self.assertTrue(P.PERMISSION_MODE_NOTES.get(m), "no note for %s" % m)
+
     def test_04_dpaths_are_unique_per_tenant(self):
         # D-numbering is PER TENANT TREE, not global -- T-local's "Sutra Labs"
         # and T-acme's "Client Success" are each their own root and each
@@ -1055,7 +1115,12 @@ class TestApp(unittest.TestCase):
         self.assertEqual(st["permission_mode"], "plan",
                          "SAFETY rule 4: the default must not auto-approve edits")
         modes = {m["id"]: m for m in body["permission_modes"]}
-        self.assertEqual(set(modes), {"plan", "acceptEdits", "bypassPermissions"})
+        # SIX, not three. `claude --help` on the installed binary lists
+        # acceptEdits / auto / bypassPermissions / manual / dontAsk / plan; the
+        # panel offered three, so half the CLI's modes were unreachable from the
+        # UI. Verified against the binary, not assumed.
+        self.assertEqual(set(modes), {"plan", "acceptEdits", "bypassPermissions",
+                                      "auto", "manual", "dontAsk"})
         self.assertTrue(modes["plan"]["default"])
         self.assertFalse(modes["plan"]["writes_files"])
         # the two modes that write files must SAY they write files -- this flag

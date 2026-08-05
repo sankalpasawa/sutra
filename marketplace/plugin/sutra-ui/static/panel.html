@@ -728,6 +728,17 @@
   .send.stop{background:var(--block);color:#fff}
   .send.stop:hover{filter:brightness(1.1)}
   [data-sask].dropping{outline:2px dashed var(--acc);outline-offset:2px}
+  .topts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px;
+    padding:9px 11px;margin:0 0 7px;background:var(--surface);
+    border:1px solid var(--line-soft);border-radius:9px}
+  .topts label{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .topts label.wide{grid-column:1/-1}
+  .topts span{font:600 9.5px/1 var(--mono);letter-spacing:.05em;color:var(--faint);
+    text-transform:uppercase}
+  .topts input,.topts select{background:var(--inset);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.3 var(--sans);padding:5px 7px;min-width:0}
+  .topts input:focus,.topts select:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .topts-note{grid-column:1/-1;margin:0;color:var(--faint);font-size:10.5px;line-height:1.45}
   .tout{background:none;border:1px solid var(--line);border-radius:5px;color:var(--muted);
     font:600 9.5px/1 var(--mono);padding:2px 6px;cursor:pointer;margin-left:4px}
   .tout:hover{border-color:var(--acc);color:var(--acc)}
@@ -1722,7 +1733,12 @@ function askClaude(s, turn, side){
   const frame = JSON.stringify({ message: turn.sent,
                                  resume: side ? (ch.sideSession || null)
                                               : resumableId(s),
-                                 model: (model === undefined ? null : model) });
+                                 model: (model === undefined ? null : model),
+                                 /* Per-turn CLI options. The SERVER validates every
+                                    one of these (build_agent_args); nothing here is
+                                    trusted, and an unknown or junk value is dropped
+                                    rather than passed to the CLI. */
+                                 opts: S.turnOpts[s.id] || null });
   if (ch.open) ch.ws.send(frame); else ch.queue.push(frame);
   scheduleRender();
 }
@@ -1830,6 +1846,8 @@ async function submitTurn(text, sessionId){
 const S = {
   screen:"departments", sel:null, view:"live", showRetired:false, showAcme:false,
   toolOpen:{},                   /* tool_use id -> is its output expanded */
+  turnOpts:{},                   /* session id -> per-turn CLI options (effort, budget, ...) */
+  optsOpen:{},                   /* session id -> is the options row expanded */
   dirQ:"",                       /* Directory view search box */
   dirSt:null,                    /* Directory charter status filter (null = generator default) */
   /* first run. `onbDismissed` is per-load only; the persisted acknowledgement
@@ -3636,7 +3654,14 @@ function sessionPane(s){
         <button class="attx" type="button" data-attrm="${s.id}:${i}"
                 aria-label="Remove ${esc(a.name)}">&times;</button></span>`).join("")}
     </div>` : ""}
+    ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
     <div class="pc">
+      <button class="ib" data-optstoggle="${s.id}" type="button"
+              aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
+              aria-label="Turn options" title="Effort, budget and tool limits for the next message">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.9" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      </button>
       <button class="ib" data-attach="${s.id}" type="button"
               aria-label="Attach a file" title="Attach a file (or drop / paste one)">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -3680,6 +3705,47 @@ function sessionPane(s){
    not already holding a taller explicit height, so without the reset the box
    grows and never comes back down after deleting a paragraph. */
 const COMPOSER_MAX_PX = 200;
+/* Per-turn CLI options. These map 1:1 onto flags `claude --help` documents, and
+   the SERVER validates every one (build_agent_args) -- nothing typed here is
+   trusted. Kept per SESSION rather than global: "spend at most $2 on this one"
+   is a property of the question being asked, not of the panel. */
+const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];
+function turnOptsHtml(sid){
+  const o = S.turnOpts[sid] || {};
+  return `<div class="topts">
+    <label><span>Effort</span>
+      <select data-opt="effort" data-sid="${sid}">
+        ${EFFORTS.map(e=>`<option value="${e}" ${o.effort===e?"selected":""}>${
+          e||"default"}</option>`).join("")}
+      </select></label>
+    <label><span>Budget</span>
+      <input type="number" step="0.5" min="0" placeholder="no cap"
+             data-opt="max_budget_usd" data-sid="${sid}"
+             value="${o.max_budget_usd!=null?esc(String(o.max_budget_usd)):""}"
+             title="--max-budget-usd: stop the turn once it has cost this much"/></label>
+    <label class="wide"><span>Allow only</span>
+      <input type="text" placeholder="Read Bash Grep — blank means every tool"
+             data-opt="allowed_tools" data-sid="${sid}"
+             value="${esc((o.allowed_tools||[]).join(" "))}"
+             title="--allowedTools: whitespace separated"/></label>
+    <label class="wide"><span>Never</span>
+      <input type="text" placeholder="WebFetch Write"
+             data-opt="disallowed_tools" data-sid="${sid}"
+             value="${esc((o.disallowed_tools||[]).join(" "))}"
+             title="--disallowedTools: whitespace separated"/></label>
+    <label class="wide"><span>Extra instructions</span>
+      <input type="text" placeholder="appended to the system prompt for this turn"
+             data-opt="append_system_prompt" data-sid="${sid}"
+             value="${esc(o.append_system_prompt||"")}"/></label>
+    <p class="topts-note">Applies to the next message; the server validates each
+      value and drops anything it does not recognise.
+      <strong>Denying one tool is not a capability limit</strong> — blocking only
+      <code>Read</code>, the agent read the same file with <code>Bash</code>. To
+      stop a capability, deny every route to it
+      (<code>Read Bash Grep Glob</code>). Measured, not assumed.</p>
+  </div>`;
+}
+
 function autoGrowComposer(el){
   if (!el || el.tagName !== "TEXTAREA") return;
   el.style.height = "auto";
@@ -4308,6 +4374,27 @@ function wire(){
     submitTurn(composed, sid); });
 
   /* ── side chat ── */
+  panes.querySelectorAll("[data-optstoggle]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.optstoggle; S.optsOpen[sid]=!S.optsOpen[sid]; render(); });
+  panes.querySelectorAll("[data-opt]").forEach(el=>{
+    const sid=el.dataset.sid, key=el.dataset.opt;
+    const commit=()=>{
+      const o = (S.turnOpts[sid] = S.turnOpts[sid] || {});
+      const raw = el.value;
+      if (key === "allowed_tools" || key === "disallowed_tools"){
+        const list = raw.split(/\s+/).filter(Boolean);
+        if (list.length) o[key] = list; else delete o[key];
+      } else if (key === "max_budget_usd"){
+        const n = parseFloat(raw);
+        if (isFinite(n) && n > 0) o[key] = n; else delete o[key];
+      } else if (raw && raw.trim()){
+        o[key] = raw.trim();
+      } else { delete o[key]; }
+      /* No render(): re-rendering on every keystroke would tear down the field
+         being typed into. The value is already in S. */
+    };
+    el.oninput = commit; el.onchange = commit;
+  });
   panes.querySelectorAll("[data-toolout]").forEach(b=>b.onclick=()=>{
     const id = b.dataset.toolout;
     S.toolOpen[id] = !S.toolOpen[id];

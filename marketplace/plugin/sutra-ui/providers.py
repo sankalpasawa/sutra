@@ -123,7 +123,18 @@ SETTINGS_PATH = Path(os.path.expanduser(
 #                      It will create, modify and delete files under `workdir`
 #                      with no per-edit prompt. Opt in deliberately.
 #   bypassPermissions  approves everything, including shell commands. Widest.
-PERMISSION_MODES = ("plan", "acceptEdits", "bypassPermissions")
+# All six the CLI accepts, verified against `claude --help` on the installed
+# binary rather than assumed:
+#   choices: "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"
+# The panel knew three, so `auto`, `manual` and `dontAsk` were unreachable from
+# the UI even though the CLI has always taken them.
+#
+# manual / auto / dontAsk describe how APPROVALS are handled, and the approval
+# round-trip needs a persistent stream-json session the panel does not have yet
+# -- so they are selectable and honest about what they do, not silently broken:
+# without that channel `manual` behaves as the CLI's own default handling.
+PERMISSION_MODES = ("plan", "acceptEdits", "bypassPermissions",
+                    "auto", "manual", "dontAsk")
 DEFAULT_PERMISSION_MODE = "plan"
 DEFAULT_WORKDIR = "~/sutra-ui-workspace"
 
@@ -215,6 +226,13 @@ def stored_model():
 
 PERMISSION_MODE_NOTES = {
     "plan": "read-only planning: the agent proposes edits, you approve each one.",
+    "auto": "the CLI decides per action, using its own rules and your "
+            "~/.claude settings.",
+    "manual": "every action is asked about. Approvals need a persistent session "
+              "channel the panel does not have yet, so today this defers to the "
+              "CLI's own handling rather than prompting in this pane.",
+    "dontAsk": "never prompts. Actions the rules do not already allow are "
+               "declined rather than escalated.",
     "acceptEdits": "the agent WRITES FILES without asking -- it can create, "
                    "modify and delete files under the workdir. Opt in knowingly.",
     "bypassPermissions": "everything is auto-approved, including shell commands "

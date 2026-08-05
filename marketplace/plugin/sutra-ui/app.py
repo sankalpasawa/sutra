@@ -111,6 +111,112 @@ AUTO_CAVEMAN = os.environ.get("SUTRA_UI_AUTO_CAVEMAN", "1") == "1"  # token-savi
 INIT_DELAY = float(os.environ.get("SUTRA_UI_INIT_DELAY", "3.5"))    # secs to let the TUI boot before typing
 
 
+# --------------------------------------------------------------- arg vector --
+# The spawn used to be a hardcoded list with no extension point, so every CLI
+# capability the panel wanted meant editing the middle of the websocket loop.
+# `claude --help` on the installed binary exposes ~40 flags that are each one
+# append; this makes them a FIELD rather than a code change.
+#
+# Everything is validated here. A value that reaches the CLI unchecked fails
+# several seconds later as a dead socket, which reads as "the panel is broken"
+# rather than "that input was wrong".
+
+def _flag_str(value, limit=4000):
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    return v[:limit] if v else None
+
+
+def _flag_list(value, limit=64):
+    """A repeated flag's values. Non-strings and blanks are dropped rather than
+    stringified -- passing `None` to the CLI as the text "None" is worse than
+    passing nothing."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    out = []
+    for v in value:
+        v = _flag_str(v, 1024)
+        if v:
+            out.append(v)
+    return out[:limit]
+
+
+def _flag_money(value):
+    """A budget ceiling. Rejects anything non-positive or unparseable: a `0`
+    silently means "spend nothing" and would look like a hung turn."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return ("%.4f" % f).rstrip("0").rstrip(".") if f > 0 else None
+
+
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
+                     opts=None):
+    """The full argv for one turn.
+
+    Separated from the socket loop so it is testable without a subprocess, and
+    so adding a flag cannot accidentally change the ordering of the ones that
+    already work.
+    """
+    opts = opts if isinstance(opts, dict) else {}
+    args = [
+        agent_bin, "-p", msg,
+        "--output-format", "stream-json",
+        "--verbose", "--include-partial-messages",
+        "--permission-mode", perm_mode,
+    ]
+    if session_id:
+        args += ["--resume", session_id]
+        # Only meaningful WITH --resume: it forks the resumed thread instead of
+        # continuing it. Passing it alone is silently ignored by the CLI, which
+        # would make a UI toggle look broken.
+        if opts.get("fork_session"):
+            args += ["--fork-session"]
+    if model:
+        args += ["--model", model]
+
+    fallback = providers.clean_model(opts.get("fallback_model"))
+    if fallback and fallback != model:
+        args += ["--fallback-model", fallback]
+
+    effort = _flag_str(opts.get("effort"))
+    if effort in EFFORT_LEVELS:
+        args += ["--effort", effort]
+
+    # Extra roots the tools may touch. Confined to $HOME for the same reason the
+    # workdir is: this is a loopback web app, and a directory arriving over a
+    # socket must not be able to hand the agent "/".
+    home = os.path.realpath(os.path.expanduser("~"))
+    for d in _flag_list(opts.get("add_dir"), 16):
+        real = os.path.realpath(os.path.expanduser(d))
+        if real == home or real.startswith(home + os.sep):
+            args += ["--add-dir", real]
+
+    allowed = _flag_list(opts.get("allowed_tools"), 64)
+    if allowed:
+        args += ["--allowedTools"] + allowed
+    denied = _flag_list(opts.get("disallowed_tools"), 64)
+    if denied:
+        args += ["--disallowedTools"] + denied
+
+    extra_prompt = _flag_str(opts.get("append_system_prompt"), 8000)
+    if extra_prompt:
+        args += ["--append-system-prompt", extra_prompt]
+
+    budget = _flag_money(opts.get("max_budget_usd"))
+    if budget:
+        args += ["--max-budget-usd", budget]
+
+    return args
+
+
 def _tool_output(content, limit=4000):
     """A tool_result's content, flattened to text for display.
 
@@ -516,21 +622,16 @@ async def ws_chat(ws: WebSocket):
                     and "/" not in seed and ".." not in seed):
                 session_id, resume_unverified = seed, True
 
-            args = [
-                agent_bin, "-p", msg,
-                "--output-format", "stream-json",
-                "--verbose", "--include-partial-messages",
-                "--permission-mode", perm_mode,
-            ]
-            if session_id:
-                args += ["--resume", session_id]
             # Model: per-message override wins over the stored setting, and BOTH are
             # validated against the allow-list -- an arbitrary string here would be
             # passed straight to the CLI, where a typo fails as a dead socket several
             # seconds later instead of as a refusal now.
             chosen_model = providers.clean_model(model) or providers.stored_model()
-            if chosen_model:
-                args += ["--model", chosen_model]
+            # Everything else the client may ask for this turn, validated in
+            # build_agent_args rather than trusted here.
+            args = build_agent_args(agent_bin, msg, perm_mode,
+                                    session_id=session_id, model=chosen_model,
+                                    opts=payload.get("opts"))
 
             # EXACTLY ONE `start` PER OPERATOR MESSAGE. The client treats `start`
             # as the demarcation that binds the next token stream to the next
