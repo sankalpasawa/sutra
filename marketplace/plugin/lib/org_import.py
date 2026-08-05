@@ -79,6 +79,15 @@ _SECT = re.compile(
     r'<section id="[^"]*" class="dept"><header><span class="chip big">([^<]*)</span>'
     r'<div><h2><a class="dlink" href="(dref-[0-9a-f]+)\.html">(.*?)</a></h2>'
     r'(?:<p class="desc">(.*?)</p>)?', re.S)
+# A department whose CHILDREN's names are withheld from the public page renders
+# a count and no names (domains_page.py:168,187). That marker is the only trace
+# the export carries of `public_names_withheld`, and of how many children the
+# real registry has under that node -- the names themselves are, by design, not
+# recoverable from a page built to omit them.
+_WITHHELD = re.compile(r'class="(?:info )?withheld">(\d+) entries')
+_SECT_BLOCK = re.compile(
+    r'<section id="[^"]*" class="dept">.*?<a class="dlink" href="(dref-[0-9a-f]+)\.html">'
+    r'(.*?)</section>', re.S)
 _THEAD = re.compile(r"<thead>(.*?)</thead>", re.S)
 _TH = re.compile(r"<th[^>]*>(.*?)</th>", re.S)
 _ROW = re.compile(
@@ -191,6 +200,32 @@ def parse_export(site_dir):
             if kid not in desc:
                 desc[kid] = _txt(m.group(4) or "")
 
+    # ------------------------------------------------- withheld children ---
+    # THIS WAS MISSED ON THE FIRST IMPORT and the loss was silent: 0 of 55
+    # domains carried the flag, while the published page plainly showed
+    # "2 entries — names withheld" under Client Projects (T3). Without it a
+    # re-publish would EXPOSE the names of two third parties that the page it
+    # was rebuilt from had deliberately hidden -- a privacy regression produced
+    # by a fidelity bug.
+    #
+    # The child NAMES are not recoverable, and must not be invented: a page
+    # built to omit them cannot yield them back. They are counted and reported
+    # as known-missing so an operator can add the real ones.
+    withheld = {}
+    for ref, s in src.items():
+        for m in _SECT_BLOCK.finditer(s):
+            w = _WITHHELD.search(m.group(2))
+            if w:
+                withheld[m.group(1)] = int(w.group(1))
+        # a page's own withheld marker, when it is the subject of that page
+        if ref != "ROOT":
+            own = _WITHHELD.search(s)
+            if own and ref not in withheld:
+                # only trust it when the page carries no dept section that could
+                # own the marker instead
+                if not _SECT_BLOCK.search(s):
+                    withheld[ref] = int(own.group(1))
+
     unknown = sorted(r for r, pa in parent.items() if pa != "ROOT" and pa not in parent)
     if unknown:
         raise ImportError_("parent unresolved for: %s" % unknown[:5])
@@ -270,6 +305,7 @@ def parse_export(site_dir):
     return {"root_name": name.get("ROOT", ""),
             "root_desc": desc.get("ROOT", ""), "name": name, "desc": desc,
             "chip": chip, "parent": parent, "kids": dict(kids),
+            "withheld": withheld,
             "charters": charters, "extras": extras,
             "link_disagreements": disagreements,
             "status_cross_checked": checked}
@@ -514,6 +550,25 @@ def build_plan(parsed, home, tenant=TENANT, ts_base=None):
         else:
             skipped_domains.append(root_ref)
 
+    # FIELD REPAIRS for domains already on disk. The importer is strictly
+    # additive -- an existing ref is skipped, never overwritten -- which is the
+    # right default and was also how the first import's loss became permanent:
+    # `public_names_withheld` was not parsed at all, so re-running could never
+    # put it back. Repairs are therefore explicit, narrow (only fields the
+    # export states authoritatively) and reported, rather than a blanket
+    # overwrite of operator-edited records.
+    field_updates = []
+    for ref, n in (parsed.get("withheld") or {}).items():
+        cur = existing.get(ref)
+        if cur is not None and not cur.get("public_names_withheld"):
+            field_updates.append({
+                "ref": ref, "name": cur.get("name"),
+                "set": {"public_names_withheld": True,
+                        "withheld_children_expected": n},
+                "why": "the published page shows %d entries with names withheld; "
+                       "without the flag a re-publish would EXPOSE them" % n,
+            })
+
     for i, ref in enumerate(order):
         if ref in existing:
             skipped_domains.append(ref)
@@ -523,7 +578,8 @@ def build_plan(parsed, home, tenant=TENANT, ts_base=None):
             ref=ref, name=parsed["name"].get(ref, ""),
             parent_ref=alias.get(pa, pa),
             description=parsed["desc"].get(ref, ""),
-            tenant=tenant, ts=ts_base + i))
+            tenant=tenant, ts=ts_base + i,
+            withheld=parsed.get("withheld", {}).get(ref)))
 
     # the root: rename in place, never a second parentless node
     root_update = None
@@ -579,11 +635,12 @@ def build_plan(parsed, home, tenant=TENANT, ts_base=None):
 
     return {"home": home, "local_root": local_root, "alias": alias,
             "ts_base": ts_base, "root_update": root_update,
+            "field_updates": field_updates,
             "domains": new_domains, "charters": new_charters,
             "skipped_domains": skipped_domains, "skipped_charters": skipped_charters}
 
 
-def _domain_doc(ref, name, parent_ref, description, tenant, ts):
+def _domain_doc(ref, name, parent_ref, description, tenant, ts, withheld=None):
     """One domain record, in exactly the shape mint_domain() writes
     (placement_engine.py :365-384) plus `description` and `import_source`.
 
@@ -613,6 +670,12 @@ def _domain_doc(ref, name, parent_ref, description, tenant, ts):
         "disposition_event_id": None,
         "import_source": "published-domains-export",
     }
+    if withheld:
+        # The page said N children exist and refused to name them. Carry BOTH:
+        # the flag, so a re-publish keeps hiding them, and the count, so the
+        # gap is visible instead of looking like an empty department.
+        doc["public_names_withheld"] = True
+        doc["withheld_children_expected"] = withheld
 
 
 def _published_root(parsed):
@@ -653,7 +716,8 @@ def apply_plan(plan):
     os.makedirs(charters_dir, exist_ok=True)
     index = os.path.join(domains_dir, "INDEX.jsonl")
 
-    wrote = {"domains": 0, "charters": 0, "sidecars": 0, "root_renamed": False}
+    wrote = {"domains": 0, "charters": 0, "sidecars": 0, "root_renamed": False,
+             "repaired": 0}
 
     for d in plan["domains"]:
         path = os.path.join(domains_dir, d["ref"] + ".json")
@@ -667,6 +731,21 @@ def apply_plan(plan):
                                  "parent_ref": d["parent_ref"], "name": d["name"],
                                  "origin": d["origin"], "tenant_id": d["tenant_id"],
                                  "ts_ms": d["ts_minted_ms"],
+                                 "source": "published-domains-export"},
+                                sort_keys=True) + "\n")
+
+    for up in plan.get("field_updates", []):
+        path = os.path.join(domains_dir, up["ref"] + ".json")
+        if not os.path.exists(path):
+            continue
+        doc = json.load(open(path, encoding="utf-8"))
+        doc.update(up["set"])
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, sort_keys=True, indent=2)
+        wrote["repaired"] = wrote.get("repaired", 0) + 1
+        with open(index, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"event": "domain_updated", "ref": up["ref"],
+                                 "set": sorted(up["set"]), "reason": up["why"],
                                  "source": "published-domains-export"},
                                 sort_keys=True) + "\n")
 
@@ -720,8 +799,26 @@ def report(parsed, plan):
         "already there: %d domains, %d charters (left untouched)"
         % (len(plan["skipped_domains"]), len(plan["skipped_charters"])),
         "",
-        "top-level departments, in the order the D-path will number them:",
     ]
+
+    for up in plan.get("field_updates", []):
+        lines.append("REPAIR      : %s (%s)" % (up["name"], up["ref"]))
+        lines.append("              set %s" % ", ".join(
+            "%s=%r" % (k, v) for k, v in sorted(up["set"].items())))
+        lines.append("              %s" % up["why"])
+    n_missing = sum(v.get("withheld_children_expected", 0)
+                    for v in [u["set"] for u in plan.get("field_updates", [])])
+    if n_missing:
+        lines.append("NOT RECOVERABLE: %d child department(s) under a withheld "
+                     "parent." % n_missing)
+        lines.append("              Their names are absent from the export BY "
+                     "DESIGN -- a page built to")
+        lines.append("              omit them cannot yield them back. They are "
+                     "counted, never invented;")
+        lines.append("              add the real ones by hand.")
+    lines.append("")
+    lines.append("top-level departments, in the order the D-path will number them:")
+
     for i, r in enumerate(tops, 1):
         n = len(p["kids"].get(r, []))
         lines.append("  D%-3d %-26s %s" % (i, p["name"].get(r, ""),
