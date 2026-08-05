@@ -47,12 +47,28 @@ jobs:
       fail-fast: false        # an Intel failure must not delete the arm64 build
       matrix:
         include:
+          # `runner`, not `runs-on`: a matrix property whose name collides with a
+          # reserved workflow key reads as a mistake and has to be dereferenced
+          # around the hyphen. The value is what runs-on consumes either way.
           - arch: arm64
-            runs-on: macos-14   # Apple Silicon
+            runner: macos-14    # Apple Silicon
           - arch: x86_64
-            runs-on: macos-13   # Intel
-    runs-on: ${{ matrix.runs-on }}
+            runner: macos-13    # Intel
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    # A step's own `if:` cannot see the `secrets` context at all -- GitHub rejects
+    # the WHOLE FILE with "Unrecognized named-value: 'secrets'" before it starts a
+    # single job (a 0s failed run with no jobs, which is what happened three times).
+    # Per the official context-availability table, `jobs.<id>.steps.if` gets
+    # github/needs/strategy/matrix/job/runner/env/vars/steps/inputs -- `env` yes,
+    # `secrets` no. And a STEP-level env is not visible to that step's own `if`
+    # either, because the condition is evaluated before the step's env exists.
+    # So the presence check is hoisted to a JOB-level env, which may read secrets.
+    #
+    # It publishes a BOOLEAN, never the secret: job-level env is visible to every
+    # step, and there is no reason for the certificate itself to be.
+    env:
+      HAVE_SIGNING_CERT: ${{ secrets.APPLE_CERT_P12 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -85,11 +101,8 @@ jobs:
       - name: Engine + importer tests
         run: python3 -m unittest discover -s marketplace/plugin/lib/tests -p 'test_*.py'
 
-      # `env.X` is not populated for a step's own `if` — the condition is
-      # evaluated before the step's env block exists, so this must read the
-      # secret directly or it silently never runs.
       - name: Import the signing certificate
-        if: ${{ secrets.APPLE_CERT_P12 != '' }}
+        if: env.HAVE_SIGNING_CERT == 'true'
         env:
           APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
