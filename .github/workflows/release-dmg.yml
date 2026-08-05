@@ -11,6 +11,14 @@
 # asset is therefore RENAMED to a stable, version-free name on upload -- the
 # versioned filename lives in the release title and notes.
 #
+# THIS WORKFLOW OWNS THOSE ASSET NAMES. Do not also upload them by hand. Each
+# leg publishes one Sutra-<arch>.dmg plus its own Sutra-<arch>.dmg.sha256, and
+# a re-run REPLACES the DMG -- so a hand-uploaded aggregate checksum file goes
+# stale silently and `shasum -c` then reports a FAILED download, which reads as
+# corruption rather than as bookkeeping. That happened once; per-asset
+# checksums written by the same leg that built the asset are why it cannot
+# happen again (and why there is no cross-leg race over one shared file).
+#
 # SIGNING
 # -------
 # Without a Developer ID certificate this produces an AD-HOC signed DMG: it

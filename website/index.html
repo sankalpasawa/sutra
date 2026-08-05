@@ -696,13 +696,16 @@
      sankalpasawa/sutra, which is also where this page is served from -- but a
      link is only worth having if it resolves, and pointing at a release that
      has not been cut yet would ship a 404 as a download button. To move them:
-     cut the same release upstream, e.g.
+     push a v* tag upstream so .github/workflows/release-dmg.yml builds and
+     attaches both architectures there, then swap the two hrefs below.
 
-       gh release create v2.64.0-desktop --repo sankalpasawa/sutra \
-         --title "Sutra Desktop 2.64.0" \
-         Sutra-arm64.dmg Sutra-x86_64.dmg SHA256SUMS.txt
-
-     then swap the two hrefs below to sankalpasawa/sutra. -->
+     DO NOT hand-upload the DMGs. The workflow owns these asset names, and a
+     manual upload alongside it is how the checksums went stale once already:
+     the release carried an aggregate SHA256SUMS.txt from a local build while
+     CI replaced the DMG with its own, so `shasum -c` reported a FAILED
+     download to anyone who checked -- which reads as corruption, not as a
+     bookkeeping slip. Each leg now publishes exactly one Sutra-<arch>.dmg and
+     its own Sutra-<arch>.dmg.sha256, so nothing can disagree. -->
 <script>
   /* Pick the right build for the visitor instead of asking them to know their
      own CPU. navigator.userAgentData.getHighEntropyValues is the only reliable
