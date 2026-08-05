@@ -4,6 +4,12 @@
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.64.3 (2026-08-04) — consult-gate false-positive fixes (WDP W1-T13, dual-reviewed)
+
+- consult-gate: hook-owned staging exemption (session scratchpads, codex/deepseek temp; dotdot-proof, NOT blanket /tmp) — kills the prompt-staging deadlock (d12).
+- consult-gate + marker: persistent consult ledger with consume-once carryover (<30min, same session) — background consults finally satisfy the per-turn gate (d9); marker match hardened to anchored command word on quote-stripped copy.
+- structural-move-check: quoted args of codex/curl heads are data, not operands — HARD-path strings inside prompt text no longer block (d10). Replay suite: holding/tests/w1-t13-plugin-test.sh.
+
 ## v2.64.2 (2026-08-04) — telemetry repair: phase-exit transcript parse + spillway log split
 
 - phase-exit-audit.sh read transcripts with the wrong jq shape (.role/.content vs .type/.message.content[].text) — every row logged transcript_status=empty; fixed, instrument live again.

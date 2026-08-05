@@ -86,6 +86,15 @@ REL_PATH="${FILE_PATH#"$REPO_ROOT"/}"
 case "$FILE_PATH" in
   "$HOME"/.claude/*) log_row "pass" "memory-scope path=${FILE_PATH}"; exit 0 ;;
 esac
+# W1-T13 (d12): hook-owned staging only — session scratchpads + peer-review
+# temp files. Deliberately NARROW (dual G1 review rejected blanket /tmp), and
+# paths containing '..' never take this exit (T13 codex fold: glob match on a
+# traversal path can resolve outside staging).
+case "$FILE_PATH" in
+  *..*) : ;;
+  /private/tmp/claude-*/*|/tmp/codex-*|/tmp/deepseek-*)
+    log_row "pass" "hook-owned-staging path=${FILE_PATH}"; exit 0 ;;
+esac
 
 # -- Session-scoped marker resolution (2026-07-30 marker-race fix) ----------
 # Markers are read via marker-lib: session dir .claude/sessions/<sid>/ first,
@@ -130,6 +139,29 @@ DEPTH_N=""
 
 # -- Already satisfied this turn? (session-scoped; foreign global ignored) --
 _ccg_marker_read codex-consulted >/dev/null 2>&1 && { log_row "pass" "consult-marker-present"; exit 0; }
+
+# -- W1-T13 (d9): persistent consult-ledger fallback ------------------------
+# A consult whose completion raced the turn boundary (background run; marker
+# wiped by reset-turn-markers) still authorizes ONCE: same session, fresh
+# (<1800s), consume-once via the never-wiped consumed ledger. T13 codex folds:
+# sid validated before regex use; consumed check is fixed-string (grep -F).
+# Known looseness (pinned, single-user CLI): two truly parallel checks could
+# both pass before either stamp lands — accepted at G1 scale, flock at W6.
+CCG_CONSULTS="$REPO_ROOT/.enforcement/codex-consults.jsonl"
+CCG_CONSUMED="$REPO_ROOT/.enforcement/codex-consult-consumed.jsonl"
+_CCG_SID="${CLAUDE_CODE_SESSION_ID:-}"
+case "$_CCG_SID" in *[!A-Za-z0-9-]*|'') _CCG_SID="" ;; esac
+if [ -n "$_CCG_SID" ] && [ -f "$CCG_CONSULTS" ]; then
+  _CCG_NOW=$(date +%s)
+  _CCG_ROW=$(grep -F "\"sid\":\"$_CCG_SID\"" "$CCG_CONSULTS" 2>/dev/null | tail -1)
+  _CCG_RTS=$(printf '%s' "$_CCG_ROW" | grep -oE '"ts":[0-9]+' | head -1 | cut -d: -f2)
+  if [ -n "$_CCG_RTS" ] && [ $((_CCG_NOW - _CCG_RTS)) -lt 1800 ] \
+     && ! grep -qF "\"sid\":\"$_CCG_SID\",\"ts\":$_CCG_RTS" "$CCG_CONSUMED" 2>/dev/null; then
+    printf '{"sid":"%s","ts":%s,"consumed_at":%s}\n' "$_CCG_SID" "$_CCG_RTS" "$_CCG_NOW" >> "$CCG_CONSUMED" 2>/dev/null || true
+    log_row "pass" "consult-carryover-consumed ts=$_CCG_RTS"
+    exit 0
+  fi
+fi
 
 # -- Degradation: codex binary absent -> pass (never brick a codex-less box) -
 # Re-checked EVERY call (codex challenge P2 "sticky" fix): no persisted
