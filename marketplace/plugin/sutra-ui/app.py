@@ -389,6 +389,11 @@ async def ws_chat(ws: WebSocket):
     session_id = None
     resume_unverified = False   # session id came from the client, not from a live run
     dead_seeds = set()          # client-supplied ids claude has already rejected
+    # A message to re-run immediately, bypassing the inbox. Set when a turn dies
+    # because the resumed thread did not exist: the message itself was fine, so
+    # it is replayed once WITHOUT --resume instead of being thrown away. See the
+    # failure branch below for why losing it was the actual bug.
+    pending = None
 
     # ---- interrupt --------------------------------------------------------
     # The loop used to `await ws.receive_text()` and only THEN spawn, so nothing
@@ -449,15 +454,21 @@ async def ws_chat(ws: WebSocket):
 
     try:
         while True:
-            get_next = asyncio.ensure_future(inbox.get())
-            gone = asyncio.ensure_future(reader_dead.wait())
-            done, _ = await asyncio.wait({get_next, gone},
-                                         return_when=asyncio.FIRST_COMPLETED)
-            if get_next not in done:
-                get_next.cancel()      # socket closed -- stop serving this channel
-                break
-            gone.cancel()
-            payload = get_next.result()
+            if pending is not None:
+                # A replay never touches the socket: the operator already sent
+                # this text, and re-reading the inbox here would reorder it
+                # behind anything they typed while the failed turn was running.
+                payload, pending = pending, None
+            else:
+                get_next = asyncio.ensure_future(inbox.get())
+                gone = asyncio.ensure_future(reader_dead.wait())
+                done, _ = await asyncio.wait({get_next, gone},
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if get_next not in done:
+                    get_next.cancel()  # socket closed -- stop serving this channel
+                    break
+                gone.cancel()
+                payload = get_next.result()
             live["stopped"] = False
             msg = payload.get("message", "")
             seed = payload.get("resume")
@@ -485,7 +496,14 @@ async def ws_chat(ws: WebSocket):
             if chosen_model:
                 args += ["--model", chosen_model]
 
-            await ws.send_json({"type": "start", "model": chosen_model})
+            # EXACTLY ONE `start` PER OPERATOR MESSAGE. The client treats `start`
+            # as the demarcation that binds the next token stream to the next
+            # QUEUED turn (`ch.pending.shift()`), so a second one for an internal
+            # replay would bind the reply to whatever message the operator typed
+            # while this turn was failing. A replay continues the turn that is
+            # already on screen; it does not announce a new one.
+            if not payload.get("_replay"):
+                await ws.send_json({"type": "start", "model": chosen_model})
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *args, cwd=workdir,
@@ -606,19 +624,45 @@ async def ws_chat(ws: WebSocket):
                 detail = err.strip()[:600] or result_error or ("claude exited " + str(rc))
                 frame = {"type": "error", "detail": detail}
                 if resume_unverified:
-                    # The id the browser handed us may be stale or from another
-                    # machine. Drop it so the NEXT message starts a fresh thread
-                    # instead of failing identically forever -- and remember it, or
-                    # the client re-sends the same dead id on every message and the
-                    # channel never recovers. `resume_reset` tells the client to
-                    # forget it too.
-                    frame["detail"] = detail + (
-                        "  (resumed session %s was rejected -- the next message "
-                        "will start a new thread)" % session_id)
-                    frame["resume_reset"] = True
+                    # The id the browser handed us may be stale, from another
+                    # machine, or -- the common case -- from a session recorded
+                    # under a DIFFERENT working directory: `claude --resume`
+                    # resolves ids per project, so an id adopted from the
+                    # transcript list is rejected whenever the panel's workdir is
+                    # not the one that session ran in.
+                    #
+                    # Drop it so it is never retried, and remember it, or the
+                    # client re-sends the same dead id on every message and the
+                    # channel never recovers.
                     dead_seeds.add(session_id)
                     session_id = None
                     resume_unverified = False
+                    frame["resume_reset"] = True
+
+                    # REPLAY THE MESSAGE. Telling the operator "the next message
+                    # will start a new thread" was the bug: their message had
+                    # nothing wrong with it, and it was discarded -- the turn
+                    # showed `failed` and they had to retype it. The only thing
+                    # wrong was the id WE attached. Drop the id, run the same
+                    # text again, and the turn simply works.
+                    #
+                    # Guarded by `not got_text`: once any answer has streamed to
+                    # the client, replaying would duplicate it. Bounded to one
+                    # attempt, because the retry carries no --resume and so
+                    # cannot fail this way twice.
+                    if not got_text:
+                        await ws.send_json({
+                            "type": "retry",
+                            "resume_reset": True,
+                            "detail": "the saved thread was gone, so this message "
+                                      "is being sent as a new one",
+                        })
+                        payload["_replay"] = True   # suppress a second `start`
+                        pending = payload
+                        continue
+                    frame["detail"] = detail + (
+                        "  (resumed session was rejected; the next message will "
+                        "start a new thread)")
                 await ws.send_json(frame)
             elif not got_result:
                 # process ended without a result event: still close the turn out

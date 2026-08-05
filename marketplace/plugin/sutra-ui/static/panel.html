@@ -1598,6 +1598,20 @@ function claudeChannel(s, side){
         (ch.turn.toolRuns||[]).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
       }
       ch.turn = null;
+    } else if (f.type === "retry"){
+      /* The saved thread id was rejected, so the server is re-running THIS SAME
+         message without it. Not an error and not a new turn: the turn already on
+         screen stays exactly where it is and keeps streaming into the replay.
+         All that changes is that the dead id is forgotten, and any tool runs from
+         the aborted attempt are cleared so they do not appear twice. */
+      if (f.resume_reset) s.claude_session = null;
+      ch.lastError = null;
+      if (ch.turn){
+        ch.turn.toolRuns = [];
+        ch.turn.response = "";        /* the accumulator the token frames append to */
+        ch.turn.thinking = false;
+        ch.turn.retried = f.detail || "restarted as a new thread";
+      }
     } else if (f.type === "error"){
       ch.lastError = f.detail || "claude failed with no detail";
       /* the stored thread id was rejected -- forget it, or every following message
@@ -1664,11 +1678,37 @@ function askClaude(s, turn, side){
      instead of a series of strangers. */
   const frame = JSON.stringify({ message: turn.sent,
                                  resume: side ? (ch.sideSession || null)
-                                              : (s.claude_session || null),
+                                              : resumableId(s),
                                  model: (model === undefined ? null : model) });
   if (ch.open) ch.ws.send(frame); else ch.queue.push(frame);
   scheduleRender();
 }
+/* The session id to hand the server -- or null when it provably cannot resolve.
+
+   `claude --resume <id>` looks the id up IN THE PROJECT OF ITS WORKING DIRECTORY.
+   adoptRealSessions() attaches `claude_session` to every transcript on disk, and
+   those transcripts belong to whatever directory they were recorded in -- usually
+   a repo, never the panel's own workdir. Sending such an id guaranteed the error
+   the operator actually hit:
+
+       No conversation found with session ID: 565ad6a3-...
+
+   The server now replays the message without the id, so nothing is lost either
+   way. This stops the doomed round trip from being made at all: a wasted claude
+   invocation, several seconds of dead air, and a scary message for a request that
+   was never going to work.
+
+   A session with no recorded cwd is still tried -- unknown is not the same as
+   mismatched, and the server's replay covers it if the guess is wrong. */
+function resumableId(s){
+  if (!s.claude_session) return null;
+  /* the `provider` frame the server sends on connect, stashed on the session */
+  const here  = (s.channel && s.channel.workdir) || "";
+  const there = s.cwd || "";
+  if (here && there && here !== there) return null;
+  return s.claude_session;
+}
+
 /* classify -> file the placement -> run Claude under that placement. The classify
    round-trip is awaited (a turn cannot be grounded before it has an address); the
    Claude run is not (it streams into the pane). */
@@ -3360,6 +3400,11 @@ function turnResponse(t){
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
+  /* A turn whose saved thread had gone and was re-sent as a new one. Stated,
+     because the reply legitimately will not remember the earlier conversation
+     and an operator who is not told that reads it as the model forgetting. */
+  const replayed = t.retried
+    ? `<span class="pill p-mut" title="${esc(t.retried)}">new thread</span>` : "";
   /* Server-measured duration and cost, stated only when the server actually sent
      them. A turn replayed from a transcript has neither, and inventing a number
      there would be fabrication. */
@@ -3396,7 +3441,7 @@ function turnResponse(t){
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
     ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>` : "";
-  return `<div class="a">${state}${meta}${tools}${waiting}${body}${err}</div>`;
+  return `<div class="a">${state}${replayed}${meta}${tools}${waiting}${body}${err}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)

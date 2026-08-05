@@ -157,7 +157,7 @@ const EPILOGUE = `
   NOT_CHECKED, CONFIDENCE_FLOOR,
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
   chanKey, paletteFor,
-  _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip,
+  _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip, resumableId,
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
   get TENANTS(){ return TENANTS; },   set TENANTS(v){ TENANTS = v; }
 };
@@ -776,6 +776,39 @@ test("18e. an unscrolled pane saves nothing, so nothing is restored", () => {
   withScroller(0, 20000, 900, () => {
     assert.strictEqual(T._browseScrollState(), null);
   });
+});
+
+/* ── 19. a resume id that cannot possibly resolve is not sent ───────────────
+   `claude --resume <id>` resolves the id IN THE PROJECT OF ITS WORKING
+   DIRECTORY. adoptRealSessions() attaches claude_session to every transcript on
+   disk, and those belong to the directory they were recorded in -- usually a
+   repo, not the panel's workdir. Sending one guaranteed:
+       No conversation found with session ID: 565ad6a3-...
+   a wasted claude run, seconds of dead air, and a failed-looking turn. */
+const mkSess = (id, cwd, workdir) => ({
+  claude_session: id, cwd: cwd, channel: workdir ? { workdir: workdir } : null,
+});
+
+test("19a. an id recorded in THIS workdir is resumed", () => {
+  assert.strictEqual(T.resumableId(mkSess("abc", "/repo", "/repo")), "abc");
+});
+
+test("19b. an id from a DIFFERENT directory is never sent", () => {
+  assert.strictEqual(T.resumableId(mkSess("abc", "/repo", "/workspace")), null,
+    "this is the doomed round trip the operator saw fail");
+});
+
+test("19c. an UNKNOWN cwd is still attempted -- unknown is not mismatched", () => {
+  /* the server replays without the id if the guess is wrong, so trying costs
+     one recoverable turn; refusing would break every legitimate continuation
+     whose cwd the transcript did not record */
+  assert.strictEqual(T.resumableId(mkSess("abc", "", "/workspace")), "abc");
+  assert.strictEqual(T.resumableId(mkSess("abc", "/repo", null)), "abc");
+});
+
+test("19d. no id means no resume, never the string 'null'", () => {
+  assert.strictEqual(T.resumableId(mkSess(null, "/repo", "/repo")), null);
+  assert.strictEqual(T.resumableId(mkSess(undefined, "/repo", "/repo")), null);
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */
