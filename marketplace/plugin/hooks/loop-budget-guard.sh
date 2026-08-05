@@ -33,7 +33,7 @@
 # Kill-switches (any one):
 #   LOOP_BUDGET_GUARD_DISABLED=1 | SUTRA_BYPASS=1 | touch ~/.loop-budget-guard-disabled
 #
-# Logged on block to .enforcement/routing-misses.log (mirrors keys-in-env-vars.sh).
+# Logged on block to .enforcement/loop-guard.jsonl (mirrors keys-in-env-vars.sh).
 
 set -u
 
@@ -142,7 +142,7 @@ log_block() {  # $1=event $2=detail
   mkdir -p "$repo_root/.enforcement" 2>/dev/null || true
   printf '{"ts":%s,"event":"%s","session":"%s","detail":"%s","total":%s}\n' \
     "$ts" "$1" "$SID_SAFE" "$safe_detail" "$TOTAL" \
-    >> "$repo_root/.enforcement/routing-misses.log" 2>/dev/null || true
+    >> "$repo_root/.enforcement/loop-guard.jsonl" 2>/dev/null || true
 }
 
 # ── Total tool-budget ceiling ─────────────────────────────────────────────────

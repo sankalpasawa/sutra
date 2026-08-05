@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# wdp-evidence — WDP W6-T51. THE controlled writer for evidence stores.
+# M7 (gate) denies direct mutation of .enforcement/* — this CLI is the one
+# sanctioned append path (exempt in the floor like sutra-atom/sutra-dispatch).
+#   wdp-evidence append <store> < row-on-stdin      stores: evidence | interim
+# Append-only by construction: no truncate/rewrite verbs exist here (d4).
+set -euo pipefail
+ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || echo "$ROOT")"
+_SP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/hooks/lib/sutra-paths.sh}"
+[ -n "$_SP" ] && [ -f "$_SP" ] || _SP="$REPO/holding/hooks/lib/sutra-paths.sh"
+. "$_SP"
+. "$SUTRA_LIB/wdp-ledger.sh"
+
+die() { echo "wdp-evidence: REFUSED — $*" >&2; exit 2; }
+
+cmd_append() {
+  local store="${1:-}" target row
+  case "$store" in
+    evidence) target="$ROOT/.enforcement/wdp/evidence.jsonl" ;;
+    interim)  target="$ROOT/.enforcement/wdp/interim-dispatch.jsonl" ;;
+    gate-journal) target="$ROOT/.enforcement/dispatch-gate.jsonl" ;;
+    *) die "unknown store '$store' (evidence|interim|gate-journal)" ;;
+  esac
+  row=$(cat)   # one JSON object per invocation, from stdin
+  # Reuse the controlled-writer validation (single object, <4KB, no newline)
+  DISPATCH_LEDGER_OVERRIDE="$target" dispatch_ledger_append "$row" \
+    || die "row rejected by controlled writer"
+  echo "APPENDED=$store"
+}
+
+case "${1:-}" in
+  append) shift; cmd_append "$@" ;;
+  *) echo "usage: echo '<json-row>' | wdp-evidence append <evidence|interim|gate-journal>" >&2; exit 1 ;;
+esac

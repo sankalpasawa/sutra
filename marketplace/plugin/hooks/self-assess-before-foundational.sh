@@ -89,7 +89,7 @@ fi
 if [ -z "$(_b2_marker_path "self-assessed-$SLUG")" ]; then
   mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
   _SAFE=$(printf '%s' "$FILE_PATH" | tr -d '"\\' | tr '\n\r' '  ')
-  echo "{\"ts\":$(date +%s),\"event\":\"proto005-warn\",\"file\":\"$_SAFE\",\"depth\":$DEPTH,\"task\":\"$SLUG\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+  echo "{\"ts\":$(date +%s),\"event\":\"proto005-warn\",\"file\":\"$_SAFE\",\"depth\":$DEPTH,\"task\":\"$SLUG\"}" >> "$REPO_ROOT/.enforcement/proto005-warnings.log"
   echo "  PROTO-005 Reminder: Depth-$DEPTH foundational edit without self-assess marker." >&2
   echo "  Consider: have you ratified this approach? (write $ASSESS_MARKER to dismiss)" >&2
   echo "  Override: PROTO005_ACK=1 <tool call>" >&2
@@ -101,7 +101,7 @@ exit 0
 # ## Operationalization
 #
 # ### 1. Measurement mechanism
-# Logged to .enforcement/routing-misses.log on every fire + override.
+# Logged to .enforcement/proto005-warnings.log on every fire + override.
 # Roll-up visible in holding/ANALYTICS-PULSE.md Sutra-Application-Rate panel (review-loop.sh).
 #
 # ### 2. Adoption mechanism

@@ -80,7 +80,8 @@ TRANSCRIPT_STATUS="ok"
 RESPONSE_TEXT=""
 
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ] && command -v jq >/dev/null 2>&1; then
-  RESPONSE_TEXT=$(jq -r 'select(.role=="assistant") | (.content // "")' "$TRANSCRIPT_PATH" 2>/dev/null | tail -c 200000 | tr '\n' ' ')
+  # Claude Code transcript rows are {type:"assistant", message:{content:[{type:"text",text:...}]}}
+  RESPONSE_TEXT=$(jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' "$TRANSCRIPT_PATH" 2>/dev/null | tail -c 200000 | tr '\n' ' ')
   [ -z "$RESPONSE_TEXT" ] && TRANSCRIPT_STATUS="empty"
 else
   TRANSCRIPT_STATUS="unavailable"

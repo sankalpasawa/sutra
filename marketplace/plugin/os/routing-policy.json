@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "updated": "2026-08-04",
+  "spine_rule": "The engine spec never names models; this file is the only model authority (D-F).",
+  "default": {
+    "model": "claude-opus-5",
+    "effort": "high"
+  },
+  "ladder": [
+    {
+      "class": 1,
+      "when": "clear + mechanical + single-file + mechanically-verifiable + low blast radius",
+      "model": "claude-haiku-4-5",
+      "effort": "low"
+    },
+    {
+      "class": 2,
+      "when": "clear-to-complicated, <=3 files, known method",
+      "model": "claude-sonnet-5",
+      "effort": "medium"
+    },
+    {
+      "class": 3,
+      "when": "complicated, multi-file, codebase reasoning",
+      "model": "claude-sonnet-5",
+      "effort": "high"
+    },
+    {
+      "class": 4,
+      "when": "complex, ambiguous shape, cross-cutting",
+      "model": "claude-opus-5",
+      "effort": "high"
+    },
+    {
+      "class": 5,
+      "when": "novel design, irreversible, fleet-wide",
+      "model": "claude-opus-5",
+      "effort": "xhigh"
+    },
+    {
+      "class": "5+",
+      "when": "long-horizon autonomous, highest stakes",
+      "model": "claude-fable-5",
+      "effort": "xhigh"
+    }
+  ],
+  "floors": {
+    "governance_paths": {
+      "min_model": "claude-opus-5",
+      "paths": [
+        "sutra/os/charters/",
+        "sutra/os/decisions/",
+        "sutra/os/engines/",
+        "holding/FOUNDER-DIRECTIONS.md",
+        "sutra/marketplace/plugin/",
+        "holding/plans/dispatch-program/routing-policy.json",
+        "holding/hooks/dispatch-gate.sh",
+        "holding/bin/sutra-dispatch",
+        "holding/bin/context-manifest",
+        "holding/bin/dispatch-report.sh"
+      ]
+    },
+    "context_window": {
+      "rule": "derive at resolve time: exclude any model whose catalog.context < atom context estimate",
+      "fallback_excluded_models": [
+        "claude-haiku-4-5"
+      ],
+      "context_tokens_gt": 200000
+    }
+  },
+  "escalation": {
+    "on_verify_fail": {
+      "action": "tier_up_plus_effort_bump",
+      "max_auto": 1
+    },
+    "on_context_overflow": {
+      "action": "min_1m_window_model"
+    },
+    "max_total_escalations": 2,
+    "top_tier_gate": {
+      "model": "claude-fable-5",
+      "requires": "founder_approval",
+      "bypass_field": "auto_escalate_max",
+      "note": "dual pre-write consult fold: no silent jump to price-max tier",
+      "applies_to": [
+        "initial_classification",
+        "escalation"
+      ]
+    },
+    "audit": "every escalation appends a decision record to the dispatch ledger",
+    "tier_jump_max": 1
+  },
+  "catalog": [
+    {
+      "model": "claude-fable-5",
+      "context": 1000000,
+      "in_per_mtok": 10.0,
+      "out_per_mtok": 50.0,
+      "rank": 1
+    },
+    {
+      "model": "claude-opus-5",
+      "context": 1000000,
+      "in_per_mtok": 5.0,
+      "out_per_mtok": 25.0,
+      "rank": 2
+    },
+    {
+      "model": "claude-sonnet-5",
+      "context": 1000000,
+      "in_per_mtok": 3.0,
+      "out_per_mtok": 15.0,
+      "intro_until_2026_08_31": {
+        "in": 2.0,
+        "out": 10.0
+      },
+      "rank": 3
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "context": 200000,
+      "in_per_mtok": 1.0,
+      "out_per_mtok": 5.0,
+      "rank": 4
+    }
+  ],
+  "catalog_source": "claude-api skill, verified 2026-08-03; re-verify at each policy bump",
+  "catalog_invariant": "rank is the capability authority (1=top); loader validates array is ascending by rank and refuses otherwise (W4 codex fold — index is display order only)"
+}

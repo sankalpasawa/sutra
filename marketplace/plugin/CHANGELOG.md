@@ -1,8 +1,48 @@
+## 2.66.0
+
+- Daily auto-update. The first session each day refreshes the marketplace and
+  updates the plugin, then prints one line if the version moved. Later
+  sessions that day exit immediately with no network call.
+- Bounded by the hook-level timeout (macOS has no GNU timeout) and fail-open
+  throughout: a missing CLI, no network, a failed update or a killed hook all
+  exit 0 in silence. A broken updater must never stop a session starting.
+- The update applies to the NEXT session, not the running one, and the message
+  says so.
+
+## 2.65.0
+
+- Dispatch runtime ships to the fleet. Every file change must now belong to a
+  declared unit: `sutra-dispatch resolve` -> `sutra-atom open` -> `bind`, and
+  mutations outside the declared envelope are blocked. See DISPATCH-ADOPTION.md.
+- CLIs, hooks, matcher and routing policy all resolve plugin-first via
+  hooks/lib/sutra-paths.sh; CLAUDE_PLUGIN_ROOT is authoritative, so a missing
+  asset fails loudly rather than silently running origin code.
+- Fixed a client-blocking bug the origin repo could not see: with no plugin
+  cache on disk, `ls -d` on the cache glob failed and pipefail+set -e killed
+  `resolve` with no message.
+
 # Changelog
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
+
+## v2.64.3 (2026-08-04) — consult-gate false-positive fixes (WDP W1-T13, dual-reviewed)
+
+- consult-gate: hook-owned staging exemption (session scratchpads, codex/deepseek temp; dotdot-proof, NOT blanket /tmp) — kills the prompt-staging deadlock (d12).
+- consult-gate + marker: persistent consult ledger with consume-once carryover (<30min, same session) — background consults finally satisfy the per-turn gate (d9); marker match hardened to anchored command word on quote-stripped copy.
+- structural-move-check: quoted args of codex/curl heads are data, not operands — HARD-path strings inside prompt text no longer block (d10). Replay suite: holding/tests/w1-t13-plugin-test.sh.
+
+## v2.64.2 (2026-08-04) — telemetry repair: phase-exit transcript parse + spillway log split
+
+- phase-exit-audit.sh read transcripts with the wrong jq shape (.role/.content vs .type/.message.content[].text) — every row logged transcript_status=empty; fixed, instrument live again.
+- routing-misses.log had 7 unrelated writers; each now owns a file (marker-resets.jsonl, proto005-warnings.log, loop-guard.jsonl, cascade.jsonl, proto004.jsonl, proto009-warnings.log, output-behavior-lint.jsonl). routing-misses.log is pure routing misses again; old rows untouched.
+- placement-touch.sh stderr no longer swallowed — engine errors land in .enforcement/placement/touch-errors.log. Codex consult: ADVISORY (2026-08-04).
+
+## v2.64.1 (2026-08-04) — blueprint-check marker fallback for non-flushing harnesses
+
+- On the 'missing' verdict only, accept the documented v2.2 session marker (HAS_OUTPUT/HAS_VERIFY, per-step at D3+, optional FILES= allowlist) — under Fable 5 assistant text reaches the transcript only at end of turn, so the PreToolUse text gate was unsatisfiable, not strict.
+- Visible-but-invalid blocks still hard-fail; Stop-time per-turn-hard-gate keeps validating final text; every fallback audit-logged to .enforcement/blueprint-fallback.jsonl. Codex: ADVISORY.
 
 ## v2.64.0 (2026-08-02) — Sutra UI panel (PR #85) + security hardening
 

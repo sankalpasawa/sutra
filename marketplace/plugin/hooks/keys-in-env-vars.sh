@@ -74,13 +74,13 @@ if [ -n "$CONTENT" ] && printf '%s' "$CONTENT" | grep -qE "$PATTERN"; then
     REASON="${PROTO004_ACK_REASON:-no-reason-given}"
     REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
     mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
-    echo "{\"ts\":$(date +%s),\"event\":\"proto004-override\",\"file\":\"$FILE_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+    echo "{\"ts\":$(date +%s),\"event\":\"proto004-override\",\"file\":\"$FILE_PATH\",\"reason\":\"$REASON\"}" >> "$REPO_ROOT/.enforcement/proto004.jsonl"
     echo "  PROTO-004 override accepted: $REASON" >&2
     exit 0
   fi
   REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
   mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
-  echo "{\"ts\":$(date +%s),\"event\":\"proto004-block\",\"file\":\"$FILE_PATH\"}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+  echo "{\"ts\":$(date +%s),\"event\":\"proto004-block\",\"file\":\"$FILE_PATH\"}" >> "$REPO_ROOT/.enforcement/proto004.jsonl"
   echo "BLOCKED: PROTO-004 — API-key-shaped string in non-env file: $FILE_PATH" >&2
   echo "  Put secrets in .env / env vars only. Override: PROTO004_ACK=1 PROTO004_ACK_REASON='<why>'" >&2
   exit 2
@@ -92,7 +92,7 @@ exit 0
 # ## Operationalization
 #
 # ### 1. Measurement mechanism
-# Logged to .enforcement/routing-misses.log on every fire + override.
+# Logged to .enforcement/proto004.jsonl on every fire + override.
 # Roll-up visible in holding/ANALYTICS-PULSE.md Sutra-Application-Rate panel (review-loop.sh).
 #
 # ### 2. Adoption mechanism

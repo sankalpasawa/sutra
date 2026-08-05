@@ -1,0 +1,102 @@
+/* Sutra Desktop — token core (T1). Source of truth: holding/website/native/design-system.html
+   One file, no per-surface forks. Surfaces (app/editorial/directory) map these tokens;
+   divergence requires a named surface + mapping + rationale on the DS page. */
+:root{
+  /* color — core */
+  --bg:#FAFAF7; --panel:#FFFFFF; --ink:#1A1714; --stone:#6B6560; --faint:#B8B2A6;
+  --line:#E8E3DB; --cream:#F5F0E8; --gold:#B8945F; --gold-glow:rgba(184,148,95,.14);
+  /* color — semantic (meaning only, never decorative) */
+  --decide:#8B6B4A;   /* clay  — DECIDE / held / approve */
+  --review:#4A6B8B;   /* steel — REVIEW / inbox / links  */
+  --done:#2D5A3E;     /* forest— DONE / proof / live     */
+  --alert:#8B4A6B;    /* rose  — NOW line / alerts / failing */
+  /* type */
+  --font-display:'Playfair Display',Georgia,serif;
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-mono:ui-monospace,Menlo,monospace;
+  --fs-greet:30px; --fs-title:24px; --fs-card-title:19px; --fs-body:14px; --fs-meta:12px;
+  --fs-label:9.5px; --ls-label:.13em;
+  /* space (the only steps) */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:64px;
+  /* radius */
+  --r-chip:8px; --r-card:12px; --r-composer:15px; --r-pill:99px;
+  /* shadow (cards only) */
+  --shadow-rest:0 1px 3px rgba(12,10,8,.04);
+  --shadow-hover:0 4px 14px rgba(12,10,8,.09);
+}
+/* base */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:var(--fs-body)/1.6 var(--font-body);color:var(--ink);background:var(--bg)}
+a{color:var(--review);text-decoration:none}
+/* 13 DS components — class names STABLE for sutra-ui import (T15) */
+.ds-greet{font-family:var(--font-display);font-size:var(--fs-greet);font-weight:500;letter-spacing:-.01em}
+.ds-sub{color:var(--stone);font-size:var(--fs-body)}
+.ds-sub b{color:var(--decide);font-weight:700}
+/* 1 decision card */
+.ds-decision{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);
+  padding:var(--s4) 20px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow-rest);cursor:pointer;transition:box-shadow .15s}
+.ds-decision:hover{box-shadow:var(--shadow-hover)}
+.ds-decision.approved{opacity:.35}
+.ds-decision .dot{width:8px;height:8px;border-radius:50%;background:var(--decide);flex-shrink:0}
+.ds-decision .t{flex:1;font-size:15px}
+.ds-decision .t small{display:block;font-size:var(--fs-meta);color:var(--faint);margin-top:2px}
+.ds-decision .act{font-size:13.5px;font-weight:700;color:var(--decide);padding:5px var(--s3);border-radius:var(--r-chip);cursor:pointer}
+.ds-decision .act:hover{background:var(--cream)}
+.ds-decision .act.q{color:var(--stone);font-weight:400}
+/* 2 chip */
+.ds-chip{font-size:var(--fs-label);font-weight:600;border-radius:var(--r-pill);padding:2px 9px;
+  border:1px solid var(--line);background:#fbfaf7;color:var(--stone);display:inline-block}
+.ds-chip.plan{color:var(--decide);cursor:pointer}
+.ds-chip.plan::before{content:"\25B8 "}
+.ds-chip.plan.open::before{content:"\25BE "}
+/* 3 quiet line */
+.ds-quiet{display:flex;align-items:center;gap:20px;font-size:13px;color:var(--faint)}
+.ds-quiet .tok{cursor:pointer}
+.ds-quiet .tok:hover{color:var(--ink)}
+.ds-quiet .review{color:var(--review);font-weight:700}
+.ds-quiet .review::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--review);margin-right:6px}
+.ds-quiet .done{color:var(--done)}
+.ds-quiet .alert{color:var(--alert)}
+/* 4 composer */
+.ds-composer{background:var(--panel);border:1px solid #ded9cf;border-radius:var(--r-composer);
+  padding:17px 20px;display:flex;align-items:center;gap:var(--s3);box-shadow:var(--shadow-rest)}
+.ds-composer .ph{flex:1;color:var(--faint);font-size:15px}
+.ds-composer .key{font-size:11px;color:var(--stone);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+/* 5 workblock */
+.ds-block{border-radius:var(--r-chip);padding:5px 11px;font-size:11.5px;cursor:pointer;border:1px solid transparent}
+.ds-block.deep{background:var(--cream);border-color:var(--gold);border-left:4px solid var(--gold)}
+.ds-block.window{background:#faf3e8;color:var(--decide)}
+.ds-block.inbox{background:#eef2f6;border-left:3px solid var(--review);color:var(--review)}
+.ds-block.rel{background:#eef3ef;border-left:4px solid var(--done);color:var(--done)}
+/* 6 atom card */
+.ds-atom{border:1.5px solid var(--done);background:#f6faf7;border-radius:10px;padding:var(--s2) 13px;font-size:11px;position:sticky;top:0}
+.ds-atom .k{font-size:9px;font-weight:700;letter-spacing:.1em;color:var(--done)}
+/* 7 work card */
+.ds-work{border:1px solid var(--line);border-left:3px solid var(--done);border-radius:var(--r-chip);padding:7px 11px;background:#fbfaf7;font-size:11.5px}
+.ds-work.failed{border-left-color:var(--alert)}
+/* 8 tray */
+.ds-tray{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);padding:10px 14px;font-size:11.5px}
+.ds-tray .k{font-size:var(--fs-label);letter-spacing:var(--ls-label);font-weight:700;color:var(--review);cursor:pointer}
+.ds-tray .body{display:none}
+.ds-tray .body.open{display:block}
+/* 9 held pill */
+.ds-held{font-size:11px;color:var(--decide);background:#faf3e8;border-radius:var(--r-pill);padding:3px var(--s3);cursor:pointer}
+/* 10 silence clock */
+.ds-clock{font-size:var(--fs-label);color:var(--alert);font-weight:600}
+/* 11 status dot + banner */
+.ds-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.ds-dot.ok{background:var(--done)} .ds-dot.warn{background:var(--alert)}
+.ds-banner{background:#faf3e8;border:1px solid var(--gold);border-radius:var(--r-chip);padding:6px var(--s3);font-size:var(--fs-meta);color:var(--decide)}
+/* 12 compact table */
+.ds-table{border-collapse:collapse;width:100%;font-size:13px}
+.ds-table th{font-size:var(--fs-label);letter-spacing:.1em;text-transform:uppercase;color:var(--stone);text-align:left;padding:7px var(--s3);background:#fbfaf7;border-bottom:1px solid var(--line)}
+.ds-table td{padding:6px var(--s3);border-bottom:1px solid var(--line)}
+/* 13 nav rail + footer */
+.ds-rail{width:168px;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;display:flex;flex-direction:column}
+.ds-rail .brand{font-family:var(--font-display);font-size:15px;margin:0 0 14px 8px}
+.ds-rail .item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:var(--r-chip);font-size:13.5px;color:var(--stone);cursor:pointer;position:relative}
+.ds-rail .item.on{background:var(--gold-glow);color:var(--ink);font-weight:600}
+.ds-rail .item:hover{background:var(--cream)}
+.ds-rail .badge{margin-left:auto;font-size:var(--fs-label);font-weight:700;background:var(--gold);color:#fff;border-radius:var(--r-pill);padding:0 6px}
+.ds-rail .reddot{position:absolute;right:8px;top:9px;width:7px;height:7px;border-radius:50%;background:var(--alert)}
+.ds-rail .foot{margin-top:auto;font-size:10px;color:var(--faint);padding:0 8px}
