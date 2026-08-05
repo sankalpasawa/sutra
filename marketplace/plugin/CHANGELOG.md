@@ -1,3 +1,15 @@
+## 2.65.0
+
+- Dispatch runtime ships to the fleet. Every file change must now belong to a
+  declared unit: `sutra-dispatch resolve` -> `sutra-atom open` -> `bind`, and
+  mutations outside the declared envelope are blocked. See DISPATCH-ADOPTION.md.
+- CLIs, hooks, matcher and routing policy all resolve plugin-first via
+  hooks/lib/sutra-paths.sh; CLAUDE_PLUGIN_ROOT is authoritative, so a missing
+  asset fails loudly rather than silently running origin code.
+- Fixed a client-blocking bug the origin repo could not see: with no plugin
+  cache on disk, `ls -d` on the cache glob failed and pipefail+set -e killed
+  `resolve` with no message.
+
 # Changelog
 
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.

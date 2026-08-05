@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# context-manifest — WDP W4-T39 per frozen CONTEXT-MANIFEST.md.
+#   create --unit U --file P... [--fact "..."]...  -> writes manifest, prints MANIFEST_ID=
+#   check <manifest-id>                            -> re-hash; exit 0 verified, 1 mismatch/missing
+set -euo pipefail
+ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+SID="${CLAUDE_CODE_SESSION_ID:-nosession}"
+MDIR="$ROOT/.enforcement/wdp/manifests"
+die() { echo "context-manifest: $*" >&2; exit 1; }
+
+cmd_create() {
+  local unit="" files=() facts=()
+  while [ $# -gt 0 ]; do case "$1" in
+    --unit) unit="$2"; shift 2 ;;
+    --file) files+=("$2"); shift 2 ;;
+    --fact) facts+=("$2"); shift 2 ;;
+    *) die "unknown flag $1" ;;
+  esac; done
+  [ -n "$unit" ] || die "create needs --unit"
+  [ ${#files[@]} -ge 1 ] || die "create needs at least one --file"
+  mkdir -p "$MDIR"
+  local seq id f rows="[]"
+  seq=$(printf 'm%02d' $(( $(find "$MDIR" -name "${SID:0:8}-*.json" 2>/dev/null | wc -l) + 1 )))
+  id="${SID:0:8}-$seq"
+  for f in "${files[@]}"; do
+    case "$f" in /*|*..*) die "file path must be repo-relative without dotdot: $f" ;; esac
+    [ -f "$ROOT/$f" ] || die "file not found: $f"
+    rows=$(printf '%s' "$rows" | jq -c --arg p "$f" --arg h "$(shasum -a 256 "$ROOT/$f" | cut -d' ' -f1)" '. + [{path:$p, sha256:$h}]')
+  done
+  jq -nc --arg id "$id" --arg u "$unit" \
+    --argjson files "$rows" \
+    --argjson facts "$(printf '%s\n' "${facts[@]+"${facts[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \
+    '{manifest_id:$id, unit:$u, ts:(now|todate), files:$files, facts:$facts}' > "$MDIR/$id.json"
+  echo "MANIFEST_ID=$id"
+}
+
+cmd_check() {
+  local id="${1:-}"; [ -n "$id" ] || die "check needs <manifest-id>"
+  local mf="$MDIR/$id.json"; [ -f "$mf" ] || { echo "MISSING $id"; exit 1; }
+  local ok=1
+  while IFS=$'\t' read -r p h; do
+    if [ ! -f "$ROOT/$p" ]; then echo "GONE $p"; ok=0
+    elif [ "$(shasum -a 256 "$ROOT/$p" | cut -d' ' -f1)" != "$h" ]; then echo "DRIFT $p"; ok=0
+    fi
+  done < <(jq -r '.files[] | [.path, .sha256] | @tsv' "$mf")
+  [ "$ok" = "1" ] && { echo "VERIFIED $id"; exit 0; } || exit 1
+}
+
+case "${1:-}" in
+  create) shift; cmd_create "$@" ;;
+  check|--check) shift; cmd_check "$@" ;;   # --check alias per frozen contract wording
+  *) echo "usage: context-manifest create --unit U --file P [--file P]... [--fact F]... | check <id>" >&2; exit 1 ;;
+esac

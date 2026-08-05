@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+# sutra-dispatch — WDP W4-T37, per FROZEN LLD-DISPATCH-CLI (+ marker-path
+# amendment 2026-08-04). Two-phase: resolve -> sutra-atom open -> bind.
+# escalate rewrites routing atomically so the gate always reads current
+# (G3 deepseek fold). Marker: .sutra/dispatch/<sid>/dispatch-record.
+set -euo pipefail
+ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+REPO_SRC="$(git rev-parse --show-toplevel 2>/dev/null || echo "$ROOT")"
+SID="${CLAUDE_CODE_SESSION_ID:-nosession}"
+DDIR="$ROOT/.sutra/dispatch/$SID"
+MARKER="$DDIR/dispatch-record"
+LEDGER="${DISPATCH_LEDGER_OVERRIDE:-$ROOT/.sutra/dispatch-ledger.jsonl}"
+# Asset locations come from the resolver (plugin-authoritative). See
+# hooks/lib/sutra-paths.sh — CLAUDE_PLUGIN_ROOT is authoritative, not a hint.
+_SP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/hooks/lib/sutra-paths.sh}"
+[ -n "$_SP" ] && [ -f "$_SP" ] || _SP="$REPO_SRC/holding/hooks/lib/sutra-paths.sh"
+. "$_SP"
+POLICY="${ROUTING_POLICY:-$SUTRA_POLICY}"
+RESOLVER="$SUTRA_BIN/routing-policy-resolve"
+
+die() { echo "sutra-dispatch: REFUSED — $*" >&2; exit 2; }
+infra() { echo "sutra-dispatch: ERROR — $*" >&2; exit 1; }
+# W5-T45: all rows route through the controlled writer (validation + 4KB cap
+# + exactly-one-append). DISPATCH_LEDGER_OVERRIDE is honored by the lib.
+. "$SUTRA_LIB/wdp-ledger.sh"
+ledger_row() { dispatch_ledger_append "$1" || infra "ledger append rejected"; }
+# An ABSENT key is a normal answer (empty), not a failure. This is a pipeline,
+# so under `set -o pipefail` a non-matching grep made marker_get return 1 and —
+# with `set -e` — killed the caller. Every previous caller happened to read a
+# key that always exists, so it stayed latent until the SKILL ladder read an
+# optional one. `|| true` keeps absence quiet; a real read error still shows
+# as empty, which every caller already treats as "not set".
+marker_get() { grep -E "^$1=" "$MARKER" 2>/dev/null | head -1 | cut -d= -f2- || true; }
+marker_write_atomic() { # stdin -> marker
+  mkdir -p "$DDIR"; local tmp="$DDIR/.tmp.$$"; cat > "$tmp"; mv "$tmp" "$MARKER"
+}
+
+# Shared-matcher semantics (TOUCHES-CONTRACT M1/M2; lib extraction lands W6):
+covered_by_envelope() { # $1=path, envelope entries on stdin (one per line)
+  local p="$1" e
+  while IFS= read -r e; do
+    [ -z "$e" ] && continue
+    if [ "${e%/}" != "$e" ]; then
+      case "$p" in "${e%/}"/*) return 0 ;; esac
+    else
+      [ "$p" = "$e" ] && return 0
+    fi
+  done
+  return 1
+}
+
+# --- SKILL catalog (SKILL-RESOLUTION.md) -------------------------------------
+# Child scope = this repo's own skills/commands; platform = the plugin catalog.
+# Child-custody wins, matching ADR-026 / workflow-type-resolve, which already
+# owns skill selection — this only surfaces its catalog to the dispatch record.
+_skill_child_dirs() { printf '%s\n' "$ROOT/.claude/skills" "$ROOT/holding/skills" "$ROOT/skills"; }
+_skill_platform_dirs() {
+  # Plugin mode: the installed plugin IS the platform catalog. Origin mode adds
+  # the dev tree. Without this a client could never resolve a platform skill,
+  # because $REPO_SRC/sutra/... exists only in the origin repo.
+  [ "${SUTRA_MODE:-}" = "plugin" ] && printf '%s\n' "$SUTRA_BASE/skills"
+  printf '%s\n' "$REPO_SRC/sutra/marketplace/plugin/skills"
+  # `|| true`: with no plugin cache on disk `ls -d` exits 1, and under
+  # `pipefail` that killed the caller's command substitution via set -e —
+  # silently, with no message. A machine WITH a cache never saw it; a client
+  # without one could not run resolve at all. Caught by the fleet smoke.
+  ls -d "$HOME"/.claude/plugins/cache/sutra/core/*/skills 2>/dev/null | sort -V | tail -1 || true
+}
+_skill_in_child() {
+  local d; while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    [ -f "$d/$1/SKILL.md" ] && return 0
+    [ -f "$d/$1.md" ] && return 0
+  done < <(_skill_child_dirs)
+  [ -f "$ROOT/.claude/commands/$1.md" ] && return 0
+  return 1
+}
+_skill_in_platform() {
+  local d; while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    [ -f "$d/$1/SKILL.md" ] && return 0
+  done < <(_skill_platform_dirs)
+  return 1
+}
+# Snapshot of the catalog listing. CREATE is only provable against a
+# before-picture: without it, "a skill file exists" proves nothing.
+_skill_catalog_sha() {
+  { _skill_child_dirs; _skill_platform_dirs; } | while IFS= read -r d; do
+    [ -n "$d" ] && [ -d "$d" ] && ls -1 "$d" 2>/dev/null
+  done | LC_ALL=C sort -u | shasum -a 256 | cut -d' ' -f1
+}
+
+cmd_resolve() {
+  local unit="" wdp="" steps=1 class="" ctx="" auto=0 isolation="none" manifest=""
+  local skill="" skill_reason=""
+  local touches=() depends=()
+  while [ $# -gt 0 ]; do case "$1" in
+    --unit) unit="$2"; shift 2 ;; --wdp-task) wdp="$2"; shift 2 ;;
+    --steps) steps="$2"; shift 2 ;; --class) class="$2"; shift 2 ;;
+    --touches) touches+=("$2"); shift 2 ;; --depends-on) depends+=("$2"); shift 2 ;;
+    --context-tokens) ctx="$2"; shift 2 ;; --auto-escalate-max) auto=1; shift ;;
+    --isolation) isolation="$2"; shift 2 ;; --manifest) manifest="$2"; shift 2 ;;
+    --skill) skill="$2"; shift 2 ;; --skill-reason) skill_reason="$2"; shift 2 ;;
+    *) infra "unknown flag $1" ;;
+  esac; done
+  [ -n "$unit" ] && [ -n "$class" ] || die "resolve needs --unit and --class"
+  [ ${#touches[@]} -ge 1 ] || die "resolve needs at least one --touches"
+
+  # SKILL ladder (SKILL-RESOLUTION.md). The decision may be `none`, but it may
+  # NOT be skipped — that is the point of the founder direction.
+  # SKILL_LADDER_OPTIONAL=1 exists so pre-ladder suites keep running; it is not
+  # a way to opt out of the declaration in real work.
+  local skill_source="na"
+  if [ -z "$skill" ]; then
+    [ "${SKILL_LADDER_OPTIONAL:-0}" = "1" ] || die "resolve needs --skill <none|<skill-name>|SEARCH|CREATE> ('none' is allowed, skipping is not)"
+    skill="none"; skill_reason="${skill_reason:-pre-ladder unit (SKILL_LADDER_OPTIONAL)}"
+  fi
+  case "$skill" in
+    none)
+      # codex P1: `none` is the cheapest rung because it carries no burden of
+      # proof, so it now carries one. Same shape as `sutra-atom abandon --reason`.
+      [ -n "$skill_reason" ] || die "SKILL=none requires --skill-reason '<why no skill governs this unit>'" ;;
+    SEARCH|CREATE) skill_source="pending" ;;
+    *)
+      # A claimed name must EXIST. This closes the fabricated-name hole
+      # mechanically; it does NOT validate that the rung is appropriate — see
+      # SKILL-RESOLUTION.md, "the honest limit of the mechanism".
+      if _skill_in_child "$skill"; then skill_source="child"
+      elif _skill_in_platform "$skill"; then skill_source="platform"
+      else
+        die "unknown skill '$skill' — not in the child or platform catalog. Use SEARCH, CREATE, or none with a reason."
+      fi ;;
+  esac
+  # The CREATE baseline must be "when this unit FIRST resolved", not "the last
+  # time I re-resolved". Re-resolving mid-unit is routine (widening an envelope
+  # after a legitimate block), and a fresh snapshot each time would silently
+  # reset the postcondition — a unit that really did author a skill would then
+  # be unable to close. Preserve the baseline while the unit name is unchanged.
+  local skill_catalog_sha=""
+  if [ -f "$MARKER" ] && [ "$(marker_get UNIT)" = "$unit" ]; then
+    skill_catalog_sha=$(marker_get SKILL_CATALOG_SHA)
+  fi
+  [ -n "$skill_catalog_sha" ] || skill_catalog_sha=$(_skill_catalog_sha)
+  # G6 codex P1: every field lands RAW in a line-oriented KV marker, so a
+  # newline in any value injects arbitrary keys — including ATOM_ID=, which
+  # would forge a bind and skip the envelope validation entirely.
+  local _f
+  for _f in "$unit" "$wdp" "$class" "$ctx" "$isolation" "$manifest" \
+            ${touches[@]+"${touches[@]}"} ${depends[@]+"${depends[@]}"}; do
+    case "$_f" in
+      *$'\n'*|*$'\r'*) die "newline/CR in dispatch field — refused (marker injection)" ;;
+    esac
+  done
+
+  local rargs=(--class "$class")
+  local t; for t in "${touches[@]}"; do rargs+=(--touch "$t"); done
+  [ -n "$ctx" ] && rargs+=(--context-tokens "$ctx")
+  [ "$auto" = "1" ] && rargs+=(--auto-escalate-max)
+  local rout; rout=$(ROUTING_POLICY="$POLICY" "$RESOLVER" "${rargs[@]}") || exit $?
+  local model effort pv
+  model=$(printf '%s' "$rout" | grep '^MODEL=' | cut -d= -f2)
+  effort=$(printf '%s' "$rout" | grep '^EFFORT=' | cut -d= -f2)
+  pv=$(printf '%s' "$rout" | grep '^POLICY_VERSION=' | cut -d= -f2)
+  local placement="INLINE"; [ "$steps" -gt 1 ] && placement="SPAWN"
+  local grain="single"; [ "$steps" -gt 1 ] && grain="multi"
+
+  local IFS='|'
+  marker_write_atomic <<EOF
+UNIT=$unit
+WDP_TASK=$wdp
+PLACEMENT=$placement
+GRAIN=$grain
+CLASS=$class
+MODEL=$model
+EFFORT=$effort
+ISOLATION=$isolation
+MANIFEST_ID=$manifest
+TOUCHES=${touches[*]}
+DEPENDS_ON=${depends[*]-}
+ESCALATION_N=0
+AUTO_ESCALATE_MAX=$auto
+SKILL=$skill
+SKILL_SOURCE=$skill_source
+SKILL_REASON=$skill_reason
+SKILL_CATALOG_SHA=$skill_catalog_sha
+SESSION=$SID
+TS=$(date +%s)
+POLICY_VERSION=$pv
+EOF
+  ledger_row "$(jq -nc --arg u "$unit" --arg w "$wdp" --arg m "$model" --arg e "$effort" \
+    --arg c "$class" --arg s "$SID" --arg pv "$pv" \
+    --argjson touches "$(printf '%s\n' "${touches[@]}" | jq -R . | jq -s .)" \
+    '{v:1, kind:"decision", unit:$u, wdp_task:$w, class:$c, model:$m, effort:$e,
+      touches:$touches, touches_breadth:($touches|length), session_id:$s,
+      policy_version:$pv, ts:(now|floor)}')"
+  printf '%s\n' "$rout"
+  echo "MARKER=$MARKER"
+}
+
+cmd_bind() {
+  local atom_id=""
+  while [ $# -gt 0 ]; do case "$1" in
+    --atom-id) atom_id="$2"; shift 2 ;; *) infra "unknown flag $1" ;;
+  esac; done
+  [ -n "$atom_id" ] || die "bind needs --atom-id"
+  [ -f "$MARKER" ] || die "no dispatch marker — run resolve first"
+  local af="$ROOT/.sutra/atoms/$SID/$atom_id/atom.json"
+  [ -f "$af" ] || die "atom $atom_id not found for session $SID"
+  [ "$(jq -r .status "$af")" = "open" ] || die "atom $atom_id is not open"
+  # Atom touches must sit INSIDE the resolved envelope (shared matcher semantics).
+  local envelope; envelope=$(marker_get TOUCHES | tr '|' '\n')
+  local at
+  while IFS= read -r at; do
+    [ -z "$at" ] && continue
+    case "$at" in *..*) die "dotdot in atom touches entry '$at'" ;; esac
+    printf '%s\n' "$envelope" | { while IFS= read -r e; do
+        [ -z "$e" ] && continue
+        if [ "${e%/}" != "$e" ]; then case "$at" in "${e%/}"/*|"${e%/}") exit 0 ;; esac
+        else [ "$at" = "$e" ] && exit 0; fi
+      done; exit 1; } || die "atom touches entry '$at' exceeds resolved envelope"
+  done < <(jq -r '.touches[]?' "$af")
+  # Freeze: envelope + binding live in the marker; later atom edits change nothing.
+  { grep -v '^ATOM_ID=' "$MARKER"; echo "ATOM_ID=$atom_id"; } | marker_write_atomic
+  ledger_row "$(jq -nc --arg a "$atom_id" --arg s "$SID" '{v:1, kind:"bind", atom_id:$a, session_id:$s, ts:(now|floor)}')"
+  echo "BOUND=$atom_id"
+}
+
+cmd_escalate() {
+  local trigger=""
+  while [ $# -gt 0 ]; do case "$1" in
+    --trigger) trigger="$2"; shift 2 ;; *) infra "unknown flag $1" ;;
+  esac; done
+  case "$trigger" in verify-fail|context-overflow) ;; *) die "escalate needs --trigger verify-fail|context-overflow" ;; esac
+  [ -f "$MARKER" ] || die "no dispatch marker"
+  local n cur_model max_total
+  n=$(marker_get ESCALATION_N); n=${n:-0}
+  max_total=$(jq -r '.escalation.max_total_escalations // 2' "$POLICY")
+  case "$max_total" in ''|null|*[!0-9]*) max_total=2 ;; esac
+  [ "$n" -lt "$max_total" ] || die "HALTED — max_total_escalations ($max_total) reached; founder review required"
+  cur_model=$(marker_get MODEL)
+  local cur_rank target_rank target_model
+  cur_rank=$(jq -r --arg m "$cur_model" '.catalog[] | select(.model==$m) | .rank' "$POLICY")
+  if [ "$trigger" = "context-overflow" ]; then
+    # G4 codex fold: overflow reroutes to the WEAKEST 1M-window model (frozen
+    # LLD), not the next tier. Already-1M -> refuse (nothing to reroute to).
+    local cur_ctx; cur_ctx=$(jq -r --arg m "$cur_model" '.catalog[] | select(.model==$m) | .context' "$POLICY")
+    [ "$cur_ctx" -lt 1000000 ] || die "context-overflow reroute refused — $cur_model already has a 1M window"
+    target_model=$(jq -r '[.catalog[] | select(.context >= 1000000)] | sort_by(-.rank) | .[0].model' "$POLICY")
+    target_rank=$(jq -r --arg m "$target_model" '.catalog[] | select(.model==$m) | .rank' "$POLICY")
+  else
+    target_rank=$((cur_rank - 1))
+    [ "$target_rank" -ge 1 ] || die "already at top tier"
+    target_model=$(jq -r --argjson r "$target_rank" '.catalog[] | select(.rank==$r) | .model' "$POLICY")
+  fi
+  # Fable gate: landing on rank 1 ALWAYS needs founder approval (any trigger).
+  if [ "$target_rank" -eq 1 ] && [ "${DISPATCH_FOUNDER_APPROVAL:-}" != "yes" ]; then
+    die "NEEDS-APPROVAL — escalation to top tier ($target_model) requires founder approval"
+  fi
+  local new_effort="xhigh"
+  { grep -vE '^(MODEL|EFFORT|ESCALATION_N)=' "$MARKER"
+    echo "MODEL=$target_model"; echo "EFFORT=$new_effort"; echo "ESCALATION_N=$((n + 1))"
+  } | marker_write_atomic
+  ledger_row "$(jq -nc --arg f "$cur_model" --arg t "$target_model" --arg tr "$trigger" --arg s "$SID" \
+    --arg ap "${DISPATCH_FOUNDER_APPROVAL:-}" \
+    '{v:1, kind:"escalation", from:$f, to:$t, trigger:$tr, approved_by:(if $ap=="yes" then "founder" else null end), session_id:$s, ts:(now|floor)}')"
+  echo "ESCALATED=$target_model EFFORT=$new_effort N=$((n + 1))"
+}
+
+# skill-found <name> --source <url> : resolve a SEARCH rung to a concrete skill.
+# SEARCH is a declaration of intent; this is the only way to discharge it.
+cmd_skill_found() {
+  local name="${1:-}"; shift || true
+  local source=""
+  while [ $# -gt 0 ]; do case "$1" in --source) source="$2"; shift 2 ;; *) infra "unknown flag $1" ;; esac; done
+  [ -n "$name" ] || die "skill-found needs <name>"
+  [ -n "$source" ] || die "skill-found needs --source <url-or-origin> (where it came from is part of the record)"
+  case "$name$source" in *$'\n'*|*$'\r'*) die "newline/CR in skill-found field — refused (marker injection)" ;; esac
+  [ -f "$MARKER" ] || die "no dispatch marker"
+  [ "$(marker_get SKILL)" = "SEARCH" ] || die "skill-found only applies to a SKILL=SEARCH unit (current: $(marker_get SKILL))"
+  { grep -vE '^(SKILL|SKILL_SOURCE)=' "$MARKER"
+    echo "SKILL=$name"; echo "SKILL_SOURCE=external"; echo "SKILL_EXTERNAL_SOURCE=$source"
+  } | marker_write_atomic
+  ledger_row "$(jq -nc --arg n "$name" --arg src "$source" --arg s "$SID" \
+    '{v:1, kind:"skill-found", skill:$n, source:$src, session_id:$s, ts:(now|floor)}')"
+  echo "SKILL_FOUND=$name"
+}
+
+# skill-check : close-time postconditions for the SEARCH and CREATE rungs.
+# Called by sutra-atom before it closes a bound atom. Exit 0 = satisfied.
+cmd_skill_check() {
+  [ -f "$MARKER" ] || return 0          # unbound unit: nothing to check
+  local sk; sk=$(marker_get SKILL)
+  case "$sk" in
+    SEARCH)
+      die "SKILL=SEARCH never resolved — run: sutra-dispatch skill-found <name> --source <url> (an unresolved SEARCH cannot close)" ;;
+    CREATE)
+      # Provable only against the before-picture taken at resolve.
+      local before now; before=$(marker_get SKILL_CATALOG_SHA); now=$(_skill_catalog_sha)
+      [ -n "$before" ] || return 0      # pre-ladder record, nothing to compare
+      [ "$before" != "$now" ] || die "SKILL=CREATE but the skill catalog is unchanged since resolve — no skill was authored (catalog sha $before)"
+      echo "SKILL_CHECK=created" ;;
+    *) : ;;
+  esac
+  return 0
+}
+
+cmd_show() {
+  [ -f "$MARKER" ] && cat "$MARKER" || echo "(no dispatch record for $SID)"
+  [ -f "$LEDGER" ] && tail -2 "$LEDGER" || true
+}
+
+case "${1:-}" in
+  resolve) shift; cmd_resolve "$@" ;;
+  bind) shift; cmd_bind "$@" ;;
+  escalate) shift; cmd_escalate "$@" ;;
+  show) shift; cmd_show "$@" ;;
+  skill-found) shift; cmd_skill_found "$@" ;;
+  skill-check) shift; cmd_skill_check "$@" ;;
+  *) echo "usage: sutra-dispatch resolve|bind|escalate|show ..." >&2; exit 1 ;;
+esac
