@@ -33,9 +33,11 @@
 #      inside their first claude session.
 #  11. Auto-launches `claude` in the target directory. Founder direction
 #      2026-05-04 ("include sutra start and start claude. Include them by
-#      default"). Robust handoff: `stty sane` + full /dev/tty reattach for
-#      stdin/stdout/stderr before exec — closes the keystroke-drop hang
-#      observed under macOS Terminal.app. --no-launch opts out.
+#      default"). Robust handoff (v0.7.0): resolves the REAL terminal
+#      device (`tty </dev/tty`) and reattaches stdin/stdout/stderr to it —
+#      closes both the keystroke-drop hang (macOS Terminal.app) and the
+#      kqueue-EINVAL crash (macOS can't kqueue the /dev/tty alias; Claude
+#      Code >= 2.1.x kqueues stdout at startup). --no-launch opts out.
 #
 # Re-run semantics (founder direction 2026-05-04, "the person might have used
 # it once, so you re-run everything"): every step is idempotent. Folder exists
@@ -63,7 +65,7 @@ IFS=$'\n\t'
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
-SUTRA_VERSION="0.6.0"  # this installer's version (NOT the plugin's — see header)
+SUTRA_VERSION="0.7.0"  # this installer's version (NOT the plugin's — see header)
 declare -a _ORIG_ARGV_ARR=()   # bash array — preserves quoting for paths with spaces/quotes; used by CLT pre-flight re-run hint
 SUTRA_MARKETPLACE="sankalpasawa/sutra"   # source spec for `marketplace add` (GitHub path)
 SUTRA_MARKETPLACE_NAME="sutra"           # registered name in Claude (from marketplace.json .name)
@@ -80,6 +82,8 @@ TARGET_DIR=""
 NON_INTERACTIVE=0
 NO_LAUNCH=0
 TOTAL_STEPS=8
+# Step-7 outcome, reported honestly by Step 8 (v0.7.0): ok | failed | skipped
+SUTRA_START_STATUS="skipped"
 
 if [[ "${SUTRA_INSTALL_VERBOSE:-0}" == "1" ]]; then
   set -x
@@ -344,7 +348,7 @@ What it does (idempotent — safe to re-run):
   7. Runs `sutra start` (telemetry consent + project onboarding outside claude).
   8. Auto-launches `claude` in the target directory (founder direction
      2026-05-04 "include them by default"). Robust hand-off via stty sane +
-     full /dev/tty re-attach. Skip with --no-launch.
+     re-attach to the resolved real terminal device. Skip with --no-launch.
 
 Re-runs safely from any state: marketplace already added → continues + refreshes;
 plugin already installed → updates to latest; sentinel re-armed; permissions deduped.
@@ -454,6 +458,15 @@ step_select_target() {
 
   cd "${TARGET_DIR}"
   log "cwd: ${PWD}"
+
+  # Seed .claude/ as a project marker — AFTER all target selection/renaming is
+  # final. `sutra start` refuses to activate in directories with no project
+  # markers (.git / package.json / ... / .claude/), so a fresh install into a
+  # new empty dir hit that guard every time (fleet report 2026-08-05): Step 7
+  # warned and onboarding silently fell through to the first claude session.
+  # .claude/ is the honest marker — Step 7 writes .claude/sutra-project.json
+  # into this exact directory.
+  mkdir -p "${TARGET_DIR}/.claude"
 }
 
 # -----------------------------------------------------------------------------
@@ -850,8 +863,10 @@ step_sutra_start() {
   # Run from the target dir; reattach stdin to /dev/tty for the consent prompt.
   # Captures exit code; non-zero is a soft warning (claude can still run /core:start).
   if ( cd "${TARGET_DIR}" && "${sutra_bin}" start </dev/tty ); then
+    SUTRA_START_STATUS="ok"
     ok "sutra start completed"
   else
+    SUTRA_START_STATUS="failed"
     warn "sutra start exited non-zero — re-run /core:start inside claude if needed."
   fi
 }
@@ -863,11 +878,26 @@ step_sutra_start() {
 # v0.3.0 print-only default. The keystroke-drop hang in v0.2.0 was caused
 # by an incomplete fd handoff — `exec </dev/tty; exec claude` redirected
 # only stdin (fd 0) but claude's interactive UI also uses fd 1 (output)
-# and fd 2 (raw mode tcsetattr ioctl). Robust v0.4.0 handoff:
-#   1. `stty sane </dev/tty` resets canonical mode + sane echo/erase
-#   2. `exec claude </dev/tty >/dev/tty 2>/dev/tty` reattaches all 3 fds
-#      AND replaces the script process in one syscall — claude inherits
-#      a clean tty for input, output, AND control.
+# and fd 2 (raw mode tcsetattr ioctl). v0.4.0 reattached all 3 fds to
+# /dev/tty — but that introduced a crash (v0.7.0 fix, fleet report
+# 2026-08-05): macOS kqueue rejects the /dev/tty controlling-terminal
+# ALIAS device on fd 1/2 (EINVAL), and Claude Code >= 2.1.x (Bun 1.4)
+# registers stdout with kqueue while constructing its tty WriteStream, so
+# `exec claude >/dev/tty 2>/dev/tty` died at launch with "EINVAL: invalid
+# argument, kqueue" + a cascading "process.stdout.isTTY" TypeError.
+#
+# v0.7.0 handoff (codex-reviewed GO 2026-08-05):
+#   1. Resolve the REAL terminal device via ttyname(3): `tty </dev/tty`
+#      returns /dev/ttysNNN (macOS) or /dev/pts/N (Linux) — devices
+#      kqueue accepts. Validate: non-empty, not "not a tty", absolute
+#      /dev/* path, character device.
+#   2. `stty sane` against the real device, then exec claude with all 3
+#      fds on it — claude inherits a clean tty for input/output/control.
+#   3. Fallback when resolution fails but stdout/stderr are already real
+#      terminal fds (normal curl|bash — only stdin is the pipe): reattach
+#      stdin only, inherit fd 1/2 untouched.
+#   4. Else: print the manual-launch hint. Never exec with alias-backed
+#      fd 1/2.
 #
 # Skipped when:
 #   * NON_INTERACTIVE (-y) — automation safety
@@ -905,18 +935,35 @@ step_launch_claude() {
   fi
 
   log ""
-  log "Launching Claude Code (sutra start completed; project onboarded)..."
+  case "${SUTRA_START_STATUS}" in
+    ok)     log "Launching Claude Code (project onboarded by sutra start)..." ;;
+    failed) log "Launching Claude Code (sutra start did NOT complete — run /core:start inside claude)..." ;;
+    *)      log "Launching Claude Code (/core:start will fire on your first session)..." ;;
+  esac
   log "  If keystrokes don't reach claude (rare): Ctrl+C twice, then run: ${hint_cmd}"
   log ""
 
-  # Robust handoff: stty sane resets terminal mode; the 3-fd redirect
-  # AND exec happen in one syscall so claude inherits a clean tty for
-  # input/output/control. Trap chain is dropped on exec(), which is fine
-  # — all on-disk state (sentinel, settings, sutra-project.json) was
-  # committed in earlier steps.
+  # Handoff (see header comment): resolve the real tty device — NEVER exec
+  # with fd 1/2 on the /dev/tty alias (macOS kqueue EINVAL crash in Claude
+  # Code >= 2.1.x). Trap chain is dropped on exec(), which is fine — all
+  # on-disk state (sentinel, settings, sutra-project.json) was committed in
+  # earlier steps.
   cd "${TARGET_DIR}"
-  stty sane </dev/tty 2>/dev/null || true
-  exec claude </dev/tty >/dev/tty 2>/dev/tty
+  local real_tty=""
+  real_tty="$(tty </dev/tty 2>/dev/null || true)"
+  if [[ -n "${real_tty}" && "${real_tty}" != "not a tty" && "${real_tty}" == /dev/* && -c "${real_tty}" ]]; then
+    stty sane <"${real_tty}" 2>/dev/null || true
+    exec claude <"${real_tty}" >"${real_tty}" 2>"${real_tty}"
+  elif [[ -t 1 && -t 2 ]]; then
+    # stdout/stderr are already real terminal fds (normal curl|bash shape —
+    # only stdin is the pipe): reattach stdin only, inherit fd 1/2.
+    stty sane </dev/tty 2>/dev/null || true
+    exec claude </dev/tty
+  else
+    warn "Could not attach a real terminal device for claude — start it manually:"
+    warn "  ${hint_cmd}"
+    return 0
+  fi
 }
 
 # -----------------------------------------------------------------------------
