@@ -12,3 +12,10 @@ node_modules/
 # suite, so running either now leaves __pycache__ directories in the tree.
 __pycache__/
 *.pyc
+
+# Signing material. NEVER commit: the Developer ID private key IS the identity,
+# and the App Store Connect .p8 authorises notarization submissions.
+# These live in ~/.sutra-signing (mode 600), outside the repo, on purpose.
+*.p8
+*.p12
+*.certSigningRequest
