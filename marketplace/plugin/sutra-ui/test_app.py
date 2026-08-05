@@ -161,10 +161,10 @@ class TestApp(unittest.TestCase):
                            "tenant_id", "mint_evidence", "ts_minted_ms",
                            "successor_refs"):
                 self.assertIn(field, r, "tree row missing %r: %r" % (field, r))
-        # live, T-local scope by default -- one retired T-local domain and the
-        # T-acme root must both be absent
+        # live by default. The tenant half of this assertion is GONE: tenancy
+        # is removed, so /tree returns the whole registry and a second root is
+        # damage to be refused at publish, not a tenant to be filtered here.
         self.assertTrue(all(row["status"] != "retired" for row in rows))
-        self.assertTrue(all(row["tenant_id"] == "T-local" for row in rows))
 
     def test_02_tree_include_retired_adds_the_tombstone(self):
         _, live_rows = _get("/api/org/tree")
@@ -172,11 +172,81 @@ class TestApp(unittest.TestCase):
         self.assertGreater(len(all_rows), len(live_rows))
         self.assertTrue(any(r["status"] == "retired" for r in all_rows))
 
-    def test_03_tree_all_tenants_adds_the_leak(self):
-        _, scoped = _get("/api/org/tree?all_tenants=false")
-        _, everyone = _get("/api/org/tree?all_tenants=true")
-        self.assertGreater(len(everyone), len(scoped))
-        self.assertTrue(any(r["tenant_id"] != "T-local" for r in everyone))
+    def test_03_tenant_params_are_accepted_no_ops(self):
+        """TENANCY IS REMOVED. This replaces four tests that specified it:
+
+            test_03_tree_all_tenants_adds_the_leak
+            test_29_tree_partitions_tenant_of_record_ahead_of_every_other_tenant
+            test_49_the_tenant_param_actually_scopes_every_org_endpoint
+            test_50_an_unknown_tenant_returns_empty_not_everything
+
+        Together they asserted that ?tenant= selected one org's rows, that
+        all_tenants=true widened it, that the tenant-of-record sorted first, and
+        that an unknown tenant returned EMPTY rather than everything. All four
+        described a capability that no longer exists: one registry now holds one
+        org, so there is nothing to select between.
+
+        What must still hold is compatibility. A running panel and existing
+        scripts send these query params; rejecting them would 422 live callers
+        for no benefit. So they are accepted and ignored -- and 'ignored' is
+        exactly what has to be pinned, because the OLD failure mode was a
+        parameter that looked scoped and was not.
+        """
+        _, base = _get("/api/org/tree?include_retired=true")
+        for q in ("?include_retired=true&tenant=T-local",
+                  "?include_retired=true&tenant=T-does-not-exist",
+                  "?include_retired=true&all_tenants=true",
+                  "?include_retired=true&all_tenants=false"):
+            status, rows = _get("/api/org/tree" + q)
+            self.assertEqual(status, 200, "%s must not 422 a live caller" % q)
+            self.assertEqual(len(rows), len(base),
+                             "%s changed the result; tenancy is removed and it "
+                             "must be a no-op" % q)
+
+        # an unknown tenant must NOT empty the response now -- the old contract
+        # was "empty, never everything"; the new one is "everything, always"
+        for path in ("/api/org/charters", "/api/org/placements"):
+            _, plain = _get(path)
+            _, ghosted = _get(path + "?tenant=T-does-not-exist")
+            self.assertEqual(len(ghosted), len(plain), path)
+
+    def test_47_the_tenants_endpoint_reports_one_registry(self):
+        """TENANCY IS REMOVED. Replaces three tests that specified it:
+
+            test_47_tenants_are_derived_from_the_registry_not_padded
+            test_48_tenant_counts_match_the_scoped_endpoints_exactly
+            test_51_stats_scope_follows_the_tenant_param
+
+        They asserted that /api/tenants unioned every tenant_id seen on a domain
+        or placement, that each row's counts matched that tenant's SCOPED
+        endpoints, and that /stats followed ?tenant=. All three described
+        per-tenant slicing, which no longer exists.
+
+        The endpoint is kept (a running panel calls it on boot; deleting it
+        would 404 a live client) and now describes the registry itself. Its
+        counts must equal the UNSCOPED endpoints -- that is the whole contract,
+        and it is what catches a half-removed filter where /tree and /charters
+        disagree about how much of the registry exists.
+        """
+        _, rows = _get("/api/tenants")
+        self.assertEqual(len(rows), 1,
+                         "one registry, one row -- got %r" % (rows,))
+        r = rows[0]
+        self.assertTrue(r["is_default"])
+
+        _, live = _get("/api/org/tree")
+        _, everything = _get("/api/org/tree?include_retired=true")
+        _, chs = _get("/api/org/charters")
+        _, plc = _get("/api/org/placements")
+
+        self.assertEqual(r["domains"], len(everything))
+        self.assertEqual(r["domains_live"], len(live))
+        self.assertEqual(r["domains_retired"], len(everything) - len(live))
+        self.assertEqual(r["charters"], len(chs))
+        self.assertEqual(r["placements"], len(plc))
+        if r["root_ref"]:
+            roots = [d["ref"] for d in everything if d["parent_ref"] is None]
+            self.assertIn(r["root_ref"], roots)
 
     def test_04_dpaths_are_unique_per_tenant(self):
         # D-numbering is PER TENANT TREE, not global -- T-local's "Sutra Labs"
@@ -729,34 +799,6 @@ class TestApp(unittest.TestCase):
         for e in other_without_before:
             self.assertNotEqual(e.get("event"), "domain_restructured")
 
-    def test_29_tree_partitions_tenant_of_record_ahead_of_every_other_tenant(self):
-        """Complements test_24 by proving the tenant key is load-bearing: a
-        sort on `path` alone would INTERLEAVE the tenants here (D-numbering is
-        per-tenant, so T-acme's "D0" sorts before T-local's "D1"). If the
-        returned order still happens to equal the path-only order, the tenant
-        key is doing nothing and the create-department parent default is one
-        dict-ordering wobble away from pointing at a foreign tenant again."""
-        _, rows = _get("/api/org/tree?include_retired=true&all_tenants=true")
-        tenants = [r["tenant_id"] for r in rows]
-        self.assertGreater(len(set(tenants)), 1, "fixture must span >1 tenant")
-
-        first_foreign = min(i for i, t in enumerate(tenants) if t != "T-local")
-        last_local = max(i for i, t in enumerate(tenants) if t == "T-local")
-        self.assertLess(last_local, first_foreign,
-                         "every tenant-of-record row must precede every foreign row: %r"
-                         % (tenants,))
-
-        # ...and this is NOT what a path-only sort would have produced
-        path_only = sorted(rows, key=lambda r: r["path"])
-        self.assertNotEqual([r["ref"] for r in path_only], [r["ref"] for r in rows],
-                             "path-only order equals the returned order -- the tenant "
-                             "key is not actually doing anything here")
-
-        # the default (scoped) view is the tenant of record and nothing else
-        _, scoped = _get("/api/org/tree")
-        self.assertTrue(scoped)
-        self.assertTrue(all(r["tenant_id"] == "T-local" for r in scoped))
-
     def test_30_simulate_now_ms_moves_staleness_in_both_directions(self):
         """now_ms is the ONE clock both halves of the screen band against. Pin
         it from both ends: a clock far in the past must age nothing, a clock far
@@ -1037,115 +1079,6 @@ class TestApp(unittest.TestCase):
         self.assertIn("not runnable", err["detail"])
 
     # ========================================================== tenants ====
-
-    def test_47_tenants_are_derived_from_the_registry_not_padded(self):
-        """There is no tenant table -- a tenant is a tenant_id observed on a
-        domain or a placement. So the list must be exactly the union of what
-        the other endpoints report, plus the tenant of record. Padding it (to
-        make a tenant picker look populated) is the failure this guards."""
-        status, rows = _get("/api/tenants")
-        self.assertEqual(status, 200)
-        self.assertIsInstance(rows, list)
-        self.assertTrue(rows)
-
-        _, all_domains = _get("/api/org/tree?all_tenants=true&include_retired=true")
-        _, all_plc = _get("/api/org/placements?all_tenants=true")
-        observed = set(d["tenant_id"] for d in all_domains if d.get("tenant_id"))
-        observed |= set(p["tenant_id"] for p in all_plc if p.get("tenant_id"))
-
-        listed = set(r["tenant_id"] for r in rows)
-        defaults = [r for r in rows if r["is_default"]]
-        self.assertEqual(len(defaults), 1, "exactly one tenant of record")
-        self.assertEqual(listed - observed, set(),
-                         "every listed tenant must be OBSERVED in the registry -- "
-                         "no invented rows")
-        self.assertEqual(observed - listed, set(),
-                         "every observed tenant must be listed -- none hidden")
-        self.assertIn(defaults[0]["tenant_id"], listed)
-
-    def test_48_tenant_counts_match_the_scoped_endpoints_exactly(self):
-        _, rows = _get("/api/tenants")
-        for r in rows:
-            tid = r["tenant_id"]
-            _, live = _get("/api/org/tree?tenant=%s" % tid)
-            _, everything = _get("/api/org/tree?tenant=%s&include_retired=true" % tid)
-            _, chs = _get("/api/org/charters?tenant=%s" % tid)
-            _, plc = _get("/api/org/placements?tenant=%s" % tid)
-            self.assertEqual(r["domains"], len(everything),
-                             "%s: `domains` counts the whole scope" % tid)
-            self.assertEqual(r["domains_live"], len(live), tid)
-            self.assertEqual(r["domains_retired"],
-                             len(everything) - len(live), tid)
-            self.assertEqual(r["charters"], len(chs), tid)
-            self.assertEqual(r["placements"], len(plc), tid)
-            if r["root_ref"]:
-                roots = [d for d in everything if d["parent_ref"] is None]
-                self.assertIn(r["root_ref"], [d["ref"] for d in roots],
-                              "%s: root_ref must be a real parentless domain" % tid)
-
-    # ==================================================== tenant scoping ===
-
-    def test_49_the_tenant_param_actually_scopes_every_org_endpoint(self):
-        """?tenant= is the parameter the whole panel hangs off. If it were
-        ignored (FastAPI silently drops UNKNOWN query params, so a rename would
-        not error), every screen would quietly show all-tenants data while the
-        rail said 'T-local'."""
-        _, rows = _get("/api/tenants")
-        tenants = [r["tenant_id"] for r in rows]
-        self.assertGreaterEqual(len(tenants), 2,
-                                "the fixture must hold >1 tenant for scoping to be "
-                                "provable -- got %r" % tenants)
-
-        seen_refs = {}
-        for tid in tenants:
-            _, tree = _get("/api/org/tree?tenant=%s&include_retired=true" % tid)
-            self.assertTrue(tree, "%s has no domains" % tid)
-            for d in tree:
-                self.assertEqual(d["tenant_id"], tid,
-                                 "?tenant=%s leaked a %s row" % (tid, d["tenant_id"]))
-            seen_refs[tid] = set(d["ref"] for d in tree)
-            _, plc = _get("/api/org/placements?tenant=%s" % tid)
-            for row in plc:
-                self.assertEqual(row["tenant_id"], tid,
-                                 "?tenant=%s leaked a placement from %s"
-                                 % (tid, row["tenant_id"]))
-
-        # the scopes are genuinely disjoint, i.e. the param partitions rather
-        # than returning the same set under a different label
-        a, b = tenants[0], tenants[1]
-        self.assertNotEqual(seen_refs[a], seen_refs[b])
-        self.assertEqual(seen_refs[a] & seen_refs[b], set())
-
-        # ...and all_tenants is the union, so nothing is lost either way
-        _, everyone = _get("/api/org/tree?all_tenants=true&include_retired=true")
-        union = set()
-        for tid in tenants:
-            union |= seen_refs[tid]
-        self.assertEqual(set(d["ref"] for d in everyone), union)
-
-    def test_50_an_unknown_tenant_returns_empty_not_everything(self):
-        """The dangerous failure is a typo'd/stale tenant id falling back to
-        'unscoped', which silently shows another tenant's org chart."""
-        ghost = "T-does-not-exist-%d" % int(time.time())
-        for path in ("/api/org/tree?tenant=%s&include_retired=true",
-                     "/api/org/charters?tenant=%s",
-                     "/api/org/placements?tenant=%s"):
-            status, rows = _get(path % ghost)
-            self.assertEqual(status, 200)
-            self.assertEqual(rows, [],
-                             "%s must be EMPTY for an unknown tenant, never a "
-                             "fallback to the full registry" % (path % ghost))
-
-    def test_51_stats_scope_follows_the_tenant_param(self):
-        _, rows = _get("/api/tenants")
-        for r in rows:
-            _, st = _get("/api/org/stats?tenant=%s" % r["tenant_id"])
-            self.assertEqual(st["tenant_id"], r["tenant_id"])
-            self.assertEqual(st["domains"], r["domains"])
-            self.assertEqual(st["charters"], r["charters"])
-            self.assertEqual(st["placements"], r["placements"])
-
-    # ================================================ sessions: NO FIXTURES =
 
     def test_52_sessions_are_real_files_under_dot_claude_projects(self):
         """The panel used to manufacture sessions by grouping placement rows by

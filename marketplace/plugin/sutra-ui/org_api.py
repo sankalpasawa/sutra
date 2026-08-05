@@ -111,8 +111,23 @@ def _tenant_of_record(tenant=None):
 
 
 def _scope(tenant=None, all_tenants=False):
-    """tenant_id to pass to the engine: None means "every tenant"."""
-    return None if all_tenants else _tenant_of_record(tenant)
+    """ALWAYS None -- i.e. unfiltered. Tenancy is removed.
+
+    This is the single place the tenant filter entered every org endpoint, so
+    it is the single place it leaves from. Returning None makes the engine's
+    remaining optional filters (charters_for(tenant_id=...),
+    all_placements(tenant_id=...)) unfiltered, which is what "one org per
+    registry" means.
+
+    Neutralising it HERE rather than at each endpoint matters: the domain-side
+    filter and the CHARTER-side filter are separate, and removing only the
+    first left /api/org/charters?tenant=<anything-unknown> returning zero rows
+    while /tree returned all of them -- a half-removed filter that disagreed
+    with itself. One chokepoint in, one chokepoint out.
+
+    The arguments are kept so live callers do not 422; they are ignored.
+    """
+    return None
 
 
 def _charter_ids_in_scope(scope, tenant_id):
@@ -134,18 +149,23 @@ def org_tree(include_retired: bool = False, all_tenants: bool = False,
              tenant: Optional[str] = None):
     """Port of the CLI's `tree` (placement_engine.py ~:2566).
 
-    domains = load_domains(); scope = tenant_refs(domains, tenant_id);
-    shown = scope if include_retired else live_refs(scope).
-    tenant_id resolution: ?tenant= overrides the PLACEMENT_TENANT env var,
-    which defaults to "T-local" -- the same default the engine's own
-    classify()/mece_report() use. When all_tenants=true, scope is skipped
-    (tenant_refs(domains, None) == all); ?tenant= is then still used for the
-    ordering below, so "which tenant leads" follows the UI's selection.
+    domains = load_domains(); shown = domains if include_retired
+                                      else live_refs(domains).
+
+    TENANCY IS REMOVED. `scope` used to be `tenant_refs(domains, tenant_id)`,
+    with ?tenant= overriding a PLACEMENT_TENANT env var and all_tenants=true as
+    the opt-out. There is one org per registry now, so the whole registry is the
+    scope and there is nothing to select between.
+
+    `tenant` and `all_tenants` remain in the signature as ACCEPTED NO-OPS: they
+    are query parameters a running panel and existing scripts may still send,
+    and 422-ing them would break callers to no purpose. They no longer affect
+    the response.
     """
     tenant_of_record = _tenant_of_record(tenant)
     tenant_id = None if all_tenants else tenant_of_record
     domains = E.load_domains()
-    scope = E.tenant_refs(domains, tenant_id)
+    scope = domains          # tenancy removed: the whole registry is the scope
     shown = scope if include_retired else E.live_refs(scope)
 
     rows = []
@@ -213,7 +233,7 @@ def org_charters(all_tenants: bool = False, tenant: Optional[str] = None):
     """
     tenant_id = _scope(tenant, all_tenants)
     domains = E.load_domains()
-    scope = E.tenant_refs(domains, tenant_id)
+    scope = domains          # tenancy removed: the whole registry is the scope
 
     seen_ids = set()
     out = []
@@ -281,7 +301,7 @@ def org_stats(tenant: Optional[str] = None):
         }
 
     tenant_id = _tenant_of_record(tenant)
-    scope = E.tenant_refs(_all, tenant_id)
+    scope = _all             # tenancy removed: the whole registry is the scope
     live = E.live_refs(scope)
     return {
         "scope": "tenant",
@@ -1200,43 +1220,39 @@ def api_git(what: str, path: Optional[str] = None):
 
 @router.get("/tenants")
 def api_tenants():
-    """Every tenant that actually exists in the registry, with real counts.
+    """ONE row: this registry. Tenancy is removed.
 
-    Derived, not stored: placement_engine has no tenant table. A tenant is a
-    `tenant_id` observed on a domain or a placement, so this unions those two
-    sources and counts each tenant's scope with the engine's own functions
-    (tenant_refs / charters_for / all_placements). If the registry holds one
-    tenant, this returns one row -- it does not pad the list to make a
-    tenant-picker look populated.
+    This used to union every `tenant_id` observed on a domain or a placement and
+    report a scope per tenant, which is what the panel's footer switcher and
+    Tenants table were built on. There is one org per registry now, so there is
+    exactly one row and nothing to switch between.
 
-    The tenant of record (PLACEMENT_TENANT, default "T-local") is always
-    present and flagged is_default, even at zero counts: the UI has to be able
-    to show the tenant every unscoped write would land in, including the case
-    where that tenant is empty.
+    The endpoint is KEPT rather than deleted because a running panel still calls
+    it on boot; removing it would 404 a live client mid-session. It now reports
+    the registry itself, and the counts are the registry's real counts -- not a
+    per-label slice that no longer means anything.
+
+    `tenant_id` stays in the payload as the ID STILL STAMPED ON THE ROWS, so the
+    field is not a lie: it is dead data on disk, reported as such, not a
+    selector. It is nothing's filter any more.
     """
     domains = E.load_domains()
-    placements = E.all_placements()
     default_id = _tenant_of_record()
 
-    ids = {default_id}
-    for d in domains.values():
-        if d.get("tenant_id"):
-            ids.add(d["tenant_id"])
-    for p in placements:
-        if p.get("tenant_id"):
-            ids.add(p["tenant_id"])
+    # exactly one scope: the registry
+    ids = [default_id]
 
     out = []
     for tid in ids:
-        scope = E.tenant_refs(domains, tid)
+        scope = domains      # tenancy removed: the whole registry is the scope
         live = E.live_refs(scope)
         roots = [(ref, d) for ref, d in scope.items() if not d.get("parent_ref")]
         roots.sort(key=lambda rd: (rd[1].get("ts_minted_ms") or 0, rd[0]))
         out.append({
             "tenant_id": tid,
             "domains": len(scope),
-            "charters": len(_charter_ids_in_scope(scope, tid)),
-            "placements": len(E.all_placements(tenant_id=tid)),
+            "charters": len(_charter_ids_in_scope(scope, None)),
+            "placements": len(E.all_placements()),
             "is_default": tid == default_id,
             # extras the landing screen would otherwise re-derive client-side
             "domains_live": len(live),

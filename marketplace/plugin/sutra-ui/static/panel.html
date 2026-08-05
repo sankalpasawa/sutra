@@ -897,11 +897,14 @@
       </div>
       <div class="rfoot">
         <div class="av">TC</div>
+        <!-- Tenancy is removed: one registry holds one org, so there is
+             nothing to switch between. This was a menu button; a control that
+             can only ever pick the thing already picked is a false affordance,
+             so it is a LABEL now. It still names the registry, because "which
+             registry am I looking at" remains a real question -- the answer is
+             just no longer a choice. -->
         <div class="tmenuwrap">
-          <button class="tsw" id="tenantSwitch" type="button" aria-haspopup="menu"
-                  aria-expanded="false"
-                  title="Switch workspace — every request is scoped to it">—</button>
-          <div class="tmenu" id="tenantMenu" role="menu" hidden></div>
+          <span class="tsw" id="tenantSwitch" title="The registry this panel reads">—</span>
         </div>
         <div style="margin-left:auto;display:flex;gap:2px">
           <button class="ib" id="termBtn" type="button" aria-pressed="false"
@@ -1141,7 +1144,10 @@ function scopeQ(){
   return S.showAcme ? "all_tenants=true"
                     : "tenant=" + encodeURIComponent(S.tenant || "");
 }
-const tenantQ = () => "tenant=" + encodeURIComponent(S.tenant || "");
+/* Tenancy is removed and the server ignores this parameter. It is no longer
+   sent: a query string that looks like a scope but is not one is exactly the
+   thing that made a half-removed filter hard to see. */
+const tenantQ = () => "";
 
 /* ══════════════════════ derivations/* ══════════════════════ derivations ══════════════════════ */
 const byRef = r => DOMAINS.find(d => d.ref === r);
@@ -2202,7 +2208,7 @@ function renderRail(){
   const chip = document.getElementById("tenantChip");
   if (chip) chip.textContent = S.tenant || "no tenant";
   const sw = document.getElementById("tenantSwitch");
-  if (sw) sw.textContent = (S.tenant || "choose a tenant") + " · switch";
+  if (sw) sw.textContent = S.tenant || "registry";
 }
 
 /* ══════════════════════ screens ══════════════════════ */

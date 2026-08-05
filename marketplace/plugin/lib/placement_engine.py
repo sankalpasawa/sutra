@@ -227,29 +227,64 @@ def live_refs(domains):
             if d.get("status", "active") != "retired"}
 
 
-def tenant_refs(domains, tenant_id):
-    """Render/publish-surface filter: keeps ONE tenant's nodes (§6).
+def tenant_refs(domains, tenant_id=None):
+    """RETIRED. Returns every domain, whatever is passed.
 
-    The exact sibling of live_refs(), and applied the same way — ONE chokepoint
-    at the enumerated surfaces (tree, search, build_site/export_registry_only's
-    input set), never a filter re-derived per call site. Per-site filtering is
-    the classic performed barrier: one forgotten site republishes the second
-    tenant onto a public GitHub Pages repo.
+    This was the publish-surface filter that kept one tenant's nodes and dropped
+    the rest. Tenancy is gone: `subtree_refs()` replaces it, selecting by
+    containment from the root instead of by a label stamped on each row.
 
-    This is a MISROUTING GUARD, not isolation (§6): the selector is the
-    PLACEMENT_TENANT env var, all tenants share one $SUTRA_NATIVE_HOME, and
-    nothing stops a process that can read the kit from reading every tenant in
-    it. Do not describe it with the word "isolation".
+    Kept as an identity function, briefly, so an out-of-tree caller degrades to
+    "sees everything" rather than crashing -- which is the safe direction for a
+    READ filter, and the honest one now that there is nothing to separate. It
+    takes no part in any decision and should be deleted once no caller remains.
 
-    `tenant_id=None` means UNFILTERED — the default at every optional call site
-    (charters_for, all_placements) so existing callers keep their semantics.
+    What it never was, by its own former docstring: isolation. All tenants
+    shared one $SUTRA_NATIVE_HOME and the selector was an env var, so nothing
+    stopped a process that could read the kit from reading every tenant in it.
+    The boundary that actually holds is ONE REGISTRY PER PARTY -- a separate
+    SUTRA_NATIVE_HOME, enforced by the filesystem rather than by a string.
+    """
+    return dict(domains)
+
+
+def subtree_refs(domains, root_ref):
+    """Publish-surface filter by CONTAINMENT: every domain at or below `root_ref`.
+
+    The replacement for tenant_refs() as the publish chokepoint. Both answer
+    "which domains belong to this org", but they answer it differently:
+
+        tenant_refs   by LABEL      -- a tenant_id string stamped on each row
+        subtree_refs  by STRUCTURE  -- reachability from the root by parent_ref
+
+    Structure is the better answer here because it cannot disagree with the tree
+    the site actually renders. A row whose tenant_id was mistyped silently
+    vanished from the published site while still sitting in the registry; a row
+    that is not under the root is not part of the org by construction, and the
+    same walk that publishes it is the one that selects it.
+
+    UNFILTERED BY LIVENESS, deliberately: retired nodes stay in, because
+    export_registry_only must keep emitting tombstoned rows (§2.1) so a charter
+    homed to a retired domain still reaches the Archive tray. Compose with
+    live_refs() when the caller wants only live ones, exactly as before.
 
     NEVER pass the result into domain_path(): ordinals are computed over the
-    full sibling set exactly as with live_refs().
+    full sibling set, the same rule live_refs() and tenant_refs() carry.
     """
-    if not tenant_id:
-        return dict(domains)
-    return {r: d for r, d in domains.items() if d.get("tenant_id") == tenant_id}
+    kids = {}
+    for r, d in domains.items():
+        kids.setdefault(d.get("parent_ref"), []).append(r)
+    out, stack, seen = {}, [root_ref], set()
+    while stack:
+        r = stack.pop()
+        # the cycle guard is not theoretical: a damaged parent_ref loop must not
+        # hang a publish, which is exactly where this runs unattended
+        if r in seen or r not in domains:
+            continue
+        seen.add(r)
+        out[r] = domains[r]
+        stack.extend(kids.get(r, ()))
+    return out
 
 
 def _nearest_live_ancestor(ref, domains):
@@ -957,14 +992,20 @@ def _root_ref(tenant_id):
     silently re-homing one tenant's work under another's root.
     """
     domains = load_domains()
+    # THE TENANT CONJUNCT IS GONE, and that is a safety improvement rather than
+    # a relaxation. It was the only thing that could make this lookup MISS on a
+    # registry that plainly has a root -- a mistyped PLACEMENT_TENANT was enough
+    # -- and the miss is not benign: control falls through to the mint below and
+    # manufactures a SECOND parent-less node, which every publish surface then
+    # refuses to disambiguate. Matching the root by structure alone makes that
+    # branch unreachable while any live root exists.
     for ref, d in sorted(domains.items()):
-        if (d.get("parent_ref") is None and d.get("tenant_id") == tenant_id
-                and d.get("status", "active") == "active"):
+        if d.get("parent_ref") is None and d.get("status", "active") == "active":
             return ref
     for ref, d in sorted(domains.items()):
-        if d.get("parent_ref") is None and d.get("tenant_id") == tenant_id:
+        if d.get("parent_ref") is None:
             dest, _how = _live_destination(ref, domains, None)
-            if dest and domains.get(dest, {}).get("tenant_id") == tenant_id:
+            if dest:
                 return dest
     ref, _ = mint_domain(None, os.environ.get("PLACEMENT_ROOT_NAME", "Root"),
                          ["root"], tenant_id, origin="system-minted")
@@ -2571,7 +2612,9 @@ def main(argv):
         # domain_path still reads the FULL map, so a cross-tenant ancestor
         # cannot renumber anything by being filtered out of the listing.
         domains = load_domains()
-        scope = tenant_refs(domains, None if "--all-tenants" in argv else tenant)
+        # tenancy removed: every domain is in scope. --all-tenants is kept as
+        # an accepted no-op flag so existing scripts do not start failing.
+        scope = dict(domains)
         shown = scope if "--all" in argv else live_refs(scope)
         _out({"tenant_id": None if "--all-tenants" in argv else tenant,
               "domains": [{"ref": r, "path": domain_path(r, domains),
@@ -2652,7 +2695,9 @@ def main(argv):
             _out({"error": "usage: search <terms> [--all-tenants]"}); return 2
         terms = [t for t in re.split(r"\s+", q) if t]
         domains = load_domains()          # FULL map: domain_path needs it
-        scope = tenant_refs(domains, None if "--all-tenants" in argv else tenant)
+        # tenancy removed: every domain is in scope. --all-tenants is kept as
+        # an accepted no-op flag so existing scripts do not start failing.
+        scope = dict(domains)
         hits = []
         for ref, d in live_refs(scope).items():   # RENDER + TENANT surface (§6)
             chs = charters_for(ref)
