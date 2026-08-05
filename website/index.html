@@ -242,6 +242,47 @@
   }
 
   /* Three big cards */
+  /* ══ Download ══
+     Reuses the existing tokens and the .three-card shell rather than
+     introducing a second visual language for one section. */
+  .hero-actions {
+    margin-top: 30px; display: flex; align-items: center;
+    gap: 16px; flex-wrap: wrap;
+  }
+  .dl-hint { font-size: 13px; color: var(--muted); }
+  .dl-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px; margin: 28px 0 36px;
+  }
+  .dl-btn {
+    display: inline-flex; flex-direction: column; gap: 4px;
+    padding: 16px 22px; border-radius: 12px; text-decoration: none;
+    font-size: 15px; font-weight: 600; line-height: 1.3;
+    border: 1px solid var(--border); color: var(--text); background: var(--card);
+    transition: border-color 0.2s, background 0.2s, transform 0.2s;
+  }
+  .dl-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .dl-primary { background: var(--accent); color: #17130F; border-color: var(--accent); }
+  .dl-primary:hover { background: var(--accent-bright); border-color: var(--accent-bright); }
+  .dl-sub { font-size: 12.5px; font-weight: 400; opacity: 0.78; }
+  .hero-actions .dl-btn { flex-direction: row; padding: 13px 20px;
+    background: var(--accent); color: #17130F; border-color: var(--accent); }
+  .dl-facts { margin-top: 8px; }
+  .dl-facts .three-card { padding: 24px 20px; }
+  .dl-note {
+    margin-top: 28px; padding: 16px 18px; border-radius: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 13.5px; line-height: 1.65; color: var(--muted);
+  }
+  .dl-note strong { color: var(--text); }
+  .dl-note code, .dl-facts code {
+    font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em;
+    color: var(--accent); background: var(--accent-dim);
+    padding: 1px 5px; border-radius: 4px;
+    /* a long path must never widen the page on a phone */
+    overflow-wrap: anywhere;
+  }
+
   .three-cards {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -614,6 +655,7 @@
       <a class="nav-link" href="way.html">The Way</a>
       <a class="nav-link" href="#core">Core</a>
       <a class="nav-link" href="#canon">Canon</a>
+      <a class="nav-link" href="#download">Download</a>
       <a class="nav-link" href="https://github.com/sankalpasawa/sutra">GitHub</a>
     </div>
   </div>
@@ -630,6 +672,77 @@
     <h1>Software development is solved. <span class="accent">Running your company isn&rsquo;t.</span></h1>
     <p class="hero-sub">
       Sutra is the operating system for AI-native companies &mdash; an agentic <strong>Chief of Staff inside Claude Code</strong>. Company-first, not code-first.
+    </p>
+    <p class="hero-actions">
+      <a class="dl-btn" href="#download">Download for macOS</a>
+      <span class="dl-hint">Apple&nbsp;Silicon &middot; no Python or Node needed</span>
+    </p>
+  </div>
+</section>
+
+<!-- ══ Download ══════════════════════════════════════════════════════════
+     The DMG is attached to a GitHub RELEASE, not committed to this site.
+     GitHub Pages is served from the repository, and git rejects any pushed
+     file over 100 MB; a bundled Sutra.dmg is ~160 MB because it carries its
+     own CPython. Release assets have no such limit, so the link below points
+     at the latest release and the page stays small.
+
+     /releases/latest/download/<name> always resolves to the newest release
+     carrying that asset name, so this markup does not need editing per
+     release -- only the asset has to keep its name. -->
+<section class="section" id="download">
+  <div class="container">
+    <div class="section-label">Install</div>
+    <h2>The desktop app, and the plugin, in one download.</h2>
+    <p class="section-sub">
+      One file. Drag it to Applications and open it. Sutra carries its own Python runtime,
+      so there is nothing to install first &mdash; no Python, no Node, no Xcode, no network
+      during setup. On first launch it also installs the Sutra plugin for Claude Code and
+      tells you every path it wrote.
+    </p>
+
+    <div class="dl-row">
+      <a class="dl-btn dl-primary"
+         href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">
+        Download Sutra for macOS
+        <span class="dl-sub">Apple Silicon (M1&ndash;M4) &middot; ~160&nbsp;MB</span>
+      </a>
+      <a class="dl-btn dl-secondary"
+         href="https://github.com/sankalpasawa/sutra/releases/latest">
+        All downloads &amp; release notes
+        <span class="dl-sub">Intel build, checksums, changelog</span>
+      </a>
+    </div>
+
+    <div class="three-cards dl-facts">
+      <div class="three-card">
+        <div class="three-card-num">01</div>
+        <h3>Loopback only</h3>
+        <p>The panel serves on <code>127.0.0.1:8330</code> and binds nothing else. A browser
+          terminal is machine access, so it is never exposed to the network.</p>
+      </div>
+      <div class="three-card">
+        <div class="three-card-num">02</div>
+        <h3>Your Max plan, not the API</h3>
+        <p>Sutra refuses to start when <code>ANTHROPIC_API_KEY</code> is set, so it can never
+          quietly bill per token instead of your subscription.</p>
+      </div>
+      <div class="three-card">
+        <div class="three-card-num">03</div>
+        <h3>Nothing hidden</h3>
+        <p>First launch lists every file it writes under <code>~/.claude</code>, and copies any
+          config it edits to <code>*.sutra-backup</code> first.</p>
+      </div>
+    </div>
+
+    <p class="dl-note">
+      <strong>Requires macOS 11 or newer.</strong>
+      If macOS says Sutra &ldquo;cannot be opened because the developer cannot be verified&rdquo;,
+      that build was not notarized &mdash; right-click Sutra, choose <em>Open</em>, then
+      <em>Open</em> again. You only do this once.
+      Prefer to build it yourself?
+      <code>marketplace/plugin/sutra-ui/electron/make-dmg.sh</code> in the repo produces the
+      same artifact.
     </p>
   </div>
 </section>

@@ -1,2 +1,8 @@
 node_modules/
 dist/
+# Vendored by bundle-runtime.sh: a whole CPython, its site-packages and a copy
+# of the plugin tree -- ~95MB of BUILD OUTPUT, reproducible from the checkout
+# plus a pinned download. Committing it would also put a second, silently
+# divergent copy of the plugin in the repo.
+payload/
+__pycache__/

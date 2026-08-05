@@ -19,9 +19,18 @@
  *     own route. The script launcher shipped without this and was observed
  *     printing a full success banner while its own uvicorn had already died on
  *     "address already in use".
- *   - Runtime is read from ~/Library/Application Support/Sutra, never from the
- *     checkout. macOS TCC protects ~/Desktop, so a Finder-launched app cannot
- *     read a checkout that lives there.
+ *   - Runtime is NEVER read from the checkout. macOS TCC protects ~/Desktop, so
+ *     a Finder-launched app cannot read a checkout that lives there.
+ *
+ * TWO WAYS THIS APP GETS INSTALLED, and both must work (provision.js):
+ *   DMG      -- the panel, a relocatable CPython and the Claude Code plugin all
+ *               ride inside Contents/Resources/payload, and the app runs
+ *               straight out of it. Nothing to stage, nothing to download, no
+ *               Python or Node needed on the machine.
+ *   install.sh -- the developer path: the checkout is the source of truth and
+ *               its runtime is staged into Application Support.
+ * The bundle wins when both exist, so an operator with both never silently runs
+ * whichever happens to be older.
  */
 "use strict";
 
@@ -32,20 +41,20 @@ const fs = require("fs");
 const os = require("os");
 const http = require("http");
 const net = require("net");
+const provision = require("./provision.js");
 
 const HOST = "127.0.0.1";
 const PORT = 8330; // canonical, pinned -- see header
 const ORIGIN = `http://${HOST}:${PORT}`;
 
-// app.getPath("appData") is ~/Library/Application Support on macOS. install.sh
-// stages the runtime there precisely so this path is never TCC-protected.
-const STAGE = path.join(app.getPath("appData"), "Sutra");
-const APP_DIR = path.join(STAGE, "plugin", "sutra-ui");
-const PY = path.join(STAGE, "venv", "bin", "python");
+// Resolved at boot, not at module load: app.getPath() is only valid once the
+// app is ready, and the answer decides which of the two installs we are.
+let RUNTIME = null;      // {kind, appDir, python, payload, stamp}
 
 let win = null;
 let backend = null;      // the uvicorn child WE spawned, or null if we reused one
 let quitting = false;
+let pluginReport = null; // what installPlugin() did, for the first-run notice
 
 function fail(title, message) {
   dialog.showErrorBox(title, message);
@@ -109,10 +118,17 @@ function editEnv() {
 
 function startBackend() {
   const child = spawn(
-    PY,
+    RUNTIME.python,
     ["-m", "uvicorn", "app:app", "--host", HOST, "--port", String(PORT), "--log-level", "warning"],
-    { cwd: APP_DIR, stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, ...editEnv() } }
+    { cwd: RUNTIME.appDir, stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        // The bundle is read-only once signed. Without this, every import in
+        // every launch would try to write a .pyc, fail, and silently recompile
+        // from source -- a slow start that looks like a hang.
+        ...(RUNTIME.kind === "bundled" ? { PYTHONDONTWRITEBYTECODE: "1" } : {}),
+        ...editEnv(),
+      } }
   );
   let stderr = "";
   child.stderr.on("data", (d) => {
@@ -189,16 +205,25 @@ async function boot() {
       "ANTHROPIC_API_KEY is set. That routes through the API (per-token billing) " +
       "instead of your Max plan.\n\nUnset it, then make sure `claude` is logged in.");
   }
-  if (!fs.existsSync(PY) || !fs.existsSync(path.join(APP_DIR, "app.py"))) {
-    return fail("Sutra runtime missing",
-      `Expected the staged runtime at:\n  ${APP_DIR}\n  ${PY}\n\n` +
-      "Run install.sh from your Sutra checkout to stage it.");
+  RUNTIME = provision.resolveRuntime(process.resourcesPath, app.getPath("appData"));
+  if (RUNTIME.kind === "none") {
+    return fail("Sutra runtime missing", RUNTIME.why);
+  }
+
+  // The DMG carries the Claude Code plugin as well as the app. Installing it is
+  // deliberately NOT allowed to stop the launch: if ~/.claude is unwritable or
+  // managed elsewhere, the panel still opens and the notice says what happened.
+  const wasProvisioned = provision.alreadyProvisioned();
+  pluginReport = provision.installPlugin({ payload: RUNTIME.payload });
+  if (pluginReport.status === "failed") {
+    console.error("[sutra] plugin install failed:", pluginReport.error);
   }
 
   if (await isSutra()) {
     // A Sutra is already serving 8330 (the CLI, or a previous run). Attach to
     // it rather than starting a second server on a pinned port.
     createWindow();
+    firstRunNotice(wasProvisioned);
     return;
   }
   if (await portBusy()) {
@@ -217,6 +242,43 @@ async function boot() {
       `The backend did not answer on ${ORIGIN} within 45s.\n\n${err.slice(-1200) || "(no output)"}`);
   }
   createWindow();
+  firstRunNotice(wasProvisioned);
+}
+
+/* What this install put on the machine, said out loud, once.
+ *
+ * An app that writes into ~/.claude unattended owes the user a plain list of
+ * what it wrote and where the backups are. Shown only on the run that actually
+ * installed something, and never before the window -- a modal in front of a
+ * blank screen reads as an error. */
+function firstRunNotice(wasProvisioned) {
+  const r = pluginReport;
+  if (!r || wasProvisioned) return;
+  if (r.status === "skipped" || r.status === "already-current") return;
+
+  const home = os.homedir();
+  const short = (p) => (p.startsWith(home) ? "~" + p.slice(home.length) : p);
+  let title, message, detail;
+
+  if (r.status === "installed") {
+    title = "Sutra plugin installed";
+    message = `The Claude Code plugin (core ${r.version}) is now installed for your user.`;
+    detail = "Written:\n" + r.wrote.map((p) => "  " + short(p)).join("\n") +
+      "\n\nExisting config files were copied to *.sutra-backup first." +
+      "\nRun /plugin in Claude Code to see it.";
+  } else if (r.status === "newer-present") {
+    title = "Sutra plugin left alone";
+    message = `A newer plugin (${r.version}) is already installed, so nothing was changed.`;
+    detail = r.notes.join("\n");
+  } else {
+    title = "Sutra plugin not installed";
+    message = "The desktop app is running, but the Claude Code plugin could not be installed.";
+    detail = (r.error || "unknown error") +
+      "\n\nThe panel works without it. To install the plugin yourself, run:" +
+      "\n  /plugin marketplace add sankalpasawa/sutra";
+  }
+  dialog.showMessageBox(win, { type: r.status === "installed" ? "info" : "warning",
+                               title, message, detail, buttons: ["OK"] });
 }
 
 // One Sutra window per machine. Electron enforces this properly; the shell

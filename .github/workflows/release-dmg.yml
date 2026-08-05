@@ -1,0 +1,148 @@
+# Build the installable Sutra.dmg and attach it to a GitHub Release.
+#
+# WHY A RELEASE ASSET AND NOT THE WEBSITE
+# ---------------------------------------
+# The site is GitHub Pages, served straight out of this repository, and git
+# rejects any pushed file over 100 MB. A bundled DMG is ~160 MB because it
+# carries its own CPython. Release assets have no such limit, so the DMG ships
+# here and website/index.html links to
+#   /releases/latest/download/Sutra-<arch>.dmg
+# which always resolves to the newest release carrying that asset name. The
+# asset is therefore RENAMED to a stable, version-free name on upload -- the
+# versioned filename lives in the release title and notes.
+#
+# SIGNING
+# -------
+# Without a Developer ID certificate this produces an AD-HOC signed DMG: it
+# installs and runs, but a first launch on another Mac needs right-click ->
+# Open. Add the four secrets below and the same workflow signs and notarizes
+# properly, no edits needed:
+#
+#   APPLE_CERT_P12        base64 of a Developer ID Application .p12
+#   APPLE_CERT_PASSWORD   its password
+#   APPLE_NOTARY_KEY      base64 of an App Store Connect .p8 key
+#   APPLE_NOTARY_KEY_ID / APPLE_NOTARY_ISSUER
+#
+# Runner note: macos-14+ images are Apple Silicon, so arm64 is the native
+# build. An Intel DMG needs a macos-13 runner; add it as a second matrix leg
+# when there is an Intel user to serve.
+name: release-dmg
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach the DMG to (must already exist)"
+        required: true
+
+permissions:
+  contents: write        # required to upload a release asset
+
+jobs:
+  dmg:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache the CPython download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sutra-bundle
+          key: sutra-bundle-${{ runner.os }}-${{ runner.arch }}-v1
+
+      - name: Install Electron toolchain
+        working-directory: marketplace/plugin/sutra-ui/electron
+        run: npm install --no-audit --no-fund
+
+      - name: Provisioning tests
+        working-directory: marketplace/plugin/sutra-ui/electron
+        run: node test_provision.js
+
+      - name: Panel tests
+        working-directory: marketplace/plugin/sutra-ui
+        run: |
+          node test_panel.js
+          node test_charter_filter.js
+
+      # The importer and the engine are what the shipped payload runs.
+      # A DMG that fails these is not worth uploading.
+      - name: Engine + importer tests
+        run: python3 -m unittest discover -s marketplace/plugin/lib/tests -p 'test_*.py'
+
+      # `env.X` is not populated for a step's own `if` — the condition is
+      # evaluated before the step's env block exists, so this must read the
+      # secret directly or it silently never runs.
+      - name: Import the signing certificate
+        if: ${{ secrets.APPLE_CERT_P12 != '' }}
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/sutra.keychain-db"
+          PASS="$(uuidgen)"
+          security create-keychain -p "$PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASS" "$KEYCHAIN"
+          printf '%s' "$APPLE_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$APPLE_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$PASS" "$KEYCHAIN" >/dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Vendor the runtime
+        working-directory: marketplace/plugin/sutra-ui/electron
+        run: ./bundle-runtime.sh --arch arm64
+
+      - name: Build the DMG
+        working-directory: marketplace/plugin/sutra-ui/electron
+        env:
+          SUTRA_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          SUTRA_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APPLE_NOTARY_KEY:-}" ]; then
+            printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            export SUTRA_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
+          fi
+          ./make-dmg.sh --arch arm64
+          rm -f "$RUNNER_TEMP/notary.p8"
+
+      # A stable asset name is what makes /releases/latest/download/... work
+      # from the website without editing the page every release.
+      - name: Name the asset for the website link
+        id: asset
+        working-directory: marketplace/plugin/sutra-ui/electron/dist
+        run: |
+          set -euo pipefail
+          built="$(ls *.dmg | head -1)"
+          cp "$built" "Sutra-arm64.dmg"
+          shasum -a 256 "Sutra-arm64.dmg" > "Sutra-arm64.dmg.sha256"
+          echo "built=$built" >> "$GITHUB_OUTPUT"
+          echo "size=$(du -h "Sutra-arm64.dmg" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            marketplace/plugin/sutra-ui/electron/dist/Sutra-arm64.dmg
+            marketplace/plugin/sutra-ui/electron/dist/Sutra-arm64.dmg.sha256
+          body: |
+            **${{ steps.asset.outputs.built }}** — ${{ steps.asset.outputs.size }}, Apple Silicon.
+
+            Drag to Applications and open. Carries its own Python runtime: no Python,
+            Node, Xcode or network needed to install. First launch also installs the
+            Sutra plugin for Claude Code and lists every path it writes.
+
+            Verify the download:
+            `shasum -a 256 -c Sutra-arm64.dmg.sha256`
