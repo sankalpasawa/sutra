@@ -31,10 +31,22 @@
 #   APPLE_NOTARY_KEY      base64 of an App Store Connect .p8 key
 #   APPLE_NOTARY_KEY_ID / APPLE_NOTARY_ISSUER
 #
-# Runner note: macos-14+ images are Apple Silicon and macos-13 is Intel, so the
-# matrix below builds each arch NATIVELY. That matters beyond convenience: the
-# post-package check actually runs the bundled interpreter, and a cross-built
-# one can only be executed under Rosetta, which CI runners do not have.
+# Runner note: the matrix builds each arch NATIVELY, which matters beyond
+# convenience -- the post-package step actually RUNS the bundled interpreter,
+# and a cross-built one needs Rosetta, which the runners do not have.
+#
+# LABELS ROT, AND A DEAD ONE DOES NOT FAIL -- IT HANGS. `macos-13` was the Intel
+# label; it has since been RETIRED, and a job asking for a retired label is never
+# assigned a runner. It does not error: it sits in `queued` with started_at:null
+# indefinitely (observed here for 45 minutes) while the rest of the run reports
+# success, so the release quietly ends up carrying one architecture. `macos-14`
+# is likewise now deprecated.
+#
+# Current standard (free on public repos) labels, per actions/runner-images:
+#   arm64  macos-15 / macos-26 / macos-latest
+#   Intel  macos-15-intel / macos-26-intel
+# The `-large` / `-xlarge` variants are LARGER runners and need a paid plan --
+# not these. If a leg ever hangs in `queued` again, check this list first.
 name: release-dmg
 
 on:
@@ -59,9 +71,9 @@ jobs:
           # reserved workflow key reads as a mistake and has to be dereferenced
           # around the hyphen. The value is what runs-on consumes either way.
           - arch: arm64
-            runner: macos-14    # Apple Silicon
+            runner: macos-15          # Apple Silicon
           - arch: x86_64
-            runner: macos-13    # Intel
+            runner: macos-15-intel    # Intel
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     # A step's own `if:` cannot see the `secrets` context at all -- GitHub rejects
@@ -191,3 +203,39 @@ jobs:
             The panel serves on 127.0.0.1:8330, loopback only, and refuses to start if
             `ANTHROPIC_API_KEY` is set — so it always bills your Max plan rather than the
             per-token API.
+
+  # A release that carries ONE architecture is a broken release, and the way it
+  # happens is quiet: a leg dies (or, before the label fix, hung forever on a
+  # retired runner) while the other leg succeeds, uploads, and the run reports
+  # green. Nobody notices until an Intel user downloads an arm64 DMG.
+  #
+  # if: always() so this runs even when a matrix leg failed -- the default would
+  # SKIP it exactly when it is needed. It asserts against the published release,
+  # not against job status, because what shipped is the only thing that matters.
+  verify:
+    needs: dmg
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Both architectures must be on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                      --json assets --jq '.assets[].name')"
+          echo "$assets" | sed 's/^/  /'
+          missing=""
+          for want in Sutra-arm64.dmg Sutra-arm64.dmg.sha256 \
+                      Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256; do
+            printf '%s\n' "$assets" | grep -qx "$want" || missing="$missing $want"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::release $TAG is missing:$missing"
+            echo "A one-architecture release is not shippable. Check whether a matrix"
+            echo "leg failed, or was never assigned a runner (a retired runner label"
+            echo "queues forever instead of failing)."
+            exit 1
+          fi
+          echo "both architectures present, each with its checksum"
