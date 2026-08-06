@@ -3,20 +3,40 @@
 There are TWO components and they update by completely different mechanisms.
 Conflating them is the mistake this module exists to prevent:
 
-  DESKTOP APP   /Applications/Sutra.app. Has NO auto-updater -- Squirrel is in
-                the bundle only because Electron ships it, nothing wires it up.
-                Released as a notarized DMG on GitHub. Updating means replacing
-                the bundle, which a running app cannot do to itself.
+  DESKTOP APP   /Applications/Sutra.app. Released as a notarized DMG on GitHub.
+                Updating means replacing the bundle, which a running app cannot
+                do to itself. Squirrel is in the bundle only because Electron
+                ships it; it is still not wired up. The auto-updater is the
+                staging machinery below, driven by the Electron shell.
 
   PLUGIN        core@sutra under ~/.claude/plugins. Already updates itself once
                 a day via hooks/sessionstart-auto-update.sh, applying to the
                 NEXT session. This module exposes the same operation on demand
                 so it is visible and forceable, not only silent and daily.
 
-CHECKING IS READ-ONLY AND NEVER AUTOMATIC HERE. Nothing in this module runs on
-import or on boot; the panel asks. A desktop app that phones home on every
-launch is a different product decision from one that has an update button, and
-this is the second.
+NOTHING IN THIS MODULE RUNS ON IMPORT OR ON BOOT. That has not changed, and it
+is load-bearing for a reason that is easy to miss: this same FastAPI app is
+what the CLI serves to a plain browser. A background poller started at import
+would make every CLI user phone GitHub on launch, which is not what was asked
+for and not a decision this module gets to make on their behalf.
+
+  So the SCHEDULE lives in the Electron shell (main.js), which is the only
+  caller that has an app to replace. Desktop auto-update was made MANDATORY by
+  founder direction 2026-08-06; "mandatory" means the user cannot decline it,
+  NOT that it happens to people who are not running the desktop app.
+
+THE STATE MACHINE, because a deferred update outlives the process that staged
+it and must survive a reboot:
+
+  (none) --stage--> staged --arm--> installing --+--> (cleared, installed)
+                      ^                          |
+                      +-------- failed <---------+   (helper wrote why)
+
+  `staged` means downloaded and verified, nothing armed. The user may defer
+  from here as often as they like; cancelling is a DEFER, never a decline.
+  `installing` is stamped BEFORE the helper is spawned and carries a lease, so
+  a boot that finds a fresh `installing` record does not arm a second helper --
+  which is how an update loop starts.
 
 INSTALLING THE DESKTOP UPDATE, and why it looks the way it does:
 
@@ -42,6 +62,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -163,10 +184,12 @@ def desktop_state():
         "size": latest.get("size"),
         "update_available": _newer(latest.get("version"), installed),
         "error": latest.get("error"),
-        # No auto-update exists. Say so where the operator can read it, rather
-        # than letting them assume a desktop app keeps itself current.
-        "note": "The desktop app has no background updater. It is checked and "
-                "installed only when you ask.",
+        # What the updater actually does, in the place an operator reads to
+        # find out. It used to say there was no background updater at all;
+        # leaving that would have been the app lying about its own behaviour.
+        "note": "The desktop app checks for updates in the background and "
+                "installs them automatically. This button only makes it "
+                "immediate.",
     }
 
 
@@ -323,60 +346,200 @@ def download_and_verify(dest_dir=None):
 
 
 _INSTALLER = r"""#!/bin/bash
-# Written by sutra-ui updates.py. Waits for the running app to exit, then swaps
-# the bundle. Everything verifiable was verified BEFORE this ran.
+# Written by sutra-ui updates.py. Waits for the app to be GONE, then swaps the
+# bundle. Everything checkable was checked before this ran; everything that can
+# go stale between then and now is re-checked here, because from this point on
+# there is no one to ask.
+#
+# Inputs arrive as environment variables, not positional arguments: this script
+# runs unattended and an argument-order mistake is a silently wrong bundle.
 set -uo pipefail
-DMG="$1"; APP="$2"; PPID_WAIT="$3"; LOG="$4"
 exec >>"$LOG" 2>&1
-echo "[$(date)] installer start dmg=$DMG app=$APP wait_pid=$PPID_WAIT"
+echo "[$(date)] installer start dmg=$DMG app=$APP wait_pid=$WAIT_PID relaunch=$RELAUNCH"
 
-# 1. wait for the app to quit (bounded -- never hang forever holding a mount)
+# Terminal status, written where the next launch can read it. The app must not
+# have to INFER what happened here by comparing version numbers -- an install
+# that succeeded while the panel read a stale version looks identical to one
+# that failed, and guessing wrong throws away a good update.
+result() {
+  local ok="$1" stage="$2" err
+  err="$(printf '%s' "${3:-}" | tr -d '\n\r"\\' | cut -c1-300)"
+  printf '{"ok":%s,"stage":"%s","version":"%s","error":"%s","ts":%s}\n' \
+    "$ok" "$stage" "$EXPECT_VERSION" "$err" "$(date +%s)" > "$RESULT.tmp" \
+    && mv -f "$RESULT.tmp" "$RESULT"
+}
+die() { echo "FAIL($1): $2"; result false "$1" "$2"; exit 1; }
+
+# The birth time of the pid we were told to wait on. A bare pid is not an
+# identity: pids are recycled, and a recycled one that exits would tell us the
+# app is gone while it is still running -- with the bundle open underneath us.
+# `$1=$1` rebuilds the record with single spaces and no leading/trailing run,
+# which is byte-for-byte what _proc_start() does in Python. These two strings
+# are compared for equality across a language boundary; if they normalised
+# differently, every update would abort as a phantom pid reuse.
+starttime() { ps -o lstart= -p "$1" 2>/dev/null | awk '{$1=$1;print}'; }
+
+# 1. wait for THAT process to end -- not merely for something with that pid to
+#    end. A start-time change means the pid was reused; we then know nothing
+#    about the app and must not touch it.
+if [ -n "${WAIT_START:-}" ]; then
+  now="$(starttime "$WAIT_PID")"
+  if [ -n "$now" ] && [ "$now" != "$WAIT_START" ]; then
+    die pid-reuse "pid $WAIT_PID is no longer the process that armed this update"
+  fi
+fi
 for _ in $(seq 1 120); do
-  kill -0 "$PPID_WAIT" 2>/dev/null || break
+  kill -0 "$WAIT_PID" 2>/dev/null || break
+  if [ -n "${WAIT_START:-}" ]; then
+    now="$(starttime "$WAIT_PID")"
+    [ -n "$now" ] && [ "$now" != "$WAIT_START" ] && die pid-reuse "pid recycled while waiting"
+  fi
   sleep 1
 done
-if kill -0 "$PPID_WAIT" 2>/dev/null; then
-  echo "app still running after 120s; aborting without touching $APP"; exit 1
-fi
+kill -0 "$WAIT_PID" 2>/dev/null && die app-alive "app still running after 120s; $APP untouched"
+
+# 2. the main process exiting is NOT the bundle being free. Electron leaves
+#    helper, GPU and renderer processes executing out of the same .app, and
+#    ditto-ing over a bundle whose binaries are still mapped is how you get a
+#    half-replaced app that launches into nothing.
+for _ in $(seq 1 60); do
+  pgrep -f "$APP/Contents/MacOS/" >/dev/null 2>&1 || break
+  sleep 1
+done
+pgrep -f "$APP/Contents/MacOS/" >/dev/null 2>&1 \
+  && die procs-alive "processes are still running from $APP"
 
 MNT="$(mktemp -d /tmp/sutra-mnt.XXXXXX)"
-hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" || { echo "mount failed"; exit 1; }
+hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null \
+  || die mount "could not mount $DMG"
 NEW="$MNT/Sutra.app"
 cleanup() { hdiutil detach "$MNT" -quiet 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
 trap cleanup EXIT
+[ -d "$NEW" ] || die contents "the disk image does not contain Sutra.app"
 
-# 2. the bundle inside must verify too -- the DMG passing is not proof of it
-codesign --verify --deep --strict "$NEW" || { echo "new bundle failed codesign"; exit 1; }
+# 3. the bundle inside must verify too -- the DMG passing Gatekeeper is not
+#    proof of what is inside it.
+codesign --verify --deep --strict "$NEW" 2>/dev/null || die codesign "new bundle failed codesign"
 
-# 3. swap, keeping the old one until the new is in place
+# 4. "validly signed" is not "signed by us". Without this, a compromised
+#    release or checksum could hand us a perfectly notarized app belonging to
+#    somebody else and every earlier gate would pass it. The expectation is
+#    CONTINUITY with the bundle being replaced, not a constant compiled in
+#    here -- a constant would be wrong for ad-hoc dev builds and would rot the
+#    day the signing identity legitimately changes.
+NEW_TEAM="$(codesign -dv --verbose=4 "$NEW" 2>&1 | sed -n 's/^TeamIdentifier=//p' | head -1)"
+[ "$NEW_TEAM" = "${EXPECT_TEAM:-}" ] \
+  || die team "signed by team '${NEW_TEAM:-none}', expected '${EXPECT_TEAM:-none}'"
+NEW_ID="$(plutil -extract CFBundleIdentifier raw -o - "$NEW/Contents/Info.plist" 2>/dev/null)"
+[ "$NEW_ID" = "${EXPECT_BUNDLE_ID:-}" ] \
+  || die bundle-id "bundle id '${NEW_ID:-none}', expected '${EXPECT_BUNDLE_ID:-none}'"
+NEW_VER="$(plutil -extract CFBundleShortVersionString raw -o - "$NEW/Contents/Info.plist" 2>/dev/null)"
+[ "$NEW_VER" = "$EXPECT_VERSION" ] \
+  || die version "image contains $NEW_VER, but $EXPECT_VERSION was staged and verified"
+
+# 5. swap. Copy BESIDE the old bundle and verify it there first, so the only
+#    moment $APP does not exist is between two renames on the same volume.
+#    RECOVER records that window: it is the breadcrumb for a crash landing
+#    exactly inside it, which no amount of ordering can make impossible.
+STAGE="${APP}.new-$$"
 BAK="${APP}.old-$$"
-mv "$APP" "$BAK" || { echo "could not move old bundle"; exit 1; }
-if ! ditto "$NEW" "$APP"; then
-  echo "copy failed; restoring previous bundle"
-  rm -rf "$APP"; mv "$BAK" "$APP"; exit 1
+rm -rf "$STAGE"
+ditto "$NEW" "$STAGE" || { rm -rf "$STAGE"; die copy "could not copy the new bundle into place"; }
+codesign --verify --deep --strict "$STAGE" 2>/dev/null \
+  || { rm -rf "$STAGE"; die copy-verify "the copied bundle does not verify"; }
+
+printf '{"app":"%s","backup":"%s","staged":"%s","ts":%s}\n' \
+  "$APP" "$BAK" "$STAGE" "$(date +%s)" > "$RECOVER" 2>/dev/null
+if ! mv "$APP" "$BAK"; then
+  rm -f "$RECOVER"; rm -rf "$STAGE"; die swap "could not move the old bundle aside"
 fi
+if ! mv "$STAGE" "$APP"; then
+  mv "$BAK" "$APP" 2>/dev/null
+  rm -f "$RECOVER"; rm -rf "$STAGE"; die swap "could not move the new bundle into place"
+fi
+rm -f "$RECOVER"
 rm -rf "$BAK"
-echo "[$(date)] installed; relaunching"
-open -a "$APP"
+result true installed ""
+echo "[$(date)] installed $EXPECT_VERSION"
+
+# 6. relaunch ONLY when the update drove the exit. If the user chose Quit and
+#    we applied on the way out, reopening the app countermands them.
+if [ "$RELAUNCH" = "1" ]; then
+  echo "[$(date)] relaunching"
+  open -a "$APP"
+fi
 """
 
 
-def install_desktop(dmg, app_path=None):
-    """Spawn the detached installer. Returns immediately; the swap happens after
-    this process's app quits.
+def _proc_start(pid):
+    """The birth time of `pid`, as the string the installer will compare against.
+    Empty when the process does not exist. Pairing this with the pid is what
+    makes 'wait for it to exit' mean a specific process rather than a number."""
+    try:
+        p = _run(["ps", "-o", "lstart=", "-p", str(int(pid))], timeout=10)
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return ""
+    return " ".join((p.stdout or "").split())
+
+
+def _bundle_identity(app):
+    """(team, bundle_id) of an installed bundle, for continuity checking."""
+    team = ""
+    try:
+        p = _run(["codesign", "-dv", "--verbose=4", str(app)], timeout=30)
+        for line in ((p.stderr or "") + (p.stdout or "")).splitlines():
+            if line.startswith("TeamIdentifier="):
+                team = line.split("=", 1)[1].strip()
+                break
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if team == "not set":
+        team = "not set"
+    bid = ""
+    try:
+        with open(Path(app) / "Contents" / "Info.plist", "rb") as fh:
+            bid = plistlib.load(fh).get("CFBundleIdentifier") or ""
+    except (OSError, ValueError):
+        pass
+    return team, bid
+
+
+def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
+                    relaunch=False, version=None, result_path=None,
+                    recover_path=None):
+    """Spawn the detached installer. Returns immediately; the swap happens once
+    the app named by `wait_pid` is gone.
 
     The caller is expected to quit the app. This does NOT kill it: a backend
     that force-quits the UI it is serving would look like a crash, and the
     helper already refuses to touch anything while the app is alive.
+
+    `wait_pid` defaults to getppid() only to keep the old manual call working.
+    That default is WRONG for the desktop shell and the shell must not rely on
+    it: main.js has a path where it attaches to a backend it did not spawn, and
+    getppid() is then a shell -- whose exit would release the helper while Sutra
+    is still running. The shell passes its own pid, with its start time.
     """
-    app = Path(app_path or (app_bundle() or ""))
-    if not app or not app.is_dir():
+    # The emptiness check is separate and comes FIRST because Path("") is
+    # PosixPath("."), which is a real directory and passes every test below it.
+    # In a source checkout app_bundle() is None, so the old `Path(x or "")`
+    # resolved the target to the CURRENT WORKING DIRECTORY -- and the helper
+    # would have moved it aside and copied a .app over it.
+    target = app_path or app_bundle()
+    if not target or not str(target).strip():
         raise RuntimeError("no installed .app to replace")
+    app = Path(target)
+    if not app.is_dir() or app.suffix != ".app":
+        raise RuntimeError("%s is not an installed .app bundle" % app)
     if not os.access(app.parent, os.W_OK):
         raise RuntimeError("%s is not writable by this user -- install the DMG "
                            "manually" % app.parent)
     if not Path(dmg).is_file():
         raise RuntimeError("no such disk image: %s" % dmg)
+
+    pid = int(wait_pid) if wait_pid else os.getppid()
+    start = wait_start if wait_start is not None else _proc_start(pid)
+    team, bundle_id = _bundle_identity(app)
 
     d = Path(tempfile.mkdtemp(prefix="sutra-installer-"))
     script = d / "install.sh"
@@ -384,14 +547,340 @@ def install_desktop(dmg, app_path=None):
     script.write_text(_INSTALLER, encoding="utf-8")
     script.chmod(0o755)
 
+    env = dict(os.environ)
+    env.update({
+        "DMG": str(dmg), "APP": str(app), "LOG": str(log),
+        "WAIT_PID": str(pid), "WAIT_START": start or "",
+        "RELAUNCH": "1" if relaunch else "0",
+        "EXPECT_VERSION": str(version or ""),
+        "EXPECT_TEAM": team, "EXPECT_BUNDLE_ID": bundle_id,
+        "RESULT": str(result_path or (d / "install-result.json")),
+        "RECOVER": str(recover_path or (d / "recover.json")),
+    })
     subprocess.Popen(
-        ["/bin/bash", str(script), str(dmg), str(app), str(os.getppid()), str(log)],
+        ["/bin/bash", str(script)], env=env,
         start_new_session=True,          # survives this process being torn down
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     return {"scheduled": True, "log": str(log), "app": str(app),
-            "note": "Quit Sutra to let the update apply; it reopens itself."}
+            "wait_pid": pid, "relaunch": bool(relaunch),
+            "note": "Quit Sutra to let the update apply."
+                    + (" It reopens itself." if relaunch else "")}
+
+
+# ----------------------------------------------------- staging / pending ----
+# Everything below exists so that an update can be downloaded NOW and applied
+# LATER -- possibly days later, across a reboot, by a process that has not been
+# started yet. That is the whole difference between an update button and an
+# auto-updater, and it is all state management.
+
+MAX_APPLY_ATTEMPTS = 2      # after this many tries at one version, stop trying
+ARM_LEASE_SECONDS = 300     # how long a spawned helper is presumed to be alive
+
+
+def stage_dir():
+    """The durable staging directory, created 0700 and proven not to be a
+    symlink.
+
+    NOT tempfile.mkdtemp: /tmp is periodically purged, and an update the user
+    deferred on Friday has to still be there on Monday. Durability is the point,
+    but it is also the cost -- a file that sits in a writable place for days is
+    a file someone can swap, so the directory is locked down and every read out
+    of it is re-verified rather than trusted.
+    """
+    d = Path(os.path.expanduser(os.environ.get(
+        "SUTRA_UPDATE_DIR", "~/Library/Application Support/Sutra/updates")))
+    if d.is_symlink():
+        raise RuntimeError("%s is a symlink; refusing to stage there" % d)
+    d.mkdir(parents=True, exist_ok=True)
+    # Ownership before permissions: chmod on a directory belonging to somebody
+    # else either fails or, worse, succeeds and tells us nothing.
+    if d.stat().st_uid != os.getuid():
+        raise RuntimeError("%s is not owned by this user" % d)
+    try:
+        os.chmod(d, 0o700)      # repair rather than refuse -- it is ours to fix
+    except OSError:
+        pass
+    if d.stat().st_mode & 0o077:
+        raise RuntimeError("%s is accessible to other users and could not be "
+                           "locked down" % d)
+    return d
+
+
+def _pending_path():
+    return stage_dir() / "pending-update.json"
+
+
+def _result_path():
+    return stage_dir() / "install-result.json"
+
+
+def _recover_path():
+    return stage_dir() / "recover.json"
+
+
+def _read_json(path):
+    try:
+        if Path(path).is_symlink():
+            return None
+        with open(path, "r", encoding="utf-8") as fh:
+            v = json.load(fh)
+        return v if isinstance(v, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _write_json(path, obj):
+    """Atomic, so a crash mid-write cannot leave a half-parsed manifest that
+    makes the next launch throw away a perfectly good staged update."""
+    path = Path(path)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh, indent=2)
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def read_pending():
+    return _read_json(_pending_path())
+
+
+def clear_pending(also_remove_dmg=True):
+    man = read_pending()
+    if also_remove_dmg and man and man.get("dmg"):
+        try:
+            p = Path(man["dmg"])
+            if p.is_file() and not p.is_symlink():
+                p.unlink()
+        except OSError:
+            pass
+    for p in (_pending_path(), _result_path()):
+        try:
+            Path(p).unlink()
+        except OSError:
+            pass
+    return man
+
+
+def _verify_staged(man, recheck_online=True):
+    """Prove the staged image is still the one that was verified at download.
+
+    The local digest comparison is a CORRUPTION check and nothing more: the
+    manifest and the image sit in the same directory, so anyone able to swap one
+    can rewrite the other. The security check is the re-fetch of the digest
+    PUBLISHED beside the release, which is why its absence is reported rather
+    than silently downgraded.
+    """
+    dmg = Path(man.get("dmg") or "")
+    if not dmg.is_file() or dmg.is_symlink():
+        raise RuntimeError("the staged disk image is gone")
+    root = stage_dir().resolve()
+    if root not in dmg.resolve().parents:
+        raise RuntimeError("the staged image is not inside the staging directory")
+    got = _sha256(dmg)
+    if man.get("sha256") and got != man["sha256"]:
+        raise RuntimeError("the staged image changed on disk since it was verified")
+
+    published = None
+    if recheck_online and man.get("sha256_url"):
+        try:
+            req = urllib.request.Request(man["sha256_url"],
+                                         headers={"User-Agent": "sutra-ui-updater"})
+            with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
+                published = r.read().decode("utf-8").split()[0].strip()
+        except (urllib.error.URLError, OSError, IndexError, ValueError):
+            published = None
+    if published and published != got:
+        raise RuntimeError("the staged image no longer matches the published "
+                           "checksum for this release")
+    return {"sha256": got, "reverified_online": bool(published)}
+
+
+def stage_desktop():
+    """Download and verify the newest desktop release, arming nothing.
+
+    Split from arming deliberately. While these were one call there was no
+    moment at which an update was ready but not yet scheduled -- which is the
+    only moment a prompt can happen in.
+    """
+    state = desktop_state()
+    if not state.get("managed"):
+        return {"staged": False, "reason": state.get("reason", "not an installed app")}
+    if state.get("error"):
+        raise RuntimeError(state["error"])
+    if not state.get("update_available"):
+        return {"staged": False, "reason": "already up to date",
+                "installed": state.get("installed")}
+
+    version = state.get("latest")
+    existing = read_pending()
+    if existing and existing.get("version") == version and existing.get("dmg"):
+        try:
+            _verify_staged(existing, recheck_online=False)
+            return {"staged": True, "already": True, "version": version,
+                    "state": existing.get("state")}
+        except RuntimeError:
+            clear_pending()          # unusable; fall through and fetch it again
+
+    latest = _latest_desktop()
+    got = download_and_verify(dest_dir=str(stage_dir()))
+    _write_json(_pending_path(), {
+        "state": "staged",
+        "version": got.get("version") or version,
+        "dmg": got["dmg"],
+        "sha256": _sha256(got["dmg"]),
+        "sha256_url": latest.get("sha256_url"),
+        "asset": latest.get("asset"),
+        "staged_at": int(time.time()),
+        "armed_at": None,
+        "lease_until": None,
+        # Three counters, not one. A helper that never spawned and a helper that
+        # ran and broke the install are different failures, and collapsing them
+        # lets two bookkeeping hiccups permanently suppress a good release.
+        "arm_attempts": 0,
+        "spawn_failures": 0,
+        "install_failures": 0,
+        "last_error": None,
+    })
+    try:
+        _result_path().unlink()
+    except OSError:
+        pass
+    return {"staged": True, "version": got.get("version"), "dmg": got["dmg"]}
+
+
+def arm_desktop(wait_pid, wait_start=None, relaunch=False):
+    """Schedule the swap for after the app named by `wait_pid` exits.
+
+    Idempotent and single-flight. Two callers can plausibly reach this at once
+    -- the countdown firing while the user is already quitting -- and two
+    helpers racing to replace the same bundle is exactly the situation the rest
+    of this file is written to avoid.
+    """
+    man = read_pending()
+    if not man:
+        raise RuntimeError("there is no staged update to install")
+    now = int(time.time())
+    if man.get("state") == "installing" and (man.get("lease_until") or 0) > now:
+        return {"scheduled": True, "already": True, "version": man.get("version"),
+                "note": "an installer for this version is already waiting"}
+    if man.get("state") == "failed" and man.get("install_failures", 0) >= MAX_APPLY_ATTEMPTS:
+        raise RuntimeError("this update failed to install %d times and will not "
+                           "be retried automatically: %s"
+                           % (man["install_failures"], man.get("last_error") or "unknown"))
+
+    proof = _verify_staged(man)
+
+    # Stamped BEFORE the spawn, so a crash between here and the helper starting
+    # is still visible as an attempt at the next launch.
+    man.update({"state": "installing", "armed_at": now,
+                "lease_until": now + ARM_LEASE_SECONDS,
+                "arm_attempts": int(man.get("arm_attempts", 0)) + 1,
+                "relaunch": bool(relaunch)})
+    _write_json(_pending_path(), man)
+
+    try:
+        sched = install_desktop(
+            man["dmg"], wait_pid=wait_pid, wait_start=wait_start,
+            relaunch=relaunch, version=man.get("version"),
+            result_path=str(_result_path()), recover_path=str(_recover_path()))
+    except (RuntimeError, OSError) as exc:
+        man.update({"state": "staged", "lease_until": None,
+                    "spawn_failures": int(man.get("spawn_failures", 0)) + 1,
+                    "last_error": "could not start the installer: %s" % exc})
+        _write_json(_pending_path(), man)
+        raise RuntimeError("could not start the installer: %s" % exc)
+
+    sched.update({"version": man.get("version"),
+                  "reverified_online": proof["reverified_online"]})
+    return sched
+
+
+def resolve_pending(installed_version=None):
+    """Called at launch, before the window opens. Decides what the last attempt
+    did and what this launch owes the user.
+
+    The helper's own status file is believed over any comparison of version
+    numbers. The shell can attach to a backend it did not start, so a version
+    read back through the API can belong to the PREVIOUS install -- and
+    concluding "still old, therefore it failed" would throw away an update that
+    actually landed.
+    """
+    man = read_pending()
+    if not man:
+        return {"pending": False}
+    version = man.get("version")
+    now = int(time.time())
+    res = _read_json(_result_path())
+
+    if res and res.get("version") == version:
+        if res.get("ok"):
+            clear_pending()
+            return {"pending": False, "applied": version}
+        man["install_failures"] = int(man.get("install_failures", 0)) + 1
+        man["last_error"] = res.get("error") or ("failed at %s" % res.get("stage"))
+        man["state"] = "failed"
+        if man["install_failures"] >= MAX_APPLY_ATTEMPTS:
+            clear_pending()
+            return {"pending": False, "gave_up": True, "version": version,
+                    "error": man["last_error"]}
+        man["state"] = "staged"
+        man["lease_until"] = None
+        _write_json(_pending_path(), man)
+        return {"pending": True, "action": "arm", "version": version,
+                "retry_after_failure": man["last_error"], "dmg": man.get("dmg")}
+
+    if installed_version and _ver_tuple(installed_version) >= _ver_tuple(version):
+        clear_pending()
+        return {"pending": False, "applied": version}
+
+    if man.get("state") == "installing":
+        if (man.get("lease_until") or 0) > now:
+            # A helper is plausibly still waiting. Arming a second one here is
+            # how a boot loop starts.
+            return {"pending": True, "action": "wait", "version": version}
+        man["install_failures"] = int(man.get("install_failures", 0)) + 1
+        man["last_error"] = "the installer never reported back"
+        if man["install_failures"] >= MAX_APPLY_ATTEMPTS:
+            man["state"] = "failed"
+            _write_json(_pending_path(), man)
+            return {"pending": True, "action": "manual", "version": version,
+                    "error": man["last_error"]}
+        man["state"] = "staged"
+        man["lease_until"] = None
+        _write_json(_pending_path(), man)
+
+    if man.get("state") == "failed":
+        return {"pending": True, "action": "manual", "version": version,
+                "error": man.get("last_error")}
+    return {"pending": True, "action": "arm", "version": version,
+            "dmg": man.get("dmg")}
+
+
+def pending_state():
+    """What the panel needs to draw the banner. No network, so it is safe to
+    poll -- which is the only reason the panel is allowed to poll it."""
+    try:
+        man = read_pending()
+    except RuntimeError as exc:
+        return {"pending": False, "error": str(exc)}
+    if not man:
+        return {"pending": False}
+    out = {"pending": True, "version": man.get("version"),
+           "state": man.get("state"), "staged_at": man.get("staged_at"),
+           "install_failures": man.get("install_failures", 0),
+           "error": man.get("last_error")}
+    rec = _read_json(_recover_path())
+    if rec:
+        # Only ever present if a swap died between two renames. Surfaced rather
+        # than cleaned up: it names the backup a human would restore from.
+        out["interrupted_swap"] = rec
+    return out
 
 
 def all_state():
-    return {"desktop": desktop_state(), "plugin": plugin_state()}
+    return {"desktop": desktop_state(), "plugin": plugin_state(),
+            "staged": pending_state()}

@@ -2,6 +2,124 @@
 
 **status**: active · **updated**: 2026-08-06
 
+## 2.71.0
+
+- **The chat can now drive Sutra itself.** Ask it for a routine and it makes one
+  — through an MCP tool server, which is Claude Code's own extension mechanism,
+  so the tools appear to the agent exactly like its built-ins. The server is
+  spawned for one run over stdio; nothing is installed and your global
+  `~/.claude.json` is never touched.
+- **Reads act; mutations propose.** The four mutating tools write an inert
+  proposal and return immediately — the agent never blocks waiting for a human,
+  and nothing touches launchd or settings until you approve it under Routines.
+  Three reasons, each sufficient alone: a `-p` run has nobody to answer a
+  permission prompt; an agent acts on text that may not have come from you; and
+  the local port is unauthenticated, so the write side of this surface is worth
+  nothing to an attacker.
+- Invalid requests are refused at the tool, before a proposal exists — a
+  proposal that cannot apply would be approved and then fail for a reason
+  nobody was shown.
+- **Markdown**: nested lists were flattened (`- a / ␣␣- b` rendered as
+  siblings), and fenced code came out inside a paragraph — invalid HTML, which
+  is what caused the odd gaps around code blocks. Both fixed.
+- **A live activity mark.** While a reply composes, the Sutra mark breathes
+  beside it, and moves into the pill while tools run. It stops under
+  `prefers-reduced-motion`: motion is decoration, the word carries the meaning.
+
+## 2.70.1
+
+- Desktop auto-update is now mandatory and staged: an update is downloaded and
+  verified first (`staged`), and only then armed, so deferring costs nothing and
+  a boot that finds a fresh `installing` record cannot arm a second helper.
+- The routes that can quit the app and replace the bundle require a token the
+  Electron shell mints and hands only to the backend it spawned — they are
+  otherwise reachable by any page in any browser on this machine. When the panel
+  is attached to a CLI-owned server there is no token, arming is refused, and
+  auto-update is off, which is the correct answer: quitting this window would
+  not stop a backend somebody else owns.
+- A minimal `preload.js` is the only IPC bridge, for the one thing the panel
+  cannot do over HTTP — end this process so the swap can happen. In a plain
+  browser `window.sutra` is absent and the restart UI does not appear, so a
+  countdown never promises a restart it cannot perform.
+- This release also makes git match what shipped: 2.70.0 was built from a tree
+  containing this work before it had been committed.
+
+## 2.70.0
+
+- **Routines.** A prompt this Mac runs on a schedule — a morning brief, a nightly
+  check — without you opening anything. Create, list, run now, pause, delete,
+  and read what happened on every past run.
+- Claude Code has two kinds and only one is honestly ownable here: cloud routines
+  live in the claude.ai account with no local file format or scriptable CLI.
+  These are the **Local** kind, and the badge says so — their noun, our scope, no
+  implied parity. The five schedule presets are Claude's own: Manual, Hourly,
+  Daily, Weekdays, Weekly, plus a custom cron escape.
+- Scheduled with a **launchd user agent**, not an in-app timer. The app quits
+  when its last window closes and kills the backend with it, so an in-process
+  tick would fire approximately never. This does not contradict ADR-017: that
+  governs the Native engine's Trigger cadence, which is a different thing at a
+  different layer.
+- **A routine cannot use a write-capable permission mode.** `acceptEdits` and
+  `bypassPermissions` are unreachable for a routine by code — a positive
+  allow-list, not a subtraction, so editing the unsafe-modes tuple cannot
+  silently re-admit one. There is no env var, settings key or consent phrase that
+  reaches them. The default is `dontAsk`, not `plan`: `plan` unattended proposes
+  edits nobody approves, exits 0, and reads OK while the routine does nothing
+  forever.
+- A per-run budget ceiling is required, the working folder must exist and be
+  inside your home, and a routine may fire at most once an hour.
+- The screen refuses to flatter: **"never run" is never rendered as "0 runs"**, a
+  green *Run now* is labelled as proving the runner and not the schedule, a
+  saved-but-not-loaded job shows launchd's own stderr rather than a generic
+  failure, and next-run is not computed — launchd decides, and an invented time
+  would be wrong the first time the Mac slept.
+- Sleep is stated up front: if the Mac is asleep at the scheduled time launchd
+  runs the job on wake, and several missed slots coalesce into **one** run.
+
+## 2.69.1
+
+- **The permission selector was a white box in a dark theme.** It shipped in
+  2.69.0 with no CSS at all and fell back to the browser's default styling,
+  sitting directly beside a correctly themed model selector. Both composer
+  selects are now styled by one rule so the next control added there cannot
+  drift either — and a mode that writes files without asking carries the warn
+  colour, so that state is legible in the composer instead of only inside the
+  dropdown.
+- **The Directory view collided with itself in a narrow pane.** Two compounding
+  bugs, both pre-existing: `grid-template-columns: 1fr` is `minmax(auto,1fr)`
+  and `auto` floors at *min-content*, so the column sized itself to 973px inside
+  a 385px pane; and when the container query collapsed the grid to one column
+  the table of contents was still `position:sticky`, so it printed itself over
+  the department names underneath. The column can shrink now, and the TOC goes
+  static when it collapses.
+## 2.69.0
+
+- **The permission mode is chosen next to the composer now, not in Settings.** It
+  was editable only in Settings, and the write-capable modes were reachable only
+  by restarting the server with `SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1` — which for
+  a Finder-launched app means editing a plist. The panel was showing a control,
+  refusing it, and telling you to do something you realistically could not.
+- The selector shows the **effective** mode, never the stored one: the server
+  clamps at the point of use, so showing the stored value would claim the agent
+  is doing something it is not.
+- Choosing a write-capable mode opens a confirmation carrying the server's own
+  wording for what that mode does, and only that confirmation sends the
+  acknowledgement the server requires — a bare boolean is refused, because the
+  local port is unauthenticated and enabling file-writing must be deliberate.
+  Cancelling reverts the selector rather than leaving it displaying a mode that
+  is not running. Consent can be withdrawn the same way.
+- **Streaming no longer flickers, jumps or stutters.** A token frame called
+  `render()`, which replaces the whole pane via `innerHTML` — ten times a second
+  the entire transcript was destroyed and re-parsed. That was one bug producing
+  three symptoms: flicker (every node replaced), the view snapping bottom→top
+  (the new scroller starts at `scrollTop 0` and is then re-pinned), and
+  choppiness (100 ms batching is 10 fps).
+- A token now patches only the streaming reply's own node on an animation frame.
+  The scroller is never replaced, so your scroll position survives by
+  construction — and if you have scrolled up to read, the view is left exactly
+  where you put it instead of being yanked to the bottom.
+  Measured over 40 token frames: **0 full re-renders**, same DOM node throughout.
+
 ## 2.68.1
 
 - **You can now check for, and install, both updates from Settings.** There was

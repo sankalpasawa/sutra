@@ -244,8 +244,36 @@ UNSAFE_PERMISSION_MODES = ("acceptEdits", "bypassPermissions")
 UNSAFE_MODES_ENV = "SUTRA_UI_ALLOW_UNSAFE_PERM_MODES"
 
 
-def unsafe_modes_allowed():
-    return os.environ.get(UNSAFE_MODES_ENV, "") == "1"
+UNSAFE_ACK_KEY = "unsafe_modes_acknowledged"
+
+
+def unsafe_modes_allowed(settings=None):
+    """True when the operator has authorised the write-capable modes.
+
+    TWO ways in, and both are a DELIBERATE HUMAN ACT:
+
+      1. the env var, set when starting the server -- for headless/CI, and the
+         original out-of-band gate
+      2. an acknowledgement recorded in settings.json by someone clicking
+         through the confirmation in the UI
+
+    (2) was added because (1) alone was unusable as a product: the panel told
+    the operator to "restart the server with SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1",
+    which for a Finder-launched .app means editing a plist or launching from a
+    terminal -- i.e. the setting was effectively unreachable for the people the
+    app is for. A control the UI shows, refuses, and cannot teach you to enable
+    is worse than no control.
+
+    The threat this still answers is UNATTENDED ENABLEMENT over the
+    unauthenticated local socket. That is why the acknowledgement is not a
+    plain boolean flip: api_settings_post requires the caller to send the
+    confirmation phrase, so a stray POST from anything else that can reach the
+    port cannot turn it on by accident. It is consent, recorded, not a default.
+    """
+    if os.environ.get(UNSAFE_MODES_ENV, "") == "1":
+        return True
+    s = settings if settings is not None else _raw_settings()
+    return bool(s.get(UNSAFE_ACK_KEY))
 
 
 # The editor is the FIRST filesystem write path in this app. Everything else reads:
@@ -582,8 +610,15 @@ def load_settings():
     }
 
 
+#: What a caller must send to record the acknowledgement. Not a boolean: the
+#: local socket is unauthenticated, so anything that can reach the port could
+#: flip a plain `true`. Requiring the phrase makes enabling it an act of
+#: intent that a stray or hostile POST does not perform by accident.
+UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking"
+
+
 def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None,
-                  model=None):
+                  model=None, unsafe_ack=None):
     """Merge a partial update into the settings file and return load_settings().
 
     Validates BEFORE writing: an unknown or unrunnable provider, or an unknown
@@ -591,6 +626,21 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
     tmp+replace so a crash mid-write cannot leave a truncated file.
     """
     raw = _raw_settings()
+
+    # Handled FIRST, so a single request can grant consent and select the mode
+    # it unlocks -- otherwise the UI would have to make two round trips and
+    # could leave consent recorded with nothing set.
+    if unsafe_ack is not None:
+        if unsafe_ack is False:
+            raw[UNSAFE_ACK_KEY] = False        # withdrawing needs no phrase
+        elif unsafe_ack != UNSAFE_ACK_PHRASE:
+            raise ValueError(
+                "to enable the write-capable modes, send unsafe_ack set to the "
+                "exact phrase %r. A boolean is not accepted: this port is "
+                "unauthenticated, so enabling must be a deliberate act."
+                % UNSAFE_ACK_PHRASE)
+        else:
+            raw[UNSAFE_ACK_KEY] = True
 
     if provider is not None:
         p = provider_by_id(provider)
@@ -607,10 +657,12 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
             raise ValueError(
                 "unknown permission_mode %r -- must be one of: %s"
                 % (permission_mode, ", ".join(PERMISSION_MODES)))
-        if permission_mode in UNSAFE_PERMISSION_MODES and not unsafe_modes_allowed():
+        # `raw` is passed so consent granted in THIS request counts -- reading
+        # the file again here would miss it and refuse the mode it just unlocked.
+        if permission_mode in UNSAFE_PERMISSION_MODES and not unsafe_modes_allowed(raw):
             raise ValueError(
-                "permission_mode %r auto-approves agent actions and cannot be set "
-                "over the API. Restart the server with %s=1 to enable it."
+                "permission_mode %r auto-approves agent actions. Confirm it in "
+                "Settings first (or start the server with %s=1)."
                 % (permission_mode, UNSAFE_MODES_ENV))
         raw["permission_mode"] = permission_mode
 

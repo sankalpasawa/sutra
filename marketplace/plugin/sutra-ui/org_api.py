@@ -29,13 +29,14 @@ import binascii
 import hashlib
 import json
 import logging
+import hmac
 import os
 import re
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -75,6 +76,8 @@ import reorg_sim as R  # noqa: E402
 
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
+import routines   # local scheduled routines (launchd + the claude CLI; no engine access)
+import proposals  # what the chat agent asks for; nothing here applies without approval
 
 # --------------------------------------------------------------- drafts ----
 # Draft plan storage. Outside SUTRA_NATIVE_HOME by design (§8.5.9 "What it
@@ -878,6 +881,9 @@ class SettingsRequest(BaseModel):
     workdir: Optional[str] = None
     onboarded: Optional[bool] = None
     model: Optional[str] = None
+    # str to GRANT (must equal providers.UNSAFE_ACK_PHRASE), False to withdraw.
+    # Deliberately not a bare bool -- see providers.UNSAFE_ACK_PHRASE.
+    unsafe_ack: Optional[Union[str, bool]] = None
 
 
 @router.post("/settings")
@@ -890,7 +896,8 @@ def api_settings_post(req: SettingsRequest):
     a mode was applied when it was not.
     """
     if (req.provider is None and req.permission_mode is None
-            and req.workdir is None and req.onboarded is None and req.model is None):
+            and req.workdir is None and req.onboarded is None and req.model is None
+            and req.unsafe_ack is None):
         raise HTTPException(
             status_code=400,
             detail="nothing to update -- send at least one of: provider, "
@@ -902,6 +909,7 @@ def api_settings_post(req: SettingsRequest):
             workdir=req.workdir,
             onboarded=req.onboarded,
             model=req.model,
+            unsafe_ack=req.unsafe_ack,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -1266,6 +1274,130 @@ def api_tenants():
     return out
 
 
+# =========================================================== proposals ======
+# The chat agent can PROPOSE mutations (see sutra_mcp.py). Applying one is a
+# separate, human act. The apply switch lives HERE rather than in proposals.py
+# so that module never imports routines and cannot mutate anything by itself.
+
+def _apply_proposal(kind, args):
+    if kind == "routine.create":
+        rec, launchd = routines.create(args)
+        return {"routine": rec["id"], "launchd_ok": launchd.get("ok")}
+    if kind == "routine.update":
+        rec, launchd = routines.update(args["id"], args.get("patch") or {})
+        return {"routine": rec["id"], "launchd_ok": launchd.get("ok")}
+    if kind == "routine.delete":
+        return routines.delete(args["id"])
+    if kind == "routine.run":
+        return routines.run_now(args["id"])
+    raise ValueError("no way to apply %r" % kind)
+
+
+@router.get("/proposals")
+def api_proposals(pending_only: bool = False):
+    return {"proposals": proposals.listing(include_decided=not pending_only),
+            "store": str(proposals.store_dir())}
+
+
+@router.post("/proposals/{pid}/decide")
+def api_proposal_decide(pid: str, body: Dict[str, Any]):
+    """approve=true applies it; approve=false rejects it. There is no third
+    option and no automatic path -- an unapproved proposal simply expires."""
+    if "approve" not in body:
+        raise HTTPException(status_code=400, detail='send {"approve": true|false}')
+    try:
+        return proposals.decide(pid, bool(body["approve"]),
+                                apply_fn=_apply_proposal)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no proposal %r" % pid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ============================================================ routines ======
+# Transport only; everything real is in routines.py, which is importable and
+# testable without a server. Reads are GET, anything that touches launchd or the
+# store is POST.
+
+@router.get("/routines")
+def api_routines():
+    return routines.state()
+
+
+@router.get("/routines/{rid}/runs")
+def api_routine_runs(rid: str, limit: int = 10):
+    try:
+        return routines.runs(rid, limit=max(1, min(int(limit), 200)))
+    except (KeyError, OSError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/routines/{rid}/output")
+def api_routine_output(rid: str, name: str):
+    try:
+        return {"id": rid, "name": name, "text": routines.run_output(rid, name)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such run output")
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/routines")
+def api_routine_create(body: Dict[str, Any]):
+    try:
+        rec, launchd = routines.create(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"routine": rec, "launchd": launchd}
+
+
+@router.post("/routines/reconcile")
+def api_routines_reconcile(body: Optional[Dict[str, Any]] = None):
+    return routines.reconcile(fix=bool((body or {}).get("fix")))
+
+
+@router.post("/routines/{rid}")
+def api_routine_update(rid: str, body: Dict[str, Any]):
+    try:
+        rec, launchd = routines.update(rid, body)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"routine": rec, "launchd": launchd}
+
+
+@router.post("/routines/{rid}/run")
+def api_routine_run(rid: str, body: Optional[Dict[str, Any]] = None):
+    # Confirmation is required because this spends money on the operator's plan.
+    if not (body or {}).get("confirm"):
+        raise HTTPException(status_code=400,
+                            detail="running a routine starts a real agent turn; "
+                                   "send {\"confirm\": true}")
+    try:
+        return routines.run_now(rid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/routines/{rid}/delete")
+def api_routine_delete(rid: str, body: Optional[Dict[str, Any]] = None):
+    if not (body or {}).get("confirm"):
+        raise HTTPException(status_code=400, detail="send {\"confirm\": true}")
+    try:
+        return routines.delete(rid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 # ============================================================= updates ======
 # Transport only. Everything real lives in updates.py, which is importable and
 # tested without a server. Checking is a GET because it changes nothing;
@@ -1294,14 +1426,105 @@ def api_updates_desktop():
     Split deliberately: everything checkable (checksum, notarization, the
     bundle's own signature) is checked while the operator is still here to be
     told, and only then is the unattended helper armed.
+
+    This is the MANUAL button and it stays exactly as it was -- it is the
+    fallback when the automatic path has given up, and a fallback that shares
+    the automatic path's failure modes is not a fallback.
     """
     try:
         got = updates.download_and_verify()
-        sched = updates.install_desktop(got["dmg"])
+        sched = updates.install_desktop(got["dmg"], relaunch=True,
+                                        version=got.get("version"))
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     sched["version"] = got.get("version")
     return sched
+
+
+# ------------------------------------------------ automatic update path -----
+# The three routes below can quit the app and replace the bundle on disk, so
+# unlike everything else on this loopback API they are AUTHENTICATED.
+#
+# The rest of the API is unauthenticated because it is reachable only from
+# 127.0.0.1 and does nothing a local user could not already do. These do:
+# "arm" hands an unattended helper the authority to replace /Applications/
+# Sutra.app, and any page in any browser on this machine can POST to localhost.
+# That is a persistence primitive, not a convenience.
+#
+# The token is minted by the Electron shell and handed to the backend it spawns.
+# Which produces exactly the right behaviour for free: when the shell ATTACHES
+# to a backend it did not start (main.js does this), it has no token for that
+# process, arming is refused, and automatic updating stays off for that session
+# instead of quietly acting through a server whose lifetime it does not own.
+
+DESKTOP_TOKEN = os.environ.get("SUTRA_DESKTOP_TOKEN") or None
+
+
+def _desktop_control(request):
+    """Authorise a desktop-control call, or refuse it with a reason."""
+    if not DESKTOP_TOKEN:
+        raise HTTPException(status_code=403, detail=(
+            "this server was not started by the Sutra desktop app, so it "
+            "cannot install or restart it"))
+    sent = request.headers.get("x-sutra-desktop-token") or ""
+    if not hmac.compare_digest(sent, DESKTOP_TOKEN):
+        raise HTTPException(status_code=403, detail="bad desktop control token")
+
+
+@router.get("/updates/staged")
+def api_updates_staged():
+    """Local staging state only -- no network. The panel polls this, and that
+    is the ONLY reason it is allowed to: a route that reaches GitHub cannot be
+    polled without turning every open panel into a crawler."""
+    return updates.pending_state()
+
+
+@router.post("/updates/desktop/stage")
+def api_updates_stage(request: Request):
+    """Download + verify into durable staging. Arms nothing."""
+    _desktop_control(request)
+    try:
+        return updates.stage_desktop()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/updates/desktop/arm")
+async def api_updates_arm(request: Request):
+    """Schedule the swap for after the shell exits.
+
+    `wait_pid` is required and is the SHELL's pid, not this process's parent.
+    See install_desktop() for why inferring it here is wrong.
+    """
+    _desktop_control(request)
+    body = {}
+    try:
+        body = await request.json()
+    except (ValueError, TypeError):
+        pass
+    pid = body.get("wait_pid")
+    if not pid:
+        raise HTTPException(status_code=400, detail="wait_pid is required")
+    try:
+        return updates.arm_desktop(int(pid), wait_start=body.get("wait_start"),
+                                   relaunch=bool(body.get("relaunch")))
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/updates/desktop/resolve")
+async def api_updates_resolve(request: Request):
+    """Launch-time decision: what did the last attempt do, and what now."""
+    _desktop_control(request)
+    body = {}
+    try:
+        body = await request.json()
+    except (ValueError, TypeError):
+        pass
+    try:
+        return updates.resolve_pending(body.get("installed"))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ========================================================== automation ======
