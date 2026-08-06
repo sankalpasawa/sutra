@@ -1915,6 +1915,8 @@ const S = {
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,
+  /* permission mode confirmation, at chat level -- see permSelect(). */
+  permConfirm:null, permBusy:false, permError:null,
   /* Per-session composer extras. `attach` holds one entry per pending file (each with
      its own error, so one rejected upload does not discard the others). `model` is a
      per-session OVERRIDE; undefined means "inherit the stored setting", which is why
@@ -3601,6 +3603,79 @@ function routingChart(s){
     </div>`;
 }
 
+/* ── permission mode, at chat level ─────────────────────────────────────────
+   This used to live ONLY in Settings, behind an env var set when starting the
+   server. For a Finder-launched .app that means editing a plist -- so the panel
+   was showing a control, refusing it, and telling the operator to do something
+   they realistically could not. It belongs next to the composer, where the
+   decision is actually made, the way Claude Code puts it in the session.
+
+   The dangerous modes are still not one click away: choosing one opens an
+   explicit confirmation that states what it does, and only that confirmation
+   sends the acknowledgement phrase the server requires. */
+const UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking";
+
+function permSelect(){
+  const st = SETTINGS || {};
+  /* The EFFECTIVE mode, not the stored one. When consent is absent the server
+     clamps at the point of use, and showing the stored value would tell the
+     operator the agent is doing something it is not. */
+  const cur = st.permission_mode_effective || st.permission_mode || "plan";
+  const modes = PERM_MODES.length ? PERM_MODES : [{id:cur}];
+  return `<select class="permsel" data-perm aria-label="Permission mode"
+      title="What the agent may do without asking — applies to the next message">
+    ${modes.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?"selected":""}
+      >${esc(m.id)}${m.writes_files?" ⚠":""}</option>`).join("")}
+  </select>`;
+}
+
+/* The confirmation. Rendered as a real block in the pane rather than a
+   window.confirm: it has to SAY what the mode does, and a native dialog cannot
+   carry the server's own wording for it. */
+function permConfirmHtml(){
+  const c = S.permConfirm;
+  if (!c) return "";
+  const m = (PERM_MODES.find(x=>x.id===c.mode)) || {};
+  return `<div class="note b" role="alertdialog" aria-label="Confirm permission mode">
+    <b>Turn on <code>${esc(c.mode)}</code>?</b>
+    <p style="margin:6px 0">${esc(m.note || "This mode auto-approves agent actions.")}</p>
+    <p style="margin:6px 0;color:var(--faint)">This applies to sessions this panel starts, and
+      stays on until you change it back. You can withdraw it here at any time.</p>
+    ${S.permError?`<p style="color:var(--block)">${esc(S.permError)}</p>`:""}
+    <button class="btn" type="button" data-permok ${S.permBusy?"disabled":""}>
+      ${S.permBusy?"Enabling…":"Yes, enable it"}</button>
+    <button class="btn" type="button" data-permno>Cancel</button>
+  </div>`;
+}
+
+async function setPermMode(mode){
+  const m = PERM_MODES.find(x=>x.id===mode) || {};
+  /* Only the write-capable modes need consent, and only when it is not already
+     granted -- re-confirming something already on is friction with no safety. */
+  if (m.writes_files && !(SETTINGS||{}).unsafe_modes_allowed){
+    S.permConfirm = { mode }; S.permError = null; render(); return;
+  }
+  await applyPermMode(mode, false);
+}
+
+async function applyPermMode(mode, withAck){
+  S.permBusy = true; S.permError = null; render();
+  try {
+    const body = { permission_mode: mode };
+    if (withAck) body.unsafe_ack = UNSAFE_ACK_PHRASE;
+    await apiPost("/api/settings", body);
+    /* Re-read rather than assuming: the server clamps, and the panel must show
+       what will actually run, not what was requested. */
+    const s = await apiGet("/api/settings");
+    SETTINGS = s.settings || SETTINGS;
+    PERM_MODES = s.permission_modes || PERM_MODES;
+    S.permConfirm = null;
+  } catch (e) {
+    S.permError = e.message;
+  }
+  S.permBusy = false; render();
+}
+
 /* The assistant half of a turn, rendered with the panel's OWN vocabulary — .turn .a for
    assistant prose, .pill for state, a compact tool row. Used for BOTH a live streaming
    reply and an assistant block replayed out of a transcript: in the second case
@@ -3814,6 +3889,7 @@ function sessionPane(s){
         <button class="attx" type="button" data-attrm="${s.id}:${i}"
                 aria-label="Remove ${esc(a.name)}">&times;</button></span>`).join("")}
     </div>` : ""}
+    ${permConfirmHtml()}
     ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
     <div class="pc">
       <button class="ib" data-optstoggle="${s.id}" type="button"
@@ -3834,6 +3910,7 @@ function sessionPane(s){
       <textarea data-sask="${s.id}" rows="1"
              placeholder="Ask anything — / for commands, Shift+Enter for a new line"
              aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
+      ${permSelect()}
       <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
               title="Model — applies to the next message">
         ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
@@ -4537,6 +4614,21 @@ function wire(){
       return;
     }
     ch.ws.send(JSON.stringify({type:"stop"}));
+  });
+
+  /* ── permission mode (chat level) ── */
+  panes.querySelectorAll("[data-perm]").forEach(sel=>sel.onchange=()=>{
+    const want = sel.value;
+    /* Re-render first so the select snaps back to the EFFECTIVE mode if the
+       confirmation is cancelled -- leaving it showing a mode that is not
+       running would be the same lie the clamp exists to prevent. */
+    setPermMode(want);
+  });
+  panes.querySelectorAll("[data-permok]").forEach(b=>b.onclick=()=>{
+    if (S.permConfirm) applyPermMode(S.permConfirm.mode, true);
+  });
+  panes.querySelectorAll("[data-permno]").forEach(b=>b.onclick=()=>{
+    S.permConfirm = null; S.permError = null; render();
   });
 
   /* ── model ── */

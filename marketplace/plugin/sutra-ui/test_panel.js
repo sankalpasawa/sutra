@@ -1016,6 +1016,49 @@ test("22c. streaming is animation-framed, not a 100ms timer", () => {
   assert.ok(!/setTimeout/.test(fn), "10fps batching is what made it choppy");
 });
 
+test("23a. the permission mode is chosen at chat level, not only in Settings", () => {
+  /* It lived only in Settings, behind an env var set when STARTING the server --
+     which for a Finder-launched .app means editing a plist. The panel showed the
+     control, refused it, and told the operator to do something they could not. */
+  const h = panelHtml;
+  assert.ok(/function permSelect\(\)\{/.test(h), "a composer-level selector must exist");
+  /* It renders in the composer row -- the same block as the model select, which
+     is the anchor that is unambiguously part of the composer. */
+  const call = h.indexOf("${permSelect()}");
+  const model = h.indexOf('<select class="modelsel"');
+  assert.ok(call !== -1, "permSelect() must be called from the template");
+  assert.ok(call < model && model - call < 600,
+    "it must render next to the model select, i.e. in the composer row");
+});
+
+test("23b. a write-capable mode is confirmed, never one click away", () => {
+  const fn = panelHtml.match(/async function setPermMode\(mode\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/writes_files/.test(fn), "must branch on whether the mode writes files");
+  assert.ok(/S\.permConfirm = \{ mode \}/.test(fn),
+    "a write-capable mode must open the confirmation instead of applying");
+  assert.ok(/unsafe_modes_allowed/.test(fn),
+    "already-granted consent must not be re-prompted -- that is friction with no safety");
+});
+
+test("23c. only the confirmation sends the acknowledgement phrase", () => {
+  /* The server refuses a bare boolean on purpose: the port is unauthenticated.
+     If the phrase were sent from anywhere else, that protection would be moot. */
+  const h = panelHtml;
+  const apply = h.match(/async function applyPermMode\(mode, withAck\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/if \(withAck\) body\.unsafe_ack = UNSAFE_ACK_PHRASE/.test(apply),
+    "the phrase is sent only when explicitly confirmed");
+  const sends = (h.match(/unsafe_ack/g) || []).length;
+  assert.ok(sends <= 3, "the phrase should have one send site, not be sprinkled around");
+});
+
+test("23d. the selector shows the EFFECTIVE mode, not the stored one", () => {
+  /* The server clamps at the point of use. Showing the stored value would tell
+     the operator the agent is doing something it is not. */
+  const fn = panelHtml.match(/function permSelect\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/permission_mode_effective/.test(fn),
+    "must read permission_mode_effective first");
+});
+
 /* ── report ────────────────────────────────────────────────────────────── */
 
 console.log("\n" + "-".repeat(60));
