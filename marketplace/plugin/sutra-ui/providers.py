@@ -53,19 +53,12 @@ from pathlib import Path
 _LOGIN_PATH_DONE = False
 
 
-def _login_shell_path():
-    """The PATH the operator's own login shell produces, or None.
-
-    Asking the shell beats hardcoding directories: it picks up nvm, asdf, pyenv
-    and hand-edited rc files, none of which are guessable. `-l` runs the login rc
-    chain, which is what Terminal.app itself does.
-    """
-    sh = os.environ.get("SHELL") or "/bin/zsh"
-    if not os.path.isfile(sh):
-        sh = "/bin/zsh" if os.path.isfile("/bin/zsh") else "/bin/sh"
+def _shell_path_once(sh, interactive):
+    """One shell invocation's $PATH, or None. Never raises."""
+    # `command -p echo` sidesteps an rc-defined echo alias mangling the output.
+    args = [sh, "-l", "-i", "-c"] if interactive else [sh, "-l", "-c"]
     try:
-        # `command -p echo` sidesteps an rc-defined echo alias mangling the output.
-        out = subprocess.run([sh, "-l", "-c", 'command -p echo "$PATH"'],
+        out = subprocess.run(args + ['command -p echo "$PATH"'],
                              capture_output=True, text=True, timeout=8)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -76,6 +69,97 @@ def _login_shell_path():
     # thing echoed. Require it to actually look like a PATH before trusting it.
     cand = lines[-1]
     return cand if (os.pathsep in cand and cand.startswith("/")) else None
+
+
+def _login_shell_path():
+    """The PATH the operator's own shell produces, or None.
+
+    Asking the shell beats hardcoding directories: it picks up nvm, asdf, pyenv
+    and hand-edited rc files, none of which are guessable.
+
+    INTERACTIVE FIRST, and that is the whole point of this function.
+    `zsh -l -c` is a LOGIN, NON-INTERACTIVE shell, and zsh reads ~/.zshrc only
+    for INTERACTIVE ones -- it reads .zshenv/.zprofile/.zlogin otherwise. So a
+    login-only harvest cannot see a PATH exported from .zshrc, which is where
+    nvm, npm-global and Claude Code's own native installer put it. Field
+    report: `claude` undetected on other people's Macs while working in every
+    terminal on those same Macs. Reproduced with a HOME whose .zshrc adds the
+    directory holding the binary -- `-l -c` misses it, `-l -i -c` finds it.
+
+    (This machine did not show it: Homebrew writes its shellenv to .zprofile,
+    which a login shell DOES read. The bug is invisible exactly where the
+    binary happens to be installed by Homebrew.)
+
+    Both are run and UNIONED rather than one being trusted: an interactive
+    shell can be the odd one out too -- an rc file guarded on `[[ -o interactive ]]`
+    that `return`s early, or a prompt framework that rewrites PATH. Taking both
+    costs one extra process on a GUI launch and cannot lose a directory either
+    one found.
+    """
+    sh = os.environ.get("SHELL") or "/bin/zsh"
+    if not os.path.isfile(sh):
+        sh = "/bin/zsh" if os.path.isfile("/bin/zsh") else "/bin/sh"
+
+    merged, seen = [], set()
+    for interactive in (True, False):
+        got = _shell_path_once(sh, interactive)
+        if not got:
+            continue
+        for entry in got.split(os.pathsep):
+            if entry and entry not in seen:
+                seen.add(entry)
+                merged.append(entry)
+    return os.pathsep.join(merged) if merged else None
+
+
+# Where the CLIs actually install themselves, for the case where no shell can be
+# asked at all: a login shell that hangs, an rc chain that exports PATH only
+# under a condition we do not meet, fish/nushell whose syntax the POSIX probe
+# above cannot drive, or a GUI-only account. Probed directly, never guessed at:
+# a directory only joins PATH if it EXISTS and actually holds the binary.
+#
+# These are locations the vendors document, not a wishlist:
+#   ~/.local/bin        Claude Code native installer
+#   ~/.claude/local     Claude Code legacy local installer
+#   /opt/homebrew/bin   Homebrew (Apple Silicon), /usr/local/bin (Intel + npm -g)
+#   ~/.npm-global/bin   the documented npm prefix workaround
+#   ~/.bun/bin ~/.volta/bin ~/.deno/bin   alternative runtimes people install with
+#   ~/.nvm/versions/node/*/bin            nvm, whose init lives in .zshrc
+_KNOWN_BIN_DIRS = (
+    "~/.local/bin",
+    "~/.claude/local",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "~/.npm-global/bin",
+    "~/.yarn/bin",
+    "~/.bun/bin",
+    "~/.volta/bin",
+    "~/.deno/bin",
+)
+
+
+def _known_bin_dirs(binaries):
+    """Existing directories from the list above that actually contain one of
+    `binaries`. Returns [] when none do -- this must never widen PATH on a hunch."""
+    found = []
+    cands = [os.path.expanduser(d) for d in _KNOWN_BIN_DIRS]
+    # nvm keeps one bin dir per installed node version; the active one is chosen
+    # by .zshrc, so when that was missed every version is a candidate.
+    nvm = os.path.expanduser("~/.nvm/versions/node")
+    if os.path.isdir(nvm):
+        try:
+            cands += [os.path.join(nvm, v, "bin") for v in sorted(os.listdir(nvm))]
+        except OSError:
+            pass
+    for d in cands:
+        if d in found or not os.path.isdir(d):
+            continue
+        for b in binaries:
+            p = os.path.join(d, b)
+            if os.path.isfile(p) and os.access(p, os.X_OK):
+                found.append(d)
+                break
+    return found
 
 
 def ensure_login_path():
@@ -99,11 +183,22 @@ def ensure_login_path():
     if any(shutil.which(spec["bin"]) for spec in _CATALOG):
         return False                     # PATH already resolves something; leave it
 
-    extra = _login_shell_path()
-    if not extra:
-        return False
     have = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
-    added = [p for p in extra.split(os.pathsep) if p and p not in have]
+    added = []
+
+    extra = _login_shell_path()
+    if extra:
+        added += [p for p in extra.split(os.pathsep) if p and p not in have]
+
+    # Last resort, and only if the shell harvest did not already produce a PATH
+    # that resolves a binary. Directly probing the documented install locations
+    # is what makes this work for someone whose shell we could not ask at all.
+    if not any(shutil.which(spec["bin"], path=os.pathsep.join(have + added))
+               for spec in _CATALOG):
+        binaries = [_bin_for(s["id"], s["bin"]) for s in _CATALOG]
+        added += [d for d in _known_bin_dirs(binaries)
+                  if d not in have and d not in added]
+
     if not added:
         return False
     os.environ["PATH"] = os.pathsep.join(have + added)
@@ -285,7 +380,15 @@ def _describe(spec):
                   "stream-json protocol only, so %s cannot be used here even "
                   "though it is installed at %s" % (spec["name"], bin_path))
     elif configured and not installed:
-        reason = "binary %r not on PATH (config found at %s)" % (binary, cfg_display)
+        # This is the message a user sees when the app cannot find a CLI they
+        # know is installed. "not on PATH" alone sent people looking in the
+        # wrong place -- name the escape hatch, because at this point PATH
+        # repair and the known-location probe have BOTH already failed.
+        reason = ("binary %r not on PATH (config found at %s). The login shell's "
+                  "PATH and the usual install locations were both searched. "
+                  "Set SUTRA_UI_%s_BIN to its full path if it lives somewhere "
+                  "else -- `which %s` in your terminal will say where."
+                  % (binary, cfg_display, spec["id"].upper(), binary))
     elif installed and not configured:
         reason = "binary %r found at %s but no config directory at %s" % (
             binary, bin_path, cfg_display)

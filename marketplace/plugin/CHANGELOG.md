@@ -1,3 +1,25 @@
+## 2.67.1
+
+- **`claude` was undetected on other people's Macs** — on machines where it ran
+  fine in every terminal. A Finder-launched app gets launchd's minimal PATH, so
+  the app asks the login shell what PATH should be; it asked with `zsh -l -c`,
+  which is a login but **non-interactive** shell, and zsh reads `~/.zshrc` only
+  for interactive ones. `.zshrc` is exactly where nvm, npm-global and Claude
+  Code's own native installer export PATH. Reproduced with a HOME whose
+  `.zshrc` adds the directory holding the binary: `-l -c` misses it, `-l -i -c`
+  finds it first. This never showed up in development because Homebrew writes
+  its shellenv to `.zprofile`, which a login shell does read — the bug is
+  invisible on precisely the machines that install via Homebrew.
+- Fixed in two independent layers: harvest an **interactive** login shell and
+  union it with the login-only answer (neither can lose a directory the other
+  found), and **probe the documented install locations directly** for the case
+  where no shell can be asked at all — `~/.local/bin`, `~/.claude/local`,
+  `/opt/homebrew/bin`, `/usr/local/bin`, `~/.npm-global/bin`, `~/.bun|.volta|
+  .deno/bin`, and every `~/.nvm/versions/node/*/bin`. A directory joins PATH
+  only if it exists *and* actually contains the binary.
+- The "not on PATH" message now says both searches already failed and names
+  `SUTRA_UI_CLAUDE_BIN`, instead of sending people to look in the wrong place.
+
 ## 2.67.0
 
 - The panel was dead on boot, and had been on main. `5781a2f` deleted
