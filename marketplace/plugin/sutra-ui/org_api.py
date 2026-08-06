@@ -74,6 +74,7 @@ import placement_engine as E  # noqa: E402  (path insert must precede this impor
 import reorg_sim as R  # noqa: E402
 
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
+import updates    # desktop-app + plugin version checks and installs (no engine access)
 
 # --------------------------------------------------------------- drafts ----
 # Draft plan storage. Outside SUTRA_NATIVE_HOME by design (§8.5.9 "What it
@@ -1263,6 +1264,44 @@ def api_tenants():
 
     out.sort(key=lambda r: (0 if r["is_default"] else 1, r["tenant_id"]))
     return out
+
+
+# ============================================================= updates ======
+# Transport only. Everything real lives in updates.py, which is importable and
+# tested without a server. Checking is a GET because it changes nothing;
+# installing is a POST because it very much does.
+
+@router.get("/updates")
+def api_updates():
+    """Both components, checked live. Network calls, so this is never called on
+    boot -- only when the operator asks."""
+    return updates.all_state()
+
+
+@router.post("/updates/plugin")
+def api_updates_plugin():
+    """Run the same update the daily hook runs, now."""
+    try:
+        return updates.install_plugin()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/updates/desktop")
+def api_updates_desktop():
+    """Download, VERIFY, and schedule the swap for after the app quits.
+
+    Split deliberately: everything checkable (checksum, notarization, the
+    bundle's own signature) is checked while the operator is still here to be
+    told, and only then is the unattended helper armed.
+    """
+    try:
+        got = updates.download_and_verify()
+        sched = updates.install_desktop(got["dmg"])
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    sched["version"] = got.get("version")
+    return sched
 
 
 # ========================================================== automation ======

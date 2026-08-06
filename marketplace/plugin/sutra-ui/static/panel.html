@@ -1826,6 +1826,8 @@ const S = {
      different answers and the screen renders them differently. */
   git:null, gitError:null, gitFile:null, gitDiff:null, gitDiffTruncated:false,
   auto:null, autoError:null,
+  /* updates: null until the operator asks -- see updatesHtml(). */
+  upd:null, updBusy:null, updError:null, updMsg:null,
   /* Per-session composer extras. `attach` holds one entry per pending file (each with
      its own error, so one rejected upload does not discard the others). `model` is a
      per-session OVERRIDE; undefined means "inherit the stored setting", which is why
@@ -3233,6 +3235,102 @@ function diffHtml(text){
   }).join("\n");
 }
 
+/* ── updates ──────────────────────────────────────────────────────────────
+   TWO components, and they are NOT the same kind of thing. Showing them as one
+   "check for updates" button would be a lie about how either behaves:
+
+     Desktop app  no background updater at all (Squirrel is in the bundle
+                  because Electron ships it; nothing wires it up). It changes
+                  only when someone installs a DMG.
+     Plugin       already updates itself once a day at session start, applying
+                  to the NEXT session. The button only makes it immediate.
+
+   Nothing here runs on load: these are network calls, and a panel that phones
+   home every time it opens is a different product decision from one with a
+   button. S.upd stays null until asked. */
+function updatesHtml(){
+  const u = S.upd;
+  const busy = S.updBusy;
+
+  if (!u && !S.updError) return `
+    <section class="chsec"><h2 class="chh">Updates</h2>
+      <p style="font-size:11.5px;color:var(--muted);margin-bottom:9px">
+        The desktop app and the Claude Code plugin update by different routes.
+        Nothing is checked until you ask — this reaches GitHub.</p>
+      <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
+        ${busy==="check"?"Checking…":"Check for updates"}</button>
+    </section>`;
+
+  if (S.updError) return `
+    <section class="chsec"><h2 class="chh">Updates</h2>
+      <div class="note b"><b>Could not check.</b> ${esc(S.updError)}</div>
+      <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
+        ${busy==="check"?"Checking…":"Try again"}</button>
+    </section>`;
+
+  /* One row per component. `managed:false` is a real answer, not an error --
+     a source checkout has no .app to replace, and that is worth saying. */
+  const row = (c, label, installBtn) => {
+    if (!c.managed) return `<div class="kv"><b>${esc(label)}</b>
+      <span><span class="pill p-mut">not managed here</span> ${esc(c.reason||"")}</span></div>`;
+    const cur = c.installed || "unknown";
+    const state = c.error
+      ? `<span class="pill p-warn">check failed</span> <span class="why">${esc(c.error)}</span>`
+      : c.update_available
+        ? `<span class="pill p-acc">${esc(c.latest)} available</span>`
+        : `<span class="pill p-ok">up to date</span>`;
+    return `<div class="kv"><b>${esc(label)}</b><span>
+      <code>${esc(cur)}</code> ${state}
+      ${c.update_available && !c.error ? installBtn : ""}
+    </span></div>
+    <div class="kv"><b></b><span class="why">${esc(c.note||"")}</span></div>`;
+  };
+
+  const d = u.desktop || {}, p = u.plugin || {};
+  const dBtn = `<button class="btn" type="button" data-upd="desktop"
+      ${busy?"disabled":""}>${busy==="desktop"?"Downloading…":"Download & install"}</button>`;
+  const pBtn = `<button class="btn" type="button" data-upd="plugin"
+      ${busy?"disabled":""}>${busy==="plugin"?"Updating…":"Update now"}</button>`;
+
+  return `
+    <section class="chsec"><h2 class="chh">Updates</h2>
+      ${S.updMsg?`<div class="note"><b>${esc(S.updMsg)}</b></div>`:""}
+      ${row(d, "Desktop app", dBtn)}
+      ${row(p, "Plugin", pBtn)}
+      <p style="margin-top:9px">
+        <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
+          ${busy==="check"?"Checking…":"Re-check"}</button>
+        ${d.release_url?`<a class="btn" href="${esc(d.release_url)}" target="_blank"
+           rel="noreferrer">Release notes</a>`:""}
+      </p>
+      ${d.update_available?`<div class="note"><b>Installing the desktop update quits Sutra.</b>
+        The download is checksum-verified and Gatekeeper-checked before anything is replaced;
+        the swap happens once the app exits, and it reopens itself.</div>`:""}
+    </section>`;
+}
+
+async function checkUpdates(){
+  S.updBusy = "check"; S.updError = null; S.updMsg = null; render();
+  try { S.upd = await apiGet("/api/updates"); }
+  catch (e) { S.updError = e.message; S.upd = null; }
+  S.updBusy = null; render();
+}
+
+async function installUpdate(which){
+  S.updBusy = which; S.updError = null; S.updMsg = null; render();
+  try {
+    const r = await apiPost("/api/updates/" + which, {});
+    S.updMsg = r.note || "Done.";
+    /* Re-read rather than assuming the install moved the version: the plugin
+       reports "already current" too, and claiming a move that did not happen
+       is the kind of lie an operator finds out about later. */
+    try { S.upd = await apiGet("/api/updates"); } catch (e) {}
+  } catch (e) {
+    S.updError = e.message;
+  }
+  S.updBusy = null; render();
+}
+
 SCREENS.settings = () => {
   if (!SETTINGS) return `<div class="zero"><h4>Settings unavailable</h4>
     <p>${esc(S.runtimeError || S.setError || "GET /api/settings has not answered.")}</p>
@@ -3240,6 +3338,7 @@ SCREENS.settings = () => {
       runtime call failed, so the rest of the panel is still live. Reload to retry.</p>`:""}</div>`;
   const st = SETTINGS;
   const active = st.provider;
+  const upd = updatesHtml();
   const banner = S.setError
     ? `<div class="note b"><b>The last change was refused.</b> ${esc(S.setError)}</div>`
     : S.setOk ? `<div class="note"><b>Saved.</b> ${esc(S.setOk)}</div>` : "";
@@ -3293,6 +3392,7 @@ SCREENS.settings = () => {
 
   return `
     ${banner}
+    ${upd}
     ${fold("set.prov", "Provider", esc(active||"none runnable"), `
       <p style="margin-bottom:9px">Which AI CLI this panel drives. A provider is offered only when
         its binary is on PATH, it has a config directory, <i>and</i> this build has an adapter for it;
@@ -4159,6 +4259,12 @@ function wire(){
   wireDivider();
 
   /* ── settings: every control posts, and reports the server's refusal ── */
+  /* ── updates ── */
+  scBody.querySelectorAll("[data-upd]").forEach(b=>b.onclick=()=>{
+    const what = b.dataset.upd;
+    if (what === "check") checkUpdates(); else installUpdate(what);
+  });
+
   scBody.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{
     if (b.disabled) return;                       /* not runnable -- the reason is on screen */
     S.setBusy = "prov:" + b.dataset.prov; S.setError = null; S.setOk = null; render();

@@ -2,6 +2,30 @@
 
 **status**: active · **updated**: 2026-08-06
 
+## 2.68.1
+
+- **You can now check for, and install, both updates from Settings.** There was
+  no way to find out either was out of date, and the two update by completely
+  different mechanisms — showing them as one "check for updates" would
+  misdescribe both:
+  - **Desktop app** — no auto-updater at all. Squirrel is in the bundle only
+    because Electron ships it; nothing wires it up. It changes only when
+    someone installs a DMG.
+  - **Plugin** — already self-updates once a day at session start, applying to
+    the *next* session. The button only makes it immediate.
+- Checking is never automatic: nothing runs on boot, because a desktop app that
+  phones home every launch is a different product decision from one with a
+  button.
+- Installing the desktop update is split, because a bundle cannot overwrite
+  itself while running. The app downloads and **verifies** — sha256 against the
+  published checksum, `spctl` (notarized, not merely signed), and
+  `codesign --verify` on the bundle inside the mounted image — and only then
+  arms a detached helper that waits for the app to exit, swaps, and reopens.
+  Any gate failing leaves `/Applications` untouched and says which one.
+- `GET /api/updates`, `POST /api/updates/plugin`, `POST /api/updates/desktop`.
+  All of it lives in the Python backend, since the Electron shell has no IPC
+  surface — which also makes it testable without a server.
+
 ## 2.68.0
 
 - Telemetry is ON by default (anonymous, once daily) per founder direction D64;
