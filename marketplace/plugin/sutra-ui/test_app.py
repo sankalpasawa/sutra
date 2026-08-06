@@ -1966,6 +1966,125 @@ class TestAutomationReader(unittest.TestCase):
                           "every source must name the file it read")
 
 
+class TestUpdates(unittest.TestCase):
+    """Version comparison and component state. No network in these tests: the
+    remote lookups are stubbed, because a test that depends on GitHub fails for
+    reasons that have nothing to do with this code."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import updates
+        from pathlib import Path as _P
+        self.U = updates
+        self.Path = _P
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_version_comparison(self):
+        n = self.U._newer
+        self.assertTrue(n("2.68.0", "2.67.1"))
+        self.assertTrue(n("2.67.1", "2.67.0"))
+        self.assertTrue(n("2.7.0", "2.67.0") is False, "component-wise, not string")
+        self.assertFalse(n("2.67.0", "2.67.0"))
+        self.assertFalse(n("2.66.0", "2.67.0"))
+
+    def test_an_unreadable_version_never_looks_newer(self):
+        """A parse failure must not present itself as an available update --
+        that would prompt an operator to install over something fine."""
+        self.assertFalse(self.U._newer("", "2.67.0"))
+        self.assertFalse(self.U._newer(None, "2.67.0"))
+        self.assertFalse(self.U._newer("garbage", "2.67.0"))
+        self.assertFalse(self.U._newer("2.68.0", None))
+
+    def test_source_checkout_reports_unmanaged_not_broken(self):
+        """Running from a checkout there is no .app to replace. That is an
+        answer, not an error, and must not render as a failed check."""
+        real = self.U.app_bundle
+        self.U.app_bundle = lambda: None
+        try:
+            d = self.U.desktop_state()
+            self.assertFalse(d["managed"])
+            self.assertIsNone(d["installed"])
+            self.assertIn("checkout", d["reason"])
+            self.assertNotIn("error", d)
+        finally:
+            self.U.app_bundle = real
+
+    def test_desktop_state_reports_an_available_update(self):
+        app = self.Path(self.tmp) / "Sutra.app"
+        (app / "Contents").mkdir(parents=True)
+        import plistlib
+        with open(app / "Contents" / "Info.plist", "wb") as fh:
+            plistlib.dump({"CFBundleShortVersionString": "2.67.0"}, fh)
+        real_app, real_latest = self.U.app_bundle, self.U._latest_desktop
+        self.U.app_bundle = lambda: app
+        self.U._latest_desktop = lambda: {
+            "version": "2.67.1", "tag": "v2.67.1-desktop", "url": "https://x",
+            "asset": "Sutra-arm64.dmg", "download_url": "https://x/d.dmg",
+            "size": 1, "sha256_url": "https://x/d.sha256", "error": None}
+        try:
+            d = self.U.desktop_state()
+            self.assertTrue(d["managed"])
+            self.assertEqual(d["installed"], "2.67.0")
+            self.assertEqual(d["latest"], "2.67.1")
+            self.assertTrue(d["update_available"])
+            self.assertIn("no background updater", d["note"])
+        finally:
+            self.U.app_bundle, self.U._latest_desktop = real_app, real_latest
+
+    def test_a_release_without_this_arch_is_not_an_update(self):
+        """An asset for the other Mac is not something this one can install."""
+        app = self.Path(self.tmp) / "S.app"
+        (app / "Contents").mkdir(parents=True)
+        import plistlib
+        with open(app / "Contents" / "Info.plist", "wb") as fh:
+            plistlib.dump({"CFBundleShortVersionString": "2.67.0"}, fh)
+        real_app, real_latest = self.U.app_bundle, self.U._latest_desktop
+        self.U.app_bundle = lambda: app
+        self.U._latest_desktop = lambda: {
+            "version": "2.99.0", "asset": "Sutra-arm64.dmg", "download_url": None,
+            "error": "release v2.99.0-desktop has no Sutra-arm64.dmg asset"}
+        try:
+            d = self.U.desktop_state()
+            self.assertIsNotNone(d["error"])
+        finally:
+            self.U.app_bundle, self.U._latest_desktop = real_app, real_latest
+
+    def test_installed_plugin_version_is_the_highest_cache_dir(self):
+        """Directories, not the manifest: an update lands as a NEW cache dir, so
+        the manifest under the old root still reads the old number."""
+        root = self.Path(self.tmp) / "core"
+        for v in ("2.9.0", "2.66.0", "2.67.0", "not-a-version"):
+            (root / v).mkdir(parents=True)
+        old = os.environ.get("SUTRA_CACHE_ROOT")
+        os.environ["SUTRA_CACHE_ROOT"] = str(root)
+        try:
+            self.assertEqual(self.U._installed_plugin_version(), "2.67.0")
+        finally:
+            if old is None:
+                del os.environ["SUTRA_CACHE_ROOT"]
+            else:
+                os.environ["SUTRA_CACHE_ROOT"] = old
+
+    def test_install_desktop_refuses_an_unwritable_target(self):
+        """Rather than half-replacing a bundle it cannot finish replacing."""
+        app = self.Path("/System/Library/CoreServices/Finder.app")
+        if not app.is_dir():
+            self.skipTest("no unwritable .app to test against")
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.install_desktop(__file__, app_path=str(app))
+        self.assertIn("writable", str(cm.exception))
+
+    def test_install_desktop_refuses_a_missing_image(self):
+        app = self.Path(self.tmp) / "W.app"
+        (app / "Contents").mkdir(parents=True)
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.install_desktop(str(self.Path(self.tmp) / "nope.dmg"), app_path=str(app))
+        self.assertIn("no such disk image", str(cm.exception))
+
+
 class TestShellPathHarvest(unittest.TestCase):
     """FIELD INCIDENT: `claude` undetected on other people's Macs.
 
