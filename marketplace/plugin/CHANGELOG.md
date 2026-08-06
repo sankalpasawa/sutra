@@ -1,3 +1,50 @@
+## 2.67.0
+
+- The panel was dead on boot, and had been on main. `5781a2f` deleted
+  `<div id="tenantMenu">` from the markup and left the code that wired it, so
+  `getElementById` returned null, the next `addEventListener` threw, and
+  `boot()` -- the last statement in the script -- never ran. Nothing was
+  fetched. Settings said "GET /api/settings has not answered" (it was never
+  called), Departments and Directory said "No domains" (58 were on disk), the
+  session list showed one empty local session (47 real transcripts existed),
+  and the footer read "no tenant". Every endpoint behind those screens returns
+  200.
+- Removed the rest of the tenant surface, which is what left the app in that
+  half-removed state: the chip, the footer label, the chooser, the gate, the
+  dead Tenants screen, `inTenant`/`scopeQ`/`META.tenant_id`/`showAcme`, the
+  `?tenant=` on four endpoints, and boot()'s silent `if (!S.tenant) return`.
+  Tenancy was already removed server-side; the client had not caught up.
+- Settings could be reported unavailable when it was fine: `loadRuntime` used
+  `Promise.all`, so a failure from `/api/skills` discarded a good
+  `/api/settings` response and nulled SETTINGS for the life of the window.
+  Now `allSettled`, and the error names which endpoint actually failed.
+- Terminal, three faults. `termSetMode` called `mountTerm()`, which has never
+  existed, so switching Shell/Claude threw after persisting the new mode --
+  the toggle moved and the PTY did not. `.termbody{display:flex}` overrode
+  `[hidden]{display:none}`, so the Preview tab left the terminal laid out at
+  zero size, it fit itself to 2x1 and pushed that winsize into the PTY. And
+  nothing re-fit on the way back. Floored in the client, floored again in the
+  `/ws/term` handler, and re-fit when the tab is shown.
+- Composer restored to the theme. It became a `<textarea>` in `03c09cc` while
+  the styling still selected `.pc input`, and `font:inherit` reset it to 16px,
+  so it rendered as a bordered box with a browser focus ring.
+- New Automation screen. The dispatcher has real state and is read from it
+  (`.sutra/*.jsonl`, `.enforcement/*.jsonl`, read-only). The scheduler has
+  none: cadence is a daemon-side tick in the Native engine (ADR-017), that
+  daemon does not run in this install, and the v1.0 scheduler does not
+  evaluate cron at all. It reports liveness and states the absence rather than
+  drawing "0 runs today", which would claim a scheduler ran and found nothing.
+- History crashed on real data: two `domain_updated` events carry no `ts_ms`,
+  and `fmt()` threw a RangeError that took the whole screen down. An undated
+  row is a fact about that row.
+- Fixed during this release: removing the tenant popover by line range also
+  deleted `.app`'s grid, `.rail`'s flex column and the narrow-window media
+  query that happened to sit inside the range, which collapsed the
+  three-column layout and stacked the rail across the top. Restored, and
+  pinned by a test.
+- 129 python + 58 node tests. The new regression tests are mutation-checked:
+  reintroducing each bug fails exactly its own test.
+
 ## 2.66.0
 
 - Daily auto-update. The first session each day refreshes the marketplace and
