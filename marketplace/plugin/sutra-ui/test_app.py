@@ -57,6 +57,36 @@ def _post(path, body):
     return _http("POST", path, body)
 
 
+
+def _without_mcp(args):
+    """The argv minus the Sutra MCP flags.
+
+    Three tests below pin the baseline argv exactly, which is the right thing to
+    pin -- flag ORDER is load-bearing and a reordering is a real regression.
+    Sutra's own tool server adds --mcp-config/--strict-mcp-config and appends
+    mcp__sutra__* to --allowedTools on every run, which is not what those tests
+    are about. They compare the argv with those removed, and TestAgentArgsMcp
+    covers the flags themselves.
+    """
+    out, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a == "--mcp-config":
+            i += 2; continue
+        if a == "--strict-mcp-config":
+            i += 1; continue
+        if a == "--allowedTools":
+            vals = []
+            j = i + 1
+            while j < len(args) and not str(args[j]).startswith("--"):
+                vals.append(args[j]); j += 1
+            vals = [v for v in vals if v != "mcp__sutra__*"]
+            if vals:
+                out.append("--allowedTools"); out.extend(vals)
+            i = j; continue
+        out.append(a); i += 1
+    return out
+
 class TestApp(unittest.TestCase):
     """One shared server for the whole class -- read-mostly endpoints don't
     need per-test isolation, but the registry dir is fresh for THIS run only
@@ -293,7 +323,7 @@ class TestApp(unittest.TestCase):
         already worked must come out in the same order -- a reorder here is a
         behaviour change nobody asked for."""
         import app as A
-        a = A.build_agent_args("claude", "hi", "plan")
+        a = _without_mcp(A.build_agent_args("claude", "hi", "plan"))
         self.assertEqual(a, ["claude", "-p", "hi", "--output-format", "stream-json",
                              "--verbose", "--include-partial-messages",
                              "--permission-mode", "plan"])
@@ -303,13 +333,13 @@ class TestApp(unittest.TestCase):
         socket, which reads as 'the panel is broken' rather than 'that was
         wrong'."""
         import app as A
-        a = A.build_agent_args("claude", "hi", "plan", opts={
+        a = _without_mcp(A.build_agent_args("claude", "hi", "plan", opts={
             "fallback_model": "not-a-model",   # not catalogued
             "effort": "bogus",                 # not a level
             "max_budget_usd": 0,               # 0 means "spend nothing" = a hang
             "allowed_tools": [None, "", 123],  # junk, not stringified
             "add_dir": ["/etc"],               # outside $HOME
-        })
+        }))
         self.assertNotIn("--fallback-model", a)
         self.assertNotIn("--effort", a)
         self.assertNotIn("--max-budget-usd", a)
@@ -364,7 +394,7 @@ class TestApp(unittest.TestCase):
         tests rely on must be byte-identical to what it always was."""
         import app as A
         self.assertEqual(
-            A.build_agent_args("claude", "hello", "plan"),
+            _without_mcp(A.build_agent_args("claude", "hello", "plan")),
             ["claude", "-p", "hello", "--output-format", "stream-json",
              "--verbose", "--include-partial-messages", "--permission-mode", "plan"])
 
@@ -2702,3 +2732,164 @@ class TestRoutines(unittest.TestCase):
              "schedule": {"preset": "daily", "hour": 9, "minute": 0}}
         b.update(kw)
         return b
+
+
+class TestProposals(unittest.TestCase):
+    """The chat agent may ASK; only the operator may APPLY.
+
+    These pin the property the whole design rests on: a proposal is INERT.
+    Writing one must not create a routine, touch launchd, or change settings.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import proposals
+        self.P = proposals
+        self.tmp = tempfile.mkdtemp()
+        self._env = dict(os.environ)
+        os.environ["SUTRA_UI_PROPOSALS"] = os.path.join(self.tmp, "proposals")
+
+    def tearDown(self):
+        os.environ.clear(); os.environ.update(self._env)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_only_known_kinds_can_be_proposed(self):
+        """A positive allow-list: adding a tool to the MCP server is not enough
+        on its own to make something applicable."""
+        with self.assertRaises(ValueError):
+            self.P.create("settings.write", {"permission_mode": "bypassPermissions"},
+                          "turn on write mode")
+        self.P.create("routine.create", {"id": "x"}, "ok")
+
+    def test_creating_a_proposal_applies_nothing(self):
+        p = self.P.create("routine.delete", {"id": "something"}, "delete it")
+        self.assertEqual(p["status"], "pending")
+        self.assertIsNone(p["result"])
+        # proposals.py must not even be ABLE to apply: it never imports routines
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "proposals.py"), encoding="utf-8").read()
+        self.assertNotIn("import routines", src,
+                         "proposals.py must not be able to mutate anything itself")
+
+    def test_rejecting_never_calls_the_applier(self):
+        p = self.P.create("routine.run", {"id": "r"}, "run it")
+        called = []
+        out = self.P.decide(p["id"], False, apply_fn=lambda k, a: called.append(k))
+        self.assertEqual(out["status"], "rejected")
+        self.assertEqual(called, [], "a rejection must not apply anything")
+
+    def test_approving_applies_exactly_once(self):
+        p = self.P.create("routine.run", {"id": "r"}, "run it")
+        calls = []
+        out = self.P.decide(p["id"], True,
+                            apply_fn=lambda k, a: (calls.append((k, a)), {"ok": True})[1])
+        self.assertEqual(out["status"], "approved")
+        self.assertEqual(len(calls), 1)
+        # and it cannot be applied a second time
+        with self.assertRaises(ValueError):
+            self.P.decide(p["id"], True, apply_fn=lambda k, a: calls.append(k))
+        self.assertEqual(len(calls), 1, "a decided proposal must not re-apply")
+
+    def test_a_failed_apply_is_recorded_not_rolled_back(self):
+        """The operator already said yes. Re-offering the click would invite them
+        to approve something that has already been tried and did not work."""
+        p = self.P.create("routine.create", {"id": "x"}, "make it")
+        def boom(kind, args):
+            raise RuntimeError("launchd refused")
+        out = self.P.decide(p["id"], True, apply_fn=boom)
+        self.assertEqual(out["status"], "failed")
+        self.assertIn("launchd refused", out["result"]["error"])
+        self.assertNotEqual(out["status"], "pending")
+
+    def test_an_old_proposal_expires_rather_than_waiting_forever(self):
+        p = self.P.create("routine.delete", {"id": "r"}, "delete")
+        rec = self.P.get(p["id"])
+        rec["created_ms"] = int((time.time() - self.P.TTL_SECONDS - 60) * 1000)
+        self.P._write(rec)
+        self.assertEqual(self.P.listing()[0]["status"], "expired")
+        with self.assertRaises(ValueError):
+            self.P.decide(p["id"], True, apply_fn=lambda k, a: None)
+
+
+class TestMcpServer(unittest.TestCase):
+    """The tool surface the chat agent gets. Driven as a real subprocess over
+    stdio, because that is exactly how the CLI runs it."""
+
+    def _rpc(self, msgs, env=None):
+        here = os.path.dirname(os.path.abspath(__file__))
+        e = dict(os.environ); e.update(env or {})
+        p = subprocess.run([sys.executable, os.path.join(here, "sutra_mcp.py")],
+                           input="\n".join(json.dumps(m) for m in msgs),
+                           capture_output=True, text=True, timeout=60, env=e)
+        return [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
+
+    def test_it_speaks_mcp(self):
+        out = self._rpc([{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}])
+        init = [m for m in out if m.get("id") == 1][0]
+        self.assertEqual(init["result"]["serverInfo"]["name"], "sutra")
+        tools = [m for m in out if m.get("id") == 2][0]["result"]["tools"]
+        names = {t["name"] for t in tools}
+        self.assertIn("sutra_routine_create", names)
+        for t in tools:
+            self.assertTrue(t["description"], "every tool needs a description")
+            self.assertEqual(t["inputSchema"]["type"], "object")
+
+    def test_a_mutating_tool_returns_a_proposal_not_a_result(self):
+        """The wording matters: the agent must not tell the operator it is done."""
+        tmp = tempfile.mkdtemp()
+        try:
+            out = self._rpc(
+                [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                 {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                     "name": "sutra_routine_create", "arguments": {
+                         "id": "t-prop", "description": "d", "prompt": "p",
+                         "cwd": os.path.expanduser("~"),
+                         "schedule": {"preset": "daily", "hour": 9, "minute": 0}}}}],
+                env={"SUTRA_UI_PROPOSALS": os.path.join(tmp, "props"),
+                     "SUTRA_UI_ROUTINES": os.path.join(tmp, "routines"),
+                     "SUTRA_UI_LAUNCHAGENTS": os.path.join(tmp, "agents")})
+            txt = [m for m in out if m.get("id") == 2][0]["result"]["content"][0]["text"]
+            self.assertIn("PROPOSAL", txt)
+            self.assertIn("Nothing has changed yet", txt)
+            # and NOTHING was created
+            self.assertFalse(os.path.isdir(os.path.join(tmp, "routines"))
+                             and os.listdir(os.path.join(tmp, "routines")))
+            self.assertFalse(os.path.isdir(os.path.join(tmp, "agents"))
+                             and os.listdir(os.path.join(tmp, "agents")))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_an_invalid_routine_is_refused_before_it_is_proposed(self):
+        """A proposal that cannot apply is worse than a refusal -- the operator
+        would approve it and watch it fail for a reason nobody showed them."""
+        tmp = tempfile.mkdtemp()
+        try:
+            out = self._rpc(
+                [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                 {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                     "name": "sutra_routine_create", "arguments": {
+                         "id": "Not Valid", "description": "d", "prompt": "p",
+                         "cwd": "/etc"}}}],
+                env={"SUTRA_UI_PROPOSALS": os.path.join(tmp, "props")})
+            res = [m for m in out if m.get("id") == 2][0]["result"]
+            self.assertTrue(res.get("isError"))
+            self.assertFalse(os.path.isdir(os.path.join(tmp, "props"))
+                             and os.listdir(os.path.join(tmp, "props")))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestAgentArgsMcp(unittest.TestCase):
+    def test_the_chat_run_gets_sutra_tools_and_cannot_stall_on_them(self):
+        import app as A
+        args = A.build_agent_args("/usr/bin/claude", "hi", "plan")
+        self.assertIn("--mcp-config", args)
+        self.assertIn("--strict-mcp-config", args,
+                      "without this the CLI also loads the user's global servers")
+        self.assertEqual(args[args.index("--allowedTools") + 1], "mcp__sutra__*",
+                         "a -p run has nobody to answer a permission prompt, so "
+                         "these must be pre-allowed or the turn stalls")
+        cfg = json.loads(args[args.index("--mcp-config") + 1])
+        self.assertEqual(cfg["mcpServers"]["sutra"]["type"], "stdio")
+        self.assertTrue(cfg["mcpServers"]["sutra"]["args"][0].endswith("sutra_mcp.py"))

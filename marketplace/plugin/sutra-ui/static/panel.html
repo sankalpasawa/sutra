@@ -2123,6 +2123,8 @@ const S = {
   upd:null, updBusy:null, updError:null, updMsg:null,
   /* routines: null until the screen is opened (it shells out to launchctl). */
   rt:null, rtError:null, rtBusy:null, rtMsg:null, rtForm:null, rtRuns:{}, rtOpen:{},
+  /* what the chat agent asked for; nothing applies until approved. */
+  props:null, propBusy:null, propError:null,
   /* transient, self-clearing note -- see the pane close handler. */
   toast:null,
   /* permission mode confirmation, at chat level -- see permSelect(). */
@@ -3678,6 +3680,51 @@ function rtRunRow(r){
     <td>${r.detail?esc(String(r.detail).slice(0,120)):""}</td></tr>`;
 }
 
+/* What the chat agent asked for. Rendered ABOVE the routines themselves and on
+   the empty screen too -- a proposal the operator cannot see is a request that
+   silently expires, which is worse than not offering the capability at all.
+
+   The agent's own summary is shown verbatim and is never trusted to decide
+   anything: it is a label written by an LLM acting on text that may not have
+   come from the operator. The ARGUMENTS are what actually applies, so they are
+   shown too, in full. */
+function proposalsHtml(){
+  const all = S.props || [];
+  const open = all.filter(p=>p.status==="pending");
+  if (!open.length && !S.propError) return "";
+  if (S.propError) return `<div class="note b"><b>Could not read proposals.</b>
+    ${esc(S.propError)}</div>`;
+  const arg = p => {
+    const a = p.args || {};
+    if (p.kind === "routine.create")
+      return `<code>${esc(a.id||"")}</code> · ${esc((a.schedule||{}).preset||"manual")}
+              · runs in <code>${esc(a.cwd||"")}</code>
+              · <code>${esc(a.permission_mode||"dontAsk")}</code>
+              · $${esc(String((a.opts||{}).max_budget_usd??"?"))}/run`;
+    if (p.kind === "routine.update")
+      return `<code>${esc(a.id||"")}</code> — changes:
+              <code>${esc(Object.keys(a.patch||{}).join(", "))}</code>`;
+    return `<code>${esc(a.id||"")}</code>`;
+  };
+  return `<div class="note" style="border-left-color:var(--acc)">
+    <b>${open.length} request${open.length===1?"":"s"} from the chat</b>
+    <p style="margin:5px 0;color:var(--faint)">Sutra asked to do the following.
+      Nothing has happened yet — these apply only if you approve them.</p>
+    ${open.map(p=>`<div class="kv" style="align-items:flex-start">
+      <b>${esc(p.kind.replace("routine.",""))}</b>
+      <span>
+        <div>${esc(p.summary||"")}</div>
+        <div class="why" style="margin-top:3px">${arg(p)}</div>
+        <div style="margin-top:7px">
+          <button class="btn" type="button" data-prok="${esc(p.id)}"
+            ${S.propBusy?"disabled":""}>${S.propBusy===p.id?"Applying…":"Approve"}</button>
+          <button class="btn" type="button" data-prno="${esc(p.id)}"
+            ${S.propBusy?"disabled":""}>Reject</button>
+        </div>
+      </span></div>`).join("")}
+  </div>`;
+}
+
 function rtCard(r){
   const runs = S.rtRuns[r.id];
   const sched = (r.schedule||{}).human || "—";
@@ -3746,7 +3793,7 @@ SCREENS.routines = () => {
   const banner = S.rtMsg ? `<div class="note"><b>${esc(S.rtMsg)}</b></div>`
     : (S.rtError ? `<div class="note b">${esc(S.rtError)}</div>` : "");
 
-  if (!list.length && !S.rtForm) return `${caveat}${orphan}${banner}
+  if (!list.length && !S.rtForm) return `${caveat}${orphan}${banner}${proposalsHtml()}
     <div class="zero"><h4>No routines yet</h4>
       <p>A routine is a prompt this Mac runs on a schedule — a morning brief, a nightly
          check, a weekly summary — without you opening anything.</p>
@@ -3754,7 +3801,7 @@ SCREENS.routines = () => {
          a launchd user agent. Nothing runs until you create one.</p>
       <p><button class="btn" type="button" data-rtnew>New routine</button></p></div>`;
 
-  return `${caveat}${orphan}${banner}
+  return `${caveat}${orphan}${banner}${proposalsHtml()}
     <p style="margin-bottom:10px"><button class="btn" type="button" data-rtnew
       >New routine</button> <button class="btn" type="button" data-rtreload>Re-check</button></p>
     ${rtCreateForm()}
@@ -5341,6 +5388,11 @@ function wire(){
   });
 
   /* ── routines ── */
+  scBody.querySelectorAll("[data-prok]").forEach(b=>b.onclick=()=>
+    decideProposal(b.dataset.prok, true));
+  scBody.querySelectorAll("[data-prno]").forEach(b=>b.onclick=()=>
+    decideProposal(b.dataset.prno, false));
+
   scBody.querySelectorAll("[data-rtnew]").forEach(b=>b.onclick=()=>{
     S.rtForm = {preset:"daily", hour:9, minute:0, weekday:1, model:"",
                 permission_mode:(S.rt&&S.rt.permission_modes||["dontAsk"])[0],
@@ -5603,7 +5655,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     if (S.screen === "automation") loadAuto(false);
-    if (S.screen === "routines") loadRoutines(false);
+    if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -5882,6 +5934,21 @@ async function loadAuto(force){
     S.autoError = e.message; S.auto = null;
   }
   render();
+}
+async function loadProposals(force){
+  if (S.props && !force) return;
+  try { S.props = (await apiGet("/api/proposals")).proposals || []; S.propError = null; }
+  catch (e) { S.propError = e.message; S.props = null; }
+  render();
+}
+async function decideProposal(pid, approve){
+  S.propBusy = pid; S.propError = null; render();
+  try {
+    await apiPost("/api/proposals/" + encodeURIComponent(pid) + "/decide", {approve});
+    await loadProposals(true);
+    await loadRoutines(true);      /* an approval may have created one */
+  } catch (e) { S.propError = e.message; }
+  S.propBusy = null; render();
 }
 async function loadRoutines(force){
   if (S.rt && !force) return;

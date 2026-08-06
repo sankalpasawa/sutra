@@ -77,6 +77,7 @@ import reorg_sim as R  # noqa: E402
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
 import routines   # local scheduled routines (launchd + the claude CLI; no engine access)
+import proposals  # what the chat agent asks for; nothing here applies without approval
 
 # --------------------------------------------------------------- drafts ----
 # Draft plan storage. Outside SUTRA_NATIVE_HOME by design (§8.5.9 "What it
@@ -1271,6 +1272,46 @@ def api_tenants():
 
     out.sort(key=lambda r: (0 if r["is_default"] else 1, r["tenant_id"]))
     return out
+
+
+# =========================================================== proposals ======
+# The chat agent can PROPOSE mutations (see sutra_mcp.py). Applying one is a
+# separate, human act. The apply switch lives HERE rather than in proposals.py
+# so that module never imports routines and cannot mutate anything by itself.
+
+def _apply_proposal(kind, args):
+    if kind == "routine.create":
+        rec, launchd = routines.create(args)
+        return {"routine": rec["id"], "launchd_ok": launchd.get("ok")}
+    if kind == "routine.update":
+        rec, launchd = routines.update(args["id"], args.get("patch") or {})
+        return {"routine": rec["id"], "launchd_ok": launchd.get("ok")}
+    if kind == "routine.delete":
+        return routines.delete(args["id"])
+    if kind == "routine.run":
+        return routines.run_now(args["id"])
+    raise ValueError("no way to apply %r" % kind)
+
+
+@router.get("/proposals")
+def api_proposals(pending_only: bool = False):
+    return {"proposals": proposals.listing(include_decided=not pending_only),
+            "store": str(proposals.store_dir())}
+
+
+@router.post("/proposals/{pid}/decide")
+def api_proposal_decide(pid: str, body: Dict[str, Any]):
+    """approve=true applies it; approve=false rejects it. There is no third
+    option and no automatic path -- an unapproved proposal simply expires."""
+    if "approve" not in body:
+        raise HTTPException(status_code=400, detail='send {"approve": true|false}')
+    try:
+        return proposals.decide(pid, bool(body["approve"]),
+                                apply_fn=_apply_proposal)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no proposal %r" % pid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ============================================================ routines ======

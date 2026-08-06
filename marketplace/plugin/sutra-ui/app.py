@@ -12,6 +12,7 @@ import pty
 import shutil
 import signal
 import struct
+import sys
 import termios
 from pathlib import Path
 
@@ -157,6 +158,30 @@ def _flag_money(value):
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 
+def _sutra_mcp_config():
+    """Inline JSON for --mcp-config, or "" when the server is not present.
+
+    Passed as a STRING rather than a file so there is no temp file to leak, no
+    path for another process to tamper with between write and read, and nothing
+    to clean up when the turn ends.
+
+    The interpreter is THIS one (sys.executable): in the packaged app that is
+    the bundled CPython inside the .app, which is the only python guaranteed to
+    exist on the machine and to have the modules sutra_mcp imports.
+    """
+    script = HERE / "sutra_mcp.py"
+    if not script.is_file():
+        return ""
+    return json.dumps({"mcpServers": {"sutra": {
+        "type": "stdio",
+        "command": sys.executable,
+        "args": [str(script)],
+        # Inherited by the server process; it uses these to find the same
+        # registry and stores the panel is reading.
+        "env": {"SUTRA_NATIVE_HOME": os.environ.get("SUTRA_NATIVE_HOME", "")},
+    }}})
+
+
 def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
                      opts=None, stream_input=False):
     """The full argv for one turn.
@@ -172,6 +197,24 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     """
     opts = opts if isinstance(opts, dict) else {}
     args = [agent_bin, "-p"]
+
+    # ---- Sutra's own tools ------------------------------------------------
+    # Without this the chat can DESCRIBE a routine but not make one: the CLI has
+    # no path back into this panel. sutra_mcp.py is a stdio MCP server the CLI
+    # spawns for THIS RUN via --mcp-config, so nothing is installed and the
+    # operator's global ~/.claude.json is never touched.
+    #
+    # --strict-mcp-config: use ONLY what we pass. Without it the CLI also loads
+    # whatever servers the user has configured globally, which would silently
+    # change what the panel's chat can reach depending on the machine.
+    #
+    # --allowedTools scoped to mcp__sutra__*: these tools must not sit behind an
+    # approval prompt, because a -p run has nobody to answer one -- the call
+    # would stall the turn. They are safe to pre-allow precisely because the
+    # mutating ones only write an inert proposal (see proposals.py).
+    mcp_cfg = _sutra_mcp_config()
+    if mcp_cfg:
+        args += ["--mcp-config", mcp_cfg, "--strict-mcp-config"]
     if stream_input:
         args += ["--input-format", "stream-json"]
     else:
@@ -209,6 +252,17 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
             args += ["--add-dir", real]
 
     allowed = _flag_list(opts.get("allowed_tools"), 64)
+    # ONE --allowedTools, not two. Sutra's own tools are appended to whatever the
+    # turn asked for rather than emitted as a second flag: the CLI takes this as
+    # a variadic list, so a second occurrence is a conflict, and whichever the
+    # parser kept would silently drop the other -- either losing the operator's
+    # per-turn allow-list or losing Sutra's tools, with no error either way.
+    #
+    # They are pre-allowed because a -p run has NOBODY to answer a permission
+    # prompt: a tool sitting behind one would stall the turn. That is safe here
+    # precisely because the mutating tools only write an inert proposal.
+    if mcp_cfg:
+        allowed = list(allowed) + ["mcp__sutra__*"]
     if allowed:
         args += ["--allowedTools"] + allowed
     denied = _flag_list(opts.get("disallowed_tools"), 64)
