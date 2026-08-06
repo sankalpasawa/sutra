@@ -34,8 +34,9 @@
  */
 "use strict";
 
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, shell, ipcMain } = require("electron");
 const { spawn, execFileSync } = require("child_process");
+const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -55,6 +56,20 @@ let win = null;
 let backend = null;      // the uvicorn child WE spawned, or null if we reused one
 let quitting = false;
 let pluginReport = null; // what installPlugin() did, for the first-run notice
+
+/* Desktop-control token. Minted here, handed to the backend WE spawn, and
+   required by the three update routes that can quit the app and replace the
+   bundle on disk. Those routes are otherwise reachable by any page in any
+   browser on this machine, which would make "replace /Applications/Sutra.app"
+   a thing a web page could ask for.
+
+   The token is only ever known for a backend we started. On the attach path
+   (isSutra() found a CLI-owned server) we have no token for it, arming is
+   refused with a 403, and automatic updating is simply off for that session --
+   which is the correct answer anyway: quitting this window would not stop a
+   backend somebody else owns. */
+const DESKTOP_TOKEN = crypto.randomBytes(32).toString("hex");
+let ownBackend = false;  // did WE spawn it? decides whether the token applies
 
 function fail(title, message) {
   dialog.showErrorBox(title, message);
@@ -247,6 +262,9 @@ function startBackend() {
         // from source -- a slow start that looks like a hang.
         ...(RUNTIME.kind === "bundled" ? { PYTHONDONTWRITEBYTECODE: "1" } : {}),
         ...editEnv(),
+        // Last, and deliberately after the shell environment: the desktop
+        // control token is ours to set and nothing inherited may override it.
+        SUTRA_DESKTOP_TOKEN: DESKTOP_TOKEN,
       } }
   );
   let stderr = "";
@@ -292,6 +310,9 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      // Two verbs, no token, no filesystem. See preload.js for why the panel
+      // cannot do this over HTTP like everything else.
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
@@ -343,6 +364,7 @@ async function boot() {
     // it rather than starting a second server on a pinned port.
     createWindow();
     firstRunNotice(wasProvisioned);
+    startUpdateSchedule();   // logs that it is off; see desktopControl()
     return;
   }
   if (await portBusy()) {
@@ -360,8 +382,16 @@ async function boot() {
     return fail("Sutra server did not start",
       `The backend did not answer on ${ORIGIN} within 45s.\n\n${err.slice(-1200) || "(no output)"}`);
   }
+  ownBackend = true;
+
+  // Before the window, not after. If a deferred update has to be finished the
+  // right thing to show is nothing at all -- a window that appears and closes
+  // half a second later reads as a crash.
+  if (await resolvePendingUpdate()) return;
+
   createWindow();
   firstRunNotice(wasProvisioned);
+  startUpdateSchedule();
 }
 
 /* What this install put on the machine, said out loud, once.
@@ -400,6 +430,151 @@ function firstRunNotice(wasProvisioned) {
                                title, message, detail, buttons: ["OK"] });
 }
 
+/* ============================================================ auto-update ===
+ *
+ * The SCHEDULE lives here and not in the Python backend on purpose. That same
+ * backend is what the CLI serves to a plain browser; a background poller there
+ * would make every CLI user phone GitHub on launch. Only this process has an
+ * app to replace, so only this process decides when to look.
+ *
+ * Mandatory (founder direction 2026-08-06): the user cannot decline. Cancelling
+ * the countdown is a DEFER -- the verified build stays staged and is applied on
+ * the way out, so the next launch is updated either way. Nothing is discarded
+ * and nothing is asked twice.
+ *
+ * Two exits from "staged", and they differ only in whether we reopen:
+ *   countdown fires -> arm(relaunch=true)  -> quit -> helper swaps -> reopens
+ *   user quits      -> arm(relaunch=false) -> exit -> helper swaps -> stays shut
+ * Relaunching after a deliberate Quit would countermand the user, so it does
+ * not happen.
+ */
+const UPDATE_FIRST_CHECK_MS = 90 * 1000;        // let the app finish starting
+const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;  // then every six hours
+let updateTimers = [];
+let armed = false;       // an installer is already waiting; do not spawn another
+
+function desktopControl() { return ownBackend; }
+
+/* JSON over loopback, with the control token attached. Bounded: this is called
+   on the quit path, and a hung request there would look like a frozen app. */
+function api(method, urlPath, body, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
+    const req = http.request(
+      { host: HOST, port: PORT, path: urlPath, method,
+        timeout: timeoutMs || 20000,
+        headers: Object.assign(
+          { "x-sutra-desktop-token": DESKTOP_TOKEN },
+          payload ? { "content-type": "application/json",
+                      "content-length": payload.length } : {}) },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => { if (text.length < 262144) text += c; });
+        res.on("end", () => {
+          let parsed = null;
+          try { parsed = JSON.parse(text); } catch {}
+          if (res.statusCode >= 200 && res.statusCode < 300) return resolve(parsed || {});
+          reject(new Error((parsed && parsed.detail) || `HTTP ${res.statusCode}`));
+        });
+      });
+    req.on("timeout", () => { req.destroy(new Error("timed out")); });
+    req.on("error", reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+/* Check, and stage in the background if there is something to stage. Failures
+   are logged and dropped: a machine that is offline, or behind a proxy, or
+   rate-limited by GitHub, must keep working exactly as before. */
+async function checkForUpdate() {
+  if (!desktopControl() || armed) return;
+  try {
+    const state = await api("GET", "/api/updates", undefined, 30000);
+    const d = (state && state.desktop) || {};
+    if (!d.managed || d.error || !d.update_available) return;
+    console.log(`[sutra] update ${d.installed} -> ${d.latest}; staging`);
+    const staged = await api("POST", "/api/updates/desktop/stage", {}, 600000);
+    if (staged && staged.staged) console.log(`[sutra] staged ${staged.version}`);
+  } catch (err) {
+    console.error("[sutra] update check failed:", err.message);
+  }
+}
+
+function startUpdateSchedule() {
+  if (!desktopControl()) {
+    console.log("[sutra] attached to a backend we did not start; auto-update off");
+    return;
+  }
+  updateTimers.push(setTimeout(checkForUpdate, UPDATE_FIRST_CHECK_MS));
+  updateTimers.push(setInterval(checkForUpdate, UPDATE_INTERVAL_MS));
+}
+
+/* Hand the helper this process -- its pid, so it waits for THE SHELL rather
+   than for whatever the backend's parent happens to be. */
+async function armUpdate(relaunch) {
+  const r = await api("POST", "/api/updates/desktop/arm",
+                      { wait_pid: process.pid, relaunch: !!relaunch }, 60000);
+  armed = true;
+  return r;
+}
+
+/* Launch-time reconciliation, before the window is shown.
+ *
+ * `installed` is read from THIS bundle, not from the backend: on the attach
+ * path the backend can be an older install still serving 8330, and treating its
+ * answer as our version would throw away an update that actually landed. */
+async function resolvePendingUpdate() {
+  if (!desktopControl()) return false;
+  let r;
+  try {
+    r = await api("POST", "/api/updates/desktop/resolve",
+                  { installed: app.getVersion() }, 20000);
+  } catch (err) {
+    console.error("[sutra] could not resolve pending update:", err.message);
+    return false;
+  }
+  if (r.applied) { console.log(`[sutra] update to ${r.applied} applied`); return false; }
+  if (r.gave_up) {
+    console.error(`[sutra] gave up on ${r.version}: ${r.error}`);
+    return false;
+  }
+  // "wait" means a helper from the previous run may still be counting down on
+  // a pid that is already gone. Arming a second one here is how a launch loop
+  // starts, so this launch does nothing and the next one re-decides.
+  if (r.action !== "arm") return false;
+
+  // The quit-time apply never ran (force reboot, SIGKILL, power loss). Finish
+  // it now: this is the one path that costs the user a visible restart, and it
+  // is the price of the promise that the next start is updated.
+  console.log(`[sutra] finishing deferred update ${r.version}`);
+  try {
+    await armUpdate(true);
+    quitting = true;
+    app.quit();
+    return true;
+  } catch (err) {
+    console.error("[sutra] could not arm deferred update:", err.message);
+    return false;
+  }
+}
+
+ipcMain.handle("sutra:update-apply", async () => {
+  if (!desktopControl()) return { ok: false, error: "this window does not control the backend" };
+  try {
+    await armUpdate(true);
+    quitting = true;
+    // Give the reply time to reach the renderer before the window goes.
+    setTimeout(() => app.quit(), 250);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("sutra:update-defer", async () => ({ ok: true, deferred: true }));
+
 // One Sutra window per machine. Electron enforces this properly; the shell
 // launcher could not, and four launchers were observed running at once.
 if (!app.requestSingleInstanceLock()) {
@@ -413,10 +588,43 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on("window-all-closed", () => app.quit());
 
-// Kill the child we started. A backend we merely attached to is left alone --
-// it belongs to whoever started it.
-app.on("before-quit", () => {
+/* Apply a deferred update on the way out, then kill the child we started.
+ *
+ * This is the PRIMARY apply path and the reason a cancelled countdown costs the
+ * user nothing: the bytes are already downloaded and verified, so the swap
+ * happens in the seconds after the app closes and the next launch is simply the
+ * new version. No restart, no flash, no second prompt.
+ *
+ * It has to run BEFORE the backend is killed -- arming is an HTTP call to it --
+ * which is why the quit is deferred once and re-issued. Bounded hard: a quit
+ * that hangs on a network call is a frozen app, and no update is worth that.
+ *
+ * A backend we merely attached to is left alone; it belongs to whoever started
+ * it, and desktopControl() is false there so nothing above applies either. */
+let quitArmAttempted = false;
+
+async function applyOnQuit() {
+  try {
+    const s = await api("GET", "/api/updates/staged", undefined, 3000);
+    if (!s || !s.pending || s.state !== "staged") return;
+    console.log(`[sutra] applying deferred update ${s.version} on quit`);
+    await armUpdate(false);          // do NOT reopen: the user chose to quit
+  } catch (err) {
+    // Nothing is lost. The manifest survives, and the next launch finishes it.
+    console.error("[sutra] deferred apply skipped:", err.message);
+  }
+}
+
+app.on("before-quit", (e) => {
+  if (!quitArmAttempted && desktopControl() && !armed) {
+    quitArmAttempted = true;
+    e.preventDefault();
+    applyOnQuit().then(() => app.quit(), () => app.quit());
+    return;
+  }
   quitting = true;
+  updateTimers.forEach((t) => { clearTimeout(t); clearInterval(t); });
+  updateTimers = [];
   if (backend && backend.exitCode === null) {
     try { backend.kill("SIGTERM"); } catch {}
     setTimeout(() => { try { backend.kill("SIGKILL"); } catch {} }, 2000);

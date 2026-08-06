@@ -67,6 +67,10 @@ const source = extractScript(html);
 
 /* ── 2. the smallest DOM that lets the script finish parsing ───────────── */
 
+/* Replaced by tests that mount real elements on document.body. Default is a
+   no-op so nothing outside those tests changes behaviour. */
+let onNodeRemove = () => {};
+
 function makeNode(tag) {
   const node = {
     tagName: (tag || "div").toUpperCase(),
@@ -91,6 +95,10 @@ function makeNode(tag) {
     addEventListener() {},
     removeEventListener() {},
     appendChild(c) { return c; },
+    // Body-mounted overlays (#onbHost, #updHost) detach themselves. Routed
+    // through a hook so a test can keep a real element registry and observe
+    // that the banner is actually GONE, not merely re-rendered empty.
+    remove() { onNodeRemove(this); },
     focus() {},
     blur() {},
     setSelectionRange() {},
@@ -162,7 +170,8 @@ const EPILOGUE = `
   /* TENANTS was exported here. It is a lazy getter, so it kept "passing" after
      the global was deleted -- it would only have thrown the moment a test
      touched it. Removed with the tenant surface it belonged to. */
-  get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; }
+  get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
+  renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S
 };
 `;
 
@@ -1110,6 +1119,149 @@ test("24b. the directory grid can shrink, and its TOC stops overlaying when it c
   assert.ok(h.indexOf("@container (max-width:720px)") >
             h.indexOf(".dpage nav{position:sticky"),
     "the container query must come AFTER the sticky rule it overrides");
+});
+
+/* ── 25. the staged-update banner ───────────────────────────────────────────
+   The update is mandatory, so the banner is the only thing standing between a
+   verified download and the app closing itself. Every test here is about it
+   telling the truth: what it will do, when, and whether it can do it at all. */
+
+const _updHosts = Object.create(null);
+
+/* Mount a real element registry on the stub document so the banner can be
+   inspected after it renders -- and, just as importantly, so its absence is
+   observable. */
+function updHarness({ staged, desktop, focus = true, term = false }) {
+  Object.keys(_updHosts).forEach((k) => delete _updHosts[k]);
+  onNodeRemove = (n) => { delete _updHosts[n.id]; };
+  documentStub.body = { appendChild(c) { _updHosts[c.id] = c; return c; } };
+  documentStub.getElementById = (id) =>
+    (id === "updHost" ? (_updHosts[id] || null) : makeNode("div"));
+  documentStub.hasFocus = () => focus;
+
+  const applied = [];
+  sandbox.sutra = desktop
+    ? { desktop: true,
+        applyUpdate: () => { applied.push(1); return Promise.resolve({ ok: true }); },
+        deferUpdate: () => Promise.resolve({ ok: true }) }
+    : undefined;
+
+  T.stopUpdCountdown();
+  T.S.updStaged = staged;
+  T.S.updDeferred = false;
+  T.S.updApplyError = null;
+  T.S.updFiring = false;
+  T.S.termOpen = term;
+  T.renderUpdateBanner();
+  return { applied, html: () => (_updHosts.updHost || { innerHTML: "" }).innerHTML,
+           gone: () => !_updHosts.updHost };
+}
+
+const STAGED = { pending: true, version: "2.70.0", state: "staged" };
+
+test("25a. no staged update means no banner at all", () => {
+  const h = updHarness({ staged: { pending: false }, desktop: true });
+  assert.ok(h.gone(), "a banner with nothing to say must be removed, not blanked");
+  T.stopUpdCountdown();
+});
+
+test("25b. a browser gets a statement of fact, never a countdown", () => {
+  /* The CLI serves this same panel where there is no app to restart. A
+     countdown there would promise something the page cannot do. */
+  const h = updHarness({ staged: STAGED, desktop: false });
+  const html = h.html();
+  assert.ok(/has been downloaded/.test(html), "it should say what happened");
+  assert.ok(/next time the desktop app quits/.test(html), "and what happens next");
+  assert.ok(!/Restart now/.test(html), "no control it cannot honour");
+  assert.strictEqual(T.S.updLeft, null, "no clock without a shell to restart");
+  T.stopUpdCountdown();
+});
+
+test("25c. the desktop counts down from 15 and offers both exits", () => {
+  const h = updHarness({ staged: STAGED, desktop: true });
+  assert.strictEqual(T.S.updLeft, T.UPDATE_COUNTDOWN_S);
+  assert.ok(/Restarting in/.test(h.html()));
+  assert.ok(/Restart now/.test(h.html()));
+  assert.ok(/Not now/.test(h.html()));
+  T.stopUpdCountdown();
+});
+
+test("25d. the clock is HELD while the window is in the background", () => {
+  /* A countdown that ran unfocused would restart the app while the user was in
+     another window, having never seen the banner. That is not a prompt. */
+  const h = updHarness({ staged: STAGED, desktop: true, focus: false });
+  const before = T.S.updLeft;
+  T.updTick();
+  assert.strictEqual(T.S.updLeft, before, "the clock must not advance unfocused");
+  assert.ok(/when you come back/.test(h.html()), "and it must say why it is paused");
+  T.stopUpdCountdown();
+});
+
+test("25e. a focused tick advances, and reaching zero restarts", () => {
+  const h = updHarness({ staged: STAGED, desktop: true });
+  T.S.updLeft = 2;
+  T.updTick();
+  assert.strictEqual(T.S.updLeft, 1);
+  T.updTick();
+  assert.strictEqual(T.S.updLeft, null, "the clock stops when it fires");
+  assert.deepStrictEqual(h.applied, [1], "and the shell is asked to restart");
+  /* Regression: the render inside applyUpdateNow() saw "staged, no clock, no
+     error yet" and started a SECOND countdown -- re-firing every 15s for as
+     long as the shell took to quit. */
+  T.renderUpdateBanner();
+  assert.strictEqual(T.S.updLeft, null, "firing must not re-arm the countdown");
+  assert.deepStrictEqual(h.applied, [1], "and must not restart twice");
+  T.stopUpdCountdown();
+});
+
+test("25f. 'Not now' defers -- it does not decline, and it does not restart", () => {
+  /* The whole point of the mandatory design: cancelling costs nothing because
+     the verified build is applied on the way out anyway. The copy has to say
+     that, or the user will expect to be asked again. */
+  const h = updHarness({ staged: STAGED, desktop: true });
+  T.S.updDeferred = true;
+  T.stopUpdCountdown();
+  T.renderUpdateBanner();
+  assert.deepStrictEqual(h.applied, [], "deferring must never restart the app");
+  assert.strictEqual(T.S.updLeft, null, "and it must stop the clock");
+  assert.ok(/will finish installing when you quit/.test(h.html()),
+    "the promise the shell actually keeps");
+  assert.ok(!/Restarting in/.test(h.html()));
+  T.stopUpdCountdown();
+});
+
+test("25g. an open terminal WARNS and the clock keeps running", () => {
+  /* Founder decision 2026-08-06: warn, do not suppress. So the warning has to
+     be present AND the countdown has to be unaffected by it. */
+  const h = updHarness({ staged: STAGED, desktop: true, term: true });
+  assert.ok(/terminal session is open/i.test(h.html()), "say what will be lost");
+  assert.strictEqual(T.S.updLeft, T.UPDATE_COUNTDOWN_S, "and still count down");
+  T.stopUpdCountdown();
+});
+
+test("25h. a failed install never renders a countdown that is not running", () => {
+  /* Regression: `failed` fell through to the countdown branch and rendered
+     "Restarting in nulls" -- there is no clock in that state. */
+  const h = updHarness({
+    staged: { pending: true, version: "2.70.0", state: "failed",
+              error: "new bundle failed codesign" },
+    desktop: true });
+  const html = h.html();
+  assert.ok(!/null/.test(html), "no null leaked into the copy: " + html);
+  assert.ok(!/Restarting in/.test(html));
+  assert.ok(/could not be installed/.test(html));
+  assert.ok(/codesign/.test(html), "the reason is the useful part");
+  T.stopUpdCountdown();
+});
+
+test("25i. an update already armed says so instead of counting again", () => {
+  const h = updHarness({
+    staged: { pending: true, version: "2.70.0", state: "installing" },
+    desktop: true });
+  assert.strictEqual(T.S.updLeft, null, "arming already happened; no second clock");
+  assert.ok(/ready to install/.test(h.html()));
+  assert.ok(/as soon as the app closes/.test(h.html()));
+  T.stopUpdCountdown();
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

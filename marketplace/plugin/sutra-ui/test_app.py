@@ -19,9 +19,11 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENV_PY = os.path.join(HERE, ".venv", "bin", "python")
@@ -2030,7 +2032,11 @@ class TestUpdates(unittest.TestCase):
             self.assertEqual(d["installed"], "2.67.0")
             self.assertEqual(d["latest"], "2.67.1")
             self.assertTrue(d["update_available"])
-            self.assertIn("no background updater", d["note"])
+            # This note used to promise there was NO background updater. There
+            # is one now, and a note that describes the old behaviour is worse
+            # than no note -- it is the app misreporting itself.
+            self.assertIn("background", d["note"])
+            self.assertNotIn("no background updater", d["note"])
         finally:
             self.U.app_bundle, self.U._latest_desktop = real_app, real_latest
 
@@ -2083,6 +2089,334 @@ class TestUpdates(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             self.U.install_desktop(str(self.Path(self.tmp) / "nope.dmg"), app_path=str(app))
         self.assertIn("no such disk image", str(cm.exception))
+
+
+class TestAutoUpdateStaging(unittest.TestCase):
+    """The staging state machine -- the part that makes an update button an
+    auto-updater.
+
+    Every test here is about a moment when NOBODY IS WATCHING: a helper that
+    ran and died, a manifest that outlived the process that wrote it, a launch
+    that has to work out what the previous launch did. The download path is not
+    re-tested (TestUpdates covers it); what is tested is what happens to a
+    staged build afterwards, because that is where an auto-updater turns into
+    either a silent success or an app that will not start."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import updates
+        from pathlib import Path as _P
+        self.U = updates
+        self.Path = _P
+        self.tmp = tempfile.mkdtemp()
+        self._prev = os.environ.get("SUTRA_UPDATE_DIR")
+        os.environ["SUTRA_UPDATE_DIR"] = os.path.join(self.tmp, "updates")
+
+    def tearDown(self):
+        if self._prev is None:
+            os.environ.pop("SUTRA_UPDATE_DIR", None)
+        else:
+            os.environ["SUTRA_UPDATE_DIR"] = self._prev
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _stage(self, version="2.70.0", state="staged", **kw):
+        """A staged manifest over a real file, so digest checks are meaningful."""
+        d = self.U.stage_dir()
+        dmg = d / ("Sutra-%s.dmg" % version)
+        dmg.write_bytes(b"disk image")
+        man = {"state": state, "version": version, "dmg": str(dmg),
+               "sha256": self.U._sha256(dmg), "sha256_url": None,
+               "staged_at": 1, "armed_at": None, "lease_until": None,
+               "arm_attempts": 0, "spawn_failures": 0, "install_failures": 0,
+               "last_error": None}
+        man.update(kw)
+        self.U._write_json(self.U._pending_path(), man)
+        return man
+
+    def _result(self, ok, version="2.70.0", error=""):
+        self.U._write_json(self.U._result_path(),
+                           {"ok": ok, "stage": "installed" if ok else "swap",
+                            "version": version, "error": error, "ts": 1})
+
+    # -- the staging directory is a durable, writable place, so it is checked --
+
+    def test_staging_directory_is_private(self):
+        d = self.U.stage_dir()
+        self.assertEqual(os.stat(d).st_mode & 0o777, 0o700,
+                         "a directory holding a DMG that will be installed "
+                         "unattended must not be readable by other users")
+
+    def test_a_symlinked_staging_directory_is_refused(self):
+        """The durability that makes /tmp wrong makes this necessary: a path
+        that persists is a path someone can point somewhere else first."""
+        real = os.path.join(self.tmp, "elsewhere")
+        os.makedirs(real)
+        link = os.path.join(self.tmp, "linked")
+        os.symlink(real, link)
+        os.environ["SUTRA_UPDATE_DIR"] = link
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.stage_dir()
+        self.assertIn("symlink", str(cm.exception))
+
+    def test_a_loosened_staging_directory_is_repaired(self):
+        """Repaired rather than refused: it is ours, so tightening it is both
+        possible and better than refusing to update. Refusal is reserved for
+        the case where the repair does not take."""
+        d = self.U.stage_dir()
+        os.chmod(d, 0o777)
+        self.U.stage_dir()
+        self.assertEqual(os.stat(d).st_mode & 0o777, 0o700)
+
+    def test_a_staging_directory_owned_by_someone_else_is_refused(self):
+        with mock.patch.object(self.U.os, "getuid", return_value=999999):
+            with self.assertRaises(RuntimeError) as cm:
+                self.U.stage_dir()
+        self.assertIn("not owned by this user", str(cm.exception))
+
+    # -- what sat on disk for days is not trusted on the way back in ---------
+
+    def test_a_changed_image_is_not_installed(self):
+        man = self._stage()
+        self.Path(man["dmg"]).write_bytes(b"something else entirely")
+        with self.assertRaises(RuntimeError) as cm:
+            self.U._verify_staged(man, recheck_online=False)
+        self.assertIn("changed on disk", str(cm.exception))
+
+    def test_an_image_outside_the_staging_directory_is_refused(self):
+        outside = self.Path(self.tmp) / "evil.dmg"
+        outside.write_bytes(b"disk image")
+        man = self._stage()
+        man["dmg"] = str(outside)
+        man["sha256"] = self.U._sha256(outside)   # digest alone would pass
+        with self.assertRaises(RuntimeError) as cm:
+            self.U._verify_staged(man, recheck_online=False)
+        self.assertIn("not inside the staging directory", str(cm.exception))
+
+    def test_a_missing_image_is_refused(self):
+        man = self._stage()
+        os.unlink(man["dmg"])
+        with self.assertRaises(RuntimeError):
+            self.U._verify_staged(man, recheck_online=False)
+
+    # -- launch-time reconciliation ------------------------------------------
+
+    def test_the_helpers_own_word_beats_a_version_comparison(self):
+        """THE ATTACH-PATH TRAP. The shell can attach to an older backend still
+        serving 8330, so a version read back through the API can be the
+        PREVIOUS install. If success were inferred from `installed >= pending`
+        this launch would call a completed update a failure and do it again."""
+        self._stage()
+        self._result(True)
+        r = self.U.resolve_pending(installed_version="2.69.1")   # says still old
+        self.assertFalse(r["pending"])
+        self.assertEqual(r["applied"], "2.70.0")
+        self.assertIsNone(self.U.read_pending(), "a finished update is cleared")
+
+    def test_a_first_failure_is_retried(self):
+        self._stage()
+        self._result(False, error="mount failed")
+        r = self.U.resolve_pending(installed_version="2.69.1")
+        self.assertEqual(r["action"], "arm")
+        self.assertEqual(self.U.read_pending()["install_failures"], 1)
+
+    def test_a_second_failure_gives_up_instead_of_bricking_the_app(self):
+        """The boot fallback QUITS the app to apply an update. Retrying that
+        forever against a broken release is an app that cannot be opened, so
+        the counter is the difference between a failed update and a failed
+        product."""
+        self._stage(install_failures=1)
+        self._result(False, error="new bundle failed codesign")
+        r = self.U.resolve_pending(installed_version="2.69.1")
+        self.assertTrue(r["gave_up"])
+        self.assertIn("codesign", r["error"])
+        self.assertIsNone(self.U.read_pending(),
+                          "giving up clears the pending state; the manual "
+                          "button is the remaining path")
+
+    def test_a_live_lease_is_waited_out_not_armed_again(self):
+        """A second helper against the same bundle is how a launch loop starts:
+        arm, quit, relaunch, still pending, arm again."""
+        self._stage(state="installing", lease_until=int(time.time()) + 300)
+        r = self.U.resolve_pending(installed_version="2.69.1")
+        self.assertEqual(r["action"], "wait")
+        self.assertEqual(self.U.read_pending()["install_failures"], 0,
+                         "waiting is not a failure")
+
+    def test_an_expired_lease_counts_as_an_attempt(self):
+        """No result file and a dead lease means a helper was spawned and was
+        never heard from. Silence is not success."""
+        self._stage(state="installing", lease_until=int(time.time()) - 10)
+        r = self.U.resolve_pending(installed_version="2.69.1")
+        self.assertEqual(r["action"], "arm")
+        self.assertEqual(self.U.read_pending()["install_failures"], 1)
+
+    def test_an_already_updated_app_clears_the_manifest(self):
+        self._stage()
+        r = self.U.resolve_pending(installed_version="2.70.0")
+        self.assertEqual(r["applied"], "2.70.0")
+        self.assertIsNone(self.U.read_pending())
+
+    def test_nothing_staged_is_not_an_error(self):
+        self.assertEqual(self.U.resolve_pending("2.69.1"), {"pending": False})
+
+    # -- arming ---------------------------------------------------------------
+
+    def test_arming_twice_does_not_spawn_two_installers(self):
+        """The countdown firing while the user is already quitting is not a
+        hypothetical -- it is the most likely way this is reached."""
+        self._stage(state="installing", lease_until=int(time.time()) + 300)
+        r = self.U.arm_desktop(os.getpid(), relaunch=True)
+        self.assertTrue(r["already"])
+
+    def test_arming_refuses_a_release_that_has_already_failed_twice(self):
+        self._stage(state="failed", install_failures=2,
+                    last_error="new bundle failed codesign")
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.arm_desktop(os.getpid())
+        self.assertIn("will not be retried", str(cm.exception))
+
+    def test_arming_with_nothing_staged_is_refused(self):
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.arm_desktop(os.getpid())
+        self.assertIn("no staged update", str(cm.exception))
+
+    def test_a_spawn_failure_returns_the_update_to_staged(self):
+        """A helper that never started has not failed to INSTALL anything. If
+        that were counted as an install failure, two hiccups here would
+        permanently suppress a perfectly good release."""
+        self._stage()
+        # No .app anywhere: this is a source checkout, exactly as CI sees it.
+        with self.assertRaises(RuntimeError):
+            self.U.arm_desktop(os.getpid(), relaunch=True)
+        man = self.U.read_pending()
+        self.assertEqual(man["state"], "staged", "still installable")
+        self.assertEqual(man["spawn_failures"], 1)
+        self.assertEqual(man["install_failures"], 0)
+
+    # -- the installer's own contract ----------------------------------------
+
+    def test_the_installer_is_told_which_process_to_wait_for(self):
+        """getppid() is WRONG for the desktop shell: main.js has a path where it
+        attaches to a backend it did not spawn, and that parent's exit would
+        release the helper while Sutra is still running."""
+        env = self._spawn_env(wait_pid=4242, relaunch=True, version="2.70.0")
+        self.assertEqual(env["WAIT_PID"], "4242")
+        self.assertEqual(env["RELAUNCH"], "1")
+        self.assertEqual(env["EXPECT_VERSION"], "2.70.0")
+
+    def test_a_quit_driven_install_does_not_reopen_the_app(self):
+        """Relaunching after a deliberate Quit countermands the user."""
+        env = self._spawn_env(wait_pid=4242, relaunch=False)
+        self.assertEqual(env["RELAUNCH"], "0")
+
+    def test_the_installer_checks_the_bundle_identity_not_just_the_signature(self):
+        """'Validly signed' is not 'signed by us'. Without this a compromised
+        release could hand over a properly notarized app belonging to someone
+        else and every earlier gate would pass it."""
+        s = self.U._INSTALLER
+        self.assertIn("TeamIdentifier=", s)
+        self.assertIn("EXPECT_BUNDLE_ID", s)
+        self.assertIn("EXPECT_VERSION", s)
+        self.assertIn("pgrep -f", s, "the main process exiting is not the "
+                                     "bundle being free of Electron helpers")
+
+    def test_the_installer_normalises_start_times_exactly_as_python_does(self):
+        """These strings are compared for equality across a language boundary.
+        If they normalised differently every update would abort as a phantom
+        pid reuse -- and it would abort SILENTLY, in a detached helper."""
+        pid = os.getpid()
+        py = self.U._proc_start(pid)
+        sh = subprocess.run(
+            ["bash", "-c", 'ps -o lstart= -p "$1" 2>/dev/null | awk \'{$1=$1;print}\'',
+             "_", str(pid)], capture_output=True, text=True).stdout.strip()
+        self.assertTrue(py, "ps must report a start time for our own process")
+        self.assertEqual(py, sh)
+
+    def _spawn_env(self, **kw):
+        """install_desktop() without actually spawning anything."""
+        app = self.Path(self.tmp) / "Sutra.app"
+        (app / "Contents").mkdir(parents=True)
+        with open(app / "Contents" / "Info.plist", "wb") as fh:
+            import plistlib
+            plistlib.dump({"CFBundleIdentifier": "os.sutra.ui",
+                           "CFBundleShortVersionString": "2.69.1"}, fh)
+        dmg = self.Path(self.tmp) / "x.dmg"
+        dmg.write_bytes(b"d")
+        seen = {}
+
+        class FakePopen(object):
+            def __init__(self, argv, env=None, **kwargs):
+                seen.update(env or {})
+
+        # Only Popen is faked. subprocess.run() still has to work, because
+        # install_desktop() shells out to codesign to read the bundle identity
+        # it is about to require of the replacement.
+        shim = types.SimpleNamespace(
+            Popen=FakePopen, run=subprocess.run, DEVNULL=subprocess.DEVNULL,
+            SubprocessError=subprocess.SubprocessError)
+        real = self.U.subprocess
+        self.U.subprocess = shim
+        try:
+            self.U.install_desktop(str(dmg), app_path=str(app), **kw)
+        finally:
+            self.U.subprocess = real
+        return seen
+
+
+class TestDesktopControlAuth(unittest.TestCase):
+    """The three routes that can quit the app and replace the bundle on disk.
+
+    Everything else on this API is unauthenticated because it is loopback-only
+    and does nothing a local user could not already do. These do: arming hands
+    an unattended helper the authority to replace /Applications/Sutra.app, and
+    ANY page in ANY browser on this machine can POST to localhost. That is a
+    persistence primitive, not a convenience."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import org_api
+        self.api = org_api
+        self._prev = org_api.DESKTOP_TOKEN
+
+    def tearDown(self):
+        self.api.DESKTOP_TOKEN = self._prev
+
+    class _Req(object):
+        def __init__(self, token=None):
+            self.headers = {"x-sutra-desktop-token": token} if token else {}
+
+    def _refusal(self, req):
+        from fastapi import HTTPException
+        try:
+            self.api._desktop_control(req)
+        except HTTPException as exc:
+            return exc
+        self.fail("desktop control was allowed when it should have been refused")
+
+    def test_a_backend_we_did_not_start_cannot_be_used_to_install(self):
+        """main.js attaches to a CLI-owned server when it finds one. It has no
+        token for that process, so automatic updating is simply off for that
+        session -- which is right anyway: quitting this window would not stop a
+        backend somebody else owns."""
+        self.api.DESKTOP_TOKEN = None
+        exc = self._refusal(self._Req("anything"))
+        self.assertEqual(exc.status_code, 403)
+        self.assertIn("not started by the Sutra desktop app", exc.detail)
+
+    def test_a_page_without_the_token_cannot_arm_an_install(self):
+        self.api.DESKTOP_TOKEN = "s3cret"
+        self.assertEqual(self._refusal(self._Req()).status_code, 403)
+        self.assertEqual(self._refusal(self._Req("guess")).status_code, 403)
+
+    def test_the_shell_can(self):
+        self.api.DESKTOP_TOKEN = "s3cret"
+        self.api._desktop_control(self._Req("s3cret"))   # must not raise
+
+    def test_reading_staged_state_needs_no_token(self):
+        """The panel polls it once a minute and it is local-only. A route that
+        reached the network could not be polled without turning every open
+        panel into a crawler."""
+        self.assertIn("pending", self.api.api_updates_staged())
 
 
 class TestShellPathHarvest(unittest.TestCase):

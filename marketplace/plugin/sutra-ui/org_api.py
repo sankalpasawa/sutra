@@ -29,6 +29,7 @@ import binascii
 import hashlib
 import json
 import logging
+import hmac
 import os
 import re
 import subprocess
@@ -1384,14 +1385,105 @@ def api_updates_desktop():
     Split deliberately: everything checkable (checksum, notarization, the
     bundle's own signature) is checked while the operator is still here to be
     told, and only then is the unattended helper armed.
+
+    This is the MANUAL button and it stays exactly as it was -- it is the
+    fallback when the automatic path has given up, and a fallback that shares
+    the automatic path's failure modes is not a fallback.
     """
     try:
         got = updates.download_and_verify()
-        sched = updates.install_desktop(got["dmg"])
+        sched = updates.install_desktop(got["dmg"], relaunch=True,
+                                        version=got.get("version"))
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     sched["version"] = got.get("version")
     return sched
+
+
+# ------------------------------------------------ automatic update path -----
+# The three routes below can quit the app and replace the bundle on disk, so
+# unlike everything else on this loopback API they are AUTHENTICATED.
+#
+# The rest of the API is unauthenticated because it is reachable only from
+# 127.0.0.1 and does nothing a local user could not already do. These do:
+# "arm" hands an unattended helper the authority to replace /Applications/
+# Sutra.app, and any page in any browser on this machine can POST to localhost.
+# That is a persistence primitive, not a convenience.
+#
+# The token is minted by the Electron shell and handed to the backend it spawns.
+# Which produces exactly the right behaviour for free: when the shell ATTACHES
+# to a backend it did not start (main.js does this), it has no token for that
+# process, arming is refused, and automatic updating stays off for that session
+# instead of quietly acting through a server whose lifetime it does not own.
+
+DESKTOP_TOKEN = os.environ.get("SUTRA_DESKTOP_TOKEN") or None
+
+
+def _desktop_control(request):
+    """Authorise a desktop-control call, or refuse it with a reason."""
+    if not DESKTOP_TOKEN:
+        raise HTTPException(status_code=403, detail=(
+            "this server was not started by the Sutra desktop app, so it "
+            "cannot install or restart it"))
+    sent = request.headers.get("x-sutra-desktop-token") or ""
+    if not hmac.compare_digest(sent, DESKTOP_TOKEN):
+        raise HTTPException(status_code=403, detail="bad desktop control token")
+
+
+@router.get("/updates/staged")
+def api_updates_staged():
+    """Local staging state only -- no network. The panel polls this, and that
+    is the ONLY reason it is allowed to: a route that reaches GitHub cannot be
+    polled without turning every open panel into a crawler."""
+    return updates.pending_state()
+
+
+@router.post("/updates/desktop/stage")
+def api_updates_stage(request: Request):
+    """Download + verify into durable staging. Arms nothing."""
+    _desktop_control(request)
+    try:
+        return updates.stage_desktop()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/updates/desktop/arm")
+async def api_updates_arm(request: Request):
+    """Schedule the swap for after the shell exits.
+
+    `wait_pid` is required and is the SHELL's pid, not this process's parent.
+    See install_desktop() for why inferring it here is wrong.
+    """
+    _desktop_control(request)
+    body = {}
+    try:
+        body = await request.json()
+    except (ValueError, TypeError):
+        pass
+    pid = body.get("wait_pid")
+    if not pid:
+        raise HTTPException(status_code=400, detail="wait_pid is required")
+    try:
+        return updates.arm_desktop(int(pid), wait_start=body.get("wait_start"),
+                                   relaunch=bool(body.get("relaunch")))
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/updates/desktop/resolve")
+async def api_updates_resolve(request: Request):
+    """Launch-time decision: what did the last attempt do, and what now."""
+    _desktop_control(request)
+    body = {}
+    try:
+        body = await request.json()
+    except (ValueError, TypeError):
+        pass
+    try:
+        return updates.resolve_pending(body.get("installed"))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ========================================================== automation ======

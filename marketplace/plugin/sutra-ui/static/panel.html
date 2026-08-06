@@ -1983,6 +1983,12 @@ const S = {
      workdir change can say plainly that the running terminal is still in the old one
      rather than silently mislabelling it. */
   termOpen:false, termCwd:null, termW:null, sideTab:"terminal",
+  /* Staged desktop update. `updStaged` is the backend's local staging state --
+     no network, which is the only reason polling it is acceptable. `updLeft` is
+     the countdown; null means not counting. `updDeferred` is per-load and never
+     persisted: deferring is not declining, and the update still applies on quit. */
+  updStaged:null, updLeft:null, updDeferred:false, updApplyError:null,
+  updFiring:false,
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
      through the org. Departments do NOT hand work to each other — no such channel exists. */
@@ -3540,15 +3546,19 @@ function diffHtml(text){
    TWO components, and they are NOT the same kind of thing. Showing them as one
    "check for updates" button would be a lie about how either behaves:
 
-     Desktop app  no background updater at all (Squirrel is in the bundle
-                  because Electron ships it; nothing wires it up). It changes
-                  only when someone installs a DMG.
-     Plugin       already updates itself once a day at session start, applying
-                  to the NEXT session. The button only makes it immediate.
+     Desktop app  checked in the background by the Electron shell and installed
+                  automatically (mandatory, founder direction 2026-08-06). The
+                  staged build applies on quit; the banner is the countdown.
+                  These buttons are the manual path, which still matters: it is
+                  what remains after the automatic path has given up on a
+                  release.
+     Plugin       updates itself once a day at session start, applying to the
+                  NEXT session. The button only makes it immediate.
 
-   Nothing here runs on load: these are network calls, and a panel that phones
-   home every time it opens is a different product decision from one with a
-   button. S.upd stays null until asked. */
+   Nothing on THIS screen runs on load: these are network calls, and a panel
+   that phones GitHub every time it opens is a different thing from one with a
+   button. S.upd stays null until asked. The banner's poll is a different route
+   (/api/updates/staged) precisely because that one touches nothing remote. */
 function updatesHtml(){
   const u = S.upd;
   const busy = S.updBusy;
@@ -4386,6 +4396,164 @@ function onboardingHtml(){
 
 /* Mounted OUTSIDE #app so render()'s wholesale replacement of #panes cannot
    tear it down mid-interaction. */
+/* ── staged desktop update ─────────────────────────────────────────────────
+   The update is MANDATORY (founder direction 2026-08-06), which decides the
+   shape of this UI more than anything else: there is no "skip this version"
+   and no "remind me next week", because neither is true. Cancel stops the
+   countdown and nothing else -- the build is already downloaded and verified,
+   and the shell applies it when the app next exits. So the honest words are
+   "not now", and then a plain statement of what will happen anyway.
+
+   TWO REASONS THIS IS NOT ALWAYS A COUNTDOWN:
+
+     no shell    The CLI serves this same panel to an ordinary browser, where
+                 there is nothing to restart. window.sutra only exists behind
+                 the Electron preload, so its absence is a reliable "I cannot
+                 honour a countdown" -- and a countdown that cannot restart
+                 anything would be a lie told once every fifteen seconds.
+
+     no focus    The clock only runs while the window has focus. A countdown
+                 that ran in the background would restart the app while the
+                 user was in another window, having never seen the banner --
+                 which is not a prompt, it is an ambush. */
+const UPDATE_COUNTDOWN_S = 15;
+const UPDATE_POLL_MS = 60000;
+let _updTicker = null;
+
+function updDesktop(){ return !!(window.sutra && window.sutra.desktop); }
+
+async function pollStagedUpdate(){
+  try {
+    /* Local staging state only -- this route never touches the network, which
+       is why a poll is acceptable here and would not be on /api/updates. */
+    S.updStaged = await apiGet("/api/updates/staged");
+  } catch (e) { S.updStaged = null; }
+  renderUpdateBanner();
+}
+
+function updTick(){
+  /* Held, not decremented, while the window is in the background. */
+  if (!document.hasFocus()) { renderUpdateBanner(); return; }
+  if (S.updLeft === null) return;
+  S.updLeft -= 1;
+  if (S.updLeft > 0) { renderUpdateBanner(); return; }
+  stopUpdCountdown();
+  applyUpdateNow();
+}
+
+function stopUpdCountdown(){
+  if (_updTicker) { clearInterval(_updTicker); _updTicker = null; }
+  S.updLeft = null;
+}
+
+async function applyUpdateNow(){
+  stopUpdCountdown();
+  /* Set BEFORE the render below, which would otherwise see "staged, no clock
+     running, no error yet" and start a second countdown -- firing applyUpdate
+     again every fifteen seconds for as long as the shell took to quit. */
+  S.updFiring = true;
+  S.updApplyError = null;
+  renderUpdateBanner();
+  try {
+    const r = await window.sutra.applyUpdate();
+    /* On success the app is already on its way out; leave the banner saying so
+       rather than flashing something else in the last frames. */
+    if (!r || !r.ok) S.updApplyError = (r && r.error) || "the restart was refused";
+  } catch (e) { S.updApplyError = e.message || String(e); }
+  if (S.updApplyError) S.updFiring = false;   /* the app is staying; allow a retry */
+  renderUpdateBanner();
+}
+
+function renderUpdateBanner(){
+  let host = document.getElementById("updHost");
+  const u = S.updStaged;
+  /* `error` on a PENDING record is the reason the last attempt failed -- it is
+     the most important thing the banner has to say, not a signal to say
+     nothing. (An unusable staging directory reports {pending:false} instead,
+     and is correctly silent.) */
+  const show = !!(u && u.pending);
+  if (!show){ stopUpdCountdown(); if (host) host.remove(); return; }
+  if (!host){
+    host = document.createElement("div");
+    host.id = "updHost";
+    document.body.appendChild(host);
+  }
+
+  const ver = esc(u.version || "a new version");
+  const armed = u.state === "installing";
+  const counting = updDesktop() && !armed && !S.updDeferred && u.state === "staged";
+
+  /* Start the clock the first time we see a staged build this load. */
+  if (counting && S.updLeft === null && !_updTicker && !S.updApplyError && !S.updFiring){
+    S.updLeft = UPDATE_COUNTDOWN_S;
+    _updTicker = setInterval(updTick, 1000);
+  }
+
+  /* Founder decision 2026-08-06: a live terminal WARNS, it does not stop the
+     clock. Said plainly, because the restart will take the session with it. */
+  const termWarn = S.termOpen
+    ? `<div class="updwarn">A terminal session is open. Restarting Sutra ends it.</div>` : "";
+
+  let body;
+  if (S.updApplyError){
+    body = `<div class="updmsg"><b>Sutra ${ver} could not be applied.</b>
+      <span class="updwhy">${esc(S.updApplyError)}</span>
+      <span class="updwhy">It will be retried when you quit.</span></div>
+      <div class="updacts"><button class="btn" type="button" data-upd2="retry">Try again</button></div>`;
+  } else if (armed){
+    body = `<div class="updmsg"><b>Sutra ${ver} is ready to install.</b>
+      <span class="updwhy">It is applied as soon as the app closes.</span></div>`;
+  } else if (!updDesktop()){
+    /* Browser / CLI: state the fact, promise nothing this page can't keep. */
+    body = `<div class="updmsg"><b>Sutra ${ver} has been downloaded.</b>
+      <span class="updwhy">It installs the next time the desktop app quits.</span></div>`;
+  } else if (u.state === "failed"){
+    /* Given up on automatically. Reached via resolve_pending's "manual"
+       verdict, and it must NOT fall through to the countdown -- there is no
+       clock running, so it would render "Restarting in nulls". */
+    body = `<div class="updmsg"><b>Sutra ${ver} could not be installed.</b>
+      <span class="updwhy">${esc(u.error || "the installer did not report why")}</span>
+      <span class="updwhy">Settings → Updates has the manual install.</span></div>`;
+  } else if (S.updDeferred){
+    body = `<div class="updmsg"><b>Sutra ${ver} will finish installing when you quit.</b>
+      <span class="updwhy">Nothing to download again — it is already verified.</span></div>`;
+  } else {
+    const paused = !document.hasFocus();
+    body = `<div class="updmsg"><b>Sutra ${ver} is ready.</b>
+      <span class="updwhy">${paused
+        ? "Restarting when you come back to this window."
+        : `Restarting in <span class="updn">${S.updLeft}s</span>.`}</span></div>
+      <div class="updacts">
+        <button class="btn pri" type="button" data-upd2="now">Restart now</button>
+        <button class="btn" type="button" data-upd2="later">Not now</button>
+      </div>`;
+  }
+
+  host.innerHTML = `<style>
+    #updHost{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9000;
+      max-width:min(720px,calc(100vw - 32px));}
+    #updHost .updbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+      background:var(--panel,#1b1917);border:1px solid var(--line,#332f2a);
+      border-radius:10px;padding:11px 14px;box-shadow:0 8px 28px rgba(0,0,0,.45);}
+    #updHost .updmsg{font-size:12.5px;line-height:1.5;flex:1 1 320px;}
+    #updHost .updwhy{display:block;color:var(--muted,#9b938a);font-size:11.5px;}
+    #updHost .updn{font-variant-numeric:tabular-nums;}
+    #updHost .updacts{display:flex;gap:8px;flex:0 0 auto;}
+    #updHost .updwarn{flex:1 1 100%;font-size:11.5px;color:var(--warn,#d9a441);}
+  </style><div class="updbar">${body}${termWarn}</div>`;
+
+  host.querySelectorAll("[data-upd2]").forEach(b=>b.onclick=()=>{
+    const a = b.dataset.upd2;
+    if (a === "now" || a === "retry") return applyUpdateNow();
+    /* "Not now" is a DEFER, and the copy above says so. The staged build is
+       kept; the shell applies it on the way out. */
+    S.updDeferred = true;
+    stopUpdCountdown();
+    if (window.sutra && window.sutra.deferUpdate) window.sutra.deferUpdate();
+    renderUpdateBanner();
+  });
+}
+
 function renderOnboarding(){
   let host = document.getElementById("onbHost");
   const show = !!(SETTINGS && SETTINGS.onboarded === false && !S.onbDismissed);
@@ -4431,6 +4599,7 @@ function render(){
 
   renderRail();
   renderOnboarding();
+  renderUpdateBanner();
 
   document.getElementById("app").classList.toggle("railcol", !!S.ui.railCollapsed);
 
@@ -5492,6 +5661,16 @@ async function boot(){
       const f = document.getElementById("prevUrl"); if (f) f.value = lastPrev;
     }
     if (lsGet(LS_TERM, false) === true){ termToggle(true); sideTab(S.sideTab); }
+
+    /* Staged-update watch. Started LAST and deliberately not awaited: a staged
+       build is never a reason for the panel to come up any slower, and this
+       route is local-only so the poll costs nothing but a loopback round trip.
+       Focus changes re-render because the countdown is held while the window is
+       in the background, and that state has to be visible the moment it flips. */
+    pollStagedUpdate();
+    setInterval(pollStagedUpdate, UPDATE_POLL_MS);
+    window.addEventListener("focus", renderUpdateBanner);
+    window.addEventListener("blur", renderUpdateBanner);
   } catch (e) {
     backendError(e);
   }
