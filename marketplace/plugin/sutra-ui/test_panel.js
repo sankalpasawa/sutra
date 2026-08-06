@@ -158,8 +158,11 @@ const EPILOGUE = `
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
   chanKey, paletteFor,
   _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip, resumableId,
-  get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
-  get TENANTS(){ return TENANTS; },   set TENANTS(v){ TENANTS = v; }
+  fmt,
+  /* TENANTS was exported here. It is a lazy getter, so it kept "passing" after
+     the global was deleted -- it would only have thrown the moment a test
+     touched it. Removed with the tenant surface it belonged to. */
+  get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; }
 };
 `;
 
@@ -317,12 +320,17 @@ test("10b. ORG-016: the target is not active", () => {
   assert.ok(/frozen/.test(subj), "ORG-016 must name the status: " + subj);
 });
 
-test("10c. ORG-017: the move crosses a tenant boundary", () => {
+test("10c. ORG-017 is NOT raised client-side: tenancy is removed", () => {
   T.DOMAINS = D;
-  // r4 is T-acme AND already parents a live "Research" -> both codes fire
-  deepEq(codesOf("r1", "r4"), ["ORG-017", "ORG-018"]);
-  // a cross-tenant target with no name clash fires ORG-017 alone
-  deepEq(codesOf("r2", "r4"), ["ORG-017"]);
+  // This used to assert ORG-017 ("the move crosses a tenant boundary"). One
+  // registry holds one org now, so a client-side cross-tenant preview can only
+  // ever be false -- and if it somehow fired it would put the word "tenant" in
+  // front of an operator as a finding. The check is gone; what remains is the
+  // name-clash code that fires on the same move for a real reason.
+  deepEq(codesOf("r1", "r4"), ["ORG-018"],
+    "r4 already parents a live 'Research' -> ORG-018 alone");
+  deepEq(codesOf("r2", "r4"), [],
+    "a differently-stamped target with no name clash is not a finding at all");
 });
 
 test("10d. ORG-018: a LIVE sibling already carries that name", () => {
@@ -858,6 +866,123 @@ test("20e. auto-grow resets height before measuring", () => {
   const measure = fn.indexOf("scrollHeight");
   assert.ok(reset !== -1 && measure !== -1 && reset < measure,
     "must set height:auto BEFORE reading scrollHeight");
+});
+
+/* ── 21. the boot contract ──────────────────────────────────────────────────
+   These exist because of a shipped, user-visible outage: 5781a2f deleted
+   <div id="tenantMenu"> from the markup and left the code that wired it. The
+   getElementById returned null, the next addEventListener threw, and boot() --
+   the LAST statement in the script -- never ran. No settings, no departments,
+   no sessions, no skills, all at once, each screen blaming its own endpoint.
+   Every endpoint was healthy the whole time. */
+
+test("21a. no top-level getElementById result is dereferenced without a guard", () => {
+  /* The exact failure shape: `const x = document.getElementById("y")` at top
+     level, followed by `x.something` with nothing proving x is non-null. Only
+     top-level code matters -- inside a function the element may legitimately be
+     created before the call. */
+  const h = panelHtml;
+  const tail = h.slice(h.lastIndexOf("\n}") + 2);   // after the last function body
+  const decls = [...tail.matchAll(/^const (\w+)\s*=\s*document\.getElementById\("([^"]+)"\)/gm)];
+  const unguarded = [];
+  for (const [, name, id] of decls) {
+    const idInMarkup = new RegExp('id="' + id + '"').test(h);
+    const guarded = new RegExp("(if\\s*\\(\\s*" + name + "\\b|" + name + "\\s*&&|" + name + "\\s*\\?)").test(tail);
+    if (!idInMarkup && !guarded) unguarded.push(name + " -> #" + id);
+  }
+  assert.deepStrictEqual(unguarded, [],
+    "top-level element refs with no matching id= in the markup and no guard: " +
+    unguarded.join(", "));
+});
+
+test("21b. boot() is still the last statement, and nothing throws before it", () => {
+  const h = panelHtml;
+  const i = h.lastIndexOf("boot();");
+  assert.ok(i !== -1, "boot() must be called");
+  const after = h.slice(i + "boot();".length).replace(/<\/script>/, "").trim();
+  assert.strictEqual(after, "",
+    "boot() must be the final statement -- anything before it that throws is silent");
+});
+
+test("21c. the tenant surface is gone, not half-gone", () => {
+  /* Half-removal is what caused the outage. Assert BOTH directions: no markup,
+     and no code that expects markup. */
+  const h = panelHtml;
+  for (const sym of ["tenantMenuEl", "tenantSwitchEl", "pickTenant", "renderTenantMenu",
+                     "tenantGateHtml", "wireGate", "inTenant", "scopeQ", "S.showAcme",
+                     "META.tenant_id", "LS_TENANT"]) {
+    assert.ok(!h.includes(sym), "tenant symbol still referenced: " + sym);
+  }
+});
+
+test("21d. loadRuntime degrades per endpoint, it does not fail as a block", () => {
+  /* Promise.all here meant a 500 from /api/skills nulled SETTINGS for the life
+     of the window, and Settings then claimed "GET /api/settings has not
+     answered" -- which had not happened. */
+  const fn = panelHtml.match(/async function loadRuntime\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(fn.includes("Promise.allSettled"), "must use allSettled");
+  assert.ok(!/Promise\.all\(/.test(fn), "must not use Promise.all");
+  assert.ok(fn.includes("S.runtimeError"), "must report WHICH endpoint failed");
+});
+
+test("21e. the composer's colours come from the theme, not the UA stylesheet", () => {
+  /* 03c09cc turned the composer into a <textarea> and left the rule selecting
+     `.pc input`, so it lost background/border/colour/outline and rendered as a
+     bordered white box with a browser focus ring. */
+  const h = panelHtml;
+  assert.ok(/\.pc input,\s*\.pc textarea\{/.test(h),
+    ".pc rule must select the textarea as well as the input");
+  const ta = h.match(/textarea\[data-sask\]\{[\s\S]*?\}/)[0];
+  assert.ok(!/font:\s*inherit/.test(ta),
+    "font:inherit resets font-size to 16px and beats the .pc rule at equal specificity");
+});
+
+test("21f. a hidden terminal body is display:none, so it cannot fit to zero", () => {
+  /* .termbody{display:flex} overrode [hidden]{display:none}: switching to the
+     Preview tab left the terminal laid out at zero size, it fit itself to 2x1
+     and pushed that winsize into the PTY. */
+  assert.ok(/\.termbody\[hidden\]\{display:none\}/.test(panelHtml),
+    ".termbody[hidden] must be display:none");
+});
+
+test("21g. the terminal mode toggle calls a function that exists", () => {
+  /* termSetMode called mountTerm(), which has never been defined -- so it threw
+     AFTER persisting the new mode, and the pane and the PTY diverged for good. */
+  const h = panelHtml;
+  assert.ok(!/\bmountTerm\s*\(/.test(h), "mountTerm() does not exist; termMount() does");
+  const fn = h.match(/function termSetMode\(mode\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/termMount\(\s*true\s*\)/.test(fn), "must force a remount on a mode change");
+});
+
+test("21h. an undated row does not take the History screen down", () => {
+  /* Two real domain_updated events in the live registry carry no ts_ms. fmt()
+     called toISOString() on them and threw a RangeError, so History rendered
+     nothing at all rather than 65 dated rows and 2 undated ones. */
+  assert.strictEqual(T.fmt(undefined), "—", "undefined must not throw");
+  assert.strictEqual(T.fmt(NaN), "—", "NaN must not throw");
+  assert.strictEqual(T.fmt("not a date"), "—", "junk must not throw");
+  assert.strictEqual(T.fmt(1785508157097).length, 10, "a real stamp still formats");
+});
+
+test("21i. the app is a three-column grid with the rail on the left", () => {
+  /* SHIPPED REGRESSION. The tenant popover was removed with a RANGE delete --
+     "from .tmenuwrap{ to .rtop{" -- and the rules that happened to sit between
+     them went with it: .app's grid-template-columns, .rail's flex column, and
+     the narrow-window media query. .app fell back to display:block, so the rail
+     stopped being a left column and Home/Code stacked across the top of the
+     window. A range delete is only as safe as its end anchor. */
+  const h = panelHtml;
+  const app = h.match(/\n\s*\.app\{[\s\S]*?\}/);
+  assert.ok(app, ".app rule must exist");
+  assert.ok(/display:grid/.test(app[0]), ".app must be display:grid");
+  assert.ok(/grid-template-columns:\s*224px\s+1fr\s+var\(--termw/.test(app[0]),
+    ".app must lay out rail | panes | terminal");
+  const rail = h.match(/\n\s*\.rail\{[\s\S]*?\}/);
+  assert.ok(rail, ".rail rule must exist");
+  assert.ok(/display:flex/.test(rail[0]) && /flex-direction:column/.test(rail[0]),
+    ".rail must be a flex column");
+  assert.ok(/@media\(max-width:860px\)\{\.app\{grid-template-columns:1fr/.test(h),
+    "the narrow-window fallback must survive");
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

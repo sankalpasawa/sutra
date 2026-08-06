@@ -1866,5 +1866,121 @@ class TestLoginPathRepair(unittest.TestCase):
                         "login PATH was prepended; it must be appended")
 
 
+class TestAutomationReader(unittest.TestCase):
+    """GET /api/automation reports the dispatcher from real ledgers, and reports
+    the scheduler as ABSENT rather than as an empty table.
+
+    The distinction is the whole point of the screen. Cadence lives in the Native
+    daemon (ADR-017: a daemon-side tick, deliberately not OS cron/launchd); that
+    daemon does not run in this install and the v1.0 scheduler does not evaluate
+    cron expressions at all. A "0 runs today" table would assert that a scheduler
+    ran and had nothing to do. Nothing ran.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        os.environ.setdefault("SUTRA_NATIVE_HOME",
+                              os.path.expanduser("~/.sutra-native/user-kit"))
+        import org_api
+        self.O = org_api
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_absent_file_and_empty_file_are_different_facts(self):
+        """"no such ledger" must not be reported the same way as "ledger with no
+        rows" -- only the second means nothing has been dispatched."""
+        missing = os.path.join(self.tmp, "nope.jsonl")
+        total, rows, big = self.O._read_jsonl_tail(missing)
+        self.assertEqual((total, rows, big), (0, [], False))
+
+        empty = os.path.join(self.tmp, "empty.jsonl")
+        open(empty, "w").close()
+        total, rows, _ = self.O._read_jsonl_tail(empty)
+        self.assertEqual((total, rows), (0, []))
+
+    def test_a_corrupt_row_does_not_empty_the_ledger(self):
+        """One unparseable line is not a reason to report zero activity: it is
+        counted in the total and skipped in the tail."""
+        p = os.path.join(self.tmp, "led.jsonl")
+        with open(p, "w") as fh:
+            fh.write('{"kind":"decision","unit":"a"}\n')
+            fh.write("{not json at all\n")
+            fh.write('{"kind":"bind","unit":"b"}\n')
+        total, rows, _ = self.O._read_jsonl_tail(p)
+        self.assertEqual(total, 3, "every non-blank line counts toward the total")
+        self.assertEqual([r["kind"] for r in rows], ["decision", "bind"],
+                         "only the parseable rows are returned")
+
+    def test_the_tail_is_the_newest_rows(self):
+        p = os.path.join(self.tmp, "led.jsonl")
+        with open(p, "w") as fh:
+            for i in range(50):
+                fh.write(json.dumps({"n": i}) + "\n")
+        total, rows, _ = self.O._read_jsonl_tail(p, limit=5)
+        self.assertEqual(total, 50)
+        self.assertEqual([r["n"] for r in rows], [45, 46, 47, 48, 49])
+
+    def test_a_runaway_ledger_is_refused_not_half_read(self):
+        """A partial tail presented as the whole is worse than saying nothing."""
+        p = os.path.join(self.tmp, "big.jsonl")
+        with open(p, "w") as fh:
+            fh.write("x" * (self.O.AUTOMATION_MAX_BYTES + 1))
+        total, rows, big = self.O._read_jsonl_tail(p)
+        self.assertTrue(big, "must flag the file as too large")
+        self.assertEqual((total, rows), (0, []), "and must not report partial counts")
+
+    def test_the_endpoint_states_that_there_is_no_scheduler(self):
+        """Called directly: this asserts the endpoint's SHAPE, which does not
+        depend on a live server, and lets the workdir be a scratch dir rather
+        than whatever this machine happens to have configured."""
+        import providers
+        real_load, real_allow = providers.load_settings, providers.workdir_allowed
+        # The allowed-root guard is exercised by its own tests; here it would only
+        # stop a scratch dir from standing in for a real workdir.
+        providers.load_settings = lambda: {"workdir": self.tmp}
+        providers.workdir_allowed = lambda wd: True
+        try:
+            body = self.O.api_automation()
+        finally:
+            providers.load_settings, providers.workdir_allowed = real_load, real_allow
+
+        self.assertEqual(body["root"], self.tmp)
+        sch = body["scheduler"]
+        self.assertIn("note", sch)
+        self.assertTrue(sch["note"].strip(), "the absence must be stated, not implied")
+        for key in ("daemon_running", "ready", "triggers_dir_exists", "triggers"):
+            self.assertIn(key, sch, "scheduler liveness field missing: " + key)
+        self.assertIn("dispatcher", body)
+        for src in ("ledger", "atoms", "gate"):
+            self.assertIn("path", body["dispatcher"][src],
+                          "every source must name the file it read")
+
+
+class TestPtyWinsizeFloor(unittest.TestCase):
+    """A resize the browser measured on a hidden container must not reach the PTY.
+
+    xterm's fit addon reports 2x1 for a container with no area. Applied to the
+    PTY, the TUI reflows into a garbled sliver and STAYS there, because nothing
+    re-sends a size afterwards. The client refuses to send such a measurement;
+    this is the server refusing to apply one, so a single buggy client cannot
+    wedge a session.
+    """
+
+    def test_the_ws_term_handler_floors_the_winsize(self):
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py"),
+                   encoding="utf-8").read()
+        i = src.find('elif kind == "r":')
+        self.assertNotEqual(i, -1, "the resize branch must exist")
+        j = src.find("TIOCSWINSZ", i)
+        self.assertNotEqual(j, -1, "the resize branch must ioctl the winsize")
+        between = src[i:j]
+        self.assertIn("continue", between,
+                      "a degenerate size must be dropped BEFORE the ioctl")
+        self.assertRegex(between, r"rows\s*<\s*\d+\s+or\s+cols\s*<\s*\d+",
+                         "the floor must test both dimensions")
+
+
 if __name__ == "__main__":
     unittest.main()

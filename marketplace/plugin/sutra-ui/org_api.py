@@ -1263,3 +1263,124 @@ def api_tenants():
 
     out.sort(key=lambda r: (0 if r["is_default"] else 1, r["tenant_id"]))
     return out
+
+
+# ========================================================== automation ======
+# The dispatcher and the scheduler, reported from the files they actually write.
+#
+# The honest shape of this, established before any of it was drawn:
+#
+#   DISPATCHER  real. bin/sutra-dispatch and bin/sutra-atom append JSONL ledgers
+#               under <workdir>/.sutra/, and hooks/dispatch-gate.sh + atom-floor.sh
+#               append verdicts under <workdir>/.enforcement/. All read-only here.
+#
+#   SCHEDULER   NOT real, and this endpoint says so rather than drawing an empty
+#               table that implies "0 runs today". Cadence lives in the Native
+#               daemon (marketplace/native, ADR-017: a daemon-side setInterval
+#               tick, deliberately NOT OS cron/launchd). At v1.0 the daemon does
+#               not run in this install and cadence-scheduler.ts does not even
+#               evaluate `cron` -- its next-fire is +Infinity. So the only
+#               truthful report is the daemon's own liveness files and the
+#               trigger store, plus the reason there is nothing to show.
+#
+# Consistent with the no-fixture rule at the top of this file: where there is no
+# data source, the answer is "there is no data source", never a plausible zero.
+
+AUTOMATION_TAIL = 12          # recent rows returned per ledger
+AUTOMATION_MAX_BYTES = 4 * 1024 * 1024   # refuse to walk a runaway ledger
+
+
+def _read_jsonl_tail(path, limit=AUTOMATION_TAIL):
+    """(total_rows, last `limit` parsed rows). Unparseable lines are counted but
+    not returned -- a corrupt row is not a reason to report an empty ledger."""
+    if not os.path.isfile(path):
+        return 0, [], False
+    try:
+        if os.path.getsize(path) > AUTOMATION_MAX_BYTES:
+            return 0, [], True
+        rows, total = [], 0
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                total += 1
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    continue
+        return total, rows[-limit:], False
+    except OSError:
+        return 0, [], False
+
+
+def _automation_root():
+    """The configured workdir, unvalidated-for-git. Dispatch state is written into
+    whatever project the agent runs in, so that is where it is read from."""
+    wd = providers.load_settings().get("workdir") or ""
+    if not wd or not providers.workdir_allowed(wd):
+        raise HTTPException(status_code=400,
+                            detail="the configured workdir is outside the allowed root; "
+                                   "set it in Settings first")
+    return wd
+
+
+@router.get("/automation")
+def api_automation():
+    """Dispatcher activity and scheduler liveness for the configured workdir."""
+    root = _automation_root()
+    exists = os.path.isdir(root)
+
+    j = lambda *p: os.path.join(root, *p)
+
+    disp_total, disp_recent, disp_big = _read_jsonl_tail(j(".sutra", "dispatch-ledger.jsonl"))
+    atom_total, atom_recent, _ = _read_jsonl_tail(j(".sutra", "atom-ledger.jsonl"))
+    gate_total, gate_recent, _ = _read_jsonl_tail(j(".enforcement", "dispatch-gate.jsonl"))
+
+    kinds, verdicts = {}, {}
+    for r in disp_recent:
+        k = str(r.get("kind") or "?")
+        kinds[k] = kinds.get(k, 0) + 1
+    for r in gate_recent:
+        v = str(r.get("verdict") or "?")
+        verdicts[v] = verdicts.get(v, 0) + 1
+
+    # ---- scheduler: liveness, not activity -------------------------------
+    home = _ACTIVE_HOME
+    native_root = os.path.dirname(home.rstrip(os.sep)) or home
+    pid_file = os.path.join(native_root, "native.pid")
+    ready_file = os.path.join(native_root, "native.ready")
+    triggers_dir = os.path.join(home, "triggers")
+    triggers = []
+    if os.path.isdir(triggers_dir):
+        try:
+            triggers = sorted(f for f in os.listdir(triggers_dir) if f.endswith(".json"))
+        except OSError:
+            triggers = []
+
+    return {
+        "root": root,
+        "root_exists": exists,
+        "dispatcher": {
+            "ledger": {"path": ".sutra/dispatch-ledger.jsonl", "rows": disp_total,
+                       "recent": disp_recent, "kinds": kinds, "too_large": disp_big},
+            "atoms": {"path": ".sutra/atom-ledger.jsonl", "rows": atom_total,
+                      "recent": atom_recent},
+            "gate": {"path": ".enforcement/dispatch-gate.jsonl", "rows": gate_total,
+                     "recent": gate_recent, "verdicts": verdicts},
+        },
+        "scheduler": {
+            "daemon_running": os.path.isfile(pid_file),
+            "pid_file": pid_file,
+            "ready": os.path.isfile(ready_file),
+            "triggers_dir": triggers_dir,
+            "triggers_dir_exists": os.path.isdir(triggers_dir),
+            "triggers": triggers,
+            # Stated, not implied. See the block comment above.
+            "note": "Cadence is a daemon-side tick in the Native engine (ADR-017), "
+                    "not OS cron or launchd. This install has no running daemon, "
+                    "and the v1.0 scheduler does not evaluate cron expressions at "
+                    "all -- their next-fire time is +Infinity. Nothing is scheduled, "
+                    "so nothing is reported as having run.",
+        },
+    }
