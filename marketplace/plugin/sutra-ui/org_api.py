@@ -35,7 +35,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -878,6 +878,9 @@ class SettingsRequest(BaseModel):
     workdir: Optional[str] = None
     onboarded: Optional[bool] = None
     model: Optional[str] = None
+    # str to GRANT (must equal providers.UNSAFE_ACK_PHRASE), False to withdraw.
+    # Deliberately not a bare bool -- see providers.UNSAFE_ACK_PHRASE.
+    unsafe_ack: Optional[Union[str, bool]] = None
 
 
 @router.post("/settings")
@@ -890,7 +893,8 @@ def api_settings_post(req: SettingsRequest):
     a mode was applied when it was not.
     """
     if (req.provider is None and req.permission_mode is None
-            and req.workdir is None and req.onboarded is None and req.model is None):
+            and req.workdir is None and req.onboarded is None and req.model is None
+            and req.unsafe_ack is None):
         raise HTTPException(
             status_code=400,
             detail="nothing to update -- send at least one of: provider, "
@@ -902,6 +906,7 @@ def api_settings_post(req: SettingsRequest):
             workdir=req.workdir,
             onboarded=req.onboarded,
             model=req.model,
+            unsafe_ack=req.unsafe_ack,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

@@ -1475,6 +1475,77 @@ function scheduleRender(){
   _renderTimer = setTimeout(()=>{ _renderTimer = null; render(); }, 100);
 }
 
+/* ── streaming: patch, do not rebuild ───────────────────────────────────────
+   Tokens used to call scheduleRender(), and render() replaces #panes WHOLESALE
+   via innerHTML. Ten times a second, for the whole reply, the entire transcript
+   was destroyed and re-parsed. That produced all three reported symptoms at
+   once, and they were one bug:
+
+     flicker     every node in the pane was replaced between frames
+     scroll jump the new scroller starts at scrollTop 0, then code re-pins it,
+                 so the view snapped bottom -> top -> bottom per frame
+     not smooth  100ms batching is 10fps, and re-parsing a long transcript
+                 costs more than the frame budget once a reply gets long
+
+   So a token frame no longer re-renders anything. It rewrites the innerHTML of
+   the ONE element that changed -- the streaming turn's [data-resp] node -- on
+   an animation frame. The scroller is never replaced, so the scroll position is
+   preserved by construction rather than saved and restored.
+
+   Structural changes (a turn starting or finishing, a tool row appearing, an
+   error) still go through render(): those change the shape of the pane, and
+   patching text cannot express them. */
+let _patchRaf = null;
+const _patchDirty = new Set();
+
+function scheduleStreamPatch(uid){
+  if (uid) _patchDirty.add(uid);
+  if (_patchRaf) return;
+  _patchRaf = requestAnimationFrame(()=>{ _patchRaf = null; patchStreaming(); });
+}
+
+/* Every turn currently streaming, by uid, across main and side channels. */
+function _streamingTurns(){
+  const out = new Map();
+  S.sessions.forEach(s => (s.turns || []).forEach(t => {
+    if (t.streaming && t.uid) out.set(t.uid, t);
+  }));
+  Object.keys(S.sideTurns || {}).forEach(sid =>
+    (S.sideTurns[sid] || []).forEach(t => { if (t.streaming && t.uid) out.set(t.uid, t); }));
+  return out;
+}
+
+function patchStreaming(){
+  const live = _streamingTurns();
+  let missed = false;
+  _patchDirty.forEach(uid=>{
+    const t = live.get(uid);
+    if (!t) return;                       /* finished; render() already owns it */
+    const el = document.querySelector('[data-resp="' + uid + '"]');
+    if (!el){
+      /* No anchor yet -- the first token of a reply that has not been drawn
+         with a body element. That IS a structural change, so fall back once. */
+      missed = true;
+      return;
+    }
+    const pane = el.closest(".pane");
+    const pb = pane && pane.querySelector(".pb");
+    const sid = pane && pane.dataset.sess;
+    const pin = pb && !S.userScrolled.get(sid);
+    el.innerHTML = mdHtml(t.response) +
+      '<span class="caret" style="color:var(--acc)">█</span>';
+    /* Only follow the tail when the operator has not scrolled away. __pinning
+       marks it as OUR scroll so the listener does not read it as intent. */
+    if (pin){
+      pb.__pinning = true;
+      pb.scrollTop = pb.scrollHeight;
+      requestAnimationFrame(()=>{ pb.__pinning = false; });
+    }
+  });
+  _patchDirty.clear();
+  if (missed) scheduleRender();
+}
+
 /* ── grounding injection ──
    THIS is the point of Sutra. What reaches Claude is never the raw utterance: it is the
    utterance under the placement the engine just resolved, mirroring what
@@ -1556,7 +1627,14 @@ function claudeChannel(s, side){
       else ch.sideSession = f.id;
       if (ch.turn) ch.turn.claude_session = f.id;
     } else if (f.type === "token"){
-      if (ch.turn) ch.turn.response = (ch.turn.response || "") + f.text;
+      if (ch.turn){
+        ch.turn.response = (ch.turn.response || "") + f.text;
+        /* TEXT ONLY -- patched in place, no re-render. See patchStreaming().
+           Return early so the scheduleRender() at the end of this handler does
+           not undo the whole point by rebuilding the pane anyway. */
+        scheduleStreamPatch(turnUid(ch.turn));
+        return;
+      }
     } else if (f.type === "retrying"){
       /* A rate-limit backoff. Without this the pane went silent and a WAITING
          turn was indistinguishable from a WEDGED one. */
@@ -1670,10 +1748,19 @@ function closeClaudeChannel(sid){
     try { ch.ws.close(); } catch (e) {}
   });
 }
+/* A stable per-turn id, assigned once. It is the anchor patchStreaming() writes
+   through, so it must not change between renders and must never be reused. */
+let _UID = 0;
+function turnUid(t){
+  if (t && !t.uid) t.uid = "t" + (++_UID);
+  return t ? t.uid : "";
+}
+
 /* Run the turn. Fire-and-forget by design: tokens arrive on the socket and land on the
    turn object, which re-renders on the throttle. */
 function askClaude(s, turn, side){
   if (!turn) return;
+  turnUid(turn);
   turn.response = turn.response || "";
   turn.tools = turn.tools || [];
   turn.error = null;
@@ -3575,9 +3662,14 @@ function turnResponse(t){
          <span class="tsum">${esc(t.retrying)}</span></div>` : "";
   const waiting = (t.streaming && !t.response && !runs.length)
     ? `<div class="working"><i class="dot"></i>${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
+  /* data-resp is the PATCH ANCHOR. While a reply streams, patchStreaming()
+     rewrites the innerHTML of exactly this node instead of letting render()
+     rebuild #panes -- see scheduleStreamPatch(). The id must be stable for the
+     life of the turn, which t.uid gives it (assigned once, never reused). */
   const body = t.response
-    ? `<div class="md" style="margin-top:6px;color:var(--ink)">${mdHtml(t.response)}${
-        t.streaming ? `<span style="color:var(--acc)">█</span>` : ""}</div>` : "";
+    ? `<div class="md" data-resp="${esc(t.uid||"")}" style="margin-top:6px;color:var(--ink)">${
+        mdHtml(t.response)}${
+        t.streaming ? `<span class="caret" style="color:var(--acc)">█</span>` : ""}</div>` : "";
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
     ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>` : "";

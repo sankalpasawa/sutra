@@ -985,6 +985,37 @@ test("21i. the app is a three-column grid with the rail on the left", () => {
     "the narrow-window fallback must survive");
 });
 
+test("22a. a streaming token patches one node, it does not re-render the pane", () => {
+  /* REPORTED: the transcript flickered, the view snapped bottom->top, and chunk
+     delivery was not smooth. One cause: a token frame called scheduleRender(),
+     and render() replaces #panes WHOLESALE via innerHTML -- ten times a second,
+     destroying and re-parsing the whole transcript per frame. */
+  const h = panelHtml;
+  const tok = h.match(/\} else if \(f\.type === "token"\)\{[\s\S]*?\n    \} else/);
+  assert.ok(tok, "the token frame branch must exist");
+  assert.ok(/scheduleStreamPatch/.test(tok[0]),
+    "a token must patch, not re-render");
+  assert.ok(/\breturn;/.test(tok[0]),
+    "it must return before the handler's trailing scheduleRender(), or the " +
+    "rebuild happens anyway and the patch is pointless");
+  assert.ok(/data-resp="\$\{esc\(t\.uid/.test(h),
+    "the reply body needs a stable patch anchor");
+});
+
+test("22b. the patch follows the tail only when the reader has not scrolled away", () => {
+  const fn = panelHtml.match(/function patchStreaming\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/S\.userScrolled\.get\(sid\)/.test(fn),
+    "must consult userScrolled before moving the scroller");
+  assert.ok(/__pinning/.test(fn),
+    "our own scroll must be marked so the listener does not read it as intent");
+});
+
+test("22c. streaming is animation-framed, not a 100ms timer", () => {
+  const fn = panelHtml.match(/function scheduleStreamPatch\(uid\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/requestAnimationFrame/.test(fn), "must batch on a frame");
+  assert.ok(!/setTimeout/.test(fn), "10fps batching is what made it choppy");
+});
+
 /* ── report ────────────────────────────────────────────────────────────── */
 
 console.log("\n" + "-".repeat(60));
