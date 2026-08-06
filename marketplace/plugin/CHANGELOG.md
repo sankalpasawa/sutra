@@ -2,6 +2,30 @@
 
 **status**: active · **updated**: 2026-08-06
 
+## 2.71.0
+
+- **The chat can now drive Sutra itself.** Ask it for a routine and it makes one
+  — through an MCP tool server, which is Claude Code's own extension mechanism,
+  so the tools appear to the agent exactly like its built-ins. The server is
+  spawned for one run over stdio; nothing is installed and your global
+  `~/.claude.json` is never touched.
+- **Reads act; mutations propose.** The four mutating tools write an inert
+  proposal and return immediately — the agent never blocks waiting for a human,
+  and nothing touches launchd or settings until you approve it under Routines.
+  Three reasons, each sufficient alone: a `-p` run has nobody to answer a
+  permission prompt; an agent acts on text that may not have come from you; and
+  the local port is unauthenticated, so the write side of this surface is worth
+  nothing to an attacker.
+- Invalid requests are refused at the tool, before a proposal exists — a
+  proposal that cannot apply would be approved and then fail for a reason
+  nobody was shown.
+- **Markdown**: nested lists were flattened (`- a / ␣␣- b` rendered as
+  siblings), and fenced code came out inside a paragraph — invalid HTML, which
+  is what caused the odd gaps around code blocks. Both fixed.
+- **A live activity mark.** While a reply composes, the Sutra mark breathes
+  beside it, and moves into the pill while tools run. It stops under
+  `prefers-reduced-motion`: motion is decoration, the word carries the meaning.
+
 ## 2.70.1
 
 - Desktop auto-update is now mandatory and staged: an update is downloaded and
