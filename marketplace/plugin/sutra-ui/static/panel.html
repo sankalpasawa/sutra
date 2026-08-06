@@ -72,6 +72,20 @@
   .grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
   .grp:hover .chev{opacity:1}
   .rsec[hidden]{display:none}
+  /* Three columns: rail | panes | terminal. The terminal track is `auto`, and the
+     pane is [hidden] when closed, so the track collapses to zero width and the
+     layout is byte-identical to the two-column one until the terminal is opened.
+     It must be a GRID ITEM rather than a child of .panes: render() replaces
+     .panes wholesale and would kill the PTY. */
+  .app{display:grid;grid-template-columns:224px 1fr var(--termw, 0px);gap:9px;background:var(--surface);
+       border:0;border-radius:0;padding:9px;height:100vh;min-height:0;box-shadow:none;
+       /* padding must live INSIDE 100vh or the app is 18px taller than the window */
+       box-sizing:border-box}
+  @media(max-width:860px){.app{grid-template-columns:1fr;height:auto}.rail{max-height:290px}}
+
+  /* rail */
+  .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
+        display:flex;flex-direction:column;min-height:0}
   .rtop{display:flex;align-items:center;gap:8px;padding:11px 11px 9px}
   /* The logo mark is BLACK on gold in BOTH themes. It does not follow --on-acc, which is
      white in the light theme: that made the brand mark read white-on-gold in light mode and

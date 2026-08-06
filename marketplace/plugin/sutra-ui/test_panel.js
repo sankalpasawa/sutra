@@ -964,6 +964,27 @@ test("21h. an undated row does not take the History screen down", () => {
   assert.strictEqual(T.fmt(1785508157097).length, 10, "a real stamp still formats");
 });
 
+test("21i. the app is a three-column grid with the rail on the left", () => {
+  /* SHIPPED REGRESSION. The tenant popover was removed with a RANGE delete --
+     "from .tmenuwrap{ to .rtop{" -- and the rules that happened to sit between
+     them went with it: .app's grid-template-columns, .rail's flex column, and
+     the narrow-window media query. .app fell back to display:block, so the rail
+     stopped being a left column and Home/Code stacked across the top of the
+     window. A range delete is only as safe as its end anchor. */
+  const h = panelHtml;
+  const app = h.match(/\n\s*\.app\{[\s\S]*?\}/);
+  assert.ok(app, ".app rule must exist");
+  assert.ok(/display:grid/.test(app[0]), ".app must be display:grid");
+  assert.ok(/grid-template-columns:\s*224px\s+1fr\s+var\(--termw/.test(app[0]),
+    ".app must lay out rail | panes | terminal");
+  const rail = h.match(/\n\s*\.rail\{[\s\S]*?\}/);
+  assert.ok(rail, ".rail rule must exist");
+  assert.ok(/display:flex/.test(rail[0]) && /flex-direction:column/.test(rail[0]),
+    ".rail must be a flex column");
+  assert.ok(/@media\(max-width:860px\)\{\.app\{grid-template-columns:1fr/.test(h),
+    "the narrow-window fallback must survive");
+});
+
 /* ── report ────────────────────────────────────────────────────────────── */
 
 console.log("\n" + "-".repeat(60));
