@@ -2,6 +2,22 @@
 
 **status**: active · **updated**: 2026-08-06
 
+## 2.69.1
+
+- **The permission selector was a white box in a dark theme.** It shipped in
+  2.69.0 with no CSS at all and fell back to the browser's default styling,
+  sitting directly beside a correctly themed model selector. Both composer
+  selects are now styled by one rule so the next control added there cannot
+  drift either — and a mode that writes files without asking carries the warn
+  colour, so that state is legible in the composer instead of only inside the
+  dropdown.
+- **The Directory view collided with itself in a narrow pane.** Two compounding
+  bugs, both pre-existing: `grid-template-columns: 1fr` is `minmax(auto,1fr)`
+  and `auto` floors at *min-content*, so the column sized itself to 973px inside
+  a 385px pane; and when the container query collapsed the grid to one column
+  the table of contents was still `position:sticky`, so it printed itself over
+  the department names underneath. The column can shrink now, and the TOC goes
+  static when it collapses.
 ## 2.69.0
 
 - **The permission mode is chosen next to the composer now, not in Settings.** It

@@ -429,9 +429,24 @@
      as the same document. Every rule is scoped under .dpage: the generator uses
      generic names (.chip .grid .info .count .tree .sub) and two of them already
      mean something else in this file. */
-  .dpage{display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:start}
-  @container (max-width:720px){ .dpage{grid-template-columns:1fr} }
+  /* minmax(0,…) NOT 1fr. A bare `1fr` is minmax(auto,1fr), and `auto` floors at
+     MIN-CONTENT -- so the charter titles and the lane table sized the column to
+     973px inside a 385px pane and the whole view overflowed its own container.
+     minmax(0,…) lets the column shrink and hands the overflow to the scrollers
+     that already exist (.lanewrap). */
+  .dpage{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
+  .dpage > *{min-width:0}          /* grid items default to min-width:auto -- same trap */
   .dpage nav{position:sticky;top:0;align-self:start;font-size:12px;min-width:0}
+  /* AFTER the sticky rule on purpose: a container query carries no extra
+     specificity, so source order is what decides. Declared before it, this was
+     silently overridden by the very rule it exists to undo. */
+  @container (max-width:720px){
+    .dpage{grid-template-columns:minmax(0,1fr)}
+    /* STATIC when collapsed. Sticky is right beside the content and wrong ON TOP
+       of it: in one column the TOC stopped being a rail and became an overlay,
+       printing itself over the department names underneath. */
+    .dpage nav{position:static}
+  }
   .dpage nav a{display:flex;align-items:center;gap:7px;color:var(--ink);
     text-decoration:none;padding:5px 6px;border-radius:7px}
   .dpage nav a:hover{background:var(--acc-bg)}
@@ -687,9 +702,31 @@
   .att .attx{border:0;background:none;color:var(--faint);cursor:pointer;font-size:14px;
     line-height:1;padding:0 2px;font-family:inherit}
   .att .attx:hover{color:var(--ink)}
-  .modelsel{flex:none;background:var(--inset);border:1px solid var(--line);border-radius:7px;
-    color:var(--muted);font:11px/1 var(--sans);padding:6px 5px;max-width:112px;cursor:pointer}
-  .modelsel:hover{color:var(--ink)}
+  /* ONE rule for both composer selects. .permsel shipped without any CSS and fell
+     back to the UA stylesheet -- a white box in a dark theme, sitting directly
+     beside a correctly themed .modelsel. Same class of regression as the composer
+     textarea: a new control added next to an existing one, without inheriting the
+     rule that made the existing one belong. They are styled together now so the
+     next one added here cannot drift either. */
+  .modelsel,.permsel{flex:none;background:var(--inset);border:1px solid var(--line);
+    border-radius:7px;color:var(--muted);font:11px/1 var(--sans);padding:6px 5px;
+    max-width:112px;cursor:pointer;
+    /* the UA select chrome is light-on-light in dark mode; drop it and draw our own */
+    -webkit-appearance:none;appearance:none;
+    padding-right:16px;
+    background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),
+                     linear-gradient(135deg,currentColor 50%,transparent 50%);
+    background-size:4px 4px,4px 4px;
+    background-position:calc(100% - 9px) 51%,calc(100% - 5px) 51%;
+    background-repeat:no-repeat}
+  .modelsel:hover,.permsel:hover{color:var(--ink);border-color:var(--line)}
+  .modelsel:focus-visible,.permsel:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  /* A mode that writes files without asking is not a neutral preference, and the
+     composer is where you are about to use it. It carries the warn colour so the
+     state is legible at a glance rather than only inside the dropdown. */
+  .permsel.warn{color:var(--warn);border-color:var(--warn);
+    background-color:color-mix(in srgb,var(--warn) 12%,var(--inset))}
+  .permsel.warn:hover{color:var(--warn)}
   /* Stop is destructive-ish and must not look like Send: same slot, different colour,
      square glyph. Reusing the send arrow would make the two indistinguishable at a glance. */
   .send.stop{background:var(--block);color:#fff}
@@ -3622,7 +3659,11 @@ function permSelect(){
      operator the agent is doing something it is not. */
   const cur = st.permission_mode_effective || st.permission_mode || "plan";
   const modes = PERM_MODES.length ? PERM_MODES : [{id:cur}];
-  return `<select class="permsel" data-perm aria-label="Permission mode"
+  /* Derived from the EFFECTIVE mode, so the warning colour tracks what will
+     actually run -- a stored-but-clamped bypassPermissions must not paint the
+     composer red for a session that is really planning. */
+  const writes = (modes.find(m=>m.id===cur)||{}).writes_files ? " warn" : "";
+  return `<select class="permsel${writes}" data-perm aria-label="Permission mode"
       title="What the agent may do without asking — applies to the next message">
     ${modes.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?"selected":""}
       >${esc(m.id)}${m.writes_files?" ⚠":""}</option>`).join("")}

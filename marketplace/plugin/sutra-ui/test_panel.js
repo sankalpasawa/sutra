@@ -1059,6 +1059,59 @@ test("23d. the selector shows the EFFECTIVE mode, not the stored one", () => {
     "must read permission_mode_effective first");
 });
 
+test("24a. every composer control is themed, none falls back to the UA stylesheet", () => {
+  /* .permsel shipped with NO css at all and rendered as a white box in a dark
+     theme, directly beside a correctly themed .modelsel. Same shape as the
+     composer-textarea regression: a control added next to an existing one
+     without inheriting the rule that made the existing one belong. */
+  const h = panelHtml;
+  /* The class attribute is often a template literal -- `class="permsel${writes}"`.
+     An earlier version of this test required a closing quote right after the
+     letters, so it never collected `permsel` at all and passed while the very
+     regression it names was reintroduced. Take the LEADING literal token of any
+     class attribute instead, interpolation or not. */
+  const classes = new Set();
+  const re = /<(?:select|input|textarea)[^>]*\sclass="([a-z][a-z-]*)/g;
+  let m;
+  while ((m = re.exec(h))) classes.add(m[1]);
+  assert.ok(classes.has("permsel") && classes.has("modelsel"),
+    "sanity: the extractor must actually see the composer selects, got " +
+    [...classes].join(","));
+  /* Comments are stripped first. A prose mention like "the .permsel rule" in a
+     comment satisfied a naive search and made this test pass while the CSS it
+     checks for was absent -- the test was reassuring rather than load-bearing.
+     Only a real selector counts: the class followed by { , : or another class. */
+  const css = (h.match(/<style[\s\S]*?<\/style>/) || [h])[0]
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const unstyled = [...classes].filter(c => !new RegExp("\\." + c + "\\s*[,{:.]").test(css));
+  assert.deepStrictEqual(unstyled, [],
+    "form controls with no CSS rule: " + unstyled.join(", "));
+});
+
+test("24b. the directory grid can shrink, and its TOC stops overlaying when it collapses", () => {
+  /* Two compounding bugs made the Directory view unreadable in a narrow pane:
+     `1fr` is minmax(auto,1fr) and `auto` floors at MIN-CONTENT, so the column
+     sized itself to 973px inside a 385px pane; and when the container query
+     collapsed the grid to one column the nav was still position:sticky, so the
+     TOC printed itself over the departments underneath. */
+  const h = panelHtml;
+  const grid = h.match(/\.dpage\{[^}]*\}/)[0];
+  assert.ok(/grid-template-columns:200px minmax\(0,1fr\)/.test(grid),
+    "the content column must be allowed to shrink below min-content");
+  assert.ok(/\.dpage > \*\{min-width:0\}/.test(h),
+    "grid items default to min-width:auto -- the same trap one level down");
+  const cq = h.match(/@container \(max-width:720px\)\{[\s\S]*?\n  \}/);
+  assert.ok(cq, "the collapse query must exist");
+  assert.ok(/\.dpage nav\{position:static\}/.test(cq[0]),
+    "a sticky nav in a single column is an overlay, not a rail");
+  /* Source order is the whole reason this works: a container query carries no
+     extra specificity, so declared BEFORE the sticky rule it is overridden by
+     the very rule it exists to undo. */
+  assert.ok(h.indexOf("@container (max-width:720px)") >
+            h.indexOf(".dpage nav{position:sticky"),
+    "the container query must come AFTER the sticky rule it overrides");
+});
+
 /* ── report ────────────────────────────────────────────────────────────── */
 
 console.log("\n" + "-".repeat(60));
