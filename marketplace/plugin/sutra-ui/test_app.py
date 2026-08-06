@@ -1847,11 +1847,19 @@ class TestLoginPathRepair(unittest.TestCase):
         self.assertFalse(prov.ensure_login_path(), "repaired PATH twice")
 
     def test_ignores_rc_banner_noise_and_non_path_output(self):
-        """An rc file that prints a banner must not poison PATH."""
+        """An rc file that prints a banner must not poison PATH.
+
+        _known_bin_dirs is stubbed out so this tests ONE mechanism. Without the
+        stub the known-location probe (added for the undetected-`claude` field
+        incident) legitimately finds a real install on the developer's own
+        machine and returns True -- which is the probe working, not the banner
+        parser failing. See TestShellPathHarvest for the probe's own tests.
+        """
         import importlib
         os.environ["PATH"] = "/usr/bin:/bin"
         prov = importlib.reload(self.providers)
         prov._login_shell_path = lambda: None      # what the parser returns for junk
+        prov._known_bin_dirs = lambda binaries: []
         self.assertFalse(prov.ensure_login_path())
         self.assertEqual(os.environ["PATH"], "/usr/bin:/bin")
 
@@ -1956,6 +1964,121 @@ class TestAutomationReader(unittest.TestCase):
         for src in ("ledger", "atoms", "gate"):
             self.assertIn("path", body["dispatcher"][src],
                           "every source must name the file it read")
+
+
+class TestShellPathHarvest(unittest.TestCase):
+    """FIELD INCIDENT: `claude` undetected on other people's Macs.
+
+    `zsh -l -c` is a LOGIN, NON-INTERACTIVE shell, and zsh reads ~/.zshrc only
+    for INTERACTIVE shells. .zshrc is where nvm, npm-global and Claude Code's
+    own native installer export PATH -- so the harvest could not see the
+    directory holding the binary, and the app reported it missing on machines
+    where it ran fine in every terminal.
+
+    The dev machine could not reveal this: Homebrew writes its shellenv to
+    .zprofile, which a login shell DOES read. These tests build the other kind
+    of HOME on purpose.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        self.tmp = tempfile.mkdtemp()
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.fake = os.path.join(self.bin, "claude")
+        with open(self.fake, "w") as fh:
+            fh.write("#!/bin/sh\necho claude\n")
+        os.chmod(self.fake, 0o755)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _zshrc_home(self):
+        """A HOME whose PATH addition lives ONLY in .zshrc -- the common case."""
+        with open(os.path.join(self.tmp, ".zshrc"), "w") as fh:
+            fh.write('export PATH="%s:$PATH"\n' % self.bin)
+        return self.tmp
+
+    @unittest.skipUnless(os.path.isfile("/bin/zsh"), "zsh required")
+    def test_a_path_exported_only_from_zshrc_is_harvested(self):
+        """The regression itself. Before the fix this directory was invisible."""
+        import importlib
+        home = self._zshrc_home()
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({"HOME": home, "PATH": "/usr/bin:/bin",
+                               "SHELL": "/bin/zsh"})
+            prov = importlib.reload(self.providers if hasattr(self, "providers")
+                                    else __import__("providers"))
+            got = prov._login_shell_path() or ""
+            self.assertIn(self.bin, got.split(os.pathsep),
+                          "a PATH exported from .zshrc must be harvested; "
+                          "`zsh -l -c` alone cannot see it")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    @unittest.skipUnless(os.path.isfile("/bin/zsh"), "zsh required")
+    def test_the_login_only_shell_really_does_miss_it(self):
+        """Pins the CAUSE, so the -i above can never be 'simplified' away by
+        someone who cannot see why it is there."""
+        import importlib
+        home = self._zshrc_home()
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({"HOME": home, "PATH": "/usr/bin:/bin",
+                               "SHELL": "/bin/zsh"})
+            prov = importlib.reload(__import__("providers"))
+            login_only = prov._shell_path_once("/bin/zsh", interactive=False) or ""
+            interactive = prov._shell_path_once("/bin/zsh", interactive=True) or ""
+            self.assertNotIn(self.bin, login_only.split(os.pathsep),
+                             "if this ever passes, zsh changed and the comment "
+                             "explaining -i is now wrong")
+            self.assertIn(self.bin, interactive.split(os.pathsep))
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_known_locations_are_probed_when_no_shell_can_be_asked(self):
+        """fish, a hanging rc chain, or a GUI-only account: no shell answer at
+        all, and the binary must still be found where its installer puts it."""
+        import importlib
+        home = os.path.join(self.tmp, "home2")
+        local = os.path.join(home, ".local", "bin")
+        os.makedirs(local)
+        target = os.path.join(local, "claude")
+        shutil.copy(self.fake, target)
+        os.chmod(target, 0o755)
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({"HOME": home, "PATH": "/usr/bin:/bin",
+                               "SHELL": "/nonexistent/shell"})
+            prov = importlib.reload(__import__("providers"))
+            self.assertIn(local, prov._known_bin_dirs(["claude"]),
+                          "~/.local/bin is where the native installer puts it")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_a_directory_without_the_binary_is_never_added(self):
+        """The probe must not widen PATH on a hunch: an empty ~/.local/bin is
+        not evidence of anything."""
+        import importlib
+        home = os.path.join(self.tmp, "home3")
+        os.makedirs(os.path.join(home, ".local", "bin"))    # exists, but empty
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({"HOME": home, "PATH": "/usr/bin:/bin"})
+            prov = importlib.reload(__import__("providers"))
+            self.assertNotIn(os.path.join(home, ".local", "bin"),
+                             prov._known_bin_dirs(["claude"]))
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
 
 
 class TestPtyWinsizeFloor(unittest.TestCase):

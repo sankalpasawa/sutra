@@ -140,38 +140,83 @@ function editEnv() {
  * Fails open: a shell that errors, hangs or prints junk costs us nothing but
  * the default environment we already had.
  */
-function loginShellEnv() {
-  const MARK = "__SUTRA_ENV__";
+const ENV_MARK = "__SUTRA_ENV__";
+
+/* One shell invocation's environment, or null. Never throws. */
+function shellEnvOnce(sh, flags) {
   try {
-    const sh = process.env.SHELL || "/bin/zsh";
     // The marker isolates the variables from anything a chatty profile prints.
-    const out = execFileSync(sh, ["-lc", `echo ${MARK}; command env`], {
+    const out = execFileSync(sh, [flags, `echo ${ENV_MARK}; command env`], {
       encoding: "utf8",
       timeout: 8000,
       maxBuffer: 4 * 1024 * 1024,
       stdio: ["ignore", "pipe", "ignore"],
     });
-    const body = out.slice(out.lastIndexOf(MARK) + MARK.length);
+    const i = out.lastIndexOf(ENV_MARK);
+    if (i < 0) return null;
     const env = {};
-    for (const line of body.split("\n")) {
+    for (const line of out.slice(i + ENV_MARK.length).split("\n")) {
       const eq = line.indexOf("=");
       if (eq <= 0) continue;                 // continuation of a multi-line value
       const k = line.slice(0, eq);
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
       env[k] = line.slice(eq + 1);
     }
-    // Never inherited: see the note above.
-    delete env.ANTHROPIC_API_KEY;
-    // Ours win -- these describe THIS process, not the shell's.
-    delete env.PWD;
-    delete env.OLDPWD;
-    delete env.SHLVL;
-    delete env._;
-    return env;
+    return Object.keys(env).length ? env : null;
   } catch (e) {
-    console.error("[sutra] could not read the login shell environment:", e.message);
+    return null;
+  }
+}
+
+function loginShellEnv() {
+  const sh = process.env.SHELL || "/bin/zsh";
+
+  /* INTERACTIVE FIRST, and it is load-bearing. `zsh -lc` is a LOGIN,
+   * NON-INTERACTIVE shell, and zsh reads ~/.zshrc only for INTERACTIVE ones.
+   * .zshrc is where nvm, npm-global and Claude Code's own native installer put
+   * PATH -- so the login-only harvest returned an environment with no `claude`
+   * in it, and the app reported it missing on other people's Macs while it ran
+   * fine in every terminal on those same Macs.
+   *
+   * This machine could not reveal it: Homebrew writes its shellenv to
+   * .zprofile, which a login shell DOES read.
+   *
+   * -lc is still run and merged underneath, never replaced by -lic: an
+   * interactive shell can be the odd one out too (an rc guarded on
+   * `[[ -o interactive ]]` that returns early, a prompt framework that rewrites
+   * PATH, or simply a shell that exits non-zero when interactive without a
+   * tty). Whichever succeeds wins; the interactive answer takes precedence
+   * where both define a variable. Fails open to {} exactly as before.
+   */
+  const interactive = shellEnvOnce(sh, "-lic");
+  const login = shellEnvOnce(sh, "-lc");
+  if (!interactive && !login) {
+    console.error("[sutra] could not read the login shell environment");
     return {};
   }
+  const env = { ...(login || {}), ...(interactive || {}) };
+
+  /* PATH is UNIONED rather than won outright. Every other variable can sensibly
+     take the interactive answer, but PATH is the one we are here for, and each
+     shell can hold a directory the other does not -- .zprofile exports one,
+     .zshrc the other. Order preserved, interactive first, duplicates dropped. */
+  const seen = new Set();
+  const merged = [];
+  for (const src of [interactive, login]) {
+    for (const p of ((src && src.PATH) || "").split(":")) {
+      if (p && !seen.has(p)) { seen.add(p); merged.push(p); }
+    }
+  }
+  if (merged.length) env.PATH = merged.join(":");
+
+  // Never inherited: see the note above.
+  delete env.ANTHROPIC_API_KEY;
+  // Ours win -- these describe THIS process, not the shell's.
+  delete env.PWD;
+  delete env.OLDPWD;
+  delete env.SHLVL;
+  delete env._;
+  return env;
 }
 
 // Resolved once, lazily, because spawning a login shell costs ~100ms and the
