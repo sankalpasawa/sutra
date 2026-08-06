@@ -1,3 +1,13 @@
+# Changelog
+
+**status**: active · **updated**: 2026-08-06
+
+## 2.68.0
+
+- Telemetry is ON by default (anonymous, once daily) per founder direction D64;
+  identity still requires explicit consent, opt-out honored, one-time disclosure
+  shown. Catalog version re-synced to source (drift guard was red at 2.43.0).
+
 ## 2.67.1
 
 - **`claude` was undetected on other people's Macs** — on machines where it ran
@@ -3214,3 +3224,7 @@ First release. Minimum viable plugin for functional validation.
 - Hooks warn rather than block. Hard enforcement deferred to v0.2.
 - No per-profile defaults yet (individual / project / company).
 - Estimation log is session-local, not cross-session.
+
+---
+
+provenance: maintained by Sutra release process; one entry per released plugin version, newest first.

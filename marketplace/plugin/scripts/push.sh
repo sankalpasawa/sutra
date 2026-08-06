@@ -54,10 +54,14 @@ if [ ! -f .claude/sutra-project.json ]; then
   exit 0
 fi
 
-OPTIN=$(jq -r '.telemetry_optin // false' .claude/sutra-project.json 2>/dev/null)
-if [ "$OPTIN" != "true" ]; then
-  echo "telemetry_optin is false — push skipped"
-  echo "(to enable: re-run /core:start --telemetry on)"
+# v2.68.0 (founder direction 2026-08-06): telemetry is ON by default —
+# opt-out model. A missing telemetry_optin key means enabled; only an
+# explicit `"telemetry_optin": false` (or SUTRA_TELEMETRY=0, checked above)
+# disables. Identity fields remain strictly consent-gated below.
+OPTIN=$(jq -r '.telemetry_optin // true' .claude/sutra-project.json 2>/dev/null)
+if [ "$OPTIN" = "false" ]; then
+  echo "telemetry_optin is false (explicit opt-out) — push skipped"
+  echo "(to re-enable: re-run /core:start --telemetry on)"
   exit 0
 fi
 
@@ -78,23 +82,20 @@ if [ -n "$CONSENT_VERSION" ]; then
     fi
   fi
 fi
-if [ "$_consent_ok" -eq 0 ]; then
-  cat >&2 <<'EOF'
-✗ identity-on-wire requires re-consent for v2.33+. Push blocked.
-
-  Existing opt-in (under PRIVACY.md v2.18.0 'identity NOT pushed') must
-  re-acknowledge before identity crosses the wire. PRIVACY.md v2.33.0
-  amendment discloses 4 identity fields on the collaborator-visible
-  sankalpasawa/sutra-data repo: git_user_name, github_login, github_id,
-  git_user_email_hash.
-
-  To re-consent:    /core:start --telemetry on
-  To opt out:       set telemetry_optin=false in .claude/sutra-project.json
-                    OR set SUTRA_TELEMETRY=0 (kill-switch, both rails)
-
-  Queue preserved; no rows leaked. Retry next push after re-consent.
+# v2.68.0: without v2.33+ consent the push proceeds ANONYMOUSLY (metric
+# rows only, no identity block) instead of blocking entirely. Identity
+# still crosses the wire only after explicit /core:start --telemetry on
+# re-consent — the v2.33 disclosure contract is unchanged.
+PUSH_IDENTITY="$_consent_ok"
+if [ "$PUSH_IDENTITY" -eq 0 ]; then
+  cat <<'EOF'
+telemetry: pushing anonymous metric rows (default-on, v2.68.0).
+  Identity fields are NOT included — they require explicit consent:
+    /core:start --telemetry on   (acknowledges PRIVACY.md v2.33 disclosure)
+  To opt out of telemetry entirely:
+    set telemetry_optin=false in .claude/sutra-project.json
+    OR set SUTRA_TELEMETRY=0 (kill-switch, both rails)
 EOF
-  exit 0
 fi
 
 INSTALL_ID=$(jq -r '.install_id // empty' .claude/sutra-project.json)
@@ -144,7 +145,9 @@ cp "$(queue_file)" "$DEST/telemetry-$TS.jsonl"
 # P1-1 fold). Log hygiene (codex P2-3 #6): NEVER print IDENTITY_4 to
 # stdout/stderr.
 IDENTITY_4="{}"
-if declare -f capture_identity >/dev/null 2>&1; then
+# v2.68.0: identity is captured ONLY on the consented path (PUSH_IDENTITY=1).
+# Default-on anonymous pushes carry IDENTITY_4="{}" — nothing to strip later.
+if [ "${PUSH_IDENTITY:-0}" -eq 1 ] && declare -f capture_identity >/dev/null 2>&1; then
   _identity_full=$(capture_identity "$VERSION" 2>/dev/null)
   if [ -n "$_identity_full" ] && printf '%s' "$_identity_full" | jq -e . >/dev/null 2>&1; then
     _identity_4=$(printf '%s' "$_identity_full" | jq '{git_user_name, github_login, github_id, git_user_email_hash}' 2>/dev/null)

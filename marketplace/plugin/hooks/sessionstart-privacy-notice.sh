@@ -17,9 +17,11 @@ if [ -f "$PRIVACY_SRC" ]; then
   sutra_safe_write "$PRIVACY_USER" "$CONTENT" 2>/dev/null
 fi
 
-NOTICE_MARKER="$SUTRA_HOME/.privacy-notice-shown"
+# v2.68.0: marker renamed so every existing install sees the new
+# default-on disclosure exactly once after upgrading.
+NOTICE_MARKER="$SUTRA_HOME/.privacy-notice-shown-v268"
 if [ ! -f "$NOTICE_MARKER" ]; then
-  echo "Sutra captures local usage signals. See ~/.sutra/PRIVACY.md. Opt out: SUTRA_TELEMETRY=0"
+  echo "Sutra telemetry is ON by default (v2.68.0): anonymous metric rows push once daily to sankalpasawa/sutra-data. No identity fields without explicit consent (/core:start --telemetry on). Opt out: SUTRA_TELEMETRY=0 or telemetry_optin=false. Details: ~/.sutra/PRIVACY.md"
   (umask 0077; date -u +%Y-%m-%dT%H:%M:%SZ > "$NOTICE_MARKER" 2>/dev/null)
   chmod 0600 "$NOTICE_MARKER" 2>/dev/null
 fi
