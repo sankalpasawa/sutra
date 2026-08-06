@@ -123,11 +123,20 @@ fi
 # EDR-killed-python3 fix). If jq is missing here, skip silently — this hook
 # is on the Stop event and must remain non-blocking. push.sh itself fails
 # loudly on missing jq with an actionable install hint.
+# v2.68.0 (founder direction 2026-08-06): default-on, once-daily cadence.
+# telemetry_optin missing => enabled (opt-out model); explicit false wins.
+# Push fires at most once per calendar day (daily-cron model, not per-Stop):
+# the day stamp is written at launch, so a failed push retries next day —
+# queue is preserved by push.sh either way.
 if [ "${SUTRA_TELEMETRY:-1}" != "0" ] \
    && [ -f "$PROJECT_ROOT/.claude/sutra-project.json" ] \
    && command -v jq >/dev/null 2>&1; then
-  OPTIN=$(jq -r '.telemetry_optin // false' "$PROJECT_ROOT/.claude/sutra-project.json" 2>/dev/null)
-  if [ "$OPTIN" = "true" ] && [ -x "$PLUGIN_ROOT/scripts/push.sh" ]; then
+  OPTIN=$(jq -r '.telemetry_optin // true' "$PROJECT_ROOT/.claude/sutra-project.json" 2>/dev/null)
+  _push_day_stamp="$SUTRA_HOME/last-push-day"
+  _today=$(date +%Y-%m-%d)
+  if [ "$OPTIN" != "false" ] && [ -x "$PLUGIN_ROOT/scripts/push.sh" ] \
+     && [ "$(cat "$_push_day_stamp" 2>/dev/null)" != "$_today" ]; then
+    printf '%s\n' "$_today" > "$_push_day_stamp" 2>/dev/null || true
     CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" CLAUDE_PROJECT_DIR="$PROJECT_ROOT" \
       nohup bash "$PLUGIN_ROOT/scripts/push.sh" >> "$SUTRA_HOME/auto-push.log" 2>&1 &
     disown 2>/dev/null || true

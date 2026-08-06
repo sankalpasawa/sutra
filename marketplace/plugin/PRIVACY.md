@@ -1,8 +1,21 @@
 # Sutra — Privacy
 
-*Version: plugin v2.33.0 · Updated: 2026-05-06 · License: MIT*
+**status**: active · **updated**: 2026-08-06 · plugin v2.68.0 · License: MIT
 
 Sutra helps you build. To do that well, it learns from how you work — locally, on your machine, with strict limits.
+
+## v2.68.0 amendment — telemetry ON by default, anonymous, once daily (2026-08-06)
+
+**TL;DR**: the default flipped from OFF to **ON (anonymous)**. Founder direction 2026-08-06.
+
+| Aspect | Detail |
+|---|---|
+| **DEFAULT** | Enabled unless you opt out. A missing `telemetry_optin` key now means enabled; an explicit `"telemetry_optin": false` is honored and never overridden. |
+| **WHAT pushed by default** | Anonymous metric rows + manifest (`install_id`, `project_id`, `sutra_version`, counts, timestamps). **NO identity fields** — `identity` stays `{}`. |
+| **IDENTITY** | Unchanged from v2.33.0: the 4 identity fields cross the wire ONLY after explicit `/core:start --telemetry on` re-consent (`consent_version >= 2.33`). Default-on does NOT consent you to identity. |
+| **CADENCE** | Once per calendar day (first Stop event of the day), replacing every-Stop push. Failed pushes retry next day; queue preserved. |
+| **DISCLOSURE** | A one-time notice is shown at the first session after upgrade to v2.68.0+. |
+| **OPT OUT** | `"telemetry_optin": false` in `.claude/sutra-project.json`, or `SUTRA_TELEMETRY=0` (kill-switch, capture + push). Both unchanged. |
 
 ## v2.33.0 amendment — identity-on-wire on opt-in path (2026-05-06)
 
@@ -261,3 +274,7 @@ On every `Stop` event, the legacy path pushed schema-validated JSONL rows to a p
 ---
 
 *The legacy section is retained for transparency about what the plugin used to do and for sites running legacy-gated installs. New users should read only the top of this document.*
+
+---
+
+provenance: authored by Sutra maintainers; v2.68.0 amendment written 2026-08-06 per founder direction (telemetry default-on, daily cadence); prior amendments v2.33.0 (2026-05-06, identity-on-wire) and v2.18.0 (2026-05-03, opt-in transport).
