@@ -1952,6 +1952,8 @@ const S = {
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,
+  /* routines: null until the screen is opened (it shells out to launchctl). */
+  rt:null, rtError:null, rtBusy:null, rtMsg:null, rtForm:null, rtRuns:{}, rtOpen:{},
   /* permission mode confirmation, at chat level -- see permSelect(). */
   permConfirm:null, permBusy:false, permError:null,
   /* Per-session composer extras. `attach` holds one entry per pending file (each with
@@ -2163,6 +2165,7 @@ const ICON = {
   hist:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>',
   health:'<path d="M3 13h4l2.5 6 4-14 2.5 8h5"/>',
   skills:'<path d="M12 3l7.5 4.3v8.6L12 20.2 4.5 15.9V7.3z"/><path d="M12 12l7.5-4.4M12 12v8.2M12 12L4.5 7.6"/>',
+  rout:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.4V12l3 1.8"/><path d="M4.5 5.5l2.2 2.2M19.5 5.5l-2.2 2.2"/>',
   auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
   chevron:'<path d="M6 9l6 6 6-6"/>'
@@ -2203,6 +2206,11 @@ function railSpec(){
          looked at. */
       {id:"automation",n:"Automation",i:"auto",
        c:(S.auto ? (((S.auto.dispatcher||{}).ledger||{}).rows) : undefined)},
+      /* Routines sit next to Automation because both are "what runs without me",
+         but they are not the same: Automation REPORTS on subsystems, a routine is
+         something the operator creates. Count withheld until read, like Git. */
+      {id:"routines", n:"Routines",  i:"rout",
+       c:(S.rt ? (S.rt.routines||[]).length : undefined)},
       /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
          anyway. It shipped as a 19px unlabelled icon in the footer and the first
          operator to use it reported "I don't see terminal": a control nobody can
@@ -3347,6 +3355,173 @@ SCREENS.automation = () => {
     </section>`;
 };
 
+/* ── S8c Routines ──
+   Local scheduled tasks. Claude Code calls the umbrella noun "Routines" and
+   offers Local vs Cloud; only Local is something this panel can honestly own,
+   so that is the badge. The five schedule presets are Claude's own
+   (Manual / Hourly / Daily / Weekdays / Weekly) plus a custom cron escape.
+
+   The honesty rules this screen follows, all of them because the alternative is
+   a plausible lie:
+     - never "0 runs" -- "never run" and "ran and produced nothing" differ
+     - a green Run now proves the RUNNER, not the schedule; say so
+     - saved-but-not-loaded is not "scheduled"; show launchd's own stderr
+     - next-run is NOT computed here: launchd decides, and a number we invented
+       would be wrong the first time the Mac slept */
+function rtPresetForm(f){
+  const P = [["manual","Manual"],["hourly","Hourly"],["daily","Daily"],
+             ["weekdays","Weekdays"],["weekly","Weekly"],["custom","Custom cron"]];
+  const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const needsTime = ["daily","weekdays","weekly"].includes(f.preset);
+  return `
+    <div class="kv"><b>Schedule</b><span>
+      <select data-rtf="preset">${P.map(([v,n])=>
+        `<option value="${v}" ${f.preset===v?"selected":""}>${n}</option>`).join("")}</select>
+      ${f.preset==="hourly"?`<span class="why">at :<input class="wdin" style="width:52px"
+          data-rtf="minute" value="${esc(String(f.minute??0))}"> past the hour</span>`:""}
+      ${needsTime?`<input class="wdin" style="width:64px" data-rtf="hour"
+          value="${esc(String(f.hour??9))}" aria-label="Hour"> :
+        <input class="wdin" style="width:64px" data-rtf="minute"
+          value="${esc(String(f.minute??0))}" aria-label="Minute">`:""}
+      ${f.preset==="weekly"?`<select data-rtf="weekday">${DAYS.map((d,i)=>
+        `<option value="${i}" ${String(f.weekday??1)===String(i)?"selected":""}>${d}</option>`).join("")}</select>`:""}
+      ${f.preset==="custom"?`<input class="wdin" style="min-width:190px" data-rtf="cron"
+          placeholder="0 9 * * 1-5" value="${esc(f.cron||"")}">`:""}
+    </span></div>`;
+}
+
+function rtCreateForm(){
+  const f = S.rtForm; if (!f) return "";
+  const st = S.rt || {};
+  return `<div class="note" style="margin-bottom:12px">
+    <b>New routine</b> <span class="pill p-mut">Local</span>
+    <p style="margin:6px 0;color:var(--faint)">Runs on this Mac, on a schedule, with
+      nobody watching. It is not a cloud routine and does not run when the Mac is off.</p>
+    ${S.rtError?`<p style="color:var(--block);white-space:pre-wrap">${esc(S.rtError)}</p>`:""}
+    <div class="kv"><b>Name</b><span><input class="wdin" data-rtf="id"
+      placeholder="morning-brief" value="${esc(f.id||"")}"> <span class="why">lower-case,
+      dashes; also the folder and launchd label</span></span></div>
+    <div class="kv"><b>Description</b><span><input class="wdin" data-rtf="description"
+      placeholder="What changed in sutra since yesterday" value="${esc(f.description||"")}"></span></div>
+    <div class="kv"><b>Instructions</b><span><textarea class="edta" style="min-height:96px"
+      data-rtf="prompt" placeholder="What Claude should do on each run">${esc(f.prompt||"")}</textarea></span></div>
+    <div class="kv"><b>Working folder</b><span><input class="wdin" data-rtf="cwd"
+      placeholder="~/some/project" value="${esc(f.cwd||"")}"> <span class="why">must exist,
+      inside your home</span></span></div>
+    <div class="kv"><b>Model</b><span><select data-rtf="model">
+      ${(st.models||[""]).map(m=>`<option value="${esc(m)}" ${f.model===m?"selected":""}
+        >${m||"CLI default"}</option>`).join("")}</select></span></div>
+    <div class="kv"><b>Permission</b><span><select data-rtf="permission_mode">
+      ${(st.permission_modes||["dontAsk"]).map(m=>`<option value="${esc(m)}"
+        ${f.permission_mode===m?"selected":""}>${esc(m)}</option>`).join("")}</select>
+      <span class="why">a routine runs unattended, so the modes that write files
+        without asking are not offered here at all</span></span></div>
+    <div class="kv"><b>Budget</b><span>$<input class="wdin" style="width:72px"
+      data-rtf="max_budget_usd" value="${esc(String(f.max_budget_usd??1))}">
+      <span class="why">per run; a schedule with no ceiling is how it becomes a bill</span></span></div>
+    ${rtPresetForm(f)}
+    <p style="margin-top:10px">
+      <button class="btn" type="button" data-rtsave ${S.rtBusy?"disabled":""}>
+        ${S.rtBusy==="create"?"Creating…":"Create routine"}</button>
+      <button class="btn" type="button" data-rtcancel>Cancel</button></p>
+  </div>`;
+}
+
+function rtRunRow(r){
+  const pill = r.outcome==="ok" ? `<span class="pill p-ok">ok</span>`
+    : r.outcome==="skipped" ? `<span class="pill p-mut">skipped</span>`
+    : `<span class="pill p-block">${esc(r.outcome||"?")}</span>`;
+  return `<tr><td>${pill}</td><td class="num">${esc(fmt(Date.parse(r.started_at)))}</td>
+    <td>${esc(r.trigger||"")}</td><td class="num">${r.duration_s??"—"}s</td>
+    <td class="num">${r.cost_usd!=null?"$"+Number(r.cost_usd).toFixed(4):"—"}</td>
+    <td>${r.detail?esc(String(r.detail).slice(0,120)):""}</td></tr>`;
+}
+
+function rtCard(r){
+  const runs = S.rtRuns[r.id];
+  const sched = (r.schedule||{}).human || "—";
+  const state = !r.enabled ? `<span class="pill p-mut">paused</span>`
+    : !r.loaded ? `<span class="pill p-warn">not loaded</span>`
+    : `<span class="pill p-ok">active</span>`;
+  /* "never run" and "0 runs" are different claims. Only one of them is true here. */
+  const last = r.never_run
+    ? `<span class="pill p-warn">never run</span> <span class="why">Run it once now
+        to check it works.</span>`
+    : r.last_run
+      ? `${r.last_run.outcome==="ok"?`<span class="pill p-ok">last ok</span>`
+          :`<span class="pill p-block">last ${esc(r.last_run.outcome)}</span>`}
+         <span class="why">${esc(fmt(Date.parse(r.last_run.started_at)))}${
+           r.last_run.cost_usd!=null?" · $"+Number(r.last_run.cost_usd).toFixed(4):""}</span>`
+      : "";
+  return `<section class="chsec" data-rt="${esc(r.id)}">
+    <h2 class="chh">${esc(r.id)} <span class="pill p-mut">Local</span></h2>
+    <p style="margin:0 0 8px;color:var(--muted)">${esc(r.description||"")}</p>
+    <div class="kv"><b>Schedule</b><span>${esc(sched)} ${state}</span></div>
+    <div class="kv"><b>Last run</b><span>${last}</span></div>
+    <div class="kv"><b>Folder</b><span><code>${esc(r.cwd)}</code>${
+      r.cwd_exists?"":` <span class="pill p-block">missing</span>`}</span></div>
+    <div class="kv"><b>Runs as</b><span><code>${esc(r.permission_mode)}</code>${
+      r.model?` · <code>${esc(r.model)}</code>`:""}</span></div>
+    ${!r.enabled?`<div class="note"><b>Paused.</b> It will not fire on its own.
+      Run now still works — that is how Claude behaves too.</div>`:""}
+    ${r.enabled&&!r.loaded?`<div class="note b"><b>Saved as active, but launchd has not
+      loaded it — it will not fire.</b> Use Re-check after fixing, or delete and
+      recreate it.</div>`:""}
+    ${r.never_fired_on_schedule?`<div class="note w"><b>Never fired on schedule.</b>
+      Every run so far was started by hand. Run now ignores the schedule, so a green
+      run proves the routine works, not that the schedule does.</div>`:""}
+    <p style="margin:9px 0 0">
+      <button class="btn" type="button" data-rtrun="${esc(r.id)}" ${S.rtBusy?"disabled":""}
+        >${S.rtBusy==="/"+r.id+"/run"?"Starting…":"Run now"}</button>
+      <button class="btn" type="button" data-rttoggle="${esc(r.id)}" data-en="${r.enabled?0:1}"
+        >${r.enabled?"Pause":"Resume"}</button>
+      <button class="btn" type="button" data-rtruns="${esc(r.id)}">${
+        runs?"Refresh runs":"Show runs"}</button>
+      <button class="btn" type="button" data-rtdel="${esc(r.id)}">Delete</button></p>
+    ${runs?(runs.error?`<div class="note b">${esc(runs.error)}</div>`
+      : runs.total===0 ? `<div class="note">No runs recorded yet.</div>`
+      : `<div class="tw"><table><thead><tr><th>Outcome</th><th>Started</th><th>Trigger</th>
+          <th>Took</th><th>Cost</th><th>Detail</th></tr></thead>
+          <tbody>${runs.runs.map(rtRunRow).join("")}</tbody></table></div>`):""}
+  </section>`;
+}
+
+SCREENS.routines = () => {
+  if (S.rtError && !S.rt) return `<div class="zero"><h4>Routines unavailable</h4>
+    <p>${esc(S.rtError)}</p></div>`;
+  if (!S.rt) return `<div class="zero"><h4>Reading…</h4>
+    <p>${esc(TITLES.routines[1])}</p></div>`;
+  const st = S.rt, list = st.routines || [];
+
+  /* The sharp edge of LOCAL scheduling, stated at the top rather than discovered
+     after a missed morning. */
+  const caveat = `<div class="note"><b>These run on this Mac, not in the cloud.</b>
+    ${esc(st.note||"")}</div>`;
+  const orphan = (st.orphans||[]).length ? `<div class="note w">
+    <b>${st.orphans.length} scheduled job${st.orphans.length===1?"":"s"} with no routine
+    behind ${st.orphans.length===1?"it":"them"}.</b> Left over from a deleted routine or an
+    older install; ${st.orphans.length===1?"it":"they"} would still fire.
+    <button class="btn" type="button" data-rtfix>Remove them</button></div>` : "";
+  const banner = S.rtMsg ? `<div class="note"><b>${esc(S.rtMsg)}</b></div>`
+    : (S.rtError ? `<div class="note b">${esc(S.rtError)}</div>` : "");
+
+  if (!list.length && !S.rtForm) return `${caveat}${orphan}${banner}
+    <div class="zero"><h4>No routines yet</h4>
+      <p>A routine is a prompt this Mac runs on a schedule — a morning brief, a nightly
+         check, a weekly summary — without you opening anything.</p>
+      <p style="color:var(--faint)">Stored in <code>${esc(st.store)}</code>, scheduled with
+         a launchd user agent. Nothing runs until you create one.</p>
+      <p><button class="btn" type="button" data-rtnew>New routine</button></p></div>`;
+
+  return `${caveat}${orphan}${banner}
+    <p style="margin-bottom:10px"><button class="btn" type="button" data-rtnew
+      >New routine</button> <button class="btn" type="button" data-rtreload>Re-check</button></p>
+    ${rtCreateForm()}
+    ${list.map(r=>r.unreadable
+      ? `<div class="note b"><b>${esc(r.id)} could not be read.</b> ${esc(r.unreadable)}</div>`
+      : rtCard(r)).join("")}`;
+};
+
 /* Colour a unified diff. Line-based on purpose: a token-level differ would be a
    second, subtly different opinion about what changed from the one git already
    gave us, and this screen's job is to show git's answer. */
@@ -3591,6 +3766,7 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
+  routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
   settings:["Settings","~/.sutra-ui/settings.json · PATH"]};
 /* ── a session's routing path, as a chart ──
@@ -4657,6 +4833,66 @@ function wire(){
     ch.ws.send(JSON.stringify({type:"stop"}));
   });
 
+  /* ── routines ── */
+  scBody.querySelectorAll("[data-rtnew]").forEach(b=>b.onclick=()=>{
+    S.rtForm = {preset:"daily", hour:9, minute:0, weekday:1, model:"",
+                permission_mode:(S.rt&&S.rt.permission_modes||["dontAsk"])[0],
+                max_budget_usd:1, cwd:((SETTINGS||{}).workdir)||""};
+    S.rtError = null; render();
+  });
+  scBody.querySelectorAll("[data-rtcancel]").forEach(b=>b.onclick=()=>{
+    S.rtForm = null; S.rtError = null; render(); });
+  scBody.querySelectorAll("[data-rtreload]").forEach(b=>b.onclick=()=>loadRoutines(true));
+  scBody.querySelectorAll("[data-rtfix]").forEach(b=>b.onclick=()=>
+    rtAction("/reconcile", {fix:true}, "Removed the leftover jobs."));
+
+  /* Field edits are held in S.rtForm, not read off the DOM at submit: render()
+     rebuilds the screen whenever the preset changes, and anything only in the
+     DOM would be lost at that moment. */
+  scBody.querySelectorAll("[data-rtf]").forEach(el=>{
+    const k = el.dataset.rtf;
+    const commit = ()=>{ if (!S.rtForm) return; S.rtForm[k] = el.value; };
+    el.oninput = commit;
+    /* A select changes the SHAPE of the form (a weekly needs a day picker), so it
+       must re-render; a text input must not, or the caret jumps on every key. */
+    if (el.tagName === "SELECT") el.onchange = ()=>{ commit(); render(); };
+  });
+
+  scBody.querySelectorAll("[data-rtsave]").forEach(b=>b.onclick=async ()=>{
+    const f = S.rtForm || {};
+    const body = {
+      id:(f.id||"").trim().toLowerCase(), description:f.description, prompt:f.prompt,
+      cwd:f.cwd, model:f.model||"", permission_mode:f.permission_mode,
+      opts:{ max_budget_usd:Number(f.max_budget_usd)||0 },
+      schedule:{ preset:f.preset, hour:Number(f.hour)||0, minute:Number(f.minute)||0,
+                 weekday:Number(f.weekday)||0, cron:f.cron },
+      enabled:true };
+    S.rtBusy = "create"; S.rtError = null; S.rtMsg = null; render();
+    try {
+      const r = await apiPost("/api/routines", body);
+      S.rtForm = null;
+      S.rtMsg = (r.launchd && r.launchd.ok)
+        ? "Created and scheduled. It has never run — use Run now to check it works."
+        : "Created, but launchd refused to load it: " + ((r.launchd||{}).stderr||"no reason given");
+      await loadRoutines(true);
+    } catch (e) { S.rtError = e.message; }
+    S.rtBusy = null; render();
+  });
+
+  scBody.querySelectorAll("[data-rtrun]").forEach(b=>b.onclick=()=>
+    rtAction("/" + b.dataset.rtrun + "/run", {confirm:true}));
+  scBody.querySelectorAll("[data-rttoggle]").forEach(b=>b.onclick=()=>
+    rtAction("/" + b.dataset.rttoggle, {enabled: b.dataset.en === "1"},
+             b.dataset.en === "1" ? "Resumed." : "Paused — it will not fire on its own."));
+  scBody.querySelectorAll("[data-rtruns]").forEach(b=>b.onclick=()=>
+    rtLoadRuns(b.dataset.rtruns));
+  scBody.querySelectorAll("[data-rtdel]").forEach(b=>b.onclick=()=>{
+    /* Deleting unloads a real launchd job. Confirm, and say what survives. */
+    if (!confirm("Delete routine \"" + b.dataset.rtdel + "\"?\n\nThe scheduled job is " +
+                 "removed. Its run history is kept on disk.")) return;
+    rtAction("/" + b.dataset.rtdel + "/delete", {confirm:true}, "Deleted.");
+  });
+
   /* ── permission mode (chat level) ── */
   panes.querySelectorAll("[data-perm]").forEach(sel=>sel.onchange=()=>{
     const want = sel.value;
@@ -4860,6 +5096,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     if (S.screen === "automation") loadAuto(false);
+    if (S.screen === "routines") loadRoutines(false);
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -5137,6 +5374,26 @@ async function loadAuto(force){
   } catch (e) {
     S.autoError = e.message; S.auto = null;
   }
+  render();
+}
+async function loadRoutines(force){
+  if (S.rt && !force) return;
+  try { S.rt = await apiGet("/api/routines"); S.rtError = null; }
+  catch (e) { S.rtError = e.message; S.rt = null; }
+  render();
+}
+async function rtAction(path, body, msg){
+  S.rtBusy = path; S.rtMsg = null; S.rtError = null; render();
+  try {
+    const r = await apiPost("/api/routines" + path, body || {});
+    S.rtMsg = msg || r.note || "Done.";
+    await loadRoutines(true);
+  } catch (e) { S.rtError = e.message; }
+  S.rtBusy = null; render();
+}
+async function rtLoadRuns(id){
+  try { S.rtRuns[id] = await apiGet("/api/routines/" + encodeURIComponent(id) + "/runs?limit=10"); }
+  catch (e) { S.rtRuns[id] = {error:e.message}; }
   render();
 }
 async function loadGit(force){

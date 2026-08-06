@@ -75,6 +75,7 @@ import reorg_sim as R  # noqa: E402
 
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
+import routines   # local scheduled routines (launchd + the claude CLI; no engine access)
 
 # --------------------------------------------------------------- drafts ----
 # Draft plan storage. Outside SUTRA_NATIVE_HOME by design (§8.5.9 "What it
@@ -1269,6 +1270,90 @@ def api_tenants():
 
     out.sort(key=lambda r: (0 if r["is_default"] else 1, r["tenant_id"]))
     return out
+
+
+# ============================================================ routines ======
+# Transport only; everything real is in routines.py, which is importable and
+# testable without a server. Reads are GET, anything that touches launchd or the
+# store is POST.
+
+@router.get("/routines")
+def api_routines():
+    return routines.state()
+
+
+@router.get("/routines/{rid}/runs")
+def api_routine_runs(rid: str, limit: int = 10):
+    try:
+        return routines.runs(rid, limit=max(1, min(int(limit), 200)))
+    except (KeyError, OSError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/routines/{rid}/output")
+def api_routine_output(rid: str, name: str):
+    try:
+        return {"id": rid, "name": name, "text": routines.run_output(rid, name)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such run output")
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/routines")
+def api_routine_create(body: Dict[str, Any]):
+    try:
+        rec, launchd = routines.create(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"routine": rec, "launchd": launchd}
+
+
+@router.post("/routines/reconcile")
+def api_routines_reconcile(body: Optional[Dict[str, Any]] = None):
+    return routines.reconcile(fix=bool((body or {}).get("fix")))
+
+
+@router.post("/routines/{rid}")
+def api_routine_update(rid: str, body: Dict[str, Any]):
+    try:
+        rec, launchd = routines.update(rid, body)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"routine": rec, "launchd": launchd}
+
+
+@router.post("/routines/{rid}/run")
+def api_routine_run(rid: str, body: Optional[Dict[str, Any]] = None):
+    # Confirmation is required because this spends money on the operator's plan.
+    if not (body or {}).get("confirm"):
+        raise HTTPException(status_code=400,
+                            detail="running a routine starts a real agent turn; "
+                                   "send {\"confirm\": true}")
+    try:
+        return routines.run_now(rid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/routines/{rid}/delete")
+def api_routine_delete(rid: str, body: Optional[Dict[str, Any]] = None):
+    if not (body or {}).get("confirm"):
+        raise HTTPException(status_code=400, detail="send {\"confirm\": true}")
+    try:
+        return routines.delete(rid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ============================================================= updates ======

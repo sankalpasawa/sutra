@@ -2226,3 +2226,145 @@ class TestPtyWinsizeFloor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRoutines(unittest.TestCase):
+    """Schedule translation, validation and the permission floor.
+
+    No launchd in these: a test that bootstraps a real job would install a real
+    scheduled agent on whoever runs the suite. The launchd path is exercised by
+    hand against a live server; what is pinned here is everything that decides
+    WHAT gets scheduled.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import routines
+        self.R = routines
+        # UNDER $HOME on purpose: validate_new() confines a routine's working
+        # folder to the home directory, and /var/folders is outside it. A tmp dir
+        # elsewhere would fail the rule the test is not trying to test.
+        self.tmp = tempfile.mkdtemp(prefix=".sutra-test-", dir=os.path.expanduser("~"))
+        self._env = dict(os.environ)
+        os.environ["SUTRA_UI_ROUTINES"] = os.path.join(self.tmp, "routines")
+        os.environ["SUTRA_UI_RUNS"] = os.path.join(self.tmp, "runs")
+        os.environ["SUTRA_UI_LAUNCHAGENTS"] = os.path.join(self.tmp, "agents")
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._env)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    # ---- the five presets Claude's own Schedule control offers --------------
+    def test_the_five_presets_map_to_the_right_cron(self):
+        R = self.R
+        self.assertIsNone(R.preset_to_cron("manual"))
+        self.assertEqual(R.preset_to_cron("hourly", minute=0), "0 * * * *")
+        self.assertEqual(R.preset_to_cron("daily", hour=9, minute=0), "0 9 * * *")
+        self.assertEqual(R.preset_to_cron("weekdays", hour=9, minute=0), "0 9 * * 1-5")
+        self.assertEqual(R.preset_to_cron("weekly", hour=18, minute=30, weekday=5),
+                         "30 18 * * 5")
+
+    def test_cron_becomes_the_calendar_launchd_actually_wants(self):
+        R = self.R
+        self.assertEqual(R.cron_to_calendar("0 * * * *"), {"Minute": 0})
+        self.assertEqual(R.cron_to_calendar("0 9 * * *"), {"Minute": 0, "Hour": 9})
+        wd = R.cron_to_calendar("0 9 * * 1-5")
+        self.assertEqual(len(wd), 5, "weekdays needs one dict per day: launchd has "
+                                     "no range syntax of its own")
+        self.assertEqual(sorted(d["Weekday"] for d in wd), [1, 2, 3, 4, 5])
+        self.assertTrue(all(d["Hour"] == 9 and d["Minute"] == 0 for d in wd))
+
+    def test_sunday_is_both_0_and_7_in_cron_but_only_0_in_launchd(self):
+        self.assertEqual(self.R.cron_to_calendar("0 9 * * 7"),
+                         {"Minute": 0, "Hour": 9, "Weekday": 0})
+
+    def test_the_once_an_hour_floor_is_enforced_at_create_time(self):
+        """Not discovered at 09:00 with nobody watching."""
+        with self.assertRaises(ValueError) as cm:
+            self.R.validate_cron("*/15 * * * *")
+        self.assertIn("once per hour", str(cm.exception))
+        self.R.validate_cron("0 9,17 * * *")          # twice a day is fine
+
+    def test_unsupported_cron_syntax_is_refused_not_misread(self):
+        """A schedule that means something other than what was typed is worse
+        than one that is rejected."""
+        for bad in ("0 9 L * *", "0 9 * * MON", "0 9 ? * *"):
+            with self.assertRaises(ValueError):
+                self.R.parse_cron(bad)
+
+    # ---- the safety floor ---------------------------------------------------
+    def test_a_routine_cannot_reach_a_write_capable_mode(self):
+        """POSITIVE allow-list, so editing providers.UNSAFE_PERMISSION_MODES
+        cannot silently re-admit one."""
+        self.assertEqual(set(self.R.ROUTINE_PERMISSION_MODES), {"dontAsk", "plan"})
+        import providers
+        for m in providers.UNSAFE_PERMISSION_MODES:
+            self.assertNotIn(m, self.R.ROUTINE_PERMISSION_MODES)
+        body = self._body(permission_mode="bypassPermissions")
+        with self.assertRaises(ValueError) as cm:
+            self.R.validate_new(body, set())
+        self.assertIn("unattended", str(cm.exception))
+
+    def test_the_default_is_dontAsk_not_plan(self):
+        """plan unattended proposes edits nobody approves, exits 0, and the run
+        reads OK while the routine does nothing forever."""
+        self.assertEqual(self.R.DEFAULT_ROUTINE_MODE, "dontAsk")
+        rec = self.R.validate_new(self._body(), set())
+        self.assertEqual(rec["permission_mode"], "dontAsk")
+
+    def test_a_budget_ceiling_is_required(self):
+        with self.assertRaises(ValueError) as cm:
+            self.R.validate_new(self._body(opts={"max_budget_usd": 0}), set())
+        self.assertIn("ceiling", str(cm.exception))
+
+    def test_the_working_folder_must_exist_and_be_inside_home(self):
+        with self.assertRaises(ValueError):
+            self.R.validate_new(self._body(cwd="/nope/does/not/exist"), set())
+        with self.assertRaises(ValueError) as cm:
+            self.R.validate_new(self._body(cwd="/usr"), set())
+        self.assertIn("home", str(cm.exception))
+
+    def test_ids_are_sanitised_because_they_become_a_launchd_label(self):
+        """The id is the launchd label suffix, the run-directory name and the
+        record filename, so it is normalised and constrained rather than trusted."""
+        for bad in ("Has Spaces", "../escape", "", "a" * 60):
+            with self.assertRaises(ValueError):
+                self.R.validate_new(self._body(id=bad), set())
+        # LOWERCASED, not refused -- Claude's own docs say the name is
+        # "lowercased to kebab-case", and matching that is the point.
+        self.assertEqual(self.R.validate_new(self._body(id="UPPER"), set())["id"],
+                         "upper")
+
+    # ---- the plist ----------------------------------------------------------
+    def test_the_plist_never_fires_on_login_and_stays_in_the_gui_session(self):
+        rec = self.R.validate_new(self._body(), set())
+        p = self.R.build_plist(rec)
+        self.assertIs(p["RunAtLoad"], False,
+                      "a routine must not fire merely because you logged in")
+        self.assertEqual(p["LimitLoadToSessionType"], "Aqua",
+                         "claude's credentials are in the login keychain; a "
+                         "non-Aqua job can meet it locked")
+        self.assertTrue(all(isinstance(v, str)
+                            for v in p["EnvironmentVariables"].values()),
+                        "launchd silently ignores non-string env values")
+
+    def test_a_manual_routine_gets_no_calendar_interval(self):
+        rec = self.R.validate_new(self._body(schedule={"preset": "manual"}), set())
+        self.assertNotIn("StartCalendarInterval", self.R.build_plist(rec))
+
+    def test_run_records_distinguish_manual_from_scheduled(self):
+        """kickstart reuses the plist's argv, so without a marker every run would
+        claim to be scheduled and the UI could never tell you the schedule has
+        never actually fired."""
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "routines.py"), encoding="utf-8").read()
+        self.assertIn('.manual', src)
+        self.assertIn('trigger = "manual"', src)
+
+    def _body(self, **kw):
+        b = {"id": "test-routine", "description": "d", "prompt": "p",
+             "cwd": self.tmp, "opts": {"max_budget_usd": 1.0},
+             "schedule": {"preset": "daily", "hour": 9, "minute": 0}}
+        b.update(kw)
+        return b

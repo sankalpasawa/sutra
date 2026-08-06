@@ -2,6 +2,38 @@
 
 **status**: active · **updated**: 2026-08-06
 
+## 2.70.0
+
+- **Routines.** A prompt this Mac runs on a schedule — a morning brief, a nightly
+  check — without you opening anything. Create, list, run now, pause, delete,
+  and read what happened on every past run.
+- Claude Code has two kinds and only one is honestly ownable here: cloud routines
+  live in the claude.ai account with no local file format or scriptable CLI.
+  These are the **Local** kind, and the badge says so — their noun, our scope, no
+  implied parity. The five schedule presets are Claude's own: Manual, Hourly,
+  Daily, Weekdays, Weekly, plus a custom cron escape.
+- Scheduled with a **launchd user agent**, not an in-app timer. The app quits
+  when its last window closes and kills the backend with it, so an in-process
+  tick would fire approximately never. This does not contradict ADR-017: that
+  governs the Native engine's Trigger cadence, which is a different thing at a
+  different layer.
+- **A routine cannot use a write-capable permission mode.** `acceptEdits` and
+  `bypassPermissions` are unreachable for a routine by code — a positive
+  allow-list, not a subtraction, so editing the unsafe-modes tuple cannot
+  silently re-admit one. There is no env var, settings key or consent phrase that
+  reaches them. The default is `dontAsk`, not `plan`: `plan` unattended proposes
+  edits nobody approves, exits 0, and reads OK while the routine does nothing
+  forever.
+- A per-run budget ceiling is required, the working folder must exist and be
+  inside your home, and a routine may fire at most once an hour.
+- The screen refuses to flatter: **"never run" is never rendered as "0 runs"**, a
+  green *Run now* is labelled as proving the runner and not the schedule, a
+  saved-but-not-loaded job shows launchd's own stderr rather than a generic
+  failure, and next-run is not computed — launchd decides, and an invented time
+  would be wrong the first time the Mac slept.
+- Sleep is stated up front: if the Mac is asleep at the scheduled time launchd
+  runs the job on wake, and several missed slots coalesce into **one** run.
+
 ## 2.69.1
 
 - **The permission selector was a white box in a dark theme.** It shipped in
