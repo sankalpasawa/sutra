@@ -340,8 +340,22 @@
   /* ── org chart: top-down, expandable ── */
   .chartwrap{overflow-x:auto;overflow-y:hidden;max-width:100%;padding:6px 2px 14px}
   .chart,.chart ul{list-style:none;margin:0;padding:0}
-  .chart ul{display:flex;justify-content:center;gap:12px}
-  .chart li{position:relative;display:flex;flex-direction:column;align-items:center;padding-top:20px}
+  /* `safe center` here is DEFENSIVE, not the fix -- measuring showed this row's
+     own justify-content was never what clipped anything (the parent li's
+     align-items was; see below). It is kept so the row cannot start centring its
+     own overflow if it ever becomes the wider box.
+     Wrapping is NOT an option for this row: li::after draws the horizontal
+     connector spanning the siblings, so a wrapped row draws broken tree edges. */
+  .chart ul{display:flex;justify-content:safe center;gap:12px}
+  /* `safe center` on the CROSS axis. This column centres each node over its
+     sibling row, and when that row is wider than the pane, plain `center`
+     centres the overflow -- pushing the left end outside the scroll container,
+     where scrollLeft:0 cannot reach it. Measured at a 738px pane: the leftmost
+     department sat at -83px and rendered permanently cut mid-word.
+     The row's own justify-content was NOT the cause; the parent's align-items
+     was. `safe` keeps the centring while it fits and falls back to start when
+     it does not. */
+  .chart li{position:relative;display:flex;flex-direction:column;align-items:safe center;padding-top:20px}
   .chart>li{padding-top:0}
   /* vertical stub up from each node into the connector row */
   .chart li::before{content:"";position:absolute;top:0;left:50%;width:1px;height:20px;background:var(--line)}
@@ -654,6 +668,24 @@
     margin-right:5px;vertical-align:middle;animation:sutraPulse 1.15s ease-in-out infinite}
   .working{margin-top:6px;color:var(--faint);display:flex;align-items:center;font-size:12px}
   .working .ell::after{content:"";animation:sutraEll 1.4s steps(1,end) infinite}
+  /* ── the "it is thinking" mark ──────────────────────────────────────────
+     There was no live indicator while a reply was being composed -- only a
+     static word and three dots, which reads the same whether the agent is
+     working or wedged. This is the Sutra mark itself, breathing: it rotates
+     slowly and pulses, so motion means "still alive" at a glance.
+     Deliberately NOT a copy of another product's glyph -- the shape is the
+     one already on the rail, so activity looks like this app. */
+  .spark{display:inline-block;width:13px;height:13px;margin-right:6px;flex:none;
+         color:var(--acc);animation:sutraSpark 2.6s ease-in-out infinite;
+         transform-origin:50% 50%}
+  .spark svg{display:block;width:100%;height:100%}
+  @keyframes sutraSpark{
+    0%   {transform:rotate(0deg)   scale(.82); opacity:.55}
+    50%  {transform:rotate(180deg) scale(1);   opacity:1}
+    100% {transform:rotate(360deg) scale(.82); opacity:.55}
+  }
+  /* The same mark in the running pill, smaller and inheriting the pill colour. */
+  .pill .spark{width:10px;height:10px;margin-right:4px;color:inherit}
   .toolRow{margin-top:7px;display:flex;flex-direction:column;gap:3px}
   .trow{display:flex;align-items:baseline;gap:7px;font-size:11.5px;padding:3px 7px;
     border:1px solid var(--line-soft);border-radius:6px;background:var(--inset);min-width:0}
@@ -674,7 +706,9 @@
   /* Respect the OS setting: a spinner is decoration, not information. The colour
      and the verdict text carry the same state without motion. */
   @media (prefers-reduced-motion: reduce){
-    .dot,.trow.run .tstate,.working .ell::after{animation:none}
+    .dot,.trow.run .tstate,.working .ell::after,.spark{animation:none}
+    /* still visible, just still -- the word next to it says what is happening */
+    .spark{opacity:1;transform:none}
   }
 
   /* ── side chat ──────────────────────────────────────────────────────────
@@ -852,6 +886,71 @@
   .wdin{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);border-radius:7px;
     padding:7px 10px;color:var(--ink);font:12px/1.4 var(--mono)}
   .wdin:focus{outline:2px solid var(--acc);outline-offset:-1px}
+
+  /* ── forms ───────────────────────────────────────────────────────────────
+     A FORM LAYOUT, because .kv is not one. .kv is a key/value DISPLAY idiom:
+     a flex row with a fixed 82px label and a plain <span> value. Putting inputs
+     inside it produced every symptom reported at once -- the fields could not
+     stretch (a `flex:1` input inside a non-flex <span> does nothing, so every
+     box sat at its intrinsic width no matter how wide the window got), the
+     textarea could only ever grow downward, and the hint text ran inline off
+     the end of the row instead of wrapping under the field it explains.
+
+     One grid: a label column that stays put, and a field column that takes
+     everything else. Every control fills its column, so "wider window" means
+     "wider fields" without a single per-control width. */
+  .rform{display:grid;gap:2px}
+  .rfrow{display:grid;grid-template-columns:112px minmax(0,1fr);gap:10px;
+         align-items:start;padding:7px 0;border-bottom:1px solid var(--line-soft)}
+  .rfrow:last-of-type{border-bottom:0}
+  .rfrow > label{color:var(--faint);font:500 10.5px/1.5 var(--sans);
+                 letter-spacing:.06em;text-transform:uppercase;padding-top:8px}
+  /* min-width:0 so a long value cannot push the column wider than the grid --
+     the same auto/min-content trap that blew out the directory view. */
+  .rfield{min-width:0;display:flex;flex-direction:column;gap:5px}
+  /* One rule for every control in a form row: they fill the column and they
+     all look like each other. A bare <select> here previously fell back to the
+     UA stylesheet and rendered as a light box in a dark theme. */
+  .rfield input,.rfield select,.rfield textarea{
+    width:100%;box-sizing:border-box;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;padding:7px 10px;
+    color:var(--ink);font:12px/1.45 var(--sans);min-width:0}
+  .rfield textarea{font-family:var(--mono);resize:vertical;min-height:120px;
+                   line-height:1.55}
+  .rfield input:focus,.rfield select:focus,.rfield textarea:focus{
+    outline:2px solid var(--acc);outline-offset:-1px}
+  .rfield select{-webkit-appearance:none;appearance:none;cursor:pointer;
+    padding-right:26px;
+    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
+                     linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-size:4px 4px,4px 4px;
+    background-position:calc(100% - 14px) 52%,calc(100% - 10px) 52%;
+    background-repeat:no-repeat}
+  /* The hint BELOW the field, not beside it. Inline, it competed with the input
+     for the same row and both lost. */
+  .rfield .hint{color:var(--faint);font:11px/1.5 var(--sans);max-width:64ch}
+  /* A row of controls that belong together (a time, a schedule) stays on one
+     line and wraps as a unit rather than each control filling the column. */
+  .rinline{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+  .rinline input,.rinline select{width:auto;flex:none}
+  .rinline .sep{color:var(--faint)}
+  .rfoot{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  /* A transient note that must not push layout around or steal focus: it
+     reports something that already happened, and disappears on its own. */
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;
+    background:var(--card);border:1px solid var(--line);border-radius:9px;
+    padding:9px 13px;color:var(--ink);font:12px/1.4 var(--sans);
+    box-shadow:0 10px 30px rgba(0,0,0,.34);max-width:min(560px,90vw);
+    pointer-events:none}
+  /* In a narrow pane the 112px label column costs more than it earns -- at a
+     325px pane it was half the width, leaving the field it labels smaller than
+     the label. Stack instead: the label reads as a caption above its field and
+     the field gets the whole column. Same container the rest of the panel
+     already queries (.pane.browse sets container-type). */
+  @container (max-width:520px){
+    .rfrow{grid-template-columns:minmax(0,1fr);gap:4px}
+    .rfrow > label{padding-top:0}
+  }
 
   /* ── onboarding ──────────────────────────────────────────────────────────
      A first-run interstitial, not a tour. It states what this panel will do
@@ -1552,6 +1651,29 @@ function _streamingTurns(){
   return out;
 }
 
+/* Replace ONE assistant block. A running turn changes its state pill, its tool
+   rows and its body many times -- a turn with six tool calls used to mean six
+   full render() passes, each swapping every node in the pane. Scroll survives
+   that now, but the repaint does not: it is the visible flicker in "the tabs
+   are very patchy". Swapping one <div> leaves the rail, the pane header, the
+   tabs and the composer untouched, so nothing outside the message can flash. */
+function patchTurn(t){
+  if (!t || !t.uid) return false;
+  const el = document.querySelector('[data-aturn="' + t.uid + '"]');
+  if (!el) return false;                    /* not drawn yet -> caller renders */
+  const pane = el.closest(".pane[data-sess]");
+  const pb = pane && pane.querySelector(".pb");
+  const sid = pane && pane.dataset.sess;
+  const pinned = pb && !S.userScrolled.get(sid);
+  el.outerHTML = turnResponse(t);
+  if (pinned){
+    pb.__pinning = true;
+    pb.scrollTop = pb.scrollHeight;
+    requestAnimationFrame(()=>{ pb.__pinning = false; });
+  }
+  return true;
+}
+
 function patchStreaming(){
   const live = _streamingTurns();
   let missed = false;
@@ -1617,11 +1739,19 @@ function claudeWsUrl(){
 }
 /* Every turn this channel still owes a reply gets the REAL reason it will not arrive.
    Silence and a spinner that never stops are the failure modes this replaces. */
-function failChannel(ch, detail){
+function failChannel(ch, detail, opts){
   const hit = ch.pending.splice(0);
   if (ch.turn) hit.push(ch.turn);
   ch.turn = null;
-  hit.forEach(t=>{ t.streaming = false; if (!t.error) t.error = ch.lastError || detail; });
+  hit.forEach(t=>{
+    t.streaming = false;
+    if (!t.error) t.error = ch.lastError || detail;
+    /* INTERRUPTED is not the same as FAILED. The agent did not refuse and did
+       not error -- the transport went away, usually because the server
+       restarted. That is recoverable, and a turn that says so can offer a
+       retry instead of leaving a red line the reader can only stare at. */
+    if (opts && opts.interrupted && !ch.lastError) t.interrupted = true;
+  });
   if (hit.length) scheduleRender();
 }
 /* A side chat gets its OWN socket under a synthetic key rather than the map being
@@ -1762,28 +1892,67 @@ function claudeChannel(s, side){
       }
       else failChannel(ch, ch.lastError);   /* refused before any turn started */
     }
+    /* MID-TURN frames change one assistant block and nothing else, so they
+       patch that block instead of rebuilding the pane. Anything structural --
+       a turn starting or finishing, a channel error, a session id arriving --
+       still goes through render(), because those change the shape of the pane
+       and a node swap cannot express them. patchTurn() returns false when the
+       block is not on screen yet, and then we render as before. */
+    const midTurn = (f.type === "tool" || f.type === "thinking" ||
+                     f.type === "retrying");
+    if (midTurn && ch.turn && patchTurn(ch.turn)) return;
     scheduleRender();
   };
   ws.onclose = ev=>{
     /* Delete by the channel's OWN key. Deleting by s.id would evict the MAIN
        channel when a side chat's socket closed. */
     if (CLAUDE_SOCKETS.get(key) === ch) CLAUDE_SOCKETS.delete(key);
-    failChannel(ch, "the Claude channel closed before the reply finished" +
-      (ev && ev.code ? " (code " + ev.code + ")" : "") + " — is the server still running?");
+    /* 1006 is an ABNORMAL close: no close frame, i.e. the server went away
+       rather than saying goodbye. Restarting the backend does exactly this. */
+    const abnormal = !ev || ev.code === 1006 || !ev.wasClean;
+    failChannel(ch,
+      abnormal ? "The connection to the agent dropped before the reply finished. "
+               + "This happens when the backend restarts."
+               : "The agent channel closed before the reply finished (code "
+               + ev.code + ").",
+      { interrupted: abnormal });
   };
   return ch;
 }
-/* Closing the pane closes the socket — the pane IS the session's lifetime here.
-   Both channels go: a side chat outliving its pane would keep a claude process
-   running with nothing rendering its output. */
-function closeClaudeChannel(sid){
+/* A PANE IS A VIEW. THE SESSION IS THE WORK.
+   This used to read "the pane IS the session's lifetime" and closed the socket
+   on pane close, which killed a reply that was still arriving and wrote
+   "pane closed before the reply finished" over it. Closing a window must never
+   destroy work that is still running -- you close a tab in Claude Code and the
+   conversation is still there when you come back.
+
+   So: a channel with a turn IN FLIGHT SURVIVES the pane closing. Tokens keep
+   landing on the turn object, which lives in S.sessions, not in the DOM -- so
+   reopening the pane shows everything that arrived while it was shut, still
+   streaming if it still is.
+
+   An IDLE channel is still closed, because the original comment's worry is
+   real: a socket with nothing in flight is a claude process kept alive for
+   nothing. That is the only case where closing costs nothing. */
+function closeClaudeChannel(sid, opts){
+  const force = !!(opts && opts.force);
+  const kept = [];
   [chanKey(sid, false), chanKey(sid, true)].forEach(key=>{
     const ch = CLAUDE_SOCKETS.get(key);
     if (!ch) return;
+    const busy = !!ch.turn || (ch.pending && ch.pending.length);
+    if (busy && !force){ kept.push(key); return; }   /* let the work finish */
     CLAUDE_SOCKETS.delete(key);
-    failChannel(ch, "pane closed before the reply finished");
+    /* No failChannel() here: nothing was in flight, so there is no turn to
+       report a failure for. Reporting one was the message you were reading. */
     try { ch.ws.close(); } catch (e) {}
   });
+  return kept;
+}
+
+/* Explicitly end the work, not just the view. Used by Stop, and by app unload. */
+function endClaudeChannel(sid){
+  return closeClaudeChannel(sid, { force:true });
 }
 /* A stable per-turn id, assigned once. It is the anchor patchStreaming() writes
    through, so it must not change between renders and must never be reused. */
@@ -1954,6 +2123,8 @@ const S = {
   upd:null, updBusy:null, updError:null, updMsg:null,
   /* routines: null until the screen is opened (it shells out to launchctl). */
   rt:null, rtError:null, rtBusy:null, rtMsg:null, rtForm:null, rtRuns:{}, rtOpen:{},
+  /* transient, self-clearing note -- see the pane close handler. */
+  toast:null,
   /* permission mode confirmation, at chat level -- see permSelect(). */
   permConfirm:null, permBusy:false, permError:null,
   /* Per-session composer extras. `attach` holds one entry per pending file (each with
@@ -2135,14 +2306,38 @@ function mdHtml(src){
       continue;
     }
 
-    const ul = /^\s*[-*+]\s+(.*)$/, ol = /^\s*\d+[.)]\s+(.*)$/;
+    const ul = /^(\s*)[-*+]\s+(.*)$/, ol = /^(\s*)\d+[.)]\s+(.*)$/;
     if (ul.test(line) || ol.test(line)){
-      const ordered = ol.test(line);
-      const re = ordered ? ol : ul;
-      const items = [];
-      while (i < rows.length && re.test(rows[i])){ items.push(inline(rows[i].match(re)[1])); i++; }
-      const tag = ordered ? "ol" : "ul";
-      out.push("<" + tag + ' class="md-l">' + items.map(x => "<li>" + x + "</li>").join("") + "</" + tag + ">");
+      /* NESTING. This used to match on the item text alone and ignore the
+         indent, so "- a / <2 spaces>- b" came out as two SIBLINGS -- a
+         structure the writer did not type. Depth is the leading whitespace,
+         two spaces (or one tab) per level, which is what every markdown writer
+         actually produces. */
+      const lines = [];
+      while (i < rows.length && (ul.test(rows[i]) || ol.test(rows[i]))){
+        const isOl = ol.test(rows[i]);
+        const m = rows[i].match(isOl ? ol : ul);
+        const indent = m[1].replace(/\t/g, "  ").length;
+        lines.push({ depth: Math.floor(indent / 2), ordered: isOl, text: inline(m[2]) });
+        i++;
+      }
+      const render = (start, depth) => {
+        const tag = lines[start].ordered ? "ol" : "ul";
+        let html = "<" + tag + ' class="md-l">', k = start;
+        while (k < lines.length && lines[k].depth >= depth){
+          if (lines[k].depth > depth){
+            /* a deeper run belongs INSIDE the item just emitted */
+            const [inner, next] = render(k, lines[k].depth);
+            html = html.replace(/<\/li>$/, inner + "</li>");
+            k = next;
+            continue;
+          }
+          html += "<li>" + lines[k].text + "</li>";
+          k++;
+        }
+        return [html + "</" + tag + ">", k];
+      };
+      out.push(render(0, lines[0].depth)[0]);
       continue;
     }
 
@@ -2152,7 +2347,13 @@ function mdHtml(src){
            && !/^\s*&gt;\s?/.test(rows[i]) && !/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(rows[i])){
       para.push(rows[i]); i++;
     }
-    out.push('<p class="md-p">' + inline(para.join("\n")).replace(/\n/g, "<br>") + "</p>");
+    /* A parked BLOCK (a fenced code block) on its own line is not prose. Wrapping
+       it produced `<p><pre>...</pre></p>`, which is invalid -- the browser closes
+       the <p> before the <pre> and the stray </p> lands after it, breaking the
+       spacing around every code block in a reply. */
+    const joined = para.join("\n");
+    if (/^\u0000\d+\u0000$/.test(joined.trim())) out.push(joined.trim());
+    else out.push('<p class="md-p">' + inline(joined).replace(/\n/g, "<br>") + "</p>");
   }
 
   return out.join("").replace(/\u0000(\d+)\u0000/g, (m, n) => slot[Number(n)]);
@@ -3379,58 +3580,92 @@ function rtPresetForm(f){
              ["weekdays","Weekdays"],["weekly","Weekly"],["custom","Custom cron"]];
   const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   const needsTime = ["daily","weekdays","weekly"].includes(f.preset);
-  return `
-    <div class="kv"><b>Schedule</b><span>
-      <select data-rtf="preset">${P.map(([v,n])=>
+  /* The controls that make up ONE schedule stay on one line: a preset, a time and
+     a day are a single thought, and stacking them full-width read as three
+     unrelated fields. */
+  const hint = {
+    manual:"Never fires on its own — you run it from here.",
+    hourly:"Every hour, at the minute you choose.",
+    daily:"Every day, including weekends.",
+    weekdays:"Monday to Friday only.",
+    weekly:"Once a week, on the day you choose.",
+    custom:"Five-field cron, local time. At most one run per hour."
+  }[f.preset] || "";
+  return `<div class="rfrow"><label for="rf-preset">Schedule</label><div class="rfield">
+    <div class="rinline">
+      <select id="rf-preset" data-rtf="preset">${P.map(([v,n])=>
         `<option value="${v}" ${f.preset===v?"selected":""}>${n}</option>`).join("")}</select>
-      ${f.preset==="hourly"?`<span class="why">at :<input class="wdin" style="width:52px"
-          data-rtf="minute" value="${esc(String(f.minute??0))}"> past the hour</span>`:""}
-      ${needsTime?`<input class="wdin" style="width:64px" data-rtf="hour"
-          value="${esc(String(f.hour??9))}" aria-label="Hour"> :
-        <input class="wdin" style="width:64px" data-rtf="minute"
+      ${f.preset==="hourly"?`<span class="sep">at :</span>
+        <input data-rtf="minute" style="width:66px" inputmode="numeric"
+               value="${esc(String(f.minute??0))}" aria-label="Minute past the hour">`:""}
+      ${needsTime?`<input data-rtf="hour" style="width:66px" inputmode="numeric"
+          value="${esc(String(f.hour??9))}" aria-label="Hour (24h)">
+        <span class="sep">:</span>
+        <input data-rtf="minute" style="width:66px" inputmode="numeric"
           value="${esc(String(f.minute??0))}" aria-label="Minute">`:""}
-      ${f.preset==="weekly"?`<select data-rtf="weekday">${DAYS.map((d,i)=>
-        `<option value="${i}" ${String(f.weekday??1)===String(i)?"selected":""}>${d}</option>`).join("")}</select>`:""}
-      ${f.preset==="custom"?`<input class="wdin" style="min-width:190px" data-rtf="cron"
-          placeholder="0 9 * * 1-5" value="${esc(f.cron||"")}">`:""}
-    </span></div>`;
+      ${f.preset==="weekly"?`<select data-rtf="weekday" aria-label="Day of week"
+        >${DAYS.map((d,i)=>`<option value="${i}"
+          ${String(f.weekday??1)===String(i)?"selected":""}>${d}</option>`).join("")}</select>`:""}
+      ${f.preset==="custom"?`<input data-rtf="cron" style="flex:1;min-width:180px"
+          placeholder="0 9 * * 1-5" value="${esc(f.cron||"")}" aria-label="Cron expression">`:""}
+    </div>
+    <span class="hint">${esc(hint)}${needsTime?" 24-hour clock, this Mac's local time.":""}</span>
+  </div></div>`;
 }
 
 function rtCreateForm(){
   const f = S.rtForm; if (!f) return "";
   const st = S.rt || {};
-  return `<div class="note" style="margin-bottom:12px">
-    <b>New routine</b> <span class="pill p-mut">Local</span>
-    <p style="margin:6px 0;color:var(--faint)">Runs on this Mac, on a schedule, with
-      nobody watching. It is not a cloud routine and does not run when the Mac is off.</p>
-    ${S.rtError?`<p style="color:var(--block);white-space:pre-wrap">${esc(S.rtError)}</p>`:""}
-    <div class="kv"><b>Name</b><span><input class="wdin" data-rtf="id"
-      placeholder="morning-brief" value="${esc(f.id||"")}"> <span class="why">lower-case,
-      dashes; also the folder and launchd label</span></span></div>
-    <div class="kv"><b>Description</b><span><input class="wdin" data-rtf="description"
-      placeholder="What changed in sutra since yesterday" value="${esc(f.description||"")}"></span></div>
-    <div class="kv"><b>Instructions</b><span><textarea class="edta" style="min-height:96px"
-      data-rtf="prompt" placeholder="What Claude should do on each run">${esc(f.prompt||"")}</textarea></span></div>
-    <div class="kv"><b>Working folder</b><span><input class="wdin" data-rtf="cwd"
-      placeholder="~/some/project" value="${esc(f.cwd||"")}"> <span class="why">must exist,
-      inside your home</span></span></div>
-    <div class="kv"><b>Model</b><span><select data-rtf="model">
-      ${(st.models||[""]).map(m=>`<option value="${esc(m)}" ${f.model===m?"selected":""}
-        >${m||"CLI default"}</option>`).join("")}</select></span></div>
-    <div class="kv"><b>Permission</b><span><select data-rtf="permission_mode">
-      ${(st.permission_modes||["dontAsk"]).map(m=>`<option value="${esc(m)}"
-        ${f.permission_mode===m?"selected":""}>${esc(m)}</option>`).join("")}</select>
-      <span class="why">a routine runs unattended, so the modes that write files
-        without asking are not offered here at all</span></span></div>
-    <div class="kv"><b>Budget</b><span>$<input class="wdin" style="width:72px"
-      data-rtf="max_budget_usd" value="${esc(String(f.max_budget_usd??1))}">
-      <span class="why">per run; a schedule with no ceiling is how it becomes a bill</span></span></div>
-    ${rtPresetForm(f)}
-    <p style="margin-top:10px">
+  const row = (id,label,control,hint) => `<div class="rfrow">
+    <label for="rf-${id}">${esc(label)}</label>
+    <div class="rfield">${control}${hint?`<span class="hint">${hint}</span>`:""}</div></div>`;
+  return `<section class="chsec" style="margin-bottom:14px">
+    <h2 class="chh">New routine <span class="pill p-mut">Local</span></h2>
+    <p style="margin:0 0 10px;color:var(--muted);font-size:11.5px;max-width:70ch">
+      Runs on this Mac, on a schedule, with nobody watching. It is not a cloud
+      routine and does not run while the Mac is off.</p>
+    ${S.rtError?`<div class="note b" style="white-space:pre-wrap">${esc(S.rtError)}</div>`:""}
+    <div class="rform">
+      ${row("id","Name",
+        `<input id="rf-id" data-rtf="id" placeholder="morning-brief"
+                spellcheck="false" autocapitalize="off" value="${esc(f.id||"")}">`,
+        "Lower-case with dashes. Also the folder name and the launchd label.")}
+      ${row("description","Description",
+        `<input id="rf-description" data-rtf="description"
+                placeholder="What changed in sutra since yesterday"
+                value="${esc(f.description||"")}">`,
+        "One line. This is what makes a list of routines scannable.")}
+      ${row("prompt","Instructions",
+        `<textarea id="rf-prompt" data-rtf="prompt"
+           placeholder="What Sutra should do on each run">${esc(f.prompt||"")}</textarea>`,
+        "What Sutra runs on each fire. Drag the corner to make it taller.")}
+      ${row("cwd","Working folder",
+        `<input id="rf-cwd" data-rtf="cwd" placeholder="~/some/project"
+                spellcheck="false" value="${esc(f.cwd||"")}">`,
+        "Must exist, and be inside your home directory.")}
+      ${row("model","Model",
+        `<select id="rf-model" data-rtf="model">${(st.models||[""]).map(m=>
+          `<option value="${esc(m)}" ${f.model===m?"selected":""}
+            >${m||"CLI default"}</option>`).join("")}</select>`, "")}
+      ${row("permission_mode","Permission",
+        `<select id="rf-permission_mode" data-rtf="permission_mode">${
+          (st.permission_modes||["dontAsk"]).map(m=>`<option value="${esc(m)}"
+            ${f.permission_mode===m?"selected":""}>${esc(m)}</option>`).join("")}</select>`,
+        "A routine runs unattended, so the modes that write files without asking " +
+        "are not offered here at all.")}
+      ${row("max_budget_usd","Budget",
+        `<div class="rinline"><span class="sep">$</span>
+          <input id="rf-max_budget_usd" data-rtf="max_budget_usd" style="width:96px"
+                 inputmode="decimal" value="${esc(String(f.max_budget_usd??1))}"></div>`,
+        "Per run. A schedule with no ceiling is how it becomes a bill.")}
+      ${rtPresetForm(f)}
+    </div>
+    <div class="rfoot">
       <button class="btn" type="button" data-rtsave ${S.rtBusy?"disabled":""}>
         ${S.rtBusy==="create"?"Creating…":"Create routine"}</button>
-      <button class="btn" type="button" data-rtcancel>Cancel</button></p>
-  </div>`;
+      <button class="btn" type="button" data-rtcancel>Cancel</button>
+    </div>
+  </section>`;
 }
 
 function rtRunRow(r){
@@ -3469,7 +3704,7 @@ function rtCard(r){
     <div class="kv"><b>Runs as</b><span><code>${esc(r.permission_mode)}</code>${
       r.model?` · <code>${esc(r.model)}</code>`:""}</span></div>
     ${!r.enabled?`<div class="note"><b>Paused.</b> It will not fire on its own.
-      Run now still works — that is how Claude behaves too.</div>`:""}
+      Run now still works, so pausing does not cost you the ability to test it.</div>`:""}
     ${r.enabled&&!r.loaded?`<div class="note b"><b>Saved as active, but launchd has not
       loaded it — it will not fire.</b> Use Re-check after fixing, or delete and
       recreate it.</div>`:""}
@@ -3908,13 +4143,19 @@ async function applyPermMode(mode, withAck){
    reply and an assistant block replayed out of a transcript: in the second case
    `streaming` is false and `response` is already complete, so the same template renders
    it with no special case. */
+/* The breathing Sutra mark, used wherever a turn is actively working. Inline
+   SVG rather than a font glyph so it inherits currentColor and scales cleanly. */
+const SPARK = '<span class="spark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+  '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></svg></span>';
+
 function turnResponse(t){
   const nTools = (t.tools && t.tools.length) || 0;
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
   const runs = t.toolRuns || [];
   const active = runs.filter(r=>r.running).length;
   const state = t.streaming
-      ? `<span class="pill p-acc"><i class="dot"></i>${active ? active + " tool" + (active===1?"":"s") + " running"
+      ? `<span class="pill p-acc">${SPARK}${active ? active + " tool" + (active===1?"":"s") + " running"
                                                              : (t.thinking ? "thinking" : "running")}</span>`
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
@@ -3963,7 +4204,7 @@ function turnResponse(t){
     ? `<div class="working"><i class="dot"></i>Rate limited — retrying<b class="ell"></b>
          <span class="tsum">${esc(t.retrying)}</span></div>` : "";
   const waiting = (t.streaming && !t.response && !runs.length)
-    ? `<div class="working"><i class="dot"></i>${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
+    ? `<div class="working">${SPARK}${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
   /* data-resp is the PATCH ANCHOR. While a reply streams, patchStreaming()
      rewrites the innerHTML of exactly this node instead of letting render()
      rebuild #panes -- see scheduleStreamPatch(). The id must be stable for the
@@ -3974,8 +4215,14 @@ function turnResponse(t){
         t.streaming ? `<span class="caret" style="color:var(--acc)">█</span>` : ""}</div>` : "";
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
-    ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>` : "";
-  return `<div class="a">${state}${replayed}${meta}${tools}${retrying}${waiting}${body}${err}</div>`;
+    ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>
+       ${t.interrupted && t.uid ? `<p style="margin-top:7px">
+         <button class="btn" type="button" data-retry="${esc(t.uid)}">Retry this message</button>
+         </p>` : ""}` : "";
+  /* data-aturn anchors this block for patchTurn(): a tool frame replaces THIS
+     node instead of re-rendering the pane. */
+  return `<div class="a" data-aturn="${esc(t.uid||"")}"
+    >${state}${replayed}${meta}${tools}${retrying}${waiting}${body}${err}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)
@@ -4596,6 +4843,7 @@ function render(){
      operator can still recognise: SWITCHING view or screen is a new document
      and correctly starts at the top. */
   const priorScroll = _browseScrollState();
+  const priorSess = _sessScrollState();
 
   renderRail();
   renderOnboarding();
@@ -4669,8 +4917,71 @@ function render(){
     }
   }
   _restoreBrowseScroll(priorScroll);
+  _restoreSessScroll(priorSess);
+  /* Rendered LAST and outside #panes, so it survives a pane rebuild and cannot
+     be what a scroll restore is measuring. */
+  {
+    let el = document.getElementById("toast");
+    if (S.toast){
+      if (!el){ el = document.createElement("div"); el.id = "toast";
+                el.className = "toast"; el.setAttribute("role","status");
+                document.body.appendChild(el); }
+      el.textContent = S.toast;
+    } else if (el) el.remove();
+  }
   /* AFTER #panes is populated -- scrollHeight is meaningless before layout. */
   scrollNewSessionsToNewest();
+}
+
+/* ── session transcript scroll, across a rebuild ──────────────────────────
+   render() replaces #panes wholesale, so every session pane's scroller is a
+   BRAND NEW element starting at scrollTop 0. The browse pane has been protected
+   from that for a while; the session panes never were. During one reply that is
+   a turn-start render, a render per tool call and a done render -- so a turn
+   with six tool calls threw the reader back to the top of the transcript six
+   times. That is the "it scrolls me to the top for every message" report.
+
+   Two states worth keeping apart, which is what Claude Code's own transcript
+   does:
+     PINNED   the reader is at the bottom watching it arrive -> stay at the
+              bottom as content grows (follow the tail).
+     PARKED   the reader scrolled up to read something -> keep their EXACT
+              offset. Yanking someone to the tail while they are reading is the
+              worse failure of the two, so `pinned` requires being genuinely at
+              the bottom, not merely near it.
+   S.userScrolled already records which, maintained by the scroll listener. */
+const SESS_PIN_SLOP = 24;      // px; a hair of tolerance for subpixel layout
+
+function _sessScrollState(){
+  const out = [];
+  document.querySelectorAll("#panes .pane[data-sess] .pb").forEach(pb=>{
+    const sid = pb.closest(".pane").dataset.sess;
+    if (!sid) return;
+    const atBottom = pb.scrollHeight - pb.clientHeight - pb.scrollTop <= SESS_PIN_SLOP;
+    out.push({ sid, top: pb.scrollTop, pinned: atBottom });
+  });
+  return out;
+}
+
+function _restoreSessScroll(prior){
+  if (!prior || !prior.length) return;
+  const apply = () => prior.forEach(p=>{
+    const pane = document.querySelector('#panes .pane[data-sess="' + CSS.escape(p.sid) + '"]');
+    const pb = pane && pane.querySelector(".pb");
+    if (!pb) return;                       /* pane closed during the rebuild */
+    /* __pinning marks this as OUR scroll so the listener does not read it as
+       the reader choosing to move -- otherwise following the tail would
+       immediately look like a manual scroll and unpin itself. */
+    pb.__pinning = true;
+    pb.scrollTop = p.pinned ? pb.scrollHeight
+                            : Math.min(p.top, Math.max(0, pb.scrollHeight - pb.clientHeight));
+    requestAnimationFrame(()=>{ pb.__pinning = false; });
+  });
+  apply();
+  /* Once more after layout: images, code blocks and tool rows settle late, and
+     a height that grew after the synchronous pass would leave a pinned reader
+     short of the tail. */
+  requestAnimationFrame(apply);
 }
 
 /* The browse pane's scroller, and the identity of what it is scrolling.
@@ -4921,9 +5232,36 @@ function wire(){
   /* session panes */
   panes.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     S.sessTab[b.dataset.sid]=b.dataset.tab; render(); });
+  /* Retry an interrupted turn: same text, same session, new socket. The turn is
+     reset rather than duplicated, so the transcript does not grow a copy of a
+     message that was never answered. */
+  panes.querySelectorAll("[data-retry]").forEach(b=>b.onclick=()=>{
+    const uid = b.dataset.retry;
+    let sess=null, turn=null;
+    S.sessions.forEach(s=>(s.turns||[]).forEach(t=>{ if (t.uid===uid){ sess=s; turn=t; } }));
+    Object.keys(S.sideTurns||{}).forEach(sid=>(S.sideTurns[sid]||[]).forEach(t=>{
+      if (t.uid===uid){ sess=S.sessions.find(x=>x.id===sid); turn=t; } }));
+    if (!sess || !turn) return;
+    turn.error = null; turn.interrupted = false; turn.response = "";
+    turn.tools = []; turn.toolRuns = [];
+    askClaude(sess, turn, !!turn.side);
+    render();
+  });
+
   panes.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{
-    closeClaudeChannel(b.dataset.close);
-    S.openPanes = S.openPanes.filter(id=>id!==b.dataset.close); render(); });
+    const sid = b.dataset.close;
+    /* Returns the channels it KEPT because work was still in flight. Closing the
+       pane hides the view; it does not cancel the reply. Say so, because the
+       button now does something different from what it used to. */
+    const kept = closeClaudeChannel(sid);
+    S.openPanes = S.openPanes.filter(id=>id!==sid);
+    if (kept.length){
+      const s = S.sessions.find(x=>x.id===sid);
+      S.toast = "Still running in the background — reopen “" +
+                ((s && s.title) || "the session") + "” to watch it finish.";
+      setTimeout(()=>{ if (S.toast) { S.toast = null; render(); } }, 6000);
+    }
+    render(); });
   /* the composer is NOT disabled while a turn runs: the reply streams in, and disabling
      the input mid-stream blurred it and dropped whatever was being typed next */
   panes.querySelectorAll("[data-ssend]").forEach(b=>b.onclick=()=>{
