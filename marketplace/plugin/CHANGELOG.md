@@ -2,6 +2,34 @@
 
 **status**: active · **updated**: 2026-08-06
 
+## 2.69.0
+
+- **The permission mode is chosen next to the composer now, not in Settings.** It
+  was editable only in Settings, and the write-capable modes were reachable only
+  by restarting the server with `SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1` — which for
+  a Finder-launched app means editing a plist. The panel was showing a control,
+  refusing it, and telling you to do something you realistically could not.
+- The selector shows the **effective** mode, never the stored one: the server
+  clamps at the point of use, so showing the stored value would claim the agent
+  is doing something it is not.
+- Choosing a write-capable mode opens a confirmation carrying the server's own
+  wording for what that mode does, and only that confirmation sends the
+  acknowledgement the server requires — a bare boolean is refused, because the
+  local port is unauthenticated and enabling file-writing must be deliberate.
+  Cancelling reverts the selector rather than leaving it displaying a mode that
+  is not running. Consent can be withdrawn the same way.
+- **Streaming no longer flickers, jumps or stutters.** A token frame called
+  `render()`, which replaces the whole pane via `innerHTML` — ten times a second
+  the entire transcript was destroyed and re-parsed. That was one bug producing
+  three symptoms: flicker (every node replaced), the view snapping bottom→top
+  (the new scroller starts at `scrollTop 0` and is then re-pinned), and
+  choppiness (100 ms batching is 10 fps).
+- A token now patches only the streaming reply's own node on an animation frame.
+  The scroller is never replaced, so your scroll position survives by
+  construction — and if you have scrolled up to read, the view is left exactly
+  where you put it instead of being yanked to the bottom.
+  Measured over 40 token frames: **0 full re-renders**, same DOM node throughout.
+
 ## 2.68.1
 
 - **You can now check for, and install, both updates from Settings.** There was
