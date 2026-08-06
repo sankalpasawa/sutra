@@ -63,8 +63,8 @@ def _without_mcp(args):
 
     Three tests below pin the baseline argv exactly, which is the right thing to
     pin -- flag ORDER is load-bearing and a reordering is a real regression.
-    Sutra's own tool server adds --mcp-config/--strict-mcp-config and appends
-    mcp__sutra__* to --allowedTools on every run, which is not what those tests
+    Sutra's own tool server adds --mcp-config/--strict-mcp-config/--settings and
+    appends mcp__sutra__* to --allowedTools on every run, which is not what those tests
     are about. They compare the argv with those removed, and TestAgentArgsMcp
     covers the flags themselves.
     """
@@ -75,6 +75,8 @@ def _without_mcp(args):
             i += 2; continue
         if a == "--strict-mcp-config":
             i += 1; continue
+        if a == "--settings":            # the PreToolUse allow hook
+            i += 2; continue
         if a == "--allowedTools":
             vals = []
             j = i + 1
