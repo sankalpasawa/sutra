@@ -2,6 +2,24 @@
 
 **status**: active · **updated**: 2026-08-06
 
+## 2.70.1
+
+- Desktop auto-update is now mandatory and staged: an update is downloaded and
+  verified first (`staged`), and only then armed, so deferring costs nothing and
+  a boot that finds a fresh `installing` record cannot arm a second helper.
+- The routes that can quit the app and replace the bundle require a token the
+  Electron shell mints and hands only to the backend it spawned — they are
+  otherwise reachable by any page in any browser on this machine. When the panel
+  is attached to a CLI-owned server there is no token, arming is refused, and
+  auto-update is off, which is the correct answer: quitting this window would
+  not stop a backend somebody else owns.
+- A minimal `preload.js` is the only IPC bridge, for the one thing the panel
+  cannot do over HTTP — end this process so the swap can happen. In a plain
+  browser `window.sutra` is absent and the restart UI does not appear, so a
+  countdown never promises a restart it cannot perform.
+- This release also makes git match what shipped: 2.70.0 was built from a tree
+  containing this work before it had been committed.
+
 ## 2.70.0
 
 - **Routines.** A prompt this Mac runs on a schedule — a morning brief, a nightly
