@@ -182,6 +182,24 @@ def _sutra_mcp_config():
     }}})
 
 
+def _sutra_allow_hook():
+    """Inline --settings JSON carrying the PreToolUse allow hook, or "".
+
+    Inline rather than a file for the same reason as the mcp config: nothing to
+    leak, nothing to tamper with between write and read, nothing to clean up.
+    """
+    script = HERE / "mcp_allow_hook.py"
+    if not script.is_file():
+        return ""
+    return json.dumps({"hooks": {"PreToolUse": [{
+        # The matcher narrows which tools even reach the hook; the hook itself
+        # re-checks with an anchored pattern rather than trusting this.
+        "matcher": "mcp__sutra__.*",
+        "hooks": [{"type": "command",
+                   "command": "%s %s" % (sys.executable, script)}],
+    }]}})
+
+
 def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
                      opts=None, stream_input=False):
     """The full argv for one turn.
@@ -215,6 +233,15 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     mcp_cfg = _sutra_mcp_config()
     if mcp_cfg:
         args += ["--mcp-config", mcp_cfg, "--strict-mcp-config"]
+        # AND the hook that makes them reachable. MEASURED, not assumed: with
+        # --permission-mode plan (the panel's default) every mcp__sutra__ call
+        # comes back in permission_denials and the server is never invoked --
+        # --allowedTools does not help, because the MODE is evaluated first.
+        # A PreToolUse hook is evaluated BEFORE the mode. See mcp_allow_hook.py
+        # for why allowing exactly this namespace is safe.
+        hook = _sutra_allow_hook()
+        if hook:
+            args += ["--settings", hook]
     if stream_input:
         args += ["--input-format", "stream-json"]
     else:

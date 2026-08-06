@@ -2893,3 +2893,48 @@ class TestAgentArgsMcp(unittest.TestCase):
         cfg = json.loads(args[args.index("--mcp-config") + 1])
         self.assertEqual(cfg["mcpServers"]["sutra"]["type"], "stdio")
         self.assertTrue(cfg["mcpServers"]["sutra"]["args"][0].endswith("sutra_mcp.py"))
+
+
+class TestMcpAllowHook(unittest.TestCase):
+    """The panel's DEFAULT permission mode is `plan`, and in `plan` every
+    mcp__sutra__ call is denied by the harness before the server is reached --
+    measured, not assumed. A PreToolUse hook is evaluated BEFORE the mode and is
+    the only thing that makes the tool surface reachable at all."""
+
+    def _decide(self, tool_name):
+        here = os.path.dirname(os.path.abspath(__file__))
+        p = subprocess.run([sys.executable, os.path.join(here, "mcp_allow_hook.py")],
+                           input=json.dumps({"tool_name": tool_name}),
+                           capture_output=True, text=True, timeout=30)
+        out = (p.stdout or "").strip()
+        if not out:
+            return None                       # silent: the mode decides
+        return json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+
+    def test_it_allows_sutra_tools(self):
+        self.assertEqual(self._decide("mcp__sutra__sutra_routines_list"), "allow")
+
+    def test_it_stays_silent_for_everything_else(self):
+        """Silent, NOT deny. Emitting a denial would make this hook an authority
+        over every tool in the session, which is not what it is for -- the
+        operator's permission mode must keep deciding those."""
+        for t in ("Bash", "Edit", "Write", "Read", "mcp__other__thing", ""):
+            self.assertIsNone(self._decide(t), "%r must be left to the mode" % t)
+
+    def test_the_chat_run_carries_the_hook(self):
+        import app as A
+        args = A.build_agent_args("/usr/bin/claude", "hi", "plan")
+        self.assertIn("--settings", args)
+        cfg = json.loads(args[args.index("--settings") + 1])
+        pre = cfg["hooks"]["PreToolUse"][0]
+        self.assertEqual(pre["matcher"], "mcp__sutra__.*")
+        self.assertIn("mcp_allow_hook.py", pre["hooks"][0]["command"])
+
+    def test_allowing_the_namespace_whole_requires_strict_mcp_config(self):
+        """The hook allows any tool the `sutra` server offers. That is only safe
+        while --strict-mcp-config guarantees WE are that server. The two must
+        never be separated."""
+        import app as A
+        args = A.build_agent_args("/usr/bin/claude", "hi", "plan")
+        if "--settings" in args:
+            self.assertIn("--strict-mcp-config", args)
