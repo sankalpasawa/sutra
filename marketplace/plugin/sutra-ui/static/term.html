@@ -184,12 +184,36 @@
   try { term.loadAddon(new Unicode11Addon.Unicode11Addon()); } catch (_) {}   // Unicode 11 width tables (#1)
   term.open(document.getElementById("term"));
   try { term.unicode.activeVersion = "11"; } catch (_) {}                      // the load-bearing line (#1)
-  function refit() { try { fit.fit(); sendResize(); } catch (_) {} }
+  /* A terminal that measures zero is not a 2x1 terminal -- it is a terminal that
+     is not on screen yet. FitAddon reports the degenerate size anyway, and once
+     that reaches the PTY the TUI reflows to a sliver and STAYS there, because
+     nothing re-fits when the element comes back. So: refuse to act on a
+     measurement taken while the container has no area. */
+  const MIN_COLS = 20, MIN_ROWS = 4;
+  function measurable() {
+    const el = document.getElementById("term");
+    return !!el && el.clientWidth > 0 && el.clientHeight > 0;
+  }
+  function refit() {
+    if (!measurable()) return;
+    try {
+      const d = fit.proposeDimensions();
+      if (!d || !isFinite(d.cols) || !isFinite(d.rows)) return;
+      if (d.cols < MIN_COLS || d.rows < MIN_ROWS) return;
+      fit.fit();
+      sendResize();
+    } catch (_) {}
+  }
   let resizeTimer;
   function debouncedRefit() { clearTimeout(resizeTimer); resizeTimer = setTimeout(refit, 150); }
-  fit.fit();
+  refit();
   setTimeout(refit, 350);
   window.addEventListener("load", refit);
+  /* Coming back from a hidden tab is a resize the ResizeObserver may not see if
+     the element was display:none the whole time -- ask again when we are shown. */
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") debouncedRefit();
+  });
 
   let ws;
   function sendResize() {

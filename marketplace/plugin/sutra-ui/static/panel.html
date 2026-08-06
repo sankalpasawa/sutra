@@ -72,36 +72,6 @@
   .grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
   .grp:hover .chev{opacity:1}
   .rsec[hidden]{display:none}
-  /* Tenant switcher popover, anchored to the rail footer. */
-  .tmenuwrap{position:relative;display:flex;min-width:0}
-  .tmenu{position:absolute;bottom:calc(100% + 7px);left:0;z-index:40;min-width:212px;
-    background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px;
-    box-shadow:0 10px 30px rgba(0,0,0,.34)}
-  .tmenu[hidden]{display:none}
-  .tmenu .th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
-    padding:5px 7px 4px}
-  .tmenu button{display:flex;align-items:center;gap:7px;width:100%;padding:6px 7px;border:0;
-    border-radius:6px;background:none;color:var(--ink);font:inherit;font-size:12px;
-    cursor:pointer;text-align:left}
-  .tmenu button:hover{background:var(--hover)}
-  .tmenu button .tm2{margin-left:auto;font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
-  .tmenu .cur{color:var(--acc)}
-  .tmenu .note{padding:6px 7px 4px;font-size:10.5px;color:var(--faint);line-height:1.45;
-    border-top:1px solid var(--line-soft);margin-top:4px}
-  /* Three columns: rail | panes | terminal. The terminal track is `auto`, and the
-     pane is [hidden] when closed, so the track collapses to zero width and the
-     layout is byte-identical to the two-column one until the terminal is opened.
-     It must be a GRID ITEM rather than a child of .panes: render() replaces
-     .panes wholesale and would kill the PTY. */
-  .app{display:grid;grid-template-columns:224px 1fr var(--termw, 0px);gap:9px;background:var(--surface);
-       border:0;border-radius:0;padding:9px;height:100vh;min-height:0;box-shadow:none;
-       /* padding must live INSIDE 100vh or the app is 18px taller than the window */
-       box-sizing:border-box}
-  @media(max-width:860px){.app{grid-template-columns:1fr;height:auto}.rail{max-height:290px}}
-
-  /* rail */
-  .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
-        display:flex;flex-direction:column;min-height:0}
   .rtop{display:flex;align-items:center;gap:8px;padding:11px 11px 9px}
   /* The logo mark is BLACK on gold in BOTH themes. It does not follow --on-acc, which is
      white in the light theme: that made the brand mark read white-on-gold in light mode and
@@ -109,8 +79,9 @@
   .rmark{width:19px;height:19px;border-radius:5px;background:var(--acc);color:#0A0908;
          display:grid;place-items:center;font:700 12px/1 var(--serif);flex:none}
   .rtop b{font-size:13px;font-weight:600}
-  .rtop .tn{margin-left:auto;font:600 8.5px/1 var(--mono);color:var(--acc);background:var(--acc-bg);
-            border:1px solid var(--acc);border-radius:4px;padding:3px 5px}
+  /* The tenant chip used to carry `margin-left:auto` and push the toggle right.
+     With the chip gone the toggle owns that job, or it collides with the wordmark. */
+  .rtop .railtog{margin-left:auto}
   .rscroll{overflow-y:auto;flex:1;min-height:0;padding-bottom:6px}
   .grp{padding:9px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.1em;
        color:var(--faint);text-transform:uppercase}
@@ -199,7 +170,6 @@
   .tag.t-noc{background:var(--warn-bg);color:var(--warn)}
   .tag.t-ten{background:var(--warn-bg);color:var(--warn)}
   .node.retired .nm{text-decoration:line-through;color:var(--faint)}
-  .node.acme{border-left:2px solid var(--warn)}
   /* draft-mode drag */
   .node.drg{opacity:.45}
   .node.ring{outline:2px solid var(--block);outline-offset:-2px;
@@ -333,8 +303,8 @@
   .ph .src{font:500 9px/1 var(--mono);color:var(--faint)}
   .pb{flex:1;overflow-y:auto;overflow-x:hidden;padding:13px 14px;min-height:0;min-width:0;font-size:12.5px}
   .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;align-items:center;gap:8px}
-  .pc input{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
-  .pc input::placeholder{color:var(--faint)}
+  .pc input,.pc textarea{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
+  .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
   .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
         display:grid;place-items:center;cursor:pointer;flex:none}
   .send:hover{background:var(--acc);color:var(--on-acc)}
@@ -386,7 +356,6 @@
                 display:flex;gap:6px;flex-wrap:wrap}
   .ocard.retired{border-style:dashed;opacity:.62}
   .ocard.retired .onm{text-decoration:line-through}
-  .ocard.acme{border-left:3px solid var(--warn)}
   .ocard.ring{outline:2px solid var(--block);outline-offset:-2px;
               background:color-mix(in srgb,var(--block) 5%,transparent);cursor:not-allowed}
   .ocard.drg{opacity:.4}
@@ -626,17 +595,6 @@
     .app{height:auto}
   }
 
-  /* ── tenant chooser ── */
-  .tgate{display:grid;gap:9px;max-width:560px}
-  .tcard{display:block;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;
-    background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:11px 13px}
-  .tcard:hover{border-color:var(--acc);background:var(--acc-bg)}
-  .tcard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
-  .tcard[aria-current="true"]{border-color:var(--acc);background:var(--acc-bg)}
-  .tcard .tid{font:600 12.5px/1 var(--mono);color:var(--ink)}
-  .tcard .tm{font:500 10px/1.45 var(--mono);color:var(--muted);margin-top:5px;
-             display:flex;gap:9px;flex-wrap:wrap}
-
   /* ── a selectable option that can also be refused, with the refusal shown ── */
   .opt{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;cursor:pointer;
     color:inherit;font:inherit;background:var(--inset);border:1px solid var(--line);
@@ -655,11 +613,6 @@
   .opt .od{font-size:11px;color:var(--muted);margin-top:3px}
   .opt .why{font:500 10px/1.5 var(--mono);color:var(--block);margin-top:5px;
             white-space:normal;overflow-wrap:anywhere}
-  .rfoot .tsw{background:none;border:0;padding:0;margin:0;color:var(--muted);font:inherit;
-    font-size:10.5px;cursor:pointer;text-align:left;min-width:0;overflow:hidden;
-    text-overflow:ellipsis;white-space:nowrap}
-  .rfoot .tsw:hover{color:var(--acc)}
-  .rfoot .tsw:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   /* ── run state ──────────────────────────────────────────────────────────
      There was previously ONE animation in this whole file, so a running turn and a
      finished one looked identical and the operator could not tell whether anything
@@ -752,9 +705,15 @@
      here rather than left to the UA stylesheet.
      `field-sizing:content` sizes it natively where supported; autoGrowComposer()
      is the fallback everywhere else, and the two agree. */
+  /* Sizing only. Colour, border and focus ring come from `.pc input,.pc textarea`
+     above, and this rule must not quietly take them back:
+     `font:inherit` did exactly that -- the shorthand reset font-size to the
+     inherited 16px and, being later in the sheet at equal specificity, beat the
+     12px the composer had as an <input>. The result was a fat, UA-bordered box
+     with a browser focus ring, which is the regression this restores. */
   textarea[data-sask]{
     flex:1; min-width:0; resize:none; overflow-y:hidden;
-    font:inherit; line-height:1.45; padding:7px 9px;
+    line-height:1.45; padding:0;
     max-height:200px; field-sizing:content;
   }
 
@@ -816,6 +775,12 @@
   .termpane .termcwd{margin-left:auto;font:500 10px/1 var(--mono);color:var(--faint);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
   .termbody{padding:0;overflow:hidden;flex:1;min-height:0;display:flex}
+  /* `display:flex` beats the UA's `[hidden]{display:none}`, so switching to the
+     Preview tab left #termBody laid out at zero height instead of removed. The
+     terminal's ResizeObserver then fit itself to nothing (2 cols x 1 row) and
+     pushed that winsize into the PTY -- which is why coming back to the tab
+     showed the TUI reflowed into a garbled sliver. Hidden must mean gone. */
+  .termbody[hidden]{display:none}
   .termbody iframe{border:0;width:100%;height:100%;flex:1;background:var(--bg)}
   .termzero{padding:16px;font-size:12px;color:var(--muted)}
   .sidetabs{flex:none}
@@ -876,7 +841,7 @@
   <div class="app" id="app">
     <nav class="rail" aria-label="Sutra">
       <div class="rtop">
-        <div class="rmark">s</div><b>Sutra</b><span class="tn" id="tenantChip">—</span>
+        <div class="rmark">s</div><b>Sutra</b>
         <button class="railtog" id="railToggle" type="button"
                 aria-label="Hide the sidebar" aria-pressed="false" title="Hide the sidebar">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -926,15 +891,9 @@
       </div>
       <div class="rfoot">
         <div class="av">TC</div>
-        <!-- Tenancy is removed: one registry holds one org, so there is
-             nothing to switch between. This was a menu button; a control that
-             can only ever pick the thing already picked is a false affordance,
-             so it is a LABEL now. It still names the registry, because "which
-             registry am I looking at" remains a real question -- the answer is
-             just no longer a choice. -->
-        <div class="tmenuwrap">
-          <span class="tsw" id="tenantSwitch" title="The registry this panel reads">—</span>
-        </div>
+        <!-- Tenancy is removed: one registry holds one org. The label that named
+             the tenant here is gone too -- naming a scope that has no alternative
+             is noise, and it was the last place the word appeared to an operator. -->
         <div style="margin-left:auto;display:flex;gap:2px">
           <button class="ib" id="termBtn" type="button" aria-pressed="false"
                   aria-label="Show the terminal" title="Terminal — the real claude TUI in a PTY">
@@ -1018,8 +977,8 @@
 <script>
 /* ══════════════════════ live data — fetched from the real backend ══════════════════════
    No seed. DOMAINS/CHARTERS/PLACEMENTS/INDEX are populated by loadOrg() from /api/org/*
-   against placement_engine.py's real registry, scoped to the tenant chosen on the landing
-   screen. Which registry is read is decided SERVER-SIDE by org_api.py's SUTRA_NATIVE_HOME
+   against placement_engine.py's real registry. Which registry is read is decided
+   SERVER-SIDE by org_api.py's SUTRA_NATIVE_HOME
    resolution — never chosen here, and there is no fixture default.
    SESSIONS are not derived from any of this: they come from GET /api/sessions, which reads
    ~/.claude/projects/**.jsonl. See adoptRealSessions(). */
@@ -1029,11 +988,9 @@ let DOMAINS = [], CHARTERS = [], PLACEMENTS = [], INDEX = [];
    hardcoded list: the Skills screen used to render ten invented strings
    and claim "31 total". */
 let SKILLS = [], SKILLS_META = {};
-/* Real tenants (GET /api/tenants — derived from tenant_id observed on domains and
-   placements, with the engine's own counts), the live provider table
-   (GET /api/providers) and the panel's settings (GET /api/settings). All three
-   are fetched; none is a literal in this file. */
-let TENANTS = [], PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
+/* The live provider table (GET /api/providers) and the panel's settings
+   (GET /api/settings). Both are fetched; neither is a literal in this file. */
+let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
 
 /* True while a turn on this session is still streaming. The composer's send button
    becomes a STOP button on exactly this condition, so the control that appears is
@@ -1049,17 +1006,14 @@ function fmtBytes(n){
        : (n/(1024*1024)).toFixed(1) + " MB";
 }
 const PLANS = [{ plan_id: "sutra-ui-draft", base: {} }];  // this tier manages exactly one draft
-/* tenant_id is no longer a constant. It is whatever the operator picked on the
-   tenant screen (see boot()), and it is what every ?tenant= below carries. */
-let META = { tenant_id: null, generated_ms: 0, history_complete_from_ms: 0 };
+let META = { generated_ms: 0, history_complete_from_ms: 0 };
 
 /* ══════════════════════ persisted UI state ══════════════════════
-   Three things survive a reload, because all three are decisions the operator
-   made about THIS machine and re-making them every load is friction, not
-   safety: the chosen tenant, which panes/sections are collapsed, and the
-   browse-pane width. Nothing about the REGISTRY is cached here — only layout.
+   What survives a reload are decisions the operator made about THIS machine,
+   because re-making them every load is friction, not safety: which panes and
+   sections are collapsed, and the browse-pane width.
+   Nothing about the REGISTRY is cached here — only layout.
    A corrupt/absent value degrades to the default; it never throws. */
-const LS_TENANT = "sutra.panel.tenant";
 const LS_LAYOUT = "sutra.panel.layout";
 const LS_TERM   = "sutra.panel.term";     /* terminal pane open/closed, per browser */
 const LS_TERMW  = "sutra.panel.termw";    /* its dragged width, in px */
@@ -1173,18 +1127,10 @@ async function apiPost(path, body){
   if (!r.ok) throw await _fail(r, path);
   return r.json();
 }
-/* THE tenant scope, in one place. Every registry read/write below goes through
-   it, so "which tenant am I looking at" cannot drift between two endpoints.
-   With `showAcme` on, the scope widens to all_tenants=true — that is a
-   deliberate, visible toggle, not a default. */
-function scopeQ(){
-  return S.showAcme ? "all_tenants=true"
-                    : "tenant=" + encodeURIComponent(S.tenant || "");
-}
-/* Tenancy is removed and the server ignores this parameter. It is no longer
-   sent: a query string that looks like a scope but is not one is exactly the
-   thing that made a half-removed filter hard to see. */
-const tenantQ = () => "";
+/* Tenancy is removed: one registry holds one org, so registry reads carry no
+   scope. What stood here built a ?tenant= the server already ignored -- a query
+   string that looks like a scope but is not one is what made a half-removed
+   filter hard to see. */
 
 /* ══════════════════════ derivations/* ══════════════════════ derivations ══════════════════════ */
 const byRef = r => DOMAINS.find(d => d.ref === r);
@@ -1192,8 +1138,6 @@ const st = d => d.status || "active";
 const isLive = d => st(d) !== "retired";
 /* live_refs(): drops retired only. frozen stays classifiable. */
 const live = () => DOMAINS.filter(isLive);
-/* tenant_refs(): the §6 chokepoint. Default view is the tenant of record. */
-const inTenant = (d, t) => d.tenant_id === t;
 
 function isDescendant(ref, ancestorRef){
   let n = byRef(ref);
@@ -1246,7 +1190,15 @@ const tok = s => new Set((String(s||"").toLowerCase().match(/[a-z0-9]+/g) || [])
                           .filter(w => w.length>1 && !STOP.has(w)));
 function jac(a,b){ const i=[...a].filter(x=>b.has(x)).length; const u=new Set([...a,...b]).size;
                    return u? i/u : 0; }
-const fmt = ms => new Date(ms).toISOString().slice(0,10);
+/* An undated row is a fact about THAT row, not a reason to blank the screen.
+   Two real domain_updated events in this registry carry no ts_ms at all, and
+   `new Date(undefined).toISOString()` throws -- which took the whole History
+   screen down with a RangeError instead of showing 65 dated events and 2
+   undated ones. Unrepresentable in, em-dash out. */
+const fmt = ms => {
+  const d = new Date(ms);
+  return isNaN(d.getTime()) ? "—" : d.toISOString().slice(0,10);
+};
 
 /* ══════════════════════ simulate() — real backend, memoized on ops ══════════════════════
    The ORG-001/002/.../020 predicates now live server-side in reorg_sim.py, calling the SAME
@@ -1328,7 +1280,6 @@ function blockCodesForMove(src, t){
   if (t.ref===src.ref || isDescendant(t.ref, src.ref))
     c.push({code:"ORG-006", subject:t.name+" is inside "+src.name});
   if (st(t) !== "active") c.push({code:"ORG-016", subject:t.name+" is "+st(t)});
-  if (t.tenant_id !== src.tenant_id) c.push({code:"ORG-017", subject:t.tenant_id+" ≠ "+src.tenant_id});
   const norm = s => s.trim().toLowerCase().replace(/\s+/g," ");
   if (DOMAINS.some(d=>d.ref!==src.ref && d.parent_ref===t.ref && st(d)!=="retired" && norm(d.name)===norm(src.name)))
     c.push({code:"ORG-018", subject:'a live sibling is already named "'+src.name+'"'});
@@ -1353,7 +1304,7 @@ async function runTurn(text, ts){
   const stamp = ts || Date.now();
   let r;
   try {
-    const res = await apiPost("/api/classify?" + tenantQ(), { text });
+    const res = await apiPost("/api/classify", { text });
     if (!res.domain_ref) {
       // mode "none": classify() found no candidate at all; nothing was written.
       r = { mode: res.mode || "none", domain: null, confidence: res.confidence || 0,
@@ -1844,7 +1795,7 @@ async function submitTurn(text, sessionId){
 
 /* ══════════════════════ state ══════════════════════ */
 const S = {
-  screen:"departments", sel:null, view:"live", showRetired:false, showAcme:false,
+  screen:"departments", sel:null, view:"live", showRetired:false,
   toolOpen:{},                   /* tool_use id -> is its output expanded */
   turnOpts:{},                   /* session id -> per-turn CLI options (effort, budget, ...) */
   optsOpen:{},                   /* session id -> is the options row expanded */
@@ -1860,6 +1811,7 @@ const S = {
      a fetch is in flight, "" when git genuinely returned an empty diff -- the two are
      different answers and the screen renders them differently. */
   git:null, gitError:null, gitFile:null, gitDiff:null, gitDiffTruncated:false,
+  auto:null, autoError:null,
   /* Per-session composer extras. `attach` holds one entry per pending file (each with
      its own error, so one rejected upload does not discard the others). `model` is a
      per-session OVERRIDE; undefined means "inherit the stored setting", which is why
@@ -1913,11 +1865,6 @@ const S = {
      operator typing (opening the palette, a simulate() response, a token frame).
      Keeping it in state makes it survive unconditionally. */
   composerText:{},
-  /* tenant: the scope EVERY registry request carries (?tenant=). null means the
-     choice has not been made yet and the tenant gate is what renders.
-     gate: the chooser is open on purpose (rail footer), even though a tenant
-     is already selected. */
-  tenant:null, gate:false, tenantsError:null,
   /* Layout the operator adjusted, restored from localStorage on load:
        paneCollapsed[<"browse"|sessionId>] -> true
        folds[<fold key>]                   -> 0 (closed) | 1 (open)
@@ -2074,7 +2021,7 @@ const ICON = {
   hist:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>',
   health:'<path d="M3 13h4l2.5 6 4-14 2.5 8h5"/>',
   skills:'<path d="M12 3l7.5 4.3v8.6L12 20.2 4.5 15.9V7.3z"/><path d="M12 12l7.5-4.4M12 12v8.2M12 12L4.5 7.6"/>',
-  ten:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M8 5V3M16 5V3"/>',
+  auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
   chevron:'<path d="M6 9l6 6 6-6"/>'
 };
@@ -2082,15 +2029,14 @@ function railSpec(){
   const sim = S.loaded ? simulate(S.draft.ops) : null;
   /* "0 open issues" and "we have not been told yet" are different facts, and a
      green-looking 0 for the second is the more expensive lie. Before the
-     registry has been read at all (tenant gate), every count is withheld for
-     the same reason -- a 0 there would be a claim about a tenant nobody has
-     loaded yet. */
+     registry has been read at all, every count is withheld for the same
+     reason -- a 0 there would be a claim about a registry nobody has read. */
   const openIssues = !sim ? undefined
     : sim.pending ? "…" : (sim.error ? "!" : sim.findings.length);
   const c = v => S.loaded ? v : undefined;
   return {
     org:[
-      {id:"departments",n:"Departments",i:"dept", c:c(live().filter(d=>inTenant(d,META.tenant_id)).length)},
+      {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
       {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)}
@@ -2109,6 +2055,12 @@ function railSpec(){
     ],
     runtime:[
       {id:"skills",  n:"Skills",   i:"skills",c:(SKILLS.length||undefined)},
+      /* Dispatcher + scheduler. The count is the dispatch ledger's row count and
+         is withheld until the screen has been opened, for the same reason Git's
+         is: a 0 before the file was read is a claim about a project nobody
+         looked at. */
+      {id:"automation",n:"Automation",i:"auto",
+       c:(S.auto ? (((S.auto.dispatcher||{}).ledger||{}).rows) : undefined)},
       /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
          anyway. It shipped as a 19px unlabelled icon in the footer and the first
          operator to use it reported "I don't see terminal": a control nobody can
@@ -2120,25 +2072,6 @@ function railSpec(){
       {id:"settings",n:"Settings", i:"gear"}
     ]
   };
-}
-/* The workspace switcher. Deliberately worded as SCOPE, not isolation:
-   placement_engine's own tenant_refs() docstring says "MISROUTING GUARD, not
-   isolation ... Do not describe it with the word isolation" -- all tenants
-   share one registry directory. Calling this a boundary in the UI would claim
-   a guarantee the engine explicitly disclaims. */
-function renderTenantMenu(){
-  const menu = document.getElementById("tenantMenu");
-  if (!menu) return;
-  const rows = (TENANTS || []).map(r=>`
-    <button type="button" role="menuitem" data-pick-tenant="${esc(r.tenant_id)}"
-            ${r.tenant_id===S.tenant?'aria-current="true"':""}>
-      <span class="${r.tenant_id===S.tenant?"cur":""}">${esc(r.tenant_id)}</span>
-      <span class="tm2">${r.domains} dept · ${r.placements} plc</span>
-    </button>`).join("");
-  menu.innerHTML = `<div class="th">Workspace</div>${rows ||
-      '<div class="note">No workspaces found in the registry.</div>'}
-    <div class="note">Switching re-scopes every screen — departments, charters and
-      placements are all read at this scope.</div>`;
 }
 
 function renderRail(){
@@ -2175,7 +2108,6 @@ function renderRail(){
   if (home) home.hidden = tab !== "home";
   if (code) code.hidden = tab !== "code";
 
-  renderTenantMenu();
 
   /* Sessions, two ways.
      RECENT is the familiar shape — date buckets, newest first.
@@ -2258,13 +2190,6 @@ function renderRail(){
       this panel, so no department was ever resolved for them — they group under Recent only.</p>`;
   }
   document.getElementById("sessions").innerHTML = html;
-
-  /* the tenant is a live selection now, so the chip and the footer switch both
-     read it rather than repeating a hardcoded "T-local" */
-  const chip = document.getElementById("tenantChip");
-  if (chip) chip.textContent = S.tenant || "no tenant";
-  const sw = document.getElementById("tenantSwitch");
-  if (sw) sw.textContent = S.tenant || "registry";
 }
 
 /* ══════════════════════ screens ══════════════════════ */
@@ -2553,16 +2478,8 @@ function domainsDirectory(){
 }
 
 SCREENS.departments = () => {
-  const t = META.tenant_id;
-  const vis = DOMAINS.filter(d=>(S.showAcme || inTenant(d,t)) && (S.showRetired || isLive(d)));
+  const vis = DOMAINS.filter(d=>S.showRetired || isLive(d));
   const roots = vis.filter(d=>!d.parent_ref || !vis.find(p=>p.ref===d.parent_ref));
-  /* Tenant of record leads its own org chart. Both tenants' roots are "D0"
-     (D-numbering is per tenant), so a path sort ties and whichever row the
-     server happened to yield first won -- which could be T-acme's. The server
-     now orders this deliberately; sort defensively here too, because "whose
-     org is this" must not depend on a remote sort key. Array#sort is stable,
-     so everything else keeps its order. */
-  roots.sort((a,b)=>(inTenant(a,t)?0:1)-(inTenant(b,t)?0:1));
   const kids = ref => vis.filter(d=>d.parent_ref===ref)
                          .sort((a,b)=>a.ts_minted_ms-b.ts_minted_ms);
   const draft = S.view==="draft";
@@ -2575,11 +2492,10 @@ SCREENS.departments = () => {
   const card = d => {
     const cs = chartersOf(d.ref).filter(c=>c.status!=="retired");
     const ret = st(d)==="retired";
-    const acme = d.tenant_id!==t;
     const n = turnsOn(d.ref);
     /* collapsed subtree count lives on the tile — nothing disappears silently */
     const hidden = (kids(d.ref).length && S.collapsed.has(d.ref)) ? subtreeN(d.ref) : 0;
-    return `<button class="ocard ${ret?"retired":""} ${acme?"acme":""}" data-ref="${d.ref}"
+    return `<button class="ocard ${ret?"retired":""}" data-ref="${d.ref}"
         data-kids="${kids(d.ref).length?1:0}"
         ${draft && !ret ? 'draggable="true"' : ''} aria-selected="${S.sel===d.ref}">
       ${n?`<span class="turnbadge">${n}</span>`:""}
@@ -2589,7 +2505,6 @@ SCREENS.departments = () => {
         <span>${cs.length?cs.length+" chr":'<span style="color:var(--warn)">no charter</span>'}</span>
         <span>${placementsOf(d.ref).length} plc</span>
         ${ret?'<span style="color:var(--block)">retired</span>':""}
-        ${acme?`<span style="color:var(--warn)">${esc(d.tenant_id)}</span>`:""}
         ${hidden?`<span class="below">${hidden} below</span>`:""}
       </span>
     </button>`;
@@ -2619,7 +2534,6 @@ SCREENS.departments = () => {
       ${sel.description?`<p style="font-size:11.5px">${esc(sel.description)}</p>`:
         `<p style="font-size:11.5px;color:var(--faint)">No description — system-minted nodes carry none.</p>`}
       <div class="kv"><b>Status</b><span>${esc(st(sel))}${sel.retired_at_ms?" · "+fmt(sel.retired_at_ms):""}</span></div>
-      <div class="kv"><b>Tenant</b><span>${esc(sel.tenant_id)}</span></div>
       <div class="kv"><b>Charters</b><span>${cs.length||"none"}</span></div>
       <div class="kv"><b>Placements</b><span class="num">${ps.length}</span></div>
       ${succ.length?`<div class="kv"><b>Succeeded by</b><span>${succ.map(s=>esc(s.name)).join(" · ")}</span></div>`:""}
@@ -2648,11 +2562,6 @@ SCREENS.departments = () => {
       </span>
 ${DOMAINS.some(d=>st(d)==="retired")
         ? `<button class="btn" data-toggle="showRetired" aria-pressed="${S.showRetired}">Show retired</button>` : ""}
-      ${TENANTS.length > 1
-        /* condition on the TENANT LIST, not on the rows already fetched: under
-           ?tenant= the fetched rows are all one tenant by construction, so the
-           old test could never be true and the scope could never be widened */
-        ? `<button class="btn" data-toggle="showAcme" aria-pressed="${S.showAcme}">Show other tenants</button>` : ""}
     </div>
     ${S.view==="dir" ? domainsDirectory() : `
     ${draft?`<div class="note w"><b>Draft — nothing on this canvas touches the registry.</b>
@@ -2687,7 +2596,7 @@ ${DOMAINS.some(d=>st(d)==="retired")
         ${fold("dept.insp", "Inspector", sel ? dPath(sel.ref) + " " + sel.name : "nothing selected", insp)}
         ${fold("dept.metrics", "Metrics", null, `
           <div class="metrics" style="margin:0">
-            <div>live<b>${live().filter(d=>inTenant(d,META.tenant_id)).length}</b></div>
+            <div>live<b>${live().length}</b></div>
             <div>retired<b>${DOMAINS.filter(d=>!isLive(d)).length}</b></div>
             <div>max depth<b>${simNum(sim, sim.maxDepth)}</b></div>
             <div>findings<b>${simNum(sim, sim.findings.length)}</b></div>
@@ -2769,17 +2678,12 @@ SCREENS.charters = () => {
 SCREENS.placements = () => {
   const modes = ["all","match","floor"];
   let rows = PLACEMENTS.filter(p=>S.pmode==="all"||p.mode===S.pmode);
-  if (S.showAcme===false) rows = rows.filter(p=>p.tenant_id===META.tenant_id);
   rows = rows.slice().sort((a,b)=>b.ts_ms-a.ts_ms);
   const held = PLACEMENTS.filter(p=>p.mode==="floor");
   return `
     <div class="facets">
       <span class="fl">Mode</span>
       <span class="seg">${modes.map(m=>`<button type="button" data-pmode="${m}" aria-pressed="${S.pmode===m}">${m}</button>`).join("")}</span>
-      ${TENANTS.length > 1 ? `<button class="btn" data-toggle="showAcme" aria-pressed="${S.showAcme}"
-          style="margin-left:auto">Show other tenants</button>`
-        : `<span style="margin-left:auto;font-size:10.5px;color:var(--faint)">one tenant in this
-            registry — nothing to widen to</span>`}
     </div>
     ${held.length?`<div class="note w"><b>${held.length} held at ancestor.</b>
       These resolved below the ${CONFIDENCE_FLOOR} confidence floor, so the engine held them at the
@@ -2790,7 +2694,7 @@ SCREENS.placements = () => {
     </tr></thead><tbody>
     ${rows.map(p=>{
       const d = byRef(p.domain_ref); const floor = p.mode==="floor";
-      return `<tr class="${p.tenant_id!==META.tenant_id?"":""}" style="${p.tenant_id!==META.tenant_id?"border-left:2px solid var(--warn)":""}">
+      return `<tr>
         <td class="k">${esc(p.work_ref.id)}</td>
         <td>${d?esc(dPath(d.ref)+" "+d.name):'<span class="pill p-block">unresolvable</span>'}</td>
         <td>${esc(p.charter_id||"—")}</td>
@@ -2952,8 +2856,6 @@ SCREENS.history = () => {
             happened, not what it changed from. Enriched events carry before/after.</div>`:""}
           ${e.before&&e.after?`<div class="det">${esc(e.before.name)} → ${esc(e.after.name||e.before.name)}
             ${e.placements_repointed?` · ${e.placements_repointed} placement(s) repointed`:""}</div>`:""}
-          ${e.event==="domain_restructured"&&!("tenant_id" in e)?`<div class="det" style="color:var(--faint)">
-            No tenant_id on this event type — history cannot be partitioned by tenant.</div>`:""}
         </li>`;}).join("")}
     </ul>
     <div class="sepiaband">
@@ -3084,44 +2986,6 @@ SCREENS.skills = () => {
     ${provs.map(group).join("")}`;
 };
 
-/* ── S9 Tenants ──
-   The counts are the SERVER's (GET /api/tenants runs tenant_refs/charters_for/
-   all_placements per tenant); they are no longer re-derived here from whatever
-   subset the current scope happened to fetch, which under a ?tenant= scope
-   would have reported every other tenant as zero. */
-SCREENS.tenants = () => {
-  if (!TENANTS.length) return `<div class="zero"><h4>No tenants</h4>
-    <p>${esc(S.tenantsError || "GET /api/tenants returned nothing.")}</p></div>`;
-  return `
-    <div class="facets">
-      <span class="fl">Viewing</span><code>${esc(S.tenant||"—")}</code>
-      <button class="btn" id="openGate" style="margin-left:auto">Switch tenant…</button>
-    </div>
-    <div class="note w"><b>Filtering is a scope, not a boundary.</b> Every request this panel makes
-      carries <code>?tenant=</code>, and the engine's own <code>tenant_refs()</code> narrows the read.
-      That is a misrouting guard — it is not access control, and the site generator still ignores
-      <code>tenant_id</code>.</div>
-    <div class="tw"><table><thead><tr>
-      <th>Tenant</th><th>Root</th><th>Domains</th><th>Charters</th><th>Placements</th><th></th>
-    </tr></thead><tbody>
-    ${TENANTS.map(r=>`<tr class="${r.tenant_id===S.tenant?"sel":""}">
-      <td class="k">${esc(r.tenant_id)}
-        ${r.is_default?' <span class="pill p-acc">of record</span>':""}
-        ${r.tenant_id===S.tenant?' <span class="pill p-ok">viewing</span>':""}</td>
-      <td>${r.root_name?esc(r.root_name):'<span style="color:var(--faint)">none</span>'}</td>
-      <td class="num">${r.domains}${r.domains_retired?` <span class="pill p-mut">${r.domains_retired} retired</span>`:""}</td>
-      <td class="num">${r.charters}</td>
-      <td class="num">${r.placements}</td>
-      <td>${r.tenant_id===S.tenant?"":
-          `<button class="btn" data-pick-tenant="${esc(r.tenant_id)}">View</button>`}</td>
-    </tr>`).join("")}
-    </tbody></table></div>
-    <p style="margin-top:11px;font-size:11.5px;color:var(--muted)">There is no tenant table in the
-      engine — a tenant is a <code>tenant_id</code> observed on a domain or a placement, so this list
-      is derived on every request. The tenant of record (<code>PLACEMENT_TENANT</code>) is always
-      listed even at zero counts, because it is where an unscoped write would land.</p>`;
-};
-
 /* ── S10 Settings ──
    Every control here acts. The provider list is the live one from
    GET /api/providers: `claude` is selectable, and the two that cannot run are
@@ -3249,6 +3113,96 @@ SCREENS.git = () => {
            <td class="desc" title="${esc(c.subject)}">${esc(c.subject)}</td></tr>`).join("")}
          </tbody></table></div>`
       : `<p style="color:var(--faint);margin:0">No commits read.</p>`)}`;
+};
+
+/* ── S8b Automation ──
+   The dispatcher and the scheduler, and they are NOT the same kind of thing:
+
+     Dispatcher  has real state. bin/sutra-dispatch and bin/sutra-atom append
+                 ledgers under <workdir>/.sutra/, the gate hooks append verdicts
+                 under <workdir>/.enforcement/. This reads them; it never writes.
+
+     Scheduler   has none. Cadence is a daemon-side tick in the Native engine
+                 (ADR-017 -- deliberately not OS cron/launchd), the daemon is not
+                 running in this install, and the v1.0 scheduler does not evaluate
+                 cron expressions at all. So this reports LIVENESS and says why
+                 there is nothing else to report.
+
+   The distinction is the point. A "Cron" table showing "0 runs today" would be a
+   claim that a scheduler ran and found nothing to do. Nothing ran. */
+SCREENS.automation = () => {
+  if (S.autoError) return `<div class="zero"><h4>Automation unavailable</h4>
+    <p>${esc(S.autoError)}</p></div>`;
+  if (!S.auto) return `<div class="zero"><h4>Reading…</h4>
+    <p>${esc(TITLES.automation[1])}</p></div>`;
+
+  const a = S.auto, d = a.dispatcher || {}, sch = a.scheduler || {};
+  const led = d.ledger || {}, atoms = d.atoms || {}, gate = d.gate || {};
+
+  const tally = obj => {
+    const ks = Object.keys(obj || {});
+    return ks.length ? ks.sort().map(k=>
+      `<span class="pill p-mut">${esc(k)} ${obj[k]}</span>`).join(" ") : "";
+  };
+
+  /* A file that is not there and a file that is there and empty are different
+     facts, and only the second one means "nothing has been dispatched". */
+  const source = (label, o) => `<div class="kv"><b>${esc(label)}</b>
+    <span><code>${esc(o.path||"")}</code> · ${o.rows
+      ? `<b>${o.rows}</b> row${o.rows===1?"":"s"}`
+      : `<span style="color:var(--faint)">no rows</span>`}</span></div>`;
+
+  const rows = (list, cols) => !list || !list.length ? "" : `
+    <div class="tw"><table><thead><tr>${cols.map(c=>`<th>${esc(c[0])}</th>`).join("")}</tr></thead>
+      <tbody>${list.slice().reverse().map(r=>`<tr>${cols.map(c=>{
+        const v = c[1](r);
+        return `<td>${v===undefined||v===null||v===""
+          ? '<span style="color:var(--faint)">—</span>' : esc(String(v))}</td>`;
+      }).join("")}</tr>`).join("")}</tbody></table></div>`;
+
+  const dispatched = (led.rows||0) + (atoms.rows||0) + (gate.rows||0);
+
+  return `
+    <div class="facets">
+      <span class="fl">Workdir</span><code>${esc(a.root||"—")}</code>
+      ${a.root_exists ? "" : `<span class="pill p-block" style="margin-left:auto">does not exist</span>`}
+    </div>
+
+    <section class="chsec"><h2 class="chh">Dispatcher</h2>
+      ${source("Dispatch ledger", led)}
+      ${source("Atom ledger", atoms)}
+      ${source("Gate verdicts", gate)}
+      ${led.too_large?`<div class="note w"><b>Ledger too large to read.</b>
+        It is past the size this screen will walk, so no rows are shown rather than
+        a partial tail presented as the whole.</div>`:""}
+      ${dispatched ? `
+        ${tally(led.kinds) ? `<p style="margin:9px 0 4px">${tally(led.kinds)}</p>` : ""}
+        ${tally(gate.verdicts) ? `<p style="margin:4px 0 9px">${tally(gate.verdicts)}</p>` : ""}
+        ${rows(led.recent, [["Kind",r=>r.kind],["Unit",r=>r.unit||r.atom_id],
+                            ["Class",r=>r.class],["Model",r=>r.model],
+                            ["When",r=>r.ts?fmt(r.ts*1000):""]])}
+        ${rows(gate.recent, [["Verdict",r=>r.verdict],["Reason",r=>r.reason],
+                             ["Tool",r=>r.tool],["Target",r=>r.target],
+                             ["When",r=>r.ts?fmt(r.ts*1000):""]])}`
+      : `<div class="zero"><h4>Nothing dispatched here</h4>
+          <p>No dispatch, atom or gate rows under <code>${esc(a.root||"")}</code>.
+             These files are written by the gate hooks in whatever project the agent
+             runs in — this is the configured workdir, which may simply not be that
+             project. Nothing is inferred from their absence.</p></div>`}
+    </section>
+
+    <section class="chsec"><h2 class="chh">Cron / scheduler</h2>
+      <div class="kv"><b>Daemon</b><span>${sch.daemon_running
+        ? '<span class="pill p-ok">running</span>'
+        : '<span class="pill p-mut">not running</span>'} · <code>${esc(sch.pid_file||"")}</code></div>
+      <div class="kv"><b>Ready</b><span>${sch.ready
+        ? '<span class="pill p-ok">yes</span>' : '<span class="pill p-mut">no</span>'}</span></div>
+      <div class="kv"><b>Triggers</b><span>${sch.triggers_dir_exists
+        ? `<b>${(sch.triggers||[]).length}</b> in <code>${esc(sch.triggers_dir||"")}</code>`
+        : `<span style="color:var(--faint)">no trigger store at</span> <code>${esc(sch.triggers_dir||"")}</code>`}</span></div>
+      <div class="note"><b>There is no cron here, and that is the finding.</b>
+        ${esc(sch.note||"")}</div>
+    </section>`;
 };
 
 /* Colour a unified diff. Line-based on purpose: a token-level differ would be a
@@ -3397,7 +3351,7 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
-  tenants:["Tenants","GET /api/tenants — derived, no tenant table"],
+  automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
   settings:["Settings","~/.sutra-ui/settings.json · PATH"]};
 /* ── a session's routing path, as a chart ──
    Honest model: the path is SUCCESSIVE PLACEMENT, not delegation. Each turn resolves to
@@ -3854,58 +3808,11 @@ function runSearch(q){
   if (!q.trim()){ S.searchRes = null; S.searchHits = null; S.searchBusy = false; render(); return; }
   S.searchBusy = true;
   _sqT = setTimeout(()=>{
-    apiGet("/api/org/search?q=" + encodeURIComponent(q) + "&limit=40&" + tenantQ())
+    apiGet("/api/org/search?q=" + encodeURIComponent(q) + "&limit=40")
       .then(r => { S.searchRes = r; S.searchHits = r.results.length; S.searchBusy = false; render(); })
       .catch(e => { S.searchRes = { query:q, results:[], counts:{}, error:e.message };
                     S.searchHits = 0; S.searchBusy = false; render(); });
   }, 250);
-}
-
-/* ══════════════════════ tenant gate ══════════════════════
-   Tenant-first: nothing about departments, charters or placements is fetched
-   or drawn until the scope those numbers belong to has been chosen, because
-   "2 domains, 38 placements" is meaningless without saying whose.
-
-   ONE-TENANT BEHAVIOUR (deliberate, and this registry is that case): when
-   GET /api/tenants returns exactly one row, boot() selects it and goes
-   straight to the panel. A chooser with a single option is not a choice — it
-   is a click charged on every load for no information. The chooser is still
-   reachable at any time from the rail footer, and it renders the same way for
-   one tenant as for ten, so the mechanism is visible rather than hidden.
-   With two or more tenants and nothing remembered, the gate blocks the load. */
-function tenantGateHtml(){
-  const cur = S.tenant;
-  const cards = TENANTS.map(r=>`
-    <button class="tcard" type="button" data-pick-tenant="${esc(r.tenant_id)}"
-            aria-current="${cur===r.tenant_id}">
-      <span class="tid">${esc(r.tenant_id)}
-        ${r.is_default?'<span class="pill p-acc">of record</span>':""}
-        ${cur===r.tenant_id?'<span class="pill p-ok">current</span>':""}</span>
-      <span class="tm">
-        <span>${r.domains} domain${r.domains===1?"":"s"}</span>
-        <span>${r.charters} charter${r.charters===1?"":"s"}</span>
-        <span>${r.placements} placement${r.placements===1?"":"s"}</span>
-        <span>${r.root_name?"root: "+esc(r.root_name):"no root"}</span>
-      </span>
-    </button>`).join("");
-  return `<section class="pane browse">
-    <div class="ph"><h3 style="max-width:none">Choose a tenant</h3>
-      <span class="src">GET /api/tenants</span></div>
-    <div class="pb">
-      <p>Every request this panel makes is scoped to one tenant. Pick the one you are
-        working in; it is remembered until you change it here.</p>
-      ${S.tenantsError?`<div class="note b"><b>Could not list tenants.</b>
-        ${esc(S.tenantsError)}</div>`:""}
-      ${TENANTS.length?`<div class="tgate">${cards}</div>`:`
-        <div class="zero"><h4>No tenants</h4><p>The registry reported none.</p></div>`}
-      ${TENANTS.length===1?`<p style="font-size:11px;color:var(--faint);margin-top:12px">
-        This registry holds exactly one tenant, so it is selected automatically on load —
-        you are seeing this screen because you asked for it. It is not padded with
-        placeholder tenants to make the list look fuller.</p>`:""}
-      ${S.tenant?`<div style="margin-top:14px">
-        <button class="btn" id="gateCancel">Keep <code>${esc(S.tenant)}</code> and go back</button>
-      </div>`:""}
-    </div></section>`;
 }
 
 /* ── first run ───────────────────────────────────────────────────────────────
@@ -3923,7 +3830,6 @@ function onboardingHtml(){
   const runnable = PROVIDERS.filter(p=>p.runnable);
   const active = PROVIDERS.find(p=>p.id===st.provider) || runnable[0] || null;
   const blocked = PROVIDERS.filter(p=>!p.runnable);
-  const tn = (TENANTS||[]).find(t=>t.tenant_id===S.tenant) || {};
   const writes = running !== "plan";
 
   const step = (n, title, body) => `<div class="onb-step">
@@ -3966,8 +3872,8 @@ function onboardingHtml(){
       ${step(4, `<h3>It reads what is already on your disk</h3>`,
         `<p>The registry below, and every slash command your assistant can already resolve. Nothing
            was seeded or invented for this screen.</p>
-         <div class="onb-fact">${esc(S.tenant||"—")} · ${tn.domains??0} departments ·
-           ${tn.charters??0} charters · ${tn.placements??0} placements ·
+         <div class="onb-fact">${live().length} departments ·
+           ${CHARTERS.length} charters · ${PLACEMENTS.length} placements ·
            ${(SKILLS_META&&SKILLS_META.total)||0} commands</div>`)}
 
       <div class="onb-foot">
@@ -4026,10 +3932,6 @@ function render(){
   renderRail();
   renderOnboarding();
 
-  /* No tenant GATE pane. Choosing a workspace is a footer control, not a
-     full-screen interstitial: with one tenant the interstitial was a click that
-     carried no information, and it hijacked every screen behind it. boot()
-     auto-selects, so S.tenant is set by the time we render. */
   document.getElementById("app").classList.toggle("railcol", !!S.ui.railCollapsed);
 
   const [t,src] = TITLES[S.screen];
@@ -4185,15 +4087,6 @@ function scrollNewSessionsToNewest(){
    from every early-return path in ondrop, so a deferred render can never be
    stranded. */
 function flushRender(){ if (S.renderDirty) render(); }
-/* the tenant chooser is its own tiny wiring pass -- it renders instead of the
-   screens, so wire() (which assumes #scBody exists) must not run for it */
-function wireGate(){
-  const panes = document.getElementById("panes");
-  panes.querySelectorAll("[data-pick-tenant]").forEach(b=>
-    b.onclick = ()=>pickTenant(b.dataset.pickTenant));
-  const c = panes.querySelector("#gateCancel");
-  if (c) c.onclick = ()=>{ S.gate = false; render(); };
-}
 
 /* Drag the browse/session divider. The drag writes the width straight onto the
    element instead of re-rendering per mousemove -- a full innerHTML rebuild at
@@ -4250,12 +4143,6 @@ function wire(){
     S.ui.folds[b.dataset.fold] = b.getAttribute("aria-expanded") === "true" ? 0 : 1;
     saveLayout(); render(); });
   wireDivider();
-
-  /* ── tenant ── */
-  scBody.querySelectorAll("[data-pick-tenant]").forEach(b=>
-    b.onclick = ()=>pickTenant(b.dataset.pickTenant));
-  const og = scBody.querySelector("#openGate");
-  if (og) og.onclick = ()=>{ S.gate = true; render(); };
 
   /* ── settings: every control posts, and reports the server's refusal ── */
   scBody.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{
@@ -4529,11 +4416,7 @@ function wire(){
     b.onclick = ()=>{ S.dirSt = b.dataset.chst; render(); });
   scBody.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>{
     S[b.dataset.toggle]=!S[b.dataset.toggle];
-    /* showAcme widens the scope SERVER-side (all_tenants=true). Under ?tenant=
-       the other tenants' rows were never fetched, so filtering locally would
-       render "none" as though that were a finding. Refetch instead. */
-    if (b.dataset.toggle === "showAcme"){ render(); refetchOrg(); }
-    else render(); });
+    render(); });
   scBody.querySelectorAll("[data-ref]").forEach(n=>{
     /* the tile IS the control: selecting a department also opens or closes its subtree */
     n.onclick=()=>{ const r=n.dataset.ref;
@@ -4622,30 +4505,22 @@ function clearRings(){
   const s=document.getElementById("dragStatus"); if(s) s.textContent="";
 }
 document.querySelector(".rail").addEventListener("click", e=>{
-  /* The gate short-circuits render(), but the RAIL keeps rendering behind it,
-     so its buttons stay live. Navigating without clearing S.gate therefore set
-     the new screen and then drew the tenant chooser over it again -- the panel
-     looked stuck on "Choose a tenant" no matter what you clicked, with only the
-     one "go back" button able to escape. Any deliberate navigation is also an
-     answer to the chooser: dismiss it. S.tenant is already set in this state
-     (the gate was opened via `switch`, not by the no-tenant path), and when it
-     is NOT set render() re-opens the gate on its own, so this cannot strand the
-     panel tenant-less. */
   const b = e.target.closest("[data-screen]");
   if (b && !b.disabled){
     /* "terminal" is a PANE TOGGLE living in the nav, not a screen. Routing it
        through S.screen would set S.screen to an id SCREENS has no entry for,
        and render() would blank the browse pane. */
     if (b.dataset.screen === "terminal"){ termToggle(); renderRail(); return; }
-    S.gate=false; S.screen=b.dataset.screen;
+    S.screen=b.dataset.screen;
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
+    if (S.screen === "automation") loadAuto(false);
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
   const op = e.target.closest("[data-open]");
-  if (op){ const id=op.dataset.open; S.gate=false;
+  if (op){ const id=op.dataset.open;
     if (!S.openPanes.includes(id)) S.openPanes.push(id);
     if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
     /* opening a REAL session is what triggers the transcript read -- the list
@@ -4680,10 +4555,9 @@ document.getElementById("newSession").onclick = () => {
     r.setAttribute("data-theme",n); wr(n); lab(); };
 })();
 /* ══════════════════════ bootstrap ══════════════════════
-   Order matters and is the whole point of "tenant-first": /api/tenants is read
-   BEFORE any registry endpoint, because every one of them is scoped by the
-   answer. Nothing about departments, charters or placements is fetched — let
-   alone drawn — until the scope is settled. */
+   One registry, one org, so there is no scope to settle before reading it.
+   boot() reads the registry, the runtime and the sessions together and lets
+   each degrade on its own. */
 
 function backendError(e){
   document.getElementById("panes").innerHTML =
@@ -4695,15 +4569,14 @@ function backendError(e){
   console.error(e);
 }
 
-/* Registry reads, all carrying the current scope. Separated from the runtime
-   reads below because switching tenants must redo these and need not redo those. */
+/* Registry reads. Separated from the runtime reads below because they answer
+   different questions: what the org IS, versus what this machine can run. */
 async function loadOrg(){
-  const q = scopeQ();
   const [tree, charters, placements, history] = await Promise.all([
-    apiGet("/api/org/tree?include_retired=true&" + q),
-    apiGet("/api/org/charters?" + q),
-    apiGet("/api/org/placements?" + q),
-    apiGet("/api/org/history?" + tenantQ()),
+    apiGet("/api/org/tree?include_retired=true"),
+    apiGet("/api/org/charters"),
+    apiGet("/api/org/placements"),
+    apiGet("/api/org/history"),
   ]);
   DOMAINS = tree;
   CHARTERS = charters;
@@ -4718,26 +4591,52 @@ async function loadOrg(){
   invalidateSim();
 }
 
-/* Machine state, not registry state: what can run, and how it is configured.
-   Tenant-independent, so a tenant switch does not refetch it. */
+/* Machine state, not registry state: what can run, and how it is configured. */
 async function loadRuntime(){
-  const [skills, provs, settings] = await Promise.all([
+  /* allSettled, NOT all. These are three independent endpoints, and under
+     Promise.all a 500 from /api/skills -- a catalog walk that touches every
+     plugin directory on the machine -- discarded a perfectly good
+     /api/settings response and left SETTINGS null for the life of the window.
+     The Settings screen then rendered "GET /api/settings has not answered",
+     which is not what happened and cannot be falsified from the screen.
+     Each subsystem now fails on its own and says which one failed. */
+  const [skillsR, provsR, settingsR] = await Promise.allSettled([
     apiGet("/api/skills"),
     apiGet("/api/providers"),
     apiGet("/api/settings"),
   ]);
-  SKILLS = skills.items || [];
-  SKILLS_META = { by_kind: skills.by_kind, by_source: skills.by_source,
-                  by_provider: skills.by_provider, total: skills.total,
-                  runnable: skills.runnable, providers: skills.providers || [] };
-  PROVIDERS = provs.providers || [];
-  SETTINGS = settings.settings || null;
-  PERM_MODES = settings.permission_modes || [];
-  MODELS = settings.models || [];
-  /* Seed the freshness baseline from the SAME response that populated SKILLS, so the
-     first poll compares against what is actually on screen rather than re-fetching
-     a catalog the panel already has. */
-  S.cat.etag = skills.signature || null;
+  const reason = r => String((r.reason && r.reason.message) || r.reason);
+  const failed = [];
+
+  if (skillsR.status === "fulfilled"){
+    const skills = skillsR.value;
+    SKILLS = skills.items || [];
+    SKILLS_META = { by_kind: skills.by_kind, by_source: skills.by_source,
+                    by_provider: skills.by_provider, total: skills.total,
+                    runnable: skills.runnable, providers: skills.providers || [] };
+    S.cat.etag = skills.signature || null;
+  } else {
+    failed.push("GET /api/skills — " + reason(skillsR));
+  }
+
+  if (provsR.status === "fulfilled") PROVIDERS = provsR.value.providers || [];
+  else failed.push("GET /api/providers — " + reason(provsR));
+
+  if (settingsR.status === "fulfilled"){
+    const settings = settingsR.value;
+    SETTINGS = settings.settings || null;
+    PERM_MODES = settings.permission_modes || [];
+    MODELS = settings.models || [];
+  } else {
+    failed.push("GET /api/settings — " + reason(settingsR));
+  }
+
+  /* Reported, not thrown: boot() already treats the runtime as degradable, and
+     the screens read S.runtimeError to say what actually failed. */
+  S.runtimeError = failed.length ? failed.join(" · ") : null;
+  /* The freshness baseline is seeded from the SAME response that populated
+     SKILLS (S.cat.etag, set above), so the first poll compares against what is
+     actually on screen rather than re-fetching a catalog the panel already has. */
   S.cat.readAt = Date.now();
   S.cat.lastCheckAt = Date.now();
 }
@@ -4882,6 +4781,19 @@ async function saveEdFile(){
 
 /* Git is fetched on demand, not at boot: a workdir that is not a repository is a
    perfectly normal state and must not cost a failed request on every start. */
+/* Dispatcher + scheduler, read when the screen is opened. Lazy for the same
+   reason Git is: it walks ledger files in the workdir, and a panel that has
+   never shown the screen has no business reading them on every boot. */
+async function loadAuto(force){
+  if (S.auto && !force) return;
+  try {
+    S.auto = await apiGet("/api/automation");
+    S.autoError = null;
+  } catch (e) {
+    S.autoError = e.message; S.auto = null;
+  }
+  render();
+}
 async function loadGit(force){
   if (S.git && !force) return;
   try {
@@ -4920,58 +4832,16 @@ function refetchOrg(){
   loadOrg().then(render).catch(backendError);
 }
 
-function pickTenant(id){
-  if (!id) return;
-  const changed = id !== S.tenant;
-  S.tenant = id;
-  META.tenant_id = id;
-  S.gate = false;
-  lsSet(LS_TENANT, id);
-  if (!changed && S.loaded){ render(); return; }
-  /* A different tenant is a different scope. Selections, search results and the
-     memoized simulate() answers all belong to the old one; carrying them across
-     would attribute one tenant's findings to another. */
-  S.sel = null; S.selCharter = null;
-  S.searchRes = null; S.searchHits = null; S.sq = "";
-  S.showAcme = false;
-  S.loaded = false;
-  invalidateSim();
-  render();
-  loadOrg().then(()=>{ S.loaded = true; render(); }).catch(backendError);
-}
 
 async function boot(){
   const panes = document.getElementById("panes");
+  /* One registry holds one org. This used to read /api/tenants first and gate
+     the whole boot on the answer -- including a silent `if (!S.tenant) return`
+     that rendered an empty panel with no error when the answer was unexpected.
+     There is nothing to choose, so there is nothing to gate on. */
   panes.innerHTML = `<section class="pane browse"><div class="pb" style="display:flex;
     align-items:center;justify-content:center;color:var(--faint);font-size:13px">
-    Reading tenants…</div></section>`;
-  try {
-    TENANTS = await apiGet("/api/tenants");
-  } catch (e) {
-    S.tenantsError = e.message;
-    TENANTS = [];
-    backendError(e);
-    return;
-  }
-
-  const stored = lsGet(LS_TENANT, null);
-  if (TENANTS.length === 1){
-    /* ONE TENANT: auto-select. See tenantGateHtml() -- a chooser with a single
-       option is a click that carries no information, and this registry has
-       exactly one tenant today. The chooser stays reachable from the rail
-       footer, so the behaviour is switchable rather than hidden. */
-    S.tenant = TENANTS[0].tenant_id;
-  } else if (stored && TENANTS.some(r=>r.tenant_id === stored)){
-    S.tenant = stored;
-  } else {
-    S.tenant = null;      /* two or more, nothing remembered -> the gate blocks */
-  }
-  if (S.tenant){ META.tenant_id = S.tenant; lsSet(LS_TENANT, S.tenant); }
-  if (!S.tenant){ render(); return; }
-
-  panes.innerHTML = `<section class="pane browse"><div class="pb" style="display:flex;
-    align-items:center;justify-content:center;color:var(--faint);font-size:13px">
-    Loading ${esc(S.tenant)}…</div></section>`;
+    Reading the registry…</div></section>`;
   try {
     /* allSettled, NOT all: these are three independent subsystems, and
        Promise.all rejects the whole boot on the first failure — so a registry
@@ -4981,7 +4851,11 @@ async function boot(){
     const [org, runtime, sessions] =
       await Promise.allSettled([loadOrg(), loadRuntime(), loadSessions()]);
     if (org.status === "rejected") throw org.reason;   /* the one hard dependency */
-    S.runtimeError  = runtime.status  === "rejected" ? String(runtime.reason  && runtime.reason.message  || runtime.reason)  : null;
+    /* loadRuntime() reports PER-ENDPOINT failures into S.runtimeError itself and
+       resolves, so only overwrite that when the whole call threw -- otherwise the
+       specific "which of the three failed" detail is clobbered with null. */
+    if (runtime.status === "rejected")
+      S.runtimeError = String(runtime.reason && runtime.reason.message || runtime.reason);
     S.sessionsError = sessions.status === "rejected" ? String(sessions.reason && sessions.reason.message || sessions.reason) : null;
     await loadDraft();
     /* A base persisted from an earlier session can ALREADY be stale — the
@@ -5101,7 +4975,12 @@ function termSetMode(mode){
   if (S.termMode === mode) return;
   S.termMode = mode;
   try { localStorage.setItem("sutra.termMode", mode); } catch (e) {}
-  mountTerm(S.termCwd, true);
+  /* termMount, not mountTerm: no such function has ever existed, so switching
+     between the shell and the claude TUI threw a ReferenceError -- AFTER
+     S.termMode had already been reassigned and persisted. The toggle moved, the
+     PTY did not, and every later open read the persisted mode against an iframe
+     that was never rebuilt. That is the "broken on multiple openings" report. */
+  termMount(true);
   paintTermMode();
   render();
 }
@@ -5167,7 +5046,18 @@ function sideTab(which){
   document.getElementById("sideTabPrev").setAttribute("aria-pressed", String(!term));
   document.getElementById("termCwd").hidden = !term;
   S.sideTab = term ? "terminal" : "preview";
-  if (term) termMount(false);
+  if (term){
+    termMount(false);
+    /* The iframe was display:none while Preview was up, so its ResizeObserver saw
+       nothing and the terminal still carries the size it had when it was hidden.
+       It is same-origin, so ask it to re-measure now that it has area again --
+       guarded, because the document may not have parsed yet on a fresh mount. */
+    requestAnimationFrame(()=>{
+      const fr = termBodyEl.querySelector("iframe");
+      try { fr && fr.contentWindow && fr.contentWindow.dispatchEvent(new Event("resize")); }
+      catch (e) {}
+    });
+  }
   lsSet(LS_SIDETAB, S.sideTab);
 }
 /* Shell vs the real Claude TUI. Wired beside the sibling tabs because it is the
@@ -5279,29 +5169,14 @@ document.querySelector(".rail").addEventListener("click", e=>{
   renderRail();
 }, true);
 
-const tenantMenuEl = document.getElementById("tenantMenu");
-const tenantSwitchEl = document.getElementById("tenantSwitch");
-function closeTenantMenu(){
-  tenantMenuEl.hidden = true;
-  tenantSwitchEl.setAttribute("aria-expanded","false");
-}
-tenantSwitchEl.onclick = (e)=>{
-  e.stopPropagation();
-  const open = tenantMenuEl.hidden;
-  renderTenantMenu();
-  tenantMenuEl.hidden = !open;
-  tenantSwitchEl.setAttribute("aria-expanded", String(open));
-};
-tenantMenuEl.addEventListener("click", e=>{
-  const b = e.target.closest("[data-pick-tenant]");
-  if (!b) return;
-  closeTenantMenu();
-  pickTenant(b.dataset.pickTenant);
-});
-document.addEventListener("click", e=>{
-  if (tenantMenuEl.hidden) return;
-  if (!e.target.closest(".tmenuwrap")) closeTenantMenu();
-});
-document.addEventListener("keydown", e=>{ if (e.key === "Escape") closeTenantMenu(); });
+/* The tenant switcher popover used to be wired here. 5781a2f ("remove tenancy")
+   deleted <div id="tenantMenu"> from the markup but left this block behind, so
+   getElementById returned null and the very next addEventListener threw a
+   TypeError -- eleven lines above boot(). The whole app died before it read
+   anything: no settings, no departments, no sessions, no skills. Every symptom
+   was downstream of one dead element reference.
+
+   The lesson is the deletion, not a null guard: there is one org per registry,
+   so there is nothing to switch between and nothing to wire. */
 boot();
 </script>

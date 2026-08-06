@@ -1066,7 +1066,17 @@ async def ws_term(ws: WebSocket):
             if kind == "i":                       # keystroke / injected text
                 os.write(master, m.get("d", "").encode("utf-8"))
             elif kind == "r":                     # resize
+                # FLOOR, not trust. A browser that measures a hidden or
+                # not-yet-laid-out container reports a 2x1 terminal, and the TUI
+                # reflows into a garbled sliver the moment that reaches the PTY --
+                # permanently, because nothing re-sends a size afterwards. The
+                # client refuses to send such a measurement (static/term.html);
+                # this refuses to APPLY one, so a single buggy or hostile client
+                # cannot wedge a session. 20x4 is below any usable terminal and
+                # above every degenerate one.
                 rows, cols = int(m.get("r", 24)), int(m.get("c", 80))
+                if rows < 4 or cols < 20:
+                    continue
                 fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
     except WebSocketDisconnect:
         pass
