@@ -3266,24 +3266,58 @@ SCREENS.health = () => {
       number the system does not promise.</div>`;
 };
 
-/* ── Balance (design preview) ──
+/* ── Balance ──
    Shipped by founder direction 2026-08-07 as a deliberate §8.5.3 exception:
    the backing state path does not exist yet, and this screen SAYS so instead
    of pretending. Rules inherited from the Balance design of record
    (holding/plans/insights-balance/DESIGN.md): outputs are work-pattern
    inference, never emotional truth; takeaways are typed AWARENESS /
    UNDERSTANDING / ACTIONABLE and production shows whichever exist (0-3),
-   never padded; no chat affordance until a Balance route exists on /ws/chat
-   (a disabled composer would still imply the capability — plain gating text
-   is cleaner). No counts anywhere on this screen: there is nothing to count. */
-SCREENS.balance = () => `
-  <h3 class="sec">Not yet observing</h3>
-  <div class="note"><b>Balance has not started.</b> The state path
-    (<code>holding/state/balance/</code>) does not exist and the Stage 1
-    observe-only baseline has not begun. Nothing on this screen is a
-    measurement.</div>
+   never padded. No counts anywhere on this screen: there is nothing to count.
 
-  <h3 class="sec">Design preview — what this screen becomes <span class="pill p-warn">SAMPLE</span></h3>
+   v2 (founder direction, same day): the screen is a CASCADE (state line ->
+   takeaway cards, both still SAMPLE) over a REAL chat — a session pane opened
+   pre-loaded on Balance. The persona rides opts.append_system_prompt, which
+   askClaude() already sends per turn and the server already validates
+   (build_agent_args, 8000-char cap). The screen splits BY FUNCTION (codex):
+   sample preview band on top, a truth bar in the middle stating what exists,
+   the real-chat launcher below — so the chat can never launder the sample
+   cards into implied measurements. The chat itself is a normal local session
+   (fresh, no resume: resumableId() is null until Claude answers), so the main
+   thread of any other session is untouched. */
+const BALANCE_PROMPT =
+  "You are Balance, the founder wellbeing module of Sutra (design of record: " +
+  "holding/plans/insights-balance/DESIGN.md). Register: professional coach — brief, calm, " +
+  "evidence-first; one observation + one suggestion; never clinical, never diagnosing. " +
+  "Everything you say is work-pattern inference from ledgers, never emotional truth — say " +
+  "\"possible frustration spike\", not \"you are frustrated\". Takeaways you offer are typed " +
+  "AWARENESS (what happened), UNDERSTANDING (why), or ACTIONABLE (a suggestion, never a " +
+  "command); give whichever genuinely exist, 0-3, never padded. HONESTY FLOOR: the Balance " +
+  "state contract (holding/state/balance/) does not exist yet — observation has NOT started; " +
+  "say so if asked about trends you cannot support. When the founder asks about their day or " +
+  "patterns, you MAY read these existing ledgers (relative to the repo root): " +
+  ".sutra/h-sutra.jsonl (per-turn classifications), .sutra/atom-ledger.jsonl (work atoms), " +
+  "holding/hooks/hook-log.jsonl (gate blocks/retries — friction), holding/ESTIMATION-LOG.jsonl, " +
+  "holding/LATENCY-LOG.jsonl, holding/TRIAGE-LOG.jsonl. Cite which ledger backs each claim. " +
+  "Sparse data lowers confidence — say so rather than inventing a state.";
+function openBalanceChat(){
+  /* Always a FRESH local session (codex: never adopt an existing one by title).
+     The persona is pinned in turnOpts BEFORE the pane renders, so the very
+     first turn already carries it. */
+  const s = { id:"s-"+(++SID), title:"Balance", created_ms:NOW, updated_ms:NOW,
+              turns:[], local:true, loadState:"live" };
+  S.sessions.unshift(s);
+  S.turnOpts[s.id] = Object.assign({}, S.turnOpts[s.id],
+                                   { append_system_prompt: BALANCE_PROMPT });
+  S.openPanes.push(s.id);
+  if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
+  render();
+  const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
+}
+SCREENS.balance = () => `
+  <h3 class="sec">Today <span class="pill p-warn">SAMPLE</span></h3>
+  <div style="font-size:13px;margin-bottom:8px">Steady, mostly — one friction window late morning.
+    <span style="color:var(--faint)">(sample state line; the cascade below shows the register, not a measurement)</span></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
     <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px">
       <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:var(--acc);margin-bottom:6px">AWARENESS · SAMPLE</div>
@@ -3299,11 +3333,19 @@ SCREENS.balance = () => `
     </div>
   </div>
 
+  <div class="note" style="margin-top:12px"><b>Current truth:</b> observation has not started —
+    <code>holding/state/balance/</code> does not exist. The cards above are samples teaching the
+    register. The chat below is REAL: it answers from your existing work ledgers when asked,
+    not from a Balance state file.</div>
+
+  <h3 class="sec">Ask Balance</h3>
+  <p style="color:var(--muted);font-size:12px;margin:0 0 8px">Opens a real session pre-loaded on
+    Balance — coach register, ledger evidence, honesty floor. Try: “how balanced am I today?”</p>
+  <button type="button" id="balanceChat" onclick="openBalanceChat()">Open Balance chat</button>
+
   <div class="legend">Takeaways are typed AWARENESS / UNDERSTANDING / ACTIONABLE; production shows
-    whichever exist (0–3) and is never padded to three. Chat appears below the takeaways when a
-    Balance route exists on /ws/chat (Stage 2) — until then this screen deliberately has no
-    composer. Observation reads existing work ledgers only; no screen, keyboard, or microphone
-    capture. Design of record: holding/plans/insights-balance/DESIGN.md.</div>`;
+    whichever exist (0–3), never padded. Observation reads existing work ledgers only; no screen,
+    keyboard, or microphone capture. Design of record: holding/plans/insights-balance/DESIGN.md.</div>`;
 
 /* ── S8 Skills ──
    Grouped BY PROVIDER, because the entries are not interchangeable: a claude
