@@ -47,6 +47,12 @@
   .aid .cb{width:13px;height:13px;border:1.5px solid var(--stone);border-radius:4px;flex-shrink:0;margin-top:1px}
   .aid.done .cb{background:var(--done);border-color:var(--done)}
   .aid.done .tx{text-decoration:line-through;color:var(--faint)}
+  .iwrap{max-width:720px;margin:0 auto;padding:0 24px;display:flex;flex-direction:column;height:100%}
+  .icard{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 13px;margin-top:8px;font-size:11.5px}
+  .icard .k{font-size:9px;letter-spacing:.1em;font-weight:700;color:var(--gold);text-transform:uppercase;margin-bottom:5px}
+  .istrip{display:flex;gap:2px;margin-top:6px}
+  .istrip i{flex:1;height:14px;border-radius:2px;background:var(--cream)}
+  .istrip i.st{background:#dfe8df}.istrip i.str{background:#f0e4cf}.istrip i.sp{background:#ecd7e2}
   .setwrap{padding:20px 24px}
   .sgrid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
   .sc{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 16px}
@@ -65,6 +71,7 @@
     <div class="item on" data-t="home">&#9678; Right Now <span class="badge">3</span></div>
     <div class="item" data-t="chats">&#9998; Chats</div>
     <div class="item" data-t="billu">&#9673; Billu</div>
+    <div class="item" data-t="balance">&#10047; Balance</div>
     <div class="item" data-t="depts">&#9639; Departments</div>
     <div class="item" data-t="set">&#9881; Settings<span class="reddot" title="1 connection needs attention"></span></div>
     <div class="foot">CEO of Asawa &middot; maker day<br>context 64% &middot; $8.40 today</div>
@@ -166,6 +173,33 @@
     </div>
   </div></section>
 
+  <!-- BALANCE (Insights module 1) -->
+  <section class="pane" id="p-insights"><div class="iwrap">
+    <div class="ds-greet" style="margin-top:40px;font-size:24px">Balance</div>
+    <div class="ds-sub" style="margin-top:4px">Your day, from your own ledgers. <span style="color:var(--faint)">&middot; sample conversation — live inference lands at Stage 1 &middot; daemon offline</span></div>
+
+    <div class="stream" id="istream" style="flex:1;padding:14px 0;overflow:auto;display:flex;flex-direction:column;gap:10px;margin-top:8px">
+      <div class="mu">How balanced am I today?</div>
+      <div class="ma">
+        <div style="font-size:9px;letter-spacing:.1em;color:var(--faint);margin-bottom:4px">SAMPLE &middot; COACH REGISTER &middot; EVIDENCE-FIRST</div>
+        Steady, mostly. One friction window late morning.
+        <div class="icard"><div class="k">Today &middot; 48 windows</div>
+          <div class="istrip"><i></i><i></i><i></i><i></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="str"></i><i class="sp"></i><i class="str"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i><i></i></div>
+        </div>
+        <div class="icard"><div class="k">The one thing</div>
+          That spike traces to repeated gate blocks on a single path — a gap worth 30 focused minutes, once. Not urgent.
+        </div>
+      </div>
+      <div class="mu">Show me this week as a page.</div>
+      <div class="ma"><div style="font-size:9px;letter-spacing:.1em;color:var(--faint);margin-bottom:4px">SAMPLE</div>On-the-fly artifact renders here at Stage 1 — a week view built from balance-log.jsonl, opened beside the chat.</div>
+    </div>
+
+    <div class="ds-composer" style="margin:0 0 20px;cursor:text" onclick="document.getElementById('iinput').focus()">
+      <input id="iinput" placeholder="Ask Balance&hellip;" style="flex:1;border:0;background:transparent;outline:none;font:inherit;font-size:12.5px;color:var(--fg)" onkeydown="if(event.key==='Enter')isend()">
+      <span class="key" onclick="isend()" style="cursor:pointer">&#8629;</span>
+    </div>
+  </div></section>
+
   <!-- DEPARTMENTS -->
   <section class="pane" id="p-depts">
     <div class="depbar"><span style="font-weight:600">Departments &amp; Charters</span><span style="color:var(--stone);font-size:10.5px">Asawa Inc. &middot; Departments — the published domains site, exactly as on the web</span><a style="margin-left:auto;color:var(--review);cursor:pointer" href="../domains/index.html" target="_blank">open in browser &#8599;</a></div>
@@ -197,7 +231,7 @@
 </div>
 
 <script>
-  const tabs={home:'p-home',chats:'p-chats',billu:'p-billu',depts:'p-depts',set:'p-set'};
+  const tabs={home:'p-home',chats:'p-chats',billu:'p-billu',balance:'p-insights',depts:'p-depts',set:'p-set'};
   function go(t){
     document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
     document.getElementById(tabs[t]).classList.add('on');
@@ -232,6 +266,15 @@
     bRenderThreads();bRenderStream();
   }
   bRenderThreads();bRenderStream();
+
+  // Balance chat — sample mode; live inference gated at Stage 1 (state contract) + Stage 2 (/ws/chat wiring)
+  function isend(){
+    const el=document.getElementById('iinput');const v=el.value.trim();if(!v)return;el.value='';
+    const s=document.getElementById('istream');
+    s.insertAdjacentHTML('beforeend','<div class="mu">'+v.replace(/</g,'&lt;')+'</div>');
+    s.insertAdjacentHTML('beforeend','<div class="ma"><div style="font-size:9px;letter-spacing:.1em;color:var(--faint);margin-bottom:4px">SAMPLE MODE</div>Live inference isn&rsquo;t wired yet &mdash; this surface goes live at Stage 1 (state contract) and answers over /ws/chat at Stage 2 (T15).</div>');
+    s.scrollTop=s.scrollHeight;
+  }
   function approve(e,id){
     e.stopPropagation();
     const el=document.getElementById(id); el.classList.add('approved');
