@@ -3314,7 +3314,61 @@ function openBalanceChat(){
   render();
   const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
 }
-SCREENS.balance = () => `
+/* Live data path (2026-08-07): lazy fetch like Git/Editor — the read happens
+   when the screen is opened, and "we have not fetched yet" renders as loading,
+   never as an empty measurement. Real rows REPLACE the sample cascade; the
+   samples render only when the backend answers {present:false}. */
+async function loadBalance(force){
+  if (S.balance && !force) return;
+  S.balance = { loading: true };
+  try { S.balance = await apiGet("/api/balance"); }
+  catch (e){ S.balance = { present: false, error: true }; }
+  render();
+}
+function balanceLiveHtml(b){
+  const st = b.state || {};
+  const dotColor = {steady:"var(--ok)", stretched:"var(--warn)",
+                    "possible-spike":"var(--block)"}[st.state] || "var(--faint)";
+  const tw = (st.takeaways || []);
+  const typeColor = {awareness:"var(--acc)", understanding:"var(--warn)", actionable:"var(--ok)"};
+  const rows = (b.today || []);
+  const strip = rows.map(r=>{
+    const c = {steady:"var(--ok-bg)", stretched:"var(--warn-bg)",
+               "possible-spike":"var(--block-bg)"}[r.state] || "var(--line-soft)";
+    const t = new Date((r.epoch||0)*1000).toTimeString().slice(0,5);
+    return `<span title="${t} — ${esc(r.state||"?")}" style="flex:1;height:20px;border-radius:3px;background:${c}"></span>`;
+  }).join("");
+  return `
+  <h3 class="sec">Now <span class="pill p-warn">OBSERVE-ONLY BASELINE</span></h3>
+  <div style="display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:4px">
+    <span style="width:11px;height:11px;border-radius:50%;background:${dotColor};display:inline-block"></span>
+    <b>${esc(st.state || "unknown")}</b>
+    <span style="color:var(--muted);font-size:12px">confidence ${esc(String(st.confidence ?? "?"))}
+      · ${esc(st.generated_at || "")} · thresholds provisional</span>
+  </div>
+  ${tw.length ? tw.map(t=>`
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 13px;margin-top:8px">
+      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:${typeColor[t.type]||"var(--muted)"};margin-bottom:5px">${esc((t.type||"").toUpperCase())}</div>
+      <div style="font-size:12px">${esc(t.text||"")}</div>
+    </div>`).join("")
+    : `<p style="color:var(--muted);font-size:12px">No takeaways this window — nothing to say is a valid answer.</p>`}
+  <h3 class="sec">Today — ${rows.length} observed window${rows.length===1?"":"s"}</h3>
+  ${rows.length ? `<div style="display:flex;gap:2px">${strip}</div>` : `<p style="color:var(--muted);font-size:12px">No windows recorded yet today.</p>`}
+  <div class="legend">Written by the 15-minute observe cron (launchd os.asawa.balance-observe),
+    observe-only per the founder's baseline ruling — it never intervenes. Signals come from existing
+    work ledgers only.</div>`;
+}
+SCREENS.balance = () => {
+  if (!S.balance || S.balance.loading)
+    return `<p style="color:var(--muted)">Reading the Balance state contract…</p>`;
+  if (S.balance.present) return balanceLiveHtml(S.balance) + `
+  <h3 class="sec">Ask Balance</h3>
+  <p style="color:var(--muted);font-size:12px;margin:0 0 8px">Opens a real session pre-loaded on
+    Balance — coach register, ledger evidence. Try: “how balanced am I today?”</p>
+  <button type="button" id="balanceChat" onclick="openBalanceChat()">Open Balance chat</button>`;
+  return balanceSampleHtml();
+};
+const balanceSampleHtml = () => `
   <h3 class="sec">Today <span class="pill p-warn">SAMPLE</span></h3>
   <div style="font-size:13px;margin-bottom:8px">Steady, mostly — one friction window late morning.
     <span style="color:var(--faint)">(sample state line; the cascade below shows the register, not a measurement)</span></div>
@@ -5743,6 +5797,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     if (S.screen === "automation") loadAuto(false);
+    if (S.screen === "balance") loadBalance(false); /* lazy, like Git */
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     render(); return;
   }

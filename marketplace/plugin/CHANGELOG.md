@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-07
 
+## 2.75.0
+
+- **Balance screen shows real observations.** New read-only GET /api/balance
+  (fixed dir, no traversal surface, fail-closed) serves the state contract;
+  the screen renders today's real state, takeaways, and window strip — the
+  sample cascade now appears only when no data exists.
+
 ## 2.74.0
 
 - **Balance chat is live in the desktop panel.** The Balance screen becomes a

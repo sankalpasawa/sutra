@@ -460,6 +460,51 @@ def api_session(sid: str):
     return data
 
 
+@app.get("/api/balance")
+def api_balance() -> dict:
+    """Balance state contract, read-only (2026-08-07).
+
+    Fixed directory — no path parameters, so no traversal surface. Resolution:
+    SUTRA_UI_BALANCE_DIR env, else the asawa-holding checkout four levels up
+    (sutra is a submodule there). A provisioned .app copy has neither, and the
+    honest answer is {present: false} — the panel renders its design preview
+    then, never a fabricated measurement. Errors never leak filesystem paths.
+    """
+    import time as _time
+
+    bdir = os.environ.get("SUTRA_UI_BALANCE_DIR") or str(
+        HERE.parent.parent.parent.parent / "holding" / "state" / "balance")
+    state_p = Path(bdir) / "balance-state.json"
+    log_p = Path(bdir) / "balance-log.jsonl"
+    if not state_p.exists():
+        return {"present": False}
+    try:
+        snap = json.loads(state_p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # Fail closed, not 500: a half-written snapshot is "not present yet".
+        return {"present": False}
+    today = []
+    lt = _time.localtime()
+    day_start = int(_time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
+    try:
+        with open(log_p, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 2_000_000))
+            for line in f.read().decode("utf-8", "replace").splitlines():
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue  # a bad line is skipped, never a 500
+                if isinstance(row.get("epoch"), (int, float)) and row["epoch"] >= day_start:
+                    today.append(row)
+    except OSError:
+        pass
+    return {"present": True, "state": snap, "today": today[-96:]}
+
+
 @app.get("/api/state")
 def state() -> dict:
     base = lr.BASE / ".claude"
