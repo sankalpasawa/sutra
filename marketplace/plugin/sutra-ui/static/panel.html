@@ -3328,10 +3328,12 @@ async function loadBalance(force){
 }
 function balanceLiveHtml(b){
   const st = b.state || {};
-  const dotColor = {steady:"var(--ok)", stretched:"var(--warn)",
-                    "possible-spike":"var(--block)"}[st.state] || "var(--faint)";
-  const tw = (st.takeaways || []);
-  const typeColor = {awareness:"var(--acc)", understanding:"var(--warn)", actionable:"var(--ok)"};
+  /* v2 schema: cards[] in the human register (time/energy/awareness/
+     understanding/actionable/custom). v1 takeaways[] still renders if an old
+     snapshot is on disk — the reader outlives the writer's schema bump. */
+  const tw = (st.cards || st.takeaways || []);
+  const typeColor = {time:"var(--acc)", energy:"var(--warn)", awareness:"var(--acc)",
+                     understanding:"var(--warn)", actionable:"var(--ok)", custom:"var(--block)"};
   const rows = (b.today || []);
   /* Day strip v3 (founder redline): 96 FIXED 15-min slots, thin, width-capped —
      the v2 flex:1 cells ballooned three observations into three giant blocks. */
@@ -3339,29 +3341,26 @@ function balanceLiveHtml(b){
   rows.forEach(r=>{
     const d = new Date((r.epoch||0)*1000);
     const idx = d.getHours()*4 + Math.floor(d.getMinutes()/15);
-    if (idx>=0 && idx<96) daySlots[idx] = r.state;
+    if (idx>=0 && idx<96) daySlots[idx] = r.state || "observed";
   });
   const strip = daySlots.map((s,i)=>{
-    const c = {steady:"var(--ok)", stretched:"var(--warn)",
+    const c = {steady:"var(--ok)", stretched:"var(--warn)", observed:"var(--acc)",
                "possible-spike":"var(--block)"}[s] || "var(--line-soft)";
     const hh = String(Math.floor(i/4)).padStart(2,"0"), mm = String((i%4)*15).padStart(2,"0");
     return `<span title="${hh}:${mm}${s?" — "+esc(s):""}" style="flex:1;height:10px;border-radius:2px;background:${c}"></span>`;
   }).join("");
   return `
-  <h3 class="sec">Now <span class="pill p-warn">OBSERVE-ONLY BASELINE</span></h3>
-  <div style="display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:8px">
-    <span style="width:11px;height:11px;border-radius:50%;background:${dotColor};display:inline-block"></span>
-    <b>${esc(st.state || "unknown")}</b>
-    <span style="color:var(--muted);font-size:12px">confidence ${esc(String(st.confidence ?? "?"))}
-      · ${esc(st.generated_at || "")} · thresholds provisional</span>
-  </div>
-  ${tw.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+  <h3 class="sec">Your day <span class="pill p-warn">OBSERVE-ONLY</span></h3>
+  <div style="color:var(--muted);font-size:11px;margin-bottom:8px">Read from your own messages —
+    when, how often, what changed course. Machine-generated activity is filtered out.
+    Updated ${esc(st.generated_at || "")}.</div>
+  ${tw.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px">
     ${tw.map(t=>`
     <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 13px">
-      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:${typeColor[t.type]||"var(--muted)"};margin-bottom:5px">${esc((t.type||"").toUpperCase())}</div>
-      <div style="font-size:12px">${esc(t.text||"")}</div>
+      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:${typeColor[t.kind||t.type]||"var(--muted)"};margin-bottom:5px">${esc((t.kind||t.type||"").toUpperCase())}</div>
+      <div style="font-size:12px;line-height:1.5">${esc(t.text||"")}</div>
     </div>`).join("")}</div>`
-    : `<p style="color:var(--muted);font-size:12px">No takeaways this window — nothing to say is a valid answer.</p>`}
+    : `<p style="color:var(--muted);font-size:12px">Nothing to say yet — that's a valid answer.</p>`}
   <h3 class="sec">Today — ${rows.length} observed window${rows.length===1?"":"s"} of 96</h3>
   <div style="display:flex;gap:1px;max-width:520px">${strip}</div>
   <div class="legend">Written by the 15-minute observe cron (launchd os.asawa.balance-observe),

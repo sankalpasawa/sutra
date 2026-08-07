@@ -2,6 +2,15 @@
 
 **status**: active · **updated**: 2026-08-07
 
+## 2.77.0
+
+- **Balance speaks human (founder-approved register).** Observe v2 filters
+  machine prompts and reads the founder's own messages — time, tempo, breaks,
+  parallel threads, course corrections. Card framework: time / energy /
+  awareness / understanding / actionable / custom, evidence-gated, plain
+  language; energy framed as tempo, never emotion. Backing metrics stay in
+  signals for audit.
+
 ## 2.76.0
 
 - **Balance screen v3 (founder redline).** Takeaway cards in a compact
