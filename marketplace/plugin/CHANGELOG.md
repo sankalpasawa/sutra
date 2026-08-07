@@ -1,8 +1,282 @@
 # Changelog
 
+**status**: active · **updated**: 2026-08-07
+
+## 2.73.0
+
+- **Balance design preview in the desktop panel.** New rail item (runtime
+  section) + screen: honest "not yet observing" state + sample-labeled
+  takeaway taxonomy (AWARENESS/UNDERSTANDING/ACTIONABLE). Preview only —
+  no state, no counts, no chat until Stage 1/2 land. Additive; no server change.
+
+## 2.72.0
+
+- **verify-runner ships fleet-wide.** Shared check executor with atom-close
+  semantics (pinned templates, envelope + dotdot refusals, SHA pin, 30s alarm)
+  — base of the Eval Engine (ADR-031): atom checks become standing evals.
+
+## 2.71.0
+
+- **The chat can now drive Sutra itself.** Ask it for a routine and it makes one
+  — through an MCP tool server, which is Claude Code's own extension mechanism,
+  so the tools appear to the agent exactly like its built-ins. The server is
+  spawned for one run over stdio; nothing is installed and your global
+  `~/.claude.json` is never touched.
+- **Reads act; mutations propose.** The four mutating tools write an inert
+  proposal and return immediately — the agent never blocks waiting for a human,
+  and nothing touches launchd or settings until you approve it under Routines.
+  Three reasons, each sufficient alone: a `-p` run has nobody to answer a
+  permission prompt; an agent acts on text that may not have come from you; and
+  the local port is unauthenticated, so the write side of this surface is worth
+  nothing to an attacker.
+- Invalid requests are refused at the tool, before a proposal exists — a
+  proposal that cannot apply would be approved and then fail for a reason
+  nobody was shown.
+- **Markdown**: nested lists were flattened (`- a / ␣␣- b` rendered as
+  siblings), and fenced code came out inside a paragraph — invalid HTML, which
+  is what caused the odd gaps around code blocks. Both fixed.
+- **A live activity mark.** While a reply composes, the Sutra mark breathes
+  beside it, and moves into the pill while tools run. It stops under
+  `prefers-reduced-motion`: motion is decoration, the word carries the meaning.
+
+## 2.70.1
+
+- Desktop auto-update is now mandatory and staged: an update is downloaded and
+  verified first (`staged`), and only then armed, so deferring costs nothing and
+  a boot that finds a fresh `installing` record cannot arm a second helper.
+- The routes that can quit the app and replace the bundle require a token the
+  Electron shell mints and hands only to the backend it spawned — they are
+  otherwise reachable by any page in any browser on this machine. When the panel
+  is attached to a CLI-owned server there is no token, arming is refused, and
+  auto-update is off, which is the correct answer: quitting this window would
+  not stop a backend somebody else owns.
+- A minimal `preload.js` is the only IPC bridge, for the one thing the panel
+  cannot do over HTTP — end this process so the swap can happen. In a plain
+  browser `window.sutra` is absent and the restart UI does not appear, so a
+  countdown never promises a restart it cannot perform.
+- This release also makes git match what shipped: 2.70.0 was built from a tree
+  containing this work before it had been committed.
+
+## 2.70.0
+
+- **Routines.** A prompt this Mac runs on a schedule — a morning brief, a nightly
+  check — without you opening anything. Create, list, run now, pause, delete,
+  and read what happened on every past run.
+- Claude Code has two kinds and only one is honestly ownable here: cloud routines
+  live in the claude.ai account with no local file format or scriptable CLI.
+  These are the **Local** kind, and the badge says so — their noun, our scope, no
+  implied parity. The five schedule presets are Claude's own: Manual, Hourly,
+  Daily, Weekdays, Weekly, plus a custom cron escape.
+- Scheduled with a **launchd user agent**, not an in-app timer. The app quits
+  when its last window closes and kills the backend with it, so an in-process
+  tick would fire approximately never. This does not contradict ADR-017: that
+  governs the Native engine's Trigger cadence, which is a different thing at a
+  different layer.
+- **A routine cannot use a write-capable permission mode.** `acceptEdits` and
+  `bypassPermissions` are unreachable for a routine by code — a positive
+  allow-list, not a subtraction, so editing the unsafe-modes tuple cannot
+  silently re-admit one. There is no env var, settings key or consent phrase that
+  reaches them. The default is `dontAsk`, not `plan`: `plan` unattended proposes
+  edits nobody approves, exits 0, and reads OK while the routine does nothing
+  forever.
+- A per-run budget ceiling is required, the working folder must exist and be
+  inside your home, and a routine may fire at most once an hour.
+- The screen refuses to flatter: **"never run" is never rendered as "0 runs"**, a
+  green *Run now* is labelled as proving the runner and not the schedule, a
+  saved-but-not-loaded job shows launchd's own stderr rather than a generic
+  failure, and next-run is not computed — launchd decides, and an invented time
+  would be wrong the first time the Mac slept.
+- Sleep is stated up front: if the Mac is asleep at the scheduled time launchd
+  runs the job on wake, and several missed slots coalesce into **one** run.
+
+## 2.69.1
+
+- **The permission selector was a white box in a dark theme.** It shipped in
+  2.69.0 with no CSS at all and fell back to the browser's default styling,
+  sitting directly beside a correctly themed model selector. Both composer
+  selects are now styled by one rule so the next control added there cannot
+  drift either — and a mode that writes files without asking carries the warn
+  colour, so that state is legible in the composer instead of only inside the
+  dropdown.
+- **The Directory view collided with itself in a narrow pane.** Two compounding
+  bugs, both pre-existing: `grid-template-columns: 1fr` is `minmax(auto,1fr)`
+  and `auto` floors at *min-content*, so the column sized itself to 973px inside
+  a 385px pane; and when the container query collapsed the grid to one column
+  the table of contents was still `position:sticky`, so it printed itself over
+  the department names underneath. The column can shrink now, and the TOC goes
+  static when it collapses.
+## 2.69.0
+
+- **The permission mode is chosen next to the composer now, not in Settings.** It
+  was editable only in Settings, and the write-capable modes were reachable only
+  by restarting the server with `SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1` — which for
+  a Finder-launched app means editing a plist. The panel was showing a control,
+  refusing it, and telling you to do something you realistically could not.
+- The selector shows the **effective** mode, never the stored one: the server
+  clamps at the point of use, so showing the stored value would claim the agent
+  is doing something it is not.
+- Choosing a write-capable mode opens a confirmation carrying the server's own
+  wording for what that mode does, and only that confirmation sends the
+  acknowledgement the server requires — a bare boolean is refused, because the
+  local port is unauthenticated and enabling file-writing must be deliberate.
+  Cancelling reverts the selector rather than leaving it displaying a mode that
+  is not running. Consent can be withdrawn the same way.
+- **Streaming no longer flickers, jumps or stutters.** A token frame called
+  `render()`, which replaces the whole pane via `innerHTML` — ten times a second
+  the entire transcript was destroyed and re-parsed. That was one bug producing
+  three symptoms: flicker (every node replaced), the view snapping bottom→top
+  (the new scroller starts at `scrollTop 0` and is then re-pinned), and
+  choppiness (100 ms batching is 10 fps).
+- A token now patches only the streaming reply's own node on an animation frame.
+  The scroller is never replaced, so your scroll position survives by
+  construction — and if you have scrolled up to read, the view is left exactly
+  where you put it instead of being yanked to the bottom.
+  Measured over 40 token frames: **0 full re-renders**, same DOM node throughout.
+
+## 2.68.1
+
+- **You can now check for, and install, both updates from Settings.** There was
+  no way to find out either was out of date, and the two update by completely
+  different mechanisms — showing them as one "check for updates" would
+  misdescribe both:
+  - **Desktop app** — no auto-updater at all. Squirrel is in the bundle only
+    because Electron ships it; nothing wires it up. It changes only when
+    someone installs a DMG.
+  - **Plugin** — already self-updates once a day at session start, applying to
+    the *next* session. The button only makes it immediate.
+- Checking is never automatic: nothing runs on boot, because a desktop app that
+  phones home every launch is a different product decision from one with a
+  button.
+- Installing the desktop update is split, because a bundle cannot overwrite
+  itself while running. The app downloads and **verifies** — sha256 against the
+  published checksum, `spctl` (notarized, not merely signed), and
+  `codesign --verify` on the bundle inside the mounted image — and only then
+  arms a detached helper that waits for the app to exit, swaps, and reopens.
+  Any gate failing leaves `/Applications` untouched and says which one.
+- `GET /api/updates`, `POST /api/updates/plugin`, `POST /api/updates/desktop`.
+  All of it lives in the Python backend, since the Electron shell has no IPC
+  surface — which also makes it testable without a server.
+
+## 2.68.0
+
+- Telemetry is ON by default (anonymous, once daily) per founder direction D64;
+  identity still requires explicit consent, opt-out honored, one-time disclosure
+  shown. Catalog version re-synced to source (drift guard was red at 2.43.0).
+
+## 2.67.1
+
+- **`claude` was undetected on other people's Macs** — on machines where it ran
+  fine in every terminal. A Finder-launched app gets launchd's minimal PATH, so
+  the app asks the login shell what PATH should be; it asked with `zsh -l -c`,
+  which is a login but **non-interactive** shell, and zsh reads `~/.zshrc` only
+  for interactive ones. `.zshrc` is exactly where nvm, npm-global and Claude
+  Code's own native installer export PATH. Reproduced with a HOME whose
+  `.zshrc` adds the directory holding the binary: `-l -c` misses it, `-l -i -c`
+  finds it first. This never showed up in development because Homebrew writes
+  its shellenv to `.zprofile`, which a login shell does read — the bug is
+  invisible on precisely the machines that install via Homebrew.
+- Fixed in two independent layers: harvest an **interactive** login shell and
+  union it with the login-only answer (neither can lose a directory the other
+  found), and **probe the documented install locations directly** for the case
+  where no shell can be asked at all — `~/.local/bin`, `~/.claude/local`,
+  `/opt/homebrew/bin`, `/usr/local/bin`, `~/.npm-global/bin`, `~/.bun|.volta|
+  .deno/bin`, and every `~/.nvm/versions/node/*/bin`. A directory joins PATH
+  only if it exists *and* actually contains the binary.
+- The "not on PATH" message now says both searches already failed and names
+  `SUTRA_UI_CLAUDE_BIN`, instead of sending people to look in the wrong place.
+
+## 2.67.0
+
+- The panel was dead on boot, and had been on main. `5781a2f` deleted
+  `<div id="tenantMenu">` from the markup and left the code that wired it, so
+  `getElementById` returned null, the next `addEventListener` threw, and
+  `boot()` -- the last statement in the script -- never ran. Nothing was
+  fetched. Settings said "GET /api/settings has not answered" (it was never
+  called), Departments and Directory said "No domains" (58 were on disk), the
+  session list showed one empty local session (47 real transcripts existed),
+  and the footer read "no tenant". Every endpoint behind those screens returns
+  200.
+- Removed the rest of the tenant surface, which is what left the app in that
+  half-removed state: the chip, the footer label, the chooser, the gate, the
+  dead Tenants screen, `inTenant`/`scopeQ`/`META.tenant_id`/`showAcme`, the
+  `?tenant=` on four endpoints, and boot()'s silent `if (!S.tenant) return`.
+  Tenancy was already removed server-side; the client had not caught up.
+- Settings could be reported unavailable when it was fine: `loadRuntime` used
+  `Promise.all`, so a failure from `/api/skills` discarded a good
+  `/api/settings` response and nulled SETTINGS for the life of the window.
+  Now `allSettled`, and the error names which endpoint actually failed.
+- Terminal, three faults. `termSetMode` called `mountTerm()`, which has never
+  existed, so switching Shell/Claude threw after persisting the new mode --
+  the toggle moved and the PTY did not. `.termbody{display:flex}` overrode
+  `[hidden]{display:none}`, so the Preview tab left the terminal laid out at
+  zero size, it fit itself to 2x1 and pushed that winsize into the PTY. And
+  nothing re-fit on the way back. Floored in the client, floored again in the
+  `/ws/term` handler, and re-fit when the tab is shown.
+- Composer restored to the theme. It became a `<textarea>` in `03c09cc` while
+  the styling still selected `.pc input`, and `font:inherit` reset it to 16px,
+  so it rendered as a bordered box with a browser focus ring.
+- New Automation screen. The dispatcher has real state and is read from it
+  (`.sutra/*.jsonl`, `.enforcement/*.jsonl`, read-only). The scheduler has
+  none: cadence is a daemon-side tick in the Native engine (ADR-017), that
+  daemon does not run in this install, and the v1.0 scheduler does not
+  evaluate cron at all. It reports liveness and states the absence rather than
+  drawing "0 runs today", which would claim a scheduler ran and found nothing.
+- History crashed on real data: two `domain_updated` events carry no `ts_ms`,
+  and `fmt()` threw a RangeError that took the whole screen down. An undated
+  row is a fact about that row.
+- Fixed during this release: removing the tenant popover by line range also
+  deleted `.app`'s grid, `.rail`'s flex column and the narrow-window media
+  query that happened to sit inside the range, which collapsed the
+  three-column layout and stacked the rail across the top. Restored, and
+  pinned by a test.
+- 129 python + 58 node tests. The new regression tests are mutation-checked:
+  reintroducing each bug fails exactly its own test.
+
+## 2.66.0
+
+- Daily auto-update. The first session each day refreshes the marketplace and
+  updates the plugin, then prints one line if the version moved. Later
+  sessions that day exit immediately with no network call.
+- Bounded by the hook-level timeout (macOS has no GNU timeout) and fail-open
+  throughout: a missing CLI, no network, a failed update or a killed hook all
+  exit 0 in silence. A broken updater must never stop a session starting.
+- The update applies to the NEXT session, not the running one, and the message
+  says so.
+
+## 2.65.0
+
+- Dispatch runtime ships to the fleet. Every file change must now belong to a
+  declared unit: `sutra-dispatch resolve` -> `sutra-atom open` -> `bind`, and
+  mutations outside the declared envelope are blocked. See DISPATCH-ADOPTION.md.
+- CLIs, hooks, matcher and routing policy all resolve plugin-first via
+  hooks/lib/sutra-paths.sh; CLAUDE_PLUGIN_ROOT is authoritative, so a missing
+  asset fails loudly rather than silently running origin code.
+- Fixed a client-blocking bug the origin repo could not see: with no plugin
+  cache on disk, `ls -d` on the cache glob failed and pipefail+set -e killed
+  `resolve` with no message.
+
+# Changelog
+
 > **D# namespace cleanup wayfinder (2026-05-04)**: References below to "D43" in v2.16.0 release notes mean **OUT-DIRECT 3-check** which has been **renumbered to D46** in `holding/FOUNDER-DIRECTIONS.md`. References to "D44" in v2.17.0 release notes mean **PERMISSIONS extension** which has been **renumbered to D47**. The capability-axis charter keeps original D43; Native Workflow Personalization keeps original D44. Historical refs in this CHANGELOG are preserved unchanged — they describe what was operationally true at release time.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
+
+## v2.64.3 (2026-08-04) — consult-gate false-positive fixes (WDP W1-T13, dual-reviewed)
+
+- consult-gate: hook-owned staging exemption (session scratchpads, codex/deepseek temp; dotdot-proof, NOT blanket /tmp) — kills the prompt-staging deadlock (d12).
+- consult-gate + marker: persistent consult ledger with consume-once carryover (<30min, same session) — background consults finally satisfy the per-turn gate (d9); marker match hardened to anchored command word on quote-stripped copy.
+- structural-move-check: quoted args of codex/curl heads are data, not operands — HARD-path strings inside prompt text no longer block (d10). Replay suite: holding/tests/w1-t13-plugin-test.sh.
+
+## v2.64.2 (2026-08-04) — telemetry repair: phase-exit transcript parse + spillway log split
+
+- phase-exit-audit.sh read transcripts with the wrong jq shape (.role/.content vs .type/.message.content[].text) — every row logged transcript_status=empty; fixed, instrument live again.
+- routing-misses.log had 7 unrelated writers; each now owns a file (marker-resets.jsonl, proto005-warnings.log, loop-guard.jsonl, cascade.jsonl, proto004.jsonl, proto009-warnings.log, output-behavior-lint.jsonl). routing-misses.log is pure routing misses again; old rows untouched.
+- placement-touch.sh stderr no longer swallowed — engine errors land in .enforcement/placement/touch-errors.log. Codex consult: ADVISORY (2026-08-04).
+
+## v2.64.1 (2026-08-04) — blueprint-check marker fallback for non-flushing harnesses
+
+- On the 'missing' verdict only, accept the documented v2.2 session marker (HAS_OUTPUT/HAS_VERIFY, per-step at D3+, optional FILES= allowlist) — under Fable 5 assistant text reaches the transcript only at end of turn, so the PreToolUse text gate was unsatisfiable, not strict.
+- Visible-but-invalid blocks still hard-fail; Stop-time per-turn-hard-gate keeps validating final text; every fallback audit-logged to .enforcement/blueprint-fallback.jsonl. Codex: ADVISORY.
 
 ## v2.64.0 (2026-08-02) — Sutra UI panel (PR #85) + security hardening
 
@@ -3105,3 +3379,7 @@ First release. Minimum viable plugin for functional validation.
 - Hooks warn rather than block. Hard enforcement deferred to v0.2.
 - No per-profile defaults yet (individual / project / company).
 - Estimation log is session-local, not cross-session.
+
+---
+
+provenance: maintained by Sutra release process; one entry per released plugin version, newest first.
