@@ -98,6 +98,7 @@ Use this table when something cites "per NATIVE-ENGINE.md §X.Y" written before 
 | [ADR-023](../decisions/ADR-023-platform-ui-kit-exposure-contract.md) | Platform UI Kit + exposure contract | operator-facing governance UI |
 | [ADR-024](../decisions/ADR-024-arch-block-canon-fork.md) | §1.0 arch-block canon fork (PROPOSED) | migrating architecture blocks into canon |
 | [ADR-030](../decisions/ADR-030-four-problem-types.md) | Four Problem Types — T1 missing operationalisation · T2 the answer · T3 the workflow · T4 the question (doctrine lens, unwired) | classifying a unit at intake by what is missing; orthogonal to the Cynefin lens + ADR-026 workflow type |
+| [ADR-031](../decisions/ADR-031-eval-engine.md) | Eval Engine — atom checks become standing eval cases, re-run nightly via Inspect AI + shared verify-runner; decay + verify-quality measurable (Accepted 2026-08-07) | re-checking finished work, regression diff on change, judge-lane grading of fuzzy checks |
 
 ## 6. Reading Order
 
