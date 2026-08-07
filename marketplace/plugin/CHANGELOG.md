@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-07
 
+## 2.74.0
+
+- **Balance chat is live in the desktop panel.** The Balance screen becomes a
+  cascade (sample state line + takeaway cards) over a REAL chat: "Open Balance
+  chat" starts a fresh session pre-loaded with the Balance persona via the
+  existing append_system_prompt seam — coach register, ledger evidence,
+  honesty floor (observation not started). No server change; 76/76 tests.
+
 ## 2.73.0
 
 - **Balance design preview in the desktop panel.** New rail item (runtime
