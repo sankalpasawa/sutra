@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-07
 
+## 2.78.0
+
+- **Usage-guard (opt-in, dormant by default).** New PreToolUse hook + `sutra-usage`
+  CLI: warns at 70% rate-limit utilization, HARD-blocks tool use at 80% until the
+  founder says "continue" (`sutra-usage continue`; override expires at window reset).
+  OFF everywhere until a machine opts in with `sutra-usage on`. Fail-open on any
+  data error; `sutra-usage status` shows live five-hour/seven-day utilization.
+
 ## 2.77.0
 
 - **Balance speaks human (founder-approved register).** Observe v2 filters

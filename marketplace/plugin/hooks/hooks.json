@@ -71,6 +71,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/usage-guard.sh",
+            "timeout": 8
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-override.sh",
             "timeout": 3
           },
