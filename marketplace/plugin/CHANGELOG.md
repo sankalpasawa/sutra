@@ -2,6 +2,11 @@
 
 **status**: active · **updated**: 2026-08-07
 
+## 2.78.2
+
+- **usage-guard: both windows everywhere.** session (5h) + 7-day each shown with
+  pct/bar/reset in status, warning line, and hard-block box (founder ask 2026-08-07).
+
 ## 2.78.1
 
 - **usage-guard fix**: `sutra-usage on` stamps the enabled flag with ts+host

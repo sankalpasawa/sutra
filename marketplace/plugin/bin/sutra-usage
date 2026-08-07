@@ -134,11 +134,11 @@ def windows():
     if d is None:
         return None
     out = []
-    for name in ("five_hour", "seven_day"):
-        w = d.get(name) or {}
+    for key, label in (("five_hour", "session (5h)"), ("seven_day", "7-day")):
+        w = d.get(key) or {}
         u = w.get("utilization")
         if isinstance(u, (int, float)):
-            out.append((name, float(u), _epoch(w.get("resets_at") or "") or time.time() + 3600))
+            out.append((label, float(u), _epoch(w.get("resets_at") or "") or time.time() + 3600))
     return out or None
 
 def _iso(epoch):
@@ -154,7 +154,8 @@ if cmd == "status":
         print("utilization: UNAVAILABLE (no token or fetch failed) -> guard fails open")
     else:
         for name, pct, reset in ws:
-            print("  %-10s %3d%%  resets %s" % (name, round(pct), _iso(reset)))
+            bar = "#" * int(round(pct / 10.0)) + "-" * (10 - int(round(pct / 10.0)))
+            print("  %-12s %3d%%  [%s]  resets %s" % (name, round(pct), bar, _iso(reset)))
     try:
         until = float(open(OVERRIDE).read().strip())
         if time.time() < until:
@@ -197,8 +198,10 @@ if pct >= cfg["BLOCK"]:
     except Exception:
         pass
     print("+-- USAGE-GUARD (HARD BLOCK) --------------------------------------+")
-    print("| Model utilization %3d%% >= %d%% block threshold (window: %s)" % (round(pct), cfg["BLOCK"], name))
-    print("| Window resets: %s" % _iso(block_reset))
+    for wn, wp, wr in ws:
+        print("| %-12s %3d%%  resets %s%s" % (wn, round(wp), _iso(wr),
+              "  <- BLOCKING" if wp >= cfg["BLOCK"] else ""))
+    print("| Utilization %d%% >= %d%% block threshold" % (round(pct), cfg["BLOCK"]))
     print("| ALL tool use is blocked (founder direction 2026-08-07).")
     print("| Founder: reply \"continue\" to override until the window resets.")
     print("| On \"continue\", Claude runs: bash %s continue" % BIN)
@@ -212,8 +215,9 @@ if pct >= cfg["WARN"]:
         recent = False
     if not recent:
         open(WARN_STAMP, "w").close()
-        print("USAGE-GUARD WARNING: model utilization %d%% (window: %s, resets %s). "
-              "Hard block at %d%%." % (round(pct), name, _iso(reset), cfg["BLOCK"]))
+        summary = " | ".join("%s %d%% (resets %s)" % (wn, round(wp), _iso(wr)) for wn, wp, wr in ws)
+        print("USAGE-GUARD WARNING: %s. Highest %d%% >= warn %d%%; hard block at %d%%."
+              % (summary, round(pct), cfg["WARN"], cfg["BLOCK"]))
         sys.exit(10)
 
 sys.exit(0)
