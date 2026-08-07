@@ -37,6 +37,16 @@
   .bp.open{display:block}
   .depbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);font-size:11.5px}
   .depframe{width:100%;height:calc(100% - 42px);border:0;background:#fff}
+  .bwrap{padding:20px 24px;display:flex;flex-direction:column;height:100%}
+  .bstat{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:11px;margin-bottom:var(--s3)}
+  .bmain{display:flex;gap:var(--s3);flex:1;min-height:0}
+  .bfeed{flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r-card);background:var(--panel);min-width:0}
+  .bside{width:270px;display:flex;flex-direction:column;gap:var(--s3);overflow:auto;flex-shrink:0}
+  .bnote{font:10.5px var(--font-mono);color:var(--stone);border:1px dashed var(--line);border-radius:9px;padding:7px 10px;align-self:flex-start}
+  .aid{display:flex;align-items:flex-start;gap:8px;font-size:11.5px;padding:4px 0;cursor:pointer}
+  .aid .cb{width:13px;height:13px;border:1.5px solid var(--stone);border-radius:4px;flex-shrink:0;margin-top:1px}
+  .aid.done .cb{background:var(--done);border-color:var(--done)}
+  .aid.done .tx{text-decoration:line-through;color:var(--faint)}
   .setwrap{padding:20px 24px}
   .sgrid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
   .sc{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 16px}
@@ -54,6 +64,7 @@
     <div class="brand">Sutra</div>
     <div class="item on" data-t="home">&#9678; Right Now <span class="badge">3</span></div>
     <div class="item" data-t="chats">&#9998; Chats</div>
+    <div class="item" data-t="billu">&#9673; Billu</div>
     <div class="item" data-t="depts">&#9639; Departments</div>
     <div class="item" data-t="set">&#9881; Settings<span class="reddot" title="1 connection needs attention"></span></div>
     <div class="foot">CEO of Asawa &middot; maker day<br>context 64% &middot; $8.40 today</div>
@@ -122,6 +133,39 @@
     </div>
   </div></section>
 
+  <!-- BILLU -->
+  <section class="pane" id="p-billu"><div class="bwrap">
+    <h2 class="pg">Billu</h2>
+    <div class="pgsub">One conversational surface across the portfolio &middot; persistent threads &middot; state at ~/.billu</div>
+    <div class="bstat">
+      <span class="ds-dot warn"></span> daemon: not running on this Mac <span class="sm">&middot; migration Phase 3 awaits go &middot; turns queue locally until then</span>
+      <span style="margin-left:auto;font-size:10.5px;color:var(--review);font-weight:600;cursor:pointer" onclick="go('set')">install &rsaquo;</span>
+    </div>
+    <div class="slist" id="bthreads"></div>
+    <div class="bmain">
+      <div class="bfeed">
+        <div class="stream" id="bstream"></div>
+        <div class="ds-composer" style="margin:10px 14px 12px;cursor:text" onclick="bfocus()">
+          <input id="binput" placeholder="Message Billu&hellip; (@company routes to that thread)" style="flex:1;border:0;background:transparent;outline:none;font:inherit;font-size:12.5px;color:var(--fg)" onkeydown="if(event.key==='Enter')bsend()">
+          <span class="key" onclick="bsend()" style="cursor:pointer">&#8629;</span>
+        </div>
+      </div>
+      <div class="bside">
+        <div class="sc"><div class="k">ACTION ITEMS <span class="sm" style="font-weight:400">sample &middot; persists via daemon after Phase 3</span></div>
+          <div class="aid" onclick="this.classList.toggle('done')"><span class="cb"></span><span class="tx">Billu migration Phase 3 — give go, install billu/billud on this Mac</span></div>
+          <div class="aid" onclick="this.classList.toggle('done')"><span class="cb"></span><span class="tx">Load launchd agent com.billu.daemon after install</span></div>
+        </div>
+        <div class="sc"><div class="k">COMPANIES</div>
+          <div class="srow"><span class="ds-dot"></span> dayflow &middot; maze &middot; ppr &middot; sutra &middot; billu <span class="sm">config/companies.toml</span></div>
+        </div>
+        <div class="sc"><div class="k">CLI</div>
+          <div class="srow sm" style="font-family:var(--font-mono)">billu &lt;text&gt; &middot; billu status &middot; billu todos</div>
+          <div class="srow sm" style="font-family:var(--font-mono)">billu @&lt;company&gt; &lt;prompt&gt; &middot; billu threads</div>
+        </div>
+      </div>
+    </div>
+  </div></section>
+
   <!-- DEPARTMENTS -->
   <section class="pane" id="p-depts">
     <div class="depbar"><span style="font-weight:600">Departments &amp; Charters</span><span style="color:var(--stone);font-size:10.5px">Asawa Inc. &middot; Departments — the published domains site, exactly as on the web</span><a style="margin-left:auto;color:var(--review);cursor:pointer" href="../domains/index.html" target="_blank">open in browser &#8599;</a></div>
@@ -153,7 +197,7 @@
 </div>
 
 <script>
-  const tabs={home:'p-home',chats:'p-chats',depts:'p-depts',set:'p-set'};
+  const tabs={home:'p-home',chats:'p-chats',billu:'p-billu',depts:'p-depts',set:'p-set'};
   function go(t){
     document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
     document.getElementById(tabs[t]).classList.add('on');
@@ -161,6 +205,33 @@
   }
   document.querySelectorAll('[data-t]').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation();go(el.dataset.t)}));
   function openSession(){ go('chats'); }
+
+  // Billu tab — mock thread views (daemon not installed on this Mac; nothing here reads live ~/.billu state)
+  const bThreads=['default','company:dayflow','company:maze','company:ppr','company:sutra','company:billu'];
+  const bTurns={}; bThreads.forEach(t=>bTurns[t]=[]);
+  let bCur='default';
+  function bRenderThreads(){
+    document.getElementById('bthreads').innerHTML=bThreads.map(t=>
+      `<div class="sit${t===bCur?' on':''}" onclick="bSwitch('${t}')"><div class="tt">${t}</div><div class="mm">mock view &middot; ${bTurns[t].length} queued</div></div>`).join('');
+  }
+  function bRenderStream(){
+    const s=document.getElementById('bstream');
+    s.innerHTML=`<div class="ds-atom"><span class="k">THREAD ${bCur}</span> &middot; mock view &middot; no live state on this Mac &middot; daemon installs at migration Phase 3</div>`
+      +bTurns[bCur].map(m=>m.who==='u'
+        ?`<div class="mu">${m.tx}</div>`
+        :`<div class="ma">${m.tx}</div>`).join('');
+    s.scrollTop=s.scrollHeight;
+  }
+  function bSwitch(t){bCur=t;bRenderThreads();bRenderStream();}
+  function bfocus(){document.getElementById('binput').focus();}
+  function bsend(){
+    const el=document.getElementById('binput');const v=el.value.trim();if(!v)return;el.value='';
+    const m=v.match(/^@(\w+)\s+/); if(m&&bThreads.includes('company:'+m[1])){bCur='company:'+m[1];}
+    bTurns[bCur].push({who:'u',tx:v.replace(/</g,'&lt;')});
+    bTurns[bCur].push({who:'a',tx:'daemon offline &mdash; queued for Billu. Runs when billud is installed (migration Phase 3).'});
+    bRenderThreads();bRenderStream();
+  }
+  bRenderThreads();bRenderStream();
   function approve(e,id){
     e.stopPropagation();
     const el=document.getElementById(id); el.classList.add('approved');
