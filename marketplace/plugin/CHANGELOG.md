@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-07
 
+## 2.76.0
+
+- **Balance screen v3 (founder redline).** Takeaway cards in a compact
+  3-across grid; day strip is 96 fixed thin 15-min slots (width-capped);
+  the chat affordance is now an inline composer in the screen — type, Enter,
+  and a Balance-loaded session opens already answering via the normal
+  submitTurn pipeline.
+
 ## 2.75.0
 
 - **Balance screen shows real observations.** New read-only GET /api/balance
