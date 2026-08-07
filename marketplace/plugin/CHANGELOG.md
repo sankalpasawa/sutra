@@ -2,6 +2,12 @@
 
 **status**: active · **updated**: 2026-08-06
 
+## 2.72.0
+
+- **verify-runner ships fleet-wide.** Shared check executor with atom-close
+  semantics (pinned templates, envelope + dotdot refusals, SHA pin, 30s alarm)
+  — base of the Eval Engine (ADR-031): atom checks become standing evals.
+
 ## 2.71.0
 
 - **The chat can now drive Sutra itself.** Ask it for a routine and it makes one
