@@ -78,6 +78,7 @@
     <div class="item on" data-t="home">&#9678; Right Now <span class="badge">3</span></div>
     <div class="item" data-t="chats">&#9998; Chats</div>
     <div class="item" data-t="billu">&#9673; Billu</div>
+    <div class="item" data-t="evals">&#10003; Evals</div>
     <div class="item" data-t="balance">&#10047; Balance</div>
     <div class="item" data-t="depts">&#9639; Departments</div>
     <div class="item" data-t="set">&#9881; Settings<span class="reddot" title="1 connection needs attention"></span></div>
@@ -125,7 +126,7 @@
       </aside>
       <div class="chatcol">
         <div class="stream">
-          <div class="ds-atom"><span class="k">ATOM OPEN</span> &middot; Goal: DS UI running &middot; Done when: app.html consumes tokens.css, 4 tabs live</div>
+          <div class="ds-atom"><span class="k">ATOM OPEN</span> &middot; Goal: DS UI running &middot; Done when: app.html consumes tokens.css, all rail tabs live</div>
           <div class="mu">Go and make the UI of this design system, and then show me the HTML version.</div>
           <div class="ma">
             <div class="chips">
@@ -180,6 +181,41 @@
     </div>
   </div></section>
 
+  <!-- EVALS (static snapshot — founder-directed 6th tab 2026-08-07; live wiring at T15) -->
+  <section class="pane" id="p-evals"><div class="bwrap">
+    <h2 class="pg">Evals</h2>
+    <div class="pgsub">Every finished piece of work keeps its check &middot; all checks re-run nightly &middot; the score tells you what rotted</div>
+    <div class="bstat">
+      <span class="ds-dot warn"></span> STATIC SNAPSHOT &middot; as of 2026-08-07 <span class="sm">&middot; nothing here reads live state &middot; live wiring at T15</span>
+    </div>
+    <div class="bmain">
+      <div class="bfeed" style="padding:14px">
+        <div class="sc"><div class="k">NIGHTLY SCORE <span class="sm" style="font-weight:400">decay-sensitive checks vs current repo</span></div>
+          <div class="srow" style="font-size:22px;font-weight:700">131 / 141 <span class="sm" style="font-size:11px">92.9% pass</span></div>
+          <div class="srow sm">excluded &amp; printed honestly: 37 frozen &middot; 12 env-bound &middot; 6 sandbox-required</div>
+        </div>
+        <div class="sc"><div class="k">WATCHDOG <span class="sm" style="font-weight:400">the checker gets checked at 07:00</span></div>
+          <div class="srow"><span class="ds-dot"></span> 6 / 6 probes passing <span class="sm">&middot; precheck-refusal &middot; atom suite &middot; freshness &middot; scheduler &middot; audit C19 &middot; plugin</span></div>
+        </div>
+        <div class="sc"><div class="k">SCHEDULE</div>
+          <div class="srow sm" style="font-family:var(--font-mono)">03:30 nightly decay run &middot; ~06:00 audit C19 row &middot; 07:00 healthcheck</div>
+        </div>
+      </div>
+      <div class="bside">
+        <div class="sc"><div class="k">AWAITING YOU <span class="sm" style="font-weight:400">standing decay &middot; founder triage</span></div>
+          <div class="aid"><span class="cb"></span><span class="tx">10 decayed atoms incl. deck/index.html DELETED (archive-never-delete candidate)</span></div>
+          <div class="aid"><span class="cb"></span><span class="tx">Label 20 calibration cases for the judge lane</span></div>
+        </div>
+        <div class="sc"><div class="k">HARD CONSTRAINT</div>
+          <div class="srow sm">a check that already passes cannot open an atom &middot; refusals audited</div>
+        </div>
+        <div class="sc"><div class="k">REGRESSIONS</div>
+          <div class="srow"><span class="ds-dot"></span> 0 today <span class="sm">&middot; a new pass&rarr;fail is CRITICAL and names the atom</span></div>
+        </div>
+      </div>
+    </div>
+  </div></section>
+
   <!-- BALANCE (Insights module 1) -->
   <section class="pane" id="p-insights"><div class="iwrap">
     <div class="ds-greet" style="margin-top:36px;font-size:24px">Balance</div>
@@ -210,7 +246,7 @@
 
   <!-- DEPARTMENTS -->
   <section class="pane" id="p-depts">
-    <div class="depbar"><span style="font-weight:600">Departments &amp; Charters</span><span style="color:var(--stone);font-size:10.5px">Asawa Inc. &middot; Departments — the published domains site, exactly as on the web</span><a style="margin-left:auto;color:var(--review);cursor:pointer" href="../domains/index.html" target="_blank">open in browser &#8599;</a></div>
+    <div class="depbar"><span style="font-weight:600">Departments &amp; Charters</span><span style="color:var(--stone);font-size:10.5px">Asawa Inc. &middot; Departments — the published domains site, exactly as on the web</span><a style="margin-left:auto;color:var(--review);cursor:pointer" href="../../../../../sutra/website/domains/index.html" target="_blank">open in browser &#8599;</a></div>
     <iframe class="depframe" src="../domains/index.html" title="Asawa Inc. Departments — published domains site"></iframe>
   </section>
 
@@ -239,7 +275,7 @@
 </div>
 
 <script>
-  const tabs={home:'p-home',chats:'p-chats',billu:'p-billu',balance:'p-insights',depts:'p-depts',set:'p-set'};
+  const tabs={home:'p-home',chats:'p-chats',billu:'p-billu',evals:'p-evals',balance:'p-insights',depts:'p-depts',set:'p-set'};
   function go(t){
     document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
     document.getElementById(tabs[t]).classList.add('on');
