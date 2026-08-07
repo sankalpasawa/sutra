@@ -1,6 +1,13 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-06
+**status**: active · **updated**: 2026-08-07
+
+## 2.73.0
+
+- **Balance design preview in the desktop panel.** New rail item (runtime
+  section) + screen: honest "not yet observing" state + sample-labeled
+  takeaway taxonomy (AWARENESS/UNDERSTANDING/ACTIONABLE). Preview only —
+  no state, no counts, no chat until Stage 1/2 land. Additive; no server change.
 
 ## 2.72.0
 

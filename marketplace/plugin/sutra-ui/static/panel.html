@@ -2377,7 +2377,8 @@ const ICON = {
   rout:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.4V12l3 1.8"/><path d="M4.5 5.5l2.2 2.2M19.5 5.5l-2.2 2.2"/>',
   auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
-  chevron:'<path d="M6 9l6 6 6-6"/>'
+  chevron:'<path d="M6 9l6 6 6-6"/>',
+  bal:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M12 12c2.4-1.6 2.4-4.9 0-6.5M12 12c-2.4 1.6-2.4 4.9 0 6.5"/>'
 };
 function railSpec(){
   const sim = S.loaded ? simulate(S.draft.ops) : null;
@@ -2425,6 +2426,11 @@ function railSpec(){
          operator to use it reported "I don't see terminal": a control nobody can
          find is not a shipped feature. The footer icon stays for muscle memory;
          renderRail routes this id to termToggle() instead of setting S.screen. */
+      /* Balance is a DESIGN PREVIEW, shipped enabled by explicit founder direction
+         (2026-08-07) as a deliberate §8.5.3 exception: no backing state exists yet
+         (holding/state/balance/ absent, Stage 1 baseline not started), so the
+         screen renders "not yet observing" + a labeled sample — no counts, ever. */
+      {id:"balance", n:"Balance",  i:"bal"},
       {id:"terminal",n:"Terminal", i:"term", toggle:true},
       /* Settings is not a count -- it is provider + permission mode + workdir,
          all three of which are single values with a live server behind them. */
@@ -3260,6 +3266,45 @@ SCREENS.health = () => {
       number the system does not promise.</div>`;
 };
 
+/* ── Balance (design preview) ──
+   Shipped by founder direction 2026-08-07 as a deliberate §8.5.3 exception:
+   the backing state path does not exist yet, and this screen SAYS so instead
+   of pretending. Rules inherited from the Balance design of record
+   (holding/plans/insights-balance/DESIGN.md): outputs are work-pattern
+   inference, never emotional truth; takeaways are typed AWARENESS /
+   UNDERSTANDING / ACTIONABLE and production shows whichever exist (0-3),
+   never padded; no chat affordance until a Balance route exists on /ws/chat
+   (a disabled composer would still imply the capability — plain gating text
+   is cleaner). No counts anywhere on this screen: there is nothing to count. */
+SCREENS.balance = () => `
+  <h3 class="sec">Not yet observing</h3>
+  <div class="note"><b>Balance has not started.</b> The state path
+    (<code>holding/state/balance/</code>) does not exist and the Stage 1
+    observe-only baseline has not begun. Nothing on this screen is a
+    measurement.</div>
+
+  <h3 class="sec">Design preview — what this screen becomes <span class="pill p-warn">SAMPLE</span></h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px">
+      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:var(--acc);margin-bottom:6px">AWARENESS · SAMPLE</div>
+      <div style="font-size:12px">Heavy shipping day — several units closed by mid-afternoon. Steady, not spiking.</div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px">
+      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:var(--warn);margin-bottom:6px">UNDERSTANDING · SAMPLE</div>
+      <div style="font-size:12px">Friction clusters on one path, not many — the blocks point at a single gap.</div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px">
+      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:var(--ok);margin-bottom:6px">ACTIONABLE · SAMPLE</div>
+      <div style="font-size:12px">Worth considering: 30 focused minutes on the recurring gap, once.</div>
+    </div>
+  </div>
+
+  <div class="legend">Takeaways are typed AWARENESS / UNDERSTANDING / ACTIONABLE; production shows
+    whichever exist (0–3) and is never padded to three. Chat appears below the takeaways when a
+    Balance route exists on /ws/chat (Stage 2) — until then this screen deliberately has no
+    composer. Observation reads existing work ledgers only; no screen, keyboard, or microphone
+    capture. Design of record: holding/plans/insights-balance/DESIGN.md.</div>`;
+
 /* ── S8 Skills ──
    Grouped BY PROVIDER, because the entries are not interchangeable: a claude
    slash command is typed and runs; a codex SKILL.md is selected by that model
@@ -4060,7 +4105,8 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
-  settings:["Settings","~/.sutra-ui/settings.json · PATH"]};
+  settings:["Settings","~/.sutra-ui/settings.json · PATH"],
+  balance:["Balance","holding/state/balance/ — not yet observing · design preview"]};
 /* ── a session's routing path, as a chart ──
    Honest model: the path is SUCCESSIVE PLACEMENT, not delegation. Each turn resolves to
    exactly one accountable department; departments never invoke one another (no such channel
