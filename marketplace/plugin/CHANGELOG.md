@@ -2,6 +2,11 @@
 
 **status**: active · **updated**: 2026-08-07
 
+## 2.78.1
+
+- **usage-guard fix**: `sutra-usage on` stamps the enabled flag with ts+host
+  (empty flag failed non-empty file checks).
+
 ## 2.78.0
 
 - **Usage-guard (opt-in, dormant by default).** New PreToolUse hook + `sutra-usage`

@@ -29,7 +29,7 @@ GUARD_DIR="${SUTRA_USAGE_GUARD_DIR:-$HOME/.sutra-usage-guard}"
 case "$CMD" in
   on)
     mkdir -p "$GUARD_DIR"; chmod 700 "$GUARD_DIR"
-    : > "$GUARD_DIR/enabled"
+    printf 'enabled ts=%s host=%s\n' "$(date +%s)" "$(hostname -s 2>/dev/null || echo unknown)" > "$GUARD_DIR/enabled"
     echo "usage-guard ON — warn>=70%, HARD block>=80% (override: sutra-usage continue)"
     exit 0 ;;
   off)
