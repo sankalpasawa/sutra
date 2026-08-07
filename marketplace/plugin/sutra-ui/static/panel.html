@@ -72,22 +72,6 @@
   .grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
   .grp:hover .chev{opacity:1}
   .rsec[hidden]{display:none}
-  /* Tenant switcher popover, anchored to the rail footer. */
-  .tmenuwrap{position:relative;display:flex;min-width:0}
-  .tmenu{position:absolute;bottom:calc(100% + 7px);left:0;z-index:40;min-width:212px;
-    background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px;
-    box-shadow:0 10px 30px rgba(0,0,0,.34)}
-  .tmenu[hidden]{display:none}
-  .tmenu .th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
-    padding:5px 7px 4px}
-  .tmenu button{display:flex;align-items:center;gap:7px;width:100%;padding:6px 7px;border:0;
-    border-radius:6px;background:none;color:var(--ink);font:inherit;font-size:12px;
-    cursor:pointer;text-align:left}
-  .tmenu button:hover{background:var(--hover)}
-  .tmenu button .tm2{margin-left:auto;font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
-  .tmenu .cur{color:var(--acc)}
-  .tmenu .note{padding:6px 7px 4px;font-size:10.5px;color:var(--faint);line-height:1.45;
-    border-top:1px solid var(--line-soft);margin-top:4px}
   /* Three columns: rail | panes | terminal. The terminal track is `auto`, and the
      pane is [hidden] when closed, so the track collapses to zero width and the
      layout is byte-identical to the two-column one until the terminal is opened.
@@ -109,8 +93,9 @@
   .rmark{width:19px;height:19px;border-radius:5px;background:var(--acc);color:#0A0908;
          display:grid;place-items:center;font:700 12px/1 var(--serif);flex:none}
   .rtop b{font-size:13px;font-weight:600}
-  .rtop .tn{margin-left:auto;font:600 8.5px/1 var(--mono);color:var(--acc);background:var(--acc-bg);
-            border:1px solid var(--acc);border-radius:4px;padding:3px 5px}
+  /* The tenant chip used to carry `margin-left:auto` and push the toggle right.
+     With the chip gone the toggle owns that job, or it collides with the wordmark. */
+  .rtop .railtog{margin-left:auto}
   .rscroll{overflow-y:auto;flex:1;min-height:0;padding-bottom:6px}
   .grp{padding:9px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.1em;
        color:var(--faint);text-transform:uppercase}
@@ -199,7 +184,6 @@
   .tag.t-noc{background:var(--warn-bg);color:var(--warn)}
   .tag.t-ten{background:var(--warn-bg);color:var(--warn)}
   .node.retired .nm{text-decoration:line-through;color:var(--faint)}
-  .node.acme{border-left:2px solid var(--warn)}
   /* draft-mode drag */
   .node.drg{opacity:.45}
   .node.ring{outline:2px solid var(--block);outline-offset:-2px;
@@ -333,8 +317,8 @@
   .ph .src{font:500 9px/1 var(--mono);color:var(--faint)}
   .pb{flex:1;overflow-y:auto;overflow-x:hidden;padding:13px 14px;min-height:0;min-width:0;font-size:12.5px}
   .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;align-items:center;gap:8px}
-  .pc input{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
-  .pc input::placeholder{color:var(--faint)}
+  .pc input,.pc textarea{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
+  .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
   .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
         display:grid;place-items:center;cursor:pointer;flex:none}
   .send:hover{background:var(--acc);color:var(--on-acc)}
@@ -356,8 +340,22 @@
   /* ── org chart: top-down, expandable ── */
   .chartwrap{overflow-x:auto;overflow-y:hidden;max-width:100%;padding:6px 2px 14px}
   .chart,.chart ul{list-style:none;margin:0;padding:0}
-  .chart ul{display:flex;justify-content:center;gap:12px}
-  .chart li{position:relative;display:flex;flex-direction:column;align-items:center;padding-top:20px}
+  /* `safe center` here is DEFENSIVE, not the fix -- measuring showed this row's
+     own justify-content was never what clipped anything (the parent li's
+     align-items was; see below). It is kept so the row cannot start centring its
+     own overflow if it ever becomes the wider box.
+     Wrapping is NOT an option for this row: li::after draws the horizontal
+     connector spanning the siblings, so a wrapped row draws broken tree edges. */
+  .chart ul{display:flex;justify-content:safe center;gap:12px}
+  /* `safe center` on the CROSS axis. This column centres each node over its
+     sibling row, and when that row is wider than the pane, plain `center`
+     centres the overflow -- pushing the left end outside the scroll container,
+     where scrollLeft:0 cannot reach it. Measured at a 738px pane: the leftmost
+     department sat at -83px and rendered permanently cut mid-word.
+     The row's own justify-content was NOT the cause; the parent's align-items
+     was. `safe` keeps the centring while it fits and falls back to start when
+     it does not. */
+  .chart li{position:relative;display:flex;flex-direction:column;align-items:safe center;padding-top:20px}
   .chart>li{padding-top:0}
   /* vertical stub up from each node into the connector row */
   .chart li::before{content:"";position:absolute;top:0;left:50%;width:1px;height:20px;background:var(--line)}
@@ -386,7 +384,6 @@
                 display:flex;gap:6px;flex-wrap:wrap}
   .ocard.retired{border-style:dashed;opacity:.62}
   .ocard.retired .onm{text-decoration:line-through}
-  .ocard.acme{border-left:3px solid var(--warn)}
   .ocard.ring{outline:2px solid var(--block);outline-offset:-2px;
               background:color-mix(in srgb,var(--block) 5%,transparent);cursor:not-allowed}
   .ocard.drg{opacity:.4}
@@ -440,6 +437,141 @@
   .md .md-t{border-collapse:collapse;font-size:.95em;min-width:100%}
   .md .md-t th,.md .md-t td{border:1px solid var(--line-soft);padding:4px 8px;text-align:left;vertical-align:top}
   .md .md-t th{background:var(--acc-bg);font-weight:650}
+  /* ── Directory view ────────────────────────────────────────────────────
+     A port of the PUBLISHED domains page (lib/domains_page.py -> the GitHub
+     Pages site) into the panel, so the in-app view and the published one read
+     as the same document. Every rule is scoped under .dpage: the generator uses
+     generic names (.chip .grid .info .count .tree .sub) and two of them already
+     mean something else in this file. */
+  /* minmax(0,…) NOT 1fr. A bare `1fr` is minmax(auto,1fr), and `auto` floors at
+     MIN-CONTENT -- so the charter titles and the lane table sized the column to
+     973px inside a 385px pane and the whole view overflowed its own container.
+     minmax(0,…) lets the column shrink and hands the overflow to the scrollers
+     that already exist (.lanewrap). */
+  .dpage{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
+  .dpage > *{min-width:0}          /* grid items default to min-width:auto -- same trap */
+  .dpage nav{position:sticky;top:0;align-self:start;font-size:12px;min-width:0}
+  /* AFTER the sticky rule on purpose: a container query carries no extra
+     specificity, so source order is what decides. Declared before it, this was
+     silently overridden by the very rule it exists to undo. */
+  @container (max-width:720px){
+    .dpage{grid-template-columns:minmax(0,1fr)}
+    /* STATIC when collapsed. Sticky is right beside the content and wrong ON TOP
+       of it: in one column the TOC stopped being a rail and became an overlay,
+       printing itself over the department names underneath. */
+    .dpage nav{position:static}
+  }
+  .dpage nav a{display:flex;align-items:center;gap:7px;color:var(--ink);
+    text-decoration:none;padding:5px 6px;border-radius:7px}
+  .dpage nav a:hover{background:var(--acc-bg)}
+  .dpage .chip{font:600 10px/1 var(--mono);color:var(--ink);background:var(--acc-bg);
+    border:1px solid var(--acc);border-radius:5px;padding:2px 6px;flex:none}
+  .dpage .chip.big{font-size:11.5px;padding:5px 9px}
+  .dpage .dhead h1{font-family:var(--serif);font-size:20px;font-weight:600;margin:0}
+  .dpage .rootdesc{color:var(--muted);font-size:12.5px;margin:5px 0 16px;max-width:60ch}
+  .dpage .dept{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;
+    padding:15px 16px;margin-bottom:14px;scroll-margin-top:10px}
+  .dpage .dept:target{border-color:var(--acc)}
+  .dpage .dept header{display:flex;gap:11px;align-items:flex-start;margin-bottom:11px}
+  .dpage .dept h2{font-size:14px;margin:0;font-weight:650}
+  .dpage .desc{color:var(--muted);font-size:12px;margin-top:2px;max-width:58ch}
+  .dpage .charter{font-size:11.5px;color:var(--muted);margin-top:5px;max-width:58ch}
+  .dpage .charter span{font:600 9.5px/1 var(--mono);color:var(--acc);
+    border:1px dotted var(--acc);border-radius:4px;padding:2px 5px;margin-right:5px}
+  .dpage .count{margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted);
+    border:1px solid var(--line-soft);border-radius:999px;padding:3px 9px;flex:none}
+  .dpage .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}
+  .dpage .info{border:1.5px dashed var(--line-soft);border-radius:9px;padding:10px 12px;min-width:0}
+  .dpage .info b{display:inline-block;margin-left:7px;font-size:12.5px}
+  .dpage .info p{color:var(--muted);font-size:11.5px;margin-top:5px}
+  .dpage .info.empty{color:var(--muted);font-style:italic}
+  .dpage .cascade{margin-top:9px;border-top:1px dotted var(--line-soft);padding-top:7px}
+  .dpage .cascade summary{cursor:pointer;font-size:11px;color:var(--acc);list-style:none}
+  .dpage .cascade summary::-webkit-details-marker{display:none}
+  .dpage .cascade summary::before{content:"\25B8 ";font-size:9px}
+  .dpage .cascade[open] summary::before{content:"\25BE "}
+  .dpage .cascade .grid{margin-top:9px;grid-template-columns:1fr}
+  .dpage .navgrp summary{display:flex;align-items:center;gap:7px;padding:5px 6px;
+    border-radius:7px;cursor:pointer;list-style:none}
+  .dpage .navgrp summary::-webkit-details-marker{display:none}
+  .dpage .navgrp summary::before{content:"\25B8";font-size:9px;color:var(--faint)}
+  .dpage .navgrp[open] summary::before{content:"\25BE"}
+  .dpage .navgrp summary:hover{background:var(--acc-bg)}
+  .dpage .navgrp summary a{color:var(--ink);text-decoration:none;flex:1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dpage .navgrp summary a:hover{color:var(--acc)}
+  .dpage .navcount{font:600 9.5px/1 var(--mono);color:var(--muted);
+    border:1px solid var(--line-soft);border-radius:999px;padding:1px 6px}
+  .dpage .navkids{margin-left:11px;border-left:2px solid var(--line-soft);padding-left:7px}
+  .dpage .navkids a.dsub{font-size:11.5px;padding:4px 6px}
+  /* the org diagram: root box, connector, child boxes */
+  .dpage .dtree{margin:5px 0 14px;text-align:center}
+  .dpage .tnode{display:inline-block;background:var(--card);border:1.5px solid var(--acc);
+    border-radius:7px;padding:5px 11px;font-size:11.5px;font-weight:600}
+  .dpage .tnode.troot{background:var(--acc-bg)}
+  .dpage .tdown{width:2px;height:12px;background:var(--line);margin:0 auto}
+  .dpage .tkids{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;
+    position:relative;padding-top:12px}
+  .dpage .tkids::before{content:"";position:absolute;top:0;left:12%;right:12%;
+    height:2px;background:var(--line)}
+  .dpage .tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
+  .dpage .tkids .tnode::before{content:"";position:absolute;top:-12px;left:50%;
+    width:2px;height:12px;background:var(--line)}
+  .dpage .chsec{margin-top:18px;background:var(--card);border:1px solid var(--line-soft);
+    border-radius:12px;padding:15px 16px}
+  .dpage .chh{font-size:14px;margin:0 0 4px;font-weight:650}
+  .dpage .chempty{color:var(--muted);font-style:italic;font-size:12px}
+  .dpage .lanenote{color:var(--faint);font-size:11px;margin-bottom:6px}
+  .dpage .chdot{display:inline-flex;align-items:center;gap:5px;
+    font:600 10px/1 var(--mono);color:var(--muted)}
+  .dpage .chdot i{width:7px;height:7px;border-radius:50%;background:var(--line);
+    display:inline-block;flex:none}
+  .dpage .chdot.st-active i{background:var(--acc)}
+  .dpage .chdot.st-shipped i{background:var(--muted)}
+  .dpage .chdot.st-retired i,.dpage .chdot.st-paused i{background:transparent;
+    border:1.5px solid var(--muted)}
+  .dpage .chdot.st-retired{opacity:.65}
+  .dpage .chfil{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+  .dpage .chfil button{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface);
+    border:1px solid var(--line-soft);border-radius:999px;padding:5px 11px;cursor:pointer}
+  .dpage .chfil button:hover{border-color:var(--acc)}
+  .dpage .chfil button[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .dpage .chfil button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .dpage .lanewrap{overflow-x:auto}
+  .dpage .chtab{border-collapse:collapse;width:100%;font-size:12px}
+  .dpage .chtab thead th{text-align:left;font:600 10px/1 var(--mono);color:var(--faint);
+    text-transform:uppercase;letter-spacing:.06em;padding:0 8px 6px;white-space:nowrap}
+  /* A row header inherits the panel's global `th{text-transform:uppercase}`
+     (see ~:224), which turned every charter title into ALL CAPS -- the
+     published page renders them as written. Reset the inherited display
+     properties here rather than weakening the global rule, which the rest of
+     the panel's tables rely on. Geometry mirrors domains_page.py's own CSS:
+     single-line rows on a fixed 44px height. */
+  .dpage .chtab tbody th{text-align:left;font-weight:500;padding:6px 8px;
+    vertical-align:middle;text-transform:none;letter-spacing:0;
+    font-size:12px;white-space:nowrap;color:var(--ink)}
+  .dpage .chtab tbody td{padding:6px 8px;vertical-align:middle}
+  .dpage .chtab tr.chtr{height:44px}
+  .dpage .chtab tbody th .cht{color:var(--ink);border-bottom:1px dotted var(--acc)}
+  .dpage .chtab td.ckind{font:400 11px/1 var(--mono);color:var(--muted)}
+  .dpage .chtab td.cown{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .dpage .cown-here{font:600 10.5px/1 var(--mono);color:var(--muted)}
+  .dpage .lanetab thead th.lane{text-align:center;color:var(--muted);font-weight:600;
+    padding:0 6px 6px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  .dpage .lanetab td.lo,.dpage .lanetab td.ll,.dpage .lanetab td.ln{
+    text-align:center;padding:6px 4px;min-width:44px}
+  /* row separators, as the published table has them -- with single-line rows
+     the eye needs the rule to track a row across six lane columns */
+  .dpage .lanetab tbody td,.dpage .lanetab tbody th{
+    border-bottom:1px dotted var(--line-soft)}
+  .dpage .lanetab td.lo{background:var(--acc);color:var(--card);font-weight:700;border-radius:4px}
+  .dpage .lanetab td.ll{background:var(--acc-bg);color:var(--acc);font-weight:600;border-radius:4px}
+  .dpage .ctxt.ohide{opacity:0}
+  .dpage tr.obreak th,.dpage tr.obreak td{border-top:1px solid var(--line-soft)}
+  .dpage .chnone td{color:var(--muted);font-style:italic}
+  .dpage .dq{width:100%;margin-bottom:8px;padding:6px 9px;border:1px solid var(--line-soft);
+    border-radius:7px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px}
+  .dpage .dq:focus{outline:2px solid var(--acc);outline-offset:1px}
   .rtoggle{display:flex;gap:3px;padding:4px 8px 6px}
   .rtoggle button{flex:1;background:none;border:1px solid var(--line);border-radius:5px;
     padding:4px 6px;font:500 9.5px/1 var(--sans);color:var(--muted);cursor:pointer}
@@ -506,17 +638,6 @@
     .app{height:auto}
   }
 
-  /* ── tenant chooser ── */
-  .tgate{display:grid;gap:9px;max-width:560px}
-  .tcard{display:block;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;
-    background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:11px 13px}
-  .tcard:hover{border-color:var(--acc);background:var(--acc-bg)}
-  .tcard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
-  .tcard[aria-current="true"]{border-color:var(--acc);background:var(--acc-bg)}
-  .tcard .tid{font:600 12.5px/1 var(--mono);color:var(--ink)}
-  .tcard .tm{font:500 10px/1.45 var(--mono);color:var(--muted);margin-top:5px;
-             display:flex;gap:9px;flex-wrap:wrap}
-
   /* ── a selectable option that can also be refused, with the refusal shown ── */
   .opt{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;cursor:pointer;
     color:inherit;font:inherit;background:var(--inset);border:1px solid var(--line);
@@ -535,11 +656,6 @@
   .opt .od{font-size:11px;color:var(--muted);margin-top:3px}
   .opt .why{font:500 10px/1.5 var(--mono);color:var(--block);margin-top:5px;
             white-space:normal;overflow-wrap:anywhere}
-  .rfoot .tsw{background:none;border:0;padding:0;margin:0;color:var(--muted);font:inherit;
-    font-size:10.5px;cursor:pointer;text-align:left;min-width:0;overflow:hidden;
-    text-overflow:ellipsis;white-space:nowrap}
-  .rfoot .tsw:hover{color:var(--acc)}
-  .rfoot .tsw:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   /* ── run state ──────────────────────────────────────────────────────────
      There was previously ONE animation in this whole file, so a running turn and a
      finished one looked identical and the operator could not tell whether anything
@@ -552,6 +668,24 @@
     margin-right:5px;vertical-align:middle;animation:sutraPulse 1.15s ease-in-out infinite}
   .working{margin-top:6px;color:var(--faint);display:flex;align-items:center;font-size:12px}
   .working .ell::after{content:"";animation:sutraEll 1.4s steps(1,end) infinite}
+  /* ── the "it is thinking" mark ──────────────────────────────────────────
+     There was no live indicator while a reply was being composed -- only a
+     static word and three dots, which reads the same whether the agent is
+     working or wedged. This is the Sutra mark itself, breathing: it rotates
+     slowly and pulses, so motion means "still alive" at a glance.
+     Deliberately NOT a copy of another product's glyph -- the shape is the
+     one already on the rail, so activity looks like this app. */
+  .spark{display:inline-block;width:13px;height:13px;margin-right:6px;flex:none;
+         color:var(--acc);animation:sutraSpark 2.6s ease-in-out infinite;
+         transform-origin:50% 50%}
+  .spark svg{display:block;width:100%;height:100%}
+  @keyframes sutraSpark{
+    0%   {transform:rotate(0deg)   scale(.82); opacity:.55}
+    50%  {transform:rotate(180deg) scale(1);   opacity:1}
+    100% {transform:rotate(360deg) scale(.82); opacity:.55}
+  }
+  /* The same mark in the running pill, smaller and inheriting the pill colour. */
+  .pill .spark{width:10px;height:10px;margin-right:4px;color:inherit}
   .toolRow{margin-top:7px;display:flex;flex-direction:column;gap:3px}
   .trow{display:flex;align-items:baseline;gap:7px;font-size:11.5px;padding:3px 7px;
     border:1px solid var(--line-soft);border-radius:6px;background:var(--inset);min-width:0}
@@ -572,7 +706,9 @@
   /* Respect the OS setting: a spinner is decoration, not information. The colour
      and the verdict text carry the same state without motion. */
   @media (prefers-reduced-motion: reduce){
-    .dot,.trow.run .tstate,.working .ell::after{animation:none}
+    .dot,.trow.run .tstate,.working .ell::after,.spark{animation:none}
+    /* still visible, just still -- the word next to it says what is happening */
+    .spark{opacity:1;transform:none}
   }
 
   /* ── side chat ──────────────────────────────────────────────────────────
@@ -600,14 +736,71 @@
   .att .attx{border:0;background:none;color:var(--faint);cursor:pointer;font-size:14px;
     line-height:1;padding:0 2px;font-family:inherit}
   .att .attx:hover{color:var(--ink)}
-  .modelsel{flex:none;background:var(--inset);border:1px solid var(--line);border-radius:7px;
-    color:var(--muted);font:11px/1 var(--sans);padding:6px 5px;max-width:112px;cursor:pointer}
-  .modelsel:hover{color:var(--ink)}
+  /* ONE rule for both composer selects. .permsel shipped without any CSS and fell
+     back to the UA stylesheet -- a white box in a dark theme, sitting directly
+     beside a correctly themed .modelsel. Same class of regression as the composer
+     textarea: a new control added next to an existing one, without inheriting the
+     rule that made the existing one belong. They are styled together now so the
+     next one added here cannot drift either. */
+  .modelsel,.permsel{flex:none;background:var(--inset);border:1px solid var(--line);
+    border-radius:7px;color:var(--muted);font:11px/1 var(--sans);padding:6px 5px;
+    max-width:112px;cursor:pointer;
+    /* the UA select chrome is light-on-light in dark mode; drop it and draw our own */
+    -webkit-appearance:none;appearance:none;
+    padding-right:16px;
+    background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),
+                     linear-gradient(135deg,currentColor 50%,transparent 50%);
+    background-size:4px 4px,4px 4px;
+    background-position:calc(100% - 9px) 51%,calc(100% - 5px) 51%;
+    background-repeat:no-repeat}
+  .modelsel:hover,.permsel:hover{color:var(--ink);border-color:var(--line)}
+  .modelsel:focus-visible,.permsel:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  /* A mode that writes files without asking is not a neutral preference, and the
+     composer is where you are about to use it. It carries the warn colour so the
+     state is legible at a glance rather than only inside the dropdown. */
+  .permsel.warn{color:var(--warn);border-color:var(--warn);
+    background-color:color-mix(in srgb,var(--warn) 12%,var(--inset))}
+  .permsel.warn:hover{color:var(--warn)}
   /* Stop is destructive-ish and must not look like Send: same slot, different colour,
      square glyph. Reusing the send arrow would make the two indistinguishable at a glance. */
   .send.stop{background:var(--block);color:#fff}
   .send.stop:hover{filter:brightness(1.1)}
   [data-sask].dropping{outline:2px dashed var(--acc);outline-offset:2px}
+  .topts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px;
+    padding:9px 11px;margin:0 0 7px;background:var(--surface);
+    border:1px solid var(--line-soft);border-radius:9px}
+  .topts label{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .topts label.wide{grid-column:1/-1}
+  .topts span{font:600 9.5px/1 var(--mono);letter-spacing:.05em;color:var(--faint);
+    text-transform:uppercase}
+  .topts input,.topts select{background:var(--inset);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.3 var(--sans);padding:5px 7px;min-width:0}
+  .topts input:focus,.topts select:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .topts-note{grid-column:1/-1;margin:0;color:var(--faint);font-size:10.5px;line-height:1.45}
+  .tout{background:none;border:1px solid var(--line);border-radius:5px;color:var(--muted);
+    font:600 9.5px/1 var(--mono);padding:2px 6px;cursor:pointer;margin-left:4px}
+  .tout:hover{border-color:var(--acc);color:var(--acc)}
+  .toutbody{margin:2px 0 6px 18px;padding:7px 9px;background:var(--inset);
+    border:1px solid var(--line-soft);border-radius:6px;color:var(--muted);
+    font:11px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;
+    max-height:260px;overflow:auto}
+  /* The composer is a TEXTAREA now. A textarea does not inherit the row's font
+     or vertical centring the way an <input> did, and it ships with a resize
+     grabber and a scrollbar that fight the auto-grow -- so all three are stated
+     here rather than left to the UA stylesheet.
+     `field-sizing:content` sizes it natively where supported; autoGrowComposer()
+     is the fallback everywhere else, and the two agree. */
+  /* Sizing only. Colour, border and focus ring come from `.pc input,.pc textarea`
+     above, and this rule must not quietly take them back:
+     `font:inherit` did exactly that -- the shorthand reset font-size to the
+     inherited 16px and, being later in the sheet at equal specificity, beat the
+     12px the composer had as an <input>. The result was a fat, UA-bordered box
+     with a browser focus ring, which is the regression this restores. */
+  textarea[data-sask]{
+    flex:1; min-width:0; resize:none; overflow-y:hidden;
+    line-height:1.45; padding:0;
+    max-height:200px; field-sizing:content;
+  }
 
   /* ── editor ─────────────────────────────────────────────────────────────
      A textarea, deliberately: see the comment on SCREENS.editor. Monospace, tab
@@ -667,6 +860,12 @@
   .termpane .termcwd{margin-left:auto;font:500 10px/1 var(--mono);color:var(--faint);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
   .termbody{padding:0;overflow:hidden;flex:1;min-height:0;display:flex}
+  /* `display:flex` beats the UA's `[hidden]{display:none}`, so switching to the
+     Preview tab left #termBody laid out at zero height instead of removed. The
+     terminal's ResizeObserver then fit itself to nothing (2 cols x 1 row) and
+     pushed that winsize into the PTY -- which is why coming back to the tab
+     showed the TUI reflowed into a garbled sliver. Hidden must mean gone. */
+  .termbody[hidden]{display:none}
   .termbody iframe{border:0;width:100%;height:100%;flex:1;background:var(--bg)}
   .termzero{padding:16px;font-size:12px;color:var(--muted)}
   .sidetabs{flex:none}
@@ -687,6 +886,71 @@
   .wdin{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);border-radius:7px;
     padding:7px 10px;color:var(--ink);font:12px/1.4 var(--mono)}
   .wdin:focus{outline:2px solid var(--acc);outline-offset:-1px}
+
+  /* ── forms ───────────────────────────────────────────────────────────────
+     A FORM LAYOUT, because .kv is not one. .kv is a key/value DISPLAY idiom:
+     a flex row with a fixed 82px label and a plain <span> value. Putting inputs
+     inside it produced every symptom reported at once -- the fields could not
+     stretch (a `flex:1` input inside a non-flex <span> does nothing, so every
+     box sat at its intrinsic width no matter how wide the window got), the
+     textarea could only ever grow downward, and the hint text ran inline off
+     the end of the row instead of wrapping under the field it explains.
+
+     One grid: a label column that stays put, and a field column that takes
+     everything else. Every control fills its column, so "wider window" means
+     "wider fields" without a single per-control width. */
+  .rform{display:grid;gap:2px}
+  .rfrow{display:grid;grid-template-columns:112px minmax(0,1fr);gap:10px;
+         align-items:start;padding:7px 0;border-bottom:1px solid var(--line-soft)}
+  .rfrow:last-of-type{border-bottom:0}
+  .rfrow > label{color:var(--faint);font:500 10.5px/1.5 var(--sans);
+                 letter-spacing:.06em;text-transform:uppercase;padding-top:8px}
+  /* min-width:0 so a long value cannot push the column wider than the grid --
+     the same auto/min-content trap that blew out the directory view. */
+  .rfield{min-width:0;display:flex;flex-direction:column;gap:5px}
+  /* One rule for every control in a form row: they fill the column and they
+     all look like each other. A bare <select> here previously fell back to the
+     UA stylesheet and rendered as a light box in a dark theme. */
+  .rfield input,.rfield select,.rfield textarea{
+    width:100%;box-sizing:border-box;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;padding:7px 10px;
+    color:var(--ink);font:12px/1.45 var(--sans);min-width:0}
+  .rfield textarea{font-family:var(--mono);resize:vertical;min-height:120px;
+                   line-height:1.55}
+  .rfield input:focus,.rfield select:focus,.rfield textarea:focus{
+    outline:2px solid var(--acc);outline-offset:-1px}
+  .rfield select{-webkit-appearance:none;appearance:none;cursor:pointer;
+    padding-right:26px;
+    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
+                     linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-size:4px 4px,4px 4px;
+    background-position:calc(100% - 14px) 52%,calc(100% - 10px) 52%;
+    background-repeat:no-repeat}
+  /* The hint BELOW the field, not beside it. Inline, it competed with the input
+     for the same row and both lost. */
+  .rfield .hint{color:var(--faint);font:11px/1.5 var(--sans);max-width:64ch}
+  /* A row of controls that belong together (a time, a schedule) stays on one
+     line and wraps as a unit rather than each control filling the column. */
+  .rinline{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+  .rinline input,.rinline select{width:auto;flex:none}
+  .rinline .sep{color:var(--faint)}
+  .rfoot{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  /* A transient note that must not push layout around or steal focus: it
+     reports something that already happened, and disappears on its own. */
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;
+    background:var(--card);border:1px solid var(--line);border-radius:9px;
+    padding:9px 13px;color:var(--ink);font:12px/1.4 var(--sans);
+    box-shadow:0 10px 30px rgba(0,0,0,.34);max-width:min(560px,90vw);
+    pointer-events:none}
+  /* In a narrow pane the 112px label column costs more than it earns -- at a
+     325px pane it was half the width, leaving the field it labels smaller than
+     the label. Stack instead: the label reads as a caption above its field and
+     the field gets the whole column. Same container the rest of the panel
+     already queries (.pane.browse sets container-type). */
+  @container (max-width:520px){
+    .rfrow{grid-template-columns:minmax(0,1fr);gap:4px}
+    .rfrow > label{padding-top:0}
+  }
 
   /* ── onboarding ──────────────────────────────────────────────────────────
      A first-run interstitial, not a tour. It states what this panel will do
@@ -727,7 +991,7 @@
   <div class="app" id="app">
     <nav class="rail" aria-label="Sutra">
       <div class="rtop">
-        <div class="rmark">s</div><b>Sutra</b><span class="tn" id="tenantChip">—</span>
+        <div class="rmark">s</div><b>Sutra</b>
         <button class="railtog" id="railToggle" type="button"
                 aria-label="Hide the sidebar" aria-pressed="false" title="Hide the sidebar">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -777,12 +1041,9 @@
       </div>
       <div class="rfoot">
         <div class="av">TC</div>
-        <div class="tmenuwrap">
-          <button class="tsw" id="tenantSwitch" type="button" aria-haspopup="menu"
-                  aria-expanded="false"
-                  title="Switch workspace — every request is scoped to it">—</button>
-          <div class="tmenu" id="tenantMenu" role="menu" hidden></div>
-        </div>
+        <!-- Tenancy is removed: one registry holds one org. The label that named
+             the tenant here is gone too -- naming a scope that has no alternative
+             is noise, and it was the last place the word appeared to an operator. -->
         <div style="margin-left:auto;display:flex;gap:2px">
           <button class="ib" id="termBtn" type="button" aria-pressed="false"
                   aria-label="Show the terminal" title="Terminal — the real claude TUI in a PTY">
@@ -825,6 +1086,14 @@
           <button type="button" id="sideTabTerm" aria-pressed="true">Terminal</button>
           <button type="button" id="sideTabPrev" aria-pressed="false">Preview</button>
         </span>
+        <!-- Shell vs the real Claude Code TUI. app.py:729 already spawns either;
+             only the shell was ever reachable. -->
+        <span class="tabs sidetabs" role="group" aria-label="Terminal runs">
+          <button type="button" id="termModeShell" aria-pressed="true"
+                  title="Your login shell — git, ls, builds">Shell</button>
+          <button type="button" id="termModeClaude" aria-pressed="false"
+                  title="The real Claude Code TUI: /mcp, /plugin, /context, /rewind, vim mode, plan approval">Claude</button>
+        </span>
         <span class="termcwd" id="termCwd"></span>
         <button class="ib" id="termReload" type="button"
                 aria-label="Restart the terminal session" title="Restart the terminal session">
@@ -858,8 +1127,8 @@
 <script>
 /* ══════════════════════ live data — fetched from the real backend ══════════════════════
    No seed. DOMAINS/CHARTERS/PLACEMENTS/INDEX are populated by loadOrg() from /api/org/*
-   against placement_engine.py's real registry, scoped to the tenant chosen on the landing
-   screen. Which registry is read is decided SERVER-SIDE by org_api.py's SUTRA_NATIVE_HOME
+   against placement_engine.py's real registry. Which registry is read is decided
+   SERVER-SIDE by org_api.py's SUTRA_NATIVE_HOME
    resolution — never chosen here, and there is no fixture default.
    SESSIONS are not derived from any of this: they come from GET /api/sessions, which reads
    ~/.claude/projects/**.jsonl. See adoptRealSessions(). */
@@ -869,11 +1138,9 @@ let DOMAINS = [], CHARTERS = [], PLACEMENTS = [], INDEX = [];
    hardcoded list: the Skills screen used to render ten invented strings
    and claim "31 total". */
 let SKILLS = [], SKILLS_META = {};
-/* Real tenants (GET /api/tenants — derived from tenant_id observed on domains and
-   placements, with the engine's own counts), the live provider table
-   (GET /api/providers) and the panel's settings (GET /api/settings). All three
-   are fetched; none is a literal in this file. */
-let TENANTS = [], PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
+/* The live provider table (GET /api/providers) and the panel's settings
+   (GET /api/settings). Both are fetched; neither is a literal in this file. */
+let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
 
 /* True while a turn on this session is still streaming. The composer's send button
    becomes a STOP button on exactly this condition, so the control that appears is
@@ -889,17 +1156,14 @@ function fmtBytes(n){
        : (n/(1024*1024)).toFixed(1) + " MB";
 }
 const PLANS = [{ plan_id: "sutra-ui-draft", base: {} }];  // this tier manages exactly one draft
-/* tenant_id is no longer a constant. It is whatever the operator picked on the
-   tenant screen (see boot()), and it is what every ?tenant= below carries. */
-let META = { tenant_id: null, generated_ms: 0, history_complete_from_ms: 0 };
+let META = { generated_ms: 0, history_complete_from_ms: 0 };
 
 /* ══════════════════════ persisted UI state ══════════════════════
-   Three things survive a reload, because all three are decisions the operator
-   made about THIS machine and re-making them every load is friction, not
-   safety: the chosen tenant, which panes/sections are collapsed, and the
-   browse-pane width. Nothing about the REGISTRY is cached here — only layout.
+   What survives a reload are decisions the operator made about THIS machine,
+   because re-making them every load is friction, not safety: which panes and
+   sections are collapsed, and the browse-pane width.
+   Nothing about the REGISTRY is cached here — only layout.
    A corrupt/absent value degrades to the default; it never throws. */
-const LS_TENANT = "sutra.panel.tenant";
 const LS_LAYOUT = "sutra.panel.layout";
 const LS_TERM   = "sutra.panel.term";     /* terminal pane open/closed, per browser */
 const LS_TERMW  = "sutra.panel.termw";    /* its dragged width, in px */
@@ -1013,15 +1277,10 @@ async function apiPost(path, body){
   if (!r.ok) throw await _fail(r, path);
   return r.json();
 }
-/* THE tenant scope, in one place. Every registry read/write below goes through
-   it, so "which tenant am I looking at" cannot drift between two endpoints.
-   With `showAcme` on, the scope widens to all_tenants=true — that is a
-   deliberate, visible toggle, not a default. */
-function scopeQ(){
-  return S.showAcme ? "all_tenants=true"
-                    : "tenant=" + encodeURIComponent(S.tenant || "");
-}
-const tenantQ = () => "tenant=" + encodeURIComponent(S.tenant || "");
+/* Tenancy is removed: one registry holds one org, so registry reads carry no
+   scope. What stood here built a ?tenant= the server already ignored -- a query
+   string that looks like a scope but is not one is what made a half-removed
+   filter hard to see. */
 
 /* ══════════════════════ derivations/* ══════════════════════ derivations ══════════════════════ */
 const byRef = r => DOMAINS.find(d => d.ref === r);
@@ -1029,8 +1288,6 @@ const st = d => d.status || "active";
 const isLive = d => st(d) !== "retired";
 /* live_refs(): drops retired only. frozen stays classifiable. */
 const live = () => DOMAINS.filter(isLive);
-/* tenant_refs(): the §6 chokepoint. Default view is the tenant of record. */
-const inTenant = (d, t) => d.tenant_id === t;
 
 function isDescendant(ref, ancestorRef){
   let n = byRef(ref);
@@ -1083,7 +1340,15 @@ const tok = s => new Set((String(s||"").toLowerCase().match(/[a-z0-9]+/g) || [])
                           .filter(w => w.length>1 && !STOP.has(w)));
 function jac(a,b){ const i=[...a].filter(x=>b.has(x)).length; const u=new Set([...a,...b]).size;
                    return u? i/u : 0; }
-const fmt = ms => new Date(ms).toISOString().slice(0,10);
+/* An undated row is a fact about THAT row, not a reason to blank the screen.
+   Two real domain_updated events in this registry carry no ts_ms at all, and
+   `new Date(undefined).toISOString()` throws -- which took the whole History
+   screen down with a RangeError instead of showing 65 dated events and 2
+   undated ones. Unrepresentable in, em-dash out. */
+const fmt = ms => {
+  const d = new Date(ms);
+  return isNaN(d.getTime()) ? "—" : d.toISOString().slice(0,10);
+};
 
 /* ══════════════════════ simulate() — real backend, memoized on ops ══════════════════════
    The ORG-001/002/.../020 predicates now live server-side in reorg_sim.py, calling the SAME
@@ -1165,7 +1430,6 @@ function blockCodesForMove(src, t){
   if (t.ref===src.ref || isDescendant(t.ref, src.ref))
     c.push({code:"ORG-006", subject:t.name+" is inside "+src.name});
   if (st(t) !== "active") c.push({code:"ORG-016", subject:t.name+" is "+st(t)});
-  if (t.tenant_id !== src.tenant_id) c.push({code:"ORG-017", subject:t.tenant_id+" ≠ "+src.tenant_id});
   const norm = s => s.trim().toLowerCase().replace(/\s+/g," ");
   if (DOMAINS.some(d=>d.ref!==src.ref && d.parent_ref===t.ref && st(d)!=="retired" && norm(d.name)===norm(src.name)))
     c.push({code:"ORG-018", subject:'a live sibling is already named "'+src.name+'"'});
@@ -1190,7 +1454,7 @@ async function runTurn(text, ts){
   const stamp = ts || Date.now();
   let r;
   try {
-    const res = await apiPost("/api/classify?" + tenantQ(), { text });
+    const res = await apiPost("/api/classify", { text });
     if (!res.domain_ref) {
       // mode "none": classify() found no candidate at all; nothing was written.
       r = { mode: res.mode || "none", domain: null, confidence: res.confidence || 0,
@@ -1347,6 +1611,100 @@ function scheduleRender(){
   _renderTimer = setTimeout(()=>{ _renderTimer = null; render(); }, 100);
 }
 
+/* ── streaming: patch, do not rebuild ───────────────────────────────────────
+   Tokens used to call scheduleRender(), and render() replaces #panes WHOLESALE
+   via innerHTML. Ten times a second, for the whole reply, the entire transcript
+   was destroyed and re-parsed. That produced all three reported symptoms at
+   once, and they were one bug:
+
+     flicker     every node in the pane was replaced between frames
+     scroll jump the new scroller starts at scrollTop 0, then code re-pins it,
+                 so the view snapped bottom -> top -> bottom per frame
+     not smooth  100ms batching is 10fps, and re-parsing a long transcript
+                 costs more than the frame budget once a reply gets long
+
+   So a token frame no longer re-renders anything. It rewrites the innerHTML of
+   the ONE element that changed -- the streaming turn's [data-resp] node -- on
+   an animation frame. The scroller is never replaced, so the scroll position is
+   preserved by construction rather than saved and restored.
+
+   Structural changes (a turn starting or finishing, a tool row appearing, an
+   error) still go through render(): those change the shape of the pane, and
+   patching text cannot express them. */
+let _patchRaf = null;
+const _patchDirty = new Set();
+
+function scheduleStreamPatch(uid){
+  if (uid) _patchDirty.add(uid);
+  if (_patchRaf) return;
+  _patchRaf = requestAnimationFrame(()=>{ _patchRaf = null; patchStreaming(); });
+}
+
+/* Every turn currently streaming, by uid, across main and side channels. */
+function _streamingTurns(){
+  const out = new Map();
+  S.sessions.forEach(s => (s.turns || []).forEach(t => {
+    if (t.streaming && t.uid) out.set(t.uid, t);
+  }));
+  Object.keys(S.sideTurns || {}).forEach(sid =>
+    (S.sideTurns[sid] || []).forEach(t => { if (t.streaming && t.uid) out.set(t.uid, t); }));
+  return out;
+}
+
+/* Replace ONE assistant block. A running turn changes its state pill, its tool
+   rows and its body many times -- a turn with six tool calls used to mean six
+   full render() passes, each swapping every node in the pane. Scroll survives
+   that now, but the repaint does not: it is the visible flicker in "the tabs
+   are very patchy". Swapping one <div> leaves the rail, the pane header, the
+   tabs and the composer untouched, so nothing outside the message can flash. */
+function patchTurn(t){
+  if (!t || !t.uid) return false;
+  const el = document.querySelector('[data-aturn="' + t.uid + '"]');
+  if (!el) return false;                    /* not drawn yet -> caller renders */
+  const pane = el.closest(".pane[data-sess]");
+  const pb = pane && pane.querySelector(".pb");
+  const sid = pane && pane.dataset.sess;
+  const pinned = pb && !S.userScrolled.get(sid);
+  el.outerHTML = turnResponse(t);
+  if (pinned){
+    pb.__pinning = true;
+    pb.scrollTop = pb.scrollHeight;
+    requestAnimationFrame(()=>{ pb.__pinning = false; });
+  }
+  return true;
+}
+
+function patchStreaming(){
+  const live = _streamingTurns();
+  let missed = false;
+  _patchDirty.forEach(uid=>{
+    const t = live.get(uid);
+    if (!t) return;                       /* finished; render() already owns it */
+    const el = document.querySelector('[data-resp="' + uid + '"]');
+    if (!el){
+      /* No anchor yet -- the first token of a reply that has not been drawn
+         with a body element. That IS a structural change, so fall back once. */
+      missed = true;
+      return;
+    }
+    const pane = el.closest(".pane");
+    const pb = pane && pane.querySelector(".pb");
+    const sid = pane && pane.dataset.sess;
+    const pin = pb && !S.userScrolled.get(sid);
+    el.innerHTML = mdHtml(t.response) +
+      '<span class="caret" style="color:var(--acc)">█</span>';
+    /* Only follow the tail when the operator has not scrolled away. __pinning
+       marks it as OUR scroll so the listener does not read it as intent. */
+    if (pin){
+      pb.__pinning = true;
+      pb.scrollTop = pb.scrollHeight;
+      requestAnimationFrame(()=>{ pb.__pinning = false; });
+    }
+  });
+  _patchDirty.clear();
+  if (missed) scheduleRender();
+}
+
 /* ── grounding injection ──
    THIS is the point of Sutra. What reaches Claude is never the raw utterance: it is the
    utterance under the placement the engine just resolved, mirroring what
@@ -1381,11 +1739,19 @@ function claudeWsUrl(){
 }
 /* Every turn this channel still owes a reply gets the REAL reason it will not arrive.
    Silence and a spinner that never stops are the failure modes this replaces. */
-function failChannel(ch, detail){
+function failChannel(ch, detail, opts){
   const hit = ch.pending.splice(0);
   if (ch.turn) hit.push(ch.turn);
   ch.turn = null;
-  hit.forEach(t=>{ t.streaming = false; if (!t.error) t.error = ch.lastError || detail; });
+  hit.forEach(t=>{
+    t.streaming = false;
+    if (!t.error) t.error = ch.lastError || detail;
+    /* INTERRUPTED is not the same as FAILED. The agent did not refuse and did
+       not error -- the transport went away, usually because the server
+       restarted. That is recoverable, and a turn that says so can offer a
+       retry instead of leaving a red line the reader can only stare at. */
+    if (opts && opts.interrupted && !ch.lastError) t.interrupted = true;
+  });
   if (hit.length) scheduleRender();
 }
 /* A side chat gets its OWN socket under a synthetic key rather than the map being
@@ -1428,7 +1794,22 @@ function claudeChannel(s, side){
       else ch.sideSession = f.id;
       if (ch.turn) ch.turn.claude_session = f.id;
     } else if (f.type === "token"){
-      if (ch.turn) ch.turn.response = (ch.turn.response || "") + f.text;
+      if (ch.turn){
+        ch.turn.response = (ch.turn.response || "") + f.text;
+        /* TEXT ONLY -- patched in place, no re-render. See patchStreaming().
+           Return early so the scheduleRender() at the end of this handler does
+           not undo the whole point by rebuilding the pane anyway. */
+        scheduleStreamPatch(turnUid(ch.turn));
+        return;
+      }
+    } else if (f.type === "retrying"){
+      /* A rate-limit backoff. Without this the pane went silent and a WAITING
+         turn was indistinguishable from a WEDGED one. */
+      if (ch.turn){ ch.turn.retrying = f.detail || "retrying"; }
+    } else if (f.type === "sysinit"){
+      /* What the session actually resolved, as opposed to what was requested --
+         they differ whenever a fallback or a settings default applies. */
+      ch.sysinit = f;
     } else if (f.type === "thinking"){
       /* Presence only -- the server does not forward the thinking text, so the UI
          says "thinking" and nothing more. */
@@ -1447,7 +1828,10 @@ function claudeChannel(s, side){
           /* Match by id. A result whose start was never seen is NOT invented as a
              finished tool -- it is dropped, because a row with no name is noise. */
           const r = f.id && runs.find(x=>x.id === f.id);
-          if (r){ r.running = false; r.ok = f.ok !== false; r.endedAt = Date.now(); }
+          if (r){ r.running = false; r.ok = f.ok !== false; r.endedAt = Date.now();
+                  /* what the tool RETURNED -- the server used to discard it, so a
+                     failing tool showed a red dot with no reason attached */
+                  if (f.output) r.output = f.output; }
         } else {
           runs.push({ id:f.id, name:f.name || "tool", summary:f.summary || "",
                       caller:f.caller || null, running:true, ok:null,
@@ -1478,6 +1862,20 @@ function claudeChannel(s, side){
         (ch.turn.toolRuns||[]).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
       }
       ch.turn = null;
+    } else if (f.type === "retry"){
+      /* The saved thread id was rejected, so the server is re-running THIS SAME
+         message without it. Not an error and not a new turn: the turn already on
+         screen stays exactly where it is and keeps streaming into the replay.
+         All that changes is that the dead id is forgotten, and any tool runs from
+         the aborted attempt are cleared so they do not appear twice. */
+      if (f.resume_reset) s.claude_session = null;
+      ch.lastError = null;
+      if (ch.turn){
+        ch.turn.toolRuns = [];
+        ch.turn.response = "";        /* the accumulator the token frames append to */
+        ch.turn.thinking = false;
+        ch.turn.retried = f.detail || "restarted as a new thread";
+      }
     } else if (f.type === "error"){
       ch.lastError = f.detail || "claude failed with no detail";
       /* the stored thread id was rejected -- forget it, or every following message
@@ -1494,33 +1892,81 @@ function claudeChannel(s, side){
       }
       else failChannel(ch, ch.lastError);   /* refused before any turn started */
     }
+    /* MID-TURN frames change one assistant block and nothing else, so they
+       patch that block instead of rebuilding the pane. Anything structural --
+       a turn starting or finishing, a channel error, a session id arriving --
+       still goes through render(), because those change the shape of the pane
+       and a node swap cannot express them. patchTurn() returns false when the
+       block is not on screen yet, and then we render as before. */
+    const midTurn = (f.type === "tool" || f.type === "thinking" ||
+                     f.type === "retrying");
+    if (midTurn && ch.turn && patchTurn(ch.turn)) return;
     scheduleRender();
   };
   ws.onclose = ev=>{
     /* Delete by the channel's OWN key. Deleting by s.id would evict the MAIN
        channel when a side chat's socket closed. */
     if (CLAUDE_SOCKETS.get(key) === ch) CLAUDE_SOCKETS.delete(key);
-    failChannel(ch, "the Claude channel closed before the reply finished" +
-      (ev && ev.code ? " (code " + ev.code + ")" : "") + " — is the server still running?");
+    /* 1006 is an ABNORMAL close: no close frame, i.e. the server went away
+       rather than saying goodbye. Restarting the backend does exactly this. */
+    const abnormal = !ev || ev.code === 1006 || !ev.wasClean;
+    failChannel(ch,
+      abnormal ? "The connection to the agent dropped before the reply finished. "
+               + "This happens when the backend restarts."
+               : "The agent channel closed before the reply finished (code "
+               + ev.code + ").",
+      { interrupted: abnormal });
   };
   return ch;
 }
-/* Closing the pane closes the socket — the pane IS the session's lifetime here.
-   Both channels go: a side chat outliving its pane would keep a claude process
-   running with nothing rendering its output. */
-function closeClaudeChannel(sid){
+/* A PANE IS A VIEW. THE SESSION IS THE WORK.
+   This used to read "the pane IS the session's lifetime" and closed the socket
+   on pane close, which killed a reply that was still arriving and wrote
+   "pane closed before the reply finished" over it. Closing a window must never
+   destroy work that is still running -- you close a tab in Claude Code and the
+   conversation is still there when you come back.
+
+   So: a channel with a turn IN FLIGHT SURVIVES the pane closing. Tokens keep
+   landing on the turn object, which lives in S.sessions, not in the DOM -- so
+   reopening the pane shows everything that arrived while it was shut, still
+   streaming if it still is.
+
+   An IDLE channel is still closed, because the original comment's worry is
+   real: a socket with nothing in flight is a claude process kept alive for
+   nothing. That is the only case where closing costs nothing. */
+function closeClaudeChannel(sid, opts){
+  const force = !!(opts && opts.force);
+  const kept = [];
   [chanKey(sid, false), chanKey(sid, true)].forEach(key=>{
     const ch = CLAUDE_SOCKETS.get(key);
     if (!ch) return;
+    const busy = !!ch.turn || (ch.pending && ch.pending.length);
+    if (busy && !force){ kept.push(key); return; }   /* let the work finish */
     CLAUDE_SOCKETS.delete(key);
-    failChannel(ch, "pane closed before the reply finished");
+    /* No failChannel() here: nothing was in flight, so there is no turn to
+       report a failure for. Reporting one was the message you were reading. */
     try { ch.ws.close(); } catch (e) {}
   });
+  return kept;
 }
+
+/* Explicitly end the work, not just the view. Used by Stop, and by app unload. */
+function endClaudeChannel(sid){
+  return closeClaudeChannel(sid, { force:true });
+}
+/* A stable per-turn id, assigned once. It is the anchor patchStreaming() writes
+   through, so it must not change between renders and must never be reused. */
+let _UID = 0;
+function turnUid(t){
+  if (t && !t.uid) t.uid = "t" + (++_UID);
+  return t ? t.uid : "";
+}
+
 /* Run the turn. Fire-and-forget by design: tokens arrive on the socket and land on the
    turn object, which re-renders on the throttle. */
 function askClaude(s, turn, side){
   if (!turn) return;
+  turnUid(turn);
   turn.response = turn.response || "";
   turn.tools = turn.tools || [];
   turn.error = null;
@@ -1544,11 +1990,42 @@ function askClaude(s, turn, side){
      instead of a series of strangers. */
   const frame = JSON.stringify({ message: turn.sent,
                                  resume: side ? (ch.sideSession || null)
-                                              : (s.claude_session || null),
-                                 model: (model === undefined ? null : model) });
+                                              : resumableId(s),
+                                 model: (model === undefined ? null : model),
+                                 /* Per-turn CLI options. The SERVER validates every
+                                    one of these (build_agent_args); nothing here is
+                                    trusted, and an unknown or junk value is dropped
+                                    rather than passed to the CLI. */
+                                 opts: S.turnOpts[s.id] || null });
   if (ch.open) ch.ws.send(frame); else ch.queue.push(frame);
   scheduleRender();
 }
+/* The session id to hand the server -- or null when it provably cannot resolve.
+
+   `claude --resume <id>` looks the id up IN THE PROJECT OF ITS WORKING DIRECTORY.
+   adoptRealSessions() attaches `claude_session` to every transcript on disk, and
+   those transcripts belong to whatever directory they were recorded in -- usually
+   a repo, never the panel's own workdir. Sending such an id guaranteed the error
+   the operator actually hit:
+
+       No conversation found with session ID: 565ad6a3-...
+
+   The server now replays the message without the id, so nothing is lost either
+   way. This stops the doomed round trip from being made at all: a wasted claude
+   invocation, several seconds of dead air, and a scary message for a request that
+   was never going to work.
+
+   A session with no recorded cwd is still tried -- unknown is not the same as
+   mismatched, and the server's replay covers it if the guess is wrong. */
+function resumableId(s){
+  if (!s.claude_session) return null;
+  /* the `provider` frame the server sends on connect, stashed on the session */
+  const here  = (s.channel && s.channel.workdir) || "";
+  const there = s.cwd || "";
+  if (here && there && here !== there) return null;
+  return s.claude_session;
+}
+
 /* classify -> file the placement -> run Claude under that placement. The classify
    round-trip is awaited (a turn cannot be grounded before it has an address); the
    Claude run is not (it streams into the pane). */
@@ -1625,7 +2102,12 @@ async function submitTurn(text, sessionId){
 
 /* ══════════════════════ state ══════════════════════ */
 const S = {
-  screen:"departments", sel:null, view:"live", showRetired:false, showAcme:false,
+  screen:"departments", sel:null, view:"live", showRetired:false,
+  toolOpen:{},                   /* tool_use id -> is its output expanded */
+  turnOpts:{},                   /* session id -> per-turn CLI options (effort, budget, ...) */
+  optsOpen:{},                   /* session id -> is the options row expanded */
+  dirQ:"",                       /* Directory view search box */
+  dirSt:null,                    /* Directory charter status filter (null = generator default) */
   /* first run. `onbDismissed` is per-load only; the persisted acknowledgement
      is settings.onboarded, so "Not now" brings the disclosure back next launch.
      runtimeError/sessionsError hold a subsystem that failed WITHOUT taking the
@@ -1636,6 +2118,17 @@ const S = {
      a fetch is in flight, "" when git genuinely returned an empty diff -- the two are
      different answers and the screen renders them differently. */
   git:null, gitError:null, gitFile:null, gitDiff:null, gitDiffTruncated:false,
+  auto:null, autoError:null,
+  /* updates: null until the operator asks -- see updatesHtml(). */
+  upd:null, updBusy:null, updError:null, updMsg:null,
+  /* routines: null until the screen is opened (it shells out to launchctl). */
+  rt:null, rtError:null, rtBusy:null, rtMsg:null, rtForm:null, rtRuns:{}, rtOpen:{},
+  /* what the chat agent asked for; nothing applies until approved. */
+  props:null, propBusy:null, propError:null,
+  /* transient, self-clearing note -- see the pane close handler. */
+  toast:null,
+  /* permission mode confirmation, at chat level -- see permSelect(). */
+  permConfirm:null, permBusy:false, permError:null,
   /* Per-session composer extras. `attach` holds one entry per pending file (each with
      its own error, so one rejected upload does not discard the others). `model` is a
      per-session OVERRIDE; undefined means "inherit the stored setting", which is why
@@ -1663,6 +2156,12 @@ const S = {
      workdir change can say plainly that the running terminal is still in the old one
      rather than silently mislabelling it. */
   termOpen:false, termCwd:null, termW:null, sideTab:"terminal",
+  /* Staged desktop update. `updStaged` is the backend's local staging state --
+     no network, which is the only reason polling it is acceptable. `updLeft` is
+     the countdown; null means not counting. `updDeferred` is per-load and never
+     persisted: deferring is not declining, and the update still applies on quit. */
+  updStaged:null, updLeft:null, updDeferred:false, updApplyError:null,
+  updFiring:false,
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
      through the org. Departments do NOT hand work to each other — no such channel exists. */
@@ -1689,11 +2188,6 @@ const S = {
      operator typing (opening the palette, a simulate() response, a token frame).
      Keeping it in state makes it survive unconditionally. */
   composerText:{},
-  /* tenant: the scope EVERY registry request carries (?tenant=). null means the
-     choice has not been made yet and the tenant gate is what renders.
-     gate: the chooser is open on purpose (rail footer), even though a tenant
-     is already selected. */
-  tenant:null, gate:false, tenantsError:null,
   /* Layout the operator adjusted, restored from localStorage on load:
        paneCollapsed[<"browse"|sessionId>] -> true
        folds[<fold key>]                   -> 0 (closed) | 1 (open)
@@ -1814,14 +2308,38 @@ function mdHtml(src){
       continue;
     }
 
-    const ul = /^\s*[-*+]\s+(.*)$/, ol = /^\s*\d+[.)]\s+(.*)$/;
+    const ul = /^(\s*)[-*+]\s+(.*)$/, ol = /^(\s*)\d+[.)]\s+(.*)$/;
     if (ul.test(line) || ol.test(line)){
-      const ordered = ol.test(line);
-      const re = ordered ? ol : ul;
-      const items = [];
-      while (i < rows.length && re.test(rows[i])){ items.push(inline(rows[i].match(re)[1])); i++; }
-      const tag = ordered ? "ol" : "ul";
-      out.push("<" + tag + ' class="md-l">' + items.map(x => "<li>" + x + "</li>").join("") + "</" + tag + ">");
+      /* NESTING. This used to match on the item text alone and ignore the
+         indent, so "- a / <2 spaces>- b" came out as two SIBLINGS -- a
+         structure the writer did not type. Depth is the leading whitespace,
+         two spaces (or one tab) per level, which is what every markdown writer
+         actually produces. */
+      const lines = [];
+      while (i < rows.length && (ul.test(rows[i]) || ol.test(rows[i]))){
+        const isOl = ol.test(rows[i]);
+        const m = rows[i].match(isOl ? ol : ul);
+        const indent = m[1].replace(/\t/g, "  ").length;
+        lines.push({ depth: Math.floor(indent / 2), ordered: isOl, text: inline(m[2]) });
+        i++;
+      }
+      const render = (start, depth) => {
+        const tag = lines[start].ordered ? "ol" : "ul";
+        let html = "<" + tag + ' class="md-l">', k = start;
+        while (k < lines.length && lines[k].depth >= depth){
+          if (lines[k].depth > depth){
+            /* a deeper run belongs INSIDE the item just emitted */
+            const [inner, next] = render(k, lines[k].depth);
+            html = html.replace(/<\/li>$/, inner + "</li>");
+            k = next;
+            continue;
+          }
+          html += "<li>" + lines[k].text + "</li>";
+          k++;
+        }
+        return [html + "</" + tag + ">", k];
+      };
+      out.push(render(0, lines[0].depth)[0]);
       continue;
     }
 
@@ -1831,7 +2349,13 @@ function mdHtml(src){
            && !/^\s*&gt;\s?/.test(rows[i]) && !/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(rows[i])){
       para.push(rows[i]); i++;
     }
-    out.push('<p class="md-p">' + inline(para.join("\n")).replace(/\n/g, "<br>") + "</p>");
+    /* A parked BLOCK (a fenced code block) on its own line is not prose. Wrapping
+       it produced `<p><pre>...</pre></p>`, which is invalid -- the browser closes
+       the <p> before the <pre> and the stray </p> lands after it, breaking the
+       spacing around every code block in a reply. */
+    const joined = para.join("\n");
+    if (/^\u0000\d+\u0000$/.test(joined.trim())) out.push(joined.trim());
+    else out.push('<p class="md-p">' + inline(joined).replace(/\n/g, "<br>") + "</p>");
   }
 
   return out.join("").replace(/\u0000(\d+)\u0000/g, (m, n) => slot[Number(n)]);
@@ -1850,7 +2374,8 @@ const ICON = {
   hist:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>',
   health:'<path d="M3 13h4l2.5 6 4-14 2.5 8h5"/>',
   skills:'<path d="M12 3l7.5 4.3v8.6L12 20.2 4.5 15.9V7.3z"/><path d="M12 12l7.5-4.4M12 12v8.2M12 12L4.5 7.6"/>',
-  ten:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M8 5V3M16 5V3"/>',
+  rout:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.4V12l3 1.8"/><path d="M4.5 5.5l2.2 2.2M19.5 5.5l-2.2 2.2"/>',
+  auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
   chevron:'<path d="M6 9l6 6 6-6"/>',
   bal:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M12 12c2.4-1.6 2.4-4.9 0-6.5M12 12c-2.4 1.6-2.4 4.9 0 6.5"/>'
@@ -1859,15 +2384,14 @@ function railSpec(){
   const sim = S.loaded ? simulate(S.draft.ops) : null;
   /* "0 open issues" and "we have not been told yet" are different facts, and a
      green-looking 0 for the second is the more expensive lie. Before the
-     registry has been read at all (tenant gate), every count is withheld for
-     the same reason -- a 0 there would be a claim about a tenant nobody has
-     loaded yet. */
+     registry has been read at all, every count is withheld for the same
+     reason -- a 0 there would be a claim about a registry nobody has read. */
   const openIssues = !sim ? undefined
     : sim.pending ? "…" : (sim.error ? "!" : sim.findings.length);
   const c = v => S.loaded ? v : undefined;
   return {
     org:[
-      {id:"departments",n:"Departments",i:"dept", c:c(live().filter(d=>inTenant(d,META.tenant_id)).length)},
+      {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
       {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)}
@@ -1886,6 +2410,17 @@ function railSpec(){
     ],
     runtime:[
       {id:"skills",  n:"Skills",   i:"skills",c:(SKILLS.length||undefined)},
+      /* Dispatcher + scheduler. The count is the dispatch ledger's row count and
+         is withheld until the screen has been opened, for the same reason Git's
+         is: a 0 before the file was read is a claim about a project nobody
+         looked at. */
+      {id:"automation",n:"Automation",i:"auto",
+       c:(S.auto ? (((S.auto.dispatcher||{}).ledger||{}).rows) : undefined)},
+      /* Routines sit next to Automation because both are "what runs without me",
+         but they are not the same: Automation REPORTS on subsystems, a routine is
+         something the operator creates. Count withheld until read, like Git. */
+      {id:"routines", n:"Routines",  i:"rout",
+       c:(S.rt ? (S.rt.routines||[]).length : undefined)},
       /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
          anyway. It shipped as a 19px unlabelled icon in the footer and the first
          operator to use it reported "I don't see terminal": a control nobody can
@@ -1902,25 +2437,6 @@ function railSpec(){
       {id:"settings",n:"Settings", i:"gear"}
     ]
   };
-}
-/* The workspace switcher. Deliberately worded as SCOPE, not isolation:
-   placement_engine's own tenant_refs() docstring says "MISROUTING GUARD, not
-   isolation ... Do not describe it with the word isolation" -- all tenants
-   share one registry directory. Calling this a boundary in the UI would claim
-   a guarantee the engine explicitly disclaims. */
-function renderTenantMenu(){
-  const menu = document.getElementById("tenantMenu");
-  if (!menu) return;
-  const rows = (TENANTS || []).map(r=>`
-    <button type="button" role="menuitem" data-pick-tenant="${esc(r.tenant_id)}"
-            ${r.tenant_id===S.tenant?'aria-current="true"':""}>
-      <span class="${r.tenant_id===S.tenant?"cur":""}">${esc(r.tenant_id)}</span>
-      <span class="tm2">${r.domains} dept · ${r.placements} plc</span>
-    </button>`).join("");
-  menu.innerHTML = `<div class="th">Workspace</div>${rows ||
-      '<div class="note">No workspaces found in the registry.</div>'}
-    <div class="note">Switching re-scopes every screen — departments, charters and
-      placements are all read at this scope.</div>`;
 }
 
 function renderRail(){
@@ -1957,7 +2473,6 @@ function renderRail(){
   if (home) home.hidden = tab !== "home";
   if (code) code.hidden = tab !== "code";
 
-  renderTenantMenu();
 
   /* Sessions, two ways.
      RECENT is the familiar shape — date buckets, newest first.
@@ -2040,13 +2555,6 @@ function renderRail(){
       this panel, so no department was ever resolved for them — they group under Recent only.</p>`;
   }
   document.getElementById("sessions").innerHTML = html;
-
-  /* the tenant is a live selection now, so the chip and the footer switch both
-     read it rather than repeating a hardcoded "T-local" */
-  const chip = document.getElementById("tenantChip");
-  if (chip) chip.textContent = S.tenant || "no tenant";
-  const sw = document.getElementById("tenantSwitch");
-  if (sw) sw.textContent = (S.tenant || "choose a tenant") + " · switch";
 }
 
 /* ══════════════════════ screens ══════════════════════ */
@@ -2076,17 +2584,267 @@ function fold(key, title, summary, inner, dflt){
 }
 
 /* ── S1 Departments ── */
+/* ══════════════ Directory view ══════════════
+   A port of the PUBLISHED domains page — the one lib/domains_page.py generates
+   for GitHub Pages — so the in-app view and the published site are the same
+   document rendered twice, not two different opinions about the org.
+
+   Structure mirrored from domains_page.py build(): a sticky TOC rail, one
+   <section class="dept"> per top-level domain (chip / name / description /
+   charters / child count), an org diagram, and a grid of cascading .info
+   cards that recurse to any depth.
+
+   The D-path chip uses the ENGINE's own `path` field rather than recomputing an
+   index, so this view can never disagree with the rest of the panel about what
+   D-number a domain has. */
+function dirData(){
+  const live = DOMAINS.filter(d => S.showRetired || st(d) !== "retired");
+  const byRef = new Map(live.map(d => [d.ref, d]));
+  const kids = new Map();
+  live.forEach(d => {
+    const pr = d.parent_ref;
+    if (pr && byRef.has(pr)){ if (!kids.has(pr)) kids.set(pr, []); kids.get(pr).push(d); }
+  });
+  kids.forEach(v => v.sort((a,b) => String(a.path||"").localeCompare(String(b.path||""), undefined, {numeric:true})));
+  const root = live.find(d => !d.parent_ref || !byRef.has(d.parent_ref)) || null;
+  return { live, byRef, kids, root };
+}
+
+function dirChartersFor(ref){
+  return CHARTERS.filter(c => c.domain_ref === ref)
+    .sort((a,b) => String(a.id).localeCompare(String(b.id)));
+}
+
+/* The published chip format. The engine's domain_path() renders "D1.D1"; the
+   generator's dpath_idx() renders the SAME ordinals as "D1.1"
+   (domains_page.py:121). This view is the published page, so it shows the
+   published spelling — a pure re-spacing of d.path, never a recomputed index,
+   so it still cannot disagree with the rest of the panel about the ordinals.
+   Every other view keeps the engine spelling. */
+function dirChip(path){
+  const parts = String(path||"").split(".");
+  return parts.length < 2 ? (path||"")
+    : parts[0] + "." + parts.slice(1).map(p => p.replace(/^D/, "")).join(".");
+}
+
+function dirMatches(d, q){
+  if (!q) return true;
+  const hay = ((d.name||"") + " " + (d.description||"") + " " + (d.path||"")).toLowerCase();
+  return hay.indexOf(q) !== -1;
+}
+
+/* The Charters section, ported from domains_page.py build_site() charter_table():
+   Owner / Charter / Kind / Status, owner-grouped, with the status filter bar.
+
+   Two rules copied exactly from the generator, because they are load-bearing:
+   - the filter bar renders ONLY when more than one distinct status exists
+     (a one-button filter is a control that cannot change anything), and
+   - the default selection is "active" when any charter is active, else "all"
+     — the generator's comment is explicit that an empty first paint on a
+     non-empty page is not acceptable.
+
+   The per-child O/L lane columns are NOT ported: they exist on the published
+   SITE's per-domain zoom pages, where "the children of THIS page" is defined.
+   This is one page over the whole registry, so those columns have no referent
+   here. Owner is shown as a real column instead. */
+/* Roll a deep ref UP to the direct child of pageRef it sits under.
+   Ported from domains_page.py child_of(), including its cycle guard: a
+   parent_ref loop in a damaged registry must not hang the renderer. */
+function dirChildOf(byRef, pageRef, ref){
+  let cur = ref; const seen = new Set();
+  while (byRef.has(cur) && !seen.has(cur)){
+    seen.add(cur);
+    const par = byRef.get(cur).parent_ref;
+    if (par === pageRef) return cur;
+    cur = par;
+  }
+  return null;
+}
+
+/* Which top-level department lanes this charter occupies, and in what role.
+   Ported from cols_for(): the charter's OWN domain scores "O", every
+   linked_domain_ref scores "L", both rolled up to the top-level department
+   they sit under — and O outranks L when a charter both owns and links into
+   the same lane. */
+function dirLanesFor(byRef, pageRef, tops, c){
+  const tset = new Set(tops.map(t => t.ref));
+  const cols = {};
+  const refs = new Set([c.domain_ref].concat(c.linked_domain_refs || []));
+  refs.forEach(r => {
+    if (!r || r === pageRef || !byRef.has(r)) return;
+    const col = dirChildOf(byRef, pageRef, r);
+    if (!col || !tset.has(col)) return;
+    const role = (r === c.domain_ref) ? "O" : "L";
+    if (cols[col] !== "O") cols[col] = role;
+  });
+  return cols;
+}
+
+function dirCharterSection(byRef, kids, root){
+  const q = (S.dirQ || "").trim().toLowerCase();
+  const all = CHARTERS.slice();
+  if (!all.length) return `<section class="chsec"><h2 class="chh">Charters</h2>
+    <p class="chempty">none yet</p></section>`;
+
+  const ownerName = c => (byRef.get(c.domain_ref) || {}).name || "—";
+  const ownerPath = c => (byRef.get(c.domain_ref) || {}).path || "";
+  const statuses = [...new Set(all.map(c => c.status).filter(Boolean))].sort();
+  const deffil = all.some(c => c.status === "active") ? "active" : "all";
+  const cur = S.dirSt || deffil;
+
+  /* The lanes are the TOP-LEVEL departments, i.e. this page is the root's
+     charter table. show only when at least one charter actually lands in one,
+     matching the generator's `show_cols` guard. */
+  const pageRef = root ? root.ref : null;
+  const tops = (kids.get(pageRef) || []);
+  const laneOf = new Map(all.map(c => [c.id, dirLanesFor(byRef, pageRef, tops, c)]));
+  const showCols = tops.length > 0 && all.some(c => Object.keys(laneOf.get(c.id)||{}).length);
+
+  const rows = all
+    .filter(c => cur === "all" || c.status === cur)
+    .filter(c => !q || ((c.title||"") + " " + (c.purpose||"") + " " + ownerName(c))
+                        .toLowerCase().indexOf(q) !== -1)
+    .sort((a,b) =>
+      ownerName(a).toLowerCase().localeCompare(ownerName(b).toLowerCase())
+      || ((a.kind==="standing"?0:1) - (b.kind==="standing"?0:1))
+      || String(a.title||"").toLowerCase().localeCompare(String(b.title||"").toLowerCase()));
+
+  let prevOwner = null;
+  const body = rows.map(c => {
+    const first = c.domain_ref !== prevOwner;
+    prevOwner = c.domain_ref;
+    /* the owner cell is ALWAYS present so a screen reader hears it on every
+       row; a repeat is hidden visually only (the generator's note) */
+    const lanes = laneOf.get(c.id) || {};
+    const laneCells = showCols ? tops.map(t => {
+      const m = lanes[t.ref];
+      if (m === "O") return `<td class="lo" title="owner: ${esc(t.name)}">O</td>`;
+      if (m === "L") return `<td class="ll" title="linked: ${esc(t.name)}">L</td>`;
+      return `<td class="ln"></td>`;
+    }).join("") : "";
+    /* The published row is ONE line: owner, title, kind, status, lanes. The
+       purpose is a TOOLTIP, never a visible block -- a version of this that
+       rendered it inline made every row three lines tall and pushed the text
+       out over the lane columns, because a <th> with a max-width inside a
+       width:100% table overflows rather than wraps. Owner is the bare name
+       (or "here" for a charter the page itself owns), as the generator has it;
+       the D-path lives in the rail and the section headers. */
+    const ownHere = root && c.domain_ref === root.ref;
+    return `<tr class="chtr${first?" obreak":""}" data-status="${esc(c.status||"")}">
+      <td class="cown"><span class="ctxt${first?"":" ohide"}">${ownHere
+        ? `<span class="cown-here" aria-label="Owned by this department">here</span>`
+        : esc(ownerName(c))}</span></td>
+      <th scope="row"><span class="cht" title="${esc(c.purpose||"")}">${esc(c.title||"")}</span></th>
+      <td class="ckind">${esc(c.kind||"")}</td>
+      <td><span class="chdot st-${esc(c.status||"")}"><i></i>${esc(c.status||"")}</span></td>
+      ${laneCells}</tr>`;
+  }).join("");
+
+  /* The generator hides this bar below two distinct statuses. Here it is
+     ALWAYS shown (founder direction): the panel is a live tool, and a control
+     that disappears depending on the data reads as a missing feature. */
+  const fil = `<div class="chfil">${["all"].concat(statuses).map(st_ =>
+      `<button type="button" data-chst="${esc(st_)}" aria-pressed="${cur===st_}">${esc(st_)}</button>`
+    ).join("")}</div>`;
+  const laneHead = showCols
+    ? tops.map(t=>`<th scope="col" class="lane" title="${esc(t.name)}">${esc(dirChip(t.path)||t.name)}</th>`).join("")
+    : "";
+  const legend = showCols ? `<p class="lanenote">O owner &middot; L linked</p>` : "";
+  const ncols = 4 + (showCols ? tops.length : 0);
+
+  return `<section class="chsec"><h2 class="chh">Charters</h2>${legend}${fil}
+    <div class="lanewrap"><table class="chtab lanetab" data-deffil="${esc(deffil)}">
+      <thead><tr><th scope="col">Owner</th><th scope="col">Charter</th>
+        <th scope="col">Kind</th><th scope="col">Status</th>${laneHead}</tr></thead>
+      <tbody>${body || `<tr class="chnone"><td colspan="${ncols}">no charters match</td></tr>`}</tbody>
+    </table></div></section>`;
+}
+
+function domainsDirectory(){
+  const { byRef, kids, root } = dirData();
+  if (!root) return `<div class="zero"><h4>No domains</h4>
+    <p>This registry has no domains yet. One is minted the first time work is placed.</p></div>`;
+  const q = (S.dirQ || "").trim().toLowerCase();
+
+  const charterLines = ref => dirChartersFor(ref).map(c =>
+    `<p class="charter"><span>Charter</span> ${esc(c.title||"")}${
+      c.purpose ? " — " + esc(c.purpose) : ""}</p>`).join("");
+
+  const orgDiagram = (parentName, childNames) => !childNames.length ? "" :
+    `<div class="dtree"><div class="tnode troot">${esc(parentName)}</div>
+      <div class="tdown"></div>
+      <div class="tkids">${childNames.map(n=>`<div class="tnode">${esc(n)}</div>`).join("")}</div></div>`;
+
+  /* a subtree survives the filter if IT matches or any descendant does --
+     hiding a matching child because its parent did not match would make the
+     search look broken */
+  const subtreeMatches = d => dirMatches(d, q)
+    || (kids.get(d.ref)||[]).some(subtreeMatches);
+
+  const navEntry = (d, depth) => {
+    const ch = (kids.get(d.ref)||[]).filter(subtreeMatches);
+    const anchor = "dir-" + d.ref;
+    if (ch.length) return `<details class="navgrp"${depth<2?" open":""}>
+      <summary><span class="chip">${esc(dirChip(d.path))}</span>
+        <a href="#${anchor}">${esc(d.name)}</a>
+        <span class="navcount">${(kids.get(d.ref)||[]).length}</span></summary>
+      <div class="navkids">${ch.map(c=>navEntry(c, depth+1)).join("")}</div></details>`;
+    return `<a class="dsub" href="#${anchor}"><span class="chip">${esc(dirChip(d.path))}</span>${esc(d.name)}</a>`;
+  };
+
+  const nodeBlock = (d, depth) => {
+    const all = kids.get(d.ref)||[];
+    const ch = all.filter(subtreeMatches);
+    let body = `<span class="chip">${esc(dirChip(d.path))}</span><b>${esc(d.name)}</b>
+      ${d.description?`<p>${esc(d.description)}</p>`:""}${charterLines(d.ref)}`;
+    if (ch.length){
+      body += `<details class="cascade"${depth<2?" open":""}>
+        <summary>${all.length} sub-domain${all.length===1?"":"s"}</summary>
+        ${orgDiagram(d.name, all.map(c=>c.name))}
+        <div class="grid">${ch.map(c=>nodeBlock(c, depth+1)).join("")}</div></details>`;
+    }
+    return `<div class="info" id="dir-${esc(d.ref)}">${body}</div>`;
+  };
+
+  const tops = (kids.get(root.ref)||[]).filter(subtreeMatches);
+  const rail = tops.map(t=>navEntry(t,1)).join("")
+    || `<p style="color:var(--faint);font-size:11.5px;padding:4px 6px">no match</p>`;
+
+  const sections = tops.map(t=>{
+    const all = kids.get(t.ref)||[];
+    const ch = all.filter(subtreeMatches);
+    const blocks = ch.length
+      ? ch.map(c=>nodeBlock(c,2)).join("")
+      : `<div class="info empty">no sub-departments yet</div>`;
+    return `<section id="dir-${esc(t.ref)}" class="dept">
+      <header><span class="chip big">${esc(dirChip(t.path))}</span>
+        <div><h2>${esc(t.name)}</h2>
+          ${t.description?`<p class="desc">${esc(t.description)}</p>`:""}
+          ${charterLines(t.ref)}</div>
+        <span class="count">${all.length}</span></header>
+      ${orgDiagram(t.name, all.map(c=>c.name))}
+      <div class="grid">${blocks}</div></section>`;
+  }).join("") || `<div class="info empty">no departments under ${esc(root.name)} yet</div>`;
+
+  return `<div class="dpage">
+    <nav>
+      <input class="dq" id="dirQ" type="search" placeholder="Search domains…"
+             autocomplete="off" value="${esc(S.dirQ||"")}">
+      ${rail}
+    </nav>
+    <main>
+      <div class="dhead"><h1>${esc(root.name)}</h1></div>
+      ${root.description?`<p class="rootdesc">${esc(root.description)}</p>`:""}
+      ${charterLines(root.ref)}
+      ${orgDiagram(root.name, (kids.get(root.ref)||[]).map(c=>c.name))}
+      ${sections}
+      ${dirCharterSection(byRef, kids, root)}
+    </main></div>`;
+}
+
 SCREENS.departments = () => {
-  const t = META.tenant_id;
-  const vis = DOMAINS.filter(d=>(S.showAcme || inTenant(d,t)) && (S.showRetired || isLive(d)));
+  const vis = DOMAINS.filter(d=>S.showRetired || isLive(d));
   const roots = vis.filter(d=>!d.parent_ref || !vis.find(p=>p.ref===d.parent_ref));
-  /* Tenant of record leads its own org chart. Both tenants' roots are "D0"
-     (D-numbering is per tenant), so a path sort ties and whichever row the
-     server happened to yield first won -- which could be T-acme's. The server
-     now orders this deliberately; sort defensively here too, because "whose
-     org is this" must not depend on a remote sort key. Array#sort is stable,
-     so everything else keeps its order. */
-  roots.sort((a,b)=>(inTenant(a,t)?0:1)-(inTenant(b,t)?0:1));
   const kids = ref => vis.filter(d=>d.parent_ref===ref)
                          .sort((a,b)=>a.ts_minted_ms-b.ts_minted_ms);
   const draft = S.view==="draft";
@@ -2099,11 +2857,10 @@ SCREENS.departments = () => {
   const card = d => {
     const cs = chartersOf(d.ref).filter(c=>c.status!=="retired");
     const ret = st(d)==="retired";
-    const acme = d.tenant_id!==t;
     const n = turnsOn(d.ref);
     /* collapsed subtree count lives on the tile — nothing disappears silently */
     const hidden = (kids(d.ref).length && S.collapsed.has(d.ref)) ? subtreeN(d.ref) : 0;
-    return `<button class="ocard ${ret?"retired":""} ${acme?"acme":""}" data-ref="${d.ref}"
+    return `<button class="ocard ${ret?"retired":""}" data-ref="${d.ref}"
         data-kids="${kids(d.ref).length?1:0}"
         ${draft && !ret ? 'draggable="true"' : ''} aria-selected="${S.sel===d.ref}">
       ${n?`<span class="turnbadge">${n}</span>`:""}
@@ -2113,7 +2870,6 @@ SCREENS.departments = () => {
         <span>${cs.length?cs.length+" chr":'<span style="color:var(--warn)">no charter</span>'}</span>
         <span>${placementsOf(d.ref).length} plc</span>
         ${ret?'<span style="color:var(--block)">retired</span>':""}
-        ${acme?`<span style="color:var(--warn)">${esc(d.tenant_id)}</span>`:""}
         ${hidden?`<span class="below">${hidden} below</span>`:""}
       </span>
     </button>`;
@@ -2143,7 +2899,6 @@ SCREENS.departments = () => {
       ${sel.description?`<p style="font-size:11.5px">${esc(sel.description)}</p>`:
         `<p style="font-size:11.5px;color:var(--faint)">No description — system-minted nodes carry none.</p>`}
       <div class="kv"><b>Status</b><span>${esc(st(sel))}${sel.retired_at_ms?" · "+fmt(sel.retired_at_ms):""}</span></div>
-      <div class="kv"><b>Tenant</b><span>${esc(sel.tenant_id)}</span></div>
       <div class="kv"><b>Charters</b><span>${cs.length||"none"}</span></div>
       <div class="kv"><b>Placements</b><span class="num">${ps.length}</span></div>
       ${succ.length?`<div class="kv"><b>Succeeded by</b><span>${succ.map(s=>esc(s.name)).join(" · ")}</span></div>`:""}
@@ -2165,17 +2920,15 @@ SCREENS.departments = () => {
     <div class="facets">
       <span class="fl">View</span>
       <span class="seg">
-        <button type="button" data-view="live"  aria-pressed="${!draft}">Live</button>
+        <button type="button" data-view="live"  aria-pressed="${S.view==="live"}">Live</button>
         <button type="button" data-view="draft" aria-pressed="${draft}">Draft${S.draft.ops.length?` · ${S.draft.ops.length}`:""}</button>
+        <button type="button" data-view="dir"   aria-pressed="${S.view==="dir"}"
+                title="The published domains page layout, over this registry">Directory</button>
       </span>
 ${DOMAINS.some(d=>st(d)==="retired")
         ? `<button class="btn" data-toggle="showRetired" aria-pressed="${S.showRetired}">Show retired</button>` : ""}
-      ${TENANTS.length > 1
-        /* condition on the TENANT LIST, not on the rows already fetched: under
-           ?tenant= the fetched rows are all one tenant by construction, so the
-           old test could never be true and the scope could never be widened */
-        ? `<button class="btn" data-toggle="showAcme" aria-pressed="${S.showAcme}">Show other tenants</button>` : ""}
     </div>
+    ${S.view==="dir" ? domainsDirectory() : `
     ${draft?`<div class="note w"><b>Draft — nothing on this canvas touches the registry.</b>
        Drag a department onto another to compose a MOVE. Every other operation is a checklist,
        and there is no Apply button in this tier.</div>`:""}
@@ -2208,13 +2961,13 @@ ${DOMAINS.some(d=>st(d)==="retired")
         ${fold("dept.insp", "Inspector", sel ? dPath(sel.ref) + " " + sel.name : "nothing selected", insp)}
         ${fold("dept.metrics", "Metrics", null, `
           <div class="metrics" style="margin:0">
-            <div>live<b>${live().filter(d=>inTenant(d,META.tenant_id)).length}</b></div>
+            <div>live<b>${live().length}</b></div>
             <div>retired<b>${DOMAINS.filter(d=>!isLive(d)).length}</b></div>
             <div>max depth<b>${simNum(sim, sim.maxDepth)}</b></div>
             <div>findings<b>${simNum(sim, sim.findings.length)}</b></div>
           </div>`)}
       </div>
-    </div>`;
+    </div>`}`;
 };
 
 /* ── S2 Charters ── */
@@ -2290,17 +3043,12 @@ SCREENS.charters = () => {
 SCREENS.placements = () => {
   const modes = ["all","match","floor"];
   let rows = PLACEMENTS.filter(p=>S.pmode==="all"||p.mode===S.pmode);
-  if (S.showAcme===false) rows = rows.filter(p=>p.tenant_id===META.tenant_id);
   rows = rows.slice().sort((a,b)=>b.ts_ms-a.ts_ms);
   const held = PLACEMENTS.filter(p=>p.mode==="floor");
   return `
     <div class="facets">
       <span class="fl">Mode</span>
       <span class="seg">${modes.map(m=>`<button type="button" data-pmode="${m}" aria-pressed="${S.pmode===m}">${m}</button>`).join("")}</span>
-      ${TENANTS.length > 1 ? `<button class="btn" data-toggle="showAcme" aria-pressed="${S.showAcme}"
-          style="margin-left:auto">Show other tenants</button>`
-        : `<span style="margin-left:auto;font-size:10.5px;color:var(--faint)">one tenant in this
-            registry — nothing to widen to</span>`}
     </div>
     ${held.length?`<div class="note w"><b>${held.length} held at ancestor.</b>
       These resolved below the ${CONFIDENCE_FLOOR} confidence floor, so the engine held them at the
@@ -2311,7 +3059,7 @@ SCREENS.placements = () => {
     </tr></thead><tbody>
     ${rows.map(p=>{
       const d = byRef(p.domain_ref); const floor = p.mode==="floor";
-      return `<tr class="${p.tenant_id!==META.tenant_id?"":""}" style="${p.tenant_id!==META.tenant_id?"border-left:2px solid var(--warn)":""}">
+      return `<tr>
         <td class="k">${esc(p.work_ref.id)}</td>
         <td>${d?esc(dPath(d.ref)+" "+d.name):'<span class="pill p-block">unresolvable</span>'}</td>
         <td>${esc(p.charter_id||"—")}</td>
@@ -2473,8 +3221,6 @@ SCREENS.history = () => {
             happened, not what it changed from. Enriched events carry before/after.</div>`:""}
           ${e.before&&e.after?`<div class="det">${esc(e.before.name)} → ${esc(e.after.name||e.before.name)}
             ${e.placements_repointed?` · ${e.placements_repointed} placement(s) repointed`:""}</div>`:""}
-          ${e.event==="domain_restructured"&&!("tenant_id" in e)?`<div class="det" style="color:var(--faint)">
-            No tenant_id on this event type — history cannot be partitioned by tenant.</div>`:""}
         </li>`;}).join("")}
     </ul>
     <div class="sepiaband">
@@ -2686,44 +3432,6 @@ SCREENS.skills = () => {
     ${provs.map(group).join("")}`;
 };
 
-/* ── S9 Tenants ──
-   The counts are the SERVER's (GET /api/tenants runs tenant_refs/charters_for/
-   all_placements per tenant); they are no longer re-derived here from whatever
-   subset the current scope happened to fetch, which under a ?tenant= scope
-   would have reported every other tenant as zero. */
-SCREENS.tenants = () => {
-  if (!TENANTS.length) return `<div class="zero"><h4>No tenants</h4>
-    <p>${esc(S.tenantsError || "GET /api/tenants returned nothing.")}</p></div>`;
-  return `
-    <div class="facets">
-      <span class="fl">Viewing</span><code>${esc(S.tenant||"—")}</code>
-      <button class="btn" id="openGate" style="margin-left:auto">Switch tenant…</button>
-    </div>
-    <div class="note w"><b>Filtering is a scope, not a boundary.</b> Every request this panel makes
-      carries <code>?tenant=</code>, and the engine's own <code>tenant_refs()</code> narrows the read.
-      That is a misrouting guard — it is not access control, and the site generator still ignores
-      <code>tenant_id</code>.</div>
-    <div class="tw"><table><thead><tr>
-      <th>Tenant</th><th>Root</th><th>Domains</th><th>Charters</th><th>Placements</th><th></th>
-    </tr></thead><tbody>
-    ${TENANTS.map(r=>`<tr class="${r.tenant_id===S.tenant?"sel":""}">
-      <td class="k">${esc(r.tenant_id)}
-        ${r.is_default?' <span class="pill p-acc">of record</span>':""}
-        ${r.tenant_id===S.tenant?' <span class="pill p-ok">viewing</span>':""}</td>
-      <td>${r.root_name?esc(r.root_name):'<span style="color:var(--faint)">none</span>'}</td>
-      <td class="num">${r.domains}${r.domains_retired?` <span class="pill p-mut">${r.domains_retired} retired</span>`:""}</td>
-      <td class="num">${r.charters}</td>
-      <td class="num">${r.placements}</td>
-      <td>${r.tenant_id===S.tenant?"":
-          `<button class="btn" data-pick-tenant="${esc(r.tenant_id)}">View</button>`}</td>
-    </tr>`).join("")}
-    </tbody></table></div>
-    <p style="margin-top:11px;font-size:11.5px;color:var(--muted)">There is no tenant table in the
-      engine — a tenant is a <code>tenant_id</code> observed on a domain or a placement, so this list
-      is derived on every request. The tenant of record (<code>PLACEMENT_TENANT</code>) is always
-      listed even at zero counts, because it is where an unscoped write would land.</p>`;
-};
-
 /* ── S10 Settings ──
    Every control here acts. The provider list is the live one from
    GET /api/providers: `claude` is selectable, and the two that cannot run are
@@ -2853,6 +3561,342 @@ SCREENS.git = () => {
       : `<p style="color:var(--faint);margin:0">No commits read.</p>`)}`;
 };
 
+/* ── S8b Automation ──
+   The dispatcher and the scheduler, and they are NOT the same kind of thing:
+
+     Dispatcher  has real state. bin/sutra-dispatch and bin/sutra-atom append
+                 ledgers under <workdir>/.sutra/, the gate hooks append verdicts
+                 under <workdir>/.enforcement/. This reads them; it never writes.
+
+     Scheduler   has none. Cadence is a daemon-side tick in the Native engine
+                 (ADR-017 -- deliberately not OS cron/launchd), the daemon is not
+                 running in this install, and the v1.0 scheduler does not evaluate
+                 cron expressions at all. So this reports LIVENESS and says why
+                 there is nothing else to report.
+
+   The distinction is the point. A "Cron" table showing "0 runs today" would be a
+   claim that a scheduler ran and found nothing to do. Nothing ran. */
+SCREENS.automation = () => {
+  if (S.autoError) return `<div class="zero"><h4>Automation unavailable</h4>
+    <p>${esc(S.autoError)}</p></div>`;
+  if (!S.auto) return `<div class="zero"><h4>Reading…</h4>
+    <p>${esc(TITLES.automation[1])}</p></div>`;
+
+  const a = S.auto, d = a.dispatcher || {}, sch = a.scheduler || {};
+  const led = d.ledger || {}, atoms = d.atoms || {}, gate = d.gate || {};
+
+  const tally = obj => {
+    const ks = Object.keys(obj || {});
+    return ks.length ? ks.sort().map(k=>
+      `<span class="pill p-mut">${esc(k)} ${obj[k]}</span>`).join(" ") : "";
+  };
+
+  /* A file that is not there and a file that is there and empty are different
+     facts, and only the second one means "nothing has been dispatched". */
+  const source = (label, o) => `<div class="kv"><b>${esc(label)}</b>
+    <span><code>${esc(o.path||"")}</code> · ${o.rows
+      ? `<b>${o.rows}</b> row${o.rows===1?"":"s"}`
+      : `<span style="color:var(--faint)">no rows</span>`}</span></div>`;
+
+  const rows = (list, cols) => !list || !list.length ? "" : `
+    <div class="tw"><table><thead><tr>${cols.map(c=>`<th>${esc(c[0])}</th>`).join("")}</tr></thead>
+      <tbody>${list.slice().reverse().map(r=>`<tr>${cols.map(c=>{
+        const v = c[1](r);
+        return `<td>${v===undefined||v===null||v===""
+          ? '<span style="color:var(--faint)">—</span>' : esc(String(v))}</td>`;
+      }).join("")}</tr>`).join("")}</tbody></table></div>`;
+
+  const dispatched = (led.rows||0) + (atoms.rows||0) + (gate.rows||0);
+
+  return `
+    <div class="facets">
+      <span class="fl">Workdir</span><code>${esc(a.root||"—")}</code>
+      ${a.root_exists ? "" : `<span class="pill p-block" style="margin-left:auto">does not exist</span>`}
+    </div>
+
+    <section class="chsec"><h2 class="chh">Dispatcher</h2>
+      ${source("Dispatch ledger", led)}
+      ${source("Atom ledger", atoms)}
+      ${source("Gate verdicts", gate)}
+      ${led.too_large?`<div class="note w"><b>Ledger too large to read.</b>
+        It is past the size this screen will walk, so no rows are shown rather than
+        a partial tail presented as the whole.</div>`:""}
+      ${dispatched ? `
+        ${tally(led.kinds) ? `<p style="margin:9px 0 4px">${tally(led.kinds)}</p>` : ""}
+        ${tally(gate.verdicts) ? `<p style="margin:4px 0 9px">${tally(gate.verdicts)}</p>` : ""}
+        ${rows(led.recent, [["Kind",r=>r.kind],["Unit",r=>r.unit||r.atom_id],
+                            ["Class",r=>r.class],["Model",r=>r.model],
+                            ["When",r=>r.ts?fmt(r.ts*1000):""]])}
+        ${rows(gate.recent, [["Verdict",r=>r.verdict],["Reason",r=>r.reason],
+                             ["Tool",r=>r.tool],["Target",r=>r.target],
+                             ["When",r=>r.ts?fmt(r.ts*1000):""]])}`
+      : `<div class="zero"><h4>Nothing dispatched here</h4>
+          <p>No dispatch, atom or gate rows under <code>${esc(a.root||"")}</code>.
+             These files are written by the gate hooks in whatever project the agent
+             runs in — this is the configured workdir, which may simply not be that
+             project. Nothing is inferred from their absence.</p></div>`}
+    </section>
+
+    <section class="chsec"><h2 class="chh">Cron / scheduler</h2>
+      <div class="kv"><b>Daemon</b><span>${sch.daemon_running
+        ? '<span class="pill p-ok">running</span>'
+        : '<span class="pill p-mut">not running</span>'} · <code>${esc(sch.pid_file||"")}</code></div>
+      <div class="kv"><b>Ready</b><span>${sch.ready
+        ? '<span class="pill p-ok">yes</span>' : '<span class="pill p-mut">no</span>'}</span></div>
+      <div class="kv"><b>Triggers</b><span>${sch.triggers_dir_exists
+        ? `<b>${(sch.triggers||[]).length}</b> in <code>${esc(sch.triggers_dir||"")}</code>`
+        : `<span style="color:var(--faint)">no trigger store at</span> <code>${esc(sch.triggers_dir||"")}</code>`}</span></div>
+      <div class="note"><b>There is no cron here, and that is the finding.</b>
+        ${esc(sch.note||"")}</div>
+    </section>`;
+};
+
+/* ── S8c Routines ──
+   Local scheduled tasks. Claude Code calls the umbrella noun "Routines" and
+   offers Local vs Cloud; only Local is something this panel can honestly own,
+   so that is the badge. The five schedule presets are Claude's own
+   (Manual / Hourly / Daily / Weekdays / Weekly) plus a custom cron escape.
+
+   The honesty rules this screen follows, all of them because the alternative is
+   a plausible lie:
+     - never "0 runs" -- "never run" and "ran and produced nothing" differ
+     - a green Run now proves the RUNNER, not the schedule; say so
+     - saved-but-not-loaded is not "scheduled"; show launchd's own stderr
+     - next-run is NOT computed here: launchd decides, and a number we invented
+       would be wrong the first time the Mac slept */
+function rtPresetForm(f){
+  const P = [["manual","Manual"],["hourly","Hourly"],["daily","Daily"],
+             ["weekdays","Weekdays"],["weekly","Weekly"],["custom","Custom cron"]];
+  const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const needsTime = ["daily","weekdays","weekly"].includes(f.preset);
+  /* The controls that make up ONE schedule stay on one line: a preset, a time and
+     a day are a single thought, and stacking them full-width read as three
+     unrelated fields. */
+  const hint = {
+    manual:"Never fires on its own — you run it from here.",
+    hourly:"Every hour, at the minute you choose.",
+    daily:"Every day, including weekends.",
+    weekdays:"Monday to Friday only.",
+    weekly:"Once a week, on the day you choose.",
+    custom:"Five-field cron, local time. At most one run per hour."
+  }[f.preset] || "";
+  return `<div class="rfrow"><label for="rf-preset">Schedule</label><div class="rfield">
+    <div class="rinline">
+      <select id="rf-preset" data-rtf="preset">${P.map(([v,n])=>
+        `<option value="${v}" ${f.preset===v?"selected":""}>${n}</option>`).join("")}</select>
+      ${f.preset==="hourly"?`<span class="sep">at :</span>
+        <input data-rtf="minute" style="width:66px" inputmode="numeric"
+               value="${esc(String(f.minute??0))}" aria-label="Minute past the hour">`:""}
+      ${needsTime?`<input data-rtf="hour" style="width:66px" inputmode="numeric"
+          value="${esc(String(f.hour??9))}" aria-label="Hour (24h)">
+        <span class="sep">:</span>
+        <input data-rtf="minute" style="width:66px" inputmode="numeric"
+          value="${esc(String(f.minute??0))}" aria-label="Minute">`:""}
+      ${f.preset==="weekly"?`<select data-rtf="weekday" aria-label="Day of week"
+        >${DAYS.map((d,i)=>`<option value="${i}"
+          ${String(f.weekday??1)===String(i)?"selected":""}>${d}</option>`).join("")}</select>`:""}
+      ${f.preset==="custom"?`<input data-rtf="cron" style="flex:1;min-width:180px"
+          placeholder="0 9 * * 1-5" value="${esc(f.cron||"")}" aria-label="Cron expression">`:""}
+    </div>
+    <span class="hint">${esc(hint)}${needsTime?" 24-hour clock, this Mac's local time.":""}</span>
+  </div></div>`;
+}
+
+function rtCreateForm(){
+  const f = S.rtForm; if (!f) return "";
+  const st = S.rt || {};
+  const row = (id,label,control,hint) => `<div class="rfrow">
+    <label for="rf-${id}">${esc(label)}</label>
+    <div class="rfield">${control}${hint?`<span class="hint">${hint}</span>`:""}</div></div>`;
+  return `<section class="chsec" style="margin-bottom:14px">
+    <h2 class="chh">New routine <span class="pill p-mut">Local</span></h2>
+    <p style="margin:0 0 10px;color:var(--muted);font-size:11.5px;max-width:70ch">
+      Runs on this Mac, on a schedule, with nobody watching. It is not a cloud
+      routine and does not run while the Mac is off.</p>
+    ${S.rtError?`<div class="note b" style="white-space:pre-wrap">${esc(S.rtError)}</div>`:""}
+    <div class="rform">
+      ${row("id","Name",
+        `<input id="rf-id" data-rtf="id" placeholder="morning-brief"
+                spellcheck="false" autocapitalize="off" value="${esc(f.id||"")}">`,
+        "Lower-case with dashes. Also the folder name and the launchd label.")}
+      ${row("description","Description",
+        `<input id="rf-description" data-rtf="description"
+                placeholder="What changed in sutra since yesterday"
+                value="${esc(f.description||"")}">`,
+        "One line. This is what makes a list of routines scannable.")}
+      ${row("prompt","Instructions",
+        `<textarea id="rf-prompt" data-rtf="prompt"
+           placeholder="What Sutra should do on each run">${esc(f.prompt||"")}</textarea>`,
+        "What Sutra runs on each fire. Drag the corner to make it taller.")}
+      ${row("cwd","Working folder",
+        `<input id="rf-cwd" data-rtf="cwd" placeholder="~/some/project"
+                spellcheck="false" value="${esc(f.cwd||"")}">`,
+        "Must exist, and be inside your home directory.")}
+      ${row("model","Model",
+        `<select id="rf-model" data-rtf="model">${(st.models||[""]).map(m=>
+          `<option value="${esc(m)}" ${f.model===m?"selected":""}
+            >${m||"CLI default"}</option>`).join("")}</select>`, "")}
+      ${row("permission_mode","Permission",
+        `<select id="rf-permission_mode" data-rtf="permission_mode">${
+          (st.permission_modes||["dontAsk"]).map(m=>`<option value="${esc(m)}"
+            ${f.permission_mode===m?"selected":""}>${esc(m)}</option>`).join("")}</select>`,
+        "A routine runs unattended, so the modes that write files without asking " +
+        "are not offered here at all.")}
+      ${row("max_budget_usd","Budget",
+        `<div class="rinline"><span class="sep">$</span>
+          <input id="rf-max_budget_usd" data-rtf="max_budget_usd" style="width:96px"
+                 inputmode="decimal" value="${esc(String(f.max_budget_usd??1))}"></div>`,
+        "Per run. A schedule with no ceiling is how it becomes a bill.")}
+      ${rtPresetForm(f)}
+    </div>
+    <div class="rfoot">
+      <button class="btn" type="button" data-rtsave ${S.rtBusy?"disabled":""}>
+        ${S.rtBusy==="create"?"Creating…":"Create routine"}</button>
+      <button class="btn" type="button" data-rtcancel>Cancel</button>
+    </div>
+  </section>`;
+}
+
+function rtRunRow(r){
+  const pill = r.outcome==="ok" ? `<span class="pill p-ok">ok</span>`
+    : r.outcome==="skipped" ? `<span class="pill p-mut">skipped</span>`
+    : `<span class="pill p-block">${esc(r.outcome||"?")}</span>`;
+  return `<tr><td>${pill}</td><td class="num">${esc(fmt(Date.parse(r.started_at)))}</td>
+    <td>${esc(r.trigger||"")}</td><td class="num">${r.duration_s??"—"}s</td>
+    <td class="num">${r.cost_usd!=null?"$"+Number(r.cost_usd).toFixed(4):"—"}</td>
+    <td>${r.detail?esc(String(r.detail).slice(0,120)):""}</td></tr>`;
+}
+
+/* What the chat agent asked for. Rendered ABOVE the routines themselves and on
+   the empty screen too -- a proposal the operator cannot see is a request that
+   silently expires, which is worse than not offering the capability at all.
+
+   The agent's own summary is shown verbatim and is never trusted to decide
+   anything: it is a label written by an LLM acting on text that may not have
+   come from the operator. The ARGUMENTS are what actually applies, so they are
+   shown too, in full. */
+function proposalsHtml(){
+  const all = S.props || [];
+  const open = all.filter(p=>p.status==="pending");
+  if (!open.length && !S.propError) return "";
+  if (S.propError) return `<div class="note b"><b>Could not read proposals.</b>
+    ${esc(S.propError)}</div>`;
+  const arg = p => {
+    const a = p.args || {};
+    if (p.kind === "routine.create")
+      return `<code>${esc(a.id||"")}</code> · ${esc((a.schedule||{}).preset||"manual")}
+              · runs in <code>${esc(a.cwd||"")}</code>
+              · <code>${esc(a.permission_mode||"dontAsk")}</code>
+              · $${esc(String((a.opts||{}).max_budget_usd??"?"))}/run`;
+    if (p.kind === "routine.update")
+      return `<code>${esc(a.id||"")}</code> — changes:
+              <code>${esc(Object.keys(a.patch||{}).join(", "))}</code>`;
+    return `<code>${esc(a.id||"")}</code>`;
+  };
+  return `<div class="note" style="border-left-color:var(--acc)">
+    <b>${open.length} request${open.length===1?"":"s"} from the chat</b>
+    <p style="margin:5px 0;color:var(--faint)">Sutra asked to do the following.
+      Nothing has happened yet — these apply only if you approve them.</p>
+    ${open.map(p=>`<div class="kv" style="align-items:flex-start">
+      <b>${esc(p.kind.replace("routine.",""))}</b>
+      <span>
+        <div>${esc(p.summary||"")}</div>
+        <div class="why" style="margin-top:3px">${arg(p)}</div>
+        <div style="margin-top:7px">
+          <button class="btn" type="button" data-prok="${esc(p.id)}"
+            ${S.propBusy?"disabled":""}>${S.propBusy===p.id?"Applying…":"Approve"}</button>
+          <button class="btn" type="button" data-prno="${esc(p.id)}"
+            ${S.propBusy?"disabled":""}>Reject</button>
+        </div>
+      </span></div>`).join("")}
+  </div>`;
+}
+
+function rtCard(r){
+  const runs = S.rtRuns[r.id];
+  const sched = (r.schedule||{}).human || "—";
+  const state = !r.enabled ? `<span class="pill p-mut">paused</span>`
+    : !r.loaded ? `<span class="pill p-warn">not loaded</span>`
+    : `<span class="pill p-ok">active</span>`;
+  /* "never run" and "0 runs" are different claims. Only one of them is true here. */
+  const last = r.never_run
+    ? `<span class="pill p-warn">never run</span> <span class="why">Run it once now
+        to check it works.</span>`
+    : r.last_run
+      ? `${r.last_run.outcome==="ok"?`<span class="pill p-ok">last ok</span>`
+          :`<span class="pill p-block">last ${esc(r.last_run.outcome)}</span>`}
+         <span class="why">${esc(fmt(Date.parse(r.last_run.started_at)))}${
+           r.last_run.cost_usd!=null?" · $"+Number(r.last_run.cost_usd).toFixed(4):""}</span>`
+      : "";
+  return `<section class="chsec" data-rt="${esc(r.id)}">
+    <h2 class="chh">${esc(r.id)} <span class="pill p-mut">Local</span></h2>
+    <p style="margin:0 0 8px;color:var(--muted)">${esc(r.description||"")}</p>
+    <div class="kv"><b>Schedule</b><span>${esc(sched)} ${state}</span></div>
+    <div class="kv"><b>Last run</b><span>${last}</span></div>
+    <div class="kv"><b>Folder</b><span><code>${esc(r.cwd)}</code>${
+      r.cwd_exists?"":` <span class="pill p-block">missing</span>`}</span></div>
+    <div class="kv"><b>Runs as</b><span><code>${esc(r.permission_mode)}</code>${
+      r.model?` · <code>${esc(r.model)}</code>`:""}</span></div>
+    ${!r.enabled?`<div class="note"><b>Paused.</b> It will not fire on its own.
+      Run now still works, so pausing does not cost you the ability to test it.</div>`:""}
+    ${r.enabled&&!r.loaded?`<div class="note b"><b>Saved as active, but launchd has not
+      loaded it — it will not fire.</b> Use Re-check after fixing, or delete and
+      recreate it.</div>`:""}
+    ${r.never_fired_on_schedule?`<div class="note w"><b>Never fired on schedule.</b>
+      Every run so far was started by hand. Run now ignores the schedule, so a green
+      run proves the routine works, not that the schedule does.</div>`:""}
+    <p style="margin:9px 0 0">
+      <button class="btn" type="button" data-rtrun="${esc(r.id)}" ${S.rtBusy?"disabled":""}
+        >${S.rtBusy==="/"+r.id+"/run"?"Starting…":"Run now"}</button>
+      <button class="btn" type="button" data-rttoggle="${esc(r.id)}" data-en="${r.enabled?0:1}"
+        >${r.enabled?"Pause":"Resume"}</button>
+      <button class="btn" type="button" data-rtruns="${esc(r.id)}">${
+        runs?"Refresh runs":"Show runs"}</button>
+      <button class="btn" type="button" data-rtdel="${esc(r.id)}">Delete</button></p>
+    ${runs?(runs.error?`<div class="note b">${esc(runs.error)}</div>`
+      : runs.total===0 ? `<div class="note">No runs recorded yet.</div>`
+      : `<div class="tw"><table><thead><tr><th>Outcome</th><th>Started</th><th>Trigger</th>
+          <th>Took</th><th>Cost</th><th>Detail</th></tr></thead>
+          <tbody>${runs.runs.map(rtRunRow).join("")}</tbody></table></div>`):""}
+  </section>`;
+}
+
+SCREENS.routines = () => {
+  if (S.rtError && !S.rt) return `<div class="zero"><h4>Routines unavailable</h4>
+    <p>${esc(S.rtError)}</p></div>`;
+  if (!S.rt) return `<div class="zero"><h4>Reading…</h4>
+    <p>${esc(TITLES.routines[1])}</p></div>`;
+  const st = S.rt, list = st.routines || [];
+
+  /* The sharp edge of LOCAL scheduling, stated at the top rather than discovered
+     after a missed morning. */
+  const caveat = `<div class="note"><b>These run on this Mac, not in the cloud.</b>
+    ${esc(st.note||"")}</div>`;
+  const orphan = (st.orphans||[]).length ? `<div class="note w">
+    <b>${st.orphans.length} scheduled job${st.orphans.length===1?"":"s"} with no routine
+    behind ${st.orphans.length===1?"it":"them"}.</b> Left over from a deleted routine or an
+    older install; ${st.orphans.length===1?"it":"they"} would still fire.
+    <button class="btn" type="button" data-rtfix>Remove them</button></div>` : "";
+  const banner = S.rtMsg ? `<div class="note"><b>${esc(S.rtMsg)}</b></div>`
+    : (S.rtError ? `<div class="note b">${esc(S.rtError)}</div>` : "");
+
+  if (!list.length && !S.rtForm) return `${caveat}${orphan}${banner}${proposalsHtml()}
+    <div class="zero"><h4>No routines yet</h4>
+      <p>A routine is a prompt this Mac runs on a schedule — a morning brief, a nightly
+         check, a weekly summary — without you opening anything.</p>
+      <p style="color:var(--faint)">Stored in <code>${esc(st.store)}</code>, scheduled with
+         a launchd user agent. Nothing runs until you create one.</p>
+      <p><button class="btn" type="button" data-rtnew>New routine</button></p></div>`;
+
+  return `${caveat}${orphan}${banner}${proposalsHtml()}
+    <p style="margin-bottom:10px"><button class="btn" type="button" data-rtnew
+      >New routine</button> <button class="btn" type="button" data-rtreload>Re-check</button></p>
+    ${rtCreateForm()}
+    ${list.map(r=>r.unreadable
+      ? `<div class="note b"><b>${esc(r.id)} could not be read.</b> ${esc(r.unreadable)}</div>`
+      : rtCard(r)).join("")}`;
+};
+
 /* Colour a unified diff. Line-based on purpose: a token-level differ would be a
    second, subtly different opinion about what changed from the one git already
    gave us, and this screen's job is to show git's answer. */
@@ -2867,6 +3911,106 @@ function diffHtml(text){
   }).join("\n");
 }
 
+/* ── updates ──────────────────────────────────────────────────────────────
+   TWO components, and they are NOT the same kind of thing. Showing them as one
+   "check for updates" button would be a lie about how either behaves:
+
+     Desktop app  checked in the background by the Electron shell and installed
+                  automatically (mandatory, founder direction 2026-08-06). The
+                  staged build applies on quit; the banner is the countdown.
+                  These buttons are the manual path, which still matters: it is
+                  what remains after the automatic path has given up on a
+                  release.
+     Plugin       updates itself once a day at session start, applying to the
+                  NEXT session. The button only makes it immediate.
+
+   Nothing on THIS screen runs on load: these are network calls, and a panel
+   that phones GitHub every time it opens is a different thing from one with a
+   button. S.upd stays null until asked. The banner's poll is a different route
+   (/api/updates/staged) precisely because that one touches nothing remote. */
+function updatesHtml(){
+  const u = S.upd;
+  const busy = S.updBusy;
+
+  if (!u && !S.updError) return `
+    <section class="chsec"><h2 class="chh">Updates</h2>
+      <p style="font-size:11.5px;color:var(--muted);margin-bottom:9px">
+        The desktop app and the Claude Code plugin update by different routes.
+        Nothing is checked until you ask — this reaches GitHub.</p>
+      <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
+        ${busy==="check"?"Checking…":"Check for updates"}</button>
+    </section>`;
+
+  if (S.updError) return `
+    <section class="chsec"><h2 class="chh">Updates</h2>
+      <div class="note b"><b>Could not check.</b> ${esc(S.updError)}</div>
+      <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
+        ${busy==="check"?"Checking…":"Try again"}</button>
+    </section>`;
+
+  /* One row per component. `managed:false` is a real answer, not an error --
+     a source checkout has no .app to replace, and that is worth saying. */
+  const row = (c, label, installBtn) => {
+    if (!c.managed) return `<div class="kv"><b>${esc(label)}</b>
+      <span><span class="pill p-mut">not managed here</span> ${esc(c.reason||"")}</span></div>`;
+    const cur = c.installed || "unknown";
+    const state = c.error
+      ? `<span class="pill p-warn">check failed</span> <span class="why">${esc(c.error)}</span>`
+      : c.update_available
+        ? `<span class="pill p-acc">${esc(c.latest)} available</span>`
+        : `<span class="pill p-ok">up to date</span>`;
+    return `<div class="kv"><b>${esc(label)}</b><span>
+      <code>${esc(cur)}</code> ${state}
+      ${c.update_available && !c.error ? installBtn : ""}
+    </span></div>
+    <div class="kv"><b></b><span class="why">${esc(c.note||"")}</span></div>`;
+  };
+
+  const d = u.desktop || {}, p = u.plugin || {};
+  const dBtn = `<button class="btn" type="button" data-upd="desktop"
+      ${busy?"disabled":""}>${busy==="desktop"?"Downloading…":"Download & install"}</button>`;
+  const pBtn = `<button class="btn" type="button" data-upd="plugin"
+      ${busy?"disabled":""}>${busy==="plugin"?"Updating…":"Update now"}</button>`;
+
+  return `
+    <section class="chsec"><h2 class="chh">Updates</h2>
+      ${S.updMsg?`<div class="note"><b>${esc(S.updMsg)}</b></div>`:""}
+      ${row(d, "Desktop app", dBtn)}
+      ${row(p, "Plugin", pBtn)}
+      <p style="margin-top:9px">
+        <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
+          ${busy==="check"?"Checking…":"Re-check"}</button>
+        ${d.release_url?`<a class="btn" href="${esc(d.release_url)}" target="_blank"
+           rel="noreferrer">Release notes</a>`:""}
+      </p>
+      ${d.update_available?`<div class="note"><b>Installing the desktop update quits Sutra.</b>
+        The download is checksum-verified and Gatekeeper-checked before anything is replaced;
+        the swap happens once the app exits, and it reopens itself.</div>`:""}
+    </section>`;
+}
+
+async function checkUpdates(){
+  S.updBusy = "check"; S.updError = null; S.updMsg = null; render();
+  try { S.upd = await apiGet("/api/updates"); }
+  catch (e) { S.updError = e.message; S.upd = null; }
+  S.updBusy = null; render();
+}
+
+async function installUpdate(which){
+  S.updBusy = which; S.updError = null; S.updMsg = null; render();
+  try {
+    const r = await apiPost("/api/updates/" + which, {});
+    S.updMsg = r.note || "Done.";
+    /* Re-read rather than assuming the install moved the version: the plugin
+       reports "already current" too, and claiming a move that did not happen
+       is the kind of lie an operator finds out about later. */
+    try { S.upd = await apiGet("/api/updates"); } catch (e) {}
+  } catch (e) {
+    S.updError = e.message;
+  }
+  S.updBusy = null; render();
+}
+
 SCREENS.settings = () => {
   if (!SETTINGS) return `<div class="zero"><h4>Settings unavailable</h4>
     <p>${esc(S.runtimeError || S.setError || "GET /api/settings has not answered.")}</p>
@@ -2874,6 +4018,7 @@ SCREENS.settings = () => {
       runtime call failed, so the rest of the panel is still live. Reload to retry.</p>`:""}</div>`;
   const st = SETTINGS;
   const active = st.provider;
+  const upd = updatesHtml();
   const banner = S.setError
     ? `<div class="note b"><b>The last change was refused.</b> ${esc(S.setError)}</div>`
     : S.setOk ? `<div class="note"><b>Saved.</b> ${esc(S.setOk)}</div>` : "";
@@ -2927,6 +4072,7 @@ SCREENS.settings = () => {
 
   return `
     ${banner}
+    ${upd}
     ${fold("set.prov", "Provider", esc(active||"none runnable"), `
       <p style="margin-bottom:9px">Which AI CLI this panel drives. A provider is offered only when
         its binary is on PATH, it has a config directory, <i>and</i> this build has an adapter for it;
@@ -2999,15 +4145,10 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
-<<<<<<< HEAD
-  tenants:["Tenants","GET /api/tenants — derived, no tenant table"],
-  settings:["Settings","~/.sutra-ui/settings.json · PATH"]};
-=======
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
   settings:["Settings","~/.sutra-ui/settings.json · PATH"],
   balance:["Balance","holding/state/balance/ — not yet observing · design preview"]};
->>>>>>> d1d84fd (sutra-ui: Balance design-preview screen in the desktop panel (v2.73.0))
 /* ── a session's routing path, as a chart ──
    Honest model: the path is SUCCESSIVE PLACEMENT, not delegation. Each turn resolves to
    exactly one accountable department; departments never invoke one another (no such channel
@@ -3055,22 +4196,110 @@ function routingChart(s){
     </div>`;
 }
 
+/* ── permission mode, at chat level ─────────────────────────────────────────
+   This used to live ONLY in Settings, behind an env var set when starting the
+   server. For a Finder-launched .app that means editing a plist -- so the panel
+   was showing a control, refusing it, and telling the operator to do something
+   they realistically could not. It belongs next to the composer, where the
+   decision is actually made, the way Claude Code puts it in the session.
+
+   The dangerous modes are still not one click away: choosing one opens an
+   explicit confirmation that states what it does, and only that confirmation
+   sends the acknowledgement phrase the server requires. */
+const UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking";
+
+function permSelect(){
+  const st = SETTINGS || {};
+  /* The EFFECTIVE mode, not the stored one. When consent is absent the server
+     clamps at the point of use, and showing the stored value would tell the
+     operator the agent is doing something it is not. */
+  const cur = st.permission_mode_effective || st.permission_mode || "plan";
+  const modes = PERM_MODES.length ? PERM_MODES : [{id:cur}];
+  /* Derived from the EFFECTIVE mode, so the warning colour tracks what will
+     actually run -- a stored-but-clamped bypassPermissions must not paint the
+     composer red for a session that is really planning. */
+  const writes = (modes.find(m=>m.id===cur)||{}).writes_files ? " warn" : "";
+  return `<select class="permsel${writes}" data-perm aria-label="Permission mode"
+      title="What the agent may do without asking — applies to the next message">
+    ${modes.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?"selected":""}
+      >${esc(m.id)}${m.writes_files?" ⚠":""}</option>`).join("")}
+  </select>`;
+}
+
+/* The confirmation. Rendered as a real block in the pane rather than a
+   window.confirm: it has to SAY what the mode does, and a native dialog cannot
+   carry the server's own wording for it. */
+function permConfirmHtml(){
+  const c = S.permConfirm;
+  if (!c) return "";
+  const m = (PERM_MODES.find(x=>x.id===c.mode)) || {};
+  return `<div class="note b" role="alertdialog" aria-label="Confirm permission mode">
+    <b>Turn on <code>${esc(c.mode)}</code>?</b>
+    <p style="margin:6px 0">${esc(m.note || "This mode auto-approves agent actions.")}</p>
+    <p style="margin:6px 0;color:var(--faint)">This applies to sessions this panel starts, and
+      stays on until you change it back. You can withdraw it here at any time.</p>
+    ${S.permError?`<p style="color:var(--block)">${esc(S.permError)}</p>`:""}
+    <button class="btn" type="button" data-permok ${S.permBusy?"disabled":""}>
+      ${S.permBusy?"Enabling…":"Yes, enable it"}</button>
+    <button class="btn" type="button" data-permno>Cancel</button>
+  </div>`;
+}
+
+async function setPermMode(mode){
+  const m = PERM_MODES.find(x=>x.id===mode) || {};
+  /* Only the write-capable modes need consent, and only when it is not already
+     granted -- re-confirming something already on is friction with no safety. */
+  if (m.writes_files && !(SETTINGS||{}).unsafe_modes_allowed){
+    S.permConfirm = { mode }; S.permError = null; render(); return;
+  }
+  await applyPermMode(mode, false);
+}
+
+async function applyPermMode(mode, withAck){
+  S.permBusy = true; S.permError = null; render();
+  try {
+    const body = { permission_mode: mode };
+    if (withAck) body.unsafe_ack = UNSAFE_ACK_PHRASE;
+    await apiPost("/api/settings", body);
+    /* Re-read rather than assuming: the server clamps, and the panel must show
+       what will actually run, not what was requested. */
+    const s = await apiGet("/api/settings");
+    SETTINGS = s.settings || SETTINGS;
+    PERM_MODES = s.permission_modes || PERM_MODES;
+    S.permConfirm = null;
+  } catch (e) {
+    S.permError = e.message;
+  }
+  S.permBusy = false; render();
+}
+
 /* The assistant half of a turn, rendered with the panel's OWN vocabulary — .turn .a for
    assistant prose, .pill for state, a compact tool row. Used for BOTH a live streaming
    reply and an assistant block replayed out of a transcript: in the second case
    `streaming` is false and `response` is already complete, so the same template renders
    it with no special case. */
+/* The breathing Sutra mark, used wherever a turn is actively working. Inline
+   SVG rather than a font glyph so it inherits currentColor and scales cleanly. */
+const SPARK = '<span class="spark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+  '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></svg></span>';
+
 function turnResponse(t){
   const nTools = (t.tools && t.tools.length) || 0;
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
   const runs = t.toolRuns || [];
   const active = runs.filter(r=>r.running).length;
   const state = t.streaming
-      ? `<span class="pill p-acc"><i class="dot"></i>${active ? active + " tool" + (active===1?"":"s") + " running"
+      ? `<span class="pill p-acc">${SPARK}${active ? active + " tool" + (active===1?"":"s") + " running"
                                                              : (t.thinking ? "thinking" : "running")}</span>`
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
+  /* A turn whose saved thread had gone and was re-sent as a new one. Stated,
+     because the reply legitimately will not remember the earlier conversation
+     and an operator who is not told that reads it as the model forgetting. */
+  const replayed = t.retried
+    ? `<span class="pill p-mut" title="${esc(t.retried)}">new thread</span>` : "";
   /* Server-measured duration and cost, stated only when the server actually sent
      them. A turn replayed from a transcript has neither, and inventing a number
      there would be fabrication. */
@@ -3089,25 +4318,46 @@ function turnResponse(t){
            <span class="tstate" aria-hidden="true"></span>
            <span class="tname">${esc(r.name)}</span>
            ${r.summary?`<span class="tsum">${esc(r.summary)}</span>`:""}
+           ${r.output?`<button class="tout" type="button" data-toolout="${esc(r.id||"")}"
+                        aria-expanded="${S.toolOpen&&S.toolOpen[r.id]?"true":"false"}"
+                        title="Show what this tool returned">${
+                          S.toolOpen&&S.toolOpen[r.id]?"hide":"output"}</button>`:""}
            ${r.caller && r.caller!=="direct"?`<span class="pill p-acc">${esc(r.caller)}</span>`:""}
            <span class="tverdict">${r.running ? "running"
                                    : r.ok === false ? "error"
                                    : r.ok === null ? "unknown"
                                    : "done"}</span>
-         </div>`).join("")}</div>`
+         </div>${r.output && S.toolOpen && S.toolOpen[r.id]
+           ? `<pre class="toutbody">${esc(r.output)}</pre>` : ""}`).join("")}</div>`
     : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
       <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
       ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
     </div>` : "");
+  /* A backoff is not a hang, and the difference has to be visible or the
+     operator kills a turn that was about to succeed. */
+  const retrying = t.retrying
+    ? `<div class="working"><i class="dot"></i>Rate limited — retrying<b class="ell"></b>
+         <span class="tsum">${esc(t.retrying)}</span></div>` : "";
   const waiting = (t.streaming && !t.response && !runs.length)
-    ? `<div class="working"><i class="dot"></i>${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
+    ? `<div class="working">${SPARK}${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
+  /* data-resp is the PATCH ANCHOR. While a reply streams, patchStreaming()
+     rewrites the innerHTML of exactly this node instead of letting render()
+     rebuild #panes -- see scheduleStreamPatch(). The id must be stable for the
+     life of the turn, which t.uid gives it (assigned once, never reused). */
   const body = t.response
-    ? `<div class="md" style="margin-top:6px;color:var(--ink)">${mdHtml(t.response)}${
-        t.streaming ? `<span style="color:var(--acc)">█</span>` : ""}</div>` : "";
+    ? `<div class="md" data-resp="${esc(t.uid||"")}" style="margin-top:6px;color:var(--ink)">${
+        mdHtml(t.response)}${
+        t.streaming ? `<span class="caret" style="color:var(--acc)">█</span>` : ""}</div>` : "";
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
-    ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>` : "";
-  return `<div class="a">${state}${meta}${tools}${waiting}${body}${err}</div>`;
+    ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>
+       ${t.interrupted && t.uid ? `<p style="margin-top:7px">
+         <button class="btn" type="button" data-retry="${esc(t.uid)}">Retry this message</button>
+         </p>` : ""}` : "";
+  /* data-aturn anchors this block for patchTurn(): a tool frame replaces THIS
+     node instead of re-rendering the pane. */
+  return `<div class="a" data-aturn="${esc(t.uid||"")}"
+    >${state}${replayed}${meta}${tools}${retrying}${waiting}${body}${err}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)
@@ -3248,15 +4498,28 @@ function sessionPane(s){
         <button class="attx" type="button" data-attrm="${s.id}:${i}"
                 aria-label="Remove ${esc(a.name)}">&times;</button></span>`).join("")}
     </div>` : ""}
+    ${permConfirmHtml()}
+    ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
     <div class="pc">
+      <button class="ib" data-optstoggle="${s.id}" type="button"
+              aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
+              aria-label="Turn options" title="Effort, budget and tool limits for the next message">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.9" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      </button>
       <button class="ib" data-attach="${s.id}" type="button"
               aria-label="Attach a file" title="Attach a file (or drop / paste one)">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="1.9" aria-hidden="true"><path d="M21 11l-8.5 8.5a4.6 4.6 0 01-6.5-6.5L14 4.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.1-2.1l7.9-7.9"/></svg>
       </button>
-      <input type="text" data-sask="${s.id}" value="${esc(S.composerText[s.id]||"")}"
-             placeholder="Ask anything — / for commands"
-             aria-label="Continue this session"/>
+      <!-- A TEXTAREA, not <input type="text">. An input cannot hold a newline at
+           any price, so Shift+Enter, Ctrl+J and pasted multi-line text were not
+           "unimplemented" -- they were impossible. rows=1 keeps it looking like a
+           single line until there is a reason not to; autoGrowComposer() sizes it. -->
+      <textarea data-sask="${s.id}" rows="1"
+             placeholder="Ask anything — / for commands, Shift+Enter for a new line"
+             aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
+      ${permSelect()}
       <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
               title="Model — applies to the next message">
         ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
@@ -3283,9 +4546,66 @@ function sessionPane(s){
    no visible failure). Capture the focused input's identity + value + caret before
    rebuilding, restore it after -- covers every text input uniformly, not just the ones
    with bespoke keep() handlers. */
+/* Size the composer to its content, up to a ceiling.
+   Reset to "auto" first: scrollHeight only SHRINKS correctly when the element is
+   not already holding a taller explicit height, so without the reset the box
+   grows and never comes back down after deleting a paragraph. */
+const COMPOSER_MAX_PX = 200;
+/* Per-turn CLI options. These map 1:1 onto flags `claude --help` documents, and
+   the SERVER validates every one (build_agent_args) -- nothing typed here is
+   trusted. Kept per SESSION rather than global: "spend at most $2 on this one"
+   is a property of the question being asked, not of the panel. */
+const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];
+function turnOptsHtml(sid){
+  const o = S.turnOpts[sid] || {};
+  return `<div class="topts">
+    <label><span>Effort</span>
+      <select data-opt="effort" data-sid="${sid}">
+        ${EFFORTS.map(e=>`<option value="${e}" ${o.effort===e?"selected":""}>${
+          e||"default"}</option>`).join("")}
+      </select></label>
+    <label><span>Budget</span>
+      <input type="number" step="0.5" min="0" placeholder="no cap"
+             data-opt="max_budget_usd" data-sid="${sid}"
+             value="${o.max_budget_usd!=null?esc(String(o.max_budget_usd)):""}"
+             title="--max-budget-usd: stop the turn once it has cost this much"/></label>
+    <label class="wide"><span>Allow only</span>
+      <input type="text" placeholder="Read Bash Grep — blank means every tool"
+             data-opt="allowed_tools" data-sid="${sid}"
+             value="${esc((o.allowed_tools||[]).join(" "))}"
+             title="--allowedTools: whitespace separated"/></label>
+    <label class="wide"><span>Never</span>
+      <input type="text" placeholder="WebFetch Write"
+             data-opt="disallowed_tools" data-sid="${sid}"
+             value="${esc((o.disallowed_tools||[]).join(" "))}"
+             title="--disallowedTools: whitespace separated"/></label>
+    <label class="wide"><span>Extra instructions</span>
+      <input type="text" placeholder="appended to the system prompt for this turn"
+             data-opt="append_system_prompt" data-sid="${sid}"
+             value="${esc(o.append_system_prompt||"")}"/></label>
+    <p class="topts-note">Applies to the next message; the server validates each
+      value and drops anything it does not recognise.
+      <strong>Denying one tool is not a capability limit</strong> — blocking only
+      <code>Read</code>, the agent read the same file with <code>Bash</code>. To
+      stop a capability, deny every route to it
+      (<code>Read Bash Grep Glob</code>). Measured, not assumed.</p>
+  </div>`;
+}
+
+function autoGrowComposer(el){
+  if (!el || el.tagName !== "TEXTAREA") return;
+  el.style.height = "auto";
+  const want = Math.min(el.scrollHeight, COMPOSER_MAX_PX);
+  el.style.height = want + "px";
+  el.style.overflowY = el.scrollHeight > COMPOSER_MAX_PX ? "auto" : "hidden";
+}
+
 function _focusedInputSelector(){
   const el = document.activeElement;
-  if (!el || !(el.tagName === "INPUT" || el.tagName === "SELECT")) return null;
+  /* TEXTAREA belongs here: the composer is one now, and omitting it means the
+     caret jumps to the end on every background re-render while you type. */
+  if (!el || !(el.tagName === "INPUT" || el.tagName === "SELECT"
+               || el.tagName === "TEXTAREA")) return null;
   if (el.id) return "#" + el.id;
   for (const attr of ["data-sask", "data-ssend"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
@@ -3380,58 +4700,11 @@ function runSearch(q){
   if (!q.trim()){ S.searchRes = null; S.searchHits = null; S.searchBusy = false; render(); return; }
   S.searchBusy = true;
   _sqT = setTimeout(()=>{
-    apiGet("/api/org/search?q=" + encodeURIComponent(q) + "&limit=40&" + tenantQ())
+    apiGet("/api/org/search?q=" + encodeURIComponent(q) + "&limit=40")
       .then(r => { S.searchRes = r; S.searchHits = r.results.length; S.searchBusy = false; render(); })
       .catch(e => { S.searchRes = { query:q, results:[], counts:{}, error:e.message };
                     S.searchHits = 0; S.searchBusy = false; render(); });
   }, 250);
-}
-
-/* ══════════════════════ tenant gate ══════════════════════
-   Tenant-first: nothing about departments, charters or placements is fetched
-   or drawn until the scope those numbers belong to has been chosen, because
-   "2 domains, 38 placements" is meaningless without saying whose.
-
-   ONE-TENANT BEHAVIOUR (deliberate, and this registry is that case): when
-   GET /api/tenants returns exactly one row, boot() selects it and goes
-   straight to the panel. A chooser with a single option is not a choice — it
-   is a click charged on every load for no information. The chooser is still
-   reachable at any time from the rail footer, and it renders the same way for
-   one tenant as for ten, so the mechanism is visible rather than hidden.
-   With two or more tenants and nothing remembered, the gate blocks the load. */
-function tenantGateHtml(){
-  const cur = S.tenant;
-  const cards = TENANTS.map(r=>`
-    <button class="tcard" type="button" data-pick-tenant="${esc(r.tenant_id)}"
-            aria-current="${cur===r.tenant_id}">
-      <span class="tid">${esc(r.tenant_id)}
-        ${r.is_default?'<span class="pill p-acc">of record</span>':""}
-        ${cur===r.tenant_id?'<span class="pill p-ok">current</span>':""}</span>
-      <span class="tm">
-        <span>${r.domains} domain${r.domains===1?"":"s"}</span>
-        <span>${r.charters} charter${r.charters===1?"":"s"}</span>
-        <span>${r.placements} placement${r.placements===1?"":"s"}</span>
-        <span>${r.root_name?"root: "+esc(r.root_name):"no root"}</span>
-      </span>
-    </button>`).join("");
-  return `<section class="pane browse">
-    <div class="ph"><h3 style="max-width:none">Choose a tenant</h3>
-      <span class="src">GET /api/tenants</span></div>
-    <div class="pb">
-      <p>Every request this panel makes is scoped to one tenant. Pick the one you are
-        working in; it is remembered until you change it here.</p>
-      ${S.tenantsError?`<div class="note b"><b>Could not list tenants.</b>
-        ${esc(S.tenantsError)}</div>`:""}
-      ${TENANTS.length?`<div class="tgate">${cards}</div>`:`
-        <div class="zero"><h4>No tenants</h4><p>The registry reported none.</p></div>`}
-      ${TENANTS.length===1?`<p style="font-size:11px;color:var(--faint);margin-top:12px">
-        This registry holds exactly one tenant, so it is selected automatically on load —
-        you are seeing this screen because you asked for it. It is not padded with
-        placeholder tenants to make the list look fuller.</p>`:""}
-      ${S.tenant?`<div style="margin-top:14px">
-        <button class="btn" id="gateCancel">Keep <code>${esc(S.tenant)}</code> and go back</button>
-      </div>`:""}
-    </div></section>`;
 }
 
 /* ── first run ───────────────────────────────────────────────────────────────
@@ -3449,7 +4722,6 @@ function onboardingHtml(){
   const runnable = PROVIDERS.filter(p=>p.runnable);
   const active = PROVIDERS.find(p=>p.id===st.provider) || runnable[0] || null;
   const blocked = PROVIDERS.filter(p=>!p.runnable);
-  const tn = (TENANTS||[]).find(t=>t.tenant_id===S.tenant) || {};
   const writes = running !== "plan";
 
   const step = (n, title, body) => `<div class="onb-step">
@@ -3492,8 +4764,8 @@ function onboardingHtml(){
       ${step(4, `<h3>It reads what is already on your disk</h3>`,
         `<p>The registry below, and every slash command your assistant can already resolve. Nothing
            was seeded or invented for this screen.</p>
-         <div class="onb-fact">${esc(S.tenant||"—")} · ${tn.domains??0} departments ·
-           ${tn.charters??0} charters · ${tn.placements??0} placements ·
+         <div class="onb-fact">${live().length} departments ·
+           ${CHARTERS.length} charters · ${PLACEMENTS.length} placements ·
            ${(SKILLS_META&&SKILLS_META.total)||0} commands</div>`)}
 
       <div class="onb-foot">
@@ -3506,6 +4778,164 @@ function onboardingHtml(){
 
 /* Mounted OUTSIDE #app so render()'s wholesale replacement of #panes cannot
    tear it down mid-interaction. */
+/* ── staged desktop update ─────────────────────────────────────────────────
+   The update is MANDATORY (founder direction 2026-08-06), which decides the
+   shape of this UI more than anything else: there is no "skip this version"
+   and no "remind me next week", because neither is true. Cancel stops the
+   countdown and nothing else -- the build is already downloaded and verified,
+   and the shell applies it when the app next exits. So the honest words are
+   "not now", and then a plain statement of what will happen anyway.
+
+   TWO REASONS THIS IS NOT ALWAYS A COUNTDOWN:
+
+     no shell    The CLI serves this same panel to an ordinary browser, where
+                 there is nothing to restart. window.sutra only exists behind
+                 the Electron preload, so its absence is a reliable "I cannot
+                 honour a countdown" -- and a countdown that cannot restart
+                 anything would be a lie told once every fifteen seconds.
+
+     no focus    The clock only runs while the window has focus. A countdown
+                 that ran in the background would restart the app while the
+                 user was in another window, having never seen the banner --
+                 which is not a prompt, it is an ambush. */
+const UPDATE_COUNTDOWN_S = 15;
+const UPDATE_POLL_MS = 60000;
+let _updTicker = null;
+
+function updDesktop(){ return !!(window.sutra && window.sutra.desktop); }
+
+async function pollStagedUpdate(){
+  try {
+    /* Local staging state only -- this route never touches the network, which
+       is why a poll is acceptable here and would not be on /api/updates. */
+    S.updStaged = await apiGet("/api/updates/staged");
+  } catch (e) { S.updStaged = null; }
+  renderUpdateBanner();
+}
+
+function updTick(){
+  /* Held, not decremented, while the window is in the background. */
+  if (!document.hasFocus()) { renderUpdateBanner(); return; }
+  if (S.updLeft === null) return;
+  S.updLeft -= 1;
+  if (S.updLeft > 0) { renderUpdateBanner(); return; }
+  stopUpdCountdown();
+  applyUpdateNow();
+}
+
+function stopUpdCountdown(){
+  if (_updTicker) { clearInterval(_updTicker); _updTicker = null; }
+  S.updLeft = null;
+}
+
+async function applyUpdateNow(){
+  stopUpdCountdown();
+  /* Set BEFORE the render below, which would otherwise see "staged, no clock
+     running, no error yet" and start a second countdown -- firing applyUpdate
+     again every fifteen seconds for as long as the shell took to quit. */
+  S.updFiring = true;
+  S.updApplyError = null;
+  renderUpdateBanner();
+  try {
+    const r = await window.sutra.applyUpdate();
+    /* On success the app is already on its way out; leave the banner saying so
+       rather than flashing something else in the last frames. */
+    if (!r || !r.ok) S.updApplyError = (r && r.error) || "the restart was refused";
+  } catch (e) { S.updApplyError = e.message || String(e); }
+  if (S.updApplyError) S.updFiring = false;   /* the app is staying; allow a retry */
+  renderUpdateBanner();
+}
+
+function renderUpdateBanner(){
+  let host = document.getElementById("updHost");
+  const u = S.updStaged;
+  /* `error` on a PENDING record is the reason the last attempt failed -- it is
+     the most important thing the banner has to say, not a signal to say
+     nothing. (An unusable staging directory reports {pending:false} instead,
+     and is correctly silent.) */
+  const show = !!(u && u.pending);
+  if (!show){ stopUpdCountdown(); if (host) host.remove(); return; }
+  if (!host){
+    host = document.createElement("div");
+    host.id = "updHost";
+    document.body.appendChild(host);
+  }
+
+  const ver = esc(u.version || "a new version");
+  const armed = u.state === "installing";
+  const counting = updDesktop() && !armed && !S.updDeferred && u.state === "staged";
+
+  /* Start the clock the first time we see a staged build this load. */
+  if (counting && S.updLeft === null && !_updTicker && !S.updApplyError && !S.updFiring){
+    S.updLeft = UPDATE_COUNTDOWN_S;
+    _updTicker = setInterval(updTick, 1000);
+  }
+
+  /* Founder decision 2026-08-06: a live terminal WARNS, it does not stop the
+     clock. Said plainly, because the restart will take the session with it. */
+  const termWarn = S.termOpen
+    ? `<div class="updwarn">A terminal session is open. Restarting Sutra ends it.</div>` : "";
+
+  let body;
+  if (S.updApplyError){
+    body = `<div class="updmsg"><b>Sutra ${ver} could not be applied.</b>
+      <span class="updwhy">${esc(S.updApplyError)}</span>
+      <span class="updwhy">It will be retried when you quit.</span></div>
+      <div class="updacts"><button class="btn" type="button" data-upd2="retry">Try again</button></div>`;
+  } else if (armed){
+    body = `<div class="updmsg"><b>Sutra ${ver} is ready to install.</b>
+      <span class="updwhy">It is applied as soon as the app closes.</span></div>`;
+  } else if (!updDesktop()){
+    /* Browser / CLI: state the fact, promise nothing this page can't keep. */
+    body = `<div class="updmsg"><b>Sutra ${ver} has been downloaded.</b>
+      <span class="updwhy">It installs the next time the desktop app quits.</span></div>`;
+  } else if (u.state === "failed"){
+    /* Given up on automatically. Reached via resolve_pending's "manual"
+       verdict, and it must NOT fall through to the countdown -- there is no
+       clock running, so it would render "Restarting in nulls". */
+    body = `<div class="updmsg"><b>Sutra ${ver} could not be installed.</b>
+      <span class="updwhy">${esc(u.error || "the installer did not report why")}</span>
+      <span class="updwhy">Settings → Updates has the manual install.</span></div>`;
+  } else if (S.updDeferred){
+    body = `<div class="updmsg"><b>Sutra ${ver} will finish installing when you quit.</b>
+      <span class="updwhy">Nothing to download again — it is already verified.</span></div>`;
+  } else {
+    const paused = !document.hasFocus();
+    body = `<div class="updmsg"><b>Sutra ${ver} is ready.</b>
+      <span class="updwhy">${paused
+        ? "Restarting when you come back to this window."
+        : `Restarting in <span class="updn">${S.updLeft}s</span>.`}</span></div>
+      <div class="updacts">
+        <button class="btn pri" type="button" data-upd2="now">Restart now</button>
+        <button class="btn" type="button" data-upd2="later">Not now</button>
+      </div>`;
+  }
+
+  host.innerHTML = `<style>
+    #updHost{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9000;
+      max-width:min(720px,calc(100vw - 32px));}
+    #updHost .updbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+      background:var(--panel,#1b1917);border:1px solid var(--line,#332f2a);
+      border-radius:10px;padding:11px 14px;box-shadow:0 8px 28px rgba(0,0,0,.45);}
+    #updHost .updmsg{font-size:12.5px;line-height:1.5;flex:1 1 320px;}
+    #updHost .updwhy{display:block;color:var(--muted,#9b938a);font-size:11.5px;}
+    #updHost .updn{font-variant-numeric:tabular-nums;}
+    #updHost .updacts{display:flex;gap:8px;flex:0 0 auto;}
+    #updHost .updwarn{flex:1 1 100%;font-size:11.5px;color:var(--warn,#d9a441);}
+  </style><div class="updbar">${body}${termWarn}</div>`;
+
+  host.querySelectorAll("[data-upd2]").forEach(b=>b.onclick=()=>{
+    const a = b.dataset.upd2;
+    if (a === "now" || a === "retry") return applyUpdateNow();
+    /* "Not now" is a DEFER, and the copy above says so. The staged build is
+       kept; the shell applies it on the way out. */
+    S.updDeferred = true;
+    stopUpdCountdown();
+    if (window.sutra && window.sutra.deferUpdate) window.sutra.deferUpdate();
+    renderUpdateBanner();
+  });
+}
+
 function renderOnboarding(){
   let host = document.getElementById("onbHost");
   const show = !!(SETTINGS && SETTINGS.onboarded === false && !S.onbDismissed);
@@ -3540,14 +4970,20 @@ function render(){
   const sel = _focusedInputSelector();
   const prior = sel ? { sel, value: document.activeElement.value,
     start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
+  /* SCROLL POSITION, for the same reason focus and caret are saved here.
+     render() replaces #panes wholesale, so the browse pane's scroller is a
+     brand-new element scrolled to 0 -- clicking a Directory status filter 800px
+     down the Charters table threw the operator back to the top of the page, on
+     every click. Keyed by screen+view so this only ever restores a position the
+     operator can still recognise: SWITCHING view or screen is a new document
+     and correctly starts at the top. */
+  const priorScroll = _browseScrollState();
+  const priorSess = _sessScrollState();
 
   renderRail();
   renderOnboarding();
+  renderUpdateBanner();
 
-  /* No tenant GATE pane. Choosing a workspace is a footer control, not a
-     full-screen interstitial: with one tenant the interstitial was a click that
-     carried no information, and it hijacked every screen behind it. boot()
-     auto-selects, so S.tenant is set by the time we render. */
   document.getElementById("app").classList.toggle("railcol", !!S.ui.railCollapsed);
 
   const [t,src] = TITLES[S.screen];
@@ -3607,7 +5043,7 @@ function render(){
 
   if (prior) {
     const el = document.querySelector(prior.sel);
-    if (el && (el.tagName === "INPUT")) {
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
       el.value = prior.value;
       el.focus();
       if (typeof prior.start === "number" && el.setSelectionRange) {
@@ -3615,8 +5051,104 @@ function render(){
       }
     }
   }
+  _restoreBrowseScroll(priorScroll);
+  _restoreSessScroll(priorSess);
+  /* Rendered LAST and outside #panes, so it survives a pane rebuild and cannot
+     be what a scroll restore is measuring. */
+  {
+    let el = document.getElementById("toast");
+    if (S.toast){
+      if (!el){ el = document.createElement("div"); el.id = "toast";
+                el.className = "toast"; el.setAttribute("role","status");
+                document.body.appendChild(el); }
+      el.textContent = S.toast;
+    } else if (el) el.remove();
+  }
   /* AFTER #panes is populated -- scrollHeight is meaningless before layout. */
   scrollNewSessionsToNewest();
+}
+
+/* ── session transcript scroll, across a rebuild ──────────────────────────
+   render() replaces #panes wholesale, so every session pane's scroller is a
+   BRAND NEW element starting at scrollTop 0. The browse pane has been protected
+   from that for a while; the session panes never were. During one reply that is
+   a turn-start render, a render per tool call and a done render -- so a turn
+   with six tool calls threw the reader back to the top of the transcript six
+   times. That is the "it scrolls me to the top for every message" report.
+
+   Two states worth keeping apart, which is what Claude Code's own transcript
+   does:
+     PINNED   the reader is at the bottom watching it arrive -> stay at the
+              bottom as content grows (follow the tail).
+     PARKED   the reader scrolled up to read something -> keep their EXACT
+              offset. Yanking someone to the tail while they are reading is the
+              worse failure of the two, so `pinned` requires being genuinely at
+              the bottom, not merely near it.
+   S.userScrolled already records which, maintained by the scroll listener. */
+const SESS_PIN_SLOP = 24;      // px; a hair of tolerance for subpixel layout
+
+function _sessScrollState(){
+  const out = [];
+  document.querySelectorAll("#panes .pane[data-sess] .pb").forEach(pb=>{
+    const sid = pb.closest(".pane").dataset.sess;
+    if (!sid) return;
+    const atBottom = pb.scrollHeight - pb.clientHeight - pb.scrollTop <= SESS_PIN_SLOP;
+    out.push({ sid, top: pb.scrollTop, pinned: atBottom });
+  });
+  return out;
+}
+
+function _restoreSessScroll(prior){
+  if (!prior || !prior.length) return;
+  const apply = () => prior.forEach(p=>{
+    const pane = document.querySelector('#panes .pane[data-sess="' + CSS.escape(p.sid) + '"]');
+    const pb = pane && pane.querySelector(".pb");
+    if (!pb) return;                       /* pane closed during the rebuild */
+    /* __pinning marks this as OUR scroll so the listener does not read it as
+       the reader choosing to move -- otherwise following the tail would
+       immediately look like a manual scroll and unpin itself. */
+    pb.__pinning = true;
+    pb.scrollTop = p.pinned ? pb.scrollHeight
+                            : Math.min(p.top, Math.max(0, pb.scrollHeight - pb.clientHeight));
+    requestAnimationFrame(()=>{ pb.__pinning = false; });
+  });
+  apply();
+  /* Once more after layout: images, code blocks and tool rows settle late, and
+     a height that grew after the synchronous pass would leave a pinned reader
+     short of the tail. */
+  requestAnimationFrame(apply);
+}
+
+/* The browse pane's scroller, and the identity of what it is scrolling.
+   S.view distinguishes Live / Draft / Directory, which are three different
+   documents in one screen; without it, switching to Directory would inherit
+   the org chart's offset. */
+function _browseScrollKey(){
+  return S.screen + ":" + (S.view || "");
+}
+function _browseScroller(){
+  return document.querySelector("#panes .pane.browse .pb");
+}
+function _browseScrollState(){
+  const el = _browseScroller();
+  if (!el || !el.scrollTop) return null;
+  return { key: _browseScrollKey(), top: el.scrollTop };
+}
+function _restoreBrowseScroll(prior){
+  if (!prior || prior.key !== _browseScrollKey()) return;
+  const el = _browseScroller();
+  if (!el) return;
+  el.scrollTop = prior.top;
+  /* Re-apply once after layout. The synchronous set above is enough whenever
+     the new content is at least as tall as the old, which is the common case;
+     it silently clamps to a shorter document (a filter that removed rows), and
+     a rAF pass lands the honest maximum instead of leaving it at 0. */
+  requestAnimationFrame(()=>{
+    const e2 = _browseScroller();
+    if (e2 && prior.key === _browseScrollKey() && e2.scrollTop !== prior.top) {
+      e2.scrollTop = Math.min(prior.top, Math.max(0, e2.scrollHeight - e2.clientHeight));
+    }
+  });
 }
 /* A transcript is a LOG: the interesting end is the newest turn. Opening a
    60-turn session at turn 1 makes the operator scroll to find what just
@@ -3670,15 +5202,6 @@ function scrollNewSessionsToNewest(){
    from every early-return path in ondrop, so a deferred render can never be
    stranded. */
 function flushRender(){ if (S.renderDirty) render(); }
-/* the tenant chooser is its own tiny wiring pass -- it renders instead of the
-   screens, so wire() (which assumes #scBody exists) must not run for it */
-function wireGate(){
-  const panes = document.getElementById("panes");
-  panes.querySelectorAll("[data-pick-tenant]").forEach(b=>
-    b.onclick = ()=>pickTenant(b.dataset.pickTenant));
-  const c = panes.querySelector("#gateCancel");
-  if (c) c.onclick = ()=>{ S.gate = false; render(); };
-}
 
 /* Drag the browse/session divider. The drag writes the width straight onto the
    element instead of re-rendering per mousemove -- a full innerHTML rebuild at
@@ -3736,13 +5259,13 @@ function wire(){
     saveLayout(); render(); });
   wireDivider();
 
-  /* ── tenant ── */
-  scBody.querySelectorAll("[data-pick-tenant]").forEach(b=>
-    b.onclick = ()=>pickTenant(b.dataset.pickTenant));
-  const og = scBody.querySelector("#openGate");
-  if (og) og.onclick = ()=>{ S.gate = true; render(); };
-
   /* ── settings: every control posts, and reports the server's refusal ── */
+  /* ── updates ── */
+  scBody.querySelectorAll("[data-upd]").forEach(b=>b.onclick=()=>{
+    const what = b.dataset.upd;
+    if (what === "check") checkUpdates(); else installUpdate(what);
+  });
+
   scBody.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{
     if (b.disabled) return;                       /* not runnable -- the reason is on screen */
     S.setBusy = "prov:" + b.dataset.prov; S.setError = null; S.setOk = null; render();
@@ -3844,9 +5367,36 @@ function wire(){
   /* session panes */
   panes.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     S.sessTab[b.dataset.sid]=b.dataset.tab; render(); });
+  /* Retry an interrupted turn: same text, same session, new socket. The turn is
+     reset rather than duplicated, so the transcript does not grow a copy of a
+     message that was never answered. */
+  panes.querySelectorAll("[data-retry]").forEach(b=>b.onclick=()=>{
+    const uid = b.dataset.retry;
+    let sess=null, turn=null;
+    S.sessions.forEach(s=>(s.turns||[]).forEach(t=>{ if (t.uid===uid){ sess=s; turn=t; } }));
+    Object.keys(S.sideTurns||{}).forEach(sid=>(S.sideTurns[sid]||[]).forEach(t=>{
+      if (t.uid===uid){ sess=S.sessions.find(x=>x.id===sid); turn=t; } }));
+    if (!sess || !turn) return;
+    turn.error = null; turn.interrupted = false; turn.response = "";
+    turn.tools = []; turn.toolRuns = [];
+    askClaude(sess, turn, !!turn.side);
+    render();
+  });
+
   panes.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{
-    closeClaudeChannel(b.dataset.close);
-    S.openPanes = S.openPanes.filter(id=>id!==b.dataset.close); render(); });
+    const sid = b.dataset.close;
+    /* Returns the channels it KEPT because work was still in flight. Closing the
+       pane hides the view; it does not cancel the reply. Say so, because the
+       button now does something different from what it used to. */
+    const kept = closeClaudeChannel(sid);
+    S.openPanes = S.openPanes.filter(id=>id!==sid);
+    if (kept.length){
+      const s = S.sessions.find(x=>x.id===sid);
+      S.toast = "Still running in the background — reopen “" +
+                ((s && s.title) || "the session") + "” to watch it finish.";
+      setTimeout(()=>{ if (S.toast) { S.toast = null; render(); } }, 6000);
+    }
+    render(); });
   /* the composer is NOT disabled while a turn runs: the reply streams in, and disabling
      the input mid-stream blurred it and dropped whatever was being typed next */
   panes.querySelectorAll("[data-ssend]").forEach(b=>b.onclick=()=>{
@@ -3859,6 +5409,32 @@ function wire(){
     submitTurn(composed, sid); });
 
   /* ── side chat ── */
+  panes.querySelectorAll("[data-optstoggle]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.optstoggle; S.optsOpen[sid]=!S.optsOpen[sid]; render(); });
+  panes.querySelectorAll("[data-opt]").forEach(el=>{
+    const sid=el.dataset.sid, key=el.dataset.opt;
+    const commit=()=>{
+      const o = (S.turnOpts[sid] = S.turnOpts[sid] || {});
+      const raw = el.value;
+      if (key === "allowed_tools" || key === "disallowed_tools"){
+        const list = raw.split(/\s+/).filter(Boolean);
+        if (list.length) o[key] = list; else delete o[key];
+      } else if (key === "max_budget_usd"){
+        const n = parseFloat(raw);
+        if (isFinite(n) && n > 0) o[key] = n; else delete o[key];
+      } else if (raw && raw.trim()){
+        o[key] = raw.trim();
+      } else { delete o[key]; }
+      /* No render(): re-rendering on every keystroke would tear down the field
+         being typed into. The value is already in S. */
+    };
+    el.oninput = commit; el.onchange = commit;
+  });
+  panes.querySelectorAll("[data-toolout]").forEach(b=>b.onclick=()=>{
+    const id = b.dataset.toolout;
+    S.toolOpen[id] = !S.toolOpen[id];
+    render();
+  });
   panes.querySelectorAll("[data-sidetoggle]").forEach(b=>b.onclick=()=>{
     const sid=b.dataset.sidetoggle;
     S.sideOpen[sid] = !S.sideOpen[sid];
@@ -3899,6 +5475,86 @@ function wire(){
     ch.ws.send(JSON.stringify({type:"stop"}));
   });
 
+  /* ── routines ── */
+  scBody.querySelectorAll("[data-prok]").forEach(b=>b.onclick=()=>
+    decideProposal(b.dataset.prok, true));
+  scBody.querySelectorAll("[data-prno]").forEach(b=>b.onclick=()=>
+    decideProposal(b.dataset.prno, false));
+
+  scBody.querySelectorAll("[data-rtnew]").forEach(b=>b.onclick=()=>{
+    S.rtForm = {preset:"daily", hour:9, minute:0, weekday:1, model:"",
+                permission_mode:(S.rt&&S.rt.permission_modes||["dontAsk"])[0],
+                max_budget_usd:1, cwd:((SETTINGS||{}).workdir)||""};
+    S.rtError = null; render();
+  });
+  scBody.querySelectorAll("[data-rtcancel]").forEach(b=>b.onclick=()=>{
+    S.rtForm = null; S.rtError = null; render(); });
+  scBody.querySelectorAll("[data-rtreload]").forEach(b=>b.onclick=()=>loadRoutines(true));
+  scBody.querySelectorAll("[data-rtfix]").forEach(b=>b.onclick=()=>
+    rtAction("/reconcile", {fix:true}, "Removed the leftover jobs."));
+
+  /* Field edits are held in S.rtForm, not read off the DOM at submit: render()
+     rebuilds the screen whenever the preset changes, and anything only in the
+     DOM would be lost at that moment. */
+  scBody.querySelectorAll("[data-rtf]").forEach(el=>{
+    const k = el.dataset.rtf;
+    const commit = ()=>{ if (!S.rtForm) return; S.rtForm[k] = el.value; };
+    el.oninput = commit;
+    /* A select changes the SHAPE of the form (a weekly needs a day picker), so it
+       must re-render; a text input must not, or the caret jumps on every key. */
+    if (el.tagName === "SELECT") el.onchange = ()=>{ commit(); render(); };
+  });
+
+  scBody.querySelectorAll("[data-rtsave]").forEach(b=>b.onclick=async ()=>{
+    const f = S.rtForm || {};
+    const body = {
+      id:(f.id||"").trim().toLowerCase(), description:f.description, prompt:f.prompt,
+      cwd:f.cwd, model:f.model||"", permission_mode:f.permission_mode,
+      opts:{ max_budget_usd:Number(f.max_budget_usd)||0 },
+      schedule:{ preset:f.preset, hour:Number(f.hour)||0, minute:Number(f.minute)||0,
+                 weekday:Number(f.weekday)||0, cron:f.cron },
+      enabled:true };
+    S.rtBusy = "create"; S.rtError = null; S.rtMsg = null; render();
+    try {
+      const r = await apiPost("/api/routines", body);
+      S.rtForm = null;
+      S.rtMsg = (r.launchd && r.launchd.ok)
+        ? "Created and scheduled. It has never run — use Run now to check it works."
+        : "Created, but launchd refused to load it: " + ((r.launchd||{}).stderr||"no reason given");
+      await loadRoutines(true);
+    } catch (e) { S.rtError = e.message; }
+    S.rtBusy = null; render();
+  });
+
+  scBody.querySelectorAll("[data-rtrun]").forEach(b=>b.onclick=()=>
+    rtAction("/" + b.dataset.rtrun + "/run", {confirm:true}));
+  scBody.querySelectorAll("[data-rttoggle]").forEach(b=>b.onclick=()=>
+    rtAction("/" + b.dataset.rttoggle, {enabled: b.dataset.en === "1"},
+             b.dataset.en === "1" ? "Resumed." : "Paused — it will not fire on its own."));
+  scBody.querySelectorAll("[data-rtruns]").forEach(b=>b.onclick=()=>
+    rtLoadRuns(b.dataset.rtruns));
+  scBody.querySelectorAll("[data-rtdel]").forEach(b=>b.onclick=()=>{
+    /* Deleting unloads a real launchd job. Confirm, and say what survives. */
+    if (!confirm("Delete routine \"" + b.dataset.rtdel + "\"?\n\nThe scheduled job is " +
+                 "removed. Its run history is kept on disk.")) return;
+    rtAction("/" + b.dataset.rtdel + "/delete", {confirm:true}, "Deleted.");
+  });
+
+  /* ── permission mode (chat level) ── */
+  panes.querySelectorAll("[data-perm]").forEach(sel=>sel.onchange=()=>{
+    const want = sel.value;
+    /* Re-render first so the select snaps back to the EFFECTIVE mode if the
+       confirmation is cancelled -- leaving it showing a mode that is not
+       running would be the same lie the clamp exists to prevent. */
+    setPermMode(want);
+  });
+  panes.querySelectorAll("[data-permok]").forEach(b=>b.onclick=()=>{
+    if (S.permConfirm) applyPermMode(S.permConfirm.mode, true);
+  });
+  panes.querySelectorAll("[data-permno]").forEach(b=>b.onclick=()=>{
+    S.permConfirm = null; S.permError = null; render();
+  });
+
   /* ── model ── */
   panes.querySelectorAll("[data-model]").forEach(sel=>sel.onchange=()=>{
     /* Per-session only. Persisting it here would silently change the default for
@@ -3917,8 +5573,10 @@ function wire(){
     const sid = inp.dataset.sask;
     /* "/" opens the palette; it only ever lists commands that actually
        resolve, because the source is GET /api/skills reading ~/.claude. */
+    autoGrowComposer(inp);
     inp.oninput = ()=>{
       S.composerText[sid] = inp.value;
+      autoGrowComposer(inp);
       const p = paletteFor(inp.value);
       const was = S.palette && S.palette.sid===sid;
       if (p && p.items.length){ S.palette = { sid, items:p.items, idx:0, token:p.token,
@@ -3932,6 +5590,20 @@ function wire(){
         if (e.key==="ArrowUp"){ e.preventDefault(); pal.idx=(pal.idx-1+pal.items.length)%pal.items.length; render(); return; }
         if (e.key==="Enter" || e.key==="Tab"){ e.preventDefault(); applyPalette(sid, pal.idx); return; }
         if (e.key==="Escape"){ e.preventDefault(); S.palette=null; render(); return; }
+      }
+      /* Shift+Enter is a NEWLINE, Enter sends. Ctrl/Cmd+J too, because that is
+         what readline users reach for. Returning early leaves the default
+         behaviour -- in a textarea that inserts the newline for us. */
+      if (e.key === "Enter" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          const at = inp.selectionStart, to = inp.selectionEnd;
+          inp.value = inp.value.slice(0, at) + "\n" + inp.value.slice(to);
+          inp.selectionStart = inp.selectionEnd = at + 1;
+          S.composerText[sid] = inp.value;
+          autoGrowComposer(inp);
+        }
+        return;
       }
       if(e.key==="Enter"){
         /* Not gated on inp.value: an attachment with no typed text is a legitimate
@@ -3964,13 +5636,15 @@ function wire(){
     S.screen="departments"; S.sel=n.dataset.ref; render(); });
 
   scBody.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{S.view=b.dataset.view;render();});
+  /* Directory search. render() restores focus + caret for the focused input,
+     so re-rendering per keystroke does not steal the cursor. */
+  const dq = scBody.querySelector("#dirQ");
+  if (dq) dq.oninput = ()=>{ S.dirQ = dq.value; render(); };
+  scBody.querySelectorAll("[data-chst]").forEach(b=>
+    b.onclick = ()=>{ S.dirSt = b.dataset.chst; render(); });
   scBody.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>{
     S[b.dataset.toggle]=!S[b.dataset.toggle];
-    /* showAcme widens the scope SERVER-side (all_tenants=true). Under ?tenant=
-       the other tenants' rows were never fetched, so filtering locally would
-       render "none" as though that were a finding. Refetch instead. */
-    if (b.dataset.toggle === "showAcme"){ render(); refetchOrg(); }
-    else render(); });
+    render(); });
   scBody.querySelectorAll("[data-ref]").forEach(n=>{
     /* the tile IS the control: selecting a department also opens or closes its subtree */
     n.onclick=()=>{ const r=n.dataset.ref;
@@ -4059,30 +5733,23 @@ function clearRings(){
   const s=document.getElementById("dragStatus"); if(s) s.textContent="";
 }
 document.querySelector(".rail").addEventListener("click", e=>{
-  /* The gate short-circuits render(), but the RAIL keeps rendering behind it,
-     so its buttons stay live. Navigating without clearing S.gate therefore set
-     the new screen and then drew the tenant chooser over it again -- the panel
-     looked stuck on "Choose a tenant" no matter what you clicked, with only the
-     one "go back" button able to escape. Any deliberate navigation is also an
-     answer to the chooser: dismiss it. S.tenant is already set in this state
-     (the gate was opened via `switch`, not by the no-tenant path), and when it
-     is NOT set render() re-opens the gate on its own, so this cannot strand the
-     panel tenant-less. */
   const b = e.target.closest("[data-screen]");
   if (b && !b.disabled){
     /* "terminal" is a PANE TOGGLE living in the nav, not a screen. Routing it
        through S.screen would set S.screen to an id SCREENS has no entry for,
        and render() would blank the browse pane. */
     if (b.dataset.screen === "terminal"){ termToggle(); renderRail(); return; }
-    S.gate=false; S.screen=b.dataset.screen;
+    S.screen=b.dataset.screen;
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
+    if (S.screen === "automation") loadAuto(false);
+    if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
   const op = e.target.closest("[data-open]");
-  if (op){ const id=op.dataset.open; S.gate=false;
+  if (op){ const id=op.dataset.open;
     if (!S.openPanes.includes(id)) S.openPanes.push(id);
     if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
     /* opening a REAL session is what triggers the transcript read -- the list
@@ -4117,10 +5784,9 @@ document.getElementById("newSession").onclick = () => {
     r.setAttribute("data-theme",n); wr(n); lab(); };
 })();
 /* ══════════════════════ bootstrap ══════════════════════
-   Order matters and is the whole point of "tenant-first": /api/tenants is read
-   BEFORE any registry endpoint, because every one of them is scoped by the
-   answer. Nothing about departments, charters or placements is fetched — let
-   alone drawn — until the scope is settled. */
+   One registry, one org, so there is no scope to settle before reading it.
+   boot() reads the registry, the runtime and the sessions together and lets
+   each degrade on its own. */
 
 function backendError(e){
   document.getElementById("panes").innerHTML =
@@ -4132,15 +5798,14 @@ function backendError(e){
   console.error(e);
 }
 
-/* Registry reads, all carrying the current scope. Separated from the runtime
-   reads below because switching tenants must redo these and need not redo those. */
+/* Registry reads. Separated from the runtime reads below because they answer
+   different questions: what the org IS, versus what this machine can run. */
 async function loadOrg(){
-  const q = scopeQ();
   const [tree, charters, placements, history] = await Promise.all([
-    apiGet("/api/org/tree?include_retired=true&" + q),
-    apiGet("/api/org/charters?" + q),
-    apiGet("/api/org/placements?" + q),
-    apiGet("/api/org/history?" + tenantQ()),
+    apiGet("/api/org/tree?include_retired=true"),
+    apiGet("/api/org/charters"),
+    apiGet("/api/org/placements"),
+    apiGet("/api/org/history"),
   ]);
   DOMAINS = tree;
   CHARTERS = charters;
@@ -4155,26 +5820,52 @@ async function loadOrg(){
   invalidateSim();
 }
 
-/* Machine state, not registry state: what can run, and how it is configured.
-   Tenant-independent, so a tenant switch does not refetch it. */
+/* Machine state, not registry state: what can run, and how it is configured. */
 async function loadRuntime(){
-  const [skills, provs, settings] = await Promise.all([
+  /* allSettled, NOT all. These are three independent endpoints, and under
+     Promise.all a 500 from /api/skills -- a catalog walk that touches every
+     plugin directory on the machine -- discarded a perfectly good
+     /api/settings response and left SETTINGS null for the life of the window.
+     The Settings screen then rendered "GET /api/settings has not answered",
+     which is not what happened and cannot be falsified from the screen.
+     Each subsystem now fails on its own and says which one failed. */
+  const [skillsR, provsR, settingsR] = await Promise.allSettled([
     apiGet("/api/skills"),
     apiGet("/api/providers"),
     apiGet("/api/settings"),
   ]);
-  SKILLS = skills.items || [];
-  SKILLS_META = { by_kind: skills.by_kind, by_source: skills.by_source,
-                  by_provider: skills.by_provider, total: skills.total,
-                  runnable: skills.runnable, providers: skills.providers || [] };
-  PROVIDERS = provs.providers || [];
-  SETTINGS = settings.settings || null;
-  PERM_MODES = settings.permission_modes || [];
-  MODELS = settings.models || [];
-  /* Seed the freshness baseline from the SAME response that populated SKILLS, so the
-     first poll compares against what is actually on screen rather than re-fetching
-     a catalog the panel already has. */
-  S.cat.etag = skills.signature || null;
+  const reason = r => String((r.reason && r.reason.message) || r.reason);
+  const failed = [];
+
+  if (skillsR.status === "fulfilled"){
+    const skills = skillsR.value;
+    SKILLS = skills.items || [];
+    SKILLS_META = { by_kind: skills.by_kind, by_source: skills.by_source,
+                    by_provider: skills.by_provider, total: skills.total,
+                    runnable: skills.runnable, providers: skills.providers || [] };
+    S.cat.etag = skills.signature || null;
+  } else {
+    failed.push("GET /api/skills — " + reason(skillsR));
+  }
+
+  if (provsR.status === "fulfilled") PROVIDERS = provsR.value.providers || [];
+  else failed.push("GET /api/providers — " + reason(provsR));
+
+  if (settingsR.status === "fulfilled"){
+    const settings = settingsR.value;
+    SETTINGS = settings.settings || null;
+    PERM_MODES = settings.permission_modes || [];
+    MODELS = settings.models || [];
+  } else {
+    failed.push("GET /api/settings — " + reason(settingsR));
+  }
+
+  /* Reported, not thrown: boot() already treats the runtime as degradable, and
+     the screens read S.runtimeError to say what actually failed. */
+  S.runtimeError = failed.length ? failed.join(" · ") : null;
+  /* The freshness baseline is seeded from the SAME response that populated
+     SKILLS (S.cat.etag, set above), so the first poll compares against what is
+     actually on screen rather than re-fetching a catalog the panel already has. */
   S.cat.readAt = Date.now();
   S.cat.lastCheckAt = Date.now();
 }
@@ -4319,6 +6010,54 @@ async function saveEdFile(){
 
 /* Git is fetched on demand, not at boot: a workdir that is not a repository is a
    perfectly normal state and must not cost a failed request on every start. */
+/* Dispatcher + scheduler, read when the screen is opened. Lazy for the same
+   reason Git is: it walks ledger files in the workdir, and a panel that has
+   never shown the screen has no business reading them on every boot. */
+async function loadAuto(force){
+  if (S.auto && !force) return;
+  try {
+    S.auto = await apiGet("/api/automation");
+    S.autoError = null;
+  } catch (e) {
+    S.autoError = e.message; S.auto = null;
+  }
+  render();
+}
+async function loadProposals(force){
+  if (S.props && !force) return;
+  try { S.props = (await apiGet("/api/proposals")).proposals || []; S.propError = null; }
+  catch (e) { S.propError = e.message; S.props = null; }
+  render();
+}
+async function decideProposal(pid, approve){
+  S.propBusy = pid; S.propError = null; render();
+  try {
+    await apiPost("/api/proposals/" + encodeURIComponent(pid) + "/decide", {approve});
+    await loadProposals(true);
+    await loadRoutines(true);      /* an approval may have created one */
+  } catch (e) { S.propError = e.message; }
+  S.propBusy = null; render();
+}
+async function loadRoutines(force){
+  if (S.rt && !force) return;
+  try { S.rt = await apiGet("/api/routines"); S.rtError = null; }
+  catch (e) { S.rtError = e.message; S.rt = null; }
+  render();
+}
+async function rtAction(path, body, msg){
+  S.rtBusy = path; S.rtMsg = null; S.rtError = null; render();
+  try {
+    const r = await apiPost("/api/routines" + path, body || {});
+    S.rtMsg = msg || r.note || "Done.";
+    await loadRoutines(true);
+  } catch (e) { S.rtError = e.message; }
+  S.rtBusy = null; render();
+}
+async function rtLoadRuns(id){
+  try { S.rtRuns[id] = await apiGet("/api/routines/" + encodeURIComponent(id) + "/runs?limit=10"); }
+  catch (e) { S.rtRuns[id] = {error:e.message}; }
+  render();
+}
 async function loadGit(force){
   if (S.git && !force) return;
   try {
@@ -4357,58 +6096,16 @@ function refetchOrg(){
   loadOrg().then(render).catch(backendError);
 }
 
-function pickTenant(id){
-  if (!id) return;
-  const changed = id !== S.tenant;
-  S.tenant = id;
-  META.tenant_id = id;
-  S.gate = false;
-  lsSet(LS_TENANT, id);
-  if (!changed && S.loaded){ render(); return; }
-  /* A different tenant is a different scope. Selections, search results and the
-     memoized simulate() answers all belong to the old one; carrying them across
-     would attribute one tenant's findings to another. */
-  S.sel = null; S.selCharter = null;
-  S.searchRes = null; S.searchHits = null; S.sq = "";
-  S.showAcme = false;
-  S.loaded = false;
-  invalidateSim();
-  render();
-  loadOrg().then(()=>{ S.loaded = true; render(); }).catch(backendError);
-}
 
 async function boot(){
   const panes = document.getElementById("panes");
+  /* One registry holds one org. This used to read /api/tenants first and gate
+     the whole boot on the answer -- including a silent `if (!S.tenant) return`
+     that rendered an empty panel with no error when the answer was unexpected.
+     There is nothing to choose, so there is nothing to gate on. */
   panes.innerHTML = `<section class="pane browse"><div class="pb" style="display:flex;
     align-items:center;justify-content:center;color:var(--faint);font-size:13px">
-    Reading tenants…</div></section>`;
-  try {
-    TENANTS = await apiGet("/api/tenants");
-  } catch (e) {
-    S.tenantsError = e.message;
-    TENANTS = [];
-    backendError(e);
-    return;
-  }
-
-  const stored = lsGet(LS_TENANT, null);
-  if (TENANTS.length === 1){
-    /* ONE TENANT: auto-select. See tenantGateHtml() -- a chooser with a single
-       option is a click that carries no information, and this registry has
-       exactly one tenant today. The chooser stays reachable from the rail
-       footer, so the behaviour is switchable rather than hidden. */
-    S.tenant = TENANTS[0].tenant_id;
-  } else if (stored && TENANTS.some(r=>r.tenant_id === stored)){
-    S.tenant = stored;
-  } else {
-    S.tenant = null;      /* two or more, nothing remembered -> the gate blocks */
-  }
-  if (S.tenant){ META.tenant_id = S.tenant; lsSet(LS_TENANT, S.tenant); }
-  if (!S.tenant){ render(); return; }
-
-  panes.innerHTML = `<section class="pane browse"><div class="pb" style="display:flex;
-    align-items:center;justify-content:center;color:var(--faint);font-size:13px">
-    Loading ${esc(S.tenant)}…</div></section>`;
+    Reading the registry…</div></section>`;
   try {
     /* allSettled, NOT all: these are three independent subsystems, and
        Promise.all rejects the whole boot on the first failure — so a registry
@@ -4418,7 +6115,11 @@ async function boot(){
     const [org, runtime, sessions] =
       await Promise.allSettled([loadOrg(), loadRuntime(), loadSessions()]);
     if (org.status === "rejected") throw org.reason;   /* the one hard dependency */
-    S.runtimeError  = runtime.status  === "rejected" ? String(runtime.reason  && runtime.reason.message  || runtime.reason)  : null;
+    /* loadRuntime() reports PER-ENDPOINT failures into S.runtimeError itself and
+       resolves, so only overwrite that when the whole call threw -- otherwise the
+       specific "which of the three failed" detail is clobbered with null. */
+    if (runtime.status === "rejected")
+      S.runtimeError = String(runtime.reason && runtime.reason.message || runtime.reason);
     S.sessionsError = sessions.status === "rejected" ? String(sessions.reason && sessions.reason.message || sessions.reason) : null;
     await loadDraft();
     /* A base persisted from an earlier session can ALREADY be stale — the
@@ -4453,6 +6154,16 @@ async function boot(){
       const f = document.getElementById("prevUrl"); if (f) f.value = lastPrev;
     }
     if (lsGet(LS_TERM, false) === true){ termToggle(true); sideTab(S.sideTab); }
+
+    /* Staged-update watch. Started LAST and deliberately not awaited: a staged
+       build is never a reason for the panel to come up any slower, and this
+       route is local-only so the poll costs nothing but a loopback round trip.
+       Focus changes re-render because the countdown is held while the window is
+       in the background, and that state has to be visible the moment it flips. */
+    pollStagedUpdate();
+    setInterval(pollStagedUpdate, UPDATE_POLL_MS);
+    window.addEventListener("focus", renderUpdateBanner);
+    window.addEventListener("blur", renderUpdateBanner);
   } catch (e) {
     backendError(e);
   }
@@ -4462,6 +6173,11 @@ async function boot(){
    Mount-once, show/hide thereafter. The iframe carries a live WebSocket to a PTY
    running `claude`; re-creating it on a render would kill that session, so the
    only operations here are "create if absent" and "toggle hidden". */
+/* Persisted so the pane comes back as the operator left it. Defaults to the
+   shell: that is what the pane did before this control existed, and a terminal
+   that silently starts an agent session would be a surprising default. */
+try { S.termMode = localStorage.getItem("sutra.termMode") || "shell"; }
+catch (e) { S.termMode = "shell"; }
 const termPaneEl  = document.getElementById("termPane");
 const termBodyEl  = document.getElementById("termBody");
 const termBtnEl   = document.getElementById("termBtn");
@@ -4500,15 +6216,47 @@ function termMount(force){
      The word for that emulator is deliberately not written here: test_05b greps the
      studio HTML for it to prove "/" is not serving the legacy console. The terminal
      is an opt-in pane behind an iframe, so the guard still holds and stays strict. */
-  /* shell=1 -> the operator's OWN login shell (zsh on macOS), not the claude TUI:
-     this is a terminal, so it has to be able to run git, ls and a build.
+  /* MODE, and it was hardcoded to `shell` -- which quietly made the single
+     highest-value thing this pane can do unreachable.
+
+     /ws/term already spawns EITHER the operator's login shell (?shell=1) or the
+     REAL claude TUI in a PTY (app.py:729, `args = [CLAUDE_BIN]`). Only the first
+     was ever requested. The second is Claude Code itself, at full fidelity --
+     every built-in slash command (/mcp, /plugin, /context, /compact, /config,
+     /permissions, /rewind, /usage), Shift+Tab mode cycling, vim mode, permission
+     prompts and plan approval -- none of which the chat pane can do, and all of
+     which the docs list as features. Reaching them costs one query parameter.
+
+     It is passthrough, not native parity: those commands run in a terminal
+     emulator rather than as panel UI. But "reachable today" beats "designed",
+     and it does not block building native versions later.
+
      embed=1 -> drops that page's own sidebar and header, which this pane already
      draws, and whose 240px sidebar left the terminal about 120px at pane width. */
-  fr.src = "/legacy/term?embed=1&shell=1" + (cwd ? "&cwd=" + encodeURIComponent(cwd) : "");
+  const shellMode = S.termMode !== "claude";
+  fr.src = "/legacy/term?embed=1" + (shellMode ? "&shell=1" : "")
+         + (cwd ? "&cwd=" + encodeURIComponent(cwd) : "");
   fr.title = "Terminal";
   termBodyEl.appendChild(fr);
   S.termCwd = cwd;
   termCwdEl.textContent = cwd;
+}
+
+/* Switch the terminal pane between the login shell and the real claude TUI.
+   force=true because the iframe src is only read at creation -- without it the
+   pane keeps whatever it was first mounted with and the toggle looks broken. */
+function termSetMode(mode){
+  if (S.termMode === mode) return;
+  S.termMode = mode;
+  try { localStorage.setItem("sutra.termMode", mode); } catch (e) {}
+  /* termMount, not mountTerm: no such function has ever existed, so switching
+     between the shell and the claude TUI threw a ReferenceError -- AFTER
+     S.termMode had already been reassigned and persisted. The toggle moved, the
+     PTY did not, and every later open read the persisted mode against an iframe
+     that was never rebuilt. That is the "broken on multiple openings" report. */
+  termMount(true);
+  paintTermMode();
+  render();
 }
 
 function termToggle(on){
@@ -4572,9 +6320,33 @@ function sideTab(which){
   document.getElementById("sideTabPrev").setAttribute("aria-pressed", String(!term));
   document.getElementById("termCwd").hidden = !term;
   S.sideTab = term ? "terminal" : "preview";
-  if (term) termMount(false);
+  if (term){
+    termMount(false);
+    /* The iframe was display:none while Preview was up, so its ResizeObserver saw
+       nothing and the terminal still carries the size it had when it was hidden.
+       It is same-origin, so ask it to re-measure now that it has area again --
+       guarded, because the document may not have parsed yet on a fresh mount. */
+    requestAnimationFrame(()=>{
+      const fr = termBodyEl.querySelector("iframe");
+      try { fr && fr.contentWindow && fr.contentWindow.dispatchEvent(new Event("resize")); }
+      catch (e) {}
+    });
+  }
   lsSet(LS_SIDETAB, S.sideTab);
 }
+/* Shell vs the real Claude TUI. Wired beside the sibling tabs because it is the
+   same kind of control: which thing this pane is showing. */
+document.getElementById("termModeShell").onclick  = ()=>termSetMode("shell");
+document.getElementById("termModeClaude").onclick = ()=>termSetMode("claude");
+function paintTermMode(){
+  const claude = S.termMode === "claude";
+  const a = document.getElementById("termModeShell");
+  const b = document.getElementById("termModeClaude");
+  if (a) a.setAttribute("aria-pressed", String(!claude));
+  if (b) b.setAttribute("aria-pressed", String(claude));
+}
+paintTermMode();
+
 document.getElementById("sideTabTerm").onclick = ()=>sideTab("terminal");
 document.getElementById("sideTabPrev").onclick = ()=>sideTab("preview");
 document.getElementById("prevGo").onclick = ()=>previewOpen(document.getElementById("prevUrl").value);
@@ -4671,29 +6443,14 @@ document.querySelector(".rail").addEventListener("click", e=>{
   renderRail();
 }, true);
 
-const tenantMenuEl = document.getElementById("tenantMenu");
-const tenantSwitchEl = document.getElementById("tenantSwitch");
-function closeTenantMenu(){
-  tenantMenuEl.hidden = true;
-  tenantSwitchEl.setAttribute("aria-expanded","false");
-}
-tenantSwitchEl.onclick = (e)=>{
-  e.stopPropagation();
-  const open = tenantMenuEl.hidden;
-  renderTenantMenu();
-  tenantMenuEl.hidden = !open;
-  tenantSwitchEl.setAttribute("aria-expanded", String(open));
-};
-tenantMenuEl.addEventListener("click", e=>{
-  const b = e.target.closest("[data-pick-tenant]");
-  if (!b) return;
-  closeTenantMenu();
-  pickTenant(b.dataset.pickTenant);
-});
-document.addEventListener("click", e=>{
-  if (tenantMenuEl.hidden) return;
-  if (!e.target.closest(".tmenuwrap")) closeTenantMenu();
-});
-document.addEventListener("keydown", e=>{ if (e.key === "Escape") closeTenantMenu(); });
+/* The tenant switcher popover used to be wired here. 5781a2f ("remove tenancy")
+   deleted <div id="tenantMenu"> from the markup but left this block behind, so
+   getElementById returned null and the very next addEventListener threw a
+   TypeError -- eleven lines above boot(). The whole app died before it read
+   anything: no settings, no departments, no sessions, no skills. Every symptom
+   was downstream of one dead element reference.
+
+   The lesson is the deletion, not a null guard: there is one org per registry,
+   so there is nothing to switch between and nothing to wire. */
 boot();
 </script>

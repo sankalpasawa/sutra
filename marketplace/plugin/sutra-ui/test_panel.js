@@ -67,6 +67,10 @@ const source = extractScript(html);
 
 /* ── 2. the smallest DOM that lets the script finish parsing ───────────── */
 
+/* Replaced by tests that mount real elements on document.body. Default is a
+   no-op so nothing outside those tests changes behaviour. */
+let onNodeRemove = () => {};
+
 function makeNode(tag) {
   const node = {
     tagName: (tag || "div").toUpperCase(),
@@ -91,6 +95,10 @@ function makeNode(tag) {
     addEventListener() {},
     removeEventListener() {},
     appendChild(c) { return c; },
+    // Body-mounted overlays (#onbHost, #updHost) detach themselves. Routed
+    // through a hook so a test can keep a real element registry and observe
+    // that the banner is actually GONE, not merely re-rendered empty.
+    remove() { onNodeRemove(this); },
     focus() {},
     blur() {},
     setSelectionRange() {},
@@ -157,8 +165,13 @@ const EPILOGUE = `
   NOT_CHECKED, CONFIDENCE_FLOOR,
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
   chanKey, paletteFor,
+  _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip, resumableId,
+  fmt,
+  /* TENANTS was exported here. It is a lazy getter, so it kept "passing" after
+     the global was deleted -- it would only have thrown the moment a test
+     touched it. Removed with the tenant surface it belonged to. */
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
-  get TENANTS(){ return TENANTS; },   set TENANTS(v){ TENANTS = v; }
+  renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S
 };
 `;
 
@@ -316,12 +329,17 @@ test("10b. ORG-016: the target is not active", () => {
   assert.ok(/frozen/.test(subj), "ORG-016 must name the status: " + subj);
 });
 
-test("10c. ORG-017: the move crosses a tenant boundary", () => {
+test("10c. ORG-017 is NOT raised client-side: tenancy is removed", () => {
   T.DOMAINS = D;
-  // r4 is T-acme AND already parents a live "Research" -> both codes fire
-  deepEq(codesOf("r1", "r4"), ["ORG-017", "ORG-018"]);
-  // a cross-tenant target with no name clash fires ORG-017 alone
-  deepEq(codesOf("r2", "r4"), ["ORG-017"]);
+  // This used to assert ORG-017 ("the move crosses a tenant boundary"). One
+  // registry holds one org now, so a client-side cross-tenant preview can only
+  // ever be false -- and if it somehow fired it would put the word "tenant" in
+  // front of an operator as a finding. The check is gone; what remains is the
+  // name-clash code that fires on the same move for a real reason.
+  deepEq(codesOf("r1", "r4"), ["ORG-018"],
+    "r4 already parents a live 'Research' -> ORG-018 alone");
+  deepEq(codesOf("r2", "r4"), [],
+    "a differently-stamped target with no name clash is not a finding at all");
 });
 
 test("10d. ORG-018: a LIVE sibling already carries that name", () => {
@@ -692,6 +710,558 @@ test("17. the '@' palette offers files and '/' offers commands, each replacing i
     assert.strictEqual(T.paletteFor("mail me at a@b"), null,
       "an embedded @ opened the file palette");
   } finally { T.S.fs = prevFs; }
+});
+
+/* ── 18. scroll survives a re-render ────────────────────────────────────────
+   render() replaces #panes wholesale, so the browse pane's scroller comes back
+   as a fresh element at scrollTop 0. Clicking a Directory status filter part
+   way down the Charters table therefore threw the operator back to the top of
+   the page on every single click. Focus and caret were already saved across
+   the rebuild; scroll was not. */
+function withScroller(top, scrollHeight, clientHeight, fn) {
+  /* A real scroller CLAMPS: assigning a scrollTop past the end silently lands
+     at scrollHeight - clientHeight. The clamp is the whole reason the restore
+     needs a rAF pass, so a plain-object stub that stored 4000 verbatim would
+     test a browser that does not exist. */
+  const el = {
+    scrollHeight: scrollHeight, clientHeight: clientHeight, _t: 0,
+    get scrollTop() { return this._t; },
+    set scrollTop(v) {
+      this._t = Math.max(0, Math.min(v, Math.max(0, this.scrollHeight - this.clientHeight)));
+    },
+  };
+  el.scrollTop = top;
+  const prev = sandbox.document.querySelector;
+  sandbox.document.querySelector = (sel) =>
+    (sel.indexOf("browse") !== -1 ? el : prev.call(sandbox.document, sel));
+  const prevRAF = sandbox.requestAnimationFrame;
+  const queued = [];
+  sandbox.requestAnimationFrame = (cb) => queued.push(cb);
+  try { return fn(el, () => queued.splice(0).forEach((cb) => cb())); }
+  finally { sandbox.document.querySelector = prev; sandbox.requestAnimationFrame = prevRAF; }
+}
+
+test("18a. the scroll key separates the three views of one screen", () => {
+  const prev = [T.S.screen, T.S.view];
+  try {
+    T.S.screen = "departments"; T.S.view = "dir";
+    const dir = T._browseScrollKey();
+    T.S.view = "live";
+    assert.notStrictEqual(T._browseScrollKey(), dir,
+      "Live and Directory are different documents and must not share a position");
+    T.S.view = "dir";
+    assert.strictEqual(T._browseScrollKey(), dir, "the same view must key the same");
+  } finally { T.S.screen = prev[0]; T.S.view = prev[1]; }
+});
+
+test("18b. a position is restored across a rebuild of the same view", () => {
+  T.S.screen = "departments"; T.S.view = "dir";
+  withScroller(4000, 20000, 900, (el) => {
+    const saved = T._browseScrollState();
+    assert.strictEqual(saved.top, 4000);
+    el.scrollTop = 0;                       // what the innerHTML rebuild does
+    T._restoreBrowseScroll(saved);
+    assert.strictEqual(el.scrollTop, 4000, "the operator's position was lost");
+  });
+});
+
+test("18c. switching view does NOT restore -- a new document starts at the top", () => {
+  T.S.screen = "departments"; T.S.view = "dir";
+  withScroller(4000, 20000, 900, (el) => {
+    const saved = T._browseScrollState();
+    T.S.view = "live";                      // the operator switched views
+    el.scrollTop = 0;
+    T._restoreBrowseScroll(saved);
+    assert.strictEqual(el.scrollTop, 0, "an unrelated view inherited a stale offset");
+  });
+});
+
+test("18d. a filter that SHORTENS the page clamps to the real maximum, not 0", () => {
+  T.S.screen = "departments"; T.S.view = "dir";
+  withScroller(4000, 20000, 900, (el, flushRAF) => {
+    const saved = T._browseScrollState();
+    // the rebuild leaves a much shorter document; the browser clamps to 0
+    el.scrollHeight = 2000; el.scrollTop = 0;
+    T._restoreBrowseScroll(saved);
+    flushRAF();
+    assert.strictEqual(el.scrollTop, 1100, "should land at scrollHeight - clientHeight");
+  });
+});
+
+test("18e. an unscrolled pane saves nothing, so nothing is restored", () => {
+  T.S.screen = "departments"; T.S.view = "dir";
+  withScroller(0, 20000, 900, () => {
+    assert.strictEqual(T._browseScrollState(), null);
+  });
+});
+
+/* ── 19. a resume id that cannot possibly resolve is not sent ───────────────
+   `claude --resume <id>` resolves the id IN THE PROJECT OF ITS WORKING
+   DIRECTORY. adoptRealSessions() attaches claude_session to every transcript on
+   disk, and those belong to the directory they were recorded in -- usually a
+   repo, not the panel's workdir. Sending one guaranteed:
+       No conversation found with session ID: 565ad6a3-...
+   a wasted claude run, seconds of dead air, and a failed-looking turn. */
+const mkSess = (id, cwd, workdir) => ({
+  claude_session: id, cwd: cwd, channel: workdir ? { workdir: workdir } : null,
+});
+
+test("19a. an id recorded in THIS workdir is resumed", () => {
+  assert.strictEqual(T.resumableId(mkSess("abc", "/repo", "/repo")), "abc");
+});
+
+test("19b. an id from a DIFFERENT directory is never sent", () => {
+  assert.strictEqual(T.resumableId(mkSess("abc", "/repo", "/workspace")), null,
+    "this is the doomed round trip the operator saw fail");
+});
+
+test("19c. an UNKNOWN cwd is still attempted -- unknown is not mismatched", () => {
+  /* the server replays without the id if the guess is wrong, so trying costs
+     one recoverable turn; refusing would break every legitimate continuation
+     whose cwd the transcript did not record */
+  assert.strictEqual(T.resumableId(mkSess("abc", "", "/workspace")), "abc");
+  assert.strictEqual(T.resumableId(mkSess("abc", "/repo", null)), "abc");
+});
+
+test("19d. no id means no resume, never the string 'null'", () => {
+  assert.strictEqual(T.resumableId(mkSess(null, "/repo", "/repo")), null);
+  assert.strictEqual(T.resumableId(mkSess(undefined, "/repo", "/repo")), null);
+});
+
+/* ── 20. the composer can hold more than one line ──────────────────────────
+   It was <input type="text">, which cannot contain a newline at any price:
+   Shift+Enter, Ctrl+J and pasting a multi-line block were not "unimplemented",
+   they were impossible. These assertions are on the shipped markup, because the
+   element TYPE is the whole feature. */
+const panelHtml = fs.readFileSync(PANEL, "utf8");
+
+test("20a. the composer is a textarea, not an input", () => {
+  assert.ok(/<textarea data-sask=/.test(panelHtml),
+    "the composer must be a textarea or multiline is impossible");
+  assert.ok(!/<input type="text" data-sask=/.test(panelHtml),
+    "the old single-line input must be gone");
+});
+
+test("20b. its value is the element's CONTENT, not a value= attribute", () => {
+  /* a textarea ignores value="..."; leaving that in place would silently blank
+     the composer on every re-render */
+  const m = panelHtml.match(/<textarea data-sask=[\s\S]{0,320}?<\/textarea>/);
+  assert.ok(m, "composer markup not found");
+  assert.ok(/>\$\{esc\(S\.composerText/.test(m[0]),
+    "the draft text must be the textarea's content");
+  assert.ok(!/value="\$\{esc\(S\.composerText/.test(m[0]),
+    "a textarea ignores value=, so the draft would vanish");
+});
+
+test("20c. focus restore knows about TEXTAREA", () => {
+  /* _focusedInputSelector tested INPUT||SELECT only. Without TEXTAREA the caret
+     jumps to the end on every background re-render while you type. */
+  const fn = panelHtml.match(/function _focusedInputSelector\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/TEXTAREA/.test(fn), "_focusedInputSelector must accept TEXTAREA");
+});
+
+test("20d. Shift+Enter is a newline and Enter still sends", () => {
+  const h = panelHtml;
+  assert.ok(/e\.key === "Enter" && \(e\.shiftKey/.test(h),
+    "Shift+Enter must be handled before the send branch");
+  assert.ok(/if\(e\.key==="Enter"\)\{/.test(h), "Enter must still send");
+});
+
+test("20e. auto-grow resets height before measuring", () => {
+  /* scrollHeight only shrinks correctly when the element is not already holding a
+     taller explicit height -- without the reset the box grows and never returns */
+  const fn = panelHtml.match(/function autoGrowComposer\(el\)\{[\s\S]*?\n\}/)[0];
+  const reset = fn.indexOf('height = "auto"');
+  const measure = fn.indexOf("scrollHeight");
+  assert.ok(reset !== -1 && measure !== -1 && reset < measure,
+    "must set height:auto BEFORE reading scrollHeight");
+});
+
+/* ── 21. the boot contract ──────────────────────────────────────────────────
+   These exist because of a shipped, user-visible outage: 5781a2f deleted
+   <div id="tenantMenu"> from the markup and left the code that wired it. The
+   getElementById returned null, the next addEventListener threw, and boot() --
+   the LAST statement in the script -- never ran. No settings, no departments,
+   no sessions, no skills, all at once, each screen blaming its own endpoint.
+   Every endpoint was healthy the whole time. */
+
+test("21a. no top-level getElementById result is dereferenced without a guard", () => {
+  /* The exact failure shape: `const x = document.getElementById("y")` at top
+     level, followed by `x.something` with nothing proving x is non-null. Only
+     top-level code matters -- inside a function the element may legitimately be
+     created before the call. */
+  const h = panelHtml;
+  const tail = h.slice(h.lastIndexOf("\n}") + 2);   // after the last function body
+  const decls = [...tail.matchAll(/^const (\w+)\s*=\s*document\.getElementById\("([^"]+)"\)/gm)];
+  const unguarded = [];
+  for (const [, name, id] of decls) {
+    const idInMarkup = new RegExp('id="' + id + '"').test(h);
+    const guarded = new RegExp("(if\\s*\\(\\s*" + name + "\\b|" + name + "\\s*&&|" + name + "\\s*\\?)").test(tail);
+    if (!idInMarkup && !guarded) unguarded.push(name + " -> #" + id);
+  }
+  assert.deepStrictEqual(unguarded, [],
+    "top-level element refs with no matching id= in the markup and no guard: " +
+    unguarded.join(", "));
+});
+
+test("21b. boot() is still the last statement, and nothing throws before it", () => {
+  const h = panelHtml;
+  const i = h.lastIndexOf("boot();");
+  assert.ok(i !== -1, "boot() must be called");
+  const after = h.slice(i + "boot();".length).replace(/<\/script>/, "").trim();
+  assert.strictEqual(after, "",
+    "boot() must be the final statement -- anything before it that throws is silent");
+});
+
+test("21c. the tenant surface is gone, not half-gone", () => {
+  /* Half-removal is what caused the outage. Assert BOTH directions: no markup,
+     and no code that expects markup. */
+  const h = panelHtml;
+  for (const sym of ["tenantMenuEl", "tenantSwitchEl", "pickTenant", "renderTenantMenu",
+                     "tenantGateHtml", "wireGate", "inTenant", "scopeQ", "S.showAcme",
+                     "META.tenant_id", "LS_TENANT"]) {
+    assert.ok(!h.includes(sym), "tenant symbol still referenced: " + sym);
+  }
+});
+
+test("21d. loadRuntime degrades per endpoint, it does not fail as a block", () => {
+  /* Promise.all here meant a 500 from /api/skills nulled SETTINGS for the life
+     of the window, and Settings then claimed "GET /api/settings has not
+     answered" -- which had not happened. */
+  const fn = panelHtml.match(/async function loadRuntime\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(fn.includes("Promise.allSettled"), "must use allSettled");
+  assert.ok(!/Promise\.all\(/.test(fn), "must not use Promise.all");
+  assert.ok(fn.includes("S.runtimeError"), "must report WHICH endpoint failed");
+});
+
+test("21e. the composer's colours come from the theme, not the UA stylesheet", () => {
+  /* 03c09cc turned the composer into a <textarea> and left the rule selecting
+     `.pc input`, so it lost background/border/colour/outline and rendered as a
+     bordered white box with a browser focus ring. */
+  const h = panelHtml;
+  assert.ok(/\.pc input,\s*\.pc textarea\{/.test(h),
+    ".pc rule must select the textarea as well as the input");
+  const ta = h.match(/textarea\[data-sask\]\{[\s\S]*?\}/)[0];
+  assert.ok(!/font:\s*inherit/.test(ta),
+    "font:inherit resets font-size to 16px and beats the .pc rule at equal specificity");
+});
+
+test("21f. a hidden terminal body is display:none, so it cannot fit to zero", () => {
+  /* .termbody{display:flex} overrode [hidden]{display:none}: switching to the
+     Preview tab left the terminal laid out at zero size, it fit itself to 2x1
+     and pushed that winsize into the PTY. */
+  assert.ok(/\.termbody\[hidden\]\{display:none\}/.test(panelHtml),
+    ".termbody[hidden] must be display:none");
+});
+
+test("21g. the terminal mode toggle calls a function that exists", () => {
+  /* termSetMode called mountTerm(), which has never been defined -- so it threw
+     AFTER persisting the new mode, and the pane and the PTY diverged for good. */
+  const h = panelHtml;
+  assert.ok(!/\bmountTerm\s*\(/.test(h), "mountTerm() does not exist; termMount() does");
+  const fn = h.match(/function termSetMode\(mode\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/termMount\(\s*true\s*\)/.test(fn), "must force a remount on a mode change");
+});
+
+test("21h. an undated row does not take the History screen down", () => {
+  /* Two real domain_updated events in the live registry carry no ts_ms. fmt()
+     called toISOString() on them and threw a RangeError, so History rendered
+     nothing at all rather than 65 dated rows and 2 undated ones. */
+  assert.strictEqual(T.fmt(undefined), "—", "undefined must not throw");
+  assert.strictEqual(T.fmt(NaN), "—", "NaN must not throw");
+  assert.strictEqual(T.fmt("not a date"), "—", "junk must not throw");
+  assert.strictEqual(T.fmt(1785508157097).length, 10, "a real stamp still formats");
+});
+
+test("21i. the app is a three-column grid with the rail on the left", () => {
+  /* SHIPPED REGRESSION. The tenant popover was removed with a RANGE delete --
+     "from .tmenuwrap{ to .rtop{" -- and the rules that happened to sit between
+     them went with it: .app's grid-template-columns, .rail's flex column, and
+     the narrow-window media query. .app fell back to display:block, so the rail
+     stopped being a left column and Home/Code stacked across the top of the
+     window. A range delete is only as safe as its end anchor. */
+  const h = panelHtml;
+  const app = h.match(/\n\s*\.app\{[\s\S]*?\}/);
+  assert.ok(app, ".app rule must exist");
+  assert.ok(/display:grid/.test(app[0]), ".app must be display:grid");
+  assert.ok(/grid-template-columns:\s*224px\s+1fr\s+var\(--termw/.test(app[0]),
+    ".app must lay out rail | panes | terminal");
+  const rail = h.match(/\n\s*\.rail\{[\s\S]*?\}/);
+  assert.ok(rail, ".rail rule must exist");
+  assert.ok(/display:flex/.test(rail[0]) && /flex-direction:column/.test(rail[0]),
+    ".rail must be a flex column");
+  assert.ok(/@media\(max-width:860px\)\{\.app\{grid-template-columns:1fr/.test(h),
+    "the narrow-window fallback must survive");
+});
+
+test("22a. a streaming token patches one node, it does not re-render the pane", () => {
+  /* REPORTED: the transcript flickered, the view snapped bottom->top, and chunk
+     delivery was not smooth. One cause: a token frame called scheduleRender(),
+     and render() replaces #panes WHOLESALE via innerHTML -- ten times a second,
+     destroying and re-parsing the whole transcript per frame. */
+  const h = panelHtml;
+  const tok = h.match(/\} else if \(f\.type === "token"\)\{[\s\S]*?\n    \} else/);
+  assert.ok(tok, "the token frame branch must exist");
+  assert.ok(/scheduleStreamPatch/.test(tok[0]),
+    "a token must patch, not re-render");
+  assert.ok(/\breturn;/.test(tok[0]),
+    "it must return before the handler's trailing scheduleRender(), or the " +
+    "rebuild happens anyway and the patch is pointless");
+  assert.ok(/data-resp="\$\{esc\(t\.uid/.test(h),
+    "the reply body needs a stable patch anchor");
+});
+
+test("22b. the patch follows the tail only when the reader has not scrolled away", () => {
+  const fn = panelHtml.match(/function patchStreaming\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/S\.userScrolled\.get\(sid\)/.test(fn),
+    "must consult userScrolled before moving the scroller");
+  assert.ok(/__pinning/.test(fn),
+    "our own scroll must be marked so the listener does not read it as intent");
+});
+
+test("22c. streaming is animation-framed, not a 100ms timer", () => {
+  const fn = panelHtml.match(/function scheduleStreamPatch\(uid\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/requestAnimationFrame/.test(fn), "must batch on a frame");
+  assert.ok(!/setTimeout/.test(fn), "10fps batching is what made it choppy");
+});
+
+test("23a. the permission mode is chosen at chat level, not only in Settings", () => {
+  /* It lived only in Settings, behind an env var set when STARTING the server --
+     which for a Finder-launched .app means editing a plist. The panel showed the
+     control, refused it, and told the operator to do something they could not. */
+  const h = panelHtml;
+  assert.ok(/function permSelect\(\)\{/.test(h), "a composer-level selector must exist");
+  /* It renders in the composer row -- the same block as the model select, which
+     is the anchor that is unambiguously part of the composer. */
+  const call = h.indexOf("${permSelect()}");
+  const model = h.indexOf('<select class="modelsel"');
+  assert.ok(call !== -1, "permSelect() must be called from the template");
+  assert.ok(call < model && model - call < 600,
+    "it must render next to the model select, i.e. in the composer row");
+});
+
+test("23b. a write-capable mode is confirmed, never one click away", () => {
+  const fn = panelHtml.match(/async function setPermMode\(mode\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/writes_files/.test(fn), "must branch on whether the mode writes files");
+  assert.ok(/S\.permConfirm = \{ mode \}/.test(fn),
+    "a write-capable mode must open the confirmation instead of applying");
+  assert.ok(/unsafe_modes_allowed/.test(fn),
+    "already-granted consent must not be re-prompted -- that is friction with no safety");
+});
+
+test("23c. only the confirmation sends the acknowledgement phrase", () => {
+  /* The server refuses a bare boolean on purpose: the port is unauthenticated.
+     If the phrase were sent from anywhere else, that protection would be moot. */
+  const h = panelHtml;
+  const apply = h.match(/async function applyPermMode\(mode, withAck\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/if \(withAck\) body\.unsafe_ack = UNSAFE_ACK_PHRASE/.test(apply),
+    "the phrase is sent only when explicitly confirmed");
+  const sends = (h.match(/unsafe_ack/g) || []).length;
+  assert.ok(sends <= 3, "the phrase should have one send site, not be sprinkled around");
+});
+
+test("23d. the selector shows the EFFECTIVE mode, not the stored one", () => {
+  /* The server clamps at the point of use. Showing the stored value would tell
+     the operator the agent is doing something it is not. */
+  const fn = panelHtml.match(/function permSelect\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(/permission_mode_effective/.test(fn),
+    "must read permission_mode_effective first");
+});
+
+test("24a. every composer control is themed, none falls back to the UA stylesheet", () => {
+  /* .permsel shipped with NO css at all and rendered as a white box in a dark
+     theme, directly beside a correctly themed .modelsel. Same shape as the
+     composer-textarea regression: a control added next to an existing one
+     without inheriting the rule that made the existing one belong. */
+  const h = panelHtml;
+  /* The class attribute is often a template literal -- `class="permsel${writes}"`.
+     An earlier version of this test required a closing quote right after the
+     letters, so it never collected `permsel` at all and passed while the very
+     regression it names was reintroduced. Take the LEADING literal token of any
+     class attribute instead, interpolation or not. */
+  const classes = new Set();
+  const re = /<(?:select|input|textarea)[^>]*\sclass="([a-z][a-z-]*)/g;
+  let m;
+  while ((m = re.exec(h))) classes.add(m[1]);
+  assert.ok(classes.has("permsel") && classes.has("modelsel"),
+    "sanity: the extractor must actually see the composer selects, got " +
+    [...classes].join(","));
+  /* Comments are stripped first. A prose mention like "the .permsel rule" in a
+     comment satisfied a naive search and made this test pass while the CSS it
+     checks for was absent -- the test was reassuring rather than load-bearing.
+     Only a real selector counts: the class followed by { , : or another class. */
+  const css = (h.match(/<style[\s\S]*?<\/style>/) || [h])[0]
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const unstyled = [...classes].filter(c => !new RegExp("\\." + c + "\\s*[,{:.]").test(css));
+  assert.deepStrictEqual(unstyled, [],
+    "form controls with no CSS rule: " + unstyled.join(", "));
+});
+
+test("24b. the directory grid can shrink, and its TOC stops overlaying when it collapses", () => {
+  /* Two compounding bugs made the Directory view unreadable in a narrow pane:
+     `1fr` is minmax(auto,1fr) and `auto` floors at MIN-CONTENT, so the column
+     sized itself to 973px inside a 385px pane; and when the container query
+     collapsed the grid to one column the nav was still position:sticky, so the
+     TOC printed itself over the departments underneath. */
+  const h = panelHtml;
+  const grid = h.match(/\.dpage\{[^}]*\}/)[0];
+  assert.ok(/grid-template-columns:200px minmax\(0,1fr\)/.test(grid),
+    "the content column must be allowed to shrink below min-content");
+  assert.ok(/\.dpage > \*\{min-width:0\}/.test(h),
+    "grid items default to min-width:auto -- the same trap one level down");
+  const cq = h.match(/@container \(max-width:720px\)\{[\s\S]*?\n  \}/);
+  assert.ok(cq, "the collapse query must exist");
+  assert.ok(/\.dpage nav\{position:static\}/.test(cq[0]),
+    "a sticky nav in a single column is an overlay, not a rail");
+  /* Source order is the whole reason this works: a container query carries no
+     extra specificity, so declared BEFORE the sticky rule it is overridden by
+     the very rule it exists to undo. */
+  assert.ok(h.indexOf("@container (max-width:720px)") >
+            h.indexOf(".dpage nav{position:sticky"),
+    "the container query must come AFTER the sticky rule it overrides");
+});
+
+/* ── 25. the staged-update banner ───────────────────────────────────────────
+   The update is mandatory, so the banner is the only thing standing between a
+   verified download and the app closing itself. Every test here is about it
+   telling the truth: what it will do, when, and whether it can do it at all. */
+
+const _updHosts = Object.create(null);
+
+/* Mount a real element registry on the stub document so the banner can be
+   inspected after it renders -- and, just as importantly, so its absence is
+   observable. */
+function updHarness({ staged, desktop, focus = true, term = false }) {
+  Object.keys(_updHosts).forEach((k) => delete _updHosts[k]);
+  onNodeRemove = (n) => { delete _updHosts[n.id]; };
+  documentStub.body = { appendChild(c) { _updHosts[c.id] = c; return c; } };
+  documentStub.getElementById = (id) =>
+    (id === "updHost" ? (_updHosts[id] || null) : makeNode("div"));
+  documentStub.hasFocus = () => focus;
+
+  const applied = [];
+  sandbox.sutra = desktop
+    ? { desktop: true,
+        applyUpdate: () => { applied.push(1); return Promise.resolve({ ok: true }); },
+        deferUpdate: () => Promise.resolve({ ok: true }) }
+    : undefined;
+
+  T.stopUpdCountdown();
+  T.S.updStaged = staged;
+  T.S.updDeferred = false;
+  T.S.updApplyError = null;
+  T.S.updFiring = false;
+  T.S.termOpen = term;
+  T.renderUpdateBanner();
+  return { applied, html: () => (_updHosts.updHost || { innerHTML: "" }).innerHTML,
+           gone: () => !_updHosts.updHost };
+}
+
+const STAGED = { pending: true, version: "2.70.0", state: "staged" };
+
+test("25a. no staged update means no banner at all", () => {
+  const h = updHarness({ staged: { pending: false }, desktop: true });
+  assert.ok(h.gone(), "a banner with nothing to say must be removed, not blanked");
+  T.stopUpdCountdown();
+});
+
+test("25b. a browser gets a statement of fact, never a countdown", () => {
+  /* The CLI serves this same panel where there is no app to restart. A
+     countdown there would promise something the page cannot do. */
+  const h = updHarness({ staged: STAGED, desktop: false });
+  const html = h.html();
+  assert.ok(/has been downloaded/.test(html), "it should say what happened");
+  assert.ok(/next time the desktop app quits/.test(html), "and what happens next");
+  assert.ok(!/Restart now/.test(html), "no control it cannot honour");
+  assert.strictEqual(T.S.updLeft, null, "no clock without a shell to restart");
+  T.stopUpdCountdown();
+});
+
+test("25c. the desktop counts down from 15 and offers both exits", () => {
+  const h = updHarness({ staged: STAGED, desktop: true });
+  assert.strictEqual(T.S.updLeft, T.UPDATE_COUNTDOWN_S);
+  assert.ok(/Restarting in/.test(h.html()));
+  assert.ok(/Restart now/.test(h.html()));
+  assert.ok(/Not now/.test(h.html()));
+  T.stopUpdCountdown();
+});
+
+test("25d. the clock is HELD while the window is in the background", () => {
+  /* A countdown that ran unfocused would restart the app while the user was in
+     another window, having never seen the banner. That is not a prompt. */
+  const h = updHarness({ staged: STAGED, desktop: true, focus: false });
+  const before = T.S.updLeft;
+  T.updTick();
+  assert.strictEqual(T.S.updLeft, before, "the clock must not advance unfocused");
+  assert.ok(/when you come back/.test(h.html()), "and it must say why it is paused");
+  T.stopUpdCountdown();
+});
+
+test("25e. a focused tick advances, and reaching zero restarts", () => {
+  const h = updHarness({ staged: STAGED, desktop: true });
+  T.S.updLeft = 2;
+  T.updTick();
+  assert.strictEqual(T.S.updLeft, 1);
+  T.updTick();
+  assert.strictEqual(T.S.updLeft, null, "the clock stops when it fires");
+  assert.deepStrictEqual(h.applied, [1], "and the shell is asked to restart");
+  /* Regression: the render inside applyUpdateNow() saw "staged, no clock, no
+     error yet" and started a SECOND countdown -- re-firing every 15s for as
+     long as the shell took to quit. */
+  T.renderUpdateBanner();
+  assert.strictEqual(T.S.updLeft, null, "firing must not re-arm the countdown");
+  assert.deepStrictEqual(h.applied, [1], "and must not restart twice");
+  T.stopUpdCountdown();
+});
+
+test("25f. 'Not now' defers -- it does not decline, and it does not restart", () => {
+  /* The whole point of the mandatory design: cancelling costs nothing because
+     the verified build is applied on the way out anyway. The copy has to say
+     that, or the user will expect to be asked again. */
+  const h = updHarness({ staged: STAGED, desktop: true });
+  T.S.updDeferred = true;
+  T.stopUpdCountdown();
+  T.renderUpdateBanner();
+  assert.deepStrictEqual(h.applied, [], "deferring must never restart the app");
+  assert.strictEqual(T.S.updLeft, null, "and it must stop the clock");
+  assert.ok(/will finish installing when you quit/.test(h.html()),
+    "the promise the shell actually keeps");
+  assert.ok(!/Restarting in/.test(h.html()));
+  T.stopUpdCountdown();
+});
+
+test("25g. an open terminal WARNS and the clock keeps running", () => {
+  /* Founder decision 2026-08-06: warn, do not suppress. So the warning has to
+     be present AND the countdown has to be unaffected by it. */
+  const h = updHarness({ staged: STAGED, desktop: true, term: true });
+  assert.ok(/terminal session is open/i.test(h.html()), "say what will be lost");
+  assert.strictEqual(T.S.updLeft, T.UPDATE_COUNTDOWN_S, "and still count down");
+  T.stopUpdCountdown();
+});
+
+test("25h. a failed install never renders a countdown that is not running", () => {
+  /* Regression: `failed` fell through to the countdown branch and rendered
+     "Restarting in nulls" -- there is no clock in that state. */
+  const h = updHarness({
+    staged: { pending: true, version: "2.70.0", state: "failed",
+              error: "new bundle failed codesign" },
+    desktop: true });
+  const html = h.html();
+  assert.ok(!/null/.test(html), "no null leaked into the copy: " + html);
+  assert.ok(!/Restarting in/.test(html));
+  assert.ok(/could not be installed/.test(html));
+  assert.ok(/codesign/.test(html), "the reason is the useful part");
+  T.stopUpdCountdown();
+});
+
+test("25i. an update already armed says so instead of counting again", () => {
+  const h = updHarness({
+    staged: { pending: true, version: "2.70.0", state: "installing" },
+    desktop: true });
+  assert.strictEqual(T.S.updLeft, null, "arming already happened; no second clock");
+  assert.ok(/ready to install/.test(h.html()));
+  assert.ok(/as soon as the app closes/.test(h.html()));
+  T.stopUpdCountdown();
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */
