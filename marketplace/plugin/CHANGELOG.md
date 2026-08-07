@@ -20,6 +20,12 @@
   OFF everywhere until a machine opts in with `sutra-usage on`. Fail-open on any
   data error; `sutra-usage status` shows live five-hour/seven-day utilization.
 
+## 2.79.0
+
+- **Balance screen beauty pass.** Serif greeting with the day's one-liner,
+  insight cards as accented stat tiles, day strip in a card with hour marks,
+  polished composer — all from existing panel tokens; visual-only.
+
 ## 2.77.0
 
 - **Balance speaks human (founder-approved register).** Observe v2 filters
