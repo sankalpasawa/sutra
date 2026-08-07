@@ -37,6 +37,43 @@ def _tenant(tenant_id):
     return tenant_id or os.environ.get("PLACEMENT_TENANT", "T-local")
 
 
+def _publish_set(where):
+    """-> (all_domains, live, root). The ONE gate every publish passes through.
+
+    This exists because the two publish paths did not agree on what they were
+    allowed to emit. `_render_set` asserted a single live root before walking
+    the tree; `export_registry_only` -- the FAST LANE, the one a drift-timer
+    hook runs unattended and then commits and pushes to a public Pages repo --
+    called neither it nor anything like it. Its only input-set filter was
+    `tenant_refs`, so with tenant gone there would have been NO guard at all on
+    the surface that publishes without a human present. Both call this now.
+
+    The input set is chosen by CONTAINMENT (subtree_refs from the root) rather
+    than by a tenant label. Structure cannot disagree with the tree that gets
+    rendered; a label can, and did so silently.
+    """
+    all_domains = E.load_domains()
+    if not all_domains:
+        raise SystemExit("registry is empty — run a scan or seed the org tree first")
+    live = E.live_refs(all_domains)
+    roots = sorted(r for r, d in live.items() if d.get("parent_ref") is None)
+    if not roots:
+        raise SystemExit("no live root domain — nothing to publish")
+    if len(roots) > 1:
+        # LOUD, not last-wins: the old `for r, d in domains.items(): if p is
+        # None: root = r` made index.html nondeterministic across runs, and only
+        # the winner's subtree was walked — the other root and everything under
+        # it vanished from the published site silently.
+        raise SystemExit("%d parent-less live domains (%s) — a publish must not "
+                         "guess which one is the root; merge or retire the "
+                         "extras first" % (len(roots), ", ".join(roots)))
+    root = roots[0]
+    # Everything under the root, tombstones included. Composed with live_refs by
+    # the caller when it wants only live nodes.
+    all_domains = E.subtree_refs(all_domains, root)
+    return all_domains, E.live_refs(all_domains), root
+
+
 def _render_set(tenant_id):
     """-> (all_domains, live, kids, root, all_kids) for ONE tenant.
 
@@ -60,24 +97,7 @@ def _render_set(tenant_id):
     and take its whole subtree off the site with no error. Those re-attach to
     the nearest live ancestor.
     """
-    all_domains = E.tenant_refs(E.load_domains(), tenant_id)
-    if not all_domains:
-        raise SystemExit("registry empty for tenant %s — run a scan or seed the "
-                         "org tree first" % tenant_id)
-    live = E.live_refs(all_domains)
-    roots = sorted(r for r, d in live.items() if d.get("parent_ref") is None)
-    if not roots:
-        raise SystemExit("tenant %s has no live root domain" % tenant_id)
-    if len(roots) > 1:
-        # LOUD, not last-wins: the old `for r, d in domains.items(): if p is
-        # None: root = r` made index.html nondeterministic across runs, and only
-        # the winner's subtree was walked — the other root and everything under
-        # it vanished from the published site silently.
-        raise SystemExit("tenant %s has %d parent-less live domains (%s) — a "
-                         "publish must not guess which one is the root; merge "
-                         "or retire the extras first"
-                         % (tenant_id, len(roots), ", ".join(roots)))
-    root = roots[0]
+    all_domains, live, root = _publish_set(where="build")
     all_kids, kids = {}, {}
     for r, d in all_domains.items():
         all_kids.setdefault(d.get("parent_ref"), []).append(r)
@@ -1372,8 +1392,14 @@ def export_registry_only(out_dir, tenant_id=None):
     consumer that must keep seeing tombstones, because a charter homed to a
     retired domain still has to reach §3.2.4's Archive tray. The PAGES drop
     retired departments (see `_render_set`); the registry keeps their rows."""
-    tenant_id = _tenant(tenant_id)
-    domains = E.tenant_refs(E.load_domains(), tenant_id)
+    # THE GUARD THIS FUNCTION NEVER HAD. It is the fast lane a drift-timer hook
+    # runs unattended and then commits and pushes to a public Pages repo, and
+    # until now its only input-set filter was tenant_refs -- no root assertion
+    # at all, unlike build()/build_site(). Removing tenant without putting this
+    # here would have left the one unattended publish surface completely
+    # unguarded. Same gate as the page build, so the two can no longer disagree
+    # about what belongs in the org.
+    domains, _live, _root = _publish_set(where="export_registry_only")
     kids = {}
     for r, d in domains.items():
         kids.setdefault(d.get("parent_ref"), []).append(r)

@@ -221,7 +221,8 @@ cmd_banner() {
   install_id=$(jq -r '.install_id // "<missing>"' "$PROJECT_JSON")
   project_id=$(jq -r '.project_id // "<missing>"' "$PROJECT_JSON")
   profile=$(jq -r '.profile // "project"' "$PROJECT_JSON")
-  optin=$(jq -r '.telemetry_optin // false' "$PROJECT_JSON")
+  # v2.68.0: three-state read — missing key = "default" (enabled, anonymous).
+  optin=$(jq -r 'if has("telemetry_optin") then (.telemetry_optin|tostring) else "default" end' "$PROJECT_JSON")
 
   echo "🧭 Sutra active"
   printf '   Version:         %s\n' "$version"
@@ -240,9 +241,11 @@ cmd_banner() {
   elif [ "$optin" = "true" ] && [ "${SUTRA_LEGACY_TELEMETRY:-}" = "1" ]; then
     tel="on — legacy push active (SUTRA_LEGACY_TELEMETRY=1)"
   elif [ "$optin" = "true" ]; then
-    tel="ENABLED — push to sankalpasawa/sutra-data on Stop (SUTRA_TELEMETRY=0 to disable)"
+    tel="ENABLED (consented, identity on wire) — daily push to sankalpasawa/sutra-data (SUTRA_TELEMETRY=0 to disable)"
+  elif [ "$optin" = "false" ]; then
+    tel="off (explicit opt-out)"
   else
-    tel="off"
+    tel="ENABLED by default (anonymous, v2.68.0) — daily push, no identity (opt out: telemetry_optin=false or SUTRA_TELEMETRY=0)"
   fi
   printf '   Telemetry:       %s\n' "$tel"
 

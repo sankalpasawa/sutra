@@ -34,8 +34,12 @@ if [ -n "$PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
 fi
 [ -z "$CMD" ] && exit 0
 
-# Real codex consult invocation? (specific subcommands, not bare "codex")
-if printf '%s' "$CMD" | grep -qE 'codex[[:space:]]+(exec|review|resume)'; then
+# Real codex consult invocation? (specific subcommands, not bare "codex").
+# W1-T13 codex-fold P1: anchored as a COMMAND WORD on a quote-stripped copy —
+# `echo "codex exec"` or a comment must never mint a durable authorization
+# (the persistent ledger below outlives the turn, so this match is load-bearing).
+CMD_SCAN=$(printf '%s' "$CMD" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" | sed -E 's/[[:space:]]#.*$//')
+if printf '%s' "$CMD_SCAN" | grep -qE '(^|[;&|(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*([^[:space:]]*/)?codex[[:space:]]+(exec|review|resume)([[:space:]]|$)'; then
   SID="unknown"
   if command -v jq >/dev/null 2>&1 && [ -n "$PAYLOAD" ]; then
     SID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // "unknown"' 2>/dev/null)
@@ -57,5 +61,11 @@ if printf '%s' "$CMD" | grep -qE 'codex[[:space:]]+(exec|review|resume)'; then
     mkdir -p "$REPO_ROOT/.claude" 2>/dev/null
     printf '%s\n' "$BODY" > "$REPO_ROOT/.claude/codex-consulted" 2>/dev/null
   fi
+  # W1-T13 (d9): persistent consult ledger — survives per-turn marker wipes so
+  # the gate honors a background consult exactly once (consume-once, gate-side).
+  case "$SID" in *[!A-Za-z0-9-]*|'') : ;; *)
+    mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
+    printf '{"sid":"%s","ts":%s}\n' "$SID" "$(date +%s)" >> "$REPO_ROOT/.enforcement/codex-consults.jsonl" 2>/dev/null || true
+  ;; esac
 fi
 exit 0

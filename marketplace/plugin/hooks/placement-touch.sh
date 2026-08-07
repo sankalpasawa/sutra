@@ -20,5 +20,6 @@ esac
 PLUGIN_DIR="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 mkdir -p "$REPO_ROOT/.enforcement/placement" 2>/dev/null
 ( cd "$REPO_ROOT" && python3 "$PLUGIN_DIR/lib/placement_engine.py" touch "$FILE" \
-    >> "$REPO_ROOT/.enforcement/placement/touch-log.jsonl" 2>/dev/null ) || true
+    >> "$REPO_ROOT/.enforcement/placement/touch-log.jsonl" \
+    2>> "$REPO_ROOT/.enforcement/placement/touch-errors.log" ) || true
 exit 0

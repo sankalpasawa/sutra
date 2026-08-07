@@ -6,6 +6,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-update.sh",
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/update-banner.sh",
             "timeout": 3
           },
@@ -60,6 +69,11 @@
     "PreToolUse": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/usage-guard.sh",
+            "timeout": 8
+          },
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-override.sh",
@@ -199,6 +213,24 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/atom-floor.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|Bash|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh"
           }
         ]
       }

@@ -1,0 +1,408 @@
+#!/usr/bin/env bash
+# LAYER=L1
+# SCOPE=single-instance:asawa-holding
+# TARGET_PATH=holding/bin/sutra-atom
+# WHY_NOT_L0_KIND=staging
+# WHY_NOT_L0_REASON=Atom v0.2 stages in asawa-holding before plugin L0 promotion per FR P6
+# PROMOTE_TO=sutra/marketplace/plugin/bin/sutra-atom
+# PROMOTE_BY=2026-08-31
+# OWNER=Governance Hooks charter
+# ACCEPTANCE=holding/tests/atom-v0-test.sh all-PASS
+# TS=2026-08-01
+#
+# sutra-atom — Work-Atom v0.2 (FR ARCHITECTURE v1.3 §4.0/§4.1; ADR-029 D2).
+# Declared surface: GOAL / CONSTRAINTS / CONTEXT / WORK. Verify is the teeth.
+# CARDS ARE PART OF THE TRANSITION LOGIC (founder direction 2026-08-01): every
+# state transition (open / close / refuse / abandon) RENDERS its card from state
+# inside the transition function itself — no flag suppresses it, no caller can
+# skip it. Any future surface (daemon, plugin) reusing these transitions
+# inherits the cards by construction. ASCII only (D-UX-1).
+# State: .sutra/atoms/<sid>/ (persists; .claude/ Bash writes roll back).
+set -euo pipefail
+
+# CLAUDE_PROJECT_DIR first, matching atom-floor.sh — so test harnesses that
+# isolate against a throwaway root get CLI and floor reading the SAME state
+# (governance-audit-fix E16, 2026-08-04). Templates still load from the repo.
+ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+REPO_SRC="$(git rev-parse --show-toplevel 2>/dev/null || echo "$ROOT")"
+SID="${CLAUDE_CODE_SESSION_ID:-nosession}"
+STATE="$ROOT/.sutra/atoms/$SID"
+_SP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/hooks/lib/sutra-paths.sh}"
+[ -n "$_SP" ] && [ -f "$_SP" ] || _SP="$REPO_SRC/holding/hooks/lib/sutra-paths.sh"
+. "$_SP"
+TPL_DIR="$SUTRA_VERIFY"
+LEDGER="${ATOM_LEDGER_OVERRIDE:-$ROOT/.sutra/atom-ledger.jsonl}"  # W1-T15 (d6): suites isolate via env
+SCHEMA_VERSION="0.3"   # WDP W4-T38: additive; v0.2 files read null-safe, never rewritten
+BANAL_RE='^(works|done|ok|fix|fixed|good|passes|it runs|no errors)$'
+W=66  # card inner width
+
+die() { echo "sutra-atom: REFUSED — $*" >&2; exit 1; }
+need_jq() { command -v jq >/dev/null || die "jq required"; }
+
+ledger_append() { mkdir -p "$(dirname "$LEDGER")"; printf '%s\n' "$1" >> "$LEDGER"; }
+# W5-T45 outcome join: close/abandon of a BOUND atom appends a dispatch
+# outcome row (non-fatal if lib missing — dispatch plumbing is optional pre-W6).
+_WDP_LIB="$SUTRA_LIB/wdp-ledger.sh"
+[ -f "$_WDP_LIB" ] && . "$_WDP_LIB" || true
+run_with_timeout() { perl -e 'alarm 30; exec @ARGV or die "exec: $!"' -- "$@"; }
+
+# --- card primitives (state -> visual; called ONLY from transitions) ---------
+# Founder direction 2026-08-01: the card is READ BY A PERSON. Plain-English
+# labels, full text WRAPPED (never truncated), empty sections omitted, input ->
+# output visible. Header prefixes ("WORK ATOM ...") stay stable — the
+# card-visibility Stop floor greps them.
+_line() { printf '| %-*.*s |\n' "$W" "$W" "$1"; }
+_rule() { printf '+%s+\n' "$(printf '=%.0s' $(seq 1 $((W+2))))"; }
+LW=12   # label column width
+
+_wrap() { # $1 = label ("" continues), $2 = text -> wrapped, hanging-indent lines
+  [ -z "${2:-}" ] && return 0
+  printf '%s' "$2" | awk -v label="$1" -v W="$W" -v LW="$LW" '
+    { width = W - LW; n = split($0, w, " "); line = ""; first = 1
+      for (i = 1; i <= n; i++) {
+        if (w[i] == "") continue
+        cand = (line == "" ? w[i] : line " " w[i])
+        if (length(cand) <= width) { line = cand; continue }
+        if (line == "") {                       # unbreakable token: hard-split
+          while (length(w[i]) > width) {
+            printf "| %-*s%-*s |\n", LW, (first ? label : ""), width, substr(w[i], 1, width)
+            w[i] = substr(w[i], width + 1); first = 0
+          }
+          line = w[i]; continue
+        }
+        printf "| %-*s%-*s |\n", LW, (first ? label : ""), width, line; first = 0
+        line = w[i]
+      }
+      if (line != "") printf "| %-*s%-*s |\n", LW, (first ? label : ""), width, line
+    }'
+}
+
+_wraplist() { # $1 = label, $2 = jq filter, $3 = file — section omitted when empty
+  local label="$1" first=1 it
+  while IFS= read -r it; do
+    [ -z "$it" ] && continue
+    if [ "$first" = "1" ]; then _wrap "$label" "- $it"; first=0; else _wrap "" "- $it"; fi
+  done < <(jq -r "$2 // [] | .[]" "$3" 2>/dev/null)
+}
+
+_verify_sentence() { # $1 = atom.json -> plain-English description of the check
+  jq -r 'if .verify.template == "file-exists" then "the file " + (.verify.args[0] // "?") + " exists and is not empty"
+         elif .verify.template == "grep-count" then "the text \"" + (.verify.args[0] // "?") + "\" appears in " + (.verify.args[1] // "?")
+         elif .verify.template == "named-test" then "the test " + (.verify.args[0] // "?") + " passes"
+         else .verify.template end' "$1"
+}
+
+card_open() { # $1 = atom.json path
+  local f="$1"
+  _rule
+  _line "WORK ATOM OPEN -- what happens next, and how you will know"
+  _line "                  it worked"
+  _rule
+  _wrap "Goal:"      "$(jq -r .goal "$f")"
+  _wrap "Done when:" "$(_verify_sentence "$f")"
+  _wrap "Done by:"   "$(jq -r '(if .work.dispatch_kind == "llm" then "Claude, in this session"
+                                elif .work.dispatch_kind == "bash" then "a shell command"
+                                elif .work.dispatch_kind == "skill" then "a Sutra skill"
+                                else "a person" end)
+                               + (if .work.ref then " (" + .work.ref + ")" else "" end)
+                               + (if .model then " [model: " + .model + "]" else "" end)' "$f")"
+  _wraplist "Limits:" '.constraints | map(.text)' "$f"
+  _wraplist "Using:"  '.context_refs' "$f"
+  _wrap "Ref:"       "$(jq -r .id "$f")"
+  _rule
+}
+
+card_close() { # $1 = atom.json path, $2 = CLOSED|VERIFY FAILED|ABANDONED
+  local f="$1" outcome="$2"
+  _rule
+  case "$outcome" in
+    CLOSED)          _line "WORK ATOM CLOSED -- goal reached, and checked" ;;
+    "VERIFY FAILED") _line "WORK ATOM VERIFY FAILED -- the check did not pass, so"
+                     _line "                          nothing is marked done" ;;
+    ABANDONED)       _line "WORK ATOM ABANDONED -- stopped on purpose, reason kept" ;;
+  esac
+  _rule
+  _wrap "Goal:" "$(jq -r .goal "$f")"
+  case "$outcome" in
+    CLOSED)
+      _wrap "Result:"   "goal reached"
+      _wrap "Proof:"    "checked $(_verify_sentence "$f") -- passed$(jq -r 'if .attempt > 1 then " on attempt " + (.attempt|tostring) else "" end' "$f")"
+      _wrap "Output:"   "$(jq -r '[.verify.args[]? | select(test("/"))] | first // empty' "$f")"
+      _wrap "Recorded:" "added to the work log (.sutra/atom-ledger.jsonl)"
+      ;;
+    "VERIFY FAILED")
+      _wrap "Result:" "not done -- this stays open until the check passes"
+      _wrap "Why:"    "$(jq -r '.verify.last_result.stderr_tail // "the check returned a failure"' "$f")"
+      _wrap "Next:"   "fix the work, then close again: sutra-atom close $(jq -r .id "$f")"
+      ;;
+    ABANDONED)
+      _wrap "Result:"   "stopped without finishing"
+      _wrap "Reason:"   "$(jq -r '.reason // "-"' "$f")"
+      _wrap "Recorded:" "added to the work log (.sutra/atom-ledger.jsonl)"
+      ;;
+  esac
+  _wrap "Ref:" "$(jq -r .id "$f")"
+  _rule
+}
+
+# --- transitions (card render embedded — the card IS part of the logic) ------
+cmd_open() {
+  need_jq
+  local goal="" work="llm" ref="" vtpl="" model="" effort="" supersedes="" relevance="" relevance_set=0
+  local vargs=() constraints=() contexts=() touches=() outputs=() depends=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --goal) goal="$2"; shift 2 ;;
+      --verify-template) vtpl="$2"; shift 2 ;;
+      --verify-arg) vargs+=("$2"); shift 2 ;;
+      --constraint) constraints+=("$2"); shift 2 ;;
+      --context) contexts+=("$2"); shift 2 ;;
+      --work) work="$2"; shift 2 ;;
+      --ref) ref="$2"; shift 2 ;;
+      --model) model="$2"; shift 2 ;;
+      --effort) effort="$2"; shift 2 ;;
+      --touches) touches+=("$2"); shift 2 ;;
+      --output) outputs+=("$2"); shift 2 ;;
+      --depends-on) depends+=("$2"); shift 2 ;;
+      --supersedes) supersedes="$2"; shift 2 ;;
+      --relevance) relevance="$2"; relevance_set=1; shift 2 ;;
+      *) die "unknown flag $1" ;;
+    esac
+  done
+  # ONE OPEN ATOM AT A TIME (founder 2026-08-01: a 5-step FLOW must not be
+  # satisfied by a single atom). Forces one atom per mutating step, closed or
+  # abandoned before the next opens — the sequence IS the workflow.
+  if [ -d "$STATE" ]; then
+    local already
+    already=$(grep -l '"status": *"open"' "$STATE"/a-*/atom.json 2>/dev/null | head -1 \
+      | xargs -I{} sh -c 'basename "$(dirname "{}")"' 2>/dev/null || true)
+    [ -n "$already" ] && die "atom $already is still open — close it (sutra-atom close $already) or abandon it with a reason before opening the next step's atom"
+  fi
+  [ -n "$goal" ] || die "open needs --goal (what done looks like)"
+  printf '%s' "$goal" | tr '[:upper:]' '[:lower:]' | grep -qE "$BANAL_RE" && die "goal is banal ('$goal') — state the observable outcome"
+  case "$work" in llm|skill|bash|manual) ;; *) die "--work must be llm|skill|bash|manual" ;; esac
+  [ -n "$vtpl" ] || die "open needs --verify-template (declare the check BEFORE the work — ADR-029 Directional)"
+  [ -x "$TPL_DIR/$vtpl.sh" ] || die "verify template '$vtpl' not in pinned registry ($TPL_DIR)"
+  # W1-T14 (d5): vacuous grep-count killed at open time — declare-before-work
+  # means the declaration itself must be capable of failing.
+  if [ "$vtpl" = "grep-count" ]; then
+    [ ${#vargs[@]} -eq 3 ] || die "grep-count needs exactly 3 args (pattern, file, min) — got ${#vargs[@]}"
+    case "${vargs[2]}" in ''|*[!0-9]*) die "grep-count min must be a positive integer, got '${vargs[2]}'" ;; esac
+    [ "${vargs[2]}" -ge 1 ] || die "grep-count min=0 is vacuous (n>=0 always true) — declare min >= 1"
+  fi
+
+  # W4-T38 (d3 process closure, v0.3) --------------------------------------
+  # Relevance: explicit-empty refused; absent derives a recorded default
+  # (relevance_source=default — a report candidate, not silent). Strict flip
+  # for the W6 gate: ATOM_REQUIRE_RELEVANCE=1 makes absent a refusal.
+  if [ "$relevance_set" = "1" ] && [ -z "$relevance" ]; then
+    die "verifier relevance is empty — state WHY this check tests the goal"
+  fi
+  local relevance_source="declared"
+  if [ "$relevance_set" = "0" ]; then
+    [ "${ATOM_REQUIRE_RELEVANCE:-0}" = "1" ] && die "verifier relevance required (strict mode) — add --relevance"
+    relevance="declared: $vtpl on ${vargs[0]:-?}"; relevance_source="default"
+  fi
+  # Envelope rule (A4): grep-count/file-exists verify TARGET must sit inside
+  # declared touches or declared outputs. Enforced only when the atom declares
+  # an envelope (touches or outputs present) — v0.2-style bare calls unchanged.
+  _v03_covered() { # $1=target; scans touches+outputs arrays (M1/M2 strict:
+    # dir entries cover strictly-under only — the node itself is NOT covered;
+    # dotdot anywhere refuses. G4 codex fold; full C1-C3 lib swap at W6-T50.)
+    local p="$1" e
+    case "$p" in *..*) return 1 ;; esac
+    for e in ${touches[@]+"${touches[@]}"} ${outputs[@]+"${outputs[@]}"}; do
+      case "$e" in *..*) continue ;; esac
+      if [ "${e%/}" != "$e" ]; then
+        case "$p" in "${e%/}"/*) return 0 ;; esac
+      else
+        [ "$p" = "$e" ] && return 0
+      fi
+    done
+    return 1
+  }
+  if [ $(( ${#touches[@]} + ${#outputs[@]} )) -gt 0 ]; then
+    local _vts=()
+    case "$vtpl" in
+      grep-count) _vts=("${vargs[1]:-}") ;;
+      file-exists) _vts=(${vargs[@]+"${vargs[@]}"}) ;;   # ALL paths (G4 codex fold)
+    esac
+    local vt
+    for vt in ${_vts[@]+"${_vts[@]}"}; do
+      [ -z "$vt" ] && continue
+      _v03_covered "$vt" || die "verify target '$vt' is outside declared touches/outputs — the check must test what this atom claims to change (declare it with --output if it is the deliverable)"
+    done
+  fi
+  # Supersedes (A6): must reference an ABANDONED atom of this session.
+  if [ -n "$supersedes" ]; then
+    local sf="$STATE/$supersedes/atom.json"
+    [ -f "$sf" ] || die "supersedes target $supersedes not found"
+    [ "$(jq -r .status "$sf")" = "abandoned" ] || die "supersedes target $supersedes is not abandoned — abandon it with a reason first"
+  fi
+
+  local target_sha="null"
+  if [ "$vtpl" = "named-test" ]; then
+    [ ${#vargs[@]} -ge 1 ] || die "named-test needs --verify-arg <script-path>"
+    [ -f "$ROOT/${vargs[0]}" ] || die "named-test target not found: ${vargs[0]}"
+    target_sha="\"$(shasum -a 256 "$ROOT/${vargs[0]}" | cut -d' ' -f1)\""
+  fi
+
+  mkdir -p "$STATE"
+  local seq id
+  seq=$(printf '%02d' $(( $(find "$STATE" -maxdepth 1 -type d -name 'a-*' | wc -l) + 1 )))
+  id="a-$(printf '%s' "$SID" | cut -c1-8)-$seq"
+  mkdir -p "$STATE/$id"
+
+  jq -n \
+    --arg schema "$SCHEMA_VERSION" --arg id "$id" --arg sid "$SID" \
+    --arg goal "$goal" --arg work "$work" --arg ref "$ref" \
+    --arg vtpl "$vtpl" --argjson tsha "$target_sha" --arg model "$model" \
+    --argjson touches "$(printf '%s\n' "${touches[@]+"${touches[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \
+    --argjson vargs "$(printf '%s\n' "${vargs[@]+"${vargs[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \
+    --argjson cons "$(printf '%s\n' "${constraints[@]+"${constraints[@]}"}" | jq -R . | jq -s 'map(select(length>0)) | map({text:., check:null})')" \
+    --argjson ctx "$(printf '%s\n' "${contexts[@]+"${contexts[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \
+    --arg effort "$effort" --arg sup "$supersedes" --arg rel "$relevance" --arg rsrc "$relevance_source" \
+    --argjson outputs "$(printf '%s\n' "${outputs[@]+"${outputs[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \
+    --argjson depends "$(printf '%s\n' "${depends[@]+"${depends[@]}"}" | jq -R . | jq -s 'map(select(length>0))')" \
+    '{schema_version:$schema, id:$id, sid:$sid, goal:$goal,
+      constraints:$cons, context_refs:$ctx,
+      work:{dispatch_kind:$work, ref:(if $ref=="" then null else $ref end)},
+      model:(if $model=="" then null else $model end),
+      effort:(if $effort=="" then null else $effort end),
+      touches:$touches, outputs:$outputs, depends_on:$depends,
+      supersedes:(if $sup=="" then null else $sup end),
+      verifier_declaration:{template:$vtpl, target:($vargs[1] // $vargs[0] // null), relevance:$rel, relevance_source:$rsrc},
+      verify:{template:$vtpl, args:$vargs, target_sha256:$tsha, last_result:null},
+      status:"open", attempt:0, closed_by:null, reason:null,
+      ts_open:(now|floor), ts_closed:null}' > "$STATE/$id/atom.json"
+
+  card_open "$STATE/$id/atom.json"   # unconditional — part of the transition
+  echo "$id"
+}
+
+cmd_close() {
+  need_jq
+  local id="${1:-}"; [ -n "$id" ] || die "close needs <atom-id>"
+  local f="$STATE/$id/atom.json"; [ -f "$f" ] || die "no such atom $id in session $SID"
+  [ "$(jq -r .status "$f")" = "open" ] || die "atom $id is not open"
+
+  local vtpl tsha; vtpl=$(jq -r .verify.template "$f"); tsha=$(jq -r '.verify.target_sha256 // empty' "$f")
+  local -a vargs=(); while IFS= read -r a; do [ -n "$a" ] && vargs+=("$a"); done < <(jq -r '.verify.args[]?' "$f")
+
+  # W4-T38 (A5, close-time envelope re-check; consult verdict: BOTH must agree
+  # when a dispatch marker is bound to this atom — atom.json alone otherwise):
+  # a verifier whose target left the envelope rejects the close.
+  local _vt="" _cl_targets=()
+  case "$vtpl" in grep-count) _cl_targets=("${vargs[1]:-}") ;; file-exists) _cl_targets=(${vargs[@]+"${vargs[@]}"}) ;; esac
+  _vt="${_cl_targets[0]:-}"
+  if [ -n "$_vt" ] && [ "$(jq -r '((.touches|length) + ((.outputs // [])|length))' "$f")" -gt 0 ]; then
+    _cl_covered() { # $1=target, entries on stdin
+      local p="$1" e
+      while IFS= read -r e; do
+        [ -z "$e" ] && continue
+        if [ "${e%/}" != "$e" ]; then case "$p" in "${e%/}"/*) return 0 ;; esac
+        else [ "$p" = "$e" ] && return 0; fi
+      done; return 1
+    }
+    local _t
+    for _t in ${_cl_targets[@]+"${_cl_targets[@]}"}; do
+      [ -z "$_t" ] && continue
+      case "$_t" in *..*) die "close refused — dotdot in verify target '$_t'" ;; esac
+      jq -r '(.touches[]? , (.outputs // [])[]?)' "$f" | _cl_covered "$_t" \
+        || die "close refused — verify target '$_t' left the atom's declared envelope"
+      local _dm="$ROOT/.sutra/dispatch/$SID/dispatch-record"
+      if [ -f "$_dm" ] && [ "$(grep -E '^ATOM_ID=' "$_dm" | cut -d= -f2)" = "$id" ]; then
+        grep -E '^TOUCHES=' "$_dm" | cut -d= -f2- | tr '|' '\n' | _cl_covered "$_t" \
+          || die "close refused — verify target '$_t' outside the BOUND dispatch envelope (integrity drift: rebind or re-resolve)"
+      fi
+    done
+  fi
+
+  if [ "$vtpl" = "named-test" ] && [ -n "$tsha" ]; then
+    local now_sha; now_sha=$(shasum -a 256 "$ROOT/${vargs[0]}" | cut -d' ' -f1)
+    if [ "$now_sha" != "$tsha" ]; then
+      local tmp; tmp=$(mktemp)
+      jq '.attempt += 1 | .verify.last_result = {exit_code:97, stderr_tail:"hash-pin mismatch: verify target changed since open", ts:(now|floor)}' "$f" > "$tmp" && mv "$tmp" "$f"
+      card_close "$f" "VERIFY FAILED"  # unconditional — failure evidence visible
+      die "hash-pin mismatch on ${vargs[0]} — target changed since open (tamper-evident refuse)"
+    fi
+  fi
+
+  local rc=0 errfile; errfile=$(mktemp)
+  ( cd "$ROOT" && run_with_timeout bash "$TPL_DIR/$vtpl.sh" "${vargs[@]+"${vargs[@]}"}" ) >/dev/null 2>"$errfile" || rc=$?
+  local errtail; errtail=$(tail -c 200 "$errfile" | tr -d '\000'); rm -f "$errfile"
+
+  local tmp; tmp=$(mktemp)
+  jq --argjson rc "$rc" --arg et "$errtail" \
+     '.attempt += 1 | .verify.last_result = {exit_code:$rc, stderr_tail:$et, ts:(now|floor)}' "$f" > "$tmp" && mv "$tmp" "$f"
+
+  if [ "$rc" -ne 0 ]; then
+    card_close "$f" "VERIFY FAILED"  # unconditional — part of the transition
+    die "verify FAILED (exit $rc) — atom stays open, fix and re-close. stderr: $errtail"
+  fi
+
+  # SKILL ladder postconditions (SKILL-RESOLUTION.md): an unresolved SEARCH or
+  # an unfulfilled CREATE blocks the close, exactly like a failed verify. Runs
+  # only for a BOUND atom — the dispatch CLI decides, this just relays.
+  local _sk_bin="$SUTRA_BIN/sutra-dispatch"
+  local _sk_marker="$ROOT/.sutra/dispatch/$SID/dispatch-record"
+  local _sk_bound=""
+  [ -f "$_sk_marker" ] && _sk_bound=$(grep -m1 '^ATOM_ID=' "$_sk_marker" 2>/dev/null | cut -d= -f2-)
+  if [ -x "$_sk_bin" ] && [ "$_sk_bound" = "$id" ]; then
+    local _sk_err
+    if ! _sk_err=$("$_sk_bin" skill-check 2>&1); then
+      card_close "$f" "VERIFY FAILED"
+      die "skill ladder unsatisfied — atom stays open. $_sk_err"
+    fi
+  fi
+
+  tmp=$(mktemp)
+  jq '.status="closed" | .closed_by="verify" | .ts_closed=(now|floor)' "$f" > "$tmp" && mv "$tmp" "$f"
+  ledger_append "$(jq -c '{schema:"atom-ledger-v0.3", sid, id, goal, status,
+    verify:{template:.verify.template, exit_code:.verify.last_result.exit_code},
+    attempt, model, effort, touches,
+    relevance:(.verifier_declaration.relevance // null),
+    relevance_source:(.verifier_declaration.relevance_source // null),
+    ts:(now|floor)}' "$f")"
+  # W5-T45 outcome join: bound atoms also land a dispatch outcome row.
+  command -v dispatch_outcome_append >/dev/null 2>&1 \
+    && dispatch_outcome_append "$id" "closed" "$(jq -r .attempt "$f")" "$rc" || true
+  card_close "$f" "CLOSED"           # unconditional — part of the transition
+}
+
+cmd_abandon() {
+  need_jq
+  local id="${1:-}"; shift || true
+  local reason=""
+  while [ $# -gt 0 ]; do case "$1" in --reason) reason="$2"; shift 2 ;; *) die "unknown flag $1" ;; esac; done
+  [ -n "$id" ] || die "abandon needs <atom-id>"
+  [ -n "$reason" ] || die "abandon needs --reason (recorded, never silent)"
+  local f="$STATE/$id/atom.json"; [ -f "$f" ] || die "no such atom $id"
+  [ "$(jq -r .status "$f")" = "open" ] || die "atom $id is not open"
+  local tmp; tmp=$(mktemp)
+  jq --arg r "$reason" '.status="abandoned" | .reason=$r | .closed_by="manual-override" | .ts_closed=(now|floor)' "$f" > "$tmp" && mv "$tmp" "$f"
+  ledger_append "$(jq -c '{schema:"atom-ledger-v0.3", sid, id, goal, status, reason, attempt,
+    model, effort, touches,
+    relevance:(.verifier_declaration.relevance // null),
+    relevance_source:(.verifier_declaration.relevance_source // null), ts:(now|floor)}' "$f")"
+  command -v dispatch_outcome_append >/dev/null 2>&1 \
+    && dispatch_outcome_append "$id" "abandoned" "$(jq -r .attempt "$f")" "" || true
+  card_close "$f" "ABANDONED"        # unconditional — part of the transition
+}
+
+cmd_list() {
+  need_jq
+  [ -d "$STATE" ] || { echo "(no atoms for session $SID)"; return 0; }
+  find "$STATE" -name atom.json -maxdepth 2 | sort | while read -r f; do
+    jq -r '[.id, .status, .work.dispatch_kind, .verify.template, .goal] | @tsv' "$f"
+  done
+}
+
+case "${1:-}" in
+  open)    shift; cmd_open "$@" ;;
+  close)   shift; cmd_close "$@" ;;
+  abandon) shift; cmd_abandon "$@" ;;
+  list)    shift; cmd_list "$@" ;;
+  *) echo "usage: sutra-atom open --goal G --verify-template T [--verify-arg A]... [--constraint C]... [--context F]... [--work llm|skill|bash|manual] [--ref R]
+       sutra-atom close <id> | abandon <id> --reason R | list" >&2; exit 2 ;;
+esac

@@ -40,7 +40,7 @@ case "$PROMPT" in
     STDIN_BYTES=${#STDIN_RAW}
     STDIN_HEAD=$(printf '%s' "$STDIN_RAW" | head -c 200 | tr -d '\n' | sed 's/"/\\"/g')
     printf '{"ts":%s,"event":"reset-skipped-empty-prompt","stdin_bytes":%s,"stdin_head":"%s"}\n' \
-      "$(date +%s)" "$STDIN_BYTES" "$STDIN_HEAD" >> .enforcement/routing-misses.log
+      "$(date +%s)" "$STDIN_BYTES" "$STDIN_HEAD" >> .enforcement/marker-resets.jsonl
     exit 0
     ;;
   # -- Guard 2: synthetic turns MUST NOT wipe markers ----------------------
@@ -51,7 +51,7 @@ case "$PROMPT" in
   *"task tools haven't been used recently"*|\
   *"<local-command-caveat>"*)
     mkdir -p .enforcement 2>/dev/null
-    printf '{"ts":%s,"event":"reset-skipped-synthetic-turn"}\n' "$(date +%s)" >> .enforcement/routing-misses.log
+    printf '{"ts":%s,"event":"reset-skipped-synthetic-turn"}\n' "$(date +%s)" >> .enforcement/marker-resets.jsonl
     exit 0
     ;;
 esac
@@ -94,7 +94,7 @@ if [ -f "$LAST_RESET_FILE" ]; then
       mkdir -p .enforcement 2>/dev/null
       STDIN_HEAD_BG=$(printf '%s' "$STDIN_RAW" | head -c 200 | tr -d '\n' | sed 's/"/\\"/g')
       printf '{"ts":%s,"event":"reset-skipped-burst-guard","last_reset_ago_s":%s,"prompt_head":"%s"}\n' \
-        "$NOW" "$DELTA" "$STDIN_HEAD_BG" >> .enforcement/routing-misses.log
+        "$NOW" "$DELTA" "$STDIN_HEAD_BG" >> .enforcement/marker-resets.jsonl
       exit 0
     fi
   fi
@@ -104,7 +104,7 @@ fi
 STDIN_HEAD_CLR=$(printf '%s' "$STDIN_RAW" | head -c 300 | tr -d '\n' | sed 's/"/\\"/g')
 mkdir -p .enforcement 2>/dev/null
 printf '{"ts":%s,"event":"clearing-with-context","prompt_head":"%s"}\n' \
-  "$NOW" "$STDIN_HEAD_CLR" >> .enforcement/routing-misses.log
+  "$NOW" "$STDIN_HEAD_CLR" >> .enforcement/marker-resets.jsonl
 
 # -- Session-scoped clear (authoritative) -----------------------------------
 # marker-lib already sourced above (before guard 3); sid already resolved.
@@ -145,12 +145,12 @@ for m in input-routed depth-registered depth-assessed sutra-deploy-depth5 \
     rm -f "$f" 2>/dev/null
   else
     printf '{"ts":%s,"event":"reset-skipped-unowned-or-foreign-global","marker":"%s","owner":"%s","self":"%s"}\n' \
-      "$NOW" "$m" "$owner" "$SELF_SID" >> .enforcement/routing-misses.log 2>/dev/null
+      "$NOW" "$m" "$owner" "$SELF_SID" >> .enforcement/marker-resets.jsonl 2>/dev/null
   fi
 done
 
 mkdir -p .claude 2>/dev/null
 echo "$NOW" > "$LAST_RESET_FILE" 2>/dev/null
 
-printf '{"ts":%s,"event":"markers-cleared","scope":"session+legacy"}\n' "$NOW" >> .enforcement/routing-misses.log
+printf '{"ts":%s,"event":"markers-cleared","scope":"session+legacy"}\n' "$NOW" >> .enforcement/marker-resets.jsonl
 exit 0

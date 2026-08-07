@@ -29,13 +29,14 @@ import binascii
 import hashlib
 import json
 import logging
+import hmac
 import os
 import re
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -74,6 +75,9 @@ import placement_engine as E  # noqa: E402  (path insert must precede this impor
 import reorg_sim as R  # noqa: E402
 
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
+import updates    # desktop-app + plugin version checks and installs (no engine access)
+import routines   # local scheduled routines (launchd + the claude CLI; no engine access)
+import proposals  # what the chat agent asks for; nothing here applies without approval
 
 # --------------------------------------------------------------- drafts ----
 # Draft plan storage. Outside SUTRA_NATIVE_HOME by design (§8.5.9 "What it
@@ -111,8 +115,23 @@ def _tenant_of_record(tenant=None):
 
 
 def _scope(tenant=None, all_tenants=False):
-    """tenant_id to pass to the engine: None means "every tenant"."""
-    return None if all_tenants else _tenant_of_record(tenant)
+    """ALWAYS None -- i.e. unfiltered. Tenancy is removed.
+
+    This is the single place the tenant filter entered every org endpoint, so
+    it is the single place it leaves from. Returning None makes the engine's
+    remaining optional filters (charters_for(tenant_id=...),
+    all_placements(tenant_id=...)) unfiltered, which is what "one org per
+    registry" means.
+
+    Neutralising it HERE rather than at each endpoint matters: the domain-side
+    filter and the CHARTER-side filter are separate, and removing only the
+    first left /api/org/charters?tenant=<anything-unknown> returning zero rows
+    while /tree returned all of them -- a half-removed filter that disagreed
+    with itself. One chokepoint in, one chokepoint out.
+
+    The arguments are kept so live callers do not 422; they are ignored.
+    """
+    return None
 
 
 def _charter_ids_in_scope(scope, tenant_id):
@@ -134,18 +153,23 @@ def org_tree(include_retired: bool = False, all_tenants: bool = False,
              tenant: Optional[str] = None):
     """Port of the CLI's `tree` (placement_engine.py ~:2566).
 
-    domains = load_domains(); scope = tenant_refs(domains, tenant_id);
-    shown = scope if include_retired else live_refs(scope).
-    tenant_id resolution: ?tenant= overrides the PLACEMENT_TENANT env var,
-    which defaults to "T-local" -- the same default the engine's own
-    classify()/mece_report() use. When all_tenants=true, scope is skipped
-    (tenant_refs(domains, None) == all); ?tenant= is then still used for the
-    ordering below, so "which tenant leads" follows the UI's selection.
+    domains = load_domains(); shown = domains if include_retired
+                                      else live_refs(domains).
+
+    TENANCY IS REMOVED. `scope` used to be `tenant_refs(domains, tenant_id)`,
+    with ?tenant= overriding a PLACEMENT_TENANT env var and all_tenants=true as
+    the opt-out. There is one org per registry now, so the whole registry is the
+    scope and there is nothing to select between.
+
+    `tenant` and `all_tenants` remain in the signature as ACCEPTED NO-OPS: they
+    are query parameters a running panel and existing scripts may still send,
+    and 422-ing them would break callers to no purpose. They no longer affect
+    the response.
     """
     tenant_of_record = _tenant_of_record(tenant)
     tenant_id = None if all_tenants else tenant_of_record
     domains = E.load_domains()
-    scope = E.tenant_refs(domains, tenant_id)
+    scope = domains          # tenancy removed: the whole registry is the scope
     shown = scope if include_retired else E.live_refs(scope)
 
     rows = []
@@ -213,7 +237,7 @@ def org_charters(all_tenants: bool = False, tenant: Optional[str] = None):
     """
     tenant_id = _scope(tenant, all_tenants)
     domains = E.load_domains()
-    scope = E.tenant_refs(domains, tenant_id)
+    scope = domains          # tenancy removed: the whole registry is the scope
 
     seen_ids = set()
     out = []
@@ -281,7 +305,7 @@ def org_stats(tenant: Optional[str] = None):
         }
 
     tenant_id = _tenant_of_record(tenant)
-    scope = E.tenant_refs(_all, tenant_id)
+    scope = _all             # tenancy removed: the whole registry is the scope
     live = E.live_refs(scope)
     return {
         "scope": "tenant",
@@ -857,6 +881,9 @@ class SettingsRequest(BaseModel):
     workdir: Optional[str] = None
     onboarded: Optional[bool] = None
     model: Optional[str] = None
+    # str to GRANT (must equal providers.UNSAFE_ACK_PHRASE), False to withdraw.
+    # Deliberately not a bare bool -- see providers.UNSAFE_ACK_PHRASE.
+    unsafe_ack: Optional[Union[str, bool]] = None
 
 
 @router.post("/settings")
@@ -869,7 +896,8 @@ def api_settings_post(req: SettingsRequest):
     a mode was applied when it was not.
     """
     if (req.provider is None and req.permission_mode is None
-            and req.workdir is None and req.onboarded is None and req.model is None):
+            and req.workdir is None and req.onboarded is None and req.model is None
+            and req.unsafe_ack is None):
         raise HTTPException(
             status_code=400,
             detail="nothing to update -- send at least one of: provider, "
@@ -881,6 +909,7 @@ def api_settings_post(req: SettingsRequest):
             workdir=req.workdir,
             onboarded=req.onboarded,
             model=req.model,
+            unsafe_ack=req.unsafe_ack,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -1200,43 +1229,39 @@ def api_git(what: str, path: Optional[str] = None):
 
 @router.get("/tenants")
 def api_tenants():
-    """Every tenant that actually exists in the registry, with real counts.
+    """ONE row: this registry. Tenancy is removed.
 
-    Derived, not stored: placement_engine has no tenant table. A tenant is a
-    `tenant_id` observed on a domain or a placement, so this unions those two
-    sources and counts each tenant's scope with the engine's own functions
-    (tenant_refs / charters_for / all_placements). If the registry holds one
-    tenant, this returns one row -- it does not pad the list to make a
-    tenant-picker look populated.
+    This used to union every `tenant_id` observed on a domain or a placement and
+    report a scope per tenant, which is what the panel's footer switcher and
+    Tenants table were built on. There is one org per registry now, so there is
+    exactly one row and nothing to switch between.
 
-    The tenant of record (PLACEMENT_TENANT, default "T-local") is always
-    present and flagged is_default, even at zero counts: the UI has to be able
-    to show the tenant every unscoped write would land in, including the case
-    where that tenant is empty.
+    The endpoint is KEPT rather than deleted because a running panel still calls
+    it on boot; removing it would 404 a live client mid-session. It now reports
+    the registry itself, and the counts are the registry's real counts -- not a
+    per-label slice that no longer means anything.
+
+    `tenant_id` stays in the payload as the ID STILL STAMPED ON THE ROWS, so the
+    field is not a lie: it is dead data on disk, reported as such, not a
+    selector. It is nothing's filter any more.
     """
     domains = E.load_domains()
-    placements = E.all_placements()
     default_id = _tenant_of_record()
 
-    ids = {default_id}
-    for d in domains.values():
-        if d.get("tenant_id"):
-            ids.add(d["tenant_id"])
-    for p in placements:
-        if p.get("tenant_id"):
-            ids.add(p["tenant_id"])
+    # exactly one scope: the registry
+    ids = [default_id]
 
     out = []
     for tid in ids:
-        scope = E.tenant_refs(domains, tid)
+        scope = domains      # tenancy removed: the whole registry is the scope
         live = E.live_refs(scope)
         roots = [(ref, d) for ref, d in scope.items() if not d.get("parent_ref")]
         roots.sort(key=lambda rd: (rd[1].get("ts_minted_ms") or 0, rd[0]))
         out.append({
             "tenant_id": tid,
             "domains": len(scope),
-            "charters": len(_charter_ids_in_scope(scope, tid)),
-            "placements": len(E.all_placements(tenant_id=tid)),
+            "charters": len(_charter_ids_in_scope(scope, None)),
+            "placements": len(E.all_placements()),
             "is_default": tid == default_id,
             # extras the landing screen would otherwise re-derive client-side
             "domains_live": len(live),
@@ -1247,3 +1272,377 @@ def api_tenants():
 
     out.sort(key=lambda r: (0 if r["is_default"] else 1, r["tenant_id"]))
     return out
+
+
+# =========================================================== proposals ======
+# The chat agent can PROPOSE mutations (see sutra_mcp.py). Applying one is a
+# separate, human act. The apply switch lives HERE rather than in proposals.py
+# so that module never imports routines and cannot mutate anything by itself.
+
+def _apply_proposal(kind, args):
+    if kind == "routine.create":
+        rec, launchd = routines.create(args)
+        return {"routine": rec["id"], "launchd_ok": launchd.get("ok")}
+    if kind == "routine.update":
+        rec, launchd = routines.update(args["id"], args.get("patch") or {})
+        return {"routine": rec["id"], "launchd_ok": launchd.get("ok")}
+    if kind == "routine.delete":
+        return routines.delete(args["id"])
+    if kind == "routine.run":
+        return routines.run_now(args["id"])
+    raise ValueError("no way to apply %r" % kind)
+
+
+@router.get("/proposals")
+def api_proposals(pending_only: bool = False):
+    return {"proposals": proposals.listing(include_decided=not pending_only),
+            "store": str(proposals.store_dir())}
+
+
+@router.post("/proposals/{pid}/decide")
+def api_proposal_decide(pid: str, body: Dict[str, Any]):
+    """approve=true applies it; approve=false rejects it. There is no third
+    option and no automatic path -- an unapproved proposal simply expires."""
+    if "approve" not in body:
+        raise HTTPException(status_code=400, detail='send {"approve": true|false}')
+    try:
+        return proposals.decide(pid, bool(body["approve"]),
+                                apply_fn=_apply_proposal)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no proposal %r" % pid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ============================================================ routines ======
+# Transport only; everything real is in routines.py, which is importable and
+# testable without a server. Reads are GET, anything that touches launchd or the
+# store is POST.
+
+@router.get("/routines")
+def api_routines():
+    return routines.state()
+
+
+@router.get("/routines/{rid}/runs")
+def api_routine_runs(rid: str, limit: int = 10):
+    try:
+        return routines.runs(rid, limit=max(1, min(int(limit), 200)))
+    except (KeyError, OSError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/routines/{rid}/output")
+def api_routine_output(rid: str, name: str):
+    try:
+        return {"id": rid, "name": name, "text": routines.run_output(rid, name)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such run output")
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/routines")
+def api_routine_create(body: Dict[str, Any]):
+    try:
+        rec, launchd = routines.create(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"routine": rec, "launchd": launchd}
+
+
+@router.post("/routines/reconcile")
+def api_routines_reconcile(body: Optional[Dict[str, Any]] = None):
+    return routines.reconcile(fix=bool((body or {}).get("fix")))
+
+
+@router.post("/routines/{rid}")
+def api_routine_update(rid: str, body: Dict[str, Any]):
+    try:
+        rec, launchd = routines.update(rid, body)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"routine": rec, "launchd": launchd}
+
+
+@router.post("/routines/{rid}/run")
+def api_routine_run(rid: str, body: Optional[Dict[str, Any]] = None):
+    # Confirmation is required because this spends money on the operator's plan.
+    if not (body or {}).get("confirm"):
+        raise HTTPException(status_code=400,
+                            detail="running a routine starts a real agent turn; "
+                                   "send {\"confirm\": true}")
+    try:
+        return routines.run_now(rid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/routines/{rid}/delete")
+def api_routine_delete(rid: str, body: Optional[Dict[str, Any]] = None):
+    if not (body or {}).get("confirm"):
+        raise HTTPException(status_code=400, detail="send {\"confirm\": true}")
+    try:
+        return routines.delete(rid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no routine %r" % rid)
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ============================================================= updates ======
+# Transport only. Everything real lives in updates.py, which is importable and
+# tested without a server. Checking is a GET because it changes nothing;
+# installing is a POST because it very much does.
+
+@router.get("/updates")
+def api_updates():
+    """Both components, checked live. Network calls, so this is never called on
+    boot -- only when the operator asks."""
+    return updates.all_state()
+
+
+@router.post("/updates/plugin")
+def api_updates_plugin():
+    """Run the same update the daily hook runs, now."""
+    try:
+        return updates.install_plugin()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/updates/desktop")
+def api_updates_desktop():
+    """Download, VERIFY, and schedule the swap for after the app quits.
+
+    Split deliberately: everything checkable (checksum, notarization, the
+    bundle's own signature) is checked while the operator is still here to be
+    told, and only then is the unattended helper armed.
+
+    This is the MANUAL button and it stays exactly as it was -- it is the
+    fallback when the automatic path has given up, and a fallback that shares
+    the automatic path's failure modes is not a fallback.
+    """
+    try:
+        got = updates.download_and_verify()
+        sched = updates.install_desktop(got["dmg"], relaunch=True,
+                                        version=got.get("version"))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    sched["version"] = got.get("version")
+    return sched
+
+
+# ------------------------------------------------ automatic update path -----
+# The three routes below can quit the app and replace the bundle on disk, so
+# unlike everything else on this loopback API they are AUTHENTICATED.
+#
+# The rest of the API is unauthenticated because it is reachable only from
+# 127.0.0.1 and does nothing a local user could not already do. These do:
+# "arm" hands an unattended helper the authority to replace /Applications/
+# Sutra.app, and any page in any browser on this machine can POST to localhost.
+# That is a persistence primitive, not a convenience.
+#
+# The token is minted by the Electron shell and handed to the backend it spawns.
+# Which produces exactly the right behaviour for free: when the shell ATTACHES
+# to a backend it did not start (main.js does this), it has no token for that
+# process, arming is refused, and automatic updating stays off for that session
+# instead of quietly acting through a server whose lifetime it does not own.
+
+DESKTOP_TOKEN = os.environ.get("SUTRA_DESKTOP_TOKEN") or None
+
+
+def _desktop_control(request):
+    """Authorise a desktop-control call, or refuse it with a reason."""
+    if not DESKTOP_TOKEN:
+        raise HTTPException(status_code=403, detail=(
+            "this server was not started by the Sutra desktop app, so it "
+            "cannot install or restart it"))
+    sent = request.headers.get("x-sutra-desktop-token") or ""
+    if not hmac.compare_digest(sent, DESKTOP_TOKEN):
+        raise HTTPException(status_code=403, detail="bad desktop control token")
+
+
+@router.get("/updates/staged")
+def api_updates_staged():
+    """Local staging state only -- no network. The panel polls this, and that
+    is the ONLY reason it is allowed to: a route that reaches GitHub cannot be
+    polled without turning every open panel into a crawler."""
+    return updates.pending_state()
+
+
+@router.post("/updates/desktop/stage")
+def api_updates_stage(request: Request):
+    """Download + verify into durable staging. Arms nothing."""
+    _desktop_control(request)
+    try:
+        return updates.stage_desktop()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/updates/desktop/arm")
+async def api_updates_arm(request: Request):
+    """Schedule the swap for after the shell exits.
+
+    `wait_pid` is required and is the SHELL's pid, not this process's parent.
+    See install_desktop() for why inferring it here is wrong.
+    """
+    _desktop_control(request)
+    body = {}
+    try:
+        body = await request.json()
+    except (ValueError, TypeError):
+        pass
+    pid = body.get("wait_pid")
+    if not pid:
+        raise HTTPException(status_code=400, detail="wait_pid is required")
+    try:
+        return updates.arm_desktop(int(pid), wait_start=body.get("wait_start"),
+                                   relaunch=bool(body.get("relaunch")))
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/updates/desktop/resolve")
+async def api_updates_resolve(request: Request):
+    """Launch-time decision: what did the last attempt do, and what now."""
+    _desktop_control(request)
+    body = {}
+    try:
+        body = await request.json()
+    except (ValueError, TypeError):
+        pass
+    try:
+        return updates.resolve_pending(body.get("installed"))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ========================================================== automation ======
+# The dispatcher and the scheduler, reported from the files they actually write.
+#
+# The honest shape of this, established before any of it was drawn:
+#
+#   DISPATCHER  real. bin/sutra-dispatch and bin/sutra-atom append JSONL ledgers
+#               under <workdir>/.sutra/, and hooks/dispatch-gate.sh + atom-floor.sh
+#               append verdicts under <workdir>/.enforcement/. All read-only here.
+#
+#   SCHEDULER   NOT real, and this endpoint says so rather than drawing an empty
+#               table that implies "0 runs today". Cadence lives in the Native
+#               daemon (marketplace/native, ADR-017: a daemon-side setInterval
+#               tick, deliberately NOT OS cron/launchd). At v1.0 the daemon does
+#               not run in this install and cadence-scheduler.ts does not even
+#               evaluate `cron` -- its next-fire is +Infinity. So the only
+#               truthful report is the daemon's own liveness files and the
+#               trigger store, plus the reason there is nothing to show.
+#
+# Consistent with the no-fixture rule at the top of this file: where there is no
+# data source, the answer is "there is no data source", never a plausible zero.
+
+AUTOMATION_TAIL = 12          # recent rows returned per ledger
+AUTOMATION_MAX_BYTES = 4 * 1024 * 1024   # refuse to walk a runaway ledger
+
+
+def _read_jsonl_tail(path, limit=AUTOMATION_TAIL):
+    """(total_rows, last `limit` parsed rows). Unparseable lines are counted but
+    not returned -- a corrupt row is not a reason to report an empty ledger."""
+    if not os.path.isfile(path):
+        return 0, [], False
+    try:
+        if os.path.getsize(path) > AUTOMATION_MAX_BYTES:
+            return 0, [], True
+        rows, total = [], 0
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                total += 1
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    continue
+        return total, rows[-limit:], False
+    except OSError:
+        return 0, [], False
+
+
+def _automation_root():
+    """The configured workdir, unvalidated-for-git. Dispatch state is written into
+    whatever project the agent runs in, so that is where it is read from."""
+    wd = providers.load_settings().get("workdir") or ""
+    if not wd or not providers.workdir_allowed(wd):
+        raise HTTPException(status_code=400,
+                            detail="the configured workdir is outside the allowed root; "
+                                   "set it in Settings first")
+    return wd
+
+
+@router.get("/automation")
+def api_automation():
+    """Dispatcher activity and scheduler liveness for the configured workdir."""
+    root = _automation_root()
+    exists = os.path.isdir(root)
+
+    j = lambda *p: os.path.join(root, *p)
+
+    disp_total, disp_recent, disp_big = _read_jsonl_tail(j(".sutra", "dispatch-ledger.jsonl"))
+    atom_total, atom_recent, _ = _read_jsonl_tail(j(".sutra", "atom-ledger.jsonl"))
+    gate_total, gate_recent, _ = _read_jsonl_tail(j(".enforcement", "dispatch-gate.jsonl"))
+
+    kinds, verdicts = {}, {}
+    for r in disp_recent:
+        k = str(r.get("kind") or "?")
+        kinds[k] = kinds.get(k, 0) + 1
+    for r in gate_recent:
+        v = str(r.get("verdict") or "?")
+        verdicts[v] = verdicts.get(v, 0) + 1
+
+    # ---- scheduler: liveness, not activity -------------------------------
+    home = _ACTIVE_HOME
+    native_root = os.path.dirname(home.rstrip(os.sep)) or home
+    pid_file = os.path.join(native_root, "native.pid")
+    ready_file = os.path.join(native_root, "native.ready")
+    triggers_dir = os.path.join(home, "triggers")
+    triggers = []
+    if os.path.isdir(triggers_dir):
+        try:
+            triggers = sorted(f for f in os.listdir(triggers_dir) if f.endswith(".json"))
+        except OSError:
+            triggers = []
+
+    return {
+        "root": root,
+        "root_exists": exists,
+        "dispatcher": {
+            "ledger": {"path": ".sutra/dispatch-ledger.jsonl", "rows": disp_total,
+                       "recent": disp_recent, "kinds": kinds, "too_large": disp_big},
+            "atoms": {"path": ".sutra/atom-ledger.jsonl", "rows": atom_total,
+                      "recent": atom_recent},
+            "gate": {"path": ".enforcement/dispatch-gate.jsonl", "rows": gate_total,
+                     "recent": gate_recent, "verdicts": verdicts},
+        },
+        "scheduler": {
+            "daemon_running": os.path.isfile(pid_file),
+            "pid_file": pid_file,
+            "ready": os.path.isfile(ready_file),
+            "triggers_dir": triggers_dir,
+            "triggers_dir_exists": os.path.isdir(triggers_dir),
+            "triggers": triggers,
+            # Stated, not implied. See the block comment above.
+            "note": "Cadence is a daemon-side tick in the Native engine (ADR-017), "
+                    "not OS cron or launchd. This install has no running daemon, "
+                    "and the v1.0 scheduler does not evaluate cron expressions at "
+                    "all -- their next-fire time is +Infinity. Nothing is scheduled, "
+                    "so nothing is reported as having run.",
+        },
+    }

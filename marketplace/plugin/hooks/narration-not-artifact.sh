@@ -60,7 +60,7 @@ if [ "$HEADERS" -lt 2 ] && [ "$TABLES" -eq 0 ] && [ "$LISTS" -lt 3 ]; then
   REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
   mkdir -p "$REPO_ROOT/.enforcement" 2>/dev/null
   _SAFE=$(printf '%s' "$FILE_PATH" | tr -d '"\\' | tr '\n\r' '  ')
-  echo "{\"ts\":$(date +%s),\"event\":\"proto009-warn\",\"file\":\"$_SAFE\",\"words\":$WORDS,\"headers\":$HEADERS,\"tables\":$TABLES,\"lists\":$LISTS}" >> "$REPO_ROOT/.enforcement/routing-misses.log"
+  echo "{\"ts\":$(date +%s),\"event\":\"proto009-warn\",\"file\":\"$_SAFE\",\"words\":$WORDS,\"headers\":$HEADERS,\"tables\":$TABLES,\"lists\":$LISTS}" >> "$REPO_ROOT/.enforcement/proto009-warnings.log"
   echo "  PROTO-009 Warning: spec/plan/review-shaped file is prose-only (${WORDS}w, ${HEADERS} headers, ${TABLES} tables, ${LISTS} list lines): $FILE_PATH" >&2
   echo "  Add structure: sections (##), a table, or numbered steps. Override: PROTO009_ACK=1" >&2
 fi
@@ -71,7 +71,7 @@ exit 0
 # ## Operationalization
 #
 # ### 1. Measurement mechanism
-# Logged to .enforcement/routing-misses.log on every fire + override.
+# Logged to .enforcement/proto009-warnings.log on every fire + override.
 # Roll-up visible in holding/ANALYTICS-PULSE.md Sutra-Application-Rate panel (review-loop.sh).
 #
 # ### 2. Adoption mechanism

@@ -174,9 +174,19 @@ stage_runtime() {
   step "stage runtime"
   command -v rsync >/dev/null 2>&1 || die "rsync not found -- cannot stage the runtime"
   mkdir -p "$SRC" "$STAGE_LIB" || die "cannot create $SUTRA_STAGE"
-  rsync -a --delete \
+  # The excludes are not cosmetic. Without the electron/ ones the staged copy
+  # carried node_modules, a packaged dist/ and bundle-runtime.sh's 95MB payload/
+  # -- measured at 1.6GB for a runtime whose actual content is ~5MB of Python.
+  # The backend never reads any of them: it runs app.py out of this directory
+  # and the engine out of ../lib.
+  # --delete-excluded, not just --delete: plain --delete PROTECTS excluded paths
+  # already on the destination, so a stage that once copied electron/node_modules
+  # kept 1.5GB of it forever after the exclude was added.
+  rsync -a --delete --delete-excluded \
     --exclude '.venv/' --exclude '.git/' --exclude '__pycache__/' \
     --exclude '*.pyc' --exclude 'test_*' --exclude '.DS_Store' \
+    --exclude 'electron/node_modules/' --exclude 'electron/dist/' \
+    --exclude 'electron/payload/' \
     "$REPO"/ "$SRC"/ || die "staging $REPO -> $SRC failed"
   rsync -a --delete \
     --exclude '__pycache__/' --exclude '*.pyc' --exclude '.DS_Store' \
@@ -720,10 +730,18 @@ if [ "${SUTRA_SKIP_ELECTRON:-0}" != "1" ] \
   # --no-install: without it, a missing local bin makes npx silently DOWNLOAD
   # and run the deprecated legacy `electron-packager` package from the
   # registry -- remote code execution during install, with output suppressed.
+  # --ignore keeps BUILD OUTPUT out of the bundle. bundle-runtime.sh leaves a
+  # ~95MB payload/ (a whole CPython plus a copy of the plugin) beside main.js,
+  # and electron-packager would otherwise pack it into app.asar -- tripling the
+  # size of an install that does not use it. The DMG path passes the payload
+  # deliberately, via --extra-resource; this path is the CHECKOUT install and
+  # runs from the staged runtime instead (see provision.js resolveRuntime).
   if ( cd "$REPO/electron" \
        && npx --no-install electron-packager . "$APP_NAME" --platform=darwin --arch="$ARCH" \
             --out=dist --overwrite --app-bundle-id="$BUNDLE_ID" --app-version=1.0.0 \
-            --icon=build/"$APP_NAME".icns --prune=true ) >/dev/null 2>&1; then
+            --icon=build/"$APP_NAME".icns --prune=true \
+            --ignore='^/payload($|/)' --ignore='^/dist($|/)' --ignore='^/build($|/)' \
+     ) >/dev/null 2>&1; then
     SUTRA_ELECTRON_APP="$REPO/electron/dist/$APP_NAME-darwin-$ARCH/$APP_NAME.app"
     [ -d "$SUTRA_ELECTRON_APP" ] || SUTRA_ELECTRON_APP=""
   fi
@@ -735,9 +753,47 @@ if [ -n "$SUTRA_ELECTRON_APP" ]; then
   mkdir -p "$APPS_DIR"
   cp -R "$SUTRA_ELECTRON_APP" "$APP" || die "could not copy the Electron bundle to $APP"
   # --deep because the bundle carries the Electron framework and helper apps.
+  #
+  # SIGN WITH A STABLE IDENTITY WHEN ONE EXISTS. This is not cosmetic: an AD-HOC
+  # signature's designated requirement IS the cdhash, so every rebuild produces a
+  # different code identity. macOS TCC records permissions against that
+  # requirement, so each re-install invalidates every grant the app had.
+  #
+  # The symptom is not a permission error -- it is a HANG. `claude` runs as a
+  # child of this app, so a protected-folder access is attributed to the
+  # RESPONSIBLE process (Sutra.app):
+  #
+  #   responsible=os.sutra.ui  accessing=com.anthropic.claude-code
+  #   service=kTCCServiceSystemPolicyDesktopFolder
+  #   "Failed to match existing code requirement for subject os.sutra.ui"
+  #   AUTHREQ_PROMPTING
+  #
+  # claude then blocks on a prompt the operator may never see, and the chat pane
+  # simply never answers. Signing with a certificate makes the requirement follow
+  # the CERT rather than the bytes, so a grant survives every subsequent install.
   if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$APP" >/dev/null 2>&1 \
-      || note "codesign failed on the Electron bundle; it still runs."
+    SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+      | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+    [ -n "$SIGN_ID" ] || SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+      | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' | head -1)"
+    if [ -n "$SIGN_ID" ]; then
+      if codesign --force --deep --sign "$SIGN_ID" "$APP" >/dev/null 2>&1; then
+        say "signed with a stable identity: $SIGN_ID"
+        say "  (file-access permissions granted once will survive re-installs)"
+      else
+        codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+        note "signing with $SIGN_ID failed, so the app is AD-HOC signed. macOS will
+    re-ask for file access after every install, and the first chat message can
+    HANG on that prompt until it is answered."
+      fi
+    else
+      codesign --force --deep --sign - "$APP" >/dev/null 2>&1 \
+        || note "codesign failed on the Electron bundle; it still runs."
+      note "No signing certificate found, so the app is AD-HOC signed. Its code
+    identity changes on every install, which invalidates macOS file-access
+    grants: the FIRST chat message after each install can hang until you answer
+    a permission prompt. A free Apple Development certificate in Xcode fixes it."
+    fi
   fi
   touch "$APP"
   wrote "$APP"

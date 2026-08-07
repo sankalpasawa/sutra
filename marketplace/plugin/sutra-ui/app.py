@@ -12,6 +12,7 @@ import pty
 import shutil
 import signal
 import struct
+import sys
 import termios
 from pathlib import Path
 
@@ -109,6 +110,237 @@ PERM_MODE = os.environ.get("SUTRA_UI_PERMISSION_MODE", "plan")
 INIT_CMD = os.environ.get("SUTRA_UI_INIT", "/core:start")          # run every fresh session so Sutra fires
 AUTO_CAVEMAN = os.environ.get("SUTRA_UI_AUTO_CAVEMAN", "1") == "1"  # token-saving default (non-Max friendly)
 INIT_DELAY = float(os.environ.get("SUTRA_UI_INIT_DELAY", "3.5"))    # secs to let the TUI boot before typing
+
+
+# --------------------------------------------------------------- arg vector --
+# The spawn used to be a hardcoded list with no extension point, so every CLI
+# capability the panel wanted meant editing the middle of the websocket loop.
+# `claude --help` on the installed binary exposes ~40 flags that are each one
+# append; this makes them a FIELD rather than a code change.
+#
+# Everything is validated here. A value that reaches the CLI unchecked fails
+# several seconds later as a dead socket, which reads as "the panel is broken"
+# rather than "that input was wrong".
+
+def _flag_str(value, limit=4000):
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    return v[:limit] if v else None
+
+
+def _flag_list(value, limit=64):
+    """A repeated flag's values. Non-strings and blanks are dropped rather than
+    stringified -- passing `None` to the CLI as the text "None" is worse than
+    passing nothing."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    out = []
+    for v in value:
+        v = _flag_str(v, 1024)
+        if v:
+            out.append(v)
+    return out[:limit]
+
+
+def _flag_money(value):
+    """A budget ceiling. Rejects anything non-positive or unparseable: a `0`
+    silently means "spend nothing" and would look like a hung turn."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return ("%.4f" % f).rstrip("0").rstrip(".") if f > 0 else None
+
+
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def _sutra_mcp_config():
+    """Inline JSON for --mcp-config, or "" when the server is not present.
+
+    Passed as a STRING rather than a file so there is no temp file to leak, no
+    path for another process to tamper with between write and read, and nothing
+    to clean up when the turn ends.
+
+    The interpreter is THIS one (sys.executable): in the packaged app that is
+    the bundled CPython inside the .app, which is the only python guaranteed to
+    exist on the machine and to have the modules sutra_mcp imports.
+    """
+    script = HERE / "sutra_mcp.py"
+    if not script.is_file():
+        return ""
+    return json.dumps({"mcpServers": {"sutra": {
+        "type": "stdio",
+        "command": sys.executable,
+        "args": [str(script)],
+        # Inherited by the server process; it uses these to find the same
+        # registry and stores the panel is reading.
+        "env": {"SUTRA_NATIVE_HOME": os.environ.get("SUTRA_NATIVE_HOME", "")},
+    }}})
+
+
+def _sutra_allow_hook():
+    """Inline --settings JSON carrying the PreToolUse allow hook, or "".
+
+    Inline rather than a file for the same reason as the mcp config: nothing to
+    leak, nothing to tamper with between write and read, nothing to clean up.
+    """
+    script = HERE / "mcp_allow_hook.py"
+    if not script.is_file():
+        return ""
+    return json.dumps({"hooks": {"PreToolUse": [{
+        # The matcher narrows which tools even reach the hook; the hook itself
+        # re-checks with an anchored pattern rather than trusting this.
+        "matcher": "mcp__sutra__.*",
+        "hooks": [{"type": "command",
+                   "command": "%s %s" % (sys.executable, script)}],
+    }]}})
+
+
+def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
+                     opts=None, stream_input=False):
+    """The full argv for one turn.
+
+    Separated from the socket loop so it is testable without a subprocess, and
+    so adding a flag cannot accidentally change the ordering of the ones that
+    already work.
+
+    stream_input=True builds a PERSISTENT process: `-p` with no positional
+    prompt plus `--input-format stream-json`, so messages arrive on stdin as
+    JSON frames and one process serves many turns. Verified against the binary:
+    two messages, one process, one session id, both answered.
+    """
+    opts = opts if isinstance(opts, dict) else {}
+    args = [agent_bin, "-p"]
+
+    # ---- Sutra's own tools ------------------------------------------------
+    # Without this the chat can DESCRIBE a routine but not make one: the CLI has
+    # no path back into this panel. sutra_mcp.py is a stdio MCP server the CLI
+    # spawns for THIS RUN via --mcp-config, so nothing is installed and the
+    # operator's global ~/.claude.json is never touched.
+    #
+    # --strict-mcp-config: use ONLY what we pass. Without it the CLI also loads
+    # whatever servers the user has configured globally, which would silently
+    # change what the panel's chat can reach depending on the machine.
+    #
+    # --allowedTools scoped to mcp__sutra__*: these tools must not sit behind an
+    # approval prompt, because a -p run has nobody to answer one -- the call
+    # would stall the turn. They are safe to pre-allow precisely because the
+    # mutating ones only write an inert proposal (see proposals.py).
+    mcp_cfg = _sutra_mcp_config()
+    if mcp_cfg:
+        args += ["--mcp-config", mcp_cfg, "--strict-mcp-config"]
+        # AND the hook that makes them reachable. MEASURED, not assumed: with
+        # --permission-mode plan (the panel's default) every mcp__sutra__ call
+        # comes back in permission_denials and the server is never invoked --
+        # --allowedTools does not help, because the MODE is evaluated first.
+        # A PreToolUse hook is evaluated BEFORE the mode. See mcp_allow_hook.py
+        # for why allowing exactly this namespace is safe.
+        hook = _sutra_allow_hook()
+        if hook:
+            args += ["--settings", hook]
+    if stream_input:
+        args += ["--input-format", "stream-json"]
+    else:
+        args += [msg]
+    args += [
+        "--output-format", "stream-json",
+        "--verbose", "--include-partial-messages",
+        "--permission-mode", perm_mode,
+    ]
+    if session_id:
+        args += ["--resume", session_id]
+        # Only meaningful WITH --resume: it forks the resumed thread instead of
+        # continuing it. Passing it alone is silently ignored by the CLI, which
+        # would make a UI toggle look broken.
+        if opts.get("fork_session"):
+            args += ["--fork-session"]
+    if model:
+        args += ["--model", model]
+
+    fallback = providers.clean_model(opts.get("fallback_model"))
+    if fallback and fallback != model:
+        args += ["--fallback-model", fallback]
+
+    effort = _flag_str(opts.get("effort"))
+    if effort in EFFORT_LEVELS:
+        args += ["--effort", effort]
+
+    # Extra roots the tools may touch. Confined to $HOME for the same reason the
+    # workdir is: this is a loopback web app, and a directory arriving over a
+    # socket must not be able to hand the agent "/".
+    home = os.path.realpath(os.path.expanduser("~"))
+    for d in _flag_list(opts.get("add_dir"), 16):
+        real = os.path.realpath(os.path.expanduser(d))
+        if real == home or real.startswith(home + os.sep):
+            args += ["--add-dir", real]
+
+    allowed = _flag_list(opts.get("allowed_tools"), 64)
+    # ONE --allowedTools, not two. Sutra's own tools are appended to whatever the
+    # turn asked for rather than emitted as a second flag: the CLI takes this as
+    # a variadic list, so a second occurrence is a conflict, and whichever the
+    # parser kept would silently drop the other -- either losing the operator's
+    # per-turn allow-list or losing Sutra's tools, with no error either way.
+    #
+    # They are pre-allowed because a -p run has NOBODY to answer a permission
+    # prompt: a tool sitting behind one would stall the turn. That is safe here
+    # precisely because the mutating tools only write an inert proposal.
+    if mcp_cfg:
+        allowed = list(allowed) + ["mcp__sutra__*"]
+    if allowed:
+        args += ["--allowedTools"] + allowed
+    denied = _flag_list(opts.get("disallowed_tools"), 64)
+    if denied:
+        args += ["--disallowedTools"] + denied
+
+    extra_prompt = _flag_str(opts.get("append_system_prompt"), 8000)
+    if extra_prompt:
+        args += ["--append-system-prompt", extra_prompt]
+
+    budget = _flag_money(opts.get("max_budget_usd"))
+    if budget:
+        args += ["--max-budget-usd", budget]
+
+    return args
+
+
+def _tool_output(content, limit=4000):
+    """A tool_result's content, flattened to text for display.
+
+    The block is either a plain string or a list of typed parts. Only text is
+    forwarded; an image is NAMED rather than inlined, because a base64 payload
+    would be megabytes over a websocket that is rendering a progress view.
+
+    Truncation is EXPLICIT. A silent cut would let someone read half a file and
+    believe it was the whole one, which is worse than showing less.
+    """
+    if content is None:
+        return None
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        parts = []
+        for c in content:
+            if isinstance(c, str):
+                parts.append(c)
+            elif isinstance(c, dict):
+                if c.get("type") == "text" and c.get("text"):
+                    parts.append(str(c["text"]))
+                elif c.get("type"):
+                    parts.append("[%s]" % c["type"])
+        text = "\n".join(parts)
+    else:
+        text = str(content)
+    text = text.strip()
+    if not text:
+        return None
+    if len(text) > limit:
+        return text[:limit] + ("\n… truncated, %d more characters"
+                               % (len(text) - limit))
+    return text
 
 
 def _tool_summary(inp, limit=120):
@@ -226,6 +458,51 @@ def api_session(sid: str):
     if data is None:
         raise HTTPException(status_code=404, detail="session not found")
     return data
+
+
+@app.get("/api/balance")
+def api_balance() -> dict:
+    """Balance state contract, read-only (2026-08-07).
+
+    Fixed directory — no path parameters, so no traversal surface. Resolution:
+    SUTRA_UI_BALANCE_DIR env, else the asawa-holding checkout four levels up
+    (sutra is a submodule there). A provisioned .app copy has neither, and the
+    honest answer is {present: false} — the panel renders its design preview
+    then, never a fabricated measurement. Errors never leak filesystem paths.
+    """
+    import time as _time
+
+    bdir = os.environ.get("SUTRA_UI_BALANCE_DIR") or str(
+        HERE.parent.parent.parent.parent / "holding" / "state" / "balance")
+    state_p = Path(bdir) / "balance-state.json"
+    log_p = Path(bdir) / "balance-log.jsonl"
+    if not state_p.exists():
+        return {"present": False}
+    try:
+        snap = json.loads(state_p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # Fail closed, not 500: a half-written snapshot is "not present yet".
+        return {"present": False}
+    today = []
+    lt = _time.localtime()
+    day_start = int(_time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
+    try:
+        with open(log_p, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 2_000_000))
+            for line in f.read().decode("utf-8", "replace").splitlines():
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue  # a bad line is skipped, never a 500
+                if isinstance(row.get("epoch"), (int, float)) and row["epoch"] >= day_start:
+                    today.append(row)
+    except OSError:
+        pass
+    return {"present": True, "state": snap, "today": today[-96:]}
 
 
 @app.get("/api/state")
@@ -389,6 +666,11 @@ async def ws_chat(ws: WebSocket):
     session_id = None
     resume_unverified = False   # session id came from the client, not from a live run
     dead_seeds = set()          # client-supplied ids claude has already rejected
+    # A message to re-run immediately, bypassing the inbox. Set when a turn dies
+    # because the resumed thread did not exist: the message itself was fine, so
+    # it is replayed once WITHOUT --resume instead of being thrown away. See the
+    # failure branch below for why losing it was the actual bug.
+    pending = None
 
     # ---- interrupt --------------------------------------------------------
     # The loop used to `await ws.receive_text()` and only THEN spawn, so nothing
@@ -449,15 +731,21 @@ async def ws_chat(ws: WebSocket):
 
     try:
         while True:
-            get_next = asyncio.ensure_future(inbox.get())
-            gone = asyncio.ensure_future(reader_dead.wait())
-            done, _ = await asyncio.wait({get_next, gone},
-                                         return_when=asyncio.FIRST_COMPLETED)
-            if get_next not in done:
-                get_next.cancel()      # socket closed -- stop serving this channel
-                break
-            gone.cancel()
-            payload = get_next.result()
+            if pending is not None:
+                # A replay never touches the socket: the operator already sent
+                # this text, and re-reading the inbox here would reorder it
+                # behind anything they typed while the failed turn was running.
+                payload, pending = pending, None
+            else:
+                get_next = asyncio.ensure_future(inbox.get())
+                gone = asyncio.ensure_future(reader_dead.wait())
+                done, _ = await asyncio.wait({get_next, gone},
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if get_next not in done:
+                    get_next.cancel()  # socket closed -- stop serving this channel
+                    break
+                gone.cancel()
+                payload = get_next.result()
             live["stopped"] = False
             msg = payload.get("message", "")
             seed = payload.get("resume")
@@ -469,43 +757,107 @@ async def ws_chat(ws: WebSocket):
                     and "/" not in seed and ".." not in seed):
                 session_id, resume_unverified = seed, True
 
-            args = [
-                agent_bin, "-p", msg,
-                "--output-format", "stream-json",
-                "--verbose", "--include-partial-messages",
-                "--permission-mode", perm_mode,
-            ]
-            if session_id:
-                args += ["--resume", session_id]
             # Model: per-message override wins over the stored setting, and BOTH are
             # validated against the allow-list -- an arbitrary string here would be
             # passed straight to the CLI, where a typo fails as a dead socket several
             # seconds later instead of as a refusal now.
             chosen_model = providers.clean_model(model) or providers.stored_model()
-            if chosen_model:
-                args += ["--model", chosen_model]
+            # Everything else the client may ask for this turn, validated in
+            # build_agent_args rather than trusted here.
+            #
+            # ONE PROCESS, MANY TURNS. Every message used to spawn its own
+            # `claude -p <msg>` with stdin closed: ~3s of cold start per turn, a
+            # cross-process prompt-cache miss every time, and session continuity
+            # faked with --resume (whose failure is the bug that lost messages).
+            # A persistent process fed stream-json on stdin keeps one session id
+            # for the life of the pane.
+            #
+            # BUT the model, permission mode, effort and budget are SPAWN-TIME
+            # flags -- they cannot change on a running process. So the rule is:
+            # reuse while the argv would be identical, otherwise respawn and
+            # carry the thread across with --resume. That keeps per-message
+            # overrides working instead of silently ignoring them, which is what
+            # a naive "always reuse" would do.
+            args = build_agent_args(agent_bin, msg, perm_mode,
+                                    session_id=None, model=chosen_model,
+                                    opts=payload.get("opts"), stream_input=True)
+            spawn_key = tuple(args)
+            proc = live.get("proc")
+            alive = proc is not None and proc.returncode is None
+            if alive and live.get("key") != spawn_key:
+                # a spawn-time option changed: end this process and carry the
+                # conversation over rather than dropping it
+                _kill_live()
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
+                alive = False
+            if not alive and session_id:
+                args = build_agent_args(agent_bin, msg, perm_mode,
+                                        session_id=session_id, model=chosen_model,
+                                        opts=payload.get("opts"), stream_input=True)
+                spawn_key = tuple(args)
 
-            await ws.send_json({"type": "start", "model": chosen_model})
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *args, cwd=workdir,
-                    stdin=asyncio.subprocess.DEVNULL,   # inheriting uvicorn's stdin makes
-                    stdout=asyncio.subprocess.PIPE,     # claude wait 3s for piped input on
-                    stderr=asyncio.subprocess.PIPE,     # EVERY message -- 3s of dead air per turn
-                    env=dict(os.environ),      # no ANTHROPIC_API_KEY -> subscription auth
-                    # own process group, so an interrupt can signal the whole tree
-                    start_new_session=True,
-                )
+            # EXACTLY ONE `start` PER OPERATOR MESSAGE. The client treats `start`
+            # as the demarcation that binds the next token stream to the next
+            # QUEUED turn (`ch.pending.shift()`), so a second one for an internal
+            # replay would bind the reply to whatever message the operator typed
+            # while this turn was failing. A replay continues the turn that is
+            # already on screen; it does not announce a new one.
+            if not payload.get("_replay"):
+                await ws.send_json({"type": "start", "model": chosen_model})
+            if not alive:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *args, cwd=workdir,
+                        # stdin is a PIPE now, not DEVNULL: it is the channel the
+                        # turns arrive on. (DEVNULL was there because a plain
+                        # inherited stdin made claude wait 3s for piped input on
+                        # every message -- with stream-json that wait IS the
+                        # feature.)
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=dict(os.environ),  # no ANTHROPIC_API_KEY -> subscription auth
+                        # own process group, so an interrupt can signal the whole tree
+                        start_new_session=True,
+                    )
+                except OSError as e:
+                    # Real cause, verbatim -- a dead socket taught the operator nothing.
+                    await ws.send_json({"type": "error", "detail":
+                        "could not start %r in %s: %s" % (agent_bin, workdir, e)})
+                    continue
                 live["proc"] = proc
-            except OSError as e:
-                # Real cause, verbatim -- a dead socket taught the operator nothing.
+                live["key"] = spawn_key
+            proc = live["proc"]
+
+            # The turn itself: one stream-json frame on stdin.
+            try:
+                proc.stdin.write((json.dumps({
+                    "type": "user",
+                    "message": {"role": "user",
+                                "content": [{"type": "text", "text": msg}]},
+                }) + "\n").encode("utf-8"))
+                await proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
+                # the process died between the liveness check and the write
+                live["proc"] = None
                 await ws.send_json({"type": "error", "detail":
-                    "could not start %r in %s: %s" % (agent_bin, workdir, e)})
+                    "the agent process closed before the message was sent (%s)" % e})
                 continue
 
             got_text = got_result = False
             result_error = None
-            async for line in proc.stdout:
+            # READ UNTIL THIS TURN'S `result`, not until EOF. The process is
+            # persistent now, so EOF only happens when it DIES -- an `async for`
+            # over stdout would simply never return.
+            eof = False
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    eof = True
+                    break
                 try:
                     ev = json.loads(line.decode("utf-8", "replace"))
                 except ValueError:
@@ -562,7 +914,51 @@ async def ws_chat(ws: WebSocket):
                                 "phase": "end",
                                 "id": blk.get("tool_use_id"),
                                 "ok": not blk.get("is_error"),
+                                # WHAT THE TOOL ACTUALLY RETURNED. This was dropped:
+                                # the frame carried {id, ok} and the whole content
+                                # array was discarded server-side, so an operator
+                                # could see that Read ran and never what it read,
+                                # and a failing tool showed a red dot with no reason
+                                # attached -- the one thing you need when a turn
+                                # goes wrong.
+                                "output": _tool_output(blk.get("content")),
                             })
+                elif t == "system":
+                    # THE FOURTH TYPE THE PARSER NEVER HANDLED. The dispatch knew
+                    # stream_event / assistant / user / result and silently
+                    # `continue`d past everything else, so two useful things were
+                    # invisible:
+                    #
+                    #   init      what the session actually resolved -- model,
+                    #             tool count, mcp servers, plugins. The panel
+                    #             showed the model it REQUESTED, never the one in
+                    #             force, and those differ whenever a fallback or
+                    #             a settings default applies.
+                    #   api_retry a rate-limit backoff. Claude waits and retries;
+                    #             with no frame for it the pane sat silent and
+                    #             the turn read as HUNG. "Waiting, retrying" and
+                    #             "wedged" look identical when nothing is sent.
+                    sub = ev.get("subtype")
+                    if sub == "init":
+                        await ws.send_json({
+                            "type": "sysinit",
+                            "model": ev.get("model"),
+                            "tools": len(ev.get("tools") or []),
+                            "mcp_servers": [
+                                {"name": m.get("name"), "status": m.get("status")}
+                                for m in (ev.get("mcp_servers") or [])
+                                if isinstance(m, dict)],
+                            "slash_commands": len(ev.get("slash_commands") or []),
+                            "permission_mode": ev.get("permissionMode"),
+                            "cwd": ev.get("cwd"),
+                        })
+                    elif sub == "api_retry":
+                        await ws.send_json({
+                            "type": "retrying",
+                            "detail": str(ev.get("message") or ev.get("error")
+                                          or "the API asked us to retry")[:300],
+                            "attempt": ev.get("attempt"),
+                        })
                 elif t == "result":
                     got_result = True
                     # A `result` event is NOT proof of success: a failed run (stale
@@ -584,10 +980,27 @@ async def ws_chat(ws: WebSocket):
                             "num_turns": ev.get("num_turns"),
                             "cost_usd": ev.get("total_cost_usd"),
                         })
+                    # `result` closes THIS TURN. The process stays up for the
+                    # next one -- that is the whole point of the change.
+                    break
 
-            err = (await proc.stderr.read()).decode("utf-8", "replace")
-            rc = await proc.wait()
-            live["proc"] = None
+            # Do NOT read stderr to EOF or wait() here: both block forever on a
+            # process that is meant to outlive the turn. Only a dead process is
+            # drained and reaped.
+            err = ""
+            rc = 0
+            if eof:
+                try:
+                    err = (await asyncio.wait_for(proc.stderr.read(), 2)).decode(
+                        "utf-8", "replace")
+                except (asyncio.TimeoutError, Exception):
+                    err = ""
+                try:
+                    rc = await asyncio.wait_for(proc.wait(), 5)
+                except (asyncio.TimeoutError, Exception):
+                    rc = -1
+                live["proc"] = None
+                live["key"] = None
 
             if live["stopped"]:
                 # SIGTERM makes rc non-zero, which the branch below would report as
@@ -595,30 +1008,67 @@ async def ws_chat(ws: WebSocket):
                 # interrupt. A stop is a normal outcome and gets its own frame.
                 # The session id is KEPT: the thread is still resumable, the operator
                 # simply cut this turn short.
+                #
+                # A stop now ends the whole PERSISTENT process, because that is
+                # the only way to interrupt a turn in flight. Clear it so the
+                # next message spawns a fresh one -- and because session_id is
+                # kept, that respawn carries --resume and the conversation
+                # continues where it was cut.
                 live["stopped"] = False
+                live["proc"] = None
+                live["key"] = None
                 await ws.send_json({"type": "stopped", "session": session_id})
                 continue
 
-            failed = (rc != 0) or (result_error is not None)
+            # rc is only meaningful when the process actually exited. A live
+            # process has no return code, so a turn fails when it SAID it failed
+            # or when the process died before producing a result.
+            failed = (result_error is not None) or (eof and not got_result) or (eof and rc != 0)
             if failed:
                 # stderr carries the specific cause ("No conversation found with
                 # session ID: ..."); the result payload is the fallback.
                 detail = err.strip()[:600] or result_error or ("claude exited " + str(rc))
                 frame = {"type": "error", "detail": detail}
                 if resume_unverified:
-                    # The id the browser handed us may be stale or from another
-                    # machine. Drop it so the NEXT message starts a fresh thread
-                    # instead of failing identically forever -- and remember it, or
-                    # the client re-sends the same dead id on every message and the
-                    # channel never recovers. `resume_reset` tells the client to
-                    # forget it too.
-                    frame["detail"] = detail + (
-                        "  (resumed session %s was rejected -- the next message "
-                        "will start a new thread)" % session_id)
-                    frame["resume_reset"] = True
+                    # The id the browser handed us may be stale, from another
+                    # machine, or -- the common case -- from a session recorded
+                    # under a DIFFERENT working directory: `claude --resume`
+                    # resolves ids per project, so an id adopted from the
+                    # transcript list is rejected whenever the panel's workdir is
+                    # not the one that session ran in.
+                    #
+                    # Drop it so it is never retried, and remember it, or the
+                    # client re-sends the same dead id on every message and the
+                    # channel never recovers.
                     dead_seeds.add(session_id)
                     session_id = None
                     resume_unverified = False
+                    frame["resume_reset"] = True
+
+                    # REPLAY THE MESSAGE. Telling the operator "the next message
+                    # will start a new thread" was the bug: their message had
+                    # nothing wrong with it, and it was discarded -- the turn
+                    # showed `failed` and they had to retype it. The only thing
+                    # wrong was the id WE attached. Drop the id, run the same
+                    # text again, and the turn simply works.
+                    #
+                    # Guarded by `not got_text`: once any answer has streamed to
+                    # the client, replaying would duplicate it. Bounded to one
+                    # attempt, because the retry carries no --resume and so
+                    # cannot fail this way twice.
+                    if not got_text:
+                        await ws.send_json({
+                            "type": "retry",
+                            "resume_reset": True,
+                            "detail": "the saved thread was gone, so this message "
+                                      "is being sent as a new one",
+                        })
+                        payload["_replay"] = True   # suppress a second `start`
+                        pending = payload
+                        continue
+                    frame["detail"] = detail + (
+                        "  (resumed session was rejected; the next message will "
+                        "start a new thread)")
                 await ws.send_json(frame)
             elif not got_result:
                 # process ended without a result event: still close the turn out
@@ -742,7 +1192,17 @@ async def ws_term(ws: WebSocket):
             if kind == "i":                       # keystroke / injected text
                 os.write(master, m.get("d", "").encode("utf-8"))
             elif kind == "r":                     # resize
+                # FLOOR, not trust. A browser that measures a hidden or
+                # not-yet-laid-out container reports a 2x1 terminal, and the TUI
+                # reflows into a garbled sliver the moment that reaches the PTY --
+                # permanently, because nothing re-sends a size afterwards. The
+                # client refuses to send such a measurement (static/term.html);
+                # this refuses to APPLY one, so a single buggy or hostile client
+                # cannot wedge a session. 20x4 is below any usable terminal and
+                # above every degenerate one.
                 rows, cols = int(m.get("r", 24)), int(m.get("c", 80))
+                if rows < 4 or cols < 20:
+                    continue
                 fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
     except WebSocketDisconnect:
         pass

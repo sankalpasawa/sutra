@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Notarization requires the hardened runtime, and the hardened runtime
+	     blocks things Electron and an embedded CPython legitimately do. Each
+	     entitlement below is here for one named reason; none is a catch-all.
+
+	     allow-jit / allow-unsigned-executable-memory
+	       V8 compiles JavaScript at runtime. Without these, the renderer
+	       process is killed the moment it JITs.
+
+	     disable-library-validation
+	       CPython dlopen()s its extension modules (pydantic_core, _ssl, ...).
+	       They are signed by us in make-dmg.sh, but library validation also
+	       requires the SAME team identifier as the loading process, and a
+	       dlopen from a python binary inside an Electron bundle does not
+	       satisfy that on every macOS version. Without it the panel backend
+	       dies on `import pydantic_core`.
+
+	     allow-dyld-environment-variables
+	       Electron's own launcher sets DYLD_ variables for its framework.
+
+	     NOT requested: app sandbox, camera, microphone, location, contacts,
+	     calendars, photos, Apple Events. Sutra binds 127.0.0.1 and reads its
+	     own registry; it has no business asking for any of them. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<true/>
+</dict>
+</plist>

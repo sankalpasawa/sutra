@@ -1067,127 +1067,74 @@ class TestTenantFiltering(Phase0Case):
         self.seed_charter(b_kid, "Bravo Secret Charter", OTHER_TENANT)
         return a_root, a_alpha, a_beta, b_root, b_kid
 
-    def test_14_tenant_filtering_keeps_the_second_tenant_out_of_every_surface(self):
-        """§6 + §9: `tenant_refs()` is the sibling of `live_refs()` — ONE
-        chokepoint at tree / search / the build_site input set. Proof clause 8:
-        a T-fixture domain's name appears in ZERO output files."""
-        E = self.E
-        a_root, _a_alpha, _a_beta, b_root, b_kid = self._seed_two_tenants()
-        secret = {"Zebra Holdings", "Bravo Logistics", "Bravo Secret Charter",
-                  b_root, b_kid}
+    def test_14_a_second_root_is_refused_rather_than_filtered(self):
+        """TENANCY IS GONE, and this test replaces the one that specified it.
 
-        # --- load_domains() is UNCHANGED: unfiltered (§9) --------------------
+        What was here: `test_14_tenant_filtering_keeps_the_second_tenant_out_of
+        _every_surface`. It seeded TWO tenants in ONE registry -- two parent-less
+        roots -- and asserted that tree / search / the classifier / build_site /
+        export_registry_only each filtered the second one out by label, with
+        `--all-tenants` as the explicit opt-out.
+
+        That capability has been REMOVED, deliberately, and this is the honest
+        record of what was given up: two organisations can no longer share a
+        registry. It was never isolation -- the selector was an env var, the
+        kit was shared, and `tenant_refs`'s own docstring said "do not describe
+        it with the word isolation" -- but it WAS a working misrouting guard,
+        and it is gone.
+
+        The replacement boundary is coarser and actually enforced: ONE REGISTRY
+        PER PARTY (a separate SUTRA_NATIVE_HOME). A second org is not a label in
+        this registry; it is a different registry.
+
+        So the contract is now the opposite of the old one. A second parent-less
+        root is not a tenant to be filtered -- it is damage, and every publish
+        surface must refuse it LOUDLY rather than silently emit one arbitrary
+        subtree.
+        """
+        E = self.E
+        import domains_page as P
+
+        a_root, _a_alpha, _a_beta, b_root, _b_kid = self._seed_two_tenants()
         domains = E.load_domains()
-        self.assertIn(b_root, domains)
-        self.assertEqual(len(E.tenant_refs(domains, TENANT)) +
-                         len(E.tenant_refs(domains, OTHER_TENANT)), len(domains))
-        self.assertEqual(E.tenant_refs(domains, None), domains,
-                         "tenant_id=None must mean UNFILTERED")
 
-        # --- tree ------------------------------------------------------------
-        code, tree = self.cli("tree")
-        self.assertEqual(code, 0)
-        blob = json.dumps(tree)
-        for name in secret:
-            self.assertNotIn(name, blob, "tenant leak in `tree`: %r" % name)
-        code, tree_all = self.cli("tree", "--all-tenants")
-        self.assertIn(b_root, json.dumps(tree_all),
-                      "--all-tenants is the explicit opt-out and must still work")
+        # the label no longer selects anything
+        self.assertEqual(len(E.tenant_refs(domains, TENANT)), len(domains),
+                         "tenant_refs is retired and must be an identity function")
+        self.assertEqual(len(E.tenant_refs(domains, OTHER_TENANT)), len(domains))
 
-        # --- search ----------------------------------------------------------
-        for q in ("Zebra", "Bravo", "Logistics"):
-            code, hits = self.cli("search", q)
-            self.assertEqual(code, 0)
-            self.assertEqual(hits["total"], 0,
-                             "tenant leak in `search %s`: %r" % (q, hits["hits"]))
-        code, hits = self.cli("search", "Alpha")
-        self.assertGreaterEqual(hits["total"], 1, "own tenant must still match")
+        # containment does, and it is the publish input set now
+        under_a = E.subtree_refs(domains, a_root)
+        self.assertIn(a_root, under_a)
+        self.assertNotIn(b_root, under_a,
+                         "a second root is not under the first by construction")
 
-        # --- classifier ------------------------------------------------------
-        scored = E.score_domains(E.gather_evidence("bravo logistics"), TENANT,
-                                 domains)
-        self.assertNotIn(b_kid, scored)
-
-        # --- build_site / export_registry_only -------------------------------
-        import domains_page as P
+        # and BOTH publish surfaces refuse the ambiguity instead of guessing.
+        # export_registry_only is the one that had no root assertion at all --
+        # a drift-timer hook commits and pushes its output to a public repo.
         out_dir = os.path.join(self.home, "site")
-        made = P.build_site(out_dir, label="Departments", tenant_id=TENANT)
-        self.assertGreater(made, 0)
-        files = sorted(os.listdir(out_dir))
-        self.assertIn("index.html", files)
-        self.assertIn("registry.json", files)
-        for fn in files:
-            text = self.read_text(os.path.join(out_dir, fn))
-            for name in secret:
-                self.assertNotIn(name, text,
-                                 "tenant leak in %s: %r" % (fn, name))
-        self.assertIn("Acme Local",
-                      self.read_text(os.path.join(out_dir, "index.html")))
+        os.makedirs(out_dir, exist_ok=True)
+        for fn, name in ((lambda: P.build_site(out_dir, label="Departments"), "build_site"),
+                         (lambda: P.export_registry_only(out_dir), "export_registry_only")):
+            with self.assertRaises(SystemExit, msg="%s must refuse two roots" % name) as cm:
+                fn()
+            self.assertIn("parent-less", str(cm.exception))
 
-        reg = self.read_json(os.path.join(out_dir, "registry.json"))
-        homes = {E.load_charter(cid).get("domain_ref") for cid in reg["charters"]}
-        self.assertTrue(homes <= set(E.tenant_refs(domains, TENANT)),
-                        "registry.json carried a foreign tenant's charter")
-
-        exp_dir = os.path.join(self.home, "export")
-        os.makedirs(exp_dir, exist_ok=True)
-        n = P.export_registry_only(exp_dir, tenant_id=TENANT)
-        reg2 = self.read_json(os.path.join(exp_dir, "registry.json"))
-        self.assertEqual(n, len(reg2["charters"]))
-        self.assertEqual(set(reg2["charters"]), set(reg["charters"]),
-                         "the fast lane and build_site disagree on the input set")
-
-        # --- the OTHER tenant still builds its own site ----------------------
-        b_dir = os.path.join(self.home, "site-b")
-        self.assertGreater(P.build_site(b_dir, tenant_id=OTHER_TENANT), 0)
-        b_index = self.read_text(os.path.join(b_dir, "index.html"))
-        self.assertIn("Zebra Holdings", b_index)
-        self.assertNotIn("Acme Local", b_index)
-        self.assertIsNotNone(a_root)
-
-    def test_14c_publish_argv_is_parsed_by_position_not_by_value(self):
-        """§6's required `--tenant`, parsed the way the engine's `_flag()`
-        already did it. Two fragilities: a dangling `--tenant` raised an
-        uncaught IndexError, and stripping positionals BY VALUE dropped an
-        out-dir that happened to equal the tenant string — the site then went
-        silently to ./domains/ instead of where it was asked to go."""
-        import domains_page as P
-        args, flags = P._parse_argv(["T-local", "--site", "--tenant", "T-local"])
-        self.assertEqual(args, ["T-local"],
-                         "the out-dir was stripped because it equals the tenant")
-        self.assertEqual(flags["--tenant"], "T-local")
-        args, flags = P._parse_argv(["out", "--label", "Depts",
-                                     "--tenant", "T-x"])
-        self.assertEqual(args, ["out"])
-        self.assertEqual(flags["--label"], "Depts")
-        self.assertEqual(flags["--tenant"], "T-x")
-        with self.assertRaises(SystemExit):
-            P._parse_argv(["out", "--tenant"])
-        with self.assertRaises(SystemExit):
-            P._parse_argv(["out", "--tenant", "--site"])
-
-    def test_14b_optional_tenant_id_on_charters_for_and_all_placements(self):
-        """§9: `charters_for` / `all_placements` take an OPTIONAL tenant_id;
-        the default stays unfiltered so every shipped call site is unchanged."""
+    def test_14b_root_lookup_no_longer_depends_on_a_label(self):
+        """_root_ref matched `parent_ref is None AND tenant_id == X`. The tenant
+        conjunct was the only thing that could make it miss on a registry that
+        plainly has a root, and the miss MINTS A SECOND ROOT -- manufacturing
+        exactly the damage the test above refuses. A mistyped PLACEMENT_TENANT
+        was enough to trigger it."""
         E = self.E
-        _a_root, a_alpha, _a_beta, _b_root, b_kid = self._seed_two_tenants()
-        a_cid = E.charters_for(a_alpha)[0]["id"]
-        b_cid = E.charters_for(b_kid)[0]["id"]
-        self.seed_placement("/w/a.md", a_alpha, a_cid, TENANT)
-        self.seed_placement("/w/b.md", b_kid, b_cid, OTHER_TENANT)
-
-        self.assertEqual(len(E.charters_for(b_kid)), 1)
-        self.assertEqual(len(E.charters_for(b_kid, TENANT)), 0)
-        self.assertEqual(len(E.charters_for(b_kid, OTHER_TENANT)), 1)
-        self.assertEqual(len(E.all_placements()), 2)
-        self.assertEqual(len(E.all_placements(TENANT)), 1)
-        self.assertEqual(len(E.all_placements(OTHER_TENANT)), 1)
-
-
-# ======================================================== supporting rows ==
-# The remaining §9 Phase 0 rows that the fourteen above do not reach.
-
-class TestMintLifecycleRules(Phase0Case):
+        a_root, _a1, _a2, _b_root, _b_kid = self._seed_two_tenants()
+        before = len(E.load_domains())
+        # a tenant that has never existed used to mint a fresh "Root"
+        got = E._root_ref("T-does-not-exist")
+        self.assertEqual(len(E.load_domains()), before,
+                         "root lookup must not MINT anything")
+        self.assertIsNone(E.load_domains()[got].get("parent_ref"),
+                          "the resolved ref must actually be a root")
 
     def test_15_mint_skips_non_active_siblings_and_refuses_a_dead_parent(self):
         """§2.1 I-D5: name reuse mints a NEW ref, never adopts the tombstone;

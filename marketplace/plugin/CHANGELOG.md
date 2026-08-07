@@ -2,6 +2,54 @@
 
 **status**: active · **updated**: 2026-08-07
 
+## 2.78.2
+
+- **usage-guard: both windows everywhere.** session (5h) + 7-day each shown with
+  pct/bar/reset in status, warning line, and hard-block box (founder ask 2026-08-07).
+
+## 2.78.1
+
+- **usage-guard fix**: `sutra-usage on` stamps the enabled flag with ts+host
+  (empty flag failed non-empty file checks).
+
+## 2.78.0
+
+- **Usage-guard (opt-in, dormant by default).** New PreToolUse hook + `sutra-usage`
+  CLI: warns at 70% rate-limit utilization, HARD-blocks tool use at 80% until the
+  founder says "continue" (`sutra-usage continue`; override expires at window reset).
+  OFF everywhere until a machine opts in with `sutra-usage on`. Fail-open on any
+  data error; `sutra-usage status` shows live five-hour/seven-day utilization.
+
+## 2.79.0
+
+- **Balance screen beauty pass.** Serif greeting with the day's one-liner,
+  insight cards as accented stat tiles, day strip in a card with hour marks,
+  polished composer — all from existing panel tokens; visual-only.
+
+## 2.77.0
+
+- **Balance speaks human (founder-approved register).** Observe v2 filters
+  machine prompts and reads the founder's own messages — time, tempo, breaks,
+  parallel threads, course corrections. Card framework: time / energy /
+  awareness / understanding / actionable / custom, evidence-gated, plain
+  language; energy framed as tempo, never emotion. Backing metrics stay in
+  signals for audit.
+
+## 2.76.0
+
+- **Balance screen v3 (founder redline).** Takeaway cards in a compact
+  3-across grid; day strip is 96 fixed thin 15-min slots (width-capped);
+  the chat affordance is now an inline composer in the screen — type, Enter,
+  and a Balance-loaded session opens already answering via the normal
+  submitTurn pipeline.
+
+## 2.75.0
+
+- **Balance screen shows real observations.** New read-only GET /api/balance
+  (fixed dir, no traversal surface, fail-closed) serves the state contract;
+  the screen renders today's real state, takeaways, and window strip — the
+  sample cascade now appears only when no data exists.
+
 ## 2.74.0
 
 - **Balance chat is live in the desktop panel.** The Balance screen becomes a

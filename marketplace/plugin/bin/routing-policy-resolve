@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# routing-policy-resolve — WDP W4-T36. Resolves class -> model+effort against
+# routing-policy.json per frozen ROUTING-POLICY.md. Pure decision tool: no
+# marker writes (sutra-dispatch owns those). KV output; exit 0 decided,
+# 2 policy refusal (fable w/o approval, bad touches encoding), 1 infra.
+# Rank is the capability authority (1 = top) — catalog order is display only
+# (W4 codex fold: a mis-ordered edit must never weaken the floor).
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+POLICY="${ROUTING_POLICY:-$ROOT/holding/plans/dispatch-program/routing-policy.json}"
+[ -f "$POLICY" ] || { echo "resolve: policy not found: $POLICY" >&2; exit 1; }
+command -v jq >/dev/null || { echo "resolve: jq required" >&2; exit 1; }
+
+CLASS="" CTX="" AUTO_MAX=0
+TOUCHES=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --class) CLASS="$2"; shift 2 ;;
+    --touch) TOUCHES+=("$2"); shift 2 ;;
+    --context-tokens) CTX="$2"; shift 2 ;;
+    --auto-escalate-max) AUTO_MAX=1; shift ;;
+    *) echo "resolve: unknown flag $1" >&2; exit 1 ;;
+  esac
+done
+[ -n "$CLASS" ] || { echo "resolve: --class required" >&2; exit 1; }
+
+# Touches encoding law (LLD): comma and pipe forbidden in entries.
+for t in ${TOUCHES[@]+"${TOUCHES[@]}"}; do
+  case "$t" in *,*|*\|*) echo "resolve: REFUSED — ',' or '|' in touches entry: $t" >&2; exit 2 ;; esac
+done
+
+# Catalog invariant: ranks 1..N ascending, unique.
+jq -e '([.catalog[].rank] == ([.catalog[].rank] | sort))
+  and (([.catalog[].rank] | unique | length) == (.catalog | length))
+  and (all(.catalog[]; (.context | type == "number") and (.rank | type == "number")))' \
+  "$POLICY" >/dev/null || { echo "resolve: catalog invariant violated (rank order/uniqueness or missing numeric context) — refusing all routing" >&2; exit 1; }
+
+# Ladder row (class as string covers "5+").
+ROW=$(jq -c --arg c "$CLASS" '.ladder[] | select((.class|tostring) == $c)' "$POLICY")
+[ -n "$ROW" ] || { echo "resolve: unknown class '$CLASS'" >&2; exit 1; }
+MODEL=$(printf '%s' "$ROW" | jq -r .model)
+EFFORT=$(printf '%s' "$ROW" | jq -r .effort)
+FLOOR_APPLIED="" WINDOW_APPLIED=""
+
+rank_of() { jq -r --arg m "$1" '.catalog[] | select(.model == $m) | .rank' "$POLICY"; }
+model_at_rank() { jq -r --argjson r "$1" '.catalog[] | select(.rank == $r) | .model' "$POLICY"; }
+ctx_of() { jq -r --arg m "$1" '.catalog[] | select(.model == $m) | .context' "$POLICY"; }
+
+# Governance floor: any touch under a floor path (exact or dir-prefix) bumps
+# weaker-than-min models up to min_model.
+MIN_MODEL=$(jq -r '.floors.governance_paths.min_model' "$POLICY")
+for t in ${TOUCHES[@]+"${TOUCHES[@]}"}; do
+  # NB: capture the path as $p — `$t | startswith(.)` rebinds `.` to $t and
+  # matches everything (found via D1/D3 failing on non-governance touches).
+  # BOTH directions (dogfood-found W4 miss): a touch UNDER a floor path floors,
+  # AND a directory touch CONTAINING a floored file floors — `holding/bin/`
+  # must not route cheaper than `holding/bin/sutra-dispatch` does.
+  hit=$(jq -r --arg t "$t" '.floors.governance_paths.paths[] as $p
+    | select( ($t == $p)
+        or ( ($p | endswith("/")) and ($t | startswith($p)) )
+        or ( ($t | endswith("/")) and ($p | startswith($t)) ) )
+    | $p' "$POLICY" | head -1)
+  if [ -n "$hit" ]; then
+    if [ "$(rank_of "$MODEL")" -gt "$(rank_of "$MIN_MODEL")" ]; then
+      MODEL="$MIN_MODEL"; FLOOR_APPLIED="governance:$hit"
+    fi
+    break
+  fi
+done
+
+# Window rule: step to next STRONGER rank until context fits.
+if [ -n "$CTX" ]; then
+  while [ "$(ctx_of "$MODEL")" -lt "$CTX" ]; do
+    r=$(rank_of "$MODEL"); nr=$((r - 1))
+    [ "$nr" -ge 1 ] || { echo "resolve: no model window fits $CTX tokens" >&2; exit 1; }
+    MODEL=$(model_at_rank "$nr"); WINDOW_APPLIED=1
+  done
+fi
+
+# Fable gate: rank-1 requires founder approval — ALWAYS. Auto flags never
+# approve the top tier (initial or otherwise); the flag is recorded only.
+if [ "$(rank_of "$MODEL")" -eq 1 ] && [ "${DISPATCH_FOUNDER_APPROVAL:-}" != "yes" ]; then
+  echo "resolve: NEEDS-APPROVAL — top-tier routing ($MODEL) requires founder approval (auto_escalate_max never approves fable)" >&2
+  exit 2
+fi
+
+PV=$(jq -r .version "$POLICY")
+printf 'CLASS=%s\nMODEL=%s\nEFFORT=%s\nRANK=%s\nFLOOR_APPLIED=%s\nWINDOW_APPLIED=%s\nAUTO_ESCALATE_MAX=%s\nPOLICY_VERSION=%s\n' \
+  "$CLASS" "$MODEL" "$EFFORT" "$(rank_of "$MODEL")" "$FLOOR_APPLIED" "$WINDOW_APPLIED" "$AUTO_MAX" "$PV"

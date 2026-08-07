@@ -95,6 +95,17 @@ if ! printf '%s' "$_CMD_TRIM" | grep -qE "$STRUCTURAL_PATTERN"; then
   exit 0
 fi
 
+# W1-T13 (d10, dual-G1-reviewed): when the command HEAD is a data-carrying
+# launcher (codex / curl / deepseek client), its quoted arguments are prompt
+# text, not operands — a HARD path inside those quotes must not trigger
+# enforcement. Applied ONLY for these heads so real movers with quoted
+# operands (mv "sutra/os/charters/x" y) keep full-string matching — zero
+# broadening. Other data-carrying heads stay pinned as a known limitation.
+case "$_CMD_TRIM" in
+  codex\ *|curl\ *|*[\;\|\&]\ codex\ *|*[\;\|\&]\ curl\ *)
+    _CMD_TRIM=$(printf '%s' "$_CMD_TRIM" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g") ;;
+esac
+
 # ── Identify if any HARD path is referenced in the command ────────────────────
 # Substring match — conservative. We treat the whole command as a string and
 # check for any HARD-list path pattern. Simple, robust to quoting weirdness.

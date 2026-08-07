@@ -19,9 +19,11 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENV_PY = os.path.join(HERE, ".venv", "bin", "python")
@@ -54,6 +56,38 @@ def _get(path):
 def _post(path, body):
     return _http("POST", path, body)
 
+
+
+def _without_mcp(args):
+    """The argv minus the Sutra MCP flags.
+
+    Three tests below pin the baseline argv exactly, which is the right thing to
+    pin -- flag ORDER is load-bearing and a reordering is a real regression.
+    Sutra's own tool server adds --mcp-config/--strict-mcp-config/--settings and
+    appends mcp__sutra__* to --allowedTools on every run, which is not what those tests
+    are about. They compare the argv with those removed, and TestAgentArgsMcp
+    covers the flags themselves.
+    """
+    out, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a == "--mcp-config":
+            i += 2; continue
+        if a == "--strict-mcp-config":
+            i += 1; continue
+        if a == "--settings":            # the PreToolUse allow hook
+            i += 2; continue
+        if a == "--allowedTools":
+            vals = []
+            j = i + 1
+            while j < len(args) and not str(args[j]).startswith("--"):
+                vals.append(args[j]); j += 1
+            vals = [v for v in vals if v != "mcp__sutra__*"]
+            if vals:
+                out.append("--allowedTools"); out.extend(vals)
+            i = j; continue
+        out.append(a); i += 1
+    return out
 
 class TestApp(unittest.TestCase):
     """One shared server for the whole class -- read-mostly endpoints don't
@@ -161,10 +195,10 @@ class TestApp(unittest.TestCase):
                            "tenant_id", "mint_evidence", "ts_minted_ms",
                            "successor_refs"):
                 self.assertIn(field, r, "tree row missing %r: %r" % (field, r))
-        # live, T-local scope by default -- one retired T-local domain and the
-        # T-acme root must both be absent
+        # live by default. The tenant half of this assertion is GONE: tenancy
+        # is removed, so /tree returns the whole registry and a second root is
+        # damage to be refused at publish, not a tenant to be filtered here.
         self.assertTrue(all(row["status"] != "retired" for row in rows))
-        self.assertTrue(all(row["tenant_id"] == "T-local" for row in rows))
 
     def test_02_tree_include_retired_adds_the_tombstone(self):
         _, live_rows = _get("/api/org/tree")
@@ -172,11 +206,218 @@ class TestApp(unittest.TestCase):
         self.assertGreater(len(all_rows), len(live_rows))
         self.assertTrue(any(r["status"] == "retired" for r in all_rows))
 
-    def test_03_tree_all_tenants_adds_the_leak(self):
-        _, scoped = _get("/api/org/tree?all_tenants=false")
-        _, everyone = _get("/api/org/tree?all_tenants=true")
-        self.assertGreater(len(everyone), len(scoped))
-        self.assertTrue(any(r["tenant_id"] != "T-local" for r in everyone))
+    def test_03_tenant_params_are_accepted_no_ops(self):
+        """TENANCY IS REMOVED. This replaces four tests that specified it:
+
+            test_03_tree_all_tenants_adds_the_leak
+            test_29_tree_partitions_tenant_of_record_ahead_of_every_other_tenant
+            test_49_the_tenant_param_actually_scopes_every_org_endpoint
+            test_50_an_unknown_tenant_returns_empty_not_everything
+
+        Together they asserted that ?tenant= selected one org's rows, that
+        all_tenants=true widened it, that the tenant-of-record sorted first, and
+        that an unknown tenant returned EMPTY rather than everything. All four
+        described a capability that no longer exists: one registry now holds one
+        org, so there is nothing to select between.
+
+        What must still hold is compatibility. A running panel and existing
+        scripts send these query params; rejecting them would 422 live callers
+        for no benefit. So they are accepted and ignored -- and 'ignored' is
+        exactly what has to be pinned, because the OLD failure mode was a
+        parameter that looked scoped and was not.
+        """
+        _, base = _get("/api/org/tree?include_retired=true")
+        for q in ("?include_retired=true&tenant=T-local",
+                  "?include_retired=true&tenant=T-does-not-exist",
+                  "?include_retired=true&all_tenants=true",
+                  "?include_retired=true&all_tenants=false"):
+            status, rows = _get("/api/org/tree" + q)
+            self.assertEqual(status, 200, "%s must not 422 a live caller" % q)
+            self.assertEqual(len(rows), len(base),
+                             "%s changed the result; tenancy is removed and it "
+                             "must be a no-op" % q)
+
+        # an unknown tenant must NOT empty the response now -- the old contract
+        # was "empty, never everything"; the new one is "everything, always"
+        for path in ("/api/org/charters", "/api/org/placements"):
+            _, plain = _get(path)
+            _, ghosted = _get(path + "?tenant=T-does-not-exist")
+            self.assertEqual(len(ghosted), len(plain), path)
+
+    def test_47_the_tenants_endpoint_reports_one_registry(self):
+        """TENANCY IS REMOVED. Replaces three tests that specified it:
+
+            test_47_tenants_are_derived_from_the_registry_not_padded
+            test_48_tenant_counts_match_the_scoped_endpoints_exactly
+            test_51_stats_scope_follows_the_tenant_param
+
+        They asserted that /api/tenants unioned every tenant_id seen on a domain
+        or placement, that each row's counts matched that tenant's SCOPED
+        endpoints, and that /stats followed ?tenant=. All three described
+        per-tenant slicing, which no longer exists.
+
+        The endpoint is kept (a running panel calls it on boot; deleting it
+        would 404 a live client) and now describes the registry itself. Its
+        counts must equal the UNSCOPED endpoints -- that is the whole contract,
+        and it is what catches a half-removed filter where /tree and /charters
+        disagree about how much of the registry exists.
+        """
+        _, rows = _get("/api/tenants")
+        self.assertEqual(len(rows), 1,
+                         "one registry, one row -- got %r" % (rows,))
+        r = rows[0]
+        self.assertTrue(r["is_default"])
+
+        _, live = _get("/api/org/tree")
+        _, everything = _get("/api/org/tree?include_retired=true")
+        _, chs = _get("/api/org/charters")
+        _, plc = _get("/api/org/placements")
+
+        self.assertEqual(r["domains"], len(everything))
+        self.assertEqual(r["domains_live"], len(live))
+        self.assertEqual(r["domains_retired"], len(everything) - len(live))
+        self.assertEqual(r["charters"], len(chs))
+        self.assertEqual(r["placements"], len(plc))
+        if r["root_ref"]:
+            roots = [d["ref"] for d in everything if d["parent_ref"] is None]
+            self.assertIn(r["root_ref"], roots)
+
+    def test_03b_tool_output_is_forwarded_not_discarded(self):
+        """The server used to send {id, ok} and DISCARD the whole content array,
+        so an operator saw that Read ran and never what it read -- and a failing
+        tool showed a red dot with no reason attached."""
+        import app as A
+
+        # a plain string result
+        self.assertEqual(A._tool_output("hello"), "hello")
+        # the typed-parts shape the CLI actually emits
+        self.assertEqual(
+            A._tool_output([{"type": "text", "text": "line one"},
+                            {"type": "text", "text": "line two"}]),
+            "line one\nline two")
+        # a non-text part is NAMED, never inlined: a base64 image would be
+        # megabytes over a websocket rendering a progress view
+        self.assertEqual(A._tool_output([{"type": "image", "source": {"data": "AAAA"}}]),
+                         "[image]")
+        # nothing to show stays None rather than becoming an empty expander
+        self.assertIsNone(A._tool_output(None))
+        self.assertIsNone(A._tool_output("   "))
+        self.assertIsNone(A._tool_output([]))
+
+    def test_03c_tool_output_truncation_is_explicit(self):
+        """A silent cut would let someone read half a file and believe it was the
+        whole one -- worse than showing less."""
+        import app as A
+        out = A._tool_output("x" * 5000, limit=100)
+        self.assertTrue(out.startswith("x" * 100))
+        self.assertIn("truncated", out)
+        self.assertIn("4900", out, "must say HOW MUCH was cut")
+        self.assertLess(len(out), 200)
+
+    def test_03d_a_tool_that_returns_nothing_is_not_an_error(self):
+        """ok and output are independent: a successful tool may legitimately
+        return no content, and that must not render as a failure."""
+        import app as A
+        self.assertIsNone(A._tool_output(""))
+
+    def test_03e_arg_builder_baseline_is_unchanged(self):
+        """The spawn was a hardcoded list; it is a builder now. The flags that
+        already worked must come out in the same order -- a reorder here is a
+        behaviour change nobody asked for."""
+        import app as A
+        a = _without_mcp(A.build_agent_args("claude", "hi", "plan"))
+        self.assertEqual(a, ["claude", "-p", "hi", "--output-format", "stream-json",
+                             "--verbose", "--include-partial-messages",
+                             "--permission-mode", "plan"])
+
+    def test_03f_arg_builder_validates_everything(self):
+        """A value that reaches the CLI unchecked fails seconds later as a dead
+        socket, which reads as 'the panel is broken' rather than 'that was
+        wrong'."""
+        import app as A
+        a = _without_mcp(A.build_agent_args("claude", "hi", "plan", opts={
+            "fallback_model": "not-a-model",   # not catalogued
+            "effort": "bogus",                 # not a level
+            "max_budget_usd": 0,               # 0 means "spend nothing" = a hang
+            "allowed_tools": [None, "", 123],  # junk, not stringified
+            "add_dir": ["/etc"],               # outside $HOME
+        }))
+        self.assertNotIn("--fallback-model", a)
+        self.assertNotIn("--effort", a)
+        self.assertNotIn("--max-budget-usd", a)
+        self.assertNotIn("--allowedTools", a)
+        self.assertNotIn("--add-dir", a)
+
+    def test_03g_add_dir_is_confined_to_home(self):
+        """This is a loopback web app: a directory arriving over a socket must
+        not be able to hand the agent '/'."""
+        import app as A
+        home = os.path.expanduser("~")
+        a = A.build_agent_args("claude", "hi", "plan",
+                               opts={"add_dir": [home, "/etc", "/"]})
+        dirs = [a[i + 1] for i, v in enumerate(a) if v == "--add-dir"]
+        self.assertEqual(dirs, [os.path.realpath(home)])
+
+    def test_03h_fork_session_needs_a_resume(self):
+        """--fork-session forks a RESUMED thread. Alone the CLI ignores it, which
+        would make the toggle look broken."""
+        import app as A
+        self.assertNotIn("--fork-session",
+                         A.build_agent_args("claude", "hi", "plan",
+                                            opts={"fork_session": True}))
+        self.assertIn("--fork-session",
+                      A.build_agent_args("claude", "hi", "plan", session_id="S",
+                                         opts={"fork_session": True}))
+
+    def test_03i_all_six_permission_modes_are_reachable(self):
+        """The panel knew three; `claude --help` accepts six. auto/manual/dontAsk
+        were unreachable from the UI even though the CLI has always taken them."""
+        import providers as P
+        for m in ("plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"):
+            self.assertIn(m, P.PERMISSION_MODES, m)
+        # and every one of them explains itself, including the ones whose
+        # behaviour is limited until a persistent session channel exists
+        for m in P.PERMISSION_MODES:
+            self.assertTrue(P.PERMISSION_MODE_NOTES.get(m), "no note for %s" % m)
+
+    def test_03j_persistent_argv_takes_the_prompt_on_stdin(self):
+        """ONE PROCESS, MANY TURNS. A persistent run must NOT carry the message
+        as a positional argument -- that is the one-shot form, and passing both
+        would send the first message twice."""
+        import app as A
+        a = A.build_agent_args("claude", "hello", "plan", stream_input=True)
+        self.assertIn("--input-format", a)
+        self.assertEqual(a[a.index("--input-format") + 1], "stream-json")
+        self.assertNotIn("hello", a, "the prompt goes on stdin, not in argv")
+        self.assertEqual(a[1], "-p")
+
+    def test_03k_one_shot_argv_is_unchanged(self):
+        """The persistent path is additive: the one-shot form other callers and
+        tests rely on must be byte-identical to what it always was."""
+        import app as A
+        self.assertEqual(
+            _without_mcp(A.build_agent_args("claude", "hello", "plan")),
+            ["claude", "-p", "hello", "--output-format", "stream-json",
+             "--verbose", "--include-partial-messages", "--permission-mode", "plan"])
+
+    def test_03l_spawn_time_options_change_the_spawn_key(self):
+        """model / permission mode / effort / budget are SPAWN-TIME flags: they
+        cannot change on a running process. The handler reuses a process only
+        while the argv would be identical, so these must actually differ --
+        otherwise a per-message override would be silently ignored."""
+        import app as A
+        base = A.build_agent_args("claude", "x", "plan", stream_input=True)
+        for label, kw in (
+            ("model", dict(model="haiku")),
+            ("perm", dict(perm_mode="acceptEdits")),
+            ("effort", dict(opts={"effort": "high"})),
+            ("budget", dict(opts={"max_budget_usd": 3})),
+        ):
+            kw.setdefault("perm_mode", "plan")
+            other = A.build_agent_args("claude", "x", kw.pop("perm_mode"),
+                                       stream_input=True, **kw)
+            self.assertNotEqual(tuple(base), tuple(other),
+                                "%s must force a respawn" % label)
 
     def test_04_dpaths_are_unique_per_tenant(self):
         # D-numbering is PER TENANT TREE, not global -- T-local's "Sutra Labs"
@@ -729,34 +970,6 @@ class TestApp(unittest.TestCase):
         for e in other_without_before:
             self.assertNotEqual(e.get("event"), "domain_restructured")
 
-    def test_29_tree_partitions_tenant_of_record_ahead_of_every_other_tenant(self):
-        """Complements test_24 by proving the tenant key is load-bearing: a
-        sort on `path` alone would INTERLEAVE the tenants here (D-numbering is
-        per-tenant, so T-acme's "D0" sorts before T-local's "D1"). If the
-        returned order still happens to equal the path-only order, the tenant
-        key is doing nothing and the create-department parent default is one
-        dict-ordering wobble away from pointing at a foreign tenant again."""
-        _, rows = _get("/api/org/tree?include_retired=true&all_tenants=true")
-        tenants = [r["tenant_id"] for r in rows]
-        self.assertGreater(len(set(tenants)), 1, "fixture must span >1 tenant")
-
-        first_foreign = min(i for i, t in enumerate(tenants) if t != "T-local")
-        last_local = max(i for i, t in enumerate(tenants) if t == "T-local")
-        self.assertLess(last_local, first_foreign,
-                         "every tenant-of-record row must precede every foreign row: %r"
-                         % (tenants,))
-
-        # ...and this is NOT what a path-only sort would have produced
-        path_only = sorted(rows, key=lambda r: r["path"])
-        self.assertNotEqual([r["ref"] for r in path_only], [r["ref"] for r in rows],
-                             "path-only order equals the returned order -- the tenant "
-                             "key is not actually doing anything here")
-
-        # the default (scoped) view is the tenant of record and nothing else
-        _, scoped = _get("/api/org/tree")
-        self.assertTrue(scoped)
-        self.assertTrue(all(r["tenant_id"] == "T-local" for r in scoped))
-
     def test_30_simulate_now_ms_moves_staleness_in_both_directions(self):
         """now_ms is the ONE clock both halves of the screen band against. Pin
         it from both ends: a clock far in the past must age nothing, a clock far
@@ -975,7 +1188,12 @@ class TestApp(unittest.TestCase):
         self.assertEqual(st["permission_mode"], "plan",
                          "SAFETY rule 4: the default must not auto-approve edits")
         modes = {m["id"]: m for m in body["permission_modes"]}
-        self.assertEqual(set(modes), {"plan", "acceptEdits", "bypassPermissions"})
+        # SIX, not three. `claude --help` on the installed binary lists
+        # acceptEdits / auto / bypassPermissions / manual / dontAsk / plan; the
+        # panel offered three, so half the CLI's modes were unreachable from the
+        # UI. Verified against the binary, not assumed.
+        self.assertEqual(set(modes), {"plan", "acceptEdits", "bypassPermissions",
+                                      "auto", "manual", "dontAsk"})
         self.assertTrue(modes["plan"]["default"])
         self.assertFalse(modes["plan"]["writes_files"])
         # the two modes that write files must SAY they write files -- this flag
@@ -1037,115 +1255,6 @@ class TestApp(unittest.TestCase):
         self.assertIn("not runnable", err["detail"])
 
     # ========================================================== tenants ====
-
-    def test_47_tenants_are_derived_from_the_registry_not_padded(self):
-        """There is no tenant table -- a tenant is a tenant_id observed on a
-        domain or a placement. So the list must be exactly the union of what
-        the other endpoints report, plus the tenant of record. Padding it (to
-        make a tenant picker look populated) is the failure this guards."""
-        status, rows = _get("/api/tenants")
-        self.assertEqual(status, 200)
-        self.assertIsInstance(rows, list)
-        self.assertTrue(rows)
-
-        _, all_domains = _get("/api/org/tree?all_tenants=true&include_retired=true")
-        _, all_plc = _get("/api/org/placements?all_tenants=true")
-        observed = set(d["tenant_id"] for d in all_domains if d.get("tenant_id"))
-        observed |= set(p["tenant_id"] for p in all_plc if p.get("tenant_id"))
-
-        listed = set(r["tenant_id"] for r in rows)
-        defaults = [r for r in rows if r["is_default"]]
-        self.assertEqual(len(defaults), 1, "exactly one tenant of record")
-        self.assertEqual(listed - observed, set(),
-                         "every listed tenant must be OBSERVED in the registry -- "
-                         "no invented rows")
-        self.assertEqual(observed - listed, set(),
-                         "every observed tenant must be listed -- none hidden")
-        self.assertIn(defaults[0]["tenant_id"], listed)
-
-    def test_48_tenant_counts_match_the_scoped_endpoints_exactly(self):
-        _, rows = _get("/api/tenants")
-        for r in rows:
-            tid = r["tenant_id"]
-            _, live = _get("/api/org/tree?tenant=%s" % tid)
-            _, everything = _get("/api/org/tree?tenant=%s&include_retired=true" % tid)
-            _, chs = _get("/api/org/charters?tenant=%s" % tid)
-            _, plc = _get("/api/org/placements?tenant=%s" % tid)
-            self.assertEqual(r["domains"], len(everything),
-                             "%s: `domains` counts the whole scope" % tid)
-            self.assertEqual(r["domains_live"], len(live), tid)
-            self.assertEqual(r["domains_retired"],
-                             len(everything) - len(live), tid)
-            self.assertEqual(r["charters"], len(chs), tid)
-            self.assertEqual(r["placements"], len(plc), tid)
-            if r["root_ref"]:
-                roots = [d for d in everything if d["parent_ref"] is None]
-                self.assertIn(r["root_ref"], [d["ref"] for d in roots],
-                              "%s: root_ref must be a real parentless domain" % tid)
-
-    # ==================================================== tenant scoping ===
-
-    def test_49_the_tenant_param_actually_scopes_every_org_endpoint(self):
-        """?tenant= is the parameter the whole panel hangs off. If it were
-        ignored (FastAPI silently drops UNKNOWN query params, so a rename would
-        not error), every screen would quietly show all-tenants data while the
-        rail said 'T-local'."""
-        _, rows = _get("/api/tenants")
-        tenants = [r["tenant_id"] for r in rows]
-        self.assertGreaterEqual(len(tenants), 2,
-                                "the fixture must hold >1 tenant for scoping to be "
-                                "provable -- got %r" % tenants)
-
-        seen_refs = {}
-        for tid in tenants:
-            _, tree = _get("/api/org/tree?tenant=%s&include_retired=true" % tid)
-            self.assertTrue(tree, "%s has no domains" % tid)
-            for d in tree:
-                self.assertEqual(d["tenant_id"], tid,
-                                 "?tenant=%s leaked a %s row" % (tid, d["tenant_id"]))
-            seen_refs[tid] = set(d["ref"] for d in tree)
-            _, plc = _get("/api/org/placements?tenant=%s" % tid)
-            for row in plc:
-                self.assertEqual(row["tenant_id"], tid,
-                                 "?tenant=%s leaked a placement from %s"
-                                 % (tid, row["tenant_id"]))
-
-        # the scopes are genuinely disjoint, i.e. the param partitions rather
-        # than returning the same set under a different label
-        a, b = tenants[0], tenants[1]
-        self.assertNotEqual(seen_refs[a], seen_refs[b])
-        self.assertEqual(seen_refs[a] & seen_refs[b], set())
-
-        # ...and all_tenants is the union, so nothing is lost either way
-        _, everyone = _get("/api/org/tree?all_tenants=true&include_retired=true")
-        union = set()
-        for tid in tenants:
-            union |= seen_refs[tid]
-        self.assertEqual(set(d["ref"] for d in everyone), union)
-
-    def test_50_an_unknown_tenant_returns_empty_not_everything(self):
-        """The dangerous failure is a typo'd/stale tenant id falling back to
-        'unscoped', which silently shows another tenant's org chart."""
-        ghost = "T-does-not-exist-%d" % int(time.time())
-        for path in ("/api/org/tree?tenant=%s&include_retired=true",
-                     "/api/org/charters?tenant=%s",
-                     "/api/org/placements?tenant=%s"):
-            status, rows = _get(path % ghost)
-            self.assertEqual(status, 200)
-            self.assertEqual(rows, [],
-                             "%s must be EMPTY for an unknown tenant, never a "
-                             "fallback to the full registry" % (path % ghost))
-
-    def test_51_stats_scope_follows_the_tenant_param(self):
-        _, rows = _get("/api/tenants")
-        for r in rows:
-            _, st = _get("/api/org/stats?tenant=%s" % r["tenant_id"])
-            self.assertEqual(st["tenant_id"], r["tenant_id"])
-            self.assertEqual(st["domains"], r["domains"])
-            self.assertEqual(st["charters"], r["charters"])
-            self.assertEqual(st["placements"], r["placements"])
-
-    # ================================================ sessions: NO FIXTURES =
 
     def test_52_sessions_are_real_files_under_dot_claude_projects(self):
         """The panel used to manufacture sessions by grouping placement rows by
@@ -1772,11 +1881,19 @@ class TestLoginPathRepair(unittest.TestCase):
         self.assertFalse(prov.ensure_login_path(), "repaired PATH twice")
 
     def test_ignores_rc_banner_noise_and_non_path_output(self):
-        """An rc file that prints a banner must not poison PATH."""
+        """An rc file that prints a banner must not poison PATH.
+
+        _known_bin_dirs is stubbed out so this tests ONE mechanism. Without the
+        stub the known-location probe (added for the undetected-`claude` field
+        incident) legitimately finds a real install on the developer's own
+        machine and returns True -- which is the probe working, not the banner
+        parser failing. See TestShellPathHarvest for the probe's own tests.
+        """
         import importlib
         os.environ["PATH"] = "/usr/bin:/bin"
         prov = importlib.reload(self.providers)
         prov._login_shell_path = lambda: None      # what the parser returns for junk
+        prov._known_bin_dirs = lambda binaries: []
         self.assertFalse(prov.ensure_login_path())
         self.assertEqual(os.environ["PATH"], "/usr/bin:/bin")
 
@@ -1791,5 +1908,1035 @@ class TestLoginPathRepair(unittest.TestCase):
                         "login PATH was prepended; it must be appended")
 
 
+class TestAutomationReader(unittest.TestCase):
+    """GET /api/automation reports the dispatcher from real ledgers, and reports
+    the scheduler as ABSENT rather than as an empty table.
+
+    The distinction is the whole point of the screen. Cadence lives in the Native
+    daemon (ADR-017: a daemon-side tick, deliberately not OS cron/launchd); that
+    daemon does not run in this install and the v1.0 scheduler does not evaluate
+    cron expressions at all. A "0 runs today" table would assert that a scheduler
+    ran and had nothing to do. Nothing ran.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        os.environ.setdefault("SUTRA_NATIVE_HOME",
+                              os.path.expanduser("~/.sutra-native/user-kit"))
+        import org_api
+        self.O = org_api
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_absent_file_and_empty_file_are_different_facts(self):
+        """"no such ledger" must not be reported the same way as "ledger with no
+        rows" -- only the second means nothing has been dispatched."""
+        missing = os.path.join(self.tmp, "nope.jsonl")
+        total, rows, big = self.O._read_jsonl_tail(missing)
+        self.assertEqual((total, rows, big), (0, [], False))
+
+        empty = os.path.join(self.tmp, "empty.jsonl")
+        open(empty, "w").close()
+        total, rows, _ = self.O._read_jsonl_tail(empty)
+        self.assertEqual((total, rows), (0, []))
+
+    def test_a_corrupt_row_does_not_empty_the_ledger(self):
+        """One unparseable line is not a reason to report zero activity: it is
+        counted in the total and skipped in the tail."""
+        p = os.path.join(self.tmp, "led.jsonl")
+        with open(p, "w") as fh:
+            fh.write('{"kind":"decision","unit":"a"}\n')
+            fh.write("{not json at all\n")
+            fh.write('{"kind":"bind","unit":"b"}\n')
+        total, rows, _ = self.O._read_jsonl_tail(p)
+        self.assertEqual(total, 3, "every non-blank line counts toward the total")
+        self.assertEqual([r["kind"] for r in rows], ["decision", "bind"],
+                         "only the parseable rows are returned")
+
+    def test_the_tail_is_the_newest_rows(self):
+        p = os.path.join(self.tmp, "led.jsonl")
+        with open(p, "w") as fh:
+            for i in range(50):
+                fh.write(json.dumps({"n": i}) + "\n")
+        total, rows, _ = self.O._read_jsonl_tail(p, limit=5)
+        self.assertEqual(total, 50)
+        self.assertEqual([r["n"] for r in rows], [45, 46, 47, 48, 49])
+
+    def test_a_runaway_ledger_is_refused_not_half_read(self):
+        """A partial tail presented as the whole is worse than saying nothing."""
+        p = os.path.join(self.tmp, "big.jsonl")
+        with open(p, "w") as fh:
+            fh.write("x" * (self.O.AUTOMATION_MAX_BYTES + 1))
+        total, rows, big = self.O._read_jsonl_tail(p)
+        self.assertTrue(big, "must flag the file as too large")
+        self.assertEqual((total, rows), (0, []), "and must not report partial counts")
+
+    def test_the_endpoint_states_that_there_is_no_scheduler(self):
+        """Called directly: this asserts the endpoint's SHAPE, which does not
+        depend on a live server, and lets the workdir be a scratch dir rather
+        than whatever this machine happens to have configured."""
+        import providers
+        real_load, real_allow = providers.load_settings, providers.workdir_allowed
+        # The allowed-root guard is exercised by its own tests; here it would only
+        # stop a scratch dir from standing in for a real workdir.
+        providers.load_settings = lambda: {"workdir": self.tmp}
+        providers.workdir_allowed = lambda wd: True
+        try:
+            body = self.O.api_automation()
+        finally:
+            providers.load_settings, providers.workdir_allowed = real_load, real_allow
+
+        self.assertEqual(body["root"], self.tmp)
+        sch = body["scheduler"]
+        self.assertIn("note", sch)
+        self.assertTrue(sch["note"].strip(), "the absence must be stated, not implied")
+        for key in ("daemon_running", "ready", "triggers_dir_exists", "triggers"):
+            self.assertIn(key, sch, "scheduler liveness field missing: " + key)
+        self.assertIn("dispatcher", body)
+        for src in ("ledger", "atoms", "gate"):
+            self.assertIn("path", body["dispatcher"][src],
+                          "every source must name the file it read")
+
+
+class TestUpdates(unittest.TestCase):
+    """Version comparison and component state. No network in these tests: the
+    remote lookups are stubbed, because a test that depends on GitHub fails for
+    reasons that have nothing to do with this code."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import updates
+        from pathlib import Path as _P
+        self.U = updates
+        self.Path = _P
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_version_comparison(self):
+        n = self.U._newer
+        self.assertTrue(n("2.68.0", "2.67.1"))
+        self.assertTrue(n("2.67.1", "2.67.0"))
+        self.assertTrue(n("2.7.0", "2.67.0") is False, "component-wise, not string")
+        self.assertFalse(n("2.67.0", "2.67.0"))
+        self.assertFalse(n("2.66.0", "2.67.0"))
+
+    def test_an_unreadable_version_never_looks_newer(self):
+        """A parse failure must not present itself as an available update --
+        that would prompt an operator to install over something fine."""
+        self.assertFalse(self.U._newer("", "2.67.0"))
+        self.assertFalse(self.U._newer(None, "2.67.0"))
+        self.assertFalse(self.U._newer("garbage", "2.67.0"))
+        self.assertFalse(self.U._newer("2.68.0", None))
+
+    def test_source_checkout_reports_unmanaged_not_broken(self):
+        """Running from a checkout there is no .app to replace. That is an
+        answer, not an error, and must not render as a failed check."""
+        real = self.U.app_bundle
+        self.U.app_bundle = lambda: None
+        try:
+            d = self.U.desktop_state()
+            self.assertFalse(d["managed"])
+            self.assertIsNone(d["installed"])
+            self.assertIn("checkout", d["reason"])
+            self.assertNotIn("error", d)
+        finally:
+            self.U.app_bundle = real
+
+    def test_desktop_state_reports_an_available_update(self):
+        app = self.Path(self.tmp) / "Sutra.app"
+        (app / "Contents").mkdir(parents=True)
+        import plistlib
+        with open(app / "Contents" / "Info.plist", "wb") as fh:
+            plistlib.dump({"CFBundleShortVersionString": "2.67.0"}, fh)
+        real_app, real_latest = self.U.app_bundle, self.U._latest_desktop
+        self.U.app_bundle = lambda: app
+        self.U._latest_desktop = lambda: {
+            "version": "2.67.1", "tag": "v2.67.1-desktop", "url": "https://x",
+            "asset": "Sutra-arm64.dmg", "download_url": "https://x/d.dmg",
+            "size": 1, "sha256_url": "https://x/d.sha256", "error": None}
+        try:
+            d = self.U.desktop_state()
+            self.assertTrue(d["managed"])
+            self.assertEqual(d["installed"], "2.67.0")
+            self.assertEqual(d["latest"], "2.67.1")
+            self.assertTrue(d["update_available"])
+            # This note used to promise there was NO background updater. There
+            # is one now, and a note that describes the old behaviour is worse
+            # than no note -- it is the app misreporting itself.
+            self.assertIn("background", d["note"])
+            self.assertNotIn("no background updater", d["note"])
+        finally:
+            self.U.app_bundle, self.U._latest_desktop = real_app, real_latest
+
+    def test_a_release_without_this_arch_is_not_an_update(self):
+        """An asset for the other Mac is not something this one can install."""
+        app = self.Path(self.tmp) / "S.app"
+        (app / "Contents").mkdir(parents=True)
+        import plistlib
+        with open(app / "Contents" / "Info.plist", "wb") as fh:
+            plistlib.dump({"CFBundleShortVersionString": "2.67.0"}, fh)
+        real_app, real_latest = self.U.app_bundle, self.U._latest_desktop
+        self.U.app_bundle = lambda: app
+        self.U._latest_desktop = lambda: {
+            "version": "2.99.0", "asset": "Sutra-arm64.dmg", "download_url": None,
+            "error": "release v2.99.0-desktop has no Sutra-arm64.dmg asset"}
+        try:
+            d = self.U.desktop_state()
+            self.assertIsNotNone(d["error"])
+        finally:
+            self.U.app_bundle, self.U._latest_desktop = real_app, real_latest
+
+    def test_installed_plugin_version_is_the_highest_cache_dir(self):
+        """Directories, not the manifest: an update lands as a NEW cache dir, so
+        the manifest under the old root still reads the old number."""
+        root = self.Path(self.tmp) / "core"
+        for v in ("2.9.0", "2.66.0", "2.67.0", "not-a-version"):
+            (root / v).mkdir(parents=True)
+        old = os.environ.get("SUTRA_CACHE_ROOT")
+        os.environ["SUTRA_CACHE_ROOT"] = str(root)
+        try:
+            self.assertEqual(self.U._installed_plugin_version(), "2.67.0")
+        finally:
+            if old is None:
+                del os.environ["SUTRA_CACHE_ROOT"]
+            else:
+                os.environ["SUTRA_CACHE_ROOT"] = old
+
+    def test_install_desktop_refuses_an_unwritable_target(self):
+        """Rather than half-replacing a bundle it cannot finish replacing."""
+        app = self.Path("/System/Library/CoreServices/Finder.app")
+        if not app.is_dir():
+            self.skipTest("no unwritable .app to test against")
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.install_desktop(__file__, app_path=str(app))
+        self.assertIn("writable", str(cm.exception))
+
+    def test_install_desktop_refuses_a_missing_image(self):
+        app = self.Path(self.tmp) / "W.app"
+        (app / "Contents").mkdir(parents=True)
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.install_desktop(str(self.Path(self.tmp) / "nope.dmg"), app_path=str(app))
+        self.assertIn("no such disk image", str(cm.exception))
+
+
+class TestAutoUpdateStaging(unittest.TestCase):
+    """The staging state machine -- the part that makes an update button an
+    auto-updater.
+
+    Every test here is about a moment when NOBODY IS WATCHING: a helper that
+    ran and died, a manifest that outlived the process that wrote it, a launch
+    that has to work out what the previous launch did. The download path is not
+    re-tested (TestUpdates covers it); what is tested is what happens to a
+    staged build afterwards, because that is where an auto-updater turns into
+    either a silent success or an app that will not start."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import updates
+        from pathlib import Path as _P
+        self.U = updates
+        self.Path = _P
+        self.tmp = tempfile.mkdtemp()
+        self._prev = os.environ.get("SUTRA_UPDATE_DIR")
+        os.environ["SUTRA_UPDATE_DIR"] = os.path.join(self.tmp, "updates")
+
+    def tearDown(self):
+        if self._prev is None:
+            os.environ.pop("SUTRA_UPDATE_DIR", None)
+        else:
+            os.environ["SUTRA_UPDATE_DIR"] = self._prev
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _stage(self, version="2.70.0", state="staged", **kw):
+        """A staged manifest over a real file, so digest checks are meaningful."""
+        d = self.U.stage_dir()
+        dmg = d / ("Sutra-%s.dmg" % version)
+        dmg.write_bytes(b"disk image")
+        man = {"state": state, "version": version, "dmg": str(dmg),
+               "sha256": self.U._sha256(dmg), "sha256_url": None,
+               "staged_at": 1, "armed_at": None, "lease_until": None,
+               "arm_attempts": 0, "spawn_failures": 0, "install_failures": 0,
+               "last_error": None}
+        man.update(kw)
+        self.U._write_json(self.U._pending_path(), man)
+        return man
+
+    def _result(self, ok, version="2.70.0", error=""):
+        self.U._write_json(self.U._result_path(),
+                           {"ok": ok, "stage": "installed" if ok else "swap",
+                            "version": version, "error": error, "ts": 1})
+
+    # -- the staging directory is a durable, writable place, so it is checked --
+
+    def test_staging_directory_is_private(self):
+        d = self.U.stage_dir()
+        self.assertEqual(os.stat(d).st_mode & 0o777, 0o700,
+                         "a directory holding a DMG that will be installed "
+                         "unattended must not be readable by other users")
+
+    def test_a_symlinked_staging_directory_is_refused(self):
+        """The durability that makes /tmp wrong makes this necessary: a path
+        that persists is a path someone can point somewhere else first."""
+        real = os.path.join(self.tmp, "elsewhere")
+        os.makedirs(real)
+        link = os.path.join(self.tmp, "linked")
+        os.symlink(real, link)
+        os.environ["SUTRA_UPDATE_DIR"] = link
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.stage_dir()
+        self.assertIn("symlink", str(cm.exception))
+
+    def test_a_loosened_staging_directory_is_repaired(self):
+        """Repaired rather than refused: it is ours, so tightening it is both
+        possible and better than refusing to update. Refusal is reserved for
+        the case where the repair does not take."""
+        d = self.U.stage_dir()
+        os.chmod(d, 0o777)
+        self.U.stage_dir()
+        self.assertEqual(os.stat(d).st_mode & 0o777, 0o700)
+
+    def test_a_staging_directory_owned_by_someone_else_is_refused(self):
+        with mock.patch.object(self.U.os, "getuid", return_value=999999):
+            with self.assertRaises(RuntimeError) as cm:
+                self.U.stage_dir()
+        self.assertIn("not owned by this user", str(cm.exception))
+
+    # -- what sat on disk for days is not trusted on the way back in ---------
+
+    def test_a_changed_image_is_not_installed(self):
+        man = self._stage()
+        self.Path(man["dmg"]).write_bytes(b"something else entirely")
+        with self.assertRaises(RuntimeError) as cm:
+            self.U._verify_staged(man, recheck_online=False)
+        self.assertIn("changed on disk", str(cm.exception))
+
+    def test_an_image_outside_the_staging_directory_is_refused(self):
+        outside = self.Path(self.tmp) / "evil.dmg"
+        outside.write_bytes(b"disk image")
+        man = self._stage()
+        man["dmg"] = str(outside)
+        man["sha256"] = self.U._sha256(outside)   # digest alone would pass
+        with self.assertRaises(RuntimeError) as cm:
+            self.U._verify_staged(man, recheck_online=False)
+        self.assertIn("not inside the staging directory", str(cm.exception))
+
+    def test_a_missing_image_is_refused(self):
+        man = self._stage()
+        os.unlink(man["dmg"])
+        with self.assertRaises(RuntimeError):
+            self.U._verify_staged(man, recheck_online=False)
+
+    # -- launch-time reconciliation ------------------------------------------
+
+    def test_the_helpers_own_word_beats_a_version_comparison(self):
+        """THE ATTACH-PATH TRAP. The shell can attach to an older backend still
+        serving 8330, so a version read back through the API can be the
+        PREVIOUS install. If success were inferred from `installed >= pending`
+        this launch would call a completed update a failure and do it again."""
+        self._stage()
+        self._result(True)
+        r = self.U.resolve_pending(installed_version="2.69.1")   # says still old
+        self.assertFalse(r["pending"])
+        self.assertEqual(r["applied"], "2.70.0")
+        self.assertIsNone(self.U.read_pending(), "a finished update is cleared")
+
+    def test_a_first_failure_is_retried(self):
+        self._stage()
+        self._result(False, error="mount failed")
+        r = self.U.resolve_pending(installed_version="2.69.1")
+        self.assertEqual(r["action"], "arm")
+        self.assertEqual(self.U.read_pending()["install_failures"], 1)
+
+    def test_a_second_failure_gives_up_instead_of_bricking_the_app(self):
+        """The boot fallback QUITS the app to apply an update. Retrying that
+        forever against a broken release is an app that cannot be opened, so
+        the counter is the difference between a failed update and a failed
+        product."""
+        self._stage(install_failures=1)
+        self._result(False, error="new bundle failed codesign")
+        r = self.U.resolve_pending(installed_version="2.69.1")
+        self.assertTrue(r["gave_up"])
+        self.assertIn("codesign", r["error"])
+        self.assertIsNone(self.U.read_pending(),
+                          "giving up clears the pending state; the manual "
+                          "button is the remaining path")
+
+    def test_a_live_lease_is_waited_out_not_armed_again(self):
+        """A second helper against the same bundle is how a launch loop starts:
+        arm, quit, relaunch, still pending, arm again."""
+        self._stage(state="installing", lease_until=int(time.time()) + 300)
+        r = self.U.resolve_pending(installed_version="2.69.1")
+        self.assertEqual(r["action"], "wait")
+        self.assertEqual(self.U.read_pending()["install_failures"], 0,
+                         "waiting is not a failure")
+
+    def test_an_expired_lease_counts_as_an_attempt(self):
+        """No result file and a dead lease means a helper was spawned and was
+        never heard from. Silence is not success."""
+        self._stage(state="installing", lease_until=int(time.time()) - 10)
+        r = self.U.resolve_pending(installed_version="2.69.1")
+        self.assertEqual(r["action"], "arm")
+        self.assertEqual(self.U.read_pending()["install_failures"], 1)
+
+    def test_an_already_updated_app_clears_the_manifest(self):
+        self._stage()
+        r = self.U.resolve_pending(installed_version="2.70.0")
+        self.assertEqual(r["applied"], "2.70.0")
+        self.assertIsNone(self.U.read_pending())
+
+    def test_nothing_staged_is_not_an_error(self):
+        self.assertEqual(self.U.resolve_pending("2.69.1"), {"pending": False})
+
+    # -- arming ---------------------------------------------------------------
+
+    def test_arming_twice_does_not_spawn_two_installers(self):
+        """The countdown firing while the user is already quitting is not a
+        hypothetical -- it is the most likely way this is reached."""
+        self._stage(state="installing", lease_until=int(time.time()) + 300)
+        r = self.U.arm_desktop(os.getpid(), relaunch=True)
+        self.assertTrue(r["already"])
+
+    def test_arming_refuses_a_release_that_has_already_failed_twice(self):
+        self._stage(state="failed", install_failures=2,
+                    last_error="new bundle failed codesign")
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.arm_desktop(os.getpid())
+        self.assertIn("will not be retried", str(cm.exception))
+
+    def test_arming_with_nothing_staged_is_refused(self):
+        with self.assertRaises(RuntimeError) as cm:
+            self.U.arm_desktop(os.getpid())
+        self.assertIn("no staged update", str(cm.exception))
+
+    def test_a_spawn_failure_returns_the_update_to_staged(self):
+        """A helper that never started has not failed to INSTALL anything. If
+        that were counted as an install failure, two hiccups here would
+        permanently suppress a perfectly good release."""
+        self._stage()
+        # No .app anywhere: this is a source checkout, exactly as CI sees it.
+        with self.assertRaises(RuntimeError):
+            self.U.arm_desktop(os.getpid(), relaunch=True)
+        man = self.U.read_pending()
+        self.assertEqual(man["state"], "staged", "still installable")
+        self.assertEqual(man["spawn_failures"], 1)
+        self.assertEqual(man["install_failures"], 0)
+
+    # -- the installer's own contract ----------------------------------------
+
+    def test_the_installer_is_told_which_process_to_wait_for(self):
+        """getppid() is WRONG for the desktop shell: main.js has a path where it
+        attaches to a backend it did not spawn, and that parent's exit would
+        release the helper while Sutra is still running."""
+        env = self._spawn_env(wait_pid=4242, relaunch=True, version="2.70.0")
+        self.assertEqual(env["WAIT_PID"], "4242")
+        self.assertEqual(env["RELAUNCH"], "1")
+        self.assertEqual(env["EXPECT_VERSION"], "2.70.0")
+
+    def test_a_quit_driven_install_does_not_reopen_the_app(self):
+        """Relaunching after a deliberate Quit countermands the user."""
+        env = self._spawn_env(wait_pid=4242, relaunch=False)
+        self.assertEqual(env["RELAUNCH"], "0")
+
+    def test_the_installer_checks_the_bundle_identity_not_just_the_signature(self):
+        """'Validly signed' is not 'signed by us'. Without this a compromised
+        release could hand over a properly notarized app belonging to someone
+        else and every earlier gate would pass it."""
+        s = self.U._INSTALLER
+        self.assertIn("TeamIdentifier=", s)
+        self.assertIn("EXPECT_BUNDLE_ID", s)
+        self.assertIn("EXPECT_VERSION", s)
+        self.assertIn("pgrep -f", s, "the main process exiting is not the "
+                                     "bundle being free of Electron helpers")
+
+    def test_the_installer_normalises_start_times_exactly_as_python_does(self):
+        """These strings are compared for equality across a language boundary.
+        If they normalised differently every update would abort as a phantom
+        pid reuse -- and it would abort SILENTLY, in a detached helper."""
+        pid = os.getpid()
+        py = self.U._proc_start(pid)
+        sh = subprocess.run(
+            ["bash", "-c", 'ps -o lstart= -p "$1" 2>/dev/null | awk \'{$1=$1;print}\'',
+             "_", str(pid)], capture_output=True, text=True).stdout.strip()
+        self.assertTrue(py, "ps must report a start time for our own process")
+        self.assertEqual(py, sh)
+
+    def _spawn_env(self, **kw):
+        """install_desktop() without actually spawning anything."""
+        app = self.Path(self.tmp) / "Sutra.app"
+        (app / "Contents").mkdir(parents=True)
+        with open(app / "Contents" / "Info.plist", "wb") as fh:
+            import plistlib
+            plistlib.dump({"CFBundleIdentifier": "os.sutra.ui",
+                           "CFBundleShortVersionString": "2.69.1"}, fh)
+        dmg = self.Path(self.tmp) / "x.dmg"
+        dmg.write_bytes(b"d")
+        seen = {}
+
+        class FakePopen(object):
+            def __init__(self, argv, env=None, **kwargs):
+                seen.update(env or {})
+
+        # Only Popen is faked. subprocess.run() still has to work, because
+        # install_desktop() shells out to codesign to read the bundle identity
+        # it is about to require of the replacement.
+        shim = types.SimpleNamespace(
+            Popen=FakePopen, run=subprocess.run, DEVNULL=subprocess.DEVNULL,
+            SubprocessError=subprocess.SubprocessError)
+        real = self.U.subprocess
+        self.U.subprocess = shim
+        try:
+            self.U.install_desktop(str(dmg), app_path=str(app), **kw)
+        finally:
+            self.U.subprocess = real
+        return seen
+
+
+class TestDesktopControlAuth(unittest.TestCase):
+    """The three routes that can quit the app and replace the bundle on disk.
+
+    Everything else on this API is unauthenticated because it is loopback-only
+    and does nothing a local user could not already do. These do: arming hands
+    an unattended helper the authority to replace /Applications/Sutra.app, and
+    ANY page in ANY browser on this machine can POST to localhost. That is a
+    persistence primitive, not a convenience."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import org_api
+        self.api = org_api
+        self._prev = org_api.DESKTOP_TOKEN
+
+    def tearDown(self):
+        self.api.DESKTOP_TOKEN = self._prev
+
+    class _Req(object):
+        def __init__(self, token=None):
+            self.headers = {"x-sutra-desktop-token": token} if token else {}
+
+    def _refusal(self, req):
+        from fastapi import HTTPException
+        try:
+            self.api._desktop_control(req)
+        except HTTPException as exc:
+            return exc
+        self.fail("desktop control was allowed when it should have been refused")
+
+    def test_a_backend_we_did_not_start_cannot_be_used_to_install(self):
+        """main.js attaches to a CLI-owned server when it finds one. It has no
+        token for that process, so automatic updating is simply off for that
+        session -- which is right anyway: quitting this window would not stop a
+        backend somebody else owns."""
+        self.api.DESKTOP_TOKEN = None
+        exc = self._refusal(self._Req("anything"))
+        self.assertEqual(exc.status_code, 403)
+        self.assertIn("not started by the Sutra desktop app", exc.detail)
+
+    def test_a_page_without_the_token_cannot_arm_an_install(self):
+        self.api.DESKTOP_TOKEN = "s3cret"
+        self.assertEqual(self._refusal(self._Req()).status_code, 403)
+        self.assertEqual(self._refusal(self._Req("guess")).status_code, 403)
+
+    def test_the_shell_can(self):
+        self.api.DESKTOP_TOKEN = "s3cret"
+        self.api._desktop_control(self._Req("s3cret"))   # must not raise
+
+    def test_reading_staged_state_needs_no_token(self):
+        """The panel polls it once a minute and it is local-only. A route that
+        reached the network could not be polled without turning every open
+        panel into a crawler."""
+        self.assertIn("pending", self.api.api_updates_staged())
+
+
+class TestShellPathHarvest(unittest.TestCase):
+    """FIELD INCIDENT: `claude` undetected on other people's Macs.
+
+    `zsh -l -c` is a LOGIN, NON-INTERACTIVE shell, and zsh reads ~/.zshrc only
+    for INTERACTIVE shells. .zshrc is where nvm, npm-global and Claude Code's
+    own native installer export PATH -- so the harvest could not see the
+    directory holding the binary, and the app reported it missing on machines
+    where it ran fine in every terminal.
+
+    The dev machine could not reveal this: Homebrew writes its shellenv to
+    .zprofile, which a login shell DOES read. These tests build the other kind
+    of HOME on purpose.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        self.tmp = tempfile.mkdtemp()
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.fake = os.path.join(self.bin, "claude")
+        with open(self.fake, "w") as fh:
+            fh.write("#!/bin/sh\necho claude\n")
+        os.chmod(self.fake, 0o755)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _zshrc_home(self):
+        """A HOME whose PATH addition lives ONLY in .zshrc -- the common case."""
+        with open(os.path.join(self.tmp, ".zshrc"), "w") as fh:
+            fh.write('export PATH="%s:$PATH"\n' % self.bin)
+        return self.tmp
+
+    @unittest.skipUnless(os.path.isfile("/bin/zsh"), "zsh required")
+    def test_a_path_exported_only_from_zshrc_is_harvested(self):
+        """The regression itself. Before the fix this directory was invisible."""
+        import importlib
+        home = self._zshrc_home()
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({"HOME": home, "PATH": "/usr/bin:/bin",
+                               "SHELL": "/bin/zsh"})
+            prov = importlib.reload(self.providers if hasattr(self, "providers")
+                                    else __import__("providers"))
+            got = prov._login_shell_path() or ""
+            self.assertIn(self.bin, got.split(os.pathsep),
+                          "a PATH exported from .zshrc must be harvested; "
+                          "`zsh -l -c` alone cannot see it")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    @unittest.skipUnless(os.path.isfile("/bin/zsh"), "zsh required")
+    def test_the_login_only_shell_really_does_miss_it(self):
+        """Pins the CAUSE, so the -i above can never be 'simplified' away by
+        someone who cannot see why it is there."""
+        import importlib
+        home = self._zshrc_home()
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({"HOME": home, "PATH": "/usr/bin:/bin",
+                               "SHELL": "/bin/zsh"})
+            prov = importlib.reload(__import__("providers"))
+            login_only = prov._shell_path_once("/bin/zsh", interactive=False) or ""
+            interactive = prov._shell_path_once("/bin/zsh", interactive=True) or ""
+            self.assertNotIn(self.bin, login_only.split(os.pathsep),
+                             "if this ever passes, zsh changed and the comment "
+                             "explaining -i is now wrong")
+            self.assertIn(self.bin, interactive.split(os.pathsep))
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_known_locations_are_probed_when_no_shell_can_be_asked(self):
+        """fish, a hanging rc chain, or a GUI-only account: no shell answer at
+        all, and the binary must still be found where its installer puts it."""
+        import importlib
+        home = os.path.join(self.tmp, "home2")
+        local = os.path.join(home, ".local", "bin")
+        os.makedirs(local)
+        target = os.path.join(local, "claude")
+        shutil.copy(self.fake, target)
+        os.chmod(target, 0o755)
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({"HOME": home, "PATH": "/usr/bin:/bin",
+                               "SHELL": "/nonexistent/shell"})
+            prov = importlib.reload(__import__("providers"))
+            self.assertIn(local, prov._known_bin_dirs(["claude"]),
+                          "~/.local/bin is where the native installer puts it")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_a_directory_without_the_binary_is_never_added(self):
+        """The probe must not widen PATH on a hunch: an empty ~/.local/bin is
+        not evidence of anything."""
+        import importlib
+        home = os.path.join(self.tmp, "home3")
+        os.makedirs(os.path.join(home, ".local", "bin"))    # exists, but empty
+        old = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update({"HOME": home, "PATH": "/usr/bin:/bin"})
+            prov = importlib.reload(__import__("providers"))
+            self.assertNotIn(os.path.join(home, ".local", "bin"),
+                             prov._known_bin_dirs(["claude"]))
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+
+class TestPtyWinsizeFloor(unittest.TestCase):
+    """A resize the browser measured on a hidden container must not reach the PTY.
+
+    xterm's fit addon reports 2x1 for a container with no area. Applied to the
+    PTY, the TUI reflows into a garbled sliver and STAYS there, because nothing
+    re-sends a size afterwards. The client refuses to send such a measurement;
+    this is the server refusing to apply one, so a single buggy client cannot
+    wedge a session.
+    """
+
+    def test_the_ws_term_handler_floors_the_winsize(self):
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py"),
+                   encoding="utf-8").read()
+        i = src.find('elif kind == "r":')
+        self.assertNotEqual(i, -1, "the resize branch must exist")
+        j = src.find("TIOCSWINSZ", i)
+        self.assertNotEqual(j, -1, "the resize branch must ioctl the winsize")
+        between = src[i:j]
+        self.assertIn("continue", between,
+                      "a degenerate size must be dropped BEFORE the ioctl")
+        self.assertRegex(between, r"rows\s*<\s*\d+\s+or\s+cols\s*<\s*\d+",
+                         "the floor must test both dimensions")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRoutines(unittest.TestCase):
+    """Schedule translation, validation and the permission floor.
+
+    No launchd in these: a test that bootstraps a real job would install a real
+    scheduled agent on whoever runs the suite. The launchd path is exercised by
+    hand against a live server; what is pinned here is everything that decides
+    WHAT gets scheduled.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import routines
+        self.R = routines
+        # UNDER $HOME on purpose: validate_new() confines a routine's working
+        # folder to the home directory, and /var/folders is outside it. A tmp dir
+        # elsewhere would fail the rule the test is not trying to test.
+        self.tmp = tempfile.mkdtemp(prefix=".sutra-test-", dir=os.path.expanduser("~"))
+        self._env = dict(os.environ)
+        os.environ["SUTRA_UI_ROUTINES"] = os.path.join(self.tmp, "routines")
+        os.environ["SUTRA_UI_RUNS"] = os.path.join(self.tmp, "runs")
+        os.environ["SUTRA_UI_LAUNCHAGENTS"] = os.path.join(self.tmp, "agents")
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._env)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    # ---- the five presets Claude's own Schedule control offers --------------
+    def test_the_five_presets_map_to_the_right_cron(self):
+        R = self.R
+        self.assertIsNone(R.preset_to_cron("manual"))
+        self.assertEqual(R.preset_to_cron("hourly", minute=0), "0 * * * *")
+        self.assertEqual(R.preset_to_cron("daily", hour=9, minute=0), "0 9 * * *")
+        self.assertEqual(R.preset_to_cron("weekdays", hour=9, minute=0), "0 9 * * 1-5")
+        self.assertEqual(R.preset_to_cron("weekly", hour=18, minute=30, weekday=5),
+                         "30 18 * * 5")
+
+    def test_cron_becomes_the_calendar_launchd_actually_wants(self):
+        R = self.R
+        self.assertEqual(R.cron_to_calendar("0 * * * *"), {"Minute": 0})
+        self.assertEqual(R.cron_to_calendar("0 9 * * *"), {"Minute": 0, "Hour": 9})
+        wd = R.cron_to_calendar("0 9 * * 1-5")
+        self.assertEqual(len(wd), 5, "weekdays needs one dict per day: launchd has "
+                                     "no range syntax of its own")
+        self.assertEqual(sorted(d["Weekday"] for d in wd), [1, 2, 3, 4, 5])
+        self.assertTrue(all(d["Hour"] == 9 and d["Minute"] == 0 for d in wd))
+
+    def test_sunday_is_both_0_and_7_in_cron_but_only_0_in_launchd(self):
+        self.assertEqual(self.R.cron_to_calendar("0 9 * * 7"),
+                         {"Minute": 0, "Hour": 9, "Weekday": 0})
+
+    def test_the_once_an_hour_floor_is_enforced_at_create_time(self):
+        """Not discovered at 09:00 with nobody watching."""
+        with self.assertRaises(ValueError) as cm:
+            self.R.validate_cron("*/15 * * * *")
+        self.assertIn("once per hour", str(cm.exception))
+        self.R.validate_cron("0 9,17 * * *")          # twice a day is fine
+
+    def test_unsupported_cron_syntax_is_refused_not_misread(self):
+        """A schedule that means something other than what was typed is worse
+        than one that is rejected."""
+        for bad in ("0 9 L * *", "0 9 * * MON", "0 9 ? * *"):
+            with self.assertRaises(ValueError):
+                self.R.parse_cron(bad)
+
+    # ---- the safety floor ---------------------------------------------------
+    def test_a_routine_cannot_reach_a_write_capable_mode(self):
+        """POSITIVE allow-list, so editing providers.UNSAFE_PERMISSION_MODES
+        cannot silently re-admit one."""
+        self.assertEqual(set(self.R.ROUTINE_PERMISSION_MODES), {"dontAsk", "plan"})
+        import providers
+        for m in providers.UNSAFE_PERMISSION_MODES:
+            self.assertNotIn(m, self.R.ROUTINE_PERMISSION_MODES)
+        body = self._body(permission_mode="bypassPermissions")
+        with self.assertRaises(ValueError) as cm:
+            self.R.validate_new(body, set())
+        self.assertIn("unattended", str(cm.exception))
+
+    def test_the_default_is_dontAsk_not_plan(self):
+        """plan unattended proposes edits nobody approves, exits 0, and the run
+        reads OK while the routine does nothing forever."""
+        self.assertEqual(self.R.DEFAULT_ROUTINE_MODE, "dontAsk")
+        rec = self.R.validate_new(self._body(), set())
+        self.assertEqual(rec["permission_mode"], "dontAsk")
+
+    def test_a_budget_ceiling_is_required(self):
+        with self.assertRaises(ValueError) as cm:
+            self.R.validate_new(self._body(opts={"max_budget_usd": 0}), set())
+        self.assertIn("ceiling", str(cm.exception))
+
+    def test_the_working_folder_must_exist_and_be_inside_home(self):
+        with self.assertRaises(ValueError):
+            self.R.validate_new(self._body(cwd="/nope/does/not/exist"), set())
+        with self.assertRaises(ValueError) as cm:
+            self.R.validate_new(self._body(cwd="/usr"), set())
+        self.assertIn("home", str(cm.exception))
+
+    def test_ids_are_sanitised_because_they_become_a_launchd_label(self):
+        """The id is the launchd label suffix, the run-directory name and the
+        record filename, so it is normalised and constrained rather than trusted."""
+        for bad in ("Has Spaces", "../escape", "", "a" * 60):
+            with self.assertRaises(ValueError):
+                self.R.validate_new(self._body(id=bad), set())
+        # LOWERCASED, not refused -- Claude's own docs say the name is
+        # "lowercased to kebab-case", and matching that is the point.
+        self.assertEqual(self.R.validate_new(self._body(id="UPPER"), set())["id"],
+                         "upper")
+
+    # ---- the plist ----------------------------------------------------------
+    def test_the_plist_never_fires_on_login_and_stays_in_the_gui_session(self):
+        rec = self.R.validate_new(self._body(), set())
+        p = self.R.build_plist(rec)
+        self.assertIs(p["RunAtLoad"], False,
+                      "a routine must not fire merely because you logged in")
+        self.assertEqual(p["LimitLoadToSessionType"], "Aqua",
+                         "claude's credentials are in the login keychain; a "
+                         "non-Aqua job can meet it locked")
+        self.assertTrue(all(isinstance(v, str)
+                            for v in p["EnvironmentVariables"].values()),
+                        "launchd silently ignores non-string env values")
+
+    def test_a_manual_routine_gets_no_calendar_interval(self):
+        rec = self.R.validate_new(self._body(schedule={"preset": "manual"}), set())
+        self.assertNotIn("StartCalendarInterval", self.R.build_plist(rec))
+
+    def test_run_records_distinguish_manual_from_scheduled(self):
+        """kickstart reuses the plist's argv, so without a marker every run would
+        claim to be scheduled and the UI could never tell you the schedule has
+        never actually fired."""
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "routines.py"), encoding="utf-8").read()
+        self.assertIn('.manual', src)
+        self.assertIn('trigger = "manual"', src)
+
+    def _body(self, **kw):
+        b = {"id": "test-routine", "description": "d", "prompt": "p",
+             "cwd": self.tmp, "opts": {"max_budget_usd": 1.0},
+             "schedule": {"preset": "daily", "hour": 9, "minute": 0}}
+        b.update(kw)
+        return b
+
+
+class TestProposals(unittest.TestCase):
+    """The chat agent may ASK; only the operator may APPLY.
+
+    These pin the property the whole design rests on: a proposal is INERT.
+    Writing one must not create a routine, touch launchd, or change settings.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import proposals
+        self.P = proposals
+        self.tmp = tempfile.mkdtemp()
+        self._env = dict(os.environ)
+        os.environ["SUTRA_UI_PROPOSALS"] = os.path.join(self.tmp, "proposals")
+
+    def tearDown(self):
+        os.environ.clear(); os.environ.update(self._env)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_only_known_kinds_can_be_proposed(self):
+        """A positive allow-list: adding a tool to the MCP server is not enough
+        on its own to make something applicable."""
+        with self.assertRaises(ValueError):
+            self.P.create("settings.write", {"permission_mode": "bypassPermissions"},
+                          "turn on write mode")
+        self.P.create("routine.create", {"id": "x"}, "ok")
+
+    def test_creating_a_proposal_applies_nothing(self):
+        p = self.P.create("routine.delete", {"id": "something"}, "delete it")
+        self.assertEqual(p["status"], "pending")
+        self.assertIsNone(p["result"])
+        # proposals.py must not even be ABLE to apply: it never imports routines
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "proposals.py"), encoding="utf-8").read()
+        self.assertNotIn("import routines", src,
+                         "proposals.py must not be able to mutate anything itself")
+
+    def test_rejecting_never_calls_the_applier(self):
+        p = self.P.create("routine.run", {"id": "r"}, "run it")
+        called = []
+        out = self.P.decide(p["id"], False, apply_fn=lambda k, a: called.append(k))
+        self.assertEqual(out["status"], "rejected")
+        self.assertEqual(called, [], "a rejection must not apply anything")
+
+    def test_approving_applies_exactly_once(self):
+        p = self.P.create("routine.run", {"id": "r"}, "run it")
+        calls = []
+        out = self.P.decide(p["id"], True,
+                            apply_fn=lambda k, a: (calls.append((k, a)), {"ok": True})[1])
+        self.assertEqual(out["status"], "approved")
+        self.assertEqual(len(calls), 1)
+        # and it cannot be applied a second time
+        with self.assertRaises(ValueError):
+            self.P.decide(p["id"], True, apply_fn=lambda k, a: calls.append(k))
+        self.assertEqual(len(calls), 1, "a decided proposal must not re-apply")
+
+    def test_a_failed_apply_is_recorded_not_rolled_back(self):
+        """The operator already said yes. Re-offering the click would invite them
+        to approve something that has already been tried and did not work."""
+        p = self.P.create("routine.create", {"id": "x"}, "make it")
+        def boom(kind, args):
+            raise RuntimeError("launchd refused")
+        out = self.P.decide(p["id"], True, apply_fn=boom)
+        self.assertEqual(out["status"], "failed")
+        self.assertIn("launchd refused", out["result"]["error"])
+        self.assertNotEqual(out["status"], "pending")
+
+    def test_an_old_proposal_expires_rather_than_waiting_forever(self):
+        p = self.P.create("routine.delete", {"id": "r"}, "delete")
+        rec = self.P.get(p["id"])
+        rec["created_ms"] = int((time.time() - self.P.TTL_SECONDS - 60) * 1000)
+        self.P._write(rec)
+        self.assertEqual(self.P.listing()[0]["status"], "expired")
+        with self.assertRaises(ValueError):
+            self.P.decide(p["id"], True, apply_fn=lambda k, a: None)
+
+
+class TestMcpServer(unittest.TestCase):
+    """The tool surface the chat agent gets. Driven as a real subprocess over
+    stdio, because that is exactly how the CLI runs it."""
+
+    def _rpc(self, msgs, env=None):
+        here = os.path.dirname(os.path.abspath(__file__))
+        e = dict(os.environ); e.update(env or {})
+        p = subprocess.run([sys.executable, os.path.join(here, "sutra_mcp.py")],
+                           input="\n".join(json.dumps(m) for m in msgs),
+                           capture_output=True, text=True, timeout=60, env=e)
+        return [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
+
+    def test_it_speaks_mcp(self):
+        out = self._rpc([{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}])
+        init = [m for m in out if m.get("id") == 1][0]
+        self.assertEqual(init["result"]["serverInfo"]["name"], "sutra")
+        tools = [m for m in out if m.get("id") == 2][0]["result"]["tools"]
+        names = {t["name"] for t in tools}
+        self.assertIn("sutra_routine_create", names)
+        for t in tools:
+            self.assertTrue(t["description"], "every tool needs a description")
+            self.assertEqual(t["inputSchema"]["type"], "object")
+
+    def test_a_mutating_tool_returns_a_proposal_not_a_result(self):
+        """The wording matters: the agent must not tell the operator it is done."""
+        tmp = tempfile.mkdtemp()
+        try:
+            out = self._rpc(
+                [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                 {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                     "name": "sutra_routine_create", "arguments": {
+                         "id": "t-prop", "description": "d", "prompt": "p",
+                         "cwd": os.path.expanduser("~"),
+                         "schedule": {"preset": "daily", "hour": 9, "minute": 0}}}}],
+                env={"SUTRA_UI_PROPOSALS": os.path.join(tmp, "props"),
+                     "SUTRA_UI_ROUTINES": os.path.join(tmp, "routines"),
+                     "SUTRA_UI_LAUNCHAGENTS": os.path.join(tmp, "agents")})
+            txt = [m for m in out if m.get("id") == 2][0]["result"]["content"][0]["text"]
+            self.assertIn("PROPOSAL", txt)
+            self.assertIn("Nothing has changed yet", txt)
+            # and NOTHING was created
+            self.assertFalse(os.path.isdir(os.path.join(tmp, "routines"))
+                             and os.listdir(os.path.join(tmp, "routines")))
+            self.assertFalse(os.path.isdir(os.path.join(tmp, "agents"))
+                             and os.listdir(os.path.join(tmp, "agents")))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_an_invalid_routine_is_refused_before_it_is_proposed(self):
+        """A proposal that cannot apply is worse than a refusal -- the operator
+        would approve it and watch it fail for a reason nobody showed them."""
+        tmp = tempfile.mkdtemp()
+        try:
+            out = self._rpc(
+                [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                 {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                     "name": "sutra_routine_create", "arguments": {
+                         "id": "Not Valid", "description": "d", "prompt": "p",
+                         "cwd": "/etc"}}}],
+                env={"SUTRA_UI_PROPOSALS": os.path.join(tmp, "props")})
+            res = [m for m in out if m.get("id") == 2][0]["result"]
+            self.assertTrue(res.get("isError"))
+            self.assertFalse(os.path.isdir(os.path.join(tmp, "props"))
+                             and os.listdir(os.path.join(tmp, "props")))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestAgentArgsMcp(unittest.TestCase):
+    def test_the_chat_run_gets_sutra_tools_and_cannot_stall_on_them(self):
+        import app as A
+        args = A.build_agent_args("/usr/bin/claude", "hi", "plan")
+        self.assertIn("--mcp-config", args)
+        self.assertIn("--strict-mcp-config", args,
+                      "without this the CLI also loads the user's global servers")
+        self.assertEqual(args[args.index("--allowedTools") + 1], "mcp__sutra__*",
+                         "a -p run has nobody to answer a permission prompt, so "
+                         "these must be pre-allowed or the turn stalls")
+        cfg = json.loads(args[args.index("--mcp-config") + 1])
+        self.assertEqual(cfg["mcpServers"]["sutra"]["type"], "stdio")
+        self.assertTrue(cfg["mcpServers"]["sutra"]["args"][0].endswith("sutra_mcp.py"))
+
+
+class TestMcpAllowHook(unittest.TestCase):
+    """The panel's DEFAULT permission mode is `plan`, and in `plan` every
+    mcp__sutra__ call is denied by the harness before the server is reached --
+    measured, not assumed. A PreToolUse hook is evaluated BEFORE the mode and is
+    the only thing that makes the tool surface reachable at all."""
+
+    def _decide(self, tool_name):
+        here = os.path.dirname(os.path.abspath(__file__))
+        p = subprocess.run([sys.executable, os.path.join(here, "mcp_allow_hook.py")],
+                           input=json.dumps({"tool_name": tool_name}),
+                           capture_output=True, text=True, timeout=30)
+        out = (p.stdout or "").strip()
+        if not out:
+            return None                       # silent: the mode decides
+        return json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+
+    def test_it_allows_sutra_tools(self):
+        self.assertEqual(self._decide("mcp__sutra__sutra_routines_list"), "allow")
+
+    def test_it_stays_silent_for_everything_else(self):
+        """Silent, NOT deny. Emitting a denial would make this hook an authority
+        over every tool in the session, which is not what it is for -- the
+        operator's permission mode must keep deciding those."""
+        for t in ("Bash", "Edit", "Write", "Read", "mcp__other__thing", ""):
+            self.assertIsNone(self._decide(t), "%r must be left to the mode" % t)
+
+    def test_the_chat_run_carries_the_hook(self):
+        import app as A
+        args = A.build_agent_args("/usr/bin/claude", "hi", "plan")
+        self.assertIn("--settings", args)
+        cfg = json.loads(args[args.index("--settings") + 1])
+        pre = cfg["hooks"]["PreToolUse"][0]
+        self.assertEqual(pre["matcher"], "mcp__sutra__.*")
+        self.assertIn("mcp_allow_hook.py", pre["hooks"][0]["command"])
+
+    def test_allowing_the_namespace_whole_requires_strict_mcp_config(self):
+        """The hook allows any tool the `sutra` server offers. That is only safe
+        while --strict-mcp-config guarantees WE are that server. The two must
+        never be separated."""
+        import app as A
+        args = A.build_agent_args("/usr/bin/claude", "hi", "plan")
+        if "--settings" in args:
+            self.assertIn("--strict-mcp-config", args)
