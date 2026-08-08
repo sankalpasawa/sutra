@@ -47,6 +47,13 @@ KINDS = (
     "routine.update",
     "routine.delete",
     "routine.run",
+    # The first kind whose effect leaves this MACHINE. A routine is local; a pull
+    # request pushes a branch and publishes to GitHub, where it is visible to
+    # other people and cannot be quietly un-done. That makes the proposal gate
+    # more necessary here than anywhere else it is already used, not less --
+    # reason 2 in the module docstring (the prompt is not always the operator)
+    # is the whole argument against a one-click Create PR button.
+    "pr.create",
 )
 
 

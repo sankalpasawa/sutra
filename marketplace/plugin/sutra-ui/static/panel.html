@@ -837,6 +837,62 @@
   .ubar i.p-warn{background:var(--warn)}
   .ubar i.p-block{background:var(--block)}
 
+  /* ── repository bar ──────────────────────────────────────────────────────
+     A thin strip between the transcript and the composer: what repository this
+     session is in, what branch, how far from its upstream, and what is uncommitted.
+     Deliberately one line and quiet -- it is context for the message you are
+     writing, not a screen. */
+  .repobar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:5px 11px;border-top:1px solid var(--line-soft);
+    background:var(--surface);font:500 10.5px/1.6 var(--mono);color:var(--faint)}
+  .repobar.off{color:var(--line)}
+  .rbrepo{color:var(--muted);font-weight:600}
+  .rbbranch{color:var(--acc);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    max-width:190px}
+  .rbahead{color:var(--ok)} .rbbehind{color:var(--warn)}
+  .rbnoup{color:var(--faint);font-style:italic}
+  .rbdiff .add{color:var(--ok);font-weight:600}
+  .rbdiff .rem{color:var(--block);font-weight:600}
+  .rbclean{color:var(--faint)}
+  .rbnone{font-style:italic}
+  .repobar button{background:none;border:1px solid var(--line);border-radius:5px;
+    color:var(--muted);font:600 9.5px/1 var(--mono);padding:3px 7px;cursor:pointer}
+  .repobar button:hover{border-color:var(--acc);color:var(--acc)}
+  .repobar .rbpr{margin-left:auto}
+  .repobar .rbprs+.rbpr{margin-left:0}
+  .repobar .rbprs{margin-left:auto}
+
+  .prlist{border-top:1px solid var(--line-soft);background:var(--inset);
+    padding:5px 11px;max-height:190px;overflow-y:auto}
+  .prrow{display:flex;align-items:center;gap:8px;padding:4px 0;
+    font:500 10.5px/1.5 var(--mono)}
+  .prrow+.prrow{border-top:1px solid var(--line-soft)}
+  .prnum{color:var(--acc);font-weight:600;flex:none}
+  .prt{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+  .prbr{color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    max-width:150px;flex:none}
+  .prnone{margin:4px 0;color:var(--faint);font-size:11px}
+
+  .prform{border-top:1px solid var(--line);background:var(--inset);padding:9px 11px}
+  .prform.done{display:flex;align-items:flex-start;gap:8px;font-size:11px;line-height:1.45}
+  .prform.done b{color:var(--ink)} .prform.done span{color:var(--muted)}
+  .prform.done .ib{margin-left:auto;flex:none}
+  .prfrow{display:flex;gap:8px}
+  .prform label{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;
+    font:600 9px/1 var(--mono);letter-spacing:.06em;color:var(--faint);margin-bottom:6px}
+  .prform label.prfw{width:100%}
+  .prform input,.prform textarea{background:var(--card);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.4 var(--sans);padding:6px 8px;
+    min-width:0;resize:vertical}
+  .prform input:focus,.prform textarea:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .prfnote{font-size:10.5px;line-height:1.45;color:var(--faint);margin-bottom:7px}
+  .prfnote.bad{color:var(--block)}
+  .prfbtns{display:flex;gap:7px}
+  .prfbtns button{background:var(--card);border:1px solid var(--line);border-radius:6px;
+    color:var(--muted);font:600 10px/1 var(--mono);padding:6px 11px;cursor:pointer}
+  .prfbtns button:first-child{border-color:var(--acc);color:var(--acc)}
+  .prfbtns button:disabled{opacity:.5;cursor:default}
+
   /* ── usage chip, in the composer row ─────────────────────────────────────
      A ring, not a bar: the composer row is a horizontal strip and a horizontal
      meter here would read as a progress bar for the message you are typing. The
@@ -1954,6 +2010,11 @@ function setSessCwd(sid, raw){
   /* Empty means "clear the override", i.e. fall back to the global setting -- not
      "run in the filesystem root". */
   if (next) S.cwd[sid] = next; else delete S.cwd[sid];
+  /* The repository bar describes the OLD folder until this is dropped. Clearing
+     it makes render() re-read; leaving it would name a repo this session is no
+     longer in, which is the exact failure the per-session bar exists to avoid. */
+  delete S.repo[sid]; delete S.prs[sid];
+  if (S.prsOpen === sid) S.prsOpen = null;
   ["", "::side"].forEach(suffix=>{
     const ch = CLAUDE_SOCKETS.get(sid + suffix);
     if (!ch) return;
@@ -2099,6 +2160,10 @@ function claudeChannel(s, side){
          why the chip refreshes here instead of on a clock. The 60s server cache
          absorbs a burst of quick turns, so this cannot become a request per turn. */
       loadUsage(true);
+      /* The agent may have committed, branched or staged during that turn, so the
+         bar's branch / ahead / diff numbers are stale the moment it ends. */
+      loadRepo(ch.sid, true);
+      if (S.prsOpen === ch.sid) loadPrs(ch.sid, true);
     } else if (f.type === "stopped"){
       /* The operator's own interrupt is NOT an error. It gets its own state so the
          turn is not painted red and blamed on the tool. */
@@ -2371,6 +2436,11 @@ const S = {
      pane rather than a bare boolean: two panes are visible at once, and a shared
      flag would open the popover in both. */
   usagePop:null,
+  /* Repository state, PER SESSION -- two panes can be in two different folders,
+     and one shared object would show whichever loaded last. `undefined` means
+     "not asked yet" and draws nothing; an object with available:false means
+     "asked, and it is not a repo", which is a normal state worth stating. */
+  repo:{}, prs:{}, prsOpen:null, prForm:null, prBusy:false, prError:null, prDone:null,
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,
@@ -3998,6 +4068,112 @@ function usageRowsHtml(u){
     </div>`).join("");
 }
 
+/* ── the repository bar ──────────────────────────────────────────────────────
+   Under the composer, describing the repository THIS session is in -- which is
+   the session's working directory, not the Settings workdir, or the bar would
+   name one repo while the session ran in another.
+
+   Per session, cached in S.repo[sid], because two panes can be in two different
+   folders and one shared object would show whichever loaded last. */
+function repoBarHtml(sid){
+  const r = S.repo && S.repo[sid];
+  if (r === undefined) return "";                       /* not asked yet: draw nothing */
+  if (!r || !r.available){
+    /* Deliberately quiet. "This folder is not a git repository" is the normal
+       state for most sessions and must not look like a failure. */
+    return `<div class="repobar off"><span class="rbnone">${
+      esc((r && r.reason) || "no repository")}</span></div>`;
+  }
+  const d = r.diff || {};
+  const dirty = (d.files || 0) > 0;
+  const sync = [];
+  if (r.ahead)  sync.push(`<span class="rbahead" title="${r.ahead} commit${r.ahead===1?"":"s"} not on ${esc(r.upstream||"the upstream")}">↑${r.ahead}</span>`);
+  if (r.behind) sync.push(`<span class="rbbehind" title="${r.behind} commit${r.behind===1?"":"s"} on ${esc(r.upstream||"the upstream")} not here">↓${r.behind}</span>`);
+  /* No upstream is NOT "in sync" -- there is nothing to be in sync with, and
+     showing 0/0 would claim otherwise. */
+  if (!r.upstream) sync.push(`<span class="rbnoup" title="This branch tracks nothing — it has never been pushed">no upstream</span>`);
+
+  const prs = S.prs && S.prs[sid];
+  const prCount = prs && prs.available ? (prs.pulls||[]).length : null;
+
+  return `<div class="repobar">
+      <span class="rbrepo" title="${esc(r.root||"")}">${esc(r.name||"repo")}</span>
+      <span class="rbbranch" title="${r.upstream?("tracking "+esc(r.upstream)):"no upstream"}">${
+        r.detached ? "detached HEAD" : esc(r.branch||"—")}</span>
+      ${sync.join("")}
+      ${dirty ? `<span class="rbdiff" title="${d.files} file${d.files===1?"":"s"} changed in the working tree, untracked files included">
+          <b class="add">+${d.added}</b> <b class="rem">−${d.removed}</b></span>`
+              : `<span class="rbclean">clean</span>`}
+      ${r.remote ? `<button type="button" class="rbprs" data-prstoggle="${esc(sid)}"
+           aria-expanded="${S.prsOpen===sid?"true":"false"}"
+           title="Open pull requests on ${esc(r.remote)}">${
+             /* Gated on the REMOTE, not on the loaded count. Gating on the count
+                made this button unreachable: it only rendered once pull requests
+                were loaded, and they only load when it is clicked. The label
+                carries the number once known and reads "PRs" until then. */
+             prCount != null ? prCount + " PR" + (prCount===1?"":"s") : "PRs"
+           }</button>` : ""}
+      ${r.remote && !r.detached ? `<button type="button" class="rbpr" data-propose-pr="${esc(sid)}"
+           title="Propose a pull request — nothing is pushed or published until you approve it">Create PR</button>` : ""}
+    </div>`;
+}
+
+/* The PR form. Everything it produces is a PROPOSAL -- the wording says so twice,
+   in the note and on the button, because the one misreading that matters here is
+   thinking the pull request now exists. */
+function prFormHtml(sid){
+  if (S.prDone && (!S.prForm || S.prForm.sid !== sid))
+    return `<div class="prform done">
+        <b>Proposal ${esc(S.prDone)} written.</b>
+        <span>Nothing has been pushed and no pull request exists yet. Approve it
+        under <b>Routines → Proposals</b> to push the branch and open it.</span>
+        <button class="ib" type="button" data-prdone-dismiss="1" aria-label="Dismiss">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>`;
+  if (!S.prForm || S.prForm.sid !== sid) return "";
+  const f = S.prForm;
+  return `<div class="prform">
+      <div class="prfrow">
+        <label>HEAD<input type="text" data-prf="head" value="${esc(f.head)}" spellcheck="false"></label>
+        <label>BASE<input type="text" data-prf="base" value="${esc(f.base)}" spellcheck="false"></label>
+      </div>
+      <label class="prfw">TITLE<input type="text" data-prf="title" value="${esc(f.title)}"
+             placeholder="what this pull request does"></label>
+      <label class="prfw">BODY<textarea data-prf="body" rows="3"
+             placeholder="optional">${esc(f.body)}</textarea></label>
+      ${S.prError?`<div class="prfnote bad">${esc(S.prError)}</div>`:""}
+      <div class="prfnote">This writes a <b>proposal</b>. It does not push and does
+        not open anything — approving it under Routines pushes
+        <code>${esc(f.head||"the branch")}</code> to origin and opens the pull request.</div>
+      <div class="prfbtns">
+        <button type="button" data-prsubmit="1" ${S.prBusy?"disabled":""}>${
+          S.prBusy?"writing…":"Propose"}</button>
+        <button type="button" data-prcancel="1">Cancel</button>
+      </div>
+    </div>`;
+}
+
+/* The PR list, opened from the bar. Same in-flow placement as the folder editor:
+   a list of rows wants width, and it is read deliberately rather than glanced at. */
+function prListHtml(sid){
+  if (S.prsOpen !== sid) return "";
+  const p = S.prs && S.prs[sid];
+  if (!p) return `<div class="prlist"><p class="prnone">Reading pull requests…</p></div>`;
+  if (!p.available)
+    return `<div class="prlist"><p class="prnone">${esc(p.reason||"unavailable")}</p></div>`;
+  if (!(p.pulls||[]).length)
+    return `<div class="prlist"><p class="prnone">No open pull requests.</p></div>`;
+  return `<div class="prlist">${p.pulls.map(pr=>`
+      <div class="prrow">
+        <span class="prnum">#${pr.number}</span>
+        <span class="prt" title="${esc(pr.title)}">${esc(pr.title)}</span>
+        <span class="prbr" title="${esc(pr.head)} → ${esc(pr.base)}">${esc(pr.head)}</span>
+        <span class="pill ${pr.draft?"p-mut":"p-ok"}">${pr.draft?"draft":esc(pr.state||"open")}</span>
+      </div>`).join("")}</div>`;
+}
+
 /* ── the composer chip ───────────────────────────────────────────────────────
    Usage belongs next to the message you are about to send, not behind a nav
    click: the number matters at the moment you decide whether to send, and a
@@ -5156,6 +5332,9 @@ function sessionPane(s){
     ${permConfirmHtml()}
     ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
     ${cwdEditorHtml(s.id)}
+    ${prFormHtml(s.id)}
+    ${prListHtml(s.id)}
+    ${repoBarHtml(s.id)}
     <div class="pc">
       ${S.usagePop === s.id ? usagePopHtml() : ""}
       <button class="ib" data-optstoggle="${s.id}" type="button"
@@ -5700,6 +5879,12 @@ function render(){
   document.getElementById("scBody").innerHTML = SCREENS[S.screen]();
   wire();
 
+  /* Fill the repository bar for whatever panes are open. Idempotent -- loadRepo
+     returns immediately once S.repo[sid] is set -- so calling it from render()
+     costs one subprocess per session rather than one per repaint, and a pane
+     opened later gets its bar without a second code path. */
+  S.openPanes.forEach(sid => loadRepo(sid, false));
+
   if (prior) {
     const el = document.querySelector(prior.sel);
     if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
@@ -6058,6 +6243,51 @@ function wire(){
   });
   panes.querySelectorAll("[data-usageclose]").forEach(b=>b.onclick=()=>{
     S.usagePop = null; render(); });
+  /* repository bar */
+  panes.querySelectorAll("[data-prstoggle]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.prstoggle;
+    const opening = S.prsOpen !== sid;
+    S.prsOpen = opening ? sid : null;
+    render();
+    if (opening) loadPrs(sid, true);
+  });
+  panes.querySelectorAll("[data-propose-pr]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.proposePr;
+    const r = S.repo[sid] || {};
+    /* Pre-filled from what the repository already says, not blank: the head is
+       the branch you are on and the base is what it tracks, which is right
+       almost always -- and both stay editable because "almost" is not "always". */
+    S.prForm = { sid,
+      head: r.branch || "",
+      base: (r.upstream || "").replace(/^origin\//, "") || "main",
+      title: "", body: "" };
+    S.prError = null; S.prDone = null;
+    render();
+    const t = panes.querySelector("[data-prf='title']"); if (t) t.focus();
+  });
+  panes.querySelectorAll("[data-prf]").forEach(inp=>{
+    inp.oninput = ()=>{ if (S.prForm) S.prForm[inp.dataset.prf] = inp.value; };
+  });
+  panes.querySelectorAll("[data-prcancel]").forEach(b=>b.onclick=()=>{
+    S.prForm = null; S.prError = null; render(); });
+  panes.querySelectorAll("[data-prsubmit]").forEach(b=>b.onclick=async ()=>{
+    if (!S.prForm || S.prBusy) return;
+    S.prBusy = true; S.prError = null; render();
+    try {
+      const r = await apiPost("/api/repo/pr-proposal", {
+        cwd: sessCwd(S.prForm.sid), head: S.prForm.head, base: S.prForm.base,
+        title: S.prForm.title, body: S.prForm.body });
+      /* The proposal is INERT. Say so plainly rather than letting a green tick
+         imply the pull request exists -- it does not, and will not until it is
+         approved under Routines. */
+      S.prDone = (r.proposal && r.proposal.id) || "written";
+      S.prForm = null;
+      loadProposals(true);
+    } catch (e){ S.prError = e.message; }
+    S.prBusy = false; render();
+  });
+  panes.querySelectorAll("[data-prdone-dismiss]").forEach(b=>b.onclick=()=>{
+    S.prDone = null; render(); });
   panes.querySelectorAll("[data-cwdinput]").forEach(inp=>{
     inp.onkeydown = e=>{
       if (e.key === "Enter"){ e.preventDefault(); setSessCwd(inp.dataset.cwdinput, inp.value); }
@@ -6827,6 +7057,31 @@ if (typeof document !== "undefined" && document.addEventListener){
   document.addEventListener("keydown", e=>{
     if (e.key === "Escape" && S.usagePop){ S.usagePop = null; render(); }
   });
+}
+
+/* Repository state for one session. Keyed by session because the folder is.
+   Re-read after a turn completes (the agent may have committed or branched) and
+   whenever the session's folder changes -- both are moments the bar would
+   otherwise go quietly stale and describe a repository that is no longer there. */
+async function loadRepo(sid, force){
+  if (!sid) return;
+  if (S.repo[sid] !== undefined && !force) return;
+  const cwd = sessCwd(sid);
+  if (!cwd){ S.repo[sid] = {available:false, reason:"no working directory"}; scheduleRender(); return; }
+  try { S.repo[sid] = await apiGet("/api/repo?cwd=" + encodeURIComponent(cwd)); }
+  catch (e){ S.repo[sid] = {available:false, reason:e.message}; }
+  scheduleRender();
+}
+/* Pull requests are a NETWORK call through gh, so unlike the repo read they are
+   fetched only when the list is actually opened. */
+async function loadPrs(sid, force){
+  if (!sid) return;
+  if (S.prs[sid] && !force) return;
+  const cwd = sessCwd(sid);
+  if (!cwd) return;
+  try { S.prs[sid] = await apiGet("/api/repo/pulls?cwd=" + encodeURIComponent(cwd)); }
+  catch (e){ S.prs[sid] = {available:false, reason:e.message, pulls:[]}; }
+  scheduleRender();
 }
 
 async function loadGit(force){
