@@ -344,8 +344,13 @@
      textarea width 0, scrollWidth 503 vs clientWidth 380. A composer you cannot
      type in is worse than one that takes two lines, so the controls wrap to a
      second line and the message box keeps a floor (see textarea[data-sask]). */
+  /* `position:relative` anchors the usage popup above this row. Chosen over
+     `.pane` because the popup must sit above the COMPOSER, whose height changes
+     when the row wraps (43px -> 76px) -- an offset measured from the pane bottom
+     would drift the moment a control wrapped. No absolutely positioned descendant
+     lives in here, so nothing else moves. */
   .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;
-      align-items:center;gap:8px;flex-wrap:wrap}
+      align-items:center;gap:8px;flex-wrap:wrap;position:relative}
   .pc input,.pc textarea{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
   .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
   .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
@@ -834,17 +839,29 @@
     background-color:color-mix(in srgb,var(--block) 12%,var(--inset))}
   .uchip.off{color:var(--faint)}
 
-  /* The popover sits ABOVE the composer, in flow, pushing the transcript up
-     rather than floating over it: an overlay would cover the last reply, which is
-     the thing you are usually reading when you check what is left. */
-  .upop{border-top:1px solid var(--line);background:var(--inset);
-    padding:9px 11px 8px;max-height:44%;overflow-y:auto}
-  .upophead{display:flex;align-items:center;gap:7px;margin-bottom:4px}
-  .upophead b{font:600 11.5px/1 var(--sans)}
+  /* A SMALL FLOATING CARD anchored above the chip, not a full-width block in flow.
+     It was in flow first, on the reasoning that an overlay would hide the last
+     reply -- but at pane width that made a ~200px band that shoved the whole
+     transcript up every time you glanced at a percentage. A 268px card covers a
+     corner for a second instead. Founder call, and the right one: the thing being
+     read is three numbers, not a document. */
+  .upop{position:absolute;bottom:calc(100% + 6px);right:8px;z-index:30;
+    width:268px;max-width:calc(100% - 16px);
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px 9px;
+    /* lifted off the transcript it overlaps, or the two read as one surface */
+    box-shadow:0 10px 28px rgba(0,0,0,.36), 0 2px 6px rgba(0,0,0,.22);
+    max-height:min(320px, 60vh);overflow-y:auto}
+  .upophead{display:flex;align-items:center;gap:7px;margin-bottom:2px}
+  .upophead b{font:600 11px/1 var(--sans)}
   .upophead .ib{margin-left:auto}
-  .upopbody .urow:first-child{padding-top:4px}
-  .upopnote{margin-top:7px;font-size:10.5px;line-height:1.45;color:var(--faint)}
-  .upopnote.w{margin:0 0 7px;color:var(--warn)}
+  /* Tighter than the full screen's rows: this is a glance, not a report. */
+  .upopbody .urow{padding:7px 0}
+  .upopbody .urow:first-child{padding-top:5px}
+  .upopbody .ulabel{font-size:11.5px}
+  .upopbody .upct{font-size:11.5px}
+  .upopnote{margin-top:7px;font-size:10px;line-height:1.4;color:var(--faint)}
+  .upopnote.w{margin:0 0 6px;color:var(--warn)}
 
   /* ── working-directory control ───────────────────────────────────────────
      Sits in the composer row because that is where you are about to use it, the
@@ -5041,8 +5058,8 @@ function sessionPane(s){
     ${permConfirmHtml()}
     ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
     ${cwdEditorHtml(s.id)}
-    ${S.usagePop === s.id ? usagePopHtml() : ""}
     <div class="pc">
+      ${S.usagePop === s.id ? usagePopHtml() : ""}
       <button class="ib" data-optstoggle="${s.id}" type="button"
               aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
               aria-label="Turn options" title="Effort, budget and tool limits for the next message">
@@ -6676,6 +6693,27 @@ async function loadUsage(force){
     S.usageError = e.message; S.usage = null;
   }
   render();
+}
+
+/* A floating popup has to be dismissible the way every other floating thing is:
+   click away, or press Escape. Without this the only exit is the × -- fine for a
+   block in flow, wrong for a card overlapping the transcript you want back.
+   Registered ONCE at top level, not in wire(): wire() runs on every render, and
+   re-adding this per render would stack a listener per repaint.
+   GUARDED because test_panel.js evaluates this script in a bare Node vm whose
+   `document` stub has no addEventListener -- an unguarded call takes the suite
+   down before a single assertion runs. */
+if (typeof document !== "undefined" && document.addEventListener){
+  document.addEventListener("click", e=>{
+    if (!S.usagePop) return;
+    /* The chip's own handler owns the toggle. Ignoring it here stops the pair
+       from firing open-then-closed on one click. */
+    if (e.target.closest("[data-usagepop]") || e.target.closest(".upop")) return;
+    S.usagePop = null; render();
+  });
+  document.addEventListener("keydown", e=>{
+    if (e.key === "Escape" && S.usagePop){ S.usagePop = null; render(); }
+  });
 }
 
 async function loadGit(force){
