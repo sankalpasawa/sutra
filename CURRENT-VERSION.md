@@ -1,6 +1,27 @@
 # Sutra — Current Version
 
-## v2.43.0 (2026-07-28, HEAD)
+## v2.79.0 (2026-08-07, HEAD)
+
+**Balance screen beauty pass.** Serif greeting with the day's one-liner, insight cards as accented stat tiles, day strip in a card with hour marks, polished composer — all from existing panel tokens; visual-only.
+
+**This file had gone stale at v2.43.0.** Thirty-six releases shipped to the fleet while `CURRENT-VERSION.md` still named v2.43.0 as HEAD — the catalog (`.claude-plugin/marketplace.json`) and the plugin manifest (`marketplace/plugin/.claude-plugin/plugin.json`) both read 2.79.0, and the plugin CHANGELOG carried every entry. Anyone reading this file to find the current version got an answer 143 commits out of date. The gap is closed here; the arcs it covered are summarized below and detailed in `marketplace/plugin/CHANGELOG.md`.
+
+**What shipped between v2.43.0 and v2.79.0**
+
+| Range | Arc |
+|-------|-----|
+| v2.44.0 – v2.47.0 | **Placement engine.** Per-turn block + warn-first gate, then the engine itself (addresses are computed, not typed), the last mile (the block is engine output), and the codex F7.1 dual-lane review folds. |
+| v2.47.1 – v2.63.0 | **Domains layer.** `core:departments` MECE view, fleet page, grounding rungs, drill-down zoom pages, ledger close with on-touch minting, the charter layer (projects as charters), consumer charter pages, `charters_seed.py` / `domains_pipeline.py`, and on-the-fly hydration with fast-lane data pushes. |
+| v2.53.0 – v2.53.1 | **Flow orchestrator mode v1.** D62 / ADR-029 flag-gated dispatch — contracts, matcher, factors, ledger, fixtures. Flag moved off → experimental. |
+| v2.58.0 | **Markers Scheme A concurrency core.** Self-only adoption, ownership-safe reset, session-first gates. |
+| v2.64.1 – v2.65.0 | **Dispatch runtime to the fleet**, plus three governance hooks that had been misfiring. |
+| v2.66.0 | **Daily auto-update** at the first session of the day. |
+| v2.68.0 | **Telemetry on by default** (D64) — anonymous, once daily. |
+| v2.69.0 – v2.72.0 | **Desktop panel.** Permission mode moved beside the composer with effective-mode clamping, streaming rewritten to patch a single node (0 full re-renders over 40 token frames), Routines on launchd with write-capable modes unreachable by construction, staged mandatory auto-update behind a shell-minted token, dual update checks in Settings, and `verify-runner` fleet-wide as the base of the Eval Engine (ADR-031). |
+| v2.73.0 – v2.79.0 | **Balance module.** Design preview → chat live on a preloaded session → real observations → v3 founder redline → human register cards (evidence-gated, tempo not emotion) → this beauty pass. |
+| v2.78.0 – v2.78.2 | **Usage-guard (opt-in, dormant by default).** Warns at 70% rate-limit utilization, HARD-blocks at 80% until `sutra-usage continue`; both the session (5h) and 7-day windows shown on every surface. |
+
+## v2.43.0 (2026-07-28)
 
 **Removed: the H-Sutra header Stop enforcement layer.** `hooks/h-sutra-enforce.sh` is deleted and its Stop registration is gone. No profile gets a block, a warning, or a forced redo for a missing or malformed header any more. Founder direction, 2026-07-28 — the layer had produced repeated forced redos for a formatting slip that changes nothing about the work.
 
