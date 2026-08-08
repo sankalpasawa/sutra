@@ -2890,7 +2890,8 @@ const ICON = {
   /* A gauge: what a utilization window is. Deliberately not the clock `rout`
      already uses -- two nav rows with the same glyph are two rows nobody can
      tell apart at 14px. */
-  usage:'<path d="M4.2 17a8.5 8.5 0 1115.6 0"/><path d="M12 17l4.2-5.2"/><circle cx="12" cy="17" r="1.3"/>'
+  usage:'<path d="M4.2 17a8.5 8.5 0 1115.6 0"/><path d="M12 17l4.2-5.2"/><circle cx="12" cy="17" r="1.3"/>',
+  evals:'<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8.5 12.2l2.4 2.4 4.6-5.2"/><path d="M8.5 17h7"/>'
 };
 function railSpec(){
   const sim = S.loaded ? simulate(S.draft.ops) : null;
@@ -2952,6 +2953,13 @@ function railSpec(){
          (holding/state/balance/ absent, Stage 1 baseline not started), so the
          screen renders "not yet observing" + a labeled sample — no counts, ever. */
       {id:"balance", n:"Balance",  i:"bal"},
+      /* Evals reports the Verifier layer: registry counts + nightly decay
+         scorecard. Count = current FAILS from the latest run, withheld until
+         the screen has been opened (Git rule: a 0 before the file was read is
+         a claim about a run nobody looked at). */
+      {id:"evals",  n:"Evals",   i:"evals",
+       c:(S.evals && S.evals.present && S.evals.scorecard ? S.evals.scorecard.fail : undefined),
+       warn:true},
       {id:"terminal",n:"Terminal", i:"term", toggle:true},
       /* Settings is not a count -- it is provider + permission mode + workdir,
          all three of which are single values with a live server behind them. */
@@ -4046,6 +4054,80 @@ const balanceSampleHtml = () => `
   <div class="legend">Takeaways are typed AWARENESS / UNDERSTANDING / ACTIONABLE; production shows
     whichever exist (0–3), never padded. Observation reads existing work ledgers only; no screen,
     keyboard, or microphone capture. Design of record: holding/plans/insights-balance/DESIGN.md.</div>`;
+
+/* ── Evals (Verifier layer, 2026-08-08) ──
+   Read model is /api/evals: registry counts, latest-vs-previous nightly
+   scorecard, regression strip, findings tail. Lazy fetch like Git/Balance.
+   Deep transcripts stay in Inspect's own viewer — the screen SHOWS the exact
+   command instead of spawning a server from the panel (hardened-surface rule). */
+async function loadEvals(force){
+  if (S.evals && !force) return;
+  S.evals = { loading: true };
+  try { S.evals = await apiGet("/api/evals"); }
+  catch (e){ S.evals = { present: false, error: true }; }
+  render();
+}
+const EVCHIP = {active:"p-ok", superseded:"p-warn", quarantined:"p-block", retired:"p-warn"};
+SCREENS.evals = () => {
+  if (!S.evals || S.evals.loading)
+    return `<p style="color:var(--muted)">Reading the verifier registry…</p>`;
+  if (!S.evals.present) return `<div class="zero"><h4>No verifier registry here</h4>
+    <p>This install has no <code>holding/state/verifier/registry.jsonl</code> —
+    the Verifier layer has not been set up for this repo. Checks appear after
+    the first <code>check_registry.py</code> build (nightly does it automatically
+    where the eval program is installed).</p></div>`;
+  const ev = S.evals, reg = ev.registry || {}, sc = ev.scorecard;
+  const st = reg.by_status || {}, scope = reg.active_by_scope || {};
+  const chips = Object.entries(st).map(([k,v]) =>
+    `<span class="pill ${EVCHIP[k]||""}" title="${esc(k)}">${esc(k)} ${v}</span>`).join(" ");
+  const failing = new Set(sc ? (sc.failing_ids||[]) : []);
+  const regre = ev.regressions || [];
+  const rows = (ev.checks||[])
+    .filter(c => c.status !== "superseded" || failing.has(c.check_id))
+    .sort((a,b) => (failing.has(b.check_id)?1:0)-(failing.has(a.check_id)?1:0)
+                 || (a.status==="active"?-1:1)-(b.status==="active"?-1:1))
+    .slice(0, 80);
+  return `
+  <h3 class="sec">Nightly decay ${sc?``:`<span class="pill p-warn">NO RUNS YET</span>`}</h3>
+  ${sc ? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px">
+      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:var(--muted);margin-bottom:5px">SCORED</div>
+      <div style="font-size:19px;font-weight:600">${sc.scored}</div></div>
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px">
+      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:var(--ok);margin-bottom:5px">PASS</div>
+      <div style="font-size:19px;font-weight:600">${sc.pass}</div></div>
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px">
+      <div style="font:600 8.5px/1 var(--mono);letter-spacing:.12em;color:${sc.fail?"var(--warn)":"var(--muted)"};margin-bottom:5px">FAIL</div>
+      <div style="font-size:19px;font-weight:600">${sc.fail}</div></div>
+    ${regre.length ? `<span class="pill p-block">NEW REGRESSIONS: ${regre.length}</span>
+      <span style="font:11px var(--mono);color:var(--warn)">${regre.map(esc).join(", ")}</span>`
+      : `<span class="pill p-ok">no new regressions vs previous run</span>`}
+    ${(ev.fixed||[]).length ? `<span class="pill p-ok">fixed since last: ${ev.fixed.length}</span>`:""}
+  </div>`:""}
+  <h3 class="sec">Registry</h3>
+  <div style="margin-bottom:6px">${chips}
+    <span style="color:var(--faint);font-size:11px;margin-left:8px">active by scope:
+    ${Object.entries(scope).map(([k,v])=>`${esc(k)} ${v}`).join(" · ")}</span></div>
+  <div class="tw"><table><thead><tr>
+    <th>Check</th><th>Scope</th><th>Status</th><th>Lane</th><th>Goal / reason</th>
+  </tr></thead><tbody>
+  ${rows.map(c=>`<tr>
+    <td class="k" style="${failing.has(c.check_id)?"color:var(--warn)":""}">${esc(c.check_id)}${failing.has(c.check_id)?" ✗":""}</td>
+    <td>${esc(c.scope||"")}</td>
+    <td><span class="pill ${EVCHIP[c.status]||""}">${esc(c.status||"")}</span>${c.superseded_by?`<span style="color:var(--faint);font-size:10px"> → ${esc(c.superseded_by)}</span>`:""}</td>
+    <td style="font-size:11px;color:var(--muted)">${esc(c.tag||"")}</td>
+    <td style="font-size:11.5px">${esc(c.goal||"")}${c.reason?`<span style="color:var(--faint)"> — ${esc(c.reason)}</span>`:""}</td>
+  </tr>`).join("")}
+  </tbody></table></div>
+  <p style="color:var(--faint);font-size:10.5px;margin:4px 0 0">superseded rows hidden unless failing;
+    top 80 shown of ${(ev.checks||[]).length} registry rows.</p>
+  <h3 class="sec">Deep transcripts</h3>
+  <div class="note">Per-case transcripts live in Inspect's own viewer. Run in a terminal:
+    <code>${esc(ev.view_cmd||"")}</code></div>
+  <div class="legend">Read model: check registry (declaration + binding + status), nightly
+    decay lane (observe-only — it never gates), findings routed to the daily governance
+    audit. Program of record: holding/plans/eval-program/VERIFIER-LEDGER.md.</div>`;
+};
 
 /* ── S8 Skills ──
    Grouped BY PROVIDER, because the entries are not interchangeable: a claude
@@ -5204,6 +5286,7 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],
+  evals:["Evals","verifier registry · nightly decay runs · findings — read-only"],
   editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
@@ -7064,6 +7147,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
        a stale percentage is the one number this screen must not show. The 60s
        server cache is what keeps re-opening cheap. */
     if (S.screen === "usage") loadUsage(true);
+    if (S.screen === "evals") loadEvals(false);     /* lazy, like Git */
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     render(); return;
   }
