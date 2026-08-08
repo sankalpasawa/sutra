@@ -367,6 +367,13 @@
   .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;
       align-items:center;gap:8px;flex-wrap:wrap;position:relative}
   .pc input,.pc textarea{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
+  /* The rule above sets outline:none and the only candidate override
+     (input:focus-visible, earlier in source, and not matching textarea at all)
+     therefore loses -- so the most-used control in the app was the one control
+     with no focus ring. Placed AFTER both rules so it wins on source order.
+     Covers the side-chat input for free: same .pc ancestor. */
+  .pc input:focus-visible,.pc textarea:focus-visible{outline:2px solid var(--acc);
+    outline-offset:2px;border-radius:4px}
   .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
   .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
         display:grid;place-items:center;cursor:pointer;flex:none}
@@ -2149,7 +2156,9 @@ function setSessCwd(sid, raw){
   const prev = sessCwd(sid);
   S.cwdEdit = null;
   if (next === prev){ scheduleRender(); return; }
-  if (streamingFor(sid)){
+  /* setSessCwd's cleanup closes BOTH sockets, so the guard must see both. It was
+     blind to side turns while its message promised not to discard the reply. */
+  if (streamingFor(sid) || sideStreamingFor(sid)){
     S.cwdError = "finish or stop the running turn first — moving folders now would "
                + "discard the reply it is still writing.";
     scheduleRender();
@@ -3023,18 +3032,32 @@ function renderRail(){
                : n >= 1024      ? (Math.round(n/102.4)/10) + " KB"
                                 : n + " B";
   const sessMeta = s => {
-    if (!s.real) return `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
+    /* The badge is computed BEFORE the guard chain, not inside its last branch.
+       Every earlier return preempted the only line that emitted it, so "live"
+       appeared ONLY on sessions the operator had never opened -- the exact
+       inverse of the ones they care about -- and a session streaming in THIS
+       panel was indistinguishable from an idle one. `running` is the panel's own
+       in-flight turn; `live` is the transcript being written by Claude outside
+       the panel; `agents_live` lights up once the subagent liveness fold lands.
+       Only `active`/running are drawn: idle and stale are the ordinary cases and
+       a badge on every row would say nothing. */
+    const running = sessionBusy(s.id);
+    const badge =
+        (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
+      + (!running && s.live === "active"
+           ? `<span class="livedot" title="Being written right now in Claude">live</span>` : "")
+      + (s.agents_live ? `<span class="livedot" title="Subagent transcripts being written right now"
+           >${s.agents_live} agent${s.agents_live===1?"":"s"}</span>` : "");
+    /* Deleted-on-disk is tested FIRST. Behind the loadState tests it was
+       unreachable for any session anyone had actually opened, which is the only
+       case the flag was added for. */
+    if (s.vanished) return badge + `<span style="color:var(--block)">deleted on disk</span>`;
+    if (!s.real) return badge + `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
     if (s.loadState === "ok" || s.loadState === "empty")
-      return `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
-    if (s.loadState === "loading") return `<span>reading transcript…</span>`;
-    if (s.loadState === "error") return `<span style="color:var(--block)">unreadable</span>`;
-    if (s.vanished) return `<span style="color:var(--block)">deleted on disk</span>`;
-    /* Liveness comes from the transcript's last write, which is the only evidence
-       there is -- Claude appends a line per event, so "written 4 seconds ago" is
-       as close to "someone is typing in it now" as anything outside Claude can
-       honestly claim. Only `active` is drawn: idle and stale are the ordinary
-       cases and a badge on every row would say nothing. */
-    return `${s.live==="active"?`<span class="livedot" title="Being written right now in Claude">live</span>`:""}<span>transcript unread</span><span>${kb(s.size||0)}</span>`;
+      return badge + `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
+    if (s.loadState === "loading") return badge + `<span>reading transcript…</span>`;
+    if (s.loadState === "error") return badge + `<span style="color:var(--block)">unreadable</span>`;
+    return badge + `<span>transcript unread</span><span>${kb(s.size||0)}</span>`;
   };
   /* `project` is the ENCODED directory name (slashes turned into dashes), which
      reads as gibberish in a 200px rail. `cwd` is the same directory unencoded
@@ -3065,7 +3088,10 @@ function renderRail(){
             ${held?'<span style="color:var(--warn)">held</span>':""}</span>
         </button></li>`;}).join("")}</ul>`).join("");
     if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
-      No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.</p>`;
+      ${S.sessionsError
+        ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
+           Nothing is claimed here about what is or is not on disk.`
+        : `No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.`}</p>`;
   } else if (S.sgroup === "project"){
     /* Keyed on the FULL cwd, labelled with its last segment. Two checkouts can
        share a basename ("sutra" under two parents) and merging them would put
@@ -5585,6 +5611,11 @@ function sessionPane(s){
         <b>Side chat</b>
         <span>separate thread — nothing here is sent to the conversation above, and it
           is not filed as a placement</span>
+        ${sideStreamingFor(s.id) ? `<button class="ib" data-sidestop="${s.id}" type="button"
+                aria-label="Stop the side chat turn"
+                title="Stop — interrupts this side thread only, never the conversation above">
+          <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+        </button>` : ""}
         <button class="ib" data-sideclose="${s.id}" type="button" aria-label="Close the side chat">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
@@ -5726,7 +5757,14 @@ function _focusedInputSelector(){
   if (!el || !(el.tagName === "INPUT" || el.tagName === "SELECT"
                || el.tagName === "TEXTAREA")) return null;
   if (el.id) return "#" + el.id;
-  for (const attr of ["data-sask", "data-ssend"]) {
+  /* Every one of these is an input with no id that render() rebuilds wholesale.
+     The comment above describes the caret fix for the composer; it was never
+     generalised, so typing a PR body or a folder path while ANY transcript on
+     disk was being written dropped focus to <body> mid-word. Valueless
+     attributes need no special case: getAttribute returns "" and [data-x=""]
+     matches a bare data-x. */
+  for (const attr of ["data-sask", "data-ssend", "data-sideask", "data-cwdinput",
+                      "data-prf", "data-edta", "data-workdir-input", "data-edfilter"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
   }
   return null;
@@ -6706,6 +6744,21 @@ function wire(){
     ch.ws.send(JSON.stringify({type:"stop"}));
   });
 
+  /* The side chat had NO stop anywhere: the main composer's Stop resolves
+     CLAUDE_SOCKETS.get(sid) -- the MAIN key -- while a side turn lives under
+     chanKey(sid,true). Kept as a SEPARATE control so stopping one never kills the
+     other. */
+  panes.querySelectorAll("[data-sidestop]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.sidestop;
+    const ch=CLAUDE_SOCKETS.get(chanKey(sid, true));
+    if(!ch || !ch.open){
+      const t=(S.sideTurns[sid]||[]).slice().reverse().find(x=>x.streaming);
+      if(t){ t.streaming=false; t.stopped=true; render(); }
+      return;
+    }
+    ch.ws.send(JSON.stringify({type:"stop"}));
+  });
+
   /* ── routines ── */
   scBody.querySelectorAll("[data-prok]").forEach(b=>b.onclick=()=>
     decideProposal(b.dataset.prok, true));
@@ -6855,17 +6908,19 @@ function wire(){
       /* Shift+Enter is a NEWLINE, Enter sends. Ctrl/Cmd+J too, because that is
          what readline users reach for. Returning early leaves the default
          behaviour -- in a textarea that inserts the newline for us. */
-      if (e.key === "Enter" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          const at = inp.selectionStart, to = inp.selectionEnd;
-          inp.value = inp.value.slice(0, at) + "\n" + inp.value.slice(to);
-          inp.selectionStart = inp.selectionEnd = at + 1;
-          S.composerText[sid] = inp.value;
-          autoGrowComposer(inp);
-        }
+      /* Cmd/Ctrl+Enter SENDS -- the convention in Claude Code, Slack, ChatGPT and
+         GitHub. It used to insert a newline too, so an operator who reached for it
+         watched the message sit in the box. Shift+Enter is a newline: return early
+         and the textarea default inserts it. */
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        const composed = composeWithAttachments(sid, inp.value.trim());
+        if(!composed) return;
+        e.preventDefault();
+        inp.value=""; S.composerText[sid]=""; S.palette=null;
+        submitTurn(composed, sid);
         return;
       }
+      if (e.key === "Enter" && e.shiftKey) return;
       if(e.key==="Enter"){
         /* Not gated on inp.value: an attachment with no typed text is a legitimate
            message ("here is the file"), and the old guard silently swallowed it. */
@@ -7042,7 +7097,13 @@ document.querySelector(".rail").addEventListener("click", e=>{
 function newSession(cwd){
   const s = { id:"s-"+(++SID), title:"New session", created_ms:NOW, updated_ms:NOW,
               turns:[], local:true, loadState:"live" };
-  if (cwd) S.cwd[s.id] = cwd;
+  /* BOTH fields, deliberately. S.cwd is the override map sessCwd()/claudeWsUrl()
+     read (so the session really runs in that folder); s.cwd is what the rail's
+     project grouping and projOf() read. Writing only the first meant the + on a
+     project heading opened a session that ran in the right directory but was
+     listed under "No folder" -- the one group with no + of its own, so the
+     button looked like it had done nothing. */
+  if (cwd){ S.cwd[s.id] = cwd; s.cwd = cwd; }
   S.sessions.unshift(s);
   S.openPanes.push(s.id);
   if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
@@ -7050,7 +7111,13 @@ function newSession(cwd){
   const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
   return s;
 }
-document.getElementById("newSession").onclick = () => newSession();
+/* With no argument the new session falls through to SETTINGS.workdir, which
+   defaults to ~/sutra-ui-workspace -- a directory the operator never works in.
+   Running `claude` in the repo they were discussing and hitting /resume then
+   lists nothing, because claude only shows the project dir for the cwd you are
+   standing in. Default to the folder in view instead. */
+document.getElementById("newSession").onclick = () =>
+  newSession(sessCwd(S.openPanes[S.openPanes.length - 1]) || "");
 /* theme */
 (function(){
   const r=document.documentElement, KEY="sutra.panel.theme";
@@ -7370,7 +7437,69 @@ if (typeof document !== "undefined" && document.addEventListener){
     S.usagePop = null; render();
   });
   document.addEventListener("keydown", e=>{
-    if (e.key === "Escape" && S.usagePop){ S.usagePop = null; render(); }
+    /* ── Escape cascade, most specific first ────────────────────────────────
+       Escape was global for exactly ONE overlay. Four dismissible states had no
+       Escape anywhere -- the routine-run view, the permission confirmation, the
+       PR form, and the folder editor -- so the only exit was finding the right
+       button with the mouse. */
+    if (e.key === "Escape"){
+      if (S.palette){ S.palette = null; render(); return; }
+      if (S.permConfirm){ S.permConfirm = null; render(); return; }
+      if (S.prForm){ S.prForm = null; render(); return; }
+      if (S.cwdEdit){ S.cwdEdit = null; S.cwdError = null; render(); return; }
+      if (S.runOpen){ S.runOpen = null; render(); return; }
+      if (S.usagePop){ S.usagePop = null; render(); return; }
+      return;
+    }
+    /* Bare keys must never fire while the operator is typing. */
+    const kel = e.target;
+    const typing = !!kel && (kel.tagName === "INPUT" || kel.tagName === "TEXTAREA"
+                             || kel.tagName === "SELECT" || kel.isContentEditable);
+    const mod = e.metaKey || e.ctrlKey;
+    const focused = S.openPanes[S.openPanes.length - 1] || null;
+    /* Cmd/Ctrl+. INTERRUPTS, wherever focus is. There was no key to stop a turn
+       at all. Both channels, because a side turn has its own socket. */
+    if (mod && e.key === "."){
+      e.preventDefault();
+      if (focused){
+        [chanKey(focused, false), chanKey(focused, true)].forEach(k=>{
+          const ch = CLAUDE_SOCKETS.get(k);
+          if (ch && ch.open) ch.ws.send(JSON.stringify({type:"stop"}));
+        });
+      }
+      return;
+    }
+    /* Cmd+W is Electron's Close Window and the app ships Electron's DEFAULT menu,
+       so it is not ours to take. Close-pane is Shift+W. */
+    if (mod && e.shiftKey && (e.key === "W" || e.key === "w")){
+      e.preventDefault();
+      if (focused){ S.openPanes = S.openPanes.filter(x => x !== focused); render(); }
+      return;
+    }
+    if (mod && !e.shiftKey && (e.key === "n" || e.key === "N")){
+      e.preventDefault();
+      newSession(sessCwd(focused) || "");
+      return;
+    }
+    if (mod && (e.key === "[" || e.key === "]")){
+      e.preventDefault();
+      const list = S.sessions;
+      if (!list.length) return;
+      const at = Math.max(0, list.findIndex(x => x.id === focused));
+      const nx = list[(at + (e.key === "]" ? 1 : list.length - 1)) % list.length];
+      if (nx){
+        if (!S.openPanes.includes(nx.id)) S.openPanes.push(nx.id);
+        if (S.openPanes.length > 2) S.openPanes = S.openPanes.slice(-2);
+        ensureTranscript(nx); render();
+      }
+      return;
+    }
+    /* "/" focuses the composer, the way every chat app does it. */
+    if (!typing && !mod && e.key === "/"){
+      const inp = focused && document.querySelector('[data-sask="' + focused + '"]');
+      if (inp){ e.preventDefault(); inp.focus(); }
+      return;
+    }
   });
 }
 
@@ -7419,6 +7548,15 @@ function continueRunThread(rid, d){
   const s = newSession();
   s.title = rid + " · run thread";
   s.claude_session = d.session_id;
+  /* The run executed in the ROUTINE's folder (routines.py spawns with the
+     routine's cwd), which is where its transcript is filed -- and `claude
+     --resume <id>` only resolves in that directory. newSession() was called with
+     no argument, so sessCwd fell through to SETTINGS.workdir, the resume failed,
+     and the button whose whole purpose is "carry on from where it stopped"
+     produced a cold conversation. Both fields: S.cwd drives sessCwd(), s.cwd
+     drives the rail grouping. */
+  const _rt = ((S.rt && S.rt.routines) || []).find(x => x.id === rid);
+  if (_rt && _rt.cwd){ S.cwd[s.id] = _rt.cwd; s.cwd = _rt.cwd; }
   /* The reply is shown as the first turn so the pane is not blank -- you are
      continuing a conversation, and a conversation with no visible history reads
      as a new one. Marked replayed, because these turns were not classified by
@@ -7492,6 +7630,9 @@ function applySessionChange(rows){
     const s = S.sessions.find(x=>x.id === row.id);
     if (!s){ needList = true; return; }        /* unseen conversation */
     s.mtime = row.mtime; s.size = row.size; s.live = row.live;
+    /* Without this the rail can never render "3 agents" from data: the field
+       arrives on every changed row and is dropped by a three-field copy. */
+    s.agents_live = row.agents_live || 0;
     /* Only a transcript actually on screen is re-read. Re-parsing every changed
        file would turn a busy Claude session into a stream of reads for panes
        nobody is looking at. */
@@ -7694,7 +7835,14 @@ function applyTermW(px){
 }
 
 function termMount(force){
-  const cwd = (SETTINGS && SETTINGS.workdir) || "";
+  /* The session's folder, not the global one. Identical defect to the one fixed
+     in sessCwd(): a turn running in ~/Desktop/development/sutra types `git
+     checkout .` into a shell sitting in ~/sutra-ui-workspace, with nothing on
+     screen stating the mismatch -- precisely the state in which an operator
+     presses Enter. /ws/term already honours a per-call cwd, so only the caller
+     was wrong. */
+  const cwd = sessCwd(S.openPanes[S.openPanes.length - 1])
+            || (SETTINGS && SETTINGS.workdir) || "";
   const have = termBodyEl.querySelector("iframe");
   if (have && !force) return;
   if (have) have.remove();
@@ -7931,6 +8079,16 @@ termGripEl.addEventListener("keydown", e=>{
    addEventListener throws ReferenceError and takes all 35 assertions down with it. */
 if (typeof addEventListener !== "undefined"){
   addEventListener("resize", ()=>{ if (S.termOpen) applyTermW(S.termW || TERM_DEFAULT); });
+  /* Electron ships its DEFAULT menu, so Cmd+R is live and destroys the page --
+     and with it every entry in CLAUDE_SOCKETS, where the streaming turn lives.
+     Test `ch.turn`, not `ch.open`: `open` is true for any connected socket
+     including an idle one, whereas `turn` is set only while a reply is streaming,
+     which is the only state worth blocking a reload for. */
+  addEventListener("beforeunload", e=>{
+    let live = false;
+    CLAUDE_SOCKETS.forEach(ch=>{ if (ch && ch.turn) live = true; });
+    if (live){ e.preventDefault(); e.returnValue = ""; }
+  });
 }
 
 /* Catalog freshness. ONE timer that decides whether to act, rather than several

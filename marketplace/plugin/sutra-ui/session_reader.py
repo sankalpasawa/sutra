@@ -138,6 +138,33 @@ def index() -> Dict[str, Dict]:
             continue          # deleted between glob and stat: simply not there
         out[f.stem] = {"mtime": int(st.st_mtime), "size": st.st_size,
                        "project": f.parent.name}
+    # SUBAGENTS. The glob above is exactly one directory deep, so it never saw
+    # <project>/<session-id>/subagents/**/agent-*.jsonl -- the bulk of transcript
+    # files on a machine that runs fan-outs. Liveness was therefore the PARENT
+    # file's mtime alone, so a session with agents writing while the parent was
+    # silent read as idle and then stale precisely when the machine was busiest.
+    #
+    # The parent id is NOT parents[1]/[2] -- workflow-nested agents sit deeper and
+    # that returns the literal "subagents". Index from the right instead. Still
+    # stat-only, so the poll cost stays flat in history size. agent-*.jsonl only,
+    # or workflow journal.jsonl bookkeeping files get counted as agents.
+    for f in PROJECTS.glob("*/*/subagents/**/agent-*.jsonl"):
+        parts = f.parts
+        try:
+            i = len(parts) - 1 - parts[::-1].index("subagents")
+        except ValueError:
+            continue
+        rec = out.get(parts[i - 1])
+        if rec is None:
+            continue          # an agent whose parent transcript is not on disk
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        rec["mtime"] = max(rec["mtime"], int(st.st_mtime))
+        rec["agents_bytes"] = rec.get("agents_bytes", 0) + st.st_size
+        if liveness(st.st_mtime) == "active":
+            rec["agents_live"] = rec.get("agents_live", 0) + 1
     return out
 
 

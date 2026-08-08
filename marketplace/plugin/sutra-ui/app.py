@@ -359,6 +359,18 @@ def _tool_summary(inp, limit=120):
     """
     if not isinstance(inp, dict):
         return ""
+    # An Agent/Task input is {description, prompt, subagent_type}. The generic
+    # scan below returns on the FIRST hit -- `prompt` -- and in a fan-out every
+    # agent's prompt starts with the same preamble, so three parallel agents
+    # rendered as three identical rows. subagent_type is the only field that says
+    # WHICH agent this is, and it was dropped entirely.
+    if inp.get("subagent_type") or inp.get("agent_type"):
+        kind = str(inp.get("subagent_type") or inp.get("agent_type") or "agent").strip()
+        desc = inp.get("description")
+        if isinstance(desc, str) and desc.strip():
+            v = "%s: %s" % (kind, " ".join(desc.split()))
+            return v[:limit] + ("…" if len(v) > limit else "")
+        return kind[:limit]
     for k in ("command", "file_path", "path", "pattern", "url", "query", "prompt",
               "description", "notebook_path"):
         v = inp.get(k)
@@ -527,7 +539,13 @@ async def api_sessions_stream():
                            # twice inside one second, and mtime alone would report
                            # the first write and swallow the second.
                            if k not in prev or prev[k]["mtime"] != v["mtime"]
-                           or prev[k]["size"] != v["size"]]
+                           or prev[k]["size"] != v["size"]
+                           # A subagent write leaves the PARENT's own size
+                           # untouched, and mtime is int seconds -- two writes in
+                           # one second are swallowed. agents_bytes moves on every
+                           # subagent append, so it is what makes the fold in
+                           # session_reader.index() actually reach the client.
+                           or prev[k].get("agents_bytes") != v.get("agents_bytes")]
                 gone = [k for k in prev if k not in cur]
                 if changed:
                     yield _sse_event("changed", {"sessions": changed})

@@ -860,11 +860,22 @@ test("20c. focus restore knows about TEXTAREA", () => {
   assert.ok(/TEXTAREA/.test(fn), "_focusedInputSelector must accept TEXTAREA");
 });
 
-test("20d. Shift+Enter is a newline and Enter still sends", () => {
+test("20d. Shift+Enter is a newline, Cmd/Ctrl+Enter sends, plain Enter sends", () => {
   const h = panelHtml;
-  assert.ok(/e\.key === "Enter" && \(e\.shiftKey/.test(h),
-    "Shift+Enter must be handled before the send branch");
-  assert.ok(/if\(e\.key==="Enter"\)\{/.test(h), "Enter must still send");
+  /* Cmd/Ctrl+Enter now SENDS (it used to insert a newline) -- the branch must
+     exist and must be a SEND, so it references submitTurn. */
+  assert.ok(/e\.key === "Enter" && \(e\.ctrlKey \|\| e\.metaKey\)/.test(h),
+    "Cmd/Ctrl+Enter must have its own branch");
+  const cmdSend = h.slice(h.indexOf('e.key === "Enter" && (e.ctrlKey || e.metaKey)'));
+  assert.ok(/submitTurn/.test(cmdSend.slice(0, 400)),
+    "the Cmd/Ctrl+Enter branch must SEND, not insert a newline");
+  /* Shift+Enter must be handled (and return, i.e. fall through to the textarea's
+     own newline) BEFORE the plain-Enter send branch, or it would send. */
+  const shiftIdx = h.indexOf('e.key === "Enter" && e.shiftKey) return');
+  const sendIdx = h.indexOf('if(e.key==="Enter"){');
+  assert.ok(shiftIdx !== -1, "Shift+Enter must be a newline (return early)");
+  assert.ok(sendIdx !== -1, "plain Enter must still send");
+  assert.ok(shiftIdx < sendIdx, "Shift+Enter must be handled before the send branch");
 });
 
 test("20e. auto-grow resets height before measuring", () => {
