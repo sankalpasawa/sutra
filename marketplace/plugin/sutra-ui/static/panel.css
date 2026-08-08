@@ -1,0 +1,1259 @@
+  :root{--serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--r:10px}
+  :root,[data-theme="dark"]{
+    --bg:#0C0B09;--surface:#161412;--card:#1C1A17;--line:#2A2622;--line-soft:#221F1C;
+    --ink:#F5F0E8;--muted:#8C857D;--faint:#6E6860;
+    --acc:#C4956A;--acc-bg:rgba(196,149,106,.12);--on-acc:#0C0B09;
+    --ok:#5A9E6F;--warn:#C9A227;--block:#B8574B;
+    --ok-bg:rgba(90,158,111,.13);--warn-bg:rgba(201,162,39,.13);--block-bg:rgba(184,87,75,.14);
+    --ok-line:rgba(90,158,111,.32);--warn-line:rgba(201,162,39,.3);--block-line:rgba(184,87,75,.38);
+    --inset:#161412;--bubble:#161412;--th-bg:#161412;--knob:#0C0B09;--vld-tx:#8C857D;
+    --sepia:rgba(196,149,106,.06);
+    --shadow:0 1px 2px rgba(0,0,0,.16),0 18px 44px -18px rgba(0,0,0,.42)}
+  @media (prefers-color-scheme:light){:root:not([data-theme]){
+    --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
+    --ink:#1c1917;--muted:#78716c;--faint:#a8a29e;
+    --acc:#8A5D2E;--acc-bg:#f6efe7;--on-acc:#ffffff;
+    --ok:#3f7d54;--warn:#8a6d12;--block:#9c3f34;
+    --ok-bg:#eef4ef;--warn-bg:#f8f3e4;--block-bg:#faeeec;
+    --ok-line:#cfe0d4;--warn-line:#e8dcbb;--block-line:#eccfc9;
+    --inset:#fafaf9;--bubble:#f5f4f2;--th-bg:#fafaf9;--knob:#ffffff;--vld-tx:#57534e;
+    --sepia:#faf6ef;
+    --shadow:0 1px 2px rgba(28,25,23,.05),0 18px 44px -20px rgba(28,25,23,.16)}}
+  [data-theme="light"]{
+    --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
+    --ink:#1c1917;--muted:#78716c;--faint:#a8a29e;
+    --acc:#8A5D2E;--acc-bg:#f6efe7;--on-acc:#ffffff;
+    --ok:#3f7d54;--warn:#8a6d12;--block:#9c3f34;
+    --ok-bg:#eef4ef;--warn-bg:#f8f3e4;--block-bg:#faeeec;
+    --ok-line:#cfe0d4;--warn-line:#e8dcbb;--block-line:#eccfc9;
+    --inset:#fafaf9;--bubble:#f5f4f2;--th-bg:#fafaf9;--knob:#ffffff;--vld-tx:#57534e;
+    --sepia:#faf6ef;
+    --shadow:0 1px 2px rgba(28,25,23,.05),0 18px 44px -20px rgba(28,25,23,.16)}
+
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;
+       -webkit-font-smoothing:antialiased;margin:0;overflow:hidden}
+  /* Desktop panel: fill the window. A centred 1320px column left ~35% of a
+   1990px display as background -- read as dead space next to the panes,
+   which is exactly what it was. Capped generously so it stays readable on
+   an ultrawide instead of stretching a chart to 3000px. */
+  .wrap{max-width:none;margin:0;padding:0;height:100vh;overflow:hidden}
+  .mast{display:flex;align-items:center;gap:11px;margin-bottom:16px;flex-wrap:wrap}
+  .mast svg{width:30px;height:30px;color:var(--acc);flex:none}
+  .mast h1{font-family:var(--serif);font-size:31px;font-weight:600;letter-spacing:-.02em;margin:0;line-height:1}
+  .mast .cap{font-size:12px;color:var(--muted);margin-left:auto;max-width:44ch;text-align:right}
+
+  /* Rail collapse gives its column BACK to the panes rather than leaving a
+     224px gutter behind: grid-template-columns drops to a single track. */
+  .app.railcol{grid-template-columns:1fr}
+  .app.railcol .rail{display:none}
+  .railtog{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+    margin-left:auto;border:1px solid transparent;border-radius:6px;background:none;
+    color:var(--faint);cursor:pointer;flex:0 0 auto;transition:background .12s,color .12s,border-color .12s}
+  /* ITEM 4 — every icon control answers the pointer. */
+  .railtog:hover{color:var(--acc);background:var(--acc-bg);border-color:var(--acc)}
+  .railtog:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  /* Reachability while the rail is gone. */
+  .railshow{position:fixed;top:11px;left:11px;z-index:60;display:none;
+    align-items:center;justify-content:center;width:26px;height:26px;
+    border:1px solid var(--line);border-radius:7px;background:var(--card);
+    color:var(--faint);cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+  .railshow:hover{color:var(--acc);background:var(--acc-bg);border-color:var(--acc)}
+  .app.railcol .railshow{display:inline-flex}
+  .app.railcol{padding-left:46px}
+  /* Rail section headers are buttons, not labels -- they collapse their body. */
+  .grp{display:flex;align-items:center;gap:6px;width:100%;background:none;border:0;
+    cursor:pointer;text-align:left;font:inherit}
+  .grp .chev{margin-left:auto;transition:transform .12s ease;flex:0 0 auto;opacity:.55}
+  .grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+  .grp:hover .chev{opacity:1}
+  .rsec[hidden]{display:none}
+  /* Three columns: rail | panes | terminal. The terminal track is `auto`, and the
+     pane is [hidden] when closed, so the track collapses to zero width and the
+     layout is byte-identical to the two-column one until the terminal is opened.
+     It must be a GRID ITEM rather than a child of .panes: render() replaces
+     .panes wholesale and would kill the PTY. */
+  .app{display:grid;grid-template-columns:224px 1fr var(--termw, 0px);gap:9px;background:var(--surface);
+       border:0;border-radius:0;padding:9px;height:100vh;min-height:0;box-shadow:none;
+       /* padding must live INSIDE 100vh or the app is 18px taller than the window */
+       box-sizing:border-box}
+  /* `height:auto` used to be here, and it made the composer UNREACHABLE. body is
+     overflow:hidden, so an app taller than the viewport is not scrolled -- it is
+     clipped. Measured at 820x900: the app grew to 6404px and the composer sat at
+     y=6352 with no way to reach it, and its position moved by thousands of pixels
+     as panes opened and closed. The app keeps the viewport's height; `.panes`
+     already flips to overflow-y:auto at this breakpoint, so the column scrolls and
+     every composer stays reachable at the foot of its own pane. */
+  @media(max-width:860px){.app{grid-template-columns:1fr}.rail{max-height:290px}}
+
+  /* rail */
+  .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
+        display:flex;flex-direction:column;min-height:0}
+  .rtop{display:flex;align-items:center;gap:8px;padding:11px 11px 9px}
+  /* The logo mark is BLACK on gold in BOTH themes. It does not follow --on-acc, which is
+     white in the light theme: that made the brand mark read white-on-gold in light mode and
+     black-on-gold in dark, i.e. two different logos. A logo is not a themed control. */
+  .rmark{width:19px;height:19px;border-radius:5px;background:var(--acc);color:#0A0908;
+         display:grid;place-items:center;font:700 12px/1 var(--serif);flex:none}
+  .rtop b{font-size:13px;font-weight:600}
+  /* The tenant chip used to carry `margin-left:auto` and push the toggle right.
+     With the chip gone the toggle owns that job, or it collides with the wordmark. */
+  .rtop .railtog{margin-left:auto}
+  .rscroll{overflow-y:auto;flex:1;min-height:0;padding-bottom:6px}
+  .grp{padding:9px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.1em;
+       color:var(--faint);text-transform:uppercase}
+  .nav{list-style:none;margin:0;padding:0 6px}
+  .nav button{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;width:100%;
+    background:none;border:0;color:var(--muted);font:400 12.5px/1.4 var(--sans);cursor:pointer;text-align:left}
+  .nav button svg{width:14px;height:14px;flex:none;opacity:.8}
+  .nav button .ct{margin-left:auto;font:500 10px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .nav button:hover:not(:disabled){background:var(--acc-bg);color:var(--ink)}
+  .nav button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .nav button[aria-current="true"]{background:var(--acc-bg);color:var(--ink);font-weight:500}
+  .nav button[aria-current="true"] svg{color:var(--acc);opacity:1}
+  .nav button:disabled{opacity:.42;cursor:not-allowed}
+  .nav button .ct.w{color:var(--warn)}
+  .nav button .dis{margin-left:auto;font:600 8px/1 var(--mono);color:var(--faint);
+                   border:1px dashed var(--line);border-radius:4px;padding:2px 4px}
+
+  .stree{list-style:none;margin:0;padding:0 6px;font-size:12px}
+  .stree button{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;width:100%;
+    background:none;border:0;color:var(--muted);font:inherit;cursor:pointer;text-align:left}
+  .stree button:hover{background:var(--acc-bg);color:var(--ink)}
+  .stree .kid{padding-left:20px}
+  .stree .n{margin-left:auto;font:500 9px/1 var(--mono);color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--acc);flex:none}
+  .dot.run{background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
+  .dot.held{background:var(--warn)}
+  .rfoot{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;align-items:center;gap:7px}
+  .av{width:21px;height:21px;border-radius:50%;background:var(--acc-bg);color:var(--acc);
+      display:grid;place-items:center;font:700 8.5px/1 var(--sans);border:1px solid var(--acc);flex:none}
+  .rfoot span{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ib{background:none;border:0;padding:3px;border-radius:4px;color:var(--faint);cursor:pointer;display:flex}
+  .ib:hover{color:var(--ink);background:var(--acc-bg)}
+  .ib:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .ico-moon{display:none}
+  @media (prefers-color-scheme:light){:root:not([data-theme]) .ico-sun{display:none}
+    :root:not([data-theme]) .ico-moon{display:block}}
+  [data-theme="light"] .ico-sun{display:none}[data-theme="light"] .ico-moon{display:block}
+  [data-theme="dark"] .ico-sun{display:block}[data-theme="dark"] .ico-moon{display:none}
+
+  /* main */
+  .main{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
+        display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .mhead{display:flex;align-items:center;gap:9px;padding:10px 13px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+  .mhead h2{font-size:13.5px;font-weight:600;margin:0;letter-spacing:-.01em}
+  .mhead .src{font:500 9.5px/1 var(--mono);color:var(--faint)}
+  .mhead .sp{margin-left:auto}
+  .body{flex:1;overflow-y:auto;padding:14px 16px;min-height:0;font-size:12.5px}
+  .cols{display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:14px;align-items:start}
+  .cols>*{min-width:0}
+  @media(max-width:1080px){.cols{grid-template-columns:1fr}}
+
+  h3.sec{font:600 10px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;
+         color:var(--faint);margin:0 0 9px}
+  h3.sec + *{margin-top:0}
+  .body p{color:var(--muted);margin:0 0 10px}
+  code{font-family:var(--mono);font-size:11px;background:var(--acc-bg);color:var(--acc);
+       padding:1px 4px;border-radius:4px}
+
+  .btn{background:var(--inset);border:1px solid var(--line);color:var(--muted);
+       font:500 11px/1 var(--sans);padding:6px 10px;border-radius:6px;cursor:pointer}
+  .btn:hover{border-color:var(--acc);color:var(--ink)}
+  .btn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .btn[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .btn.pri{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .seg button{background:none;border:0;padding:5px 11px;font:500 11px/1 var(--sans);
+              color:var(--muted);cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--acc-bg);color:var(--acc)}
+  .seg button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+
+  /* tree */
+  .tree{list-style:none;margin:0;padding:0}
+  .tree ul{list-style:none;margin:0;padding-left:17px;border-left:1px solid var(--line-soft)}
+  .node{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:7px;margin:1px 0;
+        border:1px solid transparent;cursor:pointer;background:none;width:100%;text-align:left;
+        color:inherit;font:inherit}
+  .node:hover{background:var(--acc-bg)}
+  .node:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .node[aria-selected="true"]{background:var(--acc-bg);border-color:var(--acc)}
+  .node .dp{font:600 9.5px/1 var(--mono);color:var(--acc);flex:none;min-width:26px}
+  .node .nm{font-weight:500;font-size:12.5px}
+  .node .de{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+            white-space:nowrap;flex:1;min-width:0}
+  .node .tag{font:600 8.5px/1 var(--mono);padding:3px 5px;border-radius:4px;flex:none}
+  .tag.t-ret{background:var(--block-bg);color:var(--block)}
+  .tag.t-noc{background:var(--warn-bg);color:var(--warn)}
+  .tag.t-ten{background:var(--warn-bg);color:var(--warn)}
+  .node.retired .nm{text-decoration:line-through;color:var(--faint)}
+  /* draft-mode drag */
+  .node.drg{opacity:.45}
+  .node.ring{outline:2px solid var(--block);outline-offset:-2px;
+             background:color-mix(in srgb,var(--block) 4%,transparent);cursor:not-allowed}
+  .node.ok-t{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 40%,transparent)}
+    .canvas{min-width:0}
+  .canvas.draft{background:var(--sepia);border-radius:8px;padding:9px;border:1px dashed var(--line)}
+
+  /* inspector */
+  .insp{background:var(--inset);border:1px solid var(--line-soft);border-radius:9px;padding:12px 13px}
+  .insp h4{font-family:var(--serif);font-size:16px;font-weight:600;margin:0 0 2px}
+  .insp .sub{font-size:11px;color:var(--faint);font-family:var(--mono);margin-bottom:10px}
+  .kv{display:flex;gap:9px;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:11.5px}
+  .kv:last-child{border-bottom:0}
+  .kv b{color:var(--faint);font-weight:500;min-width:82px;flex:none;font-size:10.5px;
+        text-transform:uppercase;letter-spacing:.05em}
+  .kv span{color:var(--ink)}
+
+  /* tables */
+  .tw{overflow-x:auto;border:1px solid var(--line);border-radius:9px}
+  table{border-collapse:collapse;width:100%;font-size:12px;min-width:520px}
+  th{text-align:left;font:600 9px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;
+     color:var(--muted);padding:9px 11px;border-bottom:1px solid var(--line);background:var(--th-bg);
+     white-space:nowrap;cursor:pointer;user-select:none}
+  th:hover{color:var(--ink)}
+  td{padding:8px 11px;border-bottom:1px solid var(--line-soft);color:var(--muted);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  /* A free-text cell in a fixed-width pane sets the height of its whole row. The
+     Skills descriptions run to 150 chars, so each row grew to 5-6 lines while the
+     three narrow columns beside it stayed one line -- a table of mostly blank
+     space, with the description itself scrolled out of view past min-width. Clamp
+     the cell instead of shortening the data: the full text stays in `title`. */
+  td.desc{max-width:330px;min-width:180px;color:var(--faint);line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  td.whynot{max-width:220px}
+  tbody tr:hover{background:var(--acc-bg)}
+  tbody tr.sel{background:var(--acc-bg)}
+  td.k{color:var(--ink);font-weight:500}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  .pill{font:600 8.5px/1 var(--mono);padding:3px 6px;border-radius:4px;white-space:nowrap;display:inline-block}
+  .p-ok{background:var(--ok-bg);color:var(--ok)}
+  .p-warn{background:var(--warn-bg);color:var(--warn)}
+  .p-block{background:var(--block-bg);color:var(--block)}
+  .p-acc{background:var(--acc-bg);color:var(--acc)}
+/* THE RUN STRIP. A turn in flight had exactly one 8.5px word inside an
+   accent-tinted pill -- at normal viewing distance the word is unreadable, so it
+   read as "an orange box". This is a legible line plus an INDETERMINATE sweep:
+   nothing on the wire reports how much of a turn is left (duration_ms/cost_usd
+   arrive only on `done`), so a proportional bar would be inventing a number. */
+.runstrip{display:inline-flex;align-items:center;gap:6px;font:600 10.5px/1.4 var(--mono);
+  background:var(--acc-bg);color:var(--acc);padding:5px 8px;border-radius:5px;
+  max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.runstrip b{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.runbar{display:block;height:2px;margin-top:5px;border-radius:2px;
+  background:var(--acc-bg);overflow:hidden}
+.runbar i{display:block;height:100%;width:34%;border-radius:2px;background:var(--acc);
+  animation:sutraSweep 1.5s ease-in-out infinite}
+@keyframes sutraSweep{0%{transform:translateX(-110%)}100%{transform:translateX(330%)}}
+@media (prefers-reduced-motion:reduce){.runbar i{animation:none;width:100%;opacity:.45}}
+  .p-mut{background:var(--inset);color:var(--muted);border:1px solid var(--line)}
+
+  .facets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px;align-items:center}
+  .facets .fl{font:600 9px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;
+              color:var(--faint);margin-right:2px}
+  input[type=search],input[type=text]{background:var(--inset);border:1px solid var(--line);
+    color:var(--ink);border-radius:6px;padding:6px 9px;font:400 12px/1.3 var(--sans);min-width:0}
+  input:focus-visible{outline:2px solid var(--acc);outline-offset:-1px}
+
+  .note{border-left:2px solid var(--acc);background:var(--acc-bg);padding:10px 12px;
+        border-radius:0 7px 7px 0;font-size:11.5px;color:var(--muted);margin:11px 0}
+  .note b{color:var(--ink)}
+  .note.w{border-color:var(--warn);background:var(--warn-bg)}
+  .note.b{border-color:var(--block);background:var(--block-bg)}
+  .zero{text-align:center;padding:34px 18px;color:var(--muted)}
+  .zero h4{font-family:var(--serif);font-size:17px;color:var(--ink);margin:0 0 6px;font-weight:600}
+  .zero p{max-width:46ch;margin:0 auto 12px}
+
+  .cmd{font-family:var(--mono);font-size:10.5px;color:var(--muted);background:var(--inset);
+       border:1px solid var(--line);border-radius:7px;padding:9px 11px;overflow-x:auto;
+       white-space:nowrap;display:flex;align-items:center;gap:9px}
+  .cmd .p{color:var(--acc);flex:none}
+  .cmd .t{flex:1;min-width:0;overflow-x:auto}
+
+  /* diff rail */
+  .diff .r{display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:11.5px;
+           border-bottom:1px solid var(--line-soft)}
+  .diff .r:last-child{border-bottom:0}
+  .op{font:700 8px/1 var(--mono);letter-spacing:.05em;padding:3.5px 5px;border-radius:4px;
+      flex:none;width:46px;text-align:center;background:var(--acc-bg);color:var(--acc)}
+  .metrics{display:flex;gap:13px;flex-wrap:wrap;padding:9px 11px;border-radius:8px;
+           background:var(--inset);border:1px solid var(--line-soft);margin:10px 0}
+  .metrics div{font:500 10px/1.45 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .metrics div b{display:block;color:var(--ink);font-size:13.5px;font-weight:600}
+  .metrics div b .ar{color:var(--faint);font-weight:400}
+  .metrics div.chg b{color:var(--acc)}
+  .findbar{display:flex;gap:12px;align-items:center;font:500 11px/1 var(--mono);
+           padding:8px 11px;border-radius:7px;background:var(--inset);border:1px solid var(--line-soft)}
+
+  .tl{list-style:none;margin:0;padding:0;position:relative}
+  .tl::before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:1px;background:var(--line)}
+  .tl li{position:relative;padding:0 0 12px 24px}
+  .tl li::before{content:"";position:absolute;left:4px;top:6px;width:7px;height:7px;border-radius:50%;
+                 background:var(--acc);border:2px solid var(--card)}
+  .tl li.legacy::before{background:var(--faint)}
+  .tl .when{font:500 9.5px/1 var(--mono);color:var(--faint)}
+  .tl .what{font-size:12px;color:var(--ink);margin-top:3px}
+  .tl .det{font-size:11px;color:var(--muted);margin-top:3px}
+  .sepiaband{background:var(--sepia);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;margin-top:8px}
+
+  details.code{border:1px solid var(--line-soft);border-radius:7px;margin-bottom:6px;overflow:hidden}
+  details.code summary{padding:8px 11px;cursor:pointer;display:flex;align-items:center;gap:9px;
+                       font-size:11.5px;list-style:none}
+  details.code summary::-webkit-details-marker{display:none}
+  details.code summary:hover{background:var(--acc-bg)}
+  details.code .in{padding:2px 11px 10px 11px;font-size:11.5px;color:var(--muted)}
+  details.code.nc{border-style:dashed;opacity:.85}
+  details.code.nc summary{color:var(--faint)}
+  .cid{font:700 9.5px/1 var(--mono);flex:none;width:58px}
+
+  .legend{font-size:10.5px;color:var(--faint);border-top:1px dashed var(--line);
+          margin-top:10px;padding-top:8px;line-height:1.5}
+  .kbd{font:600 9px/1 var(--mono);border:1px solid var(--line);border-radius:3px;padding:2px 4px;color:var(--muted)}
+
+  /* ── tiled panes: browse pane + session panes, newest on the right ── */
+  /* min-height:0 is load-bearing, not defensive. .panes is a GRID ITEM, and a grid
+     item's default min-height:auto refuses to shrink below its content -- so the
+     row grew to the tallest pane's content instead of to the viewport, and the
+     per-pane `overflow-y:auto` never engaged because there was nothing to clip. */
+  .panes{display:flex;gap:11px;min-width:0;min-height:0;overflow-x:auto;overflow-y:hidden}
+  /* NO max-width here. A hard 640px cap on .pane stranded the row the moment a
+     neighbour collapsed: rail at 38px + one session pane frozen at 640px left
+     588px of a 1281px row simply unclaimed, and nothing could grow into it.
+     The cap was really a READING-WIDTH control, so it now lives on the
+     transcript column (.pb) where it belongs -- the pane fills, the prose
+     stays legible. */
+  .pane{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
+        display:flex;flex-direction:column;min-height:0;min-width:0;flex:1 0 380px}
+  /* Session panes only: the browse pane's body holds charts/lists that must
+     use every pixel, so it is excluded. */
+  .pane:not(.browse) .pb > *{max-width:78ch;margin-left:auto;margin-right:auto}
+  /* A FLOOR, not the cap the comment above rejects -- the two fail in opposite
+     directions. Session panes are `flex:1 0 380px` (shrink 0), so the browse pane,
+     alone in carrying shrink:1, absorbed every pixel the row was short: measured at
+     115px with the terminal dragged to 700px, which crushes the org chart into an
+     unreadable column. Below this width the pane shows nothing usable, so the row
+     overflows into its own horizontal scroll (`.panes` is overflow-x:auto) instead
+     of silently destroying the content. */
+  .pane.browse{flex:1 1 480px;max-width:none;min-width:300px;container-type:inline-size}
+  /* ...but a floor must never win on a genuinely narrow window, where the panes
+     stack vertically and 300px could exceed the viewport. */
+  @media(max-width:860px){ .pane.browse{min-width:0} }
+  /* the inspector column yields when session panes squeeze the browse pane —
+     the width that matters is the PANE's, not the viewport's */
+  @container (max-width:760px){ .cols{grid-template-columns:minmax(0,1fr)} }
+  @container (max-width:520px){ .ocard{min-width:104px;max-width:132px} }
+  .ph{display:flex;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+  .ph h3{font-size:12.5px;font-weight:600;margin:0;letter-spacing:-.01em;white-space:nowrap;
+         overflow:hidden;text-overflow:ellipsis;max-width:190px}
+  .ph .src{font:500 9px/1 var(--mono);color:var(--faint)}
+  .pb{flex:1;overflow-y:auto;overflow-x:hidden;padding:13px 14px;min-height:0;min-width:0;font-size:12.5px}
+  /* WRAPS. The row carries eight controls now (fold, attach, message, folder,
+     usage, permission, model, send) and their fixed widths total ~493px, so in a
+     pane squeezed to 380px by an open terminal the only flexible item -- the
+     message box -- was shrunk to ZERO and the row overflowed. Measured: paneW 382,
+     textarea width 0, scrollWidth 503 vs clientWidth 380. A composer you cannot
+     type in is worse than one that takes two lines, so the controls wrap to a
+     second line and the message box keeps a floor (see textarea[data-sask]). */
+  /* `position:relative` anchors the usage popup above this row. Chosen over
+     `.pane` because the popup must sit above the COMPOSER, whose height changes
+     when the row wraps (43px -> 76px) -- an offset measured from the pane bottom
+     would drift the moment a control wrapped. No absolutely positioned descendant
+     lives in here, so nothing else moves. */
+  .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;
+      align-items:center;gap:8px;flex-wrap:wrap;position:relative}
+  .pc input,.pc textarea{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
+  /* The rule above sets outline:none and the only candidate override
+     (input:focus-visible, earlier in source, and not matching textarea at all)
+     therefore loses -- so the most-used control in the app was the one control
+     with no focus ring. Placed AFTER both rules so it wins on source order.
+     Covers the side-chat input for free: same .pc ancestor. */
+  .pc input:focus-visible,.pc textarea:focus-visible{outline:2px solid var(--acc);
+    outline-offset:2px;border-radius:4px}
+  .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
+  .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
+        display:grid;place-items:center;cursor:pointer;flex:none}
+  .send:hover{background:var(--acc);color:var(--on-acc)}
+  .send:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .tabs{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-left:auto}
+  .tabs button{background:none;border:0;padding:4px 9px;font:500 10.5px/1 var(--sans);color:var(--muted);cursor:pointer}
+  .tabs button[aria-pressed="true"]{background:var(--acc-bg);color:var(--acc)}
+
+  /* turns */
+  .turn{margin-bottom:14px}
+  .turn .u{background:var(--bubble);border:1px solid var(--line-soft);border-radius:11px;
+           padding:8px 11px;width:fit-content;max-width:92%;margin-left:auto;font-size:12px}
+  .turn .a{margin-top:9px;font-size:12px;color:var(--muted)}
+  .turn .fchip{display:inline-flex;align-items:center;gap:5px;font:600 9.5px/1 var(--mono);
+               padding:4px 7px;border-radius:5px;border:1px solid var(--acc);background:var(--acc-bg);
+               color:var(--acc);margin-bottom:7px}
+  .turn .fchip.held{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+
+  /* ── org chart: top-down, expandable ── */
+  .chartwrap{overflow-x:auto;overflow-y:hidden;max-width:100%;padding:6px 2px 14px}
+  .chart,.chart ul{list-style:none;margin:0;padding:0}
+  /* `safe center` here is DEFENSIVE, not the fix -- measuring showed this row's
+     own justify-content was never what clipped anything (the parent li's
+     align-items was; see below). It is kept so the row cannot start centring its
+     own overflow if it ever becomes the wider box.
+     Wrapping is NOT an option for this row: li::after draws the horizontal
+     connector spanning the siblings, so a wrapped row draws broken tree edges. */
+  .chart ul{display:flex;justify-content:safe center;gap:12px}
+  /* `safe center` on the CROSS axis. This column centres each node over its
+     sibling row, and when that row is wider than the pane, plain `center`
+     centres the overflow -- pushing the left end outside the scroll container,
+     where scrollLeft:0 cannot reach it. Measured at a 738px pane: the leftmost
+     department sat at -83px and rendered permanently cut mid-word.
+     The row's own justify-content was NOT the cause; the parent's align-items
+     was. `safe` keeps the centring while it fits and falls back to start when
+     it does not. */
+  .chart li{position:relative;display:flex;flex-direction:column;align-items:safe center;padding-top:20px}
+  .chart>li{padding-top:0}
+  /* vertical stub up from each node into the connector row */
+  .chart li::before{content:"";position:absolute;top:0;left:50%;width:1px;height:20px;background:var(--line)}
+  .chart>li::before{display:none}
+  /* horizontal bar spanning the sibling row */
+  .chart li::after{content:"";position:absolute;top:0;height:1px;background:var(--line)}
+  .chart li:first-child::after{left:50%;right:-6px}
+  .chart li:last-child::after{left:-6px;right:50%}
+  .chart li:only-child::after{display:none}
+  .chart li:not(:first-child):not(:last-child)::after{left:-6px;right:-6px}
+  .chart>li::after{display:none}
+  /* stub down from a node that has visible children */
+  .chart li.haskids>.ocard::after{content:"";position:absolute;bottom:-20px;left:50%;width:1px;
+    height:20px;background:var(--line)}
+  .chart li>ul{padding-top:0;margin-top:20px}
+
+  .ocard{position:relative;background:var(--card);border:1px solid var(--line);border-radius:9px;
+         padding:8px 10px;min-width:132px;max-width:172px;cursor:pointer;text-align:left;
+         color:inherit;font:inherit;display:block}
+  .ocard:hover{border-color:var(--acc);background:var(--acc-bg)}
+  .ocard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .ocard[aria-selected="true"]{border-color:var(--acc);background:var(--acc-bg)}
+  .ocard .odp{font:600 9px/1 var(--mono);color:var(--acc)}
+  .ocard .onm{font-size:12px;font-weight:600;margin-top:3px;line-height:1.25}
+  .ocard .ometa{font:500 9px/1.3 var(--mono);color:var(--muted);margin-top:4px;
+                display:flex;gap:6px;flex-wrap:wrap}
+  .ocard.retired{border-style:dashed;opacity:.62}
+  .ocard.retired .onm{text-decoration:line-through}
+  .ocard.ring{outline:2px solid var(--block);outline-offset:-2px;
+              background:color-mix(in srgb,var(--block) 5%,transparent);cursor:not-allowed}
+  .ocard.drg{opacity:.4}
+  .ocard.hit{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
+  .ocard .turnbadge{position:absolute;top:-7px;right:-7px;min-width:17px;height:17px;
+    border-radius:99px;background:var(--acc);color:var(--on-acc);font:700 9px/17px var(--mono);
+    text-align:center;padding:0 4px}
+  .ocard .below{color:var(--acc);font-weight:600}
+  .ocard[data-kids="1"]{cursor:pointer}
+  .ocard[data-kids="1"]:hover{border-color:var(--acc)}
+
+  /* ── Claude-style recents ── */
+  .rgrp{padding:10px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.09em;
+        color:var(--faint);text-transform:uppercase}
+  /* A project heading is a ROW, not just a label: it carries the session count and
+     the + that starts a session in that folder. The + is revealed on hover/focus
+     rather than always drawn -- one per project, always visible, turns the rail
+     into a column of plus signs and buries the thing you came to read. It stays
+     visible whenever it has focus, so keyboard users never chase an invisible
+     control. */
+  .rgrph{display:flex;align-items:center;gap:6px;padding-right:8px}
+  .rgrph .rgn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .rgrph .rgc{font:600 9px/1 var(--mono);color:var(--line);flex:none;
+    font-variant-numeric:tabular-nums}
+  .rgrph .rgadd{margin-left:auto;flex:none;display:grid;place-items:center;
+    width:16px;height:16px;padding:0;border:0;border-radius:4px;cursor:pointer;
+    background:none;color:var(--faint);opacity:0;transition:opacity .12s ease}
+  .rgrph:hover .rgadd,.rgrph .rgadd:focus-visible{opacity:1}
+  .rgrph .rgadd:hover{background:var(--acc-bg);color:var(--acc)}
+  .rsort{flex:none;display:grid;place-items:center;width:26px;padding:0;
+    background:none;border:1px solid var(--line);border-radius:6px;
+    color:var(--faint);cursor:pointer}
+  .rsort:hover:not(:disabled){color:var(--ink);border-color:var(--acc)}
+  /* Greyed, not hidden: see the markup comment. */
+  .rsort:disabled{opacity:.38;cursor:default}
+  .rsort[aria-pressed="true"]{color:var(--acc);border-color:var(--acc)}
+  .rlist{list-style:none;margin:0;padding:0 6px}
+  .rlist button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:6px;
+                padding:6px 8px;cursor:pointer;color:var(--muted)}
+  .rlist button:hover{background:var(--acc-bg);color:var(--ink)}
+  .rlist button[aria-current="true"]{background:var(--acc-bg);color:var(--ink)}
+  .rlist .t{font-size:12px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;
+            text-overflow:ellipsis;display:block}
+  .rlist .m{font:500 9px/1.4 var(--mono);color:var(--faint);display:flex;gap:5px;margin-top:2px}
+  /* Two-tab rail: Home is the organisation surface, Code is the work surface.
+     Sessions used to compete with the org nav for the same scroll column. */
+  .rtabs{display:flex;gap:3px;padding:2px 10px 8px}
+  .rtabs button{flex:1;background:none;border:1px solid var(--line);border-radius:6px;
+    padding:6px 0;font:600 11px/1 var(--sans);color:var(--faint);cursor:pointer}
+  .rtabs button:hover{color:var(--ink)}
+  .rtabs button[aria-selected="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .rtab[hidden]{display:none}
+  .rtab .newBtn{margin-top:2px}
+  /* Rendered transcript text. Sized to sit inside the 78ch reading column. */
+  .md{overflow-wrap:anywhere}
+  .md .md-p{margin:0 0 8px}
+  .md .md-p:last-child{margin-bottom:0}
+  .md .md-h{margin:12px 0 6px;font-weight:650;line-height:1.3;font-size:1.05em}
+  .md h1.md-h{font-size:1.3em} .md h2.md-h{font-size:1.18em} .md h3.md-h{font-size:1.07em}
+  .md .md-l{margin:0 0 8px;padding-left:20px}
+  .md .md-l li{margin:2px 0}
+  .md .md-q{margin:0 0 8px;padding:2px 0 2px 10px;border-left:2px solid var(--line);color:var(--muted)}
+  .md .md-hr{border:0;border-top:1px solid var(--line-soft);margin:12px 0}
+  .md .md-code{background:var(--acc-bg);border:1px solid var(--line-soft);border-radius:4px;
+    padding:1px 4px;font-family:var(--mono);font-size:.92em}
+  .md .md-pre{background:var(--code-bg,rgba(0,0,0,.22));border:1px solid var(--line-soft);
+    border-radius:7px;padding:9px 11px;margin:0 0 8px;overflow-x:auto}
+  .md .md-pre code{font-family:var(--mono);font-size:.92em;background:none;border:0;padding:0;white-space:pre}
+  .md .md-a{color:var(--acc);text-decoration:underline;text-underline-offset:2px}
+  .md .md-a:hover{text-decoration-thickness:2px}
+  /* A wide table scrolls INSIDE its own box; the pane never scrolls sideways. */
+  .md .md-tw{overflow-x:auto;margin:0 0 8px}
+  .md .md-t{border-collapse:collapse;font-size:.95em;min-width:100%}
+  .md .md-t th,.md .md-t td{border:1px solid var(--line-soft);padding:4px 8px;text-align:left;vertical-align:top}
+  .md .md-t th{background:var(--acc-bg);font-weight:650}
+  /* ── Directory view ────────────────────────────────────────────────────
+     A port of the PUBLISHED domains page (lib/domains_page.py -> the GitHub
+     Pages site) into the panel, so the in-app view and the published one read
+     as the same document. Every rule is scoped under .dpage: the generator uses
+     generic names (.chip .grid .info .count .tree .sub) and two of them already
+     mean something else in this file. */
+  /* minmax(0,…) NOT 1fr. A bare `1fr` is minmax(auto,1fr), and `auto` floors at
+     MIN-CONTENT -- so the charter titles and the lane table sized the column to
+     973px inside a 385px pane and the whole view overflowed its own container.
+     minmax(0,…) lets the column shrink and hands the overflow to the scrollers
+     that already exist (.lanewrap). */
+  .dpage{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
+  .dpage > *{min-width:0}          /* grid items default to min-width:auto -- same trap */
+  .dpage nav{position:sticky;top:0;align-self:start;font-size:12px;min-width:0}
+  /* AFTER the sticky rule on purpose: a container query carries no extra
+     specificity, so source order is what decides. Declared before it, this was
+     silently overridden by the very rule it exists to undo. */
+  @container (max-width:720px){
+    .dpage{grid-template-columns:minmax(0,1fr)}
+    /* STATIC when collapsed. Sticky is right beside the content and wrong ON TOP
+       of it: in one column the TOC stopped being a rail and became an overlay,
+       printing itself over the department names underneath. */
+    .dpage nav{position:static}
+  }
+  .dpage nav a{display:flex;align-items:center;gap:7px;color:var(--ink);
+    text-decoration:none;padding:5px 6px;border-radius:7px}
+  .dpage nav a:hover{background:var(--acc-bg)}
+  .dpage .chip{font:600 10px/1 var(--mono);color:var(--ink);background:var(--acc-bg);
+    border:1px solid var(--acc);border-radius:5px;padding:2px 6px;flex:none}
+  .dpage .chip.big{font-size:11.5px;padding:5px 9px}
+  .dpage .dhead h1{font-family:var(--serif);font-size:20px;font-weight:600;margin:0}
+  .dpage .rootdesc{color:var(--muted);font-size:12.5px;margin:5px 0 16px;max-width:60ch}
+  .dpage .dept{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;
+    padding:15px 16px;margin-bottom:14px;scroll-margin-top:10px}
+  .dpage .dept:target{border-color:var(--acc)}
+  .dpage .dept header{display:flex;gap:11px;align-items:flex-start;margin-bottom:11px}
+  .dpage .dept h2{font-size:14px;margin:0;font-weight:650}
+  .dpage .desc{color:var(--muted);font-size:12px;margin-top:2px;max-width:58ch}
+  .dpage .charter{font-size:11.5px;color:var(--muted);margin-top:5px;max-width:58ch}
+  .dpage .charter span{font:600 9.5px/1 var(--mono);color:var(--acc);
+    border:1px dotted var(--acc);border-radius:4px;padding:2px 5px;margin-right:5px}
+  .dpage .count{margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted);
+    border:1px solid var(--line-soft);border-radius:999px;padding:3px 9px;flex:none}
+  .dpage .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}
+  .dpage .info{border:1.5px dashed var(--line-soft);border-radius:9px;padding:10px 12px;min-width:0}
+  .dpage .info b{display:inline-block;margin-left:7px;font-size:12.5px}
+  .dpage .info p{color:var(--muted);font-size:11.5px;margin-top:5px}
+  .dpage .info.empty{color:var(--muted);font-style:italic}
+  .dpage .cascade{margin-top:9px;border-top:1px dotted var(--line-soft);padding-top:7px}
+  .dpage .cascade summary{cursor:pointer;font-size:11px;color:var(--acc);list-style:none}
+  .dpage .cascade summary::-webkit-details-marker{display:none}
+  .dpage .cascade summary::before{content:"\25B8 ";font-size:9px}
+  .dpage .cascade[open] summary::before{content:"\25BE "}
+  .dpage .cascade .grid{margin-top:9px;grid-template-columns:1fr}
+  .dpage .navgrp summary{display:flex;align-items:center;gap:7px;padding:5px 6px;
+    border-radius:7px;cursor:pointer;list-style:none}
+  .dpage .navgrp summary::-webkit-details-marker{display:none}
+  .dpage .navgrp summary::before{content:"\25B8";font-size:9px;color:var(--faint)}
+  .dpage .navgrp[open] summary::before{content:"\25BE"}
+  .dpage .navgrp summary:hover{background:var(--acc-bg)}
+  .dpage .navgrp summary a{color:var(--ink);text-decoration:none;flex:1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dpage .navgrp summary a:hover{color:var(--acc)}
+  .dpage .navcount{font:600 9.5px/1 var(--mono);color:var(--muted);
+    border:1px solid var(--line-soft);border-radius:999px;padding:1px 6px}
+  .dpage .navkids{margin-left:11px;border-left:2px solid var(--line-soft);padding-left:7px}
+  .dpage .navkids a.dsub{font-size:11.5px;padding:4px 6px}
+  /* the org diagram: root box, connector, child boxes */
+  .dpage .dtree{margin:5px 0 14px;text-align:center}
+  .dpage .tnode{display:inline-block;background:var(--card);border:1.5px solid var(--acc);
+    border-radius:7px;padding:5px 11px;font-size:11.5px;font-weight:600}
+  .dpage .tnode.troot{background:var(--acc-bg)}
+  .dpage .tdown{width:2px;height:12px;background:var(--line);margin:0 auto}
+  .dpage .tkids{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;
+    position:relative;padding-top:12px}
+  .dpage .tkids::before{content:"";position:absolute;top:0;left:12%;right:12%;
+    height:2px;background:var(--line)}
+  .dpage .tkids .tnode{position:relative;border-width:1px;border-color:var(--line);font-weight:500}
+  .dpage .tkids .tnode::before{content:"";position:absolute;top:-12px;left:50%;
+    width:2px;height:12px;background:var(--line)}
+  .dpage .chsec{margin-top:18px;background:var(--card);border:1px solid var(--line-soft);
+    border-radius:12px;padding:15px 16px}
+  .dpage .chh{font-size:14px;margin:0 0 4px;font-weight:650}
+  .dpage .chempty{color:var(--muted);font-style:italic;font-size:12px}
+  .dpage .lanenote{color:var(--faint);font-size:11px;margin-bottom:6px}
+  .dpage .chdot{display:inline-flex;align-items:center;gap:5px;
+    font:600 10px/1 var(--mono);color:var(--muted)}
+  .dpage .chdot i{width:7px;height:7px;border-radius:50%;background:var(--line);
+    display:inline-block;flex:none}
+  .dpage .chdot.st-active i{background:var(--acc)}
+  .dpage .chdot.st-shipped i{background:var(--muted)}
+  .dpage .chdot.st-retired i,.dpage .chdot.st-paused i{background:transparent;
+    border:1.5px solid var(--muted)}
+  .dpage .chdot.st-retired{opacity:.65}
+  .dpage .chfil{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+  .dpage .chfil button{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface);
+    border:1px solid var(--line-soft);border-radius:999px;padding:5px 11px;cursor:pointer}
+  .dpage .chfil button:hover{border-color:var(--acc)}
+  .dpage .chfil button[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .dpage .chfil button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .dpage .lanewrap{overflow-x:auto}
+  .dpage .chtab{border-collapse:collapse;width:100%;font-size:12px}
+  .dpage .chtab thead th{text-align:left;font:600 10px/1 var(--mono);color:var(--faint);
+    text-transform:uppercase;letter-spacing:.06em;padding:0 8px 6px;white-space:nowrap}
+  /* A row header inherits the panel's global `th{text-transform:uppercase}`
+     (see ~:224), which turned every charter title into ALL CAPS -- the
+     published page renders them as written. Reset the inherited display
+     properties here rather than weakening the global rule, which the rest of
+     the panel's tables rely on. Geometry mirrors domains_page.py's own CSS:
+     single-line rows on a fixed 44px height. */
+  .dpage .chtab tbody th{text-align:left;font-weight:500;padding:6px 8px;
+    vertical-align:middle;text-transform:none;letter-spacing:0;
+    font-size:12px;white-space:nowrap;color:var(--ink)}
+  .dpage .chtab tbody td{padding:6px 8px;vertical-align:middle}
+  .dpage .chtab tr.chtr{height:44px}
+  .dpage .chtab tbody th .cht{color:var(--ink);border-bottom:1px dotted var(--acc)}
+  .dpage .chtab td.ckind{font:400 11px/1 var(--mono);color:var(--muted)}
+  .dpage .chtab td.cown{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .dpage .cown-here{font:600 10.5px/1 var(--mono);color:var(--muted)}
+  .dpage .lanetab thead th.lane{text-align:center;color:var(--muted);font-weight:600;
+    padding:0 6px 6px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  .dpage .lanetab td.lo,.dpage .lanetab td.ll,.dpage .lanetab td.ln{
+    text-align:center;padding:6px 4px;min-width:44px}
+  /* row separators, as the published table has them -- with single-line rows
+     the eye needs the rule to track a row across six lane columns */
+  .dpage .lanetab tbody td,.dpage .lanetab tbody th{
+    border-bottom:1px dotted var(--line-soft)}
+  .dpage .lanetab td.lo{background:var(--acc);color:var(--card);font-weight:700;border-radius:4px}
+  .dpage .lanetab td.ll{background:var(--acc-bg);color:var(--acc);font-weight:600;border-radius:4px}
+  .dpage .ctxt.ohide{opacity:0}
+  .dpage tr.obreak th,.dpage tr.obreak td{border-top:1px solid var(--line-soft)}
+  .dpage .chnone td{color:var(--muted);font-style:italic}
+  .dpage .dq{width:100%;margin-bottom:8px;padding:6px 9px;border:1px solid var(--line-soft);
+    border-radius:7px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px}
+  .dpage .dq:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .rtoggle{display:flex;gap:3px;padding:4px 8px 6px}
+  .rtoggle button{flex:1;background:none;border:1px solid var(--line);border-radius:5px;
+    padding:4px 6px;font:500 9.5px/1 var(--sans);color:var(--muted);cursor:pointer}
+  .rtoggle button[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .newBtn{margin:0 10px 10px;padding:8px 11px;border-radius:7px;border:0;width:calc(100% - 20px);
+    background:var(--ink);color:var(--bg);font:600 12px/1 var(--sans);display:flex;
+    align-items:center;justify-content:center;gap:7px;cursor:pointer}
+  .newBtn:hover{background:var(--acc);color:var(--on-acc)}
+  .newBtn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+
+  /* ══ operator-adjustable layout ══
+     The pane row used to be fixed: the browse pane always took the same share
+     and no pane could be got out of the way. These rules add exactly three
+     affordances — collapse a pane to a header strip, drag the browse/session
+     divider, and stack instead of overflowing at narrow widths — reusing the
+     existing .pane/.ph/.pb vocabulary rather than inventing a second one. */
+  .pane.collapsed{flex:0 0 38px;min-width:38px;max-width:38px}
+  .pane.collapsed .pb,.pane.collapsed .pc,.pane.collapsed .tabs,
+  .pane.collapsed .src,.pane.collapsed [data-close]{display:none}
+  .pane.collapsed .ph{flex-direction:column;align-items:center;height:100%;
+    padding:9px 4px;border-bottom:0;flex-wrap:nowrap;gap:9px}
+  .pane.collapsed .ph h3{writing-mode:vertical-rl;max-width:none;max-height:100%;
+    font-size:11.5px;overflow:hidden;text-overflow:ellipsis}
+  .pfold{background:none;border:0;padding:3px;border-radius:4px;color:var(--faint);
+    cursor:pointer;display:flex;flex:none}
+  .pfold:hover{color:var(--ink);background:var(--acc-bg)}
+  .pfold:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .pfold svg{transition:transform .12s ease}
+  .pane.collapsed .pfold svg{transform:rotate(180deg)}
+  /* the divider is a real <button> so it is keyboard-reachable, not a bare div */
+  .pdiv{flex:0 0 9px;align-self:stretch;position:relative;cursor:col-resize;
+        background:none;border:0;padding:0;border-radius:4px}
+  .pdiv::after{content:"";position:absolute;inset:0 3px;border-radius:3px;background:var(--line-soft)}
+  .pdiv:hover::after,.pdiv.dragging::after{background:var(--acc)}
+  .pdiv:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+
+  /* collapsible sections INSIDE the browse pane (Departments, Charters, …) */
+  .fold{border:1px solid var(--line-soft);border-radius:9px;margin-bottom:11px;overflow:hidden}
+  .fold>.fh{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;
+    padding:8px 11px;cursor:pointer;text-align:left;color:var(--faint);
+    font:600 9.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase}
+  .fold>.fh:hover{background:var(--acc-bg);color:var(--ink)}
+  .fold>.fh:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .fold>.fh .cv{margin-left:auto;font:500 9.5px/1 var(--mono);color:var(--muted);
+                text-transform:none;letter-spacing:0}
+  .fold>.fh svg{width:11px;height:11px;flex:none;transition:transform .12s ease}
+  .fold[data-open="0"]>.fh svg{transform:rotate(-90deg)}
+  .fold>.fc{padding:11px}
+  .fold[data-open="0"]>.fc{display:none}
+
+  /* Narrow viewport: stack the panes instead of scrolling sideways. Same
+     breakpoint as .app's own stack (860px) so the rail moving to the top and
+     the panes going vertical happen together, rather than leaving a 40px band
+     where the rail has stacked but the panes still scroll horizontally. */
+  @media(max-width:860px){
+    .panes{flex-direction:column;overflow-x:hidden;overflow-y:auto}
+    .pane{flex:0 0 auto!important;width:auto!important;max-width:none;min-height:230px}
+    .pane.collapsed{flex:0 0 auto!important;min-width:0;max-width:none;min-height:0}
+    .pane.collapsed .ph{flex-direction:row;height:auto;padding:9px 11px;
+      border-bottom:1px solid var(--line-soft)}
+    .pane.collapsed .ph h3{writing-mode:horizontal-tb;max-width:190px}
+    .pane.collapsed .pfold svg{transform:rotate(-90deg)}
+    .pdiv{display:none}
+    /* The second `.app{height:auto}` lived here and had to go for the same reason
+       as the one at the top of this sheet: with body overflow:hidden it clips
+       instead of scrolling, and everything below the fold -- the composer included
+       -- becomes unreachable. The panes column above owns the scrolling now. */
+  }
+
+  /* ── a selectable option that can also be refused, with the refusal shown ── */
+  .opt{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;cursor:pointer;
+    color:inherit;font:inherit;background:var(--inset);border:1px solid var(--line);
+    border-radius:9px;padding:10px 12px;margin-bottom:7px}
+  .opt:hover:not(:disabled){border-color:var(--acc);background:var(--acc-bg)}
+  .opt:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .opt[aria-checked="true"]{border-color:var(--acc);background:var(--acc-bg)}
+  .opt:disabled{cursor:not-allowed;opacity:.7;border-style:dashed}
+  .opt .rd{width:13px;height:13px;border-radius:50%;border:1px solid var(--line);
+           flex:none;margin-top:2px}
+  .opt[aria-checked="true"] .rd{border-color:var(--acc);background:var(--acc);
+           box-shadow:inset 0 0 0 2.5px var(--card)}
+  .opt .oi{min-width:0;flex:1}
+  .opt .on{font-size:12.5px;font-weight:600;color:var(--ink);display:flex;
+           align-items:center;gap:7px;flex-wrap:wrap}
+  .opt .od{font-size:11px;color:var(--muted);margin-top:3px}
+  .opt .why{font:500 10px/1.5 var(--mono);color:var(--block);margin-top:5px;
+            white-space:normal;overflow-wrap:anywhere}
+  /* ── run state ──────────────────────────────────────────────────────────
+     There was previously ONE animation in this whole file, so a running turn and a
+     finished one looked identical and the operator could not tell whether anything
+     was happening. Every state below is driven by a frame the SERVER sent; nothing
+     here animates on a guess. */
+  @keyframes sutraPulse{0%,100%{opacity:.35}50%{opacity:1}}
+  @keyframes sutraSpin{to{transform:rotate(360deg)}}
+  @keyframes sutraEll{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+  .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;
+    margin-right:5px;vertical-align:middle;animation:sutraPulse 1.15s ease-in-out infinite}
+  .working{margin-top:6px;color:var(--faint);display:flex;align-items:center;font-size:12px}
+  .working .ell::after{content:"";animation:sutraEll 1.4s steps(1,end) infinite}
+  /* ── the "it is thinking" mark ──────────────────────────────────────────
+     There was no live indicator while a reply was being composed -- only a
+     static word and three dots, which reads the same whether the agent is
+     working or wedged. This is the Sutra mark itself, breathing: it rotates
+     slowly and pulses, so motion means "still alive" at a glance.
+     Deliberately NOT a copy of another product's glyph -- the shape is the
+     one already on the rail, so activity looks like this app. */
+  .spark{display:inline-block;width:13px;height:13px;margin-right:6px;flex:none;
+         color:var(--acc);animation:sutraSpark 2.6s ease-in-out infinite;
+         transform-origin:50% 50%}
+  .spark svg{display:block;width:100%;height:100%}
+  @keyframes sutraSpark{
+    0%   {transform:rotate(0deg)   scale(.82); opacity:.55}
+    50%  {transform:rotate(180deg) scale(1);   opacity:1}
+    100% {transform:rotate(360deg) scale(.82); opacity:.55}
+  }
+  /* The same mark in the running pill, smaller and inheriting the pill colour. */
+  .pill .spark{width:10px;height:10px;margin-right:4px;color:inherit}
+  .toolRow{margin-top:7px;display:flex;flex-direction:column;gap:3px}
+  .trow{display:flex;align-items:baseline;gap:7px;font-size:11.5px;padding:3px 7px;
+    border:1px solid var(--line-soft);border-radius:6px;background:var(--inset);min-width:0}
+  .trow .tstate{flex:none;width:7px;height:7px;border-radius:50%;background:var(--faint)}
+  .trow.run .tstate{background:none;border:1.5px solid var(--acc);border-top-color:transparent;
+    width:9px;height:9px;animation:sutraSpin .7s linear infinite}
+  .trow.ok  .tstate{background:var(--ok)}
+  .trow.bad .tstate{background:var(--block)}
+  .trow.unk .tstate{background:var(--warn)}
+  .trow .tname{font:600 11.5px/1.5 var(--mono);color:var(--ink);flex:none}
+  .trow .tsum{color:var(--faint);font-family:var(--mono);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+  .trow .tverdict{margin-left:auto;flex:none;color:var(--faint);font-size:10px;
+    text-transform:uppercase;letter-spacing:.06em}
+  .trow.run .tverdict{color:var(--acc)}
+  .trow.bad .tverdict{color:var(--block)}
+  .trow.unk .tverdict{color:var(--warn)}
+  /* Respect the OS setting: a spinner is decoration, not information. The colour
+     and the verdict text carry the same state without motion. */
+  @media (prefers-reduced-motion: reduce){
+    .dot,.trow.run .tstate,.working .ell::after,.spark{animation:none}
+    /* still visible, just still -- the word next to it says what is happening */
+    .spark{opacity:1;transform:none}
+  }
+
+  /* ── side chat ──────────────────────────────────────────────────────────
+     Visually subordinate to the main transcript: inset, dimmer, a rule above it.
+     It must never read as a peer of the conversation it branches from. */
+  .sidewrap{border-top:1px solid var(--line);background:var(--inset);
+    display:flex;flex-direction:column;max-height:44%;min-height:0}
+  .sidehead{display:flex;align-items:baseline;gap:8px;padding:8px 11px 6px}
+  .sidehead b{font-size:11.5px}
+  .sidehead span{color:var(--faint);font-size:10.5px;line-height:1.4;flex:1;min-width:0}
+  .sidehead .ib{flex:none;align-self:flex-start}
+  .sidebody{overflow-y:auto;padding:0 11px;flex:1;min-height:0}
+  .sidebody .turn{margin-bottom:9px}
+  .sidezero{color:var(--faint);font-size:11.5px;line-height:1.5;margin:0 0 9px}
+  .sidewrap .pc{border-top:1px solid var(--line-soft)}
+
+  /* ── composer: attachments, model, stop ─────────────────────────────────*/
+  .attrow{display:flex;flex-wrap:wrap;gap:5px;padding:0 11px 7px}
+  .att{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:3px 5px 3px 8px;
+    border:1px solid var(--line);border-radius:999px;background:var(--inset);max-width:260px}
+  .att.bad{border-color:var(--block-line);background:var(--block-bg)}
+  .att .attn{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .att .atts{color:var(--faint);flex:none}
+  .att.bad .atts{color:var(--block)}
+  .att .attx{border:0;background:none;color:var(--faint);cursor:pointer;font-size:14px;
+    line-height:1;padding:0 2px;font-family:inherit}
+  .att .attx:hover{color:var(--ink)}
+  /* ONE rule for both composer selects. .permsel shipped without any CSS and fell
+     back to the UA stylesheet -- a white box in a dark theme, sitting directly
+     beside a correctly themed .modelsel. Same class of regression as the composer
+     textarea: a new control added next to an existing one, without inheriting the
+     rule that made the existing one belong. They are styled together now so the
+     next one added here cannot drift either. */
+  .modelsel,.permsel{flex:none;background:var(--inset);border:1px solid var(--line);
+    border-radius:7px;color:var(--muted);font:11px/1 var(--sans);padding:6px 5px;
+    max-width:112px;cursor:pointer;
+    /* the UA select chrome is light-on-light in dark mode; drop it and draw our own */
+    -webkit-appearance:none;appearance:none;
+    padding-right:16px;
+    background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),
+                     linear-gradient(135deg,currentColor 50%,transparent 50%);
+    background-size:4px 4px,4px 4px;
+    background-position:calc(100% - 9px) 51%,calc(100% - 5px) 51%;
+    background-repeat:no-repeat}
+  /* ── usage meters ────────────────────────────────────────────────────────
+     One row per rate-limit window. The bar is the primary read and the number is
+     the confirmation, not the other way round: "how close am I" is answered by a
+     length at a glance, and 13 vs 31 is not. Colour is a THRESHOLD signal (ok /
+     warn>=70 / block>=80, the guard's own thresholds), never decoration -- so the
+     percentage carries the same class as the bar and the two cannot disagree. */
+  .urow{padding:9px 0}
+  .urow + .urow{border-top:1px solid var(--line-soft)}
+  .uhead{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .ulabel{font:500 12px/1 var(--sans);color:var(--ink)}
+  .ureset{margin-left:auto;font:400 10.5px/1 var(--sans);color:var(--faint);
+    white-space:nowrap}
+  .upct{font:600 12px/1 var(--mono);font-variant-numeric:tabular-nums;min-width:38px;
+    text-align:right}
+  .upct.p-ok{color:var(--ok)} .upct.p-warn{color:var(--warn)} .upct.p-block{color:var(--block)}
+  .ubar{height:6px;border-radius:999px;background:var(--inset);
+    border:1px solid var(--line-soft);overflow:hidden}
+  /* A window at 0% must still render as an empty track, not as a missing element:
+     "0%" and "not reported" are different facts and have to look different. */
+  .ubar i{display:block;height:100%;border-radius:999px;
+    transition:width .25s ease;min-width:0}
+  .ubar i.p-ok{background:var(--ok)}
+  .ubar i.p-warn{background:var(--warn)}
+  .ubar i.p-block{background:var(--block)}
+
+  /* Live mark: this transcript is being written in Claude right now. Pulsed,
+     because the one thing it has to say is that it is CHANGING -- a static
+     badge reads as a label. Respects reduced-motion: the colour still carries
+     the meaning without the animation. */
+  .livedot{color:var(--ok);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+  .livedot::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ok);
+    animation:livepulse 1.6s ease-in-out infinite}
+  @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){ .livedot::before{animation:none} }
+
+  /* ── routine run threads ─────────────────────────────────────────────────
+     A run row is a control, so it says so: pointer, hover, and a focus ring for
+     the keyboard path. The dot is the unread mark -- drawn as an empty ring when
+     read rather than removed, so the column does not reflow as you work down it. */
+  .runrow[data-runopen]{cursor:pointer}
+  .runrow[data-runopen]:hover>td{background:var(--acc-bg)}
+  .runrow.sel>td{background:var(--acc-bg)}
+  .runrow[data-runopen]:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .rundot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;
+    border:1px solid var(--line);background:none;vertical-align:middle}
+  .rundot.on{background:var(--acc);border-color:var(--acc)}
+  .runthread{margin-top:10px;border:1px solid var(--line);border-radius:9px;
+    background:var(--inset);padding:10px 12px}
+  .runhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:7px;
+    padding-bottom:7px;border-bottom:1px solid var(--line-soft)}
+  .runhead b{font:600 11.5px/1 var(--sans)}
+  .runhead .btn{margin-left:auto;padding:4px 9px;font-size:10px}
+  .runhead .why{color:var(--faint);font-size:10.5px}
+  .runthread .md{font-size:12.5px;line-height:1.6}
+
+  /* ── repository bar ──────────────────────────────────────────────────────
+     A thin strip between the transcript and the composer: what repository this
+     session is in, what branch, how far from its upstream, and what is uncommitted.
+     Deliberately one line and quiet -- it is context for the message you are
+     writing, not a screen. */
+  .repobar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:5px 11px;border-top:1px solid var(--line-soft);
+    background:var(--surface);font:500 10.5px/1.6 var(--mono);color:var(--faint)}
+  .repobar.off{color:var(--line)}
+  .rbrepo{color:var(--muted);font-weight:600}
+  .rbbranch{color:var(--acc);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    max-width:190px}
+  .rbahead{color:var(--ok)} .rbbehind{color:var(--warn)}
+  .rbnoup{color:var(--faint);font-style:italic}
+  .rbdiff .add{color:var(--ok);font-weight:600}
+  .rbdiff .rem{color:var(--block);font-weight:600}
+  .rbclean{color:var(--faint)}
+  .rbnone{font-style:italic}
+  .repobar button{background:none;border:1px solid var(--line);border-radius:5px;
+    color:var(--muted);font:600 9.5px/1 var(--mono);padding:3px 7px;cursor:pointer}
+  .repobar button:hover{border-color:var(--acc);color:var(--acc)}
+  .repobar .rbpr{margin-left:auto}
+  .repobar .rbprs+.rbpr{margin-left:0}
+  .repobar .rbprs{margin-left:auto}
+
+  .prlist{border-top:1px solid var(--line-soft);background:var(--inset);
+    padding:5px 11px;max-height:190px;overflow-y:auto}
+  .prrow{display:flex;align-items:center;gap:8px;padding:4px 0;
+    font:500 10.5px/1.5 var(--mono)}
+  .prrow+.prrow{border-top:1px solid var(--line-soft)}
+  .prnum{color:var(--acc);font-weight:600;flex:none}
+  .prt{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+  .prbr{color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    max-width:150px;flex:none}
+  .prnone{margin:4px 0;color:var(--faint);font-size:11px}
+
+  .prform{border-top:1px solid var(--line);background:var(--inset);padding:9px 11px}
+  .prform.done{display:flex;align-items:flex-start;gap:8px;font-size:11px;line-height:1.45}
+  .prform.done b{color:var(--ink)} .prform.done span{color:var(--muted)}
+  .prform.done .ib{margin-left:auto;flex:none}
+  .prfrow{display:flex;gap:8px}
+  .prform label{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;
+    font:600 9px/1 var(--mono);letter-spacing:.06em;color:var(--faint);margin-bottom:6px}
+  .prform label.prfw{width:100%}
+  .prform input,.prform textarea{background:var(--card);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.4 var(--sans);padding:6px 8px;
+    min-width:0;resize:vertical}
+  .prform input:focus,.prform textarea:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .prfnote{font-size:10.5px;line-height:1.45;color:var(--faint);margin-bottom:7px}
+  .prfnote.bad{color:var(--block)}
+  .prfbtns{display:flex;gap:7px}
+  .prfbtns button{background:var(--card);border:1px solid var(--line);border-radius:6px;
+    color:var(--muted);font:600 10px/1 var(--mono);padding:6px 11px;cursor:pointer}
+  .prfbtns button:first-child{border-color:var(--acc);color:var(--acc)}
+  .prfbtns button:disabled{opacity:.5;cursor:default}
+
+  /* ── usage chip, in the composer row ─────────────────────────────────────
+     A ring, not a bar: the composer row is a horizontal strip and a horizontal
+     meter here would read as a progress bar for the message you are typing. The
+     ring is drawn with conic-gradient off a single --p custom property, so there
+     is no second element to keep in sync with the number beside it. */
+  .uchip{flex:none;display:inline-flex;align-items:center;gap:5px;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;color:var(--muted);
+    font:600 11px/1 var(--mono);font-variant-numeric:tabular-nums;padding:5px 7px;cursor:pointer}
+  .uchip:hover{color:var(--ink);border-color:var(--acc)}
+  .uchip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .uchip .uring{width:11px;height:11px;border-radius:50%;flex:none;
+    background:conic-gradient(currentColor calc(var(--p,0)*1%), var(--line) 0);
+    /* the hole: without it this is a pie, and a pie at 4% is an invisible sliver */
+    -webkit-mask:radial-gradient(circle, transparent 46%, #000 47%);
+            mask:radial-gradient(circle, transparent 46%, #000 47%)}
+  .uchip.p-ok{color:var(--muted)}
+  .uchip.p-ok:hover{color:var(--ink)}
+  /* Threshold states are LOUD on purpose: at 70 and 80 the guard changes what it
+     lets through, and the chip must change with it rather than after it. */
+  .uchip.p-warn{color:var(--warn);border-color:var(--warn)}
+  .uchip.p-block{color:var(--block);border-color:var(--block);
+    background-color:color-mix(in srgb,var(--block) 12%,var(--inset))}
+  .uchip.off{color:var(--faint)}
+
+  /* A SMALL FLOATING CARD anchored above the chip, not a full-width block in flow.
+     It was in flow first, on the reasoning that an overlay would hide the last
+     reply -- but at pane width that made a ~200px band that shoved the whole
+     transcript up every time you glanced at a percentage. A 268px card covers a
+     corner for a second instead. Founder call, and the right one: the thing being
+     read is three numbers, not a document. */
+  .upop{position:absolute;bottom:calc(100% + 6px);right:8px;z-index:30;
+    width:268px;max-width:calc(100% - 16px);
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px 9px;
+    /* lifted off the transcript it overlaps, or the two read as one surface */
+    box-shadow:0 10px 28px rgba(0,0,0,.36), 0 2px 6px rgba(0,0,0,.22);
+    max-height:min(320px, 60vh);overflow-y:auto}
+  .upophead{display:flex;align-items:center;gap:7px;margin-bottom:2px}
+  .upophead b{font:600 11px/1 var(--sans)}
+  .upophead .ib{margin-left:auto}
+  /* Tighter than the full screen's rows: this is a glance, not a report. */
+  .upopbody .urow{padding:7px 0}
+  .upopbody .urow:first-child{padding-top:5px}
+  .upopbody .ulabel{font-size:11.5px}
+  .upopbody .upct{font-size:11.5px}
+  .upopnote{margin-top:7px;font-size:10px;line-height:1.4;color:var(--faint)}
+  .upopnote.w{margin:0 0 6px;color:var(--warn)}
+
+  /* ── working-directory control ───────────────────────────────────────────
+     Sits in the composer row because that is where you are about to use it, the
+     same argument the permission selector is placed by. It shows the BASENAME:
+     the full path is 40+ chars of mostly-shared prefix and would crowd out the
+     message box, so the folder name is the label and the whole path is the title.
+     Styled off .modelsel/.permsel so a third control in this row cannot drift
+     from the two already there. */
+  .cwdbtn{flex:none;display:inline-flex;align-items:center;gap:5px;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;color:var(--muted);
+    font:11px/1 var(--sans);padding:6px 8px;max-width:118px;cursor:pointer}
+  .cwdbtn:hover{color:var(--ink);border-color:var(--acc)}
+  .cwdbtn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .cwdbtn svg{width:12px;height:12px;flex:none;opacity:.75}
+  .cwdbtn .cwdn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* An override is a state worth seeing: this session is NOT where the rest of the
+     app says sessions run. */
+  .cwdbtn.over{color:var(--acc);border-color:var(--acc)}
+  .cwdrow{display:flex;gap:7px;align-items:center;padding:8px 11px;
+    border-top:1px solid var(--line-soft);background:var(--surface)}
+  .cwdrow input{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.3 var(--mono);padding:6px 8px}
+  .cwdrow input:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .cwdrow button{background:var(--inset);border:1px solid var(--line);border-radius:6px;
+    color:var(--muted);font:600 10px/1 var(--mono);padding:6px 9px;cursor:pointer}
+  .cwdrow button:hover{color:var(--ink);border-color:var(--acc)}
+  .cwdnote{padding:0 11px 8px;font-size:10.5px;color:var(--faint);line-height:1.45;
+    background:var(--surface)}
+  .cwdnote.bad{color:var(--block)}
+  .modelsel:hover,.permsel:hover{color:var(--ink);border-color:var(--line)}
+  .modelsel:focus-visible,.permsel:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  /* A mode that writes files without asking is not a neutral preference, and the
+     composer is where you are about to use it. It carries the warn colour so the
+     state is legible at a glance rather than only inside the dropdown. */
+  .permsel.warn{color:var(--warn);border-color:var(--warn);
+    background-color:color-mix(in srgb,var(--warn) 12%,var(--inset))}
+  .permsel.warn:hover{color:var(--warn)}
+  /* Stop is destructive-ish and must not look like Send: same slot, different colour,
+     square glyph. Reusing the send arrow would make the two indistinguishable at a glance. */
+  .send.stop{background:var(--block);color:#fff}
+  .send.stop:hover{filter:brightness(1.1)}
+  [data-sask].dropping{outline:2px dashed var(--acc);outline-offset:2px}
+  .topts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px;
+    padding:9px 11px;margin:0 0 7px;background:var(--surface);
+    border:1px solid var(--line-soft);border-radius:9px}
+  .topts label{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .topts label.wide{grid-column:1/-1}
+  .topts span{font:600 9.5px/1 var(--mono);letter-spacing:.05em;color:var(--faint);
+    text-transform:uppercase}
+  .topts input,.topts select{background:var(--inset);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.3 var(--sans);padding:5px 7px;min-width:0}
+  .topts input:focus,.topts select:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .topts-note{grid-column:1/-1;margin:0;color:var(--faint);font-size:10.5px;line-height:1.45}
+  .tout{background:none;border:1px solid var(--line);border-radius:5px;color:var(--muted);
+    font:600 9.5px/1 var(--mono);padding:2px 6px;cursor:pointer;margin-left:4px}
+  .tout:hover{border-color:var(--acc);color:var(--acc)}
+  /* The terminal control sits beside `output` and does something different in kind
+     -- it leaves the transcript and puts a command in front of you -- so it carries
+     the accent rather than reading as a second copy of the same toggle. */
+  .tout.tterm{border-color:var(--acc-bg);color:var(--acc)}
+  .tout.tterm:hover{border-color:var(--acc);background:var(--acc-bg)}
+  .toutbody{margin:2px 0 6px 18px;padding:7px 9px;background:var(--inset);
+    border:1px solid var(--line-soft);border-radius:6px;color:var(--muted);
+    font:11px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;
+    max-height:260px;overflow:auto}
+  /* The composer is a TEXTAREA now. A textarea does not inherit the row's font
+     or vertical centring the way an <input> did, and it ships with a resize
+     grabber and a scrollbar that fight the auto-grow -- so all three are stated
+     here rather than left to the UA stylesheet.
+     `field-sizing:content` sizes it natively where supported; autoGrowComposer()
+     is the fallback everywhere else, and the two agree. */
+  /* Sizing only. Colour, border and focus ring come from `.pc input,.pc textarea`
+     above, and this rule must not quietly take them back:
+     `font:inherit` did exactly that -- the shorthand reset font-size to the
+     inherited 16px and, being later in the sheet at equal specificity, beat the
+     12px the composer had as an <input>. The result was a fat, UA-bordered box
+     with a browser focus ring, which is the regression this restores. */
+  textarea[data-sask]{
+    /* `min-width:0` used to be here and it is what let the box reach ZERO width
+       when the row ran out of room -- flex will happily shrink a min-width:0 item
+       to nothing before it wraps anything. A floor plus a basis makes the message
+       box claim a whole line of its own instead of vanishing. 168px is about 20
+       characters at this font: the point below which typing is useless anyway. */
+    flex:1 1 168px; min-width:168px; resize:none; overflow-y:hidden;
+    line-height:1.45; padding:0;
+    max-height:200px; field-sizing:content;
+  }
+
+  /* ── editor ─────────────────────────────────────────────────────────────
+     A textarea, deliberately: see the comment on SCREENS.editor. Monospace, tab
+     accepted as indentation, generous height. */
+  .fslist{display:flex;flex-direction:column;gap:3px;max-height:38vh;overflow-y:auto}
+  .fsf{display:flex;align-items:baseline;width:100%;text-align:left}
+  .fsf.sel{border-color:var(--acc);background:var(--acc-bg)}
+  .fsf .on{font-family:var(--mono);font-size:11.5px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .fsf .od{margin-left:auto;flex:none;color:var(--faint);font-size:10.5px}
+  .edbar{display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap}
+  .edbar .btn{margin-left:0}
+  .edbar .btn:first-of-type{margin-left:auto}
+  .edta{width:100%;min-height:46vh;resize:vertical;background:var(--inset);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--ink);
+    font:12px/1.6 var(--mono);white-space:pre;overflow-wrap:normal;overflow-x:auto;
+    tab-size:2}
+  .edta:focus{outline:2px solid var(--acc);outline-offset:-1px}
+
+  /* ── git ────────────────────────────────────────────────────────────────
+     Diff colours are the only semantic colour here; everything else reuses the
+     panel's existing tokens so a diff does not read as a different product. */
+  .gitf{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left}
+  .gitf.sel{border-color:var(--acc);background:var(--acc-bg)}
+  .gcode{flex:none;font:700 10px/1.6 var(--mono);color:var(--warn);background:var(--warn-bg);
+    border:1px solid var(--warn-line);border-radius:4px;padding:0 5px;min-width:22px;text-align:center}
+  .gcode.new{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-line)}
+  pre.diff{margin:0;padding:9px 11px;background:var(--inset);border:1px solid var(--line);
+    border-radius:8px;overflow-x:auto;font:11.5px/1.55 var(--mono);white-space:pre;
+    max-height:60vh;overflow-y:auto}
+  pre.diff span{display:block}
+  pre.diff .dadd{color:var(--ok);background:var(--ok-bg)}
+  pre.diff .ddel{color:var(--block);background:var(--block-bg)}
+  pre.diff .dhunk{color:var(--acc);background:var(--acc-bg)}
+  pre.diff .dh{color:var(--faint)}
+
+  /* ── terminal pane ──────────────────────────────────────────────────────
+     Sits to the RIGHT of the panes row, full height, its own column. It is a
+     sibling of #panes (see the markup) so render() cannot tear the PTY down. */
+  /* Width is owned by the GRID TRACK (--termw on .app), not by the pane: `flex` on a
+     grid item does nothing, and an `auto` track measured the iframe's intrinsic width
+     as zero, collapsing the pane to 0px. The track is an explicit pixel value the
+     drag handle writes, so the size is deterministic and adjustable. */
+  .termpane{position:relative;min-width:0;overflow:visible;display:flex;flex-direction:column;
+    border-left:1px solid var(--line);background:var(--surface);
+    border-radius:var(--r)}
+  .termpane[hidden]{display:none}
+  /* Drag handle. Mirrors .pdiv (the browse-pane divider) so resizing feels the same
+     in both places rather than introducing a second gesture vocabulary. */
+  .termgrip{position:absolute;left:-5px;top:0;bottom:0;width:10px;cursor:col-resize;
+    background:none;border:0;padding:0;z-index:2}
+  .termgrip:hover::after,.termgrip:focus-visible::after{content:"";position:absolute;
+    left:4px;top:0;bottom:0;width:2px;background:var(--acc);border-radius:2px}
+  body.termdrag{cursor:col-resize;user-select:none}
+  body.termdrag iframe{pointer-events:none}   /* the iframe would swallow mousemove */
+  .termpane .ph{display:flex;align-items:center;gap:7px}
+  .termpane .termcwd{margin-left:auto;font:500 10px/1 var(--mono);color:var(--faint);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
+  .termbody{padding:0;overflow:hidden;flex:1;min-height:0;display:flex}
+  /* `display:flex` beats the UA's `[hidden]{display:none}`, so switching to the
+     Preview tab left #termBody laid out at zero height instead of removed. The
+     terminal's ResizeObserver then fit itself to nothing (2 cols x 1 row) and
+     pushed that winsize into the PTY -- which is why coming back to the tab
+     showed the TUI reflowed into a garbled sliver. Hidden must mean gone. */
+  .termbody[hidden]{display:none}
+  .termbody iframe{border:0;width:100%;height:100%;flex:1;background:var(--bg)}
+  .termzero{padding:16px;font-size:12px;color:var(--muted)}
+  .sidetabs{flex:none}
+  .prevbar{display:flex;gap:6px;padding:8px 9px 0}
+  .prevbar .wdin{flex:1;min-width:0}
+  .prevnote{padding:6px 10px 8px;font-size:11px;color:var(--faint);line-height:1.45}
+  .prevframe{flex:1;min-height:0;display:flex}
+  .prevframe iframe{border:0;width:100%;height:100%;background:#fff}
+  #prevBody{flex-direction:column}
+  @media (max-width: 900px){ .termpane{flex:1 1 100%;border-left:0;border-top:1px solid var(--line)} }
+
+  /* ── workdir picker ─────────────────────────────────────────────────────
+     A text field rather than a native folder dialog: the server, not the browser,
+     is what has to be able to reach the path, and <input type="file" webkitdirectory>
+     hands back a sandboxed file list with no usable absolute path. In the Electron
+     shell a real chooser is possible, so the Browse button appears only there. */
+  .wdrow{display:flex;gap:7px;align-items:stretch}
+  .wdin{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);border-radius:7px;
+    padding:7px 10px;color:var(--ink);font:12px/1.4 var(--mono)}
+  .wdin:focus{outline:2px solid var(--acc);outline-offset:-1px}
+
+  /* ── forms ───────────────────────────────────────────────────────────────
+     A FORM LAYOUT, because .kv is not one. .kv is a key/value DISPLAY idiom:
+     a flex row with a fixed 82px label and a plain <span> value. Putting inputs
+     inside it produced every symptom reported at once -- the fields could not
+     stretch (a `flex:1` input inside a non-flex <span> does nothing, so every
+     box sat at its intrinsic width no matter how wide the window got), the
+     textarea could only ever grow downward, and the hint text ran inline off
+     the end of the row instead of wrapping under the field it explains.
+
+     One grid: a label column that stays put, and a field column that takes
+     everything else. Every control fills its column, so "wider window" means
+     "wider fields" without a single per-control width. */
+  .rform{display:grid;gap:2px}
+  .rfrow{display:grid;grid-template-columns:112px minmax(0,1fr);gap:10px;
+         align-items:start;padding:7px 0;border-bottom:1px solid var(--line-soft)}
+  .rfrow:last-of-type{border-bottom:0}
+  .rfrow > label{color:var(--faint);font:500 10.5px/1.5 var(--sans);
+                 letter-spacing:.06em;text-transform:uppercase;padding-top:8px}
+  /* min-width:0 so a long value cannot push the column wider than the grid --
+     the same auto/min-content trap that blew out the directory view. */
+  .rfield{min-width:0;display:flex;flex-direction:column;gap:5px}
+  /* One rule for every control in a form row: they fill the column and they
+     all look like each other. A bare <select> here previously fell back to the
+     UA stylesheet and rendered as a light box in a dark theme. */
+  .rfield input,.rfield select,.rfield textarea{
+    width:100%;box-sizing:border-box;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;padding:7px 10px;
+    color:var(--ink);font:12px/1.45 var(--sans);min-width:0}
+  .rfield textarea{font-family:var(--mono);resize:vertical;min-height:120px;
+                   line-height:1.55}
+  .rfield input:focus,.rfield select:focus,.rfield textarea:focus{
+    outline:2px solid var(--acc);outline-offset:-1px}
+  .rfield select{-webkit-appearance:none;appearance:none;cursor:pointer;
+    padding-right:26px;
+    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
+                     linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-size:4px 4px,4px 4px;
+    background-position:calc(100% - 14px) 52%,calc(100% - 10px) 52%;
+    background-repeat:no-repeat}
+  /* The hint BELOW the field, not beside it. Inline, it competed with the input
+     for the same row and both lost. */
+  .rfield .hint{color:var(--faint);font:11px/1.5 var(--sans);max-width:64ch}
+  /* A row of controls that belong together (a time, a schedule) stays on one
+     line and wraps as a unit rather than each control filling the column. */
+  .rinline{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+  .rinline input,.rinline select{width:auto;flex:none}
+  .rinline .sep{color:var(--faint)}
+  .rfoot{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  /* A transient note that must not push layout around or steal focus: it
+     reports something that already happened, and disappears on its own. */
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;
+    background:var(--card);border:1px solid var(--line);border-radius:9px;
+    padding:9px 13px;color:var(--ink);font:12px/1.4 var(--sans);
+    box-shadow:0 10px 30px rgba(0,0,0,.34);max-width:min(560px,90vw);
+    pointer-events:none}
+  /* In a narrow pane the 112px label column costs more than it earns -- at a
+     325px pane it was half the width, leaving the field it labels smaller than
+     the label. Stack instead: the label reads as a caption above its field and
+     the field gets the whole column. Same container the rest of the panel
+     already queries (.pane.browse sets container-type). */
+  @container (max-width:520px){
+    .rfrow{grid-template-columns:minmax(0,1fr);gap:4px}
+    .rfrow > label{padding-top:0}
+  }
+
+  /* ── onboarding ──────────────────────────────────────────────────────────
+     A first-run interstitial, not a tour. It states what this panel will do
+     with the operator's machine -- which CLI it drives, where it writes, what
+     authority the agent gets -- using the SAME live /api/providers and
+     /api/settings data the Settings screen renders. Nothing here is a mockup:
+     if claude is not on PATH, step 1 says so and the finish button still works,
+     because a panel that cannot chat can still browse the registry. */
+  .onb{position:fixed;inset:0;z-index:60;background:var(--bg);overflow:auto;
+    display:flex;align-items:flex-start;justify-content:center;padding:40px 20px}
+  .onb-card{width:100%;max-width:640px;background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--r);padding:28px 30px 24px}
+  .onb-card h1{font-family:var(--serif);font-size:25px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .onb-lede{color:var(--muted);font-size:13px;margin:0 0 22px}
+  .onb-step{display:flex;gap:13px;padding:15px 0;border-top:1px solid var(--line-soft)}
+  .onb-num{flex:none;width:22px;height:22px;border-radius:50%;background:var(--acc-bg);color:var(--acc);
+    font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .onb-b{flex:1;min-width:0}
+  .onb-b h3{font-size:13px;font-weight:600;margin:0 0 3px}
+  .onb-b p{font-size:12px;color:var(--muted);margin:0 0 7px}
+  .onb-fact{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;font-size:11.5px;
+    font-family:var(--mono);color:var(--faint);word-break:break-all}
+  .onb-foot{display:flex;gap:10px;align-items:center;justify-content:flex-end;
+    border-top:1px solid var(--line);padding-top:16px;margin-top:6px}
+  .onb-foot .sp{margin-right:auto;font-size:11px;color:var(--faint)}
+  .onb-go{background:var(--acc);color:var(--on-acc);border:none;border-radius:7px;
+    padding:9px 17px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .onb-go:hover{filter:brightness(1.08)}
+  .onb-skip{background:none;border:1px solid var(--line);color:var(--muted);border-radius:7px;
+    padding:9px 15px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .onb-skip:hover{color:var(--ink);border-color:var(--muted)}

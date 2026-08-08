@@ -47,23 +47,31 @@ const assert = require("assert");
 
 const PANEL = path.join(__dirname, "static", "panel.html");
 
-/* ── 1. extract the script exactly as the browser would ────────────────── */
-
-function extractScript(html) {
-  const open = html.indexOf("<script>");
-  assert.ok(open !== -1, "panel.html has no <script> block");
-  const close = html.lastIndexOf("</script>");
-  assert.ok(close > open, "panel.html has no closing </script>");
-  // guard the invariant this whole file rests on: exactly ONE script block,
-  // so "the script" is unambiguous and nothing under test is being skipped.
-  const count = (html.match(/<script\b/g) || []).length;
-  assert.strictEqual(count, 1,
-    "expected exactly one <script> block in panel.html, found " + count);
-  return html.slice(open + "<script>".length, close);
+/* ── 1. load the script exactly as the browser does ─────────────────────────
+   panel.html was one 7900-line file with an inline <script>; it is now a shell
+   that pulls panel.css and an ORDERED list of /static/js/*.js modules. The
+   browser runs those classic scripts in one shared global scope, in source
+   order -- so concatenating them in the SAME order the shell lists them
+   reproduces exactly what runs, and the whole suite below (which exercises the
+   top-level functions) keeps testing the real thing. If the split ever drifts,
+   the module list in the shell drifts with it, and this reads that list rather
+   than a hardcoded set. */
+function loadScript() {
+  const html = fs.readFileSync(PANEL, "utf8");
+  const refs = [...html.matchAll(/<script src="\/static\/js\/([^"]+)"><\/script>/g)]
+    .map(m => m[1]);
+  assert.ok(refs.length > 0,
+    "panel.html references no /static/js modules -- has the shell changed?");
+  // No inline <script> should remain: the invariant is now "all logic lives in
+  // the modules", so an inline block would be code the browser runs but this
+  // harness never sees.
+  assert.ok(!/<script>/.test(html),
+    "panel.html still has an inline <script> -- logic outside the modules is untested");
+  return refs.map(name =>
+    fs.readFileSync(path.join(__dirname, "static", "js", name), "utf8")).join("\n");
 }
 
-const html = fs.readFileSync(PANEL, "utf8");
-const source = extractScript(html);
+const source = loadScript();
 
 /* ── 2. the smallest DOM that lets the script finish parsing ───────────── */
 
@@ -833,7 +841,15 @@ test("19d. no id means no resume, never the string 'null'", () => {
    Shift+Enter, Ctrl+J and pasting a multi-line block were not "unimplemented",
    they were impossible. These assertions are on the shipped markup, because the
    element TYPE is the whole feature. */
-const panelHtml = fs.readFileSync(PANEL, "utf8");
+/* The panel used to be ONE file, so these tests grepped it for everything:
+   JS-rendered markup (composer <textarea>, the Enter handler) AND CSS rules
+   (.pc textarea colours, the grid, .termbody[hidden]). Those now live in three
+   places -- the HTML shell, panel.css, the js modules -- so reconstruct the
+   whole picture the browser assembles, and every existing grep resolves against
+   the right file without caring which one it landed in. */
+const panelHtml = fs.readFileSync(PANEL, "utf8")
+  + "\n" + fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8")
+  + "\n" + source;
 
 test("20a. the composer is a textarea, not an input", () => {
   assert.ok(/<textarea data-sask=/.test(panelHtml),
@@ -1101,7 +1117,11 @@ test("24a. every composer control is themed, none falls back to the UA styleshee
      comment satisfied a naive search and made this test pass while the CSS it
      checks for was absent -- the test was reassuring rather than load-bearing.
      Only a real selector counts: the class followed by { , : or another class. */
-  const css = (h.match(/<style[\s\S]*?<\/style>/) || [h])[0]
+  /* The stylesheet is panel.css now, not a <style> block. Read it directly: a
+     `<style[\s\S]*?</style>` match would instead grab the tiny inline update-
+     banner style embedded in a module's template literal, which styles none of
+     the composer controls -- and every one would report as "unstyled". */
+  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "");
   const unstyled = [...classes].filter(c => !new RegExp("\\." + c + "\\s*[,{:.]").test(css));
   assert.deepStrictEqual(unstyled, [],

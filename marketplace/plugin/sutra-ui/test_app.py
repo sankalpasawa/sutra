@@ -1357,9 +1357,13 @@ class TestApp(unittest.TestCase):
         """A provable negative for the deleted seedSessions(): the string may
         appear in the tombstone comment explaining WHY it is gone, but never as
         a definition or a call."""
-        import re
+        import re, glob
+        # The panel is a shell + /static/js/*.js modules now. The fabricator (and
+        # its tombstone comment) live in the modules, so scan those AND the shell.
         html = io.open(os.path.join(HERE, "static", "panel.html"),
                        encoding="utf-8").read()
+        for jsf in sorted(glob.glob(os.path.join(HERE, "static", "js", "*.js"))):
+            html += "\n" + io.open(jsf, encoding="utf-8").read()
         # strip /* ... */ comments -- the tombstone lives in one
         code = re.sub(r"/\*.*?\*/", "", html, flags=re.S)
         code = re.sub(r"(?m)^\s*//.*$", "", code)
