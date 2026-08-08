@@ -253,6 +253,18 @@ function wire(){
   /* session panes */
   panes.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     S.sessTab[b.dataset.sid]=b.dataset.tab; render(); });
+  panes.querySelectorAll("[data-agentsfold]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.agentsfold;
+    if (S.agentsFold[sid]) delete S.agentsFold[sid];
+    else { S.agentsFold[sid] = true; loadAgents(sid, false); }
+    render(); });
+  panes.querySelectorAll("[data-agentopen]").forEach(b=>b.onclick=()=>{
+    /* sid is a claude session id (uuid) and aid is agent-<hex>; neither contains a
+       colon, so a single split is unambiguous. */
+    const i = b.dataset.agentopen.indexOf(":");
+    const sid = b.dataset.agentopen.slice(0, i), aid = b.dataset.agentopen.slice(i + 1);
+    if (S.agentOpen[sid] === aid){ delete S.agentOpen[sid]; render(); return; }
+    S.agentOpen[sid] = aid; loadAgentTranscript(sid, aid); render(); });
   /* Retry an interrupted turn: same text, same session, new socket. The turn is
      reset rather than duplicated, so the transcript does not grow a copy of a
      message that was never answered. */

@@ -185,6 +185,11 @@ const S = {
      "not asked yet" and draws nothing; an object with available:false means
      "asked, and it is not a repo", which is a normal state worth stating. */
   repo:{}, prs:{}, prsOpen:null, prForm:null, prBusy:false, prError:null, prDone:null,
+  /* Subagent transcripts, PER SESSION. `agents` is undefined until asked ([] once
+     asked and none found); `agentsFold` is whether the fold is open; `agentOpen`
+     is which agent id is expanded in a pane; `agentTurns` caches one agent's
+     parsed turns keyed "sid:aid" (null while reading). */
+  agents:{}, agentsFold:{}, agentOpen:{}, agentTurns:{},
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,

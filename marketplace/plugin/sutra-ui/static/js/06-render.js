@@ -1,3 +1,46 @@
+/* The subagents fold. The rail's "N agents" badge proved these transcripts exist
+   but led nowhere; this is where they become readable. Shown only for a REAL
+   session that has agents (live now, or already loaded). READ-ONLY: an agent ran
+   outside this panel, so there is no composer and no placement, only its turns,
+   rendered through the SAME transcriptTurns()/turnResponse() as the main thread. */
+function agentsFold(s){
+  const list = S.agents[s.id];
+  const have = (list && list.length) || s.agents_live;
+  if (!s.real || !have) return "";
+  const open = !!S.agentsFold[s.id];
+  const n = list ? list.length : (s.agents_live || 0);
+  const head = `<button class="agfold" type="button" data-agentsfold="${esc(s.id)}"
+      aria-expanded="${open}">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" aria-hidden="true"><path d="${open?"M6 9l6 6 6-6":"M9 6l6 6-6 6"}"/></svg>
+      <b>${n} subagent${n===1?"":"s"}</b>
+      <span>transcripts of the agents this session spawned</span></button>`;
+  if (!open) return `<div class="agents">${head}</div>`;
+  if (list === undefined) return `<div class="agents open">${head}
+      <p class="agnone">Reading…</p></div>`;
+  if (!list.length) return `<div class="agents open">${head}
+      <p class="agnone">No subagent transcripts on disk for this session.</p></div>`;
+  const rows = list.map(a=>{
+    const sel = S.agentOpen[s.id] === a.id;
+    return `<button class="agrow ${sel?"on":""}" type="button"
+        data-agentopen="${esc(s.id)}:${esc(a.id)}" aria-pressed="${sel}">
+        <span class="agdot ${a.running?"run":""}" aria-hidden="true"></span>
+        <span class="agl">${esc(a.label)}</span>
+        <span class="agm">${a.turns} turn${a.turns===1?"":"s"}${a.running?" · running":""}</span>
+      </button>`;
+  }).join("");
+  const aid = S.agentOpen[s.id];
+  const turns = aid ? S.agentTurns[s.id + ":" + aid] : undefined;
+  const body = !aid ? ""
+    : (turns === undefined || turns === null)
+      ? `<p class="agnone">Reading transcript…</p>`
+      : !turns.length
+        ? `<p class="agnone">No readable turns in this subagent transcript.</p>`
+        : `<div class="agtrans">${turns.map(t=>`<div class="turn">${
+            t.text?`<div class="u md">${mdHtml(t.text)}</div>`:""}${turnResponse(t)}</div>`).join("")}</div>`;
+  return `<div class="agents open">${head}<div class="aglist">${rows}</div>${body}</div>`;
+}
+
 function sessionPane(s){
   const tab = S.sessTab[s.id] || "chat";
   const collapsed = !!S.ui.paneCollapsed[s.id];
@@ -39,6 +82,7 @@ function sessionPane(s){
       </button>
     </div>
     <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
+    ${agentsFold(s)}
     ${S.sideOpen[s.id] ? `<div class="sidewrap">
       <div class="sidehead">
         <b>Side chat</b>
@@ -636,6 +680,12 @@ function render(){
      costs one subprocess per session rather than one per repaint, and a pane
      opened later gets its bar without a second code path. */
   S.openPanes.forEach(sid => loadRepo(sid, false));
+  /* Prime the subagents fold for open panes receiving agent writes, or already
+     expanded. Idempotent like loadRepo. */
+  S.openPanes.forEach(sid => {
+    const s = S.sessions.find(x=>x.id===sid);
+    if (s && s.real && (s.agents_live || S.agentsFold[sid])) loadAgents(sid, false);
+  });
 
   /* A turn may have just started, so the strip needs a clock. Idempotent, and
      the ticker clears itself on the first tick after the last turn ends. */

@@ -587,6 +587,29 @@ def api_session(sid: str):
     return data
 
 
+@app.get("/api/sessions/{sid}/agents")
+def api_session_agents(sid: str):
+    """Subagent transcripts spawned under one session.
+
+    Read-only. Fails OPEN to [] -- a session with no fan-out is the common case and
+    must render an empty fold, not an error. sid is validated inside session_reader
+    (guarded, glob-only, never joined onto a path).
+    """
+    return sr.list_agents(sid)
+
+
+@app.get("/api/sessions/{sid}/agents/{aid}")
+def api_session_agent(sid: str, aid: str):
+    """One subagent transcript, same {id,cwd,branch,messages} shape as GET
+    /api/sessions/{sid}. 404 when the id resolves to nothing under the parent's
+    subagents dir -- mirrors api_session, and is what makes traversal a miss
+    rather than a leak."""
+    data = sr.read_agent(sid, aid)
+    if data is None:
+        raise HTTPException(status_code=404, detail="agent transcript not found")
+    return data
+
+
 @app.get("/api/balance")
 def api_balance() -> dict:
     """Balance state contract, read-only (2026-08-07).

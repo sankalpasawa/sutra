@@ -904,6 +904,29 @@
   .rbdiff .rem{color:var(--block);font-weight:600}
   .rbclean{color:var(--faint)}
   .rbnone{font-style:italic}
+  /* Subagents fold. Same visual family as the repobar: a quiet band under the
+     transcript body that stays out of the way until opened. */
+  .agents{border-top:1px solid var(--line-soft);background:var(--surface)}
+  .agfold{display:flex;align-items:center;gap:7px;width:100%;background:none;border:0;
+    padding:6px 11px;cursor:pointer;color:var(--muted);text-align:left;
+    font:600 10.5px/1.5 var(--mono)}
+  .agfold:hover{color:var(--acc)}
+  .agfold b{color:var(--ink);font-weight:700}
+  .agfold span{color:var(--faint);font-weight:500}
+  .agfold svg{flex:none;color:var(--faint)}
+  .agnone{margin:0;padding:4px 13px 9px;color:var(--faint);font-style:italic;font-size:11px}
+  .aglist{display:flex;flex-direction:column;padding:0 6px 6px}
+  .agrow{display:flex;align-items:center;gap:8px;width:100%;background:none;
+    border:0;border-radius:6px;padding:5px 8px;cursor:pointer;text-align:left;
+    color:var(--muted);font:500 11px/1.4 var(--mono)}
+  .agrow:hover{background:var(--inset)}
+  .agrow.on{background:var(--inset);color:var(--ink)}
+  .agdot{width:6px;height:6px;border-radius:50%;background:var(--line);flex:none}
+  .agdot.run{background:var(--ok)}
+  .agl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .agm{flex:none;color:var(--faint);font-size:9.5px}
+  .agtrans{border-top:1px solid var(--line-soft);margin:0 6px 8px;padding:8px 7px 2px}
+  .agtrans .turn{margin-bottom:10px}
   .repobar button{background:none;border:1px solid var(--line);border-radius:5px;
     color:var(--muted);font:600 9.5px/1 var(--mono);padding:3px 7px;cursor:pointer}
   .repobar button:hover{border-color:var(--acc);color:var(--acc)}

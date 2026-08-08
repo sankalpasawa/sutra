@@ -7,6 +7,11 @@ function applySessionChange(rows){
     /* Without this the rail can never render "3 agents" from data: the field
        arrives on every changed row and is dropped by a three-field copy. */
     s.agents_live = row.agents_live || 0;
+    /* A subagent just wrote: if this pane already loaded its agent list, refresh
+       it so a new agent appears and a finished one stops saying "running". Gated
+       on already-loaded, so a pane nobody opened the fold on costs nothing. */
+    if (S.openPanes.includes(s.id) && S.agents[s.id] !== undefined && (row.agents_live || 0))
+      loadAgents(s.id, true);
     /* Only a transcript actually on screen is re-read. Re-parsing every changed
        file would turn a busy Claude session into a stream of reads for panes
        nobody is looking at. */

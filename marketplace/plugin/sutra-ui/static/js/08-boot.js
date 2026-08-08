@@ -269,6 +269,31 @@ if (typeof document !== "undefined" && document.addEventListener){
    Re-read after a turn completes (the agent may have committed or branched) and
    whenever the session's folder changes -- both are moments the bar would
    otherwise go quietly stale and describe a repository that is no longer there. */
+/* Subagent list for one session. Keyed by session id like the repo bar and
+   idempotent the same way: undefined means "not asked", [] means "asked, none".
+   The list route reads each agent file, so this is fetched on demand -- when the
+   fold opens or a pane is receiving agent writes -- never per repaint. */
+async function loadAgents(sid, force){
+  if (!sid) return;
+  if (S.agents[sid] !== undefined && !force) return;
+  try { S.agents[sid] = await apiGet("/api/sessions/" + encodeURIComponent(sid) + "/agents"); }
+  catch (e){ S.agents[sid] = []; }
+  scheduleRender();
+}
+/* One subagent's transcript, parsed through the SAME transcriptTurns() the main
+   pane uses so an agent turn and a top-level one render identically. Keyed by
+   sid+":"+aid so two open agents never clobber each other; null while in flight. */
+async function loadAgentTranscript(sid, aid){
+  const key = sid + ":" + aid;
+  if (S.agentTurns[key] !== undefined) return;
+  S.agentTurns[key] = null;
+  try {
+    const d = await apiGet("/api/sessions/" + encodeURIComponent(sid)
+                           + "/agents/" + encodeURIComponent(aid));
+    S.agentTurns[key] = transcriptTurns(d && d.messages);
+  } catch (e){ S.agentTurns[key] = []; }
+  scheduleRender();
+}
 async function loadRepo(sid, force){
   if (!sid) return;
   if (S.repo[sid] !== undefined && !force) return;
