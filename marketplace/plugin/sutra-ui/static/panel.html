@@ -837,6 +837,26 @@
   .ubar i.p-warn{background:var(--warn)}
   .ubar i.p-block{background:var(--block)}
 
+  /* ── routine run threads ─────────────────────────────────────────────────
+     A run row is a control, so it says so: pointer, hover, and a focus ring for
+     the keyboard path. The dot is the unread mark -- drawn as an empty ring when
+     read rather than removed, so the column does not reflow as you work down it. */
+  .runrow[data-runopen]{cursor:pointer}
+  .runrow[data-runopen]:hover>td{background:var(--acc-bg)}
+  .runrow.sel>td{background:var(--acc-bg)}
+  .runrow[data-runopen]:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .rundot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;
+    border:1px solid var(--line);background:none;vertical-align:middle}
+  .rundot.on{background:var(--acc);border-color:var(--acc)}
+  .runthread{margin-top:10px;border:1px solid var(--line);border-radius:9px;
+    background:var(--inset);padding:10px 12px}
+  .runhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:7px;
+    padding-bottom:7px;border-bottom:1px solid var(--line-soft)}
+  .runhead b{font:600 11.5px/1 var(--sans)}
+  .runhead .btn{margin-left:auto;padding:4px 9px;font-size:10px}
+  .runhead .why{color:var(--faint);font-size:10.5px}
+  .runthread .md{font-size:12.5px;line-height:1.6}
+
   /* ── repository bar ──────────────────────────────────────────────────────
      A thin strip between the transcript and the composer: what repository this
      session is in, what branch, how far from its upstream, and what is uncommitted.
@@ -2446,6 +2466,10 @@ const S = {
   upd:null, updBusy:null, updError:null, updMsg:null,
   /* routines: null until the screen is opened (it shells out to launchctl). */
   rt:null, rtError:null, rtBusy:null, rtMsg:null, rtForm:null, rtRuns:{}, rtOpen:{},
+  /* The run being read: {rid, name, started}. null means none is open. runDetail
+     is its parsed body, fetched on open -- not with the index, because an index
+     of 10 runs would otherwise read 10 output files nobody asked for. */
+  runOpen:null, runDetail:null,
   /* what the chat agent asked for; nothing applies until approved. */
   props:null, propBusy:null, propError:null,
   /* transient, self-clearing note -- see the pane close handler. */
@@ -4531,14 +4555,95 @@ function rtCreateForm(){
   </section>`;
 }
 
-function rtRunRow(r){
+/* ── run threads ─────────────────────────────────────────────────────────────
+   Every scheduled run is its own conversation, kept on disk. The row is the
+   entry to it: click one and the reply it produced is rendered underneath, with
+   an unread mark until you have opened it.
+
+   UNREAD IS PER MACHINE, in localStorage, and is keyed by <routine>/<output
+   file> -- the output filename is the run's timestamp, so the key is unique and
+   stable without the server having to track who has read what. A routine you
+   have never opened shows every run unread, which is the honest starting state:
+   nobody has read them. */
+const LS_RUNSEEN = "sutra.panel.runseen";
+function runSeenSet(){
+  if (!S._runSeen){
+    const raw = lsGet(LS_RUNSEEN, []);
+    S._runSeen = new Set(Array.isArray(raw) ? raw : []);
+  }
+  return S._runSeen;
+}
+function runKey(rid, name){ return rid + "/" + name; }
+function runIsUnread(rid, r){
+  /* A run with no captured output has nothing to read, so it is never "unread" --
+     marking it so would promise a thread that does not exist. */
+  return !!r.output_file && !runSeenSet().has(runKey(rid, r.output_file));
+}
+function markRunSeen(rid, name){
+  const s = runSeenSet();
+  if (s.has(runKey(rid, name))) return;
+  s.add(runKey(rid, name));
+  /* Bounded: one entry per run forever would grow without limit on a routine
+     that fires hourly. The newest 500 is far more than any unread mark is worth. */
+  const all = [...s].slice(-500);
+  S._runSeen = new Set(all);
+  lsSet(LS_RUNSEEN, all);
+}
+function rtUnreadCount(rid, runs){
+  if (!runs || !runs.runs) return 0;
+  return runs.runs.filter(r=>runIsUnread(rid, r)).length;
+}
+
+function rtRunRow(r, rid){
   const pill = r.outcome==="ok" ? `<span class="pill p-ok">ok</span>`
     : r.outcome==="skipped" ? `<span class="pill p-mut">skipped</span>`
     : `<span class="pill p-block">${esc(r.outcome||"?")}</span>`;
-  return `<tr><td>${pill}</td><td class="num">${esc(fmt(Date.parse(r.started_at)))}</td>
+  const open = S.runOpen && S.runOpen.rid===rid && S.runOpen.name===r.output_file;
+  const unread = runIsUnread(rid, r);
+  return `<tr class="runrow ${open?"sel":""}" ${r.output_file
+        ? `data-runopen="${esc(rid)}" data-runname="${esc(r.output_file)}" tabindex="0"
+           title="Read what this run said"` : ""}>
+    <td>${r.output_file?`<i class="rundot ${unread?"on":""}" aria-hidden="true"></i>`:""}${pill}</td>
+    <td class="num">${esc(fmt(Date.parse(r.started_at)))}</td>
     <td>${esc(r.trigger||"")}</td><td class="num">${r.duration_s??"—"}s</td>
     <td class="num">${r.cost_usd!=null?"$"+Number(r.cost_usd).toFixed(4):"—"}</td>
     <td>${r.detail?esc(String(r.detail).slice(0,120)):""}</td></tr>`;
+}
+
+/* The opened run: what it actually said, and the way back into that thread. */
+function rtRunThreadHtml(rid){
+  if (!S.runOpen || S.runOpen.rid !== rid) return "";
+  const d = S.runDetail;
+  if (!d) return `<div class="runthread"><p class="prnone">Reading this run…</p></div>`;
+  if (d.error) return `<div class="runthread"><p class="prnone">${esc(d.error)}</p></div>`;
+  const denials = (d.permission_denials||[]).map(x=>x && x.tool_name).filter(Boolean);
+  /* An empty result is not an empty run. Say WHY it is empty -- a denied tool is
+     the usual cause, and "nothing here" without the reason reads as a broken
+     routine rather than one that asked for permission nobody was there to give. */
+  const body = (d.result && String(d.result).trim())
+    ? `<div class="md">${mdHtml(String(d.result))}</div>`
+    : (!d.parsed
+        ? `<pre class="toutbody">${esc(String(d.text||"").slice(0,4000))}</pre>`
+        : `<p class="prnone">This run produced no reply${
+            denials.length ? " — it was denied " + esc(denials.join(", "))
+                             + ", and nobody was there to approve it." : "."}</p>`);
+  return `<div class="runthread">
+      <div class="runhead">
+        <b>${esc(fmt(Date.parse((S.runOpen.started||""))))}</b>
+        ${d.turns!=null?`<span class="pill p-mut">${d.turns} turn${d.turns===1?"":"s"}</span>`:""}
+        ${d.cost_usd!=null?`<span class="pill p-mut">$${Number(d.cost_usd).toFixed(4)}</span>`:""}
+        ${denials.length?`<span class="pill p-warn">denied ${esc(denials.join(", "))}</span>`:""}
+        ${d.session_id
+          ? `<button class="btn" type="button" data-runcontinue="${esc(rid)}"
+               title="Open this run as a chat and carry on from where it stopped">Continue this thread</button>`
+          : `<span class="why">no session id recorded — this run cannot be resumed</span>`}
+        <button class="ib" type="button" data-runclose="1" aria-label="Close this run">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      ${body}
+    </div>`;
 }
 
 /* What the chat agent asked for. Rendered ABOVE the routines themselves and on
@@ -4625,13 +4730,22 @@ function rtCard(r){
       <button class="btn" type="button" data-rttoggle="${esc(r.id)}" data-en="${r.enabled?0:1}"
         >${r.enabled?"Pause":"Resume"}</button>
       <button class="btn" type="button" data-rtruns="${esc(r.id)}">${
-        runs?"Refresh runs":"Show runs"}</button>
+        runs?"Refresh runs":"Show runs"}${
+          /* The count is on the BUTTON as well as the rows, because before you
+             press it the rows do not exist -- and "3 unread" is the reason to. */
+          runs && rtUnreadCount(r.id, runs) ? " · " + rtUnreadCount(r.id, runs) + " unread" : ""}</button>
       <button class="btn" type="button" data-rtdel="${esc(r.id)}">Delete</button></p>
     ${runs?(runs.error?`<div class="note b">${esc(runs.error)}</div>`
       : runs.total===0 ? `<div class="note">No runs recorded yet.</div>`
       : `<div class="tw"><table><thead><tr><th>Outcome</th><th>Started</th><th>Trigger</th>
           <th>Took</th><th>Cost</th><th>Detail</th></tr></thead>
-          <tbody>${runs.runs.map(rtRunRow).join("")}</tbody></table></div>`):""}
+          <tbody>${
+            /* An ARROW, not a bare reference. `.map(rtRunRow)` passes the index
+               as the second argument, so the routine id would silently become 0,
+               1, 2 -- every row keyed to a routine that does not exist. */
+            runs.runs.map(x=>rtRunRow(x, r.id)).join("")
+          }</tbody></table></div>`):""}
+    ${rtRunThreadHtml(r.id)}
   </section>`;
 }
 
@@ -6479,6 +6593,36 @@ function wire(){
              b.dataset.en === "1" ? "Resumed." : "Paused — it will not fire on its own."));
   scBody.querySelectorAll("[data-rtruns]").forEach(b=>b.onclick=()=>
     rtLoadRuns(b.dataset.rtruns));
+  /* Open a run as a thread. Keyboard too: the row is the control, and a table
+     row that only answers to a mouse is a control half the users cannot reach. */
+  const openRun = el => {
+    const rid = el.dataset.runopen, name = el.dataset.runname;
+    if (!rid || !name) return;
+    if (S.runOpen && S.runOpen.rid===rid && S.runOpen.name===name){
+      S.runOpen = null; S.runDetail = null; render(); return;   /* toggle shut */
+    }
+    const idx = (S.rtRuns[rid] || {}).runs || [];
+    const rec = idx.find(x=>x.output_file===name) || {};
+    S.runOpen = {rid, name, started: rec.started_at || ""};
+    S.runDetail = null;
+    /* Marked read on OPEN, not on close: you have seen it the moment it is on
+       screen, and a mark that waits for a close never lands when the reader
+       simply navigates away. */
+    markRunSeen(rid, name);
+    render();
+    loadRunDetail(rid, name);
+  };
+  scBody.querySelectorAll("[data-runopen]").forEach(el=>{
+    el.onclick = ()=>openRun(el);
+    el.onkeydown = e=>{ if (e.key==="Enter" || e.key===" "){ e.preventDefault(); openRun(el); } };
+  });
+  scBody.querySelectorAll("[data-runclose]").forEach(b=>b.onclick=()=>{
+    S.runOpen = null; S.runDetail = null; render(); });
+  scBody.querySelectorAll("[data-runcontinue]").forEach(b=>b.onclick=()=>{
+    const d = S.runDetail;
+    if (!d || !d.session_id) return;
+    continueRunThread(b.dataset.runcontinue, d);
+  });
   scBody.querySelectorAll("[data-rtdel]").forEach(b=>b.onclick=()=>{
     /* Deleting unloads a real launchd job. Confirm, and say what survives. */
     if (!confirm("Delete routine \"" + b.dataset.rtdel + "\"?\n\nThe scheduled job is " +
@@ -7082,6 +7226,39 @@ async function loadPrs(sid, force){
   try { S.prs[sid] = await apiGet("/api/repo/pulls?cwd=" + encodeURIComponent(cwd)); }
   catch (e){ S.prs[sid] = {available:false, reason:e.message, pulls:[]}; }
   scheduleRender();
+}
+
+async function loadRunDetail(rid, name){
+  try {
+    S.runDetail = await apiGet("/api/routines/" + encodeURIComponent(rid)
+                               + "/output?name=" + encodeURIComponent(name));
+  } catch (e){ S.runDetail = {error:e.message}; }
+  /* Only paint if this is still the run being looked at -- clicking through a
+     list faster than the reads return would otherwise let an earlier response
+     land on top of a later one. */
+  if (S.runOpen && S.runOpen.rid===rid && S.runOpen.name===name) render();
+}
+
+/* Carry on from a scheduled run, in a real chat pane.
+   The run already happened on a claude session and its id was recorded at the
+   time, so this is a genuine resume rather than a fresh thread primed with the
+   old text: seeding `claude_session` is exactly what the composer's own resume
+   path uses, and the agent keeps the context the run built. */
+function continueRunThread(rid, d){
+  const s = newSession();
+  s.title = rid + " · run thread";
+  s.claude_session = d.session_id;
+  /* The reply is shown as the first turn so the pane is not blank -- you are
+     continuing a conversation, and a conversation with no visible history reads
+     as a new one. Marked replayed, because these turns were not classified by
+     this panel and no placement was ever filed for them. */
+  if (d.result){
+    s.turns.push({ uid:"run-"+d.session_id, text:"(scheduled run — " + rid + ")",
+                   response:String(d.result), streaming:false, real:true,
+                   claude_session:d.session_id });
+  }
+  S.runOpen = null; S.runDetail = null;
+  render();
 }
 
 async function loadGit(force){

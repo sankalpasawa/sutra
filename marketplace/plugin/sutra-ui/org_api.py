@@ -1423,7 +1423,11 @@ def api_routine_runs(rid: str, limit: int = 10):
 @router.get("/routines/{rid}/output")
 def api_routine_output(rid: str, name: str):
     try:
-        return {"id": rid, "name": name, "text": routines.run_output(rid, name)}
+        # Parsed, not raw. `text` is still present so nothing that read this
+        # endpoint before breaks, but the fields the panel actually renders --
+        # the prose and the session id that makes the run resumable -- now come
+        # out of the envelope here rather than being re-parsed in the browser.
+        return routines.run_detail(rid, name)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such run output")
     except (ValueError, OSError) as exc:
