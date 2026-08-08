@@ -1303,10 +1303,28 @@ class TestApp(unittest.TestCase):
                         prompts.append("\n".join(
                             b.get("text", "") for b in c
                             if isinstance(b, dict) and b.get("type") == "text"))
+            # Sutra PREPENDS a routing preamble to messages it sends, so the raw
+            # first prompt of a panel-started session begins "PLACEMENT: ..." and
+            # the operator's own words follow the first blank line. The reader
+            # strips that; this derivation has to strip it too, or the invariant
+            # below would be testing the OLD behaviour and would force the rail
+            # back to titling 17 of 120 sessions with Sutra's own bookkeeping.
+            #
+            # The invariant itself does NOT loosen: the title must still be the
+            # HEAD of a real prompt. Only what counts as the prompt changed --
+            # the operator's text rather than Sutra's envelope around it.
+            def _strip(t):
+                t = (t or "").lstrip()
+                if not t.startswith("PLACEMENT:"):
+                    return t
+                _, sep, rest = t.partition("\n\n")
+                rest = rest.strip()
+                return rest if sep and rest else t
+
             norm = lambda t: " ".join(t.split())
             title = norm(r["title"])
             self.assertTrue(
-                any(norm(t).startswith(title[:40]) for t in prompts if t),
+                any(norm(_strip(t)).startswith(title[:40]) for t in prompts if t),
                 "%s: title %r is not the head of any user prompt in the "
                 "transcript -- it was manufactured" % (r["id"], r["title"]))
 

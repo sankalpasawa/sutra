@@ -34,6 +34,29 @@ def _is_tool_result(content) -> bool:
     )
 
 
+# Sutra PREPENDS a routing preamble to the operator's message before sending it
+# (panel.html builds it and joins with "\n\n" before the real text). The title of
+# a session is taken from its first user message, so every conversation started
+# from the panel was titled with Sutra's own bookkeeping instead of what the
+# operator typed -- measured: 17 of 120 sessions read "PLACEMENT: unresolved --
+# no department could be resolved for this turn." in the rail.
+#
+# Split on the FIRST blank line and keep the remainder, which is exactly how the
+# preamble is joined. A message that is ONLY the preamble (no text after it) keeps
+# the preamble rather than becoming blank -- an empty title is worse than an ugly
+# one, because it names nothing at all.
+_INJECTED_PREFIXES = ("PLACEMENT:",)
+
+
+def _strip_injected(text: str) -> str:
+    t = (text or "").lstrip()
+    if not t.startswith(_INJECTED_PREFIXES):
+        return text or ""
+    _, sep, rest = t.partition("\n\n")
+    rest = rest.strip()
+    return rest if sep and rest else t
+
+
 def list_sessions(limit: int = 100) -> List[dict]:
     """Most-recent sessions across all projects. Cheap: reads only the head of each file."""
     if not PROJECTS.exists():
@@ -56,7 +79,8 @@ def list_sessions(limit: int = 100) -> List[dict]:
                     if not title and d.get("type") == "user":
                         msg = d.get("message", {})
                         if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
-                            t = _text_of(msg.get("content")).strip().replace("\n", " ")
+                            t = _strip_injected(_text_of(msg.get("content")))
+                            t = t.strip().replace("\n", " ")
                             if t and not t.startswith("<"):
                                 title = t[:90]
         except OSError:
