@@ -432,6 +432,28 @@
   /* ── Claude-style recents ── */
   .rgrp{padding:10px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.09em;
         color:var(--faint);text-transform:uppercase}
+  /* A project heading is a ROW, not just a label: it carries the session count and
+     the + that starts a session in that folder. The + is revealed on hover/focus
+     rather than always drawn -- one per project, always visible, turns the rail
+     into a column of plus signs and buries the thing you came to read. It stays
+     visible whenever it has focus, so keyboard users never chase an invisible
+     control. */
+  .rgrph{display:flex;align-items:center;gap:6px;padding-right:8px}
+  .rgrph .rgn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .rgrph .rgc{font:600 9px/1 var(--mono);color:var(--line);flex:none;
+    font-variant-numeric:tabular-nums}
+  .rgrph .rgadd{margin-left:auto;flex:none;display:grid;place-items:center;
+    width:16px;height:16px;padding:0;border:0;border-radius:4px;cursor:pointer;
+    background:none;color:var(--faint);opacity:0;transition:opacity .12s ease}
+  .rgrph:hover .rgadd,.rgrph .rgadd:focus-visible{opacity:1}
+  .rgrph .rgadd:hover{background:var(--acc-bg);color:var(--acc)}
+  .rsort{flex:none;display:grid;place-items:center;width:26px;padding:0;
+    background:none;border:1px solid var(--line);border-radius:6px;
+    color:var(--faint);cursor:pointer}
+  .rsort:hover:not(:disabled){color:var(--ink);border-color:var(--acc)}
+  /* Greyed, not hidden: see the markup comment. */
+  .rsort:disabled{opacity:.38;cursor:default}
+  .rsort[aria-pressed="true"]{color:var(--acc);border-color:var(--acc)}
   .rlist{list-style:none;margin:0;padding:0 6px}
   .rlist button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:6px;
                 padding:6px 8px;cursor:pointer;color:var(--muted)}
@@ -1182,7 +1204,20 @@
         </button>
         <div class="rtoggle">
           <button type="button" data-sgroup="recent">Recent</button>
-          <button type="button" data-sgroup="dept">By department</button>
+          <button type="button" data-sgroup="project">Project</button>
+          <button type="button" data-sgroup="dept">Dept</button>
+          <!-- Sort applies to the PROJECT grouping only: "Recent" is already an
+               ordering (that is what the buckets are) and "Dept" is ordered by the
+               department path, which is a hierarchy, not a preference. The control
+               is therefore disabled rather than hidden outside Project view -- a
+               control that vanishes reads as a bug, one that greys out reads as
+               "not for this view". -->
+          <button type="button" class="rsort" id="sessSort"
+                  title="Sort projects" aria-label="Sort projects">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" aria-hidden="true">
+              <path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l3 3M17 20l-3-3"/></svg>
+          </button>
         </div>
         <div id="sessions"></div>
        </div>
@@ -2383,7 +2418,10 @@ const S = {
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
      through the org. Departments do NOT hand work to each other — no such channel exists. */
-  sessions:[], openPanes:[], sgroup:"recent", sessTab:{}, collapsed:new Set(),
+  sessions:[], openPanes:[], sgroup:"recent",
+  /* "recent" (most-recently-touched project first) | "az". Project grouping only. */
+  sessSort:"recent",
+  sessTab:{}, collapsed:new Set(),
   /* sid -> the operator has deliberately scrolled AWAY from the newest turn.
      Two weaker designs failed first: a one-shot Set was consumed by an early
      render before the transcript loaded, and a turn-COUNT key skipped re-pinning
@@ -2718,6 +2756,21 @@ function renderRail(){
      accountable department, so the session list and the org chart are the same tree. */
   document.querySelectorAll("[data-sgroup]").forEach(b=>
     b.setAttribute("aria-pressed", String(S.sgroup===b.dataset.sgroup)));
+  /* The sort control only means something under Project grouping (see the markup
+     comment). Its label states the CURRENT order, not the one clicking would
+     produce -- a control whose text is a promise about the next click reads as
+     the current state to everyone who is not thinking about it. */
+  const sortBtn = document.getElementById("sessSort");
+  if (sortBtn){
+    const on = S.sgroup === "project";
+    sortBtn.disabled = !on;
+    sortBtn.setAttribute("aria-pressed", String(on && S.sessSort === "az"));
+    sortBtn.title = !on
+      ? "Sorting applies to Project grouping"
+      : (S.sessSort === "az" ? "Sorted A–Z — click for most recent"
+                             : "Sorted by most recent — click for A–Z");
+    sortBtn.setAttribute("aria-label", sortBtn.title);
+  }
 
   const bucket = ms => {
     const d = Math.floor((NOW - ms)/DAY);
@@ -2771,6 +2824,51 @@ function renderRail(){
         </button></li>`;}).join("")}</ul>`).join("");
     if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.</p>`;
+  } else if (S.sgroup === "project"){
+    /* Keyed on the FULL cwd, labelled with its last segment. Two checkouts can
+       share a basename ("sutra" under two parents) and merging them would put
+       sessions from different repositories in one group -- and, worse, give the
+       group's + a directory it might not belong to. The full path is also what
+       the + needs, so the key is the useful value rather than a display string. */
+    const g = new Map();
+    S.sessions.forEach(s=>{
+      const key = (s.cwd || "").replace(/\/+$/, "") || null;
+      const label = key ? key.slice(key.lastIndexOf("/") + 1) : (projOf(s) || "No folder");
+      if (!g.has(key)) g.set(key, {label, cwd:key, items:[], last:0});
+      const e = g.get(key);
+      e.items.push(s);
+      e.last = Math.max(e.last, s.updated_ms || s.created_ms || 0);
+    });
+    const groups = [...g.values()].sort((a,b)=>
+      S.sessSort === "az"
+        ? a.label.localeCompare(b.label, undefined, {numeric:true, sensitivity:"base"})
+        /* Default is most-recently-touched first: the project you were last in is
+           the one you are most likely returning to. */
+        : (b.last - a.last));
+    html = groups.map(grp=>`
+      <div class="rgrp rgrph">
+        <span class="rgn" title="${esc(grp.cwd || "sessions with no recorded folder")}">${esc(grp.label)}</span>
+        <span class="rgc">${grp.items.length}</span>
+        ${grp.cwd ? `<button type="button" class="rgadd" data-newproj="${esc(grp.cwd)}"
+             title="New session in ${esc(grp.cwd)}"
+             aria-label="New session in ${esc(grp.label)}">
+           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+         </button>` : ""}
+      </div>
+      <ul class="rlist">${grp.items
+        .sort((a,b)=>(b.updated_ms||b.created_ms||0)-(a.updated_ms||a.created_ms||0))
+        .map(s=>{
+          const held = s.turns.some(t=>t.mode==="floor");
+          return `<li><button type="button" data-open="${s.id}"
+              aria-current="${S.openPanes.includes(s.id)}"
+              title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
+            <span class="t">${esc(s.title)}</span>
+            <span class="m">${sessMeta(s)}
+              ${held?'<span style="color:var(--warn)">held</span>':""}</span>
+          </button></li>`;}).join("")}</ul>`).join("");
+    if (!groups.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+      No sessions yet. Transcripts are read from <code>~/.claude/projects</code>.</p>`;
   } else {
     const g = {};
     S.sessions.forEach(s=>s.turns.forEach(t=>{
@@ -6371,6 +6469,13 @@ document.querySelector(".rail").addEventListener("click", e=>{
   }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
+  /* + on a project heading. Starts the session IN that folder rather than in the
+     global workdir -- which is the only thing that makes a per-project + different
+     from the one at the top of the rail. */
+  const np = e.target.closest("[data-newproj]");
+  if (np){ newSession(np.dataset.newproj); return; }
+  const ss = e.target.closest("#sessSort");
+  if (ss){ S.sessSort = S.sessSort === "az" ? "recent" : "az"; render(); return; }
   const op = e.target.closest("[data-open]");
   if (op){ const id=op.dataset.open;
     if (!S.openPanes.includes(id)) S.openPanes.push(id);
@@ -6384,15 +6489,23 @@ document.querySelector(".rail").addEventListener("click", e=>{
   if (g){ S.screen="departments"; S.sel=g.dataset.goto; render(); }
 });
 /* New session: opens an empty pane on the right, exactly like the reference */
-document.getElementById("newSession").onclick = () => {
+/* One path for every "start a session", so the rail button and the per-project +
+   cannot drift. `cwd` is optional: with one, the new session gets that directory
+   as its working-directory override (the same per-session mechanism the composer's
+   folder chip writes), which is the entire point of a + that lives on a project
+   heading -- starting a session "in" a project means starting it in that folder. */
+function newSession(cwd){
   const s = { id:"s-"+(++SID), title:"New session", created_ms:NOW, updated_ms:NOW,
               turns:[], local:true, loadState:"live" };
+  if (cwd) S.cwd[s.id] = cwd;
   S.sessions.unshift(s);
   S.openPanes.push(s.id);
   if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
   render();
   const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
-};
+  return s;
+}
+document.getElementById("newSession").onclick = () => newSession();
 /* theme */
 (function(){
   const r=document.documentElement, KEY="sutra.panel.theme";
