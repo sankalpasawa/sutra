@@ -1203,6 +1203,19 @@ async def ws_chat(ws: WebSocket):
                     # unknowable by construction.
                     for blk in (ev.get("message") or {}).get("content", []):
                         if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                            _out = _tool_output(blk.get("content"))
+                            # A BACKGROUND agent's tool_result is a LAUNCH RECEIPT,
+                            # not a completion: it arrives immediately, carries the
+                            # Agent's tool_use_id, and its content begins "Async
+                            # agent launched successfully". Emitting phase:end here
+                            # marked the subagent finished the instant it started.
+                            # Its REAL completion comes later as a system/
+                            # task_notification with the same tool_use_id (handled
+                            # in the system branch). Skip the receipt; the tool
+                            # stays running until that notification lands. Measured
+                            # against claude v2.1.212, stream-json, run_in_background.
+                            if _out.strip().startswith("Async agent launched"):
+                                continue
                             await ws.send_json({
                                 "type": "tool",
                                 "phase": "end",
@@ -1215,7 +1228,7 @@ async def ws_chat(ws: WebSocket):
                                 # and a failing tool showed a red dot with no reason
                                 # attached -- the one thing you need when a turn
                                 # goes wrong.
-                                "output": _tool_output(blk.get("content")),
+                                "output": _out,
                             })
                 elif t == "system":
                     # THE FOURTH TYPE THE PARSER NEVER HANDLED. The dispatch knew
@@ -1253,6 +1266,26 @@ async def ws_chat(ws: WebSocket):
                                           or "the API asked us to retry")[:300],
                             "attempt": ev.get("attempt"),
                         })
+                    elif sub == "task_notification":
+                        # THE REAL completion of a background agent. Its receipt
+                        # tool_result was skipped above, so the UI shows the agent
+                        # running until THIS frame -- which carries the same
+                        # tool_use_id the UI opened the tool with, plus the summary
+                        # and usage the receipt never had. task_started/task_progress
+                        # fire while it runs and are intentionally not forwarded (the
+                        # tool row already reads "running"); only the terminal
+                        # notification closes it. Measured shape: {tool_use_id,
+                        # status, summary, usage{...}}.
+                        status = ev.get("status") or "completed"
+                        tuid = ev.get("tool_use_id")
+                        if tuid and status in ("completed", "failed", "cancelled"):
+                            await ws.send_json({
+                                "type": "tool",
+                                "phase": "end",
+                                "id": tuid,
+                                "ok": status == "completed",
+                                "output": str(ev.get("summary") or "")[:4000],
+                            })
                 elif t == "result":
                     got_result = True
                     # A `result` event is NOT proof of success: a failed run (stale
