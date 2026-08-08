@@ -46,11 +46,34 @@ GIT_TIMEOUT = 6
 GH_TIMEOUT = 12          # a network call, unlike git
 
 
+# `gh` prefers GITHUB_TOKEN / GH_TOKEN in the environment over the login the
+# operator actually performed, and the Sutra backend was found carrying a
+# GITHUB_TOKEN it never set. That token could READ pull requests -- which is why
+# the bar listed them correctly -- but `gh pr create` came back "Resource not
+# accessible by personal access token", and proposal p-0d032147 pushed a branch
+# and then failed. The same command run from a shell WITHOUT that variable
+# succeeded against the same repository (PR #101).
+#
+# So the panel acts as the keychain login, deliberately: these are cleared for
+# every gh invocation rather than inherited by accident. Clearing them cannot
+# make gh LESS authorised than the operator is -- it falls back to `gh auth
+# login`, which is the identity they chose.
+_GH_ENV_OVERRIDES = ("GITHUB_TOKEN", "GH_TOKEN", "GH_ENTERPRISE_TOKEN",
+                     "GITHUB_ENTERPRISE_TOKEN")
+
+
+def _clean_env():
+    env = dict(os.environ)
+    for k in _GH_ENV_OVERRIDES:
+        env.pop(k, None)
+    return env
+
+
 def _run(argv, cwd, timeout):
     """(ok, stdout, err). Never raises."""
     try:
         p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                           timeout=timeout)
+                           timeout=timeout, env=_clean_env())
     except FileNotFoundError:
         return False, "", "%s is not installed on this machine" % argv[0]
     except subprocess.TimeoutExpired:
@@ -264,6 +287,18 @@ def create_pull_request(args):
     if not shutil.which("gh"):
         raise ValueError("the GitHub CLI (gh) is not installed")
 
+    # CAPABILITY CHECK BEFORE THE FIRST EFFECT.
+    # This applies TWO effects -- a push, then a PR -- and the push cannot be
+    # taken back once it reaches a shared remote. Discovered the hard way on
+    # p-0d032147: the push succeeded, `gh pr create` was refused with "Resource
+    # not accessible by personal access token", and the proposal was recorded
+    # `failed` while a branch sat on origin that nobody had been told about.
+    # "failed" must not be able to mean "half applied", so the token is asked
+    # whether it can create a pull request BEFORE anything is pushed.
+    ok, out, err = _run(["gh", "auth", "status", "--active"], root, GH_TIMEOUT)
+    if not ok:
+        raise ValueError("gh is not logged in: %s" % (err or "run `gh auth login`"))
+
     ok, _, err = _run(["git", "push", "--set-upstream", "origin", head],
                       root, GH_TIMEOUT)
     if not ok:
@@ -273,5 +308,21 @@ def create_pull_request(args):
          "--title", title, "--body", body],
         root, GH_TIMEOUT)
     if not ok:
-        raise ValueError(err or "gh pr create failed")
+        # STATE THE PARTIAL APPLICATION. The branch is on the remote now; a bare
+        # "gh pr create failed" would leave the operator believing nothing
+        # happened, and the next attempt would push a branch that is already there.
+        hint = ""
+        if "not accessible" in (err or "").lower() or "403" in (err or ""):
+            # NOT stated as a missing scope. The operator's login was verified to
+            # hold `repo` and had already created a pull request on this same
+            # repository by hand -- so "grant the scope" would send them to fix
+            # something that is not broken. An environment token overriding the
+            # login is the cause this build knows about, and _clean_env() now
+            # removes it; anything still failing here is worth reading, not guessing.
+            hint = ("\n\nThe login used has permission to read pull requests but was "
+                    "refused creating one. Check `gh auth status` and whether a "
+                    "GITHUB_TOKEN is set in this app's environment.")
+        raise ValueError(
+            "The branch %s WAS PUSHED to origin and is on the remote now, but the "
+            "pull request was not created: %s%s" % (head, err or "gh pr create failed", hint))
     return {"pushed": head, "url": (out or "").strip().splitlines()[-1] if out.strip() else ""}
