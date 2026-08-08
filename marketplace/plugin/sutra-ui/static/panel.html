@@ -337,7 +337,15 @@
          overflow:hidden;text-overflow:ellipsis;max-width:190px}
   .ph .src{font:500 9px/1 var(--mono);color:var(--faint)}
   .pb{flex:1;overflow-y:auto;overflow-x:hidden;padding:13px 14px;min-height:0;min-width:0;font-size:12.5px}
-  .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;align-items:center;gap:8px}
+  /* WRAPS. The row carries eight controls now (fold, attach, message, folder,
+     usage, permission, model, send) and their fixed widths total ~493px, so in a
+     pane squeezed to 380px by an open terminal the only flexible item -- the
+     message box -- was shrunk to ZERO and the row overflowed. Measured: paneW 382,
+     textarea width 0, scrollWidth 503 vs clientWidth 380. A composer you cannot
+     type in is worse than one that takes two lines, so the controls wrap to a
+     second line and the message box keeps a floor (see textarea[data-sask]). */
+  .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;
+      align-items:center;gap:8px;flex-wrap:wrap}
   .pc input,.pc textarea{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
   .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
   .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
@@ -802,6 +810,42 @@
   .ubar i.p-warn{background:var(--warn)}
   .ubar i.p-block{background:var(--block)}
 
+  /* ── usage chip, in the composer row ─────────────────────────────────────
+     A ring, not a bar: the composer row is a horizontal strip and a horizontal
+     meter here would read as a progress bar for the message you are typing. The
+     ring is drawn with conic-gradient off a single --p custom property, so there
+     is no second element to keep in sync with the number beside it. */
+  .uchip{flex:none;display:inline-flex;align-items:center;gap:5px;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;color:var(--muted);
+    font:600 11px/1 var(--mono);font-variant-numeric:tabular-nums;padding:5px 7px;cursor:pointer}
+  .uchip:hover{color:var(--ink);border-color:var(--acc)}
+  .uchip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .uchip .uring{width:11px;height:11px;border-radius:50%;flex:none;
+    background:conic-gradient(currentColor calc(var(--p,0)*1%), var(--line) 0);
+    /* the hole: without it this is a pie, and a pie at 4% is an invisible sliver */
+    -webkit-mask:radial-gradient(circle, transparent 46%, #000 47%);
+            mask:radial-gradient(circle, transparent 46%, #000 47%)}
+  .uchip.p-ok{color:var(--muted)}
+  .uchip.p-ok:hover{color:var(--ink)}
+  /* Threshold states are LOUD on purpose: at 70 and 80 the guard changes what it
+     lets through, and the chip must change with it rather than after it. */
+  .uchip.p-warn{color:var(--warn);border-color:var(--warn)}
+  .uchip.p-block{color:var(--block);border-color:var(--block);
+    background-color:color-mix(in srgb,var(--block) 12%,var(--inset))}
+  .uchip.off{color:var(--faint)}
+
+  /* The popover sits ABOVE the composer, in flow, pushing the transcript up
+     rather than floating over it: an overlay would cover the last reply, which is
+     the thing you are usually reading when you check what is left. */
+  .upop{border-top:1px solid var(--line);background:var(--inset);
+    padding:9px 11px 8px;max-height:44%;overflow-y:auto}
+  .upophead{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+  .upophead b{font:600 11.5px/1 var(--sans)}
+  .upophead .ib{margin-left:auto}
+  .upopbody .urow:first-child{padding-top:4px}
+  .upopnote{margin-top:7px;font-size:10.5px;line-height:1.45;color:var(--faint)}
+  .upopnote.w{margin:0 0 7px;color:var(--warn)}
+
   /* ── working-directory control ───────────────────────────────────────────
      Sits in the composer row because that is where you are about to use it, the
      same argument the permission selector is placed by. It shows the BASENAME:
@@ -811,7 +855,7 @@
      from the two already there. */
   .cwdbtn{flex:none;display:inline-flex;align-items:center;gap:5px;background:var(--inset);
     border:1px solid var(--line);border-radius:7px;color:var(--muted);
-    font:11px/1 var(--sans);padding:6px 8px;max-width:150px;cursor:pointer}
+    font:11px/1 var(--sans);padding:6px 8px;max-width:118px;cursor:pointer}
   .cwdbtn:hover{color:var(--ink);border-color:var(--acc)}
   .cwdbtn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   .cwdbtn svg{width:12px;height:12px;flex:none;opacity:.75}
@@ -879,7 +923,12 @@
      12px the composer had as an <input>. The result was a fat, UA-bordered box
      with a browser focus ring, which is the regression this restores. */
   textarea[data-sask]{
-    flex:1; min-width:0; resize:none; overflow-y:hidden;
+    /* `min-width:0` used to be here and it is what let the box reach ZERO width
+       when the row ran out of room -- flex will happily shrink a min-width:0 item
+       to nothing before it wraps anything. A floor plus a basis makes the message
+       box claim a whole line of its own instead of vanishing. 168px is about 20
+       characters at this font: the point below which typing is useless anyway. */
+    flex:1 1 168px; min-width:168px; resize:none; overflow-y:hidden;
     line-height:1.45; padding:0;
     max-height:200px; field-sizing:content;
   }
@@ -1994,6 +2043,10 @@ function claudeChannel(s, side){
         (ch.turn.toolRuns || []).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
       }
       ch.turn = null;
+      /* A completed turn is the ONLY moment utilization actually moved, which is
+         why the chip refreshes here instead of on a clock. The 60s server cache
+         absorbs a burst of quick turns, so this cannot become a request per turn. */
+      loadUsage(true);
     } else if (f.type === "stopped"){
       /* The operator's own interrupt is NOT an error. It gets its own state so the
          turn is not painted red and blamed on the tool. */
@@ -2262,6 +2315,10 @@ const S = {
      until the screen has been opened -- a 0% before anything was fetched is a
      claim about an account nobody asked about. */
   usage:null, usageError:null,
+  /* Which session pane has the usage popover open (session id), or null. Keyed by
+     pane rather than a bare boolean: two panes are visible at once, and a shared
+     flag would open the popover in both. */
+  usagePop:null,
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,
@@ -3779,6 +3836,112 @@ SCREENS.editor = () => {
    that exist. `daily` and `monthly_limit` live under extra_usage, which is
    pay-as-you-go credits and a different thing entirely; they are shown in their
    own section, and only when extra usage is actually enabled. */
+/* ── usage, rendered once and shown in two places ────────────────────────────
+   The full screen and the composer popover render from THESE functions, not from
+   two copies of the same markup. Two renderers for one set of numbers is how a
+   chip ends up saying 4% beside a panel saying 40% -- and the whole point of this
+   surface is that the operator can trust the figure without checking it twice. */
+
+/* "resets in 11 min" beats an ISO timestamp for the thing you actually want to
+   know. Past-due is stated as such rather than rendered as a negative. */
+function usageUntil(epoch){
+  if (!epoch) return "";
+  const s = epoch - Date.now()/1000;
+  if (s <= 0) return "resetting now";
+  if (s < 3600) return "resets in " + Math.max(1, Math.round(s/60)) + " min";
+  if (s < 86400) return "resets in " + Math.round(s/3600) + "h";
+  return "resets in " + Math.round(s/86400) + "d";
+}
+/* The guard's own thresholds (warn 70, block 80), so the colour on this chip and
+   the moment tool use actually stops are the same number. A chip that turns red
+   at a different point than the hook fires would be worse than no chip. */
+function usageSev(pct){ return pct >= 80 ? "p-block" : pct >= 70 ? "p-warn" : "p-ok"; }
+
+/* The window the operator is actually being metered by. `is_active` is the
+   server's own flag; the first row is the fallback so a payload that marks
+   nothing active still yields a number rather than a blank chip. */
+function usageActive(u){
+  const rows = (u && u.limits) || [];
+  return rows.find(r => r.active) || rows[0] || null;
+}
+
+function usageRowsHtml(u){
+  const rows = (u && u.limits) || [];
+  if (!rows.length) return `<p style="color:var(--faint);margin:0">The endpoint
+    returned no windows for this account.</p>`;
+  return rows.map(r => `<div class="urow">
+      <div class="uhead">
+        <span class="ulabel">${esc(r.label)}</span>
+        ${r.active?`<span class="pill p-acc" title="This is the window currently metering you">active</span>`:""}
+        <span class="ureset">${esc(usageUntil(r.resets_epoch))}</span>
+        <span class="upct ${usageSev(r.percent)}">${Math.round(r.percent)}%</span>
+      </div>
+      <div class="ubar" role="img"
+           aria-label="${esc(r.label)} at ${Math.round(r.percent)} percent">
+        <i class="${usageSev(r.percent)}" style="width:${Math.min(100, Math.max(0, r.percent))}%"></i>
+      </div>
+    </div>`).join("");
+}
+
+/* ── the composer chip ───────────────────────────────────────────────────────
+   Usage belongs next to the message you are about to send, not behind a nav
+   click: the number matters at the moment you decide whether to send, and a
+   screen you have to navigate to is a screen you check after it mattered.
+
+   It renders even when usage is UNAVAILABLE, as a muted "—". A chip that
+   disappears on failure teaches the operator that no chip means no problem,
+   which is exactly wrong when the reason is a dead network. */
+function usageChipHtml(){
+  const u = S.usage;
+  if (u && !u.available)
+    return `<button class="uchip off" type="button" data-usagepop="1"
+              aria-expanded="${S.usagePop?"true":"false"}"
+              title="Usage unavailable — ${esc(u.reason||"no data")}"
+              aria-label="Plan usage unavailable">—</button>`;
+  const a = u ? usageActive(u) : null;
+  if (!a) return `<button class="uchip off" type="button" data-usagepop="1"
+              aria-expanded="${S.usagePop?"true":"false"}"
+              title="Plan usage — not read yet" aria-label="Plan usage">…</button>`;
+  const pct = Math.round(a.percent);
+  return `<button class="uchip ${usageSev(a.percent)}" type="button" data-usagepop="1"
+            aria-expanded="${S.usagePop?"true":"false"}"
+            title="${esc(a.label)} — ${pct}% used${
+              a.resets_epoch?", "+esc(usageUntil(a.resets_epoch)):""}\n\nClick for every window."
+            }" aria-label="Plan usage: ${esc(a.label)} at ${pct} percent">
+      <span class="uring" style="--p:${Math.min(100,Math.max(0,pct))}"></span>
+      <span class="uchipn">${pct}%</span>
+    </button>`;
+}
+
+/* The popover. Anchored above the composer, same rows as the screen. */
+function usagePopHtml(){
+  if (!S.usagePop) return "";
+  const u = S.usage;
+  const body = !u
+    ? `<p style="color:var(--faint);margin:0">Reading usage…</p>`
+    : !u.available
+      ? `<p style="margin:0">${esc(u.reason||"No usage data.")}</p>
+         <p style="margin:6px 0 0;font-size:10.5px;color:var(--faint)">This reads the
+         same endpoint as <code>/usage</code> in the CLI, using the Claude Code
+         credentials on this machine.</p>`
+      : usageRowsHtml(u);
+  const stale = u && u.source === "stale-cache"
+    ? `<div class="upopnote w">Endpoint unreachable — cached figures, up to 10 min old.</div>` : "";
+  return `<div class="upop" role="dialog" aria-label="Plan usage">
+      <div class="upophead">
+        <b>Plan usage</b>
+        <button class="ib" type="button" data-usageclose="1" aria-label="Close">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      ${stale}
+      <div class="upopbody">${body}</div>
+      <div class="upopnote">Five-hour and weekly are the only rate-limit windows the
+        endpoint reports — there is no daily or monthly figure for the plan.</div>
+    </div>`;
+}
+
 SCREENS.usage = () => {
   if (S.usageError) return `<div class="zero"><h4>Usage unavailable</h4>
     <p>${esc(S.usageError)}</p></div>`;
@@ -3790,35 +3953,7 @@ SCREENS.usage = () => {
     <code>/usage</code> in the CLI, using the Claude Code credentials on this
     machine. No credentials are sent to this panel.</p></div>`;
 
-  /* "resets in 11 min" beats an ISO timestamp for the thing you actually want to
-     know. Past-due is stated as such rather than rendered as a negative. */
-  const until = epoch => {
-    if (!epoch) return "";
-    const s = epoch - Date.now()/1000;
-    if (s <= 0) return "resetting now";
-    if (s < 3600) return "resets in " + Math.max(1, Math.round(s/60)) + " min";
-    if (s < 86400) return "resets in " + Math.round(s/3600) + "h";
-    return "resets in " + Math.round(s/86400) + "d";
-  };
-  const sevClass = r => r.percent >= 80 ? "p-block" : r.percent >= 70 ? "p-warn" : "p-ok";
-
-  const row = r => `<div class="urow">
-      <div class="uhead">
-        <span class="ulabel">${esc(r.label)}</span>
-        ${r.active?`<span class="pill p-acc" title="This is the window currently metering you">active</span>`:""}
-        <span class="ureset">${esc(until(r.resets_epoch))}</span>
-        <span class="upct ${sevClass(r)}">${Math.round(r.percent)}%</span>
-      </div>
-      <div class="ubar" role="img"
-           aria-label="${esc(r.label)} at ${Math.round(r.percent)} percent">
-        <i class="${sevClass(r)}" style="width:${Math.min(100, Math.max(0, r.percent))}%"></i>
-      </div>
-    </div>`;
-
-  const rows = (u.limits||[]).length
-    ? (u.limits||[]).map(row).join("")
-    : `<p style="color:var(--faint);margin:0">The endpoint returned no windows for
-       this account.</p>`;
+  const rows = usageRowsHtml(u);
 
   const x = u.extra_usage;
   const extra = !x
@@ -4906,6 +5041,7 @@ function sessionPane(s){
     ${permConfirmHtml()}
     ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
     ${cwdEditorHtml(s.id)}
+    ${S.usagePop === s.id ? usagePopHtml() : ""}
     <div class="pc">
       <button class="ib" data-optstoggle="${s.id}" type="button"
               aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
@@ -4926,6 +5062,7 @@ function sessionPane(s){
              placeholder="Ask anything — / for commands, Shift+Enter for a new line"
              aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
       ${cwdButtonHtml(s.id)}
+      ${usageChipHtml()}
       ${permSelect()}
       <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
               title="Model — applies to the next message">
@@ -5790,6 +5927,22 @@ function wire(){
   });
   panes.querySelectorAll("[data-cwdcancel]").forEach(b=>b.onclick=()=>{
     S.cwdEdit = null; S.cwdError = null; render(); });
+  /* usage chip + popover */
+  panes.querySelectorAll("[data-usagepop]").forEach(b=>{
+    const sid = b.closest("[data-sess]") && b.closest("[data-sess]").dataset.sess;
+    b.onclick = ()=>{
+      const opening = S.usagePop !== sid;
+      S.usagePop = opening ? sid : null;
+      render();
+      /* Refresh ON OPEN rather than on a timer. The number only matters when
+         someone is looking at it, and a background poll against an external API
+         for a panel nobody has open is cost with no reader. The server's 60s
+         cache makes reopening free. */
+      if (opening) loadUsage(true);
+    };
+  });
+  panes.querySelectorAll("[data-usageclose]").forEach(b=>b.onclick=()=>{
+    S.usagePop = null; render(); });
   panes.querySelectorAll("[data-cwdinput]").forEach(inp=>{
     inp.onkeydown = e=>{
       if (e.key === "Enter"){ e.preventDefault(); setSessCwd(inp.dataset.cwdinput, inp.value); }
@@ -6621,6 +6774,11 @@ async function boot(){
       const f = document.getElementById("prevUrl"); if (f) f.value = lastPrev;
     }
     if (lsGet(LS_TERM, false) === true){ termToggle(true); sideTab(S.sideTab); }
+
+    /* Seed the composer's usage chip. NOT awaited: the panel must not wait on an
+       external API to become usable, and until it resolves the chip renders "…"
+       rather than a number nobody fetched. One request per panel load. */
+    loadUsage(true);
 
     /* Staged-update watch. Started LAST and deliberately not awaited: a staged
        build is never a reason for the panel to come up any slower, and this
