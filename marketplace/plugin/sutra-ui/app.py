@@ -5,6 +5,7 @@ log read, and an SSE live-tail. Reads only — never writes a governance file.
 Run: python3 -m uvicorn app:app --host 127.0.0.1 --port 7000
 """
 import asyncio
+import time
 import fcntl
 import json
 import os
@@ -477,6 +478,87 @@ def sessions_page() -> str:
 @app.get("/api/sessions")
 def api_sessions(limit: int = 100):
     return sr.list_sessions(limit)
+
+
+# ---------------------------------------------------------------- live sync ---
+# Sutra READS Claude's transcripts, and until now it read them once, at boot.
+# Anything typed in Claude afterwards was invisible until the panel was reloaded,
+# which makes the two look like separate programs that happen to share a folder.
+# This is the half that makes them one thing: the server watches the transcript
+# directory and tells the panel what changed, as it changes.
+#
+# STAT POLLING, NOT FILESYSTEM EVENTS. FSEvents/watchdog would be tidier and is a
+# dependency this runtime does not have -- the bundled Python ships exactly
+# fastapi, uvicorn and websockets, and adding one to a 95MB payload for a 1-second
+# timer is a bad trade. sr.index() opens no files, so the poll costs one stat per
+# transcript and is flat in history size.
+#
+# SSE, NOT A WEBSOCKET. The traffic is one-way and the browser reconnects on its
+# own; a socket would be a second lifecycle to get wrong for no gain.
+SESSION_POLL_S = 1.5
+SESSION_HEARTBEAT_S = 25        # keeps proxies and idle timeouts from closing it
+
+
+@app.get("/api/sessions/stream")
+async def api_sessions_stream():
+    async def gen():
+        prev = {}
+        first = True
+        last_beat = time.time()
+        while True:
+            try:
+                cur = sr.index()
+            except Exception:
+                # A read error must not kill the stream: the panel would fall back
+                # to boot-only behaviour silently, which is the bug this fixes.
+                await asyncio.sleep(SESSION_POLL_S)
+                continue
+
+            if first:
+                # The opening frame is the whole index, so a panel that connects
+                # late is immediately correct rather than correct-from-now-on.
+                yield _sse_event("sync", {"sessions": [
+                    dict(id=k, **v, live=sr.liveness(v["mtime"])) for k, v in cur.items()]})
+                first = False
+            else:
+                changed = [dict(id=k, **v, live=sr.liveness(v["mtime"]))
+                           for k, v in cur.items()
+                           # SIZE as well as mtime: a transcript can be appended to
+                           # twice inside one second, and mtime alone would report
+                           # the first write and swallow the second.
+                           if k not in prev or prev[k]["mtime"] != v["mtime"]
+                           or prev[k]["size"] != v["size"]]
+                gone = [k for k in prev if k not in cur]
+                if changed:
+                    yield _sse_event("changed", {"sessions": changed})
+                if gone:
+                    yield _sse_event("vanished", {"ids": gone})
+                # Liveness decays with the clock, not with writes -- a session that
+                # stops being written goes active -> idle on its own, and nothing
+                # would ever say so without a tick.
+                if time.time() - last_beat >= SESSION_HEARTBEAT_S:
+                    last_beat = time.time()
+                    yield _sse_event("tick", {"now": int(time.time())})
+            prev = cur
+            await asyncio.sleep(SESSION_POLL_S)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",      # nothing may buffer an event stream
+    })
+
+
+def _sse_event(event: str, data: dict) -> str:
+    """A NAMED SSE frame.
+
+    Deliberately not called `_sse`: this module already had one, defined further
+    down for the log tail, whose signature is a single row and which emits an
+    unnamed `data:` frame. Two functions with one name is a silent overwrite --
+    the later definition won, every call here passed two arguments to a
+    one-argument function, and the stream died on its opening frame with the
+    panel simply never receiving anything.
+    """
+    return "event: %s\ndata: %s\n\n" % (event, json.dumps(data))
 
 
 @app.get("/api/sessions/{sid}")

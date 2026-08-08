@@ -837,6 +837,16 @@
   .ubar i.p-warn{background:var(--warn)}
   .ubar i.p-block{background:var(--block)}
 
+  /* Live mark: this transcript is being written in Claude right now. Pulsed,
+     because the one thing it has to say is that it is CHANGING -- a static
+     badge reads as a label. Respects reduced-motion: the colour still carries
+     the meaning without the animation. */
+  .livedot{color:var(--ok);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+  .livedot::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ok);
+    animation:livepulse 1.6s ease-in-out infinite}
+  @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){ .livedot::before{animation:none} }
+
   /* ── routine run threads ─────────────────────────────────────────────────
      A run row is a control, so it says so: pointer, hover, and a focus ring for
      the keyboard path. The dot is the unread mark -- drawn as an empty ring when
@@ -2886,7 +2896,13 @@ function renderRail(){
       return `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
     if (s.loadState === "loading") return `<span>reading transcript…</span>`;
     if (s.loadState === "error") return `<span style="color:var(--block)">unreadable</span>`;
-    return `<span>transcript unread</span><span>${kb(s.size||0)}</span>`;
+    if (s.vanished) return `<span style="color:var(--block)">deleted on disk</span>`;
+    /* Liveness comes from the transcript's last write, which is the only evidence
+       there is -- Claude appends a line per event, so "written 4 seconds ago" is
+       as close to "someone is typing in it now" as anything outside Claude can
+       honestly claim. Only `active` is drawn: idle and stale are the ordinary
+       cases and a badge on every row would say nothing. */
+    return `${s.live==="active"?`<span class="livedot" title="Being written right now in Claude">live</span>`:""}<span>transcript unread</span><span>${kb(s.size||0)}</span>`;
   };
   /* `project` is the ENCODED directory name (slashes turned into dashes), which
      reads as gibberish in a 200px rail. `cwd` is the same directory unencoded
@@ -7291,6 +7307,101 @@ async function loadGitDiff(path){
 /* The REAL sessions. session_reader.list_sessions() walks
    ~/.claude/projects/<encoded-cwd>/*.jsonl, newest first. Nothing here is
    derived from placements. */
+/* ── live sync with Claude ───────────────────────────────────────────────────
+   Sutra reads Claude's transcripts, and it used to read them ONCE, at boot. A
+   conversation you had in Claude afterwards simply did not exist here until the
+   panel was reloaded, which is what made the two feel like separate programs
+   that happen to share a directory.
+
+   The server watches ~/.claude/projects and streams what changed. This end
+   applies it: liveness on every session, new conversations appearing in the rail
+   as they are started, and a transcript that is OPEN IN A PANE re-read as it
+   grows -- so a chat happening in Claude updates here while it happens.
+
+   EventSource, not a socket: one-way traffic, and the browser reconnects on its
+   own with no lifecycle for this file to get wrong. */
+let _sessStream = null, _sessRefreshTimer = null;
+
+/* A new conversation means the rail needs the full record (title, cwd, branch),
+   which the watcher deliberately does not carry -- it stats, it does not parse.
+   Coalesced, because starting Claude writes several lines in quick succession
+   and each one would otherwise trigger its own list read. */
+function scheduleSessionRefresh(){
+  clearTimeout(_sessRefreshTimer);
+  _sessRefreshTimer = setTimeout(()=>{ loadSessions().then(()=>render()); }, 700);
+}
+
+function applySessionChange(rows){
+  let needList = false;
+  rows.forEach(row=>{
+    const s = S.sessions.find(x=>x.id === row.id);
+    if (!s){ needList = true; return; }        /* unseen conversation */
+    s.mtime = row.mtime; s.size = row.size; s.live = row.live;
+    /* Only a transcript actually on screen is re-read. Re-parsing every changed
+       file would turn a busy Claude session into a stream of reads for panes
+       nobody is looking at. */
+    if (S.openPanes.includes(s.id) && s.real && s.loadState !== "loading"){
+      /* Re-read through the SAME shape ensureTranscript() uses -- turns via
+         transcriptTurns(), and its loadState vocabulary (unread/loading/ok/
+         empty/error). A second parsing path would drift from the first and the
+         two would disagree about the same file. */
+      s.loadState = "loading";
+      apiGet("/api/sessions/" + encodeURIComponent(s.id))
+        .then(d=>{
+          s.turns = transcriptTurns(d && d.messages);
+          s.cwd = (d && d.cwd) || s.cwd;
+          s.branch = (d && d.branch) || s.branch;
+          s.loadState = s.turns.length ? "ok" : "empty";
+          scheduleRender();
+        })
+        .catch(e=>{ s.loadState = "error"; s.loadError = e.message; scheduleRender(); });
+    }
+  });
+  if (needList) scheduleSessionRefresh(); else scheduleRender();
+}
+
+function startSessionStream(){
+  if (_sessStream || typeof EventSource === "undefined") return;
+  try { _sessStream = new EventSource("/api/sessions/stream"); }
+  catch (e){ return; }
+  _sessStream.addEventListener("sync", ev=>{
+    /* The opening frame is the WHOLE index, so a panel that connected late is
+       immediately correct rather than correct-from-now-on. */
+    try { applySessionChange(JSON.parse(ev.data).sessions || []); } catch (e) {}
+  });
+  _sessStream.addEventListener("changed", ev=>{
+    try { applySessionChange(JSON.parse(ev.data).sessions || []); } catch (e) {}
+  });
+  _sessStream.addEventListener("vanished", ev=>{
+    try {
+      const ids = new Set(JSON.parse(ev.data).ids || []);
+      /* Marked gone, NOT removed. A pane open on a transcript that was deleted
+         underneath should say so rather than vanishing mid-read. */
+      S.sessions.forEach(s=>{ if (ids.has(s.id)) s.vanished = true; });
+      scheduleRender();
+    } catch (e) {}
+  });
+  _sessStream.addEventListener("tick", ()=>{
+    /* Liveness decays with the CLOCK, not with writes: a session nobody has
+       touched for a minute stops being active on its own, and without a tick
+       nothing would ever say so. */
+    const now = Date.now()/1000;
+    let moved = false;
+    S.sessions.forEach(s=>{
+      if (!s.mtime) return;
+      const age = now - s.mtime;
+      const next = age <= 45 ? "active" : age <= 1800 ? "idle" : "stale";
+      if (s.live !== next){ s.live = next; moved = true; }
+    });
+    if (moved) scheduleRender();
+  });
+  /* EventSource retries on its own; this only stops a dead handle being reused. */
+  _sessStream.onerror = ()=>{
+    if (_sessStream && _sessStream.readyState === 2){ _sessStream = null;
+      setTimeout(startSessionStream, 3000); }
+  };
+}
+
 async function loadSessions(){
   adoptRealSessions(await apiGet("/api/sessions?limit=100"));
 }
@@ -7362,6 +7473,11 @@ async function boot(){
        external API to become usable, and until it resolves the chip renders "…"
        rather than a number nobody fetched. One request per panel load. */
     loadUsage(true);
+
+    /* Attach to Claude. From here the rail reflects what is happening in Claude
+       as it happens, rather than what was true when this panel booted. Started
+       LAST so a stream that fails cannot delay anything above it. */
+    startSessionStream();
 
     /* Staged-update watch. Started LAST and deliberately not awaited: a staged
        build is never a reason for the panel to come up any slower, and this

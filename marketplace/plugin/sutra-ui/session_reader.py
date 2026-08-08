@@ -6,6 +6,7 @@ Continuing a session happens in the real terminal via `claude --resume`.
 """
 import json
 import os
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -69,6 +70,50 @@ def list_sessions(limit: int = 100) -> List[dict]:
             "mtime": int(f.stat().st_mtime),
             "size": f.stat().st_size,
         })
+    return out
+
+
+# How recently a transcript must have been written to count as each state. These
+# are about the FILE, which is the only evidence there is: Claude appends a line
+# per event, so "was written 4 seconds ago" is as close to "someone is typing in
+# it right now" as anything outside Claude can honestly get.
+ACTIVE_S = 45          # a turn in flight, or one that just landed
+IDLE_S = 30 * 60       # the conversation is open but nothing is happening
+
+
+def liveness(mtime: float, now: Optional[float] = None) -> str:
+    """active | idle | stale, from the transcript's last write.
+
+    Deliberately three states and not a boolean: "not active" covers both a chat
+    someone is sitting in between messages and one abandoned last Tuesday, and
+    collapsing them would make the rail claim the second is as current as the first.
+    """
+    age = (time.time() if now is None else now) - float(mtime or 0)
+    if age <= ACTIVE_S:
+        return "active"
+    if age <= IDLE_S:
+        return "idle"
+    return "stale"
+
+
+def index() -> Dict[str, Dict]:
+    """{session_id: {mtime, size, project}} for every transcript on disk.
+
+    STAT ONLY -- no file is opened. This is what the watcher polls, so it has to
+    stay cheap enough to run every second or two against a projects directory
+    with hundreds of transcripts in it; parsing titles here would make the poll
+    cost scale with history rather than with change.
+    """
+    out: Dict[str, Dict] = {}
+    if not PROJECTS.exists():
+        return out
+    for f in PROJECTS.glob("*/*.jsonl"):
+        try:
+            st = f.stat()
+        except OSError:
+            continue          # deleted between glob and stat: simply not there
+        out[f.stem] = {"mtime": int(st.st_mtime), "size": st.st_size,
+                       "project": f.parent.name}
     return out
 
 
