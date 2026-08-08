@@ -1,6 +1,12 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-07
+**status**: active · **updated**: 2026-08-08
+
+## 2.79.0
+
+- **Balance screen beauty pass.** Serif greeting with the day's one-liner,
+  insight cards as accented stat tiles, day strip in a card with hour marks,
+  polished composer — all from existing panel tokens; visual-only.
 
 ## 2.78.2
 
@@ -19,12 +25,6 @@
   founder says "continue" (`sutra-usage continue`; override expires at window reset).
   OFF everywhere until a machine opts in with `sutra-usage on`. Fail-open on any
   data error; `sutra-usage status` shows live five-hour/seven-day utilization.
-
-## 2.79.0
-
-- **Balance screen beauty pass.** Serif greeting with the day's one-liner,
-  insight cards as accented stat tiles, day strip in a card with hour marks,
-  polished composer — all from existing panel tokens; visual-only.
 
 ## 2.77.0
 
