@@ -370,6 +370,33 @@ def _tool_summary(inp, limit=120):
     return ""
 
 
+# A shell command is the one tool input the operator may legitimately want to run
+# again by hand, so it is the one forwarded in FULL rather than as the 120-char
+# display summary. Deliberately narrow: only tools that take a `command` and
+# actually execute a shell. Everything else keeps the summary and nothing more --
+# a Write's `content` is a whole file and has no business crossing this wire.
+_SHELL_TOOLS = {"bash", "bashoutput", "killshell"}
+# Long enough for any real one-liner or short heredoc; past this the paste would
+# be unreviewable in a terminal prompt anyway, so it is refused rather than cut
+# into something that looks complete but is not.
+_COMMAND_MAX = 4000
+
+
+def _tool_command(name, inp):
+    """The verbatim shell command a tool was asked to run, or "".
+
+    Never raises: an unexpected input shape must not take the turn down.
+    """
+    if not isinstance(inp, dict):
+        return ""
+    if (name or "").strip().lower() not in _SHELL_TOOLS:
+        return ""
+    cmd = inp.get("command")
+    if not isinstance(cmd, str) or not cmd.strip():
+        return ""
+    return cmd if len(cmd) <= _COMMAND_MAX else ""
+
+
 def _ensure_workdir(path=None):
     """Both socket handlers spawn a subprocess with cwd=<workdir>. If that
     directory does not exist, create_subprocess_exec raises FileNotFoundError
@@ -638,6 +665,21 @@ async def ws_chat(ws: WebSocket):
     # would otherwise reach the spawn below with the ceiling raised.
     perm_mode = providers.effective_permission_mode(settings["permission_mode"])
     workdir = settings["workdir"] or WORKDIR
+    # Per-session working directory. The settings value is the DEFAULT; a session
+    # may run somewhere else, which is what the composer's folder control sets.
+    # Same confinement as every other path into a spawn -- workdir_allowed() keeps
+    # this inside $HOME (or SUTRA_UI_WORKDIR_ROOT), because the workdir becomes the
+    # agent's cwd and an arbitrary one turns this endpoint into a read oracle over
+    # the whole disk. A refused path FALLS BACK to the setting and says so in the
+    # provider frame rather than failing the connection: the operator gets a
+    # working session and an honest label, not a dead socket.
+    req_cwd = ws.query_params.get("cwd")
+    cwd_refused = None
+    if req_cwd:
+        if providers.workdir_allowed(req_cwd):
+            workdir = os.path.expanduser(req_cwd)
+        else:
+            cwd_refused = req_cwd
     if not providers.workdir_allowed(workdir):
         workdir = WORKDIR
     agent_bin = prov["bin_path"]
@@ -661,6 +703,9 @@ async def ws_chat(ws: WebSocket):
         "permission_note": providers.PERMISSION_MODE_NOTES.get(perm_mode),
         "writes_files": perm_mode in ("acceptEdits", "bypassPermissions"),
         "workdir": workdir,
+        # Stated, not swallowed: the session is running somewhere other than what
+        # was asked for, and a UI that showed the requested path would be lying.
+        "cwd_refused": cwd_refused,
     })
 
     session_id = None
@@ -898,6 +943,10 @@ async def ws_chat(ws: WebSocket):
                                 "id": blk.get("id"),
                                 "name": blk.get("name", ""),
                                 "summary": _tool_summary(blk.get("input")),
+                                # Shell commands only, in full -- what "open this in
+                                # the terminal" needs. "" for every other tool.
+                                "command": _tool_command(blk.get("name", ""),
+                                                         blk.get("input")),
                                 # Forwarded VERBATIM. Observed {"type":"direct"} for a
                                 # main-agent call; other shapes are not guessed at here,
                                 # and the client labels whatever actually arrives.

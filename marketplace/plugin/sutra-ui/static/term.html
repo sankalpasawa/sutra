@@ -18,9 +18,17 @@
      sidebar left ~120px for the terminal itself and the header was drawn twice.
      The aside is HIDDEN, not removed: connect() reads #caveman out of it, and
      display:none keeps the element (and its .checked) addressable. */
-  body.embed #app { grid-template-columns:1fr; }
+  /* `main` must span BOTH rows here, and that is load-bearing rather than tidy-up.
+     The grid is `grid-template-rows:auto 1fr`. In embed mode the header and the
+     aside are display:none, which takes them out of flow -- so `main` was
+     auto-placed into row 1, the `auto` one, and sized to its CONTENT instead of
+     to the viewport. Measured: a 458x816 iframe gave #term 430x384, and the fit
+     addon sized the PTY from that wrong box -- .xterm-screen rendered 674px wide
+     inside a 430px container, 244px of overflow, which is the garbled, clipped
+     terminal. Pinning the row makes the height the viewport's again. */
+  body.embed #app { grid-template-columns:1fr; grid-template-rows:1fr; }
   body.embed aside, body.embed header { display:none; }
-  body.embed main { grid-column:1/2; }
+  body.embed main { grid-column:1/2; grid-row:1/-1; min-height:0; min-width:0; }
   header { grid-column:1/3; display:flex; align-items:center; gap:12px;
            height:48px; padding:0 16px; white-space:nowrap; overflow:hidden;   /* fixed height: terminal can't shrink */
            border-bottom:1px solid var(--line); background:var(--panel); }
@@ -194,21 +202,58 @@
     const el = document.getElementById("term");
     return !!el && el.clientWidth > 0 && el.clientHeight > 0;
   }
+  /* Giving up silently was the bug. Every early return below is a measurement we
+     REFUSE to act on -- correct -- but the old code then did nothing at all, so
+     whatever size the terminal happened to hold at that moment became permanent:
+     nothing re-measures a container whose size never changes again, and the
+     ResizeObserver watches #term, which is exactly the element that is wrong. A
+     refused measurement now schedules a retry instead, so the terminal converges
+     on the right size rather than freezing at the first wrong one. */
+  let retryTimer = null;
+  function retryRefit(ms) {
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(refit, ms || 120);
+  }
+  /* True while the parent pane is mid drag-resize. Same-origin, so this is a plain
+     read rather than a message channel; any failure (standalone page, cross-origin
+     embed) answers "not dragging", which is the old behaviour. */
+  function parentDragging() {
+    try { return !!(window.parent && window.parent !== window
+                    && window.parent.document.body.classList.contains("termdrag")); }
+    catch (_) { return false; }
+  }
   function refit() {
-    if (!measurable()) return;
+    if (parentDragging()) { retryRefit(120); return; }
+    if (!measurable()) { retryRefit(200); return; }
     try {
       const d = fit.proposeDimensions();
-      if (!d || !isFinite(d.cols) || !isFinite(d.rows)) return;
-      if (d.cols < MIN_COLS || d.rows < MIN_ROWS) return;
-      fit.fit();
-      sendResize();
-    } catch (_) {}
+      if (!d || !isFinite(d.cols) || !isFinite(d.rows)) { retryRefit(200); return; }
+      if (d.cols < MIN_COLS || d.rows < MIN_ROWS) { retryRefit(200); return; }
+      if (d.cols !== term.cols || d.rows !== term.rows) {
+        fit.fit();
+        sendResize();
+      }
+      /* The renderer can keep a stale screen width even when cols/rows already
+         agree -- that is the 674px-screen-in-a-430px-box case. Detect it against
+         the real box and force one more fit rather than trusting the numbers. */
+      const el = document.getElementById("term");
+      const screen = document.querySelector(".xterm-screen");
+      if (el && screen && screen.getBoundingClientRect().width > el.clientWidth + 2) {
+        fit.fit();
+        sendResize();
+      }
+    } catch (_) { retryRefit(300); }
   }
   let resizeTimer;
   function debouncedRefit() { clearTimeout(resizeTimer); resizeTimer = setTimeout(refit, 150); }
   refit();
   setTimeout(refit, 350);
   window.addEventListener("load", refit);
+  /* The parent pane tells us when a drag ENDED. Fitting on every frame of a drag
+     pushes a new winsize into the PTY ~7x a second, and the TUI redraws at each
+     one -- that is what leaves the half-drawn, overlapping fragments on screen.
+     Size once, when the gesture is over. */
+  window.addEventListener("sutra:term-settled", refit);
   /* Coming back from a hidden tab is a resize the ResizeObserver may not see if
      the element was display:none the whole time -- ask again when we are shown. */
   document.addEventListener("visibilitychange", () => {
@@ -241,6 +286,12 @@
   window.addEventListener("resize", debouncedRefit);
   new ResizeObserver(debouncedRefit).observe(document.getElementById("term"));
 
+  /* A FUNCTION DECLARATION on purpose: the studio pane (same origin) asks this
+     before writing into the PTY, and `let ws` is not reachable as a property of
+     this window -- only declared functions are. Without it the parent had no way
+     to tell "socket not up yet" from "sent", and bytes written before the socket
+     opens are dropped with no error anywhere. */
+  function termReady() { return !!(ws && ws.readyState === 1); }
   function send(d) { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d })); term.focus(); }
   document.querySelectorAll(".btn").forEach((b) => {
     b.onclick = () => {

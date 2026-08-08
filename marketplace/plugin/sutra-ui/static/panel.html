@@ -81,7 +81,14 @@
        border:0;border-radius:0;padding:9px;height:100vh;min-height:0;box-shadow:none;
        /* padding must live INSIDE 100vh or the app is 18px taller than the window */
        box-sizing:border-box}
-  @media(max-width:860px){.app{grid-template-columns:1fr;height:auto}.rail{max-height:290px}}
+  /* `height:auto` used to be here, and it made the composer UNREACHABLE. body is
+     overflow:hidden, so an app taller than the viewport is not scrolled -- it is
+     clipped. Measured at 820x900: the app grew to 6404px and the composer sat at
+     y=6352 with no way to reach it, and its position moved by thousands of pixels
+     as panes opened and closed. The app keeps the viewport's height; `.panes`
+     already flips to overflow-y:auto at this breakpoint, so the column scrolls and
+     every composer stays reachable at the foot of its own pane. */
+  @media(max-width:860px){.app{grid-template-columns:1fr}.rail{max-height:290px}}
 
   /* rail */
   .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
@@ -294,7 +301,11 @@
   .kbd{font:600 9px/1 var(--mono);border:1px solid var(--line);border-radius:3px;padding:2px 4px;color:var(--muted)}
 
   /* ── tiled panes: browse pane + session panes, newest on the right ── */
-  .panes{display:flex;gap:11px;min-width:0;overflow-x:auto;overflow-y:hidden}
+  /* min-height:0 is load-bearing, not defensive. .panes is a GRID ITEM, and a grid
+     item's default min-height:auto refuses to shrink below its content -- so the
+     row grew to the tallest pane's content instead of to the viewport, and the
+     per-pane `overflow-y:auto` never engaged because there was nothing to clip. */
+  .panes{display:flex;gap:11px;min-width:0;min-height:0;overflow-x:auto;overflow-y:hidden}
   /* NO max-width here. A hard 640px cap on .pane stranded the row the moment a
      neighbour collapsed: rail at 38px + one session pane frozen at 640px left
      588px of a 1281px row simply unclaimed, and nothing could grow into it.
@@ -306,7 +317,17 @@
   /* Session panes only: the browse pane's body holds charts/lists that must
      use every pixel, so it is excluded. */
   .pane:not(.browse) .pb > *{max-width:78ch;margin-left:auto;margin-right:auto}
-  .pane.browse{flex:1 1 480px;max-width:none;min-width:0;container-type:inline-size}
+  /* A FLOOR, not the cap the comment above rejects -- the two fail in opposite
+     directions. Session panes are `flex:1 0 380px` (shrink 0), so the browse pane,
+     alone in carrying shrink:1, absorbed every pixel the row was short: measured at
+     115px with the terminal dragged to 700px, which crushes the org chart into an
+     unreadable column. Below this width the pane shows nothing usable, so the row
+     overflows into its own horizontal scroll (`.panes` is overflow-x:auto) instead
+     of silently destroying the content. */
+  .pane.browse{flex:1 1 480px;max-width:none;min-width:300px;container-type:inline-size}
+  /* ...but a floor must never win on a genuinely narrow window, where the panes
+     stack vertically and 300px could exceed the viewport. */
+  @media(max-width:860px){ .pane.browse{min-width:0} }
   /* the inspector column yields when session panes squeeze the browse pane —
      the width that matters is the PANE's, not the viewport's */
   @container (max-width:760px){ .cols{grid-template-columns:minmax(0,1fr)} }
@@ -635,7 +656,10 @@
     .pane.collapsed .ph h3{writing-mode:horizontal-tb;max-width:190px}
     .pane.collapsed .pfold svg{transform:rotate(-90deg)}
     .pdiv{display:none}
-    .app{height:auto}
+    /* The second `.app{height:auto}` lived here and had to go for the same reason
+       as the one at the top of this sheet: with body overflow:hidden it clips
+       instead of scrolling, and everything below the fold -- the composer included
+       -- becomes unreachable. The panes column above owns the scrolling now. */
   }
 
   /* ── a selectable option that can also be refused, with the refusal shown ── */
@@ -753,6 +777,34 @@
     background-size:4px 4px,4px 4px;
     background-position:calc(100% - 9px) 51%,calc(100% - 5px) 51%;
     background-repeat:no-repeat}
+  /* ── working-directory control ───────────────────────────────────────────
+     Sits in the composer row because that is where you are about to use it, the
+     same argument the permission selector is placed by. It shows the BASENAME:
+     the full path is 40+ chars of mostly-shared prefix and would crowd out the
+     message box, so the folder name is the label and the whole path is the title.
+     Styled off .modelsel/.permsel so a third control in this row cannot drift
+     from the two already there. */
+  .cwdbtn{flex:none;display:inline-flex;align-items:center;gap:5px;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;color:var(--muted);
+    font:11px/1 var(--sans);padding:6px 8px;max-width:150px;cursor:pointer}
+  .cwdbtn:hover{color:var(--ink);border-color:var(--acc)}
+  .cwdbtn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .cwdbtn svg{width:12px;height:12px;flex:none;opacity:.75}
+  .cwdbtn .cwdn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* An override is a state worth seeing: this session is NOT where the rest of the
+     app says sessions run. */
+  .cwdbtn.over{color:var(--acc);border-color:var(--acc)}
+  .cwdrow{display:flex;gap:7px;align-items:center;padding:8px 11px;
+    border-top:1px solid var(--line-soft);background:var(--surface)}
+  .cwdrow input{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.3 var(--mono);padding:6px 8px}
+  .cwdrow input:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .cwdrow button{background:var(--inset);border:1px solid var(--line);border-radius:6px;
+    color:var(--muted);font:600 10px/1 var(--mono);padding:6px 9px;cursor:pointer}
+  .cwdrow button:hover{color:var(--ink);border-color:var(--acc)}
+  .cwdnote{padding:0 11px 8px;font-size:10.5px;color:var(--faint);line-height:1.45;
+    background:var(--surface)}
+  .cwdnote.bad{color:var(--block)}
   .modelsel:hover,.permsel:hover{color:var(--ink);border-color:var(--line)}
   .modelsel:focus-visible,.permsel:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   /* A mode that writes files without asking is not a neutral preference, and the
@@ -780,6 +832,11 @@
   .tout{background:none;border:1px solid var(--line);border-radius:5px;color:var(--muted);
     font:600 9.5px/1 var(--mono);padding:2px 6px;cursor:pointer;margin-left:4px}
   .tout:hover{border-color:var(--acc);color:var(--acc)}
+  /* The terminal control sits beside `output` and does something different in kind
+     -- it leaves the transcript and puts a command in front of you -- so it carries
+     the accent rather than reading as a second copy of the same toggle. */
+  .tout.tterm{border-color:var(--acc-bg);color:var(--acc)}
+  .tout.tterm:hover{border-color:var(--acc);background:var(--acc-bg)}
   .toutbody{margin:2px 0 6px 18px;padding:7px 9px;background:var(--inset);
     border:1px solid var(--line-soft);border-radius:6px;color:var(--muted);
     font:11px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;
@@ -1734,8 +1791,50 @@ function groundingPrefix(t){
   return L.join("\n") + "\n\n";
 }
 
-function claudeWsUrl(){
-  return (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/chat";
+/* The directory THIS session runs in. S.cwd[sid] is a per-session override; with none
+   set the answer is the global setting, which is what every session used before this
+   control existed. Returning the effective value (never null) means callers never have
+   to re-derive the fallback and cannot disagree about it. */
+function sessCwd(sid){
+  const over = S.cwd && S.cwd[sid];
+  return (over || (SETTINGS||{}).workdir || "").trim();
+}
+/* The cwd is fixed when the agent process spawns, so it can only be carried on the
+   socket URL -- not sent as a later message. Changing it therefore has to drop the
+   socket (see setSessCwd), or the label would claim a directory the running process
+   is not in. */
+function claudeWsUrl(sid){
+  const base = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/chat";
+  const cwd = sid ? sessCwd(sid) : "";
+  return cwd ? base + "?cwd=" + encodeURIComponent(cwd) : base;
+}
+/* Point this session at a different folder.
+   The running agent CANNOT be moved -- its cwd was set by the spawn -- so the open
+   socket is closed rather than relabelled. The next message opens a new one in the
+   new directory. Closing while a turn streams would throw away a reply the operator
+   is waiting on, so that case is refused with a reason instead. */
+function setSessCwd(sid, raw){
+  const next = (raw || "").trim();
+  const prev = sessCwd(sid);
+  S.cwdEdit = null;
+  if (next === prev){ scheduleRender(); return; }
+  if (streamingFor(sid)){
+    S.cwdError = "finish or stop the running turn first — moving folders now would "
+               + "discard the reply it is still writing.";
+    scheduleRender();
+    return;
+  }
+  S.cwdError = null;
+  /* Empty means "clear the override", i.e. fall back to the global setting -- not
+     "run in the filesystem root". */
+  if (next) S.cwd[sid] = next; else delete S.cwd[sid];
+  ["", "::side"].forEach(suffix=>{
+    const ch = CLAUDE_SOCKETS.get(sid + suffix);
+    if (!ch) return;
+    try { ch.ws.close(); } catch (e) {}
+    CLAUDE_SOCKETS.delete(sid + suffix);
+  });
+  scheduleRender();
 }
 /* Every turn this channel still owes a reply gets the REAL reason it will not arrive.
    Silence and a spinner that never stops are the failure modes this replaces. */
@@ -1766,9 +1865,9 @@ function claudeChannel(s, side){
   let ch = CLAUDE_SOCKETS.get(key);
   if (ch && (ch.ws.readyState === WebSocket.CONNECTING || ch.ws.readyState === WebSocket.OPEN))
     return ch;
-  const ws = new WebSocket(claudeWsUrl());
+  const ws = new WebSocket(claudeWsUrl(s.id));
   ch = { ws:ws, sid:s.id, key:key, side:!!side, open:false, queue:[], pending:[],
-         turn:null, last:null, lastError:null };
+         turn:null, last:null, lastError:null, cwd:sessCwd(s.id) };
   CLAUDE_SOCKETS.set(key, ch);
   ws.onopen = ()=>{ ch.open = true; ch.queue.splice(0).forEach(m=>ws.send(m)); };
   ws.onmessage = ev=>{
@@ -1784,6 +1883,19 @@ function claudeChannel(s, side){
          writes files without asking. Dropping this frame meant the pane could
          not say what it was actually about to do. */
       s.channel = f;
+      /* The server confines any agent cwd to $HOME and fell back to the default.
+         Drop the override and SAY SO -- leaving it set would show a folder chip for
+         a directory this session is demonstrably not running in. */
+      if (f.cwd_refused){
+        delete S.cwd[s.id];
+        S.cwdError = "refused " + f.cwd_refused + " — the working directory must be "
+                   + "inside your home folder. Running in " + (f.workdir || "the default") + ".";
+        S.cwdEdit = s.id;
+      } else if (S.cwd[s.id] && f.workdir){
+        /* Show what the server RESOLVED (it expands ~ and follows symlinks), not what
+           was typed -- they differ, and echoing the input would misreport the result. */
+        S.cwd[s.id] = f.workdir;
+      }
     } else if (f.type === "session"){
       /* A SIDE channel must never write s.claude_session: that field is what the main
          thread resumes from, and overwriting it with the branch's id would silently
@@ -1834,6 +1946,9 @@ function claudeChannel(s, side){
                   if (f.output) r.output = f.output; }
         } else {
           runs.push({ id:f.id, name:f.name || "tool", summary:f.summary || "",
+                      /* Shell commands only, and only when the server sent one --
+                         this is what the "terminal" control re-opens. */
+                      command:f.command || "",
                       caller:f.caller || null, running:true, ok:null,
                       startedAt: Date.now() });
           ch.turn.thinking = false;      /* a tool call ends the thinking phase */
@@ -2188,6 +2303,13 @@ const S = {
      operator typing (opening the palette, a simulate() response, a token frame).
      Keeping it in state makes it survive unconditionally. */
   composerText:{},
+  /* sessionId -> working directory override. Absent means "use the global setting",
+     which is what every session did before this control existed -- so an untouched
+     session behaves exactly as it always has. Deliberately NOT persisted: a folder
+     silently restored from a previous browser session would spawn an agent somewhere
+     the operator never chose in this one. */
+  cwd:{},
+  cwdEdit:null,        /* sessionId whose folder editor is open, or null */
   /* Layout the operator adjusted, restored from localStorage on load:
        paneCollapsed[<"browse"|sessionId>] -> true
        folds[<fold key>]                   -> 0 (closed) | 1 (open)
@@ -4380,6 +4502,55 @@ const SPARK = '<span class="spark" aria-hidden="true"><svg viewBox="0 0 24 24" f
   'stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
   '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></svg></span>';
 
+/* ── working directory, in the composer ──────────────────────────────────────
+   The folder the agent runs in was previously reachable only in Settings, applied
+   globally to every session at once. It belongs beside the message box for the same
+   reason the permission selector does: it is a property of the turn you are about to
+   send, and two sessions can legitimately want two different folders. */
+function cwdLabel(p){
+  const clean = (p || "").replace(/\/+$/, "");
+  if (!clean) return "no folder";
+  const base = clean.split("/").filter(Boolean).pop();
+  return base || clean;   /* "/" has no basename; show the path itself */
+}
+function cwdButtonHtml(sid){
+  const eff = sessCwd(sid);
+  const over = !!(S.cwd && S.cwd[sid]);
+  const home = (SETTINGS||{}).workdir || "";
+  const title = (eff || "no working directory set")
+    + (over ? "\n\nThis session only. Every other session uses " + (home || "the default") + "."
+            : "\n\nFrom Settings — shared by every session.")
+    + "\nClick to run this session somewhere else.";
+  return `<button class="cwdbtn ${over?"over":""}" type="button" data-cwdopen="${esc(sid)}"
+            aria-expanded="${S.cwdEdit===sid?"true":"false"}"
+            aria-label="Working directory: ${esc(eff||"none")}. Change it."
+            title="${esc(title)}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+        <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+      <span class="cwdn">${esc(cwdLabel(eff))}</span>
+    </button>`;
+}
+function cwdEditorHtml(sid){
+  if (S.cwdEdit !== sid) return "";
+  const eff = sessCwd(sid);
+  const over = !!(S.cwd && S.cwd[sid]);
+  /* The note states the CONSTRAINT rather than discovering it after a failed send:
+     the server confines any agent cwd to $HOME, and a path outside it is refused
+     there. Saying so here means the refusal is not a surprise. */
+  const note = S.cwdError
+    ? `<div class="cwdnote bad">${esc(S.cwdError)}</div>`
+    : `<div class="cwdnote">Applies to the next message — the running agent cannot be
+         moved, so changing this starts a new one. Must be inside your home folder.${
+         over ? " Clear the box to go back to the shared default." : ""}</div>`;
+  return `<div class="cwdrow">
+      <input type="text" data-cwdinput="${esc(sid)}" spellcheck="false"
+             value="${esc(eff)}" placeholder="~/some/project"
+             aria-label="Working directory for this session" />
+      <button type="button" data-cwdsave="${esc(sid)}">SET</button>
+      <button type="button" data-cwdcancel="${esc(sid)}">CANCEL</button>
+    </div>${note}`;
+}
+
 function turnResponse(t){
   const nTools = (t.tools && t.tools.length) || 0;
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
@@ -4418,6 +4589,9 @@ function turnResponse(t){
                         aria-expanded="${S.toolOpen&&S.toolOpen[r.id]?"true":"false"}"
                         title="Show what this tool returned">${
                           S.toolOpen&&S.toolOpen[r.id]?"hide":"output"}</button>`:""}
+           ${r.command?`<button class="tout tterm" type="button" data-toolterm="${esc(r.id||"")}"
+                        title="Open the terminal with this command typed in, ready to run.
+It is NOT executed for you — press Enter yourself once you have read it.">terminal</button>`:""}
            ${r.caller && r.caller!=="direct"?`<span class="pill p-acc">${esc(r.caller)}</span>`:""}
            <span class="tverdict">${r.running ? "running"
                                    : r.ok === false ? "error"
@@ -4596,6 +4770,7 @@ function sessionPane(s){
     </div>` : ""}
     ${permConfirmHtml()}
     ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
+    ${cwdEditorHtml(s.id)}
     <div class="pc">
       <button class="ib" data-optstoggle="${s.id}" type="button"
               aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
@@ -4615,6 +4790,7 @@ function sessionPane(s){
       <textarea data-sask="${s.id}" rows="1"
              placeholder="Ask anything — / for commands, Shift+Enter for a new line"
              aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
+      ${cwdButtonHtml(s.id)}
       ${permSelect()}
       <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
               title="Model — applies to the next message">
@@ -5460,6 +5636,31 @@ function wire(){
   const ca=scBody.querySelector("[data-collall]");
   if(ca) ca.onclick=()=>{ live().forEach(d=>{ if(d.parent_ref) S.collapsed.add(d.ref); }); render(); };
 
+  /* working directory, per session */
+  panes.querySelectorAll("[data-cwdopen]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.cwdopen;
+    S.cwdEdit = S.cwdEdit === sid ? null : sid;
+    S.cwdError = null;
+    render();
+    /* Focus and put the caret at the END: the field is pre-filled with the current
+       path, and selecting it all would make the first keystroke wipe a value the
+       operator most likely wants to edit rather than replace. */
+    const inp = panes.querySelector('[data-cwdinput="' + sid + '"]');
+    if (inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  });
+  panes.querySelectorAll("[data-cwdsave]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.cwdsave;
+    const inp = panes.querySelector('[data-cwdinput="' + sid + '"]');
+    setSessCwd(sid, inp ? inp.value : "");
+  });
+  panes.querySelectorAll("[data-cwdcancel]").forEach(b=>b.onclick=()=>{
+    S.cwdEdit = null; S.cwdError = null; render(); });
+  panes.querySelectorAll("[data-cwdinput]").forEach(inp=>{
+    inp.onkeydown = e=>{
+      if (e.key === "Enter"){ e.preventDefault(); setSessCwd(inp.dataset.cwdinput, inp.value); }
+      else if (e.key === "Escape"){ e.preventDefault(); S.cwdEdit = null; S.cwdError = null; render(); }
+    };
+  });
   /* session panes */
   panes.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     S.sessTab[b.dataset.sid]=b.dataset.tab; render(); });
@@ -5530,6 +5731,22 @@ function wire(){
     const id = b.dataset.toolout;
     S.toolOpen[id] = !S.toolOpen[id];
     render();
+  });
+  /* "view it in the terminal" for a shell command the agent ran.
+     It TYPES the command and stops. It does not press Enter, and that is the whole
+     design: the agent ran this once already, a second run is a NEW side effect, and
+     `rm`, a migration or a deploy would be re-executed by a control the operator
+     clicked to LOOK at something. Typed-not-run is also what term.html's own
+     data-insert buttons already do, so this is the established gesture here. */
+  panes.querySelectorAll("[data-toolterm]").forEach(b=>b.onclick=()=>{
+    const id = b.dataset.toolterm;
+    let run = null;
+    S.sessions.forEach(s=>(s.turns||[]).forEach(t=>
+      (t.toolRuns||[]).forEach(r=>{ if (r.id === id) run = r; })));
+    Object.keys(S.sideTurns||{}).forEach(sid=>(S.sideTurns[sid]||[]).forEach(t=>
+      (t.toolRuns||[]).forEach(r=>{ if (r.id === id) run = r; })));
+    if (!run || !run.command) return;
+    sendToTerminal(run.command);
   });
   panes.querySelectorAll("[data-sidetoggle]").forEach(b=>b.onclick=()=>{
     const sid=b.dataset.sidetoggle;
@@ -6356,6 +6573,39 @@ function termSetMode(mode){
   render();
 }
 
+/* Type `text` at the terminal's prompt. NOTHING is executed -- see the caller for
+   why. The pane is opened, forced to the Terminal tab (pasting into a hidden pane
+   would look like the button did nothing) and put in SHELL mode, because a command
+   typed into the claude TUI is a prompt to an agent, not a command to a shell.
+   Delivery is deferred until the iframe has a live socket: a fresh mount has no
+   WebSocket yet, and bytes written before it opens are dropped silently. */
+function sendToTerminal(text){
+  if (!text) return;
+  if (!S.termOpen) termToggle(true);
+  if (S.sideTab === "preview") sideTab("terminal");
+  if (S.termMode !== "shell") termSetMode("shell");
+  termMount(false);
+  const started = Date.now();
+  (function deliver(){
+    const fr = termBodyEl && termBodyEl.querySelector("iframe");
+    const w = fr && fr.contentWindow;
+    let ready = false;
+    /* Same-origin, so the child's own send() is reachable. Using it (rather than a
+       second socket from here) keeps ONE writer on the PTY. */
+    try { ready = !!(w && typeof w.termReady === "function" && w.termReady()
+                       && typeof w.send === "function"); }
+    catch (e) { ready = false; }
+    if (ready){
+      try { w.send(text); } catch (e) {}
+      try { w.focus(); } catch (e) {}
+      return;
+    }
+    /* Bounded: a terminal that never connects must not leave a timer running for
+       the life of the session. */
+    if (Date.now() - started < 6000) setTimeout(deliver, 120);
+  })();
+}
+
 function termToggle(on){
   S.termOpen = on === undefined ? !S.termOpen : !!on;
   termPaneEl.hidden = !S.termOpen;
@@ -6460,6 +6710,17 @@ document.getElementById("termReload").onclick = ()=>termMount(true);
    iframe gets pointer-events:none for the duration via body.termdrag -- without it
    the cross-document boundary swallows the move events and the drag dies halfway. */
 const termGripEl = document.getElementById("termGrip");
+/* Tell the terminal the gesture is OVER. During a drag the pane's width changes on
+   every pointermove, the iframe's ResizeObserver fires, and each fit pushes a fresh
+   winsize into the PTY -- the TUI then redraws at each one and leaves the half-drawn,
+   overlapping fragments the operator sees as a "distorted" terminal. term.html
+   refuses to fit while body.termdrag is set (it reads this document directly -- same
+   origin) and fits once on this event instead. */
+function termSettled(){
+  const fr = termBodyEl && termBodyEl.querySelector("iframe");
+  try { fr && fr.contentWindow &&
+        fr.contentWindow.dispatchEvent(new Event("sutra:term-settled")); } catch (e) {}
+}
 termGripEl.addEventListener("pointerdown", e=>{
   e.preventDefault();
   const startX = e.clientX, startW = S.termW || TERM_DEFAULT;
@@ -6472,6 +6733,7 @@ termGripEl.addEventListener("pointerdown", e=>{
     termGripEl.removeEventListener("pointerup", up);
     termGripEl.removeEventListener("pointercancel", up);
     lsSet(LS_TERMW, S.termW);
+    termSettled();
   };
   termGripEl.addEventListener("pointermove", move);
   termGripEl.addEventListener("pointerup", up);
@@ -6485,6 +6747,7 @@ termGripEl.addEventListener("keydown", e=>{
   else if (e.key === "Home"){ e.preventDefault(); applyTermW(TERM_DEFAULT); }
   else return;
   lsSet(LS_TERMW, S.termW);
+  termSettled();   /* keyboard resize is a settled gesture too */
 });
 /* A width stored on a wide display must not exceed a narrower window later.
    GUARDED: test_panel.js evaluates this script in a bare Node vm context that has a
