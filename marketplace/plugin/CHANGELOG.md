@@ -2,6 +2,11 @@
 
 **status**: active · **updated**: 2026-08-08
 
+## 2.80.1
+
+- **verifier final-review fixes**: `sutra-eval` exits 3 (not 0) on repos without
+  a verifier setup so automation never reads "no setup" as "all clear".
+
 ## 2.80.0
 
 - **Verifier layer + Evals screen.** Desktop panel gains an Evals rail screen

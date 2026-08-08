@@ -33,4 +33,6 @@ to score and nothing is running. Setup lives in the eval program
 (VERIFIER-LEDGER.md, ADR-032) — adopt it deliberately; nothing activates by
 itself.
 EOF
-exit 0
+# exit 3, not 0 (deepseek final review): automation must never read
+# "no verifier setup" as "all checks clear".
+exit 3
