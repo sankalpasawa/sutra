@@ -1164,6 +1164,91 @@ def _git_repo():
     return wd
 
 
+# ================================================================ usage =====
+# Plan rate-limit utilization, the same data Claude Code's own /usage reports.
+#
+# READ-ONLY and ARGUMENT-FREE on purpose. There is nothing to parameterise: the
+# windows belong to the authenticated account, not to a path or a session, so
+# there is no caller-supplied input to validate and no way to point it somewhere
+# it should not look.
+#
+# The OAuth token never crosses this boundary -- see usage.py, which builds an
+# allow-list projection rather than filtering the raw payload.
+@router.get("/usage")
+def api_usage():
+    """Rate-limit windows for this account, or an explicit unavailability.
+
+    Never 5xx: usage.snapshot() fails open to {"available": false, "reason": ...}.
+    A panel that cannot say "I don't know" would have to invent a number, and an
+    invented utilization is the one thing a usage screen must never show.
+    """
+    import usage
+    return usage.snapshot()
+
+
+# ================================================================= repo =====
+# The repository a SESSION is in, which is not necessarily the Settings workdir --
+# see repo.py. `cwd` IS a caller-supplied path here, unlike /git/*, and is safe
+# only because repo.py re-validates every one through providers.workdir_allowed
+# before it reaches a subprocess. Both of these are reads.
+@router.get("/repo")
+def api_repo(cwd: str = ""):
+    """Branch, upstream, ahead/behind, diff stat and remote for `cwd`.
+
+    Never 5xx: repo.status() fails open to {"available": false, "reason": ...} so
+    a session outside a repository, or a machine without git, renders a bar that
+    says so instead of an error.
+    """
+    import repo
+    return repo.status(cwd)
+
+
+@router.get("/repo/pulls")
+def api_repo_pulls(cwd: str = "", limit: int = 10):
+    """Open pull requests, via the already-authenticated gh CLI."""
+    import repo
+    return repo.pulls(cwd, limit=max(1, min(int(limit or 10), 30)))
+
+
+@router.post("/repo/pr-proposal")
+def api_repo_pr_proposal(body: Dict[str, Any]):
+    """PROPOSE a pull request. Creates nothing on GitHub.
+
+    This endpoint writes an inert record and returns its id. The branch is not
+    pushed and no PR exists until a human approves it at
+    /api/proposals/{pid}/decide -- which is the same gate every other mutation
+    goes through, and matters more here than for any of them because this is the
+    first proposal kind whose effect leaves the machine.
+    """
+    import repo
+    cwd = (body or {}).get("cwd") or ""
+    st = repo.status(cwd)
+    if not st.get("available"):
+        raise HTTPException(status_code=400, detail=st.get("reason") or "not a repository")
+    head = (body.get("head") or st.get("branch") or "").strip()
+    base = (body.get("base") or "").strip()
+    title = (body.get("title") or "").strip()
+    if not head:
+        raise HTTPException(status_code=400,
+                            detail="this checkout has a detached HEAD — there is no branch to open a pull request from")
+    if not base:
+        raise HTTPException(status_code=400, detail="choose a base branch")
+    if head == base:
+        raise HTTPException(status_code=400,
+                            detail="head and base are the same branch (%s)" % head)
+    if not title:
+        raise HTTPException(status_code=400, detail="a pull request needs a title")
+    args = {"cwd": st["root"], "head": head, "base": base,
+            "title": title, "body": body.get("body") or ""}
+    # The summary is what the operator reads before approving, so it states the
+    # PUSH as well as the PR -- the push is part of what approval authorises, and
+    # a summary that mentioned only the PR would be understating the effect.
+    summary = ("push %s to origin and open a pull request into %s on %s — %s"
+               % (head, base, st.get("remote") or "the remote", title))
+    p = proposals.create("pr.create", args, summary)
+    return {"proposal": p}
+
+
 @router.get("/git/{what}")
 def api_git(what: str, path: Optional[str] = None):
     """status | log | diff | staged, for the configured workdir.
@@ -1290,6 +1375,9 @@ def _apply_proposal(kind, args):
         return routines.delete(args["id"])
     if kind == "routine.run":
         return routines.run_now(args["id"])
+    if kind == "pr.create":
+        import repo
+        return repo.create_pull_request(args)
     raise ValueError("no way to apply %r" % kind)
 
 
@@ -1335,7 +1423,11 @@ def api_routine_runs(rid: str, limit: int = 10):
 @router.get("/routines/{rid}/output")
 def api_routine_output(rid: str, name: str):
     try:
-        return {"id": rid, "name": name, "text": routines.run_output(rid, name)}
+        # Parsed, not raw. `text` is still present so nothing that read this
+        # endpoint before breaks, but the fields the panel actually renders --
+        # the prose and the session id that makes the run resumable -- now come
+        # out of the envelope here rather than being re-parsed in the browser.
+        return routines.run_detail(rid, name)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such run output")
     except (ValueError, OSError) as exc:

@@ -81,7 +81,14 @@
        border:0;border-radius:0;padding:9px;height:100vh;min-height:0;box-shadow:none;
        /* padding must live INSIDE 100vh or the app is 18px taller than the window */
        box-sizing:border-box}
-  @media(max-width:860px){.app{grid-template-columns:1fr;height:auto}.rail{max-height:290px}}
+  /* `height:auto` used to be here, and it made the composer UNREACHABLE. body is
+     overflow:hidden, so an app taller than the viewport is not scrolled -- it is
+     clipped. Measured at 820x900: the app grew to 6404px and the composer sat at
+     y=6352 with no way to reach it, and its position moved by thousands of pixels
+     as panes opened and closed. The app keeps the viewport's height; `.panes`
+     already flips to overflow-y:auto at this breakpoint, so the column scrolls and
+     every composer stays reachable at the foot of its own pane. */
+  @media(max-width:860px){.app{grid-template-columns:1fr}.rail{max-height:290px}}
 
   /* rail */
   .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
@@ -229,6 +236,21 @@
   .p-warn{background:var(--warn-bg);color:var(--warn)}
   .p-block{background:var(--block-bg);color:var(--block)}
   .p-acc{background:var(--acc-bg);color:var(--acc)}
+/* THE RUN STRIP. A turn in flight had exactly one 8.5px word inside an
+   accent-tinted pill -- at normal viewing distance the word is unreadable, so it
+   read as "an orange box". This is a legible line plus an INDETERMINATE sweep:
+   nothing on the wire reports how much of a turn is left (duration_ms/cost_usd
+   arrive only on `done`), so a proportional bar would be inventing a number. */
+.runstrip{display:inline-flex;align-items:center;gap:6px;font:600 10.5px/1.4 var(--mono);
+  background:var(--acc-bg);color:var(--acc);padding:5px 8px;border-radius:5px;
+  max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.runstrip b{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.runbar{display:block;height:2px;margin-top:5px;border-radius:2px;
+  background:var(--acc-bg);overflow:hidden}
+.runbar i{display:block;height:100%;width:34%;border-radius:2px;background:var(--acc);
+  animation:sutraSweep 1.5s ease-in-out infinite}
+@keyframes sutraSweep{0%{transform:translateX(-110%)}100%{transform:translateX(330%)}}
+@media (prefers-reduced-motion:reduce){.runbar i{animation:none;width:100%;opacity:.45}}
   .p-mut{background:var(--inset);color:var(--muted);border:1px solid var(--line)}
 
   .facets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px;align-items:center}
@@ -294,7 +316,11 @@
   .kbd{font:600 9px/1 var(--mono);border:1px solid var(--line);border-radius:3px;padding:2px 4px;color:var(--muted)}
 
   /* ── tiled panes: browse pane + session panes, newest on the right ── */
-  .panes{display:flex;gap:11px;min-width:0;overflow-x:auto;overflow-y:hidden}
+  /* min-height:0 is load-bearing, not defensive. .panes is a GRID ITEM, and a grid
+     item's default min-height:auto refuses to shrink below its content -- so the
+     row grew to the tallest pane's content instead of to the viewport, and the
+     per-pane `overflow-y:auto` never engaged because there was nothing to clip. */
+  .panes{display:flex;gap:11px;min-width:0;min-height:0;overflow-x:auto;overflow-y:hidden}
   /* NO max-width here. A hard 640px cap on .pane stranded the row the moment a
      neighbour collapsed: rail at 38px + one session pane frozen at 640px left
      588px of a 1281px row simply unclaimed, and nothing could grow into it.
@@ -306,7 +332,17 @@
   /* Session panes only: the browse pane's body holds charts/lists that must
      use every pixel, so it is excluded. */
   .pane:not(.browse) .pb > *{max-width:78ch;margin-left:auto;margin-right:auto}
-  .pane.browse{flex:1 1 480px;max-width:none;min-width:0;container-type:inline-size}
+  /* A FLOOR, not the cap the comment above rejects -- the two fail in opposite
+     directions. Session panes are `flex:1 0 380px` (shrink 0), so the browse pane,
+     alone in carrying shrink:1, absorbed every pixel the row was short: measured at
+     115px with the terminal dragged to 700px, which crushes the org chart into an
+     unreadable column. Below this width the pane shows nothing usable, so the row
+     overflows into its own horizontal scroll (`.panes` is overflow-x:auto) instead
+     of silently destroying the content. */
+  .pane.browse{flex:1 1 480px;max-width:none;min-width:300px;container-type:inline-size}
+  /* ...but a floor must never win on a genuinely narrow window, where the panes
+     stack vertically and 300px could exceed the viewport. */
+  @media(max-width:860px){ .pane.browse{min-width:0} }
   /* the inspector column yields when session panes squeeze the browse pane —
      the width that matters is the PANE's, not the viewport's */
   @container (max-width:760px){ .cols{grid-template-columns:minmax(0,1fr)} }
@@ -316,8 +352,28 @@
          overflow:hidden;text-overflow:ellipsis;max-width:190px}
   .ph .src{font:500 9px/1 var(--mono);color:var(--faint)}
   .pb{flex:1;overflow-y:auto;overflow-x:hidden;padding:13px 14px;min-height:0;min-width:0;font-size:12.5px}
-  .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;align-items:center;gap:8px}
+  /* WRAPS. The row carries eight controls now (fold, attach, message, folder,
+     usage, permission, model, send) and their fixed widths total ~493px, so in a
+     pane squeezed to 380px by an open terminal the only flexible item -- the
+     message box -- was shrunk to ZERO and the row overflowed. Measured: paneW 382,
+     textarea width 0, scrollWidth 503 vs clientWidth 380. A composer you cannot
+     type in is worse than one that takes two lines, so the controls wrap to a
+     second line and the message box keeps a floor (see textarea[data-sask]). */
+  /* `position:relative` anchors the usage popup above this row. Chosen over
+     `.pane` because the popup must sit above the COMPOSER, whose height changes
+     when the row wraps (43px -> 76px) -- an offset measured from the pane bottom
+     would drift the moment a control wrapped. No absolutely positioned descendant
+     lives in here, so nothing else moves. */
+  .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;
+      align-items:center;gap:8px;flex-wrap:wrap;position:relative}
   .pc input,.pc textarea{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
+  /* The rule above sets outline:none and the only candidate override
+     (input:focus-visible, earlier in source, and not matching textarea at all)
+     therefore loses -- so the most-used control in the app was the one control
+     with no focus ring. Placed AFTER both rules so it wins on source order.
+     Covers the side-chat input for free: same .pc ancestor. */
+  .pc input:focus-visible,.pc textarea:focus-visible{outline:2px solid var(--acc);
+    outline-offset:2px;border-radius:4px}
   .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
   .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
         display:grid;place-items:center;cursor:pointer;flex:none}
@@ -398,6 +454,28 @@
   /* ── Claude-style recents ── */
   .rgrp{padding:10px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.09em;
         color:var(--faint);text-transform:uppercase}
+  /* A project heading is a ROW, not just a label: it carries the session count and
+     the + that starts a session in that folder. The + is revealed on hover/focus
+     rather than always drawn -- one per project, always visible, turns the rail
+     into a column of plus signs and buries the thing you came to read. It stays
+     visible whenever it has focus, so keyboard users never chase an invisible
+     control. */
+  .rgrph{display:flex;align-items:center;gap:6px;padding-right:8px}
+  .rgrph .rgn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .rgrph .rgc{font:600 9px/1 var(--mono);color:var(--line);flex:none;
+    font-variant-numeric:tabular-nums}
+  .rgrph .rgadd{margin-left:auto;flex:none;display:grid;place-items:center;
+    width:16px;height:16px;padding:0;border:0;border-radius:4px;cursor:pointer;
+    background:none;color:var(--faint);opacity:0;transition:opacity .12s ease}
+  .rgrph:hover .rgadd,.rgrph .rgadd:focus-visible{opacity:1}
+  .rgrph .rgadd:hover{background:var(--acc-bg);color:var(--acc)}
+  .rsort{flex:none;display:grid;place-items:center;width:26px;padding:0;
+    background:none;border:1px solid var(--line);border-radius:6px;
+    color:var(--faint);cursor:pointer}
+  .rsort:hover:not(:disabled){color:var(--ink);border-color:var(--acc)}
+  /* Greyed, not hidden: see the markup comment. */
+  .rsort:disabled{opacity:.38;cursor:default}
+  .rsort[aria-pressed="true"]{color:var(--acc);border-color:var(--acc)}
   .rlist{list-style:none;margin:0;padding:0 6px}
   .rlist button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:6px;
                 padding:6px 8px;cursor:pointer;color:var(--muted)}
@@ -635,7 +713,10 @@
     .pane.collapsed .ph h3{writing-mode:horizontal-tb;max-width:190px}
     .pane.collapsed .pfold svg{transform:rotate(-90deg)}
     .pdiv{display:none}
-    .app{height:auto}
+    /* The second `.app{height:auto}` lived here and had to go for the same reason
+       as the one at the top of this sheet: with body overflow:hidden it clips
+       instead of scrolling, and everything below the fold -- the composer included
+       -- becomes unreachable. The panes column above owns the scrolling now. */
   }
 
   /* ── a selectable option that can also be refused, with the refusal shown ── */
@@ -753,6 +834,193 @@
     background-size:4px 4px,4px 4px;
     background-position:calc(100% - 9px) 51%,calc(100% - 5px) 51%;
     background-repeat:no-repeat}
+  /* ── usage meters ────────────────────────────────────────────────────────
+     One row per rate-limit window. The bar is the primary read and the number is
+     the confirmation, not the other way round: "how close am I" is answered by a
+     length at a glance, and 13 vs 31 is not. Colour is a THRESHOLD signal (ok /
+     warn>=70 / block>=80, the guard's own thresholds), never decoration -- so the
+     percentage carries the same class as the bar and the two cannot disagree. */
+  .urow{padding:9px 0}
+  .urow + .urow{border-top:1px solid var(--line-soft)}
+  .uhead{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .ulabel{font:500 12px/1 var(--sans);color:var(--ink)}
+  .ureset{margin-left:auto;font:400 10.5px/1 var(--sans);color:var(--faint);
+    white-space:nowrap}
+  .upct{font:600 12px/1 var(--mono);font-variant-numeric:tabular-nums;min-width:38px;
+    text-align:right}
+  .upct.p-ok{color:var(--ok)} .upct.p-warn{color:var(--warn)} .upct.p-block{color:var(--block)}
+  .ubar{height:6px;border-radius:999px;background:var(--inset);
+    border:1px solid var(--line-soft);overflow:hidden}
+  /* A window at 0% must still render as an empty track, not as a missing element:
+     "0%" and "not reported" are different facts and have to look different. */
+  .ubar i{display:block;height:100%;border-radius:999px;
+    transition:width .25s ease;min-width:0}
+  .ubar i.p-ok{background:var(--ok)}
+  .ubar i.p-warn{background:var(--warn)}
+  .ubar i.p-block{background:var(--block)}
+
+  /* Live mark: this transcript is being written in Claude right now. Pulsed,
+     because the one thing it has to say is that it is CHANGING -- a static
+     badge reads as a label. Respects reduced-motion: the colour still carries
+     the meaning without the animation. */
+  .livedot{color:var(--ok);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+  .livedot::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ok);
+    animation:livepulse 1.6s ease-in-out infinite}
+  @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){ .livedot::before{animation:none} }
+
+  /* ── routine run threads ─────────────────────────────────────────────────
+     A run row is a control, so it says so: pointer, hover, and a focus ring for
+     the keyboard path. The dot is the unread mark -- drawn as an empty ring when
+     read rather than removed, so the column does not reflow as you work down it. */
+  .runrow[data-runopen]{cursor:pointer}
+  .runrow[data-runopen]:hover>td{background:var(--acc-bg)}
+  .runrow.sel>td{background:var(--acc-bg)}
+  .runrow[data-runopen]:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .rundot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;
+    border:1px solid var(--line);background:none;vertical-align:middle}
+  .rundot.on{background:var(--acc);border-color:var(--acc)}
+  .runthread{margin-top:10px;border:1px solid var(--line);border-radius:9px;
+    background:var(--inset);padding:10px 12px}
+  .runhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:7px;
+    padding-bottom:7px;border-bottom:1px solid var(--line-soft)}
+  .runhead b{font:600 11.5px/1 var(--sans)}
+  .runhead .btn{margin-left:auto;padding:4px 9px;font-size:10px}
+  .runhead .why{color:var(--faint);font-size:10.5px}
+  .runthread .md{font-size:12.5px;line-height:1.6}
+
+  /* ── repository bar ──────────────────────────────────────────────────────
+     A thin strip between the transcript and the composer: what repository this
+     session is in, what branch, how far from its upstream, and what is uncommitted.
+     Deliberately one line and quiet -- it is context for the message you are
+     writing, not a screen. */
+  .repobar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:5px 11px;border-top:1px solid var(--line-soft);
+    background:var(--surface);font:500 10.5px/1.6 var(--mono);color:var(--faint)}
+  .repobar.off{color:var(--line)}
+  .rbrepo{color:var(--muted);font-weight:600}
+  .rbbranch{color:var(--acc);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    max-width:190px}
+  .rbahead{color:var(--ok)} .rbbehind{color:var(--warn)}
+  .rbnoup{color:var(--faint);font-style:italic}
+  .rbdiff .add{color:var(--ok);font-weight:600}
+  .rbdiff .rem{color:var(--block);font-weight:600}
+  .rbclean{color:var(--faint)}
+  .rbnone{font-style:italic}
+  .repobar button{background:none;border:1px solid var(--line);border-radius:5px;
+    color:var(--muted);font:600 9.5px/1 var(--mono);padding:3px 7px;cursor:pointer}
+  .repobar button:hover{border-color:var(--acc);color:var(--acc)}
+  .repobar .rbpr{margin-left:auto}
+  .repobar .rbprs+.rbpr{margin-left:0}
+  .repobar .rbprs{margin-left:auto}
+
+  .prlist{border-top:1px solid var(--line-soft);background:var(--inset);
+    padding:5px 11px;max-height:190px;overflow-y:auto}
+  .prrow{display:flex;align-items:center;gap:8px;padding:4px 0;
+    font:500 10.5px/1.5 var(--mono)}
+  .prrow+.prrow{border-top:1px solid var(--line-soft)}
+  .prnum{color:var(--acc);font-weight:600;flex:none}
+  .prt{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+  .prbr{color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    max-width:150px;flex:none}
+  .prnone{margin:4px 0;color:var(--faint);font-size:11px}
+
+  .prform{border-top:1px solid var(--line);background:var(--inset);padding:9px 11px}
+  .prform.done{display:flex;align-items:flex-start;gap:8px;font-size:11px;line-height:1.45}
+  .prform.done b{color:var(--ink)} .prform.done span{color:var(--muted)}
+  .prform.done .ib{margin-left:auto;flex:none}
+  .prfrow{display:flex;gap:8px}
+  .prform label{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;
+    font:600 9px/1 var(--mono);letter-spacing:.06em;color:var(--faint);margin-bottom:6px}
+  .prform label.prfw{width:100%}
+  .prform input,.prform textarea{background:var(--card);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.4 var(--sans);padding:6px 8px;
+    min-width:0;resize:vertical}
+  .prform input:focus,.prform textarea:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .prfnote{font-size:10.5px;line-height:1.45;color:var(--faint);margin-bottom:7px}
+  .prfnote.bad{color:var(--block)}
+  .prfbtns{display:flex;gap:7px}
+  .prfbtns button{background:var(--card);border:1px solid var(--line);border-radius:6px;
+    color:var(--muted);font:600 10px/1 var(--mono);padding:6px 11px;cursor:pointer}
+  .prfbtns button:first-child{border-color:var(--acc);color:var(--acc)}
+  .prfbtns button:disabled{opacity:.5;cursor:default}
+
+  /* ── usage chip, in the composer row ─────────────────────────────────────
+     A ring, not a bar: the composer row is a horizontal strip and a horizontal
+     meter here would read as a progress bar for the message you are typing. The
+     ring is drawn with conic-gradient off a single --p custom property, so there
+     is no second element to keep in sync with the number beside it. */
+  .uchip{flex:none;display:inline-flex;align-items:center;gap:5px;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;color:var(--muted);
+    font:600 11px/1 var(--mono);font-variant-numeric:tabular-nums;padding:5px 7px;cursor:pointer}
+  .uchip:hover{color:var(--ink);border-color:var(--acc)}
+  .uchip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .uchip .uring{width:11px;height:11px;border-radius:50%;flex:none;
+    background:conic-gradient(currentColor calc(var(--p,0)*1%), var(--line) 0);
+    /* the hole: without it this is a pie, and a pie at 4% is an invisible sliver */
+    -webkit-mask:radial-gradient(circle, transparent 46%, #000 47%);
+            mask:radial-gradient(circle, transparent 46%, #000 47%)}
+  .uchip.p-ok{color:var(--muted)}
+  .uchip.p-ok:hover{color:var(--ink)}
+  /* Threshold states are LOUD on purpose: at 70 and 80 the guard changes what it
+     lets through, and the chip must change with it rather than after it. */
+  .uchip.p-warn{color:var(--warn);border-color:var(--warn)}
+  .uchip.p-block{color:var(--block);border-color:var(--block);
+    background-color:color-mix(in srgb,var(--block) 12%,var(--inset))}
+  .uchip.off{color:var(--faint)}
+
+  /* A SMALL FLOATING CARD anchored above the chip, not a full-width block in flow.
+     It was in flow first, on the reasoning that an overlay would hide the last
+     reply -- but at pane width that made a ~200px band that shoved the whole
+     transcript up every time you glanced at a percentage. A 268px card covers a
+     corner for a second instead. Founder call, and the right one: the thing being
+     read is three numbers, not a document. */
+  .upop{position:absolute;bottom:calc(100% + 6px);right:8px;z-index:30;
+    width:268px;max-width:calc(100% - 16px);
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px 9px;
+    /* lifted off the transcript it overlaps, or the two read as one surface */
+    box-shadow:0 10px 28px rgba(0,0,0,.36), 0 2px 6px rgba(0,0,0,.22);
+    max-height:min(320px, 60vh);overflow-y:auto}
+  .upophead{display:flex;align-items:center;gap:7px;margin-bottom:2px}
+  .upophead b{font:600 11px/1 var(--sans)}
+  .upophead .ib{margin-left:auto}
+  /* Tighter than the full screen's rows: this is a glance, not a report. */
+  .upopbody .urow{padding:7px 0}
+  .upopbody .urow:first-child{padding-top:5px}
+  .upopbody .ulabel{font-size:11.5px}
+  .upopbody .upct{font-size:11.5px}
+  .upopnote{margin-top:7px;font-size:10px;line-height:1.4;color:var(--faint)}
+  .upopnote.w{margin:0 0 6px;color:var(--warn)}
+
+  /* ── working-directory control ───────────────────────────────────────────
+     Sits in the composer row because that is where you are about to use it, the
+     same argument the permission selector is placed by. It shows the BASENAME:
+     the full path is 40+ chars of mostly-shared prefix and would crowd out the
+     message box, so the folder name is the label and the whole path is the title.
+     Styled off .modelsel/.permsel so a third control in this row cannot drift
+     from the two already there. */
+  .cwdbtn{flex:none;display:inline-flex;align-items:center;gap:5px;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;color:var(--muted);
+    font:11px/1 var(--sans);padding:6px 8px;max-width:118px;cursor:pointer}
+  .cwdbtn:hover{color:var(--ink);border-color:var(--acc)}
+  .cwdbtn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .cwdbtn svg{width:12px;height:12px;flex:none;opacity:.75}
+  .cwdbtn .cwdn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* An override is a state worth seeing: this session is NOT where the rest of the
+     app says sessions run. */
+  .cwdbtn.over{color:var(--acc);border-color:var(--acc)}
+  .cwdrow{display:flex;gap:7px;align-items:center;padding:8px 11px;
+    border-top:1px solid var(--line-soft);background:var(--surface)}
+  .cwdrow input{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);
+    border-radius:6px;color:var(--ink);font:11.5px/1.3 var(--mono);padding:6px 8px}
+  .cwdrow input:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .cwdrow button{background:var(--inset);border:1px solid var(--line);border-radius:6px;
+    color:var(--muted);font:600 10px/1 var(--mono);padding:6px 9px;cursor:pointer}
+  .cwdrow button:hover{color:var(--ink);border-color:var(--acc)}
+  .cwdnote{padding:0 11px 8px;font-size:10.5px;color:var(--faint);line-height:1.45;
+    background:var(--surface)}
+  .cwdnote.bad{color:var(--block)}
   .modelsel:hover,.permsel:hover{color:var(--ink);border-color:var(--line)}
   .modelsel:focus-visible,.permsel:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   /* A mode that writes files without asking is not a neutral preference, and the
@@ -780,6 +1048,11 @@
   .tout{background:none;border:1px solid var(--line);border-radius:5px;color:var(--muted);
     font:600 9.5px/1 var(--mono);padding:2px 6px;cursor:pointer;margin-left:4px}
   .tout:hover{border-color:var(--acc);color:var(--acc)}
+  /* The terminal control sits beside `output` and does something different in kind
+     -- it leaves the transcript and puts a command in front of you -- so it carries
+     the accent rather than reading as a second copy of the same toggle. */
+  .tout.tterm{border-color:var(--acc-bg);color:var(--acc)}
+  .tout.tterm:hover{border-color:var(--acc);background:var(--acc-bg)}
   .toutbody{margin:2px 0 6px 18px;padding:7px 9px;background:var(--inset);
     border:1px solid var(--line-soft);border-radius:6px;color:var(--muted);
     font:11px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;
@@ -797,7 +1070,12 @@
      12px the composer had as an <input>. The result was a fat, UA-bordered box
      with a browser focus ring, which is the regression this restores. */
   textarea[data-sask]{
-    flex:1; min-width:0; resize:none; overflow-y:hidden;
+    /* `min-width:0` used to be here and it is what let the box reach ZERO width
+       when the row ran out of room -- flex will happily shrink a min-width:0 item
+       to nothing before it wraps anything. A floor plus a basis makes the message
+       box claim a whole line of its own instead of vanishing. 168px is about 20
+       characters at this font: the point below which typing is useless anyway. */
+    flex:1 1 168px; min-width:168px; resize:none; overflow-y:hidden;
     line-height:1.45; padding:0;
     max-height:200px; field-sizing:content;
   }
@@ -1034,7 +1312,20 @@
         </button>
         <div class="rtoggle">
           <button type="button" data-sgroup="recent">Recent</button>
-          <button type="button" data-sgroup="dept">By department</button>
+          <button type="button" data-sgroup="project">Project</button>
+          <button type="button" data-sgroup="dept">Dept</button>
+          <!-- Sort applies to the PROJECT grouping only: "Recent" is already an
+               ordering (that is what the buckets are) and "Dept" is ordered by the
+               department path, which is a hierarchy, not a preference. The control
+               is therefore disabled rather than hidden outside Project view -- a
+               control that vanishes reads as a bug, one that greys out reads as
+               "not for this view". -->
+          <button type="button" class="rsort" id="sessSort"
+                  title="Sort projects" aria-label="Sort projects">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" aria-hidden="true">
+              <path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l3 3M17 20l-3-3"/></svg>
+          </button>
         </div>
         <div id="sessions"></div>
        </div>
@@ -1145,6 +1436,55 @@ let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
 /* True while a turn on this session is still streaming. The composer's send button
    becomes a STOP button on exactly this condition, so the control that appears is
    always the one that will act. */
+/* ── liveness + progress helpers, shared by the watcher, the composer and the
+   run strip ─────────────────────────────────────────────────────────────────
+   sessionBusy() is the ONE predicate that answers "does this session own its
+   turns array right now". The disk watcher, the list refresh and the folder
+   editor all have to ask it before replacing state a socket is writing into.
+   Declared with `function` so hoisting covers the callers above; CLAUDE_SOCKETS
+   and chanKey are only dereferenced at call time, long after module eval. */
+function sideStreamingFor(sid){
+  return ((S.sideTurns || {})[sid] || []).some(t => t.streaming);
+}
+function sessionBusy(sid){
+  if (streamingFor(sid) || sideStreamingFor(sid)) return true;
+  const ch = CLAUDE_SOCKETS.get(chanKey(sid, false));
+  return !!(ch && (ch.turn || (ch.pending && ch.pending.length)));
+}
+/* Elapsed, in the smallest honest unit. Never rounds a wedged turn down to 0. */
+function fmtDur(ms){
+  if (typeof ms !== "number" || !isFinite(ms) || ms < 0) return "";
+  const s = Math.floor(ms / 1000);
+  return s < 60    ? s + "s"
+       : s < 3600   ? Math.floor(s/60) + "m " + (s%60) + "s"
+                    : Math.floor(s/3600) + "h " + Math.floor((s%3600)/60) + "m";
+}
+/* ONE line of truth about a turn in flight. Every value here is measured:
+   elapsed from the turn's own ts_ms, counts from toolRuns, characters from the
+   accumulated response. Nothing is a percentage, because nothing on the wire
+   reports a denominator -- the `done` frame is the first mention of duration or
+   cost, so a proportional bar would be a fabrication. */
+function runPhrase(t){
+  const runs = (t && t.toolRuns) || [];
+  const active = runs.filter(r => r.running);
+  const parts = [];
+  if (t && t.ts_ms) parts.push(fmtDur(Date.now() - t.ts_ms));
+  if (active.length === 1){
+    const r = active[0];
+    parts.push((r.name || "tool") + (r.summary ? " · " + String(r.summary).slice(0, 60) : ""));
+  } else if (active.length > 1){
+    parts.push(active.length + " tools running");
+  } else if (t && t.retrying){
+    parts.push("rate limited — retrying");
+  } else if (t && t.response){
+    parts.push("writing");
+  } else {
+    parts.push(t && t.thinking ? "thinking" : "working");
+  }
+  if (runs.length) parts.push((runs.length - active.length) + "/" + runs.length + " tools");
+  if (t && t.response) parts.push(t.response.length + " chars");
+  return parts.filter(Boolean).join("  ·  ");
+}
 function streamingFor(sid){
   const s = S.sessions.find(x=>x.id===sid);
   return !!(s && (s.turns||[]).some(t=>t.streaming));
@@ -1522,7 +1862,18 @@ function adoptRealSessions(rows){
      websocket threads, not files yet), so a refresh of the list must not drop
      them. Everything else is replaced wholesale by what is on disk. */
   const local = S.sessions.filter(s => s.local);
-  const real = (rows || []).map(r => ({
+  /* PRESERVE work in flight. Rebuilding a real session empties `turns`, resets
+     loadState to "unread", drops `channel` and orphans the socket's turn object
+     mid-stream. Any unseen transcript anywhere under ~/.claude/projects triggers
+     this path, so a `claude` started in the terminal pane used to kill the pane
+     you were reading. */
+  const busy = new Map(S.sessions.filter(s => s.real && sessionBusy(s.id)).map(s => [s.id, s]));
+  /* A session started HERE already owns its transcript id (set from the server's
+     `session` frame), so the on-disk row for it is the SAME conversation, not a
+     second one. Without this the rail grows a twin: one live in-memory row and
+     one read-only-looking copy of the same thread. */
+  const owned = new Set(local.map(s => s.claude_session).filter(Boolean));
+  const real = (rows || []).filter(r => !owned.has(r.id)).map(r => busy.get(r.id) || ({
     id: r.id,
     title: r.title || "(no prompt)",
     real: true, local: false,
@@ -1634,6 +1985,29 @@ function scheduleRender(){
 let _patchRaf = null;
 const _patchDirty = new Set();
 
+/* ── the one-second run ticker ───────────────────────────────────────────────
+   Repaint in this file is purely frame-driven: scheduleStreamPatch() fires on a
+   server frame and rewrites only [data-resp]. So any elapsed value would FREEZE
+   between frames -- a turn stalled 90s inside one slow tool would show whatever
+   number was current when the last frame landed, which is indistinguishable from
+   a hang. This writes TEXT ONLY, into [data-runstrip], so it can never fight the
+   caret patchStreaming() writes nor the scroll pin. It clears itself the first
+   tick after the last turn finishes, so an idle app runs no timer. */
+let _runTicker = null;
+function tickRunStrips(){
+  const live = _streamingTurns();
+  if (!live.size){ clearInterval(_runTicker); _runTicker = null; return; }
+  live.forEach((t, uid)=>{
+    const el = document.querySelector('[data-runstrip="' + uid + '"]');
+    if (el) el.textContent = runPhrase(t);
+  });
+}
+function ensureRunTicker(){
+  if (_runTicker || typeof setInterval === "undefined") return;
+  if (!_streamingTurns().size) return;
+  _runTicker = setInterval(()=>{ try { tickRunStrips(); } catch (e) {} }, 1000);
+}
+
 function scheduleStreamPatch(uid){
   if (uid) _patchDirty.add(uid);
   if (_patchRaf) return;
@@ -1734,8 +2108,78 @@ function groundingPrefix(t){
   return L.join("\n") + "\n\n";
 }
 
-function claudeWsUrl(){
-  return (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/chat";
+/* The directory THIS session runs in. S.cwd[sid] is a per-session override; with none
+   set the answer is the global setting, which is what every session used before this
+   control existed. Returning the effective value (never null) means callers never have
+   to re-derive the fallback and cannot disagree about it. */
+/* THE SESSION'S OWN DIRECTORY WINS OVER THE GLOBAL SETTING.
+   Claude files a conversation under ~/.claude/projects/<encoded-cwd>/<id>.jsonl,
+   so `claude --resume <id>` can only find it when the process runs in THAT
+   directory. This used to answer with SETTINGS.workdir for every session, and
+   the result was silent and awful: resuming a transcript that belonged to
+   ~/Desktop/development/sutra was attempted from ~/sutra-ui-workspace, claude
+   could not find the id, and started a BRAND NEW conversation instead --
+   which is why a reply typed in Sutra opened a new thread and never appeared
+   in Claude. Measured on a real session: session cwd
+   /Users/tchandrakar/Desktop/development/sutra vs sent
+   /Users/tchandrakar/sutra-ui-workspace.
+
+   Order is deliberate:
+     1. an explicit per-session override -- the operator chose it on purpose
+     2. the session's OWN recorded cwd -- where the conversation actually lives,
+        and the only directory its id resolves in
+     3. the global setting -- correct only for a NEW session, which has no
+        history and therefore no directory of its own yet */
+function sessCwd(sid){
+  const over = S.cwd && S.cwd[sid];
+  if (over) return String(over).trim();
+  const s = (S.sessions || []).find(x => x.id === sid);
+  if (s && s.cwd) return String(s.cwd).trim();
+  return ((SETTINGS || {}).workdir || "").trim();
+}
+/* The cwd is fixed when the agent process spawns, so it can only be carried on the
+   socket URL -- not sent as a later message. Changing it therefore has to drop the
+   socket (see setSessCwd), or the label would claim a directory the running process
+   is not in. */
+function claudeWsUrl(sid){
+  const base = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/chat";
+  const cwd = sid ? sessCwd(sid) : "";
+  return cwd ? base + "?cwd=" + encodeURIComponent(cwd) : base;
+}
+/* Point this session at a different folder.
+   The running agent CANNOT be moved -- its cwd was set by the spawn -- so the open
+   socket is closed rather than relabelled. The next message opens a new one in the
+   new directory. Closing while a turn streams would throw away a reply the operator
+   is waiting on, so that case is refused with a reason instead. */
+function setSessCwd(sid, raw){
+  const next = (raw || "").trim();
+  const prev = sessCwd(sid);
+  S.cwdEdit = null;
+  if (next === prev){ scheduleRender(); return; }
+  /* setSessCwd's cleanup closes BOTH sockets, so the guard must see both. It was
+     blind to side turns while its message promised not to discard the reply. */
+  if (streamingFor(sid) || sideStreamingFor(sid)){
+    S.cwdError = "finish or stop the running turn first — moving folders now would "
+               + "discard the reply it is still writing.";
+    scheduleRender();
+    return;
+  }
+  S.cwdError = null;
+  /* Empty means "clear the override", i.e. fall back to the global setting -- not
+     "run in the filesystem root". */
+  if (next) S.cwd[sid] = next; else delete S.cwd[sid];
+  /* The repository bar describes the OLD folder until this is dropped. Clearing
+     it makes render() re-read; leaving it would name a repo this session is no
+     longer in, which is the exact failure the per-session bar exists to avoid. */
+  delete S.repo[sid]; delete S.prs[sid];
+  if (S.prsOpen === sid) S.prsOpen = null;
+  ["", "::side"].forEach(suffix=>{
+    const ch = CLAUDE_SOCKETS.get(sid + suffix);
+    if (!ch) return;
+    try { ch.ws.close(); } catch (e) {}
+    CLAUDE_SOCKETS.delete(sid + suffix);
+  });
+  scheduleRender();
 }
 /* Every turn this channel still owes a reply gets the REAL reason it will not arrive.
    Silence and a spinner that never stops are the failure modes this replaces. */
@@ -1766,9 +2210,9 @@ function claudeChannel(s, side){
   let ch = CLAUDE_SOCKETS.get(key);
   if (ch && (ch.ws.readyState === WebSocket.CONNECTING || ch.ws.readyState === WebSocket.OPEN))
     return ch;
-  const ws = new WebSocket(claudeWsUrl());
+  const ws = new WebSocket(claudeWsUrl(s.id));
   ch = { ws:ws, sid:s.id, key:key, side:!!side, open:false, queue:[], pending:[],
-         turn:null, last:null, lastError:null };
+         turn:null, last:null, lastError:null, cwd:sessCwd(s.id) };
   CLAUDE_SOCKETS.set(key, ch);
   ws.onopen = ()=>{ ch.open = true; ch.queue.splice(0).forEach(m=>ws.send(m)); };
   ws.onmessage = ev=>{
@@ -1784,6 +2228,19 @@ function claudeChannel(s, side){
          writes files without asking. Dropping this frame meant the pane could
          not say what it was actually about to do. */
       s.channel = f;
+      /* The server confines any agent cwd to $HOME and fell back to the default.
+         Drop the override and SAY SO -- leaving it set would show a folder chip for
+         a directory this session is demonstrably not running in. */
+      if (f.cwd_refused){
+        delete S.cwd[s.id];
+        S.cwdError = "refused " + f.cwd_refused + " — the working directory must be "
+                   + "inside your home folder. Running in " + (f.workdir || "the default") + ".";
+        S.cwdEdit = s.id;
+      } else if (S.cwd[s.id] && f.workdir){
+        /* Show what the server RESOLVED (it expands ~ and follows symlinks), not what
+           was typed -- they differ, and echoing the input would misreport the result. */
+        S.cwd[s.id] = f.workdir;
+      }
     } else if (f.type === "session"){
       /* A SIDE channel must never write s.claude_session: that field is what the main
          thread resumes from, and overwriting it with the branch's id would silently
@@ -1796,6 +2253,13 @@ function claudeChannel(s, side){
     } else if (f.type === "token"){
       if (ch.turn){
         ch.turn.response = (ch.turn.response || "") + f.text;
+        /* Prose is arriving, so this is no longer the thinking phase. `thinking`
+           was set by the server's thinking frame and cleared only on tool-start,
+           done, stopped, retry and error -- never on a token. On an extended-
+           thinking turn that calls no tool the state therefore read "thinking"
+           for the entire time the answer was visibly being written. No forced
+           repaint here: the run ticker rewrites the strip within a second. */
+        ch.turn.thinking = false;
         /* TEXT ONLY -- patched in place, no re-render. See patchStreaming().
            Return early so the scheduleRender() at the end of this handler does
            not undo the whole point by rebuilding the pane anyway. */
@@ -1834,6 +2298,9 @@ function claudeChannel(s, side){
                   if (f.output) r.output = f.output; }
         } else {
           runs.push({ id:f.id, name:f.name || "tool", summary:f.summary || "",
+                      /* Shell commands only, and only when the server sent one --
+                         this is what the "terminal" control re-opens. */
+                      command:f.command || "",
                       caller:f.caller || null, running:true, ok:null,
                       startedAt: Date.now() });
           ch.turn.thinking = false;      /* a tool call ends the thinking phase */
@@ -1854,6 +2321,14 @@ function claudeChannel(s, side){
         (ch.turn.toolRuns || []).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
       }
       ch.turn = null;
+      /* A completed turn is the ONLY moment utilization actually moved, which is
+         why the chip refreshes here instead of on a clock. The 60s server cache
+         absorbs a burst of quick turns, so this cannot become a request per turn. */
+      loadUsage(true);
+      /* The agent may have committed, branched or staged during that turn, so the
+         bar's branch / ahead / diff numbers are stale the moment it ends. */
+      loadRepo(ch.sid, true);
+      if (S.prsOpen === ch.sid) loadPrs(ch.sid, true);
     } else if (f.type === "stopped"){
       /* The operator's own interrupt is NOT an error. It gets its own state so the
          turn is not painted red and blamed on the tool. */
@@ -1971,6 +2446,12 @@ function askClaude(s, turn, side){
   turn.tools = turn.tools || [];
   turn.error = null;
   turn.streaming = true;
+  /* Start-of-turn timestamp for the run strip's stopwatch. Set here rather than
+     at object creation so it covers EVERY streaming entry -- fresh turn, retry,
+     side chat -- through the one function they all pass. `|| Date.now()`
+     preserves an existing stamp, so a retry keeps timing from the original send
+     (a retry is the same turn, not a new one). */
+  turn.ts_ms = turn.ts_ms || Date.now();
   turn.sent = groundingPrefix(turn) + turn.text;   /* exactly what the model receives */
   let ch;
   try { ch = claudeChannel(s, side); }
@@ -2118,11 +2599,28 @@ const S = {
      a fetch is in flight, "" when git genuinely returned an empty diff -- the two are
      different answers and the screen renders them differently. */
   git:null, gitError:null, gitFile:null, gitDiff:null, gitDiffTruncated:false,
+  /* Usage. null means NOT READ YET, which is why the rail withholds its count
+     until the screen has been opened -- a 0% before anything was fetched is a
+     claim about an account nobody asked about. */
+  usage:null, usageError:null,
+  /* Which session pane has the usage popover open (session id), or null. Keyed by
+     pane rather than a bare boolean: two panes are visible at once, and a shared
+     flag would open the popover in both. */
+  usagePop:null,
+  /* Repository state, PER SESSION -- two panes can be in two different folders,
+     and one shared object would show whichever loaded last. `undefined` means
+     "not asked yet" and draws nothing; an object with available:false means
+     "asked, and it is not a repo", which is a normal state worth stating. */
+  repo:{}, prs:{}, prsOpen:null, prForm:null, prBusy:false, prError:null, prDone:null,
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,
   /* routines: null until the screen is opened (it shells out to launchctl). */
   rt:null, rtError:null, rtBusy:null, rtMsg:null, rtForm:null, rtRuns:{}, rtOpen:{},
+  /* The run being read: {rid, name, started}. null means none is open. runDetail
+     is its parsed body, fetched on open -- not with the index, because an index
+     of 10 runs would otherwise read 10 output files nobody asked for. */
+  runOpen:null, runDetail:null,
   /* what the chat agent asked for; nothing applies until approved. */
   props:null, propBusy:null, propError:null,
   /* transient, self-clearing note -- see the pane close handler. */
@@ -2165,7 +2663,10 @@ const S = {
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
      through the org. Departments do NOT hand work to each other — no such channel exists. */
-  sessions:[], openPanes:[], sgroup:"recent", sessTab:{}, collapsed:new Set(),
+  sessions:[], openPanes:[], sgroup:"recent",
+  /* "recent" (most-recently-touched project first) | "az". Project grouping only. */
+  sessSort:"recent",
+  sessTab:{}, collapsed:new Set(),
   /* sid -> the operator has deliberately scrolled AWAY from the newest turn.
      Two weaker designs failed first: a one-shot Set was consumed by an early
      render before the transcript loaded, and a turn-COUNT key skipped re-pinning
@@ -2188,6 +2689,13 @@ const S = {
      operator typing (opening the palette, a simulate() response, a token frame).
      Keeping it in state makes it survive unconditionally. */
   composerText:{},
+  /* sessionId -> working directory override. Absent means "use the global setting",
+     which is what every session did before this control existed -- so an untouched
+     session behaves exactly as it always has. Deliberately NOT persisted: a folder
+     silently restored from a previous browser session would spawn an agent somewhere
+     the operator never chose in this one. */
+  cwd:{},
+  cwdEdit:null,        /* sessionId whose folder editor is open, or null */
   /* Layout the operator adjusted, restored from localStorage on load:
        paneCollapsed[<"browse"|sessionId>] -> true
        folds[<fold key>]                   -> 0 (closed) | 1 (open)
@@ -2379,6 +2887,10 @@ const ICON = {
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
   chevron:'<path d="M6 9l6 6 6-6"/>',
   bal:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M12 12c2.4-1.6 2.4-4.9 0-6.5M12 12c-2.4 1.6-2.4 4.9 0 6.5"/>',
+  /* A gauge: what a utilization window is. Deliberately not the clock `rout`
+     already uses -- two nav rows with the same glyph are two rows nobody can
+     tell apart at 14px. */
+  usage:'<path d="M4.2 17a8.5 8.5 0 1115.6 0"/><path d="M12 17l4.2-5.2"/><circle cx="12" cy="17" r="1.3"/>',
   evals:'<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8.5 12.2l2.4 2.4 4.6-5.2"/><path d="M8.5 17h7"/>'
 };
 function railSpec(){
@@ -2422,6 +2934,15 @@ function railSpec(){
          something the operator creates. Count withheld until read, like Git. */
       {id:"routines", n:"Routines",  i:"rout",
        c:(S.rt ? (S.rt.routines||[]).length : undefined)},
+      /* Usage sits in RUNTIME because it describes the running account, not the
+         org. The count is the ACTIVE window's percentage -- the one number worth
+         seeing without opening anything -- and is withheld until the screen has
+         been read, like Git's, so the rail never asserts a figure nobody fetched. */
+      {id:"usage",    n:"Usage",     i:"usage",
+       c:(S.usage && S.usage.available
+            ? Math.round(((S.usage.limits||[]).find(r=>r.active)
+                          || (S.usage.limits||[])[0] || {}).percent ?? NaN) || undefined
+            : undefined)},
       /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
          anyway. It shipped as a 19px unlabelled icon in the footer and the first
          operator to use it reported "I don't see terminal": a control nobody can
@@ -2488,6 +3009,21 @@ function renderRail(){
      accountable department, so the session list and the org chart are the same tree. */
   document.querySelectorAll("[data-sgroup]").forEach(b=>
     b.setAttribute("aria-pressed", String(S.sgroup===b.dataset.sgroup)));
+  /* The sort control only means something under Project grouping (see the markup
+     comment). Its label states the CURRENT order, not the one clicking would
+     produce -- a control whose text is a promise about the next click reads as
+     the current state to everyone who is not thinking about it. */
+  const sortBtn = document.getElementById("sessSort");
+  if (sortBtn){
+    const on = S.sgroup === "project";
+    sortBtn.disabled = !on;
+    sortBtn.setAttribute("aria-pressed", String(on && S.sessSort === "az"));
+    sortBtn.title = !on
+      ? "Sorting applies to Project grouping"
+      : (S.sessSort === "az" ? "Sorted A–Z — click for most recent"
+                             : "Sorted by most recent — click for A–Z");
+    sortBtn.setAttribute("aria-label", sortBtn.title);
+  }
 
   const bucket = ms => {
     const d = Math.floor((NOW - ms)/DAY);
@@ -2504,12 +3040,32 @@ function renderRail(){
                : n >= 1024      ? (Math.round(n/102.4)/10) + " KB"
                                 : n + " B";
   const sessMeta = s => {
-    if (!s.real) return `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
+    /* The badge is computed BEFORE the guard chain, not inside its last branch.
+       Every earlier return preempted the only line that emitted it, so "live"
+       appeared ONLY on sessions the operator had never opened -- the exact
+       inverse of the ones they care about -- and a session streaming in THIS
+       panel was indistinguishable from an idle one. `running` is the panel's own
+       in-flight turn; `live` is the transcript being written by Claude outside
+       the panel; `agents_live` lights up once the subagent liveness fold lands.
+       Only `active`/running are drawn: idle and stale are the ordinary cases and
+       a badge on every row would say nothing. */
+    const running = sessionBusy(s.id);
+    const badge =
+        (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
+      + (!running && s.live === "active"
+           ? `<span class="livedot" title="Being written right now in Claude">live</span>` : "")
+      + (s.agents_live ? `<span class="livedot" title="Subagent transcripts being written right now"
+           >${s.agents_live} agent${s.agents_live===1?"":"s"}</span>` : "");
+    /* Deleted-on-disk is tested FIRST. Behind the loadState tests it was
+       unreachable for any session anyone had actually opened, which is the only
+       case the flag was added for. */
+    if (s.vanished) return badge + `<span style="color:var(--block)">deleted on disk</span>`;
+    if (!s.real) return badge + `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
     if (s.loadState === "ok" || s.loadState === "empty")
-      return `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
-    if (s.loadState === "loading") return `<span>reading transcript…</span>`;
-    if (s.loadState === "error") return `<span style="color:var(--block)">unreadable</span>`;
-    return `<span>transcript unread</span><span>${kb(s.size||0)}</span>`;
+      return badge + `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
+    if (s.loadState === "loading") return badge + `<span>reading transcript…</span>`;
+    if (s.loadState === "error") return badge + `<span style="color:var(--block)">unreadable</span>`;
+    return badge + `<span>transcript unread</span><span>${kb(s.size||0)}</span>`;
   };
   /* `project` is the ENCODED directory name (slashes turned into dashes), which
      reads as gibberish in a 200px rail. `cwd` is the same directory unencoded
@@ -2540,7 +3096,55 @@ function renderRail(){
             ${held?'<span style="color:var(--warn)">held</span>':""}</span>
         </button></li>`;}).join("")}</ul>`).join("");
     if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
-      No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.</p>`;
+      ${S.sessionsError
+        ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
+           Nothing is claimed here about what is or is not on disk.`
+        : `No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.`}</p>`;
+  } else if (S.sgroup === "project"){
+    /* Keyed on the FULL cwd, labelled with its last segment. Two checkouts can
+       share a basename ("sutra" under two parents) and merging them would put
+       sessions from different repositories in one group -- and, worse, give the
+       group's + a directory it might not belong to. The full path is also what
+       the + needs, so the key is the useful value rather than a display string. */
+    const g = new Map();
+    S.sessions.forEach(s=>{
+      const key = (s.cwd || "").replace(/\/+$/, "") || null;
+      const label = key ? key.slice(key.lastIndexOf("/") + 1) : (projOf(s) || "No folder");
+      if (!g.has(key)) g.set(key, {label, cwd:key, items:[], last:0});
+      const e = g.get(key);
+      e.items.push(s);
+      e.last = Math.max(e.last, s.updated_ms || s.created_ms || 0);
+    });
+    const groups = [...g.values()].sort((a,b)=>
+      S.sessSort === "az"
+        ? a.label.localeCompare(b.label, undefined, {numeric:true, sensitivity:"base"})
+        /* Default is most-recently-touched first: the project you were last in is
+           the one you are most likely returning to. */
+        : (b.last - a.last));
+    html = groups.map(grp=>`
+      <div class="rgrp rgrph">
+        <span class="rgn" title="${esc(grp.cwd || "sessions with no recorded folder")}">${esc(grp.label)}</span>
+        <span class="rgc">${grp.items.length}</span>
+        ${grp.cwd ? `<button type="button" class="rgadd" data-newproj="${esc(grp.cwd)}"
+             title="New session in ${esc(grp.cwd)}"
+             aria-label="New session in ${esc(grp.label)}">
+           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+         </button>` : ""}
+      </div>
+      <ul class="rlist">${grp.items
+        .sort((a,b)=>(b.updated_ms||b.created_ms||0)-(a.updated_ms||a.created_ms||0))
+        .map(s=>{
+          const held = s.turns.some(t=>t.mode==="floor");
+          return `<li><button type="button" data-open="${s.id}"
+              aria-current="${S.openPanes.includes(s.id)}"
+              title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
+            <span class="t">${esc(s.title)}</span>
+            <span class="m">${sessMeta(s)}
+              ${held?'<span style="color:var(--warn)">held</span>':""}</span>
+          </button></li>`;}).join("")}</ul>`).join("");
+    if (!groups.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+      No sessions yet. Transcripts are read from <code>~/.claude/projects</code>.</p>`;
   } else {
     const g = {};
     S.sessions.forEach(s=>s.turns.forEach(t=>{
@@ -3685,6 +4289,278 @@ SCREENS.editor = () => {
    nothing that mutates a repository, so this screen deliberately offers no
    stage/commit/push control -- an affordance that cannot work is worse than a
    missing one. The repo is the configured workdir, never a path from here. */
+/* ── S? Usage ────────────────────────────────────────────────────────────────
+   The plan's rate-limit windows, from the same endpoint Claude Code's own /usage
+   reads. Rendered from the server's `limits` LIST rather than from named keys:
+   the list already carries a per-model row (`weekly_scoped`, e.g. "Weekly ·
+   Fable") that no pair of hardcoded keys can express, and a window Anthropic adds
+   later shows up here without this file learning its name.
+
+   There is deliberately NO daily or monthly figure for the plan. The endpoint
+   does not return one -- five-hour and weekly are the only rate-limit windows
+   that exist. `daily` and `monthly_limit` live under extra_usage, which is
+   pay-as-you-go credits and a different thing entirely; they are shown in their
+   own section, and only when extra usage is actually enabled. */
+/* ── usage, rendered once and shown in two places ────────────────────────────
+   The full screen and the composer popover render from THESE functions, not from
+   two copies of the same markup. Two renderers for one set of numbers is how a
+   chip ends up saying 4% beside a panel saying 40% -- and the whole point of this
+   surface is that the operator can trust the figure without checking it twice. */
+
+/* "resets in 11 min" beats an ISO timestamp for the thing you actually want to
+   know. Past-due is stated as such rather than rendered as a negative. */
+function usageUntil(epoch){
+  if (!epoch) return "";
+  const s = epoch - Date.now()/1000;
+  if (s <= 0) return "resetting now";
+  if (s < 3600) return "resets in " + Math.max(1, Math.round(s/60)) + " min";
+  if (s < 86400) return "resets in " + Math.round(s/3600) + "h";
+  return "resets in " + Math.round(s/86400) + "d";
+}
+/* The guard's own thresholds (warn 70, block 80), so the colour on this chip and
+   the moment tool use actually stops are the same number. A chip that turns red
+   at a different point than the hook fires would be worse than no chip. */
+function usageSev(pct){ return pct >= 80 ? "p-block" : pct >= 70 ? "p-warn" : "p-ok"; }
+
+/* The window the operator is actually being metered by. `is_active` is the
+   server's own flag; the first row is the fallback so a payload that marks
+   nothing active still yields a number rather than a blank chip. */
+function usageActive(u){
+  const rows = (u && u.limits) || [];
+  return rows.find(r => r.active) || rows[0] || null;
+}
+
+function usageRowsHtml(u){
+  const rows = (u && u.limits) || [];
+  if (!rows.length) return `<p style="color:var(--faint);margin:0">The endpoint
+    returned no windows for this account.</p>`;
+  return rows.map(r => `<div class="urow">
+      <div class="uhead">
+        <span class="ulabel">${esc(r.label)}</span>
+        ${r.active?`<span class="pill p-acc" title="This is the window currently metering you">active</span>`:""}
+        <span class="ureset">${esc(usageUntil(r.resets_epoch))}</span>
+        <span class="upct ${usageSev(r.percent)}">${Math.round(r.percent)}%</span>
+      </div>
+      <div class="ubar" role="img"
+           aria-label="${esc(r.label)} at ${Math.round(r.percent)} percent">
+        <i class="${usageSev(r.percent)}" style="width:${Math.min(100, Math.max(0, r.percent))}%"></i>
+      </div>
+    </div>`).join("");
+}
+
+/* ── the repository bar ──────────────────────────────────────────────────────
+   Under the composer, describing the repository THIS session is in -- which is
+   the session's working directory, not the Settings workdir, or the bar would
+   name one repo while the session ran in another.
+
+   Per session, cached in S.repo[sid], because two panes can be in two different
+   folders and one shared object would show whichever loaded last. */
+function repoBarHtml(sid){
+  const r = S.repo && S.repo[sid];
+  if (r === undefined) return "";                       /* not asked yet: draw nothing */
+  if (!r || !r.available){
+    /* Deliberately quiet. "This folder is not a git repository" is the normal
+       state for most sessions and must not look like a failure. */
+    return `<div class="repobar off"><span class="rbnone">${
+      esc((r && r.reason) || "no repository")}</span></div>`;
+  }
+  const d = r.diff || {};
+  const dirty = (d.files || 0) > 0;
+  const sync = [];
+  if (r.ahead)  sync.push(`<span class="rbahead" title="${r.ahead} commit${r.ahead===1?"":"s"} not on ${esc(r.upstream||"the upstream")}">↑${r.ahead}</span>`);
+  if (r.behind) sync.push(`<span class="rbbehind" title="${r.behind} commit${r.behind===1?"":"s"} on ${esc(r.upstream||"the upstream")} not here">↓${r.behind}</span>`);
+  /* No upstream is NOT "in sync" -- there is nothing to be in sync with, and
+     showing 0/0 would claim otherwise. */
+  if (!r.upstream) sync.push(`<span class="rbnoup" title="This branch tracks nothing — it has never been pushed">no upstream</span>`);
+
+  const prs = S.prs && S.prs[sid];
+  const prCount = prs && prs.available ? (prs.pulls||[]).length : null;
+
+  return `<div class="repobar">
+      <span class="rbrepo" title="${esc(r.root||"")}">${esc(r.name||"repo")}</span>
+      <span class="rbbranch" title="${r.upstream?("tracking "+esc(r.upstream)):"no upstream"}">${
+        r.detached ? "detached HEAD" : esc(r.branch||"—")}</span>
+      ${sync.join("")}
+      ${dirty ? `<span class="rbdiff" title="${d.files} file${d.files===1?"":"s"} changed in the working tree, untracked files included">
+          <b class="add">+${d.added}</b> <b class="rem">−${d.removed}</b></span>`
+              : `<span class="rbclean">clean</span>`}
+      ${r.remote ? `<button type="button" class="rbprs" data-prstoggle="${esc(sid)}"
+           aria-expanded="${S.prsOpen===sid?"true":"false"}"
+           title="Open pull requests on ${esc(r.remote)}">${
+             /* Gated on the REMOTE, not on the loaded count. Gating on the count
+                made this button unreachable: it only rendered once pull requests
+                were loaded, and they only load when it is clicked. The label
+                carries the number once known and reads "PRs" until then. */
+             prCount != null ? prCount + " PR" + (prCount===1?"":"s") : "PRs"
+           }</button>` : ""}
+      ${r.remote && !r.detached ? `<button type="button" class="rbpr" data-propose-pr="${esc(sid)}"
+           title="Propose a pull request — nothing is pushed or published until you approve it">Create PR</button>` : ""}
+    </div>`;
+}
+
+/* The PR form. Everything it produces is a PROPOSAL -- the wording says so twice,
+   in the note and on the button, because the one misreading that matters here is
+   thinking the pull request now exists. */
+function prFormHtml(sid){
+  if (S.prDone && (!S.prForm || S.prForm.sid !== sid))
+    return `<div class="prform done">
+        <b>Proposal ${esc(S.prDone)} written.</b>
+        <span>Nothing has been pushed and no pull request exists yet. Approve it
+        under <b>Routines → Proposals</b> to push the branch and open it.</span>
+        <button class="ib" type="button" data-prdone-dismiss="1" aria-label="Dismiss">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>`;
+  if (!S.prForm || S.prForm.sid !== sid) return "";
+  const f = S.prForm;
+  return `<div class="prform">
+      <div class="prfrow">
+        <label>HEAD<input type="text" data-prf="head" value="${esc(f.head)}" spellcheck="false"></label>
+        <label>BASE<input type="text" data-prf="base" value="${esc(f.base)}" spellcheck="false"></label>
+      </div>
+      <label class="prfw">TITLE<input type="text" data-prf="title" value="${esc(f.title)}"
+             placeholder="what this pull request does"></label>
+      <label class="prfw">BODY<textarea data-prf="body" rows="3"
+             placeholder="optional">${esc(f.body)}</textarea></label>
+      ${S.prError?`<div class="prfnote bad">${esc(S.prError)}</div>`:""}
+      <div class="prfnote">This writes a <b>proposal</b>. It does not push and does
+        not open anything — approving it under Routines pushes
+        <code>${esc(f.head||"the branch")}</code> to origin and opens the pull request.</div>
+      <div class="prfbtns">
+        <button type="button" data-prsubmit="1" ${S.prBusy?"disabled":""}>${
+          S.prBusy?"writing…":"Propose"}</button>
+        <button type="button" data-prcancel="1">Cancel</button>
+      </div>
+    </div>`;
+}
+
+/* The PR list, opened from the bar. Same in-flow placement as the folder editor:
+   a list of rows wants width, and it is read deliberately rather than glanced at. */
+function prListHtml(sid){
+  if (S.prsOpen !== sid) return "";
+  const p = S.prs && S.prs[sid];
+  if (!p) return `<div class="prlist"><p class="prnone">Reading pull requests…</p></div>`;
+  if (!p.available)
+    return `<div class="prlist"><p class="prnone">${esc(p.reason||"unavailable")}</p></div>`;
+  if (!(p.pulls||[]).length)
+    return `<div class="prlist"><p class="prnone">No open pull requests.</p></div>`;
+  return `<div class="prlist">${p.pulls.map(pr=>`
+      <div class="prrow">
+        <span class="prnum">#${pr.number}</span>
+        <span class="prt" title="${esc(pr.title)}">${esc(pr.title)}</span>
+        <span class="prbr" title="${esc(pr.head)} → ${esc(pr.base)}">${esc(pr.head)}</span>
+        <span class="pill ${pr.draft?"p-mut":"p-ok"}">${pr.draft?"draft":esc(pr.state||"open")}</span>
+      </div>`).join("")}</div>`;
+}
+
+/* ── the composer chip ───────────────────────────────────────────────────────
+   Usage belongs next to the message you are about to send, not behind a nav
+   click: the number matters at the moment you decide whether to send, and a
+   screen you have to navigate to is a screen you check after it mattered.
+
+   It renders even when usage is UNAVAILABLE, as a muted "—". A chip that
+   disappears on failure teaches the operator that no chip means no problem,
+   which is exactly wrong when the reason is a dead network. */
+function usageChipHtml(){
+  const u = S.usage;
+  if (u && !u.available)
+    return `<button class="uchip off" type="button" data-usagepop="1"
+              aria-expanded="${S.usagePop?"true":"false"}"
+              title="Usage unavailable — ${esc(u.reason||"no data")}"
+              aria-label="Plan usage unavailable">—</button>`;
+  const a = u ? usageActive(u) : null;
+  if (!a) return `<button class="uchip off" type="button" data-usagepop="1"
+              aria-expanded="${S.usagePop?"true":"false"}"
+              title="Plan usage — not read yet" aria-label="Plan usage">…</button>`;
+  const pct = Math.round(a.percent);
+  return `<button class="uchip ${usageSev(a.percent)}" type="button" data-usagepop="1"
+            aria-expanded="${S.usagePop?"true":"false"}"
+            title="${esc(a.label)} — ${pct}% used${
+              a.resets_epoch?", "+esc(usageUntil(a.resets_epoch)):""}\n\nClick for every window."
+            }" aria-label="Plan usage: ${esc(a.label)} at ${pct} percent">
+      <span class="uring" style="--p:${Math.min(100,Math.max(0,pct))}"></span>
+      <span class="uchipn">${pct}%</span>
+    </button>`;
+}
+
+/* The popover. Anchored above the composer, same rows as the screen. */
+function usagePopHtml(){
+  if (!S.usagePop) return "";
+  const u = S.usage;
+  const body = !u
+    ? `<p style="color:var(--faint);margin:0">Reading usage…</p>`
+    : !u.available
+      ? `<p style="margin:0">${esc(u.reason||"No usage data.")}</p>
+         <p style="margin:6px 0 0;font-size:10.5px;color:var(--faint)">This reads the
+         same endpoint as <code>/usage</code> in the CLI, using the Claude Code
+         credentials on this machine.</p>`
+      : usageRowsHtml(u);
+  const stale = u && u.source === "stale-cache"
+    ? `<div class="upopnote w">Endpoint unreachable — cached figures, up to 10 min old.</div>` : "";
+  return `<div class="upop" role="dialog" aria-label="Plan usage">
+      <div class="upophead">
+        <b>Plan usage</b>
+        <button class="ib" type="button" data-usageclose="1" aria-label="Close">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      ${stale}
+      <div class="upopbody">${body}</div>
+      <div class="upopnote">Five-hour and weekly are the only rate-limit windows the
+        endpoint reports — there is no daily or monthly figure for the plan.</div>
+    </div>`;
+}
+
+SCREENS.usage = () => {
+  if (S.usageError) return `<div class="zero"><h4>Usage unavailable</h4>
+    <p>${esc(S.usageError)}</p></div>`;
+  if (!S.usage) return `<div class="zero"><h4>Reading usage…</h4></div>`;
+  const u = S.usage;
+  if (!u.available) return `<div class="zero"><h4>Usage unavailable</h4>
+    <p>${esc(u.reason || "no usage data")}</p>
+    <p style="font-size:11px;color:var(--faint)">This reads the same endpoint as
+    <code>/usage</code> in the CLI, using the Claude Code credentials on this
+    machine. No credentials are sent to this panel.</p></div>`;
+
+  const rows = usageRowsHtml(u);
+
+  const x = u.extra_usage;
+  const extra = !x
+    ? `<p style="color:var(--faint);margin:0">Not reported for this account.</p>`
+    : !x.enabled
+      /* NOT rendered as zeros. A null limit means "none configured", and showing
+         that as 0 would read as "you have no allowance left" -- the opposite. */
+      ? `<p style="margin:0">Extra usage is <b>off</b>. Daily, weekly and monthly
+         figures only exist once pay-as-you-go credits are enabled — they are
+         <code>null</code> right now, not zero.</p>`
+      : `<div class="kv"><b>Used</b><span>${esc(String(x.used_credits ?? "—"))} ${esc(x.currency||"")}</span></div>
+         <div class="kv"><b>Daily</b><span>${esc(String(x.daily ?? "no limit set"))}</span></div>
+         <div class="kv"><b>Weekly</b><span>${esc(String(x.weekly ?? "no limit set"))}</span></div>
+         <div class="kv"><b>Monthly limit</b><span>${esc(String(x.monthly_limit ?? "no limit set"))}</span></div>
+         ${x.limit_reached?`<div class="note w" style="margin-top:7px">The spend limit has been reached.</div>`:""}`;
+
+  const age = u.source === "stale-cache"
+    ? `<div class="note w" style="margin-bottom:9px">The usage endpoint could not be
+       reached just now. These figures come from a cached response and may be up to
+       10 minutes old.</div>` : "";
+
+  return `${age}
+    <div class="note" style="margin-bottom:9px"><b>Read-only.</b> The same data as
+      <code>/usage</code> in the CLI, for the account whose Claude Code credentials
+      are on this machine. Shared cache with <code>sutra-usage</code>, so the guard
+      and this screen can never disagree.</div>
+
+    ${fold("usage.limits", "Plan limits", `${(u.limits||[]).length} windows`, rows)}
+
+    ${fold("usage.extra", "Extra usage (pay-as-you-go)", x && x.enabled ? "on" : "off", extra)}
+
+    <p class="note" style="margin-top:9px;font-size:11px;color:var(--faint)">
+      There is no daily or monthly figure for the plan itself — five-hour and weekly
+      are the only rate-limit windows the endpoint returns.</p>`;
+};
+
 SCREENS.git = () => {
   if (S.gitError) return `<div class="zero"><h4>Git unavailable</h4>
     <p>${esc(S.gitError)}</p>
@@ -3935,14 +4811,95 @@ function rtCreateForm(){
   </section>`;
 }
 
-function rtRunRow(r){
+/* ── run threads ─────────────────────────────────────────────────────────────
+   Every scheduled run is its own conversation, kept on disk. The row is the
+   entry to it: click one and the reply it produced is rendered underneath, with
+   an unread mark until you have opened it.
+
+   UNREAD IS PER MACHINE, in localStorage, and is keyed by <routine>/<output
+   file> -- the output filename is the run's timestamp, so the key is unique and
+   stable without the server having to track who has read what. A routine you
+   have never opened shows every run unread, which is the honest starting state:
+   nobody has read them. */
+const LS_RUNSEEN = "sutra.panel.runseen";
+function runSeenSet(){
+  if (!S._runSeen){
+    const raw = lsGet(LS_RUNSEEN, []);
+    S._runSeen = new Set(Array.isArray(raw) ? raw : []);
+  }
+  return S._runSeen;
+}
+function runKey(rid, name){ return rid + "/" + name; }
+function runIsUnread(rid, r){
+  /* A run with no captured output has nothing to read, so it is never "unread" --
+     marking it so would promise a thread that does not exist. */
+  return !!r.output_file && !runSeenSet().has(runKey(rid, r.output_file));
+}
+function markRunSeen(rid, name){
+  const s = runSeenSet();
+  if (s.has(runKey(rid, name))) return;
+  s.add(runKey(rid, name));
+  /* Bounded: one entry per run forever would grow without limit on a routine
+     that fires hourly. The newest 500 is far more than any unread mark is worth. */
+  const all = [...s].slice(-500);
+  S._runSeen = new Set(all);
+  lsSet(LS_RUNSEEN, all);
+}
+function rtUnreadCount(rid, runs){
+  if (!runs || !runs.runs) return 0;
+  return runs.runs.filter(r=>runIsUnread(rid, r)).length;
+}
+
+function rtRunRow(r, rid){
   const pill = r.outcome==="ok" ? `<span class="pill p-ok">ok</span>`
     : r.outcome==="skipped" ? `<span class="pill p-mut">skipped</span>`
     : `<span class="pill p-block">${esc(r.outcome||"?")}</span>`;
-  return `<tr><td>${pill}</td><td class="num">${esc(fmt(Date.parse(r.started_at)))}</td>
+  const open = S.runOpen && S.runOpen.rid===rid && S.runOpen.name===r.output_file;
+  const unread = runIsUnread(rid, r);
+  return `<tr class="runrow ${open?"sel":""}" ${r.output_file
+        ? `data-runopen="${esc(rid)}" data-runname="${esc(r.output_file)}" tabindex="0"
+           title="Read what this run said"` : ""}>
+    <td>${r.output_file?`<i class="rundot ${unread?"on":""}" aria-hidden="true"></i>`:""}${pill}</td>
+    <td class="num">${esc(fmt(Date.parse(r.started_at)))}</td>
     <td>${esc(r.trigger||"")}</td><td class="num">${r.duration_s??"—"}s</td>
     <td class="num">${r.cost_usd!=null?"$"+Number(r.cost_usd).toFixed(4):"—"}</td>
     <td>${r.detail?esc(String(r.detail).slice(0,120)):""}</td></tr>`;
+}
+
+/* The opened run: what it actually said, and the way back into that thread. */
+function rtRunThreadHtml(rid){
+  if (!S.runOpen || S.runOpen.rid !== rid) return "";
+  const d = S.runDetail;
+  if (!d) return `<div class="runthread"><p class="prnone">Reading this run…</p></div>`;
+  if (d.error) return `<div class="runthread"><p class="prnone">${esc(d.error)}</p></div>`;
+  const denials = (d.permission_denials||[]).map(x=>x && x.tool_name).filter(Boolean);
+  /* An empty result is not an empty run. Say WHY it is empty -- a denied tool is
+     the usual cause, and "nothing here" without the reason reads as a broken
+     routine rather than one that asked for permission nobody was there to give. */
+  const body = (d.result && String(d.result).trim())
+    ? `<div class="md">${mdHtml(String(d.result))}</div>`
+    : (!d.parsed
+        ? `<pre class="toutbody">${esc(String(d.text||"").slice(0,4000))}</pre>`
+        : `<p class="prnone">This run produced no reply${
+            denials.length ? " — it was denied " + esc(denials.join(", "))
+                             + ", and nobody was there to approve it." : "."}</p>`);
+  return `<div class="runthread">
+      <div class="runhead">
+        <b>${esc(fmt(Date.parse((S.runOpen.started||""))))}</b>
+        ${d.turns!=null?`<span class="pill p-mut">${d.turns} turn${d.turns===1?"":"s"}</span>`:""}
+        ${d.cost_usd!=null?`<span class="pill p-mut">$${Number(d.cost_usd).toFixed(4)}</span>`:""}
+        ${denials.length?`<span class="pill p-warn">denied ${esc(denials.join(", "))}</span>`:""}
+        ${d.session_id
+          ? `<button class="btn" type="button" data-runcontinue="${esc(rid)}"
+               title="Open this run as a chat and carry on from where it stopped">Continue this thread</button>`
+          : `<span class="why">no session id recorded — this run cannot be resumed</span>`}
+        <button class="ib" type="button" data-runclose="1" aria-label="Close this run">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      ${body}
+    </div>`;
 }
 
 /* What the chat agent asked for. Rendered ABOVE the routines themselves and on
@@ -4029,13 +4986,22 @@ function rtCard(r){
       <button class="btn" type="button" data-rttoggle="${esc(r.id)}" data-en="${r.enabled?0:1}"
         >${r.enabled?"Pause":"Resume"}</button>
       <button class="btn" type="button" data-rtruns="${esc(r.id)}">${
-        runs?"Refresh runs":"Show runs"}</button>
+        runs?"Refresh runs":"Show runs"}${
+          /* The count is on the BUTTON as well as the rows, because before you
+             press it the rows do not exist -- and "3 unread" is the reason to. */
+          runs && rtUnreadCount(r.id, runs) ? " · " + rtUnreadCount(r.id, runs) + " unread" : ""}</button>
       <button class="btn" type="button" data-rtdel="${esc(r.id)}">Delete</button></p>
     ${runs?(runs.error?`<div class="note b">${esc(runs.error)}</div>`
       : runs.total===0 ? `<div class="note">No runs recorded yet.</div>`
       : `<div class="tw"><table><thead><tr><th>Outcome</th><th>Started</th><th>Trigger</th>
           <th>Took</th><th>Cost</th><th>Detail</th></tr></thead>
-          <tbody>${runs.runs.map(rtRunRow).join("")}</tbody></table></div>`):""}
+          <tbody>${
+            /* An ARROW, not a bare reference. `.map(rtRunRow)` passes the index
+               as the second argument, so the routine id would silently become 0,
+               1, 2 -- every row keyed to a routine that does not exist. */
+            runs.runs.map(x=>rtRunRow(x, r.id)).join("")
+          }</tbody></table></div>`):""}
+    ${rtRunThreadHtml(r.id)}
   </section>`;
 }
 
@@ -4327,7 +5293,12 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
   settings:["Settings","~/.sutra-ui/settings.json · PATH"],
-  balance:["Balance","holding/state/balance/ — not yet observing · design preview"]};
+  balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
+  /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()
+     does `const [t,src] = TITLES[S.screen]`, so a missing row here is not a blank
+     header -- it is a TypeError that aborts render() before the pane is touched,
+     leaving the previous screen on display as though the click did nothing. */
+  usage:["Usage","api.anthropic.com/api/oauth/usage — read-only, same data as /usage"]};
 /* ── a session's routing path, as a chart ──
    Honest model: the path is SUCCESSIVE PLACEMENT, not delegation. Each turn resolves to
    exactly one accountable department; departments never invoke one another (no such channel
@@ -4463,14 +5434,67 @@ const SPARK = '<span class="spark" aria-hidden="true"><svg viewBox="0 0 24 24" f
   'stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
   '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></svg></span>';
 
+/* ── working directory, in the composer ──────────────────────────────────────
+   The folder the agent runs in was previously reachable only in Settings, applied
+   globally to every session at once. It belongs beside the message box for the same
+   reason the permission selector does: it is a property of the turn you are about to
+   send, and two sessions can legitimately want two different folders. */
+function cwdLabel(p){
+  const clean = (p || "").replace(/\/+$/, "");
+  if (!clean) return "no folder";
+  const base = clean.split("/").filter(Boolean).pop();
+  return base || clean;   /* "/" has no basename; show the path itself */
+}
+function cwdButtonHtml(sid){
+  const eff = sessCwd(sid);
+  const over = !!(S.cwd && S.cwd[sid]);
+  const home = (SETTINGS||{}).workdir || "";
+  const title = (eff || "no working directory set")
+    + (over ? "\n\nThis session only. Every other session uses " + (home || "the default") + "."
+            : "\n\nFrom Settings — shared by every session.")
+    + "\nClick to run this session somewhere else.";
+  return `<button class="cwdbtn ${over?"over":""}" type="button" data-cwdopen="${esc(sid)}"
+            aria-expanded="${S.cwdEdit===sid?"true":"false"}"
+            aria-label="Working directory: ${esc(eff||"none")}. Change it."
+            title="${esc(title)}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+        <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+      <span class="cwdn">${esc(cwdLabel(eff))}</span>
+    </button>`;
+}
+function cwdEditorHtml(sid){
+  if (S.cwdEdit !== sid) return "";
+  const eff = sessCwd(sid);
+  const over = !!(S.cwd && S.cwd[sid]);
+  /* The note states the CONSTRAINT rather than discovering it after a failed send:
+     the server confines any agent cwd to $HOME, and a path outside it is refused
+     there. Saying so here means the refusal is not a surprise. */
+  const note = S.cwdError
+    ? `<div class="cwdnote bad">${esc(S.cwdError)}</div>`
+    : `<div class="cwdnote">Applies to the next message — the running agent cannot be
+         moved, so changing this starts a new one. Must be inside your home folder.${
+         over ? " Clear the box to go back to the shared default." : ""}</div>`;
+  return `<div class="cwdrow">
+      <input type="text" data-cwdinput="${esc(sid)}" spellcheck="false"
+             value="${esc(eff)}" placeholder="~/some/project"
+             aria-label="Working directory for this session" />
+      <button type="button" data-cwdsave="${esc(sid)}">SET</button>
+      <button type="button" data-cwdcancel="${esc(sid)}">CANCEL</button>
+    </div>${note}`;
+}
+
 function turnResponse(t){
   const nTools = (t.tools && t.tools.length) || 0;
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
   const runs = t.toolRuns || [];
   const active = runs.filter(r=>r.running).length;
+  /* THE ONLY whole-turn progress surface. Was an 8.5px word in a pill: no
+     elapsed time, no counts, no phase, no throughput -- a 3-second turn and a
+     wedged one were the same picture. data-runstrip is the ticker's patch anchor
+     (text node only); the sweep is indeterminate on purpose. */
   const state = t.streaming
-      ? `<span class="pill p-acc">${SPARK}${active ? active + " tool" + (active===1?"":"s") + " running"
-                                                             : (t.thinking ? "thinking" : "running")}</span>`
+      ? `<span class="runstrip">${SPARK}<b data-runstrip="${esc(t.uid||"")}"
+           >${esc(runPhrase(t))}</b></span><span class="runbar" aria-hidden="true"><i></i></span>`
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
@@ -4482,17 +5506,24 @@ function turnResponse(t){
   /* Server-measured duration and cost, stated only when the server actually sent
      them. A turn replayed from a transcript has neither, and inventing a number
      there would be fabrication. */
-  const meta = (!t.streaming && (t.duration_ms != null || t.cost_usd != null))
+  const meta = (!t.streaming && (t.duration_ms != null || t.cost_usd != null
+                                 || t.num_turns != null))
     ? `<span class="pill p-mut">${[
          t.duration_ms != null ? (t.duration_ms/1000).toFixed(1) + "s" : null,
          t.cost_usd != null ? "$" + Number(t.cost_usd).toFixed(4) : null,
+         /* the closest thing the stream has to "how much work was that" -- the
+            server sends it on every `done` and the client already stores it */
+         t.num_turns != null ? t.num_turns + " turn" + (t.num_turns===1?"":"s") : null,
        ].filter(Boolean).join(" · ")}</span>` : "";
 
   /* toolRuns (live, with lifecycle) is preferred; `tools` (flat names, which is all a
      replayed transcript records) is the fallback. A replayed turn therefore shows what
      ran but never claims a pass/fail it does not know. */
   const tools = runs.length
-    ? `<div class="toolRow">${runs.slice(-12).map(r=>`
+    ? `<div class="toolRow">${runs.length > 12 ? `<div class="trow unk">
+           <span class="tstate" aria-hidden="true"></span>
+           <span class="tname">${runs.length - 12} earlier tool call${runs.length-12===1?"":"s"}</span>
+           <span class="tsum">not shown</span></div>` : ""}${runs.slice(-12).map(r=>`
          <div class="trow ${r.running?"run":(r.ok===false?"bad":(r.ok===null?"unk":"ok"))}">
            <span class="tstate" aria-hidden="true"></span>
            <span class="tname">${esc(r.name)}</span>
@@ -4501,8 +5532,12 @@ function turnResponse(t){
                         aria-expanded="${S.toolOpen&&S.toolOpen[r.id]?"true":"false"}"
                         title="Show what this tool returned">${
                           S.toolOpen&&S.toolOpen[r.id]?"hide":"output"}</button>`:""}
+           ${r.command?`<button class="tout tterm" type="button" data-toolterm="${esc(r.id||"")}"
+                        title="Open the terminal with this command typed in, ready to run.
+It is NOT executed for you — press Enter yourself once you have read it.">terminal</button>`:""}
            ${r.caller && r.caller!=="direct"?`<span class="pill p-acc">${esc(r.caller)}</span>`:""}
-           <span class="tverdict">${r.running ? "running"
+           <span class="tverdict">${r.startedAt
+               ? esc(fmtDur((r.endedAt || Date.now()) - r.startedAt)) + " · " : ""}${r.running ? "running"
                                    : r.ok === false ? "error"
                                    : r.ok === null ? "unknown"
                                    : "done"}</span>
@@ -4514,11 +5549,18 @@ function turnResponse(t){
     </div>` : "");
   /* A backoff is not a hang, and the difference has to be visible or the
      operator kills a turn that was about to succeed. */
-  const retrying = t.retrying
+  /* ONLY while the turn is live. `retrying` is assigned in one place and cleared
+     by NO terminal branch, so a turn that hit one backoff kept an animated "Rate
+     limited — retrying…" row pinned above its completed answer. */
+  const retrying = (t.streaming && t.retrying)
     ? `<div class="working"><i class="dot"></i>Rate limited — retrying<b class="ell"></b>
          <span class="tsum">${esc(t.retrying)}</span></div>` : "";
-  const waiting = (t.streaming && !t.response && !runs.length)
-    ? `<div class="working">${SPARK}${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
+  /* RETIRED. Its condition included `!runs.length`, so it was suppressed for the
+     rest of the turn as soon as any tool ran -- i.e. it went away exactly during
+     the compose window it was supposed to cover. The run strip now carries the
+     whole live window with a stopwatch, so keeping both meant two animated
+     elements per turn saying different amounts of nothing. */
+  const waiting = "";
   /* data-resp is the PATCH ANCHOR. While a reply streams, patchStreaming()
      rewrites the innerHTML of exactly this node instead of letting render()
      rebuild #panes -- see scheduleStreamPatch(). The id must be stable for the
@@ -4652,6 +5694,11 @@ function sessionPane(s){
         <b>Side chat</b>
         <span>separate thread — nothing here is sent to the conversation above, and it
           is not filed as a placement</span>
+        ${sideStreamingFor(s.id) ? `<button class="ib" data-sidestop="${s.id}" type="button"
+                aria-label="Stop the side chat turn"
+                title="Stop — interrupts this side thread only, never the conversation above">
+          <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+        </button>` : ""}
         <button class="ib" data-sideclose="${s.id}" type="button" aria-label="Close the side chat">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
@@ -4679,7 +5726,12 @@ function sessionPane(s){
     </div>` : ""}
     ${permConfirmHtml()}
     ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
+    ${cwdEditorHtml(s.id)}
+    ${prFormHtml(s.id)}
+    ${prListHtml(s.id)}
+    ${repoBarHtml(s.id)}
     <div class="pc">
+      ${S.usagePop === s.id ? usagePopHtml() : ""}
       <button class="ib" data-optstoggle="${s.id}" type="button"
               aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
               aria-label="Turn options" title="Effort, budget and tool limits for the next message">
@@ -4698,6 +5750,8 @@ function sessionPane(s){
       <textarea data-sask="${s.id}" rows="1"
              placeholder="Ask anything — / for commands, Shift+Enter for a new line"
              aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
+      ${cwdButtonHtml(s.id)}
+      ${usageChipHtml()}
       ${permSelect()}
       <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
               title="Model — applies to the next message">
@@ -4786,7 +5840,14 @@ function _focusedInputSelector(){
   if (!el || !(el.tagName === "INPUT" || el.tagName === "SELECT"
                || el.tagName === "TEXTAREA")) return null;
   if (el.id) return "#" + el.id;
-  for (const attr of ["data-sask", "data-ssend"]) {
+  /* Every one of these is an input with no id that render() rebuilds wholesale.
+     The comment above describes the caret fix for the composer; it was never
+     generalised, so typing a PR body or a folder path while ANY transcript on
+     disk was being written dropped focus to <body> mid-word. Valueless
+     attributes need no special case: getAttribute returns "" and [data-x=""]
+     matches a bare data-x. */
+  for (const attr of ["data-sask", "data-ssend", "data-sideask", "data-cwdinput",
+                      "data-prf", "data-edta", "data-workdir-input", "data-edfilter"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
   }
   return null;
@@ -5220,6 +6281,16 @@ function render(){
   document.getElementById("scBody").innerHTML = SCREENS[S.screen]();
   wire();
 
+  /* Fill the repository bar for whatever panes are open. Idempotent -- loadRepo
+     returns immediately once S.repo[sid] is set -- so calling it from render()
+     costs one subprocess per session rather than one per repaint, and a pane
+     opened later gets its bar without a second code path. */
+  S.openPanes.forEach(sid => loadRepo(sid, false));
+
+  /* A turn may have just started, so the strip needs a clock. Idempotent, and
+     the ticker clears itself on the first tick after the last turn ends. */
+  ensureRunTicker();
+
   if (prior) {
     const el = document.querySelector(prior.sel);
     if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
@@ -5543,6 +6614,92 @@ function wire(){
   const ca=scBody.querySelector("[data-collall]");
   if(ca) ca.onclick=()=>{ live().forEach(d=>{ if(d.parent_ref) S.collapsed.add(d.ref); }); render(); };
 
+  /* working directory, per session */
+  panes.querySelectorAll("[data-cwdopen]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.cwdopen;
+    S.cwdEdit = S.cwdEdit === sid ? null : sid;
+    S.cwdError = null;
+    render();
+    /* Focus and put the caret at the END: the field is pre-filled with the current
+       path, and selecting it all would make the first keystroke wipe a value the
+       operator most likely wants to edit rather than replace. */
+    const inp = panes.querySelector('[data-cwdinput="' + sid + '"]');
+    if (inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  });
+  panes.querySelectorAll("[data-cwdsave]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.cwdsave;
+    const inp = panes.querySelector('[data-cwdinput="' + sid + '"]');
+    setSessCwd(sid, inp ? inp.value : "");
+  });
+  panes.querySelectorAll("[data-cwdcancel]").forEach(b=>b.onclick=()=>{
+    S.cwdEdit = null; S.cwdError = null; render(); });
+  /* usage chip + popover */
+  panes.querySelectorAll("[data-usagepop]").forEach(b=>{
+    const sid = b.closest("[data-sess]") && b.closest("[data-sess]").dataset.sess;
+    b.onclick = ()=>{
+      const opening = S.usagePop !== sid;
+      S.usagePop = opening ? sid : null;
+      render();
+      /* Refresh ON OPEN rather than on a timer. The number only matters when
+         someone is looking at it, and a background poll against an external API
+         for a panel nobody has open is cost with no reader. The server's 60s
+         cache makes reopening free. */
+      if (opening) loadUsage(true);
+    };
+  });
+  panes.querySelectorAll("[data-usageclose]").forEach(b=>b.onclick=()=>{
+    S.usagePop = null; render(); });
+  /* repository bar */
+  panes.querySelectorAll("[data-prstoggle]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.prstoggle;
+    const opening = S.prsOpen !== sid;
+    S.prsOpen = opening ? sid : null;
+    render();
+    if (opening) loadPrs(sid, true);
+  });
+  panes.querySelectorAll("[data-propose-pr]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.proposePr;
+    const r = S.repo[sid] || {};
+    /* Pre-filled from what the repository already says, not blank: the head is
+       the branch you are on and the base is what it tracks, which is right
+       almost always -- and both stay editable because "almost" is not "always". */
+    S.prForm = { sid,
+      head: r.branch || "",
+      base: (r.upstream || "").replace(/^origin\//, "") || "main",
+      title: "", body: "" };
+    S.prError = null; S.prDone = null;
+    render();
+    const t = panes.querySelector("[data-prf='title']"); if (t) t.focus();
+  });
+  panes.querySelectorAll("[data-prf]").forEach(inp=>{
+    inp.oninput = ()=>{ if (S.prForm) S.prForm[inp.dataset.prf] = inp.value; };
+  });
+  panes.querySelectorAll("[data-prcancel]").forEach(b=>b.onclick=()=>{
+    S.prForm = null; S.prError = null; render(); });
+  panes.querySelectorAll("[data-prsubmit]").forEach(b=>b.onclick=async ()=>{
+    if (!S.prForm || S.prBusy) return;
+    S.prBusy = true; S.prError = null; render();
+    try {
+      const r = await apiPost("/api/repo/pr-proposal", {
+        cwd: sessCwd(S.prForm.sid), head: S.prForm.head, base: S.prForm.base,
+        title: S.prForm.title, body: S.prForm.body });
+      /* The proposal is INERT. Say so plainly rather than letting a green tick
+         imply the pull request exists -- it does not, and will not until it is
+         approved under Routines. */
+      S.prDone = (r.proposal && r.proposal.id) || "written";
+      S.prForm = null;
+      loadProposals(true);
+    } catch (e){ S.prError = e.message; }
+    S.prBusy = false; render();
+  });
+  panes.querySelectorAll("[data-prdone-dismiss]").forEach(b=>b.onclick=()=>{
+    S.prDone = null; render(); });
+  panes.querySelectorAll("[data-cwdinput]").forEach(inp=>{
+    inp.onkeydown = e=>{
+      if (e.key === "Enter"){ e.preventDefault(); setSessCwd(inp.dataset.cwdinput, inp.value); }
+      else if (e.key === "Escape"){ e.preventDefault(); S.cwdEdit = null; S.cwdError = null; render(); }
+    };
+  });
   /* session panes */
   panes.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     S.sessTab[b.dataset.sid]=b.dataset.tab; render(); });
@@ -5614,6 +6771,22 @@ function wire(){
     S.toolOpen[id] = !S.toolOpen[id];
     render();
   });
+  /* "view it in the terminal" for a shell command the agent ran.
+     It TYPES the command and stops. It does not press Enter, and that is the whole
+     design: the agent ran this once already, a second run is a NEW side effect, and
+     `rm`, a migration or a deploy would be re-executed by a control the operator
+     clicked to LOOK at something. Typed-not-run is also what term.html's own
+     data-insert buttons already do, so this is the established gesture here. */
+  panes.querySelectorAll("[data-toolterm]").forEach(b=>b.onclick=()=>{
+    const id = b.dataset.toolterm;
+    let run = null;
+    S.sessions.forEach(s=>(s.turns||[]).forEach(t=>
+      (t.toolRuns||[]).forEach(r=>{ if (r.id === id) run = r; })));
+    Object.keys(S.sideTurns||{}).forEach(sid=>(S.sideTurns[sid]||[]).forEach(t=>
+      (t.toolRuns||[]).forEach(r=>{ if (r.id === id) run = r; })));
+    if (!run || !run.command) return;
+    sendToTerminal(run.command);
+  });
   panes.querySelectorAll("[data-sidetoggle]").forEach(b=>b.onclick=()=>{
     const sid=b.dataset.sidetoggle;
     S.sideOpen[sid] = !S.sideOpen[sid];
@@ -5648,6 +6821,21 @@ function wire(){
          that silently does nothing. */
       const s=S.sessions.find(x=>x.id===sid);
       const t=s && (s.turns||[]).slice().reverse().find(x=>x.streaming);
+      if(t){ t.streaming=false; t.stopped=true; render(); }
+      return;
+    }
+    ch.ws.send(JSON.stringify({type:"stop"}));
+  });
+
+  /* The side chat had NO stop anywhere: the main composer's Stop resolves
+     CLAUDE_SOCKETS.get(sid) -- the MAIN key -- while a side turn lives under
+     chanKey(sid,true). Kept as a SEPARATE control so stopping one never kills the
+     other. */
+  panes.querySelectorAll("[data-sidestop]").forEach(b=>b.onclick=()=>{
+    const sid=b.dataset.sidestop;
+    const ch=CLAUDE_SOCKETS.get(chanKey(sid, true));
+    if(!ch || !ch.open){
+      const t=(S.sideTurns[sid]||[]).slice().reverse().find(x=>x.streaming);
       if(t){ t.streaming=false; t.stopped=true; render(); }
       return;
     }
@@ -5712,6 +6900,36 @@ function wire(){
              b.dataset.en === "1" ? "Resumed." : "Paused — it will not fire on its own."));
   scBody.querySelectorAll("[data-rtruns]").forEach(b=>b.onclick=()=>
     rtLoadRuns(b.dataset.rtruns));
+  /* Open a run as a thread. Keyboard too: the row is the control, and a table
+     row that only answers to a mouse is a control half the users cannot reach. */
+  const openRun = el => {
+    const rid = el.dataset.runopen, name = el.dataset.runname;
+    if (!rid || !name) return;
+    if (S.runOpen && S.runOpen.rid===rid && S.runOpen.name===name){
+      S.runOpen = null; S.runDetail = null; render(); return;   /* toggle shut */
+    }
+    const idx = (S.rtRuns[rid] || {}).runs || [];
+    const rec = idx.find(x=>x.output_file===name) || {};
+    S.runOpen = {rid, name, started: rec.started_at || ""};
+    S.runDetail = null;
+    /* Marked read on OPEN, not on close: you have seen it the moment it is on
+       screen, and a mark that waits for a close never lands when the reader
+       simply navigates away. */
+    markRunSeen(rid, name);
+    render();
+    loadRunDetail(rid, name);
+  };
+  scBody.querySelectorAll("[data-runopen]").forEach(el=>{
+    el.onclick = ()=>openRun(el);
+    el.onkeydown = e=>{ if (e.key==="Enter" || e.key===" "){ e.preventDefault(); openRun(el); } };
+  });
+  scBody.querySelectorAll("[data-runclose]").forEach(b=>b.onclick=()=>{
+    S.runOpen = null; S.runDetail = null; render(); });
+  scBody.querySelectorAll("[data-runcontinue]").forEach(b=>b.onclick=()=>{
+    const d = S.runDetail;
+    if (!d || !d.session_id) return;
+    continueRunThread(b.dataset.runcontinue, d);
+  });
   scBody.querySelectorAll("[data-rtdel]").forEach(b=>b.onclick=()=>{
     /* Deleting unloads a real launchd job. Confirm, and say what survives. */
     if (!confirm("Delete routine \"" + b.dataset.rtdel + "\"?\n\nThe scheduled job is " +
@@ -5773,17 +6991,19 @@ function wire(){
       /* Shift+Enter is a NEWLINE, Enter sends. Ctrl/Cmd+J too, because that is
          what readline users reach for. Returning early leaves the default
          behaviour -- in a textarea that inserts the newline for us. */
-      if (e.key === "Enter" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          const at = inp.selectionStart, to = inp.selectionEnd;
-          inp.value = inp.value.slice(0, at) + "\n" + inp.value.slice(to);
-          inp.selectionStart = inp.selectionEnd = at + 1;
-          S.composerText[sid] = inp.value;
-          autoGrowComposer(inp);
-        }
+      /* Cmd/Ctrl+Enter SENDS -- the convention in Claude Code, Slack, ChatGPT and
+         GitHub. It used to insert a newline too, so an operator who reached for it
+         watched the message sit in the box. Shift+Enter is a newline: return early
+         and the textarea default inserts it. */
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        const composed = composeWithAttachments(sid, inp.value.trim());
+        if(!composed) return;
+        e.preventDefault();
+        inp.value=""; S.composerText[sid]=""; S.palette=null;
+        submitTurn(composed, sid);
         return;
       }
+      if (e.key === "Enter" && e.shiftKey) return;
       if(e.key==="Enter"){
         /* Not gated on inp.value: an attachment with no typed text is a legitimate
            message ("here is the file"), and the old guard silently swallowed it. */
@@ -5923,12 +7143,23 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     if (S.screen === "automation") loadAuto(false);
     if (S.screen === "balance") loadBalance(false); /* lazy, like Git */
+    /* force=true: unlike a repo, utilization moves while you are not looking, and
+       a stale percentage is the one number this screen must not show. The 60s
+       server cache is what keeps re-opening cheap. */
+    if (S.screen === "usage") loadUsage(true);
     if (S.screen === "evals") loadEvals(false);     /* lazy, like Git */
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
+  /* + on a project heading. Starts the session IN that folder rather than in the
+     global workdir -- which is the only thing that makes a per-project + different
+     from the one at the top of the rail. */
+  const np = e.target.closest("[data-newproj]");
+  if (np){ newSession(np.dataset.newproj); return; }
+  const ss = e.target.closest("#sessSort");
+  if (ss){ S.sessSort = S.sessSort === "az" ? "recent" : "az"; render(); return; }
   const op = e.target.closest("[data-open]");
   if (op){ const id=op.dataset.open;
     if (!S.openPanes.includes(id)) S.openPanes.push(id);
@@ -5942,15 +7173,35 @@ document.querySelector(".rail").addEventListener("click", e=>{
   if (g){ S.screen="departments"; S.sel=g.dataset.goto; render(); }
 });
 /* New session: opens an empty pane on the right, exactly like the reference */
-document.getElementById("newSession").onclick = () => {
+/* One path for every "start a session", so the rail button and the per-project +
+   cannot drift. `cwd` is optional: with one, the new session gets that directory
+   as its working-directory override (the same per-session mechanism the composer's
+   folder chip writes), which is the entire point of a + that lives on a project
+   heading -- starting a session "in" a project means starting it in that folder. */
+function newSession(cwd){
   const s = { id:"s-"+(++SID), title:"New session", created_ms:NOW, updated_ms:NOW,
               turns:[], local:true, loadState:"live" };
+  /* BOTH fields, deliberately. S.cwd is the override map sessCwd()/claudeWsUrl()
+     read (so the session really runs in that folder); s.cwd is what the rail's
+     project grouping and projOf() read. Writing only the first meant the + on a
+     project heading opened a session that ran in the right directory but was
+     listed under "No folder" -- the one group with no + of its own, so the
+     button looked like it had done nothing. */
+  if (cwd){ S.cwd[s.id] = cwd; s.cwd = cwd; }
   S.sessions.unshift(s);
   S.openPanes.push(s.id);
   if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
   render();
   const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
-};
+  return s;
+}
+/* With no argument the new session falls through to SETTINGS.workdir, which
+   defaults to ~/sutra-ui-workspace -- a directory the operator never works in.
+   Running `claude` in the repo they were discussing and hitting /resume then
+   lists nothing, because claude only shows the project dir for the cwd you are
+   standing in. Default to the folder in view instead. */
+document.getElementById("newSession").onclick = () =>
+  newSession(sessCwd(S.openPanes[S.openPanes.length - 1]) || "");
 /* theme */
 (function(){
   const r=document.documentElement, KEY="sutra.panel.theme";
@@ -6239,6 +7490,170 @@ async function rtLoadRuns(id){
   catch (e) { S.rtRuns[id] = {error:e.message}; }
   render();
 }
+/* Usage. Lazy like Git, and re-read on every open rather than cached in S: a
+   utilization figure that is quietly ten minutes stale is worse than one that
+   costs a request, and the server already coalesces at 60s against a shared cache. */
+async function loadUsage(force){
+  if (S.usage && !force) return;
+  try {
+    S.usage = await apiGet("/api/usage");
+    S.usageError = null;
+  } catch (e){
+    S.usageError = e.message; S.usage = null;
+  }
+  render();
+}
+
+/* A floating popup has to be dismissible the way every other floating thing is:
+   click away, or press Escape. Without this the only exit is the × -- fine for a
+   block in flow, wrong for a card overlapping the transcript you want back.
+   Registered ONCE at top level, not in wire(): wire() runs on every render, and
+   re-adding this per render would stack a listener per repaint.
+   GUARDED because test_panel.js evaluates this script in a bare Node vm whose
+   `document` stub has no addEventListener -- an unguarded call takes the suite
+   down before a single assertion runs. */
+if (typeof document !== "undefined" && document.addEventListener){
+  document.addEventListener("click", e=>{
+    if (!S.usagePop) return;
+    /* The chip's own handler owns the toggle. Ignoring it here stops the pair
+       from firing open-then-closed on one click. */
+    if (e.target.closest("[data-usagepop]") || e.target.closest(".upop")) return;
+    S.usagePop = null; render();
+  });
+  document.addEventListener("keydown", e=>{
+    /* ── Escape cascade, most specific first ────────────────────────────────
+       Escape was global for exactly ONE overlay. Four dismissible states had no
+       Escape anywhere -- the routine-run view, the permission confirmation, the
+       PR form, and the folder editor -- so the only exit was finding the right
+       button with the mouse. */
+    if (e.key === "Escape"){
+      if (S.palette){ S.palette = null; render(); return; }
+      if (S.permConfirm){ S.permConfirm = null; render(); return; }
+      if (S.prForm){ S.prForm = null; render(); return; }
+      if (S.cwdEdit){ S.cwdEdit = null; S.cwdError = null; render(); return; }
+      if (S.runOpen){ S.runOpen = null; render(); return; }
+      if (S.usagePop){ S.usagePop = null; render(); return; }
+      return;
+    }
+    /* Bare keys must never fire while the operator is typing. */
+    const kel = e.target;
+    const typing = !!kel && (kel.tagName === "INPUT" || kel.tagName === "TEXTAREA"
+                             || kel.tagName === "SELECT" || kel.isContentEditable);
+    const mod = e.metaKey || e.ctrlKey;
+    const focused = S.openPanes[S.openPanes.length - 1] || null;
+    /* Cmd/Ctrl+. INTERRUPTS, wherever focus is. There was no key to stop a turn
+       at all. Both channels, because a side turn has its own socket. */
+    if (mod && e.key === "."){
+      e.preventDefault();
+      if (focused){
+        [chanKey(focused, false), chanKey(focused, true)].forEach(k=>{
+          const ch = CLAUDE_SOCKETS.get(k);
+          if (ch && ch.open) ch.ws.send(JSON.stringify({type:"stop"}));
+        });
+      }
+      return;
+    }
+    /* Cmd+W is Electron's Close Window and the app ships Electron's DEFAULT menu,
+       so it is not ours to take. Close-pane is Shift+W. */
+    if (mod && e.shiftKey && (e.key === "W" || e.key === "w")){
+      e.preventDefault();
+      if (focused){ S.openPanes = S.openPanes.filter(x => x !== focused); render(); }
+      return;
+    }
+    if (mod && !e.shiftKey && (e.key === "n" || e.key === "N")){
+      e.preventDefault();
+      newSession(sessCwd(focused) || "");
+      return;
+    }
+    if (mod && (e.key === "[" || e.key === "]")){
+      e.preventDefault();
+      const list = S.sessions;
+      if (!list.length) return;
+      const at = Math.max(0, list.findIndex(x => x.id === focused));
+      const nx = list[(at + (e.key === "]" ? 1 : list.length - 1)) % list.length];
+      if (nx){
+        if (!S.openPanes.includes(nx.id)) S.openPanes.push(nx.id);
+        if (S.openPanes.length > 2) S.openPanes = S.openPanes.slice(-2);
+        ensureTranscript(nx); render();
+      }
+      return;
+    }
+    /* "/" focuses the composer, the way every chat app does it. */
+    if (!typing && !mod && e.key === "/"){
+      const inp = focused && document.querySelector('[data-sask="' + focused + '"]');
+      if (inp){ e.preventDefault(); inp.focus(); }
+      return;
+    }
+  });
+}
+
+/* Repository state for one session. Keyed by session because the folder is.
+   Re-read after a turn completes (the agent may have committed or branched) and
+   whenever the session's folder changes -- both are moments the bar would
+   otherwise go quietly stale and describe a repository that is no longer there. */
+async function loadRepo(sid, force){
+  if (!sid) return;
+  if (S.repo[sid] !== undefined && !force) return;
+  const cwd = sessCwd(sid);
+  if (!cwd){ S.repo[sid] = {available:false, reason:"no working directory"}; scheduleRender(); return; }
+  try { S.repo[sid] = await apiGet("/api/repo?cwd=" + encodeURIComponent(cwd)); }
+  catch (e){ S.repo[sid] = {available:false, reason:e.message}; }
+  scheduleRender();
+}
+/* Pull requests are a NETWORK call through gh, so unlike the repo read they are
+   fetched only when the list is actually opened. */
+async function loadPrs(sid, force){
+  if (!sid) return;
+  if (S.prs[sid] && !force) return;
+  const cwd = sessCwd(sid);
+  if (!cwd) return;
+  try { S.prs[sid] = await apiGet("/api/repo/pulls?cwd=" + encodeURIComponent(cwd)); }
+  catch (e){ S.prs[sid] = {available:false, reason:e.message, pulls:[]}; }
+  scheduleRender();
+}
+
+async function loadRunDetail(rid, name){
+  try {
+    S.runDetail = await apiGet("/api/routines/" + encodeURIComponent(rid)
+                               + "/output?name=" + encodeURIComponent(name));
+  } catch (e){ S.runDetail = {error:e.message}; }
+  /* Only paint if this is still the run being looked at -- clicking through a
+     list faster than the reads return would otherwise let an earlier response
+     land on top of a later one. */
+  if (S.runOpen && S.runOpen.rid===rid && S.runOpen.name===name) render();
+}
+
+/* Carry on from a scheduled run, in a real chat pane.
+   The run already happened on a claude session and its id was recorded at the
+   time, so this is a genuine resume rather than a fresh thread primed with the
+   old text: seeding `claude_session` is exactly what the composer's own resume
+   path uses, and the agent keeps the context the run built. */
+function continueRunThread(rid, d){
+  const s = newSession();
+  s.title = rid + " · run thread";
+  s.claude_session = d.session_id;
+  /* The run executed in the ROUTINE's folder (routines.py spawns with the
+     routine's cwd), which is where its transcript is filed -- and `claude
+     --resume <id>` only resolves in that directory. newSession() was called with
+     no argument, so sessCwd fell through to SETTINGS.workdir, the resume failed,
+     and the button whose whole purpose is "carry on from where it stopped"
+     produced a cold conversation. Both fields: S.cwd drives sessCwd(), s.cwd
+     drives the rail grouping. */
+  const _rt = ((S.rt && S.rt.routines) || []).find(x => x.id === rid);
+  if (_rt && _rt.cwd){ S.cwd[s.id] = _rt.cwd; s.cwd = _rt.cwd; }
+  /* The reply is shown as the first turn so the pane is not blank -- you are
+     continuing a conversation, and a conversation with no visible history reads
+     as a new one. Marked replayed, because these turns were not classified by
+     this panel and no placement was ever filed for them. */
+  if (d.result){
+    s.turns.push({ uid:"run-"+d.session_id, text:"(scheduled run — " + rid + ")",
+                   response:String(d.result), streaming:false, real:true,
+                   claude_session:d.session_id });
+  }
+  S.runOpen = null; S.runDetail = null;
+  render();
+}
+
 async function loadGit(force){
   if (S.git && !force) return;
   try {
@@ -6269,6 +7684,115 @@ async function loadGitDiff(path){
 /* The REAL sessions. session_reader.list_sessions() walks
    ~/.claude/projects/<encoded-cwd>/*.jsonl, newest first. Nothing here is
    derived from placements. */
+/* ── live sync with Claude ───────────────────────────────────────────────────
+   Sutra reads Claude's transcripts, and it used to read them ONCE, at boot. A
+   conversation you had in Claude afterwards simply did not exist here until the
+   panel was reloaded, which is what made the two feel like separate programs
+   that happen to share a directory.
+
+   The server watches ~/.claude/projects and streams what changed. This end
+   applies it: liveness on every session, new conversations appearing in the rail
+   as they are started, and a transcript that is OPEN IN A PANE re-read as it
+   grows -- so a chat happening in Claude updates here while it happens.
+
+   EventSource, not a socket: one-way traffic, and the browser reconnects on its
+   own with no lifecycle for this file to get wrong. */
+let _sessStream = null, _sessRefreshTimer = null;
+
+/* A new conversation means the rail needs the full record (title, cwd, branch),
+   which the watcher deliberately does not carry -- it stats, it does not parse.
+   Coalesced, because starting Claude writes several lines in quick succession
+   and each one would otherwise trigger its own list read. */
+function scheduleSessionRefresh(){
+  clearTimeout(_sessRefreshTimer);
+  _sessRefreshTimer = setTimeout(()=>{ loadSessions().then(()=>render()); }, 700);
+}
+
+function applySessionChange(rows){
+  let needList = false;
+  rows.forEach(row=>{
+    const s = S.sessions.find(x=>x.id === row.id);
+    if (!s){ needList = true; return; }        /* unseen conversation */
+    s.mtime = row.mtime; s.size = row.size; s.live = row.live;
+    /* Without this the rail can never render "3 agents" from data: the field
+       arrives on every changed row and is dropped by a three-field copy. */
+    s.agents_live = row.agents_live || 0;
+    /* Only a transcript actually on screen is re-read. Re-parsing every changed
+       file would turn a busy Claude session into a stream of reads for panes
+       nobody is looking at. */
+    /* A session with work IN FLIGHT owns its turns array: the streaming turn
+       object lives in it and the socket is still writing into that object. The
+       file on disk is BEHIND that, so re-reading it here replaced the live turn
+       with a parse that does not contain it -- the reply stopped updating, Stop
+       reverted to Send, patchStreaming() could no longer find the node, and the
+       answer reappeared minutes later as a static block. Reconciled once the
+       turn lands instead. */
+    if (S.openPanes.includes(s.id) && s.real && s.loadState !== "loading"
+        && !sessionBusy(s.id)){
+      /* Re-read through the SAME shape ensureTranscript() uses -- turns via
+         transcriptTurns(), and its loadState vocabulary (unread/loading/ok/
+         empty/error). A second parsing path would drift from the first and the
+         two would disagree about the same file. */
+      s.loadState = "loading";
+      apiGet("/api/sessions/" + encodeURIComponent(s.id))
+        .then(d=>{
+          /* The GET is in flight for hundreds of ms and a send can start inside
+             that window, so the guard above is necessary but not sufficient. */
+          if (sessionBusy(s.id)){ s.loadState = "ok"; return; }
+          s.turns = transcriptTurns(d && d.messages);
+          s.cwd = (d && d.cwd) || s.cwd;
+          s.branch = (d && d.branch) || s.branch;
+          s.loadState = s.turns.length ? "ok" : "empty";
+          scheduleRender();
+        })
+        .catch(e=>{ s.loadState = "error"; s.loadError = e.message; scheduleRender(); });
+    }
+  });
+  if (needList) scheduleSessionRefresh(); else scheduleRender();
+}
+
+function startSessionStream(){
+  if (_sessStream || typeof EventSource === "undefined") return;
+  try { _sessStream = new EventSource("/api/sessions/stream"); }
+  catch (e){ return; }
+  _sessStream.addEventListener("sync", ev=>{
+    /* The opening frame is the WHOLE index, so a panel that connected late is
+       immediately correct rather than correct-from-now-on. */
+    try { applySessionChange(JSON.parse(ev.data).sessions || []); } catch (e) {}
+  });
+  _sessStream.addEventListener("changed", ev=>{
+    try { applySessionChange(JSON.parse(ev.data).sessions || []); } catch (e) {}
+  });
+  _sessStream.addEventListener("vanished", ev=>{
+    try {
+      const ids = new Set(JSON.parse(ev.data).ids || []);
+      /* Marked gone, NOT removed. A pane open on a transcript that was deleted
+         underneath should say so rather than vanishing mid-read. */
+      S.sessions.forEach(s=>{ if (ids.has(s.id)) s.vanished = true; });
+      scheduleRender();
+    } catch (e) {}
+  });
+  _sessStream.addEventListener("tick", ()=>{
+    /* Liveness decays with the CLOCK, not with writes: a session nobody has
+       touched for a minute stops being active on its own, and without a tick
+       nothing would ever say so. */
+    const now = Date.now()/1000;
+    let moved = false;
+    S.sessions.forEach(s=>{
+      if (!s.mtime) return;
+      const age = now - s.mtime;
+      const next = age <= 45 ? "active" : age <= 1800 ? "idle" : "stale";
+      if (s.live !== next){ s.live = next; moved = true; }
+    });
+    if (moved) scheduleRender();
+  });
+  /* EventSource retries on its own; this only stops a dead handle being reused. */
+  _sessStream.onerror = ()=>{
+    if (_sessStream && _sessStream.readyState === 2){ _sessStream = null;
+      setTimeout(startSessionStream, 3000); }
+  };
+}
+
 async function loadSessions(){
   adoptRealSessions(await apiGet("/api/sessions?limit=100"));
 }
@@ -6336,6 +7860,16 @@ async function boot(){
     }
     if (lsGet(LS_TERM, false) === true){ termToggle(true); sideTab(S.sideTab); }
 
+    /* Seed the composer's usage chip. NOT awaited: the panel must not wait on an
+       external API to become usable, and until it resolves the chip renders "…"
+       rather than a number nobody fetched. One request per panel load. */
+    loadUsage(true);
+
+    /* Attach to Claude. From here the rail reflects what is happening in Claude
+       as it happens, rather than what was true when this panel booted. Started
+       LAST so a stream that fails cannot delay anything above it. */
+    startSessionStream();
+
     /* Staged-update watch. Started LAST and deliberately not awaited: a staged
        build is never a reason for the panel to come up any slower, and this
        route is local-only so the poll costs nothing but a loopback round trip.
@@ -6385,7 +7919,14 @@ function applyTermW(px){
 }
 
 function termMount(force){
-  const cwd = (SETTINGS && SETTINGS.workdir) || "";
+  /* The session's folder, not the global one. Identical defect to the one fixed
+     in sessCwd(): a turn running in ~/Desktop/development/sutra types `git
+     checkout .` into a shell sitting in ~/sutra-ui-workspace, with nothing on
+     screen stating the mismatch -- precisely the state in which an operator
+     presses Enter. /ws/term already honours a per-call cwd, so only the caller
+     was wrong. */
+  const cwd = sessCwd(S.openPanes[S.openPanes.length - 1])
+            || (SETTINGS && SETTINGS.workdir) || "";
   const have = termBodyEl.querySelector("iframe");
   if (have && !force) return;
   if (have) have.remove();
@@ -6438,6 +7979,39 @@ function termSetMode(mode){
   termMount(true);
   paintTermMode();
   render();
+}
+
+/* Type `text` at the terminal's prompt. NOTHING is executed -- see the caller for
+   why. The pane is opened, forced to the Terminal tab (pasting into a hidden pane
+   would look like the button did nothing) and put in SHELL mode, because a command
+   typed into the claude TUI is a prompt to an agent, not a command to a shell.
+   Delivery is deferred until the iframe has a live socket: a fresh mount has no
+   WebSocket yet, and bytes written before it opens are dropped silently. */
+function sendToTerminal(text){
+  if (!text) return;
+  if (!S.termOpen) termToggle(true);
+  if (S.sideTab === "preview") sideTab("terminal");
+  if (S.termMode !== "shell") termSetMode("shell");
+  termMount(false);
+  const started = Date.now();
+  (function deliver(){
+    const fr = termBodyEl && termBodyEl.querySelector("iframe");
+    const w = fr && fr.contentWindow;
+    let ready = false;
+    /* Same-origin, so the child's own send() is reachable. Using it (rather than a
+       second socket from here) keeps ONE writer on the PTY. */
+    try { ready = !!(w && typeof w.termReady === "function" && w.termReady()
+                       && typeof w.send === "function"); }
+    catch (e) { ready = false; }
+    if (ready){
+      try { w.send(text); } catch (e) {}
+      try { w.focus(); } catch (e) {}
+      return;
+    }
+    /* Bounded: a terminal that never connects must not leave a timer running for
+       the life of the session. */
+    if (Date.now() - started < 6000) setTimeout(deliver, 120);
+  })();
 }
 
 function termToggle(on){
@@ -6544,6 +8118,17 @@ document.getElementById("termReload").onclick = ()=>termMount(true);
    iframe gets pointer-events:none for the duration via body.termdrag -- without it
    the cross-document boundary swallows the move events and the drag dies halfway. */
 const termGripEl = document.getElementById("termGrip");
+/* Tell the terminal the gesture is OVER. During a drag the pane's width changes on
+   every pointermove, the iframe's ResizeObserver fires, and each fit pushes a fresh
+   winsize into the PTY -- the TUI then redraws at each one and leaves the half-drawn,
+   overlapping fragments the operator sees as a "distorted" terminal. term.html
+   refuses to fit while body.termdrag is set (it reads this document directly -- same
+   origin) and fits once on this event instead. */
+function termSettled(){
+  const fr = termBodyEl && termBodyEl.querySelector("iframe");
+  try { fr && fr.contentWindow &&
+        fr.contentWindow.dispatchEvent(new Event("sutra:term-settled")); } catch (e) {}
+}
 termGripEl.addEventListener("pointerdown", e=>{
   e.preventDefault();
   const startX = e.clientX, startW = S.termW || TERM_DEFAULT;
@@ -6556,6 +8141,7 @@ termGripEl.addEventListener("pointerdown", e=>{
     termGripEl.removeEventListener("pointerup", up);
     termGripEl.removeEventListener("pointercancel", up);
     lsSet(LS_TERMW, S.termW);
+    termSettled();
   };
   termGripEl.addEventListener("pointermove", move);
   termGripEl.addEventListener("pointerup", up);
@@ -6569,6 +8155,7 @@ termGripEl.addEventListener("keydown", e=>{
   else if (e.key === "Home"){ e.preventDefault(); applyTermW(TERM_DEFAULT); }
   else return;
   lsSet(LS_TERMW, S.termW);
+  termSettled();   /* keyboard resize is a settled gesture too */
 });
 /* A width stored on a wide display must not exceed a narrower window later.
    GUARDED: test_panel.js evaluates this script in a bare Node vm context that has a
@@ -6576,6 +8163,16 @@ termGripEl.addEventListener("keydown", e=>{
    addEventListener throws ReferenceError and takes all 35 assertions down with it. */
 if (typeof addEventListener !== "undefined"){
   addEventListener("resize", ()=>{ if (S.termOpen) applyTermW(S.termW || TERM_DEFAULT); });
+  /* Electron ships its DEFAULT menu, so Cmd+R is live and destroys the page --
+     and with it every entry in CLAUDE_SOCKETS, where the streaming turn lives.
+     Test `ch.turn`, not `ch.open`: `open` is true for any connected socket
+     including an idle one, whereas `turn` is set only while a reply is streaming,
+     which is the only state worth blocking a reload for. */
+  addEventListener("beforeunload", e=>{
+    let live = false;
+    CLAUDE_SOCKETS.forEach(ch=>{ if (ch && ch.turn) live = true; });
+    if (live){ e.preventDefault(); e.returnValue = ""; }
+  });
 }
 
 /* Catalog freshness. ONE timer that decides whether to act, rather than several

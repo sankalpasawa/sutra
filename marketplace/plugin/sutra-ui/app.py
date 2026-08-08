@@ -5,6 +5,7 @@ log read, and an SSE live-tail. Reads only — never writes a governance file.
 Run: python3 -m uvicorn app:app --host 127.0.0.1 --port 7000
 """
 import asyncio
+import time
 import fcntl
 import json
 import os
@@ -358,6 +359,18 @@ def _tool_summary(inp, limit=120):
     """
     if not isinstance(inp, dict):
         return ""
+    # An Agent/Task input is {description, prompt, subagent_type}. The generic
+    # scan below returns on the FIRST hit -- `prompt` -- and in a fan-out every
+    # agent's prompt starts with the same preamble, so three parallel agents
+    # rendered as three identical rows. subagent_type is the only field that says
+    # WHICH agent this is, and it was dropped entirely.
+    if inp.get("subagent_type") or inp.get("agent_type"):
+        kind = str(inp.get("subagent_type") or inp.get("agent_type") or "agent").strip()
+        desc = inp.get("description")
+        if isinstance(desc, str) and desc.strip():
+            v = "%s: %s" % (kind, " ".join(desc.split()))
+            return v[:limit] + ("…" if len(v) > limit else "")
+        return kind[:limit]
     for k in ("command", "file_path", "path", "pattern", "url", "query", "prompt",
               "description", "notebook_path"):
         v = inp.get(k)
@@ -368,6 +381,33 @@ def _tool_summary(inp, limit=120):
         if isinstance(v, str) and v.strip() and len(v) <= limit:
             return " ".join(v.split())
     return ""
+
+
+# A shell command is the one tool input the operator may legitimately want to run
+# again by hand, so it is the one forwarded in FULL rather than as the 120-char
+# display summary. Deliberately narrow: only tools that take a `command` and
+# actually execute a shell. Everything else keeps the summary and nothing more --
+# a Write's `content` is a whole file and has no business crossing this wire.
+_SHELL_TOOLS = {"bash", "bashoutput", "killshell"}
+# Long enough for any real one-liner or short heredoc; past this the paste would
+# be unreviewable in a terminal prompt anyway, so it is refused rather than cut
+# into something that looks complete but is not.
+_COMMAND_MAX = 4000
+
+
+def _tool_command(name, inp):
+    """The verbatim shell command a tool was asked to run, or "".
+
+    Never raises: an unexpected input shape must not take the turn down.
+    """
+    if not isinstance(inp, dict):
+        return ""
+    if (name or "").strip().lower() not in _SHELL_TOOLS:
+        return ""
+    cmd = inp.get("command")
+    if not isinstance(cmd, str) or not cmd.strip():
+        return ""
+    return cmd if len(cmd) <= _COMMAND_MAX else ""
 
 
 def _ensure_workdir(path=None):
@@ -450,6 +490,93 @@ def sessions_page() -> str:
 @app.get("/api/sessions")
 def api_sessions(limit: int = 100):
     return sr.list_sessions(limit)
+
+
+# ---------------------------------------------------------------- live sync ---
+# Sutra READS Claude's transcripts, and until now it read them once, at boot.
+# Anything typed in Claude afterwards was invisible until the panel was reloaded,
+# which makes the two look like separate programs that happen to share a folder.
+# This is the half that makes them one thing: the server watches the transcript
+# directory and tells the panel what changed, as it changes.
+#
+# STAT POLLING, NOT FILESYSTEM EVENTS. FSEvents/watchdog would be tidier and is a
+# dependency this runtime does not have -- the bundled Python ships exactly
+# fastapi, uvicorn and websockets, and adding one to a 95MB payload for a 1-second
+# timer is a bad trade. sr.index() opens no files, so the poll costs one stat per
+# transcript and is flat in history size.
+#
+# SSE, NOT A WEBSOCKET. The traffic is one-way and the browser reconnects on its
+# own; a socket would be a second lifecycle to get wrong for no gain.
+SESSION_POLL_S = 1.5
+SESSION_HEARTBEAT_S = 25        # keeps proxies and idle timeouts from closing it
+
+
+@app.get("/api/sessions/stream")
+async def api_sessions_stream():
+    async def gen():
+        prev = {}
+        first = True
+        last_beat = time.time()
+        while True:
+            try:
+                cur = sr.index()
+            except Exception:
+                # A read error must not kill the stream: the panel would fall back
+                # to boot-only behaviour silently, which is the bug this fixes.
+                await asyncio.sleep(SESSION_POLL_S)
+                continue
+
+            if first:
+                # The opening frame is the whole index, so a panel that connects
+                # late is immediately correct rather than correct-from-now-on.
+                yield _sse_event("sync", {"sessions": [
+                    dict(id=k, **v, live=sr.liveness(v["mtime"])) for k, v in cur.items()]})
+                first = False
+            else:
+                changed = [dict(id=k, **v, live=sr.liveness(v["mtime"]))
+                           for k, v in cur.items()
+                           # SIZE as well as mtime: a transcript can be appended to
+                           # twice inside one second, and mtime alone would report
+                           # the first write and swallow the second.
+                           if k not in prev or prev[k]["mtime"] != v["mtime"]
+                           or prev[k]["size"] != v["size"]
+                           # A subagent write leaves the PARENT's own size
+                           # untouched, and mtime is int seconds -- two writes in
+                           # one second are swallowed. agents_bytes moves on every
+                           # subagent append, so it is what makes the fold in
+                           # session_reader.index() actually reach the client.
+                           or prev[k].get("agents_bytes") != v.get("agents_bytes")]
+                gone = [k for k in prev if k not in cur]
+                if changed:
+                    yield _sse_event("changed", {"sessions": changed})
+                if gone:
+                    yield _sse_event("vanished", {"ids": gone})
+                # Liveness decays with the clock, not with writes -- a session that
+                # stops being written goes active -> idle on its own, and nothing
+                # would ever say so without a tick.
+                if time.time() - last_beat >= SESSION_HEARTBEAT_S:
+                    last_beat = time.time()
+                    yield _sse_event("tick", {"now": int(time.time())})
+            prev = cur
+            await asyncio.sleep(SESSION_POLL_S)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",      # nothing may buffer an event stream
+    })
+
+
+def _sse_event(event: str, data: dict) -> str:
+    """A NAMED SSE frame.
+
+    Deliberately not called `_sse`: this module already had one, defined further
+    down for the log tail, whose signature is a single row and which emits an
+    unnamed `data:` frame. Two functions with one name is a silent overwrite --
+    the later definition won, every call here passed two arguments to a
+    one-argument function, and the stream died on its opening frame with the
+    panel simply never receiving anything.
+    """
+    return "event: %s\ndata: %s\n\n" % (event, json.dumps(data))
 
 
 @app.get("/api/sessions/{sid}")
@@ -775,6 +902,21 @@ async def ws_chat(ws: WebSocket):
     # would otherwise reach the spawn below with the ceiling raised.
     perm_mode = providers.effective_permission_mode(settings["permission_mode"])
     workdir = settings["workdir"] or WORKDIR
+    # Per-session working directory. The settings value is the DEFAULT; a session
+    # may run somewhere else, which is what the composer's folder control sets.
+    # Same confinement as every other path into a spawn -- workdir_allowed() keeps
+    # this inside $HOME (or SUTRA_UI_WORKDIR_ROOT), because the workdir becomes the
+    # agent's cwd and an arbitrary one turns this endpoint into a read oracle over
+    # the whole disk. A refused path FALLS BACK to the setting and says so in the
+    # provider frame rather than failing the connection: the operator gets a
+    # working session and an honest label, not a dead socket.
+    req_cwd = ws.query_params.get("cwd")
+    cwd_refused = None
+    if req_cwd:
+        if providers.workdir_allowed(req_cwd):
+            workdir = os.path.expanduser(req_cwd)
+        else:
+            cwd_refused = req_cwd
     if not providers.workdir_allowed(workdir):
         workdir = WORKDIR
     agent_bin = prov["bin_path"]
@@ -798,6 +940,9 @@ async def ws_chat(ws: WebSocket):
         "permission_note": providers.PERMISSION_MODE_NOTES.get(perm_mode),
         "writes_files": perm_mode in ("acceptEdits", "bypassPermissions"),
         "workdir": workdir,
+        # Stated, not swallowed: the session is running somewhere other than what
+        # was asked for, and a UI that showed the requested path would be lying.
+        "cwd_refused": cwd_refused,
     })
 
     session_id = None
@@ -934,7 +1079,15 @@ async def ws_chat(ws: WebSocket):
                 args = build_agent_args(agent_bin, msg, perm_mode,
                                         session_id=session_id, model=chosen_model,
                                         opts=payload.get("opts"), stream_input=True)
-                spawn_key = tuple(args)
+                # DELIBERATELY NOT re-keying spawn_key here. The reuse test at the
+                # top compares the RESUME-FREE key (session_id=None) built each
+                # message; storing the resume-BEARING key made that comparison
+                # permanently unequal, so any pane opened from an existing
+                # transcript killed and cold-started claude on every message --
+                # ~3s of startup, the sutra MCP server respawned, the prompt cache
+                # missed, the conversation re-read from disk. `args` still carries
+                # --resume for THIS spawn; only the stored comparison key stops
+                # depending on it, so the next message reuses the live process.
 
             # EXACTLY ONE `start` PER OPERATOR MESSAGE. The client treats `start`
             # as the demarcation that binds the next token stream to the next
@@ -1035,6 +1188,10 @@ async def ws_chat(ws: WebSocket):
                                 "id": blk.get("id"),
                                 "name": blk.get("name", ""),
                                 "summary": _tool_summary(blk.get("input")),
+                                # Shell commands only, in full -- what "open this in
+                                # the terminal" needs. "" for every other tool.
+                                "command": _tool_command(blk.get("name", ""),
+                                                         blk.get("input")),
                                 # Forwarded VERBATIM. Observed {"type":"direct"} for a
                                 # main-agent call; other shapes are not guessed at here,
                                 # and the client labels whatever actually arrives.

@@ -1303,12 +1303,55 @@ class TestApp(unittest.TestCase):
                         prompts.append("\n".join(
                             b.get("text", "") for b in c
                             if isinstance(b, dict) and b.get("type") == "text"))
+            # Sutra PREPENDS a routing preamble to messages it sends, so the raw
+            # first prompt of a panel-started session begins "PLACEMENT: ..." and
+            # the operator's own words follow the first blank line. The reader
+            # strips that; this derivation has to strip it too, or the invariant
+            # below would be testing the OLD behaviour and would force the rail
+            # back to titling 17 of 120 sessions with Sutra's own bookkeeping.
+            #
+            # The invariant itself does NOT loosen: the title must still be the
+            # HEAD of a real prompt. Only what counts as the prompt changed --
+            # the operator's text rather than Sutra's envelope around it.
+            def _strip(t):
+                t = (t or "").lstrip()
+                if not t.startswith("PLACEMENT:"):
+                    return t
+                _, sep, rest = t.partition("\n\n")
+                rest = rest.strip()
+                return rest if sep and rest else t
+
+            # A title Claude wrote to disk is ALSO a legitimate source, not a
+            # fabrication: a `custom-title` (you renamed it) or `ai-title` (Claude
+            # auto-named it) is a real record in the transcript. Scan the WHOLE
+            # file for them -- a rename is appended anywhere -- gated by substring
+            # so this stays cheap. The invariant is unchanged in spirit: the title
+            # must QUOTE the transcript. Only the set of quotable records grew.
+            disk_titles = []
+            with io.open(hits[0], encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if "customTitle" not in line and "aiTitle" not in line:
+                        continue
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    v = ev.get("customTitle") or ev.get("aiTitle")
+                    if isinstance(v, str) and v.strip():
+                        disk_titles.append(v.strip())
+
             norm = lambda t: " ".join(t.split())
             title = norm(r["title"])
+            from_prompt = any(norm(_strip(t)).startswith(title[:40]) for t in prompts if t)
+            from_record = any(norm(v).startswith(title[:40]) for v in disk_titles)
             self.assertTrue(
-                any(norm(t).startswith(title[:40]) for t in prompts if t),
-                "%s: title %r is not the head of any user prompt in the "
-                "transcript -- it was manufactured" % (r["id"], r["title"]))
+                from_prompt or from_record,
+                "%s: title %r matches neither a user prompt nor a title record "
+                "on disk -- it was manufactured" % (r["id"], r["title"]))
+            # And the source the reader REPORTED must be honest.
+            if r.get("title_source") == "custom":
+                self.assertTrue(from_record, "%s: claims a custom title with no "
+                                "custom-title record on disk" % r["id"])
 
     def test_53_the_shipped_panel_contains_no_session_fabricator(self):
         """A provable negative for the deleted seedSessions(): the string may

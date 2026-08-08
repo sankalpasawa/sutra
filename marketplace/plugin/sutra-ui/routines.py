@@ -786,6 +786,50 @@ def run_output(rid, name):
     return p.read_text(encoding="utf-8", errors="replace")
 
 
+def run_detail(rid, name):
+    """One run, parsed into something readable and resumable.
+
+    Every run is already stored as the raw JSON `claude -p --output-format json`
+    wrote, and that blob has always carried two things nothing ever read:
+
+      result      -- the assistant's actual prose, which is what a person wants
+                     to see. The raw envelope around it (ttft_ms, modelUsage,
+                     permission_denials...) is telemetry, not the answer.
+      session_id  -- the thread the run happened on. Because it was written at
+                     the time, EVERY HISTORICAL RUN IS ALREADY RESUMABLE; this
+                     needs no new capture and works retroactively on runs
+                     recorded months ago.
+
+    Falls back to the raw text when the blob is not the expected shape -- a run
+    that failed before claude emitted JSON still has stderr worth reading, and
+    showing nothing because it did not parse would hide the failure.
+    """
+    raw = run_output(rid, name)
+    out = {"id": rid, "name": name, "text": raw, "parsed": False,
+           "result": None, "session_id": None, "turns": None,
+           "cost_usd": None, "is_error": None, "stop_reason": None}
+    try:
+        j = json.loads(raw)
+    except ValueError:
+        return out
+    if not isinstance(j, dict):
+        return out
+    out.update({
+        "parsed": True,
+        "result": j.get("result"),
+        "session_id": j.get("session_id"),
+        "turns": j.get("num_turns"),
+        "cost_usd": j.get("total_cost_usd"),
+        "is_error": bool(j.get("is_error")),
+        "stop_reason": j.get("stop_reason") or j.get("subtype"),
+        # Surfaced because it EXPLAINS an empty result: a run that was denied a
+        # tool produced no answer for a reason, and "nothing here" without the
+        # reason reads as the routine being broken.
+        "permission_denials": j.get("permission_denials") or [],
+    })
+    return out
+
+
 def run_now(rid):
     rec = load(rid)
     install_runner()
