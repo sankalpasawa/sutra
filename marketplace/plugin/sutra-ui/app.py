@@ -505,6 +505,143 @@ def api_balance() -> dict:
     return {"present": True, "state": snap, "today": today[-96:]}
 
 
+@app.get("/api/evals")
+def api_evals() -> dict:
+    """Verifier/Evals read model (2026-08-08, VERIFIER-LEDGER V-35/V-36).
+
+    Same posture as /api/balance: fixed directories, no path parameters, no
+    traversal surface; a provisioned copy without the asawa-holding checkout
+    answers {present: false} and the panel says so — never a fabricated
+    scorecard. Sources: check registry (holding/state/verifier/registry.jsonl),
+    nightly run summaries (holding/plans/eval-program/runs/*.json, latest two
+    for the regression strip), findings tail. Errors never leak paths.
+    """
+    root = Path(os.environ.get("SUTRA_UI_EVALS_ROOT")
+                or HERE.parent.parent.parent.parent)
+    reg_p = root / "holding" / "state" / "verifier" / "registry.jsonl"
+    runs_d = root / "holding" / "plans" / "eval-program" / "runs"
+    findings_p = root / "holding" / "observability" / "eval-nightly" / "findings.jsonl"
+    if not reg_p.exists():
+        return {"present": False}
+
+    by_status: dict = {}
+    active_by_scope: dict = {}
+    checks = []
+    try:
+        # bounded read (codex V3): a runaway registry must not become a
+        # memory/latency hole in the panel server — 16MB / 10k lines cap
+        if reg_p.stat().st_size > 16_000_000:
+            return {"present": False}
+        for n, line in enumerate(reg_p.read_text(encoding="utf-8").splitlines()):
+            if n >= 10_000:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(r, dict):
+                continue
+            by_status[r.get("status", "?")] = by_status.get(r.get("status", "?"), 0) + 1
+            if r.get("status") == "active":
+                active_by_scope[r.get("scope", "?")] = active_by_scope.get(r.get("scope", "?"), 0) + 1
+            checks.append({
+                "check_id": r.get("check_id"),
+                "scope": r.get("scope"),
+                "status": r.get("status"),
+                "tag": r.get("tag"),
+                "goal": (r.get("goal") or "")[:120],
+                "reason": (r.get("reason") or "")[:120],
+                "superseded_by": r.get("superseded_by"),
+            })
+    except OSError:
+        return {"present": False}
+
+    def _cases(run) -> list:
+        """Well-formed case dicts only — a malformed artifact degrades to
+        'not counted', never to a 500 (codex V3)."""
+        if not isinstance(run, dict) or not isinstance(run.get("cases"), list):
+            return []
+        return [c for c in run["cases"] if isinstance(c, dict) and c.get("id")]
+
+    runs = []
+    try:
+        # decay runner writes <unix-ts>.json; other artifacts (spike reports,
+        # diffs) share the dir — numeric-stem filter keeps them out of the
+        # scorecard (a grader spike is not a decay run)
+        paths = sorted((p for p in runs_d.glob("*.json") if p.stem.isdigit()),
+                       key=lambda p: int(p.stem), reverse=True)[:2]
+        for p in paths:
+            try:
+                if p.stat().st_size <= 8_000_000:
+                    runs.append(json.loads(p.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                pass
+    except OSError:
+        pass
+    latest = runs[0] if runs else None
+    prev = runs[1] if len(runs) > 1 else None
+    regressions, fixed = [], []
+    if latest is not None and prev is not None:
+        prev_pass = {c["id"] for c in _cases(prev) if c.get("score") == "C"}
+        prev_fail = {c["id"] for c in _cases(prev) if c.get("score") != "C"}
+        for c in _cases(latest):
+            if c.get("score") != "C" and c["id"] in prev_pass:
+                regressions.append(c["id"])
+            if c.get("score") == "C" and c["id"] in prev_fail:
+                fixed.append(c["id"])
+    scorecard = None
+    if latest is not None:
+        cases = _cases(latest)
+        scorecard = {
+            "ts": latest.get("ts") if isinstance(latest, dict) else None,
+            "scored": len(cases),
+            "pass": sum(1 for c in cases if c.get("score") == "C"),
+            "fail": sum(1 for c in cases if c.get("score") != "C"),
+            "failing_ids": [c["id"] for c in cases if c.get("score") != "C"][:40],
+        }
+
+    findings = []
+    try:
+        if findings_p.exists():
+            # seek-tail like /api/balance — never read a large log whole
+            with open(findings_p, "rb") as f:
+                f.seek(0, 2)
+                f.seek(max(0, f.tell() - 262_144))
+                tail = f.read().decode("utf-8", "replace").splitlines()[-20:]
+            for line in tail:
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    row = json.loads(line)
+                    if isinstance(row, dict):
+                        findings.append(row)
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+
+    # Deep transcripts live in Inspect's own viewer; the panel hands the
+    # operator the exact command instead of spawning servers from this app
+    # (spawn would widen the hardened surface for no gain).
+    view_cmd = ("cd " + "holding/plans/eval-program/impl && "
+                ".venv/bin/inspect view --log-dir ../logs")
+
+    return {
+        "present": True,
+        "registry": {"by_status": by_status, "active_by_scope": active_by_scope},
+        "scorecard": scorecard,
+        "regressions": regressions,
+        "fixed": fixed,
+        "checks": checks[:400],
+        "findings": findings,
+        "view_cmd": view_cmd,
+    }
+
+
 @app.get("/api/state")
 def state() -> dict:
     base = lr.BASE / ".claude"

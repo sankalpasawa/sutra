@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# sutra-eval — fleet surface for the Verifier layer (VERIFIER-LEDGER V-63).
+#
+# DORMANT BY DEFAULT: does nothing unless invoked, and answers honestly when
+# the repo has no Verifier setup. No client behavior changes by shipping this
+# file (founder direction 2026-08-07/08: never auto-deploy behavior; opt-in).
+#
+# On a repo WITH the eval program (registry present), delegates to the full
+# CLI. On any other repo, prints what the Verifier layer is and what setup
+# would create — it never fabricates a scorecard.
+#
+# Commands: status | run ... | continue-reading  (delegated verbs follow
+# holding/bin/sutra-verify: declare/bind/run/status/promote/retire)
+set -u
+REPO="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+FULL_CLI="$REPO/holding/bin/sutra-verify"
+REGISTRY="$REPO/holding/state/verifier/registry.jsonl"
+
+if [ -x "$FULL_CLI" ] && [ -f "$REGISTRY" ]; then
+  exec bash "$FULL_CLI" "$@"
+fi
+
+cat <<'EOF'
+sutra-eval: no Verifier registry in this repo (honest answer, not an error).
+
+The Verifier layer types every declared work-check:
+  scope    unit (retires when superseded) | invariant (forever) | capability
+  binding  {attach, mode: gate|observe, life}
+  lanes    nightly decay (observe) · grader (check-quality) · capability (redo)
+
+This repo has no holding/state/verifier/registry.jsonl, so there is nothing
+to score and nothing is running. Setup lives in the eval program
+(VERIFIER-LEDGER.md, ADR-032) — adopt it deliberately; nothing activates by
+itself.
+EOF
+exit 0

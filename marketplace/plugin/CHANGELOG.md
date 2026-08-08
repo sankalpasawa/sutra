@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-08
 
+## 2.80.0
+
+- **Verifier layer + Evals screen.** Desktop panel gains an Evals rail screen
+  (registry counts, nightly scorecard, regression strip) over new GET /api/evals;
+  `sutra-eval` ships DORMANT fleet-wide (delegates on repos with a verifier
+  registry, honest no-setup answer elsewhere). ADR-032; program: VERIFIER-LEDGER.md.
+
 ## 2.79.0
 
 - **Balance screen beauty pass.** Serif greeting with the day's one-liner,
