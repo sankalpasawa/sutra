@@ -694,6 +694,17 @@ function clearRings(){
   const s=document.getElementById("dragStatus"); if(s) s.textContent="";
 }
 document.querySelector(".rail").addEventListener("click", e=>{
+  /* Feature A: the ⋮ trigger and its menu items. These run BEFORE the data-open
+     branch below, each stopPropagation()+returns, so opening the menu never also
+     opens the pane, and the document-level closer added later does not
+     immediately re-close a just-opened menu. */
+  const mt = e.target.closest("[data-sessmenu]");
+  if (mt){ e.stopPropagation();
+    S.sessMenu = S.sessMenu === mt.dataset.sessmenu ? null : mt.dataset.sessmenu;
+    S.sessRename = null; renderRail(); return; }
+  const act = e.target.closest("[data-act]");
+  if (act){ e.stopPropagation();
+    sessAction(act.dataset.act, act.dataset.sid, act.dataset.group); return; }
   const b = e.target.closest("[data-screen]");
   if (b && !b.disabled){
     /* "terminal" is a PANE TOGGLE living in the nav, not a screen. Routing it
@@ -724,6 +735,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
   if (ss){ S.sessSort = S.sessSort === "az" ? "recent" : "az"; render(); return; }
   const op = e.target.closest("[data-open]");
   if (op){ const id=op.dataset.open;
+    markRead(id); S.sessMenu = null; S.sessRename = null;
     if (!S.openPanes.includes(id)) S.openPanes.push(id);
     if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
     /* opening a REAL session is what triggers the transcript read -- the list
@@ -733,6 +745,19 @@ document.querySelector(".rail").addEventListener("click", e=>{
     render(); return; }
   const g = e.target.closest("[data-goto]");
   if (g){ S.screen="departments"; S.sel=g.dataset.goto; render(); }
+});
+document.querySelector(".rail").addEventListener("keydown", e=>{
+  const ri = e.target.closest("[data-renameinput]");
+  if (ri && e.key === "Enter"){ e.preventDefault(); renameSession(ri.dataset.sid, ri.value); }
+  if (ri && e.key === "Escape"){ S.sessRename = null; renderRail(); }
+});
+/* One global closer: any click not on a ⋮ trigger or inside an open menu dismisses
+   it. The ⋮/menu-item branches stopPropagation(), so this never fires for the
+   click that opened the menu. Guarded so it costs nothing when closed. */
+document.addEventListener("click", e=>{
+  if (!S.sessMenu) return;
+  if (e.target.closest("[data-sessmenu]") || e.target.closest(".smenu")) return;
+  S.sessMenu = null; S.sessRename = null; renderRail();
 });
 /* New session: opens an empty pane on the right, exactly like the reference */
 /* One path for every "start a session", so the rail button and the per-project +
@@ -781,6 +806,71 @@ document.getElementById("newSession").onclick = () =>
    One registry, one org, so there is no scope to settle before reading it.
    boot() reads the registry, the runtime and the sessions together and lets
    each degrade on its own. */
+
+const shq = p => "'" + String(p).replace(/'/g, "'\\''") + "'";
+function sessAction(action, sid, group){
+  const s = S.sessions.find(x=>x.id===sid); if(!s) return;
+  switch(action){
+    case "pin": togglePin(sid); S.sessMenu=null; break;
+    case "unread": markUnread(sid); S.sessMenu=null; break;
+    case "group": setGroup(sid, group||""); S.sessMenu=null; break;
+    case "group-new": { const n=(prompt("Group name")||"").trim(); if(n) setGroup(sid,n); S.sessMenu=null; break; }
+    case "rename": S.sessRename=sid; renderRail();
+      { const i=document.querySelector('[data-renameinput][data-sid="'+sid+'"]'); if(i){ i.focus(); i.select(); } } return;
+    case "rename-save": { const i=document.querySelector('[data-renameinput][data-sid="'+sid+'"]');
+      renameSession(sid, i?i.value:""); return; }
+    case "fork": forkSession(sid); return;
+    case "archive": archiveSession(sid); return;
+    case "delete": deleteSession(sid); return;
+    case "open-terminal": { const cwd=sessCwd(sid); if(cwd) sendToTerminal("cd "+shq(cwd)+"\n"); S.sessMenu=null; break; }
+    case "open-editor": S.sessMenu=null; S.screen="editor"; loadFs(true); render(); return;
+    case "open-repo":
+      if(!S.openPanes.includes(sid)){ S.openPanes.push(sid); if(S.openPanes.length>2) S.openPanes=S.openPanes.slice(-2); }
+      loadRepo(sid,true); S.sessMenu=null; break;
+    case "open-finder": revealSession(sid); return;
+  }
+  render();
+}
+async function renameSession(sid, title){
+  title=(title||"").trim(); if(!title){ S.sessRename=null; renderRail(); return; }
+  const s=S.sessions.find(x=>x.id===sid);
+  if (s && !s.real){ s.title=title; S.sessRename=null; S.sessMenu=null; render(); return; }
+  try{ await apiPost("/api/sessions/"+encodeURIComponent(sid)+"/rename", {title});
+    if(s) s.title=title; S.sessRename=null; S.sessMenu=null;
+    S.toast="renamed — the same record Claude writes, so it shows there too";
+  }catch(e){ S.toast="rename failed: "+e.message; }
+  render();
+}
+function forkSession(sid){
+  const src=S.sessions.find(x=>x.id===sid); if(!src) return;
+  const s=newSession(sessCwd(sid));
+  s.title="Fork of "+(src.title||"session");
+  s.fork=true; s.forkOf=sid;
+  s.claude_session=src.claude_session||src.id;
+  S.turnOpts[s.id]=Object.assign({}, S.turnOpts[s.id], {fork_session:true});
+  S.sessMenu=null; render();
+}
+async function archiveSession(sid){
+  if(!confirm("Archive this session? The transcript moves out of Claude's project folder to ~/.sutra-ui/archive — it stops listing here and in Claude, and is recoverable.")) return;
+  try{ await apiPost("/api/sessions/"+encodeURIComponent(sid)+"/archive", {});
+    S.sessions=S.sessions.filter(x=>x.id!==sid); S.openPanes=S.openPanes.filter(x=>x!==sid);
+    S.sessMenu=null; S.toast="archived — recoverable in ~/.sutra-ui/archive";
+  }catch(e){ S.toast="archive failed: "+e.message; }
+  render();
+}
+async function deleteSession(sid){
+  if(!confirm("Delete this session? History is NOT destroyed — the transcript moves to ~/.sutra-ui/trash and can be restored.")) return;
+  try{ await apiPost("/api/sessions/"+encodeURIComponent(sid)+"/delete", {});
+    S.sessions=S.sessions.filter(x=>x.id!==sid); S.openPanes=S.openPanes.filter(x=>x!==sid);
+    S.sessMenu=null; S.toast="deleted — recoverable in ~/.sutra-ui/trash";
+  }catch(e){ S.toast="delete failed: "+e.message; }
+  render();
+}
+async function revealSession(sid){
+  S.sessMenu=null;
+  try{ await apiPost("/api/sessions/"+encodeURIComponent(sid)+"/reveal", {}); }
+  catch(e){ S.toast="could not reveal: "+e.message; render(); }
+}
 
 function backendError(e){
   document.getElementById("panes").innerHTML =

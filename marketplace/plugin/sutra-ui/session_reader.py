@@ -1,12 +1,15 @@
 """Read-only browser over Claude Code's saved session transcripts.
 
 Sessions live at ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl as JSONL
-event logs. We read them; we never write. Viewing costs nothing (no model calls).
+event logs. Mostly read-only; the write path (append_title/relocate) is the one
+exception, operator-granted, and it only appends Claude's own record types or
+MOVES files, never rewrites a conversation. Viewing costs nothing (no model calls).
 Continuing a session happens in the real terminal via `claude --resume`.
 """
 import json
 import os
 import time
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -199,6 +202,58 @@ def index() -> Dict[str, Dict]:
         if liveness(st.st_mtime) == "active":
             rec["agents_live"] = rec.get("agents_live", 0) + 1
     return out
+
+
+# ------------------------------------------------------------ write path -----
+# Sutra MAY write to and delete Claude's transcripts (operator-granted). The
+# rules: RENAME appends the same custom-title record Claude itself writes (so a
+# rename here also shows in Claude); ARCHIVE/DELETE MOVE the file out of
+# ~/.claude/projects rather than unlinking, so the */*.jsonl glob stops listing
+# it while it stays on disk and recoverable.
+SUTRA_STORE = Path(os.path.expanduser("~/.sutra-ui"))
+
+
+def _safe_id(session_id: str) -> bool:
+    return not ("/" in session_id or "\\" in session_id or ".." in session_id)
+
+
+def resolve_path(session_id: str) -> Optional[Path]:
+    if not _safe_id(session_id):
+        return None
+    matches = list(PROJECTS.glob("*/" + session_id + ".jsonl"))
+    return matches[0] if matches else None
+
+
+def append_title(session_id: str, title: str) -> bool:
+    """Append a custom-title record -- byte-identical to Claude's own rename."""
+    p = resolve_path(session_id)
+    if p is None:
+        return False
+    title = (title or "").replace("\n", " ").strip()[:200]
+    if not title:
+        return False
+    rec = {"type": "custom-title", "customTitle": title, "sessionId": session_id}
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec) + "\n")
+    return True
+
+
+def relocate(session_id: str, kind: str) -> Optional[Dict]:
+    """Move a transcript to ~/.sutra-ui/{archive,trash}/<project>/, recoverably."""
+    if kind not in ("archive", "trash"):
+        return None
+    p = resolve_path(session_id)
+    if p is None:
+        return None
+    dest_dir = SUTRA_STORE / kind / p.parent.name
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / p.name
+    orig = str(p)
+    shutil.move(orig, str(dest))
+    dest.with_name(dest.name + ".orig.json").write_text(
+        json.dumps({"original": orig, "session_id": session_id,
+                    "moved_at": int(time.time())}), encoding="utf-8")
+    return {"moved_to": str(dest), "original": orig}
 
 
 def _parse_transcript(f) -> Dict:

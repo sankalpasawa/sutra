@@ -481,6 +481,29 @@
   .rlist .t{font-size:12px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;
             text-overflow:ellipsis;display:block}
   .rlist .m{font:500 9px/1.4 var(--mono);color:var(--faint);display:flex;gap:5px;margin-top:2px}
+  .rlist .srow{position:relative;display:flex;align-items:stretch}
+  .rlist .srow .rowopen{flex:1;min-width:0;width:auto}
+  .rlist .srow .rowmenu{flex:none;width:24px;display:grid;place-items:center;background:none;
+    border:0;border-radius:6px;color:var(--faint);cursor:pointer;opacity:0}
+  .rlist .srow:hover .rowmenu,.rlist .srow .rowmenu[aria-expanded="true"],
+  .rlist .srow .rowmenu:focus-visible{opacity:1}
+  .rlist .srow .rowmenu:hover{background:var(--acc-bg);color:var(--ink)}
+  .rlist .srow.pinned .t::before{content:"\1F4CC ";font-size:9px}
+  .rlist .udot{display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--acc);margin-right:5px;vertical-align:middle}
+  .smenu{position:absolute;top:100%;right:6px;z-index:40;min-width:174px;
+    background:var(--bg);border:1px solid var(--line);border-radius:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.28);padding:4px;display:flex;flex-direction:column}
+  .smenu button{display:block;width:100%;text-align:left;background:none;border:0;
+    border-radius:5px;padding:6px 8px;font:500 11px/1.2 var(--sans);color:var(--ink);cursor:pointer}
+  .smenu button:hover{background:var(--acc-bg)}
+  .smenu button.danger{color:var(--block)}
+  .smenu .smsec{padding:6px 8px 2px;font:600 8.5px/1 var(--sans);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--faint)}
+  .smenu .smdiv{height:1px;background:var(--line);margin:4px 2px}
+  .smenu .smrename{display:flex;gap:4px;padding:4px}
+  .smenu .smrename input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);
+    border-radius:5px;padding:5px 6px;color:var(--ink);font:500 11px/1 var(--sans)}
   /* Two-tab rail: Home is the organisation surface, Code is the work surface.
      Sessions used to compete with the org nav for the same scroll column. */
   .rtabs{display:flex;gap:3px;padding:2px 10px 8px}

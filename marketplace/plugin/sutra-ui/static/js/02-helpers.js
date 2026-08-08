@@ -274,6 +274,11 @@ const S = {
      the operator never chose in this one. */
   cwd:{},
   cwdEdit:null,        /* sessionId whose folder editor is open, or null */
+  /* Per-session actions menu (Feature A). sessMenu = the session id whose menu
+     popover is open (one at a time). sessRename = the session id whose inline
+     rename input is showing, or null. Pinned/unread/group are localStorage-
+     persisted (see 05-chat.js), mirroring runSeen. */
+  sessMenu:null, sessRename:null,
   /* Layout the operator adjusted, restored from localStorage on load:
        paneCollapsed[<"browse"|sessionId>] -> true
        folds[<fold key>]                   -> 0 (closed) | 1 (open)
@@ -546,6 +551,39 @@ function railSpec(){
   };
 }
 
+function sessMenuHtml(s){
+  const sid=s.id;
+  if (S.sessRename===sid){
+    return `<div class="smenu" role="menu">
+      <div class="smrename">
+        <input data-renameinput data-sid="${sid}" value="${esc(s.title||"")}"
+               aria-label="Rename session" maxlength="200"/>
+        <button type="button" data-act="rename-save" data-sid="${sid}">Save</button>
+      </div></div>`;
+  }
+  const real=!!s.real, grp=groupMap()[sid]||"";
+  const groups=[...new Set(Object.values(groupMap()))].filter(Boolean);
+  const mi=(act,label,extra="")=>`<button type="button" role="menuitem" data-act="${act}" data-sid="${sid}" ${extra}>${label}</button>`;
+  return `<div class="smenu" role="menu">
+    <div class="smsec">Open in</div>
+    ${mi("open-terminal","Terminal")}
+    ${mi("open-editor","Editor")}
+    ${mi("open-finder","Finder")}
+    ${mi("open-repo","Repository bar")}
+    <div class="smdiv"></div>
+    ${mi("pin", isPinned(sid)?"Unpin":"Pin")}
+    ${mi("unread","Mark as unread")}
+    ${real?mi("rename","Rename…"):""}
+    ${real?mi("fork","Fork"):""}
+    <div class="smsec">Move to group</div>
+    ${groups.map(g=>mi("group",(g===grp?"✓ ":"")+esc(g),`data-group="${esc(g)}"`)).join("")}
+    ${mi("group-new","New group…")}
+    ${grp?mi("group","Remove from group",'data-group=""'):""}
+    ${real?`<div class="smdiv"></div>${mi("archive","Archive")}
+      <button type="button" role="menuitem" class="danger" data-act="delete" data-sid="${sid}">Delete</button>`:""}
+  </div>`;
+}
+
 function renderRail(){
   const spec = railSpec();
   const mk = items => items.map(it=>`
@@ -655,6 +693,24 @@ function renderRail(){
     return (s.project || "").replace(/^-+|-+$/g, "");
   };
 
+  const sessRow = (s, trail) => {
+    const sid=s.id, open=S.openPanes.includes(sid);
+    return `<li class="srow${isPinned(sid)?" pinned":""}" data-sid="${sid}">
+      <button type="button" class="rowopen" data-open="${sid}"
+          aria-current="${open}"
+          title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
+        <span class="t">${isUnread(sid)?'<span class="udot" aria-label="unread"></span>':""}${esc(s.title)}</span>
+        <span class="m">${sessMeta(s)}${trail||""}</span>
+      </button>
+      <button type="button" class="rowmenu" data-sessmenu="${sid}"
+          aria-haspopup="true" aria-expanded="${S.sessMenu===sid}"
+          aria-label="Actions for ${esc(s.title)}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+      </button>
+      ${S.sessMenu===sid?sessMenuHtml(s):""}
+    </li>`;
+  };
+
   let html = "";
   if (S.sgroup === "recent"){
     const order = ["Today","Yesterday","Previous 7 days","Previous 30 days","Older"];
@@ -662,17 +718,12 @@ function renderRail(){
     S.sessions.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
     html = order.filter(k=>g[k]).map(k=>`
       <div class="rgrp">${k}</div>
-      <ul class="rlist">${g[k].map(s=>{
+      <ul class="rlist">${pinFirst(g[k]).map(s=>{
         const ds = deptsOf(s);
         const held = s.turns.some(t=>t.mode==="floor");
-        return `<li><button type="button" data-open="${s.id}"
-            aria-current="${S.openPanes.includes(s.id)}"
-            title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
-          <span class="t">${esc(s.title)}</span>
-          <span class="m">${sessMeta(s)}
-            <span>${s.real ? esc(projOf(s)) : (ds.length?esc(ds.join(" → ")):"—")}</span>
-            ${held?'<span style="color:var(--warn)">held</span>':""}</span>
-        </button></li>`;}).join("")}</ul>`).join("");
+        const trail = `<span>${s.real ? esc(projOf(s)) : (ds.length?esc(ds.join(" → ")):"—")}</span>`
+          + (held?'<span style="color:var(--warn)">held</span>':"");
+        return sessRow(s, trail);}).join("")}</ul>`).join("");
     if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       ${S.sessionsError
         ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
@@ -710,17 +761,12 @@ function renderRail(){
                 stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
          </button>` : ""}
       </div>
-      <ul class="rlist">${grp.items
-        .sort((a,b)=>(b.updated_ms||b.created_ms||0)-(a.updated_ms||a.created_ms||0))
+      <ul class="rlist">${pinFirst(grp.items
+        .sort((a,b)=>(b.updated_ms||b.created_ms||0)-(a.updated_ms||a.created_ms||0)))
         .map(s=>{
           const held = s.turns.some(t=>t.mode==="floor");
-          return `<li><button type="button" data-open="${s.id}"
-              aria-current="${S.openPanes.includes(s.id)}"
-              title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
-            <span class="t">${esc(s.title)}</span>
-            <span class="m">${sessMeta(s)}
-              ${held?'<span style="color:var(--warn)">held</span>':""}</span>
-          </button></li>`;}).join("")}</ul>`).join("");
+          const trail = held?'<span style="color:var(--warn)">held</span>':"";
+          return sessRow(s, trail);}).join("")}</ul>`).join("");
     if (!groups.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       No sessions yet. Transcripts are read from <code>~/.claude/projects</code>.</p>`;
   } else {
@@ -734,11 +780,9 @@ function renderRail(){
         const held = items.filter(x=>x.t.mode==="floor").length;
         const uniq = [...new Map(items.map(x=>[x.s.id,x.s])).values()];
         return `<div class="rgrp">${esc(dPath(ref))} ${esc(d.name)}${held?` · ${held} held`:""}</div>
-          <ul class="rlist">${uniq.map(s=>`<li><button type="button" data-open="${s.id}"
-              aria-current="${S.openPanes.includes(s.id)}">
-            <span class="t">${esc(s.title)}</span>
-            <span class="m"><span>${items.filter(x=>x.s.id===s.id).length} turn(s) here</span></span>
-          </button></li>`).join("")}</ul>`;
+          <ul class="rlist">${pinFirst(uniq).map(s=>
+            sessRow(s, `<span>${items.filter(x=>x.s.id===s.id).length} turn(s) here</span>`)
+          ).join("")}</ul>`;
       }).join("");
     if (!html) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       Nothing filed yet. Transcripts read from <code>~/.claude/projects</code> ran outside

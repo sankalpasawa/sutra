@@ -13,6 +13,7 @@ import pty
 import shutil
 import signal
 import struct
+import subprocess
 import sys
 import termios
 from pathlib import Path
@@ -585,6 +586,41 @@ def api_session(sid: str):
     if data is None:
         raise HTTPException(status_code=404, detail="session not found")
     return data
+
+
+@app.post("/api/sessions/{sid}/rename")
+def api_session_rename(sid: str, body: dict):
+    title = (body or {}).get("title", "")
+    if not sr.append_title(sid, title):
+        raise HTTPException(status_code=404, detail="session not found, or the title was empty")
+    return {"ok": True, "title": str(title).replace("\n", " ").strip()[:200], "title_source": "custom"}
+
+
+@app.post("/api/sessions/{sid}/archive")
+def api_session_archive(sid: str):
+    r = sr.relocate(sid, "archive")
+    if r is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True, **r}
+
+
+@app.post("/api/sessions/{sid}/delete")
+def api_session_delete(sid: str):
+    r = sr.relocate(sid, "trash")
+    if r is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True, **r}
+
+
+@app.post("/api/sessions/{sid}/reveal")
+def api_session_reveal(sid: str):
+    if sys.platform != "darwin":
+        raise HTTPException(status_code=400, detail="reveal in Finder is macOS-only")
+    p = sr.resolve_path(sid)
+    if p is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    subprocess.run(["open", "-R", str(p)], check=False)
+    return {"ok": True}
 
 
 @app.get("/api/sessions/{sid}/agents")

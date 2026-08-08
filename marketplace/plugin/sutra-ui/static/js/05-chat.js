@@ -32,6 +32,20 @@ function markRunSeen(rid, name){
   S._runSeen = new Set(all);
   lsSet(LS_RUNSEEN, all);
 }
+const LS_PINNED = "sutra.panel.pinned";
+const LS_UNREAD = "sutra.panel.unread";
+const LS_GROUPS = "sutra.panel.groups";
+function pinnedSet(){ if(!S._pinned){ const r=lsGet(LS_PINNED,[]); S._pinned=new Set(Array.isArray(r)?r:[]); } return S._pinned; }
+function isPinned(sid){ return pinnedSet().has(sid); }
+function togglePin(sid){ const s=pinnedSet(); if(s.has(sid))s.delete(sid); else s.add(sid); lsSet(LS_PINNED,[...s]); }
+function unreadSet(){ if(!S._unread){ const r=lsGet(LS_UNREAD,[]); S._unread=new Set(Array.isArray(r)?r:[]); } return S._unread; }
+function isUnread(sid){ return unreadSet().has(sid); }
+function markUnread(sid){ const s=unreadSet(); s.add(sid); lsSet(LS_UNREAD,[...s]); }
+function markRead(sid){ const s=unreadSet(); if(s.delete(sid)) lsSet(LS_UNREAD,[...s]); }
+function groupMap(){ if(!S._groups){ const r=lsGet(LS_GROUPS,{}); S._groups=(r&&typeof r==="object")?r:{}; } return S._groups; }
+function setGroup(sid,name){ const g=groupMap(); if(name) g[sid]=name; else delete g[sid]; lsSet(LS_GROUPS,g); }
+function pinFirst(arr){ return arr.slice().sort((a,b)=>(isPinned(b.id)?1:0)-(isPinned(a.id)?1:0)); }
+
 function rtUnreadCount(rid, runs){
   if (!runs || !runs.runs) return 0;
   return runs.runs.filter(r=>runIsUnread(rid, r)).length;

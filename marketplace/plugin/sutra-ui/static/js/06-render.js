@@ -64,6 +64,7 @@ function sessionPane(s){
       <span class="dot run" aria-hidden="true" style="width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none"></span>
       <h3 title="${esc(s.title)}${s.real&&s.cwd?" — "+esc(s.cwd):""}">${esc(s.title)}</h3>
       ${s.real?`<span class="src">transcript</span>`:""}
+      ${s.fork?`<span class="src" title="Branched from another session with --fork-session">fork</span>`:""}
       <span class="tabs">
         <button type="button" data-tab="chat"  data-sid="${s.id}" aria-pressed="${tab==="chat"}">Chat</button>
         <button type="button" data-tab="route" data-sid="${s.id}" aria-pressed="${tab==="route"}">Routing</button>
