@@ -58,36 +58,69 @@ def _strip_injected(text: str) -> str:
 
 
 def list_sessions(limit: int = 100) -> List[dict]:
-    """Most-recent sessions across all projects. Cheap: reads only the head of each file."""
+    """Most-recent sessions across all projects.
+
+    THE TITLE HONOURS WHAT YOU SET IN CLAUDE. Claude appends two kinds of title
+    record to the transcript -- `custom-title` (you renamed it) and `ai-title`
+    (Claude auto-named it) -- and Sutra ignored both, so a conversation you had
+    deliberately titled still showed its raw first prompt here. Now the precedence
+    is: a title you set > the AI title > the first user message. The first two are
+    quotations of records Claude actually wrote, not anything Sutra invents.
+
+    Cost: the head fields (cwd, branch, first-message fallback) still come from the
+    first ~40 lines, but a rename can be appended ANYWHERE in a long session, so
+    the title records are scanned across the whole file. The `in line` gate keeps
+    that from json-parsing the big assistant/attachment lines -- measured ~165ms
+    for 97MB across every transcript on disk, and this runs at boot and on a new
+    session appearing, not on a timer.
+    """
     if not PROJECTS.exists():
         return []
     files = sorted(PROJECTS.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
     out = []
     for f in files[:limit]:
-        title, cwd, branch = "", "", ""
+        first_msg, cwd, branch = "", "", ""
+        custom_title = ai_title = ""
         try:
             with f.open(encoding="utf-8", errors="replace") as fh:
                 for i, line in enumerate(fh):
-                    if i > 40:
-                        break
+                    head = i <= 40
+                    # LAST title record wins: a rename overwrites an earlier one.
+                    titley = "customTitle" in line or "aiTitle" in line
+                    if not head and not titley:
+                        continue
                     try:
                         d = json.loads(line)
                     except ValueError:
                         continue
-                    cwd = cwd or d.get("cwd", "")
-                    branch = branch or d.get("gitBranch", "")
-                    if not title and d.get("type") == "user":
-                        msg = d.get("message", {})
-                        if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
-                            t = _strip_injected(_text_of(msg.get("content")))
-                            t = t.strip().replace("\n", " ")
-                            if t and not t.startswith("<"):
-                                title = t[:90]
+                    if titley:
+                        if d.get("type") == "custom-title" and isinstance(d.get("customTitle"), str):
+                            custom_title = d["customTitle"].strip() or custom_title
+                        elif d.get("type") == "ai-title" and isinstance(d.get("aiTitle"), str):
+                            ai_title = d["aiTitle"].strip() or ai_title
+                    if head:
+                        cwd = cwd or d.get("cwd", "")
+                        branch = branch or d.get("gitBranch", "")
+                        if not first_msg and d.get("type") == "user":
+                            msg = d.get("message", {})
+                            if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
+                                t = _strip_injected(_text_of(msg.get("content")))
+                                t = t.strip().replace("\n", " ")
+                                if t and not t.startswith("<"):
+                                    first_msg = t[:90]
         except OSError:
             continue
+        # A title you set is verbatim -- NOT run through _strip_injected, which is
+        # only for the machine preamble on a first message.
+        title = custom_title or ai_title or first_msg or "(no prompt)"
         out.append({
             "id": f.stem,
-            "title": title or "(no prompt)",
+            "title": title[:90],
+            # Stated so the UI could badge a renamed session if it wanted; also
+            # what the test uses to know a title is a legitimate on-disk record.
+            "title_source": ("custom" if custom_title else
+                             "ai" if ai_title else
+                             "prompt" if first_msg else "none"),
             "project": f.parent.name,
             "cwd": cwd,
             "branch": branch,
