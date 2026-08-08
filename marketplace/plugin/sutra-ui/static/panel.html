@@ -236,6 +236,21 @@
   .p-warn{background:var(--warn-bg);color:var(--warn)}
   .p-block{background:var(--block-bg);color:var(--block)}
   .p-acc{background:var(--acc-bg);color:var(--acc)}
+/* THE RUN STRIP. A turn in flight had exactly one 8.5px word inside an
+   accent-tinted pill -- at normal viewing distance the word is unreadable, so it
+   read as "an orange box". This is a legible line plus an INDETERMINATE sweep:
+   nothing on the wire reports how much of a turn is left (duration_ms/cost_usd
+   arrive only on `done`), so a proportional bar would be inventing a number. */
+.runstrip{display:inline-flex;align-items:center;gap:6px;font:600 10.5px/1.4 var(--mono);
+  background:var(--acc-bg);color:var(--acc);padding:5px 8px;border-radius:5px;
+  max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.runstrip b{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.runbar{display:block;height:2px;margin-top:5px;border-radius:2px;
+  background:var(--acc-bg);overflow:hidden}
+.runbar i{display:block;height:100%;width:34%;border-radius:2px;background:var(--acc);
+  animation:sutraSweep 1.5s ease-in-out infinite}
+@keyframes sutraSweep{0%{transform:translateX(-110%)}100%{transform:translateX(330%)}}
+@media (prefers-reduced-motion:reduce){.runbar i{animation:none;width:100%;opacity:.45}}
   .p-mut{background:var(--inset);color:var(--muted);border:1px solid var(--line)}
 
   .facets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px;align-items:center}
@@ -1414,6 +1429,55 @@ let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
 /* True while a turn on this session is still streaming. The composer's send button
    becomes a STOP button on exactly this condition, so the control that appears is
    always the one that will act. */
+/* ── liveness + progress helpers, shared by the watcher, the composer and the
+   run strip ─────────────────────────────────────────────────────────────────
+   sessionBusy() is the ONE predicate that answers "does this session own its
+   turns array right now". The disk watcher, the list refresh and the folder
+   editor all have to ask it before replacing state a socket is writing into.
+   Declared with `function` so hoisting covers the callers above; CLAUDE_SOCKETS
+   and chanKey are only dereferenced at call time, long after module eval. */
+function sideStreamingFor(sid){
+  return ((S.sideTurns || {})[sid] || []).some(t => t.streaming);
+}
+function sessionBusy(sid){
+  if (streamingFor(sid) || sideStreamingFor(sid)) return true;
+  const ch = CLAUDE_SOCKETS.get(chanKey(sid, false));
+  return !!(ch && (ch.turn || (ch.pending && ch.pending.length)));
+}
+/* Elapsed, in the smallest honest unit. Never rounds a wedged turn down to 0. */
+function fmtDur(ms){
+  if (typeof ms !== "number" || !isFinite(ms) || ms < 0) return "";
+  const s = Math.floor(ms / 1000);
+  return s < 60    ? s + "s"
+       : s < 3600   ? Math.floor(s/60) + "m " + (s%60) + "s"
+                    : Math.floor(s/3600) + "h " + Math.floor((s%3600)/60) + "m";
+}
+/* ONE line of truth about a turn in flight. Every value here is measured:
+   elapsed from the turn's own ts_ms, counts from toolRuns, characters from the
+   accumulated response. Nothing is a percentage, because nothing on the wire
+   reports a denominator -- the `done` frame is the first mention of duration or
+   cost, so a proportional bar would be a fabrication. */
+function runPhrase(t){
+  const runs = (t && t.toolRuns) || [];
+  const active = runs.filter(r => r.running);
+  const parts = [];
+  if (t && t.ts_ms) parts.push(fmtDur(Date.now() - t.ts_ms));
+  if (active.length === 1){
+    const r = active[0];
+    parts.push((r.name || "tool") + (r.summary ? " · " + String(r.summary).slice(0, 60) : ""));
+  } else if (active.length > 1){
+    parts.push(active.length + " tools running");
+  } else if (t && t.retrying){
+    parts.push("rate limited — retrying");
+  } else if (t && t.response){
+    parts.push("writing");
+  } else {
+    parts.push(t && t.thinking ? "thinking" : "working");
+  }
+  if (runs.length) parts.push((runs.length - active.length) + "/" + runs.length + " tools");
+  if (t && t.response) parts.push(t.response.length + " chars");
+  return parts.filter(Boolean).join("  ·  ");
+}
 function streamingFor(sid){
   const s = S.sessions.find(x=>x.id===sid);
   return !!(s && (s.turns||[]).some(t=>t.streaming));
@@ -1791,7 +1855,18 @@ function adoptRealSessions(rows){
      websocket threads, not files yet), so a refresh of the list must not drop
      them. Everything else is replaced wholesale by what is on disk. */
   const local = S.sessions.filter(s => s.local);
-  const real = (rows || []).map(r => ({
+  /* PRESERVE work in flight. Rebuilding a real session empties `turns`, resets
+     loadState to "unread", drops `channel` and orphans the socket's turn object
+     mid-stream. Any unseen transcript anywhere under ~/.claude/projects triggers
+     this path, so a `claude` started in the terminal pane used to kill the pane
+     you were reading. */
+  const busy = new Map(S.sessions.filter(s => s.real && sessionBusy(s.id)).map(s => [s.id, s]));
+  /* A session started HERE already owns its transcript id (set from the server's
+     `session` frame), so the on-disk row for it is the SAME conversation, not a
+     second one. Without this the rail grows a twin: one live in-memory row and
+     one read-only-looking copy of the same thread. */
+  const owned = new Set(local.map(s => s.claude_session).filter(Boolean));
+  const real = (rows || []).filter(r => !owned.has(r.id)).map(r => busy.get(r.id) || ({
     id: r.id,
     title: r.title || "(no prompt)",
     real: true, local: false,
@@ -1902,6 +1977,29 @@ function scheduleRender(){
    patching text cannot express them. */
 let _patchRaf = null;
 const _patchDirty = new Set();
+
+/* ── the one-second run ticker ───────────────────────────────────────────────
+   Repaint in this file is purely frame-driven: scheduleStreamPatch() fires on a
+   server frame and rewrites only [data-resp]. So any elapsed value would FREEZE
+   between frames -- a turn stalled 90s inside one slow tool would show whatever
+   number was current when the last frame landed, which is indistinguishable from
+   a hang. This writes TEXT ONLY, into [data-runstrip], so it can never fight the
+   caret patchStreaming() writes nor the scroll pin. It clears itself the first
+   tick after the last turn finishes, so an idle app runs no timer. */
+let _runTicker = null;
+function tickRunStrips(){
+  const live = _streamingTurns();
+  if (!live.size){ clearInterval(_runTicker); _runTicker = null; return; }
+  live.forEach((t, uid)=>{
+    const el = document.querySelector('[data-runstrip="' + uid + '"]');
+    if (el) el.textContent = runPhrase(t);
+  });
+}
+function ensureRunTicker(){
+  if (_runTicker || typeof setInterval === "undefined") return;
+  if (!_streamingTurns().size) return;
+  _runTicker = setInterval(()=>{ try { tickRunStrips(); } catch (e) {} }, 1000);
+}
 
 function scheduleStreamPatch(uid){
   if (uid) _patchDirty.add(uid);
@@ -2146,6 +2244,13 @@ function claudeChannel(s, side){
     } else if (f.type === "token"){
       if (ch.turn){
         ch.turn.response = (ch.turn.response || "") + f.text;
+        /* Prose is arriving, so this is no longer the thinking phase. `thinking`
+           was set by the server's thinking frame and cleared only on tool-start,
+           done, stopped, retry and error -- never on a token. On an extended-
+           thinking turn that calls no tool the state therefore read "thinking"
+           for the entire time the answer was visibly being written. No forced
+           repaint here: the run ticker rewrites the strip within a second. */
+        ch.turn.thinking = false;
         /* TEXT ONLY -- patched in place, no re-render. See patchStreaming().
            Return early so the scheduleRender() at the end of this handler does
            not undo the whole point by rebuilding the pane anyway. */
@@ -2332,6 +2437,12 @@ function askClaude(s, turn, side){
   turn.tools = turn.tools || [];
   turn.error = null;
   turn.streaming = true;
+  /* Start-of-turn timestamp for the run strip's stopwatch. Set here rather than
+     at object creation so it covers EVERY streaming entry -- fresh turn, retry,
+     side chat -- through the one function they all pass. `|| Date.now()`
+     preserves an existing stamp, so a retry keeps timing from the original send
+     (a retry is the same turn, not a new one). */
+  turn.ts_ms = turn.ts_ms || Date.now();
   turn.sent = groundingPrefix(turn) + turn.text;   /* exactly what the model receives */
   let ch;
   try { ch = claudeChannel(s, side); }
@@ -5268,9 +5379,13 @@ function turnResponse(t){
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
   const runs = t.toolRuns || [];
   const active = runs.filter(r=>r.running).length;
+  /* THE ONLY whole-turn progress surface. Was an 8.5px word in a pill: no
+     elapsed time, no counts, no phase, no throughput -- a 3-second turn and a
+     wedged one were the same picture. data-runstrip is the ticker's patch anchor
+     (text node only); the sweep is indeterminate on purpose. */
   const state = t.streaming
-      ? `<span class="pill p-acc">${SPARK}${active ? active + " tool" + (active===1?"":"s") + " running"
-                                                             : (t.thinking ? "thinking" : "running")}</span>`
+      ? `<span class="runstrip">${SPARK}<b data-runstrip="${esc(t.uid||"")}"
+           >${esc(runPhrase(t))}</b></span><span class="runbar" aria-hidden="true"><i></i></span>`
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
@@ -5282,17 +5397,24 @@ function turnResponse(t){
   /* Server-measured duration and cost, stated only when the server actually sent
      them. A turn replayed from a transcript has neither, and inventing a number
      there would be fabrication. */
-  const meta = (!t.streaming && (t.duration_ms != null || t.cost_usd != null))
+  const meta = (!t.streaming && (t.duration_ms != null || t.cost_usd != null
+                                 || t.num_turns != null))
     ? `<span class="pill p-mut">${[
          t.duration_ms != null ? (t.duration_ms/1000).toFixed(1) + "s" : null,
          t.cost_usd != null ? "$" + Number(t.cost_usd).toFixed(4) : null,
+         /* the closest thing the stream has to "how much work was that" -- the
+            server sends it on every `done` and the client already stores it */
+         t.num_turns != null ? t.num_turns + " turn" + (t.num_turns===1?"":"s") : null,
        ].filter(Boolean).join(" · ")}</span>` : "";
 
   /* toolRuns (live, with lifecycle) is preferred; `tools` (flat names, which is all a
      replayed transcript records) is the fallback. A replayed turn therefore shows what
      ran but never claims a pass/fail it does not know. */
   const tools = runs.length
-    ? `<div class="toolRow">${runs.slice(-12).map(r=>`
+    ? `<div class="toolRow">${runs.length > 12 ? `<div class="trow unk">
+           <span class="tstate" aria-hidden="true"></span>
+           <span class="tname">${runs.length - 12} earlier tool call${runs.length-12===1?"":"s"}</span>
+           <span class="tsum">not shown</span></div>` : ""}${runs.slice(-12).map(r=>`
          <div class="trow ${r.running?"run":(r.ok===false?"bad":(r.ok===null?"unk":"ok"))}">
            <span class="tstate" aria-hidden="true"></span>
            <span class="tname">${esc(r.name)}</span>
@@ -5305,7 +5427,8 @@ function turnResponse(t){
                         title="Open the terminal with this command typed in, ready to run.
 It is NOT executed for you — press Enter yourself once you have read it.">terminal</button>`:""}
            ${r.caller && r.caller!=="direct"?`<span class="pill p-acc">${esc(r.caller)}</span>`:""}
-           <span class="tverdict">${r.running ? "running"
+           <span class="tverdict">${r.startedAt
+               ? esc(fmtDur((r.endedAt || Date.now()) - r.startedAt)) + " · " : ""}${r.running ? "running"
                                    : r.ok === false ? "error"
                                    : r.ok === null ? "unknown"
                                    : "done"}</span>
@@ -5317,11 +5440,18 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
     </div>` : "");
   /* A backoff is not a hang, and the difference has to be visible or the
      operator kills a turn that was about to succeed. */
-  const retrying = t.retrying
+  /* ONLY while the turn is live. `retrying` is assigned in one place and cleared
+     by NO terminal branch, so a turn that hit one backoff kept an animated "Rate
+     limited — retrying…" row pinned above its completed answer. */
+  const retrying = (t.streaming && t.retrying)
     ? `<div class="working"><i class="dot"></i>Rate limited — retrying<b class="ell"></b>
          <span class="tsum">${esc(t.retrying)}</span></div>` : "";
-  const waiting = (t.streaming && !t.response && !runs.length)
-    ? `<div class="working">${SPARK}${t.thinking ? "Thinking" : "Working"}<b class="ell"></b></div>` : "";
+  /* RETIRED. Its condition included `!runs.length`, so it was suppressed for the
+     rest of the turn as soon as any tool ran -- i.e. it went away exactly during
+     the compose window it was supposed to cover. The run strip now carries the
+     whole live window with a stopwatch, so keeping both meant two animated
+     elements per turn saying different amounts of nothing. */
+  const waiting = "";
   /* data-resp is the PATCH ANCHOR. While a reply streams, patchStreaming()
      rewrites the innerHTML of exactly this node instead of letting render()
      rebuild #panes -- see scheduleStreamPatch(). The id must be stable for the
@@ -6035,6 +6165,10 @@ function render(){
      costs one subprocess per session rather than one per repaint, and a pane
      opened later gets its bar without a second code path. */
   S.openPanes.forEach(sid => loadRepo(sid, false));
+
+  /* A turn may have just started, so the strip needs a clock. Idempotent, and
+     the ticker clears itself on the first tick after the last turn ends. */
+  ensureRunTicker();
 
   if (prior) {
     const el = document.querySelector(prior.sel);
@@ -7361,7 +7495,15 @@ function applySessionChange(rows){
     /* Only a transcript actually on screen is re-read. Re-parsing every changed
        file would turn a busy Claude session into a stream of reads for panes
        nobody is looking at. */
-    if (S.openPanes.includes(s.id) && s.real && s.loadState !== "loading"){
+    /* A session with work IN FLIGHT owns its turns array: the streaming turn
+       object lives in it and the socket is still writing into that object. The
+       file on disk is BEHIND that, so re-reading it here replaced the live turn
+       with a parse that does not contain it -- the reply stopped updating, Stop
+       reverted to Send, patchStreaming() could no longer find the node, and the
+       answer reappeared minutes later as a static block. Reconciled once the
+       turn lands instead. */
+    if (S.openPanes.includes(s.id) && s.real && s.loadState !== "loading"
+        && !sessionBusy(s.id)){
       /* Re-read through the SAME shape ensureTranscript() uses -- turns via
          transcriptTurns(), and its loadState vocabulary (unread/loading/ok/
          empty/error). A second parsing path would drift from the first and the
@@ -7369,6 +7511,9 @@ function applySessionChange(rows){
       s.loadState = "loading";
       apiGet("/api/sessions/" + encodeURIComponent(s.id))
         .then(d=>{
+          /* The GET is in flight for hundreds of ms and a send can start inside
+             that window, so the guard above is necessary but not sufficient. */
+          if (sessionBusy(s.id)){ s.loadState = "ok"; return; }
           s.turns = transcriptTurns(d && d.messages);
           s.cwd = (d && d.cwd) || s.cwd;
           s.branch = (d && d.branch) || s.branch;

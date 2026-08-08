@@ -924,7 +924,15 @@ async def ws_chat(ws: WebSocket):
                 args = build_agent_args(agent_bin, msg, perm_mode,
                                         session_id=session_id, model=chosen_model,
                                         opts=payload.get("opts"), stream_input=True)
-                spawn_key = tuple(args)
+                # DELIBERATELY NOT re-keying spawn_key here. The reuse test at the
+                # top compares the RESUME-FREE key (session_id=None) built each
+                # message; storing the resume-BEARING key made that comparison
+                # permanently unequal, so any pane opened from an existing
+                # transcript killed and cold-started claude on every message --
+                # ~3s of startup, the sutra MCP server respawned, the prompt cache
+                # missed, the conversation re-read from disk. `args` still carries
+                # --resume for THIS spawn; only the stored comparison key stops
+                # depending on it, so the next message reuses the live process.
 
             # EXACTLY ONE `start` PER OPERATOR MESSAGE. The client treats `start`
             # as the demarcation that binds the next token stream to the next
