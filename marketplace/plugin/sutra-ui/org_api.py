@@ -1164,6 +1164,28 @@ def _git_repo():
     return wd
 
 
+# ================================================================ usage =====
+# Plan rate-limit utilization, the same data Claude Code's own /usage reports.
+#
+# READ-ONLY and ARGUMENT-FREE on purpose. There is nothing to parameterise: the
+# windows belong to the authenticated account, not to a path or a session, so
+# there is no caller-supplied input to validate and no way to point it somewhere
+# it should not look.
+#
+# The OAuth token never crosses this boundary -- see usage.py, which builds an
+# allow-list projection rather than filtering the raw payload.
+@router.get("/usage")
+def api_usage():
+    """Rate-limit windows for this account, or an explicit unavailability.
+
+    Never 5xx: usage.snapshot() fails open to {"available": false, "reason": ...}.
+    A panel that cannot say "I don't know" would have to invent a number, and an
+    invented utilization is the one thing a usage screen must never show.
+    """
+    import usage
+    return usage.snapshot()
+
+
 @router.get("/git/{what}")
 def api_git(what: str, path: Optional[str] = None):
     """status | log | diff | staged, for the configured workdir.

@@ -777,6 +777,31 @@
     background-size:4px 4px,4px 4px;
     background-position:calc(100% - 9px) 51%,calc(100% - 5px) 51%;
     background-repeat:no-repeat}
+  /* ── usage meters ────────────────────────────────────────────────────────
+     One row per rate-limit window. The bar is the primary read and the number is
+     the confirmation, not the other way round: "how close am I" is answered by a
+     length at a glance, and 13 vs 31 is not. Colour is a THRESHOLD signal (ok /
+     warn>=70 / block>=80, the guard's own thresholds), never decoration -- so the
+     percentage carries the same class as the bar and the two cannot disagree. */
+  .urow{padding:9px 0}
+  .urow + .urow{border-top:1px solid var(--line-soft)}
+  .uhead{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .ulabel{font:500 12px/1 var(--sans);color:var(--ink)}
+  .ureset{margin-left:auto;font:400 10.5px/1 var(--sans);color:var(--faint);
+    white-space:nowrap}
+  .upct{font:600 12px/1 var(--mono);font-variant-numeric:tabular-nums;min-width:38px;
+    text-align:right}
+  .upct.p-ok{color:var(--ok)} .upct.p-warn{color:var(--warn)} .upct.p-block{color:var(--block)}
+  .ubar{height:6px;border-radius:999px;background:var(--inset);
+    border:1px solid var(--line-soft);overflow:hidden}
+  /* A window at 0% must still render as an empty track, not as a missing element:
+     "0%" and "not reported" are different facts and have to look different. */
+  .ubar i{display:block;height:100%;border-radius:999px;
+    transition:width .25s ease;min-width:0}
+  .ubar i.p-ok{background:var(--ok)}
+  .ubar i.p-warn{background:var(--warn)}
+  .ubar i.p-block{background:var(--block)}
+
   /* ── working-directory control ───────────────────────────────────────────
      Sits in the composer row because that is where you are about to use it, the
      same argument the permission selector is placed by. It shows the BASENAME:
@@ -2233,6 +2258,10 @@ const S = {
      a fetch is in flight, "" when git genuinely returned an empty diff -- the two are
      different answers and the screen renders them differently. */
   git:null, gitError:null, gitFile:null, gitDiff:null, gitDiffTruncated:false,
+  /* Usage. null means NOT READ YET, which is why the rail withholds its count
+     until the screen has been opened -- a 0% before anything was fetched is a
+     claim about an account nobody asked about. */
+  usage:null, usageError:null,
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,
@@ -2500,7 +2529,11 @@ const ICON = {
   auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
   chevron:'<path d="M6 9l6 6 6-6"/>',
-  bal:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M12 12c2.4-1.6 2.4-4.9 0-6.5M12 12c-2.4 1.6-2.4 4.9 0 6.5"/>'
+  bal:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M12 12c2.4-1.6 2.4-4.9 0-6.5M12 12c-2.4 1.6-2.4 4.9 0 6.5"/>',
+  /* A gauge: what a utilization window is. Deliberately not the clock `rout`
+     already uses -- two nav rows with the same glyph are two rows nobody can
+     tell apart at 14px. */
+  usage:'<path d="M4.2 17a8.5 8.5 0 1115.6 0"/><path d="M12 17l4.2-5.2"/><circle cx="12" cy="17" r="1.3"/>'
 };
 function railSpec(){
   const sim = S.loaded ? simulate(S.draft.ops) : null;
@@ -2543,6 +2576,15 @@ function railSpec(){
          something the operator creates. Count withheld until read, like Git. */
       {id:"routines", n:"Routines",  i:"rout",
        c:(S.rt ? (S.rt.routines||[]).length : undefined)},
+      /* Usage sits in RUNTIME because it describes the running account, not the
+         org. The count is the ACTIVE window's percentage -- the one number worth
+         seeing without opening anything -- and is withheld until the screen has
+         been read, like Git's, so the rail never asserts a figure nobody fetched. */
+      {id:"usage",    n:"Usage",     i:"usage",
+       c:(S.usage && S.usage.available
+            ? Math.round(((S.usage.limits||[]).find(r=>r.active)
+                          || (S.usage.limits||[])[0] || {}).percent ?? NaN) || undefined
+            : undefined)},
       /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
          anyway. It shipped as a 19px unlabelled icon in the footer and the first
          operator to use it reported "I don't see terminal": a control nobody can
@@ -3725,6 +3767,94 @@ SCREENS.editor = () => {
    nothing that mutates a repository, so this screen deliberately offers no
    stage/commit/push control -- an affordance that cannot work is worse than a
    missing one. The repo is the configured workdir, never a path from here. */
+/* ── S? Usage ────────────────────────────────────────────────────────────────
+   The plan's rate-limit windows, from the same endpoint Claude Code's own /usage
+   reads. Rendered from the server's `limits` LIST rather than from named keys:
+   the list already carries a per-model row (`weekly_scoped`, e.g. "Weekly ·
+   Fable") that no pair of hardcoded keys can express, and a window Anthropic adds
+   later shows up here without this file learning its name.
+
+   There is deliberately NO daily or monthly figure for the plan. The endpoint
+   does not return one -- five-hour and weekly are the only rate-limit windows
+   that exist. `daily` and `monthly_limit` live under extra_usage, which is
+   pay-as-you-go credits and a different thing entirely; they are shown in their
+   own section, and only when extra usage is actually enabled. */
+SCREENS.usage = () => {
+  if (S.usageError) return `<div class="zero"><h4>Usage unavailable</h4>
+    <p>${esc(S.usageError)}</p></div>`;
+  if (!S.usage) return `<div class="zero"><h4>Reading usage…</h4></div>`;
+  const u = S.usage;
+  if (!u.available) return `<div class="zero"><h4>Usage unavailable</h4>
+    <p>${esc(u.reason || "no usage data")}</p>
+    <p style="font-size:11px;color:var(--faint)">This reads the same endpoint as
+    <code>/usage</code> in the CLI, using the Claude Code credentials on this
+    machine. No credentials are sent to this panel.</p></div>`;
+
+  /* "resets in 11 min" beats an ISO timestamp for the thing you actually want to
+     know. Past-due is stated as such rather than rendered as a negative. */
+  const until = epoch => {
+    if (!epoch) return "";
+    const s = epoch - Date.now()/1000;
+    if (s <= 0) return "resetting now";
+    if (s < 3600) return "resets in " + Math.max(1, Math.round(s/60)) + " min";
+    if (s < 86400) return "resets in " + Math.round(s/3600) + "h";
+    return "resets in " + Math.round(s/86400) + "d";
+  };
+  const sevClass = r => r.percent >= 80 ? "p-block" : r.percent >= 70 ? "p-warn" : "p-ok";
+
+  const row = r => `<div class="urow">
+      <div class="uhead">
+        <span class="ulabel">${esc(r.label)}</span>
+        ${r.active?`<span class="pill p-acc" title="This is the window currently metering you">active</span>`:""}
+        <span class="ureset">${esc(until(r.resets_epoch))}</span>
+        <span class="upct ${sevClass(r)}">${Math.round(r.percent)}%</span>
+      </div>
+      <div class="ubar" role="img"
+           aria-label="${esc(r.label)} at ${Math.round(r.percent)} percent">
+        <i class="${sevClass(r)}" style="width:${Math.min(100, Math.max(0, r.percent))}%"></i>
+      </div>
+    </div>`;
+
+  const rows = (u.limits||[]).length
+    ? (u.limits||[]).map(row).join("")
+    : `<p style="color:var(--faint);margin:0">The endpoint returned no windows for
+       this account.</p>`;
+
+  const x = u.extra_usage;
+  const extra = !x
+    ? `<p style="color:var(--faint);margin:0">Not reported for this account.</p>`
+    : !x.enabled
+      /* NOT rendered as zeros. A null limit means "none configured", and showing
+         that as 0 would read as "you have no allowance left" -- the opposite. */
+      ? `<p style="margin:0">Extra usage is <b>off</b>. Daily, weekly and monthly
+         figures only exist once pay-as-you-go credits are enabled — they are
+         <code>null</code> right now, not zero.</p>`
+      : `<div class="kv"><b>Used</b><span>${esc(String(x.used_credits ?? "—"))} ${esc(x.currency||"")}</span></div>
+         <div class="kv"><b>Daily</b><span>${esc(String(x.daily ?? "no limit set"))}</span></div>
+         <div class="kv"><b>Weekly</b><span>${esc(String(x.weekly ?? "no limit set"))}</span></div>
+         <div class="kv"><b>Monthly limit</b><span>${esc(String(x.monthly_limit ?? "no limit set"))}</span></div>
+         ${x.limit_reached?`<div class="note w" style="margin-top:7px">The spend limit has been reached.</div>`:""}`;
+
+  const age = u.source === "stale-cache"
+    ? `<div class="note w" style="margin-bottom:9px">The usage endpoint could not be
+       reached just now. These figures come from a cached response and may be up to
+       10 minutes old.</div>` : "";
+
+  return `${age}
+    <div class="note" style="margin-bottom:9px"><b>Read-only.</b> The same data as
+      <code>/usage</code> in the CLI, for the account whose Claude Code credentials
+      are on this machine. Shared cache with <code>sutra-usage</code>, so the guard
+      and this screen can never disagree.</div>
+
+    ${fold("usage.limits", "Plan limits", `${(u.limits||[]).length} windows`, rows)}
+
+    ${fold("usage.extra", "Extra usage (pay-as-you-go)", x && x.enabled ? "on" : "off", extra)}
+
+    <p class="note" style="margin-top:9px;font-size:11px;color:var(--faint)">
+      There is no daily or monthly figure for the plan itself — five-hour and weekly
+      are the only rate-limit windows the endpoint returns.</p>`;
+};
+
 SCREENS.git = () => {
   if (S.gitError) return `<div class="zero"><h4>Git unavailable</h4>
     <p>${esc(S.gitError)}</p>
@@ -4366,7 +4496,12 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
   settings:["Settings","~/.sutra-ui/settings.json · PATH"],
-  balance:["Balance","holding/state/balance/ — not yet observing · design preview"]};
+  balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
+  /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()
+     does `const [t,src] = TITLES[S.screen]`, so a missing row here is not a blank
+     header -- it is a TypeError that aborts render() before the pane is touched,
+     leaving the previous screen on display as though the click did nothing. */
+  usage:["Usage","api.anthropic.com/api/oauth/usage — read-only, same data as /usage"]};
 /* ── a session's routing path, as a chart ──
    Honest model: the path is SUCCESSIVE PLACEMENT, not delegation. Each turn resolves to
    exactly one accountable department; departments never invoke one another (no such channel
@@ -6057,6 +6192,10 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     if (S.screen === "automation") loadAuto(false);
     if (S.screen === "balance") loadBalance(false); /* lazy, like Git */
+    /* force=true: unlike a repo, utilization moves while you are not looking, and
+       a stale percentage is the one number this screen must not show. The 60s
+       server cache is what keeps re-opening cheap. */
+    if (S.screen === "usage") loadUsage(true);
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     render(); return;
   }
@@ -6372,6 +6511,20 @@ async function rtLoadRuns(id){
   catch (e) { S.rtRuns[id] = {error:e.message}; }
   render();
 }
+/* Usage. Lazy like Git, and re-read on every open rather than cached in S: a
+   utilization figure that is quietly ten minutes stale is worse than one that
+   costs a request, and the server already coalesces at 60s against a shared cache. */
+async function loadUsage(force){
+  if (S.usage && !force) return;
+  try {
+    S.usage = await apiGet("/api/usage");
+    S.usageError = null;
+  } catch (e){
+    S.usageError = e.message; S.usage = null;
+  }
+  render();
+}
+
 async function loadGit(force){
   if (S.git && !force) return;
   try {
