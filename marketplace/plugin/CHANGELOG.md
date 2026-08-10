@@ -1,6 +1,38 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-08
+**status**: active · **updated**: 2026-08-09
+
+## 2.81.0
+
+- **The desktop panel becomes one entity with Claude.** A run of sutra-ui work,
+  all verified in the running app:
+  - **Live sync + resume correctness.** A chat in Claude appears and updates in
+    Sutra as it is written; a reply sent from Sutra continues the SAME Claude
+    conversation (resumed in the session's own project folder) instead of
+    silently forking a new one. Sessions show active/idle/stale and a running /
+    live / N-agents badge.
+  - **Titles you set in Claude** (custom-title / ai-title) show in the rail,
+    not the raw first prompt.
+  - **The running turn shows real progress** — a run strip with a stopwatch,
+    tool counts and per-tool durations, replacing the single unreadable pill.
+  - **Subagents are visible AND readable** — the "N agents" badge opens a fold
+    listing each subagent with its task and a live dot; clicking one renders its
+    transcript. A background agent now shows "running" until it truly finishes,
+    not "done" at launch (fixed from measured stream frames).
+  - **A per-session ⋮ menu** — Open in (Terminal/Editor/Finder/Repo), Pin, Mark
+    as unread, Rename, Fork, Move to group, Archive, Delete. Rename appends the
+    same custom-title record Claude writes; Archive/Delete MOVE the transcript to
+    ~/.sutra-ui/{archive,trash} recoverably, never unlink — verified end to end.
+  - **A real keyboard layer** — /, Cmd+Enter to send, Cmd+N, Cmd+[/], Cmd+.,
+    Cmd+Shift+W, an Escape cascade, and a reload guard while a turn streams.
+  - **Working-directory, usage, and repository controls** in the composer.
+- **Architecture: panel.html split into panel.css + 9 JS modules.** The 7900-line
+  single file is now a shell loading ordered modules by concern, so UI iteration
+  touches one small file instead of a monolith. Behaviour-preserving: the modules
+  concatenate byte-for-byte back to the original script.
+- **Fix: catalog version drift.** marketplace.json's core entry (2.79.0) had
+  drifted from plugin.json (2.80.1) after the verifier merge; both now read
+  2.81.0 and the manifest-sync check is green.
 
 ## 2.80.1
 
