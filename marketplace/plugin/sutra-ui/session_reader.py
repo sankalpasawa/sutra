@@ -1,12 +1,15 @@
 """Read-only browser over Claude Code's saved session transcripts.
 
 Sessions live at ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl as JSONL
-event logs. We read them; we never write. Viewing costs nothing (no model calls).
+event logs. Mostly read-only; the write path (append_title/relocate) is the one
+exception, operator-granted, and it only appends Claude's own record types or
+MOVES files, never rewrites a conversation. Viewing costs nothing (no model calls).
 Continuing a session happens in the real terminal via `claude --resume`.
 """
 import json
 import os
 import time
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -201,14 +204,68 @@ def index() -> Dict[str, Dict]:
     return out
 
 
-def read_session(session_id: str) -> Optional[Dict]:
-    """Parse one session transcript into chat-renderable messages. Read-only."""
-    if "/" in session_id or "\\" in session_id or ".." in session_id:
-        return None  # path-traversal guard
-    matches = list(PROJECTS.glob("*/" + session_id + ".jsonl"))
-    if not matches:
+# ------------------------------------------------------------ write path -----
+# Sutra MAY write to and delete Claude's transcripts (operator-granted). The
+# rules: RENAME appends the same custom-title record Claude itself writes (so a
+# rename here also shows in Claude); ARCHIVE/DELETE MOVE the file out of
+# ~/.claude/projects rather than unlinking, so the */*.jsonl glob stops listing
+# it while it stays on disk and recoverable.
+SUTRA_STORE = Path(os.path.expanduser("~/.sutra-ui"))
+
+
+def _safe_id(session_id: str) -> bool:
+    return not ("/" in session_id or "\\" in session_id or ".." in session_id)
+
+
+def resolve_path(session_id: str) -> Optional[Path]:
+    if not _safe_id(session_id):
         return None
-    f = matches[0]
+    matches = list(PROJECTS.glob("*/" + session_id + ".jsonl"))
+    return matches[0] if matches else None
+
+
+def append_title(session_id: str, title: str) -> bool:
+    """Append a custom-title record -- byte-identical to Claude's own rename."""
+    p = resolve_path(session_id)
+    if p is None:
+        return False
+    title = (title or "").replace("\n", " ").strip()[:200]
+    if not title:
+        return False
+    rec = {"type": "custom-title", "customTitle": title, "sessionId": session_id}
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec) + "\n")
+    return True
+
+
+def relocate(session_id: str, kind: str) -> Optional[Dict]:
+    """Move a transcript to ~/.sutra-ui/{archive,trash}/<project>/, recoverably."""
+    if kind not in ("archive", "trash"):
+        return None
+    p = resolve_path(session_id)
+    if p is None:
+        return None
+    dest_dir = SUTRA_STORE / kind / p.parent.name
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / p.name
+    orig = str(p)
+    shutil.move(orig, str(dest))
+    dest.with_name(dest.name + ".orig.json").write_text(
+        json.dumps({"original": orig, "session_id": session_id,
+                    "moved_at": int(time.time())}), encoding="utf-8")
+    return {"moved_to": str(dest), "original": orig}
+
+
+def _parse_transcript(f) -> Dict:
+    """Parse ONE transcript file into chat-renderable messages. Read-only.
+
+    Shared by read_session (a top-level <session-id>.jsonl) and read_agent (a
+    subagents/**/agent-*.jsonl). A subagent record is the SAME shape as a session
+    record -- type user|assistant, message.content str-or-blocks, tool_use blocks,
+    verified on disk: agent files carry agentId/entrypoint/isSidechain and are
+    otherwise identical -- so one parser guarantees an agent turn and a session
+    turn can never disagree about how the same record renders.
+    """
     messages, cwd, branch = [], "", ""
     with f.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -237,4 +294,87 @@ def read_session(session_id: str) -> Optional[Dict]:
                     if isinstance(content, list) else []
                 if text or tools:
                     messages.append({"role": "assistant", "text": text, "tools": tools, "ts": d.get("timestamp", "")})
-    return {"id": session_id, "cwd": cwd, "branch": branch, "messages": messages}
+    return {"cwd": cwd, "branch": branch, "messages": messages}
+
+
+def read_session(session_id: str) -> Optional[Dict]:
+    """Parse one session transcript into chat-renderable messages. Read-only."""
+    if "/" in session_id or "\\" in session_id or ".." in session_id:
+        return None  # path-traversal guard
+    matches = list(PROJECTS.glob("*/" + session_id + ".jsonl"))
+    if not matches:
+        return None
+    # Single source of truth: read_session and read_agent parse identically, so
+    # an agent turn and a session turn can never disagree about one record.
+    return {"id": session_id, **_parse_transcript(matches[0])}
+
+
+# --------------------------------------------------------------- subagents ---
+# A subagent transcript lives at <project>/<parent-session>/subagents/**/agent-*.jsonl
+# -- confirmed on disk, workflow fan-outs nest under subagents/workflows/<wf>/.
+# index() already folds their mtimes onto the parent and sets agents_live; this
+# makes the files themselves readable.
+def _subagents_root(parent_sid: str):
+    """The parent session's subagents dir, or None.
+
+    parent_sid is guarded for traversal and only ever placed INSIDE a glob
+    pattern, never joined onto a path, so it cannot walk out of ~/.claude/projects.
+    """
+    if "/" in parent_sid or "\\" in parent_sid or ".." in parent_sid:
+        return None
+    hits = list(PROJECTS.glob("*/" + parent_sid + "/subagents"))
+    return hits[0] if hits else None
+
+
+def list_agents(parent_sid: str) -> List[dict]:
+    """Every subagent under one session: {id, label, mtime, turns, running}.
+
+    Read-only, newest first. Fails to [] rather than raising -- a session that
+    never fanned out simply has no agents. `label` is the agent's first user text
+    (the task it was handed), falling back to the file stem; `running` is
+    transcript liveness, the same signal index() uses.
+    """
+    root = _subagents_root(parent_sid)
+    if root is None:
+        return []
+    out = []
+    for f in sorted(root.glob("**/agent-*.jsonl"),
+                    key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        msgs = _parse_transcript(f)["messages"]
+        first_user = next((m["text"] for m in msgs if m["role"] == "user"), "")
+        label = (first_user.strip().replace("\n", " ") or f.stem)[:90]
+        out.append({
+            "id": f.stem,                 # agent-<hex>: no slashes, URL-safe path param
+            "label": label,
+            "mtime": int(st.st_mtime),
+            "turns": sum(1 for m in msgs if m["role"] == "user"),
+            "running": liveness(st.st_mtime) == "active",
+        })
+    return out
+
+
+def read_agent(parent_sid: str, agent_id: str) -> Optional[Dict]:
+    """One subagent transcript, parsed exactly like read_session. Read-only.
+
+    CONFINEMENT: agent_id is matched by STEM against files actually found under the
+    parent's subagents dir -- it is never joined onto a path -- and the resolved
+    file is re-checked to sit under that dir, so neither `..` nor a symlink can
+    point the read outside <project>/<parent>/subagents/.
+    """
+    if "/" in agent_id or "\\" in agent_id or ".." in agent_id:
+        return None
+    root = _subagents_root(parent_sid)
+    if root is None:
+        return None
+    root_r = os.path.realpath(root)
+    for f in root.glob("**/agent-*.jsonl"):
+        if f.stem != agent_id:
+            continue
+        if not os.path.realpath(f).startswith(root_r + os.sep):
+            continue              # a symlink pointing out of the subagents dir
+        return {"id": agent_id, "parent": parent_sid, **_parse_transcript(f)}
+    return None

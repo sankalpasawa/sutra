@@ -13,6 +13,7 @@ import pty
 import shutil
 import signal
 import struct
+import subprocess
 import sys
 import termios
 from pathlib import Path
@@ -584,6 +585,64 @@ def api_session(sid: str):
     data = sr.read_session(sid)
     if data is None:
         raise HTTPException(status_code=404, detail="session not found")
+    return data
+
+
+@app.post("/api/sessions/{sid}/rename")
+def api_session_rename(sid: str, body: dict):
+    title = (body or {}).get("title", "")
+    if not sr.append_title(sid, title):
+        raise HTTPException(status_code=404, detail="session not found, or the title was empty")
+    return {"ok": True, "title": str(title).replace("\n", " ").strip()[:200], "title_source": "custom"}
+
+
+@app.post("/api/sessions/{sid}/archive")
+def api_session_archive(sid: str):
+    r = sr.relocate(sid, "archive")
+    if r is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True, **r}
+
+
+@app.post("/api/sessions/{sid}/delete")
+def api_session_delete(sid: str):
+    r = sr.relocate(sid, "trash")
+    if r is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True, **r}
+
+
+@app.post("/api/sessions/{sid}/reveal")
+def api_session_reveal(sid: str):
+    if sys.platform != "darwin":
+        raise HTTPException(status_code=400, detail="reveal in Finder is macOS-only")
+    p = sr.resolve_path(sid)
+    if p is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    subprocess.run(["open", "-R", str(p)], check=False)
+    return {"ok": True}
+
+
+@app.get("/api/sessions/{sid}/agents")
+def api_session_agents(sid: str):
+    """Subagent transcripts spawned under one session.
+
+    Read-only. Fails OPEN to [] -- a session with no fan-out is the common case and
+    must render an empty fold, not an error. sid is validated inside session_reader
+    (guarded, glob-only, never joined onto a path).
+    """
+    return sr.list_agents(sid)
+
+
+@app.get("/api/sessions/{sid}/agents/{aid}")
+def api_session_agent(sid: str, aid: str):
+    """One subagent transcript, same {id,cwd,branch,messages} shape as GET
+    /api/sessions/{sid}. 404 when the id resolves to nothing under the parent's
+    subagents dir -- mirrors api_session, and is what makes traversal a miss
+    rather than a leak."""
+    data = sr.read_agent(sid, aid)
+    if data is None:
+        raise HTTPException(status_code=404, detail="agent transcript not found")
     return data
 
 
@@ -1203,6 +1262,19 @@ async def ws_chat(ws: WebSocket):
                     # unknowable by construction.
                     for blk in (ev.get("message") or {}).get("content", []):
                         if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                            _out = _tool_output(blk.get("content"))
+                            # A BACKGROUND agent's tool_result is a LAUNCH RECEIPT,
+                            # not a completion: it arrives immediately, carries the
+                            # Agent's tool_use_id, and its content begins "Async
+                            # agent launched successfully". Emitting phase:end here
+                            # marked the subagent finished the instant it started.
+                            # Its REAL completion comes later as a system/
+                            # task_notification with the same tool_use_id (handled
+                            # in the system branch). Skip the receipt; the tool
+                            # stays running until that notification lands. Measured
+                            # against claude v2.1.212, stream-json, run_in_background.
+                            if _out.strip().startswith("Async agent launched"):
+                                continue
                             await ws.send_json({
                                 "type": "tool",
                                 "phase": "end",
@@ -1215,7 +1287,7 @@ async def ws_chat(ws: WebSocket):
                                 # and a failing tool showed a red dot with no reason
                                 # attached -- the one thing you need when a turn
                                 # goes wrong.
-                                "output": _tool_output(blk.get("content")),
+                                "output": _out,
                             })
                 elif t == "system":
                     # THE FOURTH TYPE THE PARSER NEVER HANDLED. The dispatch knew
@@ -1253,6 +1325,26 @@ async def ws_chat(ws: WebSocket):
                                           or "the API asked us to retry")[:300],
                             "attempt": ev.get("attempt"),
                         })
+                    elif sub == "task_notification":
+                        # THE REAL completion of a background agent. Its receipt
+                        # tool_result was skipped above, so the UI shows the agent
+                        # running until THIS frame -- which carries the same
+                        # tool_use_id the UI opened the tool with, plus the summary
+                        # and usage the receipt never had. task_started/task_progress
+                        # fire while it runs and are intentionally not forwarded (the
+                        # tool row already reads "running"); only the terminal
+                        # notification closes it. Measured shape: {tool_use_id,
+                        # status, summary, usage{...}}.
+                        status = ev.get("status") or "completed"
+                        tuid = ev.get("tool_use_id")
+                        if tuid and status in ("completed", "failed", "cancelled"):
+                            await ws.send_json({
+                                "type": "tool",
+                                "phase": "end",
+                                "id": tuid,
+                                "ok": status == "completed",
+                                "output": str(ev.get("summary") or "")[:4000],
+                            })
                 elif t == "result":
                     got_result = True
                     # A `result` event is NOT proof of success: a failed run (stale
