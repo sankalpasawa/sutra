@@ -8,4 +8,6 @@ case "$min" in ''|*[!0-9]*) echo "grep-count: min must be a positive integer" >&
 [ -f "$file" ] || { echo "grep-count: no such file: $file" >&2; exit 1; }
 n=$(grep -cE "$pat" "$file" || true)
 [ "$n" -ge "$min" ] || { echo "grep-count: found $n < $min of /$pat/ in $file" >&2; exit 1; }
+# evidence on STDOUT (fail/refusal messages stay on stderr; exit codes unchanged)
+echo "found $n of >=$min required"
 exit 0

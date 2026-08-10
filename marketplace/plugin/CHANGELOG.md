@@ -2,6 +2,12 @@
 
 **status**: active · **updated**: 2026-08-10
 
+## 2.91.1
+
+- **verify-templates print evidence on pass**: grep-count -> "found N of >=M",
+  file-exists -> bytes/lines/age per target. Stdout only; stderr, semantics,
+  exit codes unchanged. Feeds the new EVAL line in ATOM CLOSED cards.
+
 ## 2.91.0
 
 - **Live Activity panel — Sutra's Background-tasks equivalent.** A floating,
