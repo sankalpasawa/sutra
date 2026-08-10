@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.81.0 (2026-08-09, HEAD)
+## v2.90.0 (2026-08-10, HEAD)
+
+**Notarized desktop build.** Everything in v2.81.0 — live sync, resume correctness, the running-turn strip, the subagent viewer, the per-session ⋮ menu, the panel split, and the working-directory / usage / repository controls — now Developer ID–signed and **Apple-notarized** for both arm64 and x86_64. No source change since v2.81.0; the version is realigned for a clean notarized release that supersedes the un-notarized 2.81.0-desktop DMGs.
+
+## v2.81.0 (2026-08-09)
 
 **The desktop panel becomes one entity with Claude.** Live sync (a chat in Claude appears and updates in Sutra as written) plus resume-in-the-right-folder so a reply from Sutra continues the same Claude conversation instead of forking; titles you set in Claude; a running-turn progress strip with a stopwatch; a subagent transcript viewer (the "N agents" badge now opens each agent's turns) and correct async-agent completion timing; a per-session ⋮ menu (Open in / Pin / Unread / Rename / Fork / Group / Archive / Delete, with rename appending Claude's own custom-title record and archive/delete moving files recoverably); a real keyboard layer; and working-directory / usage / repository controls in the composer. Architecture: panel.html split into panel.css + 9 JS modules, behaviour-preserving, so UI iteration touches one small file. Also fixes the catalog-vs-source version drift (both now 2.81.0). Verified in the running app end to end.
 

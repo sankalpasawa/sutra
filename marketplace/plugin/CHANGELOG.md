@@ -1,6 +1,16 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-09
+**status**: active · **updated**: 2026-08-10
+
+## 2.90.0
+
+- **Notarized desktop release.** The 2.81.0 sutra-ui parity work — live sync,
+  resume-in-the-right-folder, the running-turn strip, the subagent transcript
+  viewer, the per-session ⋮ menu, and the panel.html → panel.css + 9-module
+  split — now ships as Developer ID–signed **and Apple-notarized** DMGs for both
+  Apple Silicon (arm64) and Intel (x86_64). No source change since 2.81.0; the
+  version is realigned to 2.90.0 for a clean notarized cut that supersedes the
+  un-notarized 2.81.0-desktop assets.
 
 ## 2.81.0
 
