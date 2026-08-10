@@ -2,6 +2,22 @@
 
 **status**: active · **updated**: 2026-08-10
 
+## 2.91.0
+
+- **Live Activity panel — Sutra's Background-tasks equivalent.** A floating,
+  collapsible panel (bottom-right) surfaces all running work live: in-flight chat
+  turns (each is a spawned `claude` process) and running subagents, with a live
+  count badge and a per-item stopwatch. Backed by a new read-only
+  `GET /api/activity` that reuses the existing liveness/index logic rather than
+  inventing a divergent one. Closes three gaps vs Claude: agentic work in
+  progress, background processes running, and agent tracking.
+- **Native Finder folder picker.** A "Browse…" button on every working-directory
+  control opens the macOS directory chooser via a new `sutra:pick-directory` IPC
+  verb; the text input stays an editable fallback and the button hides in a plain
+  browser (Electron-only). No more pasting absolute paths.
+- Built by two parallel agents on disjoint file sets; verified live (the endpoint
+  caught this very session's running turn), 76/76 panel tests, zero console errors.
+
 ## 2.90.0
 
 - **Notarized desktop release.** The 2.81.0 sutra-ui parity work — live sync,

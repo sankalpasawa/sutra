@@ -646,6 +646,45 @@ def api_session_agent(sid: str, aid: str):
     return data
 
 
+@app.get("/api/activity")
+def api_activity() -> dict:
+    """Everything running right now, for the global Activity panel. Read-only.
+
+    Two kinds of live work: a chat TURN in flight (Sutra spawns a `claude`
+    process per turn, so a session whose transcript is being written this
+    instant IS a running background process), and a subagent AGENT. "Running"
+    is transcript liveness == "active" -- the SAME rule the SSE stream and the
+    log tail already use, not a new definition. elapsed_s is best-effort: now
+    minus the last write (mtime). Stat-cheap and safe to poll every ~2s: the
+    per-agent parse is paid only for sessions index() already flagged as having
+    a live agent (agents_live), so idle history costs nothing.
+    """
+    now = time.time()
+    idx = sr.index()
+    turns = []
+    agents = []
+    for sid, rec in idx.items():
+        if sr.liveness(rec["mtime"], now) == "active":
+            meta = sr.head_meta(sid)
+            turns.append({
+                "sid": sid,
+                "title": meta.get("title", ""),
+                "cwd": meta.get("cwd", ""),
+                "elapsed_s": max(0, int(now - rec["mtime"])),
+            })
+        if rec.get("agents_live"):
+            for a in sr.list_agents(sid):
+                if not a.get("running"):
+                    continue
+                agents.append({
+                    "parent_sid": sid,
+                    "id": a["id"],
+                    "label": a.get("label", ""),
+                    "elapsed_s": max(0, int(now - a["mtime"])),
+                })
+    return {"turns": turns, "agents": agents, "count": len(turns) + len(agents)}
+
+
 @app.get("/api/balance")
 def api_balance() -> dict:
     """Balance state contract, read-only (2026-08-07).

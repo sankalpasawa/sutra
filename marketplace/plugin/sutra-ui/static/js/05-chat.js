@@ -461,6 +461,8 @@ SCREENS.settings = () => {
                value="${esc(S.workdirDraft !== null ? S.workdirDraft : (st.workdir||""))}"
                spellcheck="false" autocapitalize="off" autocorrect="off"
                aria-label="Working directory" placeholder="~/sutra-ui-workspace">
+        ${dirPickerAvailable()?`<button class="btn" type="button" data-workdir-browse
+          title="Choose a folder in Finder">Browse…</button>`:""}
         <button class="btn" type="button" data-workdir-save
           ${S.setBusy==="workdir"?'aria-busy="true" disabled':""}>${
             S.setBusy==="workdir"?"Saving…":"Use this directory"}</button>
@@ -679,9 +681,46 @@ function cwdEditorHtml(sid){
       <input type="text" data-cwdinput="${esc(sid)}" spellcheck="false"
              value="${esc(eff)}" placeholder="~/some/project"
              aria-label="Working directory for this session" />
+      ${dirPickerAvailable()?`<button type="button" data-cwdbrowse="${esc(sid)}"
+        title="Choose a folder in Finder">Browse…</button>`:""}
       <button type="button" data-cwdsave="${esc(sid)}">SET</button>
       <button type="button" data-cwdcancel="${esc(sid)}">CANCEL</button>
     </div>${note}`;
+}
+
+/* ── native folder picker ─────────────────────────────────────────────────────
+   The desktop shell can open Finder for the working-directory fields; a plain
+   browser cannot. So the Browse buttons are drawn only when the preload bridge
+   is present (mirrors updDesktop()), and the text inputs stay the sole way in
+   either way -- the picker only fills them. One document-level listener,
+   registered once, because the buttons ride on nodes render() rebuilds. It also
+   serves the routine form's folder field rendered in 04-screens.js; wiring lives
+   here because 07-loaders.js already owns the inputs and cannot be a home for a
+   button gated on Electron. Guarded for the bare-vm test harness, as 08-boot.js. */
+function dirPickerAvailable(){
+  return typeof (window.sutra && window.sutra.pickDirectory) === "function";
+}
+if (typeof document !== "undefined" && document.addEventListener){
+  document.addEventListener("click", async (e)=>{
+    const el = e.target;
+    const t = el && el.closest && el.closest(
+      "[data-workdir-browse],[data-cwdbrowse],[data-rtcwd-browse]");
+    if (!t || !dirPickerAvailable()) return;
+    const picked = await window.sutra.pickDirectory();
+    if (picked == null) return;                       /* cancelled: touch nothing */
+    if (t.hasAttribute("data-workdir-browse")){       /* Settings → S.workdirDraft */
+      const inp = document.querySelector("[data-workdir-input]");
+      if (inp) inp.value = picked;
+      S.workdirDraft = picked;
+    } else if (t.hasAttribute("data-cwdbrowse")){     /* composer → the input SET reads */
+      const inp = document.querySelector('[data-cwdinput="' + t.dataset.cwdbrowse + '"]');
+      if (inp) inp.value = picked;
+    } else {                                          /* routine form → S.rtForm.cwd */
+      const inp = document.querySelector('[data-rtf="cwd"]');
+      if (inp) inp.value = picked;
+      if (S.rtForm) S.rtForm.cwd = picked;
+    }
+  });
 }
 
 function turnResponse(t){

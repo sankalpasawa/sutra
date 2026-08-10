@@ -726,8 +726,10 @@ function rtCreateForm(){
            placeholder="What Sutra should do on each run">${esc(f.prompt||"")}</textarea>`,
         "What Sutra runs on each fire. Drag the corner to make it taller.")}
       ${row("cwd","Working folder",
-        `<input id="rf-cwd" data-rtf="cwd" placeholder="~/some/project"
-                spellcheck="false" value="${esc(f.cwd||"")}">`,
+        `<div class="rfpick"><input id="rf-cwd" data-rtf="cwd" placeholder="~/some/project"
+                spellcheck="false" value="${esc(f.cwd||"")}">${
+          dirPickerAvailable()?`<button class="btn" type="button" data-rtcwd-browse
+            title="Choose a folder in Finder">Browse…</button>`:""}</div>`,
         "Must exist, and be inside your home directory.")}
       ${row("model","Model",
         `<select id="rf-model" data-rtf="model">${(st.models||[""]).map(m=>

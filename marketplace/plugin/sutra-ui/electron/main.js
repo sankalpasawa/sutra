@@ -575,6 +575,19 @@ ipcMain.handle("sutra:update-apply", async () => {
 
 ipcMain.handle("sutra:update-defer", async () => ({ ok: true, deferred: true }));
 
+/* Native folder chooser for the panel's working-directory fields. The panel is
+   the same app the CLI serves to an ordinary browser, where this cannot exist --
+   so it is offered over the preload bridge and the renderer only draws the Browse
+   button when that bridge is present. Resolves the chosen absolute path, or null
+   when the user cancels; the text input stays the fallback either way. */
+ipcMain.handle("sutra:pick-directory", async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: "Choose working directory",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  return (r.canceled || !r.filePaths || !r.filePaths.length) ? null : r.filePaths[0];
+});
+
 // One Sutra window per machine. Electron enforces this properly; the shell
 // launcher could not, and four launchers were observed running at once.
 if (!app.requestSingleInstanceLock()) {

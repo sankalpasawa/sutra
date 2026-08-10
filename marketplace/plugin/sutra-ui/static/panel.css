@@ -1255,6 +1255,10 @@
   .rinline{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
   .rinline input,.rinline select{width:auto;flex:none}
   .rinline .sep{color:var(--faint)}
+  /* input + native folder Browse, side by side; the input keeps the full width. */
+  .rfpick{display:flex;gap:7px;align-items:stretch}
+  .rfpick input{flex:1;min-width:0}
+  .rfpick .btn{flex:none;white-space:nowrap}
   .rfoot{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
   /* A transient note that must not push layout around or steal focus: it
      reports something that already happened, and disappears on its own. */
