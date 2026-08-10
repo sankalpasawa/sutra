@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.90.0 (2026-08-10, HEAD)
+## v2.91.0 (2026-08-10, HEAD)
+
+**Live Activity panel + native folder picker.** A floating, collapsible Activity panel (bottom-right) surfaces all running work live — in-flight chat turns and running subagents, with a count badge and per-item stopwatch — Sutra's equivalent of Claude's Background-tasks view, backed by a new read-only `/api/activity` that reuses the existing liveness logic. Plus a native macOS Finder "Browse…" button on every working-directory control (new `sutra:pick-directory` IPC), with the text field kept as an editable fallback. Built by two parallel agents on disjoint files; verified live (endpoint caught this session's own turn; 76/76 panel tests; zero console errors).
+
+## v2.90.0 (2026-08-10)
 
 **Notarized desktop build.** Everything in v2.81.0 — live sync, resume correctness, the running-turn strip, the subagent viewer, the per-session ⋮ menu, the panel split, and the working-directory / usage / repository controls — now Developer ID–signed and **Apple-notarized** for both arm64 and x86_64. No source change since v2.81.0; the version is realigned for a clean notarized release that supersedes the un-notarized 2.81.0-desktop DMGs.
 

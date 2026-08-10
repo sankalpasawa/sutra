@@ -133,6 +133,47 @@ def list_sessions(limit: int = 100) -> List[dict]:
     return out
 
 
+def head_meta(session_id: str) -> Dict[str, str]:
+    """{title, cwd} for ONE session -- same precedence as list_sessions
+    (custom-title > ai-title > first user message). Read-only, fails soft to
+    blanks. The activity endpoint calls this only for the handful of sessions
+    that are currently active, so it never scans the whole projects dir.
+    """
+    p = resolve_path(session_id)
+    if p is None:
+        return {"title": "", "cwd": ""}
+    first_msg = cwd = custom_title = ai_title = ""
+    try:
+        with p.open(encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                head = i <= 40
+                titley = "customTitle" in line or "aiTitle" in line
+                if not head and not titley:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if titley:
+                    if d.get("type") == "custom-title" and isinstance(d.get("customTitle"), str):
+                        custom_title = d["customTitle"].strip() or custom_title
+                    elif d.get("type") == "ai-title" and isinstance(d.get("aiTitle"), str):
+                        ai_title = d["aiTitle"].strip() or ai_title
+                if head:
+                    cwd = cwd or d.get("cwd", "")
+                    if not first_msg and d.get("type") == "user":
+                        msg = d.get("message", {})
+                        if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
+                            t = _strip_injected(_text_of(msg.get("content")))
+                            t = t.strip().replace("\n", " ")
+                            if t and not t.startswith("<"):
+                                first_msg = t[:90]
+    except OSError:
+        return {"title": "", "cwd": cwd}
+    title = custom_title or ai_title or first_msg or "(no prompt)"
+    return {"title": title[:90], "cwd": cwd}
+
+
 # How recently a transcript must have been written to count as each state. These
 # are about the FILE, which is the only evidence there is: Claude appends a line
 # per event, so "was written 4 seconds ago" is as close to "someone is typing in

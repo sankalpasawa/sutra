@@ -163,4 +163,8 @@
 <script src="/static/js/06-render.js"></script>
 <script src="/static/js/07-loaders.js"></script>
 <script src="/static/js/08-boot.js"></script>
+<!-- 10-activity.js loads before 09-tail.js on purpose: 09-tail ends with boot(),
+     which must remain the final statement (see test 21b). Activity self-mounts on
+     DOMContentLoaded, so load order before boot() is safe. -->
+<script src="/static/js/10-activity.js"></script>
 <script src="/static/js/09-tail.js"></script>

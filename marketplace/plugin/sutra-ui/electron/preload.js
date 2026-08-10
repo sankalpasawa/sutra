@@ -32,4 +32,9 @@ contextBridge.exposeInMainWorld("sutra", {
      applied when the app next exits, so the next launch is updated either way.
      This call exists to tell the shell to stop counting, nothing more. */
   deferUpdate: () => ipcRenderer.invoke("sutra:update-defer"),
+
+  /* Open a native Finder folder chooser and resolve the chosen absolute path,
+     or null if the user cancels. Backs the working-directory fields; absent in a
+     browser, where the panel keeps its text inputs as the only way in. */
+  pickDirectory: () => ipcRenderer.invoke("sutra:pick-directory"),
 });
