@@ -232,6 +232,178 @@ class TestHeadMeta(_PatchedProjects):
         self.assertEqual(meta["cwd"], "")
 
 
+class TestSubagentHelpers(unittest.TestCase):
+    """Pure functions behind the enriched agent list -- no fixtures needed.
+
+    _agent_title_fallback derives a card title from the agent's own prompt when
+    no parent Task described it; _norm120 is the whitespace-collapsed 120-char key
+    both sides of the agent<->Task join are compared on.
+    """
+
+    def test_title_fallback_prefers_structured_marker(self):
+        # FEATURE:/TASK:/SCOPE:/... marker -> its value, marker text stripped.
+        self.assertEqual(sr._agent_title_fallback("FEATURE: Native Finder picker"),
+                         "Native Finder picker")
+        self.assertEqual(sr._agent_title_fallback("TASK: wire up the drawer"),
+                         "wire up the drawer")
+        # a dash separator works too, and a preamble line before the marker does
+        # not stop it being found (the regex is multiline).
+        self.assertEqual(
+            sr._agent_title_fallback("some noise\nSCOPE - only the picker\nmore"),
+            "only the picker")
+
+    def test_title_fallback_skips_role_boilerplate_first_line(self):
+        # "You are ..." is generic role boilerplate -> take the NEXT real line.
+        self.assertEqual(
+            sr._agent_title_fallback("You are a helper agent.\n"
+                                     "Investigate the crash in module X."),
+            "Investigate the crash in module X.")
+
+    def test_title_fallback_skips_repo_opener(self):
+        # a "REPO: /p" opener is skipped like other boilerplate.
+        self.assertEqual(
+            sr._agent_title_fallback("REPO: /Users/x/proj\nActually do the thing."),
+            "Actually do the thing.")
+
+    def test_title_fallback_empty_is_the_word_subagent(self):
+        self.assertEqual(sr._agent_title_fallback(""), "subagent")
+        self.assertEqual(sr._agent_title_fallback("   \n  \n"), "subagent")
+
+    def test_title_fallback_caps_at_72_chars(self):
+        long = "TASK: " + ("x" * 200)
+        self.assertEqual(len(sr._agent_title_fallback(long)), 72)
+
+    def test_norm120_collapses_whitespace(self):
+        # runs of spaces, tabs and newlines all collapse to single spaces, and
+        # leading/trailing whitespace is dropped.
+        self.assertEqual(sr._norm120("  a\n\nb   c\td  "), "a b c d")
+
+    def test_norm120_caps_at_120_chars(self):
+        s = "word " * 60          # 300 chars, plenty over the cap
+        got = sr._norm120(s)
+        self.assertEqual(len(got), 120)
+        # the cap is applied AFTER collapsing, not before.
+        self.assertEqual(got, (" ".join(s.split()))[:120])
+
+    def test_norm120_handles_none(self):
+        self.assertEqual(sr._norm120(None), "")
+
+
+class TestListAgentsEnrichment(_PatchedProjects):
+    """session_reader.list_agents -- the agent<->parent-Task join and the
+    per-agent enrichment (title, agent_type, steps, tools, turns) end to end
+    against a fabricated projects tree."""
+
+    def test_join_and_enrichment_end_to_end(self):
+        now = time.time()
+        proj = self.root / "-Users-x-proj"
+
+        # The exact prompt the parent handed to the Task tool. The agent's first
+        # user message is this same string -- that string equality (after
+        # _norm120) is the whole join.
+        PROMPT = ("Research the authentication module and report every place the "
+                  "login flow branches, with file paths and line numbers.")
+
+        # PARENT transcript: a normal user turn, then an assistant turn whose
+        # content carries a Task tool_use with the clean description + type.
+        _write(proj / "parent.jsonl", [
+            {"type": "user", "cwd": "/w/p",
+             "message": {"content": "orchestrate the research"}},
+            {"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "I'll spawn a research agent."},
+                {"type": "tool_use", "name": "Task", "input": {
+                    "description": "My Clean Title",
+                    "subagent_type": "general-purpose",
+                    "prompt": PROMPT,
+                }},
+            ]}},
+        ], mtime=now - 300)
+
+        sub = proj / "parent" / "subagents"
+
+        # AGENT 1 -- matches the parent Task by prompt. Four assistant records
+        # (some carrying tool_use blocks) so `steps` must be 4, never 1.
+        _write(sub / "agent-aaaa.jsonl", [
+            {"type": "user", "message": {"content": PROMPT}},
+            {"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "planning the sweep"}]}},
+            {"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "reading the module"},
+                {"type": "tool_use", "name": "Read", "input": {}}]}},
+            {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "Grep", "input": {}}]}},
+            {"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "done"},
+                {"type": "tool_use", "name": "Read", "input": {}}]}},
+        ], mtime=now - 10)
+
+        # AGENT 2 -- NO matching parent Task. Its prompt carries a FEATURE marker
+        # so the fallback title is deterministic; agent_type must be "".
+        _write(sub / "agent-bbbb.jsonl", [
+            {"type": "user", "message": {"content": "FEATURE: Lone Ranger Task"}},
+            {"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "working solo"}]}},
+        ], mtime=now - 20)
+
+        agents = sr.list_agents("parent")
+        by_id = {a["id"]: a for a in agents}
+        self.assertEqual(set(by_id), {"agent-aaaa", "agent-bbbb"})
+
+        # -- the join worked for agent 1 --
+        a1 = by_id["agent-aaaa"]
+        self.assertEqual(a1["title"], "My Clean Title",
+                         "title must be the parent Task's clean description")
+        self.assertEqual(a1["agent_type"], "general-purpose",
+                         "agent_type must be the Task's subagent_type")
+        # steps counts ASSISTANT records (the real work), not turns.
+        self.assertEqual(a1["steps"], 4)
+        self.assertNotEqual(a1["steps"], 1)
+        self.assertEqual(a1["turns"], 1, "one user message == one turn")
+        # distinct tool names, first-seen order preserved.
+        self.assertEqual(a1["tools"], ["Read", "Grep"])
+        # label is the full first prompt kept for the hover tooltip.
+        self.assertEqual(a1["label"], PROMPT[:200])
+
+        # -- no match for agent 2: derived title, empty agent_type --
+        a2 = by_id["agent-bbbb"]
+        self.assertEqual(a2["agent_type"], "",
+                         "an unmatched agent has no subagent_type")
+        self.assertEqual(a2["title"], "Lone Ranger Task",
+                         "title falls back to the agent's own prompt marker")
+        self.assertEqual(a2["title"], sr._agent_title_fallback("FEATURE: Lone Ranger Task"),
+                         "the fallback title is exactly _agent_title_fallback's output")
+        self.assertEqual(a2["steps"], 1)
+
+    def test_missing_parent_tasks_still_lists_agents_with_derived_titles(self):
+        """When the parent .jsonl is gone (spawning turns compacted away),
+        _parent_tasks returns [] and every agent falls back to a derived title
+        with agent_type "" -- the list must not be empty and must not raise."""
+        now = time.time()
+        proj = self.root / "-Users-x-proj"
+        # NOTE: no parent.jsonl written -- only the subagents dir exists.
+        sub = proj / "orphan" / "subagents"
+        _write(sub / "agent-cccc.jsonl", [
+            {"type": "user", "message": {"content": "You are a helper.\n"
+                                                    "Audit the payment retries."}},
+            {"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "auditing"}]}},
+        ], mtime=now - 5)
+
+        agents = sr.list_agents("orphan")
+        self.assertEqual(len(agents), 1)
+        ag = agents[0]
+        self.assertEqual(ag["agent_type"], "")
+        # first line is role boilerplate -> next real line becomes the title.
+        self.assertEqual(ag["title"], "Audit the payment retries.")
+
+    def test_no_subagents_dir_returns_empty_list(self):
+        # a parent with no subagents dir at all -> [] (never raises).
+        proj = self.root / "-Users-x-proj"
+        _write(proj / "solo.jsonl",
+               [{"type": "user", "message": {"content": "no fan-out here"}}])
+        self.assertEqual(sr.list_agents("solo"), [])
+
+
 if __name__ == "__main__":
     # Plain-python entry point so the SHIPPED interpreter (no pytest) can run
     # this directly: electron/payload/python/bin/python3 test_activity.py -v
