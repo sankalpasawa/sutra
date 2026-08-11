@@ -8,6 +8,7 @@ Continuing a session happens in the real terminal via `claude --resume`.
 """
 import json
 import os
+import re
 import time
 import shutil
 from pathlib import Path
@@ -367,17 +368,87 @@ def _subagents_root(parent_sid: str):
     return hits[0] if hits else None
 
 
-def list_agents(parent_sid: str) -> List[dict]:
-    """Every subagent under one session: {id, label, mtime, turns, running}.
+def _norm120(s: str) -> str:
+    """Whitespace-collapsed prefix, for matching an agent to the Task that spawned it."""
+    return " ".join((s or "").split())[:120]
 
-    Read-only, newest first. Fails to [] rather than raising -- a session that
-    never fanned out simply has no agents. `label` is the agent's first user text
-    (the task it was handed), falling back to the file stem; `running` is
-    transcript liveness, the same signal index() uses.
+
+def _parent_tasks(parent_sid: str) -> List[dict]:
+    """The Task/Agent tool_use calls in the PARENT transcript, each carrying the
+    clean `description` (3-5 word title) and `subagent_type` the caller gave it.
+
+    Read-only. Returns [] when the parent file is gone or the spawning turns were
+    compacted away -- in which case the agent falls back to a derived title.
+    """
+    if "/" in parent_sid or "\\" in parent_sid or ".." in parent_sid:
+        return []
+    matches = list(PROJECTS.glob("*/" + parent_sid + ".jsonl"))
+    if not matches:
+        return []
+    tasks = []
+    try:
+        with matches[0].open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if d.get("type") != "assistant":
+                    continue
+                content = (d.get("message") or {}).get("content")
+                if not isinstance(content, list):
+                    continue
+                for b in content:
+                    if (isinstance(b, dict) and b.get("type") == "tool_use"
+                            and b.get("name") in ("Task", "Agent")):
+                        inp = b.get("input") or {}
+                        prompt = (inp.get("prompt") or "").strip()
+                        if prompt:
+                            tasks.append({
+                                "key": _norm120(prompt),
+                                "description": (inp.get("description") or "").strip(),
+                                "subagent_type": (inp.get("subagent_type") or "").strip(),
+                            })
+    except OSError:
+        return []
+    return tasks
+
+
+def _agent_title_fallback(text: str) -> str:
+    """A concise title from the agent's own prompt, when no parent Task described it.
+
+    Prefer a structured marker (FEATURE:/TASK:/SCOPE:/GOAL:), else the first line
+    that is not generic role boilerplate, else the first line. Capped for a card.
+    """
+    t = text or ""
+    m = re.search(r'(?im)^\s*(?:FEATURE|TASK|SCOPE|GOAL|OBJECTIVE|SUMMARY)\s*[:\-]\s*(.+)$', t)
+    if m:
+        return m.group(1).strip()[:72]
+    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+    for ln in lines:
+        if not ln.lower().startswith(("you are ", "you're ", "repo:", "repo :", "you will ")):
+            return ln[:72]
+    return (lines[0][:72] if lines else "subagent")
+
+
+def list_agents(parent_sid: str) -> List[dict]:
+    """Every subagent under one session, enriched for a readable list. Read-only,
+    newest first, fails to [].
+
+    Per agent: {id, title, agent_type, label, steps, tools, turns, mtime, running}.
+      - title      clean short name: the parent Task's `description` when the
+                   spawning turn is still on disk, else derived from the prompt.
+      - agent_type the Task's `subagent_type` (e.g. general-purpose), or "".
+      - steps      assistant messages -- the real work count (a "1 turn" agent may
+                   have taken 30 steps).
+      - tools      distinct tool names it used (first 8).
+      - label      the full first prompt, kept for a hover tooltip.
+      - running    transcript liveness, the same signal index() uses.
     """
     root = _subagents_root(parent_sid)
     if root is None:
         return []
+    tasks = _parent_tasks(parent_sid)
     out = []
     for f in sorted(root.glob("**/agent-*.jsonl"),
                     key=lambda p: p.stat().st_mtime, reverse=True):
@@ -387,12 +458,29 @@ def list_agents(parent_sid: str) -> List[dict]:
             continue
         msgs = _parse_transcript(f)["messages"]
         first_user = next((m["text"] for m in msgs if m["role"] == "user"), "")
-        label = (first_user.strip().replace("\n", " ") or f.stem)[:90]
+        key = _norm120(first_user)
+        match = None
+        for t in tasks:
+            k = t["key"]
+            if k and (k == key or (len(key) >= 40 and (k.startswith(key[:80]) or key.startswith(k[:80])))):
+                match = t
+                break
+        title = (match["description"] if (match and match["description"])
+                 else _agent_title_fallback(first_user)) or f.stem
+        tools = []
+        for m in msgs:
+            for tn in (m.get("tools") or []):
+                if tn and tn not in tools:
+                    tools.append(tn)
         out.append({
             "id": f.stem,                 # agent-<hex>: no slashes, URL-safe path param
-            "label": label,
-            "mtime": int(st.st_mtime),
+            "title": title[:80],
+            "agent_type": (match or {}).get("subagent_type", ""),
+            "label": (first_user.strip().replace("\n", " ") or f.stem)[:200],
+            "steps": sum(1 for m in msgs if m["role"] == "assistant"),
+            "tools": tools[:8],
             "turns": sum(1 for m in msgs if m["role"] == "user"),
+            "mtime": int(st.st_mtime),
             "running": liveness(st.st_mtime) == "active",
         })
     return out

@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.92.0 (2026-08-11, HEAD)
+## v2.93.0 (2026-08-11, HEAD)
+
+**Subagent viewer = Claude's agent view.** The subagent list stops being a wall of raw prompt text: each agent is a clean card (real title + agent-type badge + "N steps · tools · relative time"), and clicking one opens a readable step-by-step transcript — the task it was handed (collapsed), each assistant step with its tool calls, and the final message set apart as the result. Backend: `list_agents` joins to the parent's `Task` tool_use for the description/subagent_type and counts assistant steps (real work) instead of the always-1 user-turn count. Verified live on this session's 43 agents; kept the Sutra theme.
+
+## v2.92.0 (2026-08-11)
 
 **Activity: header trigger + right drawer.** The Activity panel moves from a bottom-right floating widget to a compact trigger in the chat header's top-right (a live count badge that pulses on activity) that opens a right-docked, non-modal drawer — "Running turns" + "Agents" with stopwatches — matching Claude's Background-tasks placement. Close via ×, Escape, or re-click. Verified live in the browser: the trigger renders in the header, the drawer opens/closes, the badge syncs to the running count, and this session's own turn appears with a ticking stopwatch. Plus formal evals for `/api/activity`, `head_meta`, and the picker gate.
 

@@ -290,7 +290,9 @@ async function loadAgentTranscript(sid, aid){
   try {
     const d = await apiGet("/api/sessions/" + encodeURIComponent(sid)
                            + "/agents/" + encodeURIComponent(aid));
-    S.agentTurns[key] = transcriptTurns(d && d.messages);
+    /* Keep the RAW messages: the agent detail renders them as a step sequence
+       (Claude's agent view), not folded into one turn. */
+    S.agentTurns[key] = (d && d.messages) || [];
   } catch (e){ S.agentTurns[key] = []; }
   scheduleRender();
 }
