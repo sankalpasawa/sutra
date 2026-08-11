@@ -1,6 +1,19 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-10
+**status**: active · **updated**: 2026-08-11
+
+## 2.92.0
+
+- **Activity moves to a header trigger + right-docked drawer.** The bottom-right
+  floating panel is replaced by a compact trigger in each chat header's top-right
+  (a live count badge that pulses when work is running). Clicking it opens a
+  right-docked, **non-modal** Activity drawer — "Running turns" + "Agents" with a
+  per-item stopwatch — the Claude Background-tasks placement. Close with ×, Escape,
+  or by re-clicking the trigger. Same `/api/activity` data; no backend change.
+  Verified live: trigger renders in the header, drawer opens/closes, the badge
+  syncs to the running count, and this session's own turn shows with a ticking
+  stopwatch.
+- Formal evals added for `/api/activity` + `head_meta` + the folder-picker gate.
 
 ## 2.91.0
 
