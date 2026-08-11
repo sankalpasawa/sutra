@@ -69,6 +69,13 @@ function sessionPane(s){
         <button type="button" data-tab="chat"  data-sid="${s.id}" aria-pressed="${tab==="chat"}">Chat</button>
         <button type="button" data-tab="route" data-sid="${s.id}" aria-pressed="${tab==="route"}">Routing</button>
       </span>
+      <button class="ib act-trigger" data-act-toggle type="button"
+              aria-label="Activity — running turns and agents"
+              title="Activity — running turns & agents (background tasks)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.9" aria-hidden="true"><path d="M3 12h4l2 5 4-13 2 8h6"/></svg>
+        <span class="act-badge" data-act-badge hidden>0</span>
+      </button>
       <button class="ib" data-sidetoggle="${s.id}" type="button"
               aria-pressed="${!!S.sideOpen[s.id]}"
               aria-label="${S.sideOpen[s.id]?"Hide the side chat":"Open a side chat"}"

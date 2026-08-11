@@ -174,7 +174,7 @@ const EPILOGUE = `
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
   chanKey, paletteFor,
   _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip, resumableId,
-  fmt,
+  fmt, dirPickerAvailable,
   /* TENANTS was exported here. It is a lazy getter, so it kept "passing" after
      the global was deleted -- it would only have thrown the moment a test
      touched it. Removed with the tenant surface it belonged to. */
@@ -1293,6 +1293,222 @@ test("25i. an update already armed says so instead of counting again", () => {
   assert.ok(/ready to install/.test(h.html()));
   assert.ok(/as soon as the app closes/.test(h.html()));
   T.stopUpdCountdown();
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   26. dirPickerAvailable() -- the native folder-picker gate (05-chat.js)
+   ──────────────────────────────────────────────────────────────────────────
+   The Browse… buttons in Settings and the composer are rendered ONLY when a
+   real folder picker exists, i.e. the Electron preload bridge exposed
+   window.sutra.pickDirectory. In a bare browser that bridge is absent and the
+   button must stay off (a dead button that opens nothing is worse than none).
+   window === sandbox in this harness, so window.sutra IS sandbox.sutra.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+test("26a. dirPickerAvailable is true ONLY when window.sutra.pickDirectory is callable", () => {
+  const saved = sandbox.sutra;
+  try {
+    sandbox.sutra = { pickDirectory: function () {} };
+    assert.strictEqual(T.dirPickerAvailable(), true,
+      "an Electron host exposing sutra.pickDirectory must enable the Browse… button");
+
+    sandbox.sutra = undefined;
+    assert.strictEqual(T.dirPickerAvailable(), false,
+      "in a bare browser (no preload bridge) the picker must be gated OFF");
+
+    sandbox.sutra = {};
+    assert.strictEqual(T.dirPickerAvailable(), false,
+      "a sutra bridge WITHOUT pickDirectory is not a picker");
+
+    sandbox.sutra = { pickDirectory: "nope" };
+    assert.strictEqual(T.dirPickerAvailable(), false,
+      "pickDirectory must be a function, not merely present");
+  } finally {
+    sandbox.sutra = saved;
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   27. 10-activity.js -- the global Activity drawer (observable contract)
+   ──────────────────────────────────────────────────────────────────────────
+   The module is a self-contained IIFE whose `act`-prefixed internals it never
+   exports, so there is nothing to import. It is driven the way the browser
+   drives it: load its source into a purpose-built minimal DOM, let it mount,
+   and assert on what an operator can actually SEE -- the injected <style>, the
+   built drawer, the [data-act-toggle] toggle, the rendered rows, and fail-soft
+   on a bad fetch. A synchronous-resolving fetch thenable makes the 2s poll
+   complete during mount, so these fit the synchronous harness above and leave
+   no timers running (setInterval is stubbed to a no-op).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const ACT_SRC = fs.readFileSync(path.join(__dirname, "static", "js", "10-activity.js"), "utf8");
+
+/* single-shot, synchronous promise-like: .then runs its callback NOW and hands
+   back another sync-thenable, so fetch().then().then().catch() resolves inside
+   the call that started it. Two states -- fulfilled ("f") / rejected ("r"). */
+function sThen(state, value) {
+  const self = {
+    then(onF, onR) {
+      try {
+        if (state === "f") return (typeof onF === "function") ? sWrap(onF(value)) : self;
+        return (typeof onR === "function") ? sWrap(onR(value)) : self; // propagate reject
+      } catch (e) { return sThen("r", e); }
+    },
+    catch(onR) { return self.then(undefined, onR); },
+  };
+  return self;
+}
+function sWrap(r) { return (r && typeof r.then === "function") ? r : sThen("f", r); }
+const sResolve = v => sThen("f", v);
+const sReject = e => sThen("r", e);
+
+/* the smallest DOM that lets 10-activity.js mount, toggle, and render. Only the
+   operations the module actually performs are implemented; anything else would
+   be dead code pretending to be a DOM. */
+function actDom() {
+  function matchSel(n, sel) {
+    if (!n || !n._attrs) return false;
+    if (sel[0] === "[") return n.hasAttribute(sel.slice(1, -1));
+    if (sel[0] === ".") return n.classList.contains(sel.slice(1));
+    if (sel[0] === "#") return n.id === sel.slice(1);
+    return n.tagName === sel.toUpperCase();
+  }
+  function collect(node, sel) {
+    const out = [];
+    (function walk(n) {
+      (n._kids || []).forEach(k => { if (matchSel(k, sel)) out.push(k); walk(k); });
+    })(node);
+    return out;
+  }
+  function byId(node, id) {
+    let hit = null;
+    (function walk(n) { (n._kids || []).forEach(k => { if (!hit && k.id === id) hit = k; walk(k); }); })(node);
+    return hit;
+  }
+  function mkEl(tag) {
+    return {
+      tagName: (tag || "div").toUpperCase(),
+      id: "", type: "", hidden: false, _text: "", _html: "",
+      _attrs: {}, _kids: [], _parent: null, _listeners: {},
+      classList: {
+        _s: new Set(),
+        add(...c) { c.forEach(x => this._s.add(x)); },
+        remove(...c) { c.forEach(x => this._s.delete(x)); },
+        contains(c) { return this._s.has(c); },
+        toggle(c, force) {
+          if (force === undefined) { this._s.has(c) ? this._s.delete(c) : this._s.add(c); return this._s.has(c); }
+          force ? this._s.add(c) : this._s.delete(c); return !!force;
+        },
+      },
+      get textContent() { return this._text; },
+      set textContent(v) { this._text = String(v); },
+      get innerHTML() { return this._html; },
+      set innerHTML(v) { this._html = String(v); this._kids = []; },
+      setAttribute(k, v) { this._attrs[k] = String(v); },
+      getAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null; },
+      hasAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k); },
+      addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); },
+      removeEventListener() {},
+      appendChild(c) { c._parent = this; this._kids.push(c); return c; },
+      querySelector(sel) { return collect(this, sel)[0] || null; },
+      querySelectorAll(sel) { return collect(this, sel); },
+      closest(sel) { let n = this; while (n) { if (matchSel(n, sel)) return n; n = n._parent; } return null; },
+    };
+  }
+  const head = mkEl("head"); const body = mkEl("body");
+  const doc = {
+    readyState: "complete", head, body, _listeners: {},
+    createElement: t => mkEl(t),
+    getElementById: id => byId(head, id) || byId(body, id),
+    querySelector(sel) { return collect(head, sel)[0] || collect(body, sel)[0] || null; },
+    querySelectorAll(sel) { return collect(head, sel).concat(collect(body, sel)); },
+    addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); },
+    removeEventListener() {},
+  };
+  return { doc, dispatch(type, ev) { (doc._listeners[type] || []).slice().forEach(fn => fn(ev)); } };
+}
+
+function mountActivity(fetchImpl) {
+  const { doc, dispatch } = actDom();
+  const box = {
+    console, document: doc,
+    Date, Math, JSON, Set, Map, Promise, Object, Array, String, Number, Boolean, RegExp, Error,
+    setInterval: () => 0, clearInterval: () => {}, setTimeout: () => 0, clearTimeout: () => {},
+    fetch: fetchImpl || (() => sResolve({ ok: true, json: () => sResolve({ turns: [], agents: [], count: 0 }) })),
+  };
+  box.window = box; box.globalThis = box;
+  vm.createContext(box);
+  new vm.Script(ACT_SRC, { filename: "10-activity.js#act-test" }).runInContext(box);
+  return { doc, dispatch, box };
+}
+
+function clickTrigger(m) {
+  const trig = m.doc.createElement("button");
+  trig.setAttribute("data-act-toggle", "");
+  m.doc.body.appendChild(trig);
+  m.dispatch("click", { target: trig, preventDefault() {} });
+  return trig;
+}
+
+test("27a. mounts once: injects #act-style, builds #act-drawer, and re-load is a no-op", () => {
+  const m = mountActivity();
+  assert.ok(m.doc.getElementById("act-style"), "must inject its own <style id=act-style>");
+  assert.ok(m.doc.getElementById("act-drawer"), "must build the #act-drawer aside on load");
+  assert.strictEqual(m.doc.querySelectorAll("#act-style").length, 1, "style injected exactly once");
+  assert.strictEqual(m.doc.querySelectorAll("#act-drawer").length, 1, "drawer built exactly once");
+  // running the module again in the SAME realm must hit the __actMounted guard
+  new vm.Script(ACT_SRC, { filename: "10-activity.js#reload" }).runInContext(m.box);
+  assert.strictEqual(m.doc.querySelectorAll("#act-drawer").length, 1,
+    "a double-load must not build a second drawer");
+});
+
+test("27b. a [data-act-toggle] click toggles the drawer's act-open class (Escape closes)", () => {
+  const m = mountActivity();
+  const drawer = m.doc.getElementById("act-drawer");
+  assert.strictEqual(drawer.classList.contains("act-open"), false, "starts closed");
+  const trig = clickTrigger(m);
+  assert.strictEqual(drawer.classList.contains("act-open"), true, "first click opens");
+  m.dispatch("click", { target: trig, preventDefault() {} });
+  assert.strictEqual(drawer.classList.contains("act-open"), false, "second click closes");
+  m.dispatch("click", { target: trig, preventDefault() {} });
+  assert.strictEqual(drawer.classList.contains("act-open"), true, "re-open");
+  m.dispatch("keydown", { key: "Escape" });
+  assert.strictEqual(drawer.classList.contains("act-open"), false, "Escape closes an open drawer");
+});
+
+test("27c. a populated /api/activity renders the header count and a row per item", () => {
+  const data = {
+    turns: [{ sid: "sess-abcdef012", title: "Build the feature", cwd: "/a/b/proj", elapsed_s: 5 }],
+    agents: [{ parent_sid: "sess-abcdef012", id: "agent-x", label: "run the search", elapsed_s: 3 }],
+    count: 2,
+  };
+  const m = mountActivity(() => sResolve({ ok: true, json: () => sResolve(data) }));
+  // the poll resolved synchronously during mount; the header count is synced
+  assert.strictEqual(m.doc.getElementById("act-dcount").textContent, "2",
+    "the drawer header count must be turns+agents");
+  clickTrigger(m);   // open -> body renders
+  const html = m.doc.getElementById("act-dbody").innerHTML;
+  assert.ok(/act-item/.test(html), "at least one .act-item row must render");
+  assert.ok(/Build the feature/.test(html), "the turn title must appear");
+  assert.ok(/proj/.test(html), "the turn cwd basename must appear");
+  assert.ok(/run the search/.test(html), "the agent label must appear");
+  assert.ok(/Running turns/.test(html) && /Agents/.test(html), "both section headers render");
+});
+
+test("27d. a failed or malformed fetch does not throw and leaves the drawer intact", () => {
+  // (i) network error -> straight to .catch
+  const failed = mountActivity(() => sReject(new Error("network down")));
+  assert.ok(failed.doc.getElementById("act-drawer"), "drawer still built after a failed fetch");
+  assert.strictEqual(failed.doc.getElementById("act-dcount").textContent, "0",
+    "a failed feed reports 0, never a fabricated number");
+  // (ii) 200 with a body that won't parse -> json() throws, still caught
+  const malformed = mountActivity(() => sResolve({ ok: true, json: () => { throw new Error("bad json"); } }));
+  assert.ok(malformed.doc.getElementById("act-drawer"), "drawer still built after malformed json");
+  // opening an errored feed shows the quiet error copy, not empty-state or a crash
+  clickTrigger(failed);
+  const html = failed.doc.getElementById("act-dbody").innerHTML;
+  assert.ok(/act-err/.test(html), "an errored feed renders the .act-err notice: " + html);
+  assert.ok(/reach the activity feed/i.test(html), "the notice must say the feed was unreachable");
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */
