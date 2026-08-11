@@ -36,5 +36,5 @@ contextBridge.exposeInMainWorld("sutra", {
   /* Open a native Finder folder chooser and resolve the chosen absolute path,
      or null if the user cancels. Backs the working-directory fields; absent in a
      browser, where the panel keeps its text inputs as the only way in. */
-  pickDirectory: () => ipcRenderer.invoke("sutra:pick-directory"),
+  pickDirectory: (defaultPath) => ipcRenderer.invoke("sutra:pick-directory", defaultPath),
 });

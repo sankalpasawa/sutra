@@ -706,19 +706,27 @@ if (typeof document !== "undefined" && document.addEventListener){
     const t = el && el.closest && el.closest(
       "[data-workdir-browse],[data-cwdbrowse],[data-rtcwd-browse]");
     if (!t || !dirPickerAvailable()) return;
-    const picked = await window.sutra.pickDirectory();
-    if (picked == null) return;                       /* cancelled: touch nothing */
-    if (t.hasAttribute("data-workdir-browse")){       /* Settings → S.workdirDraft */
+    if (t.hasAttribute("data-workdir-browse")){       /* Settings → draft, user confirms with Save */
       const inp = document.querySelector("[data-workdir-input]");
-      if (inp) inp.value = picked;
-      S.workdirDraft = picked;
-    } else if (t.hasAttribute("data-cwdbrowse")){     /* composer → the input SET reads */
-      const inp = document.querySelector('[data-cwdinput="' + t.dataset.cwdbrowse + '"]');
-      if (inp) inp.value = picked;
+      const picked = await window.sutra.pickDirectory(
+        (inp && inp.value) || (typeof SETTINGS !== "undefined" && SETTINGS && SETTINGS.workdir) || "");
+      if (picked == null) return;                     /* cancelled: touch nothing */
+      S.workdirDraft = picked; render();
+    } else if (t.hasAttribute("data-cwdbrowse")){     /* composer → apply to this session now */
+      const sid = t.dataset.cwdbrowse;
+      const inp = document.querySelector('[data-cwdinput="' + sid + '"]');
+      const picked = await window.sutra.pickDirectory((inp && inp.value) || sessCwd(sid) || "");
+      if (picked == null) return;
+      /* An explicit Finder choice is a decision — apply it (server confines it to
+         $HOME, exactly like SET) rather than leaving it to be wiped by a live
+         re-render before the user clicks SET. */
+      setSessCwd(sid, picked); S.cwdEdit = null; S.cwdError = null; render();
     } else {                                          /* routine form → S.rtForm.cwd */
       const inp = document.querySelector('[data-rtf="cwd"]');
-      if (inp) inp.value = picked;
-      if (S.rtForm) S.rtForm.cwd = picked;
+      const picked = await window.sutra.pickDirectory(
+        (inp && inp.value) || (S.rtForm && S.rtForm.cwd) || "");
+      if (picked == null) return;
+      if (S.rtForm) S.rtForm.cwd = picked; render();
     }
   });
 }
