@@ -45,3 +45,14 @@ VALIDATOR="$REPO_ROOT/marketplace/plugin/scripts/validate-hook-paths.sh"
 if [ -x "$VALIDATOR" ]; then
   bash "$VALIDATOR"
 fi
+
+# Manifest version-sync guard (C13 drift class, 3rd recurrence 2026-08-09).
+# Runs the same jq validation the nightly governance audit runs, so
+# catalog-vs-source version drift (marketplace.json vs plugin.json) blocks
+# at commit time instead of surfacing post-commit in the audit. Known
+# limitation: reads working tree, not staged index — a partially staged
+# bump can still slip through (follow-up logged in findings ledger).
+MANIFEST_TEST="$REPO_ROOT/marketplace/plugin/tests/unit/test-validate-manifest-json.sh"
+if [ -f "$MANIFEST_TEST" ]; then
+  bash "$MANIFEST_TEST"
+fi
