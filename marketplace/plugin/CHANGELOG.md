@@ -2,6 +2,20 @@
 
 **status**: active · **updated**: 2026-08-11
 
+## 2.93.0
+
+- **Subagent viewer rebuilt to Claude's agent view.** The "N subagents" list was a
+  wall of raw prompt text, each row mislabeled "1 turn", and the detail folded the
+  whole run into one unreadable bubble. Now each agent is a clean card — a real
+  title (the parent `Task`'s `description` when the spawning turn is still on disk,
+  else derived from the prompt), an agent-type badge, and a meta line (N steps ·
+  tools used · relative time). Clicking one opens a readable **step-by-step**
+  transcript: the task it was handed (collapsed), each step's text + tool calls,
+  and the final message set apart as the result. Backend: `list_agents` joins to
+  the parent transcript's `Task` tool_use for the title/type and counts assistant
+  **steps** (real work), not the always-1 user-turn count. Verified live on this
+  session's 43 agents; Sutra theme kept.
+
 ## 2.92.0
 
 - **Activity moves to a header trigger + right-docked drawer.** The bottom-right

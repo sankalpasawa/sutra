@@ -3,6 +3,16 @@
    session that has agents (live now, or already loaded). READ-ONLY: an agent ran
    outside this panel, so there is no composer and no placement, only its turns,
    rendered through the SAME transcriptTurns()/turnResponse() as the main thread. */
+/* Relative time from an epoch-seconds mtime — "3m ago", "2h ago", "5d ago". */
+function agRelTime(sec){
+  if (!sec) return "";
+  const s = Math.max(0, Math.floor(Date.now()/1000) - sec);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s/60) + "m ago";
+  if (s < 86400) return Math.floor(s/3600) + "h ago";
+  return Math.floor(s/86400) + "d ago";
+}
+
 function agentsFold(s){
   const list = S.agents[s.id];
   const have = (list && list.length) || s.agents_live;
@@ -14,31 +24,73 @@ function agentsFold(s){
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.2" aria-hidden="true"><path d="${open?"M6 9l6 6 6-6":"M9 6l6 6-6 6"}"/></svg>
       <b>${n} subagent${n===1?"":"s"}</b>
-      <span>transcripts of the agents this session spawned</span></button>`;
+      <span>agents this session spawned</span></button>`;
   if (!open) return `<div class="agents">${head}</div>`;
   if (list === undefined) return `<div class="agents open">${head}
       <p class="agnone">Reading…</p></div>`;
   if (!list.length) return `<div class="agents open">${head}
       <p class="agnone">No subagent transcripts on disk for this session.</p></div>`;
+  const openId = S.agentOpen[s.id];
   const rows = list.map(a=>{
-    const sel = S.agentOpen[s.id] === a.id;
+    const sel = openId === a.id;
+    const steps = a.steps || a.turns || 0;
+    const bits = [`${steps} step${steps===1?"":"s"}`];
+    if (a.tools && a.tools.length) bits.push(a.tools.slice(0,3).join(", "));
+    bits.push(a.running ? "running" : agRelTime(a.mtime));
     return `<button class="agrow ${sel?"on":""}" type="button"
-        data-agentopen="${esc(s.id)}:${esc(a.id)}" aria-pressed="${sel}">
+        data-agentopen="${esc(s.id)}:${esc(a.id)}" aria-pressed="${sel}"
+        title="${esc(a.label||"")}">
         <span class="agdot ${a.running?"run":""}" aria-hidden="true"></span>
-        <span class="agl">${esc(a.label)}</span>
-        <span class="agm">${a.turns} turn${a.turns===1?"":"s"}${a.running?" · running":""}</span>
+        <span class="agrow-main">
+          <span class="agrow-top">
+            <span class="agl">${esc(a.title || a.label || a.id)}</span>
+            ${a.agent_type?`<span class="agtype">${esc(a.agent_type)}</span>`:""}
+          </span>
+          <span class="agm">${esc(bits.filter(Boolean).join(" · "))}</span>
+        </span>
+        <svg class="agchev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>`;
   }).join("");
-  const aid = S.agentOpen[s.id];
-  const turns = aid ? S.agentTurns[s.id + ":" + aid] : undefined;
-  const body = !aid ? ""
-    : (turns === undefined || turns === null)
-      ? `<p class="agnone">Reading transcript…</p>`
-      : !turns.length
-        ? `<p class="agnone">No readable turns in this subagent transcript.</p>`
-        : `<div class="agtrans">${turns.map(t=>`<div class="turn">${
-            t.text?`<div class="u md">${mdHtml(t.text)}</div>`:""}${turnResponse(t)}</div>`).join("")}</div>`;
-  return `<div class="agents open">${head}<div class="aglist">${rows}</div>${body}</div>`;
+  const meta = openId ? list.find(a=>a.id===openId) : null;
+  const messages = openId ? S.agentTurns[s.id + ":" + openId] : undefined;
+  const detail = !openId ? "" : `<div class="agdetail">${agentDetailHtml(meta, messages)}</div>`;
+  return `<div class="agents open">${head}<div class="aglist">${rows}</div>${detail}</div>`;
+}
+
+/* One subagent rendered as Claude's agent view: a header (title / type / status),
+   the task it was handed (collapsed), then its work as a SEQUENCE of steps —
+   assistant text as markdown, tool calls as pills — with the final text-bearing
+   message set apart as the result. READ-ONLY: an agent ran outside this panel,
+   so there is no composer and no placement, only what it did. */
+function agentDetailHtml(meta, messages){
+  if (messages === undefined || messages === null) return `<p class="agnone">Reading transcript…</p>`;
+  if (!messages.length) return `<p class="agnone">No readable turns in this subagent transcript.</p>`;
+  const task = messages.find(m=>m.role==="user");
+  const steps = messages.filter(m=>m.role==="assistant");
+  const title = (meta && meta.title) || "Subagent";
+  const when = meta && meta.running ? "running"
+             : (meta && meta.mtime ? agRelTime(meta.mtime) : "");
+  const head = `<div class="agdhead">
+      <span class="agdot ${meta&&meta.running?"run":""}" aria-hidden="true"></span>
+      <b class="agdtitle">${esc(title)}</b>
+      ${meta&&meta.agent_type?`<span class="agtype">${esc(meta.agent_type)}</span>`:""}
+      <span class="agdmeta">${steps.length} step${steps.length===1?"":"s"}${when?" · "+esc(when):""}</span>
+    </div>`;
+  const taskHtml = task ? `<details class="agtask"><summary>Task it was handed</summary>
+      <div class="md">${mdHtml(task.text)}</div></details>` : "";
+  let lastTextIdx = -1;
+  steps.forEach((m,i)=>{ if (m.text) lastTextIdx = i; });
+  let stepsHtml = "";
+  for (let i=0;i<steps.length;i++){
+    const m = steps[i];
+    const txt = m.text ? `<div class="agstep-text md">${mdHtml(m.text)}</div>` : "";
+    const tools = (m.tools&&m.tools.length)
+      ? `<div class="agstep-tools">${[...new Set(m.tools)].map(x=>`<span class="pill p-acc">${esc(x)}</span>`).join("")}</div>` : "";
+    if (!txt && !tools) continue;
+    stepsHtml += `<div class="agstep${i===lastTextIdx?" result":""}">${tools}${txt}</div>`;
+  }
+  return `${head}${taskHtml}<div class="agsteps">${stepsHtml}</div>`;
 }
 
 function sessionPane(s){
