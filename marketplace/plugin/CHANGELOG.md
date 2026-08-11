@@ -2,6 +2,16 @@
 
 **status**: active · **updated**: 2026-08-11
 
+## 2.95.0
+
+- **First desktop release built, signed, and notarized entirely in GitHub Actions.**
+  With the five secrets wired (`APPLE_CERT_P12`/`APPLE_CERT_PASSWORD`,
+  `APPLE_NOTARY_KEY`/`APPLE_NOTARY_KEY_ID`/`APPLE_NOTARY_ISSUER`), pushing a
+  `v*-desktop` tag builds both arches on native runners, signs with the Developer
+  ID, notarizes via the App Store Connect API key, and uploads `Sutra-<arch>.dmg` —
+  no local build. Also fixes `test_charter_filter.js`, which had failed every CI
+  run since the panel split (it parsed a pre-split inline `<script>`).
+
 ## 2.94.0
 
 - **Native folder picker, finished.** Browse now opens Finder at the folder you're

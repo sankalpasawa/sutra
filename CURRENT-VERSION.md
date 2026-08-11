@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.94.0 (2026-08-11, HEAD)
+## v2.95.0 (2026-08-11, HEAD)
+
+**First release published entirely through GitHub Actions.** With the signing + notarization secrets wired, pushing a `v*-desktop` tag builds both arches on native runners, signs with the Developer ID, notarizes via the App Store Connect API key, and uploads `Sutra-<arch>.dmg` — no local build. Also fixes `test_charter_filter.js`, which had failed every CI run since the panel split.
+
+## v2.94.0 (2026-08-11)
 
 **Native folder picker, finished.** The Browse… button opens Finder at your current folder (a tilde-expanded `defaultPath` is passed through the IPC), and a pick in the composer's working-directory control applies immediately — the old code wrote it to the input with no backing state, so a live re-render could wipe it before SET. Settings keeps the fill-a-draft-then-Save flow; the routine folder field persists to its form; the handler returns null on any dialog error. Verified end-to-end headlessly: the button renders only with the Electron bridge present, the current path is passed as the dialog default, and the pick is applied to the session.
 
