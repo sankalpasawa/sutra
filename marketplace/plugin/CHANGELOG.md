@@ -2,6 +2,18 @@
 
 **status**: active · **updated**: 2026-08-11
 
+## 2.94.0
+
+- **Native folder picker, finished.** Browse now opens Finder at the folder you're
+  already in — the dialog receives a tilde-expanded `defaultPath` passed through the
+  IPC — and choosing a folder in the composer **applies it immediately**. Before, the
+  pick was written straight to the input with no backing state, so a live re-render
+  could wipe it before you pressed SET. Settings still fills a draft you confirm with
+  Save; the routine folder field persists to its form. The IPC handler now returns
+  null on any dialog error instead of rejecting the renderer. Verified end-to-end:
+  the button renders only with the Electron bridge, the current path is the dialog
+  default, and the pick is applied.
+
 ## 2.93.0
 
 - **Subagent viewer rebuilt to Claude's agent view.** The "N subagents" list was a

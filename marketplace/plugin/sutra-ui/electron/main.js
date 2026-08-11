@@ -580,12 +580,17 @@ ipcMain.handle("sutra:update-defer", async () => ({ ok: true, deferred: true }))
    so it is offered over the preload bridge and the renderer only draws the Browse
    button when that bridge is present. Resolves the chosen absolute path, or null
    when the user cancels; the text input stays the fallback either way. */
-ipcMain.handle("sutra:pick-directory", async () => {
-  const r = await dialog.showOpenDialog(win, {
-    title: "Choose working directory",
-    properties: ["openDirectory", "createDirectory"],
-  });
-  return (r.canceled || !r.filePaths || !r.filePaths.length) ? null : r.filePaths[0];
+ipcMain.handle("sutra:pick-directory", async (_e, defaultPath) => {
+  let dp = typeof defaultPath === "string" ? defaultPath.trim() : "";
+  if (dp === "~" || dp.startsWith("~/")) dp = path.join(app.getPath("home"), dp.slice(1));
+  const opts = { title: "Choose working directory", properties: ["openDirectory", "createDirectory"] };
+  if (dp) opts.defaultPath = dp;                 // open where they already are, not at random
+  try {
+    const r = await dialog.showOpenDialog(win, opts);
+    return (r.canceled || !r.filePaths || !r.filePaths.length) ? null : r.filePaths[0];
+  } catch (e) {
+    return null;                                 // a dialog failure must not reject the renderer
+  }
 });
 
 // One Sutra window per machine. Electron enforces this properly; the shell

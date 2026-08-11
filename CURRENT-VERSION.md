@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.93.0 (2026-08-11, HEAD)
+## v2.94.0 (2026-08-11, HEAD)
+
+**Native folder picker, finished.** The Browse… button opens Finder at your current folder (a tilde-expanded `defaultPath` is passed through the IPC), and a pick in the composer's working-directory control applies immediately — the old code wrote it to the input with no backing state, so a live re-render could wipe it before SET. Settings keeps the fill-a-draft-then-Save flow; the routine folder field persists to its form; the handler returns null on any dialog error. Verified end-to-end headlessly: the button renders only with the Electron bridge present, the current path is passed as the dialog default, and the pick is applied to the session.
+
+## v2.93.0 (2026-08-11)
 
 **Subagent viewer = Claude's agent view.** The subagent list stops being a wall of raw prompt text: each agent is a clean card (real title + agent-type badge + "N steps · tools · relative time"), and clicking one opens a readable step-by-step transcript — the task it was handed (collapsed), each assistant step with its tool calls, and the final message set apart as the result. Backend: `list_agents` joins to the parent's `Task` tool_use for the description/subagent_type and counts assistant steps (real work) instead of the always-1 user-turn count. Verified live on this session's 43 agents; kept the Sutra theme.
 
