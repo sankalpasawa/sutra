@@ -11,7 +11,13 @@
 const fs = require('fs');
 const PANEL = __dirname + '/static/panel.html';
 const html = fs.readFileSync(PANEL, 'utf8');
-const script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
+/* panel.html was one file with an inline <script>; it is now a shell that pulls an
+   ORDERED list of /static/js/*.js modules. Concatenate them in order (the same way
+   test_panel.js does) so the extraction below sees the real functions instead of a
+   -1 indexOf and a null match. */
+const refs = [...html.matchAll(/<script src="\/static\/js\/([^"]+)"><\/script>/g)].map(m => m[1]);
+if (!refs.length) throw new Error('panel.html references no /static/js modules -- has the shell changed?');
+const script = refs.map(name => fs.readFileSync(__dirname + '/static/js/' + name, 'utf8')).join('\n');
 
 function slice(from, toAnchor) {
   const a = script.indexOf(from);
