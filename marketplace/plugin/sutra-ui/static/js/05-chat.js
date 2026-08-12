@@ -487,7 +487,7 @@ SCREENS.settings = () => {
 /* ══════════════════════ render ══════════════════════ */
 const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
-  testpane:["Test pane","wiring self-test · reads already-loaded org globals"],
+  testpane:["Test pane",""],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],
   evals:["Evals","verifier registry · nightly decay runs · findings — read-only"],
@@ -733,6 +733,27 @@ if (typeof document !== "undefined" && document.addEventListener){
   });
 }
 
+/* The captured agentic output: each tool call the agent made, with its command/
+   input and a collapsible result (error-styled when the tool failed). Shared by
+   the replayed main transcript and the subagent viewer, so both show WHAT ran and
+   WHAT came back, not just a tool name. `output` toggles reuse S.toolOpen +
+   data-toolout (the same handler the live tool rows use). */
+function toolCallsHtml(calls){
+  if (!calls || !calls.length) return "";
+  return `<div class="toolcalls">${calls.map((c,i)=>{
+    const key = "c:" + (c.id || (c.name + ":" + i));
+    const open = S.toolOpen && S.toolOpen[key];
+    const inp = c.input ? `<code class="tc-in">${esc(String(c.input))}</code>` : "";
+    const out = String(c.output == null ? "" : c.output);
+    const btn = out.length ? `<button class="tc-btn" type="button" data-toolout="${esc(key)}"
+        aria-expanded="${open?"true":"false"}">${open?"hide":(c.is_error?"error":"output")}</button>` : "";
+    const body = (out.length && open)
+      ? `<pre class="tc-outbody${c.is_error?" err":""}">${esc(out)}</pre>` : "";
+    return `<div class="toolcall"><span class="tc-name pill ${c.is_error?"p-block":"p-acc"}">${
+        esc(c.name||"tool")}</span>${inp}${btn}${body}</div>`;
+  }).join("")}</div>`;
+}
+
 function turnResponse(t){
   const nTools = (t.tools && t.tools.length) || 0;
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
@@ -793,10 +814,11 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
                                    : "done"}</span>
          </div>${r.output && S.toolOpen && S.toolOpen[r.id]
            ? `<pre class="toutbody">${esc(r.output)}</pre>` : ""}`).join("")}</div>`
-    : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+    : (t.calls && t.calls.length ? toolCallsHtml(t.calls)
+       : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
       <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
       ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
-    </div>` : "");
+    </div>` : ""));
   /* A backoff is not a hang, and the difference has to be visible or the
      operator kills a turn that was about to succeed. */
   /* ONLY while the turn is live. `retrying` is assigned in one place and cleared

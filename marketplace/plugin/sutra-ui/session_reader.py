@@ -298,6 +298,42 @@ def relocate(session_id: str, kind: str) -> Optional[Dict]:
     return {"moved_to": str(dest), "original": orig}
 
 
+_TOOL_INPUT_KEYS = ("command", "file_path", "path", "pattern", "query", "url",
+                    "prompt", "notebook_path", "description")
+_RESULT_CAP = 8000   # per tool result, chars — bound the payload, keep the useful head
+
+
+def _tool_input_summary(name, inp):
+    """A concise one-liner for a tool call's input -- the command / path / pattern,
+    the part a human actually reads. Falls back to compact JSON."""
+    if not isinstance(inp, dict):
+        return (str(inp)[:400] if inp else "")
+    for k in _TOOL_INPUT_KEYS:
+        v = inp.get(k)
+        if isinstance(v, str) and v.strip():
+            return v[:600]
+    try:
+        return json.dumps(inp)[:600]
+    except (TypeError, ValueError):
+        return str(inp)[:600]
+
+
+def _result_text(content) -> str:
+    """The human-readable text of a tool_result.content (str or block list)."""
+    if isinstance(content, str):
+        return content[:_RESULT_CAP]
+    if isinstance(content, list):
+        parts = []
+        for b in content:
+            if isinstance(b, dict):
+                if b.get("type") == "text" and b.get("text"):
+                    parts.append(str(b["text"]))
+                elif b.get("type") == "image":
+                    parts.append("[image]")
+        return ("\n".join(parts))[:_RESULT_CAP]
+    return ""
+
+
 def _parse_transcript(f) -> Dict:
     """Parse ONE transcript file into chat-renderable messages. Read-only.
 
@@ -307,8 +343,17 @@ def _parse_transcript(f) -> Dict:
     verified on disk: agent files carry agentId/entrypoint/isSidechain and are
     otherwise identical -- so one parser guarantees an agent turn and a session
     turn can never disagree about how the same record renders.
+
+    CAPTURES THE AGENTIC OUTPUT. An assistant record's tool_use blocks carry the
+    INPUT (the command/path/pattern); the matching tool_result -- a user-role record
+    that arrives later, keyed by tool_use_id -- carries the OUTPUT. Both used to be
+    dropped (only tool NAMES survived), so the panel could show that an agent ran
+    Bash but never what it ran or what came back. Now each assistant message gets a
+    `calls` list of {id, name, input, output, is_error}; `tools` (names) is kept for
+    back-compat with the rail count and the older render path.
     """
     messages, cwd, branch = [], "", ""
+    results = {}   # tool_use_id -> {output, is_error}
     with f.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try:
@@ -325,17 +370,38 @@ def _parse_transcript(f) -> Dict:
                 continue
             content = msg.get("content")
             if t == "user":
+                # A user record that IS a tool_result is not a turn -- but it carries
+                # the OUTPUT of a tool the agent ran. Capture it, keyed by id.
+                if isinstance(content, list):
+                    for b in content:
+                        if isinstance(b, dict) and b.get("type") == "tool_result":
+                            results[b.get("tool_use_id")] = {
+                                "output": _result_text(b.get("content")),
+                                "is_error": bool(b.get("is_error"))}
                 if _is_tool_result(content):
-                    continue  # tool results aren't user turns
+                    continue
                 text = _text_of(content).strip()
                 if text and not text.startswith("<"):
                     messages.append({"role": "user", "text": text, "ts": d.get("timestamp", "")})
             else:  # assistant
                 text = _text_of(content).strip()
-                tools = [b.get("name", "") for b in content if isinstance(b, dict) and b.get("type") == "tool_use"] \
-                    if isinstance(content, list) else []
-                if text or tools:
-                    messages.append({"role": "assistant", "text": text, "tools": tools, "ts": d.get("timestamp", "")})
+                calls = []
+                if isinstance(content, list):
+                    for b in content:
+                        if isinstance(b, dict) and b.get("type") == "tool_use":
+                            calls.append({"id": b.get("id"), "name": b.get("name", ""),
+                                          "input": _tool_input_summary(b.get("name"), b.get("input"))})
+                if text or calls:
+                    messages.append({"role": "assistant", "text": text,
+                                     "tools": [c["name"] for c in calls],   # back-compat
+                                     "calls": calls, "ts": d.get("timestamp", "")})
+    # The result follows the call, so attach after the whole file is read.
+    for m in messages:
+        for c in m.get("calls", ()):
+            r = results.get(c.get("id"))
+            if r:
+                c["output"] = r["output"]
+                c["is_error"] = r["is_error"]
     return {"cwd": cwd, "branch": branch, "messages": messages}
 
 

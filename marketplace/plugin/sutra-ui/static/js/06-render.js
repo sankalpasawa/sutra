@@ -85,8 +85,10 @@ function agentDetailHtml(meta, messages){
   for (let i=0;i<steps.length;i++){
     const m = steps[i];
     const txt = m.text ? `<div class="agstep-text md">${mdHtml(m.text)}</div>` : "";
-    const tools = (m.tools&&m.tools.length)
-      ? `<div class="agstep-tools">${[...new Set(m.tools)].map(x=>`<span class="pill p-acc">${esc(x)}</span>`).join("")}</div>` : "";
+    /* the captured agentic output for this step — command/input + collapsible result */
+    const tools = (m.calls && m.calls.length) ? toolCallsHtml(m.calls)
+      : ((m.tools&&m.tools.length)
+          ? `<div class="agstep-tools">${[...new Set(m.tools)].map(x=>`<span class="pill p-acc">${esc(x)}</span>`).join("")}</div>` : "");
     if (!txt && !tools) continue;
     stepsHtml += `<div class="agstep${i===lastTextIdx?" result":""}">${tools}${txt}</div>`;
   }

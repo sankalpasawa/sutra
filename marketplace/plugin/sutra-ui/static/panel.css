@@ -976,6 +976,19 @@
   .agstep.result{border-left-color:var(--acc);background:var(--acc-bg);border-radius:0 7px 7px 0;
     padding:9px 12px}
   .agstep.result .agstep-text{color:var(--ink)}
+  /* captured agentic output — each tool call's command + collapsible result */
+  .toolcalls{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+  .toolcall{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+  .tc-name{flex:none}
+  .tc-in{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font:500 11px/1.5 var(--mono);color:var(--muted);background:var(--inset);border-radius:5px;padding:2px 7px}
+  .tc-btn{flex:none;appearance:none;background:none;border:1px solid var(--line);border-radius:5px;
+    color:var(--muted);font:600 9.5px/1 var(--mono);padding:3px 7px;cursor:pointer}
+  .tc-btn:hover{border-color:var(--acc);color:var(--acc)}
+  .tc-outbody{flex-basis:100%;margin:1px 0 3px;padding:8px 10px;background:var(--inset);border-radius:7px;
+    color:var(--muted);font:500 11px/1.5 var(--mono);white-space:pre-wrap;overflow-x:auto;
+    max-height:320px;overflow-y:auto}
+  .tc-outbody.err{color:var(--block);background:rgba(200,80,80,.08)}
   .repobar button{background:none;border:1px solid var(--line);border-radius:5px;
     color:var(--muted);font:600 9.5px/1 var(--mono);padding:3px 7px;cursor:pointer}
   .repobar button:hover{border-color:var(--acc);color:var(--acc)}
