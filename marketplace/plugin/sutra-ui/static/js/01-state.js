@@ -450,25 +450,44 @@ function adoptRealSessions(rows){
      this path, so a `claude` started in the terminal pane used to kill the pane
      you were reading. */
   const busy = new Map(S.sessions.filter(s => s.real && sessionBusy(s.id)).map(s => [s.id, s]));
+  /* PRESERVE THE PANE YOU ARE READING. An open, already-loaded session that is not
+     busy was still rebuilt into a fresh loadState:"unread" object here, so every
+     list refresh -- and agent activity triggers many of them -- flipped the open
+     pane back to "Transcript not read yet" until the next re-read. Keep the loaded
+     object (its turns + loadState) and refresh only its cheap metadata. */
+  const openLoaded = new Map(S.sessions.filter(s =>
+    s.real && !sessionBusy(s.id) && S.openPanes.includes(s.id)
+    && s.loadState && s.loadState !== "unread").map(s => [s.id, s]));
   /* A session started HERE already owns its transcript id (set from the server's
      `session` frame), so the on-disk row for it is the SAME conversation, not a
      second one. Without this the rail grows a twin: one live in-memory row and
      one read-only-looking copy of the same thread. */
   const owned = new Set(local.map(s => s.claude_session).filter(Boolean));
-  const real = (rows || []).filter(r => !owned.has(r.id)).map(r => busy.get(r.id) || ({
-    id: r.id,
-    title: r.title || "(no prompt)",
-    real: true, local: false,
-    project: r.project || "", cwd: r.cwd || "", branch: r.branch || "",
-    /* mtime is seconds since epoch; the rail's date buckets are in ms. This is
-       the file's last write — genuinely "updated", not a fabricated "created". */
-    created_ms: (r.mtime || 0) * 1000, updated_ms: (r.mtime || 0) * 1000,
-    size: r.size || 0,
-    turns: [], loadState: "unread", loadError: null,
-    /* the jsonl filename IS the Claude session id, so continuing this session
-       from the composer resumes the real thread rather than starting a cold one */
-    claude_session: r.id
-  }));
+  const real = (rows || []).filter(r => !owned.has(r.id)).map(r => {
+    if (busy.has(r.id)) return busy.get(r.id);          /* in-flight: untouched */
+    const k = openLoaded.get(r.id);
+    if (k){                                             /* on-screen: keep turns + loadState */
+      if (r.title) k.title = r.title;
+      k.mtime = r.mtime; if (r.size) k.size = r.size;
+      if (r.mtime) k.updated_ms = r.mtime * 1000;
+      if (r.cwd) k.cwd = r.cwd; if (r.branch) k.branch = r.branch;
+      return k;
+    }
+    return {
+      id: r.id,
+      title: r.title || "(no prompt)",
+      real: true, local: false,
+      project: r.project || "", cwd: r.cwd || "", branch: r.branch || "",
+      /* mtime is seconds since epoch; the rail's date buckets are in ms. This is
+         the file's last write — genuinely "updated", not a fabricated "created". */
+      created_ms: (r.mtime || 0) * 1000, updated_ms: (r.mtime || 0) * 1000,
+      size: r.size || 0,
+      turns: [], loadState: "unread", loadError: null,
+      /* the jsonl filename IS the Claude session id, so continuing this session
+         from the composer resumes the real thread rather than starting a cold one */
+      claude_session: r.id
+    };
+  });
   S.sessions = local.concat(real)
     .sort((a,b)=>(b.updated_ms||b.created_ms)-(a.updated_ms||a.created_ms));
 }

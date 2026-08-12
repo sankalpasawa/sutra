@@ -10,8 +10,12 @@ function applySessionChange(rows){
     /* A subagent just wrote: if this pane already loaded its agent list, refresh
        it so a new agent appears and a finished one stops saying "running". Gated
        on already-loaded, so a pane nobody opened the fold on costs nothing. */
-    if (S.openPanes.includes(s.id) && S.agents[s.id] !== undefined && (row.agents_live || 0))
-      loadAgents(s.id, true);
+    if (S.openPanes.includes(s.id) && S.agents[s.id] !== undefined && (row.agents_live || 0)){
+      /* Throttled: a fanned-out run writes many times a second, and re-rendering
+         the agents fold on every write is a visible flicker. ~1.5s is fresh enough. */
+      const now = Date.now();
+      if (!s._agentsAt || now - s._agentsAt >= 1500){ s._agentsAt = now; loadAgents(s.id, true); }
+    }
     /* Only a transcript actually on screen is re-read. Re-parsing every changed
        file would turn a busy Claude session into a stream of reads for panes
        nobody is looking at. */
@@ -23,24 +27,36 @@ function applySessionChange(rows){
        answer reappeared minutes later as a static block. Reconciled once the
        turn lands instead. */
     if (S.openPanes.includes(s.id) && s.real && s.loadState !== "loading"
-        && !sessionBusy(s.id)){
-      /* Re-read through the SAME shape ensureTranscript() uses -- turns via
-         transcriptTurns(), and its loadState vocabulary (unread/loading/ok/
-         empty/error). A second parsing path would drift from the first and the
-         two would disagree about the same file. */
-      s.loadState = "loading";
-      apiGet("/api/sessions/" + encodeURIComponent(s.id))
-        .then(d=>{
-          /* The GET is in flight for hundreds of ms and a send can start inside
-             that window, so the guard above is necessary but not sufficient. */
-          if (sessionBusy(s.id)){ s.loadState = "ok"; return; }
-          s.turns = transcriptTurns(d && d.messages);
-          s.cwd = (d && d.cwd) || s.cwd;
-          s.branch = (d && d.branch) || s.branch;
-          s.loadState = s.turns.length ? "ok" : "empty";
-          scheduleRender();
-        })
-        .catch(e=>{ s.loadState = "error"; s.loadError = e.message; scheduleRender(); });
+        && !s._reloading && !sessionBusy(s.id)){
+      /* Throttle background re-reads: an active run rewrites the file many times a
+         second, and a GET + re-parse + full render on each one IS the flicker. */
+      const now = Date.now();
+      if (!s._rereadAt || now - s._rereadAt >= 1000){
+        s._rereadAt = now;
+        s._reloading = true;
+        /* Only the FIRST load shows the "reading…" placeholder. A background
+           refresh keeps the current transcript ON SCREEN, so the pane no longer
+           flickers content -> "reading transcript…" -> content on every write.
+           Re-read through the SAME shape ensureTranscript() uses -- turns via
+           transcriptTurns(), and its loadState vocabulary -- so the two parsing
+           paths never disagree about the same file. */
+        if (s.loadState === "unread") s.loadState = "loading";
+        apiGet("/api/sessions/" + encodeURIComponent(s.id))
+          .then(d=>{
+            s._reloading = false;
+            /* The GET is in flight for hundreds of ms and a send can start inside
+               that window, so the guard above is necessary but not sufficient. */
+            if (sessionBusy(s.id)){ if (s.loadState === "loading") s.loadState = "ok"; return; }
+            s.turns = transcriptTurns(d && d.messages);
+            s.cwd = (d && d.cwd) || s.cwd;
+            s.branch = (d && d.branch) || s.branch;
+            s.loadState = s.turns.length ? "ok" : "empty";
+            scheduleRender();
+          })
+          .catch(e=>{ s._reloading = false;
+            if (s.loadState === "loading"){ s.loadState = "error"; s.loadError = e.message; }
+            scheduleRender(); });
+      }
     }
   });
   if (needList) scheduleSessionRefresh(); else scheduleRender();

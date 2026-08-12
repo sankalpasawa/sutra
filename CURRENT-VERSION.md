@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.96.0 (2026-08-12, HEAD)
+## v2.97.0 (2026-08-12, HEAD)
+
+**Two live-sync flicker fixes.** (1) "Transcript not read yet" no longer flashes on an open pane: `adoptRealSessions` preserves the pane you're reading (turns + loadState) across the frequent list refreshes agent activity triggers, instead of rebuilding it as "unread". (2) The heavy flicker while agents work is gone: `applySessionChange` keeps the transcript on screen during a background refresh (no "reading transcript…" flip) and throttles re-reads + agent-fold reloads to ~1/s. Verified at the state level: an open loaded pane survives a refresh; a background re-read never hides content; a 2nd event within a second starts no re-read. Connectors re-confirmed (33 backend tests + the mcp-config merge).
+
+## v2.96.0 (2026-08-12)
 
 **Connectors + update-banner fix.** New Connectors screen (Runtime) to add MCP connectors — like Claude CLI's — by hand (stdio command/args/env, or a remote http/sse url) or one-click from a catalog (github, filesystem, slack, puppeteer, brave-search, linear); enabled connectors are merged into the `--mcp-config` passed to every spawned session (alongside `sutra`, keeping `--strict-mcp-config`), running under the session's permission mode. Store at `~/.sutra-ui/connectors.json`, fail-soft. Also fixes the "Restarting in nulls" update banner (a dedicated restarting state + a null-safe countdown). Verified live: the screen adds/toggles/removes connectors and an enabled connector reaches the session's MCP config; 33 backend + 81 panel tests.
 
