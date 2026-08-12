@@ -1286,6 +1286,42 @@
   .rfpick input{flex:1;min-width:0}
   .rfpick .btn{flex:none;white-space:nowrap}
   .rfoot{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+
+  /* ── connectors ────────────────────────────────────────────────────────────
+     The MCP-connector screen. Reuses the .rform grid for the add form and the
+     .pill/.btn idioms for badges and controls; only the list rows, env grid and
+     catalog chips are new. */
+  .conn-actions{display:flex;gap:7px;margin-bottom:12px;flex-wrap:wrap}
+  .conn-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+  .conn-row{display:flex;gap:12px;align-items:center;padding:11px 13px;
+    background:var(--card);border:1px solid var(--line-soft);border-radius:9px}
+  .conn-main{min-width:0;flex:1}
+  .conn-name{display:flex;align-items:center;gap:7px;color:var(--ink);
+    font:600 12.5px/1.3 var(--sans)}
+  /* one line, truncated: the summary is a hint, not the whole command line */
+  .conn-sum{margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .conn-sum code{background:transparent;color:var(--muted);font-size:11px;padding:0}
+  .conn-ctl{display:flex;gap:6px;flex:none;align-items:center}
+  .conn-tog{min-width:78px;text-align:center}
+  /* args is short by nature -- override the 120px .rfield textarea floor */
+  .rfield textarea.conn-args{min-height:62px}
+  .conn-env{display:flex;flex-direction:column;gap:6px}
+  .conn-envrow{display:flex;gap:6px;align-items:center}
+  .conn-envrow input{flex:1;min-width:0;box-sizing:border-box;background:var(--inset);
+    border:1px solid var(--line);border-radius:7px;padding:7px 10px;color:var(--ink);
+    font:12px/1.45 var(--mono)}
+  .conn-envrow input:focus{outline:2px solid var(--acc);outline-offset:-1px}
+  .conn-envrow > [data-env-del]{flex:none;padding:6px 10px;line-height:1}
+  .conn-env-add{align-self:flex-start;margin-top:2px}
+  .conn-cat .conn-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .conn-chip{display:flex;flex-direction:column;align-items:flex-start;gap:5px;
+    text-align:left;max-width:240px;padding:9px 11px;background:var(--inset);
+    border:1px solid var(--line);border-radius:9px;color:var(--ink);cursor:pointer;
+    font:inherit}
+  .conn-chip:hover{border-color:var(--acc);background:var(--acc-bg)}
+  .conn-chip-h{display:flex;align-items:center;gap:7px}
+  .conn-chip-n{font:600 12px/1.2 var(--sans);color:var(--ink)}
+  .conn-chip-d{font:11px/1.4 var(--sans);color:var(--muted)}
   /* A transient note that must not push layout around or steal focus: it
      reports something that already happened, and disappears on its own. */
   .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;

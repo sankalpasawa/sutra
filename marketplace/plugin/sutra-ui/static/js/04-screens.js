@@ -648,6 +648,167 @@ SCREENS.automation = () => {
     </section>`;
 };
 
+/* ── S8b2 Connectors ──
+   The MCP servers the sessions THIS panel starts can reach. Claude CLI keeps the
+   same list under `claude mcp`; this is the same idea with a form instead of a
+   subcommand. Everything on this screen mutates: add / toggle / remove all POST
+   (or DELETE) and re-read, so the list is always the server's answer, never a
+   local optimistic guess that can drift from what a new session actually gets.
+
+   Two transports, and they take different fields — a stdio connector runs a local
+   command (command + args + env), an http/sse one connects to a url. The form
+   shows only the fields the chosen transport uses, because a url box on a stdio
+   connector is a field that does nothing and an env grid on an http one is the
+   same. The catalog PREFILLS the form and stops; nothing is saved from a preset
+   click, because a preset is a starting point with the secrets left blank. */
+SCREENS.connectors = () => {
+  const list = S.connectors, err = S.connError;
+
+  const explain = `<p>MCP connectors available to the sessions this panel starts. They run under
+    the session's permission mode — use <b>Accept Edits</b> or <b>Bypass</b> to let them act.</p>`;
+
+  /* Not read yet vs read-and-empty are different facts (Git rule). Only the first
+     is "Reading…"; the second is the empty state below. */
+  if (list == null && !err) return `${explain}<div class="zero"><h4>Reading…</h4>
+    <p>${esc(TITLES.connectors[1])}</p></div>`;
+
+  const notice = S.connMsg ? `<div class="note"><b>${esc(S.connMsg)}</b></div>` : "";
+  /* A list-load failure is reported WITHOUT throwing: the actions and form still
+     render so the operator can retry, and the notice says what failed. */
+  const loadErr = err ? `<div class="note b"><b>Could not read connectors.</b> ${esc(err)}</div>` : "";
+
+  const items = list || [];
+  const listBlock = items.length
+    ? `<div class="conn-list">${items.map(connRow).join("")}</div>`
+    : `<div class="zero"><h4>No connectors configured</h4>
+        <p>Add one below, or pick a preset from the catalog. A connector added here is
+           offered to every session this panel starts.</p></div>`;
+
+  return `${explain}${notice}${loadErr}
+    <div class="conn-actions">
+      <button class="btn" type="button" data-conn-add>＋ Add connector</button>
+      <button class="btn" type="button" data-conn-reload>Re-read</button>
+    </div>
+    ${connAddForm()}
+    ${listBlock}
+    ${connCatalog()}`;
+};
+
+/* One configured connector. The summary is the command line (stdio) or the url
+   (http/sse) -- the one line that says what this actually connects to. The toggle
+   is a real <button> carrying aria-pressed, so it reads as on/off to a screen
+   reader and picks up the accent .btn[aria-pressed="true"] styling when enabled. */
+function connRow(c){
+  const on = !!c.enabled, busy = !!S.connBusy;
+  const badge = `<span class="pill ${c.transport==="stdio"?"p-acc":"p-mut"}">${esc(c.transport||"?")}</span>`;
+  const line = c.transport === "stdio"
+    ? [c.command, ...(Array.isArray(c.args)?c.args:[])].filter(Boolean).join(" ")
+    : (c.url||"");
+  const summary = line
+    ? `<code>${esc(line)}</code>`
+    : `<span style="color:var(--faint)">no target set</span>`;
+  return `<div class="conn-row">
+    <div class="conn-main">
+      <div class="conn-name">${esc(c.name||c.id||"unnamed")} ${badge}</div>
+      <div class="conn-sum">${summary}</div>
+    </div>
+    <div class="conn-ctl">
+      <button class="btn conn-tog" type="button" aria-pressed="${on}"
+              data-conn-toggle="${esc(c.id||"")}" ${busy?"disabled":""}
+              title="${on?"Enabled — click to disable":"Disabled — click to enable"}">
+        ${on?"Enabled":"Disabled"}</button>
+      <button class="btn" type="button" data-conn-remove="${esc(c.id||"")}" ${busy?"disabled":""}>Remove</button>
+    </div>
+  </div>`;
+}
+
+/* The add/edit form. Mirrors rtCreateForm's grid (.rform/.rfrow/.rfield): field
+   edits live in S.connForm, not the DOM, because a transport change re-renders
+   the whole form and anything only in the DOM would be lost at that moment. */
+function connAddForm(){
+  const f = S.connForm; if (!f) return "";
+  const t = f.transport || "stdio";
+  const row = (id,label,control,hint) => `<div class="rfrow">
+    <label for="cf-${id}">${esc(label)}</label>
+    <div class="rfield">${control}${hint?`<span class="hint">${hint}</span>`:""}</div></div>`;
+
+  const transportSel = `<select id="cf-transport" data-cf-transport>${
+    ["stdio","http","sse"].map(x=>`<option value="${x}" ${t===x?"selected":""}>${x}</option>`).join("")}</select>`;
+
+  const stdioRows = `
+    ${row("command","Command",
+      `<input id="cf-command" data-cf="command" placeholder="npx"
+              spellcheck="false" autocapitalize="off" value="${esc(f.command||"")}">`,
+      "The executable that speaks MCP over stdio.")}
+    ${row("args","Arguments",
+      `<textarea id="cf-args" data-cf="args" class="conn-args"
+         placeholder="-y @modelcontextprotocol/server-filesystem ~/work">${esc(f.args||"")}</textarea>`,
+      "Space- or newline-separated. Each token is one argument.")}
+    ${row("env","Environment", connEnvRows(f),
+      "One row per variable, passed to the process as env vars — this is where secrets go.")}`;
+
+  const urlRows = `
+    ${row("url","URL",
+      `<input id="cf-url" data-cf="url" placeholder="https://example.com/mcp"
+              spellcheck="false" value="${esc(f.url||"")}">`,
+      "The endpoint the transport connects to.")}`;
+
+  return `<section class="chsec" style="margin-bottom:14px">
+    <h2 class="chh">Add connector</h2>
+    ${S.connFormError?`<div class="note b" style="white-space:pre-wrap">${esc(S.connFormError)}</div>`:""}
+    <div class="rform">
+      ${row("name","Name",
+        `<input id="cf-name" data-cf="name" placeholder="filesystem"
+                spellcheck="false" autocapitalize="off" value="${esc(f.name||"")}">`,
+        "How it appears to sessions.")}
+      ${row("transport","Transport", transportSel,
+        "stdio runs a local command; http and sse connect to a URL.")}
+      ${t==="stdio" ? stdioRows : urlRows}
+    </div>
+    <div class="rfoot">
+      <button class="btn" type="button" data-conn-save ${S.connBusy==="save"?"disabled":""}>
+        ${S.connBusy==="save"?"Saving…":"Save"}</button>
+      <button class="btn" type="button" data-conn-cancel>Cancel</button>
+    </div>
+  </section>`;
+}
+
+/* The env key/value grid inside the stdio form. Each input commits to S.connForm
+   on input WITHOUT re-rendering (a rebuild per keystroke fights the caret); only
+   add/remove re-render, which is why the values must already be in S. */
+function connEnvRows(f){
+  const env = f.env || [];
+  const rows = env.map((r,i)=>`<div class="conn-envrow">
+    <input data-envk="${i}" placeholder="KEY" spellcheck="false" autocapitalize="off"
+           value="${esc(r.k||"")}">
+    <input data-envv="${i}" placeholder="value" spellcheck="false" value="${esc(r.v||"")}">
+    <button class="btn" type="button" data-env-del="${i}" aria-label="Remove variable ${esc(r.k||String(i+1))}">✕</button>
+  </div>`).join("");
+  return `<div class="conn-env">${rows}
+    <button class="btn conn-env-add" type="button" data-env-add>＋ Add variable</button></div>`;
+}
+
+/* The presets. Clicking a chip PREFILLS the add form and nothing else -- a preset
+   ships without secrets, so an auto-save would write a connector that cannot work.
+   Quiet on failure: a catalog that will not load must not take the screen down. */
+function connCatalog(){
+  if (S.catError) return `<section class="chsec"><h2 class="chh">Catalog</h2>
+    <div class="note w">Could not load presets. ${esc(S.catError)}</div></section>`;
+  const cat = S.catalog;
+  if (cat == null || !cat.length) return "";
+  return `<section class="chsec conn-cat"><h2 class="chh">Catalog</h2>
+    <p style="margin:0 0 9px;color:var(--muted);font-size:11.5px;max-width:70ch">Presets. Clicking one
+       fills the form above so you only add secrets — nothing is saved until you press Save.</p>
+    <div class="conn-chips">
+      ${cat.map((p,i)=>`<button class="conn-chip" type="button" data-cat-pick="${i}"
+         title="${esc(p.description||"")}">
+         <span class="conn-chip-h"><span class="conn-chip-n">${esc(p.name||"preset")}</span>
+           <span class="pill ${p.transport==="stdio"?"p-acc":"p-mut"}">${esc(p.transport||"?")}</span></span>
+         ${p.description?`<span class="conn-chip-d">${esc(p.description)}</span>`:""}
+       </button>`).join("")}
+    </div></section>`;
+}
+
 /* ── S8c Routines ──
    Local scheduled tasks. Claude Code calls the umbrella noun "Routines" and
    offers Local vs Cloud; only Local is something this panel can honestly own,

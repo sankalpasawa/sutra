@@ -593,12 +593,23 @@ function renderUpdateBanner(){
   } else if (S.updDeferred){
     body = `<div class="updmsg"><b>Sutra ${ver} will finish installing when you quit.</b>
       <span class="updwhy">Nothing to download again — it is already verified.</span></div>`;
+  } else if (S.updFiring){
+    /* The countdown fired applyUpdate: the clock is stopped (S.updLeft === null) and
+       the app is on its way out. Say so — do NOT fall through to the countdown
+       branch below, which with a null clock renders "Restarting in nulls". */
+    body = `<div class="updmsg"><b>Sutra ${ver} is restarting…</b>
+      <span class="updwhy">Installing on the way out — this window will close.</span></div>`;
   } else {
     const paused = !document.hasFocus();
+    /* Null-safe backstop: S.updLeft can be null for a frame before the clock is
+       (re)started; never print the literal "nulls". */
+    const when = paused
+      ? "Restarting when you come back to this window."
+      : (S.updLeft != null
+          ? `Restarting in <span class="updn">${S.updLeft}s</span>.`
+          : "Restarting shortly…");
     body = `<div class="updmsg"><b>Sutra ${ver} is ready.</b>
-      <span class="updwhy">${paused
-        ? "Restarting when you come back to this window."
-        : `Restarting in <span class="updn">${S.updLeft}s</span>.`}</span></div>
+      <span class="updwhy">${when}</span></div>
       <div class="updacts">
         <button class="btn pri" type="button" data-upd2="now">Restart now</button>
         <button class="btn" type="button" data-upd2="later">Not now</button>

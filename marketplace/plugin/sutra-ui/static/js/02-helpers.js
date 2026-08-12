@@ -465,6 +465,9 @@ const ICON = {
   hist:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>',
   health:'<path d="M3 13h4l2.5 6 4-14 2.5 8h5"/>',
   skills:'<path d="M12 3l7.5 4.3v8.6L12 20.2 4.5 15.9V7.3z"/><path d="M12 12l7.5-4.4M12 12v8.2M12 12L4.5 7.6"/>',
+  /* A link/chain: what a connector is -- two hooks joined by a line. Deliberately
+     not the `plc` folder-with-node glyph, which already means Placements. */
+  conn:'<path d="M9.5 14.5l5-5"/><path d="M11.2 6.6l1.1-1.1a3.7 3.7 0 015.2 5.2l-1.9 1.9"/><path d="M12.8 17.4l-1.1 1.1a3.7 3.7 0 01-5.2-5.2l1.9-1.9"/>',
   rout:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.4V12l3 1.8"/><path d="M4.5 5.5l2.2 2.2M19.5 5.5l-2.2 2.2"/>',
   auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
@@ -490,7 +493,8 @@ function railSpec(){
       {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
-      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)}
+      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)},
+      {id:"testpane",   n:"Test pane",  i:"chart",c:undefined}
     ],
     change:[
       {id:"reorg",  n:"Reorg plans", i:"reorg", c:PLANS.length},
@@ -506,6 +510,12 @@ function railSpec(){
     ],
     runtime:[
       {id:"skills",  n:"Skills",   i:"skills",c:(SKILLS.length||undefined)},
+      /* Connectors are the MCP servers the sessions this panel starts can reach.
+         Count = configured connectors, withheld until the screen has been opened
+         (Git rule: a 0 before the file was read is a claim about a config nobody
+         looked at). S.connectors is null until then. */
+      {id:"connectors",n:"Connectors",i:"conn",
+       c:(S.connectors ? S.connectors.length : undefined)},
       /* Dispatcher + scheduler. The count is the dispatch ledger's row count and
          is withheld until the screen has been opened, for the same reason Git's
          is: a 0 before the file was read is a claim about a project nobody

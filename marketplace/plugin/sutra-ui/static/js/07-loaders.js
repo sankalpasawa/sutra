@@ -499,6 +499,107 @@ function wire(){
     rtAction("/" + b.dataset.rtdel + "/delete", {confirm:true}, "Deleted.");
   });
 
+  /* ── connectors ──
+     Every control here mutates and re-reads. Field edits go to S.connForm (not the
+     DOM) for the same reason routines does it: the transport <select> re-renders
+     the form, and a value living only in the DOM would vanish at that moment. */
+  scBody.querySelectorAll("[data-conn-add]").forEach(b=>b.onclick=()=>{
+    S.connForm = { name:"", transport:"stdio", command:"", args:"", url:"", env:[] };
+    S.connFormError = null; render();
+    const el = scBody.querySelector('[data-cf="name"]'); if (el) el.focus();
+  });
+  scBody.querySelectorAll("[data-conn-cancel]").forEach(b=>b.onclick=()=>{
+    S.connForm = null; S.connFormError = null; render(); });
+  scBody.querySelectorAll("[data-conn-reload]").forEach(b=>b.onclick=()=>{
+    loadConnectors(true); loadConnectorsCatalog(true); });
+
+  /* text inputs + args textarea: commit, no render (caret) */
+  scBody.querySelectorAll("[data-cf]").forEach(el=>{
+    const k = el.dataset.cf;
+    el.oninput = ()=>{ if (S.connForm) S.connForm[k] = el.value; };
+  });
+  /* transport SELECT changes which fields exist, so it must re-render */
+  const cfT = scBody.querySelector("[data-cf-transport]");
+  if (cfT) cfT.onchange = ()=>{ if (S.connForm){ S.connForm.transport = cfT.value; render(); } };
+
+  /* env grid: key/value commit without render; add/remove re-render */
+  scBody.querySelectorAll("[data-envk]").forEach(el=>{
+    const i = +el.dataset.envk;
+    el.oninput = ()=>{ const e = S.connForm && S.connForm.env[i]; if (e) e.k = el.value; };
+  });
+  scBody.querySelectorAll("[data-envv]").forEach(el=>{
+    const i = +el.dataset.envv;
+    el.oninput = ()=>{ const e = S.connForm && S.connForm.env[i]; if (e) e.v = el.value; };
+  });
+  scBody.querySelectorAll("[data-env-add]").forEach(b=>b.onclick=()=>{
+    if (!S.connForm) return;
+    (S.connForm.env = S.connForm.env || []).push({k:"", v:""}); render(); });
+  scBody.querySelectorAll("[data-env-del]").forEach(b=>b.onclick=()=>{
+    if (S.connForm && S.connForm.env) S.connForm.env.splice(+b.dataset.envDel, 1);
+    render(); });
+
+  /* preset -> prefill the form. Catalog args arrive as an array; the form holds a
+     string, so join. env_keys become empty rows so only the secret is left to type. */
+  scBody.querySelectorAll("[data-cat-pick]").forEach(b=>b.onclick=()=>{
+    const p = (S.catalog||[])[+b.dataset.catPick]; if (!p) return;
+    S.connForm = {
+      name: p.name||"", transport: p.transport||"stdio", command: p.command||"",
+      args: Array.isArray(p.args) ? p.args.join(" ") : (p.args||""),
+      url: p.url||"", env: (p.env_keys||[]).map(k=>({k, v:""})) };
+    S.connFormError = null; render();
+    const el = scBody.querySelector('[data-cf="name"]'); if (el) el.focus();
+  });
+
+  scBody.querySelectorAll("[data-conn-save]").forEach(b=>b.onclick=async ()=>{
+    const f = S.connForm || {};
+    const name = (f.name||"").trim();
+    if (!name){ S.connFormError = "A name is required."; render(); return; }
+    const t = f.transport || "stdio";
+    const body = { name, transport:t, enabled:true };
+    if (t === "stdio"){
+      body.command = (f.command||"").trim();
+      body.args = (f.args||"").split(/\s+/).filter(Boolean);   /* space OR newline */
+      const env = {};
+      (f.env||[]).forEach(r=>{ const k=(r.k||"").trim(); if (k) env[k] = r.v||""; });
+      body.env = env;
+    } else {
+      body.url = (f.url||"").trim();
+    }
+    S.connBusy = "save"; S.connFormError = null; S.connMsg = null; render();
+    try {
+      const r = await apiPost("/api/connectors", body);
+      /* The contract returns {error} for an invalid connector as a normal body,
+         so a 2xx with an error field is a refusal, not a success -- show it inline
+         and keep the form open with what the operator typed. */
+      if (r && r.error){ S.connFormError = r.error; }
+      else {
+        S.connForm = null;
+        S.connMsg = "Added " + ((r.connector&&r.connector.name)||name) + ".";
+        await loadConnectors(true);
+      }
+    } catch (e) { S.connFormError = e.message; }
+    S.connBusy = null; render();
+  });
+
+  scBody.querySelectorAll("[data-conn-toggle]").forEach(b=>b.onclick=async ()=>{
+    const id = b.dataset.connToggle;
+    S.connBusy = "toggle:"+id; S.connMsg = null; render();
+    try { await apiPost("/api/connectors/"+encodeURIComponent(id)+"/toggle", {});
+          await loadConnectors(true); }
+    catch (e) { S.connError = e.message; }
+    S.connBusy = null; render();
+  });
+
+  scBody.querySelectorAll("[data-conn-remove]").forEach(b=>b.onclick=async ()=>{
+    const id = b.dataset.connRemove;
+    if (!window.confirm("Remove this connector?\n\nSessions started after this will no longer see it.")) return;
+    S.connBusy = "remove:"+id; S.connMsg = null; render();
+    try { await apiDelete("/api/connectors/"+encodeURIComponent(id));
+          await loadConnectors(true); }
+    catch (e) { S.connError = e.message; }
+    S.connBusy = null; render();
+  });
+
   /* ── permission mode (chat level) ── */
   panes.querySelectorAll("[data-perm]").forEach(sel=>sel.onchange=()=>{
     const want = sel.value;
@@ -722,6 +823,9 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "usage") loadUsage(true);
     if (S.screen === "evals") loadEvals(false);     /* lazy, like Git */
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
+    /* lazy, like Git: reading the MCP config and the preset catalog on every boot
+       is work a panel that never opens this screen has no reason to do. */
+    if (S.screen === "connectors"){ loadConnectors(false); loadConnectorsCatalog(false); }
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -952,6 +1056,31 @@ async function loadRuntime(){
      actually on screen rather than re-fetching a catalog the panel already has. */
   S.cat.readAt = Date.now();
   S.cat.lastCheckAt = Date.now();
+}
+
+/* ── connectors ──────────────────────────────────────────────────────────────
+   The MCP config the Connectors screen manages. apiGet/apiPost cover read/create/
+   toggle; the contract's remove is a DELETE, which neither helper does, so this is
+   the one place that issues one -- same _fail error shape as the others, so a 500
+   here reads like a 500 anywhere. Both loaders CACHE (S.connectors / S.catalog stay
+   set until a forced reload) and report failures into state without throwing, the
+   same degradable contract loadAuto uses. */
+async function apiDelete(path){
+  const r = await fetch(API + path, { method:"DELETE" });
+  if (!r.ok) throw await _fail(r, path);
+  return r.json();
+}
+async function loadConnectors(force){
+  if (S.connectors && !force) return;
+  try { S.connectors = (await apiGet("/api/connectors")).connectors || []; S.connError = null; }
+  catch (e) { S.connError = e.message; S.connectors = null; }
+  render();
+}
+async function loadConnectorsCatalog(force){
+  if (S.catalog && !force) return;
+  try { S.catalog = (await apiGet("/api/connectors/catalog")).catalog || []; S.catError = null; }
+  catch (e) { S.catError = e.message; S.catalog = null; }
+  render();
 }
 
 /* ── skills auto-refresh ─────────────────────────────────────────────────────

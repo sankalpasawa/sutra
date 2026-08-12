@@ -1,6 +1,21 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-11
+**status**: active · **updated**: 2026-08-12
+
+## 2.96.0
+
+- **Connectors — MCP servers for your sessions, like Claude CLI.** A new Connectors
+  screen (left rail, Runtime) to add / enable / remove MCP connectors that are
+  offered to every session this panel starts. Add by hand (stdio: command + args +
+  env; or a remote http/sse url) or one-click from a catalog (github, filesystem,
+  slack, puppeteer, brave-search, linear). Enabled connectors are merged into the
+  `--mcp-config` passed to spawned `claude` (alongside `sutra`, keeping
+  `--strict-mcp-config`); they run under the session's permission mode, so use
+  Accept Edits or Bypass to let them act. Store at `~/.sutra-ui/connectors.json`;
+  fail-soft (a broken store never breaks turn spawning). 33 backend tests.
+- **Fix "Restarting in nulls".** The update banner rendered a null countdown once
+  `applyUpdate` fired (clock stopped, app not yet quit). Added a dedicated
+  "restarting…" state and made the countdown null-safe.
 
 ## 2.95.0
 
