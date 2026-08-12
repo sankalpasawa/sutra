@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -29,6 +29,7 @@ import log_reader as lr
 import session_reader as sr
 import org_api
 import providers
+import connectors_store
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -161,7 +162,7 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 
 def _sutra_mcp_config():
-    """Inline JSON for --mcp-config, or "" when the server is not present.
+    """Inline JSON for --mcp-config, or "" when there is nothing to pass.
 
     Passed as a STRING rather than a file so there is no temp file to leak, no
     path for another process to tamper with between write and read, and nothing
@@ -170,18 +171,37 @@ def _sutra_mcp_config():
     The interpreter is THIS one (sys.executable): in the packaged app that is
     the bundled CPython inside the .app, which is the only python guaranteed to
     exist on the machine and to have the modules sutra_mcp imports.
+
+    Contents: Sutra's own "sutra" server PLUS the operator's ENABLED connectors
+    (connectors_store.mcp_servers_fragment). --strict-mcp-config still holds, so
+    the merged set is the ONLY thing loaded — never the machine's global
+    ~/.claude.json. Connector tools are deliberately NOT pre-allowed here: they
+    run under the session's --permission-mode (only the sutra namespace is
+    cleared by the PreToolUse hook in build_agent_args). FAIL-SOFT: if the
+    connectors store errors, we fall back to just sutra and never break the
+    turn.
     """
+    servers = {}
     script = HERE / "sutra_mcp.py"
-    if not script.is_file():
+    if script.is_file():
+        servers["sutra"] = {
+            "type": "stdio",
+            "command": sys.executable,
+            "args": [str(script)],
+            # Inherited by the server process; it uses these to find the same
+            # registry and stores the panel is reading.
+            "env": {"SUTRA_NATIVE_HOME": os.environ.get("SUTRA_NATIVE_HOME", "")},
+        }
+    try:
+        for name, spec in connectors_store.mcp_servers_fragment().items():
+            if name == "sutra":
+                continue  # reserved — a connector must never shadow sutra
+            servers[name] = spec
+    except Exception:
+        pass  # a broken store must never take the turn down
+    if not servers:
         return ""
-    return json.dumps({"mcpServers": {"sutra": {
-        "type": "stdio",
-        "command": sys.executable,
-        "args": [str(script)],
-        # Inherited by the server process; it uses these to find the same
-        # registry and stores the panel is reading.
-        "env": {"SUTRA_NATIVE_HOME": os.environ.get("SUTRA_NATIVE_HOME", "")},
-    }}})
+    return json.dumps({"mcpServers": servers})
 
 
 def _sutra_allow_hook():
@@ -290,6 +310,9 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     # They are pre-allowed because a -p run has NOBODY to answer a permission
     # prompt: a tool sitting behind one would stall the turn. That is safe here
     # precisely because the mutating tools only write an inert proposal.
+    #
+    # ONLY the sutra namespace is pre-allowed. User connectors merged into
+    # mcp_cfg are NOT added here — they run under the session's --permission-mode.
     if mcp_cfg:
         allowed = list(allowed) + ["mcp__sutra__*"]
     if allowed:
@@ -865,6 +888,56 @@ def api_evals() -> dict:
         "findings": findings,
         "view_cmd": view_cmd,
     }
+
+
+# ============================================================ connectors =====
+# MCP connectors the operator defines once and Sutra merges into every spawned
+# turn's --mcp-config (see _sutra_mcp_config). The reads are fail-soft: a broken
+# or absent store returns [] rather than a 500, because the panel polls these
+# and a hard error would read as "connectors are broken" on a machine that
+# simply has none. Only add_or_update raises (ValueError -> 400) on bad input.
+
+@app.get("/api/connectors")
+def api_connectors() -> dict:
+    """Every stored connector, enabled or not. Read-only."""
+    return {"connectors": connectors_store.load()}
+
+
+@app.post("/api/connectors")
+def api_connectors_upsert(body: dict):
+    """Create or update one connector (matched by id; id assigned when absent).
+    Returns {"connector": ...} or 400 {"error": ...} on a validation miss — bad
+    name, reserved "sutra", unknown transport, stdio without command, http/sse
+    without url, or a duplicate name."""
+    try:
+        conn = connectors_store.add_or_update(body or {})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    return {"connector": conn}
+
+
+@app.post("/api/connectors/{cid}/toggle")
+def api_connectors_toggle(cid: str) -> dict:
+    """Flip enabled for one connector. {"connector": ...} or 404."""
+    conn = connectors_store.toggle(cid)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="connector not found")
+    return {"connector": conn}
+
+
+@app.delete("/api/connectors/{cid}")
+def api_connectors_delete(cid: str) -> dict:
+    """Delete one connector. {"ok": true} or 404."""
+    if not connectors_store.remove(cid):
+        raise HTTPException(status_code=404, detail="connector not found")
+    return {"ok": True}
+
+
+@app.get("/api/connectors/catalog")
+def api_connectors_catalog() -> dict:
+    """The one-click presets (blank secrets, env_keys names the vars to fill).
+    Read-only, static."""
+    return {"catalog": connectors_store.CATALOG}
 
 
 @app.get("/api/state")
