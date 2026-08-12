@@ -829,29 +829,49 @@ function connHdrRows(f){
    chip PREFILLS the add form and nothing else -- a preset
    ships without secrets, so an auto-save would write a connector that cannot work.
    Quiet on failure: a catalog that will not load must not take the screen down. */
+/* One catalog/registry card. i is the index into S.catalog the picker reads. */
+function connChip(p, i){
+  return `<button class="conn-chip" type="button" data-cat-pick="${i}"
+       title="${esc(p.description||"")}">
+       <span class="conn-chip-h"><span class="conn-chip-n">${esc(p.title||p.name||"preset")}</span>
+         <span class="pill ${p.transport==="stdio"?"p-acc":"p-mut"}">${esc(p.transport||"?")}</span></span>
+       ${p.description?`<span class="conn-chip-d">${esc(p.description)}</span>`:""}
+     </button>`;
+}
+const CONN_CAT_ORDER = ["Development","Data & Databases","Productivity","Communication",
+  "Search & Web","Browser & Automation","Payments & Business","Monitoring & Cloud",
+  "Design","AI & Models","Utility"];
 function connCatalog(){
   const cat = S.catalog || [];
   const q = S.catQuery || "";
+  const isReg = S.catSource === "registry";
   const status = S.catBusy ? "searching…"
-    : (cat.length ? cat.length + (S.catSource === "registry" ? " from the MCP registry" : " built-in presets")
+    : (cat.length ? (isReg ? cat.length + " from the MCP registry" : cat.length + " connectors")
                   : (q ? "no matches" : ""));
-  const chips = cat.length
-    ? `<div class="conn-chips">${cat.map((p,i)=>`<button class="conn-chip" type="button" data-cat-pick="${i}"
-         title="${esc(p.description||"")}">
-         <span class="conn-chip-h"><span class="conn-chip-n">${esc(p.name||"preset")}</span>
-           <span class="pill ${p.transport==="stdio"?"p-acc":"p-mut"}">${esc(p.transport||"?")}</span></span>
-         ${p.description?`<span class="conn-chip-d">${esc(p.description)}</span>`:""}
-       </button>`).join("")}</div>`
-    : "";
-  return `<section class="chsec conn-cat"><h2 class="chh">Browse the MCP registry</h2>
-    <p style="margin:0 0 8px;color:var(--muted);font-size:11.5px;max-width:70ch">Search the open
-      <b>MCP registry</b> (~400 servers). Click a result to fill the form above — you only add secrets;
-      nothing is saved until you press Save.</p>
+  let body = "";
+  if (cat.length && !isReg && cat.some(p=>p.category)){
+    /* the built-in gallery — grouped by category, like Claude's connectors. Keep
+       the ORIGINAL index into S.catalog so the picker still resolves the card. */
+    const groups = {};
+    cat.forEach((p,i)=>{ const c = p.category || "Other"; (groups[c] = groups[c] || []).push([p,i]); });
+    const keys = Object.keys(groups).sort((a,b)=>{
+      const ia = CONN_CAT_ORDER.indexOf(a), ib = CONN_CAT_ORDER.indexOf(b);
+      return (ia<0?99:ia) - (ib<0?99:ib); });
+    body = keys.map(c=>`<div class="conn-catgroup">
+        <h3 class="conn-catgroup-h">${esc(c)}<span class="conn-catgroup-n">${groups[c].length}</span></h3>
+        <div class="conn-chips">${groups[c].map(pi=>connChip(pi[0], pi[1])).join("")}</div></div>`).join("");
+  } else if (cat.length){
+    body = `<div class="conn-chips">${cat.map((p,i)=>connChip(p,i)).join("")}</div>`;
+  }
+  return `<section class="chsec conn-cat"><h2 class="chh">Connectors gallery</h2>
+    <p style="margin:0 0 8px;color:var(--muted);font-size:11.5px;max-width:70ch">Pick from the gallery
+      below, or search the full open <b>MCP registry</b> (~400 servers). Clicking one fills the form
+      above — you only add secrets; nothing is saved until you press Save.</p>
     <div class="conn-search">
-      <input data-cat-search placeholder="Search connectors — github, notion, postgres, filesystem…"
+      <input data-cat-search placeholder="Search the MCP registry — jira, mongodb, playwright…"
              spellcheck="false" autocapitalize="off" value="${esc(q)}">
       <span class="conn-search-note">${esc(status)}</span>
-    </div>${chips}</section>`;
+    </div>${body}</section>`;
 }
 
 /* ── S8c Routines ──

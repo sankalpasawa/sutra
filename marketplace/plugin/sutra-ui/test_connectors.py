@@ -233,31 +233,77 @@ class TestFragment(_IsolatedStore):
 
 
 # --------------------------------------------------------------- catalog -----
+# The catalog grew from the original six presets to ~50 verified connectors
+# grouped by `category`. EXPECTED is now the WHOLE catalog's name set (computed
+# from cs.CATALOG) so the endpoint/normaliser/fallback tests that compare against
+# it stay honest as the list evolves. ORIGINAL_SIX is the invariant that the
+# first shipped presets are never dropped.
 class TestCatalog(unittest.TestCase):
-    EXPECTED = {"github", "filesystem", "slack", "puppeteer", "brave-search",
-                "linear"}
+    EXPECTED = {e["name"] for e in cs.CATALOG}
+    ORIGINAL_SIX = {"github", "filesystem", "slack", "puppeteer", "brave-search",
+                    "linear"}
+    # categories are a closed vocabulary — an entry using anything else is a typo.
+    CATEGORIES = {"Development", "Data & Databases", "Productivity",
+                  "Communication", "Search & Web", "Browser & Automation",
+                  "Payments & Business", "Monitoring & Cloud", "Design",
+                  "AI & Models", "Utility"}
 
-    def test_catalog_has_the_six_presets(self):
+    def test_catalog_keeps_the_original_presets(self):
         names = {e["name"] for e in cs.CATALOG}
-        self.assertEqual(names, self.EXPECTED)
+        self.assertTrue(self.ORIGINAL_SIX <= names,
+                        "the original six presets must never be dropped")
 
-    def test_every_entry_has_the_required_keys(self):
+    def test_catalog_has_at_least_forty_entries(self):
+        self.assertGreaterEqual(len(cs.CATALOG), 40,
+                                "catalog must ship >= 40 connectors")
+
+    def test_names_are_unique_valid_slugs_and_not_sutra(self):
+        names = [e["name"] for e in cs.CATALOG]
+        self.assertEqual(len(names), len(set(names)), "duplicate connector names")
+        for n in names:
+            self.assertRegex(n, cs.NAME_RE, "invalid slug %r" % n)
+            self.assertNotEqual(n, cs.RESERVED, '"sutra" is reserved')
+
+    def test_every_entry_has_the_required_keys_and_a_known_category(self):
         for e in cs.CATALOG:
             self.assertEqual(
                 set(e.keys()),
-                {"name", "transport", "command", "args", "env_keys", "url",
-                 "description"},
+                {"name", "title", "category", "transport", "command", "args",
+                 "env_keys", "url", "description"},
                 "catalog entry %r has the wrong key set" % e.get("name"))
             self.assertIn(e["transport"], cs.TRANSPORTS)
             self.assertIsInstance(e["env_keys"], list)
+            self.assertIn(e["category"], self.CATEGORIES,
+                          "entry %r has an unknown category %r"
+                          % (e["name"], e["category"]))
+            self.assertTrue(e["title"], "entry %r has a blank title" % e["name"])
+            self.assertLessEqual(len(e["description"]), 150,
+                                 "entry %r description exceeds 150 chars" % e["name"])
 
-    def test_catalog_entries_are_valid_connectors(self):
-        # every stdio preset carries a command; the remote one carries a url —
-        # i.e. every preset would pass validate() once its secrets are filled.
+    def test_every_entry_has_a_resolvable_config(self):
+        # stdio -> a command; http|sse -> a url. i.e. every preset would pass
+        # validate() (and merge into --mcp-config) once its secrets are filled.
         for e in cs.CATALOG:
+            if e["transport"] == "stdio":
+                self.assertTrue(e["command"],
+                                "stdio entry %r has no command" % e["name"])
+                self.assertFalse(e["url"],
+                                 "stdio entry %r must not carry a url" % e["name"])
+            else:
+                self.assertTrue(e["url"],
+                                "%s entry %r has no url" % (e["transport"], e["name"]))
+                self.assertFalse(e["command"],
+                                 "remote entry %r must not carry a command" % e["name"])
             c = cs.validate({k: e[k] for k in
                              ("name", "transport", "command", "args", "url")})
             self.assertEqual(c["name"], e["name"])
+
+    def test_breadth_across_categories(self):
+        # a directory that groups connectors is only useful if the groups are
+        # populated — require most categories to have at least one entry.
+        present = {e["category"] for e in cs.CATALOG}
+        self.assertGreaterEqual(len(present), 10,
+                                "connectors should span >= 10 categories")
 
     def test_linear_is_the_remote_sse_example(self):
         lin = next(e for e in cs.CATALOG if e["name"] == "linear")
