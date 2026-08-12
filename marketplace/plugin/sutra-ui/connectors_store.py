@@ -55,13 +55,23 @@ CONNECTORS_PATH = Path(os.path.expanduser(
 
 
 # --------------------------------------------------------------- catalog ----
-# One-click presets. Blank secrets: env_keys names the env vars the operator
-# must fill before enabling. Real MCP servers, npx-launched (stdio) except the
-# one remote example (linear, sse). The frontend turns a picked entry into a
-# connector POST — env built from env_keys, enabled decided there.
+# One-click presets, grouped by `category` so the Add panel can browse them like
+# Claude's connector directory. Every entry is a VERIFIED MCP server:
+#   - stdio rows launch a real, published package (npx <npm-pkg> / uvx <pypi-pkg>).
+#   - http/sse rows point at a documented public remote endpoint that answered a
+#     live probe (200/401/403/405 — "exists, auth is per-connection").
+# `env_keys` names the secret env vars the operator must fill before a stdio
+# server works; remote OAuth servers usually need none (auth happens in-browser).
+# The frontend turns a picked entry into a connector POST — env built from
+# env_keys, enabled decided there. Shape per row:
+#   {name, title, description(<=150), category, transport, command, args,
+#    env_keys, url}. stdio -> command/args set, url ""; http|sse -> url set.
 CATALOG = [
+    # -------------------------------------------------------- Development ----
     {
         "name": "github",
+        "title": "GitHub",
+        "category": "Development",
         "transport": "stdio",
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-github"],
@@ -71,7 +81,33 @@ CATALOG = [
                        "Needs a personal access token.",
     },
     {
+        "name": "gitlab",
+        "title": "GitLab",
+        "category": "Development",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-gitlab"],
+        "env_keys": ["GITLAB_PERSONAL_ACCESS_TOKEN", "GITLAB_API_URL"],
+        "url": "",
+        "description": "GitLab projects, issues and merge requests. "
+                       "Needs a personal access token.",
+    },
+    {
+        "name": "git",
+        "title": "Git",
+        "category": "Development",
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["mcp-server-git"],
+        "env_keys": [],
+        "url": "",
+        "description": "Read, search and manipulate a local Git repository "
+                       "(status, diff, log, commit). No secrets.",
+    },
+    {
         "name": "filesystem",
+        "title": "Filesystem",
+        "category": "Development",
         "transport": "stdio",
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-filesystem",
@@ -82,7 +118,169 @@ CATALOG = [
                        "(defaults to your home — edit the path arg to narrow it).",
     },
     {
+        "name": "atlassian",
+        "title": "Atlassian (Jira & Confluence)",
+        "category": "Development",
+        "transport": "sse",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.atlassian.com/v1/sse",
+        "description": "Jira issues and Confluence pages over Atlassian's "
+                       "remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "context7",
+        "title": "Context7",
+        "category": "Development",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.context7.com/mcp",
+        "description": "Up-to-date, version-specific docs and code examples for "
+                       "thousands of libraries.",
+    },
+    # ---------------------------------------------------- Data & Databases ---
+    {
+        "name": "postgres",
+        "title": "PostgreSQL",
+        "category": "Data & Databases",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-postgres",
+                 "postgresql://localhost:5432/postgres"],
+        "env_keys": [],
+        "url": "",
+        "description": "Read-only SQL over a Postgres database. Edit the "
+                       "connection-string arg to point at your database.",
+    },
+    {
+        "name": "sqlite",
+        "title": "SQLite",
+        "category": "Data & Databases",
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["mcp-server-sqlite", "--db-path",
+                 os.path.expanduser("~/sqlite.db")],
+        "env_keys": [],
+        "url": "",
+        "description": "Query and inspect a local SQLite database file. "
+                       "Edit the --db-path arg to point at your .db.",
+    },
+    {
+        "name": "mongodb",
+        "title": "MongoDB",
+        "category": "Data & Databases",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "mongodb-mcp-server"],
+        "env_keys": ["MDB_MCP_CONNECTION_STRING"],
+        "url": "",
+        "description": "Query MongoDB and Atlas collections. "
+                       "Needs a connection string.",
+    },
+    {
+        "name": "redis",
+        "title": "Redis (Upstash)",
+        "category": "Data & Databases",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@upstash/redis-mcp"],
+        "env_keys": ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
+        "url": "",
+        "description": "Read and write keys in an Upstash Redis database. "
+                       "Needs the REST url and token.",
+    },
+    {
+        "name": "supabase",
+        "title": "Supabase",
+        "category": "Data & Databases",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.supabase.com/mcp",
+        "description": "Manage Supabase projects, tables and SQL over the "
+                       "remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "airtable",
+        "title": "Airtable",
+        "category": "Data & Databases",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "airtable-mcp-server"],
+        "env_keys": ["AIRTABLE_API_KEY"],
+        "url": "",
+        "description": "Read and write Airtable bases, tables and records. "
+                       "Needs a personal access token.",
+    },
+    # --------------------------------------------------------- Productivity --
+    {
+        "name": "notion",
+        "title": "Notion",
+        "category": "Productivity",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.notion.com/mcp",
+        "description": "Search, read and edit Notion pages and databases over "
+                       "the remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "linear",
+        "title": "Linear",
+        "category": "Productivity",
+        "transport": "sse",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.linear.app/sse",
+        "description": "Linear issues over a remote SSE endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "asana",
+        "title": "Asana",
+        "category": "Productivity",
+        "transport": "sse",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.asana.com/sse",
+        "description": "Asana tasks, projects and portfolios over the remote "
+                       "endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "todoist",
+        "title": "Todoist",
+        "category": "Productivity",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://ai.todoist.net/mcp",
+        "description": "Create and manage Todoist tasks and projects over the "
+                       "remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "memory",
+        "title": "Memory",
+        "category": "Productivity",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-memory"],
+        "env_keys": [],
+        "url": "",
+        "description": "A persistent knowledge-graph memory the agent can "
+                       "write to and recall across turns. No secrets.",
+    },
+    # -------------------------------------------------------- Communication --
+    {
         "name": "slack",
+        "title": "Slack",
+        "category": "Communication",
         "transport": "stdio",
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-slack"],
@@ -92,16 +290,34 @@ CATALOG = [
                        "Needs a bot token and a team id.",
     },
     {
-        "name": "puppeteer",
+        "name": "discord",
+        "title": "Discord",
+        "category": "Communication",
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
-        "env_keys": [],
+        "args": ["-y", "@pasympa/discord-mcp"],
+        "env_keys": ["DISCORD_TOKEN"],
         "url": "",
-        "description": "Headless-browser automation and page scraping. No secrets.",
+        "description": "Read and send messages in Discord channels. "
+                       "Needs a bot token.",
     },
     {
+        "name": "intercom",
+        "title": "Intercom",
+        "category": "Communication",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.intercom.com/mcp",
+        "description": "Query Intercom conversations and contacts over the "
+                       "remote endpoint (OAuth in-browser).",
+    },
+    # --------------------------------------------------------- Search & Web --
+    {
         "name": "brave-search",
+        "title": "Brave Search",
+        "category": "Search & Web",
         "transport": "stdio",
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-brave-search"],
@@ -110,13 +326,355 @@ CATALOG = [
         "description": "Web search via the Brave Search API. Needs an API key.",
     },
     {
-        "name": "linear",
+        "name": "exa",
+        "title": "Exa Search",
+        "category": "Search & Web",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.exa.ai/mcp",
+        "description": "Neural web search and content retrieval over Exa's "
+                       "remote endpoint.",
+    },
+    {
+        "name": "tavily",
+        "title": "Tavily",
+        "category": "Search & Web",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "tavily-mcp"],
+        "env_keys": ["TAVILY_API_KEY"],
+        "url": "",
+        "description": "Web search and extraction tuned for agents. "
+                       "Needs a Tavily API key.",
+    },
+    {
+        "name": "fetch",
+        "title": "Fetch",
+        "category": "Search & Web",
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["mcp-server-fetch"],
+        "env_keys": [],
+        "url": "",
+        "description": "Fetch a URL and return its content as markdown for the "
+                       "model to read. No secrets.",
+    },
+    {
+        "name": "perplexity",
+        "title": "Perplexity",
+        "category": "Search & Web",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@perplexity-ai/mcp-server"],
+        "env_keys": ["PERPLEXITY_API_KEY"],
+        "url": "",
+        "description": "Answer questions with Perplexity's Sonar web search. "
+                       "Needs an API key.",
+    },
+    {
+        "name": "google-maps",
+        "title": "Google Maps",
+        "category": "Search & Web",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+        "env_keys": ["GOOGLE_MAPS_API_KEY"],
+        "url": "",
+        "description": "Geocoding, places, directions and distance via Google "
+                       "Maps. Needs an API key.",
+    },
+    # ------------------------------------------------- Browser & Automation --
+    {
+        "name": "puppeteer",
+        "title": "Puppeteer",
+        "category": "Browser & Automation",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+        "env_keys": [],
+        "url": "",
+        "description": "Headless-browser automation and page scraping. No secrets.",
+    },
+    {
+        "name": "playwright",
+        "title": "Playwright",
+        "category": "Browser & Automation",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@playwright/mcp"],
+        "env_keys": [],
+        "url": "",
+        "description": "Drive a real browser to navigate, click and extract "
+                       "pages (Microsoft Playwright). No secrets.",
+    },
+    {
+        "name": "browserbase",
+        "title": "Browserbase",
+        "category": "Browser & Automation",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@browserbasehq/mcp-server-browserbase"],
+        "env_keys": ["BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID"],
+        "url": "",
+        "description": "Cloud headless browsers for automation and scraping. "
+                       "Needs an API key and project id.",
+    },
+    # ----------------------------------------------- Payments & Business -----
+    {
+        "name": "stripe",
+        "title": "Stripe",
+        "category": "Payments & Business",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.stripe.com",
+        "description": "Payments, customers, invoices and balances over "
+                       "Stripe's remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "paypal",
+        "title": "PayPal",
+        "category": "Payments & Business",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.paypal.com/mcp",
+        "description": "PayPal invoices, orders and payments over the remote "
+                       "endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "square",
+        "title": "Square",
+        "category": "Payments & Business",
         "transport": "sse",
         "command": "",
         "args": [],
         "env_keys": [],
-        "url": "https://mcp.linear.app/sse",
-        "description": "Linear issues over a remote SSE endpoint (OAuth in-browser).",
+        "url": "https://mcp.squareup.com/sse",
+        "description": "Square payments, catalog and orders over the remote "
+                       "endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "hubspot",
+        "title": "HubSpot",
+        "category": "Payments & Business",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.hubspot.com/anthropic",
+        "description": "HubSpot CRM contacts, companies and deals over the "
+                       "remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "shopify",
+        "title": "Shopify Dev",
+        "category": "Payments & Business",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@shopify/dev-mcp"],
+        "env_keys": [],
+        "url": "",
+        "description": "Search Shopify dev docs and introspect the Admin "
+                       "GraphQL schema. No secrets.",
+    },
+    # ------------------------------------------------- Monitoring & Cloud ----
+    {
+        "name": "sentry",
+        "title": "Sentry",
+        "category": "Monitoring & Cloud",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.sentry.dev/mcp",
+        "description": "Inspect Sentry issues, events and traces over the "
+                       "remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "grafana",
+        "title": "Grafana",
+        "category": "Monitoring & Cloud",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.grafana.com/mcp",
+        "description": "Query Grafana dashboards, datasources and incidents "
+                       "over the remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "cloudflare",
+        "title": "Cloudflare Docs",
+        "category": "Monitoring & Cloud",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://docs.mcp.cloudflare.com/mcp",
+        "description": "Search Cloudflare's product documentation over its "
+                       "remote endpoint. No secrets.",
+    },
+    {
+        "name": "vercel",
+        "title": "Vercel",
+        "category": "Monitoring & Cloud",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.vercel.com",
+        "description": "Manage Vercel projects and deployments over the remote "
+                       "endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "kubernetes",
+        "title": "Kubernetes",
+        "category": "Monitoring & Cloud",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "kubernetes-mcp-server"],
+        "env_keys": [],
+        "url": "",
+        "description": "Inspect and manage a Kubernetes cluster via your "
+                       "current kubeconfig context. No extra secrets.",
+    },
+    {
+        "name": "globalping",
+        "title": "Globalping",
+        "category": "Monitoring & Cloud",
+        "transport": "sse",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.globalping.dev/sse",
+        "description": "Run ping, traceroute, DNS and HTTP checks from a global "
+                       "probe network. No secrets.",
+    },
+    # -------------------------------------------------------------- Design ---
+    {
+        "name": "figma",
+        "title": "Figma",
+        "category": "Design",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.figma.com/mcp",
+        "description": "Read Figma files, frames and design context over the "
+                       "remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "canva",
+        "title": "Canva",
+        "category": "Design",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.canva.com/mcp",
+        "description": "Create and manage Canva designs over the remote "
+                       "endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "webflow",
+        "title": "Webflow",
+        "category": "Design",
+        "transport": "sse",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.webflow.com/sse",
+        "description": "Manage Webflow sites, CMS collections and items over "
+                       "the remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "wix",
+        "title": "Wix",
+        "category": "Design",
+        "transport": "sse",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://mcp.wix.com/sse",
+        "description": "Manage Wix sites, data and business tools over the "
+                       "remote endpoint (OAuth in-browser).",
+    },
+    # ---------------------------------------------------------- AI & Models --
+    {
+        "name": "huggingface",
+        "title": "Hugging Face",
+        "category": "AI & Models",
+        "transport": "http",
+        "command": "",
+        "args": [],
+        "env_keys": [],
+        "url": "https://huggingface.co/mcp",
+        "description": "Search Hugging Face models, datasets and Spaces over "
+                       "the remote endpoint (OAuth in-browser).",
+    },
+    {
+        "name": "elevenlabs",
+        "title": "ElevenLabs",
+        "category": "AI & Models",
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["elevenlabs-mcp"],
+        "env_keys": ["ELEVENLABS_API_KEY"],
+        "url": "",
+        "description": "Text-to-speech, voice cloning and audio via ElevenLabs. "
+                       "Needs an API key.",
+    },
+    {
+        "name": "everart",
+        "title": "EverArt",
+        "category": "AI & Models",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-everart"],
+        "env_keys": ["EVERART_API_KEY"],
+        "url": "",
+        "description": "Generate images with EverArt's models. Needs an API key.",
+    },
+    # ------------------------------------------------------------- Utility ---
+    {
+        "name": "time",
+        "title": "Time",
+        "category": "Utility",
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["mcp-server-time"],
+        "env_keys": [],
+        "url": "",
+        "description": "Current time and timezone conversions. No secrets.",
+    },
+    {
+        "name": "sequential-thinking",
+        "title": "Sequential Thinking",
+        "category": "Utility",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+        "env_keys": [],
+        "url": "",
+        "description": "A tool for structured, step-by-step reasoning over hard "
+                       "problems. No secrets.",
+    },
+    {
+        "name": "everything",
+        "title": "Everything (reference)",
+        "category": "Utility",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-everything"],
+        "env_keys": [],
+        "url": "",
+        "description": "The MCP reference server exercising prompts, resources "
+                       "and tools — handy to test a connection. No secrets.",
     },
 ]
 

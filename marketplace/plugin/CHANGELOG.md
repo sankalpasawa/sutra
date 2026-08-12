@@ -2,6 +2,18 @@
 
 **status**: active · **updated**: 2026-08-12
 
+## 2.99.0
+
+- **Connectors gallery — ~50 servers, grouped by category.** The default Connectors
+  view goes from 6 presets to a browsable gallery of ~50 recognizable MCP connectors
+  (GitHub, GitLab, Postgres, MongoDB, Redis, Supabase, Notion, Linear, Jira/Atlassian,
+  Asana, Slack, Discord, Stripe, PayPal, Sentry, Grafana, Cloudflare, Figma, Canva,
+  Playwright, Browserbase, ElevenLabs, …) grouped into 11 categories. Every config was
+  verified against the live MCP registry or a documented remote endpoint before
+  inclusion — no invented package names (broken candidates like plaid/semgrep/deepwiki
+  were dropped). The full open registry (~400) stays one search away; remote connectors
+  carry auth headers. 56 backend tests.
+
 ## 2.98.0
 
 - **Connectors browse the open MCP Registry.** The catalog is live now: an empty
