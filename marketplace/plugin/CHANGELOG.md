@@ -2,6 +2,19 @@
 
 **status**: active · **updated**: 2026-08-12
 
+## 2.97.0
+
+- **Fix "Transcript not read yet" flicker.** An open, already-loaded pane was rebuilt
+  to `loadState:"unread"` on every session-list refresh — and agent activity triggers
+  many of them — flipping the pane back to the placeholder. `adoptRealSessions` now
+  preserves the object for a pane you're reading (busy **or** open+loaded), refreshing
+  only its metadata.
+- **Fix the heavy flicker while agents work.** `applySessionChange` re-read an open
+  pane on every live-sync event and set `loadState:"loading"` first — flipping the
+  transcript to "reading transcript…" and back on each write. It now keeps the
+  transcript on screen during a background refresh (no placeholder flip), and throttles
+  both the transcript re-read and the agent-fold reload to ~1/s.
+
 ## 2.96.0
 
 - **Connectors — MCP servers for your sessions, like Claude CLI.** A new Connectors
