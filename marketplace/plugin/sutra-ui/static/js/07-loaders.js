@@ -504,7 +504,7 @@ function wire(){
      DOM) for the same reason routines does it: the transport <select> re-renders
      the form, and a value living only in the DOM would vanish at that moment. */
   scBody.querySelectorAll("[data-conn-add]").forEach(b=>b.onclick=()=>{
-    S.connForm = { name:"", transport:"stdio", command:"", args:"", url:"", env:[] };
+    S.connForm = { name:"", transport:"stdio", command:"", args:"", url:"", env:[], headers:[] };
     S.connFormError = null; render();
     const el = scBody.querySelector('[data-cf="name"]'); if (el) el.focus();
   });
@@ -538,6 +538,30 @@ function wire(){
     if (S.connForm && S.connForm.env) S.connForm.env.splice(+b.dataset.envDel, 1);
     render(); });
 
+  /* headers key/value (http/sse only) — mirrors env, commits to S.connForm.headers */
+  scBody.querySelectorAll("[data-hdrk]").forEach(el=>{ const i=+el.dataset.hdrk;
+    el.oninput = ()=>{ const h = S.connForm && S.connForm.headers[i]; if (h) h.k = el.value; }; });
+  scBody.querySelectorAll("[data-hdrv]").forEach(el=>{ const i=+el.dataset.hdrv;
+    el.oninput = ()=>{ const h = S.connForm && S.connForm.headers[i]; if (h) h.v = el.value; }; });
+  scBody.querySelectorAll("[data-hdr-add]").forEach(b=>b.onclick=()=>{
+    if (!S.connForm) return; (S.connForm.headers = S.connForm.headers || []).push({k:"", v:""}); render(); });
+  scBody.querySelectorAll("[data-hdr-del]").forEach(b=>b.onclick=()=>{
+    if (S.connForm && S.connForm.headers) S.connForm.headers.splice(+b.dataset.hdrDel, 1); render(); });
+
+  /* registry search (debounced) and import from ~/.claude.json */
+  scBody.querySelectorAll("[data-cat-search]").forEach(el=>{ el.oninput = ()=>connCatalogSearch(el.value); });
+  scBody.querySelectorAll("[data-conn-import]").forEach(b=>b.onclick=()=>loadClaudeImport());
+  scBody.querySelectorAll("[data-import-add]").forEach(b=>b.onclick=async ()=>{
+    const c = (S.claudeImport||[])[+b.dataset.importAdd]; if (!c) return;
+    S.connBusy = "import"; render();
+    try {
+      const r = await apiPost("/api/connectors", Object.assign({}, c, {enabled:true}));
+      if (r && r.error){ S.connError = r.error; }
+      else { S.claudeImport = (S.claudeImport||[]).filter(x=>x!==c);
+             S.connMsg = "Added " + (c.name||"connector") + "."; await loadConnectors(true); }
+    } catch (e){ S.connError = e.message; }
+    S.connBusy = null; render(); });
+
   /* preset -> prefill the form. Catalog args arrive as an array; the form holds a
      string, so join. env_keys become empty rows so only the secret is left to type. */
   scBody.querySelectorAll("[data-cat-pick]").forEach(b=>b.onclick=()=>{
@@ -545,7 +569,7 @@ function wire(){
     S.connForm = {
       name: p.name||"", transport: p.transport||"stdio", command: p.command||"",
       args: Array.isArray(p.args) ? p.args.join(" ") : (p.args||""),
-      url: p.url||"", env: (p.env_keys||[]).map(k=>({k, v:""})) };
+      url: p.url||"", env: (p.env_keys||[]).map(k=>({k, v:""})), headers: [] };
     S.connFormError = null; render();
     const el = scBody.querySelector('[data-cf="name"]'); if (el) el.focus();
   });
@@ -564,6 +588,9 @@ function wire(){
       body.env = env;
     } else {
       body.url = (f.url||"").trim();
+      const hdr = {};
+      (f.headers||[]).forEach(r=>{ const k=(r.k||"").trim(); if (k) hdr[k] = r.v||""; });
+      if (Object.keys(hdr).length) body.headers = hdr;
     }
     S.connBusy = "save"; S.connFormError = null; S.connMsg = null; render();
     try {
@@ -1078,9 +1105,34 @@ async function loadConnectors(force){
 }
 async function loadConnectorsCatalog(force){
   if (S.catalog && !force) return;
-  try { S.catalog = (await apiGet("/api/connectors/catalog")).catalog || []; S.catError = null; }
-  catch (e) { S.catError = e.message; S.catalog = null; }
+  S.catBusy = true;
+  /* Empty box → the curated built-in presets (a good starting point). Typing →
+     a live search over the open MCP registry (~400 servers). Fail-soft either way. */
+  const q = (S.catQuery || "").trim();
+  try {
+    if (q){
+      const d = await apiGet("/api/connectors/registry?q=" + encodeURIComponent(q) + "&limit=24");
+      S.catalog = d.results || []; S.catSource = d.source || "registry";
+    } else {
+      S.catalog = (await apiGet("/api/connectors/catalog")).catalog || []; S.catSource = "builtin";
+    }
+    S.catError = null;
+  } catch (e) { S.catError = e.message; if (!S.catalog) S.catalog = []; }
+  S.catBusy = false;
   render();
+}
+/* Debounced registry search so we don't fire a request per keystroke. */
+let _catSearchTimer = null;
+function connCatalogSearch(q){
+  S.catQuery = q;
+  if (_catSearchTimer) clearTimeout(_catSearchTimer);
+  _catSearchTimer = setTimeout(()=>{ _catSearchTimer = null; loadConnectorsCatalog(true); }, 300);
+}
+async function loadClaudeImport(){
+  S.connBusy = "import"; render();
+  try { S.claudeImport = (await apiGet("/api/connectors/claude-import")).connectors || []; }
+  catch (e) { S.claudeImport = []; S.connError = e.message; }
+  S.connBusy = null; render();
 }
 
 /* ── skills auto-refresh ─────────────────────────────────────────────────────

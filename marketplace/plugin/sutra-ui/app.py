@@ -940,6 +940,43 @@ def api_connectors_catalog() -> dict:
     return {"catalog": connectors_store.CATALOG}
 
 
+@app.get("/api/connectors/registry")
+def api_connectors_registry(q: str = "", limit: int = 20) -> dict:
+    """Live search of the official open MCP registry, normalised into the SAME
+    result shape as /api/connectors/catalog so the Add form prefills identically:
+
+        {"results": [{name, title, description, transport, command, args,
+                      env_keys, url}, ...], "source": "registry"|"builtin"}
+
+    FAIL-SOFT and never 500: on any network/parse error OR zero results, return
+    the built-in CATALOG (source "builtin") so the panel always has something to
+    show. `q` filters (omitted upstream when empty); `limit` defaults to 20,
+    capped at 50 in fetch_registry."""
+    try:
+        results = connectors_store.normalize_registry_servers(
+            connectors_store.fetch_registry(q, limit))
+        if results:
+            return {"results": results, "source": "registry"}
+    except Exception:
+        pass  # network down, HTTP error, bad JSON — fall through to builtin
+    return {"results": connectors_store.catalog_normalized(), "source": "builtin"}
+
+
+@app.get("/api/connectors/claude-import")
+def api_connectors_claude_import() -> dict:
+    """The operator's own MCP servers from ~/.claude.json, normalised to the
+    connector model (enabled:false), for one-click add:
+
+        {"connectors": [{name, transport, command, args, env, url, headers,
+                         enabled:false}, ...]}
+
+    Read-only and fail-soft — a missing/corrupt file yields an empty list.
+    Nothing is saved; the UI turns a chosen entry into a normal add POST. The
+    reserved "sutra" name is skipped."""
+    return {"connectors": connectors_store.normalize_claude_mcp_servers(
+        connectors_store.read_claude_mcp_servers())}
+
+
 @app.get("/api/state")
 def state() -> dict:
     base = lr.BASE / ".claude"
