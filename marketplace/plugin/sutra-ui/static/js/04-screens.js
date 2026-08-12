@@ -687,12 +687,32 @@ SCREENS.connectors = () => {
   return `${explain}${notice}${loadErr}
     <div class="conn-actions">
       <button class="btn" type="button" data-conn-add>＋ Add connector</button>
+      <button class="btn" type="button" data-conn-import ${S.connBusy==="import"?'aria-busy="true" disabled':""}>Import from Claude</button>
       <button class="btn" type="button" data-conn-reload>Re-read</button>
     </div>
     ${connAddForm()}
+    ${connImportBlock()}
     ${listBlock}
     ${connCatalog()}`;
 };
+
+/* MCP servers already configured in ~/.claude.json, offered for one-click import.
+   Loaded on demand by "Import from Claude"; each Add posts it as a Sutra connector. */
+function connImportBlock(){
+  const im = S.claudeImport; if (im == null) return "";
+  if (!im.length) return `<section class="chsec"><h2 class="chh">Import from Claude</h2>
+    <p class="note">No MCP servers found in <code>~/.claude.json</code>.</p></section>`;
+  return `<section class="chsec"><h2 class="chh">Import from Claude (${im.length})</h2>
+    <div class="conn-list">${im.map((c,i)=>{
+      const line = c.transport==="stdio"
+        ? [c.command, ...(Array.isArray(c.args)?c.args:[])].filter(Boolean).join(" ") : (c.url||"");
+      return `<div class="conn-row"><div class="conn-main">
+        <div class="conn-name">${esc(c.name||"unnamed")} <span class="pill ${c.transport==="stdio"?"p-acc":"p-mut"}">${esc(c.transport||"?")}</span></div>
+        <div class="conn-sum"><code>${esc(line)}</code></div></div>
+        <div class="conn-ctl"><button class="btn" type="button" data-import-add="${i}" ${S.connBusy?"disabled":""}>Add</button></div>
+      </div>`;
+    }).join("")}</div></section>`;
+}
 
 /* One configured connector. The summary is the command line (stdio) or the url
    (http/sse) -- the one line that says what this actually connects to. The toggle
@@ -753,6 +773,10 @@ function connAddForm(){
               spellcheck="false" value="${esc(f.url||"")}">`,
       "The endpoint the transport connects to.")}`;
 
+  const headerRows = `
+    ${row("headers","Headers", connHdrRows(f),
+      "Optional. Sent with every request — e.g. Authorization: Bearer … for a remote server that needs auth.")}`;
+
   return `<section class="chsec" style="margin-bottom:14px">
     <h2 class="chh">Add connector</h2>
     ${S.connFormError?`<div class="note b" style="white-space:pre-wrap">${esc(S.connFormError)}</div>`:""}
@@ -763,7 +787,7 @@ function connAddForm(){
         "How it appears to sessions.")}
       ${row("transport","Transport", transportSel,
         "stdio runs a local command; http and sse connect to a URL.")}
-      ${t==="stdio" ? stdioRows : urlRows}
+      ${t==="stdio" ? stdioRows : urlRows + headerRows}
     </div>
     <div class="rfoot">
       <button class="btn" type="button" data-conn-save ${S.connBusy==="save"?"disabled":""}>
@@ -788,25 +812,46 @@ function connEnvRows(f){
     <button class="btn conn-env-add" type="button" data-env-add>＋ Add variable</button></div>`;
 }
 
-/* The presets. Clicking a chip PREFILLS the add form and nothing else -- a preset
+/* Headers key/value grid for http/sse. Same pattern as env — commits to
+   S.connForm.headers on input, re-renders only on add/remove. */
+function connHdrRows(f){
+  const hdr = f.headers || [];
+  const rows = hdr.map((r,i)=>`<div class="conn-envrow">
+    <input data-hdrk="${i}" placeholder="Header" spellcheck="false" autocapitalize="off" value="${esc(r.k||"")}">
+    <input data-hdrv="${i}" placeholder="value" spellcheck="false" value="${esc(r.v||"")}">
+    <button class="btn" type="button" data-hdr-del="${i}" aria-label="Remove header ${esc(r.k||String(i+1))}">✕</button>
+  </div>`).join("");
+  return `<div class="conn-env">${rows}
+    <button class="btn conn-env-add" type="button" data-hdr-add>＋ Add header</button></div>`;
+}
+
+/* The catalog IS the open MCP registry now: a search over ~400 servers. Clicking a
+   chip PREFILLS the add form and nothing else -- a preset
    ships without secrets, so an auto-save would write a connector that cannot work.
    Quiet on failure: a catalog that will not load must not take the screen down. */
 function connCatalog(){
-  if (S.catError) return `<section class="chsec"><h2 class="chh">Catalog</h2>
-    <div class="note w">Could not load presets. ${esc(S.catError)}</div></section>`;
-  const cat = S.catalog;
-  if (cat == null || !cat.length) return "";
-  return `<section class="chsec conn-cat"><h2 class="chh">Catalog</h2>
-    <p style="margin:0 0 9px;color:var(--muted);font-size:11.5px;max-width:70ch">Presets. Clicking one
-       fills the form above so you only add secrets — nothing is saved until you press Save.</p>
-    <div class="conn-chips">
-      ${cat.map((p,i)=>`<button class="conn-chip" type="button" data-cat-pick="${i}"
+  const cat = S.catalog || [];
+  const q = S.catQuery || "";
+  const status = S.catBusy ? "searching…"
+    : (cat.length ? cat.length + (S.catSource === "registry" ? " from the MCP registry" : " built-in presets")
+                  : (q ? "no matches" : ""));
+  const chips = cat.length
+    ? `<div class="conn-chips">${cat.map((p,i)=>`<button class="conn-chip" type="button" data-cat-pick="${i}"
          title="${esc(p.description||"")}">
          <span class="conn-chip-h"><span class="conn-chip-n">${esc(p.name||"preset")}</span>
            <span class="pill ${p.transport==="stdio"?"p-acc":"p-mut"}">${esc(p.transport||"?")}</span></span>
          ${p.description?`<span class="conn-chip-d">${esc(p.description)}</span>`:""}
-       </button>`).join("")}
-    </div></section>`;
+       </button>`).join("")}</div>`
+    : "";
+  return `<section class="chsec conn-cat"><h2 class="chh">Browse the MCP registry</h2>
+    <p style="margin:0 0 8px;color:var(--muted);font-size:11.5px;max-width:70ch">Search the open
+      <b>MCP registry</b> (~400 servers). Click a result to fill the form above — you only add secrets;
+      nothing is saved until you press Save.</p>
+    <div class="conn-search">
+      <input data-cat-search placeholder="Search connectors — github, notion, postgres, filesystem…"
+             spellcheck="false" autocapitalize="off" value="${esc(q)}">
+      <span class="conn-search-note">${esc(status)}</span>
+    </div>${chips}</section>`;
 }
 
 /* ── S8c Routines ──

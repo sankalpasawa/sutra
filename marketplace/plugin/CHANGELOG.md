@@ -2,6 +2,18 @@
 
 **status**: active · **updated**: 2026-08-12
 
+## 2.98.0
+
+- **Connectors browse the open MCP Registry.** The catalog is live now: an empty
+  search shows curated presets; typing searches the official open **MCP Registry**
+  (`registry.modelcontextprotocol.io`, ~400 servers) and a result prefills the add
+  form (stdio `command`/`args`/`env_keys` for packaged servers, `url` for remote).
+  Fail-soft to the built-in presets if the registry is unreachable.
+- **Claude-parity gaps closed:** auth **headers** for http/sse remote connectors
+  (Authorization etc., merged into the session's `--mcp-config`), and **Import from
+  Claude** — one-click add of the MCP servers already in `~/.claude.json`. 53
+  backend tests (registry normalize, headers merge, import, fail-soft).
+
 ## 2.97.0
 
 - **Fix "Transcript not read yet" flicker.** An open, already-loaded pane was rebuilt

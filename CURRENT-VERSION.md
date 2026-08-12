@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.97.0 (2026-08-12, HEAD)
+## v2.98.0 (2026-08-12, HEAD)
+
+**Connectors = the open MCP Registry.** The catalog is live: an empty search shows curated presets, typing searches the official open MCP Registry (~400 servers, `registry.modelcontextprotocol.io`) and a result prefills the add form. Closed the Claude-parity gaps: auth **headers** for remote (http/sse) connectors — merged into the session's `--mcp-config` — and **Import from Claude** (adds the MCP servers already in `~/.claude.json`). Verified live: registry search returns real servers (github → 12), headers appear only for remote transports, curated presets on empty search; 53 backend + 81 panel tests. *(Next: an in-panel permission popup so a spawned session can ask to run a tool instead of stalling in text.)*
+
+## v2.97.0 (2026-08-12)
 
 **Two live-sync flicker fixes.** (1) "Transcript not read yet" no longer flashes on an open pane: `adoptRealSessions` preserves the pane you're reading (turns + loadState) across the frequent list refreshes agent activity triggers, instead of rebuilding it as "unread". (2) The heavy flicker while agents work is gone: `applySessionChange` keeps the transcript on screen during a background refresh (no "reading transcript…" flip) and throttles re-reads + agent-fold reloads to ~1/s. Verified at the state level: an open loaded pane survives a refresh; a background re-read never hides content; a 2nd event within a second starts no re-read. Connectors re-confirmed (33 backend tests + the mcp-config merge).
 

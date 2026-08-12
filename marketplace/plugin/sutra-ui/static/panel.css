@@ -1314,6 +1314,11 @@
   .conn-envrow > [data-env-del]{flex:none;padding:6px 10px;line-height:1}
   .conn-env-add{align-self:flex-start;margin-top:2px}
   .conn-cat .conn-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .conn-search{display:flex;align-items:center;gap:10px;margin:0 0 11px}
+  .conn-search input{flex:1 1 auto;min-width:0;background:var(--inset);border:1px solid var(--line);
+    border-radius:7px;color:var(--ink);font:500 12px/1.4 var(--sans);padding:7px 10px}
+  .conn-search input:focus{outline:none;border-color:var(--acc)}
+  .conn-search-note{flex:0 0 auto;color:var(--faint);font:500 10.5px/1 var(--mono);white-space:nowrap}
   .conn-chip{display:flex;flex-direction:column;align-items:flex-start;gap:5px;
     text-align:left;max-width:240px;padding:9px 11px;background:var(--inset);
     border:1px solid var(--line);border-radius:9px;color:var(--ink);cursor:pointer;

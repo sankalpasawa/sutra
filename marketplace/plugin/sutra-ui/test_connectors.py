@@ -60,13 +60,14 @@ class TestValidate(_IsolatedStore):
         c = cs.validate({"name": "github", "transport": "stdio", "command": "npx"})
         self.assertEqual(set(c.keys()),
                          {"id", "name", "transport", "command", "args", "env",
-                          "url", "enabled"})
+                          "url", "headers", "enabled"})
         self.assertEqual(c["name"], "github")
         self.assertEqual(c["transport"], "stdio")
         self.assertEqual(c["command"], "npx")
         self.assertEqual(c["args"], [])
         self.assertEqual(c["env"], {})
         self.assertEqual(c["url"], "")
+        self.assertEqual(c["headers"], {})     # stdio never carries headers
         self.assertTrue(c["enabled"])          # defaults to enabled
         self.assertEqual(c["id"], "")          # validate does NOT mint ids
 
@@ -110,6 +111,21 @@ class TestValidate(_IsolatedStore):
                          "env": {"TOK": "", "N": None, "K": "v", 5: "z"}})
         self.assertEqual(c["args"], ["-y", "pkg"])
         self.assertEqual(c["env"], {"TOK": "", "N": "", "K": "v"})
+
+    def test_headers_kept_for_remote_sanitised_like_env(self):
+        c = cs.validate({"name": "x", "transport": "http",
+                         "url": "https://h/mcp",
+                         "headers": {"Authorization": "Bearer t", "Blank": None,
+                                     "X-Num": 5, "  ": "dropped", 7: "dropped"}})
+        # blank-keyed and non-string-keyed entries drop; a None value -> ""; a
+        # non-string value is stringified (matches env sanitisation).
+        self.assertEqual(c["headers"],
+                         {"Authorization": "Bearer t", "Blank": "", "X-Num": "5"})
+
+    def test_headers_dropped_for_stdio(self):
+        c = cs.validate({"name": "x", "transport": "stdio", "command": "npx",
+                         "headers": {"Authorization": "Bearer t"}})
+        self.assertEqual(c["headers"], {}, "headers are meaningless for stdio")
 
 
 # --------------------------------------------------------------- CRUD --------
@@ -197,6 +213,24 @@ class TestFragment(_IsolatedStore):
     def test_empty_store_is_empty_fragment(self):
         self.assertEqual(cs.mcp_servers_fragment(), {})
 
+    def test_http_headers_are_merged_when_present(self):
+        cs.add_or_update({"name": "authed", "transport": "http",
+                          "url": "https://h/mcp",
+                          "headers": {"Authorization": "Bearer secret"},
+                          "enabled": True})
+        frag = cs.mcp_servers_fragment()
+        self.assertEqual(frag["authed"], {
+            "type": "http", "url": "https://h/mcp",
+            "headers": {"Authorization": "Bearer secret"}})
+
+    def test_http_without_headers_omits_the_key(self):
+        cs.add_or_update({"name": "plain", "transport": "http",
+                          "url": "https://h/mcp", "enabled": True})
+        frag = cs.mcp_servers_fragment()
+        # byte-for-byte the pre-headers shape: no empty headers key
+        self.assertEqual(frag["plain"], {"type": "http", "url": "https://h/mcp"})
+        self.assertNotIn("headers", frag["plain"])
+
 
 # --------------------------------------------------------------- catalog -----
 class TestCatalog(unittest.TestCase):
@@ -277,8 +311,19 @@ class TestEndpointsAndMerge(_IsolatedStore):
     def test_routes_are_registered(self):
         paths = {getattr(r, "path", "") for r in app.app.routes}
         for p in ("/api/connectors", "/api/connectors/{cid}/toggle",
-                  "/api/connectors/{cid}", "/api/connectors/catalog"):
+                  "/api/connectors/{cid}", "/api/connectors/catalog",
+                  "/api/connectors/registry", "/api/connectors/claude-import"):
             self.assertIn(p, paths, "missing route %s" % p)
+
+    def test_merge_carries_http_headers_into_the_config(self):
+        app.api_connectors_upsert({"name": "authed", "transport": "http",
+                                   "url": "https://h/mcp",
+                                   "headers": {"Authorization": "Bearer secret"},
+                                   "enabled": True})
+        servers = json.loads(app._sutra_mcp_config())["mcpServers"]
+        self.assertEqual(servers["authed"], {
+            "type": "http", "url": "https://h/mcp",
+            "headers": {"Authorization": "Bearer secret"}})
 
     def test_merge_adds_enabled_connector_alongside_sutra(self):
         app.api_connectors_upsert({"name": "lin", "transport": "sse",
@@ -322,6 +367,217 @@ class TestEndpointsAndMerge(_IsolatedStore):
         cs.CONNECTORS_PATH.write_text("{ corrupt", encoding="utf-8")
         servers = json.loads(app._sutra_mcp_config())["mcpServers"]
         self.assertEqual(set(servers.keys()), {"sutra"})
+
+
+# --------------------------------------------------- live registry (pure) ----
+# A fabricated registry page — the exact shape the official registry returns —
+# exercised through the network-free normaliser. NO test here touches the wire.
+_REGISTRY_PAGE = {
+    "servers": [
+        # remote streamable-http -> transport "http"
+        {"server": {"name": "com.example/remote-http", "title": "Remote HTTP",
+                    "description": "an http one", "version": "1.0.0",
+                    "remotes": [{"type": "streamable-http",
+                                 "url": "https://x/mcp"}]},
+         "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": True}}},
+        # remote sse -> transport "sse"
+        {"server": {"name": "com.example/remote-sse", "version": "2.0.0",
+                    "remotes": [{"type": "sse", "url": "https://x/sse"}]},
+         "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": True}}},
+        # npm package -> npx -y <id> + pkg args, env_keys from environmentVariables
+        {"server": {"name": "io.github.foo/npm-server", "version": "1.2.3",
+                    "packages": [{"registryType": "npm", "identifier": "@foo/mcp",
+                                  "packageArguments": [{"value": "--flag"},
+                                                       {"valueHint": "PATH"}],
+                                  "environmentVariables": [{"name": "FOO_TOKEN"}]}]},
+         "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": True}}},
+        # pypi package -> uvx <id> + pkg args
+        {"server": {"name": "org/py-server", "version": "0.1.0",
+                    "packages": [{"registryType": "pypi", "identifier": "py-mcp",
+                                  "packageArguments": [{"value": "serve"}]}]},
+         "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": True}}},
+        # oci package -> docker run -i --rm <id> (pkg args intentionally ignored)
+        {"server": {"name": "org/oci-server", "version": "1.0.0",
+                    "packages": [{"registryType": "oci",
+                                  "identifier": "ghcr.io/x/img:latest",
+                                  "packageArguments": [{"value": "ignored"}]}]},
+         "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": True}}},
+        # dedup: same server.name twice; isLatest wins -> url of the 2.0.0 row
+        {"server": {"name": "dup/multi", "version": "1.0.0",
+                    "remotes": [{"type": "streamable-http", "url": "https://old"}]},
+         "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": False}}},
+        {"server": {"name": "dup/multi", "version": "2.0.0",
+                    "remotes": [{"type": "streamable-http", "url": "https://new"}]},
+         "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": True}}},
+        # unusable: neither remote nor package -> skipped
+        {"server": {"name": "bad/empty", "version": "1.0.0"}},
+        # unusable: a package type we have no launcher for -> skipped
+        {"server": {"name": "bad/unknown-pkg", "version": "1.0.0",
+                    "packages": [{"registryType": "cargo", "identifier": "x"}]}},
+        # slug would be the reserved "sutra" -> skipped
+        {"server": {"name": "reserved/sutra", "version": "1.0.0",
+                    "remotes": [{"type": "sse", "url": "https://s"}]}},
+    ]
+}
+
+
+class TestRegistryNormalize(unittest.TestCase):
+    def setUp(self):
+        self.by_name = {r["name"]: r
+                        for r in cs.normalize_registry_servers(_REGISTRY_PAGE["servers"])}
+
+    def test_installable_servers_survive_unusable_are_dropped(self):
+        self.assertEqual(
+            set(self.by_name),
+            {"remote-http", "remote-sse", "npm-server", "py-server",
+             "oci-server", "multi"},
+            "empty/unknown-package/sutra rows must be dropped")
+
+    def test_result_shape_matches_catalog(self):
+        keys = {"name", "title", "description", "transport", "command", "args",
+                "env_keys", "url"}
+        for r in self.by_name.values():
+            self.assertEqual(set(r), keys, "%r has the wrong key set" % r["name"])
+
+    def test_remote_http_and_sse(self):
+        h = self.by_name["remote-http"]
+        self.assertEqual((h["transport"], h["url"]), ("http", "https://x/mcp"))
+        self.assertEqual(h["command"], "")
+        self.assertEqual(h["args"], [])
+        self.assertEqual(h["title"], "Remote HTTP")
+        s = self.by_name["remote-sse"]
+        self.assertEqual((s["transport"], s["url"]), ("sse", "https://x/sse"))
+
+    def test_npm_package_command_args_env(self):
+        n = self.by_name["npm-server"]
+        self.assertEqual(n["transport"], "stdio")
+        self.assertEqual(n["command"], "npx")
+        self.assertEqual(n["args"], ["-y", "@foo/mcp", "--flag", "PATH"])
+        self.assertEqual(n["env_keys"], ["FOO_TOKEN"])
+
+    def test_pypi_and_oci_commands(self):
+        p = self.by_name["py-server"]
+        self.assertEqual((p["command"], p["args"]), ("uvx", ["py-mcp", "serve"]))
+        o = self.by_name["oci-server"]
+        self.assertEqual((o["command"], o["args"]),
+                         ("docker", ["run", "-i", "--rm", "ghcr.io/x/img:latest"]))
+
+    def test_dedup_keeps_the_latest_version(self):
+        self.assertEqual(self.by_name["multi"]["url"], "https://new",
+                         "isLatest row (v2.0.0) must win the dedup")
+
+    def test_garbage_input_is_empty_not_a_raise(self):
+        for junk in (None, {}, "nope", [None, 5, {"server": "x"}, {"noserver": 1}]):
+            self.assertEqual(cs.normalize_registry_servers(junk), [])
+
+    def test_slug_rules(self):
+        self.assertEqual(cs._slug_from_registry_name("io.github.o/My_Server-1"),
+                         "my_server-1")
+        self.assertEqual(cs._slug_from_registry_name("x/--weird..name"),
+                         "weird--name")
+        self.assertIsNone(cs._slug_from_registry_name("reserved/sutra"))
+        self.assertIsNone(cs._slug_from_registry_name("x/!!!"))  # nothing valid left
+        self.assertEqual(len(cs._slug_from_registry_name("x/" + "a" * 80)), 39)
+
+
+class TestCatalogNormalized(unittest.TestCase):
+    def test_builtin_catalog_maps_to_result_shape(self):
+        norm = cs.catalog_normalized()
+        self.assertEqual({r["name"] for r in norm}, TestCatalog.EXPECTED)
+        keys = {"name", "title", "description", "transport", "command", "args",
+                "env_keys", "url"}
+        for r in norm:
+            self.assertEqual(set(r), keys)
+            self.assertTrue(r["title"], "title falls back to name, never blank")
+
+
+class TestRegistryEndpointFailSoft(_IsolatedStore):
+    """The endpoint's fail-soft contract, driven by monkeypatching the fetch so
+    NO test here needs the network."""
+
+    def setUp(self):
+        super().setUp()
+        self._saved_fetch = cs.fetch_registry
+        self.addCleanup(lambda: setattr(cs, "fetch_registry", self._saved_fetch))
+
+    def test_success_returns_registry_source(self):
+        cs.fetch_registry = lambda q="", limit=20: _REGISTRY_PAGE["servers"]
+        out = app.api_connectors_registry(q="db", limit=20)
+        self.assertEqual(out["source"], "registry")
+        self.assertIn("remote-http", {r["name"] for r in out["results"]})
+
+    def test_network_error_falls_back_to_builtin(self):
+        def boom(q="", limit=20):
+            raise OSError("network down")
+        cs.fetch_registry = boom
+        out = app.api_connectors_registry()
+        self.assertEqual(out["source"], "builtin")
+        self.assertEqual({r["name"] for r in out["results"]},
+                         TestCatalog.EXPECTED)
+
+    def test_zero_results_falls_back_to_builtin(self):
+        cs.fetch_registry = lambda q="", limit=20: []
+        out = app.api_connectors_registry(q="nothing-matches")
+        self.assertEqual(out["source"], "builtin")
+        self.assertEqual({r["name"] for r in out["results"]},
+                         TestCatalog.EXPECTED)
+
+
+class TestClaudeImport(_IsolatedStore):
+    def test_normalize_infers_transport_and_skips_sutra(self):
+        conns = cs.normalize_claude_mcp_servers({
+            "myhttp": {"type": "http", "url": "https://h/mcp",
+                       "headers": {"Authorization": "Bearer x"}},
+            "mysse": {"type": "sse", "url": "https://h/sse"},
+            "mystdio": {"command": "npx", "args": ["-y", "pkg"], "env": {"K": "v"}},
+            "urlonly": {"url": "https://u"},          # no type -> http
+            "sutra": {"command": "x"},                # reserved -> skipped
+            "empty": {},                              # no url/command -> skipped
+            "notadict": "nope",                       # bad spec -> skipped
+        })
+        by = {c["name"]: c for c in conns}
+        self.assertEqual(set(by), {"myhttp", "mysse", "mystdio", "urlonly"})
+        self.assertTrue(all(c["enabled"] is False for c in conns),
+                        "imported connectors are never auto-enabled")
+
+        self.assertEqual(by["myhttp"]["transport"], "http")
+        self.assertEqual(by["myhttp"]["url"], "https://h/mcp")
+        self.assertEqual(by["myhttp"]["headers"], {"Authorization": "Bearer x"})
+        self.assertEqual(by["mysse"]["transport"], "sse")
+        self.assertEqual(by["urlonly"]["transport"], "http")
+
+        st = by["mystdio"]
+        self.assertEqual(st["transport"], "stdio")
+        self.assertEqual(st["command"], "npx")
+        self.assertEqual(st["args"], ["-y", "pkg"])
+        self.assertEqual(st["env"], {"K": "v"})
+        self.assertEqual(st["headers"], {}, "stdio import carries no headers")
+
+    def test_normalize_garbage_is_empty(self):
+        for junk in (None, [], "x", {"": {"command": "x"}}):
+            self.assertEqual(cs.normalize_claude_mcp_servers(junk), [])
+
+    def test_endpoint_reads_the_file_and_is_fail_soft(self):
+        # point the reader at a temp ~/.claude.json via the env override
+        saved = os.environ.get("SUTRA_UI_CLAUDE_JSON")
+        cj = self.dir / "claude.json"
+        cj.write_text(json.dumps({"mcpServers": {
+            "gh": {"command": "npx", "args": ["-y", "server-github"]}}}),
+            encoding="utf-8")
+        os.environ["SUTRA_UI_CLAUDE_JSON"] = str(cj)
+        try:
+            out = app.api_connectors_claude_import()
+            self.assertEqual([c["name"] for c in out["connectors"]], ["gh"])
+            self.assertEqual(out["connectors"][0]["transport"], "stdio")
+            # missing file -> empty list, never a raise
+            os.environ["SUTRA_UI_CLAUDE_JSON"] = str(self.dir / "gone.json")
+            self.assertEqual(app.api_connectors_claude_import(),
+                             {"connectors": []})
+        finally:
+            if saved is None:
+                os.environ.pop("SUTRA_UI_CLAUDE_JSON", None)
+            else:
+                os.environ["SUTRA_UI_CLAUDE_JSON"] = saved
 
 
 if __name__ == "__main__":
