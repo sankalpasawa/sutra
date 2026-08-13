@@ -502,17 +502,21 @@ async function checkForUpdate() {
   }
 }
 
-/* Track ComposioHQ/composio's toolkit catalog. This rides the SAME tick as the
-   desktop update rather than adding a timer of its own, because it is the same
-   question asked of a different upstream -- "is there a newer version of a thing
-   we shipped a copy of?" -- and two schedules would be two things to reason
-   about when one of them misfires.
+/* Track what each connector depends on upstream. Both ride the SAME tick as the
+   desktop update rather than adding timers of their own, because all three are
+   the same question asked of different upstreams -- "is there a newer version of
+   a thing we shipped a copy of?" -- and three schedules would be three things to
+   reason about when one of them misfires.
 
-   NOT force:true. The backend's TTL decides whether this costs a request at all,
-   so a shell that restarts often does not hammer GitHub, and the backend stays
-   the single place the polling interval is defined. A failure here is logged and
-   dropped: the catalog we already have keeps working, offline included. */
-async function checkConnectorCatalog() {
+     hosted   ComposioHQ/composio's toolkit catalog
+     local    the pinned 1MCP aggregator version, from npm
+
+   NOT force:true, either of them. Each backend's TTL decides whether the call
+   costs a request at all, so a shell that restarts often does not hammer GitHub
+   or npm, and the backend stays the single place a polling interval is defined.
+   Failures are logged and dropped: the catalog and the pin we already have keep
+   working, offline included. */
+async function checkConnectorUpstreams() {
   if (!desktopControl()) return;
   try {
     const r = await api("POST", "/api/connectors/refresh", {}, 60000);
@@ -522,14 +526,22 @@ async function checkConnectorCatalog() {
   } catch (err) {
     console.error("[sutra] connector catalog check failed:", err.message);
   }
+  try {
+    const r = await api("POST", "/api/connectors/local/refresh", {}, 60000);
+    if (r && r.updated) {
+      console.log(`[sutra] 1mcp aggregator ${r.from} -> ${r.version}`);
+    }
+  } catch (err) {
+    console.error("[sutra] aggregator version check failed:", err.message);
+  }
 }
 
-/* One tick, both upstreams. Sequential, not parallel: the desktop update may
+/* One tick, every upstream. Sequential, not parallel: the desktop update may
    stage a multi-hundred-megabyte DMG, and a catalog check racing it for the
    backend's attention buys nothing on a schedule measured in hours. */
 async function checkUpstreams() {
   await checkForUpdate();
-  await checkConnectorCatalog();
+  await checkConnectorUpstreams();
 }
 
 function startUpdateSchedule() {

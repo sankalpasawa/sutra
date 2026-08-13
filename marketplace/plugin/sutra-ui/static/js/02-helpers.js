@@ -510,12 +510,17 @@ function railSpec(){
     ],
     runtime:[
       {id:"skills",  n:"Skills",   i:"skills",c:(SKILLS.length||undefined)},
-      /* Connectors are the external toolkits the sessions this panel starts can
-         reach, through Composio's tool router. Count = ENABLED toolkits, withheld
-         until the screen has been opened (Git rule: a 0 before the file was read
-         is a claim about a config nobody looked at). S.conn is null until then. */
+      /* Connectors are the external tools the sessions this panel starts can
+         reach: hosted toolkits (Composio) plus local servers (the 1MCP
+         aggregator). Count = both, ENABLED only, withheld until the screen has
+         been opened (Git rule: a 0 before the file was read is a claim about a
+         config nobody looked at). Either half alone still counts -- withholding
+         until BOTH are read would hide a real number over an unrelated fetch. */
       {id:"connectors",n:"Connectors",i:"conn",
-       c:(S.conn ? (S.conn.enabled||[]).length : undefined)},
+       c:((S.conn || S.local)
+          ? ((S.conn ? (S.conn.enabled||[]).length : 0) +
+             (S.local ? (S.local.enabled_count||0) : 0))
+          : undefined)},
       /* Dispatcher + scheduler. The count is the dispatch ledger's row count and
          is withheld until the screen has been opened, for the same reason Git's
          is: a 0 before the file was read is a claim about a project nobody

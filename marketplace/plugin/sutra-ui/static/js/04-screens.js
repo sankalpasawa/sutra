@@ -668,9 +668,18 @@ SCREENS.automation = () => {
 SCREENS.connectors = () => {
   const c = S.conn, err = S.connError;
 
-  const explain = `<p>External tools available to the sessions this panel starts, through
-    <b>Composio</b>'s tool router — one MCP endpoint carrying every toolkit you enable below.
-    They run under the session's permission mode — use <b>Accept Edits</b> or <b>Bypass</b>
+  /* Two connectors, and the screen says which is which up front, because they
+     differ in the one way that decides which you want: where the tool RUNS. */
+  const explain = `<p>External tools available to the sessions this panel starts. Two connectors,
+    both aggregated — one entry each in every session's MCP config, however many services
+    are behind them:</p>
+    <table class="conn-kinds"><tbody>
+      <tr><td><b>Hosted</b> · Composio</td><td>1000+ SaaS toolkits, run on Composio's
+        infrastructure, authenticated once</td></tr>
+      <tr><td><b>Local</b> · 1MCP</td><td>MCP servers that run on <i>this machine</i> —
+        files, git, browsers, databases</td></tr>
+    </tbody></table>
+    <p>They run under the session's permission mode — use <b>Accept Edits</b> or <b>Bypass</b>
     to let them act.</p>`;
 
   /* Not read yet vs read-and-empty are different facts (Git rule). Only the first
@@ -684,10 +693,231 @@ SCREENS.connectors = () => {
   const loadErr = err ? `<div class="note b"><b>Could not read connectors.</b> ${esc(err)}</div>` : "";
 
   return `${explain}${notice}${loadErr}
+    <h2 class="chh conn-kind-h">Hosted — Composio</h2>
     ${connAccount(c || {})}
     ${connEnabled(c || {})}
-    ${connCatalog(c || {})}`;
+    ${connCatalog(c || {})}
+    <h2 class="chh conn-kind-h">Local — 1MCP aggregator</h2>
+    ${lcSection()}`;
 };
+
+/* ── the LOCAL half ──
+   One 1MCP process fronts every enabled local server, so the session sees one
+   `local` namespace instead of one per server. Everything here is assorted by
+   TAG -- which is 1MCP's own per-server field, not a label this screen keeps to
+   itself: the groups below are the same strings `--filter` narrows on.
+
+   Preflight is rendered BEFORE anything else can be enabled. A connector that
+   says "enabled" on a machine with no Node fails as "the tools just are not
+   there", three turns later, with nothing on screen explaining why. */
+function lcSection(){
+  const L = S.local;
+  if (L == null && !S.localError) return `<div class="zero"><h4>Reading…</h4>
+    <p>local MCP servers, behind one aggregator</p></div>`;
+  if (S.localError) return `<div class="note b"><b>Could not read local servers.</b>
+    ${esc(S.localError)}</div>`;
+
+  const pf = L.preflight || {};
+  const blocked = !pf.runnable
+    ? `<div class="note b"><b>This machine cannot run the aggregator.</b> ${esc(pf.reason||"")}
+       — install Node.js, then press Re-read. Servers you add are kept; they simply
+       will not reach a session until Node is present.</div>` : "";
+
+  return `${blocked}${lcOptions(L)}${lcGroups(L)}${lcAddForm()}${lcRegistry(L)}`;
+}
+
+/* The aggregator's own row: what version is pinned, what it fronts, and the two
+   knobs that change what it exposes rather than what is in it. */
+function lcOptions(L){
+  const a = L.agent || {};
+  const ago = t => !t ? "never" : (Date.now()/1000 - t < 5400
+    ? Math.max(1, Math.round((Date.now()/1000 - t)/60)) + "m ago"
+    : Math.round((Date.now()/1000 - t)/3600) + "h ago");
+  return `<section class="chsec" style="margin-bottom:14px">
+    <div class="rform">
+      <div class="rfrow"><label>Aggregator</label><div class="rfield">
+        <code>${esc(a.package||"")}@${esc(a.version||"")}</code>
+        <span class="hint">Pinned on purpose — an unpinned <code>npx -y</code> could swap the
+          aggregator between two turns of one session. Checked ${esc(ago(a.checked_at))},
+          automatically every ${Math.round((a.ttl||86400)/3600)}h.
+          <button class="btn" type="button" data-lc-refresh ${S.localBusy==="refresh"?"disabled":""}
+                  style="margin-left:6px">${S.localBusy==="refresh"?"Checking…":"Check now"}</button></span>
+      </div></div>
+      <div class="rfrow"><label for="lc-filter">Tag filter</label><div class="rfield">
+        <input id="lc-filter" data-lc-filter spellcheck="false" autocapitalize="off"
+               placeholder="e.g. developer-tools,databases" value="${esc(L.filter||"")}">
+        <span class="hint">Blank exposes every enabled server. Otherwise only these tags reach
+          the session — the same tags the groups below are keyed on.</span>
+      </div></div>
+      <div class="rfrow"><label>Route hosted</label><div class="rfield">
+        <button class="btn" type="button" aria-pressed="${!!L.route_composio}"
+                data-lc-route ${S.localBusy?"disabled":""}>
+          ${L.route_composio?"Composio routed through here":"Composio connects directly"}</button>
+        <span class="hint">On, the Composio endpoint is added to this aggregator and the session
+          gets ONE connector for everything. Off (default) it connects directly — one less
+          process in front of something that already works.</span>
+      </div></div>
+    </div>
+  </section>`;
+}
+
+/* The servers, grouped by tag. This is the assorting, and it is the same
+   grouping 1MCP itself sees -- the <select> writes a real config field. */
+function lcGroups(L){
+  const groups = L.groups || [];
+  if (!groups.length) return `<div class="zero"><h4>No local servers</h4>
+    <p>Add one below, or pick from the open MCP Registry. Each one is grouped by category,
+       and one aggregator process fronts them all.</p></div>`;
+
+  return `<div class="conn-groups">${groups.map(g=>`
+    <div class="conn-catgroup">
+      <h3 class="conn-catgroup-h">${esc(g.tag)}<span class="conn-catgroup-n">${g.servers.length}</span></h3>
+      <div class="conn-list">${g.servers.map(lcRow).join("")}</div>
+    </div>`).join("")}
+    <div class="conn-actions">
+      <button class="btn" type="button" data-lc-add>＋ Add server</button>
+      <button class="btn" type="button" data-conn-reload>Re-read</button>
+    </div>`;
+}
+
+/* One local server. The summary is the command line (stdio) or the url -- the
+   one line that says what this actually runs. */
+function lcRow(s){
+  const on = !!s.enabled, busy = !!S.localBusy;
+  const line = s.transport === "stdio"
+    ? [s.command, ...(Array.isArray(s.args)?s.args:[])].filter(Boolean).join(" ")
+    : (s.url||"");
+  const tags = (S.localTags||[]).indexOf(s.tag) < 0
+    ? [s.tag].concat(S.localTags||[]) : (S.localTags||[]);
+  return `<div class="conn-row">
+    <div class="conn-main">
+      <div class="conn-name">${esc(s.title||s.name)}
+        <span class="pill ${s.transport==="stdio"?"p-acc":"p-mut"}">${esc(s.transport)}</span></div>
+      <div class="conn-sum">${line?`<code>${esc(line)}</code>`
+        :`<span style="color:var(--faint)">no target set</span>`}</div>
+    </div>
+    <div class="conn-ctl">
+      <select data-lc-tag="${esc(s.id)}" ${busy?"disabled":""} aria-label="Category for ${esc(s.name)}">
+        ${tags.map(t=>`<option value="${esc(t)}" ${t===s.tag?"selected":""}>${esc(t)}</option>`).join("")}
+      </select>
+      <button class="btn conn-tog" type="button" aria-pressed="${on}"
+              data-lc-toggle="${esc(s.id)}" ${busy?"disabled":""}
+              title="${on?"Enabled — click to disable":"Disabled — click to enable"}">
+        ${on?"Enabled":"Disabled"}</button>
+      <button class="btn" type="button" data-lc-remove="${esc(s.id)}" ${busy?"disabled":""}>Remove</button>
+    </div>
+  </div>`;
+}
+
+/* The add/edit form. Mirrors the routines grid; field edits live in S.localForm,
+   not the DOM, because a transport change re-renders the whole form and anything
+   only in the DOM would be lost at that moment. */
+function lcAddForm(){
+  const f = S.localForm; if (!f) return "";
+  const t = f.transport || "stdio";
+  const row = (id,label,control,hint) => `<div class="rfrow">
+    <label for="lf-${id}">${esc(label)}</label>
+    <div class="rfield">${control}${hint?`<span class="hint">${hint}</span>`:""}</div></div>`;
+
+  const stdioRows = `
+    ${row("command","Command",
+      `<input id="lf-command" data-lf="command" placeholder="npx" spellcheck="false"
+              autocapitalize="off" value="${esc(f.command||"")}">`,
+      "The executable that speaks MCP over stdio. It runs on this machine.")}
+    ${row("args","Arguments",
+      `<textarea id="lf-args" data-lf="args" class="conn-args"
+         placeholder="-y @modelcontextprotocol/server-filesystem ~/work">${esc(f.args||"")}</textarea>`,
+      "Space- or newline-separated. Each token is one argument.")}
+    ${row("env","Environment", lcEnvRows(f),
+      "One row per variable — this is where a server's secrets go.")}`;
+
+  const urlRows = `
+    ${row("url","URL",
+      `<input id="lf-url" data-lf="url" placeholder="https://example.com/mcp"
+              spellcheck="false" value="${esc(f.url||"")}">`,
+      "A remote endpoint the aggregator connects to on your behalf.")}`;
+
+  return `<section class="chsec" style="margin-bottom:14px">
+    <h2 class="chh">Add local server</h2>
+    ${S.localFormError?`<div class="note b" style="white-space:pre-wrap">${esc(S.localFormError)}</div>`:""}
+    <div class="rform">
+      ${row("name","Name",
+        `<input id="lf-name" data-lf="name" placeholder="filesystem" spellcheck="false"
+                autocapitalize="off" value="${esc(f.name||"")}">`,
+        "How it appears inside the aggregator's tool namespace.")}
+      ${row("transport","Transport",
+        `<select id="lf-transport" data-lf-transport>${["stdio","http","sse"].map(x=>
+          `<option value="${x}" ${t===x?"selected":""}>${x}</option>`).join("")}</select>`,
+        "stdio runs a local command; http and sse connect to a URL.")}
+      ${row("tag","Category",
+        `<input id="lf-tag" data-lf="tag" placeholder="developer-tools" spellcheck="false"
+                autocapitalize="off" value="${esc(f.tag||"")}">`,
+        "The 1MCP tag this server is filed under. Blank lets it be guessed.")}
+      ${t==="stdio" ? stdioRows : urlRows}
+    </div>
+    <div class="rfoot">
+      <button class="btn" type="button" data-lc-save ${S.localBusy==="save"?"disabled":""}>
+        ${S.localBusy==="save"?"Saving…":"Save"}</button>
+      <button class="btn" type="button" data-lc-cancel>Cancel</button>
+    </div>
+  </section>`;
+}
+
+function lcEnvRows(f){
+  const env = f.env || [];
+  return `<div class="conn-env">${env.map((r,i)=>`<div class="conn-envrow">
+    <input data-lenvk="${i}" placeholder="KEY" spellcheck="false" autocapitalize="off"
+           value="${esc(r.k||"")}">
+    <input data-lenvv="${i}" placeholder="value" spellcheck="false" value="${esc(r.v||"")}">
+    <button class="btn" type="button" data-lenv-del="${i}"
+            aria-label="Remove variable ${esc(r.k||String(i+1))}">✕</button>
+  </div>`).join("")}
+    <button class="btn conn-env-add" type="button" data-lenv-add>＋ Add variable</button></div>`;
+}
+
+/* The open MCP Registry, assorted. Clicking a card PREFILLS the form and stops
+   -- a registry entry ships without secrets, so an auto-save would write a
+   server that cannot run. `tag_source` is shown because a GUESSED category and
+   a LOOKED-UP one are different claims, and the registry publishes no
+   categories at all. */
+function lcRegistry(L){
+  const reg = S.localReg || {};
+  const rows = reg.results || [];
+  const q = S.localQuery || "";
+  const status = S.localRegBusy ? "searching…"
+    : (rows.length ? rows.length + (reg.source==="stale" ? " (last good copy)" : " servers")
+                   : (q ? "no matches" : ""));
+  const err = reg.error ? `<div class="note b">Registry unavailable — ${esc(reg.error)}.
+    Showing the last copy we had.</div>` : "";
+
+  const groups = {};
+  rows.forEach((r,i)=>{ (groups[r.tag||"other"] = groups[r.tag||"other"] || []).push([r,i]); });
+
+  return `<section class="chsec conn-cat"><h2 class="chh">Open MCP Registry</h2>
+    <p style="margin:0 0 8px;color:var(--muted);font-size:11.5px;max-width:70ch">Every server
+      published to <code>registry.modelcontextprotocol.io</code>, grouped into the same categories
+      the hosted connector uses. Clicking one fills the form above — you add any secrets, and
+      nothing is saved until you press Save.</p>
+    <div class="conn-search">
+      <input data-lc-search placeholder="Search the registry — postgres, playwright, figma…"
+             spellcheck="false" autocapitalize="off" value="${esc(q)}">
+      <span class="conn-search-note">${esc(status)}</span>
+    </div>${err}
+    ${Object.keys(groups).sort().map(tag=>`<div class="conn-catgroup">
+      <h3 class="conn-catgroup-h">${esc(tag)}<span class="conn-catgroup-n">${groups[tag].length}</span></h3>
+      <div class="conn-chips">${groups[tag].map(ri=>lcRegChip(ri[0], ri[1])).join("")}</div>
+    </div>`).join("")}</section>`;
+}
+
+function lcRegChip(r, i){
+  return `<button class="conn-chip" type="button" data-lc-pick="${i}"
+       title="${esc(r.description||"")}">
+       <span class="conn-chip-h"><span class="conn-chip-n">${esc(r.title||r.name)}</span>
+         <span class="pill ${r.transport==="stdio"?"p-acc":"p-mut"}">${esc(r.transport||"?")}</span></span>
+       <span class="conn-chip-d">${esc(r.description||"")}</span>
+       ${r.tag_source==="guess"?`<span class="conn-chip-d" style="opacity:.6">category guessed</span>`:""}
+     </button>`;
+}
 
 /* The account block. The key is a password field and the server never sends it
    back -- only whether one is set and its last four characters, which is enough

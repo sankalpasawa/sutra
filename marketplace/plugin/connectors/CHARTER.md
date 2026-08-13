@@ -1,6 +1,6 @@
 # CONNECTORS — Sutra Governance Charter
 
-*Version: v0.1.0 · Adopted: 2026-04-30 · Status: ACTIVE · Owner: CEO of Sutra*
+*Version: v0.4.0 · Adopted: 2026-04-30 · Amended: 2026-08-13 · Status: ACTIVE · Owner: CEO of Sutra*
 
 Internal governance charter for the Sutra Connectors module — peer to PERMISSIONS and PRIVACY. Lives in-tree with the module at `sutra/marketplace/plugin/connectors/CHARTER.md` (per build-plan codex review: charter ships WITH the module so every install carries the scope rules that bind it).
 
@@ -29,7 +29,7 @@ The module path is `sutra/marketplace/plugin/connectors/` and is D38 build-layer
 - **Not a planning surface.** Connectors do not invoke `Composio.plan()`, `Composio.discover()`, `Composio.workbench`, `session-memory`, or any Composio surface beyond `authenticate` + `executeTool` + `isAuthenticated` (LLD §2.7).
 - **Not a substitute for permission gates.** Existing PERMISSIONS hooks govern the local Bash/Write/Edit surface; Connectors govern *external* service calls. Different threat models, different gates.
 - **Not an MCP-shaped internal model.** MCP is a wire protocol used at L3 only. Sutra's internal types (LLD §2.1) are MCP-agnostic.
-- **Not a multi-vendor abstraction layer in v0.** v0 supports two integration patterns — Composio adapter AND first-party direct backends — both legitimate. A SECOND EXTERNAL VENDOR (e.g. Activepieces) still triggers charter amendment + codex review per PROTO-019.
+- **Not a multi-vendor abstraction layer, with two named exceptions.** Three integration patterns are legitimate: the Composio adapter, first-party direct backends, and — added v0.4.0 — a LOCAL AGGREGATOR (1MCP) for MCP servers that run on the operator's own machine. Composio is a hosted API for cloud SaaS and structurally cannot serve local servers; that gap, not a preference, is what the third pattern fills. Any FOURTH pattern, and any second *hosted* vendor (e.g. Activepieces), still triggers charter amendment per PROTO-019.
 - **Not unaudited.** Every external call produces an `AuditEvent` in `.enforcement/connector-audit.jsonl` (LLD §2.5). No silent calls.
 
 ---
@@ -95,6 +95,28 @@ These five rules from foundational spec §5 are the architectural promise. Each 
 **Mechanism**: this charter, plus codex review on every PR under `connectors/`. PR description must call out boundary impact when L1 surface area changes (new lib file, new public API, new Composio API touched). Reviewer rejects if charter §2 amendment is missing.
 
 **Why**: discipline drift is the named #1 risk in foundational spec §10. The trade we accepted for picking Composio over Nango was discipline cost; this rule is the discipline.
+
+```
+┌─ RULE 6 (v0.4.0) ───────────────────────────────────────────┐
+│ A LOCAL AGGREGATOR is INVOKED, never imported, always at a  │
+│ PINNED version, and is handed no Sutra credential or        │
+│ privileged path.                                            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Mechanism**: `sutra-ui/local_store.py` spawns `npx -y @1mcp/agent@<version>` and nothing else. Three properties are pinned by test in `test_local.py::TestAggregatorDiscipline`, which fails the build on drift:
+
+| Property | Why it is load-bearing |
+|---|---|
+| **Version pinned into argv** | An unpinned `npx -y @1mcp/agent` resolves whatever npm calls latest AT SPAWN TIME. The process fronting every local tool could change between two turns of one session, with nothing recorded anywhere. The pin moves only through `refresh_agent()`, which records the version it adopted. |
+| **Version pattern-checked** | The version string lands in an argv slot. `_VERSION_RE` is anchored to `N.N.N[-tag]`, so an npm answer of `latest`, `""`, or `$(id)` is refused and the existing pin holds. |
+| **Config derived, never hand-kept** | 1MCP's `mcp.json` is rewritten from Sutra's store on every mutation. Two sources of truth for "what is enabled" is how a panel starts lying about what the next turn can reach. |
+
+The aggregator is a SUBPROCESS, not a dependency: it is absent from `connectors/package.json`, is never `import`ed, and receives only the config file Sutra wrote for it. It therefore cannot call back into Sutra — the same one-way property RULE 1 requires of the Composio adapter.
+
+**Scope limit**: the aggregator fronts LOCAL MCP servers. Routing the hosted Composio endpoint through it is available but OFF by default, because it puts a subprocess in front of an endpoint that works without one. When it is on, `app._sutra_mcp_config` emits the aggregator INSTEAD OF the direct Composio entry, never both — the same toolkits under two namespaces would double every audit event.
+
+**Why**: Composio cannot serve a server that runs on the operator's machine, and N local servers merged directly into `--mcp-config` is N tool namespaces in the model's context, growing without bound. One aggregated process is the only shape that keeps the session's connector surface constant.
 
 ---
 
@@ -346,13 +368,15 @@ The Connectors module pulls in five OSS dependencies plus one system binary. Lic
 | **cockatiel** | npm dep (Microsoft) | MIT | shipped (Mode B retry policy) | Battle-tested retry + circuit-breaker. Used by `ConnectorRouter` Mode B (M1.6). |
 | **nanoid** | npm dep | MIT | shipped (idempotency_key + event_id generation) | Tiny (~130B), zero deps, URL-safe IDs. Used by `call.mjs` + Mode B Router (M1.3). |
 | **yaml** | npm dep | ISC | shipped (manifest parser) | Standard YAML 1.2 parser. Used by `lib/manifest.ts`. Moved to runtime `dependencies` in M2 step 1. |
+| **@1mcp/agent** | npm dep, invoked (never imported) | Apache-2.0 | shipped v0.4.0 (local connector aggregator) | Fronts every local MCP server as ONE stdio process, so the session's MCP config does not grow with the number of servers. Spawned via `npx -y @1mcp/agent@<pinned>` by `sutra-ui/local_store.py` — never imported, so it takes no place in `connectors/package.json` and cannot reach Sutra's own code. The pin is mandatory (§2 rule 6). |
 
 ### Considered but NOT shipped
 
 | Dep | License | Why we did not ship |
 |---|---|---|
 | **Infisical** | MIT-core / commercial-enterprise | Considered for credential management before age was selected. age won on simplicity (single binary, no server) and license clarity (pure BSD vs split-license). |
-| **Activepieces** | MIT-core / commercial | Considered as a second L2 vendor alongside Composio. Per §1 rule 4 ("Not a multi-vendor abstraction layer in v0"), adding a second vendor triggers charter amendment + codex review. Not shipped in v2.10.x. |
+| **Activepieces** | MIT-core / commercial | Considered as a second HOSTED L2 vendor alongside Composio. Per §1 rule 4, a second hosted vendor still triggers charter amendment. Not shipped. |
+| **MetaMCP** | MIT | Considered as the local aggregator before 1MCP was selected. Rejected on deployment shape, not licence: it requires Docker, Postgres and its own Next.js UI, all of which the desktop panel would then install, supervise and duplicate. 1MCP's `serve --transport=stdio` is one process with no daemon and no port. |
 
 ### Posture rule
 
@@ -366,6 +390,7 @@ License-tracking note: this charter is the source of truth. `package.json` is th
 ---
 
 ## Changelog
+- v0.4.0 (2026-08-13): **Local aggregator admitted as a third integration pattern.** §1 rule 4 rewritten — a local MCP aggregator (1MCP, Apache-2.0) is now legitimate alongside the Composio adapter and first-party direct backends, because Composio is a hosted API for cloud SaaS and structurally cannot serve MCP servers that run on the operator's own machine. §2 gains RULE 6 (aggregator discipline: pinned version, no import, no privileged config). §10 records `@1mcp/agent` as shipped and MetaMCP as considered-and-rejected. **PROTO-019 codex review was BYPASSED by explicit founder direction (2026-08-13); this amendment is founder-authority, not review-cleared, and is marked as such so a later reader does not mistake it for a reviewed decision.**
 - v0.3.0 (2026-05-01): §10 added — explicit license posture for shipped + considered OSS deps (M2 step 5).
 - v0.2.0 (2026-04-30): Sync to shipped runtime — direct backends recognized as legitimate alongside Composio. Multi-vendor expansion still triggers amendment.
 

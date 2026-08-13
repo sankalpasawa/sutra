@@ -545,7 +545,7 @@ function wire(){
   });
 
   scBody.querySelectorAll("[data-conn-reload]").forEach(b=>b.onclick=()=>{
-    loadConnectors(true); loadConnCatalog(true); });
+    loadConnectors(true); loadConnCatalog(true); loadLocal(true); loadLocalRegistry(true); });
 
   /* Enable/disable. Both the catalog card and the Disable button land here; the
      card sends no direction (flip), the button forces off, so a stale render
@@ -569,6 +569,122 @@ function wire(){
   scBody.querySelectorAll("[data-tk-off]").forEach(b=>b.onclick=()=>toggleToolkit(b.dataset.tkOff, false));
 
   scBody.querySelectorAll("[data-cx-search]").forEach(el=>{ el.oninput = ()=>connCatalogSearch(el.value); });
+
+  /* ── local connector (1MCP) ──
+     Same shape as the hosted half: mutate, re-read, render, nothing optimistic.
+     Form edits live in S.localForm because the transport <select> re-renders. */
+  scBody.querySelectorAll("[data-lc-add]").forEach(b=>b.onclick=()=>{
+    S.localForm = {name:"", transport:"stdio", tag:"", command:"", args:"", url:"", env:[]};
+    S.localFormError = null; render();
+    const el = scBody.querySelector('[data-lf="name"]'); if (el) el.focus();
+  });
+  scBody.querySelectorAll("[data-lc-cancel]").forEach(b=>b.onclick=()=>{
+    S.localForm = null; S.localFormError = null; render(); });
+
+  scBody.querySelectorAll("[data-lf]").forEach(el=>{
+    const k = el.dataset.lf;
+    el.oninput = ()=>{ if (S.localForm) S.localForm[k] = el.value; };
+  });
+  const lfT = scBody.querySelector("[data-lf-transport]");
+  if (lfT) lfT.onchange = ()=>{ if (S.localForm){ S.localForm.transport = lfT.value; render(); } };
+
+  scBody.querySelectorAll("[data-lenvk]").forEach(el=>{ const i=+el.dataset.lenvk;
+    el.oninput = ()=>{ const e = S.localForm && S.localForm.env[i]; if (e) e.k = el.value; }; });
+  scBody.querySelectorAll("[data-lenvv]").forEach(el=>{ const i=+el.dataset.lenvv;
+    el.oninput = ()=>{ const e = S.localForm && S.localForm.env[i]; if (e) e.v = el.value; }; });
+  scBody.querySelectorAll("[data-lenv-add]").forEach(b=>b.onclick=()=>{
+    if (!S.localForm) return;
+    (S.localForm.env = S.localForm.env || []).push({k:"", v:""}); render(); });
+  scBody.querySelectorAll("[data-lenv-del]").forEach(b=>b.onclick=()=>{
+    if (S.localForm && S.localForm.env) S.localForm.env.splice(+b.dataset.lenvDel, 1);
+    render(); });
+
+  scBody.querySelectorAll("[data-lc-save]").forEach(b=>b.onclick=async ()=>{
+    const f = S.localForm || {};
+    const name = (f.name||"").trim();
+    if (!name){ S.localFormError = "A name is required."; render(); return; }
+    const t = f.transport || "stdio";
+    const body = {name, transport:t, enabled:true, title:(f.title||"").trim()};
+    if ((f.tag||"").trim()) body.tag = f.tag.trim();
+    if (t === "stdio"){
+      body.command = (f.command||"").trim();
+      body.args = (f.args||"").split(/\s+/).filter(Boolean);   /* space OR newline */
+      const env = {};
+      (f.env||[]).forEach(r=>{ const k=(r.k||"").trim(); if (k) env[k] = r.v||""; });
+      body.env = env;
+    } else {
+      body.url = (f.url||"").trim();
+    }
+    S.localBusy = "save"; S.localFormError = null; S.connMsg = null; render();
+    try {
+      const r = await apiPost("/api/connectors/local", body);
+      if (r && r.error){ S.localFormError = r.error; }
+      else { S.localForm = null;
+             S.connMsg = "Added " + ((r.server&&r.server.name)||name) + "."; }
+    } catch (e) { S.localFormError = e.message; }
+    S.localBusy = null; await loadLocal(true);
+  });
+
+  const lcAct = async (path, body, msg)=>{
+    S.localBusy = path; S.connMsg = null; render();
+    try {
+      const r = await apiPost("/api/connectors/local" + path, body || {});
+      if (r && r.error) S.localError = r.error; else if (msg) S.connMsg = msg;
+    } catch (e) { S.localError = e.message; }
+    S.localBusy = null; await loadLocal(true);
+  };
+  scBody.querySelectorAll("[data-lc-toggle]").forEach(b=>b.onclick=()=>
+    lcAct("/" + b.dataset.lcToggle + "/toggle", {}, null));
+  scBody.querySelectorAll("[data-lc-tag]").forEach(sel=>sel.onchange=()=>
+    lcAct("/" + sel.dataset.lcTag + "/tag", {tag: sel.value}, "Re-filed under " + sel.value + "."));
+  scBody.querySelectorAll("[data-lc-route]").forEach(b=>b.onclick=()=>
+    lcAct("/options", {route_composio: b.getAttribute("aria-pressed") !== "true"}, null));
+
+  /* The filter is a text field, so it commits on blur/Enter rather than per
+     keystroke -- every commit rewrites 1MCP's config file. */
+  scBody.querySelectorAll("[data-lc-filter]").forEach(el=>{
+    const commit = ()=>{ if ((el.value||"") !== ((S.local&&S.local.filter)||""))
+      lcAct("/options", {filter: el.value}, null); };
+    el.onblur = commit;
+    el.onkeydown = ev=>{ if (ev.key === "Enter"){ ev.preventDefault(); el.blur(); } };
+  });
+
+  scBody.querySelectorAll("[data-lc-remove]").forEach(b=>b.onclick=async ()=>{
+    if (!window.confirm("Remove this local server?\n\nSessions started after this will no " +
+                        "longer see its tools.")) return;
+    S.localBusy = "remove"; S.connMsg = null; render();
+    try { await apiDelete("/api/connectors/local/" + encodeURIComponent(b.dataset.lcRemove)); }
+    catch (e) { S.localError = e.message; }
+    S.localBusy = null; await loadLocal(true);
+  });
+
+  /* Aggregator version check -- the local half of auto-update, counterpart to
+     the hosted connector's catalog check. */
+  scBody.querySelectorAll("[data-lc-refresh]").forEach(b=>b.onclick=async ()=>{
+    S.localBusy = "refresh"; S.connMsg = null; render();
+    try {
+      const r = await apiPost("/api/connectors/local/refresh", {force:true});
+      if (r && r.error) S.localError = r.error;
+      else if (r && r.updated) S.connMsg = "Aggregator updated " + r.from + " → " + r.version + ".";
+      else S.connMsg = "Aggregator already up to date (" + (r&&r.version) + ").";
+    } catch (e) { S.localError = e.message; }
+    S.localBusy = null; await loadLocal(true);
+  });
+
+  scBody.querySelectorAll("[data-lc-search]").forEach(el=>{ el.oninput = ()=>lcRegistrySearch(el.value); });
+
+  /* registry entry -> prefill. args arrive as an array and the form holds a
+     string, so join; env_keys become empty rows so only the secret is left. */
+  scBody.querySelectorAll("[data-lc-pick]").forEach(b=>b.onclick=()=>{
+    const r = ((S.localReg||{}).results||[])[+b.dataset.lcPick]; if (!r) return;
+    S.localForm = {
+      name: r.name||"", title: r.title||"", tag: r.tag||"",
+      transport: r.transport||"stdio", command: r.command||"",
+      args: Array.isArray(r.args) ? r.args.join(" ") : (r.args||""),
+      url: r.url||"", env: (r.env_keys||[]).map(k=>({k, v:""}))};
+    S.localFormError = null; render();
+    const el = scBody.querySelector('[data-lf="name"]'); if (el) el.focus();
+  });
 
   /* The manual half of auto-update. force:true skips the TTL so pressing it
      always talks to GitHub, and the result distinguishes "checked, nothing
@@ -812,7 +928,8 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     /* lazy, like Git: reading the MCP config and the preset catalog on every boot
        is work a panel that never opens this screen has no reason to do. */
-    if (S.screen === "connectors"){ loadConnectors(false); loadConnCatalog(false); }
+    if (S.screen === "connectors"){ loadConnectors(false); loadConnCatalog(false);
+                                    loadLocal(false); loadLocalRegistry(false); }
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -1089,6 +1206,50 @@ function connCatalogSearch(q){
   S.connQuery = q;
   if (_catSearchTimer) clearTimeout(_catSearchTimer);
   _catSearchTimer = setTimeout(()=>{ _catSearchTimer = null; loadConnCatalog(true); }, 250);
+}
+
+/* ── local connector ─────────────────────────────────────────────────────────
+   The 1MCP half. Three loaders on the same degradable contract as the hosted
+   half: cache unless forced, report failures into state, never throw.
+
+   apiDelete lives here because removing a local server is the only DELETE the
+   Connectors screen issues, and neither apiGet nor apiPost covers one -- same
+   _fail error shape as the others, so a 500 here reads like a 500 anywhere. */
+async function apiDelete(path){
+  const r = await fetch(API + path, { method:"DELETE" });
+  if (!r.ok) throw await _fail(r, path);
+  return r.json();
+}
+
+async function loadLocal(force){
+  if (S.local && !force) return;
+  try {
+    S.local = await apiGet("/api/connectors/local"); S.localError = null;
+    /* The category <select> on each row offers every tag currently IN USE, so
+       re-filing a server means picking a group that exists rather than typing
+       a new one and hoping it matches. */
+    S.localTags = (S.local.groups||[]).map(g=>g.tag);
+  }
+  catch (e) { S.localError = e.message; S.local = null; }
+  render();
+}
+
+async function loadLocalRegistry(force){
+  if (S.localReg && !force) return;
+  S.localRegBusy = true;
+  const q = (S.localQuery || "").trim();
+  try { S.localReg = await apiGet("/api/connectors/local/registry?limit=24&q=" +
+                                  encodeURIComponent(q)); }
+  catch (e) { if (!S.localReg) S.localReg = {results:[], error:e.message}; }
+  S.localRegBusy = false;
+  render();
+}
+
+let _lcSearchTimer = null;
+function lcRegistrySearch(q){
+  S.localQuery = q;
+  if (_lcSearchTimer) clearTimeout(_lcSearchTimer);
+  _lcSearchTimer = setTimeout(()=>{ _lcSearchTimer = null; loadLocalRegistry(true); }, 300);
 }
 
 /* ── skills auto-refresh ─────────────────────────────────────────────────────
