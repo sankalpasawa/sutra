@@ -502,13 +502,43 @@ async function checkForUpdate() {
   }
 }
 
+/* Track ComposioHQ/composio's toolkit catalog. This rides the SAME tick as the
+   desktop update rather than adding a timer of its own, because it is the same
+   question asked of a different upstream -- "is there a newer version of a thing
+   we shipped a copy of?" -- and two schedules would be two things to reason
+   about when one of them misfires.
+
+   NOT force:true. The backend's TTL decides whether this costs a request at all,
+   so a shell that restarts often does not hammer GitHub, and the backend stays
+   the single place the polling interval is defined. A failure here is logged and
+   dropped: the catalog we already have keeps working, offline included. */
+async function checkConnectorCatalog() {
+  if (!desktopControl()) return;
+  try {
+    const r = await api("POST", "/api/connectors/refresh", {}, 60000);
+    if (r && r.updated) {
+      console.log(`[sutra] connector catalog updated: ${r.count || 0} toolkits`);
+    }
+  } catch (err) {
+    console.error("[sutra] connector catalog check failed:", err.message);
+  }
+}
+
+/* One tick, both upstreams. Sequential, not parallel: the desktop update may
+   stage a multi-hundred-megabyte DMG, and a catalog check racing it for the
+   backend's attention buys nothing on a schedule measured in hours. */
+async function checkUpstreams() {
+  await checkForUpdate();
+  await checkConnectorCatalog();
+}
+
 function startUpdateSchedule() {
   if (!desktopControl()) {
     console.log("[sutra] attached to a backend we did not start; auto-update off");
     return;
   }
-  updateTimers.push(setTimeout(checkForUpdate, UPDATE_FIRST_CHECK_MS));
-  updateTimers.push(setInterval(checkForUpdate, UPDATE_INTERVAL_MS));
+  updateTimers.push(setTimeout(checkUpstreams, UPDATE_FIRST_CHECK_MS));
+  updateTimers.push(setInterval(checkUpstreams, UPDATE_INTERVAL_MS));
 }
 
 /* Hand the helper this process -- its pid, so it waits for THE SHELL rather

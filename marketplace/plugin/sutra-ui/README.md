@@ -115,6 +115,8 @@ the change up.
 | `~/Library/Application Support/Sutra/` | staged runtime + its venv (created by the installer) |
 | `~/.sutra-native/user-kit/` | the registry the panel reads (auto-created empty on first run) |
 | `~/.sutra-ui/settings.json` | provider + permission mode + workdir |
+| `~/.sutra-ui/composio.json` | Composio API key + user id + enabled toolkits (owner-only, 0600) |
+| `~/.sutra-ui/composio-catalog.json` | mirrored toolkit catalog — derived, safe to delete |
 | `~/.sutra-native/run/sutra-app.log` | why a Finder launch failed |
 
 First run against an empty registry works: it seeds `domains/`, `charters/` and
@@ -135,6 +137,36 @@ protocol. Installing the `codex` CLI makes it installed and configured within
 seconds, but it still cannot be used here — so it is listed, disabled, with that
 exact reason. Adding a provider means adding its id to `ADAPTERS` in
 `providers.py` **and** writing the adapter.
+
+## Connectors (Composio)
+
+External tools reach a session through **one** MCP server, not one per service:
+a Composio [tool router](https://docs.composio.dev/docs/sessions-via-mcp) session,
+merged into the `--mcp-config` of every turn alongside `sutra` (see
+`app._sutra_mcp_config`). Enabling a toolkit widens what that one endpoint
+carries; nothing is installed locally and no per-service secret is pasted here.
+
+| | |
+|---|---|
+| Set up | Connectors screen → API key from `dashboard.composio.dev/settings` + a user id |
+| Connect an account | the agent does it — the session carries Composio's connection manager and hands you an in-browser auth link the first time it touches an unconnected toolkit |
+| Permissions | connector tools are **not** pre-allowed; they run under the session's `--permission-mode` (only `mcp__sutra__*` is cleared by the PreToolUse hook) |
+| Workbench | disabled — `connectors/CHARTER.md` RULE 2 forbids Composio's remote code-execution surface |
+
+**What auto-updates, and how** — three different claims, three mechanisms:
+
+| Changes upstream | How this app picks it up | Latency |
+|---|---|---|
+| New/changed tools inside a toolkit | nothing to update — the endpoint is remote and served by Composio | immediate |
+| The toolkit catalog (which apps exist) | conditional `GET` of `ComposioHQ/composio@next:docs/public/data/toolkits-list.json`, which their bot refreshes on a schedule | ≤ 6h |
+| Which toolkits are on | session re-provisioned when the (user id, toolkits) fingerprint changes | next turn |
+
+The catalog poll is TTL-gated and runs on screen open **and** on the Electron
+shell's existing update tick (`checkUpstreams` in `main.js`) — never as a
+boot-time poller, for the reason `updates.py` documents: the CLI serves this
+same app to a plain browser, and a fetch on import would make every CLI user
+phone GitHub on launch. A copy of the catalog ships in `composio-toolkits.json`,
+so the screen works offline on first run.
 
 ## Workspaces (tenants)
 

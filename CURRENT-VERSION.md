@@ -1,6 +1,10 @@
 # Sutra — Current Version
 
-## v2.99.0 (2026-08-12, HEAD)
+## v3.0.0 (2026-08-13, HEAD)
+
+**Connectors are Composio.** The hand-maintained MCP model is gone — `connectors_store.py`, its ~50-preset gallery, the open-MCP-registry search, and the `~/.claude.json` import are deleted and replaced by Composio's *current* open-source connector: a tool router session (`POST /api/v3/tool_router/session`, the SDK's own `composio.create(user_id, mcp=True)` path — **not** the deprecated `composio.mcp.*` server API). One HTTP MCP endpoint now carries however many of Composio's **1181 toolkits** the operator enables, authenticated by an `x-api-key` header; per-toolkit OAuth is handled in-browser by the session's connection manager, so no login flow ships here. `workbench` is explicitly disabled per `connectors/CHARTER.md` RULE 2. **Auto-update, three mechanisms, stated separately:** new tools inside a toolkit need no client change (the endpoint is remote); the toolkit catalog tracks `ComposioHQ/composio@next:docs/public/data/toolkits-list.json` by ETag-conditional GET, TTL-gated on screen open *and* on the Electron shell's existing update tick; the session re-provisions when the (user id, toolkits) fingerprint changes. A vendored snapshot makes first run work offline. Verified: 56 new backend tests (incl. provable negatives against the deprecated API and against re-enabling the workbench), 175 app tests, 81 panel tests, 36 others — all green. **Breaking:** local stdio MCP servers (filesystem, git, playwright, sqlite) are no longer configurable from this panel.
+
+## v2.99.0 (2026-08-12)
 
 **Connectors gallery.** The Connectors screen's default view expands from 6 presets to a browsable gallery of ~50 recognizable MCP connectors, grouped into 11 categories (Development, Data & Databases, Productivity, Communication, Search & Web, Browser & Automation, Payments & Business, Monitoring & Cloud, Design, AI & Models, Utility) — every config verified against the live MCP registry or a documented remote endpoint (no invented package names). The full open registry (~400 servers) remains one search away; remote connectors carry auth headers. Verified live: 50 connectors / 11 categories render grouped; 56 backend + 81 panel tests.
 
