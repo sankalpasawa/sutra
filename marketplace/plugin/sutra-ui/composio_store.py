@@ -161,14 +161,25 @@ def _read_json(path, default):
 def _write_json(path, obj):
     """Atomically write one JSON file (tmp + os.replace), matching org_api's
     convention: a crash mid-write cannot leave a truncated file. The store holds
-    an API key, so the temp file is created 0600 and the mode survives the
-    replace — a world-readable ~/.sutra-ui/composio.json would leak it."""
+    an API key, so the temp file is forced to 0600 and that mode survives the
+    replace — a world-readable ~/.sutra-ui/composio.json would leak it.
+
+    The mode is set with fchmod AFTER open, not by the open() mode argument:
+    O_CREAT's mode is ignored when the temp file ALREADY EXISTS (a crash left it,
+    or another local user pre-planted composio.json.sutra-tmp at a lax mode), and
+    O_TRUNC clears only the contents, not the permission bits — so os.replace
+    would carry a 0666 inode onto the secret store. fchmod forces 0600 on the
+    real fd regardless of how the inode was created."""
     path = str(path)
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
     tmp = path + ".sutra-tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)  # load-bearing when tmp pre-existed at a laxer mode
+    except (OSError, AttributeError):
+        pass  # a platform without fchmod still gets O_CREAT's 0600 on a fresh file
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(obj, fh, indent=2)
     os.replace(tmp, path)
@@ -232,14 +243,28 @@ def load():
 
     sess = raw.get("session")
     if isinstance(sess, dict) and sess.get("url") and sess.get("session_id"):
+        # created_at is coerced defensively: a hand-edited store whose
+        # created_at is a non-numeric string is VALID JSON, so it survives
+        # _read_json's guard and would reach an unguarded float() here. A bad
+        # value degrades this ONE session row to absent (like every other
+        # malformed-shape case), never raises — load() promises "never raises".
         out["session"] = {
             "session_id": str(sess.get("session_id") or ""),
             "url": str(sess.get("url") or ""),
             "type": str(sess.get("type") or "http"),
             "fingerprint": str(sess.get("fingerprint") or ""),
-            "created_at": float(sess.get("created_at") or 0),
+            "created_at": _as_float(sess.get("created_at")),
         }
     return out
+
+
+def _as_float(v):
+    """A float, or 0.0 for anything that will not convert. Used for stored
+    timestamps a hand-edit could have corrupted."""
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def save(store):
@@ -524,13 +549,22 @@ def refresh_catalog(force=False):
     }
 
 
+def _host_message(url, exc):
+    """A transport failure as one line naming the host we could not reach.
+
+    urlopen does NOT only raise URLError: a connect timeout surfaces as a bare
+    TimeoutError (Python 3.10+), a reset as ConnectionResetError, and other
+    failures as plain OSError — none of which carry a `.reason`. Naming the host
+    only for URLError left the most common unreachable-host case ("timed out")
+    with no host at all. So the host is prepended for ANY transport exception,
+    and urllib's reason is appended when it has one."""
+    host = urllib.parse.urlsplit(url).netloc or url
+    reason = getattr(exc, "reason", None) or str(exc) or exc.__class__.__name__
+    return "could not reach %s (%s)" % (host, reason)
+
+
 def _net_message(exc):
-    """A transport failure as one line an operator can act on. urllib's own
-    repr leaks socket internals that mean nothing on a laptop."""
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None):
-        return "could not reach %s (%s)" % (
-            urllib.parse.urlsplit(CATALOG_URL).netloc, exc.reason)
-    return str(exc) or exc.__class__.__name__
+    return _host_message(CATALOG_URL, exc)
 
 
 # -------------------------------------------------------------- session -----
@@ -637,10 +671,7 @@ def _api_error(payload, status):
 
 
 def _reach_message(exc):
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None):
-        return "could not reach %s (%s)" % (
-            urllib.parse.urlsplit(API_BASE).netloc, exc.reason)
-    return str(exc) or exc.__class__.__name__
+    return _host_message(API_BASE, exc)
 
 
 def disconnect():

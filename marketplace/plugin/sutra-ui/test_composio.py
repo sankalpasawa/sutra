@@ -105,6 +105,32 @@ class TestStore(_Isolated):
         # bad shapes dropped, duplicates collapsed, good ones kept in order
         self.assertEqual(cx.load()["enabled"], ["gmail", "slack"])
 
+    def test_load_survives_a_non_numeric_created_at(self):
+        """A hand-edited store whose session.created_at is a non-numeric string
+        is VALID JSON, so it slips past _read_json's guard and would reach an
+        unguarded float(). Found by the 100-agent adversarial pass."""
+        cx.STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        cx.STORE_PATH.write_text(
+            '{"session":{"url":"http://x","session_id":"s",'
+            '"created_at":"NOTANUMBER"}}')
+        s = cx.load()                     # must not raise
+        self.assertEqual(s["session"]["created_at"], 0.0)
+
+    def test_write_forces_0600_even_when_the_temp_file_pre_exists(self):
+        """os.open's mode arg is ignored for an existing file, so a stale or
+        pre-planted composio.json.sutra-tmp at 0666 would carry world-rw onto
+        the secret store via os.replace. fchmod forces 0600. Adversarial-pass
+        finding."""
+        import os
+        cx.STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(cx.STORE_PATH) + ".sutra-tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT, 0o666)
+        os.close(fd)
+        os.chmod(tmp, 0o666)
+        cx.save({"api_key": "ak_secret", "user_id": "u", "enabled": [],
+                 "session": {}})
+        self.assertEqual(os.stat(cx.STORE_PATH).st_mode & 0o777, 0o600)
+
     def test_store_file_is_not_world_readable(self):
         """The API key lives in this file. A 0644 store would leak it to every
         process on the machine, which is not a thing a chmod comment can fix."""
@@ -418,6 +444,20 @@ class TestProvision(_Isolated):
         with self.assertRaises(cx.ComposioError) as cm:
             cx.provision()
         self.assertIn("backend.composio.dev", str(cm.exception))
+
+    def test_a_bare_transport_error_still_names_the_host(self):
+        """urlopen raises a bare TimeoutError on a connect timeout (no .reason),
+        plus ConnectionResetError / OSError on other unreachable-host modes.
+        Naming the host only for URLError left "timed out" with no host — the
+        most common case. Adversarial-pass finding."""
+        self.configured()
+        for exc in (TimeoutError("timed out"),
+                    ConnectionResetError(104, "Connection reset by peer"),
+                    OSError("network unreachable")):
+            self.fake_http(exc)
+            with self.assertRaises(cx.ComposioError) as cm:
+                cx.provision(force=True)
+            self.assertIn("backend.composio.dev", str(cm.exception))
 
     def test_response_without_an_mcp_url_is_refused(self):
         self.configured()

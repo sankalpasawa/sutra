@@ -223,6 +223,15 @@ class TestStore(_Isolated):
         lx.STORE_PATH.write_text("{ not json")
         self.assertEqual(lx.load()["servers"], [])
 
+    def test_load_survives_a_non_list_servers_value(self):
+        """{"servers": 5} is valid JSON that slips past _read_json's dict guard;
+        slicing a truthy non-list raised TypeError and 500'd every load()-backed
+        endpoint. Adversarial-pass finding."""
+        for bad in ('{"servers": 5}', '{"servers": {"a": 1}}',
+                    '{"servers": "npx"}'):
+            lx.STORE_PATH.write_text(bad)
+            self.assertEqual(lx.load()["servers"], [])   # must not raise
+
     def test_one_bad_row_is_dropped_not_the_whole_set(self):
         cx._write_json(lx.STORE_PATH, {"servers": [
             {"name": "good", "transport": "stdio", "command": "npx"},
@@ -255,6 +264,17 @@ class TestStore(_Isolated):
             self.add(name="srv%d" % i)
         with self.assertRaises(ValueError):
             self.add(name="onemore")
+
+    def test_cap_cannot_be_bypassed_with_a_fabricated_id(self):
+        """The endpoint forwards the client body verbatim, so a fabricated id
+        matching nothing is still a NEW server. Gating the cap on a missing id
+        let it append past MAX_SERVERS (silently truncated on next load).
+        Adversarial-pass finding."""
+        for i in range(lx.MAX_SERVERS):
+            self.add(name="srv%d" % i)
+        with self.assertRaises(ValueError):
+            self.add(name="evil", id="lx_fabricated1")
+        self.assertEqual(len(lx.load()["servers"]), lx.MAX_SERVERS)
 
     def test_filter_rejects_anything_that_is_not_a_tag_expression(self):
         """This lands in an argv slot."""
@@ -444,6 +464,22 @@ class TestRegistry(_Isolated):
         names = [r["name"] for r in lx.normalize_registry(REG_PAYLOAD["servers"])]
         self.assertNotIn("unlaunchable", names)   # no launcher for cargo
         self.assertNotIn("sutra", names)          # reserved key
+
+    def test_two_registry_names_sharing_a_slug_collapse_to_one(self):
+        """org-a/postgres-mcp and org-b/postgres-mcp both slug to
+        "postgres-mcp"; returning both made the second un-addable (add refuses a
+        duplicate name). The higher version wins the slug. Adversarial-pass
+        finding."""
+        rows = lx.normalize_registry([
+            {"server": {"name": "io.github.acme/postgres-mcp", "version": "1.0.0",
+                        "packages": [{"registryType": "npm",
+                                      "identifier": "postgres-mcp"}]}},
+            {"server": {"name": "com.other/postgres-mcp", "version": "2.0.0",
+                        "packages": [{"registryType": "npm",
+                                      "identifier": "postgres-mcp"}]}}])
+        names = [r["name"] for r in rows]
+        self.assertEqual(names, ["postgres-mcp"])
+        self.assertEqual(len(names), len(set(names)))
 
     def test_garbage_input_is_empty_not_an_exception(self):
         for bad in (None, {}, "", 7):

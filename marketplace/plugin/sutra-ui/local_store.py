@@ -286,7 +286,14 @@ def load():
     than losing the set."""
     raw = cx._read_json(STORE_PATH, {})
     out = _blank()
-    for row in (raw.get("servers") or [])[:MAX_SERVERS]:
+    # `servers` is coerced to a list BEFORE slicing: _read_json only guarantees
+    # the top level is a dict, so a hand-edited {"servers": 5} is valid JSON that
+    # reaches here, and slicing a truthy non-list (int, dict) raises TypeError
+    # — which would 500 every load()-backed endpoint instead of degrading. A
+    # non-list servers value reads as no servers.
+    rows = raw.get("servers")
+    rows = rows if isinstance(rows, list) else []
+    for row in rows[:MAX_SERVERS]:
         try:
             srv = validate(row)
         except ValueError:
@@ -334,15 +341,20 @@ def add_or_update(raw):
 
     if not srv["id"]:
         srv["id"] = _new_id()
-        if len(store["servers"]) >= MAX_SERVERS:
-            raise ValueError(
-                "at most %d local servers — remove one first" % MAX_SERVERS)
 
+    # The cap is enforced on APPEND, not on "the caller sent no id": a client
+    # POST forwards the body verbatim, so a fabricated id that matches nothing
+    # is still a new server, and gating the cap on a missing id let it append
+    # past MAX_SERVERS (silently truncated on the next load()). What decides an
+    # append is whether an existing row matches the id — checked here.
     for i, other in enumerate(store["servers"]):
         if other["id"] == srv["id"]:
             store["servers"][i] = srv
             break
     else:
+        if len(store["servers"]) >= MAX_SERVERS:
+            raise ValueError(
+                "at most %d local servers — remove one first" % MAX_SERVERS)
         store["servers"].append(srv)
 
     save(store)
@@ -566,10 +578,12 @@ def refresh_agent(force=False):
 
 
 def _net_message(exc, url):
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None):
-        return "could not reach %s (%s)" % (
-            urllib.parse.urlsplit(url).netloc, exc.reason)
-    return str(exc) or exc.__class__.__name__
+    # Names the host for ANY transport exception, not just URLError-with-reason:
+    # urlopen raises a bare TimeoutError on a connect timeout, which carries no
+    # .reason, and "timed out" with no host is not something an operator can act
+    # on. Delegates to composio_store's shared helper so both connectors report
+    # network failures identically.
+    return cx._host_message(url, exc)
 
 
 # ------------------------------------------------------------- registry -----
@@ -662,9 +676,23 @@ def _normalize_one(server):
 def normalize_registry(servers):
     """A registry response's `servers` list -> add-ready rows.
 
-    Dedup by server.name keeping the isLatest row (else the highest version),
-    then normalise. Pure and network-free, so a fabricated payload is testable
-    without the wire."""
+    Dedup happens TWICE, on two different keys, because they are two different
+    collisions:
+
+      1. by the full server.name (io.github.owner/x), keeping the isLatest row
+         else the highest version — the registry lists a server's every version;
+      2. by the OUTPUT slug, after normalising — two distinct registry names can
+         share a package basename (org-a/postgres-mcp and org-b/postgres-mcp),
+         and both collapse to slug "postgres-mcp".
+
+    Without step 2 the result carried two rows named "postgres-mcp": the UI
+    showed a duplicate and add() refused the second as a duplicate name, making
+    one of two legitimate servers un-addable. The output contract is
+    name-uniqueness (add() enforces it), so the higher-version row wins the slug
+    and the collision is resolved here rather than surfaced to the operator.
+
+    Pure and network-free, so a fabricated payload is testable without the
+    wire."""
     if not isinstance(servers, list):
         return []
 
@@ -691,11 +719,19 @@ def normalize_registry(servers):
                 _version_key(cur["server"].get("version")):
             best[sname] = entry
 
-    out = []
+    # Normalise, then collapse slug collisions keeping the higher upstream
+    # version (tie -> first seen), so the output names are unique.
+    by_slug = {}
     for entry in best.values():
-        row = _normalize_one(entry.get("server") or {})
-        if row:
-            out.append(row)
+        server = entry.get("server") or {}
+        row = _normalize_one(server)
+        if not row:
+            continue
+        prev = by_slug.get(row["name"])
+        if prev is None or _version_key(server.get("version")) > prev[1]:
+            by_slug[row["name"]] = (row, _version_key(server.get("version")))
+
+    out = [pair[0] for pair in by_slug.values()]
     out.sort(key=lambda r: (r["tag"], r["name"]))
     return out
 
