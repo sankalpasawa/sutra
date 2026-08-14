@@ -49,9 +49,29 @@
 # not these. If a leg ever hangs in `queued` again, check this list first.
 name: release-dmg
 
+# THREE WAYS IN, ONE TAG. Every leg below resolves the SAME `TAG` expression, so
+# whichever entry point fires, the build attaches its assets to exactly one tag:
+#
+#   push       a `v*` tag is pushed        -> github.ref_name
+#   release    a Release is published      -> github.event.release.tag_name
+#   dispatch   run by hand, tag typed in   -> github.event.inputs.tag
+#
+# The `release` trigger is why publishing no longer needs a CLI tag push. Cutting
+# a Release in the GitHub UI creates the tag AND fires this workflow against it,
+# so a release can be published from a browser by someone with no clone, no
+# credentials on a machine, and no `git push --tags`. It is the same tag either
+# way -- a Release always carries one -- so nothing downstream has to care which
+# door was used.
+#
+# `published` and not `created`: `created` fires for DRAFT releases too, and a
+# draft is precisely the state where you do NOT want 45 minutes of macOS runner
+# time spent on assets nobody has decided to ship. `published` fires when the
+# release goes public, including when a draft is published later.
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -210,7 +230,7 @@ jobs:
         if: env.HAVE_SIGNING_CERT != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
         run: |
           set -euo pipefail
           existing="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY"                         --json assets --jq '[.assets[].name] | join(" ")' 2>/dev/null || true)"
@@ -226,7 +246,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
           files: |
             marketplace/plugin/sutra-ui/electron/dist/Sutra-${{ matrix.arch }}.dmg
             marketplace/plugin/sutra-ui/electron/dist/Sutra-${{ matrix.arch }}.dmg.sha256
@@ -269,7 +289,7 @@ jobs:
       - name: Both architectures must be on the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
         run: |
           set -euo pipefail
           assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
