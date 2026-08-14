@@ -1288,9 +1288,25 @@
   .rfoot{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
 
   /* ── connectors ────────────────────────────────────────────────────────────
-     The MCP-connector screen. Reuses the .rform grid for the add form and the
-     .pill/.btn idioms for badges and controls; only the list rows, env grid and
-     catalog chips are new. */
+     The connectors screen, in two halves -- hosted (Composio) and local (1MCP).
+     Reuses the .rform grid for the add forms and the .pill/.btn idioms for
+     badges and controls; only the list rows, env grid, catalog chips and the
+     two-half headings are new. */
+  /* The kind table in the intro: what each connector IS, side by side, because
+     the difference that matters (where the tool runs) is a comparison. */
+  .conn-kinds{border-collapse:collapse;margin:9px 0 11px;max-width:70ch}
+  .conn-kinds td{padding:4px 12px 4px 0;vertical-align:top;color:var(--muted);
+    font:500 11.5px/1.5 var(--sans);border-bottom:1px solid var(--line-soft)}
+  .conn-kinds td:first-child{white-space:nowrap;color:var(--ink)}
+  /* The divider between the two halves. Heavier than a section heading because
+     it separates two CONNECTORS, not two sections of one. */
+  .conn-kind-h{margin:26px 0 12px;padding-top:14px;border-top:2px solid var(--line);
+    color:var(--ink);font:700 13px/1.2 var(--sans);letter-spacing:.2px}
+  .conn-kind-h:first-of-type{margin-top:18px}
+  .conn-groups{margin-bottom:14px}
+  .conn-ctl select{background:var(--inset);border:1px solid var(--line);border-radius:7px;
+    color:var(--ink);font:500 10.5px/1 var(--mono);padding:6px 7px;max-width:150px}
+  .conn-ctl select:focus{outline:none;border-color:var(--acc)}
   .conn-actions{display:flex;gap:7px;margin-bottom:12px;flex-wrap:wrap}
   .conn-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
   .conn-row{display:flex;gap:12px;align-items:center;padding:11px 13px;

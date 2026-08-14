@@ -502,13 +502,55 @@ async function checkForUpdate() {
   }
 }
 
+/* Track what each connector depends on upstream. Both ride the SAME tick as the
+   desktop update rather than adding timers of their own, because all three are
+   the same question asked of different upstreams -- "is there a newer version of
+   a thing we shipped a copy of?" -- and three schedules would be three things to
+   reason about when one of them misfires.
+
+     hosted   ComposioHQ/composio's toolkit catalog
+     local    the pinned 1MCP aggregator version, from npm
+
+   NOT force:true, either of them. Each backend's TTL decides whether the call
+   costs a request at all, so a shell that restarts often does not hammer GitHub
+   or npm, and the backend stays the single place a polling interval is defined.
+   Failures are logged and dropped: the catalog and the pin we already have keep
+   working, offline included. */
+async function checkConnectorUpstreams() {
+  if (!desktopControl()) return;
+  try {
+    const r = await api("POST", "/api/connectors/refresh", {}, 60000);
+    if (r && r.updated) {
+      console.log(`[sutra] connector catalog updated: ${r.count || 0} toolkits`);
+    }
+  } catch (err) {
+    console.error("[sutra] connector catalog check failed:", err.message);
+  }
+  try {
+    const r = await api("POST", "/api/connectors/local/refresh", {}, 60000);
+    if (r && r.updated) {
+      console.log(`[sutra] 1mcp aggregator ${r.from} -> ${r.version}`);
+    }
+  } catch (err) {
+    console.error("[sutra] aggregator version check failed:", err.message);
+  }
+}
+
+/* One tick, every upstream. Sequential, not parallel: the desktop update may
+   stage a multi-hundred-megabyte DMG, and a catalog check racing it for the
+   backend's attention buys nothing on a schedule measured in hours. */
+async function checkUpstreams() {
+  await checkForUpdate();
+  await checkConnectorUpstreams();
+}
+
 function startUpdateSchedule() {
   if (!desktopControl()) {
     console.log("[sutra] attached to a backend we did not start; auto-update off");
     return;
   }
-  updateTimers.push(setTimeout(checkForUpdate, UPDATE_FIRST_CHECK_MS));
-  updateTimers.push(setInterval(checkForUpdate, UPDATE_INTERVAL_MS));
+  updateTimers.push(setTimeout(checkUpstreams, UPDATE_FIRST_CHECK_MS));
+  updateTimers.push(setInterval(checkUpstreams, UPDATE_INTERVAL_MS));
 }
 
 /* Hand the helper this process -- its pid, so it waits for THE SHELL rather

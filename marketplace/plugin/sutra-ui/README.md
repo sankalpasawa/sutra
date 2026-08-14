@@ -115,6 +115,11 @@ the change up.
 | `~/Library/Application Support/Sutra/` | staged runtime + its venv (created by the installer) |
 | `~/.sutra-native/user-kit/` | the registry the panel reads (auto-created empty on first run) |
 | `~/.sutra-ui/settings.json` | provider + permission mode + workdir |
+| `~/.sutra-ui/composio.json` | Composio API key + user id + enabled toolkits (owner-only, 0600) |
+| `~/.sutra-ui/composio-catalog.json` | mirrored toolkit catalog — derived, safe to delete |
+| `~/.sutra-ui/local.json` | local MCP servers, their tags, and the pinned aggregator version |
+| `~/.sutra-ui/1mcp/mcp.json` | 1MCP's own config — **derived** from local.json on every change |
+| `~/.sutra-ui/mcp-registry.json` | cached MCP Registry page — derived, safe to delete |
 | `~/.sutra-native/run/sutra-app.log` | why a Finder launch failed |
 
 First run against an empty registry works: it seeds `domains/`, `charters/` and
@@ -135,6 +140,76 @@ protocol. Installing the `codex` CLI makes it installed and configured within
 seconds, but it still cannot be used here — so it is listed, disabled, with that
 exact reason. Adding a provider means adding its id to `ADAPTERS` in
 `providers.py` **and** writing the adapter.
+
+## Connectors
+
+Two connectors, and the difference that decides which you want is **where the
+tool runs**:
+
+| | Hosted — Composio | Local — 1MCP |
+|---|---|---|
+| Backend | a [tool router](https://docs.composio.dev/docs/sessions-via-mcp) session | `npx @1mcp/agent serve --transport=stdio` |
+| Reaches | 1000+ SaaS toolkits on Composio's infrastructure | MCP servers on *this machine* — files, git, browsers, databases |
+| Catalog | `ComposioHQ/composio` toolkit list | the open MCP Registry |
+| Needs | an API key | Node on PATH |
+
+Both **aggregate**: each is ONE entry in the `--mcp-config` of every turn,
+however many services sit behind it (see `app._sutra_mcp_config`). A session
+therefore sees at most three MCP servers — `sutra`, `composio`, `local` — no
+matter how much is enabled.
+
+### Local connector (1MCP)
+
+`@1mcp/agent` (Apache-2.0) fronts every enabled local server as one stdio
+process, so N servers cost one tool namespace instead of N. MetaMCP was the
+other candidate and was rejected on shape, not licence: it needs Docker,
+Postgres and its own web UI. `1mcp proxy` was rejected too — it requires a
+separate long-lived `1mcp serve` to proxy to, and `serve --transport=stdio` has
+no such daemon.
+
+Every server carries a **tag**, which is 1MCP's own per-server field, not a UI
+label: the screen groups by it and `--filter` narrows on it. Tags come from
+Composio's category for the same slug where one exists, so `github` files under
+`developer-tools` in **both** connectors; otherwise a keyword heuristic guesses,
+says that it guessed, and the tag is editable per server.
+
+The launch command **pins** the aggregator version. An unpinned `npx -y` would
+resolve whatever npm calls latest at spawn time, which could swap the process
+fronting every local tool between two turns of one session.
+
+Routing Composio *through* the aggregator is a switch on the screen, off by
+default — one connector for everything, at the cost of a subprocess in front of
+an endpoint that already works. With it on, `_sutra_mcp_config` emits the
+aggregator **instead of** the direct Composio entry, never both.
+
+### Hosted connector (Composio)
+
+Enabling a toolkit widens what that one endpoint carries; nothing is installed
+locally and no per-service secret is pasted here.
+
+| | |
+|---|---|
+| Set up | Connectors screen → API key from `dashboard.composio.dev/settings` + a user id |
+| Connect an account | the agent does it — the session carries Composio's connection manager and hands you an in-browser auth link the first time it touches an unconnected toolkit |
+| Permissions | connector tools are **not** pre-allowed; they run under the session's `--permission-mode` (only `mcp__sutra__*` is cleared by the PreToolUse hook) |
+| Workbench | disabled — `connectors/CHARTER.md` RULE 2 forbids Composio's remote code-execution surface |
+
+**What auto-updates, and how** — five different claims, five mechanisms:
+
+| Changes upstream | How this app picks it up | Latency |
+|---|---|---|
+| New/changed tools inside a toolkit | nothing to update — the endpoint is remote and served by Composio | immediate |
+| The toolkit catalog (which apps exist) | conditional `GET` of `ComposioHQ/composio@next:docs/public/data/toolkits-list.json`, which their bot refreshes on a schedule | ≤ 6h |
+| Which toolkits are on | session re-provisioned when the (user id, toolkits) fingerprint changes | next turn |
+| A local server publishes a new version | nothing to update — every stdio server launches through `npx -y` / `uvx`, which resolve at spawn time | immediate |
+| The 1MCP aggregator ships a release | npm `latest` dist-tag, TTL-gated; the pin moves deliberately and the version is recorded | ≤ 24h |
+
+Both checks are TTL-gated and run on screen open **and** on the Electron
+shell's existing update tick (`checkUpstreams` in `main.js`) — never as a
+boot-time poller, for the reason `updates.py` documents: the CLI serves this
+same app to a plain browser, and a fetch on import would make every CLI user
+phone GitHub on launch. A copy of the catalog ships in `composio-toolkits.json`,
+so the screen works offline on first run.
 
 ## Workspaces (tenants)
 

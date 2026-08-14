@@ -29,7 +29,8 @@ import log_reader as lr
 import session_reader as sr
 import org_api
 import providers
-import connectors_store
+import composio_store
+import local_store
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -172,14 +173,26 @@ def _sutra_mcp_config():
     the bundled CPython inside the .app, which is the only python guaranteed to
     exist on the machine and to have the modules sutra_mcp imports.
 
-    Contents: Sutra's own "sutra" server PLUS the operator's ENABLED connectors
-    (connectors_store.mcp_servers_fragment). --strict-mcp-config still holds, so
-    the merged set is the ONLY thing loaded — never the machine's global
-    ~/.claude.json. Connector tools are deliberately NOT pre-allowed here: they
-    run under the session's --permission-mode (only the sutra namespace is
-    cleared by the PreToolUse hook in build_agent_args). FAIL-SOFT: if the
-    connectors store errors, we fall back to just sutra and never break the
-    turn.
+    Contents: Sutra's own "sutra" server PLUS up to two connectors —
+
+        composio   ONE http server (a tool router session) carrying however many
+                   of Composio's hosted toolkits the operator enabled
+        local      ONE stdio process (the 1MCP aggregator) carrying however many
+                   local MCP servers the operator enabled, assorted by tag
+
+    At most three entries, whatever the operator configured, because both
+    connectors aggregate rather than multiply. When the local connector is set
+    to ROUTE the hosted one (local_store.route_composio), composio is omitted
+    here and appears inside the aggregator instead — emitting both would give
+    the session the same toolkits twice under two namespaces.
+
+    --strict-mcp-config still holds, so the merged set is the ONLY thing loaded
+    — never the machine's global ~/.claude.json. Connector tools are
+    deliberately NOT pre-allowed here: they run under the session's
+    --permission-mode (only the sutra namespace is cleared by the PreToolUse
+    hook in build_agent_args). FAIL-SOFT throughout: a broken store, an
+    unreachable Composio, or a machine with no Node falls back to fewer servers
+    and never breaks the turn.
     """
     servers = {}
     script = HERE / "sutra_mcp.py"
@@ -192,13 +205,29 @@ def _sutra_mcp_config():
             # registry and stores the panel is reading.
             "env": {"SUTRA_NATIVE_HOME": os.environ.get("SUTRA_NATIVE_HOME", "")},
         }
+
+    # Each connector is merged independently: one failing must not cost the
+    # other, so they get one try/except each rather than sharing one.
+    routed = False
     try:
-        for name, spec in connectors_store.mcp_servers_fragment().items():
+        routed = bool(local_store.load().get("route_composio"))
+    except Exception:
+        pass
+    if not routed:
+        try:
+            for name, spec in composio_store.mcp_servers_fragment().items():
+                if name == "sutra":
+                    continue  # reserved — a connector must never shadow sutra
+                servers[name] = spec
+        except Exception:
+            pass  # a broken store must never take the turn down
+    try:
+        for name, spec in local_store.mcp_servers_fragment().items():
             if name == "sutra":
-                continue  # reserved — a connector must never shadow sutra
+                continue
             servers[name] = spec
     except Exception:
-        pass  # a broken store must never take the turn down
+        pass
     if not servers:
         return ""
     return json.dumps({"mcpServers": servers})
@@ -891,90 +920,198 @@ def api_evals() -> dict:
 
 
 # ============================================================ connectors =====
-# MCP connectors the operator defines once and Sutra merges into every spawned
-# turn's --mcp-config (see _sutra_mcp_config). The reads are fail-soft: a broken
-# or absent store returns [] rather than a 500, because the panel polls these
-# and a hard error would read as "connectors are broken" on a machine that
-# simply has none. Only add_or_update raises (ValueError -> 400) on bad input.
+# The Composio connector: ONE hosted MCP endpoint (a tool router session) that
+# carries however many of Composio's 1181 toolkits the operator enabled. Sutra
+# merges it into every spawned turn's --mcp-config (see _sutra_mcp_config).
+#
+# The reads are fail-soft: a broken or absent store answers with an empty state
+# rather than a 500, because the panel polls these and a hard error would read
+# as "connectors are broken" on a machine that simply has none configured. Only
+# the mutators raise (ValueError -> 400) on bad input, and only /session
+# surfaces a provisioning failure — as a message, never a 500, because "Composio
+# is down" is not a bug in this panel.
 
 @app.get("/api/connectors")
 def api_connectors() -> dict:
-    """Every stored connector, enabled or not. Read-only."""
-    return {"connectors": connectors_store.load()}
+    """The connector's whole state, redacted: whether a key is set (and its last
+    four characters — never the key), the user id, the enabled toolkit slugs,
+    whether the cached session is still valid, and the catalog's provenance."""
+    return composio_store.state()
 
 
-@app.post("/api/connectors")
-def api_connectors_upsert(body: dict):
-    """Create or update one connector (matched by id; id assigned when absent).
-    Returns {"connector": ...} or 400 {"error": ...} on a validation miss — bad
-    name, reserved "sutra", unknown transport, stdio without command, http/sse
-    without url, or a duplicate name."""
+@app.post("/api/connectors/auth")
+def api_connectors_auth(body: dict):
+    """Set the Composio API key and/or user id. Either may be sent alone —
+    changing the user id must not require retyping the key. Returns the redacted
+    state, or 400 {"error": ...}. Any change drops the cached session."""
+    body = body or {}
     try:
-        conn = connectors_store.add_or_update(body or {})
+        return composio_store.set_auth(
+            api_key=body.get("api_key"), user_id=body.get("user_id"))
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"error": str(exc)})
-    return {"connector": conn}
 
 
-@app.post("/api/connectors/{cid}/toggle")
-def api_connectors_toggle(cid: str) -> dict:
-    """Flip enabled for one connector. {"connector": ...} or 404."""
-    conn = connectors_store.toggle(cid)
-    if conn is None:
-        raise HTTPException(status_code=404, detail="connector not found")
-    return {"connector": conn}
-
-
-@app.delete("/api/connectors/{cid}")
-def api_connectors_delete(cid: str) -> dict:
-    """Delete one connector. {"ok": true} or 404."""
-    if not connectors_store.remove(cid):
-        raise HTTPException(status_code=404, detail="connector not found")
-    return {"ok": True}
+@app.post("/api/connectors/toolkits/{slug}/toggle")
+def api_connectors_toolkit_toggle(slug: str, body: dict = None):
+    """Enable or disable one toolkit. Body {"on": bool} forces a direction;
+    an empty body flips. Returns the redacted state, or 400 {"error": ...} for
+    an unknown-shaped slug or a set that would exceed the cap."""
+    on = (body or {}).get("on")
+    try:
+        return composio_store.toggle(slug, on if isinstance(on, bool) else None)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
 
 
 @app.get("/api/connectors/catalog")
-def api_connectors_catalog() -> dict:
-    """The one-click presets (blank secrets, env_keys names the vars to fill).
-    Read-only, static."""
-    return {"catalog": connectors_store.CATALOG}
+def api_connectors_catalog(q: str = "", limit: int = 60,
+                           offset: int = 0) -> dict:
+    """Search Composio's toolkit catalog:
+
+        {"results": [{slug, name, category, tools, triggers, enabled}, ...],
+         "total": int, "source": "cache"|"vendored", "catalog": {...}}
+
+    Served from the local copy — no network on this path, so typing in the
+    search box never waits on GitHub. The copy itself is refreshed by
+    /api/connectors/refresh, which this endpoint triggers ONLY when the copy is
+    past its TTL, and even then fail-soft."""
+    if composio_store.catalog_is_stale():
+        try:
+            composio_store.refresh_catalog()
+        except Exception:
+            pass  # a stale catalog is still a catalog
+    return composio_store.catalog(q=q, limit=limit, offset=offset)
 
 
-@app.get("/api/connectors/registry")
-def api_connectors_registry(q: str = "", limit: int = 20) -> dict:
-    """Live search of the official open MCP registry, normalised into the SAME
-    result shape as /api/connectors/catalog so the Add form prefills identically:
+@app.post("/api/connectors/refresh")
+def api_connectors_refresh(body: dict = None) -> dict:
+    """Check ComposioHQ/composio for a newer toolkit catalog and adopt it.
 
-        {"results": [{name, title, description, transport, command, args,
-                      env_keys, url}, ...], "source": "registry"|"builtin"}
+    THE auto-update entry point. Called on screen open when stale, and on the
+    Electron shell's existing update tick (main.js) so the desktop app tracks
+    upstream without anyone opening the screen. Body {"force": true} skips the
+    TTL check. Never raises — returns {"checked", "updated", "error"?, ...}."""
+    force = bool((body or {}).get("force"))
+    return composio_store.refresh_catalog(force=force)
 
-    FAIL-SOFT and never 500: on any network/parse error OR zero results, return
-    the built-in CATALOG (source "builtin") so the panel always has something to
-    show. `q` filters (omitted upstream when empty); `limit` defaults to 20,
-    capped at 50 in fetch_registry."""
+
+@app.post("/api/connectors/session")
+def api_connectors_session(body: dict = None) -> dict:
+    """Provision (or re-provision) the tool router session and report it.
+
+    The turn path provisions lazily and silently; this endpoint exists so the
+    operator can PROVE the credentials work without sending a message and
+    guessing from a missing tool. Body {"force": true} re-provisions even when
+    the cached session is still usable. A refusal comes back as
+    {"ok": false, "error": "..."} — Composio being down is not a 500 here."""
+    force = bool((body or {}).get("force"))
     try:
-        results = connectors_store.normalize_registry_servers(
-            connectors_store.fetch_registry(q, limit))
-        if results:
-            return {"results": results, "source": "registry"}
-    except Exception:
-        pass  # network down, HTTP error, bad JSON — fall through to builtin
-    return {"results": connectors_store.catalog_normalized(), "source": "builtin"}
+        session = composio_store.provision(force=force)
+    except composio_store.ComposioError as exc:
+        return {"ok": False, "error": str(exc), "state": composio_store.state()}
+    return {"ok": True, "session_id": session.get("session_id", ""),
+            "state": composio_store.state()}
 
 
-@app.get("/api/connectors/claude-import")
-def api_connectors_claude_import() -> dict:
-    """The operator's own MCP servers from ~/.claude.json, normalised to the
-    connector model (enabled:false), for one-click add:
+@app.delete("/api/connectors/session")
+def api_connectors_session_drop() -> dict:
+    """Forget the cached session, keeping the credentials. The next turn
+    provisions a fresh one."""
+    return composio_store.disconnect()
 
-        {"connectors": [{name, transport, command, args, env, url, headers,
-                         enabled:false}, ...]}
 
-    Read-only and fail-soft — a missing/corrupt file yields an empty list.
-    Nothing is saved; the UI turns a chosen entry into a normal add POST. The
-    reserved "sutra" name is skipped."""
-    return {"connectors": connectors_store.normalize_claude_mcp_servers(
-        connectors_store.read_claude_mcp_servers())}
+# ------------------------------------------------------ local connector -----
+# The second connector: local MCP servers behind ONE 1MCP aggregator process,
+# assorted by tag. Same fail-soft rules as the hosted one — reads never 500,
+# only the mutators raise (ValueError -> 400), and a machine that cannot run
+# Node reports that as a fact on the state rather than as an error.
+
+@app.get("/api/connectors/local")
+def api_local() -> dict:
+    """Every local server, already grouped by tag, plus the aggregator's pinned
+    version and whether this machine can actually run it."""
+    return local_store.state()
+
+
+@app.post("/api/connectors/local")
+def api_local_upsert(body: dict):
+    """Create or update one local server (matched by id; id assigned when
+    absent). Returns {"server": ...} or 400 {"error": ...} on a validation miss
+    — bad name, a reserved name, unknown transport, stdio without a command,
+    http/sse without a url, a duplicate name, or too many servers."""
+    try:
+        srv = local_store.add_or_update(body or {})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    return {"server": srv}
+
+
+@app.post("/api/connectors/local/{sid}/toggle")
+def api_local_toggle(sid: str) -> dict:
+    """Flip enabled for one local server. {"server": ...} or 404."""
+    srv = local_store.toggle(sid)
+    if srv is None:
+        raise HTTPException(status_code=404, detail="server not found")
+    return {"server": srv}
+
+
+@app.post("/api/connectors/local/{sid}/tag")
+def api_local_retag(sid: str, body: dict):
+    """Move one server to another category. The tag is real 1MCP config, so a
+    wrong guess from the heuristic is fixable here rather than permanent."""
+    srv = local_store.retag(sid, (body or {}).get("tag"))
+    if srv is None:
+        raise HTTPException(status_code=404, detail="server not found")
+    return {"server": srv}
+
+
+@app.delete("/api/connectors/local/{sid}")
+def api_local_delete(sid: str) -> dict:
+    """Delete one local server. {"ok": true} or 404."""
+    if not local_store.remove(sid):
+        raise HTTPException(status_code=404, detail="server not found")
+    return {"ok": True}
+
+
+@app.post("/api/connectors/local/options")
+def api_local_options(body: dict):
+    """The two knobs that change what the aggregator exposes rather than what is
+    in it: {"filter": "<tags>"} and {"route_composio": bool}. 400 on a filter
+    carrying anything but tags and 1MCP's operators."""
+    body = body or {}
+    try:
+        return local_store.set_options(
+            filter_=body.get("filter"), route_composio=body.get("route_composio"))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+
+
+@app.get("/api/connectors/local/registry")
+def api_local_registry(q: str = "", limit: int = 24) -> dict:
+    """Browse or search the open MCP Registry, assorted into the SAME categories
+    the hosted connector uses:
+
+        {"results": [{name, title, description, tag, tag_source, transport,
+                      command, args, env_keys, url}, ...],
+         "source": "registry"|"cache"|"stale"}
+
+    Never 500: a registry outage returns the last good page with the error
+    alongside. An empty query is the browse view and is TTL-cached; a search
+    always goes to the wire, because a cached search is a stale answer to a
+    question just asked."""
+    return local_store.browse(q=q, limit=limit)
+
+
+@app.post("/api/connectors/local/refresh")
+def api_local_refresh(body: dict = None) -> dict:
+    """Check npm for a newer 1MCP aggregator and move the pin.
+
+    The local connector's half of auto-update, and the counterpart to
+    /api/connectors/refresh: that one tracks Composio's toolkit catalog, this
+    one tracks the aggregator itself. Both ride the Electron shell's update
+    tick. Body {"force": true} skips the TTL. Never raises."""
+    return local_store.refresh_agent(force=bool((body or {}).get("force")))
 
 
 @app.get("/api/state")
