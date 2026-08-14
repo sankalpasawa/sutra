@@ -493,8 +493,7 @@ function railSpec(){
       {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
-      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)},
-      {id:"testpane",   n:"Test pane",  i:"chart",c:undefined}
+      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)}
     ],
     change:[
       {id:"reorg",  n:"Reorg plans", i:"reorg", c:PLANS.length},

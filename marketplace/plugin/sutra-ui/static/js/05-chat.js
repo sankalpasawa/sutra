@@ -487,7 +487,6 @@ SCREENS.settings = () => {
 /* ══════════════════════ render ══════════════════════ */
 const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
-  testpane:["Test pane","wiring self-test · reads already-loaded org globals"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],
   evals:["Evals","verifier registry · nightly decay runs · findings — read-only"],
