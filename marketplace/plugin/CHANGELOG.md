@@ -2,6 +2,31 @@
 
 **status**: active · **updated**: 2026-08-12
 
+## 2.101.0
+
+- **Connectors mirror Claude; configuring is delegated to Claude (Option A).** A new
+  **Present in Claude** section on the Connectors screen reads the operator's own
+  connectors live from `claude mcp list` — the authoritative source, since `~/.claude.json`
+  misses claude.ai connectors (Gmail, Drive, …) — and shows each with a status badge
+  (connected / needs auth / pending). Configuring is delegated, not rebuilt: the buttons
+  type `claude mcp add` / `claude mcp login <name>` into the terminal (never executed for
+  you), so people use Claude's own familiar flow and Sutra never handles an OAuth token.
+  Display-only and fail-soft — a read-only `/api/connectors/configured` behind a
+  subprocess timeout + 30s TTL cache; the governed `claude -p --strict-mcp-config` spawn
+  path is untouched (claude.ai connectors are not reusable headless under strict-mcp-config,
+  verified 2026-08-15). 10 new tests (parser fixtures + fail-soft + TTL cache); 66 connector
+  tests green. Codex-consulted.
+
+## 2.100.0
+
+- **Capture the agentic output.** The transcript parser kept only the agent's text
+  and tool NAMES — you could see that a Bash ran but never what it ran or what came
+  back. Now `_parse_transcript` captures each tool call's INPUT (command / file /
+  query) and its RESULT (output, with an error flag), matched by `tool_use` id — data
+  that was previously dropped. The subagent viewer and the replayed main transcript
+  render each call as a command line with a collapsible output; failed calls are
+  flagged. Per-result payload is capped so a huge output can't bloat a transcript.
+
 ## 2.99.0
 
 - **Connectors gallery — ~50 servers, grouped by category.** The default Connectors

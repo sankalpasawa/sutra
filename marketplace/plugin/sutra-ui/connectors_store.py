@@ -35,6 +35,8 @@ providers.py uses SUTRA_UI_SETTINGS.
 import json
 import os
 import re
+import subprocess
+import time
 import urllib.parse
 import urllib.request
 import uuid
@@ -1171,3 +1173,151 @@ def normalize_claude_mcp_servers(mcp_servers):
             "enabled": False,
         })
     return out
+
+
+# ---------------------------------------------- what's present in Claude (A) ---
+# Option A (founder direction 2026-08-15): Sutra shows exactly the connectors the
+# operator's Claude already has, and DELEGATES all connection/auth to Claude
+# itself (the UI types `claude mcp add` / `login` into the PTY; Sutra never holds
+# an OAuth token). This is READ-ONLY and DISPLAY-ONLY: the result must NEVER be
+# fed into _sutra_mcp_config / --allowedTools / the hook matcher. claude.ai
+# connectors are not headless-usable under --strict-mcp-config (verified
+# 2026-08-15), so this view is informational — the governed `claude -p` spawn
+# path is untouched.
+#
+# Source of truth is `claude mcp list`, NOT ~/.claude.json: claude.ai connectors
+# (Google Drive, Gmail, ...) live outside that file and only surface in the CLI's
+# own merged view.
+#
+# `claude mcp list` is human text, not a contract. parse_claude_mcp_list is a
+# pure, best-effort parser (skips unparseable lines) so it is unit-testable
+# against captured fixtures; claude_configured() does the one guarded shell call
+# behind a subprocess timeout + a small TTL cache so a slow health-check can
+# never tie UI render speed to live MCP health.
+
+CLAUDE_BIN = os.environ.get("SUTRA_UI_CLAUDE_BIN", "claude")
+CLAUDE_MCP_LIST_TIMEOUT = 10   # seconds — a health-checking CLI must not hang us.
+CLAUDE_MCP_LIST_TTL = 30       # seconds — cache so repeated renders don't re-shell.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+# Status glyphs `claude mcp list` prints, mapped to a stable state token the UI
+# can badge without depending on the exact wording.
+_STATE_GLYPHS = (
+    ("✔", "connected"),   # ✔
+    ("✓", "connected"),   # ✓
+    ("⏸", "pending"),     # ⏸
+    ("✗", "error"),       # ✗
+    ("✖", "error"),       # ✖
+    ("!", "needs_auth"),
+)
+_STATE_WORDS = (
+    ("needs authentication", "needs_auth"),
+    ("pending approval", "pending"),
+    ("connected", "connected"),
+    ("failed", "error"),
+    ("error", "error"),
+)
+
+# Module-level cache: (fetched_at_epoch, payload_dict). Rebind-safe for tests
+# (they can reset it) and per-call TTL-checked.
+_CLAUDE_LIST_CACHE = {"ts": 0.0, "payload": None}
+
+
+def _classify_status(status_text):
+    """A raw `claude mcp list` status blob -> a stable state token
+    (connected | needs_auth | pending | error | unknown). Glyph first (most
+    reliable across wording changes), then a word fallback."""
+    s = (status_text or "").strip()
+    low = s.lower()
+    for glyph, state in _STATE_GLYPHS:
+        if glyph in s:
+            return state
+    for word, state in _STATE_WORDS:
+        if word in low:
+            return state
+    return "unknown"
+
+
+def parse_claude_mcp_list(text):
+    """Best-effort parse of `claude mcp list` stdout into display rows:
+
+        [{name, target, url, transport, status, state}, ...]
+
+    Each server line looks like `<name>: <url-or-command> - <status>`. We rsplit
+    once on ' - ' for the status (urls/commands don't contain ' - '), then split
+    the remainder once on ': ' for name vs target. A url target -> transport
+    'http' (list can't distinguish http/sse; default http, display-only anyway),
+    else 'stdio'. Lines without a ': ' (the "Checking MCP server health…" banner,
+    blanks, stray output) are skipped — never raises."""
+    rows = []
+    for raw in (text or "").splitlines():
+        line = _ANSI_RE.sub("", raw).strip()
+        if not line or ": " not in line:
+            continue
+        if line.lower().startswith("checking mcp server health"):
+            continue
+        status = ""
+        left = line
+        if " - " in line:
+            left, status = line.rsplit(" - ", 1)
+        name, _, target = left.partition(": ")
+        name = name.strip()
+        target = target.strip()
+        if not name:
+            continue
+        is_url = target.startswith("http://") or target.startswith("https://")
+        rows.append({
+            "name": name,
+            "target": target,
+            "url": target if is_url else "",
+            "transport": "http" if is_url else "stdio",
+            "status": status.strip(),
+            "state": _classify_status(status),
+        })
+    return rows
+
+
+def claude_configured(force=False):
+    """The connectors present in the operator's Claude, via `claude mcp list`.
+
+        {"connectors": [ ...parse_claude_mcp_list rows... ],
+         "error": None | str, "stale": bool}
+
+    Guarded and fail-soft: a subprocess timeout, a missing `claude` binary, or a
+    non-zero exit returns an error note (with the last-good cached rows if any,
+    marked stale) rather than raising or hanging. Successful reads are cached for
+    CLAUDE_MCP_LIST_TTL seconds so repeated screen renders don't re-shell."""
+    now = time.time()
+    cached = _CLAUDE_LIST_CACHE.get("payload")
+    if not force and cached is not None \
+            and (now - _CLAUDE_LIST_CACHE.get("ts", 0.0)) < CLAUDE_MCP_LIST_TTL:
+        return {"connectors": cached, "error": None, "stale": False}
+
+    try:
+        proc = subprocess.run(
+            [CLAUDE_BIN, "mcp", "list"],
+            capture_output=True, text=True,
+            timeout=CLAUDE_MCP_LIST_TIMEOUT,
+        )
+    except FileNotFoundError:
+        return {"connectors": cached or [], "error":
+                "the `claude` CLI was not found on PATH", "stale": cached is not None}
+    except subprocess.TimeoutExpired:
+        return {"connectors": cached or [], "error":
+                "`claude mcp list` timed out (health check slow)",
+                "stale": cached is not None}
+    except OSError as exc:
+        return {"connectors": cached or [], "error": str(exc),
+                "stale": cached is not None}
+
+    # claude mcp list writes the list to stdout and health warnings to stderr;
+    # exit is 0 even when a server "Needs authentication", so parse stdout
+    # regardless and only surface stderr when there is nothing to show.
+    rows = parse_claude_mcp_list(proc.stdout)
+    if not rows and proc.returncode != 0:
+        return {"connectors": cached or [],
+                "error": (proc.stderr or "").strip() or
+                         ("`claude mcp list` exited %d" % proc.returncode),
+                "stale": cached is not None}
+    _CLAUDE_LIST_CACHE["ts"] = now
+    _CLAUDE_LIST_CACHE["payload"] = rows
+    return {"connectors": rows, "error": None, "stale": False}

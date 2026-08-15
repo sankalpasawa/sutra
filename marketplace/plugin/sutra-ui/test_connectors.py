@@ -626,6 +626,116 @@ class TestClaudeImport(_IsolatedStore):
                 os.environ["SUTRA_UI_CLAUDE_JSON"] = saved
 
 
+# Real `claude mcp list` output captured 2026-08-15 (claude v2.1.212). The banner
+# goes to stdout ahead of the rows; one server needs auth, two are connected.
+_MCP_LIST_FIXTURE = (
+    "Checking MCP server health…\n"
+    "\n"
+    "claude.ai Atlassian Rovo: https://mcp.atlassian.com/v1/mcp - ! Needs authentication\n"
+    "claude.ai Google Drive: https://drivemcp.googleapis.com/mcp/v1 - ✔ Connected\n"
+    "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ✔ Connected\n"
+)
+
+
+class TestParseClaudeMcpList(unittest.TestCase):
+    """Pure, network-free parser for `claude mcp list` (codex risk #1: the
+    output is human text, not a contract — parse best-effort, skip junk)."""
+
+    def test_parses_the_real_fixture(self):
+        rows = cs.parse_claude_mcp_list(_MCP_LIST_FIXTURE)
+        self.assertEqual([r["name"] for r in rows],
+                         ["claude.ai Atlassian Rovo", "claude.ai Google Drive",
+                          "claude.ai Gmail"])
+        self.assertEqual(rows[1]["url"], "https://drivemcp.googleapis.com/mcp/v1")
+        self.assertEqual(rows[1]["transport"], "http")
+
+    def test_state_classification(self):
+        rows = cs.parse_claude_mcp_list(_MCP_LIST_FIXTURE)
+        by = {r["name"]: r["state"] for r in rows}
+        self.assertEqual(by["claude.ai Atlassian Rovo"], "needs_auth")
+        self.assertEqual(by["claude.ai Google Drive"], "connected")
+
+    def test_banner_blanks_and_junk_are_skipped(self):
+        rows = cs.parse_claude_mcp_list(
+            "Checking MCP server health…\n\nnot a server line\n"
+            "ok: https://h/mcp - ✔ Connected\n")
+        self.assertEqual([r["name"] for r in rows], ["ok"])
+
+    def test_stdio_target_is_not_a_url(self):
+        rows = cs.parse_claude_mcp_list("fs: npx -y server - ✔ Connected\n")
+        self.assertEqual(rows[0]["transport"], "stdio")
+        self.assertEqual(rows[0]["url"], "")
+        self.assertEqual(rows[0]["target"], "npx -y server")
+
+    def test_ansi_colour_codes_are_stripped(self):
+        rows = cs.parse_claude_mcp_list(
+            "\x1b[32mok\x1b[0m: https://h/mcp - \x1b[32m✔ Connected\x1b[0m\n")
+        self.assertEqual(rows[0]["name"], "ok")
+        self.assertEqual(rows[0]["state"], "connected")
+
+    def test_empty_input_is_empty_never_raises(self):
+        self.assertEqual(cs.parse_claude_mcp_list(""), [])
+        self.assertEqual(cs.parse_claude_mcp_list(None), [])
+
+
+class TestClaudeConfigured(unittest.TestCase):
+    """claude_configured() must be fail-soft (never raise) and cached (codex
+    risk #2: a health-checking CLI must not tie render speed to live health)."""
+
+    def setUp(self):
+        self._saved_run = cs.subprocess.run
+        cs._CLAUDE_LIST_CACHE["ts"] = 0.0
+        cs._CLAUDE_LIST_CACHE["payload"] = None
+
+    def tearDown(self):
+        cs.subprocess.run = self._saved_run
+        cs._CLAUDE_LIST_CACHE["ts"] = 0.0
+        cs._CLAUDE_LIST_CACHE["payload"] = None
+
+    def _fake_run(self, stdout="", returncode=0, stderr="", exc=None, counter=None):
+        class _R:
+            pass
+        def run(*a, **k):
+            if counter is not None:
+                counter.append(1)
+            if exc is not None:
+                raise exc
+            r = _R(); r.stdout = stdout; r.stderr = stderr; r.returncode = returncode
+            return r
+        return run
+
+    def test_missing_binary_is_fail_soft(self):
+        cs.subprocess.run = self._fake_run(exc=FileNotFoundError())
+        out = cs.claude_configured(force=True)
+        self.assertEqual(out["connectors"], [])
+        self.assertIn("claude", out["error"])
+
+    def test_timeout_is_fail_soft(self):
+        cs.subprocess.run = self._fake_run(
+            exc=cs.subprocess.TimeoutExpired(cmd="claude", timeout=10))
+        out = cs.claude_configured(force=True)
+        self.assertEqual(out["connectors"], [])
+        self.assertIn("timed out", out["error"])
+
+    def test_success_parses_and_caches(self):
+        calls = []
+        cs.subprocess.run = self._fake_run(stdout=_MCP_LIST_FIXTURE, counter=calls)
+        first = cs.claude_configured(force=True)
+        self.assertIsNone(first["error"])
+        self.assertEqual(len(first["connectors"]), 3)
+        # second call within TTL must be served from cache — no second shell.
+        second = cs.claude_configured()
+        self.assertEqual(len(second["connectors"]), 3)
+        self.assertEqual(len(calls), 1, "TTL cache must avoid a second `claude` shell")
+
+    def test_endpoint_shape(self):
+        cs.subprocess.run = self._fake_run(stdout=_MCP_LIST_FIXTURE)
+        out = app.api_connectors_configured()
+        self.assertIn("connectors", out)
+        self.assertIn("error", out)
+        self.assertIn("stale", out)
+
+
 if __name__ == "__main__":
     # Plain-python entry point so the SHIPPED interpreter (no pytest) can run
     # this directly: electron/payload/python/bin/python3 test_connectors.py -v

@@ -512,6 +512,16 @@ function wire(){
     S.connForm = null; S.connFormError = null; render(); });
   scBody.querySelectorAll("[data-conn-reload]").forEach(b=>b.onclick=()=>{
     loadConnectors(true); loadConnectorsCatalog(true); });
+  /* Option A: configuring/authenticating is DELEGATED to Claude — we type the
+     command into the PTY (sendToTerminal does NOT execute it; the operator reads
+     it and presses Enter), so people use Claude's own familiar flow and Sutra
+     never handles an OAuth token. */
+  scBody.querySelectorAll("[data-conn-configured-reload]").forEach(b=>b.onclick=()=>{
+    loadClaudeConfigured(true); });
+  scBody.querySelectorAll("[data-conn-add-in-claude]").forEach(b=>b.onclick=()=>{
+    sendToTerminal("claude mcp add "); });
+  scBody.querySelectorAll("[data-conn-configure]").forEach(b=>b.onclick=()=>{
+    sendToTerminal("claude mcp login " + shq(b.dataset.connConfigure)); });
 
   /* text inputs + args textarea: commit, no render (caret) */
   scBody.querySelectorAll("[data-cf]").forEach(el=>{
@@ -852,7 +862,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     /* lazy, like Git: reading the MCP config and the preset catalog on every boot
        is work a panel that never opens this screen has no reason to do. */
-    if (S.screen === "connectors"){ loadConnectors(false); loadConnectorsCatalog(false); }
+    if (S.screen === "connectors"){ loadConnectors(false); loadConnectorsCatalog(false); loadClaudeConfigured(false); }
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -1101,6 +1111,17 @@ async function loadConnectors(force){
   if (S.connectors && !force) return;
   try { S.connectors = (await apiGet("/api/connectors")).connectors || []; S.connError = null; }
   catch (e) { S.connError = e.message; S.connectors = null; }
+  render();
+}
+/* Option A (2026-08-15): the connectors PRESENT IN CLAUDE, read live from
+   `claude mcp list` via /api/connectors/configured. Display-only — the panel
+   mirrors Claude and delegates add/auth to Claude itself; it never holds a
+   token. Holds the whole {connectors,error,stale} payload so the screen can
+   badge status and surface a read error without throwing. */
+async function loadClaudeConfigured(force){
+  if (S.claudeConfigured && !force) return;
+  try { S.claudeConfigured = await apiGet("/api/connectors/configured"); }
+  catch (e) { S.claudeConfigured = { connectors: [], error: e.message, stale: false }; }
   render();
 }
 async function loadConnectorsCatalog(force){

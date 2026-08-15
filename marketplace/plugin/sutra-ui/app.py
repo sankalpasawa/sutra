@@ -977,6 +977,22 @@ def api_connectors_claude_import() -> dict:
         connectors_store.read_claude_mcp_servers())}
 
 
+@app.get("/api/connectors/configured")
+def api_connectors_configured() -> dict:
+    """The connectors present in the operator's Claude, read via `claude mcp list`
+    (Option A, founder direction 2026-08-15):
+
+        {"connectors": [{name, target, url, transport, status, state}, ...],
+         "error": None | str, "stale": bool}
+
+    READ-ONLY and DISPLAY-ONLY — this never enters _sutra_mcp_config / the
+    governed `claude -p` spawn path. The UI shows these with status badges and
+    delegates all add/auth to Claude itself (typed into the PTY). Fail-soft:
+    a slow/missing CLI yields an error note (with last-good stale rows), not a
+    500. See connectors_store.claude_configured."""
+    return connectors_store.claude_configured()
+
+
 @app.get("/api/state")
 def state() -> dict:
     base = lr.BASE / ".claude"
