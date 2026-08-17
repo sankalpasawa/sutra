@@ -100,12 +100,13 @@ function lsSet(key, value){
 }
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
-  const out = { paneCollapsed:{}, folds:{}, browseW:null,
+  const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
                 railCollapsed:false, railSections:{}, railTab:"home" };
   if (raw && typeof raw === "object"){
     if (raw.paneCollapsed && typeof raw.paneCollapsed === "object") out.paneCollapsed = raw.paneCollapsed;
     if (raw.folds && typeof raw.folds === "object") out.folds = raw.folds;
     if (typeof raw.railCollapsed === "boolean") out.railCollapsed = raw.railCollapsed;
+    if (typeof raw.browseClosed === "boolean") out.browseClosed = raw.browseClosed;
     if (raw.railSections && typeof raw.railSections === "object") out.railSections = raw.railSections;
     if (raw.railTab === "home" || raw.railTab === "code") out.railTab = raw.railTab;
     if (typeof raw.browseW === "number" && raw.browseW > 120) out.browseW = raw.browseW;
