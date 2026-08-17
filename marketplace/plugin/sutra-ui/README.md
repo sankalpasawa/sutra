@@ -230,6 +230,31 @@ live in whichever project Sutra governance actually runs in, which is not
 knowable at install time — so those views are empty unless you point
 `SUTRA_REPO_ROOT` at that project.
 
+## Developing the panel — live reload
+
+The server reads `static/` from disk on every request (and forces revalidation
+with `Cache-Control: no-cache`), so JS/CSS/HTML edits never need a server
+restart — only the page needs reloading. Two ways to get that:
+
+**Auto (dev only).** Start the server with `SUTRA_UI_DEV=1`:
+
+```bash
+SUTRA_UI_DEV=1 .venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 7000
+```
+
+The server then watches `static/**` (mtime+size polling, no extra dependency)
+and streams a `reload` event on `/api/dev/reload`; the panel probes `/api/dev`
+at boot and, only when the answer is `{"dev": true}`, subscribes and calls
+`location.reload()` on change. Without the env var the probe answers
+`{"dev": false}`, the stream is a 404, and nothing subscribes — production
+behaviour is unchanged.
+
+**Manual (works in the installed app).** Cmd+R. The Electron shell ships
+Electron's default menu (nothing in `electron/main.js` replaces it), so
+View → Reload is already wired; a `beforeunload` guard asks first if a reply
+is still streaming. Edits to `app.py` are the one thing neither path covers —
+those still need a server restart.
+
 ## Tests
 
 ```bash

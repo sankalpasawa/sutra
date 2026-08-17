@@ -1001,6 +1001,97 @@ async def sse(source: str):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+# ------------------------------------------------------------------ dev loop --
+# Editing the panel used to mean quitting and reopening Sutra.app. The server
+# already reads static/ from disk on every request (and the middleware at the
+# bottom of this file forces revalidation), so IT never needs restarting for a
+# JS/CSS/HTML change -- only the RENDERER keeps showing the old bytes until
+# something reloads the page. This is that something: in dev only, the server
+# watches static/** and tells the page to reload itself when anything changes.
+#
+# OPT-IN, NEVER AMBIENT. The whole feature exists only when the operator started
+# the server with SUTRA_UI_DEV=1 in the environment. In production the probe
+# answers {"dev": false}, the stream answers 404, and the client never
+# subscribes -- an installed app carries zero new behaviour, not merely dormant
+# behaviour. Read ONCE at import: dev-ness is a property of how this process
+# was started, and a flag that could flip mid-run would make "why did my panel
+# just reload" unanswerable.
+#
+# STAT POLLING, NOT FILESYSTEM EVENTS -- the same trade the session watcher
+# above makes: FSEvents/watchdog is a dependency the bundled runtime does not
+# have, and adding one for a half-second timer over a few dozen files is a bad
+# trade. The walk stats every file under static/; it opens none.
+DEV_MODE = os.environ.get("SUTRA_UI_DEV") == "1"
+DEV_RELOAD_POLL_S = 0.5
+
+
+def _static_fingerprint() -> dict:
+    """(mtime_ns, size) for every file under static/, keyed by path.
+
+    mtime_ns AND size, for the same reason the session watcher compares both:
+    an editor that writes twice inside one timestamp granule would otherwise
+    have its second write swallowed. A file that cannot be statted (deleted
+    mid-walk) is simply absent from the map, which IS a difference against the
+    previous one -- so deletions and renames reload too, not just edits.
+    """
+    out = {}
+    for root, _dirs, files in os.walk(HERE / "static"):
+        for name in files:
+            p = os.path.join(root, name)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            out[p] = (st.st_mtime_ns, st.st_size)
+    return out
+
+
+@app.get("/api/dev")
+def api_dev() -> dict:
+    """One-field probe the client boots against: {"dev": bool}.
+
+    Deliberately a separate endpoint rather than a field on /api/settings:
+    settings are OPERATOR preferences persisted in ~/.sutra-ui, and dev-ness
+    is a property of THIS process's environment. Filing it with settings would
+    invite persisting it, and a persisted dev flag is exactly the ambient
+    behaviour the env gate exists to prevent.
+    """
+    return {"dev": DEV_MODE}
+
+
+@app.get("/api/dev/reload")
+async def api_dev_reload():
+    """SSE that fires `reload` whenever anything under static/ changes. Dev only.
+
+    404 in production, not an idle stream: a stream that never fires would
+    still hold one connection open per tab for the life of the window, and
+    "this endpoint does not exist here" is the truthful answer anyway.
+
+    One diff per poll, not one event per file: a save that touches five files
+    (an editor writing backups, a build step) must produce one reload, and the
+    page that comes back resubscribes against a fresh fingerprint.
+    """
+    if not DEV_MODE:
+        raise HTTPException(status_code=404, detail="not a dev server")
+
+    async def gen():
+        prev = _static_fingerprint()
+        # Opening comment frame so a subscriber can tell "connected and
+        # watching" apart from "request parked in a buffer somewhere".
+        yield ": watching static/\n\n"
+        while True:
+            await asyncio.sleep(DEV_RELOAD_POLL_S)
+            cur = _static_fingerprint()
+            if cur != prev:
+                prev = cur
+                yield _sse_event("reload", {"at": int(time.time())})
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",      # nothing may buffer an event stream
+    })
+
+
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     """Chat <-> background `claude -p`. One subprocess per message; --resume keeps
