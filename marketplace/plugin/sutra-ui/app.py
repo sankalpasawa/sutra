@@ -1893,3 +1893,22 @@ async def ws_term(ws: WebSocket):
 
 # static assets (css/js if added later); index is served by "/" above
 app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
+
+
+@app.middleware("http")
+async def _no_heuristic_caching(request, call_next):
+    """Force revalidation on the panel document and its assets.
+
+    Without a Cache-Control header, Chromium HEURISTICALLY caches a response
+    for 10% of its Last-Modified age -- a JS file untouched for days stays
+    "fresh" for hours, and an edited panel keeps rendering from the renderer's
+    disk cache through any number of ordinary reloads. `no-cache` does not
+    forbid caching; it forbids REUSE WITHOUT ASKING, and StaticFiles' etags
+    make each ask a cheap 304. The panel is served off loopback, so the extra
+    round-trip costs nothing.
+    """
+    resp = await call_next(request)
+    p = request.url.path
+    if p == "/" or p.startswith("/static/"):
+        resp.headers.setdefault("Cache-Control", "no-cache")
+    return resp

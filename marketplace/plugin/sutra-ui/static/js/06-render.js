@@ -725,7 +725,13 @@ function render(){
     : pinBrowse
       ? ` style="flex:0 0 ${clampBrowseW(S.ui.browseW)}px;max-width:none"`
       : ` style="flex:1 1 auto;max-width:none"`;
+  /* The browse pane closes like a session pane closes: it is a VIEW, and the
+     rail keeps every way back to it. Closed emits no section at all -- a hidden
+     pane would still own #scBody and every handler wired into it. Picking any
+     Home item reopens it (07-loaders' data-screen handler). */
+  const bClosed = !!S.ui.browseClosed;
   document.getElementById("panes").innerHTML =
+    (bClosed ? "" :
     `<section class="pane browse ${bCol?"collapsed":""}"${bStyle}>
        <div class="ph">
          <button class="pfold" type="button" data-pane-fold="browse"
@@ -735,15 +741,23 @@ function render(){
                 stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
          </button>
          <h3 style="max-width:none">${esc(t)}</h3>
+         <button class="ib" data-close="browse" style="margin-left:auto"
+                 aria-label="Close this pane">
+           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+         </button>
          </div>
        <div class="pb" id="scBody"></div>
      </section>`
     + (open.length && !bCol
         ? `<button class="pdiv" id="pdiv" type="button" role="separator"
              aria-orientation="vertical" aria-label="Resize the browse pane
-             (left and right arrows adjust, home resets)"></button>` : "")
-    + open.map(sessionPane).join("");
-  document.getElementById("scBody").innerHTML = SCREENS[S.screen]();
+             (left and right arrows adjust, home resets)"></button>` : ""))
+    + open.map(sessionPane).join("")
+    + (bClosed && !open.length
+        ? `<p style="padding:24px 28px;font-size:12px;color:var(--faint)">
+             Nothing is open. Pick a screen from Home, or a session from Code.</p>` : "");
+  const scBody = document.getElementById("scBody");
+  if (scBody) scBody.innerHTML = SCREENS[S.screen]();
   wire();
 
   /* Fill the repository bar for whatever panes are open. Idempotent -- loadRepo

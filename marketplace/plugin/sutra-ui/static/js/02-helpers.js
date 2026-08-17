@@ -602,7 +602,8 @@ function renderRail(){
   const spec = railSpec();
   const mk = items => items.map(it=>`
     <li><button type="button" data-screen="${it.id}" ${it.disabled?"disabled":""}
-        aria-current="${it.toggle ? (it.id==="terminal" && S.termOpen) : S.screen===it.id}"
+        aria-current="${it.toggle ? (it.id==="terminal" && S.termOpen)
+                                  : (!S.ui.browseClosed && S.screen===it.id)}"
         ${it.disabled?'title="§8.5.3 — an item appears in the rail only if a file backs it. The FTS5 derived index (§7.3) does not exist yet."':""}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${ICON[it.i]}</svg>
       ${esc(it.n)}

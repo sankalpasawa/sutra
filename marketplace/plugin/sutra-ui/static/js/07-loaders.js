@@ -42,7 +42,10 @@ function wireDivider(){
 }
 
 function wire(){
-  const scBody = document.getElementById("scBody");
+  /* With the browse pane closed there is no #scBody. A detached node keeps
+     every scBody.querySelectorAll below a no-op instead of a TypeError that
+     would kill wire() before the session panes got their handlers. */
+  const scBody = document.getElementById("scBody") || document.createElement("div");
   const panes  = document.getElementById("panes");
 
   /* ── layout affordances (collapse, fold, resize) ── */
@@ -283,6 +286,10 @@ function wire(){
 
   panes.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{
     const sid = b.dataset.close;
+    /* "browse" is the screens pane, not a session: nothing to hang up, and the
+       closed state persists like a pane collapse does. Session ids are UUIDs,
+       so the sentinel can never collide with one. */
+    if (sid === "browse"){ S.ui.browseClosed = true; saveLayout(); render(); return; }
     /* Returns the channels it KEPT because work was still in flight. Closing the
        pane hides the view; it does not cancel the reply. Say so, because the
        button now does something different from what it used to. */
@@ -916,6 +923,9 @@ document.querySelector(".rail").addEventListener("click", e=>{
        and render() would blank the browse pane. */
     if (b.dataset.screen === "terminal"){ termToggle(); renderRail(); return; }
     S.screen=b.dataset.screen;
+    /* Picking a screen is the OPEN gesture, the way clicking a session row is:
+       a closed browse pane reopens rather than swapping content nobody can see. */
+    if (S.ui.browseClosed){ S.ui.browseClosed = false; saveLayout(); }
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     if (S.screen === "automation") loadAuto(false);
