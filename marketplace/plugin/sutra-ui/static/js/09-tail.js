@@ -88,6 +88,40 @@ function startSessionStream(){
   };
 }
 
+/* ── dev auto-reload ─────────────────────────────────────────────────────────
+   The server reads static/ from disk on every request, so an edited panel file
+   is already being SERVED fresh -- only this renderer keeps running the old
+   bytes until someone reloads the page. When the server was started with
+   SUTRA_UI_DEV=1 it watches static/** and streams a `reload` event on change;
+   this subscribes and reloads.
+
+   GATED ON THE SERVER'S ANSWER, never assumed: boot() probes /api/dev and
+   calls this with the result, so against a production server (where
+   /api/dev/reload is a 404) no subscription is ever attempted and this file
+   adds zero requests beyond the one probe. The gate lives server-side on
+   purpose -- a client-side toggle could be flipped in a production app.
+
+   `location.reload()` is the whole payload: a full reload re-runs boot(),
+   which re-reads everything, so the reloaded page is correct by the same
+   argument the first load is. Partial hot-swap machinery would be a second
+   boot path to keep honest. The reload still passes through the beforeunload
+   guard below, so an edit landing mid-turn asks before destroying the stream
+   rather than silently eating it. */
+let _devStream = null;
+function startDevReload(dev){
+  if (!dev || _devStream || typeof EventSource === "undefined") return;
+  try { _devStream = new EventSource("/api/dev/reload"); }
+  catch (e){ return; }
+  _devStream.addEventListener("reload", ()=>{
+    try { location.reload(); } catch (e) {}
+  });
+  /* EventSource retries on its own (the dev server restarts often -- that is
+     what dev means); only a CLOSED handle is dropped so it is never reused. */
+  _devStream.onerror = ()=>{
+    if (_devStream && _devStream.readyState === 2) _devStream = null;
+  };
+}
+
 async function loadSessions(){
   adoptRealSessions(await apiGet("/api/sessions?limit=100"));
 }
@@ -164,6 +198,12 @@ async function boot(){
        as it happens, rather than what was true when this panel booted. Started
        LAST so a stream that fails cannot delay anything above it. */
     startSessionStream();
+
+    /* Dev-only auto-reload. One loopback GET; in production it answers
+       {dev:false} and nothing subscribes. NOT awaited -- the panel must never
+       wait on a convenience, and a probe that fails (older server without the
+       route) simply leaves the feature off. */
+    apiGet("/api/dev").then(d=>startDevReload(d && d.dev)).catch(()=>{});
 
     /* Staged-update watch. Started LAST and deliberately not awaited: a staged
        build is never a reason for the panel to come up any slower, and this

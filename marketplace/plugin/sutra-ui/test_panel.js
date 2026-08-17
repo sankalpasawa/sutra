@@ -179,7 +179,9 @@ const EPILOGUE = `
      the global was deleted -- it would only have thrown the moment a test
      touched it. Removed with the tenant surface it belonged to. */
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
-  renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S
+  renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S,
+  startDevReload,
+  get _devStream(){ return _devStream; }, set _devStream(v){ _devStream = v; }
 };
 `;
 
@@ -1509,6 +1511,64 @@ test("27d. a failed or malformed fetch does not throw and leaves the drawer inta
   const html = failed.doc.getElementById("act-dbody").innerHTML;
   assert.ok(/act-err/.test(html), "an errored feed renders the .act-err notice: " + html);
   assert.ok(/reach the activity feed/i.test(html), "the notice must say the feed was unreachable");
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   28. dev auto-reload subscribes ONLY when the server said dev
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* An EventSource stub the vm can construct. The realm's own EventSource is
+   undefined (this harness is node, not a browser), which is itself what the
+   production path relies on -- so 28a first proves the gate without one, then
+   installs this to prove the dev path with one. */
+function makeEventSourceStub(log) {
+  function EventSourceStub(url) {
+    log.push({ url });
+    this.url = url;
+    this.readyState = 1;
+    this._listeners = {};
+    this.addEventListener = (ev, fn) => { this._listeners[ev] = fn; };
+  }
+  return EventSourceStub;
+}
+
+test("28a. no dev answer (or no EventSource) means no subscription", () => {
+  T._devStream = null;
+  // (i) the production answer: {dev:false} -> the falsy arg is the gate
+  T.startDevReload(false);
+  assert.strictEqual(T._devStream, null, "dev:false must never open a stream");
+  T.startDevReload(undefined);            // probe failed -> caller passes nothing
+  assert.strictEqual(T._devStream, null, "a failed probe must leave the feature off");
+  // (ii) dev:true but no EventSource in this realm (exactly node's state):
+  // the guard must return, not throw -- the suite reaching this line at all
+  // depends on the same guard styles used by startSessionStream.
+  T.startDevReload(true);
+  assert.strictEqual(T._devStream, null, "no EventSource -> silently off, never a throw");
+});
+
+test("28b. dev:true subscribes to /api/dev/reload and a reload event reloads the page", () => {
+  const opened = [];
+  sandbox.EventSource = makeEventSourceStub(opened);
+  let reloads = 0;
+  sandbox.location.reload = () => { reloads++; };
+  try {
+    T._devStream = null;
+    T.startDevReload(true);
+    deepEq(opened.map(o => o.url), ["/api/dev/reload"],
+      "exactly one stream, on the dev endpoint");
+    assert.ok(T._devStream, "the handle is kept so a second call cannot double-subscribe");
+    // a second call (boot re-entry) must NOT open a second stream
+    T.startDevReload(true);
+    assert.strictEqual(opened.length, 1, "re-entry is a no-op while a stream is live");
+    // the server says a static file changed -> the page reloads itself
+    T._devStream._listeners.reload({ data: "{\"at\":1}" });
+    assert.strictEqual(reloads, 1, "a `reload` event must call location.reload()");
+  } finally {
+    // leave the realm as the other tests found it: no EventSource, no stream
+    delete sandbox.EventSource;
+    delete sandbox.location.reload;
+    T._devStream = null;
+  }
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */
