@@ -7,7 +7,9 @@
 - **Teamsutra: the task loop closes.** The Ask Sutra chat can file a bug as a
   draft task; you queue it; the hourly worker (read-only — plan mode, no write
   tools) picks it up oldest-first and returns a unified diff; you read the exact
-  change on the new Teamsutra board and apply it with one click. A crashed claim
+  change on the new Teamsutra board and apply it yourself (copy the diff to
+  `git apply`, or hand it to a Claude session) — a one-click apply is not in
+  this release. A crashed claim
   stays claimed until you release it — no retry loops. Queue/drop/release are
   desktop-token-gated; a CLI-served panel shows why its buttons are disabled.
 
