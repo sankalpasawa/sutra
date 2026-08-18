@@ -348,6 +348,18 @@ function mdHtml(src){
   const slot = [];
   const park = html => "\u0000" + (slot.push(html) - 1) + "\u0000";
 
+  /* STREAMING: the fence regex below needs the CLOSING ``` to exist, so while
+     a reply streamed, an open fence and everything inside it rendered as prose
+     and then collapsed into <pre> when the close arrived -- the pane visibly
+     re-shaped on every fenced block. Close an unterminated fence before
+     parsing so streamed code is code from its first token. Line-anchored
+     toggle on purpose: an inline ``` in prose must not flip the state. */
+  {
+    let open = false;
+    for (const l of t.split("\n")) if (/^[ \t]*```/.test(l)) open = !open;
+    if (open) t += "\n```";
+  }
+
   t = t.replace(/```[ \t]*([A-Za-z0-9_+.#-]*)\n([\s\S]*?)```/g,
     (m, lang, code) => park('<pre class="md-pre"><code>' + code.replace(/\n+$/, "") + "</code></pre>"));
   t = t.replace(/`([^`\n]+)`/g, (m, c) => park('<code class="md-code">' + c + "</code>"));
