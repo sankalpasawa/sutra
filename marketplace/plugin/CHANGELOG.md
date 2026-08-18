@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-19
 
+## 2.107.1
+
+- **Apply understands the worker's own diffs.** The patch-policy gate now
+  accepts bare `---`/`+++` unified diffs (what the worker actually emits) —
+  2.107.0's gate only knew `diff --git` headers and would have refused every
+  real task. Both forms are policed identically.
+
 ## 2.107.0
 
 - **One-click Apply.** A reviewed Teamsutra task now has an Apply button:

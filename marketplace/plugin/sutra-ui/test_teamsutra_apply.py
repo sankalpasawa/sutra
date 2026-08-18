@@ -28,6 +28,19 @@ index 1111111..2222222 100644
 
 CI_DIFF = GOOD_DIFF.replace("static/js/11-teamsutra.js", ".github/workflows/x.yml")
 
+# What the worker's ts_extract_diff actually emits: a bare unified diff,
+# ---/+++ headers only, no `diff --git` line. The 2.107.0 gate refused this
+# shape — every real worker diff — so this fixture pins the 2.107.1 fix.
+BARE_DIFF = """--- a/marketplace/plugin/sutra-ui/routines.py
++++ b/marketplace/plugin/sutra-ui/routines.py
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+
+BARE_CI_DIFF = BARE_DIFF.replace("marketplace/plugin/sutra-ui/routines.py",
+                                 ".github/workflows/x.yml")
+
 HAPPY = [
     ("git remote get-url origin", (0, "git@github.com:sankalpasawa/sutra.git\n", "")),
     ("gh auth status", (0, "logged in", "")),
@@ -144,6 +157,19 @@ class TestTsApply(unittest.TestCase):
         mutating = [c for c in calls if c[:2] in (("git", "push"), ("git", "commit"),
                                                   ("git", "apply"))]
         self.assertEqual(mutating, [])
+
+    def test_worker_bare_diff_is_accepted(self):
+        tid = self._reviewed_task(diff=BARE_DIFF)
+        calls = []
+        out = self.A._ts_apply(tid, run=fake_runner(HAPPY, calls))
+        self.assertEqual(out["status"], "done")
+        self.assertTrue(out["pr_url"])
+
+    def test_worker_bare_diff_is_still_policed(self):
+        tid = self._reviewed_task(diff=BARE_CI_DIFF)
+        with self.assertRaises(ValueError):
+            self.A._ts_apply(tid, run=fake_runner(HAPPY, []))
+        self.assertIn("policy-denied path", self.T.load(tid)["apply_error"])
 
     def test_non_needs_review_task_refused(self):
         rec = self.T.create({"title": "t", "body": "b", "kind": "bug",

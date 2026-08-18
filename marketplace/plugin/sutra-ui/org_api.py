@@ -1825,6 +1825,10 @@ def _ts_apply_policy(diff):
     paths = []
     for m in re.finditer(r"^diff --git a/(\S+) b/(\S+)$", diff, re.M):
         paths += [m.group(1), m.group(2)]
+    # The worker's ts_extract_diff emits bare unified diffs — ---/+++ headers
+    # with no `diff --git` line. Both forms are policed; neither is trusted.
+    for m in re.finditer(r"^(?:---|\+\+\+) [ab]/(\S+)$", diff, re.M):
+        paths.append(m.group(1))
     if not paths:
         return "diff has no recognizable file headers"
     for p in sorted(set(paths)):
