@@ -2,6 +2,40 @@
 
 **status**: active · **updated**: 2026-08-12
 
+## 2.103.0
+
+- **"Check for updates" now downloads.** It reported a new version and staged
+  nothing: staging ran only on the Electron shell's timer (90s after launch,
+  then every six hours), so a deliberate check left the operator with a pill and
+  no download, and the only way forward was the blocking "Download & install"
+  that quits the app. The panel cannot stage by itself —
+  `/api/updates/desktop/stage` is token-authenticated and the token deliberately
+  never reaches the renderer — so a third preload verb (`stageUpdate`) asks the
+  shell, exactly as `applyUpdate`/`deferUpdate` do. One staging run at a time,
+  shared with the scheduled path, so a click during a timer run joins it instead
+  of starting a second 160MB download. The screen stays usable while it runs and
+  reports what actually landed. 5 new tests.
+- **Test pane removed** from the Organization nav. It rendered nothing by design
+  and was wired at three sites (nav → TITLES → SCREENS); all three are gone,
+  pinned by a test.
+
+## 2.102.0
+
+- **"Transcript not read yet" was a resting state, not a flash.** Reported on
+  opening the app; reproduced in the running panel — a pane opened on an IDLE
+  session sat at `loadState:"unread"` for 8s and never moved. `ensureTranscript()`
+  only acts on `"unread"` and was only CALLED from the three sites that open a
+  pane, so the ⋮ → "open in repo" action (which pushes into `openPanes` without
+  it) stranded the pane permanently; the background re-read in
+  `applySessionChange()` is no safety net because it fires on a WRITE to the
+  file and an idle transcript is never written. `render()` now schedules the
+  read for every open pane — idempotent, like `loadRepo` beside it — so the
+  invariant is structural instead of a call every future open-path must
+  remember. Second fix: `sessionBody()` claimed "not read yet" for any state
+  that was not loading/error/empty, including the `ok`-with-zero-turns the busy
+  guard produces without parsing; a session that HAS been read now says what was
+  actually found. 5 new tests pin both facts; 86 panel tests green.
+
 ## 2.101.0
 
 - **Connectors mirror Claude; configuring is delegated to Claude (Option A).** A new

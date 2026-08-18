@@ -1,6 +1,18 @@
 # Sutra — Current Version
 
-## v2.100.0 (2026-08-12, HEAD)
+## v2.103.0 (2026-08-18, HEAD)
+
+**Checking for updates downloads them.** "Check for updates" found a new version and staged nothing — background staging ran only on the shell's timer (90s after launch, then every six hours), leaving the blocking "Download & install" (which quits the app) as the only manual path. The panel can't stage itself: that route is token-authenticated and the token never reaches the renderer, so a third preload verb asks the shell, like apply/defer. One download at a time, shared with the scheduled path; the screen stays usable and reports what actually landed. **Test pane** — an empty scaffold wired at three sites — is out of the Organization nav. 6 new tests; 92 panel tests green.
+
+## v2.102.0 (2026-08-18)
+
+**"Transcript not read yet" no longer sticks.** An open pane on an idle session could sit on that message forever: `ensureTranscript()` only acts on `unread` and was called only from the sites that open a pane (the ⋮ → "open in repo" action skipped it), while the background re-read fires only on a write to the file — which an idle transcript never gets. Reproduced live (8s, no recovery), then fixed structurally: `render()` schedules the read for every open pane, idempotent like `loadRepo` beside it, so every path into `openPanes` is covered. Also, `sessionBody()` no longer claims "not read yet" for a session that WAS read (`ok` with zero turns, which the busy guard produces without parsing). 5 new tests; 86 panel tests green.
+
+## v2.101.0 (2026-08-15)
+
+**Connectors mirror Claude.** A "Present in Claude" section reads the operator's own connectors live from `claude mcp list` and shows each with a status badge; configuring is delegated to Claude's own `claude mcp add` / `claude mcp login` flow rather than rebuilt, so Sutra never handles an OAuth token. Read-only endpoint behind a subprocess timeout + 30s TTL cache. 66 connector tests green.
+
+## v2.100.0 (2026-08-12)
 
 **Agentic output is captured and shown.** The transcript reader now records, for every tool call an agent (or subagent) makes, the tool name, the actual input (command / file path / pattern / query, capped) and the returned result (capped 8 KB, error-styled when the tool failed) — not just a bare tool name. The chat replay and the subagent viewer share one renderer (`toolCallsHtml`): each call shows a name pill, its command, and a collapsible **output** toggle that reuses the live tool-row open-state. Verified: parsing a real 9,979-line session captured 1,243 tool calls, 1,236 with output (name + input + result); 81 panel tests, JS syntax clean on all four touched modules.
 

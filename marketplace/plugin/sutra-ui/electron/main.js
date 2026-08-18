@@ -488,15 +488,32 @@ function api(method, urlPath, body, timeoutMs) {
 /* Check, and stage in the background if there is something to stage. Failures
    are logged and dropped: a machine that is offline, or behind a proxy, or
    rate-limited by GitHub, must keep working exactly as before. */
-async function checkForUpdate() {
-  if (!desktopControl() || armed) return;
-  try {
+/* One staging run at a time. The six-hourly timer and the panel's manual check
+   both land here, and two concurrent 160MB downloads writing the same staging
+   path is not a race worth having. Shared with the IPC verb below so a click
+   during a scheduled run joins that run instead of starting a second. */
+let staging = null;
+
+function stageNow() {
+  if (staging) return staging;                     /* already downloading */
+  staging = (async () => {
     const state = await api("GET", "/api/updates", undefined, 30000);
     const d = (state && state.desktop) || {};
-    if (!d.managed || d.error || !d.update_available) return;
+    if (!d.managed || d.error || !d.update_available)
+      return { staged: false, reason: d.error || (d.managed ? "up to date" : "not managed here") };
     console.log(`[sutra] update ${d.installed} -> ${d.latest}; staging`);
     const staged = await api("POST", "/api/updates/desktop/stage", {}, 600000);
     if (staged && staged.staged) console.log(`[sutra] staged ${staged.version}`);
+    return staged || { staged: false };
+  })();
+  staging.finally(() => { staging = null; });
+  return staging;
+}
+
+async function checkForUpdate() {
+  if (!desktopControl() || armed) return;
+  try {
+    await stageNow();
   } catch (err) {
     console.error("[sutra] update check failed:", err.message);
   }
@@ -574,6 +591,26 @@ ipcMain.handle("sutra:update-apply", async () => {
 });
 
 ipcMain.handle("sutra:update-defer", async () => ({ ok: true, deferred: true }));
+
+/* Stage on demand, for the panel's "Check for updates".
+ *
+ * The panel found an update and cannot download it itself: /desktop/stage is
+ * token-authenticated and the token deliberately never reaches the renderer.
+ * Before this verb existed the manual check was a dead end -- it reported a new
+ * version and downloaded nothing, leaving the only path the blocking
+ * "Download & install" button, while the background download waited for a timer
+ * up to six hours away. The renderer still only ASKS; this process owns the
+ * token and does the work, exactly as with apply/defer. */
+ipcMain.handle("sutra:update-stage", async () => {
+  if (!desktopControl()) return { ok: false, error: "this window does not control the backend" };
+  if (armed) return { ok: true, staged: false, reason: "an update is already armed" };
+  try {
+    const r = await stageNow();
+    return { ok: true, staged: !!(r && r.staged), version: r && r.version, reason: r && r.reason };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 /* Native folder chooser for the panel's working-directory fields. The panel is
    the same app the CLI serves to an ordinary browser, where this cannot exist --

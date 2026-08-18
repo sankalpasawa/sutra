@@ -339,6 +339,45 @@ async function checkUpdates(){
   try { S.upd = await apiGet("/api/updates"); }
   catch (e) { S.updError = e.message; S.upd = null; }
   S.updBusy = null; render();
+  stageInBackground();
+}
+
+/* A check that FINDS an update now starts the download, instead of reporting a
+   new version and doing nothing with it.
+ *
+ * The gap this closes: staging was driven only by the shell's timer -- 90s after
+ * launch, then every six hours -- so an operator who checked deliberately got a
+ * "2.x available" pill and no download, and the only way forward was the
+ * blocking "Download & install" button that quits the app. Now the check does
+ * what checking implies.
+ *
+ * Asked of the SHELL, never done here: /api/updates/desktop/stage is
+ * token-authenticated and the panel has no token (see preload.js). In a plain
+ * browser window.sutra is absent, there is no app to replace, and this is
+ * correctly a no-op -- the manual button remains that path's answer.
+ *
+ * Not awaited by the caller: a 160MB download must not block the screen. The
+ * staged banner (poll of /api/updates/staged) is what announces the result, so
+ * this reports only the fact that it started, and any failure honestly. */
+async function stageInBackground(){
+  const d = (S.upd && S.upd.desktop) || {};
+  if (!d.managed || d.error || !d.update_available) return;
+  if (!(window.sutra && typeof window.sutra.stageUpdate === "function")) return;
+  if (S.updStaging) return;                 /* one at a time, like the shell */
+  S.updStaging = true;
+  S.updMsg = `Downloading ${d.latest} in the background — you can keep working.`;
+  render();
+  try {
+    const r = await window.sutra.stageUpdate();
+    S.updMsg = r && r.ok
+      ? (r.staged ? `${r.version || d.latest} downloaded and verified — it installs when you restart.`
+                  : `Nothing to download${r.reason ? " — " + r.reason : "."}`)
+      : `Download failed${r && r.error ? " — " + r.error : "."}`;
+  } catch (e) {
+    S.updMsg = "Download failed — " + e.message;
+  }
+  S.updStaging = false;
+  render();
 }
 
 async function installUpdate(which){
@@ -487,7 +526,6 @@ SCREENS.settings = () => {
 /* ══════════════════════ render ══════════════════════ */
 const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
-  testpane:["Test pane",""],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],
   evals:["Evals","verifier registry · nightly decay runs · findings — read-only"],
@@ -764,7 +802,7 @@ function turnResponse(t){
      wedged one were the same picture. data-runstrip is the ticker's patch anchor
      (text node only); the sweep is indeterminate on purpose. */
   const state = t.streaming
-      ? `<span class="runstrip">${SPARK}<b data-runstrip="${esc(t.uid||"")}"
+      ? `<span class="runstrip live">${SPARK}<b class="shim" data-runstrip="${esc(t.uid||"")}"
            >${esc(runPhrase(t))}</b></span><span class="runbar" aria-hidden="true"><i></i></span>`
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
@@ -910,10 +948,19 @@ function sessionBody(s){
         <p style="color:var(--faint)">The session is listed because the file exists under
         <code>~/.claude/projects</code>; nothing is shown because nothing could be parsed
         out of it. No turns have been invented to fill the gap.</p></div>`;
-    if (s.loadState === "empty")
+    /* "empty" is the read-and-found-nothing state. A session the BUSY guard in
+       applySessionChange() promoted to "ok" without parsing anything lands here
+       too: it has been read as far as this pane is concerned, and there are no
+       turns, which is the same fact under a different label. Saying "not read
+       yet" for it was the lie -- it sent the reader looking for a read that had
+       already happened and would never happen again. */
+    if (s.loadState === "empty" || s.loadState === "ok" || s.loadState === "live")
       return `<div class="zero"><h4>No readable turns in this transcript</h4>
         <p>The file parsed, but it holds no user or assistant messages — a session that was
         opened and abandoned, or one whose content is entirely tool traffic.</p></div>`;
+    /* Genuinely unread: loadState "unread", or absent on a session built by a
+       path that never set one. render() schedules the read for any open pane,
+       so this is a frame or two of honesty, not a resting state. */
     return `<p style="color:var(--muted)">Transcript not read yet.</p>`;
   }
   return `<div class="zero"><h4>Nothing asked yet</h4>

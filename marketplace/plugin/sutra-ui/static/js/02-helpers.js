@@ -193,6 +193,9 @@ const S = {
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,
+  /* a background stage() is in flight -- distinct from updBusy, which disables
+     the buttons; staging deliberately leaves the screen usable */
+  updStaging:false,
   /* routines: null until the screen is opened (it shells out to launchctl). */
   rt:null, rtError:null, rtBusy:null, rtMsg:null, rtForm:null, rtRuns:{}, rtOpen:{},
   /* The run being read: {rid, name, started}. null means none is open. runDetail
@@ -493,8 +496,7 @@ function railSpec(){
       {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
-      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)},
-      {id:"testpane",   n:"Test pane",  i:"chart",c:undefined}
+      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)}
     ],
     change:[
       {id:"reorg",  n:"Reorg plans", i:"reorg", c:PLANS.length},

@@ -551,10 +551,6 @@ SCREENS.knowledge = () => {
     ${body}`;
 };
 
-/* ── Test pane ── intentionally empty. Wired end-to-end (nav → TITLES → SCREENS)
-   so it registers under Organization, but renders no content by design. */
-SCREENS.testpane = () => "";
-
 /* ── S5 Reorg ── */
 SCREENS.reorg = () => {
   const sim = simulate(S.draft.ops);

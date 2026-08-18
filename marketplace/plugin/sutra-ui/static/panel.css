@@ -248,6 +248,44 @@
   animation:sutraSweep 1.5s ease-in-out infinite}
 @keyframes sutraSweep{0%{transform:translateX(-110%)}100%{transform:translateX(330%)}}
 @media (prefers-reduced-motion:reduce){.runbar i{animation:none;width:100%;opacity:.45}}
+/* ── working state, made UNMISTAKABLE ─────────────────────────────────────
+   The strip already existed but read as static -- a 10px word, a 13px mark, a
+   2px bar -- so a live turn and a wedged one looked identical at a glance,
+   which is the one question this surface exists to answer. Nothing new is
+   CLAIMED here (every number is still measured; there is still no fabricated
+   percentage): the EXISTING liveness is just made loud. The status text
+   shimmers, the Sutra mark carries a breathing halo, the sweep is thicker, and
+   the streaming cursor blinks instead of sitting there as a dead block. The
+   glyph stays Sutra's own mark rather than a copy of another product's -- the
+   motion is what matches Claude, not the shape. */
+.runstrip.live{font-size:11.5px;padding:6px 10px;gap:8px}
+.runstrip.live .spark{width:16px;height:16px;position:relative}
+.runstrip.live .spark::after{content:"";position:absolute;inset:-4px;border-radius:50%;
+  background:radial-gradient(circle,color-mix(in srgb,var(--acc) 45%,transparent),transparent 70%);
+  animation:sutraHalo 1.6s ease-in-out infinite;z-index:-1}
+@keyframes sutraHalo{0%,100%{transform:scale(.65);opacity:.3}50%{transform:scale(1.15);opacity:.85}}
+/* the signature: a light band sweeping across the status text */
+.runstrip .shim{
+  background:linear-gradient(100deg,
+    color-mix(in srgb,var(--acc) 45%,transparent) 0%,
+    var(--acc) 45%,
+    color-mix(in srgb,var(--acc) 45%,transparent) 90%);
+  background-size:220% 100%;
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;color:transparent;
+  animation:sutraShim 1.9s linear infinite}
+@keyframes sutraShim{0%{background-position:120% 0}100%{background-position:-120% 0}}
+.runbar{height:3px}
+/* the streaming cursor: was a static █ with NO css at all */
+.caret{animation:sutraBlink 1.05s steps(1,end) infinite}
+@keyframes sutraBlink{0%,49%{opacity:1}50%,100%{opacity:0}}
+/* Respect the OS setting: motion is decoration, the words and colour carry the
+   state. Text must stay VISIBLE -- background-clip:text left it transparent. */
+@media (prefers-reduced-motion:reduce){
+  .runstrip.live .spark::after{animation:none;opacity:.5;transform:none}
+  .runstrip .shim{animation:none;-webkit-text-fill-color:var(--acc);color:var(--acc)}
+  .caret{animation:none;opacity:1}
+}
   .p-mut{background:var(--inset);color:var(--muted);border:1px solid var(--line)}
 
   .facets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px;align-items:center}
