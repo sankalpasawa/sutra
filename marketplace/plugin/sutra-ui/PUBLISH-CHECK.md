@@ -65,6 +65,37 @@ That two-line interrogation found, in one live run, that the thinking loader
 unfenced governance blocks leak into bodies — neither visible in a screenshot,
 both fixed with the evidence attached.
 
+## Writing a test case — the same pipeline, as the authoring standard
+
+Every new test case — for ANY feature, not just the chat surface — is written
+through the same four levels, in this order. A behavior is "tested" when it has
+the levels its row demands; skipping a mandatory level is a review-blocking gap.
+
+| Level | Where it lives | Idiom | Mandatory when |
+|---|---|---|---|
+| **L1 · projection** | `test_governance.js` (or a sibling suite) | extract the REAL shipped function via the `slice()` harness — never a copy — and feed it real captured fixtures from `tests/fixtures/` | the change has any pure logic |
+| **L2 · rendered DOM** | `test_panel.js` | the vm sandbox: assert the HTML the real renderer emits — escaping, anchors, bounded growth, state round-trips | always — L1 alone cannot see a correct projection rendered into the wrong place |
+| **L3 · production state** | `qa-shell/shell-check.mjs` lane 1 | one interrogation assertion against the RUNNING app's own `S`/functions | the behavior is reachable in the shipped app |
+| **L4 · pixels** | `qa-shell` lane 2 / `qa/` states | screenshot + byte-level verification (brightness, diff) | the claim is perceptual (theme, layout, motion) |
+
+Rules that make the levels honest:
+
+- **L1+L2 are the double-test floor** (founder directive, 2026-08-18): the same
+  behavior asserted twice, through different failure modes. A bug must be wrong
+  the same way twice to survive.
+- **Fixtures are captured, never invented.** New wire shapes get captured the
+  way `tests/fixtures/toolruns-fanout.json` was (`design/capture-fanout.py`) —
+  through the server's own transform.
+- **A test that cannot run is not a test.** The async-tail lesson (test 31e):
+  the harness must actually await what it asserts; a silently-skipped assertion
+  is worse than none.
+- **Fix the product, not the test** — unless the test itself is provably stale
+  (test 15's `balanceTab`), in which case the correction is documented in the
+  commit with the reason.
+- **Every fix lands with its levels in the same commit.** The gate order above
+  is also the authoring order: write L1 red → green, L2 red → green, then wire
+  L3/L4 where mandated.
+
 ## Rules of the road
 
 - **Never `browser.close()`** on a `connectOverCDP` session.
