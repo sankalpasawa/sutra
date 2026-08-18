@@ -753,13 +753,26 @@ def api_balance() -> dict:
         HERE.parent.parent.parent.parent / "holding" / "state" / "balance")
     state_p = Path(bdir) / "balance-state.json"
     log_p = Path(bdir) / "balance-log.jsonl"
-    if not state_p.exists():
+
+    def _read(name):
+        """Fail-soft read of one balance artifact — None when absent/corrupt."""
+        try:
+            return json.loads((Path(bdir) / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    # The nightly UI read model + the roles review are read INDEPENDENTLY of the
+    # observer snapshot (consult P1 2026-08-18): a missing/half-written
+    # balance-state.json must not silently hide the approved dashboard design.
+    view = _read("dashboard-data.json")
+    review = _read("roles-review.json")
+    snap = _read("balance-state.json") if state_p.exists() else None
+    if snap is None and view is None:
         return {"present": False}
-    try:
-        snap = json.loads(state_p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        # Fail closed, not 500: a half-written snapshot is "not present yet".
-        return {"present": False}
+    if snap is None:
+        # Design present, observer snapshot not yet — the panel renders the
+        # nightly tabs and says so, rather than falling back to a sample.
+        return {"present": True, "state": {}, "today": [], "view": view, "review": review}
     today = []
     lt = _time.localtime()
     day_start = int(_time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
@@ -781,14 +794,13 @@ def api_balance() -> dict:
         pass
     # Actionables read model (PLAN-25 step 9): the coach's derived view, if
     # the nightly pass has produced one. Absent/corrupt = key omitted, not 500.
-    out = {"present": True, "state": snap, "today": today[-96:]}
-    try:
-        derived = json.loads((Path(bdir) / "actionables.json").read_text(encoding="utf-8"))
+    out = {"present": True, "state": snap, "today": today[-96:],
+           "view": view, "review": review}
+    derived = _read("actionables.json")
+    if derived:
         out["actionables"] = derived.get("actionables", [])
         out["max_active"] = derived.get("max_active")
         out["profile_warnings"] = derived.get("profile_warnings", [])
-    except (OSError, ValueError):
-        pass
     return out
 
 

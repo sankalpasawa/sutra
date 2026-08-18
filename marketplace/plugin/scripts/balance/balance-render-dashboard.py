@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Balance dashboard generator (plugin port, PLAN-25 step 20) — regenerates roles-dashboard.html with
+"""Balance V1 dashboard generator — regenerates roles-dashboard.html with
 TODAY | THIS WEEK | MONTH tabs from data on disk. Fully deterministic render;
 all dynamic strings pass through html.escape; atomic write. Consult folds
 2026-08-18: build-time authored markup, inert data, overflow wrappers,
@@ -324,7 +324,39 @@ document.querySelectorAll(".tabs button").forEach(function(b){{
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(html)
     os.replace(tmp, OUT)
-    print(f"dashboard: {OUT} ({len(html)} bytes, tabs=3)")
+
+    # Canonical UI read model (consult fold 2026-08-18): the SAME semantic
+    # decisions the HTML above renders — heat levels, role order, week window,
+    # expiry-filtered insights, subject filters — dumped so the desktop panel
+    # consumes them instead of re-deriving (re-derivation IS the drift vector
+    # this closes). Atomic write; never blocks the HTML.
+    _lvl = {"--h0": 0, "--h1": 1, "--h2": 2, "--h3": 3, "--h4": 4}
+    view = {
+        "rendered_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(NOW)),
+        "rendered_at_local": time.strftime("%-I:%M %p", time.localtime(NOW)),
+        "days": [d[5:] for d in days],
+        "roles": [{"name": r,
+                   "cells": [{"d": d[5:], "n": matrix[r][d], "level": _lvl[step(matrix[r][d])]}
+                             for d in days]}
+                  for r in ("Platform", "Governance", "Architect", "Publisher", "Portfolio")],
+        "hours": [{"h": h, "n": n, "hot": bool(1 <= h < 5 and n > 0)} for h, n in enumerate(hours)],
+        "commits_week": [{"day": d[5:], "n": commits_by_day[d]} for d in week_days],
+        "commits_today": commits_by_day.get(TODAY, 0),
+        "today_subjects": today_subj,
+        "week_subjects": [{"date": d[5:], "text": s[:110]} for d, s in week_subj],
+        "week_insight": week_insight,
+        "insights": [{"date": i.get("date", ""), "text": i.get("text", "")} for i in reversed(insights)],
+        "roles_review": review.get("roles", []),
+        "review_window": review.get("window", ""),
+        "next_changes": review.get("next_window_changes", []),
+        "balance_note": review.get("balance_note", ""),
+    }
+    fd, tmp = tempfile.mkstemp(dir=BAL)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(view, f, indent=1)
+    os.replace(tmp, os.path.join(BAL, "dashboard-data.json"))
+    print(f"dashboard: {OUT} ({len(html)} bytes, tabs=3) + dashboard-data.json "
+          f"({len(view['roles'])} roles, {len(view['days'])} days)")
 
 
 if __name__ == "__main__":
