@@ -16,8 +16,14 @@ function agRelTime(sec){
 function agentsFold(s){
   const list = S.agents[s.id];
   const have = (list && list.length) || s.agents_live;
-  if (!s.real || !have) return "";
-  const open = !!S.agentsFold[s.id];
+  const open = S.agentsFold[s.id] === true;
+  /* An EXPLICIT open request always renders the fold. A session the panel
+     started is not `real` (transcript-adopted) yet, so the old guard returned
+     "" even after a roster drill-down set S.agentsFold — the operator clicked
+     an agent and watched nothing whatsoever happen. Observed live. When the
+     request finds nothing on disk, the honest empty/note states below render
+     instead of a blank. Unopened non-real sessions still show nothing. */
+  if ((!s.real || !have) && !open) return "";
   const n = list ? list.length : (s.agents_live || 0);
   const head = `<button class="agfold" type="button" data-agentsfold="${esc(s.id)}"
       aria-expanded="${open}">
