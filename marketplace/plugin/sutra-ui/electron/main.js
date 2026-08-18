@@ -642,7 +642,7 @@ ipcMain.handle("sutra:teamsutra-action", async (_e, body) => {
     }
     const b = body || {};
     if (!/^t-[0-9a-f]{8}$/.test(String(b.id || "")))  return { ok: false, error: "bad task id" };
-    if (!["queue", "drop", "release"].includes(b.op)) return { ok: false, error: "bad op" };
+    if (!["queue", "drop", "release", "apply"].includes(b.op)) return { ok: false, error: "bad op" };
     return await api("POST", "/api/teamsutra/tasks/" + b.id + "/" + b.op, {});
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };

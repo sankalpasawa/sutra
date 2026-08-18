@@ -1786,3 +1786,238 @@ def api_teamsutra_release(tid: str, request: Request):
         return teamsutra.set_status(tid, "queued")
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ------------------------------------------------- teamsutra: task.apply ----
+# The one-click from a reviewed diff to a GitHub PR (APPLY-DESIGN v1.1).
+# Everything below is the design's safety ledger made code: the diff is
+# policed before git runs (D-A7), the target repo's origin must verify as
+# sankalpasawa/sutra (D-A4), every subprocess is arg-list + no-prompt env +
+# 120s timeout + bounded capture (D-A8), the per-task lock carries a 30-min
+# TTL (D-A9), and success is a BRANCH PUSH + PR — main is unreachable from
+# this code path and nothing merges itself.
+import shutil    # noqa: E402
+import tempfile  # noqa: E402
+
+TS_APPLY_REPO_ENV = "SUTRA_UI_TEAMSUTRA_REPO"
+TS_APPLY_REPO_DEFAULT = "~/Claude/asawa-holding/sutra"
+TS_APPLY_GH_REPO = "sankalpasawa/sutra"
+TS_APPLY_ORIGIN_RE = re.compile(
+    r"^(?:git@github\.com:|https://github\.com/)sankalpasawa/sutra(?:\.git)?$")
+TS_APPLY_DENY_RE = re.compile(r"^(?:\.github/|\.gitmodules$|\.githooks/|githooks/)")
+TS_APPLY_MAX_LINES = 400
+TS_APPLY_LOCK_TTL_S = 30 * 60
+TS_APPLY_TIMEOUT_S = 120
+TS_APPLY_SECRET_RE = re.compile(
+    r"(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9-]{20,}|xox[a-z]-[A-Za-z0-9-]+)")
+
+
+def _ts_apply_policy(diff):
+    """Patch-policy gate (D-A7): the diff is untrusted machine output that a
+    same-repo PR branch would hand to CI, so intent is policed before any git
+    mechanics run. Returns a refusal string, or None when the diff is in policy."""
+    if not diff or not diff.strip():
+        return "task has no diff to apply"
+    if "GIT binary patch" in diff or "\nBinary files " in diff:
+        return "binary patch refused"
+    if re.search(r"^(?:old|new) mode ", diff, re.M):
+        return "file-mode change refused"
+    paths = []
+    for m in re.finditer(r"^diff --git a/(\S+) b/(\S+)$", diff, re.M):
+        paths += [m.group(1), m.group(2)]
+    if not paths:
+        return "diff has no recognizable file headers"
+    for p in sorted(set(paths)):
+        if p.startswith("/") or ".." in p.split("/"):
+            return "path outside the repo tree: %s" % p
+        if TS_APPLY_DENY_RE.match(p):
+            return "policy-denied path (CI/hooks/submodules): %s" % p
+    changed = sum(1 for ln in diff.splitlines()
+                  if ln[:1] in "+-" and not ln.startswith(("+++", "---")))
+    if changed > TS_APPLY_MAX_LINES:
+        return "diff too large: %d changed lines (max %d)" % (changed, TS_APPLY_MAX_LINES)
+    return None
+
+
+def _ts_apply_sanitize(text):
+    """apply_error is founder-visible and stored: strip the home prefix,
+    redact token-shaped strings, then truncate (D-A8)."""
+    out = (text or "").replace(os.path.expanduser("~"), "~")
+    out = TS_APPLY_SECRET_RE.sub("[redacted]", out)
+    return out[:500]
+
+
+def _ts_run(args, cwd, timeout=TS_APPLY_TIMEOUT_S):
+    """One policed subprocess: arg-list exec, pinned cwd, prompt-disabled env,
+    bounded capture. gh keeps HOME/PATH for its keyring config; git cannot
+    prompt for credentials — a hang dies at the timeout instead."""
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin"),
+           "HOME": os.path.expanduser("~"),
+           "GIT_TERMINAL_PROMPT": "0", "GH_PROMPT_DISABLED": "1"}
+    p = subprocess.run(list(args), cwd=cwd, env=env, capture_output=True,
+                       text=True, timeout=timeout)
+    return p.returncode, (p.stdout or "")[-10000:], (p.stderr or "")[-10000:]
+
+
+def _ts_apply_sweep():
+    """Crash debris (D-A6/D-A9): apply worktrees and locks older than 24h are
+    removed on the next apply attempt — lazily, so no startup hook is needed."""
+    cutoff = time.time() - 24 * 3600
+    for d in (Path(tempfile.gettempdir()), teamsutra.store_dir()):
+        if not d.is_dir():
+            continue
+        for p in d.glob("ts-apply-*"):
+            try:
+                if p.stat().st_mtime < cutoff:
+                    shutil.rmtree(p, ignore_errors=True)
+            except OSError:
+                pass
+        for p in d.glob(".apply-lock-*"):
+            try:
+                if p.stat().st_mtime < cutoff:
+                    shutil.rmtree(p, ignore_errors=True)
+            except OSError:
+                pass
+
+
+def _ts_apply(tid, run=_ts_run):
+    """needs_review diff -> pushed branch -> open PR. `run` is injectable so
+    the whole ladder is testable without touching git or the network."""
+    rec = teamsutra.load(tid)
+    if rec.get("status") != "needs_review":
+        raise ValueError("apply needs a needs_review task; %s is %s"
+                         % (tid, rec.get("status")))
+
+    def fail(msg):
+        m = _ts_apply_sanitize(msg)
+        teamsutra.record_apply_result(tid, apply_error=m)
+        raise ValueError(m)
+
+    err = _ts_apply_policy(rec.get("diff"))
+    if err:
+        fail("policy: " + err)
+
+    repo = os.path.realpath(os.path.expanduser(
+        os.environ.get(TS_APPLY_REPO_ENV) or TS_APPLY_REPO_DEFAULT))
+    if not os.path.isdir(os.path.join(repo, ".git")):
+        fail("apply target is not a git repo: %s" % repo)
+
+    _ts_apply_sweep()
+
+    # Per-task lock with a TTL (D-A9): mkdir is the atomic claim, the mtime is
+    # the age. A crashed apply cannot wedge the task past 30 minutes.
+    lock = teamsutra.store_dir() / (".apply-lock-" + tid)
+    teamsutra._mkdir_private(teamsutra.store_dir())
+    if lock.is_dir():
+        if time.time() - lock.stat().st_mtime > TS_APPLY_LOCK_TTL_S:
+            shutil.rmtree(lock, ignore_errors=True)
+        else:
+            raise ValueError("apply already running for %s" % tid)
+    os.mkdir(lock)
+
+    branch = "teamsutra/" + tid
+    title = "teamsutra: %s (%s)" % ((rec.get("title") or "task")[:120], tid)
+    wt = None
+    dfile = None
+    try:
+        # Preflight (D-A4/D-A10/D-A5): right origin, live auth + push perms,
+        # then reconcile debris — adopt an open PR, clear a dead remote branch.
+        rc, out, se = run(["git", "remote", "get-url", "origin"], cwd=repo)
+        if rc or not TS_APPLY_ORIGIN_RE.match(out.strip()):
+            fail("origin is not %s (got %r)" % (TS_APPLY_GH_REPO, out.strip()))
+        rc, out, se = run(["gh", "auth", "status"], cwd=repo)
+        if rc:
+            fail("gh auth: " + (se or out))
+        rc, out, se = run(["gh", "api", "repos/" + TS_APPLY_GH_REPO,
+                           "--jq", ".permissions.push"], cwd=repo)
+        if rc or out.strip() != "true":
+            fail("no push permission on %s" % TS_APPLY_GH_REPO)
+        rc, out, se = run(["gh", "pr", "list", "-R", TS_APPLY_GH_REPO,
+                           "--head", branch, "--state", "open",
+                           "--json", "url", "--jq", ".[0].url"], cwd=repo)
+        if rc == 0 and out.strip():
+            url = out.strip()
+            teamsutra.set_status(tid, "done")
+            teamsutra.record_apply_result(tid, pr_url=url, pr_state="open",
+                                          applied_at=teamsutra.now_iso())
+            return teamsutra.load(tid)
+        rc, out, se = run(["git", "ls-remote", "--heads", "origin", branch], cwd=repo)
+        if rc:
+            fail("ls-remote: " + se)
+        if out.strip():
+            # Our machine-owned namespace: a remote branch with no open PR is
+            # debris from a half-failure — clear it and redo clean (D-A5).
+            rc, out, se = run(["git", "push", "origin", "--delete", branch], cwd=repo)
+            if rc:
+                fail("could not clear dead branch %s: %s" % (branch, se))
+
+        rc, out, se = run(["git", "fetch", "origin", "main"], cwd=repo)
+        if rc:
+            fail("fetch: " + se)
+        run(["git", "branch", "-D", branch], cwd=repo)  # stale local ref, if any
+        wt = tempfile.mkdtemp(prefix="ts-apply-")
+        rc, out, se = run(["git", "worktree", "add", "-b", branch, wt,
+                           "origin/main"], cwd=repo)
+        if rc:
+            fail("worktree: " + se)
+        dfile = os.path.join(tempfile.gettempdir(), "ts-apply-%s.patch" % tid)
+        with open(dfile, "w") as f:
+            f.write(rec["diff"])
+        rc, out, se = run(["git", "apply", "--check", dfile], cwd=wt)
+        if rc:
+            fail("apply --check: " + se)
+        rc, out, se = run(["git", "apply", dfile], cwd=wt)
+        if rc:
+            fail("apply: " + se)
+        rc, out, se = run(["git", "add", "-A"], cwd=wt)
+        if rc:
+            fail("add: " + se)
+        rc, out, se = run(["git", "commit", "-m", title], cwd=wt)
+        if rc:
+            fail("commit: " + se)
+        rc, out, se = run(["git", "push", "origin", branch], cwd=wt)
+        if rc:
+            fail("push: " + se)
+        body = ("Filed from the panel as %s.\n\n%s\n\nWorker verify: %s"
+                % (tid, (rec.get("body") or "")[:2000], rec.get("verify") or "n/a"))
+        rc, out, se = run(["gh", "pr", "create", "-R", TS_APPLY_GH_REPO,
+                           "--head", branch, "--base", "main",
+                           "--title", title, "--body", body], cwd=wt)
+        if rc:
+            fail("pr create: " + se)
+        url = (out.strip().splitlines() or [""])[-1]
+        teamsutra.set_status(tid, "done")
+        teamsutra.record_apply_result(tid, pr_url=url, pr_state="open",
+                                      applied_at=teamsutra.now_iso())
+        return teamsutra.load(tid)
+    finally:
+        if dfile:
+            try:
+                os.unlink(dfile)
+            except OSError:
+                pass
+        if wt:
+            run(["git", "worktree", "remove", "--force", wt], cwd=repo)
+            shutil.rmtree(wt, ignore_errors=True)
+        run(["git", "branch", "-D", branch], cwd=repo)  # remote/PR is the record
+        shutil.rmtree(lock, ignore_errors=True)
+
+
+@router.post("/teamsutra/tasks/{tid}/apply")
+def api_teamsutra_apply(tid: str, request: Request):
+    """needs_review -> open PR (APPLY-DESIGN v1.1). Desktop-token-gated like
+    every teamsutra write; the electron id regex is UX, this one is the boundary."""
+    _desktop_control(request)
+    if not teamsutra.ID_RE.match(tid or ""):
+        raise HTTPException(status_code=400, detail="bad task id")
+    try:
+        return _ts_apply(tid)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # timeout, OSError — record then surface
+        msg = _ts_apply_sanitize(str(exc))
+        try:
+            teamsutra.record_apply_result(tid, apply_error=msg)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=msg)

@@ -1,6 +1,14 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-18
+**status**: active · **updated**: 2026-08-19
+
+## 2.107.0
+
+- **One-click Apply.** A reviewed Teamsutra task now has an Apply button:
+  the diff is policed (no CI files, no binaries), applied on an isolated
+  `teamsutra/*` branch, and opened as a GitHub PR you merge yourself.
+  Failures land on the card in words and stay re-clickable. Never touches
+  main, never auto-merges.
 
 ## 2.106.2
 

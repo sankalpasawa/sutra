@@ -190,7 +190,11 @@ const EPILOGUE = `
   turnControlClick, agentsFold,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
-  tsBuildSeed, TS_SEED_MAX, openTeamsutraChat
+  tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
+  /* task.apply card states: the board is where a machine diff meets a human
+     click, so the three renders (Apply offered / PR handed off / failure in
+     place) are pinned as strings */
+  tsCard, tsStatusPill
 };
 `;
 
@@ -2236,6 +2240,41 @@ test("32c. a real session with agents behaves exactly as before", () => {
   const closedHtml = T.agentsFold({ id: "sid-9", real: true });
   assert.ok(/1 subagent/.test(closedHtml), "collapsed head still renders");
   assert.ok(!/agents open/.test(closedHtml), "and stays collapsed until asked");
+});
+
+/* ── 33. task.apply card states (APPLY-DESIGN v1.1) ─────────────────────── */
+
+test("33a. a reviewed task with a diff offers Apply; without one it cannot", () => {
+  sandbox.sutra = { teamsutraAction: () => Promise.resolve({}) };  // desktop bridge present
+  try {
+    const base = { id: "t-aaaa1111", title: "z-index bug", status: "needs_review",
+                   attempts: 1, max_attempts: 3, source: {} };
+    const withDiff = T.tsCard({ ...base, diff: "--- a/x\n+++ b/x\n-1\n+2" });
+    assert.ok(/data-tsact="apply"/.test(withDiff), "needs_review + diff renders Apply");
+    const noDiff = T.tsCard({ ...base, diff: null });
+    assert.ok(!/data-tsact="apply"/.test(noDiff),
+      "no diff means nothing to apply — the button must not render");
+  } finally { delete sandbox.sutra; }
+});
+
+test("33b. a handed-off task links its PR instead of pretending completion", () => {
+  const html = T.tsCard({ id: "t-aaaa1111", title: "t", status: "done",
+    attempts: 1, max_attempts: 3, source: {},
+    pr_url: "https://github.com/sankalpasawa/sutra/pull/999", pr_state: "open" });
+  assert.ok(/PR open — merge on GitHub/.test(html), "done-with-PR says PR open");
+  assert.ok(/pull\/999/.test(html), "and links the actual PR");
+  assert.ok(!/data-tsact="apply"/.test(html), "done offers no second Apply");
+});
+
+test("33c. a failed apply shows the error in place and stays re-clickable", () => {
+  sandbox.sutra = { teamsutraAction: () => Promise.resolve({}) };
+  try {
+    const html = T.tsCard({ id: "t-aaaa1111", title: "t", status: "needs_review",
+      attempts: 1, max_attempts: 3, source: {}, diff: "--- a/x\n+++ b/x\n-1\n+2",
+      apply_error: "push: remote: denied" });
+    assert.ok(/apply failed: push: remote: denied/.test(html), "error tail rendered");
+    assert.ok(/data-tsact="apply"/.test(html), "Apply still offered after failure");
+  } finally { delete sandbox.sutra; }
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

@@ -1213,6 +1213,8 @@ function tsCard(t){
   const acts = [];
   if (t.status === "draft")   acts.push(`<button data-tsact="queue" data-tid="${esc(t.id)}">Queue</button>`);
   if (t.status === "claimed") acts.push(`<button data-tsact="release" data-tid="${esc(t.id)}">Release</button>`);
+  if (t.status === "needs_review" && t.diff)
+    acts.push(`<button data-tsact="apply" data-tid="${esc(t.id)}">Apply</button>`);
   if (!["done","dropped","corrupt"].includes(t.status))
     acts.push(`<button data-tsact="drop" data-tid="${esc(t.id)}">Drop</button>`);
   const gate = tsCanAct() ? "" :
@@ -1225,6 +1227,8 @@ function tsCard(t){
     </div>
     ${t.blocked_reason ? `<div style="color:var(--warn);font-size:12px;margin-top:4px">blocked: ${esc(t.blocked_reason)}</div>` : ""}
     ${t.last_error ? `<div style="color:var(--block);font-size:12px;margin-top:4px">${esc(t.last_error)}</div>` : ""}
+    ${t.pr_url ? `<div style="font-size:12px;margin-top:4px"><a href="${esc(t.pr_url)}" target="_blank" rel="noopener">PR open — merge on GitHub →</a></div>` : ""}
+    ${t.apply_error ? `<div style="color:var(--block);font-size:12px;margin-top:4px">apply failed: ${esc(t.apply_error)} — fix and press Apply again</div>` : ""}
     ${t.diff ? `<details style="margin-top:6px"><summary>the proposed change (${(t.diff.match(/^[+-]/gm)||[]).length} changed lines) — review before applying</summary>
         <pre class="md-pre" style="max-height:340px;overflow:auto">${esc(t.diff)}</pre></details>` : ""}
     <div style="margin-top:6px;display:flex;gap:6px">${tsCanAct() ? acts.join("") : ""}</div>

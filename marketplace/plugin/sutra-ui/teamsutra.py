@@ -221,3 +221,25 @@ def set_status(tid, new, **fields):
 
 def drop(tid):
     return set_status(tid, "dropped")
+
+
+#: task.apply provenance — the ONLY keys record_apply_result may write.
+#: pr_url/pr_state/applied_at land on success; apply_error on failure. Nothing
+#: here can move status: a failed apply stays at needs_review by design, so the
+#: transition table above ships byte-identical (APPLY-DESIGN v1.1 D-A1).
+APPLY_RESULT_FIELDS = ("pr_url", "pr_state", "applied_at", "apply_error")
+
+
+def record_apply_result(tid, **extra):
+    """Allowlisted field update with NO transition. The apply failure path must
+    persist provenance without weakening the guarded store, so anything outside
+    APPLY_RESULT_FIELDS is refused — id/status/attempts are unreachable here."""
+    bad = sorted(set(extra) - set(APPLY_RESULT_FIELDS))
+    if bad:
+        raise ValueError("record_apply_result refuses non-allowlisted fields: %s"
+                         % ", ".join(bad))
+    rec = load(tid)
+    rec.update(extra)
+    rec["updated_at"] = now_iso()
+    _write(rec)
+    return rec

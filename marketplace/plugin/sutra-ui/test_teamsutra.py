@@ -200,5 +200,60 @@ class TestTeamsutraStore(unittest.TestCase):
         self.assertIn(rec["status"], self.T.STATUSES)
 
 
+class TestApplyResult(unittest.TestCase):
+    """record_apply_result (APPLY-DESIGN v1.1 D-A1): allowlisted provenance
+    fields land WITHOUT a transition; anything else is refused loudly. This is
+    the failure path of task.apply, so the guard here is what keeps a failed
+    apply from ever moving or corrupting a task."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix=".sutra-test-", dir=os.path.expanduser("~"))
+        self._env = dict(os.environ)
+        os.environ["SUTRA_UI_TEAMSUTRA"] = os.path.join(self.tmp, "teamsutra")
+        import teamsutra
+        self.T = teamsutra
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._env)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _task(self):
+        return self.T.create({"title": "t", "body": "b", "kind": "bug",
+                              "source": {"selection": None, "screen": "x",
+                                         "domain_ref": None}})
+
+    def test_allowlisted_fields_land_without_transition(self):
+        rec = self._task()
+        out = self.T.record_apply_result(rec["id"], pr_url="https://github.com/x/y/pull/1",
+                                         pr_state="open", applied_at="2026-08-19")
+        self.assertEqual(out["pr_url"], "https://github.com/x/y/pull/1")
+        again = self.T.load(rec["id"])
+        self.assertEqual(again["status"], "draft")      # status untouched
+        self.assertEqual(again["pr_state"], "open")
+        self.assertEqual(again["attempts"], 0)          # no claim side-effect
+
+    def test_apply_error_persists_and_status_stays(self):
+        rec = self._task()
+        self.T.record_apply_result(rec["id"], apply_error="push: denied")
+        again = self.T.load(rec["id"])
+        self.assertEqual(again["apply_error"], "push: denied")
+        self.assertEqual(again["status"], "draft")
+
+    def test_protected_keys_refused(self):
+        rec = self._task()
+        for bad in ({"status": "done"}, {"id": "t-00000000"}, {"attempts": 9},
+                    {"pr_url": "x", "diff": "stolen"}):
+            with self.assertRaises(ValueError):
+                self.T.record_apply_result(rec["id"], **bad)
+        again = self.T.load(rec["id"])
+        self.assertEqual(again["status"], "draft")
+        self.assertNotIn("apply_error", again)
+
+    def test_unknown_task_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            self.T.record_apply_result("t-deadbeef", apply_error="x")
+
+
 if __name__ == "__main__":
     unittest.main()
