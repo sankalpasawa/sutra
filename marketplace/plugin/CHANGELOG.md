@@ -2,6 +2,19 @@
 
 **status**: active · **updated**: 2026-08-18
 
+## 2.105.0
+
+- **Ask Sutra: select text, get a briefed chat.** Highlight anything in the panel
+  and an Ask Sutra button appears; it opens a chat that already knows which
+  department the selection belongs to (per-turn provenance, DOM-first, never
+  guessed — "no department" when nothing classified it). The briefing is budgeted
+  byte-exact against the server's 8000-char cap and states when it was cut.
+- **A durable task store** at `~/.sutra-ui/teamsutra/` (schema-checked, inert
+  creation at draft) lands as the substrate for the queued-worker half, which is
+  NOT in this release.
+- **Scheduled-routine hardening**: `install_runner()` refuses a runner that does
+  not compile, and the module docstring no longer claims `dontAsk` cannot write.
+
 ## 2.104.0
 
 - **Balance screen IS the approved design.** The desktop Balance screen now renders
