@@ -8,8 +8,15 @@ Balance screen shows the coach's actionables live; done-marking via a new
 token-gated `POST /api/balance/actionable` (renderer stays token-blind — a
 narrow preload verb carries the call; no unauth fallback). Endpoint suite
 `tests/unit/test-balance-endpoint.sh` covers auth/422s/idempotency/concurrency.
-NOTE: version deliberately unassigned — reconcile the in-flight 2.99.1 and the
-published-cache 2.101.0 before tagging.
+NOTE: version deliberately unassigned — 2.99.1 landed on main during this
+branch; reconcile against the published-cache 2.101.0 before tagging.
+
+## 2.99.1
+
+- **Fix streamed text re-shaping ("text coming and going").** `mdHtml` now closes an
+  unterminated code fence before parsing, so streamed fences render as code from the
+  first token instead of prose-then-collapse; `patchStreaming` skips repaints whose
+  rendered HTML is unchanged.
 
 ## 2.99.0
 
