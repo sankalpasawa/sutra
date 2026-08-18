@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sutra — app preview: live agents in the turn</title>
+
+<!-- Links the app's REAL stylesheet. Everything outside the PROPOSED block below
+     already exists and ships today. The markup mirrors panel.html + 06-render.js
+     structure exactly: .wrap > .app(grid) > nav.rail + .panes > .pane > .ph/.pb/.pc -->
+<link rel="stylesheet" href="../static/panel.css" />
+
+<style>
+/* ══ PREVIEW CHROME ONLY — a 30px bar, and the height math panel.css requires.
+   panel.css:77 sets .app{height:100vh} deliberately ("padding must live INSIDE
+   100vh or the app is 18px taller than the window"), and body is overflow:hidden,
+   so the bar's height must be SUBTRACTED, never added as padding. ══ */
+.pvbar{position:fixed;top:0;left:0;right:0;height:30px;z-index:50;display:flex;
+  align-items:center;gap:13px;padding:0 12px;background:var(--surface);
+  border-bottom:1px solid var(--line);font:10.5px/1 var(--mono);color:var(--muted)}
+.pvbar b{color:var(--ink);font-weight:600}
+.pvbar .k{display:inline-flex;align-items:center;gap:5px}
+.pvbar .sw{width:8px;height:8px;border-radius:2px;display:inline-block}
+.pvbar button{font:inherit;color:var(--acc);background:var(--acc-bg);
+  border:1px solid var(--acc);border-radius:5px;padding:3px 8px;cursor:pointer}
+.pvbar .sp{margin-left:auto}
+.wrap{height:calc(100vh - 30px);margin-top:30px}
+.app{height:100%}
+/* the dashed marker names what is new WITHOUT changing layout (outline, not border) */
+[data-new]{outline:1px dashed var(--acc);outline-offset:3px;border-radius:4px}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PROPOSED — the only new component CSS. Built from existing tokens.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* 1 · per-TURN live agent roster.
+   REUSE: an agent row IS a .trow — panel.css:791 already gives it the state dot
+   (run spinner / ok / bad / unk), the bold mono name, the ellipsised summary, the
+   right-aligned uppercase verdict AND the reduced-motion rule. So the roster adds
+   NO row CSS at all. Only two things are new: the nesting container, and the
+   button reset that lets a row be clickable without changing how it looks.
+   No progress bar — nothing on the wire says how far along an agent is. */
+.gv-agents{display:flex;flex-direction:column;gap:3px;margin-top:6px;
+  padding-left:10px;border-left:2px solid var(--line)}
+button.trow{width:100%;text-align:left;font-family:inherit;cursor:pointer}
+button.trow:hover{border-color:var(--acc)}
+
+/* 4 · the two controls the removed header used to carry.
+   IDENTITY: the session name moves onto the composer chip, so the pane still
+   says which session it is when the rail is collapsed (.app.railcol hides it).
+   FOLD: a slim left-edge grip, reusing the .termgrip idiom the terminal pane
+   already uses for its own edge control — multi-pane stays usable. */
+.pane{position:relative}
+.pgrip{position:absolute;left:0;top:0;bottom:0;width:11px;border:0;background:none;
+  cursor:pointer;display:grid;place-items:center;color:transparent;padding:0;z-index:2}
+.pane:hover .pgrip{color:var(--faint)}
+.pgrip:hover{background:var(--acc-bg);color:var(--acc)}
+.pb,.pc{padding-left:19px}
+/* REGRESSION CAUGHT IN REVIEW — the header could not simply be deleted.
+   panel.css:689 renders a COLLAPSED pane entirely from .ph (the vertical <h3>
+   plus the .pfold unfold button) and hides .pb/.pc. Removing .ph outright made
+   a collapsed pane a blank 38px strip with no way to reopen it. One rule fixes
+   it: the header exists only in the collapsed state, reusing the shipped
+   treatment verbatim. Child selector so a nested .ph can never be caught. */
+.pane:not(.collapsed) > .ph{display:none}
+/* BUG IN THE SHIPPED APP, surfaced by driving this preview — not caused by
+   anything proposed here. panel.css:690 hides .pb/.pc/.tabs/.src/[data-close]
+   when a pane collapses, but agentsFold() (06-render.js:15) emits .agents as a
+   SIBLING of .pb, and .agents is not in that list. Collapse a real session that
+   spawned subagents and the fold spills into the 38px strip, wrapping one letter
+   per line. The fix belongs in panel.css's own collapsed rule when this ports. */
+.pane.collapsed .agents{display:none}
+
+/* 3 · one composer menu. Trigger reuses .uchip, popover reuses .upop; only the
+   row needs styling, and it borrows the .gv-row rhythm so the menu reads like
+   the governance panel rather than a second visual language. */
+.mrow{display:grid;grid-template-columns:82px 1fr 10px;gap:10px;align-items:baseline;
+  padding:7px 9px;background:none;border:0;text-align:left;cursor:pointer;
+  font:12px/1.5 var(--sans);color:var(--ink);border-radius:6px}
+.mrow+.mrow{border-top:1px solid var(--line-soft)}
+.mrow:hover{background:var(--acc-bg)}
+.mrow .mk{font:600 9.5px/1.7 var(--mono);color:var(--muted);text-transform:uppercase;
+  letter-spacing:.07em}
+.mrow .mv{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow .ma{color:var(--faint);font-size:10px}
+
+/* 2 · the shipped thinking loader becomes openable */
+.gv-thinkbtn{cursor:pointer;border:0;background:none;padding:0;font:inherit;display:block}
+.gv-log{display:none;flex-direction:column;gap:2px;margin:5px 0 0 3px;
+  padding-left:10px;border-left:2px solid var(--line)}
+.gv-openlog .gv-log{display:flex}
+.gv-ln{font:10.5px/1.6 var(--mono);color:var(--muted)}
+.gv-ln.ok{color:var(--ok)}
+.gv-ln.bad{color:var(--block)}
+</style>
+</head>
+<body>
+
+<div class="pvbar">
+  <b>App preview</b>
+  <span class="k"><i class="sw" style="background:var(--line)"></i>ships today · v2.102.0</span>
+  <span class="k"><i class="sw" style="background:var(--acc)"></i>proposed · live agents in the turn</span>
+  <span class="sp"></span>
+  <!-- echoes what a control did, for the controls whose real destination is a
+       screen that already ships and is not part of this proposal -->
+  <span id="pvnote" style="color:var(--acc)"></span>
+  <button type="button" id="thm">toggle theme</button>
+</div>
+
+<div class="wrap">
+<div class="app">
+
+  <!-- ══ RAIL — unchanged. IA frozen. ══ -->
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop">
+      <div class="rmark">s</div><b>Sutra</b>
+      <button class="railtog" type="button" aria-label="Hide the sidebar" title="Hide the sidebar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      </button>
+    </div>
+    <div class="rtabs" role="tablist" aria-label="Sidebar">
+      <button type="button" role="tab" aria-selected="false">Home</button>
+      <button type="button" role="tab" aria-selected="true">Code</button>
+    </div>
+    <div class="rscroll">
+      <div class="rtab">
+        <button class="newBtn" type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          New session
+        </button>
+        <div class="rtoggle">
+          <button type="button" aria-pressed="true">Recent</button>
+          <button type="button">Project</button>
+          <button type="button">Dept</button>
+        </div>
+        <div class="rgrp">Today</div>
+        <ul class="rlist">
+          <li class="srow" data-sid="s1">
+            <button type="button" class="rowopen" aria-current="true" title="~/sutra">
+              <span class="t">ledger migration</span>
+              <span class="m"><span class="livedot" title="A turn is running in this panel">running</span><span class="livedot" title="Subagent transcripts being written right now">3 agents</span></span>
+            </button>
+            <button type="button" class="rowmenu" aria-haspopup="true" aria-label="Actions">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </button>
+          </li>
+          <li class="srow" data-sid="s2">
+            <button type="button" class="rowopen" aria-current="false" title="~/sutra">
+              <span class="t">mockup review</span><span class="m"></span>
+            </button>
+            <button type="button" class="rowmenu" aria-label="Actions">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </button>
+          </li>
+        </ul>
+        <div class="rgrp">Yesterday</div>
+        <ul class="rlist">
+          <li class="srow" data-sid="s3">
+            <button type="button" class="rowopen" aria-current="false" title="~/sutra">
+              <span class="t">panel: browse pane close</span><span class="m"></span>
+            </button>
+            <button type="button" class="rowmenu" aria-label="Actions">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="rfoot">
+      <div class="av">TC</div>
+      <div style="margin-left:auto;display:flex;gap:2px">
+        <button class="ib" type="button" aria-label="Show the terminal" title="Terminal">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.9"><rect x="2.5" y="4" width="19" height="16" rx="2"/>
+            <path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/></svg>
+        </button>
+        <button class="ib" type="button" aria-label="Switch theme">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.8"><circle cx="12" cy="12" r="4.2"/>
+            <path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ══ PANES ══ -->
+  <div class="panes">
+    <section class="pane" id="chatPane" aria-label="ledger migration — session pane">
+
+      <!-- PANE HEADER — HIDDEN WHILE EXPANDED, KEPT FOR THE COLLAPSED STRIP.
+           Founder (2026-08-18): the session is already named and marked live in
+           the rail, so the header repeated it and carried three controls that do
+           not belong in a chat — Activity, side chat, and the Chat/Routing tabs.
+           Everything that survives moved into the composer's one menu, and the
+           thread now starts at the top of the pane.
+           It could not be deleted, though: a collapsed pane IS this header (see
+           the CSS note above). So it stays in the DOM, hidden while expanded.
+           The <section> carries its own aria-label — with the only <h3> hidden,
+           display:none would otherwise strip the pane's accessible name, and a
+           named section is a region a screen reader can still navigate to. -->
+      <div class="ph">
+        <button class="pfold" type="button" aria-expanded="false"
+                aria-label="Expand this session pane" title="Expand this pane">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <span class="dot run" aria-hidden="true"
+              style="width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none"></span>
+        <h3 title="ledger migration">ledger migration</h3>
+      </div>
+
+      <button class="pgrip" type="button" aria-label="Collapse this session pane" title="Collapse this pane">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.2"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+
+      <div class="pb">
+
+        <!-- ── TURN 1 · settled, chip collapsed · SHIPS TODAY ── -->
+        <div class="turn">
+          <div class="u md">Cache the charter lookups in the placement engine.</div>
+          <div class="gv">
+            <button class="gv-chip" type="button" aria-expanded="false"
+                    title="Governance for this turn — click to expand">
+              <span class="gv-pulse"></span>
+              <span>turn 1</span><span class="gv-sep">·</span>
+              <span>DIRECT</span><span class="gv-sep">·</span>
+              <span>D3</span><span class="gv-sep">·</span>
+              <span class="gv-leaf">Engine Library</span><span class="gv-sep">·</span>
+              <span>0.62</span><span class="gv-sep">·</span>
+              <span>risk:med</span>
+              <span class="gv-chev">▼</span>
+            </button>
+          </div>
+          <div class="a">
+            <span class="pill p-ok">answered</span>
+            <span class="pill p-mut">48.2s · $0.3104 · 6 turns</span>
+            <div class="md" style="margin-top:6px;color:var(--ink)">
+              Added an LRU in front of <code>classify()</code> and wired the golden tests. The
+              invalidation path needs charter-mutation events, which do not exist yet — that is
+              the one thing left open.
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TURN 2 · chip expanded · SHIPS TODAY ── -->
+        <div class="turn">
+          <div class="u md">Why was that filed to Engine Library?</div>
+          <div class="gv gv-open">
+            <button class="gv-chip" type="button" aria-expanded="true">
+              <span class="gv-pulse"></span>
+              <span>turn 2</span><span class="gv-sep">·</span>
+              <span>QUERY</span><span class="gv-sep">·</span>
+              <span>D1</span><span class="gv-sep">·</span>
+              <span class="gv-leaf">Engine Library</span><span class="gv-sep">·</span>
+              <span>0.62</span>
+              <span class="gv-chev">▼</span>
+            </button>
+            <div class="gv-panel">
+              <div class="gv-row"><span class="gv-label">Placement</span><span class="gv-val">
+                <code>D0 &gt; D1 Sutra OS &gt; D1.D1 Core Plugin &gt; D3 Engine Library</code>
+                Filed to <b style="color:var(--ink)">Engine Library</b> on
+                <code>placement</code> <code>charter</code>.</span></div>
+              <div class="gv-row"><span class="gv-label">Grounding</span><span class="gv-val">
+                <span style="color:var(--acc);font-family:var(--mono);font-size:10px">C-9a7bd900</span>
+                Engine Library Charter<br><span style="font-style:italic">Stochastic reasoning
+                rides on deterministic, testable primitives.</span></span></div>
+              <div class="gv-row"><span class="gv-label">Trace</span><span class="gv-val">
+                <code>routing (question) › D1 › 0 tools › advisory</code></span></div>
+            </div>
+          </div>
+          <div class="a">
+            <span class="pill p-ok">answered</span>
+            <div class="md" style="margin-top:6px;color:var(--ink)">
+              The charter's own words matched: the work is a deterministic primitive behind a
+              stochastic caller.
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TURN 3 · streaming, fanned out · THE PROPOSAL ── -->
+        <div class="turn">
+          <div class="u md">Migrate all twelve engines to ledger schema v2.</div>
+          <div class="gv">
+            <button class="gv-chip" type="button" aria-expanded="false">
+              <span class="gv-pulse gv-amber"></span>
+              <span>turn 3</span><span class="gv-sep">·</span>
+              <span>DIRECT</span><span class="gv-sep">·</span>
+              <span>D4</span><span class="gv-sep">·</span>
+              <span class="gv-leaf">Engine Library</span><span class="gv-sep">·</span>
+              <span>held</span>
+              <span class="gv-chev">▼</span>
+            </button>
+          </div>
+          <div class="a">
+
+            <!-- tool rows — ship today, unchanged -->
+            <div class="toolRow">
+              <div class="trow ok">
+                <span class="tstate"></span><span class="tname">Read</span>
+                <span class="tsum">os/engines/LEDGER.md</span>
+                <span class="tverdict">0.4s · done</span>
+              </div>
+              <div class="trow run">
+                <span class="tstate"></span><span class="tname">Agent</span>
+                <span class="tsum">migrate the lens engine</span>
+                <span class="pill p-acc">lens</span>
+                <span class="tverdict">2m08s · running</span>
+              </div>
+            </div>
+
+            <!-- PROPOSED · per-turn agent roster — rows are .trow, reused verbatim -->
+            <div class="gv-agents" data-new>
+              <button class="trow ok" type="button" data-ag="placement"
+                      title="Open this agent's transcript">
+                <span class="tstate"></span><span class="tname">placement</span>
+                <span class="tsum">schema migrated · tests green</span>
+                <span class="tverdict">1m52s · done</span>
+              </button>
+              <button class="trow run" type="button" data-ag="lens"
+                      title="Open this agent's transcript">
+                <span class="tstate"></span><span class="tname">lens</span>
+                <span class="tsum">rewriting mint() rows</span>
+                <span class="tverdict">2m08s · running</span>
+              </button>
+              <button class="trow bad" type="button" data-ag="cynefin"
+                      title="Open this agent's transcript">
+                <span class="tstate"></span><span class="tname">cynefin</span>
+                <span class="tsum">golden test drift — cynefin.bats:14</span>
+                <span class="tverdict">1m11s · error</span>
+              </button>
+            </div>
+
+            <div class="md" style="margin-top:6px;color:var(--ink)">
+              Placement is migrated; lens is mid-rewrite; cynefin hit a golden-test drift.
+              <span class="caret" style="color:var(--acc)">█</span>
+            </div>
+
+            <!-- loader ships today · PROPOSED = it opens -->
+            <div class="gv-openlog" data-new>
+              <button class="gv-thinkbtn" type="button" title="What is happening right now">
+                <span class="gv-think"><span class="gv-pulse gv-beat"></span
+                  ><span class="gv-tlabel">thinking</span><b class="gv-tmeta">4m12s · 3 agents</b></span>
+              </button>
+              <div class="gv-log">
+                <span class="gv-ln ok">✓ routed: task → core:flow deep</span>
+                <span class="gv-ln ok">✓ depth 4/5 pinned · held at ancestor</span>
+                <span class="gv-ln">Read · os/engines/LEDGER.md</span>
+                <span class="gv-ln">Agent · placement → done</span>
+                <span class="gv-ln bad">Agent · cynefin → golden test drift</span>
+                <span class="gv-ln">Agent · lens · rewriting mint() rows</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ══ SUBAGENT FOLD — SHIPS TODAY, UNCHANGED (06-render.js:15 agentsFold).
+           This is where a per-turn agent row DRILLS DOWN TO. Clicking an agent in
+           the turn opens this existing fold with that agent selected — the same
+           thing S.agentsFold[sid] + S.agentOpen[sid] already do. The roster in the
+           turn answers "who is working right now"; this answers "what did they
+           actually do". No second surface was invented for the drill-down. ══ -->
+      <div class="agents" id="agFold">
+        <button class="agfold" type="button" id="agFoldBtn" aria-expanded="false">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          <b>3 subagents</b><span>agents this session spawned</span>
+        </button>
+        <!-- display:none inline, NOT the hidden attribute: [hidden] gets its
+             display:none from the UA sheet, so any class rule that sets a
+             display wins on specificity and the element stays on screen. The
+             app never hits this because it emits .aglist only when open. -->
+        <div class="aglist" id="agList" style="display:none">
+          <button class="agrow" type="button" data-ag="placement" aria-pressed="false">
+            <span class="agdot" aria-hidden="true"></span>
+            <span class="agrow-main">
+              <span class="agrow-top"><span class="agl">migrate the placement engine</span>
+                <span class="agtype">general-purpose</span></span>
+              <span class="agm">14 steps · Read, Edit, Bash · 2m ago</span>
+            </span>
+            <svg class="agchev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <button class="agrow" type="button" data-ag="lens" aria-pressed="false">
+            <span class="agdot run" aria-hidden="true"></span>
+            <span class="agrow-main">
+              <span class="agrow-top"><span class="agl">migrate the lens engine</span>
+                <span class="agtype">general-purpose</span></span>
+              <span class="agm">9 steps · Read, Edit · running</span>
+            </span>
+            <svg class="agchev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <button class="agrow" type="button" data-ag="cynefin" aria-pressed="false">
+            <span class="agdot" aria-hidden="true"></span>
+            <span class="agrow-main">
+              <span class="agrow-top"><span class="agl">migrate the cynefin engine</span>
+                <span class="agtype">general-purpose</span></span>
+              <span class="agm">6 steps · Read, Bash · 4m ago</span>
+            </span>
+            <svg class="agchev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="agdetail" id="agDetail" style="display:none"></div>
+      </div>
+
+      <!-- ══ COMPOSER — every meta control folded into ONE menu.
+           REUSE: the trigger is .uchip and the popover is .upop — the components
+           the usage chip already uses, anchored above the composer. Nothing new. ══ -->
+      <div class="pc" style="position:relative">
+        <!-- ⋯ ON THE LEFT (founder, 2026-08-18). It carries the session name so the
+             pane keeps its identity when the rail is collapsed, plus the live dot. -->
+        <button class="uchip" type="button" id="metaTrigger" aria-expanded="true" data-new
+                aria-label="Session — folder, permissions, model, usage, routing">
+          <span class="uring" style="background:var(--ok)"></span>
+          ledger migration <span style="color:var(--faint)">·</span> ⋯
+        </button>
+        <button class="ib" type="button" aria-label="Attach">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.9"><path d="M21 11l-8.5 8.5a4.6 4.6 0 01-6.5-6.5L14 4.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.1-2.1l7.9-7.9"/></svg>
+        </button>
+        <!-- placeholder trimmed to one word: the / palette and Shift+Enter are
+             discoverable by use, and the hint was the longest text in the pane. -->
+        <textarea rows="1" placeholder="Message" aria-label="Continue this session"></textarea>
+
+        <div class="upop" id="metaPop" data-new style="min-width:290px;left:8px;right:auto">
+          <div style="display:flex;flex-direction:column">
+            <button class="mrow" type="button"><span class="mk">Folder</span>
+              <span class="mv">~/sutra</span><span class="ma">›</span></button>
+            <button class="mrow" type="button"><span class="mk">Permissions</span>
+              <span class="mv" style="color:var(--warn)">bypass — all tools auto-approved</span><span class="ma">›</span></button>
+            <button class="mrow" type="button"><span class="mk">Model</span>
+              <span class="mv">Fable 5</span><span class="ma">›</span></button>
+            <button class="mrow" type="button"><span class="mk">Usage</span>
+              <span class="mv">55% · resets 09:29Z</span><span class="ma">›</span></button>
+            <button class="mrow" type="button"><span class="mk">Routing</span>
+              <span class="mv">departments this session touched</span><span class="ma">›</span></button>
+            <button class="mrow" type="button"><span class="mk">Fold</span>
+              <span class="mv">collapse this pane</span><span class="ma">›</span></button>
+            <!-- Close was the one header control with nowhere else to go once the
+                 header stopped rendering while expanded. It lands here. -->
+            <button class="mrow" type="button"><span class="mk">Close</span>
+              <span class="mv">close this session</span><span class="ma">›</span></button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </div>
+</div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   PREVIEW INTERACTION LAYER — this is a preview you drive, not a picture.
+
+   Every control below behaves the way the shipped app behaves, so what you
+   feel here is what the port has to reproduce:
+
+   · the ⋯ popover follows 08-boot.js:185 exactly — the trigger owns its own
+     toggle, click-away and Escape close it, and neither the trigger nor the
+     popover itself counts as "away". Escape runs a cascade, most specific
+     state first, the same way the app's does.
+   · drilling into an agent routes into the subagent fold that already ships
+     (S.agentsFold[sid] + S.agentOpen[sid]); nothing new opens.
+   · state lives in one PV object whose keys are named after the real ones,
+     so porting this is renaming, not redesigning.
+   ══════════════════════════════════════════════════════════════════════════ */
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+const PV = { menu: false, agentsFold: false, agentOpen: null, collapsed: false };
+
+/* echo for controls whose real destination is a screen that already ships and
+   is out of scope here — better than a dead click, honest about not being it */
+const noteEl = $("#pvnote");
+function note(msg){
+  noteEl.textContent = msg;
+  clearTimeout(note._t);
+  note._t = setTimeout(() => { noteEl.textContent = ""; }, 3200);
+}
+
+/* ── theme ─────────────────────────────────────────────────────────────── */
+const setTheme = t => document.documentElement.setAttribute("data-theme", t);
+$("#thm").onclick = () =>
+  setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+$$(".rfoot .ib")[1].onclick = $("#thm").onclick;
+
+/* ── governance chip · ships today ─────────────────────────────────────── */
+function wireChip(b){
+  b.onclick = () => {
+    const gv = b.closest(".gv");
+    gv.classList.toggle("gv-open");
+    b.setAttribute("aria-expanded", gv.classList.contains("gv-open"));
+  };
+}
+$$(".gv-chip").forEach(wireChip);
+
+/* ── thinking loader opens into its log · PROPOSED ─────────────────────── */
+$$(".gv-thinkbtn").forEach(b => b.onclick = () =>
+  b.parentElement.classList.toggle("gv-openlog"));
+
+/* ── the one composer menu · PROPOSED ──────────────────────────────────── */
+const trig = $("#metaTrigger"), pop = $("#metaPop");
+function setMenu(on){
+  PV.menu = on;
+  /* inline display, not [hidden] — see the note on #agList: a class rule that
+     sets display beats the UA sheet's [hidden]{display:none} every time */
+  pop.style.display = on ? "" : "none";
+  trig.setAttribute("aria-expanded", on ? "true" : "false");
+}
+setMenu(false);
+trig.onclick = () => setMenu(!PV.menu);
+
+$$(".mrow").forEach(row => row.onclick = () => {
+  const key = $(".mk", row).textContent.trim();
+  setMenu(false);
+  if (key === "Fold")  return foldPane(true);
+  if (key === "Close") return note("Close → the session closes (data-close, ships today)");
+  if (key === "Routing") {
+    note("Routing → the department tree for this session (routingChart, ships today) — UI treatment is the open to-do");
+    return;
+  }
+  note(key + " → the " + key.toLowerCase() + " screen that ships today, opened from here instead of the header");
+});
+
+/* ── fold · reuses .pane.collapsed, which the app already implements ────── */
+function foldPane(on){
+  PV.collapsed = on;
+  $("#chatPane").classList.toggle("collapsed", on);
+  $(".pfold").setAttribute("aria-expanded", on ? "false" : "true");
+  $(".pfold").setAttribute("aria-label", (on ? "Expand" : "Collapse") + " this session pane");
+  if (on) setMenu(false);
+}
+$(".pgrip").onclick = () => foldPane(!PV.collapsed);
+$(".pfold").onclick = () => foldPane(!PV.collapsed);
+
+/* ── agent drill-down ──────────────────────────────────────────────────────
+   The transcripts are the ones a real fan-out writes: a done agent, a running
+   one mid-step, and one that failed — so the failure state is visible here and
+   not only in theory. */
+const AGENTS = {
+  placement: { title:"migrate the placement engine", type:"general-purpose", when:"2m ago",
+    task:"Migrate os/engines/placement to ledger schema v2. Keep the golden tests green.",
+    steps:[
+      { tools:["Read","Grep"], text:"Read the v1 writer and every call site. Twelve rows write through `mint()`; only two set `charter_ref`." },
+      { tools:["Edit"],        text:"Added `schema:2` and moved `charter_ref` to a required column. Back-filled the two rows that had it and defaulted the rest to the ancestor charter." },
+      { tools:["Bash"],        text:"`bats placement.bats` — 41 passing, 0 failing. Schema migrated, tests green." }
+    ] },
+  lens: { title:"migrate the lens engine", type:"general-purpose", when:"running",
+    task:"Migrate os/engines/lens to ledger schema v2.",
+    steps:[
+      { tools:["Read"], text:"Lens writes through the same `mint()` but adds a `lens_id` column the other engines do not have." },
+      { tools:["Edit"], text:"Rewriting the mint() rows now — 6 of 9 converted." }
+    ] },
+  cynefin: { title:"migrate the cynefin engine", type:"general-purpose", when:"4m ago",
+    task:"Migrate os/engines/cynefin to ledger schema v2.",
+    steps:[
+      { tools:["Read","Edit"], text:"Converted the writer the same way as placement." },
+      { tools:["Bash"],        text:"`bats cynefin.bats` — **1 failing**. Golden test drift at cynefin.bats:14: the fixture pins a v1 row shape, so it fails on the added column rather than on the migration. The fixture needs regenerating; I did not touch it, because regenerating a golden file is a decision, not a step." }
+    ] }
+};
+
+function agDetail(id){
+  const a = AGENTS[id];
+  const running = a.when === "running";
+  const steps = a.steps.map((s, i) => `
+    <div class="agstep${i === a.steps.length - 1 ? " result" : ""}">
+      <div class="agstep-tools">${s.tools.map(t => `<span class="pill p-acc">${t}</span>`).join("")}</div>
+      <div class="agstep-text md">${s.text.replace(/`([^`]+)`/g, "<code>$1</code>")
+                                          .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")}</div>
+    </div>`).join("");
+  return `<div class="agdhead">
+      <span class="agdot ${running ? "run" : ""}" aria-hidden="true"></span>
+      <b class="agdtitle">${a.title}</b>
+      <span class="agtype">${a.type}</span>
+      <span class="agdmeta">${a.steps.length} steps · ${a.when}</span>
+    </div>
+    <details class="agtask"><summary>Task it was handed</summary>
+      <div class="md">${a.task}</div></details>
+    <div class="agsteps">${steps}</div>`;
+}
+
+function renderAgents(){
+  $("#agFold").classList.toggle("open", PV.agentsFold);
+  $("#agFoldBtn").setAttribute("aria-expanded", PV.agentsFold ? "true" : "false");
+  $("#agFoldBtn").querySelector("path")
+    .setAttribute("d", PV.agentsFold ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6");
+  $("#agList").style.display = PV.agentsFold ? "" : "none";
+  $$("#agList .agrow").forEach(r => {
+    const on = PV.agentsFold && r.dataset.ag === PV.agentOpen;
+    r.classList.toggle("on", on);
+    r.setAttribute("aria-pressed", on ? "true" : "false");
+    /* the row's summary is DERIVED from the transcript, the way agentsFold()
+       derives it (06-render.js:36) — a hand-written count drifts from the
+       detail below it the moment either changes, and a preview that
+       contradicts itself is worse than one that shows less */
+    const a = AGENTS[r.dataset.ag];
+    const tools = [...new Set(a.steps.flatMap(s => s.tools))].slice(0, 3).join(", ");
+    $(".agm", r).textContent =
+      `${a.steps.length} step${a.steps.length === 1 ? "" : "s"} · ${tools} · ${a.when}`;
+  });
+  const d = $("#agDetail");
+  const show = PV.agentsFold && PV.agentOpen;
+  d.style.display = show ? "" : "none";
+  d.innerHTML = show ? agDetail(PV.agentOpen) : "";
+  if (show) d.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+$("#agFoldBtn").onclick = () => { PV.agentsFold = !PV.agentsFold; renderAgents(); };
+$$("#agList .agrow").forEach(r => r.onclick = () => {
+  PV.agentOpen = PV.agentOpen === r.dataset.ag ? null : r.dataset.ag;
+  renderAgents();
+});
+/* THE DRILL-DOWN: a row in the turn opens the fold below, already on that agent */
+$$(".gv-agents button.trow").forEach(r => r.onclick = () => {
+  PV.agentsFold = true;
+  PV.agentOpen = r.dataset.ag;
+  renderAgents();
+});
+renderAgents();
+
+/* ── rail · IA frozen, but it has to respond ───────────────────────────── */
+$$(".rlist .rowopen").forEach(b => b.onclick = () => {
+  $$(".rlist .rowopen").forEach(o => o.setAttribute("aria-current", "false"));
+  b.setAttribute("aria-current", "true");
+  note("switched to “" + $(".t", b).textContent + "” — one pane per open session, unchanged");
+});
+$$(".rlist .rowmenu").forEach(b => b.onclick = () =>
+  note("session actions — rename, fork, close (ships today)"));
+$(".railtog").onclick = () => {
+  const app = $(".app");
+  app.classList.toggle("railcol");
+  note(app.classList.contains("railcol")
+    ? "sidebar hidden — the composer chip is now the only thing naming the session"
+    : "sidebar shown");
+};
+$$(".rtabs button").forEach(b => b.onclick = () => {
+  $$(".rtabs button").forEach(o => o.setAttribute("aria-selected", "false"));
+  b.setAttribute("aria-selected", "true");
+});
+$$(".rtoggle button").forEach(b => b.onclick = () => {
+  $$(".rtoggle button").forEach(o => o.setAttribute("aria-pressed", "false"));
+  b.setAttribute("aria-pressed", "true");
+  note("grouping sessions by " + b.textContent.toLowerCase() + " (ships today)");
+});
+$(".newBtn").onclick = () => note("new session — opens a pane, unchanged");
+$$(".rfoot .ib")[0].onclick = () => note("terminal pane — unchanged");
+
+/* ── composer · send a turn and watch the chip fill ────────────────────────
+   Worth driving because the chip's hardest moment is the one you cannot see in
+   a screenshot: it appears EMPTY while the turn streams, then latches once the
+   governance blocks have actually parsed. A chip that latched on the first
+   chunk would show fallback text forever — that was a real bug, caught by the
+   state tests, and this is the behaviour that replaced it. */
+const ta = $(".pc textarea");
+ta.addEventListener("keydown", e => {
+  if (e.key !== "Enter" || e.shiftKey) return;
+  e.preventDefault();
+  const text = ta.value.trim();
+  if (!text) return;
+  ta.value = "";
+  const n = $$(".pb .turn").length + 1;
+  const turn = document.createElement("div");
+  turn.className = "turn";
+  turn.innerHTML = `
+    <div class="u md"></div>
+    <div class="gv"><button class="gv-chip" type="button" aria-expanded="false">
+      <span class="gv-pulse gv-amber"></span><span>turn ${n}</span>
+      <span class="gv-sep">·</span><span class="gv-leaf">routing…</span>
+      <span class="gv-chev">▼</span></button></div>
+    <div class="a"><div class="gv-think"><span class="gv-pulse gv-beat"></span
+      ><span class="gv-tlabel">thinking</span><b class="gv-tmeta">0.0s</b></div></div>`;
+  $(".u", turn).textContent = text;
+  $(".pb").appendChild(turn);
+  wireChip($(".gv-chip", turn));
+  $(".pb").scrollTop = $(".pb").scrollHeight;
+
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    const el = $(".gv-tmeta", turn);
+    if (el) el.textContent = ((Date.now() - t0) / 1000).toFixed(1) + "s";
+  }, 100);
+
+  /* the chip latches only once real governance has parsed — not on first chunk */
+  setTimeout(() => {
+    $(".gv-chip", turn).innerHTML =
+      `<span class="gv-pulse"></span><span>turn ${n}</span><span class="gv-sep">·</span>` +
+      `<span>DIRECT</span><span class="gv-sep">·</span><span>D2</span><span class="gv-sep">·</span>` +
+      `<span class="gv-leaf">Engine Library</span><span class="gv-sep">·</span><span>0.71</span>` +
+      `<span class="gv-chev">▼</span>`;
+  }, 1100);
+
+  setTimeout(() => {
+    clearInterval(tick);
+    $(".a", turn).innerHTML =
+      `<span class="pill p-ok">answered</span>
+       <span class="pill p-mut">2.4s · $0.0121 · 1 turn</span>
+       <div class="md" style="margin-top:6px;color:var(--ink)">Preview response — the chip
+       above filled in only after the governance blocks parsed, which is the whole point
+       of the empty-then-latched behaviour.</div>`;
+    $(".pb").scrollTop = $(".pb").scrollHeight;
+  }, 2400);
+});
+
+/* ── dismissal · mirrors 08-boot.js:185 ────────────────────────────────── */
+document.addEventListener("click", e => {
+  if (!PV.menu) return;
+  if (e.target.closest("#metaTrigger") || e.target.closest(".upop")) return;
+  setMenu(false);
+});
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (PV.menu)        { setMenu(false); return; }
+  if (PV.agentOpen)   { PV.agentOpen = null; renderAgents(); return; }
+  if (PV.agentsFold)  { PV.agentsFold = false; renderAgents(); return; }
+  if (PV.collapsed)   { foldPane(false); return; }
+});
+</script>
+</body>
+</html>

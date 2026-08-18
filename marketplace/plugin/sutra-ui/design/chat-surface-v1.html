@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sutra — chat surface, design v1</title>
+
+<!-- THE POINT OF THIS FILE: it links the app's REAL stylesheet. Every colour,
+     font and radius below therefore comes from panel.css itself. Nothing here
+     introduces a token, a palette or a font of its own. If panel.css changes,
+     this page changes with it — that is the proof of fit. -->
+<link rel="stylesheet" href="../static/panel.css" />
+
+<style>
+  /* ══ ONLY the new components live here. Every value is var(--…) from panel.css. ══ */
+
+  body{padding:26px 30px;overflow:auto}
+  .doc{max-width:940px;margin:0 auto}
+  .doc h1{font-family:var(--serif);font-size:29px;letter-spacing:-.02em;margin:0 0 6px}
+  .doc .lede{color:var(--muted);font-size:13px;max-width:70ch;margin:0 0 26px}
+  .doc h2{font-size:15px;margin:34px 0 4px}
+  .doc .note{color:var(--muted);font-size:12px;max-width:74ch;margin:0 0 14px}
+  .doc .note b{color:var(--ink);font-weight:600}
+  .stage{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+         padding:18px;margin-bottom:6px}
+  .cap{font:600 9.5px/1 var(--mono);color:var(--faint);text-transform:uppercase;
+       letter-spacing:.09em;margin-bottom:9px}
+  table.tbl{border-collapse:collapse;width:100%;font-size:12px;margin:10px 0 4px}
+  table.tbl th,table.tbl td{border:1px solid var(--line-soft);padding:6px 9px;text-align:left;
+       vertical-align:top}
+  table.tbl th{background:var(--card);color:var(--muted);font-weight:600}
+  table.tbl code{font-family:var(--mono);font-size:11px;color:var(--acc)}
+
+  /* ── 1. GOVERNANCE CHIP ─────────────────────────────────────────────────
+     Extends the existing .turn .fchip. Same pill, same tokens; it gains a
+     disclosure caret and an expandable body. Collapsed is the default and
+     is one line — the ~25 lines of governance text stop entering the thread. */
+  .gchip{display:inline-flex;align-items:center;gap:6px;font:600 9.5px/1 var(--mono);
+    padding:4px 7px;border-radius:5px;border:1px solid var(--acc);background:var(--acc-bg);
+    color:var(--acc);cursor:pointer;user-select:none;max-width:100%}
+  .gchip:hover{background:var(--acc-bg);border-color:var(--acc)}
+  .gchip .sep{opacity:.5}
+  /* leaf truncates first; verb and depth never do */
+  .gchip .leaf{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gchip .car{transition:transform .12s}
+  .gov.open .gchip .car{transform:rotate(90deg)}
+  .gchip.held{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+  .gchip.blocked{border-color:var(--block);background:var(--block-bg);color:var(--block)}
+  .gov{margin-bottom:7px}
+  .govbody{display:none;margin-top:6px;border:1px solid var(--line-soft);border-radius:var(--r);
+    background:var(--card);padding:9px 11px}
+  .gov.open .govbody{display:block}
+  .grow{display:grid;grid-template-columns:74px 1fr;gap:10px;font-size:12px;padding:4px 0}
+  .grow+.grow{border-top:1px solid var(--line-soft)}
+  .grow .k{font:600 9.5px/1.5 var(--mono);color:var(--muted);text-transform:uppercase;
+    letter-spacing:.07em}
+  .grow .v{color:var(--ink)}
+  .grow .v .dim{color:var(--muted)}
+
+  /* ── 2. THINKING BAR ────────────────────────────────────────────────────
+     The app already has .runstrip for "a turn is in flight". This adds the
+     one thing it lacks: the strip is CLICKABLE and opens the live log of
+     what is happening right now. Reuses .runstrip/.runbar verbatim. */
+  .think .runstrip{cursor:pointer}
+  .thinklog{display:none;margin:6px 0 0 3px;padding-left:11px;
+    border-left:2px solid var(--line);flex-direction:column;gap:3px}
+  .think.open .thinklog{display:flex}
+  .thinklog .ln{font:11px/1.5 var(--mono);color:var(--muted)}
+  .thinklog .ln.ok{color:var(--ok)}
+  .thinklog .ln.bad{color:var(--block)}
+
+  /* ── 3. LIVE WORKER ROWS ────────────────────────────────────────────────
+     Fills the app's own `agents_live` gap: the subagents fold is per-session
+     and read from transcripts on disk, so it answers "what did this session
+     spawn", never "what is happening in THIS turn, now".
+     NOTE — no progress fill. panel.css's own comment on .runbar states the
+     rule: nothing on the wire reports how much of a turn is left, so a
+     proportional bar would be inventing a number. State is carried by the
+     dot's colour and the sweep, exactly as .runbar does. */
+  .wstrip{display:flex;flex-direction:column;gap:3px;margin:6px 0 0 3px;
+    padding-left:11px;border-left:2px solid var(--line)}
+  .wrow{display:grid;grid-template-columns:8px 108px 1fr auto;gap:8px;align-items:center;
+    font:11px/1.6 var(--mono);color:var(--muted);cursor:pointer;border-radius:4px;
+    padding:1px 4px}
+  .wrow:hover{background:var(--acc-bg)}
+  .wdot{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+  .wname{color:var(--ink)}
+  .wstep{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wopen{color:var(--faint);font-size:10px}
+  .wrow:hover .wopen{color:var(--acc)}
+  /* the 8 states = dot colour x motion. no new component per state. */
+  .wrow.queued  .wdot{background:var(--faint)}
+  .wrow.spawn   .wdot{background:var(--acc);animation:wpulse 1.4s ease-in-out infinite}
+  .wrow.run     .wdot{background:var(--acc);animation:wpulse 1.4s ease-in-out infinite}
+  .wrow.waiting .wdot{background:var(--warn)}
+  .wrow.retry   .wdot{background:var(--warn);animation:wpulse 1.4s ease-in-out infinite}
+  .wrow.failed  .wdot{background:var(--block)}
+  .wrow.done    .wdot{background:var(--ok)}
+  .wrow.stopped .wdot{background:var(--faint);opacity:.6}
+  .wrow.waiting .wstep{color:var(--warn)}
+  .wrow.failed  .wstep{color:var(--block)}
+  @keyframes wpulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.wrow .wdot{animation:none!important}}
+
+  /* turn scaffold, mirrors panel.css .turn */
+  .t{margin-bottom:16px}
+  .t .u{background:var(--bubble);border:1px solid var(--line-soft);border-radius:11px;
+        padding:8px 11px;width:fit-content;max-width:92%;margin-left:auto;font-size:12px}
+  .t .a{margin-top:9px;font-size:12px;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>Chat surface — design v1</h1>
+<p class="lede">Three additions to the panel's existing turn, drawn entirely in this app's own
+design system: this page links <code>static/panel.css</code> rather than declaring tokens, so every
+colour and font below is the app's. Nothing in the app's information architecture moves —
+the rail, the panes and the composer are untouched.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>1 · Governance chip — the filing chip, made expandable</h2>
+<p class="note">The panel already files a turn and shows it as <code>.fchip</code>. Today the rest of
+the governance — routing, depth, flow, blueprint, trace — arrives as <b>~25 lines of machine voice
+inside the reply text</b>. This keeps the chip as the only thing on screen and moves that content
+behind it. Click to expand; collapsed is the default and every turn.</p>
+
+<div class="stage">
+  <div class="cap">collapsed — the default, one line per turn</div>
+  <div class="t">
+    <div class="u">Migrate the ledger schema across the engines.</div>
+    <div class="a">
+      <div class="gov" onclick="this.classList.toggle('open')">
+        <span class="gchip"><span class="car">›</span>DIRECT<span class="sep">·</span>D3<span class="sep">·</span><span class="leaf">Engine Library</span><span class="sep">·</span>risk:med</span>
+      </div>
+      Starting with the lookup profile to size the cache…
+    </div>
+  </div>
+
+  <div class="cap" style="margin-top:18px">expanded — click the chip</div>
+  <div class="t">
+    <div class="u">Migrate the ledger schema across the engines.</div>
+    <div class="a">
+      <div class="gov open">
+        <span class="gchip"><span class="car">›</span>DIRECT<span class="sep">·</span>D3<span class="sep">·</span><span class="leaf">Engine Library</span><span class="sep">·</span>risk:med</span>
+        <div class="govbody">
+          <div class="grow"><span class="k">Route</span><span class="v">task → <span class="dim">core:flow deep · home: Engine Library</span></span></div>
+          <div class="grow"><span class="k">Depth</span><span class="v">3/5 <span class="dim">· ~45 min · 4 files</span></span></div>
+          <div class="grow"><span class="k">Flow</span><span class="v">FOLLOW core:flow <span class="dim">· 5 steps · Complicated</span></span></div>
+          <div class="grow"><span class="k">Blueprint</span><span class="v">LRU cache → wire classify() → golden tests <span class="dim">· verify: bats placement.bats</span></span></div>
+          <div class="grow"><span class="k">Placement</span><span class="v">D1.D1.D3 Engine Library <span class="dim">· "Engine Library Charter"</span></span></div>
+          <div class="grow"><span class="k">Trace</span><span class="v"><span class="dim">flow-deep › D3 › 6 tools › 4 files edited</span></span></div>
+        </div>
+      </div>
+      Starting with the lookup profile to size the cache…
+    </div>
+  </div>
+
+  <div class="cap" style="margin-top:18px">the chip carries the app's existing states</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <span class="gchip"><span class="car">›</span>QUERY<span class="sep">·</span>D1<span class="sep">·</span><span class="leaf">Core Plugin</span></span>
+    <span class="gchip held"><span class="car">›</span>TASK<span class="sep">·</span>D2<span class="sep">·</span><span class="leaf">held at ancestor</span></span>
+    <span class="gchip blocked"><span class="car">›</span>TASK<span class="sep">·</span>D3<span class="sep">·</span><span class="leaf">blueprint ✗</span></span>
+  </div>
+  <p class="note" style="margin-top:9px"><code>.held</code> is the app's existing warn variant, reused
+  unchanged. <code>.blocked</code> is the one new variant, built from the existing
+  <code>--block</code> trio.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>2 · Thinking — the run strip, made openable</h2>
+<p class="note">The app's <code>.runstrip</code> already says a turn is in flight, with an indeterminate
+sweep. The one thing it cannot answer is <b>"what is it doing right now"</b>. This makes the strip
+clickable and drops the live log underneath it. The strip, its sweep and its reduced-motion
+handling are reused verbatim — only the log is new.</p>
+
+<div class="stage">
+  <div class="cap">in flight — closed (unchanged from today)</div>
+  <div class="think">
+    <span class="runstrip"><b>working</b> · 1m24s</span>
+    <span class="runbar"><i></i></span>
+  </div>
+
+  <div class="cap" style="margin-top:18px">clicked — the live log</div>
+  <div class="think open">
+    <span class="runstrip"><b>working</b> · 1m24s</span>
+    <span class="runbar"><i></i></span>
+    <div class="thinklog">
+      <span class="ln ok">✓ routed: task → core:flow deep</span>
+      <span class="ln ok">✓ depth 3/5 pinned</span>
+      <span class="ln">read os/engines/LEDGER.md</span>
+      <span class="ln">grep worker_id os/engines/</span>
+      <span class="ln">weighing retry semantics: bounded vs exponential</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>3 · Live workers — filling the app's own <code>agents_live</code> gap</h2>
+<p class="note">The subagents fold already reads agent transcripts from disk and renders them through
+the same <code>transcriptTurns()</code> as the main thread — so drill-down <b>already exists and is not
+being replaced</b>. What it cannot show is the turn in progress: the fold is per-session and
+post-hoc. These rows are turn-scoped and live, and clicking one opens the agent that the fold
+already knows how to render. <code>s.agents_live</code> is the app's own hook for exactly this.</p>
+
+<div class="stage">
+  <div class="cap">a turn that fanned out</div>
+  <div class="t">
+    <div class="u">Migrate all 12 engines to the new ledger schema.</div>
+    <div class="a">
+      <div class="gov"><span class="gchip"><span class="car">›</span>DIRECT<span class="sep">·</span>D4<span class="sep">·</span><span class="leaf">Engine Library</span><span class="sep">·</span>3 agents</span></div>
+      <div class="wstrip">
+        <div class="wrow done"><span class="wdot"></span><span class="wname">placement</span><span class="wstep">migrated · tests green</span><span class="wopen">open ›</span></div>
+        <div class="wrow run"><span class="wdot"></span><span class="wname">lens</span><span class="wstep">rewriting axis rows</span><span class="wopen">open ›</span></div>
+        <div class="wrow retry"><span class="wdot"></span><span class="wname">cynefin</span><span class="wstep">retry 1/2 — golden test drift</span><span class="wopen">open ›</span></div>
+      </div>
+      <div class="think open" style="margin-top:7px">
+        <span class="runstrip"><b>working</b> · 4m12s · 3 agents</span>
+        <span class="runbar"><i></i></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="cap" style="margin-top:18px">the eight states — dot colour × motion, one component</div>
+  <div class="wstrip">
+    <div class="wrow queued"><span class="wdot"></span><span class="wname">queued</span><span class="wstep">waiting for a slot</span><span class="wopen"></span></div>
+    <div class="wrow spawn"><span class="wdot"></span><span class="wname">spawning</span><span class="wstep">starting up</span><span class="wopen"></span></div>
+    <div class="wrow run"><span class="wdot"></span><span class="wname">running</span><span class="wstep">rewriting axis rows</span><span class="wopen">open ›</span></div>
+    <div class="wrow waiting"><span class="wdot"></span><span class="wname">waiting</span><span class="wstep">needs permission — y / n</span><span class="wopen"></span></div>
+    <div class="wrow retry"><span class="wdot"></span><span class="wname">retrying</span><span class="wstep">retry 1/2 — golden test drift</span><span class="wopen">open ›</span></div>
+    <div class="wrow failed"><span class="wdot"></span><span class="wname">failed</span><span class="wstep">✗ schema conflict — kept for audit</span><span class="wopen">open ›</span></div>
+    <div class="wrow done"><span class="wdot"></span><span class="wname">done</span><span class="wstep">✓ migrated · tests green</span><span class="wopen">open ›</span></div>
+    <div class="wrow stopped"><span class="wdot"></span><span class="wname">stopped</span><span class="wstep">interrupted by operator</span><span class="wopen">open ›</span></div>
+  </div>
+  <p class="note" style="margin-top:11px"><b>No progress bar, deliberately.</b> panel.css already
+  settles this: nothing on the wire reports how much of a turn is left, so a proportional fill
+  would be inventing a number. State is the dot's colour plus whether it pulses — the same rule
+  <code>.runbar</code> follows.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Token use — nothing new was introduced</h2>
+<table class="tbl">
+  <tr><th>Component</th><th>Built from</th><th>New tokens</th></tr>
+  <tr><td>Governance chip</td><td><code>.fchip</code> pattern · <code>--acc</code>/<code>--acc-bg</code>, <code>--warn</code> trio, <code>--block</code> trio, <code>--mono</code>, <code>--r</code></td><td>none</td></tr>
+  <tr><td>Chip body</td><td><code>--card</code>, <code>--line-soft</code>, <code>--ink</code>, <code>--muted</code></td><td>none</td></tr>
+  <tr><td>Thinking log</td><td><code>.runstrip</code>/<code>.runbar</code> reused · <code>--line</code>, <code>--muted</code>, <code>--ok</code>, <code>--block</code></td><td>none</td></tr>
+  <tr><td>Worker rows</td><td><code>--faint</code>/<code>--acc</code>/<code>--warn</code>/<code>--block</code>/<code>--ok</code>, <code>--mono</code></td><td>none</td></tr>
+</table>
+<p class="note">Because this page links the real stylesheet, the light theme and
+<code>prefers-reduced-motion</code> are inherited rather than reimplemented. Switch
+<code>data-theme</code> on <code>&lt;html&gt;</code> to check both.</p>
+
+</div>
+</body>
+</html>
