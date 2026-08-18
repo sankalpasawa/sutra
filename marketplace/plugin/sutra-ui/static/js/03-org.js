@@ -822,6 +822,139 @@ function balanceLiveHtml(b){
   <div class="legend">Updated ${esc(st.generated_at || "")} by the 15-minute observer — it watches,
     never interrupts. Signals come only from your own messages and their timing.</div>`;
 }
+/* ---- The Five Hats: the approved tabbed design, rendered natively ----------
+   Data comes from the nightly UI read model (`view`, dashboard-data.json) —
+   the SAME semantic decisions the generated dashboard renders, so the two
+   surfaces cannot drift (consult 2026-08-18: re-deriving here would recreate
+   the drift this closes). Live values (windows observed, actionables) come
+   from the 15-min side of the payload; the two clocks are named in one line
+   rather than badged everywhere. */
+const BAL_TABS = ["today", "week", "month"];
+function balTab(){ const t = S.ui && S.ui.balanceTab; return BAL_TABS.includes(t) ? t : "today"; }
+
+function balTiles(cells){
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
+    ${cells.map(c=>`<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;
+       padding:12px 14px;box-shadow:var(--shadow)">
+      <b style="display:block;font:600 22px/1.1 var(--serif);color:var(--acc)">${esc(String(c.v))}</b>
+      <span style="font-size:11px;color:var(--muted)">${esc(c.k)}</span></div>`).join("")}
+  </div>`;
+}
+function balBars(items, hot){
+  const mx = Math.max(1, ...items.map(i=>i.n));
+  return `<div style="display:flex;gap:2px;align-items:flex-end;height:52px">
+    ${items.map(i=>`<div title="${esc(i.label)}: ${i.n}" aria-label="${esc(i.label)}: ${i.n}"
+      style="flex:1;min-height:2px;border-radius:2px 2px 0 0;height:${i.n===0?2:Math.round(4+i.n/mx*46)}px;
+      background:${hot && i.hot ? "var(--warn)" : "var(--acc)"};opacity:${i.n===0?.35:1}"></div>`).join("")}
+  </div>`;
+}
+function balHeatmap(view){
+  const shades = ["var(--line-soft)","var(--acc-bg)","var(--acc)","var(--acc)","var(--acc)"];
+  const alpha  = [1, 1, .45, .72, 1];
+  const rows = view.roles.map(r=>`
+    <div style="display:grid;grid-template-columns:86px repeat(${view.days.length},minmax(9px,1fr));gap:2px;margin-bottom:2px;align-items:center">
+      <div style="font:600 9px/1.2 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">${esc(r.name)}</div>
+      ${r.cells.map(c=>`<div tabindex="0" title="${esc(r.name)}, ${esc(c.d)}: ${c.n} file-touches"
+          aria-label="${esc(r.name)}, ${esc(c.d)}: ${c.n} file-touches"
+          style="height:13px;border-radius:2px;background:${shades[c.level]};opacity:${alpha[c.level]}"></div>`).join("")}
+    </div>`).join("");
+  return `<div style="overflow-x:auto"><div style="min-width:520px">${rows}
+    <div style="display:grid;grid-template-columns:86px repeat(${view.days.length},minmax(9px,1fr));gap:2px;margin-top:4px">
+      <span></span>${view.days.map((d,i)=>`<span style="font:8px var(--mono);color:var(--faint);text-align:center">${i%7===0||i===view.days.length-1?esc(d):""}</span>`).join("")}
+    </div></div></div>`;
+}
+function balRoleCards(view){
+  if (!view.roles_review || !view.roles_review.length) return "";
+  return view.roles_review.map(r=>`
+    <div style="background:var(--card);border:1px solid var(--line);border-left:3px solid var(--acc);
+         border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow)">
+      <h3 style="font-family:var(--serif);font-size:16px;margin:0 0 4px;font-weight:600">${esc(r.role||"")}</h3>
+      <div style="font-size:10.5px;color:var(--faint);margin-bottom:8px">${esc(r.evidence||"")} · confidence: ${esc(r.confidence||"")}</div>
+      <div style="font:600 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--ok);margin-bottom:3px">What's working</div>
+      <div style="font-size:12.5px;line-height:1.5;margin-bottom:8px">${esc(r.great||"")}</div>
+      <div style="font:600 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--warn);margin-bottom:3px">Sharpen</div>
+      <div style="font-size:12.5px;line-height:1.5;margin-bottom:8px">${esc(r.improve||"")}</div>
+      <div style="font-size:12.5px;line-height:1.5;background:var(--acc-bg);border-radius:8px;padding:9px 11px">
+        <b>How:</b> ${esc(r.how||"")}</div>
+    </div>`).join("");
+}
+function balanceTabbedHtml(b){
+  const view = b.view, st = b.state || {}, rows = b.today || [];
+  const acts = Array.isArray(b.actionables) ? b.actionables : [];
+  const active = acts.filter(a=>a.status==="open" && a.active).length;
+  const done = acts.filter(a=>a.status==="done").length;
+  const tab = balTab();
+  const sec = (t) => `<h3 class="sec" style="margin-top:18px">${esc(t)}</h3>`;
+  let body = "";
+  if (tab === "today"){
+    body = balTiles([{v:rows.length,k:"observation windows today"},
+                     {v:view.commits_today,k:"commits today (nightly)"},
+                     {v:active,k:"active actionables"},
+                     {v:done,k:"done"}])
+      + balanceActionablesHtml(b)
+      + sec("Today's insights")
+      + `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
+           box-shadow:var(--shadow);font-size:12.5px;line-height:1.6">
+          ${view.insights && view.insights.length
+            ? view.insights.map(i=>`<div>${esc(i.text)} <span style="color:var(--faint)">(${esc(i.date)})</span></div>`).join("")
+            : "First daily pass pending."}</div>`
+      + sec("Shipped today")
+      + `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
+           box-shadow:var(--shadow);font-size:12.5px;line-height:1.7">
+          ${view.today_subjects && view.today_subjects.length
+            ? view.today_subjects.map(s=>`<div>${esc(s)}</div>`).join("")
+            : "<span style='color:var(--muted)'>Nothing committed yet today.</span>"}</div>`;
+  } else if (tab === "week"){
+    body = (view.week_insight
+        ? `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
+             box-shadow:var(--shadow);margin-bottom:12px">
+            <b style="font-family:var(--serif)">The week, read honestly.</b>
+            <div style="font-size:12.5px;margin-top:5px;line-height:1.6">${esc(view.week_insight.text||"")}</div></div>`
+        : "")
+      + sec("Commits per day")
+      + `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+           box-shadow:var(--shadow);max-width:420px">
+          ${balBars((view.commits_week||[]).map(c=>({n:c.n,label:c.day})), false)}
+          <div style="display:flex;justify-content:space-between;margin-top:4px;font:9px var(--mono);color:var(--faint)">
+            ${(view.commits_week||[]).map(c=>`<span>${esc(c.day)}</span>`).join("")}</div></div>`
+      + sec("Shipped this week")
+      + `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
+           box-shadow:var(--shadow);font-size:12.5px;line-height:1.7">
+          ${view.week_subjects && view.week_subjects.length
+            ? view.week_subjects.map(s=>`<div><span style="font:600 10px var(--mono);color:var(--muted);margin-right:8px">${esc(s.date)}</span>${esc(s.text)}</div>`).join("")
+            : "<span style='color:var(--muted)'>No feature/release commits this week.</span>"}</div>`
+      + sec("Actionables in play")
+      + balanceActionablesHtml(b);
+  } else {
+    body = sec("Where the month went")
+      + `<p style="font-size:12px;color:var(--muted);margin:0 0 10px;max-width:60ch">File-touches per day by role,
+          trailing ${view.days.length} days. Darker = more. An empty row is itself a finding.</p>`
+      + `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+           box-shadow:var(--shadow)">${balHeatmap(view)}</div>`
+      + sec("When you work")
+      + `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+           box-shadow:var(--shadow)">
+          ${balBars((view.hours||[]).map(h=>({n:h.n,hot:h.hot,label:(h.h===0?"12am":h.h<12?h.h+"am":h.h===12?"12pm":(h.h-12)+"pm")})), true)}
+          <div style="display:flex;justify-content:space-between;margin-top:4px;font:9px var(--mono);color:var(--faint)">
+            <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span></div></div>`
+      + sec("The five roles, coached")
+      + balRoleCards(view)
+      + (view.balance_note ? `<div class="legend" style="max-width:70ch">${esc(view.balance_note)}</div>` : "");
+  }
+  const hh = new Date().getHours();
+  const greet = hh < 12 ? "Good morning" : hh < 17 ? "Good afternoon" : "Good evening";
+  return `
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:6px 0 2px">
+    <div class="balance-greet" style="font-family:var(--serif);font-size:22px;font-weight:500;letter-spacing:-.01em">${greet}.</div>
+    <div class="tabs" style="margin-left:auto">
+      ${BAL_TABS.map(t=>`<button type="button" data-baltab="${t}" aria-pressed="${tab===t}">${t==="today"?"Today":t==="week"?"This week":"Month"}</button>`).join("")}
+    </div>
+  </div>
+  <div style="color:var(--faint);font:9.5px var(--mono);margin-bottom:14px">
+    observed ${esc((st.generated_at||"").slice(11,16) || "—")} UTC by the 15-minute watcher ·
+    dashboard rendered ${esc(view.rendered_at_local || "")} by the nightly pass${view.review_window?` · ${esc(view.review_window)}`:""}</div>
+  ${body}`;
+}
 /* Live actionables (PLAN-25 step 11). Cards come from the coach's derived
    view served by /api/balance. The checkbox is drawn ONLY when the preload
    verb exists (desktop app) — in a plain browser Balance stays read-only,
@@ -863,6 +996,17 @@ function balanceActionablesHtml(b){
     ${canMark ? "" : `<div style="font-size:10px;color:var(--faint)">Read-only here — marking done needs the desktop app (or Balance chat).</div>`}
   </div>`;
 }
+/* Tab switch: state only, no refetch (consult fold — switching must not
+   re-hit the API, and loadBalance(true) after a done-click must not reset
+   the selected tab, which is why this lives in S.ui and not in S.balance). */
+document.addEventListener("click", (ev) => {
+  const t = ev.target && ev.target.closest && ev.target.closest("[data-baltab]");
+  if (!t) return;
+  const want = t.dataset.baltab;
+  if (!BAL_TABS.includes(want)) return;
+  S.ui.balanceTab = want;
+  render();
+});
 document.addEventListener("click", async (ev) => {
   const btn = ev.target && ev.target.closest && ev.target.closest("[data-balance-done]");
   if (!btn || !(window.sutra && window.sutra.markActionable)) return;
@@ -888,7 +1032,10 @@ function balanceAsk(e){
 SCREENS.balance = () => {
   if (!S.balance || S.balance.loading)
     return `<p style="color:var(--muted)">Reading the Balance state contract…</p>`;
-  if (S.balance.present) return balanceLiveHtml(S.balance) + `
+  /* The approved design when the nightly read model is on disk; the v0 shape
+     as an honest fallback for an instance whose pass has never run. */
+  if (S.balance.present) return (S.balance.view ? balanceTabbedHtml(S.balance)
+                                                : balanceLiveHtml(S.balance)) + `
   <div id="balanceChat" style="background:var(--card);border:1px solid var(--line);border-radius:14px;
        padding:14px 16px;display:flex;align-items:center;gap:10px;max-width:560px;margin-top:14px;
        box-shadow:var(--shadow)">
