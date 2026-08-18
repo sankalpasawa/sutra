@@ -340,6 +340,15 @@ function wire(){
     S.toolOpen[id] = !S.toolOpen[id];
     render();
   });
+  /* governance chip fold — same structural-toggle pattern as [data-toolout]:
+     flip the S key, full render. Deliberately not the patch path. */
+  panes.querySelectorAll("[data-govopen]").forEach(b=>b.onclick=()=>{
+    const uid = b.dataset.govopen;
+    if (!uid) return;
+    S.govOpen = S.govOpen || {};
+    S.govOpen[uid] = !S.govOpen[uid];
+    render();
+  });
   /* "view it in the terminal" for a shell command the agent ran.
      It TYPES the command and stops. It does not press Enter, and that is the whole
      design: the agent ran this once already, a second run is a NEW side effect, and
