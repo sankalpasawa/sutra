@@ -91,6 +91,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -174,7 +175,13 @@ def _write_json(path, obj):
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    tmp = path + ".sutra-tmp"
+    # The tmp name is UNIQUE PER WRITER (pid + thread). A fixed "<path>.sutra-tmp"
+    # let two concurrent writers of the same record interleave into ONE tmp inode,
+    # and os.replace then promoted the torn JSON as the durable file — caught as a
+    # 1-in-6 flake by test_teamsutra's concurrency test. A crash can strand a
+    # uniquely-named tmp; that is litter, never corruption, and the next same-key
+    # write does not resurrect it.
+    tmp = "%s.sutra-tmp.%d.%d" % (path, os.getpid(), threading.get_ident())
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         os.fchmod(fd, 0o600)  # load-bearing when tmp pre-existed at a laxer mode

@@ -61,9 +61,11 @@ HAPPY = [
 ]
 
 
-def fake_runner(script, calls):
-    def run(args, cwd, timeout=None):
+def fake_runner(script, calls, envs=None):
+    def run(args, cwd, timeout=None, env_extra=None):
         calls.append(tuple(args))
+        if envs is not None:
+            envs.append((tuple(args[:2]), dict(env_extra or {})))
         joined = " ".join(args)
         for prefix, resp in script:
             if joined.startswith(prefix):
@@ -170,6 +172,20 @@ class TestTsApply(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.A._ts_apply(tid, run=fake_runner(HAPPY, []))
         self.assertIn("policy-denied path", self.T.load(tid)["apply_error"])
+
+    def test_transport_commit_carries_recorded_skip_reason(self):
+        # The repo's pre-commit test gate fires in the apply worktree; the
+        # transport commit must use the gate's own override channel WITH a
+        # recorded reason (D-A11) — and only the commit, nothing else.
+        tid = self._reviewed_task()
+        envs = []
+        self.A._ts_apply(tid, run=fake_runner(HAPPY, [], envs=envs))
+        commits = [e for a, e in envs if a == ("git", "commit")]
+        self.assertEqual(len(commits), 1)
+        self.assertIn(tid, commits[0]["SKIP_TESTS_ACK"])
+        self.assertIn("human merge gate", commits[0]["SKIP_TESTS_ACK"])
+        others = [e for a, e in envs if a != ("git", "commit") and e]
+        self.assertEqual(others, [])
 
     def test_submodule_repo_with_git_file_is_accepted(self):
         # The production default target is a SUBMODULE: .git is a file

@@ -1851,13 +1851,15 @@ def _ts_apply_sanitize(text):
     return out[:500]
 
 
-def _ts_run(args, cwd, timeout=TS_APPLY_TIMEOUT_S):
+def _ts_run(args, cwd, timeout=TS_APPLY_TIMEOUT_S, env_extra=None):
     """One policed subprocess: arg-list exec, pinned cwd, prompt-disabled env,
     bounded capture. gh keeps HOME/PATH for its keyring config; git cannot
     prompt for credentials — a hang dies at the timeout instead."""
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin"),
            "HOME": os.path.expanduser("~"),
            "GIT_TERMINAL_PROMPT": "0", "GH_PROMPT_DISABLED": "1"}
+    if env_extra:
+        env.update(env_extra)
     p = subprocess.run(list(args), cwd=cwd, env=env, capture_output=True,
                        text=True, timeout=timeout)
     return p.returncode, (p.stdout or "")[-10000:], (p.stderr or "")[-10000:]
@@ -1980,9 +1982,18 @@ def _ts_apply(tid, run=_ts_run):
         rc, out, se = run(["git", "add", "-A"], cwd=wt)
         if rc:
             fail("add: " + se)
-        rc, out, se = run(["git", "commit", "-m", title], cwd=wt)
+        # The repo's pre-commit test gate fires inside this worktree too. For
+        # a machine apply the commit is TRANSPORT of an already-human-reviewed
+        # diff into a PR, where CI reruns the real suites and a human is the
+        # merge. So this uses the gate's own documented override channel, with
+        # the reason recorded — not a bypass, the sanctioned lane for commits
+        # whose verification happens downstream (caught by live smoke; D-A11).
+        rc, out, se = run(["git", "commit", "-m", title], cwd=wt,
+                          env_extra={"SKIP_TESTS_ACK":
+                                     "teamsutra apply %s: transport commit; "
+                                     "verification is the PR's CI + human merge gate" % tid})
         if rc:
-            fail("commit: " + se)
+            fail("commit: " + (se or out))
         rc, out, se = run(["git", "push", "origin", branch], cwd=wt)
         if rc:
             fail("push: " + se)

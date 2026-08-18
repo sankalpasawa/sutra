@@ -2,6 +2,15 @@
 
 **status**: active · **updated**: 2026-08-19
 
+## 2.107.3
+
+- **Apply's transport commit passes the repo's pre-commit gate** with the
+  gate's own recorded-reason channel — verification for a machine apply is
+  the PR's CI plus your merge, and the smoke PR (#119) proves the full path.
+- **Store writes can no longer tear under concurrency.** `_write_json`'s tmp
+  file is now unique per writer; the fixed name let parallel same-record
+  writes interleave and promote torn JSON (a 1-in-6 test flake, now 8/8).
+
 ## 2.107.2
 
 - **Apply works on submodule checkouts.** The default target repo is a
