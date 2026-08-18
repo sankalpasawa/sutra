@@ -78,8 +78,6 @@ h1 .fork-b.deepen .w{color:var(--ink)}              /* …then commits. the fork
 .btn.wipe.wiped{clip-path:inset(0 0 0 0 round 100px)}
 .close .btn{margin:0 auto}
 .cta .note{display:block;margin:14px 0 0;font-size:13px;color:var(--muted)}
-.cta .below{margin-top:10px;font-size:12.5px;color:var(--faint)}
-.cta .below a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--rule)}
 
 /* non-Mac notice (built in JS, styled here) */
 .dl-gate{max-width:30rem;margin:18px auto 0;opacity:0;transform:translateY(-4px);
@@ -263,7 +261,7 @@ a:focus-visible,button:focus-visible,[role="button"]:focus-visible{
   .btn:hover::after{transform:scaleX(1)}
   .card:hover{border-color:#4A4642;background:#2C2926}
   .card:hover .doing{color:#A79E96}
-  nav a:hover,footer a:hover,.cta .below a:hover,.close .fine a:hover{color:var(--ink)}
+  nav a:hover,footer a:hover{color:var(--ink)}
 }
 
 /* ── 600px — small tablet and up ────────────────────── */
@@ -280,7 +278,6 @@ a:focus-visible,button:focus-visible,[role="button"]:focus-visible{
   .cta{margin-top:44px}
   .btn{display:inline-flex;width:auto;max-width:none;padding:15px 30px;font-size:15px;min-height:0}
   .cta .note{display:inline;margin:0 0 0 20px;font-size:14px}
-  .cta .below{margin-top:16px;font-size:13.5px}
   .cue{display:flex;flex-direction:column;align-items:center}
   section{padding:124px 0}
   h2{font-size:clamp(30px,4.4vw,46px);line-height:1.16;letter-spacing:-.018em;margin-bottom:28px}
@@ -330,6 +327,18 @@ a:focus-visible,button:focus-visible,[role="button"]:focus-visible{
   .phone-only{display:none}
 }
 
+/* ── iPhone-SE class widths ─────────────────────────────────
+   Measured at 320px: three board columns leave 61.0px of text room per card,
+   but the word "Background" needs 66.3px, so it split mid-word as "Backgroun|d".
+   Buy the 5px back from padding, gap and a half-point of type rather than let a
+   real word break mid-character. Three columns stay, per the board's tap-to-open
+   design. Numbers measured in-page, not estimated. ── */
+@media(max-width:380px){
+  .teams{gap:5px}
+  .card{padding:9px 5px}
+  .card .role{font-size:11px}
+}
+
 /* ── reduced motion: status colours survive, motion does not ── */
 @media(prefers-reduced-motion:reduce){
   [data-anim],.w,.card,.stem,.rail,.legs i,nav,.cue{
@@ -345,7 +354,7 @@ a:focus-visible,button:focus-visible,[role="button"]:focus-visible{
    min-width:auto, so the board's min-content width was widening the whole
    page and pushing every section off-screen on a phone) ── */
 .teams,.team,.members,.card,.brief{min-width:0}
-.card .role,.card .doing,.brief .tx{overflow-wrap:anywhere}
+.card .role,.card .doing,.brief .tx{overflow-wrap:break-word}
 .board{max-width:100%;overflow:hidden}
 h1,h2,p{overflow-wrap:break-word}
 
@@ -373,9 +382,6 @@ h1,h2,p{overflow-wrap:break-word}
       <a class="btn" data-dl
          href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">Download for Mac <span class="ar">→</span></a>
       <span class="note">Free · runs on the Claude plan you already have</span>
-      <div class="below"><span data-arch>Apple Silicon</span> ·
-        <a data-alt href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-x86_64.dmg">Intel build</a> ·
-        <a href="https://github.com/sankalpasawa/sutra/releases/latest">checksums</a></div>
     </div>
   </div>
   <div class="cue" id="cue" aria-hidden="true"><i></i></div>
@@ -504,8 +510,7 @@ h1,h2,p{overflow-wrap:break-word}
       <a class="btn" data-dl data-anim
          href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">Download for Mac — free <span class="ar">→</span></a>
       <p class="fine" data-anim>macOS 11 or newer · signed and notarized · runs on the Claude plan you
-        already have · <span data-arch>Apple Silicon</span> ·
-        <a data-alt href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-x86_64.dmg">Intel build</a></p>
+        already have</p>
       <p class="phone-only" data-anim>Not near your Mac?
         <a href="way.html">Read the way it works →</a></p>
     </div>
@@ -540,6 +545,10 @@ if(mqR.addEventListener) mqR.addEventListener('change',function(){ location.relo
 
 var ARM = 'https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg';
 var X86 = 'https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-x86_64.dmg';
+/* Fallback when every architecture probe comes back blank. Lists both builds.
+   Firefox and Safari expose no UA-CH high-entropy hints, and privacy modes can
+   mask the WebGL renderer, so 'unknown' is a real path -- not a theoretical one. */
+var RELEASES = 'https://github.com/sankalpasawa/sutra/releases/latest';
 var ARCH_TIMEOUT_MS = 800;
 
 /* ── 1 · Timeline: one timer alive at a time, pausable, skippable ── */
@@ -930,7 +939,10 @@ function detectMacArch(){
             if(/\b(intel|amd|nvidia|radeon)\b/.test(b)) return 'x86_64';
             if(/apple[-\s]?m\d/.test(b)) return 'arm64';
           }
-          /* PROBE 5 — core parity tiebreak: Intel Macs are always even, Apple Silicon ships odd (M3 Pro = 11). */
+          /* PROBE 5 — last-resort tiebreak. An ODD core count means Apple Silicon
+             (M3 Pro = 11). An even count proves nothing: Intel Macs are always even,
+             but so are M1/M2 (8). So even falls through to 'unknown' rather than
+             guessing Intel — and 'unknown' now routes to the releases page. */
           try{ var hc=navigator.hardwareConcurrency;
             if(typeof hc==='number'&&hc>0&&hc%2===1) return 'arm64'; }catch(e){}
           return 'unknown';
@@ -947,13 +959,11 @@ function wireDownload(){
 
   if(os==='mac'){
     detectMacArch().then(function(arch){
-      var isX = arch==='x86_64';
-      btns.forEach(function(a){ a.href = isX ? X86 : ARM; });
-      $$('[data-arch]').forEach(function(el){ el.textContent = isX ? 'Intel' : 'Apple Silicon'; });
-      $$('[data-alt]').forEach(function(a){
-        a.href = isX ? ARM : X86;
-        a.textContent = isX ? 'Apple Silicon build'
-                            : (arch==='unknown' ? 'or the Intel build' : 'Intel build');
+      /* Only serve a specific DMG when a probe actually resolved. On 'unknown'
+         send them to the releases page instead of guessing -- guessing wrong
+         hands an Intel Mac an ARM-only build that will not launch. */
+      btns.forEach(function(a){
+        a.href = arch==='x86_64' ? X86 : (arch==='arm64' ? ARM : RELEASES);
       });
     });
     return;
@@ -967,7 +977,6 @@ function wireDownload(){
 function wireShare(btns){
   var canShare = typeof navigator.share==='function';
   var url=location.origin+location.pathname;
-  $$('[data-arch]').forEach(function(el){ el.textContent='Mac only'; });
   btns.forEach(function(a){
     var isClose=!!(a.closest&&a.closest('.close'));
     var label=(canShare?'Send this to my Mac':'Copy the link for your Mac')+(isClose?' — free':'');
