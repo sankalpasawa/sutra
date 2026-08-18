@@ -1,6 +1,13 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-12
+**status**: active · **updated**: 2026-08-17
+
+## 2.99.1
+
+- **Fix streamed text re-shaping ("text coming and going").** `mdHtml` now closes an
+  unterminated code fence before parsing, so streamed fences render as code from the
+  first token instead of prose-then-collapse; `patchStreaming` skips repaints whose
+  rendered HTML is unchanged.
 
 ## 2.99.0
 
