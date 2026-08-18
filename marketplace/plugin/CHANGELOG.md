@@ -2,14 +2,21 @@
 
 **status**: active · **updated**: 2026-08-18
 
-## Unreleased — balance live actionables (version held for maintainer)
+## 2.103.0
 
-Balance screen shows the coach's actionables live; done-marking via a new
-token-gated `POST /api/balance/actionable` (renderer stays token-blind — a
-narrow preload verb carries the call; no unauth fallback). Endpoint suite
-`tests/unit/test-balance-endpoint.sh` covers auth/422s/idempotency/concurrency.
-NOTE: version deliberately unassigned — 2.99.1 landed on main during this
-branch; reconcile against the published-cache 2.101.0 before tagging.
+- **Balance — the founder coach ships.** Observe-only wellbeing + executive
+  coaching: the Balance screen lists your live actionables and marks them done
+  in place, backed by a new token-gated `POST /api/balance/actionable` (the
+  renderer never sees the token — a narrow preload verb carries the call; no
+  unauthenticated fallback). The engine (15-min observer, nightly coach pass,
+  dashboard generator) ships in `scripts/balance/` with per-instance state
+  resolution; see `docs/BALANCE.md` to adopt it and ADR-033 for the custody
+  split. Suites: `tests/unit/test-balance-endpoint.sh` (auth, 422s,
+  idempotency, concurrent duplicates, CLI-mode 403).
+- **Version reconciliation.** `plugin.json` and the marketplace catalog were
+  stranded at 2.99.1 while desktop tags ran ahead to v2.102.0-desktop (that tag
+  was cut without a manifest bump). Both manifests now say 2.103.0, matching
+  the tag cut for this release.
 
 ## 2.99.1
 
