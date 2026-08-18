@@ -171,6 +171,18 @@ class TestTsApply(unittest.TestCase):
             self.A._ts_apply(tid, run=fake_runner(HAPPY, []))
         self.assertIn("policy-denied path", self.T.load(tid)["apply_error"])
 
+    def test_submodule_repo_with_git_file_is_accepted(self):
+        # The production default target is a SUBMODULE: .git is a file
+        # ("gitdir: ..."), not a directory. 2.107.1 refused this shape.
+        repo2 = os.path.join(self.tmp, "subrepo")
+        os.makedirs(repo2)
+        with open(os.path.join(repo2, ".git"), "w") as f:
+            f.write("gitdir: ../elsewhere/.git/modules/subrepo\n")
+        os.environ["SUTRA_UI_TEAMSUTRA_REPO"] = repo2
+        tid = self._reviewed_task()
+        out = self.A._ts_apply(tid, run=fake_runner(HAPPY, []))
+        self.assertEqual(out["status"], "done")
+
     def test_non_needs_review_task_refused(self):
         rec = self.T.create({"title": "t", "body": "b", "kind": "bug",
                              "source": {"selection": None, "screen": "x",

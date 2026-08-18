@@ -2,6 +2,12 @@
 
 **status**: active · **updated**: 2026-08-19
 
+## 2.107.2
+
+- **Apply works on submodule checkouts.** The default target repo is a
+  submodule, where `.git` is a file — 2.107.1 refused it as "not a git
+  repo". Caught by the live smoke before any install.
+
 ## 2.107.1
 
 - **Apply understands the worker's own diffs.** The patch-policy gate now

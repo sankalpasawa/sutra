@@ -1903,7 +1903,11 @@ def _ts_apply(tid, run=_ts_run):
 
     repo = os.path.realpath(os.path.expanduser(
         os.environ.get(TS_APPLY_REPO_ENV) or TS_APPLY_REPO_DEFAULT))
-    if not os.path.isdir(os.path.join(repo, ".git")):
+    # .git is a DIRECTORY in a plain checkout but a FILE in submodules and
+    # worktrees — the default target is a submodule of asawa-holding, so an
+    # isdir check here refused every real apply (caught by the live smoke).
+    # Identity is enforced separately by the origin-URL preflight below.
+    if not os.path.exists(os.path.join(repo, ".git")):
         fail("apply target is not a git repo: %s" % repo)
 
     _ts_apply_sweep()
