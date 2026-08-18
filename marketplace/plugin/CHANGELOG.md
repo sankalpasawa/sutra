@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-18
 
+## 2.106.2
+
+- **The draft shows what you highlighted again.** Ask Sutra's pre-filled
+  message carries your selection as a quote under the question — same as the
+  original behavior, still fully editable, still sent only when you press
+  Enter.
+
 ## 2.106.1
 
 - **Ask Sutra no longer sends the first message for you.** The chat opens with

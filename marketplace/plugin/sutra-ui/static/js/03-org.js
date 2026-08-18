@@ -1181,8 +1181,18 @@ function openTeamsutraChat(ctx){
      is placed in the composer as an EDITABLE draft via S.composerText — the
      same store the template reads and applyPalette writes — so it survives
      re-renders, and the founder edits or replaces it and presses Enter
-     themselves. Nothing spends money until they do. */
-  S.composerText[s.id] = "What is this about?";
+     themselves. Nothing spends money until they do.
+
+     The draft CARRIES THE SELECTION as a markdown quote — same shape the
+     original auto-send used. Dropping it was a regression (founder, same
+     day: the message no longer showed the text they had highlighted). Every
+     line is "> "-prefixed so a multi-line selection stays one visible quote
+     block in the sent turn. */
+  var tsQ = "What is this about?";
+  if (ctx.text) {
+    tsQ += "\n\n> " + String(ctx.text).slice(0, 400).split("\n").join("\n> ");
+  }
+  S.composerText[s.id] = tsQ;
   render();
   const inp = document.querySelector('[data-sask="'+s.id+'"]');
   if (inp) {
