@@ -804,6 +804,11 @@ def api_balance() -> dict:
     return out
 
 
+# Fixed drop reasons — one click each in the panel, no typing. "Doesn't matter"
+# is the founder's own phrase for this control and stays first.
+DROP_REASONS = ("doesnt-matter", "not-now", "handled-elsewhere", "coach-wrong")
+
+
 @app.post("/api/balance/actionable")
 def api_balance_actionable(body: dict, request: Request) -> dict:
     """Append ONE coach-ledger event for an actionable (PLAN-25 step 10).
@@ -829,12 +834,21 @@ def api_balance_actionable(body: dict, request: Request) -> dict:
     aid = str((body or {}).get("id", ""))
     op = (body or {}).get("op", "")
     note = str((body or {}).get("note", "") or "")
-    if op not in ("done", "movement"):
-        raise HTTPException(status_code=422, detail="op must be done|movement")
+    reason = str((body or {}).get("reason", "") or "")
+    if op not in ("done", "drop", "movement"):
+        raise HTTPException(status_code=422, detail="op must be done|drop|movement")
     if not _re.fullmatch(r"[a-z0-9-]{1,64}", aid):
         raise HTTPException(status_code=422, detail="bad id")
     if len(note) > 200:
         raise HTTPException(status_code=422, detail="note too long (200 max)")
+    # A drop must say WHY (consult fold 2026-08-18, both lanes converged): the
+    # founder's word closes an item, but a why-less drop leaves the ledger
+    # proving only that something uncomfortable was dismissed — not whether the
+    # coach was wrong, the item expired, or it was handled elsewhere. FIXED
+    # reasons, never free text: a required essay would defeat the one-click ask.
+    if op == "drop" and reason not in DROP_REASONS:
+        raise HTTPException(status_code=422,
+                            detail="drop needs reason: " + "|".join(DROP_REASONS))
 
     bdir = os.environ.get("SUTRA_UI_BALANCE_DIR") or str(
         HERE.parent.parent.parent.parent / "holding" / "state" / "balance")
@@ -846,7 +860,7 @@ def api_balance_actionable(body: dict, request: Request) -> dict:
     with open(lock_p, "w") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
         try:
-            born, closed = False, False
+            born, closed_as = False, None
             with open(ledger, encoding="utf-8", errors="replace") as f:
                 for line in f:
                     line = line.strip()
@@ -861,12 +875,21 @@ def api_balance_actionable(body: dict, request: Request) -> dict:
                     if e.get("event") == "born":
                         born = True
                     elif e.get("event") in ("done", "dropped"):
-                        closed = True
+                        closed_as = e["event"]
             if not born:
                 raise HTTPException(status_code=404, detail="unknown actionable")
-            if op == "done" and closed:
-                return {"ok": True, "already": True}
-            row = {"ts": int(_time.time()), "event": op, "id": aid, "by": "founder-ui"}
+            # Terminal is terminal, for EVERY verb (consult fold: the earlier
+            # code short-circuited only `done`, so a second drop would have
+            # appended a duplicate closing row). A stale-UI race stays boring —
+            # 200 with the prior state, never a 409, and `closed_as` so the
+            # client can say what actually happened instead of guessing.
+            if closed_as:
+                return {"ok": True, "already": True, "closed_as": closed_as}
+            row = {"ts": int(_time.time()),
+                   "event": "dropped" if op == "drop" else op,
+                   "id": aid, "by": "founder-ui"}
+            if op == "drop":
+                row["reason"] = reason
             if note:
                 row["note"] = note
             data = (json.dumps(row) + "\n").encode("utf-8")

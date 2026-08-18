@@ -967,6 +967,7 @@ function balanceActionablesHtml(b){
   const open = acts.filter(a => a.status === "open" && a.active);
   const parked = acts.filter(a => a.status === "open" && !a.active).length;
   const done = acts.filter(a => a.status === "done");
+  const dropped = acts.filter(a => a.status === "dropped");
   const card = (a) => {
     const isDone = a.status === "done";
     const escd = !isDone && a.escalated;
@@ -980,19 +981,54 @@ function balanceActionablesHtml(b){
              style="font:700 13px var(--mono);color:var(--acc);background:none;border:1px solid var(--line);
              border-radius:6px;cursor:pointer;padding:2px 7px">[ ]</button>`
         : `<span style="font:700 13px var(--mono);color:var(--muted)">[ ]</span>`;
+    /* Drop ("it doesn't matter"): the x opens four one-click reasons — a
+       reason is required (both consult lanes: a why-less drop leaves the
+       ledger proving only that discomfort was dismissed) but never typed. */
+    const dropUi = (isDone || !canMark) ? "" : `
+      <button data-balance-drop="${esc(a.id)}" title="Doesn't matter — drop it"
+        aria-label="Drop this actionable" style="font:600 13px/1 var(--mono);color:var(--faint);
+        background:none;border:0;cursor:pointer;padding:2px 5px;align-self:flex-start">&times;</button>`;
+    const dropPicker = (!isDone && canMark && S.ui.balanceDropFor === a.id) ? `
+      <div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;
+           border-top:1px dashed var(--line);padding-top:8px">
+        <span style="font:9.5px/1.8 var(--mono);color:var(--muted);margin-right:2px">drop because</span>
+        ${[["doesnt-matter","doesn't matter"],["not-now","not now"],
+           ["handled-elsewhere","handled elsewhere"],["coach-wrong","coach got it wrong"]]
+          .map(([v,label])=>`<button data-drop-id="${esc(a.id)}" data-drop-reason="${v}"
+            style="font:600 9.5px/1 var(--mono);color:var(--muted);background:var(--card);
+            border:1px solid var(--line);border-radius:99px;padding:5px 9px;cursor:pointer">${esc(label)}</button>`).join("")}
+      </div>` : "";
     return `
-    <div style="display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--line);
-         border-left:3px solid ${edge};border-radius:10px;padding:11px 13px;margin-bottom:8px${isDone?";opacity:.7":""}">
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;background:var(--card);
+         border:1px solid var(--line);border-left:3px solid ${edge};border-radius:10px;padding:11px 13px;
+         margin-bottom:8px${isDone?";opacity:.7":""}">
       ${box}
       <div style="flex:1;font-size:12.5px;line-height:1.5">${esc(a.text||"")}
         <div style="font:9.5px var(--mono);color:var(--faint);margin-top:4px">${esc(meta)}</div></div>
+      ${dropUi}${dropPicker}
     </div>`;
   };
+  const DROP_LABEL = {"doesnt-matter":"doesn't matter","not-now":"not now",
+                      "handled-elsewhere":"handled elsewhere","coach-wrong":"coach got it wrong"};
+  /* Dropped stays VISIBLE (both consult lanes, P1): the ledger keeps it
+     forever regardless, and a coach whose items can be silently deleted stops
+     being a coach. Collapsed count + reasons, never in the active list. */
+  const droppedHtml = dropped.length ? `
+    <details style="margin-top:6px">
+      <summary style="font:9.5px/1.6 var(--mono);color:var(--faint);cursor:pointer">
+        ${dropped.length} dropped</summary>
+      <div style="margin-top:6px">${dropped.slice(-5).map(a=>`
+        <div style="font-size:11.5px;color:var(--muted);line-height:1.5;padding:4px 0">
+          <span style="text-decoration:line-through">${esc(a.text||"")}</span>
+          <span style="font:9px var(--mono);color:var(--faint)"> — ${esc(DROP_LABEL[a.drop_reason]||a.drop_reason||"dropped")}</span>
+        </div>`).join("")}</div>
+    </details>` : "";
   return `
   <div style="margin-top:14px;max-width:560px">
     <div style="font:600 8.5px/1 var(--mono);letter-spacing:.14em;color:var(--muted);
          text-transform:uppercase;margin-bottom:9px">Actionables · ${open.length} active${parked?` · ${parked} parked`:""}</div>
     ${open.map(card).join("")}${done.map(card).join("")}
+    ${droppedHtml}
     ${canMark ? "" : `<div style="font-size:10px;color:var(--faint)">Read-only here — marking done needs the desktop app (or Balance chat).</div>`}
   </div>`;
 }
@@ -1006,6 +1042,23 @@ document.addEventListener("click", (ev) => {
   if (!BAL_TABS.includes(want)) return;
   S.ui.balanceTab = want;
   render();
+});
+/* Drop: the x reveals the reason chips (state only); a chip does the write. */
+document.addEventListener("click", (ev) => {
+  const x = ev.target && ev.target.closest && ev.target.closest("[data-balance-drop]");
+  if (!x) return;
+  const id = x.dataset.balanceDrop;
+  S.ui.balanceDropFor = (S.ui.balanceDropFor === id) ? null : id;
+  render();
+});
+document.addEventListener("click", async (ev) => {
+  const chip = ev.target && ev.target.closest && ev.target.closest("[data-drop-reason]");
+  if (!chip || !(window.sutra && window.sutra.markActionable)) return;
+  chip.disabled = true;
+  const r = await window.sutra.markActionable(chip.dataset.dropId, "drop", "", chip.dataset.dropReason);
+  S.ui.balanceDropFor = null;
+  if (r && r.ok) loadBalance(true);
+  else { chip.disabled = false; toast && toast("Could not drop: " + esc(String(r && r.error || "unknown"))); }
 });
 document.addEventListener("click", async (ev) => {
   const btn = ev.target && ev.target.closest && ev.target.closest("[data-balance-done]");

@@ -625,7 +625,7 @@ ipcMain.handle("sutra:balance-actionable", async (_e, body) => {
   try {
     const b = body || {};
     return await api("POST", "/api/balance/actionable",
-                     { id: b.id, op: b.op, note: b.note });
+                     { id: b.id, op: b.op, note: b.note, reason: b.reason });
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
   }
