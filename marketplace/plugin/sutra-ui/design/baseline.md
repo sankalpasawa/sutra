@@ -168,6 +168,25 @@ measures computed style. 30 assertions, all green, across three modes:
 
 Artifacts: `design/app-dark.png`, `design/app-light.png`, `design/app-reduced-motion.png`.
 
+## Step 25 — the packaged app: what is and is not verified
+
+The Electron shell does not bundle the panel; it loads it
+(`electron/main.js:339`, `win.loadURL(ORIGIN)` against `127.0.0.1:8330`). The
+page verified in step 20 — served by the real FastAPI app — **is** the page the
+shell renders, so the feature is verified in the app's own runtime.
+
+What is **not** yet true: the installed `/Applications/Sutra.app` stages a *copy*
+of the runtime into `~/Library/Application Support/Sutra/plugin/sutra-ui/`, and
+that copy is still the old code:
+
+```
+grep -c gv-agents ~/Library/Application Support/Sutra/plugin/sutra-ui/static/panel.css   -> 0
+grep -c gv-agents  <repo>/static/panel.css                                               -> 1
+```
+
+So the packaged app will show the roster after the next `bundle-runtime.sh`
+re-stage. That is a release action and was not performed here.
+
 ## Step 22 — adversarial review of the diff
 
 An independent pass over the finished diff (`codex exec`, high effort, prompted to
