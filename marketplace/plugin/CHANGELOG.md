@@ -2,6 +2,21 @@
 
 **status**: active · **updated**: 2026-08-18
 
+## 2.104.0
+
+- **Balance screen IS the approved design.** The desktop Balance screen now renders
+  the tabbed Five Hats design natively — TODAY / THIS WEEK / MONTH, stat tiles, the
+  30-day role heatmap, hours-of-day chart, shipped timeline and per-role coaching —
+  instead of the older card-and-strip shape. The nightly renderer emits
+  `dashboard-data.json` as the canonical UI read model, so the generated dashboard
+  and the panel consume the same semantic decisions and cannot drift apart.
+- **Drop an actionable.** Each actionable carries a quiet `x`: clear one that
+  doesn't matter without claiming it was done. A drop takes one of four fixed
+  reasons (chips, no typing) and stays visible in a collapsed "N dropped" list —
+  the ledger keeps it forever either way. Terminal state is now terminal for every
+  verb (a duplicate drop no longer appends a second closing row) and responses
+  carry `closed_as`.
+
 ## 2.103.0
 
 - **Balance — the founder coach ships.** Observe-only wellbeing + executive
