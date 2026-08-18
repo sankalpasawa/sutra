@@ -818,9 +818,59 @@ function balanceLiveHtml(b){
     <div style="display:flex;justify-content:space-between;min-width:380px;margin-top:4px;
          font:9px var(--mono);color:var(--faint)"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>12am</span></div>
   </div>
+  ${balanceActionablesHtml(b)}
   <div class="legend">Updated ${esc(st.generated_at || "")} by the 15-minute observer — it watches,
     never interrupts. Signals come only from your own messages and their timing.</div>`;
 }
+/* Live actionables (PLAN-25 step 11). Cards come from the coach's derived
+   view served by /api/balance. The checkbox is drawn ONLY when the preload
+   verb exists (desktop app) — in a plain browser Balance stays read-only,
+   same pattern as the Browse button. No inline onclick with interpolated
+   ids: data attributes + one delegated listener. */
+function balanceActionablesHtml(b){
+  const acts = Array.isArray(b.actionables) ? b.actionables : null;
+  if (!acts || !acts.length) return "";
+  const canMark = !!(window.sutra && window.sutra.markActionable);
+  const open = acts.filter(a => a.status === "open" && a.active);
+  const parked = acts.filter(a => a.status === "open" && !a.active).length;
+  const done = acts.filter(a => a.status === "done");
+  const card = (a) => {
+    const isDone = a.status === "done";
+    const escd = !isDone && a.escalated;
+    const edge = isDone ? "var(--ok)" : escd ? "var(--block)" : "var(--warn)";
+    let meta = isDone ? `closed by ${esc(String(a.closed_by||""))}` : `open ${a.days_open||0}d`;
+    if (!isDone && a.movements) meta += ` · ${a.movements} progress note${a.movements===1?"":"s"}`;
+    if (escd) meta += ` · RECURRING — stalled ${a.stalled_days||0}d`;
+    const box = isDone ? `<span style="font:700 13px var(--mono);color:var(--ok)">[x]</span>`
+      : canMark
+        ? `<button data-balance-done="${esc(a.id)}" title="Mark done"
+             style="font:700 13px var(--mono);color:var(--acc);background:none;border:1px solid var(--line);
+             border-radius:6px;cursor:pointer;padding:2px 7px">[ ]</button>`
+        : `<span style="font:700 13px var(--mono);color:var(--muted)">[ ]</span>`;
+    return `
+    <div style="display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--line);
+         border-left:3px solid ${edge};border-radius:10px;padding:11px 13px;margin-bottom:8px${isDone?";opacity:.7":""}">
+      ${box}
+      <div style="flex:1;font-size:12.5px;line-height:1.5">${esc(a.text||"")}
+        <div style="font:9.5px var(--mono);color:var(--faint);margin-top:4px">${esc(meta)}</div></div>
+    </div>`;
+  };
+  return `
+  <div style="margin-top:14px;max-width:560px">
+    <div style="font:600 8.5px/1 var(--mono);letter-spacing:.14em;color:var(--muted);
+         text-transform:uppercase;margin-bottom:9px">Actionables · ${open.length} active${parked?` · ${parked} parked`:""}</div>
+    ${open.map(card).join("")}${done.map(card).join("")}
+    ${canMark ? "" : `<div style="font-size:10px;color:var(--faint)">Read-only here — marking done needs the desktop app (or Balance chat).</div>`}
+  </div>`;
+}
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target && ev.target.closest && ev.target.closest("[data-balance-done]");
+  if (!btn || !(window.sutra && window.sutra.markActionable)) return;
+  btn.disabled = true; btn.textContent = "[…]";
+  const r = await window.sutra.markActionable(btn.dataset.balanceDone, "done", "");
+  if (r && r.ok) { btn.textContent = "[x]"; loadBalance(true); }
+  else { btn.disabled = false; btn.textContent = "[ ]"; toast && toast("Could not mark done: " + esc(String(r && r.error || "unknown"))); }
+});
 /* Inline ask (founder redline): the founder types IN the Balance screen; Enter
    creates the Balance-seeded session and routes the text through submitTurn —
    the same optimistic/streaming/error pipeline as every other message (codex:

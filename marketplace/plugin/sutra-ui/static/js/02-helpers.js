@@ -512,12 +512,17 @@ function railSpec(){
     ],
     runtime:[
       {id:"skills",  n:"Skills",   i:"skills",c:(SKILLS.length||undefined)},
-      /* Connectors are the MCP servers the sessions this panel starts can reach.
-         Count = configured connectors, withheld until the screen has been opened
-         (Git rule: a 0 before the file was read is a claim about a config nobody
-         looked at). S.connectors is null until then. */
+      /* Connectors are the external tools the sessions this panel starts can
+         reach: hosted toolkits (Composio) plus local servers (the 1MCP
+         aggregator). Count = both, ENABLED only, withheld until the screen has
+         been opened (Git rule: a 0 before the file was read is a claim about a
+         config nobody looked at). Either half alone still counts -- withholding
+         until BOTH are read would hide a real number over an unrelated fetch. */
       {id:"connectors",n:"Connectors",i:"conn",
-       c:(S.connectors ? S.connectors.length : undefined)},
+       c:((S.conn || S.local)
+          ? ((S.conn ? (S.conn.enabled||[]).length : 0) +
+             (S.local ? (S.local.enabled_count||0) : 0))
+          : undefined)},
       /* Dispatcher + scheduler. The count is the dispatch ledger's row count and
          is withheld until the screen has been opened, for the same reason Git's
          is: a 0 before the file was read is a claim about a project nobody
@@ -600,7 +605,8 @@ function renderRail(){
   const spec = railSpec();
   const mk = items => items.map(it=>`
     <li><button type="button" data-screen="${it.id}" ${it.disabled?"disabled":""}
-        aria-current="${it.toggle ? (it.id==="terminal" && S.termOpen) : S.screen===it.id}"
+        aria-current="${it.toggle ? (it.id==="terminal" && S.termOpen)
+                                  : (!S.ui.browseClosed && S.screen===it.id)}"
         ${it.disabled?'title="§8.5.3 — an item appears in the rail only if a file backs it. The FTS5 derived index (§7.3) does not exist yet."':""}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${ICON[it.i]}</svg>
       ${esc(it.n)}

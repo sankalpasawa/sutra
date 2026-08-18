@@ -42,7 +42,10 @@ function wireDivider(){
 }
 
 function wire(){
-  const scBody = document.getElementById("scBody");
+  /* With the browse pane closed there is no #scBody. A detached node keeps
+     every scBody.querySelectorAll below a no-op instead of a TypeError that
+     would kill wire() before the session panes got their handlers. */
+  const scBody = document.getElementById("scBody") || document.createElement("div");
   const panes  = document.getElementById("panes");
 
   /* ── layout affordances (collapse, fold, resize) ── */
@@ -283,6 +286,10 @@ function wire(){
 
   panes.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{
     const sid = b.dataset.close;
+    /* "browse" is the screens pane, not a session: nothing to hang up, and the
+       closed state persists like a pane collapse does. Session ids are UUIDs,
+       so the sentinel can never collide with one. */
+    if (sid === "browse"){ S.ui.browseClosed = true; saveLayout(); render(); return; }
     /* Returns the channels it KEPT because work was still in flight. Closing the
        pane hides the view; it does not cancel the reply. Say so, because the
        button now does something different from what it used to. */
@@ -331,6 +338,15 @@ function wire(){
   panes.querySelectorAll("[data-toolout]").forEach(b=>b.onclick=()=>{
     const id = b.dataset.toolout;
     S.toolOpen[id] = !S.toolOpen[id];
+    render();
+  });
+  /* governance chip fold — same structural-toggle pattern as [data-toolout]:
+     flip the S key, full render. Deliberately not the patch path. */
+  panes.querySelectorAll("[data-govopen]").forEach(b=>b.onclick=()=>{
+    const uid = b.dataset.govopen;
+    if (!uid) return;
+    S.govOpen = S.govOpen || {};
+    S.govOpen[uid] = !S.govOpen[uid];
     render();
   });
   /* "view it in the terminal" for a shell command the agent ran.
@@ -500,22 +516,58 @@ function wire(){
   });
 
   /* ── connectors ──
-     Every control here mutates and re-reads. Field edits go to S.connForm (not the
-     DOM) for the same reason routines does it: the transport <select> re-renders
-     the form, and a value living only in the DOM would vanish at that moment. */
-  scBody.querySelectorAll("[data-conn-add]").forEach(b=>b.onclick=()=>{
-    S.connForm = { name:"", transport:"stdio", command:"", args:"", url:"", env:[], headers:[] };
-    S.connFormError = null; render();
-    const el = scBody.querySelector('[data-cf="name"]'); if (el) el.focus();
+     Three controls, one shape: mutate, re-read, render. Nothing is optimistic --
+     what the screen shows is always the server's answer, because a toolkit that
+     LOOKS enabled but is not is the failure mode that costs a turn to discover.
+     Auth field edits go to S.connAuth (not the DOM) so a re-render mid-typing
+     cannot drop them. */
+  scBody.querySelectorAll("[data-cx]").forEach(el=>{
+    const k = el.dataset.cx;
+    el.oninput = ()=>{ (S.connAuth = S.connAuth || {})[k] = el.value; };
   });
-  scBody.querySelectorAll("[data-conn-cancel]").forEach(b=>b.onclick=()=>{
-    S.connForm = null; S.connFormError = null; render(); });
+
+  scBody.querySelectorAll("[data-cx-save]").forEach(b=>b.onclick=async ()=>{
+    const a = S.connAuth || {};
+    const body = {};
+    /* A BLANK key field means "keep the key you have", not "clear it" -- the
+       field renders empty on every load because the server never sends the key
+       back, so treating empty as a clear would wipe it on any unrelated save. */
+    if ((a.api_key||"").trim()) body.api_key = a.api_key.trim();
+    if (a.user_id != null) body.user_id = a.user_id.trim();
+    if (!Object.keys(body).length){ S.connAuthError = "Nothing to save."; render(); return; }
+    S.connBusy = "auth"; S.connAuthError = null; S.connMsg = null; render();
+    try {
+      const r = await apiPost("/api/connectors/auth", body);
+      /* The contract returns {error} as a normal body, so a 2xx with an error
+         field is a refusal, not a success -- show it and keep what was typed. */
+      if (r && r.error){ S.connAuthError = r.error; }
+      else { S.conn = r; S.connAuth = {api_key:"", user_id:r.user_id||""};
+             S.connMsg = "Saved."; }
+    } catch (e) { S.connAuthError = e.message; }
+    S.connBusy = null; render();
+  });
+
+  scBody.querySelectorAll("[data-cx-test]").forEach(b=>b.onclick=async ()=>{
+    S.connBusy = "test"; S.connMsg = null; S.connAuthError = null; render();
+    try {
+      const r = await apiPost("/api/connectors/session", {force:true});
+      if (r && r.state) S.conn = r.state;
+      /* Composio refusing is an ANSWER, not an exception: it comes back 200
+         with ok:false and the reason, and the reason is the useful part. */
+      if (r && r.ok) S.connMsg = "Connected. Session " + (r.session_id||"") + ".";
+      else S.connAuthError = (r && r.error) || "Could not create a session.";
+    } catch (e) { S.connAuthError = e.message; }
+    S.connBusy = null; render();
+  });
+
   scBody.querySelectorAll("[data-conn-reload]").forEach(b=>b.onclick=()=>{
-    loadConnectors(true); loadConnectorsCatalog(true); });
+    loadConnectors(true); loadConnCatalog(true); loadLocal(true); loadLocalRegistry(true);
+    loadClaudeConfigured(true); });
   /* Option A: configuring/authenticating is DELEGATED to Claude — we type the
      command into the PTY (sendToTerminal does NOT execute it; the operator reads
      it and presses Enter), so people use Claude's own familiar flow and Sutra
-     never handles an OAuth token. */
+     never handles an OAuth token. Kept alongside the Composio/local halves: this
+     mirrors what Claude already has and never enters the governed spawn path. */
   scBody.querySelectorAll("[data-conn-configured-reload]").forEach(b=>b.onclick=()=>{
     loadClaudeConfigured(true); });
   scBody.querySelectorAll("[data-conn-add-in-claude]").forEach(b=>b.onclick=()=>{
@@ -523,73 +575,65 @@ function wire(){
   scBody.querySelectorAll("[data-conn-configure]").forEach(b=>b.onclick=()=>{
     sendToTerminal("claude mcp login " + shq(b.dataset.connConfigure)); });
 
-  /* text inputs + args textarea: commit, no render (caret) */
-  scBody.querySelectorAll("[data-cf]").forEach(el=>{
-    const k = el.dataset.cf;
-    el.oninput = ()=>{ if (S.connForm) S.connForm[k] = el.value; };
-  });
-  /* transport SELECT changes which fields exist, so it must re-render */
-  const cfT = scBody.querySelector("[data-cf-transport]");
-  if (cfT) cfT.onchange = ()=>{ if (S.connForm){ S.connForm.transport = cfT.value; render(); } };
+  /* Enable/disable. Both the catalog card and the Disable button land here; the
+     card sends no direction (flip), the button forces off, so a stale render
+     cannot turn something back on. */
+  const toggleToolkit = async (slug, on)=>{
+    S.connBusy = "toolkit:"+slug; S.connMsg = null; S.connAuthError = null; render();
+    try {
+      const r = await apiPost("/api/connectors/toolkits/"+encodeURIComponent(slug)+"/toggle",
+                              on==null ? {} : {on:!!on});
+      if (r && r.error) S.connError = r.error;
+      else { S.conn = r;
+             S.connMsg = (r.enabled||[]).indexOf(slug)>=0
+               ? "Enabled " + slug + ". It reaches sessions started from now on."
+               : "Disabled " + slug + "."; }
+    } catch (e) { S.connError = e.message; }
+    S.connBusy = null;
+    /* Re-read the catalog page so its cards carry the new enabled flags. */
+    await loadConnCatalog(true);
+  };
+  scBody.querySelectorAll("[data-tk-pick]").forEach(b=>b.onclick=()=>toggleToolkit(b.dataset.tkPick, null));
+  scBody.querySelectorAll("[data-tk-off]").forEach(b=>b.onclick=()=>toggleToolkit(b.dataset.tkOff, false));
 
-  /* env grid: key/value commit without render; add/remove re-render */
-  scBody.querySelectorAll("[data-envk]").forEach(el=>{
-    const i = +el.dataset.envk;
-    el.oninput = ()=>{ const e = S.connForm && S.connForm.env[i]; if (e) e.k = el.value; };
+  scBody.querySelectorAll("[data-cx-search]").forEach(el=>{ el.oninput = ()=>connCatalogSearch(el.value); });
+
+  /* ── local connector (1MCP) ──
+     Same shape as the hosted half: mutate, re-read, render, nothing optimistic.
+     Form edits live in S.localForm because the transport <select> re-renders. */
+  scBody.querySelectorAll("[data-lc-add]").forEach(b=>b.onclick=()=>{
+    S.localForm = {name:"", transport:"stdio", tag:"", command:"", args:"", url:"", env:[]};
+    S.localFormError = null; render();
+    const el = scBody.querySelector('[data-lf="name"]'); if (el) el.focus();
   });
-  scBody.querySelectorAll("[data-envv]").forEach(el=>{
-    const i = +el.dataset.envv;
-    el.oninput = ()=>{ const e = S.connForm && S.connForm.env[i]; if (e) e.v = el.value; };
+  scBody.querySelectorAll("[data-lc-cancel]").forEach(b=>b.onclick=()=>{
+    S.localForm = null; S.localFormError = null; render(); });
+
+  scBody.querySelectorAll("[data-lf]").forEach(el=>{
+    const k = el.dataset.lf;
+    el.oninput = ()=>{ if (S.localForm) S.localForm[k] = el.value; };
   });
-  scBody.querySelectorAll("[data-env-add]").forEach(b=>b.onclick=()=>{
-    if (!S.connForm) return;
-    (S.connForm.env = S.connForm.env || []).push({k:"", v:""}); render(); });
-  scBody.querySelectorAll("[data-env-del]").forEach(b=>b.onclick=()=>{
-    if (S.connForm && S.connForm.env) S.connForm.env.splice(+b.dataset.envDel, 1);
+  const lfT = scBody.querySelector("[data-lf-transport]");
+  if (lfT) lfT.onchange = ()=>{ if (S.localForm){ S.localForm.transport = lfT.value; render(); } };
+
+  scBody.querySelectorAll("[data-lenvk]").forEach(el=>{ const i=+el.dataset.lenvk;
+    el.oninput = ()=>{ const e = S.localForm && S.localForm.env[i]; if (e) e.k = el.value; }; });
+  scBody.querySelectorAll("[data-lenvv]").forEach(el=>{ const i=+el.dataset.lenvv;
+    el.oninput = ()=>{ const e = S.localForm && S.localForm.env[i]; if (e) e.v = el.value; }; });
+  scBody.querySelectorAll("[data-lenv-add]").forEach(b=>b.onclick=()=>{
+    if (!S.localForm) return;
+    (S.localForm.env = S.localForm.env || []).push({k:"", v:""}); render(); });
+  scBody.querySelectorAll("[data-lenv-del]").forEach(b=>b.onclick=()=>{
+    if (S.localForm && S.localForm.env) S.localForm.env.splice(+b.dataset.lenvDel, 1);
     render(); });
 
-  /* headers key/value (http/sse only) — mirrors env, commits to S.connForm.headers */
-  scBody.querySelectorAll("[data-hdrk]").forEach(el=>{ const i=+el.dataset.hdrk;
-    el.oninput = ()=>{ const h = S.connForm && S.connForm.headers[i]; if (h) h.k = el.value; }; });
-  scBody.querySelectorAll("[data-hdrv]").forEach(el=>{ const i=+el.dataset.hdrv;
-    el.oninput = ()=>{ const h = S.connForm && S.connForm.headers[i]; if (h) h.v = el.value; }; });
-  scBody.querySelectorAll("[data-hdr-add]").forEach(b=>b.onclick=()=>{
-    if (!S.connForm) return; (S.connForm.headers = S.connForm.headers || []).push({k:"", v:""}); render(); });
-  scBody.querySelectorAll("[data-hdr-del]").forEach(b=>b.onclick=()=>{
-    if (S.connForm && S.connForm.headers) S.connForm.headers.splice(+b.dataset.hdrDel, 1); render(); });
-
-  /* registry search (debounced) and import from ~/.claude.json */
-  scBody.querySelectorAll("[data-cat-search]").forEach(el=>{ el.oninput = ()=>connCatalogSearch(el.value); });
-  scBody.querySelectorAll("[data-conn-import]").forEach(b=>b.onclick=()=>loadClaudeImport());
-  scBody.querySelectorAll("[data-import-add]").forEach(b=>b.onclick=async ()=>{
-    const c = (S.claudeImport||[])[+b.dataset.importAdd]; if (!c) return;
-    S.connBusy = "import"; render();
-    try {
-      const r = await apiPost("/api/connectors", Object.assign({}, c, {enabled:true}));
-      if (r && r.error){ S.connError = r.error; }
-      else { S.claudeImport = (S.claudeImport||[]).filter(x=>x!==c);
-             S.connMsg = "Added " + (c.name||"connector") + "."; await loadConnectors(true); }
-    } catch (e){ S.connError = e.message; }
-    S.connBusy = null; render(); });
-
-  /* preset -> prefill the form. Catalog args arrive as an array; the form holds a
-     string, so join. env_keys become empty rows so only the secret is left to type. */
-  scBody.querySelectorAll("[data-cat-pick]").forEach(b=>b.onclick=()=>{
-    const p = (S.catalog||[])[+b.dataset.catPick]; if (!p) return;
-    S.connForm = {
-      name: p.name||"", transport: p.transport||"stdio", command: p.command||"",
-      args: Array.isArray(p.args) ? p.args.join(" ") : (p.args||""),
-      url: p.url||"", env: (p.env_keys||[]).map(k=>({k, v:""})), headers: [] };
-    S.connFormError = null; render();
-    const el = scBody.querySelector('[data-cf="name"]'); if (el) el.focus();
-  });
-
-  scBody.querySelectorAll("[data-conn-save]").forEach(b=>b.onclick=async ()=>{
-    const f = S.connForm || {};
+  scBody.querySelectorAll("[data-lc-save]").forEach(b=>b.onclick=async ()=>{
+    const f = S.localForm || {};
     const name = (f.name||"").trim();
-    if (!name){ S.connFormError = "A name is required."; render(); return; }
+    if (!name){ S.localFormError = "A name is required."; render(); return; }
     const t = f.transport || "stdio";
-    const body = { name, transport:t, enabled:true };
+    const body = {name, transport:t, enabled:true, title:(f.title||"").trim()};
+    if ((f.tag||"").trim()) body.tag = f.tag.trim();
     if (t === "stdio"){
       body.command = (f.command||"").trim();
       body.args = (f.args||"").split(/\s+/).filter(Boolean);   /* space OR newline */
@@ -598,43 +642,93 @@ function wire(){
       body.env = env;
     } else {
       body.url = (f.url||"").trim();
-      const hdr = {};
-      (f.headers||[]).forEach(r=>{ const k=(r.k||"").trim(); if (k) hdr[k] = r.v||""; });
-      if (Object.keys(hdr).length) body.headers = hdr;
     }
-    S.connBusy = "save"; S.connFormError = null; S.connMsg = null; render();
+    S.localBusy = "save"; S.localFormError = null; S.connMsg = null; render();
     try {
-      const r = await apiPost("/api/connectors", body);
-      /* The contract returns {error} for an invalid connector as a normal body,
-         so a 2xx with an error field is a refusal, not a success -- show it inline
-         and keep the form open with what the operator typed. */
-      if (r && r.error){ S.connFormError = r.error; }
-      else {
-        S.connForm = null;
-        S.connMsg = "Added " + ((r.connector&&r.connector.name)||name) + ".";
-        await loadConnectors(true);
-      }
-    } catch (e) { S.connFormError = e.message; }
-    S.connBusy = null; render();
+      const r = await apiPost("/api/connectors/local", body);
+      if (r && r.error){ S.localFormError = r.error; }
+      else { S.localForm = null;
+             S.connMsg = "Added " + ((r.server&&r.server.name)||name) + "."; }
+    } catch (e) { S.localFormError = e.message; }
+    S.localBusy = null; await loadLocal(true);
   });
 
-  scBody.querySelectorAll("[data-conn-toggle]").forEach(b=>b.onclick=async ()=>{
-    const id = b.dataset.connToggle;
-    S.connBusy = "toggle:"+id; S.connMsg = null; render();
-    try { await apiPost("/api/connectors/"+encodeURIComponent(id)+"/toggle", {});
-          await loadConnectors(true); }
-    catch (e) { S.connError = e.message; }
-    S.connBusy = null; render();
+  const lcAct = async (path, body, msg)=>{
+    S.localBusy = path; S.connMsg = null; render();
+    try {
+      const r = await apiPost("/api/connectors/local" + path, body || {});
+      if (r && r.error) S.localError = r.error; else if (msg) S.connMsg = msg;
+    } catch (e) { S.localError = e.message; }
+    S.localBusy = null; await loadLocal(true);
+  };
+  scBody.querySelectorAll("[data-lc-toggle]").forEach(b=>b.onclick=()=>
+    lcAct("/" + b.dataset.lcToggle + "/toggle", {}, null));
+  scBody.querySelectorAll("[data-lc-tag]").forEach(sel=>sel.onchange=()=>
+    lcAct("/" + sel.dataset.lcTag + "/tag", {tag: sel.value}, "Re-filed under " + sel.value + "."));
+  scBody.querySelectorAll("[data-lc-route]").forEach(b=>b.onclick=()=>
+    lcAct("/options", {route_composio: b.getAttribute("aria-pressed") !== "true"}, null));
+
+  /* The filter is a text field, so it commits on blur/Enter rather than per
+     keystroke -- every commit rewrites 1MCP's config file. */
+  scBody.querySelectorAll("[data-lc-filter]").forEach(el=>{
+    const commit = ()=>{ if ((el.value||"") !== ((S.local&&S.local.filter)||""))
+      lcAct("/options", {filter: el.value}, null); };
+    el.onblur = commit;
+    el.onkeydown = ev=>{ if (ev.key === "Enter"){ ev.preventDefault(); el.blur(); } };
   });
 
-  scBody.querySelectorAll("[data-conn-remove]").forEach(b=>b.onclick=async ()=>{
-    const id = b.dataset.connRemove;
-    if (!window.confirm("Remove this connector?\n\nSessions started after this will no longer see it.")) return;
-    S.connBusy = "remove:"+id; S.connMsg = null; render();
-    try { await apiDelete("/api/connectors/"+encodeURIComponent(id));
-          await loadConnectors(true); }
-    catch (e) { S.connError = e.message; }
-    S.connBusy = null; render();
+  scBody.querySelectorAll("[data-lc-remove]").forEach(b=>b.onclick=async ()=>{
+    if (!window.confirm("Remove this local server?\n\nSessions started after this will no " +
+                        "longer see its tools.")) return;
+    S.localBusy = "remove"; S.connMsg = null; render();
+    try { await apiDelete("/api/connectors/local/" + encodeURIComponent(b.dataset.lcRemove)); }
+    catch (e) { S.localError = e.message; }
+    S.localBusy = null; await loadLocal(true);
+  });
+
+  /* Aggregator version check -- the local half of auto-update, counterpart to
+     the hosted connector's catalog check. */
+  scBody.querySelectorAll("[data-lc-refresh]").forEach(b=>b.onclick=async ()=>{
+    S.localBusy = "refresh"; S.connMsg = null; render();
+    try {
+      const r = await apiPost("/api/connectors/local/refresh", {force:true});
+      if (r && r.error) S.localError = r.error;
+      else if (r && r.updated) S.connMsg = "Aggregator updated " + r.from + " → " + r.version + ".";
+      else S.connMsg = "Aggregator already up to date (" + (r&&r.version) + ").";
+    } catch (e) { S.localError = e.message; }
+    S.localBusy = null; await loadLocal(true);
+  });
+
+  scBody.querySelectorAll("[data-lc-search]").forEach(el=>{ el.oninput = ()=>lcRegistrySearch(el.value); });
+
+  /* registry entry -> prefill. args arrive as an array and the form holds a
+     string, so join; env_keys become empty rows so only the secret is left. */
+  scBody.querySelectorAll("[data-lc-pick]").forEach(b=>b.onclick=()=>{
+    const r = ((S.localReg||{}).results||[])[+b.dataset.lcPick]; if (!r) return;
+    S.localForm = {
+      name: r.name||"", title: r.title||"", tag: r.tag||"",
+      transport: r.transport||"stdio", command: r.command||"",
+      args: Array.isArray(r.args) ? r.args.join(" ") : (r.args||""),
+      url: r.url||"", env: (r.env_keys||[]).map(k=>({k, v:""}))};
+    S.localFormError = null; render();
+    const el = scBody.querySelector('[data-lf="name"]'); if (el) el.focus();
+  });
+
+  /* The manual half of auto-update. force:true skips the TTL so pressing it
+     always talks to GitHub, and the result distinguishes "checked, nothing
+     changed" from "adopted a new catalog" -- collapsing them would make the
+     button feel broken on the (common) unchanged path. */
+  scBody.querySelectorAll("[data-cx-refresh]").forEach(b=>b.onclick=async ()=>{
+    S.connBusy = "refresh"; S.connMsg = null; render();
+    try {
+      const r = await apiPost("/api/connectors/refresh", {force:true});
+      if (r && r.error) S.connError = r.error;
+      else if (r && r.updated) S.connMsg = "Catalog updated — " + (r.count||0) +
+        " toolkits" + ((r.added||[]).length ? ", new: " + r.added.slice(0,6).join(", ") : "") + ".";
+      else S.connMsg = "Already up to date.";
+    } catch (e) { S.connError = e.message; }
+    S.connBusy = null;
+    await loadConnCatalog(true);
   });
 
   /* ── permission mode (chat level) ── */
@@ -850,6 +944,9 @@ document.querySelector(".rail").addEventListener("click", e=>{
        and render() would blank the browse pane. */
     if (b.dataset.screen === "terminal"){ termToggle(); renderRail(); return; }
     S.screen=b.dataset.screen;
+    /* Picking a screen is the OPEN gesture, the way clicking a session row is:
+       a closed browse pane reopens rather than swapping content nobody can see. */
+    if (S.ui.browseClosed){ S.ui.browseClosed = false; saveLayout(); }
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     if (S.screen === "automation") loadAuto(false);
@@ -862,7 +959,9 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     /* lazy, like Git: reading the MCP config and the preset catalog on every boot
        is work a panel that never opens this screen has no reason to do. */
-    if (S.screen === "connectors"){ loadConnectors(false); loadConnectorsCatalog(false); loadClaudeConfigured(false); }
+    if (S.screen === "connectors"){ loadConnectors(false); loadConnCatalog(false);
+                                    loadLocal(false); loadLocalRegistry(false);
+                                    loadClaudeConfigured(false); }
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -1096,64 +1195,110 @@ async function loadRuntime(){
 }
 
 /* ── connectors ──────────────────────────────────────────────────────────────
-   The MCP config the Connectors screen manages. apiGet/apiPost cover read/create/
-   toggle; the contract's remove is a DELETE, which neither helper does, so this is
-   the one place that issues one -- same _fail error shape as the others, so a 500
-   here reads like a 500 anywhere. Both loaders CACHE (S.connectors / S.catalog stay
-   set until a forced reload) and report failures into state without throwing, the
-   same degradable contract loadAuto uses. */
+   The Composio connector the Connectors screen manages. Two loaders, both
+   CACHING (S.conn / S.connCat stay set until a forced reload) and both reporting
+   failures into state without throwing -- the same degradable contract loadAuto
+   uses, because a panel whose Connectors screen throws is a panel that looks
+   broken over a subsystem the operator may not even use.
+
+   Neither loader ever holds the API key: /api/connectors answers with a redacted
+   state (api_key_set + last four), so there is nothing here to leak into a
+   client-side log or a screenshot. */
+async function loadConnectors(force){
+  if (S.conn && !force) return;
+  try {
+    S.conn = await apiGet("/api/connectors"); S.connError = null;
+    /* Seed the editable user id from the server ONCE, so the field shows what is
+       stored without clobbering something half-typed on a forced re-read. */
+    if (!S.connAuth) S.connAuth = {api_key:"", user_id:S.conn.user_id||""};
+  }
+  catch (e) { S.connError = e.message; S.conn = null; }
+  render();
+}
+
+/* The catalog page. The server serves it from the local mirror and refreshes
+   that mirror on a TTL, so this is a local read that occasionally costs one
+   conditional GET to GitHub -- typing in the search box never waits on the
+   network for a catalog that has not changed. */
+async function loadConnCatalog(force){
+  if (S.connCat && !force) return;
+  S.catBusy = true;
+  const q = (S.connQuery || "").trim();
+  try {
+    S.connCat = await apiGet("/api/connectors/catalog?limit=60&q=" + encodeURIComponent(q));
+    S.catError = null;
+  } catch (e) { S.catError = e.message; if (!S.connCat) S.connCat = {results:[], total:0}; }
+  S.catBusy = false;
+  render();
+}
+
+/* Debounced so we don't fire a request per keystroke. */
+let _catSearchTimer = null;
+function connCatalogSearch(q){
+  S.connQuery = q;
+  if (_catSearchTimer) clearTimeout(_catSearchTimer);
+  _catSearchTimer = setTimeout(()=>{ _catSearchTimer = null; loadConnCatalog(true); }, 250);
+}
+
+/* ── local connector ─────────────────────────────────────────────────────────
+   The 1MCP half. Three loaders on the same degradable contract as the hosted
+   half: cache unless forced, report failures into state, never throw.
+
+   apiDelete lives here because removing a local server is the only DELETE the
+   Connectors screen issues, and neither apiGet nor apiPost covers one -- same
+   _fail error shape as the others, so a 500 here reads like a 500 anywhere. */
 async function apiDelete(path){
   const r = await fetch(API + path, { method:"DELETE" });
   if (!r.ok) throw await _fail(r, path);
   return r.json();
 }
-async function loadConnectors(force){
-  if (S.connectors && !force) return;
-  try { S.connectors = (await apiGet("/api/connectors")).connectors || []; S.connError = null; }
-  catch (e) { S.connError = e.message; S.connectors = null; }
-  render();
-}
 /* Option A (2026-08-15): the connectors PRESENT IN CLAUDE, read live from
    `claude mcp list` via /api/connectors/configured. Display-only — the panel
    mirrors Claude and delegates add/auth to Claude itself; it never holds a
    token. Holds the whole {connectors,error,stale} payload so the screen can
-   badge status and surface a read error without throwing. */
+   badge status and surface a read error without throwing.
+
+   Kept through the Composio merge: it is the one half of the old connectors
+   model with no equivalent on the hosted/local side, and its endpoint survived
+   because it reads Claude rather than Sutra's own store. The preset gallery and
+   registry search that used to live beside it are NOT re-wired -- the local
+   (1MCP) half now owns those paths. */
 async function loadClaudeConfigured(force){
   if (S.claudeConfigured && !force) return;
   try { S.claudeConfigured = await apiGet("/api/connectors/configured"); }
   catch (e) { S.claudeConfigured = { connectors: [], error: e.message, stale: false }; }
   render();
 }
-async function loadConnectorsCatalog(force){
-  if (S.catalog && !force) return;
-  S.catBusy = true;
-  /* Empty box → the curated built-in presets (a good starting point). Typing →
-     a live search over the open MCP registry (~400 servers). Fail-soft either way. */
-  const q = (S.catQuery || "").trim();
+
+async function loadLocal(force){
+  if (S.local && !force) return;
   try {
-    if (q){
-      const d = await apiGet("/api/connectors/registry?q=" + encodeURIComponent(q) + "&limit=24");
-      S.catalog = d.results || []; S.catSource = d.source || "registry";
-    } else {
-      S.catalog = (await apiGet("/api/connectors/catalog")).catalog || []; S.catSource = "builtin";
-    }
-    S.catError = null;
-  } catch (e) { S.catError = e.message; if (!S.catalog) S.catalog = []; }
-  S.catBusy = false;
+    S.local = await apiGet("/api/connectors/local"); S.localError = null;
+    /* The category <select> on each row offers every tag currently IN USE, so
+       re-filing a server means picking a group that exists rather than typing
+       a new one and hoping it matches. */
+    S.localTags = (S.local.groups||[]).map(g=>g.tag);
+  }
+  catch (e) { S.localError = e.message; S.local = null; }
   render();
 }
-/* Debounced registry search so we don't fire a request per keystroke. */
-let _catSearchTimer = null;
-function connCatalogSearch(q){
-  S.catQuery = q;
-  if (_catSearchTimer) clearTimeout(_catSearchTimer);
-  _catSearchTimer = setTimeout(()=>{ _catSearchTimer = null; loadConnectorsCatalog(true); }, 300);
+
+async function loadLocalRegistry(force){
+  if (S.localReg && !force) return;
+  S.localRegBusy = true;
+  const q = (S.localQuery || "").trim();
+  try { S.localReg = await apiGet("/api/connectors/local/registry?limit=24&q=" +
+                                  encodeURIComponent(q)); }
+  catch (e) { if (!S.localReg) S.localReg = {results:[], error:e.message}; }
+  S.localRegBusy = false;
+  render();
 }
-async function loadClaudeImport(){
-  S.connBusy = "import"; render();
-  try { S.claudeImport = (await apiGet("/api/connectors/claude-import")).connectors || []; }
-  catch (e) { S.claudeImport = []; S.connError = e.message; }
-  S.connBusy = null; render();
+
+let _lcSearchTimer = null;
+function lcRegistrySearch(q){
+  S.localQuery = q;
+  if (_lcSearchTimer) clearTimeout(_lcSearchTimer);
+  _lcSearchTimer = setTimeout(()=>{ _lcSearchTimer = null; loadLocalRegistry(true); }, 300);
 }
 
 /* ── skills auto-refresh ─────────────────────────────────────────────────────

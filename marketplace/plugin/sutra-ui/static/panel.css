@@ -1339,9 +1339,25 @@
   .rfoot{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
 
   /* ── connectors ────────────────────────────────────────────────────────────
-     The MCP-connector screen. Reuses the .rform grid for the add form and the
-     .pill/.btn idioms for badges and controls; only the list rows, env grid and
-     catalog chips are new. */
+     The connectors screen, in two halves -- hosted (Composio) and local (1MCP).
+     Reuses the .rform grid for the add forms and the .pill/.btn idioms for
+     badges and controls; only the list rows, env grid, catalog chips and the
+     two-half headings are new. */
+  /* The kind table in the intro: what each connector IS, side by side, because
+     the difference that matters (where the tool runs) is a comparison. */
+  .conn-kinds{border-collapse:collapse;margin:9px 0 11px;max-width:70ch}
+  .conn-kinds td{padding:4px 12px 4px 0;vertical-align:top;color:var(--muted);
+    font:500 11.5px/1.5 var(--sans);border-bottom:1px solid var(--line-soft)}
+  .conn-kinds td:first-child{white-space:nowrap;color:var(--ink)}
+  /* The divider between the two halves. Heavier than a section heading because
+     it separates two CONNECTORS, not two sections of one. */
+  .conn-kind-h{margin:26px 0 12px;padding-top:14px;border-top:2px solid var(--line);
+    color:var(--ink);font:700 13px/1.2 var(--sans);letter-spacing:.2px}
+  .conn-kind-h:first-of-type{margin-top:18px}
+  .conn-groups{margin-bottom:14px}
+  .conn-ctl select{background:var(--inset);border:1px solid var(--line);border-radius:7px;
+    color:var(--ink);font:500 10.5px/1 var(--mono);padding:6px 7px;max-width:150px}
+  .conn-ctl select:focus{outline:none;border-color:var(--acc)}
   .conn-actions{display:flex;gap:7px;margin-bottom:12px;flex-wrap:wrap}
   .conn-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
   .conn-row{display:flex;gap:12px;align-items:center;padding:11px 13px;
@@ -1431,3 +1447,48 @@
   .onb-skip{background:none;border:1px solid var(--line);color:var(--muted);border-radius:7px;
     padding:9px 15px;font-size:12.5px;cursor:pointer;font-family:inherit}
   .onb-skip:hover{color:var(--ink);border-color:var(--muted)}
+
+/* ── governance surface (chat-surface DS port) ─────────────────────────────────
+   Namespaced gv-*: the per-turn governance chip (collapsed by default, drops
+   open on click) and the chip-less bottom thinking loader. Consumes the panel's
+   OWN tokens (--acc/--ink/--line/--mono) so both panel themes keep working.
+   STATE = primitive x semantic color x motion: new states compose from these
+   pieces; do not fork per-state components. */
+  .gv{margin:2px 0 4px}
+  .gv-chip{display:inline-flex;align-items:center;gap:9px;
+    background:var(--panel,transparent);border:1px solid var(--line);border-radius:999px;
+    padding:3px 13px 3px 9px;font-family:var(--mono);font-size:11px;color:var(--muted);
+    cursor:pointer;user-select:none;transition:border-color .22s,color .22s}
+  .gv-chip:hover{border-color:var(--acc);color:var(--ink)}
+  .gv-open .gv-chip{border-radius:10px 10px 0 0;border-bottom-color:transparent}
+  .gv-open .gv-chev{transform:rotate(180deg)}
+  .gv-pulse{width:7px;height:7px;border-radius:50%;background:var(--acc);flex-shrink:0}
+  .gv-amber{background:var(--warn,#A67B0A)}
+  .gv-beat{animation:gvBeat 1.1s ease-in-out infinite}
+  @keyframes gvBeat{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.6);opacity:.45}}
+  .gv-sep{color:var(--faint)}
+  .gv-chev{transition:transform .22s;font-size:9px;color:var(--faint)}
+  .gv-leaf{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    display:inline-block;vertical-align:bottom}
+  .gv-unres{color:var(--block)}
+  .gv-chip span{white-space:nowrap}
+  .gv-panel{border:1px solid var(--line);border-top:none;border-radius:0 10px 10px 10px;
+    background:var(--panel,transparent);padding:11px 14px;display:flex;flex-direction:column;
+    gap:7px;max-width:640px}
+  .gv-row{display:grid;grid-template-columns:84px 1fr;gap:11px;align-items:baseline;
+    font-size:12px}
+  .gv-row+.gv-row{border-top:1px solid var(--line);padding-top:7px}
+  .gv-label{font-family:var(--mono);font-size:10px;color:var(--acc);
+    text-transform:uppercase;letter-spacing:.8px}
+  .gv-val{color:var(--muted)}
+  .gv-val code{font-family:var(--mono);font-size:10px}
+  .gv-think{display:inline-flex;align-items:center;gap:8px;margin-top:7px;
+    font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .gv-tlabel{background:linear-gradient(90deg,var(--faint) 20%,var(--ink) 50%,var(--faint) 80%);
+    background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:gvShimmer 1.8s linear infinite}
+  @keyframes gvShimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+  .gv-tmeta{font-weight:400;color:var(--faint)}
+  @media (prefers-reduced-motion: reduce){
+    .gv-beat,.gv-tlabel{animation:none}
+  }

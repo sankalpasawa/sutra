@@ -100,12 +100,13 @@ function lsSet(key, value){
 }
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
-  const out = { paneCollapsed:{}, folds:{}, browseW:null,
+  const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
                 railCollapsed:false, railSections:{}, railTab:"home" };
   if (raw && typeof raw === "object"){
     if (raw.paneCollapsed && typeof raw.paneCollapsed === "object") out.paneCollapsed = raw.paneCollapsed;
     if (raw.folds && typeof raw.folds === "object") out.folds = raw.folds;
     if (typeof raw.railCollapsed === "boolean") out.railCollapsed = raw.railCollapsed;
+    if (typeof raw.browseClosed === "boolean") out.browseClosed = raw.browseClosed;
     if (raw.railSections && typeof raw.railSections === "object") out.railSections = raw.railSections;
     if (raw.railTab === "home" || raw.railTab === "code") out.railTab = raw.railTab;
     if (typeof raw.browseW === "number" && raw.browseW > 120) out.browseW = raw.browseW;
@@ -664,12 +665,22 @@ function patchStreaming(){
       missed = true;
       return;
     }
+    /* gvBody (05-chat.js, reached via window so module order can never hard-fail
+       streaming) strips governance emissions so the streamed body matches what
+       the settled render will show. Fallback is identity: raw text over nothing. */
+    const html = mdHtml((window.gvBody || function(x){ return x; })(t.response)) +
+      '<span class="caret" style="color:var(--acc)">█</span>';
+    /* Unchanged output is not repainted. Rewriting identical innerHTML every
+       frame tears the DOM down just to rebuild the same pixels -- visible churn
+       on long replies. The cache lives ON the node, so a full render() rebuild
+       discards it with the node and the first patch after always paints. */
+    if (el.__sutraLastHtml === html) return;
+    el.__sutraLastHtml = html;
     const pane = el.closest(".pane");
     const pb = pane && pane.querySelector(".pb");
     const sid = pane && pane.dataset.sess;
     const pin = pb && !S.userScrolled.get(sid);
-    el.innerHTML = mdHtml(t.response) +
-      '<span class="caret" style="color:var(--acc)">█</span>';
+    el.innerHTML = html;
     /* Only follow the tail when the operator has not scrolled away. __pinning
        marks it as OUR scroll so the listener does not read it as intent. */
     if (pin){

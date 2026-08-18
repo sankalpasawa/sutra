@@ -532,7 +532,7 @@ const TITLES = {departments:["Departments","domains/*.json"],charters:["Charters
   editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
-  connectors:["Connectors","MCP servers offered to the sessions this panel starts"],
+  connectors:["Connectors","Composio toolkits + local MCP servers, offered to the sessions this panel starts"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
   settings:["Settings","~/.sutra-ui/settings.json · PATH"],
@@ -792,6 +792,87 @@ function toolCallsHtml(calls){
   }).join("")}</div>`;
 }
 
+/* ── governance surface (chat-surface DS port) ────────────────────────────────
+   parseGov reads the model's own governance emissions (H-Sutra header, DEPTH,
+   PLACEMENT, OS trace, block fences) out of a response; gvBody strips them from
+   the prose so they render as the chip + panel instead of raw markdown. Pure
+   string functions, no DOM — the grammar is the risky contract, kept testable.
+   Anything not matched renders as body prose: raw text is never lost. */
+function parseGov(text){
+  const g = { verb:null, depth:null, risk:null, leaf:null, trace:null };
+  if (!text) return { g, body: "" };
+  const h = text.match(/^\s*\[([A-Z0-9-]+)·([A-Z0-9-]+)[^\]]*RISK:\s*(\w+)\s*\]/);
+  if (h){ g.verb = h[2]; g.risk = h[3]; }
+  const d = text.match(/DEPTH:\s*(\d)\s*\/\s*5/); if (d) g.depth = d[1];
+  const p = text.match(/PLACEMENT:[^\n|]*>\s*([^>|\n]+?)\s*\|/); if (p) g.leaf = p[1].trim();
+  const tr = text.match(/\n`?OS:\s*([^\n`]+)/); if (tr) g.trace = tr[1].trim();
+  let body = text.replace(/^\s*\[[A-Z0-9-]+·[^\]]*\]\s*\n?/, "");
+  /* governance fences are contiguous field lines — a blank line inside means the
+     lazy match mispaired with the NEXT fence opener; leave those alone */
+  body = body.replace(/```[\s\S]*?```/g, (m) =>
+    /(INPUT:|TASK:|FLOW|BLUEPRINT|DEPTH:|^\s*```\s*\nOS:)/m.test(m) && !/\n[ \t]*\r?\n/.test(m)
+      ? "" : m);
+  body = body.replace(/^PLACEMENT:[^\n]*\n?/gm, "");
+  body = body.replace(/^FLOW:[^\n]*\n?/gm, "");
+  body = body.replace(/\n`?OS:\s*[^\n]+\s*$/, "");
+  /* streaming tolerance: a trailing UNTERMINATED fence that already shows a
+     governance key is hidden until it closes — raw governance mid-stream reads
+     as broken; the settled render restores anything non-governance */
+  body = body.replace(/```[^`]*$/, (m) =>
+    /(INPUT:|TASK:|FLOW|BLUEPRINT|DEPTH:|OS:)/.test(m) ? "" : m);
+  return { g, body: body.replace(/\n{3,}/g, "\n\n").trim() };
+}
+/* patchStreaming (01-state.js) reaches this through window with a fallback so
+   module order can never hard-fail streaming */
+function gvBody(text){ return parseGov(text).body; }
+if (typeof window !== "undefined") window.gvBody = gvBody;
+
+/* The collapsed governance chip + drop-open panel for one panel-run turn.
+   Chip: turn n · VERB · Dn · domain · confidence/held. Panel: the SAME honest
+   placement prose, grounding charter, and trace that used to print inline —
+   relocated behind one click, never reworded. Lives at .turn level, OUTSIDE
+   [data-aturn], so patchTurn()/patchStreaming() never touch it mid-stream. */
+function gvChipHtml(t, i){
+  const open = !!(S.govOpen && t.uid && S.govOpen[t.uid]);
+  const pg = parseGov(t.response || "").g;
+  const held = t.mode === "floor";
+  const segs = [`<span>turn ${i+1}</span>`];
+  if (pg.verb)  segs.push(`<span>${esc(pg.verb)}</span>`);
+  if (pg.depth) segs.push(`<span>D${esc(pg.depth)}</span>`);
+  if (t.domain) segs.push(`<span class="gv-leaf">${esc(t.domain.name)}</span>`);
+  segs.push(t.domain
+    ? `<span>${held ? "held" : esc(Number(t.confidence||0).toFixed(2))}</span>`
+    : `<span class="gv-unres">unresolved</span>`);
+  if (pg.risk) segs.push(`<span>risk:${esc(pg.risk.toLowerCase())}</span>`);
+  const prose = !t.domain
+    ? `<b style="color:var(--block)">Unresolved</b> — no department could be
+       resolved, so this ran without a charter.${t.blocked?` <span style="color:var(--faint)">${esc(t.blocked)}</span>`:""}`
+    : (t.blocked && !t.placement
+      ? `Classified to <b style="color:var(--ink)">${esc(t.domain.name)}</b>, but
+         <b style="color:var(--block)">nothing was filed</b> —
+         <span style="color:var(--faint)">${esc(t.blocked)}</span>`
+      : (held
+        ? `No department claims this, so it was held at the nearest live ancestor rather than guessed.`
+        : `Filed to <b style="color:var(--ink)">${esc(t.domain.name)}</b>${t.matched&&t.matched.length?` on <code>${t.matched.map(esc).join("</code> <code>")}</code>`:""}.`));
+  return `<div class="gv ${open?"gv-open":""}">
+    <button class="gv-chip" type="button" data-govopen="${esc(t.uid||"")}"
+      aria-expanded="${open?"true":"false"}"
+      title="Governance for this turn — click to ${open?"collapse":"expand"}">
+      <span class="gv-pulse${held||!t.domain?" gv-amber":""}" aria-hidden="true"></span>
+      ${segs.join(`<span class="gv-sep">·</span>`)}
+      <span class="gv-chev" aria-hidden="true">▼</span>
+    </button>
+    ${open?`<div class="gv-panel">
+      <div class="gv-row"><span class="gv-label">Placement</span><span class="gv-val">${
+        t.domain?`<code>${esc(dPath(t.domain.ref))}</code> `:""}${prose}</span></div>
+      ${t.charter?`<div class="gv-row"><span class="gv-label">Grounding</span><span class="gv-val">
+        <span style="color:var(--acc);font-family:var(--mono);font-size:10px">${esc(t.charter.id)}</span>
+        ${esc(t.charter.title)}<br><span style="font-style:italic">${esc(t.charter.purpose)}</span></span></div>`:""}
+      ${pg.trace?`<div class="gv-row"><span class="gv-label">Trace</span><span class="gv-val"><code>${esc(pg.trace)}</code></span></div>`:""}
+    </div>`:""}
+  </div>`;
+}
+
 function turnResponse(t){
   const nTools = (t.tools && t.tools.length) || 0;
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
@@ -801,12 +882,18 @@ function turnResponse(t){
      elapsed time, no counts, no phase, no throughput -- a 3-second turn and a
      wedged one were the same picture. data-runstrip is the ticker's patch anchor
      (text node only); the sweep is indeterminate on purpose. */
-  const state = t.streaming
-      ? `<span class="runstrip live">${SPARK}<b class="shim" data-runstrip="${esc(t.uid||"")}"
-           >${esc(runPhrase(t))}</b></span><span class="runbar" aria-hidden="true"><i></i></span>`
+  /* DS port: the live loader is chip-less and BOTTOMMOST (rendered last in the
+     concat below); the settled verdict pill stays at the top. data-runstrip
+     stays the ticker's patch anchor and still holds ONLY a text node. */
+  const stateTop = t.streaming ? ""
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
+  const stateBottom = t.streaming
+      ? `<div class="gv-think"><span class="gv-pulse gv-beat" aria-hidden="true"></span
+           ><span class="gv-tlabel">thinking</span><b class="gv-tmeta" data-runstrip="${esc(t.uid||"")}"
+           >${esc(runPhrase(t))}</b></div>`
+      : "";
   /* A turn whose saved thread had gone and was re-sent as a new one. Stated,
      because the reply legitimately will not remember the earlier conversation
      and an operator who is not told that reads it as the model forgetting. */
@@ -877,7 +964,7 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
      life of the turn, which t.uid gives it (assigned once, never reused). */
   const body = t.response
     ? `<div class="md" data-resp="${esc(t.uid||"")}" style="margin-top:6px;color:var(--ink)">${
-        mdHtml(t.response)}${
+        mdHtml(gvBody(t.response))}${
         t.streaming ? `<span class="caret" style="color:var(--acc)">█</span>` : ""}</div>` : "";
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
@@ -888,7 +975,7 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
   /* data-aturn anchors this block for patchTurn(): a tool frame replaces THIS
      node instead of re-rendering the pane. */
   return `<div class="a" data-aturn="${esc(t.uid||"")}"
-    >${state}${replayed}${meta}${tools}${retrying}${waiting}${body}${err}</div>`;
+    >${stateTop}${replayed}${meta}${tools}${retrying}${waiting}${body}${err}${stateBottom}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)
@@ -909,29 +996,13 @@ function turnBlock(t, i){
           so no placement was ever filed for it.</div>
       </div>${turnResponse(t)}</div>`;
   }
+  /* DS port: the placement prose, grounding charter, and trace that used to
+     print inline every turn now live behind the collapsed governance chip —
+     same honest words (incl. the mode-"none"/blocked/floor branches, which
+     moved verbatim into gvChipHtml), one click away instead of always-on. */
   return `<div class="turn">
     <div class="u md">${mdHtml(t.text)}</div>
-    <div class="a">
-      ${t.domain?`<span class="fchip ${t.mode==="floor"?"held":""}">turn ${i+1} · ${esc(dPath(t.domain.ref))} ${esc(t.domain.name)}${t.mode==="floor"?" · held at ancestor":" · "+t.confidence.toFixed(2)}</span><br>`:""}
-      ${!t.domain
-        /* mode "none": there is no department. The old template still printed
-           "Filed to ." — an empty owner dressed as a filing. Say what happened. */
-        ? `<b style="color:var(--block)">Unresolved</b> — no department could be
-           resolved, so this ran without a charter.${t.blocked?` <span style="color:var(--faint)">${esc(t.blocked)}</span>`:""}`
-        /* classified, but write_placement refused (no reachable charter, I-P2).
-           A department was chosen; nothing was filed. Both halves are true and
-           "Filed to X" alone is the false one. */
-        : (t.blocked && !t.placement
-          ? `Classified to <b style="color:var(--ink)">${esc(t.domain.name)}</b>, but
-             <b style="color:var(--block)">nothing was filed</b> —
-             <span style="color:var(--faint)">${esc(t.blocked)}</span>`
-          : (t.mode==="floor"
-            ? `No department claims this, so it was held at the nearest live ancestor rather than guessed.`
-            : `Filed to <b style="color:var(--ink)">${esc(t.domain.name)}</b>${t.matched&&t.matched.length?` on <code>${t.matched.map(esc).join("</code> <code>")}</code>`:""}.`))}
-      ${t.charter?`<div class="ground" style="margin-top:7px"><b>Grounding</b> —
-        <span style="color:var(--acc);font-family:var(--mono);font-size:10px">${esc(t.charter.id)}</span>
-        ${esc(t.charter.title)}<br><span style="font-style:italic">${esc(t.charter.purpose)}</span></div>`:""}
-    </div>${turnResponse(t)}</div>`;
+    ${gvChipHtml(t, i)}${turnResponse(t)}</div>`;
 }
 
 /* Chat body. A real session that has no readable transcript gets an HONEST

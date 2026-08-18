@@ -312,6 +312,20 @@ class TestCatalog(unittest.TestCase):
 
 
 # --------------------------------------------------- endpoints + the merge ---
+# RETIRED AT THE ROUTE LEVEL, NOT DELETED (sync with upstream main, 2026-08-18).
+# Upstream replaced the hand-maintained MCP model with Composio (hosted) + 1MCP
+# (local) and took over /api/connectors, /catalog, /registry and the
+# --mcp-config merge. connectors_store.py is kept in the tree and its STORE
+# logic is still exercised by every other class in this file; only the classes
+# that assert the old HTTP surface are skipped, because that surface genuinely
+# no longer exists. Skipped rather than deleted so the next connectors rewrite
+# (2.110.1 onward) inherits the contract these pinned. Deleting them would erase
+# it; leaving them failing would make a red suite normal.
+_ROUTES_MOVED = ("routes moved to the Composio/1MCP model upstream; the store "
+                 "logic they wrap is still covered by the other classes here")
+
+
+@unittest.skip(_ROUTES_MOVED)
 class TestEndpointsAndMerge(_IsolatedStore):
     def test_list_and_upsert_handlers(self):
         self.assertEqual(app.api_connectors(), {"connectors": []})
@@ -537,6 +551,7 @@ class TestCatalogNormalized(unittest.TestCase):
             self.assertTrue(r["title"], "title falls back to name, never blank")
 
 
+@unittest.skip(_ROUTES_MOVED)
 class TestRegistryEndpointFailSoft(_IsolatedStore):
     """The endpoint's fail-soft contract, driven by monkeypatching the fetch so
     NO test here needs the network."""
@@ -603,6 +618,7 @@ class TestClaudeImport(_IsolatedStore):
         for junk in (None, [], "x", {"": {"command": "x"}}):
             self.assertEqual(cs.normalize_claude_mcp_servers(junk), [])
 
+    @unittest.skip(_ROUTES_MOVED)
     def test_endpoint_reads_the_file_and_is_fail_soft(self):
         # point the reader at a temp ~/.claude.json via the env override
         saved = os.environ.get("SUTRA_UI_CLAUDE_JSON")
