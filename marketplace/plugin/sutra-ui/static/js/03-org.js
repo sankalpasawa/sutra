@@ -1082,6 +1082,109 @@ function balanceAsk(e){
   const sid = openBalanceChat();
   submitTurn(text, sid);
 }
+
+/* ── Teamsutra: the Ask Sutra seeded chat ─────────────────────────────────
+   Same shape as openBalanceChat, and for the same reasons: a FRESH local
+   session, the seed pinned into turnOpts BEFORE the pane renders so the very
+   first turn carries it. The difference is that this seed is ASSEMBLED per
+   invocation — persona + the department the selection resolved to + the
+   selected text — and must therefore be BUDGETED: the server truncates
+   append_system_prompt at 8000 chars SILENTLY (app.py _flag_str), and a
+   silently cut briefing is a chat that confidently answers from half a
+   department. */
+
+const TS_SEED_MAX = 8000;   // mirror of app.py's cap — checked by test 29b
+
+const TS_PERSONA =
+  "You are Teamsutra, the in-app assistant of the Sutra desktop panel. The " +
+  "user selected a piece of text inside the app and asked about it. FIRST " +
+  "explain — what the selected thing is, in the context of the department " +
+  "given below; be brief and concrete. If the user describes a problem or " +
+  "asks for a change, offer to file it as a task (say what you would write, " +
+  "then file only on their yes). HONESTY FLOOR: context below is structure " +
+  "only — names, paths, charter titles. If it was truncated, the last line " +
+  "says so; when a claim needs data you do not have, say that rather than " +
+  "inventing it. A null department means nothing classified this selection " +
+  "— do not guess one.";
+
+/* Assemble the department slice of the seed, cheapest facts first, and cut
+   HIERARCHICALLY when over budget: descendants drop before the parent chain,
+   the parent chain before the selection, and the truncation is STATED in the
+   seed itself. Order of sacrifice, most expendable first:
+     child charter titles -> child list -> ancestor names -> nothing else.
+   The selection and the persona are never cut (the selection is already
+   capped at 4000 by the bubble). */
+function tsBuildSeed(ctx){
+  const parts = { persona: TS_PERSONA, dept: "", sel: "" };
+  const d = ctx.domainRef && typeof byRef === "function" ? byRef(ctx.domainRef) : null;
+  if (d){
+    const chain = [];
+    let cur = d;
+    for (let i = 0; cur && i < 12; i++){
+      chain.unshift((typeof dPath === "function" ? dPath(cur.ref) + " " : "") + cur.name);
+      cur = cur.parent_ref ? byRef(cur.parent_ref) : null;
+    }
+    const kids = (typeof DOMAINS !== "undefined" ? DOMAINS : [])
+      .filter(x => x.parent_ref === d.ref)
+      .map(x => x.name);
+    const charters = (typeof CHARTERS !== "undefined" ? CHARTERS : [])
+      .filter(c => c.domain_ref === d.ref && (c.status || "active") !== "retired")
+      .map(c => c.title).filter(Boolean);
+    const full = [
+      "DEPARTMENT: " + chain.join(" > "),
+      kids.length ? "SUB-DEPARTMENTS: " + kids.join(", ") : "",
+      charters.length ? "CHARTERS: " + charters.join(" | ") : "",
+    ].filter(Boolean).join("\n");
+    const noCharters = [
+      "DEPARTMENT: " + chain.join(" > "),
+      kids.length ? "SUB-DEPARTMENTS: " + kids.join(", ") : "",
+    ].filter(Boolean).join("\n");
+    const bare = "DEPARTMENT: " + chain.join(" > ");
+    parts.dept = { full, noCharters, bare };
+  } else if (ctx.charterId){
+    parts.dept = { full: "CHARTER: " + ctx.charterId, noCharters: "CHARTER: " + ctx.charterId,
+                   bare: "CHARTER: " + ctx.charterId };
+  } else {
+    parts.dept = { full: "DEPARTMENT: none — nothing classified this selection",
+                   noCharters: "DEPARTMENT: none — nothing classified this selection",
+                   bare: "DEPARTMENT: none — nothing classified this selection" };
+  }
+  parts.sel = "SELECTED TEXT (screen: " + (ctx.screen || "unknown") + "):\n" + (ctx.text || "");
+  const join = dept => parts.persona + "\n\n" + dept + "\n\n" + parts.sel;
+  const MARK = "\n[context truncated to fit the briefing budget]";
+  let seed = join(parts.dept.full);
+  if (seed.length <= TS_SEED_MAX) return seed;
+  seed = join(parts.dept.noCharters) + MARK;
+  if (seed.length <= TS_SEED_MAX) return seed;
+  seed = join(parts.dept.bare) + MARK;
+  if (seed.length <= TS_SEED_MAX) return seed;
+  /* Persona + bare chain + selection still over: cut the SELECTION's tail as
+     the last resort, keeping the marker. Never emit an over-budget seed. */
+  const overhead = join(parts.dept.bare).length - (ctx.text || "").length;
+  const room = Math.max(0, TS_SEED_MAX - overhead - MARK.length);
+  parts.sel = "SELECTED TEXT (screen: " + (ctx.screen || "unknown") + "):\n" +
+              (ctx.text || "").slice(0, room);
+  return join(parts.dept.bare) + MARK;
+}
+
+function openTeamsutraChat(ctx){
+  ctx = ctx || {};
+  const s = { id:"s-"+(++SID), title:"Ask Sutra", created_ms:NOW, updated_ms:NOW,
+              turns:[], local:true, loadState:"live" };
+  S.sessions.unshift(s);
+  S.turnOpts[s.id] = Object.assign({}, S.turnOpts[s.id],
+                                   { append_system_prompt: tsBuildSeed(ctx) });
+  S.openPanes.push(s.id);
+  if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
+  render();
+  const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
+  /* First turn: the question is implicit in the gesture. Ask it for them so
+     the pane is never blank — the same no-special-first-turn path Balance
+     uses (submitTurn carries classify + optimistic render + retry). */
+  submitTurn("What is this about?\n\n> " + (ctx.text || "").slice(0, 400), s.id);
+  return s.id;
+}
+if (typeof window !== "undefined") window.openTeamsutraChat = openTeamsutraChat;
 SCREENS.balance = () => {
   if (!S.balance || S.balance.loading)
     return `<p style="color:var(--muted)">Reading the Balance state contract…</p>`;

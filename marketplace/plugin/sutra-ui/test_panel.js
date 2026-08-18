@@ -183,7 +183,10 @@ const EPILOGUE = `
   /* the per-turn chat surface: the projection is unit-tested in
      test_governance.js, and these two prove the projection actually REACHES
      the DOM -- a correct roster rendered into the wrong place still fails */
-  gvAgents, turnResponse, agentMatch, focusKeyOf, patchTurn
+  gvAgents, turnResponse, agentMatch, focusKeyOf, patchTurn,
+  /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
+     tests can prove the 8000-char server cap is never silently exceeded */
+  tsBuildSeed, TS_SEED_MAX, openTeamsutraChat
 };
 `;
 
@@ -1888,6 +1891,217 @@ test("29e. patchTurn never STEALS focus from outside the turn it patched", () =>
     if (prevA) Object.defineProperty(sandbox.document, "activeElement", prevA);
     else delete sandbox.document.activeElement;
   }
+});
+
+/* ── 28. the Teamsutra selection bubble (11-teamsutra.js) ──────────────── */
+
+const TS_SRC = fs.readFileSync(path.join(__dirname, "static", "js", "11-teamsutra.js"), "utf8");
+
+/* Same shape as actDom(), with the two selector forms 11-teamsutra actually
+   uses and the activity stub lacks: comma lists ("input, textarea, .smenu")
+   and the [id^="dir-"] prefix match. Extended HERE, not in actDom — the
+   activity tests keep their own smaller contract. */
+function tsDom() {
+  function matchOne(n, sel) {
+    if (!n || !n._attrs) return false;
+    sel = sel.trim();
+    let m = sel.match(/^\[id\^="([^"]+)"\]$/);
+    if (m) return typeof n.id === "string" && n.id.indexOf(m[1]) === 0;
+    if (sel[0] === "[") return n.hasAttribute(sel.slice(1, -1));
+    if (sel[0] === ".") return n.classList.contains(sel.slice(1));
+    if (sel[0] === "#") return n.id === sel.slice(1);
+    m = sel.match(/^([a-z]+)\.([\w-]+)$/i);            // e.g. nav.rail
+    if (m) return n.tagName === m[1].toUpperCase() && n.classList.contains(m[2]);
+    m = sel.match(/^\.([\w-]+)\[([\w-]+)\]$/);          // e.g. .pane[data-sess]
+    if (m) return n.classList.contains(m[1]) && n.hasAttribute(m[2]);
+    return n.tagName === sel.toUpperCase();
+  }
+  function matchSel(n, sel) {
+    return String(sel).split(",").some(s => matchOne(n, s));
+  }
+  function mkEl(tag) {
+    return {
+      tagName: String(tag).toUpperCase(), nodeType: 1, id: "", _text: "", _html: "",
+      get parentElement() { return this._parent; },
+      _attrs: {}, _kids: [], _parent: null, _listeners: {}, style: {},
+      classList: {
+        _s: new Set(),
+        add(...c) { c.forEach(x => this._s.add(x)); },
+        contains(c) { return this._s.has(c); },
+      },
+      get textContent() { return this._text; },
+      set textContent(v) { this._text = String(v); },
+      get innerHTML() { return this._html; },
+      set innerHTML(v) { this._html = String(v); this._kids = []; },
+      setAttribute(k, v) { this._attrs[k] = String(v); },
+      getAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null; },
+      hasAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k); },
+      addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); },
+      appendChild(c) { c._parent = this; this._kids.push(c); return c; },
+      querySelector() { return null; },
+      closest(sel) { let n = this; while (n) { if (matchSel(n, sel)) return n; n = n._parent; } return null; },
+    };
+  }
+  const head = mkEl("head"); const body = mkEl("body");
+  function byId(node, id) {
+    let hit = null;
+    (function walk(n) { (n._kids || []).forEach(k => { if (!hit && k.id === id) hit = k; walk(k); }); })(node);
+    return hit;
+  }
+  const doc = {
+    readyState: "complete", head, body, _listeners: {},
+    createElement: t => mkEl(t),
+    getElementById: id => byId(head, id) || byId(body, id),
+    addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); },
+  };
+  return { doc, mkEl };
+}
+
+function mountTeamsutra() {
+  const { doc, mkEl } = tsDom();
+  const box = {
+    console, document: doc, setTimeout: fn => fn(), clearTimeout: () => {},
+    Date, Math, JSON, Set, Object, Array, String, Number, Boolean, RegExp, Error,
+  };
+  box.window = box; box.globalThis = box;
+  vm.createContext(box);
+  new vm.Script(TS_SRC, { filename: "11-teamsutra.js#ts-test" }).runInContext(box);
+  return { doc, mkEl, box };
+}
+
+test("28a. mounts once: injects #ts-style, registers listeners, re-load is a no-op", () => {
+  const m = mountTeamsutra();
+  assert.ok(m.doc.getElementById("ts-style"), "must inject its own <style id=ts-style>");
+  const before = (m.doc._listeners.mouseup || []).length;
+  assert.ok(before >= 1, "must listen for mouseup on the document");
+  new vm.Script(TS_SRC, { filename: "11-teamsutra.js#reload" }).runInContext(m.box);
+  assert.strictEqual((m.doc._listeners.mouseup || []).length, before,
+    "a double-load must hit the __tsMounted guard, not add listeners again");
+});
+
+test("28b. resolver: per-turn data-turn-domain wins, and an EMPTY one resolves null", () => {
+  const m = mountTeamsutra();
+  const turn = m.mkEl("div"); turn.setAttribute("data-turn-domain", "dref-abc123");
+  const p = m.mkEl("p"); turn.appendChild(p);
+  assert.strictEqual(JSON.stringify(m.box.__tsResolve(p)), JSON.stringify({ ref: "dref-abc123", kind: "turn" }));
+  // A transcript-style turn carries the attribute EMPTY -- that is "nothing
+  // classified this", and the resolver must fall through, never return "".
+  const bare = m.mkEl("div"); bare.setAttribute("data-turn-domain", "");
+  const q = m.mkEl("p"); bare.appendChild(q);
+  assert.strictEqual(m.box.__tsResolve(q), null);
+});
+
+test("28c. resolver: [data-ref] is trusted only on the departments screen", () => {
+  const m = mountTeamsutra();
+  const tile = m.mkEl("button"); tile.setAttribute("data-ref", "dref-tile01");
+  const span = m.mkEl("span"); tile.appendChild(span);
+  m.box.S = { screen: "departments" };
+  assert.strictEqual(JSON.stringify(m.box.__tsResolve(span)), JSON.stringify({ ref: "dref-tile01", kind: "tile" }));
+  // The SAME attribute appears on routing-chart nodes inside chat, where it
+  // is not a department address. Off the departments screen: null.
+  m.box.S = { screen: "charters" };
+  assert.strictEqual(m.box.__tsResolve(span), null);
+});
+
+test("28d. resolver: directory sections and charter rows; plain prose is null", () => {
+  const m = mountTeamsutra();
+  m.box.S = { screen: "departments" };
+  const dir = m.mkEl("section"); dir.id = "dir-dref-dir999";
+  const t = m.mkEl("p"); dir.appendChild(t);
+  assert.strictEqual(JSON.stringify(m.box.__tsResolve(t)), JSON.stringify({ ref: "dref-dir999", kind: "directory" }));
+  const row = m.mkEl("tr"); row.setAttribute("data-charter", "C-abcdef1234567890");
+  const td = m.mkEl("td"); row.appendChild(td);
+  assert.strictEqual(JSON.stringify(m.box.__tsResolve(td)),
+    JSON.stringify({ charter: "C-abcdef1234567890", kind: "charter" }));
+  const lone = m.mkEl("p");
+  assert.strictEqual(m.box.__tsResolve(lone), null,
+    "unattributed prose must resolve to null — never to a guess");
+});
+
+test("28e. chrome exclusion: selections in inputs, menus, the rail and the bubble itself never show it", () => {
+  const m = mountTeamsutra();
+  for (const make of [
+    () => m.mkEl("input"), () => m.mkEl("textarea"), () => m.mkEl("button"),
+    () => { const e = m.mkEl("div"); e.classList.add("smenu"); return e; },
+    () => { const e = m.mkEl("div"); e.classList.add("composer"); return e; },
+    () => { const e = m.mkEl("div"); e.classList.add("sidewrap"); return e; },
+    () => { const e = m.mkEl("nav"); e.classList.add("rail"); return e; },
+    () => { const e = m.mkEl("button"); e.id = "ts-bubble"; return e; },
+  ]) {
+    const host = make();
+    const inner = m.mkEl("span"); host.appendChild(inner);
+    assert.strictEqual(m.box.__tsInChrome(inner), true,
+      "selection inside <" + host.tagName + (host.id ? "#" + host.id : "") + "> must be excluded");
+  }
+  const prose = m.mkEl("p");
+  assert.strictEqual(m.box.__tsInChrome(prose), false, "plain prose is not chrome");
+});
+
+/* ── 29. the Teamsutra seed budgeter (03-org.js) ───────────────────────── */
+
+test("29a. a null department seeds 'none' and never guesses", () => {
+  T.DOMAINS = []; T.CHARTERS = [];
+  const seed = T.tsBuildSeed({ text: "what is this", screen: "evals",
+                               domainRef: null, charterId: null });
+  assert.ok(seed.indexOf("DEPARTMENT: none") !== -1,
+    "a selection nothing classified must say so");
+  assert.ok(seed.indexOf("do not guess") !== -1, "the persona must forbid guessing");
+  assert.ok(seed.length <= T.TS_SEED_MAX);
+});
+
+test("29b. byte-exact budget: the largest org + longest selection never exceeds the cap, and says it truncated", () => {
+  /* Build an org bigger than the budget could ever hold: 12-deep chain, 80
+     children, 120 charters with long titles. */
+  const doms = [];
+  let parent = null;
+  for (let i = 0; i < 12; i++) {
+    const ref = "dref-chain" + i;
+    doms.push({ ref, name: "Department Layer " + i + " With A Deliberately Long Name",
+                parent_ref: parent, ts_minted_ms: i });
+    parent = ref;
+  }
+  for (let i = 0; i < 80; i++) {
+    doms.push({ ref: "dref-kid" + i, name: "Subdepartment Number " + i + " Of Many",
+                parent_ref: "dref-chain11", ts_minted_ms: 100 + i });
+  }
+  T.DOMAINS = doms;
+  T.CHARTERS = Array.from({ length: 120 }, (_, i) => ({
+    id: "C-" + i, domain_ref: "dref-chain11",
+    title: "Charter " + i + ": a title long enough to blow any budget wide open when repeated",
+    status: "shipped" }));
+  const seed = T.tsBuildSeed({ text: "x".repeat(4000), screen: "departments",
+                               domainRef: "dref-chain11" });
+  assert.ok(seed.length <= T.TS_SEED_MAX,
+    "seed is " + seed.length + " chars — the server truncates at " + T.TS_SEED_MAX + " SILENTLY");
+  assert.ok(seed.indexOf("[context truncated") !== -1,
+    "a cut seed must SAY it was cut — a silently halved briefing answers confidently from half a department");
+  assert.ok(seed.indexOf("DEPARTMENT: ") !== -1, "the parent chain survives every cut");
+  assert.ok(seed.indexOf("SELECTED TEXT") !== -1, "the selection survives every cut");
+});
+
+test("29c. a small org fits whole: chain, children and charters all present, no marker", () => {
+  T.DOMAINS = [
+    { ref: "dref-root", name: "Asawa", parent_ref: null, ts_minted_ms: 1 },
+    { ref: "dref-os", name: "Sutra OS", parent_ref: "dref-root", ts_minted_ms: 2 },
+    { ref: "dref-ts", name: "Teamsutra", parent_ref: "dref-os", ts_minted_ms: 3 },
+  ];
+  T.CHARTERS = [{ id: "C-x", domain_ref: "dref-os", title: "Protocol System", status: "shipped" }];
+  const seed = T.tsBuildSeed({ text: "short", screen: "departments", domainRef: "dref-os" });
+  assert.ok(seed.indexOf("Sutra OS") !== -1);
+  assert.ok(seed.indexOf("SUB-DEPARTMENTS: Teamsutra") !== -1);
+  assert.ok(seed.indexOf("CHARTERS: Protocol System") !== -1);
+  assert.ok(seed.indexOf("[context truncated") === -1, "nothing was cut, so nothing may claim it was");
+});
+
+test("28f. panel.html loads 11-teamsutra before 09-tail, so boot() stays last", () => {
+  const h = panelHtml;
+  // Match the script TAGS, not bare filenames — the names also appear in
+  // prose comments earlier in the file.
+  const ts = h.indexOf('<script src="/static/js/11-teamsutra.js">');
+  const tail = h.indexOf('<script src="/static/js/09-tail.js">');
+  assert.ok(ts !== -1, "panel.html must register 11-teamsutra.js");
+  assert.ok(tail !== -1, "panel.html must still register 09-tail.js");
+  assert.ok(ts < tail, "11-teamsutra.js must load before 09-tail.js (test 21b's invariant)");
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

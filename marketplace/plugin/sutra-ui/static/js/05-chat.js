@@ -1080,7 +1080,14 @@ function turnBlock(t, i){
      print inline every turn now live behind the collapsed governance chip —
      same honest words (incl. the mode-"none"/blocked/floor branches, which
      moved verbatim into gvChipHtml), one click away instead of always-on. */
-  return `<div class="turn">
+  /* data-turn-domain: the department this turn was classified into, for the
+     Teamsutra selection layer. PANEL turns only — the transcript branch above
+     deliberately carries none, because those ran in the terminal and nothing
+     ever classified them; a selection there resolves to "no department"
+     rather than to a guess. A session holds MANY placements and the pane
+     header shows only the last turn's, so per-turn provenance must live here,
+     on the turn itself. Empty string when classification returned nothing. */
+  return `<div class="turn" data-turn-domain="${t.domain && t.domain.ref ? esc(t.domain.ref) : ""}">
     <div class="u md">${mdHtml(t.text)}</div>
     ${gvChipHtml(t, i)}${turnResponse(t)}</div>`;
 }
