@@ -37,4 +37,11 @@ contextBridge.exposeInMainWorld("sutra", {
      or null if the user cancels. Backs the working-directory fields; absent in a
      browser, where the panel keeps its text inputs as the only way in. */
   pickDirectory: (defaultPath) => ipcRenderer.invoke("sutra:pick-directory", defaultPath),
+
+  /* Mark a Balance actionable (done | movement). The write endpoint is
+     desktop-token-gated and the token NEVER reaches the renderer — the main
+     process attaches it. Absent in a browser, where Balance is read-only;
+     the panel keys the checkbox UI off this verb's presence. */
+  markActionable: (id, op, note) =>
+    ipcRenderer.invoke("sutra:balance-actionable", { id, op, note }),
 });

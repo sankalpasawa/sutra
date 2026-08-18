@@ -617,6 +617,20 @@ ipcMain.handle("sutra:update-apply", async () => {
 
 ipcMain.handle("sutra:update-defer", async () => ({ ok: true, deferred: true }));
 
+/* Balance actionable write: the ONLY path from the panel to the token-gated
+   endpoint. The renderer asks; the main process — which owns the token —
+   attaches it via api() below. Input is passed through untouched: the server
+   owns validation (op whitelist, id shape, note cap) and answers 4xx there. */
+ipcMain.handle("sutra:balance-actionable", async (_e, body) => {
+  try {
+    const b = body || {};
+    return await api("POST", "/api/balance/actionable",
+                     { id: b.id, op: b.op, note: b.note });
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
+
 /* Native folder chooser for the panel's working-directory fields. The panel is
    the same app the CLI serves to an ordinary browser, where this cannot exist --
    so it is offered over the preload bridge and the renderer only draws the Browse
