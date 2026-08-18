@@ -17,7 +17,7 @@
   --paper:#FBF8F3; --paper-2:#F4EFE7;
   --ink:#1C1917; --ink-2:#4A443E; --muted:#8A8078; --faint:#B8AFA5;
   --rule:#E3DACD; --accent:#A8543A;
-  --serif:'Fraunces',Georgia,serif;
+  --serif:'Fraunces','Fraunces-fb',Georgia,serif;
   --sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
   --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
   --ease:cubic-bezier(.22,.8,.3,1);        /* SETTLE — arrivals, never overshoots */
@@ -27,6 +27,27 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:68px}
+/* ── metric-matched serif fallback ──────────────────────────────────────
+   Measured on 2026-08-18: Fraunces sets ~8.5% narrower than Georgia at the
+   same size ("Manage AI, you get better." = 362.6px vs 396.3px at 34px).
+   The page requests 20 font faces, so on a phone the fallback paints first
+   and every headline RE-WRAPS when the real font lands -- mid-intro, because
+   the intro is choreographed on a timeline. size-adjust makes Georgia occupy
+   Fraunces' width, so the swap costs no layout at all.
+
+   No ascent/descent-override on purpose: every text element here sets a
+   UNITLESS line-height (h1 1.14, h2 1.2, body 1.68), so the line box is
+   font-size x line-height regardless of font metrics. Vertical movement here
+   comes from line-COUNT changes, which size-adjust already removes. Guessed
+   ascent values would shift baselines for no gain. ── */
+@font-face{
+  font-family:'Fraunces-fb';
+  src:local('Georgia'),local('Times New Roman');
+  size-adjust:91.5%;          /* 362.6 / 396.3 */
+  line-gap-override:0%;
+  font-display:swap;
+}
+
 body{background:var(--paper);color:var(--ink);font-family:var(--sans);
   font-size:16px;line-height:1.68;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 .wrap{max-width:1120px;margin:0 auto;padding:0 20px}
@@ -598,11 +619,16 @@ function splitWords(el,step){
   });
 }
 
-/* split at real font metrics, never reflow mid-reveal */
+/* Split at real font metrics, never reflow mid-reveal.
+   The cap was 600ms, which a desktop with warm cache always wins and a phone on
+   cellular always loses -- so on mobile the words were split at FALLBACK metrics
+   and everything re-wrapped when the fonts landed. That is why desktop looked
+   fine and mobile looked broken. 1200ms lets most real connections win the race;
+   the metric-matched 'Fraunces-fb' above covers whoever still times out. */
 var ready=new Promise(function(res){
   var f=false, go=function(){ if(!f){f=true;res();} };
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(go,go);
-  setTimeout(go,600);
+  setTimeout(go,1200);
 });
 
 ready.then(function(){
