@@ -35,7 +35,8 @@ WHAT A ROUTINE MAY DO, AND WHAT IT MAY NOT
     mode for a routine in v1". Both were false. `dontAsk` is a PROMPTING policy,
     not a capability: providers.py's own PERMISSION_MODE_NOTES already says it
     "never prompts. Actions the rules do not already allow are declined rather
-    than escalated." What a run may actually do is decided by the loaded rules
+    than escalated." The allow-list itself lives in ROUTINE_PERMISSION_MODES
+    below. What a run may actually do is decided by the loaded rules
     -- and this module already emits `opts.allowed_tools` verbatim as repeated
     --allowed-tools flags in the runner's argv. Measured against the CLI
     directly, 2026-08-18:
