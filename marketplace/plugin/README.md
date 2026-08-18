@@ -15,6 +15,7 @@ Operating system for building with AI. Governance + observability for Claude Cod
 - **codex-sutra (opt-in)** — `/codex-sutra review|challenge|consult|design-review` invokes the OpenAI Codex CLI as a second-opinion reviewer for PROTO-019 codex-by-codex review. No wall-clock hard cap (v2.39.2, D2026-05-13) — gstack /codex's 5-min cap removed; wrapper polls with stall + heartbeat warnings; founder Ctrl-C is the only interrupt path. Fail-closed semantics, three-channel result durability. **Requires `codex` CLI installed separately** (not bundled with the plugin): `npm install -g @openai/codex`. Step 0 detects missing CLI and stops gracefully — no auto-install. Replaces gstack `/codex` for PROTO-019 review path; gstack `/codex` remains for non-PROTO-019 use.
 - **Per-profile enforcement** — `individual` / `project` / `company` profiles via `/core:start --profile` (v1.6.0+); `company` hard-blocks on missing depth markers
 - **Local telemetry (v2.0+ privacy model)** — signals captured to `~/.sutra/metrics-queue.jsonl` locally; **push to a data store is disabled by default**. Legacy push available via `SUTRA_LEGACY_TELEMETRY=1`. See `PRIVACY.md`.
+- **Balance — founder coach (opt-in)** — observe-only wellbeing + executive coaching: 15-min observer, evidence-first actionables with live done-marking in the desktop app, nightly coached dashboard (TODAY / WEEK / MONTH). Engine in `scripts/balance/`; adoption guide in [docs/BALANCE.md](docs/BALANCE.md); decision record ADR-033.
 
 ## Install (60 seconds)
 
