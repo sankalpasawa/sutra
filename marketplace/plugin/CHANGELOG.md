@@ -2,6 +2,12 @@
 
 **status**: active · **updated**: 2026-08-18
 
+## 2.106.1
+
+- **Ask Sutra no longer sends the first message for you.** The chat opens with
+  "What is this about?" sitting in the composer as an editable draft — change
+  it or keep it, and press Enter yourself. Nothing runs until you do.
+
 ## 2.106.0
 
 - **Teamsutra: the task loop closes.** The Ask Sutra chat can file a bug as a

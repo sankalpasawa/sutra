@@ -1176,12 +1176,22 @@ function openTeamsutraChat(ctx){
                                    { append_system_prompt: tsBuildSeed(ctx) });
   S.openPanes.push(s.id);
   if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
+  /* tsPrefill: the first turn is NOT auto-sent (founder feedback 2026-08-18:
+     "let me type the message... let me click on Enter"). The default question
+     is placed in the composer as an EDITABLE draft via S.composerText — the
+     same store the template reads and applyPalette writes — so it survives
+     re-renders, and the founder edits or replaces it and presses Enter
+     themselves. Nothing spends money until they do. */
+  S.composerText[s.id] = "What is this about?";
   render();
-  const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
-  /* First turn: the question is implicit in the gesture. Ask it for them so
-     the pane is never blank — the same no-special-first-turn path Balance
-     uses (submitTurn carries classify + optimistic render + retry). */
-  submitTurn("What is this about?\n\n> " + (ctx.text || "").slice(0, 400), s.id);
+  const inp = document.querySelector('[data-sask="'+s.id+'"]');
+  if (inp) {
+    inp.value = S.composerText[s.id];
+    inp.focus();
+    if (inp.setSelectionRange) {
+      try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) {}
+    }
+  }
   return s.id;
 }
 if (typeof window !== "undefined") window.openTeamsutraChat = openTeamsutraChat;
