@@ -96,6 +96,24 @@ wait "${CPIDS[@]}"   # NEVER bare wait: that also waits on the server subshell
 DONE3=$(grep -c '"event": "done", "id": "act-test-three"' "$TMP/coach-ledger.jsonl")
 [ "$DONE3" -eq 1 ] || die "concurrent duplicates appended $DONE3 done rows (expected 1)"
 
+# 7b) DROP contract (consult fold: drop needs explicit coverage, not "same as done")
+printf '%s\n' '{"ts":5,"event":"born","id":"act-test-drop","role":"Test","text":"d","predicate":null}' >> "$TMP/coach-ledger.jsonl"
+[ "$(curl -s -m 8 -o /dev/null -w '%{http_code}' -X POST "$B/api/balance/actionable" "${H[@]}" -d '{"id":"act-test-drop","op":"drop"}')" = 422 ] || die "drop without reason not 422"
+[ "$(curl -s -m 8 -o /dev/null -w '%{http_code}' -X POST "$B/api/balance/actionable" "${H[@]}" -d '{"id":"act-test-drop","op":"drop","reason":"because-i-said"}')" = 422 ] || die "drop with bad reason not 422"
+ND0=$(grep -c '"event": "dropped", "id": "act-test-drop"' "$TMP/coach-ledger.jsonl" || true)
+curl -s -m 8 -X POST "$B/api/balance/actionable" "${H[@]}" -d '{"id":"act-test-drop","op":"drop","reason":"doesnt-matter"}' | grep -q '"already":false' || die "valid drop not ok"
+ND1=$(grep -c '"event": "dropped", "id": "act-test-drop"' "$TMP/coach-ledger.jsonl" || true)
+[ "$((ND1-ND0))" -eq 1 ] || die "drop appended $((ND1-ND0)) rows, expected 1"
+grep -q '"reason": "doesnt-matter"' "$TMP/coach-ledger.jsonl" || die "drop reason not recorded in ledger"
+# duplicate drop -> zero rows, closed_as reported
+curl -s -m 8 -X POST "$B/api/balance/actionable" "${H[@]}" -d '{"id":"act-test-drop","op":"drop","reason":"not-now"}' | grep -q '"closed_as":"dropped"' || die "duplicate drop missing closed_as"
+[ "$(grep -c '"event": "dropped", "id": "act-test-drop"' "$TMP/coach-ledger.jsonl")" -eq "$ND1" ] || die "duplicate drop appended a row"
+# done-after-drop -> already, closed_as=dropped, no append
+curl -s -m 8 -X POST "$B/api/balance/actionable" "${H[@]}" -d '{"id":"act-test-drop","op":"done"}' | grep -q '"closed_as":"dropped"' || die "done-after-drop missing closed_as=dropped"
+# drop-after-done -> already, closed_as=done
+curl -s -m 8 -X POST "$B/api/balance/actionable" "${H[@]}" -d '{"id":"act-test-one","op":"drop","reason":"doesnt-matter"}' | grep -q '"closed_as":"done"' || die "drop-after-done missing closed_as=done"
+echo "checkpoint: drop contract done"
+
 echo "checkpoint: concurrency done"
 # 8) CLI mode (env token unset): POST is ALWAYS 403
 stop_server

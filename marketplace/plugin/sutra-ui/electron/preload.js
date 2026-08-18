@@ -42,6 +42,6 @@ contextBridge.exposeInMainWorld("sutra", {
      desktop-token-gated and the token NEVER reaches the renderer — the main
      process attaches it. Absent in a browser, where Balance is read-only;
      the panel keys the checkbox UI off this verb's presence. */
-  markActionable: (id, op, note) =>
-    ipcRenderer.invoke("sutra:balance-actionable", { id, op, note }),
+  markActionable: (id, op, note, reason) =>
+    ipcRenderer.invoke("sutra:balance-actionable", { id, op, note, reason }),
 });

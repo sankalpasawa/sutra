@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Balance daily coach pass (plugin port, PLAN-25 step 20) — fold ledger, evaluate predicates, emit events.
+"""Balance V1 daily coach pass — fold ledger, evaluate predicates, emit events.
 
 Consult folds (2026-08-18, codex + deepseek convergent):
 - 'surfaced' is DERIVED (days_open), never emitted.
@@ -161,6 +161,8 @@ def main():
             acts[aid]["status"] = ev
             acts[aid]["closed_ts"] = e.get("ts")
             acts[aid]["closed_by"] = e.get("by", "founder")
+            if ev == "dropped" and e.get("reason"):
+                acts[aid]["drop_reason"] = e["reason"]
 
     for a in acts.values():
         if a.get("predicate"):
