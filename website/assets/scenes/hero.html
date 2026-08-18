@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!-- Scene: dark hero, mid-stream turn. Rendered from shipped v2.102.0 UI styles. -->
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="scenes.css"></head>
+<body>
+<div class="frame">
+  <div class="titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+    <span class="appname">Sutra — chat · session 7a4ae0</span></div>
+  <div class="chat">
+    <div class="u">Refactor the placement engine to cache charter lookups.</div>
+    <div class="a">
+      <div class="gv"><button class="gv-chip">
+        <span class="gv-pulse gv-beat"></span>
+        <span>turn 3</span><span class="gv-sep">·</span>
+        <span>TASK</span><span class="gv-sep">·</span>
+        <span>D3</span><span class="gv-sep">·</span>
+        <span class="gv-leaf">Placement Engine</span><span class="gv-sep">·</span>
+        <span>0.53</span>
+        <span class="gv-chev">▼</span>
+      </button></div>
+      <div class="tl">
+        <span class="ln ok">✓ Read placement_engine.py</span>
+        <span class="ln ok">✓ Grep charter refs · 14 sites</span>
+        <span class="ln run">⧗ Bash bats placement.bats</span>
+      </div>
+      <p>Starting with the lookup profile to size the cache. The classifier resolves a
+      charter on every turn, and 14 call sites repeat the same read — an LRU keyed on
+      the charter ref removes all but the first<span class="caret"></span></p>
+      <div class="gv-think">
+        <span class="gv-pulse gv-beat"></span>
+        <span class="gv-tlabel">thinking</span>
+        <span class="gv-tmeta">2m 08s · 6 of 9 tools · running tests</span>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+/* GIF frame sampling: ?t=<seconds> freezes every animation at that phase via
+   negative animation-delay, and ticks the live meta so frames differ honestly. */
+(function(){
+  const m = location.search.match(/[?&]t=([0-9.]+)/);
+  if (!m) return;
+  const t = parseFloat(m[1]);
+  document.querySelectorAll('.gv-beat').forEach(el => {
+    el.style.animationDelay = (-t) + 's'; el.style.animationPlayState = 'paused';
+  });
+  document.querySelectorAll('.gv-tlabel').forEach(el => {
+    el.style.animationDelay = (-t) + 's'; el.style.animationPlayState = 'paused';
+  });
+  const caret = document.querySelector('.caret');
+  if (caret) caret.style.visibility = (Math.floor(t * 2) % 2) ? 'hidden' : 'visible';
+  const meta = document.querySelector('.gv-tmeta');
+  if (meta) meta.textContent = '2m ' + String(8 + Math.floor(t)).padStart(2, '0') +
+    's · 6 of 9 tools · running tests';
+})();
+</script>
+</body></html>
