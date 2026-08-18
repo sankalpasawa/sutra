@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sutra://schemas/decision-provenance-row.schema.json",
+  "title": "decision-provenance-row",
+  "description": "One decision-provenance row appended per turn by the EXISTING per-turn pipeline (placement engine, authority schema, routing hooks). Source of shape: holding/plans/native-sop-program/v1-build/SCOPE.md section 4 (B18-1, amended by the S0 gate review). Fields the pipeline cannot honestly compute in a given turn carry not_evaluated/null. Evolution is additive-only; writes are atomic (temp+rename).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "turn_id",
+    "decision_seq",
+    "ts",
+    "operator_id",
+    "charter_ref",
+    "domain_ref",
+    "task_tier",
+    "phase",
+    "intent_type",
+    "factors",
+    "authority_verdict",
+    "reversibility",
+    "approval_ref",
+    "work_ref",
+    "output_ref",
+    "channels"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Row-shape version carried by every row (SCOPE section 4 preamble)."
+    },
+    "turn_id": {
+      "type": "string",
+      "description": "Identifier of the turn this decision row belongs to."
+    },
+    "decision_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sequence number of this decision within the turn."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp the row was appended."
+    },
+    "operator_id": {
+      "type": "string",
+      "description": "Operator whose turn produced the decision."
+    },
+    "charter_ref": {
+      "type": ["string", "null"],
+      "description": "Charter reference; null when the pipeline cannot honestly compute it this turn (writer note)."
+    },
+    "domain_ref": {
+      "type": ["string", "null"],
+      "description": "Domain reference; null when not honestly computable this turn (writer note)."
+    },
+    "task_tier": {
+      "type": ["string", "null"],
+      "description": "Task tier as computed by the existing pipeline; null when not honestly computable this turn (writer note)."
+    },
+    "phase": {
+      "type": ["string", "null"],
+      "description": "Phase of the unit at decision time; null when not honestly computable this turn (writer note)."
+    },
+    "intent_type": {
+      "type": ["string", "null"],
+      "description": "Classified intent type from the per-turn pipeline; null when not honestly computable this turn (writer note)."
+    },
+    "factors": {
+      "type": "array",
+      "description": "Factors the pipeline observed for this decision.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "value", "source_ref"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Factor kind."
+          },
+          "value": {
+            "type": ["string", "number", "boolean"],
+            "description": "Observed factor value."
+          },
+          "source_ref": {
+            "type": ["string", "null"],
+            "description": "Where the factor value came from; null when not honestly attributable this turn (writer note)."
+          }
+        }
+      }
+    },
+    "authority_verdict": {
+      "type": "string",
+      "enum": ["granted", "denied", "escalated", "not_evaluated"],
+      "description": "Authority outcome; not_evaluated when the pipeline did not evaluate authority this turn (writer note)."
+    },
+    "reversibility": {
+      "type": ["string", "null"],
+      "description": "Reversibility as computed by the existing pipeline; null when not honestly computable this turn (writer note). SCOPE section 4 does not ratify an enum for this field, so it is deliberately left as a free string."
+    },
+    "approval_ref": {
+      "type": ["string", "null"],
+      "description": "Reference to the approval artifact; explicitly nullable in SCOPE section 4."
+    },
+    "work_ref": {
+      "type": ["string", "null"],
+      "description": "Reference to the unit of work (e.g. workflow id); null when not honestly computable this turn (writer note)."
+    },
+    "output_ref": {
+      "type": ["string", "null"],
+      "description": "Reference to the produced output artifact; null when not honestly computable this turn (writer note)."
+    },
+    "channels": {
+      "type": "array",
+      "description": "Channels involved in the decision.",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

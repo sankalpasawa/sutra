@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sutra.dev/os/native/schemas/outbox-row.schema.json",
+  "title": "outbox-row",
+  "description": "One durable outbox row (SCOPE.md section 4, B18-5): append-only JSONL, atomic writes (temp+rename with completeness marker), idempotent replay keyed on outbox_id, visible pending/failed state. NOT a scheduler: no cross-device ordering, no background execution, no retry policy, no exactly-once. Instance rows land only under ~/.sutra-native/outbox/ — never in the plugin package or sutra/os/native/schemas/. The row is a self-contained artifact: no conversational carry. Evolution is additive-only.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Schema version of this row. All rows carry schema_version; evolution is additive-only."
+    },
+    "outbox_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "THE stable idempotency key for this row — replay of the same outbox_id is a no-op. Uniquely identifies the queued ask across replays."
+    },
+    "ts_queued": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp (ISO 8601) when the ask was queued into the outbox."
+    },
+    "ask_text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The ask, verbatim, as a self-contained artifact — the row carries everything needed for local replay; no conversational carry."
+    },
+    "operator_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Operator who queued the ask."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["pending", "replayed", "failed"],
+      "description": "Visible row state: pending (queued, not yet replayed), replayed (consumed by a replay), failed (replay attempted and failed; visible, no retry policy in v1)."
+    },
+    "ts_resolved": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Timestamp (ISO 8601) when the row left pending (replayed or failed). Null while pending."
+    },
+    "replay_ref": {
+      "type": ["string", "null"],
+      "description": "Reference to the replay/run that consumed this row. Null until a replay resolves it."
+    }
+  },
+  "required": [
+    "schema_version",
+    "outbox_id",
+    "ts_queued",
+    "ask_text",
+    "operator_id",
+    "state",
+    "ts_resolved",
+    "replay_ref"
+  ],
+  "additionalProperties": false
+}
