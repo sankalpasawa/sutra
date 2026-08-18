@@ -13,11 +13,14 @@ SAFETY (see marketplace/plugin/sutra-ui -- ground truth for this module):
     charter_retire, charter_reassign, consolidate, reconcile, repair,
     verify_charters. test_forbidden_calls.py greps this file for those names
     and fails the build if any appear -- a provable negative.
-  - Writes to disk in exactly two places:
+  - Writes to disk in exactly three places:
       (a) write_placement() -> SUTRA_NATIVE_HOME (classify endpoint only, one
           placement per call)
       (b) the draft file under DRAFTS_DIR (outside SUTRA_NATIVE_HOME, mirrors
           ~/.sutra-ui/drafts/ per the design doc's §8.5.9 "What it writes")
+      (c) the Teamsutra task store under ~/.sutra-ui/teamsutra/, via the
+          teamsutra module only (creation lands INERT at status=draft; the
+          queue/drop/release mutations are desktop-token-gated)
   - SUTRA_NATIVE_HOME resolution: the REAL registry (the engine's own default,
     ~/.sutra-native/user-kit) unless the env var overrides it. No fixture
     default -- an operator must never be shown seeded data dressed as theirs.
@@ -73,6 +76,7 @@ if _LIB_DIR not in sys.path:
 
 import placement_engine as E  # noqa: E402  (path insert must precede this import)
 import reorg_sim as R  # noqa: E402
+import teamsutra  # noqa: E402
 
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
@@ -1738,3 +1742,47 @@ def api_automation():
                     "so nothing is reported as having run.",
         },
     }
+
+# ------------------------------------------------------------- teamsutra ----
+# The task store's transport. House rules (same as routines): reads are GET
+# and unauthenticated on loopback; anything that changes state is POST, and
+# every teamsutra WRITE additionally requires the desktop token — the port is
+# unauthenticated, and "any local process can queue work for an unattended
+# agent" is precisely the exposure the token exists to close. Creation is NOT
+# exposed here at all: the chat files tasks through the MCP tool, at draft.
+
+@router.get("/teamsutra/tasks")
+def api_teamsutra_tasks():
+    """The full board, oldest first, corrupt records visible as corrupt."""
+    return {"tasks": teamsutra.listing()}
+
+
+@router.post("/teamsutra/tasks/{tid}/queue")
+def api_teamsutra_queue(tid: str, request: Request):
+    """draft -> queued. The operator's click — the one transition that turns
+    an inert record into claimable work."""
+    _desktop_control(request)
+    try:
+        return teamsutra.set_status(tid, "queued")
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/teamsutra/tasks/{tid}/drop")
+def api_teamsutra_drop(tid: str, request: Request):
+    _desktop_control(request)
+    try:
+        return teamsutra.drop(tid)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/teamsutra/tasks/{tid}/release")
+def api_teamsutra_release(tid: str, request: Request):
+    """claimed -> queued, explicitly and by a human. Crash recovery is a
+    CLICK, never a timer: a stuck claim must not become a retry loop."""
+    _desktop_control(request)
+    try:
+        return teamsutra.set_status(tid, "queued")
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

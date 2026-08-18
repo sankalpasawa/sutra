@@ -631,6 +631,24 @@ ipcMain.handle("sutra:balance-actionable", async (_e, body) => {
   }
 });
 
+/* Teamsutra task actions (queue / drop / release). Unlike the balance handler
+   above, this one CHECKS desktopControl() first: on the attach path the
+   backend was started with a different token and every write would 403 —
+   refusing here with a reason beats a bare server error in the UI. */
+ipcMain.handle("sutra:teamsutra-action", async (_e, body) => {
+  try {
+    if (!desktopControl()) {
+      return { ok: false, error: "this window is attached to a backend it did not start — queue actions are disabled" };
+    }
+    const b = body || {};
+    if (!/^t-[0-9a-f]{8}$/.test(String(b.id || "")))  return { ok: false, error: "bad task id" };
+    if (!["queue", "drop", "release"].includes(b.op)) return { ok: false, error: "bad op" };
+    return await api("POST", "/api/teamsutra/tasks/" + b.id + "/" + b.op, {});
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
+
 /* Native folder chooser for the panel's working-directory fields. The panel is
    the same app the CLI serves to an ordinary browser, where this cannot exist --
    so it is offered over the preload bridge and the renderer only draws the Browse

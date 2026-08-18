@@ -36,6 +36,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import proposals                                        # noqa: E402
+import teamsutra                                        # noqa: E402
 import routines                                         # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -192,6 +193,30 @@ def t_routine_run(args):
     return _propose("routine.run", {"id": rid}, "run routine %r now" % rid)
 
 
+
+def t_task_file(args):
+    """File a Teamsutra task. DIRECT write, not a proposal — and that is safe
+    for exactly one reason: the record lands at status='draft', which nothing
+    may claim. Creation is inert; only an operator queues it. Validated here
+    so a refusal reaches the agent with the reason."""
+    body = {
+        "title": str(args.get("title") or ""),
+        "body": str(args.get("body") or ""),
+        "kind": str(args.get("kind") or "bug"),
+        "verify": str(args.get("verify") or ""),
+        "source": args.get("source") or {},
+    }
+    try:
+        rec = teamsutra.create(body)
+    except ValueError as exc:
+        return _err("that task would be refused: %s" % exc)
+    return _text(
+        "TASK %s filed as a DRAFT.\n"
+        "It does nothing until the operator queues it on the Teamsutra screen. "
+        "Tell them what you filed and why; do not claim any work has started."
+        % rec["id"])
+
+
 TOOLS = [
     {"name": "sutra_routines_list", "fn": t_routines_list,
      "description": "List the operator's local scheduled routines with their "
@@ -259,6 +284,16 @@ TOOLS = [
                     "operator's plan, so it requires approval.",
      "schema": {"type": "object", "required": ["id"], "properties": {
          "id": {"type": "string"}}}},
+
+    {"name": "sutra_task_file", "fn": t_task_file,
+     "description": "File a Teamsutra task (bug/task/question) as a DRAFT. "
+                    "Inert until the operator queues it — never claim work "
+                    "has started.",
+     "schema": {"type": "object", "required": ["title", "body"], "properties": {
+         "title": {"type": "string"}, "body": {"type": "string"},
+         "kind": {"type": "string", "enum": ["bug", "task", "question"]},
+         "verify": {"type": "string"},
+         "source": {"type": "object"}}}},
 ]
 BY_NAME = {t["name"]: t for t in TOOLS}
 

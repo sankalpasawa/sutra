@@ -531,6 +531,11 @@ function railSpec(){
          something the operator creates. Count withheld until read, like Git. */
       {id:"routines", n:"Routines",  i:"rout",
        c:(S.rt ? (S.rt.routines||[]).length : undefined)},
+      /* Teamsutra: tasks filed from the Ask Sutra selection chat. The count is
+         the OPEN work (queued + claimed + needs_review) — done/dropped would
+         inflate it into a lie. Withheld until the screen has been read. */
+      {id:"teamsutra", n:"Teamsutra", i:"rout",
+       c:(S.ts ? (S.ts.tasks||[]).filter(t=>["queued","claimed","needs_review"].includes(t.status)).length : undefined)},
       /* Usage sits in RUNTIME because it describes the running account, not the
          org. The count is the ACTIVE window's percentage -- the one number worth
          seeing without opening anything -- and is withheld until the screen has

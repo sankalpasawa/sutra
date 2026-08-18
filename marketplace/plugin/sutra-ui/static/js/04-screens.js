@@ -1194,3 +1194,50 @@ function rtCreateForm(){
   </section>`;
 }
 
+/* ── Teamsutra: the task board ────────────────────────────────────────────
+   Tasks filed from the Ask Sutra chat. The worker is READ-ONLY — a finished
+   task carries a unified diff a human reads and applies; nothing on this
+   screen edits code. Mutations (queue/drop/release) are desktop-token-gated
+   server-side, so in a browser-served panel the buttons render disabled with
+   the reason instead of failing with a bare 403. */
+function tsStatusPill(st){
+  const cls = { draft:"p-mut", queued:"p-acc", claimed:"p-warn",
+                needs_review:"p-acc", blocked:"p-warn", failed:"p-err",
+                done:"p-ok", dropped:"p-mut", corrupt:"p-err" }[st] || "p-mut";
+  return `<span class="pill ${cls}">${esc(st)}</span>`;
+}
+function tsCanAct(){ return !!(window.sutra && window.sutra.teamsutraAction); }
+function tsCard(t){
+  const src = t.source || {};
+  const dept = src.domain_name ? `${esc(src.domain_path||"")} ${esc(src.domain_name)}` : "no department";
+  const acts = [];
+  if (t.status === "draft")   acts.push(`<button data-tsact="queue" data-tid="${esc(t.id)}">Queue</button>`);
+  if (t.status === "claimed") acts.push(`<button data-tsact="release" data-tid="${esc(t.id)}">Release</button>`);
+  if (!["done","dropped","corrupt"].includes(t.status))
+    acts.push(`<button data-tsact="drop" data-tid="${esc(t.id)}">Drop</button>`);
+  const gate = tsCanAct() ? "" :
+    `<div style="color:var(--faint);font-size:11px;margin-top:4px">queue actions need the desktop app — this panel was started from the CLI</div>`;
+  return `<div class="card" style="margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:baseline">
+      ${tsStatusPill(t.status)}
+      <strong>${esc(t.title||"")}</strong>
+      <span style="color:var(--faint);font-size:11px">${esc(t.id)} · ${esc(dept)} · attempt ${t.attempts||0}/${t.max_attempts||3}</span>
+    </div>
+    ${t.blocked_reason ? `<div style="color:var(--warn);font-size:12px;margin-top:4px">blocked: ${esc(t.blocked_reason)}</div>` : ""}
+    ${t.last_error ? `<div style="color:var(--block);font-size:12px;margin-top:4px">${esc(t.last_error)}</div>` : ""}
+    ${t.diff ? `<details style="margin-top:6px"><summary>the proposed change (${(t.diff.match(/^[+-]/gm)||[]).length} changed lines) — review before applying</summary>
+        <pre class="md-pre" style="max-height:340px;overflow:auto">${esc(t.diff)}</pre></details>` : ""}
+    <div style="margin-top:6px;display:flex;gap:6px">${tsCanAct() ? acts.join("") : ""}</div>
+    ${gate}
+  </div>`;
+}
+SCREENS.teamsutra = () => {
+  if (S.tsError) return `<p style="color:var(--block)">${esc(S.tsError)}</p>`;
+  if (!S.ts) return `<p style="color:var(--muted)">Reading the task store…</p>`;
+  const rows = S.ts.tasks || [];
+  if (!rows.length) return `<div class="info">No tasks yet. Select text anywhere
+    in the panel and click <strong>Ask Sutra</strong> — the chat can file what
+    you find as a task. A filed task sits as a draft until you queue it here;
+    the hourly worker then picks it up and returns a change for your review.</div>`;
+  return rows.map(tsCard).join("");
+};

@@ -44,4 +44,6 @@ contextBridge.exposeInMainWorld("sutra", {
      the panel keys the checkbox UI off this verb's presence. */
   markActionable: (id, op, note, reason) =>
     ipcRenderer.invoke("sutra:balance-actionable", { id, op, note, reason }),
+  teamsutraAction: (id, op) =>
+    ipcRenderer.invoke("sutra:teamsutra-action", { id, op }),
 });

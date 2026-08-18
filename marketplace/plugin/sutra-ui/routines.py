@@ -363,6 +363,79 @@ def login_path():
             seen.add(e); out.append(e)
     return ":".join(out)
 
+
+# ---- teamsutra queue (active only when the record opts in) -----------------
+# The runner stays stdlib-only and generic; everything task-specific keys off
+# opts.teamsutra == true on the routine record. One task per fire, oldest
+# first by created_ms (never directory order). A crashed claim stays claimed
+# on purpose -- release is an operator CLICK, never a timer, so a crash can
+# never become a retry loop.
+TS_DIR = os.path.expanduser(os.environ.get("SUTRA_UI_TEAMSUTRA", "~/.sutra-ui/teamsutra"))
+
+def ts_write(path, rec):
+    tmp = path + ".sutra-tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, json.dumps(rec, indent=2).encode("utf-8"))
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)
+
+def ts_claim():
+    """Oldest queued task, or None. Corrupt files are skipped -- the panel
+    surfaces them; one bad record must never halt the sweep."""
+    try:
+        names = [n for n in os.listdir(TS_DIR)
+                 if n.startswith("t-") and n.endswith(".json")]
+    except OSError:
+        return None, None
+    best = None
+    for n in names:
+        fp = os.path.join(TS_DIR, n)
+        try:
+            with open(fp, encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if rec.get("schema") != 1 or rec.get("status") != "queued":
+            continue
+        key = (rec.get("created_ms") or 0, rec.get("id") or "")
+        if best is None or key < best[0]:
+            best = (key, fp, rec)
+    if best is None:
+        return None, None
+    _, fp, rec = best
+    rec["status"] = "claimed"
+    rec["attempts"] = int(rec.get("attempts") or 0) + 1
+    rec["updated_at"] = iso()
+    ts_write(fp, rec)
+    return fp, rec
+
+def ts_extract_diff(text):
+    """The worker is READ-ONLY: its fix arrives as a unified diff in its final
+    message. Last ```diff fence wins; else a bare ---/+++ hunk block."""
+    text = text or ""
+    fences = re.findall(r"```diff\n(.*?)```", text, re.S)
+    if fences:
+        return fences[-1].strip() or None
+    i = text.find("--- a/")
+    if i != -1 and "+++ b/" in text[i:]:
+        return text[i:].strip() or None
+    return None
+
+def ts_scrub_env(env):
+    """The verify subprocess gets NO credential-shaped env. Pattern-based on
+    purpose: a fixed list is stale the day a new token variable appears."""
+    bad = re.compile(r"(TOKEN|SECRET|PASSWORD|API_?KEY|CREDENTIAL|_PAT$|^GH_|^GITHUB_|^AWS_|^OPENAI_|^ANTHROPIC_|^COMPOSIO_)", re.I)
+    return {k: v for k, v in env.items() if not bad.search(k)}
+
+def ts_finish(fp, rec, status, **fields):
+    rec["status"] = status
+    for k, v in fields.items():
+        rec[k] = v
+    rec["updated_at"] = iso()
+    ts_write(fp, rec)
+
 def main():
     if len(sys.argv) < 2: sys.exit(2)
     rid = sys.argv[1]
@@ -400,55 +473,127 @@ def main():
                "duration_s":0}
         append(rundir, row); return
 
-    env = dict(os.environ)
-    env["PATH"] = login_path()
-    # NEVER inherited into a routine: it would route billing through the
-    # per-token API instead of the plan, silently, on a schedule.
-    env.pop("ANTHROPIC_API_KEY", None)
-
-    claude = shutil.which("claude", path=env["PATH"]) or r.get("claude_bin") or "claude"
-    args = [claude, "-p", r["prompt"], "--output-format", "json",
-            "--permission-mode", r.get("permission_mode") or "dontAsk",
-            "--setting-sources", (r.get("opts") or {}).get("setting_sources") or "user"]
-    if r.get("model"): args += ["--model", r["model"]]
-    o = r.get("opts") or {}
-    if o.get("effort"): args += ["--effort", str(o["effort"])]
-    if o.get("max_budget_usd"): args += ["--max-budget-usd", str(o["max_budget_usd"])]
-    for t in (o.get("allowed_tools") or []): args += ["--allowed-tools", t]
-    for t in (o.get("disallowed_tools") or []): args += ["--disallowed-tools", t]
-
-    outp = os.path.join(rundir, started.replace(":", "-") + ".out")
-    outcome, exit_code, detail, cost = "ok", None, None, None
+    # OUTER GUARD (codex P1): everything after the lock is acquired runs under
+    # one try/finally. Before this, argv construction sat OUTSIDE the try that
+    # releases .lock -- one bad task payload or a NameError in new code would
+    # strand the lock (and any claim) forever with no index row.
+    ts_fp = ts_rec = None
     try:
-        p = subprocess.run(args, cwd=r.get("cwd") or os.path.expanduser("~"),
-                           env=env, capture_output=True, text=True, timeout=TIMEOUT)
-        exit_code = p.returncode
-        body = (p.stdout or "") + (("\n--- stderr ---\n" + p.stderr) if p.stderr else "")
-        fd = os.open(outp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        try: os.write(fd, body[-MAX_OUT:].encode("utf-8", "replace"))
-        finally: os.close(fd)
-        if exit_code != 0:
-            outcome = "failed"; detail = (p.stderr or p.stdout or "")[-600:]
-        else:
-            try:
-                j = json.loads(p.stdout or "{}")
-                cost = j.get("total_cost_usd")
-                if j.get("is_error"): outcome, detail = "failed", str(j.get("subtype") or "")[:200]
-            except ValueError:
-                pass
-    except subprocess.TimeoutExpired:
-        outcome, detail = "timeout", "exceeded %ds" % TIMEOUT
-    except OSError as e:
-        outcome, detail = "failed", "could not start claude: %s" % e
+        env = dict(os.environ)
+        env["PATH"] = login_path()
+        # NEVER inherited into a routine: it would route billing through the
+        # per-token API instead of the plan, silently, on a schedule.
+        env.pop("ANTHROPIC_API_KEY", None)
+
+        prompt = r["prompt"]
+        if (r.get("opts") or {}).get("teamsutra"):
+            ts_fp, ts_rec = ts_claim()
+            if ts_rec is None:
+                append(rundir, {"schema":1,"id":rid,"trigger":trigger,
+                                "started_at":started,"outcome":"skipped",
+                                "reason":"teamsutra queue empty","duration_s":0})
+                return
+            src = ts_rec.get("source") or {}
+            prompt = (prompt + "\n\n== TASK " + ts_rec["id"] + " (attempt "
+                      + str(ts_rec.get("attempts")) + " of "
+                      + str(ts_rec.get("max_attempts")) + ") ==\nTITLE: "
+                      + (ts_rec.get("title") or "") + "\nKIND: "
+                      + (ts_rec.get("kind") or "") + "\nDEPARTMENT: "
+                      + (src.get("domain_path") or "none") + " "
+                      + (src.get("domain_name") or "") + "\nSELECTION:\n"
+                      + (src.get("selection") or "(none)") + "\n\nBODY:\n"
+                      + (ts_rec.get("body") or ""))
+
+        claude = shutil.which("claude", path=env["PATH"]) or r.get("claude_bin") or "claude"
+        args = [claude, "-p", prompt, "--output-format", "json",
+                "--permission-mode", r.get("permission_mode") or "dontAsk",
+                "--setting-sources", (r.get("opts") or {}).get("setting_sources") or "user"]
+        if r.get("model"): args += ["--model", r["model"]]
+        o = r.get("opts") or {}
+        if o.get("effort"): args += ["--effort", str(o["effort"])]
+        if o.get("max_budget_usd"): args += ["--max-budget-usd", str(o["max_budget_usd"])]
+        for t in (o.get("allowed_tools") or []): args += ["--allowed-tools", t]
+        for t in (o.get("disallowed_tools") or []): args += ["--disallowed-tools", t]
+
+        outp = os.path.join(rundir, started.replace(":", "-") + ".out")
+        outcome, exit_code, detail, cost = "ok", None, None, None
+        result_text = ""
+        try:
+            p = subprocess.run(args, cwd=r.get("cwd") or os.path.expanduser("~"),
+                               env=env, capture_output=True, text=True, timeout=TIMEOUT)
+            exit_code = p.returncode
+            body = (p.stdout or "") + (("\n--- stderr ---\n" + p.stderr) if p.stderr else "")
+            fd = os.open(outp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try: os.write(fd, body[-MAX_OUT:].encode("utf-8", "replace"))
+            finally: os.close(fd)
+            if exit_code != 0:
+                outcome = "failed"; detail = (p.stderr or p.stdout or "")[-600:]
+            else:
+                try:
+                    j = json.loads(p.stdout or "{}")
+                    cost = j.get("total_cost_usd")
+                    result_text = str(j.get("result") or "")
+                    if j.get("is_error"): outcome, detail = "failed", str(j.get("subtype") or "")[:200]
+                except ValueError:
+                    pass
+        except subprocess.TimeoutExpired:
+            outcome, detail = "timeout", "exceeded %ds" % TIMEOUT
+        except OSError as e:
+            outcome, detail = "failed", "could not start claude: %s" % e
+
+        verify_exit = None
+        if ts_rec is not None:
+            # The worker is READ-ONLY; its output is a unified diff (or an
+            # explicit refusal). Close the task honestly from what came back.
+            if outcome == "ok":
+                diff = ts_extract_diff(result_text)
+                m = re.search(r"^BLOCKED:\s*(.+)$", result_text, re.M)
+                if diff:
+                    if (ts_rec.get("verify") or "").strip():
+                        try:
+                            v = subprocess.run(["/bin/sh", "-c", ts_rec["verify"]],
+                                               cwd=r.get("cwd") or os.path.expanduser("~"),
+                                               env=ts_scrub_env(env), capture_output=True,
+                                               text=True, timeout=120)
+                            verify_exit = v.returncode
+                        except Exception:
+                            verify_exit = -1
+                    ts_finish(ts_fp, ts_rec, "needs_review", diff=diff,
+                              last_error=None)
+                elif m:
+                    ts_finish(ts_fp, ts_rec, "blocked",
+                              blocked_reason=m.group(1)[:600])
+                else:
+                    ts_finish(ts_fp, ts_rec, "failed",
+                              last_error="worker returned neither a diff nor a BLOCKED: line")
+            else:
+                ts_finish(ts_fp, ts_rec, "failed",
+                          last_error=(detail or outcome or "")[:600])
+
+        append(rundir, {"schema":1,"id":rid,"trigger":trigger,"started_at":started,
+                        "ended_at":iso(),"duration_s":round(time.time()-t0,1),
+                        "outcome":outcome,"exit_code":exit_code,"detail":detail,
+                        "cost_usd":cost,"output_file":os.path.basename(outp),
+                        "task_id":(ts_rec or {}).get("id"),
+                        "verify_exit":verify_exit,
+                        "prompt_sha256":hashlib.sha256((r.get("prompt") or "").encode()).hexdigest()})
+    except Exception as e:
+        # The outer guard's whole point: an unexpected raise still writes a
+        # legible failure row and closes the task, instead of stranding both.
+        try:
+            if ts_rec is not None and ts_rec.get("status") == "claimed":
+                ts_finish(ts_fp, ts_rec, "failed",
+                          last_error=("runner error: %s" % e)[:600])
+        except Exception:
+            pass
+        append(rundir, {"schema":1,"id":rid,"trigger":trigger,"started_at":started,
+                        "ended_at":iso(),"duration_s":round(time.time()-t0,1),
+                        "outcome":"failed","exit_code":None,
+                        "detail":("runner error: %s" % e)[:600],
+                        "task_id":(ts_rec or {}).get("id")})
     finally:
         try: os.rmdir(lock)
         except OSError: pass
-
-    append(rundir, {"schema":1,"id":rid,"trigger":trigger,"started_at":started,
-                    "ended_at":iso(),"duration_s":round(time.time()-t0,1),
-                    "outcome":outcome,"exit_code":exit_code,"detail":detail,
-                    "cost_usd":cost,"output_file":os.path.basename(outp),
-                    "prompt_sha256":hashlib.sha256((r.get("prompt") or "").encode()).hexdigest()})
 
 def append(rundir, row):
     p = os.path.join(rundir, "index.jsonl")

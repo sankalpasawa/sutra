@@ -2852,6 +2852,80 @@ class TestRunnerCompileGuard(unittest.TestCase):
         self.assertIn("line 2", self.R.runner_syntax_error("x = 1\ndef f(:\n"))
 
 
+class TestRunnerTeamsutra(unittest.TestCase):
+    """The _RUNNER's teamsutra claim path, executed for real against temp
+    stores. The runner is a string: these tests exec it (with the trailing
+    main() call stripped) so what is tested is the exact code launchd runs,
+    not a lookalike."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import routines
+        self.tmp = tempfile.mkdtemp(prefix=".sutra-test-", dir=os.path.expanduser("~"))
+        self._env = dict(os.environ)
+        os.environ["SUTRA_UI_ROUTINES"] = os.path.join(self.tmp, "routines")
+        os.environ["SUTRA_UI_RUNS"] = os.path.join(self.tmp, "runs")
+        os.environ["SUTRA_UI_TEAMSUTRA"] = os.path.join(self.tmp, "teamsutra")
+        os.makedirs(os.environ["SUTRA_UI_TEAMSUTRA"])
+        src = routines._RUNNER
+        cut = src.rfind("\nmain()")
+        assert cut != -1, "the runner must end by calling main()"
+        self.ns = {}
+        exec(compile(src[:cut], "run-routine.py#test", "exec"), self.ns)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._env)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _task(self, tid, status="queued", created_ms=0, **kw):
+        rec = {"schema": 1, "id": tid, "title": "t", "body": "b", "kind": "bug",
+               "status": status, "attempts": 0, "max_attempts": 3,
+               "source": {}, "verify": "", "created_ms": created_ms}
+        rec.update(kw)
+        p = os.path.join(os.environ["SUTRA_UI_TEAMSUTRA"], tid + ".json")
+        with open(p, "w") as fh:
+            json.dump(rec, fh)
+        return p
+
+    def test_claim_takes_the_oldest_queued_by_created_ms(self):
+        self._task("t-aaaa0001", created_ms=300)
+        self._task("t-ffff0002", created_ms=100)   # oldest, despite the name
+        self._task("t-bbbb0003", created_ms=200)
+        fp, rec = self.ns["ts_claim"]()
+        self.assertEqual(rec["id"], "t-ffff0002")
+        self.assertEqual(rec["status"], "claimed")
+        self.assertEqual(rec["attempts"], 1)
+        with open(fp) as fh:
+            on_disk = json.load(fh)
+        self.assertEqual(on_disk["status"], "claimed",
+                         "the claim must be durable, not in-memory")
+
+    def test_claim_skips_corrupt_and_non_queued_and_empty_is_none(self):
+        self._task("t-dddd0001", status="draft")
+        with open(os.path.join(os.environ["SUTRA_UI_TEAMSUTRA"], "t-deadbeef.json"), "w") as fh:
+            fh.write("{ not json")
+        fp, rec = self.ns["ts_claim"]()
+        self.assertIsNone(rec, "a draft is inert and a corrupt file is skipped")
+
+    def test_extract_diff_prefers_the_last_diff_fence(self):
+        text = ("prose\n```diff\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n```\n"
+                "more\n```diff\n--- a/y\n+++ b/y\n@@ -1 +1 @@\n-o\n+n\n```\n")
+        d = self.ns["ts_extract_diff"](text)
+        self.assertIn("+++ b/y", d)
+        self.assertNotIn("+++ b/x", d)
+        bare = "words\n--- a/z\n+++ b/z\n@@ -1 +1 @@\n-p\n+q\n"
+        self.assertIn("+++ b/z", self.ns["ts_extract_diff"](bare))
+        self.assertIsNone(self.ns["ts_extract_diff"]("no diff here"))
+
+    def test_scrub_env_drops_credential_shapes_and_keeps_the_rest(self):
+        env = {"PATH": "/usr/bin", "HOME": "/Users/x", "GH_TOKEN": "a",
+               "GITHUB_TOKEN": "b", "OPENAI_API_KEY": "c", "MY_SECRET": "d",
+               "AWS_ACCESS_KEY_ID": "e", "DB_PASSWORD": "f", "LANG": "en"}
+        out = self.ns["ts_scrub_env"](env)
+        self.assertEqual(sorted(out), ["HOME", "LANG", "PATH"])
+
+
 class TestProposals(unittest.TestCase):
     """The chat agent may ASK; only the operator may APPLY.
 

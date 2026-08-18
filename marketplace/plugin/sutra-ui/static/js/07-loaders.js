@@ -997,6 +997,14 @@ document.querySelector(".rail").addEventListener("click", e=>{
   if (mt){ e.stopPropagation();
     S.sessMenu = S.sessMenu === mt.dataset.sessmenu ? null : mt.dataset.sessmenu;
     S.sessRename = null; renderRail(); return; }
+  const tsb = e.target.closest("[data-tsact]");
+  if (tsb && window.sutra && window.sutra.teamsutraAction){
+    e.stopPropagation();
+    window.sutra.teamsutraAction(tsb.dataset.tid, tsb.dataset.tsact)
+      .then(()=>loadTeamsutra(true))
+      .catch(err=>{ S.tsError = String(err && err.message || err); render(); });
+    return;
+  }
   const act = e.target.closest("[data-act]");
   if (act){ e.stopPropagation();
     sessAction(act.dataset.act, act.dataset.sid, act.dataset.group); return; }
@@ -1020,6 +1028,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "usage") loadUsage(true);
     if (S.screen === "evals") loadEvals(false);     /* lazy, like Git */
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
+    if (S.screen === "teamsutra") loadTeamsutra(false);
     /* lazy, like Git: reading the MCP config and the preset catalog on every boot
        is work a panel that never opens this screen has no reason to do. */
     if (S.screen === "connectors"){ loadConnectors(false); loadConnCatalog(false);

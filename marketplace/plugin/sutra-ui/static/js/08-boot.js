@@ -148,6 +148,12 @@ async function decideProposal(pid, approve){
   } catch (e) { S.propError = e.message; }
   S.propBusy = null; render();
 }
+async function loadTeamsutra(force){
+  if (S.ts && !force) return;
+  try { S.ts = await apiGet("/api/teamsutra/tasks"); S.tsError = null; }
+  catch (e) { S.tsError = e.message; S.ts = null; }
+  render();
+}
 async function loadRoutines(force){
   if (S.rt && !force) return;
   try { S.rt = await apiGet("/api/routines"); S.rtError = null; }
