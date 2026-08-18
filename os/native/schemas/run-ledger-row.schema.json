@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sutra://os/native/schemas/run-ledger-row.schema.json",
+  "title": "run-ledger-row",
+  "description": "One append-only row in the v1 run ledger (~/.sutra-native/ledger/). Shape ratified in SCOPE.md §4 (B18-1, amended by the S0 gate review). S0 folds: run_id is the join key eval receipts reference; verify_template is a PINNED registry reference so later template edits never change the meaning of old evidence (G1). Writes are atomic (temp+rename); evolution is additive-only.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Row schema version (all rows carry schema_version; additive-only evolution)."
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "S0 fold: the join key eval-receipt rows reference (eval-receipt.run_id)."
+    },
+    "atom_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The work-atom this run executed."
+    },
+    "ts_open": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the atom opened."
+    },
+    "ts_close": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the atom closed (row is written at close)."
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The atom's pre-declared goal."
+    },
+    "verify_template": {
+      "type": "object",
+      "description": "S0 fold (G1): PINNED registry reference — both id and version required so later template edits never change the meaning of old evidence.",
+      "properties": {
+        "template_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "template_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["template_id", "template_version"],
+      "additionalProperties": false
+    },
+    "verify_args": {
+      "type": "array",
+      "description": "Arguments the verify template was instantiated with, as name/value pairs.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": ["string", "number", "boolean", "null"]
+          }
+        },
+        "required": ["name", "value"],
+        "additionalProperties": false
+      }
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["pass", "fail-retry", "fail-escalate", "blocked"],
+      "description": "Run outcome — exact ratified enum."
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of verify attempts consumed."
+    },
+    "workflow_ref": {
+      "type": ["string", "null"],
+      "description": "Reference to the FOLLOWED registered workflow. Nullable until registry live (CONSTRUCT / improvised runs carry null)."
+    },
+    "thread_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Conversation/session thread the run belongs to."
+    },
+    "operator_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Operator identity for the run."
+    },
+    "evidence_ref": {
+      "type": ["string", "null"],
+      "description": "Pointer to the evidence artifact for this run; null when no evidence artifact exists."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "atom_id",
+    "ts_open",
+    "ts_close",
+    "goal",
+    "verify_template",
+    "verify_args",
+    "outcome",
+    "attempts",
+    "workflow_ref",
+    "thread_id",
+    "operator_id",
+    "evidence_ref"
+  ],
+  "additionalProperties": false
+}

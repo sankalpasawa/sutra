@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""sutra-schema-validate -- structural JSON validator (W-BUILD-V1 S4-C0).
+
+Usage: sutra-schema-validate <schema.json> <jsonl-file-or-single-json>
+
+Python3 STDLIB ONLY (the jsonschema package is not importable; validation is
+manual per the M1 leak guard, SCOPE.md section 3). Implements the constraint
+subset the five sutra/os/native/schemas contracts use:
+
+  type (incl. union lists) - required - enum - const - additionalProperties -
+  nested properties - items - minItems - minLength - minimum - pattern -
+  allOf - if/then/else
+
+`format` is annotation-only (JSON Schema 2020-12 default; no fixture tests it).
+Top-level `_expect_error` keys (fixture bookkeeping) are stripped before
+validation.
+
+Input handling: the data file is parsed as ONE JSON document if the whole file
+parses; otherwise it is treated as JSONL, one row per non-empty line.
+
+Exit status: 0 all rows valid - 1 any row invalid (per-row errors printed) -
+2 usage error - 3 unreadable input.
+
+Leak guards: reads only; never writes anywhere (SCOPE section 3 "CLIs").
+No F1-F10 behavior (FORBIDDEN-DEPS.md): no ledger reads, no contracts, no
+queues, no routing, no arbitration, no installer layout, no scheduler, no
+approval, no tenancy, no estimation.
+"""
+import json
+import re
+import sys
+
+
+def jtype(v):
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "boolean"
+    if isinstance(v, int):
+        return "integer"
+    if isinstance(v, float):
+        return "number"
+    if isinstance(v, str):
+        return "string"
+    if isinstance(v, list):
+        return "array"
+    if isinstance(v, dict):
+        return "object"
+    return "unknown"
+
+
+def type_ok(v, t):
+    if t == "number":
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+    if t == "integer":
+        return isinstance(v, int) and not isinstance(v, bool)
+    return jtype(v) == t
+
+
+def _eq(a, b):
+    """JSON equality that never conflates booleans with numbers."""
+    return a == b and isinstance(a, bool) == isinstance(b, bool)
+
+
+def validate(v, s, path, errs):
+    """Append human-readable error strings to errs; no return value."""
+    if not isinstance(s, dict):
+        return
+
+    t = s.get("type")
+    if t is not None:
+        ts = t if isinstance(t, list) else [t]
+        if not any(type_ok(v, x) for x in ts):
+            errs.append("%s: expected type %s, got %s (%r)"
+                        % (path, "|".join(ts), jtype(v), v))
+            return  # deeper checks are meaningless on the wrong type
+
+    if "enum" in s and not any(_eq(v, e) for e in s["enum"]):
+        errs.append("%s: %r not in enum %s" % (path, v, s["enum"]))
+    if "const" in s and not _eq(v, s["const"]):
+        errs.append("%s: %r != const %r" % (path, v, s["const"]))
+
+    if isinstance(v, str):
+        if "minLength" in s and len(v) < s["minLength"]:
+            errs.append("%s: length %d < minLength %d"
+                        % (path, len(v), s["minLength"]))
+        if "pattern" in s and not re.search(s["pattern"], v):
+            errs.append("%s: %r does not match pattern %r"
+                        % (path, v, s["pattern"]))
+
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if "minimum" in s and v < s["minimum"]:
+            errs.append("%s: %s < minimum %s" % (path, v, s["minimum"]))
+
+    if isinstance(v, dict):
+        for r in s.get("required", []):
+            if r not in v:
+                errs.append("%s: missing required property '%s'" % (path, r))
+        props = s.get("properties", {})
+        if s.get("additionalProperties") is False:
+            for k in v:
+                if k not in props:
+                    errs.append("%s: additional property '%s' not allowed"
+                                % (path, k))
+        for k, sub in props.items():
+            if k in v:
+                validate(v[k], sub, "%s.%s" % (path, k), errs)
+
+    if isinstance(v, list):
+        if "minItems" in s and len(v) < s["minItems"]:
+            errs.append("%s: %d items < minItems %d"
+                        % (path, len(v), s["minItems"]))
+        items = s.get("items")
+        if isinstance(items, dict):
+            for i, item in enumerate(v):
+                validate(item, items, "%s[%d]" % (path, i), errs)
+
+    for sub in s.get("allOf", []):
+        validate(v, sub, path, errs)
+
+    if "if" in s:
+        probe = []
+        validate(v, s["if"], path, probe)
+        if not probe:
+            if "then" in s:
+                validate(v, s["then"], path, errs)
+        elif "else" in s:
+            validate(v, s["else"], path, errs)
+
+
+def load_rows(text):
+    """Whole-document JSON first; else JSONL one row per non-empty line.
+    Returns list of (row_number, value_or_None, parse_error_or_None)."""
+    try:
+        return [(1, json.loads(text), None)]
+    except ValueError:
+        pass
+    rows = []
+    n = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        n += 1
+        try:
+            rows.append((n, json.loads(line), None))
+        except ValueError as e:
+            rows.append((n, None, str(e)))
+    return rows
+
+
+def main(argv):
+    if len(argv) != 3:
+        sys.stderr.write(
+            "usage: sutra-schema-validate <schema.json> "
+            "<jsonl-file-or-single-json>\n")
+        return 2
+    try:
+        with open(argv[1], "r", encoding="utf-8") as f:
+            schema = json.load(f)
+    except (OSError, ValueError) as e:
+        sys.stderr.write("cannot load schema %s: %s\n" % (argv[1], e))
+        return 3
+    try:
+        with open(argv[2], "r", encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        sys.stderr.write("cannot read data %s: %s\n" % (argv[2], e))
+        return 3
+
+    rows = load_rows(text)
+    if not rows:
+        sys.stderr.write("no JSON rows found in %s\n" % argv[2])
+        return 1
+
+    invalid = 0
+    for n, value, parse_err in rows:
+        if parse_err is not None:
+            invalid += 1
+            print("row %d: INVALID" % n)
+            print("  - $: JSON parse error: %s" % parse_err)
+            continue
+        if isinstance(value, dict):
+            value = dict(value)
+            value.pop("_expect_error", None)
+        errs = []
+        validate(value, schema, "$", errs)
+        if errs:
+            invalid += 1
+            print("row %d: INVALID" % n)
+            for e in errs:
+                print("  - %s" % e)
+        else:
+            print("row %d: VALID" % n)
+
+    print("%d row(s): %d valid, %d invalid"
+          % (len(rows), len(rows) - invalid, invalid))
+    return 1 if invalid else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sutra.dev/native/schemas/eval-receipt-row.schema.json",
+  "title": "eval-receipt-row",
+  "description": "One eval receipt row (SCOPE.md §4, B18-1 as amended by the S0 gate review). Append-only JSONL; writes are atomic (temp+rename) with a completeness marker; evolution is additive-only. exclusion_reason is MANDATORY (non-null) iff result=excluded, and MUST be null otherwise.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "pack",
+    "case_id",
+    "check",
+    "result",
+    "exclusion_reason",
+    "receipt_ref",
+    "judge",
+    "ts"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version of this row shape (all v1 rows carry schema_version; evolution is additive-only)."
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "References run-ledger.run_id — the join key linking this receipt to its run-ledger row (S0 fold: verify pass rate is read via run_id joins between ledger and receipts)."
+    },
+    "pack": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Eval pack this receipt belongs to."
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Case within the pack that was evaluated."
+    },
+    "check": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The specific check the case ran."
+    },
+    "result": {
+      "enum": ["pass", "fail", "excluded"],
+      "description": "Outcome of the check."
+    },
+    "exclusion_reason": {
+      "type": ["string", "null"],
+      "description": "MANDATORY (non-null, non-empty) iff result=excluded; MUST be null otherwise. Enforced by the if/then/else conditional below."
+    },
+    "receipt_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference to the receipt evidence artifact."
+    },
+    "judge": {
+      "enum": ["deterministic", "llm"],
+      "description": "Which judge produced the result."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp the receipt was written (RFC 3339)."
+    }
+  },
+  "if": {
+    "properties": {
+      "result": { "const": "excluded" }
+    },
+    "required": ["result"]
+  },
+  "then": {
+    "properties": {
+      "exclusion_reason": { "type": "string", "minLength": 1 }
+    },
+    "required": ["exclusion_reason"]
+  },
+  "else": {
+    "properties": {
+      "exclusion_reason": { "type": "null" }
+    }
+  }
+}

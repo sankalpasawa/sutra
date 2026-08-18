@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""sutra-route-log -- decision-provenance row appender (W-BUILD-V1 S4-C4).
+
+Reads ONE turn summary from args and/or stdin, computes the recorded
+routing mode (match if routing confidence >= 0.80 else floor -- A4
+threshold, recorded as a factor row, LOG-ONLY: the append changes no
+behavior in either direction), fills fields the caller cannot honestly
+compute with null / not_evaluated (SCOPE section 4 writer note), and
+appends exactly one schema-valid row to the instance ledger at
+~/.sutra-native/ledger/decision-provenance.jsonl.
+
+Validation: external sutra-schema-validate against
+decision-provenance-row.schema.json when both are present, else an
+inline structural check implementing the same contract (16 required
+keys, additionalProperties false, enum, factor item shape).
+
+Write discipline (SCOPE section 4 preamble): atomic temp+rename in the
+ledger directory, then a completeness marker
+(decision-provenance.jsonl.complete), itself written temp+rename.
+
+M4-slice guard (SCOPE section 3): records observed handoffs ONLY.
+No queueing, no assignment, no escalation code paths. authority_verdict
+values (including "escalated") are RECORDED verdicts the existing
+per-turn pipeline already decided -- this tool never decides or routes.
+FORBIDDEN-DEPS: no F1 (nothing reads the ledger here), F2, F3, F4, F5,
+F6 (v1-own dir convention), F7, F8, F9 (single operator), F10.
+
+Exit status:
+  0  row appended and completeness marker present
+  1  row failed structural validation (nothing written)
+  2  usage error (bad args / unparseable stdin)
+  3  I/O failure (temp write or rename failed; store unchanged)
+
+A failed append never blocks the turn -- log-only cuts both ways.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+THRESHOLD = 0.80
+SCHEMA_VERSION_DEFAULT = "1.0.0"
+LEDGER_NAME = "decision-provenance.jsonl"
+
+REQUIRED_KEYS = [
+    "schema_version", "turn_id", "decision_seq", "ts", "operator_id",
+    "charter_ref", "domain_ref", "task_tier", "phase", "intent_type",
+    "factors", "authority_verdict", "reversibility", "approval_ref",
+    "work_ref", "output_ref", "channels",
+]
+AUTHORITY_ENUM = {"granted", "denied", "escalated", "not_evaluated"}
+NULLABLE_STR = {
+    "charter_ref", "domain_ref", "task_tier", "phase", "intent_type",
+    "reversibility", "approval_ref", "work_ref", "output_ref",
+}
+
+
+def die(code, msg):
+    sys.stderr.write("sutra-route-log: %s\n" % msg)
+    sys.exit(code)
+
+
+def parse_args(argv):
+    p = argparse.ArgumentParser(prog="sutra-route-log", add_help=True)
+    p.add_argument("--stdin", action="store_true",
+                   help="read a JSON turn summary object from stdin; args override")
+    p.add_argument("--turn-id")
+    p.add_argument("--operator", "--operator-id", dest="operator_id")
+    p.add_argument("--decision-seq", type=int)
+    p.add_argument("--ts")
+    p.add_argument("--schema-version")
+    p.add_argument("--charter-ref")
+    p.add_argument("--domain-ref")
+    p.add_argument("--task-tier")
+    p.add_argument("--phase")
+    p.add_argument("--intent-type")
+    p.add_argument("--confidence", type=float,
+                   help="routing confidence observed by the existing pipeline")
+    p.add_argument("--confidence-source",
+                   help="source_ref for the routing_confidence factor")
+    p.add_argument("--authority-verdict")
+    p.add_argument("--reversibility")
+    p.add_argument("--approval-ref")
+    p.add_argument("--work-ref")
+    p.add_argument("--output-ref")
+    p.add_argument("--channel", action="append", dest="channels")
+    p.add_argument("--factor", action="append", dest="factors",
+                   help="extra factor row as JSON: {\"type\":..,\"value\":..,\"source_ref\":..}")
+    return p.parse_args(argv)
+
+
+def read_stdin_summary():
+    raw = sys.stdin.read()
+    try:
+        obj = json.loads(raw)
+    except ValueError as e:
+        die(2, "stdin is not valid JSON: %s" % e)
+    if not isinstance(obj, dict):
+        die(2, "stdin summary must be a JSON object")
+    return obj
+
+
+def build_row(args):
+    summary = read_stdin_summary() if args.stdin else {}
+
+    def pick(arg_val, key, default=None):
+        if arg_val is not None:
+            return arg_val
+        if key in summary:
+            return summary[key]
+        return default
+
+    turn_id = pick(args.turn_id, "turn_id")
+    operator_id = pick(args.operator_id, "operator_id")
+    if not turn_id or not operator_id:
+        die(2, "turn_id and operator_id are required (args or stdin)")
+
+    ts = pick(args.ts, "ts")
+    if ts is None:
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    confidence = pick(args.confidence, "confidence")
+    confidence_source = pick(args.confidence_source, "confidence_source")
+
+    factors = []
+    if confidence is not None:
+        try:
+            conf = float(confidence)
+        except (TypeError, ValueError):
+            die(2, "confidence must be a number")
+        mode = "match" if conf >= THRESHOLD else "floor"
+        factors.append({"type": "routing_confidence", "value": conf,
+                        "source_ref": confidence_source})
+        factors.append({"type": "routing_mode", "value": mode,
+                        "source_ref": "sutra-route-log:threshold-%.2f" % THRESHOLD})
+    else:
+        mode = "not_evaluated"  # honest: no confidence observed this turn
+
+    extra = summary.get("factors", [])
+    if not isinstance(extra, list):
+        die(2, "stdin factors must be an array")
+    factors.extend(extra)
+    for f in (args.factors or []):
+        try:
+            factors.append(json.loads(f))
+        except ValueError as e:
+            die(2, "--factor is not valid JSON: %s" % e)
+
+    channels = args.channels if args.channels is not None \
+        else summary.get("channels", [])
+
+    row = {
+        "schema_version": pick(args.schema_version, "schema_version",
+                               SCHEMA_VERSION_DEFAULT),
+        "turn_id": turn_id,
+        "decision_seq": pick(args.decision_seq, "decision_seq", 0),
+        "ts": ts,
+        "operator_id": operator_id,
+        "charter_ref": pick(args.charter_ref, "charter_ref"),
+        "domain_ref": pick(args.domain_ref, "domain_ref"),
+        "task_tier": pick(args.task_tier, "task_tier"),
+        "phase": pick(args.phase, "phase"),
+        "intent_type": pick(args.intent_type, "intent_type"),
+        "factors": factors,
+        "authority_verdict": pick(args.authority_verdict, "authority_verdict",
+                                  "not_evaluated"),
+        "reversibility": pick(args.reversibility, "reversibility"),
+        "approval_ref": pick(args.approval_ref, "approval_ref"),
+        "work_ref": pick(args.work_ref, "work_ref"),
+        "output_ref": pick(args.output_ref, "output_ref"),
+        "channels": channels,
+    }
+    return row, mode
+
+
+def inline_validate(row):
+    """Structural check mirroring decision-provenance-row.schema.json."""
+    errs = []
+    if not isinstance(row, dict):
+        return ["row is not an object"]
+    for k in REQUIRED_KEYS:
+        if k not in row:
+            errs.append("missing required key: %s" % k)
+    for k in row:
+        if k not in REQUIRED_KEYS:
+            errs.append("additional property not allowed: %s" % k)
+    if errs:
+        return errs
+    for k in ("schema_version", "turn_id", "operator_id", "ts"):
+        if not isinstance(row[k], str):
+            errs.append("%s must be a string" % k)
+    seq = row["decision_seq"]
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+        errs.append("decision_seq must be an integer >= 0")
+    for k in NULLABLE_STR:
+        if row[k] is not None and not isinstance(row[k], str):
+            errs.append("%s must be string or null" % k)
+    if row["authority_verdict"] not in AUTHORITY_ENUM:
+        errs.append("authority_verdict must be one of %s"
+                    % "|".join(sorted(AUTHORITY_ENUM)))
+    if not isinstance(row["factors"], list):
+        errs.append("factors must be an array")
+    else:
+        for i, f in enumerate(row["factors"]):
+            if not isinstance(f, dict):
+                errs.append("factors[%d] must be an object" % i)
+                continue
+            if set(f.keys()) != {"type", "value", "source_ref"}:
+                errs.append("factors[%d] must have exactly type/value/source_ref" % i)
+                continue
+            if not isinstance(f["type"], str):
+                errs.append("factors[%d].type must be a string" % i)
+            if not isinstance(f["value"], (str, int, float, bool)):
+                errs.append("factors[%d].value must be string|number|boolean" % i)
+            if f["source_ref"] is not None and not isinstance(f["source_ref"], str):
+                errs.append("factors[%d].source_ref must be string or null" % i)
+    if not isinstance(row["channels"], list) or \
+            any(not isinstance(c, str) for c in row["channels"]):
+        errs.append("channels must be an array of strings")
+    return errs
+
+
+def validate(row):
+    """External sutra-schema-validate when available, else inline. Exit 1 on fail."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    validator = os.path.join(here, "sutra-schema-validate")
+    schema = os.path.normpath(os.path.join(
+        here, "..", "..", "..", "os", "native", "schemas",
+        "decision-provenance-row.schema.json"))
+    if os.path.isfile(validator) and os.path.isfile(schema):
+        fd, tmp = tempfile.mkstemp(suffix=".json")
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(row, fh)
+            r = subprocess.run([sys.executable, validator, schema, tmp],
+                               capture_output=True, text=True)
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        if r.returncode == 0:
+            return
+        if r.returncode == 1:
+            die(1, "row failed schema validation (nothing written):\n%s"
+                % (r.stdout + r.stderr).strip())
+        # validator unusable (usage/io) -> fall through to inline check
+    errs = inline_validate(row)
+    if errs:
+        die(1, "row failed structural validation (nothing written): "
+            + "; ".join(errs))
+
+
+def atomic_append(row):
+    ledger_dir = os.path.join(os.path.expanduser("~"), ".sutra-native", "ledger")
+    ledger = os.path.join(ledger_dir, LEDGER_NAME)
+    marker = ledger + ".complete"
+    line = json.dumps(row, separators=(",", ":"), sort_keys=False) + "\n"
+    try:
+        os.makedirs(ledger_dir, exist_ok=True)
+        existing = b""
+        if os.path.exists(ledger):
+            with open(ledger, "rb") as fh:
+                existing = fh.read()
+        fd, tmp = tempfile.mkstemp(dir=ledger_dir, prefix=".route-log.")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(existing)
+                fh.write(line.encode("utf-8"))
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, ledger)
+        except OSError:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+        rows = existing.count(b"\n") + 1
+        fd2, tmp2 = tempfile.mkstemp(dir=ledger_dir, prefix=".route-log.")
+        try:
+            with os.fdopen(fd2, "w") as fh:
+                json.dump({"complete": True, "rows": rows,
+                           "last_ts": row["ts"]}, fh)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp2, marker)
+        except OSError:
+            try:
+                os.unlink(tmp2)
+            except OSError:
+                pass
+            raise
+        return rows
+    except OSError as e:
+        die(3, "I/O failure, store unchanged or marker missing: %s" % e)
+
+
+def main(argv):
+    args = parse_args(argv)
+    row, mode = build_row(args)
+    validate(row)
+    rows = atomic_append(row)
+    print("appended turn_id=%s seq=%s mode=%s rows=%d"
+          % (row["turn_id"], row["decision_seq"], mode, rows))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

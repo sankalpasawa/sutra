@@ -3,14 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>document.documentElement.className+=' js';</script>
+<script>document.documentElement.className+=' js';
+/* Failsafe: headlines are CSS-hidden until the word-splitter has run (see
+   .words-ready below). If the main script never executes, this un-hides them
+   anyway so the page can never strand its own headlines. */
+setTimeout(function(){document.documentElement.classList.add('words-ready');},2000);</script>
 <link rel="icon" href="sutra-mark.svg" type="image/svg+xml">
 <link rel="mask-icon" href="sutra-mark.svg" color="#A8543A">
 <title>Sutra — Manage AI, you get better.</title>
 <meta name="description" content="Sutra gives you the ability to create multiple AI teams — and helps you grow as a leader. A Mac app that runs on the Claude plan you already have.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..400&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..400&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=optional" rel="stylesheet">
+<!-- display=optional, not swap. With swap the browser may replace the fallback at ANY
+     later moment, and the fallback is ~9% wider, so headlines visibly re-wrapped after
+     paint on mobile: "Speed / is fine. Everyone has it. / Velocity / is / speed with a
+     direction." collapsing to three lines once Fraunces landed. optional gives the font
+     a short window and then commits for that pageview -- there is no swap period at all,
+     so that reflow is impossible rather than merely small. Fonts still download and
+     cache, so repeat visits render Fraunces immediately.
+     Why not size-adjust alone: it needs Safari 17+, and a failed local() drops the whole
+     @font-face. The metric-matched fallback below is kept for where it does apply, but
+     it is no longer what guarantees stability. font-display is supported from Safari
+     11.1, so this covers every device. -->
 <style>
 /* ── tokens ─────────────────────────────────────────── */
 :root{
@@ -45,7 +60,7 @@ html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:68p
   src:local('Georgia'),local('Times New Roman');
   size-adjust:91.5%;          /* 362.6 / 396.3 */
   line-gap-override:0%;
-  font-display:swap;
+  /* no font-display here: src is local(), so it resolves immediately or not at all */
 }
 
 body{background:var(--paper);color:var(--ink);font-family:var(--sans);
@@ -262,6 +277,13 @@ footer a{color:var(--muted);text-decoration:none}
   transition:opacity 1.05s var(--ease),transform 1.05s var(--ease)}
 [data-anim].in{opacity:1;transform:none}
 [data-anim="words"]{opacity:1;transform:none}
+/* An unsplit headline must never be painted. It would show as plain text, then
+   VANISH the instant splitWords() replaced it with opacity:0 word spans -- which
+   is precisely the "appears once, then gets rearranged" seen on mobile. Desktop
+   never showed it because a warm font cache split before the first paint.
+   Scoped to html.js so a no-JS reader is unaffected, and the head script arms a
+   2s failsafe so this can never stick. */
+html.js:not(.words-ready) [data-anim="words"]{visibility:hidden}
 .w{display:inline-block;opacity:0;transform:translateY(14px);
   transition:opacity .70s var(--ease),transform .70s var(--ease),color 1.1s var(--ease-tone)}
 [data-anim="words"].in .w{opacity:1;transform:none}
@@ -625,23 +647,28 @@ function splitWords(el,step){
    and everything re-wrapped when the fonts landed. That is why desktop looked
    fine and mobile looked broken. 1200ms lets most real connections win the race;
    the metric-matched 'Fraunces-fb' above covers whoever still times out. */
-var ready=new Promise(function(res){
-  var f=false, go=function(){ if(!f){f=true;res();} };
-  if(document.fonts && document.fonts.ready) document.fonts.ready.then(go,go);
-  setTimeout(go,1200);
-});
-
-ready.then(function(){
-  if(!reduce){
-    $$('[data-anim="words"]').forEach(function(el){
-      var step = el.classList.contains('fork-a') ? 38
-               : el.classList.contains('fork-b') ? 48
-               : el.closest('.turn')             ? 56 : 42;
-      splitWords(el,step);
-    });
-  }
-  boot();
-});
+/* Split immediately -- never on a font-load timer.
+   The old code waited for document.fonts.ready raced against a timeout before
+   splitting. A warm desktop cache won that race, so the split happened before
+   first paint and nobody saw it. A phone on cellular always LOST it, so the
+   headline sat on screen as plain text for the whole timeout, then vanished and
+   re-animated the moment the split ran. Raising the cap only made it worse.
+   Now the split runs at script execution and the headline is CSS-hidden until
+   it has, so the first painted state is already the final arrangement. The
+   metric-matched 'Fraunces-fb' fallback keeps the later font swap layout-neutral
+   (~0.5% residual), which is what makes splitting at fallback metrics safe. */
+function splitNow(){
+  if(reduce) return;
+  $$('[data-anim="words"]').forEach(function(el){
+    var step = el.classList.contains('fork-a') ? 38
+             : el.classList.contains('fork-b') ? 48
+             : el.closest('.turn')             ? 56 : 42;
+    splitWords(el,step);
+  });
+}
+try{ splitNow(); }
+finally{ document.documentElement.classList.add('words-ready'); }
+boot();
 
 /* ── 3 · boot ────────────────────────────────────────────── */
 function boot(){
