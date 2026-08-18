@@ -22,14 +22,38 @@ WHAT A ROUTINE MAY DO, AND WHAT IT MAY NOT
     A routine runs an agent with nobody watching. The permission mode is a
     POSITIVE ALLOW-LIST here, not a subtraction from providers.PERMISSION_MODES:
     subtraction would silently re-admit bypassPermissions the day someone edits
-    that tuple. There is no env var, no settings key and no consent phrase that
-    reaches a write-capable mode for a routine in v1.
+    that tuple.
 
     The default is `dontAsk`, not `plan`. `plan` unattended is silent
     uselessness: it proposes edits for a human who is not there, exits 0, and
     the run reads OK while the routine does nothing forever. A routine that
     looks healthy and does nothing is worse than one that fails, because failure
-    is legible. `dontAsk` denies rather than stalls, and is not a write mode.
+    is legible. `dontAsk` denies rather than stalls.
+
+    `dontAsk` IS WRITE-CAPABLE. This paragraph used to end "...and is not a
+    write mode", and used to claim above that nothing "reaches a write-capable
+    mode for a routine in v1". Both were false. `dontAsk` is a PROMPTING policy,
+    not a capability: providers.py's own PERMISSION_MODE_NOTES already says it
+    "never prompts. Actions the rules do not already allow are declined rather
+    than escalated." What a run may actually do is decided by the loaded rules
+    -- and this module already emits `opts.allowed_tools` verbatim as repeated
+    --allowed-tools flags in the runner's argv. Measured against the CLI
+    directly, 2026-08-18:
+
+        --permission-mode dontAsk --allowed-tools Write   -> the file CHANGED
+        --permission-mode dontAsk (no allow-list)         -> Write DENIED
+        --permission-mode plan    --allowed-tools Write   -> not written
+
+    So the real ceiling on a routine is the pair (permission_mode,
+    allowed_tools), and validate_new only validates the first half. Anything
+    relying on "a routine cannot write" is relying on a property this module
+    does not have.
+
+    One more thing the pair does not capture: `--setting-sources user` is
+    hardcoded in the runner, so a routine also inherits the operator's own
+    PreToolUse hooks. Those can deny a tool for reasons unrelated to permission
+    mode, and the run presents as a spent budget and a non-zero exit rather than
+    as a legible refusal.
 """
 import errno
 import hashlib
@@ -443,12 +467,43 @@ def runner_path():
     return store_dir() / "bin" / RUNNER_NAME
 
 
+def runner_syntax_error(source=None):
+    """Return a human-readable reason _RUNNER will not parse, or None.
+
+    WHY THIS EXISTS. The runner is a STRING literal in this module, not an
+    imported module: nothing type-checks it, no linter walks it, and no test
+    imports it. A typo therefore ships silently and does not surface until
+    launchd fires the job -- possibly hours later, on a machine nobody is
+    watching, as a bare non-zero exit with a traceback buried in a .out file.
+
+    compile() rather than py_compile: py_compile wants a path on disk, and the
+    whole point is to find out BEFORE anything reaches disk.
+    """
+    try:
+        compile(_RUNNER if source is None else source, RUNNER_NAME, "exec")
+    except SyntaxError as e:
+        return "line %s: %s" % (e.lineno, e.msg)
+    return None
+
+
 def install_runner():
     """Write the runner out of the bundle. Idempotent; rewritten when it drifts,
-    so an app update carries a new runner to already-scheduled routines."""
+    so an app update carries a new runner to already-scheduled routines.
+
+    Refuses to install a runner that does not parse. The check runs BEFORE the
+    write on purpose: a broken runner must never replace a working one that is
+    already on disk serving scheduled jobs. Failing here is loud and happens
+    while a human is present; failing at fire time is silent and is not.
+    """
+    want = _RUNNER
+    bad = runner_syntax_error(want)
+    if bad:
+        raise ValueError(
+            "refusing to install %s: it does not parse (%s). The runner is a "
+            "string literal in routines.py, so this is an edit to _RUNNER, not "
+            "a corrupt file on disk." % (RUNNER_NAME, bad))
     d = _mkdir_private(store_dir() / "bin")
     p = d / RUNNER_NAME
-    want = _RUNNER
     if not p.exists() or p.read_text(encoding="utf-8") != want:
         _write_private(p, want)
     os.chmod(p, 0o700)

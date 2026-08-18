@@ -2783,6 +2783,75 @@ class TestRoutines(unittest.TestCase):
         return b
 
 
+class TestRunnerCompileGuard(unittest.TestCase):
+    """install_runner() must refuse a _RUNNER that does not parse.
+
+    The runner is a string literal: no import, no linter, no type-check ever
+    touches it, so before this guard a typo shipped silently and surfaced hours
+    later as a failed scheduled run. The guard runs BEFORE the write, so a
+    broken runner can never replace a working one already serving jobs.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import routines
+        self.R = routines
+        self.tmp = tempfile.mkdtemp(prefix=".sutra-test-", dir=os.path.expanduser("~"))
+        self._env = dict(os.environ)
+        os.environ["SUTRA_UI_ROUTINES"] = os.path.join(self.tmp, "routines")
+        os.environ["SUTRA_UI_RUNS"] = os.path.join(self.tmp, "runs")
+        os.environ["SUTRA_UI_LAUNCHAGENTS"] = os.path.join(self.tmp, "agents")
+        self._runner = self.R._RUNNER
+
+    def tearDown(self):
+        self.R._RUNNER = self._runner
+        os.environ.clear()
+        os.environ.update(self._env)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_the_shipped_runner_parses(self):
+        """The guard's baseline: the _RUNNER in this build compiles. If this
+        fails, every scheduled routine on every install is already broken."""
+        self.assertIsNone(self.R.runner_syntax_error())
+
+    def test_a_healthy_install_writes_0700_and_records_a_sha(self):
+        p = self.R.install_runner()
+        self.assertTrue(p.exists())
+        self.assertEqual(p.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(p.read_text(encoding="utf-8"), self.R._RUNNER)
+        self.assertEqual(len(self.R.runner_sha()), 16)
+
+    def test_a_broken_runner_refuses_and_names_the_line(self):
+        self.R._RUNNER = "def broken(:\n    pass\n"
+        with self.assertRaises(ValueError) as cm:
+            self.R.install_runner()
+        self.assertIn("does not parse", str(cm.exception))
+        self.assertIn("line 1", str(cm.exception))
+
+    def test_a_refused_install_leaves_the_working_runner_untouched(self):
+        """The property that matters: refusal must not damage what is already
+        on disk. A scheduled job keeps its working runner."""
+        p = self.R.install_runner()
+        good = p.read_text(encoding="utf-8")
+        self.R._RUNNER = "while True\n"          # missing colon
+        with self.assertRaises(ValueError):
+            self.R.install_runner()
+        self.assertEqual(p.read_text(encoding="utf-8"), good)
+
+    def test_the_guard_is_not_a_freeze(self):
+        """A runner that parses but differs must still install — the guard
+        rejects broken code, not change."""
+        p = self.R.install_runner()
+        before = p.read_text(encoding="utf-8")
+        self.R._RUNNER = before + "\n# runner revision marker\n"
+        self.R.install_runner()
+        self.assertNotEqual(p.read_text(encoding="utf-8"), before)
+
+    def test_runner_syntax_error_reports_none_for_valid_source(self):
+        self.assertIsNone(self.R.runner_syntax_error("x = 1\n"))
+        self.assertIn("line 2", self.R.runner_syntax_error("x = 1\ndef f(:\n"))
+
+
 class TestProposals(unittest.TestCase):
     """The chat agent may ASK; only the operator may APPLY.
 
