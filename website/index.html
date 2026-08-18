@@ -14,7 +14,18 @@ setTimeout(function(){document.documentElement.classList.add('words-ready');},20
 <meta name="description" content="Sutra gives you the ability to create multiple AI teams — and helps you grow as a leader. A Mac app that runs on the Claude plan you already have.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..400&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..400&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=optional" rel="stylesheet">
+<!-- display=optional, not swap. With swap the browser may replace the fallback at ANY
+     later moment, and the fallback is ~9% wider, so headlines visibly re-wrapped after
+     paint on mobile: "Speed / is fine. Everyone has it. / Velocity / is / speed with a
+     direction." collapsing to three lines once Fraunces landed. optional gives the font
+     a short window and then commits for that pageview -- there is no swap period at all,
+     so that reflow is impossible rather than merely small. Fonts still download and
+     cache, so repeat visits render Fraunces immediately.
+     Why not size-adjust alone: it needs Safari 17+, and a failed local() drops the whole
+     @font-face. The metric-matched fallback below is kept for where it does apply, but
+     it is no longer what guarantees stability. font-display is supported from Safari
+     11.1, so this covers every device. -->
 <style>
 /* ── tokens ─────────────────────────────────────────── */
 :root{
@@ -49,7 +60,7 @@ html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:68p
   src:local('Georgia'),local('Times New Roman');
   size-adjust:91.5%;          /* 362.6 / 396.3 */
   line-gap-override:0%;
-  font-display:swap;
+  /* no font-display here: src is local(), so it resolves immediately or not at all */
 }
 
 body{background:var(--paper);color:var(--ink);font-family:var(--sans);
