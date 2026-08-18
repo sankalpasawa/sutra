@@ -261,6 +261,58 @@ function wire(){
     if (S.agentsFold[sid]) delete S.agentsFold[sid];
     else { S.agentsFold[sid] = true; loadAgents(sid, false); }
     render(); });
+  /* Drill down from a turn's agent roster into the subagent fold below it.
+     No new surface: this opens the fold that already ships and selects the
+     matching agent in it — exactly what [data-agentsfold] and [data-agentopen]
+     do when clicked by hand.
+     Async because the agent list may not be fetched yet. The fold opens FIRST so
+     the click feels immediate; the selection lands when the list arrives. */
+  panes.querySelectorAll("[data-agentrow]").forEach(b=>b.onclick=async ()=>{
+    const pane = b.closest(".pane[data-sess]");
+    const sid = pane && pane.dataset.sess;
+    if (!sid) return;
+    const kind = b.dataset.agkind, desc = b.dataset.agdesc;
+    /* How many rows in THIS turn carry the same key. agentMatch() refuses to
+       resolve when there is more than one, because two rows that normalise to
+       the same key cannot be told apart -- and if only one of them happens to
+       have a transcript on disk, both would otherwise open it. */
+    const group = b.closest(".gv-agents");
+    const peers = group
+      ? Array.prototype.filter.call(group.querySelectorAll("[data-agentrow]"),
+          x => x.dataset.agkind === kind && x.dataset.agdesc === desc).length
+      : 1;
+    /* Click ordering. loadAgents() is async, so a slow first click could land
+       AFTER a fast second one and overwrite the selection the operator is
+       actually looking at. Only the newest click is allowed to apply. */
+    const token = (S._agentClick = (S._agentClick || 0) + 1);
+    S.agentNote = S.agentNote || {};
+    delete S.agentNote[sid];
+    S.agentsFold[sid] = true;
+    render();
+    /* A failed fetch must not leave an unhandled rejection and no feedback:
+       loadAgents() already degrades to [], and this covers the rest. */
+    try { await loadAgents(sid, false); }
+    catch (e){ S.agentNote[sid] = "Could not read this session's subagents."; render(); return; }
+    if (token !== S._agentClick) return;          /* a newer click owns the pane */
+    const hit = agentMatch(S.agents[sid], kind, desc, peers);
+    if (hit){
+      S.agentOpen[sid] = hit.id;
+      loadAgentTranscript(sid, hit.id);
+    } else {
+      /* Honest failure. A running agent often has no transcript on disk yet, and
+         two identical agents cannot be told apart. Say which it is, rather than
+         opening nothing silently or opening a plausible wrong one. */
+      const list = S.agents[sid];
+      S.agentNote[sid] = peers > 1
+        ? "Two agents in this turn have the same type and description, so this row "
+          + "cannot be told apart from its twin — open the one you want below."
+        : (list && list.length)
+          ? "Could not tell which transcript belongs to this row — it may still be "
+            + "running, or its transcript is not on disk yet."
+          : "No subagent transcript on disk for this agent yet.";
+    }
+    render();
+  });
   panes.querySelectorAll("[data-agentopen]").forEach(b=>b.onclick=()=>{
     /* sid is a claude session id (uuid) and aid is agent-<hex>; neither contains a
        colon, so a single split is unambiguous. */
@@ -338,6 +390,18 @@ function wire(){
   panes.querySelectorAll("[data-toolout]").forEach(b=>b.onclick=()=>{
     const id = b.dataset.toolout;
     S.toolOpen[id] = !S.toolOpen[id];
+    render();
+  });
+  /* the loader opens into the turn's step log — same structural-toggle pattern
+     as the governance chip below it: flip the S key, full render. Not the patch
+     path, because opening a log CHANGES the shape of the block rather than its
+     text, and the patch path exists for text. */
+  panes.querySelectorAll("[data-thinkopen]").forEach(b=>b.onclick=()=>{
+    const uid = b.dataset.thinkopen;
+    if (!uid) return;
+    S.thinkOpen = S.thinkOpen || {};
+    if (S.thinkOpen[uid]) delete S.thinkOpen[uid];
+    else S.thinkOpen[uid] = true;
     render();
   });
   /* governance chip fold — same structural-toggle pattern as [data-toolout]:

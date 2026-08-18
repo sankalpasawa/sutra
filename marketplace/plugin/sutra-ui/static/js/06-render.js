@@ -55,7 +55,43 @@ function agentsFold(s){
   const meta = openId ? list.find(a=>a.id===openId) : null;
   const messages = openId ? S.agentTurns[s.id + ":" + openId] : undefined;
   const detail = !openId ? "" : `<div class="agdetail">${agentDetailHtml(meta, messages)}</div>`;
-  return `<div class="agents open">${head}<div class="aglist">${rows}</div>${detail}</div>`;
+  /* Set when a drill-down from a turn's roster could not resolve to exactly one
+     transcript. Says so instead of silently opening nothing -- or worse, opening
+     a plausible-looking wrong one. Reuses .agnone, the same line "Reading…" and
+     "No subagent transcripts" already use. */
+  const note = (S.agentNote && S.agentNote[s.id])
+    ? `<p class="agnone">${esc(S.agentNote[s.id])}</p>` : "";
+  return `<div class="agents open">${head}${note}<div class="aglist">${rows}</div>${detail}</div>`;
+}
+
+/* Correlate a turn's roster row with a subagent transcript.
+   THE TWO IDS ARE NOT THE SAME, and treating them as such would open the wrong
+   agent: a roster row is keyed by the `tool_use` id off the wire, while the
+   fold's rows are keyed by transcript FILENAME (session_reader.py: id = f.stem).
+   The server already pairs them -- _parent_tasks() matches an agent to its Task
+   by prompt prefix -- and then surfaces the SAME two fields on both sides:
+   subagent_type/agent_type and description/title. So this re-joins on the
+   pairing the server made rather than inventing a second, weaker one.
+
+   An AMBIGUOUS match resolves to nothing on purpose. Two agents of the same type
+   with the same description are indistinguishable here, and picking one would be
+   a coin flip presented as an answer. */
+function agentMatch(list, kind, desc, peers){
+  if (!list || !list.length || !desc) return null;
+  /* Ambiguity has TWO sides, and checking only one was a real hole: if two rows
+     in the SAME turn normalise to the same key and only one transcript happens
+     to be on disk, both rows would resolve to it -- confidently opening the
+     wrong agent. `peers` is how many rows in this turn share this row's key. */
+  if (peers > 1) return null;
+  /* the roster caps desc at 120 and may end in an ellipsis; the server caps
+     title at 80. Compare on the common ground. */
+  const nd = s => String(s||"").replace(/…+$/, "").trim().toLowerCase().slice(0, 80);
+  const nk = s => String(s||"").trim().toLowerCase();
+  const d = nd(desc), k = nk(kind);
+  if (!d) return null;
+  const hits = list.filter(a =>
+    nd(a.title) === d && (!a.agent_type || !k || nk(a.agent_type) === k));
+  return hits.length === 1 ? hits[0] : null;
 }
 
 /* One subagent rendered as Claude's agent view: a header (title / type / status),

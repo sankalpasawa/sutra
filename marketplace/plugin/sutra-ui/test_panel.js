@@ -179,7 +179,11 @@ const EPILOGUE = `
      the global was deleted -- it would only have thrown the moment a test
      touched it. Removed with the tenant surface it belonged to. */
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
-  renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S
+  renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S,
+  /* the per-turn chat surface: the projection is unit-tested in
+     test_governance.js, and these two prove the projection actually REACHES
+     the DOM -- a correct roster rendered into the wrong place still fails */
+  gvAgents, turnResponse, agentMatch, focusKeyOf, patchTurn
 };
 `;
 
@@ -665,21 +669,50 @@ test("14e. an assistant block with no recorded prompt is marked orphan, not give
 
 /* ── 15. loadLayout rejects junk rather than trusting localStorage ──────── */
 
+/* DEFAULTS is spelled once. When loadLayout() grows a key, this test used to have
+   to be edited in two places or it went red for the wrong reason -- which is
+   exactly what happened when balanceTab shipped: the code was correct and
+   validated, the expectation was simply stale. Naming the shape once means the
+   next key added to loadLayout() fails this test only if it is genuinely
+   unguarded, not merely new. */
+const LAYOUT_DEFAULTS = { paneCollapsed: {}, folds: {}, browseW: null, browseClosed: false,
+                          railCollapsed: false, railSections: {}, railTab: "home",
+                          balanceTab: "today" };
+
 test("15. a corrupt/hostile stored layout degrades to defaults", () => {
   const prev = sandbox.localStorage._m["sutra.panel.layout"];
   try {
     sandbox.localStorage._m["sutra.panel.layout"] = "{not json";
-    deepEq(T.loadLayout(), { paneCollapsed: {}, folds: {}, browseW: null, browseClosed: false,
-                             railCollapsed: false, railSections: {}, railTab: "home" },
+    deepEq(T.loadLayout(), LAYOUT_DEFAULTS,
       "unparseable layout must not take the panel down");
     sandbox.localStorage._m["sutra.panel.layout"] =
       JSON.stringify({ browseW: "700px", paneCollapsed: "nope", folds: 3, browseClosed: "yes" });
-    deepEq(T.loadLayout(), { paneCollapsed: {}, folds: {}, browseW: null, browseClosed: false,
-                             railCollapsed: false, railSections: {}, railTab: "home" },
+    deepEq(T.loadLayout(), LAYOUT_DEFAULTS,
       "wrong types must be dropped, not applied");
     sandbox.localStorage._m["sutra.panel.layout"] = JSON.stringify({ browseW: 12 });
     assert.strictEqual(T.loadLayout().browseW, null,
       "an absurdly small width would render an unusable sliver");
+  } finally {
+    if (prev === undefined) delete sandbox.localStorage._m["sutra.panel.layout"];
+    else sandbox.localStorage._m["sutra.panel.layout"] = prev;
+  }
+});
+
+/* balanceTab shipped with an allowlist in loadLayout() but no test. localStorage is
+   attacker-writable from anything that runs in this origin, and the value is used to
+   pick a render branch, so a value outside the allowlist must never survive. */
+test("15b. balanceTab is allowlisted, not trusted", () => {
+  const prev = sandbox.localStorage._m["sutra.panel.layout"];
+  try {
+    for (const good of ["today", "week", "month"]) {
+      sandbox.localStorage._m["sutra.panel.layout"] = JSON.stringify({ balanceTab: good });
+      assert.strictEqual(T.loadLayout().balanceTab, good, good + " is a real tab and must survive");
+    }
+    for (const bad of ["year", "", null, 3, {}, ["today"], "__proto__", "<script>"]) {
+      sandbox.localStorage._m["sutra.panel.layout"] = JSON.stringify({ balanceTab: bad });
+      assert.strictEqual(T.loadLayout().balanceTab, "today",
+        JSON.stringify(bad) + " is not a tab and must degrade to the default");
+    }
   } finally {
     if (prev === undefined) delete sandbox.localStorage._m["sutra.panel.layout"];
     else sandbox.localStorage._m["sutra.panel.layout"] = prev;
@@ -1509,6 +1542,352 @@ test("27d. a failed or malformed fetch does not throw and leaves the drawer inta
   const html = failed.doc.getElementById("act-dbody").innerHTML;
   assert.ok(/act-err/.test(html), "an errored feed renders the .act-err notice: " + html);
   assert.ok(/reach the activity feed/i.test(html), "the notice must say the feed was unreachable");
+});
+
+/* ── 28. the per-turn agent roster, AS RENDERED ─────────────────────────────
+   test_governance.js proves the projection is right. These prove it reaches the
+   DOM in the right shape, in the right place, escaped. A bug has to survive
+   both suites, and they fail for different reasons. */
+
+const AG_FIX = JSON.parse(
+  require("fs").readFileSync(__dirname + "/tests/fixtures/toolruns-fanout.json", "utf8"));
+/* a turn as 01-state.js builds it: BOTH stores populated, because the wire
+   pushes to `tools` and `toolRuns` on the same frame */
+const agTurn = runs => ({
+  uid: "t9", streaming: true, response: "working",
+  tools: runs.map(r => r.name), toolRuns: runs,
+});
+
+test("28a. a real fan-out renders one button row per agent, inside .gv-agents", () => {
+  const html = T.turnResponse(agTurn(AG_FIX.toolRuns));
+  assert.ok(/<div class="gv-agents">/.test(html), "the container is missing: " + html.slice(0, 200));
+  const rows = html.match(/<button class="trow /g) || [];
+  assert.strictEqual(rows.length, 4, "4 Agent runs in the fixture, got " + rows.length);
+});
+
+test("28b. an ordinary turn renders NO roster at all — not an empty container", () => {
+  const html = T.turnResponse(agTurn([
+    { id: "a", name: "Read", summary: "x.md", running: false, ok: true, startedAt: 1 },
+  ]));
+  assert.ok(!/gv-agents/.test(html), "a turn that spawned nothing must be unchanged: " + html);
+});
+
+test("28c. rows reuse .trow — no second row component was invented", () => {
+  const html = T.turnResponse(agTurn(AG_FIX.toolRuns));
+  assert.ok(!/gv-arow|agent-row|class="arow/.test(html),
+    "the roster must reuse .trow, not introduce a parallel class");
+});
+
+test("28d. the live agent renders run, the finished ones render ok", () => {
+  const html = T.turnResponse(agTurn(AG_FIX.toolRuns));
+  assert.strictEqual((html.match(/<button class="trow run"/g) || []).length, 1);
+  assert.strictEqual((html.match(/<button class="trow ok"/g) || []).length, 3);
+});
+
+/* The check that matters is not "does the string `onerror=` appear" -- it does,
+   harmlessly, inside escaped text. It is whether a payload can CLOSE a tag or
+   CLOSE an attribute. Those are the two shapes tested here. */
+test("28e. a hostile agent summary cannot open a tag", () => {
+  const html = T.turnResponse(agTurn([
+    { id: "x", name: "Agent", running: true, ok: null, startedAt: 1,
+      summary: 'Explore: <img src=x onerror="alert(1)"><script>bad()</' + "script>" },
+  ]));
+  assert.ok(!/<img|<script/i.test(html), "a tag was opened by wire text: " + html);
+  assert.ok(/&lt;img/.test(html), "and it is still readable, just inert");
+});
+
+test("28f. a hostile agent id or kind cannot close an attribute", () => {
+  const html = T.turnResponse(agTurn([
+    { id: 'x" onclick="steal()', name: "Agent", running: true, ok: null, startedAt: 1,
+      summary: 'a" onmouseover="x(): y' },
+  ]));
+  /* the attack shape: a raw quote that ENDS the attribute, followed by a live
+     handler. Escaped payloads read `&quot; onclick=&quot;` and cannot do this. */
+  assert.ok(!/"\s*on[a-z]+\s*=/i.test(html), "an attribute was closed by wire text: " + html);
+  assert.ok(/&quot; onclick=/.test(html), "the payload should survive, escaped, in the id");
+});
+
+test("28g. 20 agents render 12 rows and say how many were dropped", () => {
+  const many = Array.from({ length: 20 }, (_, i) => ({
+    id: "id" + i, name: "Agent", summary: "Explore: job " + i,
+    running: false, ok: true, startedAt: 1, endedAt: 2,
+  }));
+  const html = T.turnResponse(agTurn(many));
+  assert.strictEqual((html.match(/<button class="trow /g) || []).length, 12,
+    "the roster must be bounded like the tool rows");
+  assert.ok(/8 earlier agents/.test(html), "a silent truncation reads as the whole fan-out");
+  assert.ok(/job 19/.test(html) && !/job 0</.test(html),
+    "it keeps the RECENT ones — those are the ones still moving");
+});
+
+test("28h. a row with nothing to correlate on is shown but disabled, with a reason", () => {
+  /* two ways a row can be unopenable: no tool_use id (no row identity) and no
+     description (nothing for agentMatch() to join on). Both must still RENDER --
+     the work happened -- and both must decline to look like a link. */
+  [
+    { id: null, name: "Agent", summary: "Explore: orphan", running: true, ok: null, startedAt: 1 },
+    { id: "toolu_1", name: "Agent", summary: "Explore", running: true, ok: null, startedAt: 1 },
+  ].forEach(run => {
+    const html = T.turnResponse(agTurn([run]));
+    assert.ok(/<button class="trow run" type="button" disabled/.test(html),
+      "must not pretend to be openable: " + html);
+    assert.ok(/title="Nothing to open/.test(html), "and it must say why");
+    assert.ok(!/data-agentrow/.test(html), "an unopenable row carries no open handle");
+    assert.ok(/class="trow run"/.test(html), "the row itself still renders");
+  });
+});
+
+test("28l. an openable row carries the correlation keys, not just an id", () => {
+  const html = T.turnResponse(agTurn(AG_FIX.toolRuns));
+  assert.ok(/data-agentrow="toolu_/.test(html), "row identity, for focus and for tests");
+  assert.ok(/data-agkind="Explore"/.test(html), "the type half of the join");
+  assert.ok(/data-agdesc="Audit model PRD pages"/.test(html), "the description half of the join");
+});
+
+test("28i. the roster sits inside [data-aturn], so patchTurn() covers it", () => {
+  const html = T.turnResponse(agTurn(AG_FIX.toolRuns));
+  const anchor = html.indexOf("data-aturn");
+  const roster = html.indexOf("gv-agents");
+  assert.ok(anchor >= 0 && roster > anchor,
+    "outside the patch anchor the roster would go stale mid-stream");
+  assert.ok(html.trim().endsWith("</div>"), "the anchor element must still close the block");
+});
+
+test("28j. every row carries visible text — a row is never a bare dot", () => {
+  const html = T.turnResponse(agTurn(AG_FIX.toolRuns));
+  const rows = html.split('<button class="trow ').slice(1);
+  rows.forEach((r, i) => {
+    const text = r.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    assert.ok(text.length > 3, "row " + i + " has no accessible name: " + JSON.stringify(text));
+  });
+});
+
+test("28k. per-turn open state is NEVER persisted — uids are per-page-load", () => {
+  /* turnUid() is a monotonic in-memory counter, so a uid means nothing after a
+     reload. Persisting a uid-keyed map would make a stale key collide with a
+     fresh turn and attach someone else's open panel to it. */
+  const persisted = Object.keys(T.loadLayout());
+  ["govOpen", "thinkOpen", "agentOpen", "toolOpen", "agentsFold"].forEach(k =>
+    assert.ok(!persisted.includes(k),
+      k + " is uid- or id-keyed and must not be written to localStorage"));
+});
+
+test("28m. both streaming patch anchors survive the new blocks", () => {
+  /* patchStreaming() writes tokens into [data-resp] and the ticker into
+     [data-runstrip]; patchTurn() replaces [data-aturn]. Adding a roster and a
+     log between them must not displace any of the three, or streaming silently
+     falls back to a full render per token — the exact cost the patch path exists
+     to avoid. */
+  const html = T.turnResponse({ uid: "t9", streaming: true, response: "partial text",
+                                tools: ["Agent"], toolRuns: AG_FIX.toolRuns });
+  ["data-aturn=\"t9\"", "data-resp=\"t9\"", "data-runstrip=\"t9\""].forEach(a =>
+    assert.ok(html.indexOf(a) !== -1, "missing patch anchor " + a));
+});
+
+test("28o. a transcript-replayed turn shows NO roster, because none was recorded", () => {
+  /* transcriptTurns() (01-state.js:509) builds replayed turns with `tools` — flat
+     names — and never `toolRuns`, because a transcript on disk records no
+     lifecycle. The roster is therefore a LIVE surface. Deriving one from the
+     flat names would mean inventing a state, a summary and an elapsed time for
+     agents whose outcome was never written down. The session-level subagent fold
+     is what covers replayed sessions, and it reads the transcripts themselves. */
+  const replayed = { uid: "t9", transcript: true, streaming: false,
+                     response: "an answer", tools: ["Agent", "Agent", "Read"] };
+  const html = T.turnResponse(replayed);
+  assert.ok(!/gv-agents/.test(html), "a replayed turn cannot know what its agents did");
+  assert.ok(/2 tool calls|3 tool calls/.test(html), "it still says what ran: " + html);
+});
+
+test("28n. turnResponse is pure — rendering a turn twice gives the same string", () => {
+  const t = { uid: "t9", streaming: true, response: "x",
+              tools: ["Agent"], toolRuns: AG_FIX.toolRuns };
+  const before = JSON.stringify(t);
+  const a = T.turnResponse(t), b = T.turnResponse(t);
+  assert.strictEqual(a, b, "a renderer with side effects would drift under the patch loop");
+  assert.strictEqual(JSON.stringify(t), before, "the renderer must not mutate the turn");
+});
+
+/* ── 30. the loader opens into the turn's step log ──────────────────────────── */
+
+const logTurn = (runs, open) => {
+  T.S.thinkOpen = open ? { t9: true } : {};
+  return T.turnResponse({ uid: "t9", streaming: true, response: "…",
+                          tools: runs.map(r => r.name), toolRuns: runs });
+};
+const RUNS3 = [
+  { id: "a", name: "Read", summary: "os/engines/LEDGER.md", running: false, ok: true },
+  { id: "b", name: "Bash", summary: "bats placement.bats", running: false, ok: false },
+  { id: "c", name: "Agent", summary: "Explore: audit pages", running: true, ok: null },
+];
+
+test("30a. the loader is a button, so it is reachable by keyboard", () => {
+  const html = logTurn(RUNS3, false);
+  assert.ok(/<button class="gv-thinkbtn" type="button" data-thinkopen="t9"/.test(html), html.slice(-400));
+  assert.ok(/aria-expanded="false"/.test(html), "a collapsed control must say it is collapsed");
+});
+
+test("30b. the log is CLOSED by default — the turn looks as it does today", () => {
+  assert.ok(!/gv-log/.test(logTurn(RUNS3, false)), "an unopened log must not render");
+});
+
+test("30c. opened, it renders one line per run, coloured by outcome", () => {
+  const html = logTurn(RUNS3, true);
+  assert.ok(/<div class="gv-log">/.test(html));
+  assert.strictEqual((html.match(/class="gv-ln /g) || []).length, 3);
+  assert.ok(/class="gv-ln ok">Read · os\/engines\/LEDGER.md</.test(html));
+  assert.ok(/class="gv-ln bad">Bash · bats placement.bats</.test(html));
+  assert.ok(/class="gv-ln run">Agent · Explore: audit pages</.test(html));
+  assert.ok(/aria-expanded="true"/.test(html));
+});
+
+test("30d. data-runstrip still holds ONLY a text node — the ticker contract", () => {
+  /* patchStreaming() writes textContent into this node once a second. If the
+     wrapper had put an element inside it, the ticker would erase it. */
+  const html = logTurn(RUNS3, true);
+  const m = html.match(/data-runstrip="t9"[^>]*>([^<]*)</);
+  assert.ok(m, "the runstrip anchor is gone: " + html.slice(-400));
+  assert.ok(!/[<>]/.test(m[1]), "the anchor must contain text and nothing else: " + m[1]);
+});
+
+test("30e. a settled turn has no loader and no log", () => {
+  T.S.thinkOpen = { t9: true };
+  const html = T.turnResponse({ uid: "t9", streaming: false, response: "done",
+                                tools: ["Read"], toolRuns: RUNS3 });
+  assert.ok(!/gv-thinkbtn|gv-log/.test(html),
+    "the log belongs to a turn in flight; a finished turn shows its answer");
+});
+
+test("30f. a hostile tool summary cannot open a tag in the log", () => {
+  const html = logTurn([{ id: "a", name: "Bash", running: true, ok: null,
+                          summary: '<img src=x onerror=1>' }], true);
+  assert.ok(!/<img/.test(html), "unescaped markup in the log: " + html);
+  assert.ok(/&lt;img/.test(html));
+});
+
+test("30g. the log is bounded in the DOM, not just in the projection", () => {
+  const many = Array.from({ length: 2000 }, (_, i) => ({
+    id: "i" + i, name: "Bash", summary: "step " + i, running: false, ok: true }));
+  const html = logTurn(many, true);
+  assert.strictEqual((html.match(/class="gv-ln /g) || []).length, 61,
+    "60 lines plus the one saying what was dropped");
+  assert.ok(/1940 earlier steps not shown/.test(html));
+});
+
+/* ── 29. focus survives a patch ──────────────────────────────────────────────
+   patchTurn() replaces the whole assistant block via outerHTML on every tool
+   frame. Anything focused inside it is destroyed, so a keyboard user gets thrown
+   to <body> several times a second during a fan-out. This already affected the
+   shipped `output`/`terminal` buttons; a roster of clickable rows made it worth
+   fixing rather than documenting. */
+
+test("29a. a focused control is identified by the key its handler already uses", () => {
+  const node = { getAttribute: k => (k === "data-agentrow" ? "toolu_42" : null) };
+  assert.strictEqual(T.focusKeyOf(node), '[data-agentrow="toolu_42"]');
+});
+
+test("29b. a hostile id cannot break out of the restore selector", () => {
+  const node = { getAttribute: k => (k === "data-toolout" ? 'x"] , script[src' : null) };
+  const key = T.focusKeyOf(node);
+  assert.strictEqual(key, '[data-toolout="x\\"] , script[src"]',
+    "the quote must be escaped, or the selector would match other elements");
+});
+
+test("29c. a node with none of those keys is not restored", () => {
+  assert.strictEqual(T.focusKeyOf({ getAttribute: () => null }), null);
+  assert.strictEqual(T.focusKeyOf(null), null);
+  assert.strictEqual(T.focusKeyOf({}), null, "a node with no getAttribute must not throw");
+});
+
+test("29d. patchTurn puts focus back on the same control it destroyed", () => {
+  const prevQ = sandbox.document.querySelector;
+  const prevA = Object.getOwnPropertyDescriptor(sandbox.document, "activeElement");
+  try {
+    let focused = 0;
+    const row = { getAttribute: k => (k === "data-agentrow" ? "toolu_7" : null) };
+    const replacement = { focus: () => { focused++; }, getAttribute: () => null };
+    const block = {
+      contains: n => n === row,
+      closest: () => null,
+      /* the restore is SCOPED to the replaced block, so the lookup happens here
+         and not on the document */
+      querySelector: sel => (sel === '[data-agentrow="toolu_7"]' ? replacement : null),
+      set outerHTML(v) { this._html = v; },
+      get outerHTML() { return this._html; },
+    };
+    sandbox.document.activeElement = row;
+    sandbox.document.querySelector = sel =>
+      sel.indexOf("data-aturn") !== -1 ? block : null;
+
+    const ok = T.patchTurn({ uid: "t9", streaming: true, response: "x", tools: [], toolRuns: [] });
+    assert.strictEqual(ok, true, "the block was found, so the patch must report success");
+    assert.strictEqual(focused, 1, "focus was not restored after the block was replaced");
+  } finally {
+    sandbox.document.querySelector = prevQ;
+    if (prevA) Object.defineProperty(sandbox.document, "activeElement", prevA);
+    else delete sandbox.document.activeElement;
+  }
+});
+
+test("29f. the restore is scoped to the patched turn, not the whole document", () => {
+  /* Two turns can hold the same data-* value — a side chat replaying the same
+     session, or simply a document-wide lookup finding the first match. A global
+     querySelector would move focus into a DIFFERENT turn, which is worse than
+     losing it. The lookup must happen inside the block that was replaced. */
+  const prevQ = sandbox.document.querySelector;
+  const prevA = Object.getOwnPropertyDescriptor(sandbox.document, "activeElement");
+  try {
+    let inThisTurn = 0, inAnotherTurn = 0;
+    const row = { getAttribute: k => (k === "data-agentrow" ? "toolu_7" : null) };
+    const block = {
+      contains: n => n === row,
+      closest: () => null,
+      /* this turn's copy is gone from the DOM and has no replacement yet */
+      querySelector: () => null,
+      set outerHTML(v) { this._html = v; },
+      get outerHTML() { return this._html; },
+    };
+    sandbox.document.activeElement = row;
+    sandbox.document.querySelector = sel => {
+      if (sel.indexOf("data-aturn") !== -1) return block;
+      inAnotherTurn++;                       /* a document-wide lookup happened */
+      return { focus: () => { inAnotherTurn++; }, getAttribute: () => null };
+    };
+    T.patchTurn({ uid: "t9", streaming: true, response: "x", tools: [], toolRuns: [] });
+    assert.strictEqual(inThisTurn, 0);
+    assert.strictEqual(inAnotherTurn, 0,
+      "focus was searched for outside the patched block — it could land in another turn");
+  } finally {
+    sandbox.document.querySelector = prevQ;
+    if (prevA) Object.defineProperty(sandbox.document, "activeElement", prevA);
+    else delete sandbox.document.activeElement;
+  }
+});
+
+test("29e. patchTurn never STEALS focus from outside the turn it patched", () => {
+  const prevQ = sandbox.document.querySelector;
+  const prevA = Object.getOwnPropertyDescriptor(sandbox.document, "activeElement");
+  try {
+    let focused = 0;
+    /* the operator is typing in the composer, which is not inside this block */
+    const elsewhere = { getAttribute: k => (k === "data-agentrow" ? "toolu_7" : null) };
+    const block = {
+      contains: () => false,
+      closest: () => null,
+      set outerHTML(v) { this._html = v; },
+      get outerHTML() { return this._html; },
+    };
+    sandbox.document.activeElement = elsewhere;
+    sandbox.document.querySelector = sel =>
+      sel.indexOf("data-aturn") !== -1 ? block
+      : { focus: () => { focused++; }, getAttribute: () => null };
+
+    T.patchTurn({ uid: "t9", streaming: true, response: "x", tools: [], toolRuns: [] });
+    assert.strictEqual(focused, 0, "focus must stay where the operator put it");
+  } finally {
+    sandbox.document.querySelector = prevQ;
+    if (prevA) Object.defineProperty(sandbox.document, "activeElement", prevA);
+    else delete sandbox.document.activeElement;
+  }
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

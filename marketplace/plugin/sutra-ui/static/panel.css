@@ -687,8 +687,13 @@
      divider, and stack instead of overflowing at narrow widths — reusing the
      existing .pane/.ph/.pb vocabulary rather than inventing a second one. */
   .pane.collapsed{flex:0 0 38px;min-width:38px;max-width:38px}
+  /* .agents joins this list because agentsFold() (06-render.js) emits it as a
+     SIBLING of .pb, not inside it. Collapsing a session that had spawned
+     subagents therefore left the whole fold rendering inside the 38px strip,
+     wrapping one letter per line. Found by driving design/app-preview.html. */
   .pane.collapsed .pb,.pane.collapsed .pc,.pane.collapsed .tabs,
-  .pane.collapsed .src,.pane.collapsed [data-close]{display:none}
+  .pane.collapsed .src,.pane.collapsed .agents,
+  .pane.collapsed [data-close]{display:none}
   .pane.collapsed .ph{flex-direction:column;align-items:center;height:100%;
     padding:9px 4px;border-bottom:0;flex-wrap:nowrap;gap:9px}
   .pane.collapsed .ph h3{writing-mode:vertical-rl;max-width:none;max-height:100%;
@@ -804,6 +809,22 @@
   .trow.run .tverdict{color:var(--acc)}
   .trow.bad .tverdict{color:var(--block)}
   .trow.unk .tverdict{color:var(--warn)}
+  /* ══ per-turn agent roster ══
+     An agent row IS a .trow. Everything above already gives it the state dot
+     (run spinner / ok / bad / unk), the bold-mono name, the ellipsised summary,
+     the right-aligned uppercase verdict AND the reduced-motion rule below — so
+     the roster adds NO row styling and NO second set of state colours. Only two
+     things are genuinely new: the nested container, and the reset that lets a
+     row be a <button> without looking like one. */
+  .gv-agents{display:flex;flex-direction:column;gap:3px;margin-top:6px;
+    padding-left:10px;border-left:2px solid var(--line)}
+  button.trow{width:100%;text-align:left;font-family:inherit;cursor:pointer}
+  button.trow:hover{border-color:var(--acc)}
+  button.trow:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  /* an agent whose transcript is not on disk yet has nothing to open; it still
+     shows, because the work is real -- it just does not pretend to be a link */
+  button.trow[disabled]{cursor:default;opacity:.75}
+  button.trow[disabled]:hover{border-color:var(--line-soft)}
   /* Respect the OS setting: a spinner is decoration, not information. The colour
      and the verdict text carry the same state without motion. */
   @media (prefers-reduced-motion: reduce){
@@ -1438,6 +1459,22 @@
     animation:gvShimmer 1.8s linear infinite}
   @keyframes gvShimmer{from{background-position:200% 0}to{background-position:-200% 0}}
   .gv-tmeta{font-weight:400;color:var(--faint)}
+  /* ══ the loader opens into the turn's step log ══
+     The loader already said a turn was working; it could not say what it was
+     doing. It is now the button, and .gv-think is unchanged inside it — the
+     reset below exists so a <button> inherits rather than imposing its own
+     font, padding and border. */
+  .gv-thinkbtn{display:block;width:100%;text-align:left;background:none;border:0;
+    padding:0;font:inherit;color:inherit;cursor:pointer}
+  .gv-thinkbtn:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:5px}
+  .gv-log{display:flex;flex-direction:column;gap:2px;margin:5px 0 0 3px;
+    padding-left:10px;border-left:2px solid var(--line)}
+  /* the state colours are the ones the tool rows already use — one palette */
+  .gv-ln{font:10.5px/1.6 var(--mono);color:var(--muted);word-break:break-word}
+  .gv-ln.ok{color:var(--ok)}
+  .gv-ln.bad{color:var(--block)}
+  .gv-ln.run{color:var(--acc)}
+  .gv-ln.unk{color:var(--warn)}
   @media (prefers-reduced-motion: reduce){
     .gv-beat,.gv-tlabel{animation:none}
   }

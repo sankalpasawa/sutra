@@ -313,23 +313,39 @@ button.trow:hover{border-color:var(--acc)}
 
             <!-- PROPOSED · per-turn agent roster — rows are .trow, reused verbatim -->
             <div class="gv-agents" data-new>
+              <!-- CORRECTED AGAINST THE IMPLEMENTATION (step 23). The mockup
+                   used to name rows `placement`, `lens`, `cynefin`, as if each
+                   agent had its own name. It does not. The wire carries one
+                   composed string per Agent run — "<subagent_type>: <description>"
+                   from app.py's _tool_summary() — so a real fan-out is several
+                   agents of the SAME type told apart by their descriptions.
+                   .tname is therefore the type and .tsum the description, which
+                   is also exactly what the tool rows above already do. -->
               <button class="trow ok" type="button" data-ag="placement"
                       title="Open this agent's transcript">
-                <span class="tstate"></span><span class="tname">placement</span>
-                <span class="tsum">schema migrated · tests green</span>
+                <span class="tstate"></span><span class="tname">general-purpose</span>
+                <span class="tsum">migrate the placement engine</span>
                 <span class="tverdict">1m52s · done</span>
               </button>
               <button class="trow run" type="button" data-ag="lens"
                       title="Open this agent's transcript">
-                <span class="tstate"></span><span class="tname">lens</span>
-                <span class="tsum">rewriting mint() rows</span>
+                <span class="tstate"></span><span class="tname">general-purpose</span>
+                <span class="tsum">migrate the lens engine</span>
                 <span class="tverdict">2m08s · running</span>
               </button>
               <button class="trow bad" type="button" data-ag="cynefin"
                       title="Open this agent's transcript">
-                <span class="tstate"></span><span class="tname">cynefin</span>
-                <span class="tsum">golden test drift — cynefin.bats:14</span>
+                <span class="tstate"></span><span class="tname">general-purpose</span>
+                <span class="tsum">migrate the cynefin engine</span>
                 <span class="tverdict">1m11s · error</span>
+              </button>
+              <!-- the honest fourth state: an agent with no transcript to
+                   correlate with yet cannot be opened, and says so -->
+              <button class="trow unk" type="button" disabled
+                      title="Nothing to open: this agent has no transcript to correlate with yet">
+                <span class="tstate"></span><span class="tname">general-purpose</span>
+                <span class="tsum">migrate the depth engine</span>
+                <span class="tverdict">0m04s · unknown</span>
               </button>
             </div>
 

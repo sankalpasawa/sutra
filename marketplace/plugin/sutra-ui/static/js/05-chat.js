@@ -813,6 +813,108 @@ function gvChipHtml(t, i){
   </div>`;
 }
 
+/* ── the per-turn agent roster ───────────────────────────────────────────────
+   A fan-out used to be invisible: three parallel agents produced three "Agent"
+   tool rows whose only distinguishing text was an ellipsised prompt, so the
+   operator could not tell which one was still running or which one failed.
+
+   NO NEW DATA. Everything here is already in `turn.toolRuns` (01-state.js:904).
+   The identity problem in particular was already solved SERVER-side:
+   `_tool_summary()` (app.py:400) composes "<subagent_type>: <description>" for
+   Agent/Task inputs, precisely because "every agent's prompt starts with the
+   same preamble, so three parallel agents rendered as three identical rows".
+   This splits that composed string back apart — it does not invent a name.
+
+   The state ternary is the tool row's, character for character: one rule, two
+   surfaces. The verdict is mapped from that state through a fixed table rather
+   than read off the wire, so a subagent cannot label itself "done".
+
+   Pure, DOM-free, and deliberately self-contained: test_governance.js extracts
+   this function on its own, so it must not lean on helpers that would not
+   travel with it. */
+/* Wire text arrives from a subagent prompt or a tool input, so it is
+   attacker-influenced in any session that reads untrusted content. esc() stops
+   markup at render time; this stops what esc() does not: control bytes, bidi
+   overrides that reverse how a line READS without changing what it says,
+   newlines that turn one row into several, and unbounded length in a
+   single-line row. Every surface showing wire text goes through here, so the
+   rule is written once rather than once per renderer. */
+function gvClean(s, cap){
+  let v = String(s == null ? "" : s)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/[\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  /* the ellipsis is the point: a silent cut reads as the whole story */
+  if (v.length > cap) v = v.slice(0, cap) + "\u2026";
+  return v;
+}
+
+/* The turn's step log \u2014 what the loader opens into. Every line traces to a
+   real `toolRuns` entry; nothing here is narrated, inferred or padded. A turn
+   that ran no tools has no log, and the loader stays what it is today. */
+function gvLog(t){
+  const out = [];
+  const runs = (t && t.toolRuns) || [];
+  for (let i = 0; i < runs.length; i++){
+    const r = runs[i];
+    if (!r) continue;
+    /* the same lifecycle ternary as the tool row and the roster */
+    const state = r.running ? "run" : (r.ok === false ? "bad" : (r.ok === null ? "unk" : "ok"));
+    const name = gvClean(r.name || "tool", 24);
+    const sum = gvClean(r.summary, 96);
+    out.push({ state, text: sum ? name + " \u00b7 " + sum : name });
+  }
+  /* Bounded. A long turn can run hundreds of tools, and an unbounded log inside
+     a chat turn is a memory leak with a scrollbar. The OLDEST go: the recent
+     ones are what you opened this to read. */
+  const CAP = 60;
+  if (out.length > CAP){
+    const n = out.length - CAP;
+    return [{ state: "unk", text: n + " earlier step" + (n === 1 ? "" : "s") + " not shown" }]
+             .concat(out.slice(-CAP));
+  }
+  return out;
+}
+
+function gvAgents(t){
+  const clean = gvClean;
+  const VERDICT = { run:"running", bad:"error", unk:"unknown", ok:"done" };
+  const out = [];
+  const runs = (t && t.toolRuns) || [];
+  for (let i = 0; i < runs.length; i++){
+    const r = runs[i];
+    /* the tool has shipped under both names */
+    if (!r || (r.name !== "Agent" && r.name !== "Task")) continue;
+    const raw = String(r.summary == null ? "" : r.summary);
+    /* FIRST ": " only — a description may legitimately contain a colon */
+    const at = raw.indexOf(": ");
+    const state = r.running ? "run" : (r.ok === false ? "bad" : (r.ok === null ? "unk" : "ok"));
+    const desc = clean(at > 0 ? raw.slice(at + 2) : "", 120);
+    out.push({
+      id: r.id || "",
+      /* the kind is the bold column, so it is capped harder than the summary */
+      kind: clean(at > 0 ? raw.slice(0, at) : raw, 32) || "agent",
+      desc,
+      state,
+      verdict: VERDICT[state],
+      /* a finished run is its own span; a running one is measured against now.
+         No startedAt means no elapsed — 0s would be a fabricated measurement. */
+      ms: typeof r.startedAt === "number"
+        ? (typeof r.endedAt === "number" ? r.endedAt : Date.now()) - r.startedAt
+        : null,
+      /* A row is openable only if the drill-down has something to correlate on.
+         agentMatch() (06-render.js) joins on description, because the roster's
+         tool_use id and the fold's transcript filename are different keys. No
+         id means no row identity; no description means nothing to match. Either
+         way the row still SHOWS -- the work happened -- it just does not pretend
+         to be a link. */
+      openable: !!(r.id && desc),
+    });
+  }
+  return out;
+}
+
 function turnResponse(t){
   const nTools = (t.tools && t.tools.length) || 0;
   if (!t.streaming && !t.response && !t.error && !nTools) return "";
@@ -829,10 +931,28 @@ function turnResponse(t){
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
+  /* The loader becomes the button that opens the turn's step log. It already
+     said the turn was working; it could not say what it was DOING, so a wedged
+     turn and a busy one looked the same. The loader markup itself is unchanged
+     — data-runstrip still holds ONLY a text node, so the 1s ticker keeps
+     patching text and nothing else. Open state lives in S.thinkOpen[uid], the
+     same in-memory, per-page-load pattern S.govOpen uses; it survives
+     patchTurn() because the render reads it, and it is deliberately NOT
+     persisted, because a uid means nothing after a reload. */
+  const logLines = t.streaming ? gvLog(t) : [];
+  const logOpen = !!(S.thinkOpen && t.uid && S.thinkOpen[t.uid]);
   const stateBottom = t.streaming
-      ? `<div class="gv-think"><span class="gv-pulse gv-beat" aria-hidden="true"></span
+      ? `<div><button class="gv-thinkbtn" type="button" data-thinkopen="${esc(t.uid||"")}"
+             aria-expanded="${logOpen?"true":"false"}" title="${logLines.length
+               ? "What has run so far in this turn"
+               : "Nothing has run yet in this turn"}"
+           ><span class="gv-think"><span class="gv-pulse gv-beat" aria-hidden="true"></span
            ><span class="gv-tlabel">thinking</span><b class="gv-tmeta" data-runstrip="${esc(t.uid||"")}"
-           >${esc(runPhrase(t))}</b></div>`
+           >${esc(runPhrase(t))}</b></span></button>${
+          logOpen && logLines.length
+            ? `<div class="gv-log">${logLines.map(l=>
+                `<span class="gv-ln ${l.state}">${esc(l.text)}</span>`).join("")}</div>`
+            : ""}</div>`
       : "";
   /* A turn whose saved thread had gone and was re-sent as a new one. Stated,
      because the reply legitimately will not remember the earlier conversation
@@ -883,6 +1003,27 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
       <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
       ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
     </div>` : "");
+  /* The agent roster, nested under the tool rows it elaborates. A turn that
+     spawned nothing renders NOTHING here — no empty container, no heading — so
+     an ordinary turn's DOM is byte-identical to what it was before this shipped.
+     Capped at 12 with the same "N earlier" line and the same slice(-12) the tool
+     rows use: on a long fan-out, the ones still moving are the recent ones. */
+  const agentRows = gvAgents(t);
+  const agents = agentRows.length
+    ? `<div class="gv-agents">${agentRows.length > 12 ? `<div class="trow unk">
+           <span class="tstate" aria-hidden="true"></span>
+           <span class="tname">${agentRows.length - 12} earlier agent${agentRows.length-12===1?"":"s"}</span>
+           <span class="tsum">not shown</span></div>` : ""}${agentRows.slice(-12).map(a=>`
+         <button class="trow ${a.state}" type="button"${a.openable
+             ? ` data-agentrow="${esc(a.id)}" data-agkind="${esc(a.kind)}"`
+               + ` data-agdesc="${esc(a.desc)}" title="Open this agent's transcript"`
+             : ` disabled title="Nothing to open: this agent has no transcript to correlate with yet"`
+           }><span class="tstate" aria-hidden="true"></span
+           ><span class="tname">${esc(a.kind)}</span>${a.desc
+             ? `<span class="tsum">${esc(a.desc)}</span>` : ""
+           }<span class="tverdict">${a.ms != null
+               ? esc(fmtDur(a.ms)) + " · " : ""}${a.verdict}</span></button>`).join("")}</div>`
+    : "";
   /* A backoff is not a hang, and the difference has to be visible or the
      operator kills a turn that was about to succeed. */
   /* ONLY while the turn is live. `retrying` is assigned in one place and cleared
@@ -914,7 +1055,7 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
   /* data-aturn anchors this block for patchTurn(): a tool frame replaces THIS
      node instead of re-rendering the pane. */
   return `<div class="a" data-aturn="${esc(t.uid||"")}"
-    >${stateTop}${replayed}${meta}${tools}${retrying}${waiting}${body}${err}${stateBottom}</div>`;
+    >${stateTop}${replayed}${meta}${tools}${agents}${retrying}${waiting}${body}${err}${stateBottom}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)

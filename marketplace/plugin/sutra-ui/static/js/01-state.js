@@ -635,6 +635,28 @@ function _streamingTurns(){
    that now, but the repaint does not: it is the visible flicker in "the tabs
    are very patchy". Swapping one <div> leaves the rail, the pane header, the
    tabs and the composer untouched, so nothing outside the message can flash. */
+/* A stable selector for whichever control inside a turn currently has focus.
+   `outerHTML =` below DESTROYS the node, so anything focused inside it loses
+   focus to <body> — a keyboard user is thrown back to the top of the document
+   every time a tool frame lands, which during a fan-out is several times a
+   second. This already affected the shipped `output` and `terminal` buttons; the
+   agent roster would make it worse by putting a button per subagent in the same
+   block. These attributes are the identity the click handlers already key on, so
+   restoring by the same key cannot land on a different control. */
+const PATCH_FOCUS_KEYS = ["data-agentrow", "data-toolout", "data-toolterm",
+                          "data-thinkopen", "data-govopen", "data-retry"];
+function focusKeyOf(node){
+  if (!node || !node.getAttribute) return null;
+  for (let i = 0; i < PATCH_FOCUS_KEYS.length; i++){
+    const k = PATCH_FOCUS_KEYS[i];
+    const v = node.getAttribute(k);
+    /* JSON.stringify quotes AND escapes, so a hostile id cannot break out of the
+       attribute selector the way raw interpolation would */
+    if (v != null) return "[" + k + "=" + JSON.stringify(String(v)) + "]";
+  }
+  return null;
+}
+
 function patchTurn(t){
   if (!t || !t.uid) return false;
   const el = document.querySelector('[data-aturn="' + t.uid + '"]');
@@ -643,7 +665,20 @@ function patchTurn(t){
   const pb = pane && pane.querySelector(".pb");
   const sid = pane && pane.dataset.sess;
   const pinned = pb && !S.userScrolled.get(sid);
+  /* restore focus only if it was inside THIS block: moving it otherwise would
+     steal focus from wherever the operator actually is */
+  const act = document.activeElement;
+  const refocus = (act && el.contains && el.contains(act)) ? focusKeyOf(act) : null;
   el.outerHTML = turnResponse(t);
+  if (refocus){
+    /* Scoped to the block that was just replaced. A document-wide lookup would
+       match the same data-* value in ANOTHER turn or another session pane and
+       silently move focus there -- the ids are unique per tool call, but the
+       lookup must not depend on that to be correct. */
+    const block = document.querySelector('[data-aturn="' + t.uid + '"]');
+    const again = block && block.querySelector(refocus);
+    if (again && again.focus) again.focus();
+  }
   if (pinned){
     pb.__pinning = true;
     pb.scrollTop = pb.scrollHeight;

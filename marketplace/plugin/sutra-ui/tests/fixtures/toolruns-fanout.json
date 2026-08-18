@@ -1,0 +1,66 @@
+{
+  "_source": "captured from a real transcript by scratchpad/capture-fanout.py; summaries produced by app.py's own _tool_summary()",
+  "_shape": "one entry per turn.toolRuns row, exactly as 01-state.js:904 stores it",
+  "_trim": "`command` dropped (unread by the roster); non-Agent summaries capped at 60 chars -- they are here only to prove non-agents are excluded",
+  "toolRuns": [
+    {
+      "id": "toolu_01NKnXvvLFZtyLsqziDPAwfz",
+      "name": "Bash",
+      "summary": "cd /Users/asawa/Claude/asawa-holding/holding/website/native ",
+      "caller": "direct",
+      "running": false,
+      "ok": true,
+      "startedAt": 1700000000000,
+      "endedAt": 1700000071000
+    },
+    {
+      "id": "toolu_01CbXeoRtStNAsuYkXqsRE8x",
+      "name": "Agent",
+      "summary": "Explore: Audit model PRD pages",
+      "caller": "direct",
+      "running": false,
+      "ok": true,
+      "startedAt": 1700000005000,
+      "endedAt": 1700000431000
+    },
+    {
+      "id": "toolu_01YAza4HDntkxFk6VM5EAJax",
+      "name": "Agent",
+      "summary": "Explore: Audit platform block pages",
+      "caller": "direct",
+      "running": false,
+      "ok": true,
+      "startedAt": 1700000006000,
+      "endedAt": 1700000503000
+    },
+    {
+      "id": "toolu_01L7RmPwVZph19qjLEMPKmBK",
+      "name": "Agent",
+      "summary": "Explore: Audit engineering pages",
+      "caller": "direct",
+      "running": false,
+      "ok": true,
+      "startedAt": 1700000007000,
+      "endedAt": 1700000575000
+    },
+    {
+      "id": "toolu_01G1HG9fCFetCcHrn7ES16ti",
+      "name": "Agent",
+      "summary": "Explore: Audit hub/products/roadmap/archive",
+      "caller": "direct",
+      "running": true,
+      "ok": null,
+      "startedAt": 1700000008000
+    },
+    {
+      "id": "toolu_019UW46d3xyuBKi1XRtBkaNL",
+      "name": "Bash",
+      "summary": "find /Users/asawa/Claude/asawa-holding/holding/plans -name \"",
+      "caller": "direct",
+      "running": false,
+      "ok": true,
+      "startedAt": 1700000001000,
+      "endedAt": 1700000143000
+    }
+  ]
+}
