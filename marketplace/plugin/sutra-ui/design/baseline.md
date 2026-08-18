@@ -168,6 +168,34 @@ measures computed style. 30 assertions, all green, across three modes:
 
 Artifacts: `design/app-dark.png`, `design/app-light.png`, `design/app-reduced-motion.png`.
 
+## Live run in the installed app (2026-08-18) — and what it found
+
+The staged runtime under `~/Library/Application Support/Sutra/plugin/sutra-ui/`
+was re-staged with the installer's own rsync recipe, and the feature was driven
+in the **running Sutra.app** — real turns through the app's own composer, real
+`Agent` fan-outs, every click through the app's own controls. It worked, and it
+also found two defects no unit test had seen (both fixed, both now pinned):
+
+| Found live | Root cause | Fix | Pinned by |
+|---|---|---|---|
+| Every per-turn control was **dead while a turn streamed** — clicking "thinking" mid-stream did nothing (also affected the shipped output/terminal buttons) | `wire()` binds `onclick` per render; `patchTurn()` replaces the turn's DOM per tool frame; fresh nodes have no handler until the next full render | the five per-turn controls moved to ONE delegated listener registered once at boot; per-render bindings removed so a click can never fire twice | tests 31a–31e |
+| The roster **drill-down opened nothing** in a live pane | `agentsFold()` required `s.real`; a panel-started session is not transcript-adopted yet, so the click rendered an empty string | an explicit open request always renders the fold, degrading to the honest empty/note state | tests 32a–32c |
+
+Verified after the fix, live, through the app's own controls: roster mid-stream →
+log click mid-stream works (5 lines) → turn settles with 2 openable rows →
+roster click opens the fold with an honest note. Frames: `final-1..4` in the
+session scratchpad; the settled state also matches `design/app-dark.png`.
+
+One more behaviour learned live, same rule as test 28o seen from the other side:
+in a **transcript-backed** pane the roster lives only while the turn streams — on
+settle the disk watcher replaces the live turn with its transcript form (flat
+tools, no lifecycle), so the "N tool calls" pill returns. Panel-native sessions
+keep their roster.
+
+`design/baseline-turn.png` (step 2) exists now — produced late, honestly: the
+same captured fan-out rendered through the **pre-feature commit's own code**
+(`e6dcc0a^`), showing four identical `Agent` rows flat among the tool rows.
+
 ## Step 25 — the packaged app: what is and is not verified
 
 The Electron shell does not bundle the panel; it loads it

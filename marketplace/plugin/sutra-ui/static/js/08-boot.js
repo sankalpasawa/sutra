@@ -191,6 +191,12 @@ async function loadUsage(force){
    `document` stub has no addEventListener -- an unguarded call takes the suite
    down before a single assertion runs. */
 if (typeof document !== "undefined" && document.addEventListener){
+  /* Per-turn controls (thinking log, governance chip, tool output/terminal,
+     agent roster) are DELEGATED: patchTurn() replaces their DOM mid-stream, so
+     per-render onclick bindings die exactly when the operator wants to click
+     them. Registered once; the per-render bindings for these five are gone,
+     so a click can never fire twice. */
+  document.addEventListener("click", turnControlClick);
   document.addEventListener("click", e=>{
     if (!S.usagePop) return;
     /* The chip's own handler owns the toggle. Ignoring it here stops the pair

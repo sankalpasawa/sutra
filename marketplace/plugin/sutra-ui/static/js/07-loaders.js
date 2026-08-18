@@ -41,6 +41,111 @@ function wireDivider(){
   };
 }
 
+
+/* ── per-TURN controls: delegated, not per-render ─────────────────────────────
+   Every control inside a turn's assistant block dies the moment patchTurn()
+   replaces that block: wire() binds b.onclick per render, outerHTML swaps the
+   nodes, and the fresh copies have no handler until the NEXT full render.
+   During streaming that gap is the normal state — which is why, observed live,
+   the thinking-log toggle did nothing mid-turn. The shipped output/terminal
+   buttons had the same dead window.
+   ONE document-level listener (registered once at boot, same guarded pattern as
+   the popover dismiss) survives any number of patches. The per-render bindings
+   for these five controls are REMOVED — a click must never fire twice.
+   Scoped to .turn so nothing outside a chat turn is ever intercepted; dataset
+   values are captured before any await, because the node a click landed on may
+   be replaced while the handler is in flight. */
+function turnControlClick(e){
+  const inTurn = e.target && e.target.closest && e.target.closest(".turn");
+  if (!inTurn) return;
+
+  const think = e.target.closest("[data-thinkopen]");
+  if (think){
+    const uid = think.dataset.thinkopen;
+    if (!uid) return;
+    S.thinkOpen = S.thinkOpen || {};
+    if (S.thinkOpen[uid]) delete S.thinkOpen[uid];
+    else S.thinkOpen[uid] = true;
+    render();
+    return;
+  }
+  const gov = e.target.closest("[data-govopen]");
+  if (gov){
+    const uid = gov.dataset.govopen;
+    if (!uid) return;
+    S.govOpen = S.govOpen || {};
+    S.govOpen[uid] = !S.govOpen[uid];
+    render();
+    return;
+  }
+  const tout = e.target.closest("[data-toolout]");
+  if (tout){
+    S.toolOpen[tout.dataset.toolout] = !S.toolOpen[tout.dataset.toolout];
+    render();
+    return;
+  }
+  /* TYPES the command and stops — never runs it. The agent ran this once
+     already; a second run is a NEW side effect behind a look-at-it control. */
+  const term = e.target.closest("[data-toolterm]");
+  if (term){
+    const id = term.dataset.toolterm;
+    let run = null;
+    S.sessions.forEach(s=>(s.turns||[]).forEach(t=>
+      (t.toolRuns||[]).forEach(r=>{ if (r.id === id) run = r; })));
+    Object.keys(S.sideTurns||{}).forEach(sid=>(S.sideTurns[sid]||[]).forEach(t=>
+      (t.toolRuns||[]).forEach(r=>{ if (r.id === id) run = r; })));
+    if (!run || !run.command) return;
+    sendToTerminal(run.command);
+    return;
+  }
+  /* Drill down from a turn's agent roster into the subagent fold below it.
+     No new surface: opens the fold that already ships with that agent selected.
+     Async because the agent list may not be fetched yet; the fold opens FIRST so
+     the click feels immediate. Everything the handler needs from the DOM is
+     captured HERE, before the await — the row may not exist afterwards. */
+  const row = e.target.closest("[data-agentrow]");
+  if (row){
+    const pane = row.closest(".pane[data-sess]");
+    const sid = pane && pane.dataset.sess;
+    if (!sid) return;
+    const kind = row.dataset.agkind, desc = row.dataset.agdesc;
+    /* rows in THIS turn sharing this key — agentMatch() refuses >1, because two
+       indistinguishable rows must not both claim whichever transcript exists */
+    const group = row.closest(".gv-agents");
+    const peers = group
+      ? Array.prototype.filter.call(group.querySelectorAll("[data-agentrow]"),
+          x => x.dataset.agkind === kind && x.dataset.agdesc === desc).length
+      : 1;
+    /* only the newest click may apply — a slow fetch from an earlier click must
+       not overwrite what the operator is looking at now */
+    const token = (S._agentClick = (S._agentClick || 0) + 1);
+    S.agentNote = S.agentNote || {};
+    delete S.agentNote[sid];
+    S.agentsFold[sid] = true;
+    render();
+    (async () => {
+      try { await loadAgents(sid, false); }
+      catch (err){ S.agentNote[sid] = "Could not read this session's subagents."; render(); return; }
+      if (token !== S._agentClick) return;
+      const hit = agentMatch(S.agents[sid], kind, desc, peers);
+      if (hit){
+        S.agentOpen[sid] = hit.id;
+        loadAgentTranscript(sid, hit.id);
+      } else {
+        const list = S.agents[sid];
+        S.agentNote[sid] = peers > 1
+          ? "Two agents in this turn have the same type and description, so this row "
+            + "cannot be told apart from its twin — open the one you want below."
+          : (list && list.length)
+            ? "Could not tell which transcript belongs to this row — it may still be "
+              + "running, or its transcript is not on disk yet."
+            : "No subagent transcript on disk for this agent yet.";
+      }
+      render();
+    })();
+  }
+}
+
 function wire(){
   /* With the browse pane closed there is no #scBody. A detached node keeps
      every scBody.querySelectorAll below a no-op instead of a TypeError that
@@ -261,58 +366,6 @@ function wire(){
     if (S.agentsFold[sid]) delete S.agentsFold[sid];
     else { S.agentsFold[sid] = true; loadAgents(sid, false); }
     render(); });
-  /* Drill down from a turn's agent roster into the subagent fold below it.
-     No new surface: this opens the fold that already ships and selects the
-     matching agent in it — exactly what [data-agentsfold] and [data-agentopen]
-     do when clicked by hand.
-     Async because the agent list may not be fetched yet. The fold opens FIRST so
-     the click feels immediate; the selection lands when the list arrives. */
-  panes.querySelectorAll("[data-agentrow]").forEach(b=>b.onclick=async ()=>{
-    const pane = b.closest(".pane[data-sess]");
-    const sid = pane && pane.dataset.sess;
-    if (!sid) return;
-    const kind = b.dataset.agkind, desc = b.dataset.agdesc;
-    /* How many rows in THIS turn carry the same key. agentMatch() refuses to
-       resolve when there is more than one, because two rows that normalise to
-       the same key cannot be told apart -- and if only one of them happens to
-       have a transcript on disk, both would otherwise open it. */
-    const group = b.closest(".gv-agents");
-    const peers = group
-      ? Array.prototype.filter.call(group.querySelectorAll("[data-agentrow]"),
-          x => x.dataset.agkind === kind && x.dataset.agdesc === desc).length
-      : 1;
-    /* Click ordering. loadAgents() is async, so a slow first click could land
-       AFTER a fast second one and overwrite the selection the operator is
-       actually looking at. Only the newest click is allowed to apply. */
-    const token = (S._agentClick = (S._agentClick || 0) + 1);
-    S.agentNote = S.agentNote || {};
-    delete S.agentNote[sid];
-    S.agentsFold[sid] = true;
-    render();
-    /* A failed fetch must not leave an unhandled rejection and no feedback:
-       loadAgents() already degrades to [], and this covers the rest. */
-    try { await loadAgents(sid, false); }
-    catch (e){ S.agentNote[sid] = "Could not read this session's subagents."; render(); return; }
-    if (token !== S._agentClick) return;          /* a newer click owns the pane */
-    const hit = agentMatch(S.agents[sid], kind, desc, peers);
-    if (hit){
-      S.agentOpen[sid] = hit.id;
-      loadAgentTranscript(sid, hit.id);
-    } else {
-      /* Honest failure. A running agent often has no transcript on disk yet, and
-         two identical agents cannot be told apart. Say which it is, rather than
-         opening nothing silently or opening a plausible wrong one. */
-      const list = S.agents[sid];
-      S.agentNote[sid] = peers > 1
-        ? "Two agents in this turn have the same type and description, so this row "
-          + "cannot be told apart from its twin — open the one you want below."
-        : (list && list.length)
-          ? "Could not tell which transcript belongs to this row — it may still be "
-            + "running, or its transcript is not on disk yet."
-          : "No subagent transcript on disk for this agent yet.";
-    }
-    render();
-  });
   panes.querySelectorAll("[data-agentopen]").forEach(b=>b.onclick=()=>{
     /* sid is a claude session id (uuid) and aid is agent-<hex>; neither contains a
        colon, so a single split is unambiguous. */
@@ -386,48 +439,6 @@ function wire(){
          being typed into. The value is already in S. */
     };
     el.oninput = commit; el.onchange = commit;
-  });
-  panes.querySelectorAll("[data-toolout]").forEach(b=>b.onclick=()=>{
-    const id = b.dataset.toolout;
-    S.toolOpen[id] = !S.toolOpen[id];
-    render();
-  });
-  /* the loader opens into the turn's step log — same structural-toggle pattern
-     as the governance chip below it: flip the S key, full render. Not the patch
-     path, because opening a log CHANGES the shape of the block rather than its
-     text, and the patch path exists for text. */
-  panes.querySelectorAll("[data-thinkopen]").forEach(b=>b.onclick=()=>{
-    const uid = b.dataset.thinkopen;
-    if (!uid) return;
-    S.thinkOpen = S.thinkOpen || {};
-    if (S.thinkOpen[uid]) delete S.thinkOpen[uid];
-    else S.thinkOpen[uid] = true;
-    render();
-  });
-  /* governance chip fold — same structural-toggle pattern as [data-toolout]:
-     flip the S key, full render. Deliberately not the patch path. */
-  panes.querySelectorAll("[data-govopen]").forEach(b=>b.onclick=()=>{
-    const uid = b.dataset.govopen;
-    if (!uid) return;
-    S.govOpen = S.govOpen || {};
-    S.govOpen[uid] = !S.govOpen[uid];
-    render();
-  });
-  /* "view it in the terminal" for a shell command the agent ran.
-     It TYPES the command and stops. It does not press Enter, and that is the whole
-     design: the agent ran this once already, a second run is a NEW side effect, and
-     `rm`, a migration or a deploy would be re-executed by a control the operator
-     clicked to LOOK at something. Typed-not-run is also what term.html's own
-     data-insert buttons already do, so this is the established gesture here. */
-  panes.querySelectorAll("[data-toolterm]").forEach(b=>b.onclick=()=>{
-    const id = b.dataset.toolterm;
-    let run = null;
-    S.sessions.forEach(s=>(s.turns||[]).forEach(t=>
-      (t.toolRuns||[]).forEach(r=>{ if (r.id === id) run = r; })));
-    Object.keys(S.sideTurns||{}).forEach(sid=>(S.sideTurns[sid]||[]).forEach(t=>
-      (t.toolRuns||[]).forEach(r=>{ if (r.id === id) run = r; })));
-    if (!run || !run.command) return;
-    sendToTerminal(run.command);
   });
   panes.querySelectorAll("[data-sidetoggle]").forEach(b=>b.onclick=()=>{
     const sid=b.dataset.sidetoggle;

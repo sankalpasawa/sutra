@@ -184,6 +184,10 @@ const EPILOGUE = `
      test_governance.js, and these two prove the projection actually REACHES
      the DOM -- a correct roster rendered into the wrong place still fails */
   gvAgents, turnResponse, agentMatch, focusKeyOf, patchTurn,
+  /* the delegated per-turn click handler + the fold, exported so the live-run
+     regressions (dead controls mid-stream; invisible fold on non-real
+     sessions) stay pinned */
+  turnControlClick, agentsFold,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat
@@ -2104,15 +2108,151 @@ test("28f. panel.html loads 11-teamsutra before 09-tail, so boot() stays last", 
   assert.ok(ts < tail, "11-teamsutra.js must load before 09-tail.js (test 21b's invariant)");
 });
 
+/* ── 31. per-turn controls survive patchTurn — found by driving the LIVE app ──
+   patchTurn() replaces a turn's DOM mid-stream; per-render onclick bindings die
+   with the replaced nodes, so the thinking toggle (and the shipped output/
+   terminal buttons) were dead exactly while a turn streamed. The five per-turn
+   controls are now handled by ONE delegated listener that no patch can kill. */
+
+/* a synthetic event whose target chains .closest() the way a real one does:
+   hits[sel] is what that selector resolves to */
+const evFor = hits => ({ target: { closest: sel => hits[sel] || null } });
+const IN_TURN = { ".turn": {} };   /* every control below lives inside a turn */
+/* the handler ends in render(), which needs the full DOM this stub does not
+   have. State changes land BEFORE render, so a no-op render isolates exactly
+   what these tests assert. Top-level function declarations in a non-strict vm
+   script live on the global, so the swap is visible inside the handler. */
+function withNoopRender(fn){
+  const prev = sandbox.render;
+  sandbox.render = () => {};
+  try { return fn(); } finally { sandbox.render = prev; }
+}
+
+test("31a. the thinking toggle works with no per-render binding at all", () => {
+  T.S.thinkOpen = {};
+  const btn = { dataset: { thinkopen: "t42" } };
+  withNoopRender(() => {
+    T.turnControlClick(evFor({ ...IN_TURN, "[data-thinkopen]": btn }));
+    assert.strictEqual(T.S.thinkOpen["t42"], true, "first click opens");
+    T.turnControlClick(evFor({ ...IN_TURN, "[data-thinkopen]": btn }));
+    assert.strictEqual(T.S.thinkOpen["t42"], undefined, "second click closes");
+  });
+});
+
+test("31b. the governance chip and tool output toggle through the same path", () => {
+  T.S.govOpen = {}; T.S.toolOpen = {};
+  withNoopRender(() => {
+    T.turnControlClick(evFor({ ...IN_TURN,
+      "[data-govopen]": { dataset: { govopen: "t42" } } }));
+    assert.strictEqual(T.S.govOpen["t42"], true);
+    T.turnControlClick(evFor({ ...IN_TURN,
+      "[data-toolout]": { dataset: { toolout: "toolu_9" } } }));
+    assert.strictEqual(T.S.toolOpen["toolu_9"], true);
+  });
+});
+
+test("31c. a click OUTSIDE a turn is never intercepted", () => {
+  T.S.thinkOpen = {};
+  /* same button, but nothing resolves .turn — e.g. a control in the rail */
+  withNoopRender(() =>
+    T.turnControlClick(evFor({ "[data-thinkopen]": { dataset: { thinkopen: "t42" } } })));
+  assert.strictEqual(Object.keys(T.S.thinkOpen).length, 0,
+    "the delegated listener must not reach outside chat turns");
+});
+
+test("31d. the five delegated controls have NO per-render binding left", () => {
+  /* the whole point: if wire() also bound them, one click would toggle twice
+     and every control would appear dead. The source must contain no
+     querySelectorAll binding for any of the five. */
+  const src = require("fs").readFileSync(__dirname + "/static/js/07-loaders.js", "utf8");
+  ["data-thinkopen", "data-govopen", "data-toolout", "data-toolterm", "data-agentrow"]
+    .forEach(k => {
+      const bound = new RegExp('panes\\.querySelectorAll\\("\\[' + k + '\\]"\\)\\.forEach').test(src);
+      assert.ok(!bound, k + " is still bound per-render — a click would fire twice");
+    });
+});
+
+/* The harness runs tests synchronously and the file ends in process.exit, so a
+   returned promise would never be awaited — its assertions would silently not
+   run. Async checks register here and the exit waits for them. */
+const ASYNC_CHECKS = [];
+
+test("31e. the roster drill-down works through delegation and captures before await", () => {
+  /* the async body must read every DOM value BEFORE its first await — the row
+     may be patched away while loadAgents is in flight. Proven by handing it a
+     row whose dataset is DESTROYED synchronously after the call returns. */
+  const rowDataset = { agkind: "Explore", agdesc: "count things" };
+  const row = {
+    dataset: rowDataset,
+    closest: sel => sel === ".pane[data-sess]" ? { dataset: { sess: "sid-1" } }
+           : sel === ".gv-agents" ? { querySelectorAll: () => [{ dataset: { ...rowDataset } }] }
+           : sel === ".turn" ? {} : null,
+  };
+  T.S.agentsFold = {}; T.S.agents = { "sid-1": [] }; T.S.agentNote = {};
+  const prevRender = sandbox.render;
+  sandbox.render = () => {};
+  T.turnControlClick(evFor({ ...IN_TURN, "[data-agentrow]": row }));
+  /* synchronous part: the fold opened immediately */
+  assert.strictEqual(T.S.agentsFold["sid-1"], true, "the fold opens on click, before any fetch");
+  /* now the row disappears, as a patch would make it */
+  delete rowDataset.agkind; delete rowDataset.agdesc;
+  /* the async continuation still runs to an HONEST note, not a crash.
+     render stays a no-op until it settles, then is restored. Registered, not
+     returned: the exit below waits on ASYNC_CHECKS. */
+  ASYNC_CHECKS.push(new Promise(r => setTimeout(r, 20)).then(() => {
+    sandbox.render = prevRender;
+    /* only the continuation's OWN writes are asserted — tests that ran after
+       31e legitimately reset S.agentsFold, and asserting state they own would
+       couple this check to test ordering */
+    assert.ok(T.S.agentNote["sid-1"],
+      "no transcript to join on -> the fold must SAY so: " + JSON.stringify(T.S.agentNote));
+  }));
+});
+
+/* ── 32. the fold renders for a live panel session — found by driving the app ── */
+
+test("32a. an explicit open request renders the fold even before the session is real", () => {
+  T.S.agentsFold = { "sid-9": true };
+  T.S.agents = { "sid-9": [] };
+  T.S.agentNote = { "sid-9": "No subagent transcript on disk for this agent yet." };
+  const html = T.agentsFold({ id: "sid-9", real: false });
+  assert.ok(html && /agents open/.test(html),
+    "the operator clicked; showing nothing at all was the live-run bug");
+  assert.ok(/No subagent transcripts on disk|No subagent transcript on disk/.test(html),
+    "and what renders is the honest empty state, not a blank container");
+});
+
+test("32b. an UNOPENED non-real session still shows nothing — no new noise", () => {
+  T.S.agentsFold = {};
+  T.S.agents = {};
+  T.S.agentNote = {};
+  assert.strictEqual(T.agentsFold({ id: "sid-9", real: false }), "",
+    "the fix must not put an empty fold under every fresh session");
+});
+
+test("32c. a real session with agents behaves exactly as before", () => {
+  T.S.agentsFold = {};
+  T.S.agents = { "sid-9": [{ id: "agent-a", title: "t", steps: 1, tools: [], mtime: 1 }] };
+  const closedHtml = T.agentsFold({ id: "sid-9", real: true });
+  assert.ok(/1 subagent/.test(closedHtml), "collapsed head still renders");
+  assert.ok(!/agents open/.test(closedHtml), "and stays collapsed until asked");
+});
+
 /* ── report ────────────────────────────────────────────────────────────── */
 
-console.log("\n" + "-".repeat(60));
-console.log("panel.html script: " + passed + " passed, " + failures.length + " failed");
-if (failures.length) {
-  failures.forEach(f => {
-    console.log("\nFAILED: " + f.name);
-    console.log(f.e && f.e.stack ? f.e.stack : String(f.e));
+Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []).then(results => {
+  results.forEach((r, i) => {
+    if (r.status === "rejected") failures.push({ name: "async check #" + i, e: r.reason });
+    else passed++;
   });
-  process.exit(1);
-}
-process.exit(0);
+  console.log("\n" + "-".repeat(60));
+  console.log("panel.html script: " + passed + " passed, " + failures.length + " failed");
+  if (failures.length) {
+    failures.forEach(f => {
+      console.log("\nFAILED: " + f.name);
+      console.log(f.e && f.e.stack ? f.e.stack : String(f.e));
+    });
+    process.exit(1);
+  }
+  process.exit(0);
+});
