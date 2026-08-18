@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- Scene: settled turn, governance chip expanded. Rendered from shipped v2.102.0 UI styles. -->
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="scenes.css"></head>
+<body>
+<div class="frame">
+  <div class="titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+    <span class="appname">Sutra — chat · session 7a4ae0</span></div>
+  <div class="chat">
+    <div class="u">Refactor the placement engine to cache charter lookups.</div>
+    <div class="a">
+      <div class="gv gv-open"><button class="gv-chip">
+        <span class="gv-pulse"></span>
+        <span>turn 3</span><span class="gv-sep">·</span>
+        <span>TASK</span><span class="gv-sep">·</span>
+        <span>D3</span><span class="gv-sep">·</span>
+        <span class="gv-leaf">Placement Engine</span><span class="gv-sep">·</span>
+        <span>0.53</span>
+        <span class="gv-chev">▼</span>
+      </button>
+      <div class="gv-panel">
+        <div class="gv-row"><span class="gv-label">Placement</span>
+          <span class="gv-val"><code>D1.D1.D3.D1</code> Filed to <b>Placement Engine</b> on
+          <code>charter cache</code> <code>classify</code>.</span></div>
+        <div class="gv-row"><span class="gv-label">Grounding</span>
+          <span class="gv-val"><code>C-9a7bd900</code> Placement Engine Charter —
+          <i>addresses are computed and persisted, never invented.</i></span></div>
+        <div class="gv-row"><span class="gv-label">Trace</span>
+          <span class="gv-val"><code>flow-deep › D3 › 9 tools › 4 files edited</code></span></div>
+      </div></div>
+      <span class="pill">answered</span>
+      <p>Cache is in: an LRU keyed on charter ref, invalidated on charter writes.
+      All 14 call sites now hit memory after the first read — classify latency drops
+      from 41ms to 2ms on the golden set, and the full suite is green.</p>
+    </div>
+  </div>
+</div>
+</body></html>
