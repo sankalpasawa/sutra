@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""sutra-build-workflow -- the ONE v1 builder gate (W-BUILD-V1 S4-C3).
+
+Implements holding/plans/native-sop-program/v1-build/specs/builder-pipeline.md.
+
+  sutra-build-workflow propose --from-transcript <file> --id <workflow_id> \
+      --title <title> --goal <goal> [--version <v>] [--proposed-by <who>] \
+      [--reuse-tag <tag>]
+  sutra-build-workflow approve --id <workflow_id>[@<version>] \
+      --operator <who> --i-approve
+  sutra-build-workflow reject --id <workflow_id>[@<version>] [--reason <why>]
+
+Gate (propose runs stages 1-5 in one invocation):
+  validate -> construct -> judge -> verify -> PROPOSE
+APPROVE + register run as a separate operator-initiated invocation (approve).
+
+APPROVE IS NEVER AUTOMATIC (F8). The approve subcommand refuses unless BOTH
+--operator <who> AND the explicit literal token --i-approve are present on
+the command line. There is no environment variable, config key, timer,
+default, batch path, or flag combination that approves without --i-approve.
+propose never touches approval state: it writes status=proposed with
+approved_by=null, ts_registered=null, full stop.
+
+Stores (instance data ONLY under ~/.sutra-native/ -- SCOPE section 3 "CLIs"):
+  $SUTRA_NATIVE_HOME/registry/proposals/<workflow_id>@<version>.json  (propose)
+  $SUTRA_NATIVE_HOME/registry/workflows/                (approve, via
+                                                         sutra-registry add)
+Default SUTRA_NATIVE_HOME = ~/.sutra-native. This CLI refuses to write
+instance data inside the sutra package or sutra/os/native/schemas/.
+
+Pinning (G1): every constructed step carries verify {template_id,
+template_version, args}; judge requires the pin to name an entry present in
+templates/verify-templates.json (version compared as strings).
+
+Not here, by law: no ledger reads or anything predictive (F1), no
+cross-system contract objects (F2), no queues/boards (F3), no style matching
+(F4), no arbitration/ownership (F5), no installer layout (F6), no scheduler
+semantics (F7), no auto-approve (F8), single-operator single-tenant (F9),
+no estimation/backward-scheduling (F10). No template libraries, provenance
+chains, or publishing paths (M5 guard).
+
+Exit (propose): 0 proposed entry written - 1 rejected at
+validate/construct/judge/verify (stage named on stderr) - 2 usage -
+3 store write failure.
+Exit (approve/reject): 0 done - 1 target not in proposed state - 2 usage
+(including any approve attempt missing --operator or --i-approve) -
+3 registry/store failure - 4 target not found.
+"""
+import glob
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+
+SELF_DIR = os.path.dirname(os.path.realpath(__file__))
+VALIDATOR = os.path.join(SELF_DIR, "sutra-schema-validate")
+REGISTRY_CLI = os.path.join(SELF_DIR, "sutra-registry")
+TEMPLATES_PATH = os.environ.get(
+    "SUTRA_VERIFY_TEMPLATES",
+    os.path.realpath(os.path.join(SELF_DIR, "..", "templates",
+                                  "verify-templates.json")))
+DEFAULT_SCHEMA = os.path.realpath(os.path.join(
+    SELF_DIR, "..", "..", "..", "os", "native", "schemas",
+    "workflow-definition.schema.json"))
+SCHEMA_PATH = os.environ.get("SUTRA_WORKFLOW_SCHEMA", DEFAULT_SCHEMA)
+NATIVE_HOME = os.environ.get(
+    "SUTRA_NATIVE_HOME", os.path.join(os.path.expanduser("~"), ".sutra-native"))
+PROPOSALS = os.path.join(NATIVE_HOME, "registry", "proposals")
+PKG_ROOT = os.path.realpath(os.path.join(SELF_DIR, "..", "..", ".."))
+
+
+def die(code, msg):
+    sys.stderr.write("sutra-build-workflow: %s\n" % msg)
+    sys.exit(code)
+
+
+def guard_instance_home():
+    nh = os.path.realpath(NATIVE_HOME)
+    if nh == PKG_ROOT or nh.startswith(PKG_ROOT + os.sep):
+        die(3, "refusing to write instance data inside the sutra package: %s"
+            % nh)
+
+
+def atomic_write(path, obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(obj, f, indent=2, sort_keys=False)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except OSError as e:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        die(3, "store write failure: %s" % e)
+
+
+def parse_flags(argv, spec, bare):
+    """spec: {flag: takes_value True}; bare: set of value-less flags."""
+    out = {}
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in bare:
+            out[a] = True
+            i += 1
+        elif a in spec:
+            if i + 1 >= len(argv):
+                die(2, "flag %s needs a value" % a)
+            out[a] = argv[i + 1]
+            i += 2
+        else:
+            die(2, "unknown flag: %s" % a)
+    return out
+
+
+def utc_now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def load_templates():
+    try:
+        with open(TEMPLATES_PATH) as f:
+            reg = json.load(f)
+    except (OSError, ValueError) as e:
+        die(1, "judge: cannot read verify-templates registry %s (%s)"
+            % (TEMPLATES_PATH, e))
+    pins = set()
+    for t in reg.get("templates", []):
+        pins.add((str(t.get("template_id")), str(t.get("template_version"))))
+    return pins
+
+
+def run_validator(entry):
+    fd, tmp = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(entry, f)
+        return subprocess.run(
+            [VALIDATOR, SCHEMA_PATH, tmp],
+            capture_output=True, text=True)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------- propose
+
+def normalize_args(raw):
+    """Accept [{name,value}] or {name: value}; emit [{name,value}]."""
+    if raw is None:
+        return []
+    if isinstance(raw, dict):
+        return [{"name": str(k), "value": v} for k, v in raw.items()]
+    if isinstance(raw, list):
+        out = []
+        for a in raw:
+            if not (isinstance(a, dict) and "name" in a and "value" in a):
+                return None
+            out.append({"name": str(a["name"]), "value": a["value"]})
+        return out
+    return None
+
+
+def cmd_propose(argv):
+    f = parse_flags(argv, {"--from-transcript": True, "--id": True,
+                           "--title": True, "--goal": True,
+                           "--version": True, "--proposed-by": True,
+                           "--reuse-tag": True}, set())
+    for req in ("--from-transcript", "--id", "--title", "--goal"):
+        if req not in f:
+            die(2, "propose requires %s" % req)
+    guard_instance_home()
+
+    # Stage 1: validate -- structural acceptance of the transcript record.
+    try:
+        with open(f["--from-transcript"]) as fh:
+            record = json.load(fh)
+    except (OSError, ValueError) as e:
+        die(1, "validate: transcript record unparseable or unreadable: %s" % e)
+    if not isinstance(record, dict) or not isinstance(
+            record.get("steps"), list):
+        die(1, "validate: transcript record incomplete -- needs a top-level "
+               "object with a 'steps' array")
+
+    # Stage 2: construct -- draft workflow-definition candidate.
+    steps = []
+    for i, raw in enumerate(record["steps"], start=1):
+        if not isinstance(raw, dict):
+            die(1, "construct: transcript step %d is not an object" % i)
+        name = raw.get("name") or "step-%d" % i
+        how = raw.get("how") or raw.get("action")
+        if not how:
+            die(1, "construct: transcript step %d ('%s') has no 'how'"
+                % (i, name))
+        verify = raw.get("verify") if isinstance(raw.get("verify"), dict) \
+            else {}
+        args = normalize_args(verify.get("args"))
+        if args is None:
+            die(1, "construct: transcript step %d ('%s') has malformed "
+                   "verify args" % (i, name))
+        steps.append({
+            "id": "s%d" % i,
+            "name": str(name),
+            "how": str(how),
+            "verify": {
+                "template_id": str(verify.get("template_id") or ""),
+                "template_version": str(verify.get("template_version") or ""),
+                "args": args,
+            },
+        })
+    if not steps:
+        die(1, "construct: transcript does not yield at least one step")
+    fp = record.get("failure_policy")
+    if not (isinstance(fp, dict) and isinstance(fp.get("retry_budget"), int)
+            and fp.get("on_escalate")):
+        fp = {"retry_budget": 1, "on_escalate": "operator"}
+    candidate = {
+        "schema_version": "1.0.0",
+        "workflow_id": f["--id"],
+        "version": f.get("--version", "0.1.0"),
+        "title": f["--title"],
+        "goal": f["--goal"],
+        "steps": steps,
+        "failure_policy": {"retry_budget": fp["retry_budget"],
+                           "on_escalate": str(fp["on_escalate"])},
+        "reuse_tag": f.get("--reuse-tag", record.get("reuse_tag")
+                           or "uncategorized"),
+        "status": "proposed",
+        "proposed_by": f.get("--proposed-by", os.environ.get("USER")
+                             or "operator"),
+        "approved_by": None,
+        "ts_registered": None,
+    }
+
+    # Stage 3: judge -- fit-for-registry verdict (structure + G1 pinning).
+    pins = load_templates()
+    reasons = []
+    for s in candidate["steps"]:
+        v = s["verify"]
+        if not v["template_id"] or not v["template_version"]:
+            reasons.append("step %s ('%s'): verify pin missing "
+                           "{template_id, template_version}"
+                           % (s["id"], s["name"]))
+        elif (v["template_id"], v["template_version"]) not in pins:
+            reasons.append("step %s ('%s'): pin {%s, %s} not present in "
+                           "verify-templates registry"
+                           % (s["id"], s["name"], v["template_id"],
+                              v["template_version"]))
+    verdict = {"fit_for_registry": not reasons, "reasons": reasons}
+    print("judge verdict: %s" % json.dumps(verdict))
+    if reasons:
+        die(1, "judge: fit-for-registry=no -- %s" % "; ".join(reasons))
+
+    # Stage 4: verify -- structural validator against the schema.
+    r = run_validator(candidate)
+    if r.returncode != 0:
+        sys.stderr.write(r.stdout + r.stderr)
+        die(1, "verify: schema validation failed (%s)" % SCHEMA_PATH)
+
+    # Stage 5: PROPOSE -- write the proposal; approval state untouched (F8).
+    dest = os.path.join(
+        PROPOSALS, "%s@%s.json" % (candidate["workflow_id"],
+                                   candidate["version"]))
+    if os.path.exists(dest):
+        die(3, "proposal already exists: %s" % dest)
+    atomic_write(dest, candidate)
+    print("proposed: %s" % dest)
+    print("awaiting explicit operator approval -- run: sutra-build-workflow "
+          "approve --id %s@%s --operator <you> --i-approve"
+          % (candidate["workflow_id"], candidate["version"]))
+    sys.exit(0)
+
+
+# ---------------------------------------------------------------- approve
+
+def find_proposal(ident):
+    if "@" in ident:
+        p = os.path.join(PROPOSALS, ident + ".json")
+        return p if os.path.isfile(p) else None
+    matches = sorted(glob.glob(
+        os.path.join(glob.escape(PROPOSALS), glob.escape(ident) + "@*.json")))
+    if len(matches) > 1:
+        die(2, "ambiguous --id %s: %s -- name it as <id>@<version>"
+            % (ident, ", ".join(os.path.basename(m) for m in matches)))
+    return matches[0] if matches else None
+
+
+def cmd_approve(argv):
+    f = parse_flags(argv, {"--id": True, "--operator": True},
+                    {"--i-approve"})
+    # F8: BOTH the operator identity AND the explicit consent token are
+    # required. No other flag combination approves. Ever.
+    if "--id" not in f:
+        die(2, "approve requires --id")
+    if "--operator" not in f:
+        die(2, "approve is OPERATOR-ONLY: requires --operator <who> "
+               "(and --i-approve)")
+    if f.get("--i-approve") is not True:
+        die(2, "approve refused: explicit --i-approve token missing -- "
+               "approval is never automatic (F8)")
+    guard_instance_home()
+    path = find_proposal(f["--id"])
+    if path is None:
+        die(4, "no proposal found for --id %s under %s"
+            % (f["--id"], PROPOSALS))
+    try:
+        with open(path) as fh:
+            entry = json.load(fh)
+    except (OSError, ValueError) as e:
+        die(3, "cannot read proposal %s: %s" % (path, e))
+    if entry.get("status") != "proposed":
+        die(1, "target is not in proposed state (status=%s)"
+            % entry.get("status"))
+
+    entry["status"] = "registered"
+    entry["approved_by"] = f["--operator"]
+    entry["ts_registered"] = utc_now()
+
+    r = run_validator(entry)
+    if r.returncode != 0:
+        sys.stderr.write(r.stdout + r.stderr)
+        die(1, "approved entry failed schema validation -- not registered")
+
+    fd, tmp = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(entry, fh, indent=2)
+        reg = subprocess.run([REGISTRY_CLI, "add", tmp],
+                             capture_output=True, text=True)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    sys.stdout.write(reg.stdout)
+    sys.stderr.write(reg.stderr)
+    if reg.returncode != 0:
+        die(3, "sutra-registry add failed (exit %d); proposal left in "
+               "proposed state at %s" % (reg.returncode, path))
+    try:
+        os.replace(path, path + ".approved")
+    except OSError as e:
+        die(3, "registered, but could not archive proposal file: %s" % e)
+    print("registered: %s@%s approved_by=%s ts_registered=%s"
+          % (entry["workflow_id"], entry["version"], entry["approved_by"],
+             entry["ts_registered"]))
+    sys.exit(0)
+
+
+# ----------------------------------------------------------------- reject
+
+def cmd_reject(argv):
+    f = parse_flags(argv, {"--id": True, "--reason": True}, set())
+    if "--id" not in f:
+        die(2, "reject requires --id")
+    guard_instance_home()
+    path = find_proposal(f["--id"])
+    if path is None:
+        die(4, "no proposal found for --id %s under %s"
+            % (f["--id"], PROPOSALS))
+    try:
+        with open(path) as fh:
+            entry = json.load(fh)
+    except (OSError, ValueError) as e:
+        die(3, "cannot read proposal %s: %s" % (path, e))
+    if entry.get("status") != "proposed":
+        die(1, "target is not in proposed state (status=%s)"
+            % entry.get("status"))
+    try:
+        os.replace(path, path + ".rejected")
+    except OSError as e:
+        die(3, "could not archive rejected proposal: %s" % e)
+    print("rejected: %s (%s)"
+          % (os.path.basename(path), f.get("--reason", "no reason given")))
+    sys.exit(0)
+
+
+def main():
+    if len(sys.argv) < 2:
+        die(2, "usage: sutra-build-workflow {propose|approve|reject} ...")
+    cmd, argv = sys.argv[1], sys.argv[2:]
+    if cmd == "propose":
+        cmd_propose(argv)
+    elif cmd == "approve":
+        cmd_approve(argv)
+    elif cmd == "reject":
+        cmd_reject(argv)
+    else:
+        die(2, "unknown command '%s'" % cmd)
+
+
+if __name__ == "__main__":
+    main()

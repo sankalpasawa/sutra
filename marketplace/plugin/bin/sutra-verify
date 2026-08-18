@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""sutra-verify -- instantiate a PINNED verify template and run it (W-BUILD-V1 S4-C2).
+
+The registry (templates/verify-templates.json, shipped with the plugin) pins each
+template by {template_id, template_version}; entries are immutable once shipped, so
+old evidence never changes meaning (SCOPE.md section 4, G1). Named args
+[{name, value}] are mapped to the template's positional contract, the template runs
+under bash, and the CLI emits:
+
+    OUTCOME: pass|fail-retry
+    EVIDENCE: {...one JSON line: verify_template, verify_args, exit_code, stdout, ...}
+    COUNTERSIGN: {...}        (only with --countersign <operator>; record-only in v1)
+
+This CLI writes NO instance data -- pure stdout emission. Callers (sutra-atom, the
+run ledger) persist rows under ~/.sutra-native/ (SCOPE.md section 3 "CLIs" guard).
+
+Exit status (aligned with registry-cli spec table):
+    0  pass (template exited 0)
+    1  fail-retry (template ran, exited nonzero)
+    2  usage error (bad flags, unknown/missing/duplicate arg names)
+    3  registry I/O error (registry file missing or corrupt)
+    4  not found (no template pinned at {template_id, template_version})
+
+python3 stdlib only. No engine reads, no contracts, no queues, no scheduling,
+no auto-approve, single-tenant (FORBIDDEN-DEPS F1-F10).
+"""
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+USAGE = ("usage: sutra-verify --template <template_id> --version <n> "
+         "[--arg name=value ...] [--countersign <operator>]")
+
+
+def usage_error(msg):
+    print("sutra-verify: " + msg, file=sys.stderr)
+    print(USAGE, file=sys.stderr)
+    sys.exit(2)
+
+
+def take_value(argv, i, flag):
+    if i + 1 >= len(argv):
+        usage_error(flag + " needs a value")
+    return argv[i + 1], i + 2
+
+
+def main(argv):
+    template_id = None
+    version_raw = None
+    countersign = None
+    named = []  # [(name, value)] in CLI order
+
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--template":
+            template_id, i = take_value(argv, i, a)
+        elif a == "--version":
+            version_raw, i = take_value(argv, i, a)
+        elif a == "--arg":
+            raw, i = take_value(argv, i, a)
+            if "=" not in raw:
+                usage_error("--arg wants name=value, got: " + raw)
+            name, _, value = raw.partition("=")
+            if not name:
+                usage_error("--arg has empty name: " + raw)
+            named.append((name, value))
+        elif a == "--countersign":
+            countersign, i = take_value(argv, i, a)
+        elif a in ("-h", "--help"):
+            print(USAGE)
+            return 0
+        else:
+            usage_error("unknown argument: " + a)
+
+    if not template_id:
+        usage_error("--template is required")
+    if version_raw is None:
+        usage_error("--version is required")
+    try:
+        version = int(version_raw)
+    except ValueError:
+        usage_error("--version must be an integer, got: " + version_raw)
+
+    registry_path = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), "..", "templates",
+        "verify-templates.json")
+    try:
+        with open(registry_path, encoding="utf-8") as fh:
+            registry = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        print("sutra-verify: registry error at %s: %s" % (registry_path, exc),
+              file=sys.stderr)
+        return 3
+
+    templates = registry.get("templates", [])
+    entry = next((t for t in templates
+                  if t.get("template_id") == template_id
+                  and t.get("template_version") == version), None)
+    if entry is None:
+        known = ", ".join("%s@%s" % (t.get("template_id"), t.get("template_version"))
+                          for t in templates)
+        print("sutra-verify: no pinned template %s@%s in registry (known: %s)"
+              % (template_id, version, known), file=sys.stderr)
+        return 4
+
+    # Map named args -> positional argv per the entry's ordered arg spec.
+    spec = entry.get("args", [])
+    spec_names = [s["name"] for s in spec]
+    unknown = sorted({n for n, _ in named if n not in spec_names})
+    if unknown:
+        usage_error("unknown arg name(s) for %s@%s: %s (expects: %s)"
+                    % (template_id, version, ", ".join(unknown),
+                       ", ".join(spec_names)))
+    positional = []
+    for s in spec:
+        values = [v for n, v in named if n == s["name"]]
+        if s.get("required") and not values:
+            usage_error("missing required arg for %s@%s: %s"
+                        % (template_id, version, s["name"]))
+        if not s.get("repeat") and len(values) > 1:
+            usage_error("arg given more than once: " + s["name"])
+        positional.extend(values)
+
+    script = entry["script"]
+    script_sha256 = hashlib.sha256(script.encode("utf-8")).hexdigest()
+    proc = subprocess.run(
+        ["bash", "-c", script, "%s@%s" % (template_id, version)] + positional,
+        capture_output=True, text=True)
+
+    outcome = "pass" if proc.returncode == 0 else "fail-retry"
+    ts = int(time.time())
+    evidence = {
+        "schema_version": 1,
+        "verify_template": {"template_id": template_id,
+                            "template_version": version},
+        "verify_args": [{"name": n, "value": v} for n, v in named],
+        "exit_code": proc.returncode,
+        "outcome": outcome,
+        "stdout": proc.stdout.strip(),
+        "stderr": proc.stderr.strip(),
+        "script_sha256": script_sha256,
+        "ts": ts,
+    }
+    print("OUTCOME: " + outcome)
+    print("EVIDENCE: " + json.dumps(evidence, separators=(",", ":")))
+    if countersign:
+        print("COUNTERSIGN: " + json.dumps(
+            {"operator": countersign, "note": "record-only (v1)", "ts": ts},
+            separators=(",", ":")))
+    return 0 if outcome == "pass" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

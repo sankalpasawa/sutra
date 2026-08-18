@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "registry_id": "verify-templates",
+  "law": "Entries are immutable once shipped: any behavior change requires a NEW template_version. Old evidence keeps its meaning because {template_id, template_version} pins the exact script that produced it (SCOPE.md section 4, G1).",
+  "templates": [
+    {
+      "template_id": "file-exists",
+      "template_version": 1,
+      "contract": "file-exists <path> [<path>...] -- exit 0 iff every path exists and is non-empty; evidence (bytes, lines, age per path) on stdout; refusals on stderr",
+      "args": [
+        { "name": "path", "required": true, "repeat": true }
+      ],
+      "script": "set -euo pipefail\n[ $# -ge 1 ] || { echo \"file-exists: needs at least one path\" >&2; exit 2; }\nEVIDENCE=\"\"\nfor p in \"$@\"; do\n  [ -s \"$p\" ] || { echo \"file-exists: missing or empty: $p\" >&2; exit 1; }\n  bytes=$(wc -c < \"$p\" | tr -d ' ')\n  lines=$(wc -l < \"$p\" | tr -d ' ')\n  mt=$(stat -f %m \"$p\" 2>/dev/null || stat -c %Y \"$p\" 2>/dev/null || echo 0)\n  age=$(( $(date +%s) - mt ))\n  EVIDENCE=\"${EVIDENCE:+$EVIDENCE; }present: $p (${bytes}B, ${lines} lines, ${age}s old)\"\ndone\necho \"$EVIDENCE\"\nexit 0\n"
+    },
+    {
+      "template_id": "grep-count",
+      "template_version": 1,
+      "contract": "grep-count <pattern> <file> <min> -- exit 0 iff extended-regex pattern occurs >= min times in file; min must be >= 1 (min=0 is vacuous); dash-leading patterns never parse as options",
+      "args": [
+        { "name": "pattern", "required": true, "repeat": false },
+        { "name": "file", "required": true, "repeat": false },
+        { "name": "min", "required": true, "repeat": false }
+      ],
+      "script": "set -euo pipefail\n[ $# -eq 3 ] || { echo \"grep-count: needs <pattern> <file> <min>\" >&2; exit 2; }\npat=\"$1\"; file=\"$2\"; min=\"$3\"\ncase \"$min\" in ''|*[!0-9]*) echo \"grep-count: min must be a positive integer\" >&2; exit 2 ;; esac\n[ \"$min\" -ge 1 ] || { echo \"grep-count: min=0 is vacuous -- min must be >= 1\" >&2; exit 2; }\n[ -f \"$file\" ] || { echo \"grep-count: no such file: $file\" >&2; exit 1; }\nn=$(grep -cE -- \"$pat\" \"$file\" || true)\nn=${n:-0}\n[ \"$n\" -ge \"$min\" ] || { echo \"grep-count: found $n < $min of /$pat/ in $file\" >&2; exit 1; }\necho \"found $n of >=$min required\"\nexit 0\n"
+    },
+    {
+      "template_id": "named-test",
+      "template_version": 1,
+      "contract": "named-test <script> [arg...] -- runs a named test script via bash; its exit code passes through unchanged; stdout/stderr pass through as evidence",
+      "args": [
+        { "name": "script", "required": true, "repeat": false },
+        { "name": "arg", "required": false, "repeat": true }
+      ],
+      "script": "set -euo pipefail\n[ $# -ge 1 ] || { echo \"named-test: needs <script-path>\" >&2; exit 2; }\nscript=\"$1\"; shift\n[ -f \"$script\" ] || { echo \"named-test: no such script: $script\" >&2; exit 1; }\nbash \"$script\" \"$@\"\n"
+    }
+  ]
+}

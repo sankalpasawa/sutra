@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""sutra-registry -- plain-file workflow registry (W-BUILD-V1 S4-C1).
+
+Implements holding/plans/native-sop-program/v1-build/specs/registry-cli.md.
+
+  sutra-registry add <entry.json>
+  sutra-registry list [--status proposed|registered|superseded|retired]
+  sutra-registry show <workflow_id>[@<version>]
+  sutra-registry supersede <workflow_id>@<version> --by <workflow_id>@<newer_version>
+  sutra-registry retire <workflow_id>@<version>
+
+Store: one JSON file per entry at
+  $SUTRA_NATIVE_HOME/registry/workflows/<workflow_id>@<version>.json
+(default SUTRA_NATIVE_HOME = ~/.sutra-native) plus a derived index.json.
+Instance data lands ONLY under ~/.sutra-native/ -- this CLI refuses to write
+into the sutra package or sutra/os/native/schemas/ (SCOPE section 3 "CLIs").
+
+Validation: every entry passing through add/supersede/retire is checked by
+sutra-schema-validate (same bin dir) against workflow-definition.schema.json
+(python3-stdlib structural validation; jsonschema is not importable -- M1
+guard). On validator failure nothing is written.
+
+Atomic writes: temp file + fsync + os.replace. index.json is rewritten
+atomically after every successful mutation and carries "index_complete": true
+as its completeness marker (SCOPE section 4 preamble). Succession records
+("recording the succeeding workflow_id@version", spec supersede) live in
+index.json under "successions" so entry files stay schema-pure
+(additionalProperties: false forbids extra keys in the entry itself).
+
+Status transitions only; append-style updates. The CLI stores records; it
+never changes approval state -- APPROVE is an operator action in the builder
+gate, never a registry side effect (SCOPE section 1; F8). No queue/board
+views (F3), no ledger reads (F1), no contracts (F2), no style matching (F4),
+no arbitration/ownership (F5), no installer layout (F6), no scheduler (F7),
+single-operator single-tenant (F9), no estimation (F10).
+
+Exit: 0 success - 1 validation failure - 2 usage - 3 store I/O error -
+4 not found - 5 state conflict (illegal transition, duplicate add,
+successor absent).
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+SELF_DIR = os.path.dirname(os.path.realpath(__file__))
+VALIDATOR = os.path.join(SELF_DIR, "sutra-schema-validate")
+DEFAULT_SCHEMA = os.path.realpath(os.path.join(
+    SELF_DIR, "..", "..", "..", "os", "native", "schemas",
+    "workflow-definition.schema.json"))
+SCHEMA_PATH = os.environ.get("SUTRA_WORKFLOW_SCHEMA", DEFAULT_SCHEMA)
+NATIVE_HOME = os.environ.get(
+    "SUTRA_NATIVE_HOME", os.path.join(os.path.expanduser("~"), ".sutra-native"))
+STORE = os.path.join(NATIVE_HOME, "registry", "workflows")
+INDEX = os.path.join(STORE, "index.json")
+STATUSES = ("proposed", "registered", "superseded", "retired")
+
+
+def die(code, msg):
+    sys.stderr.write("sutra-registry: %s\n" % msg)
+    sys.exit(code)
+
+
+def guard_store_root():
+    """Leak guard (SCOPE section 3 "CLIs"): instance rows never land in the
+    sutra package (which contains the plugin and sutra/os/native/schemas/)."""
+    sutra_root = os.path.realpath(os.path.join(SELF_DIR, "..", "..", ".."))
+    r = os.path.realpath(NATIVE_HOME)
+    if r == sutra_root or r.startswith(sutra_root + os.sep):
+        die(3, "refusing store root inside the sutra package: %s" % r)
+
+
+def atomic_write(path, text):
+    tmp = "%s.tmp.%d" % (path, os.getpid())
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except OSError as e:
+        try:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        except OSError:
+            pass
+        die(3, "store write failed for %s: %s" % (path, e))
+
+
+def run_validator(entry):
+    """Validate an entry dict via sutra-schema-validate. Returns (rc, output).
+    Temp file lives in the instance area, never the repo."""
+    os.makedirs(STORE, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".validate-", suffix=".json", dir=STORE)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(entry, f, indent=2)
+            f.write("\n")
+        p = subprocess.run(
+            [sys.executable, VALIDATOR, SCHEMA_PATH, tmp],
+            capture_output=True, text=True)
+        return p.returncode, (p.stdout + p.stderr)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def entry_path(key):
+    return os.path.join(STORE, key + ".json")
+
+
+def load_entry(key):
+    path = entry_path(key)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        die(3, "cannot read store entry %s: %s" % (path, e))
+
+
+def load_index():
+    if not os.path.exists(INDEX):
+        return {"schema_version": "1.0.0", "workflows": {},
+                "successions": {}, "index_complete": True}
+    try:
+        with open(INDEX, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        die(3, "cannot read index %s: %s" % (INDEX, e))
+
+
+def rebuild_index(successions=None):
+    """Derived index: rescan entry files; carry the succession map forward."""
+    old = load_index()
+    if successions is None:
+        successions = old.get("successions", {})
+    workflows = {}
+    for name in sorted(os.listdir(STORE)):
+        if not name.endswith(".json") or name == "index.json":
+            continue
+        try:
+            with open(os.path.join(STORE, name), "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError) as e:
+            die(3, "cannot index store entry %s: %s" % (name, e))
+        wid = data.get("workflow_id")
+        ver = data.get("version")
+        if not wid or not ver:
+            continue
+        row = {"status": data.get("status"), "title": data.get("title")}
+        key = "%s@%s" % (wid, ver)
+        if key in successions:
+            row["superseded_by"] = successions[key]
+        workflows.setdefault(wid, {})[ver] = row
+    index = {"schema_version": "1.0.0", "workflows": workflows,
+             "successions": successions, "index_complete": True}
+    atomic_write(INDEX, json.dumps(index, indent=2) + "\n")
+
+
+def version_key(v):
+    return tuple((0, int(p)) if p.isdigit() else (1, p)
+                 for p in str(v).split("."))
+
+
+def parse_ref(ref, require_version=True):
+    if "@" in ref:
+        wid, ver = ref.rsplit("@", 1)
+        if not wid or not ver:
+            die(2, "bad reference %r (want <workflow_id>@<version>)" % ref)
+        return wid, ver
+    if require_version:
+        die(2, "bad reference %r (want <workflow_id>@<version>)" % ref)
+    return ref, None
+
+
+def write_entry(key, entry):
+    atomic_write(entry_path(key), json.dumps(entry, indent=2) + "\n")
+
+
+def cmd_add(argv):
+    if len(argv) != 1:
+        die(2, "usage: sutra-registry add <entry.json>")
+    try:
+        with open(argv[0], "r", encoding="utf-8") as f:
+            entry = json.load(f)
+    except OSError as e:
+        die(3, "cannot read %s: %s" % (argv[0], e))
+    except ValueError as e:
+        die(1, "entry is not valid JSON: %s" % e)
+    if not isinstance(entry, dict):
+        die(1, "entry must be a JSON object")
+    entry.pop("_expect_error", None)
+    rc, out = run_validator(entry)
+    if rc != 0:
+        sys.stderr.write(out)
+        die(1, "entry rejected by workflow-definition schema; nothing written")
+    key = "%s@%s" % (entry["workflow_id"], entry["version"])
+    if os.path.exists(entry_path(key)):
+        die(5, "duplicate: %s already in store" % key)
+    write_entry(key, entry)
+    rebuild_index()
+    print("added %s (status=%s)" % (key, entry["status"]))
+
+
+def cmd_list(argv):
+    status = None
+    if argv:
+        if len(argv) == 2 and argv[0] == "--status":
+            status = argv[1]
+            if status not in STATUSES:
+                die(2, "--status must be one of %s" % "|".join(STATUSES))
+        else:
+            die(2, "usage: sutra-registry list [--status <status>]")
+    index = load_index()
+    rows = []
+    for wid in sorted(index.get("workflows", {})):
+        versions = index["workflows"][wid]
+        for ver in sorted(versions, key=version_key):
+            row = versions[ver]
+            if status and row.get("status") != status:
+                continue
+            rows.append((wid, ver, row.get("status") or "?",
+                         row.get("title") or "?"))
+    header = ("WORKFLOW_ID", "VERSION", "STATUS", "TITLE")
+    widths = [max(len(str(r[i])) for r in rows + [header])
+              for i in range(4)]
+    fmt = "  ".join("%%-%ds" % w for w in widths)
+    print(fmt % header)
+    for r in rows:
+        print(fmt % r)
+
+
+def cmd_show(argv):
+    if len(argv) != 1:
+        die(2, "usage: sutra-registry show <workflow_id>[@<version>]")
+    wid, ver = parse_ref(argv[0], require_version=False)
+    if ver is None:
+        index = load_index()
+        versions = index.get("workflows", {}).get(wid, {})
+        registered = [v for v, row in versions.items()
+                      if row.get("status") == "registered"]
+        if not registered:
+            die(4, "no registered version of %s in index" % wid)
+        ver = max(registered, key=version_key)
+    path = entry_path("%s@%s" % (wid, ver))
+    if not os.path.exists(path):
+        die(4, "not found: %s@%s" % (wid, ver))
+    with open(path, "r", encoding="utf-8") as f:
+        sys.stdout.write(f.read())
+
+
+def transition(key, entry, new_status, successions=None):
+    """Shared supersede/retire tail: mutate status, re-validate, atomic write.
+    Status transitions only -- no other field changes (append-style update)."""
+    entry = dict(entry)
+    entry["status"] = new_status
+    rc, out = run_validator(entry)
+    if rc != 0:
+        sys.stderr.write(out)
+        die(1, "mutated entry rejected by schema; nothing written")
+    write_entry(key, entry)
+    rebuild_index(successions)
+    print("%s -> %s" % (key, new_status))
+
+
+def cmd_supersede(argv):
+    if len(argv) != 3 or argv[1] != "--by":
+        die(2, "usage: sutra-registry supersede <workflow_id>@<version> "
+               "--by <workflow_id>@<newer_version>")
+    wid, ver = parse_ref(argv[0])
+    key = "%s@%s" % (wid, ver)
+    entry = load_entry(key)
+    if entry is None:
+        die(4, "not found: %s" % key)
+    if entry.get("status") != "registered":
+        die(5, "illegal transition: %s is %r, supersede requires 'registered'"
+            % (key, entry.get("status")))
+    s_wid, s_ver = parse_ref(argv[2])
+    successor = "%s@%s" % (s_wid, s_ver)
+    if successor == key:
+        die(5, "successor must differ from target")
+    if load_entry(successor) is None:
+        die(5, "successor %s absent from store" % successor)
+    index = load_index()
+    successions = dict(index.get("successions", {}))
+    successions[key] = successor
+    transition(key, entry, "superseded", successions)
+
+
+def cmd_retire(argv):
+    if len(argv) != 1:
+        die(2, "usage: sutra-registry retire <workflow_id>@<version>")
+    wid, ver = parse_ref(argv[0])
+    key = "%s@%s" % (wid, ver)
+    entry = load_entry(key)
+    if entry is None:
+        die(4, "not found: %s" % key)
+    if entry.get("status") not in ("registered", "superseded"):
+        die(5, "illegal transition: %s is %r, retire requires "
+               "'registered' or 'superseded'" % (key, entry.get("status")))
+    transition(key, entry, "retired")
+
+
+def main(argv):
+    if len(argv) < 2:
+        die(2, "usage: sutra-registry "
+               "{add|list|show|supersede|retire} ...")
+    guard_store_root()
+    cmd, rest = argv[1], argv[2:]
+    if cmd == "add":
+        cmd_add(rest)
+    elif cmd == "list":
+        cmd_list(rest)
+    elif cmd == "show":
+        cmd_show(rest)
+    elif cmd == "supersede":
+        cmd_supersede(rest)
+    elif cmd == "retire":
+        cmd_retire(rest)
+    else:
+        die(2, "unknown command %r" % cmd)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

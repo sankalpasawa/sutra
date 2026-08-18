@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""sutra-resolve -- FOLLOW/CONSTRUCT resolution against the workflow registry
+(W-BUILD-V1 S4-C6).
+
+Implements SCOPE.md section 1 "FOLLOW/CONSTRUCT": resolution against the REAL
+registry; no match -> honest CONSTRUCT + proposal offer.
+
+  sutra-resolve --ask "text" [--reuse-tag <tag>]
+
+Match law:
+  1. --reuse-tag exact match against a registered entry's reuse_tag, OR
+  2. title-token overlap between the ask text and a registered entry's title.
+Only status=registered entries are followable. Highest version wins per
+workflow_id; ties break on overlap score, then workflow_id.
+
+Output (single JSON object on stdout):
+  match    -> {"mode":"FOLLOW","workflow_id":...,"version":...,
+               "steps_count":N,"runs":0,
+               "note":"following the registered workflow"}
+  no match -> {"mode":"CONSTRUCT","note":"no registered workflow matches",
+               "proposal_offer":true}
+
+Inputs are ONLY registry files under $SUTRA_NATIVE_HOME/registry/
+(default SUTRA_NATIVE_HOME = ~/.sutra-native). This CLI is read-only:
+it never writes anything, anywhere.
+
+Leak guards honored (FORBIDDEN-DEPS.md): "runs" is the literal 0 -- the
+ledger is NEVER read, so nothing predictive can be computed (F1). Token
+overlap is exact-string set intersection -- no style matching (F4). No
+estimates, ETAs, or due-date math (F1/F10). No queues (F3), no contracts
+(F2), no arbitration (F5), no installer assumptions (F6), no scheduler
+semantics (F7), no auto-approve (F8), single-tenant only (F9).
+
+Exit codes: 0 resolution produced (FOLLOW or CONSTRUCT); 2 usage error;
+3 store I/O error (unreadable/corrupt entry file).
+"""
+
+import json
+import os
+import re
+import sys
+
+NATIVE_HOME = os.environ.get(
+    "SUTRA_NATIVE_HOME", os.path.join(os.path.expanduser("~"), ".sutra-native"))
+STORE = os.path.join(NATIVE_HOME, "registry", "workflows")
+
+# Minimal deterministic stop-set so filler words never create a "match".
+STOPWORDS = frozenset((
+    "the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "with",
+    "at", "by", "is", "are", "do", "does", "run", "via", "per", "new",
+))
+
+
+def die(code, msg):
+    sys.stderr.write("sutra-resolve: %s\n" % msg)
+    sys.exit(code)
+
+
+def tokens(text):
+    """Lowercase alphanumeric tokens, stopwords and 1-char tokens dropped."""
+    out = set()
+    for tok in re.split(r"[^a-z0-9]+", text.lower()):
+        if len(tok) >= 2 and tok not in STOPWORDS:
+            out.add(tok)
+    return out
+
+
+def version_key(v):
+    """Numeric-aware ordering for version strings like 1.2.0."""
+    parts = []
+    for piece in re.split(r"[.\-+]", str(v)):
+        parts.append((0, int(piece)) if piece.isdigit() else (1, piece))
+    return parts
+
+
+def load_registered_entries():
+    """Read entry files from the registry store; keep status=registered only.
+
+    The per-entry files are the store of record; index.json is a derived
+    index (registry-cli.md FILES) and is skipped as a candidate. Both are
+    registry files -- nothing outside the registry is read.
+    """
+    if not os.path.isdir(STORE):
+        return []
+    entries = []
+    for name in sorted(os.listdir(STORE)):
+        if not name.endswith(".json") or name == "index.json":
+            continue
+        path = os.path.join(STORE, name)
+        try:
+            with open(path, "r") as fh:
+                entry = json.load(fh)
+        except (OSError, ValueError) as exc:
+            die(3, "unreadable registry entry %s: %s" % (name, exc))
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") == "registered":
+            entries.append(entry)
+    return entries
+
+
+def resolve(ask_text, reuse_tag):
+    entries = load_registered_entries()
+    ask_tokens = tokens(ask_text)
+
+    # Candidates: (score, entry). reuse_tag exact match outranks any
+    # title-token overlap; overlap needs >= 1 shared meaningful token.
+    best = None       # (tag_matched, overlap, version_key, workflow_id, entry)
+    for entry in entries:
+        tag_matched = bool(reuse_tag) and entry.get("reuse_tag") == reuse_tag
+        overlap = len(ask_tokens & tokens(entry.get("title", "")))
+        if not tag_matched and overlap < 1:
+            continue
+        key = (1 if tag_matched else 0, overlap,
+               version_key(entry.get("version", "0")))
+        if best is None or key > best[0] or (
+                key == best[0]
+                and entry.get("workflow_id", "") < best[1].get("workflow_id", "")):
+            best = (key, entry)
+
+    if best is None:
+        return {
+            "mode": "CONSTRUCT",
+            "note": "no registered workflow matches",
+            "proposal_offer": True,
+        }
+    entry = best[1]
+    return {
+        "mode": "FOLLOW",
+        "workflow_id": entry.get("workflow_id"),
+        "version": entry.get("version"),
+        "steps_count": len(entry.get("steps", [])),
+        # Literal 0: the run ledger is never read (F1). v1 shows no history.
+        "runs": 0,
+        "note": "following the registered workflow",
+    }
+
+
+def main(argv):
+    ask_text = None
+    reuse_tag = None
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--ask":
+            if i + 1 >= len(argv):
+                die(2, "usage: sutra-resolve --ask \"text\" [--reuse-tag <tag>]")
+            ask_text = argv[i + 1]
+            i += 2
+        elif arg == "--reuse-tag":
+            if i + 1 >= len(argv):
+                die(2, "usage: sutra-resolve --ask \"text\" [--reuse-tag <tag>]")
+            reuse_tag = argv[i + 1]
+            i += 2
+        else:
+            die(2, "unknown argument %r; usage: sutra-resolve --ask \"text\" "
+                   "[--reuse-tag <tag>]" % arg)
+    if ask_text is None or not ask_text.strip():
+        die(2, "usage: sutra-resolve --ask \"text\" [--reuse-tag <tag>]")
+
+    print(json.dumps(resolve(ask_text, reuse_tag), sort_keys=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
