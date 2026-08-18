@@ -12,6 +12,13 @@
 # Exit 1: at least one hook path missing or untracked. Prints the offenders.
 #
 # Run pre-commit, in tests/run-all.sh, and as a release-cut acceptance gate.
+
+# Git exports GIT_DIR/GIT_INDEX_FILE to hook subprocesses; in a WORKTREE those
+# point at the worktree's private gitdir and break the `cd + git ls-files`
+# subshells below (every path reads as untracked: 0/67, 2026-08-18). This
+# script only ever inspects git state relative to PLUGIN_ROOT — inherited git
+# env is never wanted.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
 set -u
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"

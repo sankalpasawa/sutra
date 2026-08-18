@@ -1,6 +1,15 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-17
+**status**: active · **updated**: 2026-08-18
+
+## Unreleased — balance live actionables (version held for maintainer)
+
+Balance screen shows the coach's actionables live; done-marking via a new
+token-gated `POST /api/balance/actionable` (renderer stays token-blind — a
+narrow preload verb carries the call; no unauth fallback). Endpoint suite
+`tests/unit/test-balance-endpoint.sh` covers auth/422s/idempotency/concurrency.
+NOTE: version deliberately unassigned — 2.99.1 landed on main during this
+branch; reconcile against the published-cache 2.101.0 before tagging.
 
 ## 2.99.1
 

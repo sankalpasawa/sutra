@@ -20,7 +20,7 @@ from pathlib import Path
 
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -779,7 +779,93 @@ def api_balance() -> dict:
                     today.append(row)
     except OSError:
         pass
-    return {"present": True, "state": snap, "today": today[-96:]}
+    # Actionables read model (PLAN-25 step 9): the coach's derived view, if
+    # the nightly pass has produced one. Absent/corrupt = key omitted, not 500.
+    out = {"present": True, "state": snap, "today": today[-96:]}
+    try:
+        derived = json.loads((Path(bdir) / "actionables.json").read_text(encoding="utf-8"))
+        out["actionables"] = derived.get("actionables", [])
+        out["max_active"] = derived.get("max_active")
+        out["profile_warnings"] = derived.get("profile_warnings", [])
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+@app.post("/api/balance/actionable")
+def api_balance_actionable(body: dict, request: Request) -> dict:
+    """Append ONE coach-ledger event for an actionable (PLAN-25 step 10).
+
+    Desktop-only write: requires x-sutra-desktop-token matching the env token
+    the Electron shell minted — ALWAYS (403 when the env token is absent; a
+    CLI-run server is read-only here). The renderer never sees the token: the
+    panel calls window.sutra.markActionable, and the shell's main process
+    attaches the header (same doctrine as preload.js — "the token never
+    reaches here"). Consult folds 2026-08-18: no unauth fallback; flock'd
+    ledger-read + single O_APPEND write for idempotency; schema whitelists.
+    """
+    import fcntl
+    import hmac as _hmac
+    import re as _re
+    import time as _time
+
+    env_token = os.environ.get("SUTRA_DESKTOP_TOKEN", "")
+    got = request.headers.get("x-sutra-desktop-token", "")
+    if not env_token or not got or not _hmac.compare_digest(env_token, got):
+        raise HTTPException(status_code=403, detail="desktop-only write")
+
+    aid = str((body or {}).get("id", ""))
+    op = (body or {}).get("op", "")
+    note = str((body or {}).get("note", "") or "")
+    if op not in ("done", "movement"):
+        raise HTTPException(status_code=422, detail="op must be done|movement")
+    if not _re.fullmatch(r"[a-z0-9-]{1,64}", aid):
+        raise HTTPException(status_code=422, detail="bad id")
+    if len(note) > 200:
+        raise HTTPException(status_code=422, detail="note too long (200 max)")
+
+    bdir = os.environ.get("SUTRA_UI_BALANCE_DIR") or str(
+        HERE.parent.parent.parent.parent / "holding" / "state" / "balance")
+    ledger = Path(bdir) / "coach-ledger.jsonl"
+    if not ledger.exists():
+        raise HTTPException(status_code=404, detail="no coach ledger")
+
+    lock_p = Path(bdir) / "coach-ledger.lock"
+    with open(lock_p, "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            born, closed = False, False
+            with open(ledger, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line.startswith("{"):
+                        continue
+                    try:
+                        e = json.loads(line)
+                    except ValueError:
+                        continue
+                    if e.get("id") != aid:
+                        continue
+                    if e.get("event") == "born":
+                        born = True
+                    elif e.get("event") in ("done", "dropped"):
+                        closed = True
+            if not born:
+                raise HTTPException(status_code=404, detail="unknown actionable")
+            if op == "done" and closed:
+                return {"ok": True, "already": True}
+            row = {"ts": int(_time.time()), "event": op, "id": aid, "by": "founder-ui"}
+            if note:
+                row["note"] = note
+            data = (json.dumps(row) + "\n").encode("utf-8")
+            fd = os.open(ledger, os.O_WRONLY | os.O_APPEND)
+            try:
+                os.write(fd, data)  # single write, one line, <4KB
+            finally:
+                os.close(fd)
+        finally:
+            fcntl.flock(lk, fcntl.LOCK_UN)
+    return {"ok": True, "already": False}
 
 
 @app.get("/api/evals")
