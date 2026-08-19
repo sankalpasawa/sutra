@@ -856,7 +856,9 @@
      row be a <button> without looking like one. */
   .gv-agents{display:flex;flex-direction:column;gap:3px;margin-top:6px;
     padding-left:10px;border-left:2px solid var(--line)}
-  button.trow{width:100%;text-align:left;font-family:inherit;cursor:pointer}
+  /* color:inherit — a <button> does not inherit text color (UA ButtonText =
+     black), which is off-token in BOTH themes; the .trow palette is --ink */
+  button.trow{width:100%;text-align:left;font-family:inherit;color:inherit;cursor:pointer}
   button.trow:hover{border-color:var(--acc)}
   button.trow:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   /* an agent whose transcript is not on disk yet has nothing to open; it still
@@ -1481,6 +1483,9 @@
     padding:3px 13px 3px 9px;font-family:var(--mono);font-size:11px;color:var(--muted);
     cursor:pointer;user-select:none;transition:border-color .22s,color .22s}
   .gv-chip:hover{border-color:var(--acc);color:var(--ink)}
+  /* keyboard path: every other control here has a ring (button.trow,
+     .gv-thinkbtn, .runrow) — the chip was the one interactive element without */
+  .gv-chip:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
   .gv-open .gv-chip{border-radius:10px 10px 0 0;border-bottom-color:transparent}
   .gv-open .gv-chev{transform:rotate(180deg)}
   .gv-pulse{width:7px;height:7px;border-radius:50%;background:var(--acc);flex-shrink:0}

@@ -203,7 +203,7 @@ const EPILOGUE = `
   /* the delegated per-turn click handler + the fold, exported so the live-run
      regressions (dead controls mid-stream; invisible fold on non-real
      sessions) stay pinned */
-  turnControlClick, agentsFold,
+  turnControlClick, agentsFold, streamBodyHtml,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
@@ -1842,6 +1842,40 @@ test("28i. the roster sits inside [data-aturn], so patchTurn() covers it", () =>
   assert.ok(html.trim().endsWith("</div>"), "the anchor element must still close the block");
 });
 
+test("28q. a roster row never falls back to the UA button colour", () => {
+  /* design-qa 20260819-004318-adf0df, all 8 states: button.trow computed
+     rgb(0,0,0). A <button> does NOT inherit colour -- the UA paints buttontext
+     (black) -- so the "without looking like one" reset was incomplete:
+     div.trow inherits the token ink, button.trow carried UA black. Latent
+     today (every glyph sits in .tname/.tsum/.tverdict), live the moment any
+     bare text or currentColor lands inside a row. Comments stripped and only
+     the real rule matched -- the 24a lesson. */
+  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const rule = css.match(/button\.trow\{([^}]*)\}/);
+  assert.ok(rule, "the button.trow reset rule must exist");
+  const colour = rule[1].match(/(?:^|;)\s*color\s*:\s*([^;}]+)/);
+  assert.ok(colour, "the reset must declare a colour -- a button does not inherit one");
+  assert.ok(/^(inherit|var\(--[a-z-]+\))$/.test(colour[1].trim()),
+    "and it must resolve through the token system, not a literal: " + colour[1].trim());
+});
+
+test("28r. the governance chip paints the token focus ring, not the UA fallback", () => {
+  /* design-qa 20260819-004318-adf0df rows 9-12: button.gv-chip had no
+     :focus-visible rule while every sibling control (button.trow:825,
+     .gv-thinkbtn:1474) carries the token ring — the chip fell back to the UA
+     ring, off-token in BOTH themes. Comments stripped and only the real rule
+     matched — the 24a lesson. */
+  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const rule = css.match(/\.gv-chip:focus-visible\{([^}]*)\}/);
+  assert.ok(rule, "the .gv-chip:focus-visible rule must exist");
+  assert.ok(/outline\s*:\s*2px solid var\(--acc\)/.test(rule[1]),
+    "and it must paint the same token ring as button.trow / .gv-thinkbtn: " + rule[1]);
+  assert.ok(!/\.gv-chip[^{]*\{[^}]*outline\s*:\s*(none|0)/.test(css),
+    "no later chip rule may cancel the ring");
+});
+
 test("28j. every row carries visible text — a row is never a bare dot", () => {
   const html = T.turnResponse(agTurn(AG_FIX.toolRuns));
   const rows = html.split('<button class="trow ').slice(1);
@@ -1885,6 +1919,23 @@ test("28o. a transcript-replayed turn shows NO roster, because none was recorded
   const html = T.turnResponse(replayed);
   assert.ok(!/gv-agents/.test(html), "a replayed turn cannot know what its agents did");
   assert.ok(/2 tool calls|3 tool calls/.test(html), "it still says what ran: " + html);
+});
+
+test("28p. an unfenced governance run never reaches the rendered turn body", () => {
+  /* L2 of the parseGov unfenced fix (test_governance.js §9 is L1): the strip
+     must survive the REAL render path — mdHtml(gvBody(...)) inside
+     turnResponse — not just the projection. Verified live 2026-08-19 that the
+     unfenced block leaked into bodies as governance soup. */
+  const html = T.turnResponse({ uid: "t9", streaming: false,
+    response: "Answer.\nINPUT: x\nTYPE: task", tools: [], toolRuns: [] });
+  assert.ok(!/INPUT:|TYPE:/.test(html), "governance soup reached the DOM: " + html);
+  assert.ok(/Answer\./.test(html), "the real answer must survive the strip");
+  /* and the sentence-not-block rule holds in the DOM too */
+  const prose = T.turnResponse({ uid: "t9", streaming: false,
+    response: "First.\nTYPE: the parameter kind matters here\nAfter.",
+    tools: [], toolRuns: [] });
+  assert.ok(/TYPE: the parameter kind matters here/.test(prose),
+    "a lone key-looking line inside prose was eaten by the strip: " + prose);
 });
 
 test("28n. turnResponse is pure — rendering a turn twice gives the same string", () => {
@@ -2457,6 +2508,47 @@ test("33c. a failed apply shows the error in place and stays re-clickable", () =
     assert.ok(/apply failed: push: remote: denied/.test(html), "error tail rendered");
     assert.ok(/data-tsact="apply"/.test(html), "Apply still offered after failure");
   } finally { delete sandbox.sutra; }
+});
+
+/* ── 34. the streaming caret is gated on the STRIPPED body — both writers ────
+   The founder saw a lone brown caret block on its own line while a turn
+   streamed pure governance preamble. Two writers draw this caret: turnResponse
+   at render time and patchStreaming on every token frame. The fix earlier
+   landed only in turnResponse (the second writer repainted the lone caret each
+   frame), and the L2 tests written for it were dropped in a cross-session
+   merge — both facts are why this section pins the SHARED builder and the
+   call-site contract, not just one writer. */
+
+test("34a. a preamble-only streamed body renders NO caret", () => {
+  const html = T.streamBodyHtml({ response:
+    "[INBOUND\u00b7QUERY \u00b7 TIMING:now \u00b7 CHANNEL:x \u00b7 REV:none \u00b7 RISK:low]" });
+  assert.ok(!/class="caret"/.test(html), "the lone caret is back: " + html);
+});
+
+test("34b. the caret returns with real text, sitting after it", () => {
+  const html = T.streamBodyHtml({ response:
+    "[INBOUND\u00b7QUERY \u00b7 TIMING:now \u00b7 CHANNEL:x \u00b7 REV:none \u00b7 RISK:low]\nHello." });
+  const ci = html.indexOf('class="caret"');
+  assert.ok(ci > -1, "caret must return once text exists");
+  assert.ok(html.indexOf("Hello.") > -1 && html.indexOf("Hello.") < ci,
+    "caret marks where text is APPEARING — after it");
+});
+
+test("34c. empty and null responses produce no caret and do not throw", () => {
+  assert.ok(!/caret/.test(T.streamBodyHtml({ response: "" })));
+  assert.ok(!/caret/.test(T.streamBodyHtml({})));
+  assert.ok(!/caret/.test(T.streamBodyHtml(null)));
+});
+
+test("34d. patchStreaming uses the shared builder — no second caret writer", () => {
+  /* the source contract: the ONLY caret literal on the streaming path lives in
+     streamBodyHtml. A caret literal reappearing inside patchStreaming is the
+     regression that already happened once. */
+  const src = require("fs").readFileSync(__dirname + "/static/js/01-state.js", "utf8");
+  const ps = src.slice(src.indexOf("function patchStreaming"));
+  const psBody = ps.slice(0, ps.indexOf("\nfunction ", 10) > 0 ? ps.indexOf("\nfunction ", 10) : ps.length);
+  assert.ok(/streamBodyHtml\(/.test(psBody), "patchStreaming must call streamBodyHtml");
+  assert.ok(!/class="caret"/.test(psBody), "a caret literal inside patchStreaming is the second writer returning");
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

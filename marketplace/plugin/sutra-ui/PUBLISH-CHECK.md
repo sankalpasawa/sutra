@@ -20,11 +20,11 @@ lane-1 backing is screenshot archaeology.
 ## The publish gate, in order
 
 ```
-1. node test_panel.js            # 119 — the DOM contract, in a vm
-2. node test_governance.js       # 44  — pure projections vs a real captured fan-out
+1. node test_panel.js            # 134 — the DOM contract, in a vm
+2. node test_governance.js       # 51  — pure projections vs a real captured fan-out
 3. node test_charter_filter.js   # 31  — untouched neighbors stay green
 4. pytest (7 files)              # 341 — backend
-5. PLAYWRIGHT=<path> bash qa-shell/run.sh   # 10 — BOTH lanes vs the PRODUCTION shell
+5. PLAYWRIGHT=<path> bash qa-shell/run.sh   # 13 — BOTH lanes vs the PRODUCTION shell
 6. qa/run.sh                     # the productized design-QA sweep (states x rules),
                                  # once the design-qa product lands (in flight)
 ```

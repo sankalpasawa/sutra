@@ -1,0 +1,201 @@
+{
+  "_source": "tokens parsed from ../static/panel.css (:root, [data-theme=\"dark\"], the light @media block and [data-theme=\"light\"]) — 26 token names, 41 color values across both themes; _map/_pair/_source keys are annotations the design-qa product ignores",
+  "_regen": "node -e 'const fs=require(\"fs\");const c=fs.readFileSync(\"../static/panel.css\",\"utf8\").split(\"body{\")[0];const s=new Set();for(const m of c.matchAll(/--[\\w-]+\\s*:\\s*([^;}]+)/g)){const v=m[1].trim();if(/^#[0-9a-fA-F]{3,8}$/.test(v)||/^rgba?\\([^()]*\\)$/.test(v))s.add(v)}console.log(JSON.stringify([...s]))' (run from qa/)",
+  "tokens": {
+    "_map": {
+      "bg": [
+        "#0C0B09",
+        "#fafaf9"
+      ],
+      "surface": [
+        "#161412",
+        "#ffffff"
+      ],
+      "card": [
+        "#1C1A17",
+        "#ffffff"
+      ],
+      "line": [
+        "#2A2622",
+        "#e2e0dd"
+      ],
+      "line-soft": [
+        "#221F1C",
+        "#eeecea"
+      ],
+      "ink": [
+        "#F5F0E8",
+        "#1c1917"
+      ],
+      "muted": [
+        "#8C857D",
+        "#78716c"
+      ],
+      "faint": [
+        "#6E6860",
+        "#a8a29e"
+      ],
+      "acc": [
+        "#C4956A",
+        "#8A5D2E"
+      ],
+      "acc-bg": [
+        "rgba(196,149,106,.12)",
+        "#f6efe7"
+      ],
+      "on-acc": [
+        "#0C0B09",
+        "#ffffff"
+      ],
+      "ok": [
+        "#5A9E6F",
+        "#3f7d54"
+      ],
+      "warn": [
+        "#C9A227",
+        "#8a6d12"
+      ],
+      "block": [
+        "#B8574B",
+        "#9c3f34"
+      ],
+      "ok-bg": [
+        "rgba(90,158,111,.13)",
+        "#eef4ef"
+      ],
+      "warn-bg": [
+        "rgba(201,162,39,.13)",
+        "#f8f3e4"
+      ],
+      "block-bg": [
+        "rgba(184,87,75,.14)",
+        "#faeeec"
+      ],
+      "ok-line": [
+        "rgba(90,158,111,.32)",
+        "#cfe0d4"
+      ],
+      "warn-line": [
+        "rgba(201,162,39,.3)",
+        "#e8dcbb"
+      ],
+      "block-line": [
+        "rgba(184,87,75,.38)",
+        "#eccfc9"
+      ],
+      "inset": [
+        "#161412",
+        "#fafaf9"
+      ],
+      "bubble": [
+        "#161412",
+        "#f5f4f2"
+      ],
+      "th-bg": [
+        "#161412",
+        "#fafaf9"
+      ],
+      "knob": [
+        "#0C0B09",
+        "#ffffff"
+      ],
+      "vld-tx": [
+        "#8C857D",
+        "#57534e"
+      ],
+      "sepia": [
+        "rgba(196,149,106,.06)",
+        "#faf6ef"
+      ]
+    },
+    "_scope": "pinned to the #qa-probe rig — the full fan-out turn markup rendered by the page's own code. The visible copy is byte-identical markup under the same CSS, and real session panes are excluded because their transcript content differs per machine and per run",
+    "allowed": [
+      "#0C0B09",
+      "#fafaf9",
+      "#161412",
+      "#ffffff",
+      "#1C1A17",
+      "#2A2622",
+      "#e2e0dd",
+      "#221F1C",
+      "#eeecea",
+      "#F5F0E8",
+      "#1c1917",
+      "#8C857D",
+      "#78716c",
+      "#6E6860",
+      "#a8a29e",
+      "#C4956A",
+      "#8A5D2E",
+      "rgba(196,149,106,.12)",
+      "#f6efe7",
+      "#5A9E6F",
+      "#3f7d54",
+      "#C9A227",
+      "#8a6d12",
+      "#B8574B",
+      "#9c3f34",
+      "rgba(90,158,111,.13)",
+      "#eef4ef",
+      "rgba(201,162,39,.13)",
+      "#f8f3e4",
+      "rgba(184,87,75,.14)",
+      "#faeeec",
+      "rgba(90,158,111,.32)",
+      "#cfe0d4",
+      "rgba(201,162,39,.3)",
+      "#e8dcbb",
+      "rgba(184,87,75,.38)",
+      "#eccfc9",
+      "#f5f4f2",
+      "#57534e",
+      "rgba(196,149,106,.06)",
+      "#faf6ef"
+    ],
+    "selectors": [
+      "#qa-probe .turn, #qa-probe .turn *"
+    ],
+    "properties": [
+      "color",
+      "background-color"
+    ],
+    "maxElements": 400
+  },
+  "contrast": [
+    {
+      "_pair": "tool-row primary text: --ink on --inset (.trow background); pinned to the probe rig for run-to-run determinism",
+      "fg": "#qa-probe .toolRow .trow .tname",
+      "min": 4.5
+    },
+    {
+      "_pair": "step-log first line on --card (every .gv-ln carries a state class, so this measures the palette's log colours on the .pane, the nearest painted ancestor)",
+      "fg": "#qa-probe .gv-log .gv-ln",
+      "min": 4.5
+    },
+    {
+      "_pair": "step-log failure line: --block on --card. 3.0 floor: the colour supplements the printed verdict word; the dark palette's --block measures ~3.7 by design",
+      "fg": "#qa-probe .gv-log .gv-ln.bad",
+      "min": 3
+    },
+    {
+      "_pair": "step-log running line: --acc on --card",
+      "fg": "#qa-probe .gv-log .gv-ln.run",
+      "min": 3
+    }
+  ],
+  "reducedMotion": {
+    "selectors": [
+      "*"
+    ]
+  },
+  "overflow": true,
+  "focus": {
+    "_why": "the three interactive affordances of the fan-out turn: the step-log opener, the agent drill-down rows, the governance chip",
+    "selectors": [
+      "[data-thinkopen]",
+      "[data-agentrow]",
+      ".gv-chip"
+    ],
+    "maxElements": 12
+  }
+}

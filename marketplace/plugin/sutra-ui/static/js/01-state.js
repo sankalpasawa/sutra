@@ -689,6 +689,20 @@ function patchTurn(t){
   return true;
 }
 
+/* The streamed body for one token frame. gvBody (05-chat.js, reached via window
+   so module order can never hard-fail streaming) strips governance emissions so
+   the streamed body matches what the settled render will show; fallback is
+   identity, raw text over nothing. The caret marks WHERE text is appearing —
+   while the STRIPPED body is empty there is no "where", and a lone caret on its
+   own line reads as a glitch (founder, 2026-08-19). The thinking loader below
+   the body is the aliveness signal until real text exists. turnResponse()
+   applies the same gate at render time; both writers, one rule. */
+function streamBodyHtml(t){
+  const stripped = (window.gvBody || function(x){ return x; })((t && t.response) || "");
+  return mdHtml(stripped) +
+    (stripped ? '<span class="caret" style="color:var(--acc)">█</span>' : "");
+}
+
 function patchStreaming(){
   const live = _streamingTurns();
   let missed = false;
@@ -702,11 +716,7 @@ function patchStreaming(){
       missed = true;
       return;
     }
-    /* gvBody (05-chat.js, reached via window so module order can never hard-fail
-       streaming) strips governance emissions so the streamed body matches what
-       the settled render will show. Fallback is identity: raw text over nothing. */
-    const html = mdHtml((window.gvBody || function(x){ return x; })(t.response)) +
-      '<span class="caret" style="color:var(--acc)">█</span>';
+    const html = streamBodyHtml(t);
     /* Unchanged output is not repainted. Rewriting identical innerHTML every
        frame tears the DOM down just to rebuild the same pixels -- visible churn
        on long replies. The cache lives ON the node, so a full render() rebuild

@@ -401,6 +401,111 @@ test('7i. a wrong type never resolves to a same-titled agent', () => {
     'the ledger agent is general-purpose; matching it here would open the wrong transcript');
 });
 
+/* ── 9. parseGov — UNFENCED governance blocks ────────────────────────────────
+   The fenced path was covered; the unfenced one leaked (verified live 2026-08-19:
+   gvBody("Answer.\nINPUT: x\nTYPE: task") kept the block — governance soup in
+   replies). The rule under test: a RUN of >= 2 contiguous column-0 lines each
+   starting with a known governance key is the block shape and is deleted whole;
+   a LONE key-looking line surrounded by prose is a sentence and survives.
+   parseGov is extracted the same way the other projections are — the shipped
+   bytes, never a copy — and is deliberately self-contained. */
+
+const P = new Function(
+  slice('function parseGov', 'return { g, body:')
+  + '; return { parseGov, gvBody: function(t){ return parseGov(t).body; } };'
+)();
+
+test('9a. a preamble-only response strips to nothing at all', () => {
+  assert.strictEqual(P.gvBody(
+    'INPUT: user asked for a fix\nTYPE: task\nEXISTING HOME: none\n'
+    + 'ROUTE: direct\nFIT CHECK: none\nACTION: fix it\n\n'
+    + 'TASK: "fix it"\nDEPTH: 3/5\nEFFORT: 10m\nCOST: ~$1\nIMPACT: small'), '',
+    'a response that is ONLY governance has no prose to show');
+});
+
+test('9b. answer text plus a trailing unfenced block keeps ONLY the answer', () => {
+  /* the exact live-verified leak, pinned */
+  assert.strictEqual(P.gvBody('Answer.\nINPUT: x\nTYPE: task'), 'Answer.');
+});
+
+test('9c. a single key-looking line inside prose survives — it is a sentence', () => {
+  const body = P.gvBody(
+    'First paragraph.\nTYPE: the parameter kind matters here\nMore prose after.');
+  assert.ok(body.includes('TYPE: the parameter kind matters here'),
+    'a lone line merely containing a colon must never be eaten: ' + JSON.stringify(body));
+  assert.ok(body.includes('First paragraph.') && body.includes('More prose after.'));
+});
+
+test('9d. the fenced path still strips — the old contract is untouched', () => {
+  const body = P.gvBody('Answer.\n```\nINPUT: x\nTYPE: task\n```\nMore.');
+  assert.ok(!/INPUT:|TYPE:/.test(body), 'the fence leaked: ' + JSON.stringify(body));
+  assert.ok(body.includes('Answer.') && body.includes('More.'),
+    'the prose around the fence survives');
+});
+
+test('9e. chip fields (verb/depth/risk) still parse from the unfenced form', () => {
+  const r = P.parseGov(
+    '[INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low]\n'
+    + 'INPUT: x\nTYPE: task\nTASK: "fix"\nDEPTH: 3/5\nEFFORT: 5m\nAnswer here.');
+  assert.strictEqual(r.g.verb, 'DIRECT', 'the header verb feeds the chip');
+  assert.strictEqual(r.g.depth, '3', 'DEPTH is read for the chip BEFORE the strip');
+  assert.strictEqual(r.g.risk, 'low');
+  assert.strictEqual(r.body, 'Answer here.',
+    'and the body is the prose alone — extraction and stripping must not fight');
+});
+
+/* ── 10. the roster's colour contract, at the projection level ───────────────
+   design-qa 20260819-004318-adf0df, all 8 states: button.trow computed
+   rgb(0,0,0) — a <button> does not inherit colour, and the reset omitted it.
+   The CSS fix (color:inherit on button.trow) is sufficient ONLY while every
+   glyph in a row comes from a field the template wraps in a token-coloured
+   home (.tname/.tsum/.tverdict) or renders as an attribute. Pin that shape
+   here: a NEW field added to the projection without a declared home is the
+   first place the defect re-opens, and this is the level where it shows. */
+
+test('10a. a row exposes text only through fields with a token-coloured render home', () => {
+  const rows = agentsOf(FIX.toolRuns);
+  assert.ok(rows.length > 0, 'sanity: the real fixture must produce rows');
+  /* every key gvAgents emits, mapped to where 05-chat.js renders it */
+  const HOME = {
+    id: 'attribute (data-agentrow)', state: 'attribute (class)',
+    openable: 'attribute (disabled)', kind: '.tname span',
+    desc: '.tsum span', verdict: '.tverdict span', ms: '.tverdict span',
+  };
+  rows.forEach((r, i) => {
+    Object.keys(r).forEach(k => {
+      assert.ok(k in HOME, 'row ' + i + ' emits field "' + k + '" which has no '
+        + 'declared render home — wrap it in a token-coloured element in '
+        + '05-chat.js (and extend this map) before shipping it');
+    });
+  });
+});
+
+/* ── 11. the chip's keyboard half, at the projection level ───────────────────
+   design-qa 20260819-004318-adf0df rows 9-12: button.gv-chip showed no
+   author-defined focus indicator — the one interactive element relying on the
+   off-token UA ring. The CSS half (.gv-chip:focus-visible, panel.css) can only
+   ever fire if this projection keeps emitting a REAL <button>: regressed to a
+   click-bearing <div>, the ring dies silently while the CSS rule stays green.
+   gvChipHtml is the shipped bytes via slice(); S/esc/dPath are the
+   collaborators it closes over, stubbed at the boundary. */
+
+const C = new Function('S', 'esc', 'dPath',
+  slice('function parseGov', 'return { g, body:')
+  + slice('function gvChipHtml', 'return `<div class="gv ')
+  + '; return gvChipHtml;');
+const chip = t => C({ govOpen: {} }, s => String(s == null ? '' : s), r => String(r))(t, 0);
+
+test('11a. the governance chip is a real button in the tab order — the focus ring has an element to land on', () => {
+  const html = chip({ uid: 'u1', response: 'Answer.',
+                      domain: { name: 'Ops', ref: 'r1' }, confidence: 0.9 });
+  assert.ok(/<button class="gv-chip" type="button"/.test(html),
+    'the chip must stay a <button type="button">, never a click-bearing div: '
+    + JSON.stringify(html.slice(0, 160)));
+  assert.ok(!/tabindex\s*=\s*"-1"/.test(html),
+    'and it must not be pulled out of the tab order');
+});
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 Date.now = realNow;
 console.log('\n' + '-'.repeat(60));

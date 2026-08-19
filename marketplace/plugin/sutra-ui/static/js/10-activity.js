@@ -83,6 +83,8 @@
       "#act-ddot{width:8px;height:8px;border-radius:50%;background:var(--faint,#6e6860);flex:0 0 auto}" +
       "#act-drawer.act-live-h #act-ddot{background:var(--ok,#5a9e6f);box-shadow:0 0 0 0 var(--ok,#5a9e6f);animation:act-pulse2 1.8s ease-out infinite}" +
       "@keyframes act-pulse2{0%{box-shadow:0 0 0 0 rgba(90,158,111,.45)}70%{box-shadow:0 0 0 6px rgba(90,158,111,0)}100%{box-shadow:0 0 0 0 rgba(90,158,111,0)}}" +
+      /* the color + count already say "live"; under reduced motion the pulses stop */
+      "@media (prefers-reduced-motion:reduce){.act-trigger.act-live .act-badge,#act-drawer.act-live-h #act-ddot{animation:none}}" +
       "#act-dtitle{font-weight:600;letter-spacing:.01em;flex:0 0 auto}" +
       "#act-dcount{min-width:18px;text-align:center;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;" +
       "background:var(--acc-bg,rgba(196,149,106,.12));color:var(--acc,#c4956a)}" +

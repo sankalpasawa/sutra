@@ -814,6 +814,29 @@ function parseGov(text){
       ? "" : m);
   body = body.replace(/^PLACEMENT:[^\n]*\n?/gm, "");
   body = body.replace(/^FLOW:[^\n]*\n?/gm, "");
+  /* UNFENCED governance blocks — the model sometimes emits the block bare, with
+     no fence around it. The block SHAPE is a run: two or more contiguous lines,
+     each starting (column 0) with a known governance key. A run is deleted
+     whole. A LONE key-looking line surrounded by prose is a sentence, not a
+     block — "TYPE: the parameter kind matters here" — and must survive; so must
+     indented text, which is why the keys anchor at column 0. Runs after the
+     lone-line strips above, so a PLACEMENT:/FLOW: line inside a block does not
+     split one run into two, stranding a lone survivor. */
+  {
+    const isGovKey = (l) =>
+      /^(INPUT|TYPE|EXISTING HOME|ROUTE|FIT CHECK|ACTION|TASK|DEPTH|EFFORT|COST|IMPACT|TRIAGE|ESTIMATE|ACTUAL):/.test(l);
+    const lines = body.split("\n");
+    const kept = [];
+    for (let i = 0; i < lines.length; ){
+      if (isGovKey(lines[i])){
+        let j = i + 1;
+        while (j < lines.length && isGovKey(lines[j])) j++;
+        if (j - i >= 2){ i = j; continue; }  /* a run IS the block — drop it whole */
+      }
+      kept.push(lines[i]); i++;
+    }
+    body = kept.join("\n");
+  }
   body = body.replace(/\n`?OS:\s*[^\n]+\s*$/, "");
   /* streaming tolerance: a trailing UNTERMINATED fence that already shows a
      governance key is hidden until it closes — raw governance mid-stream reads
