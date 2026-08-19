@@ -131,7 +131,7 @@ p strong{color:var(--ink);font-weight:500}
   pointer-events:none;z-index:0}
 .turn::before{top:-110px;background:linear-gradient(to bottom,rgba(244,239,231,0),var(--paper-2))}
 .turn::after{bottom:-110px;background:linear-gradient(to top,rgba(244,239,231,0),var(--paper-2))}
-.turn h2{font-size:clamp(28px,7.4vw,34px);margin-bottom:18px;color:var(--ink)}
+.turn h2{margin-bottom:18px;color:var(--ink)}  /* same scale as every h2 — no size boost */
 .turn p{font-size:17.5px}
 
 /* ── team board ─────────────────────────────────────── */
@@ -231,20 +231,17 @@ p strong{color:var(--ink);font-weight:500}
 
 /* ── close + trust band ─────────────────────────────── */
 .close{padding:88px 0 96px;text-align:center;background:var(--paper-2)}
-.close h2{font-size:clamp(28px,7.4vw,34px)}
 .close p{max-width:500px;margin:0 auto 30px;font-size:17px}
 .close .fine{margin-top:22px;font-size:13.5px;color:var(--muted)}
-.close .fine a,.phone-only a{color:var(--muted)}
-.phone-only{display:block;margin-top:18px;font-size:14.5px}
-.phone-only a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(168,84,58,.35)}
+.close .fine a{color:var(--muted)}
 
 .trust{list-style:none;max-width:860px;margin:56px auto 0;padding-top:26px;
   border-top:1px solid var(--rule);display:grid;grid-template-columns:1fr;gap:0;text-align:left}
 .trust li{padding:14px 0;border-bottom:1px solid var(--rule);
   font-size:13.5px;line-height:1.55;color:var(--muted)}
 .trust li:last-child{border-bottom:0}
-.trust b{display:block;font-family:var(--mono);font-weight:500;font-size:9.5px;
-  letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+.trust b{display:block;font-family:var(--serif);font-weight:500;font-size:19px;
+  color:var(--ink);margin-bottom:5px}
 
 footer{padding:34px 0 46px;text-align:center;font-size:12.5px;line-height:2.1;color:var(--faint)}
 footer a{color:var(--muted);text-decoration:none}
@@ -304,10 +301,9 @@ a:focus-visible,button:focus-visible,[role="button"]:focus-visible{
   p{margin-bottom:20px}
   .lede{font-size:19.5px;line-height:1.68}
   .turn{padding:132px 0}
-  .turn h2{font-size:clamp(32px,5.2vw,58px);margin-bottom:24px}
+  .turn h2{margin-bottom:24px}
   .turn p{font-size:19px}
   .close{padding:140px 0 150px}
-  .close h2{font-size:clamp(32px,5vw,52px)}
   .close p{font-size:18px;margin:0 auto 38px}
   .cap{font-size:14px;line-height:1.6;margin:26px auto 0}
   footer{padding:42px 0 58px;font-size:13px;line-height:1.75}
@@ -344,7 +340,6 @@ a:focus-visible,button:focus-visible,[role="button"]:focus-visible{
   .legs,.team.mini .legs{display:flex;height:12px}
   .members,.team.mini .members{gap:10px}
   .board-hint{display:none}
-  .phone-only{display:none}
 }
 
 /* ── iPhone-SE class widths ─────────────────────────────────
@@ -529,16 +524,13 @@ h1,h2,p{overflow-wrap:break-word}
       <h2><span class="ln fork-a" data-anim="words">This used to take a company.</span><span class="ln fork-b" data-anim="words">Now it just takes <em>you</em>.</span></h2>
       <a class="btn" data-dl data-anim
          href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">Download for Mac — free <span class="ar">→</span></a>
-      <p class="fine" data-anim>macOS 11 or newer · signed and notarized · runs on the Claude plan you
-        already have</p>
-      <p class="phone-only" data-anim>Not near your Mac?
-        <a href="way.html">Read the way it works →</a></p>
+      <p class="fine" data-anim>macOS 11 or newer · signed and notarized</p>
     </div>
 
     <ul class="trust" data-anim>
-      <li><b>Private</b>No prompts, no file contents. Nothing captured by default.</li>
-      <li><b>No meter</b>Runs on the Claude plan you already pay for, and refuses to start if it finds an API key.</li>
-      <li><b>Local</b>Every record it writes is a plain file on your own Mac.</li>
+      <li><b>Free</b>Runs on the Claude plan you already pay for. No meter, ever.</li>
+      <li><b>Private</b>Everything lives on your own Mac. Nothing leaves it.</li>
+      <li><b>Yours</b>Every check you set, it keeps. It grows as you grow.</li>
     </ul>
   </div>
 </section>
