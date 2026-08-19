@@ -1032,9 +1032,14 @@ function turnResponse(t){
            ><span class="gv-think"><span class="gv-pulse gv-beat" aria-hidden="true"></span
            ><span class="gv-tlabel">thinking</span><b class="gv-tmeta" data-runstrip="${esc(t.uid||"")}"
            >${esc(runPhrase(t))}</b></span></button>${
-          logOpen && logLines.length
-            ? `<div class="gv-log">${logLines.map(l=>
-                `<span class="gv-ln ${l.state}">${esc(l.text)}</span>`).join("")}</div>`
+          logOpen
+            ? `<div class="gv-log">${logLines.length
+                ? logLines.map(l=>
+                    `<span class="gv-ln ${l.state}">${esc(l.text)}</span>`).join("")
+                /* an OPEN log must never render as nothing — a click that visibly
+                   does nothing reads as a dead button (founder, 2026-08-19).
+                   One honest line until the first real step arrives. */
+                : `<span class="gv-ln unk">nothing has run yet in this turn</span>`}</div>`
             : ""}</div>`
       : "";
   /* A turn whose saved thread had gone and was re-sent as a new one. Stated,

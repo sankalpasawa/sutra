@@ -2510,6 +2510,43 @@ test("33c. a failed apply shows the error in place and stays re-clickable", () =
   } finally { delete sandbox.sutra; }
 });
 
+/* ── 30x. an OPEN empty log is never invisible ──────────────────────────────
+   The founder clicked "thinking" before any tool ran, the state flipped, and
+   nothing rendered — indistinguishable from a dead button. An open log now
+   always draws: real lines when there are steps, one honest line when not.
+   (Numbered 30h/30i in the fix plan; placed here after a cross-session merge
+   renumbered the neighborhood.) */
+
+test("30h. an OPEN log with zero runs renders exactly one honest line", () => {
+  T.S.thinkOpen = { t9: true };
+  const html = T.turnResponse({ uid: "t9", streaming: true, response: "",
+                                tools: [], toolRuns: [] });
+  assert.ok(/<div class="gv-log">/.test(html), "the open log must render: " + html.slice(-300));
+  assert.strictEqual((html.match(/class="gv-ln /g) || []).length, 1);
+  assert.ok(/nothing has run yet in this turn/.test(html));
+  /* the ticker contract survives the new branch */
+  const m = html.match(/data-runstrip="t9"[^>]*>([^<]*)</);
+  assert.ok(m && !/[<>]/.test(m[1]), "data-runstrip must stay text-only");
+  T.S.thinkOpen = {};
+});
+
+test("30i. the honest line yields to the first real step", () => {
+  T.S.thinkOpen = { t9: true };
+  const html = T.turnResponse({ uid: "t9", streaming: true, response: "",
+    tools: ["Read"], toolRuns: [{ id: "a", name: "Read", summary: "x.md", running: true, ok: null }] });
+  assert.ok(!/nothing has run yet/.test(html), "the placeholder must disappear");
+  assert.strictEqual((html.match(/class="gv-ln /g) || []).length, 1, "one real line");
+  assert.ok(/class="gv-ln run">Read/.test(html));
+  T.S.thinkOpen = {};
+});
+
+test("30j. a CLOSED log still renders nothing — the default is unchanged", () => {
+  T.S.thinkOpen = {};
+  const html = T.turnResponse({ uid: "t9", streaming: true, response: "",
+                                tools: [], toolRuns: [] });
+  assert.ok(!/gv-log/.test(html), "closed means closed");
+});
+
 /* ── 34. the streaming caret is gated on the STRIPPED body — both writers ────
    The founder saw a lone brown caret block on its own line while a turn
    streamed pure governance preamble. Two writers draw this caret: turnResponse
