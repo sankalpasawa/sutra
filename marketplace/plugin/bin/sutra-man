@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""sutra-man - render a plain-text man page from a Sutra workflow registry entry.
+
+Usage: sutra-man <entry.json | entries.jsonl> [row]
+  row: 1-indexed JSONL row (default 1). Ignored for plain .json files.
+
+Sections: NAME=title, SYNOPSIS=goal, STEPS=steps+pinned verifies,
+POLICY=failure_policy, PROVENANCE=proposed_by/approved_by/ts_registered.
+S7-41 (W-BUILD-V1): docs from artifacts. Stdlib only.
+"""
+import json
+import sys
+
+WIDTH = 78
+
+
+def fail(msg):
+    sys.stderr.write("sutra-man: %s\n" % msg)
+    sys.exit(1)
+
+
+def load(path, row):
+    try:
+        with open(path) as f:
+            if path.endswith(".jsonl"):
+                lines = [l for l in f.read().splitlines() if l.strip()]
+                if not 1 <= row <= len(lines):
+                    fail("row %d out of range (file has %d rows)" % (row, len(lines)))
+                return json.loads(lines[row - 1])
+            return json.load(f)
+    except OSError as e:
+        fail(str(e))
+    except json.JSONDecodeError as e:
+        fail("invalid JSON: %s" % e)
+
+
+def hdr(entry):
+    tag = "%s(1)" % str(entry.get("workflow_id", "?")).upper()
+    mid = "Sutra Workflow Registry"
+    pad = max(WIDTH - 2 * len(tag) - len(mid), 2)
+    left = pad // 2
+    return tag + " " * left + mid + " " * (pad - left) + tag
+
+
+def fmt_verify(v):
+    if not v:
+        return "(none pinned)"
+    args = ", ".join(
+        "%s=%s" % (a.get("name"), a.get("value")) for a in v.get("args", [])
+    )
+    pinned = "%s@%s" % (v.get("template_id", "?"), v.get("template_version", "?"))
+    return pinned + (" (%s)" % args if args else "")
+
+
+def render(e):
+    out = [hdr(e), ""]
+    out += ["NAME", "       %s - %s" % (e.get("workflow_id", "?"), e.get("title", "?")), ""]
+    out += ["SYNOPSIS", "       %s" % e.get("goal", "?"), ""]
+    out.append("STEPS")
+    for s in e.get("steps", []):
+        out.append("       %-4s %s" % (s.get("id", "?"), s.get("name", "?")))
+        if s.get("how"):
+            out.append("            %s" % s["how"])
+        out.append("            verify: %s" % fmt_verify(s.get("verify")))
+        out.append("")
+    if not e.get("steps"):
+        out.append("       (none)")
+        out.append("")
+    out.append("POLICY")
+    fp = e.get("failure_policy") or {}
+    if fp:
+        for k, v in fp.items():
+            out.append("       %s: %s" % (k, v))
+    else:
+        out.append("       (none)")
+    out.append("")
+    out.append("PROVENANCE")
+    for k in ("proposed_by", "approved_by", "ts_registered"):
+        val = e.get(k)
+        out.append("       %-15s%s" % (k + ":", "-" if val is None else val))
+    out.append("")
+    foot_l = "%s@%s" % (e.get("workflow_id", "?"), e.get("version", "?"))
+    foot_r = str(e.get("status", "?"))
+    out.append(foot_l + " " * max(WIDTH - len(foot_l) - len(foot_r), 1) + foot_r)
+    return "\n".join(out)
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] in ("-h", "--help"):
+        sys.stdout.write(__doc__)
+        sys.exit(1 if len(argv) < 2 else 0)
+    row = 1
+    if len(argv) >= 3:
+        try:
+            row = int(argv[2])
+        except ValueError:
+            fail("row must be an integer")
+    print(render(load(argv[1], row)))
+
+
+if __name__ == "__main__":
+    main(sys.argv)

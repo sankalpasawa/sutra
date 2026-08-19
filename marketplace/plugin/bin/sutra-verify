@@ -32,8 +32,9 @@ import subprocess
 import sys
 import time
 
-USAGE = ("usage: sutra-verify --template <template_id> --version <n> "
-         "[--arg name=value ...] [--countersign <operator>]")
+USAGE = ("usage: sutra-verify --template-id <template_id> --template-version <n> "
+         "[--arg name=value ...] [--countersign <operator>]\n"
+         "       (--template / --version are accepted as legacy aliases)")
 
 
 def usage_error(msg):
@@ -57,10 +58,16 @@ def main(argv):
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a == "--template":
-            template_id, i = take_value(argv, i, a)
-        elif a == "--version":
-            version_raw, i = take_value(argv, i, a)
+        if a in ("--template", "--template-id"):
+            value, i = take_value(argv, i, a)
+            if template_id is not None and template_id != value:
+                usage_error("conflicting template ids: %s vs %s" % (template_id, value))
+            template_id = value
+        elif a in ("--version", "--template-version"):
+            value, i = take_value(argv, i, a)
+            if version_raw is not None and version_raw != value:
+                usage_error("conflicting template versions: %s vs %s" % (version_raw, value))
+            version_raw = value
         elif a == "--arg":
             raw, i = take_value(argv, i, a)
             if "=" not in raw:
@@ -78,13 +85,13 @@ def main(argv):
             usage_error("unknown argument: " + a)
 
     if not template_id:
-        usage_error("--template is required")
+        usage_error("--template-id is required")
     if version_raw is None:
-        usage_error("--version is required")
+        usage_error("--template-version is required")
     try:
         version = int(version_raw)
     except ValueError:
-        usage_error("--version must be an integer, got: " + version_raw)
+        usage_error("--template-version must be an integer, got: " + version_raw)
 
     registry_path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)), "..", "templates",

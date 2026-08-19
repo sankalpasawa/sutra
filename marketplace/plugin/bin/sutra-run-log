@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""sutra-run-log -- run-ledger row lifecycle (W-BUILD-V1 S5-32/33).
+
+OWNS ONLY THE ROW LIFECYCLE (S5 completion consult: NOT a second runner --
+no execution, no verify-running; verify outcomes are REPORTED to it by the
+caller). `open` mints run_id + atom_id and holds pre-close state in a
+`<run_id>.open` file in the ledger dir; `close` folds the reported outcome
+into exactly ONE schema-valid run-ledger row and appends it.
+
+Store: $SUTRA_NATIVE_HOME/ledger/run-ledger.jsonl (env override for
+instance root; default ~/.sutra-native). Write discipline (SCOPE section 4
+preamble): atomic temp+rename, then completeness marker
+run-ledger.jsonl.complete, itself temp+rename. Every row carries
+schema_version; evolution is additive-only.
+
+Validation: external sutra-schema-validate against
+sutra/os/native/schemas/run-ledger-row.schema.json when both are present,
+else an inline structural check implementing the same contract (14
+required keys, additionalProperties false, outcome enum, pinned
+verify_template id+version -- G1, verify_args item shape).
+
+B18-7 (SCOPE section 5): the run ledger is an append-only operational log
+that does not affect canonical state -- carve-out, not an SoR write.
+FORBIDDEN-DEPS: no F1 (nothing here reads the ledger back to drive
+behavior), F2-F10 clean (no queues, no routing, no arbitration, no
+installer layout, single operator recorded as data).
+
+Exit status:
+  0  ok (open state written / row appended + marker present)
+  1  row failed validation (nothing written)
+  2  usage error (bad args, bad outcome, unknown run-id)
+  3  I/O failure (store unchanged or marker missing)
+
+run_id is the join key eval-receipt rows reference (S0 fold).
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import uuid
+from datetime import datetime, timezone
+
+SCHEMA_VERSION_DEFAULT = "1.0.0"
+LEDGER_NAME = "run-ledger.jsonl"
+OUTCOMES = ["pass", "fail-retry", "fail-escalate", "blocked"]
+
+REQUIRED_KEYS = [
+    "schema_version", "run_id", "atom_id", "ts_open", "ts_close", "goal",
+    "verify_template", "verify_args", "outcome", "attempts",
+    "workflow_ref", "thread_id", "operator_id", "evidence_ref",
+]
+
+
+def die(code, msg):
+    sys.stderr.write("sutra-run-log: %s\n" % msg)
+    sys.exit(code)
+
+
+def now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def ledger_dir():
+    root = os.environ.get("SUTRA_NATIVE_HOME")
+    if not root:
+        root = os.path.join(os.path.expanduser("~"), ".sutra-native")
+    return os.path.join(root, "ledger")
+
+
+def atomic_write(path, data_bytes):
+    d = os.path.dirname(path)
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".run-log.")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data_bytes)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def parse_args(argv):
+    p = argparse.ArgumentParser(prog="sutra-run-log", add_help=True)
+    sub = p.add_subparsers(dest="cmd")
+
+    po = sub.add_parser("open", help="mint run_id+atom_id, hold .open state")
+    po.add_argument("--goal", required=True)
+    po.add_argument("--template-id", required=True)
+    po.add_argument("--template-version", required=True)
+    po.add_argument("--arg", action="append", dest="args", default=[],
+                    metavar="NAME=VALUE",
+                    help="verify template argument (repeatable)")
+    po.add_argument("--workflow-ref", default=None,
+                    help="FOLLOWED workflow ref; omit for CONSTRUCT (null)")
+    po.add_argument("--thread-id", required=True)
+    po.add_argument("--operator", "--operator-id", dest="operator_id",
+                    required=True)
+    po.add_argument("--run-id", default=None,
+                    help="override minted run_id (caller-supplied join key)")
+    po.add_argument("--atom-id", default=None,
+                    help="override minted atom_id")
+
+    pc = sub.add_parser("close", help="append ONE run-ledger row from state")
+    pc.add_argument("--run-id", required=True)
+    pc.add_argument("--outcome", required=True, choices=OUTCOMES)
+    pc.add_argument("--attempts", required=True, type=int)
+    pc.add_argument("--evidence-ref", default=None)
+
+    ns = p.parse_args(argv)
+    if ns.cmd is None:
+        p.print_usage(sys.stderr)
+        sys.exit(2)
+    return ns
+
+
+def cmd_open(args):
+    suffix = uuid.uuid4().hex[:8]
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    run_id = args.run_id or "run-%s-%s" % (stamp, suffix)
+    atom_id = args.atom_id or "atom-%s-%s" % (stamp, suffix)
+
+    verify_args = []
+    for pair in args.args:
+        if "=" not in pair:
+            die(2, "--arg must be NAME=VALUE, got: %s" % pair)
+        name, value = pair.split("=", 1)
+        if not name:
+            die(2, "--arg name must be non-empty: %s" % pair)
+        verify_args.append({"name": name, "value": value})
+
+    state = {
+        "schema_version": SCHEMA_VERSION_DEFAULT,
+        "run_id": run_id,
+        "atom_id": atom_id,
+        "ts_open": now_iso(),
+        "goal": args.goal,
+        "verify_template": {
+            "template_id": args.template_id,
+            "template_version": args.template_version,
+        },
+        "verify_args": verify_args,
+        "workflow_ref": args.workflow_ref,
+        "thread_id": args.thread_id,
+        "operator_id": args.operator_id,
+    }
+    open_path = os.path.join(ledger_dir(), run_id + ".open")
+    if os.path.exists(open_path):
+        die(2, "run already open: %s" % open_path)
+    try:
+        atomic_write(open_path, (json.dumps(state, separators=(",", ":"))
+                                 + "\n").encode("utf-8"))
+    except OSError as e:
+        die(3, "I/O failure writing open state: %s" % e)
+    print("run_id=%s atom_id=%s" % (run_id, atom_id))
+    return 0
+
+
+def inline_validate(row):
+    """Structural check mirroring run-ledger-row.schema.json."""
+    errs = []
+    if not isinstance(row, dict):
+        return ["row is not an object"]
+    for k in REQUIRED_KEYS:
+        if k not in row:
+            errs.append("missing required key: %s" % k)
+    for k in row:
+        if k not in REQUIRED_KEYS:
+            errs.append("additional property not allowed: %s" % k)
+    if errs:
+        return errs
+    for k in ("schema_version", "run_id", "atom_id", "ts_open", "ts_close",
+              "goal", "thread_id", "operator_id"):
+        if not isinstance(row[k], str) or not row[k]:
+            errs.append("%s must be a non-empty string" % k)
+    vt = row["verify_template"]
+    if (not isinstance(vt, dict)
+            or set(vt.keys()) != {"template_id", "template_version"}
+            or any(not isinstance(vt[k], str) or not vt[k] for k in vt)):
+        errs.append("verify_template must be {template_id, template_version}"
+                    " with non-empty strings (pinned reference, G1)")
+    va = row["verify_args"]
+    if not isinstance(va, list):
+        errs.append("verify_args must be an array")
+    else:
+        for i, a in enumerate(va):
+            if (not isinstance(a, dict)
+                    or set(a.keys()) != {"name", "value"}
+                    or not isinstance(a.get("name"), str) or not a["name"]
+                    or not (a["value"] is None
+                            or isinstance(a["value"], (str, int, float, bool)))):
+                errs.append("verify_args[%d] must be {name, value}" % i)
+    if row["outcome"] not in OUTCOMES:
+        errs.append("outcome must be one of %s" % "|".join(OUTCOMES))
+    att = row["attempts"]
+    if isinstance(att, bool) or not isinstance(att, int) or att < 1:
+        errs.append("attempts must be an integer >= 1")
+    for k in ("workflow_ref", "evidence_ref"):
+        if row[k] is not None and not isinstance(row[k], str):
+            errs.append("%s must be string or null" % k)
+    return errs
+
+
+def validate(row):
+    """External sutra-schema-validate when available, else inline."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    validator = os.path.join(here, "sutra-schema-validate")
+    schema = os.path.normpath(os.path.join(
+        here, "..", "..", "..", "os", "native", "schemas",
+        "run-ledger-row.schema.json"))
+    if os.path.isfile(validator) and os.path.isfile(schema):
+        fd, tmp = tempfile.mkstemp(suffix=".json")
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(row, fh)
+            r = subprocess.run([sys.executable, validator, schema, tmp],
+                               capture_output=True, text=True)
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        if r.returncode == 0:
+            return
+        if r.returncode == 1:
+            die(1, "row failed schema validation (nothing written):\n%s"
+                % (r.stdout + r.stderr).strip())
+        # validator unusable (usage/io) -> fall through to inline check
+    errs = inline_validate(row)
+    if errs:
+        die(1, "row failed structural validation (nothing written): "
+            + "; ".join(errs))
+
+
+def atomic_append(row):
+    d = ledger_dir()
+    ledger = os.path.join(d, LEDGER_NAME)
+    marker = ledger + ".complete"
+    line = json.dumps(row, separators=(",", ":")) + "\n"
+    try:
+        os.makedirs(d, exist_ok=True)
+        existing = b""
+        if os.path.exists(ledger):
+            with open(ledger, "rb") as fh:
+                existing = fh.read()
+        atomic_write(ledger, existing + line.encode("utf-8"))
+        rows = existing.count(b"\n") + 1
+        atomic_write(marker, json.dumps(
+            {"complete": True, "rows": rows,
+             "last_ts": row["ts_close"]}).encode("utf-8"))
+        return rows
+    except OSError as e:
+        die(3, "I/O failure, store unchanged or marker missing: %s" % e)
+
+
+def cmd_close(args):
+    open_path = os.path.join(ledger_dir(), args.run_id + ".open")
+    if not os.path.isfile(open_path):
+        die(2, "unknown run-id (no open state at %s)" % open_path)
+    try:
+        with open(open_path, "r") as fh:
+            state = json.load(fh)
+    except (OSError, ValueError) as e:
+        die(3, "open state unreadable: %s" % e)
+
+    row = dict(state)
+    row["ts_close"] = now_iso()
+    row["outcome"] = args.outcome
+    row["attempts"] = args.attempts
+    row["evidence_ref"] = args.evidence_ref
+    validate(row)
+    rows = atomic_append(row)
+    try:
+        os.unlink(open_path)
+    except OSError:
+        pass  # row is appended; a stale .open never blocks the close
+    print("closed run_id=%s outcome=%s attempts=%d rows=%d"
+          % (row["run_id"], row["outcome"], row["attempts"], rows))
+    return 0
+
+
+def main(argv):
+    args = parse_args(argv)
+    if args.cmd == "open":
+        return cmd_open(args)
+    return cmd_close(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

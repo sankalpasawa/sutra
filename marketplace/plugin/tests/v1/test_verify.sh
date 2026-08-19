@@ -103,5 +103,21 @@ else
   echo "FAIL t17-evidence-json-shape"; echo "$EV_LINE" | sed 's/^/    /'; fail=$((fail+1))
 fi
 
+# --- flag aliases: --template-id/--template-version canonical (2026-08-19) ----
+run "$SV" --template-id file-exists --template-version 1 --arg "path=$TMP/data.txt"
+t t18-canonical-flags 0 "OUTCOME: pass"
+
+run "$SV" --template-id grep-count --version 1 --arg "pattern=alpha" --arg "file=$TMP/data.txt" --arg "min=1"
+t t19-mixed-flag-forms 0 "OUTCOME: pass"
+
+run "$SV" --template file-exists --template-id grep-count --template-version 1 --arg "path=$TMP/data.txt"
+t t20-conflicting-template-ids 2 "conflicting template ids"
+
+run "$SV" --template-id file-exists --template file-exists --template-version 1 --arg "path=$TMP/data.txt"
+t t21-equal-values-both-forms 0 "OUTCOME: pass"
+
+run "$SV" --version 1 --template-version 2 --template-id file-exists --arg "path=$TMP/data.txt"
+t t22-conflicting-template-versions 2 "conflicting template versions"
+
 echo "RESULT: pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]
