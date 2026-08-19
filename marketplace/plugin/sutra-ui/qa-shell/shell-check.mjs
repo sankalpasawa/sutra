@@ -93,8 +93,14 @@ const state = await page.evaluate(() => {
        interrogate the parsed CSSOM of the SHIPPED stylesheet in the RUNNING
        app: the rule must have survived parsing, paint through the token, and
        the token must resolve to a real colour on this page. */
-    const walk = rules => [...rules].flatMap(rl =>
-      rl.cssRules ? walk(rl.cssRules) : (rl.selectorText === ".gv-chip:focus-visible" ? [rl] : []));
+    /* CSS Nesting gave EVERY style rule a .cssRules list (empty when nothing
+       is nested), so "has cssRules ? recurse : leaf" never inspected any leaf —
+       the walk silently found nothing, ever. Check the selector on every rule
+       AND recurse into whatever children it carries. */
+    const walk = rules => [...rules].flatMap(rl => [
+      ...(rl.selectorText === ".gv-chip:focus-visible" ? [rl] : []),
+      ...(rl.cssRules && rl.cssRules.length ? walk(rl.cssRules) : []),
+    ]);
     let chipRules = [];
     for (const sheet of document.styleSheets) {
       try { chipRules = chipRules.concat(walk(sheet.cssRules)); } catch (e) {}
