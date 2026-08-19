@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""sutra-run-cost -- report per-run cost measurements from the run ledger (B18-8).
+
+Measurement stand-up ONLY: pricing stays open by its own rule. This tool reports
+what the record actually carries -- wall-clock duration (ts_close - ts_open, both
+UTC per the run-ledger schema) and attempts -- and says plainly what it cannot
+measure yet (tokens are not instrumented in v1 rows).
+
+Reads:
+    <ledger-dir>/run-ledger.jsonl   closed rows (one JSON object per line)
+    <ledger-dir>/*.open             runs opened but not yet closed
+
+Usage:
+    sutra-run-cost [--ledger-dir <dir>]        (default: ~/.sutra-native/ledger)
+    sutra-run-cost --json                       one JSON report object on stdout
+
+Exit codes:
+    0  report produced (including the empty-ledger report)
+    1  ledger dir exists but a row was malformed (report still printed, loudly)
+    2  usage error
+"""
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+USAGE = "usage: sutra-run-cost [--ledger-dir <dir>] [--json]"
+
+
+def usage_error(msg):
+    print("sutra-run-cost: " + msg, file=sys.stderr)
+    print(USAGE, file=sys.stderr)
+    sys.exit(2)
+
+
+def parse_ts(raw):
+    """UTC ISO-8601 'Z' timestamps per run-ledger schema; None if unparseable."""
+    if not isinstance(raw, str):
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def main(argv):
+    ledger_dir = os.path.expanduser("~/.sutra-native/ledger")
+    as_json = False
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--ledger-dir":
+            if i + 1 >= len(argv):
+                usage_error("--ledger-dir needs a value")
+            ledger_dir = argv[i + 1]
+            i += 2
+        elif a == "--json":
+            as_json = True
+            i += 1
+        elif a in ("-h", "--help"):
+            print(USAGE)
+            return 0
+        else:
+            usage_error("unknown argument: " + a)
+
+    runs, malformed = [], []
+    ledger_path = os.path.join(ledger_dir, "run-ledger.jsonl")
+    if os.path.isfile(ledger_path):
+        with open(ledger_path) as fh:
+            for n, line in enumerate(fh, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    malformed.append(n)
+                    continue
+                t0, t1 = parse_ts(row.get("ts_open")), parse_ts(row.get("ts_close"))
+                runs.append({
+                    "run_id": row.get("run_id", "?"),
+                    "workflow_ref": row.get("workflow_ref"),
+                    "outcome": row.get("outcome", "?"),
+                    "attempts": row.get("attempts"),
+                    "wall_seconds": (t1 - t0).total_seconds() if (t0 and t1) else None,
+                })
+
+    open_runs = []
+    if os.path.isdir(ledger_dir):
+        open_runs = sorted(
+            f[:-len(".open")] for f in os.listdir(ledger_dir) if f.endswith(".open"))
+
+    report = {
+        "schema_version": 1,
+        "ledger_dir": ledger_dir,
+        "clock_basis": "wall-clock UTC, ts_close - ts_open from the row itself",
+        "tokens": "not instrumented (v1 rows carry no token field; candidate v2 schema addition)",
+        "closed_runs": len(runs),
+        "open_runs": open_runs,
+        "malformed_lines": malformed,
+        "runs": runs,
+    }
+    durations = [r["wall_seconds"] for r in runs if r["wall_seconds"] is not None]
+    if durations:
+        report["total_wall_seconds"] = sum(durations)
+        report["mean_wall_seconds"] = sum(durations) / len(durations)
+
+    if as_json:
+        print(json.dumps(report))
+    else:
+        if not os.path.isdir(ledger_dir):
+            print("no ledger dir at %s -- nothing recorded yet" % ledger_dir)
+            return 0
+        print("run-cost report (%s)" % ledger_dir)
+        print("  clock basis: %s" % report["clock_basis"])
+        print("  tokens:      %s" % report["tokens"])
+        for r in runs:
+            dur = ("%.0fs" % r["wall_seconds"]) if r["wall_seconds"] is not None else "duration unavailable"
+            print("  %s  %s  outcome=%s attempts=%s  %s"
+                  % (r["run_id"], r["workflow_ref"] or "-", r["outcome"], r["attempts"], dur))
+        for rid in open_runs:
+            print("  %s  OPEN (not closed; no duration yet)" % rid)
+        if durations:
+            print("  closed=%d  total=%.0fs  mean=%.0fs"
+                  % (len(runs), report["total_wall_seconds"], report["mean_wall_seconds"]))
+        else:
+            print("  closed=%d" % len(runs))
+        if malformed:
+            print("  MALFORMED lines (fix the writer, do not hand-edit): %s"
+                  % ",".join(str(n) for n in malformed))
+
+    return 1 if malformed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
