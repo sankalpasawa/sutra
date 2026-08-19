@@ -57,7 +57,14 @@ header{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;
   justify-content:center;padding:104px 0 72px;position:relative}
 h1{font-family:var(--serif);font-weight:300;font-size:clamp(29px,7.6vw,34px);
   line-height:1.14;letter-spacing:-.015em}
-h1 .ln{display:block;white-space:normal;text-wrap:balance}
+/* No text-wrap:balance on any split headline. WebKit's balance solver has a
+   known regression with atomic inline content (bug 284665, Safari 17.5): it
+   settles on one-word lines despite 4x the needed width and only corrects on
+   the next full relayout -- exactly the "opens broken, then realigns" the
+   founder photographed twice at identical break positions across two different
+   builds. The fork lines are hand-authored and short; greedy wrap is
+   deterministic and computed once. */
+h1 .ln{display:block;white-space:normal}
 h1 .ln+.ln{margin-top:-.08em}                       /* founder: tighten the fork gap */
 h1 .fork-a{color:var(--faint)}
 h1 .fork-b{color:var(--ink)}
@@ -106,7 +113,7 @@ h1 .fork-b.deepen .w{color:var(--ink)}              /* …then commits. the fork
 /* ── sections ───────────────────────────────────────── */
 section{padding:76px 0}
 h2{font-family:var(--serif);font-weight:300;font-size:clamp(26px,6.6vw,32px);
-  line-height:1.2;letter-spacing:-.015em;margin-bottom:20px;text-wrap:balance}
+  line-height:1.2;letter-spacing:-.015em;margin-bottom:20px}
 h2 .ln{display:block}
 h2 .ln+.ln{margin-top:-.04em}
 h2 .fork-a{color:var(--faint)}
