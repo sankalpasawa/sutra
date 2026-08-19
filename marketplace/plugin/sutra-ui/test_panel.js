@@ -58,8 +58,8 @@ const PANEL = path.join(__dirname, "static", "panel.html");
    than a hardcoded set. */
 function loadScript() {
   const html = fs.readFileSync(PANEL, "utf8");
-  const refs = [...html.matchAll(/<script src="\/static\/js\/([^"]+)"><\/script>/g)]
-    .map(m => m[1]);
+  const refs = [...html.matchAll(/<script src="\/static\/js\/([^"?]+)(?:\?[^"]*)?"><\/script>/g)]
+    .map(m => m[1]);   /* strip the ?v=__ASSETVER__ cache-bust query the server fills in */
   assert.ok(refs.length > 0,
     "panel.html references no /static/js modules -- has the shell changed?");
   // No inline <script> should remain: the invariant is now "all logic lives in
@@ -137,6 +137,14 @@ const sandbox = {
   console,
   document: documentStub,
   themeBtn: makeNode("button"),     // implicit global from the element id
+  /* The rail's three section containers. renderRail() addresses them as bare
+     identifiers -- the browser creates a global for every element id, and the
+     panel relies on it. The sandbox has to provide the same globals or any test
+     that reaches render() dies on "navOrg is not defined" for a reason that has
+     nothing to do with what it is testing. */
+  navOrg: makeNode("div"),
+  navChange: makeNode("div"),
+  navRuntime: makeNode("div"),
   localStorage: {
     _m: {},
     getItem(k) { return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
@@ -148,6 +156,12 @@ const sandbox = {
   navigator: { clipboard: { writeText: () => Promise.resolve() } },
   WebSocket: function WebSocketStub() { this.readyState = 0; this.send = () => {}; this.close = () => {}; },
   setTimeout, clearTimeout, setInterval, clearInterval,
+  /* A NO-OP that never runs the callback, for the same reason fetch never
+     settles below: the frame callbacks are pure scroll positioning, and running
+     them would leave a continuation firing after the assertions finish. Returns
+     a handle so a caller that cancels does not throw. */
+  requestAnimationFrame: () => 0,
+  cancelAnimationFrame: () => {},
   Date, Math, JSON, Set, Map, Promise, Object, Array, String, Number, Boolean, RegExp, Error,
   // never settles on purpose -- parks simulate() in its pending branch and
   // leaves no continuation running after the assertions.
@@ -172,6 +186,8 @@ const EPILOGUE = `
   blockCodesForMove, isDescendant, railSpec, tok, jac, band, lastRouted, dPath,
   NOT_CHECKED, CONFIDENCE_FLOOR,
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
+  ensureTranscript, sessionBody, __renderSrc: String(render),
+  checkUpdates, stageInBackground, TITLES, SCREENS,
   chanKey, paletteFor,
   _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip, resumableId,
   fmt, dirPickerAvailable,
@@ -229,6 +245,26 @@ function test(name, fn) {
     console.log("FAIL - " + name + "\n       " + (e && e.message ? e.message : e));
   }
 }
+
+/* The awaiting variant. test() calls fn() and never awaits it, which is right
+   for the ~90 synchronous checks below but silently wrong for an async one: the
+   body after the first `await` resumes AFTER later tests have already mutated the
+   shared S, so it asserts against another test's state. That is not hypothetical
+   -- the update-staging checks below passed only by microtask luck until an
+   upstream render() grew one more tick and they began reading a null another test
+   had just written. Anything async goes through here, and the runner drives them
+   in the async phase, after every sync test has finished touching S. */
+async function atest(name, fn) {
+  try {
+    await fn();
+    passed++;
+    console.log("ok   - " + name);
+  } catch (e) {
+    failures.push({ name, e });
+    console.log("FAIL - " + name + "\n       " + (e && e.message ? e.message : e));
+  }
+}
+
 
 /* ── fixture: a small org that exercises every ring code ───────────────── */
 
@@ -847,6 +883,71 @@ test("18e. an unscrolled pane saves nothing, so nothing is restored", () => {
   });
 });
 
+/* ── 18f-18j. "Transcript not read yet" was a RESTING state ────────────────
+   Reported live: the message shows on opening the app and does not clear.
+   Reproduced in the running panel -- an open pane on an IDLE session sat at
+   loadState "unread" for 8s and never moved. Two independent causes:
+
+     1. Nothing enforced "an open pane reads its transcript". ensureTranscript()
+        only acts on "unread", and was only CALLED from the sites that open a
+        pane; the ⋮ > "open in repo" action pushes into openPanes without
+        calling it. The background re-read in applySessionChange() is no safety
+        net -- it fires on a WRITE to the file, and an idle transcript is never
+        written. So the pane never recovered.
+     2. sessionBody() treated every state that was not loading/error/empty as
+        "not read yet", including "ok" with zero turns -- which the busy guard
+        in applySessionChange() produces without parsing anything.
+
+   These pin the FACTS, not the wiring: a pane left unread must become read,
+   and a session that HAS been read must never claim otherwise. */
+
+test("18f. ensureTranscript starts the read for a pane left unread", () => {
+  const s = { id: "idle-1", real: true, turns: [], loadState: "unread" };
+  T.ensureTranscript(s);
+  assert.strictEqual(s.loadState, "loading",
+    "an unread real session is exactly what the read is for");
+});
+
+test("18g. ensureTranscript is idempotent -- a repaint must not refetch", () => {
+  /* render() calls this for every open pane on EVERY repaint. If it were not a
+     no-op past "unread" it would issue a GET per frame per pane. */
+  ["loading", "ok", "empty", "error"].forEach(st => {
+    const s = { id: "x", real: true, turns: [], loadState: st };
+    T.ensureTranscript(s);
+    assert.strictEqual(s.loadState, st, `${st} must be left alone`);
+  });
+  assert.doesNotThrow(() => T.ensureTranscript(null), "a closed/missing pane is not an error");
+  const local = { id: "s-1", real: false, turns: [], loadState: "live" };
+  T.ensureTranscript(local);
+  assert.strictEqual(local.loadState, "live", "a panel-started session has no file to read");
+});
+
+test("18h. render() is the floor: every open pane gets its read scheduled", () => {
+  /* The regression this closes is a pane reaching openPanes by a path that
+     forgot the call. Assert the floor exists rather than the call sites. */
+  assert.ok(/openPanes[\s\S]{0,200}ensureTranscript/.test(T.__renderSrc),
+    "render() must schedule ensureTranscript for open panes");
+});
+
+test("18i. a session that WAS read never says 'not read yet'", () => {
+  /* the busy guard promotes "loading" -> "ok" without parsing, so ok+0 turns
+     is a real state and it is a READ one */
+  ["ok", "empty", "live"].forEach(st => {
+    const body = T.sessionBody({ id: "a", real: true, turns: [], loadState: st });
+    assert.ok(!/not read yet/.test(body), `${st} is read -- claiming otherwise is the bug`);
+    assert.ok(/No readable turns/.test(body), `${st} must say what was actually found`);
+  });
+});
+
+test("18j. the four honest states are still distinguishable", () => {
+  const mk = st => T.sessionBody({ id: "a", real: true, turns: [], loadState: st, loadError: "boom" });
+  assert.ok(/Reading the transcript/.test(mk("loading")));
+  assert.ok(/could not be read/.test(mk("error")) && /boom/.test(mk("error")));
+  assert.ok(/No readable turns/.test(mk("empty")));
+  assert.ok(/not read yet/.test(mk("unread")), "unread is still a truthful transient");
+  assert.ok(/not read yet/.test(mk(undefined)), "a session built with no loadState is unread");
+});
+
 /* ── 19. a resume id that cannot possibly resolve is not sent ───────────────
    `claude --resume <id>` resolves the id IN THE PROJECT OF ITS WORKING
    DIRECTORY. adoptRealSessions() attaches claude_session to every transcript on
@@ -1348,6 +1449,83 @@ test("25i. an update already armed says so instead of counting again", () => {
    button must stay off (a dead button that opens nothing is worse than none).
    window === sandbox in this harness, so window.sutra IS sandbox.sutra.
    ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 25j-25n. a check that FINDS an update must start the download ─────────
+   Reported: "check for updates is not downloading the dmg in the background".
+   It was accurate. Staging ran only on the shell's timer (90s after launch,
+   then every six hours), so a deliberate check reported "x.y available" and
+   downloaded nothing; the only way on was the blocking "Download & install"
+   that quits the app. The panel cannot stage by itself -- /desktop/stage is
+   token-authenticated and the token never reaches the renderer -- so it asks
+   the shell, the same shape as apply/defer. */
+
+/* sandbox IS window inside the vm realm (sandbox.window = sandbox), so this is
+   the same stub the dirPickerAvailable test uses one section down. */
+const withSutra = async (bridge, fn) => {
+  const saved = sandbox.sutra;
+  sandbox.sutra = bridge;
+  try { return await fn(); } finally { sandbox.sutra = saved; }
+};
+
+/* Driven in the async phase by the runner at the foot of this file, in
+   sequence: every one of these mutates S.upd*, so they must not interleave
+   with each other or with a sync test. */
+async function updateStagingChecks(){
+await atest("25j. finding an update asks the shell to stage it", async () => {
+  let asked = 0;
+  T.S.upd = { desktop: { managed: true, update_available: true, latest: "9.9.9" } };
+  T.S.updStaging = false;
+  await withSutra({ desktop: true, stageUpdate: () => { asked++; return Promise.resolve({ ok: true, staged: true, version: "9.9.9" }); } },
+    () => T.stageInBackground());
+  assert.strictEqual(asked, 1, "the download the operator asked for by checking");
+  assert.ok(/9\.9\.9/.test(T.S.updMsg) && /verified|install/i.test(T.S.updMsg),
+    "report what landed, not that a download started");
+});
+
+await atest("25k. up-to-date, unmanaged, or errored checks download nothing", async () => {
+  for (const d of [{ managed: true, update_available: false },
+                   { managed: false, reason: "source checkout" },
+                   { managed: true, update_available: true, error: "rate limited" }]) {
+    let asked = 0;
+    T.S.upd = { desktop: d }; T.S.updStaging = false; T.S.updMsg = null;
+    await withSutra({ desktop: true, stageUpdate: () => { asked++; return Promise.resolve({ ok: true }); } },
+      () => T.stageInBackground());
+    assert.strictEqual(asked, 0, `must not stage for ${JSON.stringify(d)}`);
+  }
+});
+
+await atest("25l. a plain browser stages nothing -- there is no app to replace", async () => {
+  T.S.upd = { desktop: { managed: true, update_available: true, latest: "9.9.9" } };
+  T.S.updStaging = false; T.S.updMsg = null;
+  await withSutra(undefined, () => T.stageInBackground());
+  assert.strictEqual(T.S.updMsg, null, "no promise of a download that cannot happen");
+});
+
+await atest("25m. one download at a time", async () => {
+  let asked = 0;
+  T.S.upd = { desktop: { managed: true, update_available: true, latest: "9.9.9" } };
+  T.S.updStaging = true;                     /* one already in flight */
+  await withSutra({ desktop: true, stageUpdate: () => { asked++; return Promise.resolve({ ok: true }); } },
+    () => T.stageInBackground());
+  assert.strictEqual(asked, 0, "two concurrent 160MB downloads into one path is not a race worth having");
+});
+
+await atest("25n. a failed stage says so instead of claiming a download", async () => {
+  T.S.upd = { desktop: { managed: true, update_available: true, latest: "9.9.9" } };
+  T.S.updStaging = false;
+  await withSutra({ desktop: true, stageUpdate: () => Promise.resolve({ ok: false, error: "offline" }) },
+    () => T.stageInBackground());
+  assert.ok(/failed/i.test(T.S.updMsg) && /offline/.test(T.S.updMsg));
+});
+}
+
+/* ── 26b. the Test pane scaffold is gone from all three wiring sites ───────
+   It rendered nothing by design and shipped in the operator's Organization nav. */
+test("26b. no Test pane in the nav, the titles, or the screens", () => {
+  assert.ok(!T.railSpec().org.some(x => x.id === "testpane"), "nav");
+  assert.ok(!("testpane" in T.TITLES), "TITLES");
+  assert.ok(!("testpane" in T.SCREENS), "SCREENS");
+});
 
 test("26a. dirPickerAvailable is true ONLY when window.sutra.pickDirectory is callable", () => {
   const saved = sandbox.sutra;
@@ -2104,9 +2282,13 @@ test("29c. a small org fits whole: chain, children and charters all present, no 
 test("28f. panel.html loads 11-teamsutra before 09-tail, so boot() stays last", () => {
   const h = panelHtml;
   // Match the script TAGS, not bare filenames — the names also appear in
-  // prose comments earlier in the file.
-  const ts = h.indexOf('<script src="/static/js/11-teamsutra.js">');
-  const tail = h.indexOf('<script src="/static/js/09-tail.js">');
+  // prose comments earlier in the file. The src carries a ?v=<token> cache-bust
+  // the server substitutes per build, so the query is optional here: the
+  // invariant under test is the ORDER of the two tags, not their query string.
+  const tagAt = name =>
+    h.search(new RegExp('<script src="/static/js/' + name.replace('.', '\\.') + '(\\?[^"]*)?">'));
+  const ts = tagAt("11-teamsutra.js");
+  const tail = tagAt("09-tail.js");
   assert.ok(ts !== -1, "panel.html must register 11-teamsutra.js");
   assert.ok(tail !== -1, "panel.html must still register 09-tail.js");
   assert.ok(ts < tail, "11-teamsutra.js must load before 09-tail.js (test 21b's invariant)");
@@ -2279,7 +2461,11 @@ test("33c. a failed apply shows the error in place and stays re-clickable", () =
 
 /* ── report ────────────────────────────────────────────────────────────── */
 
-Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []).then(results => {
+/* Sequential async checks FIRST (they own S.upd* and must not interleave),
+   then the parallel ones, then the summary. */
+updateStagingChecks()
+  .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))
+  .then(results => {
   results.forEach((r, i) => {
     if (r.status === "rejected") failures.push({ name: "async check #" + i, e: r.reason });
     else passed++;

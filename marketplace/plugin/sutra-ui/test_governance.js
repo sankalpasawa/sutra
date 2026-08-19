@@ -17,7 +17,9 @@ const assert = require('assert');
 
 const PANEL = __dirname + '/static/panel.html';
 const html = fs.readFileSync(PANEL, 'utf8');
-const refs = [...html.matchAll(/<script src="\/static\/js\/([^"]+)"><\/script>/g)].map(m => m[1]);
+/* ?v=<token> cache-bust is captured separately and dropped -- reading
+   "01-state.js?v=__ASSETVER__" off disk is an ENOENT. */
+const refs = [...html.matchAll(/<script src="\/static\/js\/([^"?]+)(?:\?[^"]*)?"><\/script>/g)].map(m => m[1]);
 if (!refs.length) throw new Error('panel.html references no /static/js modules -- has the shell changed?');
 const script = refs.map(name => fs.readFileSync(__dirname + '/static/js/' + name, 'utf8')).join('\n');
 

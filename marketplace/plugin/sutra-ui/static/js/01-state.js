@@ -508,7 +508,7 @@ function transcriptTurns(messages){
     if (m.role === "user"){
       out.push({ text: m.text || "", ts_ms: ts || 0, transcript: true,
                  domain: null, mode: "transcript", confidence: 0, matched: [],
-                 response: "", tools: [] });
+                 response: "", tools: [], calls: [] });
       return;
     }
     let cur = out[out.length - 1];
@@ -517,11 +517,13 @@ function transcriptTurns(messages){
          a prompt for it */
       cur = { text: "", orphan: true, ts_ms: ts || 0, transcript: true,
               domain: null, mode: "transcript", confidence: 0, matched: [],
-              response: "", tools: [] };
+              response: "", tools: [], calls: [] };
       out.push(cur);
     }
     if (m.text) cur.response = cur.response ? (cur.response + "\n\n" + m.text) : m.text;
     if (m.tools && m.tools.length) cur.tools = (cur.tools || []).concat(m.tools);
+    /* the captured agentic output: each call's command/input and its result */
+    if (m.calls && m.calls.length) cur.calls = (cur.calls || []).concat(m.calls);
     if (!cur.ts_ms) cur.ts_ms = ts || 0;
   });
   return out;

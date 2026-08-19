@@ -339,6 +339,45 @@ async function checkUpdates(){
   try { S.upd = await apiGet("/api/updates"); }
   catch (e) { S.updError = e.message; S.upd = null; }
   S.updBusy = null; render();
+  stageInBackground();
+}
+
+/* A check that FINDS an update now starts the download, instead of reporting a
+   new version and doing nothing with it.
+ *
+ * The gap this closes: staging was driven only by the shell's timer -- 90s after
+ * launch, then every six hours -- so an operator who checked deliberately got a
+ * "2.x available" pill and no download, and the only way forward was the
+ * blocking "Download & install" button that quits the app. Now the check does
+ * what checking implies.
+ *
+ * Asked of the SHELL, never done here: /api/updates/desktop/stage is
+ * token-authenticated and the panel has no token (see preload.js). In a plain
+ * browser window.sutra is absent, there is no app to replace, and this is
+ * correctly a no-op -- the manual button remains that path's answer.
+ *
+ * Not awaited by the caller: a 160MB download must not block the screen. The
+ * staged banner (poll of /api/updates/staged) is what announces the result, so
+ * this reports only the fact that it started, and any failure honestly. */
+async function stageInBackground(){
+  const d = (S.upd && S.upd.desktop) || {};
+  if (!d.managed || d.error || !d.update_available) return;
+  if (!(window.sutra && typeof window.sutra.stageUpdate === "function")) return;
+  if (S.updStaging) return;                 /* one at a time, like the shell */
+  S.updStaging = true;
+  S.updMsg = `Downloading ${d.latest} in the background — you can keep working.`;
+  render();
+  try {
+    const r = await window.sutra.stageUpdate();
+    S.updMsg = r && r.ok
+      ? (r.staged ? `${r.version || d.latest} downloaded and verified — it installs when you restart.`
+                  : `Nothing to download${r.reason ? " — " + r.reason : "."}`)
+      : `Download failed${r && r.error ? " — " + r.error : "."}`;
+  } catch (e) {
+    S.updMsg = "Download failed — " + e.message;
+  }
+  S.updStaging = false;
+  render();
 }
 
 async function installUpdate(which){
@@ -732,6 +771,27 @@ if (typeof document !== "undefined" && document.addEventListener){
   });
 }
 
+/* The captured agentic output: each tool call the agent made, with its command/
+   input and a collapsible result (error-styled when the tool failed). Shared by
+   the replayed main transcript and the subagent viewer, so both show WHAT ran and
+   WHAT came back, not just a tool name. `output` toggles reuse S.toolOpen +
+   data-toolout (the same handler the live tool rows use). */
+function toolCallsHtml(calls){
+  if (!calls || !calls.length) return "";
+  return `<div class="toolcalls">${calls.map((c,i)=>{
+    const key = "c:" + (c.id || (c.name + ":" + i));
+    const open = S.toolOpen && S.toolOpen[key];
+    const inp = c.input ? `<code class="tc-in">${esc(String(c.input))}</code>` : "";
+    const out = String(c.output == null ? "" : c.output);
+    const btn = out.length ? `<button class="tc-btn" type="button" data-toolout="${esc(key)}"
+        aria-expanded="${open?"true":"false"}">${open?"hide":(c.is_error?"error":"output")}</button>` : "";
+    const body = (out.length && open)
+      ? `<pre class="tc-outbody${c.is_error?" err":""}">${esc(out)}</pre>` : "";
+    return `<div class="toolcall"><span class="tc-name pill ${c.is_error?"p-block":"p-acc"}">${
+        esc(c.name||"tool")}</span>${inp}${btn}${body}</div>`;
+  }).join("")}</div>`;
+}
+
 /* ── governance surface (chat-surface DS port) ────────────────────────────────
    parseGov reads the model's own governance emissions (H-Sutra header, DEPTH,
    PLACEMENT, OS trace, block fences) out of a response; gvBody strips them from
@@ -999,10 +1059,11 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
                                    : "done"}</span>
          </div>${r.output && S.toolOpen && S.toolOpen[r.id]
            ? `<pre class="toutbody">${esc(r.output)}</pre>` : ""}`).join("")}</div>`
-    : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+    : (t.calls && t.calls.length ? toolCallsHtml(t.calls)
+       : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
       <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
       ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
-    </div>` : "");
+    </div>` : ""));
   /* The agent roster, nested under the tool rows it elaborates. A turn that
      spawned nothing renders NOTHING here — no empty container, no heading — so
      an ordinary turn's DOM is byte-identical to what it was before this shipped.
@@ -1106,10 +1167,19 @@ function sessionBody(s){
         <p style="color:var(--faint)">The session is listed because the file exists under
         <code>~/.claude/projects</code>; nothing is shown because nothing could be parsed
         out of it. No turns have been invented to fill the gap.</p></div>`;
-    if (s.loadState === "empty")
+    /* "empty" is the read-and-found-nothing state. A session the BUSY guard in
+       applySessionChange() promoted to "ok" without parsing anything lands here
+       too: it has been read as far as this pane is concerned, and there are no
+       turns, which is the same fact under a different label. Saying "not read
+       yet" for it was the lie -- it sent the reader looking for a read that had
+       already happened and would never happen again. */
+    if (s.loadState === "empty" || s.loadState === "ok" || s.loadState === "live")
       return `<div class="zero"><h4>No readable turns in this transcript</h4>
         <p>The file parsed, but it holds no user or assistant messages — a session that was
         opened and abandoned, or one whose content is entirely tool traffic.</p></div>`;
+    /* Genuinely unread: loadState "unread", or absent on a session built by a
+       path that never set one. render() schedules the read for any open pane,
+       so this is a frame or two of honesty, not a resting state. */
     return `<p style="color:var(--muted)">Transcript not read yet.</p>`;
   }
   return `<div class="zero"><h4>Nothing asked yet</h4>

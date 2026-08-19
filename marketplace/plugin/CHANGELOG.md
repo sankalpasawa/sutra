@@ -107,6 +107,65 @@
   first token instead of prose-then-collapse; `patchStreaming` skips repaints whose
   rendered HTML is unchanged.
 
+## 2.103.0
+
+- **"Check for updates" now downloads.** It reported a new version and staged
+  nothing: staging ran only on the Electron shell's timer (90s after launch,
+  then every six hours), so a deliberate check left the operator with a pill and
+  no download, and the only way forward was the blocking "Download & install"
+  that quits the app. The panel cannot stage by itself —
+  `/api/updates/desktop/stage` is token-authenticated and the token deliberately
+  never reaches the renderer — so a third preload verb (`stageUpdate`) asks the
+  shell, exactly as `applyUpdate`/`deferUpdate` do. One staging run at a time,
+  shared with the scheduled path, so a click during a timer run joins it instead
+  of starting a second 160MB download. The screen stays usable while it runs and
+  reports what actually landed. 5 new tests.
+- **Test pane removed** from the Organization nav. It rendered nothing by design
+  and was wired at three sites (nav → TITLES → SCREENS); all three are gone,
+  pinned by a test.
+
+## 2.102.0
+
+- **"Transcript not read yet" was a resting state, not a flash.** Reported on
+  opening the app; reproduced in the running panel — a pane opened on an IDLE
+  session sat at `loadState:"unread"` for 8s and never moved. `ensureTranscript()`
+  only acts on `"unread"` and was only CALLED from the three sites that open a
+  pane, so the ⋮ → "open in repo" action (which pushes into `openPanes` without
+  it) stranded the pane permanently; the background re-read in
+  `applySessionChange()` is no safety net because it fires on a WRITE to the
+  file and an idle transcript is never written. `render()` now schedules the
+  read for every open pane — idempotent, like `loadRepo` beside it — so the
+  invariant is structural instead of a call every future open-path must
+  remember. Second fix: `sessionBody()` claimed "not read yet" for any state
+  that was not loading/error/empty, including the `ok`-with-zero-turns the busy
+  guard produces without parsing; a session that HAS been read now says what was
+  actually found. 5 new tests pin both facts; 86 panel tests green.
+
+## 2.101.0
+
+- **Connectors mirror Claude; configuring is delegated to Claude (Option A).** A new
+  **Present in Claude** section on the Connectors screen reads the operator's own
+  connectors live from `claude mcp list` — the authoritative source, since `~/.claude.json`
+  misses claude.ai connectors (Gmail, Drive, …) — and shows each with a status badge
+  (connected / needs auth / pending). Configuring is delegated, not rebuilt: the buttons
+  type `claude mcp add` / `claude mcp login <name>` into the terminal (never executed for
+  you), so people use Claude's own familiar flow and Sutra never handles an OAuth token.
+  Display-only and fail-soft — a read-only `/api/connectors/configured` behind a
+  subprocess timeout + 30s TTL cache; the governed `claude -p --strict-mcp-config` spawn
+  path is untouched (claude.ai connectors are not reusable headless under strict-mcp-config,
+  verified 2026-08-15). 10 new tests (parser fixtures + fail-soft + TTL cache); 66 connector
+  tests green. Codex-consulted.
+
+## 2.100.0
+
+- **Capture the agentic output.** The transcript parser kept only the agent's text
+  and tool NAMES — you could see that a Bash ran but never what it ran or what came
+  back. Now `_parse_transcript` captures each tool call's INPUT (command / file /
+  query) and its RESULT (output, with an error flag), matched by `tool_use` id — data
+  that was previously dropped. The subagent viewer and the replayed main transcript
+  render each call as a command line with a collapsible output; failed calls are
+  flagged. Per-result payload is capped so a huge output can't bloat a transcript.
+
 ## 2.99.0
 
 - **Connectors gallery — ~50 servers, grouped by category.** The default Connectors

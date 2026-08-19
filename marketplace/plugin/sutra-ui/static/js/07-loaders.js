@@ -636,7 +636,19 @@ function wire(){
   });
 
   scBody.querySelectorAll("[data-conn-reload]").forEach(b=>b.onclick=()=>{
-    loadConnectors(true); loadConnCatalog(true); loadLocal(true); loadLocalRegistry(true); });
+    loadConnectors(true); loadConnCatalog(true); loadLocal(true); loadLocalRegistry(true);
+    loadClaudeConfigured(true); });
+  /* Option A: configuring/authenticating is DELEGATED to Claude — we type the
+     command into the PTY (sendToTerminal does NOT execute it; the operator reads
+     it and presses Enter), so people use Claude's own familiar flow and Sutra
+     never handles an OAuth token. Kept alongside the Composio/local halves: this
+     mirrors what Claude already has and never enters the governed spawn path. */
+  scBody.querySelectorAll("[data-conn-configured-reload]").forEach(b=>b.onclick=()=>{
+    loadClaudeConfigured(true); });
+  scBody.querySelectorAll("[data-conn-add-in-claude]").forEach(b=>b.onclick=()=>{
+    sendToTerminal("claude mcp add "); });
+  scBody.querySelectorAll("[data-conn-configure]").forEach(b=>b.onclick=()=>{
+    sendToTerminal("claude mcp login " + shq(b.dataset.connConfigure)); });
 
   /* Enable/disable. Both the catalog card and the Disable button land here; the
      card sends no direction (flip), the button forces off, so a stale render
@@ -1032,7 +1044,8 @@ document.querySelector(".rail").addEventListener("click", e=>{
     /* lazy, like Git: reading the MCP config and the preset catalog on every boot
        is work a panel that never opens this screen has no reason to do. */
     if (S.screen === "connectors"){ loadConnectors(false); loadConnCatalog(false);
-                                    loadLocal(false); loadLocalRegistry(false); }
+                                    loadLocal(false); loadLocalRegistry(false);
+                                    loadClaudeConfigured(false); }
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -1322,6 +1335,23 @@ async function apiDelete(path){
   const r = await fetch(API + path, { method:"DELETE" });
   if (!r.ok) throw await _fail(r, path);
   return r.json();
+}
+/* Option A (2026-08-15): the connectors PRESENT IN CLAUDE, read live from
+   `claude mcp list` via /api/connectors/configured. Display-only — the panel
+   mirrors Claude and delegates add/auth to Claude itself; it never holds a
+   token. Holds the whole {connectors,error,stale} payload so the screen can
+   badge status and surface a read error without throwing.
+
+   Kept through the Composio merge: it is the one half of the old connectors
+   model with no equivalent on the hosted/local side, and its endpoint survived
+   because it reads Claude rather than Sutra's own store. The preset gallery and
+   registry search that used to live beside it are NOT re-wired -- the local
+   (1MCP) half now owns those paths. */
+async function loadClaudeConfigured(force){
+  if (S.claudeConfigured && !force) return;
+  try { S.claudeConfigured = await apiGet("/api/connectors/configured"); }
+  catch (e) { S.claudeConfigured = { connectors: [], error: e.message, stale: false }; }
+  render();
 }
 
 async function loadLocal(force){

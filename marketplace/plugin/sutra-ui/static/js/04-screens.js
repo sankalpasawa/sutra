@@ -698,8 +698,70 @@ SCREENS.connectors = () => {
     ${connEnabled(c || {})}
     ${connCatalog(c || {})}
     <h2 class="chh conn-kind-h">Local — 1MCP aggregator</h2>
-    ${lcSection()}`;
+    ${lcSection()}
+    ${connConfiguredBlock()}`;
 };
+
+/* Option A (founder direction 2026-08-15): the connectors PRESENT IN CLAUDE,
+   read live from `claude mcp list`. DISPLAY-ONLY and delegated: Sutra mirrors
+   what Claude has and hands add/auth back to Claude (the buttons type
+   `claude mcp add` / `login` into the terminal — never executed for you, never
+   stored here), so people use Claude's own familiar flow and no OAuth token
+   touches Sutra. These are NOT the servers a Sutra turn can call: claude.ai
+   connectors are not reusable headless under --strict-mcp-config (verified), so
+   this is a mirror, not a merge. Status badges come straight from the CLI. */
+function connConfiguredBlock(){
+  const cc = S.claudeConfigured;
+  const head = `<section class="chsec"><h2 class="chh">Present in Claude</h2>`;
+  const actions = `<div class="conn-actions">
+    <button class="btn" type="button" data-conn-add-in-claude>＋ Add in Claude</button>
+    <button class="btn" type="button" data-conn-configured-reload>Refresh from Claude</button></div>`;
+  /* Not read yet vs read-and-empty are different facts (Git rule). */
+  if (cc == null) return `${head}<p class="note">Reading from Claude…</p>${actions}</section>`;
+  const rows = cc.connectors || [];
+  const errNote = cc.error
+    ? `<div class="note b"><b>Could not read from Claude.</b> ${esc(cc.error)}${cc.stale?" — showing last-known list.":""}</div>`
+    : "";
+  if (!rows.length) return `${head}${errNote}${actions}
+    <div class="zero"><h4>No connectors in Claude yet</h4>
+      <p>Add one with <b>＋ Add in Claude</b> (or in Claude Desktop). It appears here
+         the moment Claude has it — this panel mirrors <code>claude mcp list</code>.</p></div></section>`;
+  const badge = st => {
+    const m = { connected:["p-ok","connected"], needs_auth:["p-warn","needs auth"],
+                pending:["p-mut","pending"], error:["p-block","error"] }[st]
+              || ["p-mut", st || "unknown"];
+    return `<span class="pill ${m[0]}">${esc(m[1])}</span>`;
+  };
+  const list = rows.map(c=>{
+    const needs = c.state === "needs_auth" || c.state === "error";
+    const cfg = needs
+      ? `<button class="btn" type="button" data-conn-configure="${esc(c.name)}">Configure in Claude</button>`
+      : "";
+    return `<div class="conn-row"><div class="conn-main">
+      <div class="conn-name">${esc(c.name)} ${badge(c.state)}</div>
+      <div class="conn-sum"><code>${esc(c.url || c.target || "")}</code></div></div>
+      <div class="conn-ctl">${cfg}</div></div>`;
+  }).join("");
+  return `${head}${errNote}${actions}<div class="conn-list">${list}</div></section>`;
+}
+
+/* MCP servers already configured in ~/.claude.json, offered for one-click import.
+   Loaded on demand by "Import from Claude"; each Add posts it as a Sutra connector. */
+function connImportBlock(){
+  const im = S.claudeImport; if (im == null) return "";
+  if (!im.length) return `<section class="chsec"><h2 class="chh">Import from Claude</h2>
+    <p class="note">No MCP servers found in <code>~/.claude.json</code>.</p></section>`;
+  return `<section class="chsec"><h2 class="chh">Import from Claude (${im.length})</h2>
+    <div class="conn-list">${im.map((c,i)=>{
+      const line = c.transport==="stdio"
+        ? [c.command, ...(Array.isArray(c.args)?c.args:[])].filter(Boolean).join(" ") : (c.url||"");
+      return `<div class="conn-row"><div class="conn-main">
+        <div class="conn-name">${esc(c.name||"unnamed")} <span class="pill ${c.transport==="stdio"?"p-acc":"p-mut"}">${esc(c.transport||"?")}</span></div>
+        <div class="conn-sum"><code>${esc(line)}</code></div></div>
+        <div class="conn-ctl"><button class="btn" type="button" data-import-add="${i}" ${S.connBusy?"disabled":""}>Add</button></div>
+      </div>`;
+    }).join("")}</div></section>`;
+}
 
 /* ── the LOCAL half ──
    One 1MCP process fronts every enabled local server, so the session sees one

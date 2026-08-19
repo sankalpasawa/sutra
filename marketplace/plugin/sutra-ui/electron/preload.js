@@ -33,6 +33,14 @@ contextBridge.exposeInMainWorld("sutra", {
      This call exists to tell the shell to stop counting, nothing more. */
   deferUpdate: () => ipcRenderer.invoke("sutra:update-defer"),
 
+  /* Download + verify a newer build into staging, in the background. The panel
+     calls this when its own "Check for updates" finds one, because the staging
+     route is token-authenticated and the token is not here. Resolves
+     {ok, staged, version} -- the panel reports what actually happened rather
+     than claiming a download it did not observe. Arms nothing: the staged build
+     applies through the existing countdown/quit path. */
+  stageUpdate: () => ipcRenderer.invoke("sutra:update-stage"),
+
   /* Open a native Finder folder chooser and resolve the chosen absolute path,
      or null if the user cancels. Backs the working-directory fields; absent in a
      browser, where the panel keeps its text inputs as the only way in. */

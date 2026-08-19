@@ -1,6 +1,6 @@
 <title>Sutra</title>
 
-<link rel="stylesheet" href="/static/panel.css">
+<link rel="stylesheet" href="/static/panel.css?v=__ASSETVER__">
 
 <div class="wrap">
   
@@ -155,19 +155,19 @@
   </div>
 </div>
 
-<script src="/static/js/01-state.js"></script>
-<script src="/static/js/02-helpers.js"></script>
-<script src="/static/js/03-org.js"></script>
-<script src="/static/js/04-screens.js"></script>
-<script src="/static/js/05-chat.js"></script>
-<script src="/static/js/06-render.js"></script>
-<script src="/static/js/07-loaders.js"></script>
-<script src="/static/js/08-boot.js"></script>
+<script src="/static/js/01-state.js?v=__ASSETVER__"></script>
+<script src="/static/js/02-helpers.js?v=__ASSETVER__"></script>
+<script src="/static/js/03-org.js?v=__ASSETVER__"></script>
+<script src="/static/js/04-screens.js?v=__ASSETVER__"></script>
+<script src="/static/js/05-chat.js?v=__ASSETVER__"></script>
+<script src="/static/js/06-render.js?v=__ASSETVER__"></script>
+<script src="/static/js/07-loaders.js?v=__ASSETVER__"></script>
+<script src="/static/js/08-boot.js?v=__ASSETVER__"></script>
 <!-- 10-activity.js loads before 09-tail.js on purpose: 09-tail ends with boot(),
      which must remain the final statement (see test 21b). Activity self-mounts on
      DOMContentLoaded, so load order before boot() is safe. -->
-<script src="/static/js/10-activity.js"></script>
+<script src="/static/js/10-activity.js?v=__ASSETVER__"></script>
 <!-- 11-teamsutra.js: the Ask Sutra selection bubble. Same self-mounting shape
      as 10-activity.js, and before 09-tail.js for the same test-21b reason. -->
-<script src="/static/js/11-teamsutra.js"></script>
-<script src="/static/js/09-tail.js"></script>
+<script src="/static/js/11-teamsutra.js?v=__ASSETVER__"></script>
+<script src="/static/js/09-tail.js?v=__ASSETVER__"></script>

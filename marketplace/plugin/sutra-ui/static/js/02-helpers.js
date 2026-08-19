@@ -193,6 +193,9 @@ const S = {
   auto:null, autoError:null,
   /* updates: null until the operator asks -- see updatesHtml(). */
   upd:null, updBusy:null, updError:null, updMsg:null,
+  /* a background stage() is in flight -- distinct from updBusy, which disables
+     the buttons; staging deliberately leaves the screen usable */
+  updStaging:false,
   /* routines: null until the screen is opened (it shells out to launchctl). */
   rt:null, rtError:null, rtBusy:null, rtMsg:null, rtForm:null, rtRuns:{}, rtOpen:{},
   /* The run being read: {rid, name, started}. null means none is open. runDetail

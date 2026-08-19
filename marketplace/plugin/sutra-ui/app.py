@@ -30,6 +30,14 @@ import session_reader as sr
 import org_api
 import providers
 import composio_store
+# Kept through the Composio migration for ONE surviving surface: the read-only
+# "Present in Claude" mirror (/api/connectors/configured -> claude_configured),
+# which reads the operator's Claude via `claude mcp list` rather than Sutra's own
+# store, so it has no Composio equivalent. The merge dropped this import while
+# keeping the endpoint that calls it -- a NameError on first request. The rest of
+# the module (preset gallery, registry search, ~/.claude.json import) is retained
+# in the tree but no longer routed: the local (1MCP) half owns those paths now.
+import connectors_store
 import local_store
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
@@ -492,30 +500,69 @@ def _ensure_workdir(path=None):
 WORKDIR_READY = _ensure_workdir()
 
 
+def _asset_version() -> str:
+    """A token that CHANGES whenever any panel asset changes, appended to every
+    /static/js/*.js and panel.css URL as ?v=<token>.
+
+    Why this exists: a desktop update replaces the bundle, but the module URLs
+    were identical across versions and StaticFiles serves them with an ETag and
+    NO Cache-Control. Chromium is free to reuse the cached copy without
+    revalidating, so an updated app kept rendering the OLD UI -- the "Test pane
+    is still there after I removed it" report was exactly this: 2.103.0 shipped
+    without it, the window ran a cached 02-helpers.js that still had it. A
+    per-build token in the URL makes the new bundle request new URLs, so the
+    cache can never serve last version's Javascript.
+
+    Derived from the newest mtime across the served assets rather than a wired
+    version string: it needs no bump to stay correct, works from a source
+    checkout where no STAMP exists, and changes for ANY edit, not just a version
+    bump. Cheap -- a dozen stats on one page load."""
+    root = HERE / "static"
+    newest = 0.0
+    for p in [root / "panel.css", root / "panel.html", *sorted((root / "js").glob("*.js"))]:
+        try:
+            m = p.stat().st_mtime
+            if m > newest:
+                newest = m
+        except OSError:
+            pass
+    return str(int(newest))
+
+
 def _panel_html() -> str:
     """The Tier-3 org/reorg studio: the reviewed design shell, wired to the real
     /api/org/* endpoints (org_api.py -> placement_engine.py). Markup and CSS
     are byte-identical to the reviewed design; only the data layer differs
     (seed constants replaced with fetch()).
-    """
-    return (HERE / "static" / "panel.html").read_text(encoding="utf-8")
+
+    The __ASSETVER__ token in the asset URLs is substituted here, per request, so
+    the page always references the version of the JS/CSS currently on disk."""
+    html = (HERE / "static" / "panel.html").read_text(encoding="utf-8")
+    return html.replace("__ASSETVER__", _asset_version())
+
+
+# The page itself must never be cached, or the browser serves an old page whose
+# asset URLs point at old ?v= tokens -- which would defeat the busting below.
+# The versioned JS/CSS, by contrast, are safe to cache HARD: their URL changes
+# when they do.
+_NOCACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
+def index() -> HTMLResponse:
     """THE app. This previously served term.html (the xterm console), so the
     front door showed a completely different UI from the studio, and the studio
     was reachable only if you already knew to type /panel. Anyone who opened
     the server saw the wrong product. The studio IS the app; the older
     surfaces remain reachable under /legacy/* below.
     """
-    return _panel_html()
+    return HTMLResponse(_panel_html(), headers=_NOCACHE)
 
 
 @app.get("/panel", response_class=HTMLResponse)
-def panel_page() -> str:
+def panel_page() -> HTMLResponse:
     """Alias for /, so existing links and bookmarks keep working."""
-    return _panel_html()
+    return HTMLResponse(_panel_html(), headers=_NOCACHE)
 
 
 # --- legacy surfaces -------------------------------------------------------
@@ -1233,6 +1280,22 @@ def api_local_refresh(body: dict = None) -> dict:
     one tracks the aggregator itself. Both ride the Electron shell's update
     tick. Body {"force": true} skips the TTL. Never raises."""
     return local_store.refresh_agent(force=bool((body or {}).get("force")))
+
+
+@app.get("/api/connectors/configured")
+def api_connectors_configured() -> dict:
+    """The connectors present in the operator's Claude, read via `claude mcp list`
+    (Option A, founder direction 2026-08-15):
+
+        {"connectors": [{name, target, url, transport, status, state}, ...],
+         "error": None | str, "stale": bool}
+
+    READ-ONLY and DISPLAY-ONLY — this never enters _sutra_mcp_config / the
+    governed `claude -p` spawn path. The UI shows these with status badges and
+    delegates all add/auth to Claude itself (typed into the PTY). Fail-soft:
+    a slow/missing CLI yields an error note (with last-good stale rows), not a
+    500. See connectors_store.claude_configured."""
+    return connectors_store.claude_configured()
 
 
 @app.get("/api/state")

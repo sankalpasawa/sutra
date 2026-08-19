@@ -15,7 +15,11 @@ const html = fs.readFileSync(PANEL, 'utf8');
    ORDERED list of /static/js/*.js modules. Concatenate them in order (the same way
    test_panel.js does) so the extraction below sees the real functions instead of a
    -1 indexOf and a null match. */
-const refs = [...html.matchAll(/<script src="\/static\/js\/([^"]+)"><\/script>/g)].map(m => m[1]);
+/* The src carries a ?v=<token> cache-bust the server substitutes per build, so the
+   query is captured separately and dropped -- reading "01-state.js?v=__ASSETVER__"
+   off disk is an ENOENT, which is exactly how this broke. test_panel.js's loader
+   strips it the same way. */
+const refs = [...html.matchAll(/<script src="\/static\/js\/([^"?]+)(?:\?[^"]*)?"><\/script>/g)].map(m => m[1]);
 if (!refs.length) throw new Error('panel.html references no /static/js modules -- has the shell changed?');
 const script = refs.map(name => fs.readFileSync(__dirname + '/static/js/' + name, 'utf8')).join('\n');
 

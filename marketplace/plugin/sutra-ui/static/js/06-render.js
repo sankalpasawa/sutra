@@ -127,8 +127,10 @@ function agentDetailHtml(meta, messages){
   for (let i=0;i<steps.length;i++){
     const m = steps[i];
     const txt = m.text ? `<div class="agstep-text md">${mdHtml(m.text)}</div>` : "";
-    const tools = (m.tools&&m.tools.length)
-      ? `<div class="agstep-tools">${[...new Set(m.tools)].map(x=>`<span class="pill p-acc">${esc(x)}</span>`).join("")}</div>` : "";
+    /* the captured agentic output for this step — command/input + collapsible result */
+    const tools = (m.calls && m.calls.length) ? toolCallsHtml(m.calls)
+      : ((m.tools&&m.tools.length)
+          ? `<div class="agstep-tools">${[...new Set(m.tools)].map(x=>`<span class="pill p-acc">${esc(x)}</span>`).join("")}</div>` : "");
     if (!txt && !tools) continue;
     stepsHtml += `<div class="agstep${i===lastTextIdx?" result":""}">${tools}${txt}</div>`;
   }
@@ -807,6 +809,20 @@ function render(){
      costs one subprocess per session rather than one per repaint, and a pane
      opened later gets its bar without a second code path. */
   S.openPanes.forEach(sid => loadRepo(sid, false));
+  /* THE FLOOR under "an open pane has read its transcript". This used to be the
+     responsibility of each site that opens a pane -- the rail's click handler,
+     the keyboard nav, the boot block -- and the ⋮ > "open in repo" action was
+     one that forgot, so it pushed a session into openPanes at loadState
+     "unread" and left it there. Nothing recovered it: ensureTranscript() only
+     acts on "unread" but is only CALLED from those open sites, and the
+     background re-read in applySessionChange() fires only when the SSE reports
+     a WRITE to that file. An idle transcript is never written, so the pane sat
+     on "Transcript not read yet" forever -- not a flicker, a permanent state.
+     Enforcing it here makes the invariant structural: every path into
+     openPanes, including ones not yet written, gets the read. Idempotent for
+     the same reason loadRepo is -- ensureTranscript() returns immediately
+     unless the session is real AND still unread, so a repaint costs nothing. */
+  S.openPanes.forEach(sid => ensureTranscript(S.sessions.find(x=>x.id===sid)));
   /* Prime the subagents fold for open panes receiving agent writes, or already
      expanded. Idempotent like loadRepo. */
   S.openPanes.forEach(sid => {
