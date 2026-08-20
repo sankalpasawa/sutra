@@ -1,6 +1,23 @@
 # Sutra — Current Version
 
-## v2.110.1 (2026-08-18, HEAD)
+## v2.111.0 (2026-08-20, HEAD)
+
+**Connector platform rewrite: P1 + P2 + the permission engine.** The layer
+deleted in 96edce8 is rebuilt as a provider-agnostic module under
+`marketplace/plugin/connectors/`. GitHub is the first and only provider.
+Authorization is the GitHub App device flow, which needs no client secret and
+has no redirect URI at all -- deleting the entire callback attack surface. The
+credential lives in the macOS Keychain; the database holds a reference and
+expiry timestamps and no token bytes, verified by a raw scan of the db file.
+The permission model is a port of Claude Code's own: `Tool(specifier)` rules,
+deny -> ask -> allow with specificity never reordering, six modes, managed
+settings that no other scope can override. 138 tests, zero new dependencies.
+
+**Honest scope:** this is a library plus a CLI. `sutra-ui` is untouched, so the
+installed desktop app has no connectors screen and no connect button. Wiring is
+P3+.
+
+## v2.110.1 (2026-08-18)
 
 **Synced with upstream main; both connector models kept side by side.** This merge brings sankalpasawa/main (25 commits: Composio tool router, the 1MCP local aggregator, the chat governance surface, Balance graduation) together with this fork's line (agentic tool output, the transcript-pane fix, the update-check fix, asset cache-busting, Test pane removal). The connectors collision was resolved by keeping **both**: upstream's Hosted (Composio) and Local (1MCP) halves are the live screen, and this fork's **Present in Claude** mirror — the one half with no upstream equivalent, and whose `/api/connectors/configured` endpoint survives because it reads Claude rather than Sutra's own store — is kept beneath them. `connectors_store.py` and its 66 tests are retained in the tree; the preset gallery and registry search they backed are not re-wired, because upstream's local half now owns those routes. Version set to 2.110.1 as the base for the next connectors rewrite. Upstream's own notes below are labelled v3.0.0/v3.1.0; their `plugin.json` read 2.99.1, so the numbering here is deliberately ahead of both.
 

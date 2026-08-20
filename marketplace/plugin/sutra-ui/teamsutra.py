@@ -16,7 +16,7 @@ queued. One enum value instead of a parallel approval subsystem.
 SHAPE. Copied from routines.py, the store whose SCHEMA is actually CHECKED on
 load (a mismatch refuses rather than half-interprets). One JSON file per record
 at ~/.sutra-ui/teamsutra/t-<8hex>.json (env override SUTRA_UI_TEAMSUTRA), dir
-0700, records 0600, every write atomic via composio_store._write_json.
+0700, records 0600, every write atomic via json_store.write_json.
 
 ORDERING. Strictly by the validated created_ms field, oldest first, id as the
 tie-break. NEVER glob order: t-<8hex> names are random, so directory order is
@@ -30,7 +30,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import composio_store as cx
+import json_store
 
 SCHEMA = 1
 ID_RE = re.compile(r"^t-[0-9a-f]{8}$")
@@ -143,7 +143,7 @@ def validate_new(body):
 
 def _write(rec):
     _mkdir_private(store_dir())
-    cx._write_json(_path(rec["id"]), rec)
+    json_store.write_json(_path(rec["id"]), rec)
 
 
 def create(body):
@@ -160,7 +160,7 @@ def load(tid):
     p = _path(tid)
     if not p.exists():
         raise FileNotFoundError(tid)
-    rec = cx._read_json(p, {})
+    rec = json_store.read_json(p, {})
     if not rec:
         # The file exists but did not parse as a dict — that is corruption,
         # and the caller (listing) surfaces it as such rather than "missing".
