@@ -532,7 +532,6 @@ const TITLES = {teamsutra:["Teamsutra","~/.sutra-ui/teamsutra/t-*.json"],departm
   editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
-  connectors:["Connectors","Composio toolkits + local MCP servers, offered to the sessions this panel starts"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
   settings:["Settings","~/.sutra-ui/settings.json · PATH"],
