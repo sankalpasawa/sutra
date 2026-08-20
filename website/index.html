@@ -93,13 +93,6 @@ h1 .fork-b.deepen .w{color:var(--ink)}              /* …then commits. the fork
 .cta .note{display:block;margin:14px 0 0;font-size:13px;color:var(--muted)}
 
 /* non-Mac notice (built in JS, styled here) */
-.dl-gate{max-width:30rem;margin:18px auto 0;opacity:0;transform:translateY(-4px);
-  transition:opacity .26s ease-out,transform .26s ease-out}
-.dl-gate[data-open="1"]{opacity:1;transform:none}
-.dl-gate p{margin:0 0 6px;padding-top:16px;border-top:1px solid var(--rule);
-  font-size:14px;line-height:1.55;color:var(--ink-2)}
-.dl-gate a{font-size:14px;color:var(--accent);text-decoration:none;
-  border-bottom:1px solid rgba(168,84,58,.35)}
 
 /* ── wordless scroll cue ────────────────────────────── */
 .cue{display:none;position:absolute;left:50%;bottom:38px;transform:translateX(-50%);
@@ -523,7 +516,7 @@ h1,h2,p{overflow-wrap:break-word}
     <div class="col">
       <h2><span class="ln fork-a" data-anim="words">This used to take a company.</span><span class="ln fork-b" data-anim="words">Now it just takes <em>you</em>.</span></h2>
       <a class="btn" data-dl data-anim
-         href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">Download for Mac — free <span class="ar">→</span></a>
+         href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">Download for Mac <span class="ar">→</span></a>
       <p class="fine" data-anim>macOS 11 or newer · signed and notarized</p>
     </div>
 
@@ -984,52 +977,12 @@ function wireDownload(){
     return;
   }
 
-  if(os==='ios'||os==='android'){ wireShare(btns); return; }
-  wireNotice(btns);
+  /* Everything that is not a Mac gets the releases page: one label on every device,
+     one destination that explains itself. No rewritten buttons, no share sheets,
+     no notices -- founder 2026-08-20: "just write it as Download for Mac." */
+  btns.forEach(function(a){ a.href = RELEASES; });
 }
 
-/* phones and tablets: move the link to the machine that can run it */
-function wireShare(btns){
-  var canShare = typeof navigator.share==='function';
-  var url=location.origin+location.pathname;
-  btns.forEach(function(a){
-    var isClose=!!(a.closest&&a.closest('.close'));
-    var label=(canShare?'Send this to my Mac':'Copy the link for your Mac')+(isClose?' — free':'');
-    var html=label+' <span class="ar">→</span>';
-    a.removeAttribute('href'); a.setAttribute('role','button'); a.tabIndex=0; a.innerHTML=html;
-    function flash(m){ a.textContent=m; setTimeout(function(){ a.innerHTML=html; },3200); }
-    function act(){
-      if(canShare){
-        navigator.share({title:'Sutra — Manage AI, you get better.',url:url})
-          .then(function(){ flash('Sent. Open it on your Mac.'); }).catch(function(){});
-      } else if(navigator.clipboard){
-        navigator.clipboard.writeText(url)
-          .then(function(){ flash('Link copied. Paste it on your Mac.'); })
-          .catch(function(){ flash(url); });
-      } else { flash(url); }
-    }
-    a.addEventListener('click',act);
-    a.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); act(); } });
-  });
-}
-
-/* Windows / Linux / unknown: state the fact inline, block nothing */
-function wireNotice(btns){
-  btns.forEach(function(a){
-    var opened=false;
-    a.addEventListener('click',function(ev){
-      if(opened) return;                        /* second click passes straight through */
-      ev.preventDefault(); opened=true;
-      var gate=document.createElement('div');
-      gate.className='dl-gate'; gate.setAttribute('role','status'); gate.setAttribute('aria-live','polite');
-      gate.innerHTML='<p>Sutra is a Mac app. There is no Windows or Linux build yet.</p>'+
-                     '<a href="'+ARM+'">Download the Mac version anyway</a>';
-      a.parentNode.insertBefore(gate,a.nextSibling);
-      requestAnimationFrame(function(){ gate.setAttribute('data-open','1'); });
-      try{ gate.querySelector('a').focus(); }catch(e){}
-    });
-  });
-}
 })();
 
 </script>
