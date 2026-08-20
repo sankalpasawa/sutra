@@ -2,6 +2,24 @@
 
 **status**: active · **updated**: 2026-08-20
 
+## 2.110.2
+
+- **The thinking log answers every click.** Opened with zero tool runs it
+  says "nothing has run yet in this turn" — an open log never renders as
+  nothing, which read as a dead button.
+- **The lone streaming caret is gone.** The caret now waits for the first
+  visible text in BOTH render paths (settled and per-token patch), which
+  share one body builder.
+- **Governance text no longer leaks into replies.** Unfenced INPUT:/TYPE:/
+  ROUTE: runs are stripped like their fenced forms; a lone key-looking line
+  inside prose survives.
+- **Design-system fixes from the new design-qa sweep**: roster buttons paint
+  token ink (not UA black), the governance chip has a visible focus ring,
+  and the activity pulses honor prefers-reduced-motion.
+- **New verification lanes in-repo**: `qa-shell/` (state + pixel checks vs
+  the RUNNING app) and `qa/` (design-qa product sweep), with the four-level
+  test-authoring standard in `PUBLISH-CHECK.md`.
+
 ## %s (%s)
 
 **Connector platform rewrite — phases P1 and P2, plus the permission engine.**
