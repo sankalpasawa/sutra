@@ -1,6 +1,39 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-19
+**status**: active · **updated**: 2026-08-20
+
+## %s (%s)
+
+**Connector platform rewrite — phases P1 and P2, plus the permission engine.**
+Replaces the layer removed in 96edce8. Nothing here is reachable from the
+desktop app yet: the module ships as a library and a CLI, and the sutra-ui
+wiring is later work. The version bump records that the code landed, not that
+a user-facing feature did.
+
+- **ADR-034 — connector token ownership.** The Connector Service is the only
+  confidential client; the desktop renderer never holds a GitHub credential.
+  Grounded in four verified GitHub facts, three of which contradict widely
+  repeated older guidance: PKCE is now supported but does NOT relax the
+  `client_secret` requirement on the web-flow code exchange, so a desktop
+  binary cannot redeem a code; the device flow needs no secret; and device-flow
+  refresh needs no secret either, which is what makes a secret-less local
+  client viable with a full 8h/6-month lifecycle rather than a degraded one.
+- **GitHub App, not OAuth App.** Per-repository, per-resource permissions are
+  the only honest basis for "read-only on repo X". `administration` is not
+  requested, so repository deletion is unreachable rather than merely denied.
+- **Permission engine** — a faithful port of Claude Code's model: `Tool(specifier)`
+  rules, deny -> ask -> allow with first-match-wins and no specificity reordering,
+  six modes, a five-source settings hierarchy with managed settings undeniable,
+  and hooks that can narrow but never widen.
+- **P1 lifecycle** — schema and migrations, OAuth transaction FSM with
+  database-enforced single-use redemption, device-flow strategy, macOS Keychain
+  credential store via Security.framework (not the `security` CLI, which puts
+  secrets in argv), connector lifecycle, reauthorization, disconnect.
+- **P2 discovery** — installations, repositories and organizations through the
+  GitHub App endpoints, Link-header pagination, HMAC-signed opaque cursors
+  validated four ways before dereference, uninstall detection.
+- 138 tests, stdlib only. No new runtime dependencies.
+- Design pack: `marketplace/plugin/connectors/design/`.
 
 ## 2.107.3
 
