@@ -17,7 +17,11 @@
 | 7 | [07-operations.md](07-operations.md) | 20 rate limits · 21 caching · 22 audit architecture · 23 observability |
 | 8 | [08-delivery.md](08-delivery.md) | 24 testing · 26 deployment · 27 production security checklist · 28 troubleshooting |
 
-Deliverable **25 (complete implementation)** is the next phase and is deliberately absent. Its plan is in `08-delivery.md §Implementation sequence`.
+Deliverable **25 (complete implementation)** is in progress: **P1–P3 have shipped**
+(lifecycle, discovery, permission layer, panel surface). P4–P7 — the agent tool
+gateway, approval cards, rate budgets and the CI security gate — have not.
+`08-delivery.md §8.6` carries the phase table and, more usefully, the explicit
+list of what P1–P3 do *not* yet give you.
 
 ## The five claims this pack rests on
 

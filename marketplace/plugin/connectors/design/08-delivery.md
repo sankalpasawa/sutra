@@ -182,21 +182,33 @@ Desktop ──► API Gateway (TLS, WAF, per-operator rate limit)
 
 ---
 
-## 8.6 Implementation sequence (deliverable 25 — next phase)
+## 8.6 Implementation sequence
 
-| Phase | Ships | Proves |
-|---|---|---|
-| **P1** | schema + migrations, `ConnectorService`, `CredentialStore`+Keychain, device-flow `AuthStrategy`, `/authorize` + poll, identity, connector row | a real GitHub connection persists with no secret on disk |
-| **P2** | `GitHubClient` (pinned version, Link pagination, error classification), installations, repos, orgs, `validate`, reauth, disconnect | the full lifecycle, including every non-happy path in `02 §2.5` |
-| **P3** | capability model, resolver, policy table, capability API | permission decisions exist outside the model and are testable without one |
-| **P4** | tool registry + schemas + gateway, READ tools, untrusted envelope, taint tracking, audit chain | an agent can read GitHub and cannot act on what it reads |
-| **P5** | approval grants + gate + desktop cards, WRITE tools, idempotency | a write happens only with a human keystroke on the exact operation |
-| **P6** | rate budgets, breaker, retry classification, cache, metrics, alerts | it survives contact with GitHub's limits |
-| **P7** | the full security suite of `8.3` in CI as a merge gate | the guarantees are enforced, not merely intended |
+| Phase | Ships | Status |
+|-------|-------|--------|
+| **P1** | schema + migrations, `ConnectorService`, `CredentialStore`+Keychain, device-flow `AuthStrategy`, `/authorize` + poll, identity, connector row | ✅ **shipped 2.111.0** — verified against a live connection to `@tchandrakar` (id 64305513) |
+| **P2** | `GitHubClient` (pinned version, Link pagination, error classification), installations, repos, orgs, `validate`, reauth, disconnect | ✅ **shipped 2.111.0** — ⚠️ **unproven against real repositories**: the GitHub App is authorized but not installed, so `/user/installations` returns `total_count: 0` and only the empty-state path has run live |
+| **P3** | capability model, resolver, policy table, capability API | ✅ **shipped 2.112.0** — settings resolved from the five real paths; 11 panel endpoints; Connectors screen |
+| **P4** | tool registry + gateway, READ tools, untrusted envelope, taint tracking, audit chain wiring | ⬜ next |
+| **P5** | approval grants + gate + desktop cards, WRITE tools, idempotency | ⬜ |
+| **P6** | rate budgets, breaker, retry classification, cache, metrics, alerts | ⬜ |
+| **P7** | the full security suite of `8.3` in CI as a merge gate | ⬜ |
 
-P7 is not last because it is least important. It is last because it asserts the properties P1–P6 build, and it must be a merge gate from the day it exists.
+P7 is not last because it is least important. It is last because it asserts the
+properties P1–P6 build, and it must be a merge gate from the day it exists.
 
----
+### What P1–P3 do NOT yet give you
+
+Stated plainly so the phase ticks above are not read as more than they are:
+
+| Not built | Consequence today |
+|---|---|
+| Tool gateway (P4) | **Nothing invokes a capability.** The permission engine answers "would this be allowed"; no code path asks it on behalf of an agent. |
+| Untrusted envelope + taint tracking (P4) | Repository content is not yet wrapped or taint-tracked, because nothing reads it into an agent. |
+| Approval grants (P5) | `ASK` is a decision the engine returns; no card renders it and no grant is minted. |
+| Rate budgets, breaker (P6) | GitHub's limits are classified correctly but not yet enforced on our side. |
+| `web_pkce` strategy | Hosted-only. The port exists; the implementation does not. |
+| Remote revocation on disconnect | Needs a `client_secret` local mode is never issued. Reported honestly rather than claimed. |
 
 ## 8.7 Troubleshooting
 
@@ -221,51 +233,53 @@ P7 is not last because it is least important. It is last because it asserts the 
 ## 8.8 Production readiness checklist
 
 ```
+(marked as of 2.112.0 — P1-P3. Unticked items are P4-P7 or hosted-only.)
+
 OAuth
 [ ] Authorization Code flow implemented (hosted strategy)
-[ ] Device flow implemented (local strategy)                       ← v1 path
+[x] Device flow implemented (local strategy)                       ← v1 path
 [ ] PKCE implemented, S256 only, `plain` unreachable
-[ ] State: 256-bit, hashed at rest, single-use via rowcount, ≤10 min, operator-bound
-[ ] OAuth transactions expire and are swept
-[ ] Authorization codes single-use (GitHub-enforced + our claim check)
-[ ] Client secret never in the desktop binary, repo, log, or renderer
+[x] State: 256-bit, hashed at rest, single-use via rowcount, ≤10 min, operator-bound
+[x] OAuth transactions expire and are swept
+[x] Authorization codes single-use (GitHub-enforced + our claim check)
+[x] Client secret never in the desktop binary, repo, log, or renderer
 [ ] Redirect URI exact-match, one registered value (hosted)
 
 Credentials
-[ ] Encrypted at rest — Keychain (local) / KMS envelope with AAD (hosted)
-[ ] Never in logs, responses, metric labels, traces, or crash dumps
+[x] Encrypted at rest — Keychain (local) / KMS envelope with AAD (hosted)
+[x] Never in logs, responses, metric labels, traces, or crash dumps
 [ ] CI test greps every sink for token-shaped strings
-[ ] Credential type not serialisable; repr/str/format redacted
-[ ] Rotation on every refresh; old credential destroyed
-[ ] No credential export path exists anywhere in the codebase
+[x] Credential type not serialisable; repr/str/format redacted
+[x] Rotation on every refresh; old credential destroyed
+[x] No credential export path exists anywhere in the codebase
 
 Identity & lifecycle
-[ ] Connector identity separate from application identity
-[ ] GitHub numeric user id is the stable provider identity; login is display-only
-[ ] UNIQUE(operator_id, provider, provider_account_id) present and tested
-[ ] Multiple GitHub accounts: connect, switch, isolate, no overwrite
-[ ] Full lifecycle implemented incl. specific REAUTH reasons
-[ ] Reauthorize preserves the connector row; account mismatch is rejected
-[ ] Disconnect deletes credentials before attempting remote revocation
-[ ] Disconnect UI states honestly whether GitHub authorization was revoked
+[x] Connector identity separate from application identity
+[x] GitHub numeric user id is the stable provider identity; login is display-only
+[x] UNIQUE(operator_id, provider, provider_account_id) present and tested
+[x] Multiple GitHub accounts: connect, switch, isolate, no overwrite
+[x] Full lifecycle implemented incl. specific REAUTH reasons
+[x] Reauthorize preserves the connector row; account mismatch is rejected
+[x] Disconnect deletes credentials before attempting remote revocation
+[x] Disconnect UI states honestly whether GitHub authorization was revoked
 
 Authorization
 [ ] Repository permissions enforced; 404 never rendered as "does not exist"
 [ ] Organization restrictions handled: SSO, third-party approval, EMU, suspended, selected-repos
-[ ] Capabilities enforced outside the LLM, re-resolved per call, never cached
-[ ] Unknown capability fails closed
-[ ] Destructive operations require human approval; repo/org deletion not implemented at all
+[x] Capabilities enforced outside the LLM, re-resolved per call, never cached
+[x] Unknown capability fails closed
+[x] Destructive operations require human approval; repo/org deletion not implemented at all
 [ ] Approval grants bound to an operation hash, single-use, ≤5 min, re-verified at dispatch
-[ ] Cross-user connector access prevented (operator predicate + 404 + RLS)
+[x] Cross-user connector access prevented (operator predicate + 404 + RLS)
 [ ] Cross-connector and cross-repository access prevented
-[ ] connector_id never appears in a tool schema
+[x] connector_id never appears in a tool schema
 
 Agent safety
 [ ] All provider content wrapped as untrusted; no filename confers trust
 [ ] Taint tracking escalates writes to ASK_USER after any untrusted read
 [ ] Injection classifiers are telemetry only, never an authz input
 [ ] Tool args strictly schema-validated; additionalProperties false; no URLs in identifiers
-[ ] Cursors opaque and signed; never dereferenced
+[x] Cursors opaque and signed; never dereferenced
 
 Operations
 [ ] 403 classified four ways; permission 403 never retried
@@ -273,12 +287,12 @@ Operations
 [ ] retry-after honoured exactly; circuit breaker per connector
 [ ] File contents cached only at an immutable SHA
 [ ] Cache keys always include connector_id
-[ ] Audit rows for every meaningful action, hash-chained, append-only, secret-free
+[x] Audit rows for every meaningful action, hash-chained, append-only, secret-free
 [ ] Chain verification scheduled; failure is P1
 [ ] Metrics, alerts and request-id tracing in place; no PII in labels
 
 Build & release
-[ ] Development and production GitHub Apps fully separated
+[x] Development and production GitHub Apps fully separated
 [ ] .env holds secret names, not values; pre-commit secret scanning enforced
 [ ] Desktop packages signed and notarised (Keychain ACL depends on it)
 [ ] Renderer: contextIsolation on, nodeIntegration off, strict CSP
