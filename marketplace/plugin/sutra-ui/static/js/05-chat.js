@@ -524,7 +524,8 @@ SCREENS.settings = () => {
 /* ── Staged department creation (§3.3). Four collapsible sections and a completion meter —
    NOT a Next/Back wizard. Nothing is minted at any step; the last step renders a CLI string. */
 /* ══════════════════════ render ══════════════════════ */
-const TITLES = {teamsutra:["Teamsutra","~/.sutra-ui/teamsutra/t-*.json"],departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
+const TITLES = {connectors:["Connectors","GitHub · credentials in the OS keychain, never in this window"],
+  teamsutra:["Teamsutra","~/.sutra-ui/teamsutra/t-*.json"],departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],

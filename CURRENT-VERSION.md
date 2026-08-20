@@ -1,6 +1,24 @@
 # Sutra — Current Version
 
-## v2.111.0 (2026-08-20, HEAD)
+## v2.112.0 (2026-08-20, HEAD)
+
+**The connectors screen is live, and permissions are resolved from disk.** P3
+lands the permission layer over real settings files, and the panel gets its
+Connectors surface back -- rebuilt rather than restored: it renders the new
+connector model, not the Composio/1MCP one that was removed.
+
+What an operator can now do in the app: connect a GitHub account through the
+device flow (the code is shown large and monospaced because it is transcribed
+by hand into another window), see which repositories the installation actually
+covers and what each one permits, see which organizations have Sutra installed
+and which merely have you as a member, read the permission rules in the order
+the engine evaluates them, and read the hash-chained audit trail. The panel
+never sees a credential -- it deals in connector ids and connector state only.
+
+**Honest scope:** the agent tool gateway is not built. Nothing invokes these
+capabilities yet; the screen shows what WOULD be permitted. That is P4.
+
+## v2.111.0 (2026-08-20)
 
 **Connector platform rewrite: P1 + P2 + the permission engine.** The layer
 deleted in 96edce8 is rebuilt as a provider-agnostic module under

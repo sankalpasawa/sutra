@@ -480,6 +480,7 @@ const ICON = {
   hist:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>',
   health:'<path d="M3 13h4l2.5 6 4-14 2.5 8h5"/>',
   skills:'<path d="M12 3l7.5 4.3v8.6L12 20.2 4.5 15.9V7.3z"/><path d="M12 12l7.5-4.4M12 12v8.2M12 12L4.5 7.6"/>',
+  link:'<path d="M10.1 13.9a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7l-1.3 1.3"/><path d="M13.9 10.1a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 1 0 5.7 5.7l1.3-1.3"/>',
   rout:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.4V12l3 1.8"/><path d="M4.5 5.5l2.2 2.2M19.5 5.5l-2.2 2.2"/>',
   auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
@@ -535,6 +536,13 @@ function railSpec(){
       /* Teamsutra: tasks filed from the Ask Sutra selection chat. The count is
          the OPEN work (queued + claimed + needs_review) — done/dropped would
          inflate it into a lie. Withheld until the screen has been read. */
+      /* External World. The count is the number of ACTIVE connectors, and it is
+         withheld until the screen has been opened, for the same reason Git's is:
+         a 0 before anything was read is a claim about a machine nobody looked
+         at. */
+      {id:"connectors", n:"Connectors", i:"link",
+       c:(S.conn && S.conn.list ? S.conn.list.filter(c=>c.status==="ACTIVE").length : undefined),
+       warn:(S.conn && S.conn.list ? S.conn.list.some(c=>c.status==="REAUTH_REQUIRED") : false)},
       {id:"teamsutra", n:"Teamsutra", i:"rout",
        c:(S.ts ? (S.ts.tasks||[]).filter(t=>["queued","claimed","needs_review"].includes(t.status)).length : undefined)},
       /* Usage sits in RUNTIME because it describes the running account, not the

@@ -825,8 +825,27 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "evals") loadEvals(false);     /* lazy, like Git */
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     if (S.screen === "teamsutra") loadTeamsutra(false);
+    if (S.screen === "connectors") loadConnectors(false);  /* lazy: opens the connector db */
     render(); return;
   }
+  /* Connectors. Every branch returns: these are terminal gestures, not
+     navigation, and falling through would also run the session handlers. */
+  const cStart = e.target.closest("[data-connstart]");
+  if (cStart){ connStart(); return; }
+  const cCancel = e.target.closest("[data-conncancel]");
+  if (cCancel){ connCancel(); return; }
+  const cOpen = e.target.closest("[data-connopen]");
+  if (cOpen){
+    const id = cOpen.dataset.connopen;
+    if (S.conn.open === id){ S.conn.open = null; render(); }
+    else loadConnectorDetail(id);
+    return;
+  }
+  const cDis = e.target.closest("[data-conndis]");
+  if (cDis){ connDisconnect(cDis.dataset.conndis); return; }
+  const cRef = e.target.closest("[data-connrefresh]");
+  if (cRef){ connRefreshRepos(cRef.dataset.connrefresh); return; }
+
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
   /* + on a project heading. Starts the session IN that folder rather than in the

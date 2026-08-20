@@ -27,6 +27,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 import log_reader as lr
 import session_reader as sr
+import connectors_api
 import org_api
 import providers
 
@@ -52,6 +53,9 @@ ALLOWED_HOSTS = [h.strip() for h in
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
 app.include_router(org_api.router)
+# Connector platform (ADR-034). The panel never sees a credential --
+# it deals in connector ids and connector state only.
+app.include_router(connectors_api.router)
 HERE = Path(__file__).resolve().parent
 
 

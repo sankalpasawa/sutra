@@ -3813,3 +3813,31 @@ First release. Minimum viable plugin for functional validation.
 ---
 
 provenance: maintained by Sutra release process; one entry per released plugin version, newest first.
+## %s (%s)
+
+**Connectors screen + P3 permission layer.** The first user-facing half of the
+connector rewrite: the panel gets a Connectors surface, and permission
+decisions are now resolved from real settings files on disk.
+
+- **P3 `permission_service.py`** — resolves the five settings sources from
+  actual paths (managed / session / local / project / user), derives the
+  working set from the connector's installations so a read outside the
+  connector's scope prompts, persists "don't ask again" to
+  `settings.local.json` (local, not project: a rule one operator accepted in a
+  modal is not team policy), and exposes the capability read model. Malformed
+  settings fail CLOSED -- an unreadable policy file must never read as "no
+  policy", which is the widest state there is.
+- **11 panel endpoints** under `/api/connectors`. Synchronous `def`, not
+  `async def`: the GitHub client is blocking stdlib urllib, so FastAPI runs
+  these in a threadpool and a slow GitHub call cannot freeze the panel.
+- **Connectors screen** (`12-connectors.js`) — the External World block's
+  operator projection per ADR-023. Connect via device flow with the code shown
+  for transcription, repositories with per-repo capabilities, organizations
+  separating membership from access, the live permission rule table in
+  evaluation order, and the hash-chained audit trail. An in-flight device flow
+  is labelled EPHEMERAL rather than rendered as settled state.
+- "Authorized but not installed" and "installed but no repositories selected"
+  render as two different states with two different fixes, because they are.
+- 164 tests. 152 panel tests still green, including 21i, the grid guard that
+  caught the last CSS regression.
+
