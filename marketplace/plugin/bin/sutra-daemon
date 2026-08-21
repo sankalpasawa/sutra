@@ -1,0 +1,587 @@
+#!/usr/bin/env python3
+"""sutra-daemon -- P1: the simplest standalone daemon (gate + router + executor).
+
+Founder contract (2026-08-20, session bcb3d1c4):
+  - REACTIVE ONLY: acts on founder-dropped inputs; no schedule ticks (G1 unruled).
+  - ONE-FEATURE-AT-A-TIME: routes are the features; each route is founder-approved
+    through the builder gate; the daemon ships with ZERO approved routes.
+  - FALLBACK = ASK: input with no approved route becomes a durable outbox ask.
+  - THROW-BACK ALWAYS: any unexpected condition (host failure, timeout, verify
+    fail, tampered route, interrupted run) becomes a durable outbox ask with
+    capped evidence. The daemon NEVER retries and NEVER self-heals in P1.
+  - Records land in the ratified v1 stores via the sibling CLIs
+    (sutra-run-log, sutra-verify, sutra-outbox). The record is the API.
+
+Layout ($SUTRA_NATIVE_HOME/daemon/, default ~/.sutra-native/daemon/):
+  inbox.jsonl       founder asks (append-only; one JSON object per line)
+  routes.json       the orchestration file: which input goes to which
+                    workflow on which host session ("kept handy")
+  state.json        input_id -> terminal state; "consumed" MEANS terminal
+                    (passed | fallback | throwback), never merely "read"
+  quarantine.jsonl  malformed inbox lines, verbatim, with byte offset
+  outputs/          per-input artifacts the host session writes
+  daemon.pid        flock'd PID file
+
+Commands:
+  ask <text>                       append an input row
+  start [--interval N] [--once]    run the loop (foreground; --once = single pass)
+  status                           daemon + pending + routes summary
+  stop                             signal the running daemon
+  route-propose --pattern P --workflow W --host claude-bare|codex
+                --prompt-template T --verify-template-id V --verify-version N
+                [--verify-arg name=value ...] [--timeout-s N]
+  route-approve --route-id R --i-approve --operator OP    (builder gate; human only)
+  route-list
+
+Exit codes: 0 ok · 1 runtime refusal · 2 usage error
+"""
+import errno
+import fcntl
+import hashlib
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+import uuid
+
+EVIDENCE_CAP = 2000
+INPUT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+
+
+class _MatchTimeout(Exception):
+    pass
+
+
+def _search_bounded(pattern, text, seconds=2):
+    """re.search with a SIGALRM bound -- a catastrophic pattern cannot hang the pass."""
+    def _boom(sig, frm):
+        raise _MatchTimeout()
+    old = signal.signal(signal.SIGALRM, _boom)
+    signal.alarm(seconds)
+    try:
+        return re.search(pattern, text)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
+DEFAULT_TIMEOUT_S = 300
+HOSTS = ("claude-bare", "codex")
+
+
+def native_home():
+    root = os.environ.get("SUTRA_NATIVE_HOME")
+    if not root:
+        root = os.path.join(os.path.expanduser("~"), ".sutra-native")
+    return root
+
+
+def dhome():
+    d = os.path.join(native_home(), "daemon")
+    os.makedirs(os.path.join(d, "outputs"), exist_ok=True)
+    return d
+
+
+def bin_dir():
+    return os.path.dirname(os.path.realpath(__file__))
+
+
+def now_iso():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def die(msg, code=2):
+    print("sutra-daemon: " + msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def atomic_write_json(path, obj):
+    tmp = path + ".tmp." + str(os.getpid())
+    with open(tmp, "w") as fh:
+        json.dump(obj, fh, indent=1)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
+def load_json(path, default):
+    if not os.path.isfile(path):
+        return default
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def load_json_safe(path, default):
+    """(obj, err) -- corrupt files never crash the loop; callers decide."""
+    try:
+        return load_json(path, default), None
+    except (ValueError, OSError) as e:
+        return default, "%s unreadable: %s" % (os.path.basename(path), e)
+
+
+def append_line(path, obj):
+    line = json.dumps(obj, separators=(",", ":")) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        os.write(fd, line.encode())
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def route_hash(route):
+    """Content hash over everything that changes behavior (not status/audit)."""
+    core = {k: route.get(k) for k in (
+        "route_id", "pattern", "workflow", "host", "prompt_template",
+        "verify_template_id", "verify_version", "verify_args", "timeout_s")}
+    return hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
+
+
+def run_cli(name, args):
+    """Run a sibling v1 CLI; returns (rc, stdout+stderr capped)."""
+    argv = [sys.executable, os.path.join(bin_dir(), name)] + args
+    p = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+    out = (p.stdout + p.stderr)[-EVIDENCE_CAP:]
+    return p.returncode, out
+
+
+def outbox_ask(kind, input_id, text):
+    ask = "[daemon:%s] input %s: %s" % (kind, input_id, text[:EVIDENCE_CAP])
+    rc, out = run_cli("sutra-outbox", ["add", ask, "--operator", "sutra-daemon"])
+    if rc != 0:
+        # last resort: the ask must not be lost silently
+        append_line(os.path.join(dhome(), "outbox-fallback.jsonl"),
+                    {"ts": now_iso(), "kind": kind, "input_id": input_id, "text": text[:EVIDENCE_CAP]})
+    return rc
+
+
+def set_state(states, input_id, state, extra=None):
+    row = {"state": state, "ts": now_iso()}
+    if extra:
+        row.update(extra)
+    states[input_id] = row
+    atomic_write_json(os.path.join(dhome(), "state.json"), states)
+
+
+# ---------------------------------------------------------------- inputs
+
+def cmd_ask(argv):
+    if not argv:
+        die("ask needs the input text")
+    text = " ".join(argv)
+    row = {"input_id": "in-%s-%s" % (time.strftime("%Y%m%d%H%M%S", time.gmtime()), uuid.uuid4().hex[:8]),
+           "ts": now_iso(), "text": text}
+    append_line(os.path.join(dhome(), "inbox.jsonl"), row)
+    print("queued %s" % row["input_id"])
+    return 0
+
+
+def read_inbox():
+    """Complete, parseable rows + quarantined lines. Ignores incomplete tail."""
+    path = os.path.join(dhome(), "inbox.jsonl")
+    rows, quarantined = [], 0
+    if not os.path.isfile(path):
+        return rows, quarantined
+    with open(path, "rb") as fh:
+        data = fh.read()
+    offset = 0
+    for raw in data.split(b"\n"):
+        if not raw:
+            offset += 1
+            continue
+        end = offset + len(raw)
+        if end >= len(data) and not data.endswith(b"\n"):
+            break  # incomplete trailing line; next poll gets it
+        try:
+            row = json.loads(raw.decode())
+            if not isinstance(row, dict) or "input_id" not in row or "text" not in row:
+                raise ValueError("missing input_id/text")
+            if not INPUT_ID_RE.match(str(row["input_id"])):
+                raise ValueError("input_id fails [A-Za-z0-9_-]{1,80} (path-safety)")
+            rows.append(row)
+        except (ValueError, UnicodeDecodeError) as e:
+            append_line(os.path.join(dhome(), "quarantine.jsonl"),
+                        {"ts": now_iso(), "byte_offset": offset, "error": str(e)[:200],
+                         "line": raw.decode(errors="replace")[:EVIDENCE_CAP]})
+            quarantined += 1
+        offset = end + 1
+    return rows, quarantined
+
+
+# ---------------------------------------------------------------- executor
+
+def host_argv(route, prompt):
+    override = os.environ.get("SUTRA_DAEMON_HOST_CMD")  # test seam: JSON argv; {prompt} substituted
+    if override:
+        return [a.replace("{prompt}", prompt) for a in json.loads(override)]
+    if route["host"] == "claude-bare":
+        return ["claude", "--bare", "-p", prompt]
+    if route["host"] == "codex":
+        return ["codex", "exec", "-s", "read-only", prompt]
+    raise ValueError("unknown host: " + route["host"])
+
+
+def process_input(row, routes, states):
+    input_id, text = row["input_id"], row["text"]
+    matched = None
+    for r in routes:
+        if r.get("status") != "approved":
+            continue
+        if route_hash(r) != r.get("approved_hash"):
+            outbox_ask("throwback", input_id,
+                       "route %s content no longer matches its approved hash; nothing run. Text: %s"
+                       % (r.get("route_id", "?"), text))
+            set_state(states, input_id, "throwback", {"why": "route tampered: " + r.get("route_id", "?")})
+            return
+        try:
+            hit = _search_bounded(r["pattern"], text)
+        except _MatchTimeout:
+            outbox_ask("throwback", input_id,
+                       "route %s pattern timed out matching this input; nothing run" % r.get("route_id", "?"))
+            set_state(states, input_id, "throwback", {"why": "pattern timeout: " + r.get("route_id", "?")})
+            return
+        if hit:
+            matched = r
+            break
+
+    if matched is None:
+        outbox_ask("fallback", input_id, "no approved route matches; you decide: " + text)
+        set_state(states, input_id, "fallback")
+        return
+
+    out_path = os.path.join(dhome(), "outputs", input_id + ".md")
+    prompt = matched["prompt_template"].replace("{text}", text).replace("{out}", out_path)
+    verify_args = [a.replace("{out}", out_path).replace("{text}", text)
+                   for a in matched.get("verify_args", [])]
+
+    goal = "daemon route %s on input %s" % (matched["route_id"], input_id)
+    open_args = ["open", "--goal", goal,
+                 "--template-id", matched["verify_template_id"],
+                 "--template-version", str(matched["verify_version"]),
+                 "--thread-id", "t-daemon-" + input_id,
+                 "--operator", "sutra-daemon"]
+    if matched.get("workflow"):
+        open_args += ["--workflow-ref", matched["workflow"]]
+    for a in verify_args:
+        open_args += ["--arg", a]
+    rc, out = run_cli("sutra-run-log", open_args)
+    if rc != 0:
+        outbox_ask("throwback", input_id, "could not open run record (rc=%d): %s" % (rc, out))
+        set_state(states, input_id, "throwback", {"why": "run-log open failed"})
+        return
+    run_id = None
+    for tok in out.split():
+        if tok.startswith("run_id="):
+            run_id = tok.split("=", 1)[1]
+    if not run_id:
+        outbox_ask("throwback", input_id, "run record opened but no run_id parsed: " + out)
+        set_state(states, input_id, "throwback", {"why": "run-log open gave no run_id"})
+        return
+
+    # mark running BEFORE the subprocess: a crash here is found on restart
+    # and thrown back -- never silently lost, never auto-rerun (P1 contract).
+    set_state(states, input_id, "running", {"run_id": run_id})
+
+    timeout_s = int(matched.get("timeout_s") or DEFAULT_TIMEOUT_S)
+    try:
+        argv = host_argv(matched, prompt)
+        p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, start_new_session=True, cwd=dhome())
+        try:
+            host_out, _ = p.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+            p.wait()
+            run_cli("sutra-run-log", ["close", "--run-id", run_id, "--outcome", "fail-escalate",
+                                      "--attempts", "1", "--evidence-ref", "timeout"])
+            outbox_ask("throwback", input_id,
+                       "host timed out after %ss on route %s; run %s closed fail-escalate. Text: %s"
+                       % (timeout_s, matched["route_id"], run_id, text))
+            set_state(states, input_id, "throwback", {"run_id": run_id, "why": "host timeout"})
+            return
+        host_rc = p.returncode
+    except (OSError, ValueError) as e:
+        run_cli("sutra-run-log", ["close", "--run-id", run_id, "--outcome", "fail-escalate",
+                                  "--attempts", "1", "--evidence-ref", "host-spawn-error"])
+        outbox_ask("throwback", input_id, "host could not start (%s); run %s closed fail-escalate" % (e, run_id))
+        set_state(states, input_id, "throwback", {"run_id": run_id, "why": "host spawn error"})
+        return
+
+    if host_rc != 0:
+        run_cli("sutra-run-log", ["close", "--run-id", run_id, "--outcome", "fail-escalate",
+                                  "--attempts", "1", "--evidence-ref", "host-nonzero"])
+        outbox_ask("throwback", input_id,
+                   "host exited %d on route %s; run %s closed fail-escalate. Tail: %s"
+                   % (host_rc, matched["route_id"], run_id, (host_out or "")[-EVIDENCE_CAP:]))
+        set_state(states, input_id, "throwback", {"run_id": run_id, "why": "host rc %d" % host_rc})
+        return
+
+    vargs = ["--template-id", matched["verify_template_id"],
+             "--template-version", str(matched["verify_version"])]
+    for a in verify_args:
+        vargs += ["--arg", a]
+    vrc, vout = run_cli("sutra-verify", vargs)
+    if vrc != 0:
+        run_cli("sutra-run-log", ["close", "--run-id", run_id, "--outcome", "fail-escalate",
+                                  "--attempts", "1", "--evidence-ref", "verify-fail"])
+        outbox_ask("throwback", input_id,
+                   "pinned check FAILED on route %s; run %s closed fail-escalate. Check said: %s"
+                   % (matched["route_id"], run_id, vout[-EVIDENCE_CAP:]))
+        set_state(states, input_id, "throwback", {"run_id": run_id, "why": "verify fail"})
+        return
+
+    crc, cout = run_cli("sutra-run-log", ["close", "--run-id", run_id, "--outcome", "pass",
+                                          "--attempts", "1", "--evidence-ref", out_path])
+    if crc != 0:
+        outbox_ask("throwback", input_id,
+                   "work + check succeeded but the ledger close FAILED (rc=%d): %s — record is the API; you decide"
+                   % (crc, cout))
+        set_state(states, input_id, "throwback", {"run_id": run_id, "why": "ledger close failed"})
+        return
+    set_state(states, input_id, "passed", {"run_id": run_id, "output": out_path})
+
+
+def _ledger_outcome(run_id):
+    """Closed outcome for run_id from the ratified ledger, or None."""
+    path = os.path.join(native_home(), "ledger", "run-ledger.jsonl")
+    if not run_id or not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if row.get("run_id") == run_id:
+                    return row.get("outcome")
+    except OSError:
+        return None
+    return None
+
+
+def pass_once():
+    d = dhome()
+    routes, rerr = load_json_safe(os.path.join(d, "routes.json"), [])
+    if rerr:
+        outbox_ask("throwback", "routes-file", rerr + " — treating as zero approved routes until you fix it")
+        routes = []
+    states, serr = load_json_safe(os.path.join(d, "state.json"), None)
+    if serr or states is None and os.path.isfile(os.path.join(d, "state.json")):
+        # state memory is the idempotency guarantee; NEVER guess past it
+        outbox_ask("throwback", "state-file", (serr or "state.json unreadable") +
+                   " — refusing to process (would risk re-running consumed inputs); you decide")
+        print("sutra-daemon: state.json unreadable — refusing this pass", file=sys.stderr)
+        return 0
+    states = states or {}
+
+    # crash sweep: "running" leftovers. If the ledger already closed the run,
+    # trust the record; otherwise throw back (P1: no auto-resume).
+    for iid, st in list(states.items()):
+        if st.get("state") != "running":
+            continue
+        closed = _ledger_outcome(st.get("run_id"))
+        if closed == "pass":
+            set_state(states, iid, "passed", {"run_id": st.get("run_id"), "note": "recovered from ledger after crash"})
+            continue
+        if closed is None:
+            run_cli("sutra-run-log", ["close", "--run-id", st.get("run_id", "?"), "--outcome", "fail-escalate",
+                                      "--attempts", "1", "--evidence-ref", "interrupted"])
+        outbox_ask("throwback", iid,
+                   "run %s was interrupted mid-work (daemon died); nothing auto-resumed — you decide"
+                   % st.get("run_id", "?"))
+        set_state(states, iid, "throwback", {"run_id": st.get("run_id"), "why": "interrupted (daemon died mid-run)"})
+
+    rows, _ = read_inbox()
+    handled = 0
+    for row in rows:
+        if row["input_id"] in states:
+            continue  # terminal state exists = consumed
+        process_input(row, routes, states)
+        handled += 1
+    return handled
+
+
+def cmd_start(argv):
+    interval, once = 5, False
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--interval":
+            interval = int(argv[i + 1]); i += 2
+        elif argv[i] == "--once":
+            once = True; i += 1
+        else:
+            die("unknown start flag: " + argv[i])
+    pid_path = os.path.join(dhome(), "daemon.pid")
+    fd = os.open(pid_path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as e:
+        if e.errno in (errno.EACCES, errno.EAGAIN):
+            die("another sutra-daemon holds the lock (%s)" % pid_path, 1)
+        raise
+    os.ftruncate(fd, 0)
+    os.write(fd, json.dumps({"pid": os.getpid(), "started_at": now_iso()}).encode())
+    os.fsync(fd)
+    print("sutra-daemon P1: reactive only — no schedule ticks (G1 unruled); throw-back-always")
+    try:
+        while True:
+            n = pass_once()
+            if n:
+                print("%s handled %d input(s)" % (now_iso(), n))
+            if once:
+                break
+            time.sleep(interval)
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+        try:
+            os.unlink(pid_path)
+        except OSError:
+            pass
+    return 0
+
+
+def cmd_status(argv):
+    d = dhome()
+    pid_path = os.path.join(d, "daemon.pid")
+    running = "stopped"
+    if os.path.isfile(pid_path):
+        try:
+            info = json.load(open(pid_path))
+            os.kill(info["pid"], 0)
+            running = "running pid=%s since %s" % (info["pid"], info["started_at"])
+        except (OSError, ValueError, KeyError):
+            running = "stopped (stale pid file)"
+    routes = load_json(os.path.join(d, "routes.json"), [])
+    states = load_json(os.path.join(d, "state.json"), {})
+    rows, _ = read_inbox()
+    pending = [r["input_id"] for r in rows if r["input_id"] not in states]
+    print("daemon:  " + running)
+    print("routes:  %d approved / %d total" % (
+        sum(1 for r in routes if r.get("status") == "approved"), len(routes)))
+    print("pending: %d input(s) %s" % (len(pending), pending[:5]))
+    by = {}
+    for st in states.values():
+        by[st["state"]] = by.get(st["state"], 0) + 1
+    print("consumed:", json.dumps(by))
+    return 0
+
+
+def cmd_stop(argv):
+    pid_path = os.path.join(dhome(), "daemon.pid")
+    if not os.path.isfile(pid_path):
+        print("not running")
+        return 0
+    try:
+        info = json.load(open(pid_path))
+        os.kill(info["pid"], signal.SIGTERM)
+        print("signalled pid %s" % info["pid"])
+    except (OSError, ValueError, KeyError) as e:
+        print("stale pid file (%s); removing" % e)
+        os.unlink(pid_path)
+    return 0
+
+
+# ---------------------------------------------------------------- builder gate
+
+def cmd_route_propose(argv):
+    opts = {"verify_args": [], "timeout_s": DEFAULT_TIMEOUT_S}
+    i = 0
+    need = {"--pattern": "pattern", "--workflow": "workflow", "--host": "host",
+            "--prompt-template": "prompt_template", "--verify-template-id": "verify_template_id",
+            "--verify-version": "verify_version", "--timeout-s": "timeout_s"}
+    while i < len(argv):
+        a = argv[i]
+        if a in need:
+            if i + 1 >= len(argv):
+                die(a + " needs a value")
+            opts[need[a]] = argv[i + 1]; i += 2
+        elif a == "--verify-arg":
+            opts["verify_args"].append(argv[i + 1]); i += 2
+        else:
+            die("unknown flag: " + a)
+    for k in ("pattern", "workflow", "host", "prompt_template", "verify_template_id", "verify_version"):
+        if k not in opts:
+            die("--%s is required" % k.replace("_", "-"))
+    if opts["host"] not in HOSTS:
+        die("host must be one of: " + ", ".join(HOSTS))
+    try:
+        re.compile(opts["pattern"])
+    except re.error as e:
+        die("pattern does not compile: %s" % e)
+    d = dhome()
+    routes = load_json(os.path.join(d, "routes.json"), [])
+    route = {"route_id": "r-%s" % uuid.uuid4().hex[:8], "status": "proposed",
+             "proposed_at": now_iso(), **opts}
+    routes.append(route)
+    atomic_write_json(os.path.join(d, "routes.json"), routes)
+    print("proposed %s hash=%s" % (route["route_id"], route_hash(route)[:16]))
+    print("approve (founder only): sutra-daemon route-approve --route-id %s --i-approve --operator <you>"
+          % route["route_id"])
+    return 0
+
+
+def cmd_route_approve(argv):
+    rid, iapprove, operator = None, False, None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--route-id":
+            rid = argv[i + 1]; i += 2
+        elif argv[i] == "--i-approve":
+            iapprove = True; i += 1
+        elif argv[i] == "--operator":
+            operator = argv[i + 1]; i += 2
+        else:
+            die("unknown flag: " + argv[i])
+    if not rid:
+        die("--route-id is required")
+    if not iapprove or not operator:
+        die("approval is a human act: both --i-approve and --operator are required "
+            "(no flag, schedule, or retry can synthesize one)", 1)
+    if not sys.stdin.isatty() and not os.environ.get("SUTRA_DAEMON_APPROVE_ACK"):
+        die("approval must run from an interactive terminal "
+            "(non-interactive override: SUTRA_DAEMON_APPROVE_ACK=1 — honor-system, audit-logged)", 1)
+    d = dhome()
+    routes = load_json(os.path.join(d, "routes.json"), [])
+    for r in routes:
+        if r.get("route_id") == rid:
+            if r.get("status") != "proposed":
+                die("route %s is '%s' — only 'proposed' routes can be approved; "
+                    "re-propose to change an approved route (anti-laundering)" % (rid, r.get("status")), 1)
+            r["status"] = "approved"
+            r["approved_by"] = operator
+            r["approved_at"] = now_iso()
+            r["approved_hash"] = route_hash(r)
+            atomic_write_json(os.path.join(d, "routes.json"), routes)
+            append_line(os.path.join(d, "route-approvals.jsonl"),
+                        {"ts": now_iso(), "route_id": rid, "operator": operator,
+                         "hash": r["approved_hash"], "tty": sys.stdin.isatty(), "ppid": os.getppid()})
+            print("approved %s by %s hash=%s" % (rid, operator, r["approved_hash"][:16]))
+            return 0
+    die("no such route: " + rid, 1)
+
+
+def cmd_route_list(argv):
+    for r in load_json(os.path.join(dhome(), "routes.json"), []):
+        print("%s  %-9s  %-24s  host=%s  pattern=%s" % (
+            r.get("route_id"), r.get("status"), r.get("workflow"), r.get("host"), r.get("pattern")))
+    return 0
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    cmd, rest = argv[0], argv[1:]
+    table = {"ask": cmd_ask, "start": cmd_start, "status": cmd_status, "stop": cmd_stop,
+             "route-propose": cmd_route_propose, "route-approve": cmd_route_approve,
+             "route-list": cmd_route_list}
+    if cmd not in table:
+        die("unknown command: " + cmd)
+    return table[cmd](rest)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
