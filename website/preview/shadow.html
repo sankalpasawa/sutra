@@ -78,6 +78,38 @@ h1{font-family:var(--font-display);font-size:30px;font-weight:600;margin-bottom:
 .wpane{flex:1.2;border:2px solid var(--gold);border-radius:var(--r-chip);padding:var(--s2);font-size:var(--fs-meta);color:var(--stone);background:var(--gold-glow)}
 .note{color:var(--faint);font-size:var(--fs-meta);margin-top:var(--s2)}
 footer{margin-top:var(--s6);color:var(--faint);font-size:var(--fs-meta)}
+/* in-chat presence */
+.chathead{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);font-size:var(--fs-meta)}
+.chathead .t{font-weight:600;font-size:var(--fs-body)}
+.pchip{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;border:1px solid var(--gold);color:var(--gold);background:var(--gold-glow);border-radius:var(--r-pill);padding:2px 8px}
+.pchip i{width:6px;height:6px;border-radius:50%;background:var(--gold);display:inline-block}
+.ubadge{margin-left:auto;font-size:var(--fs-label);background:var(--gold);color:#fff;border-radius:var(--r-pill);padding:2px 7px}
+.msgs{padding:var(--s3) var(--s4);display:flex;flex-direction:column;gap:var(--s2)}
+.msg{max-width:86%;border-radius:var(--r-card);padding:var(--s2) var(--s3);font-size:var(--fs-body);line-height:1.45}
+.msg.you{align-self:flex-end;background:var(--cream)}
+.msg.agent{align-self:flex-start;border:1px solid var(--line);background:var(--panel)}
+.msg.shadow{align-self:flex-start;border:1px solid var(--gold);background:var(--panel)}
+.msg .who{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--stone);margin-bottom:3px}
+.msg.shadow .who{color:var(--gold)}
+.meta-line{font-family:var(--font-mono);font-size:10.5px;color:var(--review);margin-top:4px}
+.verify{font-size:var(--fs-meta);color:var(--done);margin-top:3px}
+.whisper{margin:var(--s2) var(--s4);border-left:2px solid var(--gold);background:var(--cream);border-radius:0 var(--r-chip) var(--r-chip) 0;padding:var(--s2) var(--s3);font-size:var(--fs-meta);color:var(--ink)}
+.whisper .wl{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--gold);display:flex;gap:var(--s2)}
+.whisper .wl span:last-child{color:var(--faint);text-transform:none;letter-spacing:0}
+.whisper p{margin:4px 0}
+.wreply{display:flex;gap:var(--s2);margin-top:var(--s2)}
+.wreply input{flex:1;font:inherit;font-size:var(--fs-meta);border:1px dashed var(--faint);border-radius:var(--r-chip);padding:4px 8px;background:var(--bg)}
+.composer{margin:var(--s3) var(--s4) var(--s4);border:1px solid var(--line);border-radius:15px;padding:var(--s3);color:var(--faint);font-size:var(--fs-body)}
+.divider{display:flex;align-items:center;gap:var(--s2);margin:var(--s3) var(--s4);color:var(--stone);font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase}
+.divider:before,.divider:after{content:"";flex:1;border-top:1px dashed var(--faint)}
+.home{padding:var(--s4)}
+.home .greet{font-family:var(--font-display);font-size:22px;margin-bottom:var(--s3)}
+.home h4{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--stone);margin:var(--s3) 0 var(--s2)}
+.hcard{border:1px solid var(--line);border-radius:var(--r-card);padding:var(--s3);margin-bottom:var(--s2);font-size:var(--fs-body);box-shadow:var(--shadow-rest)}
+.hcard .m{color:var(--stone);font-size:var(--fs-meta);margin-top:2px}
+.hrow{display:flex;gap:var(--s2);font-size:var(--fs-meta);color:var(--stone);padding:4px 0}
+.hrow .ok{color:var(--done)}
+.wrail .on{color:var(--gold);font-weight:600}
 </style>
 </head>
 <body>
@@ -171,7 +203,7 @@ footer{margin-top:var(--s6);color:var(--faint);font-size:var(--fs-meta)}
     <h2>5 · Where it lives (Chats page)</h2>
     <div class="pane"><div class="wire">
       <div class="row">
-        <div class="wrail">RAIL<br><br>Recent<br>Project<br>Dept<br><br><span class="ok-t">no badge</span></div>
+        <div class="wrail">RAIL<br><br><span class="on">Shadow</span><br>Chats<br>Dept<br>Settings<br><br><span class="ok-t">no badge</span></div>
         <div class="wlist">
           <div class="wsess"><span class="sd" style="background:var(--alert)"></span>dayflow — dropped</div>
           <div class="wsess"><span class="sd" style="background:var(--decide)"></span>sutra-ui — long bash</div>
@@ -180,8 +212,67 @@ footer{margin-top:var(--s6);color:var(--faint);font-size:var(--fs-meta)}
         </div>
         <div class="wpane"><b>Shadow pane</b> (rename of Ask Sutra — proposed)<br>incident feed + chat composer stay together</div>
       </div>
-      <p class="note">Severity dots on session rows + one quiet line on Right Now. No new nav destination, no rail badge (locked IA invariant).</p>
+      <p class="note">Founder ruling 2026-08-21: Shadow is the FIRST tab and converges with Right Now. Chats keeps severity dots + the session-local pane. No destination added, no rail badge.</p>
     </div></div>
+  </section>
+
+  <!-- P6 SHADOW TAB HOME -->
+  <section class="pgroup">
+    <h2>6 · Shadow tab — home (ex-Right Now)</h2>
+    <div class="pane"><div class="home">
+      <div class="greet">Good morning. 4 sessions live, 1 needs you.</div>
+      <h4>Needs me</h4>
+      <div class="hcard"><div class="crow"><span class="chip hi">SIG-DROP</span><b>dayflow — resume or drop?</b></div><div class="m">Held for your 11:00 decision window · evidence a015e6cb</div></div>
+      <h4>Handled by Shadow</h4>
+      <div class="hrow"><span class="ok">✓</span>paisa — reply finished, summary whispered · 09:52</div>
+      <div class="hrow"><span class="ok">✓</span>billu — permission prompt surfaced, you approved · 09:31</div>
+      <h4>Waiting</h4>
+      <div class="hrow"><span class="md-t">●</span>sutra-ui — Bash 11 m, watching (typical 6 m)</div>
+      <div class="quiet" style="padding:var(--s3) 0 0">Balance: next decision window 11:00 · inbox served after</div>
+    </div></div>
+    <p class="note">Same register as Right Now; Shadow composes it using Balance logic. Chats never shows this cross-session queue.</p>
+  </section>
+
+  <!-- P7 IN-CHAT WHISPER -->
+  <section class="pgroup">
+    <h2>7 · In a chat — Shadow talks WITH you (v0)</h2>
+    <div class="pane">
+      <div class="chathead"><span class="t">paisa · EMI reconciliation</span><span class="pchip"><i></i>Shadow watching · L1</span><span class="pill">quiet: off</span><span class="ubadge">1 whisper</span></div>
+      <div class="msgs">
+        <div class="msg you"><div class="who">You</div>Run the EMI recon against last night's batch and show me the diffs.</div>
+        <div class="msg agent"><div class="who">Claude</div>Running W-emi-reconcile on 2026-08-20 batch… 1,204 loans compared, 3 mismatches found. Opening the diff.</div>
+      </div>
+      <div class="whisper">
+        <div class="wl"><span>Shadow · whisper</span><span>only you see this — not part of the session</span></div>
+        <p>Those 3 mismatches match the rounding bug you fixed in dayflow last week (commit 7c1e…). Want me to draft the same patch into the composer?</p>
+        <div class="acts"><span class="btn act">Copy into composer</span><span class="btn ghost">Not now</span><span class="btn ghost">Wrong signal</span></div>
+        <div class="wreply"><input value="yes, but only the rounding helper — not the schema change"><span class="btn ghost">Reply to Shadow</span></div>
+      </div>
+      <div class="composer">Message Claude…</div>
+    </div>
+    <p class="note">Whisper lane: pinned aside, own scroll, collapsed until unread · max 3 visible · expires 2 h · the ONLY bridge into the session is "Copy into composer" — Shadow never injects at L1.</p>
+  </section>
+
+  <!-- P8 AWAY MODE -->
+  <section class="pgroup">
+    <h2>8 · While you are away — Shadow talks TO the chat</h2>
+    <div class="pane quarantine">
+      <div class="qbanner">Act 2 (L2) — not in v0 — needs founder gate</div>
+      <div class="qinner" style="padding:0">
+        <div class="chathead"><span class="t">dayflow · api deploy</span><span class="pchip"><i></i>Shadow acting · L2</span><span class="pill">you: away 22 m</span></div>
+        <div class="divider">you stepped away 10:41 · Shadow at L2 · allowlisted playbooks only</div>
+        <div class="msgs">
+          <div class="msg agent"><div class="who">Claude</div>Connection error (529) — request failed mid-tool.</div>
+          <div class="msg shadow"><div class="who">[Shadow] · acted · PB-RETRY</div>Retrying the last instruction: connection dropped mid-tool, no side effects committed.
+            <div class="meta-line">actor=shadow · L2 · pb=PB-RETRY · sig=SIG-DROP · away=true · lock=acquired · ev a015e6cb L412–418</div>
+            <div class="verify">Verified · session resumed, tool completed 10:44</div></div>
+          <div class="msg shadow"><div class="who">[Shadow] · suggested</div>Deploy step next would push to staging — non-idempotent. Holding for you.</div>
+        </div>
+        <div class="divider">you returned 11:03 · new actions frozen · cooldown 5 m</div>
+        <div class="msgs"><div class="hcard"><b>Handoff</b><div class="m">While you were away: 1 retry (verified) · 1 held for you · 2 whispers expired</div><div class="acts" style="margin-top:8px"><span class="btn act">Continue</span><span class="btn ghost">Pause Shadow here</span><span class="btn ghost">Review actions</span></div></div></div>
+      </div>
+    </div>
+    <p class="note">Every Shadow turn is tagged forever, carries machine-readable metadata, and says whether it acted or only suggested. Shown greyed: acting while away ships in Act 2, behind your L2 approval.</p>
   </section>
 
 </div>
