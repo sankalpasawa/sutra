@@ -1,26 +1,111 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-20
+**status**: active · **updated**: 2026-08-21
 
-## 2.110.2
+## 2.112.3 (2026-08-21)
 
-- **The thinking log answers every click.** Opened with zero tool runs it
-  says "nothing has run yet in this turn" — an open log never renders as
-  nothing, which read as a dead button.
-- **The lone streaming caret is gone.** The caret now waits for the first
-  visible text in BOTH render paths (settled and per-token patch), which
-  share one body builder.
-- **Governance text no longer leaks into replies.** Unfenced INPUT:/TYPE:/
-  ROUTE: runs are stripped like their fenced forms; a lone key-looking line
-  inside prose survives.
-- **Design-system fixes from the new design-qa sweep**: roster buttons paint
-  token ink (not UA black), the governance chip has a visible focus ring,
-  and the activity pulses honor prefers-reduced-motion.
-- **New verification lanes in-repo**: `qa-shell/` (state + pixel checks vs
-  the RUNNING app) and `qa/` (design-qa product sweep), with the four-level
-  test-authoring standard in `PUBLISH-CHECK.md`.
+**An empty installation set no longer defeats the cache.**
 
-## %s (%s)
+Measured on the installed app: every call to the connectors detail cost a live
+GitHub round-trip, ~0.85s, on a connector that is authorized but not installed.
+The sync condition was `if refresh or not installations` -- and for a connector
+with no installations that is true on *every* request, so the 15-minute cache
+was bypassed exactly when there was nothing to fetch.
+
+A freshness marker now records that GitHub was asked and what it said,
+including when the answer was none. "We have not asked" and "we asked and there
+are none" look identical in an empty list and have very different costs.
+
+Found by hammering the endpoints 60-deep after the 2.112.2 thread fix; one
+request timed out behind the queue, which is what surfaced the per-call
+round-trip underneath.
+
+## 2.112.2 (2026-08-21)
+
+**Fixes the Connectors screen returning 500. Root cause, not a workaround.**
+
+`sqlite3.connect()` defaults to `check_same_thread=True`, so a connection binds
+to the thread that created it. The panel serves its connector endpoints as
+synchronous `def` handlers -- deliberately, so a blocking GitHub call cannot
+stall the event loop -- and FastAPI runs those in a **threadpool**. One shared
+connection therefore worked for the first request and raised
+`ProgrammingError` as soon as the pool routed a later one to a different
+worker:
+
+    /api/connectors -> 200    first request, thread A
+    /api/connectors -> 500    later request, thread B
+
+It read as transient because restarting put a fresh connection on whichever
+thread asked first, and it never appeared in the 164 tests or the CLI because
+both are single-threaded.
+
+- `Database` now holds **one connection per thread**. WAL lets independent
+  connections read and write concurrently, so this is the right shape here
+  rather than a global lock -- a lock would also have to cover cursor
+  iteration, which several callers do lazily.
+- `busy_timeout = 5000`, so two threads writing at once wait briefly instead of
+  surfacing an immediate "database is locked".
+- In-memory databases keep a single shared connection, because a memory
+  database lives *inside* its connection and per-thread handles would give each
+  thread its own empty one.
+- **4 regression tests** that fail against the old code: read from another
+  thread, write visible across threads, four concurrent workers, and the
+  end-to-end shape -- build the service on one thread, call it from another.
+
+The 2.112.1 diagnosability work below stands: it is what turns the *next*
+unexpected failure into a message instead of a silent 500.
+
+## 2.112.1 (2026-08-21)
+
+**Connector panel errors are diagnosable, and the backend recovers on its own.**
+
+The Connectors screen showed `/api/connectors -> 500` with no way to find out
+why. Restarting the app cleared it and the root cause was never reproduced --
+which is the point: two defects made a transient fault permanent and invisible.
+
+- **Every connector endpoint returns a structured error.** They previously
+  caught only `ConnectorError`; anything else became a bare 500. Electron
+  buffers the backend's stderr in memory and surfaces it only if the process
+  *exits*, so the reason existed nowhere a person could reach. Unexpected
+  exceptions are now logged to `~/.sutra/panel-errors.log` and returned with a
+  code, a message and that path.
+- **`service()` rebuilds a dead handle.** It cached a module global holding a
+  live SQLite connection for the life of the process, so a connection that went
+  bad could never recover and the only cure was quitting the app. A failed
+  construction is no longer cached either, so the next request retries instead
+  of inheriting a permanent `None`.
+- The screen distinguishes "the service did not answer" from "the service
+  answered and told us what went wrong", and offers Retry.
+
+## 2.112.0 (2026-08-20)
+
+**Connectors screen + P3 permission layer.** The first user-facing half of the
+connector rewrite: the panel gets a Connectors surface, and permission
+decisions are now resolved from real settings files on disk.
+
+- **P3 `permission_service.py`** — resolves the five settings sources from
+  actual paths (managed / session / local / project / user), derives the
+  working set from the connector's installations so a read outside the
+  connector's scope prompts, persists "don't ask again" to
+  `settings.local.json` (local, not project: a rule one operator accepted in a
+  modal is not team policy), and exposes the capability read model. Malformed
+  settings fail CLOSED -- an unreadable policy file must never read as "no
+  policy", which is the widest state there is.
+- **11 panel endpoints** under `/api/connectors`. Synchronous `def`, not
+  `async def`: the GitHub client is blocking stdlib urllib, so FastAPI runs
+  these in a threadpool and a slow GitHub call cannot freeze the panel.
+- **Connectors screen** (`12-connectors.js`) — the External World block's
+  operator projection per ADR-023. Connect via device flow with the code shown
+  for transcription, repositories with per-repo capabilities, organizations
+  separating membership from access, the live permission rule table in
+  evaluation order, and the hash-chained audit trail. An in-flight device flow
+  is labelled EPHEMERAL rather than rendered as settled state.
+- "Authorized but not installed" and "installed but no repositories selected"
+  render as two different states with two different fixes, because they are.
+- 164 tests. 152 panel tests still green, including 21i, the grid guard that
+  caught the last CSS regression.
+
+## 2.111.0 (2026-08-20)
 
 **Connector platform rewrite — phases P1 and P2, plus the permission engine.**
 Replaces the layer removed in 96edce8. Nothing here is reachable from the
@@ -52,6 +137,24 @@ a user-facing feature did.
   validated four ways before dereference, uninstall detection.
 - 138 tests, stdlib only. No new runtime dependencies.
 - Design pack: `marketplace/plugin/connectors/design/`.
+
+## 2.110.2
+
+- **The thinking log answers every click.** Opened with zero tool runs it
+  says "nothing has run yet in this turn" — an open log never renders as
+  nothing, which read as a dead button.
+- **The lone streaming caret is gone.** The caret now waits for the first
+  visible text in BOTH render paths (settled and per-token patch), which
+  share one body builder.
+- **Governance text no longer leaks into replies.** Unfenced INPUT:/TYPE:/
+  ROUTE: runs are stripped like their fenced forms; a lone key-looking line
+  inside prose survives.
+- **Design-system fixes from the new design-qa sweep**: roster buttons paint
+  token ink (not UA black), the governance chip has a visible focus ring,
+  and the activity pulses honor prefers-reduced-motion.
+- **New verification lanes in-repo**: `qa-shell/` (state + pixel checks vs
+  the RUNNING app) and `qa/` (design-qa product sweep), with the four-level
+  test-authoring standard in `PUBLISH-CHECK.md`.
 
 ## 2.107.3
 
@@ -3831,106 +3934,3 @@ First release. Minimum viable plugin for functional validation.
 ---
 
 provenance: maintained by Sutra release process; one entry per released plugin version, newest first.
-## %s (%s)
-
-**Connectors screen + P3 permission layer.** The first user-facing half of the
-connector rewrite: the panel gets a Connectors surface, and permission
-decisions are now resolved from real settings files on disk.
-
-- **P3 `permission_service.py`** — resolves the five settings sources from
-  actual paths (managed / session / local / project / user), derives the
-  working set from the connector's installations so a read outside the
-  connector's scope prompts, persists "don't ask again" to
-  `settings.local.json` (local, not project: a rule one operator accepted in a
-  modal is not team policy), and exposes the capability read model. Malformed
-  settings fail CLOSED -- an unreadable policy file must never read as "no
-  policy", which is the widest state there is.
-- **11 panel endpoints** under `/api/connectors`. Synchronous `def`, not
-  `async def`: the GitHub client is blocking stdlib urllib, so FastAPI runs
-  these in a threadpool and a slow GitHub call cannot freeze the panel.
-- **Connectors screen** (`12-connectors.js`) — the External World block's
-  operator projection per ADR-023. Connect via device flow with the code shown
-  for transcription, repositories with per-repo capabilities, organizations
-  separating membership from access, the live permission rule table in
-  evaluation order, and the hash-chained audit trail. An in-flight device flow
-  is labelled EPHEMERAL rather than rendered as settled state.
-- "Authorized but not installed" and "installed but no repositories selected"
-  render as two different states with two different fixes, because they are.
-- 164 tests. 152 panel tests still green, including 21i, the grid guard that
-  caught the last CSS regression.
-
-## %s (%s)
-
-**Connector panel errors are diagnosable, and the backend recovers on its own.**
-
-The Connectors screen showed `/api/connectors -> 500` with no way to find out
-why. Restarting the app cleared it and the root cause was never reproduced --
-which is the point: two defects made a transient fault permanent and invisible.
-
-- **Every connector endpoint returns a structured error.** They previously
-  caught only `ConnectorError`; anything else became a bare 500. Electron
-  buffers the backend's stderr in memory and surfaces it only if the process
-  *exits*, so the reason existed nowhere a person could reach. Unexpected
-  exceptions are now logged to `~/.sutra/panel-errors.log` and returned with a
-  code, a message and that path.
-- **`service()` rebuilds a dead handle.** It cached a module global holding a
-  live SQLite connection for the life of the process, so a connection that went
-  bad could never recover and the only cure was quitting the app. A failed
-  construction is no longer cached either, so the next request retries instead
-  of inheriting a permanent `None`.
-- The screen distinguishes "the service did not answer" from "the service
-  answered and told us what went wrong", and offers Retry.
-
-## %s (%s)
-
-**Fixes the Connectors screen returning 500. Root cause, not a workaround.**
-
-`sqlite3.connect()` defaults to `check_same_thread=True`, so a connection binds
-to the thread that created it. The panel serves its connector endpoints as
-synchronous `def` handlers -- deliberately, so a blocking GitHub call cannot
-stall the event loop -- and FastAPI runs those in a **threadpool**. One shared
-connection therefore worked for the first request and raised
-`ProgrammingError` as soon as the pool routed a later one to a different
-worker:
-
-    /api/connectors -> 200    first request, thread A
-    /api/connectors -> 500    later request, thread B
-
-It read as transient because restarting put a fresh connection on whichever
-thread asked first, and it never appeared in the 164 tests or the CLI because
-both are single-threaded.
-
-- `Database` now holds **one connection per thread**. WAL lets independent
-  connections read and write concurrently, so this is the right shape here
-  rather than a global lock -- a lock would also have to cover cursor
-  iteration, which several callers do lazily.
-- `busy_timeout = 5000`, so two threads writing at once wait briefly instead of
-  surfacing an immediate "database is locked".
-- In-memory databases keep a single shared connection, because a memory
-  database lives *inside* its connection and per-thread handles would give each
-  thread its own empty one.
-- **4 regression tests** that fail against the old code: read from another
-  thread, write visible across threads, four concurrent workers, and the
-  end-to-end shape -- build the service on one thread, call it from another.
-
-The 2.112.1 diagnosability work below stands: it is what turns the *next*
-unexpected failure into a message instead of a silent 500.
-
-## %s (%s)
-
-**An empty installation set no longer defeats the cache.**
-
-Measured on the installed app: every call to the connectors detail cost a live
-GitHub round-trip, ~0.85s, on a connector that is authorized but not installed.
-The sync condition was `if refresh or not installations` -- and for a connector
-with no installations that is true on *every* request, so the 15-minute cache
-was bypassed exactly when there was nothing to fetch.
-
-A freshness marker now records that GitHub was asked and what it said,
-including when the answer was none. "We have not asked" and "we asked and there
-are none" look identical in an empty list and have very different costs.
-
-Found by hammering the endpoints 60-deep after the 2.112.2 thread fix; one
-request timed out behind the queue, which is what surfaced the per-call
-round-trip underneath.
-
