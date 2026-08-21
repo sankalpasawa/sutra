@@ -311,16 +311,26 @@ SCREENS.connectors = () => {
      a redirect flow has already opened a browser and has no code to show. */
   let tx = "";
   if (s.tx){
+    /* The URL is shown as selectable TEXT, not as a button label. Putting it in
+       the label produced a 221px button that, with Cancel beside it, needed
+       more width than this pane has. It is also the thing a user may want to
+       read or copy, which a button label does not support. */
+    const uri = s.tx.verification_uri || "";
+    const shown = uri.replace(/^https?:\/\//, "");
     tx = s.tx.mode === "device"
       ? `<div class="note conntx"><b>Enter this code</b>
          <div class="usercode">${esc(s.tx.user_code||"")}</div>
-         <a class="btn" href="${esc(s.tx.verification_uri||"")}" target="_blank"
-            rel="noreferrer">Open ${esc(s.tx.verification_uri||"")}</a>
-         <button class="btn" type="button" data-conncancel>Cancel</button>
+         <p class="txwhere">at <code>${esc(shown)}</code></p>
+         <div class="txactions">
+           <a class="btn" href="${esc(uri)}" target="_blank" rel="noreferrer">Open in browser</a>
+           <button class="btn" type="button" data-conncancel>Cancel</button>
+         </div>
          <p class="muted">Live — not yet durable. Waiting for you to approve.</p></div>`
       : `<div class="note conntx"><b>Approve in your browser</b>
-         <p>A browser window has opened. Approve there and this will complete.</p>
-         <button class="btn" type="button" data-conncancel>Cancel</button>
+         <p class="txwhere">A browser window has opened. Approve there and this completes.</p>
+         <div class="txactions">
+           <button class="btn" type="button" data-conncancel>Cancel</button>
+         </div>
          <p class="muted">Live — not yet durable. Waiting for the callback.</p></div>`;
   }
   const txErr = s.txErr ? `<div class="note w"><b>Could not start the connection.</b>

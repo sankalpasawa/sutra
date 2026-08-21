@@ -1,6 +1,19 @@
 # Sutra — Current Version
 
-## v2.113.0 (2026-08-21, HEAD)
+## v2.113.1 (2026-08-21, HEAD)
+
+**Connector tile layout fixed, including a regression it had caused on the
+Updates screen.** A tile clipped its own Manage button at two-column width,
+tiles stretched to the tallest instead of sizing to content, the device-code
+card's button label was an entire URL and overflowed a narrow pane, and a
+global `a.btn` margin added for this screen had misaligned anchor-buttons
+against real buttons panel-wide.
+
+Two new tests check the blast radius rather than the four symptoms: the
+connectors CSS may not add a global margin to `a.btn`, and every selector it
+adds must be scoped to a connector container.
+
+## v2.113.0 (2026-08-21)
 
 **Slack is the second provider, and Connectors is now a tile view.** One tile
 per provider whether connected or not, each stating its auth mode, whether it

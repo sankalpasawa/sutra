@@ -2,6 +2,32 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.113.1 (2026-08-21)
+
+**Three layout defects, one of them a regression this codebase caused
+elsewhere.** All measured in a browser at the widths the panel actually uses.
+
+- **A connector tile clipped its own Manage button.** At a 287px tile -- two
+  columns, a normal width for this pane -- the account row wanted 283px in a
+  259px box and the button overhung the tile by 22px with no way to reach it.
+  The row now wraps and the account name truncates.
+- **Tiles stretched to the tallest.** Grid's default `stretch` gave a tile with
+  85px of content a 180px box. Now `align-items: start`.
+- **`a.btn` carried a global `margin-top`** added for the connectors screen. It
+  pushed every `<a class="btn">` 7px below any adjacent `<button class="btn">`
+  panel-wide -- visibly misaligning "Release notes" against "Re-check" on the
+  Updates screen. The margin is now scoped; the `inline-block` half of that
+  rule, which is genuinely global, stays.
+- **The device-code card overflowed.** Its button label was the entire URL
+  including scheme, rendering 221px wide; with Cancel it needed 280px in a
+  303px pane. The label is now "Open in browser" and the URL is shown as
+  selectable text, which is also what a person wants to read or copy.
+
+**Two new tests** cover the blast radius rather than these four instances: no
+global margin on `a.btn`, and every selector the connectors CSS adds must be
+scoped to a connector container. The second one immediately caught an unscoped
+`.pglyph` that had shipped in 2.113.0.
+
 ## 2.113.0 (2026-08-21)
 
 **Slack connector, and the Connectors screen becomes a provider tile view.**

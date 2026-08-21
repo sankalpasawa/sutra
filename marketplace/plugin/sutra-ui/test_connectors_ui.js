@@ -113,6 +113,36 @@ test("the rail has a connectors entry", () => {
   assert(/id:\s*["']connectors["']/.test(helpers), "no rail entry for connectors");
 });
 
+/* ── CSS blast radius ────────────────────────────────────────────────────
+ * The connectors CSS is appended to a stylesheet the WHOLE panel shares. A
+ * rule written for this screen that is not scoped to it changes every other
+ * screen -- which is exactly what happened: a global `a.btn{margin-top:7px}`
+ * pushed the Updates screen's "Release notes" link 7px below the "Re-check"
+ * button beside it.
+ */
+const css = fs.readFileSync(path.join(__dirname, "static/panel.css"), "utf8");
+
+test("no global margin on a.btn", () => {
+  const rule = css.match(/\n\s*a\.btn\{([^}]*)\}/);
+  assert(rule, "a.btn rule not found");
+  assert(!/margin-top/.test(rule[1]),
+    "a.btn carries a global margin-top; it will misalign every <a class=btn> "
+    + "next to a <button class=btn> panel-wide. Scope it (.note a.btn, etc).");
+});
+
+test("connector CSS additions are scoped", () => {
+  /* Everything added for this screen must be reachable only from a connector
+     container. A bare element or utility selector added here applies panel-wide. */
+  const section = css.slice(css.indexOf("Connector tiles"));
+  const bare = [];
+  for (const m of section.matchAll(/(?:^|\n)\s{2}([^@\s][^{\n]*)\{/g)) {
+    const sel = m[1].trim();
+    const scoped = /\.(ptile|ptiles|conn|tile|tbl|txactions|usercode|k-|r-|sc-head|sp\b|err\b|dot\b)/.test(sel);
+    if (!scoped) bare.push(sel);
+  }
+  assert(bare.length === 0, "unscoped selectors added by the connectors CSS: " + bare.join(" | "));
+});
+
 console.log("\n" + "-".repeat(60));
 console.log(`connectors UI wiring: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

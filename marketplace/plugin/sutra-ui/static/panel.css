@@ -1510,8 +1510,14 @@
      line height -- so the padded box overlapped the text above and below it.
      Buttons in this panel are <button>, which is why the rule never needed a
      display until a link wore the same class. */
-  a.btn{display:inline-block;margin-top:7px;text-decoration:none;vertical-align:middle}
-  .note a.btn{margin-top:8px}
+  /* display:inline-block is right GLOBALLY: an inline anchor's padding does not
+     affect line height, so it paints over its neighbours.
+     margin-top is NOT global, and an earlier version of this rule made it so --
+     which pushed every <a class="btn"> 7px below any adjacent <button class="btn">.
+     The Updates screen pairs exactly those two, and its buttons visibly
+     misaligned. The margin belongs only where a link follows body text. */
+  a.btn{display:inline-block;text-decoration:none;vertical-align:middle}
+  .note a.btn,.conndetail a.btn{margin-top:8px}
   .connlist{list-style:none;margin:4px 0;padding:0;font-size:11.5px}
   .connlist li{display:flex;align-items:center;gap:7px;padding:3px 0;color:var(--ink)}
 
@@ -1524,7 +1530,15 @@
   /* The device code. Large and monospaced because it is transcribed by hand
      into another window -- the one string on this screen a person retypes. */
   .conntx .usercode{font:600 22px/1.2 var(--mono);letter-spacing:.14em;
-                    color:var(--ink);margin:8px 0 10px;user-select:all}
+                    color:var(--ink);margin:8px 0 4px;user-select:all}
+  /* The action row WRAPS. Measured: "Open https://github.com/login/device"
+     rendered a 221px button which, with Cancel, needed 280px -- more than the
+     303px pane leaves after padding. The label is now short and the URL is
+     shown as selectable text instead of being crammed into a button. */
+  .conntx .txwhere{margin:0 0 10px;font-size:11.5px;color:var(--muted)}
+  .conntx .txwhere code{font:400 11.5px/1.4 var(--mono);color:var(--ink);user-select:all}
+  .txactions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .txactions .btn,.txactions a.btn{margin-top:0}
 
   /* Rule effects, coloured by what they do rather than by severity: a deny is
      the SAFE outcome here, so it is not painted as an error. */
@@ -1541,7 +1555,10 @@
      rather than a fixed column count: the browse pane is resizable and was
      measured at 303px in one layout and 463px in another, so a fixed grid
      would either overflow or waste half the width. */
-  .ptiles{display:grid;gap:10px;margin:12px 0;
+  /* align-items:start, not the grid default of stretch. Stretched tiles all
+     take the height of the tallest, so a tile with less content shows a block
+     of dead space -- measured at 180px for a tile whose content was 85px. */
+  .ptiles{display:grid;gap:10px;margin:12px 0;align-items:start;
           grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
   .ptile{border:1px solid var(--line);border-radius:var(--r);background:var(--card);
          padding:12px 13px;display:flex;flex-direction:column;gap:8px}
@@ -1549,8 +1566,17 @@
   .ptilehead{display:flex;align-items:flex-start;gap:9px}
   .ptilehead b{font:600 12.5px/1.3 var(--sans);color:var(--ink);display:block}
   .ptilehead .muted{font-size:10.5px;line-height:1.35;margin-top:1px}
-  .pglyph{width:20px;height:20px;flex:none;color:var(--acc);margin-top:1px}
-  .ptile .connlist li{padding:2px 0;font-size:11.5px;gap:6px}
+  .ptile .pglyph{width:20px;height:20px;flex:none;color:var(--acc);margin-top:1px}
+  /* The account row WRAPS. Measured at a 287px tile: the row wanted 283px in a
+     259px box and the Manage button overhung the tile by 22px, clipped with no
+     way to reach it. Two columns is a normal width for this pane, so the row
+     has to survive it. */
+  .ptile .connlist li{padding:2px 0;font-size:11.5px;gap:6px;flex-wrap:wrap}
+  /* min-width:0 is what actually lets a flex child shrink below its content;
+     without it text-overflow never triggers inside a flex row. */
+  .ptile .connlist li b{min-width:0;overflow:hidden;text-overflow:ellipsis;
+                        white-space:nowrap;max-width:100%}
+  .ptile .connlist li .sp{flex:1 1 0;min-width:0}
   .tileempty{padding:2px 0 !important;font-size:11px}
   /* The honest note about a weaker auth flow. Deliberately readable rather
      than a tooltip: a caveat nobody sees is not a caveat. */
