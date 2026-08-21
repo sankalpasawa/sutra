@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow — design preview · Sutra Desktop</title>
+<!-- Preview twin of record for holding/plans/shadow/DESIGN-SYSTEM.md.
+     Tokens copied verbatim from holding/departments/experience/desktop-app/ui/tokens.css.
+     Dual-lane reviewed 2026-08-21 (codex + DeepSeek); v0 shows L0/L1 + pause only. -->
+<style>
+:root{
+  --bg:#FAFAF7; --panel:#FFFFFF; --ink:#1A1714; --stone:#6B6560; --faint:#B8B2A6;
+  --line:#E8E3DB; --cream:#F5F0E8; --gold:#B8945F; --gold-glow:rgba(184,148,95,.14);
+  --decide:#8B6B4A; --review:#4A6B8B; --done:#2D5A3E; --alert:#8B4A6B;
+  --font-display:'Playfair Display',Georgia,serif;
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-mono:ui-monospace,Menlo,monospace;
+  --fs-title:24px; --fs-card-title:19px; --fs-body:14px; --fs-meta:12px;
+  --fs-label:9.5px; --ls-label:.13em;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:64px;
+  --r-chip:8px; --r-card:12px; --r-pill:99px;
+  --shadow-rest:0 1px 3px rgba(12,10,8,.04);
+  --shadow-hover:0 4px 14px rgba(12,10,8,.09);
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:var(--fs-body);padding:var(--s6) var(--s5) var(--s7)}
+h1{font-family:var(--font-display);font-size:30px;font-weight:600;margin-bottom:var(--s1)}
+.sub{color:var(--stone);font-size:var(--fs-meta);margin-bottom:var(--s6)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:var(--s5);max-width:1560px}
+.pgroup{background:var(--cream);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--s4)}
+.pgroup>h2{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--stone);margin-bottom:var(--s3)}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow-rest);overflow:hidden}
+.strip{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);font-size:var(--fs-meta)}
+.strip .name{font-family:var(--font-display);font-size:15px;font-weight:600}
+.strip .meta{color:var(--stone)}
+.pill{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;border:1px solid var(--line);border-radius:var(--r-pill);padding:2px 8px;color:var(--stone);background:var(--bg)}
+.pill.l1{border-color:var(--gold);color:var(--gold);background:var(--gold-glow)}
+.pause{margin-left:auto;font-size:var(--fs-meta);color:var(--stone);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px 10px;background:var(--bg);cursor:default}
+.calm{display:flex;align-items:center;gap:var(--s2);padding:var(--s5) var(--s4);color:var(--done)}
+.calm .dot{width:8px;height:8px;border-radius:50%;background:var(--done)}
+.quiet{padding:0 var(--s4) var(--s4);color:var(--faint);font-size:var(--fs-meta)}
+.card{display:flex;border-top:1px solid var(--line)}
+.rail{width:3px;flex:none}
+.rail.hi{background:var(--alert)} .rail.md{background:var(--decide)} .rail.lo{background:var(--stone)}
+.cbody{padding:var(--s3) var(--s4);flex:1}
+.crow{display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s1)}
+.chip{font-family:var(--font-mono);font-size:var(--fs-label);letter-spacing:.06em;border-radius:var(--r-chip);padding:2px 7px;background:var(--bg);border:1px solid var(--line)}
+.chip.hi{color:var(--alert)} .chip.md{color:var(--decide)} .chip.lo{color:var(--stone)}
+.ct{font-size:var(--fs-body);font-weight:600}
+.cm{color:var(--stone);font-size:var(--fs-meta);margin-bottom:var(--s1)}
+.ev{font-family:var(--font-mono);font-size:11px;color:var(--review);margin-bottom:var(--s2)}
+.acts{display:flex;gap:var(--s2)}
+.btn{font-size:var(--fs-meta);border:1px solid var(--line);border-radius:var(--r-chip);padding:4px 10px;background:var(--panel);cursor:default}
+.btn.act{border-color:var(--gold);color:var(--gold);background:var(--gold-glow)}
+.btn.ghost{color:var(--stone)}
+.mini{margin-top:var(--s3)}
+.mini h3{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--faint);margin:var(--s3) 0 var(--s2)}
+.digestrow{display:flex;gap:var(--s3);padding:var(--s3) var(--s4);font-size:var(--fs-meta)}
+.digestrow b{font-weight:600}
+.hi-t{color:var(--alert)} .md-t{color:var(--decide)} .lo-t{color:var(--stone)} .ok-t{color:var(--done)}
+.paused{background:repeating-linear-gradient(45deg,var(--cream),var(--cream) 8px,var(--bg) 8px,var(--bg) 16px)}
+.paused .cbody{color:var(--stone)}
+.degchip{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--stone);border:1px dashed var(--faint);border-radius:var(--r-pill);padding:2px 8px}
+.quarantine{position:relative;border:2px dashed var(--faint);opacity:.92}
+.qbanner{background:var(--ink);color:var(--cream);font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;text-align:center;padding:var(--s2)}
+.qinner{filter:grayscale(.55);opacity:.75;pointer-events:none;padding:var(--s3) var(--s4)}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r-chip);overflow:hidden;width:max-content;margin-bottom:var(--s3)}
+.seg span{padding:5px 12px;font-size:var(--fs-meta);border-right:1px solid var(--line);color:var(--faint)}
+.seg span:last-child{border-right:0}
+.seg .on{background:var(--gold-glow);color:var(--gold);font-weight:600}
+.pbrow{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) 0;border-top:1px solid var(--line);font-size:var(--fs-meta);color:var(--stone)}
+.wire{padding:var(--s3) var(--s4)}
+.wire .row{display:flex;gap:var(--s3)}
+.wrail{width:56px;border:1px solid var(--line);border-radius:var(--r-chip);padding:var(--s2);font-size:var(--fs-label);color:var(--faint);text-align:center}
+.wlist{flex:1;border:1px solid var(--line);border-radius:var(--r-chip);padding:var(--s2)}
+.wsess{display:flex;align-items:center;gap:var(--s2);padding:5px 6px;font-size:var(--fs-meta);color:var(--stone)}
+.sd{width:7px;height:7px;border-radius:50%}
+.wpane{flex:1.2;border:2px solid var(--gold);border-radius:var(--r-chip);padding:var(--s2);font-size:var(--fs-meta);color:var(--stone);background:var(--gold-glow)}
+.note{color:var(--faint);font-size:var(--fs-meta);margin-top:var(--s2)}
+footer{margin-top:var(--s6);color:var(--faint);font-size:var(--fs-meta)}
+</style>
+</head>
+<body>
+<h1>Shadow</h1>
+<p class="sub">Sutra Desktop companion · design preview v1.0 · locked token core · v0 = session monitor (observe + suggest) · dual-lane reviewed 2026-08-21</p>
+
+<div class="grid">
+
+  <!-- P1 CALM -->
+  <section class="pgroup">
+    <h2>1 · Pane — Calm (v0 default)</h2>
+    <div class="pane">
+      <div class="strip">
+        <span class="name">Shadow</span>
+        <span class="meta">watching 4 sessions</span>
+        <span class="pill l1">L1 · suggest</span>
+        <span class="pill">not screen-aware yet</span>
+        <span class="pause">Pause monitoring</span>
+      </div>
+      <div class="calm"><span class="dot"></span>All calm — 2 handled today</div>
+      <div class="quiet">Last incident 3 h ago · paisa · resolved by you</div>
+    </div>
+  </section>
+
+  <!-- P2 INCIDENTS -->
+  <section class="pgroup">
+    <h2>2 · Pane — Incidents (v0)</h2>
+    <div class="pane">
+      <div class="strip">
+        <span class="name">Shadow</span>
+        <span class="meta">watching 4 sessions · 3 need you</span>
+        <span class="pill l1">L1 · suggest</span>
+        <span class="pause">Pause monitoring</span>
+      </div>
+      <div class="card"><div class="rail hi"></div><div class="cbody">
+        <div class="crow"><span class="chip hi">SIG-DROP</span><span class="ct">dayflow — session dropped</span></div>
+        <div class="cm">Connection error (529) · idle 2 m 14 s · 3 related drops in 10 min</div>
+        <div class="ev">a015e6cb · L412–418</div>
+        <div class="acts"><span class="btn act">Retry session</span><span class="btn ghost">Dismiss</span><span class="btn ghost">Wrong signal</span></div>
+      </div></div>
+      <div class="card"><div class="rail md"></div><div class="cbody">
+        <div class="crow"><span class="chip md">SIG-STALL</span><span class="ct">sutra-ui — Bash running 11 m</span></div>
+        <div class="cm">No output since 10:41 · typical for this project: 6 m</div>
+        <div class="ev">6723ea56 · L1204</div>
+        <div class="acts"><span class="btn act">Open session</span><span class="btn ghost">Dismiss</span><span class="btn ghost">Wrong signal</span></div>
+      </div></div>
+      <div class="card"><div class="rail lo"></div><div class="cbody">
+        <div class="crow"><span class="chip lo">SIG-DONE</span><span class="ct">paisa — reply finished</span></div>
+        <div class="cm">EMI reconciliation script passing · suggested next: commit + run W-emi-reconcile</div>
+        <div class="ev">d9227850 · L88–96</div>
+        <div class="acts"><span class="btn act">Open session</span><span class="btn ghost">Mark read</span></div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- P3 EDGE STATES -->
+  <section class="pgroup">
+    <h2>3 · Edge states</h2>
+    <div class="mini"><h3>Storm digest (&gt;5 open)</h3>
+      <div class="pane"><div class="digestrow">
+        <span><b class="hi-t">4</b> high</span><span><b class="md-t">3</b> med</span><span><b class="lo-t">2</b> low</span>
+        <span style="margin-left:auto" class="btn ghost">Expand</span>
+      </div></div>
+    </div>
+    <div class="mini"><h3>Paused</h3>
+      <div class="pane paused"><div class="card"><div class="rail lo"></div><div class="cbody">
+        Monitoring paused — nothing is being watched. <span class="btn act" style="margin-left:8px">Resume monitoring</span>
+      </div></div></div>
+    </div>
+    <div class="mini"><h3>Degraded (side-channel down)</h3>
+      <div class="pane"><div class="strip"><span class="name">Shadow</span><span class="meta">watching 4 sessions</span><span class="degchip">degraded — transcripts only</span></div></div>
+    </div>
+  </section>
+
+  <!-- P4 ACT 2 QUARANTINE -->
+  <section class="pgroup">
+    <h2>4 · Act 2+ preview</h2>
+    <div class="pane quarantine">
+      <div class="qbanner">Not in v0 — future, needs founder gate</div>
+      <div class="qinner">
+        <div class="seg"><span>L0 observe</span><span class="on">L1 suggest</span><span>L2 nudge 🔒</span><span>L3 fix 🔒</span><span>L4 auto 🔒</span></div>
+        <div class="pbrow"><span class="chip lo">PB-RETRY</span><span>on SIG-DROP · used 7× · idempotent</span><span style="margin-left:auto">promoted</span></div>
+        <div class="pbrow"><span class="chip lo">PB-FIX-HEADER</span><span>on SIG-ERRLOOP · seen 3× · awaiting your approval</span><span style="margin-left:auto">proposed</span></div>
+      </div>
+    </div>
+    <p class="note">Rendered greyed + non-interactive on purpose: v0 ships L0/L1 + pause only.</p>
+  </section>
+
+  <!-- P5 WHERE IT LIVES -->
+  <section class="pgroup">
+    <h2>5 · Where it lives (Chats page)</h2>
+    <div class="pane"><div class="wire">
+      <div class="row">
+        <div class="wrail">RAIL<br><br>Recent<br>Project<br>Dept<br><br><span class="ok-t">no badge</span></div>
+        <div class="wlist">
+          <div class="wsess"><span class="sd" style="background:var(--alert)"></span>dayflow — dropped</div>
+          <div class="wsess"><span class="sd" style="background:var(--decide)"></span>sutra-ui — long bash</div>
+          <div class="wsess"><span class="sd" style="background:var(--done)"></span>paisa — finished</div>
+          <div class="wsess"><span class="sd" style="background:var(--line)"></span>billu — active</div>
+        </div>
+        <div class="wpane"><b>Shadow pane</b> (rename of Ask Sutra — proposed)<br>incident feed + chat composer stay together</div>
+      </div>
+      <p class="note">Severity dots on session rows + one quiet line on Right Now. No new nav destination, no rail badge (locked IA invariant).</p>
+    </div></div>
+  </section>
+
+</div>
+
+<footer>Shadow design preview v1.0 · tokens: desktop-app/ui/tokens.css (verbatim) · spec: holding/plans/shadow/DESIGN-SYSTEM.md · PRD: PRD-V0.md · reviewed: codex + DeepSeek 2026-08-21</footer>
+</body>
+</html>
