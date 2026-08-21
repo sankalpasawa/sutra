@@ -1,6 +1,13 @@
 # Sutra — Current Version
 
-## v2.113.1 (2026-08-21, HEAD)
+## v2.113.2 (2026-08-21, HEAD)
+
+Tiles share a height again, with their action buttons pinned to the bottom edge
+so a row lines up without a short tile showing dead space. Connector failures
+render as a sentence plus a hint keyed to the provider's error code, instead of
+printing the structured error body as raw JSON.
+
+## v2.113.1 (2026-08-21)
 
 **Connector tile layout fixed, including a regression it had caused on the
 Updates screen.** A tile clipped its own Manage button at two-column width,

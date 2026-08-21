@@ -1555,10 +1555,12 @@
      rather than a fixed column count: the browse pane is resizable and was
      measured at 303px in one layout and 463px in another, so a fixed grid
      would either overflow or waste half the width. */
-  /* align-items:start, not the grid default of stretch. Stretched tiles all
-     take the height of the tallest, so a tile with less content shows a block
-     of dead space -- measured at 180px for a tile whose content was 85px. */
-  .ptiles{display:grid;gap:10px;margin:12px 0;align-items:start;
+  /* Tiles share a height (grid's default stretch) so a row of them lines up.
+     An earlier version used align-items:start to kill the dead space a short
+     tile showed when stretched -- which fixed the gap and left the row ragged.
+     Both are solved by stretching AND pinning the action to the bottom, so the
+     space goes between the content and the button instead of after it. */
+  .ptiles{display:grid;gap:10px;margin:12px 0;
           grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
   .ptile{border:1px solid var(--line);border-radius:var(--r);background:var(--card);
          padding:12px 13px;display:flex;flex-direction:column;gap:8px}
@@ -1583,4 +1585,8 @@
   .tilecaveat{margin:0;font-size:10.5px;line-height:1.4;color:var(--faint);
               border-left:2px solid var(--line);padding-left:8px}
   .tileblocked{margin:0 !important;font-size:10.5px}
+  /* margin-top:auto in a flex column pushes the action to the bottom edge, so
+     every tile's button sits on the same line regardless of how much content
+     is above it. */
+  .ptile > .btn,.ptile > .tileblocked{margin-top:auto}
   .ptile .btn{align-self:flex-start}

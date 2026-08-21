@@ -2,6 +2,18 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.113.2 (2026-08-21)
+
+- **Tiles align again.** 2.113.1 stopped tiles stretching, to kill the dead
+  space a short tile showed -- which fixed the gap and left the row ragged.
+  Tiles now stretch AND pin their action to the bottom edge, so the slack goes
+  between the content and the button instead of after it. Verified at 2, 3 and
+  4 columns: tops, bottoms and action buttons all on one line.
+- **Connector errors read as sentences.** A failure rendered the whole
+  structured body as raw JSON on screen. The panel now shows the message, a
+  hint keyed to the provider's own error code, and the code itself -- so
+  `bad_client_secret` says which field to copy and where it lives.
+
 ## 2.113.1 (2026-08-21)
 
 **Three layout defects, one of them a regression this codebase caused

@@ -17,6 +17,48 @@ S.conn = { providers: null, err: null, tx: null, txProvider: null, txErr: null,
            open: null, openProvider: null,
            repos: null, orgs: null, perms: null, events: null, busy: false };
 
+/* The backend returns a structured error body; apiGet/apiPost stringify the
+ * whole object into the Error message. Rendering that raw put a JSON blob on
+ * screen -- `{"code":"VALIDATION_FAILED","message":"slack: bad_client_secret",
+ * "retryable":false,...}` -- when the useful part is one sentence and an action.
+ */
+const CONN_ACTION_HINT = {
+  RECONNECT: "Reconnect this account.",
+  GRANT_CAPABILITY: "Grant the capability in your settings file.",
+  AUTHORISE_SSO: "Authorise Sutra for that organisation.",
+  INSTALL_APP: "Install the app on the account you want reachable.",
+  ADD_REPOSITORY: "Add repositories to the installation.",
+  WAIT: "Rate limited — try again shortly.",
+  CONTACT_ORG_OWNER: "An organisation owner has to approve this.",
+};
+const PROVIDER_ERROR_HELP = {
+  bad_client_secret:
+    "The client secret on this machine is not the one this Slack app expects. "
+    + "Copy it from Basic Information \u2192 App Credentials \u2192 Client Secret into "
+    + "~/.sutra/provider-secrets.env",
+  invalid_client_id: "The client id does not match this Slack app.",
+  bad_redirect_uri:
+    "The redirect URL is not registered on the app. Add "
+    + "http://localhost:8765/slack/callback under OAuth & Permissions.",
+  invalid_auth: "The stored credential was rejected. Reconnect.",
+};
+
+function connError(raw){
+  const text = String(raw && raw.message || raw || "");
+  let parsed = null;
+  const brace = text.indexOf("{");
+  if (brace >= 0){
+    try { parsed = JSON.parse(text.slice(brace, text.lastIndexOf("}") + 1)); } catch (e) {}
+  }
+  if (!parsed) return { headline: text, hint: null, code: null };
+  const pe = parsed.provider_error;
+  return {
+    headline: parsed.message || parsed.code || text,
+    hint: PROVIDER_ERROR_HELP[pe] || CONN_ACTION_HINT[parsed.user_action] || null,
+    code: parsed.code || null,
+  };
+}
+
 async function apiDelete(path){
   const r = await fetch(API + path, { method:"DELETE" });
   if (!r.ok) throw await _fail(r, path);
@@ -333,8 +375,14 @@ SCREENS.connectors = () => {
          </div>
          <p class="muted">Live — not yet durable. Waiting for the callback.</p></div>`;
   }
-  const txErr = s.txErr ? `<div class="note w"><b>Could not start the connection.</b>
-    <br><code>${esc(s.txErr)}</code></div>` : "";
+  let txErr = "";
+  if (s.txErr){
+    const e = connError(s.txErr);
+    txErr = `<div class="note w"><b>Could not start the connection.</b>
+      <br>${esc(e.headline)}
+      ${e.hint?`<br><span class="muted">${esc(e.hint)}</span>`:""}
+      ${e.code?`<br><span class="muted">code: <code>${esc(e.code)}</code></span>`:""}</div>`;
+  }
 
   return head + degraded + txErr + tx
     + `<div class="ptiles">${(s.providers||[]).map(providerTile).join("")}</div>`
