@@ -108,6 +108,19 @@ class AuthStrategy:
     def complete(self, secret: str) -> Credential:
         return self.poll(secret)
 
+    def can_resume(self, handle: str) -> bool:
+        """Can an EXISTING transaction still be completed by this strategy?
+
+        Device flow: yes. The device_code lives at the provider, so a restart
+        loses nothing and the user's code is still good.
+
+        Redirect flow: only while the loopback listener is alive, and that
+        listener is in-process. After a restart the transaction is a corpse --
+        and ConnectorService's idempotency would otherwise keep handing it back
+        forever, so every Connect click returns the same dead flow.
+        """
+        return True
+
     def identity(self, result: "AuthResult"):
         """Resolve the provider account this authorization belongs to.
 

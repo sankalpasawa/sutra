@@ -316,6 +316,34 @@ class TestEndToEndConnect(unittest.TestCase):
         for secret in ("xoxb-", "xoxp-", "xoxe-", "shhh"):
             self.assertNotIn(secret, blob)
 
+    def test_a_dead_transaction_is_retired_not_handed_back(self):
+        """begin_connect is idempotent, and a redirect listener is in-process.
+        Together they made Connect permanently unusable after a restart: the
+        open transaction was returned forever and could never complete."""
+        db, transport, strategy, service = build()
+        first = service.begin_connect(OPERATOR)
+        tx_id = first["transaction_id"]
+
+        # Simulate the restart: the process kept the row, lost the listener.
+        strategy.close_all()
+
+        second = service.begin_connect(OPERATOR)
+        self.assertNotEqual(second["transaction_id"], tx_id,
+                            "a transaction nobody can finish was handed back")
+        row = db.execute("SELECT status, failure_code FROM oauth_transactions "
+                         "WHERE id = ?", (tx_id,)).fetchone()
+        self.assertEqual(row["status"], "FAILED")
+        self.assertEqual(row["failure_code"], "LISTENER_LOST")
+        strategy.cancel(service.credentials.get_secret("device:" + second["transaction_id"]))
+
+    def test_a_live_transaction_is_still_reused(self):
+        """Idempotency must survive the fix: a double-clicked Connect should
+        not strand a second listener."""
+        db, transport, strategy, service = build()
+        first = service.begin_connect(OPERATOR)
+        second = service.begin_connect(OPERATOR)
+        self.assertEqual(first["transaction_id"], second["transaction_id"])
+
     def test_a_provider_never_lists_another_providers_connectors(self):
         """A GitHub connection rendered as a connected Slack account because
         list_connectors did not filter by provider."""

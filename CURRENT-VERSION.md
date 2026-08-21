@@ -1,6 +1,17 @@
 # Sutra — Current Version
 
-## v2.113.2 (2026-08-21, HEAD)
+## v2.113.3 (2026-08-21, HEAD)
+
+**Slack could never be connected after an app restart.** An idempotent
+begin_connect kept returning an open transaction whose in-process loopback
+listener had died with the previous process, so every Connect click resurrected
+the same unusable flow. Strategies now declare whether they can still service a
+transaction; one they cannot is retired and replaced.
+
+Found by running the connect through the installed app rather than the test
+suite -- the suite never restarts a process.
+
+## v2.113.2 (2026-08-21)
 
 Tiles share a height again, with their action buttons pinned to the bottom edge
 so a row lines up without a short tile showing dead space. Connector failures

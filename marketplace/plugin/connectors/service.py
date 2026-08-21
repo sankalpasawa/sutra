@@ -70,9 +70,23 @@ class _ConnectorLifecycle:
         # strand a device code.
         existing = self.transactions.find_open(operator_id, self.config.provider)
         if existing is not None:
-            challenge = self._cached_challenge(existing)
+            resumable = False
+            try:
+                handle = self.credentials.get_secret(_DEVICE_SECRET_PREFIX + existing.id)
+                resumable = self.strategy.can_resume(handle)
+            except CredentialNotFound:
+                resumable = False
+            challenge = self._cached_challenge(existing) if resumable else None
             if challenge is not None:
                 return {**existing.public_dict(), **challenge}
+            # Dead: a redirect flow whose in-process listener did not survive a
+            # restart. Retire it and open a fresh one, rather than handing back
+            # a transaction that can never complete -- which made Connect
+            # permanently unusable, since every click returned the same corpse.
+            self.transactions.transition(existing.id, existing.status,
+                                         TransactionStatus.FAILED,
+                                         failure_code="LISTENER_LOST")
+            self._purge_transaction_secrets(existing.id)
 
         now = utcnow()
         tx = OAuthTransaction(

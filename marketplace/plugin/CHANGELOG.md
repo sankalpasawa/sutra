@@ -2,6 +2,29 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.113.3 (2026-08-21)
+
+**Connecting Slack was permanently impossible after an app restart.**
+
+Two decisions collided. `begin_connect` is idempotent -- an operator with an
+open transaction gets that one back rather than opening a second, so a
+double-clicked Connect does not strand a listener. And a redirect flow's
+loopback listener lives IN-PROCESS, because a listener that outlived the app
+would be a port held open by nothing.
+
+Together: restart the app mid-flow and the transaction row survives while its
+listener does not. Every subsequent Connect returned that same corpse, and
+polling it answered *"restart the connection"* -- advice the UI had no way to
+follow, because restarting produced the same dead transaction again.
+
+Strategies now declare `can_resume()`. Device flow always can: the device_code
+lives at the provider. A loopback flow can only while it still holds the
+listener. A transaction nobody can finish is retired as `LISTENER_LOST` and a
+fresh one opened.
+
+Two tests, one per direction: a dead transaction must not be handed back, and a
+live one must still be reused.
+
 ## 2.113.2 (2026-08-21)
 
 - **Tiles align again.** 2.113.1 stopped tiles stretching, to kill the dead

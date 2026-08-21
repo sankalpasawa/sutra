@@ -127,6 +127,11 @@ class SlackLoopbackStrategy(AuthStrategy):
         user = result.extra.get("user") or result.primary
         return self.client.identity(user.access_token, result.meta)
 
+    def can_resume(self, handle: str) -> bool:
+        """Only while this process still holds the listener for that state."""
+        with self._lock:
+            return handle in self._pending
+
     def cancel(self, handle: str):
         self._discard(handle)
 
