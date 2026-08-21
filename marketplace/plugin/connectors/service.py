@@ -27,7 +27,7 @@ from .models import (
     TERMINAL_STATUSES, TransactionStatus, iso, utcnow,
 )
 from .discovery_service import DiscoveryMixin
-from .oauth.strategies import AuthStrategy, DeviceFlowStrategy
+from .oauth.strategies import AuthResult, AuthStrategy, DeviceFlowStrategy
 
 #: Transactions are short-lived by construction. GitHub's device codes last 15
 #: minutes; ours expire no later than that.
@@ -262,6 +262,9 @@ class _ConnectorLifecycle:
             # rotates A's credential, and connecting B inserts a second row.
             self.connectors.update_identity(existing.id, identity)
             self.connectors.set_label(existing.id, tx.label)
+            # Reconnecting a previously disconnected account must clear the
+            # soft-delete, or the row says ACTIVE while every listing hides it.
+            self.connectors.reactivate(existing.id)
             return existing
 
         connector = Connector(
@@ -346,7 +349,19 @@ class _ConnectorLifecycle:
             raise TransactionNotFound(connector_id)
         try:
             credential = self.credential_for(operator_id, connector_id)
-            identity = self.client.get_user(credential.access_token)
+            # Identity resolution belongs to the STRATEGY -- GitHub asks
+            # GET /user, Slack asks auth.test with the user token. poll_connect
+            # was moved onto that seam and this caller was missed, so validate
+            # called GitHub's client method on a SlackClient and raised
+            # AttributeError. Rebuild the same shape poll_connect produces.
+            extra = {}
+            for slot in self.credential_slots:
+                try:
+                    extra[slot] = self.credentials.get(connector_id, slot=slot)
+                except CredentialNotFound:
+                    pass
+            identity = self.strategy.identity(
+                AuthResult(primary=credential, extra=extra))
         except ConnectorError as exc:
             self.events.append(operator_id, "CONNECTOR_VALIDATION_FAILED", "FAILED",
                                connector_id=connector_id, reason_code=exc.code)

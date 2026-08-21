@@ -2,6 +2,43 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.115.0 (2026-08-21)
+
+**Slack works end to end.** First release where a Slack account can be
+connected, disconnected and reconnected from the app.
+
+Two defects, both found by using the installed app rather than by the suite:
+
+- **A reconnected account was ACTIVE and invisible at the same time.**
+  Disconnect soft-deletes so audit rows stay resolvable and a reconnect reuses
+  the same connector id. Nothing cleared `disconnected_at` on the way back, and
+  every listing filters on it being NULL -- so a successful reconnect showed
+  nothing, while the row claimed it was connected. The user has no way to tell
+  which of the two the system believes.
+- **`validate` called GitHub's client method on a Slack client.** Identity
+  resolution was moved onto the strategy for the connect path and this second
+  caller was missed, so validating a Slack connector raised AttributeError.
+
+Three tests now check the CLASS rather than those two instances: the service
+may contain no provider-specific client call, must resolve identity through the
+strategy, and may not name a provider except through its own config.
+
+Also in this release, from 2.113.x:
+
+- Slack connector: loopback redirect, bot + user tokens in separate credential
+  slots, identity keyed `team_id:user_id`, token rotation honoured.
+- Connectors screen is a provider tile view -- one tile per provider whether
+  connected or not, each stating its auth mode, whether it can connect on this
+  machine, and its caveat. Slack's says plainly that its flow is weaker than
+  GitHub's.
+- A dead OAuth transaction is retired instead of resurrected. An idempotent
+  begin_connect kept handing back a transaction whose in-process listener died
+  with a previous app process, making Connect permanently unusable.
+- Tiles align, with actions pinned to the bottom edge.
+- Connector errors render as a sentence and a code, not a raw JSON body.
+
+201 connector + 152 panel + 51 governance + 12 UI wiring tests green.
+
 ## 2.113.3 (2026-08-21)
 
 **Connecting Slack was permanently impossible after an app restart.**

@@ -1,6 +1,18 @@
 # Sutra — Current Version
 
-## v2.113.3 (2026-08-21, HEAD)
+## v2.115.0 (2026-08-21, HEAD)
+
+**Slack connects, disconnects and reconnects from the app.** Verified against a
+real workspace: bot and user tokens in separate keychain slots, both rotating,
+identity keyed team_id:user_id, no token bytes anywhere in the database.
+
+The two defects that stood between a working connector and a usable one were a
+reconnect that left the account ACTIVE and invisible simultaneously, and a
+validate path that still called GitHub's client method on a Slack client. Both
+were found by using the installed app; neither was reachable from the test
+suite. Three new tests check the class of each rather than the instance.
+
+## v2.113.3 (2026-08-21)
 
 **Slack could never be connected after an app restart.** An idempotent
 begin_connect kept returning an open transaction whose in-process loopback

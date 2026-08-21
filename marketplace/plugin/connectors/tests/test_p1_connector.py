@@ -517,11 +517,69 @@ class TestCredentialLifecycle(unittest.TestCase):
                 service.credentials.get(connector_id) if slot is None \
                     else service.credentials.get(connector_id, slot=slot)
 
+    def test_reconnect_after_disconnect_is_visible_again(self):
+        """A reconnected account was ACTIVE and invisible at the same time:
+        disconnect soft-deletes, and nothing cleared disconnected_at on the way
+        back, while every listing filters on it being NULL."""
+        db, transport, service, connector_id = self.connect()
+        service.disconnect(OPERATOR, connector_id)
+        self.assertEqual(service.list_connectors(OPERATOR), [])
+
+        script_successful_connect(transport)           # same account reconnects
+        started = service.begin_connect(OPERATOR)
+        result = service.poll_connect(OPERATOR, started["transaction_id"])
+
+        self.assertEqual(result["connector_id"], connector_id, "same row reused")
+        listed = service.list_connectors(OPERATOR)
+        self.assertEqual(len(listed), 1, "reconnected account is invisible")
+        self.assertEqual(listed[0]["status"], "ACTIVE")
+        row = db.execute("SELECT disconnected_at FROM connectors WHERE id = ?",
+                         (connector_id,)).fetchone()
+        self.assertIsNone(row["disconnected_at"],
+                          "status and disconnected_at disagree")
+
     def test_connector_row_survives_for_audit(self):
         db, transport, service, connector_id = self.connect()
         service.disconnect(OPERATOR, connector_id)
         self.assertIsNotNone(service.get_connector(OPERATOR, connector_id))
         self.assertEqual(service.list_connectors(OPERATOR), [])
+
+
+# ====================================================================== #
+class TestProviderAgnosticism(unittest.TestCase):
+    """ConnectorService must contain no provider-specific call.
+
+    poll_connect was moved onto the strategy's identity seam and validate was
+    missed, so validate called GitHub's get_user on a SlackClient. A grep-level
+    test catches the class rather than that one instance."""
+
+    def _service_source(self):
+        import connectors.service as mod
+        import connectors.discovery_service as disc
+        with open(mod.__file__) as a, open(disc.__file__) as b:
+            return a.read() + b.read()
+
+    def test_no_github_method_names_in_the_service(self):
+        import re
+        source = self._service_source()
+        offenders = []
+        for name in ("get_user", "request_device_code", "poll_for_token",
+                     "auth_test", "exchange_code", "authorize_url"):
+            for m in re.finditer(r"self\.client\.%s\b" % name, source):
+                offenders.append(name)
+        self.assertEqual(offenders, [],
+            "provider-specific client calls in the service: %s" % offenders)
+
+    def test_validate_resolves_identity_through_the_strategy(self):
+        source = self._service_source()
+        self.assertIn("self.strategy.identity(", source)
+
+    def test_no_provider_literal_outside_config(self):
+        """The service may name a provider only via self.config.provider."""
+        import re
+        source = self._service_source()
+        bad = [m.group(0) for m in re.finditer(r'["\']github["\']|["\']slack["\']', source)]
+        self.assertEqual(bad, [], "hardcoded provider literal in the service: %s" % bad)
 
 
 # ====================================================================== #

@@ -63,6 +63,24 @@ class ConnectorRepository:
              iso(connector.created_at), iso(connector.updated_at)))
         return connector
 
+    def reactivate(self, connector_id: str):
+        """Clear the soft-delete when a disconnected connector is reconnected.
+
+        Disconnect is a SOFT delete: the row survives so audit events that
+        reference it stay resolvable, and reconnecting reuses the same id so
+        history stays attached to one continuous relationship.
+
+        But nothing cleared disconnected_at on the way back, so a successful
+        reconnect produced a contradictory row -- status ACTIVE with a
+        disconnected_at still set. list_for_operator filters on
+        `disconnected_at IS NULL`, so the account was invisible in the UI while
+        its own status claimed it was connected. The user reconnects, sees
+        nothing, and has no way to tell which of the two the system believes.
+        """
+        self.db.execute(
+            "UPDATE connectors SET disconnected_at = NULL, updated_at = ? WHERE id = ?",
+            (iso(utcnow()), connector_id))
+
     def update_identity(self, connector_id: str, identity, status=None, status_reason=None):
         """Refresh the mutable display fields. username is NOT identity."""
         self.db.execute(
