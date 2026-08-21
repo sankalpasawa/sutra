@@ -541,8 +541,10 @@ function railSpec(){
          a 0 before anything was read is a claim about a machine nobody looked
          at. */
       {id:"connectors", n:"Connectors", i:"link",
-       c:(S.conn && S.conn.list ? S.conn.list.filter(c=>c.status==="ACTIVE").length : undefined),
-       warn:(S.conn && S.conn.list ? S.conn.list.some(c=>c.status==="REAUTH_REQUIRED") : false)},
+       c:(S.conn && S.conn.providers
+            ? S.conn.providers.reduce((n,p)=>n+(p.connected||0),0) : undefined),
+       warn:(S.conn && S.conn.providers
+            ? S.conn.providers.some(p=>p.needs_attention>0) : false)},
       {id:"teamsutra", n:"Teamsutra", i:"rout",
        c:(S.ts ? (S.ts.tasks||[]).filter(t=>["queued","claimed","needs_review"].includes(t.status)).length : undefined)},
       /* Usage sits in RUNTIME because it describes the running account, not the

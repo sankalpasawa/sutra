@@ -18,6 +18,20 @@ from typing import Optional
 #: Sutra Dev GitHub App, owned by tchandrakar. Public value.
 DEV_CLIENT_ID = "Iv23li4V24WX8yjaWoby"
 
+#: Sutra Slack app. Public value -- it appears in every authorization URL a
+#: user's browser visits.
+SLACK_DEV_CLIENT_ID = "11873373906406.11873418567958"
+
+SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
+SLACK_ACCESS_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
+SLACK_API_BASE = "https://slack.com/api"
+
+#: Fixed, because Slack matches redirect URLs EXACTLY -- an ephemeral port the
+#: way Google's desktop client type permits is not available here. A fixed port
+#: is squattable; see design/06 threat T-21.
+SLACK_REDIRECT_PORT = 8765
+SLACK_REDIRECT_PATH = "/slack/callback"
+
 GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code"
 GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_VERIFICATION_URL = "https://github.com/login/device"
@@ -55,3 +69,72 @@ class ProviderConfig:
     def __post_init__(self):
         if not self.client_id:
             raise ValueError("client_id is required")
+
+
+@dataclass(frozen=True)
+class SlackConfig:
+    """Slack differs from GitHub in three ways that matter, all of them worse:
+
+      no device flow    -> a browser redirect is the only option
+      no PKCE           -> `state` is the ONLY binding between our request and
+                           the code that comes back
+      secret required   -> and it must therefore live on the device
+
+    Each is Slack's constraint, not a choice we made, and each is recorded
+    rather than smoothed over.
+    """
+    provider: str = "slack"
+    client_id: str = SLACK_DEV_CLIENT_ID
+    api_base: str = SLACK_API_BASE
+    authorize_url: str = SLACK_AUTHORIZE_URL
+    access_token_url: str = SLACK_ACCESS_TOKEN_URL
+    redirect_port: int = SLACK_REDIRECT_PORT
+    redirect_path: str = SLACK_REDIRECT_PATH
+    user_agent: str = "Sutra-Connector/0.1"
+    #: One authorization yields two tokens with different reach and different
+    #: attribution, so they live in separate slots.
+    credential_slots: tuple = ("user",)
+    #: Read from ~/.sutra/provider-secrets.env, never from the repo.
+    client_secret: Optional[str] = None
+
+    @property
+    def redirect_uri(self) -> str:
+        return "http://localhost:%d%s" % (self.redirect_port, self.redirect_path)
+
+    @classmethod
+    def from_env(cls, env=None):
+        env = env if env is not None else os.environ
+        return cls(
+            client_id=env.get("SUTRA_SLACK_CLIENT_ID") or SLACK_DEV_CLIENT_ID,
+            client_secret=(env.get("SUTRA_SLACK_CLIENT_SECRET")
+                           or _read_secret_file(env).get("SUTRA_SLACK_CLIENT_SECRET")),
+        )
+
+
+def _read_secret_file(env=None):
+    """~/.sutra/provider-secrets.env, mode 0600.
+
+    A file rather than the repo, and a file rather than a shell profile: an
+    exported variable is visible in the environment of every process the user
+    launches, which is a wider audience than this needs.
+    """
+    env = env if env is not None else os.environ
+    path = env.get("SUTRA_SECRETS_FILE") or os.path.expanduser("~/.sutra/provider-secrets.env")
+    out = {}
+    if not os.path.exists(path):
+        return out
+    mode = os.stat(path).st_mode & 0o777
+    if mode & 0o077:
+        # Refuse to read a secrets file other users can read. Failing loudly
+        # beats silently loading a credential from a world-readable file.
+        raise PermissionError(
+            "%s is mode %o; secrets must not be group- or world-readable. "
+            "Run: chmod 600 %s" % (path, mode, path))
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            out[key.strip()] = value.strip().strip('"').strip("'")
+    return out

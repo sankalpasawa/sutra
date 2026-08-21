@@ -504,6 +504,19 @@ class TestCredentialLifecycle(unittest.TestCase):
         with self.assertRaises(Exception):
             service.credential_for(OPERATOR, connector_id)
 
+    def test_disconnect_erases_every_credential_slot(self):
+        """Slack issues a bot AND a user token from one authorization. A
+        disconnect that erased only the default slot would leave a live token
+        behind after telling the user the connection was gone."""
+        db, transport, service, connector_id = self.connect()
+        service.credential_slots = ("user",)
+        service.credentials.save(connector_id, Credential("xoxp-USER"), slot="user")
+        service.disconnect(OPERATOR, connector_id)
+        for slot in (None, "user"):
+            with self.assertRaises(CredentialNotFound):
+                service.credentials.get(connector_id) if slot is None \
+                    else service.credentials.get(connector_id, slot=slot)
+
     def test_connector_row_survives_for_audit(self):
         db, transport, service, connector_id = self.connect()
         service.disconnect(OPERATOR, connector_id)

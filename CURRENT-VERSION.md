@@ -1,6 +1,20 @@
 # Sutra — Current Version
 
-## v2.112.5 (2026-08-21, HEAD)
+## v2.113.0 (2026-08-21, HEAD)
+
+**Slack is the second provider, and Connectors is now a tile view.** One tile
+per provider whether connected or not, each stating its auth mode, whether it
+can connect on this machine, and its caveat. Slack's tile says plainly that its
+flow is weaker than GitHub's: no device flow, no PKCE, a loopback port.
+
+Slack issues two tokens from one authorization -- a bot token that posts (so
+agent actions are attributable to Sutra) and a user token that reads and
+searches. They live in separate credential slots and disconnect erases both.
+
+Adding a provider is now a registry row plus a package; the service, the API
+and the screen no longer know which provider they are serving.
+
+## v2.112.5 (2026-08-21)
 
 **Connectors screen layout fixed.** An `<a class="btn">` was `display: inline`,
 so its padding overlapped the surrounding text, and the activity table was

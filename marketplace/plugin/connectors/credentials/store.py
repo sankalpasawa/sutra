@@ -43,24 +43,41 @@ class CredentialStore:
         raise NotImplementedError
 
     # -- credentials: built on the above ---------------------------------
-    @staticmethod
-    def _credential_key(connector_id: str) -> str:
-        return "cred:%s" % connector_id
+    #: A connection can hold more than one credential. Slack issues a BOT token
+    #: and a USER token from a single authorization, and they have different
+    #: reach and different attribution -- storing them in one slot would force
+    #: a choice between them at write time.
+    DEFAULT_SLOT = "default"
 
-    def save(self, connector_id: str, credential: Credential) -> None:
-        self.put_secret(self._credential_key(connector_id),
+    @classmethod
+    def _credential_key(cls, connector_id: str, slot: str = DEFAULT_SLOT) -> str:
+        return ("cred:%s" % connector_id if slot == cls.DEFAULT_SLOT
+                else "cred:%s:%s" % (connector_id, slot))
+
+    def save(self, connector_id: str, credential: Credential,
+             slot: str = DEFAULT_SLOT) -> None:
+        self.put_secret(self._credential_key(connector_id, slot),
                         json.dumps(credential.to_secret_json(), separators=(",", ":")))
 
-    def get(self, connector_id: str) -> Credential:
-        raw = self.get_secret(self._credential_key(connector_id))
+    def get(self, connector_id: str, slot: str = DEFAULT_SLOT) -> Credential:
+        raw = self.get_secret(self._credential_key(connector_id, slot))
         return Credential.from_secret_json(json.loads(raw))
 
-    def delete(self, connector_id: str) -> None:
-        self.delete_secret(self._credential_key(connector_id))
+    def delete(self, connector_id: str, slot: str = DEFAULT_SLOT) -> None:
+        self.delete_secret(self._credential_key(connector_id, slot))
 
-    def rotate(self, connector_id: str, credential: Credential) -> None:
+    def delete_all(self, connector_id: str, slots=()) -> None:
+        """Disconnect must destroy EVERY credential a connection holds, not
+        just the default one. A forgotten slot is a live token after the user
+        was told the connector was gone."""
+        self.delete(connector_id)
+        for slot in slots:
+            self.delete(connector_id, slot)
+
+    def rotate(self, connector_id: str, credential: Credential,
+               slot: str = DEFAULT_SLOT) -> None:
         """Replace in place. The previous material must not survive."""
-        self.save(connector_id, credential)
+        self.save(connector_id, credential, slot)
 
 
 class MemoryCredentialStore(CredentialStore):

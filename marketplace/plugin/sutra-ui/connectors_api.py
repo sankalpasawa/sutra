@@ -27,13 +27,14 @@ _PLUGIN_ROOT = str(Path(__file__).resolve().parents[1])
 if _PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, _PLUGIN_ROOT)
 
-from connectors.config import ProviderConfig                    # noqa: E402
 from connectors.credentials import KeychainCredentialStore, keychain_available  # noqa: E402
 from connectors.credentials.store import MemoryCredentialStore  # noqa: E402
 from connectors.database import Database                        # noqa: E402
 from connectors.errors import ConnectorError                    # noqa: E402
 from connectors.permission_service import ConnectorPermissions  # noqa: E402
-from connectors.service import ConnectorService                 # noqa: E402
+from connectors.registry import (                               # noqa: E402
+    build_service, get_spec, provider_ids, secret_available,
+)
 
 router = APIRouter(prefix="/api", tags=["connectors"])
 
@@ -42,7 +43,11 @@ SUTRA_DIR = Path.home() / ".sutra"
 DB_PATH = str(SUTRA_DIR / "connectors.db")
 ERROR_LOG = SUTRA_DIR / "panel-errors.log"
 
-_service = None
+#: One Database for the whole process; one service PER PROVIDER over it. They
+#: share the file, and Database keeps a connection per thread.
+_db = None
+_store = None
+_services = {}
 _degraded = None
 
 log = logging.getLogger("sutra.connectors")
@@ -68,45 +73,51 @@ def _log_unexpected(where: str, exc: BaseException) -> str:
     return "%s: %s" % (type(exc).__name__, exc)
 
 
-def _build_service():
-    db = Database(DB_PATH)
-    db.migrate()
-    global _degraded
-    if keychain_available():
-        store = KeychainCredentialStore()
-        _degraded = None
-    else:
-        # Say so rather than silently losing credentials on restart.
-        store = MemoryCredentialStore()
-        _degraded = ("No OS keychain on this platform. Credentials will not "
-                     "survive a restart.")
-    return ConnectorService(db, store, config=ProviderConfig.from_env())
+def _foundation():
+    """The shared database and credential store."""
+    global _db, _store, _degraded
+    if _db is None:
+        _db = Database(DB_PATH)
+        _db.migrate()
+    if _store is None:
+        if keychain_available():
+            _store = KeychainCredentialStore()
+            _degraded = None
+        else:
+            # Say so rather than silently losing credentials on restart.
+            _store = MemoryCredentialStore()
+            _degraded = ("No OS keychain on this platform. Credentials will not "
+                         "survive a restart.")
+    return _db, _store
 
 
-def service():
-    """One service per process, REBUILT if its connection has gone bad.
+def service(provider: str = "github"):
+    """One service per provider, REBUILT if the shared connection goes bad.
 
-    The previous version cached a module global holding a live SQLite
-    connection for the life of the process. A connection that broke could never
-    recover, so the only cure was quitting the whole app -- which is what
-    happened in practice. Now a dead handle is detected and replaced, and a
-    FAILED construction is never cached, so the next request retries instead of
-    inheriting a permanent None.
+    A failed construction is never cached, so the next request retries instead
+    of inheriting a permanent None.
     """
-    global _service
-    if _service is not None:
+    global _db, _services
+    if provider not in provider_ids():
+        raise HTTPException(status_code=404,
+                            detail={"code": "UNKNOWN_PROVIDER", "provider": provider})
+    existing = _services.get(provider)
+    if existing is not None:
         try:
-            _service.db.execute("SELECT 1").fetchone()
-            return _service
+            existing.db.execute("SELECT 1").fetchone()
+            return existing
         except (sqlite3.Error, AttributeError) as exc:
             _log_unexpected("service.healthcheck", exc)
             try:
-                _service.db.close()
+                existing.db.close()
             except Exception:
                 pass
-            _service = None
-    _service = _build_service()
-    return _service
+            _services.clear()
+            _db = None
+    db, store = _foundation()
+    built = build_service(provider, db, store)
+    _services[provider] = built
+    return built
 
 
 def guarded(where):
@@ -139,8 +150,8 @@ def guarded(where):
     return decorate
 
 
-def permissions(connector_id: str) -> ConnectorPermissions:
-    return ConnectorPermissions(service(), OPERATOR, connector_id)
+def permissions(provider: str, connector_id: str) -> ConnectorPermissions:
+    return ConnectorPermissions(service(provider), OPERATOR, connector_id)
 
 
 def _fail(exc: ConnectorError):
@@ -157,79 +168,115 @@ def _fail(exc: ConnectorError):
 @router.get("/connectors")
 @guarded("list_connectors")
 def list_connectors():
-    try:
-        rows = service().list_connectors(OPERATOR)
-    except ConnectorError as exc:
-        _fail(exc)
+    """Every connector across every provider."""
+    rows = []
+    for pid in provider_ids():
+        for row in service(pid).list_connectors(OPERATOR):
+            rows.append(dict(row, provider=pid))
     return {"connectors": rows, "degraded": _degraded,
             "truth_class": "authoritative"}
 
 
+# NOT /api/providers: org_api.py already owns that path for AI CLI providers
+# (Claude, Codex, Gemini) and its router is registered first, so a route there
+# is silently shadowed rather than rejected. One segment under /connectors
+# cannot collide with /connectors/{provider}/{connector_id}, which is two.
+@router.get("/connectors/providers")
+@guarded("connector_providers")
+def connector_providers():
+    """Tile data. Includes providers with NO connector, which is the whole
+    point of a tile view: an unconnected provider still needs somewhere to be
+    shown, and no connector row exists to render it from."""
+    db, store = _foundation()
+    out = []
+    for pid in provider_ids():
+        spec = get_spec(pid)
+        connectors = service(pid).list_connectors(OPERATOR)
+        ready = secret_available(spec)
+        out.append({
+            "provider": spec.provider,
+            "display_name": spec.display_name,
+            "tagline": spec.tagline,
+            "auth_mode": spec.auth_mode,
+            "caveat": spec.caveat,
+            "connectable": ready,
+            "blocked_reason": None if ready else
+                "No client secret on this machine. Add "
+                "SUTRA_%s_CLIENT_SECRET to ~/.sutra/provider-secrets.env "
+                "(mode 600)." % spec.provider.upper(),
+            "connectors": connectors,
+            "connected": len(connectors),
+            "needs_attention": sum(
+                1 for c in connectors if c["status"] == "REAUTH_REQUIRED"),
+        })
+    return {"providers": out, "degraded": _degraded, "truth_class": "authoritative"}
+
+
 # ------------------------------------------------------------- connect ---
-@router.post("/connectors/github/authorize")
+@router.post("/connectors/{provider}/authorize")
 @guarded("authorize")
-def authorize(label: Optional[str] = None):
+def authorize(provider: str, label: Optional[str] = None):
     try:
-        return service().begin_connect(OPERATOR, label=label)
+        return service(provider).begin_connect(OPERATOR, label=label)
     except ConnectorError as exc:
         _fail(exc)
 
 
-@router.get("/connectors/github/authorize/{transaction_id}")
+@router.get("/connectors/{provider}/authorize/{transaction_id}")
 @guarded("poll")
-def poll(transaction_id: str):
+def poll(provider: str, transaction_id: str):
     try:
-        return service().poll_connect(OPERATOR, transaction_id)
+        return service(provider).poll_connect(OPERATOR, transaction_id)
     except ConnectorError as exc:
         _fail(exc)
 
 
-@router.delete("/connectors/github/authorize/{transaction_id}")
+@router.delete("/connectors/{provider}/authorize/{transaction_id}")
 @guarded("cancel")
-def cancel(transaction_id: str):
+def cancel(provider: str, transaction_id: str):
     try:
-        service().cancel_connect(OPERATOR, transaction_id)
+        service(provider).cancel_connect(OPERATOR, transaction_id)
     except ConnectorError as exc:
         _fail(exc)
     return {"status": "CANCELLED"}
 
 
 # -------------------------------------------------------------- detail ---
-@router.get("/connectors/github/{connector_id}")
+@router.get("/connectors/{provider}/{connector_id}")
 @guarded("detail")
-def detail(connector_id: str):
-    connector = service().get_connector(OPERATOR, connector_id)
+def detail(provider: str, connector_id: str):
+    connector = service(provider).get_connector(OPERATOR, connector_id)
     if connector is None:
         # 404 rather than 403: a 403 confirms the id exists.
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
     return connector.public_dict()
 
 
-@router.post("/connectors/github/{connector_id}/validate")
+@router.post("/connectors/{provider}/{connector_id}/validate")
 @guarded("validate")
-def validate(connector_id: str):
+def validate(provider: str, connector_id: str):
     try:
-        return service().validate(OPERATOR, connector_id)
+        return service(provider).validate(OPERATOR, connector_id)
     except ConnectorError as exc:
         _fail(exc)
 
 
-@router.delete("/connectors/github/{connector_id}")
+@router.delete("/connectors/{provider}/{connector_id}")
 @guarded("disconnect")
-def disconnect(connector_id: str):
+def disconnect(provider: str, connector_id: str):
     try:
-        return service().disconnect(OPERATOR, connector_id)
+        return service(provider).disconnect(OPERATOR, connector_id)
     except ConnectorError as exc:
         _fail(exc)
 
 
 # ----------------------------------------------------------- discovery ---
-@router.get("/connectors/github/{connector_id}/repositories")
+@router.get("/connectors/{provider}/{connector_id}/repositories")
 @guarded("repositories")
-def repositories(connector_id: str, cursor: Optional[str] = None,
+def repositories(provider: str, connector_id: str, cursor: Optional[str] = None,
                  refresh: bool = Query(False)):
     try:
-        return service().list_repositories(OPERATOR, connector_id,
+        return service(provider).list_repositories(OPERATOR, connector_id,
                                            cursor=cursor, refresh=refresh)
     except ConnectorError as exc:
         _fail(exc)
@@ -238,35 +285,35 @@ def repositories(connector_id: str, cursor: Optional[str] = None,
                             detail={"code": "INVALID_CURSOR", "message": str(exc)})
 
 
-@router.get("/connectors/github/{connector_id}/organizations")
+@router.get("/connectors/{provider}/{connector_id}/organizations")
 @guarded("organizations")
-def organizations(connector_id: str, refresh: bool = Query(False)):
+def organizations(provider: str, connector_id: str, refresh: bool = Query(False)):
     try:
-        return service().list_organizations(OPERATOR, connector_id, refresh=refresh)
+        return service(provider).list_organizations(OPERATOR, connector_id, refresh=refresh)
     except ConnectorError as exc:
         _fail(exc)
 
 
 # --------------------------------------------------------- permissions ---
-@router.get("/connectors/github/{connector_id}/permissions")
+@router.get("/connectors/{provider}/{connector_id}/permissions")
 @guarded("connector_permissions")
-def connector_permissions(connector_id: str):
+def connector_permissions(provider: str, connector_id: str):
     """The P3 capability read model. Read-only: rules are edited in the
     settings files, which is where they can be reviewed in a diff."""
-    if service().get_connector(OPERATOR, connector_id) is None:
+    if service(provider).get_connector(OPERATOR, connector_id) is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
     try:
-        return permissions(connector_id).summary()
+        return permissions(provider, connector_id).summary()
     except ConnectorError as exc:
         _fail(exc)
 
 
-@router.get("/connectors/github/{connector_id}/events")
+@router.get("/connectors/{provider}/{connector_id}/events")
 @guarded("events")
-def events(connector_id: str, limit: int = Query(50, le=200)):
-    if service().get_connector(OPERATOR, connector_id) is None:
+def events(provider: str, connector_id: str, limit: int = Query(50, le=200)):
+    if service(provider).get_connector(OPERATOR, connector_id) is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
-    rows = service().events.list_for_connector(connector_id, limit)
+    rows = service(provider).events.list_for_connector(connector_id, limit)
     return {"events": [{"event_type": r["event_type"], "result": r["result"],
                         "resource": r["resource"], "operation": r["operation"],
                         "reason_code": r["reason_code"],

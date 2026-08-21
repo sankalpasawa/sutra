@@ -1,0 +1,72 @@
+# Sutra Slack connector — app manifest.
+#
+# Upload at api.slack.com/apps -> Create New App -> "From a manifest".
+# NOT "AI agent": that template is preselected in the dialog and adds assistant
+# scopes and features nothing here asks for.
+#
+# Every scope below is present for one stated reason. Slack scope changes after
+# installation require reinstalling to the workspace, so the list is worth
+# reading once rather than widening later.
+_metadata:
+  major_version: 2
+  minor_version: 1
+
+display_information:
+  name: Sutra
+  description: Governance and agent workspace. Reads what you point it at; posts as itself.
+  background_color: "#1C1A17"
+
+features:
+  bot_user:
+    display_name: Sutra
+    always_online: false
+
+oauth_config:
+  redirect_urls:
+    # Fixed port: Slack matches the redirect URL exactly, so an ephemeral port
+    # is not possible the way it is with Google's desktop client type. A fixed
+    # port is squattable by another local process -- see the threat note in
+    # design/06-security.md. Slack offers no PKCE to bind the code to us.
+    - http://localhost:8765/slack/callback
+
+  scopes:
+    # ---- BOT: Sutra's own identity. Writing lives here so that every action an
+    # agent takes is attributable to Sutra and not to a person. ----
+    bot:
+      - chat:write          # post as Sutra
+      - channels:read       # list public channels
+      - channels:history    # read public channels Sutra was invited to
+      - groups:history      # read private channels Sutra was invited to
+      - users:read          # resolve user IDs to names for display
+
+    # ---- USER: your reach. Reading and search live here because a bot only
+    # ever sees conversations it has been added to -- a bot's im:history means
+    # "DMs with Sutra", not "your DMs". ----
+    #
+    # Deliberately absent: chat:write as a user scope. With it, an agent could
+    # post messages indistinguishable from you. Nothing requested that.
+    user:
+      - channels:read
+      - channels:history
+      - groups:read
+      - groups:history
+      - im:read
+      - im:history
+      - mpim:read
+      - mpim:history
+      - search:read         # bots cannot search at all; this is user-token only
+      - users:read
+
+settings:
+  # Single-workspace install. Org-wide deployment on Enterprise Grid is a
+  # larger approval ask; start narrow and widen if it is ever needed.
+  org_deploy_enabled: false
+
+  # Not used: Sutra calls the Web API and does not hold a socket open.
+  socket_mode_enabled: false
+
+  # Rotation ON. Without it Slack tokens NEVER EXPIRE, and a permanent
+  # credential with search:read over an enterprise workspace is the worst
+  # single secret in this system. Rotation costs us refresh machinery we
+  # already built for GitHub.
+  token_rotation_enabled: true

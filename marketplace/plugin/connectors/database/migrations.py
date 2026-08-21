@@ -197,4 +197,50 @@ CREATE TRIGGER IF NOT EXISTS connector_events_no_delete
 -- memory silently dropped it. Transaction state belongs in the transaction row.
 ALTER TABLE oauth_transactions ADD COLUMN label TEXT;
 """),
+
+("011_strategy_loopback", """
+-- The strategy CHECK listed only the two flows GitHub needed. Slack has no
+-- device flow and no PKCE, so its redirect flow is plain loopback -- a third
+-- name, and one the constraint rejected outright. SQLite cannot alter a CHECK
+-- in place, so the column is rebuilt.
+ALTER TABLE oauth_transactions RENAME TO oauth_transactions_old;
+
+CREATE TABLE oauth_transactions (
+  id                 TEXT PRIMARY KEY,
+  operator_id        TEXT NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+  provider           TEXT NOT NULL,
+  strategy           TEXT NOT NULL
+                       CHECK (strategy IN ('device','web_pkce','loopback')),
+  state_hash         TEXT,
+  code_verifier_enc  BLOB,
+  device_code_enc    BLOB,
+  redirect_uri       TEXT,
+  requested_scopes   TEXT,
+  reconnect_of       TEXT REFERENCES connectors(id),
+  status             TEXT NOT NULL
+                       CHECK (status IN ('CREATED','AUTHORIZATION_STARTED','CALLBACK_RECEIVED',
+                                         'CODE_EXCHANGED','CONNECTOR_CREATED','COMPLETED',
+                                         'EXPIRED','CANCELLED','FAILED','REJECTED')),
+  failure_code       TEXT,
+  connector_id       TEXT REFERENCES connectors(id),
+  poll_interval      INTEGER NOT NULL DEFAULT 5,
+  label              TEXT,
+  created_at         TEXT NOT NULL,
+  expires_at         TEXT NOT NULL,
+  completed_at       TEXT
+);
+
+INSERT INTO oauth_transactions
+  SELECT id, operator_id, provider, strategy, state_hash, code_verifier_enc,
+         device_code_enc, redirect_uri, requested_scopes, reconnect_of, status,
+         failure_code, connector_id, poll_interval, label, created_at,
+         expires_at, completed_at
+  FROM oauth_transactions_old;
+
+DROP TABLE oauth_transactions_old;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_state
+  ON oauth_transactions(state_hash) WHERE state_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tx_sweep ON oauth_transactions(status, expires_at);
+"""),
 ]

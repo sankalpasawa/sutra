@@ -46,6 +46,11 @@ class _ConnectorLifecycle:
         self.client = client or GitHubClient(self.config)
         self.strategy = strategy or DeviceFlowStrategy(self.client, self.config)
         self.credentials = credential_store
+        #: Extra credential slots this provider issues beyond the default one.
+        #: Slack hands out a bot token AND a user token from one authorization;
+        #: disconnect must destroy every slot, because a forgotten one is a live
+        #: token after the user was told the connection was gone.
+        self.credential_slots = tuple(getattr(self.config, "credential_slots", ()))
         self.connectors = ConnectorRepository(db)
         self.transactions = TransactionRepository(db)
         self.events = EventRepository(db)
@@ -78,11 +83,15 @@ class _ConnectorLifecycle:
         self.transactions.create(tx)
 
         challenge = self.strategy.begin()
-        # The device code is redeemable material: keychain, never the database.
-        self.credentials.put_secret(_DEVICE_SECRET_PREFIX + tx.id, challenge.device_code)
+        # The handle is redeemable material -- a device_code for device flow, a
+        # state value for a redirect flow, and for a provider with no PKCE the
+        # state is the ONLY binding between the code and this request. Keychain,
+        # never the database.
+        self.credentials.put_secret(_DEVICE_SECRET_PREFIX + tx.id, challenge.handle)
         self.credentials.put_secret(
             _DEVICE_SECRET_PREFIX + tx.id + ":display",
-            "%s\n%s" % (challenge.user_code, challenge.verification_uri))
+            "%s\n%s\n%s" % (challenge.mode, challenge.user_code or "",
+                            challenge.verification_uri or ""))
 
         self.transactions.transition(
             tx.id, TransactionStatus.CREATED, TransactionStatus.AUTHORIZATION_STARTED,
@@ -101,8 +110,14 @@ class _ConnectorLifecycle:
                 _DEVICE_SECRET_PREFIX + tx.id + ":display")
         except CredentialNotFound:
             return None
-        user_code, _, uri = display.partition("\n")
-        return {"user_code": user_code, "verification_uri": uri,
+        parts = display.split("\n")
+        mode = parts[0] if parts else "device"
+        if mode != "device":
+            return {"mode": mode, "browser_opened": True,
+                    "poll_interval_seconds": tx.poll_interval}
+        return {"mode": "device",
+                "user_code": parts[1] if len(parts) > 1 else "",
+                "verification_uri": parts[2] if len(parts) > 2 else "",
                 "poll_interval_seconds": tx.poll_interval}
 
     def poll_connect(self, operator_id: str, transaction_id: str) -> Dict:
@@ -127,7 +142,7 @@ class _ConnectorLifecycle:
             raise TransactionNotFound("device code is gone; restart the flow")
 
         try:
-            credential = self.strategy.complete(device_code)
+            result = self.strategy.poll(device_code)
         except SlowDown as exc:
             # GitHub asks for +5s. Honour it: polling faster is what earns a
             # secondary rate limit.
@@ -154,11 +169,19 @@ class _ConnectorLifecycle:
         self.transactions.claim(tx.id, TransactionStatus.AUTHORIZATION_STARTED,
                                 TransactionStatus.CODE_EXCHANGED)
 
-        identity = self.client.get_user(credential.access_token)
+        # Identity resolution is the strategy's job: GitHub asks GET /user,
+        # Slack asks auth.test with the user token. The service stays
+        # provider-agnostic by never knowing which.
+        identity = self.strategy.identity(result)
         connector = self._upsert_connector(operator_id, tx, identity)
-        self.credentials.save(connector.id, credential)
+
+        # A provider may issue several credentials from one authorization.
+        self.credentials.save(connector.id, result.primary)
+        for slot, credential in (result.extra or {}).items():
+            self.credentials.save(connector.id, credential, slot=slot)
         self.connectors.record_credential_metadata(
-            connector.id, "%s:%s" % (self.config.provider, connector.id), credential)
+            connector.id, "%s:%s" % (self.config.provider, connector.id), result.primary)
+        self._record_grant_metadata(connector.id, result)
         self.connectors.set_status(connector.id, ConnectorStatus.ACTIVE)
 
         self.transactions.claim(tx.id, TransactionStatus.CODE_EXCHANGED,
@@ -180,6 +203,29 @@ class _ConnectorLifecycle:
                 "transaction_id": tx.id,
                 "connector_id": connector.id,
                 "connector": refreshed.public_dict()}
+
+    def _record_grant_metadata(self, connector_id, result):
+        """Persist what the provider actually granted.
+
+        Notably `rotation_enabled`: a Slack app installed without token
+        rotation yields a credential that NEVER EXPIRES, which is a different
+        risk posture from one that does. Recording it means the UI can say so
+        rather than implying rotation is protecting the user when it is not.
+        """
+        meta = result.meta or {}
+        if not meta:
+            return
+        now = iso(utcnow())
+        for scope in (meta.get("bot_scopes") or []):
+            self.db.execute(
+                "INSERT OR IGNORE INTO connector_scopes (connector_id, scope, source, "
+                "granted_at) VALUES (?,?,?,?)",
+                (connector_id, "bot:%s" % scope, "oauth_scope", now))
+        for scope in (meta.get("user_scopes") or []):
+            self.db.execute(
+                "INSERT OR IGNORE INTO connector_scopes (connector_id, scope, source, "
+                "granted_at) VALUES (?,?,?,?)",
+                (connector_id, "user:%s" % scope, "oauth_scope", now))
 
     def _upsert_connector(self, operator_id, tx, identity) -> Connector:
         existing = self.connectors.find_by_account(
@@ -233,8 +279,15 @@ class _ConnectorLifecycle:
         return self.connectors.get(operator_id, connector_id)
 
     def list_connectors(self, operator_id) -> List[Dict]:
-        return [c.public_dict()
-                for c in self.connectors.list_for_operator(operator_id)]
+        """This provider's connectors ONLY.
+
+        The provider filter is not optional. Without it every provider's
+        service returned every connector, so a GitHub connection rendered as a
+        connected Slack account -- and worse, a caller could have acted on a
+        connector belonging to a different provider entirely.
+        """
+        return [c.public_dict() for c in self.connectors.list_for_operator(
+            operator_id, provider=self.config.provider)]
 
     # ================================================================== #
     # credentials
@@ -300,9 +353,10 @@ class _ConnectorLifecycle:
 
         # 1. stop new work immediately
         self.connectors.mark_disconnected(connector_id)
-        # 2. destroy the local credential BEFORE attempting remote revocation,
-        #    so a network failure at step 3 still leaves us holding nothing
-        self.credentials.delete(connector_id)
+        # 2. destroy EVERY local credential slot BEFORE attempting remote
+        #    revocation, so a network failure at step 3 still leaves us holding
+        #    nothing at all
+        self.credentials.delete_all(connector_id, slots=self.credential_slots)
         self.connectors.drop_credential_metadata(connector_id)
         # 3. drop caches and grants
         self.db.execute("DELETE FROM connector_metadata WHERE connector_id = ?",

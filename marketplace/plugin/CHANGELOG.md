@@ -2,6 +2,37 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.113.0 (2026-08-21)
+
+**Slack connector, and the Connectors screen becomes a provider tile view.**
+
+- **Slack.** Browser redirect to a loopback port, because Slack offers no
+  device flow. One authorization yields a **bot token and a user token**, which
+  live in separate credential slots -- the bot posts (so agent actions are
+  attributable to Sutra) and the user token reads and searches (a bot only ever
+  sees conversations it was added to). Identity is keyed `team_id:user_id`,
+  because a Slack user id is only unique within a workspace.
+- **Tile view.** One tile per provider, connected or not. A provider with no
+  connector still needs somewhere to live, and there is no connector row to
+  render it from -- so the tiles come from a provider catalogue rather than the
+  connector list. Each tile states its auth mode, whether it can connect at all
+  on this machine, and any caveat.
+- **Slack's tile says the flow is weaker than GitHub's**, in the tile, in
+  words. Slack has no PKCE, so `state` is the only value binding the returned
+  code to our request. A caveat nobody reads is not a caveat.
+- **Provider registry**: adding a provider is a row plus a package. The service,
+  the API and the screen are provider-agnostic.
+
+Fixes found while building this:
+
+- `list_connectors` did not filter by provider, so **every provider's service
+  returned every connector** -- a GitHub connection rendered as a connected
+  Slack account.
+- A hostile probe to the loopback port **consumed the listener**, stranding the
+  user's real callback. Probes are now refused without ending the wait.
+- The tile endpoint collided with `org_api`'s `/api/providers` (AI CLI
+  providers) and was silently shadowed, because that router registers first.
+
 ## 2.112.5 (2026-08-21)
 
 **Two layout defects on the Connectors screen, both measured in a browser.**
