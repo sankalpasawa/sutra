@@ -830,6 +830,8 @@ document.querySelector(".rail").addEventListener("click", e=>{
   }
   /* Connectors. Every branch returns: these are terminal gestures, not
      navigation, and falling through would also run the session handlers. */
+  const cRetry = e.target.closest("[data-connretry]");
+  if (cRetry){ S.conn.err = null; S.conn.list = null; loadConnectors(true); return; }
   const cStart = e.target.closest("[data-connstart]");
   if (cStart){ connStart(); return; }
   const cCancel = e.target.closest("[data-conncancel]");

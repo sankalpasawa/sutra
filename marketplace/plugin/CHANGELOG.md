@@ -3841,3 +3841,25 @@ decisions are now resolved from real settings files on disk.
 - 164 tests. 152 panel tests still green, including 21i, the grid guard that
   caught the last CSS regression.
 
+## %s (%s)
+
+**Connector panel errors are diagnosable, and the backend recovers on its own.**
+
+The Connectors screen showed `/api/connectors -> 500` with no way to find out
+why. Restarting the app cleared it and the root cause was never reproduced --
+which is the point: two defects made a transient fault permanent and invisible.
+
+- **Every connector endpoint returns a structured error.** They previously
+  caught only `ConnectorError`; anything else became a bare 500. Electron
+  buffers the backend's stderr in memory and surfaces it only if the process
+  *exits*, so the reason existed nowhere a person could reach. Unexpected
+  exceptions are now logged to `~/.sutra/panel-errors.log` and returned with a
+  code, a message and that path.
+- **`service()` rebuilds a dead handle.** It cached a module global holding a
+  live SQLite connection for the life of the process, so a connection that went
+  bad could never recover and the only cure was quitting the app. A failed
+  construction is no longer cached either, so the next request retries instead
+  of inheriting a permanent `None`.
+- The screen distinguishes "the service did not answer" from "the service
+  answered and told us what went wrong", and offers Retry.
+

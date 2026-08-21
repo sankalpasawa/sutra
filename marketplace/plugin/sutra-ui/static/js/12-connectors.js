@@ -26,7 +26,13 @@ async function loadConnectors(force){
     S.conn.list = d.connectors || [];
     S.conn.degraded = d.degraded || null;
     S.conn.err = null;
-  } catch (e) { S.conn.err = String(e.message || e); S.conn.list = []; }
+  } catch (e) {
+    /* The backend now returns a structured body for unexpected failures too,
+       so an error here names what broke and where the traceback is, instead of
+       being an opaque 500 the operator cannot act on. */
+    S.conn.err = String(e.message || e);
+    S.conn.list = [];
+  }
   render();
 }
 
@@ -229,8 +235,18 @@ SCREENS.connectors = () => {
   const head = `<div class="sc-head"><h3>${esc(TITLES.connectors[0])}</h3>
     <p>${esc(TITLES.connectors[1])}</p></div>`;
 
-  if (s.err) return head + `<div class="note w"><b>The connector service did not answer.</b>
-    <br><code>${esc(s.err)}</code></div>`;
+  if (s.err){
+    /* Distinguish "the backend is not there" from "the backend answered and
+       told us what went wrong". Different fixes -- and collapsing them into one
+       message is what made the last failure undiagnosable. */
+    const structured = /PANEL_INTERNAL_ERROR/.test(s.err);
+    return head + `<div class="note w">
+      <b>${structured ? "The connector service hit an unexpected error."
+                      : "The connector service did not answer."}</b>
+      <br><code>${esc(s.err)}</code>
+      ${structured ? `<br>Full traceback: <code>~/.sutra/panel-errors.log</code>` : ""}
+      <br><button class="btn" type="button" data-connretry>Retry</button></div>`;
+  }
   if (s.list === null) return head + `<p class="muted">Loading…</p>`;
 
   const degraded = s.degraded ? `<div class="note w"><b>${esc(s.degraded)}</b></div>` : "";

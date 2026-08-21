@@ -11,7 +11,11 @@ threadpool, so a slow GitHub call cannot stall the event loop and freeze the
 whole panel. Declaring these `async` would be the bug that stdlib choice pays
 for elsewhere.
 """
+import functools
+import logging
+import sqlite3
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -34,30 +38,105 @@ from connectors.service import ConnectorService                 # noqa: E402
 router = APIRouter(prefix="/api", tags=["connectors"])
 
 OPERATOR = "local"
-DB_PATH = str(Path.home() / ".sutra" / "connectors.db")
+SUTRA_DIR = Path.home() / ".sutra"
+DB_PATH = str(SUTRA_DIR / "connectors.db")
+ERROR_LOG = SUTRA_DIR / "panel-errors.log"
 
 _service = None
 _degraded = None
 
+log = logging.getLogger("sutra.connectors")
+
+
+def _log_unexpected(where: str, exc: BaseException) -> str:
+    """Write the traceback somewhere a human can actually reach it.
+
+    Electron buffers the backend's stderr IN MEMORY and only surfaces it if the
+    process exits, so an unhandled exception in a request leaves no trace
+    anywhere: the panel shows an opaque 500 and the reason is unreachable
+    without killing the app. This function is the fix for that, and it is why
+    every endpoint below catches Exception rather than only ConnectorError.
+    """
+    detail = traceback.format_exc()
+    try:
+        SUTRA_DIR.mkdir(mode=0o700, exist_ok=True)
+        with open(ERROR_LOG, "a", encoding="utf-8") as handle:
+            handle.write("\n=== %s: %s: %s\n%s" % (where, type(exc).__name__, exc, detail))
+    except OSError:
+        pass                                    # never fail a request over logging
+    log.exception("connectors: %s failed", where)
+    return "%s: %s" % (type(exc).__name__, exc)
+
+
+def _build_service():
+    db = Database(DB_PATH)
+    db.migrate()
+    global _degraded
+    if keychain_available():
+        store = KeychainCredentialStore()
+        _degraded = None
+    else:
+        # Say so rather than silently losing credentials on restart.
+        store = MemoryCredentialStore()
+        _degraded = ("No OS keychain on this platform. Credentials will not "
+                     "survive a restart.")
+    return ConnectorService(db, store, config=ProviderConfig.from_env())
+
 
 def service():
-    """One service per process. Built lazily so importing this module never
-    touches the Keychain or the filesystem -- an import that prompts for
-    Keychain access on app launch would be its own bug."""
-    global _service, _degraded
-    if _service is None:
-        db = Database(DB_PATH)
-        db.migrate()
-        if keychain_available():
-            store = KeychainCredentialStore()
-            _degraded = None
-        else:
-            # Say so rather than silently losing credentials on restart.
-            store = MemoryCredentialStore()
-            _degraded = ("No OS keychain on this platform. Credentials will not "
-                         "survive a restart.")
-        _service = ConnectorService(db, store, config=ProviderConfig.from_env())
+    """One service per process, REBUILT if its connection has gone bad.
+
+    The previous version cached a module global holding a live SQLite
+    connection for the life of the process. A connection that broke could never
+    recover, so the only cure was quitting the whole app -- which is what
+    happened in practice. Now a dead handle is detected and replaced, and a
+    FAILED construction is never cached, so the next request retries instead of
+    inheriting a permanent None.
+    """
+    global _service
+    if _service is not None:
+        try:
+            _service.db.execute("SELECT 1").fetchone()
+            return _service
+        except (sqlite3.Error, AttributeError) as exc:
+            _log_unexpected("service.healthcheck", exc)
+            try:
+                _service.db.close()
+            except Exception:
+                pass
+            _service = None
+    _service = _build_service()
     return _service
+
+
+def guarded(where):
+    """Every endpoint returns a STRUCTURED error, never a bare 500.
+
+    An opaque 500 tells the operator only that something is wrong; the panel
+    cannot switch on it and the reason is not written down anywhere. A 500 with
+    a code, a message and a log path is a thing a person can act on.
+    """
+    def decorate(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except HTTPException:
+                raise
+            except ConnectorError as exc:
+                _fail(exc)
+            except Exception as exc:
+                message = _log_unexpected(where, exc)
+                raise HTTPException(status_code=500, detail={
+                    "code": "PANEL_INTERNAL_ERROR",
+                    "message": message,
+                    "where": where,
+                    "log": str(ERROR_LOG),
+                    "user_action": "NONE",
+                    "retryable": True,
+                })
+        return wrapper
+    return decorate
 
 
 def permissions(connector_id: str) -> ConnectorPermissions:
@@ -76,6 +155,7 @@ def _fail(exc: ConnectorError):
 
 # ---------------------------------------------------------------- list ---
 @router.get("/connectors")
+@guarded("list_connectors")
 def list_connectors():
     try:
         rows = service().list_connectors(OPERATOR)
@@ -87,6 +167,7 @@ def list_connectors():
 
 # ------------------------------------------------------------- connect ---
 @router.post("/connectors/github/authorize")
+@guarded("authorize")
 def authorize(label: Optional[str] = None):
     try:
         return service().begin_connect(OPERATOR, label=label)
@@ -95,6 +176,7 @@ def authorize(label: Optional[str] = None):
 
 
 @router.get("/connectors/github/authorize/{transaction_id}")
+@guarded("poll")
 def poll(transaction_id: str):
     try:
         return service().poll_connect(OPERATOR, transaction_id)
@@ -103,6 +185,7 @@ def poll(transaction_id: str):
 
 
 @router.delete("/connectors/github/authorize/{transaction_id}")
+@guarded("cancel")
 def cancel(transaction_id: str):
     try:
         service().cancel_connect(OPERATOR, transaction_id)
@@ -113,6 +196,7 @@ def cancel(transaction_id: str):
 
 # -------------------------------------------------------------- detail ---
 @router.get("/connectors/github/{connector_id}")
+@guarded("detail")
 def detail(connector_id: str):
     connector = service().get_connector(OPERATOR, connector_id)
     if connector is None:
@@ -122,6 +206,7 @@ def detail(connector_id: str):
 
 
 @router.post("/connectors/github/{connector_id}/validate")
+@guarded("validate")
 def validate(connector_id: str):
     try:
         return service().validate(OPERATOR, connector_id)
@@ -130,6 +215,7 @@ def validate(connector_id: str):
 
 
 @router.delete("/connectors/github/{connector_id}")
+@guarded("disconnect")
 def disconnect(connector_id: str):
     try:
         return service().disconnect(OPERATOR, connector_id)
@@ -139,6 +225,7 @@ def disconnect(connector_id: str):
 
 # ----------------------------------------------------------- discovery ---
 @router.get("/connectors/github/{connector_id}/repositories")
+@guarded("repositories")
 def repositories(connector_id: str, cursor: Optional[str] = None,
                  refresh: bool = Query(False)):
     try:
@@ -152,6 +239,7 @@ def repositories(connector_id: str, cursor: Optional[str] = None,
 
 
 @router.get("/connectors/github/{connector_id}/organizations")
+@guarded("organizations")
 def organizations(connector_id: str, refresh: bool = Query(False)):
     try:
         return service().list_organizations(OPERATOR, connector_id, refresh=refresh)
@@ -161,6 +249,7 @@ def organizations(connector_id: str, refresh: bool = Query(False)):
 
 # --------------------------------------------------------- permissions ---
 @router.get("/connectors/github/{connector_id}/permissions")
+@guarded("connector_permissions")
 def connector_permissions(connector_id: str):
     """The P3 capability read model. Read-only: rules are edited in the
     settings files, which is where they can be reviewed in a diff."""
@@ -173,6 +262,7 @@ def connector_permissions(connector_id: str):
 
 
 @router.get("/connectors/github/{connector_id}/events")
+@guarded("events")
 def events(connector_id: str, limit: int = Query(50, le=200)):
     if service().get_connector(OPERATOR, connector_id) is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})

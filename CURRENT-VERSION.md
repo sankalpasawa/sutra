@@ -1,6 +1,20 @@
 # Sutra — Current Version
 
-## v2.112.0 (2026-08-20, HEAD)
+## v2.112.1 (2026-08-21, HEAD)
+
+**Panel connector errors became diagnosable.** A 500 on `/api/connectors` had
+no discoverable cause: the endpoints caught only `ConnectorError`, and
+Electron buffers backend stderr in memory unless the process exits, so the
+traceback existed nowhere reachable. Unexpected exceptions now log to
+`~/.sutra/panel-errors.log` and come back as a structured error the screen can
+render. Separately, the service cached a SQLite connection for the process
+lifetime with no way to recover a broken one -- it now health-checks and
+rebuilds, and never caches a failed construction.
+
+The original fault was not reproduced. Restarting cleared it. What is fixed is
+the pair of defects that made it invisible and unrecoverable.
+
+## v2.112.0 (2026-08-20)
 
 **The connectors screen is live, and permissions are resolved from disk.** P3
 lands the permission layer over real settings files, and the panel gets its
