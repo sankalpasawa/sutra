@@ -1,6 +1,17 @@
 # Sutra — Current Version
 
-## v2.112.4 (2026-08-21, HEAD)
+## v2.112.5 (2026-08-21, HEAD)
+
+**Connectors screen layout fixed.** An `<a class="btn">` was `display: inline`,
+so its padding overlapped the surrounding text, and the activity table was
+clipped at 407px with `overflow-x: visible`, silently losing its last column.
+Anchors with `.btn` are `inline-block`; tables scroll in their own container.
+
+Both were found by driving the real panel in a browser and measuring, not by
+reading the source -- which is also how the dead buttons in 2.112.4 were
+confirmed fixed.
+
+## v2.112.4 (2026-08-21)
 
 **The Connectors buttons work.** They were inert in 2.112.0-2.112.3: the click
 handlers sat inside the rail's listener, which never sees clicks in the screen

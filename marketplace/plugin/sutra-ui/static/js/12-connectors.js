@@ -166,12 +166,12 @@ function connRepos(c){
   }
   return `<section><h4>Repositories <span class="ct">${rows.length}</span>
     <button class="btn" type="button" data-connrefresh="${esc(c.id)}">Refresh</button></h4>
-    <table class="tbl"><thead><tr><th>Repository</th><th>Visibility</th><th>Your role</th><th>Capabilities</th></tr></thead><tbody>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>Repository</th><th>Visibility</th><th>Your role</th><th>Capabilities</th></tr></thead><tbody>
     ${rows.map(r=>`<tr>
       <td><code>${esc(r.full_name)}</code>${r.archived?' <span class="tag">archived</span>':""}</td>
       <td>${esc(r.visibility)}</td><td>${esc(r.user_permission)}</td>
       <td title="${esc((r.capabilities||[]).join("\n"))}">${(r.capabilities||[]).length}</td></tr>`).join("")}
-    </tbody></table>
+    </tbody></table></div>
     ${d.next_cursor?`<p class="muted">More available — paging is cursor-based.</p>`:""}</section>`;
 }
 
@@ -203,10 +203,10 @@ function connPerms(){
       <b>deny → ask → allow</b>, first match wins. A broad deny beats a narrow allow.
       ${d.managed_rules_only?" Managed policy is the only rule source on this machine.":""}
       ${d.locks && d.locks.bypass_disabled?" Bypass mode is locked off.":""}</div>
-    ${total? `<table class="tbl"><thead><tr><th>Rule</th><th>Effect</th><th>From</th></tr></thead><tbody>
+    ${total? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Rule</th><th>Effect</th><th>From</th></tr></thead><tbody>
       ${kinds.flatMap(k=>((d.rules||{})[k]||[]).map(r=>
         `<tr><td><code>${esc(r.rule)}</code></td><td class="k-${k}">${k}</td><td>${esc(r.source)}</td></tr>`)).join("")}
-      </tbody></table>`
+      </tbody></table></div>`
      : `<p class="muted">No rules configured. Reads inside the connected repositories are
         allowed; every write asks. Add rules in <code>~/.sutra/settings.json</code>.</p>`}
     ${(d.removed_tools||[]).length?`<p class="muted"><b>Removed from the agent entirely:</b>
@@ -223,11 +223,11 @@ function connEvents(){
   const rows = d.events || [];
   if (!rows.length) return "";
   return `<section><h4>Recent activity <span class="muted">audited, hash-chained</span></h4>
-    <table class="tbl"><thead><tr><th>When</th><th>Event</th><th>Result</th><th>Resource</th></tr></thead><tbody>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>When</th><th>Event</th><th>Result</th><th>Resource</th></tr></thead><tbody>
     ${rows.map(e=>`<tr><td>${esc((e.occurred_at||"").slice(0,19).replace("T"," "))}</td>
       <td>${esc(e.event_type)}</td><td class="r-${esc(String(e.result).toLowerCase())}">${esc(e.result)}</td>
       <td>${esc(e.resource||"")}</td></tr>`).join("")}
-    </tbody></table></section>`;
+    </tbody></table></div></section>`;
 }
 
 SCREENS.connectors = () => {

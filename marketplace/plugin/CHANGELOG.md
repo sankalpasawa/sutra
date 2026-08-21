@@ -2,6 +2,22 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.112.5 (2026-08-21)
+
+**Two layout defects on the Connectors screen, both measured in a browser.**
+
+- **"Open GitHub installations" overlapped the text around it.** An
+  `<a class="btn">` computes `display: inline`, where padding does not affect
+  line height, so the padded 27px box painted over its neighbouring lines. The
+  panel's buttons are all `<button>`, so the rule never needed an explicit
+  display until a link wore the same class. Anchors carrying `.btn` are now
+  `inline-block` with a top margin. Verified: 0 collisions with surrounding
+  text, down from an overlapping box in a 46.6px note rendering 67px tall.
+- **The activity table was clipped, losing its last column.** It wanted 520px
+  in a 407px pane with `overflow-x: visible`, so 113px including the `Resource`
+  header was simply cut off. Tables now scroll inside their own container.
+  A narrow pane is normal; silently dropping a column is not.
+
 ## 2.112.4 (2026-08-21)
 
 **Every button on the Connectors screen now works.** They did nothing at all in
