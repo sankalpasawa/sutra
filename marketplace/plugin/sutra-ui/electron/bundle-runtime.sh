@@ -190,7 +190,7 @@ case "$ARCH" in
   arm64)  SB_ZIP="silverbullet-server-darwin-aarch64.zip"
           SB_SHA256="3625a3c3b6fcdc1ca1bdbe57559c41c97b3bc642613d8d8d32d40013df648bc1" ;;
   x86_64) SB_ZIP="silverbullet-server-darwin-x86_64.zip"
-          SB_SHA256="${SUTRA_SB_SHA256_X86_64:-}" ;;
+          SB_SHA256="fd5aac2b006b8b58e38be5ee447441bec8a95f325c436814eb2d6eba8f468b41" ;;
 esac
 if [ -n "${SB_SHA256:-}" ]; then
   SB_URL="https://github.com/silverbulletmd/silverbullet/releases/download/${SB_VERSION}/${SB_ZIP}"

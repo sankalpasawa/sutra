@@ -476,6 +476,32 @@ function mdHtml(src){
 }
 
 /* ══════════════════════ rail ══════════════════════ */
+/* Knowledge -> Files bridge. A registry work path becomes a SilverBullet page
+   name ONLY if it is a plain relative .md path: no scheme, no leading slash,
+   no backslash, no control chars, no empty or dot segments. Anything else
+   returns null and the button is simply not offered. The iframe URL is then
+   assembled from the backend's numeric port + per-segment encoding -- never
+   from a string the registry (or anything else) supplied whole. */
+function sbPageFromPath(p){
+  /* A Knowledge row can hand a document to the Files screen. The value comes
+     from the REGISTRY (a placement work_ref), not from user HTML, but it ends
+     up in a URL this window loads, so it is validated as a bare relative path
+     and nothing else: no scheme, no absolute or home-relative form, no
+     traversal, no separators from the other OS, no control characters.
+     Returns the SilverBullet PAGE NAME (path minus .md) -- unencoded, because
+     encoding belongs to whoever builds the URL (sbUrl) -- or null, which
+     callers use to hide the affordance entirely. */
+  if (typeof p !== "string") return null;
+  const raw = p.trim();
+  if (!raw) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;      /* scheme */
+  if (raw[0] === "/" || raw[0] === "~") return null;       /* absolute / home */
+  if (/[\\\u0000-\u001f\u007f]/.test(raw)) return null;   /* separator / control */
+  if (!/\.md$/i.test(raw)) return null;
+  const segs = raw.slice(0, -3).split("/");
+  if (!segs.length || segs.some(s => s === "" || s === "." || s === "..")) return null;
+  return segs.join("/");
+}
 const ICON = {
   term:'<rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/>',
   git:'<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="9" r="2.6"/><path d="M6 8.6v6.8M8.6 6H14a1.5 1.5 0 011.5 1.5v0"/>',
@@ -501,6 +527,41 @@ const ICON = {
   usage:'<path d="M4.2 17a8.5 8.5 0 1115.6 0"/><path d="M12 17l4.2-5.2"/><circle cx="12" cy="17" r="1.3"/>',
   evals:'<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8.5 12.2l2.4 2.4 4.6-5.2"/><path d="M8.5 17h7"/>'
 };
+/* ── Files bridge helpers ────────────────────────────────────────────────────
+   A Knowledge row can open its document in Files. The path arrives from the
+   REGISTRY (placement work_ref), not from user HTML, but it still becomes part
+   of a URL this window loads, so it is validated as a path and nothing else:
+   no scheme, no host, no traversal, no absolute or home-relative form. Returns
+   the SilverBullet page name (path minus .md) or null when the value is not a
+   markdown document -- callers use null to hide the affordance entirely. */
+function sbPageFromPath(p){
+  if (typeof p !== "string") return null;
+  const raw = p.trim();
+  if (!raw) return null;
+  /* A colon would allow a scheme (javascript:, http://elsewhere); a backslash
+     is a path separator on the other OS and a normalizer's blind spot. */
+  if (/[:\\]/.test(raw) || /[\u0000-\u001f\u007f]/.test(raw)) return null;
+  if (raw[0] === "/" || raw[0] === "~") return null;
+  if (!/\.md$/i.test(raw)) return null;
+  const page = raw.slice(0, -3);
+  if (!page) return null;                       /* the literal ".md" */
+  const segs = page.split("/");
+  /* Empty segment catches "a//b" and "foo/.md"; dot segments catch traversal. */
+  if (segs.some(s => s === "" || s === "." || s === "..")) return null;
+  return page;
+}
+
+/* The sidecar's port comes back from OUR backend, but a port is the one part
+   of the iframe URL that is not a constant, so it is checked as an integer in
+   range rather than trusted -- Number() alone accepts NaN, 1e9 and decimals. */
+function sbUrl(port, page){
+  const n = Number(port);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return null;
+  const base = "http://127.0.0.1:" + n + "/";
+  if (!page) return base;
+  return base + String(page).split("/").map(encodeURIComponent).join("/");
+}
+
 function railSpec(){
   const sim = S.loaded ? simulate(S.draft.ops) : null;
   /* "0 open issues" and "we have not been told yet" are different facts, and a
@@ -515,7 +576,10 @@ function railSpec(){
       {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
-      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)}
+      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)},
+      /* Files sits beside Knowledge: both answer "where does work live" --
+         Knowledge over the registry, Files over the documents themselves. */
+      {id:"files",      n:"Files",      i:"files"}
     ],
     change:[
       {id:"reorg",  n:"Reorg plans", i:"reorg", c:PLANS.length},
@@ -526,7 +590,6 @@ function railSpec(){
       {id:"git",    n:"Git",         i:"git",   c:(S.git ? ((S.git.status||{}).files||[]).length : undefined)},
       /* Editor sits next to Git: both are views of the same working tree, one shows
          what changed and the other lets you change it. Count withheld until read. */
-      {id:"files",  n:"Files",       i:"files"},
       {id:"editor", n:"Editor",      i:"edit",  c:(S.fs ? S.fs.files.length : undefined)},
       {id:"health", n:"Health",      i:"health",c:openIssues, warn:true}
     ],

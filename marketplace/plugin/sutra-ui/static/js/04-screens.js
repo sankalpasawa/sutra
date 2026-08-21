@@ -249,12 +249,18 @@ SCREENS.files = () => {
   const gate = st.readonly ? `<div class="note w"><b>Read-only.</b> Editing is
     gated out of band, same as the plain editor. Restart with
     <code>SUTRA_UI_ALLOW_EDIT=1</code> to enable saving.</div>` : "";
-  /* The iframe URL is BUILT here from the backend's own status — never from
-     rendered content — so no document can steer this frame off loopback. */
-  return `${gate}<iframe class="sbframe" title="Files"
-    src="http://127.0.0.1:${Number(st.port)}/"
-    style="width:100%;height:calc(100% - ${st.readonly ? 44 : 0}px);border:0;background:#fff"></iframe>`;
+  /* No src in the markup. The URL is built by sbUrl() (integer-checked port,
+     per-segment encoding) and assigned as a PROPERTY in wire(), so a page name
+     can never be interpolated into HTML, and a bad port leaves the frame empty
+     instead of pointing it somewhere unintended. */
+  const warn = st.inject_error ? `<div class="note w"><b>Partial setup.</b>
+    ${esc(st.inject_error)} — the viewer works; the folder tree or theme may be
+    missing.</div>` : "";
+  const chrome = (st.readonly ? 44 : 0) + (st.inject_error ? 44 : 0);
+  return `${gate}${warn}<iframe class="sbframe" title="Files" data-sbframe
+    style="width:100%;height:calc(100% - ${chrome}px);border:0;background:#fff"></iframe>`;
 };
+
 
 /* ── git ─────────────────────────────────────────────────────────────────────
    READ-ONLY, and says so. The endpoints behind this expose status/log/diff and

@@ -2,6 +2,9 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.116.1 — 2026-08-21
+- Files: folder tree via vendored treeview plug (MIT, hash-pinned, only when editing is on); Files moves beside Knowledge; Knowledge results open their document in Files; hardened workspace writes (no clobber, no symlink escape, never wedges startup).
+
 ## 2.116.0 — 2026-08-21
 
 - **Teamsutra reads like a person wrote it.** Each task is now a status in

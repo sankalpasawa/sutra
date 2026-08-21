@@ -25,6 +25,7 @@ import os
 import platform
 import signal
 import socket
+import stat
 import subprocess
 import time
 import urllib.request
@@ -43,9 +44,19 @@ SB_ASSETS = {
     "x86_64": {
         "url": "https://github.com/silverbulletmd/silverbullet/releases/download/"
                "2.10.0/silverbullet-server-darwin-x86_64.zip",
-        # Pinned at packaging time by bundle-runtime.sh; dev download on this
-        # arch fails closed until the hash is recorded there.
-        "sha256": os.environ.get("SUTRA_SB_SHA256_X86_64", ""),
+        "sha256": "fd5aac2b006b8b58e38be5ee447441bec8a95f325c436814eb2d6eba8f468b41",
+    },
+}
+
+# Vendored plugs copied into the space's _plug/ folder (the only place SB 2.x
+# loads plugs from) so the offline DMG rule holds — no Plugs: Update fetch.
+# Each entry is hash-pinned; a managed copy whose hash matches is left alone,
+# a foreign file with the same name is never overwritten.
+VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
+PLUGS = {
+    "treeview.plug.js": {
+        "src": os.path.join(VENDOR_DIR, "silverbullet-treeview", "treeview.plug.js"),
+        "sha256": "2eb6726e031b788affd0e86f4ca200e7a914b17f1546445eb4ab298c47a5125f",
     },
 }
 
@@ -136,6 +147,72 @@ def inject_theme(root):
     return True
 
 
+def _is_regular(path):
+    """True only for a real regular file — not a symlink, FIFO, device or dir.
+    lstat, not stat: a symlink to a regular file must still be refused."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    import stat as _stat
+    return _stat.S_ISREG(st.st_mode)
+
+
+def _sha256(path):
+    if not _is_regular(path):
+        raise RuntimeError("refusing to hash a non-regular file: %s" % path)
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def inject_plug(root, name="treeview.plug.js"):
+    """Copy a vendored, hash-pinned plug into <root>/_plug/ — the directory
+    tree for the Files screen. Same gate as the theme: only when editing is
+    allowed (a read-only space is never mutated; those users get the page
+    picker). Hardening (codex review 2026-08-21):
+    - _plug must be a real directory INSIDE the realpath'd root (no symlink
+      escape); the destination must be absent or a regular file.
+    - No TOCTOU: the managed copy is linked into place with os.link, which
+      fails atomically if anything appeared at dst in the meantime — a
+      foreign file is never overwritten.
+    Returns True when the managed plug is in place, False when skipped."""
+    if not providers.editing_allowed():
+        return False
+    spec = PLUGS[name]
+    if not _is_regular(spec["src"]) or _sha256(spec["src"]) != spec["sha256"]:
+        raise RuntimeError("vendored plug %s missing or tampered" % name)
+    real_root = os.path.realpath(root)
+    pdir = os.path.join(real_root, "_plug")
+    if os.path.lexists(pdir) and (os.path.islink(pdir) or not os.path.isdir(pdir)):
+        raise RuntimeError("_plug exists but is not a plain directory; leaving it alone")
+    os.makedirs(pdir, exist_ok=True)
+    if os.path.realpath(pdir) != pdir:
+        raise RuntimeError("_plug resolves outside the space root; leaving it alone")
+    dst = os.path.join(pdir, name)
+    if os.path.lexists(dst):
+        if not _is_regular(dst):
+            raise RuntimeError("%s is not a regular file; leaving it alone" % name)
+        return _sha256(dst) == spec["sha256"]
+    tmp = os.path.join(pdir, ".%s.sutra-tmp-%d" % (name, os.getpid()))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        with os.fdopen(fd, "wb") as out, open(spec["src"], "rb") as src:
+            out.write(src.read())
+        try:
+            os.link(tmp, dst)          # atomic no-clobber: EEXIST if dst appeared
+        except FileExistsError:
+            return _is_regular(dst) and _sha256(dst) == spec["sha256"]
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    return True
+
+
 def _sb_env(readonly, port):
     env = dict(os.environ)
     env.update({
@@ -180,6 +257,7 @@ def status():
         "readonly": _state["readonly"],
         "version": SB_VERSION,
         "error": _state["error"],
+        "inject_error": _state.get("inject_error"),
     }
 
 
@@ -196,8 +274,21 @@ def start(root):
     readonly = not providers.editing_allowed()
     try:
         binary = ensure_binary()
+        # Injection is best-effort: a bad _plug path or a tampered vendor file
+        # must degrade to "no tree / default theme", never to a Files screen
+        # that cannot start (codex review: do not wedge startup).
+        _state["inject_error"] = None
         if not readonly:
-            inject_theme(root)
+            # Labels are literals, not step.__name__: reading an attribute off
+            # the callable inside the handler is one more thing that can raise
+            # while we are already handling a failure -- and that exception
+            # escapes to the outer try, which is precisely the startup wedge
+            # this loop exists to prevent.
+            for label, step in (("theme", inject_theme), ("tree", inject_plug)):
+                try:
+                    step(root)
+                except Exception as exc:  # noqa: BLE001
+                    _state["inject_error"] = "%s: %s" % (label, exc)
         port = _free_port()
         proc = subprocess.Popen(
             [binary, "--single", root],
