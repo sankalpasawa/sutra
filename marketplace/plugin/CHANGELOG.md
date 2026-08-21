@@ -3863,3 +3863,38 @@ which is the point: two defects made a transient fault permanent and invisible.
 - The screen distinguishes "the service did not answer" from "the service
   answered and told us what went wrong", and offers Retry.
 
+## %s (%s)
+
+**Fixes the Connectors screen returning 500. Root cause, not a workaround.**
+
+`sqlite3.connect()` defaults to `check_same_thread=True`, so a connection binds
+to the thread that created it. The panel serves its connector endpoints as
+synchronous `def` handlers -- deliberately, so a blocking GitHub call cannot
+stall the event loop -- and FastAPI runs those in a **threadpool**. One shared
+connection therefore worked for the first request and raised
+`ProgrammingError` as soon as the pool routed a later one to a different
+worker:
+
+    /api/connectors -> 200    first request, thread A
+    /api/connectors -> 500    later request, thread B
+
+It read as transient because restarting put a fresh connection on whichever
+thread asked first, and it never appeared in the 164 tests or the CLI because
+both are single-threaded.
+
+- `Database` now holds **one connection per thread**. WAL lets independent
+  connections read and write concurrently, so this is the right shape here
+  rather than a global lock -- a lock would also have to cover cursor
+  iteration, which several callers do lazily.
+- `busy_timeout = 5000`, so two threads writing at once wait briefly instead of
+  surfacing an immediate "database is locked".
+- In-memory databases keep a single shared connection, because a memory
+  database lives *inside* its connection and per-thread handles would give each
+  thread its own empty one.
+- **4 regression tests** that fail against the old code: read from another
+  thread, write visible across threads, four concurrent workers, and the
+  end-to-end shape -- build the service on one thread, call it from another.
+
+The 2.112.1 diagnosability work below stands: it is what turns the *next*
+unexpected failure into a message instead of a silent 500.
+

@@ -96,6 +96,80 @@ class TestSchema(unittest.TestCase):
 
 
 # ====================================================================== #
+class TestThreadSafety(unittest.TestCase):
+    """Regression for the 2.112.0 field failure.
+
+    sqlite3.connect() defaults to check_same_thread=True, so a shared
+    connection binds to the thread that made it. The panel serves connector
+    endpoints as synchronous `def` handlers -- deliberately, so a blocking
+    GitHub call cannot stall the event loop -- and FastAPI runs those in a
+    THREADPOOL. The result was 200 on the first request and 500 on the next one
+    the pool routed to a different worker.
+
+    It never showed up here before because every other test, and the CLI, is
+    single-threaded. A file-backed database and a real second thread are what
+    reproduce it.
+    """
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        self.db = Database(os.path.join(self.dir, "t.db"))
+        self.db.migrate()
+        ConnectorRepository(self.db).ensure_operator(OPERATOR)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _in_thread(self, fn):
+        import threading
+        box = {}
+        def run():
+            try: box["value"] = fn()
+            except Exception as exc: box["error"] = exc
+        t = threading.Thread(target=run); t.start(); t.join()
+        if "error" in box:
+            raise box["error"]
+        return box["value"]
+
+    def test_read_from_another_thread(self):
+        self.assertEqual(self._in_thread(
+            lambda: self.db.execute("SELECT 1").fetchone()[0]), 1)
+
+    def test_write_from_another_thread_is_visible_to_the_first(self):
+        repo = ConnectorRepository(self.db)
+        self._in_thread(lambda: repo.create(Connector(
+            id="conn_thread", operator_id=OPERATOR, provider="github",
+            provider_account_id="1", provider_username="x",
+            status=ConnectorStatus.ACTIVE)))
+        self.assertIsNotNone(repo.get(OPERATOR, "conn_thread"))
+
+    def test_many_threads_concurrently(self):
+        """Four workers, as a threadpool would. Any one of them raising
+        ProgrammingError is the shipped bug."""
+        import threading
+        errors = []
+        def hammer():
+            try:
+                for _ in range(20):
+                    self.db.execute("SELECT COUNT(*) FROM connectors").fetchone()
+            except Exception as exc:
+                errors.append(exc)
+        threads = [threading.Thread(target=hammer) for _ in range(4)]
+        [t.start() for t in threads]; [t.join() for t in threads]
+        self.assertEqual(errors, [])
+
+    def test_service_survives_a_thread_change(self):
+        """The end-to-end shape of the field failure: build the service on one
+        thread, call it from another."""
+        service = ConnectorService(self.db, MemoryCredentialStore())
+        self.assertEqual(service.list_connectors(OPERATOR), [])
+        self.assertEqual(self._in_thread(
+            lambda: service.list_connectors(OPERATOR)), [])
+
+
+# ====================================================================== #
 class TestTransactionFSM(unittest.TestCase):
 
     def setUp(self):

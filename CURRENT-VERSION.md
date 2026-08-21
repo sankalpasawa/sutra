@@ -1,6 +1,23 @@
 # Sutra — Current Version
 
-## v2.112.1 (2026-08-21, HEAD)
+## v2.112.2 (2026-08-21, HEAD)
+
+**The Connectors 500 is fixed at the root.** A single SQLite connection was
+shared across FastAPI's threadpool, and `sqlite3` binds a connection to its
+creating thread. First request 200, next request on another worker 500. It
+looked transient because a restart reset which thread held the handle, and it
+escaped 164 tests and the CLI because both are single-threaded.
+
+`Database` now keeps one connection per thread, with `busy_timeout` for
+concurrent writers and a single shared handle for in-memory databases (a memory
+database lives inside its connection). Four regression tests cover it,
+including the end-to-end shape: construct the service on one thread, call it
+from another.
+
+Shipped together with the 2.112.1 diagnosability fix, which is what would have
+named this failure in one step instead of several.
+
+## v2.112.1 (2026-08-21)
 
 **Panel connector errors became diagnosable.** A 500 on `/api/connectors` had
 no discoverable cause: the endpoints caught only `ConnectorError`, and
