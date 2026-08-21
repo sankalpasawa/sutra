@@ -55,6 +55,11 @@ ALLOWED_TRANSITIONS = {
 TITLE_MAX = 200
 BODY_MAX = 100_000
 SELECTION_MAX = 4_000
+#: The operator's own words to the chat, kept so the board can show "what you
+#: said" next to "what you highlighted". Optional; records without it are
+#: valid (SCHEMA unchanged — the store drops unknown source keys, it never
+#: rejects them).
+ASK_MAX = 2_000
 MAX_ATTEMPTS_DEFAULT = 3
 
 
@@ -101,10 +106,12 @@ def validate_new(body):
     if not isinstance(src, dict):
         raise ValueError("source must be an object")
     sel = (src.get("selection") or "")[:SELECTION_MAX]
+    ask = (src.get("ask") or "")[:ASK_MAX]
     # A department may be null and MUST be null rather than guessed: a wrong
     # address is the failure the placement layer exists to remove.
     source = {
         "selection": sel,
+        "ask": ask,
         "screen": src.get("screen") or None,
         "domain_ref": src.get("domain_ref") or None,
         "domain_path": src.get("domain_path") or None,

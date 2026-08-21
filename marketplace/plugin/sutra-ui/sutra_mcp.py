@@ -293,7 +293,20 @@ TOOLS = [
          "title": {"type": "string"}, "body": {"type": "string"},
          "kind": {"type": "string", "enum": ["bug", "task", "question"]},
          "verify": {"type": "string"},
-         "source": {"type": "object"}}}},
+         "source": {"type": "object",
+                    "description": "Where the task came from. Pass the "
+                                   "selection and screen you were briefed "
+                                   "with, and `ask` = the operator's own "
+                                   "words, verbatim — the board shows both.",
+                    "properties": {
+                        "selection": {"type": "string"},
+                        "ask": {"type": "string"},
+                        "screen": {"type": "string"},
+                        "domain_ref": {"type": ["string", "null"]},
+                        "domain_path": {"type": ["string", "null"]},
+                        "domain_name": {"type": ["string", "null"]},
+                        "charter_id": {"type": ["string", "null"]},
+                        "session_id": {"type": ["string", "null"]}}}}}},
 ]
 BY_NAME = {t["name"]: t for t in TOOLS}
 

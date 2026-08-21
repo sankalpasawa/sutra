@@ -541,7 +541,10 @@ SCREENS.knowledge = () => {
                ${x.owner_retired?'<span class="pill p-block">tombstone</span>':""}
                ${x.status==="retired"?'<span class="pill p-block">retired</span>':""}</td>
              <td>${(x.matched_on||[]).map(f=>`<code>${esc(f)}</code>`).join(" ")}</td>
-             <td>${esc((x.subtitle||"").slice(0,90))}</td></tr>`).join("")}
+             <td>${esc((x.subtitle||"").slice(0,90))}
+               ${x.kind==="placement" && sbPageFromPath(x.title||"")
+                 ? `<button class="btn" type="button" data-openfiles="${esc(x.title)}"
+                      style="margin-left:6px">Open in Files</button>` : ""}</td></tr>`).join("")}
            </tbody></table></div>`;
   return `
     <div class="facets">
@@ -1101,7 +1104,10 @@ const TS_PERSONA =
   "explain — what the selected thing is, in the context of the department " +
   "given below; be brief and concrete. If the user describes a problem or " +
   "asks for a change, offer to file it as a task (say what you would write, " +
-  "then file only on their yes). HONESTY FLOOR: context below is structure " +
+  "then file only on their yes). When you file, pass source = {selection, " +
+  "screen, domain_ref, domain_path, domain_name, charter_id} exactly as " +
+  "briefed below, plus ask = the user's own words, verbatim — the board shows " +
+  "what they highlighted and what they said. HONESTY FLOOR: context below is structure " +
   "only — names, paths, charter titles. If it was truncated, the last line " +
   "says so; when a claim needs data you do not have, say that rather than " +
   "inventing it. A null department means nothing classified this selection " +

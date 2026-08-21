@@ -2,6 +2,19 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.116.0 — 2026-08-21
+
+- **Teamsutra reads like a person wrote it.** Each task is now a status in
+  words, what YOU flagged (the text you highlighted or your own message, plus
+  the screen), what SUTRA did, and one button. "Details" tells the same story
+  in full — when, where, a timeline, and the change as before/after lines —
+  so ids, status codes and raw errors never sit on the face of a card. An
+  error shows only while it is the current state: an open pull request hides
+  the apply error that preceded it. New tasks keep your own words
+  (`source.ask`); existing tasks stay valid.
+- Repairs 2.115.1, which shipped the new board's script without its styles
+  and with a stale test export that made `test_panel.js` throw on load.
+
 ## 2.115.1 — 2026-08-21
 - sutra-ui: Files screen — SilverBullet (MIT) sidecar, Sutra-skinned; edit follows SUTRA_UI_ALLOW_EDIT gate; pinned 2.10.0 + sha256, lazy start, dies with backend.
 

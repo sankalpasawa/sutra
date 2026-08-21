@@ -84,6 +84,19 @@ class TestTeamsutraStore(unittest.TestCase):
             source={"selection": "y" * 10_000}))
         self.assertEqual(len(rec["source"]["selection"]), self.T.SELECTION_MAX)
 
+    def test_ask_is_kept_capped_and_optional(self):
+        # "What you said" on the board: kept verbatim, capped, never required.
+        rec = self.T.create(self._body(source={"selection": "s", "ask": "why eleven?"}))
+        self.assertEqual(rec["source"]["ask"], "why eleven?")
+        rec = self.T.create(self._body(source={"selection": "s", "ask": "z" * 10_000}))
+        self.assertEqual(len(rec["source"]["ask"]), self.T.ASK_MAX)
+        rec = self.T.create(self._body(source={"selection": "s"}))
+        self.assertEqual(rec["source"]["ask"], "")
+        # Unknown source keys are dropped, not refused — SCHEMA stays 1.
+        rec = self.T.create(self._body(source={"selection": "s", "bogus": 1}))
+        self.assertNotIn("bogus", rec["source"])
+        self.assertEqual(rec["schema"], self.T.SCHEMA)
+
     def test_department_stays_null_when_absent(self):
         """Null, never guessed — a wrong address is the failure the placement
         layer exists to remove."""

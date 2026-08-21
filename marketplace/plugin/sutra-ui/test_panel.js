@@ -210,7 +210,7 @@ const EPILOGUE = `
   /* task.apply card states: the board is where a machine diff meets a human
      click, so the three renders (Apply offered / PR handed off / failure in
      place) are pinned as strings */
-  tsCard, tsStatusPill
+  tsCard, tsStatusWords, tsCurrentError, tsParseDiff, tsChangeView, tsStory
 };
 `;
 
@@ -2477,37 +2477,99 @@ test("32c. a real session with agents behaves exactly as before", () => {
 
 /* ── 33. task.apply card states (APPLY-DESIGN v1.1) ─────────────────────── */
 
-test("33a. a reviewed task with a diff offers Apply; without one it cannot", () => {
+/* v3 board (2026-08-21): the card speaks the operator's language. These pin
+   the click contract (data-tsact/data-tid) AND the voice — no status codes,
+   ids or raw errors on the face of the card. */
+const TS_DIFF = "--- a/x.py\n+++ b/x.py\n@@ -1,2 +1,2 @@\n ctx\n-old line\n+new line\n";
+
+test("33a. a reviewed task with a diff offers Apply; without one it cannot; no bridge, no buttons", () => {
+  const base = { id: "t-aaaa1111", title: "z-index bug", status: "needs_review",
+                 attempts: 1, max_attempts: 3, source: {}, created_at: "2026-08-19T00:45:00+05:30" };
   sandbox.sutra = { teamsutraAction: () => Promise.resolve({}) };  // desktop bridge present
   try {
-    const base = { id: "t-aaaa1111", title: "z-index bug", status: "needs_review",
-                   attempts: 1, max_attempts: 3, source: {} };
-    const withDiff = T.tsCard({ ...base, diff: "--- a/x\n+++ b/x\n-1\n+2" });
-    assert.ok(/data-tsact="apply"/.test(withDiff), "needs_review + diff renders Apply");
+    const withDiff = T.tsCard({ ...base, diff: TS_DIFF });
+    assert.ok(/data-tsact="apply" data-tid="t-aaaa1111"/.test(withDiff), "needs_review + diff renders Apply");
+    assert.ok(/data-tsact="drop"[^>]*>Close this</.test(withDiff), "drop is worded Close this");
+    assert.ok(/Ready for your review/.test(withDiff), "status is words");
+    assert.ok(!/needs_review/.test(withDiff), "the status CODE never reaches the operator");
     const noDiff = T.tsCard({ ...base, diff: null });
     assert.ok(!/data-tsact="apply"/.test(noDiff),
       "no diff means nothing to apply — the button must not render");
   } finally { delete sandbox.sutra; }
+  const cli = T.tsCard({ ...base, diff: TS_DIFF });
+  assert.ok(!/data-tsact=/.test(cli), "CLI-served panel: no dead buttons");
+  assert.ok(/need the desktop app/.test(cli), "and it says why");
 });
 
-test("33b. a handed-off task links its PR instead of pretending completion", () => {
+test("33b. a handed-off task links its PR as a plain link and hides the old apply error", () => {
   const html = T.tsCard({ id: "t-aaaa1111", title: "t", status: "done",
-    attempts: 1, max_attempts: 3, source: {},
-    pr_url: "https://github.com/sankalpasawa/sutra/pull/999", pr_state: "open" });
-  assert.ok(/PR open — merge on GitHub/.test(html), "done-with-PR says PR open");
-  assert.ok(/pull\/999/.test(html), "and links the actual PR");
+    attempts: 1, max_attempts: 3, source: {}, diff: TS_DIFF,
+    apply_error: "commit: BLOCKED — pre-commit gate",
+    pr_url: "https://github.com/sankalpasawa/sutra/pull/999", pr_state: "open",
+    applied_at: "2026-08-19T00:48:10+05:30" });
+  assert.ok(/Done — your merge/.test(html), "done-with-open-PR says it is the operator's merge");
+  assert.ok(/<a class="tsc-btn pri" href="https:\/\/github\.com\/sankalpasawa\/sutra\/pull\/999"/.test(html),
+    "the PR is a plain anchor, never a data-tsact action");
+  assert.ok(/pull request #999/.test(html), "and is named by number");
   assert.ok(!/data-tsact="apply"/.test(html), "done offers no second Apply");
+  assert.ok(!/BLOCKED|Tried to apply/.test(html), "an apply error is history once a PR exists");
+  assert.strictEqual(T.tsCurrentError({ status: "done", apply_error: "x", pr_url: "u" }), null);
 });
 
-test("33c. a failed apply shows the error in place and stays re-clickable", () => {
+test("33c. a failed apply says so in one plain sentence and offers Apply again", () => {
   sandbox.sutra = { teamsutraAction: () => Promise.resolve({}) };
   try {
     const html = T.tsCard({ id: "t-aaaa1111", title: "t", status: "needs_review",
-      attempts: 1, max_attempts: 3, source: {}, diff: "--- a/x\n+++ b/x\n-1\n+2",
-      apply_error: "push: remote: denied" });
-    assert.ok(/apply failed: push: remote: denied/.test(html), "error tail rendered");
-    assert.ok(/data-tsact="apply"/.test(html), "Apply still offered after failure");
+      attempts: 1, max_attempts: 3, source: {}, diff: TS_DIFF,
+      apply_error: "apply --check: error: corrupt patch at line 11" });
+    assert.ok(/Tried to apply it and couldn.t: corrupt patch at line 11\./.test(html), "error in words, prefix stripped");
+    assert.ok(/data-tsact="apply"[^>]*>Apply again</.test(html), "Apply still offered, relabelled");
   } finally { delete sandbox.sutra; }
+});
+
+test("33d. status words cover every state; smoke tasks wear a TEST badge", () => {
+  const w = s => T.tsStatusWords({ status: s })[1];
+  assert.strictEqual(w("draft"), "Waiting for you to queue it");
+  assert.strictEqual(w("queued"), "In line — Sutra checks hourly");
+  assert.strictEqual(w("claimed"), "Sutra is working on it");
+  assert.strictEqual(w("blocked"), "Stuck — needs you");
+  assert.strictEqual(w("done"), "Done");
+  assert.strictEqual(T.tsStatusWords({ status: "done", pr_url: "u", pr_state: "open" })[1], "Done — your merge");
+  const html = T.tsCard({ id: "t-1", title: "smoke: x", status: "queued", source: {} });
+  assert.ok(/<span class="test">TEST<\/span>/.test(html), "smoke: prefix -> TEST badge");
+  assert.ok(!/class="test"/.test(T.tsCard({ id: "t-2", title: "real bug", status: "queued", source: {} })));
+});
+
+test("33e. the YOU line prefers the highlight, then the operator's words, then an honest nothing", () => {
+  const sel = T.tsCard({ id: "t-1", title: "t", status: "queued",
+    source: { selection: "what a run may actually do", ask: "why?", screen: "teamsutra" } });
+  assert.ok(/Highlighted <q>what a run may actually do<\/q>/.test(sel));
+  assert.ok(/Teamsutra screen/.test(sel), "screen named in words");
+  const ask = T.tsCard({ id: "t-1", title: "t", status: "queued", source: { ask: "the page shows 11", screen: "departments" } });
+  assert.ok(/<q>the page shows 11<\/q>/.test(ask));
+  assert.ok(/What you said<\/div>\s*<div class="b"><p class="quote">the page shows 11/.test(ask), "Details carries the full words");
+  const none = T.tsCard({ id: "t-1", title: "t", status: "queued", source: {} });
+  assert.ok(/Filed from the chat, nothing highlighted/.test(none));
+  assert.ok(/Not kept for this task/.test(none));
+  const xss = T.tsCard({ id: "t-1", title: "<b>t</b>", status: "queued", source: { selection: "<img src=x onerror=1>" } });
+  assert.ok(!/<img/.test(xss) && /&lt;img/.test(xss), "selection is escaped");
+});
+
+test("33f. the change view is hunk-aware, hides headers, escapes every line, and falls back when unparseable", () => {
+  const tricky = "diff --git a/f.py b/f.py\n--- a/f.py\n+++ b/f.py\n@@ -1,2 +1,2 @@\n ctx <x>\n---- not a header\n+++ also content\n";
+  const rows = T.tsParseDiff(tricky);
+  assert.ok(Array.isArray(rows), "parses");
+  const kinds = rows.map(r => r.k).join(",");
+  assert.strictEqual(kinds, "file,ctx,del,add", "inside the hunk, leading --/++ are content");
+  assert.strictEqual(rows[2].text, "--- not a header");
+  assert.strictEqual(rows[0].text, "f.py");
+  const view = T.tsChangeView(tricky);
+  assert.ok(!/@@|diff --git/.test(view), "hunk and git headers never shown");
+  assert.ok(/f\.py <span>· 1 removed, 1 added<\/span>/.test(view), "human count in the header");
+  assert.ok(/&lt;x&gt;/.test(view) && !/<x>/.test(view), "context escaped");
+  assert.strictEqual(T.tsParseDiff("just some text\nno hunks"), null);
+  assert.ok(/<pre class="md-pre">just some text/.test(T.tsChangeView("just some text\nno hunks")), "fallback is escaped plain text");
+  assert.ok(/Reference for support: t-9/.test(T.tsStory({ id: "t-9", status: "queued", source: {} })), "id only in Details, as support reference");
 });
 
 /* ── 30x. an OPEN empty log is never invisible ──────────────────────────────
