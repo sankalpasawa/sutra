@@ -2,6 +2,9 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.115.1 — 2026-08-21
+- sutra-ui: Files screen — SilverBullet (MIT) sidecar, Sutra-skinned; edit follows SUTRA_UI_ALLOW_EDIT gate; pinned 2.10.0 + sha256, lazy start, dies with backend.
+
 ## 2.115.0 (2026-08-21)
 
 **Slack works end to end.** First release where a Slack account can be

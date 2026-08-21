@@ -237,6 +237,10 @@ function wire(){
   const edReload = scBody.querySelector("[data-edreload]");
   if (edReload) edReload.onclick = ()=>{ const p=S.edFile; S.edBase=S.edText; openEdFile(p); };
 
+  /* ── files (SilverBullet sidecar) ── */
+  const sbRetry = scBody.querySelector("[data-sbretry]");
+  if (sbRetry) sbRetry.onclick = ()=>loadFilesScreen(true);
+
   /* ── git ── */
   scBody.querySelectorAll("[data-gitfile]").forEach(b=>b.onclick=()=>{
     const p = b.dataset.gitfile;
@@ -816,6 +820,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.ui.browseClosed){ S.ui.browseClosed = false; saveLayout(); }
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
+    if (S.screen === "files") loadFilesScreen(); /* lazy: spawns the sidecar on demand */
     if (S.screen === "automation") loadAuto(false);
     if (S.screen === "balance") loadBalance(false); /* lazy, like Git */
     /* force=true: unlike a repo, utilization moves while you are not looking, and

@@ -227,6 +227,35 @@ SCREENS.editor = () => {
     ${pane}`;
 };
 
+/* ── files ───────────────────────────────────────────────────────────────────
+   The Obsidian-style Files surface. The heavy lifting (tree, live-preview
+   editing, wikilinks, backlinks, search) is the embedded SilverBullet client
+   (MIT), skinned via a sutra-managed THEME.md and run by the backend as a
+   loopback sidecar (sb_sidecar.py). This screen renders three honest states:
+   starting, failed-with-reason (plus a path back to the plain Editor), and
+   running (iframe onto the sidecar's port — same-machine loopback only). */
+SCREENS.files = () => {
+  const st = S.sb;
+  if (S.sbError) return `<div class="zero"><h4>Files unavailable</h4>
+    <p>${esc(S.sbError)}</p>
+    <p><button class="btn" type="button" data-sbretry>Retry</button>
+       <button class="btn" type="button" data-screen="editor">Open plain editor</button></p></div>`;
+  if (!st || S.sbBusy) return `<div class="zero"><h4>Starting Files…</h4>
+    <p>Launching the viewer for your workspace.</p></div>`;
+  if (!st.running) return `<div class="zero"><h4>Files engine not running</h4>
+    <p>${esc(st.error || "It stopped or never started.")}</p>
+    <p><button class="btn" type="button" data-sbretry>Start</button>
+       <button class="btn" type="button" data-screen="editor">Open plain editor</button></p></div>`;
+  const gate = st.readonly ? `<div class="note w"><b>Read-only.</b> Editing is
+    gated out of band, same as the plain editor. Restart with
+    <code>SUTRA_UI_ALLOW_EDIT=1</code> to enable saving.</div>` : "";
+  /* The iframe URL is BUILT here from the backend's own status — never from
+     rendered content — so no document can steer this frame off loopback. */
+  return `${gate}<iframe class="sbframe" title="Files"
+    src="http://127.0.0.1:${Number(st.port)}/"
+    style="width:100%;height:calc(100% - ${st.readonly ? 44 : 0}px);border:0;background:#fff"></iframe>`;
+};
+
 /* ── git ─────────────────────────────────────────────────────────────────────
    READ-ONLY, and says so. The endpoints behind this expose status/log/diff and
    nothing that mutates a repository, so this screen deliberately offers no
@@ -757,53 +786,266 @@ function rtCreateForm(){
 }
 
 /* ── Teamsutra: the task board ────────────────────────────────────────────
-   Tasks filed from the Ask Sutra chat. The worker is READ-ONLY — a finished
-   task carries a unified diff a human reads and applies; nothing on this
-   screen edits code. Mutations (queue/drop/release) are desktop-token-gated
-   server-side, so in a browser-served panel the buttons render disabled with
-   the reason instead of failing with a bare 403. */
-function tsStatusPill(st){
-  const cls = { draft:"p-mut", queued:"p-acc", claimed:"p-warn",
-                needs_review:"p-acc", blocked:"p-warn", failed:"p-err",
-                done:"p-ok", dropped:"p-mut", corrupt:"p-err" }[st] || "p-mut";
-  return `<span class="pill ${cls}">${esc(st)}</span>`;
-}
+   Tasks filed from the Ask Sutra chat, told in the operator's own language:
+   what YOU flagged, what SUTRA did, and the one thing to do next. Status
+   codes, ids, attempt counters and raw diffs live behind "Details" — and even
+   there the story is told in the same voice (founder, 2026-08-21: "no
+   technical jargon or technical systems").
+
+   The worker is READ-ONLY — a finished task carries a unified diff a human
+   reads and applies; nothing on this screen edits code. Mutations
+   (queue/drop/release/apply) are desktop-token-gated server-side, so a
+   browser-served panel hides the buttons and says why, instead of rendering
+   controls that fail with a bare 403.
+
+   codex + deepseek consult (2026-08-21, both folded): the timeline is a
+   NARRATIVE derived only from stable facts (created_at, status, diff,
+   apply_error, applied_at, pr_url) — nothing is implied that the record
+   cannot prove; the change view is hunk-aware so a removed line that begins
+   with "--" is never mistaken for a file header, escapes every line, and
+   falls back to escaped plain text when the diff does not parse; the PR is a
+   plain link, never a data-tsact action; error visibility is decided in ONE
+   place (tsCurrentError). The data-tsact / data-tid click contract that
+   07-loaders.js dispatches to window.sutra.teamsutraAction is unchanged. */
 function tsCanAct(){ return !!(window.sutra && window.sutra.teamsutraAction); }
-function tsCard(t){
-  const src = t.source || {};
-  const dept = src.domain_name ? `${esc(src.domain_path||"")} ${esc(src.domain_name)}` : "no department";
-  const acts = [];
-  if (t.status === "draft")   acts.push(`<button data-tsact="queue" data-tid="${esc(t.id)}">Queue</button>`);
-  if (t.status === "claimed") acts.push(`<button data-tsact="release" data-tid="${esc(t.id)}">Release</button>`);
-  if (t.status === "needs_review" && t.diff)
-    acts.push(`<button data-tsact="apply" data-tid="${esc(t.id)}">Apply</button>`);
-  if (!["done","dropped","corrupt"].includes(t.status))
-    acts.push(`<button data-tsact="drop" data-tid="${esc(t.id)}">Drop</button>`);
-  const gate = tsCanAct() ? "" :
-    `<div style="color:var(--faint);font-size:11px;margin-top:4px">queue actions need the desktop app — this panel was started from the CLI</div>`;
-  return `<div class="card" style="margin-bottom:8px">
-    <div style="display:flex;gap:8px;align-items:baseline">
-      ${tsStatusPill(t.status)}
-      <strong>${esc(t.title||"")}</strong>
-      <span style="color:var(--faint);font-size:11px">${esc(t.id)} · ${esc(dept)} · attempt ${t.attempts||0}/${t.max_attempts||3}</span>
-    </div>
-    ${t.blocked_reason ? `<div style="color:var(--warn);font-size:12px;margin-top:4px">blocked: ${esc(t.blocked_reason)}</div>` : ""}
-    ${t.last_error ? `<div style="color:var(--block);font-size:12px;margin-top:4px">${esc(t.last_error)}</div>` : ""}
-    ${t.pr_url ? `<div style="font-size:12px;margin-top:4px"><a href="${esc(t.pr_url)}" target="_blank" rel="noopener">PR open — merge on GitHub →</a></div>` : ""}
-    ${t.apply_error ? `<div style="color:var(--block);font-size:12px;margin-top:4px">apply failed: ${esc(t.apply_error)} — fix and press Apply again</div>` : ""}
-    ${t.diff ? `<details style="margin-top:6px"><summary>the proposed change (${(t.diff.match(/^[+-]/gm)||[]).length} changed lines) — review before applying</summary>
-        <pre class="md-pre" style="max-height:340px;overflow:auto">${esc(t.diff)}</pre></details>` : ""}
-    <div style="margin-top:6px;display:flex;gap:6px">${tsCanAct() ? acts.join("") : ""}</div>
-    ${gate}
+function tsIsTest(t){ return /^smoke:/.test(String(t.title || "")); }
+function tsClip(s, n){ s = String(s || ""); return s.length > n ? s.slice(0, n - 1).replace(/\s+$/, "") + "…" : s; }
+function tsScreenName(id){ id = String(id || ""); return id ? id.charAt(0).toUpperCase() + id.slice(1) : ""; }
+function tsWhen(iso, withTime){
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const o = { day:"numeric", month:"short" };
+  if (withTime){ o.hour = "numeric"; o.minute = "2-digit"; }
+  try { return d.toLocaleString(undefined, o); } catch (e) { return String(iso).slice(0, 10); }
+}
+function tsPrNumber(url){ const m = /\/pull\/(\d+)/.exec(String(url || "")); return m ? "#" + m[1] : ""; }
+/* One plain sentence out of a tool's error text: the first non-empty line,
+   minus any "stage: error:" prefix, capped. The full text stays in Details. */
+function tsPlainError(text){
+  const lines = String(text || "").split("\n").map(l => l.replace(/^[a-z][a-z0-9 _-]{0,24}:\s*(error:\s*)?/i, "").trim()).filter(Boolean);
+  let s = tsClip(lines[0] || "", 160);
+  return s && !/[.!?…]$/.test(s) ? s + "." : s;
+}
+
+/* Status words. `done` reads differently while its PR is still open. */
+function tsStatusWords(t){
+  const prOpen = !!t.pr_url && t.pr_state !== "merged" && t.pr_state !== "closed";
+  const m = {
+    draft:        ["wait",   "Waiting for you to queue it"],
+    queued:       ["wait",   "In line — Sutra checks hourly"],
+    claimed:      ["work",   "Sutra is working on it"],
+    needs_review: ["review", "Ready for your review"],
+    blocked:      ["stuck",  "Stuck — needs you"],
+    failed:       ["stuck",  "Couldn't fix it"],
+    done:         ["done",   prOpen ? "Done — your merge" : "Done"],
+    dropped:      ["wait",   "Closed"],
+    corrupt:      ["stuck",  "Record unreadable"],
+  };
+  return m[t.status] || ["wait", esc(t.status || "")];
+}
+function tsNeedsYou(t){
+  if (["draft", "needs_review", "blocked", "failed"].includes(t.status)) return true;
+  return t.status === "done" && !!t.pr_url && t.pr_state !== "merged" && t.pr_state !== "closed";
+}
+/* Error visibility, decided ONCE: an error shows only while it describes the
+   current state. Once a PR exists the apply error is history; once a task is
+   done or dropped, the worker's last error is history too. */
+function tsCurrentError(t){
+  if (t.apply_error && !t.pr_url) return { kind:"apply", text:t.apply_error };
+  if (t.status === "blocked" && t.blocked_reason) return { kind:"blocked", text:t.blocked_reason };
+  if (t.last_error && !["done", "dropped"].includes(t.status)) return { kind:"worker", text:t.last_error };
+  return null;
+}
+
+/* Hunk-aware unified-diff reader. Header lines are recognised only OUTSIDE a
+   hunk; inside one the @@ counts decide where it ends, so a removed line that
+   itself begins with "--" (or an added one with "++") is content, not a file
+   header. Handles both `diff --git` and bare `---`/`+++` forms. Returns null
+   when the text has no hunk at all — the caller then shows escaped plain text
+   rather than guessing. */
+function tsParseDiff(diff){
+  const out = [];
+  let oldN = 0, newN = 0, sawHunk = false;
+  for (const ln of String(diff || "").replace(/\r/g, "").split("\n")){
+    if (oldN > 0 || newN > 0){
+      const c = ln.charAt(0);
+      if (c === "+"){ out.push({ k:"add", text:ln.slice(1) }); newN--; }
+      else if (c === "-"){ out.push({ k:"del", text:ln.slice(1) }); oldN--; }
+      else if (c === "\\"){ /* "\ No newline at end of file" — not a line */ }
+      else { out.push({ k:"ctx", text:ln.slice(1) }); oldN--; newN--; }
+      if (oldN < 0) oldN = 0;
+      if (newN < 0) newN = 0;
+      continue;
+    }
+    const h = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(ln);
+    if (h){
+      oldN = h[1] == null ? 1 : parseInt(h[1], 10);
+      newN = h[2] == null ? 1 : parseInt(h[2], 10);
+      sawHunk = true;
+      continue;
+    }
+    if (/^\+\+\+ /.test(ln)){
+      out.push({ k:"file", text:ln.slice(4).replace(/^b\//, "").replace(/\t.*$/, "").trim() });
+    }
+    /* `diff --git`, `---`, `index`, mode/rename lines: headers, not shown. */
+  }
+  return sawHunk ? out : null;
+}
+const TS_CHANGE_MAX_LINES = 400;
+function tsChangeView(diff){
+  if (!diff) return "";
+  const rows = tsParseDiff(diff);
+  if (!rows){
+    return `<div class="tsc-chg"><div class="file">The proposed change</div><pre class="md-pre">${esc(diff)}</pre></div>`;
+  }
+  const files = rows.filter(r => r.k === "file").map(r => r.text.split("/").pop()).filter(Boolean);
+  const add = rows.filter(r => r.k === "add").length, del = rows.filter(r => r.k === "del").length;
+  const counts = [del ? `${del} removed` : "", add ? `${add} added` : ""].filter(Boolean).join(", ");
+  const head = `${files.length ? files.map(esc).join(", ") : "The proposed change"}${counts ? ` <span>· ${counts}</span>` : ""}`;
+  const lines = rows.filter(r => r.k !== "file");
+  const shown = lines.slice(0, TS_CHANGE_MAX_LINES);
+  const body = shown.map(r =>
+    `<div class="ln ${r.k}"><i>${r.k === "add" ? "+" : r.k === "del" ? "−" : ""}</i>${esc(r.text)}</div>`).join("");
+  const more = lines.length > shown.length
+    ? `<div class="ln ctx"><i></i>… ${lines.length - shown.length} more lines</div>` : "";
+  return `<div class="tsc-chg"><div class="file">${head}</div>${body}${more}</div>`;
+}
+
+/* The YOU line: what the operator highlighted first, else what they said,
+   else an honest "nothing". Clipped on the card face; full in Details. */
+function tsYouLine(t, full){
+  const s = t.source || {};
+  const sel = String(s.selection || "").trim(), ask = String(s.ask || "").trim();
+  const where = s.screen ? ` <span class="ctx">· ${esc(tsScreenName(s.screen))} screen</span>` : "";
+  if (sel) return `Highlighted <q>${esc(full ? sel : tsClip(sel, 90))}</q>${where}`;
+  if (ask) return `<q>${esc(full ? ask : tsClip(ask, 110))}</q>${where}`;
+  return `<span class="na">Filed from the chat, nothing highlighted</span>${where}`;
+}
+/* The SUTRA line: what it did, and what it is waiting on — one or two
+   sentences, derived only from facts the record holds. */
+function tsSutraLine(t){
+  const err = tsCurrentError(t);
+  const pr = tsPrNumber(t.pr_url);
+  switch (t.status){
+    case "draft":
+      return "Filed as a draft. Queue it and Sutra picks it up on its next hourly pass.";
+    case "queued":
+      return `In line${t.created_at ? " since " + esc(tsWhen(t.created_at, true)) : ""}. Sutra checks the line every hour and takes the oldest first.`;
+    case "claimed":
+      return `Working on it${(t.attempts || 0) > 1 ? ` (try ${t.attempts} of ${t.max_attempts || 3})` : ""}. If nothing comes back within the hour, Release it to put it back in line.`;
+    case "needs_review": {
+      let fix = "Came back without a change to show.";
+      if (t.diff){
+        const rows = tsParseDiff(t.diff);
+        const n = rows ? rows.filter(r => r.k === "add" || r.k === "del").length : 0;
+        const files = rows ? rows.filter(r => r.k === "file").map(r => r.text.split("/").pop()).filter(Boolean) : [];
+        fix = `Wrote a fix${n ? ` — ${n} line${n === 1 ? "" : "s"}` : ""}${files.length ? ` in ${esc(files.join(", "))}` : ""}.`;
+      }
+      if (err && err.kind === "apply")
+        return `${fix} Tried to apply it and couldn't: ${esc(tsPlainError(err.text))} Read the change, then press Apply again.`;
+      return t.diff ? `${fix} Read the change, then Apply to open a pull request you merge yourself.` : fix;
+    }
+    case "blocked":
+      return `Couldn't continue: ${esc(tsPlainError(t.blocked_reason || (err && err.text) || "no reason was recorded"))}`;
+    case "failed":
+      return `Gave up after ${t.attempts || 0} tr${(t.attempts || 0) === 1 ? "y" : "ies"}${err ? `: ${esc(tsPlainError(err.text))}` : "."} Close it, or hand it to a Claude session.`;
+    case "done":
+      if (!t.pr_url) return "Done.";
+      if (t.pr_state === "merged") return `Merged as pull request ${esc(pr)}.`;
+      if (t.pr_state === "closed") return `Pull request ${esc(pr)} was closed without merging.`;
+      return `Applied the fix on a side branch and opened pull request ${esc(pr)}. Merge it on GitHub — or close it if this was only a test.`;
+    case "dropped":
+      return "Closed — nothing was changed.";
+    case "corrupt":
+      return "This record could not be read. Nothing was changed.";
+  }
+  return "";
+}
+/* Details timeline: only events the record can prove, each with the time it
+   actually carries. Events without a timestamp of their own render without
+   one rather than borrowing a neighbour's. */
+function tsTimeline(t){
+  const ev = [];
+  const push = (iso, html) => ev.push({ when: iso ? tsWhen(iso, true) : "", html });
+  if (t.created_at) push(t.created_at,
+    `You flagged it.${t.body ? ` Sutra understood it as: <span class="sub">${esc(tsClip(t.body, 240))}</span>` : ""}`);
+  if (t.status === "queued") push(t.updated_at, "Queued — waiting for Sutra's next hourly pass.");
+  if (t.status === "claimed") push(t.updated_at, "Sutra picked it up and is working on it.");
+  if (t.diff){
+    const rows = tsParseDiff(t.diff);
+    const n = rows ? rows.filter(r => r.k === "add" || r.k === "del").length : 0;
+    push("", `Wrote a fix${n ? ` — ${n} line${n === 1 ? "" : "s"}` : ""}.`);
+  }
+  if (t.apply_error && !t.pr_url) push("", `Tried to apply it and couldn't: ${esc(tsPlainError(t.apply_error))}`);
+  if (t.status === "blocked" && t.blocked_reason) push(t.updated_at, `Couldn't continue: ${esc(tsPlainError(t.blocked_reason))}`);
+  if (t.status === "failed") push(t.updated_at, `Gave up after ${t.attempts || 0} tries.`);
+  if (t.applied_at) push(t.applied_at,
+    `Applied the fix on a side branch${t.pr_url ? ` and opened <a href="${esc(t.pr_url)}" target="_blank" rel="noopener">pull request ${esc(tsPrNumber(t.pr_url))}</a>` : ""}.`);
+  if (t.status === "dropped") push(t.updated_at, "Closed by you.");
+  return ev;
+}
+function tsStory(t){
+  const s = t.source || {};
+  const dept = s.domain_name ? ` · ${esc(((s.domain_path || "") + " " + s.domain_name).trim())}` : "";
+  const meta = [esc(tsWhen(t.created_at, true)), s.screen ? `on the ${esc(tsScreenName(s.screen))} screen` : ""]
+    .filter(Boolean).join(" · ") + dept;
+  const sel = String(s.selection || "").trim(), ask = String(s.ask || "").trim();
+  const tl = tsTimeline(t);
+  return `<div class="tsc-story">
+    <div class="h">What you highlighted</div>
+    <div class="b">${meta ? `<div class="meta">${meta}</div>` : ""}${sel ? `<p class="quote">${esc(sel)}</p>` : `<span class="na">Nothing — this was filed straight from the chat.</span>`}</div>
+    <div class="h">What you said</div>
+    <div class="b">${ask ? `<p class="quote">${esc(ask)}</p>` : `<span class="na">Not kept for this task.</span>`}</div>
+    <div class="h">What Sutra did</div>
+    <div class="b">${tl.length ? `<ul class="tl">${tl.map(e => `<li><time>${esc(e.when)}</time><span>${e.html}</span></li>`).join("")}</ul>` : `<span class="na">Nothing yet.</span>`}</div>
+    ${t.diff ? `<div class="h">The change</div><div class="b">${tsChangeView(t.diff)}</div>` : ""}
+    <div class="h"></div><div class="b ref">Reference for support: ${esc(t.id)}</div>
   </div>`;
+}
+/* Details stay open across re-renders: render() rewrites the screen, so the
+   open set lives in S, not in the DOM. */
+function tsToggle(el){
+  if (!el || !el.dataset || !el.dataset.tid) return;
+  S.tsOpen = S.tsOpen || {};
+  if (el.open) S.tsOpen[el.dataset.tid] = true; else delete S.tsOpen[el.dataset.tid];
+}
+function tsCard(t){
+  const st = tsStatusWords(t), cls = st[0], words = st[1];
+  const can = tsCanAct();
+  const B = (act, label, pri) =>
+    `<button type="button" class="tsc-btn ${pri ? "pri" : "sec"}" data-tsact="${act}" data-tid="${esc(t.id)}">${label}</button>`;
+  const acts = [];
+  if (t.status === "done" && t.pr_url && t.pr_state !== "merged")
+    acts.push(`<a class="tsc-btn pri" href="${esc(t.pr_url)}" target="_blank" rel="noopener">Open pull request</a>`);
+  if (can){
+    if (t.status === "draft") acts.push(B("queue", "Queue", true));
+    if (t.status === "claimed") acts.push(B("release", "Release", true));
+    if (t.status === "needs_review" && t.diff) acts.push(B("apply", t.apply_error && !t.pr_url ? "Apply again" : "Apply", true));
+    if (!["done", "dropped", "corrupt"].includes(t.status)) acts.push(B("drop", "Close this", false));
+  }
+  const gate = can || ["done", "dropped", "corrupt"].includes(t.status) ? "" :
+    `<span class="tsc-gate">Queue and Apply need the desktop app — this panel was opened from the command line.</span>`;
+  const open = !!(S.tsOpen && S.tsOpen[t.id]);
+  return `<article class="tsc${tsNeedsYou(t) ? " needs-you" : ""}" data-tid="${esc(t.id)}">
+    <div class="tsc-top ${cls}"><span class="dot"></span>${words}${tsIsTest(t) ? ` <span class="test">TEST</span>` : ""}<span class="when">${esc(tsWhen(t.created_at))}</span></div>
+    <h3>${esc(t.title || "")}</h3>
+    <div class="tsc-rows">
+      <div class="k">You</div><div class="v">${tsYouLine(t, false)}</div>
+      <div class="k s">Sutra</div><div class="v">${tsSutraLine(t)}</div>
+    </div>
+    <div class="tsc-foot">${acts.join("")}${gate}
+      <details class="tsc-det" data-tid="${esc(t.id)}"${open ? " open" : ""} ontoggle="tsToggle(this)"><summary><span class="o">Details</span><span class="c">Hide details</span></summary>${tsStory(t)}</details>
+    </div>
+  </article>`;
 }
 SCREENS.teamsutra = () => {
   if (S.tsError) return `<p style="color:var(--block)">${esc(S.tsError)}</p>`;
-  if (!S.ts) return `<p style="color:var(--muted)">Reading the task store…</p>`;
+  if (!S.ts) return `<p style="color:var(--muted)">Reading your tasks…</p>`;
   const rows = S.ts.tasks || [];
-  if (!rows.length) return `<div class="info">No tasks yet. Select text anywhere
-    in the panel and click <strong>Ask Sutra</strong> — the chat can file what
-    you find as a task. A filed task sits as a draft until you queue it here;
-    the hourly worker then picks it up and returns a change for your review.</div>`;
-  return rows.map(tsCard).join("");
+  if (!rows.length) return `<div class="info">Nothing here yet. Select any text in the
+    panel and click <strong>Ask Sutra</strong> — if you describe a problem, the chat
+    can file it as a task. Filed tasks wait here until you queue them; Sutra then
+    picks them up on its hourly pass and brings back a change for your review.</div>`;
+  return `<p class="tsc-hint">What you flagged, and what Sutra did about it.</p>${rows.map(tsCard).join("")}`;
 };

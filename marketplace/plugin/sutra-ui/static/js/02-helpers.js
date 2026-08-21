@@ -180,6 +180,14 @@ const S = {
      pane rather than a bare boolean: two panes are visible at once, and a shared
      flag would open the popover in both. */
   usagePop:null,
+  /* Which session pane has the composer's session menu open (session id), or
+     null. Same shape as usagePop, for the same two-panes reason. In-memory
+     only: it never enters S.ui, so saveLayout() can never persist it. */
+  sessMenu:null,
+  /* Which session pane has the composer's session menu (the ⋯ chip) open, or
+     null. In-memory only, like usagePop: it is NOT in S.ui, so saveLayout()
+     never persists it and a reload starts with every menu closed. */
+  sessMenu:null,
   /* Repository state, PER SESSION -- two panes can be in two different folders,
      and one shared object would show whichever loaded last. `undefined` means
      "not asked yet" and draws nothing; an object with available:false means
@@ -472,6 +480,7 @@ const ICON = {
   term:'<rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/>',
   git:'<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="9" r="2.6"/><path d="M6 8.6v6.8M8.6 6H14a1.5 1.5 0 011.5 1.5v0"/>',
   edit:'<path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/>',
+  files:'<path d="M3.5 6.5h6l2 2h9v10.5h-17z"/><path d="M3.5 6.5v-2h5"/>',
   dept:'<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="2" y="16" width="6" height="5" rx="1"/><rect x="16" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M5 16v-2h14v2"/>',
   chart:'<path d="M4 4h11l5 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v6h6M7 14h8M7 17h5"/>',
   plc:'<path d="M3 7h7l2 3h9"/><path d="M3 7v11a1 1 0 001 1h16a1 1 0 001-1v-8"/><circle cx="16.5" cy="14.5" r="2.2"/>',
@@ -517,6 +526,7 @@ function railSpec(){
       {id:"git",    n:"Git",         i:"git",   c:(S.git ? ((S.git.status||{}).files||[]).length : undefined)},
       /* Editor sits next to Git: both are views of the same working tree, one shows
          what changed and the other lets you change it. Count withheld until read. */
+      {id:"files",  n:"Files",       i:"files"},
       {id:"editor", n:"Editor",      i:"edit",  c:(S.fs ? S.fs.files.length : undefined)},
       {id:"health", n:"Health",      i:"health",c:openIssues, warn:true}
     ],

@@ -265,6 +265,11 @@ function startBackend() {
         // Last, and deliberately after the shell environment: the desktop
         // control token is ours to set and nothing inherited may override it.
         SUTRA_DESKTOP_TOKEN: DESKTOP_TOKEN,
+        // Where the bundled payload lives, for the Files sidecar
+        // (sb_sidecar._bundled_binary resolves Resources/payload/sb/). Dev
+        // checkouts have no resourcesPath payload; the module then falls back
+        // to its pinned first-use download.
+        SUTRA_UI_RESOURCES: path.join(process.resourcesPath || "", "payload"),
       } }
   );
   let stderr = "";

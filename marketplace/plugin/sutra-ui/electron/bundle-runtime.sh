@@ -177,6 +177,39 @@ rsync -a --delete \
 [ -f "$PAYLOAD/plugin/.claude-plugin/plugin.json" ] || die "payload has no plugin manifest"
 
 # --------------------------------------------------------------------------
+# 3b. SilverBullet sidecar binary -- the Files screen's engine (sb_sidecar.py).
+#
+# Pinned version + sha256, fail-closed: a tampered or drifted download must
+# never ship. The zip's inner binary is named `silverbullet`; the payload
+# renames it to the path sb_sidecar._bundled_binary() resolves. Offline DMG
+# rule holds: the download is cached like the CPython tarball.
+# --------------------------------------------------------------------------
+step "silverbullet sidecar"
+SB_VERSION="2.10.0"
+case "$ARCH" in
+  arm64)  SB_ZIP="silverbullet-server-darwin-aarch64.zip"
+          SB_SHA256="3625a3c3b6fcdc1ca1bdbe57559c41c97b3bc642613d8d8d32d40013df648bc1" ;;
+  x86_64) SB_ZIP="silverbullet-server-darwin-x86_64.zip"
+          SB_SHA256="${SUTRA_SB_SHA256_X86_64:-}" ;;
+esac
+if [ -n "${SB_SHA256:-}" ]; then
+  SB_URL="https://github.com/silverbulletmd/silverbullet/releases/download/${SB_VERSION}/${SB_ZIP}"
+  mkdir -p "$CACHE"
+  [ -f "$CACHE/$SB_ZIP" ] || curl -fsSL -o "$CACHE/$SB_ZIP" "$SB_URL" || die "silverbullet download failed"
+  echo "$SB_SHA256  $CACHE/$SB_ZIP" | shasum -a 256 -c - >/dev/null 2>&1 \
+    || die "silverbullet sha256 mismatch -- refusing to ship an unverified binary"
+  mkdir -p "$PAYLOAD/sb"
+  unzip -o -q "$CACHE/$SB_ZIP" silverbullet -d "$PAYLOAD/sb" || die "silverbullet unzip failed"
+  mv -f "$PAYLOAD/sb/silverbullet" "$PAYLOAD/sb/silverbullet-server"
+  chmod 0755 "$PAYLOAD/sb/silverbullet-server"
+else
+  # No pinned hash for this arch yet: build proceeds WITHOUT the sidecar and
+  # the Files screen falls back to first-use download (sb_sidecar.ensure_binary,
+  # itself fail-closed). Say so loudly rather than shipping silently less.
+  echo "  !! no pinned SilverBullet sha256 for $ARCH -- payload ships without sidecar"
+fi
+
+# --------------------------------------------------------------------------
 # 4. STAMP -- what the app compares against the staged copy to decide whether
 #    a re-stage is needed. Content-addressed, so an edited checkout produces a
 #    different stamp and the next launch re-stages instead of running stale code.

@@ -30,6 +30,7 @@ import session_reader as sr
 import connectors_api
 import org_api
 import providers
+import sb_sidecar
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -510,6 +511,31 @@ def _panel_html() -> str:
 # The versioned JS/CSS, by contrast, are safe to cache HARD: their URL changes
 # when they do.
 _NOCACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
+
+@app.get("/api/files/status")
+def api_files_status(start: int = 0):
+    """Files screen (SilverBullet sidecar) state. `?start=1` lazily launches
+    the sidecar against the configured workdir — same root, same $HOME guard,
+    and the same out-of-band edit gate as /api/fs/write (sidecar goes
+    read-only when editing is off). Loopback-only like everything else here."""
+    if start:
+        root = providers.load_settings().get("workdir") or _ensure_workdir()
+        if not root:
+            return JSONResponse({"running": False, "error": "no usable workdir"},
+                                status_code=400)
+        try:
+            return sb_sidecar.start(os.path.realpath(os.path.expanduser(root)))
+        except Exception as exc:  # noqa: BLE001 — panel shows the reason verbatim
+            return JSONResponse({"running": False, "error": str(exc)}, status_code=500)
+    return sb_sidecar.status()
+
+
+@app.on_event("shutdown")
+def _sb_shutdown():
+    # The sidecar dies with the backend: no orphan SilverBullet process may
+    # outlive the app that gated its read-only mode.
+    sb_sidecar.stop()
 
 
 @app.get("/", response_class=HTMLResponse)
