@@ -23,6 +23,12 @@ class DiscoveryMixin:
     TTL_ORGANIZATIONS = 900
 
     _CURSOR_SECRET_KEY = "cursor-hmac"
+    #: Marker row recording that we asked GitHub and it answered -- including
+    #: when the answer was "none". Without it, `not installations` is true on
+    #: every request for an authorized-but-not-installed connector, so the
+    #: cache is defeated exactly when there is nothing to cache and every page
+    #: view costs a live GitHub round-trip (~0.85s, and rate-limit budget).
+    _SYNC_MARKER = "installations_sync"
 
     def _cursor_secret(self) -> bytes:
         """Per-install HMAC key, minted once and kept where credentials are kept.
@@ -74,6 +80,7 @@ class DiscoveryMixin:
             "SELECT installation_id FROM connector_installations WHERE connector_id = ?",
             (connector_id,)).fetchall()
         removed = [r["installation_id"] for r in rows if r["installation_id"] not in known]
+        self._mark_synced(connector_id, len(installations))
         for installation_id in removed:
             self.db.execute(
                 "DELETE FROM connector_installations WHERE connector_id = ? "
@@ -83,6 +90,36 @@ class DiscoveryMixin:
                                connector_id=connector_id,
                                reason_code=StatusReason.ORG_ACCESS_REMOVED.value,
                                detail={"removed_installations": removed})
+        return installations
+
+    def _sync_is_fresh(self, connector_id) -> bool:
+        row = self.db.execute(
+            "SELECT expires_at FROM connector_metadata WHERE connector_id = ? "
+            "AND kind = ? AND external_id = 'self'",
+            (connector_id, self._SYNC_MARKER)).fetchone()
+        return bool(row and row["expires_at"] > iso(utcnow()))
+
+    def _mark_synced(self, connector_id, count):
+        now = utcnow()
+        self.db.execute(
+            "INSERT INTO connector_metadata (connector_id, kind, external_id, "
+            " payload_json, fetched_at, expires_at) VALUES (?,?,'self',?,?,?) "
+            "ON CONFLICT(connector_id, kind, external_id) DO UPDATE SET "
+            " payload_json=excluded.payload_json, fetched_at=excluded.fetched_at, "
+            " expires_at=excluded.expires_at",
+            (connector_id, self._SYNC_MARKER, canonical({"count": count}),
+             iso(now), iso(now + timedelta(seconds=self.TTL_INSTALLATIONS))))
+
+    def _installations_for(self, operator_id, connector_id, refresh):
+        """Cached installations, re-syncing only when stale or forced.
+
+        The freshness marker is what distinguishes "we have not asked" from
+        "we asked and the answer was none" -- two states that look identical
+        in an empty list and have very different costs.
+        """
+        if not refresh and self._sync_is_fresh(connector_id):
+            return self.cached_installations(connector_id)
+        installations = self.sync_installations(operator_id, connector_id)
         return installations
 
     def cached_installations(self, connector_id):
@@ -109,9 +146,7 @@ class DiscoveryMixin:
         if connector is None:
             raise TransactionNotFound(connector_id)
 
-        installations = self.cached_installations(connector_id)
-        if refresh or not installations:
-            installations = self.sync_installations(operator_id, connector_id)
+        installations = self._installations_for(operator_id, connector_id, refresh)
         if installation_id is not None:
             installations = [i for i in installations
                              if i.installation_id == int(installation_id)]
@@ -176,9 +211,7 @@ class DiscoveryMixin:
         if connector is None:
             raise TransactionNotFound(connector_id)
 
-        installations = self.cached_installations(connector_id)
-        if refresh or not installations:
-            installations = self.sync_installations(operator_id, connector_id)
+        installations = self._installations_for(operator_id, connector_id, refresh)
 
         credential = self.credential_for(operator_id, connector_id)
         organizations = Discovery(self.client).list_organizations(

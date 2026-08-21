@@ -3898,3 +3898,21 @@ both are single-threaded.
 The 2.112.1 diagnosability work below stands: it is what turns the *next*
 unexpected failure into a message instead of a silent 500.
 
+## %s (%s)
+
+**An empty installation set no longer defeats the cache.**
+
+Measured on the installed app: every call to the connectors detail cost a live
+GitHub round-trip, ~0.85s, on a connector that is authorized but not installed.
+The sync condition was `if refresh or not installations` -- and for a connector
+with no installations that is true on *every* request, so the 15-minute cache
+was bypassed exactly when there was nothing to fetch.
+
+A freshness marker now records that GitHub was asked and what it said,
+including when the answer was none. "We have not asked" and "we asked and there
+are none" look identical in an empty list and have very different costs.
+
+Found by hammering the endpoints 60-deep after the 2.112.2 thread fix; one
+request timed out behind the queue, which is what surfaced the per-call
+round-trip underneath.
+

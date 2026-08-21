@@ -1,6 +1,16 @@
 # Sutra — Current Version
 
-## v2.112.2 (2026-08-21, HEAD)
+## v2.112.3 (2026-08-21, HEAD)
+
+**Discovery stops re-asking GitHub on every page view.** With no installations,
+`not installations` was true on each request, so the 15-minute cache was
+bypassed and every call cost ~0.85s of live GitHub. A freshness marker now
+records that GitHub answered, including when the answer was none.
+
+Ships with the 2.112.2 thread fix: the Connectors screen is correct under
+concurrency (60 requests, 12-way, all 200) and no longer chatty.
+
+## v2.112.2 (2026-08-21)
 
 **The Connectors 500 is fixed at the root.** A single SQLite connection was
 shared across FastAPI's threadpool, and `sqlite3` binds a connection to its

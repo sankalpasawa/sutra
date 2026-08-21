@@ -279,6 +279,43 @@ class TestServiceDiscovery(unittest.TestCase):
             "SELECT reason_code FROM connector_events")]
         self.assertIn("ORG_ACCESS_REMOVED", reasons)
 
+    def test_empty_installations_do_not_re_sync_every_call(self):
+        """An authorized-but-not-installed connector defeated the cache: `not
+        installations` was true on every request, so every page view cost a
+        live GitHub round-trip. The freshness marker distinguishes "not asked"
+        from "asked, answer was none"."""
+        db, transport, service, connector_id = connected_service()
+        transport.push(200, {"total_count": 0, "installations": []})
+        first = service.list_repositories(OPERATOR, connector_id)
+        self.assertEqual(first["empty_reason"], "NOT_INSTALLED")
+        calls_after_first = len(transport.calls)
+        # No further responses scripted: a second GitHub call would raise.
+        second = service.list_repositories(OPERATOR, connector_id)
+        self.assertEqual(second["empty_reason"], "NOT_INSTALLED")
+        self.assertEqual(len(transport.calls), calls_after_first,
+                         "second call must not hit GitHub again")
+
+    def test_refresh_forces_a_re_sync(self):
+        db, transport, service, connector_id = connected_service()
+        transport.push(200, {"installations": []})
+        service.list_repositories(OPERATOR, connector_id)
+        before = len(transport.calls)
+        transport.push(200, {"installations": [INSTALLATION]})
+        transport.push(200, {"repositories": [REPO]})
+        result = service.list_repositories(OPERATOR, connector_id, refresh=True)
+        self.assertGreater(len(transport.calls), before)
+        self.assertEqual(len(result["repositories"]), 1)
+
+    def test_organizations_also_honour_the_marker(self):
+        db, transport, service, connector_id = connected_service()
+        transport.push(200, {"installations": []})
+        transport.push(200, [])
+        service.list_organizations(OPERATOR, connector_id)
+        before = len(transport.calls)
+        transport.push(200, [])          # only /user/orgs should be called again
+        service.list_organizations(OPERATOR, connector_id)
+        self.assertEqual(len(transport.calls), before + 1)
+
     def test_next_cursor_is_opaque_and_signed(self):
         db, transport, service, connector_id = connected_service()
         transport.push(200, {"installations": [INSTALLATION]})
