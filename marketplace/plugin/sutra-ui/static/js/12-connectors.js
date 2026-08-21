@@ -272,3 +272,45 @@ SCREENS.connectors = () => {
     `<div class="connlisting">${s.list.map(connCard).join("")}</div>
      <button class="btn" type="button" data-connstart ${s.busy?"disabled":""}>Connect another account</button>`;
 };
+
+
+/* ── events ──────────────────────────────────────────────────────────────
+ * Delegated on `document`, not on the screen container and NOT on `.rail`.
+ *
+ * The first version of this wired the handlers into the rail's click listener,
+ * where they could never fire: the rail listener only sees clicks inside
+ * `.rail`, and every control below lives in `#scBody`. The screen rendered
+ * perfectly and no button did anything, because rendering and event handling
+ * are separate paths and only one of them was wrong.
+ *
+ * `#scBody` is rebuilt by render() on every pass, so a listener attached to it
+ * would be discarded with the element it was attached to. document-level
+ * delegation survives that; scoping to `#scBody` in the guard keeps a stray
+ * `data-conn*` attribute elsewhere from reaching these handlers.
+ */
+document.addEventListener("click", e => {
+  if (!e.target.closest("#scBody")) return;
+
+  const retry = e.target.closest("[data-connretry]");
+  if (retry){ S.conn.err = null; S.conn.list = null; loadConnectors(true); return; }
+
+  const start = e.target.closest("[data-connstart]");
+  if (start){ connStart(); return; }
+
+  const cancel = e.target.closest("[data-conncancel]");
+  if (cancel){ connCancel(); return; }
+
+  const open = e.target.closest("[data-connopen]");
+  if (open){
+    const id = open.dataset.connopen;
+    if (S.conn.open === id){ S.conn.open = null; render(); }
+    else loadConnectorDetail(id);
+    return;
+  }
+
+  const dis = e.target.closest("[data-conndis]");
+  if (dis){ connDisconnect(dis.dataset.conndis); return; }
+
+  const ref = e.target.closest("[data-connrefresh]");
+  if (ref){ connRefreshRepos(ref.dataset.connrefresh); return; }
+});

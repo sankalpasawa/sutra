@@ -1,6 +1,19 @@
 # Sutra — Current Version
 
-## v2.112.3 (2026-08-21, HEAD)
+## v2.112.4 (2026-08-21, HEAD)
+
+**The Connectors buttons work.** They were inert in 2.112.0-2.112.3: the click
+handlers sat inside the rail's listener, which never sees clicks in the screen
+body. The screen rendered fine, which is why the defect survived a screenshot
+and 152 panel tests -- those extract panel.html's inline script, and this
+screen is an external file.
+
+Handlers moved to a document-level delegate scoped to `#scBody`, plus a new
+10-test suite whose main assertion is general rather than specific: every
+control the markup emits must have a handler, and every handler must have a
+control.
+
+## v2.112.3 (2026-08-21)
 
 **Discovery stops re-asking GitHub on every page view.** With no installations,
 `not installations` was true on each request, so the 15-minute cache was

@@ -2,6 +2,28 @@
 
 **status**: active · **updated**: 2026-08-21
 
+## 2.112.4 (2026-08-21)
+
+**Every button on the Connectors screen now works.** They did nothing at all in
+2.112.0-2.112.3.
+
+The click handlers were added inside the `.rail` listener, which only sees
+clicks inside `.rail`; every control on the screen lives in `#scBody`. So the
+screen rendered correctly and no button responded -- rendering and event
+handling are separate paths, and only one of them was wrong, which is why it
+looked right in a screenshot.
+
+Handlers now live in `12-connectors.js` as a document-level delegate scoped to
+`#scBody`. Document-level because `#scBody` is rebuilt by `render()` on every
+pass, so a listener bound to it would be discarded with the element.
+
+**New suite: `test_connectors_ui.js`, 10 tests.** `test_panel.js` could not
+catch this -- it extracts the inline `<script>` from `panel.html`, and this
+screen is an external file, so 152 tests passed while every button was dead.
+The load-bearing check is the general one: every `data-conn*` control the
+markup emits must have a handler that reads it, and every handler must
+correspond to a control that exists.
+
 ## 2.112.3 (2026-08-21)
 
 **An empty installation set no longer defeats the cache.**
