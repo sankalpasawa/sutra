@@ -1,6 +1,13 @@
 # Sutra — Current Version
 
-## v2.115.0 (2026-08-21, HEAD)
+## v2.115.1 (2026-08-21, HEAD)
+
+"Not now" on the update banner dismisses it. Deferring previously swapped the
+countdown for a message with no buttons, leaving a permanent notice on screen
+until the app quit. Dismissal is keyed to the staged version so a newer build
+still announces itself, and a failed or already-armed install always shows.
+
+## v2.115.0 (2026-08-21)
 
 **Slack connects, disconnects and reconnects from the app.** Verified against a
 real workspace: bot and user tokens in separate keychain slots, both rotating,

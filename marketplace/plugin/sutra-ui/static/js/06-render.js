@@ -591,7 +591,15 @@ function renderUpdateBanner(){
      the most important thing the banner has to say, not a signal to say
      nothing. (An unusable staging directory reports {pending:false} instead,
      and is correctly silent.) */
-  const show = !!(u && u.pending);
+  /* "Not now" must actually dismiss. Deferring used to swap the countdown for
+     a message with NO buttons, so the banner became permanent -- an update the
+     operator explicitly postponed then sat on screen until the app quit.
+     Dismissal is keyed to the VERSION, so a genuinely newer build still gets
+     to announce itself. An error or an in-flight install always shows: those
+     are not states the operator asked to stop hearing about. */
+  const dismissed = !!(u && u.version && S.updDismissed === u.version
+                       && !S.updApplyError && u.state !== "installing");
+  const show = !!(u && u.pending) && !dismissed;
   if (!show){ stopUpdCountdown(); if (host) host.remove(); return; }
   if (!host){
     host = document.createElement("div");
@@ -676,9 +684,13 @@ function renderUpdateBanner(){
   host.querySelectorAll("[data-upd2]").forEach(b=>b.onclick=()=>{
     const a = b.dataset.upd2;
     if (a === "now" || a === "retry") return applyUpdateNow();
-    /* "Not now" is a DEFER, and the copy above says so. The staged build is
-       kept; the shell applies it on the way out. */
+    /* "Not now" is a DEFER: the staged build is kept and the shell applies it
+       on the way out. It is also a DISMISSAL -- the banner goes away. Saying
+       "not now" and being answered with a permanent notice is not a defer, it
+       is a nag, and Settings -> Updates already carries the same fact for
+       anyone who wants it. */
     S.updDeferred = true;
+    S.updDismissed = (S.updStaged && S.updStaged.version) || null;
     stopUpdCountdown();
     if (window.sutra && window.sutra.deferUpdate) window.sutra.deferUpdate();
     renderUpdateBanner();
