@@ -43,6 +43,17 @@
   .sm{max-width:92%;padding:7px 10px;border-radius:10px} .sm.s{align-self:flex-start;background:var(--cream);border-left:2px solid var(--gold);border-radius:0 10px 10px 10px} .sm.u{align-self:flex-end;background:#f0ede5;border:1px solid var(--line);border-radius:10px 10px 3px 10px}
   .mem{align-self:stretch;border:1px dashed var(--gold);border-radius:10px;padding:7px 10px;font-size:11.5px;background:#fdfaf4} .mem .k{font-size:9px;letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--gold);font-weight:700} .mem .e{float:right;color:var(--stone);font-size:10.5px}
   .scomp{border-top:1px solid var(--line);padding:9px 12px;font-size:12px;color:var(--faint);display:flex;gap:8px} .scomp .ph{flex:1} .scomp .key{font-size:10px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--stone)}
+  /* journey extras */
+  .mile{display:inline-block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:99px;padding:2px 8px;margin-left:6px;vertical-align:middle}
+  .mile.mvp{background:var(--gold-glow);color:var(--gold);border:1px solid var(--gold)} .mile.m1{background:#eef2f6;color:var(--review);border:1px solid var(--review)} .mile.fut{background:var(--ink);color:var(--cream)}
+  .focusline{font-size:10.5px;color:var(--stone);margin-top:5px} .focusline u{text-decoration:none;border-bottom:1px dotted var(--stone);margin-left:4px}
+  .fban{background:var(--ink);color:var(--cream);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;text-align:center;padding:6px}
+  .steps{display:flex;flex-direction:column;gap:6px;font-size:12px} .steps div{display:flex;gap:8px;align-items:center} .steps i{width:14px;height:14px;border-radius:50%;display:inline-block;border:1.5px solid var(--line)} .steps i.ok{background:var(--done);border-color:var(--done)} .steps i.hold{border-color:var(--decide);background:var(--gold-glow)}
+  .sact{display:flex;gap:8px;margin-top:8px} .sact .act{font-size:12px;font-weight:700;color:var(--decide);padding:4px 10px;border-radius:var(--r-chip);background:var(--panel);border:1px solid var(--line)} .sact .act.q{font-weight:400;color:var(--stone);border-color:transparent}
+  .tabs{display:flex;gap:12px;padding:8px 12px 0;font-size:11px;color:var(--faint)} .tabs b{color:var(--ink);border-bottom:2px solid var(--gold);padding-bottom:4px;font-weight:600}
+  .memlist{display:flex;flex-direction:column;gap:7px;padding:10px 12px} .memrow{border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:11.5px;line-height:1.4} .memrow .sc{float:right;font-size:9.5px;color:var(--stone);background:var(--cream);border-radius:99px;padding:1px 7px;margin-left:6px} .memrow .ed{color:var(--faint);font-size:10px;margin-top:2px}
+  .imp{margin:4px 12px 10px;border:1px dashed var(--gold);border-radius:10px;padding:8px 10px;font-size:11.5px;background:#fdfaf4}
+  .ro{padding:44px 24px} .ro .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);padding:16px;max-width:620px} .ro .k{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:700} .ro .nm{font-family:var(--font-display);font-size:18px;margin:4px 0 10px} .ro .row{display:flex;justify-content:space-between;font-size:12.5px;padding:7px 0;border-top:1px solid var(--line);color:var(--stone)} .ro .row b{color:var(--ink);font-weight:500}
 </style>
 </head>
 <body>
@@ -139,6 +150,87 @@
   <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
 </div>
 
-<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop &middot; preview v3 &middot; overlay model (founder 2026-08-22) &middot; spec: holding/plans/shadow/</p>
+<!-- ============ 3: FOCUS ============ -->
+<p class="cap"><b>3 · It knows what you&rsquo;re on.</b> <span class="mile m1">Focus &middot; opt-in &middot; M1</span> Shadow guesses your focus from the pane you&rsquo;re in and says so &mdash; and you can tell it it&rsquo;s wrong.</p>
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="ds-rail"><div class="brand">Sutra</div><div class="item">&#9998; Chats</div><div class="item on">&#10227; Routines</div><div class="item">&#10047; Balance</div><div class="item">&#9673; Teamsutra</div><div class="item">&#9643; Usage</div><div class="item">&#9881; Manage &#9662;</div><div class="foot">Sankalp &middot; 12 min here</div></nav>
+  <section class="pane"><div class="ro">
+    <h2 class="pg">Routines</h2><div class="pgsub">Things Sutra does on a schedule</div>
+    <div class="card"><div class="k">ROUTINE</div><div class="nm">Nightly EMI check</div>
+      <div class="row"><span>Runs</span><b>every night, 02:00</b></div><div class="row"><span>Last run</span><b>yesterday &middot; 3 differences</b></div><div class="row"><span>On differences</span><b>message me in the morning</b></div><div class="row"><span>Test run</span><b>never</b></div></div>
+  </div></section>
+  <div class="shadow-fab">
+    <div class="spill">You&rsquo;ve been on the nightly EMI check for 12 minutes. Want me to run it once as a test?<div class="acts"><span class="act">Run a test</span><span class="act q">Not now</span></div><div class="focusline">I think you&rsquo;re on: nightly EMI check <u>wrong?</u></div></div>
+    <div class="sdot" title="Shadow"><i></i></div>
+  </div>
+</div>
+
+<!-- ============ 4: HEAVY LIFTING (FUTURE) ============ -->
+<p class="cap"><b>4 · It does the heavy lifting.</b> <span class="mile fut">M2+ future &middot; once you let Shadow act</span> Same card, now working through a task and stopping at anything that touches a live system.</p>
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="ds-rail"><div class="brand">Sutra</div><div class="item on">&#9998; Chats <span class="badge">1</span></div><div class="item">&#10227; Routines</div><div class="item">&#10047; Balance</div><div class="item">&#9673; Teamsutra</div><div class="item">&#9643; Usage</div><div class="item">&#9881; Manage &#9662;</div><div class="foot">Sankalp &middot; maker morning</div></nav>
+  <section class="pane"><div class="chwrap"><h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
+    <div class="slist"><div class="sit on"><div class="tt">paisa &middot; EMI check</div><div class="mm">Shadow working</div></div><div class="sit"><div class="tt">dayflow &middot; api deploy</div><div class="mm">idle</div></div></div>
+    <div class="panes2"><aside class="ctx"><div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div></aside><div class="chatcol"><div class="chathead"><span class="t">EMI reconciliation</span></div><div class="stream"><div class="mu">Fix the rounding differences and get it ready for a test deploy.</div><div class="ma">Working on it&hellip;</div></div><div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div></div></div>
+  </div></section>
+  <div class="scard">
+    <div class="fban">M2+ future &middot; shown only once you let Shadow act</div>
+    <div class="hd"><span class="nm"><i></i>Shadow</span><span class="switch"><i></i>quiet</span><span class="hide">hide</span></div>
+    <div class="sees">Doing this for you &middot; you can stop me any time</div>
+    <div class="smsgs">
+      <div class="steps"><div><i class="ok"></i>Ran the EMI check &mdash; 3 differences</div><div><i class="ok"></i>Put last week&rsquo;s fix in place</div><div><i class="ok"></i>Tests passed (142/142)</div><div><i class="hold"></i>Test deploy &mdash; waiting for you: it changes a live system</div></div>
+      <div class="sact"><span class="act">Approve the deploy</span><span class="act q">Stop here</span></div>
+    </div>
+    <div class="scomp"><span class="ph">Tell Shadow&hellip;</span></div>
+  </div>
+  <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
+</div>
+
+<!-- ============ 5: YOU'RE BACK (FUTURE) ============ -->
+<p class="cap"><b>5 · You&rsquo;re back.</b> <span class="mile fut">M2+ future &middot; once you let Shadow act</span> One card. What it noticed, what it changed (nothing), what it held for you.</p>
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="ds-rail"><div class="brand">Sutra</div><div class="item on">&#9998; Chats</div><div class="item">&#10227; Routines</div><div class="item">&#10047; Balance</div><div class="item">&#9673; Teamsutra</div><div class="item">&#9643; Usage</div><div class="item">&#9881; Manage &#9662;</div><div class="foot">Sankalp &middot; back at 11:03</div></nav>
+  <section class="pane"><div class="chwrap"><h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
+    <div class="slist"><div class="sit on"><div class="tt">dayflow &middot; api deploy</div><div class="mm">ready to continue</div></div><div class="sit"><div class="tt">paisa &middot; EMI check</div><div class="mm">summary ready</div></div></div>
+    <div class="panes2"><aside class="ctx"><div class="crumb">DayFlow &rsaquo; Backend &rsaquo; <b>API deploy</b></div></aside><div class="chatcol"><div class="chathead"><span class="t">API deploy</span></div><div class="stream"><div class="mu">Deploy the API to the test environment once the tests pass.</div><div class="ma">Tests passed (142/142). Starting the test deploy&hellip;</div><div class="ma" style="color:var(--stone)">Connection lost at 10:41.</div></div><div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div></div></div>
+  </div></section>
+  <div class="scard" style="height:300px">
+    <div class="fban">M2+ future &middot; shown only once you let Shadow act</div>
+    <div class="hd"><span class="nm"><i></i>Shadow</span><span class="hide">hide</span></div>
+    <div class="smsgs">
+      <div class="sm s">Welcome back &mdash; you were away 22 minutes.<br><br>I noticed dayflow dropped its connection at 10:41. Nothing was changed; it&rsquo;s waiting at the last safe point.<br><br>I&rsquo;m holding the test deploy for you.</div>
+      <div class="sact"><span class="act">Continue</span><span class="act q">Show me what you saw</span></div>
+    </div>
+  </div>
+  <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
+</div>
+
+<!-- ============ 6: WHAT I REMEMBER ============ -->
+<p class="cap"><b>6 · What it remembers.</b> <span class="mile mvp">MVP</span> Everything you&rsquo;ve told it, in your words, with where it applies. Past instructions from your Sutra chats are offered for review &mdash; never switched on by themselves.</p>
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="ds-rail"><div class="brand">Sutra</div><div class="item on">&#9998; Chats</div><div class="item">&#10227; Routines</div><div class="item">&#10047; Balance</div><div class="item">&#9673; Teamsutra</div><div class="item">&#9643; Usage</div><div class="item">&#9881; Manage &#9662;</div><div class="foot">Sankalp &middot; maker morning</div></nav>
+  <section class="pane"><div class="chwrap"><h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
+    <div class="slist"><div class="sit on"><div class="tt">paisa &middot; EMI check</div><div class="mm">live now</div></div><div class="sit"><div class="tt">dayflow &middot; api deploy</div><div class="mm">idle</div></div></div>
+    <div class="panes2"><aside class="ctx"><div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div></aside><div class="chatcol"><div class="chathead"><span class="t">EMI reconciliation</span></div><div class="stream"><div class="mu">Run the EMI check against last night&rsquo;s batch.</div><div class="ma">Done &mdash; 1,204 loans compared, 3 differences.</div></div><div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div></div></div>
+  </div></section>
+  <div class="scard">
+    <div class="hd"><span class="nm"><i></i>Shadow</span><span class="switch"><i></i>quiet</span><span class="hide">hide</span></div>
+    <div class="tabs"><span>Chat</span><b>What I remember</b></div>
+    <div class="memlist">
+      <div class="memrow"><span class="sc">paisa</span>When rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.<div class="ed">told me today &middot; edit</div></div>
+      <div class="memrow"><span class="sc">everywhere</span>Never push to a client&rsquo;s repo. Ever.<div class="ed">from your directions &middot; edit</div></div>
+      <div class="memrow"><span class="sc">dayflow</span>Run the tests before any deploy.<div class="ed">told me Tuesday &middot; edit</div></div>
+      <div class="memrow"><span class="sc">everywhere</span>Stay quiet after 6 pm unless something breaks.<div class="ed">told me last week &middot; edit</div></div>
+    </div>
+    <div class="imp">I found <b>37</b> things you&rsquo;ve asked Sutra for in past chats. Want to go through them one by one?<div class="sact"><span class="act">Review them</span><span class="act q">Later</span></div></div>
+  </div>
+  <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
+</div>
+
+<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop &middot; preview v3.1 &middot; overlay model (founder 2026-08-22) &middot; MVP = screens 1, 2, 6 &middot; spec: holding/plans/shadow/</p>
 </body>
 </html>
