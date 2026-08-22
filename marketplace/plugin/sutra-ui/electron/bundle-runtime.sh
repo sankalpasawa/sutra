@@ -167,6 +167,7 @@ mkdir -p "$PAYLOAD/plugin"
 rsync -a --delete \
   --exclude 'sutra-ui/.venv/' \
   --exclude 'sutra-ui/electron/node_modules/' \
+  --exclude 'sutra-ui/electron/node_modules' \
   --exclude 'sutra-ui/electron/dist/' \
   --exclude 'sutra-ui/electron/payload/' \
   --exclude '__pycache__/' --exclude '*.pyc' \
