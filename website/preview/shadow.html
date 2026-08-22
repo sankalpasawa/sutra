@@ -3,199 +3,142 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow in Sutra Desktop — preview v2</title>
+<title>Shadow on Sutra Desktop — preview v3 (overlay)</title>
 <link rel="stylesheet" href="tokens.css">
-<!-- v2 (2026-08-21): founder asked for the experience, not the engine. Three full-app screens in the
-     cockpit shell; plain first-person copy; no codes, no hashes. Layout-only CSS below; every visual
-     decision lives in tokens.css. Docs: holding/plans/shadow/ -->
+<!-- v3 (2026-08-22): founder ruling — Shadow is an overlay, not a tab or panel. A dot, a one-line prompt,
+     an expandable chat; it rides on the app window. Layout-only CSS; visuals from tokens.css.
+     Spec: holding/plans/shadow/DESIGN-SYSTEM.md · PRD-MVP.md -->
 <style>
   body{background:#ECE8E0;margin:0;padding:40px 24px 80px;font-family:var(--font-body);color:var(--ink)}
-  .cap{max-width:1300px;margin:0 auto 10px;font-size:12px;color:var(--stone);letter-spacing:.02em}
-  .cap b{color:var(--ink);font-weight:600}
+  .cap{max-width:1300px;margin:0 auto 10px;font-size:12px;color:var(--stone)} .cap b{color:var(--ink);font-weight:600}
   .window{width:1300px;max-width:100%;height:720px;margin:0 auto 56px;background:var(--bg);border:1px solid #ddd8cf;border-radius:14px;box-shadow:0 22px 64px rgba(12,10,8,.18);overflow:hidden;display:flex;position:relative}
-  .lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20}
-  .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#e0ddd6}
-  .ds-rail{padding-top:40px}
-  .ds-rail .item{padding:7px 9px;border-radius:9px;font-size:13px;color:var(--stone);margin-bottom:2px;cursor:default}
-  .ds-rail .item.on{background:var(--cream);color:var(--ink);font-weight:600}
-  .ds-rail .item .badge{float:right;font-size:10px;background:var(--decide);color:#fff;border-radius:99px;padding:1px 6px}
-  .ds-rail .foot{margin-top:auto;font-size:10px;color:var(--faint);padding:0 8px;line-height:1.5}
-  .pane{flex:1;overflow:auto}
-  .homecol{max-width:660px;margin:0 auto;padding:0 24px;display:flex;flex-direction:column;min-height:100%}
-  .stack{display:flex;flex-direction:column;gap:var(--s3);margin-top:var(--s5)}
-  .ds-decision{display:flex;align-items:center;gap:14px;padding:14px 16px;box-shadow:var(--shadow-rest)}
-  .ds-decision .dot.alert{background:var(--alert)} .ds-decision .dot.review{background:var(--review)} .ds-decision .dot.done{background:var(--done)}
-  .handled{margin-top:28px;font-size:13px;color:var(--stone);line-height:1.6}
-  .handled b{color:var(--done);font-weight:600}
-  .ds-composer{display:flex;align-items:center;gap:10px;padding:14px 16px}
-  .chwrap{padding:44px 24px 20px}
-  h2.pg{font-family:var(--font-display);font-size:20px;font-weight:500;margin:0 0 2px}
-  .pgsub{font-size:11.5px;color:var(--stone);margin-bottom:12px}
-  .slist{display:flex;gap:var(--s2);margin-bottom:var(--s3);flex-wrap:wrap}
-  .sit{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:11px}
-  .sit.on{border-color:var(--gold);background:#fdfaf4}
-  .sit .tt{font-weight:600;font-size:11.5px} .sit .mm{font-size:9px;color:var(--stone)}
-  .sit .sd{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20} .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#e0ddd6}
+  .ds-rail{padding-top:40px} .ds-rail .item{padding:7px 9px;border-radius:9px;font-size:13px;color:var(--stone);margin-bottom:2px} .ds-rail .item.on{background:var(--cream);color:var(--ink);font-weight:600}
+  .ds-rail .item .badge{float:right;font-size:10px;background:var(--decide);color:#fff;border-radius:99px;padding:1px 6px} .ds-rail .foot{margin-top:auto;font-size:10px;color:var(--faint);padding:0 8px;line-height:1.5}
+  .pane{flex:1;overflow:auto} .chwrap{padding:44px 24px 20px}
+  h2.pg{font-family:var(--font-display);font-size:20px;font-weight:500;margin:0 0 2px} .pgsub{font-size:11.5px;color:var(--stone);margin-bottom:12px}
+  .slist{display:flex;gap:var(--s2);margin-bottom:var(--s3);flex-wrap:wrap} .sit{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:11px} .sit.on{border-color:var(--gold);background:#fdfaf4} .sit .tt{font-weight:600;font-size:11.5px} .sit .mm{font-size:9px;color:var(--stone)}
   .panes2{display:flex;height:540px;border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden;background:var(--panel)}
-  .ctx{width:270px;border-right:1px solid var(--line);padding:13px;overflow:auto;background:#fbfaf7;font-size:11px}
-  .crumb{font-size:10px;color:var(--stone);margin-bottom:9px} .crumb b{color:var(--gold)}
-  .cc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px}
-  .cc .k{font-size:9px;letter-spacing:var(--ls-label);font-weight:700;color:var(--gold)}
-  .cc .nm{font-family:var(--font-display);font-size:13px;margin:2px 0}
-  .chatcol{flex:1;display:flex;flex-direction:column;min-width:0}
-  .chathead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px}
-  .chathead .t{font-weight:600;font-size:13px}
-  .presence{margin-left:auto;display:inline-flex;align-items:center;gap:6px;color:var(--stone);font-size:11.5px}
-  .presence i{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;box-shadow:0 0 0 3px var(--gold-glow)}
-  .switch{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--stone);border:1px solid var(--line);border-radius:99px;padding:2px 8px}
-  .switch i{width:18px;height:10px;border-radius:99px;background:var(--line);display:inline-block;position:relative}
-  .switch i:after{content:"";position:absolute;left:1px;top:1px;width:8px;height:8px;border-radius:50%;background:#fff}
+  .ctx{width:270px;border-right:1px solid var(--line);padding:13px;overflow:auto;background:#fbfaf7;font-size:11px} .crumb{font-size:10px;color:var(--stone);margin-bottom:9px} .crumb b{color:var(--gold)}
+  .cc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px} .cc .k{font-size:9px;letter-spacing:var(--ls-label);font-weight:700;color:var(--gold)} .cc .nm{font-family:var(--font-display);font-size:13px;margin:2px 0}
+  .chatcol{flex:1;display:flex;flex-direction:column;min-width:0} .chathead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px} .chathead .t{font-weight:600;font-size:13px}
   .stream{flex:1;padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
   .mu{align-self:flex-end;max-width:72%;background:#f0ede5;border:1px solid var(--line);border-radius:11px 11px 3px 11px;padding:8px 12px;font-size:12.5px}
   .ma{align-self:flex-start;max-width:86%;background:var(--bg);border:1px solid var(--line);border-radius:11px 11px 11px 3px;padding:10px 13px;font-size:12.5px;line-height:1.5}
   .ma table{border-collapse:collapse;margin-top:6px;font-size:11.5px} .ma td{padding:2px 10px 2px 0;color:var(--stone)} .ma td:first-child{color:var(--ink)}
-  .shadowline{align-self:flex-start;max-width:86%;margin-top:2px;padding:10px 13px 9px;border-left:2px solid var(--gold);background:#fdfaf4;border-radius:0 11px 11px 0;font-size:12.5px;line-height:1.5}
-  .shadowline .who{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--gold);margin-bottom:3px}
-  .shadowline .who i{width:6px;height:6px;border-radius:50%;background:var(--gold);display:inline-block}
-  .shadowline .who span{color:var(--faint)}
-  .shadowline .acts{display:flex;gap:8px;margin-top:7px;align-items:center}
-  .shadowline .act{font-size:12px;font-weight:700;color:var(--decide);padding:4px 10px;border-radius:var(--r-chip);background:var(--panel);border:1px solid var(--line)}
-  .shadowline .act.q{font-weight:400;color:var(--stone);border-color:transparent}
-  .shadowline .reply{margin-left:auto;font-size:11px;color:var(--faint);border:1px dashed var(--faint);border-radius:99px;padding:3px 10px;min-width:150px}
-  .back{align-self:stretch;background:#fdfaf4;border:1px solid #eadfc8;border-radius:var(--r-card);padding:14px 16px;font-size:13px;line-height:1.55;position:relative}
-  .back .who{font-size:10.5px;color:var(--gold);margin-bottom:4px}
-  .back .acts{display:flex;gap:10px;margin-top:10px;align-items:center}
-  .back .act{font-size:13px;font-weight:700;color:var(--decide);padding:5px 12px;border-radius:var(--r-chip);background:var(--panel);border:1px solid var(--line)}
-  .back .act.q{font-weight:400;color:var(--stone);border-color:transparent}
-  .back .future{margin-left:auto;font-size:10.5px;color:var(--stone);background:var(--cream);border-radius:99px;padding:3px 10px}
-  .future-wash{opacity:.82}
-  .ds-composer.chat{margin:10px 14px 12px}
+  .ds-composer{display:flex;align-items:center;gap:10px;padding:14px 16px;margin:10px 14px 12px}
+  /* ---- Shadow overlay ---- */
+  .shadow-fab{position:absolute;right:28px;bottom:26px;display:flex;align-items:flex-end;gap:10px;z-index:30}
+  .sdot{width:40px;height:40px;border-radius:50%;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-hover);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+  .sdot i{width:12px;height:12px;border-radius:50%;background:var(--gold);display:block}
+  .sdot:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--gold);opacity:.55}
+  .spill{background:var(--cream);border-left:2px solid var(--gold);border-radius:0 11px 11px 11px;padding:9px 12px;font-size:12.5px;box-shadow:var(--shadow-rest);max-width:360px;margin-bottom:2px}
+  .spill .acts{display:flex;gap:8px;margin-top:6px} .spill .act{font-size:12px;font-weight:700;color:var(--decide)} .spill .act.q{font-weight:400;color:var(--stone)}
+  .scard{position:absolute;right:28px;bottom:78px;width:300px;height:380px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:0 18px 48px rgba(12,10,8,.16);display:flex;flex-direction:column;z-index:31;overflow:hidden}
+  .scard .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)} .scard .hd .nm{font-family:var(--font-display);font-size:15px;font-weight:600} .scard .hd .nm i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);margin-right:6px}
+  .switch{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--stone);border:1px solid var(--line);border-radius:99px;padding:2px 8px} .switch i{width:18px;height:10px;border-radius:99px;background:var(--line);display:inline-block;position:relative} .switch i:after{content:"";position:absolute;left:1px;top:1px;width:8px;height:8px;border-radius:50%;background:#fff}
+  .hide{font-size:10.5px;color:var(--faint)}
+  .sees{font-size:10.5px;color:var(--stone);padding:7px 12px;border-bottom:1px solid var(--line);background:#fbfaf7} .sees b{color:var(--ink);font-weight:600}
+  .smsgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.45}
+  .sm{max-width:92%;padding:7px 10px;border-radius:10px} .sm.s{align-self:flex-start;background:var(--cream);border-left:2px solid var(--gold);border-radius:0 10px 10px 10px} .sm.u{align-self:flex-end;background:#f0ede5;border:1px solid var(--line);border-radius:10px 10px 3px 10px}
+  .mem{align-self:stretch;border:1px dashed var(--gold);border-radius:10px;padding:7px 10px;font-size:11.5px;background:#fdfaf4} .mem .k{font-size:9px;letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--gold);font-weight:700} .mem .e{float:right;color:var(--stone);font-size:10.5px}
+  .scomp{border-top:1px solid var(--line);padding:9px 12px;font-size:12px;color:var(--faint);display:flex;gap:8px} .scomp .ph{flex:1} .scomp .key{font-size:10px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--stone)}
 </style>
 </head>
 <body>
 
-<!-- ============ SCREEN A: SHADOW TAB ============ -->
-<p class="cap"><b>1 · Shadow — the first tab.</b> This is what opens when you launch Sutra. Same calm home you approved; Shadow now writes it.</p>
+<p class="cap"><b>1 · Shadow rides on the app.</b> No new tab, no panel. A dot in the corner; when it has something worth saying, one line appears for a few seconds. Everything else is exactly the app you approved.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="ds-rail">
     <div class="brand">Sutra</div>
-    <div class="item on">&#9678; Shadow <span class="badge">1</span></div>
-    <div class="item">&#9998; Chats</div>
+    <div class="item on">&#9998; Chats <span class="badge">1</span></div>
     <div class="item">&#10227; Routines</div>
     <div class="item">&#10047; Balance</div>
     <div class="item">&#9673; Teamsutra</div>
-    <div class="item">&#9881; Manage &#9662;</div>
-    <div class="foot">Sankalp &middot; maker morning<br>4 sessions running</div>
-  </nav>
-  <section class="pane"><div class="homecol">
-    <div class="ds-greet" style="margin-top:64px">Good morning, Sankalp.</div>
-    <div class="ds-sub">Four sessions are running. <b>One needs you.</b></div>
-    <div class="stack">
-      <div class="ds-decision"><span class="dot alert"></span><span class="t">dayflow lost its connection 2 minutes ago. Pick it back up?<small>from where it stopped &middot; nothing lost &middot; 1 min</small></span><span class="act">Pick it up</span><span class="act q">leave it</span></div>
-      <div class="ds-decision"><span class="dot"></span><span class="t">paisa finished the EMI check — 3 differences found.<small>I wrote you a two-line summary &middot; 2 min</small></span><span class="act">Read it</span><span class="act q">later</span></div>
-      <div class="ds-decision"><span class="dot review"></span><span class="t">sutra-ui has been building for 11 minutes — longer than usual.<small>I&rsquo;m watching it &middot; nothing to do yet</small></span><span class="act">Open</span><span class="act q">fine</span></div>
-    </div>
-    <div class="handled"><b>Handled while you worked</b> &mdash; billu asked for a permission, you gave it &middot; paisa&rsquo;s summary is ready when you are.</div>
-    <div class="ds-composer" style="margin:32px 0 20px"><span class="ph">Ask Shadow anything&hellip;</span><span class="key">&#8984;K</span></div>
-    <div class="ds-quiet" style="padding-bottom:40px"><span class="tok">watching 4 sessions</span><span class="tok">next decision window 11:00</span><span class="tok">quiet after 6</span></div>
-  </div></section>
-</div>
-
-<!-- ============ SCREEN B: INSIDE A CHAT ============ -->
-<p class="cap"><b>2 · Inside a chat — Shadow talks with you.</b> A quiet gold line under the conversation, only you can see it. It never speaks to Claude for you; it offers, you decide.</p>
-<div class="window">
-  <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="ds-rail">
-    <div class="brand">Sutra</div>
-    <div class="item">&#9678; Shadow</div>
-    <div class="item on">&#9998; Chats</div>
-    <div class="item">&#10227; Routines</div>
-    <div class="item">&#10047; Balance</div>
-    <div class="item">&#9673; Teamsutra</div>
+    <div class="item">&#9643; Usage</div>
     <div class="item">&#9881; Manage &#9662;</div>
     <div class="foot">Sankalp &middot; maker morning<br>4 sessions running</div>
   </nav>
   <section class="pane"><div class="chwrap">
-    <h2 class="pg">Chats</h2>
-    <div class="pgsub">Every card is a session</div>
+    <h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
     <div class="slist">
-      <div class="sit on"><div class="tt"><span class="sd" style="background:var(--done)"></span>paisa &middot; EMI check</div><div class="mm">live now</div></div>
-      <div class="sit"><div class="tt"><span class="sd" style="background:var(--alert)"></span>dayflow &middot; api deploy</div><div class="mm">lost connection</div></div>
-      <div class="sit"><div class="tt"><span class="sd" style="background:var(--review)"></span>sutra-ui &middot; build</div><div class="mm">11 min, watching</div></div>
-      <div class="sit"><div class="tt"><span class="sd" style="background:var(--line)"></span>billu &middot; migration</div><div class="mm">idle</div></div>
+      <div class="sit on"><div class="tt">paisa &middot; EMI check</div><div class="mm">live now</div></div>
+      <div class="sit"><div class="tt">dayflow &middot; api deploy</div><div class="mm">lost connection</div></div>
+      <div class="sit"><div class="tt">sutra-ui &middot; build</div><div class="mm">11 min</div></div>
+      <div class="sit"><div class="tt">billu &middot; migration</div><div class="mm">idle</div></div>
     </div>
     <div class="panes2">
-      <aside class="ctx">
-        <div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div>
-        <div class="cc"><div class="k">SHADOW</div><div class="nm">Here with you</div><div style="color:var(--stone)">Watching this chat. I&rsquo;ll only speak when it helps.</div></div>
-        <div class="cc"><div class="k">LAST TIME</div><div style="color:var(--stone)">You fixed a rounding issue in dayflow on Tuesday. Looks related.</div></div>
-      </aside>
+      <aside class="ctx"><div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div>
+        <div class="cc"><div class="k">CHARTER</div><div class="nm">Lending operations</div></div>
+        <div class="cc"><div class="k">LAST TIME</div><div style="color:var(--stone)">Rounding issue fixed in dayflow on Tuesday.</div></div></aside>
       <div class="chatcol">
-        <div class="chathead"><span class="t">EMI reconciliation</span><span class="presence"><i></i>Shadow is here</span><span class="switch"><i></i>quiet</span></div>
+        <div class="chathead"><span class="t">EMI reconciliation</span></div>
         <div class="stream">
           <div class="mu">Run the EMI check against last night&rsquo;s batch and show me the differences.</div>
-          <div class="ma">Done &mdash; 1,204 loans compared, 3 differences.
-            <table><tr><td>LN-20817</td><td>&#8377;12,450.00 vs &#8377;12,449.99</td></tr><tr><td>LN-21033</td><td>&#8377;8,210.00 vs &#8377;8,209.99</td></tr><tr><td>LN-21290</td><td>&#8377;15,000.00 vs &#8377;14,999.99</td></tr></table></div>
-          <div class="shadowline">
-            <div class="who"><i></i>Shadow <span>&middot; Only you see this</span></div>
-            Those 3 differences look like the same issue you fixed last week. Want me to put that fix in your composer?
-            <div class="acts"><span class="act">Put it in my composer</span><span class="act q">Not now</span><span class="reply">tell Shadow&hellip;</span></div>
-          </div>
+          <div class="ma">Done &mdash; 1,204 loans compared, 3 differences.<table><tr><td>LN-20817</td><td>&#8377;12,450.00 vs &#8377;12,449.99</td></tr><tr><td>LN-21033</td><td>&#8377;8,210.00 vs &#8377;8,209.99</td></tr><tr><td>LN-21290</td><td>&#8377;15,000.00 vs &#8377;14,999.99</td></tr></table></div>
         </div>
-        <div class="ds-composer chat"><span class="ph">Continue this session&hellip;</span></div>
+        <div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div>
       </div>
     </div>
   </div></section>
+  <!-- overlay: dot + pill -->
+  <div class="shadow-fab">
+    <div class="spill">dayflow lost its connection 2 minutes ago. Pick it back up?<div class="acts"><span class="act">Pick it up</span><span class="act q">Not now</span></div></div>
+    <div class="sdot" title="Shadow"><i></i></div>
+  </div>
 </div>
 
-<!-- ============ SCREEN C: YOU'RE BACK ============ -->
-<p class="cap"><b>3 · You&rsquo;re back — Shadow tells you what happened.</b> One card, top of the chat. Today it only reports; the card shows what it could do once you let it act for you.</p>
+<p class="cap"><b>2 · Tap the dot — Shadow opens its own chat.</b> It tells you what it can see, you tell it what to do, and it reads back what it will remember. Nothing else on screen moved.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="ds-rail">
     <div class="brand">Sutra</div>
-    <div class="item">&#9678; Shadow</div>
-    <div class="item on">&#9998; Chats</div>
+    <div class="item on">&#9998; Chats <span class="badge">1</span></div>
     <div class="item">&#10227; Routines</div>
     <div class="item">&#10047; Balance</div>
     <div class="item">&#9673; Teamsutra</div>
+    <div class="item">&#9643; Usage</div>
     <div class="item">&#9881; Manage &#9662;</div>
-    <div class="foot">Sankalp &middot; back at 11:03<br>4 sessions running</div>
+    <div class="foot">Sankalp &middot; maker morning<br>4 sessions running</div>
   </nav>
   <section class="pane"><div class="chwrap">
-    <h2 class="pg">Chats</h2>
-    <div class="pgsub">Every card is a session</div>
+    <h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
     <div class="slist">
-      <div class="sit on"><div class="tt"><span class="sd" style="background:var(--done)"></span>dayflow &middot; api deploy</div><div class="mm">ready to continue</div></div>
-      <div class="sit"><div class="tt"><span class="sd" style="background:var(--done)"></span>paisa &middot; EMI check</div><div class="mm">summary ready</div></div>
-      <div class="sit"><div class="tt"><span class="sd" style="background:var(--line)"></span>sutra-ui &middot; build</div><div class="mm">finished</div></div>
-      <div class="sit"><div class="tt"><span class="sd" style="background:var(--line)"></span>billu &middot; migration</div><div class="mm">idle</div></div>
+      <div class="sit on"><div class="tt">paisa &middot; EMI check</div><div class="mm">live now</div></div>
+      <div class="sit"><div class="tt">dayflow &middot; api deploy</div><div class="mm">lost connection</div></div>
+      <div class="sit"><div class="tt">sutra-ui &middot; build</div><div class="mm">11 min</div></div>
+      <div class="sit"><div class="tt">billu &middot; migration</div><div class="mm">idle</div></div>
     </div>
     <div class="panes2">
-      <aside class="ctx">
-        <div class="crumb">DayFlow &rsaquo; Backend &rsaquo; <b>API deploy</b></div>
-        <div class="cc"><div class="k">SHADOW</div><div class="nm">Welcome back</div><div style="color:var(--stone)">You were away 22 minutes. Here&rsquo;s what I saw.</div></div>
-      </aside>
+      <aside class="ctx"><div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div>
+        <div class="cc"><div class="k">CHARTER</div><div class="nm">Lending operations</div></div>
+        <div class="cc"><div class="k">LAST TIME</div><div style="color:var(--stone)">Rounding issue fixed in dayflow on Tuesday.</div></div></aside>
       <div class="chatcol">
-        <div class="chathead"><span class="t">API deploy</span><span class="presence"><i></i>Shadow is here</span><span class="switch"><i></i>quiet</span></div>
-        <div class="stream future-wash">
-          <div class="back">
-            <div class="who">Shadow &middot; while you were away (22 min) <span class="future" style="margin-left:10px">Preview &middot; once you let Shadow act for you</span></div>
-            I noticed dayflow dropped its connection at 10:41. Nothing was lost &mdash; it&rsquo;s waiting for you at the last safe point.<br>
-            Once you let me act for you, I could pick it back up myself and pause a live release like the staging deploy until you&rsquo;re back.
-            <div class="acts"><span class="act">Continue</span><span class="act q">Show me what you&rsquo;d see</span></div>
-          </div>
-          <div class="mu">Deploy the API to staging once the tests pass.</div>
-          <div class="ma">Tests passed (142/142). Starting the staging deploy&hellip;</div>
-          <div class="ma" style="color:var(--stone)">Connection lost at 10:41.</div>
+        <div class="chathead"><span class="t">EMI reconciliation</span></div>
+        <div class="stream">
+          <div class="mu">Run the EMI check against last night&rsquo;s batch and show me the differences.</div>
+          <div class="ma">Done &mdash; 1,204 loans compared, 3 differences.<table><tr><td>LN-20817</td><td>&#8377;12,450.00 vs &#8377;12,449.99</td></tr><tr><td>LN-21033</td><td>&#8377;8,210.00 vs &#8377;8,209.99</td></tr><tr><td>LN-21290</td><td>&#8377;15,000.00 vs &#8377;14,999.99</td></tr></table></div>
         </div>
-        <div class="ds-composer chat"><span class="ph">Continue this session&hellip;</span></div>
+        <div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div>
       </div>
     </div>
   </div></section>
+  <!-- overlay: expanded card -->
+  <div class="scard">
+    <div class="hd"><span class="nm"><i></i>Shadow</span><span class="switch"><i></i>quiet</span><span class="hide">hide</span></div>
+    <div class="sees">I can see: <b>this chat</b> &middot; 4 sessions &middot; the app. Not your screen, not your eyes.</div>
+    <div class="smsgs">
+      <div class="sm s">You&rsquo;re on the EMI check. Those 3 differences look like the same issue you fixed last week. Want that fix in your composer?</div>
+      <div class="sm u">Yes. And whenever rounding differences show up in an EMI check, offer it straight away.</div>
+      <div class="sm s">Put it in your composer. And I&rsquo;ll remember this one &mdash; tap to confirm.</div>
+      <div class="mem"><span class="k">I&rsquo;ll remember</span><span class="e">paisa &middot; standing &middot; edit</span><br>When rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.</div>
+    </div>
+    <div class="scomp"><span class="ph">Tell Shadow&hellip;</span><span class="key">&#8984;&#8679;S</span></div>
+  </div>
+  <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
 </div>
 
-<p class="cap" style="margin-top:-30px">Shadow in Sutra Desktop &middot; preview v2 &middot; same tokens, same shell as the cockpit &middot; spec lives in holding/plans/shadow/</p>
+<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop &middot; preview v3 &middot; overlay model (founder 2026-08-22) &middot; spec: holding/plans/shadow/</p>
 </body>
 </html>
