@@ -3,280 +3,199 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow — design preview · Sutra Desktop</title>
-<!-- Preview twin of record for holding/plans/shadow/DESIGN-SYSTEM.md.
-     Tokens copied verbatim from holding/departments/experience/desktop-app/ui/tokens.css.
-     Dual-lane reviewed 2026-08-21 (codex + DeepSeek); v0 shows L0/L1 + pause only. -->
+<title>Shadow in Sutra Desktop — preview v2</title>
+<link rel="stylesheet" href="tokens.css">
+<!-- v2 (2026-08-21): founder asked for the experience, not the engine. Three full-app screens in the
+     cockpit shell; plain first-person copy; no codes, no hashes. Layout-only CSS below; every visual
+     decision lives in tokens.css. Docs: holding/plans/shadow/ -->
 <style>
-:root{
-  --bg:#FAFAF7; --panel:#FFFFFF; --ink:#1A1714; --stone:#6B6560; --faint:#B8B2A6;
-  --line:#E8E3DB; --cream:#F5F0E8; --gold:#B8945F; --gold-glow:rgba(184,148,95,.14);
-  --decide:#8B6B4A; --review:#4A6B8B; --done:#2D5A3E; --alert:#8B4A6B;
-  --font-display:'Playfair Display',Georgia,serif;
-  --font-body:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --font-mono:ui-monospace,Menlo,monospace;
-  --fs-title:24px; --fs-card-title:19px; --fs-body:14px; --fs-meta:12px;
-  --fs-label:9.5px; --ls-label:.13em;
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:64px;
-  --r-chip:8px; --r-card:12px; --r-pill:99px;
-  --shadow-rest:0 1px 3px rgba(12,10,8,.04);
-  --shadow-hover:0 4px 14px rgba(12,10,8,.09);
-}
-*{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:var(--fs-body);padding:var(--s6) var(--s5) var(--s7)}
-h1{font-family:var(--font-display);font-size:30px;font-weight:600;margin-bottom:var(--s1)}
-.sub{color:var(--stone);font-size:var(--fs-meta);margin-bottom:var(--s6)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:var(--s5);max-width:1560px}
-.pgroup{background:var(--cream);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--s4)}
-.pgroup>h2{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--stone);margin-bottom:var(--s3)}
-.pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow-rest);overflow:hidden}
-.strip{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);font-size:var(--fs-meta)}
-.strip .name{font-family:var(--font-display);font-size:15px;font-weight:600}
-.strip .meta{color:var(--stone)}
-.pill{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;border:1px solid var(--line);border-radius:var(--r-pill);padding:2px 8px;color:var(--stone);background:var(--bg)}
-.pill.l1{border-color:var(--gold);color:var(--gold);background:var(--gold-glow)}
-.pause{margin-left:auto;font-size:var(--fs-meta);color:var(--stone);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px 10px;background:var(--bg);cursor:default}
-.calm{display:flex;align-items:center;gap:var(--s2);padding:var(--s5) var(--s4);color:var(--done)}
-.calm .dot{width:8px;height:8px;border-radius:50%;background:var(--done)}
-.quiet{padding:0 var(--s4) var(--s4);color:var(--faint);font-size:var(--fs-meta)}
-.card{display:flex;border-top:1px solid var(--line)}
-.rail{width:3px;flex:none}
-.rail.hi{background:var(--alert)} .rail.md{background:var(--decide)} .rail.lo{background:var(--stone)}
-.cbody{padding:var(--s3) var(--s4);flex:1}
-.crow{display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s1)}
-.chip{font-family:var(--font-mono);font-size:var(--fs-label);letter-spacing:.06em;border-radius:var(--r-chip);padding:2px 7px;background:var(--bg);border:1px solid var(--line)}
-.chip.hi{color:var(--alert)} .chip.md{color:var(--decide)} .chip.lo{color:var(--stone)}
-.ct{font-size:var(--fs-body);font-weight:600}
-.cm{color:var(--stone);font-size:var(--fs-meta);margin-bottom:var(--s1)}
-.ev{font-family:var(--font-mono);font-size:11px;color:var(--review);margin-bottom:var(--s2)}
-.acts{display:flex;gap:var(--s2)}
-.btn{font-size:var(--fs-meta);border:1px solid var(--line);border-radius:var(--r-chip);padding:4px 10px;background:var(--panel);cursor:default}
-.btn.act{border-color:var(--gold);color:var(--gold);background:var(--gold-glow)}
-.btn.ghost{color:var(--stone)}
-.mini{margin-top:var(--s3)}
-.mini h3{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--faint);margin:var(--s3) 0 var(--s2)}
-.digestrow{display:flex;gap:var(--s3);padding:var(--s3) var(--s4);font-size:var(--fs-meta)}
-.digestrow b{font-weight:600}
-.hi-t{color:var(--alert)} .md-t{color:var(--decide)} .lo-t{color:var(--stone)} .ok-t{color:var(--done)}
-.paused{background:repeating-linear-gradient(45deg,var(--cream),var(--cream) 8px,var(--bg) 8px,var(--bg) 16px)}
-.paused .cbody{color:var(--stone)}
-.degchip{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--stone);border:1px dashed var(--faint);border-radius:var(--r-pill);padding:2px 8px}
-.quarantine{position:relative;border:2px dashed var(--faint);opacity:.92}
-.qbanner{background:var(--ink);color:var(--cream);font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;text-align:center;padding:var(--s2)}
-.qinner{filter:grayscale(.55);opacity:.75;pointer-events:none;padding:var(--s3) var(--s4)}
-.seg{display:flex;border:1px solid var(--line);border-radius:var(--r-chip);overflow:hidden;width:max-content;margin-bottom:var(--s3)}
-.seg span{padding:5px 12px;font-size:var(--fs-meta);border-right:1px solid var(--line);color:var(--faint)}
-.seg span:last-child{border-right:0}
-.seg .on{background:var(--gold-glow);color:var(--gold);font-weight:600}
-.pbrow{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) 0;border-top:1px solid var(--line);font-size:var(--fs-meta);color:var(--stone)}
-.wire{padding:var(--s3) var(--s4)}
-.wire .row{display:flex;gap:var(--s3)}
-.wrail{width:56px;border:1px solid var(--line);border-radius:var(--r-chip);padding:var(--s2);font-size:var(--fs-label);color:var(--faint);text-align:center}
-.wlist{flex:1;border:1px solid var(--line);border-radius:var(--r-chip);padding:var(--s2)}
-.wsess{display:flex;align-items:center;gap:var(--s2);padding:5px 6px;font-size:var(--fs-meta);color:var(--stone)}
-.sd{width:7px;height:7px;border-radius:50%}
-.wpane{flex:1.2;border:2px solid var(--gold);border-radius:var(--r-chip);padding:var(--s2);font-size:var(--fs-meta);color:var(--stone);background:var(--gold-glow)}
-.note{color:var(--faint);font-size:var(--fs-meta);margin-top:var(--s2)}
-footer{margin-top:var(--s6);color:var(--faint);font-size:var(--fs-meta)}
-/* in-chat presence */
-.chathead{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);font-size:var(--fs-meta)}
-.chathead .t{font-weight:600;font-size:var(--fs-body)}
-.pchip{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;border:1px solid var(--gold);color:var(--gold);background:var(--gold-glow);border-radius:var(--r-pill);padding:2px 8px}
-.pchip i{width:6px;height:6px;border-radius:50%;background:var(--gold);display:inline-block}
-.ubadge{margin-left:auto;font-size:var(--fs-label);background:var(--gold);color:#fff;border-radius:var(--r-pill);padding:2px 7px}
-.msgs{padding:var(--s3) var(--s4);display:flex;flex-direction:column;gap:var(--s2)}
-.msg{max-width:86%;border-radius:var(--r-card);padding:var(--s2) var(--s3);font-size:var(--fs-body);line-height:1.45}
-.msg.you{align-self:flex-end;background:var(--cream)}
-.msg.agent{align-self:flex-start;border:1px solid var(--line);background:var(--panel)}
-.msg.shadow{align-self:flex-start;border:1px solid var(--gold);background:var(--panel)}
-.msg .who{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--stone);margin-bottom:3px}
-.msg.shadow .who{color:var(--gold)}
-.meta-line{font-family:var(--font-mono);font-size:10.5px;color:var(--review);margin-top:4px}
-.verify{font-size:var(--fs-meta);color:var(--done);margin-top:3px}
-.whisper{margin:var(--s2) var(--s4);border-left:2px solid var(--gold);background:var(--cream);border-radius:0 var(--r-chip) var(--r-chip) 0;padding:var(--s2) var(--s3);font-size:var(--fs-meta);color:var(--ink)}
-.whisper .wl{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--gold);display:flex;gap:var(--s2)}
-.whisper .wl span:last-child{color:var(--faint);text-transform:none;letter-spacing:0}
-.whisper p{margin:4px 0}
-.wreply{display:flex;gap:var(--s2);margin-top:var(--s2)}
-.wreply input{flex:1;font:inherit;font-size:var(--fs-meta);border:1px dashed var(--faint);border-radius:var(--r-chip);padding:4px 8px;background:var(--bg)}
-.composer{margin:var(--s3) var(--s4) var(--s4);border:1px solid var(--line);border-radius:15px;padding:var(--s3);color:var(--faint);font-size:var(--fs-body)}
-.divider{display:flex;align-items:center;gap:var(--s2);margin:var(--s3) var(--s4);color:var(--stone);font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase}
-.divider:before,.divider:after{content:"";flex:1;border-top:1px dashed var(--faint)}
-.home{padding:var(--s4)}
-.home .greet{font-family:var(--font-display);font-size:22px;margin-bottom:var(--s3)}
-.home h4{font-size:var(--fs-label);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--stone);margin:var(--s3) 0 var(--s2)}
-.hcard{border:1px solid var(--line);border-radius:var(--r-card);padding:var(--s3);margin-bottom:var(--s2);font-size:var(--fs-body);box-shadow:var(--shadow-rest)}
-.hcard .m{color:var(--stone);font-size:var(--fs-meta);margin-top:2px}
-.hrow{display:flex;gap:var(--s2);font-size:var(--fs-meta);color:var(--stone);padding:4px 0}
-.hrow .ok{color:var(--done)}
-.wrail .on{color:var(--gold);font-weight:600}
+  body{background:#ECE8E0;margin:0;padding:40px 24px 80px;font-family:var(--font-body);color:var(--ink)}
+  .cap{max-width:1300px;margin:0 auto 10px;font-size:12px;color:var(--stone);letter-spacing:.02em}
+  .cap b{color:var(--ink);font-weight:600}
+  .window{width:1300px;max-width:100%;height:720px;margin:0 auto 56px;background:var(--bg);border:1px solid #ddd8cf;border-radius:14px;box-shadow:0 22px 64px rgba(12,10,8,.18);overflow:hidden;display:flex;position:relative}
+  .lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20}
+  .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#e0ddd6}
+  .ds-rail{padding-top:40px}
+  .ds-rail .item{padding:7px 9px;border-radius:9px;font-size:13px;color:var(--stone);margin-bottom:2px;cursor:default}
+  .ds-rail .item.on{background:var(--cream);color:var(--ink);font-weight:600}
+  .ds-rail .item .badge{float:right;font-size:10px;background:var(--decide);color:#fff;border-radius:99px;padding:1px 6px}
+  .ds-rail .foot{margin-top:auto;font-size:10px;color:var(--faint);padding:0 8px;line-height:1.5}
+  .pane{flex:1;overflow:auto}
+  .homecol{max-width:660px;margin:0 auto;padding:0 24px;display:flex;flex-direction:column;min-height:100%}
+  .stack{display:flex;flex-direction:column;gap:var(--s3);margin-top:var(--s5)}
+  .ds-decision{display:flex;align-items:center;gap:14px;padding:14px 16px;box-shadow:var(--shadow-rest)}
+  .ds-decision .dot.alert{background:var(--alert)} .ds-decision .dot.review{background:var(--review)} .ds-decision .dot.done{background:var(--done)}
+  .handled{margin-top:28px;font-size:13px;color:var(--stone);line-height:1.6}
+  .handled b{color:var(--done);font-weight:600}
+  .ds-composer{display:flex;align-items:center;gap:10px;padding:14px 16px}
+  .chwrap{padding:44px 24px 20px}
+  h2.pg{font-family:var(--font-display);font-size:20px;font-weight:500;margin:0 0 2px}
+  .pgsub{font-size:11.5px;color:var(--stone);margin-bottom:12px}
+  .slist{display:flex;gap:var(--s2);margin-bottom:var(--s3);flex-wrap:wrap}
+  .sit{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:11px}
+  .sit.on{border-color:var(--gold);background:#fdfaf4}
+  .sit .tt{font-weight:600;font-size:11.5px} .sit .mm{font-size:9px;color:var(--stone)}
+  .sit .sd{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .panes2{display:flex;height:540px;border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden;background:var(--panel)}
+  .ctx{width:270px;border-right:1px solid var(--line);padding:13px;overflow:auto;background:#fbfaf7;font-size:11px}
+  .crumb{font-size:10px;color:var(--stone);margin-bottom:9px} .crumb b{color:var(--gold)}
+  .cc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px}
+  .cc .k{font-size:9px;letter-spacing:var(--ls-label);font-weight:700;color:var(--gold)}
+  .cc .nm{font-family:var(--font-display);font-size:13px;margin:2px 0}
+  .chatcol{flex:1;display:flex;flex-direction:column;min-width:0}
+  .chathead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px}
+  .chathead .t{font-weight:600;font-size:13px}
+  .presence{margin-left:auto;display:inline-flex;align-items:center;gap:6px;color:var(--stone);font-size:11.5px}
+  .presence i{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;box-shadow:0 0 0 3px var(--gold-glow)}
+  .switch{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--stone);border:1px solid var(--line);border-radius:99px;padding:2px 8px}
+  .switch i{width:18px;height:10px;border-radius:99px;background:var(--line);display:inline-block;position:relative}
+  .switch i:after{content:"";position:absolute;left:1px;top:1px;width:8px;height:8px;border-radius:50%;background:#fff}
+  .stream{flex:1;padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+  .mu{align-self:flex-end;max-width:72%;background:#f0ede5;border:1px solid var(--line);border-radius:11px 11px 3px 11px;padding:8px 12px;font-size:12.5px}
+  .ma{align-self:flex-start;max-width:86%;background:var(--bg);border:1px solid var(--line);border-radius:11px 11px 11px 3px;padding:10px 13px;font-size:12.5px;line-height:1.5}
+  .ma table{border-collapse:collapse;margin-top:6px;font-size:11.5px} .ma td{padding:2px 10px 2px 0;color:var(--stone)} .ma td:first-child{color:var(--ink)}
+  .shadowline{align-self:flex-start;max-width:86%;margin-top:2px;padding:10px 13px 9px;border-left:2px solid var(--gold);background:#fdfaf4;border-radius:0 11px 11px 0;font-size:12.5px;line-height:1.5}
+  .shadowline .who{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--gold);margin-bottom:3px}
+  .shadowline .who i{width:6px;height:6px;border-radius:50%;background:var(--gold);display:inline-block}
+  .shadowline .who span{color:var(--faint)}
+  .shadowline .acts{display:flex;gap:8px;margin-top:7px;align-items:center}
+  .shadowline .act{font-size:12px;font-weight:700;color:var(--decide);padding:4px 10px;border-radius:var(--r-chip);background:var(--panel);border:1px solid var(--line)}
+  .shadowline .act.q{font-weight:400;color:var(--stone);border-color:transparent}
+  .shadowline .reply{margin-left:auto;font-size:11px;color:var(--faint);border:1px dashed var(--faint);border-radius:99px;padding:3px 10px;min-width:150px}
+  .back{align-self:stretch;background:#fdfaf4;border:1px solid #eadfc8;border-radius:var(--r-card);padding:14px 16px;font-size:13px;line-height:1.55;position:relative}
+  .back .who{font-size:10.5px;color:var(--gold);margin-bottom:4px}
+  .back .acts{display:flex;gap:10px;margin-top:10px;align-items:center}
+  .back .act{font-size:13px;font-weight:700;color:var(--decide);padding:5px 12px;border-radius:var(--r-chip);background:var(--panel);border:1px solid var(--line)}
+  .back .act.q{font-weight:400;color:var(--stone);border-color:transparent}
+  .back .future{margin-left:auto;font-size:10.5px;color:var(--stone);background:var(--cream);border-radius:99px;padding:3px 10px}
+  .future-wash{opacity:.82}
+  .ds-composer.chat{margin:10px 14px 12px}
 </style>
 </head>
 <body>
-<h1>Shadow</h1>
-<p class="sub">Sutra Desktop companion · design preview v1.0 · locked token core · v0 = session monitor (observe + suggest) · dual-lane reviewed 2026-08-21</p>
 
-<div class="grid">
-
-  <!-- P1 CALM -->
-  <section class="pgroup">
-    <h2>1 · Pane — Calm (v0 default)</h2>
-    <div class="pane">
-      <div class="strip">
-        <span class="name">Shadow</span>
-        <span class="meta">watching 4 sessions</span>
-        <span class="pill l1">L1 · suggest</span>
-        <span class="pill">not screen-aware yet</span>
-        <span class="pause">Pause monitoring</span>
-      </div>
-      <div class="calm"><span class="dot"></span>All calm — 2 handled today</div>
-      <div class="quiet">Last incident 3 h ago · paisa · resolved by you</div>
+<!-- ============ SCREEN A: SHADOW TAB ============ -->
+<p class="cap"><b>1 · Shadow — the first tab.</b> This is what opens when you launch Sutra. Same calm home you approved; Shadow now writes it.</p>
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="ds-rail">
+    <div class="brand">Sutra</div>
+    <div class="item on">&#9678; Shadow <span class="badge">1</span></div>
+    <div class="item">&#9998; Chats</div>
+    <div class="item">&#10227; Routines</div>
+    <div class="item">&#10047; Balance</div>
+    <div class="item">&#9673; Teamsutra</div>
+    <div class="item">&#9881; Manage &#9662;</div>
+    <div class="foot">Sankalp &middot; maker morning<br>4 sessions running</div>
+  </nav>
+  <section class="pane"><div class="homecol">
+    <div class="ds-greet" style="margin-top:64px">Good morning, Sankalp.</div>
+    <div class="ds-sub">Four sessions are running. <b>One needs you.</b></div>
+    <div class="stack">
+      <div class="ds-decision"><span class="dot alert"></span><span class="t">dayflow lost its connection 2 minutes ago. Pick it back up?<small>from where it stopped &middot; nothing lost &middot; 1 min</small></span><span class="act">Pick it up</span><span class="act q">leave it</span></div>
+      <div class="ds-decision"><span class="dot"></span><span class="t">paisa finished the EMI check — 3 differences found.<small>I wrote you a two-line summary &middot; 2 min</small></span><span class="act">Read it</span><span class="act q">later</span></div>
+      <div class="ds-decision"><span class="dot review"></span><span class="t">sutra-ui has been building for 11 minutes — longer than usual.<small>I&rsquo;m watching it &middot; nothing to do yet</small></span><span class="act">Open</span><span class="act q">fine</span></div>
     </div>
-  </section>
-
-  <!-- P2 INCIDENTS -->
-  <section class="pgroup">
-    <h2>2 · Pane — Incidents (v0)</h2>
-    <div class="pane">
-      <div class="strip">
-        <span class="name">Shadow</span>
-        <span class="meta">watching 4 sessions · 3 need you</span>
-        <span class="pill l1">L1 · suggest</span>
-        <span class="pause">Pause monitoring</span>
-      </div>
-      <div class="card"><div class="rail hi"></div><div class="cbody">
-        <div class="crow"><span class="chip hi">SIG-DROP</span><span class="ct">dayflow — session dropped</span></div>
-        <div class="cm">Connection error (529) · idle 2 m 14 s · 3 related drops in 10 min</div>
-        <div class="ev">a015e6cb · L412–418</div>
-        <div class="acts"><span class="btn act">Retry session</span><span class="btn ghost">Dismiss</span><span class="btn ghost">Wrong signal</span></div>
-      </div></div>
-      <div class="card"><div class="rail md"></div><div class="cbody">
-        <div class="crow"><span class="chip md">SIG-STALL</span><span class="ct">sutra-ui — Bash running 11 m</span></div>
-        <div class="cm">No output since 10:41 · typical for this project: 6 m</div>
-        <div class="ev">6723ea56 · L1204</div>
-        <div class="acts"><span class="btn act">Open session</span><span class="btn ghost">Dismiss</span><span class="btn ghost">Wrong signal</span></div>
-      </div></div>
-      <div class="card"><div class="rail lo"></div><div class="cbody">
-        <div class="crow"><span class="chip lo">SIG-DONE</span><span class="ct">paisa — reply finished</span></div>
-        <div class="cm">EMI reconciliation script passing · suggested next: commit + run W-emi-reconcile</div>
-        <div class="ev">d9227850 · L88–96</div>
-        <div class="acts"><span class="btn act">Open session</span><span class="btn ghost">Mark read</span></div>
-      </div></div>
-    </div>
-  </section>
-
-  <!-- P3 EDGE STATES -->
-  <section class="pgroup">
-    <h2>3 · Edge states</h2>
-    <div class="mini"><h3>Storm digest (&gt;5 open)</h3>
-      <div class="pane"><div class="digestrow">
-        <span><b class="hi-t">4</b> high</span><span><b class="md-t">3</b> med</span><span><b class="lo-t">2</b> low</span>
-        <span style="margin-left:auto" class="btn ghost">Expand</span>
-      </div></div>
-    </div>
-    <div class="mini"><h3>Paused</h3>
-      <div class="pane paused"><div class="card"><div class="rail lo"></div><div class="cbody">
-        Monitoring paused — nothing is being watched. <span class="btn act" style="margin-left:8px">Resume monitoring</span>
-      </div></div></div>
-    </div>
-    <div class="mini"><h3>Degraded (side-channel down)</h3>
-      <div class="pane"><div class="strip"><span class="name">Shadow</span><span class="meta">watching 4 sessions</span><span class="degchip">degraded — transcripts only</span></div></div>
-    </div>
-  </section>
-
-  <!-- P4 ACT 2 QUARANTINE -->
-  <section class="pgroup">
-    <h2>4 · Act 2+ preview</h2>
-    <div class="pane quarantine">
-      <div class="qbanner">Not in v0 — future, needs founder gate</div>
-      <div class="qinner">
-        <div class="seg"><span>L0 observe</span><span class="on">L1 suggest</span><span>L2 nudge 🔒</span><span>L3 fix 🔒</span><span>L4 auto 🔒</span></div>
-        <div class="pbrow"><span class="chip lo">PB-RETRY</span><span>on SIG-DROP · used 7× · idempotent</span><span style="margin-left:auto">promoted</span></div>
-        <div class="pbrow"><span class="chip lo">PB-FIX-HEADER</span><span>on SIG-ERRLOOP · seen 3× · awaiting your approval</span><span style="margin-left:auto">proposed</span></div>
-      </div>
-    </div>
-    <p class="note">Rendered greyed + non-interactive on purpose: v0 ships L0/L1 + pause only.</p>
-  </section>
-
-  <!-- P5 WHERE IT LIVES -->
-  <section class="pgroup">
-    <h2>5 · Where it lives (Chats page)</h2>
-    <div class="pane"><div class="wire">
-      <div class="row">
-        <div class="wrail">RAIL<br><br><span class="on">Shadow</span><br>Chats<br>Dept<br>Settings<br><br><span class="ok-t">no badge</span></div>
-        <div class="wlist">
-          <div class="wsess"><span class="sd" style="background:var(--alert)"></span>dayflow — dropped</div>
-          <div class="wsess"><span class="sd" style="background:var(--decide)"></span>sutra-ui — long bash</div>
-          <div class="wsess"><span class="sd" style="background:var(--done)"></span>paisa — finished</div>
-          <div class="wsess"><span class="sd" style="background:var(--line)"></span>billu — active</div>
-        </div>
-        <div class="wpane"><b>Shadow pane</b> (rename of Ask Sutra — proposed)<br>incident feed + chat composer stay together</div>
-      </div>
-      <p class="note">Founder ruling 2026-08-21: Shadow is the FIRST tab and converges with Right Now. Chats keeps severity dots + the session-local pane. No destination added, no rail badge.</p>
-    </div></div>
-  </section>
-
-  <!-- P6 SHADOW TAB HOME -->
-  <section class="pgroup">
-    <h2>6 · Shadow tab — home (ex-Right Now)</h2>
-    <div class="pane"><div class="home">
-      <div class="greet">Good morning. 4 sessions live, 1 needs you.</div>
-      <h4>Needs me</h4>
-      <div class="hcard"><div class="crow"><span class="chip hi">SIG-DROP</span><b>dayflow — resume or drop?</b></div><div class="m">Held for your 11:00 decision window · evidence a015e6cb</div></div>
-      <h4>Handled by Shadow</h4>
-      <div class="hrow"><span class="ok">✓</span>paisa — reply finished, summary whispered · 09:52</div>
-      <div class="hrow"><span class="ok">✓</span>billu — permission prompt surfaced, you approved · 09:31</div>
-      <h4>Waiting</h4>
-      <div class="hrow"><span class="md-t">●</span>sutra-ui — Bash 11 m, watching (typical 6 m)</div>
-      <div class="quiet" style="padding:var(--s3) 0 0">Balance: next decision window 11:00 · inbox served after</div>
-    </div></div>
-    <p class="note">Same register as Right Now; Shadow composes it using Balance logic. Chats never shows this cross-session queue.</p>
-  </section>
-
-  <!-- P7 IN-CHAT WHISPER -->
-  <section class="pgroup">
-    <h2>7 · In a chat — Shadow talks WITH you (v0)</h2>
-    <div class="pane">
-      <div class="chathead"><span class="t">paisa · EMI reconciliation</span><span class="pchip"><i></i>Shadow watching · L1</span><span class="pill">quiet: off</span><span class="ubadge">1 whisper</span></div>
-      <div class="msgs">
-        <div class="msg you"><div class="who">You</div>Run the EMI recon against last night's batch and show me the diffs.</div>
-        <div class="msg agent"><div class="who">Claude</div>Running W-emi-reconcile on 2026-08-20 batch… 1,204 loans compared, 3 mismatches found. Opening the diff.</div>
-      </div>
-      <div class="whisper">
-        <div class="wl"><span>Shadow · whisper</span><span>only you see this — not part of the session</span></div>
-        <p>Those 3 mismatches match the rounding bug you fixed in dayflow last week (commit 7c1e…). Want me to draft the same patch into the composer?</p>
-        <div class="acts"><span class="btn act">Copy into composer</span><span class="btn ghost">Not now</span><span class="btn ghost">Wrong signal</span></div>
-        <div class="wreply"><input value="yes, but only the rounding helper — not the schema change"><span class="btn ghost">Reply to Shadow</span></div>
-      </div>
-      <div class="composer">Message Claude…</div>
-    </div>
-    <p class="note">Whisper lane: pinned aside, own scroll, collapsed until unread · max 3 visible · expires 2 h · the ONLY bridge into the session is "Copy into composer" — Shadow never injects at L1.</p>
-  </section>
-
-  <!-- P8 AWAY MODE -->
-  <section class="pgroup">
-    <h2>8 · While you are away — Shadow talks TO the chat</h2>
-    <div class="pane quarantine">
-      <div class="qbanner">Act 2 (L2) — not in v0 — needs founder gate</div>
-      <div class="qinner" style="padding:0">
-        <div class="chathead"><span class="t">dayflow · api deploy</span><span class="pchip"><i></i>Shadow acting · L2</span><span class="pill">you: away 22 m</span></div>
-        <div class="divider">you stepped away 10:41 · Shadow at L2 · allowlisted playbooks only</div>
-        <div class="msgs">
-          <div class="msg agent"><div class="who">Claude</div>Connection error (529) — request failed mid-tool.</div>
-          <div class="msg shadow"><div class="who">[Shadow] · acted · PB-RETRY</div>Retrying the last instruction: connection dropped mid-tool, no side effects committed.
-            <div class="meta-line">actor=shadow · L2 · pb=PB-RETRY · sig=SIG-DROP · away=true · lock=acquired · ev a015e6cb L412–418</div>
-            <div class="verify">Verified · session resumed, tool completed 10:44</div></div>
-          <div class="msg shadow"><div class="who">[Shadow] · suggested</div>Deploy step next would push to staging — non-idempotent. Holding for you.</div>
-        </div>
-        <div class="divider">you returned 11:03 · new actions frozen · cooldown 5 m</div>
-        <div class="msgs"><div class="hcard"><b>Handoff</b><div class="m">While you were away: 1 retry (verified) · 1 held for you · 2 whispers expired</div><div class="acts" style="margin-top:8px"><span class="btn act">Continue</span><span class="btn ghost">Pause Shadow here</span><span class="btn ghost">Review actions</span></div></div></div>
-      </div>
-    </div>
-    <p class="note">Every Shadow turn is tagged forever, carries machine-readable metadata, and says whether it acted or only suggested. Shown greyed: acting while away ships in Act 2, behind your L2 approval.</p>
-  </section>
-
+    <div class="handled"><b>Handled while you worked</b> &mdash; billu asked for a permission, you gave it &middot; paisa&rsquo;s summary is ready when you are.</div>
+    <div class="ds-composer" style="margin:32px 0 20px"><span class="ph">Ask Shadow anything&hellip;</span><span class="key">&#8984;K</span></div>
+    <div class="ds-quiet" style="padding-bottom:40px"><span class="tok">watching 4 sessions</span><span class="tok">next decision window 11:00</span><span class="tok">quiet after 6</span></div>
+  </div></section>
 </div>
 
-<footer>Shadow design preview v1.0 · tokens: desktop-app/ui/tokens.css (verbatim) · spec: holding/plans/shadow/DESIGN-SYSTEM.md · PRD: PRD-V0.md · reviewed: codex + DeepSeek 2026-08-21</footer>
+<!-- ============ SCREEN B: INSIDE A CHAT ============ -->
+<p class="cap"><b>2 · Inside a chat — Shadow talks with you.</b> A quiet gold line under the conversation, only you can see it. It never speaks to Claude for you; it offers, you decide.</p>
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="ds-rail">
+    <div class="brand">Sutra</div>
+    <div class="item">&#9678; Shadow</div>
+    <div class="item on">&#9998; Chats</div>
+    <div class="item">&#10227; Routines</div>
+    <div class="item">&#10047; Balance</div>
+    <div class="item">&#9673; Teamsutra</div>
+    <div class="item">&#9881; Manage &#9662;</div>
+    <div class="foot">Sankalp &middot; maker morning<br>4 sessions running</div>
+  </nav>
+  <section class="pane"><div class="chwrap">
+    <h2 class="pg">Chats</h2>
+    <div class="pgsub">Every card is a session</div>
+    <div class="slist">
+      <div class="sit on"><div class="tt"><span class="sd" style="background:var(--done)"></span>paisa &middot; EMI check</div><div class="mm">live now</div></div>
+      <div class="sit"><div class="tt"><span class="sd" style="background:var(--alert)"></span>dayflow &middot; api deploy</div><div class="mm">lost connection</div></div>
+      <div class="sit"><div class="tt"><span class="sd" style="background:var(--review)"></span>sutra-ui &middot; build</div><div class="mm">11 min, watching</div></div>
+      <div class="sit"><div class="tt"><span class="sd" style="background:var(--line)"></span>billu &middot; migration</div><div class="mm">idle</div></div>
+    </div>
+    <div class="panes2">
+      <aside class="ctx">
+        <div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div>
+        <div class="cc"><div class="k">SHADOW</div><div class="nm">Here with you</div><div style="color:var(--stone)">Watching this chat. I&rsquo;ll only speak when it helps.</div></div>
+        <div class="cc"><div class="k">LAST TIME</div><div style="color:var(--stone)">You fixed a rounding issue in dayflow on Tuesday. Looks related.</div></div>
+      </aside>
+      <div class="chatcol">
+        <div class="chathead"><span class="t">EMI reconciliation</span><span class="presence"><i></i>Shadow is here</span><span class="switch"><i></i>quiet</span></div>
+        <div class="stream">
+          <div class="mu">Run the EMI check against last night&rsquo;s batch and show me the differences.</div>
+          <div class="ma">Done &mdash; 1,204 loans compared, 3 differences.
+            <table><tr><td>LN-20817</td><td>&#8377;12,450.00 vs &#8377;12,449.99</td></tr><tr><td>LN-21033</td><td>&#8377;8,210.00 vs &#8377;8,209.99</td></tr><tr><td>LN-21290</td><td>&#8377;15,000.00 vs &#8377;14,999.99</td></tr></table></div>
+          <div class="shadowline">
+            <div class="who"><i></i>Shadow <span>&middot; only you see this</span></div>
+            Those 3 differences look like the same rounding issue from last week. Want me to place the fix here?
+            <div class="acts"><span class="act">Place it here</span><span class="act q">Not now</span><span class="reply">tell Shadow&hellip;</span></div>
+          </div>
+        </div>
+        <div class="ds-composer chat"><span class="ph">Continue this session&hellip;</span></div>
+      </div>
+    </div>
+  </div></section>
+</div>
+
+<!-- ============ SCREEN C: YOU'RE BACK ============ -->
+<p class="cap"><b>3 · You&rsquo;re back — Shadow tells you what happened.</b> One card, top of the chat. Shown as a preview: this is how it reads once you let Shadow act for you.</p>
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="ds-rail">
+    <div class="brand">Sutra</div>
+    <div class="item">&#9678; Shadow</div>
+    <div class="item on">&#9998; Chats</div>
+    <div class="item">&#10227; Routines</div>
+    <div class="item">&#10047; Balance</div>
+    <div class="item">&#9673; Teamsutra</div>
+    <div class="item">&#9881; Manage &#9662;</div>
+    <div class="foot">Sankalp &middot; back at 11:03<br>4 sessions running</div>
+  </nav>
+  <section class="pane"><div class="chwrap">
+    <h2 class="pg">Chats</h2>
+    <div class="pgsub">Every card is a session</div>
+    <div class="slist">
+      <div class="sit on"><div class="tt"><span class="sd" style="background:var(--done)"></span>dayflow &middot; api deploy</div><div class="mm">ready to continue</div></div>
+      <div class="sit"><div class="tt"><span class="sd" style="background:var(--done)"></span>paisa &middot; EMI check</div><div class="mm">summary ready</div></div>
+      <div class="sit"><div class="tt"><span class="sd" style="background:var(--line)"></span>sutra-ui &middot; build</div><div class="mm">finished</div></div>
+      <div class="sit"><div class="tt"><span class="sd" style="background:var(--line)"></span>billu &middot; migration</div><div class="mm">idle</div></div>
+    </div>
+    <div class="panes2">
+      <aside class="ctx">
+        <div class="crumb">DayFlow &rsaquo; Backend &rsaquo; <b>API deploy</b></div>
+        <div class="cc"><div class="k">SHADOW</div><div class="nm">Welcome back</div><div style="color:var(--stone)">You were away 22 minutes. Here&rsquo;s what I saw.</div></div>
+      </aside>
+      <div class="chatcol">
+        <div class="chathead"><span class="t">API deploy</span><span class="presence"><i></i>Shadow is here</span><span class="switch"><i></i>quiet</span></div>
+        <div class="stream future-wash">
+          <div class="back">
+            <div class="who">Shadow &middot; while you were away (22 min)</div>
+            I noticed dayflow dropped its connection at 10:41. It&rsquo;s ready to continue from the last safe point &mdash; nothing was lost.<br>
+            The next step is the staging deploy. That changes a live system, so I held it for you.
+            <div class="acts"><span class="act">Continue</span><span class="act q">Show me what you did</span><span class="future">Preview &middot; once you let Shadow act for you</span></div>
+          </div>
+          <div class="mu">Deploy the API to staging once the tests pass.</div>
+          <div class="ma">Tests passed (142/142). Starting the staging deploy&hellip;</div>
+          <div class="ma" style="color:var(--stone)">Connection lost at 10:41.</div>
+        </div>
+        <div class="ds-composer chat"><span class="ph">Continue this session&hellip;</span></div>
+      </div>
+    </div>
+  </div></section>
+</div>
+
+<p class="cap" style="margin-top:-30px">Shadow in Sutra Desktop &middot; preview v2 &middot; same tokens, same shell as the cockpit &middot; spec lives in holding/plans/shadow/</p>
 </body>
 </html>
