@@ -549,12 +549,13 @@ const TITLES = {connectors:["Connectors","External accounts · credentials in th
    inherited; the numbered badges are which turn landed where. */
 function routingChart(s){
   const touched = [...new Set(s.turns.filter(t=>t.domain).map(t=>t.domain.ref))];
-  if (!touched.length) return s.turns.length
+  const back = `<button class="rt-back" type="button" data-tab="chat" data-sid="${esc(s.id)}">← back to the chat</button>`;
+  if (!touched.length) return back + (s.turns.length
     ? `<div class="zero"><h4>No turn here carries a placement</h4>
         <p>Every turn in this session was read from a transcript on disk. They ran in the
         terminal, outside Sutra, so nothing classified them and there is no routing path to
         draw. Ask something below and that turn will have one.</p></div>`
-    : `<p style="color:var(--faint)">No turns yet.</p>`;
+    : `<p style="color:var(--faint)">No turns yet.</p>`);
   const chains = touched.map(ref=>{
     const chain=[]; let n=byRef(ref);
     while(n){ chain.unshift(n); n = n.parent_ref?byRef(n.parent_ref):null; }
@@ -565,28 +566,35 @@ function routingChart(s){
   const kids = ref => [...keep].map(byRef).filter(d=>d.parent_ref===ref)
                         .sort((a,b)=>a.ts_minted_ms-b.ts_minted_ms);
   const turnsAt = ref => s.turns.map((t,i)=>({t,i})).filter(x=>x.t.domain&&x.t.domain.ref===ref);
-  const node = d => {
+  /* Routing UI treatment (founder to-do from 2026-08-18, done 2026-08-22):
+     an indented TREE-LIST, one row per department on any turn's ancestry
+     path, in the pane's own row idiom -- not an org chart swapped into the
+     chat. Department rows are primary (codex: routing is ancestry; "where did
+     this turn pass through"), with turn badges on the rows that own a turn and
+     "passed through" on the ancestors. Same data as before; only the shape. */
+  const filed = s.turns.filter(t=>t.domain).length;
+  const unresolved = s.turns.filter(t=>!t.domain && !t.transcript).length;
+  const rows = [];
+  const walk = (d, depth) => {
     const ts = turnsAt(d.ref);
-    const hit = ts.length>0;
-    return `<button class="ocard ${hit?"hit":""}" data-ref="${d.ref}" style="min-width:118px">
-      ${hit?`<span class="turnbadge">${ts.map(x=>x.i+1).join(",")}</span>`:""}
-      <span class="odp">${esc(dPath(d.ref))}</span>
-      <span class="onm">${esc(d.name)}</span>
-      ${hit?`<span class="ometa"><span>${ts.map(x=>x.t.mode==="floor"?"held":x.t.confidence.toFixed(2)).join(" · ")}</span></span>`
-           :`<span class="ometa"><span style="color:var(--faint)">passed through</span></span>`}
-    </button>`;
+    rows.push(`<div class="rt-row ${ts.length?"hit":""}" style="--d:${depth}" data-ref="${esc(d.ref)}">
+      <span class="rt-dp">${esc(dPath(d.ref))}</span>
+      <span class="rt-nm">${esc(d.name)}</span>
+      <span class="rt-meta">${ts.length
+        ? ts.map(x=>`<span class="rt-turn" title="turn ${x.i+1} · ${x.t.mode==="floor"?"held at ancestor":"confidence "+x.t.confidence.toFixed(2)}">turn ${x.i+1}${x.t.mode==="floor"?" · held":" · "+x.t.confidence.toFixed(2)}</span>`).join("")
+        : `<span class="rt-pass">passed through</span>`}</span>
+    </div>`);
+    kids(d.ref).forEach(k=>walk(k, depth+1));
   };
-  const branch = d => `<li class="${kids(d.ref).length?"haskids":""}">${node(d)}
-    ${kids(d.ref).length?`<ul>${kids(d.ref).map(branch).join("")}</ul>`:""}</li>`;
-  return `
-    <div class="chartwrap"><ul class="chart">${roots.map(branch).join("")}</ul></div>
-    <div class="legend" style="margin-top:4px">
-      Badges are turn numbers. A node with no badge is an <b>ancestor on the path</b>, not a
-      participant — it is shown because charters inherit down this chain.
-      <br><br><b>Departments do not hand work to each other.</b> There is no domain-to-domain
-      channel in the engine. This path is successive placement: each turn was classified
-      independently and filed to exactly one owner.
-    </div>`;
+  roots.forEach(r=>walk(r, 0));
+  return `<div class="rt">
+    ${back}
+    <div class="rt-sum">${s.turns.length} turn${s.turns.length===1?"":"s"} · ${keep.size} department${keep.size===1?"":"s"} on the path · ${filed} filed${unresolved?` · <span class="gv-unres">${unresolved} unresolved</span>`:""}</div>
+    <div class="rt-tree">${rows.join("")}</div>
+    <div class="legend">A row with a turn badge owns that turn. Rows marked <b>passed through</b>
+      are ancestors on the path — shown because charters inherit down the chain. Departments do
+      not hand work to each other: each turn was classified independently and filed to one owner.</div>
+  </div>`;
 }
 
 /* ── permission mode, at chat level ─────────────────────────────────────────
@@ -800,50 +808,96 @@ function toolCallsHtml(calls){
    Anything not matched renders as body prose: raw text is never lost. */
 function parseGov(text){
   const g = { verb:null, depth:null, risk:null, leaf:null, trace:null };
-  if (!text) return { g, body: "" };
+  const sections = [];
+  if (!text) return { g, body: "", sections };
   const h = text.match(/^\s*\[([A-Z0-9-]+)·([A-Z0-9-]+)[^\]]*RISK:\s*(\w+)\s*\]/);
   if (h){ g.verb = h[2]; g.risk = h[3]; }
   const d = text.match(/DEPTH:\s*(\d)\s*\/\s*5/); if (d) g.depth = d[1];
   const p = text.match(/PLACEMENT:[^\n|]*>\s*([^>|\n]+?)\s*\|/); if (p) g.leaf = p[1].trim();
   const tr = text.match(/\n`?OS:\s*([^\n`]+)/); if (tr) g.trace = tr[1].trim();
-  let body = text.replace(/^\s*\[[A-Z0-9-]+·[^\]]*\]\s*\n?/, "");
-  /* governance fences are contiguous field lines — a blank line inside means the
-     lazy match mispaired with the NEXT fence opener; leave those alone */
-  body = body.replace(/```[\s\S]*?```/g, (m) =>
-    /(INPUT:|TASK:|FLOW|BLUEPRINT|DEPTH:|^\s*```\s*\nOS:)/m.test(m) && !/\n[ \t]*\r?\n/.test(m)
-      ? "" : m);
-  body = body.replace(/^PLACEMENT:[^\n]*\n?/gm, "");
-  body = body.replace(/^FLOW:[^\n]*\n?/gm, "");
-  /* UNFENCED governance blocks — the model sometimes emits the block bare, with
-     no fence around it. The block SHAPE is a run: two or more contiguous lines,
-     each starting (column 0) with a known governance key. A run is deleted
-     whole. A LONE key-looking line surrounded by prose is a sentence, not a
-     block — "TYPE: the parameter kind matters here" — and must survive; so must
-     indented text, which is why the keys anchor at column 0. Runs after the
-     lone-line strips above, so a PLACEMENT:/FLOW: line inside a block does not
-     split one run into two, stranding a lone survivor. */
-  {
-    const isGovKey = (l) =>
-      /^(INPUT|TYPE|EXISTING HOME|ROUTE|FIT CHECK|ACTION|TASK|DEPTH|EFFORT|COST|IMPACT|TRIAGE|ESTIMATE|ACTUAL):/.test(l);
-    const lines = body.split("\n");
-    const kept = [];
-    for (let i = 0; i < lines.length; ){
-      if (isGovKey(lines[i])){
-        let j = i + 1;
-        while (j < lines.length && isGovKey(lines[j])) j++;
-        if (j - i >= 2){ i = j; continue; }  /* a run IS the block — drop it whole */
-      }
-      kept.push(lines[i]); i++;
-    }
-    body = kept.join("\n");
+
+  /* ── CAPTURE, not discard (founder 2026-08-22: "I don't want anything to be
+     escaped"). Every governance block the model emits -- the H-Sutra header,
+     Input Routing, Depth, FLOW, BLUEPRINT, Build-Layer, Placement, Triage, the
+     OS trace -- is lifted out of the body VERBATIM into `sections`, where the
+     chip's panel shows it as an audit trail. The body is the reply alone.
+
+     Shape rules (codex 2026-08-22, ADVISORY):
+       · a section opens on a column-0 known key. Field GROUPS (routing / depth
+         / triage) need a RUN of >= 2 key lines or a fence, so a lone sentence
+         like "TYPE: the parameter kind matters here" stays prose. Single-line
+         markers (PLACEMENT / FLOW / OS / BUILD-LAYER family) are always
+         governance, even alone.
+       · continuation lines are captured only when INDENTED (or a BLUEPRINT
+         sub-key at any indent). A column-0 "1. ..." right after a block is the
+         model's real answer and is never swallowed.
+       · a fence whose content carries a governance key is captured whole,
+         fence markers included; any other fence is the reply's own code.
+       · lossless: lines are stored exactly as emitted. Derived fields above
+         are the only normalisation. */
+  const GROUP = {
+    routing:   /^(INPUT|TYPE|EXISTING HOME|ROUTE|FIT CHECK|ACTION):/,
+    depth:     /^(TASK|DEPTH|EFFORT|COST|IMPACT):/,
+    triage:    /^(TRIAGE|ESTIMATE|ACTUAL):/,
+    blueprint: /^BLUEPRINT\b/,
+    buildLayer:/^(BUILD-LAYER|ACTIVATION-SCOPE|TARGET-PATH):/,
+    flow:      /^FLOW:/,
+    placement: /^PLACEMENT:/,
+    trace:     /^`?OS:\s/,
+  };
+  const TITLE = { header:"Header", routing:"Input routing", depth:"Depth", flow:"Flow",
+                  blueprint:"Blueprint", buildLayer:"Build layer", placement:"Placement",
+                  triage:"Triage", trace:"Trace", fence:"Governance" };
+  const RUN_GROUPS = ["routing", "depth", "triage"];             /* need >= 2 lines */
+  const keyOf = (l) => { for (const k in GROUP) if (GROUP[k].test(l)) return k; return null; };
+  const BP_SUB = /^\s*(Doing|Steps|Output looks like|Verified by|Scale|Stops if|Switch|Verify)\s*:/;
+  const isCont = (l, key) => /^\s+\S/.test(l) || (key === "blueprint" && BP_SUB.test(l));
+  const push = (key, lines) => { if (lines.length) sections.push({ key, title: TITLE[key] || key, lines: lines.slice() }); };
+
+  const src = text.split("\n");
+  const kept = [];
+  let i = 0;
+  /* the H-Sutra header is the first non-blank line when present */
+  if (h){
+    while (i < src.length && !src[i].trim()) { kept.push(src[i]); i++; }
+    push("header", [src[i]]); i++;
   }
-  body = body.replace(/\n`?OS:\s*[^\n]+\s*$/, "");
-  /* streaming tolerance: a trailing UNTERMINATED fence that already shows a
-     governance key is hidden until it closes — raw governance mid-stream reads
-     as broken; the settled render restores anything non-governance */
-  body = body.replace(/```[^`]*$/, (m) =>
-    /(INPUT:|TASK:|FLOW|BLUEPRINT|DEPTH:|OS:)/.test(m) ? "" : m);
-  return { g, body: body.replace(/\n{3,}/g, "\n\n").trim() };
+  while (i < src.length){
+    const line = src[i];
+    /* a fence: governance if any line inside carries a key, else the reply's */
+    if (/^\s*```/.test(line)){
+      let j = i + 1;
+      while (j < src.length && !/^\s*```/.test(src[j])) j++;
+      const closed = j < src.length;
+      const inner = src.slice(i + 1, j);
+      const gov = inner.some(l => keyOf(l) || BP_SUB.test(l));
+      if (gov){
+        const first = inner.map(keyOf).find(Boolean) || "fence";
+        push(first, src.slice(i, closed ? j + 1 : j));   /* unterminated (streaming): capture what is there */
+        i = closed ? j + 1 : j; continue;
+      }
+      kept.push(...src.slice(i, closed ? j + 1 : src.length)); i = closed ? j + 1 : src.length; continue;
+    }
+    const key = keyOf(line);
+    if (key){
+      let j = i + 1;
+      const lines = [line];
+      while (j < src.length){
+        const l = src[j];
+        const k2 = keyOf(l);
+        /* same family continues the run; a sibling family (routing -> depth) starts its own */
+        if (k2 === key || (key === "blueprint" && BP_SUB.test(l))) { lines.push(l); j++; continue; }
+        if (k2) break;
+        if (isCont(l, key)) { lines.push(l); j++; continue; }
+        break;
+      }
+      const keyLines = lines.filter(l => keyOf(l) === key || (key === "blueprint" && BP_SUB.test(l))).length;
+      if (RUN_GROUPS.includes(key) && keyLines < 2){ kept.push(line); i++; continue; }  /* a lone sentence, not a block */
+      push(key, lines); i = j; continue;
+    }
+    kept.push(line); i++;
+  }
+  return { g, body: kept.join("\n").replace(/\n{3,}/g, "\n\n").trim(), sections };
 }
 /* patchStreaming (01-state.js) reaches this through window with a fallback so
    module order can never hard-fail streaming */
@@ -857,7 +911,8 @@ if (typeof window !== "undefined") window.gvBody = gvBody;
    [data-aturn], so patchTurn()/patchStreaming() never touch it mid-stream. */
 function gvChipHtml(t, i){
   const open = !!(S.govOpen && t.uid && S.govOpen[t.uid]);
-  const pg = parseGov(t.response || "").g;
+  const parsed = parseGov(t.response || "");
+  const pg = parsed.g, secs = parsed.sections || [];
   const held = t.mode === "floor";
   const segs = [`<span>turn ${i+1}</span>`];
   if (pg.verb)  segs.push(`<span>${esc(pg.verb)}</span>`);
@@ -892,6 +947,7 @@ function gvChipHtml(t, i){
         <span style="color:var(--acc);font-family:var(--mono);font-size:10px">${esc(t.charter.id)}</span>
         ${esc(t.charter.title)}<br><span style="font-style:italic">${esc(t.charter.purpose)}</span></span></div>`:""}
       ${pg.trace?`<div class="gv-row"><span class="gv-label">Trace</span><span class="gv-val"><code>${esc(pg.trace)}</code></span></div>`:""}
+      ${secs.filter(x=>x.key!=="trace").map(x=>`<div class="gv-row"><span class="gv-label">${esc(x.title)}</span><span class="gv-val"><pre class="gv-pre">${esc(x.lines.join("\n"))}</pre></span></div>`).join("")}
     </div>`:""}
   </div>`;
 }

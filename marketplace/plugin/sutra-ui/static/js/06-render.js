@@ -151,7 +151,17 @@ function paneMenuHtml(s){
   const row = (key, label, val) => `<button class="mrow" type="button" data-mrow="${key}">
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
   return `<div class="upop panemenu" role="menu" aria-label="Session menu — ${esc(s.title)}">
-    ${row("folder", "Folder", esc(cwdLabel(sessCwd(s.id))))}
+    ${row("folder", "Folder", esc(cwdLabel(sessCwd(s.id))) + (()=>{
+        /* the repo bar's facts, one click away instead of always on screen */
+        const r = S.repo && S.repo[s.id]; if (!r || !r.available) return "";
+        const d = r.diff || {};
+        return ` · ${esc(r.detached ? "detached" : (r.branch || "—"))} · ${(d.files||0) > 0 ? `+${d.added||0} −${d.removed||0}` : "clean"}`;
+      })())}
+    ${(()=>{ const r = S.repo && S.repo[s.id]; if (!r || !r.available || !r.remote) return "";
+        const prs = S.prs && S.prs[s.id]; const n = prs && prs.available ? (prs.pulls||[]).length : null;
+        return row("prs", "Pull requests", n != null ? `${n} open` : "on " + esc(r.remote))
+             + (r.detached ? "" : row("pr", "Create PR", "propose — nothing is pushed until you approve"));
+      })()}
     <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect()}</span><span class="ma"></span></label>
     <label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
             title="Model — applies to the next message">
@@ -249,7 +259,6 @@ function sessionPane(s){
     ${cwdEditorHtml(s.id)}
     ${prFormHtml(s.id)}
     ${prListHtml(s.id)}
-    ${repoBarHtml(s.id)}
     <div class="pc">
       <!-- Chat-surface chrome (founder, 2026-08-18): the ⋯ chip is the pane's
            identity — the header no longer shows while expanded — and its menu is
@@ -260,7 +269,12 @@ function sessionPane(s){
               aria-label="Session — folder, permissions, model, usage, routing"
               title="Everything about this session — folder, permissions, model, usage, routing">
         <span class="uring" style="background:var(${streamingFor(s.id)||s.agents_live?"--ok":"--line"})"></span>
-        <span class="uname">${esc(s.title)}</span><span style="color:var(--faint)">·</span>⋯
+        <span class="uname">${esc(s.title)}</span>${(()=>{
+          /* branch/dirty state stays GLANCEABLE with the bar gone (codex P2):
+             one warn dot when the working tree is dirty, nothing when clean */
+          const r = S.repo && S.repo[s.id]; const dirty = !!(r && r.available && r.diff && r.diff.files > 0);
+          return dirty ? `<span class="udirty" title="${r.diff.files} file${r.diff.files===1?"":"s"} changed — see Folder in this menu" aria-label="uncommitted changes"></span>` : "";
+        })()}<span style="color:var(--faint)">·</span>⋯
       </button>
       <button class="ib" data-attach="${s.id}" type="button"
               aria-label="Attach a file" title="Attach a file (or drop / paste one)">

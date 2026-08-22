@@ -506,6 +506,91 @@ test('11a. the governance chip is a real button in the tab order — the focus r
     'and it must not be pulled out of the tab order');
 });
 
+/* ── 10. governance CAPTURE — nothing escapes, nothing is lost ───────────────
+   Founder 2026-08-22: every system block lives under the chip; none may leak
+   into the reply. Codex rules: lossless lines; continuation only when indented;
+   a column-0 numbered list after a block is the ANSWER. */
+const PG = new Function(slice('function parseGov', 'return { g, body:') + '; return parseGov;')();
+const PRE = "[INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:med]\n" +
+  "INPUT: ship it\nTYPE: task\nEXISTING HOME: none\nROUTE: direct\nFIT CHECK: none\nACTION: do it\n\n" +
+  "TASK: \"ship\"\nDEPTH: 4/5\nEFFORT: 1h\nCOST: ~$2\nIMPACT: real\n\n" +
+  "FLOW: [1] task · [2] CONSTRUCT · [3] 3 steps\n\n" +
+  "BLUEPRINT\nDoing: the thing\nSteps:\n  1. first\n     Verify: a\n  2. second\nOutput looks like: x\nVerified by: y\nScale: 1 file\nStops if: z\n\n" +
+  "BUILD-LAYER: L1\nACTIVATION-SCOPE: here\nTARGET-PATH: /x\n\n" +
+  "PLACEMENT: D0 > D1 Sutra OS > D1.D1 Core | \"Charter\"\n\n" +
+  "Here is the real answer.\n\n1. First real point\n2. Second real point\n\n" +
+  "TRIAGE: depth_selected=4\nESTIMATE: tokens_est=2000\nACTUAL: tokens=2100\n\n" +
+  "`OS: Input Routing (task) > D1 > 3 calls > done`";
+
+test('10a. every block family is captured as a section, in order', () => {
+  const r = PG(PRE);
+  assert.deepStrictEqual(r.sections.map(x => x.key),
+    ['header','routing','depth','flow','blueprint','buildLayer','placement','triage','trace']);
+});
+
+test('10b. the body is the reply alone — no governance key survives', () => {
+  const r = PG(PRE);
+  assert.ok(!/^(INPUT|TYPE|TASK|DEPTH|FLOW|BLUEPRINT|BUILD-LAYER|PLACEMENT|TRIAGE|OS):/m.test(r.body), r.body);
+  assert.ok(!/\[INBOUND/.test(r.body), 'the header leaked');
+  assert.ok(r.body.startsWith('Here is the real answer.'), r.body.slice(0, 60));
+});
+
+test('10c. a column-0 numbered list after governance is the ANSWER, never swallowed', () => {
+  const r = PG(PRE);
+  assert.ok(r.body.includes('1. First real point') && r.body.includes('2. Second real point'), r.body);
+});
+
+test('10d. indented BLUEPRINT steps ARE captured as continuation', () => {
+  const bp = PG(PRE).sections.find(x => x.key === 'blueprint');
+  assert.ok(bp.lines.includes('  1. first') && bp.lines.includes('     Verify: a'), JSON.stringify(bp.lines));
+  assert.ok(bp.lines.includes('Stops if: z'), 'sub-keys at column 0 belong to the blueprint');
+});
+
+test('10e. capture is LOSSLESS — lines come back verbatim', () => {
+  const r = PG(PRE);
+  const all = r.sections.flatMap(x => x.lines).join('\n');
+  ['INPUT: ship it', 'COST: ~$2', 'FLOW: [1] task · [2] CONSTRUCT · [3] 3 steps', 'TARGET-PATH: /x',
+   'PLACEMENT: D0 > D1 Sutra OS > D1.D1 Core | "Charter"', 'ACTUAL: tokens=2100', '`OS: Input Routing (task) > D1 > 3 calls > done`']
+    .forEach(l => assert.ok(all.includes(l), 'lost: ' + l));
+});
+
+test('10f. a lone key-looking sentence stays prose (9c still holds)', () => {
+  const r = PG('The fix is simple.\nTYPE: the parameter kind matters here, not the name.\nDone.');
+  assert.ok(r.body.includes('TYPE: the parameter kind'), r.body);
+  assert.strictEqual(r.sections.length, 0);
+});
+
+test('10g. single-line markers are governance even alone', () => {
+  const r = PG('Answer.\nPLACEMENT: D0 > D1 X | "Y"\nMore answer.');
+  assert.strictEqual(r.sections.length, 1); assert.strictEqual(r.sections[0].key, 'placement');
+  assert.strictEqual(r.body, 'Answer.\nMore answer.');
+});
+
+test('10h. a governance fence is captured whole, markers included; a code fence is not', () => {
+  const r = PG('```\nINPUT: x\nTYPE: task\n```\nAnswer.\n```js\nconst a = 1;\n```');
+  assert.strictEqual(r.sections.length, 1);
+  assert.deepStrictEqual(r.sections[0].lines, ['```', 'INPUT: x', 'TYPE: task', '```']);
+  assert.ok(r.body.includes('const a = 1;'), 'the reply\'s own code must survive');
+});
+
+test('10i. streaming: an unterminated governance fence is captured, not shown', () => {
+  const r = PG('```\nINPUT: partial\nTYPE: ta');
+  assert.strictEqual(r.body, '');
+  assert.strictEqual(r.sections[0].key, 'routing');
+});
+
+test('10j. derived chip fields still parse from the captured form', () => {
+  const r = PG(PRE);
+  assert.strictEqual(r.g.verb, 'DIRECT'); assert.strictEqual(r.g.depth, '4'); assert.strictEqual(r.g.risk, 'med');
+  assert.strictEqual(r.g.leaf, 'D1.D1 Core'); assert.ok(/Input Routing/.test(r.g.trace));
+});
+
+test('10k. a preamble with NO answer yields an empty body and full sections', () => {
+  const r = PG(PRE.split('Here is the real answer.')[0]);
+  assert.strictEqual(r.body, '');
+  assert.ok(r.sections.length >= 6);
+});
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 Date.now = realNow;
 console.log('\n' + '-'.repeat(60));

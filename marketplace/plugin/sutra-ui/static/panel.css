@@ -1482,6 +1482,28 @@
     text-transform:uppercase;letter-spacing:.8px}
   .gv-val{color:var(--muted)}
   .gv-val code{font-family:var(--mono);font-size:10px}
+  /* governance panel: captured blocks, verbatim (audit trail) */
+  .gv-pre{margin:0;white-space:pre-wrap;word-break:break-word;font:10.5px/1.5 var(--mono);color:var(--muted);
+    max-height:220px;overflow:auto}
+  /* the ⋯ chip's dirty-tree dot: branch state glanceable with the repo bar gone */
+  .uchip .udirty{width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none;margin-left:2px}
+  /* Routing view: a tree-list in the pane's row idiom */
+  .rt{display:flex;flex-direction:column;gap:8px}
+  .rt-back{align-self:flex-start;background:none;border:1px solid var(--line);border-radius:6px;
+    padding:4px 9px;font:500 11px/1 var(--sans);color:var(--muted);cursor:pointer}
+  .rt-back:hover{color:var(--ink);border-color:var(--acc)}
+  .rt-back:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .rt-sum{font:500 10.5px/1.5 var(--mono);color:var(--faint)}
+  .rt-tree{display:flex;flex-direction:column;gap:3px}
+  .rt-row{display:flex;align-items:baseline;gap:8px;padding:5px 8px;border:1px solid var(--line-soft);
+    border-radius:6px;background:var(--inset);margin-left:calc(var(--d,0) * 18px);min-width:0}
+  .rt-row.hit{border-color:var(--acc);background:var(--acc-bg)}
+  .rt-dp{font:600 9.5px/1.4 var(--mono);color:var(--acc);flex:none}
+  .rt-nm{font-size:12px;font-weight:600;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rt-meta{margin-left:auto;display:flex;gap:5px;flex:none}
+  .rt-turn{font:600 9.5px/1.6 var(--mono);color:var(--acc);background:var(--card);border:1px solid var(--line);
+    border-radius:5px;padding:0 6px}
+  .rt-pass{font:500 9.5px/1.6 var(--mono);color:var(--faint)}
   .gv-think{display:inline-flex;align-items:center;gap:8px;margin-top:7px;
     font-family:var(--mono);font-size:11px;color:var(--muted)}
   .gv-tlabel{background:linear-gradient(90deg,var(--faint) 20%,var(--ink) 50%,var(--faint) 80%);

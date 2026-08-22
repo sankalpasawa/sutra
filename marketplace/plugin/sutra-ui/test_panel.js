@@ -206,6 +206,7 @@ const EPILOGUE = `
      regressions (dead controls mid-stream; invisible fold on non-real
      sessions) stay pinned */
   turnControlClick, agentsFold, streamBodyHtml, drainStep, _MAX_STEP, _reduceMotion,
+  gvChipHtml, routingChart,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
@@ -2896,6 +2897,99 @@ test("35k. dismissal is wired once at boot: click-away and Escape-first, with fo
   const wire = require("fs").readFileSync(__dirname + "/static/js/07-loaders.js", "utf8");
   assert.ok(/panes\.querySelectorAll\("\[data-panemenu\]"\)/.test(wire), "chip toggle bound in wire()");
   assert.ok(/panes\.querySelectorAll\("\[data-mrow\]"\)/.test(wire), "rows bound in wire()");
+});
+
+/* ── 36. the chip panel shows every captured block — nothing escapes ──────── */
+test("36a. an open chip renders one row per captured section, verbatim, escaped", () => {
+  T.S.govOpen = { t36: true };
+  const t = { uid: "t36", streaming: false, tools: [], toolRuns: [],
+    response: "[INBOUND·DIRECT · TIMING:now · CHANNEL:x · REV:none · RISK:low]\nINPUT: <b>x</b>\nTYPE: task\n\nTASK: \"t\"\nDEPTH: 2/5\n\nReal answer." };
+  const html = sandbox.gvChipHtml(t, 0);
+  ["Header", "Input routing", "Depth"].forEach(l =>
+    assert.ok(html.includes('<span class="gv-label">' + l + "</span>"), "missing row " + l));
+  assert.ok(html.includes("INPUT: &lt;b&gt;x&lt;/b&gt;"), "captured text must be escaped");
+  assert.ok(!html.includes("<b>x</b>"), "raw markup in a captured line must not render");
+  assert.ok(/<pre class="gv-pre">/.test(html));
+  T.S.govOpen = {};
+});
+
+test("36b. the rendered BODY carries no governance while the panel carries all of it", () => {
+  const resp = "[INBOUND·QUERY · TIMING:now · CHANNEL:x · REV:none · RISK:low]\nINPUT: q\nTYPE: question\n\nThe answer is 4.";
+  const html = T.turnResponse({ uid: "t36b", streaming: false, response: resp, tools: [], toolRuns: [] });
+  assert.ok(html.includes("The answer is 4."));
+  assert.ok(!/INPUT:|TYPE:|\[INBOUND/.test(html), "governance leaked into the body: " + html);
+});
+
+/* ── 35l-n. the repo bar's facts live in the ⋯ menu now ──────────────────── */
+test("35l. with a repository known, Folder carries branch + state and PR rows appear after it", () => {
+  const prevRepo = T.S.repo; T.S.repo = { "sid-35": { available: true, branch: "main", remote: "github.com/x/y",
+    upstream: "origin/main", diff: { files: 2, added: 10, removed: 3 } } };
+  try {
+    const hm = paneHtml({ menu: true });
+    const keys = [...hm.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
+    deepEq(keys, ["Folder", "Pull requests", "Create PR", "Permissions", "Model", "Usage", "Routing", "Fold", "Close"]);
+    assert.ok(/main · \+10 −3/.test(hm), "Folder row must show branch + dirty state");
+    assert.ok(!/class="repobar/.test(paneHtml()), "the bar itself must be gone");
+    assert.ok(/class="udirty"/.test(paneHtml()), "dirty state stays glanceable on the chip (codex P2)");
+  } finally { T.S.repo = prevRepo; }
+});
+
+test("35m. a clean tree: Folder says clean, no dirty dot; no remote: no PR rows", () => {
+  const prevRepo = T.S.repo; T.S.repo = { "sid-35": { available: true, branch: "main", remote: "", diff: { files: 0 } } };
+  try {
+    const hm = paneHtml({ menu: true });
+    assert.ok(/main · clean/.test(hm));
+    assert.ok(!/Pull requests|Create PR/.test(hm), "no remote -> nothing to open a PR against");
+    assert.ok(!/class="udirty"/.test(paneHtml()));
+  } finally { T.S.repo = prevRepo; }
+});
+
+test("35n. PR rows dispatch to the same state the bar's buttons mutated", () => {
+  const sid = "sid-35n";
+  T.S.sessions.push({ id: sid, title: "t", turns: [] });
+  const prevRepo = T.S.repo; T.S.repo = { [sid]: { available: true, branch: "feat", remote: "r", upstream: "origin/main" } };
+  const prevLoad = sandbox.loadPrs; sandbox.loadPrs = () => {};
+  try {
+    withNoopRender(() => {
+      T.S.paneMenu = sid; sandbox.paneMenuAction(sid, "prs");
+      assert.strictEqual(T.S.prsOpen, sid, "Pull requests opens the PR list");
+      assert.strictEqual(T.S.paneMenu, null);
+      T.S.paneMenu = sid; sandbox.paneMenuAction(sid, "pr");
+      assert.ok(T.S.prForm && T.S.prForm.sid === sid && T.S.prForm.head === "feat" && T.S.prForm.base === "main",
+        "Create PR pre-fills head/base from the repo: " + JSON.stringify(T.S.prForm));
+    });
+  } finally { T.S.repo = prevRepo; sandbox.loadPrs = prevLoad; T.S.prsOpen = null; T.S.prForm = null;
+    T.S.sessions = T.S.sessions.filter(s => s.id !== sid); }
+});
+
+/* ── 37. Routing view: a tree-list, not an org chart ─────────────────────── */
+test("37a. the routing view is an indented tree with turn badges and a way back", () => {
+  const prevD = T.DOMAINS;
+  T.DOMAINS = [
+    { ref: "r", name: "Asawa", path: "D0", parent_ref: null, ts_minted_ms: 1 },
+    { ref: "a", name: "Sutra OS", path: "D1", parent_ref: "r", ts_minted_ms: 2 },
+    { ref: "b", name: "Engine Library", path: "D1.D3", parent_ref: "a", ts_minted_ms: 3 },
+  ];
+  try {
+    const s = { id: "s37", title: "t", turns: [
+      { text: "q1", domain: { ref: "b", name: "Engine Library" }, confidence: 0.62, mode: "match" },
+      { text: "q2", domain: { ref: "a", name: "Sutra OS" }, confidence: 0, mode: "floor" },
+      { text: "q3" },
+    ] };
+    const html = sandbox.routingChart(s);
+    assert.ok(/class="rt-back"[^>]*data-tab="chat"[^>]*data-sid="s37"/.test(html), "no way back to the chat");
+    assert.ok(/3 turns · 3 departments on the path · 2 filed · <span class="gv-unres">1 unresolved/.test(html), (html.match(/rt-sum.{0,160}/) || [""])[0]);
+    const rows = [...html.matchAll(/<div class="rt-row ?(hit)?" style="--d:(\d)"/g)].map(m => ({ hit: !!m[1], d: +m[2] }));
+    deepEq(rows, [{ hit: false, d: 0 }, { hit: true, d: 1 }, { hit: true, d: 2 }], "depth follows ancestry; hit rows own turns");
+    assert.ok(/turn 1 · 0\.62/.test(html) && /turn 2 · held/.test(html), "badges carry turn + confidence/held");
+    assert.ok(/passed through/.test(html), "the root is an ancestor, not a participant");
+    assert.ok(!/class="ocard"/.test(html), "the org chart is gone from the chat pane");
+  } finally { T.DOMAINS = prevD; }
+});
+
+test("37b. no placements: the honest empty state, still with a way back", () => {
+  const html = sandbox.routingChart({ id: "s", title: "t", turns: [{ text: "x", transcript: true }] });
+  assert.ok(/rt-back/.test(html) && /No turn here carries a placement/.test(html));
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

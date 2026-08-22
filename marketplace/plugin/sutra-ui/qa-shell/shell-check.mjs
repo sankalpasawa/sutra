@@ -117,6 +117,11 @@ const state = await page.evaluate(() => {
     /* the unfenced-block leak this lane found (2026-08-19): a bare INPUT:/TYPE:
        run must strip in the RUNNING app, and only the answer survives */
     r.unfencedStripped = gvBody("Answer.\nINPUT: x\nTYPE: task") === "Answer.";
+    /* governance CAPTURE (founder 2026-08-22): in the running shell, a full
+       preamble lifts into sections and the body is the reply alone */
+    { const pg = parseGov("[INBOUND·DIRECT · TIMING:now · CHANNEL:x · REV:none · RISK:low]\nINPUT: a\nTYPE: task\n\nTASK: t\nDEPTH: 3/5\n\nPLACEMENT: D0 > D1 X | \"Y\"\n\nReal.\n\n1. kept\n\n`OS: x > y`");
+      r.govSections = pg.sections.map(x => x.key).join(",");
+      r.govBody = pg.body; }
     /* chat-surface chrome (founder 2026-08-18, finished 2026-08-22): in the
        RUNNING shell a session pane hides its header while expanded, carries the
        ⋯ chip first in the composer, and renders the 7-row menu on open */
@@ -147,6 +152,9 @@ check("roster sits inside the patch anchor", state.rosterInsideAnchor === true);
 check("control characters stripped from wire text", state.controlCharsStripped === true);
 check("H-Sutra header stripped from bodies", state.headerStripped === true);
 check("unfenced governance run stripped from bodies", state.unfencedStripped === true);
+check("governance captured as sections in the running shell",
+  state.govSections === "header,routing,depth,placement,trace", state.govSections);
+check("and the body is the reply alone, numbered list intact", state.govBody === "Real.\n\n1. kept", JSON.stringify(state.govBody));
 check("chrome: session pane header hidden while expanded", state.chromeHeaderHidden === true, String(state.chromeHeaderHidden));
 check("chrome: ⋯ chip is the first composer control", state.chromeChipFirst === true, String(state.chromeChipFirst));
 check("chrome: the pane menu carries the 7 relocated controls in order",

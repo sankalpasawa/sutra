@@ -175,6 +175,15 @@ function paneMenuAction(sid, key){
   S.paneMenu = null;
   switch (key){
     case "folder": S.cwdEdit = sid; S.cwdError = null; break;
+    /* the repo bar's two buttons, now rows: same state, same loaders */
+    case "prs":    S.prsOpen = sid; render(); loadPrs(sid, true); return;
+    case "pr": {
+      const r = (S.repo && S.repo[sid]) || {};
+      S.prForm = { sid, head: r.branch || "", base: (r.upstream || "").replace(/^origin\//, "") || "main", title: "", body: "" };
+      S.prError = null; S.prDone = null; render();
+      const t = document.querySelector("[data-prf='title']"); if (t && t.focus) t.focus();
+      return;
+    }
     case "usage":  S.usagePop = sid; if (typeof loadUsage === "function") loadUsage(true); break;
     case "route":  S.sessTab[sid] = (S.sessTab[sid] || "chat") === "route" ? "chat" : "route"; break;
     case "fold":   S.ui.paneCollapsed[sid] = true; saveLayout(); break;

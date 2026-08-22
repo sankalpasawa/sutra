@@ -92,6 +92,8 @@ button.trow:hover{border-color:var(--acc)}
 .gv-ln{font:10.5px/1.6 var(--mono);color:var(--muted)}
 .gv-ln.ok{color:var(--ok)}
 .gv-ln.bad{color:var(--block)}
+/* captured governance blocks, verbatim — shipped in panel.css the same way */
+.gv-pre{margin:0;white-space:pre-wrap;word-break:break-word;font:10.5px/1.5 var(--mono);color:var(--muted);max-height:220px;overflow:auto}
 </style>
 </head>
 <body>
@@ -269,6 +271,21 @@ button.trow:hover{border-color:var(--acc)}
                 rides on deterministic, testable primitives.</span></span></div>
               <div class="gv-row"><span class="gv-label">Trace</span><span class="gv-val">
                 <code>routing (question) › D1 › 0 tools › advisory</code></span></div>
+              <!-- SHIPPED 2026-08-22 (founder: "I don't want anything to be escaped"):
+                   every governance block the model emits is CAPTURED here, verbatim,
+                   as an audit trail — the reply body carries none of it. -->
+              <div class="gv-row" data-new><span class="gv-label">Header</span><span class="gv-val"><pre class="gv-pre">[INBOUND·QUERY · TIMING:now · CHANNEL:in-band · REV:none · RISK:low]</pre></span></div>
+              <div class="gv-row" data-new><span class="gv-label">Input routing</span><span class="gv-val"><pre class="gv-pre">INPUT: why was that filed to Engine Library?
+TYPE: question
+EXISTING HOME: placement engine
+ROUTE: explain from the charter
+FIT CHECK: none
+ACTION: answer</pre></span></div>
+              <div class="gv-row" data-new><span class="gv-label">Depth</span><span class="gv-val"><pre class="gv-pre">TASK: "explain a placement"
+DEPTH: 1/5
+EFFORT: 1 read
+COST: ~$0.05
+IMPACT: understanding</pre></span></div>
             </div>
           </div>
           <div class="a">
