@@ -93,20 +93,34 @@ class _Handler(BaseHTTPRequestHandler):
         state = (params.get("state") or [None])[0]
         error = (params.get("error") or [None])[0]
 
+        # Record the outcome and SIGNAL IT BEFORE writing the response.
+        #
+        # Signalling afterwards left a race: the browser (or a test) gets its
+        # response and immediately polls, while this thread has not yet set the
+        # event -- so the poll answers AuthorizationPending for a flow that had
+        # already completed. Harmless in a browser, where the next poll is
+        # seconds later; in the suite it surfaced as an intermittent failure,
+        # which is worse than a consistent one because it teaches you to rerun.
+        #
+        # Setting it first is also more truthful: the flow IS decided the
+        # moment the code is in hand, not when the courtesy page finishes
+        # rendering.
         if error:
             captured["error"] = error
+            self.server.done.set()
             self._respond(200, "Authorization declined",
                           "You can close this window and return to Sutra.")
         elif not code or not state:
             captured["error"] = "missing_parameters"
+            self.server.done.set()
             self._respond(400, "Incomplete callback",
                           "The provider did not return a code.")
         else:
             captured["code"] = code
             captured["state"] = state
+            self.server.done.set()
             self._respond(200, "Connected",
                           "You can close this window and return to Sutra.")
-        self.server.done.set()
 
     def _respond(self, status, heading, detail):
         body = (_PAGE % (heading, detail)).encode("utf-8")

@@ -583,6 +583,51 @@ class TestProviderAgnosticism(unittest.TestCase):
 
 
 # ====================================================================== #
+class TestCrossProviderIsolation(unittest.TestCase):
+    """A connector must be unreachable through another provider's service.
+
+    Operator scoping stopped cross-USER access; nothing stopped cross-PROVIDER
+    access, so a GitHub connector could be read, validated and DISCONNECTED via
+    the Slack path. Disconnect is where that mattered: each provider declares
+    its own credential slots, so the wrong service left a live token behind.
+    """
+
+    def setUp(self):
+        self.db = Database(); self.db.migrate()
+        repo = ConnectorRepository(self.db)
+        repo.ensure_operator(OPERATOR)
+        self.gh = "conn_gh"; self.sl = "conn_sl"
+        for cid, prov, acct in ((self.gh, "github", "1"), (self.sl, "slack", "T:U")):
+            repo.create(Connector(id=cid, operator_id=OPERATOR, provider=prov,
+                                  provider_account_id=acct, provider_username="x",
+                                  status=ConnectorStatus.ACTIVE))
+        self.repo = repo
+
+    def test_lookup_scoped_to_the_named_provider(self):
+        self.assertIsNotNone(self.repo.get(OPERATOR, self.gh, "github"))
+        self.assertIsNone(self.repo.get(OPERATOR, self.gh, "slack"))
+        self.assertIsNone(self.repo.get(OPERATOR, self.sl, "github"))
+
+    def test_a_service_cannot_reach_the_other_providers_connector(self):
+        from connectors.config import SlackConfig
+        gh_svc = ConnectorService(self.db, MemoryCredentialStore())
+        sl_svc = ConnectorService(self.db, MemoryCredentialStore(), config=SlackConfig())
+        self.assertIsNotNone(gh_svc.get_connector(OPERATOR, self.gh))
+        self.assertIsNone(gh_svc.get_connector(OPERATOR, self.sl))
+        self.assertIsNone(sl_svc.get_connector(OPERATOR, self.gh))
+
+    def test_disconnect_through_the_wrong_provider_is_refused(self):
+        """The consequence: the wrong service would erase the wrong slots."""
+        gh_svc = ConnectorService(self.db, MemoryCredentialStore())
+        with self.assertRaises(TransactionNotFound):
+            gh_svc.disconnect(OPERATOR, self.sl)
+        row = self.db.execute("SELECT status FROM connectors WHERE id = ?",
+                              (self.sl,)).fetchone()
+        self.assertEqual(row["status"], "ACTIVE", "the Slack connector was disconnected "
+                                                  "by the GitHub service")
+
+
+# ====================================================================== #
 class TestAudit(unittest.TestCase):
 
     def test_connect_and_disconnect_are_audited_and_chained(self):

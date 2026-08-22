@@ -62,7 +62,7 @@ class _ConnectorLifecycle:
                       reconnect_of: Optional[str] = None) -> Dict:
         self.connectors.ensure_operator(operator_id)
 
-        if reconnect_of and not self.connectors.get(operator_id, reconnect_of):
+        if reconnect_of and not self.connectors.get(operator_id, reconnect_of, self.config.provider):
             raise TransactionNotFound("no such connector for this operator")
 
         # Idempotent per operator: an open transaction is returned rather than
@@ -212,7 +212,7 @@ class _ConnectorLifecycle:
             "SUCCESS", connector_id=connector.id,
             detail={"account_id": identity.account_id, "username": identity.username})
 
-        refreshed = self.connectors.get(operator_id, connector.id)
+        refreshed = self.connectors.get(operator_id, connector.id, self.config.provider)
         return {"status": TransactionStatus.COMPLETED.value,
                 "transaction_id": tx.id,
                 "connector_id": connector.id,
@@ -246,7 +246,7 @@ class _ConnectorLifecycle:
             operator_id, self.config.provider, identity.account_id)
 
         if tx.reconnect_of:
-            target = self.connectors.get(operator_id, tx.reconnect_of)
+            target = self.connectors.get(operator_id, tx.reconnect_of, self.config.provider)
             if target and target.provider_account_id != identity.account_id:
                 # Not a reconnect. Rebinding the row would attach one person's
                 # history and grants to a different GitHub account.
@@ -293,7 +293,7 @@ class _ConnectorLifecycle:
     # read
     # ================================================================== #
     def get_connector(self, operator_id, connector_id) -> Optional[Connector]:
-        return self.connectors.get(operator_id, connector_id)
+        return self.connectors.get(operator_id, connector_id, self.config.provider)
 
     def list_connectors(self, operator_id) -> List[Dict]:
         """This provider's connectors ONLY.
@@ -316,7 +316,7 @@ class _ConnectorLifecycle:
         surface to the user -- it would show a scary status eight times a day
         for nothing. Only REFRESH failure is a state change.
         """
-        connector = self.connectors.get(operator_id, connector_id)
+        connector = self.connectors.get(operator_id, connector_id, self.config.provider)
         if connector is None:
             raise TransactionNotFound(connector_id)
         if connector.status is ConnectorStatus.DISCONNECTED:
@@ -344,7 +344,7 @@ class _ConnectorLifecycle:
         return rotated
 
     def validate(self, operator_id, connector_id) -> Dict:
-        connector = self.connectors.get(operator_id, connector_id)
+        connector = self.connectors.get(operator_id, connector_id, self.config.provider)
         if connector is None:
             raise TransactionNotFound(connector_id)
         try:
@@ -367,13 +367,13 @@ class _ConnectorLifecycle:
                                connector_id=connector_id, reason_code=exc.code)
             raise
         self.connectors.update_identity(connector_id, identity, status=ConnectorStatus.ACTIVE)
-        return self.connectors.get(operator_id, connector_id).public_dict()
+        return self.connectors.get(operator_id, connector_id, self.config.provider).public_dict()
 
     # ================================================================== #
     # disconnect
     # ================================================================== #
     def disconnect(self, operator_id, connector_id) -> Dict:
-        connector = self.connectors.get(operator_id, connector_id)
+        connector = self.connectors.get(operator_id, connector_id, self.config.provider)
         if connector is None:
             raise TransactionNotFound(connector_id)
         if connector.status is ConnectorStatus.DISCONNECTED:

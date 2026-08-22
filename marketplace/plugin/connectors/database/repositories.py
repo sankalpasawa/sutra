@@ -144,13 +144,28 @@ class ConnectorRepository:
             last_validated_at=parse_iso(row["last_validated_at"]),
             disconnected_at=parse_iso(row["disconnected_at"]))
 
-    def get(self, operator_id: str, connector_id: str) -> Optional[Connector]:
-        """Always scoped by operator. Callers get None for another operator's
-        connector, which the API renders as 404 rather than 403 -- a 403 would
-        confirm the id exists and turn the endpoint into an enumeration oracle."""
-        row = self.db.execute(
-            "SELECT * FROM connectors WHERE id = ? AND operator_id = ?",
-            (connector_id, operator_id)).fetchone()
+    def get(self, operator_id: str, connector_id: str,
+            provider: Optional[str] = None) -> Optional[Connector]:
+        """Scoped by operator AND, when given, by provider.
+
+        Operator scoping stops cross-USER access. Provider scoping stops
+        cross-PROVIDER access, which list_for_operator already had and this did
+        not -- so a GitHub connector could be read, validated and DISCONNECTED
+        through the /slack/ path.
+
+        Disconnect is where that stopped being cosmetic: each provider declares
+        its own credential slots, so disconnecting a Slack connector through
+        the GitHub service called delete_all(slots=()) and left the Slack USER
+        token alive after telling the operator the connection was gone.
+
+        Callers get None rather than a 403, so the endpoint is not an oracle
+        for ids that exist under a different provider."""
+        sql = "SELECT * FROM connectors WHERE id = ? AND operator_id = ?"
+        params = [connector_id, operator_id]
+        if provider is not None:
+            sql += " AND provider = ?"
+            params.append(provider)
+        row = self.db.execute(sql, params).fetchone()
         return self._row_to_connector(row) if row else None
 
     def find_by_account(self, operator_id, provider, provider_account_id):

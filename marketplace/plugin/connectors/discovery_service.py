@@ -142,9 +142,18 @@ class DiscoveryMixin:
         from .github.discovery import Discovery
         from .github.pagination import decode_cursor, encode_cursor
 
-        connector = self.connectors.get(operator_id, connector_id)
+        connector = self.connectors.get(operator_id, connector_id, self.config.provider)
         if connector is None:
             raise TransactionNotFound(connector_id)
+
+        # Validate the cursor FIRST. The not-installed early return below used
+        # to short-circuit before this, so a forged cursor got a cheerful 200
+        # instead of a rejection -- harmless, since it was never dereferenced,
+        # but a client cannot tell a bad cursor from an empty result.
+        secret = self._cursor_secret()
+        start_url = None
+        if cursor:
+            start_url = decode_cursor(secret, connector_id, cursor, connector.api_base)
 
         installations = self._installations_for(operator_id, connector_id, refresh)
         if installation_id is not None:
@@ -159,12 +168,7 @@ class DiscoveryMixin:
                     "install_url": "https://github.com/settings/installations"}
 
         credential = self.credential_for(operator_id, connector_id)
-        secret = self._cursor_secret()
         discovery = Discovery(self.client)
-
-        start_url = None
-        if cursor:
-            start_url = decode_cursor(secret, connector_id, cursor, connector.api_base)
 
         repositories, next_url, access = [], None, "ok"
         for installation in installations:
@@ -207,7 +211,7 @@ class DiscoveryMixin:
     # ------------------------------------------------------------------ #
     def list_organizations(self, operator_id, connector_id, refresh=False):
         from .github.discovery import Discovery
-        connector = self.connectors.get(operator_id, connector_id)
+        connector = self.connectors.get(operator_id, connector_id, self.config.provider)
         if connector is None:
             raise TransactionNotFound(connector_id)
 
