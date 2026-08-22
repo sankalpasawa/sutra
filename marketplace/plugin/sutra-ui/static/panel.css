@@ -1720,3 +1720,30 @@
   .tsc-chg .ln.add{background:var(--ok-bg);color:var(--ink)}
   .tsc-chg .ln.add i{color:var(--ok)}
   .tsc-chg .md-pre{margin:0;border:0;border-radius:0;max-height:260px;overflow:auto}
+  /* ── streaming caret ────────────────────────────────────────────────────
+     Solid while text is flowing -- the caret is already moving, and a blink on
+     top of that is noise. It blinks only once tokens have STALLED, which is
+     when the operator actually needs to be told the turn is still alive.
+     The old rule animated it unconditionally, which never showed: the element
+     was recreated on every frame, restarting the animation at t=0 forever. */
+  .caret{opacity:1}
+  .caret.blink{animation:sutraBlink 1.05s steps(1,end) infinite}
+  /* .caret.blink out-specifies the `.caret{animation:none}` in the
+     prefers-reduced-motion block above, so without this the new rule quietly
+     re-enabled motion for exactly the people who asked for none. */
+  @media (prefers-reduced-motion:reduce){ .caret.blink{animation:none;opacity:1} }
+  /* The patch anchor now exists from the `start` frame, before any text. An
+     empty one must not push the layout around while it waits. */
+  .md[data-resp]:empty{margin:0 !important;display:none}
+
+  /* ── project-group collapse ─────────────────────────────────────────────
+     The group header is a toggle. Default is expanded; only an explicit
+     collapse persists (S.ui.sessCollapsed, keyed "project:<cwd>"). */
+  .rgrph .rgtog{display:flex;align-items:center;gap:6px;flex:1;min-width:0;
+    background:none;border:0;padding:0;margin:0;cursor:pointer;color:inherit;
+    font:inherit;letter-spacing:inherit;text-transform:inherit;text-align:left}
+  .rgrph .rgtog:hover .rgn{color:var(--ink)}
+  .rgchev{flex:none;color:var(--faint);transition:transform .15s ease}
+  .rgrph.collapsed .rgchev{transform:none}
+  .rgrph:not(.collapsed) .rgchev{transform:rotate(90deg)}
+  @media (prefers-reduced-motion:reduce){ .rgchev{transition:none} }

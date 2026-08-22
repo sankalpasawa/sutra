@@ -133,7 +133,13 @@ test("no global margin on a.btn", () => {
 test("connector CSS additions are scoped", () => {
   /* Everything added for this screen must be reachable only from a connector
      container. A bare element or utility selector added here applies panel-wide. */
-  const section = css.slice(css.indexOf("Connector tiles"));
+  /* Bounded at the NEXT section banner, not at EOF. Slicing to the end
+     attributed every later addition to this section -- the streaming-caret
+     rules appended afterwards were reported as unscoped connector CSS, which
+     is a false positive that would train someone to ignore this test. */
+  const start = css.indexOf("Connector tiles");
+  const after = css.indexOf("─────", css.indexOf("\n", start) + 1);
+  const section = css.slice(start, after === -1 ? css.length : after);
   const bare = [];
   for (const m of section.matchAll(/(?:^|\n)\s{2}([^@\s][^{\n]*)\{/g)) {
     const sel = m[1].trim();

@@ -257,6 +257,14 @@ const S = {
   sessions:[], openPanes:[], sgroup:"recent",
   /* "recent" (most-recently-touched project first) | "az". Project grouping only. */
   sessSort:"recent",
+  /* Pagination of the on-disk session list. The REST list parses titles, which
+     is the expensive part, so it is fetched a page at a time as the operator
+     scrolls rather than all at once at boot. sessionRows is the UNION of every
+     page fetched so far, keyed by id, and is what adoptRealSessions rebuilds
+     S.sessions from -- so a periodic refresh of page 0 cannot drop the pages
+     already scrolled in. sessMore stays true until a short page proves the end;
+     sessPaging guards against a scroll firing a second fetch mid-flight. */
+  sessionRows:new Map(), sessMore:true, sessPaging:false, sessPageSize:100,
   sessTab:{}, collapsed:new Set(),
   /* sid -> the operator has deliberately scrolled AWAY from the newest turn.
      Two weaker designs failed first: a one-shot Set was consumed by an early
@@ -564,6 +572,14 @@ function sbUrl(port, page){
   return base + String(page).split("/").map(encodeURIComponent).join("/");
 }
 
+/* A DOM-id-safe, stable hash of an arbitrary key (a cwd can contain / and .).
+   Only needs to be collision-free within one render, not cryptographic. */
+function hashKey(str){
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
 function railSpec(){
   const sim = S.loaded ? simulate(S.draft.ops) : null;
   /* "0 open issues" and "we have not been told yet" are different facts, and a
@@ -856,10 +872,25 @@ function renderRail(){
         /* Default is most-recently-touched first: the project you were last in is
            the one you are most likely returning to. */
         : (b.last - a.last));
-    html = groups.map(grp=>`
-      <div class="rgrp rgrph">
-        <span class="rgn" title="${esc(grp.cwd || "sessions with no recorded folder")}">${esc(grp.label)}</span>
-        <span class="rgc">${grp.items.length}</span>
+    html = groups.map(grp=>{
+      /* Collapse is per project, keyed by cwd under the "project:" namespace so
+         a folder collapsed here cannot also collapse a same-named bucket in the
+         department view. Default is EXPANDED: only an explicit collapse persists,
+         so a fresh install shows every group open. */
+      const ckey = "project:" + (grp.cwd || "\u2205");
+      const collapsed = !!(S.ui.sessCollapsed && S.ui.sessCollapsed[ckey]);
+      const bodyId = "rl-" + hashKey(ckey);
+      return `
+      <div class="rgrp rgrph ${collapsed ? "collapsed" : ""}">
+        <button type="button" class="rgtog" data-sesscollapse="${esc(ckey)}"
+            aria-expanded="${!collapsed}" aria-controls="${bodyId}"
+            title="${collapsed ? "Expand" : "Collapse"} ${esc(grp.label)}">
+          <svg class="rgchev" width="9" height="9" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="3" aria-hidden="true">
+            <path d="M9 6l6 6-6 6"/></svg>
+          <span class="rgn" title="${esc(grp.cwd || "sessions with no recorded folder")}">${esc(grp.label)}</span>
+          <span class="rgc">${grp.items.length}</span>
+        </button>
         ${grp.cwd ? `<button type="button" class="rgadd" data-newproj="${esc(grp.cwd)}"
              title="New session in ${esc(grp.cwd)}"
              aria-label="New session in ${esc(grp.label)}">
@@ -867,12 +898,12 @@ function renderRail(){
                 stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
          </button>` : ""}
       </div>
-      <ul class="rlist">${pinFirst(grp.items
+      <ul class="rlist" id="${bodyId}" ${collapsed ? "hidden" : ""}>${pinFirst(grp.items
         .sort((a,b)=>(b.updated_ms||b.created_ms||0)-(a.updated_ms||a.created_ms||0)))
         .map(s=>{
           const held = s.turns.some(t=>t.mode==="floor");
           const trail = held?'<span style="color:var(--warn)">held</span>':"";
-          return sessRow(s, trail);}).join("")}</ul>`).join("");
+          return sessRow(s, trail);}).join("")}</ul>`;}).join("");
     if (!groups.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       No sessions yet. Transcripts are read from <code>~/.claude/projects</code>.</p>`;
   } else {

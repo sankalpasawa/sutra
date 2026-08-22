@@ -61,8 +61,8 @@ def _strip_injected(text: str) -> str:
     return rest if sep and rest else t
 
 
-def list_sessions(limit: int = 100) -> List[dict]:
-    """Most-recent sessions across all projects.
+def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
+    """Most-recent sessions across all projects, newest first.
 
     THE TITLE HONOURS WHAT YOU SET IN CLAUDE. Claude appends two kinds of title
     record to the transcript -- `custom-title` (you renamed it) and `ai-title`
@@ -77,12 +77,22 @@ def list_sessions(limit: int = 100) -> List[dict]:
     that from json-parsing the big assistant/attachment lines -- measured ~165ms
     for 97MB across every transcript on disk, and this runs at boot and on a new
     session appearing, not on a timer.
+
+    PAGINATION. `offset` walks further back in the same mtime-sorted order, so the
+    panel can fetch history a page at a time as the operator scrolls rather than
+    parsing every transcript on disk at boot -- title parsing is the expensive
+    part and only the requested slice pays for it. The full glob+stat+sort is
+    cheap (stat-only) and is what makes offsets stable within one call; across
+    calls a session bumped to the top by a new write can shift the window by one,
+    which the client dedups by id. A short page (fewer than `limit`) is how the
+    client knows it has reached the end.
     """
     if not PROJECTS.exists():
         return []
     files = sorted(PROJECTS.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    offset = max(0, offset)
     out = []
-    for f in files[:limit]:
+    for f in files[offset:offset + limit]:
         first_msg, cwd, branch = "", "", ""
         custom_title = ai_title = ""
         try:

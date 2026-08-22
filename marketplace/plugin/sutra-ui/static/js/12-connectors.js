@@ -13,7 +13,7 @@
  * such rather than drawn as settled state.
  */
 
-S.conn = { providers: null, err: null, tx: null, txProvider: null, txErr: null,
+S.conn = { providers: null, sections: null, err: null, tx: null, txProvider: null, txErr: null,
            open: null, openProvider: null,
            repos: null, orgs: null, perms: null, events: null, busy: false };
 
@@ -88,7 +88,14 @@ async function loadConnectorDetail(provider, id){
   /* allSettled, not all: independent endpoints, and a permissions read that
      throws must not discard a perfectly good repository list. Repos and orgs
      are GitHub-shaped; other providers simply return nothing for them. */
-  const wants = provider === "github"
+  /* Which sections a provider HAS is a property of the provider, not of
+     whether its data has arrived yet. Deriving it from the value conflated
+     "Slack has no repositories" with "GitHub's repositories are still
+     loading", so the detail pane rendered empty for the seconds a live GitHub
+     call takes -- no spinner, no text, nothing. */
+  S.conn.sections = provider === "github"
+    ? { repos: true, orgs: true } : { repos: false, orgs: false };
+  const wants = S.conn.sections.repos
     ? ["/repositories", "/organizations", "/permissions", "/events?limit=20"]
     : [null, null, "/permissions", "/events?limit=20"];
   const settled = await Promise.allSettled(
@@ -239,8 +246,8 @@ function connDetailPane(){
     </div>
     <div class="connmeta">account ${esc(c.account.id)} · connected ${esc((c.created_at||"").slice(0,10))}</div>
     <div class="conndetail">
-      ${S.conn.repos !== null ? connRepos(provider, c) : ""}
-      ${S.conn.orgs !== null ? connOrgs() : ""}
+      ${(S.conn.sections||{}).repos ? connRepos(provider, c) : ""}
+      ${(S.conn.sections||{}).orgs ? connOrgs() : ""}
       ${connPerms()}
       ${connEvents()}
     </div>
@@ -275,7 +282,8 @@ function connRepos(provider, c){
 
 function connOrgs(){
   const d = S.conn.orgs;
-  if (!d || d._err) return "";
+  if (!d) return `<section><h4>Organizations</h4><p class="muted">Loading…</p></section>`;
+  if (d._err) return `<section><h4>Organizations</h4><p class="err">${esc(d._err)}</p></section>`;
   const rows = d.organizations || [], personal = d.personal_installation;
   if (!rows.length && !personal) return "";
   const note = { ok:"installed", not_installed:"Sutra not installed",
@@ -290,7 +298,7 @@ function connOrgs(){
 
 function connPerms(){
   const d = S.conn.perms;
-  if (!d) return "";
+  if (!d) return `<section><h4>Permissions</h4><p class="muted">Loading…</p></section>`;
   if (d._err) return `<section><h4>Permissions</h4><p class="err">${esc(d._err)}</p></section>`;
   const kinds = ["deny","ask","allow"];   /* evaluation order, so it reads as the engine reads it */
   const total = kinds.reduce((n,k)=>n+((d.rules||{})[k]||[]).length,0);
@@ -317,7 +325,8 @@ function connPerms(){
 
 function connEvents(){
   const d = S.conn.events;
-  if (!d || d._err) return "";
+  if (!d) return `<section><h4>Recent activity</h4><p class="muted">Loading…</p></section>`;
+  if (d._err) return "";
   const rows = d.events || [];
   if (!rows.length) return "";
   return `<section><h4>Recent activity <span class="muted">audited, hash-chained</span></h4>

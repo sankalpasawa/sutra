@@ -196,6 +196,8 @@ const EPILOGUE = `
      touched it. Removed with the tenant surface it belonged to. */
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
   renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S,
+  /* B1 cadence smoothing: the drain POLICY is pure arithmetic and lives here so
+     it can be tested without rAF, which never fires headlessly. */
   /* the per-turn chat surface: the projection is unit-tested in
      test_governance.js, and these two prove the projection actually REACHES
      the DOM -- a correct roster rendered into the wrong place still fails */
@@ -203,7 +205,7 @@ const EPILOGUE = `
   /* the delegated per-turn click handler + the fold, exported so the live-run
      regressions (dead controls mid-stream; invisible fold on non-real
      sessions) stay pinned */
-  turnControlClick, agentsFold, streamBodyHtml,
+  turnControlClick, agentsFold, streamBodyHtml, drainStep, _MAX_STEP, _reduceMotion,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
@@ -722,9 +724,12 @@ test("14e. an assistant block with no recorded prompt is marked orphan, not give
    validated, the expectation was simply stale. Naming the shape once means the
    next key added to loadLayout() fails this test only if it is genuinely
    unguarded, not merely new. */
+/* Mirrors loadLayout()'s defaults. Every new persisted layout key must be added
+   here too -- this is a whole-object deepEq, so a new default reads as a
+   corruption failure until the fixture catches up. */
 const LAYOUT_DEFAULTS = { paneCollapsed: {}, folds: {}, browseW: null, browseClosed: false,
                           railCollapsed: false, railSections: {}, railTab: "home",
-                          balanceTab: "today" };
+                          balanceTab: "today", sessCollapsed: {} };
 
 test("15. a corrupt/hostile stored layout degrades to defaults", () => {
   const prev = sandbox.localStorage._m["sutra.panel.layout"];
@@ -2624,13 +2629,105 @@ test("34a. a preamble-only streamed body renders NO caret", () => {
   assert.ok(!/class="caret"/.test(html), "the lone caret is back: " + html);
 });
 
-test("34b. the caret returns with real text, sitting after it", () => {
+test("34b. the caret returns with real text, INSIDE the last block", () => {
+  /* Position changed deliberately. The caret used to be concatenated after the
+     markdown, so the DOM read `<p>text</p><span class=caret>` -- <p> is a block,
+     so the caret sat on its own line, and the <p> losing :last-child brought
+     back 8px of margin above it. It now goes inside the last text-bearing
+     element, so it trails the final character wherever that is.
+     Matched on `class="caret` without the closing quote: the class list also
+     carries `blink` when the stream has stalled. */
   const html = T.streamBodyHtml({ response:
     "[INBOUND\u00b7QUERY \u00b7 TIMING:now \u00b7 CHANNEL:x \u00b7 REV:none \u00b7 RISK:low]\nHello." });
-  const ci = html.indexOf('class="caret"');
+  const ci = html.indexOf('class="caret');
   assert.ok(ci > -1, "caret must return once text exists");
   assert.ok(html.indexOf("Hello.") > -1 && html.indexOf("Hello.") < ci,
-    "caret marks where text is APPEARING — after it");
+    "caret marks where text is APPEARING — after the text");
+  const close = html.lastIndexOf("</p>");
+  assert.ok(close > -1 && ci < close,
+    "caret must sit INSIDE the paragraph, not orphaned after it: " + html);
+});
+
+test("34e. the caret lands inside a list item, not after the list", () => {
+  /* The end of a reply is often a bullet. Matching only the final tag would
+     put the caret after </ul>, i.e. back on its own line. */
+  const html = T.streamBodyHtml({ response: "- one\n- two" });
+  const ci = html.indexOf('class="caret');
+  const lastLi = html.lastIndexOf("</li>");
+  assert.ok(ci > -1, "caret missing on a list body");
+  assert.ok(lastLi > -1 && ci < lastLi, "caret escaped the list item: " + html);
+});
+
+test("34f. a settled turn carries no caret", () => {
+  /* turnResponse() gates on t.streaming. An earlier version of the inline-caret
+     change dropped that gate and left a caret on every finished reply. */
+  const html = T.turnResponse
+    ? T.turnResponse({ uid: "u1", response: "Done.", streaming: false })
+    : "";
+  if (html) assert.ok(!/class="caret/.test(html), "settled turn kept a caret: " + html);
+});
+
+test("34g. a partial table row is withheld until its line completes", () => {
+  /* A markdown table needs `|---|` on the NEXT line, so a header alone renders
+     as a paragraph and then re-parses into a bordered table one frame later --
+     a hard layout jump that shoves everything below it. */
+  if (!T.withholdPartialRow) return;
+  const w = T.withholdPartialRow;
+  assert.equal(w("intro\n| Col A | Col B"), "intro", "table header must be withheld");
+  assert.equal(w("| a |\n|---|\n| 1 "), "| a |\n|---|", "mid-table row must be withheld");
+  assert.equal(w("intro\n| Col A |\n"), "intro\n| Col A |\n", "a terminated line is kept");
+});
+
+test("34h. ordinary prose containing one pipe is NOT withheld", () => {
+  /* The first cut withheld any last line with a pipe, so "use a | b here"
+     vanished until its newline -- and if it was line one, the reply showed
+     nothing at all. Withholding must key on table SHAPE, not on the character. */
+  if (!T.withholdPartialRow) return;
+  const w = T.withholdPartialRow;
+  assert.equal(w("a pipe | inside prose"), "a pipe | inside prose");
+  assert.equal(w("just prose"), "just prose");
+});
+
+test("34i. only ONE scroll pin timer per session survives a re-render", () => {
+  /* render() replaces #panes wholesale, so a guard stashed on the .pb element
+     is orphaned every time and a fresh 100ms interval was created on EVERY
+     render -- overlapping 4s timers all writing scrollTop while patchStreaming
+     pinned on rAF. Two writers at different cadences is visible jitter. */
+  const raw = require("fs").readFileSync(
+    require("path").join(__dirname, "static/js/06-render.js"), "utf8");
+  /* Strip comments before asserting. Twice now a source-level test has failed
+     on the comment that DOCUMENTS the fix rather than on code -- a test that
+     cannot tell prose from program is worse than no test, because the failure
+     teaches you to loosen the assertion. */
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  assert.ok(!/pb\.__pinTimer\s*\)/.test(src),
+    "the pin guard is back on the element, where a re-render orphans it");
+  assert.ok(/_pinTimers\s*=\s*new Map\(\)/.test(src),
+    "pin timers must be keyed by session id, not stored on the node");
+  assert.ok(/_sessionIsStreaming\(sid\)/.test(src),
+    "the pin timer must yield while patchStreaming owns the pin");
+});
+
+test("34j. cadence drain always converges to the full text", () => {
+  /* The load-bearing correctness property: the smoothed view must reach 100%
+     of the accumulator, or the reply would render truncated until `done`
+     flushed it. Adversarial sizes, all must land exactly on full. */
+  if (!T.drainStep) return;
+  for (const full of [1, 3, 7, 40, 400, 5000, 100000]){
+    let shown = 0, frames = 0;
+    while (shown < full){ shown = T.drainStep(shown, full); frames++;
+      assert.ok(shown <= full, "drain overshot the text: " + shown + " > " + full);
+      assert.ok(frames < full + 50, "drain stalled — no convergence for full=" + full); }
+    assert.equal(shown, full, "drain did not reach the end for full=" + full);
+  }
+});
+
+test("34k. the drain makes progress every frame (step floor >= 1)", () => {
+  if (!T.drainStep) return;
+  assert.ok(T.drainStep(0, 1) === 1, "a 1-char reply must show in one step");
+  assert.ok(T.drainStep(99, 100) === 100, "the last char must not require many frames");
+  assert.ok(T.drainStep(0, 600) > T.drainStep(0, 60),
+    "a bigger backlog must drain faster — the rate is backlog-aware");
 });
 
 test("34c. empty and null responses produce no caret and do not throw", () => {
@@ -2654,6 +2751,58 @@ test("34d. patchStreaming uses the shared builder — no second caret writer", (
 
 /* Sequential async checks FIRST (they own S.upd* and must not interleave),
    then the parallel ones, then the summary. */
+/* ── the drain policy: properties, not thresholds ────────────────────────── */
+/* These deliberately do NOT skip when a symbol is missing: a silent
+   `if (!T.x) return` turns a deleted feature into a green test. */
+test("34j drainStep never exceeds what has been received", () => {
+  assert.equal(T.drainStep(0, 10), Math.min(10, T.drainStep(0, 10)), "sanity");
+  assert.equal(T.drainStep(9, 10), 10, "cannot pass full");
+  assert.equal(T.drainStep(50, 20), 20, "shown ahead of full clamps to full");
+});
+
+test("34k drainStep always makes progress, so the drain cannot stall", () => {
+  let shown = 0, guard = 0;
+  while (shown < 5000 && guard++ < 100000) {
+    const next = T.drainStep(shown, 5000);
+    assert.ok(next > shown, "step made no progress at shown=" + shown);
+    shown = next;
+  }
+  assert.equal(shown, 5000, "must converge");
+});
+
+test("34l no single frame may dump a lump, at any backlog size", () => {
+  /* The property that actually matters perceptually: not how EVEN the steps
+     are (the drain eases out by design, so a max/avg ratio means nothing), but
+     that no ONE frame paints a visible chunk. A purely proportional step passes
+     at 400 chars and fails badly at 40000 -- which is why all three are here. */
+  [400, 4000, 40000].forEach(total => {
+    let shown = 0, guard = 0, max = 0;
+    while (shown < total && guard++ < 200000) {
+      const next = T.drainStep(shown, total);
+      max = Math.max(max, next - shown);
+      shown = next;
+    }
+    assert.equal(shown, total, "must fully drain a " + total + "-char backlog");
+    assert.ok(max <= T._MAX_STEP,
+      "backlog " + total + ": one frame painted " + max + " chars, over the " +
+      T._MAX_STEP + "-char ceiling");
+  });
+});
+
+test("34m the live view lags while streaming but never after", () => {
+  /* streamBodyHtml is the single place the smoothed view is computed. If it
+     ever renders past _shown mid-stream the caret jumps ahead of the text; if
+     it still clips after streaming ends the final answer is truncated. */
+  const partial = T.streamBodyHtml({ streaming: true,  response: "abcdefghij", _shown: 3 });
+  const settled = T.streamBodyHtml({ streaming: false, response: "abcdefghij", _shown: 3 });
+  if (!T._reduceMotion()) {
+    assert.ok(/abc/.test(partial) && !/abcdefg/.test(partial),
+      "mid-stream must clip to _shown, got: " + partial);
+  }
+  assert.ok(/abcdefghij/.test(settled),
+    "a finished turn must show the whole response, got: " + settled);
+});
+
 updateStagingChecks()
   .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))
   .then(results => {

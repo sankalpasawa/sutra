@@ -578,8 +578,11 @@ def sessions_page() -> str:
 
 
 @app.get("/api/sessions")
-def api_sessions(limit: int = 100):
-    return sr.list_sessions(limit)
+def api_sessions(limit: int = 100, offset: int = 0):
+    """One page of sessions, newest first. `offset` walks back into history so
+    the panel can fetch more as it scrolls; a page shorter than `limit` means
+    the end. See session_reader.list_sessions for the offset-stability note."""
+    return sr.list_sessions(limit, offset)
 
 
 # ---------------------------------------------------------------- live sync ---
@@ -1138,6 +1141,38 @@ async def sse(source: str):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+async def _drain_to_newline(reader):
+    """Consume bytes up to and including the next newline. Returns False at EOF.
+
+    Naively calling readuntil(b"\n") after an over-limit readline does NOT
+    work: the offending bytes are still buffered, so readuntil raises
+    LimitOverrunError on the same data and consumes nothing. Swallowing that and
+    retrying is an infinite skip that silently drops every later frame -- which
+    is exactly what the first version of this fix did, caught by
+    test_stream_readline.py.
+
+    LimitOverrunError.consumed is the number of buffered bytes examined without
+    finding the separator; readexactly() on that count is what actually removes
+    them. Loop until a newline is reached, then the caller is back on a frame
+    boundary.
+    """
+    while True:
+        try:
+            await reader.readuntil(b"\n")
+            return True
+        except asyncio.LimitOverrunError as over:
+            try:
+                await reader.readexactly(over.consumed)
+            except asyncio.IncompleteReadError:
+                return False
+        except asyncio.IncompleteReadError:
+            return False
+        except ValueError:
+            # Defensive: some Python versions surface the limit breach as a
+            # bare ValueError from readuntil. Drop the whole buffer and stop.
+            return False
+
+
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     """Chat <-> background `claude -p`. One subprocess per message; --resume keeps
@@ -1417,6 +1452,17 @@ async def ws_chat(ws: WebSocket):
                         stdin=asyncio.subprocess.PIPE,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
+                        # 8 MiB, not asyncio's 64 KiB default. stream-json is ONE
+                        # JSON object per line, and a `user` frame carrying a
+                        # tool_result routinely exceeds 64 KiB -- any Read of a
+                        # sizeable file, any verbose Bash capture. At the default,
+                        # StreamReader.readline() raises
+                        #   ValueError: Separator is not found, and chunk exceed the limit
+                        # which propagated out of the read loop, past a handler that
+                        # catches only WebSocketDisconnect, and killed the socket and
+                        # the child mid-answer. Reproduced directly: a 200 KB line
+                        # raises at the default and reads clean at this limit.
+                        limit=8 * 1024 * 1024,
                         env=dict(os.environ),  # no ANTHROPIC_API_KEY -> subscription auth
                         # own process group, so an interrupt can signal the whole tree
                         start_new_session=True,
@@ -1452,7 +1498,23 @@ async def ws_chat(ws: WebSocket):
             # over stdout would simply never return.
             eof = False
             while True:
-                line = await proc.stdout.readline()
+                # readline() is INSIDE the guard. It was outside, so an
+                # over-limit line took the whole websocket down instead of
+                # costing one dropped frame. The limit above makes this rare;
+                # this makes it survivable, because "rare" is not "never" and
+                # the failure mode was a dead chat with no error shown.
+                try:
+                    line = await proc.stdout.readline()
+                except (ValueError, asyncio.LimitOverrunError) as exc:
+                    await ws.send_json({
+                        "type": "notice",
+                        "text": "one oversized frame from the agent was skipped. "
+                                "The answer continues.",
+                    })
+                    if not await _drain_to_newline(proc.stdout):
+                        eof = True
+                        break
+                    continue
                 if not line:
                     eof = True
                     break

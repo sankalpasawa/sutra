@@ -1131,10 +1131,16 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
      rewrites the innerHTML of exactly this node instead of letting render()
      rebuild #panes -- see scheduleStreamPatch(). The id must be stable for the
      life of the turn, which t.uid gives it (assigned once, never reused). */
-  const body = t.response
+  /* Emitted while STREAMING as well as when text exists. It used to require
+     t.response, so on the `start` frame there was no anchor -- the first token
+     of every reply missed patchStreaming(), fell through to a 100ms-debounced
+     full #panes rebuild, and paid the heaviest path in the app at the exact
+     moment the operator is watching for the answer to begin. An empty anchor
+     costs one div and `.md[data-resp]:empty` gives it no height. */
+  const body = (t.response || t.streaming)
     ? `<div class="md" data-resp="${esc(t.uid||"")}" style="margin-top:6px;color:var(--ink)">${
-        mdHtml(gvBody(t.response))}${
-        t.streaming ? `<span class="caret" style="color:var(--acc)">█</span>` : ""}</div>` : "";
+        t.response ? (t.streaming ? caretHtml(mdHtml(gvBody(t.response)), t)
+                                  : mdHtml(gvBody(t.response))) : ""}</div>` : "";
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
     ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>

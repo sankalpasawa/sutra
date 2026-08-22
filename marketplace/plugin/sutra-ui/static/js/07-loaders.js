@@ -853,6 +853,18 @@ document.querySelector(".rail").addEventListener("click", e=>{
   }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
+  /* Collapse/expand one project group. Persisted per cwd; default expanded, so
+     the store only ever holds the groups the operator explicitly closed. */
+  const sc = e.target.closest("[data-sesscollapse]");
+  if (sc){
+    const key = sc.dataset.sesscollapse;
+    S.ui.sessCollapsed = S.ui.sessCollapsed || {};
+    if (S.ui.sessCollapsed[key]) delete S.ui.sessCollapsed[key];
+    else S.ui.sessCollapsed[key] = true;
+    saveLayout();
+    render();
+    return;
+  }
   /* + on a project heading. Starts the session IN that folder rather than in the
      global workdir -- which is the only thing that makes a per-project + different
      from the one at the top of the rail. */

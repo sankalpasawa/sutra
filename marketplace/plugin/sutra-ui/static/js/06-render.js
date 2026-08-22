@@ -959,6 +959,16 @@ function _restoreBrowseScroll(prior){
    60-turn session at turn 1 makes the operator scroll to find what just
    happened. Scroll once per pane-open, then leave the scroll position alone so
    a re-render (a streaming token, a sim result) never yanks the view back. */
+/* One pin timer per session, surviving the #panes rebuild that orphans any
+   flag stored on the element itself. */
+const _pinTimers = new Map();
+
+function _sessionIsStreaming(sid){
+  const s = (S.sessions || []).find(x => x.id === sid);
+  if (s && (s.turns || []).some(t => t.streaming)) return true;
+  return ((S.sideTurns || {})[sid] || []).some(t => t.streaming);
+}
+
 function scrollNewSessionsToNewest(){
   const open = new Set(S.openPanes);
   [...S.userScrolled.keys()].forEach(id => { if (!open.has(id)) S.userScrolled.delete(id); });
@@ -985,20 +995,38 @@ function scrollNewSessionsToNewest(){
     document.querySelectorAll("#panes .pane[data-sess]").forEach(pane=>{
       const sid = pane.dataset.sess;
       const pb = pane.querySelector(".pb");
-      if (!pb || pb.__pinTimer) return;
+      if (!pb) return;
+      /* Keyed by SESSION, not stashed on the element. The old guard was
+         `if (pb.__pinTimer) return`, but render() replaces #panes wholesale --
+         so every .pb is a brand-new node with no flag, and a fresh 100ms
+         interval was created on EVERY render(). A turn with several structural
+         frames left overlapping 4s timers all writing scrollTop, while
+         patchStreaming was also pinning on rAF. Two writers at different
+         cadences on one element is visible micro-jitter, and a real scroll
+         gesture landing between them could be swallowed. */
+      const prev = _pinTimers.get(sid);
+      if (prev) clearInterval(prev);
       let lastH = -1, stable = 0, ticks = 0;
-      pb.__pinTimer = setInterval(()=>{
+      const timer = setInterval(()=>{
         ticks++;
-        const done = () => { clearInterval(pb.__pinTimer); pb.__pinTimer = null; };
+        const done = () => { clearInterval(timer); if (_pinTimers.get(sid) === timer) _pinTimers.delete(sid); };
         if (S.userScrolled.get(sid) || ticks > 40) return done();   // 4s ceiling
+        /* While a reply is streaming, patchStreaming() owns the pin. This timer
+           exists to settle the view after a RENDER, and running both makes them
+           fight. Yield rather than stop: the stream will end and the tail may
+           still need settling. */
+        if (_sessionIsStreaming(sid)) return;
         const h = pb.scrollHeight;
         if (h <= pb.clientHeight + 1) return;                       // nothing yet
         if (h === lastH){ if (++stable >= 3) done(); return; }       // settled
         lastH = h; stable = 0;
         pb.__pinning = true;
         pb.scrollTop = h;                                            // newest turn is last
-        setTimeout(()=>{ pb.__pinning = false; }, 0);
+        /* rAF, not setTimeout(0), so the release lands on the same boundary
+           patchStreaming uses -- the scroll listener reads one convention. */
+        requestAnimationFrame(()=>{ pb.__pinning = false; });
       }, 100);
+      _pinTimers.set(sid, timer);
     });
   });
 }

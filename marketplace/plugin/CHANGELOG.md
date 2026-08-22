@@ -1,6 +1,39 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-21
+**status**: active · **updated**: 2026-08-22
+
+## 2.115.2 (2026-08-22)
+
+**Streaming text now flows instead of arriving in lumps.**
+
+Two defects, both in how a reply is painted while it streams.
+
+The reply was re-rendered from scratch on every frame: the whole `<div>` had its
+`innerHTML` replaced, so every DOM node the operator might be interacting with
+was destroyed and rebuilt ~30 times a second. Selecting a sentence in a reply
+that was still being written was therefore impossible -- the selection was wiped
+by the next frame. The rendered output is now split at the last settled
+paragraph boundary; the settled prefix keeps its DOM identity untouched across
+frames and only the live tail is re-rendered. The split is adopted only when
+`html(prefix) + html(tail)` is byte-identical to `html(whole)`, so a clever
+splitter can never change what is displayed -- if the check fails it falls back
+to a whole render. Per-frame cost drops from O(reply) to O(paragraph).
+
+The character drain that decouples display cadence from network cadence had no
+upper bound on its per-frame step. The step was purely proportional to backlog,
+so a long reply arriving in few chunks -- or a window returning to the
+foreground after `requestAnimationFrame` had been paused -- painted hundreds of
+characters in a single frame, which is the exact lump the drain exists to
+remove. The step is now capped. Measured on a real 4850-character reply in the
+installed app: the network delivered 38 chunks averaging 127 characters (peak
+182), while the display advanced over 619 frames averaging 7.8 characters
+(peak 26, the cap). Before the cap, display cadence tracked arrival exactly.
+
+Also: a partial markdown table row is withheld until its line completes, so a
+header no longer renders as a paragraph and then re-parses into a bordered
+table one frame later; the caret sits inside the last block rather than after
+it, and stops blinking only when the stream stalls; and both behaviours are
+disabled under `prefers-reduced-motion`.
 
 ## 2.116.1 — 2026-08-21
 - Files: folder tree via vendored treeview plug (MIT, hash-pinned, only when editing is on); Files moves beside Knowledge; Knowledge results open their document in Files; hardened workspace writes (no clobber, no symlink escape, never wedges startup).

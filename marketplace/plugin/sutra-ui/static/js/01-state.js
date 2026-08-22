@@ -102,13 +102,16 @@ function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
                 railCollapsed:false, railSections:{}, railTab:"home",
-                balanceTab:"today" };
+                balanceTab:"today", sessCollapsed:{} };
   if (raw && typeof raw === "object"){
     if (raw.paneCollapsed && typeof raw.paneCollapsed === "object") out.paneCollapsed = raw.paneCollapsed;
     if (raw.folds && typeof raw.folds === "object") out.folds = raw.folds;
     if (typeof raw.railCollapsed === "boolean") out.railCollapsed = raw.railCollapsed;
     if (typeof raw.browseClosed === "boolean") out.browseClosed = raw.browseClosed;
     if (raw.railSections && typeof raw.railSections === "object") out.railSections = raw.railSections;
+    /* Collapsed session groups, keyed "<mode>:<groupkey>" so a group collapsed
+       under Project does not silently collapse a same-named bucket under Recent. */
+    if (raw.sessCollapsed && typeof raw.sessCollapsed === "object") out.sessCollapsed = raw.sessCollapsed;
     if (raw.railTab === "home" || raw.railTab === "code") out.railTab = raw.railTab;
     if (["today","week","month"].includes(raw.balanceTab)) out.balanceTab = raw.balanceTab;
     if (typeof raw.browseW === "number" && raw.browseW > 120) out.browseW = raw.browseW;
@@ -568,6 +571,17 @@ function scheduleRender(){
   _renderTimer = setTimeout(()=>{ _renderTimer = null; render(); }, 100);
 }
 
+/* Render on THIS tick, cancelling any pending debounce.
+   Reserved for `start`: exactly once per operator message, never a hot path.
+   The debounce exists so a token stream cannot rebuild #panes per character --
+   but it also delayed the turn appearing at all by up to 100ms, and the reply's
+   patch anchor is created by that render. Waiting for it meant the first token
+   had nothing to patch. */
+function renderNow(){
+  if (_renderTimer){ clearTimeout(_renderTimer); _renderTimer = null; }
+  render();
+}
+
 /* ── streaming: patch, do not rebuild ───────────────────────────────────────
    Tokens used to call scheduleRender(), and render() replaces #panes WHOLESALE
    via innerHTML. Ten times a second, for the whole reply, the entire transcript
@@ -606,6 +620,13 @@ function tickRunStrips(){
   live.forEach((t, uid)=>{
     const el = document.querySelector('[data-runstrip="' + uid + '"]');
     if (el) el.textContent = runPhrase(t);
+    /* Toggle the caret's blink in place rather than through a repaint: while
+       the stream is stalled no patch frame is coming, so nothing else would
+       ever update it. classList on an existing node costs nothing and cannot
+       restart the animation of anything else. */
+    const body = document.querySelector('[data-resp="' + uid + '"]');
+    const caret = body && body.querySelector(".caret");
+    if (caret) caret.classList.toggle("blink", caretIsStalled(t));
   });
 }
 function ensureRunTicker(){
@@ -618,6 +639,68 @@ function scheduleStreamPatch(uid){
   if (uid) _patchDirty.add(uid);
   if (_patchRaf) return;
   _patchRaf = requestAnimationFrame(()=>{ _patchRaf = null; patchStreaming(); });
+}
+
+/* ── cadence smoothing ───────────────────────────────────────────────────────
+   The network delivers tokens in lumps: a model can emit 40 deltas in 8ms and
+   then go quiet for 300ms. Painting each lump the instant it lands mirrors that
+   jitter -- a paragraph slams in, then a pause, then another slam. This decouples
+   DISPLAY rate from ARRIVAL rate: t.response is the full accumulator (unchanged,
+   and still the source of truth every other reader uses), t._shown is how much of
+   it is currently on screen, and a rAF loop advances _shown toward the end at a
+   steady, backlog-aware rate.
+
+   The rate self-tunes: a large backlog drains fast so display never falls far
+   behind a quick model, a trickle animates gently. On stream end the settled
+   render paints t.response in full, so nothing can be left undisplayed -- the
+   drain only ever lags the LIVE view, never the final answer.
+
+   Under prefers-reduced-motion the smoothing is bypassed entirely (see
+   streamBodyHtml): motion is exactly what that setting asks us not to add. */
+const _CATCHUP_FRAMES = 6;     // drain any backlog within ~6 frames (~100ms)
+const _MIN_STEP = 3;           // ...but never slower than this many chars/frame
+const _MAX_STEP = 26;          // ...and never faster: no frame may dump a lump
+let _drainRaf = null;
+
+function _reduceMotion(){
+  return typeof matchMedia === "function" &&
+         matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/* Pure so it can be tested: given how much is shown and how much exists, return
+   the next shown count. Advances by a backlog-aware step, never past `full`, and
+   -- because the step floor is >= 1 -- always makes progress, so the drain is
+   guaranteed to converge rather than stall a few chars short forever. */
+function drainStep(shown, full){
+  if (shown >= full) return full;
+  /* Floor AND ceiling. The step was purely proportional, so a large backlog --
+     a long reply arriving in few chunks, or a tab returning to the foreground
+     with rAF paused meanwhile -- painted hundreds of characters in one frame,
+     which is the exact lump the drain exists to remove. Capping it means a big
+     backlog takes longer than _CATCHUP_FRAMES to clear; bounded smoothness is
+     the better trade against hitting a deadline with a jolt. */
+  const step = Math.min(_MAX_STEP,
+                        Math.max(_MIN_STEP, Math.ceil((full - shown) / _CATCHUP_FRAMES)));
+  return Math.min(full, shown + step);
+}
+
+function drainTick(){
+  _drainRaf = null;
+  let moreToShow = false;
+  _streamingTurns().forEach((t, uid)=>{
+    const full = (t.response || "").length;
+    if (t._shown == null) t._shown = 0;
+    if (t._shown >= full) return;
+    t._shown = drainStep(t._shown, full);
+    if (t._shown < full) moreToShow = true;
+    scheduleStreamPatch(uid);
+  });
+  if (moreToShow) ensureDrain();
+}
+
+function ensureDrain(){
+  if (_drainRaf || typeof requestAnimationFrame === "undefined") return;
+  _drainRaf = requestAnimationFrame(drainTick);
 }
 
 /* Every turn currently streaming, by uid, across main and side channels. */
@@ -697,10 +780,127 @@ function patchTurn(t){
    own line reads as a glitch (founder, 2026-08-19). The thinking loader below
    the body is the aliveness signal until real text exists. turnResponse()
    applies the same gate at render time; both writers, one rule. */
+/* A markdown table needs a `|---|` separator on the line AFTER the header, so
+   while only the header has arrived it renders as a paragraph and then re-parses
+   into a bordered table one frame later -- a hard layout jump that shoves
+   everything below it. Withholding the final INCOMPLETE line when it contains a
+   pipe costs a few hundred milliseconds of delay on that one line and removes
+   the jump entirely.
+
+   Only the last line, only while it is unterminated, and only when a pipe is
+   present: everything else streams exactly as before. */
+function withholdPartialRow(text){
+  if (!text || text.endsWith("\n")) return text;
+  const nl = text.lastIndexOf("\n");
+  const tail = nl === -1 ? text : text.slice(nl + 1);
+  /* Table-SHAPED, not merely pipe-containing. A first cut withheld any last
+     line with a pipe in it, which meant a sentence like "use a | b here"
+     vanished until its newline arrived -- and if it was the first line, the
+     reply showed nothing at all for that whole time. A real table row either
+     opens with a pipe or carries at least two of them. */
+  const trimmed = tail.replace(/^\s+/, "");
+  const pipes = (tail.match(/\|/g) || []).length;
+  const looksTabular = trimmed.charAt(0) === "|" || pipes >= 2;
+  if (!looksTabular) return text;
+  return nl === -1 ? "" : text.slice(0, nl);
+}
+
 function streamBodyHtml(t){
-  const stripped = (window.gvBody || function(x){ return x; })((t && t.response) || "");
-  return mdHtml(stripped) +
-    (stripped ? '<span class="caret" style="color:var(--acc)">█</span>' : "");
+  /* The smoothed view shows only t._shown characters; the reduced-motion path
+     and the settled path show everything. `_shown == null` (not yet draining)
+     also means show-all, so the very first patch is never blank. */
+  let full = (t && t.response) || "";
+  if (t && t.streaming && t._shown != null && !_reduceMotion())
+    full = full.slice(0, t._shown);
+  const raw = withholdPartialRow(full);
+  const stripped = (window.gvBody || function(x){ return x; })(raw);
+  return stripped ? caretHtml(mdHtml(stripped), t) : mdHtml(stripped);
+}
+
+/* ── the caret ───────────────────────────────────────────────────────────
+   It used to be concatenated AFTER the markdown string, so the DOM read
+   `<p class="md-p">text</p><span class="caret">`. Three consequences: <p> is
+   display:block so the caret sat on its own line; the <p> stopped being
+   :last-child so `.md .md-p:last-child{margin-bottom:0}` lapsed and 8px of
+   margin reappeared above it; and the whole thing was a NEW element every
+   frame, so `animation:sutraBlink` restarted at t=0 continuously and the
+   caret never actually blinked -- it was solid while writing and only began
+   blinking once the stream stopped, the exact inverse of the signal intended.
+
+   Now it is injected INSIDE the last text-bearing element, so it trails the
+   final character wherever that is -- a paragraph, a list item, a table cell.
+   The blink is applied only when tokens have STALLED: while text is flowing
+   the caret is moving anyway and a blink on top of that is noise. */
+const CARET_STALL_MS = 420;
+
+function caretIsStalled(t){
+  return !t || !t._lastTok || (Date.now() - t._lastTok) > CARET_STALL_MS;
+}
+
+function caretHtml(html, t){
+  const cls = "caret" + (caretIsStalled(t) ? " blink" : "");
+  const span = '<span class="' + cls + '" style="color:var(--acc)">\u2588</span>';
+  /* Land the caret inside the INNERMOST text-bearing element at the end of the
+     output. The last characters of a reply are often inside a list item or a
+     code block, so the string ends `</li></ul>` or `</code></pre>` -- matching
+     only the final tag would put the caret after the whole list, back on its
+     own line, which is the bug this replaces. So: match the innermost close,
+     then allow any number of container closes after it. */
+  const m = html.match(
+    /<\/(p|li|td|th|h[1-6]|code|blockquote)>(?:\s*<\/(?:ul|ol|li|table|tbody|thead|tr|pre|blockquote|div)>)*\s*$/i);
+  if (!m) return html + span;          /* bare text: append, as before */
+  return html.slice(0, m.index) + span + html.slice(m.index);
+}
+
+/* ── B2: settled prefix + live tail ─────────────────────────────────────────
+   patchStreaming() used to assign the whole reply's HTML on every frame, which
+   is O(reply) per frame and O(n^2) over a reply -- and, worse than the cost, it
+   destroyed every node each time. Text selection inside a streaming answer was
+   wiped on the next token, and any CSS animation on settled content restarted
+   forever.
+
+   The fix is the vanilla equivalent of per-block memoization: split the reply
+   at the last SAFE blank-line boundary, render the prefix once and leave its
+   DOM alone, and re-render only the growing tail each frame.
+
+   "Safe" is verified, not assumed. Splitting markdown at a blank line can
+   change the output -- a blank line inside a list makes it loose rather than
+   tight, and a fence must never be cut. So a candidate boundary is ADOPTED only
+   when mdHtml(prefix) + mdHtml(tail) is byte-identical to mdHtml(whole). That
+   check costs one full render per boundary crossed, not per token, and if it
+   ever disagrees the frame falls back to whole-rendering and tries again at the
+   next boundary. Correctness does not depend on my splitter being clever. */
+
+function _lastSafeBoundary(src){
+  /* Index just past the last blank line that is not inside a fence. */
+  let fence = null, idx = -1, pos = 0;
+  const lines = src.split("\n");
+  for (let i = 0; i < lines.length; i++){
+    const ln = lines[i];
+    const f = ln.match(/^\s{0,3}(```+|~~~+)/);
+    if (fence){ if (f && ln.trim().indexOf(fence) === 0) fence = null; }
+    else if (f){ fence = f[1]; }
+    else if (ln.trim() === "" && i > 0){ idx = pos + ln.length + 1; }
+    pos += ln.length + 1;
+  }
+  return fence ? -1 : idx;          /* never split with a fence still open */
+}
+
+function splitSettled(src, cache){
+  /* Returns {prefix, tail, prefixHtml} or null when no safe split exists. */
+  const at = _lastSafeBoundary(src);
+  if (at <= 0 || at >= src.length) return null;
+  const prefix = src.slice(0, at);
+  const tail = src.slice(at);
+  if (!prefix.trim() || !tail.trim()) return null;
+
+  if (cache && cache.prefix === prefix) return { prefix, tail, prefixHtml: cache.prefixHtml };
+
+  const prefixHtml = mdHtml(prefix);
+  /* The verification. If splitting here would render differently from not
+     splitting, do not split here. */
+  if (prefixHtml + mdHtml(tail) !== mdHtml(src)) return null;
+  return { prefix, tail, prefixHtml };
 }
 
 function patchStreaming(){
@@ -716,18 +916,53 @@ function patchStreaming(){
       missed = true;
       return;
     }
-    const html = streamBodyHtml(t);
-    /* Unchanged output is not repainted. Rewriting identical innerHTML every
-       frame tears the DOM down just to rebuild the same pixels -- visible churn
-       on long replies. The cache lives ON the node, so a full render() rebuild
-       discards it with the node and the first patch after always paints. */
-    if (el.__sutraLastHtml === html) return;
-    el.__sutraLastHtml = html;
+    /* Try the settled/live split first. When it holds, the prefix's DOM is
+       never touched again -- selection inside it survives, and the per-frame
+       cost is the size of the current paragraph rather than the whole reply. */
+    /* Same smoothed view streamBodyHtml() computes -- the split path must not
+       render ahead of the whole-render path or the tail would jump. */
+    let _full = (t && t.response) || "";
+    if (t && t.streaming && t._shown != null && !_reduceMotion())
+      _full = _full.slice(0, t._shown);
+    const raw = withholdPartialRow(_full);
+    const stripped = (window.gvBody || function(x){ return x; })(raw);
+    const split = stripped ? splitSettled(stripped, el.__sutraSplit) : null;
+
+    if (split){
+      el.__sutraSplit = { prefix: split.prefix, prefixHtml: split.prefixHtml };
+      let head = el.firstElementChild, live = el.lastElementChild;
+      if (!head || head === live || !el.__sutraSplitDom){
+        el.innerHTML = '<div class="md-settled"></div><div class="md-live"></div>';
+        el.__sutraSplitDom = true;
+        el.__sutraPrefixHtml = null;
+        head = el.firstElementChild; live = el.lastElementChild;
+      }
+      if (el.__sutraPrefixHtml !== split.prefixHtml){
+        head.innerHTML = split.prefixHtml;          /* only when a block settles */
+        el.__sutraPrefixHtml = split.prefixHtml;
+      }
+      const tailHtml = caretHtml(mdHtml(split.tail), t);
+      if (el.__sutraTailHtml !== tailHtml){
+        live.innerHTML = tailHtml;
+        el.__sutraTailHtml = tailHtml;
+      } else return;                                 /* nothing changed at all */
+      el.__sutraLastHtml = null;
+    } else {
+      const html = streamBodyHtml(t);
+      /* Unchanged output is not repainted. Rewriting identical innerHTML every
+         frame tears the DOM down just to rebuild the same pixels -- visible
+         churn on long replies. The cache lives ON the node, so a full render()
+         rebuild discards it with the node and the first patch after always
+         paints. */
+      if (el.__sutraLastHtml === html) return;
+      el.__sutraLastHtml = html;
+      el.__sutraSplitDom = false;
+      el.innerHTML = html;
+    }
     const pane = el.closest(".pane");
     const pb = pane && pane.querySelector(".pb");
     const sid = pane && pane.dataset.sess;
     const pin = pb && !S.userScrolled.get(sid);
-    el.innerHTML = html;
     /* Only follow the tail when the operator has not scrolled away. __pinning
        marks it as OUR scroll so the listener does not read it as intent. */
     if (pin){
@@ -882,7 +1117,17 @@ function claudeChannel(s, side){
       /* the server emits exactly one "start" per message, in order — that is the
          demarcation that binds the next token stream to the right queued turn */
       ch.turn = ch.pending.shift() || ch.turn;
-      if (ch.turn){ ch.turn.streaming = true; ch.last = ch.turn; }
+      if (ch.turn){
+        ch.turn.streaming = true; ch.last = ch.turn;
+        ch.turn._lastTok = Date.now();
+        ch.turn._shown = 0;
+        /* Synchronously, not on the 100ms debounce: this render is what creates
+           the reply's [data-resp] patch anchor, and until it exists the first
+           token has nothing to patch and falls back to a full rebuild. Once per
+           operator message. */
+        renderNow();
+        return;
+      }
     } else if (f.type === "provider"){
       /* the server states, per connect, which binary it resolved and which
          permission mode it will run under -- including whether that mode
@@ -914,6 +1159,15 @@ function claudeChannel(s, side){
     } else if (f.type === "token"){
       if (ch.turn){
         ch.turn.response = (ch.turn.response || "") + f.text;
+        /* When the last character actually arrived. The caret blinks only once
+           this goes stale -- see caretHtml(). */
+        ch.turn._lastTok = Date.now();
+        /* Feed the drain rather than painting this lump now. The drain advances
+           the visible prefix at a steady rate; see ensureDrain(). Reduced motion
+           shows everything immediately, so keep _shown pinned to the full length
+           in that case so no prefix is ever withheld. */
+        if (_reduceMotion()) ch.turn._shown = ch.turn.response.length;
+        else { if (ch.turn._shown == null) ch.turn._shown = 0; ensureDrain(); }
         /* Prose is arriving, so this is no longer the thinking phase. `thinking`
            was set by the server's thinking frame and cleared only on tool-start,
            done, stopped, retry and error -- never on a token. On an extended-
@@ -1009,6 +1263,7 @@ function claudeChannel(s, side){
       if (ch.turn){
         ch.turn.toolRuns = [];
         ch.turn.response = "";        /* the accumulator the token frames append to */
+        ch.turn._shown = 0;
         ch.turn.thinking = false;
         ch.turn.retried = f.detail || "restarted as a new thread";
       }
