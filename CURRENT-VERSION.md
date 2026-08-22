@@ -1,13 +1,19 @@
 # Sutra — Current Version
 
-## v2.115.2 (2026-08-22, HEAD)
+## v2.117.0 (2026-08-22, HEAD)
 
-Streaming text flows instead of arriving in lumps. The reply is no longer
-re-rendered from scratch each frame -- the settled paragraphs keep their DOM
-identity, so a selection made mid-stream survives -- and the per-frame
-character step is capped, so a bursty network no longer paints a lump. On a
-real 4850-char reply: 38 network chunks averaging 127 chars became 619 display
-frames averaging 7.8.
+Carries the 2.116.x line (Teamsutra rewritten to read like a person wrote it;
+Files v1.1 with folder tree + Knowledge bridge) plus three fixes:
+
+- **Streaming text flows instead of arriving in lumps.** The reply is no longer
+  re-rendered from scratch each frame -- settled paragraphs keep their DOM
+  identity, so a selection made mid-stream survives -- and the per-frame
+  character step is capped, so a bursty network no longer paints a lump. On a
+  real 4850-char reply: 38 network chunks averaging 127 chars became 619
+  display frames averaging 7.8.
+- **"Not now" on the update banner dismisses it**, keyed to the staged version.
+- **Connector lookups scoped by provider**, closing a cross-provider read /
+  validate / disconnect path that could strand a live token in the keychain.
 
 ## v2.115.1 (2026-08-21)
 

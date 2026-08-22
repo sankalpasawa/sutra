@@ -2,7 +2,10 @@
 
 **status**: active · **updated**: 2026-08-22
 
-## 2.115.2 (2026-08-22)
+## 2.117.0 (2026-08-22)
+
+Rolls up the streaming, update-banner and connector-scoping work onto the
+2.116.x line (Teamsutra + Files v1.1, documented below).
 
 **Streaming text now flows instead of arriving in lumps.**
 
@@ -34,6 +37,24 @@ header no longer renders as a paragraph and then re-parses into a bordered
 table one frame later; the caret sits inside the last block rather than after
 it, and stops blinking only when the stream stalls; and both behaviours are
 disabled under `prefers-reduced-motion`.
+
+**"Not now" on the update banner now actually dismisses it.** Deferring set a
+flag and re-rendered into a branch with no buttons, so the countdown became a
+permanent notice until the app quit. Dismissal is keyed to the staged version,
+so waving away one build does not silence the next; a failed or already-armed
+install always shows.
+
+**Connector lookups are scoped by provider, not just operator.** A connector
+belonging to one provider could be read, validated and DISCONNECTED through
+another provider's path; disconnecting a Slack connector through the GitHub
+service left the Slack user token alive in the keychain after reporting the
+connection gone. `get()` now scopes by provider at every service call site.
+Also: the pagination cursor is validated before the not-installed early return,
+and the loopback OAuth handler signals completion before writing its response
+(fixes an intermittent AuthorizationPending race).
+
+Housekeeping: a byte-identical duplicate of the Teamsutra board CSS block was
+collapsed and given the section banner every other block already had.
 
 ## 2.116.1 — 2026-08-21
 - Files: folder tree via vendored treeview plug (MIT, hash-pinned, only when editing is on); Files moves beside Knowledge; Knowledge results open their document in Files; hardened workspace writes (no clobber, no symlink escape, never wedges startup).
