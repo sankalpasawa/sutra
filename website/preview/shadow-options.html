@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow — overlay design options</title>
+<link rel="stylesheet" href="tokens.css">
+<!-- 2026-08-22: founder asked for options that catch the eye yet stay minimal.
+     4 treatments x 3 use cases on mini app windows; same tokens; codex APPROVE with tweaks folded
+     (one slow entrance, no pulsing; counts never colour-only; beside-you needs collision rules). -->
+<style>
+  body{background:#ECE8E0;margin:0;padding:40px 24px 80px;font-family:var(--font-body);color:var(--ink)}
+  h1{font-family:var(--font-display);font-size:28px;font-weight:600;margin:0 0 4px}
+  .sub{font-size:12.5px;color:var(--stone);margin-bottom:28px;max-width:900px}
+  .sec{margin:0 auto 34px;max-width:1320px}
+  .sec h2{font-family:var(--font-display);font-size:19px;font-weight:500;margin:0 0 2px}
+  .sec h2 small{font-family:var(--font-body);font-size:11px;color:var(--stone);margin-left:8px;font-weight:400}
+  .sec p{font-size:12.5px;color:var(--stone);margin:0 0 12px;max-width:900px}
+  .row{display:flex;gap:18px;flex-wrap:wrap}
+  .cell{width:400px} .cell .lab{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--stone);margin:6px 0 0}
+  .mini{width:400px;height:240px;background:var(--bg);border:1px solid #ddd8cf;border-radius:10px;box-shadow:0 10px 28px rgba(12,10,8,.12);position:relative;overflow:hidden;display:flex}
+  .mrail{width:56px;background:var(--panel);border-right:1px solid var(--line);padding:24px 6px 0} .mrail i{display:block;height:6px;border-radius:3px;background:var(--line);margin:7px 2px} .mrail i.on{background:var(--cream)}
+  .mpage{flex:1;padding:20px 14px} .mpage b{display:block;width:38%;height:8px;border-radius:4px;background:#d8d3ca;margin-bottom:10px} .mpage i{display:block;height:6px;border-radius:3px;background:var(--line);margin:6px 0;width:85%}
+  .comp{position:absolute;left:68px;right:14px;bottom:12px;height:24px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
+  /* A quiet corner */
+  .dot{position:absolute;right:12px;bottom:46px;width:24px;height:24px;border-radius:50%;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-hover);display:flex;align-items:center;justify-content:center} .dot i{width:8px;height:8px;border-radius:50%;background:var(--gold);display:block} .dot.calm i{background:var(--faint)}
+  .pill{position:absolute;right:42px;bottom:46px;max-width:250px;background:var(--cream);border-left:2px solid var(--gold);border-radius:0 9px 9px 9px;padding:6px 9px;font-size:10.5px;line-height:1.4;box-shadow:var(--shadow-rest)} .pill .a{color:var(--decide);font-weight:700;margin-top:3px;font-size:10px} .pill .a span{color:var(--stone);font-weight:400;margin-left:8px}
+  .pill.low{border-left-color:var(--stone)}
+  /* B sunrise */
+  .glow{position:absolute;right:-70px;bottom:-70px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(184,148,95,.42) 0%,rgba(184,148,95,0) 62%)}
+  .glow.rose{background:radial-gradient(circle,rgba(139,74,107,.38) 0%,rgba(139,74,107,0) 62%)}
+  .glow.low{background:radial-gradient(circle,rgba(107,101,96,.22) 0%,rgba(107,101,96,0) 62%)}
+  .gtext{position:absolute;right:14px;bottom:46px;max-width:230px;font-size:10.5px;line-height:1.4;background:rgba(255,255,255,.9);border-radius:9px;padding:6px 9px;box-shadow:var(--shadow-rest)} .gtext .a{color:var(--decide);font-weight:700;margin-top:3px;font-size:10px} .gtext .a span{color:var(--stone);font-weight:400;margin-left:8px}
+  /* C peek */
+  .peek{position:absolute;right:0;top:96px;width:6px;height:40px;background:var(--gold);border-radius:4px 0 0 4px} .peek.low{background:var(--stone)} .peek.calm{background:var(--line)}
+  .peekc{position:absolute;right:10px;top:108px;font-size:10px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:0 6px}
+  .peekout{position:absolute;right:0;top:92px;width:230px;background:var(--cream);border:1px solid var(--line);border-right:0;border-radius:9px 0 0 9px;padding:7px 9px;font-size:10.5px;line-height:1.4;box-shadow:var(--shadow-hover)} .peekout .a{color:var(--decide);font-weight:700;margin-top:3px;font-size:10px} .peekout .a span{color:var(--stone);font-weight:400;margin-left:8px}
+  /* D beside you */
+  .near{position:absolute;left:68px;bottom:42px;max-width:260px;background:var(--cream);border-left:2px solid var(--gold);border-radius:0 9px 9px 9px;padding:6px 9px;font-size:10.5px;line-height:1.4;box-shadow:var(--shadow-rest)} .near:before{content:"";position:absolute;left:14px;bottom:-6px;border:6px solid transparent;border-top-color:var(--cream);border-bottom:0}
+  .near.low{border-left-color:var(--stone)} .near .a{color:var(--decide);font-weight:700;margin-top:3px;font-size:10px} .near .a span{color:var(--stone);font-weight:400;margin-left:8px}
+  .sess{position:absolute;left:68px;top:20px;width:120px;height:28px;border:1px solid var(--gold);border-radius:8px;background:#fdfaf4}
+  .nearS{position:absolute;left:196px;top:18px;max-width:180px;background:var(--cream);border-left:2px solid var(--gold);border-radius:0 9px 9px 9px;padding:6px 9px;font-size:10.5px;line-height:1.4;box-shadow:var(--shadow-rest)} .nearS .a{color:var(--decide);font-weight:700;margin-top:3px;font-size:10px} .nearS .a span{color:var(--stone);font-weight:400;margin-left:8px}
+  table{border-collapse:collapse;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden} th,td{padding:8px 12px;border-top:1px solid var(--line);text-align:left;vertical-align:top} th{background:var(--cream);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--stone);border-top:0}
+  .rec{max-width:1320px;margin:0 auto;background:var(--panel);border:1px solid var(--gold);border-radius:12px;padding:16px 18px;font-size:13px;line-height:1.55} .rec b{font-family:var(--font-display);font-size:17px;display:block;margin-bottom:6px;font-weight:600}
+  .foot{max-width:1320px;margin:30px auto 0;font-size:11.5px;color:var(--faint)}
+</style>
+</head>
+<body>
+<h1>Shadow — how it catches your eye</h1>
+<p class="sub">Four ways the overlay can ask for attention, each shown in three moments: <b>needs you</b> (a session dropped), <b>low</b> (a reply finished), and <b>calm</b> (nothing to say). Same app, same tokens. Rule for all four: one slow entrance, never a pulse.</p>
+
+<!-- A -->
+<section class="sec">
+  <h2>A · Quiet corner <small>the current design · MVP</small></h2>
+  <p>A small dot lives above the composer. When it has something, one line appears beside it and leaves on its own.</p>
+  <div class="row">
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="pill">dayflow lost its connection. Pick it back up?<div class="a">Pick it up<span>Not now</span></div></div><div class="dot"><i></i></div></div><div class="lab">needs you</div></div>
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="pill low">paisa finished — 3 differences. Read it?<div class="a">Read it<span>Later</span></div></div><div class="dot"><i></i></div></div><div class="lab">low</div></div>
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="dot calm"><i></i></div></div><div class="lab">calm — a dot, nothing else</div></div>
+  </div>
+</section>
+
+<!-- B -->
+<section class="sec">
+  <h2>B · Sunrise <small>light instead of shape</small></h2>
+  <p>Nothing is there when it&rsquo;s calm. When something needs you, a soft light rises from the corner and the line floats in it. Warmth says how urgent: gold for low, rose for needs-you. It fades out in 12 seconds.</p>
+  <div class="row">
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="glow rose"></div><div class="gtext">dayflow lost its connection. Pick it back up?<div class="a">Pick it up<span>Not now</span></div></div></div><div class="lab">needs you — rose light</div></div>
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="glow"></div><div class="gtext">paisa finished — 3 differences. Read it?<div class="a">Read it<span>Later</span></div></div></div><div class="lab">low — gold light</div></div>
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div></div><div class="lab">calm — nothing at all</div></div>
+  </div>
+</section>
+
+<!-- C -->
+<section class="sec">
+  <h2>C · Peek <small>near-zero footprint</small></h2>
+  <p>A thin tab on the window edge with a count. Hover, click or &#8984;&#8679;S slides the line out. Smallest possible presence; easiest to miss.</p>
+  <div class="row">
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="peekout">dayflow lost its connection. Pick it back up?<div class="a">Pick it up<span>Not now</span></div></div></div><div class="lab">needs you — slid out</div></div>
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="peek low"></div><div class="peekc">1</div></div><div class="lab">low — tab + count</div></div>
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="peek calm"></div></div><div class="lab">calm — a hairline</div></div>
+  </div>
+</section>
+
+<!-- D -->
+<section class="sec">
+  <h2>D · Beside you <small>needs Focus · M1</small></h2>
+  <p>The dot stays in the corner, but the line appears next to where you are: under the composer while you type, beside the session card you&rsquo;re looking at. Never over typed text, cursor, menus or a selection.</p>
+  <div class="row">
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="near">dayflow lost its connection. Pick it back up?<div class="a">Pick it up<span>Not now</span></div></div><div class="dot"><i></i></div></div><div class="lab">needs you — under the composer</div></div>
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><div class="sess"></div><b style="margin-top:40px"></b><i></i><i></i></div><div class="comp"></div><div class="nearS">paisa finished — 3 differences. Read it?<div class="a">Read it<span>Later</span></div></div><div class="dot"><i></i></div></div><div class="lab">low — beside the session you&rsquo;re on</div></div>
+    <div class="cell"><div class="mini"><div class="mrail"><i class="on"></i><i></i><i></i><i></i></div><div class="mpage"><b></b><i></i><i></i><i></i></div><div class="comp"></div><div class="dot calm"><i></i></div></div><div class="lab">calm — a dot, nothing else</div></div>
+  </div>
+</section>
+
+<section class="sec">
+  <h2>Compared</h2>
+  <table>
+    <tr><th>treatment</th><th>catches the eye</th><th>noise when calm</th><th>risk</th><th>fits</th></tr>
+    <tr><td>A · Quiet corner</td><td>medium</td><td>tiny dot</td><td>pill can collide with scrollbar / bottom UI — safe-area rule</td><td>MVP</td></tr>
+    <tr><td>B · Sunrise</td><td>high, gently</td><td>none</td><td>gold on cream contrast; must never loop or breathe</td><td>MVP add-on</td></tr>
+    <tr><td>C · Peek</td><td>low</td><td>hairline</td><td>easy to miss; count must be text, not colour</td><td>founders who want zero presence</td></tr>
+    <tr><td>D · Beside you</td><td>highest</td><td>tiny dot</td><td>highest occlusion; needs collision rules + trustworthy focus</td><td>M1</td></tr>
+  </table>
+</section>
+
+<div class="rec"><b>Recommendation: A when calm, B when it needs you, D once it knows where you are.</b>
+A quiet dot is the anchor you can always find. The sunrise is how it catches your eye — light, not shape, one slow entrance, gone in 12 seconds, warmer when it matters more. When Focus ships, the same line moves beside your work instead of the corner. Peek stays as a setting for days you want nothing visible.</div>
+
+<p class="foot">Shadow overlay options &middot; 2026-08-22 &middot; journey mock: shadow.html &middot; spec: holding/plans/shadow/DESIGN-SYSTEM.md</p>
+</body>
+</html>
