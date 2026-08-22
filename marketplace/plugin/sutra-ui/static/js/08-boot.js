@@ -214,6 +214,13 @@ if (typeof document !== "undefined" && document.addEventListener){
      them. Registered once; the per-render bindings for these five are gone,
      so a click can never fire twice. */
   document.addEventListener("click", turnControlClick);
+  /* ⋯ pane menu: click-away. The chip and the popover are not "away" -- the
+     chip's own handler owns the toggle, so this must not re-close it. */
+  document.addEventListener("click", e=>{
+    if (!S.paneMenu) return;
+    if (e.target.closest("[data-panemenu]") || e.target.closest(".upop")) return;
+    S.paneMenu = null; render();
+  });
   document.addEventListener("click", e=>{
     if (!S.usagePop) return;
     /* The chip's own handler owns the toggle. Ignoring it here stops the pair
@@ -228,6 +235,14 @@ if (typeof document !== "undefined" && document.addEventListener){
        PR form, and the folder editor -- so the only exit was finding the right
        button with the mouse. */
     if (e.key === "Escape"){
+      /* the ⋯ pane menu is the most specific overlay: it closes FIRST, and
+         focus goes back to the chip that opened it (codex P2) */
+      if (S.paneMenu){
+        const sid = S.paneMenu; S.paneMenu = null; render();
+        const chip = document.querySelector('[data-panemenu="' + sid + '"]');
+        if (chip && chip.focus) chip.focus();
+        return;
+      }
       if (S.palette){ S.palette = null; render(); return; }
       if (S.permConfirm){ S.permConfirm = null; render(); return; }
       if (S.prForm){ S.prForm = null; render(); return; }

@@ -117,6 +117,22 @@ const state = await page.evaluate(() => {
     /* the unfenced-block leak this lane found (2026-08-19): a bare INPUT:/TYPE:
        run must strip in the RUNNING app, and only the answer survives */
     r.unfencedStripped = gvBody("Answer.\nINPUT: x\nTYPE: task") === "Answer.";
+    /* chat-surface chrome (founder 2026-08-18, finished 2026-08-22): in the
+       RUNNING shell a session pane hides its header while expanded, carries the
+       ⋯ chip first in the composer, and renders the 7-row menu on open */
+    const pane = document.querySelector(".pane[data-sess]");
+    if (pane){
+      const ph = pane.querySelector(":scope > .ph");
+      r.chromeHeaderHidden = !!ph && getComputedStyle(ph).display === "none";
+      const pc = pane.querySelector(":scope > .pc");
+      const chip = pc && pc.querySelector("[data-panemenu]");
+      r.chromeChipFirst = !!(chip && pc.querySelector("button") === chip);
+      const sid = pane.dataset.sess;
+      S.paneMenu = sid;
+      const menu = paneMenuHtml(S.sessions.find(x => x.id === sid) || { id: sid, title: "" });
+      S.paneMenu = null;
+      r.chromeMenuKeys = [...menu.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]).join(",");
+    } else { r.chromeHeaderHidden = r.chromeChipFirst = "no session pane open"; r.chromeMenuKeys = ""; }
   } catch (e) { r.errors.push(String(e)); }
   return r;
 });
@@ -131,6 +147,10 @@ check("roster sits inside the patch anchor", state.rosterInsideAnchor === true);
 check("control characters stripped from wire text", state.controlCharsStripped === true);
 check("H-Sutra header stripped from bodies", state.headerStripped === true);
 check("unfenced governance run stripped from bodies", state.unfencedStripped === true);
+check("chrome: session pane header hidden while expanded", state.chromeHeaderHidden === true, String(state.chromeHeaderHidden));
+check("chrome: ⋯ chip is the first composer control", state.chromeChipFirst === true, String(state.chromeChipFirst));
+check("chrome: the pane menu carries the 7 relocated controls in order",
+  state.chromeMenuKeys === "Folder,Permissions,Model,Usage,Routing,Fold,Close", state.chromeMenuKeys);
 check("roster button carries the token ink, never UA buttontext",
   state.rowColor === state.inkColor && state.rowColor !== "no row mounted",
   "row=" + state.rowColor + " ink=" + state.inkColor);

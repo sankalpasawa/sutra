@@ -23,14 +23,29 @@ lane-1 backing is screenshot archaeology.
 1. node test_panel.js            # 134 — the DOM contract, in a vm
 2. node test_governance.js       # 51  — pure projections vs a real captured fan-out
 3. node test_charter_filter.js   # 31  — untouched neighbors stay green
-4. pytest (7 files)              # 341 — backend
-5. PLAYWRIGHT=<path> bash qa-shell/run.sh   # 13 — BOTH lanes vs the PRODUCTION shell
-6. qa/run.sh                     # the productized design-QA sweep (states x rules),
-                                 # once the design-qa product lands (in flight)
+4. .venv/bin/python -m pytest -q # backend — collect ALL test_*.py; never a hand-typed file list (two of the old names were removed and pytest silently reported 0)
+5. QA_BACKEND=repo PLAYWRIGHT=<path> bash qa-shell/run.sh   # BOTH lanes, repo code in the REAL shell (see Bundled builds)
+6. PANEL_URL=http://127.0.0.1:7011/ qa/run.sh   # the design-QA sweep against the repo backend
 ```
 
 Steps 1–4 are code truth. Step 5 is production truth. Step 6 is design truth.
 A feature is publishable when all three kinds agree.
+
+## Bundled builds (2.117.0+) — what "production" means now
+
+Since the DMG began carrying its own payload, the installed app runs from
+`Sutra.app/Contents/Resources/payload/` and **never reads the staged copy** in
+`Application Support`. Restaging is a no-op; the production shell is frozen
+until the next DMG. Two consequences, both encoded in `qa-shell/run.sh`:
+
+| Mode | Command | What it verifies |
+|---|---|---|
+| `QA_BACKEND=app` (default) | `bash qa-shell/run.sh` | the **installed build as shipped** — its own bundled backend, ownership by pid tree |
+| `QA_BACKEND=repo` (pre-release) | `QA_BACKEND=repo bash qa-shell/run.sh` | **repo code in the real shell**: the repo's backend is started on 8330 first, and `main.js` *attaches* to an already-serving Sutra instead of spawning its bundle. Ownership = the backend is the one the script started |
+
+The design-qa sweep follows the same rule: `PANEL_URL=http://127.0.0.1:7011/ qa/run.sh`
+against a repo backend on a side port, never against the frozen 8330 bundle
+when the question is "does the repo change work".
 
 ## What `qa-shell/run.sh` does (and why each part exists)
 

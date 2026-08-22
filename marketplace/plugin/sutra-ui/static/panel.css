@@ -1118,6 +1118,42 @@
      transcript up every time you glanced at a percentage. A 268px card covers a
      corner for a second instead. Founder call, and the right one: the thing being
      read is three numbers, not a document. */
+  /* ══ chat-surface chrome (founder decisions, 2026-08-18; design/app-preview.html) ══
+     The pane header exists ONLY for the collapsed strip -- panel.css renders
+     that strip entirely from .ph, so .ph cannot be deleted; it is hidden while
+     expanded. SCOPED to session panes: the browse pane keeps its header with
+     its own fold and close (codex P2). A left-edge grip is the expanded pane's
+     fold control; body and composer clear it. The composer's ⋯ chip carries the
+     session's identity (the rail may be collapsed) and truncates long titles
+     (codex P3); its menu is the .upop the usage chip already uses, anchored
+     LEFT because the chip is left. Rows borrow the .gv-row rhythm so the menu
+     reads like the governance panel, not a second visual language. */
+  .pane[data-sess]{position:relative}
+  .pane[data-sess]:not(.collapsed) > .ph{display:none}
+  .pane[data-sess] > .pb,.pane[data-sess] > .pc{padding-left:19px}
+  .pgrip{position:absolute;left:0;top:0;bottom:0;width:11px;border:0;background:none;
+    cursor:pointer;display:grid;place-items:center;color:transparent;padding:0;z-index:2}
+  .pane[data-sess]:hover .pgrip{color:var(--faint)}
+  .pgrip:hover{background:var(--acc-bg);color:var(--acc)}
+  .pgrip:focus-visible{outline:2px solid var(--acc);outline-offset:-2px;color:var(--acc)}
+  .uchip[data-panemenu]{max-width:220px;min-width:0}
+  .uchip[data-panemenu] .uname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .upop.panemenu{left:8px;right:auto;width:300px;padding:4px;display:flex;flex-direction:column}
+  .mrow{display:grid;grid-template-columns:82px 1fr 10px;gap:10px;align-items:baseline;
+    padding:7px 9px;background:none;border:0;text-align:left;cursor:pointer;
+    font:12px/1.5 var(--sans);color:var(--ink);border-radius:6px;width:100%}
+  .mrow+.mrow{border-top:1px solid var(--line-soft)}
+  .mrow:hover{background:var(--acc-bg)}
+  .mrow:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .mrow .mk{font:600 9.5px/1.7 var(--mono);color:var(--muted);text-transform:uppercase;
+    letter-spacing:.07em}
+  .mrow .mv{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;min-width:0}
+  .mrow .ma{color:var(--faint);font-size:10px}
+  /* a <label> row hosts a real <select>: it must not look like a pill inside a pill */
+  label.mrow{cursor:default}
+  label.mrow .mv select{width:100%;max-width:100%;background:var(--inset);color:var(--ink);
+    border:1px solid var(--line);border-radius:5px;font:inherit;font-size:11.5px;padding:2px 4px}
   .upop{position:absolute;bottom:calc(100% + 6px);right:8px;z-index:30;
     width:268px;max-width:calc(100% - 16px);
     background:var(--card);border:1px solid var(--line);border-radius:10px;

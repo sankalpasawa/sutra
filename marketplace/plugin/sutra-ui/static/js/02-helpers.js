@@ -184,10 +184,11 @@ const S = {
      null. Same shape as usagePop, for the same two-panes reason. In-memory
      only: it never enters S.ui, so saveLayout() can never persist it. */
   sessMenu:null,
-  /* Which session pane has the composer's session menu (the ⋯ chip) open, or
-     null. In-memory only, like usagePop: it is NOT in S.ui, so saveLayout()
-     never persists it and a reload starts with every menu closed. */
-  sessMenu:null,
+  /* Which session pane has the composer's ⋯ PANE menu open, or null. Named
+     paneMenu, not sessMenu: sessMenu is the RAIL's per-session actions menu,
+     and the two sharing one key made the chip toggle the wrong menu. In-memory
+     only, like usagePop: NOT in S.ui, so saveLayout() never persists it. */
+  paneMenu:null,
   /* Repository state, PER SESSION -- two panes can be in two different folders,
      and one shared object would show whichever loaded last. `undefined` means
      "not asked yet" and draws nothing; an object with available:false means

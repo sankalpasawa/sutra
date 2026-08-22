@@ -3,7 +3,10 @@
 set -eu
 
 QA="$(cd "$(dirname "$0")" && pwd)"
-URL="http://127.0.0.1:8330/"
+# PANEL_URL overrides the target: the installed app (2.117.0+) runs a FROZEN
+# bundled payload on 8330, so repo code is verified against the repo backend
+# (see PUBLISH-CHECK.md "Bundled builds").
+URL="${PANEL_URL:-http://127.0.0.1:8330/}"
 
 # The product carries NO machine-specific fallback (by design — see its README:
 # resolution is $PLAYWRIGHT, then a package resolvable from ITS directory).
@@ -36,12 +39,13 @@ node -e '
   const qa = process.argv[1];
   const cfg = JSON.parse(fs.readFileSync(qa + "/config.json", "utf8"));
   cfg.rules = JSON.parse(fs.readFileSync(qa + "/rules-sutra.json", "utf8"));
+  cfg.url = process.argv[2];
   const fx = JSON.parse(fs.readFileSync(qa + "/../tests/fixtures/toolruns-fanout.json", "utf8"));
   const boot = cfg.states.find((s) => s.name === "boot");
   const slot = boot.actions.find((a) => a.eval && a.eval.startsWith("window.__qaRuns"));
   slot.eval = "window.__qaRuns = " + JSON.stringify(fx.toolRuns) + ";";
   fs.writeFileSync(qa + "/config.json", JSON.stringify(cfg, null, 2) + "\n");
-' "$QA"
+' "$QA" "$URL"
 
 cd "$QA"
 node /Users/asawa/Claude/dayflow/products/design-qa/cli.mjs run config.json

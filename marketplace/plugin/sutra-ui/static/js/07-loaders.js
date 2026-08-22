@@ -146,6 +146,44 @@ function turnControlClick(e){
   }
 }
 
+/* Close a pane. ONE path for the header's old × and the ⋯ menu's Close row.
+   "browse" is the screens pane, not a session: nothing to hang up, and the
+   closed state persists like a pane collapse does. Session ids are UUIDs, so
+   the sentinel can never collide with one. */
+function closePane(sid){
+  if (sid === "browse"){ S.ui.browseClosed = true; saveLayout(); render(); return; }
+  /* Returns the channels it KEPT because work was still in flight. Closing the
+     pane hides the view; it does not cancel the reply. Say so, because the
+     control now does something different from what it used to. */
+  const kept = closeClaudeChannel(sid);
+  S.openPanes = S.openPanes.filter(id=>id!==sid);
+  if (kept.length){
+    const s = S.sessions.find(x=>x.id===sid);
+    S.toast = "Still running in the background — reopen “" +
+              ((s && s.title) || "the session") + "” to watch it finish.";
+    setTimeout(()=>{ if (S.toast) { S.toast = null; render(); } }, 6000);
+  }
+  render();
+}
+
+/* The ⋯ pane menu's rows (chat-surface chrome, founder 2026-08-18). Each row
+   mutates EXACTLY the state the header control it replaced used to mutate --
+   no second code path -- and every row closes the menu. Permissions and Model
+   are not here: they are <label>s around the existing selects, so the
+   [data-perm]/[data-model] handlers own them unchanged. */
+function paneMenuAction(sid, key){
+  S.paneMenu = null;
+  switch (key){
+    case "folder": S.cwdEdit = sid; S.cwdError = null; break;
+    case "usage":  S.usagePop = sid; if (typeof loadUsage === "function") loadUsage(true); break;
+    case "route":  S.sessTab[sid] = (S.sessTab[sid] || "chat") === "route" ? "chat" : "route"; break;
+    case "fold":   S.ui.paneCollapsed[sid] = true; saveLayout(); break;
+    case "close":  closePane(sid); return;          /* renders itself */
+    default: break;
+  }
+  render();
+}
+
 function wire(){
   /* With the browse pane closed there is no #scBody. A detached node keeps
      every scBody.querySelectorAll below a no-op instead of a TypeError that
@@ -411,24 +449,16 @@ function wire(){
     render();
   });
 
-  panes.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{
-    const sid = b.dataset.close;
-    /* "browse" is the screens pane, not a session: nothing to hang up, and the
-       closed state persists like a pane collapse does. Session ids are UUIDs,
-       so the sentinel can never collide with one. */
-    if (sid === "browse"){ S.ui.browseClosed = true; saveLayout(); render(); return; }
-    /* Returns the channels it KEPT because work was still in flight. Closing the
-       pane hides the view; it does not cancel the reply. Say so, because the
-       button now does something different from what it used to. */
-    const kept = closeClaudeChannel(sid);
-    S.openPanes = S.openPanes.filter(id=>id!==sid);
-    if (kept.length){
-      const s = S.sessions.find(x=>x.id===sid);
-      S.toast = "Still running in the background — reopen “" +
-                ((s && s.title) || "the session") + "” to watch it finish.";
-      setTimeout(()=>{ if (S.toast) { S.toast = null; render(); } }, 6000);
-    }
+  panes.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>closePane(b.dataset.close));
+  /* ⋯ pane menu (chat-surface chrome): the chip toggles, every row dispatches
+     through paneMenuAction() to the SAME state the old header control mutated */
+  panes.querySelectorAll("[data-panemenu]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.panemenu;
+    S.paneMenu = S.paneMenu === sid ? null : sid;
     render(); });
+  panes.querySelectorAll("[data-mrow]").forEach(b=>b.onclick=()=>{
+    const pane = b.closest("[data-sess]");
+    if (pane) paneMenuAction(pane.dataset.sess, b.dataset.mrow); });
   /* the composer is NOT disabled while a turn runs: the reply streams in, and disabling
      the input mid-stream blurred it and dropped whatever was being typed next */
   panes.querySelectorAll("[data-ssend]").forEach(b=>b.onclick=()=>{

@@ -2747,6 +2747,157 @@ test("34d. patchStreaming uses the shared builder — no second caret writer", (
   assert.ok(!/class="caret"/.test(psBody), "a caret literal inside patchStreaming is the second writer returning");
 });
 
+/* NAMESPACE NOTE (2026-08-22): this spec was first written against S.sessMenu /
+   data-sessmenu / sessMenuAction. Those names already belong to the RAIL's
+   per-session actions menu (rename / pin / archive -- 02-helpers.js:809,
+   07-loaders.js:814), and sharing them made the composer chip toggle the wrong
+   menu. The pane menu is paneMenu / data-panemenu / paneMenuAction. The spec
+   is corrected to the non-colliding names; every assertion's INTENT is intact. */
+/* ── 35. chat-surface chrome — the founder's 2026-08-18 decisions, ported ──
+   design/app-preview.html + design/drive-preview.mjs are the contract. These
+   pin the DOM that sessionPane() emits: the header exists only for the
+   collapsed strip, a left-edge grip folds the pane, the composer opens with a
+   session chip whose ⋯ menu carries every relocated control, and the
+   placeholder is one word. Measured against 2.112.5 before the port: 6 of the
+   24 lane-1 checks in design/PARITY-PLAN-chat-chrome.md passed. */
+const PANE_S = { id: "sid-35", title: "ledger migration", turns: [], real: false, cwd: "", channel: null };
+function paneHtml(over) {
+  const prevMenu = T.S.paneMenu, prevFold = T.S.ui.paneCollapsed["sid-35"];
+  T.S.paneMenu = over && over.menu ? "sid-35" : null;
+  if (over && over.collapsed) T.S.ui.paneCollapsed["sid-35"] = true; else delete T.S.ui.paneCollapsed["sid-35"];
+  try { return sandbox.sessionPane(PANE_S); }
+  finally {
+    T.S.paneMenu = prevMenu;
+    if (prevFold) T.S.ui.paneCollapsed["sid-35"] = prevFold; else delete T.S.ui.paneCollapsed["sid-35"];
+  }
+}
+const chipTagOf = h => (h.match(/<button[^>]*data-panemenu="sid-35"[^>]*>/) || [""])[0];
+
+test("35a. the expanded header carries identity only — no tabs, activity, side-chat or close", () => {
+  const h = paneHtml();
+  const ph = h.slice(h.indexOf('<div class="ph">'), h.indexOf('<div class="pb">'));
+  assert.ok(ph.includes("<h3"), "the title h3 stays: it IS the collapsed strip");
+  ["data-tab=", "data-act-toggle", "data-sidetoggle=", "data-close="].forEach(k =>
+    assert.ok(!ph.includes(k), k + " must not be in the header any more"));
+});
+
+test("35b. the section names itself — the only h3 is display:none while expanded", () => {
+  assert.ok(/<section class="pane[^"]*"[^>]*aria-label="ledger migration — session pane"/.test(paneHtml()),
+    "aria-label missing: a named section stays a navigable region without a visible h3");
+});
+
+test("35c. the grip renders BEFORE the header while expanded, and not at all while collapsed", () => {
+  const h = paneHtml();
+  const grip = h.indexOf('class="pgrip"'), ph = h.indexOf('<div class="ph">');
+  assert.ok(grip > -1, "no .pgrip rendered");
+  assert.ok(grip < ph, "the grip must precede .ph so a [data-pane-fold] query resolves to the VISIBLE control");
+  const tag = (h.match(/<button[^>]*class="pgrip"[^>]*>/) || [""])[0];
+  assert.ok(/data-pane-fold="sid-35"/.test(tag), "the grip reuses the fold handler");
+  assert.ok(/aria-label="Collapse this session pane"/.test(tag));
+  assert.ok(!paneHtml({ collapsed: true }).includes("pgrip"),
+    "collapsed: the strip's own fold button must be the only [data-pane-fold]");
+});
+
+test("35d. the composer opens with the session chip, left of attach; the placeholder is one word", () => {
+  const h = paneHtml();
+  const pc = h.slice(h.lastIndexOf('<div class="pc">'));
+  const chip = pc.indexOf("data-panemenu="), attach = pc.indexOf("data-attach=");
+  assert.ok(chip > -1, "no chip");
+  assert.ok(chip < attach, "chip must sit LEFT of attach (founder, 2026-08-18)");
+  const firstCtl = pc.indexOf("<button");
+  assert.ok(pc.slice(firstCtl, firstCtl + 600).includes("data-panemenu="), "the chip must be the first control");
+  assert.ok(/<textarea data-sask="sid-35"[^>]*placeholder="Message"/.test(pc), "placeholder must be exactly 'Message'");
+  assert.ok(/<textarea data-sask="sid-35"[^>]*aria-label="Continue this session"/.test(pc), "aria-label unchanged");
+});
+
+test("35e. the chip carries the session name, a live dot and the contract's aria", () => {
+  const h = paneHtml();
+  const tag = chipTagOf(h);
+  assert.ok(tag, "chip tag missing");
+  assert.ok(/class="uchip[^"]*"/.test(tag), "the chip reuses .uchip");
+  assert.ok(/aria-label="Session — folder, permissions, model, usage, routing"/.test(tag));
+  assert.ok(/aria-expanded="false"/.test(tag), "closed by default");
+  const inner = h.slice(h.indexOf(tag) + tag.length, h.indexOf("</button>", h.indexOf(tag)));
+  assert.ok(inner.includes("ledger migration"), "the chip must name the session");
+  assert.ok(/class="uring/.test(inner), "the live dot reuses .uring");
+  assert.ok(/aria-expanded="true"/.test(chipTagOf(paneHtml({ menu: true }))), "open state reflected");
+});
+
+test("35f. the menu is closed by default and, open, carries every relocated control in order", () => {
+  assert.ok(!paneHtml().includes('class="mrow'), "no menu rows while closed");
+  const hm = paneHtml({ menu: true });
+  const keys = [...hm.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
+  deepEq(keys, ["Folder", "Permissions", "Model", "Usage", "Routing", "Fold", "Close"],
+    "the 7-row contract from drive-preview.mjs");
+  assert.ok(/<div class="upop[^"]*"/.test(hm), "the popover reuses .upop");
+});
+
+test("35g. Permissions and Model rows are LABELS around the existing selects — never a select inside a button", () => {
+  const hm = paneHtml({ menu: true });
+  assert.ok(/<label class="mrow"[^>]*>[\s\S]*?<span class="mk">Permissions<\/span>[\s\S]*?<select class="permsel/.test(hm),
+    "Permissions must wrap select[data-perm] in a label (codex [P1]: interactive-in-button is invalid)");
+  assert.ok(/<label class="mrow"[^>]*>[\s\S]*?<span class="mk">Model<\/span>[\s\S]*?<select class="modelsel/.test(hm),
+    "Model must wrap select[data-model] in a label");
+  hm.split("</button>").filter(x => x.includes('class="mrow"')).forEach(chunk =>
+    assert.ok(!/<select/.test(chunk.slice(chunk.lastIndexOf("<button"))), "a button row must not contain a select"));
+  assert.ok(hm.includes('data-perm') && hm.includes('data-model='), "the existing handlers' hooks survive");
+});
+
+test("35h. menu state is in-memory only — never part of the persisted layout", () => {
+  assert.ok(!("paneMenu" in T.S.ui), "S.ui is what saveLayout() persists; paneMenu must not live there");
+  assert.ok(!/paneMenu/.test(String(sandbox.saveLayout)), "saveLayout must not know about the menu");
+  assert.strictEqual(T.S.paneMenu, null, "default closed");
+});
+
+test("35i. every row dispatches to the state the old control mutated, and closes the menu", () => {
+  const sid = "sid-35i";
+  T.S.sessions.push({ id: sid, title: "t", turns: [] });
+  withNoopRender(() => {
+    T.S.paneMenu = sid; sandbox.paneMenuAction(sid, "route");
+    assert.strictEqual(T.S.sessTab[sid], "route", "Routing swaps the pane body");
+    assert.strictEqual(T.S.paneMenu, null, "and closes the menu");
+    sandbox.paneMenuAction(sid, "route");
+    assert.strictEqual(T.S.sessTab[sid], "chat", "Routing toggles back");
+    T.S.paneMenu = sid; sandbox.paneMenuAction(sid, "fold");
+    assert.strictEqual(T.S.ui.paneCollapsed[sid], true, "Fold collapses the pane");
+    delete T.S.ui.paneCollapsed[sid];
+    T.S.paneMenu = sid; sandbox.paneMenuAction(sid, "usage");
+    assert.strictEqual(T.S.usagePop, sid, "Usage opens the existing popover");
+    T.S.usagePop = null;
+    T.S.paneMenu = sid; sandbox.paneMenuAction(sid, "folder");
+    assert.strictEqual(T.S.cwdEdit, sid, "Folder opens the existing cwd editor");
+    T.S.cwdEdit = null;
+    T.S.openPanes = [sid]; T.S.paneMenu = sid; sandbox.paneMenuAction(sid, "close");
+    assert.ok(!T.S.openPanes.includes(sid), "Close closes the pane through the same path as data-close");
+  });
+  T.S.sessions = T.S.sessions.filter(s => s.id !== sid);
+});
+
+test("35j. the stylesheet ships the chrome: scoped header-hide, grip, rows, chip truncation", () => {
+  const css = require("fs").readFileSync(__dirname + "/static/panel.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.ok(/\.pane\[data-sess\]:not\(\.collapsed\)\s*>\s*\.ph\s*\{\s*display:\s*none/.test(css),
+    "header hidden while expanded — SCOPED to session panes (codex [P2]: the browse pane keeps its header)");
+  assert.ok(!/\.pane:not\(\.collapsed\)\s*>\s*\.ph/.test(css), "the unscoped rule would strip the browse pane's fold/close");
+  assert.ok(/\.pgrip\s*\{/.test(css), ".pgrip rule missing");
+  assert.ok(/\.mrow\s*\{/.test(css), ".mrow rule missing");
+  assert.ok(/\.uchip\[data-panemenu\]\s*\{[^}]*max-width/.test(css), "long titles must truncate (codex [P3])");
+  assert.ok(/\.pane\[data-sess\]\s*>\s*\.pb\s*,\s*\.pane\[data-sess\]\s*>\s*\.pc\s*\{\s*padding-left:\s*19px/.test(css),
+    "body + composer clear the grip");
+});
+
+test("35k. dismissal is wired once at boot: click-away and Escape-first, with focus back on the chip", () => {
+  const boot = require("fs").readFileSync(__dirname + "/static/js/08-boot.js", "utf8");
+  const esc = boot.slice(boot.indexOf('if (e.key === "Escape")'));
+  const menuAt = esc.indexOf("S.paneMenu"), palAt = esc.indexOf("S.palette");
+  assert.ok(menuAt > -1 && menuAt < palAt, "Escape must close the menu FIRST in the cascade");
+  assert.ok(/data-panemenu=/.test(esc.slice(menuAt, menuAt + 400)), "Escape must put focus back on the chip (codex [P2])");
+  assert.ok(/closest\("\[data-panemenu\]"\)/.test(boot) && /closest\("\.upop"\)/.test(boot),
+    "click-away must treat the trigger and the popover as not-away");
+  const wire = require("fs").readFileSync(__dirname + "/static/js/07-loaders.js", "utf8");
+  assert.ok(/panes\.querySelectorAll\("\[data-panemenu\]"\)/.test(wire), "chip toggle bound in wire()");
+  assert.ok(/panes\.querySelectorAll\("\[data-mrow\]"\)/.test(wire), "rows bound in wire()");
+});
+
 /* ── report ────────────────────────────────────────────────────────────── */
 
 /* Sequential async checks FIRST (they own S.upd* and must not interleave),

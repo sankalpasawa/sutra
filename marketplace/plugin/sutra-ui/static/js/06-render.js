@@ -137,6 +137,35 @@ function agentDetailHtml(meta, messages){
   return `${head}${taskHtml}<div class="agsteps">${stepsHtml}</div>`;
 }
 
+/* The composer's PANE menu (chat-surface chrome, founder 2026-08-18): every
+   control the pane header used to carry, in one place. Namespaced paneMenu /
+   data-panemenu on purpose -- S.sessMenu + sessMenuHtml() already belong to the
+   RAIL's per-session actions menu (rename / pin / archive), and a second owner
+   of that name silently broke it. The popover reuses .upop; rows either dispatch
+   through paneMenuAction() or -- for Permissions and Model -- are LABELS around
+   the existing selects, so the [data-perm]/[data-model] handlers in wire()
+   survive unchanged (a select inside a button is invalid HTML -- codex P1). */
+function paneMenuHtml(s){
+  if (S.paneMenu !== s.id) return "";
+  const u = S.usage ? usageActive(S.usage) : null;
+  const row = (key, label, val) => `<button class="mrow" type="button" data-mrow="${key}">
+      <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
+  return `<div class="upop panemenu" role="menu" aria-label="Session menu — ${esc(s.title)}">
+    ${row("folder", "Folder", esc(cwdLabel(sessCwd(s.id))))}
+    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect()}</span><span class="ma"></span></label>
+    <label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
+            title="Model — applies to the next message">
+        ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
+          <option value="${esc(m.id)}" ${(S.model[s.id] ?? ((SETTINGS||{}).model||"")) === m.id ? "selected":""}
+          >${esc(m.name)}</option>`).join("")}
+      </select></span><span class="ma"></span></label>
+    ${row("usage", "Usage", u ? Math.round(u.percent) + "% used" : "plan usage")}
+    ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
+    ${row("fold", "Fold", "collapse this pane")}
+    ${row("close", "Close", "close this session")}
+  </div>`;
+}
+
 function sessionPane(s){
   const tab = S.sessTab[s.id] || "chat";
   const collapsed = !!S.ui.paneCollapsed[s.id];
@@ -149,7 +178,23 @@ function sessionPane(s){
   const chanChip = ch ? `<span class="pill ${ch.writes_files?"p-block":"p-mut"}">${esc(ch.id)} ·
       ${esc(ch.permission_mode||"")}${ch.writes_files?" · writes files":""}</span>` : "";
   const body = tab==="route" ? routingChart(s) : sessionBody(s);
-  return `<section class="pane ${collapsed?"collapsed":""}" data-sess="${s.id}">
+  /* Chrome decisions (founder, 2026-08-18): the header exists only for the
+     COLLAPSED strip -- while expanded it is display:none (panel.css), because
+     the rail already names the session and the three controls it carried
+     (Chat/Routing tabs, Activity, close) moved into the composer's ⋯ menu. The
+     <section> names itself, since its only <h3> is hidden while expanded. The
+     grip is the expanded pane's fold control; it is NOT rendered while
+     collapsed, so a [data-pane-fold] query always resolves to the visible one
+     (the strip's own .pfold) -- codex follow-up, 2026-08-21. */
+  const live = streamingFor(s.id) || !!s.agents_live;
+  const menuOpen = S.paneMenu === s.id;
+  return `<section class="pane ${collapsed?"collapsed":""}" data-sess="${s.id}"
+      aria-label="${esc(s.title)} — session pane">
+    ${collapsed ? "" : `<button class="pgrip" type="button" data-pane-fold="${esc(s.id)}"
+            aria-label="Collapse this session pane" title="Collapse this pane">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+    </button>`}
     <div class="ph">
       <button class="pfold" type="button" data-pane-fold="${esc(s.id)}"
               aria-expanded="${!collapsed}"
@@ -161,29 +206,6 @@ function sessionPane(s){
       <h3 title="${esc(s.title)}${s.real&&s.cwd?" — "+esc(s.cwd):""}">${esc(s.title)}</h3>
       ${s.real?`<span class="src">transcript</span>`:""}
       ${s.fork?`<span class="src" title="Branched from another session with --fork-session">fork</span>`:""}
-      <span class="tabs">
-        <button type="button" data-tab="chat"  data-sid="${s.id}" aria-pressed="${tab==="chat"}">Chat</button>
-        <button type="button" data-tab="route" data-sid="${s.id}" aria-pressed="${tab==="route"}">Routing</button>
-      </span>
-      <button class="ib act-trigger" data-act-toggle type="button"
-              aria-label="Activity — running turns and agents"
-              title="Activity — running turns & agents (background tasks)">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.9" aria-hidden="true"><path d="M3 12h4l2 5 4-13 2 8h6"/></svg>
-        <span class="act-badge" data-act-badge hidden>0</span>
-      </button>
-      <button class="ib" data-sidetoggle="${s.id}" type="button"
-              aria-pressed="${!!S.sideOpen[s.id]}"
-              aria-label="${S.sideOpen[s.id]?"Hide the side chat":"Open a side chat"}"
-              title="Side chat — ask something without touching this thread">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.8" aria-hidden="true">
-          <path d="M4 5h11a2 2 0 012 2v5a2 2 0 01-2 2H8l-4 3V5z"/><path d="M19 9h1a1 1 0 011 1v9l-3-2h-5"/>
-        </svg>
-      </button>
-      <button class="ib" data-close="${s.id}" aria-label="Close session">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      </button>
     </div>
     <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
     ${agentsFold(s)}
@@ -229,34 +251,48 @@ function sessionPane(s){
     ${prListHtml(s.id)}
     ${repoBarHtml(s.id)}
     <div class="pc">
-      ${S.usagePop === s.id ? usagePopHtml() : ""}
-      <button class="ib" data-optstoggle="${s.id}" type="button"
-              aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
-              aria-label="Turn options" title="Effort, budget and tool limits for the next message">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.9" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <!-- Chat-surface chrome (founder, 2026-08-18): the ⋯ chip is the pane's
+           identity — the header no longer shows while expanded — and its menu is
+           the one home for Folder / Permissions / Model / Usage / Routing /
+           Fold / Close. It sits LEFT of attach by direction. -->
+      <button class="uchip" type="button" data-panemenu="${esc(s.id)}"
+              aria-expanded="${S.paneMenu===s.id?"true":"false"}"
+              aria-label="Session — folder, permissions, model, usage, routing"
+              title="Everything about this session — folder, permissions, model, usage, routing">
+        <span class="uring" style="background:var(${streamingFor(s.id)||s.agents_live?"--ok":"--line"})"></span>
+        <span class="uname">${esc(s.title)}</span><span style="color:var(--faint)">·</span>⋯
       </button>
       <button class="ib" data-attach="${s.id}" type="button"
               aria-label="Attach a file" title="Attach a file (or drop / paste one)">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="1.9" aria-hidden="true"><path d="M21 11l-8.5 8.5a4.6 4.6 0 01-6.5-6.5L14 4.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.1-2.1l7.9-7.9"/></svg>
       </button>
+      <button class="ib" data-sidetoggle="${s.id}" type="button"
+              aria-pressed="${!!S.sideOpen[s.id]}"
+              aria-label="${S.sideOpen[s.id]?"Hide the side chat":"Open a side chat"}"
+              title="Side chat — ask something without touching this thread">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" aria-hidden="true">
+          <path d="M4 5h11a2 2 0 012 2v5a2 2 0 01-2 2H8l-4 3V5z"/><path d="M19 9h1a1 1 0 011 1v9l-3-2h-5"/>
+        </svg>
+      </button>
       <!-- A TEXTAREA, not <input type="text">. An input cannot hold a newline at
            any price, so Shift+Enter, Ctrl+J and pasted multi-line text were not
            "unimplemented" -- they were impossible. rows=1 keeps it looking like a
-           single line until there is a reason not to; autoGrowComposer() sizes it. -->
+           single line until there is a reason not to; autoGrowComposer() sizes it.
+           Placeholder is ONE WORD (founder, 2026-08-18): the / palette and
+           Shift+Enter are learned by use. -->
       <textarea data-sask="${s.id}" rows="1"
-             placeholder="Ask anything — / for commands, Shift+Enter for a new line"
+             placeholder="Message"
              aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
-      ${cwdButtonHtml(s.id)}
-      ${usageChipHtml()}
-      ${permSelect()}
-      <select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
-              title="Model — applies to the next message">
-        ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
-          <option value="${esc(m.id)}" ${(S.model[s.id] ?? ((SETTINGS||{}).model||"")) === m.id ? "selected":""}
-          >${esc(m.name)}</option>`).join("")}
-      </select>
+      <button class="ib" data-optstoggle="${s.id}" type="button"
+              aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
+              aria-label="Turn options" title="Effort, budget and tool limits for the next message">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.9" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      </button>
+      ${paneMenuHtml(s)}
+      ${S.usagePop === s.id ? usagePopHtml() : ""}
       ${streamingFor(s.id)
         ? `<button class="send stop" data-sstop="${s.id}" type="button" aria-label="Stop this turn"
                    title="Stop — kills the running process">
