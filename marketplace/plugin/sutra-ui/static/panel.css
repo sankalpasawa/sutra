@@ -1741,3 +1741,19 @@
   .rgrph.collapsed .rgchev{transform:none}
   .rgrph:not(.collapsed) .rgchev{transform:rotate(90deg)}
   @media (prefers-reduced-motion:reduce){ .rgchev{transition:none} }
+
+/* ── mediated connector tile (a connection Sutra observes, not owns) ──────
+   Visually distinct from an owned provider tile on purpose: the operator must
+   be able to tell at a glance which connections Sutra can actually act on. */
+.ptile.mediated{border-style:dashed}
+.ptile.mediated .ct.via{background:transparent;border:1px solid var(--bd);
+  color:var(--mut);font-weight:400;letter-spacing:.02em}
+.ptile.mediated .medobs{margin:2px 0 0 18px;font-size:12px;line-height:1.45}
+.ptile.mediated .medobs code{font-size:11px;opacity:.85}
+.ptile.mediated .mediatedacct{margin:6px 0 0;font-size:12px}
+.ptile.mediated .medfoot{margin:6px 0 0;font-size:11px}
+/* Pinned to the bottom like .ptile > .btn, but as a row of two controls. The
+   wrapper needs the auto margin itself -- putting it on the buttons inside
+   would leave the wrapper unpinned and the tile ragged against its neighbours. */
+.ptile.mediated .medactions{display:flex;gap:8px;margin-top:auto;padding-top:10px}
+.ptile.mediated .medactions .btn{margin-top:0}

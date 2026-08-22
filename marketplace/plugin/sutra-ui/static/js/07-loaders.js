@@ -888,6 +888,11 @@ document.querySelector(".rail").addEventListener("click", e=>{
     if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
     if (S.screen === "teamsutra") loadTeamsutra(false);
     if (S.screen === "connectors") loadConnectors(false);  /* lazy: opens the connector db */
+    /* Cache-only. A plain read never spawns the Claude CLI -- the probe
+       contacts every one of the operator's connectors and rewrites Claude's
+       own cache, so it must be an explicit act, not a side effect of opening
+       a screen. The tile renders "Not checked yet" until the button is used. */
+    if (S.screen === "connectors") loadMediated(false);
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");

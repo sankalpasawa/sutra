@@ -2,6 +2,60 @@
 
 **status**: active · **updated**: 2026-08-22
 
+## 2.117.1 (2026-08-22)
+
+**Google connector: report what Claude knows, and say plainly what it does not.**
+
+Gmail and Google Drive are connected inside Claude, not inside Sutra. Sutra now
+shows them, as a new and deliberately weaker class of tile -- a MEDIATED
+connector: one Sutra observes and cannot act on. See ADR-035.
+
+Google is NOT registered as a connector provider, because the data model would
+force it to lie: Credential rejects an empty access_token, the OAuth strategy
+column is CHECK-constrained to the three strategies Sutra implements, and
+provider_account_id is NOT NULL. There is no token, no strategy and no account
+id to put in them. The module sits beside providers.py and imports nothing from
+connectors.*, so it cannot reach the credential store even by accident.
+
+Two kinds of fact, rendered differently, because only one of them is stable:
+
+  - MEMBERSHIP is durable. "This Claude account has a Gmail connector" comes
+    from the account's connector list, and is rendered as state.
+  - The STATUS STRING is a five-second probe. The same unchanged Google Drive
+    connector was observed reporting four different things within one hour --
+    "Connected - tools fetch failed", "Connected", "Needs authentication", and
+    back again. It is rendered as a quoted observation attributed to the check
+    that produced it, never as a claim about the connector.
+
+**The connected Google account is not shown, because it is not knowable.** The
+payload Claude fetches carries no account, email or subject; no local store
+records the binding; and neither Google MCP server exposes a whoami tool or
+requests an identity scope, so even a fully credentialed caller could not ask.
+The tile says exactly that. The tempting wrong answer was one lookup away and
+would have looked right on most machines: ~/.claude.json holds the CLAUDE
+account email, usually an @gmail.com address, and Claude injects it into every
+session as plain text. Under a "Google account" label it would be wrong for
+every operator whose Claude login differs from their Google connection. A test
+asserts it appears neither in the payload nor in the rendered tile.
+
+Absence is only asserted with proof of presence. Offline, `claude mcp list`
+prints "No MCP servers configured." and exits 0 -- identical to being signed out
+and to genuinely having none. "Not added in Claude" is therefore emitted only
+when a claude.ai row was actually parsed; every other path renders "Status
+unknown".
+
+Checking is manual, capped at one real run per 60s and serialised by a lock,
+because it is neither free nor inert: it runs the Claude CLI, which opens a live
+connection to every one of the operator's connectors and rewrites Claude's own
+cache. Opening the screen reads cache only. The tile discloses this.
+
+The child process is contained: fixed argv, stdin closed, an explicit cwd (never
+inherited -- the CLI enumerates .mcp.json from the working directory, so running
+it inside a cloned repo could execute that repo's stdio command), and an
+environment ALLOWLIST. A denylist was rejected: the backend's environment
+carries SUTRA_DESKTOP_TOKEN, which authorises replacing /Applications/Sutra.app,
+and `claude` plus every process it spawns would have inherited it.
+
 ## 2.117.0 (2026-08-22)
 
 Rolls up the streaming, update-banner and connector-scoping work onto the

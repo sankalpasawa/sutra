@@ -149,6 +149,145 @@ test("connector CSS additions are scoped", () => {
   assert(bare.length === 0, "unscoped selectors added by the connectors CSS: " + bare.join(" | "));
 });
 
+
+/* ── mediated (Claude-owned) connector tile ──────────────────────────────
+ * These EXECUTE the renderer. A regex over the source would pass for a tile
+ * that interpolates a hostile string without esc(), because the source
+ * contains the word "esc" plenty of times elsewhere.
+ */
+const vm = require("vm");
+
+function mediatedSandbox(){
+  const sandbox = {
+    S: { conn: { mediated: null, mediatedBusy: false } },
+    esc: v => String(v == null ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;"),
+    document: { addEventListener(){}, querySelector(){ return null; } },
+    apiGet: async () => ({ tiles: [] }),
+    render(){}, console,
+    /* The file assigns its screen renderer into these at load. Stubbing them
+       is what lets the real module run unmodified in a sandbox, so these
+       tests exercise the shipped code rather than a copy of it. */
+    SCREENS: {}, TITLES: {}, fmt: v => String(v),
+    setTimeout, clearTimeout, encodeURIComponent, decodeURIComponent,
+    Date, JSON, Math, Object, Array, String, Number, Boolean, RegExp,
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  /* The file registers a document click listener at load; the stub above
+     absorbs it. Everything else here is plain function declarations. */
+  vm.runInContext(screen, sandbox, { filename: "12-connectors.js" });
+  return sandbox;
+}
+
+const medTile = (over) => Object.assign({
+  provider: "google", name: "Google", via: "claude",
+  manage_url: "https://claude.ai/customize/connectors",
+  account_known: false, availability: "ok", availability_detail: "",
+  checked_at: 1787411853, stale: false,
+  services: [
+    { key: "gmail", name: "Gmail", membership: "added", observation: "connected",
+      connectors: [{ label: "claude.ai Gmail", observation: "connected",
+                     raw_status: "Connected" }] },
+    { key: "gdrive", name: "Google Drive", membership: "not_added",
+      observation: null, connectors: [] },
+  ],
+}, over || {});
+
+test("mediatedTile escapes hostile text from the CLI", () => {
+  const sb = mediatedSandbox();
+  const evil = '<img src=x onerror=alert(1)>';
+  const html = sb.mediatedTile(medTile({ services: [
+    { key: "gmail", name: "Gmail", membership: "added", observation: "unknown",
+      connectors: [{ label: evil, observation: "unknown", raw_status: evil }] }]}));
+  assert(!/<img src=x/.test(html), "raw CLI text reached the DOM unescaped");
+  assert(/&lt;img/.test(html), "expected the payload to appear escaped");
+});
+
+test("mediatedTile escapes the availability detail", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTile(medTile({
+    availability: "cli_error", availability_detail: '<script>x</script>' }));
+  assert(!/<script>x<\/script>/.test(html), "stderr reached the DOM unescaped");
+});
+
+test("the mediated tile never renders an account", () => {
+  /* The Claude account email is usually a @gmail.com address and is the most
+     tempting wrong answer available. It must not appear on a Google tile. */
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTile(medTile());
+  assert(/not visible to Sutra/.test(html),
+    "the tile must say the account is unknown, not stay silent about it");
+  assert(!/@/.test(html.replace(/https?:\/\/[^"'\s]+/g, "")),
+    "an email-shaped string appeared on the tile: " + html.slice(0, 300));
+});
+
+test("an unavailable check never renders as 'not connected'", () => {
+  const sb = mediatedSandbox();
+  for (const avail of ["not_checked", "cli_missing", "timed_out", "cli_error", "unreadable"]){
+    const html = sb.mediatedTile(medTile({
+      availability: avail,
+      services: [{ key: "gmail", name: "Gmail", membership: "unknown",
+                   observation: null, connectors: [] }] }));
+    assert(/Status unknown/.test(html), avail + " did not render as unknown");
+    assert(!/Not added in Claude/.test(html),
+      avail + " rendered an absence claim it cannot support");
+    assert(!/\bNot authenticated\b/.test(html),
+      avail + " rendered 'not authenticated' without evidence");
+  }
+});
+
+test("the account note is suppressed when nothing is connected", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTile(medTile({ services: [
+    { key: "gmail", name: "Gmail", membership: "not_added",
+      observation: null, connectors: [] }]}));
+  assert(!/not visible to Sutra/.test(html),
+    "hedging about an account for a connector that is not added reads as a bug");
+});
+
+test("the mediated tile emits no connect or disconnect control", () => {
+  /* Sutra cannot connect or revoke this -- Claude owns it. Rendering a button
+     that cannot work would be a lie in the shape of a control. */
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTile(medTile());
+  for (const attr of ["data-connstart", "data-conndis", "data-connopen"]){
+    assert(!html.includes(attr), "mediated tile emitted " + attr);
+  }
+  assert(html.includes("data-connrecheck"), "no re-check control");
+  assert(/href="https:\/\/claude\.ai\/customize\/connectors"/.test(html),
+    "no link out to where the connection can actually be managed");
+});
+
+test("both connectors on one host are rendered, never collapsed", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTile(medTile({ services: [
+    { key: "gmail", name: "Gmail", membership: "added", observation: "needs_auth",
+      connectors: [
+        { label: "claude.ai Gmail", observation: "connected", raw_status: "Connected" },
+        { label: "claude.ai Gmail (2)", observation: "needs_auth",
+          raw_status: "Needs authentication" }]}]}));
+  assert(html.includes("claude.ai Gmail (2)"),
+    "the second Google account vanished -- a broken connector hidden behind a healthy one");
+});
+
+test("probe results are attributed to the check, never asserted as state", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTile(medTile());
+  assert(/last check\s+reported/.test(html.replace(/\s+/g, " ")),
+    "the status string must be attributed to the check that produced it");
+});
+
+test("opening the screen reads cache only and never probes", () => {
+  /* The probe runs the Claude CLI, which contacts every connector and
+     rewrites Claude's own cache. That must be a deliberate act. */
+  assert(/loadMediated\(false\)/.test(loaders),
+    "the screen must call loadMediated(false) -- cache only");
+  assert(!/loadMediated\(true\)/.test(loaders),
+    "no loader may force a probe on screen open");
+});
+
 console.log("\n" + "-".repeat(60));
 console.log(`connectors UI wiring: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

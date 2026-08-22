@@ -15,7 +15,11 @@
 
 S.conn = { providers: null, sections: null, err: null, tx: null, txProvider: null, txErr: null,
            open: null, openProvider: null,
-           repos: null, orgs: null, perms: null, events: null, busy: false };
+           repos: null, orgs: null, perms: null, events: null, busy: false,
+           /* mediated = connections Sutra can SEE but does not own. Held apart
+              from `providers` on purpose: merging them would let Claude's
+              connections inflate Sutra's own connected count. */
+           mediated: null, mediatedBusy: false };
 
 /* The backend returns a structured error body; apiGet/apiPost stringify the
  * whole object into the Error message. Rendering that raw put a JSON blob on
@@ -179,6 +183,149 @@ const PROVIDER_GLYPH = {
   github: '<path d="M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.4-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.4 4.6-4.6 4.9.4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2z"/>',
   slack:  '<path d="M5.1 14.5a2 2 0 1 1-2-2h2v2zm1 0a2 2 0 1 1 4 0v5a2 2 0 1 1-4 0v-5zM9.1 5.1a2 2 0 1 1 2-2v2h-2zm0 1a2 2 0 1 1 0 4h-5a2 2 0 1 1 0-4h5zM18.5 9.1a2 2 0 1 1 2 2h-2v-2zm-1 0a2 2 0 1 1-4 0v-5a2 2 0 1 1 4 0v5zM14.5 18.5a2 2 0 1 1-2 2v-2h2zm0-1a2 2 0 1 1 0-4h5a2 2 0 1 1 0 4h-5z"/>',
 };
+
+/* ── mediated tiles: a connection Sutra observes but does not own ────────
+ *
+ * Two kinds of fact are rendered differently on purpose, because the backend
+ * can vouch for one and not the other:
+ *
+ *   MEMBERSHIP is durable. "This Claude account has a Gmail connector" comes
+ *   from the account's connector list. It is rendered as state.
+ *
+ *   The STATUS STRING is a five-second probe. The same unchanged connector
+ *   was observed reporting four different things within one hour. It is
+ *   rendered as a quoted observation attributed to the check, never as a
+ *   claim about the connector -- "Claude's last check reported X".
+ *
+ * And the account is not rendered at all, because it is not knowable: Claude
+ * does not report which Google account a connector is bound to. The nearest
+ * thing to hand is the CLAUDE account email, which is usually a @gmail.com
+ * address and is therefore the single most tempting wrong answer available.
+ */
+const MED_MEMBERSHIP = {
+  added:     ["ok",  "Added in Claude"],
+  not_added: ["off", "Not added in Claude"],
+  unknown:   ["off", "Status unknown"],
+};
+
+const MED_OBSERVED = {
+  connected:        "connected",
+  degraded:         "connected, but its tools did not answer",
+  needs_auth:       "not authenticated",
+  pending_approval: "waiting for approval",
+  not_configured:   "not configured",
+  probe_failed:     "unreachable",
+  unknown:          "something it did not recognise",
+};
+
+/* Availability is about the CHECK, not the connector. Every one of these
+   means "we do not know", and none of them may render as "not connected". */
+const MED_UNAVAILABLE = {
+  not_checked: ["Not checked yet.",
+    "Checking runs `claude mcp list`, which contacts each of your connectors."],
+  cli_missing: ["Claude Code is not installed.",
+    "Sutra reads these connections by running the `claude` CLI, and no `claude` binary was found. Set SUTRA_UI_CLAUDE_BIN to its full path if it lives elsewhere."],
+  timed_out: ["Status unknown.",
+    "`claude mcp list` did not answer in time. It contacts every connector to check it, so this can happen on a slow connection or with many connectors."],
+  cli_error: ["Status unknown.", "The Claude CLI exited with an error."],
+  unreadable: ["Status unknown.",
+    "The Claude CLI listed no claude.ai connectors. It prints exactly the same thing when you are offline, when you are signed out, and when you genuinely have none — so Sutra will not guess which."],
+};
+
+function medWhen(ts){
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+}
+
+function mediatedTile(t){
+  const ok = t.availability === "ok";
+  const services = t.services || [];
+  const anyAdded = services.some(x => x.membership === "added");
+
+  const rows = services.map(svc => {
+    const [cls, label] = MED_MEMBERSHIP[svc.membership] || ["off", "Status unknown"];
+    /* One line per real connector, never collapsed: two Google accounts share
+       one host, and folding them together would hide a broken connection
+       behind a healthy one. */
+    const detail = (svc.connectors || []).map(c => {
+      const said = MED_OBSERVED[c.observation] || "something it did not recognise";
+      return `<div class="medobs muted">${esc(c.label)} — Claude's last check
+        reported it ${esc(said)}${c.raw_status
+          ? `: <code>${esc(c.raw_status)}</code>` : ""}</div>`;
+    }).join("");
+    return `<li>
+      <span class="dot ${cls}"></span><b>${esc(svc.name)}</b>
+      <span class="muted">${esc(label)}</span>
+      ${detail}
+    </li>`;
+  }).join("");
+
+  let note = "";
+  if (!ok){
+    const [head, body] = MED_UNAVAILABLE[t.availability] || MED_UNAVAILABLE.cli_error;
+    note = `<div class="note w tileblocked"><b>${esc(head)}</b> ${esc(body)}
+      ${t.availability_detail?`<br><code>${esc(t.availability_detail)}</code>`:""}</div>`;
+  }
+
+  /* Only shown once something is actually connected. Next to "Not added in
+     Claude" it would read as a hedge about a connection that does not exist. */
+  const acct = (ok && anyAdded)
+    ? `<p class="mediatedacct muted">Google account: not visible to Sutra.
+         Claude does not report which account a connector is bound to.</p>`
+    : "";
+
+  const checked = t.checked_at
+    ? `<p class="medfoot muted">Checked ${esc(medWhen(t.checked_at))}${
+        t.stale ? " · may be out of date" : ""}</p>`
+    : "";
+
+  return `<div class="ptile mediated">
+    <div class="ptilehead">
+      <svg class="pglyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 11v2.6h4.3c-.2 1.1-1.4 3.2-4.3 3.2a4.8 4.8 0 0 1 0-9.6c1.5 0 2.5.6 3 1.2l2-2A7.4 7.4 0 1 0 12 19.4c4.3 0 7.1-3 7.1-7.2 0-.5 0-.9-.1-1.2H12z"/>
+      </svg>
+      <div>
+        <b>${esc(t.name || "Google")}</b>
+        <div class="muted">Gmail and Google Drive, connected inside Claude</div>
+      </div>
+      <span class="sp"></span>
+      <span class="ct via">via Claude</span>
+    </div>
+    <ul class="connlist">${rows}</ul>
+    ${note}
+    ${acct}
+    <p class="tilecaveat">Claude owns this connection, not Sutra. The token and
+      the Google account never reach Sutra. Checking runs a live probe through
+      the Claude CLI, which contacts each connector.</p>
+    ${checked}
+    <div class="medactions">
+      <button class="btn" type="button" data-connrecheck="google"
+        ${S.conn.mediatedBusy ? "disabled" : ""}>
+        ${S.conn.mediatedBusy ? "Checking…" : (t.checked_at ? "Re-check" : "Check now")}</button>
+      <a class="btn" href="${esc(t.manage_url || "https://claude.ai/customize/connectors")}"
+         target="_blank" rel="noreferrer">Manage in Claude</a>
+    </div>
+  </div>`;
+}
+
+async function loadMediated(refresh){
+  if (S.conn.mediatedBusy) return;
+  if (refresh) { S.conn.mediatedBusy = true; render(); }
+  try {
+    const d = await apiGet("/api/connectors/mediated" + (refresh ? "?refresh=true" : ""));
+    S.conn.mediated = (d.tiles || [])[0] || null;
+  } catch (e) {
+    /* A failed fetch is not evidence about the connection. Fall back to the
+       same "we do not know" shape the backend uses. */
+    S.conn.mediated = { provider: "google", name: "Google", via: "claude",
+                        account_known: false, availability: "cli_error",
+                        availability_detail: String(e.message || e),
+                        services: [], checked_at: null };
+  }
+  S.conn.mediatedBusy = false;
+  render();
+}
 
 function providerTile(p){
   const glyph = PROVIDER_GLYPH[p.provider] || '<circle cx="12" cy="12" r="8"/>';
@@ -394,7 +541,8 @@ SCREENS.connectors = () => {
   }
 
   return head + degraded + txErr + tx
-    + `<div class="ptiles">${(s.providers||[]).map(providerTile).join("")}</div>`
+    + `<div class="ptiles">${(s.providers||[]).map(providerTile).join("")
+         }${s.mediated ? mediatedTile(s.mediated) : ""}</div>`
     + connDetailPane();
 };
 
@@ -434,6 +582,9 @@ document.addEventListener("click", e => {
 
   const dis = e.target.closest("[data-conndis]");
   if (dis){ connDisconnect(providerOf(dis), dis.dataset.conndis); return; }
+
+  const recheck = e.target.closest("[data-connrecheck]");
+  if (recheck){ loadMediated(true); return; }
 
   const ref = e.target.closest("[data-connrefresh]");
   if (ref){ connRefreshRepos(providerOf(ref), ref.dataset.connrefresh); return; }

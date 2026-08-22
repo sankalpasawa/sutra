@@ -212,6 +212,30 @@ def connector_providers():
     return {"providers": out, "degraded": _degraded, "truth_class": "authoritative"}
 
 
+# ------------------------------------------------------- mediated tiles ---
+# One segment under /connectors, declared BEFORE /connectors/{provider}/... so
+# the path parameter cannot swallow it -- the same reason /connectors/providers
+# sits where it does.
+#
+# Deliberately NOT merged into /connectors/providers. That payload is
+# truth_class "authoritative": Sutra ran the OAuth and holds the token. This
+# one is an observation of another program's state, and merging them would let
+# Claude's connections inflate Sutra's connected count in the rail badge.
+@router.get("/connectors/mediated")
+@guarded("connectors_mediated")
+def connectors_mediated(refresh: bool = Query(False)):
+    """Connections Sutra can see but does not own.
+
+    A plain GET never spawns anything -- it answers from cache, or says
+    "not_checked". `refresh=true` asks for a real probe, which is rate limited
+    and single-flight inside the module, because the probe runs the Claude CLI
+    and that opens a live connection to every one of the operator's connectors.
+    """
+    import mediated_connectors
+    return {"tiles": [mediated_connectors.snapshot(refresh=refresh)],
+            "truth_class": "observed"}
+
+
 # ------------------------------------------------------------- connect ---
 @router.post("/connectors/{provider}/authorize")
 @guarded("authorize")

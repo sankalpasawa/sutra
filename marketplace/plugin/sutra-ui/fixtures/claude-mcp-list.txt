@@ -1,0 +1,5 @@
+Checking MCP server health…
+
+claude.ai Atlassian Rovo: https://mcp.atlassian.com/v1/mcp - ! Needs authentication
+claude.ai Google Drive: https://drivemcp.googleapis.com/mcp/v1 - ! Needs authentication
+claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ✔ Connected

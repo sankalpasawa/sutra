@@ -1,6 +1,16 @@
 # Sutra — Current Version
 
-## v2.117.0 (2026-08-22, HEAD)
+## v2.117.1 (2026-08-22, HEAD)
+
+Google connector, as a MEDIATED tile: a connection Sutra observes and cannot act
+on. Membership ("Added in Claude") is rendered as state; the CLI's status string
+is rendered as a timestamped observation, because the same connector reported
+four different statuses within one hour. The connected Google account is NOT
+shown -- it is not knowable from any local store or from Claude's API, and the
+nearest value to hand is the Claude account email, which would have been a
+convincing wrong answer. See ADR-035.
+
+## v2.117.0 (2026-08-22)
 
 Carries the 2.116.x line (Teamsutra rewritten to read like a person wrote it;
 Files v1.1 with folder tree + Knowledge bridge) plus three fixes:
