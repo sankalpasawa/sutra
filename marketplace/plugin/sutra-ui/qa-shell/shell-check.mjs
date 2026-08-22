@@ -157,8 +157,18 @@ check("governance captured as sections in the running shell",
 check("and the body is the reply alone, numbered list intact", state.govBody === "Real.\n\n1. kept", JSON.stringify(state.govBody));
 check("chrome: session pane header hidden while expanded", state.chromeHeaderHidden === true, String(state.chromeHeaderHidden));
 check("chrome: ⋯ chip is the first composer control", state.chromeChipFirst === true, String(state.chromeChipFirst));
-check("chrome: the pane menu carries the 7 relocated controls in order",
-  state.chromeMenuKeys === "Folder,Permissions,Model,Usage,Routing,Fold,Close", state.chromeMenuKeys);
+/* the 7-row contract holds as an ORDERED SUBSEQUENCE: when the session's folder
+   is a repository with a remote, "Pull requests" and "Create PR" sit right after
+   Folder (35l) -- the installed app opened on exactly such a session, and the
+   strict 7-row form read that correct 9-row menu as a failure (2026-08-22) */
+const CORE = ["Folder","Permissions","Model","Usage","Routing","Fold","Close"];
+const got = String(state.chromeMenuKeys || "").split(",");
+const coreInOrder = CORE.every((k, i) => got.indexOf(k) > (i ? got.indexOf(CORE[i-1]) : -1));
+const extras = got.filter(k => !CORE.includes(k));
+const extrasOk = extras.every(k => k === "Pull requests" || k === "Create PR")
+  && (!extras.length || got.indexOf(extras[0]) === got.indexOf("Folder") + 1);
+check("chrome: the pane menu carries the 7 relocated controls in order (PR rows allowed after Folder)",
+  coreInOrder && extrasOk, state.chromeMenuKeys);
 check("roster button carries the token ink, never UA buttontext",
   state.rowColor === state.inkColor && state.rowColor !== "no row mounted",
   "row=" + state.rowColor + " ink=" + state.inkColor);
