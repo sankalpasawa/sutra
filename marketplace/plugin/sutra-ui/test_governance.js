@@ -832,6 +832,22 @@ test('12h. odd turns never throw: null turn, non-array turns, non-string text', 
   assert.strictEqual(SUM2({ title: 't', turns: [{ text: { a: 1 } }] }), 't');
 });
 
+/* ── 14. the Output Trace as the spec writes it: a blockquote ──────────────── */
+test('14a. "> route: a > b > c > d" (the spec\'s literal shape) is captured, and feeds g.trace', () => {
+  const r = PG('Answer.\n\n> route: atom-card floor redo > D1 Sutra OS > 0 tool calls > awaiting founder verdict');
+  assert.strictEqual(r.body, 'Answer.');
+  assert.deepStrictEqual(r.sections.map(x => x.key), ['trace']);
+  assert.ok(/atom-card floor redo > D1 Sutra OS/.test(r.g.trace));
+});
+test('14b. the founder\'s 2026-08-23 screenshot line, with its left-border prefix, is captured whole', () => {
+  const r = PG('Text.\n> route: brainstorming revision > D1 Sutra OS (engine mis-address, noted) > 2 web searches + dual consult + atom 14 > v3.1 committed 496baf6, screenshots sent > awaiting founder verdict');
+  assert.strictEqual(r.body, 'Text.');
+});
+test('14c. GUARD: a quoted sentence with two > signs is not a trace; a bare breadcrumb still keeps the 4-hop guard', () => {
+  const r = PG('> route: see a > b > c\nroute: Home > Settings > Billing > Invoices');
+  assert.strictEqual(r.sections.length, 0, JSON.stringify(r.sections));
+});
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 Date.now = realNow;
 console.log('\n' + '-'.repeat(60));

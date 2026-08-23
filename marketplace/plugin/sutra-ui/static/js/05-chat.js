@@ -819,7 +819,9 @@ function parseGov(text){
   const p = text.match(/PLACEMENT:[^\n|]*>\s*([^>|\n]+?)\s*\|/); if (p) g.leaf = p[1].trim();
   /* the trace is a " > " chain (985/985 real OS: lines); a bare "OS: macOS 14"
      in a bug report is not one. The lowercase form needs the spec's five fields. */
-  const tr = text.match(/\n`?OS:\s*([^\n`]*\s>\s[^\n`]*)/) || text.match(/(?:^|\n)route:\s*((?:[^\n]*\s>\s){4}[^\n]*)/);
+  const tr = text.match(/\n`?OS:\s*([^\n`]*\s>\s[^\n`]*)/)
+          || text.match(/(?:^|\n)>\s*`?route:\s*((?:[^\n]*\s>\s){3}[^\n`]*)/)
+          || text.match(/(?:^|\n)route:\s*((?:[^\n]*\s>\s){4}[^\n]*)/);
   if (tr) g.trace = tr[1].trim();
 
   /* ── CAPTURE, not discard (founder 2026-08-22: "I don't want anything to be
@@ -863,7 +865,12 @@ function parseGov(text){
     placement: /^PLACEMENT:(?=[^\n]*(\bD\d|[Uu]nresolved|[Hh]eld\b|[>|]))/,
     /* "OS: a > b" or "route: a > b > c > d > e" (the spec's five fields);
        "route: the bug is here" and a breadcrumb "Home > Settings > Billing" stay */
-    trace:     /^(`?OS:\s[^\n]*\s>\s|route:\s+(?:[^\n]*\s>\s){4})/,
+    /* the Output Trace spec emits its line as a markdown BLOCKQUOTE --
+       "> route: <skill> > <domain> > <nodes> > <terminal>" -- which is why a
+       leaked one draws a left border (founder screenshot, 2026-08-23). The
+       quoted form is the spec's own shape, so it needs only the spec's three
+       hops; a BARE "route:" keeps the four-hop guard that spares a breadcrumb. */
+    trace:     /^(`?OS:\s[^\n]*\s>\s|>\s*`?route:\s+(?:[^\n]*\s>\s){3}|route:\s+(?:[^\n]*\s>\s){4})/,
     /* the plugin's self-report line, exact prefix only (codex) */
     state:     /^Governance state:\s+plugin\b/i,
   };
