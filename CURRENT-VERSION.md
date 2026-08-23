@@ -2,6 +2,13 @@
 
 ## v2.117.2 (2026-08-23, HEAD)
 
+The chat surface, redesigned and verified in the shipped app: every turn's
+governance captured under its chip (never leaked into the reply), subagent
+fan-outs visible as rows inside the turn, an openable step log, a minimal
+header (what the chat is about in 45 words + close), one ⋯ composer menu
+carrying every session control, Routing as a tree. Plus a two-lane publish
+standard (state over CDP, then pixels) and a design-QA product.
+
 Two hardcoded defaults replaced with what Claude already knows: the rail footer
 avatar comes from the signed-in Claude account instead of a literal "TC", and
 the agent's default workdir falls back to the operator's most recent Claude

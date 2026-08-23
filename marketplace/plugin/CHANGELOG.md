@@ -4,6 +4,42 @@
 
 ## 2.117.2 (2026-08-23)
 
+**The chat surface, redesigned and verified end-to-end in the shipped app.**
+
+Every turn's governance is now CAPTURED, never leaked: the H-Sutra header,
+Input Routing, Depth, FLOW (including the drawn `+-- FLOW --+` boxes),
+BLUEPRINT, Build-Layer, Placement, Triage, the "Governance state" line and the
+Output Trace -- in every form the plugin emits them -- lift out of the reply
+into the turn's governance chip as a verbatim audit trail. The reply body is
+the reply alone. The capture rules were checked against 5,657 real assistant
+turns (0 prose lost) after an adversarial review produced 36 findings, each
+pinned as a test with its reproduction.
+
+A fan-out is visible: one row per subagent inside the turn (type, description,
+elapsed, state), reusing the tool-row component, with a drill-down into the
+subagent fold that already ships. The thinking loader opens into the turn's
+step log, and says "nothing has run yet" instead of doing nothing.
+
+The chat pane's chrome matches the founder's design: a minimal header -- what
+the chat is about in at most 45 words, a live dot, the × close -- a left-edge
+grip to fold the pane, a composer that opens with a single ⋯ menu carrying
+Folder (with branch + working-tree state), Pull requests, Create PR,
+Permissions, Model, Usage, Turn options, Routing, Fold and Close. The repo bar
+above the composer and the ≡ control beside the send arrow are gone; the
+message bar carries no placeholder. Routing is an indented department tree
+with turn badges, not an org chart.
+
+Fixed along the way: keyboard focus was lost on every streaming patch;
+clicking an agent opened nothing in a live pane; a roster row rendered in
+the browser's default black; the governance chip had no focus ring; the
+subagent fold spilled into a collapsed pane.
+
+A publish standard now exists (`sutra-ui/PUBLISH-CHECK.md`): two lanes --
+state interrogation of the running app over CDP, then screenshots -- plus a
+design-QA product extracted from DayFlow's in-app tester. Since builds are
+bundled, the shell lane can run the real app against the repo backend
+(`QA_BACKEND=repo`) without a rebuild.
+
 **Two hardcoded defaults replaced with what Claude already knows.**
 
 The rail footer rendered a literal `TC` -- a developer's own initials, shipped
