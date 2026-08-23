@@ -47,6 +47,26 @@ const page = ctx.pages().find(p => p.url().includes("127.0.0.1:8330")) || ctx.pa
 console.log("attached to shell page: " + page.url());
 await page.waitForTimeout(1500);
 
+/* A freshly installed build launches with NO pane restored and sessions still
+   loading (2026-08-23: five chrome checks failed on "no session pane open").
+   The lane must not depend on restored state: wait for the session list, then
+   open a pane THROUGH THE APP'S OWN RAIL if none is open. */
+for (let i = 0; i < 20; i++) {
+  const n = await page.evaluate(() => (typeof S !== "undefined" && S.sessions) ? S.sessions.length : 0);
+  if (n > 0) break;
+  await page.waitForTimeout(500);
+}
+const opened = await page.evaluate(() => {
+  if (document.querySelector(".pane[data-sess]")) return "already open";
+  if (typeof S === "undefined" || !S.sessions || !S.sessions.length) return "no sessions";
+  S.ui.railTab = "code"; render();
+  const row = document.querySelector(".rlist .rowopen");
+  if (!row) return "no rail row";
+  row.click(); return "opened via rail";
+});
+console.log("session pane: " + opened);
+await page.waitForTimeout(1500);
+
 /* ── LANE 1 · STATE ────────────────────────────────────────────────────────── */
 console.log("\nLANE 1 · state (the app testifies about itself)");
 
