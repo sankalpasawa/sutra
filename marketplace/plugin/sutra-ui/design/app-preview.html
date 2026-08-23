@@ -62,7 +62,12 @@ button.trow:hover{border-color:var(--acc)}
    a collapsed pane a blank 38px strip with no way to reopen it. One rule fixes
    it: the header exists only in the collapsed state, reusing the shipped
    treatment verbatim. Child selector so a nested .ph can never be caught. */
-.pane:not(.collapsed) > .ph{display:none}
+/* 2026-08-23: header visible again, minimal; the strip's fold hides while expanded */
+.pane:not(.collapsed) > .ph > .pfold{display:none}
+.pane:not(.collapsed) > .ph{flex-wrap:nowrap;align-items:flex-start}
+.pane:not(.collapsed) > .ph .phsum{white-space:normal;max-width:none;flex:1;min-width:0;font-weight:500;line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pane:not(.collapsed) > .ph [aria-label="Close session"]{margin-left:auto}
 /* BUG IN THE SHIPPED APP, surfaced by driving this preview — not caused by
    anything proposed here. panel.css:690 hides .pb/.pc/.tabs/.src/[data-close]
    when a pane collapses, but agentsFold() (06-render.js:15) emits .agents as a
@@ -202,6 +207,9 @@ button.trow:hover{border-color:var(--acc)}
            The <section> carries its own aria-label — with the only <h3> hidden,
            display:none would otherwise strip the pane's accessible name, and a
            named section is a region a screen reader can still navigate to. -->
+      <!-- DECISION 2026-08-23 (founder): the header is BACK, minimal — what this
+           chat is about in <=45 words (the first prompt, inert, capped), a live
+           dot, and the × close. Nothing else. -->
       <div class="ph">
         <button class="pfold" type="button" aria-expanded="false"
                 aria-label="Expand this session pane" title="Expand this pane">
@@ -210,7 +218,10 @@ button.trow:hover{border-color:var(--acc)}
         </button>
         <span class="dot run" aria-hidden="true"
               style="width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none"></span>
-        <h3 title="ledger migration">ledger migration</h3>
+        <h3 class="phsum" title="ledger migration">Migrate all twelve engines to ledger schema v2, keeping every golden test green and filing the work under Engine Library; spawn one agent per engine and report which ones drift.</h3>
+        <button class="ib" type="button" aria-label="Close session" title="Close this session" data-new>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
       </div>
 
       <button class="pgrip" type="button" aria-label="Collapse this session pane" title="Collapse this pane">
@@ -449,10 +460,10 @@ IMPACT: understanding</pre></span></div>
       <div class="pc" style="position:relative">
         <!-- ⋯ ON THE LEFT (founder, 2026-08-18). It carries the session name so the
              pane keeps its identity when the rail is collapsed, plus the live dot. -->
+        <!-- 2026-08-23: three dots ONLY — identity lives in the header now -->
         <button class="uchip" type="button" id="metaTrigger" aria-expanded="true" data-new
-                aria-label="Session — folder, permissions, model, usage, routing">
-          <span class="uring" style="background:var(--ok)"></span>
-          ledger migration <span style="color:var(--faint)">·</span> ⋯
+                aria-haspopup="menu" aria-controls="metaPop" aria-label="Chat options — ledger migration">
+          <span aria-hidden="true">⋯</span>
         </button>
         <button class="ib" type="button" aria-label="Attach">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -460,7 +471,8 @@ IMPACT: understanding</pre></span></div>
         </button>
         <!-- placeholder trimmed to one word: the / palette and Shift+Enter are
              discoverable by use, and the hint was the longest text in the pane. -->
-        <textarea rows="1" placeholder="Message" aria-label="Continue this session"></textarea>
+        <!-- 2026-08-23: no placeholder at all -->
+        <textarea rows="1" aria-label="Continue this session"></textarea>
 
         <div class="upop" id="metaPop" data-new style="min-width:290px;left:8px;right:auto">
           <div style="display:flex;flex-direction:column">
@@ -472,6 +484,8 @@ IMPACT: understanding</pre></span></div>
               <span class="mv">Fable 5</span><span class="ma">›</span></button>
             <button class="mrow" type="button"><span class="mk">Usage</span>
               <span class="mv">55% · resets 09:29Z</span><span class="ma">›</span></button>
+            <button class="mrow" type="button"><span class="mk">Turn options</span>
+              <span class="mv">effort, budget and tool limits for the next message</span><span class="ma">›</span></button>
             <button class="mrow" type="button"><span class="mk">Routing</span>
               <span class="mv">departments this session touched</span><span class="ma">›</span></button>
             <button class="mrow" type="button"><span class="mk">Fold</span>

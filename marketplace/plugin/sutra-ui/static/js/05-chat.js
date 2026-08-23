@@ -810,11 +810,17 @@ function parseGov(text){
   const g = { verb:null, depth:null, risk:null, leaf:null, trace:null };
   const sections = [];
   if (!text) return { g, body: "", sections };
-  const h = text.match(/^\s*\[([A-Z0-9-]+)·([A-Z0-9-]+)[^\]]*RISK:\s*(\w+)\s*\]/);
-  if (h){ g.verb = h[2]; g.risk = h[3]; }
+  /* the H-Sutra header "[DIRECTION·VERB · ... · RISK:x]" -- fields may follow RISK
+     -- or the documented clarify form "[STAGE-1-FAIL · CLARIFY · attempt:1/1]",
+     which carries no RISK at all (10 real turns) */
+  const h = text.match(/^\s*\[([A-Z0-9-]+)\s*·\s*([A-Z0-9-]+)(?:[^\]]*RISK:\s*(\w+))?[^\]]*\]/);
+  if (h){ g.verb = h[2]; g.risk = h[3] || null; }
   const d = text.match(/DEPTH:\s*(\d)\s*\/\s*5/); if (d) g.depth = d[1];
   const p = text.match(/PLACEMENT:[^\n|]*>\s*([^>|\n]+?)\s*\|/); if (p) g.leaf = p[1].trim();
-  const tr = text.match(/\n`?OS:\s*([^\n`]+)/); if (tr) g.trace = tr[1].trim();
+  /* the trace is a " > " chain (985/985 real OS: lines); a bare "OS: macOS 14"
+     in a bug report is not one. The lowercase form needs the spec's five fields. */
+  const tr = text.match(/\n`?OS:\s*([^\n`]*\s>\s[^\n`]*)/) || text.match(/(?:^|\n)route:\s*((?:[^\n]*\s>\s){4}[^\n]*)/);
+  if (tr) g.trace = tr[1].trim();
 
   /* ── CAPTURE, not discard (founder 2026-08-22: "I don't want anything to be
      escaped"). Every governance block the model emits -- the H-Sutra header,
@@ -822,17 +828,29 @@ function parseGov(text){
      OS trace -- is lifted out of the body VERBATIM into `sections`, where the
      chip's panel shows it as an audit trail. The body is the reply alone.
 
-     Shape rules (codex 2026-08-22, ADVISORY):
+     Shape rules (codex 2026-08-22, ADVISORY; refuter 2026-08-23 against 5.6k
+     real turns):
        · a section opens on a column-0 known key. Field GROUPS (routing / depth
-         / triage) need a RUN of >= 2 key lines or a fence, so a lone sentence
-         like "TYPE: the parameter kind matters here" stays prose. Single-line
-         markers (PLACEMENT / FLOW / OS / BUILD-LAYER family) are always
-         governance, even alone.
-       · continuation lines are captured only when INDENTED (or a BLUEPRINT
-         sub-key at any indent). A column-0 "1. ..." right after a block is the
-         model's real answer and is never swallowed.
-       · a fence whose content carries a governance key is captured whole,
-         fence markers included; any other fence is the reply's own code.
+         / triage) need a RUN of >= 2 key lines, fenced or not, so a lone
+         sentence like "TYPE: the parameter kind matters here" stays prose; a
+         depth run must carry its DEPTH: line (0 real runs lack it), so a plan
+         comparison's "COST: / IMPACT:" pairs are the reply's own.
+       · a run directly under a prose line ending in ":" is a list the reply
+         introduces ("Each line means:") -- never a block (0 real blocks do).
+       · single-line markers (FLOW / PLACEMENT / OS / BUILD-LAYER family) are
+         governance even alone, but carry their shape: FLOW's bracketed spine,
+         PLACEMENT's D-path / "unresolved", a " > " chain on the trace. A pump
+         spec's "FLOW: 3.2 L/min" stays.
+       · continuation lines are captured only when INDENTED, or a BLUEPRINT
+         sub-key at any indent, a BLUEPRINT "Steps:" list item, or a FLOW "[n]"
+         step. A column-0 "1. ..." right after a block is the model's real
+         answer and is never swallowed.
+       · markdown dress ("**INPUT:**", "## BLUEPRINT", "- Doing:") is read
+         through for the key test only; lines are stored as emitted.
+       · a fence is captured whole, markers included, when its content passes
+         the same rules; an ASCII / unicode box ("+-- FLOW --+", "╭─ FLOW ─╮")
+         is captured fenced or not, when its rows carry a key, a "[n]" step or
+         a D-path (a box that merely SAYS "DEPTH" over buoy soundings is not one).
        · lossless: lines are stored exactly as emitted. Derived fields above
          are the only normalisation. */
   const GROUP = {
@@ -841,18 +859,54 @@ function parseGov(text){
     triage:    /^(TRIAGE|ESTIMATE|ACTUAL):/,
     blueprint: /^BLUEPRINT\b/,
     buildLayer:/^(BUILD-LAYER|ACTIVATION-SCOPE|TARGET-PATH):/,
-    flow:      /^FLOW:/,
-    placement: /^PLACEMENT:/,
-    trace:     /^`?OS:\s/,
+    flow:      /^FLOW:(?:[^\n]*\[|\s*$)/,
+    placement: /^PLACEMENT:(?=[^\n]*(\bD\d|[Uu]nresolved|[Hh]eld\b|[>|]))/,
+    /* "OS: a > b" or "route: a > b > c > d > e" (the spec's five fields);
+       "route: the bug is here" and a breadcrumb "Home > Settings > Billing" stay */
+    trace:     /^(`?OS:\s[^\n]*\s>\s|route:\s+(?:[^\n]*\s>\s){4})/,
+    /* the plugin's self-report line, exact prefix only (codex) */
+    state:     /^Governance state:\s+plugin\b/i,
   };
   const TITLE = { header:"Header", routing:"Input routing", depth:"Depth", flow:"Flow",
                   blueprint:"Blueprint", buildLayer:"Build layer", placement:"Placement",
-                  triage:"Triage", trace:"Trace", fence:"Governance" };
+                  triage:"Triage", trace:"Trace", state:"Governance state", fence:"Governance" };
   const RUN_GROUPS = ["routing", "depth", "triage"];             /* need >= 2 lines */
-  const keyOf = (l) => { for (const k in GROUP) if (GROUP[k].test(l)) return k; return null; };
-  const BP_SUB = /^\s*(Doing|Steps|Output looks like|Verified by|Scale|Stops if|Switch|Verify)\s*:/;
-  const isCont = (l, key) => /^\s+\S/.test(l) || (key === "blueprint" && BP_SUB.test(l));
+  const bare = (l) => l.replace(/^#{1,6}\s+(?=[A-Z])/, "").replace(/^(\s*(?:[-*]\s+)?)\*\*([^*\n]+?)\*\*/, "$1$2");
+  const keyOf = (l) => { l = bare(l); for (const k in GROUP) if (GROUP[k].test(l)) return k; return null; };
+  const BP_SUB = /^\s*(?:[-*]\s+)?(Doing|Steps|Output looks like|Verified by|Scale|Stops if|Switch|Verify)\s*:/;
+  const isSub = (l) => BP_SUB.test(bare(l));
+  const isCont = (l, key, steps) => /^\s+\S/.test(l)
+    || (key === "blueprint" && (isSub(l) || (steps && /^\s*(?:[-*]|\d+[.)])\s+/.test(l))))
+    || (key === "flow" && /^\[/.test(l));
   const push = (key, lines) => { if (lines.length) sections.push({ key, title: TITLE[key] || key, lines: lines.slice() }); };
+
+  /* boxes: "+-- FLOW ----+ | [1] TYPE: ... |" (the founder's 2026-08-23
+     screenshot; 133 real unfenced) and the unicode "╭─ FLOW ─╮ │ ... │" */
+  const BOX = /^(?:\+-+|[╭┌]─+)\s*(FLOW|BLUEPRINT|INPUT ROUTING|DEPTH|PLACEMENT|BUILD-LAYER|TRIAGE|GOVERNANCE)\b/i;
+  const BOX_KEY = { flow:"flow", blueprint:"blueprint", "input routing":"routing", depth:"depth",
+                    placement:"placement", "build-layer":"buildLayer", triage:"triage", governance:"fence" };
+  const BOXROW = /^[|+│╭╰┌└]/;
+  /* only a box ROW is read through its frame; an indented line elsewhere in a
+     fence is indented, exactly as it is unfenced */
+  const unbox = (l) => BOXROW.test(l) ? l.replace(/^[\s|+\-│╭╰┌└─]+/, "") : l;
+  /* what a block of lines says about itself, box framing ignored */
+  const evidence = (lines) => {
+    const e = { marker:false, run:0, subs:0, depth:false, steps:false, dpath:false };
+    const runs = {};
+    for (const raw of lines){
+      const l = unbox(raw);
+      const k = keyOf(l);
+      if (k){ if (RUN_GROUPS.includes(k)) runs[k] = (runs[k] || 0) + 1; else e.marker = true; }
+      if (isSub(l)) e.subs++;
+      if (/\bDEPTH:\s*\d\s*\/\s*5/.test(l)) e.depth = true;   /* the one-line depth block */
+      if (/\[\d+\]/.test(l)) e.steps = true;                  /* a FLOW box row: "[1] TYPE: ..." */
+      if (/\bD\d+\b/.test(l)) e.dpath = true;                  /* a PLACEMENT box row: "D0 > D3 Sutra OS" */
+    }
+    for (const k in runs) e.run = Math.max(e.run, runs[k]);
+    return e;
+  };
+  const isGov = (e, boxHead) => e.marker || e.run >= 2 || e.subs >= 2 || e.depth
+                              || (!!boxHead && (e.run >= 1 || e.steps || e.dpath));
 
   const src = text.split("\n");
   const kept = [];
@@ -864,35 +918,54 @@ function parseGov(text){
   }
   while (i < src.length){
     const line = src[i];
-    /* a fence: governance if any line inside carries a key, else the reply's */
     if (/^\s*```/.test(line)){
       let j = i + 1;
       while (j < src.length && !/^\s*```/.test(src[j])) j++;
       const closed = j < src.length;
       const inner = src.slice(i + 1, j);
-      const gov = inner.some(l => keyOf(l) || BP_SUB.test(l));
-      if (gov){
-        const first = inner.map(keyOf).find(Boolean) || "fence";
+      const boxHead = inner.length ? inner[0].match(BOX) : null;
+      const e = evidence(inner);
+      /* an unterminated fence is still streaming: one routing/depth key is
+         enough to hold it back until the closing marker says what it is */
+      if (isGov(e, boxHead) || (!closed && e.run >= 1)){
+        const first = (boxHead && BOX_KEY[boxHead[1].toLowerCase()])
+                   || inner.map(l => keyOf(unbox(l))).find(Boolean) || "fence";
         push(first, src.slice(i, closed ? j + 1 : j));   /* unterminated (streaming): capture what is there */
         i = closed ? j + 1 : j; continue;
       }
       kept.push(...src.slice(i, closed ? j + 1 : src.length)); i = closed ? j + 1 : src.length; continue;
     }
+    const ub = line.match(BOX);
+    if (ub){
+      let j = i + 1;
+      while (j < src.length && BOXROW.test(src[j]) && !BOX.test(src[j])) j++;
+      const rows = src.slice(i, j);
+      if (isGov(evidence(rows), ub)){ push(BOX_KEY[ub[1].toLowerCase()], rows); i = j; continue; }
+    }
     const key = keyOf(line);
     if (key){
       let j = i + 1;
       const lines = [line];
+      let steps = false;                                   /* inside a BLUEPRINT "Steps:" list */
       while (j < src.length){
         const l = src[j];
         const k2 = keyOf(l);
         /* same family continues the run; a sibling family (routing -> depth) starts its own */
-        if (k2 === key || (key === "blueprint" && BP_SUB.test(l))) { lines.push(l); j++; continue; }
+        if (k2 === key || (key === "blueprint" && isSub(l))) {
+          /* a column-0 sub-key opens or closes the Steps list; an indented "Verify:" under a step does not */
+          if (key === "blueprint" && !/^\s/.test(l)) steps = /^(?:[-*]\s+)?Steps\s*:/.test(bare(l));
+          lines.push(l); j++; continue;
+        }
         if (k2) break;
-        if (isCont(l, key)) { lines.push(l); j++; continue; }
+        if (isCont(l, key, steps)) { lines.push(l); j++; continue; }
         break;
       }
-      const keyLines = lines.filter(l => keyOf(l) === key || (key === "blueprint" && BP_SUB.test(l))).length;
-      if (RUN_GROUPS.includes(key) && keyLines < 2){ kept.push(line); i++; continue; }  /* a lone sentence, not a block */
+      const keyLines = lines.filter(l => keyOf(l) === key || (key === "blueprint" && isSub(l))).length;
+      const prose = RUN_GROUPS.includes(key) && (
+           keyLines < 2                                                          /* a lone sentence, not a block */
+        || (i > 0 && /\S:\s*$/.test(src[i - 1]) && !keyOf(src[i - 1]))           /* an introduced list */
+        || (key === "depth" && !lines.some(l => /^DEPTH:/.test(bare(l)))));      /* no DEPTH: -- the reply's own figures */
+      if (prose){ kept.push(...lines); i = j; continue; }
       push(key, lines); i = j; continue;
     }
     kept.push(line); i++;
@@ -971,6 +1044,35 @@ function gvChipHtml(t, i){
    Pure, DOM-free, and deliberately self-contained: test_governance.js extracts
    this function on its own, so it must not lean on helpers that would not
    travel with it. */
+/* What this chat is about, for the pane header (founder 2026-08-23: "know
+   what the chat is about", 45 words, not more). The ONLY deterministic source
+   is the first user prompt -- there is no summariser, and inventing a summary
+   would be fabrication -- so this is that prompt as INERT text: fences and
+   their contents dropped (a pasted code block says nothing about the chat),
+   whitespace collapsed, capped at 45 words AND 280 characters (codex: URL-heavy
+   prompts blow past a word cap), with an ellipsis so a cut never reads as the
+   whole. The server's `title` is the same prompt already cut at ~90 chars, so
+   a loaded transcript's first turn is preferred when it is there. */
+function sessSummary(s){
+  /* refuter 2026-08-23: must be INERT (control / bidi / zero-width chars
+     stripped -- the same gvClean the rows use), must not throw on odd turns,
+     must not slice a surrogate pair, and a prompt that is ONLY a code block
+     must fall back to the title rather than yield an empty header. A stray
+     opening fence drops its marker only, never the rest of the prompt. */
+  const turns = s && Array.isArray(s.turns) ? s.turns : [];
+  const t0 = turns.length && turns[0] && typeof turns[0].text === "string" ? turns[0].text : "";
+  const title = s && typeof s.title === "string" ? s.title : "";
+  const strip = (str) => gvClean(
+    String(str).replace(/```[\s\S]*?```/g, " ").replace(/^\s*```.*$/gm, " "), 100000);
+  let v = strip(t0) || strip(title);
+  const words = v.split(" ").filter(Boolean);
+  let cut = false;
+  if (words.length > 45){ v = words.slice(0, 45).join(" "); cut = true; }
+  const cps = Array.from(v);                                  /* code points, not UTF-16 units */
+  if (cps.length > 280){ v = cps.slice(0, 280).join("").replace(/\s+\S*$/, ""); cut = true; }
+  return v + (cut ? "…" : "");
+}
+
 /* Wire text arrives from a subagent prompt or a tool input, so it is
    attacker-influenced in any session that reads untrusted content. esc() stops
    markup at render time; this stops what esc() does not: control bytes, bidi

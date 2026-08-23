@@ -2774,12 +2774,17 @@ function paneHtml(over) {
 }
 const chipTagOf = h => (h.match(/<button[^>]*data-panemenu="sid-35"[^>]*>/) || [""])[0];
 
-test("35a. the expanded header carries identity only — no tabs, activity, side-chat or close", () => {
+/* DECISION CHANGE (founder, 2026-08-23) superseding 2026-08-18: the header is
+   BACK, minimal -- "what this chat is about" in <= 45 words, a live dot, and
+   the × close. Tabs, Activity and the side-chat control stay out. */
+test("35a. the expanded header is summary + live dot + close — nothing else", () => {
   const h = paneHtml();
   const ph = h.slice(h.indexOf('<div class="ph">'), h.indexOf('<div class="pb">'));
-  assert.ok(ph.includes("<h3"), "the title h3 stays: it IS the collapsed strip");
-  ["data-tab=", "data-act-toggle", "data-sidetoggle=", "data-close="].forEach(k =>
-    assert.ok(!ph.includes(k), k + " must not be in the header any more"));
+  assert.ok(/<h3 class="phsum"/.test(ph), "the summary h3 is the header");
+  assert.ok(/data-close="sid-35"/.test(ph), "the × close is back in the header (founder 2026-08-23)");
+  ["data-tab=", "data-act-toggle", "data-sidetoggle="].forEach(k =>
+    assert.ok(!ph.includes(k), k + " must not be in the header"));
+  assert.ok(/class="dot/.test(ph), "a live dot next to the summary");
 });
 
 test("35b. the section names itself — the only h3 is display:none while expanded", () => {
@@ -2799,7 +2804,7 @@ test("35c. the grip renders BEFORE the header while expanded, and not at all whi
     "collapsed: the strip's own fold button must be the only [data-pane-fold]");
 });
 
-test("35d. the composer opens with the session chip, left of attach; the placeholder is one word", () => {
+test("35d. the composer opens with the ⋯ chip, left of attach; no placeholder", () => {
   const h = paneHtml();
   const pc = h.slice(h.lastIndexOf('<div class="pc">'));
   const chip = pc.indexOf("data-panemenu="), attach = pc.indexOf("data-attach=");
@@ -2807,20 +2812,22 @@ test("35d. the composer opens with the session chip, left of attach; the placeho
   assert.ok(chip < attach, "chip must sit LEFT of attach (founder, 2026-08-18)");
   const firstCtl = pc.indexOf("<button");
   assert.ok(pc.slice(firstCtl, firstCtl + 600).includes("data-panemenu="), "the chip must be the first control");
-  assert.ok(/<textarea data-sask="sid-35"[^>]*placeholder="Message"/.test(pc), "placeholder must be exactly 'Message'");
+  assert.ok(!/<textarea data-sask="sid-35"[^>]*placeholder=/.test(pc), "NO placeholder (founder 2026-08-23: remove the silent text)");
   assert.ok(/<textarea data-sask="sid-35"[^>]*aria-label="Continue this session"/.test(pc), "aria-label unchanged");
 });
 
-test("35e. the chip carries the session name, a live dot and the contract's aria", () => {
+test("35e. the chip is ⋯ ONLY — identity moved to the header; the a11y name still says what it opens", () => {
   const h = paneHtml();
   const tag = chipTagOf(h);
   assert.ok(tag, "chip tag missing");
   assert.ok(/class="uchip[^"]*"/.test(tag), "the chip reuses .uchip");
-  assert.ok(/aria-label="Session — folder, permissions, model, usage, routing"/.test(tag));
+  assert.ok(/aria-label="Chat options — ledger migration"/.test(tag), "accessible name names the chat (codex P2)");
+  assert.ok(/aria-haspopup="true"/.test(tag), "a generic popup — the rows are not menuitems (refuter 2026-08-23)");
+  assert.ok(!/aria-controls=/.test(tag), "closed: no aria-controls to a non-existent id");
   assert.ok(/aria-expanded="false"/.test(tag), "closed by default");
   const inner = h.slice(h.indexOf(tag) + tag.length, h.indexOf("</button>", h.indexOf(tag)));
-  assert.ok(inner.includes("ledger migration"), "the chip must name the session");
-  assert.ok(/class="uring/.test(inner), "the live dot reuses .uring");
+  assert.strictEqual(inner.replace(/<[^>]+>/g, "").trim(), "⋯", "three dots only (founder 2026-08-23)");
+  assert.ok(!/uname|uring|udirty/.test(inner), "no name, no live ring, no dirty dot on the chip");
   assert.ok(/aria-expanded="true"/.test(chipTagOf(paneHtml({ menu: true }))), "open state reflected");
 });
 
@@ -2828,8 +2835,9 @@ test("35f. the menu is closed by default and, open, carries every relocated cont
   assert.ok(!paneHtml().includes('class="mrow'), "no menu rows while closed");
   const hm = paneHtml({ menu: true });
   const keys = [...hm.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
-  deepEq(keys, ["Folder", "Permissions", "Model", "Usage", "Routing", "Fold", "Close"],
-    "the 7-row contract from drive-preview.mjs");
+  deepEq(keys, ["Folder", "Permissions", "Model", "Usage", "Turn options", "Routing", "Fold", "Close"],
+    "the 8-row contract: the ≡ turn-options control became a row (founder 2026-08-23)");
+  assert.ok(/id="panemenu-sid-35"/.test(hm), "the popover carries the id aria-controls points at");
   assert.ok(/<div class="upop[^"]*"/.test(hm), "the popover reuses .upop");
 });
 
@@ -2874,14 +2882,15 @@ test("35i. every row dispatches to the state the old control mutated, and closes
   T.S.sessions = T.S.sessions.filter(s => s.id !== sid);
 });
 
-test("35j. the stylesheet ships the chrome: scoped header-hide, grip, rows, chip truncation", () => {
+test("35j. the stylesheet ships the chrome: visible minimal header, grip, rows, chip", () => {
   const css = require("fs").readFileSync(__dirname + "/static/panel.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  assert.ok(/\.pane\[data-sess\]:not\(\.collapsed\)\s*>\s*\.ph\s*\{\s*display:\s*none/.test(css),
-    "header hidden while expanded — SCOPED to session panes (codex [P2]: the browse pane keeps its header)");
-  assert.ok(!/\.pane:not\(\.collapsed\)\s*>\s*\.ph/.test(css), "the unscoped rule would strip the browse pane's fold/close");
+  assert.ok(!/\.pane\[data-sess\]:not\(\.collapsed\)\s*>\s*\.ph\s*\{\s*display:\s*none/.test(css),
+    "the header is VISIBLE while expanded again (founder 2026-08-23)");
+  assert.ok(/\.pane\[data-sess\]:not\(\.collapsed\)\s*>\s*\.ph\s*>\s*\.pfold\s*\{\s*display:\s*none/.test(css),
+    "but the strip's fold button stays hidden while expanded — the grip folds");
+  assert.ok(/\.phsum\{[^}]*line-clamp/.test(css), "the summary clamps to two lines");
   assert.ok(/\.pgrip\s*\{/.test(css), ".pgrip rule missing");
   assert.ok(/\.mrow\s*\{/.test(css), ".mrow rule missing");
-  assert.ok(/\.uchip\[data-panemenu\]\s*\{[^}]*max-width/.test(css), "long titles must truncate (codex [P3])");
   assert.ok(/\.pane\[data-sess\]\s*>\s*\.pb\s*,\s*\.pane\[data-sess\]\s*>\s*\.pc\s*\{\s*padding-left:\s*19px/.test(css),
     "body + composer clear the grip");
 });
@@ -2927,10 +2936,10 @@ test("35l. with a repository known, Folder carries branch + state and PR rows ap
   try {
     const hm = paneHtml({ menu: true });
     const keys = [...hm.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
-    deepEq(keys, ["Folder", "Pull requests", "Create PR", "Permissions", "Model", "Usage", "Routing", "Fold", "Close"]);
+    deepEq(keys, ["Folder", "Pull requests", "Create PR", "Permissions", "Model", "Usage", "Turn options", "Routing", "Fold", "Close"]);
     assert.ok(/main · \+10 −3/.test(hm), "Folder row must show branch + dirty state");
     assert.ok(!/class="repobar/.test(paneHtml()), "the bar itself must be gone");
-    assert.ok(/class="udirty"/.test(paneHtml()), "dirty state stays glanceable on the chip (codex P2)");
+    assert.ok(!/class="udirty"/.test(paneHtml()), "no dirty dot on the chip any more — the Folder row carries it (founder 2026-08-23: three dots only)");
   } finally { T.S.repo = prevRepo; }
 });
 
@@ -2940,7 +2949,6 @@ test("35m. a clean tree: Folder says clean, no dirty dot; no remote: no PR rows"
     const hm = paneHtml({ menu: true });
     assert.ok(/main · clean/.test(hm));
     assert.ok(!/Pull requests|Create PR/.test(hm), "no remote -> nothing to open a PR against");
-    assert.ok(!/class="udirty"/.test(paneHtml()));
   } finally { T.S.repo = prevRepo; }
 });
 
@@ -2990,6 +2998,136 @@ test("37a. the routing view is an indented tree with turn badges and a way back"
 test("37b. no placements: the honest empty state, still with a way back", () => {
   const html = sandbox.routingChart({ id: "s", title: "t", turns: [{ text: "x", transcript: true }] });
   assert.ok(/rt-back/.test(html) && /No turn here carries a placement/.test(html));
+});
+
+/* ── 38. the header says what the chat is about — deterministically ───────── */
+test("38a. the summary is the first prompt, capped at 45 words with an ellipsis", () => {
+  const words = Array.from({ length: 60 }, (_, i) => "w" + i).join(" ");
+  const h = sandbox.sessionPane({ id: "sid-38", title: "short title", real: false, cwd: "", channel: null,
+    turns: [{ text: words }] });
+  const m = h.match(/<h3 class="phsum"[^>]*>([^<]*)<\/h3>/);
+  assert.ok(m, "summary h3 missing");
+  const shown = m[1];
+  assert.ok(shown.endsWith("…"), "a cut must say so");
+  assert.strictEqual(shown.replace("…", "").trim().split(" ").length, 45, "exactly 45 words survive");
+});
+
+test("38b. a pasted code block says nothing about the chat — fences are dropped, text stays", () => {
+  const h = sandbox.sessionPane({ id: "sid-38", title: "t", real: false, cwd: "", channel: null,
+    turns: [{ text: "Fix this:\n```js\nconst secret = 1;\n```\nplease" }] });
+  const shown = h.match(/<h3 class="phsum"[^>]*>([^<]*)<\/h3>/)[1];
+  assert.strictEqual(shown, "Fix this: please");
+});
+
+test("38c. with no transcript loaded the server title is the summary; collapsed shows the raw title", () => {
+  const open = sandbox.sessionPane({ id: "sid-38", title: "server title here", real: false, cwd: "", channel: null, turns: [] });
+  assert.ok(/<h3 class="phsum"[^>]*>server title here<\/h3>/.test(open));
+  T.S.ui.paneCollapsed["sid-38"] = true;
+  try {
+    const col = sandbox.sessionPane({ id: "sid-38", title: "server title here", real: false, cwd: "", channel: null,
+      turns: [{ text: Array.from({ length: 60 }, () => "x").join(" ") }] });
+    assert.ok(/<h3 class="phsum"[^>]*>server title here<\/h3>/.test(col), "the strip keeps the plain title");
+  } finally { delete T.S.ui.paneCollapsed["sid-38"]; }
+});
+
+test("38d. the summary is inert text — markup in a prompt cannot render", () => {
+  const h = sandbox.sessionPane({ id: "sid-38", title: "t", real: false, cwd: "", channel: null,
+    turns: [{ text: "<img src=x onerror=alert(1)> hello" }] });
+  assert.ok(!/<img/.test(h) && /&lt;img/.test(h));
+});
+
+test("38e. the ≡ control is gone from the composer and lives in the menu as Turn options", () => {
+  const h = paneHtml();
+  const pc = h.slice(h.lastIndexOf('<div class="pc">'));
+  assert.ok(!/data-optstoggle/.test(pc), "no turn-options button next to send");
+  const sid = "sid-38e";
+  T.S.sessions.push({ id: sid, title: "t", turns: [] });
+  try {
+    withNoopRender(() => {
+      T.S.paneMenu = sid; sandbox.paneMenuAction(sid, "opts");
+      assert.strictEqual(T.S.optsOpen[sid], true, "the row toggles the same state the button did");
+      assert.strictEqual(T.S.paneMenu, null);
+    });
+  } finally { delete T.S.optsOpen[sid]; T.S.sessions = T.S.sessions.filter(s => s.id !== sid); }
+});
+
+/* ── 39. the capture boundary, in the DOM (L2 of test_governance.js §13) ──
+   The refuter's 2026-08-23 repros through the REAL render path: mdHtml(gvBody())
+   inside turnResponse, and gvChipHtml for the panel. A reply that merely LOOKS
+   like governance must reach the DOM; governance in a new dress must not. */
+const t39 = (uid, response) => ({ uid, streaming: false, response, tools: [], toolRuns: [] });
+
+test("39a. a glossary explaining the routing keys renders in the turn body, figures and all", () => {
+  const html = T.turnResponse(t39("t39a",
+    "[INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low]\nINPUT: x\nTYPE: question\n\n"
+    + "Each line of the routing block has a fixed meaning:\nINPUT: a paraphrase of what you said\n"
+    + "TYPE: one of direction/task/feedback/question\nROUTE: which skill handles it\n\nSo ROUTE: is just the dispatch decision."));
+  assert.ok(/TYPE: one of direction\/task\/feedback\/question/.test(html), "the glossary was stripped: " + html);
+  assert.ok(/ROUTE: which skill handles it/.test(html));
+  assert.ok(!/INPUT: x|TYPE: question/.test(html), "the real block still must not reach the DOM");
+});
+
+test("39b. a plan comparison keeps its COST:/IMPACT: figures; a bug report keeps its OS: line", () => {
+  const plan = T.turnResponse(t39("t39b",
+    "Option A — keep Postgres\nCOST: $40/mo\nIMPACT: no migration work\n\nOption B — move to SQLite\nCOST: $0\nIMPACT: lose concurrent writers\n\nI would pick A."));
+  assert.ok(/COST: \$40\/mo/.test(plan) && /IMPACT: lose concurrent writers/.test(plan), "figures lost: " + plan);
+  const env = T.turnResponse(t39("t39b2", "Environment:\n\nOS: macOS 14.6 (Darwin 23.6.0)\nBrowser: Chrome 128\n\nThe crash is in the renderer."));
+  assert.ok(/OS: macOS 14\.6/.test(env), "the environment line was taken for the trace: " + env);
+});
+
+test("39c. a fenced ticket template with one Steps: line, and a fenced commit template, render as the reply's code", () => {
+  const html = T.turnResponse(t39("t39c",
+    "Paste this into the ticket:\n\n```\nTitle: Login button unresponsive\nSteps:\n1. open /login\nExpected: redirect to /home\n```\n\n"
+    + "Use the team template:\n\n```\nTYPE: fix | feat | chore\nSCOPE: module name\n```"));
+  assert.ok(/Steps:/.test(html) && /Expected: redirect to \/home/.test(html), "the ticket template was stripped: " + html);
+  assert.ok(/TYPE: fix \| feat \| chore/.test(html), "the commit template was stripped: " + html);
+});
+
+test("39d. an UNFENCED FLOW box never reaches the turn body and sits whole in the open chip panel", () => {
+  const resp = "+-- FLOW -----+\n| [1] TYPE: question |\n| [2] RESOLVE: CONSTRUCT |\n+-------------+\n\nHere is the real answer.";
+  const body = T.turnResponse(t39("t39d", resp));
+  assert.ok(!/\+-- FLOW|RESOLVE: CONSTRUCT/.test(body), "the box leaked into the body: " + body);
+  assert.ok(/Here is the real answer\./.test(body));
+  T.S.govOpen = { t39d: true };
+  try {
+    const chip = sandbox.gvChipHtml(t39("t39d", resp), 0);
+    assert.ok(chip.includes('<span class="gv-label">Flow</span>'), "no Flow row in the panel");
+    assert.ok(/\[2\] RESOLVE: CONSTRUCT/.test(chip) && /\+-------------\+/.test(chip), "the box is not shown whole: " + chip);
+  } finally { T.S.govOpen = {}; }
+});
+
+test("39e. bold **INPUT:** keys, a multi-line FLOW and a Steps bullet list are governance in the DOM too", () => {
+  const bold = T.turnResponse(t39("t39e", "**INPUT:** ship it\n**TYPE:** task\n**ACTION:** do it\n\nHere is the real answer."));
+  assert.ok(!/INPUT:|ACTION:/.test(bold), "bold keys leaked: " + bold);
+  const flow = T.turnResponse(t39("t39e2", "FLOW: [1] task/cell\n[2] FOLLOW core:flow\n[6] close\n\nHere is the real answer."));
+  assert.ok(!/FOLLOW core:flow|\[6\] close/.test(flow), "FLOW continuation leaked: " + flow);
+  const bp = T.turnResponse(t39("t39e3", "BLUEPRINT\nDoing: the thing\nSteps:\n- first\n- second\nStops if: z\n\nHere is the real answer."));
+  assert.ok(!/Stops if: z|- second/.test(bp), "Steps bullets leaked: " + bp);
+  [bold, flow, bp].forEach(h => assert.ok(/Here is the real answer\./.test(h), "the answer must survive"));
+});
+
+test("39f. the [STAGE-1-FAIL · CLARIFY] header is lifted out of the body and names the verb on the chip", () => {
+  const t = t39("t39f", "[STAGE-1-FAIL · CLARIFY · attempt:1/1]\n\nWhich file did you mean?");
+  const body = T.turnResponse(t);
+  assert.ok(!/STAGE-1-FAIL/.test(body), "the clarify header leaked: " + body);
+  assert.ok(/Which file did you mean\?/.test(body));
+  assert.ok(/<span>CLARIFY<\/span>/.test(sandbox.gvChipHtml(t, 0)), "the chip must carry the verb");
+});
+
+/* ── 40. the ⋯ popover's a11y contract (refuter 2026-08-23) ──────────────── */
+test("40a. the popover is a labelled group, not a menu it cannot honour; aria-controls only while open", () => {
+  const closed = chipTagOf(paneHtml());
+  assert.ok(/aria-haspopup="true"/.test(closed), "generic popup, not menu semantics");
+  assert.ok(!/aria-controls=/.test(closed), "aria-controls must not point at an id that does not exist");
+  const hm = paneHtml({ menu: true });
+  assert.ok(/aria-controls="panemenu-sid-35"/.test(chipTagOf(hm)), "open: it points at the popover");
+  assert.ok(/<div class="upop panemenu" id="panemenu-sid-35" role="group"/.test(hm));
+  assert.ok(!/role="menu"/.test(hm) && !/role="menuitem"/.test(hm));
+});
+
+test("40b. the live dot has a text alternative when it means something, and is hidden when it does not", () => {
+  const quiet = paneHtml();
+  assert.ok(/class="dot " aria-hidden="true"/.test(quiet), "idle dot is decorative");
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

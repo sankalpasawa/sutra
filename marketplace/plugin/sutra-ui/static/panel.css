@@ -1129,15 +1129,21 @@
      LEFT because the chip is left. Rows borrow the .gv-row rhythm so the menu
      reads like the governance panel, not a second visual language. */
   .pane[data-sess]{position:relative}
-  .pane[data-sess]:not(.collapsed) > .ph{display:none}
+  /* 2026-08-23: the header is BACK, minimal -- summary (<=45 words, clamped to
+     two lines) + live dot + close. It keeps the collapsed-strip behaviour. */
+  .pane[data-sess]:not(.collapsed) > .ph{flex-wrap:nowrap;align-items:flex-start}
+  .pane[data-sess]:not(.collapsed) > .ph > .pfold{display:none}
+  .pane[data-sess]:not(.collapsed) > .ph > .dot{margin-top:6px}
+  .pane[data-sess]:not(.collapsed) > .ph .phsum{white-space:normal;max-width:none;flex:1;min-width:0;
+    font-weight:500;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .pane[data-sess]:not(.collapsed) > .ph [data-close]{margin-left:auto;flex:none}
   .pane[data-sess] > .pb,.pane[data-sess] > .pc{padding-left:19px}
   .pgrip{position:absolute;left:0;top:0;bottom:0;width:11px;border:0;background:none;
     cursor:pointer;display:grid;place-items:center;color:transparent;padding:0;z-index:2}
   .pane[data-sess]:hover .pgrip{color:var(--faint)}
   .pgrip:hover{background:var(--acc-bg);color:var(--acc)}
   .pgrip:focus-visible{outline:2px solid var(--acc);outline-offset:-2px;color:var(--acc)}
-  .uchip[data-panemenu]{max-width:220px;min-width:0}
-  .uchip[data-panemenu] .uname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .uchip[data-panemenu]{padding:5px 9px;font-size:13px;line-height:1;min-width:0}
   .upop.panemenu{left:8px;right:auto;width:300px;padding:4px;display:flex;flex-direction:column}
   .mrow{display:grid;grid-template-columns:82px 1fr 10px;gap:10px;align-items:baseline;
     padding:7px 9px;background:none;border:0;text-align:left;cursor:pointer;
@@ -1485,8 +1491,6 @@
   /* governance panel: captured blocks, verbatim (audit trail) */
   .gv-pre{margin:0;white-space:pre-wrap;word-break:break-word;font:10.5px/1.5 var(--mono);color:var(--muted);
     max-height:220px;overflow:auto}
-  /* the ⋯ chip's dirty-tree dot: branch state glanceable with the repo bar gone */
-  .uchip .udirty{width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none;margin-left:2px}
   /* Routing view: a tree-list in the pane's row idiom */
   .rt{display:flex;flex-direction:column;gap:8px}
   .rt-back{align-self:flex-start;background:none;border:1px solid var(--line);border-radius:6px;

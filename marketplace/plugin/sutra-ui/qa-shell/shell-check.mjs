@@ -132,6 +132,9 @@ const state = await page.evaluate(() => {
       const pc = pane.querySelector(":scope > .pc");
       const chip = pc && pc.querySelector("[data-panemenu]");
       r.chromeChipFirst = !!(chip && pc.querySelector("button") === chip);
+      r.chromeChipText = chip ? chip.textContent.trim() : "";
+      r.chromeSummaryWords = ph ? ((ph.querySelector(".phsum") || {}).textContent || "").trim().split(/\s+/).filter(Boolean).length : 0;
+      r.chromeClose = !!(ph && ph.querySelector("[data-close]"));
       const sid = pane.dataset.sess;
       S.paneMenu = sid;
       const menu = paneMenuHtml(S.sessions.find(x => x.id === sid) || { id: sid, title: "" });
@@ -155,19 +158,22 @@ check("unfenced governance run stripped from bodies", state.unfencedStripped ===
 check("governance captured as sections in the running shell",
   state.govSections === "header,routing,depth,placement,trace", state.govSections);
 check("and the body is the reply alone, numbered list intact", state.govBody === "Real.\n\n1. kept", JSON.stringify(state.govBody));
-check("chrome: session pane header hidden while expanded", state.chromeHeaderHidden === true, String(state.chromeHeaderHidden));
+check("chrome: session pane header VISIBLE while expanded, carrying a <=45-word summary and the × close",
+  state.chromeHeaderHidden === false && state.chromeSummaryWords > 0 && state.chromeSummaryWords <= 45 && state.chromeClose === true,
+  "hidden=" + state.chromeHeaderHidden + " words=" + state.chromeSummaryWords + " close=" + state.chromeClose);
+check("chrome: the composer chip is three dots only", state.chromeChipText === "⋯", JSON.stringify(state.chromeChipText));
 check("chrome: ⋯ chip is the first composer control", state.chromeChipFirst === true, String(state.chromeChipFirst));
 /* the 7-row contract holds as an ORDERED SUBSEQUENCE: when the session's folder
    is a repository with a remote, "Pull requests" and "Create PR" sit right after
    Folder (35l) -- the installed app opened on exactly such a session, and the
    strict 7-row form read that correct 9-row menu as a failure (2026-08-22) */
-const CORE = ["Folder","Permissions","Model","Usage","Routing","Fold","Close"];
+const CORE = ["Folder","Permissions","Model","Usage","Turn options","Routing","Fold","Close"];
 const got = String(state.chromeMenuKeys || "").split(",");
 const coreInOrder = CORE.every((k, i) => got.indexOf(k) > (i ? got.indexOf(CORE[i-1]) : -1));
 const extras = got.filter(k => !CORE.includes(k));
 const extrasOk = extras.every(k => k === "Pull requests" || k === "Create PR")
   && (!extras.length || got.indexOf(extras[0]) === got.indexOf("Folder") + 1);
-check("chrome: the pane menu carries the 7 relocated controls in order (PR rows allowed after Folder)",
+check("chrome: the pane menu carries the 8 relocated controls in order (PR rows allowed after Folder)",
   coreInOrder && extrasOk, state.chromeMenuKeys);
 check("roster button carries the token ink, never UA buttontext",
   state.rowColor === state.inkColor && state.rowColor !== "no row mounted",

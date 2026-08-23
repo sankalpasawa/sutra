@@ -591,6 +591,247 @@ test('10k. a preamble with NO answer yields an empty body and full sections', ()
   assert.ok(r.sections.length >= 6);
 });
 
+/* ── 11. capture: boxes, the state line, the lowercase trace — and the guards ──
+   The founder's 2026-08-23 screenshot: a FENCED ASCII box "+-- FLOW ---+ | [1]
+   TYPE: ... |", a bare "Governance state: plugin ..." line and a "route: a > b
+   > c" trace all leaked. Captured now -- with codex's over-capture guards. */
+const SHOT = "[INBOUND·QUERY · TIMING:now · CHANNEL:in-band · REV:none · RISK:low]\n" +
+  "```\n+-- FLOW ------------------------------------------------+\n| Unit:    Respond to greeting                              |\n" +
+  "| [1] TYPE: question / cell social-inbound                 |\n| [2] RESOLVE: CONSTRUCT (trivial, no workflow type fits)  |\n" +
+  "| [3] STEPS: 1 -> reply                                    |\n+----------------------------------------------------------+\n```\n\n" +
+  "Hi. No tool calls this turn — nothing written.\n\n" +
+  "Governance state: plugin v2.117.0, findings open=19 critical=0.\n\n" +
+  "route: input-routing > D1.D1.D3 Engine Library > 0 nodes > readability gate > 0 files";
+
+test('11a. the founder\'s exact screenshot: box, state line and route all captured; only the greeting remains', () => {
+  const r = PG(SHOT);
+  assert.strictEqual(r.body, 'Hi. No tool calls this turn — nothing written.', r.body);
+  assert.deepStrictEqual(r.sections.map(x => x.key), ['header', 'flow', 'state', 'trace']);
+});
+
+test('11b. the box is captured WHOLE and verbatim, fence markers included', () => {
+  const fl = PG(SHOT).sections.find(x => x.key === 'flow');
+  assert.strictEqual(fl.lines[0], '```'); assert.ok(fl.lines[1].startsWith('+-- FLOW'));
+  assert.ok(fl.lines.some(l => l.includes('[2] RESOLVE: CONSTRUCT')));
+  assert.strictEqual(fl.lines[fl.lines.length - 1], '```');
+});
+
+test('11c. the lowercase route: trace feeds the chip trace field', () => {
+  assert.ok(/input-routing > D1\.D1\.D3 Engine Library/.test(PG(SHOT).g.trace));
+});
+
+test('11d. GUARD: a code fence with ONE key-looking line is the reply\'s own code', () => {
+  const r = PG('Here is the log:\n```\n| line 1 |\n| TYPE: widget |\n| line 3 |\n```');
+  assert.strictEqual(r.sections.length, 0);
+  assert.ok(r.body.includes('TYPE: widget'));
+});
+
+test('11e. GUARD: an unknown box header is not governance', () => {
+  const r = PG('```\n+-- RESULTS ----+\n| total: 3      |\n+---------------+\n```');
+  assert.strictEqual(r.sections.length, 0);
+});
+
+test('11f. GUARD: two keys inside a box ARE governance even without a known header', () => {
+  const r = PG('```\n| INPUT: x |\n| TYPE: task |\n```');
+  assert.strictEqual(r.sections.length, 1);
+});
+
+test('11g. GUARD: prose "route: the bug is here" stays; only a > chain is a trace', () => {
+  const r = PG('The fix: route: the bug is here, in the router.\nroute: a > b');
+  assert.ok(r.body.includes('route: the bug is here') && r.body.includes('route: a > b'), r.body);
+  assert.strictEqual(r.sections.length, 0);
+});
+
+test('11h. GUARD: "Governance state:" needs the exact plugin prefix', () => {
+  const r = PG('Governance state: messy\nGovernance state: plugin v1, ok');
+  assert.ok(r.body.includes('Governance state: messy'));
+  assert.strictEqual(r.sections.length, 1); assert.strictEqual(r.sections[0].key, 'state');
+});
+
+/* ── 12. sessSummary — the header, deterministically ───────────────────────── */
+const SUM = new Function(slice('function gvClean', 'return v;') + slice('function sessSummary', 'return v + (cut') + '; return sessSummary;')();
+test('12a. 45 words, then an ellipsis', () => {
+  const t = Array.from({ length: 50 }, (_, i) => 'w' + i).join(' ');
+  const v = SUM({ turns: [{ text: t }] });
+  assert.ok(v.endsWith('…') && v.replace('…', '').split(' ').length === 45);
+});
+test('12b. a 280-char ceiling catches URL soup that a word cap misses', () => {
+  const v = SUM({ turns: [{ text: 'https://' + 'x'.repeat(400) + ' tail' }] });
+  assert.ok(v.length <= 281 && v.endsWith('…'), String(v.length));
+});
+test('12c. fences dropped, whitespace collapsed, short text untouched', () => {
+  assert.strictEqual(SUM({ turns: [{ text: 'a\n\n```\ncode\n```\n  b  ' }] }), 'a b');
+  assert.strictEqual(SUM({ title: 'just a title' }), 'just a title');
+  assert.strictEqual(SUM(null), '');
+});
+
+/* ── 13. the refuter's 2026-08-23 pass: over-capture (a reply that LOOKS like
+   governance is the reply) and under-capture (governance that leaks). Every
+   input below is the refuter's own repro, and every shape rule was checked
+   against 5.6k real assistant turns before it was written (survey in the
+   commit). The contract stays what it was: body = the reply alone, sections =
+   the governance verbatim -- these pin the boundary from both sides. */
+const GOV = '[INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low]\n'
+  + 'INPUT: x\nTYPE: question\nROUTE: answer\nFIT CHECK: none\nACTION: reply\n\n';
+const keysOf = r => r.sections.map(x => x.key);
+
+/* over-capture: the reply survives */
+test('13a. a glossary the reply INTRODUCES ("...meaning:") is the reply, even as a run of routing keys', () => {
+  const r = PG(GOV + 'Each line of the routing block has a fixed meaning:\nINPUT: a paraphrase of what you said\n'
+    + 'TYPE: one of direction/task/feedback/question\nROUTE: which skill handles it\nACTION: what Claude does next\n\n'
+    + 'So ROUTE: is just the dispatch decision.');
+  assert.ok(r.body.includes('TYPE: one of direction/task/feedback/question'), r.body);
+  assert.ok(r.body.includes('ACTION: what Claude does next') && r.body.includes('So ROUTE: is just'), r.body);
+  assert.deepStrictEqual(keysOf(r), ['header', 'routing'], 'the real block is still captured once');
+});
+
+test('13b. a plan comparison\'s COST:/IMPACT: pairs keep their figures -- a depth run carries DEPTH:', () => {
+  const r = PG(GOV + 'Option A — keep Postgres\nCOST: $40/mo\nIMPACT: no migration work\n\n'
+    + 'Option B — move to SQLite\nCOST: $0\nIMPACT: lose concurrent writers\n\nI would pick A.');
+  ['COST: $40/mo', 'IMPACT: no migration work', 'COST: $0', 'IMPACT: lose concurrent writers']
+    .forEach(l => assert.ok(r.body.includes(l), 'lost: ' + l + ' in ' + JSON.stringify(r.body)));
+  assert.ok(!keysOf(r).includes('depth'));
+  /* and the real thing, with its DEPTH: line, is still a block */
+  assert.deepStrictEqual(keysOf(PG('TASK: "ship"\nDEPTH: 3/5\nCOST: ~$1\n\nAnswer.')), ['depth']);
+});
+
+test('13c. a fenced bug-report template with ONE "Steps:" line is the reply\'s own', () => {
+  const r = PG(GOV + 'Paste this into the ticket:\n\n```\nTitle: Login button unresponsive\nSteps:\n1. open /login\n'
+    + '2. click Sign in\nExpected: redirect to /home\nActual: nothing\n```\n\nAttach the HAR file too.');
+  assert.ok(r.body.includes('Steps:') && r.body.includes('Expected: redirect to /home') && r.body.includes('Attach the HAR'), r.body);
+  assert.deepStrictEqual(keysOf(r), ['header', 'routing']);
+});
+
+test('13d. an UNCLOSED fence with one "Verify:" line does not swallow the rest of the reply', () => {
+  const r = PG(GOV + 'Checklist:\n```\nVerify: backups exist\nThen run the migration and\n'
+    + 'then tell the team. Here is the actual SQL:\nALTER TABLE t ADD COLUMN c int;');
+  assert.ok(r.body.includes('ALTER TABLE t ADD COLUMN c int;') && r.body.includes('Verify: backups exist'), r.body);
+  /* while a streaming governance fence is still held back on its first key */
+  assert.deepStrictEqual(keysOf(PG('```\nINPUT: partial')), ['routing']);
+});
+
+test('13e. a fenced commit template with one uppercase TYPE: key is code -- a run is >= 2, fenced or not', () => {
+  const r = PG(GOV + 'Use the team template:\n\n```\nTYPE: fix | feat | chore\nSCOPE: module name\nSUMMARY: one line\n```');
+  assert.ok(r.body.includes('TYPE: fix | feat | chore') && r.body.includes('SUMMARY: one line'), r.body);
+  assert.deepStrictEqual(keysOf(r), ['header', 'routing']);
+  /* the real one-line depth block ("TASK: .. DEPTH: 1/5 .. IMPACT: ..") is still a block */
+  assert.deepStrictEqual(keysOf(PG('```\nTASK: "reopen deck"  DEPTH: 1/5  EFFORT: <1 min  COST: ~$0  IMPACT: deck visible\n```\nOk.')), ['depth']);
+});
+
+test('13f. a bug report\'s "OS: macOS 14.6" is an environment line, not the trace -- the trace is a " > " chain', () => {
+  const r = PG(GOV + 'Please file it with this environment block:\n\nOS: macOS 14.6 (Darwin 23.6.0)\nBrowser: Chrome 128\n'
+    + 'Node: 20.11\n\nThe crash is in the renderer.');
+  assert.ok(r.body.includes('OS: macOS 14.6 (Darwin 23.6.0)'), r.body);
+  assert.strictEqual(r.g.trace, null, 'the chip trace must not be polluted');
+  assert.deepStrictEqual(keysOf(r), ['header', 'routing']);
+});
+
+test('13g. a breadcrumb "route: Home > Settings > Billing > Invoices" stays; the lowercase trace needs the spec\'s five fields', () => {
+  const r = PG(GOV + 'To find the setting:\nroute: Home > Settings > Billing > Invoices\nThen click Export.');
+  assert.ok(r.body.includes('route: Home > Settings > Billing > Invoices'), r.body);
+  assert.strictEqual(r.g.trace, null);
+  assert.ok(/input-routing/.test(PG(SHOT).g.trace), '11c still holds: the five-field route: IS the trace');
+});
+
+test('13h. a pump spec\'s FLOW:/PLACEMENT: lines stay -- the markers carry their shape', () => {
+  const r = PG(GOV + 'Pump spec:\nFLOW: 3.2 L/min at 2 bar\nPLACEMENT: below the tank outlet, never above\nHEAD: 4 m');
+  assert.ok(r.body.includes('FLOW: 3.2 L/min at 2 bar') && r.body.includes('PLACEMENT: below the tank outlet'), r.body);
+  assert.deepStrictEqual(keysOf(r), ['header', 'routing']);
+  /* the real shapes: a bracketed spine, a D-path, the unresolved form */
+  assert.deepStrictEqual(keysOf(PG('FLOW: [1] task · [2] CONSTRUCT\nPLACEMENT: D0 Asawa Inc.\nA.\nPLACEMENT: (domain unresolved; charter: x) proceeding')),
+    ['flow', 'placement', 'placement']);
+});
+
+test('13i. a box that merely SAYS "DEPTH" over buoy soundings is the reply\'s own box', () => {
+  const r = PG(GOV + 'Soundings:\n```\n+-- DEPTH -------+\n| buoy 1 | 3.1 m |\n| buoy 2 | 4.7 m |\n+----------------+\n```');
+  assert.ok(r.body.includes('| buoy 1 | 3.1 m |'), r.body);
+  assert.deepStrictEqual(keysOf(r), ['header', 'routing']);
+});
+
+test('13j. an indented "BLUEPRINT step" inside a diagram fence is not a marker -- only box rows read through their frame', () => {
+  const r = PG('```\n   atom open          workflow author\n   BLUEPRINT step     system charter\n```\nProse.');
+  assert.strictEqual(r.sections.length, 0);
+  assert.ok(r.body.includes('BLUEPRINT step'));
+});
+
+/* under-capture: the governance is captured */
+test('13k. an UNFENCED "+-- FLOW --+" box is captured whole (133 real turns draw it unfenced)', () => {
+  const r = PG('+-- FLOW -----+\n| [1] TYPE: question |\n| [2] RESOLVE: CONSTRUCT |\n| [3] STEPS: 1 -> reply |\n+-------------+\n\nHere is the real answer.');
+  assert.strictEqual(r.body, 'Here is the real answer.', r.body);
+  assert.deepStrictEqual(keysOf(r), ['flow']);
+  assert.strictEqual(r.sections[0].lines.length, 5, 'all five rows, bottom edge included');
+  /* and the real "(close)" box whose only evidence is a "[6]" row */
+  const c = PG('+-- FLOW (close) ----+\n| Unit:    Connect |\n| [6] CLOSE: ok     |\n+--------------------+\n\nAnswer.');
+  assert.strictEqual(c.body, 'Answer.'); assert.deepStrictEqual(keysOf(c), ['flow']);
+});
+
+test('13l. a unicode box "╭─ FLOW ─╮ │ [1] TYPE: … │" is a box too, fenced', () => {
+  const r = PG('```\n╭─ FLOW ───╮\n│ [1] TYPE: question │\n│ [2] RESOLVE: CONSTRUCT │\n╰──────╯\n```\n\nHere is the real answer.');
+  assert.strictEqual(r.body, 'Here is the real answer.', r.body);
+  assert.deepStrictEqual(keysOf(r), ['flow']);
+});
+
+test('13m. the multi-line FLOW per CLAUDE.md: column-0 "[2]".."[6]" steps continue the block', () => {
+  const r = PG('FLOW: [1] task/cell\n[2] FOLLOW core:flow\n[3] read > write > run\n[4] Clear\n[5] execute\n[6] close\n\nHere is the real answer.');
+  assert.strictEqual(r.body, 'Here is the real answer.', r.body);
+  assert.deepStrictEqual(r.sections[0].lines.length, 6);
+});
+
+test('13n. BLUEPRINT with column-0 "- " Steps bullets captures the bullets AND the trailing sub-keys', () => {
+  const r = PG('BLUEPRINT\nDoing: the thing\nSteps:\n- first\n  Verify: a\n- second\nOutput looks like: x\nVerified by: y\nScale: 1 file\nStops if: z\n\nHere is the real answer.');
+  assert.strictEqual(r.body, 'Here is the real answer.', r.body);
+  assert.strictEqual(r.sections[0].lines.length, 10);
+  /* 10c still holds: a numbered list after "Stops if:" is the ANSWER, not a Steps list */
+  assert.ok(PG('BLUEPRINT\nDoing: x\nStops if: z\n1. First real point').body.includes('1. First real point'));
+});
+
+test('13o. bold markdown keys "**INPUT:**" are read through; lines are stored as emitted', () => {
+  const r = PG('**INPUT:** ship it\n**TYPE:** task\n**EXISTING HOME:** none\n**ROUTE:** direct\n**FIT CHECK:** none\n**ACTION:** do it\n\nHere is the real answer.');
+  assert.strictEqual(r.body, 'Here is the real answer.', r.body);
+  assert.deepStrictEqual(keysOf(r), ['routing']);
+  assert.strictEqual(r.sections[0].lines[0], '**INPUT:** ship it', 'lossless');
+  /* the real "**BLUEPRINT**" + "- Doing:" bullet form and the "## BLUEPRINT" heading form */
+  assert.strictEqual(PG('**BLUEPRINT**\n- Doing: run\n- Steps: (1) a (2) b\n- Stops if: err\n\nAnswer.').body, 'Answer.');
+  assert.strictEqual(PG('## BLUEPRINT\nDoing: the thing\nSteps:\n  1. first\nStops if: z\n\nAnswer.').body, 'Answer.');
+});
+
+test('13p. a header with a field after RISK still feeds the chip and is captured', () => {
+  const r = PG('[INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low · CELL:C4]\nINPUT: x\nTYPE: task\n\nHere is the real answer.');
+  assert.strictEqual(r.body, 'Here is the real answer.', r.body);
+  assert.strictEqual(r.g.verb, 'DIRECT'); assert.strictEqual(r.g.risk, 'low');
+  assert.deepStrictEqual(keysOf(r), ['header', 'routing']);
+});
+
+test('13q. the documented "[STAGE-1-FAIL · CLARIFY · attempt:1/1]" header is a header (10 real turns)', () => {
+  const r = PG('[STAGE-1-FAIL · CLARIFY · attempt:1/1]\n\nWhich file did you mean?');
+  assert.strictEqual(r.body, 'Which file did you mean?', r.body);
+  assert.deepStrictEqual(keysOf(r), ['header']);
+  assert.strictEqual(r.g.verb, 'CLARIFY'); assert.strictEqual(r.g.risk, null);
+});
+
+/* ── 12d-h. sessSummary hardening (refuter 2026-08-23) ───────────────────── */
+const SUM2 = new Function(slice('function gvClean', 'return v;') + slice('function sessSummary', 'return v + (cut') + '; return sessSummary;')();
+test('12d. inert: control, bidi and zero-width characters never reach the header', () => {
+  const v = SUM2({ turns: [{ text: 'safe‮​\x07 text' }] });
+  assert.strictEqual(v, 'safe text');
+});
+test('12e. a fence-only first prompt falls back to the title, never an empty header', () => {
+  assert.strictEqual(SUM2({ title: 'the title', turns: [{ text: '```\ncode only\n```' }] }), 'the title');
+});
+test('12f. a stray opening fence drops its marker only — the rest of the prompt survives', () => {
+  assert.strictEqual(SUM2({ turns: [{ text: 'before\n```\nafter the stray fence' }] }), 'before after the stray fence');
+});
+test('12g. the character cap counts code points — no lone surrogate at the cut', () => {
+  const v = SUM2({ turns: [{ text: '😀'.repeat(300) }] });
+  assert.ok(!/[\uD800-\uDFFF](?![\uDC00-\uDFFF])/.test(v.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')), 'lone surrogate emitted');
+  assert.ok(Array.from(v.replace('…','')).length <= 280);
+});
+test('12h. odd turns never throw: null turn, non-array turns, non-string text', () => {
+  assert.strictEqual(SUM2({ title: 't', turns: [null] }), 't');
+  assert.strictEqual(SUM2({ title: 't', turns: 'nope' }), 't');
+  assert.strictEqual(SUM2({ title: 't', turns: [{ text: { a: 1 } }] }), 't');
+});
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 Date.now = realNow;
 console.log('\n' + '-'.repeat(60));

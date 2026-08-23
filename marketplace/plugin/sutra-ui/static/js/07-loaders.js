@@ -186,6 +186,7 @@ function paneMenuAction(sid, key){
     }
     case "usage":  S.usagePop = sid; if (typeof loadUsage === "function") loadUsage(true); break;
     case "route":  S.sessTab[sid] = (S.sessTab[sid] || "chat") === "route" ? "chat" : "route"; break;
+    case "opts":   S.optsOpen[sid] = !S.optsOpen[sid]; break;   /* the ≡ control, now a row */
     case "fold":   S.ui.paneCollapsed[sid] = true; saveLayout(); break;
     case "close":  closePane(sid); return;          /* renders itself */
     default: break;
@@ -463,8 +464,19 @@ function wire(){
      through paneMenuAction() to the SAME state the old header control mutated */
   panes.querySelectorAll("[data-panemenu]").forEach(b=>b.onclick=()=>{
     const sid = b.dataset.panemenu;
-    S.paneMenu = S.paneMenu === sid ? null : sid;
-    render(); });
+    const opening = S.paneMenu !== sid;
+    S.paneMenu = opening ? sid : null;
+    render();
+    /* the render replaced the chip, so focus fell to <body>; a keyboard user
+       who just opened the menu must land ON it (refuter 2026-08-23). Escape
+       returns them to the chip (08-boot). */
+    if (opening){
+      const first = document.querySelector('#panemenu-' + sid + ' .mrow, #panemenu-' + sid + ' button, #panemenu-' + sid + ' select');
+      if (first && first.focus) first.focus();
+    } else {
+      const chip = document.querySelector('[data-panemenu="' + sid + '"]');
+      if (chip && chip.focus) chip.focus();
+    } });
   panes.querySelectorAll("[data-mrow]").forEach(b=>b.onclick=()=>{
     const pane = b.closest("[data-sess]");
     if (pane) paneMenuAction(pane.dataset.sess, b.dataset.mrow); });

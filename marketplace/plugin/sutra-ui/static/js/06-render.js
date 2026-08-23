@@ -150,7 +150,10 @@ function paneMenuHtml(s){
   const u = S.usage ? usageActive(S.usage) : null;
   const row = (key, label, val) => `<button class="mrow" type="button" data-mrow="${key}">
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
-  return `<div class="upop panemenu" role="menu" aria-label="Session menu — ${esc(s.title)}">
+  /* role="group", not "menu": the rows are buttons and <label>s, not menuitems,
+     and a menu role promises arrow-key navigation this popover does not have
+     (refuter 2026-08-23). A labelled group is honest and valid. */
+  return `<div class="upop panemenu" id="panemenu-${esc(s.id)}" role="group" aria-label="Chat options — ${esc(s.title)}">
     ${row("folder", "Folder", esc(cwdLabel(sessCwd(s.id))) + (()=>{
         /* the repo bar's facts, one click away instead of always on screen */
         const r = S.repo && S.repo[s.id]; if (!r || !r.available) return "";
@@ -170,6 +173,7 @@ function paneMenuHtml(s){
           >${esc(m.name)}</option>`).join("")}
       </select></span><span class="ma"></span></label>
     ${row("usage", "Usage", u ? Math.round(u.percent) + "% used" : "plan usage")}
+    ${row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
     ${row("fold", "Fold", "collapse this pane")}
     ${row("close", "Close", "close this session")}
@@ -205,6 +209,10 @@ function sessionPane(s){
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
     </button>`}
+    <!-- Header (founder 2026-08-23): back, minimal -- WHAT THIS CHAT IS ABOUT in
+         at most 45 words, a live dot, and the × close. No tabs, no activity,
+         no side-chat control. Collapsed, the same element is the vertical strip
+         (panel.css), so the fold button and the full title stay in it. -->
     <div class="ph">
       <button class="pfold" type="button" data-pane-fold="${esc(s.id)}"
               aria-expanded="${!collapsed}"
@@ -212,10 +220,13 @@ function sessionPane(s){
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
       </button>
-      <span class="dot run" aria-hidden="true" style="width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none"></span>
-      <h3 title="${esc(s.title)}${s.real&&s.cwd?" — "+esc(s.cwd):""}">${esc(s.title)}</h3>
+      <span class="dot ${live?"run":""}" ${live ? `role="img" aria-label="a turn is running"` : `aria-hidden="true"`} style="width:6px;height:6px;border-radius:50%;background:var(${live?"--ok":"--line"});flex:none"></span>
+      <h3 class="phsum" title="${esc(s.title)}${s.real&&s.cwd?" — "+esc(s.cwd):""}">${esc(collapsed ? s.title : sessSummary(s))}</h3>
       ${s.real?`<span class="src">transcript</span>`:""}
       ${s.fork?`<span class="src" title="Branched from another session with --fork-session">fork</span>`:""}
+      <button class="ib" data-close="${esc(s.id)}" type="button" aria-label="Close session" title="Close this session">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
     </div>
     <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
     ${agentsFold(s)}
@@ -264,17 +275,15 @@ function sessionPane(s){
            identity — the header no longer shows while expanded — and its menu is
            the one home for Folder / Permissions / Model / Usage / Routing /
            Fold / Close. It sits LEFT of attach by direction. -->
+      <!-- ⋯ ONLY (founder 2026-08-23): the header carries the identity now, and
+           the dirty-tree fact lives in the menu's Folder row. The name a screen
+           reader hears is the accessible label, not the glyph (codex P2). -->
       <button class="uchip" type="button" data-panemenu="${esc(s.id)}"
-              aria-expanded="${S.paneMenu===s.id?"true":"false"}"
-              aria-label="Session — folder, permissions, model, usage, routing"
-              title="Everything about this session — folder, permissions, model, usage, routing">
-        <span class="uring" style="background:var(${streamingFor(s.id)||s.agents_live?"--ok":"--line"})"></span>
-        <span class="uname">${esc(s.title)}</span>${(()=>{
-          /* branch/dirty state stays GLANCEABLE with the bar gone (codex P2):
-             one warn dot when the working tree is dirty, nothing when clean */
-          const r = S.repo && S.repo[s.id]; const dirty = !!(r && r.available && r.diff && r.diff.files > 0);
-          return dirty ? `<span class="udirty" title="${r.diff.files} file${r.diff.files===1?"":"s"} changed — see Folder in this menu" aria-label="uncommitted changes"></span>` : "";
-        })()}<span style="color:var(--faint)">·</span>⋯
+              aria-expanded="${S.paneMenu===s.id?"true":"false"}" aria-haspopup="true"${
+              S.paneMenu===s.id ? ` aria-controls="panemenu-${esc(s.id)}"` : ""}
+              aria-label="Chat options — ${esc(s.title)}"
+              title="Everything about this chat — folder, permissions, model, usage, routing, turn options">
+        <span aria-hidden="true">⋯</span>
       </button>
       <button class="ib" data-attach="${s.id}" type="button"
               aria-label="Attach a file" title="Attach a file (or drop / paste one)">
@@ -296,15 +305,9 @@ function sessionPane(s){
            single line until there is a reason not to; autoGrowComposer() sizes it.
            Placeholder is ONE WORD (founder, 2026-08-18): the / palette and
            Shift+Enter are learned by use. -->
+      <!-- no placeholder at all (founder 2026-08-23): the bar is self-evident -->
       <textarea data-sask="${s.id}" rows="1"
-             placeholder="Message"
              aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
-      <button class="ib" data-optstoggle="${s.id}" type="button"
-              aria-expanded="${S.optsOpen[s.id]?"true":"false"}"
-              aria-label="Turn options" title="Effort, budget and tool limits for the next message">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.9" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-      </button>
       ${paneMenuHtml(s)}
       ${S.usagePop === s.id ? usagePopHtml() : ""}
       ${streamingFor(s.id)
