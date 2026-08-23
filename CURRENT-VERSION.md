@@ -1,6 +1,15 @@
 # Sutra — Current Version
 
-## v2.117.1 (2026-08-22, HEAD)
+## v2.117.2 (2026-08-23, HEAD)
+
+Two hardcoded defaults replaced with what Claude already knows: the rail footer
+avatar comes from the signed-in Claude account instead of a literal "TC", and
+the agent's default workdir falls back to the operator's most recent Claude
+workspace instead of ~/sutra-ui-workspace. Both are DEFAULTS only -- a stored
+workdir still wins -- and the recent path is filtered through workdir_allowed()
+before it is offered, because it becomes the agent's cwd.
+
+## v2.117.1 (2026-08-22)
 
 Google connector, as a MEDIATED tile: a connection Sutra observes and cannot act
 on. Membership ("Added in Claude") is rendered as state; the CLI's status string

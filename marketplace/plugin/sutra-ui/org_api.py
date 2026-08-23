@@ -78,6 +78,7 @@ import placement_engine as E  # noqa: E402  (path insert must precede this impor
 import reorg_sim as R  # noqa: E402
 import teamsutra  # noqa: E402
 
+import claude_local
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
 import routines   # local scheduled routines (launchd + the claude CLI; no engine access)
@@ -832,6 +833,10 @@ def api_providers_set_active(req: ActiveProviderRequest):
         "provider": providers.provider_by_id(settings["provider"]),
         "settings": settings,
         "providers": providers.discover_providers(),
+        # Who is signed in to Claude on this machine. None when unknown -- the
+        # panel must render an unknown identity rather than a placeholder that
+        # looks real. The header used to be a hardcoded "TC".
+        "claude_account": claude_local.account(),
     }
 
 
@@ -876,6 +881,10 @@ def api_settings_get():
         # unknown string fails as a dead socket seconds later instead of a refusal.
         "models": list(providers.MODELS),
         "providers": providers.discover_providers(),
+        # Who is signed in to Claude on this machine. None when unknown -- the
+        # panel must render an unknown identity rather than a placeholder that
+        # looks real. The header used to be a hardcoded "TC".
+        "claude_account": claude_local.account(),
     }
 
 

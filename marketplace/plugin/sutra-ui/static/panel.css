@@ -1761,3 +1761,7 @@
    would leave the wrapper unpinned and the tile ragged against its neighbours. */
 .ptile.mediated .medactions{display:flex;gap:8px;margin-top:auto;padding-top:10px}
 .ptile.mediated .medactions .btn{margin-top:0}
+
+/* An avatar with no known identity. Neutral dot rather than a letter: any
+   letter here would be a guess at who the operator is. */
+.av.av-unknown{background:var(--bd);color:transparent}

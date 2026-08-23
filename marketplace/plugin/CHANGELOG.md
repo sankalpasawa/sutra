@@ -1,6 +1,45 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-22
+**status**: active · **updated**: 2026-08-23
+
+## 2.117.2 (2026-08-23)
+
+**Two hardcoded defaults replaced with what Claude already knows.**
+
+The rail footer rendered a literal `TC` -- a developer's own initials, shipped
+to every operator. It now comes from the Claude account signed in on this
+machine, via a new `claude_account` field on `/api/settings`.
+
+One letter, not two: the display name here is "Tishant", so the initials are
+"T". Padding a one-word name to two characters means inventing a letter from
+the middle of a word, which reads as a typo. When Claude has no account on the
+machine -- fresh install, signed out -- the chip renders a neutral dot rather
+than a plausible-looking guess at who the operator is.
+
+The agent's default working directory was `~/sutra-ui-workspace`, a folder
+nothing else creates and nobody works in. It now falls back to the directory
+the operator most recently worked in with Claude, read from the newest session
+transcript's own `cwd` field rather than by decoding the projects directory
+name (that encoding is lossy -- every path separator becomes the same character
+as a literal hyphen in a folder name).
+
+Precedence is unchanged where it matters: **stored > SUTRA_UI_WORKDIR > Claude's
+recent > the old default**. This only ever supplies a DEFAULT, so a workdir the
+operator has set is never overridden, and `workdir_source` in the settings
+payload says which rule produced the answer.
+
+The path is filtered through `workdir_allowed()` before it is offered. That
+value becomes the spawned agent's cwd, so honouring a path outside the
+permitted root because another program's config pointed there would be a real
+escalation, not a convenience.
+
+New `claude_local.py` holds both readers. Same rules as `mediated_connectors.py`
+and for the same reason: read-only, config only -- never credential material --
+and absence degrades to the documented default instead of raising, because
+neither a page header nor a settings default is worth failing a page load over.
+
+17 tests, mutation-checked: a stored workdir that stops winning, a dropped
+`workdir_allowed` filter, and initials padded to two characters each fail.
 
 ## 2.117.1 (2026-08-22)
 

@@ -1135,6 +1135,8 @@ async function loadRuntime(){
     SETTINGS = settings.settings || null;
     PERM_MODES = settings.permission_modes || [];
     MODELS = settings.models || [];
+    CLAUDE_ACCOUNT = settings.claude_account || null;
+    paintAvatar();
   } else {
     failed.push("GET /api/settings — " + reason(settingsR));
   }

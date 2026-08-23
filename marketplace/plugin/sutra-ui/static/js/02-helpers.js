@@ -929,3 +929,34 @@ function renderRail(){
   document.getElementById("sessions").innerHTML = html;
 }
 
+
+
+/* ── who is signed in ─────────────────────────────────────────────────────
+ * The rail footer used to be a hardcoded "TC" -- a developer's own initials,
+ * shipped to every operator. Sutra runs on top of Claude Code, so the person's
+ * identity is already known; it comes from the /api/settings payload.
+ *
+ * Unknown stays unknown. When Claude has no account on this machine (fresh
+ * install, signed out) the chip renders a neutral dot rather than inventing
+ * initials, because a plausible-looking wrong identity is worse than an
+ * obviously absent one.
+ */
+let CLAUDE_ACCOUNT = null;
+
+function paintAvatar(){
+  const el = document.querySelector(".rfoot .av");
+  if (!el) return;
+  const a = CLAUDE_ACCOUNT;
+  if (a && a.initials){
+    el.textContent = a.initials;
+    el.classList.remove("av-unknown");
+    /* Full identity on hover: two people with the same initial otherwise have
+       no way to tell which account the panel is driving. */
+    el.title = [a.display_name, a.email].filter(Boolean).join(" — ")
+             || "signed in to Claude";
+  } else {
+    el.textContent = "";
+    el.classList.add("av-unknown");
+    el.title = "Not signed in to Claude on this machine";
+  }
+}

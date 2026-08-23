@@ -550,10 +550,31 @@ def load_settings():
             os.environ.get("SUTRA_UI_PERMISSION_MODE")) or DEFAULT_PERMISSION_MODE
 
     workdir = raw.get("workdir")
+    workdir_source = "stored"
     if not isinstance(workdir, str) or not workdir.strip():
         if workdir is not None:
             invalid["workdir"] = workdir
-        workdir = os.environ.get("SUTRA_UI_WORKDIR", DEFAULT_WORKDIR)
+        env_wd = os.environ.get("SUTRA_UI_WORKDIR")
+        if env_wd:
+            workdir, workdir_source = env_wd, "env"
+        else:
+            # Before falling back to ~/sutra-ui-workspace -- a directory nobody
+            # works in and nothing else creates -- ask Claude where this
+            # operator actually last worked. Sutra runs on top of Claude Code,
+            # so on a fresh install that answer already exists and is far more
+            # useful than a synthetic empty folder.
+            #
+            # Only ever a DEFAULT: a stored value and SUTRA_UI_WORKDIR both win,
+            # and the path is filtered through workdir_allowed() inside
+            # recent_workspace() because it becomes the agent's cwd.
+            recent = None
+            try:
+                import claude_local
+                recent = claude_local.recent_workspace(workdir_allowed)
+            except Exception:
+                recent = None
+            workdir = recent or DEFAULT_WORKDIR
+            workdir_source = "claude_recent" if recent else "default"
     workdir = os.path.expanduser(workdir)
 
     detail = active_provider_detail()
@@ -585,6 +606,7 @@ def load_settings():
         # reported as "" rather than folded into null.
         "model": stored_model() or "",
         # metadata -- the three keys above are the contract; these explain them
+        "workdir_source": workdir_source,
         "provider_source": detail["source"],
         "provider_stored": stored,
         "provider_ignored": detail["ignored"],
