@@ -914,8 +914,7 @@ document.getElementById("app").addEventListener("click", e=>{
   const op = e.target.closest("[data-open]");
   if (op){ const id=op.dataset.open;
     markRead(id); S.sessMenu = null; S.sessRename = null;
-    if (!S.openPanes.includes(id)) S.openPanes.push(id);
-    if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
+    pushPane(id);
     /* opening a REAL session is what triggers the transcript read -- the list
        endpoint only read each file's head, so until now the turns are unknown,
        not empty */
@@ -954,8 +953,7 @@ function newSession(cwd){
      button looked like it had done nothing. */
   if (cwd){ S.cwd[s.id] = cwd; s.cwd = cwd; }
   S.sessions.unshift(s);
-  S.openPanes.push(s.id);
-  if (S.openPanes.length>2) S.openPanes = S.openPanes.slice(-2);
+  pushPane(s.id);
   render();
   const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
   return s;
@@ -1173,7 +1171,7 @@ function sessAction(action, sid, group){
     case "open-terminal": { const cwd=sessCwd(sid); if(cwd) sendToTerminal("cd "+shq(cwd)+"\n"); S.sessMenu=null; break; }
     case "open-editor": S.sessMenu=null; S.screen="editor"; loadFs(true); render(); return;
     case "open-repo":
-      if(!S.openPanes.includes(sid)){ S.openPanes.push(sid); if(S.openPanes.length>2) S.openPanes=S.openPanes.slice(-2); }
+      pushPane(sid);
       loadRepo(sid,true); S.sessMenu=null; break;
     case "open-finder": revealSession(sid); return;
   }

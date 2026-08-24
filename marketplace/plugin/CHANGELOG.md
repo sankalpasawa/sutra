@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.220.1 (2026-08-24)
+
+- **Six vertical panes.** The session surface's pane cap rises from 2 to 6
+  (founder: "the panes of the chats: 1, 2, 3, 4, 5, 6"). One helper, one
+  rule: all three open paths share pushPane() — FIFO eviction of the oldest,
+  never a duplicate. The pane row already scrolls horizontally with a 380px
+  floor per pane, so six never crush. Pinned in test_panel.js 43a-c.
+
 ## 2.220.0 (2026-08-24)
 
 **Slack stops being a connector Sutra owns. It is observed through Claude, like

@@ -5,6 +5,18 @@ function endClaudeChannel(sid){
 /* A stable per-turn id, assigned once. It is the anchor patchStreaming() writes
    through, so it must not change between renders and must never be reused. */
 let _UID = 0;
+/* How many session panes stand side by side. Was 2 — the founder asked for
+   the vertical planes to go to SIX (2026-08-24: "the panes of the chats:
+   1, 2, 3, 4, 5, 6"). .panes already scrolls horizontally and each pane
+   floors at 380px, so 6 open panes overflow into scroll, never crush.
+   One helper, one rule: the oldest pane is evicted first (FIFO), a re-open
+   never duplicates. All three open paths go through here. */
+const MAX_PANES = 6;
+function pushPane(id){
+  if (!S.openPanes.includes(id)) S.openPanes.push(id);
+  if (S.openPanes.length > MAX_PANES) S.openPanes = S.openPanes.slice(-MAX_PANES);
+}
+
 function turnUid(t){
   if (t && !t.uid) t.uid = "t" + (++_UID);
   return t ? t.uid : "";

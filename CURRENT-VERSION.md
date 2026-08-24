@@ -1,6 +1,12 @@
 # Sutra — Current Version
 
-## v2.220.0 (2026-08-24, HEAD)
+## v2.220.1 (2026-08-24, HEAD)
+
+Six vertical panes: the session surface holds up to 6 side-by-side chat
+panes (FIFO eviction, no duplicates, horizontal scroll).
+
+
+## v2.220.0 (2026-08-24)
 
 Slack stops being a connector Sutra owns and becomes one it observes through
 Claude, like Gmail and Drive. Sutra runs no Slack OAuth app and holds no Slack

@@ -206,7 +206,7 @@ const EPILOGUE = `
      regressions (dead controls mid-stream; invisible fold on non-real
      sessions) stay pinned */
   turnControlClick, agentsFold, streamBodyHtml, drainStep, _MAX_STEP, _reduceMotion,
-  gvChipHtml, routingChart, turnBlock, gvHasCapture,
+  gvChipHtml, routingChart, turnBlock, gvHasCapture, pushPane, MAX_PANES,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
@@ -3218,6 +3218,35 @@ test("42c. the pane's 'transcript' tag is gone; fork survives", () => {
   assert.ok(!/>transcript<\/span>/.test(real), "the transcript label is provenance noise");
   const fork = sandbox.sessionPane({ id: "sid-42c", title: "t", real: true, fork: true, cwd: "/x", channel: null, turns: [] });
   assert.ok(/>fork<\/span>/.test(fork), "fork is a user-relevant fact and stays");
+});
+
+/* ── 43 · six vertical panes (founder 2026-08-24: "1, 2, 3, 4, 5, 6") ───── */
+
+test("43a. six panes stand open at once; the seventh evicts the OLDEST, never a random one", () => {
+  const saved = T.S.openPanes;
+  T.S.openPanes = [];
+  try {
+    ["a","b","c","d","e","f"].forEach(id => T.pushPane(id));
+    assert.strictEqual(T.S.openPanes.length, 6, "six panes must coexist");
+    assert.strictEqual(T.MAX_PANES, 6);
+    T.pushPane("g");
+    assert.deepStrictEqual(T.S.openPanes, ["b","c","d","e","f","g"], "FIFO eviction — the oldest yields");
+  } finally { T.S.openPanes = saved; }
+});
+
+test("43b. re-opening an open session never duplicates its pane", () => {
+  const saved = T.S.openPanes;
+  T.S.openPanes = ["a","b"];
+  try {
+    T.pushPane("a");
+    assert.deepStrictEqual(T.S.openPanes, ["a","b"], "no duplicate pane for an open session");
+  } finally { T.S.openPanes = saved; }
+});
+
+test("43c. the stylesheet lets six panes overflow into horizontal scroll, never crush", () => {
+  const css = require("fs").readFileSync(__dirname + "/static/panel.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.ok(/\.panes\{[^}]*overflow-x:\s*auto/.test(css), "the pane row scrolls horizontally");
+  assert.ok(/\.pane\{[^}]*flex:\s*1 0 380px/.test(css), "each pane floors at 380px");
 });
 
 test("42e. the subtitle strips a governance-opening prompt down to the actual ask", () => {
