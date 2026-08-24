@@ -100,7 +100,9 @@ else
 fi
 
 step "lane 1 (state) + lane 2 (pixels)"
-SHELL_DEBUG_PORT="$PORT" node "$HERE/shell-check.mjs"
+# QA_SCRIPT: an alternative lane script (default: the chat-surface check).
+# nav-check.mjs is the v3.3 shell lane — raw CDP, no playwright needed.
+SHELL_DEBUG_PORT="$PORT" node "${QA_SCRIPT:-$HERE/shell-check.mjs}"
 RC=$?
 
 step "post-check liveness (the check must not have harmed the app)"
