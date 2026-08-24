@@ -375,8 +375,11 @@ ${DOMAINS.some(d=>st(d)==="retired")
        and there is no Apply button in this tier.</div>`:""}
     <div class="cols">
       <div>
+        ${S.orgScope && S.orgScope.missing ? `<div class="note w"><b>Acting as ${esc(S.orgScope.role)},
+          but no Sutra scope anchor exists in this registry.</b> Showing the whole tree.</div>` : ""}
         ${fold("dept.chart", "Org chart",
-          `${vis.length} shown · ${S.collapsed.size} subtree${S.collapsed.size===1?"":"s"} collapsed`, `
+          `${vis.length} shown · ${S.collapsed.size} subtree${S.collapsed.size===1?"":"s"} collapsed`
+          + (S.orgScope && S.orgScope.ref ? ` · scoped to ${S.orgScope.name} (acting as ${S.orgScope.role})` : ""), `
           <div class="canvas ${draft?"draft":""}">
             <div class="chartwrap">
               <ul class="chart">${roots.map(branch).join("")}</ul>
@@ -568,6 +571,9 @@ SCREENS.reorg = () => {
   const err  = sim.error || base.error;
   const n = v => (pend || err) ? "—" : v;
   return `
+    ${S.orgScope && S.orgScope.ref ? `<div class="note b"><b>Acting as ${esc(S.orgScope.role)} —
+      reorg plans still read and validate against the WHOLE Asawa tree.</b>
+      Scoping is a view over Departments/Charters/Placements only (v3.4).</div>` : ""}
     <div class="facets">
       <span class="fl">Plan</span><code>${esc(PLANS[0].plan_id)}</code>
       <span class="pill p-mut">plan_origin: studio-drag</span>
@@ -1099,7 +1105,7 @@ function balanceAsk(e){
 const TS_SEED_MAX = 8000;   // mirror of app.py's cap — checked by test 29b
 
 const TS_PERSONA =
-  "You are Teamsutra, the in-app assistant of the Sutra desktop panel. The " +
+  "You are Help, the in-app assistant of the Sutra desktop panel. The " +
   "user selected a piece of text inside the app and asked about it. FIRST " +
   "explain — what the selected thing is, in the context of the department " +
   "given below; be brief and concrete. If the user describes a problem or " +

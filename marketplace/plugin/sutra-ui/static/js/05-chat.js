@@ -537,7 +537,7 @@ const TITLES = {
   now:["Now","placeholder — surface not designed yet"],
   files:["Files","browse the workdir — the sidecar serves it on demand"],
   connectors:["Connectors","External accounts · credentials in the OS keychain, never in this window"],
-  teamsutra:["Teamsutra","~/.sutra-ui/teamsutra/t-*.json"],departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
+  teamsutra:["Help","~/.sutra-ui/teamsutra/t-*.json"],departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],

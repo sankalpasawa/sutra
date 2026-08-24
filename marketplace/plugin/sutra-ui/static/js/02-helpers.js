@@ -641,7 +641,11 @@ function railSpec(){
             ? S.conn.providers.reduce((n,p)=>n+(p.connected||0),0) : undefined),
        warn:(S.conn && S.conn.providers
             ? S.conn.providers.some(p=>p.needs_attention>0) : false)},
-      {id:"teamsutra", n:"Teamsutra", i:"rout",
+      /* "Help" to the operator; `teamsutra` in the code, the store and the API
+         (founder, 2026-08-24 — a user-facing rename, deliberately not a
+         migration: renaming the id would move ~/.sutra-ui/teamsutra and break
+         every filed task's provenance for a word on a rail). */
+      {id:"teamsutra", n:"Help", i:"rout",
        c:(S.ts ? (S.ts.tasks||[]).filter(t=>["queued","claimed","needs_review"].includes(t.status)).length : undefined)},
       /* Usage sits in RUNTIME because it describes the running account, not the
          org. The count is the ACTIVE window's percentage -- the one number worth
