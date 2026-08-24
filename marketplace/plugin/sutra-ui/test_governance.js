@@ -841,6 +841,14 @@ test('12i. a prompt that OPENS with governance blocks yields a subtitle without 
   assert.strictEqual(allGov, 'the title', 'an all-governance prompt falls back to the title');
 });
 
+test('12j. free-form ritual lines (CAPS-KEY headings, metric parentheses) are skipped, never a lone ask', () => {
+  const card = 'CHARTER PURPOSE: Asawa runs its own operations on Sutra.\n(confidence 0.45, mode floor)\n\nIn the Mac app there is Home and Code. Design the home architecture.';
+  const v = SUM2({ title: 't', turns: [{ text: card }] });
+  assert.ok(/^In the Mac app/.test(v), 'the ask must open the subtitle, got: ' + v);
+  const lone = SUM2({ title: 't12j', turns: [{ text: 'TODO: buy milk' }] });
+  assert.strictEqual(lone, 'TODO: buy milk', 'a one-line CAPS-KEY prompt keeps its text — something beats nothing');
+});
+
 /* ── 14. the Output Trace as the spec writes it: a blockquote ──────────────── */
 test('14a. "> route: a > b > c > d" (the spec\'s literal shape) is captured, and feeds g.trace', () => {
   const r = PG('Answer.\n\n> route: atom-card floor redo > D1 Sutra OS > 0 tool calls > awaiting founder verdict');

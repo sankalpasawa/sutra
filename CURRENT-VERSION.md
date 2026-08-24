@@ -1,6 +1,12 @@
 # Sutra — Current Version
 
-## v2.119.3 (2026-08-24, HEAD)
+## v2.119.5 (2026-08-24, HEAD)
+
+Subtitle round 3: free-form ritual (CAPS-KEY headings, metric parentheses)
+trimmed from the header subtitle; the ask opens it.
+
+
+## v2.119.3 (2026-08-24)
 
 Chat header round 2: title + subtitle rows (hover for full text), department
 beside the live dot ("latest filed"), aligned to the chat column; per-turn

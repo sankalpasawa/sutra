@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.119.5 (2026-08-24)
+
+- **Subtitle round 3: free-form ritual trimmed.** parseGov lifts known blocks;
+  pasted governance cards also open with CAPS-KEY headings ("CHARTER
+  PURPOSE:") and metric parentheses. Leading lines of that shape are skipped
+  (max 8, prose must remain; a lone "TODO: x" prompt keeps its text). L1 12j.
+
 ## 2.119.4 (2026-08-24)
 
 - **The rail says Help — and Help opens directly.** The destination row still

@@ -1105,7 +1105,22 @@ function sessSummary(s){
      same way it does for responses; guarded because the subtitle must never
      throw, with the raw text as the last resort — something beats nothing. */
   const degov = (str) => { try { return parseGov(String(str)).body; } catch (e) { return String(str); } };
-  let v = strip(degov(t0)) || strip(degov(title)) || strip(t0) || strip(title);
+  /* 2.119.5: parseGov only lifts KNOWN blocks; a pasted governance card also
+     carries free-form ritual lines ("CHARTER PURPOSE: …", "(confidence 0.45,
+     mode floor)") that open the body. Skip leading lines that look like a
+     CAPS-KEY heading or a parenthesized metric — at most 8, and only when
+     prose remains; otherwise keep the untrimmed text (something beats
+     nothing). A one-line "TODO: x" prompt therefore keeps its text. */
+  const deritual = (str) => {
+    const lines = String(str).split("\n");
+    let i = 0;
+    while (i < lines.length && i < 8 &&
+           (/^[A-Z][A-Z0-9 _-]{2,40}:/.test(lines[i].trim()) || /^\(/.test(lines[i].trim()) || lines[i].trim() === ""))
+      i++;
+    const rest = lines.slice(i).join("\n").trim();
+    return rest ? rest : String(str);
+  };
+  let v = strip(deritual(degov(t0))) || strip(deritual(degov(title))) || strip(t0) || strip(title);
   const words = v.split(" ").filter(Boolean);
   let cut = false;
   if (words.length > 45){ v = words.slice(0, 45).join(" "); cut = true; }
