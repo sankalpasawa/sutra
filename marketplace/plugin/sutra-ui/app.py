@@ -31,6 +31,7 @@ import connectors_api
 import org_api
 import providers
 import sb_sidecar
+from session_runtime import SessionRuntime
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -1314,29 +1315,9 @@ async def ws_chat(ws: WebSocket):
     #
     # One reader task owns the socket, handles `stop` inline (the only frame that
     # must act during a turn) and queues everything else for the main loop.
-    live = {"proc": None, "stopped": False}
+    rt = SessionRuntime()
     inbox = asyncio.Queue()
     reader_dead = asyncio.Event()
-
-    def _kill_live():
-        """Kill the process GROUP, not just the direct child.
-
-        `claude` spawns helpers; signalling only the parent leaves them holding
-        the stdout pipe, so the read loop never ends and the turn never actually
-        stops. The spawn below uses start_new_session=True, which makes the child
-        a group leader so this reaches its descendants too.
-        """
-        p = live["proc"]
-        if p is None or p.returncode is not None:
-            return False
-        try:
-            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            try:
-                p.kill()
-            except (ProcessLookupError, OSError):
-                return False
-        return True
 
     async def _reader():
         try:
@@ -1352,8 +1333,8 @@ async def ws_chat(ws: WebSocket):
                     # Set the flag BEFORE killing: the stdout loop can end between
                     # the signal and the assignment, and would then report the
                     # operator's own interrupt as a crash.
-                    live["stopped"] = True
-                    _kill_live()
+                    rt.stopped = True
+                    rt.kill_group()
                     continue
                 await inbox.put(payload)
         except (WebSocketDisconnect, RuntimeError):
@@ -1380,7 +1361,7 @@ async def ws_chat(ws: WebSocket):
                     break
                 gone.cancel()
                 payload = get_next.result()
-            live["stopped"] = False
+            rt.stopped = False
             msg = payload.get("message", "")
             seed = payload.get("resume")
             model = payload.get("model")
@@ -1416,12 +1397,12 @@ async def ws_chat(ws: WebSocket):
                                     session_id=None, model=chosen_model,
                                     opts=payload.get("opts"), stream_input=True)
             spawn_key = tuple(args)
-            proc = live.get("proc")
-            alive = proc is not None and proc.returncode is None
-            if alive and live.get("key") != spawn_key:
+            proc = rt.proc
+            alive = rt.alive
+            if alive and rt.key != spawn_key:
                 # a spawn-time option changed: end this process and carry the
                 # conversation over rather than dropping it
-                _kill_live()
+                rt.kill_group()
                 try:
                     await proc.wait()
                 except Exception:
@@ -1451,51 +1432,20 @@ async def ws_chat(ws: WebSocket):
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
                 try:
-                    proc = await asyncio.create_subprocess_exec(
-                        *args, cwd=workdir,
-                        # stdin is a PIPE now, not DEVNULL: it is the channel the
-                        # turns arrive on. (DEVNULL was there because a plain
-                        # inherited stdin made claude wait 3s for piped input on
-                        # every message -- with stream-json that wait IS the
-                        # feature.)
-                        stdin=asyncio.subprocess.PIPE,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        # 8 MiB, not asyncio's 64 KiB default. stream-json is ONE
-                        # JSON object per line, and a `user` frame carrying a
-                        # tool_result routinely exceeds 64 KiB -- any Read of a
-                        # sizeable file, any verbose Bash capture. At the default,
-                        # StreamReader.readline() raises
-                        #   ValueError: Separator is not found, and chunk exceed the limit
-                        # which propagated out of the read loop, past a handler that
-                        # catches only WebSocketDisconnect, and killed the socket and
-                        # the child mid-answer. Reproduced directly: a 200 KB line
-                        # raises at the default and reads clean at this limit.
-                        limit=8 * 1024 * 1024,
-                        env=dict(os.environ),  # no ANTHROPIC_API_KEY -> subscription auth
-                        # own process group, so an interrupt can signal the whole tree
-                        start_new_session=True,
-                    )
+                    proc = await rt.spawn(args, workdir, spawn_key)
                 except OSError as e:
                     # Real cause, verbatim -- a dead socket taught the operator nothing.
                     await ws.send_json({"type": "error", "detail":
                         "could not start %r in %s: %s" % (agent_bin, workdir, e)})
                     continue
-                live["proc"] = proc
-                live["key"] = spawn_key
-            proc = live["proc"]
+            proc = rt.proc
 
             # The turn itself: one stream-json frame on stdin.
             try:
-                proc.stdin.write((json.dumps({
-                    "type": "user",
-                    "message": {"role": "user",
-                                "content": [{"type": "text", "text": msg}]},
-                }) + "\n").encode("utf-8"))
-                await proc.stdin.drain()
+                await rt.send_user_frame(msg)
             except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
                 # the process died between the liveness check and the write
-                live["proc"] = None
+                rt.proc = None
                 await ws.send_json({"type": "error", "detail":
                     "the agent process closed before the message was sent (%s)" % e})
                 continue
@@ -1705,10 +1655,9 @@ async def ws_chat(ws: WebSocket):
                     rc = await asyncio.wait_for(proc.wait(), 5)
                 except (asyncio.TimeoutError, Exception):
                     rc = -1
-                live["proc"] = None
-                live["key"] = None
+                rt.clear()
 
-            if live["stopped"]:
+            if rt.stopped:
                 # SIGTERM makes rc non-zero, which the branch below would report as
                 # "claude exited -15" -- i.e. blaming the tool for the operator's own
                 # interrupt. A stop is a normal outcome and gets its own frame.
@@ -1720,9 +1669,8 @@ async def ws_chat(ws: WebSocket):
                 # next message spawns a fresh one -- and because session_id is
                 # kept, that respawn carries --resume and the conversation
                 # continues where it was cut.
-                live["stopped"] = False
-                live["proc"] = None
-                live["key"] = None
+                rt.stopped = False
+                rt.clear()
                 await ws.send_json({"type": "stopped", "session": session_id})
                 continue
 
@@ -1789,7 +1737,7 @@ async def ws_chat(ws: WebSocket):
         # Killing any still-running child too -- a disconnected browser must not
         # leave a `claude` process running against the operator's plan.
         reader_task.cancel()
-        _kill_live()
+        rt.kill_group()
 
 
 @app.websocket("/ws/term")

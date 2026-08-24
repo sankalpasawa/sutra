@@ -118,8 +118,11 @@ class TestSourceKeepsBothProtections(unittest.TestCase):
         # Generous window: the rationale comment on this call is long, and an
         # earlier version of this test sliced it off and failed on its own
         # documentation. Bound it at the closing paren instead of a guess.
-        start = self.src.index("proc = await asyncio.create_subprocess_exec")
-        spawn = self.src[start:self.src.index("start_new_session=True", start)]
+        # The spawn moved to SessionRuntime (S17); the guard follows the code.
+        with open(os.path.join(HERE, "session_runtime.py")) as handle:
+            src = handle.read()
+        start = src.index("await asyncio.create_subprocess_exec")
+        spawn = src[start:src.index("start_new_session=True", start)]
         self.assertRegex(spawn, r"limit\s*=\s*\d",
                          "the chat subprocess is back on asyncio's 64 KiB default")
 
