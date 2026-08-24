@@ -3401,6 +3401,14 @@ test("opt4. throwback asks render as first-class decisions, with their ids", () 
   assert.ok(html.includes("host exited 3"), "raw evidence stays one glance away");
 });
 
+test("opt5. chat-first: teach and chat buttons present; the 7-field form is gone", () => {
+  const html = T.SCREENS.optimus();
+  assert.ok(html.includes("data-optteach"), "teach-in-chat button");
+  assert.ok(html.includes("data-optchat"), "chat-about-this button");
+  assert.ok(!html.includes("optP_pattern"), "field form removed");
+});
+
+
 
 updateStagingChecks()
   .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))

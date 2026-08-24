@@ -1,7 +1,7 @@
 """test_optimus_api -- Optimus is a window: reads honest, mutations gated.
 
 Isolated root via SUTRA_UI_DAEMON_ROOT (never the live ~/.sutra-native).
-Desktop token set BEFORE org_api import (module reads it at import time).
+Mutations are guarded by _local_only (host/origin), not the desktop token.
 No TestClient (venv has no httpx): endpoint functions are called directly
 with a stub Request -- same objects FastAPI would call.
 """
@@ -27,12 +27,15 @@ from fastapi import HTTPException  # noqa: E402
 
 
 class Req:
-    def __init__(self, token=None):
-        self.headers = {"x-sutra-desktop-token": token} if token else {}
+    def __init__(self, host="localhost:8330", origin=None):
+        self.headers = {"host": host}
+        if origin:
+            self.headers["origin"] = origin
 
 
-OK = Req("test-token-123")
-NO = Req()
+OK = Req()
+BAD_HOST = Req(host="evil.example:8330")
+BAD_ORIGIN = Req(origin="https://evil.example")
 
 
 def seed():
@@ -79,12 +82,13 @@ class OptimusApi(unittest.TestCase):
         self.assertEqual(j["state_summary"], {"passed": 1})
         self.assertFalse(j["daemon"]["running"])
 
-    def test_03_mutations_refuse_without_token(self):
+    def test_03_mutations_refuse_rebinding_and_foreign_origins(self):
         seed()
-        self.assertEqual(http_status(optimus_api.optimus_ask, NO, {"text": "x"}), 403)
-        self.assertEqual(http_status(optimus_api.optimus_route_approve, NO,
-                                     {"route_id": "r", "operator": "o", "confirm": "r"}), 403)
-        self.assertEqual(http_status(optimus_api.optimus_daemon_start, NO), 403)
+        self.assertEqual(http_status(optimus_api.optimus_ask, BAD_HOST, {"text": "x"}), 403)
+        self.assertEqual(http_status(optimus_api.optimus_ask, BAD_ORIGIN, {"text": "x"}), 403)
+        self.assertEqual(http_status(optimus_api.optimus_route_approve, BAD_HOST,
+                                     {"route_id": "r", "confirm": "r"}), 403)
+        self.assertEqual(http_status(optimus_api.optimus_daemon_start, BAD_HOST), 403)
 
     def test_04_approve_requires_typed_confirmation(self):
         seed()

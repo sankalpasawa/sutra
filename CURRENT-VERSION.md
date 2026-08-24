@@ -1,6 +1,12 @@
 # Sutra — Current Version
 
-## v2.222.2 (2026-08-24, HEAD)
+## v2.222.3 (2026-08-24, HEAD)
+
+Workspace: openScreen loads the screen again — the per-screen dispatch line was
+lost in a worktree restore, so the click path rendered an empty shell. Restored
++ pinned by a workspace-suite test.
+
+## v2.222.2 (2026-08-24)
 
 Optimus copy in customer voice (P0); technical detail demoted to muted; trust
 gates unchanged. (2.222.1 in between: workspace flag propagation — see CHANGELOG.)

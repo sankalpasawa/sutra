@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.3 (2026-08-24)
+
+- **Workspace: opening the screen loads it.** openScreen()'s per-screen
+  dispatch lost its workspace line in a worktree restore, so the click path
+  rendered an empty shell. Line restored; the dispatch is now pinned by a
+  workspace-suite test.
+
 ## 2.222.2 (2026-08-24)
 
 - **Optimus speaks customer (P0).** "Optimus is awake/asleep", "Waiting on

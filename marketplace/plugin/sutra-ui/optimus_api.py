@@ -24,9 +24,25 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
-from org_api import _desktop_control
-
 router = APIRouter(prefix="/api/optimus")
+
+
+def _local_only(request: Request):
+    """Mutation guard. NOT the desktop-updater token (that gate 403'd whenever
+    the shell attached to a dev backend, killing every Optimus action — the
+    2026-08-24 founder screenshot). Threat model per dual-lane consult: local
+    processes already hold equal power through the daemon CLI, so the real
+    web-facing risks are DNS rebinding (wrong Host) and cross-origin browser
+    calls (foreign Origin). Both are checked here; JSON bodies additionally
+    force a CORS preflight no foreign page gets approved for."""
+    host = (request.headers.get("host") or "").split(":")[0]
+    if host not in ("localhost", "127.0.0.1"):
+        raise HTTPException(status_code=403, detail="local panel requests only (bad host)")
+    origin = request.headers.get("origin")
+    if origin:
+        ohost = origin.split("//")[-1].split(":")[0].split("/")[0]
+        if ohost not in ("localhost", "127.0.0.1"):
+            raise HTTPException(status_code=403, detail="local panel requests only (bad origin)")
 
 READ_CAP_BYTES = 1_000_000
 TAIL_ROWS = 25
@@ -146,7 +162,7 @@ def optimus_snapshot() -> dict:
 
 @router.post("/ask")
 def optimus_ask(request: Request, body: dict) -> dict:
-    _desktop_control(request)
+    _local_only(request)
     text = (body or {}).get("text", "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="ask needs text")
@@ -158,7 +174,7 @@ def optimus_ask(request: Request, body: dict) -> dict:
 
 @router.post("/route-propose")
 def optimus_route_propose(request: Request, body: dict) -> dict:
-    _desktop_control(request)
+    _local_only(request)
     b = body or {}
     required = ("pattern", "workflow", "host", "prompt_template",
                 "verify_template_id", "verify_version")
@@ -186,7 +202,7 @@ def optimus_route_approve(request: Request, body: dict) -> dict:
     honor override is used deliberately and is audit-logged by the daemon
     (route-approvals.jsonl records tty=false); the exit code + output return
     inline so the operator sees exactly what the gate said."""
-    _desktop_control(request)
+    _local_only(request)
     b = body or {}
     import getpass
     rid, confirm = b.get("route_id"), b.get("confirm")
@@ -204,7 +220,7 @@ def optimus_route_approve(request: Request, body: dict) -> dict:
 
 @router.post("/daemon/start")
 def optimus_daemon_start(request: Request) -> dict:
-    _desktop_control(request)
+    _local_only(request)
     snap = optimus_snapshot()
     if snap["daemon"]["running"]:
         raise HTTPException(status_code=409, detail="daemon already running pid=%s"
@@ -217,7 +233,7 @@ def optimus_daemon_start(request: Request) -> dict:
 def optimus_daemon_stop(request: Request, body: dict) -> dict:
     """PID-visible stop (consult fold): the caller must echo the pid it saw,
     so a stale screen can never stop a process it was not looking at."""
-    _desktop_control(request)
+    _local_only(request)
     snap = optimus_snapshot()
     live = (snap["daemon"]["pid"] or {}).get("pid")
     sent = (body or {}).get("pid_confirm")

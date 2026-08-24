@@ -68,12 +68,12 @@ function optRouteRow(r){
   const when = optWhen(r.pattern);
   const live = r.status === "approved";
   const appr = !live
-    ? `<div class="opt-approve">
-         <span class="muted">To switch this on, type its code <code>${esc(r.route_id)}</code>:</span>
+    ? `<details class="opt-approve"><summary>Switch on&#8230;</summary>
+         <span class="muted">Type its code <code>${esc(r.route_id)}</code> to confirm — this step is deliberately yours alone:</span>
          <input type="text" class="wdin" placeholder="${esc(r.route_id)}"
                 data-optconfirm="${esc(r.route_id)}">
          <button class="btn" type="button" data-optapprove="${esc(r.route_id)}">Switch on</button>
-       </div>` : "";
+       </details>` : "";
   return `<div class="opt-route">
     <b>${esc((r.workflow || "?").split("@")[0])}</b> ${optChip(live ? "on" : "waiting for you", live ? "ok" : "warn")}
     <div>${when ? esc(when) : `matches <code class="muted">${esc(r.pattern || "")}</code>`}</div>
@@ -95,7 +95,8 @@ SCREENS.optimus = () => {
        <button class="btn" type="button" data-optrefresh>Refresh</button></p>
     <div class="opt-ask"><input type="text" class="wdin" id="optAskText"
       placeholder="Tell Optimus what you need… (try: write a note on …)">
-      <button class="btn" type="button" data-optask>Ask</button></div></div>`;
+      <button class="btn" type="button" data-optask>Ask</button>
+      <button class="btn" type="button" data-optchat>Chat about this</button></div></div>`;
 
   const pid = s.daemon.pid || {};
   const daemonLine = s.daemon.running
@@ -123,7 +124,8 @@ SCREENS.optimus = () => {
     <h3>Ask Optimus</h3>
     <div class="opt-ask"><input type="text" class="wdin" id="optAskText"
       placeholder="Tell Optimus what you need… (things it knows run by themselves; anything else comes back to you)">
-      <button class="btn" type="button" data-optask>Ask</button></div>
+      <button class="btn" type="button" data-optask>Ask</button>
+      <button class="btn" type="button" data-optchat>Chat about this</button></div>
     <p class="muted">${(s.pending_inputs || []).length ? `${(s.pending_inputs || []).length} waiting in line · ` : ""}so far: ${stateBits}
       ${s.inbox_malformed ? ` · <span class="warn">${s.inbox_malformed} garbled request(s) set aside</span>` : ""}</p>
 
@@ -131,18 +133,7 @@ SCREENS.optimus = () => {
 
     <h3>What Optimus knows how to do</h3>
     ${(s.routes || []).map(optRouteRow).join("") || `<p class="muted">Nothing yet — teach it something below.</p>`}
-    <details class="opt-build"><summary>Teach Optimus something new</summary>
-      <div class="opt-form">
-        <input type="text" class="wdin" id="optP_pattern" placeholder="When an ask starts with… (e.g. ^reconcile )">
-        <input type="text" class="wdin" id="optP_workflow" placeholder="Do it the registered way… (e.g. W-emi-reconcile@1.0.0)">
-        <input type="text" class="wdin" id="optP_prompt_template" placeholder="Tell the worker what to do… (use {text} and {out})">
-        <input type="text" class="wdin" id="optP_department" placeholder="Which department is this for? (optional)">
-        <input type="text" class="wdin" id="optP_charter" placeholder="Under which charter? (optional)">
-        <select class="wdin" id="optP_host"><option>claude-bare</option><option>codex</option></select>
-        <details><summary class="muted">Advanced: how Optimus checks its own work</summary>
-          <input type="text" class="wdin" id="optP_verify" placeholder="check type (e.g. grep-count)">
-          <input type="text" class="wdin" id="optP_vargs" placeholder="check details (e.g. pattern=provenance,file={out},min=1)">
-        </details>
+    <p><button class="btn" type="button" data-optteach>Teach Optimus something new — in chat</button></p>
         <button class="btn" type="button" data-optpropose>Suggest it</button>
         <p class="muted">Suggesting changes nothing — a new ability only switches on after you
         approve it above by typing its code. That step is deliberately yours alone.</p>
@@ -152,6 +143,34 @@ SCREENS.optimus = () => {
     ${o.act ? `<pre class="opt-act">${esc(o.act)}</pre>` : ""}
   </div>`;
 };
+
+/* Chat-first (founder, 2026-08-24: "there should be a way to start a chat from
+   here itself... too many text boxes"). Same session shape as openTeamsutraChat;
+   the draft is an EDITABLE composer prefill — nothing sends until Enter. */
+function optOpenChat(seed, draft){
+  const s = { id:"s-"+(++SID), title:"Optimus", created_ms:NOW, updated_ms:NOW,
+              turns:[], local:true, loadState:"live" };
+  S.sessions.unshift(s);
+  S.turnOpts[s.id] = Object.assign({}, S.turnOpts[s.id], { append_system_prompt: seed });
+  S.openPanes.push(s.id);
+  if (S.openPanes.length > 2) S.openPanes = S.openPanes.slice(-2);
+  S.composerText[s.id] = draft;
+  render();
+  const inp = document.querySelector('[data-sask="'+s.id+'"]');
+  if (inp){ inp.value = draft; inp.focus(); }
+  return s.id;
+}
+
+const OPT_CHAT_SEED = "You are helping the operator drive Optimus, the local sutra-daemon. " +
+  "Its CLI is sutra/marketplace/plugin/bin/sutra-daemon (ask/status/route-list/route-propose/" +
+  "route-approve/start/stop); stores live under ~/.sutra-native/. The screen's snapshot is at " +
+  "GET http://localhost:8330/api/optimus. Route approval is the operator's act alone — never " +
+  "approve without their explicit confirmation in this chat.";
+
+const OPT_TEACH_SEED = OPT_CHAT_SEED + " The operator wants to TEACH Optimus a new ability. " +
+  "Interview them briefly (what phrase should trigger it, which workflow does it, which " +
+  "department/charter does it belong to, how should the result be checked), then run " +
+  "route-propose with those values and show them the route code to approve on the Optimus screen.";
 
 async function optAct(label, fn){
   try {
@@ -184,15 +203,13 @@ document.addEventListener("click", e => {
       { route_id: rid, confirm: box ? box.value.trim() : "" }));
     return;
   }
-  if (e.target.closest("[data-optpropose]")) {
-    const g = id => (document.getElementById(id) || {}).value || "";
-    optAct("propose", () => apiPost("/api/optimus/route-propose", {
-      pattern: g("optP_pattern"), workflow: g("optP_workflow"),
-      host: g("optP_host") || "claude-bare", prompt_template: g("optP_prompt_template"),
-      verify_template_id: g("optP_verify") || "file-exists", verify_version: "1",
-      verify_args: g("optP_vargs") ? g("optP_vargs").split(",").map(x => x.trim()).filter(Boolean) : [],
-      department: g("optP_department"), charter: g("optP_charter"),
-    }));
+  if (e.target.closest("[data-optteach]")) {
+    optOpenChat(OPT_TEACH_SEED, "I want to teach Optimus something new: ");
+    return;
+  }
+  if (e.target.closest("[data-optchat]")) {
+    const t = document.getElementById("optAskText");
+    optOpenChat(OPT_CHAT_SEED, (t && t.value.trim()) ? t.value.trim() : "Let's look at what Optimus is doing. ");
     return;
   }
 });
