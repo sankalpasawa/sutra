@@ -159,7 +159,13 @@ const state = await page.evaluate(() => {
       const chip = pc && pc.querySelector("[data-panemenu]");
       r.chromeChipFirst = !!(chip && pc.querySelector("button") === chip);
       r.chromeChipText = chip ? chip.textContent.trim() : "";
-      r.chromeSummaryWords = ph ? ((ph.querySelector(".phsum") || {}).textContent || "").trim().split(/\s+/).filter(Boolean).length : 0;
+      /* header round 2 (founder 2026-08-24): one bold title row + one faint
+         subtitle row; the 45-word cap now binds the SUBTITLE (or the title
+         when the two would duplicate and the subtitle is suppressed). */
+      const subEl = ph && (ph.querySelector(".phs") || ph.querySelector(".pht"));
+      r.chromeSummaryWords = subEl ? (subEl.textContent || "").trim().split(/\s+/).filter(Boolean).length : 0;
+      r.chromeTwoRow = !!(ph && ph.querySelector(".pht"));
+      r.chromeNoTranscriptTag = !(ph && [...ph.querySelectorAll(".src")].some(e => e.textContent.trim() === "transcript"));
       r.chromeClose = !!(ph && ph.querySelector("[data-close]"));
       const sid = pane.dataset.sess;
       S.paneMenu = sid;
@@ -186,9 +192,10 @@ check("governance captured as sections in the running shell",
 check("and the body is the reply alone, numbered list intact", state.govBody === "Real.\n\n1. kept", JSON.stringify(state.govBody));
 check("transcript turns render the chip too — labelled terminal, real uid", state.transcriptChip === true);
 check("and a prose-only transcript turn stays chipless", state.transcriptQuiet === true);
-check("chrome: session pane header VISIBLE while expanded, carrying a <=45-word summary and the × close",
-  state.chromeHeaderHidden === false && state.chromeSummaryWords > 0 && state.chromeSummaryWords <= 45 && state.chromeClose === true,
-  "hidden=" + state.chromeHeaderHidden + " words=" + state.chromeSummaryWords + " close=" + state.chromeClose);
+check("chrome: session pane header VISIBLE while expanded — title row + <=45-word subtitle + the × close",
+  state.chromeHeaderHidden === false && state.chromeTwoRow === true && state.chromeSummaryWords > 0 && state.chromeSummaryWords <= 45 && state.chromeClose === true,
+  "hidden=" + state.chromeHeaderHidden + " tworow=" + state.chromeTwoRow + " words=" + state.chromeSummaryWords + " close=" + state.chromeClose);
+check("chrome: the pane's 'transcript' provenance tag is gone", state.chromeNoTranscriptTag === true);
 check("chrome: the composer chip is three dots only", state.chromeChipText === "⋯", JSON.stringify(state.chromeChipText));
 check("chrome: ⋯ chip is the first composer control", state.chromeChipFirst === true, String(state.chromeChipFirst));
 /* the 7-row contract holds as an ORDERED SUBSEQUENCE: when the session's folder

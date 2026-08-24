@@ -2,6 +2,25 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.119.2 (2026-08-24)
+
+**Chat header round 2 + transcript noise removed (founder feedback).**
+
+The session-pane header is now ONE bold title line + ONE faint subtitle line
+(the 45-word summary), each single-line ellipsized -- never a wrapped clamp
+whose tail is unreachable. Hovering the header shows the full title and
+subtitle; the accessible name carries both. The header sits on the chat
+column's vertical plane, and the department appears beside the live dot --
+the latest FILED turn's leaf, honestly labelled "latest filed", absent when
+nothing was ever filed. The per-turn "turn N · from transcript" pill and the
+"Read from ~/.claude/projects" note are gone (the orphan warning stays), as
+is the pane's "transcript" tag (fork stays). Pinned in test_panel.js 38a-d,
+35j, 42a-d and two reworked lane checks.
+- **The selection button says Help.** Selecting text used to offer "Ask Sutra"
+  while the page it opens is called Help. The button, the chat's own title and
+  the empty-state instruction now all say Help. Screen readers still hear the
+  full sentence, since they reach the button without the surrounding context.
+
 ## 2.119.1 (2026-08-24)
 
 - **The selection button says Help.** Selecting text used to offer "Ask Sutra"

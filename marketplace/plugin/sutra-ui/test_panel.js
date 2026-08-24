@@ -2889,7 +2889,10 @@ test("35j. the stylesheet ships the chrome: visible minimal header, grip, rows, 
     "the header is VISIBLE while expanded again (founder 2026-08-23)");
   assert.ok(/\.pane\[data-sess\]:not\(\.collapsed\)\s*>\s*\.ph\s*>\s*\.pfold\s*\{\s*display:\s*none/.test(css),
     "but the strip's fold button stays hidden while expanded — the grip folds");
-  assert.ok(/\.phsum\{[^}]*line-clamp/.test(css), "the summary clamps to two lines");
+  assert.ok(/\.pht\{[^}]*text-overflow:\s*ellipsis/.test(css), "the title row ellipsizes on one line");
+  assert.ok(/\.phs\{[^}]*text-overflow:\s*ellipsis/.test(css), "the subtitle row ellipsizes on one line");
+  assert.ok(!/\.phsum\{[^}]*line-clamp/.test(css),
+    "the wrapped 2-line clamp is gone — its tail was unreachable (founder 2026-08-24)");
   assert.ok(/\.pgrip\s*\{/.test(css), ".pgrip rule missing");
   assert.ok(/\.mrow\s*\{/.test(css), ".mrow rule missing");
   assert.ok(/\.pane\[data-sess\]\s*>\s*\.pb\s*,\s*\.pane\[data-sess\]\s*>\s*\.pc\s*\{\s*padding-left:\s*19px/.test(css),
@@ -3002,12 +3005,14 @@ test("37b. no placements: the honest empty state, still with a way back", () => 
 });
 
 /* ── 38. the header says what the chat is about — deterministically ───────── */
-test("38a. the summary is the first prompt, capped at 45 words with an ellipsis", () => {
+test("38a. the summary is the SUBTITLE row — capped at 45 words with an ellipsis (founder 2026-08-24)", () => {
   const words = Array.from({ length: 60 }, (_, i) => "w" + i).join(" ");
   const h = sandbox.sessionPane({ id: "sid-38", title: "short title", real: false, cwd: "", channel: null,
     turns: [{ text: words }] });
-  const m = h.match(/<h3 class="phsum"[^>]*>([^<]*)<\/h3>/);
-  assert.ok(m, "summary h3 missing");
+  const t = h.match(/<span class="pht">([^<]*)<\/span>/);
+  const m = h.match(/<span class="phs">([^<]*)<\/span>/);
+  assert.ok(t && m, "title row + subtitle row missing");
+  assert.strictEqual(t[1], "short title", "the title row is the session title");
   const shown = m[1];
   assert.ok(shown.endsWith("…"), "a cut must say so");
   assert.strictEqual(shown.replace("…", "").trim().split(" ").length, 45, "exactly 45 words survive");
@@ -3016,13 +3021,15 @@ test("38a. the summary is the first prompt, capped at 45 words with an ellipsis"
 test("38b. a pasted code block says nothing about the chat — fences are dropped, text stays", () => {
   const h = sandbox.sessionPane({ id: "sid-38", title: "t", real: false, cwd: "", channel: null,
     turns: [{ text: "Fix this:\n```js\nconst secret = 1;\n```\nplease" }] });
-  const shown = h.match(/<h3 class="phsum"[^>]*>([^<]*)<\/h3>/)[1];
+  const shown = h.match(/<span class="phs">([^<]*)<\/span>/)[1];
   assert.strictEqual(shown, "Fix this: please");
 });
 
 test("38c. with no transcript loaded the server title is the summary; collapsed shows the raw title", () => {
   const open = sandbox.sessionPane({ id: "sid-38", title: "server title here", real: false, cwd: "", channel: null, turns: [] });
-  assert.ok(/<h3 class="phsum"[^>]*>server title here<\/h3>/.test(open));
+  assert.ok(/<span class="pht">server title here<\/span>/.test(open));
+  assert.ok(!/<span class="phs">/.test(open),
+    "summary == title must not render two identical rows (codex 2026-08-24)");
   T.S.ui.paneCollapsed["sid-38"] = true;
   try {
     const col = sandbox.sessionPane({ id: "sid-38", title: "server title here", real: false, cwd: "", channel: null,
@@ -3184,6 +3191,45 @@ test("41f. the gate ignores a prose mention of DEPTH — broad regex must not ch
   const prose = "Here is the glossary the doc introduces:\n- DEPTH: 3/5 means thorough\n- COST: an estimate\nThat is all.";
   assert.equal(T.gvHasCapture({ response: prose }), false,
     "an explanatory list that stays in the body must not claim a capture (codex P2)");
+});
+
+/* ── 42 · header round 2 + transcript-noise removal (founder 2026-08-24) ── */
+
+test("42a. hover and the accessible name carry the FULL title and subtitle", () => {
+  const words = Array.from({ length: 60 }, (_, i) => "w" + i).join(" ");
+  const h = sandbox.sessionPane({ id: "sid-42", title: "my title", real: false, cwd: "", channel: null,
+    turns: [{ text: words }] });
+  const ph = h.match(/<h3 class="phsum" title="([^"]*)" aria-label="([^"]*)"/);
+  assert.ok(ph, "hover + aria attributes missing");
+  assert.ok(ph[1].startsWith("my title — w0 "), "hover = title — subtitle");
+  assert.ok(ph[2].startsWith("my title. w0 "), "aria-label = title. subtitle (codex: punctuation)");
+});
+
+test("42b. the per-turn transcript boilerplate is gone; the orphan warning is not", () => {
+  const plain = T.turnBlock({ transcript: true, text: "q", response: "An answer.", tools: [] }, 3);
+  assert.ok(!/from transcript/.test(plain) && !/~\/.claude\/projects/.test(plain),
+    "the 'turn N · from transcript' pill and provenance note must be gone");
+  const orphan = T.turnBlock({ transcript: true, orphan: true, text: "", response: "x", tools: [] }, 0);
+  assert.ok(/no recorded prompt/.test(orphan), "the orphan warning reports a real anomaly and stays");
+});
+
+test("42c. the pane's 'transcript' tag is gone; fork survives", () => {
+  const real = sandbox.sessionPane({ id: "sid-42c", title: "t", real: true, cwd: "/x", channel: null, turns: [] });
+  assert.ok(!/>transcript<\/span>/.test(real), "the transcript label is provenance noise");
+  const fork = sandbox.sessionPane({ id: "sid-42c", title: "t", real: true, fork: true, cwd: "/x", channel: null, turns: [] });
+  assert.ok(/>fork<\/span>/.test(fork), "fork is a user-relevant fact and stays");
+});
+
+test("42d. the department chip is the LATEST FILED turn's leaf, labelled as such — absent when nothing was filed", () => {
+  const filed = sandbox.sessionPane({ id: "sid-42d", title: "t", real: false, cwd: "", channel: null,
+    turns: [{ text: "a", domain: { ref: "d1", name: "Sutra OS" } }, { text: "b" }] });
+  const chip = filed.match(/<span class="phdept" title="([^"]*)">([^<]*)<\/span>/);
+  assert.ok(chip, "dept chip missing when a turn was filed");
+  assert.strictEqual(chip[2], "Sutra OS");
+  assert.ok(/^latest filed:/.test(chip[1]), "the label must say it is the latest filed, not the session's identity (codex)");
+  const none = sandbox.sessionPane({ id: "sid-42d", title: "t", real: false, cwd: "", channel: null,
+    turns: [{ text: "a" }] });
+  assert.ok(!/phdept/.test(none), "no fabricated dash when nothing was ever filed");
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

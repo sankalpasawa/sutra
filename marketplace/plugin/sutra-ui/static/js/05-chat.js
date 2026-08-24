@@ -1359,18 +1359,16 @@ function turnBlock(t, i){
        so "input routing … and everything" was captured nowhere). The chip is
        gated on an actual capture, and turnUid() gives it a real toggle anchor
        (an empty data-govopen is a dead chip — the click handler returns).
-       Placement honesty is kept inside gvChipHtml's transcript branch. */
+       Placement honesty is kept inside gvChipHtml's transcript branch.
+       The "turn N · from transcript" pill + provenance note are GONE
+       (founder 2026-08-24: per-turn boilerplate, not user-relevant); the
+       orphan warning stays — it reports a real anomaly, not provenance. */
     const gvT = gvHasCapture(t) ? (turnUid(t), gvChipHtml(t, i)) : "";
     return `<div class="turn">
       ${t.orphan
         ? `<div class="a"><span class="pill p-warn">assistant message with no recorded prompt</span></div>`
         : `<div class="u md">${mdHtml(t.text)}</div>`}
-      <div class="a">
-        <span class="pill p-mut">turn ${i+1} · from transcript</span>
-        <div style="margin-top:5px;color:var(--faint);font-size:11px">Read from
-          <code>~/.claude/projects</code>. This ran in the terminal, not through this panel,
-          so no placement was ever filed for it.</div>
-      </div>${gvT}${turnResponse(t)}</div>`;
+      ${gvT}${turnResponse(t)}</div>`;
   }
   /* DS port: the placement prose, grounding charter, and trace that used to
      print inline every turn now live behind the collapsed governance chip —

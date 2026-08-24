@@ -209,10 +209,15 @@ function sessionPane(s){
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
     </button>`}
-    <!-- Header (founder 2026-08-23): back, minimal -- WHAT THIS CHAT IS ABOUT in
-         at most 45 words, a live dot, and the × close. No tabs, no activity,
-         no side-chat control. Collapsed, the same element is the vertical strip
-         (panel.css), so the fold button and the full title stay in it. -->
+    <!-- Header (founder 2026-08-24): ONE title line + ONE subtitle line, both
+         single-line ellipsized, full text on hover (title=) and in the
+         accessible name. The 45-word summary is the SUBTITLE now, never a
+         wrapped paragraph ("too many lines, and I cannot find more lines").
+         The department sits beside the live dot — the LATEST FILED turn's
+         leaf, honestly labelled as such, absent when nothing was ever filed
+         (codex 2026-08-24: last-domain-wins without the label misleads).
+         The per-pane "transcript" tag is gone (fork stays). Collapsed, the
+         same element is the vertical strip (panel.css), unchanged. -->
     <div class="ph">
       <button class="pfold" type="button" data-pane-fold="${esc(s.id)}"
               aria-expanded="${!collapsed}"
@@ -220,10 +225,19 @@ function sessionPane(s){
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
       </button>
-      <span class="dot ${live?"run":""}" ${live ? `role="img" aria-label="a turn is running"` : `aria-hidden="true"`} style="width:6px;height:6px;border-radius:50%;background:var(${live?"--ok":"--line"});flex:none"></span>
-      <h3 class="phsum" title="${esc(s.title)}${s.real&&s.cwd?" — "+esc(s.cwd):""}">${esc(collapsed ? s.title : sessSummary(s))}</h3>
-      ${s.real?`<span class="src">transcript</span>`:""}
+      ${(() => {
+        const sub = collapsed ? "" : sessSummary(s);
+        const dupSub = !sub || sub.replace(/\s+/g, " ").trim() === String(s.title || "").replace(/\s+/g, " ").trim();
+        const hover = esc(s.title) + (dupSub ? "" : " — " + esc(sub)) + (s.real && s.cwd ? " · " + esc(s.cwd) : "");
+        const dTurn = collapsed ? null : [...(s.turns || [])].reverse().find(t => t && t.domain);
+        return `<h3 class="phsum" title="${hover}" aria-label="${esc(s.title)}${dupSub ? "" : ". " + esc(sub)}">${
+          collapsed ? esc(s.title)
+                    : `<span class="pht">${esc(s.title)}</span>${dupSub ? "" : `<span class="phs">${esc(sub)}</span>`}`
+        }</h3>
       ${s.fork?`<span class="src" title="Branched from another session with --fork-session">fork</span>`:""}
+      ${dTurn ? `<span class="phdept" title="latest filed: ${esc(dTurn.domain.name)}">${esc(dTurn.domain.name)}</span>` : ""}`;
+      })()}
+      <span class="dot ${live?"run":""}" ${live ? `role="img" aria-label="a turn is running"` : `aria-hidden="true"`} style="width:6px;height:6px;border-radius:50%;background:var(${live?"--ok":"--line"});flex:none"></span>
       <button class="ib" data-close="${esc(s.id)}" type="button" aria-label="Close session" title="Close this session">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>

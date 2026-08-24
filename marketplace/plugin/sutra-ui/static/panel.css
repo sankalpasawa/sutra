@@ -1188,8 +1188,19 @@
   .pane[data-sess]:not(.collapsed) > .ph{flex-wrap:nowrap;align-items:flex-start}
   .pane[data-sess]:not(.collapsed) > .ph > .pfold{display:none}
   .pane[data-sess]:not(.collapsed) > .ph > .dot{margin-top:6px}
+  /* Header rows (founder 2026-08-24): ONE bold title line + ONE faint subtitle
+     line, each single-line ellipsized — never a wrapped clamp whose tail is
+     unreachable. Full text lives on hover (title=) and in the aria-label.
+     padding-left:19px puts the title on the chat column's vertical plane. */
+  .pane[data-sess]:not(.collapsed) > .ph{padding-left:19px}
   .pane[data-sess]:not(.collapsed) > .ph .phsum{white-space:normal;max-width:none;flex:1;min-width:0;
-    font-weight:500;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    font-weight:500;line-height:1.35;overflow:hidden}
+  .pht{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+  .phs{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    color:var(--faint);font-weight:400;font-size:11.5px}
+  .phdept{flex:none;font-size:10px;color:var(--faint);border:1px solid var(--line);
+    border-radius:8px;padding:1px 7px;max-width:140px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
   .pane[data-sess]:not(.collapsed) > .ph [data-close]{margin-left:auto;flex:none}
   .pane[data-sess] > .pb,.pane[data-sess] > .pc{padding-left:19px}
   .pgrip{position:absolute;left:0;top:0;bottom:0;width:11px;border:0;background:none;

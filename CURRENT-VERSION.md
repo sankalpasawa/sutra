@@ -1,6 +1,13 @@
 # Sutra — Current Version
 
-## v2.118.3 (2026-08-24, HEAD)
+## v2.119.2 (2026-08-24, HEAD)
+
+Chat header round 2: title + subtitle rows (hover for full text), department
+beside the live dot ("latest filed"), aligned to the chat column; per-turn
+transcript boilerplate and the pane's "transcript" tag removed.
+
+
+## v2.118.3 (2026-08-24)
 
 Ownership inversion: the desktop update channel now points at
 `sankalpasawa/sutra` (the founder's repo, where CI signs and notarizes).
