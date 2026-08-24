@@ -1050,7 +1050,7 @@ SCREENS.teamsutra = () => {
   if (!S.ts) return `<p style="color:var(--muted)">Reading your tasks…</p>`;
   const rows = S.ts.tasks || [];
   if (!rows.length) return `<div class="info">Nothing here yet. Select any text in the
-    panel and click <strong>Ask Sutra</strong> — if you describe a problem, the chat
+    panel and click <strong>Help</strong> — if you describe a problem, the chat
     can file it as a task. Filed tasks wait here until you queue them; Sutra then
     picks them up on its hourly pass and brings back a change for your review.</div>`;
   return `<p class="tsc-hint">What you flagged, and what Sutra did about it.</p>${rows.map(tsCard).join("")}`;

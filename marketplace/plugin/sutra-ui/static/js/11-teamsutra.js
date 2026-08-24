@@ -105,7 +105,11 @@
     tsEl = document.createElement("button");
     tsEl.id = "ts-bubble";
     tsEl.type = "button";
-    tsEl.setAttribute("aria-label", "Ask Sutra about the selected text");
+    /* The visible label is one word — "Help" — because the button appears
+       beside text the operator just selected, where the sentence is already
+       obvious. The aria-label stays a full sentence: a screen reader reaches
+       it without that context (founder, 2026-08-24). */
+    tsEl.setAttribute("aria-label", "Get help with the selected text");
     document.body.appendChild(tsEl);
     tsEl.addEventListener("click", tsAsk);
   }
@@ -138,7 +142,7 @@
       })(),
     };
     tsBuild();
-    tsEl.innerHTML = "&#9679; Ask Sutra <span class=\"ts-dept\"></span>";
+    tsEl.innerHTML = "&#9679; Help <span class=\"ts-dept\"></span>";
     tsEl.querySelector(".ts-dept").textContent = tsCurrent.domainLabel;
     /* Below the selection, clamped to the viewport. position:fixed, so the
        rect's viewport coordinates are used as-is. */

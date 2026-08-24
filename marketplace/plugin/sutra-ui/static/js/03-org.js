@@ -1181,7 +1181,7 @@ function tsBuildSeed(ctx){
 
 function openTeamsutraChat(ctx){
   ctx = ctx || {};
-  const s = { id:"s-"+(++SID), title:"Ask Sutra", created_ms:NOW, updated_ms:NOW,
+  const s = { id:"s-"+(++SID), title:"Help", created_ms:NOW, updated_ms:NOW,
               turns:[], local:true, loadState:"live" };
   S.sessions.unshift(s);
   S.turnOpts[s.id] = Object.assign({}, S.turnOpts[s.id],
