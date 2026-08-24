@@ -204,7 +204,11 @@ const PROVIDER_GLYPH = {
  */
 const MED_MEMBERSHIP = {
   added:     ["ok",  "Added in Claude"],
-  not_added: ["off", "Not added in Claude"],
+  /* Scoped to the evidence that exists. Sutra sees what the Claude CLI lists;
+     that is not the same as what the account holds -- a connector can be
+     present in claude.ai and absent from the CLI's view. Claiming the stronger
+     fact from the weaker observation is the error ADR-035 exists to prevent. */
+  not_added: ["off", "Not listed by the Claude CLI"],
   unknown:   ["off", "Status unknown"],
 };
 
@@ -257,6 +261,9 @@ function mediatedTile(t){
     return `<li>
       <span class="dot ${cls}"></span><b>${esc(svc.name)}</b>
       <span class="muted">${esc(label)}</span>
+      ${svc.catalogued === false
+        ? `<span class="tag" title="Sutra has no entry for this one — it is shown because Claude reports it">also in Claude</span>`
+        : ""}
       ${detail}
     </li>`;
   }).join("");
@@ -271,7 +278,7 @@ function mediatedTile(t){
   /* Only shown once something is actually connected. Next to "Not added in
      Claude" it would read as a hedge about a connection that does not exist. */
   const acct = (ok && anyAdded)
-    ? `<p class="mediatedacct muted">Google account: not visible to Sutra.
+    ? `<p class="mediatedacct muted">Accounts: not visible to Sutra.
          Claude does not report which account a connector is bound to.</p>`
     : "";
 
@@ -282,12 +289,13 @@ function mediatedTile(t){
 
   return `<div class="ptile mediated">
     <div class="ptilehead">
-      <svg class="pglyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 11v2.6h4.3c-.2 1.1-1.4 3.2-4.3 3.2a4.8 4.8 0 0 1 0-9.6c1.5 0 2.5.6 3 1.2l2-2A7.4 7.4 0 1 0 12 19.4c4.3 0 7.1-3 7.1-7.2 0-.5 0-.9-.1-1.2H12z"/>
+      <svg class="pglyph" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+        <path d="M8.5 8.5a3.5 3.5 0 1 0 0 7M15.5 8.5a3.5 3.5 0 1 1 0 7"/>
       </svg>
       <div>
-        <b>${esc(t.name || "Google")}</b>
-        <div class="muted">Gmail and Google Drive, connected inside Claude</div>
+        <b>${esc(t.name || "Connected in Claude")}</b>
+        <div class="muted">Connections Claude holds — Sutra can see them, not use them</div>
       </div>
       <span class="sp"></span>
       <span class="ct via">via Claude</span>
@@ -295,9 +303,9 @@ function mediatedTile(t){
     <ul class="connlist">${rows}</ul>
     ${note}
     ${acct}
-    <p class="tilecaveat">Claude owns this connection, not Sutra. The token and
-      the Google account never reach Sutra. Checking runs a live probe through
-      the Claude CLI, which contacts each connector.</p>
+    <p class="tilecaveat">Claude owns these connections, not Sutra. No token and
+      no account ever reaches Sutra, and a Sutra turn cannot use them. Checking
+      runs a live probe through the Claude CLI, which contacts each connector.</p>
     ${checked}
     <div class="medactions">
       <button class="btn" type="button" data-connrecheck="google"

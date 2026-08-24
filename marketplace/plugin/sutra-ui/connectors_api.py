@@ -193,13 +193,23 @@ def connector_providers():
         spec = get_spec(pid)
         connectors = service(pid).list_connectors(OPERATOR)
         ready = secret_available(spec)
+        # A retired provider with nothing stored has nothing to offer and
+        # nothing to clean up, so it is omitted entirely -- Slack lives in the
+        # Claude-mediated list now. It is KEPT when a connector still exists,
+        # because that row's tokens can only be removed through this provider's
+        # own DELETE route.
+        if getattr(spec, "retired", False) and not connectors:
+            continue
         out.append({
             "provider": spec.provider,
             "display_name": spec.display_name,
             "tagline": spec.tagline,
             "auth_mode": spec.auth_mode,
             "caveat": spec.caveat,
-            "connectable": ready,
+            "retired": getattr(spec, "retired", False),
+            "retired_note": getattr(spec, "retired_note", None),
+            # A retired provider is never connectable, whatever the secret says.
+            "connectable": ready and not getattr(spec, "retired", False),
             "blocked_reason": None if ready else
                 "No client secret on this machine. Add "
                 "SUTRA_%s_CLIENT_SECRET to ~/.sutra/provider-secrets.env "

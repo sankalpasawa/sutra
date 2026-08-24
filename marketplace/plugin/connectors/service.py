@@ -316,6 +316,17 @@ class _ConnectorLifecycle:
         surface to the user -- it would show a scary status eight times a day
         for nothing. Only REFRESH failure is a state change.
         """
+        # A RETIRED provider must not hand out a credential at all. Gating on
+        # strategy.refresh() raising is NOT enough and was verified not to be:
+        # refresh() is only reached on the expired branch below, so a
+        # credential that has not expired yet would be returned and used --
+        # exactly the thing retirement is supposed to stop. Provider-agnostic
+        # on purpose; the next retirement gets this for free.
+        if getattr(self.strategy, "retired", False):
+            raise CredentialInvalid(
+                "%s is retired in Sutra and its credentials are no longer used; "
+                "this connector can only be disconnected." % self.config.provider)
+
         connector = self.connectors.get(operator_id, connector_id, self.config.provider)
         if connector is None:
             raise TransactionNotFound(connector_id)

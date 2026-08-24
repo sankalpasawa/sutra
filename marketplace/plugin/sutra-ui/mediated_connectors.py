@@ -64,14 +64,36 @@ import time
 
 import providers
 
-# ---------------------------------------------------------------- services --
-# Keyed by URL HOST, not display name: the CLI takes display names from a
-# server-supplied field and appends " (2)" when two collide, so the name is
-# neither stable nor unique. The host is both.
-SERVICES = (
-    {"key": "gmail",  "name": "Gmail",        "host": "gmailmcp.googleapis.com"},
-    {"key": "gdrive", "name": "Google Drive", "host": "drivemcp.googleapis.com"},
+# ---------------------------------------------------------------- catalogue --
+# Host is the PREFERRED key: the CLI takes display names from a server-supplied
+# field and appends " (2)" when two collide, so a name is neither stable nor
+# unique while a host is both.
+#
+# But a host can only be known once a connector has actually been connected --
+# it arrives in the CLI's output, not from anywhere we can look it up. So an
+# entry may declare a name to match on until then. Name matching is strictly
+# weaker and is used ONLY when an entry has no host.
+#
+# Anything Claude reports that matches no entry at all is passed through rather
+# than dropped: the operator has an Atlassian Rovo connector today, and a
+# catalogue that silently ignores it is telling them it does not exist.
+CATALOGUE = (
+    {"key": "gmail",  "name": "Gmail",
+     "hosts": ("gmailmcp.googleapis.com",), "match_name": "Gmail"},
+    {"key": "gdrive", "name": "Google Drive",
+     "hosts": ("drivemcp.googleapis.com",), "match_name": "Google Drive"},
+    # Slack has NO known host. It has never been connected on this machine, so
+    # `claude mcp list` has never reported its URL and there is nothing to key
+    # on. Rather than guess -- a wrong host would render "Not added in Claude"
+    # forever, confidently and wrongly -- the entry matches on the connector's
+    # display name until a real row teaches us the host.
+    {"key": "slack",  "name": "Slack",
+     "hosts": (), "match_name": "Slack"},
 )
+
+# Back-compat alias: SERVICES was the old name and is still what reads best at
+# the call sites that only want key/name.
+SERVICES = CATALOGUE
 
 MANAGE_URL = "https://claude.ai/customize/connectors"
 
@@ -187,6 +209,7 @@ def parse(text):
     upgraded the CLI. Row parsing keeps the strict regex and degrades per row.
     """
     saw = False
+    unparsed = 0
     by_host = {}
     for raw_line in (text or "").splitlines():
         line = _ANSI.sub("", raw_line).strip()
@@ -196,6 +219,13 @@ def parse(text):
             saw = True
         m = _ROW.match(line)
         if not m:
+            # A claude.ai line we could not read is IGNORANCE, not absence. If
+            # it were merely skipped, saw would still be True and every entry
+            # with no row would be stamped "not added" -- turning a format we
+            # failed to parse into a confident claim that the operator has no
+            # such connector.
+            if line.startswith("claude.ai "):
+                unparsed += 1
             continue
         name = m.group("name").strip()
         if not name.startswith("claude.ai "):
@@ -212,7 +242,7 @@ def parse(text):
             "observation": classify(status),
             "raw_status": status,
         })
-    return saw, by_host
+    return saw, by_host, unparsed
 
 
 # Worst-first. A host with two connectors in disagreeing states must roll up to
@@ -229,28 +259,83 @@ def _rollup(rows):
     return "unknown"
 
 
-def _build(availability, detail="", saw=False, by_host=None, checked_at=None):
+def _short_name(label):
+    """"claude.ai Gmail (2)" -> "Gmail". The scope prefix and the CLI's
+    collision suffix are both noise for matching and for display."""
+    name = re.sub(r"^claude\.ai\s+", "", label or "").strip()
+    return re.sub(r"\s+\(\d+\)$", "", name).strip()
+
+
+def _matches(entry, row):
+    """Host first, name only as a fallback for an entry that has no host yet.
+
+    Name matching is deliberately the weaker path and never overrides a host:
+    two connectors can share a display name, and the CLI disambiguates them by
+    appending " (2)", which _short_name strips back off.
+    """
+    if entry["hosts"]:
+        return row["host"] in entry["hosts"]
+    want = (entry.get("match_name") or "").lower()
+    return bool(want) and _short_name(row["label"]).lower() == want
+
+
+def _build(availability, detail="", saw=False, by_host=None, checked_at=None,
+           unparsed=0):
     by_host = by_host or {}
+    rows_all = [dict(r, host=h) for h, rs in by_host.items() for r in rs]
     services = []
-    for svc in SERVICES:
-        rows = by_host.get(svc["host"], [])
+    claimed = set()
+
+    for entry in CATALOGUE:
+        rows = [r for r in rows_all if _matches(entry, r)]
+        claimed.update(id(r) for r in rows)
         if rows:
             membership = "added"
-        elif availability == "ok" and saw:
-            # Only ever assertable when the server list demonstrably arrived.
+        elif availability == "ok" and saw and not unparsed:
+            # Only ever assertable when the server list demonstrably arrived AND
+            # every claude.ai line in it was readable. One unreadable row and we
+            # no longer know what is in the list.
             membership = "not_added"
         else:
             membership = "unknown"
         services.append({
-            "key": svc["key"],
-            "name": svc["name"],
+            "key": entry["key"],
+            "name": entry["name"],
             "membership": membership,
             "observation": _rollup(rows) if rows else None,
-            "connectors": rows,
+            # A name-matched entry LEARNS its host the moment a real row shows
+            # up, which is the whole point of not guessing one.
+            "host": (rows[0]["host"] if rows else
+                     (entry["hosts"][0] if entry["hosts"] else None)),
+            "known_host": bool(entry["hosts"]),
+            "catalogued": True,
+            "connectors": [{k: v for k, v in r.items() if k != "host"} for r in rows],
+        })
+
+    # Everything else Claude reports. Dropping these would tell the operator a
+    # connector they can see in Claude does not exist -- and they DO have one
+    # (Atlassian Rovo) that no catalogue entry claims.
+    leftover = {}
+    for r in rows_all:
+        if id(r) in claimed:
+            continue
+        leftover.setdefault(_short_name(r["label"]) or r["host"], []).append(r)
+    for name, rows in sorted(leftover.items()):
+        services.append({
+            "key": "other:" + rows[0]["host"],
+            "name": name,
+            "membership": "added",          # it is in the list; that is the fact
+            "observation": _rollup(rows),
+            "host": rows[0]["host"],
+            "known_host": True,
+            "catalogued": False,            # Sutra has no opinion about this one
+            "connectors": [{k: v for k, v in r.items() if k != "host"} for r in rows],
         })
     return {
-        "provider": "google",
-        "name": "Google",
+        # Not "google" any more: this tile is every connection Claude holds --
+        # Gmail, Drive, Slack, and anything else the operator has added there.
+        "provider": "claude",
+        "name": "Connected in Claude",
         "via": "claude",
         "manage_url": MANAGE_URL,
         # Machine-readable so the "we do not know the account" promise is
@@ -290,13 +375,14 @@ def _probe():
     if proc.returncode != 0:
         return _build("cli_error", proc.stderr or proc.stdout, checked_at=now)
 
-    saw, by_host = parse(proc.stdout)
+    saw, by_host, unparsed = parse(proc.stdout)
     if not saw:
         # Identical output whether the operator is offline, signed out, or
         # genuinely has no connectors. Exit status is 0 in every case, so this
         # cannot be resolved -- and must not be guessed.
         return _build("unreadable", proc.stdout, checked_at=now)
-    return _build("ok", saw=True, by_host=by_host, checked_at=now)
+    return _build("ok", saw=True, by_host=by_host, checked_at=now,
+                  unparsed=unparsed)
 
 
 def snapshot(refresh=False):

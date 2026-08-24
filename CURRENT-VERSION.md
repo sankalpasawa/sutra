@@ -1,6 +1,24 @@
 # Sutra — Current Version
 
-## v2.119.5 (2026-08-24, HEAD)
+## v2.220.0 (2026-08-24, HEAD)
+
+Slack stops being a connector Sutra owns and becomes one it observes through
+Claude, like Gmail and Drive. Sutra runs no Slack OAuth app and holds no Slack
+token.
+
+The mediated catalogue is generalised: Slack matches on display name until a
+real row teaches it the host -- it has never been connected in Claude here, so
+there is no host to look up, and guessing one would render "not listed" forever
+and confidently. Any connector Claude reports that Sutra has no catalogue entry
+for is now surfaced rather than dropped (the operator has an Atlassian Rovo
+connector the old code silently ignored).
+
+Slack is retired IN PLACE, not deleted. Deregistering it was verified by
+execution to make every /api/connectors/slack/... route 404 -- including DELETE
+-- which does not remove an upgrader's tokens, it removes their only way to
+remove them.
+
+## v2.119.5 (2026-08-24)
 
 Subtitle round 3: free-form ritual (CAPS-KEY headings, metric parentheses)
 trimmed from the header subtitle; the ask opens it.

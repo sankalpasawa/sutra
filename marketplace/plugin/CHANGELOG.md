@@ -2,6 +2,64 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.220.0 (2026-08-24)
+
+**Slack stops being a connector Sutra owns. It is observed through Claude, like
+Gmail and Google Drive.**
+
+Founder direction: "let's not use app. We will use claude's credentials here."
+Sutra no longer runs a Slack OAuth app and holds no Slack token.
+
+THE CATALOGUE GENERALISED. mediated_connectors was hardcoded to two Google
+hosts. It now takes a catalogue, and two things follow.
+
+Slack has NO known MCP host. It has never been connected in Claude on this
+machine, so `claude mcp list` has never reported its URL and there is nothing
+to look up. Rather than guess -- a wrong host renders "not listed" forever,
+confidently and wrongly -- the entry matches on the connector's display name
+until a real row teaches us the host, which it then keeps. The collision suffix
+the CLI appends (" (2)") is stripped before matching, and a name match never
+overrides a host.
+
+Anything Claude reports that Sutra has no entry for is now surfaced instead of
+dropped. The operator has an Atlassian Rovo connector; the old catalogue knew
+only Google and silently ignored it, which tells someone a connector they can
+see in Claude does not exist.
+
+SLACK RETIRED IN PLACE, NOT DELETED. Removing "slack" from the registry was
+verified by execution to be the wrong move: nothing raises, but every
+/api/connectors/slack/... route -- including DELETE -- starts returning 404.
+That does not remove an upgrader's Slack tokens from the Keychain; it removes
+their only way to remove them. So the spec stays registered with exactly one
+capability left: destroy.
+
+The second attempt raised from build_strategy. That 500s the entire
+/api/connectors/providers endpoint, because build_service() constructs the
+strategy eagerly -- a retired Slack took GitHub's tile down with it. The
+shipped form is a RetiredStrategy that BUILDS and whose actions refuse.
+can_resume() answers False rather than raising: it is a question, not an
+action, and raising turned a render into a 500.
+
+And the safety claim that "refresh() raises, so no credential can be minted"
+was false. credential_for only reaches refresh() on the EXPIRED branch, so a
+credential that had not expired yet would still be handed out and used. The
+gate is now at the top of credential_for and is provider-agnostic, so the next
+retirement gets it for free.
+
+A retired provider's tile is omitted once nothing is stored, and KEPT while a
+connector row still exists -- because that row's tokens can only be removed
+through that provider's own DELETE route.
+
+AN UNREADABLE ROW IS IGNORANCE, NOT ABSENCE. parse() set `saw` from the
+`claude.ai ` line prefix but dropped rows whose shape it could not read, so one
+CLI format change would stamp "not listed" on every other connector -- a parser
+bug wearing the appearance of a fact. Unreadable rows are now counted, and a
+single one blocks every absence claim in that snapshot.
+
+The label is also scoped to the evidence: "Not listed by the Claude CLI", not
+"Not added in Claude". Sutra sees what the CLI lists; that is not the same as
+what the account holds.
+
 ## 2.119.5 (2026-08-24)
 
 - **Subtitle round 3: free-form ritual trimmed.** parseGov lifts known blocks;

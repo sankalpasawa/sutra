@@ -34,7 +34,7 @@ class ParseRealOutput(unittest.TestCase):
         self.assertIn("claude.ai ", FIXTURE.read_text())
 
     def test_parses_every_row_of_the_capture(self):
-        saw, by_host = mc.parse(FIXTURE.read_text())
+        saw, by_host, _un = mc.parse(FIXTURE.read_text())
         self.assertTrue(saw)
         self.assertIn("gmailmcp.googleapis.com", by_host)
         self.assertIn("drivemcp.googleapis.com", by_host)
@@ -56,7 +56,7 @@ class ParseRealOutput(unittest.TestCase):
     def test_status_text_is_uniform_after_cleaning(self):
         """One field must not read '! Needs authentication' on one row and
         'Connected' on the next purely because one glyph is ASCII."""
-        _, by = mc.parse(
+        _, by, _un = mc.parse(
             "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ✔ Connected\n"
             "claude.ai Google Drive: https://drivemcp.googleapis.com/mcp/v1 - ! Needs authentication\n")
         for rows in by.values():
@@ -69,7 +69,7 @@ class NeverGuess(unittest.TestCase):
     """The core promise: an absent answer renders as unknown, never as absent."""
 
     def test_offline_sentinel_is_unreadable_not_not_added(self):
-        saw, by = mc.parse(EMPTY_OUT)
+        saw, by, _un = mc.parse(EMPTY_OUT)
         self.assertFalse(saw, "the empty sentinel must not count as proof of fetch")
         p = mc._build("unreadable", EMPTY_OUT, saw=saw, by_host=by)
         for svc in p["services"]:
@@ -77,25 +77,43 @@ class NeverGuess(unittest.TestCase):
                              "offline must never render as 'not added'")
 
     def test_not_added_requires_proof_the_list_arrived(self):
-        """Only assertable when some claude.ai row was seen."""
-        saw, by = mc.parse(
+        """Only assertable when some claude.ai row was seen.
+
+        Scoped to CATALOGUED entries: the Atlassian row itself now comes back as
+        a passthrough service, and it is legitimately "added" -- it is in the
+        list, which is the fact."""
+        saw, by, _un = mc.parse(
             "claude.ai Atlassian Rovo: https://mcp.atlassian.com/v1/mcp - ! Needs authentication\n")
         p = mc._build("ok", saw=saw, by_host=by)
-        for svc in p["services"]:
-            self.assertEqual(svc["membership"], "not_added")
+        catalogued = [s for s in p["services"] if s["catalogued"]]
+        self.assertEqual(len(catalogued), len(mc.CATALOGUE))
+        for svc in catalogued:
+            self.assertEqual(svc["membership"], "not_added", svc["name"])
+
+    def test_a_connector_sutra_has_no_entry_for_is_surfaced_not_dropped(self):
+        """The operator HAS an Atlassian Rovo connector. A catalogue that only
+        knows Google would silently drop it, which tells them a connector they
+        can see in Claude does not exist."""
+        saw, by, _un = mc.parse(
+            "claude.ai Atlassian Rovo: https://mcp.atlassian.com/v1/mcp - ! Needs authentication\n")
+        p = mc._build("ok", saw=saw, by_host=by)
+        extra = [s for s in p["services"] if not s["catalogued"]]
+        self.assertEqual([s["name"] for s in extra], ["Atlassian Rovo"])
+        self.assertEqual(extra[0]["membership"], "added")
+        self.assertEqual(extra[0]["observation"], "needs_auth")
 
     def test_proof_of_fetch_survives_a_format_change(self):
         """If proof-of-fetch came from the strict row regex, a cosmetic CLI
         change would make the tile announce 'no claude.ai connectors' -- false,
         since the CLI listed three."""
-        saw, by = mc.parse(
+        saw, by, _un = mc.parse(
             "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 (HTTP) - ✔ Connected\n")
         self.assertTrue(saw)
         self.assertIn("gmailmcp.googleapis.com", by,
                       "optional transport tag must not break row parsing")
 
     def test_unrecognised_row_shape_still_proves_fetch(self):
-        saw, by = mc.parse("claude.ai Gmail >>> totally new layout\n")
+        saw, by, _un = mc.parse("claude.ai Gmail >>> totally new layout\n")
         self.assertTrue(saw, "a claude.ai line proves the list arrived")
         self.assertEqual(by, {}, "but an unparseable row must yield no claims")
 
@@ -107,11 +125,94 @@ class NeverGuess(unittest.TestCase):
                                  "%s leaked a claim" % avail)
 
 
+class AnUnreadableRowIsIgnoranceNotAbsence(unittest.TestCase):
+    """The nastiest failure this module can have: a CLI format change makes one
+    row unparseable, and every OTHER connector is then confidently reported as
+    "not listed" -- a wrong answer produced by a parser bug, wearing the
+    appearance of a fact."""
+
+    def test_an_unparseable_claudeai_row_is_counted(self):
+        saw, by, unparsed = mc.parse(
+            "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - Connected\n"
+            "claude.ai Something >>> brand new layout\n")
+        self.assertTrue(saw)
+        self.assertEqual(unparsed, 1)
+        self.assertIn("gmailmcp.googleapis.com", by)
+
+    def test_one_unreadable_row_blocks_every_absence_claim(self):
+        saw, by, unparsed = mc.parse(
+            "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - Connected\n"
+            "claude.ai Something >>> brand new layout\n")
+        p = mc._build("ok", saw=saw, by_host=by, unparsed=unparsed)
+        slack = [s for s in p["services"] if s["key"] == "slack"][0]
+        self.assertEqual(slack["membership"], "unknown",
+                         "an unreadable row must degrade absence to unknown")
+        gmail = [s for s in p["services"] if s["key"] == "gmail"][0]
+        self.assertEqual(gmail["membership"], "added",
+                         "a row we DID read is still a fact")
+
+    def test_absence_is_assertable_when_everything_parsed(self):
+        saw, by, unparsed = mc.parse(
+            "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - Connected\n")
+        self.assertEqual(unparsed, 0)
+        p = mc._build("ok", saw=saw, by_host=by, unparsed=unparsed)
+        slack = [s for s in p["services"] if s["key"] == "slack"][0]
+        self.assertEqual(slack["membership"], "not_added")
+
+
+class SlackHasNoKnownHost(unittest.TestCase):
+    """Slack has never been connected here, so `claude mcp list` has never
+    reported its URL. The entry matches on name until a real row teaches us the
+    host -- guessing one would render "Not added in Claude" forever, confidently
+    and wrongly."""
+
+    def _slack(self, p):
+        return [s for s in p["services"] if s["key"] == "slack"][0]
+
+    def test_absent_slack_is_not_added_when_the_list_arrived(self):
+        saw, by, _un = mc.parse(
+            "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - Connected\n")
+        svc = self._slack(mc._build("ok", saw=saw, by_host=by))
+        self.assertEqual(svc["membership"], "not_added")
+        self.assertIsNone(svc["host"], "no host may be invented for Slack")
+        self.assertFalse(svc["known_host"])
+
+    def test_absent_slack_is_unknown_when_the_list_did_not_arrive(self):
+        for avail in ("cli_missing", "timed_out", "unreadable", "not_checked"):
+            svc = self._slack(mc._build(avail))
+            self.assertEqual(svc["membership"], "unknown", avail)
+
+    def test_slack_is_matched_by_name_and_LEARNS_its_host(self):
+        saw, by, _un = mc.parse(
+            "claude.ai Slack: https://slackmcp.example.com/mcp/v1 - Connected\n")
+        svc = self._slack(mc._build("ok", saw=saw, by_host=by))
+        self.assertEqual(svc["membership"], "added")
+        self.assertEqual(svc["host"], "slackmcp.example.com",
+                         "the host must be learned from the row, not guessed")
+
+    def test_the_collision_suffix_does_not_defeat_the_name_match(self):
+        """The CLI appends " (2)" when two display names collide."""
+        saw, by, _un = mc.parse(
+            "claude.ai Slack (2): https://slackmcp.example.com/mcp/v1 - ! Needs authentication\n")
+        svc = self._slack(mc._build("ok", saw=saw, by_host=by))
+        self.assertEqual(svc["membership"], "added")
+        self.assertEqual(svc["observation"], "needs_auth")
+
+    def test_a_name_match_does_not_swallow_a_different_connector(self):
+        """"Slackbot Notifier" is not Slack."""
+        saw, by, _un = mc.parse(
+            "claude.ai Slackbot Notifier: https://other.example.com/mcp - Connected\n")
+        p = mc._build("ok", saw=saw, by_host=by)
+        self.assertEqual(self._slack(p)["membership"], "not_added")
+        extra = [s for s in p["services"] if not s["catalogued"]]
+        self.assertEqual([s["name"] for s in extra], ["Slackbot Notifier"])
+
+
 class MultipleConnectorsPerHost(unittest.TestCase):
     def test_two_gmail_accounts_both_survive_and_roll_up_to_worst(self):
         """Two Google accounts in Claude share one host. Collapsing them would
         hide a dead connector behind a healthy one -- inverting the point."""
-        saw, by = mc.parse(
+        saw, by, _un = mc.parse(
             "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ✔ Connected\n"
             "claude.ai Gmail (2): https://gmailmcp.googleapis.com/mcp/v1 - ! Needs authentication\n")
         rows = by["gmailmcp.googleapis.com"]
@@ -148,7 +249,7 @@ class AccountIsNeverInvented(unittest.TestCase):
         email = self._claude_email()
         if not email:
             self.skipTest("no local Claude account to guard against")
-        saw, by = mc.parse(FIXTURE.read_text())
+        saw, by, _un = mc.parse(FIXTURE.read_text())
         blob = json.dumps(mc._build("ok", saw=saw, by_host=by))
         self.assertNotIn(email, blob,
                          "the CLAUDE account email leaked into the Google payload")
@@ -269,7 +370,7 @@ class ProbeIsRationed(unittest.TestCase):
 
 class HostileTextIsDefanged(unittest.TestCase):
     def test_control_bytes_and_markup_are_stripped_or_kept_inert(self):
-        saw, by = mc.parse(
+        saw, by, _un = mc.parse(
             "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - "
             "\x1b[31m<img src=x onerror=alert(1)>\x07\n")
         row = by["gmailmcp.googleapis.com"][0]
@@ -280,7 +381,7 @@ class HostileTextIsDefanged(unittest.TestCase):
         self.assertEqual(row["observation"], "unknown")
 
     def test_status_text_is_capped(self):
-        _, by = mc.parse(
+        _, by, _un = mc.parse(
             "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - " + "A" * 5000)
         self.assertLessEqual(len(by["gmailmcp.googleapis.com"][0]["raw_status"]), 120)
 

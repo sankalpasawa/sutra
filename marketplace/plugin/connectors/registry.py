@@ -32,6 +32,57 @@ class ProviderSpec:
     needs_local_secret: bool = False
     #: Honest note rendered on the tile. Not marketing.
     caveat: Optional[str] = None
+    #: RETIRED: Sutra no longer mints or uses this provider's credentials, but
+    #: it can still DESTROY one. The spec stays registered on purpose -- pulling
+    #: it out of _SPECS makes every /api/connectors/{provider}/... route 404,
+    #: including DELETE, which would strand an existing connector's tokens in
+    #: the Keychain with no way to remove them. Verified by execution, not
+    #: assumed. `retired_note` is rendered on the tile in place of Connect.
+    retired: bool = False
+    retired_note: Optional[str] = None
+
+
+_RETIRED_MSG = ("{p} is retired in Sutra: it is observed through Claude, not "
+                "authorised here. An existing connection can only be disconnected.")
+
+
+class RetiredStrategy:
+    """A strategy that can be BUILT but not USED.
+
+    The first attempt raised from the builder instead, which 500s the entire
+    /api/connectors/providers endpoint -- build_service() constructs the
+    strategy eagerly (see build_service below), so a provider that cannot build
+    takes down the tile list for every provider, GitHub included. Found by
+    running it, not by reading it.
+
+    So the object exists and only its ACTIONS refuse. list_connectors() and
+    disconnect() never touch a strategy, which is exactly why they keep working
+    -- and disconnect is the one capability a retired provider must retain.
+    """
+
+    #: Read by ConnectorService.credential_for as the choke point. It is an
+    #: ATTRIBUTE, not a method that raises, because the caller must be able to
+    #: ask "is this retired?" without triggering the refusal.
+    retired = True
+
+    def __init__(self, provider: str):
+        self.provider = provider
+
+    def _refuse(self, *_a, **_k):
+        raise RuntimeError(_RETIRED_MSG.format(p=self.provider.title()))
+
+    begin = poll = identity = refresh = _refuse
+
+    def can_resume(self, handle):
+        """Not a refusal: this is a QUESTION, and the honest answer is no.
+        Raising here would turn a resumable-transaction check into a 500."""
+        return False
+
+    def cancel(self, handle):
+        return None
+
+    def close_all(self):
+        return None
 
 
 def _github_spec():
@@ -56,28 +107,49 @@ def _github_spec():
 
 
 def _slack_spec():
+    """RETIRED in 2.220.0 (founder direction 2026-08-24: "let's not use app").
+
+    Slack is now observed through Claude like Gmail and Drive -- see ADR-035 and
+    mediated_connectors.py. Sutra no longer runs a Slack OAuth app and holds no
+    Slack token.
+
+    The spec is NOT deleted. An operator upgrading with an ACTIVE Slack
+    connection still has two live tokens in the Keychain, and removing "slack"
+    from _SPECS makes every /api/connectors/slack/... route return 404 --
+    including DELETE. That does not delete their tokens, it stops them from
+    ever deleting their tokens. So the spec survives with exactly one remaining
+    capability: destroy.
+
+    build_strategy raises, so no NEW connection can be minted and no existing
+    credential can be refreshed into a usable one. credential_slots is kept
+    verbatim: disconnect erases the slots the spec declares, and dropping the
+    "user" slot here would leave the user token behind on every machine that
+    still has one.
+    """
     from .config import SlackConfig
     from .slack.client import SlackClient
-    from .slack.strategy import SlackLoopbackStrategy
 
     def build_strategy(config, client):
-        return SlackLoopbackStrategy(client, config)
+        return RetiredStrategy("slack")
 
     return ProviderSpec(
         provider="slack",
         display_name="Slack",
-        tagline="Channels, messages and search.",
+        tagline="Now connected inside Claude, not in Sutra.",
         auth_mode="redirect",
         build_config=SlackConfig.from_env,
         build_client=SlackClient,
         build_strategy=build_strategy,
+        # Verbatim from the un-retired spec. Disconnect erases the slots the
+        # spec declares; dropping "user" would orphan the user token.
         credential_slots=("user",),
-        needs_local_secret=True,
-        # Stated on the tile rather than discovered later. Slack offers no
-        # device flow and no PKCE, so this connection is genuinely weaker than
-        # GitHub's and the operator should know before starting.
-        caveat="Uses a browser redirect to a local port. Slack offers no PKCE, "
-               "so this is a weaker flow than GitHub's.",
+        needs_local_secret=False,       # nothing is minted, so nothing is needed
+        retired=True,
+        retired_note="Sutra no longer manages Slack. It is connected inside "
+                     "Claude instead — see the Claude connections below. Any "
+                     "Slack connection still stored here can be disconnected, "
+                     "and nothing else.",
+        caveat=None,
     )
 
 
