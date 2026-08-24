@@ -608,6 +608,10 @@ function railSpec(){
   const c = v => S.loaded ? v : undefined;
   return {
     org:[
+      /* Workspace (flag-gated, FLAG.md): one surface over the organisation's
+         documents. Ships hidden; S92 cutover turns the flag on by default. */
+      ...(typeof wsFlagOn === "function" && wsFlagOn()
+        ? [{id:"workspace", n:"Workspace", i:"know"}] : []),
       {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
@@ -776,6 +780,9 @@ function planeRows(dest){
   };
   const groups = [];
   for (const entry of (DEST_PLANES[dest] || [])){
+    /* A row can be feature-flagged (FLAG.md). With the flag off the row must
+       not render at all — the byId fallback would otherwise show a bare id. */
+    if (entry.flag === "workspace" && !(typeof wsFlagOn === "function" && wsFlagOn())) continue;
     if (entry.group) groups.push({ label: entry.group, rows: entry.rows.map(row) });
     else {
       if (!groups.length || groups[groups.length-1].label) groups.push({ label:null, rows:[] });

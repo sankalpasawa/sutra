@@ -286,6 +286,9 @@ function wire(){
   if (edReload) edReload.onclick = ()=>{ const p=S.edFile; S.edBase=S.edText; openEdFile(p); };
 
   /* ── files (SilverBullet sidecar) ── */
+  /* Workspace (flag-gated): its own wiring lives in 13-workspace.js; the
+     guard keeps wire() intact if that file ever fails to load. */
+  if (typeof wireWorkspace === "function") wireWorkspace(scBody);
   const sbRetry = scBody.querySelector("[data-sbretry]");
   if (sbRetry) sbRetry.onclick = ()=>loadFilesScreen(true);
   /* The frame's URL is set as a PROPERTY, never rendered into HTML: the page
@@ -1069,6 +1072,7 @@ function openScreen(id){
   if (id === "files") loadFilesScreen(); /* lazy: spawns the sidecar on demand */
   if (id === "automation") loadAuto(false);
   if (id === "balance") loadBalance(false); /* lazy, like Git */
+  if (id === "optimus") loadOptimus(false); /* lazy: reads the daemon's files */
   /* force=true: unlike a repo, utilization moves while you are not looking, and
      a stale percentage is the one number this screen must not show. The 60s
      server cache is what keeps re-opening cheap. */

@@ -2,6 +2,9 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.221.0 — 2026-08-24
+- Workspace (flag-gated, default off): one screen over the organisation — Department > Charter > Document tree, merged document+registry search, charter pages, Unfiled, SilverBullet editing; 14 specced states; perf-hardened (tree 7.6ms warm).
+
 ## 2.220.4 (2026-08-24)
 
 **Releases come from the pipeline. The Settings groups collapse individually.**

@@ -57,6 +57,12 @@ app.include_router(org_api.router)
 # Connector platform (ADR-034). The panel never sees a credential --
 # it deals in connector ids and connector state only.
 app.include_router(connectors_api.router)
+# Workspace (flag-gated, FLAG.md): the router mounts always, and every route
+# answers 404 flag_off until flags.workspace is set — mounting conditionally
+# would make the flag require a restart, which FLAG.md's rollback forbids.
+import workspace_api
+app.include_router(workspace_api.router)
+# fixed-path + bounded; mutations shell the daemon CLI (desktop-token gated).
 HERE = Path(__file__).resolve().parent
 
 

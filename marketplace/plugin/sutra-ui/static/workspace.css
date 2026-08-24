@@ -1,0 +1,216 @@
+/* ── Workspace screen (PLAN-100 S13-S20) ─────────────────────────────────────
+   One namespaced block: every selector is rooted at a ws-* class, so this file
+   is INERT until 13-workspace.js renders ws-* markup — flag off (FLAG.md)
+   means zero behaviour change even with the stylesheet linked.
+
+   Source of record: holding/plans/workspace-program/DESIGN-LOCK.md (states
+   01-14 of workspace-states.html). Every px below is copied from its redline
+   tables; any delta needs founder sign-off (S20 diffs this file vs the lock).
+
+   NAMING source of truth: static/js/13-workspace.js (S20 reconciliation) —
+   every class that file emits has a rule here, and no rule here styles a
+   class the JS does not emit. The old mock-derived names (.ws-q .ws-msg
+   .ws-doc-i .ws-sk .ws-lk .ws-cx .ws-chd .ws-right .ws-screen .ws-body …)
+   are renamed to the JS vocabulary; the rail (.ws-rail*) and the fake caret
+   are dropped — the JS renders neither (the shipped panel owns the rail,
+   and a live <input> owns its own caret).
+
+   TOKEN MAP — the mock's tokens.css names do not exist in the panel; panel.css
+   :root is authoritative at runtime, so each mock ROLE maps onto the panel
+   variable already carrying that role. Dark mode comes free (S19): the panel
+   redefines these same variables under :root,[data-theme="dark"] — this file
+   contains no hex at all, light-only or otherwise.
+     mock --bg           -> var(--bg)      screen ground
+     mock --panel        -> var(--card)    top bar, doc pane
+     mock --ink          -> var(--ink)     department level, selected doc, typed query
+     mock --stone        -> var(--muted)   document level, top actions, empty message
+     mock --faint        -> var(--faint)   placeholder, counts, meta, gone docs
+     mock --line         -> var(--line)    every border and rule
+     mock --cream        -> var(--bubble)  skeleton blocks (nearest: #F5F0E8 ~ #f5f4f2)
+     mock --gold         -> var(--acc)     gold actions (Done / File it / go)
+     mock --gold-glow    -> var(--acc-bg)  selection wash: doc.on, fold.on
+     mock --review       -> var(--acc)     charter level, record edge. The panel has
+                                           NO blue anywhere; its one link colour is
+                                           --acc (.md .md-a, panel.css:623). Charter
+                                           blue therefore lands on the accent. The
+                                           tree still reads in three levels — ink
+                                           600/8 · acc 400/20 · muted 400/32 — via
+                                           weight + indent, which the lock itself
+                                           names as the level-telling mechanism
+                                           (workspace-states.html:41).
+     mock --decide       -> var(--warn)    notice-bar default edge (#8B6B4A -> warn role)
+     mock --alert        -> var(--block)   changed-on-disk edge, offline dot
+     mock --done         -> (unused on this screen; reserved — DESIGN-LOCK)
+     mock --font-display -> var(--serif)   charter-page h1
+     mock --font-body    -> var(--sans)    everything else
+     mock --font-mono    -> var(--mono)    (document body lives in the sidecar iframe)
+
+   OFF-TOKEN LITERALS (DESIGN-LOCK §off-token) — each mapped to the NEAREST
+   existing panel variable; nothing minted:
+     #fbfaf7  (side+ctx pane bg)      -> var(--inset)     #fafaf9 light / #161412 dark
+     #f4f6f9  (charter/record sel)    -> var(--line-soft) #eeecea light / #221F1C dark.
+              --bubble is the closer literal in light BUT is byte-equal to --inset in
+              dark, which would make the selection invisible on the side pane;
+              --line-soft stays one step off the pane ground in BOTH themes.
+     #fbf0d8  (search <mark>)         -> var(--warn-bg)   #f8f3e4 light — same pale-amber role
+     #2b2723  (doc body text)         -> var(--ink)       nearest by colour distance; the
+              one-step softness vs full ink is dropped — flagged for S20/founder.
+     #dedad3  (mock sheet ground)     -> never ships (mock chrome — lock rule)
+
+   CLASS MAP (mock -> shipped, JS names). Bare helpers (.on .gone .i1 .alert
+   .gold .stone) only match inside a ws-* compound, so they cannot leak:
+     .screen>.ws          .top>.ws-top       .q>.ws-search     .right>.ws-topright
+     .panes>.ws-panes     .side>.ws-side     .dep>.ws-dep      dep count>.ws-count
+     .cha>.ws-cha         .doc-i>.ws-doc     .rule>.ws-rule    .lens>.ws-lens
+     .grp>.ws-grp         .rec>.ws-rec       .fold>.ws-fold    fold dir>.ws-fold-dir
+     .doc>.ws-doccol      .col>.ws-col       .crumb>.ws-crumb  .act>.ws-act
+     .msg>.ws-notice      .empty>.ws-empty   .sk>.ws-skel (+.ws-skel-wrap)
+     .chd>.ws-desc        .chlist>.ws-chlist chlist a>.ws-chrow  date>.ws-chdate
+     .ctx>.ws-ctx         .cx>.ws-cs         .ck>.ws-ck (+.ws-cshead)
+     .cr>.ws-cr           cr value>.ws-cv    .lk>.ws-cl        .dot>.ws-dot
+     chip>.ws-chip        count>.ws-rescount charter page>.ws-page
+     .s>.ws-s (+.ws-loc .ws-snip)  .i8>.ws-hit  .i20>.ws-und  .unfiled>.ws-unfiled
+     iframe>.ws-frame     empty side>.ws-none
+   The mock's per-state INLINE styles are promoted to modifiers so the frontend
+   agent never writes style=: .ws-dep.ws-unfiled  .ws-doc.ws-und  .ws-doc.ws-hit
+   .ws-cha.on  .ws-notice.alert  .ws-chip.alert  .ws-doc.gone
+   ─────────────────────────────────────────────────────────────────────────── */
+
+  /* screen — 1440x900 is the MOCK SHEET's framing (workspace-states.html:16);
+     in the app the panel's pane box supplies the dimensions. radius 10 is the
+     panel's own --r (10px), so the lock value rides the existing token.
+     .ws stacks the top bar over the panes (the mock's .body). */
+  .ws{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;
+    border-radius:var(--r);background:var(--bg);color:var(--ink);font-family:var(--sans)}
+
+  /* shared reset — the JS renders rows and actions as real <button>s the
+     static mock never needed; one reset, per-class values below */
+  .ws button{border:0;background:none;font-family:inherit;text-align:left;
+    color:inherit;padding:0;cursor:pointer}
+
+  /* top bar 52 */
+  .ws-top{height:52px;flex:none;display:flex;align-items:center;gap:14px;padding:0 20px;
+    border-bottom:1px solid var(--line);background:var(--card)}
+  /* Live input: placeholder faint / typed ink lands on ::placeholder + colour —
+     the mock faked typing with .typed because its screens are static. */
+  .ws-search{flex:1;max-width:520px;font-size:13.5px;color:var(--ink);caret-color:var(--ink);
+    border:0;background:transparent;outline:none;font-family:inherit}
+  .ws-search::placeholder{color:var(--faint)}
+  .ws-topright{margin-left:auto;display:flex;align-items:center;gap:14px;
+    font-size:11.5px;color:var(--faint)}
+  .ws-rescount{font-size:11.5px;color:var(--faint)}   /* SC7 total, top-right cluster */
+  .ws-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--faint)}
+  .ws-dot{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--faint)}
+  .ws-chip.alert .ws-dot{background:var(--block)}  /* state 13 offline dot (mock :598 inline --alert) */
+  .ws-act{font-size:12px;color:var(--muted);cursor:pointer;border:0;background:none;
+    padding:0;font-family:inherit}
+  .ws-act.gold{color:var(--acc)}
+  .ws-act.stone{color:var(--muted)}   /* "Keep mine" (state 12, mock :570 inline .go.s) */
+  .ws-act[disabled]{opacity:.55;cursor:default}  /* busy actions (fileit/newdoc/savecopy) */
+
+  /* panes: side 286 · doc flex · ctx 250. overflow-y:auto, NOT the mock's
+     hidden — the mock crops static 900px snapshots; a live tree (5k-doc
+     fixture, S87) and a live document must scroll. Behavioural, not visual;
+     flagged for the S20 diff. */
+  .ws-panes{flex:1;display:flex;min-height:0}
+  .ws-side{width:286px;flex:none;border-right:1px solid var(--line);background:var(--inset);
+    padding:12px 10px;overflow-y:auto;font-size:12.5px}
+  .ws-none{min-height:8px}   /* empty tree/results render — no lock value; inert spacer */
+
+  /* the three levels, told by weight and indent — no chevrons, no icons */
+  .ws-dep{padding:7px 8px 3px;color:var(--ink);font-weight:600;letter-spacing:-.01em}
+  .ws-count{float:right;font-weight:400;color:var(--faint);font-size:11px}
+  .ws-dep.ws-unfiled{color:var(--muted)}                    /* mock :138/:195 inline */
+  .ws-cha{display:block;width:100%;padding:4px 8px 4px 20px;color:var(--acc);
+    font-size:12px;cursor:pointer}
+  .ws-cha.on{background:var(--line-soft);border-radius:6px}  /* state 02 (mock :184 inline) */
+  .ws-doc{display:block;width:100%;padding:4px 8px 4px 32px;color:var(--muted);
+    border-radius:6px;line-height:1.35;font-size:12.5px;cursor:pointer}
+  .ws-doc.on{background:var(--acc-bg);color:var(--ink)}
+  .ws-doc.gone{color:var(--faint);text-decoration:line-through}
+  .ws-doc.ws-und{padding-left:20px}  /* Unfiled docs indent (mock :139/:376 inline) */
+  .ws-doc.ws-hit{padding-left:8px}   /* search doc-result rows (mock :235-:241 inline) */
+  .ws-s{display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
+  .ws-s.ws-loc{color:var(--muted)}   /* result-location variant --stone (lock type table) */
+  .ws-s.ws-snip{color:var(--faint)}
+  .ws-s mark{background:var(--warn-bg);color:var(--muted);border-radius:2px}
+  .ws-rec .ws-s{color:var(--muted)}
+  .ws-rule{border:0;border-top:1px solid var(--line);margin:12px 6px}
+  .ws-lens{display:flex;gap:14px;padding:0 8px 10px;font-size:11px;color:var(--faint)}
+  .ws-lens button{font-size:11px;color:var(--faint);cursor:pointer}
+  .ws-lens button[aria-selected="true"]{color:var(--ink);font-weight:500}
+  .ws-grp{font-size:9px;letter-spacing:.14em;color:var(--faint);margin:16px 8px 7px}
+  .ws-rec{display:block;width:calc(100% - 8px);padding:5px 8px;line-height:1.35;
+    border-left:2px solid var(--acc);margin:0 0 3px 8px;cursor:pointer;font-size:12.5px;
+    color:var(--ink)}
+  .ws-fold{display:block;width:100%;padding:4px 8px;border-radius:6px;font-size:12.5px;
+    color:var(--muted);cursor:pointer}
+  .ws-fold-dir{color:var(--ink)}     /* directory headers (mock .fold.d) */
+  .ws-fold.i1{padding-left:22px}
+  .ws-fold.on{background:var(--acc-bg);color:var(--ink)}
+
+  /* doc pane — 620 centred column (fixed by design, A11Y.md §4). The column
+     is a flex stack so the sidecar iframe fills the height below the crumb
+     and notices; the document body itself renders inside the iframe. */
+  .ws-doccol{flex:1;min-width:0;overflow-y:auto;background:var(--card);padding:40px 0;
+    display:flex;flex-direction:column}
+  .ws-col{width:620px;margin:0 auto;flex:1;display:flex;flex-direction:column;min-height:0}
+  .ws-crumb{font-size:11.5px;color:var(--faint);margin-bottom:14px;flex:none}
+  .ws-frame{flex:1;width:100%;min-height:0;border:0;background:var(--card)}
+  .ws-col h1{font-family:var(--serif);font-size:28px;font-weight:500;margin:0 0 16px;
+    letter-spacing:-.01em}
+  .ws-skel-wrap{padding-top:4px}
+  .ws-skel{height:11px;border-radius:4px;background:var(--bubble);margin:13px 0}
+  .ws-skel:first-child{height:22px;width:56%;margin-bottom:24px}  /* heading variant */
+  .ws-skel:nth-child(3n+2){width:92%}
+  .ws-skel:nth-child(3n){width:74%}
+  .ws-skel:nth-child(3n+1){width:45%}
+
+  /* charter page — the middle level is itself readable (state 02) */
+  .ws-page{font-size:14px;line-height:1.72;color:var(--ink)}
+  .ws-desc{font-size:14px;line-height:1.72;margin:0 0 13px;color:var(--ink)}
+  .ws-chlist{margin-top:26px}
+  .ws-chrow{display:flex;width:100%;justify-content:space-between;padding:11px 0;
+    border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none;
+    font-size:13.5px;cursor:pointer}
+  .ws-chdate{color:var(--faint);font-size:11.5px}
+  .ws-page .ws-act{margin-top:22px}
+
+  /* context rail 250 */
+  .ws-ctx{width:250px;flex:none;border-left:1px solid var(--line);background:var(--inset);
+    padding:16px 14px;font-size:12px;overflow-y:auto}
+  .ws-cs{margin-bottom:26px}         /* one ctx section (mock .cx) */
+  .ws-ck{color:var(--muted)}         /* row key (mock .cr span:first-child) */
+  .ws-cshead{display:block;font-size:9px;letter-spacing:.14em;color:var(--faint);
+    margin:0 0 9px}                  /* section heading (mock .ck) */
+  .ws-cr{display:flex;justify-content:space-between;padding:5px 0;color:var(--ink)}
+  .ws-cv{color:var(--ink);text-align:right}
+  .ws-cl{display:block;width:100%;padding:6px 0;color:var(--ink);text-decoration:none;
+    border-bottom:1px solid var(--line);cursor:pointer;font-size:12px}
+  .ws-cl:last-child{border:0}
+
+  /* notice bar (states 06/12/14 + transient server notices) + empty pane
+     (states 08/09/13) */
+  .ws-notice{border-left:2px solid var(--warn);padding:1px 0 1px 13px;margin:0 0 24px;
+    font-size:13.5px;color:var(--ink);flex:none}
+  .ws-notice.alert{border-color:var(--block)}
+  .ws-notice .ws-act{font-size:13.5px;color:var(--acc);margin-left:12px;cursor:pointer}
+  .ws-notice .ws-act.stone{color:var(--muted)}   /* "Keep mine" (state 12, mock :570 inline) */
+  .ws-empty{height:100%;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:22px}
+  .ws-empty p{font-size:14px;color:var(--muted);margin:0;line-height:1.6;
+    max-width:380px;text-align:center}
+  .ws-empty .ws-act{font-size:13px;color:var(--acc);cursor:pointer}
+
+  /* ── Keyboard focus (A11Y.md §3) — accent outline, distinct from the --acc-bg
+     pointer-selection wash; -2px inset matches the panel's .node treatment so
+     outlines never clip against pane edges. Not in the mock (static screens
+     carry no focus); mandated by A11Y.md, judged at S74. The roving-tabindex
+     cursor row is focused programmatically (wireWorkspace), so [data-wsfocus]
+     gets the outline on plain :focus, not only :focus-visible. */
+  .ws-search:focus-visible,.ws-act:focus-visible,
+  .ws-dep:focus-visible,.ws-cha:focus-visible,.ws-doc:focus-visible,
+  .ws-rec:focus-visible,.ws-fold:focus-visible,.ws-lens button:focus-visible,
+  .ws-chrow:focus-visible,.ws-cl:focus-visible,
+  .ws-side [data-wsfocus]:focus{
+    outline:2px solid var(--acc);outline-offset:-2px}

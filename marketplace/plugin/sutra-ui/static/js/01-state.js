@@ -117,7 +117,11 @@ const DEST_PLANES = {
              {screen:null, label:"Session watch", soon:true}],
   /* chats has no screen rows: its plane hosts the session list verbatim. */
   chats:    [],
-  org:      [{screen:"departments"},{screen:"charters"},{screen:"placements"},
+  org:      [/* workspace row is flag-gated at render: with the flag off,
+                SCREENS.workspace never registers and the row is dropped by the
+                same SCREENS[sel] validation every stale selection goes through. */
+             {screen:"workspace", flag:"workspace"},
+             {screen:"departments"},{screen:"charters"},{screen:"placements"},
              {screen:"knowledge"},{screen:"files"},{screen:"reorg"}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},

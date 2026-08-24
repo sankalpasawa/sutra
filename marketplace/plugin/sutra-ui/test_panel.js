@@ -1274,7 +1274,13 @@ test("24a. every composer control is themed, none falls back to the UA styleshee
      `<style[\s\S]*?</style>` match would instead grab the tiny inline update-
      banner style embedded in a module's template literal, which styles none of
      the composer controls -- and every one would report as "unstyled". */
-  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8")
+  /* Every stylesheet panel.html links is part of the shipped theme — the
+     Workspace screen ships its controls in workspace.css, and a control
+     styled there is themed, not a UA fallback. Concatenate them all. */
+  const sheets = [...panelHtml.matchAll(/<link rel="stylesheet" href="\/static\/([\w.-]+\.css)/g)]
+    .map(m => m[1]);
+  const css = sheets.map(f =>
+      fs.readFileSync(path.join(__dirname, "static", f), "utf8")).join("\n")
     .replace(/\/\*[\s\S]*?\*\//g, "");
   const unstyled = [...classes].filter(c => !new RegExp("\\." + c + "\\s*[,{:.]").test(css));
   assert.deepStrictEqual(unstyled, [],
