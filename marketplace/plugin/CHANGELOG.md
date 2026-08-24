@@ -4,6 +4,11 @@
 
 ## 2.222.3 (2026-08-24)
 
+- **Optimus actions work in attach mode + chat-first.** The desktop-updater
+  token gate (403 on every action against a dev-attached backend) is replaced
+  by a rebinding-safe local-only guard (host+origin). "Too many text boxes":
+  teach form -> seeded "Teach in chat"; approve behind Switch on; "Chat about
+  this" opens a briefed session. Typed route-code + PID-echo unchanged.
 - **Workspace: opening the screen loads it.** openScreen()'s per-screen
   dispatch lost its workspace line in a worktree restore, so the click path
   rendered an empty shell. Line restored; the dispatch is now pinned by a
