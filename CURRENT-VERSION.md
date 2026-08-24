@@ -1,6 +1,11 @@
 # Sutra — Current Version
 
-## v2.222.3 (2026-08-24, HEAD)
+## v2.222.4 (2026-08-25, HEAD)
+
+Workspace/Files visual parity: theme v2 (SB chrome hidden, panel tokens both
+themes, serif headings), search-result styling per mock 03, nativeTheme bridge.
+
+## v2.222.3 (2026-08-24)
 
 Workspace: openScreen loads the screen again — the per-screen dispatch line was
 lost in a worktree restore, so the click path rendered an empty shell. Restored

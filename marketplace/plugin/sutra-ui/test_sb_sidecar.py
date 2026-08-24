@@ -41,6 +41,37 @@ class InjectTheme(unittest.TestCase):
                 self.assertFalse(sb_sidecar.inject_theme(root))
             self.assertEqual(open(path).read(), "# my own theme\n")
 
+    def test_older_managed_theme_is_upgraded_in_place(self):
+        """v1 on disk (an earlier plugin wrote it) must become the current
+        version — the exact upgrade the founder's space needed for dark mode."""
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "THEME.md")
+            with open(path, "w") as fh:
+                fh.write("<!-- sutra-managed: theme v1 -->\nold body\n")
+            with mock.patch.object(providers, "editing_allowed", return_value=True):
+                self.assertTrue(sb_sidecar.inject_theme(root))
+            body = open(path).read()
+            self.assertTrue(body.startswith(sb_sidecar.THEME_MARKER))
+            self.assertIn('html[data-theme="dark"]', body,
+                          "v2 must carry the dark palette")
+            self.assertIn("#sb-top { display: none; }", body,
+                          "v2 must hide the SB chrome bar")
+
+    def test_current_and_newer_managed_themes_are_left_alone(self):
+        """Same version: no rewrite. NEWER version (a later plugin wrote it):
+        never downgrade — that would ping-pong between plugin versions."""
+        for ver, label in ((sb_sidecar.THEME_VERSION, "current"),
+                           (sb_sidecar.THEME_VERSION + 5, "newer")):
+            with tempfile.TemporaryDirectory() as root:
+                path = os.path.join(root, "THEME.md")
+                sentinel = "<!-- sutra-managed: theme v%d -->\nsentinel body\n" % ver
+                with open(path, "w") as fh:
+                    fh.write(sentinel)
+                with mock.patch.object(providers, "editing_allowed", return_value=True):
+                    self.assertTrue(sb_sidecar.inject_theme(root), label)
+                self.assertEqual(open(path).read(), sentinel,
+                                 "%s version must not be rewritten" % label)
+
 
 class EnvConstruction(unittest.TestCase):
     def test_readonly_env(self):

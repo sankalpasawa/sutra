@@ -22,6 +22,7 @@ Design decisions (dual consult 2026-08-21, PoC atom a-78660f98-06):
 import hashlib
 import json
 import os
+import re
 import platform
 import signal
 import socket
@@ -60,16 +61,42 @@ PLUGS = {
     },
 }
 
-THEME_MARKER = "<!-- sutra-managed: theme v1 -->"
+THEME_VERSION = 2
+THEME_MARKER_RE = re.compile(r"<!-- sutra-managed: theme v(\d+) -->")
+THEME_MARKER = "<!-- sutra-managed: theme v%d -->" % THEME_VERSION
 THEME_MD = THEME_MARKER + """
 ```space-style
-html {
-  --root-background-color: #FAFAF7;
-  --root-color: #1A1714;
-  --ui-accent-color: #B8945F;
-  --ui-font: 'Inter', -apple-system, sans-serif;
-  --editor-font: 'Inter', -apple-system, sans-serif;
-  --top-background-color: #FFFFFF;
+/* Sutra theme v2 — generated from panel.css tokens (2.222.x). Keyed on SB's own
+   html[data-theme], which SilverBullet derives from prefers-color-scheme; the
+   desktop shell drives that scheme via nativeTheme (sutra:theme IPC), so the
+   iframe follows the panel toggle. Values are MIRRORED panel tokens — the
+   iframe is cross-origin and cannot read the panel's variables. */
+html[data-theme="light"] {
+  --root-background-color: #ffffff;   /* panel --surface (doc column) */
+  --root-color: #1c1917;              /* panel --ink */
+  --ui-accent-color: #8A5D2E;         /* panel --acc */
+  --top-background-color: #ffffff;
+  --ui-font: -apple-system, "Segoe UI", Roboto, sans-serif;
+  --editor-font: -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+html[data-theme="dark"] {
+  --root-background-color: #161412;   /* panel --surface */
+  --root-color: #F5F0E8;              /* panel --ink */
+  --ui-accent-color: #C4956A;         /* panel --acc */
+  --top-background-color: #161412;
+  --ui-font: -apple-system, "Segoe UI", Roboto, sans-serif;
+  --editor-font: -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+/* The panel renders its own breadcrumb, title context and save state (mock 07),
+   so SB's top bar duplicates chrome the design does not have. NARROW selector,
+   pinned to SB 2.10.0 (#sb-top verified in its DOM); a broader selector could
+   swallow a future read-only or error affordance. Editing and autosave do not
+   depend on the bar (verified: PUT persists with it hidden). */
+#sb-top { display: none; }
+/* Serif headings per the locked mock (panel --serif stack). Pinned-version
+   compatibility selectors: SB 2.10.0 renders headings as .sb-line-h1/h2/h3. */
+#sb-editor .sb-line-h1, #sb-editor .sb-line-h2, #sb-editor .sb-line-h3 {
+  font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 }
 ```
 """
@@ -132,14 +159,25 @@ def _free_port():
 
 
 def inject_theme(root):
-    """Marker-fenced, only-if-absent, and only when editing is allowed."""
+    """Marker-versioned, and only when editing is allowed.
+
+    States (strict, no fuzzy merging):
+      absent            -> write the current version
+      ours, older       -> replace with the current version
+      ours, same/newer  -> leave as is (newer = a later plugin wrote it)
+      no marker (user)  -> never touch a file we don't own outright
+    Returns True when the file on disk is sutra-managed after the call."""
     if not providers.editing_allowed():
         return False
     path = os.path.join(root, "THEME.md")
     if os.path.exists(path):
-        # Never overwrite a file we don't own outright.
-        head = open(path, "r", encoding="utf-8", errors="replace").read(len(THEME_MARKER))
-        return head == THEME_MARKER
+        head = open(path, "r", encoding="utf-8", errors="replace").read(120)
+        m = THEME_MARKER_RE.match(head)
+        if not m:
+            return False                      # user-authored: hands off
+        if int(m.group(1)) >= THEME_VERSION:
+            return True                       # same or newer: no-op
+        # ours and older: replace wholesale (managed block IS the whole file)
     tmp = path + ".sutra-tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(THEME_MD)

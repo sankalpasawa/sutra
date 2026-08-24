@@ -988,12 +988,16 @@ document.getElementById("newSession").onclick = () =>
   const rd=()=>{try{return localStorage.getItem(KEY)}catch(e){return null}};
   const wr=v=>{try{localStorage.setItem(KEY,v)}catch(e){}};
   const saved=rd(); if(saved==="light"||saved==="dark") r.setAttribute("data-theme",saved);
+  /* Desktop shell: mirror into nativeTheme so the SB iframe's scheme follows
+     the panel (absent in a plain browser — presence-gated like the updater). */
+  const bridge=(t)=>{ try { if (window.sutra && window.sutra.setTheme) window.sutra.setTheme(t); } catch(_e){} };
+  bridge(saved==="light"||saved==="dark" ? saved : "system");
   const eff=()=>r.getAttribute("data-theme")||
     (matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");
   const lab=()=>themeBtn.setAttribute("aria-label","Switch to "+(eff()==="light"?"dark":"light")+" theme");
   lab();
   themeBtn.onclick=()=>{ const n=eff()==="light"?"dark":"light";
-    r.setAttribute("data-theme",n); wr(n); lab(); };
+    r.setAttribute("data-theme",n); wr(n); lab(); bridge(n); };
 })();
 /* ── v3.3 identity footer (PLAN-25 S12-S14) ─────────────────────────────────
    The bottom-left states the ROLE the operator is acting as and is the control

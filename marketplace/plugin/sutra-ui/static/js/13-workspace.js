@@ -784,7 +784,7 @@ function wsResultsHtml(){
     const f = d.filing || {};
     const loc = (f.department == null && f.charter == null)
       ? WS_COPY.unfiled
-      : [f.department, f.charter].filter(Boolean).join(" / ");
+      : [f.department, f.charter].filter(Boolean).join(" \u00b7 ");
     html += '<button type="button" class="ws-doc ws-hit" ' + wsRowAttrs("sdoc", d.path) + '>'
       + esc(d.title)
       + '<span class="ws-s ws-loc">' + esc(loc) + '</span>'

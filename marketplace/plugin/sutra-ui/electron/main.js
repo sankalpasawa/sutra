@@ -639,6 +639,22 @@ ipcMain.handle("sutra:update-apply", async () => {
 
 ipcMain.handle("sutra:update-defer", async () => ({ ok: true, deferred: true }));
 
+/* Panel theme -> nativeTheme. The SB iframe is cross-origin and derives its
+   own dark mode from prefers-color-scheme; Chromium derives that scheme from
+   nativeTheme. Following the panel's effective theme here is the only bridge
+   that keeps the iframe and the panel in the same palette. Allow-listed
+   values only — this is renderer input. */
+ipcMain.handle("sutra:theme", async (_e, t) => {
+  const allowed = ["dark", "light", "system"];
+  if (!allowed.includes(t)) return { ok: false, error: "bad theme " + String(t).slice(0, 24) };
+  try {
+    require("electron").nativeTheme.themeSource = t;
+    return { ok: true, theme: t };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+});
+
 /* Stage on demand, for the panel's "Check for updates".
  *
  * The panel found an update and cannot download it itself: /desktop/stage is

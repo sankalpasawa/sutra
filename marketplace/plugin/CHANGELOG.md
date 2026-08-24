@@ -2,6 +2,15 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.4 (2026-08-25)
+
+- **Workspace/Files: the SilverBullet pane now looks like the design.** Theme
+  v2 space style (marker-versioned, v1 upgraded in place): SB's top chrome
+  hidden, panel tokens in both light and dark, serif headings per the locked
+  mock. Search results: middle-dot location separator, soft dividers, tinted
+  match highlights. Desktop shell: panel theme now drives nativeTheme so the
+  editor iframe follows the toggle (effective from the next DMG).
+
 ## 2.222.3 (2026-08-24)
 
 - **Optimus actions work in attach mode + chat-first.** The desktop-updater

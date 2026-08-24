@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld("sutra", {
      Resolves {ok:true} or {ok:false, error} -- the panel must be able to say
      why a mandatory restart did not happen. */
   applyUpdate: () => ipcRenderer.invoke("sutra:update-apply"),
+  /* Tell the shell the panel's effective theme so nativeTheme can follow.
+     This is what makes prefers-color-scheme — and therefore the SilverBullet
+     iframe, which keys its own dark mode off that scheme — agree with the
+     panel toggle. Cross-origin, so no other bridge exists. */
+  setTheme: (t) => ipcRenderer.invoke("sutra:theme", t),
+
 
   /* Defer. Deliberately NOT "decline": the staged build stays on disk and is
      applied when the app next exits, so the next launch is updated either way.

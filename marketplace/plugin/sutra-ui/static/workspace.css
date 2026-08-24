@@ -129,7 +129,11 @@
   .ws-doc.on{background:var(--acc-bg);color:var(--ink)}
   .ws-doc.gone{color:var(--faint);text-decoration:line-through}
   .ws-doc.ws-und{padding-left:20px}  /* Unfiled docs indent (mock :139/:376 inline) */
-  .ws-doc.ws-hit{padding-left:8px}   /* search doc-result rows (mock :235-:241 inline) */
+  .ws-doc.ws-hit{padding:9px 8px;border-bottom:1px solid var(--line-soft)}
+  /* search doc-result rows (mock :235-:241): breathing room + a soft divider,
+     and the match highlight stays a tint, not a highlighter stroke — token
+     colors so both themes keep contrast without glare */
+  .ws-doc.ws-hit mark, .ws-side mark{background:var(--warn-bg);color:inherit;border-radius:2px}
   .ws-s{display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
   .ws-s.ws-loc{color:var(--muted)}   /* result-location variant --stone (lock type table) */
   .ws-s.ws-snip{color:var(--faint)}
