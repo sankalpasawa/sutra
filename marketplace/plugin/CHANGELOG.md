@@ -2,6 +2,19 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.118.3 (2026-08-24)
+
+**The update channel is founder-owned: sankalpasawa/sutra is the primary repo.**
+
+`DESKTOP_REPO` now defaults to `sankalpasawa/sutra` -- the repo where releases
+are built, signed and notarized. (`PLUGIN_REPO` already pointed there.) The
+previous default, `tchandrakar/sutra`, becomes a one-time migration bridge: it
+publishes this release once, and must never again publish a higher desktop
+release, or users still on the old feed would be trapped on it (codex consult).
+Pinned four ways in `test_update_channel.py`: the default, the plugin channel,
+the env override (`SUTRA_UI_DESKTOP_REPO` still wins for dev/QA), and the
+actual URL `_latest_desktop()` requests.
+
 ## 2.118.2 (2026-08-24)
 
 Hotfix for the v3.3 shell: entering Focus or Team Sutra from the rail now

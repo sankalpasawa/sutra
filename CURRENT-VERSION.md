@@ -1,5 +1,14 @@
 # Sutra — Current Version
 
+## v2.118.3 (2026-08-24, HEAD)
+
+Ownership inversion: the desktop update channel now points at
+`sankalpasawa/sutra` (the founder's repo, where CI signs and notarizes).
+`tchandrakar/sutra` publishes one migration bridge and then retires as a
+release channel. Pinned in `test_update_channel.py` (default, override,
+and the URL the updater actually requests).
+
+
 ## v2.118.1 (2026-08-24, HEAD)
 
 Governance chips now render on transcript turns -- which is every real session

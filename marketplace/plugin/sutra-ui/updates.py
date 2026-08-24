@@ -69,7 +69,13 @@ from pathlib import Path
 
 # Where each component comes from. Overridable so a fork or a staging channel
 # can be pointed somewhere else without editing code.
-DESKTOP_REPO = os.environ.get("SUTRA_UI_DESKTOP_REPO", "tchandrakar/sutra")
+"""The update CHANNEL is an ownership decision, not a mirror detail (founder,
+2026-08-24): sankalpasawa/sutra is the PRIMARY repo — releases are built,
+signed and published there. tchandrakar/sutra published one final migration
+bridge (the release that carried this default) and must never again publish a
+higher desktop release, or users still on the old feed would be trapped on it
+(codex consult 2026-08-24). Pinned by test_update_channel.py."""
+DESKTOP_REPO = os.environ.get("SUTRA_UI_DESKTOP_REPO", "sankalpasawa/sutra")
 PLUGIN_REPO = os.environ.get("SUTRA_UI_PLUGIN_REPO", "sankalpasawa/sutra")
 NET_TIMEOUT = 15
 
