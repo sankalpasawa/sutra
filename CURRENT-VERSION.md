@@ -1,6 +1,12 @@
 # Sutra — Current Version
 
-## v2.220.2 (2026-08-24, HEAD)
+## v2.220.3 (2026-08-24, HEAD)
+
+Chat rows in user language: 'not opened yet' (no sizes, no 'transcript'),
+'opening…', "can't be opened"; workspace label only when it differentiates.
+
+
+## v2.220.2 (2026-08-24)
 
 Every connector type gets its own tile: five connectors, five tiles, each with
 its own glyph, state, account line and controls. The single "Connected in

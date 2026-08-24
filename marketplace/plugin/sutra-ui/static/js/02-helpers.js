@@ -823,6 +823,52 @@ function renderPlane(){
       </button></li>`).join("")}</ul>`).join("");
 }
 
+/* Row metadata, in USER language (founder 2026-08-24: "user-friendly and
+   concise"). The list endpoint reads only each .jsonl's head, so an unopened
+   session has no turn count — but the file's size and the word "transcript"
+   are file-system provenance, not something a user thinks in. The row says
+   "not opened yet" and stops. Lifted to module scope so the pins in
+   test_panel.js exercise the SHIPPED function, not a copy. */
+function rowMeta(s){
+  /* The badge is computed BEFORE the guard chain, not inside its last branch.
+     `running` is the panel's own in-flight turn; `live` is the transcript
+     being written by Claude outside the panel; `agents_live` lights once the
+     subagent liveness fold lands. Only active/running draw — a badge on every
+     row would say nothing. */
+  const running = sessionBusy(s.id);
+  const badge =
+      (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
+    + (!running && s.live === "active"
+         ? `<span class="livedot" title="Being written right now in Claude">live</span>` : "")
+    + (s.agents_live ? `<span class="livedot" title="Subagent transcripts being written right now"
+         >${s.agents_live} agent${s.agents_live===1?"":"s"}</span>` : "");
+  if (s.vanished) return badge + `<span style="color:var(--block)">deleted on disk</span>`;
+  if (!s.real) return badge + `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
+  if (s.loadState === "ok" || s.loadState === "empty")
+    return badge + `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
+  if (s.loadState === "loading") return badge + `<span>opening…</span>`;
+  if (s.loadState === "error") return badge + `<span style="color:var(--block)">can't be opened</span>`;
+  return badge + `<span>not opened yet</span>`;
+}
+
+/* `project` is the ENCODED directory name (slashes turned into dashes), which
+   reads as gibberish in a 200px rail. `cwd` is the same directory unencoded,
+   so prefer its last segment. */
+function rowWorkspace(s){
+  const c = (s.cwd || "").replace(/\/+$/, "");
+  if (c) return c.slice(c.lastIndexOf("/") + 1);
+  return (s.project || "").replace(/^-+|-+$/g, "");
+}
+
+/* The workspace label earns its pixels only when it DIFFERENTIATES: with every
+   listed session in one workspace it repeats the same word down the rail and
+   says nothing (founder 2026-08-24). */
+function workspaceLabel(s, sessions){
+  if (!s.real) return "";
+  const ws = new Set((sessions || []).filter(x => x && x.real).map(rowWorkspace).filter(Boolean));
+  return ws.size > 1 ? rowWorkspace(s) : "";
+}
+
 function renderRail(){
   const nav = document.getElementById("railnav");
   if (nav) nav.innerHTML = DESTS.map(d=>`
@@ -862,51 +908,7 @@ function renderRail(){
          : d<=30 ? "Previous 30 days" : "Older";
   };
   const deptsOf = s => [...new Set(s.turns.filter(t=>t.domain).map(t=>dPath(t.domain.ref)))];
-  /* The list endpoint reads only the head of each .jsonl, so it has no turn
-     count to give. Say "transcript unread" until the pane actually reads it --
-     printing a 0, or reusing the file size as a turn count, would both be
-     numbers nobody counted. `project` and the file size ARE real, so those are
-     what the unread row carries. */
-  const kb = n => n >= 1048576 ? (Math.round(n/104857.6)/10) + " MB"
-               : n >= 1024      ? (Math.round(n/102.4)/10) + " KB"
-                                : n + " B";
-  const sessMeta = s => {
-    /* The badge is computed BEFORE the guard chain, not inside its last branch.
-       Every earlier return preempted the only line that emitted it, so "live"
-       appeared ONLY on sessions the operator had never opened -- the exact
-       inverse of the ones they care about -- and a session streaming in THIS
-       panel was indistinguishable from an idle one. `running` is the panel's own
-       in-flight turn; `live` is the transcript being written by Claude outside
-       the panel; `agents_live` lights up once the subagent liveness fold lands.
-       Only `active`/running are drawn: idle and stale are the ordinary cases and
-       a badge on every row would say nothing. */
-    const running = sessionBusy(s.id);
-    const badge =
-        (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
-      + (!running && s.live === "active"
-           ? `<span class="livedot" title="Being written right now in Claude">live</span>` : "")
-      + (s.agents_live ? `<span class="livedot" title="Subagent transcripts being written right now"
-           >${s.agents_live} agent${s.agents_live===1?"":"s"}</span>` : "");
-    /* Deleted-on-disk is tested FIRST. Behind the loadState tests it was
-       unreachable for any session anyone had actually opened, which is the only
-       case the flag was added for. */
-    if (s.vanished) return badge + `<span style="color:var(--block)">deleted on disk</span>`;
-    if (!s.real) return badge + `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
-    if (s.loadState === "ok" || s.loadState === "empty")
-      return badge + `<span>${s.turns.length} turn${s.turns.length===1?"":"s"}</span>`;
-    if (s.loadState === "loading") return badge + `<span>reading transcript…</span>`;
-    if (s.loadState === "error") return badge + `<span style="color:var(--block)">unreadable</span>`;
-    return badge + `<span>transcript unread</span><span>${kb(s.size||0)}</span>`;
-  };
-  /* `project` is the ENCODED directory name (slashes turned into dashes), which
-     reads as gibberish in a 200px rail. `cwd` is the same directory unencoded
-     and is returned by the same endpoint, so prefer its last segment and fall
-     back to the encoded form only when cwd is absent. */
-  const projOf = s => {
-    const c = (s.cwd || "").replace(/\/+$/, "");
-    if (c) return c.slice(c.lastIndexOf("/") + 1);
-    return (s.project || "").replace(/^-+|-+$/g, "");
-  };
+  const sessMeta = rowMeta, projOf = rowWorkspace;
 
   const sessRow = (s, trail) => {
     const sid=s.id, open=S.openPanes.includes(sid);
@@ -936,7 +938,9 @@ function renderRail(){
       <ul class="rlist">${pinFirst(g[k]).map(s=>{
         const ds = deptsOf(s);
         const held = s.turns.some(t=>t.mode==="floor");
-        const trail = `<span>${s.real ? esc(projOf(s)) : (ds.length?esc(ds.join(" → ")):"—")}</span>`
+        const ws = s.real ? workspaceLabel(s, S.sessions) : "";
+        const trailTxt = s.real ? ws : (ds.length?ds.join(" → "):"—");
+        const trail = (trailTxt ? `<span>${esc(trailTxt)}</span>` : "")
           + (held?'<span style="color:var(--warn)">held</span>':"");
         return sessRow(s, trail);}).join("")}</ul>`).join("");
     if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">

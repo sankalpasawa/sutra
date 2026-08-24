@@ -207,6 +207,7 @@ const EPILOGUE = `
      sessions) stay pinned */
   turnControlClick, agentsFold, streamBodyHtml, drainStep, _MAX_STEP, _reduceMotion,
   gvChipHtml, routingChart, turnBlock, gvHasCapture, pushPane, MAX_PANES,
+  rowMeta, rowWorkspace, workspaceLabel,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
@@ -3247,6 +3248,35 @@ test("43c. the stylesheet lets six panes overflow into horizontal scroll, never 
   const css = require("fs").readFileSync(__dirname + "/static/panel.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   assert.ok(/\.panes\{[^}]*overflow-x:\s*auto/.test(css), "the pane row scrolls horizontally");
   assert.ok(/\.pane\{[^}]*flex:\s*1 0 380px/.test(css), "each pane floors at 380px");
+});
+
+/* ── 44 · chat-row metadata in USER language (founder 2026-08-24) ────────── */
+
+test("44a. an unopened session says 'not opened yet' — no file size, no 'transcript'", () => {
+  const m = T.rowMeta({ id: "r44a", real: true, live: "idle", turns: [], loadState: "unread", size: 1258291 });
+  assert.ok(/not opened yet/.test(m), "the human phrasing is the row");
+  assert.ok(!/MB|KB|\d+ B\b/.test(m), "file size is file-system provenance, not user language");
+  assert.ok(!/transcript/i.test(m), "the word 'transcript' left the rows");
+});
+
+test("44b. transient states read human: 'opening…' and 'can't be opened'", () => {
+  assert.ok(/opening…/.test(T.rowMeta({ id: "x", real: true, turns: [], loadState: "loading" })));
+  assert.ok(/can't be opened/.test(T.rowMeta({ id: "x", real: true, turns: [], loadState: "error" })));
+});
+
+test("44c. the workspace label earns its pixels: shown only when the list spans >1 workspace", () => {
+  const a = { id: "a", real: true, cwd: "/u/asawa-holding", turns: [] };
+  const b = { id: "b", real: true, cwd: "/u/asawa-holding", turns: [] };
+  const c = { id: "c", real: true, cwd: "/u/other-repo", turns: [] };
+  assert.strictEqual(T.workspaceLabel(a, [a, b]), "", "one workspace — the label repeats and says nothing");
+  assert.strictEqual(T.workspaceLabel(a, [a, b, c]), "asawa-holding", "two workspaces — now it differentiates");
+  assert.strictEqual(T.workspaceLabel({ id: "p", real: false, turns: [] }, [a, c]), "", "panel-only sessions carry dept trails, not workspaces");
+});
+
+test("44d. what stayed: turn counts, live badges, and the deleted-on-disk anomaly", () => {
+  assert.ok(/3 turns/.test(T.rowMeta({ id: "x", real: true, turns: [1, 2, 3], loadState: "ok" })));
+  assert.ok(/livedot/.test(T.rowMeta({ id: "x", real: true, live: "active", turns: [], loadState: "unread" })), "live stays — the founder's signal");
+  assert.ok(/deleted on disk/.test(T.rowMeta({ id: "x", real: true, vanished: true, turns: [] })));
 });
 
 test("42e. the subtitle strips a governance-opening prompt down to the actual ask", () => {

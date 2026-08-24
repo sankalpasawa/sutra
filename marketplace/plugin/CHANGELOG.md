@@ -2,6 +2,15 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.220.3 (2026-08-24)
+
+- **Chat rows read human.** "transcript unread · 1.2 MB" is now "not opened
+  yet" — file sizes and the word "transcript" left the rows; "reading
+  transcript…" is "opening…", "unreadable" is "can't be opened". The
+  workspace label shows only when the list actually spans more than one
+  workspace. Kept: turn counts, live/running/agents badges, deleted-on-disk.
+  Row helpers lifted to module scope and pinned (test_panel.js 44a-d).
+
 ## 2.220.2 (2026-08-24)
 
 **Every connector type gets its own tile.**
