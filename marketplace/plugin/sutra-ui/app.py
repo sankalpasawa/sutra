@@ -62,7 +62,10 @@ app.include_router(connectors_api.router)
 # would make the flag require a restart, which FLAG.md's rollback forbids.
 import workspace_api
 app.include_router(workspace_api.router)
+# Optimus (Focus > Optimus): a window over sutra-daemon's stores. Reads are
 # fixed-path + bounded; mutations shell the daemon CLI (desktop-token gated).
+import optimus_api
+app.include_router(optimus_api.router)
 HERE = Path(__file__).resolve().parent
 
 

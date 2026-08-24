@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.0 (2026-08-24)
+
+- **Optimus (Focus tab): the daemon, visible.** Status + PID, decision queue
+  (fallback/throwback asks), routes with department/charter chips, recent runs,
+  ask box, and the route builder — two-step typed approve, PID-echo stop. The
+  screen only requests; every mutation shells the sutra-daemon CLI gate.
+
 ## 2.221.0 — 2026-08-24
 - Workspace (flag-gated, default off): one screen over the organisation — Department > Charter > Document tree, merged document+registry search, charter pages, Unfiled, SilverBullet editing; 14 specced states; perf-hardened (tree 7.6ms warm).
 

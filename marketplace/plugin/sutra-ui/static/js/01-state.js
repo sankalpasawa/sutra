@@ -113,6 +113,7 @@ const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
      exist now so the shape is honest about what is and is not built. */
   focus:    [{screen:"balance", label:"Balance"},
+             {screen:"optimus", label:"Optimus"},
              {screen:null, label:"Daily brief",  soon:true},
              {screen:null, label:"Session watch", soon:true}],
   /* chats has no screen rows: its plane hosts the session list verbatim. */

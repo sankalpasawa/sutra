@@ -128,11 +128,12 @@ test("planes: settings carries four labelled groups", () => {
   assert.strictEqual(JSON.stringify(groups.map(g => g.label)), JSON.stringify(
     ["Tools","Automation","System","Preferences"]));
 });
-test("planes: focus offers Balance live and two honest comings-soon", () => {
+test("planes: focus offers Balance + Optimus live and two honest comings-soon", () => {
   const rows = T.planeRows("focus").flatMap(g => g.rows);
-  assert.strictEqual(rows.length, 3);
+  assert.strictEqual(rows.length, 4);
   assert.strictEqual(rows.filter(r => r.disabled).length, 2);
   assert.strictEqual(rows[0].screen, "balance");
+  assert.strictEqual(rows[1].screen, "optimus");
 });
 
 /* §rail ─ S7 */

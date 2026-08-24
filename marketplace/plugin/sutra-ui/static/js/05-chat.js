@@ -549,6 +549,7 @@ const TITLES = {
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
   settings:["Settings","~/.sutra-ui/settings.json · PATH"],
   balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
+  optimus:["Optimus","the daemon, visible — ~/.sutra-native/daemon · asks, routes, runs"],
   /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()
      does `const [t,src] = TITLES[S.screen]`, so a missing row here is not a blank
      header -- it is a TypeError that aborts render() before the pane is touched,

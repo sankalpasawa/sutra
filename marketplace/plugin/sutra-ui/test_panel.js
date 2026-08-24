@@ -3362,6 +3362,44 @@ test("34m the live view lags while streaming but never after", () => {
     "a finished turn must show the whole response, got: " + settled);
 });
 
+/* ── Optimus (Focus > the daemon, visible) ─────────────────────────────── */
+
+test("opt1. optimus is registered: SCREENS + TITLES + focus plane row", () => {
+  assert.ok(typeof T.SCREENS.optimus === "function", "SCREENS.optimus");
+  assert.ok(Array.isArray(T.TITLES.optimus) && T.TITLES.optimus[0] === "Optimus", "TITLES.optimus");
+});
+
+test("opt2. optimus renders honest emptiness — no fabricated daemon state", () => {
+  T.S.optimus = { snap: { present: false, root: "/tmp/x", daemon: { running: false, pid: null } },
+                  at: new Date(), err: null, act: null };
+  const html = T.SCREENS.optimus();
+  assert.ok(html.includes("No daemon record yet"), "empty state text");
+  assert.ok(html.includes("data-optstart"), "start control offered");
+  assert.ok(!html.includes("undefined"), "no undefined leaks");
+});
+
+test("opt3. a proposed route renders the TWO-STEP approve (typed confirm), never one-click", () => {
+  T.S.optimus = { snap: { present: true, root: "/tmp/x",
+    daemon: { running: true, pid: { pid: 4242, started_at: "2026-08-24T00:00:00Z" } },
+    routes: [{ route_id: "r-abc12345", status: "proposed", pattern: "^(write|author) ",
+               workflow: "W-md-authoring@0.1.0", host: "claude-bare",
+               department: "Finance Ops", charter: "EMI Reconciliation" }],
+    pending_inputs: [], state_summary: { passed: 2 }, asks: [], runs: [],
+    quarantine: [], inbox_malformed: 0 }, at: new Date(), err: null, act: null };
+  const html = T.SCREENS.optimus();
+  assert.ok(html.includes('data-optconfirm="r-abc12345"'), "typed-confirm input present");
+  assert.ok(html.includes('data-optapprove="r-abc12345"'), "approve button present");
+  assert.ok(html.includes("Finance Ops") && html.includes("EMI Reconciliation"), "dept/charter chips");
+  assert.ok(html.includes('data-optstop="4242"'), "stop echoes the pid it saw");
+});
+
+test("opt4. throwback asks render as first-class decisions, with their ids", () => {
+  T.S.optimus.snap.asks = [{ outbox_id: "ob-1", ask_text: "[daemon:throwback] input in-x: host exited 3" }];
+  const html = T.SCREENS.optimus();
+  assert.ok(html.includes("ob-1") && html.includes("throwback"), "ask row with id + kind");
+});
+
+
 updateStagingChecks()
   .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))
   .then(results => {

@@ -1,6 +1,13 @@
 # Sutra — Current Version
 
-## v2.220.4 (2026-08-24, HEAD)
+## v2.222.0 (2026-08-24, HEAD)
+
+**Optimus — the daemon, visible (Focus tab).** A window over sutra-daemon's
+stores: status+PID, decision queue, routes with department/charter chips,
+recent runs, ask box, route builder. Screen requests; the daemon CLI gate
+decides (two-step typed approve, PID-echo stop, desktop-token mutations).
+
+## v2.220.4 (2026-08-24)
 
 Releases come from .github/workflows/release-dmg.yml only: make-dmg.sh now
 refuses to notarize unless SUTRA_RELEASE_CI=1, which only the workflow sets.
