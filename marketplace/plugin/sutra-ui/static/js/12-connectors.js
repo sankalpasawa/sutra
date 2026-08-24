@@ -242,79 +242,100 @@ function medWhen(ts){
   return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
 }
 
-function mediatedTile(t){
-  const ok = t.availability === "ok";
-  const services = t.services || [];
-  const anyAdded = services.some(x => x.membership === "added");
+/* Founder direction 2026-08-24, non-negotiable: EVERY connector type gets its
+   own tile. One tile listing four services was the shape that got called weird
+   twice; grouping them under a single "Connected in Claude" card made Gmail,
+   Drive, Slack and Atlassian look like sub-items of a product that does not
+   exist. They are four separate connections and they render as four tiles,
+   sitting beside GitHub's.
 
-  const rows = services.map(svc => {
-    const [cls, label] = MED_MEMBERSHIP[svc.membership] || ["off", "Status unknown"];
-    /* One line per real connector, never collapsed: two Google accounts share
-       one host, and folding them together would hide a broken connection
-       behind a healthy one. */
-    const detail = (svc.connectors || []).map(c => {
-      const said = MED_OBSERVED[c.observation] || "something it did not recognise";
-      return `<div class="medobs muted">${esc(c.label)} — Claude's last check
-        reported it ${esc(said)}${c.raw_status
-          ? `: <code>${esc(c.raw_status)}</code>` : ""}</div>`;
-    }).join("");
-    return `<li>
-      <span class="dot ${cls}"></span><b>${esc(svc.name)}</b>
-      <span class="muted">${esc(label)}</span>
-      ${svc.catalogued === false
-        ? `<span class="tag" title="Sutra has no entry for this one — it is shown because Claude reports it">also in Claude</span>`
-        : ""}
-      ${detail}
+   The probe is still ONE call for all of them -- the CLI lists every connector
+   in a single run -- so Re-check on any tile refreshes them all. The button
+   says so rather than implying it only refreshes its own. */
+const MED_GLYPH = {
+  gmail:  '<path d="M3 6.5v11h4.2V11l4.8 3.6L16.8 11v6.5H21v-11a1.6 1.6 0 0 0-2.5-1.3L12 9.9 5.5 5.2A1.6 1.6 0 0 0 3 6.5z"/>',
+  gdrive: '<path d="M8.4 3.5h7.2l5.4 9.3-3.6 6.2H5.4l-3.6-6.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  slack:  '<path d="M5.2 14.4a1.8 1.8 0 1 1-1.8-1.8h1.8zm.9 0a1.8 1.8 0 0 1 3.6 0v4.5a1.8 1.8 0 0 1-3.6 0zM9.7 5.2a1.8 1.8 0 1 1 1.8-1.8v1.8zm0 .9a1.8 1.8 0 0 1 0 3.6H5.2a1.8 1.8 0 0 1 0-3.6zM18.8 9.7a1.8 1.8 0 1 1 1.8 1.8h-1.8zm-.9 0a1.8 1.8 0 0 1-3.6 0V5.2a1.8 1.8 0 0 1 3.6 0zM14.3 18.8a1.8 1.8 0 1 1-1.8 1.8v-1.8zm0-.9a1.8 1.8 0 0 1 0-3.6h4.5a1.8 1.8 0 0 1 0 3.6z"/>',
+};
+const MED_GLYPH_FALLBACK =
+  '<path d="M8.5 8.5a3.5 3.5 0 1 0 0 7M15.5 8.5a3.5 3.5 0 1 1 0 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
+
+/* What the tile says under the name. Membership, not health -- health is the
+   quoted observation below it. */
+const MED_SUBTITLE = {
+  added:     "Connected inside Claude",
+  not_added: "Not connected in Claude",
+  unknown:   "Sutra could not check",
+};
+
+function mediatedTile(t, svc){
+  const ok = t.availability === "ok";
+  const [cls, label] = MED_MEMBERSHIP[svc.membership] || ["off", "Status unknown"];
+  const glyph = MED_GLYPH[svc.key] || MED_GLYPH_FALLBACK;
+  const attn = svc.membership === "added" &&
+               ["needs_auth", "probe_failed", "not_configured"].indexOf(svc.observation) !== -1;
+
+  /* One line per real connector, never collapsed: two accounts can share a
+     host, and folding them together would hide a broken connection behind a
+     healthy one. */
+  const rows = (svc.connectors || []).map(c => {
+    const said = MED_OBSERVED[c.observation] || "something it did not recognise";
+    return `<li><span class="dot ${cls}"></span>
+      <span class="muted">Claude's last check reported it ${esc(said)}</span>
+      ${c.raw_status ? `<code>${esc(c.raw_status)}</code>` : ""}
+      ${(svc.connectors.length > 1) ? `<span class="tag">${esc(c.label)}</span>` : ""}
     </li>`;
   }).join("");
 
-  let note = "";
+  let body;
   if (!ok){
-    const [head, body] = MED_UNAVAILABLE[t.availability] || MED_UNAVAILABLE.cli_error;
-    note = `<div class="note w tileblocked"><b>${esc(head)}</b> ${esc(body)}
-      ${t.availability_detail?`<br><code>${esc(t.availability_detail)}</code>`:""}</div>`;
+    const [head, why] = MED_UNAVAILABLE[t.availability] || MED_UNAVAILABLE.cli_error;
+    body = `<div class="note w tileblocked"><b>${esc(head)}</b> ${esc(why)}
+      ${t.availability_detail ? `<br><code>${esc(t.availability_detail)}</code>` : ""}</div>`;
+  } else if (svc.membership === "not_added"){
+    body = `<ul class="connlist"><li class="muted tileempty">
+      ${esc(label)} — add it in Claude and it will appear here.</li></ul>`;
+  } else {
+    body = `<ul class="connlist">${rows}</ul>`;
   }
 
-  /* Only shown once something is actually connected. Next to "Not added in
-     Claude" it would read as a hedge about a connection that does not exist. */
-  const acct = (ok && anyAdded)
-    ? `<p class="mediatedacct muted">Accounts: not visible to Sutra.
-         Claude does not report which account a connector is bound to.</p>`
-    : "";
+  /* Only where a connection actually exists. Next to "not connected" it would
+     read as a hedge about something that is not there. */
+  const acct = (ok && svc.membership === "added")
+    ? `<p class="mediatedacct muted">Account: not visible to Sutra.</p>` : "";
 
-  const checked = t.checked_at
-    ? `<p class="medfoot muted">Checked ${esc(medWhen(t.checked_at))}${
-        t.stale ? " · may be out of date" : ""}</p>`
-    : "";
-
-  return `<div class="ptile mediated">
+  return `<div class="ptile mediated ${attn ? "attn" : ""}">
     <div class="ptilehead">
-      <svg class="pglyph" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-        <path d="M8.5 8.5a3.5 3.5 0 1 0 0 7M15.5 8.5a3.5 3.5 0 1 1 0 7"/>
-      </svg>
+      <svg class="pglyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${glyph}</svg>
       <div>
-        <b>${esc(t.name || "Connected in Claude")}</b>
-        <div class="muted">Connections Claude holds — Sutra can see them, not use them</div>
+        <b>${esc(svc.name)}</b>
+        <div class="muted">${esc(MED_SUBTITLE[svc.membership] || "Sutra could not check")}</div>
       </div>
       <span class="sp"></span>
       <span class="ct via">via Claude</span>
     </div>
-    <ul class="connlist">${rows}</ul>
-    ${note}
+    ${body}
     ${acct}
-    <p class="tilecaveat">Claude owns these connections, not Sutra. No token and
-      no account ever reaches Sutra, and a Sutra turn cannot use them. Checking
-      runs a live probe through the Claude CLI, which contacts each connector.</p>
-    ${checked}
+    <p class="tilecaveat">Claude owns this connection. No token and no account
+      reaches Sutra, and a Sutra turn cannot use it.</p>
+    ${t.checked_at ? `<p class="medfoot muted">Checked ${esc(medWhen(t.checked_at))}${
+        t.stale ? " · may be out of date" : ""}</p>` : ""}
     <div class="medactions">
-      <button class="btn" type="button" data-connrecheck="google"
-        ${S.conn.mediatedBusy ? "disabled" : ""}>
+      <button class="btn" type="button" data-connrecheck="${esc(svc.key)}"
+        ${S.conn.mediatedBusy ? "disabled" : ""}
+        title="Runs one live probe through the Claude CLI — it refreshes every Claude connection, not just this one">
         ${S.conn.mediatedBusy ? "Checking…" : (t.checked_at ? "Re-check" : "Check now")}</button>
       <a class="btn" href="${esc(t.manage_url || "https://claude.ai/customize/connectors")}"
          target="_blank" rel="noreferrer">Manage in Claude</a>
     </div>
   </div>`;
+}
+
+/* One tile per connector. The snapshot is shared (a single CLI run), the tiles
+   are not. */
+function mediatedTiles(t){
+  if (!t) return "";
+  return (t.services || []).map(svc => mediatedTile(t, svc)).join("");
 }
 
 async function loadMediated(refresh){
@@ -550,7 +571,7 @@ SCREENS.connectors = () => {
 
   return head + degraded + txErr + tx
     + `<div class="ptiles">${(s.providers||[]).map(providerTile).join("")
-         }${s.mediated ? mediatedTile(s.mediated) : ""}</div>`
+         }${mediatedTiles(s.mediated)}</div>`
     + connDetailPane();
 };
 

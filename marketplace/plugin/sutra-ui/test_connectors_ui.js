@@ -203,7 +203,7 @@ const medTile = (over) => Object.assign({
 test("mediatedTile escapes hostile text from the CLI", () => {
   const sb = mediatedSandbox();
   const evil = '<img src=x onerror=alert(1)>';
-  const html = sb.mediatedTile(medTile({ services: [
+  const html = sb.mediatedTiles(medTile({ services: [
     { key: "gmail", name: "Gmail", membership: "added", observation: "unknown",
       connectors: [{ label: evil, observation: "unknown", raw_status: evil }] }]}));
   assert(!/<img src=x/.test(html), "raw CLI text reached the DOM unescaped");
@@ -212,7 +212,7 @@ test("mediatedTile escapes hostile text from the CLI", () => {
 
 test("mediatedTile escapes the availability detail", () => {
   const sb = mediatedSandbox();
-  const html = sb.mediatedTile(medTile({
+  const html = sb.mediatedTiles(medTile({
     availability: "cli_error", availability_detail: '<script>x</script>' }));
   assert(!/<script>x<\/script>/.test(html), "stderr reached the DOM unescaped");
 });
@@ -221,34 +221,42 @@ test("the mediated tile never renders an account", () => {
   /* The Claude account email is usually a @gmail.com address and is the most
      tempting wrong answer available. It must not appear on a Google tile. */
   const sb = mediatedSandbox();
-  const html = sb.mediatedTile(medTile());
-  assert(/not visible to Sutra/.test(html),
-    "the tile must say the account is unknown, not stay silent about it");
+  const html = sb.mediatedTiles(medTile());
+  assert(/Account: not visible to Sutra/.test(html),
+    "a connected tile must say the account is unknown, not stay silent about it");
   assert(!/@/.test(html.replace(/https?:\/\/[^"'\s]+/g, "")),
     "an email-shaped string appeared on the tile: " + html.slice(0, 300));
 });
 
-test("an unavailable check never renders as 'not connected'", () => {
+test("an unavailable check asserts NEITHER presence NOR absence, on any tile", () => {
+  /* This replaced a test that matched the literal string "Status unknown".
+     With one tile per connector that copy moved into a per-tile subtitle and a
+     per-availability reason, so the old assertion tested the wording rather
+     than the property. The property is what matters: when the check did not
+     succeed, no tile may claim the connector exists OR that it does not. */
   const sb = mediatedSandbox();
   for (const avail of ["not_checked", "cli_missing", "timed_out", "cli_error", "unreadable"]){
-    const html = sb.mediatedTile(medTile({
+    const html = sb.mediatedTiles(medTile({
       availability: avail,
       services: [{ key: "gmail", name: "Gmail", membership: "unknown",
                    observation: null, connectors: [] }] }));
-    assert(/Status unknown/.test(html), avail + " did not render as unknown");
-    assert(!/Not added in Claude/.test(html),
-      avail + " rendered an absence claim it cannot support");
-    assert(!/\bNot authenticated\b/.test(html),
-      avail + " rendered 'not authenticated' without evidence");
+    assert(!/Not listed by the Claude CLI/.test(html),
+      avail + " asserted absence it cannot support");
+    assert(!/Connected inside Claude/.test(html),
+      avail + " asserted a connection it cannot support");
+    assert(!/last check reported/.test(html),
+      avail + " quoted an observation it does not have");
+    assert(/could not check|Status unknown|Not checked yet|Claude Code is not installed/.test(html),
+      avail + " gave the operator no signal that the state is unknown");
   }
 });
 
 test("the account note is suppressed when nothing is connected", () => {
   const sb = mediatedSandbox();
-  const html = sb.mediatedTile(medTile({ services: [
+  const html = sb.mediatedTiles(medTile({ services: [
     { key: "gmail", name: "Gmail", membership: "not_added",
       observation: null, connectors: [] }]}));
-  assert(!/not visible to Sutra/.test(html),
+  assert(!/Account: not visible to Sutra/.test(html),
     "hedging about an account for a connector that is not added reads as a bug");
 });
 
@@ -256,7 +264,7 @@ test("the mediated tile emits no connect or disconnect control", () => {
   /* Sutra cannot connect or revoke this -- Claude owns it. Rendering a button
      that cannot work would be a lie in the shape of a control. */
   const sb = mediatedSandbox();
-  const html = sb.mediatedTile(medTile());
+  const html = sb.mediatedTiles(medTile());
   for (const attr of ["data-connstart", "data-conndis", "data-connopen"]){
     assert(!html.includes(attr), "mediated tile emitted " + attr);
   }
@@ -267,7 +275,7 @@ test("the mediated tile emits no connect or disconnect control", () => {
 
 test("both connectors on one host are rendered, never collapsed", () => {
   const sb = mediatedSandbox();
-  const html = sb.mediatedTile(medTile({ services: [
+  const html = sb.mediatedTiles(medTile({ services: [
     { key: "gmail", name: "Gmail", membership: "added", observation: "needs_auth",
       connectors: [
         { label: "claude.ai Gmail", observation: "connected", raw_status: "Connected" },
@@ -279,9 +287,70 @@ test("both connectors on one host are rendered, never collapsed", () => {
 
 test("probe results are attributed to the check, never asserted as state", () => {
   const sb = mediatedSandbox();
-  const html = sb.mediatedTile(medTile());
+  const html = sb.mediatedTiles(medTile());
   assert(/last check\s+reported/.test(html.replace(/\s+/g, " ")),
     "the status string must be attributed to the check that produced it");
+});
+
+test("every connector type gets its OWN tile", () => {
+  /* Founder direction 2026-08-24, non-negotiable. One card listing four
+     services made them look like sub-items of a product that does not exist. */
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile({ services: [
+    { key:"gmail",  name:"Gmail",        membership:"added", observation:"connected",
+      connectors:[{label:"claude.ai Gmail", observation:"connected", raw_status:"Connected"}] },
+    { key:"gdrive", name:"Google Drive", membership:"added", observation:"connected",
+      connectors:[{label:"claude.ai Google Drive", observation:"connected", raw_status:"Connected"}] },
+    { key:"slack",  name:"Slack",        membership:"not_added", observation:null, connectors:[] },
+    { key:"other:mcp.atlassian.com", name:"Atlassian Rovo", membership:"added",
+      observation:"needs_auth", catalogued:false,
+      connectors:[{label:"claude.ai Atlassian Rovo", observation:"needs_auth",
+                   raw_status:"Needs authentication"}] },
+  ]}));
+  const tiles = html.match(/<div class="ptile mediated/g) || [];
+  assert(tiles.length === 4, "expected 4 separate tiles, got " + tiles.length);
+  for (const name of ["Gmail", "Google Drive", "Slack", "Atlassian Rovo"]){
+    assert(html.includes(">" + name + "<"), "no tile headed " + name);
+  }
+});
+
+test("each tile carries its own controls, not one shared set", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile());
+  const tiles  = (html.match(/<div class="ptile mediated/g) || []).length;
+  const checks = (html.match(/data-connrecheck=/g) || []).length;
+  const manage = (html.match(/Manage in Claude/g) || []).length;
+  assert(checks === tiles, `${tiles} tiles but ${checks} re-check buttons`);
+  assert(manage === tiles, `${tiles} tiles but ${manage} manage links`);
+});
+
+test("a tile whose connector needs attention is marked, and healthy ones are not", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile({ services: [
+    { key:"gmail", name:"Gmail", membership:"added", observation:"connected",
+      connectors:[{label:"claude.ai Gmail", observation:"connected", raw_status:"Connected"}] },
+    { key:"gdrive", name:"Google Drive", membership:"added", observation:"needs_auth",
+      connectors:[{label:"claude.ai Google Drive", observation:"needs_auth",
+                   raw_status:"Needs authentication"}] },
+  ]}));
+  const attn = (html.match(/ptile mediated attn/g) || []).length;
+  assert(attn === 1, "exactly one tile should carry .attn, got " + attn);
+});
+
+test("an unavailable check marks EVERY tile unknown, not just the first", () => {
+  /* With one card the availability note was rendered once. With N tiles a
+     partial render would leave some tiles silently asserting stale state. */
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile({
+    availability: "unreadable",
+    services: [
+      { key:"gmail", name:"Gmail", membership:"unknown", observation:null, connectors:[] },
+      { key:"slack", name:"Slack", membership:"unknown", observation:null, connectors:[] },
+    ]}));
+  const unknown = (html.match(/Status unknown/g) || []).length;
+  assert(unknown >= 2, "every tile must say unknown, found " + unknown);
+  assert(!/Not listed by the Claude CLI/.test(html),
+    "an unreadable check must not assert absence on any tile");
 });
 
 test("opening the screen reads cache only and never probes", () => {

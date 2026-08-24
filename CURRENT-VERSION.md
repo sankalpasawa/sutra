@@ -1,5 +1,12 @@
 # Sutra — Current Version
 
+## v2.220.2 (2026-08-24, HEAD)
+
+Every connector type gets its own tile: five connectors, five tiles, each with
+its own glyph, state, account line and controls. The single "Connected in
+Claude" card is gone. The probe remains one CLI run for all of them, and the
+Re-check tooltip says so rather than letting per-tile placement imply otherwise.
+
 ## v2.220.1 (2026-08-24, HEAD)
 
 Six vertical panes: the session surface holds up to 6 side-by-side chat

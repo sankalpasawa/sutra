@@ -2,6 +2,37 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.220.2 (2026-08-24)
+
+**Every connector type gets its own tile.**
+
+Founder direction, non-negotiable. 2.220.0 rendered all four Claude-held
+connections inside a single "Connected in Claude" card, which made Gmail, Google
+Drive, Slack and Atlassian Rovo read as sub-items of a product that does not
+exist. They are four separate connections and they now render as four tiles,
+sitting beside GitHub's -- five connectors, five tiles, each with its own glyph,
+its own membership state, its own account line, its own timestamp and its own
+controls.
+
+The probe is still ONE CLI run for all of them, because `claude mcp list`
+returns every connector in a single invocation. So Re-check on any tile
+refreshes every Claude connection. The button's tooltip says exactly that rather
+than letting the per-tile placement imply it only refreshes its own -- the whole
+point of this surface is not implying things it cannot support.
+
+A tile whose connector reported needs-auth, probe-failed or not-configured
+carries the warn border; healthy ones do not. Availability is per tile too: when
+the check did not succeed, EVERY tile says so, rather than one shared banner
+above tiles that would otherwise sit there asserting stale state.
+
+Four tests, each mutation-checked: collapsing back to one tile, sharing a single
+control set across tiles, and asserting absence while the check was unavailable
+all fail the suite. One older test was replaced rather than repaired -- it
+matched the literal string "Status unknown", which moved into a per-tile
+subtitle; the replacement asserts the property (an unavailable check asserts
+neither presence nor absence, quotes no observation, and still signals unknown),
+which is stronger and survives the next copy change.
+
 ## 2.220.1 (2026-08-24)
 
 - **Six vertical panes.** The session surface's pane cap rises from 2 to 6
