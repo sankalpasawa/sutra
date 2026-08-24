@@ -163,6 +163,48 @@ class SessionRuntime:
         self.proc = None
         self.key = None
         self.stopped = False
+        # Turn observers (PLAN-100 S19). The websocket's send_json is NOT in
+        # this list -- it is the PRIMARY emit passed to demux_turn, and its
+        # exceptions must keep propagating exactly as before (a dead socket
+        # ends the turn loop). Subscribers here are additional observers:
+        # they see every frame the primary sees, and a broken one is dropped
+        # for the turn rather than breaking the operator's answer.
+        self.subscribers = []
+
+    def subscribe(self, cb):
+        """Register an observer for client frames. cb(frame) may be sync or
+        async; it is called AFTER the primary emit for each frame. Returns cb
+        so callers can hold it for unsubscribe."""
+        self.subscribers.append(cb)
+        return cb
+
+    def unsubscribe(self, cb):
+        try:
+            self.subscribers.remove(cb)
+        except ValueError:
+            pass
+
+    def _fanout(self, primary):
+        """Wrap the primary emit with subscriber fan-out.
+
+        Snapshot semantics: the subscriber list is captured per FRAME (not per
+        turn) so an observer attached mid-turn starts seeing frames then --
+        the Shadow watcher attaches to already-running panes. Primary
+        exceptions propagate (frozen behavior); subscriber exceptions are
+        swallowed per-frame -- an observer must never cost the operator a turn.
+        """
+        import asyncio as _asyncio
+
+        async def emit(frame):
+            await primary(frame)
+            for cb in list(self.subscribers):
+                try:
+                    res = cb(frame)
+                    if _asyncio.iscoroutine(res):
+                        await res
+                except Exception:
+                    pass
+        return emit
 
     @property
     def alive(self):
@@ -255,6 +297,7 @@ class SessionRuntime:
         result_error, eof); every policy decision on that tuple (stderr
         drain, reap, stop vs error vs replay) stays at the socket layer.
         """
+        emit = self._fanout(emit)
         got_text = got_result = False
         result_error = None
         # READ UNTIL THIS TURN'S `result`, not until EOF. The process is
