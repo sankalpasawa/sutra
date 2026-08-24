@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.119.1 (2026-08-24)
+
+- **The selection button says Help.** Selecting text used to offer "Ask Sutra"
+  while the page it opens is called Help. The button, the chat's own title and
+  the empty-state instruction now all say Help. Screen readers still hear the
+  full sentence, since they reach the button without the surrounding context.
+
 ## 2.119.0 (2026-08-24)
 
 - **One minimize, both lanes.** The sidebar toggle now collapses the rail AND
