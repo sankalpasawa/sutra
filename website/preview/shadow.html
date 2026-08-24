@@ -29,8 +29,9 @@
   .ds-composer{display:flex;align-items:center;gap:10px;padding:14px 16px;margin:10px 14px 12px}
   /* ---- Shadow overlay ---- */
   .shadow-fab{position:absolute;right:28px;bottom:26px;display:flex;align-items:flex-end;gap:10px;z-index:30}
-  .sdot{width:40px;height:40px;border-radius:50%;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-hover);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
-  .sdot i{width:12px;height:12px;border-radius:50%;background:var(--gold);display:block}
+  .sdot{width:40px;height:40px;border-radius:50%;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-hover);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;overflow:hidden}
+  .sdot b{font-family:var(--font-display);font-size:19px;font-weight:600;color:var(--gold);line-height:1;position:relative;z-index:2}
+  .sdot:before{content:"";position:absolute;left:-8px;top:-8px;width:34px;height:34px;border-radius:50%;background:rgba(26,23,20,.06);z-index:1}
   .sdot:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--gold);opacity:.55}
   .spill{background:var(--cream);border-left:2px solid var(--gold);border-radius:0 11px 11px 11px;padding:9px 12px;font-size:12.5px;box-shadow:var(--shadow-rest);max-width:360px;margin-bottom:2px}
   .spill .acts{display:flex;gap:8px;margin-top:6px} .spill .act{font-size:12px;font-weight:700;color:var(--decide)} .spill .act.q{font-weight:400;color:var(--stone)}
@@ -42,7 +43,11 @@
   .smsgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.45}
   .sm{max-width:92%;padding:7px 10px;border-radius:10px} .sm.s{align-self:flex-start;background:var(--cream);border-left:2px solid var(--gold);border-radius:0 10px 10px 10px} .sm.u{align-self:flex-end;background:#f0ede5;border:1px solid var(--line);border-radius:10px 10px 3px 10px}
   .mem{align-self:stretch;border:1px dashed var(--gold);border-radius:10px;padding:7px 10px;font-size:11.5px;background:#fdfaf4} .mem .k{font-size:9px;letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--gold);font-weight:700} .mem .e{float:right;color:var(--stone);font-size:10.5px}
-  .scomp{border-top:1px solid var(--line);padding:9px 12px;font-size:12px;color:var(--faint);display:flex;gap:8px} .scomp .ph{flex:1} .scomp .key{font-size:10px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--stone)}
+  .scomp{border-top:1px solid var(--line);padding:9px 12px;font-size:12px;color:var(--faint);display:flex;gap:8px;align-items:center} .scomp .ph{flex:1} .scomp .key{font-size:10px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--stone)}
+  .mic{width:22px;height:22px;border-radius:50%;border:1px solid var(--gold);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;flex:none}
+  .chips2{display:flex;gap:6px;height:24px;align-items:center;margin:2px 0}
+  .chip2{font-size:11px;color:var(--decide);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 10px;white-space:nowrap}
+  .chips2.dim{opacity:.45}
   /* journey extras */
   .mile{display:inline-block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:99px;padding:2px 8px;margin-left:6px;vertical-align:middle}
   .mile.mvp{background:var(--gold-glow);color:var(--gold);border:1px solid var(--gold)} .mile.m1{background:#eef2f6;color:var(--review);border:1px solid var(--review)} .mile.fut{background:var(--ink);color:var(--cream)}
@@ -96,11 +101,11 @@
   <!-- overlay: dot + pill -->
   <div class="shadow-fab">
     <div class="spill">dayflow lost its connection 2 minutes ago. Pick it back up?<div class="acts"><span class="act">Pick it up</span><span class="act q">Not now</span></div></div>
-    <div class="sdot" title="Shadow"><i></i></div>
+    <div class="sdot" title="Shadow"><b>S</b></div>
   </div>
 </div>
 
-<p class="cap"><b>2 · Tap the dot — Shadow opens its own chat.</b> It tells you what it can see, you tell it what to do, and it reads back what it will remember. Nothing else on screen moved.</p>
+<p class="cap"><b>2 · Tap the dot — Shadow opens its own chat, with a voice.</b> The Sutra mark sits in the dot. Hold the mic to talk (a solid "Listening" label appears; release stops it). Quick answers are built on the fly — never more than three, always with the composer underneath. The dimmed row is one you already answered.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="ds-rail">
@@ -141,13 +146,14 @@
     <div class="sees">I can see: <b>this chat</b> &middot; 4 sessions &middot; the app. Not your screen, not your eyes.</div>
     <div class="smsgs">
       <div class="sm s">You&rsquo;re on the EMI check. Those 3 differences look like the same issue you fixed last week. Want that fix in your composer?</div>
+      <div class="chips2 dim"><span class="chip2">Put the fix in my composer</span><span class="chip2">Explain it first</span><span class="chip2">Not now</span></div>
       <div class="sm u">Yes. And whenever rounding differences show up in an EMI check, offer it straight away.</div>
       <div class="sm s">Put it in your composer. And I&rsquo;ll remember this one &mdash; tap to confirm.</div>
       <div class="mem"><span class="k">I&rsquo;ll remember</span><span class="e">paisa &middot; standing &middot; edit</span><br>When rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.</div>
     </div>
-    <div class="scomp"><span class="ph">Tell Shadow&hellip;</span><span class="key">&#8984;&#8679;S</span></div>
+    <div class="scomp"><span class="mic">&#9679;</span><span class="ph">Tell Shadow — type, or hold to talk&hellip;</span><span class="key">&#8984;&#8679;S</span></div>
   </div>
-  <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
+  <div class="shadow-fab"><div class="sdot" title="Shadow"><b>S</b></div></div>
 </div>
 
 <!-- ============ 3: FOCUS ============ -->
@@ -162,7 +168,7 @@
   </div></section>
   <div class="shadow-fab">
     <div class="spill">You&rsquo;ve been on the nightly EMI check for 12 minutes. Want me to run it once as a test?<div class="acts"><span class="act">Run a test</span><span class="act q">Not now</span></div><div class="focusline">I think you&rsquo;re on: nightly EMI check <u>wrong?</u></div></div>
-    <div class="sdot" title="Shadow"><i></i></div>
+    <div class="sdot" title="Shadow"><b>S</b></div>
   </div>
 </div>
 
@@ -185,7 +191,7 @@
     </div>
     <div class="scomp"><span class="ph">Tell Shadow&hellip;</span></div>
   </div>
-  <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
+  <div class="shadow-fab"><div class="sdot" title="Shadow"><b>S</b></div></div>
 </div>
 
 <!-- ============ 5: YOU'RE BACK (FUTURE) ============ -->
@@ -205,7 +211,7 @@
       <div class="sact"><span class="act">Continue</span><span class="act q">Show me what you saw</span></div>
     </div>
   </div>
-  <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
+  <div class="shadow-fab"><div class="sdot" title="Shadow"><b>S</b></div></div>
 </div>
 
 <!-- ============ 6: WHAT I REMEMBER ============ -->
@@ -228,7 +234,7 @@
     </div>
     <div class="imp">I found <b>37</b> things you&rsquo;ve asked Sutra for in past chats. Want to go through them one by one?<div class="sact"><span class="act">Review them</span><span class="act q">Later</span></div></div>
   </div>
-  <div class="shadow-fab"><div class="sdot" title="Shadow"><i></i></div></div>
+  <div class="shadow-fab"><div class="sdot" title="Shadow"><b>S</b></div></div>
 </div>
 
 <p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop &middot; preview v3.1 &middot; overlay model (founder 2026-08-22) &middot; MVP = screens 1, 2, 6 &middot; <a href="shadow-options.html" style="color:var(--gold)">how it catches your eye — 4 options</a> &middot; spec: holding/plans/shadow/</p>
