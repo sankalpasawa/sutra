@@ -30,6 +30,7 @@ Commands:
   route-propose --pattern P --workflow W --host claude-bare|codex
                 --prompt-template T --verify-template-id V --verify-version N
                 [--verify-arg name=value ...] [--timeout-s N]
+                [--department D] [--charter C]      (display binding for Optimus)
   route-approve --route-id R --i-approve --operator OP    (builder gate; human only)
   route-list
 
@@ -131,7 +132,11 @@ def append_line(path, obj):
 
 
 def route_hash(route):
-    """Content hash over everything that changes behavior (not status/audit)."""
+    """Content hash over everything that changes behavior (not status/audit).
+
+    department/charter are declarative DISPLAY metadata (Optimus chips) and are
+    deliberately outside the hash -- annotating an approved route never disables
+    it; changing what it DOES still does."""
     core = {k: route.get(k) for k in (
         "route_id", "pattern", "workflow", "host", "prompt_template",
         "verify_template_id", "verify_version", "verify_args", "timeout_s")}
@@ -229,11 +234,14 @@ def process_input(row, routes, states):
         if r.get("status") != "approved":
             continue
         if route_hash(r) != r.get("approved_hash"):
-            outbox_ask("throwback", input_id,
-                       "route %s content no longer matches its approved hash; nothing run. Text: %s"
-                       % (r.get("route_id", "?"), text))
-            set_state(states, input_id, "throwback", {"why": "route tampered: " + r.get("route_id", "?")})
-            return
+            # route-level defect: flag the ROUTE once, never consume unrelated inputs for it
+            flag = "route-tamper:" + r.get("route_id", "?")
+            if flag not in states:
+                outbox_ask("throwback", flag,
+                           "route %s content no longer matches its approved hash; it is skipped "
+                           "until re-proposed + re-approved" % r.get("route_id", "?"))
+                set_state(states, flag, "route-tampered")
+            continue
         try:
             hit = _search_bounded(r["pattern"], text)
         except _MatchTimeout:
@@ -491,7 +499,8 @@ def cmd_route_propose(argv):
     i = 0
     need = {"--pattern": "pattern", "--workflow": "workflow", "--host": "host",
             "--prompt-template": "prompt_template", "--verify-template-id": "verify_template_id",
-            "--verify-version": "verify_version", "--timeout-s": "timeout_s"}
+            "--verify-version": "verify_version", "--timeout-s": "timeout_s",
+            "--department": "department", "--charter": "charter"}
     while i < len(argv):
         a = argv[i]
         if a in need:
@@ -565,8 +574,11 @@ def cmd_route_approve(argv):
 
 def cmd_route_list(argv):
     for r in load_json(os.path.join(dhome(), "routes.json"), []):
-        print("%s  %-9s  %-24s  host=%s  pattern=%s" % (
-            r.get("route_id"), r.get("status"), r.get("workflow"), r.get("host"), r.get("pattern")))
+        binding = ""
+        if r.get("department") or r.get("charter"):
+            binding = "  [%s / %s]" % (r.get("department") or "-", r.get("charter") or "-")
+        print("%s  %-9s  %-24s  host=%s  pattern=%s%s" % (
+            r.get("route_id"), r.get("status"), r.get("workflow"), r.get("host"), r.get("pattern"), binding))
     return 0
 
 

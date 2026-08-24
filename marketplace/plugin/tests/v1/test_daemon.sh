@@ -179,5 +179,35 @@ t t16-sweep-runs 0
 run python3 -c "import json,os; st=json.load(open(os.environ['SUTRA_NATIVE_HOME']+'/daemon/state.json')); print(st['in-crashed-after-close']['state'])"
 t t16b-ledger-trusted 0 "passed"
 
+# --- t17: department/charter binding — display metadata, not behavior ---------
+run python3 "$DAEMON" route-propose --pattern "^reconcile " --workflow "W-emi-reconcile@1.0.0" \
+  --host codex --prompt-template "x {text}" --verify-template-id file-exists --verify-version 1 \
+  --department "Finance Ops" --charter "EMI Reconciliation"
+RID2="$(printf '%s' "$OUT" | sed -n 's/^proposed \(r-[a-f0-9]*\).*/\1/p')"
+t t17-propose-with-binding 0 "proposed r-"
+run python3 "$DAEMON" route-list
+t t17b-binding-shown 0 "[Finance Ops / EMI Reconciliation]"
+run env SUTRA_DAEMON_APPROVE_ACK=1 python3 "$DAEMON" route-approve --route-id "$RID2" --i-approve --operator sankalpasawa
+t t17c-binding-approvable 0 "approved $RID2"
+python3 - <<PYEOF
+import json, os
+p = os.environ["SUTRA_NATIVE_HOME"] + "/daemon/routes.json"
+r = json.load(open(p))
+x = [q for q in r if q["route_id"] == "$RID2"][0]
+x["department"] = "Renamed Dept"
+json.dump(r, open(p, "w"))
+PYEOF
+run python3 "$DAEMON" ask "reconcile augusts EMIs"
+run env SUTRA_DAEMON_HOST_CMD='["/bin/sh","-c","true"]' python3 "$DAEMON" start --once
+if printf '%s' "$OUT" | grep -q "handled 1"; then
+  if python3 "$BIN/sutra-outbox" list | grep -q "approved hash.*reconcile augusts"; then
+    echo "FAIL t17d-metadata-edit-not-tamper (binding edit disabled the route)"; fail=$((fail+1))
+  else
+    echo "PASS t17d-metadata-edit-not-tamper"; pass=$((pass+1))
+  fi
+else
+  echo "FAIL t17d-metadata-edit-not-tamper (rc=$RC out=$OUT)"; fail=$((fail+1))
+fi
+
 echo "RESULT: pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]
