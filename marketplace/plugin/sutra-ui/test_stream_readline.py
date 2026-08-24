@@ -108,28 +108,27 @@ class TestReadLimit(unittest.TestCase):
 
 class TestSourceKeepsBothProtections(unittest.TestCase):
     """Source-level, because the behavioural tests above exercise the PATTERN
-    and cannot see whether app.py still uses it."""
+    and cannot see whether the shipped code still uses it. The spawn and the
+    read loop both moved to SessionRuntime (PLAN-100 S17/S18); the guards
+    follow the code they protect."""
 
     def setUp(self):
-        with open(os.path.join(HERE, "app.py")) as handle:
+        with open(os.path.join(HERE, "session_runtime.py")) as handle:
             self.src = handle.read()
 
     def test_subprocess_raises_the_stream_limit(self):
         # Generous window: the rationale comment on this call is long, and an
         # earlier version of this test sliced it off and failed on its own
         # documentation. Bound it at the closing paren instead of a guess.
-        # The spawn moved to SessionRuntime (S17); the guard follows the code.
-        with open(os.path.join(HERE, "session_runtime.py")) as handle:
-            src = handle.read()
-        start = src.index("await asyncio.create_subprocess_exec")
-        spawn = src[start:src.index("start_new_session=True", start)]
+        start = self.src.index("await asyncio.create_subprocess_exec")
+        spawn = self.src[start:self.src.index("start_new_session=True", start)]
         self.assertRegex(spawn, r"limit\s*=\s*\d",
                          "the chat subprocess is back on asyncio's 64 KiB default")
 
     def test_readline_is_inside_a_guard(self):
         loop = self.src[self.src.index("eof = False"):][:2600]
         guard = loop.index("try:")
-        read = loop.index("proc.stdout.readline()")
+        read = loop.index("self.proc.stdout.readline()")
         self.assertLess(guard, read,
                         "readline() sits outside the try again -- an oversized line "
                         "will kill the websocket instead of dropping one frame")
