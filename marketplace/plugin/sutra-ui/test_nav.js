@@ -79,6 +79,12 @@ sandbox.render = () => {};
 const T = vm.runInContext(`({ DESTS, DEST_PLANES, DEST_DEFAULT_SCREEN, S, SCREENS, TITLES,
   loadLayout, planeRows, goDest, renderRail, paintTelemetry, applyAccent, onAccFor,
   buildAccentRow, ACCENTS, document })`, sandbox);
+/* spies for the 2.118.1 regressions: which lazy loaders fired */
+const loaded = [];
+for (const fn of ["loadBalance","loadTeamsutra","loadGit","loadFs","loadAuto",
+                  "loadUsage","loadEvals","loadRoutines","loadProposals",
+                  "loadTeamsutra","loadConnectors","loadMediated","loadFilesScreen"])
+  sandbox[fn] = (...a) => { loaded.push(fn); };
 
 /* ── harness ──────────────────────────────────────────────────────────────── */
 let passed = 0, failed = 0;
@@ -224,6 +230,36 @@ test("accent: the per-theme tint derivation lives in the stylesheet", () => {
   const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
   assert((css.match(/data-accent[^\n]*color-mix/g) || []).length >= 2,
     "both themes must derive --acc-bg from the one hex");
+});
+
+/* §hotfix 2.118.1 — the three live regressions stay dead */
+test("hotfix: entering Focus from the rail actually loads Balance", () => {
+  T.S.ui = T.loadLayout();
+  loaded.length = 0;
+  T.goDest("focus");
+  assert(loaded.includes("loadBalance"),
+    "goDest(focus) must fire loadBalance — a blank Balance is the shipped bug");
+  assert.strictEqual(T.S.ui.browseClosed, false);
+});
+test("hotfix: entering Team Sutra from the rail actually loads its tasks", () => {
+  loaded.length = 0;
+  T.goDest("team");
+  assert(loaded.includes("loadTeamsutra"),
+    "goDest(team) must fire loadTeamsutra");
+});
+test("hotfix: the terminal clamp reserves the plane and a 320px detail floor", () => {
+  T.S.ui = T.loadLayout();
+  T.S.ui.dest = "settings";
+  els["app"]._cls.add("threecol"); els["app"]._cls.delete("noplane");
+  sandbox.innerWidth = 1400;
+  /* chrome 224+240+27=491; avail = 1400-491-320 = 589 — a 72% ask (1008) must
+     come back at 589, leaving the detail its floor. */
+  const clamped = vm.runInContext("clampTermW(1008)", sandbox);
+  assert.strictEqual(clamped, 589, "got " + clamped);
+  /* on Now (no plane) the same ask keeps 240 more */
+  els["app"]._cls.add("noplane");
+  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 829);
+  els["app"]._cls.delete("noplane");
 });
 
 /* §coverage ─ S21: every legacy railSpec destination is reachable in v3.3 */

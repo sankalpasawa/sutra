@@ -226,7 +226,20 @@ function clampTermW(px){
      the rest of the session. With no trustworthy viewport, apply the floor only. */
   const vw = (typeof innerWidth === "number" && innerWidth > TERM_MIN) ? innerWidth : 0;
   const want = Math.max(TERM_MIN, Math.round(px));
-  return vw ? Math.min(Math.round(vw * TERM_MAX_FRAC), want) : want;
+  if (!vw) return want;
+  /* 2.118.1: the old ceiling (0.72·vw) predates the second plane. With the
+     v3.3 shell the fixed chrome is rail 224 + plane 240 (when visible) + grid
+     gaps, and the detail track is minmax(0,1fr) — so an over-wide terminal
+     used to collapse the detail to 0px and "cover everything". Reserve the
+     chrome plus a 320px detail floor; TERM_MIN still wins when the window is
+     genuinely too small for both. */
+  const app = document.getElementById("app");
+  const planeVisible = !!(app && app.classList.contains("threecol")
+                          && !app.classList.contains("noplane"));
+  const chrome = 224 + (planeVisible ? 240 : 0) + 27 /* 3 grid gaps */;
+  const avail = vw - chrome - 320;
+  const ceil = Math.max(TERM_MIN, Math.min(Math.round(vw * TERM_MAX_FRAC), avail));
+  return Math.min(ceil, want);
 }
 /* The GRID TRACK is the single source of truth for the pane width. An `auto` track
    measured the iframe's intrinsic width as 0 and collapsed the pane; an explicit

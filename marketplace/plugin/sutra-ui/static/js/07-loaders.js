@@ -887,31 +887,7 @@ document.getElementById("app").addEventListener("click", e=>{
        through S.screen would set S.screen to an id SCREENS has no entry for,
        and render() would blank the browse pane. */
     if (b.dataset.screen === "terminal"){ termToggle(); renderRail(); return; }
-    S.screen=b.dataset.screen;
-    /* v3.3 (PLAN-25 S9): remember the pick per destination, so returning to a
-       destination restores the screen the operator was on. */
-    if (DESTS.includes(S.ui.dest)) S.ui.destSel[S.ui.dest] = S.screen;
-    /* Picking a screen is the OPEN gesture, the way clicking a session row is:
-       a closed browse pane reopens rather than swapping content nobody can see. */
-    if (S.ui.browseClosed){ S.ui.browseClosed = false; saveLayout(); } else saveLayout();
-    if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
-    if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
-    if (S.screen === "files") loadFilesScreen(); /* lazy: spawns the sidecar on demand */
-    if (S.screen === "automation") loadAuto(false);
-    if (S.screen === "balance") loadBalance(false); /* lazy, like Git */
-    /* force=true: unlike a repo, utilization moves while you are not looking, and
-       a stale percentage is the one number this screen must not show. The 60s
-       server cache is what keeps re-opening cheap. */
-    if (S.screen === "usage") loadUsage(true);
-    if (S.screen === "evals") loadEvals(false);     /* lazy, like Git */
-    if (S.screen === "routines"){ loadRoutines(false); loadProposals(false); }
-    if (S.screen === "teamsutra") loadTeamsutra(false);
-    if (S.screen === "connectors") loadConnectors(false);  /* lazy: opens the connector db */
-    /* Cache-only. A plain read never spawns the Claude CLI -- the probe
-       contacts every one of the operator's connectors and rewrites Claude's
-       own cache, so it must be an explicit act, not a side effect of opening
-       a screen. The tile renders "Not checked yet" until the button is used. */
-    if (S.screen === "connectors") loadMediated(false);
+    openScreen(b.dataset.screen);
     render(); return;
   }
   const sg = e.target.closest("[data-sgroup]");
@@ -1053,6 +1029,40 @@ document.getElementById("newSession").onclick = () =>
   });
   paintRole();
 })();
+/* ── opening a screen, from ANY entry point (2.118.1 hotfix) ────────────────
+   The lazy loaders used to live only inside the click delegation, so entering
+   a destination from the RAIL (goDest -> default screen) rendered Balance and
+   Teamsutra without ever fetching — a blank screen that looked dead. This is
+   the one open path now; the click handler and goDest both call it. The
+   terminal pane-toggle deliberately stays OUT: it is not a screen. */
+function openScreen(id){
+  if (!id || !SCREENS[id]) return;
+  S.screen = id;
+  /* v3.3 (PLAN-25 S9): remember the pick per destination, so returning to a
+     destination restores the screen the operator was on. */
+  if (DESTS.includes(S.ui.dest)) S.ui.destSel[S.ui.dest] = S.screen;
+  /* Opening a screen is the OPEN gesture, the way clicking a session row is:
+     a closed browse pane reopens rather than swapping content nobody can see. */
+  S.ui.browseClosed = false; saveLayout();
+  if (id === "git") loadGit(false);      /* lazy: only when actually opened */
+  if (id === "editor") loadFs(false);    /* walking a real project is not free */
+  if (id === "files") loadFilesScreen(); /* lazy: spawns the sidecar on demand */
+  if (id === "automation") loadAuto(false);
+  if (id === "balance") loadBalance(false); /* lazy, like Git */
+  /* force=true: unlike a repo, utilization moves while you are not looking, and
+     a stale percentage is the one number this screen must not show. The 60s
+     server cache is what keeps re-opening cheap. */
+  if (id === "usage") loadUsage(true);
+  if (id === "evals") loadEvals(false);     /* lazy, like Git */
+  if (id === "routines"){ loadRoutines(false); loadProposals(false); }
+  if (id === "teamsutra") loadTeamsutra(false);
+  if (id === "connectors") loadConnectors(false);  /* lazy: opens the connector db */
+  /* Cache-only. A plain read never spawns the Claude CLI -- the probe
+     contacts every one of the operator's connectors and rewrites Claude's
+     own cache, so it must be an explicit act, not a side effect of opening
+     a screen. The tile renders "Not checked yet" until the button is used. */
+  if (id === "connectors") loadMediated(false);
+}
 /* ── v3.3 accent colour (PLAN-25 S16-S19) ───────────────────────────────────
    ONE hex restyles the app: applyAccent sets --acc and --on-acc inline and
    stamps data-accent on <html>; --acc-bg derives per theme in panel.css. The

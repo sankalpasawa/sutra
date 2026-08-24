@@ -107,7 +107,9 @@ test("every handler corresponds to a control that exists", () => {
 });
 
 test("the lazy loader fires when the screen opens", () => {
-  assert(/S\.screen\s*===\s*["']connectors["']\)\s*loadConnectors/.test(loaders),
+  /* 2.118.1 moved the open path into openScreen(id) — the guard reads `id`,
+     not S.screen; the promise (open => load) is the same. */
+  assert(/id\s*===\s*["']connectors["']\)\s*loadConnectors/.test(loaders),
     "opening the screen does not trigger loadConnectors");
 });
 

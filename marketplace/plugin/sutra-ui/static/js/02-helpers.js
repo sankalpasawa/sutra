@@ -728,9 +728,13 @@ function goDest(d){
        exactly as the old Code tab behaved. */
     S.ui.browseClosed = true;
   } else {
-    S.ui.browseClosed = false;
+    /* 2.118.1: route through openScreen so the lazy loaders fire — entering
+       Focus/Team Sutra from the rail used to render Balance/Teamsutra blank,
+       because the fetch calls lived only in the click delegation. */
     const sel = S.ui.destSel[d];
-    S.screen = (sel && SCREENS[sel]) ? sel : DEST_DEFAULT_SCREEN[d];
+    const target = (sel && SCREENS[sel]) ? sel : DEST_DEFAULT_SCREEN[d];
+    if (typeof openScreen === "function" && SCREENS[target]) openScreen(target);
+    else { S.ui.browseClosed = false; S.screen = target; }
   }
   saveLayout(); render();
 }
@@ -763,8 +767,14 @@ function renderPlane(){
   app.classList.add("threecol");
   const dest = DESTS.includes(S.ui.dest) ? S.ui.dest : "now";
   const off = dest === "now";                     /* Now is the one full-bleed surface */
+  const wasOff = app.classList.contains("noplane");
   app.classList.toggle("noplane", off);
   plane.hidden = off;
+  /* 2.118.1 (codex fold): the plane appearing or leaving changes the fixed
+     chrome the terminal clamp reserves — a width valid on Now can zero the
+     detail track once the 240px plane is back. Re-clamp on every flip. */
+  if (wasOff !== off && typeof applyTermW === "function" && S.termOpen)
+    applyTermW(S.termW || 460);
   const head = document.getElementById("planeHead");
   const body = document.getElementById("planeBody");
   const chats = document.getElementById("planeChats");
