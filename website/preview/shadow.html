@@ -3,97 +3,111 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow on Sutra Desktop — preview v4 (IA v3.3 shell)</title>
-<!-- v4 (2026-08-24): rebuilt on the SHIPPED Home IA v3.3 shell (dark stock palette, rail
-     Now/Focus/Chats/Org/Team Sutra/Settings, identity footer). Founder ruling: Shadow's work
-     lands in NOW; the Shadow section lives UNDER FOCUS. Overlay unchanged: S-mark dot, pill,
-     card with voice + on-the-fly chips. Spec: holding/plans/shadow/ -->
+<title>Shadow on Sutra Desktop — preview v4.1</title>
+<!-- v4.1 (2026-08-24): LIGHT theme — the app's real default on a light-mode Mac (panel.css
+     prefers-color-scheme:light values). New: Now composer + new-chat, "Shadow is watching" strip,
+     Shadow activity line, delegation flow (brief -> new chat started by Shadow). The app itself
+     follows the system theme; this mock shows the light rendering the founder sees.
+     Spec: holding/plans/shadow/ (ARCHITECTURE §2 delegation, PRD R19-R22) -->
 <style>
 :root{
-  --bg:#0C0B09;--surface:#161412;--card:#1C1A17;--line:#2A2622;--line-soft:#221F1C;
-  --ink:#F5F0E8;--muted:#8C857D;--faint:#6E6860;--accent:#B8945F;--accent-glow:rgba(184,148,95,.16);
-  /* semantics, brightened for the dark shell */
-  --alert:#C7789F;--decide:#C09A6A;--done:#6FA57F;--review:#7C9BB8;
+  --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
+  --ink:#1c1917;--muted:#78716c;--faint:#a8a29e;--accent:#B8945F;--accent-glow:rgba(184,148,95,.12);
+  --alert:#8B4A6B;--decide:#8B6B4A;--done:#2D5A3E;--review:#4A6B8B;
   --fd:'Playfair Display',Georgia,serif;--fb:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
 }
 *{box-sizing:border-box;margin:0}
-body{background:#060504;color:var(--ink);font-family:var(--fb);font-size:14px;padding:40px 24px 80px}
+body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;padding:40px 24px 80px}
 .cap{max-width:1300px;margin:0 auto 10px;font-size:12px;color:var(--muted)} .cap b{color:var(--ink);font-weight:600}
 .mile{display:inline-block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:99px;padding:2px 8px;margin-left:6px;background:var(--accent-glow);color:var(--accent);border:1px solid var(--accent)}
-.window{width:1300px;max-width:100%;height:700px;margin:0 auto 56px;background:var(--bg);border:1px solid #262220;border-radius:14px;box-shadow:0 22px 64px rgba(0,0,0,.5);overflow:hidden;display:flex;position:relative}
-.lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20} .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#2c2825}
+.window{width:1300px;max-width:100%;height:700px;margin:0 auto 56px;background:var(--bg);border:1px solid #d8d5d0;border-radius:14px;box-shadow:0 1px 2px rgba(28,25,23,.05),0 22px 54px -18px rgba(28,25,23,.22);overflow:hidden;display:flex;position:relative}
+.lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20} .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#d9d6d1}
 .rail{width:196px;background:var(--surface);border-right:1px solid var(--line-soft);padding:44px 10px 10px;display:flex;flex-direction:column}
-.brand{font-family:var(--fd);font-size:15px;margin:0 0 14px 8px;color:var(--ink)}
+.brand{font-family:var(--fd);font-size:15px;margin:0 0 14px 8px}
 .item{padding:8px 10px;border-radius:9px;font-size:13px;color:var(--muted);margin-bottom:2px;display:flex;gap:9px;align-items:center}
-.item.on{background:var(--card);color:var(--ink);font-weight:600;border:1px solid var(--line-soft)}
+.item.on{background:var(--bg);color:var(--ink);font-weight:600;border:1px solid var(--line-soft)}
 .item .g{width:14px;text-align:center;color:var(--faint)} .item.on .g{color:var(--accent)}
-.item .badge{margin-left:auto;font-size:10px;background:var(--decide);color:#0C0B09;border-radius:99px;padding:1px 6px;font-weight:700}
+.item .badge{margin-left:auto;font-size:10px;background:var(--decide);color:#fff;border-radius:99px;padding:1px 6px;font-weight:700}
 .identity{margin-top:auto;border-top:1px solid var(--line-soft);padding:10px 8px 4px;font-size:11px;color:var(--muted)}
 .identity b{color:var(--ink);font-weight:600;display:block;font-size:12px}
 .identity .tele{margin-top:3px;color:var(--faint);font-size:10.5px}
-.identity .sw{display:flex;gap:5px;margin-top:7px} .identity .sw i{width:10px;height:10px;border-radius:50%;display:inline-block;border:1px solid var(--line)}
 .pane{flex:1;overflow:auto;padding:44px 28px 20px}
 .greet{font-family:var(--fd);font-size:28px;font-weight:500}
-.sub{color:var(--muted);font-size:13.5px;margin:4px 0 20px} .sub b{color:var(--decide);font-weight:600}
+.sub{color:var(--muted);font-size:13.5px;margin:4px 0 16px} .sub b{color:var(--decide);font-weight:600}
+.composer{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;max-width:640px;margin-bottom:18px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
+.composer .ph{flex:1;color:var(--faint);font-size:13.5px}
+.composer .cbtn{font-size:12px;font-weight:600;color:var(--decide);border:1px solid var(--line);border-radius:9px;padding:5px 10px;white-space:nowrap}
+.mic{width:24px;height:24px;border-radius:50%;border:1px solid var(--accent);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10px;flex:none}
+.h4{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:16px 0 8px;font-weight:700}
 .stack{display:flex;flex-direction:column;gap:10px;max-width:640px}
-.dcard{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:13px 15px}
+.dcard{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:12px 15px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
 .dcard .dot{width:8px;height:8px;border-radius:50%;flex:none}
 .dcard .t{flex:1;font-size:14px} .dcard .t small{display:block;color:var(--faint);font-size:11.5px;margin-top:2px}
-.dcard .act{font-size:13px;font-weight:700;color:var(--decide);padding:5px 11px;border-radius:8px;cursor:default}
+.dcard .act{font-size:13px;font-weight:700;color:var(--decide);padding:5px 11px;border-radius:8px}
 .dcard .act.q{color:var(--muted);font-weight:400}
-.handled{margin:22px 0 0;font-size:12.5px;color:var(--muted);max-width:640px} .handled b{color:var(--done);font-weight:600}
-.quiet{margin-top:26px;font-size:12px;color:var(--faint)}
+.watch{max-width:640px;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;overflow:hidden}
+.wrow{display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--line-soft);font-size:12.5px;color:var(--muted)}
+.wrow:first-child{border-top:0}
+.wrow .sd{width:7px;height:7px;border-radius:50%;flex:none}
+.wrow b{color:var(--ink);font-weight:600} .wrow .st{margin-left:auto;font-size:11px}
+.wrow.shx{background:var(--accent-glow)} .wrow.shx .sm2{font-size:11px;color:var(--muted)}
+.activity{max-width:640px;margin-top:10px;font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:center}
+.activity i{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block}
+.activity u{text-decoration:none;border-bottom:1px dotted var(--muted)}
+.quiet{margin-top:22px;font-size:12px;color:var(--faint)}
 .crumb{font-size:11px;color:var(--muted);margin-bottom:4px} .crumb b{color:var(--accent)}
 .pg{font-family:var(--fd);font-size:20px;font-weight:500;margin:0 0 14px}
-.secnav{display:flex;gap:14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line-soft);margin-bottom:16px;max-width:640px}
-.secnav b{color:var(--ink);border-bottom:2px solid var(--accent);padding-bottom:7px;font-weight:600}
-.secnav span{padding-bottom:7px}
-.mission{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:13px 15px;max-width:640px;font-size:13px}
+.secnav{display:flex;gap:14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line-soft);margin-bottom:16px;max-width:680px}
+.secnav b{color:var(--ink);border-bottom:2px solid var(--accent);padding-bottom:7px;font-weight:600} .secnav span{padding-bottom:7px}
+.mission{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:13px 15px;max-width:680px;font-size:13px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
 .mission .k{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.mission .obj{margin:4px 0 2px;font-weight:600}
-.mission .dw{color:var(--muted);font-size:12px}
+.mission .obj{margin:4px 0 2px;font-weight:600} .mission .dw{color:var(--muted);font-size:12px}
 .mission .meta{display:flex;gap:14px;margin-top:9px;font-size:11.5px;color:var(--faint)} .mission .meta .stop{color:var(--alert);margin-left:auto}
-.mrow{border:1px solid var(--line-soft);background:var(--card);border-radius:10px;padding:9px 12px;font-size:12.5px;max-width:640px;margin-top:8px}
-.mrow .sc{float:right;font-size:9.5px;color:var(--muted);background:var(--surface);border:1px solid var(--line-soft);border-radius:99px;padding:1px 7px}
+.mrow{border:1px solid var(--line-soft);background:var(--card);border-radius:10px;padding:9px 12px;font-size:12.5px;max-width:680px;margin-top:8px}
+.mrow .sc{float:right;font-size:9.5px;color:var(--muted);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:1px 7px}
 .mrow .ed{color:var(--faint);font-size:10.5px;margin-top:2px}
 .slist{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .sit{background:var(--card);border:1px solid var(--line-soft);border-radius:10px;padding:7px 12px;font-size:11px;color:var(--muted)}
 .sit.on{border-color:var(--accent);color:var(--ink)} .sit .sd{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle}
-.chatbox{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;height:520px;display:flex;flex-direction:column;max-width:820px}
+.sit .by{display:block;font-size:9px;color:var(--accent)}
+.chatbox{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;height:500px;display:flex;flex-direction:column;max-width:820px}
 .chathead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);font-size:12px;color:var(--muted)} .chathead .t{font-weight:600;font-size:13px;color:var(--ink)}
 .stream{flex:1;padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
-.mu{align-self:flex-end;max-width:72%;background:#242019;border:1px solid var(--line-soft);border-radius:11px 11px 3px 11px;padding:8px 12px;font-size:12.5px}
-.ma{align-self:flex-start;max-width:86%;background:var(--surface);border:1px solid var(--line-soft);border-radius:11px 11px 11px 3px;padding:10px 13px;font-size:12.5px;line-height:1.5}
-.comp{border-top:1px solid var(--line-soft);margin:0;padding:12px 16px;font-size:13px;color:var(--faint)}
+.mu{align-self:flex-end;max-width:72%;background:#f1efec;border:1px solid var(--line-soft);border-radius:11px 11px 3px 11px;padding:8px 12px;font-size:12.5px}
+.ma{align-self:flex-start;max-width:86%;background:var(--bg);border:1px solid var(--line-soft);border-radius:11px 11px 11px 3px;padding:10px 13px;font-size:12.5px;line-height:1.5}
+.comp2{border-top:1px solid var(--line-soft);padding:12px 16px;font-size:13px;color:var(--faint)}
 /* overlay */
 .fab{position:absolute;right:28px;bottom:26px;display:flex;align-items:flex-end;gap:10px;z-index:30}
-.sdot{width:40px;height:40px;border-radius:50%;background:var(--card);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.sdot{width:40px;height:40px;border-radius:50%;background:var(--card);border:1px solid var(--line);box-shadow:0 4px 14px rgba(28,25,23,.16);display:flex;align-items:center;justify-content:center;position:relative;overflow:visible}
 .sdot b{font-family:var(--fd);font-size:19px;font-weight:600;color:var(--accent);position:relative;z-index:2}
-.sdot:before{content:"";position:absolute;left:-8px;top:-8px;width:34px;height:34px;border-radius:50%;background:rgba(245,240,232,.05);z-index:1}
-.sdot:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--accent);opacity:.55}
-.spill{background:var(--card);border-left:2px solid var(--accent);border:1px solid var(--line-soft);border-left:2px solid var(--accent);border-radius:0 11px 11px 11px;padding:9px 12px;font-size:12.5px;max-width:360px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.sdot:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--accent);opacity:.5}
+.sdot .n{position:absolute;top:-4px;right:-4px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;border-radius:99px;padding:1px 5px;z-index:3}
+.spill{background:#fdfbf7;border:1px solid var(--line-soft);border-left:2px solid var(--accent);border-radius:0 11px 11px 11px;padding:9px 12px;font-size:12.5px;max-width:360px;box-shadow:0 4px 16px rgba(28,25,23,.10)}
 .spill .acts{display:flex;gap:10px;margin-top:6px} .spill .act{font-size:12px;font-weight:700;color:var(--decide)} .spill .act.q{font-weight:400;color:var(--muted)}
-.scard{position:absolute;right:28px;bottom:78px;width:300px;height:390px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.55);display:flex;flex-direction:column;z-index:31;overflow:hidden}
+.scard{position:absolute;right:28px;bottom:78px;width:310px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px rgba(28,25,23,.18);display:flex;flex-direction:column;z-index:31;overflow:hidden}
 .scard .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line-soft)}
 .scard .hd .nm{font-family:var(--fd);font-size:15px;font-weight:600} .scard .hd .nm b{color:var(--accent);margin-right:5px}
 .switch{margin-left:auto;font-size:10.5px;color:var(--muted);border:1px solid var(--line-soft);border-radius:99px;padding:2px 8px} .hide{font-size:10.5px;color:var(--faint)}
-.sees{font-size:10.5px;color:var(--muted);padding:7px 12px;border-bottom:1px solid var(--line-soft);background:var(--surface)} .sees b{color:var(--ink)}
-.smsgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.45}
-.sm{max-width:92%;padding:7px 10px;border-radius:10px}
-.sm.s{align-self:flex-start;background:var(--surface);border-left:2px solid var(--accent);border-radius:0 10px 10px 10px}
-.sm.u{align-self:flex-end;background:#242019;border:1px solid var(--line-soft);border-radius:10px 10px 3px 10px}
+.sees{font-size:10.5px;color:var(--muted);padding:7px 12px;border-bottom:1px solid var(--line-soft);background:var(--bg)} .sees b{color:var(--ink)}
+.smsgs{padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.45}
+.sm{max-width:94%;padding:7px 10px;border-radius:10px}
+.sm.s{align-self:flex-start;background:#faf7f1;border-left:2px solid var(--accent);border-radius:0 10px 10px 10px}
+.sm.u{align-self:flex-end;background:#f1efec;border:1px solid var(--line-soft);border-radius:10px 10px 3px 10px}
+.brief{border:1px solid var(--accent);border-radius:10px;background:#fdfbf7;padding:9px 11px;font-size:11.5px}
+.brief .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.brief .row{display:flex;gap:6px;margin-top:4px} .brief .row span:first-child{color:var(--faint);width:64px;flex:none} .brief .row span:last-child{color:var(--ink)}
+.brief .acts{display:flex;gap:10px;margin-top:8px} .brief .act{font-size:12px;font-weight:700;color:var(--decide)} .brief .act.q{font-weight:400;color:var(--muted)}
 .chips2{display:flex;gap:6px;height:24px;align-items:center} .chips2.dim{opacity:.45}
-.chip2{font-size:11px;color:var(--decide);background:var(--surface);border:1px solid var(--line-soft);border-radius:99px;padding:3px 10px;white-space:nowrap}
-.mem{border:1px dashed var(--accent);border-radius:10px;padding:7px 10px;font-size:11.5px;background:var(--surface)}
+.chip2{font-size:11px;color:var(--decide);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:3px 10px;white-space:nowrap}
+.mem{border:1px dashed var(--accent);border-radius:10px;padding:7px 10px;font-size:11.5px;background:#fdfbf7}
 .mem .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700} .mem .e{float:right;color:var(--muted);font-size:10.5px}
 .scomp{border-top:1px solid var(--line-soft);padding:9px 12px;font-size:12px;color:var(--faint);display:flex;gap:8px;align-items:center}
 .scomp .ph{flex:1} .scomp .key{font-size:10px;border:1px solid var(--line-soft);border-radius:6px;padding:1px 6px;color:var(--muted)}
-.mic{width:22px;height:22px;border-radius:50%;border:1px solid var(--accent);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10px;flex:none}
 </style>
 </head>
 <body>
 
-<p class="cap"><b>1 · Now — Shadow writes this page.</b> <span class="mile">MVP</span> Your ruling: Shadow's work lands in Now. The dot rides in the corner; one line when something needs you.</p>
+<p class="cap"><b>1 · Now — light, like your app.</b> <span class="mile">MVP</span> The app follows your Mac's appearance; yours is light, so the design is light. Now has a composer with a new-chat option, the "Shadow is watching" strip, and one line telling you what Shadow itself is doing.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
@@ -104,25 +118,62 @@ body{background:#060504;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     <div class="item"><span class="g">&#9638;</span>Org</div>
     <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
     <div class="item"><span class="g">&#9881;</span>Settings</div>
-    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div><div class="sw"><i style="background:var(--accent)"></i><i></i><i></i></div></div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div></div>
   </nav>
   <section class="pane">
     <div class="greet">Good morning, Sankalp.</div>
-    <div class="sub">Four sessions are running. <b>One needs you.</b> Shadow set this up.</div>
+    <div class="sub">Four sessions are running. <b>One needs you.</b></div>
+    <div class="composer"><span class="mic">&#9679;</span><span class="ph">Tell Shadow, or start something new&hellip;</span><span class="cbtn">New chat</span></div>
+    <div class="h4">Needs you</div>
     <div class="stack">
       <div class="dcard"><span class="dot" style="background:var(--alert)"></span><span class="t">dayflow lost its connection 2 minutes ago. Pick it back up?<small>from where it stopped · nothing lost · 1 min</small></span><span class="act">Pick it up</span><span class="act q">leave it</span></div>
-      <div class="dcard"><span class="dot" style="background:var(--decide)"></span><span class="t">paisa finished the EMI check — 3 differences found.<small>two-line summary ready · 2 min</small></span><span class="act">Read it</span><span class="act q">later</span></div>
     </div>
-    <div class="handled"><b>Handled while you worked</b> — billu asked for a permission, you gave it · sutra-ui build finished clean.</div>
-    <div class="quiet">Shadow is watching 4 sessions · next decision window 11:00 · quiet after 6</div>
+    <div class="h4">Shadow is watching</div>
+    <div class="watch">
+      <div class="wrow"><span class="sd" style="background:var(--done)"></span><b>paisa</b> · EMI check<span class="st">live · all good</span></div>
+      <div class="wrow"><span class="sd" style="background:var(--alert)"></span><b>dayflow</b> · api deploy<span class="st">dropped · offered above</span></div>
+      <div class="wrow"><span class="sd" style="background:var(--review)"></span><b>sutra-ui</b> · build<span class="st">11 min · watching</span></div>
+      <div class="wrow"><span class="sd" style="background:var(--line)"></span><b>billu</b> · migration<span class="st">idle</span></div>
+    </div>
+    <div class="activity"><i></i>Shadow: monitoring <b>&nbsp;EMI auto-fix&nbsp;</b> · turn 3 of 12 · <u>details in Focus &rsaquo; Shadow</u></div>
+    <div class="quiet">quiet after 6 · next decision window 11:00</div>
   </section>
-  <div class="fab">
-    <div class="spill">sutra-ui has been building for 11 minutes — longer than usual. Want me to keep watching?<div class="acts"><span class="act">Keep watching</span><span class="act q">Open it</span></div></div>
-    <div class="sdot"><b>S</b></div>
-  </div>
+  <div class="fab"><div class="sdot"><b>S</b><span class="n">1</span></div></div>
 </div>
 
-<p class="cap"><b>2 · In a chat — the card, with voice and on-the-fly answers.</b> <span class="mile">MVP</span> Same overlay as before, native to the dark shell. Hold the mic to talk; quick answers are generated per moment, max three.</p>
+<p class="cap"><b>2 · One line, and Shadow starts the chat.</b> <span class="mile">MVP</span> You type one line into the Now composer. Shadow shows you a one-glance brief — what it will start, where, what done means, what it will tell the chat — you tap Start, and the new chat appears in Chats, started by Shadow, monitored by Shadow.</p>
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="rail">
+    <div class="brand">Sutra</div>
+    <div class="item on"><span class="g">&#9673;</span>Now</div>
+    <div class="item"><span class="g">&#9678;</span>Focus</div>
+    <div class="item"><span class="g">&#9998;</span>Chats</div>
+    <div class="item"><span class="g">&#9638;</span>Org</div>
+    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div></div>
+  </nav>
+  <section class="pane">
+    <div class="greet" style="font-size:22px">Start something new</div>
+    <div class="sub">You wrote one line. Shadow drafted the rest — nothing starts until you say so.</div>
+    <div class="stack" style="max-width:680px">
+      <div class="mu" style="align-self:flex-end;max-width:80%">We need to start a new feature: auto-fix the rounding differences in EMI checks.</div>
+      <div class="brief">
+        <div class="k">Shadow &middot; ready to start</div>
+        <div class="row"><span>Chat</span><span><b>EMI auto-fix</b> — new, in paisa</span></div>
+        <div class="row"><span>Done when</span><span>a PR link or a tested patch summary appears in the chat</span></div>
+        <div class="row"><span>I&rsquo;ll tell it</span><span>your one line · last week&rsquo;s rounding fix · the EMI check that found 3 differences · your paisa standards <u style="text-decoration:none;border-bottom:1px dotted var(--muted)">view all</u></span></div>
+        <div class="acts"><span class="act">Start the chat</span><span class="act q">Edit</span><span class="act q">Not now</span></div>
+      </div>
+      <div class="h4">After you tap Start</div>
+      <div class="wrow shx" style="border:1px solid var(--line-soft);border-radius:10px"><span class="sd" style="background:var(--accent)"></span><b>EMI auto-fix</b>&nbsp;<span class="sm2">· started by Shadow · turn 1 · in Chats now</span><span class="st">Shadow is working with it</span></div>
+    </div>
+  </section>
+  <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
+</div>
+
+<p class="cap"><b>3 · Chats — the new chat is a normal chat.</b> <span class="mile">MVP</span> It shows up like any other, marked "started by Shadow". The moment you type into it, Shadow steps back and the mission pauses — it's yours.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
@@ -133,41 +184,33 @@ body{background:#060504;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     <div class="item"><span class="g">&#9638;</span>Org</div>
     <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
     <div class="item"><span class="g">&#9881;</span>Settings</div>
-    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div><div class="sw"><i style="background:var(--accent)"></i><i></i><i></i></div></div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">5 sessions · ctx 62% · $8 today</div></div>
   </nav>
   <section class="pane">
     <div class="pg">Chats</div>
     <div class="slist">
-      <div class="sit on"><span class="sd" style="background:var(--done)"></span>paisa · EMI check</div>
+      <div class="sit on"><span class="sd" style="background:var(--accent)"></span>EMI auto-fix<span class="by">started by Shadow</span></div>
+      <div class="sit"><span class="sd" style="background:var(--done)"></span>paisa · EMI check</div>
       <div class="sit"><span class="sd" style="background:var(--alert)"></span>dayflow · api deploy</div>
       <div class="sit"><span class="sd" style="background:var(--review)"></span>sutra-ui · build</div>
-      <div class="sit"><span class="sd" style="background:var(--line)"></span>billu · migration</div>
     </div>
     <div class="chatbox">
-      <div class="chathead"><span class="t">EMI reconciliation</span><span>paisa · lending ops</span></div>
+      <div class="chathead"><span class="t">EMI auto-fix</span><span>started by Shadow · turn 3 · Shadow is monitoring</span></div>
       <div class="stream">
-        <div class="mu">Run the EMI check against last night&rsquo;s batch and show me the differences.</div>
-        <div class="ma">Done &mdash; 1,204 loans compared, 3 differences: LN-20817 · LN-21033 · LN-21290, each off by one paisa.</div>
+        <div class="mu" style="opacity:.8">[Shadow] Build an auto-fix for rounding differences in EMI checks. Context: last week&rsquo;s fix (7c1e), yesterday&rsquo;s check found 3 one-paisa differences&hellip;</div>
+        <div class="ma">Plan: extend the reconciliation step with the rounding helper, add a test for the three cases, run the suite&hellip;</div>
+        <div class="ma">142/142 tests pass. Preparing the patch summary.</div>
       </div>
-      <div class="comp">Continue this session&hellip;</div>
+      <div class="comp2">Type here and Shadow steps back &mdash; this chat becomes yours&hellip;</div>
     </div>
   </section>
-  <div class="scard">
-    <div class="hd"><span class="nm"><b>S</b>Shadow</span><span class="switch">quiet</span><span class="hide">hide</span></div>
-    <div class="sees">I can see: <b>this chat</b> · 4 sessions · the app. Not your screen, not your eyes.</div>
-    <div class="smsgs">
-      <div class="sm s">Those 3 differences look like the same issue you fixed last week. Want me to put that fix in your composer?</div>
-      <div class="chips2 dim"><span class="chip2">Put the fix in my composer</span><span class="chip2">Explain it first</span><span class="chip2">Not now</span></div>
-      <div class="sm u">Yes. And whenever rounding differences show up in an EMI check, offer it straight away.</div>
-      <div class="sm s">Done. And I&rsquo;ll remember this one &mdash; tap to confirm.</div>
-      <div class="mem"><span class="k">I&rsquo;ll remember</span><span class="e">paisa · standing · edit</span><br>When rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.</div>
-    </div>
-    <div class="scomp"><span class="mic">&#9679;</span><span class="ph">Tell Shadow — type, or hold to talk&hellip;</span><span class="key">&#8984;&#8679;S</span></div>
+  <div class="fab">
+    <div class="spill">EMI auto-fix: tests pass, patch summary coming up. I&rsquo;ll show you when it&rsquo;s done.</div>
+    <div class="sdot"><b>S</b><span class="n">2</span></div>
   </div>
-  <div class="fab"><div class="sdot"><b>S</b></div></div>
 </div>
 
-<p class="cap"><b>3 · Focus &rsaquo; Shadow — its own section, one level under Focus.</b> <span class="mile">MVP</span> Your ruling: the Shadow section lives under Focus — missions, what it remembers, how it operates, what it may see.</p>
+<p class="cap"><b>4 · Focus &rsaquo; Shadow — track everything it does.</b> <span class="mile">MVP</span> Every mission, every turn, every piece of evidence. Stop anything with one tap.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
@@ -178,25 +221,29 @@ body{background:#060504;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     <div class="item"><span class="g">&#9638;</span>Org</div>
     <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
     <div class="item"><span class="g">&#9881;</span>Settings</div>
-    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div><div class="sw"><i style="background:var(--accent)"></i><i></i><i></i></div></div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">5 sessions · ctx 62% · $8 today</div></div>
   </nav>
   <section class="pane">
     <div class="crumb">Focus &rsaquo; <b>Shadow</b></div>
     <div class="pg">Shadow</div>
     <div class="secnav"><b>Missions</b><span>What I remember</span><span>How I operate</span><span>What I can see</span></div>
     <div class="mission">
-      <div class="k">Working on it now</div>
-      <div class="obj">&ldquo;Fix the rounding differences and get it ready for a test deploy.&rdquo;</div>
-      <div class="dw">Done when: the fix is in and tests pass in the paisa chat.</div>
-      <div class="meta"><span>paisa · EMI check</span><span>turn 2 of 12</span><span>acting · L3</span><span class="stop">Stop</span></div>
+      <div class="k">Running</div>
+      <div class="obj">EMI auto-fix &mdash; &ldquo;auto-fix the rounding differences in EMI checks&rdquo;</div>
+      <div class="dw">Done when: a PR link or a tested patch summary appears in the chat · what I told it: view</div>
+      <div class="meta"><span>started by you, one line, 10:52</span><span>turn 3 of 12</span><span class="stop">Stop</span></div>
     </div>
-    <div class="mrow"><span class="sc">yesterday</span>Picked dayflow back up after it dropped — verified, nothing lost.<div class="ed">done · evidence</div></div>
-    <div class="mrow"><span class="sc">paisa</span><b>Remembers:</b> when rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.<div class="ed">told me today · edit</div></div>
-    <div class="mrow"><span class="sc">everywhere</span><b>Operates:</b> acts by default · holds anything irreversible for you · quiet after 6.<div class="ed">change in How I operate</div></div>
+    <div class="mission" style="margin-top:8px">
+      <div class="k" style="color:var(--review)">Paused — you stepped in</div>
+      <div class="obj">dayflow deploy watch</div>
+      <div class="dw">You typed into the chat at 10:41, so I stepped back. Say resume when you want me on it again.</div>
+      <div class="meta"><span>turn 5</span><span class="stop">End it</span></div>
+    </div>
+    <div class="mrow"><span class="sc">done · yesterday</span>Picked dayflow back up after it dropped — verified, nothing lost.<div class="ed">evidence · 3 turns</div></div>
   </section>
-  <div class="fab"><div class="sdot"><b>S</b></div></div>
+  <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
 </div>
 
-<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop · preview v4 · shipped IA v3.3 shell (Now / Focus / Chats / Org / Team Sutra / Settings) · Shadow&rsquo;s work lands in Now, its section lives under Focus · spec: holding/plans/shadow/</p>
+<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop · preview v4.1 · light default (follows your Mac) · Now: composer + watching strip + activity line · delegation: brief &rarr; new chat started by Shadow · spec: holding/plans/shadow/</p>
 </body>
 </html>
