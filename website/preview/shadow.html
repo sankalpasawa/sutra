@@ -135,13 +135,13 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
       <div class="wrow"><span class="sd" style="background:var(--review)"></span><b>sutra-ui</b> · build<span class="st">11 min · watching</span></div>
       <div class="wrow"><span class="sd" style="background:var(--line)"></span><b>billu</b> · migration<span class="st">idle</span></div>
     </div>
-    <div class="activity"><i></i>Shadow: monitoring <b>&nbsp;EMI auto-fix&nbsp;</b> · turn 3 of 12 · <u>details in Focus &rsaquo; Shadow</u></div>
+    <div class="activity"><i></i>Shadow: watching <b>&nbsp;EMI auto-fix&nbsp;</b> · turn 3 of 12 · <u>details in Focus &rsaquo; Shadow</u></div>
     <div class="quiet">quiet after 6 · next decision window 11:00</div>
   </section>
   <div class="fab"><div class="sdot"><b>S</b><span class="n">1</span></div></div>
 </div>
 
-<p class="cap"><b>2 · One line, and Shadow starts the chat.</b> <span class="mile">MVP</span> You type one line into the Now composer. Shadow shows you a one-glance brief — what it will start, where, what done means, what it will tell the chat — you tap Start, and the new chat appears in Chats, started by Shadow, monitored by Shadow.</p>
+<p class="cap"><b>2 · One line, one conversation, one action.</b> <span class="mile">MVP</span> Same composer, no header, no Edit. Shadow answers with a card; you keep talking and the card updates in place. One action — Start the chat. It starts in the background: the card flips to Started and a small nudge appears. You stay where you are.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
@@ -155,25 +155,32 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div></div>
   </nav>
   <section class="pane">
-    <div class="greet" style="font-size:22px">Start something new</div>
-    <div class="sub">You wrote one line. Shadow drafted the rest — nothing starts until you say so.</div>
+    <div class="greet">Good morning, Sankalp.</div>
+    <div class="sub">Same page, same composer — this is just the conversation a moment later.</div>
     <div class="stack" style="max-width:680px">
       <div class="mu" style="align-self:flex-end;max-width:80%">We need to start a new feature: auto-fix the rounding differences in EMI checks.</div>
       <div class="brief">
-        <div class="k">Shadow &middot; ready to start</div>
+        <div class="k">Shadow &middot; ready</div>
         <div class="row"><span>Chat</span><span><b>EMI auto-fix</b> — new, in paisa</span></div>
         <div class="row"><span>Done when</span><span>a PR link or a tested patch summary appears in the chat</span></div>
-        <div class="row"><span>I&rsquo;ll tell it</span><span>your one line · last week&rsquo;s rounding fix · the EMI check that found 3 differences · your paisa standards <u style="text-decoration:none;border-bottom:1px dotted var(--muted)">view all</u></span></div>
-        <div class="acts"><span class="act">Start the chat</span><span class="act q">Edit</span><span class="act q">Not now</span></div>
+        <div class="row"><span>I&rsquo;ll tell it</span><span>your one line · last week&rsquo;s rounding fix · the 3 differences found yesterday</span></div>
+        <div class="acts"><span class="act">Start the chat</span><span class="act q">or keep telling me&hellip;</span></div>
       </div>
-      <div class="h4">After you tap Start</div>
-      <div class="wrow shx" style="border:1px solid var(--line-soft);border-radius:10px"><span class="sd" style="background:var(--accent)"></span><b>EMI auto-fix</b>&nbsp;<span class="sm2">· started by Shadow · turn 1 · in Chats now</span><span class="st">Shadow is working with it</span></div>
+      <div class="mu" style="align-self:flex-end;max-width:80%">Also make it run before every EMI check, not just this once.</div>
+      <div class="brief">
+        <div class="k">Shadow &middot; updated just now</div>
+        <div class="row"><span>Chat</span><span><b>EMI auto-fix</b> — new, in paisa</span></div>
+        <div class="row"><span>Done when</span><span>a tested patch summary appears AND the fix runs before every EMI check</span></div>
+        <div class="row"><span>I&rsquo;ll tell it</span><span>everything above, plus: wire it into the nightly routine</span></div>
+        <div class="acts"><span class="act">Start the chat</span><span class="act q">or keep telling me&hellip;</span></div>
+      </div>
     </div>
+    <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:var(--bg);font-size:12px;border-radius:99px;padding:7px 16px;box-shadow:0 8px 24px rgba(28,25,23,.25)">EMI auto-fix started &middot; in Chats &middot; follow it in Focus &rsaquo; Shadow</div>
   </section>
   <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
 </div>
 
-<p class="cap"><b>3 · Chats — the new chat is a normal chat.</b> <span class="mile">MVP</span> It shows up like any other, marked "started by Shadow". The moment you type into it, Shadow steps back and the mission pauses — it's yours.</p>
+<p class="cap"><b>3 · Chats — the new chat is a normal chat.</b> <span class="mile">MVP</span> It appears like any other, marked "started by Shadow" — you were never taken here. The moment you type into it, Shadow steps back — it's yours.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
@@ -195,7 +202,7 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
       <div class="sit"><span class="sd" style="background:var(--review)"></span>sutra-ui · build</div>
     </div>
     <div class="chatbox">
-      <div class="chathead"><span class="t">EMI auto-fix</span><span>started by Shadow · turn 3 · Shadow is monitoring</span></div>
+      <div class="chathead"><span class="t">EMI auto-fix</span><span>started by Shadow · turn 3 · Shadow is watching</span></div>
       <div class="stream">
         <div class="mu" style="opacity:.8">[Shadow] Build an auto-fix for rounding differences in EMI checks. Context: last week&rsquo;s fix (7c1e), yesterday&rsquo;s check found 3 one-paisa differences&hellip;</div>
         <div class="ma">Plan: extend the reconciliation step with the rounding helper, add a test for the three cases, run the suite&hellip;</div>
@@ -228,9 +235,9 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     <div class="pg">Shadow</div>
     <div class="secnav"><b>Missions</b><span>What I remember</span><span>How I operate</span><span>What I can see</span></div>
     <div class="mission">
-      <div class="k">Running</div>
+      <div class="k">Started &middot; watching</div>
       <div class="obj">EMI auto-fix &mdash; &ldquo;auto-fix the rounding differences in EMI checks&rdquo;</div>
-      <div class="dw">Done when: a PR link or a tested patch summary appears in the chat · what I told it: view</div>
+      <div class="dw">Done when: a tested patch summary appears and the fix runs before every EMI check · what I told it: view</div>
       <div class="meta"><span>started by you, one line, 10:52</span><span>turn 3 of 12</span><span class="stop">Stop</span></div>
     </div>
     <div class="mission" style="margin-top:8px">
@@ -244,6 +251,6 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
   <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
 </div>
 
-<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop · preview v4.1 · light default (follows your Mac) · Now: composer + watching strip + activity line · delegation: brief &rarr; new chat started by Shadow · spec: holding/plans/shadow/</p>
+<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop · preview v4.2 · one composer, one card, one action, one word (watching) · card updates as you chat; Start never navigates — a nudge appears and the mission lives in Focus &rsaquo; Shadow · spec: holding/plans/shadow/</p>
 </body>
 </html>
