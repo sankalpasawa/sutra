@@ -63,10 +63,12 @@ await check("entering Focus from the rail loads Balance (the shipped bug)",
   `(()=>{ let hit=false; const orig=loadBalance; loadBalance=()=>{hit=true};
      try { goDest('focus'); } finally { loadBalance=orig; }
      return hit && S.screen==='balance'; })()`);
-await check("entering Team Sutra from the rail loads its tasks",
+await check("entering Help from the rail loads its tasks, full-bleed (no plane)",
   `(()=>{ let hit=false; const orig=loadTeamsutra; loadTeamsutra=()=>{hit=true};
      try { goDest('team'); } finally { loadTeamsutra=orig; }
-     return hit && S.screen==='teamsutra'; })()`);
+     return hit && S.screen==='teamsutra'
+       && document.getElementById('app').classList.contains('noplane')
+       && />\\s*Help\\s*</.test(document.getElementById('railnav').innerHTML); })()`);
 await check("org plane lists Files",
   `(goDest('org'), /Files/.test(document.getElementById('planeBody').innerHTML))`);
 await check("terminal clamp leaves the detail its floor (plane visible)",

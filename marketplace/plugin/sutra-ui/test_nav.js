@@ -316,14 +316,39 @@ test("v3.4: the role accessor is published for loadOrg", () => {
   assert.strictEqual(typeof vm.runInContext("panelRole", sandbox), "function");
 });
 
+test("v3.4.1: the rail says Help and gives it no plane", () => {
+  T.S.ui = T.loadLayout();
+  T.renderRail();
+  assert(/>\s*Help\s*</.test(els["railnav"].innerHTML), "rail label must be Help");
+  assert(els["railnav"].innerHTML.indexOf("Team Sutra") === -1, "Team Sutra must be gone from the rail");
+  T.goDest("team");
+  assert.strictEqual(T.S.screen, "teamsutra", "Help still opens its screen directly");
+  assert(els["app"]._cls.has("noplane"), "Help is full-bleed — no second plane");
+  assert.strictEqual(T.planeRows("team").flatMap(g => g.rows).length, 0);
+  T.goDest("now");
+});
+test("v3.4.1: a stale destSel cannot hijack a full-bleed destination (codex P1)", () => {
+  T.S.ui = T.loadLayout();
+  T.S.ui.destSel.team = "settings";   /* hostile/stale persisted pick */
+  loaded.length = 0;
+  T.goDest("team");
+  assert.strictEqual(T.S.screen, "teamsutra", "Help must land on its own screen");
+  assert(loaded.includes("loadTeamsutra"), "…and still load its tasks");
+  assert(els["app"]._cls.has("noplane"));
+  T.goDest("now");
+});
+
 /* §coverage ─ S21: every legacy railSpec destination is reachable in v3.3 */
 test("coverage: all 20 legacy rail ids stay reachable through the new shell", () => {
   const legacy = ["departments","charters","placements","knowledge","files","reorg",
                   "history","git","editor","health","skills","automation","routines",
                   "connectors","teamsutra","usage","balance","evals","terminal","settings"];
   const reachable = new Set();
-  for (const d of T.DESTS)
+  for (const d of T.DESTS){
     T.planeRows(d).forEach(g => g.rows.forEach(r => r.screen && reachable.add(r.screen)));
+    /* a plane-less destination (Now, Help) reaches its screen directly */
+    if (T.DEST_DEFAULT_SCREEN[d]) reachable.add(T.DEST_DEFAULT_SCREEN[d]);
+  }
   const missing = legacy.filter(id => !reachable.has(id));
   assert.strictEqual(missing.length, 0, "unreachable: " + missing.join(", "));
 });

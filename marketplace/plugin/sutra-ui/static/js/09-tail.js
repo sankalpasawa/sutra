@@ -120,7 +120,8 @@ async function boot(){
      and the browse pane showing another. */
   if (S.ui.dest === "chats"){ S.ui.browseClosed = true; }
   else {
-    const sel = S.ui.destSel[S.ui.dest];
+    const sel = (typeof destFullBleed === "function" && destFullBleed(S.ui.dest))
+      ? null : S.ui.destSel[S.ui.dest];
     S.screen = (sel && SCREENS[sel]) ? sel : (DEST_DEFAULT_SCREEN[S.ui.dest] || S.screen);
   }
   /* One registry holds one org. This used to read /api/tenants first and gate

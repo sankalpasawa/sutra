@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.119.4 (2026-08-24)
+
+- **The rail says Help — and Help opens directly.** The destination row still
+  said Team Sutra (2.118.4 renamed the screen, 2.119.1 the selection bubble);
+  now the rail matches, and its one-screen plane is gone: clicking Help lands
+  on the page full-width. A remembered pick can no longer reroute it.
+
 ## 2.119.3 (2026-08-24)
 
 - **The subtitle is the ask, never the ritual.** A first prompt that opens with

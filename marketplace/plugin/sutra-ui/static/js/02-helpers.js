@@ -720,9 +720,17 @@ function sessMenuHtml(s){
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
 const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", org:"Org",
-                     team:"Team Sutra", settings:"Settings" };
+                     team:"Help", settings:"Settings" };
 const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", org:"dept",
                      team:"team", settings:"gear" };
+
+/* A destination whose plane spec is empty is FULL-BLEED: no second plane, and
+   its screen opens directly — a persisted destSel must not reroute it (codex
+   P1, 2026-08-24: a stale destSel.team could hijack Help to another screen).
+   Chats is exempt: its plane is the session surface, not rows. */
+function destFullBleed(d){
+  return d !== "chats" && !(DEST_PLANES[d] || []).length;
+}
 
 function goDest(d){
   if (!DESTS.includes(d)) return;
@@ -735,7 +743,7 @@ function goDest(d){
     /* 2.118.1: route through openScreen so the lazy loaders fire — entering
        Focus/Team Sutra from the rail used to render Balance/Teamsutra blank,
        because the fetch calls lived only in the click delegation. */
-    const sel = S.ui.destSel[d];
+    const sel = destFullBleed(d) ? null : S.ui.destSel[d];
     const target = (sel && SCREENS[sel]) ? sel : DEST_DEFAULT_SCREEN[d];
     if (typeof openScreen === "function" && SCREENS[target]) openScreen(target);
     else { S.ui.browseClosed = false; S.screen = target; }
@@ -770,7 +778,9 @@ function renderPlane(){
   if (!app || !plane) return;
   app.classList.add("threecol");
   const dest = DESTS.includes(S.ui.dest) ? S.ui.dest : "now";
-  const off = dest === "now";                     /* Now is the one full-bleed surface */
+  /* Full-bleed = empty plane spec (Now by design; Help since 2026-08-24 —
+     a one-row plane is a click that buys nothing). One predicate with goDest. */
+  const off = destFullBleed(dest);
   const wasOff = app.classList.contains("noplane");
   app.classList.toggle("noplane", off);
   plane.hidden = off;

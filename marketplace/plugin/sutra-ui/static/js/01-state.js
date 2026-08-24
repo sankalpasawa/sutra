@@ -119,7 +119,7 @@ const DEST_PLANES = {
   chats:    [],
   org:      [{screen:"departments"},{screen:"charters"},{screen:"placements"},
              {screen:"knowledge"},{screen:"files"},{screen:"reorg"}],
-  team:     [{screen:"teamsutra"}],
+  team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"routines"},{screen:"connectors"}]},
              {group:"System",      rows:[{screen:"health"},{screen:"evals"},{screen:"usage"},{screen:"history"}]},
