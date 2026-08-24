@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.2 (2026-08-24)
+
+- **Optimus speaks customer (P0).** "Optimus is awake/asleep", "Waiting on
+  you", "What Optimus knows how to do", "Teach Optimus something new"; honest
+  trigger phrasing; Done-checked run cards. Ids, pids and raw evidence stay one
+  glance away; the typed route-code approve gate is unchanged (trust boundary).
+
 ## 2.222.1 (2026-08-24)
 
 - **Workspace: the flag now reaches the panel.** load_settings() carries a

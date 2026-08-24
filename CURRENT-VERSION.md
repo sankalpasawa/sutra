@@ -1,6 +1,11 @@
 # Sutra — Current Version
 
-## v2.222.0 (2026-08-24, HEAD)
+## v2.222.2 (2026-08-24, HEAD)
+
+Optimus copy in customer voice (P0); technical detail demoted to muted; trust
+gates unchanged. (2.222.1 in between: workspace flag propagation — see CHANGELOG.)
+
+## v2.222.0 (2026-08-24)
 
 **Optimus — the daemon, visible (Focus tab).** A window over sutra-daemon's
 stores: status+PID, decision queue, routes with department/charter chips,

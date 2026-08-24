@@ -3373,7 +3373,7 @@ test("opt2. optimus renders honest emptiness — no fabricated daemon state", ()
   T.S.optimus = { snap: { present: false, root: "/tmp/x", daemon: { running: false, pid: null } },
                   at: new Date(), err: null, act: null };
   const html = T.SCREENS.optimus();
-  assert.ok(html.includes("No daemon record yet"), "empty state text");
+  assert.ok(html.includes("hasn\u2019t done anything yet"), "empty state text");
   assert.ok(html.includes("data-optstart"), "start control offered");
   assert.ok(!html.includes("undefined"), "no undefined leaks");
 });
@@ -3396,7 +3396,9 @@ test("opt3. a proposed route renders the TWO-STEP approve (typed confirm), never
 test("opt4. throwback asks render as first-class decisions, with their ids", () => {
   T.S.optimus.snap.asks = [{ outbox_id: "ob-1", ask_text: "[daemon:throwback] input in-x: host exited 3" }];
   const html = T.SCREENS.optimus();
-  assert.ok(html.includes("ob-1") && html.includes("throwback"), "ask row with id + kind");
+  assert.ok(html.includes("ob-1"), "ask keeps its exact id");
+  assert.ok(html.includes("couldn\u2019t finish this"), "throwback in customer voice");
+  assert.ok(html.includes("host exited 3"), "raw evidence stays one glance away");
 });
 
 

@@ -26,19 +26,59 @@ async function loadOptimus(force){
 
 function optChip(txt, cls){ return `<span class="chip ${cls||""}">${esc(txt)}</span>`; }
 
+/* Customer-voice helpers (P0). Honesty folds from the 2026-08-24 consult:
+   the matcher is described truthfully ("starts with"), pass renders as
+   "Done — checked" only because a pinned check actually ran, and raw
+   evidence stays one glance away in muted text — friendly never means
+   hidden. The route id at the approve boundary stays exact and technical:
+   it IS the trust gate. */
+function optWhen(pattern){
+  const m = /^\^\((\w+(?:\|\w+)*)\)\s?/.exec(pattern || "");
+  if (m) return "when your ask starts with " + m[1].split("|").map(w => `“${w}”`).join(" or ");
+  const m2 = /^\^(\w+)\s?/.exec(pattern || "");
+  if (m2) return `when your ask starts with “${m2[1]}”`;
+  return null;
+}
+function optAskRow(a){
+  const raw = a.ask_text || a.text || "";
+  let kind = "your call", body = raw;
+  const m = /^\[daemon:(\w+)\] input ([\w./-]+): ([\s\S]*)$/.exec(raw);
+  if (m){
+    kind = m[1] === "fallback" ? "new kind of request" : "couldn’t finish this";
+    body = m[3];
+  }
+  return `<div class="opt-ask-row">${optChip(kind, "warn")} ${esc(body.slice(0, 260))}
+    <div class="muted" style="font-size:11px">${esc(a.outbox_id || "")}</div></div>`;
+}
+function optRunRow(r){
+  let took = "";
+  if (r.ts_open && r.ts_close){
+    const s0 = Date.parse(r.ts_open), s1 = Date.parse(r.ts_close);
+    if (!isNaN(s0) && !isNaN(s1)) took = ` · took ${Math.max(1, Math.round((s1 - s0) / 1000))}s`;
+  }
+  const done = r.outcome === "pass";
+  return `<div class="opt-run">${optChip(done ? "Done — checked" : "Handed back to you", done ? "ok" : "err")}
+    ${esc((r.workflow_ref || "").split("@")[0] || "work")}${esc(took)}
+    <span class="muted" style="font-size:11px">${esc(r.run_id || "")}</span></div>`;
+}
+
 function optRouteRow(r){
   const bind = (r.department || r.charter)
-    ? ` <span class="muted">[${esc(r.department || "-")} / ${esc(r.charter || "-")}]</span>` : "";
-  const appr = r.status === "proposed"
+    ? `<div class="muted">${esc(r.department || "")}${r.department && r.charter ? " · " : ""}${esc(r.charter || "")}</div>` : "";
+  const when = optWhen(r.pattern);
+  const live = r.status === "approved";
+  const appr = !live
     ? `<div class="opt-approve">
-         <input type="text" class="wdin" placeholder="type ${esc(r.route_id)} to approve"
+         <span class="muted">To switch this on, type its code <code>${esc(r.route_id)}</code>:</span>
+         <input type="text" class="wdin" placeholder="${esc(r.route_id)}"
                 data-optconfirm="${esc(r.route_id)}">
-         <button class="btn" type="button" data-optapprove="${esc(r.route_id)}">Approve</button>
+         <button class="btn" type="button" data-optapprove="${esc(r.route_id)}">Switch on</button>
        </div>` : "";
   return `<div class="opt-route">
-    <code>${esc(r.route_id)}</code> ${optChip(r.status, r.status === "approved" ? "ok" : "warn")}
-    <code class="muted">${esc(r.pattern || "")}</code> &#8594; ${esc(r.workflow || "?")}
-    <span class="muted">host=${esc(r.host || "?")}</span>${bind}${appr}</div>`;
+    <b>${esc((r.workflow || "?").split("@")[0])}</b> ${optChip(live ? "on" : "waiting for you", live ? "ok" : "warn")}
+    <div>${when ? esc(when) : `matches <code class="muted">${esc(r.pattern || "")}</code>`}</div>
+    ${bind}
+    <div class="muted" style="font-size:11px">${esc(r.route_id)} · runs on ${esc(r.host || "?")}</div>${appr}</div>`;
 }
 
 SCREENS.optimus = () => {
@@ -48,32 +88,29 @@ SCREENS.optimus = () => {
     <button class="btn" type="button" data-optrefresh>Retry</button></div>`;
   const s = o.snap;
   if (!s || !s.present) return `<div class="pad">
-    <p>No daemon record yet at <code>${esc(s ? s.root : "~/.sutra-native")}</code>.</p>
-    <p class="muted">Nothing is fabricated here: the screen renders only what the
-    daemon has actually written. Ask something below, or start the daemon.</p>
-    <p><button class="btn" type="button" data-optstart>Start daemon</button>
+    <p><b>Optimus hasn’t done anything yet.</b></p>
+    <p class="muted">This screen only ever shows what really happened — nothing here is
+    ever made up. Wake Optimus and ask for something to get started.</p>
+    <p><button class="btn" type="button" data-optstart>Wake Optimus</button>
        <button class="btn" type="button" data-optrefresh>Refresh</button></p>
     <div class="opt-ask"><input type="text" class="wdin" id="optAskText"
-      placeholder="ask the daemon (e.g. write a note on ...)">
+      placeholder="Tell Optimus what you need… (try: write a note on …)">
       <button class="btn" type="button" data-optask>Ask</button></div></div>`;
 
   const pid = s.daemon.pid || {};
   const daemonLine = s.daemon.running
-    ? `${optChip("running", "ok")} pid ${esc(String(pid.pid))} since ${esc(pid.started_at || "?")}
-       <button class="btn danger" type="button" data-optstop="${esc(String(pid.pid))}">Stop pid ${esc(String(pid.pid))}</button>`
-    : `${optChip("stopped", "warn")}
-       <button class="btn" type="button" data-optstart>Start daemon</button>`;
+    ? `${optChip("Optimus is awake", "ok")}
+       <button class="btn danger" type="button" data-optstop="${esc(String(pid.pid))}"
+               title="process ${esc(String(pid.pid))} on this Mac, since ${esc(pid.started_at || "?")}">Put to sleep (${esc(String(pid.pid))})</button>`
+    : `${optChip("Optimus is asleep", "warn")}
+       <button class="btn" type="button" data-optstart>Wake Optimus</button>`;
 
-  const asks = (s.asks || []).slice().reverse().slice(0, 10).map(a =>
-    `<div class="opt-ask-row"><code class="muted">${esc(a.outbox_id || "")}</code>
-       ${esc(a.ask_text || a.text || JSON.stringify(a).slice(0, 200))}</div>`).join("")
-    || `<p class="muted">No asks waiting. When the daemon cannot handle something, it lands here — never silently.</p>`;
+  const asks = (s.asks || []).slice().reverse().slice(0, 10).map(optAskRow).join("")
+    || `<p class="muted">Nothing needs you right now. Whenever Optimus can’t handle
+        something on its own, it appears here — never silently dropped.</p>`;
 
-  const runs = (s.runs || []).slice().reverse().slice(0, 8).map(r =>
-    `<div class="opt-run"><code>${esc(r.run_id || "?")}</code>
-       ${optChip(r.outcome || "?", r.outcome === "pass" ? "ok" : "err")}
-       ${esc(r.workflow_ref || "-")} <span class="muted">attempts ${esc(String(r.attempts ?? "?"))}</span></div>`).join("")
-    || `<p class="muted">No runs recorded yet.</p>`;
+  const runs = (s.runs || []).slice().reverse().slice(0, 8).map(optRunRow).join("")
+    || `<p class="muted">Nothing finished yet.</p>`;
 
   const stateBits = Object.entries(s.state_summary || {})
     .map(([k, v]) => `${esc(k)}: ${v}`).join(" &#183; ") || "nothing consumed yet";
@@ -83,29 +120,35 @@ SCREENS.optimus = () => {
       <span class="muted">last sync ${esc(o.at.toLocaleTimeString())}</span>
       <button class="btn" type="button" data-optrefresh>Refresh</button></div>
 
-    <h3>Ask</h3>
+    <h3>Ask Optimus</h3>
     <div class="opt-ask"><input type="text" class="wdin" id="optAskText"
-      placeholder="ask the daemon (a registered route runs it; anything else comes back to you)">
+      placeholder="Tell Optimus what you need… (things it knows run by themselves; anything else comes back to you)">
       <button class="btn" type="button" data-optask>Ask</button></div>
-    <p class="muted">pending: ${(s.pending_inputs || []).length} &#183; consumed: ${stateBits}
-      ${s.inbox_malformed ? ` &#183; <span class="warn">${s.inbox_malformed} malformed line(s) quarantined</span>` : ""}</p>
+    <p class="muted">${(s.pending_inputs || []).length ? `${(s.pending_inputs || []).length} waiting in line · ` : ""}so far: ${stateBits}
+      ${s.inbox_malformed ? ` · <span class="warn">${s.inbox_malformed} garbled request(s) set aside</span>` : ""}</p>
 
-    <h3>Decisions waiting on you</h3>${asks}
+    <h3>Waiting on you</h3>${asks}
 
-    <h3>Routes (the daemon&#8217;s features)</h3>
-    ${(s.routes || []).map(optRouteRow).join("") || `<p class="muted">No routes yet — propose one below.</p>`}
-    <details class="opt-build"><summary>Propose a new route (the builder)</summary>
+    <h3>What Optimus knows how to do</h3>
+    ${(s.routes || []).map(optRouteRow).join("") || `<p class="muted">Nothing yet — teach it something below.</p>`}
+    <details class="opt-build"><summary>Teach Optimus something new</summary>
       <div class="opt-form">
-        ${["pattern", "workflow", "prompt_template", "department", "charter"].map(f =>
-          `<input type="text" class="wdin" id="optP_${f}" placeholder="${f}">`).join("")}
+        <input type="text" class="wdin" id="optP_pattern" placeholder="When an ask starts with… (e.g. ^reconcile )">
+        <input type="text" class="wdin" id="optP_workflow" placeholder="Do it the registered way… (e.g. W-emi-reconcile@1.0.0)">
+        <input type="text" class="wdin" id="optP_prompt_template" placeholder="Tell the worker what to do… (use {text} and {out})">
+        <input type="text" class="wdin" id="optP_department" placeholder="Which department is this for? (optional)">
+        <input type="text" class="wdin" id="optP_charter" placeholder="Under which charter? (optional)">
         <select class="wdin" id="optP_host"><option>claude-bare</option><option>codex</option></select>
-        <input type="text" class="wdin" id="optP_verify" placeholder="verify: template-id (e.g. grep-count)">
-        <input type="text" class="wdin" id="optP_vargs" placeholder="verify args comma-separated (e.g. pattern=provenance,file={out},min=1)">
-        <button class="btn" type="button" data-optpropose>Propose</button>
-        <p class="muted">Proposing registers nothing — a route runs only after you approve it above, by typing its id.</p>
+        <details><summary class="muted">Advanced: how Optimus checks its own work</summary>
+          <input type="text" class="wdin" id="optP_verify" placeholder="check type (e.g. grep-count)">
+          <input type="text" class="wdin" id="optP_vargs" placeholder="check details (e.g. pattern=provenance,file={out},min=1)">
+        </details>
+        <button class="btn" type="button" data-optpropose>Suggest it</button>
+        <p class="muted">Suggesting changes nothing — a new ability only switches on after you
+        approve it above by typing its code. That step is deliberately yours alone.</p>
       </div></details>
 
-    <h3>Recent runs</h3>${runs}
+    <h3>Recently done</h3>${runs}
     ${o.act ? `<pre class="opt-act">${esc(o.act)}</pre>` : ""}
   </div>`;
 };
