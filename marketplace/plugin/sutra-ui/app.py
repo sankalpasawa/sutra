@@ -32,7 +32,8 @@ import org_api
 import providers
 import sb_sidecar
 from session_runtime import (SessionRuntime, _drain_to_newline,
-                             _tool_command, _tool_output, _tool_summary)
+                             _tool_command, _tool_output, _tool_summary,
+                             register_runtime, unregister_runtime)
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -1202,8 +1203,7 @@ async def ws_chat(ws: WebSocket):
                     # Set the flag BEFORE killing: the stdout loop can end between
                     # the signal and the assignment, and would then report the
                     # operator's own interrupt as a crash.
-                    rt.stopped = True
-                    rt.kill_group()
+                    rt.stop()
                     continue
                 await inbox.put(payload)
         except (WebSocketDisconnect, RuntimeError):
@@ -1321,6 +1321,9 @@ async def ws_chat(ws: WebSocket):
 
             (session_id, got_text, got_result,
              result_error, eof) = await rt.demux_turn(ws.send_json, session_id)
+            # S23: now that the session id is known, make this runtime
+            # discoverable (idempotent; same id + same rt every turn).
+            register_runtime(session_id, rt)
 
             # Do NOT read stderr to EOF or wait() here: both block forever on a
             # process that is meant to outlive the turn. Only a dead process is
@@ -1420,6 +1423,7 @@ async def ws_chat(ws: WebSocket):
         # leave a `claude` process running against the operator's plan.
         reader_task.cancel()
         rt.kill_group()
+        unregister_runtime(session_id, rt)
 
 
 @app.websocket("/ws/term")

@@ -170,6 +170,68 @@ class SessionRuntime:
         # they see every frame the primary sees, and a broken one is dropped
         # for the turn rather than breaking the operator's answer.
         self.subscribers = []
+        # S21: coarse turn state, driven by the frames this runtime itself
+        # emits (see _observe). Not a permission oracle: PERMISSION_WAIT
+        # detection is a policy layered on open_tools + quiet time in P2,
+        # once the real stall shape has been characterized.
+        self.state = "idle"
+        self.open_tools = set()
+        # S24 queue: owned here, consumed by the handler only from P2 (S37).
+        self.turn_queue = TurnQueue()
+
+    def stop(self):
+        """The OPERATOR pressed stop (S22): record the intent, then kill the
+        group. Kept as one method so the reader task cannot get the order
+        wrong -- the flag must be set BEFORE the kill, or the stdout loop can
+        end between the signal and the assignment and report the operator's
+        own interrupt as a crash.
+
+        Ordering contract (codex fold, 2026-08-25):
+        - a turn cut by stop still ends with a `_turn_boundary` to observers
+          (eof context) -- watchers always see the turn close;
+        - queued SHADOW turns are dropped, queued OPERATOR turns are kept
+          (the founder's words outrank automation, even mid-interrupt);
+        - the ws handler unregisters from the registry AFTER the kill, in its
+          finally -- a lookup during teardown may briefly see a dying runtime,
+          which is why sayers must check `alive` before writing."""
+        self.stopped = True
+        self.state = "stopped"
+        if getattr(self, "turn_queue", None) is not None:
+            self.turn_queue.clear_shadow()
+        return self.kill_group()
+
+    def _observe(self, frame):
+        """S21: update coarse state from a frame passing through the fanout.
+        Purely mechanical -- no policy, no timers."""
+        t = frame.get("type")
+        if t == "retrying":
+            self.state = "retrying"
+        elif t in ("token", "sysinit", "session", "thinking"):
+            if self.state != "stopped":
+                self.state = "active"
+        elif t == "tool":
+            if self.state != "stopped":
+                self.state = "active"
+            if frame.get("phase") == "start" and frame.get("id"):
+                self.open_tools.add(frame["id"])
+            elif frame.get("phase") == "end" and frame.get("id"):
+                self.open_tools.discard(frame["id"])
+        elif t == "_turn_boundary":
+            if self.state != "stopped":
+                self.state = "idle"
+            self.open_tools.clear()
+
+    async def _notify_subscribers(self, frame):
+        """Deliver one frame to the observers only (never the primary).
+        Snapshot + isolation semantics identical to _fanout."""
+        self._observe(frame)
+        for cb in list(self.subscribers):
+            try:
+                res = cb(frame)
+                if asyncio.iscoroutine(res):
+                    await res
+            except Exception:
+                pass
 
     def subscribe(self, cb):
         """Register an observer for client frames. cb(frame) may be sync or
@@ -196,6 +258,7 @@ class SessionRuntime:
         import asyncio as _asyncio
 
         async def emit(frame):
+            self._observe(frame)
             await primary(frame)
             for cb in list(self.subscribers):
                 try:
@@ -287,6 +350,23 @@ class SessionRuntime:
         self.key = None
 
     async def demux_turn(self, emit, session_id):
+        """S20 wrapper: run the turn, then hand a boundary event to the
+        OBSERVERS only. The underscore type marks it internal -- it is never
+        sent to the primary, so the client protocol is byte-identical."""
+        if not self.stopped:
+            self.state = "active"
+        out = await self._demux_turn_inner(emit, session_id)
+        session_id, got_text, got_result, result_error, eof = out
+        await self._notify_subscribers({
+            "type": "_turn_boundary",
+            "session": session_id,
+            "got_result": got_result,
+            "error": result_error,
+            "eof": eof,
+        })
+        return out
+
+    async def _demux_turn_inner(self, emit, session_id):
         """Read THIS TURN's events from the persistent process and translate
         them into client frames via `emit` (the websocket's send_json).
 
@@ -488,3 +568,77 @@ class SessionRuntime:
                 # next one -- that is the whole point of the change.
                 break
         return session_id, got_text, got_result, result_error, eof
+
+
+# ---------------------------------------------------------------- registry --
+# S23: one place Shadow can resolve "which runtime is session X" without
+# touching websocket internals. The ws handler registers after a turn first
+# reveals the claude session id, and unregisters in its finally -- a stale
+# entry must never outlive its socket, or a say would land on a dead pipe.
+RUNTIMES = {}
+
+
+def register_runtime(session_id, rt):
+    if session_id:
+        RUNTIMES[session_id] = rt
+
+
+def unregister_runtime(session_id, rt):
+    """Remove only OUR mapping: two sockets can churn over the same resumed
+    session id, and the loser of that race must not evict the winner."""
+    if session_id and RUNTIMES.get(session_id) is rt:
+        del RUNTIMES[session_id]
+
+
+def lookup_runtime(session_id):
+    return RUNTIMES.get(session_id)
+
+
+# -------------------------------------------------------------- turn queue --
+class TurnQueue:
+    """S24/S25: priority queue for injected turns.
+
+    Operator turns ALWAYS outrank shadow says -- the founder never waits
+    behind automation. Delivery is pull-based: the consumer calls get() at a
+    turn boundary, so an injected turn can never interleave mid-answer.
+    Built and unit-tested here; the handler inbox is wired through it in P2
+    (S37), not before.
+
+    S25: enqueue with a dedupe_key is rejected (returns False) when that key
+    was already accepted -- an at-most-once guard for retried says. Keys are
+    remembered for the queue's lifetime (one pane), which is the scope a
+    retry storm actually spans.
+
+    Dedupe keys are CALLER-PROVIDED and should be identity-shaped --
+    "<session_id>:<say_request_id>:<source>" -- never message text (codex
+    fold): the operator repeating "yes" twice on purpose is two turns, not
+    a duplicate. No key => no dedupe, ever.
+    """
+
+    def __init__(self):
+        self._operator = []
+        self._shadow = []
+        self._seen_keys = set()
+
+    def put(self, payload, source="operator", dedupe_key=None):
+        if dedupe_key is not None:
+            if dedupe_key in self._seen_keys:
+                return False
+            self._seen_keys.add(dedupe_key)
+        (self._operator if source == "operator" else self._shadow).append(payload)
+        return True
+
+    def get(self):
+        if self._operator:
+            return self._operator.pop(0)
+        if self._shadow:
+            return self._shadow.pop(0)
+        return None
+
+    def clear_shadow(self):
+        """Stop semantics (codex fold): automation queued behind a stop is
+        stale by definition; the operator's own queued turns are not."""
+        self._shadow.clear()
+
+    def __len__(self):
+        return len(self._operator) + len(self._shadow)

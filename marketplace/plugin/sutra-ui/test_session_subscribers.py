@@ -53,7 +53,10 @@ class TestSubscribers(unittest.TestCase):
         primary, seen = [], []
         rt.subscribe(seen.append)
         run_turn(rt, lambda f: _async(primary.append, f))
-        self.assertEqual(primary, seen)
+        # S20: observers additionally get the internal boundary frame the
+        # primary never sees -- everything else is delivery-parity.
+        self.assertEqual(primary, seen[:-1])
+        self.assertEqual(seen[-1]["type"], "_turn_boundary")
         self.assertEqual([f["type"] for f in primary],
                          ["session", "sysinit", "token", "done"])
 
@@ -113,7 +116,7 @@ class TestSubscribers(unittest.TestCase):
             return _async(None, frame)
 
         run_turn(rt, attach_on_token)
-        self.assertEqual(seen, ["token", "done"])
+        self.assertEqual(seen, ["token", "done", "_turn_boundary"])
 
 
 def _async(fn, arg):
