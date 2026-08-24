@@ -1073,6 +1073,10 @@ function openScreen(id){
   if (id === "automation") loadAuto(false);
   if (id === "balance") loadBalance(false); /* lazy, like Git */
   if (id === "optimus") loadOptimus(false); /* lazy: reads the daemon's files */
+  /* Workspace (flag-gated): guard mirrors wire() -- a missing 13-workspace.js
+     must not break every other screen's open path. */
+  if (id === "workspace" && typeof loadWorkspace === "function") loadWorkspace(false);
+
   /* force=true: unlike a repo, utilization moves while you are not looking, and
      a stale percentage is the one number this screen must not show. The 60s
      server cache is what keeps re-opening cheap. */

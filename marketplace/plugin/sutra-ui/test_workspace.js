@@ -548,6 +548,15 @@ async function asyncChecks(){
   pass++;
 }
 
+test("35. openScreen dispatches the workspace lazy load (regression: line dropped in a worktree restore)", () => {
+  /* wireWorkspace() only binds handlers; the DATA arrives via openScreen's
+     per-screen dispatch in 07-loaders.js. This line was silently lost once --
+     the screen opened as an empty shell -- so the dispatch itself is pinned. */
+  const src = fs.readFileSync(path.join(__dirname, "static/js/07-loaders.js"), "utf8");
+  assert(/id === "workspace" && typeof loadWorkspace === "function"\) loadWorkspace\(false\)/.test(src),
+    "openScreen must call loadWorkspace(false) for id workspace (guarded like wireWorkspace)");
+});
+
 asyncChecks().catch(e => {
   console.log("FAIL - a superseded query's late response is dropped\n       " + e.message);
   fail++;
