@@ -730,6 +730,7 @@ test("14e. an assistant block with no recorded prompt is marked orphan, not give
    corruption failure until the fixture catches up. */
 const LAYOUT_DEFAULTS = { paneCollapsed: {}, folds: {}, browseW: null, browseClosed: false,
                           railCollapsed: false, railSections: {}, railTab: "home",
+                          dest: "now", destSel: {},
                           balanceTab: "today", sessCollapsed: {} };
 
 test("15. a corrupt/hostile stored layout degrades to defaults", () => {

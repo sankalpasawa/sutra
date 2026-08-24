@@ -102,6 +102,13 @@
         <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>
       </svg>
     </button>
+    <!-- v3.3 (PLAN-25 S5): the second fixed plane. Hidden until the
+         six-destination shell takes over navigation (S7) — until then the
+         grid keeps its two-column shape and nothing here renders. -->
+    <aside class="plane" id="plane" hidden aria-label="List">
+      <div class="planehead" id="planeHead"></div>
+      <div class="planebody" id="planeBody"></div>
+    </aside>
     <div class="panes" id="panes"></div>
 
     <!-- Terminal. Deliberately a SIBLING of #panes, not a child: render() sets

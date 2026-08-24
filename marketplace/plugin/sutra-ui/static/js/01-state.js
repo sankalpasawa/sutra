@@ -98,10 +98,37 @@ function lsGet(key, fallback){
 function lsSet(key, value){
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
 }
+/* ── the v3.3 navigation model (PLAN-25 S3) ─────────────────────────────────
+   Six DESTINATIONS replace the Home|Code rail tabs. Each destination except
+   Now owns a second fixed plane whose rows are the EXISTING screens — the
+   registry itself does not change. DEST_PLANES is the single source for what
+   each plane lists; the coverage test (test_nav.js) walks it against the
+   legacy railSpec inventory so nothing can silently fall out of reach. */
+const DESTS = ["now","focus","chats","org","team","settings"];
+const DEST_PLANES = {
+  /* focus: Balance today; the rest of the companion arrives later — the rows
+     exist now so the shape is honest about what is and is not built. */
+  focus:    [{screen:"balance", label:"Balance"},
+             {screen:null, label:"Daily brief",  soon:true},
+             {screen:null, label:"Session watch", soon:true}],
+  /* chats has no screen rows: its plane hosts the session list verbatim. */
+  chats:    [],
+  org:      [{screen:"departments"},{screen:"charters"},{screen:"placements"},
+             {screen:"knowledge"},{screen:"files"},{screen:"reorg"}],
+  team:     [{screen:"teamsutra"}],
+  settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
+             {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"routines"},{screen:"connectors"}]},
+             {group:"System",      rows:[{screen:"health"},{screen:"evals"},{screen:"usage"},{screen:"history"}]},
+             {group:"Preferences", rows:[{screen:"settings"}]}]
+};
+/* Where a destination lands before the operator has picked anything. */
+const DEST_DEFAULT_SCREEN = { now:"now", focus:"balance", chats:null,
+                              org:"departments", team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
                 railCollapsed:false, railSections:{}, railTab:"home",
+                dest:"now", destSel:{},
                 balanceTab:"today", sessCollapsed:{} };
   if (raw && typeof raw === "object"){
     if (raw.paneCollapsed && typeof raw.paneCollapsed === "object") out.paneCollapsed = raw.paneCollapsed;
@@ -113,6 +140,14 @@ function loadLayout(){
        under Project does not silently collapse a same-named bucket under Recent. */
     if (raw.sessCollapsed && typeof raw.sessCollapsed === "object") out.sessCollapsed = raw.sessCollapsed;
     if (raw.railTab === "home" || raw.railTab === "code") out.railTab = raw.railTab;
+    /* v3.3 destination (PLAN-25 S3). Migration: an operator whose stored
+       shell was the Code tab lands in Chats — the same surface renamed. */
+    if (DESTS.includes(raw.dest)) out.dest = raw.dest;
+    else if (raw.railTab === "code") out.dest = "chats";
+    if (raw.destSel && typeof raw.destSel === "object"){
+      for (const d of DESTS)
+        if (typeof raw.destSel[d] === "string") out.destSel[d] = raw.destSel[d];
+    }
     if (["today","week","month"].includes(raw.balanceTab)) out.balanceTab = raw.balanceTab;
     if (typeof raw.browseW === "number" && raw.browseW > 120) out.browseW = raw.browseW;
   }

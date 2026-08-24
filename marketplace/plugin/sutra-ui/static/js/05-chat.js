@@ -395,6 +395,13 @@ async function installUpdate(which){
   S.updBusy = null; render();
 }
 
+/* v3.3 (PLAN-25 S4): the Now destination's placeholder surface. Honest empty
+   state, no invented content — the founder designs this screen later. */
+SCREENS.now = () => `
+  <div class="zero"><h4>Now</h4>
+    <p>Placeholder — the Now surface is not designed yet. Everything else in the shell is live.</p>
+  </div>`;
+
 SCREENS.settings = () => {
   if (!SETTINGS) return `<div class="zero"><h4>Settings unavailable</h4>
     <p>${esc(S.runtimeError || S.setError || "GET /api/settings has not answered.")}</p>
@@ -524,7 +531,11 @@ SCREENS.settings = () => {
 /* ── Staged department creation (§3.3). Four collapsible sections and a completion meter —
    NOT a Next/Back wizard. Nothing is minted at any step; the last step renders a CLI string. */
 /* ══════════════════════ render ══════════════════════ */
-const TITLES = {connectors:["Connectors","External accounts · credentials in the OS keychain, never in this window"],
+const TITLES = {
+  /* v3.3 (PLAN-25 S4): Now is a deliberate placeholder — the destination
+     exists so the shell is complete; its surface is designed later. */
+  now:["Now","placeholder — surface not designed yet"],
+  connectors:["Connectors","External accounts · credentials in the OS keychain, never in this window"],
   teamsutra:["Teamsutra","~/.sutra-ui/teamsutra/t-*.json"],departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
   placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],

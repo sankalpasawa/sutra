@@ -87,6 +87,21 @@
      every composer stays reachable at the foot of its own pane. */
   @media(max-width:860px){.app{grid-template-columns:1fr}.rail{max-height:290px}}
 
+  /* ── v3.3 second plane (PLAN-25 S5) ──────────────────────────────────────
+     Gated on .app.threecol, which nothing sets until S7. minmax(0,1fr) on the
+     detail track so plane + terminal open together can never overflow. */
+  .app.threecol{grid-template-columns:224px 240px minmax(0,1fr) var(--termw, 0px)}
+  .app.threecol.noplane{grid-template-columns:224px minmax(0,1fr) var(--termw, 0px)}
+  .app.threecol.noplane .plane{display:none}
+  .plane{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
+         display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .planehead{display:flex;align-items:center;gap:8px;height:40px;flex:none;
+             padding:0 12px;border-bottom:1px solid var(--line-soft)}
+  .planehead h2{font-size:12.5px;font-weight:600;margin:0;flex:1;min-width:0;
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .planebody{flex:1;overflow-y:auto;min-height:0;padding-bottom:6px}
+  @media(max-width:860px){.app.threecol{grid-template-columns:1fr}}
+
   /* rail */
   .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
         display:flex;flex-direction:column;min-height:0}
