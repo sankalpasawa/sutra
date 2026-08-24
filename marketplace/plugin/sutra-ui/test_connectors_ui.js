@@ -35,10 +35,13 @@ function test(name, fn){
 }
 function assert(cond, msg){ if (!cond) throw new Error(msg); }
 
-/* Slice out the body of the `.rail` click listener so we can assert on it. */
+/* Slice out the body of the shell's shared click listener so we can assert on
+   it. v3.3 moved it from `.rail` to `#app` (the session list now lives in the
+   second plane); the assertion's subject — connector handlers must not ride
+   the shell delegation — is unchanged. */
 function railListenerBody(src){
-  const start = src.indexOf('document.querySelector(".rail").addEventListener("click"');
-  assert(start !== -1, "rail click listener not found");
+  const start = src.indexOf('document.getElementById("app").addEventListener("click"');
+  assert(start !== -1, "shell (#app) click listener not found");
   const next = src.indexOf('document.addEventListener("click"', start);
   return src.slice(start, next === -1 ? src.length : next);
 }

@@ -115,6 +115,14 @@ function refetchOrg(){
 
 async function boot(){
   const panes = document.getElementById("panes");
+  /* v3.3 (PLAN-25 S9): align the screen with the restored destination BEFORE
+     the first render, so the shell never opens with a rail saying one thing
+     and the browse pane showing another. */
+  if (S.ui.dest === "chats"){ S.ui.browseClosed = true; }
+  else {
+    const sel = S.ui.destSel[S.ui.dest];
+    S.screen = (sel && SCREENS[sel]) ? sel : (DEST_DEFAULT_SCREEN[S.ui.dest] || S.screen);
+  }
   /* One registry holds one org. This used to read /api/tenants first and gate
      the whole boot on the answer -- including a silent `if (!S.tenant) return`
      that rendered an empty panel with no error when the answer was unexpected.
@@ -515,21 +523,11 @@ railToggle.onclick = ()=>{
   render();
 };
 
-/* Rail sections collapse on a click anywhere on their header. */
+/* v3.3 (PLAN-25 S9): a rail click picks a DESTINATION. The plane's own rows
+   carry data-screen and ride the existing screen delegation unchanged. */
 document.querySelector(".rail").addEventListener("click", e=>{
-  const tabBtn = e.target.closest("[data-railtab]");
-  if (tabBtn){
-    S.ui.railTab = tabBtn.dataset.railtab;
-    saveLayout();
-    renderRail();
-    return;
-  }
-  const sec = e.target.closest("[data-railsec]");
-  if (!sec) return;
-  const key = sec.dataset.railsec;
-  S.ui.railSections[key] = !(S.ui.railSections[key] !== false);
-  saveLayout();
-  renderRail();
+  const destBtn = e.target.closest("[data-dest]");
+  if (destBtn) goDest(destBtn.dataset.dest);
 }, true);
 
 /* The tenant switcher popover used to be wired here. 5781a2f ("remove tenancy")

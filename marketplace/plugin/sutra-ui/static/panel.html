@@ -18,57 +18,11 @@
           </svg>
         </button>
       </div>
-      <div class="rtabs" role="tablist" aria-label="Sidebar">
-        <button type="button" role="tab" id="tabBtnHome" data-railtab="home"
-                aria-selected="true" aria-controls="tabHome">Home</button>
-        <button type="button" role="tab" id="tabBtnCode" data-railtab="code"
-                aria-selected="false" aria-controls="tabCode">Code</button>
-      </div>
+      <!-- v3.3 (PLAN-25 S7): six destinations, one rail, no tabs.
+           renderRail() fills this list; the second plane (below, beside the
+           rail in the grid) carries each destination's rows. -->
       <div class="rscroll">
-       <div class="rtab" id="tabHome" role="tabpanel" aria-labelledby="tabBtnHome">
-        <button class="grp" type="button" data-railsec="org" aria-expanded="true"
-                aria-controls="secOrg">Organization
-          <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="rsec" id="secOrg"><ul class="nav" id="navOrg"></ul></div>
-        <button class="grp" type="button" data-railsec="change" aria-expanded="true"
-                aria-controls="secChange">Change
-          <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="rsec" id="secChange"><ul class="nav" id="navChange"></ul></div>
-        <button class="grp" type="button" data-railsec="runtime" aria-expanded="true"
-                aria-controls="secRuntime">Runtime
-          <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="rsec" id="secRuntime"><ul class="nav" id="navRuntime"></ul></div>
-       </div>
-       <div class="rtab" id="tabCode" role="tabpanel" aria-labelledby="tabBtnCode" hidden>
-        <button class="newBtn" id="newSession" type="button">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-          New session
-        </button>
-        <div class="rtoggle">
-          <button type="button" data-sgroup="recent">Recent</button>
-          <button type="button" data-sgroup="project">Project</button>
-          <button type="button" data-sgroup="dept">Dept</button>
-          <!-- Sort applies to the PROJECT grouping only: "Recent" is already an
-               ordering (that is what the buckets are) and "Dept" is ordered by the
-               department path, which is a hierarchy, not a preference. The control
-               is therefore disabled rather than hidden outside Project view -- a
-               control that vanishes reads as a bug, one that greys out reads as
-               "not for this view". -->
-          <button type="button" class="rsort" id="sessSort"
-                  title="Sort projects" aria-label="Sort projects">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" aria-hidden="true">
-              <path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l3 3M17 20l-3-3"/></svg>
-          </button>
-        </div>
-        <div id="sessions"></div>
-       </div>
+        <ul class="nav" id="railnav"></ul>
       </div>
       <div class="rfoot">
         <!-- Filled by paintAvatar() from /api/settings claude_account. Empty
@@ -108,6 +62,32 @@
     <aside class="plane" id="plane" hidden aria-label="List">
       <div class="planehead" id="planeHead"></div>
       <div class="planebody" id="planeBody"></div>
+      <!-- The Chats plane: the old Code tab's body, MOVED VERBATIM (PLAN-25 S8).
+           Same ids, same controls, same behaviour — only the container changed. -->
+      <div class="planebody" id="planeChats" hidden>
+        <button class="newBtn" id="newSession" type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          New chat
+        </button>
+        <div class="rtoggle">
+          <button type="button" data-sgroup="recent">Recent</button>
+          <button type="button" data-sgroup="project">Project</button>
+          <button type="button" data-sgroup="dept">Dept</button>
+          <!-- Sort applies to the PROJECT grouping only: "Recent" is already an
+               ordering (that is what the buckets are) and "Dept" is ordered by the
+               department path, which is a hierarchy, not a preference. The control
+               is therefore disabled rather than hidden outside Project view -- a
+               control that vanishes reads as a bug, one that greys out reads as
+               "not for this view". -->
+          <button type="button" class="rsort" id="sessSort"
+                  title="Sort projects" aria-label="Sort projects">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" aria-hidden="true">
+              <path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l3 3M17 20l-3-3"/></svg>
+          </button>
+        </div>
+        <div id="sessions"></div>
+      </div>
     </aside>
     <div class="panes" id="panes"></div>
 

@@ -127,7 +127,7 @@ const DEST_DEFAULT_SCREEN = { now:"now", focus:"balance", chats:null,
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
-                railCollapsed:false, railSections:{}, railTab:"home",
+                railCollapsed:false, railSections:{},
                 dest:"now", destSel:{},
                 balanceTab:"today", sessCollapsed:{} };
   if (raw && typeof raw === "object"){
@@ -139,9 +139,9 @@ function loadLayout(){
     /* Collapsed session groups, keyed "<mode>:<groupkey>" so a group collapsed
        under Project does not silently collapse a same-named bucket under Recent. */
     if (raw.sessCollapsed && typeof raw.sessCollapsed === "object") out.sessCollapsed = raw.sessCollapsed;
-    if (raw.railTab === "home" || raw.railTab === "code") out.railTab = raw.railTab;
-    /* v3.3 destination (PLAN-25 S3). Migration: an operator whose stored
-       shell was the Code tab lands in Chats — the same surface renamed. */
+    /* v3.3 destination (PLAN-25 S3/S10). Migration: an operator whose stored
+       shell was the Code tab lands in Chats — the same surface renamed. The
+       railTab field itself is retired; only the migration still reads it. */
     if (DESTS.includes(raw.dest)) out.dest = raw.dest;
     else if (raw.railTab === "code") out.dest = "chats";
     if (raw.destSel && typeof raw.destSel === "object"){

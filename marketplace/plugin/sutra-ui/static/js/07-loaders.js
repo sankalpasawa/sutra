@@ -857,7 +857,11 @@ function clearRings(){
     n.classList.remove("ring","drg","ok-t"); n.removeAttribute("title"); });
   const s=document.getElementById("dragStatus"); if(s) s.textContent="";
 }
-document.querySelector(".rail").addEventListener("click", e=>{
+/* v3.3 (PLAN-25 S8): the session list and plane rows moved out of .rail into
+   #plane, so this delegation now hangs on #app — the shared ancestor of both.
+   Every branch below targets a closest() selector, so widening the container
+   changes which clicks ARRIVE here, not which ones ACT. */
+document.getElementById("app").addEventListener("click", e=>{
   /* Feature A: the ⋮ trigger and its menu items. These run BEFORE the data-open
      branch below, each stopPropagation()+returns, so opening the menu never also
      opens the pane, and the document-level closer added later does not
@@ -884,9 +888,12 @@ document.querySelector(".rail").addEventListener("click", e=>{
        and render() would blank the browse pane. */
     if (b.dataset.screen === "terminal"){ termToggle(); renderRail(); return; }
     S.screen=b.dataset.screen;
+    /* v3.3 (PLAN-25 S9): remember the pick per destination, so returning to a
+       destination restores the screen the operator was on. */
+    if (DESTS.includes(S.ui.dest)) S.ui.destSel[S.ui.dest] = S.screen;
     /* Picking a screen is the OPEN gesture, the way clicking a session row is:
        a closed browse pane reopens rather than swapping content nobody can see. */
-    if (S.ui.browseClosed){ S.ui.browseClosed = false; saveLayout(); }
+    if (S.ui.browseClosed){ S.ui.browseClosed = false; saveLayout(); } else saveLayout();
     if (S.screen === "git") loadGit(false);      /* lazy: only when actually opened */
     if (S.screen === "editor") loadFs(false);    /* walking a real project is not free */
     if (S.screen === "files") loadFilesScreen(); /* lazy: spawns the sidecar on demand */
@@ -941,7 +948,7 @@ document.querySelector(".rail").addEventListener("click", e=>{
   const g = e.target.closest("[data-goto]");
   if (g){ S.screen="departments"; S.sel=g.dataset.goto; render(); }
 });
-document.querySelector(".rail").addEventListener("keydown", e=>{
+document.getElementById("app").addEventListener("keydown", e=>{
   const ri = e.target.closest("[data-renameinput]");
   if (ri && e.key === "Enter"){ e.preventDefault(); renameSession(ri.dataset.sid, ri.value); }
   if (ri && e.key === "Escape"){ S.sessRename = null; renderRail(); }

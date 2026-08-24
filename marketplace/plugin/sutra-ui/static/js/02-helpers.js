@@ -531,6 +531,10 @@ const ICON = {
   auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
   chevron:'<path d="M6 9l6 6 6-6"/>',
+  /* v3.3 destinations (PLAN-25 S7) */
+  focus:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/>',
+  chats:'<path d="M20.5 12c0 4.1-3.8 7.4-8.5 7.4-1.1 0-2.2-.2-3.2-.5L4 20.5l1.7-4A7 7 0 013.5 12c0-4.1 3.8-7.4 8.5-7.4s8.5 3.3 8.5 7.4z"/>',
+  team:'<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.2 2.7-5.4 6-5.4s6 2.2 6 5.4"/><path d="M16 5.6a3.2 3.2 0 010 5.6M18 13.8c2 .8 3.4 2.6 3.4 5.2"/>',
   bal:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M12 12c2.4-1.6 2.4-4.9 0-6.5M12 12c-2.4 1.6-2.4 4.9 0 6.5"/>',
   /* A gauge: what a utilization window is. Deliberately not the clock `rout`
      already uses -- two nav rows with the same glyph are two rows nobody can
@@ -706,40 +710,91 @@ function sessMenuHtml(s){
   </div>`;
 }
 
-function renderRail(){
+/* ── v3.3 shell (PLAN-25 S6-S9) ─────────────────────────────────────────────
+   The rail renders the six DESTINATIONS; the second plane renders the chosen
+   destination's rows, every one of them an EXISTING screen. railSpec() stays
+   the single source for live counts — the planes consume it, so the badge
+   logic (and its tests) did not move. */
+const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", org:"Org",
+                     team:"Team Sutra", settings:"Settings" };
+const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", org:"dept",
+                     team:"team", settings:"gear" };
+
+function goDest(d){
+  if (!DESTS.includes(d)) return;
+  S.ui.dest = d;
+  if (d === "chats"){
+    /* Chats is the session surface: the browse pane yields to session panes,
+       exactly as the old Code tab behaved. */
+    S.ui.browseClosed = true;
+  } else {
+    S.ui.browseClosed = false;
+    const sel = S.ui.destSel[d];
+    S.screen = (sel && SCREENS[sel]) ? sel : DEST_DEFAULT_SCREEN[d];
+  }
+  saveLayout(); render();
+}
+
+/* One destination's plane rows, decorated with railSpec()'s live counts. */
+function planeRows(dest){
   const spec = railSpec();
-  const mk = items => items.map(it=>`
-    <li><button type="button" data-screen="${it.id}" ${it.disabled?"disabled":""}
-        aria-current="${it.toggle ? (it.id==="terminal" && S.termOpen)
-                                  : (!S.ui.browseClosed && S.screen===it.id)}"
-        ${it.disabled?'title="§8.5.3 — an item appears in the rail only if a file backs it. The FTS5 derived index (§7.3) does not exist yet."':""}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${ICON[it.i]}</svg>
-      ${esc(it.n)}
-      ${it.disabled?`<span class="dis">${esc(it.dis)}</span>`
-        :(it.c!==undefined?`<span class="ct ${it.warn?"w":""}">${it.c}</span>`:"")}
+  const byId = {};
+  [...spec.org, ...spec.change, ...spec.runtime].forEach(it => { byId[it.id] = it; });
+  const row = r => {
+    const it = r.screen ? (byId[r.screen] || {}) : {};
+    return { screen: r.screen, label: r.label || it.n || r.screen,
+             soon: !!r.soon, disabled: !!(r.soon || it.disabled), dis: it.dis,
+             c: it.c, warn: !!it.warn, toggle: !!it.toggle };
+  };
+  const groups = [];
+  for (const entry of (DEST_PLANES[dest] || [])){
+    if (entry.group) groups.push({ label: entry.group, rows: entry.rows.map(row) });
+    else {
+      if (!groups.length || groups[groups.length-1].label) groups.push({ label:null, rows:[] });
+      groups[groups.length-1].rows.push(row(entry));
+    }
+  }
+  return groups;
+}
+
+function renderPlane(){
+  const app = document.getElementById("app"), plane = document.getElementById("plane");
+  if (!app || !plane) return;
+  app.classList.add("threecol");
+  const dest = DESTS.includes(S.ui.dest) ? S.ui.dest : "now";
+  const off = dest === "now";                     /* Now is the one full-bleed surface */
+  app.classList.toggle("noplane", off);
+  plane.hidden = off;
+  const head = document.getElementById("planeHead");
+  const body = document.getElementById("planeBody");
+  const chats = document.getElementById("planeChats");
+  if (head) head.innerHTML = `<h2>${DEST_LABEL[dest] || ""}</h2>`;
+  if (chats) chats.hidden = dest !== "chats";
+  if (!body) return;
+  body.hidden = dest === "chats";
+  if (dest === "chats"){ body.innerHTML = ""; return; }
+  body.innerHTML = planeRows(dest).map(g => `
+    ${g.label ? `<div class="rgrp">${esc(g.label)}</div>` : ""}
+    <ul class="nav">${g.rows.map(it=>`
+      <li><button type="button" ${it.screen?`data-screen="${it.screen}"`:""} ${it.disabled?"disabled":""}
+          aria-current="${it.toggle ? (it.screen==="terminal" && S.termOpen)
+                                    : (!S.ui.browseClosed && S.screen===it.screen)}"
+          ${it.soon?'title="Coming soon — part of Focus"':""}>
+        <span class="lab">${esc(it.label)}</span>
+        ${it.soon?`<span class="dis">soon</span>`
+          : it.disabled && it.dis ? `<span class="dis">${esc(it.dis)}</span>`
+          : (it.c!==undefined?`<span class="ct ${it.warn?"w":""}">${it.c}</span>`:"")}
+      </button></li>`).join("")}</ul>`).join("");
+}
+
+function renderRail(){
+  const nav = document.getElementById("railnav");
+  if (nav) nav.innerHTML = DESTS.map(d=>`
+    <li><button type="button" data-dest="${d}" aria-current="${S.ui.dest===d}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${ICON[DEST_ICON[d]]}</svg>
+      ${DEST_LABEL[d]}
     </button></li>`).join("");
-  navOrg.innerHTML = mk(spec.org);
-  navChange.innerHTML = mk(spec.change);
-  navRuntime.innerHTML = mk(spec.runtime);
-
-  /* Section collapse. Default is EXPANDED, so a fresh install shows the whole
-     rail; only an explicit collapse is persisted. */
-  document.querySelectorAll("[data-railsec]").forEach(btn=>{
-    const key = btn.dataset.railsec;
-    const open = S.ui.railSections[key] !== false;
-    btn.setAttribute("aria-expanded", String(open));
-    const body = document.getElementById(btn.getAttribute("aria-controls"));
-    if (body) body.hidden = !open;
-  });
-
-  /* Tab visibility. Home is the default so a fresh install lands on the org
-     surface; only an explicit switch is persisted. */
-  const tab = (S.ui.railTab === "code") ? "code" : "home";
-  document.querySelectorAll("[data-railtab]").forEach(b=>
-    b.setAttribute("aria-selected", String(b.dataset.railtab === tab)));
-  const home = document.getElementById("tabHome"), code = document.getElementById("tabCode");
-  if (home) home.hidden = tab !== "home";
-  if (code) code.hidden = tab !== "code";
+  renderPlane();
 
 
   /* Sessions, two ways.
