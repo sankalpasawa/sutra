@@ -1004,6 +1004,67 @@ document.getElementById("newSession").onclick = () =>
   themeBtn.onclick=()=>{ const n=eff()==="light"?"dark":"light";
     r.setAttribute("data-theme",n); wr(n); lab(); };
 })();
+/* ── v3.3 identity footer (PLAN-25 S12-S14) ─────────────────────────────────
+   The bottom-left states the ROLE the operator is acting as and is the control
+   that switches it. The menu has exactly two jobs: Act as, and Switch theme —
+   deliberately no account chrome (founder direction 2026-08-24). The role is a
+   session-scoping label persisted per panel; it does not (yet) re-scope any
+   backend read — that wiring is a later, separate decision. */
+(function(){
+  const KEY = "sutra.panel.role";
+  /* The holding's operating identities. Static by design: roles are a founder
+     decision, not a discovery — extending this list is a one-line change. */
+  const ROLES = [
+    { name:"CEO of Asawa Inc.", who:"holding" },
+    { name:"CEO of Sutra",      who:"subsidiary" }
+  ];
+  const rd = ()=>{ try{ return localStorage.getItem(KEY) }catch(e){ return null } };
+  const wr = v =>{ try{ localStorage.setItem(KEY, v) }catch(e){} };
+  const current = ()=> ROLES.some(x=>x.name===rd()) ? rd() : ROLES[0].name;
+
+  const idEl = document.getElementById("identity");
+  const btn  = document.getElementById("idBtn");
+  const menu = document.getElementById("idMenu");
+  const list = document.getElementById("roleList");
+  if (!idEl || !btn || !menu || !list) return;
+
+  function paintRole(){
+    const roleEl = document.getElementById("idRole");
+    if (roleEl) roleEl.textContent = current();
+    list.innerHTML = ROLES.map(x=>`
+      <li><button type="button" data-role="${x.name}" aria-current="${x.name===current()}">
+        ${x.name}<span class="idwho">${x.who}</span></button></li>`).join("");
+  }
+  function setOpen(open){
+    menu.hidden = !open;
+    idEl.classList.toggle("open", open);
+    btn.setAttribute("aria-expanded", String(open));
+  }
+  btn.onclick = e => { e.stopPropagation(); setOpen(menu.hidden); };
+  list.onclick = e => {
+    const b = e.target.closest("[data-role]"); if (!b) return;
+    wr(b.dataset.role); paintRole(); setOpen(false);
+  };
+  document.addEventListener("click", e => {
+    if (!menu.hidden && !idEl.contains(e.target)) setOpen(false);
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && !menu.hidden) setOpen(false);
+  });
+  paintRole();
+})();
+/* Telemetry line (PLAN-25 S14): the same utilization number the Usage screen
+   shows, or an honest em-dash before the first read. renderRail() refreshes it
+   on every render, so it tracks loadUsage() without its own timer. */
+function paintTelemetry(){
+  const el = document.getElementById("idStat");
+  if (!el) return;
+  const pct = (S.usage && S.usage.available)
+    ? Math.round((((S.usage.limits||[]).find(r=>r.active)
+                   || (S.usage.limits||[])[0] || {}).percent) ?? NaN)
+    : NaN;
+  el.textContent = Number.isFinite(pct) ? pct + "% of the usage window" : "—";
+}
 /* ══════════════════════ bootstrap ══════════════════════
    One registry, one org, so there is no scope to settle before reading it.
    boot() reads the registry, the runtime and the sessions together and lets

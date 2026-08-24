@@ -795,6 +795,7 @@ function renderRail(){
       ${DEST_LABEL[d]}
     </button></li>`).join("");
   renderPlane();
+  if (typeof paintTelemetry === "function") paintTelemetry();
 
 
   /* Sessions, two ways.

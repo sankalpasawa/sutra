@@ -24,28 +24,39 @@
       <div class="rscroll">
         <ul class="nav" id="railnav"></ul>
       </div>
-      <div class="rfoot">
-        <!-- Filled by paintAvatar() from /api/settings claude_account. Empty
-             in the markup on purpose: shipping initials here means shipping
-             SOMEONE'S initials, and the last set belonged to a developer. -->
-        <div class="av av-unknown" title="Not signed in to Claude on this machine"></div>
-        <!-- Tenancy is removed: one registry holds one org. The label that named
-             the tenant here is gone too -- naming a scope that has no alternative
-             is noise, and it was the last place the word appeared to an operator. -->
-        <div style="margin-left:auto;display:flex;gap:2px">
-          <button class="ib" id="termBtn" type="button" aria-pressed="false"
-                  aria-label="Show the terminal" title="Terminal — the real claude TUI in a PTY">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.9" aria-hidden="true">
-              <rect x="2.5" y="4" width="19" height="16" rx="2"/>
-              <path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/>
-            </svg>
-          </button>
-          <button class="ib" id="themeBtn" type="button" aria-label="Switch theme">
-            <svg class="ico-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
-            <svg class="ico-moon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 019.8 4a8.4 8.4 0 102.4 16.4A8.3 8.3 0 0020 14.2z"/></svg>
-          </button>
+      <!-- v3.3 identity footer (PLAN-25 S11-S12). Bottom-left answers "who am
+           I acting as": the ROLE, then session telemetry. Clicking it opens a
+           menu with exactly two jobs — Act as, and Switch theme. The avatar is
+           still filled by paintAvatar() from /api/settings claude_account. -->
+      <div class="rfoot identity" id="identity">
+        <div class="idmenu" id="idMenu" hidden>
+          <div class="idsec">Act as</div>
+          <ul class="nav" id="roleList"></ul>
+          <div class="iddiv"></div>
+          <ul class="nav"><li>
+            <button class="idrow" id="themeBtn" type="button" aria-label="Switch theme">
+              <svg class="ico-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
+              <svg class="ico-moon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 019.8 4a8.4 8.4 0 102.4 16.4A8.3 8.3 0 0020 14.2z"/></svg>
+              Switch theme
+            </button>
+          </li></ul>
         </div>
+        <button class="idbtn" id="idBtn" type="button" aria-haspopup="menu" aria-expanded="false">
+          <div class="av av-unknown" title="Not signed in to Claude on this machine"></div>
+          <span class="idtext">
+            <span class="idrole" id="idRole"></span>
+            <span class="idstat" id="idStat">—</span>
+          </span>
+          <svg class="idcaret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <button class="ib" id="termBtn" type="button" aria-pressed="false"
+                aria-label="Show the terminal" title="Terminal — the real claude TUI in a PTY">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.9" aria-hidden="true">
+            <rect x="2.5" y="4" width="19" height="16" rx="2"/>
+            <path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/>
+          </svg>
+        </button>
       </div>
     </nav>
 

@@ -102,6 +102,34 @@
   .planebody{flex:1;overflow-y:auto;min-height:0;padding-bottom:6px}
   @media(max-width:860px){.app.threecol{grid-template-columns:1fr}}
 
+  /* ── v3.3 identity footer (PLAN-25 S11-S12) ──────────────────────────── */
+  .identity{position:relative;padding:6px 7px}
+  .idbtn{flex:1;min-width:0;display:flex;align-items:center;gap:7px;border:0;background:none;
+         cursor:pointer;padding:5px 6px;border-radius:7px;text-align:left;color:inherit}
+  .idbtn:hover{background:var(--acc-bg)}
+  .idbtn:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .idtext{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .idrole{font:600 11.5px/1.25 var(--sans);color:var(--ink);overflow:hidden;
+          text-overflow:ellipsis;white-space:nowrap}
+  .idstat{font:400 10px/1.3 var(--sans);color:var(--faint);font-variant-numeric:tabular-nums;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .idcaret{color:var(--faint);flex:none;transition:transform .14s ease}
+  .identity.open .idcaret{transform:rotate(180deg)}
+  .idmenu{position:absolute;left:7px;right:7px;bottom:calc(100% - 2px);z-index:50;
+          background:var(--card);border:1px solid var(--line);border-radius:9px;padding:4px;
+          box-shadow:var(--shadow)}
+  .idmenu[hidden]{display:none}
+  .idsec{font:600 9px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;
+         color:var(--faint);padding:8px 10px 4px}
+  .iddiv{height:1px;background:var(--line-soft);margin:4px 3px}
+  .idrow,.idmenu .nav button{display:flex;align-items:center;gap:8px;width:100%;border:0;
+         background:none;color:var(--muted);font:400 12px/1 var(--sans);text-align:left;
+         cursor:pointer;padding:6px 9px;border-radius:6px}
+  .idrow:hover,.idmenu .nav button:hover{background:var(--acc-bg);color:var(--ink)}
+  .idmenu .nav button[aria-current="true"]{color:var(--ink);font-weight:600}
+  .idmenu .nav button .idwho{margin-left:auto;font-size:9.5px;color:var(--faint)}
+  @media (prefers-reduced-motion:reduce){.idcaret{transition:none}}
+
   /* rail */
   .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
         display:flex;flex-direction:column;min-height:0}
