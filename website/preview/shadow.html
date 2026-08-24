@@ -3,12 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow on Sutra Desktop — preview v4.1</title>
-<!-- v4.1 (2026-08-24): LIGHT theme — the app's real default on a light-mode Mac (panel.css
-     prefers-color-scheme:light values). New: Now composer + new-chat, "Shadow is watching" strip,
-     Shadow activity line, delegation flow (brief -> new chat started by Shadow). The app itself
-     follows the system theme; this mock shows the light rendering the founder sees.
-     Spec: holding/plans/shadow/ (ARCHITECTURE §2 delegation, PRD R19-R22) -->
+<title>Shadow on Sutra Desktop — preview v4.2</title>
+<!-- v4.2 (2026-08-24): LIGHT theme (the app's real default on a light-mode Mac). One composer,
+     in-conversation mission card (updates in place, single Start), bottom nudge, one word: watching.
+     Spec: holding/plans/shadow/ (ARCHITECTURE §2 delegation, PRD R19-R23, DESIGN-IA.md) -->
 <style>
 :root{
   --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
@@ -141,7 +139,7 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
   <div class="fab"><div class="sdot"><b>S</b><span class="n">1</span></div></div>
 </div>
 
-<p class="cap"><b>2 · One line, one conversation, one action.</b> <span class="mile">MVP</span> Same composer, no header, no Edit. Shadow answers with a card; you keep talking and the card updates in place. One action — Start the chat. It starts in the background: the card flips to Started and a small nudge appears. You stay where you are.</p>
+<p class="cap"><b>2 · One line, one conversation, one action.</b> <span class="mile">MVP</span> Same composer, no header, no Edit. The first card is Ready; you kept talking, it updated, you tapped Start — the second card is the SAME card, now flipped to Started, and the nudge confirms it. You never left this page.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
@@ -164,15 +162,15 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
         <div class="row"><span>Chat</span><span><b>EMI auto-fix</b> — new, in paisa</span></div>
         <div class="row"><span>Done when</span><span>a PR link or a tested patch summary appears in the chat</span></div>
         <div class="row"><span>I&rsquo;ll tell it</span><span>your one line · last week&rsquo;s rounding fix · the 3 differences found yesterday</span></div>
-        <div class="acts"><span class="act">Start the chat</span><span class="act q">or keep telling me&hellip;</span></div>
+        <div class="acts"><span class="act">Start the chat</span><span style="color:var(--faint);font-size:11px">&hellip;or keep telling me</span></div>
       </div>
       <div class="mu" style="align-self:flex-end;max-width:80%">Also make it run before every EMI check, not just this once.</div>
       <div class="brief">
-        <div class="k">Shadow &middot; updated just now</div>
+        <div class="k">Shadow &middot; started 10:52</div>
         <div class="row"><span>Chat</span><span><b>EMI auto-fix</b> — new, in paisa</span></div>
         <div class="row"><span>Done when</span><span>a tested patch summary appears AND the fix runs before every EMI check</span></div>
         <div class="row"><span>I&rsquo;ll tell it</span><span>everything above, plus: wire it into the nightly routine</span></div>
-        <div class="acts"><span class="act">Start the chat</span><span class="act q">or keep telling me&hellip;</span></div>
+        <div class="acts"><span style="color:var(--done);font-weight:700;font-size:12px">Started &middot; follow it in Focus &rsaquo; Shadow</span></div>
       </div>
     </div>
     <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:var(--bg);font-size:12px;border-radius:99px;padding:7px 16px;box-shadow:0 8px 24px rgba(28,25,23,.25)">EMI auto-fix started &middot; in Chats &middot; follow it in Focus &rsaquo; Shadow</div>
