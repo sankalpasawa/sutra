@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.119.3 (2026-08-24)
+
+- **The subtitle is the ask, never the ritual.** A first prompt that opens with
+  governance blocks (PLACEMENT/INPUT/header) now has them lifted before the
+  45-word cap, so the header's subtitle reads what the chat is about. An
+  all-governance prompt falls back to the title. Pinned at L1 (12i) and L2 (42e).
+
 ## 2.119.2 (2026-08-24)
 
 **Chat header round 2 + transcript noise removed (founder feedback).**

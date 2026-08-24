@@ -3220,6 +3220,15 @@ test("42c. the pane's 'transcript' tag is gone; fork survives", () => {
   assert.ok(/>fork<\/span>/.test(fork), "fork is a user-relevant fact and stays");
 });
 
+test("42e. the subtitle strips a governance-opening prompt down to the actual ask", () => {
+  const h = sandbox.sessionPane({ id: "sid-42e", title: "t42e", real: false, cwd: "", channel: null,
+    turns: [{ text: 'PLACEMENT: D1.1 Core | "C"\n\nINPUT: a\nTYPE: task\nEXISTING HOME: none\nROUTE: r\nFIT CHECK: none\nACTION: y\n\nMake the header calm.' }] });
+  const m = h.match(/<span class="phs">([^<]*)<\/span>/);
+  assert.ok(m, "subtitle missing");
+  assert.ok(!/PLACEMENT:|INPUT:/.test(m[1]), "governance leaked into the subtitle");
+  assert.ok(/Make the header calm\./.test(m[1]), "the ask survives");
+});
+
 test("42d. the department chip is the LATEST FILED turn's leaf, labelled as such — absent when nothing was filed", () => {
   const filed = sandbox.sessionPane({ id: "sid-42d", title: "t", real: false, cwd: "", channel: null,
     turns: [{ text: "a", domain: { ref: "d1", name: "Sutra OS" } }, { text: "b" }] });

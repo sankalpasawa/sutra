@@ -649,7 +649,7 @@ test('11h. GUARD: "Governance state:" needs the exact plugin prefix', () => {
 });
 
 /* ── 12. sessSummary — the header, deterministically ───────────────────────── */
-const SUM = new Function(slice('function gvClean', 'return v;') + slice('function sessSummary', 'return v + (cut') + '; return sessSummary;')();
+const SUM = new Function(slice('function gvClean', 'return v;') + slice('function parseGov', 'return { g, body:') + slice('function sessSummary', 'return v + (cut') + '; return sessSummary;')();
 test('12a. 45 words, then an ellipsis', () => {
   const t = Array.from({ length: 50 }, (_, i) => 'w' + i).join(' ');
   const v = SUM({ turns: [{ text: t }] });
@@ -810,7 +810,7 @@ test('13q. the documented "[STAGE-1-FAIL · CLARIFY · attempt:1/1]" header is a
 });
 
 /* ── 12d-h. sessSummary hardening (refuter 2026-08-23) ───────────────────── */
-const SUM2 = new Function(slice('function gvClean', 'return v;') + slice('function sessSummary', 'return v + (cut') + '; return sessSummary;')();
+const SUM2 = new Function(slice('function gvClean', 'return v;') + slice('function parseGov', 'return { g, body:') + slice('function sessSummary', 'return v + (cut') + '; return sessSummary;')();
 test('12d. inert: control, bidi and zero-width characters never reach the header', () => {
   const v = SUM2({ turns: [{ text: 'safe‮​\x07 text' }] });
   assert.strictEqual(v, 'safe text');
@@ -830,6 +830,15 @@ test('12h. odd turns never throw: null turn, non-array turns, non-string text', 
   assert.strictEqual(SUM2({ title: 't', turns: [null] }), 't');
   assert.strictEqual(SUM2({ title: 't', turns: 'nope' }), 't');
   assert.strictEqual(SUM2({ title: 't', turns: [{ text: { a: 1 } }] }), 't');
+});
+
+test('12i. a prompt that OPENS with governance blocks yields a subtitle without them (founder 2026-08-24)', () => {
+  const prompt = 'PLACEMENT: D1.1 Core Plugin | "Flow spine"\n\nINPUT: fix the header\nTYPE: task\nEXISTING HOME: none\nROUTE: direct\nFIT CHECK: none\nACTION: do it\n\nImprove how the chat header reads for real sessions.';
+  const v = SUM2({ title: 'fallback', turns: [{ text: prompt }] });
+  assert.ok(!/PLACEMENT:|INPUT:|TYPE:/.test(v), 'governance leaked into the subtitle: ' + v);
+  assert.ok(/Improve how the chat header reads/.test(v), 'the actual ask must survive');
+  const allGov = SUM2({ title: 'the title', turns: [{ text: 'INPUT: x\nTYPE: task\nEXISTING HOME: none\nROUTE: r\nFIT CHECK: none\nACTION: y' }] });
+  assert.strictEqual(allGov, 'the title', 'an all-governance prompt falls back to the title');
 });
 
 /* ── 14. the Output Trace as the spec writes it: a blockquote ──────────────── */

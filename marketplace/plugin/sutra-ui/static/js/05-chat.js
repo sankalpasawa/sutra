@@ -1099,7 +1099,13 @@ function sessSummary(s){
   const title = s && typeof s.title === "string" ? s.title : "";
   const strip = (str) => gvClean(
     String(str).replace(/```[\s\S]*?```/g, " ").replace(/^\s*```.*$/gm, " "), 100000);
-  let v = strip(t0) || strip(title);
+  /* founder 2026-08-24: prompts in governed sessions OPEN with governance
+     blocks (PLACEMENT:/INPUT:/H-Sutra header), and a subtitle that reads
+     "PLACEMENT: D1.1 …" says nothing about the chat. parseGov lifts them the
+     same way it does for responses; guarded because the subtitle must never
+     throw, with the raw text as the last resort — something beats nothing. */
+  const degov = (str) => { try { return parseGov(String(str)).body; } catch (e) { return String(str); } };
+  let v = strip(degov(t0)) || strip(degov(title)) || strip(t0) || strip(title);
   const words = v.split(" ").filter(Boolean);
   let cut = false;
   if (words.length > 45){ v = words.slice(0, 45).join(" "); cut = true; }
