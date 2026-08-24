@@ -67,6 +67,11 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
 .sidecol{flex:1;display:flex;flex-direction:column;gap:12px}
 .panelbox{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:12px 14px}
 .panelbox .h4{margin-top:0}
+.ptabs{display:flex;gap:16px;border-bottom:1px solid var(--line-soft);margin-bottom:9px}
+.ptabs span{font-size:12px;color:var(--muted);padding-bottom:7px}
+.ptabs b{font-size:12px;color:var(--ink);font-weight:600;border-bottom:2px solid var(--accent);padding-bottom:7px}
+.ptabs .c{color:var(--faint);font-size:10.5px;margin-left:3px}
+.statelabel{font-size:9.5px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase;margin:-4px 0 6px}
 .wrow{display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--line-soft);font-size:12px;color:var(--muted)}
 .wrow:first-of-type{border-top:0}
 .wrow b{color:var(--ink);font-weight:600} .wrow .st{margin-left:auto}
@@ -120,7 +125,7 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
   <div class="fab"><div class="sdot"><b>S</b><span class="n">3</span></div></div>
 </div>
 
-<p class="cap"><b>2 · Focus › Shadow — Shadow's home.</b> <span class="mile">MVP</span> The full Shadow chat lives here, next to what it's watching (with your on/off toggles) and its missions. Starting something isn't a form — Shadow offers its own templates and shapes the card to the use case.</p>
+<p class="cap"><b>2 · Focus › Shadow — Shadow's home.</b> <span class="mile">MVP</span> The full chat, and beside it ONE plane with two tabs — everything Shadow does is either passive or active: <b>Watching</b> (your on/off toggles) | <b>Working</b> (missions). Shown twice below so you can see both tab states.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
@@ -160,14 +165,15 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
       </div>
       <div class="sidecol">
         <div class="panelbox">
-          <div class="h4">Watching</div>
+          <div class="ptabs"><b>Watching<span class="c">4</span></b><span>Working<span class="c">3</span></span></div>
           <div class="wrow"><b>paisa</b> · EMI check<span class="st"><span class="tog"></span></span></div>
           <div class="wrow"><b>dayflow</b> · api deploy<span class="st"><span class="tog"></span></span></div>
           <div class="wrow"><b>sutra-ui</b> · build<span class="st"><span class="tog"></span></span></div>
           <div class="wrow"><b>billu</b> · migration<span class="st"><span class="tog off"></span></span></div>
         </div>
         <div class="panelbox">
-          <div class="h4">Missions</div>
+          <div class="statelabel">the same plane — Working tab selected</div>
+          <div class="ptabs"><span>Watching<span class="c">4</span></span><b>Working<span class="c">3</span></b></div>
           <div class="mrow2"><div class="t"><span class="stc run">Running</span><b>EMI auto-fix</b><span class="stop">Stop</span></div><div class="m">turn 3 of 12 · evidence</div></div>
           <div class="mrow2"><div class="t"><span class="stc run">Running</span><b>landing copy refresh</b><span class="stop">Stop</span></div><div class="m">drafting · evidence</div></div>
           <div class="mrow2"><div class="t"><span class="stc que">Queued</span><b>nightly EMI wiring</b><span class="stop">Drop</span></div><div class="m">starts when a slot frees · Start now</div></div>
