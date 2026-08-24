@@ -1053,6 +1053,73 @@ document.getElementById("newSession").onclick = () =>
   });
   paintRole();
 })();
+/* ── v3.3 accent colour (PLAN-25 S16-S19) ───────────────────────────────────
+   ONE hex restyles the app: applyAccent sets --acc and --on-acc inline and
+   stamps data-accent on <html>; --acc-bg derives per theme in panel.css. The
+   a11y floor is enforced at BUILD time: a swatch whose best text colour cannot
+   reach 4.5:1 on the accent is never offered (WCAG relative luminance). */
+function _lum(hex){
+  const m = /^#([0-9a-f]{6})$/i.exec(hex || ""); if (!m) return null;
+  const c = [0,2,4].map(i => {
+    const v = parseInt(m[1].slice(i, i+2), 16) / 255;
+    return v <= .03928 ? v/12.92 : Math.pow((v+.055)/1.055, 2.4);
+  });
+  return .2126*c[0] + .7152*c[1] + .0722*c[2];
+}
+function _contrast(a, b){
+  const la = _lum(a), lb = _lum(b);
+  if (la === null || lb === null) return 0;
+  const [hi, lo] = la > lb ? [la, lb] : [lb, la];
+  return (hi + .05) / (lo + .05);
+}
+/* The text colour that lives ON the accent, or null when neither ink clears
+   the floor — a null swatch is dropped, never rendered dimmer (S19). */
+function onAccFor(hex){
+  const dark = "#0C0B09", light = "#ffffff";
+  const cd = _contrast(hex, dark), cl = _contrast(hex, light);
+  const best = cd >= cl ? {c:dark, r:cd} : {c:light, r:cl};
+  return best.r >= 4.5 ? best.c : null;
+}
+const ACCENT_KEY = "sutra.panel.accent";
+const ACCENTS = ["#B8574B","#4A6B8B","#2D5A3E","#7C5CBF","#8a6d12","#3E7C8A"];
+function applyAccent(hex){
+  const r = document.documentElement;
+  if (!hex){                      /* reset: the shipped token palette returns */
+    r.style.removeProperty("--acc"); r.style.removeProperty("--on-acc");
+    r.removeAttribute("data-accent");
+    try{ localStorage.removeItem(ACCENT_KEY) }catch(e){}
+    return true;
+  }
+  const on = onAccFor(hex);
+  if (!on) return false;          /* below the floor: refuse, keep the current */
+  r.style.setProperty("--acc", hex);
+  r.style.setProperty("--on-acc", on);
+  r.setAttribute("data-accent", hex);
+  try{ localStorage.setItem(ACCENT_KEY, hex) }catch(e){}
+  return true;
+}
+function buildAccentRow(){
+  const row = document.getElementById("accentRow");
+  if (!row) return;
+  let cur = null; try{ cur = localStorage.getItem(ACCENT_KEY) }catch(e){}
+  row.innerHTML =
+    `<button type="button" class="sw swreset" data-accent="" aria-current="${!cur}"
+       title="Default palette" aria-label="Default palette"></button>` +
+    ACCENTS.filter(h => onAccFor(h)).map(h => `
+      <button type="button" class="sw" data-accent="${h}" aria-current="${cur===h}"
+        style="background:${h}" title="${h}" aria-label="Accent ${h}"></button>`).join("");
+  row.onclick = e => {
+    const b = e.target.closest("[data-accent]"); if (!b) return;
+    if (applyAccent(b.dataset.accent || null)) buildAccentRow();
+  };
+}
+(function(){
+  /* boot apply (S17): a stored accent that no longer clears the floor (or was
+     hand-edited into garbage) is dropped rather than half-applied. */
+  let saved = null; try{ saved = localStorage.getItem(ACCENT_KEY) }catch(e){}
+  if (saved && !applyAccent(saved)) { try{ localStorage.removeItem(ACCENT_KEY) }catch(e){} }
+  buildAccentRow();
+})();
 /* Telemetry line (PLAN-25 S14): the same utilization number the Usage screen
    shows, or an honest em-dash before the first read. renderRail() refreshes it
    on every render, so it tracks loadUsage() without its own timer. */

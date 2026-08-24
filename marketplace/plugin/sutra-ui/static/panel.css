@@ -130,6 +130,24 @@
   .idmenu .nav button .idwho{margin-left:auto;font-size:9.5px;color:var(--faint)}
   @media (prefers-reduced-motion:reduce){.idcaret{transition:none}}
 
+  /* ── v3.3 accent colour (PLAN-25 S16/S18) ────────────────────────────────
+     applyAccent() sets --acc/--on-acc inline and stamps data-accent; the tint
+     derives HERE so each theme mixes its own strength from the one hex:
+     12% over light, 16% over dark (a dark ground swallows weak tints). */
+  :root[data-accent]{--acc-bg:color-mix(in srgb, var(--acc) 12%, transparent)}
+  :root[data-accent][data-theme="dark"]{--acc-bg:color-mix(in srgb, var(--acc) 16%, transparent)}
+  @media (prefers-color-scheme: dark){
+    :root[data-accent]:not([data-theme="light"]){--acc-bg:color-mix(in srgb, var(--acc) 16%, transparent)}
+  }
+  .swrow{display:flex;gap:6px;padding:4px 10px 8px;align-items:center}
+  .sw{width:18px;height:18px;border-radius:50%;border:1px solid var(--line);cursor:pointer;
+      padding:0;flex:none}
+  .sw[aria-current="true"]{outline:2px solid var(--acc);outline-offset:2px}
+  .sw:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .sw.swreset{background:none;position:relative}
+  .sw.swreset::after{content:"";position:absolute;inset:3px;border-radius:50%;
+      background:linear-gradient(135deg,#C4956A 49%,var(--card) 51%)}
+
   /* rail */
   .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
         display:flex;flex-direction:column;min-height:0}

@@ -114,6 +114,7 @@ jobs:
         working-directory: marketplace/plugin/sutra-ui
         run: |
           node test_panel.js
+          node test_nav.js
           node test_charter_filter.js
 
       # The importer and the engine are what the shipped payload runs.
