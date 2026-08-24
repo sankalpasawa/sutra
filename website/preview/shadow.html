@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow on Sutra Desktop — preview v4.2</title>
-<!-- v4.2 (2026-08-24): LIGHT theme (the app's real default on a light-mode Mac). One composer,
-     in-conversation mission card (updates in place, single Start), bottom nudge, one word: watching.
-     Spec: holding/plans/shadow/ (ARCHITECTURE §2 delegation, PRD R19-R23, DESIGN-IA.md) -->
+<title>Shadow on Sutra Desktop — preview v4.3</title>
+<!-- v4.3 (2026-08-24): parallel missions — multi-row watching strip w/ Queued, "many at once"
+     screen (tagged cards, filters, Yes-to-which disambiguation), queued mission in Focus.
+     v4.2 base: light theme, one composer, in-conversation mission card, nudge, one word: watching.
+     Spec: holding/plans/shadow/ (PRODUCT §1, ARCH concurrency, PRD R19-R24, DESIGN-IA.md) -->
 <style>
 :root{
   --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
@@ -48,6 +49,11 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
 .wrow:first-child{border-top:0}
 .wrow .sd{width:7px;height:7px;border-radius:50%;flex:none}
 .wrow b{color:var(--ink);font-weight:600} .wrow .st{margin-left:auto;font-size:11px}
+.mtag{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:var(--accent-glow);border-radius:99px;padding:1px 7px;font-weight:700}
+.stc{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;border-radius:99px;padding:1px 7px;font-weight:700}
+.stc.run{color:var(--done);background:rgba(45,90,62,.10)} .stc.que{color:var(--muted);background:var(--bg);border:1px solid var(--line-soft)} .stc.pau{color:var(--review);background:rgba(74,107,139,.10)} .stc.app{color:var(--decide);background:rgba(139,107,74,.10)}
+.filters{display:flex;gap:6px;margin-bottom:10px} .fchip{font-size:11px;color:var(--muted);border:1px solid var(--line-soft);border-radius:99px;padding:3px 10px} .fchip.on{color:var(--ink);border-color:var(--accent);background:var(--accent-glow)}
+.sub2{font-size:10.5px;color:var(--faint)}
 .wrow.shx{background:var(--accent-glow)} .wrow.shx .sm2{font-size:11px;color:var(--muted)}
 .activity{max-width:640px;margin-top:10px;font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:center}
 .activity i{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block}
@@ -128,12 +134,12 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     </div>
     <div class="h4">Shadow is watching</div>
     <div class="watch">
-      <div class="wrow"><span class="sd" style="background:var(--done)"></span><b>paisa</b> · EMI check<span class="st">live · all good</span></div>
-      <div class="wrow"><span class="sd" style="background:var(--alert)"></span><b>dayflow</b> · api deploy<span class="st">dropped · offered above</span></div>
-      <div class="wrow"><span class="sd" style="background:var(--review)"></span><b>sutra-ui</b> · build<span class="st">11 min · watching</span></div>
-      <div class="wrow"><span class="sd" style="background:var(--line)"></span><b>billu</b> · migration<span class="st">idle</span></div>
+      <div class="wrow"><span class="sd" style="background:var(--done)"></span><b>EMI auto-fix</b> · paisa<span class="sub2">&nbsp;turn 3</span><span class="st"><span class="stc run">Running</span></span></div>
+      <div class="wrow"><span class="sd" style="background:var(--done)"></span><b>landing copy refresh</b> · website<span class="sub2">&nbsp;drafting</span><span class="st"><span class="stc run">Running</span></span></div>
+      <div class="wrow"><span class="sd" style="background:var(--alert)"></span><b>dayflow deploy watch</b> · dayflow<span class="sub2">&nbsp;dropped · offered above</span><span class="st"><span class="stc run">Running</span></span></div>
+      <div class="wrow"><span class="sd" style="background:var(--line)"></span><b>nightly EMI wiring</b> · paisa<span class="sub2">&nbsp;starts when a slot frees</span><span class="st"><span class="stc que">Queued</span></span></div>
     </div>
-    <div class="activity"><i></i>Shadow: watching <b>&nbsp;EMI auto-fix&nbsp;</b> · turn 3 of 12 · <u>details in Focus &rsaquo; Shadow</u></div>
+    <div class="activity"><i></i>Shadow: 3 running · 1 queued · <u>details in Focus &rsaquo; Shadow</u></div>
     <div class="quiet">quiet after 6 · next decision window 11:00</div>
   </section>
   <div class="fab"><div class="sdot"><b>S</b><span class="n">1</span></div></div>
@@ -176,6 +182,39 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:var(--bg);font-size:12px;border-radius:99px;padding:7px 16px;box-shadow:0 8px 24px rgba(28,25,23,.25)">EMI auto-fix started &middot; in Chats &middot; follow it in Focus &rsaquo; Shadow</div>
   </section>
   <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
+</div>
+
+<p class="cap"><b>2b · Many at once — one thread, three missions.</b> <span class="mile">MVP</span> Fire as many one-liners as you like. Every card wears its mission tag and a one-word state. And when a bare "yes" could mean two things, Shadow asks once — never guesses.</p>
+<div class="window" style="height:640px">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="rail">
+    <div class="brand">Sutra</div>
+    <div class="item on"><span class="g">&#9673;</span>Now</div>
+    <div class="item"><span class="g">&#9678;</span>Focus</div>
+    <div class="item"><span class="g">&#9998;</span>Chats</div>
+    <div class="item"><span class="g">&#9638;</span>Org</div>
+    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">6 sessions · ctx 62% · $9 today</div></div>
+  </nav>
+  <section class="pane">
+    <div class="filters"><span class="fchip on">All</span><span class="fchip">Running</span><span class="fchip">Paused</span><span class="fchip">Approval</span><span class="fchip">Queued</span></div>
+    <div class="stack" style="max-width:680px">
+      <div class="brief"><div class="k"><span class="mtag">EMI auto-fix</span> <span class="stc run">Running</span></div>
+        <div class="row"><span>Now</span><span>tests passed (142/142) — writing the patch summary</span></div>
+      </div>
+      <div class="brief"><div class="k"><span class="mtag">Landing copy</span> <span class="stc app">Approval</span></div>
+        <div class="row"><span>Ready</span><span>the hero copy rewrite is done — swap it onto the live page?</span></div>
+        <div class="acts"><span class="act">Approve the swap</span><span class="act q">Show me first</span></div>
+      </div>
+      <div class="mu" style="align-self:flex-end;max-width:60%">yes</div>
+      <div class="brief"><div class="k">Shadow</div>
+        <div class="row"><span></span><span>Yes to which — the <b>landing copy</b> swap, or the <b>EMI</b> deploy?</span></div>
+        <div class="acts"><span class="act"><span class="mtag" style="margin-right:5px">Landing copy</span>the swap</span><span class="act"><span class="mtag" style="margin-right:5px">EMI</span>the deploy</span></div>
+      </div>
+    </div>
+  </section>
+  <div class="fab"><div class="sdot"><b>S</b><span class="n">3</span></div></div>
 </div>
 
 <p class="cap"><b>3 · Chats — the new chat is a normal chat.</b> <span class="mile">MVP</span> It appears like any other, marked "started by Shadow" — you were never taken here. The moment you type into it, Shadow steps back — it's yours.</p>
@@ -243,6 +282,12 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
       <div class="obj">dayflow deploy watch</div>
       <div class="dw">You typed into the chat at 10:41, so I stepped back. Say resume when you want me on it again.</div>
       <div class="meta"><span>turn 5</span><span class="stop">End it</span></div>
+    </div>
+    <div class="mission" style="margin-top:8px">
+      <div class="k" style="color:var(--muted)">Queued</div>
+      <div class="obj">nightly EMI wiring</div>
+      <div class="dw">Starts when a slot frees (3 of 5 running). You can start it now or drop it.</div>
+      <div class="meta"><span>queued 11:02</span><span>Start now</span><span class="stop">Drop</span></div>
     </div>
     <div class="mrow"><span class="sc">done · yesterday</span>Picked dayflow back up after it dropped — verified, nothing lost.<div class="ed">evidence · 3 turns</div></div>
   </section>
