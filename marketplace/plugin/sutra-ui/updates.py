@@ -174,8 +174,10 @@ def desktop_state():
             "component": "desktop",
             "managed": False,
             "installed": None,
-            "reason": "not running from an installed .app -- this is a source "
-                      "checkout, so there is nothing for an updater to replace",
+            "reason": "not running from inside an installed .app -- this server "
+                      "was started outside Sutra.app (the CLI, or a source "
+                      "checkout), so there is nothing for an updater to replace "
+                      "here",
         }
     latest = _latest_desktop()
     return {

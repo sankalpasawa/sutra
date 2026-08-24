@@ -1,6 +1,14 @@
 # Sutra — Current Version
 
-## v2.222.4 (2026-08-25, HEAD)
+**status**: active · **updated**: 2026-08-25
+
+## v2.222.5 (2026-08-25, HEAD)
+
+Settings > Updates: desktop row now tells the truth in attach mode (shell
+attached to a CLI/source-checkout server) — "desktop updates unavailable" +
+recovery step, instead of the false "not managed here / source checkout".
+
+## v2.222.4 (2026-08-25)
 
 Workspace/Files visual parity: theme v2 (SB chrome hidden, panel tokens both
 themes, serif headings), search-result styling per mock 03, nativeTheme bridge.
@@ -505,3 +513,7 @@ Known-red suites on this release, pre-existing and untouched here: `test-codex-d
 Rationale: long-reasoning runs were being killed before completion. Founder Ctrl-C is the only interrupt path now; stall + heartbeat keep silent hangs observable.
 
 For prior release history, see `marketplace/plugin/CHANGELOG.md`.
+
+---
+
+provenance: maintained by Sutra release process; newest release first, HEAD marks the shipped version.

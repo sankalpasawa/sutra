@@ -317,10 +317,31 @@ function updatesHtml(){
   const pBtn = `<button class="btn" type="button" data-upd="plugin"
       ${busy?"disabled":""}>${busy==="plugin"?"Updating…":"Update now"}</button>`;
 
+  /* Inside the Electron shell, `managed:false` needs different words. The
+     backend only knows where IT runs -- and the shell attaches to whatever
+     Sutra already serves the pinned port (a CLI or source-checkout uvicorn),
+     with auto-update then off because the shell holds no token for a backend
+     it did not start. Echoing the backend's "not managed here" told a
+     Sutra.app user their installed app had no updater at all, which is false.
+     Say what is actually happening and the one action that brings updates
+     back. `window.sutra` is the shell-presence signal (preload puts it there;
+     a page cannot conjure it), and this deliberately does NOT claim the user
+     is in an installed .app -- a dev shell launched from a checkout lands
+     here too, and the copy stays true for both. */
+  const desktopRow = () => {
+    if (d.managed || !window.sutra) return row(d, "Desktop app", dBtn);
+    return `<div class="kv"><b>Desktop app</b>
+      <span><span class="pill p-warn">desktop updates unavailable</span>
+      This window is using a Sutra server that is not running from inside an
+      installed .app — a CLI or source checkout is serving ${esc(location.host)}.
+      If you launched this from an installed Sutra.app, quit that server and
+      reopen Sutra to re-enable automatic updates.</span></div>`;
+  };
+
   return `
     <section class="chsec"><h2 class="chh">Updates</h2>
       ${S.updMsg?`<div class="note"><b>${esc(S.updMsg)}</b></div>`:""}
-      ${row(d, "Desktop app", dBtn)}
+      ${desktopRow()}
       ${row(p, "Plugin", pBtn)}
       <p style="margin-top:9px">
         <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>

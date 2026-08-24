@@ -2,6 +2,15 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.5 (2026-08-25)
+
+- **Settings > Updates: honest desktop row in attach mode.** When the desktop
+  shell is attached to a Sutra server it did not start (CLI or source checkout
+  on the pinned port), the row now says desktop updates are unavailable and how
+  to restore them, instead of echoing the backend's "not managed here /
+  source checkout" — which was false for installed-app users. Backend reason
+  reworded to stop asserting "source checkout" as the only cause.
+
 ## 2.222.4 (2026-08-25)
 
 - **Workspace/Files: the SilverBullet pane now looks like the design.** Theme
