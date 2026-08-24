@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.118.2 (2026-08-24)
+
+Hotfix for the v3.3 shell: entering Focus or Team Sutra from the rail now
+loads Balance/Teamsutra (shared openScreen path), and the terminal width
+clamp reserves the second plane plus a 320px detail floor — it can no longer
+cover the whole window. Three regression tests added.
+
 ## 2.118.1 (2026-08-24)
 
 **Governance chips on transcript turns — the fix for "input routing is getting missed".**
