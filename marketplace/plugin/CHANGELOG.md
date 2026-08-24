@@ -1,6 +1,17 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-23
+**status**: active · **updated**: 2026-08-24
+
+## 2.118.0 (2026-08-24)
+
+**The v3.3 shell: six destinations, a second plane, an identity footer, one accent colour.**
+
+The Home|Code tabs retire: one rail (Now placeholder, Focus with Balance, Chats,
+Org, Team Sutra, Settings) with a fixed second plane listing the existing
+screens — all 20 stay reachable (enforced by test_nav.js's coverage matrix).
+The footer states the acting role; its menu is Act as + Switch theme + an
+accent colour with a build-time 4.5:1 contrast floor. Stored Code-tab layouts
+migrate to Chats.
 
 ## 2.117.2 (2026-08-23)
 

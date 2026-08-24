@@ -62,13 +62,8 @@
   .railshow:hover{color:var(--acc);background:var(--acc-bg);border-color:var(--acc)}
   .app.railcol .railshow{display:inline-flex}
   .app.railcol{padding-left:46px}
-  /* Rail section headers are buttons, not labels -- they collapse their body. */
-  .grp{display:flex;align-items:center;gap:6px;width:100%;background:none;border:0;
-    cursor:pointer;text-align:left;font:inherit}
-  .grp .chev{margin-left:auto;transition:transform .12s ease;flex:0 0 auto;opacity:.55}
-  .grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
-  .grp:hover .chev{opacity:1}
-  .rsec[hidden]{display:none}
+  /* Rail section headers (.grp/.rsec) retired with the grouped rail in v3.3
+     (PLAN-25 S23). */
   /* Three columns: rail | panes | terminal. The terminal track is `auto`, and the
      pane is [hidden] when closed, so the track collapses to zero width and the
      layout is byte-identical to the two-column one until the terminal is opened.
@@ -162,8 +157,6 @@
      With the chip gone the toggle owns that job, or it collides with the wordmark. */
   .rtop .railtog{margin-left:auto}
   .rscroll{overflow-y:auto;flex:1;min-height:0;padding-bottom:6px}
-  .grp{padding:9px 12px 4px;font:600 9.5px/1 var(--sans);letter-spacing:.1em;
-       color:var(--faint);text-transform:uppercase}
   .nav{list-style:none;margin:0;padding:0 6px}
   .nav button{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;width:100%;
     background:none;border:0;color:var(--muted);font:400 12.5px/1.4 var(--sans);cursor:pointer;text-align:left}
@@ -603,15 +596,8 @@
   .smenu .smrename{display:flex;gap:4px;padding:4px}
   .smenu .smrename input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);
     border-radius:5px;padding:5px 6px;color:var(--ink);font:500 11px/1 var(--sans)}
-  /* Two-tab rail: Home is the organisation surface, Code is the work surface.
-     Sessions used to compete with the org nav for the same scroll column. */
-  .rtabs{display:flex;gap:3px;padding:2px 10px 8px}
-  .rtabs button{flex:1;background:none;border:1px solid var(--line);border-radius:6px;
-    padding:6px 0;font:600 11px/1 var(--sans);color:var(--faint);cursor:pointer}
-  .rtabs button:hover{color:var(--ink)}
-  .rtabs button[aria-selected="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
-  .rtab[hidden]{display:none}
-  .rtab .newBtn{margin-top:2px}
+  /* The two-tab rail (Home | Code) retired in v3.3 — its styles left with it
+     (PLAN-25 S23). */
   /* Rendered transcript text. Sized to sit inside the 78ch reading column. */
   .md{overflow-wrap:anywhere}
   .md .md-p{margin:0 0 8px}
