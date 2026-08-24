@@ -1602,6 +1602,34 @@ class TestEffectiveModeAndOnboarding(unittest.TestCase):
         self.assertEqual(raw["permission_mode"], "plan")
         self.assertTrue(raw["onboarded"])
 
+    def test_flags_reach_the_settings_payload_sanitized(self):
+        """The rail gates screens on SETTINGS.flags; the backend gates routes on
+        the raw file. load_settings() must carry the flags or the two disagree:
+        the API answers while the rail row never renders (the exact defect that
+        hid the Workspace screen)."""
+        self._write({"flags": {"workspace": True, "other": False,
+                               "junk": "yes", "num": 1}})
+        s = self.providers.load_settings()
+        self.assertEqual(s["flags"], {"workspace": True},
+                         "only boolean-true survives -- absent/false/junk are OFF")
+
+    def test_flags_absent_or_malformed_mean_empty_not_missing(self):
+        """FLAG.md: absent means OFF. The KEY must still exist so the client
+        reads {} rather than undefined."""
+        self._write({"permission_mode": "plan"})
+        self.assertEqual(self.providers.load_settings()["flags"], {})
+        self._write({"flags": ["workspace"]})
+        self.assertEqual(self.providers.load_settings()["flags"], {},
+                         "a non-dict flags value is ignored wholesale")
+
+    def test_settings_write_preserves_flags(self):
+        """save_settings merges into the raw file -- a Settings-screen POST must
+        not wipe a flag that was set out of band."""
+        self._write({"flags": {"workspace": True}})
+        self.providers.save_settings(onboarded=True)
+        s = self.providers.load_settings()
+        self.assertEqual(s["flags"], {"workspace": True})
+
 
 class TestSkillsSignature(unittest.TestCase):
     """The catalog was read once at boot, so a plugin update or a new command was

@@ -2,6 +2,12 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.1 (2026-08-24)
+
+- **Workspace: the flag now reaches the panel.** load_settings() carries a
+  sanitized flags dict, so the rail's Workspace row renders when the flag is
+  on. API and rail now read the same truth; 3 contract tests pin it.
+
 ## 2.222.0 (2026-08-24)
 
 - **Optimus (Focus tab): the daemon, visible.** Status + PID, decision queue

@@ -626,6 +626,14 @@ def load_settings():
         # discover the rule from a 400.
         "workdir_root": os.path.realpath(os.path.expanduser(
             os.environ.get("SUTRA_UI_WORKDIR_ROOT", "~"))),
+        # Feature flags, verbatim booleans from the file. The panel's rail
+        # gates screens on these (wsFlagOn reads SETTINGS.flags); the backend
+        # reads the raw file directly (workspace_api._flag_on). Omitting them
+        # here made the two disagree: the API answered while the rail row
+        # never rendered. Sanitized to {name: bool} -- anything non-dict or
+        # non-boolean-true is OFF, matching FLAG.md's "absent means OFF".
+        "flags": {k: True for k, v in (raw.get("flags") or {}).items()
+                  if v is True} if isinstance(raw.get("flags"), dict) else {},
         "settings_path": str(SETTINGS_PATH),
         "settings_file_exists": SETTINGS_PATH.exists(),
         "invalid_stored_values": invalid,
