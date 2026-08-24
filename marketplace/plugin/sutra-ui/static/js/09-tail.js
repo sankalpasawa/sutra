@@ -234,9 +234,12 @@ function clampTermW(px){
      chrome plus a 320px detail floor; TERM_MIN still wins when the window is
      genuinely too small for both. */
   const app = document.getElementById("app");
-  const planeVisible = !!(app && app.classList.contains("threecol")
+  /* v3.4: collapsed lanes leave a 46px strip + ONE 9px grid gap. */
+  const navCollapsed = !!(app && app.classList.contains("railcol"));
+  const planeVisible = !!(app && !navCollapsed && app.classList.contains("threecol")
                           && !app.classList.contains("noplane"));
-  const chrome = 224 + (planeVisible ? 240 : 0) + 27 /* 3 grid gaps */;
+  const chrome = navCollapsed ? 46 + 9
+               : 224 + (planeVisible ? 240 : 0) + 27 /* 3 grid gaps */;
   const avail = vw - chrome - 320;
   const ceil = Math.max(TERM_MIN, Math.min(Math.round(vw * TERM_MAX_FRAC), avail));
   return Math.min(ceil, want);
@@ -528,12 +531,16 @@ const railToggle = document.getElementById("railToggle");
 const railShow = document.getElementById("railShow");
 if (railShow) railShow.onclick = ()=>{ railToggle.onclick(); };
 railToggle.onclick = ()=>{
-  S.ui.railCollapsed = !S.ui.railCollapsed;
-  railToggle.setAttribute("aria-pressed", String(!!S.ui.railCollapsed));
-  railToggle.setAttribute("aria-label", S.ui.railCollapsed ? "Show the sidebar" : "Hide the sidebar");
+  S.ui.navCollapsed = !S.ui.navCollapsed;
+  railToggle.setAttribute("aria-pressed", String(!!S.ui.navCollapsed));
+  railToggle.setAttribute("aria-label", S.ui.navCollapsed ? "Show the navigation" : "Hide the navigation");
   railToggle.title = railToggle.getAttribute("aria-label");
   saveLayout();
   render();
+  /* Collapsing frees ~460px of chrome; expanding takes it back. An open
+     terminal must re-clamp exactly like it does when the plane flips
+     (2.118.1), or it either wastes the freed width or covers the detail. */
+  if (S.termOpen && typeof applyTermW === "function") applyTermW(S.termW || 460);
 };
 
 /* v3.3 (PLAN-25 S9): a rail click picks a DESTINATION. The plane's own rows

@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.119.0 (2026-08-24)
+
+- **One minimize, both lanes.** The sidebar toggle now collapses the rail AND
+  the plane into a 46px strip — before, it left a broken half-grid where the
+  detail crammed into a 240px track and screens overlapped.
+- **Act as is functional.** Switching to CEO of Sutra scopes Departments,
+  Charters and Placements to the Sutra subtree; Asawa restores the whole tree.
+
 ## 2.118.4 (2026-08-24)
 
 - **Teamsutra is now Help.** The rail entry, the chat's source label and the

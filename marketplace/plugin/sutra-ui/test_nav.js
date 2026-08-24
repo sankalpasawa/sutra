@@ -262,6 +262,60 @@ test("hotfix: the terminal clamp reserves the plane and a 320px detail floor", (
   els["app"]._cls.delete("noplane");
 });
 
+/* §v3.4 — the lane collapse and the functional Act-as */
+test("v3.4: the collapse rules exist and OUTRANK the threecol grid", () => {
+  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
+  const three = css.indexOf(".app.threecol{grid-template-columns:224px 240px");
+  const col = css.indexOf(".app.threecol.railcol{grid-template-columns:minmax(0,1fr)");
+  assert(three !== -1 && col !== -1, "both grid rules must exist");
+  assert(col > three, "the railcol override must come AFTER threecol, or it loses the cascade");
+  assert(css.indexOf(".app.threecol.railcol .rail,.app.threecol.railcol .plane{display:none}") !== -1,
+    "collapsed must hide BOTH lanes — hiding only the rail is the shipped overlap bug");
+});
+test("v3.4: the stored single-lane flag migrates to the both-lane flag", () => {
+  storage._m["sutra.panel.layout"] = JSON.stringify({ railCollapsed: true });
+  assert.strictEqual(T.loadLayout().navCollapsed, true);
+  storage._m["sutra.panel.layout"] = JSON.stringify({ navCollapsed: false, railCollapsed: true });
+  assert.strictEqual(T.loadLayout().navCollapsed, false, "the new key must win over the legacy one");
+  delete storage._m["sutra.panel.layout"];
+});
+test("v3.4: collapsed lanes hand the terminal the freed width — and no more", () => {
+  els["app"]._cls.add("threecol"); els["app"]._cls.add("railcol"); els["app"]._cls.delete("noplane");
+  sandbox.innerWidth = 1400;
+  /* chrome 46+9=55; avail = 1400-55-320 = 1025; the 72% ceiling (1008) now binds. */
+  assert.strictEqual(vm.runInContext("clampTermW(10000)", sandbox), 1008);
+  els["app"]._cls.delete("railcol");
+});
+test("v3.4: acting as CEO of Sutra scopes the org to the Sutra subtree", () => {
+  const domains = [
+    { ref: "r", parent_ref: null, name: "Asawa Inc." },
+    { ref: "s", parent_ref: "r", name: "Sutra OS" },
+    { ref: "sc", parent_ref: "s", name: "Core Plugin" },
+    { ref: "h", parent_ref: "r", name: "Holding Departments" },
+  ];
+  const charters = [{ id: "c1", domain_ref: "s" }, { id: "c2", domain_ref: "h" }];
+  const placements = [{ id: "p1", domain_ref: "sc" }, { id: "p2", domain_ref: "r" }];
+  const out = vm.runInContext("scopeOrgForRole", sandbox)("CEO of Sutra", domains, charters, placements);
+  assert.strictEqual(JSON.stringify(out.domains.map(d => d.ref)), JSON.stringify(["s", "sc"]));
+  assert.strictEqual(out.charters.length, 1);
+  assert.strictEqual(out.placements.length, 1);
+  assert.strictEqual(out.scope.ref, "s");
+  assert.strictEqual(out.scope.missing, false);
+});
+test("v3.4: CEO of Asawa sees the whole tree; a missing anchor fails OPEN and says so", () => {
+  const domains = [{ ref: "r", parent_ref: null, name: "Asawa Inc." }];
+  const scoper = vm.runInContext("scopeOrgForRole", sandbox);
+  const whole = scoper("CEO of Asawa Inc.", domains, [], []);
+  assert.strictEqual(whole.domains.length, 1);
+  assert.strictEqual(whole.scope.ref, null);
+  const miss = scoper("CEO of Sutra", domains, [], []);
+  assert.strictEqual(miss.domains.length, 1, "no anchor must NOT blank the org");
+  assert.strictEqual(miss.scope.missing, true, "…but it must say the scope is missing");
+});
+test("v3.4: the role accessor is published for loadOrg", () => {
+  assert.strictEqual(typeof vm.runInContext("panelRole", sandbox), "function");
+});
+
 /* §coverage ─ S21: every legacy railSpec destination is reachable in v3.3 */
 test("coverage: all 20 legacy rail ids stay reachable through the new shell", () => {
   const legacy = ["departments","charters","placements","knowledge","files","reorg",

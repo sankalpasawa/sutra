@@ -798,7 +798,7 @@ function render(){
   renderOnboarding();
   renderUpdateBanner();
 
-  document.getElementById("app").classList.toggle("railcol", !!S.ui.railCollapsed);
+  document.getElementById("app").classList.toggle("railcol", !!S.ui.navCollapsed);
 
   const [t,src] = TITLES[S.screen];
   const open = S.openPanes.map(id=>S.sessions.find(s=>s.id===id)).filter(Boolean);

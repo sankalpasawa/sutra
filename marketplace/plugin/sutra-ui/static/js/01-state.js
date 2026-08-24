@@ -7,6 +7,10 @@
    ~/.claude/projects/**.jsonl. See adoptRealSessions(). */
 const API = "";                        // same-origin
 let DOMAINS = [], CHARTERS = [], PLACEMENTS = [], INDEX = [];
+/* v3.4 Act-as: ORG_ALL keeps the UNFILTERED registry read; DOMAINS/CHARTERS/
+   PLACEMENTS above hold the view SCOPED to the acting role (loadOrg applies
+   scopeOrgForRole). Reorg/simulate and History read the whole tree by design. */
+let ORG_ALL = null;
 /* Real slash commands, read from ~/.claude by GET /api/skills. Never a
    hardcoded list: the Skills screen used to render ten invented strings
    and claim "31 total". */
@@ -127,13 +131,16 @@ const DEST_DEFAULT_SCREEN = { now:"now", focus:"balance", chats:null,
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
-                railCollapsed:false, railSections:{},
+                navCollapsed:false, railSections:{},
                 dest:"now", destSel:{},
                 balanceTab:"today", sessCollapsed:{} };
   if (raw && typeof raw === "object"){
     if (raw.paneCollapsed && typeof raw.paneCollapsed === "object") out.paneCollapsed = raw.paneCollapsed;
     if (raw.folds && typeof raw.folds === "object") out.folds = raw.folds;
-    if (typeof raw.railCollapsed === "boolean") out.railCollapsed = raw.railCollapsed;
+    /* v3.4: the flag now collapses BOTH lanes (rail + plane), so it is named
+       for what it does. Migration: accept the old single-lane key. */
+    if (typeof raw.navCollapsed === "boolean") out.navCollapsed = raw.navCollapsed;
+    else if (typeof raw.railCollapsed === "boolean") out.navCollapsed = raw.railCollapsed;
     if (typeof raw.browseClosed === "boolean") out.browseClosed = raw.browseClosed;
     if (raw.railSections && typeof raw.railSections === "object") out.railSections = raw.railSections;
     /* Collapsed session groups, keyed "<mode>:<groupkey>" so a group collapsed

@@ -14,9 +14,17 @@ import fs from "fs";
 const PORT = process.env.SHELL_DEBUG_PORT || "9223";
 const OUT = new URL("./out/", import.meta.url).pathname;
 
-const targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
-const page = targets.find(t => t.type === "page" && /127\.0\.0\.1:8330/.test(t.url || ""));
-if (!page){ console.error("no shell page target on CDP", targets.map(t=>t.url)); process.exit(1); }
+/* The CDP port answers before the shell's PAGE target exists — one immediate
+   /json/list is a race (it lost on 2026-08-24). Poll for the target. */
+let page = null;
+for (let i = 0; i < 40 && !page; i++){
+  try {
+    const targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
+    page = targets.find(t => t.type === "page" && /127\.0\.0\.1:8330/.test(t.url || ""));
+  } catch {}
+  if (!page) await new Promise(r => setTimeout(r, 500));
+}
+if (!page){ console.error("no shell page target on CDP after 20s"); process.exit(1); }
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
@@ -90,6 +98,32 @@ await check("back on Now: full-bleed, plane gone",
   `(goDest('now'), document.getElementById('app').classList.contains('noplane')
      && document.getElementById('plane').hidden)`);
 
+/* ── v3.4: the lane collapse and the functional Act-as ────────────────────── */
+await check("v3.4: one toggle collapses BOTH lanes and the detail takes the width",
+  `(async ()=>{ goDest('settings');
+     const panes = document.getElementById('panes');
+     const before = panes.getBoundingClientRect().width;
+     document.getElementById('railToggle').onclick();
+     await new Promise(r=>setTimeout(r,80));
+     const app = document.getElementById('app');
+     const railGone = getComputedStyle(document.querySelector('.rail')).display === 'none';
+     const planeGone = getComputedStyle(document.getElementById('plane')).display === 'none';
+     const after = panes.getBoundingClientRect().width;
+     const ok = app.classList.contains('railcol') && railGone && planeGone && after > before + 300;
+     document.getElementById('railToggle').onclick();
+     await new Promise(r=>setTimeout(r,80));
+     return ok || ('before '+Math.round(before)+' after '+Math.round(after)); })()`, true);
+await check("v3.4: acting as CEO of Sutra scopes the org; Asawa restores it",
+  `(async ()=>{ localStorage.setItem('sutra.panel.role','CEO of Sutra');
+     await loadOrg();
+     const scoped = DOMAINS.length > 0 && DOMAINS.every(d => d.ref !== undefined)
+       && DOMAINS.some(d => /sutra/i.test(d.name)) && !DOMAINS.some(d => d.name === 'Holding Departments')
+       && S.orgScope && !!S.orgScope.ref;
+     localStorage.setItem('sutra.panel.role','CEO of Asawa Inc.');
+     await loadOrg();
+     const restored = DOMAINS.some(d => d.name === 'Holding Departments') && S.orgScope && S.orgScope.ref === null;
+     return (scoped && restored) || ('scoped '+scoped+' restored '+restored); })()`, true);
+
 /* ── lane 2: PIXELS — light and dark, saved for the founder's own eyes ────── */
 async function snap(name){
   const shot = await cdp("Page.captureScreenshot", { format: "png" });
@@ -99,6 +133,15 @@ async function snap(name){
 await evql(`document.documentElement.setAttribute('data-theme','light')`);
 await evql(`goDest('settings')`);
 await snap("nav-light.png");
+/* v3.4 F2 verification: departments in BOTH lane states (the shipped overlap) */
+await evql(`goDest('org'); openScreen('departments'); render()`);
+await new Promise(r => setTimeout(r, 900));
+await snap("nav-dept.png");
+await evql(`document.getElementById('railToggle').onclick()`);
+await new Promise(r => setTimeout(r, 300));
+await snap("nav-dept-collapsed.png");
+await evql(`document.getElementById('railToggle').onclick()`);
+await new Promise(r => setTimeout(r, 300));
 await evql(`document.documentElement.setAttribute('data-theme','dark')`);
 await snap("nav-dark.png");
 await evql(`document.documentElement.removeAttribute('data-theme'); goDest('now')`);

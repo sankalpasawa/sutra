@@ -1020,6 +1020,11 @@ document.getElementById("newSession").onclick = () =>
   list.onclick = e => {
     const b = e.target.closest("[data-role]"); if (!b) return;
     wr(b.dataset.role); paintRole(); setOpen(false);
+    /* v3.4: acting is FUNCTIONAL — the org surfaces re-scope to the subtree
+       this role commands. Re-read (cheap, loopback) rather than stash-and-
+       filter so a stale earlier read cannot leak across roles. */
+    if (typeof loadOrg === "function")
+      loadOrg().then(()=>render()).catch(err => console.warn("Act-as rescope failed:", err));
   };
   document.addEventListener("click", e => {
     if (!menu.hidden && !idEl.contains(e.target)) setOpen(false);
@@ -1028,6 +1033,9 @@ document.getElementById("newSession").onclick = () =>
     if (e.key === "Escape" && !menu.hidden) setOpen(false);
   });
   paintRole();
+  /* The scope resolver (loadOrg) needs the acting role but must not reach into
+     this closure; publish the read-only accessor. */
+  globalThis.panelRole = current;
 })();
 /* ── opening a screen, from ANY entry point (2.118.1 hotfix) ────────────────
    The lazy loaders used to live only inside the click delegation, so entering
@@ -1222,6 +1230,47 @@ function backendError(e){
   console.error(e);
 }
 
+/* v3.4 Act-as: resolve the acting role to a VIEW SCOPE over the one org tree.
+   CEO of Asawa Inc. commands the whole tree; CEO of Sutra commands the Sutra
+   subtree. Pure so the vm harness can test it without a DOM.
+
+   Anchor order (codex+deepseek converged 2026-08-24: a display-name regex is
+   the WEAKEST anchor): (1) the known dref of "Sutra OS" in the founder's
+   registry -- a no-op on other installs; (2) structural: a depth-1 child of
+   the root whose name says sutra. No match FAILS OPEN with scope.missing set,
+   and loadOrg's caller paints a loud chip -- blanking the founder's whole org
+   on a rename would read as data loss (deepseek argued fail-closed; overruled
+   for exactly that reason, the misconfig stays visible either way). */
+function scopeOrgForRole(role, domains, charters, placements){
+  const whole = { domains, charters, placements, scope:{ role, ref:null, name:null, missing:false } };
+  if (!role || !/sutra/i.test(role) || /asawa/i.test(role)) return whole;
+  const root = domains.find(d => !d.parent_ref) || null;
+  const anchor =
+    domains.find(d => d.ref === "dref-a19b505fe0d92ce3") ||
+    (root && domains.find(d => d.parent_ref === root.ref && /sutra/i.test(d.name || ""))) ||
+    null;
+  if (!anchor){
+    whole.scope.missing = true;
+    console.warn("Act-as: no Sutra scope anchor in this registry — showing the whole tree");
+    return whole;
+  }
+  const keep = new Set([anchor.ref]);
+  /* BFS over parent_ref; bounded passes so a damaged registry with a parent
+     loop cannot hang the shell (same defence as 03-org's depth walk). */
+  for (let pass = 0, grew = true; grew && pass < 100; pass++){
+    grew = false;
+    for (const d of domains){
+      if (!keep.has(d.ref) && d.parent_ref && keep.has(d.parent_ref)){ keep.add(d.ref); grew = true; }
+    }
+  }
+  return {
+    domains: domains.filter(d => keep.has(d.ref)),
+    charters: charters.filter(c => keep.has(c.domain_ref)),
+    placements: placements.filter(p => keep.has(p.domain_ref)),
+    scope: { role, ref: anchor.ref, name: anchor.name, missing: false },
+  };
+}
+
 /* Registry reads. Separated from the runtime reads below because they answer
    different questions: what the org IS, versus what this machine can run. */
 async function loadOrg(){
@@ -1231,10 +1280,14 @@ async function loadOrg(){
     apiGet("/api/org/placements"),
     apiGet("/api/org/history"),
   ]);
-  DOMAINS = tree;
-  CHARTERS = charters;
-  PLACEMENTS = placements;
-  INDEX = history.events || [];
+  ORG_ALL = { domains: tree, charters, placements };
+  const scoped = scopeOrgForRole(
+    (typeof panelRole === "function" ? panelRole() : ""), tree, charters, placements);
+  DOMAINS = scoped.domains;
+  CHARTERS = scoped.charters;
+  PLACEMENTS = scoped.placements;
+  S.orgScope = scoped.scope;
+  INDEX = history.events || [];   /* History stays whole-tree by design */
   // history_complete_from_ms is DERIVED server-side (earliest event carrying a
   // before/after snapshot), not a stored engine field -- see /api/org/history.
   META.history_complete_from_ms = history.meta.history_complete_from_ms;

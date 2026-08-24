@@ -88,6 +88,13 @@
   .app.threecol{grid-template-columns:224px 240px minmax(0,1fr) var(--termw, 0px)}
   .app.threecol.noplane{grid-template-columns:224px minmax(0,1fr) var(--termw, 0px)}
   .app.threecol.noplane .plane{display:none}
+  /* v3.4: the lane toggle collapses BOTH fixed lanes. Without these rules
+     railcol left the 4-track grid intact, so the plane slid into the rail's
+     224px track and the DETAIL crammed into the plane's 240px track (clipped,
+     third track empty) -- the overlap the founder reported. Collapsed, two
+     tracks remain (detail + terminal); the 46px pad hosts the railShow strip. */
+  .app.threecol.railcol{grid-template-columns:minmax(0,1fr) var(--termw, 0px);padding-left:46px}
+  .app.threecol.railcol .rail,.app.threecol.railcol .plane{display:none}
   .plane{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
          display:flex;flex-direction:column;min-height:0;overflow:hidden}
   .planehead{display:flex;align-items:center;gap:8px;height:40px;flex:none;

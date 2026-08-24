@@ -729,7 +729,7 @@ test("14e. an assistant block with no recorded prompt is marked orphan, not give
    here too -- this is a whole-object deepEq, so a new default reads as a
    corruption failure until the fixture catches up. */
 const LAYOUT_DEFAULTS = { paneCollapsed: {}, folds: {}, browseW: null, browseClosed: false,
-                          railCollapsed: false, railSections: {},
+                          navCollapsed: false, railSections: {},
                           dest: "now", destSel: {},
                           balanceTab: "today", sessCollapsed: {} };
 
