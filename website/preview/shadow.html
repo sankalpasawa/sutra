@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow on Sutra Desktop — preview v4.3</title>
-<!-- v4.3 (2026-08-24): parallel missions — multi-row watching strip w/ Queued, "many at once"
-     screen (tagged cards, filters, Yes-to-which disambiguation), queued mission in Focus.
-     v4.2 base: light theme, one composer, in-conversation mission card, nudge, one word: watching.
-     Spec: holding/plans/shadow/ (PRODUCT §1, ARCH concurrency, PRD R19-R24, DESIGN-IA.md) -->
+<title>Shadow on Sutra Desktop — preview v5</title>
+<!-- v5 (2026-08-24, founder cleanup): Now = its own module, shows ONLY what needs the founder
+     (Shadow is one producer of its feed). Shadow's HOME = Focus > Shadow: the chat, the watching
+     list with toggles, missions, memory. No fixed buttons — actions are generated per moment
+     (free text always; Clarify fallback). Delegation via Shadow's template family.
+     Spec: holding/plans/shadow/ (PRODUCT §1/§5, PRD R16/R20/R25, DESIGN-IA) -->
 <style>
 :root{
   --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
@@ -19,7 +20,7 @@
 body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;padding:40px 24px 80px}
 .cap{max-width:1300px;margin:0 auto 10px;font-size:12px;color:var(--muted)} .cap b{color:var(--ink);font-weight:600}
 .mile{display:inline-block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:99px;padding:2px 8px;margin-left:6px;background:var(--accent-glow);color:var(--accent);border:1px solid var(--accent)}
-.window{width:1300px;max-width:100%;height:700px;margin:0 auto 56px;background:var(--bg);border:1px solid #d8d5d0;border-radius:14px;box-shadow:0 1px 2px rgba(28,25,23,.05),0 22px 54px -18px rgba(28,25,23,.22);overflow:hidden;display:flex;position:relative}
+.window{width:1300px;max-width:100%;height:680px;margin:0 auto 56px;background:var(--bg);border:1px solid #d8d5d0;border-radius:14px;box-shadow:0 1px 2px rgba(28,25,23,.05),0 22px 54px -18px rgba(28,25,23,.22);overflow:hidden;display:flex;position:relative}
 .lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20} .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#d9d6d1}
 .rail{width:196px;background:var(--surface);border-right:1px solid var(--line-soft);padding:44px 10px 10px;display:flex;flex-direction:column}
 .brand{font-family:var(--fd);font-size:15px;margin:0 0 14px 8px}
@@ -32,164 +33,70 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
 .identity .tele{margin-top:3px;color:var(--faint);font-size:10.5px}
 .pane{flex:1;overflow:auto;padding:44px 28px 20px}
 .greet{font-family:var(--fd);font-size:28px;font-weight:500}
-.sub{color:var(--muted);font-size:13.5px;margin:4px 0 16px} .sub b{color:var(--decide);font-weight:600}
-.composer{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;max-width:640px;margin-bottom:18px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
-.composer .ph{flex:1;color:var(--faint);font-size:13.5px}
-.composer .cbtn{font-size:12px;font-weight:600;color:var(--decide);border:1px solid var(--line);border-radius:9px;padding:5px 10px;white-space:nowrap}
-.mic{width:24px;height:24px;border-radius:50%;border:1px solid var(--accent);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10px;flex:none}
+.sub{color:var(--muted);font-size:13.5px;margin:4px 0 20px} .sub b{color:var(--decide);font-weight:600}
 .h4{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:16px 0 8px;font-weight:700}
-.stack{display:flex;flex-direction:column;gap:10px;max-width:640px}
-.dcard{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:12px 15px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
-.dcard .dot{width:8px;height:8px;border-radius:50%;flex:none}
-.dcard .t{flex:1;font-size:14px} .dcard .t small{display:block;color:var(--faint);font-size:11.5px;margin-top:2px}
-.dcard .act{font-size:13px;font-weight:700;color:var(--decide);padding:5px 11px;border-radius:8px}
-.dcard .act.q{color:var(--muted);font-weight:400}
-.watch{max-width:640px;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;overflow:hidden}
-.wrow{display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--line-soft);font-size:12.5px;color:var(--muted)}
-.wrow:first-child{border-top:0}
-.wrow .sd{width:7px;height:7px;border-radius:50%;flex:none}
-.wrow b{color:var(--ink);font-weight:600} .wrow .st{margin-left:auto;font-size:11px}
+.stack{display:flex;flex-direction:column;gap:10px;max-width:660px}
+.dcard{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:12px 15px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
+.dcard .top{display:flex;align-items:center;gap:10px;font-size:14px} .dcard .top .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dcard .top b{font-weight:600} .dcard small{display:block;color:var(--faint);font-size:11.5px;margin:3px 0 0 18px}
+.dyn{display:flex;gap:8px;margin:9px 0 0 18px;align-items:center;flex-wrap:wrap}
+.dyn .act{font-size:12px;font-weight:700;color:var(--decide);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:4px 11px}
+.dyn .act.q{font-weight:400;color:var(--muted);border-color:transparent}
 .mtag{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:var(--accent-glow);border-radius:99px;padding:1px 7px;font-weight:700}
-.stc{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;border-radius:99px;padding:1px 7px;font-weight:700}
-.stc.run{color:var(--done);background:rgba(45,90,62,.10)} .stc.que{color:var(--muted);background:var(--bg);border:1px solid var(--line-soft)} .stc.pau{color:var(--review);background:rgba(74,107,139,.10)} .stc.app{color:var(--decide);background:rgba(139,107,74,.10)}
-.filters{display:flex;gap:6px;margin-bottom:10px} .fchip{font-size:11px;color:var(--muted);border:1px solid var(--line-soft);border-radius:99px;padding:3px 10px} .fchip.on{color:var(--ink);border-color:var(--accent);background:var(--accent-glow)}
-.sub2{font-size:10.5px;color:var(--faint)}
-.wrow.shx{background:var(--accent-glow)} .wrow.shx .sm2{font-size:11px;color:var(--muted)}
-.activity{max-width:640px;margin-top:10px;font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:center}
-.activity i{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block}
-.activity u{text-decoration:none;border-bottom:1px dotted var(--muted)}
-.quiet{margin-top:22px;font-size:12px;color:var(--faint)}
+.src{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);border:1px solid var(--line-soft);border-radius:99px;padding:1px 7px}
+.quiet{margin-top:24px;font-size:12px;color:var(--faint)}
 .crumb{font-size:11px;color:var(--muted);margin-bottom:4px} .crumb b{color:var(--accent)}
-.pg{font-family:var(--fd);font-size:20px;font-weight:500;margin:0 0 14px}
-.secnav{display:flex;gap:14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line-soft);margin-bottom:16px;max-width:680px}
-.secnav b{color:var(--ink);border-bottom:2px solid var(--accent);padding-bottom:7px;font-weight:600} .secnav span{padding-bottom:7px}
-.mission{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:13px 15px;max-width:680px;font-size:13px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
-.mission .k{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.mission .obj{margin:4px 0 2px;font-weight:600} .mission .dw{color:var(--muted);font-size:12px}
-.mission .meta{display:flex;gap:14px;margin-top:9px;font-size:11.5px;color:var(--faint)} .mission .meta .stop{color:var(--alert);margin-left:auto}
-.mrow{border:1px solid var(--line-soft);background:var(--card);border-radius:10px;padding:9px 12px;font-size:12.5px;max-width:680px;margin-top:8px}
-.mrow .sc{float:right;font-size:9.5px;color:var(--muted);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:1px 7px}
-.mrow .ed{color:var(--faint);font-size:10.5px;margin-top:2px}
-.slist{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-.sit{background:var(--card);border:1px solid var(--line-soft);border-radius:10px;padding:7px 12px;font-size:11px;color:var(--muted)}
-.sit.on{border-color:var(--accent);color:var(--ink)} .sit .sd{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle}
-.sit .by{display:block;font-size:9px;color:var(--accent)}
-.chatbox{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;height:500px;display:flex;flex-direction:column;max-width:820px}
-.chathead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);font-size:12px;color:var(--muted)} .chathead .t{font-weight:600;font-size:13px;color:var(--ink)}
-.stream{flex:1;padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
-.mu{align-self:flex-end;max-width:72%;background:#f1efec;border:1px solid var(--line-soft);border-radius:11px 11px 3px 11px;padding:8px 12px;font-size:12.5px}
-.ma{align-self:flex-start;max-width:86%;background:var(--bg);border:1px solid var(--line-soft);border-radius:11px 11px 11px 3px;padding:10px 13px;font-size:12.5px;line-height:1.5}
-.comp2{border-top:1px solid var(--line-soft);padding:12px 16px;font-size:13px;color:var(--faint)}
+.pg{font-family:var(--fd);font-size:20px;font-weight:500;margin:0 0 12px}
+.cols{display:flex;gap:18px;max-width:1010px}
+.chatcol{flex:1.2;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;display:flex;flex-direction:column;height:520px}
+.chathead{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line-soft);font-size:12px;color:var(--muted)}
+.chathead .nm{font-family:var(--fd);font-size:15px;font-weight:600;color:var(--ink)} .chathead .nm b{color:var(--accent);margin-right:5px}
+.smsgs{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:9px;font-size:12.5px;line-height:1.45}
+.sm{max-width:94%;padding:8px 11px;border-radius:10px}
+.sm.s{align-self:flex-start;background:#faf7f1;border-left:2px solid var(--accent);border-radius:0 10px 10px 10px}
+.sm.u{align-self:flex-end;background:#f1efec;border:1px solid var(--line-soft);border-radius:10px 10px 3px 10px}
+.stc{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;border-radius:99px;padding:1px 7px;font-weight:700}
+.stc.run{color:var(--done);background:rgba(45,90,62,.10)} .stc.que{color:var(--muted);background:var(--bg);border:1px solid var(--line-soft)} .stc.app{color:var(--decide);background:rgba(139,107,74,.10)}
+.brief{border:1px solid var(--accent);border-radius:10px;background:#fdfbf7;padding:9px 11px;font-size:11.5px}
+.brief .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700;display:flex;gap:6px;align-items:center}
+.brief .row{display:flex;gap:6px;margin-top:4px} .brief .row span:first-child{color:var(--faint);width:70px;flex:none} .brief .row span:last-child{color:var(--ink)}
+.tmpl{display:flex;gap:7px;margin-top:4px;flex-wrap:wrap}
+.tmpl span{font-size:11px;color:var(--muted);border:1px dashed var(--faint);border-radius:99px;padding:3px 10px}
+.scomp{border-top:1px solid var(--line-soft);padding:10px 13px;font-size:12.5px;color:var(--faint);display:flex;gap:8px;align-items:center}
+.scomp .ph{flex:1} .mic{width:22px;height:22px;border-radius:50%;border:1px solid var(--accent);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10px;flex:none}
+.sidecol{flex:1;display:flex;flex-direction:column;gap:12px}
+.panelbox{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:12px 14px}
+.panelbox .h4{margin-top:0}
+.wrow{display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--line-soft);font-size:12px;color:var(--muted)}
+.wrow:first-of-type{border-top:0}
+.wrow b{color:var(--ink);font-weight:600} .wrow .st{margin-left:auto}
+.tog{width:30px;height:16px;border-radius:99px;background:var(--done);position:relative;flex:none} .tog:after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff}
+.tog.off{background:var(--line)} .tog.off:after{right:auto;left:2px}
+.mrow2{padding:8px 0;border-top:1px solid var(--line-soft);font-size:12px}
+.mrow2:first-of-type{border-top:0}
+.mrow2 .t{display:flex;gap:8px;align-items:center} .mrow2 .t b{font-weight:600}
+.mrow2 .m{color:var(--faint);font-size:10.5px;margin-top:2px} .mrow2 .stop{color:var(--alert);font-size:11px;font-weight:600;margin-left:auto}
 /* overlay */
 .fab{position:absolute;right:28px;bottom:26px;display:flex;align-items:flex-end;gap:10px;z-index:30}
-.sdot{width:40px;height:40px;border-radius:50%;background:var(--card);border:1px solid var(--line);box-shadow:0 4px 14px rgba(28,25,23,.16);display:flex;align-items:center;justify-content:center;position:relative;overflow:visible}
+.sdot{width:40px;height:40px;border-radius:50%;background:var(--card);border:1px solid var(--line);box-shadow:0 4px 14px rgba(28,25,23,.16);display:flex;align-items:center;justify-content:center;position:relative}
 .sdot b{font-family:var(--fd);font-size:19px;font-weight:600;color:var(--accent);position:relative;z-index:2}
 .sdot:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--accent);opacity:.5}
 .sdot .n{position:absolute;top:-4px;right:-4px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;border-radius:99px;padding:1px 5px;z-index:3}
 .spill{background:#fdfbf7;border:1px solid var(--line-soft);border-left:2px solid var(--accent);border-radius:0 11px 11px 11px;padding:9px 12px;font-size:12.5px;max-width:360px;box-shadow:0 4px 16px rgba(28,25,23,.10)}
-.spill .acts{display:flex;gap:10px;margin-top:6px} .spill .act{font-size:12px;font-weight:700;color:var(--decide)} .spill .act.q{font-weight:400;color:var(--muted)}
-.scard{position:absolute;right:28px;bottom:78px;width:310px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px rgba(28,25,23,.18);display:flex;flex-direction:column;z-index:31;overflow:hidden}
-.scard .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line-soft)}
-.scard .hd .nm{font-family:var(--fd);font-size:15px;font-weight:600} .scard .hd .nm b{color:var(--accent);margin-right:5px}
-.switch{margin-left:auto;font-size:10.5px;color:var(--muted);border:1px solid var(--line-soft);border-radius:99px;padding:2px 8px} .hide{font-size:10.5px;color:var(--faint)}
+.spill .dyn{margin:6px 0 0}
+.scard{position:absolute;right:28px;bottom:78px;width:310px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px rgba(28,25,23,.18);display:flex;flex-direction:column;z-index:31;overflow:hidden;height:400px}
+.scard .chathead{padding:10px 12px}
 .sees{font-size:10.5px;color:var(--muted);padding:7px 12px;border-bottom:1px solid var(--line-soft);background:var(--bg)} .sees b{color:var(--ink)}
-.smsgs{padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.45}
-.sm{max-width:94%;padding:7px 10px;border-radius:10px}
-.sm.s{align-self:flex-start;background:#faf7f1;border-left:2px solid var(--accent);border-radius:0 10px 10px 10px}
-.sm.u{align-self:flex-end;background:#f1efec;border:1px solid var(--line-soft);border-radius:10px 10px 3px 10px}
-.brief{border:1px solid var(--accent);border-radius:10px;background:#fdfbf7;padding:9px 11px;font-size:11.5px}
-.brief .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.brief .row{display:flex;gap:6px;margin-top:4px} .brief .row span:first-child{color:var(--faint);width:64px;flex:none} .brief .row span:last-child{color:var(--ink)}
-.brief .acts{display:flex;gap:10px;margin-top:8px} .brief .act{font-size:12px;font-weight:700;color:var(--decide)} .brief .act.q{font-weight:400;color:var(--muted)}
-.chips2{display:flex;gap:6px;height:24px;align-items:center} .chips2.dim{opacity:.45}
-.chip2{font-size:11px;color:var(--decide);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:3px 10px;white-space:nowrap}
-.mem{border:1px dashed var(--accent);border-radius:10px;padding:7px 10px;font-size:11.5px;background:#fdfbf7}
-.mem .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700} .mem .e{float:right;color:var(--muted);font-size:10.5px}
-.scomp{border-top:1px solid var(--line-soft);padding:9px 12px;font-size:12px;color:var(--faint);display:flex;gap:8px;align-items:center}
-.scomp .ph{flex:1} .scomp .key{font-size:10px;border:1px solid var(--line-soft);border-radius:6px;padding:1px 6px;color:var(--muted)}
 </style>
 </head>
 <body>
 
-<p class="cap"><b>1 · Now — light, like your app.</b> <span class="mile">MVP</span> The app follows your Mac's appearance; yours is light, so the design is light. Now has a composer with a new-chat option, the "Shadow is watching" strip, and one line telling you what Shadow itself is doing.</p>
+<p class="cap"><b>1 · Now — only what needs you.</b> <span class="mile">MVP</span> Now is its own module. Shadow is just one voice feeding it (the mission-tagged cards); the org feeds it too. No strip, no buttons, no chrome — each card brings its own actions, generated for that moment. Tap a Shadow card and you land in the Shadow thread, not on a page.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
     <div class="brand">Sutra</div>
-    <div class="item on"><span class="g">&#9673;</span>Now <span class="badge">1</span></div>
-    <div class="item"><span class="g">&#9678;</span>Focus</div>
-    <div class="item"><span class="g">&#9998;</span>Chats</div>
-    <div class="item"><span class="g">&#9638;</span>Org</div>
-    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
-    <div class="item"><span class="g">&#9881;</span>Settings</div>
-    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div></div>
-  </nav>
-  <section class="pane">
-    <div class="greet">Good morning, Sankalp.</div>
-    <div class="sub">Four sessions are running. <b>One needs you.</b></div>
-    <div class="composer"><span class="mic">&#9679;</span><span class="ph">Tell Shadow, or start something new&hellip;</span><span class="cbtn">New chat</span></div>
-    <div class="h4">Needs you</div>
-    <div class="stack">
-      <div class="dcard"><span class="dot" style="background:var(--alert)"></span><span class="t">dayflow lost its connection 2 minutes ago. Pick it back up?<small>from where it stopped · nothing lost · 1 min</small></span><span class="act">Pick it up</span><span class="act q">leave it</span></div>
-    </div>
-    <div class="h4">Shadow is watching</div>
-    <div class="watch">
-      <div class="wrow"><span class="sd" style="background:var(--done)"></span><b>EMI auto-fix</b> · paisa<span class="sub2">&nbsp;turn 3</span><span class="st"><span class="stc run">Running</span></span></div>
-      <div class="wrow"><span class="sd" style="background:var(--done)"></span><b>landing copy refresh</b> · website<span class="sub2">&nbsp;drafting</span><span class="st"><span class="stc run">Running</span></span></div>
-      <div class="wrow"><span class="sd" style="background:var(--alert)"></span><b>dayflow deploy watch</b> · dayflow<span class="sub2">&nbsp;dropped · offered above</span><span class="st"><span class="stc run">Running</span></span></div>
-      <div class="wrow"><span class="sd" style="background:var(--line)"></span><b>nightly EMI wiring</b> · paisa<span class="sub2">&nbsp;starts when a slot frees</span><span class="st"><span class="stc que">Queued</span></span></div>
-    </div>
-    <div class="activity"><i></i>Shadow: 3 running · 1 queued · <u>details in Focus &rsaquo; Shadow</u></div>
-    <div class="quiet">quiet after 6 · next decision window 11:00</div>
-  </section>
-  <div class="fab"><div class="sdot"><b>S</b><span class="n">1</span></div></div>
-</div>
-
-<p class="cap"><b>2 · One line, one conversation, one action.</b> <span class="mile">MVP</span> Same composer, no header, no Edit. The first card is Ready; you kept talking, it updated, you tapped Start — the second card is the SAME card, now flipped to Started, and the nudge confirms it. You never left this page.</p>
-<div class="window">
-  <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="rail">
-    <div class="brand">Sutra</div>
-    <div class="item on"><span class="g">&#9673;</span>Now</div>
-    <div class="item"><span class="g">&#9678;</span>Focus</div>
-    <div class="item"><span class="g">&#9998;</span>Chats</div>
-    <div class="item"><span class="g">&#9638;</span>Org</div>
-    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
-    <div class="item"><span class="g">&#9881;</span>Settings</div>
-    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div></div>
-  </nav>
-  <section class="pane">
-    <div class="greet">Good morning, Sankalp.</div>
-    <div class="sub">Same page, same composer — this is just the conversation a moment later.</div>
-    <div class="stack" style="max-width:680px">
-      <div class="mu" style="align-self:flex-end;max-width:80%">We need to start a new feature: auto-fix the rounding differences in EMI checks.</div>
-      <div class="brief">
-        <div class="k">Shadow &middot; ready</div>
-        <div class="row"><span>Chat</span><span><b>EMI auto-fix</b> — new, in paisa</span></div>
-        <div class="row"><span>Done when</span><span>a PR link or a tested patch summary appears in the chat</span></div>
-        <div class="row"><span>I&rsquo;ll tell it</span><span>your one line · last week&rsquo;s rounding fix · the 3 differences found yesterday</span></div>
-        <div class="acts"><span class="act">Start the chat</span><span style="color:var(--faint);font-size:11px">&hellip;or keep telling me</span></div>
-      </div>
-      <div class="mu" style="align-self:flex-end;max-width:80%">Also make it run before every EMI check, not just this once.</div>
-      <div class="brief">
-        <div class="k">Shadow &middot; started 10:52</div>
-        <div class="row"><span>Chat</span><span><b>EMI auto-fix</b> — new, in paisa</span></div>
-        <div class="row"><span>Done when</span><span>a tested patch summary appears AND the fix runs before every EMI check</span></div>
-        <div class="row"><span>I&rsquo;ll tell it</span><span>everything above, plus: wire it into the nightly routine</span></div>
-        <div class="acts"><span style="color:var(--done);font-weight:700;font-size:12px">Started &middot; follow it in Focus &rsaquo; Shadow</span></div>
-      </div>
-    </div>
-    <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:var(--bg);font-size:12px;border-radius:99px;padding:7px 16px;box-shadow:0 8px 24px rgba(28,25,23,.25)">EMI auto-fix started &middot; in Chats &middot; follow it in Focus &rsaquo; Shadow</div>
-  </section>
-  <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
-</div>
-
-<p class="cap"><b>2b · Many at once — one thread, three missions.</b> <span class="mile">MVP</span> Fire as many one-liners as you like. Every card wears its mission tag and a one-word state. And when a bare "yes" could mean two things, Shadow asks once — never guesses.</p>
-<div class="window" style="height:640px">
-  <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="rail">
-    <div class="brand">Sutra</div>
-    <div class="item on"><span class="g">&#9673;</span>Now</div>
+    <div class="item on"><span class="g">&#9673;</span>Now <span class="badge">3</span></div>
     <div class="item"><span class="g">&#9678;</span>Focus</div>
     <div class="item"><span class="g">&#9998;</span>Chats</div>
     <div class="item"><span class="g">&#9638;</span>Org</div>
@@ -198,63 +105,22 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     <div class="identity"><b>Sankalp — CEO</b><div class="tele">6 sessions · ctx 62% · $9 today</div></div>
   </nav>
   <section class="pane">
-    <div class="filters"><span class="fchip on">All</span><span class="fchip">Running</span><span class="fchip">Paused</span><span class="fchip">Approval</span><span class="fchip">Queued</span></div>
-    <div class="stack" style="max-width:680px">
-      <div class="brief"><div class="k"><span class="mtag">EMI auto-fix</span> <span class="stc run">Running</span></div>
-        <div class="row"><span>Now</span><span>tests passed (142/142) — writing the patch summary</span></div>
-      </div>
-      <div class="brief"><div class="k"><span class="mtag">Landing copy</span> <span class="stc app">Approval</span></div>
-        <div class="row"><span>Ready</span><span>the hero copy rewrite is done — swap it onto the live page?</span></div>
-        <div class="acts"><span class="act">Approve the swap</span><span class="act q">Show me first</span></div>
-      </div>
-      <div class="mu" style="align-self:flex-end;max-width:60%">yes</div>
-      <div class="brief"><div class="k">Shadow</div>
-        <div class="row"><span></span><span>Yes to which — the <b>landing copy</b> swap, or the <b>EMI</b> deploy?</span></div>
-        <div class="acts"><span class="act"><span class="mtag" style="margin-right:5px">Landing copy</span>the swap</span><span class="act"><span class="mtag" style="margin-right:5px">EMI</span>the deploy</span></div>
-      </div>
+    <div class="greet">Good morning, Sankalp.</div>
+    <div class="sub"><b>Three things need you.</b> Everything else is handled.</div>
+    <div class="stack">
+      <div class="dcard"><div class="top"><span class="dot" style="background:var(--alert)"></span><b>dayflow lost its connection. Pick it back up?</b><span class="mtag" style="margin-left:auto">Shadow</span></div><small>from where it stopped · nothing lost · 1 min</small>
+        <div class="dyn"><span class="act">Pick it up</span><span class="act q">leave it</span></div></div>
+      <div class="dcard"><div class="top"><span class="dot" style="background:var(--decide)"></span><b>The landing copy rewrite is ready — swap it live?</b><span class="mtag" style="margin-left:auto">Shadow</span></div><small>changes the live page · reversible · you asked for review-first</small>
+        <div class="dyn"><span class="act">Show me first</span><span class="act q">approve the swap</span><span class="act q">not now</span></div></div>
+      <div class="dcard"><div class="top"><span class="dot" style="background:var(--review)"></span><b>Charter A1 is waiting on your ratification</b><span class="src" style="margin-left:auto">Org</span></div><small>5-min read · blocks the Shadow build</small>
+        <div class="dyn"><span class="act">Read it</span><span class="act q">later</span></div></div>
     </div>
+    <div class="quiet">Now is its own module — Shadow and the org both feed it. Nothing else lives here.</div>
   </section>
   <div class="fab"><div class="sdot"><b>S</b><span class="n">3</span></div></div>
 </div>
 
-<p class="cap"><b>3 · Chats — the new chat is a normal chat.</b> <span class="mile">MVP</span> It appears like any other, marked "started by Shadow" — you were never taken here. The moment you type into it, Shadow steps back — it's yours.</p>
-<div class="window">
-  <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="rail">
-    <div class="brand">Sutra</div>
-    <div class="item"><span class="g">&#9673;</span>Now</div>
-    <div class="item"><span class="g">&#9678;</span>Focus</div>
-    <div class="item on"><span class="g">&#9998;</span>Chats</div>
-    <div class="item"><span class="g">&#9638;</span>Org</div>
-    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
-    <div class="item"><span class="g">&#9881;</span>Settings</div>
-    <div class="identity"><b>Sankalp — CEO</b><div class="tele">5 sessions · ctx 62% · $8 today</div></div>
-  </nav>
-  <section class="pane">
-    <div class="pg">Chats</div>
-    <div class="slist">
-      <div class="sit on"><span class="sd" style="background:var(--accent)"></span>EMI auto-fix<span class="by">started by Shadow</span></div>
-      <div class="sit"><span class="sd" style="background:var(--done)"></span>paisa · EMI check</div>
-      <div class="sit"><span class="sd" style="background:var(--alert)"></span>dayflow · api deploy</div>
-      <div class="sit"><span class="sd" style="background:var(--review)"></span>sutra-ui · build</div>
-    </div>
-    <div class="chatbox">
-      <div class="chathead"><span class="t">EMI auto-fix</span><span>started by Shadow · turn 3 · Shadow is watching</span></div>
-      <div class="stream">
-        <div class="mu" style="opacity:.8">[Shadow] Build an auto-fix for rounding differences in EMI checks. Context: last week&rsquo;s fix (7c1e), yesterday&rsquo;s check found 3 one-paisa differences&hellip;</div>
-        <div class="ma">Plan: extend the reconciliation step with the rounding helper, add a test for the three cases, run the suite&hellip;</div>
-        <div class="ma">142/142 tests pass. Preparing the patch summary.</div>
-      </div>
-      <div class="comp2">Type here and Shadow steps back &mdash; this chat becomes yours&hellip;</div>
-    </div>
-  </section>
-  <div class="fab">
-    <div class="spill">EMI auto-fix: tests pass, patch summary coming up. I&rsquo;ll show you when it&rsquo;s done.</div>
-    <div class="sdot"><b>S</b><span class="n">2</span></div>
-  </div>
-</div>
-
-<p class="cap"><b>4 · Focus &rsaquo; Shadow — track everything it does.</b> <span class="mile">MVP</span> Every mission, every turn, every piece of evidence. Stop anything with one tap.</p>
+<p class="cap"><b>2 · Focus › Shadow — Shadow's home.</b> <span class="mile">MVP</span> The full Shadow chat lives here, next to what it's watching (with your on/off toggles) and its missions. Starting something isn't a form — Shadow offers its own templates and shapes the card to the use case.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail">
@@ -265,35 +131,83 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--fb);font-size:14px;pa
     <div class="item"><span class="g">&#9638;</span>Org</div>
     <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
     <div class="item"><span class="g">&#9881;</span>Settings</div>
-    <div class="identity"><b>Sankalp — CEO</b><div class="tele">5 sessions · ctx 62% · $8 today</div></div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">6 sessions · ctx 62% · $9 today</div></div>
   </nav>
   <section class="pane">
     <div class="crumb">Focus &rsaquo; <b>Shadow</b></div>
-    <div class="pg">Shadow</div>
-    <div class="secnav"><b>Missions</b><span>What I remember</span><span>How I operate</span><span>What I can see</span></div>
-    <div class="mission">
-      <div class="k">Started &middot; watching</div>
-      <div class="obj">EMI auto-fix &mdash; &ldquo;auto-fix the rounding differences in EMI checks&rdquo;</div>
-      <div class="dw">Done when: a tested patch summary appears and the fix runs before every EMI check · what I told it: view</div>
-      <div class="meta"><span>started by you, one line, 10:52</span><span>turn 3 of 12</span><span class="stop">Stop</span></div>
+    <div class="cols">
+      <div class="chatcol">
+        <div class="chathead"><span class="nm"><b>S</b>Shadow</span><span>the one thread — same as the corner card</span></div>
+        <div class="smsgs">
+          <div class="sm u">We need to start a new feature: auto-fix the rounding differences in EMI checks.</div>
+          <div class="sm s">That sounds like <b>fix something</b>. Here&rsquo;s the shape — tell me anything and it updates.</div>
+          <div class="brief">
+            <div class="k"><span class="mtag">EMI auto-fix</span><span class="stc app">Ready</span></div>
+            <div class="row"><span>Chat</span><span><b>EMI auto-fix</b> — new, in paisa</span></div>
+            <div class="row"><span>Done when</span><span>a tested patch summary appears and the fix runs before every EMI check</span></div>
+            <div class="row"><span>I&rsquo;ll tell it</span><span>your line · last week&rsquo;s fix · yesterday&rsquo;s 3 differences</span></div>
+            <div class="dyn" style="margin-left:0"><span class="act">Start the chat</span><span class="act q">&hellip;or keep telling me</span></div>
+          </div>
+          <div class="sm u">yes</div>
+          <div class="sm s">Yes to which — the <b>EMI</b> start, or the <b>landing copy</b> swap?
+            <div class="dyn" style="margin-left:0"><span class="act"><span class="mtag" style="margin-right:5px">EMI</span>start it</span><span class="act"><span class="mtag" style="margin-right:5px">Landing</span>the swap</span></div>
+          </div>
+          <div class="sm s" style="border-left-color:var(--faint);color:var(--muted)">Or start something new — I&rsquo;ll shape it:
+            <div class="tmpl"><span>start a feature</span><span>fix something</span><span>research</span><span>watch this</span></div>
+          </div>
+        </div>
+        <div class="scomp"><span class="mic">&#9679;</span><span class="ph">Tell Shadow — type, or hold to talk&hellip;</span></div>
+      </div>
+      <div class="sidecol">
+        <div class="panelbox">
+          <div class="h4">Watching</div>
+          <div class="wrow"><b>paisa</b> · EMI check<span class="st"><span class="tog"></span></span></div>
+          <div class="wrow"><b>dayflow</b> · api deploy<span class="st"><span class="tog"></span></span></div>
+          <div class="wrow"><b>sutra-ui</b> · build<span class="st"><span class="tog"></span></span></div>
+          <div class="wrow"><b>billu</b> · migration<span class="st"><span class="tog off"></span></span></div>
+        </div>
+        <div class="panelbox">
+          <div class="h4">Missions</div>
+          <div class="mrow2"><div class="t"><span class="stc run">Running</span><b>EMI auto-fix</b><span class="stop">Stop</span></div><div class="m">turn 3 of 12 · evidence</div></div>
+          <div class="mrow2"><div class="t"><span class="stc run">Running</span><b>landing copy refresh</b><span class="stop">Stop</span></div><div class="m">drafting · evidence</div></div>
+          <div class="mrow2"><div class="t"><span class="stc que">Queued</span><b>nightly EMI wiring</b><span class="stop">Drop</span></div><div class="m">starts when a slot frees · Start now</div></div>
+        </div>
+      </div>
     </div>
-    <div class="mission" style="margin-top:8px">
-      <div class="k" style="color:var(--review)">Paused — you stepped in</div>
-      <div class="obj">dayflow deploy watch</div>
-      <div class="dw">You typed into the chat at 10:41, so I stepped back. Say resume when you want me on it again.</div>
-      <div class="meta"><span>turn 5</span><span class="stop">End it</span></div>
-    </div>
-    <div class="mission" style="margin-top:8px">
-      <div class="k" style="color:var(--muted)">Queued</div>
-      <div class="obj">nightly EMI wiring</div>
-      <div class="dw">Starts when a slot frees (3 of 5 running). You can start it now or drop it.</div>
-      <div class="meta"><span>queued 11:02</span><span>Start now</span><span class="stop">Drop</span></div>
-    </div>
-    <div class="mrow"><span class="sc">done · yesterday</span>Picked dayflow back up after it dropped — verified, nothing lost.<div class="ed">evidence · 3 turns</div></div>
   </section>
-  <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
+  <div class="fab"><div class="sdot"><b>S</b><span class="n">3</span></div></div>
 </div>
 
-<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop · preview v4.2 · one composer, one card, one action, one word (watching) · card updates as you chat; Start never navigates — a nudge appears and the mission lives in Focus &rsaquo; Shadow · spec: holding/plans/shadow/</p>
+<p class="cap"><b>3 · Anywhere else — the corner card is the same thread.</b> <span class="mile">MVP</span> On any screen, the dot expands into the compact view of that same conversation. A pill tap lands you here, one more tap opens the full home.</p>
+<div class="window" style="height:620px">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="rail">
+    <div class="brand">Sutra</div>
+    <div class="item"><span class="g">&#9673;</span>Now</div>
+    <div class="item"><span class="g">&#9678;</span>Focus</div>
+    <div class="item on"><span class="g">&#9998;</span>Chats</div>
+    <div class="item"><span class="g">&#9638;</span>Org</div>
+    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">6 sessions · ctx 62% · $9 today</div></div>
+  </nav>
+  <section class="pane">
+    <div class="pg">Chats</div>
+    <div class="sub" style="margin-top:-6px">you're working here — Shadow stays in the corner</div>
+  </section>
+  <div class="scard">
+    <div class="chathead"><span class="nm"><b>S</b>Shadow</span><span>compact · open home &#8599;</span></div>
+    <div class="sees">I can see: <b>this screen</b> · 6 sessions · the app. Not your eyes.</div>
+    <div class="smsgs">
+      <div class="sm s">sutra-ui&rsquo;s build has run 11 minutes — longer than usual. Want me to keep watching?
+        <div class="dyn" style="margin-left:0"><span class="act">Keep watching</span><span class="act q">open it</span></div>
+      </div>
+    </div>
+    <div class="scomp"><span class="mic">&#9679;</span><span class="ph">Tell Shadow&hellip;</span></div>
+  </div>
+  <div class="fab"><div class="sdot"><b>S</b><span class="n">3</span></div></div>
+</div>
+
+<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop · preview v5 · founder cleanup: Now = its own module (needs-you only) · Shadow&rsquo;s home = Focus › Shadow · dynamic actions, no fixed buttons · template family · spec: holding/plans/shadow/</p>
 </body>
 </html>
