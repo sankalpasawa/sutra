@@ -1,6 +1,16 @@
 # Sutra — Current Version
 
-## v2.117.2 (2026-08-23, HEAD)
+## v2.118.1 (2026-08-24, HEAD)
+
+Governance chips now render on transcript turns -- which is every real session
+read from `~/.claude/projects`. Until now that branch skipped the chip while
+the body strip removed the same content: Input Routing, Depth, FLOW, BLUEPRINT
+and traces were invisible on real sessions. The chip is gated on an actual
+capture, toggles via a real turn uid, and says **terminal** (a fact) rather
+than "unresolved" (a failure that never happened). L1+L2+L3 pinned.
+
+
+## v2.117.2 (2026-08-23)
 
 The chat surface, redesigned and verified in the shipped app: every turn's
 governance captured under its chip (never leaked into the reply), subagent

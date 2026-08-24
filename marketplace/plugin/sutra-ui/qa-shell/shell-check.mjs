@@ -142,6 +142,12 @@ const state = await page.evaluate(() => {
     { const pg = parseGov("[INBOUND·DIRECT · TIMING:now · CHANNEL:x · REV:none · RISK:low]\nINPUT: a\nTYPE: task\n\nTASK: t\nDEPTH: 3/5\n\nPLACEMENT: D0 > D1 X | \"Y\"\n\nReal.\n\n1. kept\n\n`OS: x > y`");
       r.govSections = pg.sections.map(x => x.key).join(",");
       r.govBody = pg.body; }
+    /* transcript turns are ALL real sessions (2026-08-24): the chip must render
+       there too, honestly labelled terminal, and never for plain prose */
+    { const gt = { transcript:true, text:"q", response:"```\nINPUT: a\nTYPE: task\nEXISTING HOME: none\nROUTE: r\nFIT CHECK: none\nACTION: y\n```\nBody.", tools:[] };
+      const h = turnBlock(gt, 0);
+      r.transcriptChip = /gv-chip/.test(h) && />terminal</.test(h) && !/gv-unres/.test(h) && !!gt.uid;
+      r.transcriptQuiet = !/gv-chip/.test(turnBlock({ transcript:true, text:"q", response:"Plain prose only.", tools:[] }, 1)); }
     /* chat-surface chrome (founder 2026-08-18, finished 2026-08-22): in the
        RUNNING shell a session pane hides its header while expanded, carries the
        ⋯ chip first in the composer, and renders the 7-row menu on open */
@@ -178,6 +184,8 @@ check("unfenced governance run stripped from bodies", state.unfencedStripped ===
 check("governance captured as sections in the running shell",
   state.govSections === "header,routing,depth,placement,trace", state.govSections);
 check("and the body is the reply alone, numbered list intact", state.govBody === "Real.\n\n1. kept", JSON.stringify(state.govBody));
+check("transcript turns render the chip too — labelled terminal, real uid", state.transcriptChip === true);
+check("and a prose-only transcript turn stays chipless", state.transcriptQuiet === true);
 check("chrome: session pane header VISIBLE while expanded, carrying a <=45-word summary and the × close",
   state.chromeHeaderHidden === false && state.chromeSummaryWords > 0 && state.chromeSummaryWords <= 45 && state.chromeClose === true,
   "hidden=" + state.chromeHeaderHidden + " words=" + state.chromeSummaryWords + " close=" + state.chromeClose);

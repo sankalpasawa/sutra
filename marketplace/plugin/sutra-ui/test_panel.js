@@ -206,7 +206,7 @@ const EPILOGUE = `
      regressions (dead controls mid-stream; invisible fold on non-real
      sessions) stay pinned */
   turnControlClick, agentsFold, streamBodyHtml, drainStep, _MAX_STEP, _reduceMotion,
-  gvChipHtml, routingChart,
+  gvChipHtml, routingChart, turnBlock, gvHasCapture,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
@@ -3129,6 +3129,61 @@ test("40a. the popover is a labelled group, not a menu it cannot honour; aria-co
 test("40b. the live dot has a text alternative when it means something, and is hidden when it does not", () => {
   const quiet = paneHtml();
   assert.ok(/class="dot " aria-hidden="true"/.test(quiet), "idle dot is decorative");
+});
+
+/* ── 41 · governance chip on TRANSCRIPT turns ─────────────────────────────
+   Every real session is read from ~/.claude/projects, so every real turn is a
+   transcript turn — and until 2.117.3 the transcript branch of turnBlock never
+   rendered gvChipHtml while gvBody stripped the same content from the body:
+   captured nowhere, shown nowhere (found live 2026-08-24, founder report
+   "input routing … getting missed"). These pin the honest fix: chip when
+   something was captured, "terminal" (a fact) instead of "unresolved" (a
+   failure that never happened), no chip when there is nothing to capture. */
+
+const GOV_RESP = "```\nINPUT: ship the fix\nTYPE: task\nEXISTING HOME: none\nROUTE: bash\nFIT CHECK: none\nACTION: run the gate\n```\nDone — the fix shipped.";
+
+test("41a. a transcript turn whose text carries governance renders the chip", () => {
+  const h = T.turnBlock({ transcript:true, text:"q", response:GOV_RESP, tools:[] }, 0);
+  assert.ok(/gv-chip/.test(h), "chip missing on a transcript turn with governance");
+});
+
+test("41b. the transcript chip reports 'terminal', never a fabricated resolution failure", () => {
+  const t = { transcript:true, text:"q", uid:"tr41b", response:GOV_RESP, tools:[] };
+  const closed = T.turnBlock(t, 0);
+  assert.ok(/>terminal</.test(closed), "terminal segment missing");
+  assert.ok(!/gv-unres/.test(closed) && !/Unresolved/.test(closed),
+    "a terminal turn was misreported as a resolution failure");
+  T.S.govOpen = { tr41b: true };                    /* open it — the prose lives in the panel */
+  const open = T.turnBlock(t, 0);
+  T.S.govOpen = {};
+  assert.ok(/no placement was ever computed/.test(open),
+    "the opened chip must carry the honest terminal prose (codex consult)");
+  assert.ok(!/Unresolved/.test(open), "opened transcript chip misreports a failure");
+  assert.ok(/gv-row/.test(open) && /INPUT: ship the fix/.test(open),
+    "the opened chip must show the captured governance sections");
+});
+
+test("41c. a prose-only transcript turn renders NO chip — nothing captured is not a chip", () => {
+  const h = T.turnBlock({ transcript:true, text:"q", response:"Just an answer. No blocks anywhere.", tools:[] }, 1);
+  assert.ok(!/gv-chip/.test(h), "chip rendered with nothing captured");
+});
+
+test("41d. the transcript chip is toggleable: a real uid is assigned, not an empty anchor", () => {
+  const t = { transcript:true, text:"q", response:GOV_RESP, tools:[] };
+  const h = T.turnBlock(t, 0);
+  assert.ok(t.uid && new RegExp('data-govopen="' + t.uid + '"').test(h),
+    "empty data-govopen means the click handler returns and the chip is dead");
+});
+
+test("41e. panel turns are untouched: no domain still reads unresolved", () => {
+  const h = T.turnBlock({ text:"q", uid:"u41e", response:"plain", tools:[] }, 0);
+  assert.ok(/gv-chip/.test(h) && /gv-unres/.test(h), "panel branch changed");
+});
+
+test("41f. the gate ignores a prose mention of DEPTH — broad regex must not chip a non-capture", () => {
+  const prose = "Here is the glossary the doc introduces:\n- DEPTH: 3/5 means thorough\n- COST: an estimate\nThat is all.";
+  assert.equal(T.gvHasCapture({ response: prose }), false,
+    "an explanatory list that stays in the body must not claim a capture (codex P2)");
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

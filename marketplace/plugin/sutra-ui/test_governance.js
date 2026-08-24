@@ -848,6 +848,32 @@ test('14c. GUARD: a quoted sentence with two > signs is not a trace; a bare brea
   assert.strictEqual(r.sections.length, 0, JSON.stringify(r.sections));
 });
 
+/* ── 15. gvHasCapture — the transcript-chip gate (2.117.3) ───────────────────
+   The chip on a TRANSCRIPT turn renders only when parseGov actually captured
+   something. depth is deliberately outside the gate: its regex matches an
+   explanatory list that stays in the body (codex consult 2026-08-24). */
+const GHC = new Function(
+  slice('function parseGov', 'return { g, body:') +
+  '; ' + slice('function gvHasCapture', 'p.g.verb || p.g.risk);') +
+  ' return gvHasCapture;')();
+
+test('15a. a fenced routing block is a capture — the gate opens', () => {
+  assert.strictEqual(GHC({ response: "```\nINPUT: x\nTYPE: task\nEXISTING HOME: none\nROUTE: r\nFIT CHECK: none\nACTION: y\n```\nAnswer." }), true);
+});
+
+test('15b. plain prose is not a capture — the gate stays shut', () => {
+  assert.strictEqual(GHC({ response: "A normal answer with nothing structured in it." }), false);
+});
+
+test('15c. GUARD: an introduced list mentioning DEPTH stays body-only and does not chip (codex P2)', () => {
+  assert.strictEqual(GHC({ response: "The doc defines these terms:\n- DEPTH: 3/5 means thorough\n- COST: an estimate\nThat is all." }), false);
+});
+
+test('15d. an empty or missing response never throws and never chips', () => {
+  assert.strictEqual(GHC({}), false);
+  assert.strictEqual(GHC({ response: "" }), false);
+});
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 Date.now = realNow;
 console.log('\n' + '-'.repeat(60));

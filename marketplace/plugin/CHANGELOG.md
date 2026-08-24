@@ -2,6 +2,24 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.118.1 (2026-08-24)
+
+**Governance chips on transcript turns — the fix for "input routing is getting missed".**
+
+Every real session is read from `~/.claude/projects`, so every real turn is a
+transcript turn -- and the transcript branch of `turnBlock` never rendered the
+governance chip while `gvBody` stripped the same content from the body. Net
+effect: Input Routing, Depth, FLOW, BLUEPRINT and traces were captured nowhere
+(found live on the installed 2.117.2, 2026-08-24). Now a transcript turn whose
+text carries governance renders the chip, gated on an actual capture
+(`gvHasCapture`: sections, verb or risk -- depth deliberately excluded, its
+regex matches explanatory prose), keyed by a real `turnUid` so it toggles, and
+labelled **terminal** instead of "unresolved": a terminal turn's missing
+placement is a fact, not a classification failure. Prose-only transcript turns
+stay chipless. Pinned at L1 (`test_governance.js` 15a-d), L2 (`test_panel.js`
+41a-f) and L3 (two new lane-1 interrogations in `qa-shell/shell-check.mjs`);
+codex consult converged on the gate and the uid anchor.
+
 ## 2.118.0 (2026-08-24)
 
 **The v3.3 shell: six destinations, a second plane, an identity footer, one accent colour.**

@@ -994,6 +994,16 @@ function parseGov(text){
 /* patchStreaming (01-state.js) reaches this through window with a fallback so
    module order can never hard-fail streaming */
 function gvBody(text){ return parseGov(text).body; }
+
+/* Chip-worthiness for TRANSCRIPT turns: a chip only when parseGov actually
+   captured something. depth is deliberately NOT in this gate: its regex is
+   broad enough to match an explanatory list that merely mentions "DEPTH: 3/5"
+   and stays in the body — a chip there would claim a capture that never
+   happened (codex consult, 2026-08-24). */
+function gvHasCapture(t){
+  const p = parseGov((t && t.response) || "");
+  return !!((p.sections && p.sections.length) || p.g.verb || p.g.risk);
+}
 if (typeof window !== "undefined") window.gvBody = gvBody;
 
 /* The collapsed governance chip + drop-open panel for one panel-run turn.
@@ -1012,11 +1022,17 @@ function gvChipHtml(t, i){
   if (t.domain) segs.push(`<span class="gv-leaf">${esc(t.domain.name)}</span>`);
   segs.push(t.domain
     ? `<span>${held ? "held" : esc(Number(t.confidence||0).toFixed(2))}</span>`
-    : `<span class="gv-unres">unresolved</span>`);
+    : (t.transcript
+      /* a terminal turn's missing placement is a FACT, not a failure — nothing
+         ever tried to classify it, so "unresolved" would misreport */
+      ? `<span>terminal</span>`
+      : `<span class="gv-unres">unresolved</span>`));
   if (pg.risk) segs.push(`<span>risk:${esc(pg.risk.toLowerCase())}</span>`);
   const prose = !t.domain
-    ? `<b style="color:var(--block)">Unresolved</b> — no department could be
-       resolved, so this ran without a charter.${t.blocked?` <span style="color:var(--faint)">${esc(t.blocked)}</span>`:""}`
+    ? (t.transcript
+      ? `Ran in the terminal, outside this panel — no placement was ever computed, so none is reported.`
+      : `<b style="color:var(--block)">Unresolved</b> — no department could be
+       resolved, so this ran without a charter.${t.blocked?` <span style="color:var(--faint)">${esc(t.blocked)}</span>`:""}`)
     : (t.blocked && !t.placement
       ? `Classified to <b style="color:var(--ink)">${esc(t.domain.name)}</b>, but
          <b style="color:var(--block)">nothing was filed</b> —
@@ -1337,6 +1353,14 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
      never happened. */
 function turnBlock(t, i){
   if (t.transcript){
+    /* Transcript turns get the governance chip too — gvBody strips governance
+       from EVERY body, so a transcript turn without a chip loses that content
+       entirely (found live 2026-08-24: every real session reads as transcript,
+       so "input routing … and everything" was captured nowhere). The chip is
+       gated on an actual capture, and turnUid() gives it a real toggle anchor
+       (an empty data-govopen is a dead chip — the click handler returns).
+       Placement honesty is kept inside gvChipHtml's transcript branch. */
+    const gvT = gvHasCapture(t) ? (turnUid(t), gvChipHtml(t, i)) : "";
     return `<div class="turn">
       ${t.orphan
         ? `<div class="a"><span class="pill p-warn">assistant message with no recorded prompt</span></div>`
@@ -1346,7 +1370,7 @@ function turnBlock(t, i){
         <div style="margin-top:5px;color:var(--faint);font-size:11px">Read from
           <code>~/.claude/projects</code>. This ran in the terminal, not through this panel,
           so no placement was ever filed for it.</div>
-      </div>${turnResponse(t)}</div>`;
+      </div>${gvT}${turnResponse(t)}</div>`;
   }
   /* DS port: the placement prose, grounding charter, and trace that used to
      print inline every turn now live behind the collapsed governance chip —
