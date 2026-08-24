@@ -3,240 +3,200 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow on Sutra Desktop — preview v3 (overlay)</title>
-<link rel="stylesheet" href="tokens.css">
-<!-- v3 (2026-08-22): founder ruling — Shadow is an overlay, not a tab or panel. A dot, a one-line prompt,
-     an expandable chat; it rides on the app window. Layout-only CSS; visuals from tokens.css.
-     Spec: holding/plans/shadow/DESIGN-SYSTEM.md · PRD-MVP.md -->
+<title>Shadow on Sutra Desktop — preview v4 (IA v3.3 shell)</title>
+<!-- v4 (2026-08-24): rebuilt on the SHIPPED Home IA v3.3 shell (dark stock palette, rail
+     Now/Focus/Chats/Org/Team Sutra/Settings, identity footer). Founder ruling: Shadow's work
+     lands in NOW; the Shadow section lives UNDER FOCUS. Overlay unchanged: S-mark dot, pill,
+     card with voice + on-the-fly chips. Spec: holding/plans/shadow/ -->
 <style>
-  body{background:#ECE8E0;margin:0;padding:40px 24px 80px;font-family:var(--font-body);color:var(--ink)}
-  .cap{max-width:1300px;margin:0 auto 10px;font-size:12px;color:var(--stone)} .cap b{color:var(--ink);font-weight:600}
-  .window{width:1300px;max-width:100%;height:720px;margin:0 auto 56px;background:var(--bg);border:1px solid #ddd8cf;border-radius:14px;box-shadow:0 22px 64px rgba(12,10,8,.18);overflow:hidden;display:flex;position:relative}
-  .lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20} .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#e0ddd6}
-  .ds-rail{padding-top:40px} .ds-rail .item{padding:7px 9px;border-radius:9px;font-size:13px;color:var(--stone);margin-bottom:2px} .ds-rail .item.on{background:var(--cream);color:var(--ink);font-weight:600}
-  .ds-rail .item .badge{float:right;font-size:10px;background:var(--decide);color:#fff;border-radius:99px;padding:1px 6px} .ds-rail .foot{margin-top:auto;font-size:10px;color:var(--faint);padding:0 8px;line-height:1.5}
-  .pane{flex:1;overflow:auto} .chwrap{padding:44px 24px 20px}
-  h2.pg{font-family:var(--font-display);font-size:20px;font-weight:500;margin:0 0 2px} .pgsub{font-size:11.5px;color:var(--stone);margin-bottom:12px}
-  .slist{display:flex;gap:var(--s2);margin-bottom:var(--s3);flex-wrap:wrap} .sit{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:11px} .sit.on{border-color:var(--gold);background:#fdfaf4} .sit .tt{font-weight:600;font-size:11.5px} .sit .mm{font-size:9px;color:var(--stone)}
-  .panes2{display:flex;height:540px;border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden;background:var(--panel)}
-  .ctx{width:270px;border-right:1px solid var(--line);padding:13px;overflow:auto;background:#fbfaf7;font-size:11px} .crumb{font-size:10px;color:var(--stone);margin-bottom:9px} .crumb b{color:var(--gold)}
-  .cc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px} .cc .k{font-size:9px;letter-spacing:var(--ls-label);font-weight:700;color:var(--gold)} .cc .nm{font-family:var(--font-display);font-size:13px;margin:2px 0}
-  .chatcol{flex:1;display:flex;flex-direction:column;min-width:0} .chathead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px} .chathead .t{font-weight:600;font-size:13px}
-  .stream{flex:1;padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
-  .mu{align-self:flex-end;max-width:72%;background:#f0ede5;border:1px solid var(--line);border-radius:11px 11px 3px 11px;padding:8px 12px;font-size:12.5px}
-  .ma{align-self:flex-start;max-width:86%;background:var(--bg);border:1px solid var(--line);border-radius:11px 11px 11px 3px;padding:10px 13px;font-size:12.5px;line-height:1.5}
-  .ma table{border-collapse:collapse;margin-top:6px;font-size:11.5px} .ma td{padding:2px 10px 2px 0;color:var(--stone)} .ma td:first-child{color:var(--ink)}
-  .ds-composer{display:flex;align-items:center;gap:10px;padding:14px 16px;margin:10px 14px 12px}
-  /* ---- Shadow overlay ---- */
-  .shadow-fab{position:absolute;right:28px;bottom:26px;display:flex;align-items:flex-end;gap:10px;z-index:30}
-  .sdot{width:40px;height:40px;border-radius:50%;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-hover);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;overflow:hidden}
-  .sdot b{font-family:var(--font-display);font-size:19px;font-weight:600;color:var(--gold);line-height:1;position:relative;z-index:2}
-  .sdot:before{content:"";position:absolute;left:-8px;top:-8px;width:34px;height:34px;border-radius:50%;background:rgba(26,23,20,.06);z-index:1}
-  .sdot:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--gold);opacity:.55}
-  .spill{background:var(--cream);border-left:2px solid var(--gold);border-radius:0 11px 11px 11px;padding:9px 12px;font-size:12.5px;box-shadow:var(--shadow-rest);max-width:360px;margin-bottom:2px}
-  .spill .acts{display:flex;gap:8px;margin-top:6px} .spill .act{font-size:12px;font-weight:700;color:var(--decide)} .spill .act.q{font-weight:400;color:var(--stone)}
-  .scard{position:absolute;right:28px;bottom:78px;width:300px;height:380px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:0 18px 48px rgba(12,10,8,.16);display:flex;flex-direction:column;z-index:31;overflow:hidden}
-  .scard .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)} .scard .hd .nm{font-family:var(--font-display);font-size:15px;font-weight:600} .scard .hd .nm i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);margin-right:6px}
-  .switch{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--stone);border:1px solid var(--line);border-radius:99px;padding:2px 8px} .switch i{width:18px;height:10px;border-radius:99px;background:var(--line);display:inline-block;position:relative} .switch i:after{content:"";position:absolute;left:1px;top:1px;width:8px;height:8px;border-radius:50%;background:#fff}
-  .hide{font-size:10.5px;color:var(--faint)}
-  .sees{font-size:10.5px;color:var(--stone);padding:7px 12px;border-bottom:1px solid var(--line);background:#fbfaf7} .sees b{color:var(--ink);font-weight:600}
-  .smsgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.45}
-  .sm{max-width:92%;padding:7px 10px;border-radius:10px} .sm.s{align-self:flex-start;background:var(--cream);border-left:2px solid var(--gold);border-radius:0 10px 10px 10px} .sm.u{align-self:flex-end;background:#f0ede5;border:1px solid var(--line);border-radius:10px 10px 3px 10px}
-  .mem{align-self:stretch;border:1px dashed var(--gold);border-radius:10px;padding:7px 10px;font-size:11.5px;background:#fdfaf4} .mem .k{font-size:9px;letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--gold);font-weight:700} .mem .e{float:right;color:var(--stone);font-size:10.5px}
-  .scomp{border-top:1px solid var(--line);padding:9px 12px;font-size:12px;color:var(--faint);display:flex;gap:8px;align-items:center} .scomp .ph{flex:1} .scomp .key{font-size:10px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--stone)}
-  .mic{width:22px;height:22px;border-radius:50%;border:1px solid var(--gold);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;flex:none}
-  .chips2{display:flex;gap:6px;height:24px;align-items:center;margin:2px 0}
-  .chip2{font-size:11px;color:var(--decide);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 10px;white-space:nowrap}
-  .chips2.dim{opacity:.45}
-  /* journey extras */
-  .mile{display:inline-block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:99px;padding:2px 8px;margin-left:6px;vertical-align:middle}
-  .mile.mvp{background:var(--gold-glow);color:var(--gold);border:1px solid var(--gold)} .mile.m1{background:#eef2f6;color:var(--review);border:1px solid var(--review)} .mile.fut{background:var(--ink);color:var(--cream)}
-  .focusline{font-size:10.5px;color:var(--stone);margin-top:5px} .focusline u{text-decoration:none;border-bottom:1px dotted var(--stone);margin-left:4px}
-  .fban{background:var(--ink);color:var(--cream);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;text-align:center;padding:6px}
-  .steps{display:flex;flex-direction:column;gap:6px;font-size:12px} .steps div{display:flex;gap:8px;align-items:center} .steps i{width:14px;height:14px;border-radius:50%;display:inline-block;border:1.5px solid var(--line)} .steps i.ok{background:var(--done);border-color:var(--done)} .steps i.hold{border-color:var(--decide);background:var(--gold-glow)}
-  .sact{display:flex;gap:8px;margin-top:8px} .sact .act{font-size:12px;font-weight:700;color:var(--decide);padding:4px 10px;border-radius:var(--r-chip);background:var(--panel);border:1px solid var(--line)} .sact .act.q{font-weight:400;color:var(--stone);border-color:transparent}
-  .tabs{display:flex;gap:12px;padding:8px 12px 0;font-size:11px;color:var(--faint)} .tabs b{color:var(--ink);border-bottom:2px solid var(--gold);padding-bottom:4px;font-weight:600}
-  .memlist{display:flex;flex-direction:column;gap:7px;padding:10px 12px} .memrow{border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:11.5px;line-height:1.4} .memrow .sc{float:right;font-size:9.5px;color:var(--stone);background:var(--cream);border-radius:99px;padding:1px 7px;margin-left:6px} .memrow .ed{color:var(--faint);font-size:10px;margin-top:2px}
-  .imp{margin:4px 12px 10px;border:1px dashed var(--gold);border-radius:10px;padding:8px 10px;font-size:11.5px;background:#fdfaf4}
-  .ro{padding:44px 24px} .ro .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);padding:16px;max-width:620px} .ro .k{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:700} .ro .nm{font-family:var(--font-display);font-size:18px;margin:4px 0 10px} .ro .row{display:flex;justify-content:space-between;font-size:12.5px;padding:7px 0;border-top:1px solid var(--line);color:var(--stone)} .ro .row b{color:var(--ink);font-weight:500}
+:root{
+  --bg:#0C0B09;--surface:#161412;--card:#1C1A17;--line:#2A2622;--line-soft:#221F1C;
+  --ink:#F5F0E8;--muted:#8C857D;--faint:#6E6860;--accent:#B8945F;--accent-glow:rgba(184,148,95,.16);
+  /* semantics, brightened for the dark shell */
+  --alert:#C7789F;--decide:#C09A6A;--done:#6FA57F;--review:#7C9BB8;
+  --fd:'Playfair Display',Georgia,serif;--fb:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+body{background:#060504;color:var(--ink);font-family:var(--fb);font-size:14px;padding:40px 24px 80px}
+.cap{max-width:1300px;margin:0 auto 10px;font-size:12px;color:var(--muted)} .cap b{color:var(--ink);font-weight:600}
+.mile{display:inline-block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:99px;padding:2px 8px;margin-left:6px;background:var(--accent-glow);color:var(--accent);border:1px solid var(--accent)}
+.window{width:1300px;max-width:100%;height:700px;margin:0 auto 56px;background:var(--bg);border:1px solid #262220;border-radius:14px;box-shadow:0 22px 64px rgba(0,0,0,.5);overflow:hidden;display:flex;position:relative}
+.lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20} .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#2c2825}
+.rail{width:196px;background:var(--surface);border-right:1px solid var(--line-soft);padding:44px 10px 10px;display:flex;flex-direction:column}
+.brand{font-family:var(--fd);font-size:15px;margin:0 0 14px 8px;color:var(--ink)}
+.item{padding:8px 10px;border-radius:9px;font-size:13px;color:var(--muted);margin-bottom:2px;display:flex;gap:9px;align-items:center}
+.item.on{background:var(--card);color:var(--ink);font-weight:600;border:1px solid var(--line-soft)}
+.item .g{width:14px;text-align:center;color:var(--faint)} .item.on .g{color:var(--accent)}
+.item .badge{margin-left:auto;font-size:10px;background:var(--decide);color:#0C0B09;border-radius:99px;padding:1px 6px;font-weight:700}
+.identity{margin-top:auto;border-top:1px solid var(--line-soft);padding:10px 8px 4px;font-size:11px;color:var(--muted)}
+.identity b{color:var(--ink);font-weight:600;display:block;font-size:12px}
+.identity .tele{margin-top:3px;color:var(--faint);font-size:10.5px}
+.identity .sw{display:flex;gap:5px;margin-top:7px} .identity .sw i{width:10px;height:10px;border-radius:50%;display:inline-block;border:1px solid var(--line)}
+.pane{flex:1;overflow:auto;padding:44px 28px 20px}
+.greet{font-family:var(--fd);font-size:28px;font-weight:500}
+.sub{color:var(--muted);font-size:13.5px;margin:4px 0 20px} .sub b{color:var(--decide);font-weight:600}
+.stack{display:flex;flex-direction:column;gap:10px;max-width:640px}
+.dcard{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:13px 15px}
+.dcard .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dcard .t{flex:1;font-size:14px} .dcard .t small{display:block;color:var(--faint);font-size:11.5px;margin-top:2px}
+.dcard .act{font-size:13px;font-weight:700;color:var(--decide);padding:5px 11px;border-radius:8px;cursor:default}
+.dcard .act.q{color:var(--muted);font-weight:400}
+.handled{margin:22px 0 0;font-size:12.5px;color:var(--muted);max-width:640px} .handled b{color:var(--done);font-weight:600}
+.quiet{margin-top:26px;font-size:12px;color:var(--faint)}
+.crumb{font-size:11px;color:var(--muted);margin-bottom:4px} .crumb b{color:var(--accent)}
+.pg{font-family:var(--fd);font-size:20px;font-weight:500;margin:0 0 14px}
+.secnav{display:flex;gap:14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line-soft);margin-bottom:16px;max-width:640px}
+.secnav b{color:var(--ink);border-bottom:2px solid var(--accent);padding-bottom:7px;font-weight:600}
+.secnav span{padding-bottom:7px}
+.mission{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:13px 15px;max-width:640px;font-size:13px}
+.mission .k{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.mission .obj{margin:4px 0 2px;font-weight:600}
+.mission .dw{color:var(--muted);font-size:12px}
+.mission .meta{display:flex;gap:14px;margin-top:9px;font-size:11.5px;color:var(--faint)} .mission .meta .stop{color:var(--alert);margin-left:auto}
+.mrow{border:1px solid var(--line-soft);background:var(--card);border-radius:10px;padding:9px 12px;font-size:12.5px;max-width:640px;margin-top:8px}
+.mrow .sc{float:right;font-size:9.5px;color:var(--muted);background:var(--surface);border:1px solid var(--line-soft);border-radius:99px;padding:1px 7px}
+.mrow .ed{color:var(--faint);font-size:10.5px;margin-top:2px}
+.slist{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.sit{background:var(--card);border:1px solid var(--line-soft);border-radius:10px;padding:7px 12px;font-size:11px;color:var(--muted)}
+.sit.on{border-color:var(--accent);color:var(--ink)} .sit .sd{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.chatbox{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;height:520px;display:flex;flex-direction:column;max-width:820px}
+.chathead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);font-size:12px;color:var(--muted)} .chathead .t{font-weight:600;font-size:13px;color:var(--ink)}
+.stream{flex:1;padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.mu{align-self:flex-end;max-width:72%;background:#242019;border:1px solid var(--line-soft);border-radius:11px 11px 3px 11px;padding:8px 12px;font-size:12.5px}
+.ma{align-self:flex-start;max-width:86%;background:var(--surface);border:1px solid var(--line-soft);border-radius:11px 11px 11px 3px;padding:10px 13px;font-size:12.5px;line-height:1.5}
+.comp{border-top:1px solid var(--line-soft);margin:0;padding:12px 16px;font-size:13px;color:var(--faint)}
+/* overlay */
+.fab{position:absolute;right:28px;bottom:26px;display:flex;align-items:flex-end;gap:10px;z-index:30}
+.sdot{width:40px;height:40px;border-radius:50%;background:var(--card);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.sdot b{font-family:var(--fd);font-size:19px;font-weight:600;color:var(--accent);position:relative;z-index:2}
+.sdot:before{content:"";position:absolute;left:-8px;top:-8px;width:34px;height:34px;border-radius:50%;background:rgba(245,240,232,.05);z-index:1}
+.sdot:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--accent);opacity:.55}
+.spill{background:var(--card);border-left:2px solid var(--accent);border:1px solid var(--line-soft);border-left:2px solid var(--accent);border-radius:0 11px 11px 11px;padding:9px 12px;font-size:12.5px;max-width:360px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.spill .acts{display:flex;gap:10px;margin-top:6px} .spill .act{font-size:12px;font-weight:700;color:var(--decide)} .spill .act.q{font-weight:400;color:var(--muted)}
+.scard{position:absolute;right:28px;bottom:78px;width:300px;height:390px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.55);display:flex;flex-direction:column;z-index:31;overflow:hidden}
+.scard .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line-soft)}
+.scard .hd .nm{font-family:var(--fd);font-size:15px;font-weight:600} .scard .hd .nm b{color:var(--accent);margin-right:5px}
+.switch{margin-left:auto;font-size:10.5px;color:var(--muted);border:1px solid var(--line-soft);border-radius:99px;padding:2px 8px} .hide{font-size:10.5px;color:var(--faint)}
+.sees{font-size:10.5px;color:var(--muted);padding:7px 12px;border-bottom:1px solid var(--line-soft);background:var(--surface)} .sees b{color:var(--ink)}
+.smsgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.45}
+.sm{max-width:92%;padding:7px 10px;border-radius:10px}
+.sm.s{align-self:flex-start;background:var(--surface);border-left:2px solid var(--accent);border-radius:0 10px 10px 10px}
+.sm.u{align-self:flex-end;background:#242019;border:1px solid var(--line-soft);border-radius:10px 10px 3px 10px}
+.chips2{display:flex;gap:6px;height:24px;align-items:center} .chips2.dim{opacity:.45}
+.chip2{font-size:11px;color:var(--decide);background:var(--surface);border:1px solid var(--line-soft);border-radius:99px;padding:3px 10px;white-space:nowrap}
+.mem{border:1px dashed var(--accent);border-radius:10px;padding:7px 10px;font-size:11.5px;background:var(--surface)}
+.mem .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700} .mem .e{float:right;color:var(--muted);font-size:10.5px}
+.scomp{border-top:1px solid var(--line-soft);padding:9px 12px;font-size:12px;color:var(--faint);display:flex;gap:8px;align-items:center}
+.scomp .ph{flex:1} .scomp .key{font-size:10px;border:1px solid var(--line-soft);border-radius:6px;padding:1px 6px;color:var(--muted)}
+.mic{width:22px;height:22px;border-radius:50%;border:1px solid var(--accent);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10px;flex:none}
 </style>
 </head>
 <body>
 
-<p class="cap"><b>1 · Shadow rides on the app.</b> No new tab, no panel. A dot in the corner; when it has something worth saying, one line appears for a few seconds. Everything else is exactly the app you approved.</p>
+<p class="cap"><b>1 · Now — Shadow writes this page.</b> <span class="mile">MVP</span> Your ruling: Shadow's work lands in Now. The dot rides in the corner; one line when something needs you.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="ds-rail">
+  <nav class="rail">
     <div class="brand">Sutra</div>
-    <div class="item on">&#9998; Chats <span class="badge">1</span></div>
-    <div class="item">&#10227; Routines</div>
-    <div class="item">&#10047; Balance</div>
-    <div class="item">&#9673; Teamsutra</div>
-    <div class="item">&#9643; Usage</div>
-    <div class="item">&#9881; Manage &#9662;</div>
-    <div class="foot">Sankalp &middot; maker morning<br>4 sessions running</div>
+    <div class="item on"><span class="g">&#9673;</span>Now <span class="badge">1</span></div>
+    <div class="item"><span class="g">&#9678;</span>Focus</div>
+    <div class="item"><span class="g">&#9998;</span>Chats</div>
+    <div class="item"><span class="g">&#9638;</span>Org</div>
+    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div><div class="sw"><i style="background:var(--accent)"></i><i></i><i></i></div></div>
   </nav>
-  <section class="pane"><div class="chwrap">
-    <h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
-    <div class="slist">
-      <div class="sit on"><div class="tt">paisa &middot; EMI check</div><div class="mm">live now</div></div>
-      <div class="sit"><div class="tt">dayflow &middot; api deploy</div><div class="mm">lost connection</div></div>
-      <div class="sit"><div class="tt">sutra-ui &middot; build</div><div class="mm">11 min</div></div>
-      <div class="sit"><div class="tt">billu &middot; migration</div><div class="mm">idle</div></div>
+  <section class="pane">
+    <div class="greet">Good morning, Sankalp.</div>
+    <div class="sub">Four sessions are running. <b>One needs you.</b> Shadow set this up.</div>
+    <div class="stack">
+      <div class="dcard"><span class="dot" style="background:var(--alert)"></span><span class="t">dayflow lost its connection 2 minutes ago. Pick it back up?<small>from where it stopped · nothing lost · 1 min</small></span><span class="act">Pick it up</span><span class="act q">leave it</span></div>
+      <div class="dcard"><span class="dot" style="background:var(--decide)"></span><span class="t">paisa finished the EMI check — 3 differences found.<small>two-line summary ready · 2 min</small></span><span class="act">Read it</span><span class="act q">later</span></div>
     </div>
-    <div class="panes2">
-      <aside class="ctx"><div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div>
-        <div class="cc"><div class="k">CHARTER</div><div class="nm">Lending operations</div></div>
-        <div class="cc"><div class="k">LAST TIME</div><div style="color:var(--stone)">Rounding issue fixed in dayflow on Tuesday.</div></div></aside>
-      <div class="chatcol">
-        <div class="chathead"><span class="t">EMI reconciliation</span></div>
-        <div class="stream">
-          <div class="mu">Run the EMI check against last night&rsquo;s batch and show me the differences.</div>
-          <div class="ma">Done &mdash; 1,204 loans compared, 3 differences.<table><tr><td>LN-20817</td><td>&#8377;12,450.00 vs &#8377;12,449.99</td></tr><tr><td>LN-21033</td><td>&#8377;8,210.00 vs &#8377;8,209.99</td></tr><tr><td>LN-21290</td><td>&#8377;15,000.00 vs &#8377;14,999.99</td></tr></table></div>
-        </div>
-        <div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div>
-      </div>
-    </div>
-  </div></section>
-  <!-- overlay: dot + pill -->
-  <div class="shadow-fab">
-    <div class="spill">dayflow lost its connection 2 minutes ago. Pick it back up?<div class="acts"><span class="act">Pick it up</span><span class="act q">Not now</span></div></div>
-    <div class="sdot" title="Shadow"><b>S</b></div>
+    <div class="handled"><b>Handled while you worked</b> — billu asked for a permission, you gave it · sutra-ui build finished clean.</div>
+    <div class="quiet">Shadow is watching 4 sessions · next decision window 11:00 · quiet after 6</div>
+  </section>
+  <div class="fab">
+    <div class="spill">sutra-ui has been building for 11 minutes — longer than usual. Want me to keep watching?<div class="acts"><span class="act">Keep watching</span><span class="act q">Open it</span></div></div>
+    <div class="sdot"><b>S</b></div>
   </div>
 </div>
 
-<p class="cap"><b>2 · Tap the dot — Shadow opens its own chat, with a voice.</b> The Sutra mark sits in the dot. Hold the mic to talk (a solid "Listening" label appears; release stops it). Quick answers are built on the fly — never more than three, always with the composer underneath. The dimmed row is one you already answered.</p>
+<p class="cap"><b>2 · In a chat — the card, with voice and on-the-fly answers.</b> <span class="mile">MVP</span> Same overlay as before, native to the dark shell. Hold the mic to talk; quick answers are generated per moment, max three.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="ds-rail">
+  <nav class="rail">
     <div class="brand">Sutra</div>
-    <div class="item on">&#9998; Chats <span class="badge">1</span></div>
-    <div class="item">&#10227; Routines</div>
-    <div class="item">&#10047; Balance</div>
-    <div class="item">&#9673; Teamsutra</div>
-    <div class="item">&#9643; Usage</div>
-    <div class="item">&#9881; Manage &#9662;</div>
-    <div class="foot">Sankalp &middot; maker morning<br>4 sessions running</div>
+    <div class="item"><span class="g">&#9673;</span>Now</div>
+    <div class="item"><span class="g">&#9678;</span>Focus</div>
+    <div class="item on"><span class="g">&#9998;</span>Chats</div>
+    <div class="item"><span class="g">&#9638;</span>Org</div>
+    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div><div class="sw"><i style="background:var(--accent)"></i><i></i><i></i></div></div>
   </nav>
-  <section class="pane"><div class="chwrap">
-    <h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
+  <section class="pane">
+    <div class="pg">Chats</div>
     <div class="slist">
-      <div class="sit on"><div class="tt">paisa &middot; EMI check</div><div class="mm">live now</div></div>
-      <div class="sit"><div class="tt">dayflow &middot; api deploy</div><div class="mm">lost connection</div></div>
-      <div class="sit"><div class="tt">sutra-ui &middot; build</div><div class="mm">11 min</div></div>
-      <div class="sit"><div class="tt">billu &middot; migration</div><div class="mm">idle</div></div>
+      <div class="sit on"><span class="sd" style="background:var(--done)"></span>paisa · EMI check</div>
+      <div class="sit"><span class="sd" style="background:var(--alert)"></span>dayflow · api deploy</div>
+      <div class="sit"><span class="sd" style="background:var(--review)"></span>sutra-ui · build</div>
+      <div class="sit"><span class="sd" style="background:var(--line)"></span>billu · migration</div>
     </div>
-    <div class="panes2">
-      <aside class="ctx"><div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div>
-        <div class="cc"><div class="k">CHARTER</div><div class="nm">Lending operations</div></div>
-        <div class="cc"><div class="k">LAST TIME</div><div style="color:var(--stone)">Rounding issue fixed in dayflow on Tuesday.</div></div></aside>
-      <div class="chatcol">
-        <div class="chathead"><span class="t">EMI reconciliation</span></div>
-        <div class="stream">
-          <div class="mu">Run the EMI check against last night&rsquo;s batch and show me the differences.</div>
-          <div class="ma">Done &mdash; 1,204 loans compared, 3 differences.<table><tr><td>LN-20817</td><td>&#8377;12,450.00 vs &#8377;12,449.99</td></tr><tr><td>LN-21033</td><td>&#8377;8,210.00 vs &#8377;8,209.99</td></tr><tr><td>LN-21290</td><td>&#8377;15,000.00 vs &#8377;14,999.99</td></tr></table></div>
-        </div>
-        <div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div>
+    <div class="chatbox">
+      <div class="chathead"><span class="t">EMI reconciliation</span><span>paisa · lending ops</span></div>
+      <div class="stream">
+        <div class="mu">Run the EMI check against last night&rsquo;s batch and show me the differences.</div>
+        <div class="ma">Done &mdash; 1,204 loans compared, 3 differences: LN-20817 · LN-21033 · LN-21290, each off by one paisa.</div>
       </div>
+      <div class="comp">Continue this session&hellip;</div>
     </div>
-  </div></section>
-  <!-- overlay: expanded card -->
+  </section>
   <div class="scard">
-    <div class="hd"><span class="nm"><i></i>Shadow</span><span class="switch"><i></i>quiet</span><span class="hide">hide</span></div>
-    <div class="sees">I can see: <b>this chat</b> &middot; 4 sessions &middot; the app. Not your screen, not your eyes.</div>
+    <div class="hd"><span class="nm"><b>S</b>Shadow</span><span class="switch">quiet</span><span class="hide">hide</span></div>
+    <div class="sees">I can see: <b>this chat</b> · 4 sessions · the app. Not your screen, not your eyes.</div>
     <div class="smsgs">
-      <div class="sm s">You&rsquo;re on the EMI check. Those 3 differences look like the same issue you fixed last week. Want that fix in your composer?</div>
+      <div class="sm s">Those 3 differences look like the same issue you fixed last week. Want me to put that fix in your composer?</div>
       <div class="chips2 dim"><span class="chip2">Put the fix in my composer</span><span class="chip2">Explain it first</span><span class="chip2">Not now</span></div>
       <div class="sm u">Yes. And whenever rounding differences show up in an EMI check, offer it straight away.</div>
-      <div class="sm s">Put it in your composer. And I&rsquo;ll remember this one &mdash; tap to confirm.</div>
-      <div class="mem"><span class="k">I&rsquo;ll remember</span><span class="e">paisa &middot; standing &middot; edit</span><br>When rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.</div>
+      <div class="sm s">Done. And I&rsquo;ll remember this one &mdash; tap to confirm.</div>
+      <div class="mem"><span class="k">I&rsquo;ll remember</span><span class="e">paisa · standing · edit</span><br>When rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.</div>
     </div>
     <div class="scomp"><span class="mic">&#9679;</span><span class="ph">Tell Shadow — type, or hold to talk&hellip;</span><span class="key">&#8984;&#8679;S</span></div>
   </div>
-  <div class="shadow-fab"><div class="sdot" title="Shadow"><b>S</b></div></div>
+  <div class="fab"><div class="sdot"><b>S</b></div></div>
 </div>
 
-<!-- ============ 3: FOCUS ============ -->
-<p class="cap"><b>3 · It knows what you&rsquo;re on.</b> <span class="mile m1">Focus &middot; opt-in &middot; M1</span> Shadow guesses your focus from the pane you&rsquo;re in and says so &mdash; and you can tell it it&rsquo;s wrong.</p>
+<p class="cap"><b>3 · Focus &rsaquo; Shadow — its own section, one level under Focus.</b> <span class="mile">MVP</span> Your ruling: the Shadow section lives under Focus — missions, what it remembers, how it operates, what it may see.</p>
 <div class="window">
   <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="ds-rail"><div class="brand">Sutra</div><div class="item">&#9998; Chats</div><div class="item on">&#10227; Routines</div><div class="item">&#10047; Balance</div><div class="item">&#9673; Teamsutra</div><div class="item">&#9643; Usage</div><div class="item">&#9881; Manage &#9662;</div><div class="foot">Sankalp &middot; 12 min here</div></nav>
-  <section class="pane"><div class="ro">
-    <h2 class="pg">Routines</h2><div class="pgsub">Things Sutra does on a schedule</div>
-    <div class="card"><div class="k">ROUTINE</div><div class="nm">Nightly EMI check</div>
-      <div class="row"><span>Runs</span><b>every night, 02:00</b></div><div class="row"><span>Last run</span><b>yesterday &middot; 3 differences</b></div><div class="row"><span>On differences</span><b>message me in the morning</b></div><div class="row"><span>Test run</span><b>never</b></div></div>
-  </div></section>
-  <div class="shadow-fab">
-    <div class="spill">You&rsquo;ve been on the nightly EMI check for 12 minutes. Want me to run it once as a test?<div class="acts"><span class="act">Run a test</span><span class="act q">Not now</span></div><div class="focusline">I think you&rsquo;re on: nightly EMI check <u>wrong?</u></div></div>
-    <div class="sdot" title="Shadow"><b>S</b></div>
-  </div>
-</div>
-
-<!-- ============ 4: HEAVY LIFTING (FUTURE) ============ -->
-<p class="cap"><b>4 · It does the heavy lifting.</b> <span class="mile fut">M2+ future &middot; once you let Shadow act</span> Same card, now working through a task and stopping at anything that touches a live system.</p>
-<div class="window">
-  <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="ds-rail"><div class="brand">Sutra</div><div class="item on">&#9998; Chats <span class="badge">1</span></div><div class="item">&#10227; Routines</div><div class="item">&#10047; Balance</div><div class="item">&#9673; Teamsutra</div><div class="item">&#9643; Usage</div><div class="item">&#9881; Manage &#9662;</div><div class="foot">Sankalp &middot; maker morning</div></nav>
-  <section class="pane"><div class="chwrap"><h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
-    <div class="slist"><div class="sit on"><div class="tt">paisa &middot; EMI check</div><div class="mm">Shadow working</div></div><div class="sit"><div class="tt">dayflow &middot; api deploy</div><div class="mm">idle</div></div></div>
-    <div class="panes2"><aside class="ctx"><div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div></aside><div class="chatcol"><div class="chathead"><span class="t">EMI reconciliation</span></div><div class="stream"><div class="mu">Fix the rounding differences and get it ready for a test deploy.</div><div class="ma">Working on it&hellip;</div></div><div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div></div></div>
-  </div></section>
-  <div class="scard">
-    <div class="fban">M2+ future &middot; shown only once you let Shadow act</div>
-    <div class="hd"><span class="nm"><i></i>Shadow</span><span class="switch"><i></i>quiet</span><span class="hide">hide</span></div>
-    <div class="sees">Doing this for you &middot; you can stop me any time</div>
-    <div class="smsgs">
-      <div class="steps"><div><i class="ok"></i>Ran the EMI check &mdash; 3 differences</div><div><i class="ok"></i>Put last week&rsquo;s fix in place</div><div><i class="ok"></i>Tests passed (142/142)</div><div><i class="hold"></i>Test deploy &mdash; waiting for you: it changes a live system</div></div>
-      <div class="sact"><span class="act">Approve the deploy</span><span class="act q">Stop here</span></div>
+  <nav class="rail">
+    <div class="brand">Sutra</div>
+    <div class="item"><span class="g">&#9673;</span>Now</div>
+    <div class="item on"><span class="g">&#9678;</span>Focus</div>
+    <div class="item"><span class="g">&#9998;</span>Chats</div>
+    <div class="item"><span class="g">&#9638;</span>Org</div>
+    <div class="item"><span class="g">&#9672;</span>Team Sutra</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp — CEO</b><div class="tele">4 sessions · ctx 62% · $8 today</div><div class="sw"><i style="background:var(--accent)"></i><i></i><i></i></div></div>
+  </nav>
+  <section class="pane">
+    <div class="crumb">Focus &rsaquo; <b>Shadow</b></div>
+    <div class="pg">Shadow</div>
+    <div class="secnav"><b>Missions</b><span>What I remember</span><span>How I operate</span><span>What I can see</span></div>
+    <div class="mission">
+      <div class="k">Working on it now</div>
+      <div class="obj">&ldquo;Fix the rounding differences and get it ready for a test deploy.&rdquo;</div>
+      <div class="dw">Done when: the fix is in and tests pass in the paisa chat.</div>
+      <div class="meta"><span>paisa · EMI check</span><span>turn 2 of 12</span><span>acting · L3</span><span class="stop">Stop</span></div>
     </div>
-    <div class="scomp"><span class="ph">Tell Shadow&hellip;</span></div>
-  </div>
-  <div class="shadow-fab"><div class="sdot" title="Shadow"><b>S</b></div></div>
+    <div class="mrow"><span class="sc">yesterday</span>Picked dayflow back up after it dropped — verified, nothing lost.<div class="ed">done · evidence</div></div>
+    <div class="mrow"><span class="sc">paisa</span><b>Remembers:</b> when rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.<div class="ed">told me today · edit</div></div>
+    <div class="mrow"><span class="sc">everywhere</span><b>Operates:</b> acts by default · holds anything irreversible for you · quiet after 6.<div class="ed">change in How I operate</div></div>
+  </section>
+  <div class="fab"><div class="sdot"><b>S</b></div></div>
 </div>
 
-<!-- ============ 5: YOU'RE BACK (FUTURE) ============ -->
-<p class="cap"><b>5 · You&rsquo;re back.</b> <span class="mile fut">M2+ future &middot; once you let Shadow act</span> One card. What it noticed, what it changed (nothing), what it held for you.</p>
-<div class="window">
-  <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="ds-rail"><div class="brand">Sutra</div><div class="item on">&#9998; Chats</div><div class="item">&#10227; Routines</div><div class="item">&#10047; Balance</div><div class="item">&#9673; Teamsutra</div><div class="item">&#9643; Usage</div><div class="item">&#9881; Manage &#9662;</div><div class="foot">Sankalp &middot; back at 11:03</div></nav>
-  <section class="pane"><div class="chwrap"><h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
-    <div class="slist"><div class="sit on"><div class="tt">dayflow &middot; api deploy</div><div class="mm">ready to continue</div></div><div class="sit"><div class="tt">paisa &middot; EMI check</div><div class="mm">summary ready</div></div></div>
-    <div class="panes2"><aside class="ctx"><div class="crumb">DayFlow &rsaquo; Backend &rsaquo; <b>API deploy</b></div></aside><div class="chatcol"><div class="chathead"><span class="t">API deploy</span></div><div class="stream"><div class="mu">Deploy the API to the test environment once the tests pass.</div><div class="ma">Tests passed (142/142). Starting the test deploy&hellip;</div><div class="ma" style="color:var(--stone)">Connection lost at 10:41.</div></div><div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div></div></div>
-  </div></section>
-  <div class="scard" style="height:300px">
-    <div class="fban">M2+ future &middot; shown only once you let Shadow act</div>
-    <div class="hd"><span class="nm"><i></i>Shadow</span><span class="hide">hide</span></div>
-    <div class="smsgs">
-      <div class="sm s">Welcome back &mdash; you were away 22 minutes.<br><br>I noticed dayflow dropped its connection at 10:41. Nothing was changed; it&rsquo;s waiting at the last safe point.<br><br>I&rsquo;m holding the test deploy for you.</div>
-      <div class="sact"><span class="act">Continue</span><span class="act q">Show me what you saw</span></div>
-    </div>
-  </div>
-  <div class="shadow-fab"><div class="sdot" title="Shadow"><b>S</b></div></div>
-</div>
-
-<!-- ============ 6: WHAT I REMEMBER ============ -->
-<p class="cap"><b>6 · What it remembers.</b> <span class="mile mvp">MVP</span> Everything you&rsquo;ve told it, in your words, with where it applies. Past instructions from your Sutra chats are offered for review &mdash; never switched on by themselves.</p>
-<div class="window">
-  <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="ds-rail"><div class="brand">Sutra</div><div class="item on">&#9998; Chats</div><div class="item">&#10227; Routines</div><div class="item">&#10047; Balance</div><div class="item">&#9673; Teamsutra</div><div class="item">&#9643; Usage</div><div class="item">&#9881; Manage &#9662;</div><div class="foot">Sankalp &middot; maker morning</div></nav>
-  <section class="pane"><div class="chwrap"><h2 class="pg">Chats</h2><div class="pgsub">Every card is a session</div>
-    <div class="slist"><div class="sit on"><div class="tt">paisa &middot; EMI check</div><div class="mm">live now</div></div><div class="sit"><div class="tt">dayflow &middot; api deploy</div><div class="mm">idle</div></div></div>
-    <div class="panes2"><aside class="ctx"><div class="crumb">Paisa &rsaquo; Lending ops &rsaquo; <b>EMI reconciliation</b></div></aside><div class="chatcol"><div class="chathead"><span class="t">EMI reconciliation</span></div><div class="stream"><div class="mu">Run the EMI check against last night&rsquo;s batch.</div><div class="ma">Done &mdash; 1,204 loans compared, 3 differences.</div></div><div class="ds-composer"><span class="ph">Continue this session&hellip;</span></div></div></div>
-  </div></section>
-  <div class="scard">
-    <div class="hd"><span class="nm"><i></i>Shadow</span><span class="switch"><i></i>quiet</span><span class="hide">hide</span></div>
-    <div class="tabs"><span>Chat</span><b>What I remember</b></div>
-    <div class="memlist">
-      <div class="memrow"><span class="sc">paisa</span>When rounding differences show up in an EMI check, offer last week&rsquo;s fix right away.<div class="ed">told me today &middot; edit</div></div>
-      <div class="memrow"><span class="sc">everywhere</span>Never push to a client&rsquo;s repo. Ever.<div class="ed">from your directions &middot; edit</div></div>
-      <div class="memrow"><span class="sc">dayflow</span>Run the tests before any deploy.<div class="ed">told me Tuesday &middot; edit</div></div>
-      <div class="memrow"><span class="sc">everywhere</span>Stay quiet after 6 pm unless something breaks.<div class="ed">told me last week &middot; edit</div></div>
-    </div>
-    <div class="imp">I found <b>37</b> things you&rsquo;ve asked Sutra for in past chats. Want to go through them one by one?<div class="sact"><span class="act">Review them</span><span class="act q">Later</span></div></div>
-  </div>
-  <div class="shadow-fab"><div class="sdot" title="Shadow"><b>S</b></div></div>
-</div>
-
-<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop &middot; preview v3.1 &middot; overlay model (founder 2026-08-22) &middot; MVP = screens 1, 2, 6 &middot; <a href="shadow-options.html" style="color:var(--gold)">how it catches your eye — 4 options</a> &middot; spec: holding/plans/shadow/</p>
+<p class="cap" style="margin-top:-30px">Shadow on Sutra Desktop · preview v4 · shipped IA v3.3 shell (Now / Focus / Chats / Org / Team Sutra / Settings) · Shadow&rsquo;s work lands in Now, its section lives under Focus · spec: holding/plans/shadow/</p>
 </body>
 </html>
