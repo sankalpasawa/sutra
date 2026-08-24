@@ -301,8 +301,21 @@ function mediatedTile(t, svc){
 
   /* Only where a connection actually exists. Next to "not connected" it would
      read as a hedge about something that is not there. */
-  const acct = (ok && svc.membership === "added")
-    ? `<p class="mediatedacct muted">Account: not visible to Sutra.</p>` : "";
+  /* Three states, deliberately distinct. A blanket "not visible to Sutra" was
+     accurate but hid the difference between "the connector told us", "we asked
+     and it could not tell" and "we have no way to ask this one yet". */
+  let acct = "";
+  if (ok && svc.membership === "added"){
+    if (svc.account){
+      acct = `<p class="mediatedacct"><span class="muted">Account</span>
+                <b>${esc(svc.account)}</b></p>`;
+    } else if (svc.account_resolvable){
+      acct = `<p class="mediatedacct muted">Account: Claude did not report one.</p>`;
+    } else {
+      acct = `<p class="mediatedacct muted">Account: Sutra cannot ask this
+                connector who it is.</p>`;
+    }
+  }
 
   return `<div class="ptile mediated ${attn ? "attn" : ""}">
     <div class="ptilehead">

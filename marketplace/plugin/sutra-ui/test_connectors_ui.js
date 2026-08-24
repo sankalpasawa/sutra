@@ -222,8 +222,8 @@ test("the mediated tile never renders an account", () => {
      tempting wrong answer available. It must not appear on a Google tile. */
   const sb = mediatedSandbox();
   const html = sb.mediatedTiles(medTile());
-  assert(/Account: not visible to Sutra/.test(html),
-    "a connected tile must say the account is unknown, not stay silent about it");
+  assert(/Account: Sutra cannot ask this|Account: Claude did not report/.test(html),
+    "a connected tile with no resolvable account must say so, not stay silent");
   assert(!/@/.test(html.replace(/https?:\/\/[^"'\s]+/g, "")),
     "an email-shaped string appeared on the tile: " + html.slice(0, 300));
 });
@@ -256,7 +256,7 @@ test("the account note is suppressed when nothing is connected", () => {
   const html = sb.mediatedTiles(medTile({ services: [
     { key: "gmail", name: "Gmail", membership: "not_added",
       observation: null, connectors: [] }]}));
-  assert(!/Account: not visible to Sutra/.test(html),
+  assert(!/Account:/.test(html),
     "hedging about an account for a connector that is not added reads as a bug");
 });
 
@@ -351,6 +351,44 @@ test("an unavailable check marks EVERY tile unknown, not just the first", () => 
   assert(unknown >= 2, "every tile must say unknown, found " + unknown);
   assert(!/Not listed by the Claude CLI/.test(html),
     "an unreadable check must not assert absence on any tile");
+});
+
+test("a resolved account is rendered, and it is the CONNECTOR's not Claude's", () => {
+  /* The whole hazard: ~/.claude.json holds the Claude account email, which is
+     often also a @gmail.com address. The tile must render what the connector
+     reported, and a resolver that returned nothing must never fall back to it. */
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile({ services: [
+    { key:"gmail", name:"Gmail", membership:"added", observation:"connected",
+      account:"real@connector.example", account_resolvable:true,
+      connectors:[{label:"claude.ai Gmail", observation:"connected", raw_status:"Connected"}] }]}));
+  assert(/real@connector\.example/.test(html), "the reported account must be shown");
+  assert(!/not visible to Sutra/.test(html), "stale blanket copy still present");
+});
+
+test("the three account states are distinct", () => {
+  const sb = mediatedSandbox();
+  const mk = over => sb.mediatedTiles(medTile({ services: [Object.assign(
+    { key:"gmail", name:"Gmail", membership:"added", observation:"connected",
+      connectors:[{label:"x", observation:"connected", raw_status:"Connected"}] }, over)]}));
+  const resolved   = mk({ account:"a@b.com", account_resolvable:true });
+  const askedNone  = mk({ account:null,      account_resolvable:true });
+  const cannotAsk  = mk({ account:null,      account_resolvable:false });
+  assert(/a@b\.com/.test(resolved));
+  assert(/did not report/.test(askedNone),
+    "asked-and-got-nothing must differ from cannot-ask");
+  assert(/cannot ask this/.test(cannotAsk),
+    "cannot-ask must differ from asked-and-got-nothing");
+  assert(!/did not report/.test(cannotAsk), "the two unknowns must not collapse");
+});
+
+test("no account is rendered while the check is unavailable", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile({ availability: "unreadable",
+    services:[{ key:"gmail", name:"Gmail", membership:"unknown", observation:null,
+                account:"stale@old.example", account_resolvable:true, connectors:[] }]}));
+  assert(!/stale@old\.example/.test(html),
+    "an account from a failed check must not be presented as current");
 });
 
 test("opening the screen reads cache only and never probes", () => {

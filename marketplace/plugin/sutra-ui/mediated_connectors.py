@@ -259,6 +259,16 @@ def _rollup(rows):
     return "unknown"
 
 
+def _resolvable_keys():
+    """Catalogue keys with a PROVEN identity path. Imported lazily so a broken
+    or absent resolver module can never take the connectors screen down."""
+    try:
+        import claude_accounts
+        return set(claude_accounts.RESOLVERS)
+    except Exception:
+        return set()
+
+
 def _short_name(label):
     """"claude.ai Gmail (2)" -> "Gmail". The scope prefix and the CLI's
     collision suffix are both noise for matching and for display."""
@@ -280,7 +290,7 @@ def _matches(entry, row):
 
 
 def _build(availability, detail="", saw=False, by_host=None, checked_at=None,
-           unparsed=0):
+           unparsed=0, accounts=None):
     by_host = by_host or {}
     rows_all = [dict(r, host=h) for h, rs in by_host.items() for r in rs]
     services = []
@@ -298,9 +308,16 @@ def _build(availability, detail="", saw=False, by_host=None, checked_at=None,
             membership = "not_added"
         else:
             membership = "unknown"
+        # Three distinct states, and they must not be conflated:
+        #   a string -> the CONNECTOR reported this address
+        #   None     -> we have a resolver, it ran, it could not tell
+        #   absent   -> no resolver exists for this connector yet
+        acct_known = (accounts or {}) if membership == "added" else {}
         services.append({
             "key": entry["key"],
             "name": entry["name"],
+            "account": acct_known.get(entry["key"]),
+            "account_resolvable": entry["key"] in _resolvable_keys(),
             "membership": membership,
             "observation": _rollup(rows) if rows else None,
             # A name-matched entry LEARNS its host the moment a real row shows
@@ -324,6 +341,10 @@ def _build(availability, detail="", saw=False, by_host=None, checked_at=None,
         services.append({
             "key": "other:" + rows[0]["host"],
             "name": name,
+            # Sutra has no catalogue entry for this connector, so it has no
+            # identity path either. Absent, not None: "we never asked".
+            "account": None,
+            "account_resolvable": False,
             "membership": "added",          # it is in the list; that is the fact
             "observation": _rollup(rows),
             "host": rows[0]["host"],
@@ -338,8 +359,9 @@ def _build(availability, detail="", saw=False, by_host=None, checked_at=None,
         "name": "Connected in Claude",
         "via": "claude",
         "manage_url": MANAGE_URL,
-        # Machine-readable so the "we do not know the account" promise is
-        # pinnable by a test rather than living only in a UI string.
+        # Per-service now (see services[].account). Kept as the envelope-level
+        # answer to "does Sutra hold these accounts itself" -- it does not, and
+        # that stays true even when a connector reports one.
         "account_known": False,
         "availability": availability,
         "availability_detail": _clean(detail, 200),
@@ -381,8 +403,19 @@ def _probe():
         # genuinely has no connectors. Exit status is 0 in every case, so this
         # cannot be resolved -- and must not be guessed.
         return _build("unreadable", proc.stdout, checked_at=now)
+    # Only on a real probe: this costs two HTTPS round-trips per resolvable
+    # connector and rides the same 60s cooldown as the CLI call above.
+    accounts = {}
+    try:
+        import claude_accounts
+        present = [e["key"] for e in CATALOGUE
+                   if any(_matches(e, dict(r, host=h))
+                          for h, rs in by_host.items() for r in rs)]
+        accounts = claude_accounts.resolve(present)
+    except Exception:
+        accounts = {}
     return _build("ok", saw=True, by_host=by_host, checked_at=now,
-                  unparsed=unparsed)
+                  unparsed=unparsed, accounts=accounts)
 
 
 def snapshot(refresh=False):

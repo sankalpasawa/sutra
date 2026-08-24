@@ -240,10 +240,31 @@ class AccountIsNeverInvented(unittest.TestCase):
     def test_payload_declares_the_account_unknown(self):
         self.assertIs(mc._build("ok", saw=True)["account_known"], False)
 
-    def test_no_identity_field_exists_at_all(self):
-        blob = json.dumps(mc._build("ok", saw=True))
-        for key in ('"account"', '"email"', '"username"', '"login"', '"user"'):
-            self.assertNotIn(key, blob, "identity field %s must not exist" % key)
+    def test_an_account_is_only_ever_one_the_connector_reported(self):
+        """This REPLACES a test asserting no account field could exist at all.
+        That invariant was correct while nothing could resolve an account; now
+        Gmail can, via the MCP proxy, so the guarantee moves rather than
+        disappears: a service may carry an account, but only one the connector
+        itself reported. _build never invents, defaults or copies one."""
+        p = mc._build("ok", saw=True)
+        for svc in p["services"]:
+            self.assertIsNone(svc["account"],
+                              "_build must not supply an account of its own")
+        p2 = mc._build("ok", saw=True, accounts={"gmail": "x@y.com"})
+        gmail = [s for s in p2["services"] if s["key"] == "gmail"][0]
+        self.assertIsNone(gmail["account"],
+                          "an account must not attach to a connector that is "
+                          "not even added")
+
+    def test_no_account_survives_a_membership_that_is_not_added(self):
+        saw, by, un = mc.parse(
+            "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - Connected\n")
+        p = mc._build("ok", saw=saw, by_host=by, unparsed=un,
+                      accounts={"slack": "ghost@nowhere.com"})
+        slack = [s for s in p["services"] if s["key"] == "slack"][0]
+        self.assertEqual(slack["membership"], "not_added")
+        self.assertIsNone(slack["account"])
+        self.assertNotIn("ghost@nowhere.com", json.dumps(p))
 
     def test_the_claude_account_email_never_appears(self):
         email = self._claude_email()
@@ -332,7 +353,11 @@ class ProbeIsRationed(unittest.TestCase):
         outer = self
 
         def fake_run(argv, **kw):
-            outer.calls.append(argv)
+            # Only `claude mcp list` counts. The account resolver also shells
+            # out to `security` for the session token, and counting that as a
+            # probe would make single-flight look broken when it is not.
+            if any("mcp" in str(a) for a in argv):
+                outer.calls.append(argv)
             class R:
                 returncode = 0
                 stdout = FIXTURE.read_text()
