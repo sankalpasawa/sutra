@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.118.4 (2026-08-24)
+
+- **Teamsutra is now Help.** The rail entry, the chat's source label and the
+  in-app assistant say Help — the name describes what the page is for instead
+  of what built it. Nothing moved underneath: the task store, the API and the
+  MCP tool keep their names, so every filed task stays exactly where it was.
+
 ## 2.118.3 (2026-08-24)
 
 **The update channel is founder-owned: sankalpasawa/sutra is the primary repo.**
