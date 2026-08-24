@@ -1,4 +1,21 @@
 #!/usr/bin/env bash
+# RELEASES DO NOT COME FROM THIS SCRIPT ANY MORE (founder direction 2026-08-24).
+#
+# .github/workflows/release-dmg.yml owns every published DMG. It builds both
+# arches on native runners, signs and notarizes with the repo's Apple secrets,
+# and uploads Sutra-<arch>.dmg plus a per-arch .sha256. Push a v* tag to
+# sankalpasawa/sutra and it runs. Nothing else may create or upload a release
+# asset.
+#
+# This is not a style preference; it was measured. A hand-built release for
+# v2.220.2 was created at 09:08 and CI replaced both DMGs at 09:26/09:28 with
+# different checksums -- so ~15 minutes of local notarization was wasted, and
+# for 18 minutes the published release carried assets no pipeline had built.
+# The workflow already said "do not also upload them by hand"; it said it in a
+# file that only CI reads, which is why it kept happening.
+#
+# THIS SCRIPT IS STILL CORRECT FOR LOCAL WORK: --skip-notarize to build a DMG
+# for installing and testing on this machine. That is its only remaining job.
 # make-dmg.sh -- build the installable Sutra.dmg.
 #
 #   bundle-runtime.sh   ->  payload/   (CPython + deps + the plugin)
@@ -305,6 +322,22 @@ fi
 # The app is submitted as a ZIP because notarytool does not accept a bare
 # .app directory; the ticket is then stapled to the .app, and the DMG built
 # AROUND the already-stapled app below.
+# Notarization is a RELEASE act, and releases come from CI. Refuse it here
+# rather than document a preference: the "do not build releases by hand" note
+# already existed in release-dmg.yml and did not stop three hand-built releases,
+# because a comment in a file only CI reads cannot stop anyone. A guard can.
+#
+# CI sets SUTRA_RELEASE_CI=1. On a workstation, notarizing produces an artifact
+# that either goes nowhere or races the pipeline for the same asset name -- both
+# of which happened. Local builds want --skip-notarize; Gatekeeper does not gate
+# a locally built app, so nothing is lost.
+if [ "$SKIP_NOTARIZE" != "1" ] && [ "${SUTRA_RELEASE_CI:-0}" != "1" ]; then
+  die "notarization here is disabled: releases are built by
+  .github/workflows/release-dmg.yml on a v* tag pushed to sankalpasawa/sutra.
+  For a local build use --skip-notarize. To override deliberately, set
+  SUTRA_RELEASE_CI=1 -- and know that CI will overwrite whatever you upload."
+fi
+
 if [ -n "$IDENTITY" ] && [ "$SKIP_NOTARIZE" != "1" ] && [ ${#NARGS[@]} -gt 0 ]; then
   step "notarize the app"
   APP_ZIP="$DIST/$APP_NAME-app-$ARCH.zip"

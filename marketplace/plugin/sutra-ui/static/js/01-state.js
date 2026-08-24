@@ -131,7 +131,7 @@ const DEST_DEFAULT_SCREEN = { now:"now", focus:"balance", chats:null,
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
-                navCollapsed:false, railSections:{},
+                navCollapsed:false, planeSections:{},
                 dest:"now", destSel:{},
                 balanceTab:"today", sessCollapsed:{} };
   if (raw && typeof raw === "object"){
@@ -142,7 +142,21 @@ function loadLayout(){
     if (typeof raw.navCollapsed === "boolean") out.navCollapsed = raw.navCollapsed;
     else if (typeof raw.railCollapsed === "boolean") out.navCollapsed = raw.railCollapsed;
     if (typeof raw.browseClosed === "boolean") out.browseClosed = raw.browseClosed;
-    if (raw.railSections && typeof raw.railSections === "object") out.railSections = raw.railSections;
+    /* Collapsed plane groups, keyed "<dest>:<label>" so Tools under Settings is
+       not the same switch as a same-named group under another destination.
+       Only scoped keys are adopted. railSections held the pre-v3.3 rail's
+       collapsed sections under BARE names ("org", "sessions", "change") -- a
+       surface that no longer exists and whose names cannot be translated into
+       a dest:label pair. Importing them looked like courtesy and was the
+       opposite: they match nothing, so they would sit in the operator's stored
+       layout forever, inert. Dropping an untranslatable key loses nothing,
+       because the section it named is gone. */
+    if (raw.planeSections && typeof raw.planeSections === "object"){
+      out.planeSections = {};
+      Object.keys(raw.planeSections).forEach(k => {
+        if (k.indexOf(":") !== -1) out.planeSections[k] = !!raw.planeSections[k];
+      });
+    }
     /* Collapsed session groups, keyed "<mode>:<groupkey>" so a group collapsed
        under Project does not silently collapse a same-named bucket under Recent. */
     if (raw.sessCollapsed && typeof raw.sessCollapsed === "object") out.sessCollapsed = raw.sessCollapsed;

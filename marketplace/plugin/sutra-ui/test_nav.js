@@ -353,6 +353,65 @@ test("coverage: all 20 legacy rail ids stay reachable through the new shell", ()
   assert.strictEqual(missing.length, 0, "unreachable: " + missing.join(", "));
 });
 
+/* ── plane groups collapse individually (founder, 2026-08-24) ─────────────── */
+/* Per-file, because two of these assert ORDERING inside one file, which the
+   concatenated SCRIPT would blur across module boundaries. */
+const JS = f => fs.readFileSync(path.join(__dirname, "static", "js", f), "utf8");
+test("each labelled plane group renders its own collapse control", () => {
+  const src = JS("02-helpers.js");
+  assert(/data-planecollapse=/.test(src), "no per-group collapse control is emitted");
+  assert(/aria-expanded="\$\{!collapsed\}"/.test(src),
+    "the control must report its own expanded state");
+  assert(/aria-controls="\$\{bodyId\}"/.test(src),
+    "the control must name the list it collapses");
+});
+
+test("an UNLABELLED plane group gets no collapse control", () => {
+  /* Offering to hide rows under a header the operator cannot see is a control
+     that makes its own target disappear. */
+  const src = JS("02-helpers.js");
+  assert(/const collapsible = !!g\.label/.test(src),
+    "collapsibility must be gated on the group having a label");
+});
+
+test("the collapse key is scoped per destination", () => {
+  const src = JS("02-helpers.js");
+  assert(/const ckey = dest \+ ":" \+ \(g\.label \|\| ""\)/.test(src),
+    "TOOLS under Settings must not share a switch with a same-named group elsewhere");
+});
+
+test("every data-planecollapse control has a handler that reads it", () => {
+  /* The bug this repo has actually shipped: a rendered control nothing listens
+     for. 152 tests passed while every button on a screen was dead. */
+  const loaders = JS("07-loaders.js");
+  assert(/\[data-planecollapse\]/.test(loaders), "no handler reads data-planecollapse");
+  assert(/S\.ui\.planeSections/.test(loaders), "the handler must mutate planeSections");
+  assert(/saveLayout\(\)/.test(loaders.slice(loaders.indexOf("data-planecollapse"))),
+    "the collapse must persist");
+});
+
+test("the handler runs BEFORE the row handler", () => {
+  /* Both live in one delegated listener. If [data-screen] were checked first a
+     header click would also open a screen. */
+  const loaders = JS("07-loaders.js");
+  assert(loaders.indexOf("data-planecollapse") < loaders.indexOf('closest("[data-screen]")'),
+    "the group header must be handled before the row");
+});
+
+test("only SCOPED plane-collapse keys are adopted from stored layout", () => {
+  /* This replaced a test asserting railSections was migrated across. Migrating
+     it was wrong: those keys are bare pre-v3.3 rail names ("org", "sessions")
+     that can never match a dest:label pair, so importing them plants permanent
+     dead entries in the operator's layout. Verified against the real store,
+     which had picked up four of them. */
+  const state = JS("01-state.js");
+  assert(/k\.indexOf\(":"\) !== -1/.test(state),
+    "an unscoped legacy key must not be adopted");
+  assert(!/out\.planeSections = raw\.railSections/.test(state),
+    "the untranslatable railSections migration must be gone");
+});
+
+
 console.log("-".repeat(60));
 console.log(`v3.3 shell: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

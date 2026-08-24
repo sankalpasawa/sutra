@@ -809,9 +809,28 @@ function renderPlane(){
   if (!body) return;
   body.hidden = dest === "chats";
   if (dest === "chats"){ body.innerHTML = ""; return; }
-  body.innerHTML = planeRows(dest).map(g => `
-    ${g.label ? `<div class="rgrp">${esc(g.label)}</div>` : ""}
-    <ul class="nav">${g.rows.map(it=>`
+  body.innerHTML = planeRows(dest).map(g => {
+    /* A group with no label is not a group -- it is the ungrouped remainder, and
+       giving it a collapse control would offer to hide rows under a header the
+       operator cannot see. Only labelled groups collapse. */
+    const ckey = dest + ":" + (g.label || "");
+    const collapsible = !!g.label;
+    const collapsed = collapsible && !!(S.ui.planeSections && S.ui.planeSections[ckey]);
+    const bodyId = "pg-" + hashKey(ckey);
+    const head = !collapsible ? "" : `
+      <div class="rgrp rgrph ${collapsed ? "collapsed" : ""}">
+        <button type="button" class="rgtog" data-planecollapse="${esc(ckey)}"
+            aria-expanded="${!collapsed}" aria-controls="${bodyId}"
+            title="${collapsed ? "Expand" : "Collapse"} ${esc(g.label)}">
+          <svg class="rgchev" width="9" height="9" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="3" aria-hidden="true">
+            <path d="M9 6l6 6-6 6"/></svg>
+          <span class="rgn">${esc(g.label)}</span>
+        </button>
+      </div>`;
+    return `
+    ${head}
+    <ul class="nav" id="${bodyId}" ${collapsed ? "hidden" : ""}>${g.rows.map(it=>`
       <li><button type="button" ${it.screen?`data-screen="${it.screen}"`:""} ${it.disabled?"disabled":""}
           aria-current="${it.toggle ? (it.screen==="terminal" && S.termOpen)
                                     : (!S.ui.browseClosed && S.screen===it.screen)}"
@@ -820,7 +839,8 @@ function renderPlane(){
         ${it.soon?`<span class="dis">soon</span>`
           : it.disabled && it.dis ? `<span class="dis">${esc(it.dis)}</span>`
           : (it.c!==undefined?`<span class="ct ${it.warn?"w":""}">${it.c}</span>`:"")}
-      </button></li>`).join("")}</ul>`).join("");
+      </button></li>`).join("")}</ul>`;
+  }).join("");
 }
 
 /* Row metadata, in USER language (founder 2026-08-24: "user-friendly and

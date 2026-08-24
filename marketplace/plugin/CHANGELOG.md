@@ -2,6 +2,45 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.220.4 (2026-08-24)
+
+**Releases come from the pipeline. The Settings groups collapse individually.**
+
+RELEASE OWNERSHIP. `.github/workflows/release-dmg.yml` already built, signed,
+notarized and published every DMG on a v* tag, and already said "do not also
+upload them by hand" -- in a file only CI reads. That did not stop three
+hand-built releases. Measured on v2.220.2: a hand-made release at 09:08 was
+overwritten by CI at 09:26 and 09:28 with different checksums, so a quarter of
+an hour of local notarization was thrown away and the published release carried
+unpipelined assets for eighteen minutes.
+
+So the note becomes a guard. make-dmg.sh now REFUSES to notarize unless
+SUTRA_RELEASE_CI=1, which only the workflow sets. `--skip-notarize` is
+untouched and remains the right way to build for local testing -- Gatekeeper
+does not gate a locally built app, so nothing is lost. Removing the variable
+from the workflow does not silently produce an unsigned release; it fails the
+build, which is the correct direction for that mistake.
+
+The `fork` remote is gone. Development and pushes go to sankalpasawa/sutra
+only, which is also where the update channel already pointed
+(DESKTOP_REPO/PLUGIN_REPO, since 2.118.3).
+
+SETTINGS GROUPS COLLAPSE INDIVIDUALLY. Tools, Automation, System and
+Preferences each have their own control; collapsing one leaves the others
+alone. State is keyed "<dest>:<label>", so Tools under Settings is not the same
+switch as a same-named group elsewhere, and the store holds only the groups
+explicitly closed -- re-expanding removes the key rather than recording false.
+
+It reuses the session-group idiom (.rgrph/.rgtog/.rgchev) rather than a second
+one, so both collapsible surfaces in the shell behave identically, including
+the reduced-motion guard.
+
+The orphaned railSections slot was renamed planeSections, and its contents are
+NOT migrated. Verified against the real store: it had accumulated "org",
+"sessions", "change", "runtime" -- bare pre-v3.3 rail names that can never match
+a dest:label key, so importing them plants permanent dead entries. Dropping an
+untranslatable key loses nothing, because the section it named is gone.
+
 ## 2.220.3 (2026-08-24)
 
 - **Chat rows read human.** "transcript unread · 1.2 MB" is now "not opened

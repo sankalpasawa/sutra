@@ -881,6 +881,20 @@ document.getElementById("app").addEventListener("click", e=>{
   const act = e.target.closest("[data-act]");
   if (act){ e.stopPropagation();
     sessAction(act.dataset.act, act.dataset.sid, act.dataset.group); return; }
+  /* Collapse/expand ONE plane group. Checked BEFORE [data-screen] because the
+     header sits in the same delegated listener; a row click must still open its
+     screen, and the header must not. Persisted per "<dest>:<label>", default
+     expanded, so the store only holds groups the operator explicitly closed. */
+  const pc = e.target.closest("[data-planecollapse]");
+  if (pc){
+    const key = pc.dataset.planecollapse;
+    S.ui.planeSections = S.ui.planeSections || {};
+    if (S.ui.planeSections[key]) delete S.ui.planeSections[key];
+    else S.ui.planeSections[key] = true;
+    saveLayout();
+    renderPlane();
+    return;
+  }
   const b = e.target.closest("[data-screen]");
   if (b && !b.disabled){
     /* "terminal" is a PANE TOGGLE living in the nav, not a screen. Routing it

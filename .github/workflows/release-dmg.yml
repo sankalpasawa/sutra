@@ -152,6 +152,12 @@ jobs:
           SUTRA_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           SUTRA_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
           APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          # make-dmg.sh refuses to notarize unless this is set (founder
+          # direction 2026-08-24: releases come from the pipeline, not from a
+          # workstation). THIS is the one place that may set it. Removing it
+          # does not make the build unsigned -- it makes the build FAIL, which
+          # is the intended direction for that mistake.
+          SUTRA_RELEASE_CI: "1"
         run: |
           set -euo pipefail
           if [ -n "${APPLE_NOTARY_KEY:-}" ]; then

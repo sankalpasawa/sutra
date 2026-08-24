@@ -1830,3 +1830,20 @@
 /* An avatar with no known identity. Neutral dot rather than a letter: any
    letter here would be a guess at who the operator is. */
 .av.av-unknown{background:var(--bd);color:transparent}
+
+/* Plane group headers collapse individually. Reuses the session-group idiom
+   (.rgrph/.rgtog/.rgchev) rather than inventing a second one, so the two
+   collapsible surfaces in the shell behave and read identically. The plane's
+   header carries no count badge -- a destination group's size is fixed and
+   visible, unlike a session bucket that grows. */
+  .plane .rgrp.rgrph{padding-top:10px;padding-bottom:4px}
+  .plane .rgrph .rgtog{background:none;border:0;cursor:pointer;color:inherit;
+    font:inherit;letter-spacing:inherit;text-transform:inherit;width:100%;
+    text-align:left;padding:0}
+  .plane .rgrph .rgchev{transition:transform .12s ease;transform:rotate(90deg);
+    color:var(--line)}
+  .plane .rgrph.collapsed .rgchev{transform:none}
+  .plane .rgrph .rgtog:hover .rgn{color:var(--ink)}
+@media (prefers-reduced-motion: reduce){
+  .plane .rgrph .rgchev{transition:none}
+}

@@ -1,5 +1,13 @@
 # Sutra — Current Version
 
+## v2.220.4 (2026-08-24, HEAD)
+
+Releases come from .github/workflows/release-dmg.yml only: make-dmg.sh now
+refuses to notarize unless SUTRA_RELEASE_CI=1, which only the workflow sets.
+The `fork` remote is removed -- development and pushes go to sankalpasawa/sutra,
+where the update channel already pointed. Settings pane groups collapse
+individually, keyed per destination, storing only what was explicitly closed.
+
 ## v2.220.3 (2026-08-24, HEAD)
 
 Chat rows in user language: 'not opened yet' (no sizes, no 'transcript'),
