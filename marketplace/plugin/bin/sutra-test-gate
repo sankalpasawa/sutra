@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# sutra-test-gate — generic git test gate (W2 parity, 2026-08-25).
+# Called by .githooks/pre-commit and .githooks/pre-push (installed by /core:start
+# on profile=company, via the stable shim ~/.sutra/bin/sutra-test-gate).
+#
+# Contract: reads "test_command" from .claude/sutra-project.json in the repo
+# being committed. No test_command declared -> pass silently (gate is armed by
+# declaring one). Declared -> run it; nonzero exit blocks the git operation.
+# Override for one operation: SUTRA_TEST_GATE_ACK=1 git commit ...
+set -uo pipefail
+STAGE="${1:-pre-commit}"
+[ "${SUTRA_TEST_GATE_ACK:-}" = "1" ] && { echo "sutra-test-gate: ACK override ($STAGE)"; exit 0; }
+REPO=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+CFG="$REPO/.claude/sutra-project.json"
+[ -f "$CFG" ] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+CMD=$(jq -r '.test_command // empty' "$CFG" 2>/dev/null)
+[ -z "$CMD" ] && exit 0
+echo "sutra-test-gate ($STAGE): running declared test_command: $CMD"
+if ( cd "$REPO" && bash -c "$CMD" ); then
+  echo "sutra-test-gate: PASS"
+  exit 0
+fi
+echo "sutra-test-gate: FAIL — $STAGE blocked. Fix tests, or SUTRA_TEST_GATE_ACK=1 to override once." >&2
+exit 1

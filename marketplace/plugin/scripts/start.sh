@@ -56,11 +56,15 @@ fi
 PROFILE_ARG=""
 FORCE=0
 TELEMETRY_FLAG=""
+INSTALL_OS=0
+INSTALL_GATES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE_ARG="${2:-}"; shift 2 ;;
     --profile=*) PROFILE_ARG="${1#*=}"; shift ;;
     --force) FORCE=1; shift ;;
+    --os) INSTALL_OS=1; shift ;;
+    --git-gates) INSTALL_GATES=1; shift ;;
     --telemetry) TELEMETRY_FLAG="${2:-}"; shift 2 ;;
     --telemetry=*) TELEMETRY_FLAG="${1#*=}"; shift ;;
     *) shift ;;
@@ -256,6 +260,22 @@ Declare L0 | L1 | L2 + activation scope before the edit. Floor: build-layer-chec
 
 Run a real codex consult (/core:codex-sutra) before the first Depth-3+ Edit/Write; a successful run writes the satisfying marker. On machines without the codex binary the gate degrades to pass (never bricks). Floor: codex-consult-gate.sh (PreToolUse Edit|Write).
 
+## PLACEMENT — one line per unit of work (ADR-028)
+
+```
+PLACEMENT: <domain path> | "<charter title>"
+```
+
+Every unit of work carries an address. If nothing matches, write exactly: `PLACEMENT: unresolved (no-match)` — never fabricate a path. Floor: placement-gate.sh + placement-stop-check.sh.
+
+## DISPATCH + Work-Atom — before the first mutation of a unit
+
+Open a Work-Atom before the first Edit/Write of a unit and close it through its pre-declared verify when the unit ends: `bin/sutra-atom open --goal <observable outcome> --verify-template <kind> ...`, then `bin/sutra-dispatch resolve` + `bind`. The frozen envelope — not the live intent — is the mutation authority. Floor: atom-floor.sh + dispatch-gate.sh (degrade to pass where the CLIs are absent).
+
+## Marker lifecycle — session-scoped writes
+
+Write marker files via the Write tool to `.claude/sessions/<CLAUDE_CODE_SESSION_ID>/<name>`, always including a `SESSION=<session-id>` line. Markers persist within a turn and reset on the next user prompt. Never write the shared `.claude/<name>` twin directly — dual-write maintains it.
+
 ## Readability Gate — apply at output time
 
 - Tables over paragraphs when ≥3 rows of comparable data
@@ -341,6 +361,62 @@ GOVBLOCK
 }
 
 ensure_project_claude_md
+
+# Step 3.7 — company operating scaffold (W2 parity, 2026-08-25).
+# Only-if-absent per file: a re-run NEVER overwrites user content.
+materialize_company_os() {
+  local tdir="$PLUGIN_ROOT/templates/os"
+  local dest="$PROJECT_ROOT/os"
+  [ -d "$tdir" ] || return 0
+  local created=0 rel
+  for rel in TODO.md DIRECTIONS.md SYSTEM-MAP.md departments/DEPARTMENT-REGISTRY.md; do
+    if [ ! -f "$dest/$rel" ]; then
+      mkdir -p "$dest/$(dirname "$rel")"
+      cp "$tdir/$rel" "$dest/$rel"
+      created=$((created+1))
+    fi
+  done
+  mkdir -p "$dest/state"
+  [ -f "$dest/state/.gitkeep" ] || : > "$dest/state/.gitkeep"
+  echo "company OS scaffold: $created file(s) created under os/ (existing files untouched)"
+}
+
+# Step 3.8 — git test gates via stable shim (W2 parity, 2026-08-25).
+# The plugin cache path changes per version, so out-of-repo callers go through
+# ~/.sutra/bin/sutra-test-gate which resolves the newest installed plugin.
+install_git_gates() {
+  [ -e "$PROJECT_ROOT/.git" ] || { echo "git gates: no .git here — skipped"; return 0; }
+  mkdir -p "$PROJECT_ROOT/.githooks" "$HOME/.sutra/bin"
+  cat > "$HOME/.sutra/bin/sutra-test-gate" <<'SHIMEOF'
+#!/usr/bin/env bash
+# stable shim -> newest installed Sutra core plugin (managed by /core:start)
+latest=$(ls -d "$HOME"/.claude/plugins/cache/sutra/core/*/bin/sutra-test-gate 2>/dev/null | sort -V | tail -1)
+[ -n "$latest" ] && exec bash "$latest" "$@"
+exit 0
+SHIMEOF
+  chmod +x "$HOME/.sutra/bin/sutra-test-gate"
+  local stage f
+  for stage in pre-commit pre-push; do
+    f="$PROJECT_ROOT/.githooks/$stage"
+    if [ ! -f "$f" ]; then
+      printf '#!/usr/bin/env bash\nexec "$HOME/.sutra/bin/sutra-test-gate" %s\n' "$stage" > "$f"
+      chmod +x "$f"
+    fi
+  done
+  local current
+  current=$(git -C "$PROJECT_ROOT" config core.hooksPath 2>/dev/null || true)
+  if [ -z "$current" ]; then
+    git -C "$PROJECT_ROOT" config core.hooksPath .githooks
+    echo "git gates: core.hooksPath -> .githooks (pre-commit + pre-push; arm by setting test_command in .claude/sutra-project.json)"
+  elif [ "$current" = ".githooks" ]; then
+    echo "git gates: already installed"
+  else
+    echo "git gates: core.hooksPath is already \"$current\" — left untouched; call ~/.sutra/bin/sutra-test-gate from your existing hooks to arm the gate"
+  fi
+}
+
+if [ "$PROFILE" = "company" ] || [ "$INSTALL_OS" = 1 ]; then materialize_company_os; fi
+if [ "$PROFILE" = "company" ] || [ "$INSTALL_GATES" = 1 ]; then install_git_gates; fi
 
 # Step 4 — activation banner + next steps. v2.13.0: bash/jq lib.
 if [ -f .claude/sutra-project.json ]; then

@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-08-25
 
+## 2.229.0 (2026-08-25)
+
+W2 installer wave: /core:start on profile=company (or --os / --git-gates) scaffolds an os/ operating layer (TODO, DIRECTIONS, SYSTEM-MAP, department registry; only-if-absent, never overwrites), installs .githooks pre-commit/pre-push test gates via the stable ~/.sutra/bin shim, and extends the managed CLAUDE.md block with PLACEMENT, DISPATCH+Work-Atom, and marker-lifecycle contracts. New: bin/sutra-test-gate (armed by test_command in .claude/sutra-project.json), /core:company and /core:onboard (single-repo 8-phase). Fresh-repo sim 15/15.
+
 ## 2.228.0 (2026-08-25)
 
 - **Sign in from the app.** The Usage screen's Account card gains a Sign in /
