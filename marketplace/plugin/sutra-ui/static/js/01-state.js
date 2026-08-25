@@ -112,10 +112,12 @@ const DESTS = ["now","focus","chats","org","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
      exist now so the shape is honest about what is and is not built. */
-  focus:    [{screen:"balance", label:"Balance"},
+  focus:    [/* Shadow IS the session watch -- the soon-row it replaces
+                promised exactly this (PLAN-100 P6; wired 2026-08-25) */
+             {screen:"shadow", label:"Shadow"},
+             {screen:"balance", label:"Balance"},
              {screen:"optimus", label:"Optimus"},
-             {screen:null, label:"Daily brief",  soon:true},
-             {screen:null, label:"Session watch", soon:true}],
+             {screen:null, label:"Daily brief",  soon:true}],
   /* chats has no screen rows: its plane hosts the session list verbatim. */
   chats:    [],
   org:      [/* workspace row is flag-gated at render: with the flag off,
@@ -132,7 +134,7 @@ const DEST_PLANES = {
              {group:"Preferences", rows:[{screen:"settings"}]}]
 };
 /* Where a destination lands before the operator has picked anything. */
-const DEST_DEFAULT_SCREEN = { now:"now", focus:"balance", chats:null,
+const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
                               org:"departments", team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);

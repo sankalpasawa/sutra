@@ -197,3 +197,11 @@ function showPill(text, opts){
 if (typeof document !== "undefined" && document.addEventListener){
   document.addEventListener("keydown", shadowKeyHandler);
 }
+
+/* THE BOOT CALL. Defining a boot function is not booting (the gap the
+   founder saw: everything served, nothing called). Guarded so vm tests can
+   load the module inert and drive boot explicitly. */
+if (typeof document !== "undefined" && typeof fetch !== "undefined"
+    && !(typeof globalThis !== "undefined" && globalThis.__SHADOW_NO_AUTOBOOT)){
+  try { bootShadowOverlay(); } catch (e) {}
+}
