@@ -42,10 +42,15 @@ function fresh(opts){
     },
     _appended: appended,
   };
+  ctx.__SHADOW_NO_AUTOBOOT = true;   /* tests drive boot explicitly */
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
   return ctx;
 }
+
+/* the 2.224.1 lesson: served code that nobody calls. Pin the call site. */
+assert(/^\s*try \{ bootShadowOverlay\(\); \}/m.test(src),
+  "the module must CALL bootShadowOverlay on load");
 
 /* 1. S65: snap picks the nearest corner */
 {

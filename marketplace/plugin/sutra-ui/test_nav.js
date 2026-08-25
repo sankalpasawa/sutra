@@ -133,12 +133,12 @@ test("planes: settings carries four labelled groups", () => {
   assert.strictEqual(JSON.stringify(groups.map(g => g.label)), JSON.stringify(
     ["Tools","Automation","System","Preferences"]));
 });
-test("planes: focus offers Balance + Optimus live and two honest comings-soon", () => {
-  const rows = T.planeRows("focus").flatMap(g => g.rows);
-  assert.strictEqual(rows.length, 4);
-  assert.strictEqual(rows.filter(r => r.disabled).length, 2);
-  assert.strictEqual(rows[0].screen, "balance");
-  assert.strictEqual(rows[1].screen, "optimus");
+test("planes: focus leads with Shadow, Balance + Optimus live, one honest coming-soon", () => {
+  const rows = T.DEST_PLANES.focus;
+  assert.strictEqual(rows[0].screen, "shadow", "Shadow is the companion home row");
+  const live = rows.filter(r => r.screen).map(r => r.screen);
+  assert(live.includes("balance") && live.includes("optimus"), "Balance + Optimus stay");
+  assert.strictEqual(rows.filter(r => r.soon).length, 1, "one honest coming-soon");
 });
 
 /* §rail ─ S7 */
@@ -239,13 +239,22 @@ test("accent: the per-theme tint derivation lives in the stylesheet", () => {
 });
 
 /* §hotfix 2.118.1 — the three live regressions stay dead */
-test("hotfix: entering Focus from the rail actually loads Balance", () => {
+test("hotfix: entering Focus from the rail lands on Shadow via openScreen", () => {
+  /* the 2.118.1 regression was goDest bypassing openScreen so lazy loaders
+     never fired. Focus now lands on Shadow; the route must still go through
+     openScreen (Shadow's own lazy fetch is pinned in test_shadow_home.js),
+     and a stored destSel pick still outranks the default. */
   T.S.ui = T.loadLayout();
   loaded.length = 0;
   T.goDest("focus");
-  assert(loaded.includes("loadBalance"),
-    "goDest(focus) must fire loadBalance — a blank Balance is the shipped bug");
+  assert.strictEqual(T.S.screen, "shadow",
+    "goDest(focus) must land on the Shadow home");
   assert.strictEqual(T.S.ui.browseClosed, false);
+  T.S.ui.destSel.focus = "balance";
+  loaded.length = 0;
+  T.goDest("focus");
+  assert(loaded.includes("loadBalance"),
+    "a stored Balance pick still routes through its lazy loader");
 });
 test("hotfix: entering Team Sutra from the rail actually loads its tasks", () => {
   loaded.length = 0;

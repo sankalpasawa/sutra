@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.224.3 — Shadow visible
+
+The overlay boots on load and Focus lands on Shadow (first plane row, new default). Earlier builds served the code without calling it.
+
 ## 2.224.2 (2026-08-25)
 
 - Theme header comment now states v3 (the atom-verify floor caught it still
