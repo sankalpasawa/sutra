@@ -130,7 +130,7 @@ atom_floor_check() {
             # that write to disk — they returned read-only, which ALSO cleared
             # ATOM_FLOOR_MUTATION and so suppressed the opaque-mutation sentinel,
             # meaning the gate was never called at all for them.
-            printf '%s' "$cmd_scan" | grep -qE '(^|[;&|`[:space:]])(mv|cp|rm|rmdir|truncate|tee|install|touch|mkdir|ln|chmod|chown|rsync|patch|unzip|tar|dd)[[:space:]]|sed[[:space:]]+-+i|git[[:space:]]+(add|mv|rm)([[:space:]]|$)|tar[[:space:]]+[^|;]*x|(curl|wget)[[:space:]]([^|;]*[[:space:]])?-(o|O)([[:space:]]|$)|dd[[:space:]][^|;]*of=|(go|cargo)[[:space:]]+build|npx[[:space:]]|python3?[[:space:]]+[^-][^[:space:]]*\.py|sqlite3[[:space:]]|>\||&>|[0-9]?>>?' || return 0
+            printf '%s' "$cmd_scan" | grep -qE '(^|[;&|`[:space:]])(mv|cp|rm|rmdir|truncate|tee|install|touch|mkdir|ln|chmod|chown|rsync|patch|unzip|tar|dd)[[:space:]]|sed[[:space:]]+-+i|(sed|awk|gawk)[[:space:]][^|;]*--?in-?place|gawk[[:space:]]+-[A-Za-z]*i[[:space:]]+inplace|git[[:space:]]+(add|mv|rm)([[:space:]]|$)|tar[[:space:]]+[^|;]*x|(curl|wget)[[:space:]]([^|;]*[[:space:]])?-(o|O)([[:space:]]|$)|dd[[:space:]][^|;]*of=|(go|cargo)[[:space:]]+build|npx[[:space:]]|python3?[[:space:]]+[^-][^[:space:]]*\.py|sqlite3[[:space:]]|>\||&>|[0-9]?>>?' || return 0
             # Path tokens from the SANITIZED stream (T18 codex P1 fold): a
             # whitelisted path inside quotes or a comment is DATA and must
             # never authorize an unrelated mutator (`rm x # holding/TODO.md`).
@@ -159,6 +159,42 @@ atom_floor_check() {
                 # them. A repo path never carries a backslash escape or '%'.
                 *'\'*|*'%'*) continue ;;
               esac
+              # FP-replay #16 (a-db25e6c4-07, amended per codex+deepseek
+              # 2026-08-26): a token made ONLY of slashes and dots is jq/awk
+              # string data ("/"), never a path. Digit-only paths (log/2024/07)
+              # remain targets (digits are alnum).
+              printf '%s' "$_af_q" | grep -qE '^[/.]+$' && continue
+              # FP-replay #15 + #17 (a-db25e6c4-07): resolve the pipe-segment
+              # carrying this quoted token. In sed/awk segments, pipe-bearing
+              # tokens are EXPRESSIONS (s|a/b|c|g), never file operands. Pure
+              # text-reader segments with no unquoted output redirect
+              # contribute no targets. In-place editors (sed -i anywhere,
+              # --in-place, gawk -i inplace) stay mutators (codex fold). The
+              # redirect check runs on a quote-stripped copy so a '>' inside a
+              # quoted awk program is not mistaken for a shell redirect.
+              local _af_seg_line _af_seg_word _af_seg_noq _af_inplace
+              local _af_nohd_split="$cmd_nohd"
+              _af_nohd_split="${_af_nohd_split// | /$'\n'}"
+              _af_nohd_split="${_af_nohd_split//||/$'\n'}"
+              _af_nohd_split="${_af_nohd_split//&&/$'\n'}"
+              _af_nohd_split="${_af_nohd_split//;/$'\n'}"
+              _af_seg_line=$(printf '%s\n' "$_af_nohd_split" | grep -F -m1 -- "$_af_q" || true)
+              if [ -n "$_af_seg_line" ]; then
+                _af_seg_word=$(printf '%s\n' "$_af_seg_line" \
+                  | sed -E 's/^[[:space:]]*//; s/^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*//' \
+                  | awk '{print $1}')
+                _af_seg_word="${_af_seg_word##*/}"
+                _af_seg_noq=$(printf '%s' "$_af_seg_line" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")
+                _af_inplace=0
+                printf '%s' "$_af_seg_line" | grep -qE '(^|[[:space:]])--?in-?place([[:space:]=]|$)|[[:space:]]-[A-Za-z]*i([[:space:]]|$)' && _af_inplace=1
+                case "$_af_seg_word" in
+                  sed|awk|gawk)
+                    case "$_af_q" in *'|'*) continue ;; esac
+                    if [ "$_af_inplace" = 0 ] && ! printf '%s' "$_af_seg_noq" | grep -q '>'; then continue; fi ;;
+                  grep|egrep|fgrep|rg|jq|cut|tr|comm|diff|column|head|tail|sort|uniq|wc|test|\[)
+                    printf '%s' "$_af_seg_noq" | grep -q '>' || continue ;;
+                esac
+              fi
               _atom_floor_whitelisted "$_af_q" && continue
               # Q: prefix = "already known to be a single quoted path" — the
               # dispatcher's prose-token filter must NOT re-judge these, or a

@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-08-25
 
+## 2.232.0 (2026-08-26)
+
+Scanner FP fix (atom-floor.sh, both twins): sed pipe-delimited expressions, slash-only string args, and quoted reader-segment patterns (grep/jq/awk) no longer become envelope-gate mutation targets; in-place editors (sed --in-place anywhere, gawk -i inplace) now correctly gate. FP-replay suite #15-#17, 28/28. Governance loop ported fleet-side: daily-governance-audit.sh (generic checks: hooks.json integrity, project json, unarmed git gates, failing routines, missing GOVBLOCK; ledger at .sutra/governance/findings.jsonl), findings-banner.sh on SessionStart, governance-triage-headless.sh fix-one LLM pass. Fresh-repo sim 9/9.
+
 ## 2.231.2 (2026-08-25)
 
 - **Desktop DMG builds again**: sutra-ui `.venv` had been committed as a
