@@ -52,4 +52,24 @@ def parse_reply(text):
         return ""
 
     display = _BLOCK.sub(_eat, text or "").strip()
+    display = _strip_governance_noise(display)
     return display, out
+
+
+_NOISE = re.compile(
+    r"^(\[[A-Z][A-Z0-9\u00b7\-]*\u00b7[^\]]*\]"      # H-Sutra headers
+    r"|(INPUT|TYPE|EXISTING HOME|ROUTE|FIT CHECK|ACTION|TASK|DEPTH"
+    r"|EFFORT|COST|IMPACT|PLACEMENT|FLOW|TRIAGE|ESTIMATE|ACTUAL|OS):.*"
+    r")\s*$", re.M)
+
+
+def _strip_governance_noise(text):
+    """Belt to SHADOW.md's braces: the user-scope CLAUDE.md trains the model
+    to emit per-turn governance blocks in every workdir. The persona forbids
+    them; anything that leaks is stripped line-wise so the founder reads an
+    answer, not scaffolding."""
+    lines = [l for l in (text or "").splitlines()
+             if not _NOISE.match(l.strip())]
+    out = "\n".join(lines)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
