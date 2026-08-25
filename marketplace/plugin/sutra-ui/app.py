@@ -1129,6 +1129,142 @@ async def api_shadow_chat(request: Request):
             "watching": sess.alive}
 
 
+# ------------------------------------------------- shadow home endpoints --
+# PLAN-100 P6. All flag-gated. Instructions and watches are ledgered, never
+# deleted: a revoked instruction stays on the record as inert history
+# (archive-never-delete), and a watch toggle is an auditable act.
+import mission_engine as _mission_engine
+import shadow_precedence
+
+
+@app.get("/api/shadow/instructions")
+async def api_shadow_instructions():
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_ledger
+    rows = shadow_ledger.read("instructions", 200)
+    latest = {}
+    for r in rows:                       # last writer per id wins
+        if r.get("id"):
+            latest[r["id"]] = r
+    return {"instructions": sorted(
+        latest.values(), key=shadow_precedence.rank_key)}
+
+
+@app.post("/api/shadow/instructions")
+async def api_shadow_instruction_write(request: Request):
+    """capture (unconfirmed=inert) / confirm / revoke -- one endpoint,
+    action field decides; every action is one more ledger row."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_ledger
+    body = await request.json()
+    action = body.get("action")
+    if action == "capture":
+        text = (body.get("text") or "").strip()
+        if not text:
+            raise HTTPException(400, "text required")
+        row = shadow_ledger.append("instructions", {
+            "text": text[:1000],
+            "precedence": body.get("precedence") or "history",
+            "confirmed": False,
+            "source_thread": body.get("source_thread")})
+        return row
+    if action in ("confirm", "revoke"):
+        iid = body.get("id") or ""
+        rows = [r for r in shadow_ledger.read("instructions", 500)
+                if r.get("id") == iid]
+        if not rows:
+            raise HTTPException(404, "no instruction %s" % iid)
+        row = dict(rows[-1])
+        if action == "confirm":
+            row["confirmed"] = True
+            row["confirmed_at"] = row.pop("ts", None)
+        else:
+            row["confirmed"] = False
+            row["revoked_at"] = row.pop("ts", None)
+        return shadow_ledger.append("instructions", row)
+    raise HTTPException(400, "action must be capture|confirm|revoke")
+
+
+@app.get("/api/shadow/watches")
+async def api_shadow_watches():
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    return {"watches": sorted(_shadow_watches())}
+
+
+@app.post("/api/shadow/watches")
+async def api_shadow_watch_toggle(request: Request):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_ledger
+    body = await request.json()
+    sid = (body.get("session_id") or "").strip()
+    if not sid:
+        raise HTTPException(400, "session_id required")
+    watch = bool(body.get("watch"))
+    shadow_ledger.append("actions", {
+        "kind": "say" if False else ("resume" if watch else "stop"),
+        "mission_id": None,
+        "summary": ("watch " if watch else "unwatch ") + sid})
+    watches = _shadow_watches()
+    (watches.add if watch else watches.discard)(sid)
+    _save_watches(watches)
+    return {"watching": sorted(watches)}
+
+
+def _watches_path():
+    import shadow_ledger
+    return os.path.join(os.path.dirname(shadow_ledger._path("actions")),
+                        "..", "watches.json")
+
+
+def _shadow_watches():
+    try:
+        with open(_watches_path(), encoding="utf-8") as handle:
+            return set(json.load(handle))
+    except (OSError, ValueError):
+        return set()
+
+
+def _save_watches(watches):
+    with open(_watches_path(), "w", encoding="utf-8") as handle:
+        json.dump(sorted(watches), handle)
+
+
+@app.get("/api/shadow/missions")
+async def api_shadow_missions():
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    store = _mission_engine.MissionStore()
+    return {"missions": store.list()}
+
+
+@app.post("/api/shadow/missions/{mid}/act")
+async def api_shadow_mission_act(mid: str, request: Request):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    action = body.get("action")
+    store = _mission_engine.MissionStore()
+    sched = _mission_engine.MissionScheduler(store)
+    try:
+        if action == "stop":
+            return store.transition(mid, "stopped", "founder stop (home)")
+        if action == "drop":
+            return sched.cancel_queued(mid)
+        if action == "start_now":
+            return sched.start(mid)
+        if action == "confirm_check":
+            return store.confirm_check(mid, int(body.get("index") or 0))
+        if action == "resume":
+            return store.transition(mid, "running", "explicit resume (home)")
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    raise HTTPException(400, "unknown action %r" % action)
+
+
 @app.get("/api/shadow/feed")
 async def api_shadow_feed():
     """PLAN-100 S59: the needs-you feed, render-only. 403 when the flag is

@@ -1896,3 +1896,22 @@
 .nytitle{ font-size:13px; margin:4px 0; }
 .nywhy{ font-size:11px; color:var(--faint); }
 .nyact{ margin-top:6px; }
+
+/* Shadow home (P6) */
+.shhome{ max-width:640px; display:flex; flex-direction:column; gap:12px; }
+.shthread{ display:flex; flex-direction:column; gap:4px; }
+.shtabs{ display:flex; gap:8px; }
+.shtab.on{ border-color:var(--acc); color:var(--acc); }
+.shplane{ display:flex; flex-direction:column; gap:6px; }
+.shwatchrow,.shmissionrow{ display:flex; align-items:center; gap:8px;
+  border:1px solid var(--line); border-radius:8px; padding:6px 8px;
+  font-size:12px; }
+.shrowacts{ display:flex; gap:6px; }
+.shmemory{ display:flex; flex-direction:column; gap:6px; }
+.shmem{ display:flex; align-items:center; gap:8px; font-size:12px;
+  border:1px solid var(--line-soft, var(--line)); border-radius:8px;
+  padding:5px 8px; }
+.shmem-dead .shmemtext{ text-decoration:line-through; color:var(--faint); }
+.shprec{ font-size:10px; color:var(--faint); text-transform:uppercase; }
+.shmemtext{ flex:1; }
+.shinert{ font-size:10px; color:var(--faint); }
