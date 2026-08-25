@@ -2,6 +2,16 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.225.1 (2026-08-25)
+
+- **Editor reviewer round: the light-mode blocker is dead.** The async mount
+  could land in a container a re-render had already replaced (invisible
+  editor, flat white); the mount now re-queries the live container and the
+  wire hook re-attaches a surviving editor after any re-render. Meta reads
+  "saved/unsaved" while editing (mock-07); SB's emphasis classes carry real
+  weights so bold is bold when the marks hide. Proven: 56 distinct colors in
+  the previously single-color region; both themes mount at ~530ms.
+
 ## 2.225.0 (2026-08-25)
 
 - **Editing is native.** SilverBullet's editor core — forked at

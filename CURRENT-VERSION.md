@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.225.0 (2026-08-25, HEAD)
+## v2.225.1 (2026-08-25, HEAD)
+
+Editor lifecycle race fixed (light-mode blocker); saved label; emphasis weights.
+
+## v2.225.0 (2026-08-25)
 
 Native editing: forked SB editor core vendored in-panel; iframes deleted;
 sidecar retired from the app path.

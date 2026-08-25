@@ -1000,7 +1000,11 @@ function wsCtxHtml(state){
     let html = '<div class="ws-cs"><div class="ws-ck ws-cshead">' + WS_COPY.ckCharter + '</div>'
       + row("department", esc(f.department ? f.department.name : ""))
       + row("charter", esc(f.charter ? f.charter.title : ""))
-      + row("updated", esc(wsRelTime(meta.meta ? meta.meta.mtime : null)));
+      + row(S.ws.editing ? "saved" : "updated",
+            esc(S.ws.editing && S.ws.unsaved ? "unsaved"
+                : wsRelTime(meta.meta ? meta.meta.mtime : null)));
+      /* mock-07: while EDITING the row reads "saved <ago>" / "unsaved" —
+         reviewer editor-round-1 minor 2; reading keeps "updated". */
     if (state === "07" && meta.meta && meta.meta.words != null)
       html += row("words", esc(String(meta.meta.words)));
     html += '</div>';
@@ -1148,6 +1152,13 @@ async function wsMountEditor(el){
   try { await wsLoadEditorScript(); }
   catch (e){ w.notice = String(e.message || e); render(); return; }
   if (!S.ws.editing || S.ws.edHandle) return;      /* state moved on while loading */
+  /* THE CONTAINER MAY BE DEAD: any render() during the (possibly 1.3MB) script
+     load replaced scBody's DOM, so the element we were handed can be detached
+     — the editor then mounts invisibly into an orphan (reviewer blocker,
+     editor round 1: flat-white light edit). Always re-query the LIVE one. */
+  const live = document.querySelector("#scBody [data-wseditor]");
+  if (live) el = live;
+  else if (el && el.isConnected === false) return;  /* nowhere real to mount */
   const path = w.sel.path;
   const docs = wsAllDocs(w.tree || {});
   const row = docs.find(d => d.path === path);
@@ -1299,6 +1310,12 @@ function wsRenderSideOnly(){
 function wireWorkspace(scBody){
   const edEl = scBody && scBody.querySelector && scBody.querySelector("[data-wseditor]");
   if (edEl && S.ws.editing && !S.ws.edHandle) void wsMountEditor(edEl);
+  if (edEl && S.ws.edHandle && S.ws.edHandle.view
+      && S.ws.edHandle.view.dom && S.ws.edHandle.view.dom.isConnected === false){
+    /* re-render replaced the container: move the live editor back in — CM's
+       view DOM relocates cleanly; state, undo and dirty tracking survive. */
+    edEl.appendChild(S.ws.edHandle.view.dom);
+  }
   if (!S.ws.editing && S.ws.edHandle) wsUnmountEditor();
   if (!wsFlagOn()) return;
   wsEnsureRegistered();

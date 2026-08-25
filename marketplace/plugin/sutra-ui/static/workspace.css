@@ -228,6 +228,14 @@
   .ws-editor .sb-line-blockquote{border-left:2px solid var(--acc);
     padding-left:10px;color:var(--muted)}
   .ws-editor .sb-line-comment{color:var(--faint)}
+  /* clean-mode emphasis (reviewer editor-round-1 minor 3): SB's highlight
+     style tags emphasis with sb-strong/sb-emphasis classes — give them the
+     panel's actual weights so bold IS bold when the marks hide */
+  .ws-editor .sb-strong{font-weight:600}
+  .ws-editor .sb-emphasis{font-style:italic}
+  .ws-editor .sb-strikethrough{text-decoration:line-through}
+  .ws-editor .sb-code{font-family:var(--mono);font-size:12px;background:var(--inset);
+    border-radius:4px;padding:0 4px}
   .ws-editor a,.ws-editor .sb-wiki-link{color:var(--acc)}
 
 
