@@ -350,36 +350,31 @@ class TestSayAccepted(unittest.TestCase):
             joined = " ".join(texts)
             self.assertIn("[Shadow \u00b7 mission %s]" % m42, joined)
             self.assertNotIn("sk-abcdefghijklmnop", joined)
-            # race, made DETERMINISTIC: while a turn is IN FLIGHT, queue a
-            # shadow say AND an operator message. At the boundary both are
-            # waiting -- the operator must go first. (Posting to an idle pane
-            # and racing the socket is a coin flip, not the invariant.)
-            ws.send(json.dumps({"message": "please be SLOW"}))
-            time.sleep(0.5)  # the SLOW turn is now in flight
+            # R22 (mounted): an OPERATOR turn on a session with a running
+            # mission PAUSES it and drops its queued shadow turns -- the
+            # founder never queues behind automation, and automation never
+            # talks over the founder.
             m43 = store.create("race probe", "fix", target_session=sid)
             store.transition(m43["id"], "brief_confirm")
             store.transition(m43["id"], "running")
+            ws.send(json.dumps({"message": "please be SLOW"}))
+            time.sleep(0.5)
             post({"message": "shadow-second", "mission_id": m43["id"]})
             ws.send(json.dumps({"message": "operator-first"}))
-            # drain the SLOW turn first
-            deadline = time.time() + 20
-            while time.time() < deadline:
-                fr = json.loads(ws.recv(timeout=15))
-                if fr["type"] == "done":
-                    break
-            order = []
+            texts2, dones = [], 0
             deadline = time.time() + 30
-            dones = 0
             while time.time() < deadline and dones < 2:
                 fr = json.loads(ws.recv(timeout=15))
                 if fr["type"] == "token":
-                    order.append(fr["text"])
+                    texts2.append(fr["text"])
                 if fr["type"] == "done":
                     dones += 1
-            joined = " ".join(order)
-            self.assertLess(joined.index("operator-first"),
-                            joined.index("shadow-second"),
-                            "the founder never queues behind automation")
+            joined2 = " ".join(texts2)
+            self.assertIn("operator-first", joined2)
+            self.assertNotIn("shadow-second", joined2,
+                             "takeover drops the queued shadow turn")
+            self.assertEqual(store.load(m43["id"])["state"], "paused",
+                             "operator turn pauses the bound mission")
             ws.close()
         finally:
             os.environ.pop("SUTRA_SHADOW_HOME", None)

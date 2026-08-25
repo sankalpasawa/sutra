@@ -127,3 +127,52 @@ if (typeof TITLES !== "undefined"){
   TITLES.shadow = ["Shadow",
     "your chief of staff \u00b7 one conversation, everywhere"];
 }
+
+/* The home controls act (they rendered un-wired before -- the recurring
+   disease, now cured surface by surface). One delegated listener. */
+if (typeof document !== "undefined" && document.addEventListener){
+  document.addEventListener("click", (ev) => {
+    const d = (ev.target && ev.target.dataset) || {};
+    if (d.shtab){ if (typeof S !== "undefined") S.shadowTab = d.shtab;
+      if (typeof scheduleRender === "function") scheduleRender(); return; }
+    if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
+    if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
+    if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);
+    if (d.shconfirm) return shadowInstructionAct(d.shconfirm, "confirm");
+    if (d.shrevoke) return shadowInstructionAct(d.shrevoke, "revoke");
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey && ev.target && ev.target.dataset
+        && ev.target.dataset.shhomecompose){
+      ev.preventDefault && ev.preventDefault();
+      const text = ev.target.value; ev.target.value = "";
+      if (text && text.trim() && typeof sendToShadow === "function"){
+        sendToShadow(text.trim()).then(() => {
+          if (typeof loadShadowHome === "function") loadShadowHome();
+          if (typeof scheduleRender === "function") scheduleRender();
+        });
+        if (typeof scheduleRender === "function") scheduleRender();
+      }
+    }
+  });
+}
+
+async function shadowWatchSet(sid, watch){
+  if (typeof fetch === "undefined") return;
+  try {
+    await fetch("/api/shadow/watches", { method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ session_id: sid, watch }) });
+  } catch (e) {}
+  loadShadowHome();
+}
+
+async function shadowInstructionAct(id, action){
+  if (typeof fetch === "undefined") return;
+  try {
+    await fetch("/api/shadow/instructions", { method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, action }) });
+  } catch (e) {}
+  loadShadowHome();
+}

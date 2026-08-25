@@ -210,5 +210,19 @@ function part3(){
     ctx.missionCardHtml({ id: "m-2", objective: "y", state: "paused" })),
     "state chip carries the state");
   console.log("ok 10 mission card");
-  console.log("test_shadow_overlay.js: all green");
+  /* 11. reply blocks land: mission renders in-thread; finishers pinned */
+{
+  const c3 = fresh();
+  c3.S.shadowThread = [{ who: "shadow",
+    mission: { id: "m-9", objective: "x", state: "brief_confirm" } }];
+  assert(/data-shstart="m-9"/.test(c3.shadowCardHtml()),
+    "a mission entry renders as a card in the thread");
+  assert(/shadowMissionAct/.test(src), "Start must act");
+  assert(/active_missions/.test(src), "badge reads the status count");
+  assert(/data-shquiet/.test(src) && /data-shhidesess/.test(src),
+    "quiet + hide controls exist (R12)");
+  assert(/tabindex", "-1"/.test(src), "dot is click-only (R3)");
+  console.log("ok 11 reply blocks + finishers");
+}
+console.log("test_shadow_overlay.js: all green");
 }

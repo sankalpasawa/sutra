@@ -1136,6 +1136,23 @@ def _shadow_args():
     return build_agent_args(prov["bin_path"], "", "plan", stream_input=True)
 
 
+@app.on_event("startup")
+async def _shadow_recover():
+    if providers.shadow_enabled():
+        try:
+            shadow_runner.recover_on_boot()
+        except Exception:
+            pass
+
+
+@app.on_event("shutdown")
+async def _shadow_shutdown():
+    try:
+        shadow_runner.shutdown()
+    except Exception:
+        pass
+
+
 @app.get("/api/shadow/status")
 async def api_shadow_status():
     """The dot reads this: watching (green) / not (grey). Never 500s -- a
@@ -1145,7 +1162,8 @@ async def api_shadow_status():
     sess = _SHADOW["session"]
     return {"watching": bool(sess and sess.alive),
             "session": sess.session_id if sess else None,
-            "permission_mode": "plan"}
+            "permission_mode": "plan",
+            "active_missions": shadow_runner.active_mission_count()}
 
 
 @app.post("/api/shadow/chat")
@@ -1180,8 +1198,34 @@ async def api_shadow_chat(request: Request):
          err, _e) = await sess.rt.demux_turn(collect, sess.session_id)
     if err:
         raise HTTPException(502, "shadow turn failed: %s" % err[:200])
-    return {"reply": "".join(tokens), "session": sess.session_id,
-            "watching": sess.alive}
+    raw = "".join(tokens)
+    display, blocks = shadow_protocol.parse_reply(raw)
+    out = {"reply": display, "session": sess.session_id,
+           "watching": sess.alive}
+    if "chips" in blocks:
+        out["chips"] = blocks["chips"]
+    if "mission" in blocks:
+        mspec = blocks["mission"]
+        store = _mission_engine.MissionStore()
+        try:
+            m = store.create(mspec["objective"], mspec["template"],
+                             target_mode=mspec.get("target_mode") or "existing",
+                             target_session=mspec.get("target_session"),
+                             done_when=mspec.get("done_when"),
+                             manifest=mspec.get("manifest"))
+            store.transition(m["id"], "brief_confirm", "proposed in chat")
+            out["mission"] = store.load(m["id"])
+        except ValueError:
+            pass                      # invalid proposal: reply text stands
+    if "remember" in blocks:
+        import shadow_ledger
+        row = shadow_ledger.append("instructions", {
+            "text": blocks["remember"]["text"][:1000],
+            "precedence": blocks["remember"]["precedence"],
+            "confirmed": False,
+            "source_thread": sess.session_id})
+        out["remembered"] = row
+    return out
 
 
 # ------------------------------------------------- shadow home endpoints --
@@ -1190,6 +1234,8 @@ async def api_shadow_chat(request: Request):
 # (archive-never-delete), and a watch toggle is an auditable act.
 import mission_engine as _mission_engine
 import shadow_precedence
+import shadow_runner
+import shadow_protocol
 
 
 @app.get("/api/shadow/instructions")
@@ -1288,6 +1334,31 @@ def _save_watches(watches):
         json.dump(sorted(watches), handle)
 
 
+@app.post("/api/shadow/missions")
+async def api_shadow_mission_create(request: Request):
+    """GAP-AUDIT row 1: the delegate path. Shadow\'s proposal (or the
+    founder\'s direct ask) creates a brief_confirm mission; Start is the
+    founder\'s confirm + admit."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    objective = (body.get("objective") or "").strip()
+    template = body.get("template") or "fix"
+    if not objective:
+        raise HTTPException(400, "objective required")
+    store = _mission_engine.MissionStore()
+    try:
+        m = store.create(objective, template,
+                         target_mode=body.get("target_mode") or "existing",
+                         target_session=body.get("target_session"),
+                         done_when=body.get("done_when"),
+                         manifest=body.get("manifest"))
+        store.transition(m["id"], "brief_confirm", "proposed")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return store.load(m["id"])
+
+
 @app.get("/api/shadow/missions")
 async def api_shadow_missions():
     if not providers.shadow_enabled():
@@ -1310,11 +1381,14 @@ async def api_shadow_mission_act(mid: str, request: Request):
         if action == "drop":
             return sched.cancel_queued(mid)
         if action == "start_now":
-            return sched.start(mid)
+            # admit AND launch the loop (GAP-AUDIT row 2: the mounted engine)
+            return shadow_runner.start_mission(mid, _validated_say)
         if action == "confirm_check":
             return store.confirm_check(mid, int(body.get("index") or 0))
         if action == "resume":
-            return store.transition(mid, "running", "explicit resume (home)")
+            m = store.transition(mid, "running", "explicit resume (home)")
+            shadow_runner._launch(mid, _validated_say, None)
+            return m
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     raise HTTPException(400, "unknown action %r" % action)
@@ -1343,15 +1417,42 @@ async def api_shadow_feed():
     return {"items": items[-50:], "ts": time.time()}
 
 
-@app.post("/api/sessions/{sid}/say")
-async def api_session_say(sid: str, request: Request):
-    if request.headers.get("x-shadow-say-token") != SHADOW_SAY_TOKEN:
-        raise HTTPException(401, "missing or wrong say token")
+def _validated_say(sid, mission_id, msg, dedupe_key=None):
+    """The ONE say path (endpoint AND runner): every check or none."""
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
     rt = lookup_runtime(sid)
     if rt is None:
         raise HTTPException(404, "no live runtime for session %s" % sid)
+    import mission_engine as _me
+    m = _me.MissionStore().load(mission_id)
+    if m is None:
+        raise HTTPException(404, "no such mission %s" % mission_id)
+    if m["state"] != "running":
+        raise HTTPException(409, "mission %s is %s, not running"
+                            % (mission_id, m["state"]))
+    if m.get("target_session") != sid:
+        # STRICT binding (codex re-review P1): an unbound running mission
+        # must not become a skeleton key over every pane.
+        raise HTTPException(409, "mission %s is not bound to session %s"
+                            % (mission_id, sid))
+    if "never_say" in m.get("invariants", ()):
+        raise HTTPException(403, "watch missions never speak")
+    clean, redactions = shadow_egress.scrub(msg)
+    tagged = "[Shadow \u00b7 mission %s] %s" % (mission_id, clean)
+    ok = rt.turn_queue.put({"message": tagged, "_source": "shadow"},
+                           source="shadow", dedupe_key=dedupe_key)
+    if not ok:
+        raise HTTPException(409, "duplicate say (dedupe key already accepted)")
+    rt.queue_event.set()
+    return {"queued": True, "redactions": redactions,
+            "position": len(rt.turn_queue)}
+
+
+@app.post("/api/sessions/{sid}/say")
+async def api_session_say(sid: str, request: Request):
+    if request.headers.get("x-shadow-say-token") != SHADOW_SAY_TOKEN:
+        raise HTTPException(401, "missing or wrong say token")
     try:
         body = await request.json()
     except Exception:
@@ -1360,33 +1461,7 @@ async def api_session_say(sid: str, request: Request):
     mission = (body.get("mission_id") or "").strip()
     if not msg or not mission:
         raise HTTPException(400, "message and mission_id are required")
-    # The endpoint is where the mission state machine BINDS (codex P1 fold):
-    # a token holder must not bypass states, targets, or template invariants.
-    import mission_engine as _me
-    m = _me.MissionStore().load(mission)
-    if m is None:
-        raise HTTPException(404, "no such mission %s" % mission)
-    if m["state"] != "running":
-        raise HTTPException(409, "mission %s is %s, not running"
-                            % (mission, m["state"]))
-    if m.get("target_session") != sid:
-        # STRICT binding (codex re-review P1): an unbound running mission
-        # must not become a skeleton key over every pane -- provision or
-        # amend the target first, then speak.
-        raise HTTPException(409, "mission %s is not bound to session %s"
-                            % (mission, sid))
-    if "never_say" in m.get("invariants", ()):
-        raise HTTPException(403, "watch missions never speak")
-    clean, redactions = shadow_egress.scrub(msg)
-    tagged = "[Shadow \u00b7 mission %s] %s" % (mission, clean)
-    ok = rt.turn_queue.put({"message": tagged, "_source": "shadow"},
-                           source="shadow",
-                           dedupe_key=body.get("dedupe_key"))
-    if not ok:
-        raise HTTPException(409, "duplicate say (dedupe key already accepted)")
-    rt.queue_event.set()
-    return {"queued": True, "redactions": redactions,
-            "position": len(rt.turn_queue)}
+    return _validated_say(sid, mission, msg, body.get("dedupe_key"))
 
 
 @app.websocket("/ws/chat")
@@ -1587,6 +1662,18 @@ async def ws_chat(ws: WebSocket):
                     nudge.cancel()
                     break
             rt.stopped = False
+            if (payload.get("_source") != "shadow" and session_id
+                    and providers.shadow_enabled()):
+                # R22 takeover (dual-lane fold): an operator turn on a session
+                # with a running mission PAUSES it here -- after payload
+                # ownership, before any turn dispatches; queued shadow turns
+                # for this session are dropped by the pause path.
+                try:
+                    hit = shadow_runner.founder_takeover(session_id)
+                    if hit is not None:
+                        rt.turn_queue.clear_shadow()
+                except Exception:
+                    pass
             msg = payload.get("message", "")
             seed = payload.get("resume")
             model = payload.get("model")
@@ -1680,6 +1767,9 @@ async def ws_chat(ws: WebSocket):
             # S23: now that the session id is known, make this runtime
             # discoverable (idempotent; same id + same rt every turn).
             register_runtime(session_id, rt)
+            if session_id and providers.shadow_enabled():
+                # the watcher rides every live pane (GAP-AUDIT row 3)
+                shadow_runner.attach_observer(session_id, rt)
 
             # Do NOT read stderr to EOF or wait() here: both block forever on a
             # process that is meant to outlive the turn. Only a dead process is
