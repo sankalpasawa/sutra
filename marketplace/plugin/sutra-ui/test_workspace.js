@@ -165,7 +165,7 @@ function freshSandbox(){
   wsCurrentState, wsStateFromError, wsGroupResults, wsMarkSnippet,
   wsSearchInput, wsVisibleRows, wsActivateRow, wsKeydown, wsParseRoute,
   wsOpenDoc, wsSetLens, wsEdit, wsDone, wsKeepMine, wireWorkspace,
-  wsScreenHtml, WS_COPY, wsMatchWords, wsCount, wsTreeHtml };
+  wsScreenHtml, WS_COPY, wsMatchWords, wsCount, wsTreeHtml, wsMdHtml };
 `;
   new vm.Script(validatorSrc + "\n" + source + EPILOGUE,
     { filename: "13-workspace.js#test" }).runInContext(sb);
@@ -498,8 +498,39 @@ test("state 14 keeps the last read copy on screen and offers Save a copy", () =>
   assert(html.indexOf("This document is no longer there. Your last read copy is on screen.") !== -1,
     "state-14 message missing");
   assert(html.indexOf(">Save a copy<") !== -1, "Save a copy missing");
-  assert(html.indexOf("data-wsframe") !== -1,
-    "the frame (the last read copy) must stay on screen");
+  /* The read view renders lastRead directly — a STRONGER guarantee than the
+     old iframe (which cannot display a deleted file at all). The rendered
+     body must be on screen; the editor frame must NOT mount in read state. */
+  assert(html.indexOf("ws-read") !== -1 && html.indexOf("body") !== -1,
+    "the rendered last-read copy must stay on screen");
+  assert(html.indexOf("data-wsframe") === -1,
+    "the editor iframe must not mount in the read state");
+});
+
+test("read state renders the panel view; edit state mounts the iframe (round 3)", () => {
+  const sb = onSandbox(sb2 => {
+    sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
+    sb2.S.ws.lastRead = { path: "holding/research/viewer.md",
+      text: "# Title From Doc\n\nBody **bold** text\n\n- item", editable: true };
+  });
+  let html = sb.__W.wsScreenHtml();
+  assert(html.indexOf("ws-doctitle") !== -1 && html.indexOf("Title From Doc") !== -1,
+    "read state must show the serif doc title");
+  assert(html.indexOf("<strong>bold</strong>") !== -1, "markdown must render");
+  assert(html.indexOf("data-wsframe") === -1, "no iframe in read state");
+  sb.S.ws.editing = true;
+  html = sb.__W.wsScreenHtml();
+  assert(html.indexOf("data-wsframe") !== -1, "edit state mounts the iframe");
+});
+
+test("the renderer never lets author bytes reach the DOM as markup", () => {
+  const sb = onSandbox();
+  const hostile = '# T\n\n<img src=x onerror=alert(1)> **b** <script>x</script>\n\n- <b>li</b>';
+  const out = sb.__W.wsMdHtml(hostile);
+  assert(out.indexOf("<img") === -1 && out.indexOf("<script") === -1
+    && out.indexOf("<b>") === -1, "raw tags must be escaped: " + out.slice(0, 120));
+  assert(out.indexOf("&lt;img") !== -1, "escaped form must survive");
+  assert(out.indexOf("<strong>b</strong>") !== -1, "markdown still renders around it");
 });
 
 test("state 14 hides Save a copy when the edit gate is off", () => {

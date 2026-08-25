@@ -2,6 +2,15 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.9 (2026-08-25)
+
+- **Reading is the panel's own view.** A document opens into a rendered,
+  themed read state — serif title, proportional body, escaped-first markdown
+  (headings, lists, code, quotes, tables) — exactly the locked mock. The
+  SilverBullet editor iframe now appears only behind Edit, and Done returns
+  to the refreshed read view. Charter pages gain their breadcrumb; the Edit
+  link yields to the result count while searching; tree rows ellipsize.
+
 ## 2.222.8 (2026-08-25)
 
 - **Review-loop round (reviewer agent + codex + deepseek).** Search shows its

@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.222.8 (2026-08-25, HEAD)
+## v2.222.9 (2026-08-25, HEAD)
+
+Panel-native rendered READ state (iframe only behind Edit) + reviewer minors.
+
+## v2.222.8 (2026-08-25)
 
 Review-loop: search in-flight state + content cache, clip fix, filing join
 unified, cursor/renderer one predicate, 14-row cap, stable sidecar port.

@@ -428,6 +428,19 @@ function wsEdit(){
 function wsDone(){
   if (!S.ws.editing) return;
   S.ws.editing = false; S.ws.unsaved = false;
+  /* The read view renders from lastRead — refresh it so the edit just made
+     in the iframe is what the reader sees (reviewer round 2). */
+  (async () => {
+    try {
+      const path = S.ws.sel && S.ws.sel.path;
+      if (!path) return;
+      const r = await apiGet("/api/fs/read?path=" + encodeURIComponent(path));
+      if (S.ws.sel && S.ws.sel.path === path){
+        S.ws.lastRead = { path: path, text: r.text, editable: r.editable };
+        render();
+      }
+    } catch (_e) {}
+  })();
   /* One disk check on the way out: the save happened inside the sidecar, and
      an external write during the edit deserves the banner now, not on the
      next focus. (The save-conflict 409 path itself is the sidecar's/fs-write's;
@@ -927,7 +940,13 @@ function wsCharterPageHtml(){
   const c = S.ws.charter;
   if (!c) return wsSkelHtml(6);
   const ch = c.charter || {};
+  /* Breadcrumb above the serif title (mock 02; reviewer round-2 minor 6):
+     the department comes from the tree join when this charter is in it. */
+  let crumbDept = null;
+  ((S.ws.tree || {}).departments || []).forEach(d =>
+    (d.charters || []).forEach(x => { if (x.id === ch.id) crumbDept = d.name; }));
   return '<div class="ws-page">'
+    + (crumbDept ? '<div class="ws-crumb">' + esc(crumbDept) + ' \u00b7 ' + esc(ch.title) + '</div>' : "")
     + '<h1>' + esc(ch.title) + '</h1>'
     + (ch.purpose ? '<p class="ws-desc">' + esc(ch.purpose) + '</p>' : "")
     + '<div class="ws-chlist">'
@@ -1000,6 +1019,100 @@ function wsCrumbHtml(state){
 /* The document column per state. The iframe carries NO src attribute in the
    markup — wireWorkspace() assigns it as a property from sbUrl() only, the
    wire() pattern the Files screen established. */
+/* ── read-state markdown renderer (reviewer round 2, blocker 1) ──────────────
+   The READ state is the PANEL's (mock 02/03): serif title, themed body — the
+   SilverBullet iframe appears only in EDIT (mock 07). Escape-first by
+   construction: every piece of source text passes esc() BEFORE any tag is
+   assembled, so no author-controlled byte reaches the DOM as markup. Links
+   render only for http(s) targets. Deliberately conservative — headings,
+   emphasis, code, lists, quotes, tables, rules — anything else stays plain
+   escaped text rather than half-rendered risk. */
+function wsMdInline(t){
+  let x = esc(t);
+  x = x.replace(/`([^`]+)`/g, "<code>$1</code>");
+  x = x.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  x = x.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
+  x = x.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  x = x.replace(/\[\[([^\]]+)\]\]/g, '<span class="ws-wikilink">$1</span>');
+  return x;
+}
+function wsMdHtml(text){
+  const lines = String(text || "").split(/\r?\n/);
+  let html = "", i = 0, para = [];
+  const flush = () => {
+    if (para.length){ html += "<p>" + para.map(wsMdInline).join("<br>") + "</p>"; para = []; }
+  };
+  while (i < lines.length){
+    const ln = lines[i];
+    if (/^```/.test(ln)){
+      flush();
+      const buf = []; i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      html += "<pre><code>" + esc(buf.join("\n")) + "</code></pre>";
+      continue;
+    }
+    const h = ln.match(/^(#{1,6})\s+(.*)$/);
+    if (h){ flush(); const lv = Math.min(h[1].length, 4);
+      html += "<h" + lv + ">" + wsMdInline(h[2]) + "</h" + lv + ">"; i++; continue; }
+    if (/^\s*([-*+]|\d+\.)\s+/.test(ln)){
+      flush();
+      const items = []; const ordered = /^\s*\d+\./.test(ln);
+      while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])){
+        let it = lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, "");
+        it = it.replace(/^\[ \]\s*/, "\u25a1 ").replace(/^\[x\]\s*/i, "\u25a3 ");
+        items.push("<li>" + wsMdInline(it) + "</li>"); i++;
+      }
+      html += (ordered ? "<ol>" : "<ul>") + items.join("") + (ordered ? "</ol>" : "</ul>");
+      continue;
+    }
+    if (/^\s*&gt;|^\s*>/.test(ln)){
+      flush();
+      const buf = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      html += "<blockquote>" + buf.map(wsMdInline).join("<br>") + "</blockquote>";
+      continue;
+    }
+    if (/^\s*\|.*\|\s*$/.test(ln)){
+      flush();
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(lines[i++]);
+      const cells = r => r.replace(/^\s*\||\|\s*$/g, "").split("|").map(c => wsMdInline(c.trim()));
+      let t = "<table>";
+      rows.forEach((r, ri) => {
+        if (/^\s*\|[\s:|-]+\|\s*$/.test(r)) return;      /* separator row */
+        const tag = ri === 0 ? "th" : "td";
+        t += "<tr><" + tag + ">" + cells(r).join("</" + tag + "><" + tag + ">") + "</" + tag + "></tr>";
+      });
+      html += t + "</table>";
+      continue;
+    }
+    if (/^\s*(---+|\*\*\*+)\s*$/.test(ln)){ flush(); html += "<hr>"; i++; continue; }
+    if (!ln.trim()){ flush(); i++; continue; }
+    para.push(ln); i++;
+  }
+  flush();
+  return html;
+}
+/* Title strategy: a leading H1 IS the document's title (mock renders it once,
+   serif); otherwise the registry title from the selection row. */
+function wsReadView(){
+  const w = S.ws;
+  if (!w.lastRead || w.lastRead.path !== (w.sel && w.sel.path))
+    return '<div class="ws-read">' + wsSkelHtml(6) + '</div>';
+  let text = w.lastRead.text || "";
+  let title = null;
+  const m = text.match(/^\s*#\s+(.+)\r?\n/);
+  if (m){ title = m[1]; text = text.slice(m.index + m[0].length); }
+  if (!title){
+    const docs = wsAllDocs(w.tree || {});
+    const row = docs.find(d => d.path === w.sel.path);
+    title = (row && row.title) || w.sel.path.split("/").pop();
+  }
+  return '<div class="ws-read"><h1 class="ws-doctitle">' + esc(title) + "</h1>"
+    + '<div class="ws-mdbody">' + wsMdHtml(text) + "</div></div>";
+}
 function wsDocColHtml(state){
   const w = S.ws;
   if (state === "10") return wsSkelHtml(8);
@@ -1023,8 +1136,15 @@ function wsDocColHtml(state){
     html += wsNoticeHtml("info", WS_COPY.unfiledNotice,
       wsEditAllowed() ? [{ act:"fileit", label:WS_COPY.fileIt, gold:true }] : []);
   html += wsCrumbHtml(state);
-  if (w.sel && w.sel.type === "doc")
-    html += '<iframe class="ws-frame" title="Document" data-wsframe></iframe>';
+  if (w.sel && w.sel.type === "doc"){
+    /* READ is the panel's own rendered view (mock 02/03); the SilverBullet
+       iframe mounts only while EDITING (mock 07) — reviewer round 2,
+       blocker 1: the editor chrome can never be the read state. */
+    if (S.ws.editing)
+      html += '<iframe class="ws-frame" title="Document" data-wsframe></iframe>';
+    else
+      html += wsReadView();
+  }
   return html;
 }
 function wsScreenHtml(){
@@ -1041,7 +1161,7 @@ function wsScreenHtml(){
     + (!wsEditAllowed() && state !== "13" ? '<span class="ws-chip">' + WS_COPY.readOnly + '</span>' : "")
     + (S.ws.editing
         ? '<button type="button" class="ws-act gold" data-wsact="done">' + WS_COPY.done + '</button>'
-        : (wsEditAllowed() && S.ws.sel && S.ws.sel.type === "doc" && !S.ws.docGone && state !== "13"
+        : (wsEditAllowed() && !g && S.ws.sel && S.ws.sel.type === "doc" && !S.ws.docGone && state !== "13"
             ? '<button type="button" class="ws-act" data-wsact="edit">' + WS_COPY.edit + '</button>' : ""))
     + '</span></div>';
   const lens =
