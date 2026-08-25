@@ -2,6 +2,18 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.8 (2026-08-25)
+
+- **Review-loop round (reviewer agent + codex + deepseek).** Search shows its
+  in-flight state and cold search is cached (mtime-keyed content cache) — the
+  4-6s silent pane read as broken. Doc column no longer clips at the FILING
+  boundary (fixed-620px removed). Doc filing agrees with the tree (the
+  relativizing join reached _latest_placement_for). Keyboard cursor mirrors
+  the collapsed tree exactly (one shared predicate). Big charters cap at 14
+  rows with an honest "N more". Stable per-workdir sidecar port — the SB
+  client's index now survives restarts instead of rebuilding per boot.
+  IPv6 Host parsing fixed in the origin guard.
+
 ## 2.222.7 (2026-08-25)
 
 - **Tree indents actually render.** The shared `.ws button` reset (0,1,1)

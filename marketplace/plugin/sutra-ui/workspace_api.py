@@ -269,19 +269,39 @@ def _stem(rel):
     return base[:-3] if base.lower().endswith(".md") else base
 
 
+#: mtime-keyed content cache (named follow-up, promoted 2026-08-25 when the
+#: cold search measured 2.3-6s on the founder's corpus and read as "search is
+#: broken"). Keyed by path -> (mtime_ns, size, text); a changed file misses on
+#: either component. Bounded: an over-cap insert evicts the oldest entries —
+#: this is a warm-set cache, not an archive.
+_TEXT_CACHE = {}
+_TEXT_CACHE_MAX = 8192
+
+
 def _read_text(target):
     """Document text for search/word-count. Display-lane decode (replace),
     matching _doc_title -- the byte-exact lane stays /api/fs/read. Oversized
     or unreadable files yield ''. NUL means binary (org_api's own predicate):
-    not a document body worth scanning."""
+    not a document body worth scanning. mtime+size-keyed cache in front."""
     try:
-        if os.path.getsize(target) > org_api.FS_MAX_READ:
+        st = os.stat(target)
+        key = (st.st_mtime_ns, st.st_size)
+        hit = _TEXT_CACHE.get(target)
+        if hit and hit[0] == key:
+            return hit[1]
+        if st.st_size > org_api.FS_MAX_READ:
             return ""
         with open(target, "rb") as fh:
             raw = fh.read()
         if b"\x00" in raw:
-            return ""
-        return raw.decode("utf-8", errors="replace")
+            text = ""
+        else:
+            text = raw.decode("utf-8", errors="replace")
+        if len(_TEXT_CACHE) >= _TEXT_CACHE_MAX:
+            for k in list(_TEXT_CACHE)[:_TEXT_CACHE_MAX // 8]:
+                del _TEXT_CACHE[k]
+        _TEXT_CACHE[target] = (key, text)
+        return text
     except OSError:
         return ""
 
@@ -630,8 +650,13 @@ def _filing_names(rel):
 def _latest_placement_for(rel):
     rl = rel.lower()
     best = None
+    root = _root()
     for p in _doc_placements(_all_placements()):
-        if _norm_rel(p["work_ref"]["id"]).lower() != rl:
+        # root is REQUIRED here: absolute placement ids only join after
+        # relativization, and the tree path (line ~408) already passes it.
+        # Omitting it made the doc endpoint deny a filing the tree displayed
+        # (reviewer 2026-08-25, finding 5).
+        if _norm_rel(p["work_ref"]["id"], root).lower() != rl:
             continue
         if best is None or (p.get("ts_ms") or 0) > (best.get("ts_ms") or 0):
             best = p

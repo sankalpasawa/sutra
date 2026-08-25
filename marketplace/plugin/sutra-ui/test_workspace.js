@@ -358,13 +358,42 @@ test("deep-link parse: precedence fields, one decode, rejects per grammar", () =
 
 /* ── keyboard ───────────────────────────────────────────────────────────── */
 
-test("visible rows walk the flat visual order: dept, charter, doc, Unfiled", () => {
+test("visible rows mirror the collapsed tree exactly (codex finding 5)", () => {
+  /* No selection: every dept row + Unfiled row, NOTHING expanded — the cursor
+     must never land on a row the renderer did not draw. */
   const sb = onSandbox();
-  const rows = sb.__W.wsVisibleRows();
-  const shape = rows.map(r => r.type).join(",");
-  assert(shape === "dept,charter,doc,doc,dept,doc",
-    "flat traversal order broken: " + shape);
-  assert(rows[3].gone === true, "a missing doc stays LISTED (struck), never dropped");
+  assert(sb.__W.wsVisibleRows().map(r => r.type).join(",") === "dept,dept",
+    "collapsed default must expose only dept rows");
+  /* Selecting a filed doc expands its dept + charter + that charter's docs. */
+  const sb2 = onSandbox(x => { x.S.ws.sel = { type:"doc", path:"holding/research/viewer.md" }; });
+  const shape = sb2.__W.wsVisibleRows().map(r => r.type).join(",");
+  assert(shape === "dept,charter,doc,doc,dept",
+    "active path traversal broken: " + shape);
+  assert(sb2.__W.wsVisibleRows()[3].gone === true,
+    "a missing doc stays LISTED (struck), never dropped");
+  /* The renderer and the cursor use ONE predicate: what wsTreeHtml draws as
+     buttons equals what wsVisibleRows returns, row for row. */
+  const html = sb2.__W.wsTreeHtml();
+  const drawn = (html.match(/data-wstype="(dept|charter|doc)"/g) || []).length;
+  assert(drawn === sb2.__W.wsVisibleRows().length,
+    "renderer drew " + drawn + " rows, cursor walks " + sb2.__W.wsVisibleRows().length);
+});
+
+test("a 15+ doc charter caps at 14 with an honest more-row (reviewer finding 4)", () => {
+  const docs = [];
+  for (let i = 0; i < 30; i++) docs.push({ path: "d/" + i + ".md", title: "Doc " + i, mtime: i });
+  const sb = onSandbox(x => {
+    x.S.ws.tree = { departments: [{ ref: "D9", name: "Big", count: 30, charters: [
+      { id: "C-big", title: "Huge", docs } ] }], unfiled: [] };
+    x.S.ws.sel = { type: "doc", path: "d/29.md" };   /* selected doc beyond the cap */
+  });
+  const html = sb.__W.wsTreeHtml();
+  const drawnDocs = (html.match(/data-wstype="doc"/g) || []).length;
+  assert(drawnDocs === 15, "cap draws 14 + the selected doc, got " + drawnDocs);
+  assert(/ws-more/.test(html), "the more-row must exist");
+  assert(/15 more/.test(html), "the more-row names the hidden count");
+  sb.__W.wsActivateRow({ type: "more", key: "C-big" });
+  assert(sb.S.ws.showAllDocs === "C-big", "activating the more-row lifts the cap");
 });
 
 test("Enter on a department toggles its expansion (founder 2026-08-25)", () => {

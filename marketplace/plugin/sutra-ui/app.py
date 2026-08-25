@@ -61,8 +61,15 @@ _LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 @app.middleware("http")
 async def _origin_guard(request, call_next):
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-        host = (request.headers.get("host") or "").split(":")[0]
-        if host not in ("127.0.0.1", "localhost", "[::1]", ""):
+        raw_host = request.headers.get("host") or ""
+        # IPv6-safe: [::1]:8330 must parse to ::1, not "[". urlsplit handles
+        # the bracket form; a bare value falls back to the pre-colon split.
+        from urllib.parse import urlsplit as _us
+        try:
+            host = _us("//" + raw_host).hostname or ""
+        except ValueError:
+            host = raw_host.split(":")[0]
+        if host not in ("127.0.0.1", "localhost", "::1", ""):
             return JSONResponse({"detail": "host not loopback"}, status_code=403)
         origin = request.headers.get("origin")
         if origin:

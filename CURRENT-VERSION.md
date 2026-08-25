@@ -2,7 +2,12 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.222.7 (2026-08-25, HEAD)
+## v2.222.8 (2026-08-25, HEAD)
+
+Review-loop: search in-flight state + content cache, clip fix, filing join
+unified, cursor/renderer one predicate, 14-row cap, stable sidecar port.
+
+## v2.222.7 (2026-08-25)
 
 Tree indents render (button-reset specificity); DOM-verified vs mock spec.
 

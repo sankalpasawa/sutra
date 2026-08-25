@@ -150,6 +150,24 @@ def ensure_binary():
     return path
 
 
+def _stable_port(root):
+    """Deterministic per-workdir port. The SB CLIENT keys its space index by
+    ORIGIN — a random port per boot meant a fresh origin and a from-scratch
+    reindex (minutes on a real corpus) on EVERY app restart; styles and
+    markdown rendering read as broken until it finished (reviewer 2026-08-25,
+    blocker 3 root cause). Falls forward to the next free port on collision."""
+    base = 8340 + (int(hashlib.sha256(root.encode()).hexdigest(), 16) % 200)
+    for port in range(base, base + 20):
+        probe = socket.socket()
+        try:
+            probe.bind(("127.0.0.1", port))
+            probe.close()
+            return port
+        except OSError:
+            probe.close()
+    return _free_port()
+
+
 def _free_port():
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -327,7 +345,7 @@ def start(root):
                     step(root)
                 except Exception as exc:  # noqa: BLE001
                     _state["inject_error"] = "%s: %s" % (label, exc)
-        port = _free_port()
+        port = _stable_port(root)
         proc = subprocess.Popen(
             [binary, "--single", root],
             env=_sb_env(readonly, port),
