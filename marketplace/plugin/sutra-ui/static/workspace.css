@@ -117,22 +117,24 @@
     padding:12px 10px;overflow-y:auto;font-size:12.5px}
   .ws-none{min-height:8px}   /* empty tree/results render — no lock value; inert spacer */
 
-  /* the three levels, told by weight and indent — no chevrons, no icons */
-  .ws-dep{display:block;width:100%;text-align:left;cursor:pointer;
+  /* the three levels, told by weight and indent — no chevrons, no icons.
+     .ws-prefixed: the shared `.ws button` reset is (0,1,1) and silently
+     zeroed these paddings for months — row rules must outrank it. */
+  .ws .ws-dep{display:block;width:100%;text-align:left;cursor:pointer;
     padding:6px 8px 3px;color:var(--ink);font-weight:600;font-size:12.5px;
     letter-spacing:-.01em;border-radius:6px}
-  .ws-dep:hover{background:var(--line-soft)}
+  .ws .ws-dep:hover{background:var(--line-soft)}
   .ws-count{float:right;font-weight:400;color:var(--faint);font-size:11px}
   .ws-dep.ws-unfiled{color:var(--muted)}                    /* mock :138/:195 inline */
-  .ws-cha{display:block;width:100%;padding:4px 8px 4px 20px;color:var(--acc);
+  .ws .ws-cha{display:block;width:100%;padding:4px 8px 4px 20px;color:var(--acc);
     font-size:12px;cursor:pointer}
   .ws-cha.on{background:var(--line-soft);border-radius:6px}  /* state 02 (mock :184 inline) */
-  .ws-doc{display:block;width:100%;padding:4px 8px 4px 32px;color:var(--muted);
+  .ws .ws-doc{display:block;width:100%;padding:4px 8px 4px 32px;color:var(--muted);
     border-radius:6px;line-height:1.35;font-size:12px;cursor:pointer}
   .ws-doc.on{background:var(--acc-bg);color:var(--ink)}
   .ws-doc.gone{color:var(--faint);text-decoration:line-through}
-  .ws-doc.ws-und{padding-left:20px}  /* Unfiled docs indent (mock :139/:376 inline) */
-  .ws-doc.ws-hit{padding:9px 8px;border-bottom:1px solid var(--line-soft)}
+  .ws .ws-doc.ws-und{padding-left:20px}  /* Unfiled docs indent (mock :139/:376 inline) */
+  .ws .ws-doc.ws-hit{padding:9px 8px;border-bottom:1px solid var(--line-soft)}
   /* search doc-result rows (mock :235-:241): breathing room + a soft divider,
      and the match highlight stays a tint, not a highlighter stroke — token
      colors so both themes keep contrast without glare */

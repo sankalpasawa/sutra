@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.7 (2026-08-25)
+
+- **Tree indents actually render.** The shared `.ws button` reset (0,1,1)
+  had silently zeroed the charter/doc indents since the screen shipped —
+  the hierarchy existed in markup only. Row rules now outrank the reset;
+  DOM-verified 20px/32px against the mock spec across 3 capture rounds.
+
 ## 2.222.6 (2026-08-25)
 
 - **Editing is on by default.** A human editing their own workdir is normal
