@@ -388,9 +388,12 @@ class MissionScheduler:
         m = self.store.load(mid)
         if m is None:
             raise ValueError("no mission %s" % mid)
+        if m["state"] == "running":
+            return m                      # idempotent: double-start is a no-op
         running = self.store.list(states=("running",))
         if m.get("target_session") and any(
                 r.get("target_session") == m["target_session"]
+                and r["id"] != mid          # a mission never blocks ITSELF
                 for r in running):
             raise ValueError(
                 "session %s already has a running mission -- amend it"

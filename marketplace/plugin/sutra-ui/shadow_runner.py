@@ -288,6 +288,8 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
     async def go():
         try:
             m = store.load(mid)
+            if m and m["state"] == "running":
+                return                    # double-start no-op (race fix)
             if provisioner and m and m.get("target_mode") == "new" \
                     and not m.get("target_session"):
                 eng = mission_engine.MissionEngine(store, None, None, None)
@@ -296,8 +298,10 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
         except Exception as exc:
             try:
                 mm = store.load(mid)
-                if mm and mm["state"] not in mission_engine.TERMINAL:
-                    store.transition(mid, "failed",
+                # NEVER downgrade a healthy running mission (race fix: the
+                # duplicate starter's failure is not the mission's failure)
+                if mm and mm["state"] in ("brief_confirm", "queued"):
+                    store.transition(mm["id"], "failed",
                                      "provision/admit failed: %s"
                                      % str(exc)[:200])
             except Exception:
