@@ -1,4 +1,5 @@
-"""PLAN-100 S8: the shadow.enabled flag ships dark.
+"""PLAN-100 S8 (amended by founder direction 2026-08-25): the shadow
+ flag ships ON.
 
 Off-state contract: absent file, absent key, or junk values are all OFF.
 Only a literal boolean true turns it on. shadow_enabled() is the single
@@ -27,25 +28,28 @@ class TestShadowFlag(unittest.TestCase):
         providers.SETTINGS_PATH = self._orig
         self.tmp.cleanup()
 
-    def test_01_default_is_off_when_no_settings_file(self):
-        self.assertFalse(providers.shadow_enabled())
+    def test_01_default_is_ON_when_no_settings_file(self):
+        # founder direction 2026-08-25: Shadow is always on by default
+        self.assertTrue(providers.shadow_enabled())
 
-    def test_02_default_is_off_when_key_absent(self):
+    def test_02_default_is_ON_when_key_absent(self):
         self.settings.write_text(json.dumps({"provider": "claude"}))
+        self.assertTrue(providers.shadow_enabled())
+
+    def test_03_only_boolean_false_disables(self):
+        self.settings.write_text(json.dumps({"shadow.enabled": False}))
         self.assertFalse(providers.shadow_enabled())
+        for not_off in ("false", 0, None, "off"):
+            self.settings.write_text(json.dumps({"shadow.enabled": not_off}))
+            self.assertTrue(providers.shadow_enabled(), repr(not_off))
 
-    def test_03_junk_values_are_off(self):
-        for junk in ("true", 1, "on", {"enabled": True}, None, 0):
-            self.settings.write_text(json.dumps({"shadow.enabled": junk}))
-            self.assertFalse(providers.shadow_enabled(), repr(junk))
-
-    def test_04_only_boolean_true_is_on(self):
+    def test_04_boolean_true_is_on(self):
         self.settings.write_text(json.dumps({"shadow.enabled": True}))
         self.assertTrue(providers.shadow_enabled())
 
     def test_05_explicit_settings_arg_wins(self):
-        self.assertTrue(providers.shadow_enabled({"shadow.enabled": True}))
-        self.assertFalse(providers.shadow_enabled({}))
+        self.assertFalse(providers.shadow_enabled({"shadow.enabled": False}))
+        self.assertTrue(providers.shadow_enabled({}))
 
     def test_06_accessor_is_the_only_read_path(self):
         # the lint the off-state suite also runs: the key appears only in
