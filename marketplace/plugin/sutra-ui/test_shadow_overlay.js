@@ -242,11 +242,14 @@ function part3(){
   const dot = { className: "", textContent: "", setAttribute(){} };
   ctx.applyDotState(dot, { watching: true, active_missions: 2, alerts: 3 });
   assert(/shdot-alert/.test(dot.className), "alert class applied");
-  assert.strictEqual(dot.textContent, "3", "alert count wins the face");
+  /* mock v5: the S-mark is ALWAYS the face; the count rides a badge */
+  assert(/S/.test(dot.textContent), "face keeps the S-mark");
+  assert(/3/.test(dot.textContent), "alert count present as badge");
   ctx.applyDotState(dot, { watching: true, active_missions: 2, alerts: 0 });
   assert(!/shdot-alert/.test(dot.className), "alert class cleared");
-  assert.strictEqual(dot.textContent, "2", "badge falls back to missions");
-  console.log("ok 13 alert pill");
+  assert(/S/.test(dot.textContent) && /2/.test(dot.textContent),
+    "badge falls back to mission count, S stays");
+  console.log("ok 13 alert pill (S-mark + badge)");
 }
 console.log("test_shadow_overlay.js: all green");
 }
