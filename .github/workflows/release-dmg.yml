@@ -62,7 +62,44 @@ permissions:
   contents: write        # required to upload a release asset
 
 jobs:
+  # THE TAG IS A CLAIM ABOUT THE TREE, AND THE TREE MUST AGREE. v2.224.5-desktop
+  # was once pushed while both manifests still said 2.224.4 (a changelog-only
+  # bump), so the release advertised a version the payload did not carry. This
+  # check is cheap and the matrix legs are not: it runs first, on ubuntu, so a
+  # mismatched tag costs seconds and zero macOS minutes. On workflow_dispatch
+  # the build uses the DISPATCHED ref's tree, not the tag's commit -- comparing
+  # that tree against the tag is exactly the assertion wanted: the tag must
+  # describe what actually ships. Consequence for REPAIR runs: once main's
+  # manifests move past a tag, a repair dispatched from main refuses (as it
+  # should -- it would ship a newer tree under an old name); dispatch repairs
+  # from the tag's own ref instead.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match the plugin manifests
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v*-desktop) ;;
+            *) echo "::error::tag '$TAG' is not vX.Y.Z-desktop -- this pipeline only releases desktop tags"
+               exit 1 ;;
+          esac
+          want="${TAG#v}"; want="${want%-desktop}"
+          plugin="$(jq -r .version marketplace/plugin/.claude-plugin/plugin.json)"
+          market="$(jq -r '.plugins[] | select(.name=="core") | .version' .claude-plugin/marketplace.json)"
+          echo "tag=$want  plugin.json=$plugin  marketplace.json(core)=$market"
+          if [ "$want" != "$plugin" ] || [ "$want" != "$market" ]; then
+            echo "::error::tag $TAG claims $want but plugin.json says $plugin and marketplace.json (core) says $market. Bump the manifests, or cut the tag that matches them. Repairing an OLD release? Dispatch from the tag's own ref: gh workflow run release-dmg -f tag=$TAG --ref refs/tags/$TAG"
+            exit 1
+          fi
+          echo "version guard OK: $want"
+
   dmg:
+    needs: guard
     strategy:
       fail-fast: false        # an Intel failure must not delete the arm64 build
       matrix:
@@ -269,8 +306,11 @@ jobs:
   # SKIP it exactly when it is needed. It asserts against the published release,
   # not against job status, because what shipped is the only thing that matters.
   verify:
-    needs: dmg
-    if: always()
+    needs: [guard, dmg]
+    # Still runs when a matrix leg failed (that is its whole point), but never
+    # after the guard refused -- a guard failure would otherwise surface here as
+    # a misleading "missing assets" error on a release that was never attempted.
+    if: always() && needs.guard.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Both architectures must be on the release
