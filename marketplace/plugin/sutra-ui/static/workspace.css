@@ -93,7 +93,7 @@
     border-bottom:1px solid var(--line);background:var(--card)}
   /* Live input: placeholder faint / typed ink lands on ::placeholder + colour —
      the mock faked typing with .typed because its screens are static. */
-  .ws-search{flex:1;max-width:520px;font-size:13.5px;color:var(--ink);caret-color:var(--ink);
+  .ws-search{flex:1;max-width:520px;font-size:13px;font-weight:400;color:var(--ink);caret-color:var(--ink);
     border:0;background:transparent;outline:none;font-family:inherit}
   .ws-search::placeholder{color:var(--faint)}
   .ws-topright{margin-left:auto;display:flex;align-items:center;gap:14px;
@@ -118,14 +118,17 @@
   .ws-none{min-height:8px}   /* empty tree/results render — no lock value; inert spacer */
 
   /* the three levels, told by weight and indent — no chevrons, no icons */
-  .ws-dep{padding:7px 8px 3px;color:var(--ink);font-weight:600;letter-spacing:-.01em}
+  .ws-dep{display:block;width:100%;text-align:left;cursor:pointer;
+    padding:6px 8px 3px;color:var(--ink);font-weight:600;font-size:12.5px;
+    letter-spacing:-.01em;border-radius:6px}
+  .ws-dep:hover{background:var(--line-soft)}
   .ws-count{float:right;font-weight:400;color:var(--faint);font-size:11px}
   .ws-dep.ws-unfiled{color:var(--muted)}                    /* mock :138/:195 inline */
   .ws-cha{display:block;width:100%;padding:4px 8px 4px 20px;color:var(--acc);
     font-size:12px;cursor:pointer}
   .ws-cha.on{background:var(--line-soft);border-radius:6px}  /* state 02 (mock :184 inline) */
   .ws-doc{display:block;width:100%;padding:4px 8px 4px 32px;color:var(--muted);
-    border-radius:6px;line-height:1.35;font-size:12.5px;cursor:pointer}
+    border-radius:6px;line-height:1.35;font-size:12px;cursor:pointer}
   .ws-doc.on{background:var(--acc-bg);color:var(--ink)}
   .ws-doc.gone{color:var(--faint);text-decoration:line-through}
   .ws-doc.ws-und{padding-left:20px}  /* Unfiled docs indent (mock :139/:376 inline) */

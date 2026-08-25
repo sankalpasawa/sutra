@@ -633,13 +633,23 @@ function wsActivateRow(row){
     }
   }
   else if (row.type === "dept"){
-    /* Enter on a department: selection moves to its first charter (A11Y
-       Decision — departments have no page). */
-    const rows = wsVisibleRows();
-    const at = rows.findIndex(r => r.type === "dept" && r.key === row.key);
-    if (at !== -1 && rows[at+1] && rows[at+1].type === "charter"){
-      S.ws.cursor = { mode:"tree", i: at + 1 }; render();
-    }
+    /* A department row is its own toggle (founder 2026-08-25): departments
+       have no page, so activate = expand/collapse. The explicit choice in
+       openDeps outranks the auto-expand-active rule; the current visual
+       state comes from the same predicate the renderer used. */
+    if (!S.ws.openDeps) S.ws.openDeps = {};
+    const t = S.ws.tree || {};
+    let activeDep = null;
+    const selPath2 = S.ws.sel && S.ws.sel.type === "doc" ? S.ws.sel.path : null;
+    const selCh2 = S.ws.sel && S.ws.sel.type === "charter" ? S.ws.sel.id : null;
+    (t.departments || []).forEach(d => (d.charters || []).forEach(c => {
+      if ((selCh2 && c.id === selCh2)
+          || (selPath2 && (c.docs || []).some(x => x.path === selPath2))) activeDep = d.ref;
+    }));
+    const openNow = (row.key in S.ws.openDeps)
+      ? !!S.ws.openDeps[row.key] : row.key === activeDep;
+    S.ws.openDeps[row.key] = !openNow;
+    render();
   }
 }
 /* Named (not inline) so tests can drive keys without a DOM event pipeline. */
@@ -730,13 +740,32 @@ function wsTreeHtml(){
   const t = S.ws.tree || {};
   const selPath = S.ws.sel && S.ws.sel.type === "doc" ? S.ws.sel.path : null;
   const selCh = S.ws.sel && S.ws.sel.type === "charter" ? S.ws.sel.id : null;
+  /* Collapse-by-default (founder 2026-08-25, mock 01): only the ACTIVE path
+     expands — the department holding the selection, and docs only under the
+     selected charter (or the one holding the selected doc). Everything else
+     is one row with a count; the dept row itself is the toggle. openDeps
+     holds explicit operator choices and outranks the automatic rule. */
+  if (!S.ws.openDeps) S.ws.openDeps = {};
+  let activeDep = null, activeCh = selCh;
+  (t.departments || []).forEach(d => (d.charters || []).forEach(c => {
+    if ((selCh && c.id === selCh)
+        || (selPath && (c.docs || []).some(x => x.path === selPath))){
+      activeDep = d.ref;
+      if (!activeCh) activeCh = c.id;
+    }
+  }));
+  const depOpen = ref => (ref in S.ws.openDeps) ? !!S.ws.openDeps[ref] : ref === activeDep;
   let html = "";
   (t.departments || []).forEach(d => {
-    html += '<div class="ws-dep" ' + wsRowAttrs("dept", d.ref) + '>'
-      + esc(d.name) + '<span class="ws-count">' + esc(wsCount(d.count)) + '</span></div>';
+    const open = depOpen(d.ref);
+    html += '<button type="button" class="ws-dep' + (open ? " open" : "") + '" '
+      + wsRowAttrs("dept", d.ref) + '>'
+      + esc(d.name) + '<span class="ws-count">' + esc(wsCount(d.count)) + '</span></button>';
+    if (!open) return;
     (d.charters || []).forEach(c => {
       html += '<button type="button" class="ws-cha' + (selCh === c.id ? " on" : "") + '" '
         + wsRowAttrs("charter", c.id) + '>' + esc(c.title) + '</button>';
+      if (c.id !== activeCh) return;
       (c.docs || []).forEach(x => {
         html += '<button type="button" class="ws-doc'
           + (x.missing ? " gone" : "") + (selPath === x.path ? " on" : "") + '" '
@@ -745,10 +774,12 @@ function wsTreeHtml(){
     });
   });
   if ((t.unfiled || []).length){
+    const uOpen = depOpen("__unfiled__") || !!(selPath && (t.unfiled || []).some(x => x.path === selPath));
     html += '<hr class="ws-rule">'
-      + '<div class="ws-dep ws-unfiled" ' + wsRowAttrs("dept", "__unfiled__") + '>'
-      + WS_COPY.unfiled + '</div>';
-    (t.unfiled || []).forEach(x => {
+      + '<button type="button" class="ws-dep ws-unfiled' + (uOpen ? " open" : "") + '" '
+      + wsRowAttrs("dept", "__unfiled__") + '>'
+      + WS_COPY.unfiled + '<span class="ws-count">' + esc(wsCount((t.unfiled || []).length)) + '</span></button>';
+    if (uOpen) (t.unfiled || []).forEach(x => {
       html += '<button type="button" class="ws-doc ws-und'
         + (selPath === x.path ? " on" : "") + '" '
         + wsRowAttrs("doc", x.path) + '>' + esc(x.title) + '</button>';

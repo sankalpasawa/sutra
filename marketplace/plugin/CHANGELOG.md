@@ -2,6 +2,16 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.222.6 (2026-08-25)
+
+- **Editing is on by default.** A human editing their own workdir is normal
+  software; SUTRA_UI_READ_ONLY=1 is the kiosk opt-out (SUTRA_UI_ALLOW_EDIT
+  now a harmless no-op). New origin/host guard refuses cross-origin browser
+  mutations on the loopback port — the declared threat model, dual-consulted.
+- **The tree reads like the org.** Departments collapse to a row + count by
+  default; only the active path expands; the department row is the toggle.
+  Unfiled collapses too. Tighter type scale in the tree and search bar.
+
 ## 2.222.5 (2026-08-25)
 
 - **Settings > Updates: honest desktop row in attach mode.** When the desktop

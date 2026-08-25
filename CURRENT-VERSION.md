@@ -2,7 +2,12 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.222.5 (2026-08-25, HEAD)
+## v2.222.6 (2026-08-25, HEAD)
+
+Editing default-on (READ_ONLY opt-out + origin guard, dual-consulted); tree
+collapses to the active path (founder structure ruling); tighter type scale.
+
+## v2.222.5 (2026-08-25)
 
 Settings > Updates: desktop row now tells the truth in attach mode (shell
 attached to a CLI/source-checkout server) — "desktop updates unavailable" +

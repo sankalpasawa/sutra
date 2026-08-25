@@ -171,7 +171,7 @@ SCREENS.skills = () => {
    shell may block and an offline machine certainly does. What the operator needs
    here is "read what the agent changed and fix a line", and a textarea does that.
 
-   Saving is gated server-side (SUTRA_UI_ALLOW_EDIT). When it is off, the pane still
+   Saving is ON by default; SUTRA_UI_READ_ONLY=1 gates it off. When off, the pane still
    OPENS files -- reading exposes nothing the chat agent, whose cwd is this same
    directory, cannot already read -- and says plainly why saving is unavailable. */
 SCREENS.editor = () => {
@@ -187,7 +187,7 @@ SCREENS.editor = () => {
   const gate = S.fs.editable ? "" : `<div class="note w">
     <b>Saving is off.</b> This pane writes to your files and the panel is
     unauthenticated by construction, so it is gated out of band. Restart with
-    <code>${esc(S.fs.edit_env||"SUTRA_UI_ALLOW_EDIT")}=1</code> to enable saving.
+    without <code>SUTRA_UI_READ_ONLY=1</code> to enable saving.
     Opening files still works.</div>`;
 
   const list = `<div class="fslist">${files.slice(0,600).map(f=>`
@@ -248,7 +248,7 @@ SCREENS.files = () => {
        <button class="btn" type="button" data-screen="editor">Open plain editor</button></p></div>`;
   const gate = st.readonly ? `<div class="note w"><b>Read-only.</b> Editing is
     gated out of band, same as the plain editor. Restart with
-    <code>SUTRA_UI_ALLOW_EDIT=1</code> to enable saving.</div>` : "";
+    without <code>SUTRA_UI_READ_ONLY=1</code> to enable saving.</div>` : "";
   /* No src in the markup. The URL is built by sbUrl() (integer-checked port,
      per-segment encoding) and assigned as a PROPERTY in wire(), so a page name
      can never be interpolated into HTML, and a bad port leaves the frame empty

@@ -284,11 +284,21 @@ def unsafe_modes_allowed(settings=None):
 # localhost control plane) and anything able to reach the port could otherwise
 # rewrite files. Reading is NOT gated: it exposes nothing the chat agent, whose cwd
 # is the same directory, cannot already read.
-EDIT_ENV = "SUTRA_UI_ALLOW_EDIT"
+EDIT_ENV = "SUTRA_UI_ALLOW_EDIT"          # accepted for back-compat; now a no-op
+READ_ONLY_ENV = "SUTRA_UI_READ_ONLY"
 
 
 def editing_allowed():
-    return os.environ.get(EDIT_ENV, "") == "1"
+    """Editing is ON by default (founder ruling 2026-08-25): a human editing
+    their own workdir through their own app is normal-software behavior. The
+    old SUTRA_UI_ALLOW_EDIT opt-in inverted to a SUTRA_UI_READ_ONLY opt-out
+    (kiosk/demo posture). THREAT MODEL, declared per dual consult: the origin
+    guard in app.py protects the unauthenticated loopback port against
+    cross-origin BROWSER requests only; local processes are outside the model
+    (they hold the user's file permissions already — with the TCC caveat that
+    the app's grants may exceed another process's). Boot-token hardening is
+    the named follow-up."""
+    return os.environ.get(READ_ONLY_ENV, "") != "1"
 
 
 def effective_permission_mode(mode):

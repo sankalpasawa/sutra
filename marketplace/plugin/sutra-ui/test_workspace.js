@@ -165,7 +165,7 @@ function freshSandbox(){
   wsCurrentState, wsStateFromError, wsGroupResults, wsMarkSnippet,
   wsSearchInput, wsVisibleRows, wsActivateRow, wsKeydown, wsParseRoute,
   wsOpenDoc, wsSetLens, wsEdit, wsDone, wsKeepMine, wireWorkspace,
-  wsScreenHtml, WS_COPY, wsMatchWords, wsCount };
+  wsScreenHtml, WS_COPY, wsMatchWords, wsCount, wsTreeHtml };
 `;
   new vm.Script(validatorSrc + "\n" + source + EPILOGUE,
     { filename: "13-workspace.js#test" }).runInContext(sb);
@@ -367,11 +367,32 @@ test("visible rows walk the flat visual order: dept, charter, doc, Unfiled", () 
   assert(rows[3].gone === true, "a missing doc stays LISTED (struck), never dropped");
 });
 
-test("Enter on a department moves the cursor to its first charter", () => {
+test("Enter on a department toggles its expansion (founder 2026-08-25)", () => {
+  /* Departments have no page; activate = expand/collapse. Collapsed is the
+     DEFAULT for every dept outside the active selection path, so the first
+     activation of an inactive dept must record open=true, the second false. */
   const sb = onSandbox();
   sb.__W.wsActivateRow({ type: "dept", key: "D3" });
-  assert(sb.S.ws.cursor && sb.S.ws.cursor.i === 1,
-    "departments have no page -- Enter must land on the first charter");
+  assert(sb.S.ws.openDeps && sb.S.ws.openDeps["D3"] === true,
+    "first activation of a collapsed dept must expand it");
+  sb.__W.wsActivateRow({ type: "dept", key: "D3" });
+  assert(sb.S.ws.openDeps["D3"] === false,
+    "second activation must collapse it again");
+});
+
+test("the tree collapses to counts by default; only the active path expands", () => {
+  /* Mock 01: inactive departments render one row + count; the selected doc's
+     department expands, and docs list only under the charter holding it. */
+  const sb = onSandbox();
+  const html = sb.__W.wsTreeHtml();
+  const chaCount = (html.match(/ws-cha/g) || []).length;
+  const sel = sb.S.ws.sel;
+  if (sel){
+    assert(chaCount > 0, "the active department must show its charters");
+  }
+  const depButtons = (html.match(/class="ws-dep/g) || []).length;
+  assert(depButtons >= 1, "departments render as rows");
+  assert(/ws-count/.test(html), "collapsed rows carry counts");
 });
 
 test("Esc clears search; a selected charter page survives (04 -> 02)", () => {

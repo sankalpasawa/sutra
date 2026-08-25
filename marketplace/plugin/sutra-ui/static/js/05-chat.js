@@ -563,7 +563,7 @@ const TITLES = {
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],
   evals:["Evals","verifier registry · nightly decay runs · findings — read-only"],
-  editor:["Editor","files under the workdir — saving is gated by SUTRA_UI_ALLOW_EDIT"],
+  editor:["Editor","files under the workdir — saving is on unless SUTRA_UI_READ_ONLY=1"],
   health:["Health","lint · mece · verify-charters · stats"],
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],

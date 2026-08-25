@@ -8,7 +8,7 @@ Design decisions (dual consult 2026-08-21, PoC atom a-78660f98-06):
 - FastAPI owns the sidecar (policy lives next to the file APIs); Electron
   kills the whole runtime tree on exit, so orphans die with the app.
 - Read-only follows the SAME out-of-band gate as /api/fs/write: without
-  SUTRA_UI_ALLOW_EDIT=1 the sidecar runs SB_READ_ONLY=1 (PoC: PUT -> 403)
+  SUTRA_UI_READ_ONLY=1 the sidecar runs SB_READ_ONLY=1 (PoC: PUT -> 403); editing defaults ON
   and NO files are injected into the user's space.
 - Theme injection is marker-fenced and only-if-absent: a user's own
   THEME.md is never touched.
