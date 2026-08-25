@@ -25,7 +25,7 @@ _OBSERVED = set()
 _RECENT_TEXT = {}
 _RECENT_CAP = 20000
 
-BOUNDARY_TIMEOUT_S = 180
+BOUNDARY_TIMEOUT_S = 300   # delegates in a governance-heavy repo run long turns
 
 
 def attach_observer(session_id, rt):
@@ -231,40 +231,33 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
         raise RuntimeError("delegate session failed to boot: %s" % (err,))
     register(sid, rt)
     attach_observer(sid, rt)
-    shadow_ledger.append("actions", {
-        "mission_id": None, "kind": "spawn",
-        "summary": "delegate session %s spawned (plan mode)" % sid})
-    return sid
 
+    # THE PUMP (found by the first real flight): panes have a websocket loop
+    # consuming their TurnQueue; a headless delegate has nobody -- says sat
+    # queued forever and every boundary wait timed out. This is the delegate's
+    # loop: nudge -> dequeue -> send -> demux (which fires _turn_boundary to
+    # the waiters).
+    async def _pump():
+        async def sink(frame):
+            return None
+        while rt.alive:
+            try:
+                await asyncio.wait_for(rt.queue_event.wait(), 3600)
+            except asyncio.TimeoutError:
+                continue
+            rt.queue_event.clear()
+            while True:
+                payload = rt.turn_queue.get()
+                if payload is None:
+                    break
+                try:
+                    await rt.send_user_frame(payload.get("message") or "")
+                    await rt.demux_turn(sink, sid)
+                except Exception:
+                    rt.kill_group()
+                    return
 
-async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
-    """S53 in production: a NEW claude session Shadow delegates into.
-
-    Headless twin of a pane: its own SessionRuntime, spawned in PLAN mode
-    (v1 safety: real turns, visible work, no unsupervised writes -- acting
-    delegates need an explicit founder grant), registered in the same
-    registry the say chain uses, observer attached, first turn = the
-    enriched manifest. The transcript lands in ~/.claude/projects, so the
-    session appears in Chats and a pane can resume it.
-    """
-    import session_runtime as srt
-    rt = srt.SessionRuntime()
-    args = build_args()
-    await rt.spawn(args, cwd, tuple(args), env=env)
-    texts = []
-
-    async def collect(frame):
-        if frame.get("type") == "token":
-            texts.append(frame.get("text") or "")
-
-    await rt.send_user_frame(manifest)
-    (sid, _t, got_result, err, _e) = await rt.demux_turn(collect, None)
-    if not got_result or not sid:
-        rt.kill_group()
-        rt.clear()
-        raise RuntimeError("delegate session failed to boot: %s" % (err,))
-    register(sid, rt)
-    attach_observer(sid, rt)
+    asyncio.get_event_loop().create_task(_pump())
     shadow_ledger.append("actions", {
         "mission_id": None, "kind": "spawn",
         "summary": "delegate session %s spawned (plan mode)" % sid})
