@@ -161,7 +161,8 @@ async function shadowWatchSet(sid, watch){
   if (typeof fetch === "undefined") return;
   try {
     await fetch("/api/shadow/watches", { method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json",
+        "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
       body: JSON.stringify({ session_id: sid, watch }) });
   } catch (e) {}
   loadShadowHome();
@@ -171,7 +172,8 @@ async function shadowInstructionAct(id, action){
   if (typeof fetch === "undefined") return;
   try {
     await fetch("/api/shadow/instructions", { method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json",
+        "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
       body: JSON.stringify({ id, action }) });
   } catch (e) {}
   loadShadowHome();
