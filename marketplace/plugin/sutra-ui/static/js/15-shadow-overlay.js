@@ -13,7 +13,10 @@
 /* one POST path for shadow surfaces: panel token attached, and a single
    retry after a token refresh -- the page outlives backend restarts. */
 async function shadowPost(url, body){
-  const go = () => shadowPost(url, url);
+  const go = () => fetch(url, { method: "POST",
+    headers: { "content-type": "application/json",
+      "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
+    body: JSON.stringify(body) });
   let r = await go();
   if (r.status === 403 && typeof refreshPanelToken === "function"
       && await refreshPanelToken()){
