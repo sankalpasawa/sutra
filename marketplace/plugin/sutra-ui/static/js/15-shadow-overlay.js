@@ -215,6 +215,13 @@ function missionCardHtml(m){
 /* the card: compact view of the ONE thread + chips + free text always */
 function shadowCardHtml(){
   const thread = (typeof S !== "undefined" && S.shadowThread) || [];
+  if (!thread.length && typeof S !== "undefined" && !S._shadowIntroSeeded){
+    /* First-run journey: the designed one-liner, seeded locally, honest */
+    S._shadowIntroSeeded = true;
+    thread.push({ who: "shadow", ts: Date.now(),
+      text: "I'm Shadow. I can see this app \u2014 your sessions, missions, "
+            + "and what you teach me. Nothing else." });
+  }
   const last = thread.slice(-6).map(t => t.mission
     ? missionCardHtml(t.mission)
     : `
@@ -325,6 +332,9 @@ async function shadowMissionAct(mid, action, extra){
     const r = await shadowPost("/api/shadow/missions/" + mid + "/act",
       Object.assign({ action }, extra || {}));
     const doc = r.ok ? await r.json() : null;
+    if (doc && action === "start_now" && typeof showNudge === "function"){
+      showNudge("Mission starting \u2014 follow it in Focus \u203a Shadow");
+    }
     if (typeof loadShadowHome === "function") loadShadowHome();
     renderShadowCard();
     return doc;
