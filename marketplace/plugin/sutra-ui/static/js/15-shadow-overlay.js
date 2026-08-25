@@ -93,9 +93,13 @@ if (typeof S !== "undefined"){
 function applyDotState(dot, status){
   const st = dotState(status);
   const al = status && status.alerts;
-  dot.className = "shdot " + st.cls + (al ? " shdot-alert" : "");
   const nb = status && status.active_missions;
-  dot.textContent = al ? String(al) : (nb ? String(nb) : "S");
+  dot.className = "shdot " + st.cls + (al ? " shdot-alert" : "");
+  /* mock v5: the face is ALWAYS the S-mark; counts ride a separate badge */
+  const n = al || nb || 0;
+  if (typeof dot.innerHTML === "string")
+    dot.innerHTML = "S" + (n ? `<span class="shbadge">${n}</span>` : "");
+  else dot.textContent = "S" + (n || "");
   dot.setAttribute && dot.setAttribute("aria-label",
     al ? st.label + " \u00b7 " + al + " need you" : st.label);
 }
@@ -150,6 +154,13 @@ function renderShadowCard(){
         renderShadowCard();
         const dot = document.querySelector && document.querySelector(".shdot");
         if (dot && dot.remove) dot.remove();               /* R12: one control */
+        return;
+      }
+      if (d.shopenhome){
+        S.shadowCardOpen = false; renderShadowCard();
+        if (typeof goDest === "function") goDest("focus");
+        if (typeof openScreen === "function") openScreen("shadow");
+        if (typeof render === "function") render();
         return;
       }
       if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
@@ -258,6 +269,7 @@ function shadowCardHtml(){
       <button class="btn shhide" type="button" data-shquiet="1">${
         (typeof S !== "undefined" && S.shadowQuiet) ? "Unquiet" : "Quiet"}</button>
       <button class="btn shhide" type="button" data-shhidesess="1">Hide</button>
+      <button class="btn shhide" type="button" data-shopenhome="1">Open home \u2197</button>
     </div>
     <div class="shlog">${last || `<div class="shempty">Ask Shadow anything.</div>`}</div>
     <div class="shchips">${chipHtml}</div>

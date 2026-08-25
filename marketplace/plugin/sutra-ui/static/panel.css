@@ -1934,3 +1934,16 @@
 .shfinhead{ font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
   opacity: .6; margin: 10px 0 4px; }
 .shfinished{ opacity: .85; }
+
+/* mock-v5 parity: rows never shred, the dot keeps its S, Now greets */
+.shmissionrow{ flex-wrap:wrap; }
+.shmission{ flex:1 1 100%; flex-wrap:wrap; }
+.shmission .shobj{ flex:1 1 55%; min-width:160px; }
+.shmission .shdone{ flex-basis:100%; }
+.shdot{ font-family:Georgia,'Times New Roman',serif; }
+.shbadge{ position:absolute; top:-5px; right:-5px; background:#B8945F;
+  color:#fff; font-size:9px; font-weight:700; border-radius:99px;
+  padding:1px 5px; line-height:1.3; }
+.nygreet{ font-family:Georgia,'Times New Roman',serif; font-size:22px;
+  font-weight:600; margin:6px 2px 0; }
+.nysub{ color:var(--faint,#8a8681); font-size:12.5px; margin:2px 2px 12px; }

@@ -88,7 +88,9 @@ function shadowMemoryHtml(rows){
     const dead = !!r.revoked_at;
     const inert = !r.confirmed && !dead;
     return `<div class="shmem ${dead ? "shmem-dead" : ""}" data-shmem="${escAttr(r.id)}">
-      <span class="shprec">${esc(r.precedence || "")}</span>
+      <span class="shprec">${esc(({ d_ledger: "ledger", session: "this session",
+        project: "project", taste: "taste", history: "history",
+        floor: "floor" })[r.precedence] || r.precedence || "")}</span>
       <span class="shmemtext">${esc(r.text || "")}</span>
       ${inert ? `<span class="shinert">unconfirmed \u00b7 inert</span>
         <button class="btn pri" type="button" data-shconfirm="${escAttr(r.id)}">Confirm</button>` : ""}
