@@ -28,3 +28,15 @@ claude plugin marketplace add sankalpasawa/sutra
 claude plugin install core@sutra
 /core:start
 ```
+
+## Reversing the company-OS install (W2/W3 surfaces)
+
+If `/core:start --profile company` installed operating surfaces, reverse them per item:
+
+```bash
+git config --unset core.hooksPath && rm -rf .githooks   # git test gates
+bash ${CLAUDE_PLUGIN_ROOT}/bin/sutra-routine remove --all  # scheduled routines (launchd agents os.sutra.plugin.*)
+rm -f ~/.sutra/bin/sutra-test-gate ~/.sutra/bin/sutra-routine  # stable shims
+```
+
+`os/` (your operating layer) and `.claude/CLAUDE.md` hold YOUR content — they are never auto-deleted; remove them manually if you want them gone. The Native runtime is the separate `native@sutra` plugin: `claude plugin uninstall native@sutra`.

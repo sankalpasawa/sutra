@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# sutra-routine — user-level scheduled routines for Sutra (W3 parity, 2026-08-25).
+# Storage: ~/.sutra/routines/<id>.json  Ledger: ~/.sutra/routines/runs.jsonl
+# macOS: launchd agents named os.sutra.plugin.<id> (never collides with the
+# desktop app's os.sutra.ui.routine.* namespace). Other OS: prints a cron line.
+# Env: SUTRA_ROUTINE_NO_LAUNCHD=1 skips launchctl/plist (tests, CI).
+set -uo pipefail
+DIR="$HOME/.sutra/routines"
+BIN="$HOME/.sutra/bin"
+AGENTS="$HOME/Library/LaunchAgents"
+mkdir -p "$DIR" "$BIN"
+
+usage() {
+  cat <<'EOF'
+usage: sutra-routine add --id ID --schedule SPEC --command CMD
+       sutra-routine list | status [ID] | run ID | remove ID | remove --all
+SPEC:  daily@HH:MM | hourly | every:SECONDS
+EOF
+  exit 2
+}
+
+ensure_shim() {
+  cat > "$BIN/sutra-routine" <<'SHIMEOF'
+#!/usr/bin/env bash
+# stable shim -> newest installed Sutra core plugin (managed by sutra-routine)
+latest=$(ls -d "$HOME"/.claude/plugins/cache/sutra/core/*/bin/sutra-routine 2>/dev/null | sort -V | tail -1)
+[ -n "$latest" ] && exec bash "$latest" "$@"
+echo "sutra-routine shim: no installed plugin found" >&2; exit 1
+SHIMEOF
+  chmod +x "$BIN/sutra-routine"
+}
+
+plist_path() { printf '%s/os.sutra.plugin.%s.plist' "$AGENTS" "$1"; }
+
+write_plist() { # id schedule
+  local id="$1" spec="$2" p cal=""
+  p=$(plist_path "$id")
+  mkdir -p "$AGENTS"
+  case "$spec" in
+    daily@*)
+      local hm="${spec#daily@}" h m
+      h="${hm%%:*}"; m="${hm##*:}"
+      cal="<key>StartCalendarInterval</key><dict><key>Hour</key><integer>${h#0}</integer><key>Minute</key><integer>${m#0}</integer></dict>" ;;
+    hourly)   cal="<key>StartInterval</key><integer>3600</integer>" ;;
+    every:*)  cal="<key>StartInterval</key><integer>${spec#every:}</integer>" ;;
+    *) echo "bad schedule: $spec" >&2; return 1 ;;
+  esac
+  cat > "$p" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>os.sutra.plugin.$id</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>$BIN/sutra-routine</string><string>run</string><string>$id</string>
+  </array>
+  $cal
+  <key>StandardOutPath</key><string>$DIR/$id.log</string>
+  <key>StandardErrorPath</key><string>$DIR/$id.log</string>
+</dict></plist>
+PLISTEOF
+  launchctl unload "$p" 2>/dev/null || true
+  launchctl load -w "$p" 2>/dev/null || echo "warn: launchctl load failed for $id" >&2
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  add)
+    ID=""; SPEC=""; CMDSTR=""
+    while [ $# -gt 0 ]; do case "$1" in
+      --id) ID="$2"; shift 2 ;; --schedule) SPEC="$2"; shift 2 ;; --command) CMDSTR="$2"; shift 2 ;; *) usage ;;
+    esac; done
+    [ -n "$ID" ] && [ -n "$SPEC" ] && [ -n "$CMDSTR" ] || usage
+    case "$ID" in *[!a-zA-Z0-9_-]*) echo "id must be [a-zA-Z0-9_-]" >&2; exit 2 ;; esac
+    command -v jq >/dev/null 2>&1 || { echo "jq required" >&2; exit 127; }
+    jq -nc --arg id "$ID" --arg s "$SPEC" --arg c "$CMDSTR" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{id:$id,schedule:$s,command:$c,created:$t}' > "$DIR/$ID.json"
+    ensure_shim
+    if [ "${SUTRA_ROUTINE_NO_LAUNCHD:-}" = "1" ]; then
+      echo "added $ID (launchd skipped: SUTRA_ROUTINE_NO_LAUNCHD=1)"
+    elif [ "$(uname)" = "Darwin" ]; then
+      write_plist "$ID" "$SPEC" && echo "added $ID -> os.sutra.plugin.$ID ($SPEC)"
+    else
+      echo "added $ID (no launchd on $(uname)); cron suggestion:"
+      echo "  # $SPEC : bash $BIN/sutra-routine run $ID"
+    fi ;;
+  list)
+    ls "$DIR"/*.json 2>/dev/null | while read -r f; do jq -r '"\(.id)\t\(.schedule)\t\(.command)"' "$f"; done ;;
+  status)
+    ID="${1:-}"
+    if [ -n "$ID" ]; then
+      tail -50 "$DIR/runs.jsonl" 2>/dev/null | jq -r --arg id "$ID" 'select(.id==$id) | "\(.ts) exit=\(.exit)"' | tail -5
+    else
+      for f in "$DIR"/*.json; do [ -f "$f" ] || continue
+        id=$(jq -r .id "$f")
+        last=$(tail -200 "$DIR/runs.jsonl" 2>/dev/null | jq -r --arg id "$id" 'select(.id==$id) | .ts' | tail -1)
+        echo "$id last-run=${last:-never}"
+      done
+    fi ;;
+  run)
+    ID="${1:-}"; [ -n "$ID" ] || usage
+    [ -f "$DIR/$ID.json" ] || { echo "unknown routine: $ID" >&2; exit 1; }
+    C=$(jq -r .command "$DIR/$ID.json")
+    bash -c "$C"; X=$?
+    printf '{"id":"%s","ts":"%s","exit":%s}\n' "$ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$X" >> "$DIR/runs.jsonl"
+    exit $X ;;
+  remove)
+    if [ "${1:-}" = "--all" ]; then
+      for f in "$DIR"/*.json; do [ -f "$f" ] || continue
+        "$0" remove "$(jq -r .id "$f")"
+      done
+      exit 0
+    fi
+    ID="${1:-}"; [ -n "$ID" ] || usage
+    p=$(plist_path "$ID")
+    [ -f "$p" ] && { launchctl unload "$p" 2>/dev/null || true; rm -f "$p"; }
+    rm -f "$DIR/$ID.json"
+    echo "removed $ID" ;;
+  *) usage ;;
+esac

@@ -417,6 +417,10 @@ SHIMEOF
 
 if [ "$PROFILE" = "company" ] || [ "$INSTALL_OS" = 1 ]; then materialize_company_os; fi
 if [ "$PROFILE" = "company" ] || [ "$INSTALL_GATES" = 1 ]; then install_git_gates; fi
+if [ "$PROFILE" = "company" ]; then
+  echo "routines:  schedule recurring work with bin/sutra-routine add --id <id> --schedule daily@09:00 --command <cmd>"
+  echo "native:    the workflow runtime is a separate plugin -> claude plugin install native@sutra"
+fi
 
 # Step 4 — activation banner + next steps. v2.13.0: bash/jq lib.
 if [ -f .claude/sutra-project.json ]; then
