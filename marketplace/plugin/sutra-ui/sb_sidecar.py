@@ -66,7 +66,7 @@ THEME_MARKER_RE = re.compile(r"<!-- sutra-managed: theme v(\d+) -->")
 THEME_MARKER = "<!-- sutra-managed: theme v%d -->" % THEME_VERSION
 THEME_MD = THEME_MARKER + """
 ```space-style
-/* Sutra theme v2 — generated from panel.css tokens (2.222.x). Keyed on SB's own
+/* Sutra theme v3 — generated from panel.css tokens (2.224.x). Keyed on SB's own
    html[data-theme], which SilverBullet derives from prefers-color-scheme; the
    desktop shell drives that scheme via nativeTheme (sutra:theme IPC), so the
    iframe follows the panel toggle. Values are MIRRORED panel tokens — the

@@ -2,6 +2,11 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.224.2 (2026-08-25)
+
+- Theme header comment now states v3 (the atom-verify floor caught it still
+  claiming v2); marker-versioned upgrade carries it to every space.
+
 ## 2.224.1 (2026-08-25)
 
 - **Closeout sweep (founder: "complete this off").** Theme v3 scales the

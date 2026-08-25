@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.224.1 (2026-08-25, HEAD)
+## v2.224.2 (2026-08-25, HEAD)
+
+Theme comment honesty (verify-floor catch).
+
+## v2.224.1 (2026-08-25)
 
 Closeout: theme v3 edit scale, 680/232 measure, panel token, daemon hygiene.
 
