@@ -308,6 +308,245 @@ TOOLS = [
                         "charter_id": {"type": ["string", "null"]},
                         "session_id": {"type": ["string", "null"]}}}}}},
 ]
+# ---- Shadow tools (PLAN-100 S31+) ------------------------------------------
+# Registered ONLY when the shadow flag is true AT SERVER SPAWN. This server is
+# spawned per run (--mcp-config), so the flag is re-evaluated every time the
+# CLI starts it; with the flag off these names do not exist in tools/list at
+# all -- absence, not refusal, is the off-state.
+# Registration requires BOTH the flag and the spawn-env marker: the same MCP
+# server serves ordinary chat panes, and a chat agent must never see Shadow
+# tools -- only Shadow's own session (spawned with SUTRA_MCP_SHADOW=1) does.
+# Listing is NOT authorization (dual-lane fold, 2026-08-25): each handler
+# re-checks the flag at call time, and a persistent agent process keeps its
+# spawn-time tool table until it respawns -- pinned in tests.
+try:
+    import providers as _providers
+    import session_reader as _session_reader
+    _SHADOW_ON = (_providers.shadow_enabled()
+                  and os.environ.get("SUTRA_MCP_SHADOW") == "1")
+except Exception:
+    _SHADOW_ON = False
+
+if _SHADOW_ON:
+    def t_shadow_sessions_list(args):
+        # call-time authorization: hiding a name is not a permission model
+        if not _providers.shadow_enabled():
+            return _text("refused: the shadow flag is off")
+        limit = args.get("limit") or 25
+        rows = _session_reader.list_sessions(limit=min(int(limit), 100))
+        import time as _time
+        now = _time.time()
+        out = []
+        for r in rows:
+            out.append({
+                "session_id": r.get("id") or r.get("session_id"),
+                "title": r.get("title"),
+                "mtime": r.get("mtime"),
+                "liveness": _session_reader.liveness(r.get("mtime") or 0, now),
+            })
+        return _text(json.dumps(out))
+
+    import shadow_egress as _shadow_egress
+    import shadow_ledger as _shadow_ledger
+    import urllib.request as _urlreq
+    import urllib.error as _urlerr
+
+    def _shadow_gate():
+        """Call-time authorization shared by every shadow tool."""
+        if not _providers.shadow_enabled():
+            return _text("refused: the shadow flag is off")
+        return None
+
+    def t_shadow_session_read_tail(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        sid = args.get("session_id") or ""
+        limit = min(int(args.get("limit") or 20), 100)
+        doc = _session_reader.read_session(sid)
+        if not doc:
+            return _text("no such session: %s" % sid)
+        items = (doc.get("messages") or doc.get("items") or [])[-limit:]
+        out = []
+        for it in items:
+            if isinstance(it, dict):
+                txt = str(it.get("text") or it.get("content") or "")[:800]
+                out.append({"role": it.get("role") or it.get("type"),
+                            "text": txt})
+        return _text(json.dumps(out))
+
+    def t_shadow_app_state(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        import time as _time
+        rows = _session_reader.list_sessions(limit=100)
+        now = _time.time()
+        live = sum(1 for r in rows
+                   if _session_reader.liveness(r.get("mtime") or 0, now) == "live")
+        detail = _providers.active_provider_detail()
+        # Bounded + redacted by construction: counts and enum-ish fields only.
+        # No tokens, no keys, no file contents, no env -- pinned by test.
+        return _text(json.dumps({
+            "sessions_total": len(rows),
+            "sessions_live": live,
+            "provider": detail.get("id"),
+            "permission_mode": _providers.effective_permission_mode(
+                _providers.load_settings()["permission_mode"]),
+            "app_version": os.environ.get("SUTRA_UI_VERSION", "unknown"),
+        }))
+
+    def t_shadow_ledger_read(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        try:
+            rows = _shadow_ledger.read(args.get("kind") or "",
+                                       args.get("limit") or 50)
+        except ValueError as exc:
+            return _text(str(exc))
+        return _text(json.dumps(rows))
+
+    def t_shadow_ledger_append(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        try:
+            row = _shadow_ledger.append(args.get("kind") or "",
+                                        args.get("row"))
+        except ValueError as exc:
+            return _text(str(exc))
+        return _text(json.dumps(row))
+
+    def t_shadow_session_say(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        sid = args.get("session_id") or ""
+        port = os.environ.get("SUTRA_UI_PORT", "8330")
+        payload = json.dumps({
+            "message": args.get("message") or "",
+            "mission_id": args.get("mission_id"),
+            "dedupe_key": args.get("dedupe_key"),
+        }).encode("utf-8")
+        req = _urlreq.Request(
+            "http://127.0.0.1:%s/api/sessions/%s/say" % (port, sid),
+            data=payload, headers={
+                "content-type": "application/json",
+                # capability, not attribution: minted by the app per boot,
+                # inherited via the spawn env; without it the app answers 401
+                "x-shadow-say-token":
+                    os.environ.get("SUTRA_SHADOW_SAY_TOKEN", ""),
+            })
+        try:
+            with _urlreq.urlopen(req, timeout=10) as resp:
+                return _text(resp.read().decode("utf-8", "replace"))
+        except _urlerr.HTTPError as exc:
+            return _text("refused (%s): %s" % (
+                exc.code, exc.read().decode("utf-8", "replace")[:300]))
+        except Exception as exc:
+            return _text("say failed: %s" % exc)
+
+    def t_shadow_verify(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        mode = args.get("mode") or "contains"
+        if mode == "contains":
+            sid = args.get("session_id") or ""
+            needle = args.get("needle") or ""
+            doc = _session_reader.read_session(sid)
+            hay = json.dumps(doc or {})
+            return _text(json.dumps({"mode": mode, "passed": needle in hay}))
+        if mode == "ledger_has":
+            import shadow_ledger as _sl
+            rows = _sl.read(args.get("kind") or "actions", 200)
+            needle = args.get("needle") or ""
+            return _text(json.dumps({
+                "mode": mode,
+                "passed": any(needle in json.dumps(r) for r in rows)}))
+        if mode == "state":
+            # runtime state lives in the APP process; answered over HTTP in a
+            # later step -- refuse honestly rather than guessing
+            return _text(json.dumps({"mode": mode, "passed": None,
+                                     "note": "state assertions land with the "
+                                             "mission loop (P3)"}))
+        return _text("unknown verify mode %r" % mode)
+
+    def t_shadow_mission_update(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        import shadow_ledger as _sl
+        states = ("draft", "brief_confirm", "running", "queued", "paused",
+                  "done", "failed", "stopped")
+        mid = args.get("mission_id") or ""
+        state = args.get("state") or ""
+        if not mid or state not in states:
+            return _text("refused: mission_id and a known state are required")
+        row = _sl.append("missions", {
+            "mission_id": mid, "state": state,
+            "note": str(args.get("note") or "")[:500]})
+        return _text(json.dumps(row))
+
+    for _name, _fn, _desc, _schema in [
+        ("shadow_session_read_tail", t_shadow_session_read_tail,
+         "Last N items of one session transcript, bounded and truncated.",
+         {"type": "object", "properties": {
+             "session_id": {"type": "string"},
+             "limit": {"type": "integer", "maximum": 100}},
+          "required": ["session_id"]}),
+        ("shadow_app_state", t_shadow_app_state,
+         "Bounded, redacted app snapshot: session counts, provider, "
+         "permission mode, version.",
+         {"type": "object", "properties": {}}),
+        ("shadow_ledger_read", t_shadow_ledger_read,
+         "Read Shadow ledger rows (instructions|missions|actions).",
+         {"type": "object", "properties": {
+             "kind": {"type": "string"},
+             "limit": {"type": "integer"}}, "required": ["kind"]}),
+        ("shadow_ledger_append", t_shadow_ledger_append,
+         "Append one row to a Shadow ledger (append-only, inert memory).",
+         {"type": "object", "properties": {
+             "kind": {"type": "string"}, "row": {"type": "object"}},
+          "required": ["kind", "row"]}),
+        ("shadow_verify", t_shadow_verify,
+         "Assert an outcome: contains (session transcript), ledger_has, "
+         "or state (P3).",
+         {"type": "object", "properties": {
+             "mode": {"type": "string"},
+             "session_id": {"type": "string"},
+             "kind": {"type": "string"},
+             "needle": {"type": "string"}}}),
+        ("shadow_mission_update", t_shadow_mission_update,
+         "Append a mission state transition to the missions ledger.",
+         {"type": "object", "properties": {
+             "mission_id": {"type": "string"},
+             "state": {"type": "string"},
+             "note": {"type": "string"}},
+          "required": ["mission_id", "state"]}),
+        ("shadow_session_say", t_shadow_session_say,
+         "Send one gated, scrubbed, mission-tagged turn into a live session "
+         "via the app (delivered only at a turn boundary).",
+         {"type": "object", "properties": {
+             "session_id": {"type": "string"},
+             "message": {"type": "string"},
+             "mission_id": {"type": "string"},
+             "dedupe_key": {"type": "string"}},
+          "required": ["session_id", "message", "mission_id"]}),
+    ]:
+        TOOLS.append({"name": _name, "fn": _fn, "description": _desc,
+                      "schema": _schema})
+
+    TOOLS.append({
+        "name": "shadow_sessions_list", "fn": t_shadow_sessions_list,
+        "description": "List Claude Code sessions on this machine with "
+                       "liveness (live/recent/idle) so Shadow can decide "
+                       "what it is watching.",
+        "schema": {"type": "object", "properties": {
+            "limit": {"type": "integer", "maximum": 100}}},
+    })
+
 BY_NAME = {t["name"]: t for t in TOOLS}
 
 

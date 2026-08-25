@@ -2,6 +2,9 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.223.0 — Shadow v1 (flag-gated, default OFF)
+
+Shadow: a chief-of-staff layer behind `shadow.enabled` (default OFF — zero behavior change until enabled). SessionRuntime substrate, gated MCP tools + capability-token say chain, mission engine with floors and scheduler, needs-you feed on Now, overlay dot/pill/card, Focus > Shadow home. 473 py + full node suites green; off-state invariants enforced.
 ## 2.222.9 (2026-08-25)
 
 - **Reading is the panel's own view.** A document opens into a rendered,

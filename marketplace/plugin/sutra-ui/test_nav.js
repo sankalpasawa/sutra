@@ -111,9 +111,12 @@ test("model: a hostile destSel is filtered to known destinations", () => {
 });
 
 /* §now ─ S4 */
-test("now: SCREENS.now renders an honest placeholder and TITLES carries it", () => {
+test("now: SCREENS.now renders the honest empty state and TITLES carries it", () => {
+  /* v3.3 shipped a designed-later placeholder; PLAN-100 S59 made Now the
+     needs-you feed consumer. Empty/dark feed = honest empty state. */
   assert(typeof T.SCREENS.now === "function", "SCREENS.now missing");
-  assert(/placeholder/i.test(T.SCREENS.now()), "placeholder wording missing");
+  assert(/Nothing needs you right now/.test(T.SCREENS.now()),
+         "empty-state wording missing");
   assert(Array.isArray(T.TITLES.now) && T.TITLES.now.length === 2);
 });
 

@@ -31,9 +31,12 @@ import connectors_api
 import org_api
 import providers
 import sb_sidecar
+import secrets as _secrets
+import shadow_egress
 from session_runtime import (SessionRuntime, _drain_to_newline,
                              _tool_command, _tool_output, _tool_summary,
-                             register_runtime, unregister_runtime)
+                             register_runtime, unregister_runtime,
+                             lookup_runtime)
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -1088,6 +1091,290 @@ async def sse(source: str):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+# --------------------------------------------------------------- shadow say --
+# PLAN-100 S37. Capability token first (dual-lane fold, 2026-08-25): a local
+# HTTP port is reachable by every same-user process, and mission_id is
+# attribution, not authorization. The token is minted per app boot and travels
+# to Shadow's MCP child via the spawn env; nothing else knows it. It is
+# checked BEFORE flag/session/mission so an unauthorized caller learns
+# nothing (no oracle).
+# In APP MEMORY ONLY (codex P1 fold): a global env write leaked the token
+# into every chat pane's spawned agent. Shadow's own session receives it via
+# its spawn env overlay -- nothing else can present it.
+SHADOW_SAY_TOKEN = _secrets.token_hex(24)
+
+
+# ------------------------------------------------------------ shadow chat --
+# PLAN-100 P5: ONE Shadow conversation. The overlay card and the Focus home
+# are two views of this channel. Lazy: the first message boots the session;
+# the flag off means 403 and no process ever exists.
+import shadow_session as _shadow_session
+
+_SHADOW = {"session": None}
+_SHADOW_LOCK = asyncio.Lock()   # boot + turn serialization (codex P2 fold)
+
+
+def _shadow_args():
+    detail = providers.active_provider_detail()
+    prov = providers.provider_by_id(detail["id"]) if detail["id"] else None
+    if not prov or not prov.get("bin_path"):
+        raise HTTPException(503, "no usable provider for Shadow")
+    return build_agent_args(prov["bin_path"], "", "plan", stream_input=True)
+
+
+@app.get("/api/shadow/status")
+async def api_shadow_status():
+    """The dot reads this: watching (green) / not (grey). Never 500s -- a
+    down Shadow is a STATE the UI renders, not an error."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    sess = _SHADOW["session"]
+    return {"watching": bool(sess and sess.alive),
+            "session": sess.session_id if sess else None,
+            "permission_mode": "plan"}
+
+
+@app.post("/api/shadow/chat")
+async def api_shadow_chat(request: Request):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "body must be json")
+    msg = (body.get("message") or "").strip()
+    if not msg:
+        raise HTTPException(400, "message required")
+    async with _SHADOW_LOCK:
+        sess = _SHADOW["session"]
+        if sess is None or not sess.alive:
+            sess = _shadow_session.ShadowSession()
+            booted = await sess.start(
+                _shadow_args, WORKDIR,
+                extra_env={"SUTRA_SHADOW_SAY_TOKEN": SHADOW_SAY_TOKEN})
+            if booted is None:
+                raise HTTPException(503, "shadow could not boot")
+            _SHADOW["session"] = sess
+        tokens = []
+
+        async def collect(frame):
+            if frame.get("type") == "token":
+                tokens.append(frame.get("text") or "")
+
+        await sess.rt.send_user_frame(msg)
+        (sess.session_id, _t, got_result,
+         err, _e) = await sess.rt.demux_turn(collect, sess.session_id)
+    if err:
+        raise HTTPException(502, "shadow turn failed: %s" % err[:200])
+    return {"reply": "".join(tokens), "session": sess.session_id,
+            "watching": sess.alive}
+
+
+# ------------------------------------------------- shadow home endpoints --
+# PLAN-100 P6. All flag-gated. Instructions and watches are ledgered, never
+# deleted: a revoked instruction stays on the record as inert history
+# (archive-never-delete), and a watch toggle is an auditable act.
+import mission_engine as _mission_engine
+import shadow_precedence
+
+
+@app.get("/api/shadow/instructions")
+async def api_shadow_instructions():
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_ledger
+    rows = shadow_ledger.read("instructions", 200)
+    latest = {}
+    for r in rows:                       # last writer per id wins
+        if r.get("id"):
+            latest[r["id"]] = r
+    return {"instructions": sorted(
+        latest.values(), key=shadow_precedence.rank_key)}
+
+
+@app.post("/api/shadow/instructions")
+async def api_shadow_instruction_write(request: Request):
+    """capture (unconfirmed=inert) / confirm / revoke -- one endpoint,
+    action field decides; every action is one more ledger row."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_ledger
+    body = await request.json()
+    action = body.get("action")
+    if action == "capture":
+        text = (body.get("text") or "").strip()
+        if not text:
+            raise HTTPException(400, "text required")
+        row = shadow_ledger.append("instructions", {
+            "text": text[:1000],
+            "precedence": body.get("precedence") or "history",
+            "confirmed": False,
+            "source_thread": body.get("source_thread")})
+        return row
+    if action in ("confirm", "revoke"):
+        iid = body.get("id") or ""
+        rows = [r for r in shadow_ledger.read("instructions", 500)
+                if r.get("id") == iid]
+        if not rows:
+            raise HTTPException(404, "no instruction %s" % iid)
+        row = dict(rows[-1])
+        if action == "confirm":
+            row["confirmed"] = True
+            row["confirmed_at"] = row.pop("ts", None)
+        else:
+            row["confirmed"] = False
+            row["revoked_at"] = row.pop("ts", None)
+        return shadow_ledger.append("instructions", row)
+    raise HTTPException(400, "action must be capture|confirm|revoke")
+
+
+@app.get("/api/shadow/watches")
+async def api_shadow_watches():
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    return {"watches": sorted(_shadow_watches())}
+
+
+@app.post("/api/shadow/watches")
+async def api_shadow_watch_toggle(request: Request):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_ledger
+    body = await request.json()
+    sid = (body.get("session_id") or "").strip()
+    if not sid:
+        raise HTTPException(400, "session_id required")
+    watch = bool(body.get("watch"))
+    shadow_ledger.append("actions", {
+        "kind": "say" if False else ("resume" if watch else "stop"),
+        "mission_id": None,
+        "summary": ("watch " if watch else "unwatch ") + sid})
+    watches = _shadow_watches()
+    (watches.add if watch else watches.discard)(sid)
+    _save_watches(watches)
+    return {"watching": sorted(watches)}
+
+
+def _watches_path():
+    import shadow_ledger
+    return os.path.join(os.path.dirname(shadow_ledger._path("actions")),
+                        "..", "watches.json")
+
+
+def _shadow_watches():
+    try:
+        with open(_watches_path(), encoding="utf-8") as handle:
+            return set(json.load(handle))
+    except (OSError, ValueError):
+        return set()
+
+
+def _save_watches(watches):
+    with open(_watches_path(), "w", encoding="utf-8") as handle:
+        json.dump(sorted(watches), handle)
+
+
+@app.get("/api/shadow/missions")
+async def api_shadow_missions():
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    store = _mission_engine.MissionStore()
+    return {"missions": store.list()}
+
+
+@app.post("/api/shadow/missions/{mid}/act")
+async def api_shadow_mission_act(mid: str, request: Request):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    action = body.get("action")
+    store = _mission_engine.MissionStore()
+    sched = _mission_engine.MissionScheduler(store)
+    try:
+        if action == "stop":
+            return store.transition(mid, "stopped", "founder stop (home)")
+        if action == "drop":
+            return sched.cancel_queued(mid)
+        if action == "start_now":
+            return sched.start(mid)
+        if action == "confirm_check":
+            return store.confirm_check(mid, int(body.get("index") or 0))
+        if action == "resume":
+            return store.transition(mid, "running", "explicit resume (home)")
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    raise HTTPException(400, "unknown action %r" % action)
+
+
+@app.get("/api/shadow/feed")
+async def api_shadow_feed():
+    """PLAN-100 S59: the needs-you feed, render-only. 403 when the flag is
+    off -- the panel treats any non-200 as "render the placeholder", so the
+    off state costs zero client logic."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_feed
+    items = []
+    try:
+        with open(shadow_feed._feed_path(), encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    it = json.loads(line)
+                except ValueError:
+                    continue
+                if it.get("state") not in ("expired", "handled"):
+                    items.append(it)
+    except OSError:
+        pass
+    return {"items": items[-50:], "ts": time.time()}
+
+
+@app.post("/api/sessions/{sid}/say")
+async def api_session_say(sid: str, request: Request):
+    if request.headers.get("x-shadow-say-token") != SHADOW_SAY_TOKEN:
+        raise HTTPException(401, "missing or wrong say token")
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    rt = lookup_runtime(sid)
+    if rt is None:
+        raise HTTPException(404, "no live runtime for session %s" % sid)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "body must be json")
+    msg = (body.get("message") or "").strip()
+    mission = (body.get("mission_id") or "").strip()
+    if not msg or not mission:
+        raise HTTPException(400, "message and mission_id are required")
+    # The endpoint is where the mission state machine BINDS (codex P1 fold):
+    # a token holder must not bypass states, targets, or template invariants.
+    import mission_engine as _me
+    m = _me.MissionStore().load(mission)
+    if m is None:
+        raise HTTPException(404, "no such mission %s" % mission)
+    if m["state"] != "running":
+        raise HTTPException(409, "mission %s is %s, not running"
+                            % (mission, m["state"]))
+    if m.get("target_session") != sid:
+        # STRICT binding (codex re-review P1): an unbound running mission
+        # must not become a skeleton key over every pane -- provision or
+        # amend the target first, then speak.
+        raise HTTPException(409, "mission %s is not bound to session %s"
+                            % (mission, sid))
+    if "never_say" in m.get("invariants", ()):
+        raise HTTPException(403, "watch missions never speak")
+    clean, redactions = shadow_egress.scrub(msg)
+    tagged = "[Shadow \u00b7 mission %s] %s" % (mission, clean)
+    ok = rt.turn_queue.put({"message": tagged, "_source": "shadow"},
+                           source="shadow",
+                           dedupe_key=body.get("dedupe_key"))
+    if not ok:
+        raise HTTPException(409, "duplicate say (dedupe key already accepted)")
+    rt.queue_event.set()
+    return {"queued": True, "redactions": redactions,
+            "position": len(rt.turn_queue)}
+
+
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     """Chat <-> background `claude -p`. One subprocess per message; --resume keeps
@@ -1255,16 +1542,36 @@ async def ws_chat(ws: WebSocket):
                 # this text, and re-reading the inbox here would reorder it
                 # behind anything they typed while the failed turn was running.
                 payload, pending = pending, None
+            elif inbox.empty() and len(rt.turn_queue) > 0:
+                # S37: a queued shadow turn runs ONLY at a boundary and ONLY
+                # when no operator frame is waiting -- the founder never queues
+                # behind automation. The loop-top length check (not the event)
+                # is authoritative, so coalesced wake-ups cannot stall a
+                # non-empty queue (dual-lane fold).
+                rt.queue_event.clear()
+                payload = rt.turn_queue.get()
+                if payload is None:
+                    continue
             else:
                 get_next = asyncio.ensure_future(inbox.get())
                 gone = asyncio.ensure_future(reader_dead.wait())
-                done, _ = await asyncio.wait({get_next, gone},
+                nudge = asyncio.ensure_future(rt.queue_event.wait())
+                done, _ = await asyncio.wait({get_next, gone, nudge},
                                              return_when=asyncio.FIRST_COMPLETED)
-                if get_next not in done:
+                if get_next in done:
+                    gone.cancel()
+                    nudge.cancel()
+                    payload = get_next.result()
+                elif nudge in done:
+                    # just a nudge: loop back up; the queue check above decides
+                    get_next.cancel()
+                    gone.cancel()
+                    rt.queue_event.clear()
+                    continue
+                else:
                     get_next.cancel()  # socket closed -- stop serving this channel
+                    nudge.cancel()
                     break
-                gone.cancel()
-                payload = get_next.result()
             rt.stopped = False
             msg = payload.get("message", "")
             seed = payload.get("resume")

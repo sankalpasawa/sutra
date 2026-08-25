@@ -1847,3 +1847,71 @@
 @media (prefers-reduced-motion: reduce){
   .plane .rgrph .rgchev{transition:none}
 }
+
+/* ================= Shadow overlay (PLAN-100 P5) =================
+   Every rule uses the shared theme tokens, so the overlay follows the
+   app's light/dark without its own palette. Nothing here renders unless
+   15-shadow-overlay.js mounts (flag-gated server-side). */
+.shdot{ position:fixed; width:34px; height:34px; border-radius:50%;
+  background:var(--card); border:2px solid var(--line); cursor:pointer;
+  z-index:60; }
+.shdot-live{ border-color:var(--acc); }
+.shdot-idle{ opacity:.75; }
+.shdot-down{ opacity:.45; filter:grayscale(1); }
+.shpill{ position:fixed; z-index:60; background:var(--card);
+  color:var(--ink); border:1px solid var(--line); border-radius:16px;
+  padding:6px 12px; font-size:12px; box-shadow:0 4px 14px rgba(0,0,0,.12); }
+.shcard{ position:fixed; z-index:61; width:340px; background:var(--card);
+  color:var(--ink); border:1px solid var(--line); border-radius:12px;
+  padding:10px; box-shadow:0 8px 28px rgba(0,0,0,.16); }
+.shperm{ font-size:10px; color:var(--faint); margin-bottom:6px; }
+.shlog{ max-height:220px; overflow-y:auto; }
+.shmsg{ margin:4px 0; padding:6px 8px; border-radius:8px; font-size:12px; }
+.shmine{ background:var(--bg); }
+.shshadow{ background:var(--inset); border:1px solid var(--line); }
+.shempty{ color:var(--faint); font-size:12px; padding:8px 0; }
+.shchips{ display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
+.shchip{ font-size:11px; }
+.shcompose{ width:100%; min-height:44px; resize:vertical;
+  background:var(--bg); color:var(--ink); border:1px solid var(--line);
+  border-radius:8px; padding:6px 8px; font:inherit; font-size:12px; }
+.shmission{ display:flex; align-items:center; gap:8px; margin:6px 0;
+  padding:6px 8px; border:1px solid var(--line); border-radius:8px;
+  font-size:12px; }
+.shstate{ font-size:10px; padding:1px 6px; border-radius:8px;
+  border:1px solid var(--line); color:var(--faint); }
+.shstate-running{ border-color:var(--acc); color:var(--acc); }
+.shstate-paused{ border-color:orange; }
+.shobj{ flex:1; }
+.shturns{ color:var(--faint); font-size:10px; }
+.nudge{ position:fixed; bottom:18px; right:18px; z-index:62;
+  background:var(--card); color:var(--ink); border:1px solid var(--line);
+  border-radius:10px; padding:8px 12px; font-size:12px;
+  box-shadow:0 6px 20px rgba(0,0,0,.14); }
+.nyfeed{ display:flex; flex-direction:column; gap:10px; max-width:560px; }
+.nycard{ border:1px solid var(--line); border-radius:10px; padding:10px 12px;
+  background:var(--card); cursor:pointer; }
+.nyhead{ display:flex; gap:8px; font-size:10px; color:var(--faint);
+  text-transform:uppercase; letter-spacing:.04em; }
+.nytitle{ font-size:13px; margin:4px 0; }
+.nywhy{ font-size:11px; color:var(--faint); }
+.nyact{ margin-top:6px; }
+
+/* Shadow home (P6) */
+.shhome{ max-width:640px; display:flex; flex-direction:column; gap:12px; }
+.shthread{ display:flex; flex-direction:column; gap:4px; }
+.shtabs{ display:flex; gap:8px; }
+.shtab.on{ border-color:var(--acc); color:var(--acc); }
+.shplane{ display:flex; flex-direction:column; gap:6px; }
+.shwatchrow,.shmissionrow{ display:flex; align-items:center; gap:8px;
+  border:1px solid var(--line); border-radius:8px; padding:6px 8px;
+  font-size:12px; }
+.shrowacts{ display:flex; gap:6px; }
+.shmemory{ display:flex; flex-direction:column; gap:6px; }
+.shmem{ display:flex; align-items:center; gap:8px; font-size:12px;
+  border:1px solid var(--line-soft, var(--line)); border-radius:8px;
+  padding:5px 8px; }
+.shmem-dead .shmemtext{ text-decoration:line-through; color:var(--faint); }
+.shprec{ font-size:10px; color:var(--faint); text-transform:uppercase; }
+.shmemtext{ flex:1; }
+.shinert{ font-size:10px; color:var(--faint); }
