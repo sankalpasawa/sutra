@@ -1146,6 +1146,13 @@ def _shadow_args():
     return build_agent_args(prov["bin_path"], "", "plan", stream_input=True)
 
 
+def _shadow_workdir_for_delegates():
+    """Delegates work where the founder works (their objectives point at the
+    real repo), but in PLAN mode -- reads and plans, no writes until granted."""
+    settings = providers.load_settings()
+    return settings.get("workdir") or WORKDIR
+
+
 def _shadow_workdir():
     """Shadow's OWN workdir (live fix 2026-08-25): booting in the founder's
     repo made the session load that repo's entire governance stack -- 40s+
@@ -1404,6 +1411,22 @@ async def api_shadow_mission_act(mid: str, request: Request):
         if action == "drop":
             return sched.cancel_queued(mid)
         if action == "start_now":
+            m0 = store.load(mid)
+            if m0 and m0.get("target_mode") == "new" \
+                    and not m0.get("target_session"):
+                # S53 live: provision the delegate BEFORE admission
+                eng = _mission_engine.MissionEngine(store, None, None, None)
+
+                async def _spawner(mission):
+                    manifest = mission.get("manifest") or (
+                        "You are a delegate session working for the founder "
+                        "via Shadow. Objective: %s. Work step by step; state "
+                        "DONE-CHECK lines when checks pass."
+                        % mission["objective"])
+                    return await shadow_runner.spawn_delegate_session(
+                        _shadow_args, _shadow_workdir_for_delegates(),
+                        manifest, register_runtime)
+                await eng.provision_target(mid, _spawner)
             # admit AND launch the loop (GAP-AUDIT row 2: the mounted engine)
             return shadow_runner.start_mission(mid, _validated_say)
         if action == "confirm_check":

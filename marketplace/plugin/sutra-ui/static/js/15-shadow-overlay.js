@@ -99,6 +99,7 @@ function mountShadowOverlay(){
   const dot = document.createElement("div");
   const st = dotState(_shadowStatus);
   dot.className = "shdot " + st.cls;
+  dot.textContent = "S";                    /* the S-mark: unmistakable */
   dot.setAttribute && dot.setAttribute("role", "button");
   dot.setAttribute && dot.setAttribute("aria-label", st.label);
   dot.setAttribute && dot.setAttribute("tabindex", "-1");  /* R3: click, not tab */
