@@ -224,5 +224,16 @@ function part3(){
   assert(/tabindex", "-1"/.test(src), "dot is click-only (R3)");
   console.log("ok 11 reply blocks + finishers");
 }
+/* 12. the CSRF lesson: every mutating fetch carries the panel token */
+{
+  const home = fs.readFileSync(path.join(__dirname, "static", "js", "16-shadow-home.js"), "utf8");
+  for (const [nm, code] of [["overlay", src], ["home", home]]){
+    const posts = code.split("method: \"POST\"").length - 1;
+    const tokened = code.split("X-Sutra-Panel").length - 1;
+    assert(posts > 0 && tokened >= posts,
+      nm + ": every POST must carry X-Sutra-Panel (" + tokened + "/" + posts + ")");
+  }
+  console.log("ok 12 panel token on every POST");
+}
 console.log("test_shadow_overlay.js: all green");
 }

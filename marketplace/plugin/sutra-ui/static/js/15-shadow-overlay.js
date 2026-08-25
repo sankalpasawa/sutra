@@ -239,7 +239,8 @@ async function sendToShadow(text){
                            + "to a minute)\u2026" });
   try {
     const r = await fetch("/api/shadow/chat", {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json",
+        "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
       body: JSON.stringify({ message: text }) });
     S.shadowBusy = false;
     S.shadowThread = S.shadowThread.filter(t => !t.busy);
@@ -308,7 +309,8 @@ async function shadowMissionAct(mid, action, extra){
   if (typeof fetch === "undefined") return null;
   try {
     const r = await fetch("/api/shadow/missions/" + mid + "/act", {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json",
+        "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
       body: JSON.stringify(Object.assign({ action }, extra || {})) });
     const doc = r.ok ? await r.json() : null;
     if (typeof loadShadowHome === "function") loadShadowHome();
