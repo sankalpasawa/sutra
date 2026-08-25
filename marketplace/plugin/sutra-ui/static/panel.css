@@ -1852,7 +1852,7 @@
    Every rule uses the shared theme tokens, so the overlay follows the
    app's light/dark without its own palette. Nothing here renders unless
    15-shadow-overlay.js mounts (flag-gated server-side). */
-.shdot{ position:fixed; right:18px; bottom:18px; width:34px; height:34px;
+.shdot{ position:fixed; right:18px; bottom:84px; width:34px; height:34px;
   border-radius:50%; background:var(--card); border:2px solid var(--line);
   cursor:pointer; z-index:60; }
 .shdot-live{ border-color:var(--acc); }
@@ -1861,7 +1861,7 @@
 .shpill{ position:fixed; z-index:60; background:var(--card);
   color:var(--ink); border:1px solid var(--line); border-radius:16px;
   padding:6px 12px; font-size:12px; box-shadow:0 4px 14px rgba(0,0,0,.12); }
-.shcard{ position:fixed; right:18px; bottom:64px; z-index:61; width:340px;
+.shcard{ position:fixed; right:18px; bottom:130px; z-index:61; width:340px;
   background:var(--card);
   color:var(--ink); border:1px solid var(--line); border-radius:12px;
   padding:10px; box-shadow:0 8px 28px rgba(0,0,0,.16); }
