@@ -108,4 +108,21 @@ assert(/shhomecompose/.test(src) && /sendToShadow/.test(src),
   "the home composer must send");
 console.log("ok 6 controls wired");
 
+/* gap-closure: finished rows carry retry / take-over / result excerpt */
+{
+  const ctx = fresh();
+  const h = ctx.shadowPlaneHtml([], [
+    { id: "m-f1", objective: "died", state: "failed",
+      target_session: "sess-9", result_excerpt: "tail of transcript" },
+  ], "working");
+  assert(/Recent finished/.test(h), "finished section header");
+  assert(/data-shact="retry"/.test(h), "retry one-tap present");
+  assert(/data-shtakeover="sess-9"/.test(h), "take-over affordance present");
+  assert(/tail of transcript/.test(h), "result excerpt rendered");
+  const none = ctx.shadowPlaneHtml([], [
+    { id: "m-1", objective: "live", state: "running" }], "working");
+  assert(!/Recent finished/.test(none), "no finished header without rows");
+  console.log("ok 7 finished rows: retry/take-over/result");
+}
+
 console.log("test_shadow_home.js: all green");

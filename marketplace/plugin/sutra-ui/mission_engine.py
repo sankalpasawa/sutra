@@ -210,6 +210,30 @@ def _now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def clone_for_retry(store, mid):
+    """Failed/stopped/done -> a FRESH mission with the same brief (retry
+    one-tap). Always a new target: a dead delegate is never reused."""
+    src = store.load(mid)
+    if not src or src.get("state") not in TERMINAL:
+        raise ValueError("retry is only for finished missions")
+    prior = src.get("retried_to")
+    if prior:
+        pm = store.load(prior)
+        if pm and pm.get("state") not in TERMINAL:
+            raise ValueError("already retried as %s" % prior)
+    checks = [{k: v for k, v in c.items()
+               if k not in ("met", "confirmed_by", "confirmed_at")}
+              for c in src.get("done_when") or []]
+    clone = store.create(src["objective"], src.get("template") or "fix",
+                         target_mode="new", target_session=None,
+                         done_when=checks, manifest=src.get("manifest"))
+    src = store.load(mid)
+    src["retried_to"] = clone["id"]
+    store.save(src)
+    return store.transition(clone["id"], "brief_confirm",
+                            "retry of %s" % mid)
+
+
 def evaluate_done_when(mission, transcript_text, verifier=None):
     """Tiered evaluation. founder_confirm NEVER auto-passes: it is met only
     when its `met` flag was set by an explicit founder action."""
@@ -338,9 +362,17 @@ class MissionEngine:
             if fresh["state"] in TERMINAL or fresh["state"] == "paused":
                 return fresh
             if done:
-                return self.store.transition(
+                mm = self.store.transition(
                     mid, "done", "done_when met: %s"
                     % json.dumps(results)[:400])
+                t = transcript or ""
+                mm["result_excerpt"] = (t if len(t) <= 400
+                                        else t[:150] + " ... " + t[-250:])
+                self.store.save(mm)
+                shadow_ledger.append("actions", {
+                    "mission_id": mid, "kind": "result",
+                    "summary": mm["result_excerpt"][:200]})
+                return mm
             pending_confirm = [r for r in results
                                if r["tier"] == "founder_confirm"
                                and not r["met"]]

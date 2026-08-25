@@ -98,6 +98,99 @@ class TestJourneySims(unittest.TestCase):
         with open(sf2._feed_path()) as fh:
             self.assertTrue(any("wait-1" in l for l in fh))
 
+    def test_u3_boot_replay_confirmed_only(self):
+        """U3 applied-thereafter: boot context carries confirmed rows only."""
+        import shadow_session
+        shadow_ledger.append("instructions", {
+            "text": "never say maybe", "precedence": "taste",
+            "confirmed": True})
+        shadow_ledger.append("instructions", {
+            "text": "unconfirmed wish", "precedence": "taste",
+            "confirmed": False})
+        shadow_ledger.append("actions", {
+            "mission_id": "m-x", "kind": "say", "summary": "did a thing"})
+        ctx = shadow_session.standing_context()
+        self.assertIn("never say maybe", ctx)
+        self.assertNotIn("unconfirmed wish", ctx)
+        self.assertIn("RECENT SHADOW ACTIONS", ctx)
+        self.assertIn("did a thing", ctx)
+
+    def test_u1_stall_detection(self):
+        """U1: a silent running mission raises ONE deduped stall item."""
+        store = MissionStore()
+        m = store.create("quiet work", "fix", target_session="sess-stall")
+        store.transition(m["id"], "brief_confirm")
+        store.transition(m["id"], "running")
+        shadow_runner._LAST_FRAME_TS["sess-stall"] = 100.0
+        raised = shadow_runner.check_stalls(now=1000.0, stall_secs=240)
+        self.assertEqual(raised, [m["id"]])
+        self.assertEqual(
+            shadow_runner.check_stalls(now=2000.0, stall_secs=240), [],
+            "dedupe: one stall alert per mission")
+        import importlib, shadow_feed as sf
+        importlib.reload(sf)
+        with open(sf._feed_path()) as fh:
+            self.assertTrue(any("stall-%s" % m["id"] in l for l in fh))
+
+    def test_failed_retry_clones_fresh_mission(self):
+        """Mission-failed journey: Retry = same brief, NEW target."""
+        from mission_engine import clone_for_retry
+        store = MissionStore()
+        m = store.create("doomed again", "fix", target_session="s-dead",
+                         done_when=[{"tier": "auto", "check": "x", "met": True}])
+        store.transition(m["id"], "brief_confirm")
+        store.transition(m["id"], "running")
+        store.transition(m["id"], "failed", "say refused")
+        clone = clone_for_retry(store, m["id"])
+        self.assertEqual(clone["state"], "brief_confirm")
+        self.assertEqual(clone["objective"], "doomed again")
+        self.assertIsNone(clone.get("target_session"))
+        self.assertEqual(clone["target_mode"], "new")
+        self.assertNotIn("met", clone["done_when"][0])
+        live = store.create("still running", "fix", target_session="s-live")
+        store.transition(live["id"], "brief_confirm")
+        store.transition(live["id"], "running")
+        with self.assertRaises(ValueError):
+            clone_for_retry(store, live["id"])
+
+    def test_retry_is_idempotent_while_clone_lives(self):
+        from mission_engine import clone_for_retry
+        store = MissionStore()
+        m = store.create("flaky", "fix", target_session="s-a")
+        store.transition(m["id"], "brief_confirm")
+        store.transition(m["id"], "running")
+        store.transition(m["id"], "failed", "boom")
+        first = clone_for_retry(store, m["id"])
+        with self.assertRaises(ValueError):
+            clone_for_retry(store, m["id"])
+        store.transition(first["id"], "queued")
+        store.transition(first["id"], "running")
+        store.transition(first["id"], "failed", "boom again")
+        second = clone_for_retry(store, m["id"])
+        self.assertNotEqual(second["id"], first["id"])
+
+    def test_stall_grace_for_silent_from_birth_session(self):
+        store = MissionStore()
+        m = store.create("mute", "fix", target_session="sess-mute")
+        store.transition(m["id"], "brief_confirm")
+        store.transition(m["id"], "running")
+        shadow_runner._LAST_FRAME_TS.pop("sess-mute", None)
+        self.assertEqual(shadow_runner.check_stalls(now=5000.0), [],
+                         "first sweep stamps, never alerts")
+        raised = shadow_runner.check_stalls(now=5000.0 + 241)
+        self.assertEqual(raised, [m["id"]])
+
+    def test_boot_context_degrades_loudly(self):
+        import shadow_session
+        from unittest import mock
+        with mock.patch.object(shadow_session, "standing_context",
+                               wraps=shadow_session.standing_context):
+            with mock.patch("shadow_ledger.read",
+                            side_effect=OSError("ledger torn")):
+                ctx = shadow_session.standing_context()
+        self.assertIn("standing instructions unavailable", ctx)
+        self.assertIn("ledger torn", ctx)
+
     # Delegate (U2), floors (permission mid-mission), down-state, takeover and
     # the say chain are pinned END TO END in: test_shadow_runner.py,
     # test_mission_engine.py, test_shadow_say.py, test_shadow_overlay.js.

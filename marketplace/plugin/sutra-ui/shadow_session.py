@@ -34,6 +34,34 @@ def load_context():
         return None
 
 
+def standing_context():
+    """U3 "applied thereafter" + grounded undo: founder-confirmed standing
+    instructions and recent actions, rebuilt fresh at every boot. Failure
+    yields "" -- a broken ledger must never stop Shadow from booting."""
+    try:
+        import shadow_ledger
+        import shadow_precedence
+        latest = {}
+        for row in shadow_ledger.read("instructions", 200):
+            latest[row.get("id")] = row
+        block = shadow_precedence.replay_context(list(latest.values()))
+        acts = shadow_ledger.read("actions", 10)
+        lines = ["- %s: %s" % (a.get("kind"), (a.get("summary") or "")[:120])
+                 for a in acts]
+        out = ("\n\nSTANDING INSTRUCTIONS (founder-confirmed; apply to "
+               "every reply):\n" + block)
+        if lines:
+            out += ("\n\nRECENT SHADOW ACTIONS (ground undo requests in "
+                    "these; if something cannot be undone, say so "
+                    "honestly):\n" + "\n".join(lines))
+        return out
+    except Exception as exc:
+        # deepseek fold: a broken ledger must not stop the boot, but it
+        # must not be SILENT either -- Shadow itself tells the founder
+        return ("\n\n(standing instructions unavailable this boot: %s -- "
+                "the memory ledger needs attention)" % str(exc)[:120])
+
+
 class ShadowSession:
     """One persistent agent session that IS Shadow.
 
@@ -60,6 +88,7 @@ class ShadowSession:
         context = load_context()
         if context is None:
             return None
+        context = context + standing_context()
         args = build_args()
         # Narrow contract (codex fold): the caller supplies argv, but the
         # session refuses one that cannot speak the persistent protocol --

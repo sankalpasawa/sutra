@@ -63,8 +63,21 @@ function shadowPlaneHtml(watching, missions, tab){
             type="button" data-shact="stop" data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
       </span>
     </div>`).join("");
+  const finished = missions.filter(m =>
+    ["failed", "stopped"].includes(m.state)).slice(-5).reverse();
+  const fin = finished.map(m => `
+    <div class="shmissionrow shfinished" data-shmissionrow="${escAttr(m.id)}">
+      ${missionCardHtml(m)}
+      <span class="shrowacts">
+        <button class="btn" type="button" data-shact="retry"
+          data-shmid="${escAttr(m.id)}">Retry</button>
+        ${m.target_session ? `<button class="btn" type="button"
+          data-shtakeover="${escAttr(m.target_session)}">Take over</button>` : ""}
+      </span>
+    </div>`).join("");
   return head + `<div class="shplane">${rows ||
-    `<div class="shempty">No missions in flight.</div>`}</div>`;
+    `<div class="shempty">No missions in flight.</div>`}${fin ? `
+    <div class="shfinhead">Recent finished</div>` + fin : ""}</div>`;
 }
 
 /* S86/S87: the memory section. Unconfirmed rows are visibly inert; one tap
@@ -151,6 +164,14 @@ if (typeof document !== "undefined" && document.addEventListener){
     const d = (ev.target && ev.target.dataset) || {};
     if (d.shtab){ if (typeof S !== "undefined") S.shadowTab = d.shtab;
       if (typeof scheduleRender === "function") scheduleRender(); return; }
+    if (d.shtakeover){
+      /* navigation, never mutation: land the founder where the delegate
+         session can be resumed by hand */
+      if (typeof S !== "undefined")
+        S.pendingDeepLink = "sutra://session/" + d.shtakeover;
+      if (typeof goDest === "function") goDest("chats");
+      return;
+    }
     if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
     if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
     if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);
