@@ -485,13 +485,16 @@ def provider_bin(pid):
 # settings key outside this function are a review failure (PLAN-100 S8).
 
 def shadow_enabled(settings=None):
-    """True only when settings.json carries "shadow.enabled": true (bool).
+    """True unless settings.json carries "shadow.enabled": false (bool).
 
-    Absent file, absent key, or any non-boolean-true value means OFF. This
-    fails closed by construction: _raw_settings() never raises.
+    Founder direction 2026-08-25: Shadow is ALWAYS ON by default. Only an
+    explicit boolean false turns it off -- absent file, absent key, or junk
+    values all mean ON. The off state still exists (this accessor is still
+    the single read path, and everything downstream still honors it); it is
+    simply opt-out now instead of opt-in.
     """
     s = settings if settings is not None else _raw_settings()
-    return s.get("shadow.enabled") is True
+    return s.get("shadow.enabled") is not False
 
 
 # ------------------------------------------------------------ settings io --
