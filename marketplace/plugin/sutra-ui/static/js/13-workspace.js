@@ -57,7 +57,11 @@ S.ws = {
 /* The one place the flag is read. SETTINGS is the boot-fetched /api/settings
    payload; absent, malformed or false all mean OFF (FLAG.md default). */
 function wsFlagOn(){
-  return !!(SETTINGS && SETTINGS.flags && SETTINGS.flags.workspace === true);
+  /* S92 cutover: absent means ON; only an explicit false turns the screen
+     off (FLAG.md rollback). Malformed settings fail OPEN post-cutover —
+     the Workspace is the default surface, not the experiment. */
+  if (!SETTINGS || !SETTINGS.flags) return true;
+  return SETTINGS.flags.workspace !== false;
 }
 /* Every delegated listener guards on this: flag on AND the screen is showing.
    A listener that fires on another screen would be exactly the stray-attribute

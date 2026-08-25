@@ -80,8 +80,10 @@ class WsCase(unittest.TestCase):
 class FlagGate(WsCase):
     def test_flag_off_is_typed_404_with_hint(self):
         c = self.build(workspace_corpus.corpus_small)
+        # S92 cutover: absent means ON now; the typed 404 hangs off the
+        # EXPLICIT false — the recorded rollback switch (FLAG.md).
         with open(c["settings"], "w") as fh:
-            json.dump({"workdir": c["workdir"]}, fh)   # flags absent = OFF
+            json.dump({"workdir": c["workdir"], "flags": {"workspace": False}}, fh)
         for call in (workspace_api.ws_tree,
                      lambda: workspace_api.ws_search(q="x"),
                      lambda: workspace_api.ws_charter(id=c["c_eng"]),

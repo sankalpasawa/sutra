@@ -110,7 +110,12 @@ def _flag_on():
     is the same file, same never-raises posture, one json read.
     """
     flags = providers._raw_settings().get("flags")
-    return isinstance(flags, dict) and bool(flags.get(WS_FLAG))
+    # S92 CUTOVER (founder, 2026-08-25): absent now means ON — the Workspace
+    # is the default org surface fleet-wide. An explicit false is the only
+    # off-switch (FLAG.md rollback path, unchanged).
+    if not isinstance(flags, dict):
+        return True
+    return flags.get(WS_FLAG) is not False
 
 
 def _guarded(event):

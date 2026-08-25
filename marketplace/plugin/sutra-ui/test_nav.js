@@ -121,10 +121,12 @@ test("now: SCREENS.now renders the honest empty state and TITLES carries it", ()
 });
 
 /* §planes ─ S6 */
-test("planes: org lists its six screens, Files included, railSpec-decorated", () => {
+test("planes: org post-S92 — Workspace leads; Knowledge/Files folded in", () => {
+  /* S92 cutover (founder 2026-08-25): the flag defaults ON, Knowledge and
+     Files fold into the Workspace (openScreen redirects their ids). */
   const rows = T.planeRows("org").flatMap(g => g.rows).map(r => r.screen);
   assert.strictEqual(JSON.stringify(rows), JSON.stringify(
-    ["departments","charters","placements","knowledge","files","reorg"]));
+    ["workspace","departments","charters","placements","reorg"]));
 });
 test("planes: settings carries four labelled groups", () => {
   const groups = T.planeRows("settings");
@@ -353,6 +355,15 @@ test("coverage: all 20 legacy rail ids stay reachable through the new shell", ()
     /* a plane-less destination (Now, Help) reaches its screen directly */
     if (T.DEST_DEFAULT_SCREEN[d]) reachable.add(T.DEST_DEFAULT_SCREEN[d]);
   }
+  /* S92: knowledge + files no longer sit in a plane — they stay reachable
+     because openScreen REDIRECTS their ids to the Workspace. The coverage
+     claim they satisfy is the redirect, asserted here at the source level
+     (behavior is exercised in the workspace suite). */
+  ["knowledge", "files"].forEach(id => reachable.add(id));
+  const loaders = require("fs").readFileSync(__dirname + "/static/js/07-loaders.js", "utf8");
+  assert.ok(/id === "knowledge" \|\| id === "files"/.test(loaders)
+    && /id = "workspace"/.test(loaders),
+    "the folded ids must redirect to workspace in openScreen");
   const missing = legacy.filter(id => !reachable.has(id));
   assert.strictEqual(missing.length, 0, "unreachable: " + missing.join(", "));
 });

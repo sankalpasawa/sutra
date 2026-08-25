@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.224.0 (2026-08-25)
+
+- **S92 cutover: the Workspace is the org surface.** The flag defaults ON
+  fleet-wide (explicit `false` is the rollback switch). Knowledge and Files
+  fold into the Workspace — their rail rows leave, their ids redirect, their
+  code stays one release per the deletion rule. Entering Org lands on the
+  Workspace.
+
 ## 2.223.1 (2026-08-25)
 
 - **Workspace parity loop closed: SIGN-OFF.** The round-3 reviewer confirmed

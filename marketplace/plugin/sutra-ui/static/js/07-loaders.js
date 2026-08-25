@@ -1063,6 +1063,12 @@ document.getElementById("newSession").onclick = () =>
    the one open path now; the click handler and goDest both call it. The
    terminal pane-toggle deliberately stays OUT: it is not a screen. */
 function openScreen(id){
+  /* S92 cutover: the old ids keep working — deep links, destSel restores and
+     muscle memory land on the Workspace, which is where those surfaces live
+     now. Redirect BEFORE the SCREENS check so a folded id never dead-ends. */
+  if ((id === "knowledge" || id === "files")
+      && typeof wsFlagOn === "function" && wsFlagOn() && SCREENS.workspace)
+    id = "workspace";
   if (!id || !SCREENS[id]) return;
   S.screen = id;
   /* v3.3 (PLAN-25 S9): remember the pick per destination, so returning to a

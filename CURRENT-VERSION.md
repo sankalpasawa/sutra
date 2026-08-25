@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.223.1 (2026-08-25, HEAD)
+## v2.224.0 (2026-08-25, HEAD)
+
+S92 cutover: Workspace default-on fleet-wide; Knowledge/Files folded in.
+
+## v2.223.1 (2026-08-25)
 
 Workspace parity loop closed (reviewer SIGN-OFF); search top-bar swap fixed.
 

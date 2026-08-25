@@ -615,10 +615,13 @@ function railSpec(){
       {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
-      {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)},
-      /* Files sits beside Knowledge: both answer "where does work live" --
-         Knowledge over the registry, Files over the documents themselves. */
-      {id:"files",      n:"Files",      i:"files"}
+      /* S92 cutover: Knowledge + Files FOLD into Workspace when it is on --
+         their ids still resolve (openScreen redirects them), their code
+         stays until one release after cutover (FLAG.md deletion rule). */
+      ...(typeof wsFlagOn === "function" && wsFlagOn() ? [] : [
+        {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)},
+        {id:"files",      n:"Files",      i:"files"}
+      ])
     ],
     change:[
       {id:"reorg",  n:"Reorg plans", i:"reorg", c:PLANS.length},
@@ -760,7 +763,13 @@ function goDest(d){
        Focus/Team Sutra from the rail used to render Balance/Teamsutra blank,
        because the fetch calls lived only in the click delegation. */
     const sel = destFullBleed(d) ? null : S.ui.destSel[d];
-    const target = (sel && SCREENS[sel]) ? sel : DEST_DEFAULT_SCREEN[d];
+    /* S92 cutover: entering Org lands on the Workspace when it is on; the
+       static default (departments) remains the rollback path, and a stored
+       destSel still wins — the operator's last pick outranks the default. */
+    let fallback = DEST_DEFAULT_SCREEN[d];
+    if (d === "org" && typeof wsFlagOn === "function" && wsFlagOn() && SCREENS.workspace)
+      fallback = "workspace";
+    const target = (sel && SCREENS[sel]) ? sel : fallback;
     if (typeof openScreen === "function" && SCREENS[target]) openScreen(target);
     else { S.ui.browseClosed = false; S.screen = target; }
   }
@@ -783,6 +792,10 @@ function planeRows(dest){
     /* A row can be feature-flagged (FLAG.md). With the flag off the row must
        not render at all — the byId fallback would otherwise show a bare id. */
     if (entry.flag === "workspace" && !(typeof wsFlagOn === "function" && wsFlagOn())) continue;
+    /* S92 cutover: rows that folded into the Workspace leave the plane while
+       it is on; their ids still resolve via openScreen's redirect, and their
+       code survives one release past cutover (FLAG.md deletion rule). */
+    if (entry.foldsInto === "workspace" && typeof wsFlagOn === "function" && wsFlagOn()) continue;
     if (entry.group) groups.push({ label: entry.group, rows: entry.rows.map(row) });
     else {
       if (!groups.length || groups[groups.length-1].label) groups.push({ label:null, rows:[] });

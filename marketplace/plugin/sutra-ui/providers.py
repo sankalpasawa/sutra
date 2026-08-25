@@ -659,8 +659,11 @@ def load_settings():
         # here made the two disagree: the API answered while the rail row
         # never rendered. Sanitized to {name: bool} -- anything non-dict or
         # non-boolean-true is OFF, matching FLAG.md's "absent means OFF".
-        "flags": {k: True for k, v in (raw.get("flags") or {}).items()
-                  if v is True} if isinstance(raw.get("flags"), dict) else {},
+        # Booleans pass through BOTH ways since S92: absent means ON for
+        # cutover flags, so an explicit false must survive sanitization to
+        # remain expressible. Junk still dies here.
+        "flags": {k: v for k, v in (raw.get("flags") or {}).items()
+                  if isinstance(v, bool)} if isinstance(raw.get("flags"), dict) else {},
         "settings_path": str(SETTINGS_PATH),
         "settings_file_exists": SETTINGS_PATH.exists(),
         "invalid_stored_values": invalid,

@@ -186,10 +186,13 @@ const EMPTY_TREE = { departments: [], unfiled: [], doc_rows: 0, truncated: false
 
 /* ── flag-off inertness ─────────────────────────────────────────────────── */
 
-test("flag off: nothing registers, nothing fetches, nothing reacts", () => {
+test("flag off (explicit false): nothing registers, nothing fetches, nothing reacts", () => {
+  /* S92 cutover inverted the default: absent means ON. The inert contract is
+     unchanged, it just hangs off the EXPLICIT false now (FLAG.md rollback). */
   const sb = freshSandbox();
+  sb.SETTINGS = { flags: { workspace: false } };
   const W = sb.__W;
-  assert(W.wsFlagOn() === false, "absent SETTINGS must read as flag OFF");
+  assert(W.wsFlagOn() === false, "explicit false must read as flag OFF");
   W.wsEnsureRegistered();
   assert(sb.SCREENS.workspace === undefined, "SCREENS.workspace registered with the flag off");
   assert(sb.TITLES.workspace === undefined, "TITLES.workspace registered with the flag off");
@@ -205,12 +208,19 @@ test("flag off: nothing registers, nothing fetches, nothing reacts", () => {
   assert(sb.posts.length === 0, "telemetry pinged with the flag off");
 });
 
-test("flags.workspace must be literal true -- truthy strings stay OFF", () => {
+test("S92 default-on: absent means ON; only explicit false turns it off", () => {
+  /* Post-cutover the Workspace is the default surface, so the predicate
+     FAILS OPEN: absent settings, absent flags, junk values all read ON.
+     The server's sanitize only ships booleans, so the client never sees
+     junk in practice; explicit false is the one recorded off-switch. */
   const sb = freshSandbox();
-  sb.SETTINGS = { flags: { workspace: "yes" } };
-  assert(sb.__W.wsFlagOn() === false, "a truthy non-boolean must not turn the flag on");
+  assert(sb.__W.wsFlagOn() === true, "absent SETTINGS reads ON after cutover");
+  sb.SETTINGS = { flags: {} };
+  assert(sb.__W.wsFlagOn() === true, "absent flag key reads ON");
   sb.SETTINGS = { flags: { workspace: true } };
-  assert(sb.__W.wsFlagOn() === true, "literal true must turn the flag on");
+  assert(sb.__W.wsFlagOn() === true, "literal true reads ON");
+  sb.SETTINGS = { flags: { workspace: false } };
+  assert(sb.__W.wsFlagOn() === false, "explicit false is the off-switch");
 });
 
 test("flag on: registration adds BOTH the SCREENS and the TITLES row", () => {

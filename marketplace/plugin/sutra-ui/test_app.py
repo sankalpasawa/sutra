@@ -1652,8 +1652,10 @@ class TestEffectiveModeAndOnboarding(unittest.TestCase):
         self._write({"flags": {"workspace": True, "other": False,
                                "junk": "yes", "num": 1}})
         s = self.providers.load_settings()
-        self.assertEqual(s["flags"], {"workspace": True},
-                         "only boolean-true survives -- absent/false/junk are OFF")
+        # S92: booleans survive BOTH ways (explicit false is the recorded
+        # off-switch for default-on flags); junk still dies at the door.
+        self.assertEqual(s["flags"], {"workspace": True, "other": False},
+                         "booleans pass through; junk is dropped")
 
     def test_flags_absent_or_malformed_mean_empty_not_missing(self):
         """FLAG.md: absent means OFF. The KEY must still exist so the client
