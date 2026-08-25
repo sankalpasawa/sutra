@@ -1136,6 +1136,19 @@ def _shadow_args():
     return build_agent_args(prov["bin_path"], "", "plan", stream_input=True)
 
 
+def _shadow_workdir():
+    """Shadow's OWN workdir (live fix 2026-08-25): booting in the founder's
+    repo made the session load that repo's entire governance stack -- 40s+
+    turns and replies drowned in per-turn blocks. An empty home keeps the
+    persona pure (SHADOW.md is the only context) and turns fast."""
+    import shadow_ledger
+    d = os.path.join(os.path.dirname(shadow_ledger._path("actions")),
+                     "..", "workdir")
+    d = os.path.realpath(d)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 @app.on_event("startup")
 async def _shadow_recover():
     if providers.shadow_enabled():
@@ -1182,7 +1195,7 @@ async def api_shadow_chat(request: Request):
         if sess is None or not sess.alive:
             sess = _shadow_session.ShadowSession()
             booted = await sess.start(
-                _shadow_args, WORKDIR,
+                _shadow_args, _shadow_workdir(),
                 extra_env={"SUTRA_SHADOW_SAY_TOKEN": SHADOW_SAY_TOKEN})
             if booted is None:
                 raise HTTPException(503, "shadow could not boot")

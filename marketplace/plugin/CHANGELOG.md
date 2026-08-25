@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.224.8 — Shadow answers fast
+
+Shadow boots in its own clean workdir (persona-pure, no repo governance overhead — turns drop from 40s+); the card shows waking/thinking states and guards in-flight sends.
+
 ## 2.224.7 — Shadow complete loop
 
 The engine is mounted: delegate from chat (structured mission blocks), Start drives the target chat to done, rescue signals feed Now, takeover pauses, badge counts. Home controls act; chips generate from replies.

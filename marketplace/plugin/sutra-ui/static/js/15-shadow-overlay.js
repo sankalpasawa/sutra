@@ -226,16 +226,30 @@ function shadowCardHtml(){
 async function sendToShadow(text){
   if (typeof S === "undefined" || typeof fetch === "undefined") return null;
   if (isOwnTurn(text)) return null;               /* S75 self-loop guard */
+  if (S.shadowBusy){
+    S.shadowThread.push({ who: "shadow", ts: Date.now(),
+      text: "(one moment -- still answering the last message)" });
+    return null;
+  }
+  S.shadowBusy = true;
   S.shadowThread.push({ who: "founder", text, ts: Date.now() });
+  S.shadowThread.push({ who: "shadow", ts: Date.now(), busy: true,
+    text: S.shadowBooted ? "thinking\u2026"
+                         : "waking up (first message boots my session -- up "
+                           + "to a minute)\u2026" });
   try {
     const r = await fetch("/api/shadow/chat", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ message: text }) });
+    S.shadowBusy = false;
+    S.shadowThread = S.shadowThread.filter(t => !t.busy);
     if (!r.ok){
-      S.shadowThread.push({ who: "shadow",
-        text: "(Shadow is not watching right now)", ts: Date.now() });
+      S.shadowThread.push({ who: "shadow", ts: Date.now(),
+        text: "(that failed: " + r.status + " -- try again, or check "
+              + "Focus \u203a Shadow)" });
       return null;
     }
+    S.shadowBooted = true;
     const doc = await r.json();
     S.shadowThread.push({ who: "shadow", text: doc.reply, ts: Date.now() });
     if (doc.chips) S.shadowChips = doc.chips;          /* R18: generated */
@@ -250,8 +264,10 @@ async function sendToShadow(text){
     }
     return doc;
   } catch (e){
-    S.shadowThread.push({ who: "shadow",
-      text: "(Shadow is not reachable)", ts: Date.now() });
+    S.shadowBusy = false;
+    S.shadowThread = S.shadowThread.filter(t => !t.busy);
+    S.shadowThread.push({ who: "shadow", ts: Date.now(),
+      text: "(Shadow is not reachable -- is the app backend running?)" });
     return null;
   }
 }
