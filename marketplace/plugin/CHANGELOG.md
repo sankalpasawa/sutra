@@ -5,6 +5,43 @@
 ## 2.223.0 — Shadow v1 (flag-gated, default OFF)
 
 Shadow: a chief-of-staff layer behind `shadow.enabled` (default OFF — zero behavior change until enabled). SessionRuntime substrate, gated MCP tools + capability-token say chain, mission engine with floors and scheduler, needs-you feed on Now, overlay dot/pill/card, Focus > Shadow home. 473 py + full node suites green; off-state invariants enforced.
+## 2.222.9 (2026-08-25)
+
+- **Reading is the panel's own view.** A document opens into a rendered,
+  themed read state — serif title, proportional body, escaped-first markdown
+  (headings, lists, code, quotes, tables) — exactly the locked mock. The
+  SilverBullet editor iframe now appears only behind Edit, and Done returns
+  to the refreshed read view. Charter pages gain their breadcrumb; the Edit
+  link yields to the result count while searching; tree rows ellipsize.
+
+## 2.222.8 (2026-08-25)
+
+- **Review-loop round (reviewer agent + codex + deepseek).** Search shows its
+  in-flight state and cold search is cached (mtime-keyed content cache) — the
+  4-6s silent pane read as broken. Doc column no longer clips at the FILING
+  boundary (fixed-620px removed). Doc filing agrees with the tree (the
+  relativizing join reached _latest_placement_for). Keyboard cursor mirrors
+  the collapsed tree exactly (one shared predicate). Big charters cap at 14
+  rows with an honest "N more". Stable per-workdir sidecar port — the SB
+  client's index now survives restarts instead of rebuilding per boot.
+  IPv6 Host parsing fixed in the origin guard.
+
+## 2.222.7 (2026-08-25)
+
+- **Tree indents actually render.** The shared `.ws button` reset (0,1,1)
+  had silently zeroed the charter/doc indents since the screen shipped —
+  the hierarchy existed in markup only. Row rules now outrank the reset;
+  DOM-verified 20px/32px against the mock spec across 3 capture rounds.
+
+## 2.222.6 (2026-08-25)
+
+- **Editing is on by default.** A human editing their own workdir is normal
+  software; SUTRA_UI_READ_ONLY=1 is the kiosk opt-out (SUTRA_UI_ALLOW_EDIT
+  now a harmless no-op). New origin/host guard refuses cross-origin browser
+  mutations on the loopback port — the declared threat model, dual-consulted.
+- **The tree reads like the org.** Departments collapse to a row + count by
+  default; only the active path expands; the department row is the toggle.
+  Unfiled collapses too. Tighter type scale in the tree and search bar.
 
 ## 2.222.5 (2026-08-25)
 

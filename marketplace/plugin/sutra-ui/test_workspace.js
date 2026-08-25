@@ -165,7 +165,7 @@ function freshSandbox(){
   wsCurrentState, wsStateFromError, wsGroupResults, wsMarkSnippet,
   wsSearchInput, wsVisibleRows, wsActivateRow, wsKeydown, wsParseRoute,
   wsOpenDoc, wsSetLens, wsEdit, wsDone, wsKeepMine, wireWorkspace,
-  wsScreenHtml, WS_COPY, wsMatchWords, wsCount };
+  wsScreenHtml, WS_COPY, wsMatchWords, wsCount, wsTreeHtml, wsMdHtml };
 `;
   new vm.Script(validatorSrc + "\n" + source + EPILOGUE,
     { filename: "13-workspace.js#test" }).runInContext(sb);
@@ -358,20 +358,70 @@ test("deep-link parse: precedence fields, one decode, rejects per grammar", () =
 
 /* ── keyboard ───────────────────────────────────────────────────────────── */
 
-test("visible rows walk the flat visual order: dept, charter, doc, Unfiled", () => {
+test("visible rows mirror the collapsed tree exactly (codex finding 5)", () => {
+  /* No selection: every dept row + Unfiled row, NOTHING expanded — the cursor
+     must never land on a row the renderer did not draw. */
   const sb = onSandbox();
-  const rows = sb.__W.wsVisibleRows();
-  const shape = rows.map(r => r.type).join(",");
-  assert(shape === "dept,charter,doc,doc,dept,doc",
-    "flat traversal order broken: " + shape);
-  assert(rows[3].gone === true, "a missing doc stays LISTED (struck), never dropped");
+  assert(sb.__W.wsVisibleRows().map(r => r.type).join(",") === "dept,dept",
+    "collapsed default must expose only dept rows");
+  /* Selecting a filed doc expands its dept + charter + that charter's docs. */
+  const sb2 = onSandbox(x => { x.S.ws.sel = { type:"doc", path:"holding/research/viewer.md" }; });
+  const shape = sb2.__W.wsVisibleRows().map(r => r.type).join(",");
+  assert(shape === "dept,charter,doc,doc,dept",
+    "active path traversal broken: " + shape);
+  assert(sb2.__W.wsVisibleRows()[3].gone === true,
+    "a missing doc stays LISTED (struck), never dropped");
+  /* The renderer and the cursor use ONE predicate: what wsTreeHtml draws as
+     buttons equals what wsVisibleRows returns, row for row. */
+  const html = sb2.__W.wsTreeHtml();
+  const drawn = (html.match(/data-wstype="(dept|charter|doc)"/g) || []).length;
+  assert(drawn === sb2.__W.wsVisibleRows().length,
+    "renderer drew " + drawn + " rows, cursor walks " + sb2.__W.wsVisibleRows().length);
 });
 
-test("Enter on a department moves the cursor to its first charter", () => {
+test("a 15+ doc charter caps at 14 with an honest more-row (reviewer finding 4)", () => {
+  const docs = [];
+  for (let i = 0; i < 30; i++) docs.push({ path: "d/" + i + ".md", title: "Doc " + i, mtime: i });
+  const sb = onSandbox(x => {
+    x.S.ws.tree = { departments: [{ ref: "D9", name: "Big", count: 30, charters: [
+      { id: "C-big", title: "Huge", docs } ] }], unfiled: [] };
+    x.S.ws.sel = { type: "doc", path: "d/29.md" };   /* selected doc beyond the cap */
+  });
+  const html = sb.__W.wsTreeHtml();
+  const drawnDocs = (html.match(/data-wstype="doc"/g) || []).length;
+  assert(drawnDocs === 15, "cap draws 14 + the selected doc, got " + drawnDocs);
+  assert(/ws-more/.test(html), "the more-row must exist");
+  assert(/15 more/.test(html), "the more-row names the hidden count");
+  sb.__W.wsActivateRow({ type: "more", key: "C-big" });
+  assert(sb.S.ws.showAllDocs === "C-big", "activating the more-row lifts the cap");
+});
+
+test("Enter on a department toggles its expansion (founder 2026-08-25)", () => {
+  /* Departments have no page; activate = expand/collapse. Collapsed is the
+     DEFAULT for every dept outside the active selection path, so the first
+     activation of an inactive dept must record open=true, the second false. */
   const sb = onSandbox();
   sb.__W.wsActivateRow({ type: "dept", key: "D3" });
-  assert(sb.S.ws.cursor && sb.S.ws.cursor.i === 1,
-    "departments have no page -- Enter must land on the first charter");
+  assert(sb.S.ws.openDeps && sb.S.ws.openDeps["D3"] === true,
+    "first activation of a collapsed dept must expand it");
+  sb.__W.wsActivateRow({ type: "dept", key: "D3" });
+  assert(sb.S.ws.openDeps["D3"] === false,
+    "second activation must collapse it again");
+});
+
+test("the tree collapses to counts by default; only the active path expands", () => {
+  /* Mock 01: inactive departments render one row + count; the selected doc's
+     department expands, and docs list only under the charter holding it. */
+  const sb = onSandbox();
+  const html = sb.__W.wsTreeHtml();
+  const chaCount = (html.match(/ws-cha/g) || []).length;
+  const sel = sb.S.ws.sel;
+  if (sel){
+    assert(chaCount > 0, "the active department must show its charters");
+  }
+  const depButtons = (html.match(/class="ws-dep/g) || []).length;
+  assert(depButtons >= 1, "departments render as rows");
+  assert(/ws-count/.test(html), "collapsed rows carry counts");
 });
 
 test("Esc clears search; a selected charter page survives (04 -> 02)", () => {
@@ -448,8 +498,39 @@ test("state 14 keeps the last read copy on screen and offers Save a copy", () =>
   assert(html.indexOf("This document is no longer there. Your last read copy is on screen.") !== -1,
     "state-14 message missing");
   assert(html.indexOf(">Save a copy<") !== -1, "Save a copy missing");
-  assert(html.indexOf("data-wsframe") !== -1,
-    "the frame (the last read copy) must stay on screen");
+  /* The read view renders lastRead directly — a STRONGER guarantee than the
+     old iframe (which cannot display a deleted file at all). The rendered
+     body must be on screen; the editor frame must NOT mount in read state. */
+  assert(html.indexOf("ws-read") !== -1 && html.indexOf("body") !== -1,
+    "the rendered last-read copy must stay on screen");
+  assert(html.indexOf("data-wsframe") === -1,
+    "the editor iframe must not mount in the read state");
+});
+
+test("read state renders the panel view; edit state mounts the iframe (round 3)", () => {
+  const sb = onSandbox(sb2 => {
+    sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
+    sb2.S.ws.lastRead = { path: "holding/research/viewer.md",
+      text: "# Title From Doc\n\nBody **bold** text\n\n- item", editable: true };
+  });
+  let html = sb.__W.wsScreenHtml();
+  assert(html.indexOf("ws-doctitle") !== -1 && html.indexOf("Title From Doc") !== -1,
+    "read state must show the serif doc title");
+  assert(html.indexOf("<strong>bold</strong>") !== -1, "markdown must render");
+  assert(html.indexOf("data-wsframe") === -1, "no iframe in read state");
+  sb.S.ws.editing = true;
+  html = sb.__W.wsScreenHtml();
+  assert(html.indexOf("data-wsframe") !== -1, "edit state mounts the iframe");
+});
+
+test("the renderer never lets author bytes reach the DOM as markup", () => {
+  const sb = onSandbox();
+  const hostile = '# T\n\n<img src=x onerror=alert(1)> **b** <script>x</script>\n\n- <b>li</b>';
+  const out = sb.__W.wsMdHtml(hostile);
+  assert(out.indexOf("<img") === -1 && out.indexOf("<script") === -1
+    && out.indexOf("<b>") === -1, "raw tags must be escaped: " + out.slice(0, 120));
+  assert(out.indexOf("&lt;img") !== -1, "escaped form must survive");
+  assert(out.indexOf("<strong>b</strong>") !== -1, "markdown still renders around it");
 });
 
 test("state 14 hides Save a copy when the edit gate is off", () => {

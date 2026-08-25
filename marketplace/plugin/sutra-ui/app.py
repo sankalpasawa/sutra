@@ -48,6 +48,41 @@ if providers.ensure_login_path():
 
 app = FastAPI(title="Sutra UI", docs_url=None, redoc_url=None)
 
+
+# ── Origin/Host guard (dual consult 2026-08-25) ─────────────────────────────
+# Editing now defaults ON, so the unauthenticated loopback port needs its
+# declared protection: MUTATING requests carrying a cross-origin Origin header
+# are refused, and the Host must be loopback. This closes cross-origin BROWSER
+# writes (the one NEW surface default-on editing creates). It deliberately does
+# NOT authenticate local processes — they are outside the declared threat
+# model (documented in providers.editing_allowed). No-Origin requests pass:
+# that is the agent/CLI lane (curl, hooks, the chat runner), and a browser
+# cannot strip its own Origin on a cross-origin mutation.
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+
+
+@app.middleware("http")
+async def _origin_guard(request, call_next):
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        raw_host = request.headers.get("host") or ""
+        # IPv6-safe: [::1]:8330 must parse to ::1, not "[". urlsplit handles
+        # the bracket form; a bare value falls back to the pre-colon split.
+        from urllib.parse import urlsplit as _us
+        try:
+            host = _us("//" + raw_host).hostname or ""
+        except ValueError:
+            host = raw_host.split(":")[0]
+        if host not in ("127.0.0.1", "localhost", "::1", ""):
+            return JSONResponse({"detail": "host not loopback"}, status_code=403)
+        origin = request.headers.get("origin")
+        if origin:
+            from urllib.parse import urlsplit
+            ohost = (urlsplit(origin).hostname or "")
+            if ohost not in ("127.0.0.1", "localhost", "::1"):
+                return JSONResponse({"detail": "cross-origin mutation refused"},
+                                    status_code=403)
+    return await call_next(request)
+
 # --- DNS-rebinding defence -------------------------------------------------
 # Binding to 127.0.0.1 keeps other machines out; it does NOT keep out a page
 # the operator visits. A hostile site can point its own DNS name at 127.0.0.1

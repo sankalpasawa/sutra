@@ -53,6 +53,22 @@ def _get(path):
     return _http("GET", path)
 
 
+def _http_h(method, path, body=None, headers=None):
+    """Like _http but with extra request headers — for the origin-guard tests."""
+    url = "http://127.0.0.1:%d%s" % (TestApp.port, path)
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    h = {"Content-Type": "application/json"} if data else {}
+    h.update(headers or {})
+    req = urllib.request.Request(url, data=data, method=method, headers=h)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode("utf-8"))
+
+
+
+
 def _post(path, body):
     return _http("POST", path, body)
 
@@ -1213,6 +1229,32 @@ class TestApp(unittest.TestCase):
                          before["settings"]["permission_mode"],
                          "a rejected mode must not be silently downgraded OR stored")
 
+    # ==================================================== origin guard ====
+    # Editing defaults ON (2026-08-25): the loopback port's declared
+    # protection — cross-origin BROWSER mutations refused, the no-Origin
+    # agent/CLI lane passes, reads untouched. Local processes are outside
+    # the declared threat model (documented in providers.editing_allowed).
+
+    def test_42b_cross_origin_mutation_is_refused(self):
+        status, body = _http_h("POST", "/api/settings", {"onboarded": True},
+                               headers={"Origin": "https://evil.example"})
+        self.assertEqual(status, 403)
+        self.assertIn("cross-origin", body["detail"])
+
+    def test_42c_same_origin_mutation_passes_the_guard(self):
+        status, _ = _http_h("POST", "/api/settings", {"onboarded": True},
+                            headers={"Origin": "http://127.0.0.1:%d" % TestApp.port})
+        self.assertNotEqual(status, 403, "same-origin must not be refused")
+
+    def test_42d_no_origin_agent_lane_passes(self):
+        status, _ = _post("/api/settings", {"onboarded": True})
+        self.assertNotEqual(status, 403)
+
+    def test_42e_reads_are_untouched_even_cross_origin(self):
+        status, _ = _http_h("GET", "/api/settings",
+                            headers={"Origin": "https://evil.example"})
+        self.assertEqual(status, 200, "reads carry no new risk and stay open")
+
     def test_43_settings_writes_outside_any_sutra_native_home(self):
         """Panel preferences are not governance state. If the settings file
         landed under SUTRA_NATIVE_HOME, POST /api/settings would be a registry
@@ -1713,24 +1755,36 @@ class TestEditorWriteGate(unittest.TestCase):
     def tearDown(self):
         os.environ.clear(); os.environ.update(self._old)
 
-    def test_editing_is_off_by_default(self):
-        """A panel that could rewrite files the moment it starts is not a default
-        anyone opted into."""
-        self.assertFalse(self.p.editing_allowed())
-
-    def test_editing_turns_on_only_via_the_env_gate(self):
+    def test_editing_is_on_by_default(self):
+        """Founder ruling 2026-08-25 (dual consult): a human editing their own
+        workdir through their own app is normal-software behavior. The origin
+        guard covers the new browser-CSRF surface; local processes are outside
+        the declared threat model."""
+        os.environ.pop("SUTRA_UI_READ_ONLY", None)
         import importlib
-        os.environ[self.p.EDIT_ENV] = "1"
         self.assertTrue(importlib.reload(self.p).editing_allowed())
 
-    def test_gate_is_exact_not_truthy(self):
-        """'0', 'false', 'no' must NOT enable writing -- a truthy check here would
-        turn a disabling value into an enabling one."""
+    def test_read_only_opt_out_gates_editing_off(self):
+        """Kiosk/demo posture: SUTRA_UI_READ_ONLY=1 disables writing."""
         import importlib
-        for v in ("0", "false", "no", "", "yes", "true"):
-            os.environ[self.p.EDIT_ENV] = v
+        os.environ["SUTRA_UI_READ_ONLY"] = "1"
+        self.assertFalse(importlib.reload(self.p).editing_allowed())
+
+    def test_gate_is_exact_not_truthy(self):
+        """Only the exact value '1' opts OUT -- '0', 'false', 'no' must not
+        accidentally disable editing (inverse of the old bug class)."""
+        import importlib
+        for v in ("0", "false", "no", "", "yes", "true", "1"):
+            os.environ["SUTRA_UI_READ_ONLY"] = v
             got = importlib.reload(self.p).editing_allowed()
-            self.assertEqual(got, v == "1", "%r produced editing_allowed()=%s" % (v, got))
+            self.assertEqual(got, v != "1", "%r produced editing_allowed()=%s" % (v, got))
+
+    def test_legacy_allow_edit_env_is_a_harmless_no_op(self):
+        """Deployments that still set SUTRA_UI_ALLOW_EDIT=1 keep working."""
+        import importlib
+        os.environ.pop("SUTRA_UI_READ_ONLY", None)
+        os.environ[self.p.EDIT_ENV] = "1"
+        self.assertTrue(importlib.reload(self.p).editing_allowed())
 
     def test_write_endpoint_takes_base_bytes_for_conflict_detection(self):
         """Without it, the agent writing a file while the pane is open would be
