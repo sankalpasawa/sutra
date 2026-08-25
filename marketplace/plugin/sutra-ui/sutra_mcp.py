@@ -447,6 +447,48 @@ if _SHADOW_ON:
         except Exception as exc:
             return _text("say failed: %s" % exc)
 
+    def t_shadow_verify(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        mode = args.get("mode") or "contains"
+        if mode == "contains":
+            sid = args.get("session_id") or ""
+            needle = args.get("needle") or ""
+            doc = _session_reader.read_session(sid)
+            hay = json.dumps(doc or {})
+            return _text(json.dumps({"mode": mode, "passed": needle in hay}))
+        if mode == "ledger_has":
+            import shadow_ledger as _sl
+            rows = _sl.read(args.get("kind") or "actions", 200)
+            needle = args.get("needle") or ""
+            return _text(json.dumps({
+                "mode": mode,
+                "passed": any(needle in json.dumps(r) for r in rows)}))
+        if mode == "state":
+            # runtime state lives in the APP process; answered over HTTP in a
+            # later step -- refuse honestly rather than guessing
+            return _text(json.dumps({"mode": mode, "passed": None,
+                                     "note": "state assertions land with the "
+                                             "mission loop (P3)"}))
+        return _text("unknown verify mode %r" % mode)
+
+    def t_shadow_mission_update(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        import shadow_ledger as _sl
+        states = ("draft", "brief_confirm", "running", "queued", "paused",
+                  "done", "failed", "stopped")
+        mid = args.get("mission_id") or ""
+        state = args.get("state") or ""
+        if not mid or state not in states:
+            return _text("refused: mission_id and a known state are required")
+        row = _sl.append("missions", {
+            "mission_id": mid, "state": state,
+            "note": str(args.get("note") or "")[:500]})
+        return _text(json.dumps(row))
+
     for _name, _fn, _desc, _schema in [
         ("shadow_session_read_tail", t_shadow_session_read_tail,
          "Last N items of one session transcript, bounded and truncated.",
@@ -468,6 +510,21 @@ if _SHADOW_ON:
          {"type": "object", "properties": {
              "kind": {"type": "string"}, "row": {"type": "object"}},
           "required": ["kind", "row"]}),
+        ("shadow_verify", t_shadow_verify,
+         "Assert an outcome: contains (session transcript), ledger_has, "
+         "or state (P3).",
+         {"type": "object", "properties": {
+             "mode": {"type": "string"},
+             "session_id": {"type": "string"},
+             "kind": {"type": "string"},
+             "needle": {"type": "string"}}}),
+        ("shadow_mission_update", t_shadow_mission_update,
+         "Append a mission state transition to the missions ledger.",
+         {"type": "object", "properties": {
+             "mission_id": {"type": "string"},
+             "state": {"type": "string"},
+             "note": {"type": "string"}},
+          "required": ["mission_id", "state"]}),
         ("shadow_session_say", t_shadow_session_say,
          "Send one gated, scrubbed, mission-tagged turn into a live session "
          "via the app (delivered only at a turn boundary).",

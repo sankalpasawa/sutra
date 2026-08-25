@@ -37,4 +37,6 @@ TOOL_GATES = {
     "shadow_ledger_read": {"kind": "read", "gate": "flag+env, call-time re-check"},
     "shadow_ledger_append": {"kind": "write-inert", "gate": "flag+env, ledger-only, append-only"},
     "shadow_session_say": {"kind": "write-acting", "gate": "flag+env + mission_id + dedupe + scrub + app-side 403/404/400/409"},
+    "shadow_verify": {"kind": "read", "gate": "flag+env, call-time re-check"},
+    "shadow_mission_update": {"kind": "write-inert", "gate": "flag+env, missions ledger only, state enum"},
 }
