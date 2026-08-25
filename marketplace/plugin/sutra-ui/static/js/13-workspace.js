@@ -113,7 +113,7 @@ const WS_COPY = {
    (ERROR-MODEL fail-safe). */
 async function wsGet(path){
   let r;
-  try { r = await fetch(API + path); }
+  try { r = await fetch(API + path, { headers: (typeof panelToken === "function" ? { "X-Sutra-Panel": panelToken() } : {}) }); }
   catch (e){
     const err = new Error("the panel backend is unreachable");
     err.kind = "engine_down"; throw err;

@@ -60,6 +60,16 @@ app = FastAPI(title="Sutra UI", docs_url=None, redoc_url=None)
 # cannot strip its own Origin on a cross-origin mutation.
 _LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 
+#: Per-boot panel token (dual consult 2026-08-25: "keep the token — it is
+#: cheap and reduces dependence on subtle browser rules"). Served ONLY inside
+#: the panel HTML; a browser page on another origin can trigger a request to
+#: this port but can never READ the panel to steal the header value. Local
+#: processes can — they are outside the declared threat model (see
+#: providers.editing_allowed). Required only when the request carries an
+#: Origin header: the agent/CLI lane sends none and stays free.
+import secrets as _secrets
+PANEL_TOKEN = _secrets.token_urlsafe(32)
+
 
 @app.middleware("http")
 async def _origin_guard(request, call_next):
@@ -81,6 +91,9 @@ async def _origin_guard(request, call_next):
             if ohost not in ("127.0.0.1", "localhost", "::1"):
                 return JSONResponse({"detail": "cross-origin mutation refused"},
                                     status_code=403)
+            if request.headers.get("x-sutra-panel") != PANEL_TOKEN:
+                return JSONResponse({"detail": "panel token missing or stale "
+                                     "-- reload the panel"}, status_code=403)
     return await call_next(request)
 
 # --- DNS-rebinding defence -------------------------------------------------
@@ -453,7 +466,8 @@ def _panel_html() -> str:
     The __ASSETVER__ token in the asset URLs is substituted here, per request, so
     the page always references the version of the JS/CSS currently on disk."""
     html = (HERE / "static" / "panel.html").read_text(encoding="utf-8")
-    return html.replace("__ASSETVER__", _asset_version())
+    return (html.replace("__ASSETVER__", _asset_version())
+                .replace("__PANELTOKEN__", PANEL_TOKEN))
 
 
 # The page itself must never be cached, or the browser serves an old page whose

@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import types
+import re
 import unittest
 import urllib.error
 import urllib.request
@@ -1241,10 +1242,25 @@ class TestApp(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertIn("cross-origin", body["detail"])
 
-    def test_42c_same_origin_mutation_passes_the_guard(self):
+    def test_42c_same_origin_with_token_passes_the_guard(self):
+        """The token comes from the served panel, the way the real client gets
+        it — importing app here would mint a DIFFERENT process's token."""
+        html = urllib.request.urlopen(
+            "http://127.0.0.1:%d/panel" % TestApp.port, timeout=5).read().decode()
+        m = re.search(r'name="sutra-panel-token" content="([^"]+)"', html)
+        self.assertIsNotNone(m, "the served panel must carry the token meta")
         status, _ = _http_h("POST", "/api/settings", {"onboarded": True},
-                            headers={"Origin": "http://127.0.0.1:%d" % TestApp.port})
-        self.assertNotEqual(status, 403, "same-origin must not be refused")
+                            headers={"Origin": "http://127.0.0.1:%d" % TestApp.port,
+                                     "X-Sutra-Panel": m.group(1)})
+        self.assertNotEqual(status, 403, "same-origin + token must not be refused")
+
+    def test_42c2_same_origin_without_token_is_refused(self):
+        """A browser-origin mutation must carry the per-boot panel token
+        (dual consult 2026-08-25) — Origin alone is not authorization."""
+        status, body = _http_h("POST", "/api/settings", {"onboarded": True},
+                               headers={"Origin": "http://127.0.0.1:%d" % TestApp.port})
+        self.assertEqual(status, 403)
+        self.assertIn("panel token", body["detail"])
 
     def test_42d_no_origin_agent_lane_passes(self):
         status, _ = _post("/api/settings", {"onboarded": True})

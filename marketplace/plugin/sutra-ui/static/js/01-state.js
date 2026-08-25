@@ -256,14 +256,23 @@ async function _fail(r, path){
   return new Error(detail ? (detail + " (" + path + " -> " + r.status + ")")
                           : (path + " -> " + r.status));
 }
+/* Per-boot panel token (security consult 2026-08-25): rides every panel
+   request so browser-origin mutations authenticate. Another origin cannot
+   read this page to learn it; the server only demands it when an Origin
+   header is present, so the agent/CLI lane never needs it. */
+function panelToken(){
+  const m = document.querySelector('meta[name="sutra-panel-token"]');
+  return m ? m.content : "";
+}
 async function apiGet(path){
-  const r = await fetch(API + path);
+  const r = await fetch(API + path, { headers: { "X-Sutra-Panel": panelToken() } });
   if (!r.ok) throw await _fail(r, path);
   return r.json();
 }
 async function apiPost(path, body){
   const r = await fetch(API + path, { method:"POST",
-    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body||{}) });
+    headers:{"Content-Type":"application/json", "X-Sutra-Panel": panelToken()},
+    body: JSON.stringify(body||{}) });
   if (!r.ok) throw await _fail(r, path);
   return r.json();
 }

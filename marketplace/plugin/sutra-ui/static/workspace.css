@@ -166,7 +166,7 @@
      and notices; the document body itself renders inside the iframe. */
   .ws-doccol{flex:1;min-width:0;overflow-y:auto;background:var(--card);padding:40px 0;
     display:flex;flex-direction:column}
-  .ws-col{width:100%;max-width:620px;margin:0 auto;padding:0 28px;box-sizing:border-box;
+  .ws-col{width:100%;max-width:680px;margin:0 auto;padding:0 28px;box-sizing:border-box;
     flex:1;display:flex;flex-direction:column;min-height:0}
   /* was width:620px FIXED — narrower panes clipped the content mid-word at
      the FILING boundary (reviewer 2026-08-25, blocker 2) */
@@ -174,7 +174,9 @@
   .ws-frame{flex:1;width:100%;min-height:0;border:0;background:var(--card)}
   .ws-col h1{font-family:var(--serif);font-size:28px;font-weight:500;margin:0 0 16px;
     letter-spacing:-.01em}
-  /* read state (mock 02/03): serif title + proportional themed body — the
+  /* Measure (reviewer round-3 minor 5): 680px reading column against a 232px
+     meta pane restores the mock's reading-dominant ratio at 1440.
+  read state (mock 02/03): serif title + proportional themed body — the
      panel's own render; the editor iframe exists only behind Edit */
   .ws-read{overflow-y:auto;min-height:0;flex:1;padding-bottom:40px}
   .ws-doctitle{font-family:var(--serif);font-size:28px;font-weight:500;margin:0 0 16px;
@@ -218,7 +220,7 @@
   .ws-page .ws-act{margin-top:22px}
 
   /* context rail 250 */
-  .ws-ctx{width:250px;flex:none;border-left:1px solid var(--line);background:var(--inset);
+  .ws-ctx{width:232px;flex:none;border-left:1px solid var(--line);background:var(--inset);
     padding:16px 14px;font-size:12px;overflow-y:auto}
   .ws-cs{margin-bottom:26px}         /* one ctx section (mock .cx) */
   .ws-ck{color:var(--muted)}         /* row key (mock .cr span:first-child) */

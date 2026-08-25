@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.224.0 (2026-08-25, HEAD)
+## v2.224.1 (2026-08-25, HEAD)
+
+Closeout: theme v3 edit scale, 680/232 measure, panel token, daemon hygiene.
+
+## v2.224.0 (2026-08-25)
 
 S92 cutover: Workspace default-on fleet-wide; Knowledge/Files folded in.
 

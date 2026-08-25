@@ -2,6 +2,15 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.224.1 (2026-08-25)
+
+- **Closeout sweep (founder: "complete this off").** Theme v3 scales the
+  edit surface to the read view (13.5px, mock-07 restraint). Reading column
+  widened to 680px against a 232px meta pane (mock ratio). Per-boot panel
+  token now required on browser-origin mutations (dual-consulted) — served
+  only inside the panel, agent/CLI lane untouched. Native daemon hygiene:
+  five accumulated daemons reduced to one with an honest pidfile.
+
 ## 2.224.0 (2026-08-25)
 
 - **S92 cutover: the Workspace is the org surface.** The flag defaults ON

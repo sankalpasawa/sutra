@@ -61,7 +61,7 @@ PLUGS = {
     },
 }
 
-THEME_VERSION = 2
+THEME_VERSION = 3
 THEME_MARKER_RE = re.compile(r"<!-- sutra-managed: theme v(\d+) -->")
 THEME_MARKER = "<!-- sutra-managed: theme v%d -->" % THEME_VERSION
 THEME_MD = THEME_MARKER + """
@@ -98,6 +98,12 @@ html[data-theme="dark"] {
 #sb-editor .sb-line-h1, #sb-editor .sb-line-h2, #sb-editor .sb-line-h3 {
   font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 }
+/* v3 (reviewer round-3 minor 3): the EDIT surface reads at the same scale as
+   the panel's read view — 13.5px proportional body, mock-07's restraint —
+   instead of the stock oversized editor face. Pinned to SB 2.10.0's editor
+   container; code blocks keep mono via SB's own inner classes. */
+#sb-editor .cm-editor { font-size: 13.5px; line-height: 1.65; }
+#sb-editor .cm-content { padding-top: 8px; }
 ```
 """
 

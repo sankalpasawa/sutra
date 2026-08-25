@@ -42,20 +42,22 @@ class InjectTheme(unittest.TestCase):
             self.assertEqual(open(path).read(), "# my own theme\n")
 
     def test_older_managed_theme_is_upgraded_in_place(self):
-        """v1 on disk (an earlier plugin wrote it) must become the current
+        """An older managed version on disk must become the current
         version — the exact upgrade the founder's space needed for dark mode."""
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "THEME.md")
             with open(path, "w") as fh:
-                fh.write("<!-- sutra-managed: theme v1 -->\nold body\n")
+                fh.write("<!-- sutra-managed: theme v2 -->\nold body\n")
             with mock.patch.object(providers, "editing_allowed", return_value=True):
                 self.assertTrue(sb_sidecar.inject_theme(root))
             body = open(path).read()
             self.assertTrue(body.startswith(sb_sidecar.THEME_MARKER))
             self.assertIn('html[data-theme="dark"]', body,
-                          "v2 must carry the dark palette")
+                          "current theme must carry the dark palette")
             self.assertIn("#sb-top { display: none; }", body,
-                          "v2 must hide the SB chrome bar")
+                          "current theme must hide the SB chrome bar")
+            self.assertIn(".cm-editor { font-size: 13.5px", body,
+                          "v3 must scale the edit surface to the read view")
 
     def test_current_and_newer_managed_themes_are_left_alone(self):
         """Same version: no rewrite. NEWER version (a later plugin wrote it):
