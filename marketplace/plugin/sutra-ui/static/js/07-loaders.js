@@ -219,7 +219,10 @@ function wire(){
   /* ── updates ── */
   scBody.querySelectorAll("[data-upd]").forEach(b=>b.onclick=()=>{
     const what = b.dataset.upd;
-    if (what === "check") checkUpdates(); else installUpdate(what);
+    if (what === "check") checkUpdates();
+    else if (what === "shell-stage") shellStage();
+    else if (what === "shell-apply") shellApply();
+    else installUpdate(what);
   });
 
   scBody.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{

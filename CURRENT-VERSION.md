@@ -2,7 +2,14 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.225.1 (2026-08-25, HEAD)
+## v2.226.3 (2026-08-25, HEAD)
+
+Attach-mode auto-update: the shell updates itself via its bundled sidecar CLI
+(updates_cli wrapping updates.py, flock-serialised) even while a CLI/checkout
+server holds 8330; feature-detected renderer lights up at the next DMG.
+(2.225.2-2.226.2 in between: see marketplace/plugin/CHANGELOG.md.)
+
+## v2.225.1 (2026-08-25)
 
 Editor lifecycle race fixed (light-mode blocker); saved label; emphasis weights.
 

@@ -53,6 +53,8 @@ INSTALLING THE DESKTOP UPDATE, and why it looks the way it does:
 
   A failure at any gate leaves /Applications untouched and reports why.
 """
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -652,6 +654,42 @@ def _write_json(path, obj):
         pass
 
 
+@contextlib.contextmanager
+def _state_lock(timeout=5.0):
+    """Serialise manifest read-modify-write across PROCESSES.
+
+    The lease makes arming idempotent-ish and the Electron single-instance
+    lock caps shells at one, but neither protects pending-update.json from a
+    second WRITER CLASS -- and since 2026-08-25 there is one: the shell spawns
+    this module as a CLI (updates_cli) in attach mode, alongside whatever
+    backend also holds these functions. flock, held narrowly and NEVER
+    indefinitely: the quit path runs under a hard wall-clock bound, and a lock
+    that outwaits it would freeze the app on exit. Timeout raises RuntimeError
+    like every other refusal here.
+    """
+    path = stage_dir() / ".lock"
+    fh = open(path, "a")
+    deadline = time.time() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.time() >= deadline:
+                    raise RuntimeError(
+                        "the update state is in use by another process "
+                        "(a stage or install is in progress)")
+                time.sleep(0.1)
+        yield
+    finally:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        fh.close()
+
+
 def read_pending():
     return _read_json(_pending_path())
 
@@ -708,6 +746,12 @@ def _verify_staged(man, recheck_online=True):
 
 
 def stage_desktop():
+    """Public, serialised entry -- see _state_lock for why."""
+    with _state_lock():
+        return _stage_desktop_unlocked()
+
+
+def _stage_desktop_unlocked():
     """Download and verify the newest desktop release, arming nothing.
 
     Split from arming deliberately. While these were one call there was no
@@ -761,6 +805,13 @@ def stage_desktop():
 
 
 def arm_desktop(wait_pid, wait_start=None, relaunch=False):
+    """Public, serialised entry -- see _state_lock for why."""
+    with _state_lock():
+        return _arm_desktop_unlocked(wait_pid, wait_start=wait_start,
+                                     relaunch=relaunch)
+
+
+def _arm_desktop_unlocked(wait_pid, wait_start=None, relaunch=False):
     """Schedule the swap for after the app named by `wait_pid` exits.
 
     Idempotent and single-flight. Two callers can plausibly reach this at once
@@ -808,6 +859,12 @@ def arm_desktop(wait_pid, wait_start=None, relaunch=False):
 
 
 def resolve_pending(installed_version=None):
+    """Public, serialised entry -- see _state_lock for why."""
+    with _state_lock():
+        return _resolve_pending_unlocked(installed_version=installed_version)
+
+
+def _resolve_pending_unlocked(installed_version=None):
     """Called at launch, before the window opens. Decides what the last attempt
     did and what this launch owes the user.
 

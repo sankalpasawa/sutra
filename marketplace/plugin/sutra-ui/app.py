@@ -458,6 +458,12 @@ def _asset_version() -> str:
 
 
 def _panel_html() -> str:
+    # CAPTURE-GATE ESCAPE, accepted (dual-lane consult 2026-08-25): the
+    # rendered-capture gate stamps static/** + electron/** edits only. This
+    # function's token substitution is the one Python path that can change
+    # render output without a stamp -- rare, and such changes co-ship with
+    # static/ edits in practice. If you change the substitution itself,
+    # capture the rendered panel anyway.
     """The Tier-3 org/reorg studio: the reviewed design shell, wired to the real
     /api/org/* endpoints (org_api.py -> placement_engine.py). Markup and CSS
     are byte-identical to the reviewed design; only the data layer differs

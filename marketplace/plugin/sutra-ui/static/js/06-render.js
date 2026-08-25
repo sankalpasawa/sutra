@@ -611,6 +611,20 @@ function updDesktop(){ return !!(window.sutra && window.sutra.desktop); }
 
 async function pollStagedUpdate(){
   try {
+    /* Attach mode on a sidecar-capable shell: the SHELL's manifest is the
+       truth -- the backend serving this page cannot know about shell-side
+       staging. Feature-detected; a failed shell call renders as nothing
+       staged, never as optimistic HTTP state from the wrong server. */
+    if (window.sutra && typeof window.sutra.updateState === "function") {
+      const s = await window.sutra.updateState();
+      if (s && s.attach) {
+        S.updStaged = (s.capable && s.staged)
+          ? { pending: true, state: s.armed ? "installing" : "staged", version: s.staged_version }
+          : { pending: false };
+        renderUpdateBanner();
+        return;
+      }
+    }
     /* Local staging state only -- this route never touches the network, which
        is why a poll is acceptable here and would not be on /api/updates. */
     S.updStaged = await apiGet("/api/updates/staged");

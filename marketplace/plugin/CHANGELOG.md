@@ -2,6 +2,17 @@
 
 **status**: active · **updated**: 2026-08-25
 
+## 2.226.3 (2026-08-25)
+
+- **Attach mode no longer costs you updates.** The shell gains an update
+  sidecar: in attach mode (a CLI or checkout serving the pinned port) every
+  update verb runs the BUNDLE's own python (`updates_cli.py` wrapping the
+  untouched `updates.py` machinery) — no HTTP, no token, same staging state
+  machine, now flock-serialised across processes. New `sutra:update-state`
+  IPC + feature-detected renderer (Settings row, background stage, countdown
+  banner read the shell in attach mode) — inert until the next DMG, lies in
+  no old/new combination. 11 new CLI tests + 9 source pins.
+
 ## 2.226.2 (2026-08-25)
 
 - **CI green for the desktop lane**: org-import test pins updated to the grown

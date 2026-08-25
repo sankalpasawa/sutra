@@ -330,6 +330,27 @@ function updatesHtml(){
      here too, and the copy stays true for both. */
   const desktopRow = () => {
     if (d.managed || !window.sutra) return row(d, "Desktop app", dBtn);
+    /* Attach mode on a sidecar-capable shell (new DMG): the app updates
+       ITSELF; render the shell's state through the same row markup. Feature-
+       detected — an old DMG has no updateState and keeps the honesty message
+       below, and capable:false (dev shell) keeps it too. */
+    const sh = S.shellUpd;
+    if (sh && sh.ok && sh.capable) {
+      if (sh.staged) return `<div class="kv"><b>Desktop app</b><span>
+        <code>${esc(sh.installed || "?")}</code>
+        <span class="pill p-acc">${esc(sh.staged_version || "update")} downloaded</span>
+        <button class="btn" type="button" data-upd="shell-apply"
+          ${busy?"disabled":""}>${busy==="shell-apply"?"Restarting…":"Restart to apply"}</button></span></div>
+        <div class="kv"><b></b><span class="why">Staged by the app itself — the server
+        serving this window is not involved, and does not need to be.</span></div>`;
+      const c = { managed: true, installed: sh.installed, latest: sh.latest,
+                  update_available: !!sh.update_available, error: sh.error,
+                  note: "Updated by the desktop app itself (this window is attached to a " +
+                        "separate Sutra server; updates no longer depend on it)." };
+      const shBtn = `<button class="btn" type="button" data-upd="shell-stage"
+          ${busy?"disabled":""}>${busy==="shell-stage"?"Downloading…":"Download & install"}</button>`;
+      return row(c, "Desktop app", shBtn);
+    }
     return `<div class="kv"><b>Desktop app</b>
       <span><span class="pill p-warn">desktop updates unavailable</span>
       This window is using a Sutra server that is not running from inside an
@@ -359,8 +380,38 @@ async function checkUpdates(){
   S.updBusy = "check"; S.updError = null; S.updMsg = null; render();
   try { S.upd = await apiGet("/api/updates"); }
   catch (e) { S.updError = e.message; S.upd = null; }
+  /* Shell-side state rides the same check, feature-detected: the verb is
+     absent on old DMGs and in plain browsers, where the backend's answer is
+     the only one. A failed call renders as incapable — never optimistic. */
+  if (window.sutra && typeof window.sutra.updateState === "function") {
+    try { S.shellUpd = await window.sutra.updateState(); }
+    catch (e) { S.shellUpd = null; }
+  } else { S.shellUpd = null; }
   S.updBusy = null; render();
   stageInBackground();
+}
+
+/* Shell-path actions (attach mode on a DMG that carries the update sidecar).
+   Callers are feature-detected — these never run against an old shell. */
+async function shellStage(){
+  S.updBusy = "shell-stage"; S.updError = null; S.updMsg = null; render();
+  try {
+    const r = await window.sutra.stageUpdate();
+    S.updMsg = r && r.ok
+      ? (r.staged ? `${r.version || "The update"} downloaded and verified — restart to apply.`
+                  : `Nothing to download${r.reason ? " — " + r.reason : "."}`)
+      : `Download failed${r && r.error ? " — " + r.error : "."}`;
+  } catch (e) { S.updError = e.message; }
+  try { S.shellUpd = await window.sutra.updateState(); } catch (e) { /* keep last */ }
+  S.updBusy = null; render();
+}
+async function shellApply(){
+  S.updBusy = "shell-apply"; render();
+  try {
+    const r = await window.sutra.applyUpdate();
+    if (!(r && r.ok)) S.updError = (r && r.error) || "restart failed";
+  } catch (e) { S.updError = e.message; }
+  S.updBusy = null; render();
 }
 
 /* A check that FINDS an update now starts the download, instead of reporting a
@@ -382,11 +433,15 @@ async function checkUpdates(){
  * this reports only the fact that it started, and any failure honestly. */
 async function stageInBackground(){
   const d = (S.upd && S.upd.desktop) || {};
-  if (!d.managed || d.error || !d.update_available) return;
+  /* The shell path counts too: in attach mode the backend says unmanaged
+     while the sidecar-capable shell knows an update exists. */
+  const sh = S.shellUpd;
+  const shellPath = !!(sh && sh.ok && sh.capable && sh.update_available && !sh.staged);
+  if (!shellPath && (!d.managed || d.error || !d.update_available)) return;
   if (!(window.sutra && typeof window.sutra.stageUpdate === "function")) return;
   if (S.updStaging) return;                 /* one at a time, like the shell */
   S.updStaging = true;
-  S.updMsg = `Downloading ${d.latest} in the background — you can keep working.`;
+  S.updMsg = `Downloading ${d.latest || (sh && sh.latest) || "the update"} in the background — you can keep working.`;
   render();
   try {
     const r = await window.sutra.stageUpdate();

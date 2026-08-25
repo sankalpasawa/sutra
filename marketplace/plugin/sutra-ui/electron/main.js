@@ -366,10 +366,13 @@ async function boot() {
 
   if (await isSutra()) {
     // A Sutra is already serving 8330 (the CLI, or a previous run). Attach to
-    // it rather than starting a second server on a pinned port.
+    // it rather than starting a second server on a pinned port. Updating no
+    // longer stops here: a deferred update from the last run is finished via
+    // the bundled sidecar BEFORE the window, exactly like the own path below.
+    if (await resolvePendingUpdate()) return;
     createWindow();
     firstRunNotice(wasProvisioned);
-    startUpdateSchedule();   // logs that it is off; see desktopControl()
+    startUpdateSchedule();   // sidecar-backed in attach mode; see updateCapable()
     return;
   }
   if (await portBusy()) {
@@ -460,6 +463,72 @@ let armed = false;       // an installer is already waiting; do not spawn anothe
 
 function desktopControl() { return ownBackend; }
 
+/* ── the attach-mode update-sidecar ──────────────────────────────────────────
+ * One seam for every update operation. When this shell OWNS the backend the
+ * verbs ride HTTP with the control token, exactly as before. When it is
+ * ATTACHED to a backend it did not start, the same machinery runs as a spawned
+ * child of the BUNDLE's own python (updates_cli.py beside updates.py) -- no
+ * HTTP and no token: the token exists because any browser page can POST to
+ * localhost, and a child process is not reachable from a page. Dev shells
+ * (RUNTIME.kind !== "bundled") have no updater and answer capable:false --
+ * which the panel renders as its honesty message, never as a fake row.
+ */
+function updateCapable() { return ownBackend || !!(RUNTIME && RUNTIME.kind === "bundled"); }
+
+let lastUpdateCheck = null;   // the desktop section of the last check, for update-state
+
+function updateCli(args, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    execFile(RUNTIME.python, ["-m", "updates_cli", ...args], {
+      // cwd puts updates_cli.py + updates.py on sys.path (asserted CLI-side);
+      // env is INHERITED and overlaid, never replaced -- HOME/TMPDIR/locale
+      // matter, and shellEnv() brings the proxy vars a Finder launch lacks.
+      cwd: RUNTIME.appDir,
+      env: { ...process.env, ...shellEnv(), PYTHONDONTWRITEBYTECODE: "1" },
+      timeout: timeoutMs || 30000,
+      maxBuffer: 4 * 1024 * 1024,
+    }, (err, stdout) => {
+      let parsed = null;
+      try { parsed = JSON.parse(String(stdout || "").trim()); } catch (e) { /* judged below */ }
+      if (parsed && parsed.error) return reject(new Error(parsed.error));
+      if (err) return reject(new Error(err.killed ? "the updater timed out" : (err.message || "updater failed")));
+      if (!parsed) return reject(new Error("the updater returned no answer"));
+      resolve(parsed);
+    });
+  });
+}
+
+async function updateOp(verb, body, timeoutMs) {
+  if (ownBackend) {
+    switch (verb) {
+      case "check":   return api("GET", "/api/updates", undefined, timeoutMs || 30000);
+      case "staged":  return api("GET", "/api/updates/staged", undefined, timeoutMs || 3000);
+      case "stage":   return api("POST", "/api/updates/desktop/stage", {}, timeoutMs || 600000);
+      case "arm":     return api("POST", "/api/updates/desktop/arm",
+                                 { wait_pid: body.wait_pid, relaunch: !!body.relaunch }, timeoutMs || 60000);
+      case "resolve": return api("POST", "/api/updates/desktop/resolve",
+                                 { installed: body && body.installed }, timeoutMs || 20000);
+    }
+  }
+  if (!updateCapable()) throw new Error("no update capability in this shell (not a bundled app)");
+  switch (verb) {
+    case "check":   return updateCli(["check"], timeoutMs || 30000);
+    case "staged":  return updateCli(["staged"], timeoutMs || 5000);
+    case "stage":   return updateCli(["stage"], timeoutMs || 600000);
+    case "arm": {
+      const a = ["arm", "--wait-pid", String(body.wait_pid)];
+      if (body.relaunch) a.push("--relaunch");
+      return updateCli(a, timeoutMs || 60000);
+    }
+    case "resolve": {
+      const a = ["resolve"];
+      if (body && body.installed) a.push("--installed", String(body.installed));
+      return updateCli(a, timeoutMs || 20000);
+    }
+  }
+  throw new Error("unknown update verb " + verb);
+}
+
 /* JSON over loopback, with the control token attached. Bounded: this is called
    on the quit path, and a hung request there would look like a frozen app. */
 function api(method, urlPath, body, timeoutMs) {
@@ -502,13 +571,22 @@ let staging = null;
 function stageNow() {
   if (staging) return staging;                     /* already downloading */
   staging = (async () => {
-    const state = await api("GET", "/api/updates", undefined, 30000);
+    const state = await updateOp("check", null, 30000);
     const d = (state && state.desktop) || {};
+    lastUpdateCheck = d;
     if (!d.managed || d.error || !d.update_available)
       return { staged: false, reason: d.error || (d.managed ? "up to date" : "not managed here") };
     console.log(`[sutra] update ${d.installed} -> ${d.latest}; staging`);
-    const staged = await api("POST", "/api/updates/desktop/stage", {}, 600000);
-    if (staged && staged.staged) console.log(`[sutra] staged ${staged.version}`);
+    const staged = await updateOp("stage", null, 600000);
+    if (staged && staged.staged) {
+      console.log(`[sutra] staged ${staged.version}`);
+      // Attach mode has no backend the panel could poll for this; the shell
+      // says it happened. Own mode sends it too -- one code path, no lies.
+      try {
+        if (win && !win.isDestroyed())
+          win.webContents.send("sutra:update-staged", { staged: true, version: staged.version });
+      } catch (e) { /* a closed window is not a failed stage */ }
+    }
     return staged || { staged: false };
   })();
   staging.finally(() => { staging = null; });
@@ -516,7 +594,7 @@ function stageNow() {
 }
 
 async function checkForUpdate() {
-  if (!desktopControl() || armed) return;
+  if (!updateCapable() || armed) return;
   try {
     await stageNow();
   } catch (err) {
@@ -567,9 +645,14 @@ async function checkUpstreams() {
 }
 
 function startUpdateSchedule() {
-  if (!desktopControl()) {
-    console.log("[sutra] attached to a backend we did not start; auto-update off");
+  if (!updateCapable()) {
+    console.log("[sutra] no update capability in this shell (dev checkout); auto-update off");
     return;
+  }
+  if (!desktopControl()) {
+    // Founder direction 2026-08-25: attaching must not cost the user their
+    // updates. The schedule runs; the verbs ride the bundled sidecar CLI.
+    console.log("[sutra] attached to a backend we did not start; updating via the bundled sidecar");
   }
   updateTimers.push(setTimeout(checkUpstreams, UPDATE_FIRST_CHECK_MS));
   updateTimers.push(setInterval(checkUpstreams, UPDATE_INTERVAL_MS));
@@ -577,9 +660,9 @@ function startUpdateSchedule() {
 
 /* Hand the helper this process -- its pid, so it waits for THE SHELL rather
    than for whatever the backend's parent happens to be. */
-async function armUpdate(relaunch) {
-  const r = await api("POST", "/api/updates/desktop/arm",
-                      { wait_pid: process.pid, relaunch: !!relaunch }, 60000);
+async function armUpdate(relaunch, timeoutMs) {
+  const r = await updateOp("arm", { wait_pid: process.pid, relaunch: !!relaunch },
+                           timeoutMs || 60000);
   armed = true;
   return r;
 }
@@ -590,11 +673,10 @@ async function armUpdate(relaunch) {
  * path the backend can be an older install still serving 8330, and treating its
  * answer as our version would throw away an update that actually landed. */
 async function resolvePendingUpdate() {
-  if (!desktopControl()) return false;
+  if (!updateCapable()) return false;
   let r;
   try {
-    r = await api("POST", "/api/updates/desktop/resolve",
-                  { installed: app.getVersion() }, 20000);
+    r = await updateOp("resolve", { installed: app.getVersion() }, 20000);
   } catch (err) {
     console.error("[sutra] could not resolve pending update:", err.message);
     return false;
@@ -625,7 +707,7 @@ async function resolvePendingUpdate() {
 }
 
 ipcMain.handle("sutra:update-apply", async () => {
-  if (!desktopControl()) return { ok: false, error: "this window does not control the backend" };
+  if (!updateCapable()) return { ok: false, error: "no update capability in this shell" };
   try {
     await armUpdate(true);
     quitting = true;
@@ -638,6 +720,28 @@ ipcMain.handle("sutra:update-apply", async () => {
 });
 
 ipcMain.handle("sutra:update-defer", async () => ({ ok: true, deferred: true }));
+
+/* The renderer's one honest window into shell-side updating. In attach mode
+   the backend serving the page knows nothing about the shell's staging, so
+   the panel asks the SHELL. capable:false (dev checkout, unpackaged run) is a
+   first-class answer the panel renders as its honesty message -- this verb
+   never fabricates a row. `staged` is read live from the manifest (network-
+   free); the latest/available figures are the cache of the last check. */
+ipcMain.handle("sutra:update-state", async () => {
+  const base = { ok: true, attach: !ownBackend, capable: updateCapable(),
+                 installed: app.getVersion(), staging: !!staging, armed };
+  if (!updateCapable()) return { ...base, reason: "not running from an installed bundle" };
+  const d = lastUpdateCheck || {};
+  let staged = null;
+  try { staged = await updateOp("staged", null, 5000); } catch (e) { /* unknown stays unknown */ }
+  return { ...base,
+    latest: d.latest || null,
+    update_available: !!d.update_available,
+    error: d.error || null,
+    staged: !!(staged && staged.pending && staged.state === "staged"),
+    staged_version: (staged && staged.version) || null,
+    staged_state: (staged && staged.state) || null };
+});
 
 /* Panel theme -> nativeTheme. The SB iframe is cross-origin and derives its
    own dark mode from prefers-color-scheme; Chromium derives that scheme from
@@ -665,7 +769,7 @@ ipcMain.handle("sutra:theme", async (_e, t) => {
  * up to six hours away. The renderer still only ASKS; this process owns the
  * token and does the work, exactly as with apply/defer. */
 ipcMain.handle("sutra:update-stage", async () => {
-  if (!desktopControl()) return { ok: false, error: "this window does not control the backend" };
+  if (!updateCapable()) return { ok: false, error: "no update capability in this shell" };
   if (armed) return { ok: true, staged: false, reason: "an update is already armed" };
   try {
     const r = await stageNow();
@@ -745,20 +849,23 @@ app.on("window-all-closed", () => app.quit());
  * happens in the seconds after the app closes and the next launch is simply the
  * new version. No restart, no flash, no second prompt.
  *
- * It has to run BEFORE the backend is killed -- arming is an HTTP call to it --
- * which is why the quit is deferred once and re-issued. Bounded hard: a quit
- * that hangs on a network call is a frozen app, and no update is worth that.
+ * It has to run BEFORE the backend is killed -- arming is an HTTP call to it
+ * in own mode, a sidecar-CLI call in attach mode -- which is why the quit is
+ * deferred once and re-issued. Bounded hard on BOTH verbs: a quit that hangs
+ * on a network call OR a locked manifest is a frozen app, and no update is
+ * worth that; a timeout here means quit WITHOUT arming, and the next launch's
+ * resolve finishes the job from the surviving manifest.
  *
- * A backend we merely attached to is left alone; it belongs to whoever started
- * it, and desktopControl() is false there so nothing above applies either. */
+ * A backend we merely attached to is still left alone -- but since 2026-08-25
+ * attaching no longer forfeits the update: the sidecar owns it. */
 let quitArmAttempted = false;
 
 async function applyOnQuit() {
   try {
-    const s = await api("GET", "/api/updates/staged", undefined, 3000);
+    const s = await updateOp("staged", null, 3000);
     if (!s || !s.pending || s.state !== "staged") return;
     console.log(`[sutra] applying deferred update ${s.version} on quit`);
-    await armUpdate(false);          // do NOT reopen: the user chose to quit
+    await armUpdate(false, 8000);    // do NOT reopen: the user chose to quit
   } catch (err) {
     // Nothing is lost. The manifest survives, and the next launch finishes it.
     console.error("[sutra] deferred apply skipped:", err.message);
@@ -766,7 +873,7 @@ async function applyOnQuit() {
 }
 
 app.on("before-quit", (e) => {
-  if (!quitArmAttempted && desktopControl() && !armed) {
+  if (!quitArmAttempted && updateCapable() && !armed) {
     quitArmAttempted = true;
     e.preventDefault();
     applyOnQuit().then(() => app.quit(), () => app.quit());

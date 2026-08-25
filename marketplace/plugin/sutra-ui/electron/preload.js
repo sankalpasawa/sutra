@@ -39,6 +39,18 @@ contextBridge.exposeInMainWorld("sutra", {
      This call exists to tell the shell to stop counting, nothing more. */
   deferUpdate: () => ipcRenderer.invoke("sutra:update-defer"),
 
+  /* Shell-side update state, for windows attached to a backend the shell did
+     not start -- that backend knows nothing about shell staging, so the panel
+     asks the SHELL. capable:false is a real answer (dev checkout); the panel
+     keeps its honesty message on it rather than drawing a fake row. */
+  updateState: () => ipcRenderer.invoke("sutra:update-state"),
+
+  /* Staged push: fired when a background stage completes, so the countdown
+     appears without the renderer polling a backend that cannot know. */
+  onUpdateStaged: (cb) => {
+    ipcRenderer.on("sutra:update-staged", (_e, s) => { try { cb(s); } catch (e) {} });
+  },
+
   /* Download + verify a newer build into staging, in the background. The panel
      calls this when its own "Check for updates" finds one, because the staging
      route is token-authenticated and the token is not here. Resolves
