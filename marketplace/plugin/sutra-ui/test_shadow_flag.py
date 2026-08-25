@@ -51,11 +51,16 @@ class TestShadowFlag(unittest.TestCase):
         # the lint the off-state suite also runs: the key appears only in
         # providers.py (accessor home) and this test file
         import subprocess
+        # escaped dot: the SETTINGS KEY is the contraband, not calls to
+        # the shadow_enabled() accessor (which are the sanctioned path)
         out = subprocess.run(
-            ["git", "grep", "-n", "shadow.enabled", "--", "*.py"],
+            ["git", "grep", "-nE", r"shadow\.enabled", "--", "*.py"],
             capture_output=True, text=True).stdout
+        # test fixtures legitimately WRITE the key into settings files;
+        # the lint hunts production READS outside the accessor's home
         offenders = [l for l in out.splitlines()
-                     if "providers.py" not in l and "test_shadow_flag" not in l]
+                     if not l.startswith("providers.py")
+                     and not l.startswith("test_")]
         self.assertEqual(offenders, [])
 
 

@@ -308,6 +308,53 @@ TOOLS = [
                         "charter_id": {"type": ["string", "null"]},
                         "session_id": {"type": ["string", "null"]}}}}}},
 ]
+# ---- Shadow tools (PLAN-100 S31+) ------------------------------------------
+# Registered ONLY when the shadow flag is true AT SERVER SPAWN. This server is
+# spawned per run (--mcp-config), so the flag is re-evaluated every time the
+# CLI starts it; with the flag off these names do not exist in tools/list at
+# all -- absence, not refusal, is the off-state.
+# Registration requires BOTH the flag and the spawn-env marker: the same MCP
+# server serves ordinary chat panes, and a chat agent must never see Shadow
+# tools -- only Shadow's own session (spawned with SUTRA_MCP_SHADOW=1) does.
+# Listing is NOT authorization (dual-lane fold, 2026-08-25): each handler
+# re-checks the flag at call time, and a persistent agent process keeps its
+# spawn-time tool table until it respawns -- pinned in tests.
+try:
+    import providers as _providers
+    import session_reader as _session_reader
+    _SHADOW_ON = (_providers.shadow_enabled()
+                  and os.environ.get("SUTRA_MCP_SHADOW") == "1")
+except Exception:
+    _SHADOW_ON = False
+
+if _SHADOW_ON:
+    def t_shadow_sessions_list(args):
+        # call-time authorization: hiding a name is not a permission model
+        if not _providers.shadow_enabled():
+            return _text("refused: the shadow flag is off")
+        limit = args.get("limit") or 25
+        rows = _session_reader.list_sessions(limit=min(int(limit), 100))
+        import time as _time
+        now = _time.time()
+        out = []
+        for r in rows:
+            out.append({
+                "session_id": r.get("id") or r.get("session_id"),
+                "title": r.get("title"),
+                "mtime": r.get("mtime"),
+                "liveness": _session_reader.liveness(r.get("mtime") or 0, now),
+            })
+        return _text(json.dumps(out))
+
+    TOOLS.append({
+        "name": "shadow_sessions_list", "fn": t_shadow_sessions_list,
+        "description": "List Claude Code sessions on this machine with "
+                       "liveness (live/recent/idle) so Shadow can decide "
+                       "what it is watching.",
+        "schema": {"type": "object", "properties": {
+            "limit": {"type": "integer", "maximum": 100}}},
+    })
+
 BY_NAME = {t["name"]: t for t in TOOLS}
 
 
