@@ -346,6 +346,141 @@ if _SHADOW_ON:
             })
         return _text(json.dumps(out))
 
+    import shadow_egress as _shadow_egress
+    import shadow_ledger as _shadow_ledger
+    import urllib.request as _urlreq
+    import urllib.error as _urlerr
+
+    def _shadow_gate():
+        """Call-time authorization shared by every shadow tool."""
+        if not _providers.shadow_enabled():
+            return _text("refused: the shadow flag is off")
+        return None
+
+    def t_shadow_session_read_tail(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        sid = args.get("session_id") or ""
+        limit = min(int(args.get("limit") or 20), 100)
+        doc = _session_reader.read_session(sid)
+        if not doc:
+            return _text("no such session: %s" % sid)
+        items = (doc.get("messages") or doc.get("items") or [])[-limit:]
+        out = []
+        for it in items:
+            if isinstance(it, dict):
+                txt = str(it.get("text") or it.get("content") or "")[:800]
+                out.append({"role": it.get("role") or it.get("type"),
+                            "text": txt})
+        return _text(json.dumps(out))
+
+    def t_shadow_app_state(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        import time as _time
+        rows = _session_reader.list_sessions(limit=100)
+        now = _time.time()
+        live = sum(1 for r in rows
+                   if _session_reader.liveness(r.get("mtime") or 0, now) == "live")
+        detail = _providers.active_provider_detail()
+        # Bounded + redacted by construction: counts and enum-ish fields only.
+        # No tokens, no keys, no file contents, no env -- pinned by test.
+        return _text(json.dumps({
+            "sessions_total": len(rows),
+            "sessions_live": live,
+            "provider": detail.get("id"),
+            "permission_mode": _providers.effective_permission_mode(
+                _providers.load_settings()["permission_mode"]),
+            "app_version": os.environ.get("SUTRA_UI_VERSION", "unknown"),
+        }))
+
+    def t_shadow_ledger_read(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        try:
+            rows = _shadow_ledger.read(args.get("kind") or "",
+                                       args.get("limit") or 50)
+        except ValueError as exc:
+            return _text(str(exc))
+        return _text(json.dumps(rows))
+
+    def t_shadow_ledger_append(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        try:
+            row = _shadow_ledger.append(args.get("kind") or "",
+                                        args.get("row"))
+        except ValueError as exc:
+            return _text(str(exc))
+        return _text(json.dumps(row))
+
+    def t_shadow_session_say(args):
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        sid = args.get("session_id") or ""
+        port = os.environ.get("SUTRA_UI_PORT", "8330")
+        payload = json.dumps({
+            "message": args.get("message") or "",
+            "mission_id": args.get("mission_id"),
+            "dedupe_key": args.get("dedupe_key"),
+        }).encode("utf-8")
+        req = _urlreq.Request(
+            "http://127.0.0.1:%s/api/sessions/%s/say" % (port, sid),
+            data=payload, headers={
+                "content-type": "application/json",
+                # capability, not attribution: minted by the app per boot,
+                # inherited via the spawn env; without it the app answers 401
+                "x-shadow-say-token":
+                    os.environ.get("SUTRA_SHADOW_SAY_TOKEN", ""),
+            })
+        try:
+            with _urlreq.urlopen(req, timeout=10) as resp:
+                return _text(resp.read().decode("utf-8", "replace"))
+        except _urlerr.HTTPError as exc:
+            return _text("refused (%s): %s" % (
+                exc.code, exc.read().decode("utf-8", "replace")[:300]))
+        except Exception as exc:
+            return _text("say failed: %s" % exc)
+
+    for _name, _fn, _desc, _schema in [
+        ("shadow_session_read_tail", t_shadow_session_read_tail,
+         "Last N items of one session transcript, bounded and truncated.",
+         {"type": "object", "properties": {
+             "session_id": {"type": "string"},
+             "limit": {"type": "integer", "maximum": 100}},
+          "required": ["session_id"]}),
+        ("shadow_app_state", t_shadow_app_state,
+         "Bounded, redacted app snapshot: session counts, provider, "
+         "permission mode, version.",
+         {"type": "object", "properties": {}}),
+        ("shadow_ledger_read", t_shadow_ledger_read,
+         "Read Shadow ledger rows (instructions|missions|actions).",
+         {"type": "object", "properties": {
+             "kind": {"type": "string"},
+             "limit": {"type": "integer"}}, "required": ["kind"]}),
+        ("shadow_ledger_append", t_shadow_ledger_append,
+         "Append one row to a Shadow ledger (append-only, inert memory).",
+         {"type": "object", "properties": {
+             "kind": {"type": "string"}, "row": {"type": "object"}},
+          "required": ["kind", "row"]}),
+        ("shadow_session_say", t_shadow_session_say,
+         "Send one gated, scrubbed, mission-tagged turn into a live session "
+         "via the app (delivered only at a turn boundary).",
+         {"type": "object", "properties": {
+             "session_id": {"type": "string"},
+             "message": {"type": "string"},
+             "mission_id": {"type": "string"},
+             "dedupe_key": {"type": "string"}},
+          "required": ["session_id", "message", "mission_id"]}),
+    ]:
+        TOOLS.append({"name": _name, "fn": _fn, "description": _desc,
+                      "schema": _schema})
+
     TOOLS.append({
         "name": "shadow_sessions_list", "fn": t_shadow_sessions_list,
         "description": "List Claude Code sessions on this machine with "

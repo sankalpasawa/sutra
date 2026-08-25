@@ -178,6 +178,10 @@ class SessionRuntime:
         self.open_tools = set()
         # S24 queue: owned here, consumed by the handler only from P2 (S37).
         self.turn_queue = TurnQueue()
+        # S37 nudge: set by the say endpoint after an enqueue. A NUDGE only:
+        # the handler's loop-top queue-length check is the authoritative wake
+        # condition (a coalesced Event cannot stall a non-empty queue).
+        self.queue_event = asyncio.Event()
 
     def stop(self):
         """The OPERATOR pressed stop (S22): record the intent, then kill the

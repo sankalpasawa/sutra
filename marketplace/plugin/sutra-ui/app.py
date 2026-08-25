@@ -31,9 +31,12 @@ import connectors_api
 import org_api
 import providers
 import sb_sidecar
+import secrets as _secrets
+import shadow_egress
 from session_runtime import (SessionRuntime, _drain_to_newline,
                              _tool_command, _tool_output, _tool_summary,
-                             register_runtime, unregister_runtime)
+                             register_runtime, unregister_runtime,
+                             lookup_runtime)
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -1053,6 +1056,46 @@ async def sse(source: str):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+# --------------------------------------------------------------- shadow say --
+# PLAN-100 S37. Capability token first (dual-lane fold, 2026-08-25): a local
+# HTTP port is reachable by every same-user process, and mission_id is
+# attribution, not authorization. The token is minted per app boot and travels
+# to Shadow's MCP child via the spawn env; nothing else knows it. It is
+# checked BEFORE flag/session/mission so an unauthorized caller learns
+# nothing (no oracle).
+SHADOW_SAY_TOKEN = _secrets.token_hex(24)
+os.environ["SUTRA_SHADOW_SAY_TOKEN"] = SHADOW_SAY_TOKEN
+
+
+@app.post("/api/sessions/{sid}/say")
+async def api_session_say(sid: str, request: Request):
+    if request.headers.get("x-shadow-say-token") != SHADOW_SAY_TOKEN:
+        raise HTTPException(401, "missing or wrong say token")
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    rt = lookup_runtime(sid)
+    if rt is None:
+        raise HTTPException(404, "no live runtime for session %s" % sid)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "body must be json")
+    msg = (body.get("message") or "").strip()
+    mission = (body.get("mission_id") or "").strip()
+    if not msg or not mission:
+        raise HTTPException(400, "message and mission_id are required")
+    clean, redactions = shadow_egress.scrub(msg)
+    tagged = "[Shadow \u00b7 mission %s] %s" % (mission, clean)
+    ok = rt.turn_queue.put({"message": tagged, "_source": "shadow"},
+                           source="shadow",
+                           dedupe_key=body.get("dedupe_key"))
+    if not ok:
+        raise HTTPException(409, "duplicate say (dedupe key already accepted)")
+    rt.queue_event.set()
+    return {"queued": True, "redactions": redactions,
+            "position": len(rt.turn_queue)}
+
+
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     """Chat <-> background `claude -p`. One subprocess per message; --resume keeps
@@ -1220,16 +1263,36 @@ async def ws_chat(ws: WebSocket):
                 # this text, and re-reading the inbox here would reorder it
                 # behind anything they typed while the failed turn was running.
                 payload, pending = pending, None
+            elif inbox.empty() and len(rt.turn_queue) > 0:
+                # S37: a queued shadow turn runs ONLY at a boundary and ONLY
+                # when no operator frame is waiting -- the founder never queues
+                # behind automation. The loop-top length check (not the event)
+                # is authoritative, so coalesced wake-ups cannot stall a
+                # non-empty queue (dual-lane fold).
+                rt.queue_event.clear()
+                payload = rt.turn_queue.get()
+                if payload is None:
+                    continue
             else:
                 get_next = asyncio.ensure_future(inbox.get())
                 gone = asyncio.ensure_future(reader_dead.wait())
-                done, _ = await asyncio.wait({get_next, gone},
+                nudge = asyncio.ensure_future(rt.queue_event.wait())
+                done, _ = await asyncio.wait({get_next, gone, nudge},
                                              return_when=asyncio.FIRST_COMPLETED)
-                if get_next not in done:
+                if get_next in done:
+                    gone.cancel()
+                    nudge.cancel()
+                    payload = get_next.result()
+                elif nudge in done:
+                    # just a nudge: loop back up; the queue check above decides
+                    get_next.cancel()
+                    gone.cancel()
+                    rt.queue_event.clear()
+                    continue
+                else:
                     get_next.cancel()  # socket closed -- stop serving this channel
+                    nudge.cancel()
                     break
-                gone.cancel()
-                payload = get_next.result()
             rt.stopped = False
             msg = payload.get("message", "")
             seed = payload.get("resume")
