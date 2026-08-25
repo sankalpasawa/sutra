@@ -2,6 +2,12 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.224.4 (2026-08-25)
+
+- Vertical rhythm: content starts 22px under the search bar (was 40px+ of
+  stacked dead space); crumb and tree tops tightened. Departments with no
+  documents keep their row but recede (muted, regular weight).
+
 ## 2.224.3 — Shadow visible
 
 The overlay boots on load and Focus lands on Shadow (first plane row, new default). Earlier builds served the code without calling it.

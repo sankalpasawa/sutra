@@ -811,7 +811,8 @@ function wsTreeHtml(){
   let html = "";
   (t.departments || []).forEach(d => {
     const open = depOpen(d.ref);
-    html += '<button type="button" class="ws-dep' + (open ? " open" : "") + '" '
+    html += '<button type="button" class="ws-dep' + (open ? " open" : "")
+      + (!d.count ? " ws-quiet" : "") + '" '
       + wsRowAttrs("dept", d.ref) + '>'
       + esc(d.name) + '<span class="ws-count">' + esc(wsCount(d.count)) + '</span></button>';
     if (!open) return;

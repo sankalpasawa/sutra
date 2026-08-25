@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.224.2 (2026-08-25, HEAD)
+## v2.224.4 (2026-08-25, HEAD)
+
+Rhythm hygiene: 22px content start, quiet zero-doc departments.
+
+## v2.224.2 (2026-08-25)
 
 Theme comment honesty (verify-floor catch).
 

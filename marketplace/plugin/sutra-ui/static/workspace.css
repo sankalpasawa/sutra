@@ -114,7 +114,7 @@
      flagged for the S20 diff. */
   .ws-panes{flex:1;display:flex;min-height:0}
   .ws-side{width:286px;flex:none;border-right:1px solid var(--line);background:var(--inset);
-    padding:12px 10px;overflow-y:auto;font-size:12.5px}
+    padding:10px 10px 12px;overflow-y:auto;font-size:12.5px}
   .ws-searching{padding:10px 8px;font-size:12px;color:var(--faint)}
   .ws-none{min-height:8px}   /* empty tree/results render — no lock value; inert spacer */
 
@@ -126,6 +126,9 @@
     letter-spacing:-.01em;border-radius:6px}
   .ws .ws-dep:hover{background:var(--line-soft)}
   .ws-count{float:right;font-weight:400;color:var(--faint);font-size:11px}
+  /* hygiene (founder 2026-08-25): a department with no documents keeps its
+     row — the tree is MECE — but recedes; 50 bold zero rows were shouting */
+  .ws .ws-dep.ws-quiet{color:var(--muted);font-weight:500}
   .ws-dep.ws-unfiled{color:var(--muted)}                    /* mock :138/:195 inline */
   .ws .ws-cha{display:block;width:100%;padding:4px 8px 4px 20px;color:var(--acc);
     font-size:12px;cursor:pointer}
@@ -164,13 +167,13 @@
   /* doc pane — 620 centred column (fixed by design, A11Y.md §4). The column
      is a flex stack so the sidecar iframe fills the height below the crumb
      and notices; the document body itself renders inside the iframe. */
-  .ws-doccol{flex:1;min-width:0;overflow-y:auto;background:var(--card);padding:40px 0;
+  .ws-doccol{flex:1;min-width:0;overflow-y:auto;background:var(--card);padding:22px 0 40px;
     display:flex;flex-direction:column}
   .ws-col{width:100%;max-width:680px;margin:0 auto;padding:0 28px;box-sizing:border-box;
     flex:1;display:flex;flex-direction:column;min-height:0}
   /* was width:620px FIXED — narrower panes clipped the content mid-word at
      the FILING boundary (reviewer 2026-08-25, blocker 2) */
-  .ws-crumb{font-size:11.5px;color:var(--faint);margin-bottom:14px;flex:none}
+  .ws-crumb{font-size:11.5px;color:var(--faint);margin-bottom:10px;flex:none}
   .ws-frame{flex:1;width:100%;min-height:0;border:0;background:var(--card)}
   .ws-col h1{font-family:var(--serif);font-size:28px;font-weight:500;margin:0 0 16px;
     letter-spacing:-.01em}
@@ -234,7 +237,7 @@
 
   /* notice bar (states 06/12/14 + transient server notices) + empty pane
      (states 08/09/13) */
-  .ws-notice{border-left:2px solid var(--warn);padding:1px 0 1px 13px;margin:0 0 24px;
+  .ws-notice{border-left:2px solid var(--warn);padding:1px 0 1px 13px;margin:0 0 12px;
     font-size:13.5px;color:var(--ink);flex:none}
   .ws-notice.alert{border-color:var(--block)}
   .ws-notice .ws-act{font-size:13.5px;color:var(--acc);margin-left:12px;cursor:pointer}
