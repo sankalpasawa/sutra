@@ -1926,3 +1926,11 @@
 .shprec{ font-size:10px; color:var(--faint); text-transform:uppercase; }
 .shmemtext{ flex:1; }
 .shinert{ font-size:10px; color:var(--faint); }
+
+/* gap-closure: rescue/stall pill + finished-mission rows */
+.shdot-alert{ box-shadow: 0 0 0 3px #e5484d; }
+.shresult{ font-size: 12px; opacity: .75; white-space: pre-wrap;
+  margin: 4px 0; max-height: 72px; overflow: hidden; }
+.shfinhead{ font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  opacity: .6; margin: 10px 0 4px; }
+.shfinished{ opacity: .85; }

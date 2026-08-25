@@ -8,6 +8,7 @@ transcript reader. Plus the watcher: one observer per runtime that turns
 error signals into rescue feed items and the dot-badge count.
 """
 import asyncio
+import time
 
 import mission_engine
 import session_reader
@@ -27,6 +28,10 @@ DELEGATES = {}
 _RECENT_TEXT = {}
 _RECENT_CAP = 20000
 
+#: session_id -> unix ts of the LAST frame of any kind (stall detection)
+_LAST_FRAME_TS = {}
+STALL_SECS = 240
+
 BOUNDARY_TIMEOUT_S = 300   # delegates in a governance-heavy repo run long turns
 
 
@@ -40,6 +45,7 @@ def attach_observer(session_id, rt):
 
     def observer(frame):
         t = frame.get("type")
+        _LAST_FRAME_TS[session_id] = time.time()
         if t == "token" and frame.get("text"):
             buf = _RECENT_TEXT.get(session_id, "") + frame["text"]
             _RECENT_TEXT[session_id] = buf[-_RECENT_CAP:]
@@ -164,7 +170,22 @@ def _launch(mid, validated_say, verifier):
                 "mission %s" % m["state"])
             promoted = mission_engine.MissionScheduler(store).on_terminal(mid)
             if promoted is not None:
-                _launch(promoted["id"], validated_say, verifier)
+                prov = DEFAULT_PROVISIONER["fn"]
+                if prov and promoted.get("target_mode") == "new" \
+                        and not promoted.get("target_session"):
+                    # a promoted queued mission may still need its delegate
+                    # (codex P1 fold: queued rows spawn nothing until here)
+                    eng2 = mission_engine.MissionEngine(store, None, None,
+                                                        None)
+                    try:
+                        await eng2.provision_target(promoted["id"], prov)
+                    except Exception as exc2:
+                        store.transition(promoted["id"], "failed",
+                                         "provision on promote failed: %s"
+                                         % str(exc2)[:200])
+                        promoted = None
+                if promoted is not None:
+                    _launch(promoted["id"], validated_say, verifier)
         elif m and m.get("pause_reason"):
             mission_engine.emit_mission_feed(
                 m, "needs_decision", m.get("pause_reason"))
@@ -174,6 +195,60 @@ def _launch(mid, validated_say, verifier):
                        % (m["state"] if m else "unknown")})
 
     RUNNING[mid] = asyncio.get_event_loop().create_task(run())
+
+
+def check_stalls(now=None, stall_secs=STALL_SECS):
+    """U1 + permission-journey stall detection: a running mission whose
+    target session has emitted nothing for stall_secs raises a needs-you
+    feed item (deduped one per mission). Pure -- tests pass a fake now."""
+    now = time.time() if now is None else now
+    store = mission_engine.MissionStore()
+    raised = []
+    for m in store.list(states=("running",)):
+        sid = m.get("target_session")
+        last = _LAST_FRAME_TS.get(sid)
+        if sid and last is None:
+            # never-heard-from target: start its clock at this sweep so a
+            # stuck-from-birth delegate still alerts one cycle later, and a
+            # freshly resumed mission gets the same grace (deepseek fold)
+            _LAST_FRAME_TS[sid] = now
+            continue
+        if sid and last and (now - last) >= stall_secs:
+            ok, _problems = shadow_feed.emit({
+                "item_id": "stall-%s" % m["id"],
+                "producer": "shadow",
+                "kind": "needs_decision",
+                "title": "mission may be stalled -- nothing from its "
+                         "session for %d min" % max(1, int(now - last) // 60),
+                "deep_link": "sutra://shadow/%s" % m["id"],
+                "dedupe_key": "stall:%s" % m["id"],
+                "state": "new"})
+            if ok:
+                raised.append(m["id"])
+    return raised
+
+
+_STALL_TASK = {"task": None}
+
+
+def start_stall_watch(interval=60):
+    """Periodic stall sweep. Singleton: repeat startups reuse the live task
+    (codex P2 fold); shutdown() cancels it."""
+    t = _STALL_TASK.get("task")
+    if t is not None and not t.done():
+        return t
+
+    async def loop():
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                check_stalls()
+            except Exception:
+                pass
+
+    task = asyncio.get_event_loop().create_task(loop())
+    _STALL_TASK["task"] = task
+    return task
 
 
 def active_mission_count():
@@ -199,6 +274,10 @@ def shutdown():
     for task in list(RUNNING.values()):
         task.cancel()
     RUNNING.clear()
+    t = _STALL_TASK.get("task")
+    if t is not None:
+        t.cancel()
+        _STALL_TASK["task"] = None
 
 
 def founder_takeover(session_id):
@@ -278,6 +357,17 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
     return sid
 
 
+#: missions currently inside the async start path (double-click guard)
+_STARTING = set()
+#: registered once by the app; promotion of queued new-target missions
+#: needs a spawner long after the originating request died (codex P1 fold)
+DEFAULT_PROVISIONER = {"fn": None}
+
+
+def set_default_provisioner(fn):
+    DEFAULT_PROVISIONER["fn"] = fn
+
+
 def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
     """Second-flight fix: provisioning a delegate takes minutes; holding the
     HTTP request open let client timeouts CANCEL it mid-spawn. Admission and
@@ -290,11 +380,26 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
             m = store.load(mid)
             if m and m["state"] == "running":
                 return                    # double-start no-op (race fix)
-            if provisioner and m and m.get("target_mode") == "new" \
-                    and not m.get("target_session"):
-                eng = mission_engine.MissionEngine(store, None, None, None)
-                await eng.provision_target(mid, provisioner)
-            start_mission(mid, validated_say, verifier)
+            if mid in _STARTING:
+                return                    # a second click provisions NOTHING
+            _STARTING.add(mid)
+            try:
+                # cap BEFORE any spawn (codex P1): a full scheduler must
+                # queue cheaply, never leak a live delegate for a queued row
+                if len(store.list(states=("running",))) \
+                        >= mission_engine.MAX_RUNNING:
+                    mission_engine.MissionScheduler(store).start(mid)
+                    return
+                prov = provisioner or DEFAULT_PROVISIONER["fn"]
+                m = store.load(mid)
+                if prov and m and m.get("target_mode") == "new" \
+                        and not m.get("target_session"):
+                    eng = mission_engine.MissionEngine(store, None, None,
+                                                       None)
+                    await eng.provision_target(mid, prov)
+                start_mission(mid, validated_say, verifier)
+            finally:
+                _STARTING.discard(mid)
         except Exception as exc:
             try:
                 mm = store.load(mid)

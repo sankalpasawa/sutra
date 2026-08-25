@@ -89,6 +89,17 @@ if (typeof S !== "undefined"){
   if (!S._pillHistory) S._pillHistory = [];
 }
 
+/* one place decides what the dot shows: state class, alert pill, badge */
+function applyDotState(dot, status){
+  const st = dotState(status);
+  const al = status && status.alerts;
+  dot.className = "shdot " + st.cls + (al ? " shdot-alert" : "");
+  const nb = status && status.active_missions;
+  dot.textContent = al ? String(al) : (nb ? String(nb) : "S");
+  dot.setAttribute && dot.setAttribute("aria-label",
+    al ? st.label + " \u00b7 " + al + " need you" : st.label);
+}
+
 /* ---- mounting (only after a 200 from status) ----------------------------- */
 let _shadowStatus;
 
@@ -103,8 +114,7 @@ function mountShadowOverlay(){
   dot.setAttribute && dot.setAttribute("role", "button");
   dot.setAttribute && dot.setAttribute("aria-label", st.label);
   dot.setAttribute && dot.setAttribute("tabindex", "-1");  /* R3: click, not tab */
-  const nb = _shadowStatus && _shadowStatus.active_missions;
-  if (nb) dot.textContent = String(nb);                     /* R20: badge */
+  applyDotState(dot, _shadowStatus);                        /* R20 + pill */
   dot.dataset && (dot.dataset.shadowdot = "1");
   if (dot.addEventListener) dot.addEventListener("click", toggleShadowCard);
   (document.body || document.documentElement).appendChild(dot);
@@ -162,8 +172,7 @@ async function shadowSendAndRefresh(text){
     _shadowStatus = { watching: doc.watching,
                       permission_mode: (_shadowStatus || {}).permission_mode };
     const dot = document.querySelector && document.querySelector(".shdot");
-    if (dot){ const st = dotState(_shadowStatus);
-      dot.className = "shdot " + st.cls; }
+    if (dot) applyDotState(dot, _shadowStatus);
   }
   renderShadowCard();
 }
@@ -178,6 +187,15 @@ function bootShadowOverlay(){
     _shadowStatus = status;
     mountShadowOverlay();
   }).catch(() => {});
+}
+
+/* event-driven pill (the overlay never polls -- pinned): whoever already
+   holds fresh feed data pushes the alert count here (14-needs-you does). */
+function shadowDotAlerts(n){
+  const dot = document.querySelector && document.querySelector(".shdot");
+  if (!dot) return;
+  _shadowStatus = Object.assign({}, _shadowStatus || {}, { alerts: n });
+  applyDotState(dot, _shadowStatus);
 }
 
 /* S77: cmd-shift-S toggles the card; Esc closes (S66) */
@@ -209,6 +227,7 @@ function missionCardHtml(m){
       ${esc(m.done_when[0].check || "")}</span>` : ""}
     ${startable ? `<button class="btn pri" type="button"
         data-shstart="${escAttr(m.id || "")}">Start</button>` : ""}
+    ${m.result_excerpt ? `<div class="shresult">${esc(m.result_excerpt)}</div>` : ""}
   </div>`;
 }
 

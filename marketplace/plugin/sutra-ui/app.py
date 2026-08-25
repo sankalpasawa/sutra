@@ -1166,11 +1166,31 @@ def _shadow_workdir():
     return d
 
 
+async def _default_delegate_spawner(mission):
+    """Registered with the runner so PROMOTED queued missions (whose
+    originating request is long gone) can still get a delegate."""
+    manifest = mission.get("manifest") or (
+        "You are a delegate session working for the founder via Shadow. "
+        "Objective: %s. Work step by step; state DONE-CHECK lines when "
+        "checks pass." % mission["objective"])
+    return await shadow_runner.spawn_delegate_session(
+        _shadow_args, _shadow_workdir_for_delegates(), manifest,
+        register_runtime)
+
+
 @app.on_event("startup")
 async def _shadow_recover():
     if providers.shadow_enabled():
         try:
             shadow_runner.recover_on_boot()
+        except Exception:
+            pass
+        try:
+            shadow_runner.start_stall_watch()
+        except Exception:
+            pass
+        try:
+            shadow_runner.set_default_provisioner(_default_delegate_spawner)
         except Exception:
             pass
 
@@ -1183,6 +1203,28 @@ async def _shadow_shutdown():
         pass
 
 
+def _shadow_alert_count():
+    """New rescue/stall/needs-decision feed items -- the dot pill number."""
+    import shadow_feed
+    count = 0
+    try:
+        with open(shadow_feed._feed_path(), encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    it = json.loads(line)
+                except ValueError:
+                    continue
+                iid = it.get("item_id") or ""
+                if it.get("state") == "new" and (
+                        it.get("kind") == "needs_decision"
+                        or iid.startswith("rescue-")
+                        or iid.startswith("stall-")):
+                    count += 1
+    except OSError:
+        pass
+    return count
+
+
 @app.get("/api/shadow/status")
 async def api_shadow_status():
     """The dot reads this: watching (green) / not (grey). Never 500s -- a
@@ -1193,7 +1235,8 @@ async def api_shadow_status():
     return {"watching": bool(sess and sess.alive),
             "session": sess.session_id if sess else None,
             "permission_mode": "plan",
-            "active_missions": shadow_runner.active_mission_count()}
+            "active_missions": shadow_runner.active_mission_count(),
+            "alerts": _shadow_alert_count()}
 
 
 @app.post("/api/shadow/chat")
@@ -1424,6 +1467,20 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # minutes-long provision -- background task, instant answer
             return shadow_runner.start_mission_async(
                 mid, _validated_say, provisioner=_spawner)
+        if action == "retry":
+            clone = _mission_engine.clone_for_retry(store, mid)
+
+            async def _respawner(mission):
+                manifest = mission.get("manifest") or (
+                    "You are a delegate session working for the founder "
+                    "via Shadow. Objective: %s. Work step by step; state "
+                    "DONE-CHECK lines when checks pass."
+                    % mission["objective"])
+                return await shadow_runner.spawn_delegate_session(
+                    _shadow_args, _shadow_workdir_for_delegates(),
+                    manifest, register_runtime)
+            return shadow_runner.start_mission_async(
+                clone["id"], _validated_say, provisioner=_respawner)
         if action == "confirm_check":
             return store.confirm_check(mid, int(body.get("index") or 0))
         if action == "resume":

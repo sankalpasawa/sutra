@@ -60,6 +60,13 @@ function loadNeedsYou(){
   fetch("/api/shadow/feed").then(r => r.ok ? r.json() : null).then(doc => {
     S._needsYouBusy = false;
     S.needsYou = doc ? (doc.items || []) : null;   /* null = feature dark */
+    if (doc && typeof shadowDotAlerts === "function"){
+      const alerts = (doc.items || []).filter(it => it.state === "new"
+        && (it.kind === "needs_decision"
+            || String(it.item_id || "").indexOf("rescue-") === 0
+            || String(it.item_id || "").indexOf("stall-") === 0)).length;
+      shadowDotAlerts(alerts);
+    }
     if (typeof scheduleRender === "function") scheduleRender();
   }).catch(() => { S._needsYouBusy = false; S.needsYou = null; });
 }

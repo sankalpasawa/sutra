@@ -235,5 +235,18 @@ function part3(){
   }
   console.log("ok 12 panel token on every POST");
 }
+
+/* gap-closure: the alert pill wins the dot face; clears when alerts drop */
+{
+  const ctx = fresh();
+  const dot = { className: "", textContent: "", setAttribute(){} };
+  ctx.applyDotState(dot, { watching: true, active_missions: 2, alerts: 3 });
+  assert(/shdot-alert/.test(dot.className), "alert class applied");
+  assert.strictEqual(dot.textContent, "3", "alert count wins the face");
+  ctx.applyDotState(dot, { watching: true, active_missions: 2, alerts: 0 });
+  assert(!/shdot-alert/.test(dot.className), "alert class cleared");
+  assert.strictEqual(dot.textContent, "2", "badge falls back to missions");
+  console.log("ok 13 alert pill");
+}
 console.log("test_shadow_overlay.js: all green");
 }
