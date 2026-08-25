@@ -204,6 +204,32 @@
   .ws-mdbody a{color:var(--acc)}
   .ws-mdbody hr{border:0;border-top:1px solid var(--line);margin:18px 0}
   .ws-wikilink{color:var(--acc)}
+  /* ── native editor (PLAN-25-EDITOR S11/S15) ────────────────────────────────
+     The forked SilverBullet editor core mounts HERE as a plain div — one
+     origin, panel tokens straight in, no bridge, no space style, no iframe.
+     Selectors pinned to CM6 + SB 2.10 line classes (same vocabulary the old
+     space-style theme used; kept in sync with the fork). */
+  .ws-editor{flex:1;min-height:0;overflow-y:auto}
+  .ws-editor .cm-editor{font-size:13.5px;line-height:1.65;height:100%;
+    background:var(--card);color:var(--ink)}
+  .ws-editor .cm-editor.cm-focused{outline:none}
+  .ws-editor .cm-content{caret-color:var(--ink);padding:4px 0 60px;
+    font-family:var(--sans)}
+  .ws-editor .cm-cursor{border-left-color:var(--ink)}
+  .ws-editor .cm-selectionBackground{background:var(--acc-bg) !important}
+  .ws-editor .cm-gutters{display:none}
+  .ws-editor .sb-line-h1,.ws-editor .sb-line-h2,.ws-editor .sb-line-h3{
+    font-family:var(--serif);font-weight:500}
+  .ws-editor .sb-line-h1{font-size:24px}
+  .ws-editor .sb-line-h2{font-size:19px}
+  .ws-editor .sb-line-h3{font-size:15px}
+  .ws-editor .sb-line-code,.ws-editor .sb-line-fenced-code{
+    font-family:var(--mono);font-size:12px;background:var(--inset)}
+  .ws-editor .sb-line-blockquote{border-left:2px solid var(--acc);
+    padding-left:10px;color:var(--muted)}
+  .ws-editor .sb-line-comment{color:var(--faint)}
+  .ws-editor a,.ws-editor .sb-wiki-link{color:var(--acc)}
+
 
   .ws-skel-wrap{padding-top:4px}
   .ws-skel{height:11px;border-radius:4px;background:var(--bubble);margin:13px 0}

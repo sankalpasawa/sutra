@@ -2,7 +2,12 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.224.6 (2026-08-25, HEAD)
+## v2.225.0 (2026-08-25, HEAD)
+
+Native editing: forked SB editor core vendored in-panel; iframes deleted;
+sidecar retired from the app path.
+
+## v2.224.6 (2026-08-25)
 
 Settings > Usage opens with the Account card: who is signed in, email, plan,
 subscription/billing, organization/role, tier, IDs, data age — local reads,

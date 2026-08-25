@@ -530,7 +530,10 @@ test("read state renders the panel view; edit state mounts the iframe (round 3)"
   assert(html.indexOf("data-wsframe") === -1, "no iframe in read state");
   sb.S.ws.editing = true;
   html = sb.__W.wsScreenHtml();
-  assert(html.indexOf("data-wsframe") !== -1, "edit state mounts the iframe");
+  /* PLAN-25-EDITOR S11/S14: edit mode renders the NATIVE editor container;
+     no iframe exists anywhere in the workspace surface anymore. */
+  assert(html.indexOf("data-wseditor") !== -1, "edit state mounts the native editor div");
+  assert(html.indexOf("<iframe") === -1, "no iframe in any workspace state");
 });
 
 test("the renderer never lets author bytes reach the DOM as markup", () => {
@@ -616,6 +619,25 @@ test("leaving the screen tears S.ws down to {lens, lastDocPath}", () => {
 /* ── async phase: stale search responses ────────────────────────────────── */
 
 async function asyncChecks(){
+  {
+    /* editing mounts the native editor through the wire hook (PLAN-25 S10) */
+    const calls = [];
+    const sb = onSandbox(x => {
+      x.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
+      x.S.ws.lastRead = { path: "holding/research/viewer.md", text: "body", editable: true, bytes: 4 };
+      x.S.ws.editing = true;
+      x.window.SutraEditor = { mount: (o) => { calls.push(o.path); return { destroy(){}, forceSave(){}, isDirty: () => false }; } };
+    });
+    const el = { querySelector: (q) => q === "[data-wseditor]" ? {} : null };
+    sb.__W.wireWorkspace(el);
+    await new Promise(r => setImmediate(r));
+    if (calls.length === 1 && calls[0] === "holding/research/viewer.md" && sb.S.ws.edHandle){
+      console.log("ok   - editing mounts the native editor through the wire hook (PLAN-25 S10)"); pass++;
+    } else {
+      console.log("FAIL - editing mounts the native editor through the wire hook\n       calls=" + JSON.stringify(calls)); fail++;
+    }
+  }
+
   const sb = onSandbox();
   const W = sb.__W;
   const resolvers = [];
@@ -646,6 +668,19 @@ test("35. openScreen dispatches the workspace lazy load (regression: line droppe
   const src = fs.readFileSync(path.join(__dirname, "static/js/07-loaders.js"), "utf8");
   assert(/id === "workspace" && typeof loadWorkspace === "function"\) loadWorkspace\(false\)/.test(src),
     "openScreen must call loadWorkspace(false) for id workspace (guarded like wireWorkspace)");
+});
+
+test("Done flushes the native editor and unmounts it (PLAN-25 S12/S14)", () => {
+  const calls = [];
+  const sb = onSandbox(x => {
+    x.S.ws.editing = true;
+    x.S.ws.edHandle = { destroy: () => calls.push("destroyed"), forceSave: () => calls.push("flushed") };
+  });
+  sb.__W.wsDone();
+  assert(JSON.stringify(calls) === '["flushed","destroyed"]',
+    "Done must save FIRST, then unmount: " + JSON.stringify(calls));
+  assert(sb.S.ws.edHandle === null && sb.S.ws.editing === false,
+    "edit state fully closed");
 });
 
 asyncChecks().catch(e => {

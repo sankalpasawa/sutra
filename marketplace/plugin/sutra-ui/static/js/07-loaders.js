@@ -289,17 +289,8 @@ function wire(){
   /* Workspace (flag-gated): its own wiring lives in 13-workspace.js; the
      guard keeps wire() intact if that file ever fails to load. */
   if (typeof wireWorkspace === "function") wireWorkspace(scBody);
-  const sbRetry = scBody.querySelector("[data-sbretry]");
-  if (sbRetry) sbRetry.onclick = ()=>loadFilesScreen(true);
-  /* The frame's URL is set as a PROPERTY, never rendered into HTML: the page
-     name came from the registry, and a value that reaches the DOM as markup is
-     one escaping bug away from being executable. A null from sbUrl (bad port)
-     leaves the frame blank rather than loading a guess. */
-  const sbFrame = scBody.querySelector("[data-sbframe]");
-  if (sbFrame && S.sb && S.sb.running){
-    const url = sbUrl(S.sb.port, S.sbOpen);
-    if (url) sbFrame.src = url;
-  }
+  /* sidecar iframe wiring removed — PLAN-25-EDITOR S15: Files folded into
+     the Workspace and editing is native; no [data-sbframe] exists to mount. */
   /* Knowledge -> Files. Validated a second time here: the button was rendered
      from state that could have changed under it, and the check is cheap. */
   scBody.querySelectorAll("[data-openfiles]").forEach(b=>b.onclick = ()=>{

@@ -2,6 +2,17 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.225.0 (2026-08-25)
+
+- **Editing is native.** SilverBullet's editor core — forked at
+  sankalpasawa/silverbullet (MIT, pinned 2.10.0, attribution kept) — now
+  mounts directly in the panel as a vendored, hash-pinned bundle: live
+  preview, real markdown behavior, our tokens, one origin. Saves flow
+  through /api/fs/write with base-bytes conflict detection; autosave
+  debounces and pauses on conflict. The SilverBullet iframes are GONE
+  (edit mode and the folded Files screen) and the sidecar is no longer
+  started by the panel. PLAN-25-EDITOR S1-S17.
+
 ## 2.224.8 — Shadow answers fast
 
 Shadow boots in its own clean workdir (persona-pure, no repo governance overhead — turns drop from 40s+); the card shows waking/thinking states and guards in-flight sends.

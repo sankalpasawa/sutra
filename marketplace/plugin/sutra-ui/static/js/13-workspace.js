@@ -375,7 +375,7 @@ async function wsOpenDoc(path, opts){
      the viewer itself is unaffected. */
   try {
     const r = await apiGet("/api/fs/read?path=" + encodeURIComponent(path));
-    if (S.ws.docPath === path) S.ws.lastRead = { path: path, text: r.text, editable: r.editable };
+    if (S.ws.docPath === path) S.ws.lastRead = { path: path, text: r.text, editable: r.editable, bytes: r.bytes };
   } catch (e) { if (S.ws.docPath === path) S.ws.lastRead = null; }
   render();
 }
@@ -431,6 +431,11 @@ function wsEdit(){
 }
 function wsDone(){
   if (!S.ws.editing) return;
+  /* flush the native editor's buffer BEFORE leaving edit mode, then tear the
+     mount down — Done means "my edits are on disk" (mock 07). */
+  const h = S.ws.edHandle;
+  if (h){ try { h.forceSave(); } catch (_e){} }
+  wsUnmountEditor();
   S.ws.editing = false; S.ws.unsaved = false;
   /* The read view renders from lastRead — refresh it so the edit just made
      in the iframe is what the reader sees (reviewer round 2). */
@@ -1118,6 +1123,68 @@ function wsReadView(){
   return '<div class="ws-read"><h1 class="ws-doctitle">' + esc(title) + "</h1>"
     + '<div class="ws-mdbody">' + wsMdHtml(text) + "</div></div>";
 }
+/* ── native editor lifecycle (PLAN-25-EDITOR S10-S14) ────────────────────────
+   The vendored bundle (static/vendor/sutra-editor.js, sha-pinned in
+   VENDOR-MANIFEST.md) loads LAZILY on first edit — boot stays light. The
+   handle lives on S.ws.edHandle; save goes through /api/fs/write with the
+   base bytes captured at read (the same 409 conflict lane the plain editor
+   uses); a 409 raises state 12 and autosave pauses (consult contract). */
+let _wsEditorScript = null;
+function wsLoadEditorScript(){
+  if (window.SutraEditor) return Promise.resolve();
+  if (_wsEditorScript) return _wsEditorScript;
+  _wsEditorScript = new Promise((resolve, reject) => {
+    const sc = document.createElement("script");
+    sc.src = "/static/vendor/sutra-editor.js";
+    sc.onload = () => resolve();
+    sc.onerror = () => { _wsEditorScript = null; reject(new Error("editor bundle failed to load")); };
+    document.head.appendChild(sc);
+  });
+  return _wsEditorScript;
+}
+async function wsMountEditor(el){
+  const w = S.ws;
+  if (!w.sel || w.sel.type !== "doc" || !w.lastRead || w.lastRead.path !== w.sel.path) return;
+  try { await wsLoadEditorScript(); }
+  catch (e){ w.notice = String(e.message || e); render(); return; }
+  if (!S.ws.editing || S.ws.edHandle) return;      /* state moved on while loading */
+  const path = w.sel.path;
+  const docs = wsAllDocs(w.tree || {});
+  const row = docs.find(d => d.path === path);
+  S.ws.edHandle = window.SutraEditor.mount({
+    parent: el,
+    path: path,
+    title: (row && row.title) || path.split("/").pop(),
+    text: w.lastRead.text || "",
+    readOnly: !wsEditAllowed(),
+    dark: (function(){
+      const r = document.documentElement;
+      const t = r && r.getAttribute ? r.getAttribute("data-theme") : null;
+      if (t) return t === "dark";
+      return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    })(),
+    save: async (text) => {
+      const r = await apiPost("/api/fs/write",
+        { path: path, text: text, base_bytes: S.ws.lastRead ? S.ws.lastRead.bytes : null });
+      S.ws.lastRead = { path: path, text: text, editable: true, bytes: r.bytes };
+      S.ws.changed = false;
+    },
+    onDirty: (d) => { S.ws.unsaved = d; wsRenderCtxOnly(); },
+    onSaveState: (st) => {
+      if (st === "failed"){ S.ws.changed = true; render(); }   /* state 12 lane */
+      else wsRenderCtxOnly();
+    },
+    navigate: (ref) => { const p = wsParseRoute(ref); if (p && p.doc) wsOpenDoc(p.doc); },
+    flash: (m) => { S.ws.notice = m; render(); },
+  });
+}
+function wsUnmountEditor(){
+  if (S.ws.edHandle){ try { S.ws.edHandle.destroy(); } catch (_e){} S.ws.edHandle = null; }
+}
+function wsRenderCtxOnly(){
+  const ctx = document.querySelector("#scBody .ws-ctx");
+  if (ctx) ctx.innerHTML = wsCtxHtml(wsCurrentState());
+}
 function wsDocColHtml(state){
   const w = S.ws;
   if (state === "10") return wsSkelHtml(8);
@@ -1142,11 +1209,11 @@ function wsDocColHtml(state){
       wsEditAllowed() ? [{ act:"fileit", label:WS_COPY.fileIt, gold:true }] : []);
   html += wsCrumbHtml(state);
   if (w.sel && w.sel.type === "doc"){
-    /* READ is the panel's own rendered view (mock 02/03); the SilverBullet
-       iframe mounts only while EDITING (mock 07) — reviewer round 2,
-       blocker 1: the editor chrome can never be the read state. */
+    /* READ is the panel's own rendered view (mock 02/03). EDITING mounts the
+       NATIVE editor — SilverBullet's forked editor core in a plain div
+       (PLAN-25-EDITOR S11); the iframe is gone (S14). */
     if (S.ws.editing)
-      html += '<iframe class="ws-frame" title="Document" data-wsframe></iframe>';
+      html += '<div class="ws-editor" data-wseditor></div>';
     else
       html += wsReadView();
   }
@@ -1230,11 +1297,15 @@ function wsRenderSideOnly(){
    which happens HERE as a property, never in markup, from sbUrl() only
    (ARCH.md S34: no new URL builders anywhere). */
 function wireWorkspace(scBody){
+  const edEl = scBody && scBody.querySelector && scBody.querySelector("[data-wseditor]");
+  if (edEl && S.ws.editing && !S.ws.edHandle) void wsMountEditor(edEl);
+  if (!S.ws.editing && S.ws.edHandle) wsUnmountEditor();
   if (!wsFlagOn()) return;
   wsEnsureRegistered();
   /* Teardown on exit (ARCH memory plan): keep only lens + lastDocPath. */
   if (S.screen !== "workspace"){
     if (S.ws.loaded){
+      wsUnmountEditor();               /* PLAN-25 S10: no orphaned CM view */
       const keep = { lens: S.ws.lens, lastDocPath: S.ws.lastDocPath };
       S.ws.loaded = false; S.ws.loading = false;
       S.ws.tree = null; S.ws.treeError = null;

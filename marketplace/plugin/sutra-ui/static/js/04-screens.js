@@ -228,37 +228,15 @@ SCREENS.editor = () => {
 };
 
 /* ── files ───────────────────────────────────────────────────────────────────
-   The Obsidian-style Files surface. The heavy lifting (tree, live-preview
-   editing, wikilinks, backlinks, search) is the embedded SilverBullet client
-   (MIT), skinned via a sutra-managed THEME.md and run by the backend as a
-   loopback sidecar (sb_sidecar.py). This screen renders three honest states:
-   starting, failed-with-reason (plus a path back to the plain Editor), and
-   running (iframe onto the sidecar's port — same-machine loopback only). */
+   FOLDED (S92) + NATIVE (PLAN-25-EDITOR S15, 2026-08-25): Files lives inside
+   the Workspace now, and editing is the vendored native editor — the
+   SilverBullet sidecar iframe is GONE. openScreen() redirects the "files" id;
+   this renderer survives one release (FLAG deletion rule) purely as the
+   honest signpost for any stale deep link that lands before the redirect. */
 SCREENS.files = () => {
-  const st = S.sb;
-  if (S.sbError) return `<div class="zero"><h4>Files unavailable</h4>
-    <p>${esc(S.sbError)}</p>
-    <p><button class="btn" type="button" data-sbretry>Retry</button>
-       <button class="btn" type="button" data-screen="editor">Open plain editor</button></p></div>`;
-  if (!st || S.sbBusy) return `<div class="zero"><h4>Starting Files…</h4>
-    <p>Launching the viewer for your workspace.</p></div>`;
-  if (!st.running) return `<div class="zero"><h4>Files engine not running</h4>
-    <p>${esc(st.error || "It stopped or never started.")}</p>
-    <p><button class="btn" type="button" data-sbretry>Start</button>
-       <button class="btn" type="button" data-screen="editor">Open plain editor</button></p></div>`;
-  const gate = st.readonly ? `<div class="note w"><b>Read-only.</b> Editing is
-    gated out of band, same as the plain editor. Restart with
-    without <code>SUTRA_UI_READ_ONLY=1</code> to enable saving.</div>` : "";
-  /* No src in the markup. The URL is built by sbUrl() (integer-checked port,
-     per-segment encoding) and assigned as a PROPERTY in wire(), so a page name
-     can never be interpolated into HTML, and a bad port leaves the frame empty
-     instead of pointing it somewhere unintended. */
-  const warn = st.inject_error ? `<div class="note w"><b>Partial setup.</b>
-    ${esc(st.inject_error)} — the viewer works; the folder tree or theme may be
-    missing.</div>` : "";
-  const chrome = (st.readonly ? 44 : 0) + (st.inject_error ? 44 : 0);
-  return `${gate}${warn}<iframe class="sbframe" title="Files" data-sbframe
-    style="width:100%;height:calc(100% - ${chrome}px);border:0;background:#fff"></iframe>`;
+  return `<div class="zero"><h4>Files lives in the Workspace now</h4>
+    <p>Browse, read and edit every document in one place.</p>
+    <p><button class="btn" type="button" data-screen="workspace">Open Workspace</button></p></div>`;
 };
 
 
