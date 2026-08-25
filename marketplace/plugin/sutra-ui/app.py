@@ -31,6 +31,9 @@ import connectors_api
 import org_api
 import providers
 import sb_sidecar
+from session_runtime import (SessionRuntime, _drain_to_newline,
+                             _tool_command, _tool_output, _tool_summary,
+                             register_runtime, unregister_runtime)
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -343,106 +346,6 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     return args
 
 
-def _tool_output(content, limit=4000):
-    """A tool_result's content, flattened to text for display.
-
-    The block is either a plain string or a list of typed parts. Only text is
-    forwarded; an image is NAMED rather than inlined, because a base64 payload
-    would be megabytes over a websocket that is rendering a progress view.
-
-    Truncation is EXPLICIT. A silent cut would let someone read half a file and
-    believe it was the whole one, which is worse than showing less.
-    """
-    if content is None:
-        return None
-    if isinstance(content, str):
-        text = content
-    elif isinstance(content, list):
-        parts = []
-        for c in content:
-            if isinstance(c, str):
-                parts.append(c)
-            elif isinstance(c, dict):
-                if c.get("type") == "text" and c.get("text"):
-                    parts.append(str(c["text"]))
-                elif c.get("type"):
-                    parts.append("[%s]" % c["type"])
-        text = "\n".join(parts)
-    else:
-        text = str(content)
-    text = text.strip()
-    if not text:
-        return None
-    if len(text) > limit:
-        return text[:limit] + ("\n… truncated, %d more characters"
-                               % (len(text) - limit))
-    return text
-
-
-def _tool_summary(inp, limit=120):
-    """One line describing what a tool was asked to do, or "".
-
-    The UI needs to say WHICH file was read or WHICH command ran -- a column of
-    identical "Bash" rows tells the operator nothing. The full input is not
-    forwarded: a Write's `content` is the whole file, and shipping it to the
-    browser on every call is both noise and an accidental data path.
-
-    Key order is deliberate: the most identifying field for the common tools
-    (command / file_path / pattern) first, then any short string field, then
-    nothing. Never raises -- a tool with an unexpected input shape must not take
-    the turn down.
-    """
-    if not isinstance(inp, dict):
-        return ""
-    # An Agent/Task input is {description, prompt, subagent_type}. The generic
-    # scan below returns on the FIRST hit -- `prompt` -- and in a fan-out every
-    # agent's prompt starts with the same preamble, so three parallel agents
-    # rendered as three identical rows. subagent_type is the only field that says
-    # WHICH agent this is, and it was dropped entirely.
-    if inp.get("subagent_type") or inp.get("agent_type"):
-        kind = str(inp.get("subagent_type") or inp.get("agent_type") or "agent").strip()
-        desc = inp.get("description")
-        if isinstance(desc, str) and desc.strip():
-            v = "%s: %s" % (kind, " ".join(desc.split()))
-            return v[:limit] + ("…" if len(v) > limit else "")
-        return kind[:limit]
-    for k in ("command", "file_path", "path", "pattern", "url", "query", "prompt",
-              "description", "notebook_path"):
-        v = inp.get(k)
-        if isinstance(v, str) and v.strip():
-            v = " ".join(v.split())
-            return v[:limit] + ("…" if len(v) > limit else "")
-    for v in inp.values():
-        if isinstance(v, str) and v.strip() and len(v) <= limit:
-            return " ".join(v.split())
-    return ""
-
-
-# A shell command is the one tool input the operator may legitimately want to run
-# again by hand, so it is the one forwarded in FULL rather than as the 120-char
-# display summary. Deliberately narrow: only tools that take a `command` and
-# actually execute a shell. Everything else keeps the summary and nothing more --
-# a Write's `content` is a whole file and has no business crossing this wire.
-_SHELL_TOOLS = {"bash", "bashoutput", "killshell"}
-# Long enough for any real one-liner or short heredoc; past this the paste would
-# be unreviewable in a terminal prompt anyway, so it is refused rather than cut
-# into something that looks complete but is not.
-_COMMAND_MAX = 4000
-
-
-def _tool_command(name, inp):
-    """The verbatim shell command a tool was asked to run, or "".
-
-    Never raises: an unexpected input shape must not take the turn down.
-    """
-    if not isinstance(inp, dict):
-        return ""
-    if (name or "").strip().lower() not in _SHELL_TOOLS:
-        return ""
-    cmd = inp.get("command")
-    if not isinstance(cmd, str) or not cmd.strip():
-        return ""
-    return cmd if len(cmd) <= _COMMAND_MAX else ""
 
 
 def _ensure_workdir(path=None):
@@ -1150,38 +1053,6 @@ async def sse(source: str):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
-async def _drain_to_newline(reader):
-    """Consume bytes up to and including the next newline. Returns False at EOF.
-
-    Naively calling readuntil(b"\n") after an over-limit readline does NOT
-    work: the offending bytes are still buffered, so readuntil raises
-    LimitOverrunError on the same data and consumes nothing. Swallowing that and
-    retrying is an infinite skip that silently drops every later frame -- which
-    is exactly what the first version of this fix did, caught by
-    test_stream_readline.py.
-
-    LimitOverrunError.consumed is the number of buffered bytes examined without
-    finding the separator; readexactly() on that count is what actually removes
-    them. Loop until a newline is reached, then the caller is back on a frame
-    boundary.
-    """
-    while True:
-        try:
-            await reader.readuntil(b"\n")
-            return True
-        except asyncio.LimitOverrunError as over:
-            try:
-                await reader.readexactly(over.consumed)
-            except asyncio.IncompleteReadError:
-                return False
-        except asyncio.IncompleteReadError:
-            return False
-        except ValueError:
-            # Defensive: some Python versions surface the limit breach as a
-            # bare ValueError from readuntil. Drop the whole buffer and stop.
-            return False
-
-
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     """Chat <-> background `claude -p`. One subprocess per message; --resume keeps
@@ -1314,29 +1185,9 @@ async def ws_chat(ws: WebSocket):
     #
     # One reader task owns the socket, handles `stop` inline (the only frame that
     # must act during a turn) and queues everything else for the main loop.
-    live = {"proc": None, "stopped": False}
+    rt = SessionRuntime()
     inbox = asyncio.Queue()
     reader_dead = asyncio.Event()
-
-    def _kill_live():
-        """Kill the process GROUP, not just the direct child.
-
-        `claude` spawns helpers; signalling only the parent leaves them holding
-        the stdout pipe, so the read loop never ends and the turn never actually
-        stops. The spawn below uses start_new_session=True, which makes the child
-        a group leader so this reaches its descendants too.
-        """
-        p = live["proc"]
-        if p is None or p.returncode is not None:
-            return False
-        try:
-            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            try:
-                p.kill()
-            except (ProcessLookupError, OSError):
-                return False
-        return True
 
     async def _reader():
         try:
@@ -1352,8 +1203,7 @@ async def ws_chat(ws: WebSocket):
                     # Set the flag BEFORE killing: the stdout loop can end between
                     # the signal and the assignment, and would then report the
                     # operator's own interrupt as a crash.
-                    live["stopped"] = True
-                    _kill_live()
+                    rt.stop()
                     continue
                 await inbox.put(payload)
         except (WebSocketDisconnect, RuntimeError):
@@ -1380,7 +1230,7 @@ async def ws_chat(ws: WebSocket):
                     break
                 gone.cancel()
                 payload = get_next.result()
-            live["stopped"] = False
+            rt.stopped = False
             msg = payload.get("message", "")
             seed = payload.get("resume")
             model = payload.get("model")
@@ -1416,12 +1266,12 @@ async def ws_chat(ws: WebSocket):
                                     session_id=None, model=chosen_model,
                                     opts=payload.get("opts"), stream_input=True)
             spawn_key = tuple(args)
-            proc = live.get("proc")
-            alive = proc is not None and proc.returncode is None
-            if alive and live.get("key") != spawn_key:
+            proc = rt.proc
+            alive = rt.alive
+            if alive and rt.key != spawn_key:
                 # a spawn-time option changed: end this process and carry the
                 # conversation over rather than dropping it
-                _kill_live()
+                rt.kill_group()
                 try:
                     await proc.wait()
                 except Exception:
@@ -1451,244 +1301,29 @@ async def ws_chat(ws: WebSocket):
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
                 try:
-                    proc = await asyncio.create_subprocess_exec(
-                        *args, cwd=workdir,
-                        # stdin is a PIPE now, not DEVNULL: it is the channel the
-                        # turns arrive on. (DEVNULL was there because a plain
-                        # inherited stdin made claude wait 3s for piped input on
-                        # every message -- with stream-json that wait IS the
-                        # feature.)
-                        stdin=asyncio.subprocess.PIPE,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        # 8 MiB, not asyncio's 64 KiB default. stream-json is ONE
-                        # JSON object per line, and a `user` frame carrying a
-                        # tool_result routinely exceeds 64 KiB -- any Read of a
-                        # sizeable file, any verbose Bash capture. At the default,
-                        # StreamReader.readline() raises
-                        #   ValueError: Separator is not found, and chunk exceed the limit
-                        # which propagated out of the read loop, past a handler that
-                        # catches only WebSocketDisconnect, and killed the socket and
-                        # the child mid-answer. Reproduced directly: a 200 KB line
-                        # raises at the default and reads clean at this limit.
-                        limit=8 * 1024 * 1024,
-                        env=dict(os.environ),  # no ANTHROPIC_API_KEY -> subscription auth
-                        # own process group, so an interrupt can signal the whole tree
-                        start_new_session=True,
-                    )
+                    proc = await rt.spawn(args, workdir, spawn_key)
                 except OSError as e:
                     # Real cause, verbatim -- a dead socket taught the operator nothing.
                     await ws.send_json({"type": "error", "detail":
                         "could not start %r in %s: %s" % (agent_bin, workdir, e)})
                     continue
-                live["proc"] = proc
-                live["key"] = spawn_key
-            proc = live["proc"]
+            proc = rt.proc
 
             # The turn itself: one stream-json frame on stdin.
             try:
-                proc.stdin.write((json.dumps({
-                    "type": "user",
-                    "message": {"role": "user",
-                                "content": [{"type": "text", "text": msg}]},
-                }) + "\n").encode("utf-8"))
-                await proc.stdin.drain()
+                await rt.send_user_frame(msg)
             except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
                 # the process died between the liveness check and the write
-                live["proc"] = None
+                rt.proc = None
                 await ws.send_json({"type": "error", "detail":
                     "the agent process closed before the message was sent (%s)" % e})
                 continue
 
-            got_text = got_result = False
-            result_error = None
-            # READ UNTIL THIS TURN'S `result`, not until EOF. The process is
-            # persistent now, so EOF only happens when it DIES -- an `async for`
-            # over stdout would simply never return.
-            eof = False
-            while True:
-                # readline() is INSIDE the guard. It was outside, so an
-                # over-limit line took the whole websocket down instead of
-                # costing one dropped frame. The limit above makes this rare;
-                # this makes it survivable, because "rare" is not "never" and
-                # the failure mode was a dead chat with no error shown.
-                try:
-                    line = await proc.stdout.readline()
-                except (ValueError, asyncio.LimitOverrunError) as exc:
-                    await ws.send_json({
-                        "type": "notice",
-                        "text": "one oversized frame from the agent was skipped. "
-                                "The answer continues.",
-                    })
-                    if not await _drain_to_newline(proc.stdout):
-                        eof = True
-                        break
-                    continue
-                if not line:
-                    eof = True
-                    break
-                try:
-                    ev = json.loads(line.decode("utf-8", "replace"))
-                except ValueError:
-                    continue
-                # capture session id from the first event that carries one
-                if session_id is None and ev.get("session_id"):
-                    session_id = ev["session_id"]
-                    await ws.send_json({"type": "session", "id": session_id})
-                t = ev.get("type")
-                if t == "stream_event":
-                    delta = (ev.get("event") or {}).get("delta") or {}
-                    if delta.get("type") == "text_delta" and delta.get("text"):
-                        got_text = True
-                        await ws.send_json({"type": "token", "text": delta["text"]})
-                elif t == "assistant":
-                    for blk in (ev.get("message") or {}).get("content", []):
-                        # fallback when partial deltas are absent: emit full text blocks
-                        if blk.get("type") == "text" and blk.get("text") and not got_text:
-                            await ws.send_json({"type": "token", "text": blk["text"]})
-                        elif blk.get("type") == "thinking":
-                            # Presence only. The thinking TEXT is deliberately not
-                            # forwarded: it is the model's scratchpad, it is long, and
-                            # rendering it as if it were the answer misrepresents both.
-                            await ws.send_json({"type": "thinking"})
-                        elif blk.get("type") == "tool_use":
-                            # tool_use blocks never arrive as text deltas, so this must
-                            # run regardless of got_text -- gating it behind the text
-                            # fallback meant a streaming turn reported zero tool calls.
-                            #
-                            # phase=start + id: the id is what `tool_result` correlates
-                            # against (verified against a real `claude -p` run: tool_use.id
-                            # == tool_result.tool_use_id). Without it the UI could show
-                            # that a tool was CALLED but never that it finished, so every
-                            # tool appeared to run forever.
-                            await ws.send_json({
-                                "type": "tool",
-                                "phase": "start",
-                                "id": blk.get("id"),
-                                "name": blk.get("name", ""),
-                                "summary": _tool_summary(blk.get("input")),
-                                # Shell commands only, in full -- what "open this in
-                                # the terminal" needs. "" for every other tool.
-                                "command": _tool_command(blk.get("name", ""),
-                                                         blk.get("input")),
-                                # Forwarded VERBATIM. Observed {"type":"direct"} for a
-                                # main-agent call; other shapes are not guessed at here,
-                                # and the client labels whatever actually arrives.
-                                "caller": (blk.get("caller") or {}).get("type"),
-                            })
-                elif t == "user":
-                    # tool_result lives on USER messages, not assistant ones. This branch
-                    # did not exist, so every tool result was dropped and completion was
-                    # unknowable by construction.
-                    for blk in (ev.get("message") or {}).get("content", []):
-                        if isinstance(blk, dict) and blk.get("type") == "tool_result":
-                            _out = _tool_output(blk.get("content"))
-                            # A BACKGROUND agent's tool_result is a LAUNCH RECEIPT,
-                            # not a completion: it arrives immediately, carries the
-                            # Agent's tool_use_id, and its content begins "Async
-                            # agent launched successfully". Emitting phase:end here
-                            # marked the subagent finished the instant it started.
-                            # Its REAL completion comes later as a system/
-                            # task_notification with the same tool_use_id (handled
-                            # in the system branch). Skip the receipt; the tool
-                            # stays running until that notification lands. Measured
-                            # against claude v2.1.212, stream-json, run_in_background.
-                            if _out.strip().startswith("Async agent launched"):
-                                continue
-                            await ws.send_json({
-                                "type": "tool",
-                                "phase": "end",
-                                "id": blk.get("tool_use_id"),
-                                "ok": not blk.get("is_error"),
-                                # WHAT THE TOOL ACTUALLY RETURNED. This was dropped:
-                                # the frame carried {id, ok} and the whole content
-                                # array was discarded server-side, so an operator
-                                # could see that Read ran and never what it read,
-                                # and a failing tool showed a red dot with no reason
-                                # attached -- the one thing you need when a turn
-                                # goes wrong.
-                                "output": _out,
-                            })
-                elif t == "system":
-                    # THE FOURTH TYPE THE PARSER NEVER HANDLED. The dispatch knew
-                    # stream_event / assistant / user / result and silently
-                    # `continue`d past everything else, so two useful things were
-                    # invisible:
-                    #
-                    #   init      what the session actually resolved -- model,
-                    #             tool count, mcp servers, plugins. The panel
-                    #             showed the model it REQUESTED, never the one in
-                    #             force, and those differ whenever a fallback or
-                    #             a settings default applies.
-                    #   api_retry a rate-limit backoff. Claude waits and retries;
-                    #             with no frame for it the pane sat silent and
-                    #             the turn read as HUNG. "Waiting, retrying" and
-                    #             "wedged" look identical when nothing is sent.
-                    sub = ev.get("subtype")
-                    if sub == "init":
-                        await ws.send_json({
-                            "type": "sysinit",
-                            "model": ev.get("model"),
-                            "tools": len(ev.get("tools") or []),
-                            "mcp_servers": [
-                                {"name": m.get("name"), "status": m.get("status")}
-                                for m in (ev.get("mcp_servers") or [])
-                                if isinstance(m, dict)],
-                            "slash_commands": len(ev.get("slash_commands") or []),
-                            "permission_mode": ev.get("permissionMode"),
-                            "cwd": ev.get("cwd"),
-                        })
-                    elif sub == "api_retry":
-                        await ws.send_json({
-                            "type": "retrying",
-                            "detail": str(ev.get("message") or ev.get("error")
-                                          or "the API asked us to retry")[:300],
-                            "attempt": ev.get("attempt"),
-                        })
-                    elif sub == "task_notification":
-                        # THE REAL completion of a background agent. Its receipt
-                        # tool_result was skipped above, so the UI shows the agent
-                        # running until THIS frame -- which carries the same
-                        # tool_use_id the UI opened the tool with, plus the summary
-                        # and usage the receipt never had. task_started/task_progress
-                        # fire while it runs and are intentionally not forwarded (the
-                        # tool row already reads "running"); only the terminal
-                        # notification closes it. Measured shape: {tool_use_id,
-                        # status, summary, usage{...}}.
-                        status = ev.get("status") or "completed"
-                        tuid = ev.get("tool_use_id")
-                        if tuid and status in ("completed", "failed", "cancelled"):
-                            await ws.send_json({
-                                "type": "tool",
-                                "phase": "end",
-                                "id": tuid,
-                                "ok": status == "completed",
-                                "output": str(ev.get("summary") or "")[:4000],
-                            })
-                elif t == "result":
-                    got_result = True
-                    # A `result` event is NOT proof of success: a failed run (stale
-                    # --resume, permission abort, API error) emits one with
-                    # is_error/subtype set and THEN exits non-zero. Sending "done"
-                    # here painted a failed turn as answered-with-empty-text, and the
-                    # real error arrived a frame later -- where the client attributed
-                    # it to whatever turn came next. Hold it and report once, below.
-                    if ev.get("is_error") or (ev.get("subtype") or "success") != "success":
-                        result_error = str(ev.get("result") or ev.get("subtype")
-                                           or "claude reported an error")[:600]
-                    else:
-                        # Carry the REAL measurements the result frame already has, so
-                        # the UI states duration and cost instead of estimating them.
-                        await ws.send_json({
-                            "type": "done",
-                            "session": session_id,
-                            "duration_ms": ev.get("duration_ms"),
-                            "num_turns": ev.get("num_turns"),
-                            "cost_usd": ev.get("total_cost_usd"),
-                        })
-                    # `result` closes THIS TURN. The process stays up for the
-                    # next one -- that is the whole point of the change.
-                    break
+            (session_id, got_text, got_result,
+             result_error, eof) = await rt.demux_turn(ws.send_json, session_id)
+            # S23: now that the session id is known, make this runtime
+            # discoverable (idempotent; same id + same rt every turn).
+            register_runtime(session_id, rt)
 
             # Do NOT read stderr to EOF or wait() here: both block forever on a
             # process that is meant to outlive the turn. Only a dead process is
@@ -1705,10 +1340,9 @@ async def ws_chat(ws: WebSocket):
                     rc = await asyncio.wait_for(proc.wait(), 5)
                 except (asyncio.TimeoutError, Exception):
                     rc = -1
-                live["proc"] = None
-                live["key"] = None
+                rt.clear()
 
-            if live["stopped"]:
+            if rt.stopped:
                 # SIGTERM makes rc non-zero, which the branch below would report as
                 # "claude exited -15" -- i.e. blaming the tool for the operator's own
                 # interrupt. A stop is a normal outcome and gets its own frame.
@@ -1720,9 +1354,8 @@ async def ws_chat(ws: WebSocket):
                 # next message spawns a fresh one -- and because session_id is
                 # kept, that respawn carries --resume and the conversation
                 # continues where it was cut.
-                live["stopped"] = False
-                live["proc"] = None
-                live["key"] = None
+                rt.stopped = False
+                rt.clear()
                 await ws.send_json({"type": "stopped", "session": session_id})
                 continue
 
@@ -1789,7 +1422,8 @@ async def ws_chat(ws: WebSocket):
         # Killing any still-running child too -- a disconnected browser must not
         # leave a `claude` process running against the operator's plan.
         reader_task.cancel()
-        _kill_live()
+        rt.kill_group()
+        unregister_runtime(session_id, rt)
 
 
 @app.websocket("/ws/term")

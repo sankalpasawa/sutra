@@ -467,6 +467,23 @@ def provider_bin(pid):
     return p["bin_path"] if p else None
 
 
+# --------------------------------------------------------------- shadow ----
+# Shadow (the chief-of-staff companion) ships dark: the flag defaults to OFF
+# and this accessor is the ONLY sanctioned read path for it. Nothing Shadow-
+# related may import, spawn, write, or render unless shadow_enabled() is True
+# at the call site (lazy-load guard). Direct reads of the "shadow.enabled"
+# settings key outside this function are a review failure (PLAN-100 S8).
+
+def shadow_enabled(settings=None):
+    """True only when settings.json carries "shadow.enabled": true (bool).
+
+    Absent file, absent key, or any non-boolean-true value means OFF. This
+    fails closed by construction: _raw_settings() never raises.
+    """
+    s = settings if settings is not None else _raw_settings()
+    return s.get("shadow.enabled") is True
+
+
 # ------------------------------------------------------------ settings io --
 
 def _raw_settings():
