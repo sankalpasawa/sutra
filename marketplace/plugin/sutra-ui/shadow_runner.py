@@ -20,6 +20,8 @@ RUNNING = {}
 _BOUNDARIES = {}
 #: runtimes already carrying our observer (identity-keyed)
 _OBSERVED = set()
+#: session ids whose runtime WE spawned (delegates) -- ours to clean up
+DELEGATES = {}
 #: session_id -> rolling window of STREAMED text (what the app actually saw;
 #: transcript files lag or, for fakes, never exist -- the stream is the truth)
 _RECENT_TEXT = {}
@@ -91,7 +93,14 @@ def make_bindings(validated_say):
                           dedupe_key="%s:t%d:runner"
                           % (mission["id"], mission["turns_used"]))
             return True
-        except Exception:
+        except Exception as exc:
+            # the reason must survive (first flight: "say refused", cause lost)
+            try:
+                shadow_ledger.append("actions", {
+                    "mission_id": mission["id"], "kind": "say",
+                    "summary": "say REFUSED: %s" % str(exc)[:220]})
+            except Exception:
+                pass
             return False
 
     async def waiter(mission):
@@ -146,6 +155,10 @@ def _launch(mid, validated_say, verifier):
         finally:
             RUNNING.pop(mid, None)
         if m and m["state"] in mission_engine.TERMINAL:
+            drt = DELEGATES.pop(m.get("target_session"), None)
+            if drt is not None:
+                drt.kill_group()   # a terminal mission's delegate dies with it
+                drt.clear()
             mission_engine.emit_mission_feed(
                 m, "info" if m["state"] == "done" else "needs_decision",
                 "mission %s" % m["state"])
@@ -231,6 +244,7 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
         raise RuntimeError("delegate session failed to boot: %s" % (err,))
     register(sid, rt)
     attach_observer(sid, rt)
+    DELEGATES[sid] = rt
 
     # THE PUMP (found by the first real flight): panes have a websocket loop
     # consuming their TurnQueue; a headless delegate has nobody -- says sat
@@ -262,3 +276,34 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
         "mission_id": None, "kind": "spawn",
         "summary": "delegate session %s spawned (plan mode)" % sid})
     return sid
+
+
+def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
+    """Second-flight fix: provisioning a delegate takes minutes; holding the
+    HTTP request open let client timeouts CANCEL it mid-spawn. Admission and
+    provisioning now run as an app task; the endpoint answers immediately and
+    the mission file is the progress surface."""
+    store = mission_engine.MissionStore()
+
+    async def go():
+        try:
+            m = store.load(mid)
+            if provisioner and m and m.get("target_mode") == "new" \
+                    and not m.get("target_session"):
+                eng = mission_engine.MissionEngine(store, None, None, None)
+                await eng.provision_target(mid, provisioner)
+            start_mission(mid, validated_say, verifier)
+        except Exception as exc:
+            try:
+                mm = store.load(mid)
+                if mm and mm["state"] not in mission_engine.TERMINAL:
+                    store.transition(mid, "failed",
+                                     "provision/admit failed: %s"
+                                     % str(exc)[:200])
+            except Exception:
+                pass
+
+    asyncio.get_event_loop().create_task(go())
+    return {"accepted": True, "mission_id": mid,
+            "note": "provisioning + admission in background; poll the "
+                    "missions list"}

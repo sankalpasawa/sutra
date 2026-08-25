@@ -180,7 +180,18 @@ class TestMountedEngine(unittest.TestCase):
         # 2. founder Start = confirm + admit; the RUNNER drives the loop
         started = self._post("/api/shadow/missions/%s/act" % m2["id"],
                              {"action": "start_now"})
-        self.assertEqual(started["state"], "running")
+        # async contract (second-flight fix): instant accept, poll for running
+        self.assertTrue(started.get("accepted"))
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            missions = self._get("/api/shadow/missions")["missions"]
+            mm = next(x for x in missions if x["id"] == m2["id"])
+            if mm["state"] in ("running", "done", "failed", "stopped"):
+                break
+            time.sleep(0.5)
+        # the loop can outrun the poll (fake finishes in one turn): admitted
+        # is proven by reaching running OR a terminal state past it
+        self.assertIn(mm["state"], ("running", "done"))
         # 3. the loop reaches done (fake replies contain DONE-MARKER)
         deadline = time.time() + 60
         final = None
