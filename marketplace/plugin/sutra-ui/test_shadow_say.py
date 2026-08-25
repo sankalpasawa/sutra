@@ -321,6 +321,12 @@ class TestSayAccepted(unittest.TestCase):
             # a mission id that does not exist is refused
             code_, _ = post({"message": "x", "mission_id": "m-nope"})
             self.assertEqual(code_, 404)
+            # an UNBOUND running mission is refused: no skeleton keys
+            loose = store.create("unbound", "fix")
+            store.transition(loose["id"], "brief_confirm")
+            store.transition(loose["id"], "running")
+            code_, _ = post({"message": "x", "mission_id": loose["id"]})
+            self.assertEqual(code_, 409)
             # accept + scrub: the queued turn lands at the boundary, tagged
             code_, body = post({"message": "run check sk-abcdefghijklmnop now",
                                 "mission_id": m42,

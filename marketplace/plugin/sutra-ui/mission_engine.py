@@ -10,6 +10,7 @@ runtime's _turn_boundary subscriber.
 Flag-gated at every entry: engine methods refuse when shadow_enabled() is
 False -- the flag going dark mid-mission stops the loop at the next check.
 """
+import fcntl
 import json
 import os
 import time
@@ -100,18 +101,27 @@ class MissionStore:
         # inside one asyncio process, but a second process (or a future
         # thread) writing the same mission would silently lose updates.
         # A writer holding an older seq than the disk refuses instead.
-        on_disk = self.load(mission["id"]) if mission.get("seq") else None
-        if on_disk and on_disk.get("seq", 0) > mission.get("seq", 0):
-            raise ValueError("stale write on %s (disk seq %s > held %s)"
-                             % (mission["id"], on_disk["seq"],
-                                mission["seq"]))
-        mission["seq"] = int(mission.get("seq", 0)) + 1
         path = os.path.join(_home(), mission["id"] + ".json")
-        tmp = path + ".tmp"
-        mission["updated_at"] = _now()
-        with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump(mission, handle, indent=1)
-        os.replace(tmp, path)
+        # ONE lock across load-check-increment-write (codex re-review P2):
+        # the check and the replace must be a single critical section or two
+        # writers can both pass the check and the last replace silently wins.
+        with open(path + ".lock", "w") as lk:
+            fcntl.flock(lk.fileno(), fcntl.LOCK_EX)
+            try:
+                on_disk = self.load(mission["id"]) \
+                    if mission.get("seq") else None
+                if on_disk and on_disk.get("seq", 0) > mission.get("seq", 0):
+                    raise ValueError(
+                        "stale write on %s (disk seq %s > held %s)"
+                        % (mission["id"], on_disk["seq"], mission["seq"]))
+                mission["seq"] = int(mission.get("seq", 0)) + 1
+                tmp = path + ".tmp"
+                mission["updated_at"] = _now()
+                with open(tmp, "w", encoding="utf-8") as handle:
+                    json.dump(mission, handle, indent=1)
+                os.replace(tmp, path)
+            finally:
+                fcntl.flock(lk.fileno(), fcntl.LOCK_UN)
 
     def load(self, mid):
         try:

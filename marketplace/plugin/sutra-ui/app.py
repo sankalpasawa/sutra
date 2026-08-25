@@ -1320,9 +1320,12 @@ async def api_session_say(sid: str, request: Request):
     if m["state"] != "running":
         raise HTTPException(409, "mission %s is %s, not running"
                             % (mission, m["state"]))
-    if m.get("target_session") and m["target_session"] != sid:
-        raise HTTPException(409, "mission %s targets %s, not %s"
-                            % (mission, m["target_session"], sid))
+    if m.get("target_session") != sid:
+        # STRICT binding (codex re-review P1): an unbound running mission
+        # must not become a skeleton key over every pane -- provision or
+        # amend the target first, then speak.
+        raise HTTPException(409, "mission %s is not bound to session %s"
+                            % (mission, sid))
     if "never_say" in m.get("invariants", ()):
         raise HTTPException(403, "watch missions never speak")
     clean, redactions = shadow_egress.scrub(msg)
