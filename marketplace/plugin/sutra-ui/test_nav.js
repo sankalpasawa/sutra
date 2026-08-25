@@ -436,6 +436,85 @@ test("only SCOPED plane-collapse keys are adopted from stored layout", () => {
 });
 
 
+/* §2.226.0 — Focus + Org fold their plane into a rail accordion
+   (founder 2026-08-25, design canvas 68c685b1; codex consult P1/P2 folds). */
+test("inline: Focus and Org open with NO second plane; Settings still has one", () => {
+  T.S.ui = T.loadLayout();
+  T.goDest("focus"); T.renderRail();
+  assert(els["app"]._cls.has("noplane"), "Focus must be planeless");
+  assert.strictEqual(els["planeBody"].innerHTML, "", "hidden plane holds no rows");
+  T.goDest("org"); T.renderRail();
+  assert(els["app"]._cls.has("noplane"), "Org must be planeless");
+  T.goDest("settings"); T.renderRail();
+  assert(!els["app"]._cls.has("noplane"), "Settings keeps its plane");
+  assert(els["planeBody"].innerHTML.indexOf('data-screen="terminal"') !== -1, "…and its rows");
+  T.goDest("now");
+});
+test("inline: the terminal clamp treats Focus/Org as no-plane (codex P1)", () => {
+  T.S.ui = T.loadLayout();
+  els["app"]._cls.add("threecol");
+  sandbox.innerWidth = 1400;
+  T.goDest("org"); T.renderRail();
+  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 829, "org: 240px handed back");
+  T.goDest("settings"); T.renderRail();
+  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 589, "settings: plane reserved");
+  T.goDest("now");
+});
+test("inline: entering Org renders its rows inside the rail with the plane's markup", () => {
+  T.S.ui = T.loadLayout();
+  T.goDest("org");
+  T.renderRail();
+  const out = els["railnav"].innerHTML;
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 6, "still six destinations");
+  assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
+  assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
+  assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");
+  assert(/data-dest="org"[^>]*aria-current="false"/.test(out), "open parent yields the highlight");
+  assert(/data-screen="departments"[^>]*aria-current="true"/.test(out), "the landed child carries it");
+  assert(/data-screen="charters"/.test(out) && /data-screen="reorg"/.test(out), "rows come from DEST_PLANES");
+  assert(/data-dest="focus"[^>]*data-open="false"/.test(out), "only one accordion open");
+  assert(!/id="acc-focus"/.test(out), "closed accordion renders no list");
+  T.goDest("now");
+});
+test("inline: Focus rows keep the soon marker; child rows never carry data-dest", () => {
+  T.S.ui = T.loadLayout();
+  T.goDest("focus");
+  T.renderRail();
+  const sub = (els["railnav"].innerHTML.split('id="acc-focus"')[1] || "").split("</ul>")[0];
+  assert(sub.length > 0, "focus accordion rendered");
+  assert(/class="dis">soon</.test(sub), "Daily brief keeps its honest soon");
+  assert(!/data-dest=/.test(sub), "child rows are screen rows only (codex P1)");
+  T.goDest("now");
+});
+test("inline: collapsed accordion hands the highlight back to the parent", () => {
+  T.S.ui = T.loadLayout();
+  T.goDest("focus");
+  T.S.ui.railOpen = null;          /* what the rail click toggle does */
+  T.renderRail();
+  const out = els["railnav"].innerHTML;
+  assert(/data-dest="focus"[^>]*aria-current="true"/.test(out), "parent current when folded");
+  assert(!/id="acc-focus"/.test(out));
+  assert.strictEqual(T.S.screen, "shadow", "the screen stayed open");
+  T.goDest("now");
+});
+test("inline: a remembered pick still routes; leaving closes the accordion (codex P2)", () => {
+  T.S.ui = T.loadLayout();
+  T.S.ui.destSel.org = "charters";
+  T.goDest("org");
+  assert.strictEqual(T.S.screen, "charters", "destSel still outranks the default");
+  assert.strictEqual(T.S.ui.railOpen, "org");
+  T.goDest("settings");
+  assert.strictEqual(T.S.ui.railOpen, null, "no stale open section");
+  T.goDest("now");
+});
+test("inline: stored railOpen is adopted only for the current inline dest", () => {
+  sandbox.localStorage.setItem("sutra.panel.layout", JSON.stringify({ dest:"settings", railOpen:"org" }));
+  assert.strictEqual(T.loadLayout().railOpen, null, "stale slot dropped");
+  sandbox.localStorage.setItem("sutra.panel.layout", JSON.stringify({ dest:"org", railOpen:"org" }));
+  assert.strictEqual(T.loadLayout().railOpen, "org", "matching slot kept");
+  sandbox.localStorage.removeItem("sutra.panel.layout");
+});
+
 console.log("-".repeat(60));
 console.log(`v3.3 shell: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -133,6 +133,11 @@ const DEST_PLANES = {
              {group:"System",      rows:[{screen:"health"},{screen:"evals"},{screen:"usage"},{screen:"history"}]},
              {group:"Preferences", rows:[{screen:"settings"}]}]
 };
+/* 2.226.0 (founder 2026-08-25, design canvas 68c685b1): these destinations
+   render their DEST_PLANES rows INLINE in the rail as an accordion under the
+   destination button, and the 240px second plane does not open for them.
+   DEST_PLANES stays the single source — the accordion consumes planeRows(). */
+const DEST_INLINE = new Set(["focus","org"]);
 /* Where a destination lands before the operator has picked anything. */
 const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
                               org:"departments", team:"teamsutra", settings:"settings" };
@@ -140,7 +145,7 @@ function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
                 navCollapsed:false, planeSections:{},
-                dest:"now", destSel:{},
+                dest:"now", destSel:{}, railOpen:null,
                 balanceTab:"today", sessCollapsed:{} };
   if (raw && typeof raw === "object"){
     if (raw.paneCollapsed && typeof raw.paneCollapsed === "object") out.paneCollapsed = raw.paneCollapsed;
@@ -177,6 +182,11 @@ function loadLayout(){
       for (const d of DESTS)
         if (typeof raw.destSel[d] === "string") out.destSel[d] = raw.destSel[d];
     }
+    /* The open accordion (2.226.0). Only the CURRENT inline destination can be
+       open (codex P2: one slot, no hidden state carried across destinations);
+       anything else stored is stale and reads as closed. */
+    if (typeof raw.railOpen === "string" && DEST_INLINE.has(raw.railOpen) && raw.railOpen === out.dest)
+      out.railOpen = raw.railOpen;
     if (["today","week","month"].includes(raw.balanceTab)) out.balanceTab = raw.balanceTab;
     if (typeof raw.browseW === "number" && raw.browseW > 120) out.browseW = raw.browseW;
   }

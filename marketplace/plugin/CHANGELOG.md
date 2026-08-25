@@ -1,6 +1,16 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-24
+**status**: active · **updated**: 2026-08-25
+
+## 2.226.0 (2026-08-25)
+
+- **Focus and Org fold into the rail.** Their rows now open as an inline
+  accordion under the destination button; the 240px second plane no longer
+  appears for them, so the screen takes its width. Click the open parent to
+  fold it; the screen stays. Rows still come from `DEST_PLANES`; a remembered
+  pick still lands. Design: founder canvas 68c685b1; codex P1/P2 folded
+  (child rows bypass the rail capture handler, one `destNoPlane` predicate,
+  `railOpen` never survives a destination change). 7 new nav tests.
 
 ## 2.225.1 (2026-08-25)
 

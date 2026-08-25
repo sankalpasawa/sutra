@@ -168,6 +168,14 @@
   .nav button{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;width:100%;
     background:none;border:0;color:var(--muted);font:400 12.5px/1.4 var(--sans);cursor:pointer;text-align:left}
   .nav button svg{width:14px;height:14px;flex:none;opacity:.8}
+  /* 2.226.0 inline accordion (Focus, Org): chevron on the parent, children
+     nested under a hairline. The 240px plane does not open for these. */
+  .nav button .chev{margin-left:auto;width:10px;height:10px;opacity:.6;transition:transform .12s ease}
+  .nav button[data-open="true"]{color:var(--ink);font-weight:500}
+  .nav button[data-open="true"] .chev{transform:rotate(90deg)}
+  .nav .sub{margin:2px 0 4px 15px;padding:0 0 0 6px;border-left:1px solid var(--line-soft)}
+  .nav .sub button{font-size:12px;padding:5px 8px 5px 10px}
+  @media (prefers-reduced-motion:reduce){.nav button .chev{transition:none}}
   .nav button .ct{margin-left:auto;font:500 10px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
   .nav button:hover:not(:disabled){background:var(--acc-bg);color:var(--ink)}
   .nav button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}

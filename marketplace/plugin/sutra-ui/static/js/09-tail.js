@@ -547,8 +547,19 @@ railToggle.onclick = ()=>{
 /* v3.3 (PLAN-25 S9): a rail click picks a DESTINATION. The plane's own rows
    carry data-screen and ride the existing screen delegation unchanged. */
 document.querySelector(".rail").addEventListener("click", e=>{
+  /* 2.226.0 (codex P1): accordion child rows sit INSIDE the rail and carry
+     data-screen; they must reach the #app screen delegation untouched. */
+  if (e.target.closest("[data-screen]")) return;
   const destBtn = e.target.closest("[data-dest]");
-  if (destBtn) goDest(destBtn.dataset.dest);
+  if (!destBtn) return;
+  const d = destBtn.dataset.dest;
+  /* 2.226.0: a second click on the CURRENT inline destination toggles its
+     accordion — the screen on the right stays put; only the rail folds. */
+  if (typeof destInline === "function" && destInline(d) && S.ui.dest === d){
+    S.ui.railOpen = S.ui.railOpen === d ? null : d;
+    saveLayout(); render(); return;
+  }
+  goDest(d);
 }, true);
 
 /* The tenant switcher popover used to be wired here. 5781a2f ("remove tenancy")

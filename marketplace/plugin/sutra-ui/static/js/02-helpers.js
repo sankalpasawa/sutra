@@ -750,6 +750,13 @@ const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", org:"dept",
 function destFullBleed(d){
   return d !== "chats" && !(DEST_PLANES[d] || []).length;
 }
+/* An INLINE destination keeps its rows (so destSel still means something) but
+   shows them in the rail accordion instead of a second plane (2.226.0). */
+function destInline(d){ return DEST_INLINE.has(d); }
+/* The ONE predicate for "no 240px plane column" (codex P1, 2026-08-25):
+   full-bleed (no rows) or inline (rows live in the rail). renderPlane and the
+   terminal clamp key off this; destSel routing keys off destFullBleed alone. */
+function destNoPlane(d){ return destFullBleed(d) || destInline(d); }
 
 function goDest(d){
   if (!DESTS.includes(d)) return;
@@ -763,6 +770,9 @@ function goDest(d){
        Focus/Team Sutra from the rail used to render Balance/Teamsutra blank,
        because the fetch calls lived only in the click delegation. */
     const sel = destFullBleed(d) ? null : S.ui.destSel[d];
+    /* Entering an inline destination opens its accordion; entering any other
+       destination closes it (codex P2: one slot, never a stale open section). */
+    S.ui.railOpen = destInline(d) ? d : null;
     /* S92 cutover: entering Org lands on the Workspace when it is on; the
        static default (departments) remains the rollback path, and a stored
        destSel still wins — the operator's last pick outranks the default. */
@@ -812,7 +822,7 @@ function renderPlane(){
   const dest = DESTS.includes(S.ui.dest) ? S.ui.dest : "now";
   /* Full-bleed = empty plane spec (Now by design; Help since 2026-08-24 —
      a one-row plane is a click that buys nothing). One predicate with goDest. */
-  const off = destFullBleed(dest);
+  const off = destNoPlane(dest);
   const wasOff = app.classList.contains("noplane");
   app.classList.toggle("noplane", off);
   plane.hidden = off;
@@ -829,6 +839,9 @@ function renderPlane(){
   if (!body) return;
   body.hidden = dest === "chats";
   if (dest === "chats"){ body.innerHTML = ""; return; }
+  /* Inline destinations own their rows in the rail; a hidden plane must not
+     hold a second set of data-screen / aria-current controls (deepseek P2). */
+  if (off){ body.innerHTML = ""; return; }
   body.innerHTML = planeRows(dest).map(g => {
     /* A group with no label is not a group -- it is the ungrouped remainder, and
        giving it a collapse control would offer to hide rows under a header the
@@ -911,11 +924,33 @@ function workspaceLabel(s, sessions){
 
 function renderRail(){
   const nav = document.getElementById("railnav");
-  if (nav) nav.innerHTML = DESTS.map(d=>`
-    <li><button type="button" data-dest="${d}" aria-current="${S.ui.dest===d}">
+  if (nav) nav.innerHTML = DESTS.map(d=>{
+    const inline = destInline(d);
+    const open = inline && S.ui.railOpen === d;
+    /* While the accordion is open the CHILD row carries the highlight and the
+       parent only reads as the open section (data-open); collapsed, the parent
+       takes the highlight back so the rail still says where you are. */
+    const current = S.ui.dest === d && !open;
+    const chev = inline ? `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>` : "";
+    /* Child rows carry data-screen ONLY (never data-dest) so the #app screen
+       delegation opens them and the rail capture handler lets them through. */
+    const sub = !open ? "" : `<ul class="nav sub" id="acc-${d}">${planeRows(d).flatMap(g => g.rows).map(it=>`
+      <li><button type="button" ${it.screen?`data-screen="${it.screen}"`:""} ${it.disabled?"disabled":""}
+          aria-current="${!S.ui.browseClosed && S.screen===it.screen}"
+          ${it.soon?'title="Coming soon — part of Focus"':""}>
+        <span class="lab">${esc(it.label)}</span>
+        ${it.soon?`<span class="dis">soon</span>`
+          : it.disabled && it.dis ? `<span class="dis">${esc(it.dis)}</span>`
+          : (it.c!==undefined?`<span class="ct ${it.warn?"w":""}">${it.c}</span>`:"")}
+      </button></li>`).join("")}</ul>`;
+    return `
+    <li><button type="button" data-dest="${d}" aria-current="${current}"
+        ${inline?`data-open="${open}" aria-expanded="${open}" aria-controls="acc-${d}"`:""}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${ICON[DEST_ICON[d]]}</svg>
-      ${DEST_LABEL[d]}
-    </button></li>`).join("");
+      ${DEST_LABEL[d]}${chev}
+    </button>${sub}</li>`;
+  }).join("");
   renderPlane();
   if (typeof paintTelemetry === "function") paintTelemetry();
 
