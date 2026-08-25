@@ -16,6 +16,7 @@ import time
 import uuid
 
 import providers
+import shadow_egress
 import shadow_ledger
 
 STATES = ("draft", "brief_confirm", "running", "queued", "paused",
@@ -78,6 +79,9 @@ class MissionStore:
             "version": 1,
             "invariants": list(TEMPLATES[template]["invariants"]),
             "created_at": _now(),
+            # monotonic tiebreak: created_at is second-granularity and the
+            # store lists by filename (random hex) -- FIFO needs a real clock
+            "created_ns": __import__("time").time_ns(),
             "updated_at": _now(),
         }
         self.save(mission)
@@ -216,6 +220,27 @@ class MissionEngine:
         self.reader = transcript_reader
         self.verifier = verifier
 
+    async def provision_target(self, mid, spawner):
+        """S53: target_mode=new -- provision the delegate session ONCE via
+        the injected spawner (production: session create + manifest prompt),
+        then pin the id on the mission. Idempotent: an already-targeted
+        mission returns its session untouched."""
+        m = self.store.load(mid)
+        if m is None:
+            raise ValueError("no mission %s" % mid)
+        if m.get("target_session"):
+            return m["target_session"]
+        if m["target_mode"] != "new":
+            raise ValueError("provision_target on an existing-target mission")
+        sid = await spawner(m)
+        m = self.store.load(mid)
+        m["target_session"] = sid
+        self.store.save(m)
+        shadow_ledger.append("actions", {
+            "mission_id": mid, "kind": "spawn",
+            "summary": "delegate session %s provisioned" % sid})
+        return sid
+
     async def run_mission(self, mid):
         """Loop until terminal/paused. Returns the final mission dict.
 
@@ -259,6 +284,16 @@ class MissionEngine:
                 return self.store.transition(
                     mid, "stopped", "ping-pong detected (identical "
                                     "consecutive says)")
+            floors = shadow_egress.floor_check(say_text)
+            if floors:
+                # S52: the say never leaves the engine; the founder decides
+                m = self.store.transition(
+                    mid, "paused", "floor requires confirmation: %s"
+                    % ", ".join(floors))
+                m["pause_reason"] = "floor_confirm"
+                m["pending_floor_say"] = say_text[:1000]
+                self.store.save(m)
+                return m
             ok = await self.sayer(m, say_text)
             if not ok:
                 return self.store.transition(mid, "failed", "say refused")
@@ -318,3 +353,78 @@ class MissionEngine:
 
     def resume(self, mid):
         return self.store.transition(mid, "running", "explicit resume")
+
+
+class MissionScheduler:
+    """S55/S56: cap-5 admission with FIFO queue, promotion, and the
+    disambiguation helper. One mission per target session is enforced at
+    admission -- amend, never spawn a duplicate."""
+
+    def __init__(self, store, max_running=MAX_RUNNING):
+        self.store = store
+        self.max_running = max_running
+
+    def start(self, mid):
+        m = self.store.load(mid)
+        if m is None:
+            raise ValueError("no mission %s" % mid)
+        running = self.store.list(states=("running",))
+        if m.get("target_session") and any(
+                r.get("target_session") == m["target_session"]
+                for r in running):
+            raise ValueError(
+                "session %s already has a running mission -- amend it"
+                % m["target_session"])
+        if len(running) < self.max_running:
+            return self.store.transition(mid, "running", "admitted")
+        return self.store.transition(mid, "queued",
+                                     "cap %d reached" % self.max_running)
+
+    def on_terminal(self, mid):
+        """Promote the oldest queued mission when a slot frees."""
+        queued = sorted(self.store.list(states=("queued",)),
+                        key=lambda m: m.get("created_ns", 0))
+        running = self.store.list(states=("running",))
+        if queued and len(running) < self.max_running:
+            return self.store.transition(queued[0]["id"], "running",
+                                         "promoted from queue")
+        return None
+
+    def cancel_queued(self, mid):
+        m = self.store.load(mid)
+        if m is None or m["state"] != "queued":
+            raise ValueError("cancel_queued needs a queued mission")
+        return self.store.transition(mid, "stopped", "cancelled from queue")
+
+    def pending_confirmations(self):
+        """S56 disambiguation: every paused mission awaiting a founder
+        decision. More than one => the UI must ask "Yes to which"."""
+        out = []
+        for m in self.store.list(states=("paused",)):
+            if m.get("pause_reason") in ("founder_confirm", "floor_confirm"):
+                out.append({"mission_id": m["id"],
+                            "objective": m["objective"][:120],
+                            "reason": m["pause_reason"],
+                            "version": m["version"]})
+        return out
+
+
+def emit_mission_feed(mission, kind, why_now):
+    """S57: mission events that need the founder become feed items. Dedupe
+    key = mission + state + version, so an amend re-surfaces exactly once."""
+    import shadow_feed
+    item = {
+        "item_id": "f-%s-%s-v%d" % (mission["id"], mission["state"],
+                                    mission["version"]),
+        "producer": "shadow",
+        "mission_id": mission["id"],
+        "kind": kind,
+        "severity": "action" if kind == "needs_decision" else "info",
+        "why_now": why_now[:200],
+        "title": mission["objective"][:120],
+        "deep_link": "sutra://shadow/mission/%s" % mission["id"],
+        "dedupe_key": "%s:%s:v%d" % (mission["id"], mission["state"],
+                                     mission["version"]),
+        "state": "new",
+    }
+    return shadow_feed.emit(item)

@@ -40,3 +40,29 @@ TOOL_GATES = {
     "shadow_verify": {"kind": "read", "gate": "flag+env, call-time re-check"},
     "shadow_mission_update": {"kind": "write-inert", "gate": "flag+env, missions ledger only, state enum"},
 }
+
+
+# ------------------------------------------------------------------ floors --
+# The three confirm-first floors (PRD R8): no ledger row, template, or
+# standing instruction can override these -- a say that trips one pauses its
+# mission for an explicit founder yes. Patterns are deliberately broad:
+# a false PAUSE costs a click; a false PASS costs a repo.
+_FLOOR_PATTERNS = [
+    ("d52_destructive_git",
+     __import__("re").compile(
+         r"(--force(-with-lease)?\b|reset\s+--hard|--no-verify"
+         r"|push\s+.*--delete|filter-branch|update-ref\s+-d)")),
+    ("d33_client_repo",
+     __import__("re").compile(
+         r"~/Claude/(?!asawa-holding)[A-Za-z][A-Za-z0-9_-]*")),
+    ("irreversible_external_send",
+     __import__("re").compile(
+         r"(?i)\b(send (the )?(email|mail|invoice)|post (to|on) "
+         r"(slack|twitter|x\.com|linkedin)|publish (the )?(site|release"
+         r"|post)|charge (the )?(card|customer))\b")),
+]
+
+
+def floor_check(text):
+    """Return the list of floor names the text trips (empty = clear)."""
+    return [name for name, pat in _FLOOR_PATTERNS if pat.search(text or "")]
