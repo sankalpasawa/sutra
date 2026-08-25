@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.222.9 (2026-08-25, HEAD)
+## v2.223.1 (2026-08-25, HEAD)
+
+Workspace parity loop closed (reviewer SIGN-OFF); search top-bar swap fixed.
+
+## v2.222.9 (2026-08-25)
 
 Panel-native rendered READ state (iframe only behind Edit) + reviewer minors.
 
@@ -57,7 +61,7 @@ The `fork` remote is removed -- development and pushes go to sankalpasawa/sutra,
 where the update channel already pointed. Settings pane groups collapse
 individually, keyed per destination, storing only what was explicitly closed.
 
-## v2.220.3 (2026-08-24, HEAD)
+## v2.220.3 (2026-08-24)
 
 Chat rows in user language: 'not opened yet' (no sizes, no 'transcript'),
 'opening…', "can't be opened"; workspace label only when it differentiates.
@@ -70,7 +74,7 @@ its own glyph, state, account line and controls. The single "Connected in
 Claude" card is gone. The probe remains one CLI run for all of them, and the
 Re-check tooltip says so rather than letting per-tile placement imply otherwise.
 
-## v2.220.1 (2026-08-24, HEAD)
+## v2.220.1 (2026-08-24)
 
 Six vertical panes: the session surface holds up to 6 side-by-side chat
 panes (FIFO eviction, no duplicates, horizontal scroll).
@@ -116,7 +120,7 @@ release channel. Pinned in `test_update_channel.py` (default, override,
 and the URL the updater actually requests).
 
 
-## v2.118.1 (2026-08-24, HEAD)
+## v2.118.1 (2026-08-24)
 
 Governance chips now render on transcript turns -- which is every real session
 read from `~/.claude/projects`. Until now that branch skipped the chip while
@@ -456,22 +460,22 @@ Known-red suites on this release, pre-existing and untouched here: `test-codex-d
 **Blueprint marker visibility + out-of-repo guard (Testlify field incident 2026-07-08).** A fleet client emitted a correct prose BLUEPRINT (Output + Verified-by included) and `blueprint-check.sh` still HARD-blocked Write twice — the hook reads ONLY `.claude/blueprint-registered`, and no fleet-visible surface (per-turn reminder, hook stderr) said to write it; the marker contract lived solely in the non-auto-invoked `core:blueprint` skill. The model's only advertised exit (`BLUEPRINT_ACK=1`, unusable on Write tool calls) taught a Bash+ACK bypass of the gate. Fix 1: `per-turn-discipline-prompt.sh` now states the marker contract (write the marker via the Write tool with `HAS_OUTPUT`/`HAS_VERIFY`/`HAS_PER_STEP_VERIFY`) before the first Edit/Write of each turn. Fix 2: `blueprint-check.sh` out-of-repo guard — absolute paths outside `$CLAUDE_PROJECT_DIR` (`~/.claude/**` memory files, sibling repos) are out of scope; they could never match any whitelist and were blocked by accident. Inside-repo enforcement unchanged. Tests: `test-blueprint-marker-visibility.sh` 6/6. Fix + bump ship together (self-shipping PR #80). (#78 depth-gate + error-text split ships separately; A4 text-validation via #73.)
 
 
-## v2.39.19 (2026-07-06, HEAD)
+## v2.39.19 (2026-07-06)
 
 **#63 — /core:start documents the H-Sutra header contract it enforces.** `h-sutra-enforce.sh` HARD-blocks every response whose first line isn't a valid header, but `/core:start` wrote a CLAUDE.md governance block with zero references to that header (`grep "H-Sutra|DIRECTION|VERB"` → 0 hits) — an invisible rule that caused repeated "redo with the header" blocks. `scripts/start.sh` now writes an **"H-Sutra Header"** section (exact format, DIRECTION/VERB vocabulary, example, STAGE-1-FAIL variant) as the first documented behavior; the hook's diagnostic points to it. Verified: generated-block grep → 5 hits. The fix + this version bump ship together in this PR (self-shipping). After update, clients re-run `/core:start` to regenerate the block. (A4 block-text validation ships separately via #73.)
 
 
-## v2.39.18 (2026-06-30, HEAD)
+## v2.39.18 (2026-06-30)
 
 **loop-budget-guard: per-turn reset + agent-orchestration exemption (fixes the session-wide hard-stop).** The guard's tool-call counter was cumulative-per-session and never reset, so a long working session crossed the 250 ceiling on ordinary Bash/Read/Write calls and hard-stopped itself ("tool-budget guard hard-stopped further file reads this session") — and the deadlock blocked the very Bash needed to update out of it. New `loopguard-turn-reset.sh` (UserPromptSubmit) truncates the counter at the start of each real user turn → budget is now **per-turn** (a 250-call runaway in one turn still blocks; synthetic turns skipped, so within-turn loop detection is intact). `Agent`/`Task`/`Workflow` dispatches are exempt from counting (a fan-out is not a loop; opt back in with `LOOP_GUARD_COUNT_AGENTS=1`). Guard suite 12/12. Also ships **A4 block-text validation** (`perturn-text-validate.sh` — validates the emitted Input Routing / Depth / Output Trace; `blueprint-text-validate.sh` detection hardening; profile-aware). D13 cascade: risk LOW, backward-compatible.
 
 
-## v2.39.17 (2026-06-25, HEAD)
+## v2.39.17 (2026-06-25)
 
 **Loop/tool-budget guard promoted to L0 (A6).** Always-on PreToolUse hook blocks runaway agents + infinite loops before execution; fail-open. Per-session budget (250) + frequency-in-window repeat detection; kill-switches + LOOP_GUARD_ACK. 8/8 tests. D13 cascade: risk LOW.
 
 
-## v2.39.13 (2026-06-14, HEAD)
+## v2.39.13 (2026-06-14)
 
 **Flow fires every turn like the H-Sutra header — emission_mode literal-text fix.** Root cause: Flow was the only per-turn block with `emission_mode: skill_invocation` (a Skill tool call), which the model rationalized skipping on light turns while literal-text blocks (header/routing/depth) fired reliably. Fix: fast-path now emits a literal one-line `FLOW: <type> · fast-path · <n> atom · classify->answer` block as TEXT every turn; the `core:flow` Skill is invoked only on substantive/multi-step/mutation turns. Two files: `sutra-defaults.json` `.per_turn_blocks.flow` + `hooks/per-turn-discipline-prompt.sh` FLOW ACTIVATION block (duplicate Backstop line collapsed).
 
