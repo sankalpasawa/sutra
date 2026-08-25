@@ -491,12 +491,77 @@ function usagePopHtml(){
     </div>`;
 }
 
+/* ── the account, FIRST (founder ask, 2026-08-25) ────────────────────────────
+   WHICH Claude account this panel runs on comes before how much of it is used.
+   Every row is a value read from a local Claude store or the words "not
+   reported" -- never a placeholder that looks like a real one (ADR-035). The
+   friendly plan name appears only when the server matched the raw values
+   exactly, and the raw organizationType · tier are shown beside it either
+   way, so a tier this build has not met renders as itself, not as a guess.
+   The card is local: it renders even when the usage endpoint is unreachable. */
+function accountDateOnly(iso){
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso).slice(0, 10);
+  try { return d.toLocaleDateString(undefined, { day:"numeric", month:"short", year:"numeric" }); }
+  catch (e) { return String(iso).slice(0, 10); }
+}
+function accountAgo(epoch){
+  if (!epoch) return "";
+  const s = Math.max(0, Math.round(Date.now() / 1000 - epoch));
+  if (s < 90) return "just now";
+  const m = Math.round(s / 60); if (m < 90) return m + " min ago";
+  const h = Math.round(m / 60); if (h < 36) return h + " h ago";
+  return Math.round(h / 24) + " d ago";
+}
+function accountHtml(){
+  const a = S.account;
+  const NR = `<span style="color:var(--faint)">not reported</span>`;
+  const kv = (k, v, sub) => `<div class="kv"><b>${esc(k)}</b><span>${
+      v == null || v === "" ? NR : esc(String(v))}${
+      sub ? ` <span class="why">${esc(sub)}</span>` : ""}</span></div>`;
+  if (S.accountError) return `<p style="margin:0;color:var(--faint)">${esc(S.accountError)}</p>`;
+  if (!a) return `<p style="margin:0;color:var(--faint)">Reading the account…</p>`;
+  if (!a.available) return `<p style="margin:0">${esc(a.reason || "no Claude account is signed in")}</p>`;
+  const p = a.profile || {}, s = a.subscription || {};
+  const rawPlan = [p.organization_type, p.rate_limit_tier].filter(Boolean).join(" · ");
+  const sub = [s.subscription_type,
+               p.billing_type ? String(p.billing_type).replace(/_/g, " ") : null,
+               p.subscription_created_at ? "since " + accountDateOnly(p.subscription_created_at) : null]
+              .filter(Boolean).join(" · ");
+  const ids = [p.account_id ? "account " + p.account_id : null,
+               p.organization_id ? "org " + p.organization_id : null].filter(Boolean).join(" · ");
+  const other = p.full_name && p.full_name !== p.display_name ? p.full_name : "";
+  return `
+    ${kv("Signed in as", p.display_name || p.full_name, other)}
+    ${kv("Email", p.email)}
+    ${kv("Plan", p.plan || rawPlan || null, p.plan ? rawPlan : "")}
+    ${kv("Subscription", sub || null)}
+    ${kv("Organization", p.organization, p.organization_role ? "role: " + p.organization_role : "")}
+    ${kv("Rate-limit tier", s.rate_limit_tier || p.rate_limit_tier)}
+    ${kv("Extra usage", p.extra_usage_enabled == null ? null : (p.extra_usage_enabled ? "on" : "off"))}
+    ${kv("Account created", p.account_created_at ? accountDateOnly(p.account_created_at) : null)}
+    ${p.trial_ends_at ? kv("Claude Code trial ends", accountDateOnly(p.trial_ends_at)) : ""}
+    ${ids ? kv("IDs", ids) : ""}
+    ${kv("Data as of", p.profile_fetched_at ? accountAgo(p.profile_fetched_at) : null)}
+    <p class="note" style="margin-top:9px;font-size:11px;color:var(--faint)">Read from
+      <code>~/.claude.json</code> and the non-secret fields of the Claude Code credential
+      record on this machine. No token reaches this panel.</p>`;
+}
+function accountFold(){
+  const a = S.account;
+  const p = a && a.available ? (a.profile || {}) : null;
+  const summary = p ? (p.email || p.display_name || "") : (a && !a.available ? "not signed in" : "");
+  return fold("usage.account", "Account", summary, accountHtml());
+}
+
 SCREENS.usage = () => {
-  if (S.usageError) return `<div class="zero"><h4>Usage unavailable</h4>
+  const acct = accountFold();
+  if (S.usageError) return `${acct}<div class="zero"><h4>Usage unavailable</h4>
     <p>${esc(S.usageError)}</p></div>`;
-  if (!S.usage) return `<div class="zero"><h4>Reading usage…</h4></div>`;
+  if (!S.usage) return `${acct}<div class="zero"><h4>Reading usage…</h4></div>`;
   const u = S.usage;
-  if (!u.available) return `<div class="zero"><h4>Usage unavailable</h4>
+  if (!u.available) return `${acct}<div class="zero"><h4>Usage unavailable</h4>
     <p>${esc(u.reason || "no usage data")}</p>
     <p style="font-size:11px;color:var(--faint)">This reads the same endpoint as
     <code>/usage</code> in the CLI, using the Claude Code credentials on this
@@ -524,7 +589,7 @@ SCREENS.usage = () => {
        reached just now. These figures come from a cached response and may be up to
        10 minutes old.</div>` : "";
 
-  return `${age}
+  return `${acct}${age}
     <div class="note" style="margin-bottom:9px"><b>Read-only.</b> The same data as
       <code>/usage</code> in the CLI, for the account whose Claude Code credentials
       are on this machine. Shared cache with <code>sutra-usage</code>, so the guard

@@ -17,8 +17,21 @@ RULES, same as mediated_connectors.py and for the same reason:
 
 import json
 import os
+import re
 
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")
+
+# organizationType -> product name. A type missing here is NOT guessed at:
+# plan_label() returns None and the panel shows the raw values, because a
+# familiar name over a tier that means something else is exactly the
+# convincing-wrong answer ADR-035 forbids.
+_PLAN_LABELS = {
+    "claude_free": "Claude Free",
+    "claude_pro": "Claude Pro",
+    "claude_max": "Claude Max",
+    "claude_team": "Claude Team",
+    "claude_enterprise": "Claude Enterprise",
+}
 
 
 def _read_claude_json():
@@ -64,6 +77,70 @@ def account():
         "email": email or None,
         "initials": initials_for(name, email),
         "organization": oa.get("organizationName") or None,
+    }
+
+
+def plan_label(org_type, tier):
+    """'Claude Max (20x)' when BOTH parts are recognised, else None.
+
+    The multiplier is read off the tier's `_<n>x` suffix (default_claude_max_20x)
+    and only decorates a product name this module knows; a known product with an
+    unfamiliar tier still gets its bare name, an unknown product gets nothing.
+    """
+    base = _PLAN_LABELS.get(str(org_type or ""))
+    if not base:
+        return None
+    m = re.search(r"_(\d+)x$", str(tier or ""))
+    return "%s (%sx)" % (base, m.group(1)) if m else base
+
+
+def _short_id(value):
+    s = str(value or "")
+    return s[:8] if s else None
+
+
+def profile():
+    """The signed-in account in full, allow-listed, or None.
+
+    account() is the rail avatar's two fields; this is the Settings > Usage
+    "Account" card: who, which plan, which organisation, on what billing, since
+    when. Every key is named here on purpose -- a field Claude adds to its
+    config later has to be opted in before it can reach a screen. Deliberately
+    NOT forwarded: userRateLimitTier, seatTier, workspaceRole (access-control
+    knobs that read as account facts and confuse the story), full UUIDs (the
+    first 8 characters are enough for support). None follows account()'s rule:
+    no config, signed out, or an unrecognised shape means "we do not know".
+    """
+    oa = _read_claude_json().get("oauthAccount")
+    if not isinstance(oa, dict):
+        return None
+    name = oa.get("displayName") or None
+    email = oa.get("emailAddress") or None
+    if not (name or email):
+        return None
+    org_type = oa.get("organizationType") or None
+    tier = oa.get("organizationRateLimitTier") or None
+    fetched = oa.get("profileFetchedAt")
+    extra = oa.get("hasExtraUsageEnabled")
+    return {
+        "display_name": name,
+        "full_name": oa.get("fullName") or None,
+        "email": email,
+        "plan": plan_label(org_type, tier),
+        "organization_type": org_type,
+        "rate_limit_tier": tier,
+        "billing_type": oa.get("billingType") or None,
+        "subscription_created_at": oa.get("subscriptionCreatedAt") or None,
+        "organization": oa.get("organizationName") or None,
+        "organization_role": oa.get("organizationRole") or None,
+        "account_created_at": oa.get("accountCreatedAt") or None,
+        "extra_usage_enabled": extra if isinstance(extra, bool) else None,
+        "trial_ends_at": oa.get("claudeCodeTrialEndsAt") or None,
+        "account_id": _short_id(oa.get("accountUuid")),
+        "organization_id": _short_id(oa.get("organizationUuid")),
+        # Milliseconds in the file; seconds here, like every other timestamp
+        # the panel is handed. This is the AGE of everything above.
+        "profile_fetched_at": (fetched / 1000.0) if isinstance(fetched, (int, float)) else None,
     }
 
 

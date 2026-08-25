@@ -2,6 +2,17 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.224.6 (2026-08-25)
+
+- **Settings > Usage opens with the Account.** Which Claude account the panel
+  runs on, before how much of it is used: signed-in name, email, plan (friendly
+  name only on an exact match, raw organizationType · tier shown beside it),
+  subscription + billing + since, organization + role, rate-limit tier, extra
+  usage, account created, short IDs, data age. New `/api/account` reads
+  `~/.claude.json` and the non-secret fields of the credential record — local
+  only, allow-listed, tokens excluded by construction and pinned by test.
+  Manifests re-synced (2.224.5 bumped the changelog only).
+
 ## 2.224.5 — Shadow interactive
 
 The dot has a home corner and opens the card on click; the card mounts and sends (Enter + chips); Now's empty state starts a Shadow chat.

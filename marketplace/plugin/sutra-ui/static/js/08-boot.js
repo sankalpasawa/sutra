@@ -190,6 +190,15 @@ async function rtLoadRuns(id){
    costs a request, and the server already coalesces at 60s against a shared cache. */
 async function loadUsage(force){
   if (S.usage && !force) return;
+  /* The account rides the same open: same screen, local read, and it has to
+     render when the usage endpoint cannot. Its own route rather than a field
+     on /api/usage, whose shape the PreToolUse guard shares. */
+  try {
+    S.account = await apiGet("/api/account");
+    S.accountError = null;
+  } catch (e){
+    S.accountError = e.message; S.account = null;
+  }
   try {
     S.usage = await apiGet("/api/usage");
     S.usageError = null;

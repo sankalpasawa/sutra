@@ -1199,6 +1199,19 @@ def api_usage():
     return usage.snapshot()
 
 
+@router.get("/account")
+def api_account():
+    """The Claude account this panel runs on: who is signed in, on which plan,
+    in which organisation, on what billing -- from ~/.claude.json plus the
+    non-secret fields of the credential record. Local reads, no network, and a
+    separate route from /usage on purpose: that payload's shape is shared with
+    the PreToolUse guard and must not grow. Never 5xx: usage.account() fails
+    open to {"available": false, "reason": ...}.
+    """
+    import usage
+    return usage.account()
+
+
 # ================================================================= repo =====
 # The repository a SESSION is in, which is not necessarily the Settings workdir --
 # see repo.py. `cwd` IS a caller-supplied path here, unlike /git/*, and is safe

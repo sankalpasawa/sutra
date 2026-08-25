@@ -2,7 +2,18 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.224.4 (2026-08-25, HEAD)
+## v2.224.6 (2026-08-25, HEAD)
+
+Settings > Usage opens with the Account card: who is signed in, email, plan,
+subscription/billing, organization/role, tier, IDs, data age — local reads,
+allow-listed, no tokens. Manifests re-synced after 2.224.5.
+
+## v2.224.5 (2026-08-25)
+
+Shadow interactive: dot home corner, click-to-card, card mounts and sends,
+Now empty state starts a chat (changelog-only bump; manifests stayed 2.224.4).
+
+## v2.224.4 (2026-08-25)
 
 Rhythm hygiene: 22px content start, quiet zero-doc departments.
 

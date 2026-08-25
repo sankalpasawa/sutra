@@ -70,21 +70,75 @@ _LEGACY_KEY_FOR_KIND = {
 }
 
 
-def _token():
-    """The OAuth access token, or None. Never returned to a caller."""
+def _credentials():
+    """The parsed `claudeAiOauth` record, or None. It CONTAINS the tokens:
+    callers take the one field they need and never hand the dict onward."""
     try:
         raw = subprocess.run(
             ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
             capture_output=True, text=True, timeout=5).stdout.strip()
         if raw:
-            return json.loads(raw)["claudeAiOauth"]["accessToken"]
+            return json.loads(raw)["claudeAiOauth"]
     except Exception:
         pass
     try:
         p = os.path.expanduser("~/.claude/.credentials.json")
-        return json.load(open(p))["claudeAiOauth"]["accessToken"]
+        return json.load(open(p))["claudeAiOauth"]
     except Exception:
         return None
+
+
+def _token():
+    """The OAuth access token, or None. Never returned to a caller."""
+    c = _credentials()
+    try:
+        return c["accessToken"] if c else None
+    except Exception:
+        return None
+
+
+# The NON-secret half of the credential record, by name. The record also holds
+# accessToken / refreshToken / expiry; none of those is in this map and so none
+# can be emitted -- a new key upstream has to be opted in here to reach a screen.
+_SUBSCRIPTION_FIELDS = {
+    "subscriptionType": "subscription_type",   # "max", "pro", ...
+    "rateLimitTier": "rate_limit_tier",        # "default_claude_max_20x"
+}
+
+
+def subscription():
+    """Which subscription the credentials were issued for, or None.
+
+    Lives here and not in claude_local.py because that module is Keychain-free
+    by rule and this one already owns the credential read. Corroborates the
+    plan ~/.claude.json describes from the token's own point of view.
+    """
+    c = _credentials()
+    if not isinstance(c, dict):
+        return None
+    out = {new: (c.get(old) or None) for old, new in _SUBSCRIPTION_FIELDS.items()}
+    return out if any(out.values()) else None
+
+
+def account():
+    """The Claude account this panel runs on: profile + subscription, or an
+    explicit unavailability. Local reads only -- no network, and independent of
+    snapshot() and the cache the guard shares. Never raises."""
+    try:
+        import claude_local
+        prof = claude_local.profile()
+        sub = subscription()
+    except Exception as e:
+        return {"available": False,
+                "reason": "account lookup failed (%s)" % type(e).__name__,
+                "profile": None, "subscription": None}
+    if prof is None and sub is None:
+        return {"available": False,
+                "reason": "no Claude account is signed in on this machine",
+                "profile": None, "subscription": None}
+    return {"available": True, "profile": prof, "subscription": sub,
+            "sources": ["~/.claude.json",
+                        "Claude Code credentials (non-secret fields only)"]}
 
 
 def _valid(d):
