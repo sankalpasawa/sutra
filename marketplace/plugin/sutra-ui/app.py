@@ -477,6 +477,16 @@ def _panel_html() -> str:
 _NOCACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
 
+@app.get("/api/panel-token")
+async def api_panel_token():
+    """Heal a stale panel after a backend restart (found live, 2026-08-25):
+    in Electron the window OUTLIVES backend restarts, so the token baked into
+    the page dies silently and every mutation 403s until a manual reload.
+    Same-origin JS can read this and retry; a cross-site page cannot read the
+    response (no CORS headers), so CSRF protection is intact."""
+    return JSONResponse({"token": PANEL_TOKEN}, headers=_NOCACHE)
+
+
 @app.get("/api/files/status")
 def api_files_status(start: int = 0):
     """Files screen (SilverBullet sidecar) state. `?start=1` lazily launches
