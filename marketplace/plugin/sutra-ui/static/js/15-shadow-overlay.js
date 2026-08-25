@@ -10,6 +10,19 @@
    turn; the only timers are one-shot (pill auto-hide, nudge remove). */
 "use strict";
 
+/* one POST path for shadow surfaces: panel token attached, and a single
+   retry after a token refresh -- the page outlives backend restarts. */
+async function shadowPost(url, body){
+  const go = () => shadowPost(url, url);
+  let r = await go();
+  if (r.status === 403 && typeof refreshPanelToken === "function"
+      && await refreshPanelToken()){
+    r = await go();
+  }
+  return r;
+}
+
+
 /* attribute-context escaper (codex P2 fold): esc() is for text nodes;
    anything interpolated inside a quoted attribute goes through THIS, which
    also closes the quote-breakout vector. */
@@ -238,10 +251,7 @@ async function sendToShadow(text){
                          : "waking up (first message boots my session -- up "
                            + "to a minute)\u2026" });
   try {
-    const r = await fetch("/api/shadow/chat", {
-      method: "POST", headers: { "content-type": "application/json",
-        "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
-      body: JSON.stringify({ message: text }) });
+    const r = await shadowPost("/api/shadow/chat", { message: text });
     S.shadowBusy = false;
     S.shadowThread = S.shadowThread.filter(t => !t.busy);
     if (!r.ok){
@@ -308,10 +318,8 @@ if (typeof document !== "undefined" && typeof fetch !== "undefined"
 async function shadowMissionAct(mid, action, extra){
   if (typeof fetch === "undefined") return null;
   try {
-    const r = await fetch("/api/shadow/missions/" + mid + "/act", {
-      method: "POST", headers: { "content-type": "application/json",
-        "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
-      body: JSON.stringify(Object.assign({ action }, extra || {})) });
+    const r = await shadowPost("/api/shadow/missions/" + mid + "/act",
+      Object.assign({ action }, extra || {}));
     const doc = r.ok ? await r.json() : null;
     if (typeof loadShadowHome === "function") loadShadowHome();
     renderShadowCard();

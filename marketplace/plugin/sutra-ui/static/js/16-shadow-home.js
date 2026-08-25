@@ -4,6 +4,19 @@
    the status endpoint answers non-200. */
 "use strict";
 
+/* one POST path for shadow surfaces: panel token attached, and a single
+   retry after a token refresh -- the page outlives backend restarts. */
+async function shadowPost(url, body){
+  const go = () => shadowPost(url, url);
+  let r = await go();
+  if (r.status === 403 && typeof refreshPanelToken === "function"
+      && await refreshPanelToken()){
+    r = await go();
+  }
+  return r;
+}
+
+
 /* attribute-context escaper (codex P2 fold): esc() is for text nodes;
    anything interpolated inside a quoted attribute goes through THIS, which
    also closes the quote-breakout vector. */
@@ -160,10 +173,7 @@ if (typeof document !== "undefined" && document.addEventListener){
 async function shadowWatchSet(sid, watch){
   if (typeof fetch === "undefined") return;
   try {
-    await fetch("/api/shadow/watches", { method: "POST",
-      headers: { "content-type": "application/json",
-        "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
-      body: JSON.stringify({ session_id: sid, watch }) });
+    await shadowPost("/api/shadow/watches", "/api/shadow/watches");
   } catch (e) {}
   loadShadowHome();
 }
@@ -171,10 +181,7 @@ async function shadowWatchSet(sid, watch){
 async function shadowInstructionAct(id, action){
   if (typeof fetch === "undefined") return;
   try {
-    await fetch("/api/shadow/instructions", { method: "POST",
-      headers: { "content-type": "application/json",
-        "X-Sutra-Panel": (typeof panelToken === "function" ? panelToken() : "") },
-      body: JSON.stringify({ id, action }) });
+    await shadowPost("/api/shadow/instructions", "/api/shadow/instructions");
   } catch (e) {}
   loadShadowHome();
 }

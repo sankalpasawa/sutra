@@ -262,7 +262,18 @@ async function _fail(r, path){
    request so browser-origin mutations authenticate. Another origin cannot
    read this page to learn it; the server only demands it when an Origin
    header is present, so the agent/CLI lane never needs it. */
+let _panelTokenOverride = null;
+async function refreshPanelToken(){
+  /* the page can outlive the backend (Electron restart) -- re-sync instead
+     of demanding a reload */
+  try {
+    const r = await fetch("/api/panel-token");
+    if (r.ok){ _panelTokenOverride = (await r.json()).token; return true; }
+  } catch (e) {}
+  return false;
+}
 function panelToken(){
+  if (_panelTokenOverride) return _panelTokenOverride;
   const m = document.querySelector('meta[name="sutra-panel-token"]');
   return m ? m.content : "";
 }
