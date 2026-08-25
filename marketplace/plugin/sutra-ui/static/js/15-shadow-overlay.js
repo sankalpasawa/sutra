@@ -85,7 +85,9 @@ function mountShadowOverlay(){
   dot.className = "shdot " + st.cls;
   dot.setAttribute && dot.setAttribute("role", "button");
   dot.setAttribute && dot.setAttribute("aria-label", st.label);
-  dot.setAttribute && dot.setAttribute("tabindex", "0");
+  dot.setAttribute && dot.setAttribute("tabindex", "-1");  /* R3: click, not tab */
+  const nb = _shadowStatus && _shadowStatus.active_missions;
+  if (nb) dot.textContent = String(nb);                     /* R20: badge */
   dot.dataset && (dot.dataset.shadowdot = "1");
   if (dot.addEventListener) dot.addEventListener("click", toggleShadowCard);
   (document.body || document.documentElement).appendChild(dot);
@@ -113,8 +115,17 @@ function renderShadowCard(){
       }
     });
     wrap.addEventListener("click", (ev) => {
-      const chip = ev.target && ev.target.dataset && ev.target.dataset.shchip;
-      if (chip) shadowSendAndRefresh(chip);
+      const d = (ev.target && ev.target.dataset) || {};
+      if (d.shchip) return shadowSendAndRefresh(d.shchip);
+      if (d.shquiet){ S.shadowQuiet = !S.shadowQuiet; return renderShadowCard(); }
+      if (d.shhidesess){
+        S.shadowHideSession = true; S.shadowCardOpen = false;
+        renderShadowCard();
+        const dot = document.querySelector && document.querySelector(".shdot");
+        if (dot && dot.remove) dot.remove();               /* R12: one control */
+        return;
+      }
+      if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
     });
   }
   (document.body || document.documentElement).appendChild(wrap);
@@ -177,6 +188,8 @@ function missionCardHtml(m){
     <span class="shstate shstate-${esc(m.state || "")}">${esc(m.state || "")}</span>
     <span class="shobj">${esc(m.objective || "")}</span>
     <span class="shturns">${m.turns_used || 0}/${m.max_turns || "?"}</span>
+    ${(m.done_when && m.done_when[0]) ? `<span class="shdone">done when:
+      ${esc(m.done_when[0].check || "")}</span>` : ""}
     ${startable ? `<button class="btn pri" type="button"
         data-shstart="${escAttr(m.id || "")}">Start</button>` : ""}
   </div>`;
@@ -185,7 +198,9 @@ function missionCardHtml(m){
 /* the card: compact view of the ONE thread + chips + free text always */
 function shadowCardHtml(){
   const thread = (typeof S !== "undefined" && S.shadowThread) || [];
-  const last = thread.slice(-6).map(t => `
+  const last = thread.slice(-6).map(t => t.mission
+    ? missionCardHtml(t.mission)
+    : `
     <div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}">
       ${esc(t.text || "")}</div>`).join("");
   const chips = validChips((typeof S !== "undefined" && S.shadowChips) || []);
@@ -195,7 +210,12 @@ function shadowCardHtml(){
     : `<button class="btn shchip" type="button" data-shchip="Clarify what you meant">Clarify</button>`;
   const perm = _shadowStatus && _shadowStatus.permission_mode;
   return `<div class="shcard" data-shadowcard="1">
-    ${perm ? `<div class="shperm">permissions: ${esc(perm)}</div>` : ""}
+    <div class="shperm">sees: your sessions \u00b7 missions \u00b7 what it
+      has learned${perm ? ` \u00b7 permissions: ${escAttr(perm)}` : ""}
+      <button class="btn shhide" type="button" data-shquiet="1">${
+        (typeof S !== "undefined" && S.shadowQuiet) ? "Unquiet" : "Quiet"}</button>
+      <button class="btn shhide" type="button" data-shhidesess="1">Hide</button>
+    </div>
     <div class="shlog">${last || `<div class="shempty">Ask Shadow anything.</div>`}</div>
     <div class="shchips">${chipHtml}</div>
     <textarea class="shcompose" data-shcompose="1"
@@ -218,6 +238,16 @@ async function sendToShadow(text){
     }
     const doc = await r.json();
     S.shadowThread.push({ who: "shadow", text: doc.reply, ts: Date.now() });
+    if (doc.chips) S.shadowChips = doc.chips;          /* R18: generated */
+    if (doc.mission){                                   /* R19: card in-thread */
+      S.shadowThread.push({ who: "shadow", mission: doc.mission,
+                            ts: Date.now() });
+    }
+    if (doc.remembered){                                /* R6: honest inert */
+      S.shadowThread.push({ who: "shadow", ts: Date.now(),
+        text: "I will remember that once you confirm it in Focus > "
+              + "Shadow > memory." });
+    }
     return doc;
   } catch (e){
     S.shadowThread.push({ who: "shadow",
@@ -255,4 +285,18 @@ if (typeof document !== "undefined" && document.addEventListener){
 if (typeof document !== "undefined" && typeof fetch !== "undefined"
     && !(typeof globalThis !== "undefined" && globalThis.__SHADOW_NO_AUTOBOOT)){
   try { bootShadowOverlay(); } catch (e) {}
+}
+
+/* R19/R24: mission actions from any surface (card or home). */
+async function shadowMissionAct(mid, action, extra){
+  if (typeof fetch === "undefined") return null;
+  try {
+    const r = await fetch("/api/shadow/missions/" + mid + "/act", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(Object.assign({ action }, extra || {})) });
+    const doc = r.ok ? await r.json() : null;
+    if (typeof loadShadowHome === "function") loadShadowHome();
+    renderShadowCard();
+    return doc;
+  } catch (e){ return null; }
 }

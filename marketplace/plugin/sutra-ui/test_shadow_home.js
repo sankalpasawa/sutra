@@ -100,4 +100,12 @@ const MISSIONS = [
   console.log("ok 5 memory");
 }
 
+/* 6. the controls are WIRED (the recurring lesson, pinned per surface) */
+assert(/d\.shact && d\.shmid/.test(src), "home mission actions handled");
+assert(/shadowWatchSet/.test(src) && /shadowInstructionAct/.test(src),
+  "watch + memory controls must act");
+assert(/shhomecompose/.test(src) && /sendToShadow/.test(src),
+  "the home composer must send");
+console.log("ok 6 controls wired");
+
 console.log("test_shadow_home.js: all green");
