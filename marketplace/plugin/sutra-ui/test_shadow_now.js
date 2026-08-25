@@ -77,8 +77,11 @@ const ITEMS = [{
 {
   const ctx = fresh(false);
   ctx.S.needsYou = null;             /* feature dark (403) */
-  assert(/Nothing needs you right now/.test(ctx.SCREENS.now()),
+  const empty = ctx.SCREENS.now();
+  assert(/Nothing needs you right now/.test(empty),
          "dark feed renders the honest empty state");
+  assert(/data-nystart/.test(empty),
+         "the empty state must offer a way to start talking to Shadow");
   ctx.S.needsYou = ITEMS;
   assert(/nyfeed/.test(ctx.SCREENS.now()), "items render as cards");
   console.log("ok 2 screen states");

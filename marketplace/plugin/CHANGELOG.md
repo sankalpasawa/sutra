@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.224.5 — Shadow interactive
+
+The dot has a home corner and opens the card on click; the card mounts and sends (Enter + chips); Now's empty state starts a Shadow chat.
+
 ## 2.224.4 (2026-08-25)
 
 - Vertical rhythm: content starts 22px under the search bar (was 40px+ of

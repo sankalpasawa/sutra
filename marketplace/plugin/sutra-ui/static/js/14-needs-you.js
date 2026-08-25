@@ -75,6 +75,8 @@ if (typeof SCREENS !== "undefined"){
     return `
   <div class="zero"><h4>Now</h4>
     <p>Nothing needs you right now.</p>
+    <p><button class="btn pri" type="button" data-nystart="1">Talk to
+    Shadow</button></p>
   </div>`;
   };
 }
@@ -82,6 +84,10 @@ if (typeof SCREENS !== "undefined"){
 if (typeof document !== "undefined" && document.addEventListener){
   document.addEventListener("click", (ev) => {
     const t = ev.target;
+    if (t && t.dataset && t.dataset.nystart){
+      openNeedsYouItem("sutra://shadow/home");
+      return;
+    }
     const card = t && t.closest ? t.closest("[data-deeplink]") : null;
     if (card && !(t.closest && t.closest("[data-nyact]"))){
       openNeedsYouItem(card.dataset ? card.dataset.deeplink : null);

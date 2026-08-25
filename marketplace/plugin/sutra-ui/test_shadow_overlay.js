@@ -48,9 +48,18 @@ function fresh(opts){
   return ctx;
 }
 
-/* the 2.224.1 lesson: served code that nobody calls. Pin the call site. */
+/* the 2.224.1 lesson: served code that nobody calls. Pin the call sites. */
 assert(/^\s*try \{ bootShadowOverlay\(\); \}/m.test(src),
   "the module must CALL bootShadowOverlay on load");
+assert(/addEventListener\("click", toggleShadowCard\)/.test(src),
+  "the dot must open the card on click");
+assert(/function renderShadowCard/.test(src)
+       && /appendChild\(wrap\)/.test(src),
+  "the card must MOUNT, not just return html");
+const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
+const dotRule = css.slice(css.indexOf(".shdot{"), css.indexOf("}", css.indexOf(".shdot{")));
+assert(/right:\s*\d/.test(dotRule) && /bottom:\s*\d/.test(dotRule),
+  "the dot needs default coordinates or it renders nowhere (2.224.3 bug)");
 
 /* 1. S65: snap picks the nearest corner */
 {
@@ -153,6 +162,35 @@ function part3(){
   const el = ctx.showPill("hello");
   assert(el && el.className === "shpill");
   console.log("ok 8 keyboard + quiet + pill");
+
+  /* 8b. dot click toggles + MOUNTS the card; Esc unmounts */
+  {
+    const c2 = fresh();
+    const removed = [];
+    let mounted = null;
+    c2.document.querySelector = (sel) =>
+      sel === "[data-shcardwrap]" ? mounted : null;
+    const mkEl = c2.document.createElement;
+    c2.document.createElement = (tag) => {
+      const el = mkEl(tag);
+      el.innerHTML = "";
+      el.addEventListener = () => {};
+      el.remove = () => { removed.push(el); if (mounted === el) mounted = null; };
+      return el;
+    };
+    const baseAppend = c2.document.body.appendChild.bind(c2.document.body);
+    c2.document.body.appendChild = (el) => {
+      if (el.dataset && el.dataset.shcardwrap) mounted = el;
+      baseAppend(el);
+    };
+    c2.S.shadowThread = [];
+    c2.toggleShadowCard();
+    assert(mounted, "click path must mount the card");
+    assert(/shcard/.test(mounted.innerHTML), "mounted card carries the shell");
+    c2.shadowKeyHandler({ key: "Escape" });
+    assert(!mounted, "Esc must unmount");
+    console.log("ok 8b card mounts");
+  }
 
   /* 9. ONE thread: the card renders S.shadowThread (shared with the home) */
   ctx.S.shadowThread = [{ who: "founder", text: "hi" },
