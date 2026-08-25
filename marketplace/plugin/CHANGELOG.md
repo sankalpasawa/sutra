@@ -2,6 +2,16 @@
 
 **status**: active · **updated**: 2026-08-24
 
+## 2.223.1 (2026-08-25)
+
+- **Workspace parity loop closed: SIGN-OFF.** The round-3 reviewer confirmed
+  the panel-native read state in pixels (3/3 rounds identical) and caught one
+  last real bug on the way out: the Edit-to-count swap never fired on the
+  search render path — one shared top-bar builder now serves both (the code
+  itself landed in fd66681). Remaining minors filed as named follow-ups:
+  SB edit-surface skinning toward mock-07, reading-column measure,
+  records-section + charter-crumb captures.
+
 ## 2.223.0 — Shadow v1 (flag-gated, default OFF)
 
 Shadow: a chief-of-staff layer behind `shadow.enabled` (default OFF — zero behavior change until enabled). SessionRuntime substrate, gated MCP tools + capability-token say chain, mission engine with floors and scheduler, needs-you feed on Now, overlay dot/pill/card, Focus > Shadow home. 473 py + full node suites green; off-state invariants enforced.
