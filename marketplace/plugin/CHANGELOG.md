@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-25
 
+## 2.231.1 (2026-08-25)
+
+- **Default-edit now reaches every doc** (87% of the corpus was unfiled and
+  excluded — guard dropped, File-it banner rides above the editor); **search
+  moved into the pane header**, the `.ws-top` band deleted (search sits at the
+  pane top); read renderer keeps wrapped bullet lines + `_em_`; search focus
+  ring; tree-row path tooltips. First visual-bug audit: 49 findings filed.
+
 ## 2.231.0 (2026-08-25)
 
 W4 closing wave: workflow-floor.sh — Stop ADVISORY for heavy multi-file turns with no Agent/Workflow dispatch (G5; default OFF, enable via ~/.sutra/workflow-floor-enabled; never blocks). capability-audit.sh gains an install-surface section (settings-wired hooks without plugin twins, git hooksPath, launchd routines) so parity gaps stop hiding. Floor smoke 4/4.

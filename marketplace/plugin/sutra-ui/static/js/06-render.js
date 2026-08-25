@@ -412,7 +412,8 @@ function _focusedInputSelector(){
      attributes need no special case: getAttribute returns "" and [data-x=""]
      matches a bare data-x. */
   for (const attr of ["data-sask", "data-ssend", "data-sideask", "data-cwdinput",
-                      "data-prf", "data-edta", "data-workdir-input", "data-edfilter"]) {
+                      "data-prf", "data-edta", "data-workdir-input", "data-edfilter",
+                      "data-wssearch"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
   }
   return null;
@@ -878,6 +879,7 @@ function render(){
                 stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
          </button>
          <h3 style="max-width:none">${esc(t)}</h3>
+         ${S.screen === "workspace" && typeof wsPaneHeadHtml === "function" ? wsPaneHeadHtml() : ""}
          <button class="ib" data-close="browse" style="margin-left:auto"
                  aria-label="Close this pane">
            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>

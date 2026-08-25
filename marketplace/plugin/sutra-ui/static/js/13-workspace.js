@@ -383,13 +383,14 @@ async function wsOpenDoc(path, opts){
      edit once the read copy is here. Guards: stale open, restore (boot stays
      light + Reload's documented 12->01), fromSearch (03 keeps its preview and
      its per-keystroke doc-col churn would detach a mounted editor), missing
-     read copy, doc gone (14), read-only (11), unfiled (06 keeps File-it).
+     read copy, doc gone (14), read-only (11). UNFILED docs edit too — 87% of
+     the founder's corpus is unfiled (r3 measurement), so the old exclusion
+     turned the feature off; the File-it banner now rides ABOVE the editor.
      NOT via wsEdit(): that is the explicit-action path — it sets unsaved=true
      (would arm wsCheckDisk's false 12), steals focus and pings telemetry.
      unsaved stays false here; onDirty owns dirty. */
   if (S.ws.docPath === path && !opts.restore && !opts.fromSearch
-      && S.ws.lastRead && !S.ws.docGone && wsEditAllowed()
-      && !wsDocIsUnfiled(path)){
+      && S.ws.lastRead && !S.ws.docGone && wsEditAllowed()){
     S.ws.editing = true;
   }
   render();
@@ -853,6 +854,9 @@ function wsTreeHtml(){
         drawn++;
         html += '<button type="button" class="ws-doc'
           + (x.missing ? " gone" : "") + (isSel ? " on" : "") + '" '
+          /* full path as tooltip (visual audit r3): ellipsized twins like two
+             "Changelog" rows are otherwise indistinguishable */
+          + 'title="' + esc(x.path) + '" '
           + wsRowAttrs("doc", x.path) + '>' + esc(x.title) + '</button>';
       });
       if (!showAll && docs.length > drawn){
@@ -878,6 +882,7 @@ function wsTreeHtml(){
         drawn++;
         html += '<button type="button" class="ws-doc ws-und'
           + (isSel ? " on" : "") + '" '
+          + 'title="' + esc(x.path) + '" '
           + wsRowAttrs("doc", x.path) + '>' + esc(x.title) + '</button>';
       });
       if (!showAll && docs.length > drawn){
@@ -1061,6 +1066,9 @@ function wsMdInline(t){
   x = x.replace(/`([^`]+)`/g, "<code>$1</code>");
   x = x.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   x = x.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
+  /* _underscore_ emphasis (visual audit r3): word-boundary guarded so
+     snake_case identifiers never italicize. */
+  x = x.replace(/(^|[\s(])_([^_\s](?:[^_]*[^_\s])?)_(?![A-Za-z0-9_])/g, "$1<em>$2</em>");
   x = x.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   x = x.replace(/\[\[([^\]]+)\]\]/g, '<span class="ws-wikilink">$1</span>');
@@ -1091,7 +1099,17 @@ function wsMdHtml(text){
       while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])){
         let it = lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, "");
         it = it.replace(/^\[ \]\s*/, "\u25a1 ").replace(/^\[x\]\s*/i, "\u25a3 ");
-        items.push("<li>" + wsMdInline(it) + "</li>"); i++;
+        i++;
+        /* lazy continuation (CommonMark; visual audit r3): a wrapped line
+           belongs to its bullet \u2014 before this, it fell out of the list and
+           restarted flush-left mid-sentence. A blank line or any new block
+           marker still ends the item. */
+        while (i < lines.length && lines[i].trim()
+               && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i])
+               && !/^(#{1,6})\s+|^```|^\s*>|^\s*\|.*\|\s*$|^\s*(---+|\*\*\*+)\s*$/.test(lines[i])){
+          it += " " + lines[i].trim(); i++;
+        }
+        items.push("<li>" + wsMdInline(it) + "</li>");
       }
       html += (ordered ? "<ol>" : "<ul>") + items.join("") + (ordered ? "</ol>" : "</ul>");
       continue;
@@ -1243,7 +1261,10 @@ function wsDocColHtml(state){
     html += wsNoticeHtml("alert", WS_COPY.changedNotice,
       [{ act:"reload", label:WS_COPY.reload, gold:true },
        { act:"keepmine", label:WS_COPY.keepMine }]);
-  if (state === "06")
+  /* File-it also rides above the EDITOR: unfiled docs default-edit now
+     (state 07 wins the resolver), and filing must stay one click (r3). */
+  if (state === "06"
+      || (state === "07" && w.sel && w.sel.type === "doc" && wsDocIsUnfiled(w.sel.path)))
     html += wsNoticeHtml("info", WS_COPY.unfiledNotice,
       wsEditAllowed() ? [{ act:"fileit", label:WS_COPY.fileIt, gold:true }] : []);
   html += wsCrumbHtml(state);
@@ -1273,16 +1294,20 @@ function wsTopRightHtml(state, g){
             ? '<button type="button" class="ws-act" data-wsact="edit">' + WS_COPY.edit + '</button>' : ""))
     + '</span>';
 }
+/* The search + action cluster live in the browse pane's OWN header row (.ph)
+   — 06-render.js asks for this when S.screen === "workspace". One header, no
+   second band: the .ws-top rectangle is gone (founder 2026-08-25, r3). */
+function wsPaneHeadHtml(){
+  if (!wsFlagOn()) return "";
+  const state = wsCurrentState();
+  const g = S.ws.results ? wsGroupResults(S.ws.results) : null;
+  return '<input class="ws-search" data-wssearch placeholder="' + WS_COPY.search + '"'
+    + ' value="' + esc(S.ws.q) + '" aria-label="' + WS_COPY.search + '">'
+    + wsTopRightHtml(state, g);
+}
 function wsScreenHtml(){
   const state = wsCurrentState();
   wsSyncCursorRow();
-  const g = S.ws.results ? wsGroupResults(S.ws.results) : null;
-  const top =
-    '<div class="ws-top">'
-    + '<input class="ws-search" data-wssearch placeholder="' + WS_COPY.search + '"'
-    + ' value="' + esc(S.ws.q) + '" aria-label="' + WS_COPY.search + '">'
-    + wsTopRightHtml(state, g)
-    + '</div>';
   const lens =
     '<div class="ws-lens" role="tablist">'
     + '<button type="button" data-wslens="org" aria-selected="' + (S.ws.lens === "org") + '">'
@@ -1294,7 +1319,7 @@ function wsScreenHtml(){
   else if (S.ws.searching && !S.ws.results) side = wsSearchingHtml();
   else if (S.ws.results) side = wsResultsHtml();
   else side = lens + (S.ws.lens === "folders" ? wsFoldersHtml() : wsTreeHtml());
-  return '<div class="ws">' + top
+  return '<div class="ws">'
     + '<div class="ws-panes">'
     + '<div class="ws-side" role="tree">' + side + '</div>'
     + '<div class="ws-doccol"><div class="ws-col">' + wsDocColHtml(state) + '</div></div>'
@@ -1310,7 +1335,7 @@ function wsRenderSideOnly(){
   if (!side){ render(); return; }
   const state = wsCurrentState();
   wsSyncCursorRow();
-  const tr = document.querySelector("#scBody .ws-topright");
+  const tr = document.querySelector("#panes .pane.browse .ws-topright");
   if (tr){
     const g2 = S.ws.results ? wsGroupResults(S.ws.results) : null;
     tr.outerHTML = wsTopRightHtml(state, g2);
@@ -1365,7 +1390,8 @@ function wireWorkspace(scBody){
   }
   scBody = scBody || document.getElementById("scBody");
   if (!scBody) return;
-  const search = scBody.querySelector("[data-wssearch]");
+  /* the input lives in the browse pane's .ph now, not in scBody (r3) */
+  const search = document.querySelector("#panes .pane.browse [data-wssearch]");
   if (search){
     /* No render() per keystroke — it would fight the caret; results repaint
        through wsRenderSideOnly() when the debounced fetch lands. */

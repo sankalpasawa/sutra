@@ -165,7 +165,8 @@ function freshSandbox(){
   wsCurrentState, wsStateFromError, wsGroupResults, wsMarkSnippet,
   wsSearchInput, wsVisibleRows, wsActivateRow, wsKeydown, wsParseRoute,
   wsOpenDoc, wsSetLens, wsEdit, wsDone, wsKeepMine, wireWorkspace,
-  wsScreenHtml, WS_COPY, wsMatchWords, wsCount, wsTreeHtml, wsMdHtml };
+  wsScreenHtml, WS_COPY, wsMatchWords, wsCount, wsTreeHtml, wsMdHtml,
+  wsPaneHeadHtml, wsFileIt };
 `;
   new vm.Script(validatorSrc + "\n" + source + EPILOGUE,
     { filename: "13-workspace.js#test" }).runInContext(sb);
@@ -465,7 +466,8 @@ test("state 13 renders survival copy, Try again, and the offline chip", () => {
   const html = sb.__W.wsScreenHtml();
   assert(html.indexOf(sb.__W.WS_COPY.engineDown) !== -1, "state-13 message missing");
   assert(html.indexOf(">Try again<") !== -1, "Try again action missing");
-  assert(html.indexOf(">offline<") !== -1,
+  /* r3: the chip cluster lives in the pane head now */
+  assert(sb.__W.wsPaneHeadHtml().indexOf(">offline<") !== -1,
     "the offline chip MUST co-render with the message or cause is lost (COPY.md audit)");
 });
 
@@ -566,9 +568,12 @@ test("state 11 shows the read-only chip and NO edit affordance anywhere", () => 
     sb2.S.sb = { running: true, readonly: true };
     sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
   });
+  /* r3: the chip cluster lives in the pane head now */
+  const head = sb.__W.wsPaneHeadHtml();
   const html = sb.__W.wsScreenHtml();
-  assert(html.indexOf(">read-only<") !== -1, "read-only chip missing");
-  assert(html.indexOf('data-wsact="edit"') === -1, "Edit rendered in read-only mode");
+  assert(head.indexOf(">read-only<") !== -1, "read-only chip missing from pane head");
+  assert(head.indexOf('data-wsact="edit"') === -1 && html.indexOf('data-wsact="edit"') === -1,
+    "Edit rendered in read-only mode");
   assert(html.indexOf(">New document here<") === -1 && html.indexOf(">File it<") === -1,
     "every write affordance must be absent in state 11");
 });
@@ -683,12 +688,10 @@ async function asyncChecks(){
       : Promise.resolve({ ok: false, json: async () => ({ error: { kind: "not_found", message: "gone" } }) }));
     await sb.__W.wsOpenDoc("holding/research/viewer.md", {});
     if (sb.S.ws.editing || !sb.S.ws.docGone) bad.push("gone");
-    sb = mk();
-    sb.S.ws.tree = { departments: [], unfiled: [{ path: "holding/TODO.md", title: "TODO" }] };
-    await sb.__W.wsOpenDoc("holding/TODO.md", {});
-    if (sb.S.ws.editing || sb.__W.wsCurrentState() !== "06") bad.push("unfiled");
+    /* unfiled is NO LONGER a guard (r3: 87% of the corpus was unfiled) —
+       its positive case is the dedicated r3 test below */
     if (!bad.length){
-      console.log("ok   - default-edit guards: restore/fromSearch/read-only/gone/unfiled stay read-first"); pass++;
+      console.log("ok   - default-edit guards: restore/fromSearch/read-only/gone stay read-first"); pass++;
     } else {
       console.log("FAIL - default-edit guards leaked into edit: " + bad.join(", ")); fail++;
     }
@@ -716,6 +719,53 @@ async function asyncChecks(){
       console.log("ok   - default-edit: a stale mount resumer aborts on the openSeq/state re-check"); pass++;
     } else {
       console.log("FAIL - default-edit: stale resumer mounted anyway: calls=" + JSON.stringify(calls)); fail++;
+    }
+  }
+
+  {
+    /* r3: unfiled docs default-edit too (87% of the corpus was unfiled), and
+       the File-it banner rides ABOVE the editor in state 07 */
+    const sb = onSandbox();
+    sb.fetchImpl = (u) => Promise.resolve({ ok: true, json: async () =>
+      String(u).indexOf("/api/fs/read") !== -1
+        ? { text: "body", editable: true, bytes: 4 }
+        : { meta: { mtime: 111 } } });
+    sb.S.ws.tree = { departments: [], unfiled: [{ path: "holding/TODO.md", title: "TODO" }] };
+    await sb.__W.wsOpenDoc("holding/TODO.md", {});
+    const ok1 = sb.S.ws.editing === true && sb.S.ws.unsaved === false
+      && sb.__W.wsCurrentState() === "07";
+    const html = sb.__W.wsScreenHtml();
+    const ok2 = html.indexOf('data-wsact="fileit"') !== -1 && html.indexOf("data-wseditor") !== -1;
+    if (ok1 && ok2){
+      console.log("ok   - unfiled docs default-edit too, File-it banner above the editor (r3)"); pass++;
+    } else {
+      console.log("FAIL - unfiled default-edit: editing=" + sb.S.ws.editing
+        + " state=" + sb.__W.wsCurrentState() + " fileit=" + (html.indexOf('data-wsact="fileit"') !== -1)
+        + " editor=" + (html.indexOf("data-wseditor") !== -1)); fail++;
+    }
+  }
+
+  {
+    /* r3 (deepseek hazard pin): File-it while editing dirty preserves the
+       editor handle and the dirty state — filing classifies the PATH, it
+       never touches doc bytes or identity */
+    const sb = onSandbox();
+    const handle = { destroy(){}, forceSave(){}, isDirty: () => true };
+    sb.fetchImpl = () => Promise.resolve({ ok: true, json: async () =>
+      ({ departments: [], unfiled: [] }) });
+    sb.S.screen = "workspace";
+    sb.S.ws.loaded = true;
+    sb.S.ws.sel = { type: "doc", path: "holding/TODO.md" };
+    sb.S.ws.docPath = "holding/TODO.md";
+    sb.S.ws.editing = true; sb.S.ws.unsaved = true;
+    sb.S.ws.edHandle = handle;
+    await sb.__W.wsFileIt();
+    if (sb.S.ws.edHandle === handle && sb.S.ws.unsaved === true
+        && sb.S.ws.editing === true && sb.S.ws.busy === null){
+      console.log("ok   - File-it while editing preserves the editor handle and dirty state (r3)"); pass++;
+    } else {
+      console.log("FAIL - File-it disturbed the editor: edHandle=" + (sb.S.ws.edHandle === handle)
+        + " unsaved=" + sb.S.ws.unsaved + " editing=" + sb.S.ws.editing + " busy=" + sb.S.ws.busy); fail++;
     }
   }
 
@@ -749,6 +799,24 @@ test("35. openScreen dispatches the workspace lazy load (regression: line droppe
   const src = fs.readFileSync(path.join(__dirname, "static/js/07-loaders.js"), "utf8");
   assert(/id === "workspace" && typeof loadWorkspace === "function"\) loadWorkspace\(false\)/.test(src),
     "openScreen must call loadWorkspace(false) for id workspace (guarded like wireWorkspace)");
+});
+
+test("search lives in the pane header: wsPaneHeadHtml carries the input, the screen body has no band (r3)", () => {
+  const sb = onSandbox();
+  const head = sb.__W.wsPaneHeadHtml();
+  assert(head.indexOf("data-wssearch") !== -1, "pane head must carry the search input");
+  assert(head.indexOf("ws-topright") !== -1, "pane head must carry the action cluster");
+  const html = sb.__W.wsScreenHtml();
+  assert(html.indexOf('class="ws-top"') === -1, "the .ws-top band must not render in the screen body");
+  assert(html.indexOf("data-wssearch") === -1, "the search input must not render in the screen body");
+});
+
+test("search-in-header wiring pins (r3): 06-render injects the hook + preserves search focus", () => {
+  const src = fs.readFileSync(path.join(__dirname, "static/js/06-render.js"), "utf8");
+  assert(/S\.screen === "workspace" && typeof wsPaneHeadHtml === "function" \? wsPaneHeadHtml\(\) : ""/.test(src),
+    ".ph must ask the workspace for its header contribution");
+  assert(/"data-wssearch"/.test(src),
+    "data-wssearch must be in the focused-input preserve whitelist (typing must survive background renders)");
 });
 
 test("Done flushes the native editor and unmounts it (PLAN-25 S12/S14)", () => {

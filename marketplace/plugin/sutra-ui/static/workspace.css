@@ -92,15 +92,16 @@
   .ws button{border:0;background:none;font-family:inherit;text-align:left;
     color:inherit;padding:0;cursor:pointer}
 
-  /* top bar 40 — was the mock sheet's 52; matched to the panel's own 40px
-     planehead so the search bar sits tight under the pane head (founder
-     spacing directive 2026-08-25) */
-  .ws-top{height:40px;flex:none;display:flex;align-items:center;gap:14px;padding:0 20px;
-    border-bottom:1px solid var(--line);background:var(--card)}
-  /* Live input: placeholder faint / typed ink lands on ::placeholder + colour —
-     the mock faked typing with .typed because its screens are static. */
-  .ws-search{flex:1;max-width:520px;font-size:13px;font-weight:400;color:var(--ink);caret-color:var(--ink);
-    border:0;background:transparent;outline:none;font-family:inherit}
+  /* The search lives in the browse pane's .ph row now (r3, founder
+     2026-08-25: "the rectangular plane can go") — the .ws-top band is gone.
+     Location-agnostic classes; margin-left keeps a breath after the title. */
+  .ws-search{flex:1;min-width:120px;max-width:520px;margin-left:10px;
+    font-size:13px;font-weight:400;color:var(--ink);caret-color:var(--ink);
+    border:0;border-bottom:1px solid transparent;background:transparent;
+    outline:none;font-family:inherit}
+  /* focus visibility (visual audit r3): the bare input in the pane head was
+     indistinguishable from a static label when focused */
+  .ws-search:focus{border-bottom-color:var(--acc)}
   .ws-search::placeholder{color:var(--faint)}
   .ws-topright{margin-left:auto;display:flex;align-items:center;gap:14px;
     font-size:11.5px;color:var(--faint)}
