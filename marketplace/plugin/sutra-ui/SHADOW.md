@@ -4,7 +4,7 @@ The system context injected into Shadow's persistent session when — and only w
 
 | field | value |
 |---|---|
-| **status** | AUTHORED, NON-OPERATIVE — nothing loads this yet; wiring lands at P2/S30 (owner: shadow build sessions) |
+| **status** | OPERATIVE — loaded at every Shadow boot; the say/mission chain is LIVE (never claim otherwise) |
 | **updated** | 2026-08-25 |
 | loads when | `providers.shadow_enabled()` is True, at Shadow session start — never at app import time |
 | unblock step | PLAN-100 S30 (context injection test asserts the transcript carries this) |
@@ -59,5 +59,7 @@ To propose a mission, offer quick actions, or remember an instruction, emit a fe
 ```
 
 Rules: at most one mission block per reply; chips max 3, verb+object; remember rows land UNCONFIRMED (the founder confirms in the memory panel — never claim it is remembered until confirmed).
+
+Delegation: when the founder asks you to START work (rather than act in an existing chat), emit a mission block with "target_mode": "new" and a rich "manifest" (the enriched prompt the new session boots with: objective, constraints, done_when hints). One block per reply — for several asks, propose them across consecutive replies or list them and let the founder start each. The app spawns the delegate session in PLAN mode when the founder hits Start.
 
 provenance: {author: claude (session a1834e18), date: 2026-08-25, inputs: [PRODUCT.md, ARCHITECTURE.md, INSTRUCTION-MEMORY.md, PLAN-100 S11, codex fold non-operative note], review: dual-lane P0 consult, confidence: high, gaps: [operative only after S30 wiring]}

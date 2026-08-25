@@ -201,3 +201,71 @@ def founder_takeover(session_id):
             mission_engine.emit_mission_feed(
                 hit, "needs_decision", "you took over -- resume when ready")
     return hit
+
+
+async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
+    """S53 in production: a NEW claude session Shadow delegates into.
+
+    Headless twin of a pane: its own SessionRuntime, spawned in PLAN mode
+    (v1 safety: real turns, visible work, no unsupervised writes -- acting
+    delegates need an explicit founder grant), registered in the same
+    registry the say chain uses, observer attached, first turn = the
+    enriched manifest. The transcript lands in ~/.claude/projects, so the
+    session appears in Chats and a pane can resume it.
+    """
+    import session_runtime as srt
+    rt = srt.SessionRuntime()
+    args = build_args()
+    await rt.spawn(args, cwd, tuple(args), env=env)
+    texts = []
+
+    async def collect(frame):
+        if frame.get("type") == "token":
+            texts.append(frame.get("text") or "")
+
+    await rt.send_user_frame(manifest)
+    (sid, _t, got_result, err, _e) = await rt.demux_turn(collect, None)
+    if not got_result or not sid:
+        rt.kill_group()
+        rt.clear()
+        raise RuntimeError("delegate session failed to boot: %s" % (err,))
+    register(sid, rt)
+    attach_observer(sid, rt)
+    shadow_ledger.append("actions", {
+        "mission_id": None, "kind": "spawn",
+        "summary": "delegate session %s spawned (plan mode)" % sid})
+    return sid
+
+
+async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
+    """S53 in production: a NEW claude session Shadow delegates into.
+
+    Headless twin of a pane: its own SessionRuntime, spawned in PLAN mode
+    (v1 safety: real turns, visible work, no unsupervised writes -- acting
+    delegates need an explicit founder grant), registered in the same
+    registry the say chain uses, observer attached, first turn = the
+    enriched manifest. The transcript lands in ~/.claude/projects, so the
+    session appears in Chats and a pane can resume it.
+    """
+    import session_runtime as srt
+    rt = srt.SessionRuntime()
+    args = build_args()
+    await rt.spawn(args, cwd, tuple(args), env=env)
+    texts = []
+
+    async def collect(frame):
+        if frame.get("type") == "token":
+            texts.append(frame.get("text") or "")
+
+    await rt.send_user_frame(manifest)
+    (sid, _t, got_result, err, _e) = await rt.demux_turn(collect, None)
+    if not got_result or not sid:
+        rt.kill_group()
+        rt.clear()
+        raise RuntimeError("delegate session failed to boot: %s" % (err,))
+    register(sid, rt)
+    attach_observer(sid, rt)
+    shadow_ledger.append("actions", {
+        "mission_id": None, "kind": "spawn",
+        "summary": "delegate session %s spawned (plan mode)" % sid})
+    return sid
