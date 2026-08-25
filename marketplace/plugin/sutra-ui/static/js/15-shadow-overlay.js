@@ -87,8 +87,57 @@ function mountShadowOverlay(){
   dot.setAttribute && dot.setAttribute("aria-label", st.label);
   dot.setAttribute && dot.setAttribute("tabindex", "0");
   dot.dataset && (dot.dataset.shadowdot = "1");
+  if (dot.addEventListener) dot.addEventListener("click", toggleShadowCard);
   (document.body || document.documentElement).appendChild(dot);
   return dot;
+}
+
+/* the card MOUNTS (2.224.3 lesson repeated: html functions nobody renders
+   are invisible). One wrapper div, replaced wholesale per state change. */
+function renderShadowCard(){
+  if (typeof document === "undefined" || typeof S === "undefined") return;
+  const existing = document.querySelector && document.querySelector("[data-shcardwrap]");
+  if (existing) existing.remove();
+  if (!S.shadowCardOpen) return;
+  const wrap = document.createElement("div");
+  wrap.dataset && (wrap.dataset.shcardwrap = "1");
+  wrap.innerHTML = shadowCardHtml();
+  if (wrap.addEventListener){
+    wrap.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && !ev.shiftKey && ev.target
+          && ev.target.dataset && ev.target.dataset.shcompose){
+        ev.preventDefault && ev.preventDefault();
+        const text = ev.target.value;
+        ev.target.value = "";
+        if (text && text.trim()) shadowSendAndRefresh(text.trim());
+      }
+    });
+    wrap.addEventListener("click", (ev) => {
+      const chip = ev.target && ev.target.dataset && ev.target.dataset.shchip;
+      if (chip) shadowSendAndRefresh(chip);
+    });
+  }
+  (document.body || document.documentElement).appendChild(wrap);
+  return wrap;
+}
+
+function toggleShadowCard(){
+  if (typeof S === "undefined") return;
+  S.shadowCardOpen = !S.shadowCardOpen;
+  renderShadowCard();
+}
+
+async function shadowSendAndRefresh(text){
+  renderShadowCard();               /* founder turn appears immediately */
+  const doc = await sendToShadow(text);
+  if (doc && doc.watching !== undefined){
+    _shadowStatus = { watching: doc.watching,
+                      permission_mode: (_shadowStatus || {}).permission_mode };
+    const dot = document.querySelector && document.querySelector(".shdot");
+    if (dot){ const st = dotState(_shadowStatus);
+      dot.className = "shdot " + st.cls; }
+  }
+  renderShadowCard();
 }
 
 function bootShadowOverlay(){
@@ -107,11 +156,13 @@ function bootShadowOverlay(){
 function shadowKeyHandler(ev){
   if (ev.key === "Escape" && typeof S !== "undefined" && S.shadowCardOpen){
     S.shadowCardOpen = false;
+    renderShadowCard();
     return true;
   }
   if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey
       && String(ev.key).toLowerCase() === "s"){
     if (typeof S !== "undefined") S.shadowCardOpen = !S.shadowCardOpen;
+    renderShadowCard();
     return true;
   }
   return false;
