@@ -298,12 +298,17 @@ class SessionRuntime:
                 return False
         return True
 
-    async def spawn(self, args, cwd, key):
+    async def spawn(self, args, cwd, key, env=None):
         """Start the persistent process and adopt it as self.proc.
 
         On OSError nothing is assigned -- the caller keeps whatever stale proc
         was there (the socket layer\'s liveness check already treats a dead one
         as not-alive), and the error policy stays at the socket layer.
+
+        env: optional environment OVERLAY for this spawn only (P5: Shadow's
+        own session carries SUTRA_MCP_SHADOW=1 so ITS MCP server registers the
+        shadow tools; chat panes never get the marker). Default None keeps the
+        frozen behavior byte-identical.
         """
         p = await asyncio.create_subprocess_exec(
             *args, cwd=cwd,
@@ -323,7 +328,7 @@ class SessionRuntime:
             # directly: a 200 KB line raises at the default and reads clean at
             # this limit.
             limit=8 * 1024 * 1024,
-            env=dict(os.environ),  # no ANTHROPIC_API_KEY -> subscription auth
+            env=dict(os.environ, **(env or {})),  # no ANTHROPIC_API_KEY -> subscription auth
             # own process group, so an interrupt can signal the whole tree
             start_new_session=True,
         )

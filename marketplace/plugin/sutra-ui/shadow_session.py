@@ -66,7 +66,8 @@ class ShadowSession:
         # a missing stream flag fails here, loudly, not as a hung boot.
         if "--input-format" in args and "stream-json" not in args:
             raise ValueError("build_args() argv lacks stream-json input")
-        await self.rt.spawn(args, cwd, tuple(args))
+        await self.rt.spawn(args, cwd, tuple(args),
+                            env={"SUTRA_MCP_SHADOW": "1"})
 
         async def _sink(frame):
             return None

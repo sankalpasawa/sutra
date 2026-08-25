@@ -1067,6 +1067,68 @@ SHADOW_SAY_TOKEN = _secrets.token_hex(24)
 os.environ["SUTRA_SHADOW_SAY_TOKEN"] = SHADOW_SAY_TOKEN
 
 
+# ------------------------------------------------------------ shadow chat --
+# PLAN-100 P5: ONE Shadow conversation. The overlay card and the Focus home
+# are two views of this channel. Lazy: the first message boots the session;
+# the flag off means 403 and no process ever exists.
+import shadow_session as _shadow_session
+
+_SHADOW = {"session": None}
+
+
+def _shadow_args():
+    detail = providers.active_provider_detail()
+    prov = providers.provider_by_id(detail["id"]) if detail["id"] else None
+    if not prov or not prov.get("bin_path"):
+        raise HTTPException(503, "no usable provider for Shadow")
+    return build_agent_args(prov["bin_path"], "", "plan", stream_input=True)
+
+
+@app.get("/api/shadow/status")
+async def api_shadow_status():
+    """The dot reads this: watching (green) / not (grey). Never 500s -- a
+    down Shadow is a STATE the UI renders, not an error."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    sess = _SHADOW["session"]
+    return {"watching": bool(sess and sess.alive),
+            "session": sess.session_id if sess else None,
+            "permission_mode": "plan"}
+
+
+@app.post("/api/shadow/chat")
+async def api_shadow_chat(request: Request):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "body must be json")
+    msg = (body.get("message") or "").strip()
+    if not msg:
+        raise HTTPException(400, "message required")
+    sess = _SHADOW["session"]
+    if sess is None or not sess.alive:
+        sess = _shadow_session.ShadowSession()
+        booted = await sess.start(_shadow_args, WORKDIR)
+        if booted is None:
+            raise HTTPException(503, "shadow could not boot")
+        _SHADOW["session"] = sess
+    tokens = []
+
+    async def collect(frame):
+        if frame.get("type") == "token":
+            tokens.append(frame.get("text") or "")
+
+    await sess.rt.send_user_frame(msg)
+    (sess.session_id, _t, got_result,
+     err, _e) = await sess.rt.demux_turn(collect, sess.session_id)
+    if err:
+        raise HTTPException(502, "shadow turn failed: %s" % err[:200])
+    return {"reply": "".join(tokens), "session": sess.session_id,
+            "watching": sess.alive}
+
+
 @app.get("/api/shadow/feed")
 async def api_shadow_feed():
     """PLAN-100 S59: the needs-you feed, render-only. 403 when the flag is
