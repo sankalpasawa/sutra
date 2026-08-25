@@ -186,7 +186,7 @@ Desktop ──► API Gateway (TLS, WAF, per-operator rate limit)
 
 | Phase | Ships | Status |
 |-------|-------|--------|
-| **P1** | schema + migrations, `ConnectorService`, `CredentialStore`+Keychain, device-flow `AuthStrategy`, `/authorize` + poll, identity, connector row | ✅ **shipped 2.111.0** — verified against a live connection to `@tchandrakar` (id 64305513) |
+| **P1** | schema + migrations, `ConnectorService`, `CredentialStore`+Keychain, device-flow `AuthStrategy`, `/authorize` + poll, identity, connector row | ✅ **shipped 2.111.0** — verified against a live connection to the then-collaborator's GitHub account (identifier removed per D69) |
 | **P2** | `GitHubClient` (pinned version, Link pagination, error classification), installations, repos, orgs, `validate`, reauth, disconnect | ✅ **shipped 2.111.0** — ⚠️ **unproven against real repositories**: the GitHub App is authorized but not installed, so `/user/installations` returns `total_count: 0` and only the empty-state path has run live |
 | **P3** | capability model, resolver, policy table, capability API | ✅ **shipped 2.112.0** — settings resolved from the five real paths; 11 panel endpoints; Connectors screen |
 | **P4** | tool registry + gateway, READ tools, untrusted envelope, taint tracking, audit chain wiring | ⬜ next |

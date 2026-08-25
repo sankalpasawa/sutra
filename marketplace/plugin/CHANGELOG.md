@@ -2,13 +2,17 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## 2.227.0
+## 2.228.0 (2026-08-25)
 
 - **Sign in from the app.** The Usage screen's Account card gains a Sign in /
   Switch account button — it runs Claude's own browser auth flow; the button
   doubles as Cancel while a sign-in waits. The card slims to the four rows you
   act on, with diagnostics behind Details, and the screen's explainer notes
   shrink to one line.
+
+## 2.227.0 (2026-08-25)
+
+W1 fleet parity: md-standard-gate (PostToolUse Edit|Write) and atom-cards-stop-check (Stop) promoted from asawa-holding to plugin L0 and wired in hooks.json. Ships 4 engine-of-record mirrors, canon seed (13 charters + 36 ADRs) at os/canon/, and 4 authoring skills (writing-llm-md, writing-adr, writing-engine-charter, skill-resolution). Suites: atom-cards 11/11, md-gate smoke 3/3 (incl. new macOS /var symlink canonicalization fix), ownership-audit PASS.
 
 ## 2.226.3 (2026-08-25)
 

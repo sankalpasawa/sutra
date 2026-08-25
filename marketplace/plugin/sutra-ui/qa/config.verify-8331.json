@@ -1,0 +1,345 @@
+{
+  "_child": "sutra-ui QA child of /Users/asawa/Claude/dayflow/products/design-qa — run via ./run.sh, which syncs `rules` from rules-sutra.json and the boot fixture action from ../tests/fixtures/toolruns-fanout.json before calling the product CLI on this file",
+  "url": "http://127.0.0.1:8331/",
+  "outDir": "runs",
+  "viewport": {
+    "width": 1280,
+    "height": 860
+  },
+  "headless": true,
+  "fullPage": false,
+  "settleMs": 250,
+  "states": [
+    {
+      "name": "boot",
+      "_what": "the panel as it opens (headless default is the light no-attribute theme). Actions[2] is machine-written by run.sh from the captured fan-out fixture; actions[3] defines the drive-app-style demo turn, stops this page's live session stream, and mounts the offscreen probe rig",
+      "actions": [
+        {
+          "wait": "#panes .pane .pb"
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "eval": "window.__qaRuns = [{\"id\":\"toolu_01NKnXvvLFZtyLsqziDPAwfz\",\"name\":\"Bash\",\"summary\":\"cd /Users/asawa/Claude/asawa-holding/holding/website/native \",\"caller\":\"direct\",\"running\":false,\"ok\":true,\"startedAt\":1700000000000,\"endedAt\":1700000071000},{\"id\":\"toolu_01CbXeoRtStNAsuYkXqsRE8x\",\"name\":\"Agent\",\"summary\":\"Explore: Audit model PRD pages\",\"caller\":\"direct\",\"running\":false,\"ok\":true,\"startedAt\":1700000005000,\"endedAt\":1700000431000},{\"id\":\"toolu_01YAza4HDntkxFk6VM5EAJax\",\"name\":\"Agent\",\"summary\":\"Explore: Audit platform block pages\",\"caller\":\"direct\",\"running\":false,\"ok\":true,\"startedAt\":1700000006000,\"endedAt\":1700000503000},{\"id\":\"toolu_01L7RmPwVZph19qjLEMPKmBK\",\"name\":\"Agent\",\"summary\":\"Explore: Audit engineering pages\",\"caller\":\"direct\",\"running\":false,\"ok\":true,\"startedAt\":1700000007000,\"endedAt\":1700000575000},{\"id\":\"toolu_01G1HG9fCFetCcHrn7ES16ti\",\"name\":\"Agent\",\"summary\":\"Explore: Audit hub/products/roadmap/archive\",\"caller\":\"direct\",\"running\":true,\"ok\":null,\"startedAt\":1700000008000},{\"id\":\"toolu_019UW46d3xyuBKi1XRtBkaNL\",\"name\":\"Bash\",\"summary\":\"find /Users/asawa/Claude/asawa-holding/holding/plans -name \\\"\",\"caller\":\"direct\",\"running\":false,\"ok\":true,\"startedAt\":1700000001000,\"endedAt\":1700000143000}];"
+        },
+        {
+          "eval": "(() => {\n  /* page's own functions — if these are missing, the modules did not load */\n  if (typeof turnResponse !== \"function\") throw new Error(\"turnResponse is not defined\");\n  if (typeof gvChipHtml !== \"function\") throw new Error(\"gvChipHtml is not defined\");\n  if (typeof gvAgents !== \"function\") throw new Error(\"gvAgents is not defined\");\n  /* a fresh profile shows the first-run interstitial over everything; dismiss\n     it in memory only — no server settings write */\n  if (window.S) S.onbDismissed = true;\n  const onb = document.getElementById(\"onbHost\");\n  if (onb && onb.firstChild && typeof render === \"function\") render();\n  /* THIS PAGE ONLY (isolated QA browser context): stop the live session stream.\n     Its sync/changed/tick frames re-render #panes wholesale at arbitrary times,\n     which wipes the injected demo turn between states and makes screenshots\n     depend on whatever sessions happen to be active on the machine. The dummy\n     keeps startSessionStream()'s reopen guard satisfied. */\n  try {\n    if (typeof _sessStream !== \"undefined\") {\n      if (_sessStream && _sessStream.close) _sessStream.close();\n      _sessStream = { readyState: 2, close() {} };\n    }\n  } catch (e) {}\n  /* Freeze background re-renders (QA page only). On a panel with live sessions,\n     transcript tailing schedules render() continuously and render() replaces\n     #panes WHOLESALE — an injected demo turn is wiped within ~100ms of\n     mounting. The original is kept as __qaRender for the states that need a\n     real re-render (the pane fold); everything the states mount afterwards\n     stays exactly where it was put. */\n  if (!window.__qaRender && typeof render === \"function\") {\n    window.__qaRender = render;\n    render = () => {};\n  }\n  /* the demo turn, composed exactly as design/drive-app.mjs composes it */\n  window.__qaTurn = () => {\n    const raw = window.__qaRuns;\n    if (!Array.isArray(raw) || !raw.length) throw new Error(\"window.__qaRuns missing — run.sh composes it from tests/fixtures/toolruns-fanout.json\");\n    S.thinkOpen = { demo: true };\n    /* the fixture's clock is frozen in 2023; rebase onto now so RUNNING rows\n       read like something an operator actually sees */\n    const t0 = Date.now() - 9 * 60 * 1000;\n    const base = raw[0].startedAt;\n    const runs = raw.map((r) => Object.assign({}, r, {\n      startedAt: t0 + (r.startedAt - base),\n      endedAt: r.endedAt == null ? undefined : t0 + (r.endedAt - base),\n    }));\n    /* the captured fan-out contains no FAILURE; append one, clearly marked as\n       demo composition, because the failure colouring is what is worth proving */\n    runs.push({ id: \"toolu_demo_fail\", name: \"Bash\", summary: \"bats cynefin.bats\",\n      running: false, ok: false, startedAt: t0 + 9000, endedAt: t0 + 80000 });\n    return { uid: \"demo\", streaming: true,\n      response: \"Placement is migrated; lens is mid-rewrite; cynefin hit a golden-test drift.\",\n      tools: runs.map((r) => r.name), toolRuns: runs };\n  };\n  window.__qaHtml = (t) => '<div class=\"u md\">Migrate all twelve engines to ledger schema v2.</div>'\n    + gvChipHtml(t, 0) + turnResponse(t);\n  /* visible copy in the real browse pane body; any app render() wipes it, so\n     later states simply call this again */\n  window.__qaFanout = () => {\n    const t = window.__qaTurn();\n    const pb = document.querySelector(\"#panes .pane.browse .pb\") || document.querySelector(\"#panes .pane .pb\");\n    if (!pb) throw new Error(\"no expanded .pane .pb in the running panel\");\n    const wrap = document.createElement(\"div\");\n    wrap.className = \"turn\";\n    wrap.innerHTML = window.__qaHtml(t);\n    pb.innerHTML = \"\";\n    pb.appendChild(wrap);\n    return pb.querySelectorAll(\".gv-agents button.trow\").length;\n  };\n  /* offscreen probe rig: the SAME app-rendered markup kept mounted on <body>\n     (render() never touches <body> children outside #panes), so the global\n     contrast/focus rules keep their subjects in EVERY state — boot and\n     collapsed-pane included. Offscreen, not display:none: computed styles and\n     programmatic focus stay real */\n  let probe = document.getElementById(\"qa-probe\");\n  if (!probe) {\n    probe = document.createElement(\"div\");\n    probe.id = \"qa-probe\";\n    probe.className = \"pane\";\n    probe.style.cssText = \"position:absolute;left:-9999px;top:0;width:900px\";\n    document.body.appendChild(probe);\n  }\n  probe.innerHTML = '<div class=\"pb\"><div class=\"turn\">' + window.__qaHtml(window.__qaTurn()) + \"</div></div>\";\n  return probe.querySelectorAll(\".gv-log .gv-ln\").length;\n})()"
+        },
+        {
+          "wait": "#qa-probe .gv-log .gv-ln.bad"
+        }
+      ]
+    },
+    {
+      "name": "fanout",
+      "_what": "the captured fan-out turn rendered by the page's own turnResponse(): 4 agent rows, 7 step-log lines (6 captured + the appended demo failure), step log open via S.thinkOpen",
+      "actions": [
+        {
+          "eval": "window.__qaFanout()"
+        },
+        {
+          "wait": "#panes .gv-agents button.trow"
+        },
+        {
+          "wait": "#panes .gv-log .gv-ln"
+        }
+      ]
+    },
+    {
+      "name": "log-open",
+      "_what": "the open step log pinned into view, failure line visible (remounted first: a straggling boot-time render() can wipe the pane between states)",
+      "actions": [
+        {
+          "eval": "window.__qaFanout()"
+        },
+        {
+          "wait": "#panes .gv-log .gv-ln.bad"
+        },
+        {
+          "eval": "(() => {\n  const bad = document.querySelector(\"#panes .gv-log .gv-ln.bad\");\n  if (!bad) throw new Error(\"the open step log with its failure line is not in the pane\");\n  bad.scrollIntoView({ block: \"center\" });\n  return true;\n})()"
+        }
+      ]
+    },
+    {
+      "name": "chip-open",
+      "_what": "the governance chip dropped open (S.govOpen, then the same remount the app would do)",
+      "actions": [
+        {
+          "eval": "(() => {\n  S.govOpen = { demo: true };\n  window.__qaFanout();\n  const p = document.querySelector(\"#panes .gv.gv-open .gv-panel\");\n  if (!p) throw new Error(\"the governance chip did not open\");\n  p.scrollIntoView({ block: \"center\" });\n  return true;\n})()"
+        },
+        {
+          "wait": "#panes .gv.gv-open .gv-panel"
+        }
+      ]
+    },
+    {
+      "name": "collapsed-pane",
+      "_what": "a REAL click on the pane fold: the app's own handler flips S.ui.paneCollapsed; __qaRender (the unfrozen render) applies it. The demo lands hidden with the pane, so it is not remounted here — the probe rig keeps every rule measurable",
+      "actions": [
+        {
+          "click": "[data-pane-fold]"
+        },
+        {
+          "eval": "window.__qaRender()"
+        },
+        {
+          "wait": "#panes .pane.collapsed"
+        }
+      ]
+    },
+    {
+      "name": "dark",
+      "_what": "fold clicked again to expand (+ __qaRender to apply it), demo remounted, [data-theme=dark] set the way drive-app.mjs sets it (the product's theme action: attribute + paint verification)",
+      "actions": [
+        {
+          "click": "[data-pane-fold]"
+        },
+        {
+          "eval": "window.__qaRender(); window.__qaFanout();"
+        },
+        {
+          "theme": "dark"
+        },
+        {
+          "wait": "#panes .gv-log .gv-ln"
+        }
+      ]
+    },
+    {
+      "name": "light",
+      "_what": "[data-theme=light] on the same populated surface (defensive remount first)",
+      "actions": [
+        {
+          "eval": "window.__qaFanout()"
+        },
+        {
+          "theme": "light"
+        },
+        {
+          "wait": "#panes .gv-log .gv-ln"
+        }
+      ]
+    },
+    {
+      "name": "reduced-motion",
+      "_what": "anchors the running ring into view. The state's `media` emulates prefers-reduced-motion:reduce BEFORE the screenshot, so 08-reduced-motion.png is captured under the condition it is named for (stilled UI); the reduced-motion rule then re-emulates during its check and scans EVERY matching element incl. ::before/::after (no cap) to prove nothing still animates",
+      "media": {
+        "reducedMotion": "reduce"
+      },
+      "actions": [
+        {
+          "eval": "window.__qaFanout()"
+        },
+        {
+          "wait": "#panes .gv-agents .trow.run .tstate"
+        },
+        {
+          "eval": "(() => {\n  const dot = document.querySelector(\"#panes .gv-agents .trow.run .tstate\")\n    || document.querySelector(\"#panes .toolRow .trow.run .tstate\");\n  if (!dot) throw new Error(\"no running row present for the reduced-motion check\");\n  dot.scrollIntoView({ block: \"center\" });\n  return true;\n})()"
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "_source": "tokens parsed from ../static/panel.css (:root, [data-theme=\"dark\"], the light @media block and [data-theme=\"light\"]) — 26 token names, 41 color values across both themes; _map/_pair/_source keys are annotations the design-qa product ignores",
+    "_regen": "node -e 'const fs=require(\"fs\");const c=fs.readFileSync(\"../static/panel.css\",\"utf8\").split(\"body{\")[0];const s=new Set();for(const m of c.matchAll(/--[\\w-]+\\s*:\\s*([^;}]+)/g)){const v=m[1].trim();if(/^#[0-9a-fA-F]{3,8}$/.test(v)||/^rgba?\\([^()]*\\)$/.test(v))s.add(v)}console.log(JSON.stringify([...s]))' (run from qa/)",
+    "tokens": {
+      "_map": {
+        "bg": [
+          "#0C0B09",
+          "#fafaf9"
+        ],
+        "surface": [
+          "#161412",
+          "#ffffff"
+        ],
+        "card": [
+          "#1C1A17",
+          "#ffffff"
+        ],
+        "line": [
+          "#2A2622",
+          "#e2e0dd"
+        ],
+        "line-soft": [
+          "#221F1C",
+          "#eeecea"
+        ],
+        "ink": [
+          "#F5F0E8",
+          "#1c1917"
+        ],
+        "muted": [
+          "#8C857D",
+          "#78716c"
+        ],
+        "faint": [
+          "#6E6860",
+          "#a8a29e"
+        ],
+        "acc": [
+          "#C4956A",
+          "#8A5D2E"
+        ],
+        "acc-bg": [
+          "rgba(196,149,106,.12)",
+          "#f6efe7"
+        ],
+        "on-acc": [
+          "#0C0B09",
+          "#ffffff"
+        ],
+        "ok": [
+          "#5A9E6F",
+          "#3f7d54"
+        ],
+        "warn": [
+          "#C9A227",
+          "#8a6d12"
+        ],
+        "block": [
+          "#B8574B",
+          "#9c3f34"
+        ],
+        "ok-bg": [
+          "rgba(90,158,111,.13)",
+          "#eef4ef"
+        ],
+        "warn-bg": [
+          "rgba(201,162,39,.13)",
+          "#f8f3e4"
+        ],
+        "block-bg": [
+          "rgba(184,87,75,.14)",
+          "#faeeec"
+        ],
+        "ok-line": [
+          "rgba(90,158,111,.32)",
+          "#cfe0d4"
+        ],
+        "warn-line": [
+          "rgba(201,162,39,.3)",
+          "#e8dcbb"
+        ],
+        "block-line": [
+          "rgba(184,87,75,.38)",
+          "#eccfc9"
+        ],
+        "inset": [
+          "#161412",
+          "#fafaf9"
+        ],
+        "bubble": [
+          "#161412",
+          "#f5f4f2"
+        ],
+        "th-bg": [
+          "#161412",
+          "#fafaf9"
+        ],
+        "knob": [
+          "#0C0B09",
+          "#ffffff"
+        ],
+        "vld-tx": [
+          "#8C857D",
+          "#57534e"
+        ],
+        "sepia": [
+          "rgba(196,149,106,.06)",
+          "#faf6ef"
+        ]
+      },
+      "_scope": "pinned to the #qa-probe rig — the full fan-out turn markup rendered by the page's own code. The visible copy is byte-identical markup under the same CSS, and real session panes are excluded because their transcript content differs per machine and per run",
+      "allowed": [
+        "#0C0B09",
+        "#fafaf9",
+        "#161412",
+        "#ffffff",
+        "#1C1A17",
+        "#2A2622",
+        "#e2e0dd",
+        "#221F1C",
+        "#eeecea",
+        "#F5F0E8",
+        "#1c1917",
+        "#8C857D",
+        "#78716c",
+        "#6E6860",
+        "#a8a29e",
+        "#C4956A",
+        "#8A5D2E",
+        "rgba(196,149,106,.12)",
+        "#f6efe7",
+        "#5A9E6F",
+        "#3f7d54",
+        "#C9A227",
+        "#8a6d12",
+        "#B8574B",
+        "#9c3f34",
+        "rgba(90,158,111,.13)",
+        "#eef4ef",
+        "rgba(201,162,39,.13)",
+        "#f8f3e4",
+        "rgba(184,87,75,.14)",
+        "#faeeec",
+        "rgba(90,158,111,.32)",
+        "#cfe0d4",
+        "rgba(201,162,39,.3)",
+        "#e8dcbb",
+        "rgba(184,87,75,.38)",
+        "#eccfc9",
+        "#f5f4f2",
+        "#57534e",
+        "rgba(196,149,106,.06)",
+        "#faf6ef"
+      ],
+      "selectors": [
+        "#qa-probe .turn, #qa-probe .turn *"
+      ],
+      "properties": [
+        "color",
+        "background-color"
+      ],
+      "maxElements": 400
+    },
+    "contrast": [
+      {
+        "_pair": "tool-row primary text: --ink on --inset (.trow background); pinned to the probe rig for run-to-run determinism",
+        "fg": "#qa-probe .toolRow .trow .tname",
+        "min": 4.5
+      },
+      {
+        "_pair": "step-log first line on --card (every .gv-ln carries a state class, so this measures the palette's log colours on the .pane, the nearest painted ancestor)",
+        "fg": "#qa-probe .gv-log .gv-ln",
+        "min": 4.5
+      },
+      {
+        "_pair": "step-log failure line: --block on --card. 3.0 floor: the colour supplements the printed verdict word; the dark palette's --block measures ~3.7 by design",
+        "fg": "#qa-probe .gv-log .gv-ln.bad",
+        "min": 3
+      },
+      {
+        "_pair": "step-log running line: --acc on --card",
+        "fg": "#qa-probe .gv-log .gv-ln.run",
+        "min": 3
+      }
+    ],
+    "reducedMotion": {
+      "selectors": [
+        "*"
+      ]
+    },
+    "overflow": true,
+    "focus": {
+      "_why": "the three interactive affordances of the fan-out turn: the step-log opener, the agent drill-down rows, the governance chip",
+      "selectors": [
+        "[data-thinkopen]",
+        "[data-agentrow]",
+        ".gv-chip"
+      ],
+      "maxElements": 12
+    }
+  },
+  "_verify": "TEMP verification copy: identical to config.json but pointed at the FIXED marketplace tree served on 8331 (the 8330 instance is the installed Sutra.app stale build)"
+}

@@ -46,7 +46,7 @@ def _read_claude_json():
 def initials_for(name, email=""):
     """Up to two letters, from the display name if there is one.
 
-    Deliberately NOT padded to two characters: "Tishant" yields "T", not "TI".
+    Deliberately NOT padded to two characters: "Sankalp" yields "S", not "SA".
     A one-word name has one initial, and inventing a second letter from the
     middle of a word produces something that looks like a typo. Claude's own
     surfaces do the same.

@@ -1,0 +1,5 @@
+# D69 ownership allowlist — path-prefix per line, '#' comments.
+# Only historical/archive mentions of the departed collaborator may live here.
+marketplace/plugin/CHANGELOG.md  # release history (archive-never-delete)
+CURRENT-VERSION.md               # migration-bridge history note
+marketplace/plugin/sutra-ui/updates.py  # docstring: one-time migration-bridge history

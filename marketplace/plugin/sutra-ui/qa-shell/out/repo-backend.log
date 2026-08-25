@@ -1,0 +1,7 @@
+========================================================================
+SUTRA_NATIVE_HOME (registry root) = /Users/asawa/.sutra-native/user-kit
+========================================================================
+========================================================================
+[org_api] SUTRA_NATIVE_HOME (registry root) = /Users/asawa/.sutra-native/user-kit
+[org_api] WRITES: POST /api/classify appends ONE placement row here.
+========================================================================

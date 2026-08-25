@@ -149,7 +149,7 @@ class TestConnectorPermissions(unittest.TestCase):
 
     def test_working_set_from_selected_repositories(self):
         self._install()
-        self.assertEqual(self.perms.granted_repos(), ["tchandrakar/sutra"])
+        self.assertEqual(self.perms.granted_repos(), ["example-owner/sutra"])
 
     def test_repository_selection_all_is_scoped_to_the_account(self):
         """'all' means every repo IN THAT ACCOUNT, not every repo on GitHub."""
@@ -160,7 +160,7 @@ class TestConnectorPermissions(unittest.TestCase):
     def test_read_inside_the_working_set_is_allowed(self):
         self._install()
         decision = self.perms.evaluate("github.get_file",
-                                       {"repository": "tchandrakar/sutra", "path": "a.py"})
+                                       {"repository": "example-owner/sutra", "path": "a.py"})
         self.assertIs(decision.outcome, Outcome.ALLOW)
 
     def test_read_outside_the_working_set_prompts(self):
@@ -173,7 +173,7 @@ class TestConnectorPermissions(unittest.TestCase):
     def test_no_installations_means_no_working_set(self):
         """Nothing granted yet, so nothing is free. Fails closed."""
         decision = self.perms.evaluate("github.get_file",
-                                       {"repository": "tchandrakar/sutra", "path": "a"})
+                                       {"repository": "example-owner/sutra", "path": "a"})
         self.assertIs(decision.outcome, Outcome.ASK)
 
     def test_deny_rule_from_disk_beats_the_working_set(self):
@@ -181,16 +181,16 @@ class TestConnectorPermissions(unittest.TestCase):
         write(self.resolver.user_path(),
               {"permissions": {"deny": ["github.get_file(*:**/.env)"]}})
         decision = self.perms.evaluate(
-            "github.get_file", {"repository": "tchandrakar/sutra", "path": "cfg/.env"})
+            "github.get_file", {"repository": "example-owner/sutra", "path": "cfg/.env"})
         self.assertIs(decision.outcome, Outcome.DENY)
         self.assertEqual(decision.step, 1)
 
     def test_session_grant_satisfies_a_write(self):
         self._install()
-        args = {"repository": "tchandrakar/sutra", "base": "dev"}
+        args = {"repository": "example-owner/sutra", "base": "dev"}
         self.assertIs(self.perms.evaluate("github.create_pull_request", args).outcome,
                       Outcome.ASK)
-        self.perms.grant_for_session("github.create_pull_request", "tchandrakar/sutra")
+        self.perms.grant_for_session("github.create_pull_request", "example-owner/sutra")
         self.assertIs(self.perms.evaluate("github.create_pull_request", args).outcome,
                       Outcome.ALLOW)
 
@@ -205,7 +205,7 @@ class TestConnectorPermissions(unittest.TestCase):
     def test_evaluations_are_audited(self):
         self._install()
         self.perms.evaluate("github.get_file",
-                            {"repository": "tchandrakar/sutra", "path": "a"})
+                            {"repository": "example-owner/sutra", "path": "a"})
         types = [r["event_type"] for r in
                  self.db.execute("SELECT event_type FROM connector_events")]
         self.assertIn("TOOL_EVALUATED", types)
@@ -214,7 +214,7 @@ class TestConnectorPermissions(unittest.TestCase):
         self._install()
         write(self.resolver.user_path(), {"permissions": {"deny": ["github.get_file"]}})
         self.perms.evaluate("github.get_file",
-                            {"repository": "tchandrakar/sutra", "path": "a"})
+                            {"repository": "example-owner/sutra", "path": "a"})
         rows = [dict(r) for r in self.db.execute(
             "SELECT event_type, result FROM connector_events")]
         self.assertTrue(any(r["event_type"] == "TOOL_DENIED" and r["result"] == "DENIED"
@@ -224,9 +224,9 @@ class TestConnectorPermissions(unittest.TestCase):
         self._install()
         write(self.resolver.user_path(),
               {"permissions": {"deny": ["github.delete_branch"],
-                               "allow": ["github.get_file(tchandrakar/*)"]}})
+                               "allow": ["github.get_file(example-owner/*)"]}})
         summary = self.perms.summary()
-        self.assertEqual(summary["granted_repositories"], ["tchandrakar/sutra"])
+        self.assertEqual(summary["granted_repositories"], ["example-owner/sutra"])
         self.assertIn("github.delete_branch", summary["removed_tools"])
         self.assertNotIn("github.delete_branch", summary["visible_tools"])
         self.assertEqual(len(summary["rules"]["allow"]), 1)

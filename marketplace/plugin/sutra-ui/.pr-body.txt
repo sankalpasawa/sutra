@@ -1,0 +1,29 @@
+## What
+
+Ports the chat-surface design (prototyped in sankalpasawa/sutra-ui-workspace, chat-surface-v0.3) onto the panel's chat screen:
+
+- **Collapsed governance chip per turn** — `turn n · VERB · Dn · domain · confidence/held · risk`. Click drops open a panel holding the SAME honest placement prose, grounding charter, and OS trace that used to print inline every turn. Never reworded — just moved behind one click (on-demand governance, founder decision D1).
+- **Chip-less thinking loader, bottommost** — the live run strip becomes a beating dot + shimmering "thinking" + the existing runPhrase ticker text, rendered last in the assistant block. Settled verdict pills stay on top.
+- **Governance-stripped body** — `parseGov`/`gvBody` (pure, in-file, unit-testable) strip the model's governance emissions from the rendered markdown; streaming and settled renders agree (patchStreaming reaches gvBody via window with identity fallback). Trailing unterminated governance fences are hidden until they close, so raw governance never flashes mid-stream. Unmatched text always renders — nothing is ever lost.
+
+Also completes the staged **core 2.99.1 release metadata** (plugin.json + CHANGELOG were in the worktree; the catalog was not, which failed validate-hook-paths version-sync on every commit — synced here).
+
+## Safety
+
+- Chip lives at .turn level OUTSIDE [data-aturn]: patchTurn/patchStreaming never touch it mid-stream.
+- data-runstrip stays text-only for the 1s ticker; the three patch anchors are unchanged.
+- [data-govopen] uses the same structural-toggle pattern as [data-toolout] (S key + full render).
+- New CSS is namespaced gv-*, consumes the panel's own tokens (both themes work), reduced-motion covered.
+- Honest-empty contracts preserved: transcript turns keep their no-placement provenance; the mode-none / blocked / floor branches moved verbatim.
+
+## Gates (all local, green)
+
+test_panel.js 81/81 · test_charter_filter.js 31/31 · engine+importer 61/61 · provision 17/17
+
+## Commit note
+
+One commit carries both the DS port and the 2.99.1 metadata sync — the metadata completion unblocked the pre-commit version-sync validator and the staged files swept together. The diff splits cleanly by path.
+
+Release: after merge, the next `vN.N.N-desktop` tag ships this in the DMG via release-dmg.yml. Not tagging in this PR.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

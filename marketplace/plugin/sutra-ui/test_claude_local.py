@@ -17,9 +17,9 @@ import providers
 
 class Initials(unittest.TestCase):
     def test_one_word_name_gives_one_letter(self):
-        """Not padded to two. "Tishant" -> "T"; "TI" looks like a typo, and
+        """Not padded to two. "Sankalp" -> "S"; "SA" looks like a typo, and
         inventing a second letter is inventing identity."""
-        self.assertEqual(claude_local.initials_for("Tishant"), "T")
+        self.assertEqual(claude_local.initials_for("Sankalp"), "S")
 
     def test_two_words_give_two_letters(self):
         self.assertEqual(claude_local.initials_for("Ada Lovelace"), "AL")

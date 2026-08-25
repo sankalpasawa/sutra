@@ -30,7 +30,7 @@ API = "https://api.github.com"
 
 INSTALLATION = {
     "id": 42,
-    "account": {"login": "tchandrakar", "id": 64305513, "type": "User"},
+    "account": {"login": "example-owner", "id": 90000001, "type": "User"},
     "repository_selection": "selected",
     "permissions": {"metadata": "read", "contents": "write",
                     "pull_requests": "write", "issues": "write"},
@@ -42,8 +42,8 @@ ORG_INSTALLATION = {
     "permissions": {"metadata": "read", "contents": "read"},
 }
 REPO = {
-    "id": 1296269, "name": "sutra", "full_name": "tchandrakar/sutra",
-    "owner": {"login": "tchandrakar"}, "private": True, "visibility": "private",
+    "id": 1296269, "name": "sutra", "full_name": "example-owner/sutra",
+    "owner": {"login": "example-owner"}, "private": True, "visibility": "private",
     "default_branch": "main", "archived": False,
     "permissions": {"admin": True, "push": True, "pull": True},
 }
@@ -194,7 +194,7 @@ class TestDiscovery(unittest.TestCase):
         installation = Discovery._to_installation(INSTALLATION)
         repos, next_url, access = Discovery(client).list_repositories("ghu_x", installation)
         repo = repos[0]
-        self.assertEqual(repo.full_name, "tchandrakar/sutra")
+        self.assertEqual(repo.full_name, "example-owner/sutra")
         self.assertEqual(repo.visibility, "private")
         self.assertEqual(repo.user_permission, "admin")
         self.assertEqual(repo.installation_id, 42)
@@ -251,7 +251,7 @@ class TestServiceDiscovery(unittest.TestCase):
         transport.push(200, {"installations": [INSTALLATION]})
         transport.push(200, {"repositories": [REPO]})
         result = service.list_repositories(OPERATOR, connector_id)
-        self.assertEqual(result["repositories"][0]["full_name"], "tchandrakar/sutra")
+        self.assertEqual(result["repositories"][0]["full_name"], "example-owner/sutra")
         cached = db.execute(
             "SELECT COUNT(*) c FROM connector_metadata WHERE kind='repository'").fetchone()
         self.assertEqual(cached["c"], 1)
