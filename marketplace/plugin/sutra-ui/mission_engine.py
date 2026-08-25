@@ -95,6 +95,16 @@ class MissionStore:
         # seq is a monotonic write counter; ledger rows carry it, so the
         # audit trail and the store file can always be re-ordered/replayed
         # against each other after a crash (dual-lane fold).
+        #
+        # Optimistic stale-write guard (codex P2): store ops are synchronous
+        # inside one asyncio process, but a second process (or a future
+        # thread) writing the same mission would silently lose updates.
+        # A writer holding an older seq than the disk refuses instead.
+        on_disk = self.load(mission["id"]) if mission.get("seq") else None
+        if on_disk and on_disk.get("seq", 0) > mission.get("seq", 0):
+            raise ValueError("stale write on %s (disk seq %s > held %s)"
+                             % (mission["id"], on_disk["seq"],
+                                mission["seq"]))
         mission["seq"] = int(mission.get("seq", 0)) + 1
         path = os.path.join(_home(), mission["id"] + ".json")
         tmp = path + ".tmp"

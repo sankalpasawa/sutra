@@ -4,6 +4,7 @@ Now (the module) renders this feed; Shadow is one producer among several.
 This stub owns the CONTRACT: schema validation + dedupe + append. Rendering
 lands in P4; nothing here draws UI.
 """
+import fcntl
 import json
 import os
 
@@ -46,16 +47,21 @@ def emit(item):
     if problems:
         return False, problems
     path = _feed_path()
-    try:
-        with open(path, encoding="utf-8") as handle:
+    # scan-and-append under ONE lock (codex P2): two producers racing the
+    # same dedupe_key must not both pass the scan and double-prompt the
+    # founder.
+    with open(path, "a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            handle.seek(0)
             for line in handle:
                 try:
                     if json.loads(line).get("dedupe_key") == item["dedupe_key"]:
                         return False, ["duplicate dedupe_key"]
                 except ValueError:
                     continue
-    except OSError:
-        pass
-    with open(path, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps(item) + "\n")
+            handle.write(json.dumps(item) + "\n")
+            handle.flush()
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
     return True, []

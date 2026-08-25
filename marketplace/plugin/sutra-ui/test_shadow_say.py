@@ -242,6 +242,7 @@ class TestSayAccepted(unittest.TestCase):
         port = _free_port()
         env = dict(os.environ, SUTRA_UI_SETTINGS=settings,
                    SUTRA_UI_CLAUDE_BIN=fake, SUTRA_UI_WORKDIR_ROOT=tmp,
+                   SUTRA_SHADOW_HOME=tmp,
                    SUTRA_SAY_TOKEN_ECHO=os.path.join(tmp, "token.txt"))
         env.pop("ANTHROPIC_API_KEY", None)
         code = "; ".join([
@@ -304,15 +305,31 @@ class TestSayAccepted(unittest.TestCase):
                 self.fail("expected 404")
             except urllib.error.HTTPError as exc:
                 self.assertEqual(exc.code, 404)
+            # the endpoint now binds the mission state machine: create a
+            # REAL running mission targeting this session (codex P1 fold)
+            os.environ["SUTRA_SHADOW_HOME"] = tmp
+            import importlib
+            import shadow_ledger as _sl
+            importlib.reload(_sl)
+            import mission_engine as _me
+            importlib.reload(_me)
+            store = _me.MissionStore()
+            mm = store.create("say chain e2e", "fix", target_session=sid)
+            store.transition(mm["id"], "brief_confirm")
+            store.transition(mm["id"], "running")
+            m42 = mm["id"]
+            # a mission id that does not exist is refused
+            code_, _ = post({"message": "x", "mission_id": "m-nope"})
+            self.assertEqual(code_, 404)
             # accept + scrub: the queued turn lands at the boundary, tagged
             code_, body = post({"message": "run check sk-abcdefghijklmnop now",
-                                "mission_id": "m-42",
+                                "mission_id": m42,
                                 "dedupe_key": "%s:say-1:shadow" % sid})
             self.assertEqual(code_, 200)
             self.assertEqual(body["redactions"], 1)
             # 409 on the same key
             code_, _ = post({"message": "again",
-                             "mission_id": "m-42",
+                             "mission_id": m42,
                              "dedupe_key": "%s:say-1:shadow" % sid})
             self.assertEqual(code_, 409)
             # the shadow turn streams into the SAME pane, tagged + scrubbed
@@ -325,7 +342,7 @@ class TestSayAccepted(unittest.TestCase):
                 if fr["type"] == "done":
                     break
             joined = " ".join(texts)
-            self.assertIn("[Shadow \u00b7 mission m-42]", joined)
+            self.assertIn("[Shadow \u00b7 mission %s]" % m42, joined)
             self.assertNotIn("sk-abcdefghijklmnop", joined)
             # race, made DETERMINISTIC: while a turn is IN FLIGHT, queue a
             # shadow say AND an operator message. At the boundary both are
@@ -333,7 +350,10 @@ class TestSayAccepted(unittest.TestCase):
             # and racing the socket is a coin flip, not the invariant.)
             ws.send(json.dumps({"message": "please be SLOW"}))
             time.sleep(0.5)  # the SLOW turn is now in flight
-            post({"message": "shadow-second", "mission_id": "m-43"})
+            m43 = store.create("race probe", "fix", target_session=sid)
+            store.transition(m43["id"], "brief_confirm")
+            store.transition(m43["id"], "running")
+            post({"message": "shadow-second", "mission_id": m43["id"]})
             ws.send(json.dumps({"message": "operator-first"}))
             # drain the SLOW turn first
             deadline = time.time() + 20
@@ -356,6 +376,7 @@ class TestSayAccepted(unittest.TestCase):
                             "the founder never queues behind automation")
             ws.close()
         finally:
+            os.environ.pop("SUTRA_SHADOW_HOME", None)
             proc.terminate()
             try:
                 proc.wait(5)

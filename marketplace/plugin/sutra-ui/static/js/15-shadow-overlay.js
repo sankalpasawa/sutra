@@ -10,6 +10,16 @@
    turn; the only timers are one-shot (pill auto-hide, nudge remove). */
 "use strict";
 
+/* attribute-context escaper (codex P2 fold): esc() is for text nodes;
+   anything interpolated inside a quoted attribute goes through THIS, which
+   also closes the quote-breakout vector. */
+function escAttr(x){
+  return String(x == null ? "" : x)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+
 /* ---- pure helpers (node-tested directly) -------------------------------- */
 
 /* S65: snap a dragged dot to the nearest corner, inside the safe zones */
@@ -112,12 +122,12 @@ function shadowKeyHandler(ev){
 function missionCardHtml(m){
   if (!m) return "";
   const startable = m.state === "brief_confirm";
-  return `<div class="shmission" data-shmission="${esc(m.id || "")}">
+  return `<div class="shmission" data-shmission="${escAttr(m.id || "")}">
     <span class="shstate shstate-${esc(m.state || "")}">${esc(m.state || "")}</span>
     <span class="shobj">${esc(m.objective || "")}</span>
     <span class="shturns">${m.turns_used || 0}/${m.max_turns || "?"}</span>
     ${startable ? `<button class="btn pri" type="button"
-        data-shstart="${esc(m.id || "")}">Start</button>` : ""}
+        data-shstart="${escAttr(m.id || "")}">Start</button>` : ""}
   </div>`;
 }
 
@@ -130,7 +140,7 @@ function shadowCardHtml(){
   const chips = validChips((typeof S !== "undefined" && S.shadowChips) || []);
   const chipHtml = chips.length
     ? chips.map(c => `<button class="btn shchip" type="button"
-        data-shchip="${esc(c)}">${esc(c)}</button>`).join("")
+        data-shchip="${escAttr(c)}">${esc(c)}</button>`).join("")
     : `<button class="btn shchip" type="button" data-shchip="Clarify what you meant">Clarify</button>`;
   const perm = _shadowStatus && _shadowStatus.permission_mode;
   return `<div class="shcard" data-shadowcard="1">

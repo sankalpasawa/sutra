@@ -1063,8 +1063,10 @@ async def sse(source: str):
 # to Shadow's MCP child via the spawn env; nothing else knows it. It is
 # checked BEFORE flag/session/mission so an unauthorized caller learns
 # nothing (no oracle).
+# In APP MEMORY ONLY (codex P1 fold): a global env write leaked the token
+# into every chat pane's spawned agent. Shadow's own session receives it via
+# its spawn env overlay -- nothing else can present it.
 SHADOW_SAY_TOKEN = _secrets.token_hex(24)
-os.environ["SUTRA_SHADOW_SAY_TOKEN"] = SHADOW_SAY_TOKEN
 
 
 # ------------------------------------------------------------ shadow chat --
@@ -1074,6 +1076,7 @@ os.environ["SUTRA_SHADOW_SAY_TOKEN"] = SHADOW_SAY_TOKEN
 import shadow_session as _shadow_session
 
 _SHADOW = {"session": None}
+_SHADOW_LOCK = asyncio.Lock()   # boot + turn serialization (codex P2 fold)
 
 
 def _shadow_args():
@@ -1107,22 +1110,25 @@ async def api_shadow_chat(request: Request):
     msg = (body.get("message") or "").strip()
     if not msg:
         raise HTTPException(400, "message required")
-    sess = _SHADOW["session"]
-    if sess is None or not sess.alive:
-        sess = _shadow_session.ShadowSession()
-        booted = await sess.start(_shadow_args, WORKDIR)
-        if booted is None:
-            raise HTTPException(503, "shadow could not boot")
-        _SHADOW["session"] = sess
-    tokens = []
+    async with _SHADOW_LOCK:
+        sess = _SHADOW["session"]
+        if sess is None or not sess.alive:
+            sess = _shadow_session.ShadowSession()
+            booted = await sess.start(
+                _shadow_args, WORKDIR,
+                extra_env={"SUTRA_SHADOW_SAY_TOKEN": SHADOW_SAY_TOKEN})
+            if booted is None:
+                raise HTTPException(503, "shadow could not boot")
+            _SHADOW["session"] = sess
+        tokens = []
 
-    async def collect(frame):
-        if frame.get("type") == "token":
-            tokens.append(frame.get("text") or "")
+        async def collect(frame):
+            if frame.get("type") == "token":
+                tokens.append(frame.get("text") or "")
 
-    await sess.rt.send_user_frame(msg)
-    (sess.session_id, _t, got_result,
-     err, _e) = await sess.rt.demux_turn(collect, sess.session_id)
+        await sess.rt.send_user_frame(msg)
+        (sess.session_id, _t, got_result,
+         err, _e) = await sess.rt.demux_turn(collect, sess.session_id)
     if err:
         raise HTTPException(502, "shadow turn failed: %s" % err[:200])
     return {"reply": "".join(tokens), "session": sess.session_id,
@@ -1305,6 +1311,20 @@ async def api_session_say(sid: str, request: Request):
     mission = (body.get("mission_id") or "").strip()
     if not msg or not mission:
         raise HTTPException(400, "message and mission_id are required")
+    # The endpoint is where the mission state machine BINDS (codex P1 fold):
+    # a token holder must not bypass states, targets, or template invariants.
+    import mission_engine as _me
+    m = _me.MissionStore().load(mission)
+    if m is None:
+        raise HTTPException(404, "no such mission %s" % mission)
+    if m["state"] != "running":
+        raise HTTPException(409, "mission %s is %s, not running"
+                            % (mission, m["state"]))
+    if m.get("target_session") and m["target_session"] != sid:
+        raise HTTPException(409, "mission %s targets %s, not %s"
+                            % (mission, m["target_session"], sid))
+    if "never_say" in m.get("invariants", ()):
+        raise HTTPException(403, "watch missions never speak")
     clean, redactions = shadow_egress.scrub(msg)
     tagged = "[Shadow \u00b7 mission %s] %s" % (mission, clean)
     ok = rt.turn_queue.put({"message": tagged, "_source": "shadow"},

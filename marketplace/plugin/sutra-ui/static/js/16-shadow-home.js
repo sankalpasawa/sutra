@@ -4,6 +4,16 @@
    the status endpoint answers non-200. */
 "use strict";
 
+/* attribute-context escaper (codex P2 fold): esc() is for text nodes;
+   anything interpolated inside a quoted attribute goes through THIS, which
+   also closes the quote-breakout vector. */
+function escAttr(x){
+  return String(x == null ? "" : x)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+
 /* S83: ONE plane, two tabs, live counts. Pure. */
 function shadowPlaneHtml(watching, missions, tab){
   const active = missions.filter(m =>
@@ -16,25 +26,25 @@ function shadowPlaneHtml(watching, missions, tab){
       data-shtab="working">Working \u00b7 ${active.length}</button></div>`;
   if (t === "watching"){
     const rows = watching.map(sid => `
-      <div class="shwatchrow" data-shwatch="${esc(sid)}">
+      <div class="shwatchrow" data-shwatch="${escAttr(sid)}">
         <span class="shobj">${esc(sid)}</span>
-        <button class="btn" type="button" data-shunwatch="${esc(sid)}">Stop watching</button>
+        <button class="btn" type="button" data-shunwatch="${escAttr(sid)}">Stop watching</button>
       </div>`).join("");
     return head + `<div class="shplane">${rows ||
       `<div class="shempty">Shadow is not watching any session yet.</div>`}</div>`;
   }
   const rows = active.map(m => `
-    <div class="shmissionrow" data-shmissionrow="${esc(m.id)}">
+    <div class="shmissionrow" data-shmissionrow="${escAttr(m.id)}">
       ${missionCardHtml(m)}
       <span class="shrowacts">
         ${m.state === "queued" ? `<button class="btn" type="button"
-            data-shact="start_now" data-shmid="${esc(m.id)}">Start now</button>
+            data-shact="start_now" data-shmid="${escAttr(m.id)}">Start now</button>
           <button class="btn" type="button" data-shact="drop"
-            data-shmid="${esc(m.id)}">Drop</button>` : ""}
+            data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
         ${m.state === "paused" ? `<button class="btn" type="button"
-            data-shact="resume" data-shmid="${esc(m.id)}">Resume</button>` : ""}
+            data-shact="resume" data-shmid="${escAttr(m.id)}">Resume</button>` : ""}
         ${["running", "paused"].includes(m.state) ? `<button class="btn"
-            type="button" data-shact="stop" data-shmid="${esc(m.id)}">Stop</button>` : ""}
+            type="button" data-shact="stop" data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
       </span>
     </div>`).join("");
   return head + `<div class="shplane">${rows ||
@@ -48,13 +58,13 @@ function shadowMemoryHtml(rows){
   const items = (rows || []).map(r => {
     const dead = !!r.revoked_at;
     const inert = !r.confirmed && !dead;
-    return `<div class="shmem ${dead ? "shmem-dead" : ""}" data-shmem="${esc(r.id)}">
+    return `<div class="shmem ${dead ? "shmem-dead" : ""}" data-shmem="${escAttr(r.id)}">
       <span class="shprec">${esc(r.precedence || "")}</span>
       <span class="shmemtext">${esc(r.text || "")}</span>
       ${inert ? `<span class="shinert">unconfirmed \u00b7 inert</span>
-        <button class="btn pri" type="button" data-shconfirm="${esc(r.id)}">Confirm</button>` : ""}
+        <button class="btn pri" type="button" data-shconfirm="${escAttr(r.id)}">Confirm</button>` : ""}
       ${r.confirmed && !dead ? `<button class="btn" type="button"
-        data-shrevoke="${esc(r.id)}">Revoke</button>` : ""}
+        data-shrevoke="${escAttr(r.id)}">Revoke</button>` : ""}
       ${dead ? `<span class="shinert">revoked</span>` : ""}
     </div>`;
   }).join("");

@@ -5,13 +5,23 @@
    below is what renders -- byte-for-byte the pre-existing empty state. */
 "use strict";
 
+/* attribute-context escaper (codex P2 fold): esc() is for text nodes;
+   anything interpolated inside a quoted attribute goes through THIS, which
+   also closes the quote-breakout vector. */
+function escAttr(x){
+  return String(x == null ? "" : x)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+
 /* pure: items -> cards html. Pure so the node test asserts on real output
    without a DOM. */
 function needsYouHtml(items){
   if (!items || !items.length) return "";
   const rows = items.map(it => `
-    <div class="nycard" data-deeplink="${esc(it.deep_link || "")}"
-         data-itemid="${esc(it.item_id || "")}">
+    <div class="nycard" data-deeplink="${escAttr(it.deep_link || "")}"
+         data-itemid="${escAttr(it.item_id || "")}">
       <div class="nyhead">
         <span class="nyprod">${esc(it.producer || "")}</span>
         <span class="nykind">${esc(it.kind || "")}</span>
@@ -19,7 +29,7 @@ function needsYouHtml(items){
       <div class="nytitle">${esc(it.title || "")}</div>
       ${it.why_now ? `<div class="nywhy">${esc(it.why_now)}</div>` : ""}
       ${it.primary_action ? `<button class="btn pri nyact" type="button"
-         data-nyact="${esc(it.item_id || "")}">${esc(it.primary_action)}</button>` : ""}
+         data-nyact="${escAttr(it.item_id || "")}">${esc(it.primary_action)}</button>` : ""}
     </div>`).join("");
   return `<div class="nyfeed">${rows}</div>`;
 }

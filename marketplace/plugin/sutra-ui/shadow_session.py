@@ -47,7 +47,7 @@ class ShadowSession:
         self.session_id = None
         self.started = False
 
-    async def start(self, build_args, cwd, emit=None):
+    async def start(self, build_args, cwd, emit=None, extra_env=None):
         """Spawn Shadow's session and inject the SHADOW.md context as the
         first turn. Refuses (returns None) when the flag is off.
 
@@ -66,18 +66,29 @@ class ShadowSession:
         # a missing stream flag fails here, loudly, not as a hung boot.
         if "--input-format" in args and "stream-json" not in args:
             raise ValueError("build_args() argv lacks stream-json input")
-        await self.rt.spawn(args, cwd, tuple(args),
-                            env={"SUTRA_MCP_SHADOW": "1"})
+        env = {"SUTRA_MCP_SHADOW": "1"}
+        env.update(extra_env or {})
+        await self.rt.spawn(args, cwd, tuple(args), env=env)
 
         async def _sink(frame):
             return None
 
-        await self.rt.send_user_frame(
-            "[Shadow boot] Read your operating context, then answer READY.\n\n"
-            + context)
-        (self.session_id, _got_text, got_result,
-         _err, _eof) = await self.rt.demux_turn(emit or _sink, None)
+        try:
+            await self.rt.send_user_frame(
+                "[Shadow boot] Read your operating context, then answer "
+                "READY.\n\n" + context)
+            (self.session_id, _got_text, got_result,
+             _err, _eof) = await self.rt.demux_turn(emit or _sink, None)
+        except Exception:
+            # partial boot must not leak a live process (codex P2 fold)
+            self.rt.kill_group()
+            self.rt.clear()
+            raise
         self.started = bool(got_result)
+        if not self.started:
+            self.rt.kill_group()
+            self.rt.clear()
+            return None
         return self.session_id
 
     def stop(self):
