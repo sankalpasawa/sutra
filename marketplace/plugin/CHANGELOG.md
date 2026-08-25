@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## 2.226.1 (2026-08-25)
+## 2.226.2 (2026-08-25)
+
+- **CI green for the desktop lane**: org-import test pins updated to the grown
+  registry (55 domains, 162 charters; Sutra OS gained the Sutra Desktop
+  domain) — the v2.226.1-desktop DMG run failed on the stale counts.
+
+## 2.226.1 (2026-08-25) 
 
 - **Workspace docs open in the editor by default** (read-first stays for
   restore/search/read-only/unfiled/gone); tables now render as tables inside

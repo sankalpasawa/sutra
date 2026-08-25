@@ -69,7 +69,7 @@ class ParseExport(unittest.TestCase):
 
     def test_every_domain_is_found_and_parented(self):
         p = self.p
-        self.assertEqual(len(p["parent"]), 54)
+        self.assertEqual(len(p["parent"]), 55)
         for ref, pa in p["parent"].items():
             self.assertTrue(pa == "ROOT" or pa in p["parent"],
                             "%s has an unresolved parent %s" % (ref, pa))
@@ -81,7 +81,7 @@ class ParseExport(unittest.TestCase):
                                 "Fleet (T4)"])
 
     def test_child_counts_match_the_published_page(self):
-        want = {"Sutra OS": 5, "Holding Departments": 9, "Portfolio (T2)": 6,
+        want = {"Sutra OS": 6, "Holding Departments": 9, "Portfolio (T2)": 6,
                 "Client Projects (T3)": 0, "Fleet (T4)": 0, "Core Plugin": 4,
                 "Governance Hooks": 11, "Skills Catalog": 7}
         byname = {n: r for r, n in self.p["name"].items()}
@@ -90,7 +90,7 @@ class ParseExport(unittest.TestCase):
                              "%s should have %d children" % (n, k))
 
     def test_all_charters_recovered_with_a_page_each(self):
-        self.assertEqual(len(self.p["charters"]), 161)
+        self.assertEqual(len(self.p["charters"]), 162)
         for cid in self.p["charters"]:
             self.assertTrue(os.path.exists(os.path.join(EXPORT, cid + ".html")),
                             "%s has no charter page" % cid)
@@ -151,11 +151,11 @@ class RoundTrip(unittest.TestCase):
                             "engine path %s escaped the sandbox" % p)
 
     def test_registry_holds_every_department_and_charter(self):
-        """54 departments plus the root they hang from. An empty target gets the
+        """55 departments plus the root they hang from. An empty target gets the
         root created; a target that already has one has it aliased."""
         domains = self.E.load_domains()
-        self.assertEqual(len(domains), 55)
-        self.assertEqual(len(self.E.charter_body_files()), 161)
+        self.assertEqual(len(domains), 56)
+        self.assertEqual(len(self.E.charter_body_files()), 162)
 
     def test_one_root_only(self):
         domains = self.E.load_domains()
