@@ -2,6 +2,13 @@
 
 **status**: active · **updated**: 2026-08-25
 
+## 2.231.2 (2026-08-25)
+
+- **Desktop DMG builds again**: sutra-ui `.venv` had been committed as a
+  machine-local symlink (dangling on CI, packaged into the bundle, codesign
+  verify failed both arches — v2.228.0 + v2.231.1 tags). Removed from the
+  index; `.gitignore` pattern hardened (`.venv` matches symlinks too).
+
 ## 2.231.1 (2026-08-25)
 
 - **Default-edit now reaches every doc** (87% of the corpus was unfiled and
