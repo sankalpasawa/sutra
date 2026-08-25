@@ -15,7 +15,10 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-#: Sutra Dev GitHub App, owned by tchandrakar. Public value.
+#: Sutra Dev GitHub App client id. Public value. OWNERSHIP MIGRATION PENDING
+#: (D69, 2026-08-25): the App registration must move to an Asawa-owned account;
+#: until the new App exists this id stays (swapping strands existing grants --
+#: codex+deepseek consult 2026-08-25). Per-env override: SUTRA_GITHUB_CLIENT_ID.
 DEV_CLIENT_ID = "Iv23li4V24WX8yjaWoby"
 
 #: Sutra Slack app. Public value -- it appears in every authorization URL a

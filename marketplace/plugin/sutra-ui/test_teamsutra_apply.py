@@ -151,7 +151,7 @@ class TestTsApply(unittest.TestCase):
     def test_wrong_origin_refuses_before_mutation(self):
         tid = self._reviewed_task()
         script = [("git remote get-url origin",
-                   (0, "git@github.com:tchandrakar/sutra.git\n", ""))] + HAPPY[1:]
+                   (0, "git@github.com:example-owner/sutra.git\n", ""))] + HAPPY[1:]
         calls = []
         with self.assertRaises(ValueError):
             self.A._ts_apply(tid, run=fake_runner(script, calls))

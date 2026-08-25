@@ -42,8 +42,8 @@ TOKEN_OK = {
                     "access_token": "xoxp-USERTOKEN", "token_type": "user",
                     "expires_in": 43200, "refresh_token": "xoxe-USERREFRESH"},
 }
-AUTH_TEST_OK = {"ok": True, "url": "https://afterquery.slack.com/",
-                "team": "AfterQuery", "user": "tishant",
+AUTH_TEST_OK = {"ok": True, "url": "https://example-team.slack.com/",
+                "team": "ExampleTeam", "user": "founder",
                 "team_id": "T0BRPAZSNBY", "user_id": "U999"}
 
 
@@ -284,7 +284,7 @@ class TestEndToEndConnect(unittest.TestCase):
         row = db.execute("SELECT * FROM connectors").fetchone()
         self.assertEqual(row["provider"], "slack")
         self.assertEqual(row["provider_account_id"], "T0BRPAZSNBY:U999")
-        self.assertEqual(row["provider_username"], "tishant")
+        self.assertEqual(row["provider_username"], "founder")
 
     def test_both_tokens_are_stored_in_separate_slots(self):
         db, transport, service, result = self.connect()
@@ -357,7 +357,7 @@ class TestEndToEndConnect(unittest.TestCase):
 
         listed = service.list_connectors(OPERATOR)          # a SLACK service
         self.assertEqual(len(listed), 1)
-        self.assertEqual(listed[0]["account"]["username"], "tishant")
+        self.assertEqual(listed[0]["account"]["username"], "founder")
         self.assertNotIn("octocat", json.dumps(listed))
 
     def test_transaction_state_is_destroyed_on_completion(self):

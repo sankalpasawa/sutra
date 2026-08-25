@@ -1111,8 +1111,8 @@ function groundingPrefix(t){
    could not find the id, and started a BRAND NEW conversation instead --
    which is why a reply typed in Sutra opened a new thread and never appeared
    in Claude. Measured on a real session: session cwd
-   /Users/tchandrakar/Desktop/development/sutra vs sent
-   /Users/tchandrakar/sutra-ui-workspace.
+   /Users/<operator>/Desktop/development/sutra vs sent
+   /Users/<operator>/sutra-ui-workspace.
 
    Order is deliberate:
      1. an explicit per-session override -- the operator chose it on purpose
