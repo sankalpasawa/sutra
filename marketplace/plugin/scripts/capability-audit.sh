@@ -166,3 +166,25 @@ echo "$audit_jsonl_row" >> "$OUT_JSONL"
 echo
 echo "Audit text:  $OUT_TXT"
 echo "Audit jsonl: $OUT_JSONL (appended 1 row)"
+
+# ---- install-surface audit (W4 2026-08-25, atom a-db25e6c4-06) --------------
+# The 4-state matrix above covers per-turn disciplines only. This section makes
+# the audit honest about INSTALL surfaces: repo-settings-wired hooks lacking a
+# plugin twin, git hooksPath gates, and launchd routines.
+{
+  echo ""
+  echo "## Install-surface audit (settings-wired hooks / githooks / launchd)"
+  echo ""
+  echo "Repo-settings-wired hooks WITHOUT a plugin hooks/ twin (parity gap):"
+  if [ -f "$ROOT/.claude/settings.json" ]; then
+    grep -o '[a-zA-Z0-9_./-]*hooks/[a-zA-Z0-9_-]*\.sh' "$ROOT/.claude/settings.json" | sed 's|.*/||' | sort -u | while read -r h; do
+      if [ ! -f "$ROOT/sutra/marketplace/plugin/hooks/$h" ] && [ ! -f "$ROOT/hooks/$h" ]; then echo "  GAP  $h"; fi
+    done
+  else
+    echo "  (no .claude/settings.json here)"
+  fi
+  echo ""
+  echo "git core.hooksPath: $(git -C "$ROOT" config core.hooksPath 2>/dev/null || echo unset)"
+  echo "launchd os.sutra.*: $(ls "$HOME/Library/LaunchAgents" 2>/dev/null | grep -c '^os\.sutra\.' || echo 0) plist(s)"
+} | tee -a "$OUT_TXT"
+

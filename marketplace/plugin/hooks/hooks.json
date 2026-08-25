@@ -511,6 +511,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/atom-cards-stop-check.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/workflow-floor.sh",
+            "timeout": 8
           }
         ]
       },

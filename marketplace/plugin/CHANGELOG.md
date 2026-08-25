@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-08-25
 
+## 2.231.0 (2026-08-25)
+
+W4 closing wave: workflow-floor.sh — Stop ADVISORY for heavy multi-file turns with no Agent/Workflow dispatch (G5; default OFF, enable via ~/.sutra/workflow-floor-enabled; never blocks). capability-audit.sh gains an install-surface section (settings-wired hooks without plugin twins, git hooksPath, launchd routines) so parity gaps stop hiding. Floor smoke 4/4.
+
 ## 2.230.0 (2026-08-25)
 
 W3 scheduler: new bin/sutra-routine — user-level scheduled routines (add/list/status/run/remove) backed by launchd agents os.sutra.plugin.* through the stable ~/.sutra/bin shim; run ledger at ~/.sutra/routines/runs.jsonl; cron suggestion on non-macOS. /core:uninstall documents full reversal (gates, routines, shims); /core:start company banner points at sutra-routine and the standalone native@sutra runtime. Routine lifecycle sim 11/11.
