@@ -1067,6 +1067,29 @@ SHADOW_SAY_TOKEN = _secrets.token_hex(24)
 os.environ["SUTRA_SHADOW_SAY_TOKEN"] = SHADOW_SAY_TOKEN
 
 
+@app.get("/api/shadow/feed")
+async def api_shadow_feed():
+    """PLAN-100 S59: the needs-you feed, render-only. 403 when the flag is
+    off -- the panel treats any non-200 as "render the placeholder", so the
+    off state costs zero client logic."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_feed
+    items = []
+    try:
+        with open(shadow_feed._feed_path(), encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    it = json.loads(line)
+                except ValueError:
+                    continue
+                if it.get("state") not in ("expired", "handled"):
+                    items.append(it)
+    except OSError:
+        pass
+    return {"items": items[-50:], "ts": time.time()}
+
+
 @app.post("/api/sessions/{sid}/say")
 async def api_session_say(sid: str, request: Request):
     if request.headers.get("x-shadow-say-token") != SHADOW_SAY_TOKEN:
