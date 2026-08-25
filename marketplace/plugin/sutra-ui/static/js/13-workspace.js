@@ -1147,6 +1147,21 @@ function wsDocColHtml(state){
   }
   return html;
 }
+/* Top-right cluster, shared by the full render AND the search's side-only
+   render — reviewer round 3, minor 1: the Edit->count swap claimed in
+   2.222.9 never fired on the search path because only wsScreenHtml built
+   this markup. One builder, two callers, no drift. */
+function wsTopRightHtml(state, g){
+  return '<span class="ws-topright">'
+    + (g ? '<span class="ws-rescount">' + g.total + '</span>' : "")
+    + (state === "13" ? '<span class="ws-chip alert"><i class="ws-dot"></i>' + WS_COPY.offline + '</span>' : "")
+    + (!wsEditAllowed() && state !== "13" ? '<span class="ws-chip">' + WS_COPY.readOnly + '</span>' : "")
+    + (S.ws.editing
+        ? '<button type="button" class="ws-act gold" data-wsact="done">' + WS_COPY.done + '</button>'
+        : (wsEditAllowed() && !g && S.ws.sel && S.ws.sel.type === "doc" && !S.ws.docGone && state !== "13"
+            ? '<button type="button" class="ws-act" data-wsact="edit">' + WS_COPY.edit + '</button>' : ""))
+    + '</span>';
+}
 function wsScreenHtml(){
   const state = wsCurrentState();
   wsSyncCursorRow();
@@ -1155,15 +1170,8 @@ function wsScreenHtml(){
     '<div class="ws-top">'
     + '<input class="ws-search" data-wssearch placeholder="' + WS_COPY.search + '"'
     + ' value="' + esc(S.ws.q) + '" aria-label="' + WS_COPY.search + '">'
-    + '<span class="ws-topright">'
-    + (g ? '<span class="ws-rescount">' + g.total + '</span>' : "")
-    + (state === "13" ? '<span class="ws-chip alert"><i class="ws-dot"></i>' + WS_COPY.offline + '</span>' : "")
-    + (!wsEditAllowed() && state !== "13" ? '<span class="ws-chip">' + WS_COPY.readOnly + '</span>' : "")
-    + (S.ws.editing
-        ? '<button type="button" class="ws-act gold" data-wsact="done">' + WS_COPY.done + '</button>'
-        : (wsEditAllowed() && !g && S.ws.sel && S.ws.sel.type === "doc" && !S.ws.docGone && state !== "13"
-            ? '<button type="button" class="ws-act" data-wsact="edit">' + WS_COPY.edit + '</button>' : ""))
-    + '</span></div>';
+    + wsTopRightHtml(state, g)
+    + '</div>';
   const lens =
     '<div class="ws-lens" role="tablist">'
     + '<button type="button" data-wslens="org" aria-selected="' + (S.ws.lens === "org") + '">'
@@ -1191,6 +1199,11 @@ function wsRenderSideOnly(){
   if (!side){ render(); return; }
   const state = wsCurrentState();
   wsSyncCursorRow();
+  const tr = document.querySelector("#scBody .ws-topright");
+  if (tr){
+    const g2 = S.ws.results ? wsGroupResults(S.ws.results) : null;
+    tr.outerHTML = wsTopRightHtml(state, g2);
+  }
   side.innerHTML = (S.ws.searching && !S.ws.results) ? wsSearchingHtml()
     : S.ws.results ? wsResultsHtml()
     : ('<div class="ws-lens" role="tablist">'
