@@ -211,6 +211,10 @@ const EPILOGUE = `
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
+  /* the Usage account card: sign-in is a mutating control on a read screen,
+     so its render states (offered / cancel-while-busy / browser hint) are
+     pinned as strings */
+  accountHtml, accountLoginHtml,
   /* task.apply card states: the board is where a machine diff meets a human
      click, so the three renders (Apply offered / PR handed off / failure in
      place) are pinned as strings */
@@ -3304,6 +3308,59 @@ test("42d. the department chip is the LATEST FILED turn's leaf, labelled as such
   const none = sandbox.sessionPane({ id: "sid-42d", title: "t", real: false, cwd: "", channel: null,
     turns: [{ text: "a" }] });
   assert.ok(!/phdept/.test(none), "no fabricated dash when nothing was ever filed");
+});
+
+/* ── 34. Usage account card: sign-in states + simplification ───────────── */
+
+test("34a. desktop offers Sign in when signed out, Switch when signed in", () => {
+  sandbox.sutra = { authLogin: () => Promise.resolve({ ok: true }) };
+  try {
+    T.S.authBusy = false; T.S.authMsg = null; T.S.accountError = null;
+    T.S.account = { available: false, reason: "no Claude account is signed in" };
+    assert.ok(/data-auth-login/.test(T.accountHtml()), "signed-out card offers the button");
+    assert.ok(/>\s*Sign in</.test(T.accountHtml()), "and it says Sign in");
+    T.S.account = { available: true, profile: { email: "a@b.c", display_name: "A" },
+                    subscription: {} };
+    assert.ok(/Switch account/.test(T.accountHtml()), "signed-in card says Switch account");
+  } finally { delete sandbox.sutra; }
+});
+
+test("34b. while a sign-in runs the button becomes Cancel", () => {
+  sandbox.sutra = { authLogin: () => Promise.resolve({ ok: true }) };
+  try {
+    T.S.authBusy = true;
+    T.S.account = { available: true, profile: { email: "a@b.c" }, subscription: {} };
+    const html = T.accountHtml();
+    assert.ok(/Cancel sign-in/.test(html), "busy button cancels");
+    assert.ok(/Waiting for the browser sign-in/.test(html), "and says why it waits");
+  } finally { T.S.authBusy = false; delete sandbox.sutra; }
+});
+
+test("34c. a plain browser gets the CLI hint, never a dead button", () => {
+  T.S.account = { available: true, profile: { email: "a@b.c" }, subscription: {} };
+  const html = T.accountHtml();               // no sandbox.sutra: browser context
+  assert.ok(!/data-auth-login/.test(html), "no button without the bridge");
+  assert.ok(/claude auth login/.test(html), "the CLI path is named instead");
+});
+
+test("34d. simplified card: four rows on top, the rest behind Details", () => {
+  sandbox.sutra = { authLogin: () => Promise.resolve({ ok: true }) };
+  try {
+    T.S.authBusy = false; T.S.authMsg = null;
+    T.S.account = { available: true,
+      profile: { email: "a@b.c", display_name: "A", organization: "Org",
+                 plan: "Max", account_id: "acc_1", rate_limit_tier: "t2" },
+      subscription: { subscription_type: "max" } };
+    const html = T.accountHtml();
+    const top = html.split("<details")[0];
+    assert.ok(/Signed in as/.test(top) && /Email/.test(top)
+           && /Plan/.test(top) && /Organization/.test(top), "the four acting rows are on top");
+    assert.ok(!/Rate-limit tier/.test(top) && !/acc_1/.test(top),
+      "diagnostics are not furniture any more");
+    const details = html.split("<details")[1] || "";
+    assert.ok(/Rate-limit tier/.test(details) && /acc_1/.test(details),
+      "but they are still reachable behind Details");
+  } finally { delete sandbox.sutra; }
 });
 
 /* ── report ────────────────────────────────────────────────────────────── */

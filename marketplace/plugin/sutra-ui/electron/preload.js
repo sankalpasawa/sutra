@@ -72,4 +72,11 @@ contextBridge.exposeInMainWorld("sutra", {
     ipcRenderer.invoke("sutra:balance-actionable", { id, op, note, reason }),
   teamsutraAction: (id, op) =>
     ipcRenderer.invoke("sutra:teamsutra-action", { id, op }),
+
+  /* Run `claude auth login` (the CLI's own OAuth browser flow) in the main
+     process. Resolves {ok} or {ok:false, error}; CLI output never crosses
+     this bridge. Invoking it again while a sign-in runs CANCELS that one —
+     the panel's button doubles as Cancel. Absent in a browser, where the
+     Account card shows the CLI command instead. */
+  authLogin: () => ipcRenderer.invoke("sutra:auth-login"),
 });

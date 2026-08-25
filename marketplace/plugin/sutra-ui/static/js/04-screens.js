@@ -492,15 +492,34 @@ function accountAgo(epoch){
   const h = Math.round(m / 60); if (h < 36) return h + " h ago";
   return Math.round(h / 24) + " d ago";
 }
+/* The sign-in control. Rendered ONLY when the preload bridge offers authLogin
+   (Electron; a plain browser cannot spawn the CLI, and pretending otherwise
+   would be a button that lies). While a sign-in runs the same button cancels
+   it — an abandoned browser tab must not wedge the card. */
+function accountLoginHtml(signedIn){
+  if (!(window.sutra && window.sutra.authLogin))
+    return `<p class="why" style="margin:9px 0 0">To sign in or switch accounts, use the
+      desktop app — or run <code>claude auth login</code> in a terminal.</p>`;
+  return `<p style="margin:9px 0 0"><button class="btn" type="button" data-auth-login>
+      ${S.authBusy ? "Cancel sign-in" : (signedIn ? "Switch account" : "Sign in")}</button>
+    ${S.authBusy ? `<span class="why" style="margin-left:8px">Waiting for the browser sign-in…</span>` : ""}
+    ${!S.authBusy && S.authMsg ? `<span class="why" style="margin-left:8px">${esc(S.authMsg)}</span>` : ""}</p>`;
+}
+
+/* Simplified per founder direction (2026-08-25): the four rows an operator
+   actually acts on, the sign-in control, and everything else behind one
+   Details disclosure — kept reachable (the reviewers were right that tier/IDs
+   explain "why do my limits look wrong?") but no longer furniture. */
 function accountHtml(){
   const a = S.account;
   const NR = `<span style="color:var(--faint)">not reported</span>`;
   const kv = (k, v, sub) => `<div class="kv"><b>${esc(k)}</b><span>${
       v == null || v === "" ? NR : esc(String(v))}${
       sub ? ` <span class="why">${esc(sub)}</span>` : ""}</span></div>`;
-  if (S.accountError) return `<p style="margin:0;color:var(--faint)">${esc(S.accountError)}</p>`;
+  if (S.accountError) return `<p style="margin:0;color:var(--faint)">${esc(S.accountError)}</p>${accountLoginHtml(false)}`;
   if (!a) return `<p style="margin:0;color:var(--faint)">Reading the account…</p>`;
-  if (!a.available) return `<p style="margin:0">${esc(a.reason || "no Claude account is signed in")}</p>`;
+  if (!a.available) return `<p style="margin:0">${esc(a.reason || "no Claude account is signed in")}</p>
+    ${accountLoginHtml(false)}`;
   const p = a.profile || {}, s = a.subscription || {};
   const rawPlan = [p.organization_type, p.rate_limit_tier].filter(Boolean).join(" · ");
   const sub = [s.subscription_type,
@@ -514,17 +533,21 @@ function accountHtml(){
     ${kv("Signed in as", p.display_name || p.full_name, other)}
     ${kv("Email", p.email)}
     ${kv("Plan", p.plan || rawPlan || null, p.plan ? rawPlan : "")}
-    ${kv("Subscription", sub || null)}
     ${kv("Organization", p.organization, p.organization_role ? "role: " + p.organization_role : "")}
-    ${kv("Rate-limit tier", s.rate_limit_tier || p.rate_limit_tier)}
-    ${kv("Extra usage", p.extra_usage_enabled == null ? null : (p.extra_usage_enabled ? "on" : "off"))}
-    ${kv("Account created", p.account_created_at ? accountDateOnly(p.account_created_at) : null)}
-    ${p.trial_ends_at ? kv("Claude Code trial ends", accountDateOnly(p.trial_ends_at)) : ""}
-    ${ids ? kv("IDs", ids) : ""}
-    ${kv("Data as of", p.profile_fetched_at ? accountAgo(p.profile_fetched_at) : null)}
-    <p class="note" style="margin-top:9px;font-size:11px;color:var(--faint)">Read from
-      <code>~/.claude.json</code> and the non-secret fields of the Claude Code credential
-      record on this machine. No token reaches this panel.</p>`;
+    ${accountLoginHtml(true)}
+    <details style="margin-top:9px"><summary class="why">Details</summary>
+      ${kv("Subscription", sub || null)}
+      ${kv("Rate-limit tier", s.rate_limit_tier || p.rate_limit_tier)}
+      ${kv("Extra usage", p.extra_usage_enabled == null ? null : (p.extra_usage_enabled ? "on" : "off"))}
+      ${kv("Account created", p.account_created_at ? accountDateOnly(p.account_created_at) : null)}
+      ${p.trial_ends_at ? kv("Claude Code trial ends", accountDateOnly(p.trial_ends_at)) : ""}
+      ${ids ? kv("IDs", ids) : ""}
+      ${kv("Data as of", p.profile_fetched_at ? accountAgo(p.profile_fetched_at) : null)}
+      <p class="note" style="margin-top:9px;font-size:11px;color:var(--faint)">Account data is read from
+        <code>~/.claude.json</code> and the non-secret fields of the Claude Code credential
+        record on this machine — no token reaches this panel. Sign-in runs Claude's own
+        browser auth flow.</p>
+    </details>`;
 }
 function accountFold(){
   const a = S.account;
@@ -568,18 +591,13 @@ SCREENS.usage = () => {
        10 minutes old.</div>` : "";
 
   return `${acct}${age}
-    <div class="note" style="margin-bottom:9px"><b>Read-only.</b> The same data as
-      <code>/usage</code> in the CLI, for the account whose Claude Code credentials
-      are on this machine. Shared cache with <code>sutra-usage</code>, so the guard
-      and this screen can never disagree.</div>
-
     ${fold("usage.limits", "Plan limits", `${(u.limits||[]).length} windows`, rows)}
 
     ${fold("usage.extra", "Extra usage (pay-as-you-go)", x && x.enabled ? "on" : "off", extra)}
 
-    <p class="note" style="margin-top:9px;font-size:11px;color:var(--faint)">
-      There is no daily or monthly figure for the plan itself — five-hour and weekly
-      are the only rate-limit windows the endpoint returns.</p>`;
+    <p class="why" style="margin-top:9px">Same numbers as <code>/usage</code> in the CLI,
+      read locally; the usage-guard reads the same cache, so this screen and the guard
+      can never disagree.</p>`;
 };
 
 SCREENS.git = () => {

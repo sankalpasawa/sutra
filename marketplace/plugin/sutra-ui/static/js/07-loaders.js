@@ -225,6 +225,24 @@ function wire(){
     else installUpdate(what);
   });
 
+  /* ── account sign-in (Usage screen) ── the same button cancels while a
+     sign-in runs; on completion the account+usage re-read shows who won.
+     One delayed retry covers the CLI still flushing ~/.claude.json. */
+  scBody.querySelectorAll("[data-auth-login]").forEach(b=>b.onclick=async()=>{
+    if (!(window.sutra && window.sutra.authLogin)) return;
+    if (S.authBusy){ try { window.sutra.authLogin(); } catch(e){} return; }
+    S.authBusy = true; S.authMsg = null; render();
+    let r = null;
+    try { r = await window.sutra.authLogin(); }
+    catch(e){ r = { ok:false, error: e.message }; }
+    S.authBusy = false;
+    S.authMsg = r && r.ok ? "Signed in." : ((r && r.error) || "sign-in did not complete");
+    await loadUsage(true);
+    if (r && r.ok && !(S.account && S.account.available))
+      setTimeout(()=>{ loadUsage(true).then(()=>render()); }, 1500);
+    render();
+  });
+
   scBody.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{
     if (b.disabled) return;                       /* not runnable -- the reason is on screen */
     S.setBusy = "prov:" + b.dataset.prov; S.setError = null; S.setOk = null; render();

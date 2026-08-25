@@ -811,6 +811,66 @@ ipcMain.handle("sutra:teamsutra-action", async (_e, body) => {
   }
 });
 
+/* Sign in / switch the Claude account, from the Usage screen's Account card.
+   Runs the CLI's OWN OAuth flow (`claude auth login`) -- this app never sees a
+   credential; the CLI writes ~/.claude.json and the backend re-reads it on the
+   next /api/account request, so the card refreshes without a restart.
+
+   Gates, per the dual-lane design review (codex + deepseek, 2026-08-25):
+     - desktopControl(): only when this shell spawned its own backend;
+     - SENDER ORIGIN: only the panel this shell serves may invoke it — any other
+       frame that somehow gets the preload bridge is refused;
+     - the child runs under the imported login-shell env (Finder's empty env
+       HANGS `claude` — see shellEnv) MINUS every ANTHROPIC_- and CLAUDE_CODE_-
+       prefixed var, so an exported token cannot change what "login" means;
+     - stdout/stderr are drained and NEVER cross the bridge — OAuth CLIs print
+       URLs and device codes; the renderer gets {ok, error} and nothing else.
+
+   A second invocation while one runs CANCELS the running one (the panel's
+   button doubles as Cancel) — an abandoned browser tab must not wedge the
+   card. Teardown is SIGTERM, then SIGKILL after 5s; the busy slot clears on
+   actual child exit, never on a timer alone. The binary is whatever `claude`
+   the user's login shell resolves — deliberate for a desktop developer tool,
+   and the same resolution every terminal on this machine uses. */
+let authChild = null;
+ipcMain.handle("sutra:auth-login", async (e) => {
+  if (!desktopControl()) {
+    return { ok: false, error: "sign-in is only available when this window started its own backend" };
+  }
+  try {
+    if (new URL(e.senderFrame.url).origin !== ORIGIN) throw new Error("origin");
+  } catch { return { ok: false, error: "refused: unexpected caller" }; }
+  if (authChild) {
+    const c = authChild;
+    try { c.kill("SIGTERM"); } catch (err) {}
+    setTimeout(() => { try { c.kill("SIGKILL"); } catch (err) {} }, 5000);
+    return { ok: false, error: "cancelled" };
+  }
+  const env = { ...process.env, ...shellEnv() };
+  for (const k of Object.keys(env)) if (/^(ANTHROPIC_|CLAUDE_CODE_)/.test(k)) delete env[k];
+  return await new Promise((resolve) => {
+    let settled = false;
+    const done = (r) => { if (!settled) { settled = true; authChild = null; resolve(r); } };
+    let child;
+    try {
+      child = spawn("claude", ["auth", "login"], { env, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (err) { return done({ ok: false, error: "could not start claude: " + err.message }); }
+    authChild = child;
+    child.stdout.resume();                       // drained, never forwarded
+    child.stderr.resume();
+    const t = setTimeout(() => {
+      try { child.kill("SIGTERM"); } catch (err) {}
+      setTimeout(() => { try { child.kill("SIGKILL"); } catch (err) {} }, 5000);
+    }, 180000);
+    child.on("error", (err) => { clearTimeout(t); done({ ok: false, error: String(err.message || err) }); });
+    child.on("close", (code) => {
+      clearTimeout(t);
+      done(code === 0 ? { ok: true }
+                      : { ok: false, error: "sign-in did not complete (exit " + code + ")" });
+    });
+  });
+});
+
 /* Native folder chooser for the panel's working-directory fields. The panel is
    the same app the CLI serves to an ordinary browser, where this cannot exist --
    so it is offered over the preload bridge and the renderer only draws the Browse

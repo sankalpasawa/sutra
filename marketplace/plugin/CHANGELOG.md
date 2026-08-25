@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-25
 
+## 2.227.0
+
+- **Sign in from the app.** The Usage screen's Account card gains a Sign in /
+  Switch account button — it runs Claude's own browser auth flow; the button
+  doubles as Cancel while a sign-in waits. The card slims to the four rows you
+  act on, with diagnostics behind Details, and the screen's explainer notes
+  shrink to one line.
+
 ## 2.226.3 (2026-08-25)
 
 - **Attach mode no longer costs you updates.** The shell gains an update
