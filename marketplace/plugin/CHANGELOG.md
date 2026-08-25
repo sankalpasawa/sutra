@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-25
 
+## 2.226.1 (2026-08-25)
+
+- **Workspace docs open in the editor by default** (read-first stays for
+  restore/search/read-only/unfiled/gone); tables now render as tables inside
+  the editor; `[[wiki-link]]` docs no longer crash the mount (fork host fix,
+  bundle re-pinned); header gap tightened ~35px; left tree scroll survives
+  background repaints. Dual consult folded; 44/220/230 suites green.
+
 ## 2.226.0 (2026-08-25)
 
 - **Focus and Org fold into the rail.** Their rows now open as an inline

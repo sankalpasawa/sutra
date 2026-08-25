@@ -350,6 +350,8 @@ async function wsOpenDoc(path, opts){
   S.ws.charter = null; S.ws.matched = null;
   S.ws.docGone = false; S.ws.changed = false;
   S.ws.editing = false; S.ws.unsaved = false;
+  S.ws.openSeq = (S.ws.openSeq || 0) + 1;      /* open-cycle token (dual consult):
+     a mount resumer from an older open must never pair its text with this one */
   S.ws.doc = null; S.ws.docMtime = null; S.ws.notice = null;
   if (!opts.fromSearch){ S.ws.results = null; S.ws.q = ""; S.ws.searchEpisode = false; }
   S.ws.focusFrameOnLoad = !opts.restore;       /* R1: explicit opens only */
@@ -377,6 +379,19 @@ async function wsOpenDoc(path, opts){
     const r = await apiGet("/api/fs/read?path=" + encodeURIComponent(path));
     if (S.ws.docPath === path) S.ws.lastRead = { path: path, text: r.text, editable: r.editable, bytes: r.bytes };
   } catch (e) { if (S.ws.docPath === path) S.ws.lastRead = null; }
+  /* default-edit (founder 2026-08-25, dual consult): an EXPLICIT open lands in
+     edit once the read copy is here. Guards: stale open, restore (boot stays
+     light + Reload's documented 12->01), fromSearch (03 keeps its preview and
+     its per-keystroke doc-col churn would detach a mounted editor), missing
+     read copy, doc gone (14), read-only (11), unfiled (06 keeps File-it).
+     NOT via wsEdit(): that is the explicit-action path — it sets unsaved=true
+     (would arm wsCheckDisk's false 12), steals focus and pings telemetry.
+     unsaved stays false here; onDirty owns dirty. */
+  if (S.ws.docPath === path && !opts.restore && !opts.fromSearch
+      && S.ws.lastRead && !S.ws.docGone && wsEditAllowed()
+      && !wsDocIsUnfiled(path)){
+    S.ws.editing = true;
+  }
   render();
 }
 
@@ -1149,9 +1164,22 @@ function wsLoadEditorScript(){
 async function wsMountEditor(el){
   const w = S.ws;
   if (!w.sel || w.sel.type !== "doc" || !w.lastRead || w.lastRead.path !== w.sel.path) return;
+  const seq = w.openSeq;                           /* this open cycle (dual consult) */
   try { await wsLoadEditorScript(); }
-  catch (e){ w.notice = String(e.message || e); render(); return; }
+  catch (e){
+    /* fall back to READ view (deepseek): editing with no editor is state 07
+       showing an empty column — a lie. The notice says why. */
+    w.notice = String(e.message || e); w.editing = false; render(); return;
+  }
   if (!S.ws.editing || S.ws.edHandle) return;      /* state moved on while loading */
+  /* STATE re-check after the await, mirroring the entry predicate (dual
+     consult): the DOM re-query below covers container death but not a
+     mid-flight second open — sel can be doc B while lastRead is still doc A,
+     and mounting would save A's text under B's path. The seq token also
+     catches A->B->A round-trips faster than the script load. */
+  if (S.ws.openSeq !== seq) return;
+  if (!S.ws.sel || S.ws.sel.type !== "doc" || !S.ws.lastRead
+      || S.ws.lastRead.path !== S.ws.sel.path) return;
   /* THE CONTAINER MAY BE DEAD: any render() during the (possibly 1.3MB) script
      load replaced scBody's DOM, so the element we were handed can be detached
      — the editor then mounts invisibly into an orphan (reviewer blocker,
@@ -1364,8 +1392,20 @@ function wireWorkspace(scBody){
   const foc = scBody.querySelector(".ws-side [data-wsfocus]");
   if (foc && document.activeElement !== search &&
       document.activeElement && document.activeElement.tagName !== "IFRAME") {
-    /* only reclaim focus when a tree/results traversal is in progress */
-    if (S.ws.cursor) foc.focus();
+    /* only reclaim focus when a tree/results traversal is in progress.
+       preventScroll (glitch fix 2026-08-25): a plain focus() yanked the
+       freshly rebuilt tree to the cursor row on EVERY background render —
+       the second half of the scroll glitch. The rAF nearest-scroll runs
+       AFTER render()'s scroll restore, so arrow-key traversal still follows
+       the cursor while a background repaint moves nothing. */
+    if (S.ws.cursor){
+      try { foc.focus({ preventScroll: true }); } catch (_e){ foc.focus(); }
+      requestAnimationFrame(()=>{
+        if (foc.isConnected && document.activeElement === foc){
+          try { foc.scrollIntoView({ block: "nearest" }); } catch (_e){}
+        }
+      });
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-# Vendored artifacts manifest
+# Vendored artifacts manifest 
 
 - **title**: Vendor manifest (prebuilt artifacts the panel consumes)
 - **status**: active
@@ -8,7 +8,7 @@
 
 | Artifact | Source | Pin | sha256 |
 |---|---|---|---|
-| static/vendor/sutra-editor.js | sankalpasawa/silverbullet, branch `sutra-editor` (fork of silverbulletmd/silverbullet 2.10.0, MIT — LICENSE.md preserved upstream; attribution banner in the file header) | fork commit 0209b6d; upstream tag 2.10.0 | 3d4d795a13c7f4995703b1182cb009edfe64f4fb631b7790e78d6f48b8518486 |
+| static/vendor/sutra-editor.js | sankalpasawa/silverbullet, branch `sutra-editor` (fork of silverbulletmd/silverbullet 2.10.0, MIT — LICENSE.md preserved upstream; attribution banner in the file header) | fork commit da18182; upstream tag 2.10.0 | 22da847615903a8dc121e6659f4a7d8402cdb5d1ecfb0defbed2f478e759e24c |
 
 Rebuild: `node sutra-build.mjs` at the fork root (esbuild, deterministic,
 es2022 iife). Verify: `shasum -a 256 static/vendor/sutra-editor.js` must equal

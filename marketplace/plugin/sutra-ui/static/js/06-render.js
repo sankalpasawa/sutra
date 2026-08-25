@@ -1001,25 +1001,45 @@ function _browseScrollKey(){
 function _browseScroller(){
   return document.querySelector("#panes .pane.browse .pb");
 }
+/* The workspace screen never scrolls .pb (.ws exactly fills it) — its real
+   scrollers are the tree column and the doc column, reborn at scrollTop 0 on
+   every innerHTML rebuild. Saving them here is what stops the left tree from
+   snapping to the top on every SSE-driven repaint (founder glitch report
+   2026-08-25; dual consult — the full rebuild itself is a logged follow-up). */
+function _wsScrollers(){
+  if (S.screen !== "workspace") return [];
+  return [
+    ["wsSide", document.querySelector("#scBody .ws-side")],
+    ["wsDoc",  document.querySelector("#scBody .ws-doccol")],
+  ].filter(p => p[1]);
+}
 function _browseScrollState(){
   const el = _browseScroller();
-  if (!el || !el.scrollTop) return null;
-  return { key: _browseScrollKey(), top: el.scrollTop };
+  const st = { key: _browseScrollKey(), top: (el && el.scrollTop) || 0 };
+  _wsScrollers().forEach(([id, sc]) => { if (sc.scrollTop) st[id] = sc.scrollTop; });
+  if (!st.top && st.wsSide == null && st.wsDoc == null) return null;
+  return st;
 }
 function _restoreBrowseScroll(prior){
   if (!prior || prior.key !== _browseScrollKey()) return;
   const el = _browseScroller();
-  if (!el) return;
-  el.scrollTop = prior.top;
+  if (el && prior.top) el.scrollTop = prior.top;
+  _wsScrollers().forEach(([id, sc]) => { if (prior[id] != null) sc.scrollTop = prior[id]; });
   /* Re-apply once after layout. The synchronous set above is enough whenever
      the new content is at least as tall as the old, which is the common case;
      it silently clamps to a shorter document (a filter that removed rows), and
      a rAF pass lands the honest maximum instead of leaving it at 0. */
   requestAnimationFrame(()=>{
+    if (prior.key !== _browseScrollKey()) return;
     const e2 = _browseScroller();
-    if (e2 && prior.key === _browseScrollKey() && e2.scrollTop !== prior.top) {
+    if (e2 && prior.top && e2.scrollTop !== prior.top) {
       e2.scrollTop = Math.min(prior.top, Math.max(0, e2.scrollHeight - e2.clientHeight));
     }
+    _wsScrollers().forEach(([id, sc]) => {
+      if (prior[id] != null && sc.scrollTop !== prior[id]) {
+        sc.scrollTop = Math.min(prior[id], Math.max(0, sc.scrollHeight - sc.clientHeight));
+      }
+    });
   });
 }
 /* A transcript is a LOG: the interesting end is the newest turn. Opening a

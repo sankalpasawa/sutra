@@ -82,14 +82,20 @@
      .ws stacks the top bar over the panes (the mock's .body). */
   .ws{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;
     border-radius:var(--r);background:var(--bg);color:var(--ink);font-family:var(--sans)}
+  /* full-bleed (founder spacing directive 2026-08-25): the pane body's 13px/14px
+     inset doubled the workspace's own chrome — the screen owns its edges.
+     Direct-child match only (dual consult): never fires on nested .ws-likes. */
+  .pb:has(> .ws){padding:0}
 
   /* shared reset — the JS renders rows and actions as real <button>s the
      static mock never needed; one reset, per-class values below */
   .ws button{border:0;background:none;font-family:inherit;text-align:left;
     color:inherit;padding:0;cursor:pointer}
 
-  /* top bar 52 */
-  .ws-top{height:52px;flex:none;display:flex;align-items:center;gap:14px;padding:0 20px;
+  /* top bar 40 — was the mock sheet's 52; matched to the panel's own 40px
+     planehead so the search bar sits tight under the pane head (founder
+     spacing directive 2026-08-25) */
+  .ws-top{height:40px;flex:none;display:flex;align-items:center;gap:14px;padding:0 20px;
     border-bottom:1px solid var(--line);background:var(--card)}
   /* Live input: placeholder faint / typed ink lands on ::placeholder + colour —
      the mock faked typing with .typed because its screens are static. */
@@ -114,7 +120,9 @@
      flagged for the S20 diff. */
   .ws-panes{flex:1;display:flex;min-height:0}
   .ws-side{width:286px;flex:none;border-right:1px solid var(--line);background:var(--inset);
-    padding:10px 10px 12px;overflow-y:auto;font-size:12.5px}
+    padding:10px 10px 12px;overflow-y:auto;font-size:12.5px;
+    scrollbar-gutter:stable}  /* classic-scrollbar appear/disappear reflowed
+                                 every ellipsized row (glitch fix 2026-08-25) */
   .ws-searching{padding:10px 8px;font-size:12px;color:var(--faint)}
   .ws-none{min-height:8px}   /* empty tree/results render — no lock value; inert spacer */
 
@@ -167,13 +175,14 @@
   /* doc pane — 620 centred column (fixed by design, A11Y.md §4). The column
      is a flex stack so the sidecar iframe fills the height below the crumb
      and notices; the document body itself renders inside the iframe. */
-  .ws-doccol{flex:1;min-width:0;overflow-y:auto;background:var(--card);padding:22px 0 40px;
+  .ws-doccol{flex:1;min-width:0;overflow-y:auto;background:var(--card);padding:12px 0 40px;
     display:flex;flex-direction:column}
+  /* padding-top 22->12 (founder spacing directive 2026-08-25) */
   .ws-col{width:100%;max-width:680px;margin:0 auto;padding:0 28px;box-sizing:border-box;
     flex:1;display:flex;flex-direction:column;min-height:0}
   /* was width:620px FIXED — narrower panes clipped the content mid-word at
      the FILING boundary (reviewer 2026-08-25, blocker 2) */
-  .ws-crumb{font-size:11.5px;color:var(--faint);margin-bottom:10px;flex:none}
+  .ws-crumb{font-size:11.5px;color:var(--faint);margin-bottom:6px;flex:none}
   .ws-frame{flex:1;width:100%;min-height:0;border:0;background:var(--card)}
   .ws-col h1{font-family:var(--serif);font-size:28px;font-weight:500;margin:0 0 16px;
     letter-spacing:-.01em}
@@ -237,6 +246,22 @@
   .ws-editor .sb-code{font-family:var(--mono);font-size:12px;background:var(--inset);
     border-radius:4px;padding:0 4px}
   .ws-editor a,.ws-editor .sb-wiki-link{color:var(--acc)}
+  /* tables (founder 2026-08-25; dual consult). SB's tablePlugin renders the
+     widget but hides source rows 2..N by CLASS, not by replace — without the
+     upstream rule (fork editor.scss:391) the raw pipes stayed visible under
+     the widget. Same mechanism for fenced-code hiding (editor.scss vocab).
+     Widget th/td mirror the read view's .ws-mdbody table rules for parity. */
+  .ws-editor .sb-line-table-outside,
+  .ws-editor .sb-fenced-code-hide{display:none}
+  .ws-editor .sb-line-tbl-header{font-weight:600}
+  .ws-editor .sb-table-widget{display:block;width:100%;overflow-x:auto}
+  .ws-editor .sb-table-widget table{border-collapse:collapse;margin:0 0 14px;
+    font-size:12.5px;max-width:100%}
+  .ws-editor .sb-table-widget th{text-align:left;font-size:10.5px;letter-spacing:.08em;
+    color:var(--muted);border-bottom:1px solid var(--line);padding:5px 10px 5px 0;
+    font-weight:600}
+  .ws-editor .sb-table-widget td{border-bottom:1px solid var(--line-soft);
+    padding:6px 10px 6px 0;vertical-align:top}
 
 
   .ws-skel-wrap{padding-top:4px}

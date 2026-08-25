@@ -517,6 +517,9 @@ test("state 14 keeps the last read copy on screen and offers Save a copy", () =>
     "the editor iframe must not mount in the read state");
 });
 
+/* NOTE (default-edit, 2026-08-25): a plain explicit open now lands in EDIT —
+   the read state below is reached via Done / restore / fromSearch / read-only
+   / unfiled / gone, so this render pin stays valid. */
 test("read state renders the panel view; edit state mounts the iframe (round 3)", () => {
   const sb = onSandbox(sb2 => {
     sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
@@ -635,6 +638,84 @@ async function asyncChecks(){
       console.log("ok   - editing mounts the native editor through the wire hook (PLAN-25 S10)"); pass++;
     } else {
       console.log("FAIL - editing mounts the native editor through the wire hook\n       calls=" + JSON.stringify(calls)); fail++;
+    }
+  }
+
+  {
+    /* default-edit: an explicit doc open lands in edit state once the read
+       copy arrives (founder 2026-08-25, dual consult) */
+    const sb = onSandbox();
+    sb.fetchImpl = (u) => Promise.resolve({ ok: true, json: async () =>
+      String(u).indexOf("/api/fs/read") !== -1
+        ? { text: "body", editable: true, bytes: 4 }
+        : { meta: { mtime: 111 } } });
+    await sb.__W.wsOpenDoc("holding/research/viewer.md", {});
+    if (sb.S.ws.editing === true && sb.S.ws.unsaved === false
+        && sb.__W.wsCurrentState() === "07"){
+      console.log("ok   - default-edit: an explicit doc open lands in edit state (07), unsaved stays false"); pass++;
+    } else {
+      console.log("FAIL - default-edit: explicit open should land editing=true/unsaved=false/state 07, got editing="
+        + sb.S.ws.editing + " unsaved=" + sb.S.ws.unsaved + " state=" + sb.__W.wsCurrentState()); fail++;
+    }
+  }
+
+  {
+    /* default-edit guards: restore, fromSearch, read-only, gone and unfiled
+       all stay read-first */
+    const mk = (impl) => { const sb = onSandbox(); sb.fetchImpl = impl || ((u) =>
+      Promise.resolve({ ok: true, json: async () =>
+        String(u).indexOf("/api/fs/read") !== -1
+          ? { text: "body", editable: true, bytes: 4 }
+          : { meta: { mtime: 111 } } })); return sb; };
+    const bad = [];
+    let sb = mk();
+    await sb.__W.wsOpenDoc("holding/research/viewer.md", { restore: true });
+    if (sb.S.ws.editing) bad.push("restore");
+    sb = mk();
+    await sb.__W.wsOpenDoc("holding/research/viewer.md", { fromSearch: true });
+    if (sb.S.ws.editing) bad.push("fromSearch");
+    sb = mk();
+    sb.S.sb = { running: true, readonly: true };
+    await sb.__W.wsOpenDoc("holding/research/viewer.md", {});
+    if (sb.S.ws.editing || sb.__W.wsCurrentState() !== "11") bad.push("read-only");
+    sb = mk((u) => String(u).indexOf("/api/fs/read") !== -1
+      ? Promise.resolve({ ok: true, json: async () => ({ error: { kind: "not_found" } }) })
+      : Promise.resolve({ ok: false, json: async () => ({ error: { kind: "not_found", message: "gone" } }) }));
+    await sb.__W.wsOpenDoc("holding/research/viewer.md", {});
+    if (sb.S.ws.editing || !sb.S.ws.docGone) bad.push("gone");
+    sb = mk();
+    sb.S.ws.tree = { departments: [], unfiled: [{ path: "holding/TODO.md", title: "TODO" }] };
+    await sb.__W.wsOpenDoc("holding/TODO.md", {});
+    if (sb.S.ws.editing || sb.__W.wsCurrentState() !== "06") bad.push("unfiled");
+    if (!bad.length){
+      console.log("ok   - default-edit guards: restore/fromSearch/read-only/gone/unfiled stay read-first"); pass++;
+    } else {
+      console.log("FAIL - default-edit guards leaked into edit: " + bad.join(", ")); fail++;
+    }
+  }
+
+  {
+    /* default-edit: a stale mount resumer never pairs old text with a new
+       path — the post-await openSeq/state re-check (dual consult) */
+    const calls = [];
+    const sb = onSandbox(x => {
+      x.S.ws.sel = { type: "doc", path: "holding/research/a.md" };
+      x.S.ws.lastRead = { path: "holding/research/a.md", text: "AAA", editable: true, bytes: 3 };
+      x.S.ws.editing = true;
+      x.S.ws.openSeq = 7;
+      x.window.SutraEditor = { mount: (o) => { calls.push(o.path);
+        return { destroy(){}, forceSave(){}, isDirty: () => false }; } };
+    });
+    const el = { querySelector: (q) => q === "[data-wseditor]" ? {} : null };
+    sb.__W.wireWorkspace(el);
+    /* a second open lands while the mount resumer sits behind the await */
+    sb.S.ws.sel = { type: "doc", path: "holding/research/b.md" };
+    sb.S.ws.openSeq = 8;
+    await new Promise(r => setImmediate(r));
+    if (calls.length === 0 && !sb.S.ws.edHandle){
+      console.log("ok   - default-edit: a stale mount resumer aborts on the openSeq/state re-check"); pass++;
+    } else {
+      console.log("FAIL - default-edit: stale resumer mounted anyway: calls=" + JSON.stringify(calls)); fail++;
     }
   }
 
