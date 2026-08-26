@@ -75,7 +75,6 @@ const WS_COPY = {
   searching: "searching\u2026",
   search: "Search",
   edit: "Edit",
-  done: "Done",
   readOnly: "read-only",
   offline: "offline",
   lensOrg: "Organisation",
@@ -458,34 +457,9 @@ function wsEdit(){
   wsPing("edit_entered");
   render();
 }
-function wsDone(){
-  if (!S.ws.editing) return;
-  /* flush the native editor's buffer BEFORE leaving edit mode, then tear the
-     mount down — Done means "my edits are on disk" (mock 07). */
-  const h = S.ws.edHandle;
-  if (h){ try { h.forceSave(); } catch (_e){} }
-  wsUnmountEditor();
-  S.ws.editing = false; S.ws.unsaved = false;
-  /* The read view renders from lastRead — refresh it so the edit just made
-     in the iframe is what the reader sees (reviewer round 2). */
-  (async () => {
-    try {
-      const path = S.ws.sel && S.ws.sel.path;
-      if (!path) return;
-      const r = await apiGet("/api/fs/read?path=" + encodeURIComponent(path));
-      if (S.ws.sel && S.ws.sel.path === path){
-        S.ws.lastRead = { path: path, text: r.text, editable: r.editable };
-        render();
-      }
-    } catch (_e) {}
-  })();
-  /* One disk check on the way out: the save happened inside the sidecar, and
-     an external write during the edit deserves the banner now, not on the
-     next focus. (The save-conflict 409 path itself is the sidecar's/fs-write's;
-     ERROR-MODEL F3.) */
-  wsCheckDisk();
-  render();
-}
+/* (r6) wsDone is GONE with the Done button — docs are simply editable.
+   Autosave persists (1s debounce); wsUnmountEditor flushes on every exit. */
+
 
 /* Changed-on-disk detection (F3). On-focus + on-Done, deliberately NOT a
    poll: the codebase's no-retry-storm rule (ERROR-MODEL retry table) and the
@@ -530,7 +504,6 @@ function wsTryAgain(){
   S.ws.treeError = null;
   loadWorkspace(true);
 }
-
 /* ── unfiled → File it (state 06, PRD U5) ───────────────────────────────────
    Routes through the EXISTING classify flow — POST /api/classify writes the
    placement with work_ref.id = the text, which is why the text sent is the
@@ -1274,6 +1247,12 @@ async function wsMountEditor(el){
       if (t) return t === "dark";
       return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
     })(),
+    onSaveState: (st) => {
+      S.ws.saveState = st;
+      const tr = document.querySelector("#panes .pane.browse .ws-topright");
+      if (tr) tr.outerHTML = wsTopRightHtml(wsCurrentState(),
+        S.ws.results ? wsGroupResults(S.ws.results) : null);
+    },
     save: async (text) => {
       const r = await apiPost("/api/fs/write",
         { path: path, text: text, base_bytes: S.ws.lastRead ? S.ws.lastRead.bytes : null });
@@ -1290,7 +1269,15 @@ async function wsMountEditor(el){
   });
 }
 function wsUnmountEditor(){
-  if (S.ws.edHandle){ try { S.ws.edHandle.destroy(); } catch (_e){} S.ws.edHandle = null; }
+  const h = S.ws.edHandle;
+  if (h){
+    /* flush BEFORE destroy (r6): Done's explicit flush lives here now — a
+       screen exit inside the 1s debounce never drops keystrokes, and the
+       handle's forceSave also commits an open table cell. */
+    try { h.forceSave(); } catch (_e){}
+    try { h.destroy(); } catch (_e){}
+    S.ws.edHandle = null;
+  }
 }
 function wsRenderCtxOnly(){
   const ctx = document.querySelector("#scBody .ws-ctx");
@@ -1342,12 +1329,12 @@ function wsTopRightHtml(state, g){
     + (g ? '<span class="ws-rescount">' + g.total + '</span>' : "")
     + (state === "13" ? '<span class="ws-chip alert"><i class="ws-dot"></i>' + WS_COPY.offline + '</span>' : "")
     + (!wsEditAllowed() && state !== "13" ? '<span class="ws-chip">' + WS_COPY.readOnly + '</span>' : "")
-    /* the Edit BUTTON is gone (founder r4: redundant — docs open in edit).
-       Read views enter edit by clicking the document body or pressing "e";
-       every entry runs through wsCanEnterEdit(). Done stays. */
-    + (S.ws.editing
-        ? '<button type="button" class="ws-act gold" data-wsact="done">' + WS_COPY.done + '</button>'
-        : "")
+    /* (r6) Done is gone too — docs are simply editable; a quiet chip shows
+       the save state instead (autosave owns persistence). */
+    + (S.ws.editing && S.ws.saveState === "saving"
+        ? '<span class="ws-chip">saving…</span>'
+        : S.ws.editing && S.ws.unsaved
+          ? '<span class="ws-chip">unsaved</span>' : "")
     + '</span>';
 }
 /* The search + action cluster live in the browse pane's OWN header row (.ph)
@@ -1496,7 +1483,6 @@ document.addEventListener("click", e => {
   if (act){
     const a = act.dataset.wsact;
     if (a === "edit") wsEdit();
-    else if (a === "done") wsDone();
     else if (a === "reload") wsReload();
     else if (a === "keepmine") wsKeepMine();
     else if (a === "savecopy") wsSaveCopy();

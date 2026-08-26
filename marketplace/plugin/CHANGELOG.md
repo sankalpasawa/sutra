@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.235.0 (2026-08-26)
+
+- **Tables never lose their shape.** They render as one solid block, always;
+  click a cell to edit it in place (Enter commits, Tab hops cells, Esc
+  cancels), "+ row" grows the table. The Done button is gone — docs are
+  simply editable, autosave persists, a quiet chip shows save state. Editor
+  scrolling is one scroller now (the wheel glitch is dead).
+
 ## 2.234.1 (2026-08-26)
 
 - **The sidecar is gone, the folded screens are gone** (expired one-release

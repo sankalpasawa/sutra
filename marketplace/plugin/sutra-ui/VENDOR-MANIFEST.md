@@ -8,7 +8,7 @@
 
 | Artifact | Source | Pin | sha256 |
 |---|---|---|---|
-| static/vendor/sutra-editor.js | sankalpasawa/silverbullet, branch `sutra-editor` (fork of silverbulletmd/silverbullet 2.10.0, MIT — LICENSE.md preserved upstream; attribution banner in the file header) | fork commit da18182; upstream tag 2.10.0 | 22da847615903a8dc121e6659f4a7d8402cdb5d1ecfb0defbed2f478e759e24c |
+| static/vendor/sutra-editor.js | sankalpasawa/silverbullet, branch `sutra-editor` (fork of silverbulletmd/silverbullet 2.10.0, MIT — LICENSE.md preserved upstream; attribution banner in the file header) | fork commit 8c6b28d; upstream tag 2.10.0 | 96892401253820f88a3eb961b6e9475f06db31ec291c1201bf1efd2976bda112 |
 
 Rebuild: `node sutra-build.mjs` at the fork root (esbuild, deterministic,
 es2022 iife). Verify: `shasum -a 256 static/vendor/sutra-editor.js` must equal

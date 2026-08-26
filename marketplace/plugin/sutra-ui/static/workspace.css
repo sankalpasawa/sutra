@@ -227,7 +227,11 @@
      origin, panel tokens straight in, no bridge, no space style, no iframe.
      Selectors pinned to CM6 + SB 2.10 line classes (same vocabulary the old
      space-style theme used; kept in sync with the fork). */
-  .ws-editor{flex:1;min-height:0;overflow-y:auto}
+  /* ONE scroller (r6): the CM scroller owns editor scrolling — .ws-editor
+     stacking its own overflow on top of .ws-doccol's made wheel input glitchy
+     (three nested scrollers). Read views still scroll via .ws-doccol. */
+  .ws-editor{flex:1;min-height:0;overflow:hidden}
+  .ws-editor .cm-scroller{overflow-y:auto}
   .ws-editor .cm-editor{font-size:13.5px;line-height:1.65;height:100%;
     background:var(--card);color:var(--ink)}
   .ws-editor .cm-editor.cm-focused{outline:none}
@@ -271,6 +275,14 @@
     font-weight:600}
   .ws-editor .sb-table-widget td{border-bottom:1px solid var(--line-soft);
     padding:6px 10px 6px 0;vertical-align:top}
+  /* in-cell editing (r6): the input inherits the cell's type entirely */
+  .ws-editor .sb-cell-input{width:100%;min-width:60px;border:0;outline:none;
+    border-bottom:1px solid var(--acc);background:transparent;color:var(--ink);
+    font:inherit;padding:0;caret-color:var(--ink)}
+  .ws-editor .sb-table-addrow{display:inline-block;margin:4px 0 0;border:0;
+    background:none;color:var(--faint);font:inherit;font-size:11px;
+    cursor:pointer;padding:2px 0}
+  .ws-editor .sb-table-addrow:hover{color:var(--acc)}
 
 
   .ws-skel-wrap{padding-top:4px}

@@ -162,7 +162,7 @@ function freshSandbox(){
 ;globalThis.__W = { wsFlagOn, wsActive, wsEnsureRegistered, loadWorkspace,
   wsCurrentState, wsStateFromError, wsGroupResults, wsMarkSnippet,
   wsSearchInput, wsVisibleRows, wsActivateRow, wsKeydown, wsParseRoute,
-  wsOpenDoc, wsSetLens, wsEdit, wsDone, wsKeepMine, wireWorkspace,
+  wsOpenDoc, wsSetLens, wsEdit, wsKeepMine, wireWorkspace, wsUnmountEditor,
   wsScreenHtml, WS_COPY, wsMatchWords, wsCount, wsTreeHtml, wsMdHtml,
   wsPaneHeadHtml, wsFileIt };
 `;
@@ -874,17 +874,28 @@ test("click-to-edit (r4): the keyboard path — 'e' enters edit, and read-only r
   assert(ro.S.ws.editing === false, "read-only mode must refuse the keyboard entry");
 });
 
-test("Done flushes the native editor and unmounts it (PLAN-25 S12/S14)", () => {
+test("unmount flushes the editor BEFORE destroying it (r6: Done is gone)", () => {
   const calls = [];
   const sb = onSandbox(x => {
     x.S.ws.editing = true;
     x.S.ws.edHandle = { destroy: () => calls.push("destroyed"), forceSave: () => calls.push("flushed") };
   });
-  sb.__W.wsDone();
+  sb.__W.wsUnmountEditor();
   assert(JSON.stringify(calls) === '["flushed","destroyed"]',
-    "Done must save FIRST, then unmount: " + JSON.stringify(calls));
-  assert(sb.S.ws.edHandle === null && sb.S.ws.editing === false,
-    "edit state fully closed");
+    "unmount must save FIRST, then destroy: " + JSON.stringify(calls));
+  assert(sb.S.ws.edHandle === null, "handle cleared");
+});
+
+test("no Done button anywhere; the save chip replaces it (r6)", () => {
+  assert(!/data-wsact="done"/.test(source), "the Done button must not exist in the module");
+  const sb = onSandbox(sb2 => {
+    sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
+    sb2.S.ws.docPath = "holding/research/viewer.md";
+    sb2.S.ws.lastRead = { path: "holding/research/viewer.md", text: "b", editable: true };
+    sb2.S.ws.editing = true; sb2.S.ws.saveState = "saving";
+  });
+  assert(sb.__W.wsPaneHeadHtml().indexOf("saving") !== -1,
+    "the pane head must show the saving chip while a save is in flight");
 });
 
 asyncChecks().catch(e => {
