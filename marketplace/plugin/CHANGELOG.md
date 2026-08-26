@@ -1,6 +1,14 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-25
+**status**: active · **updated**: 2026-08-26
+
+## 2.232.1 (2026-08-26)
+
+- **The Edit button is gone** — docs open in edit; remaining read views enter
+  edit by clicking the body (selections/links safe) or pressing `e`. Sidebar
+  highlight now follows the open screen (was stuck on Org). Audit batch:
+  evals goal ellipsis, teamsutra newest-first, usage name dedupe, verdict
+  dates unwrapped, git rows deduped, connectors title, Optimus placeholder.
 
 ## 2.232.0 (2026-08-26)
 

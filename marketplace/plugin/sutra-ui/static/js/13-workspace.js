@@ -438,9 +438,21 @@ function wsSetLens(lens){
    /api/fs/write (SUTRA_UI_ALLOW_EDIT); this screen only tracks the mode for
    the crumb, the Done affordance and the changed-on-disk watch. In state 11
    the Edit affordance is simply absent, so this cannot fire. */
+/* ONE gate for every edit entry — body click, keyboard, programmatic callers
+   (codex r4): the UI can only hide what this refuses. */
+function wsCanEnterEdit(){
+  return wsFlagOn() && wsEditAllowed() && !!S.ws.docPath && !S.ws.docGone
+    && !S.ws.editing && !!(S.ws.sel && S.ws.sel.type === "doc");
+}
+function wsEnterEditFromRead(){
+  if (!wsCanEnterEdit()) return;
+  wsEdit();
+}
 function wsEdit(){
   if (!wsFlagOn() || !wsEditAllowed() || !S.ws.docPath) return;
-  S.ws.editing = true; S.ws.unsaved = true;
+  /* unsaved stays FALSE at entry (r4): nothing is typed yet — onDirty owns
+     the flag. A false true armed wsCheckDisk's state-12 interrupt. */
+  S.ws.editing = true;
   S.ws.focusFrameOnLoad = true;                /* R1: Edit is an explicit open */
   wsPing("edit_entered");
   render();
@@ -768,6 +780,12 @@ function wsKeydown(e){
   }
   if (e.key === "ArrowDown"){ e.preventDefault(); wsMoveCursor(1); return; }
   if (e.key === "ArrowUp"){ e.preventDefault(); wsMoveCursor(-1); return; }
+  /* keyboard edit entry (r4, a11y): the Edit button is gone; "e" is the
+     non-pointer path into the editor from any read view. inTyping/inSearch
+     are already excluded above; wsCanEnterEdit refuses read-only/gone. */
+  if ((e.key === "e" || e.key === "E") && !inSearch && wsCanEnterEdit()){
+    e.preventDefault(); wsEnterEditFromRead(); return;
+  }
   if (e.key === "Enter" && !inSearch){
     const rows = wsVisibleRows();
     const cur = S.ws.cursor && rows[S.ws.cursor.i];
@@ -1157,7 +1175,9 @@ function wsReadView(){
     const row = docs.find(d => d.path === w.sel.path);
     title = (row && row.title) || w.sel.path.split("/").pop();
   }
-  return '<div class="ws-read"><h1 class="ws-doctitle">' + esc(title) + "</h1>"
+  /* data-wsread: the click-to-edit surface (r4 — the Edit button is gone).
+     title hints the affordance; the delegate guards selections and links. */
+  return '<div class="ws-read" data-wsread title="Click to edit"><h1 class="ws-doctitle">' + esc(title) + "</h1>"
     + '<div class="ws-mdbody">' + wsMdHtml(text) + "</div></div>";
 }
 /* ── native editor lifecycle (PLAN-25-EDITOR S10-S14) ────────────────────────
@@ -1288,10 +1308,12 @@ function wsTopRightHtml(state, g){
     + (g ? '<span class="ws-rescount">' + g.total + '</span>' : "")
     + (state === "13" ? '<span class="ws-chip alert"><i class="ws-dot"></i>' + WS_COPY.offline + '</span>' : "")
     + (!wsEditAllowed() && state !== "13" ? '<span class="ws-chip">' + WS_COPY.readOnly + '</span>' : "")
+    /* the Edit BUTTON is gone (founder r4: redundant — docs open in edit).
+       Read views enter edit by clicking the document body or pressing "e";
+       every entry runs through wsCanEnterEdit(). Done stays. */
     + (S.ws.editing
         ? '<button type="button" class="ws-act gold" data-wsact="done">' + WS_COPY.done + '</button>'
-        : (wsEditAllowed() && !g && S.ws.sel && S.ws.sel.type === "doc" && !S.ws.docGone && state !== "13"
-            ? '<button type="button" class="ws-act" data-wsact="edit">' + WS_COPY.edit + '</button>' : ""))
+        : "")
     + '</span>';
 }
 /* The search + action cluster live in the browse pane's OWN header row (.ph)
@@ -1460,6 +1482,18 @@ document.addEventListener("click", e => {
     else if (a === "tryagain") wsTryAgain();
     else if (a === "fileit") wsFileIt();
     else if (a === "newdoc" || a === "newdochere") wsNewDoc();
+    return;
+  }
+
+  /* click-to-edit (r4): a plain click on the read body enters edit. Guards:
+     a drag-selection to copy text never flips (selection not collapsed);
+     links, wiki-links and any real control keep their own behaviour. */
+  const readBody = e.target.closest("[data-wsread]");
+  if (readBody){
+    if (e.target.closest("a,.ws-wikilink,button,input,textarea,select,summary,details")) return;
+    const sel = window.getSelection && window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    wsEnterEditFromRead();
     return;
   }
 

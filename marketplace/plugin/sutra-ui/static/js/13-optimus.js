@@ -94,7 +94,7 @@ SCREENS.optimus = () => {
     <p><button class="btn" type="button" data-optstart>Wake Optimus</button>
        <button class="btn" type="button" data-optrefresh>Refresh</button></p>
     <div class="opt-ask"><input type="text" class="wdin" id="optAskText"
-      placeholder="Tell Optimus what you need… (try: write a note on …)">
+      placeholder="Ask Optimus…">
       <button class="btn" type="button" data-optask>Ask</button>
       <button class="btn" type="button" data-optchat>Chat about this</button></div></div>`;
 
@@ -113,8 +113,9 @@ SCREENS.optimus = () => {
   const runs = (s.runs || []).slice().reverse().slice(0, 8).map(optRunRow).join("")
     || `<p class="muted">Nothing finished yet.</p>`;
 
+  /* styled status, not stray debug prose (visual audit r4) */
   const stateBits = Object.entries(s.state_summary || {})
-    .map(([k, v]) => `${esc(k)}: ${v}`).join(" &#183; ") || "nothing consumed yet";
+    .map(([k, v]) => `${esc(k)}: ${v}`).join(" &#183; ") || "Nothing processed yet";
 
   return `<div class="pad opt-wrap">
     <div class="opt-head">${daemonLine}
@@ -123,7 +124,7 @@ SCREENS.optimus = () => {
 
     <h3>Ask Optimus</h3>
     <div class="opt-ask"><input type="text" class="wdin" id="optAskText"
-      placeholder="Tell Optimus what you need… (things it knows run by themselves; anything else comes back to you)">
+      placeholder="Ask Optimus…">
       <button class="btn" type="button" data-optask>Ask</button>
       <button class="btn" type="button" data-optchat>Chat about this</button></div>
     <p class="muted">${(s.pending_inputs || []).length ? `${(s.pending_inputs || []).length} waiting in line · ` : ""}so far: ${stateBits}

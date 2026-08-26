@@ -1,3 +1,8 @@
+/* A date must not wrap mid-token (visual audit r4: "2026-08-" / "25" in the
+   verdict tables): non-breaking hyphen + space keep it one unit, plain text
+   so it survives any cell escaping. */
+function nbDate(s){ return String(s).replace(/-/g, "‑").replace(/ /g, " "); }
+
 /* ── Evals (Verifier layer, 2026-08-08) ──
    Read model is /api/evals: registry counts, latest-vs-previous nightly
    scorecard, regression strip, findings tail. Lazy fetch like Git/Balance.
@@ -59,7 +64,8 @@ SCREENS.evals = () => {
     <td>${esc(c.scope||"")}</td>
     <td><span class="pill ${EVCHIP[c.status]||""}">${esc(c.status||"")}</span>${c.superseded_by?`<span style="color:var(--faint);font-size:10px"> → ${esc(c.superseded_by)}</span>`:""}</td>
     <td style="font-size:11px;color:var(--muted)">${esc(c.tag||"")}</td>
-    <td style="font-size:11.5px">${esc(c.goal||"")}${c.reason?`<span style="color:var(--faint)"> — ${esc(c.reason)}</span>`:""}</td>
+    <td style="font-size:11.5px;max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+        title="${esc((c.goal||"") + (c.reason ? " — " + c.reason : ""))}">${esc(c.goal||"")}${c.reason?`<span style="color:var(--faint)"> — ${esc(c.reason)}</span>`:""}</td>
   </tr>`).join("")}
   </tbody></table></div>
   <p style="color:var(--faint);font-size:10.5px;margin:4px 0 0">superseded rows hidden unless failing;
@@ -528,9 +534,10 @@ function accountHtml(){
               .filter(Boolean).join(" · ");
   const ids = [p.account_id ? "account " + p.account_id : null,
                p.organization_id ? "org " + p.organization_id : null].filter(Boolean).join(" · ");
-  const other = p.full_name && p.full_name !== p.display_name ? p.full_name : "";
+  /* one name, not two (visual audit r4): display_name + full_name rendered
+     as "Abhishek Abhishek Shah" — the fuller string alone carries it. */
   return `
-    ${kv("Signed in as", p.display_name || p.full_name, other)}
+    ${kv("Signed in as", p.full_name || p.display_name)}
     ${kv("Email", p.email)}
     ${kv("Plan", p.plan || rawPlan || null, p.plan ? rawPlan : "")}
     ${kv("Organization", p.organization, p.organization_role ? "role: " + p.organization_role : "")}
@@ -613,11 +620,14 @@ SCREENS.git = () => {
   const CODE = {M:"modified", A:"added", D:"deleted", R:"renamed", C:"copied", "?":"untracked", U:"conflicted"};
   const label = f => CODE[(f.y !== " " ? f.y : f.x)] || "changed";
 
+  /* one status, not two (visual audit r4): the badge carries the letter, the
+     full word rides the tooltip — the sub-line only earns its row for the
+     staged marker, reclaiming ~30px per file on an 800-file tree. */
   const row = f => `<button class="opt gitf ${sel===f.path?"sel":""}" type="button"
-      data-gitfile="${esc(f.path)}">
+      data-gitfile="${esc(f.path)}" title="${esc(label(f))}">
       <span class="gcode ${f.y==="?"||f.x==="?"?"new":""}">${esc((f.x+f.y).trim()||"?")}</span>
       <span class="oi"><span class="on">${esc(f.path)}</span>
-      <span class="od">${esc(label(f))}${f.x!==" "&&f.x!=="?"?" · staged":""}</span></span>
+      ${f.x!==" "&&f.x!=="?"?`<span class="od">staged</span>`:""}</span>
     </button>`;
 
   const diff = S.gitDiff == null
@@ -719,10 +729,10 @@ SCREENS.automation = () => {
         ${tally(gate.verdicts) ? `<p style="margin:4px 0 9px">${tally(gate.verdicts)}</p>` : ""}
         ${rows(led.recent, [["Kind",r=>r.kind],["Unit",r=>r.unit||r.atom_id],
                             ["Class",r=>r.class],["Model",r=>r.model],
-                            ["When",r=>r.ts?fmt(r.ts*1000):""]])}
+                            ["When",r=>r.ts?nbDate(fmt(r.ts*1000)):""]])}
         ${rows(gate.recent, [["Verdict",r=>r.verdict],["Reason",r=>r.reason],
                              ["Tool",r=>r.tool],["Target",r=>r.target],
-                             ["When",r=>r.ts?fmt(r.ts*1000):""]])}`
+                             ["When",r=>r.ts?nbDate(fmt(r.ts*1000)):""]])}`
       : `<div class="zero"><h4>Nothing dispatched here</h4>
           <p>No dispatch, atom or gate rows under <code>${esc(a.root||"")}</code>.
              These files are written by the gate hooks in whatever project the agent
@@ -1109,7 +1119,10 @@ function tsCard(t){
 SCREENS.teamsutra = () => {
   if (S.tsError) return `<p style="color:var(--block)">${esc(S.tsError)}</p>`;
   if (!S.ts) return `<p style="color:var(--muted)">Reading your tasks…</p>`;
-  const rows = S.ts.tasks || [];
+  /* newest first (visual audit r4): the freshest resolution was scrolling off
+     the bottom as the ledger grew. ISO timestamps sort lexically. */
+  const rows = (S.ts.tasks || []).slice()
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   if (!rows.length) return `<div class="info">Nothing here yet. Select any text in the
     panel and click <strong>Help</strong> — if you describe a problem, the chat
     can file it as a task. Filed tasks wait here until you queue them; Sutra then

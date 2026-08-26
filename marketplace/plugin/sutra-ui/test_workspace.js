@@ -819,6 +819,59 @@ test("search-in-header wiring pins (r3): 06-render injects the hook + preserves 
     "data-wssearch must be in the focused-input preserve whitelist (typing must survive background renders)");
 });
 
+test("click-to-edit (r4): the Edit button is gone from every surface", () => {
+  const sb = onSandbox(sb2 => {
+    sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
+    sb2.S.ws.docPath = "holding/research/viewer.md";
+    sb2.S.ws.lastRead = { path: "holding/research/viewer.md", text: "body", editable: true };
+  });
+  assert(sb.__W.wsPaneHeadHtml().indexOf('data-wsact="edit"') === -1,
+    "the pane head must not render an Edit button");
+  assert(sb.__W.wsScreenHtml().indexOf('data-wsact="edit"') === -1,
+    "the screen body must not render an Edit button");
+  assert(!/data-wsact="edit"/.test(source),
+    "no Edit button markup anywhere in the module");
+});
+
+test("click-to-edit (r4): read-body click enters edit; selections and links do not", () => {
+  const mk = (extra) => {
+    const sb = onSandbox(sb2 => {
+      sb2.S.screen = "workspace";
+      sb2.S.ws.loaded = true;
+      sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
+      sb2.S.ws.docPath = "holding/research/viewer.md";
+      sb2.S.ws.lastRead = { path: "holding/research/viewer.md", text: "body", editable: true };
+      sb2.getSelection = () => ({ isCollapsed: extra.collapsed !== false });
+    });
+    const map = Object.assign({
+      "#scBody": {}, "[data-wsread]": {},
+    }, extra.map || {});
+    sb.handlers.click({ target: { closest: q => map[q] || null, tagName: "DIV" } });
+    return sb;
+  };
+  assert(mk({}).S.ws.editing === true, "a plain read-body click must enter edit");
+  assert(mk({ collapsed: false }).S.ws.editing === false,
+    "a drag-selection must NOT flip into edit (copying text stays safe)");
+  assert(mk({ map: { "a,.ws-wikilink,button,input,textarea,select,summary,details": {} } }).S.ws.editing === false,
+    "a link click keeps its own behaviour");
+});
+
+test("click-to-edit (r4): the keyboard path — 'e' enters edit, and read-only refuses", () => {
+  const seed = sb2 => {
+    sb2.S.screen = "workspace";
+    sb2.S.ws.loaded = true;
+    sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
+    sb2.S.ws.docPath = "holding/research/viewer.md";
+    sb2.S.ws.lastRead = { path: "holding/research/viewer.md", text: "body", editable: true };
+  };
+  const sb = onSandbox(seed);
+  sb.handlers.keydown({ key: "e", target: { tagName: "DIV", closest: () => null }, preventDefault(){} });
+  assert(sb.S.ws.editing === true, "'e' must enter edit from a read view");
+  const ro = onSandbox(sb2 => { seed(sb2); sb2.S.sb = { running: true, readonly: true }; });
+  ro.handlers.keydown({ key: "e", target: { tagName: "DIV", closest: () => null }, preventDefault(){} });
+  assert(ro.S.ws.editing === false, "read-only mode must refuse the keyboard entry");
+});
+
 test("Done flushes the native editor and unmounts it (PLAN-25 S12/S14)", () => {
   const calls = [];
   const sb = onSandbox(x => {

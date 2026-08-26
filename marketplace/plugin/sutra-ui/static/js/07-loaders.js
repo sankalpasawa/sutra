@@ -1083,6 +1083,15 @@ function openScreen(id){
     id = "workspace";
   if (!id || !SCREENS[id]) return;
   S.screen = id;
+  /* Keep the rail honest (visual audit r4): the active highlight and the pane
+     title both read S.ui.dest, but nothing moved it when a screen opened from
+     outside its destination — Settings showed "Org" active, Teamsutra was
+     titled "Help". The screen's OWNING destination follows the open. */
+  const owner = DESTS.find(d =>
+    (DEST_PLANES[d] || []).some(x => x.screen === id
+        || (x.rows || []).some(r => r.screen === id))   /* grouped planes (settings) */
+    || DEST_DEFAULT_SCREEN[d] === id);                   /* plane-less dests (team) */
+  if (owner && S.ui.dest !== owner) S.ui.dest = owner;
   /* v3.3 (PLAN-25 S9): remember the pick per destination, so returning to a
      destination restores the screen the operator was on. */
   if (DESTS.includes(S.ui.dest)) S.ui.destSel[S.ui.dest] = S.screen;

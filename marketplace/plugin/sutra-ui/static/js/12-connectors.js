@@ -530,8 +530,9 @@ function connEvents(){
 
 SCREENS.connectors = () => {
   const s = S.conn;
-  const head = `<div class="sc-head"><h3>${esc(TITLES.connectors[0])}</h3>
-    <p>${esc(TITLES.connectors[1])}</p></div>`;
+  /* the pane header already names this screen — one owner for the title
+     (visual audit r4); the subtitle sentence stays. */
+  const head = `<div class="sc-head"><p>${esc(TITLES.connectors[1])}</p></div>`;
 
   if (s.err){
     const structured = /PANEL_INTERNAL_ERROR/.test(s.err);
