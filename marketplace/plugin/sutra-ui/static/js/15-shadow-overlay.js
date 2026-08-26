@@ -84,7 +84,27 @@ function dotState(status){
 
 /* ---- state -------------------------------------------------------------- */
 if (typeof S !== "undefined"){
-  if (!S.shadowThread) S.shadowThread = [];   /* ONE thread, shared with P6 */
+  /* v10 per-chat threads. S.shadowThread stays the name every existing
+     caller uses, but it is now an ACCESSOR onto the active tab's array
+     (codex P2: a plain alias detaches the moment someone reassigns it,
+     and sendToShadow reassigns it twice). */
+  if (!S.shadowThreads) S.shadowThreads = {};
+  if (!S.shadowChat) S.shadowChat = "global";
+  if (!Object.getOwnPropertyDescriptor(S, "shadowThread")
+      || !Object.getOwnPropertyDescriptor(S, "shadowThread").get){
+    const seed = S.shadowThread || [];
+    S.shadowThreads[S.shadowChat] = seed;
+    try {
+      delete S.shadowThread;
+      Object.defineProperty(S, "shadowThread", {
+        configurable: true, enumerable: true,
+        get(){ const k = S.shadowChat || "global";
+          if (!S.shadowThreads[k]) S.shadowThreads[k] = [];
+          return S.shadowThreads[k]; },
+        set(v){ S.shadowThreads[S.shadowChat || "global"] = v || []; },
+      });
+    } catch (e){ S.shadowThread = seed; }   /* frozen S: keep the array */
+  }
   if (S.shadowQuiet === undefined) S.shadowQuiet = false;
   if (!S._pillHistory) S._pillHistory = [];
 }
@@ -339,7 +359,12 @@ async function sendToShadow(text){
                          : "waking up (first message boots my session -- up "
                            + "to a minute)\u2026" });
   try {
-    const r = await shadowPost("/api/shadow/chat", { message: text });
+    /* the tab the founder is typing in rides the turn: the server folds
+       that chat's confirmed rules in, and a remember lands scoped */
+    const scope = (S.shadowChat && S.shadowChat !== "global")
+      ? S.shadowChat : null;
+    const r = await shadowPost("/api/shadow/chat",
+      scope ? { message: text, scope_id: scope } : { message: text });
     S.shadowBusy = false;
     S.shadowThread = S.shadowThread.filter(t => !t.busy);
     if (!r.ok){
@@ -357,9 +382,12 @@ async function sendToShadow(text){
                             ts: Date.now() });
     }
     if (doc.remembered){                                /* R6: honest inert */
+      const sc = doc.remembered.scope === "chat";
       S.shadowThread.push({ who: "shadow", ts: Date.now(),
-        text: "I will remember that once you confirm it in Focus > "
-              + "Shadow > memory." });
+        text: sc ? "Noted for THIS chat \u2014 inert until you confirm it"
+                   + " in Shadow settings."
+                 : "I will remember that everywhere once you confirm it"
+                   + " in Shadow settings." });
     }
     return doc;
   } catch (e){

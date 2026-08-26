@@ -1152,16 +1152,44 @@ def _shadow_workdir():
     return d
 
 
-async def _default_delegate_spawner(mission):
-    """Registered with the runner so PROMOTED queued missions (whose
-    originating request is long gone) can still get a delegate."""
-    manifest = mission.get("manifest") or (
+def _scoped_instructions(scope_id):
+    """The confirmed rules that belong to ONE chat, as a labeled block.
+    Empty string when that chat has taught Shadow nothing."""
+    if not scope_id:
+        return ""
+    try:
+        import shadow_ledger
+        block = shadow_precedence.replay_context(
+            shadow_ledger.read_latest("instructions"),
+            scope="chat", scope_id=scope_id)
+        # replay_context always emits the floors line; a scope with no
+        # rules of its own must not ship a bare floors block
+        body = [ln for ln in block.split("\n") if ln.startswith("[")]
+        if not body:
+            return ""
+        return ("\n\nRULES FOR THIS CHAT ONLY (founder-confirmed; they "
+                "apply while you work on it):\n" + "\n".join(body))
+    except Exception:
+        return ""
+
+
+def _delegate_manifest(mission):
+    """ONE manifest composer (was three copies). Scoped rules are folded
+    in AT SPAWN TIME, never baked into the mission record -- a revoked
+    rule must not re-fire on retry."""
+    base = mission.get("manifest") or (
         "You are a delegate session working for the founder via Shadow. "
         "Objective: %s. Work step by step; state DONE-CHECK lines when "
         "checks pass." % mission["objective"])
+    return base + _scoped_instructions(mission.get("target_session"))
+
+
+async def _default_delegate_spawner(mission):
+    """Registered with the runner so PROMOTED queued missions (whose
+    originating request is long gone) can still get a delegate."""
     return await shadow_runner.spawn_delegate_session(
-        _shadow_args, _shadow_workdir_for_delegates(), manifest,
-        register_runtime)
+        _shadow_args, _shadow_workdir_for_delegates(),
+        _delegate_manifest(mission), register_runtime)
 
 
 @app.on_event("startup")
@@ -1236,6 +1264,9 @@ async def api_shadow_chat(request: Request):
     msg = (body.get("message") or "").strip()
     if not msg:
         raise HTTPException(400, "message required")
+    # v10: the tab the founder is typing in. Scope rides the TURN, not the
+    # process -- one Shadow session serves every tab.
+    scope_id = (body.get("scope_id") or "").strip() or None
     async with _SHADOW_LOCK:
         sess = _SHADOW["session"]
         if sess is None or not sess.alive:
@@ -1252,7 +1283,22 @@ async def api_shadow_chat(request: Request):
             if frame.get("type") == "token":
                 tokens.append(frame.get("text") or "")
 
-        await sess.rt.send_user_frame(msg)
+        # the scoped preamble is sent ONCE per (scope, rules) pair: a
+        # tab switch or a new rule re-arms it, an ordinary next message
+        # does not repeat it
+        pre = ""
+        if scope_id:
+            scoped = _scoped_instructions(scope_id)
+            stamp = "%s:%s" % (scope_id, hash(scoped))
+            if getattr(sess, "scope_stamp", None) != stamp:
+                sess.scope_stamp = stamp
+                pre = ("[Context] You are now talking about the chat %s."
+                       % scope_id) + scoped + "\n\n"
+        elif getattr(sess, "scope_stamp", None) is not None:
+            sess.scope_stamp = None
+            pre = ("[Context] Back to general talk -- no single chat is "
+                   "in focus.\n\n")
+        await sess.rt.send_user_frame(pre + msg)
         (sess.session_id, _t, got_result,
          err, _e) = await sess.rt.demux_turn(collect, sess.session_id)
     if err:
@@ -1260,7 +1306,7 @@ async def api_shadow_chat(request: Request):
     raw = "".join(tokens)
     display, blocks = shadow_protocol.parse_reply(raw)
     out = {"reply": display, "session": sess.session_id,
-           "watching": sess.alive}
+           "watching": sess.alive, "scope_id": scope_id}
     if "chips" in blocks:
         out["chips"] = blocks["chips"]
     if "mission" in blocks:
@@ -1278,10 +1324,14 @@ async def api_shadow_chat(request: Request):
             pass                      # invalid proposal: reply text stands
     if "remember" in blocks:
         import shadow_ledger
+        # the SECOND ledger writer: without this stamp, an instruction
+        # Shadow captures inside a chat tab would land GLOBAL
         row = shadow_ledger.append("instructions", {
             "text": blocks["remember"]["text"][:1000],
             "precedence": blocks["remember"]["precedence"],
             "confirmed": False,
+            "scope": "chat" if scope_id else "global",
+            "scope_id": scope_id or None,
             "source_thread": sess.session_id})
         out["remembered"] = row
     return out
@@ -1298,17 +1348,21 @@ import shadow_protocol
 
 
 @app.get("/api/shadow/instructions")
-async def api_shadow_instructions():
+async def api_shadow_instructions(request: Request):
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
     import shadow_ledger
-    rows = shadow_ledger.read("instructions", 200)
-    latest = {}
-    for r in rows:                       # last writer per id wins
-        if r.get("id"):
-            latest[r["id"]] = r
-    return {"instructions": sorted(
-        latest.values(), key=shadow_precedence.rank_key)}
+    out = sorted(shadow_ledger.read_latest("instructions"),
+                 key=shadow_precedence.rank_key)
+    for r in out:                        # explicit scope for every row
+        r.setdefault("scope", shadow_precedence.row_scope(r))
+    want = request.query_params.get("scope") if request else None
+    want_id = request.query_params.get("scope_id") if request else None
+    if want:
+        out = [r for r in out if r.get("scope") == want
+               and (want != "chat" or not want_id
+                    or r.get("scope_id") == want_id)]
+    return {"instructions": out}
 
 
 @app.post("/api/shadow/instructions")
@@ -1324,15 +1378,26 @@ async def api_shadow_instruction_write(request: Request):
         text = (body.get("text") or "").strip()
         if not text:
             raise HTTPException(400, "text required")
+        # v10: scope is explicit on every NEW row. An unknown scope is a
+        # 400, never a silent global (a mis-typed scope must not leak a
+        # per-chat rule into every reply).
+        scope = (body.get("scope") or "global").strip()
+        scope_id = (body.get("scope_id") or "").strip() or None
+        if scope not in ("global", "chat"):
+            raise HTTPException(400, "scope must be global|chat")
+        if scope == "chat" and not scope_id:
+            raise HTTPException(400, "scope_id required for scope=chat")
         row = shadow_ledger.append("instructions", {
             "text": text[:1000],
             "precedence": body.get("precedence") or "history",
             "confirmed": False,
+            "scope": scope,
+            "scope_id": scope_id,
             "source_thread": body.get("source_thread")})
         return row
     if action in ("confirm", "revoke"):
         iid = body.get("id") or ""
-        rows = [r for r in shadow_ledger.read("instructions", 500)
+        rows = [r for r in shadow_ledger.read_latest("instructions")
                 if r.get("id") == iid]
         if not rows:
             raise HTTPException(404, "no instruction %s" % iid)
@@ -1345,6 +1410,46 @@ async def api_shadow_instruction_write(request: Request):
             row["revoked_at"] = row.pop("ts", None)
         return shadow_ledger.append("instructions", row)
     raise HTTPException(400, "action must be capture|confirm|revoke")
+
+
+@app.get("/api/shadow/settings")
+async def api_shadow_settings():
+    """The codified rules, one read: how Shadow engages, what it
+    remembers (global and per chat), its attention, and the floors it
+    cannot be talked out of. The ledger wearing a settings face."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_ledger
+    try:
+        rows = shadow_ledger.read_latest("instructions")
+    except Exception:
+        rows = []
+    live = [r for r in rows
+            if r.get("confirmed") and not r.get("revoked_at")]
+    per_chat = {}
+    for r in live:
+        if shadow_precedence.row_scope(r) == "chat":
+            per_chat.setdefault(r.get("scope_id") or "?", []).append(r)
+    return {
+        "engage": [
+            "Answer with the outcome in the first line.",
+            "One slow entrance, never a pulse.",
+            "Opening a card retires it.",
+        ],
+        "global": [r for r in live
+                   if shadow_precedence.row_scope(r) == "global"],
+        "per_chat": per_chat,
+        "attention": {
+            "watching": sorted(_shadow_watches()),
+            "off": sorted(_shadow_unwatched()),
+            "alerts": _shadow_alert_count(),
+        },
+        "floors": [
+            "destructive git operations",
+            "external client repositories",
+            "irreversible external sends",
+        ],
+    }
 
 
 @app.get("/api/shadow/watches")
@@ -1480,14 +1585,9 @@ async def api_shadow_mission_act(mid: str, request: Request):
             return sched.cancel_queued(mid)
         if action == "start_now":
             async def _spawner(mission):
-                manifest = mission.get("manifest") or (
-                    "You are a delegate session working for the founder "
-                    "via Shadow. Objective: %s. Work step by step; state "
-                    "DONE-CHECK lines when checks pass."
-                    % mission["objective"])
                 return await shadow_runner.spawn_delegate_session(
                     _shadow_args, _shadow_workdir_for_delegates(),
-                    manifest, register_runtime)
+                    _delegate_manifest(mission), register_runtime)
             # second-flight fix: never hold the request open across a
             # minutes-long provision -- background task, instant answer
             return shadow_runner.start_mission_async(
@@ -1496,14 +1596,9 @@ async def api_shadow_mission_act(mid: str, request: Request):
             clone = _mission_engine.clone_for_retry(store, mid)
 
             async def _respawner(mission):
-                manifest = mission.get("manifest") or (
-                    "You are a delegate session working for the founder "
-                    "via Shadow. Objective: %s. Work step by step; state "
-                    "DONE-CHECK lines when checks pass."
-                    % mission["objective"])
                 return await shadow_runner.spawn_delegate_session(
                     _shadow_args, _shadow_workdir_for_delegates(),
-                    manifest, register_runtime)
+                    _delegate_manifest(mission), register_runtime)
             return shadow_runner.start_mission_async(
                 clone["id"], _validated_say, provisioner=_respawner)
         if action == "confirm_check":

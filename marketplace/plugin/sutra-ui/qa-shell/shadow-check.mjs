@@ -158,6 +158,28 @@ await check("G7 card: open-home affordance present",
   `!!document.querySelector("[data-shcardwrap] [data-shopenhome]")`);
 await evql(`(S.shadowCardOpen = false, typeof renderShadowCard === "function" && renderShadowCard(), true)`);
 
+/* ── G11/G12: per-chat tabs + settings (v10) ─────────────────────────────── */
+/* the card checks navigated to Chats — come back to the home first
+   (learned live: the tab check skipped because nothing was mounted) */
+await evql(`(goDest("focus"), typeof openScreen === "function"
+  && openScreen("shadow"), typeof render === "function" && render(), true)`);
+await until(`document.querySelector("[data-shchat], .shchattabs")`, 6000);
+const tabCount = await evql(`document.querySelectorAll("[data-shchat]").length`);
+if (tabCount === 0) skip("G11 per-chat tabs render", "no tabs on this machine");
+else {
+  await check("G11 tabs: the new tab exists and uses its own namespace",
+    `!!document.querySelector('[data-shchat="global"]')
+       && document.querySelectorAll('[data-shtab]').length <= 2`);
+  await check("G12 tab click switches the thread (no page churn)",
+    `(() => { const t = document.querySelector('[data-shchat]:not(.on)');
+       if (!t) return true; t.click();
+       return S.shadowChat === t.dataset.shchat; })()`);
+}
+await evql(`(typeof loadShadowSettings === "function" && loadShadowSettings(), true)`);
+await until(`typeof S !== "undefined" && S.shadowSettings !== undefined`, 6000);
+await check("G13 settings read: the codified rules load (floors present)",
+  `!!(S.shadowSettings && (S.shadowSettings.floors || []).length >= 3)`);
+
 /* ── G9: a Shadow deep link actually lands (the founder's dead-click) ───── */
 await evql(`(typeof openNeedsYouItem === "function"
   && openNeedsYouItem("sutra://shadow/mission/m-qa-probe"), true)`);

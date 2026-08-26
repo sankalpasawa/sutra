@@ -219,6 +219,67 @@ class TestJourneySims(unittest.TestCase):
         self.assertEqual(states["ret-1"], "handled")
         self.assertEqual(states["ret-2"], "new")
 
+    def test_scoped_instruction_never_enters_the_global_boot(self):
+        """THE leak test (recon risk #1): a confirmed CHAT-scoped rule must
+        not appear in Shadow's boot context, and a global one must."""
+        import shadow_session
+        shadow_ledger.append("instructions", {
+            "text": "global rule visible everywhere", "precedence": "taste",
+            "confirmed": True, "scope": "global", "scope_id": None})
+        shadow_ledger.append("instructions", {
+            "text": "paisa only rule", "precedence": "taste",
+            "confirmed": True, "scope": "chat", "scope_id": "sess-paisa"})
+        ctx = shadow_session.standing_context()
+        self.assertIn("global rule visible everywhere", ctx)
+        self.assertNotIn("paisa only rule", ctx)
+
+    def test_legacy_rows_are_grandfathered_global(self):
+        """A row written before v10 carries no scope: it stays global."""
+        import shadow_session
+        shadow_ledger.append("instructions", {
+            "text": "legacy standing rule", "precedence": "taste",
+            "confirmed": True})
+        self.assertIn("legacy standing rule",
+                      shadow_session.standing_context())
+
+    def test_scoped_replay_returns_only_that_chat(self):
+        rows = [
+            {"text": "A", "precedence": "taste", "confirmed": True,
+             "scope": "chat", "scope_id": "s-1"},
+            {"text": "B", "precedence": "taste", "confirmed": True,
+             "scope": "chat", "scope_id": "s-2"},
+            {"text": "C", "precedence": "taste", "confirmed": True,
+             "scope": "global"},
+        ]
+        one = shadow_precedence.replay_context(rows, scope="chat",
+                                               scope_id="s-1")
+        self.assertIn("A", one)
+        self.assertNotIn("B", one)
+        self.assertNotIn("C", one)
+        glob = shadow_precedence.replay_context(rows, scope="global")
+        self.assertIn("C", glob)
+        self.assertNotIn("A", glob)
+
+    def test_window_starvation_cannot_evict_a_global_rule(self):
+        """codex P1: 250 per-chat rows after one global rule -- the global
+        rule must still reach the boot context, and the FIRST row must
+        still be findable by id (revokeable)."""
+        import shadow_session
+        first = shadow_ledger.append("instructions", {
+            "text": "the one global rule", "precedence": "taste",
+            "confirmed": True, "scope": "global", "scope_id": None})
+        for i in range(250):
+            shadow_ledger.append("instructions", {
+                "text": "chat rule %d" % i, "precedence": "taste",
+                "confirmed": True, "scope": "chat",
+                "scope_id": "sess-%d" % (i % 7)})
+        ctx = shadow_session.standing_context()
+        self.assertIn("the one global rule", ctx)
+        self.assertNotIn("chat rule 249", ctx)
+        rows = [r for r in shadow_ledger.read_latest("instructions")
+                if r.get("id") == first["id"]]
+        self.assertEqual(len(rows), 1, "old row still findable by id")
+
     # Delegate (U2), floors (permission mid-mission), down-state, takeover and
     # the say chain are pinned END TO END in: test_shadow_runner.py,
     # test_mission_engine.py, test_shadow_say.py, test_shadow_overlay.js.

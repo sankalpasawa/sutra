@@ -105,6 +105,41 @@ function shadowMemoryHtml(rows){
      instructions appear here.</div>`}</div>`;
 }
 
+/* v10: the tabs. One per chat Shadow oversees, plus "new" (key
+   "global"). A tab is the ONE mind's conversation about that chat --
+   never another agent. Namespace is data-shchat so the plane's
+   data-shtab keeps its meaning (three QA probes depend on it). */
+function shadowChatLabel(key){
+  if (!key || key === "global") return "new";
+  const t = (typeof S !== "undefined" && S.shadowChatTitles) || {};
+  return t[key] || String(key).slice(0, 8);
+}
+function shadowChatKeys(){
+  const watch = (typeof S !== "undefined" && S.shadowWatching) || [];
+  const miss = ((typeof S !== "undefined" && S.shadowMissions) || [])
+    .map(m => m.target_session).filter(Boolean);
+  const seen = {}; const out = [];
+  for (const k of [...watch, ...miss]){
+    if (k && !seen[k]){ seen[k] = 1; out.push(k); }
+  }
+  return out;
+}
+function shadowChatTabsHtml(){
+  const active = (typeof S !== "undefined" && S.shadowChat) || "global";
+  const missionsBy = {};
+  for (const m of ((typeof S !== "undefined" && S.shadowMissions) || [])){
+    if (["running", "queued", "paused"].includes(m.state) && m.target_session)
+      missionsBy[m.target_session] = 1;
+  }
+  const tab = (key) => `<span class="shchattab${
+    key === active ? " on" : ""}" data-shchat="${escAttr(key)}">${
+    key === "global" ? "\u002b new" : esc(shadowChatLabel(key))
+  }${missionsBy[key] ? `<span class="shchatdot"></span>` : ""}</span>`;
+  return `<div class="shchattabs">${
+    [tab("global"), ...shadowChatKeys().map(tab)].join("")
+  }<span class="shchattab shchatset" data-shscreen="shadowsettings">\u2699</span></div>`;
+}
+
 /* the full thread: every message, mission cards inline, composer */
 function shadowHomeHtml(){
   const dark = typeof S === "undefined" || S.shadowHomeDark;
@@ -115,17 +150,23 @@ function shadowHomeHtml(){
   const thread = (S.shadowThread || []).map(t => `
     <div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}">
       ${esc(t.text || "")}</div>`).join("");
+  const tabs = shadowChatTabsHtml();
   /* mock v5 screen 2: the chat thread beside ONE plane (+ memory) */
   const err = S.shadowHomeErr ? `<div class="sherr">Could not reach Shadow
     just now \u2014 showing what I last knew.
     <button class="btn" type="button" data-shreload="1">Retry</button></div>` : "";
   return `<div class="shhome shcols">${err}
     <div class="shchatcol">
+      ${tabs}
       <div class="shthread">${thread ||
         `<div class="shempty">Ask Shadow anything \u2014 it sees your
          sessions, your missions, and what it has learned.</div>`}</div>
       <textarea class="shcompose" data-shhomecompose="1"
-        placeholder="Talk to Shadow"></textarea>
+        data-shscope="${escAttr(S.shadowChat || "global")}"
+        placeholder="${(S.shadowChat && S.shadowChat !== "global")
+          ? "Tell it \u2014 this tab is already about "
+            + escAttr(shadowChatLabel(S.shadowChat))
+          : "Say anything \u2014 it lands here"}"></textarea>
     </div>
     <div class="shsidecol">
       ${shadowPlaneHtml(S.shadowWatching || [], S.shadowMissions || [],
@@ -159,6 +200,59 @@ async function loadShadowHome(){
     if (typeof scheduleRender === "function") scheduleRender(); }
 }
 
+async function loadShadowSettings(){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  try {
+    const r = await fetch("/api/shadow/settings");
+    S.shadowSettings = r.ok ? await r.json() : null;
+  } catch (e){ S.shadowSettings = null; }
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+
+function shadowSettingsHtml(){
+  const d = (typeof S !== "undefined" && S.shadowSettings) || null;
+  if (!d) return `<div class="zero"><h4>Shadow settings</h4>
+    <p>Could not read the rules just now.
+    <button class="btn" type="button" data-shsetreload="1">Retry</button></p></div>`;
+  const rows = [];
+  rows.push(`<div class="setrow"><span class="k">How I engage</span><span>${
+    (d.engage || []).map(esc).join(" \u00b7 ")}</span></div>`);
+  rows.push(`<div class="setrow"><span class="k">Remember \u2014 everywhere</span><span>${
+    (d.global || []).length
+      ? (d.global || []).map(r => `${esc(r.text || "")}
+          <button class="btn" type="button" data-shrevoke="${escAttr(r.id)}">Revoke</button>`).join("<br>")
+      : "<span class='shempty'>nothing yet</span>"}</span></div>`);
+  for (const key of Object.keys(d.per_chat || {})){
+    rows.push(`<div class="setrow"><span class="k">Remember \u2014 ${
+      esc(shadowChatLabel(key))}</span><span>${
+      (d.per_chat[key] || []).map(r => `${esc(r.text || "")}
+        <button class="btn" type="button" data-shrevoke="${escAttr(r.id)}">Revoke</button>`).join("<br>")
+    }</span></div>`);
+  }
+  const a = d.attention || {};
+  rows.push(`<div class="setrow"><span class="k">Attention</span><span>${
+    (a.watching || []).length} overseen \u00b7 ${
+    (a.off || []).length} off \u00b7 ${a.alerts || 0} waiting</span></div>`);
+  rows.push(`<div class="setrow"><span class="k">Floors</span><span
+    style="color:var(--faint)">${(d.floors || []).map(esc).join(" \u00b7 ")
+    } \u2014 confirm-first, always (not editable)</span></div>`);
+  return `<div class="shsettings"><div class="panelbox">${rows.join("")}</div></div>`;
+}
+
+if (typeof SCREENS !== "undefined"){
+  SCREENS.shadowsettings = () => {
+    if (typeof S !== "undefined" && S.shadowSettings === undefined){
+      loadShadowSettings();
+      return `<div class="zero"><h4>Shadow settings</h4><p>Reading\u2026</p></div>`;
+    }
+    return shadowSettingsHtml();
+  };
+}
+if (typeof TITLES !== "undefined"){
+  TITLES.shadowsettings = ["Shadow settings",
+    "the rules it lives by \u00b7 what it remembers"];
+}
+
 if (typeof SCREENS !== "undefined"){
   SCREENS.shadow = () => {
     if (typeof S !== "undefined" && S.shadowHomeDark === undefined){
@@ -178,6 +272,18 @@ if (typeof TITLES !== "undefined"){
 if (typeof document !== "undefined" && document.addEventListener){
   document.addEventListener("click", (ev) => {
     const d = (ev.target && ev.target.dataset) || {};
+    if (d.shchat){
+      if (typeof S !== "undefined") S.shadowChat = d.shchat;
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shscreen){
+      if (typeof openScreen === "function") openScreen(d.shscreen);
+      else if (typeof S !== "undefined") S.screen = d.shscreen;
+      if (typeof loadShadowSettings === "function") loadShadowSettings();
+      if (typeof render === "function") render();
+      return;
+    }
     if (d.shreload){
       if (typeof loadShadowHome === "function") loadShadowHome(); return; }
     if (d.shtab){ if (typeof S !== "undefined") S.shadowTab = d.shtab;

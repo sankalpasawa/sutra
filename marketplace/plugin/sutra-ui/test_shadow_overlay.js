@@ -274,5 +274,28 @@ function part3(){
   assert(calls.includes("dest:chats"), "session link lands on Chats");
   console.log("ok 14 deep-link router");
 }
+
+/* v10: the active tab rides the turn as scope_id */
+{
+  const ctx = fresh();
+  const posts = [];
+  ctx.shadowPost = (path, body) => { posts.push({ path, body });
+    return Promise.resolve({ ok: true, json: async () => ({ reply: "ok" }) }); };
+  ctx.S.shadowChat = "sess-paisa";
+  ctx.S.shadowBusy = false;
+  ctx.fetch = () => Promise.resolve({ ok: true, json: async () => ({}) });
+  ctx.sendToShadow("do the thing");
+  assert(posts.length >= 1, "the turn posted (guards clear)");
+  assert.strictEqual(posts[0].path, "/api/shadow/chat");
+  assert.strictEqual(posts[0].body.scope_id, "sess-paisa",
+    "the open tab scopes the turn");
+  posts.length = 0;
+  ctx.S.shadowBusy = false;
+  ctx.S.shadowChat = "global";
+  ctx.sendToShadow("general question");
+  assert.strictEqual(posts[0].body.scope_id, undefined,
+    "the new tab sends no scope");
+  console.log("ok 15 scope rides the turn");
+}
 console.log("test_shadow_overlay.js: all green");
 }
