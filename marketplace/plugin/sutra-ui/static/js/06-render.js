@@ -789,6 +789,10 @@ function renderOnboarding(){
   });
 }
 
+function invalidatePanesHtml(){
+  const p = document.getElementById("panes");
+  if (p) p.__lastPanesHtml = null;
+}
 function render(){
   /* A drag is a live binding between the dragged node and the drop targets'
      ondragover/ondrop handlers. render() replaces #panes wholesale, so a
@@ -856,7 +860,13 @@ function render(){
      pane would still own #scBody and every handler wired into it. Picking any
      Home item reopens it (07-loaders' data-screen handler). */
   const bClosed = !!S.ui.browseClosed;
-  document.getElementById("panes").innerHTML =
+  /* r8: the same unchanged-HTML skip #143 gave #scBody, for the WHOLE panes
+     row — idle websocket frames stop killing hover states and swapping
+     buttons mid-click. Streaming panes change the string every frame, so
+     live repaints continue. Direct-DOM patches inside #panes must call
+     invalidatePanesHtml() (wsRenderSideOnly / save-chip swap / divider). */
+  const panesEl = document.getElementById("panes");
+  const panesHtml =
     (bClosed ? "" :
     `<section class="pane browse ${bCol?"collapsed":""}"${bStyle}>
        <div class="ph">
@@ -883,6 +893,10 @@ function render(){
     + (bClosed && !open.length
         ? `<p style="padding:24px 28px;font-size:12px;color:var(--faint)">
              Nothing is open. Pick a screen from Home, or a session from Code.</p>` : "");
+  if (panesEl && panesEl.__lastPanesHtml !== panesHtml){
+    panesEl.__lastPanesHtml = panesHtml;
+    panesEl.innerHTML = panesHtml;
+  }
   const scBody = document.getElementById("scBody");
   if (scBody){
     /* founder's "it stops working there" root cause (2026-08-26): every

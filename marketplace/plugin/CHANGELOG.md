@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.235.2 (2026-08-26)
+
+- **The whole panes row stops rebuilding when nothing changed** — hover
+  states stop dying and buttons stop swapping mid-click on background
+  activity (idle probe: 0 rebuilds in 10s, was every frame). Save-state chip
+  updater un-broken (duplicate handler). Org/Folders rows gain the app's
+  hover wash, radii, and 120ms motion (reduced-motion respected).
+
 ## 2.235.1 (2026-08-26)
 
 - **The Folders lens works now** — the file walk capped at 4,000 files of any

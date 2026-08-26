@@ -1338,12 +1338,7 @@ async function wsMountEditor(el){
       if (t) return t === "dark";
       return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
     })(),
-    onSaveState: (st) => {
-      S.ws.saveState = st;
-      const tr = document.querySelector("#panes .pane.browse .ws-topright");
-      if (tr) tr.outerHTML = wsTopRightHtml(wsCurrentState(),
-        S.ws.results ? wsGroupResults(S.ws.results) : null);
-    },
+
     save: async (text) => {
       const r = await apiPost("/api/fs/write",
         { path: path, text: text, base_bytes: S.ws.lastRead ? S.ws.lastRead.bytes : null });
@@ -1352,8 +1347,16 @@ async function wsMountEditor(el){
     },
     onDirty: (d) => { S.ws.unsaved = d; wsRenderCtxOnly(); },
     onSaveState: (st) => {
-      if (st === "failed"){ S.ws.changed = true; render(); }   /* state 12 lane */
-      else wsRenderCtxOnly();
+      /* ONE handler (r8: duplicate keys silently killed the chip updater) */
+      S.ws.saveState = st;
+      if (st === "failed"){ S.ws.changed = true; render(); return; }  /* 12 lane */
+      const tr = document.querySelector("#panes .pane.browse .ws-topright");
+      if (tr){
+        if (typeof invalidatePanesHtml === "function") invalidatePanesHtml();
+        tr.outerHTML = wsTopRightHtml(wsCurrentState(),
+          S.ws.results ? wsGroupResults(S.ws.results) : null);
+      }
+      wsRenderCtxOnly();
     },
     navigate: (ref) => { const p = wsParseRoute(ref); if (p && p.doc) wsOpenDoc(p.doc); },
     flash: (m) => { S.ws.notice = m; render(); },
@@ -1371,6 +1374,7 @@ function wsUnmountEditor(){
   }
 }
 function wsRenderCtxOnly(){
+  if (typeof invalidatePanesHtml === "function") invalidatePanesHtml();
   const ctx = document.querySelector("#scBody .ws-ctx");
   if (ctx) ctx.innerHTML = wsCtxHtml(wsCurrentState());
 }
@@ -1465,6 +1469,8 @@ function wsScreenHtml(){
    and the doc column keeps the search input — and its caret — alive, the same
    reason renderFilterOnly() exists for the editor filter. */
 function wsRenderSideOnly(){
+  /* direct-DOM patch under #panes — bust the unchanged-HTML cache (r8) */
+  if (typeof invalidatePanesHtml === "function") invalidatePanesHtml();
   const side = document.querySelector("#scBody .ws-side");
   if (!side){ render(); return; }
   const state = wsCurrentState();

@@ -15,6 +15,7 @@ function wireDivider(){
   const browse = panes.querySelector(".pane.browse");
   if (!browse) return;
   const apply = w => { S.ui.browseW = Math.round(w);
+    if (typeof invalidatePanesHtml === "function") invalidatePanesHtml();  /* r8 */
     browse.style.flex = "0 0 " + Math.round(w) + "px"; browse.style.maxWidth = "none"; };
   /* The SAME ceiling render() applies to a restored width -- a drag must not
      be able to reach a width the next reload would clamp away. */

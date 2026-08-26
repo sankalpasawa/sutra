@@ -343,3 +343,19 @@
   .ws-chrow:focus-visible,.ws-cl:focus-visible,
   .ws-side [data-wsfocus]:focus{
     outline:2px solid var(--acc);outline-offset:-2px}
+
+  /* r8 row motion — the app's interaction vocabulary on the tree rows.
+     Pays off now that idle frames stop rebuilding #panes (unchanged-HTML
+     skip); reduced-motion users get none (repo QA surface). */
+  .ws .ws-cha, .ws .ws-doc, .ws .ws-fold, .ws .ws-rec,
+  .ws-act, .ws-lens button {
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .ws .ws-cha:hover, .ws .ws-doc:hover, .ws .ws-fold:hover, .ws .ws-rec:hover {
+    background: var(--line-soft);
+  }
+  .ws .ws-cha, .ws .ws-rec { border-radius: 6px; }
+  @media (prefers-reduced-motion: reduce) {
+    .ws .ws-cha, .ws .ws-doc, .ws .ws-fold, .ws .ws-rec,
+    .ws-act, .ws-lens button { transition: none; }
+  }
