@@ -888,6 +888,12 @@ def api_settings_get():
     }
 
 
+class ProviderBinRequest(BaseModel):
+    provider: str
+    #: None or "" clears the override and returns to PATH lookup.
+    path: Optional[str] = None
+
+
 class SettingsRequest(BaseModel):
     provider: Optional[str] = None
     permission_mode: Optional[str] = None
@@ -897,6 +903,33 @@ class SettingsRequest(BaseModel):
     # str to GRANT (must equal providers.UNSAFE_ACK_PHRASE), False to withdraw.
     # Deliberately not a bare bool -- see providers.UNSAFE_ACK_PHRASE.
     unsafe_ack: Optional[Union[str, bool]] = None
+
+
+@router.post("/settings/provider-bin")
+def api_provider_bin(req: ProviderBinRequest):
+    """Point the panel at a CLI it could not find on its own.
+
+    This exists because the documented escape hatch was an environment
+    variable, and a .app opened from Finder cannot be given one without
+    `launchctl setenv` and a relaunch -- so the panel was naming a fix most of
+    the people who needed it could not perform.
+
+    The path is validated before it is stored: a file that does not exist or
+    is not executable is refused here rather than accepted and failed later,
+    because "found it and it will not run" is a worse error than "cannot find
+    it" and points further from the mistake.
+    """
+    if providers.provider_by_id(req.provider) is None:
+        raise HTTPException(status_code=400, detail={
+            "code": "UNKNOWN_PROVIDER", "message": "no provider %r" % req.provider})
+    try:
+        stored = providers.set_provider_bin(req.provider, req.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={
+            "code": "BAD_BINARY_PATH", "message": str(exc),
+            "user_action": "PICK_ANOTHER_PATH"})
+    return {"provider": req.provider, "path": stored,
+            "providers": providers.discover_providers()}
 
 
 @router.post("/settings")

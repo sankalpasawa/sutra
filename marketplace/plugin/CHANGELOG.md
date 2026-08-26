@@ -2,6 +2,56 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.235.4 (2026-08-26)
+
+**"Claude is installed but the panel cannot find it" — four causes, four fixes.**
+
+A user reported Claude installed and Settings showing `binary 'claude' not on
+PATH (config found at ~/.claude)`. The tell was in the same screenshot: ALL
+THREE providers reported "config found". Someone with ~/.claude, ~/.codex and
+~/.gemini has all three CLIs — that is not three missing binaries, it is PATH
+repair failing wholesale.
+
+CLAUDE DESKTOP IS A DIFFERENT PRODUCT. Verified against an installed bundle:
+/Applications/Claude.app contains no executable named `claude` anywhere.
+Installing Desktop gives this panel nothing to drive. That case now says so and
+names what to install, instead of reporting a PATH problem that does not exist
+— the cruellest version of this bug, because nothing was broken and the message
+sent the operator hunting.
+
+THE SHIM DIRS WERE THE GAP. The known-locations probe covered Homebrew, npm,
+yarn, bun, volta and deno but no version-manager shim directory — pnpm, mise,
+asdf, nodenv, fnm. ~/Library/pnpm exists on the maintainer's own machine and
+was not probed. A shim dir is exactly where a CLI lands when the operator
+manages runtimes, and it is never on a GUI launch's PATH.
+
+THE HARVEST FAILED SILENTLY. Reading the login shell's PATH had an 8s timeout;
+a first GUI launch pays for the whole rc chain (nvm, conda, oh-my-zsh) and a
+shell that takes nine seconds is slow, not broken. Raised to 25s, and the
+failure is now explained: "your login shell took over 25s to start" and "your
+shell startup printed output that hid its PATH" are different problems with
+different fixes, and the panel could not previously tell them apart.
+
+AND AN ESCAPE HATCH THE OPERATOR CAN REACH. The documented fix was
+SUTRA_UI_CLAUDE_BIN. For a .app opened from Finder that means `launchctl
+setenv` plus a relaunch, and it does not survive a reboot — the panel was
+naming a fix most of the people who needed it could not perform. There is now
+POST /api/settings/provider-bin, persisted to settings.json and consulted by
+_bin_for. The env var still wins, so tests and terminal launches are unchanged.
+
+The path is validated at SET time: a file that does not exist or is not
+executable is refused rather than stored. Accepting it would trade "cannot find
+it" for "found it and it will not run" — a worse error, later, and further from
+the mistake.
+
+Reads the settings file directly rather than through load_settings(), which
+calls active_provider_detail() -> discover_providers() -> _describe() ->
+_bin_for(); going through it would recurse on the first call. There is a test
+for that specific loop.
+
+16 tests, mutation-checked: reverting the Desktop branch, the settings
+override, the set-time validation, or the timeout each fails the suite.
+
 ## 2.235.3 (2026-08-26)
 
 - **The workspace stops falling apart in a narrow pane.** Drag the divider in

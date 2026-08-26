@@ -51,16 +51,35 @@ from pathlib import Path
 # reason pointing at the wrong thing. This is a property of GUI LAUNCH, not of
 # the machine, so it is repaired here rather than documented as a limitation.
 _LOGIN_PATH_DONE = False
+#: Why the login-shell harvest did not help, when it did not. "Both were
+#: searched" told the operator nothing actionable: a harvest that TIMED OUT and
+#: a harvest that ran fine but found nothing are different problems with
+#: different fixes, and the panel could not tell them apart.
+_HARVEST_NOTE = ""
+
+
+def _harvest_note():
+    return (" (%s)" % _HARVEST_NOTE) if _HARVEST_NOTE else ""
 
 
 def _shell_path_once(sh, interactive):
     """One shell invocation's $PATH, or None. Never raises."""
     # `command -p echo` sidesteps an rc-defined echo alias mangling the output.
+    global _HARVEST_NOTE
     args = [sh, "-l", "-i", "-c"] if interactive else [sh, "-l", "-c"]
     try:
+        # 8s was too tight and failed SILENTLY. A first GUI launch pays for the
+        # whole rc chain -- nvm, conda, oh-my-zsh plugins -- and a shell that
+        # takes nine seconds is slow, not broken. Timing out there produced
+        # "binary not on PATH" on a machine where the binary was on PATH.
         out = subprocess.run(args + ['command -p echo "$PATH"'],
-                             capture_output=True, text=True, timeout=8)
+                             capture_output=True, text=True, timeout=25)
+    except subprocess.TimeoutExpired:
+        _HARVEST_NOTE = ("your login shell took over 25s to start, so its PATH "
+                         "could not be read")
+        return None
     except (OSError, subprocess.SubprocessError):
+        _HARVEST_NOTE = "your login shell could not be run"
         return None
     lines = [l.strip() for l in (out.stdout or "").splitlines() if l.strip()]
     if not lines:
@@ -68,7 +87,13 @@ def _shell_path_once(sh, interactive):
     # An rc file that prints a banner puts junk on earlier lines; PATH is the last
     # thing echoed. Require it to actually look like a PATH before trusting it.
     cand = lines[-1]
-    return cand if (os.pathsep in cand and cand.startswith("/")) else None
+    if os.pathsep in cand and cand.startswith("/"):
+        return cand
+    # The shell ran but the last line was not a PATH -- an rc file printing
+    # after the echo. Recorded rather than silently discarded, because the fix
+    # (quieten the rc file) is nothing like the fix for a timeout.
+    _HARVEST_NOTE = ("your shell startup printed output that hid its PATH")
+    return None
 
 
 def _login_shell_path():
@@ -135,6 +160,17 @@ _KNOWN_BIN_DIRS = (
     "~/.bun/bin",
     "~/.volta/bin",
     "~/.deno/bin",
+    # Version-manager SHIM dirs. These were the gap that made the probe fail on
+    # machines where the binary was installed perfectly normally: a shim dir is
+    # exactly where a tool lands when the operator manages runtimes, and it is
+    # never on a GUI launch's PATH. ~/Library/pnpm exists on the maintainer's
+    # own machine and was not covered.
+    "~/Library/pnpm",
+    "~/.local/share/mise/shims",
+    "~/.asdf/shims",
+    "~/.nodenv/shims",
+    "~/.n/bin",
+    "~/.fnm/aliases/default/bin",
 )
 
 
@@ -390,11 +426,73 @@ _CATALOG = (
 )
 
 
+#: Claude Desktop's bundle. It is NOT the Claude Code CLI and ships no `claude`
+#: binary -- verified by searching the installed bundle for any executable of
+#: that name and finding none. Someone who installed Desktop has nothing Sutra
+#: can drive, and telling them "binary not on PATH" sends them hunting for a
+#: PATH problem that does not exist. Detected only so the panel can say which
+#: product is missing.
+_DESKTOP_APP_PATHS = (
+    "/Applications/Claude.app",
+    "~/Applications/Claude.app",
+)
+
+
+def claude_desktop_installed():
+    return any(os.path.isdir(os.path.expanduser(p)) for p in _DESKTOP_APP_PATHS)
+
+
 def _bin_for(pid, fallback):
-    """SUTRA_UI_CLAUDE_BIN predates this module (app.py read it directly); the
-    generic form keeps that override working and gives the other two the same
-    escape hatch, e.g. SUTRA_UI_CODEX_BIN=/opt/foo/codex."""
-    return os.environ.get("SUTRA_UI_%s_BIN" % pid.upper(), fallback)
+    """Which binary to look for, in precedence order.
+
+      1. SUTRA_UI_<ID>_BIN      env override; predates this module, and tests
+                                rely on it, so it stays first and wins.
+      2. settings provider_bins a path the operator set IN THE PANEL.
+      3. the bare name           resolved through PATH.
+
+    Step 2 is the one that matters for a stuck operator. The env var is a fine
+    escape hatch for a terminal launch and a useless one for a .app opened from
+    Finder: setting it means `launchctl setenv` plus a relaunch, it does not
+    survive a reboot, and nothing in the UI hints at any of that. The panel was
+    naming an escape hatch most of the people who needed it could not use.
+
+    Reads the settings file DIRECTLY rather than through load_settings(),
+    which calls active_provider_detail() -> discover_providers() -> here.
+    Going through it would recurse forever on the first call.
+    """
+    env = os.environ.get("SUTRA_UI_%s_BIN" % pid.upper())
+    if env:
+        return env
+    bins = _raw_settings().get("provider_bins")
+    if isinstance(bins, dict):
+        chosen = bins.get(pid)
+        if isinstance(chosen, str) and chosen.strip():
+            return os.path.expanduser(chosen.strip())
+    return fallback
+
+
+def set_provider_bin(pid, path):
+    """Persist a hand-picked binary path, or clear it with a falsy path.
+
+    Validated HERE rather than at render time: a path that is not an executable
+    file cannot help, and storing it would replace "cannot find it" with
+    "found it and it will not run", which is a worse error later and further
+    from the mistake.
+    """
+    raw = _raw_settings()
+    bins = dict(raw.get("provider_bins") or {})
+    if path:
+        full = os.path.expanduser(str(path).strip())
+        if not os.path.isfile(full):
+            raise ValueError("no file at %s" % full)
+        if not os.access(full, os.X_OK):
+            raise ValueError("%s is not executable" % full)
+        bins[pid] = full
+    else:
+        bins.pop(pid, None)
+    raw["provider_bins"] = bins
+    _write_settings(raw)
+    return bins.get(pid)
 
 
 def _describe(spec):
@@ -422,11 +520,25 @@ def _describe(spec):
         # know is installed. "not on PATH" alone sent people looking in the
         # wrong place -- name the escape hatch, because at this point PATH
         # repair and the known-location probe have BOTH already failed.
-        reason = ("binary %r not on PATH (config found at %s). The login shell's "
-                  "PATH and the usual install locations were both searched. "
-                  "Set SUTRA_UI_%s_BIN to its full path if it lives somewhere "
-                  "else -- `which %s` in your terminal will say where."
-                  % (binary, cfg_display, spec["id"].upper(), binary))
+        if spec["id"] == "claude" and claude_desktop_installed():
+            # The failure that reads as a Sutra bug and is not one. Claude
+            # Desktop and Claude Code are different products; Desktop ships no
+            # `claude` binary. Naming the right thing to install is the whole
+            # fix for this case.
+            reason = ("Claude Desktop is installed, but this panel needs the "
+                      "Claude Code CLI -- a separate product that Desktop does "
+                      "not include. Install it with `brew install --cask "
+                      "claude-code`, or from claude.com/claude-code, then press "
+                      "Check again. (Config was found at %s, which is why the "
+                      "provider is listed at all.)" % cfg_display)
+        else:
+            reason = ("binary %r not on PATH (config found at %s). The login "
+                      "shell's PATH and the usual install locations were both "
+                      "searched%s. Set the full path in Settings below, or "
+                      "SUTRA_UI_%s_BIN -- `which %s` in your terminal will say "
+                      "where."
+                      % (binary, cfg_display, _harvest_note(),
+                         spec["id"].upper(), binary))
     elif installed and not configured:
         reason = "binary %r found at %s but no config directory at %s" % (
             binary, bin_path, cfg_display)
@@ -498,6 +610,15 @@ def shadow_enabled(settings=None):
 
 
 # ------------------------------------------------------------ settings io --
+
+def _write_settings(raw):
+    """Atomic, so a crash mid-write cannot leave a half-parsed preferences file
+    that the next launch silently degrades to defaults."""
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SETTINGS_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(raw, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(SETTINGS_PATH)
+
 
 def _raw_settings():
     """The settings file as-is, or {} when absent/unreadable. Never raises --
@@ -753,10 +874,7 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
                 % (model, ", ".join(sorted(i for i in MODEL_IDS if i))))
         raw["model"] = model.strip()
 
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = SETTINGS_PATH.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(raw, indent=2, sort_keys=True), encoding="utf-8")
-    tmp.replace(SETTINGS_PATH)
+    _write_settings(raw)
     return load_settings()
 
 

@@ -2,7 +2,20 @@
 
 **status**: active · **updated**: 2026-08-25
 
-## v2.226.3 (2026-08-25, HEAD)
+## v2.235.4 (2026-08-26, HEAD)
+
+Provider detection: Claude Desktop is recognised as a different product from the
+Claude Code CLI (Desktop ships no `claude` binary) and the panel says what to
+install; version-manager shim dirs (pnpm, mise, asdf, nodenv, fnm) are probed;
+the login-shell PATH harvest gets 25s instead of 8 and explains why it failed;
+and a binary path can be set from the panel instead of only through an
+environment variable a Finder-launched app cannot receive.
+
+NOTE: this file had drifted — its previous top entry was v2.226.3 while
+plugin.json was already at 2.235.3. The intervening releases are in
+marketplace/plugin/CHANGELOG.md; the gap below is real, not a lost entry.
+
+## v2.226.3 (2026-08-25)
 
 Attach-mode auto-update: the shell updates itself via its bundled sidecar CLI
 (updates_cli wrapping updates.py, flock-serialised) even while a CLI/checkout
