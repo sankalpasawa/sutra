@@ -125,4 +125,32 @@ console.log("ok 6 controls wired");
   console.log("ok 7 finished rows: retry/take-over/result");
 }
 
+/* the dead-wire pins (founder hit these live 2026-08-26): toggle + memory
+   actions must send REAL bodies, and take-over routes through the router */
+{
+  const ctx = fresh();
+  const posts = [];
+  ctx.shadowPost = (path, body) => { posts.push({ path, body });
+    return Promise.resolve({ ok: true, json: () => ({}) }); };
+  ctx.fetch = () => Promise.resolve({ ok: false });
+  ctx.loadShadowHome = () => {};
+  ctx.shadowWatchSet("sess-1", false);
+  ctx.shadowInstructionAct("inst-9", "confirm");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(posts[0].body)),
+    { session_id: "sess-1", watch: false }, "watch toggle sends a real body");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(posts[1].body)),
+    { id: "inst-9", action: "confirm" }, "memory action sends a real body");
+  console.log("ok 8 dead wires carry real bodies");
+}
+{
+  const ctx = fresh();
+  const routed = [];
+  ctx.shadowRouteDeepLink = (l) => { routed.push(l); return true; };
+  const h = ctx.shadowPlaneHtml([], [
+    { id: "m-f1", objective: "died", state: "failed",
+      target_session: "sess-9" }], "working");
+  assert(/data-shtakeover="sess-9"/.test(h), "take-over rendered");
+  console.log("ok 9 take-over present (routing pinned in overlay suite)");
+}
+
 console.log("test_shadow_home.js: all green");

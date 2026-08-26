@@ -220,7 +220,7 @@ def check_stalls(now=None, stall_secs=STALL_SECS):
                 "kind": "needs_decision",
                 "title": "mission may be stalled -- nothing from its "
                          "session for %d min" % max(1, int(now - last) // 60),
-                "deep_link": "sutra://shadow/%s" % m["id"],
+                "deep_link": "sutra://shadow/mission/%s" % m["id"],
                 "dedupe_key": "stall:%s" % m["id"],
                 "state": "new"})
             if ok:

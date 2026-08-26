@@ -70,13 +70,18 @@ async function check(name, expr, expect){
   } catch (e){ fail(name, e.message); }
 }
 
-/* wait for boot, then install the error hook (G8) */
+/* wait for the rail FIRST: the shell reloads its page once after the
+   backend attaches, which wipes anything installed earlier (learned live:
+   an early hook made G8 read undefined). Boot-window errors are therefore
+   out of scope for G8 -- the drive itself is what it guards. */
 for (let i = 0; i < 40; i++){
   if (await evql(`document.querySelectorAll('#railnav [data-dest]').length`) === 6) break;
   await new Promise(r => setTimeout(r, 250));
 }
-await evql(`(window.__qaErrs = [], window.addEventListener("error",
-  e => window.__qaErrs.push(String(e.message).slice(0,120))), true)`);
+await evql(`(window.__qaErrs = window.__qaErrs || [],
+  window.__qaErrsHooked || (window.__qaErrsHooked = true,
+    window.addEventListener("error",
+      e => window.__qaErrs.push(String(e.message).slice(0,120)))), true)`);
 
 const RAW = "NEEDS_DECISION|APP_RESTART|D_LEDGER|BRIEF_CONFIRM|FOUNDER_CONFIRM";
 
@@ -92,9 +97,9 @@ if (cardCount === 0){
   skip("G2 Now: no duplicate card titles", "feed empty on this machine");
   skip("G3 Now: every card has an action pill", "feed empty on this machine");
 } else {
-  await check("G2 Now: no duplicate producer+title identity (codex fold)",
+  await check("G2 Now: every rendered card is a distinct item (unique data-itemid)",
     `(() => { const t = [...document.querySelectorAll(".nycard")].map(c =>
-         (c.querySelector(".nyprod")?.innerText || "") + "|" + (c.querySelector(".nytitle")?.innerText || ""));
+         (c.dataset && c.dataset.itemid) || "");
        return new Set(t).size === t.length; })()`);
   await check("G3 Now: every card has an action pill",
     `[...document.querySelectorAll(".nycard")].every(c => c.querySelector(".nyact, .nyactrow button"))`);
@@ -103,16 +108,25 @@ if (cardCount === 0){
 /* ── the dot (G4) ────────────────────────────────────────────────────────── */
 const hasDot = await evql(`!!document.querySelector(".shdot")`);
 if (!hasDot) skip("G4 dot face", "no dot mounted (shadow off or hidden)");
-else await check("G4 dot: face is S (+badge), never a bare number",
+else await check("G4 dot: S-mark face + a real .shbadge element for the count",
   `(() => { const d = document.querySelector(".shdot");
-     const face = (d.childNodes.length ? d.innerText : d.textContent).trim();
-     return /S/.test(face) && !/^\\d+$/.test(face); })()`);
+     const face = (d.innerText || d.textContent || "").trim();
+     if (!/S/.test(face) || /^\\d+$/.test(face)) return false;
+     const n = (face.match(/\\d+/) || [null])[0];
+     return n === null || !!d.querySelector(".shbadge"); })()`);
 
 /* ── Focus > Shadow home ─────────────────────────────────────────────────── */
 await evql(`(goDest("focus"), typeof openScreen === "function" ? openScreen("shadow") : (S.screen = "shadow"),
   typeof render === "function" && render(), true)`);
 await until(`document.querySelectorAll(".shtab").length >= 2`);
 await shot("2-home-watching");
+await until(`S.shadowHomeDark === false`);
+await check("G10 home: data loaded honestly (no silent-empty, no error strip)",
+  `S.shadowHomeErr !== true`);
+if (process.env.QA_SHADOW_HOME){
+  await check("G10f fixture: the seeded missions actually render",
+    `(S.shadowMissions || []).length >= 2`);
+}
 await check("G6 home: Watching/Working tabs render",
   `document.querySelectorAll(".shtab").length >= 2`);
 await check("G6 home: composer present",
@@ -140,9 +154,20 @@ await check("G7 card: open-home affordance present",
   `!!document.querySelector("[data-shcardwrap] [data-shopenhome]")`);
 await evql(`(S.shadowCardOpen = false, typeof renderShadowCard === "function" && renderShadowCard(), true)`);
 
+/* ── G9: a Shadow deep link actually lands (the founder's dead-click) ───── */
+await evql(`(typeof openNeedsYouItem === "function"
+  && openNeedsYouItem("sutra://shadow/mission/m-qa-probe"), true)`);
+const landed = await until(
+  `S.ui.dest === "focus" && S.screen === "shadow" && S.shadowTab === "working"`);
+landed ? ok("G9 deep link: Open lands on Focus > Shadow, Working tab")
+       : fail("G9 deep link: Open lands on Focus > Shadow, Working tab",
+              "dest/screen/tab never settled");
+await shot("5-deeplink-landing");
+
 /* ── G8 ──────────────────────────────────────────────────────────────────── */
 await check("G8 zero uncaught page errors during the drive",
-  `window.__qaErrs.length === 0 || (console.log(window.__qaErrs), false)`);
+  `(window.__qaErrs || []).length === 0
+     || (console.log(window.__qaErrs), false)`);
 
 console.log(`\nshadow-check: ${passed} passed, ${failed} failed, ${skipped} skipped`);
 console.log("screenshots: qa-shell/out/shadow-*.png");

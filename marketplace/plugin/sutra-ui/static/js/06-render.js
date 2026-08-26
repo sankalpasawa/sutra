@@ -897,6 +897,22 @@ function render(){
              Nothing is open. Pick a screen from Home, or a session from Code.</p>` : "");
   const scBody = document.getElementById("scBody");
   if (scBody) scBody.innerHTML = SCREENS[S.screen]();
+  /* the shadow home is two columns; widen ONLY its pane (explicit class,
+     not :has -- deepseek fold 2026-08-26). Self-cleaning on screen change. */
+  if (scBody && scBody.closest){
+    const bp = scBody.closest(".pane");
+    if (bp && bp.classList){
+      /* review fold: a COLLAPSED browse pane keeps its 38px rail -- never
+         re-inflate it (inline flex beat .collapsed once before; documented
+         above the bStyle computation) */
+      const wide = S.screen === "shadow" && !bCol;
+      bp.classList.toggle("shwide", wide);
+      /* the pane carries a saved inline flex-basis that beats any class;
+         the render rebuilds it fresh each pass, so setting inline here is
+         authoritative for THIS paint only (learned live 2026-08-26) */
+      if (wide && bp.style) bp.style.flex = "0 0 720px";
+    }
+  }
   wire();
 
   /* Fill the repository bar for whatever panes are open. Idempotent -- loadRepo

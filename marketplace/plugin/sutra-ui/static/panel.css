@@ -1947,3 +1947,16 @@
 .nygreet{ font-family:Georgia,'Times New Roman',serif; font-size:22px;
   font-weight:600; margin:6px 2px 0; }
 .nysub{ color:var(--faint,#8a8681); font-size:12.5px; margin:2px 2px 12px; }
+
+/* finish-list: two-column shadow home + deep-link focus highlight */
+.pane.shwide{ flex: 0 0 720px; max-width: 720px; }
+.shcols{ display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+.shchatcol{ flex:1.2 1 300px; min-width:260px; display:flex;
+  flex-direction:column; }
+.shchatcol .shthread{ max-height:420px; overflow-y:auto; }
+.shsidecol{ flex:1 1 240px; min-width:220px; }
+.shfocused{ outline:2px solid #B8945F; border-radius:10px; }
+
+.sherr{ flex-basis:100%; font-size:12px; color:#a05a2c;
+  background:rgba(184,148,95,.10); border:1px solid rgba(184,148,95,.4);
+  border-radius:8px; padding:6px 10px; }
