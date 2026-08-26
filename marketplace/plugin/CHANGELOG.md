@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.234.0 (2026-08-26)
+
+Coverage trio (D31) ported fleet-side: auto-coverage (PostToolUse), coverage-gate (Stop, SOFT), log-coverage — repo registry at os/method-registry.jsonl with fallback to the plugin-shipped one. D69 migration seam: GitHub client id resolves env > ~/.sutra-connectors/github-client-id > legacy default, so the successor Asawa-owned App drops in with one echo, no code change. Connectors suite 217 green; seam+coverage sim 6/6.
+
 ## 2.233.0 (2026-08-26)
 
 W-next closeout: bin/sutra-edge (A22 Edge Engine) ported fleet-generic — state at .sutra/edges/, repo-root from CLAUDE_PROJECT_DIR/git; round-trip sim 6/6 (add/list/fire/flags/clear/check). New skill updating-canon: five-step routing for canon edits (charter section / new ADR / both / archive / reject), generalized from the Asawa D54 discipline.

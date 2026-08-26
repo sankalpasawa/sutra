@@ -21,6 +21,25 @@ from typing import Optional
 #: codex+deepseek consult 2026-08-25). Per-env override: SUTRA_GITHUB_CLIENT_ID.
 DEV_CLIENT_ID = "Iv23li4V24WX8yjaWoby"
 
+#: D69 migration seam (2026-08-26, atom a-db25e6c4-10): the successor
+#: Asawa-owned GitHub App drops in WITHOUT a code change. Resolution order:
+#:   1. env  SUTRA_GITHUB_CLIENT_ID                      (per-process)
+#:   2. file ~/.sutra-connectors/github-client-id        (per-machine, durable)
+#:   3. DEV_CLIENT_ID above                              (legacy default)
+#: Tokens minted under the OLD client id keep working until revoked; on auth
+#: failure the device flow simply re-runs under the new id (codex+deepseek
+#: consult 2026-08-25). Founder action reduces to: register the App, then
+#:   echo '<new-client-id>' > ~/.sutra-connectors/github-client-id
+def _github_client_id_override() -> Optional[str]:
+    p = os.path.expanduser("~/.sutra-connectors/github-client-id")
+    try:
+        if os.path.isfile(p):
+            v = open(p).read().strip()
+            return v or None
+    except OSError:
+        pass
+    return None
+
 #: Sutra Slack app. Public value -- it appears in every authorization URL a
 #: user's browser visits.
 SLACK_DEV_CLIENT_ID = "11873373906406.11873418567958"
@@ -64,7 +83,7 @@ class ProviderConfig:
     def from_env(cls, env=None):
         env = env if env is not None else os.environ
         return cls(
-            client_id=env.get("SUTRA_GITHUB_CLIENT_ID") or DEV_CLIENT_ID,
+            client_id=env.get("SUTRA_GITHUB_CLIENT_ID") or _github_client_id_override() or DEV_CLIENT_ID,
             api_base=env.get("SUTRA_GITHUB_API_BASE") or GITHUB_API_BASE,
             client_secret=env.get("SUTRA_GITHUB_CLIENT_SECRET") or None,
         )

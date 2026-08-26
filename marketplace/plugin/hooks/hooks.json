@@ -252,6 +252,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatcher-posttool.sh",
             "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-coverage.sh",
+            "timeout": 5
           }
         ]
       },
@@ -521,6 +526,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/workflow-floor.sh",
             "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/coverage-gate.sh",
+            "timeout": 5
           }
         ]
       },
