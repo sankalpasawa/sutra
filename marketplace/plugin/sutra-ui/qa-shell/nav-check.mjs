@@ -59,8 +59,11 @@ for (let i = 0; i < 40; i++){
 }
 await check("six destinations in the rail DOM (after boot)",
   `document.querySelectorAll('#railnav [data-dest]').length`, 6);
-await check("entering Focus from the rail loads Balance (the shipped bug)",
-  `(()=>{ let hit=false; const orig=loadBalance; loadBalance=()=>{hit=true};
+await check("entering Focus from the rail fires the selected screen's loader (2.118.1 pin, state-independent)",
+  `(()=>{ /* destSel persists across sessions (e.g. Shadow) -- pin the
+       LOADER-FIRES contract, not the ambient selection */
+     S.ui.destSel.focus = 'balance';
+     let hit=false; const orig=loadBalance; loadBalance=()=>{hit=true};
      try { goDest('focus'); } finally { loadBalance=orig; }
      return hit && S.screen==='balance'; })()`);
 await check("entering Help from the rail loads its tasks, full-bleed (no plane)",
@@ -69,8 +72,17 @@ await check("entering Help from the rail loads its tasks, full-bleed (no plane)"
      return hit && S.screen==='teamsutra'
        && document.getElementById('app').classList.contains('noplane')
        && />\\s*Help\\s*</.test(document.getElementById('railnav').innerHTML); })()`);
-await check("org plane lists Files",
-  `(goDest('org'), /Files/.test(document.getElementById('planeBody').innerHTML))`);
+await check("org dest lands on a real screen (accordion + workspace-cutover aware)",
+  `(()=>{ /* 2.226.0: Org is an inline rail accordion, no second plane;
+       S92: the flag-on default surface is the Workspace. State-independent:
+       clear the stored pick, then the dest must land on a REAL screen and
+       open its accordion. */
+     S.ui.destSel.org = null;
+     goDest('org');
+     return !!SCREENS[S.screen]
+       && (S.screen === 'workspace' || S.screen === 'departments')
+       && (typeof destInline !== 'function' || !destInline('org')
+           || S.ui.railOpen === 'org'); })()`);
 await check("terminal clamp leaves the detail its floor (plane visible)",
   `(()=>{ goDest('settings'); const w = clampTermW(10000);
      return w <= innerWidth - 224 - 240 - 27 - 320 || w === 280; })()`);
