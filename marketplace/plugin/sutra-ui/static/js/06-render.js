@@ -884,7 +884,17 @@ function render(){
         ? `<p style="padding:24px 28px;font-size:12px;color:var(--faint)">
              Nothing is open. Pick a screen from Home, or a session from Code.</p>` : "");
   const scBody = document.getElementById("scBody");
-  if (scBody) scBody.innerHTML = SCREENS[S.screen]();
+  if (scBody){
+    /* founder's "it stops working there" root cause (2026-08-26): every
+       websocket frame renders, and an unconditional innerHTML rebuild
+       replaces the screen's buttons between mousedown and mouseup. Only
+       rebuild when the markup actually changed. */
+    const html = SCREENS[S.screen]();
+    if (scBody.__lastScreenHtml !== html){
+      scBody.__lastScreenHtml = html;
+      scBody.innerHTML = html;
+    }
+  }
   /* the shadow home is two columns; widen ONLY its pane (explicit class,
      not :has -- deepseek fold 2026-08-26). Self-cleaning on screen change. */
   if (scBody && scBody.closest){

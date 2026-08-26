@@ -149,8 +149,19 @@ if (typeof document !== "undefined" && document.addEventListener){
       openNeedsYouItem("sutra://shadow/home");
       return;
     }
+    /* the ACTION BUTTON routes too (founder's dead Open, root-caused
+       2026-08-26: this branch excluded data-nyact and nothing else ever
+       handled it -- the pill was dead by leftover design) */
+    const act = t && t.closest ? t.closest("[data-nyact]") : null;
+    if (act){
+      const host = act.closest ? act.closest("[data-deeplink]") : null;
+      openNeedsYouItem(host && host.dataset ? host.dataset.deeplink : null,
+                       act.dataset.nyact
+                         || (host && host.dataset ? host.dataset.itemid : null));
+      return;
+    }
     const card = t && t.closest ? t.closest("[data-deeplink]") : null;
-    if (card && !(t.closest && t.closest("[data-nyact]"))){
+    if (card){
       openNeedsYouItem(card.dataset ? card.dataset.deeplink : null,
                        card.dataset ? card.dataset.itemid : null);
     }
