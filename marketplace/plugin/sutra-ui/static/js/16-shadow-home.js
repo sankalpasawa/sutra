@@ -218,8 +218,9 @@ async function shadowWatchSet(sid, watch){
     /* the founder's dead-toggle fix: the BODY was the path string */
     const r = await shadowPost("/api/shadow/watches",
       { session_id: sid, watch: !!watch });
-    if (r && !r.ok && typeof showNudge === "function")
-      showNudge("The watch toggle did not stick \u2014 try again");
+    if (r && typeof showNudge === "function")
+      showNudge(!r.ok ? "The watch toggle did not stick \u2014 try again"
+        : (watch ? "Watching." : "Stopped watching."));
   } catch (e) {}
   loadShadowHome();
 }
@@ -229,8 +230,11 @@ async function shadowInstructionAct(id, action){
   try {
     /* same disease as the watch toggle: Confirm/Revoke never reached the API */
     const r = await shadowPost("/api/shadow/instructions", { id, action });
-    if (r && !r.ok && typeof showNudge === "function")
-      showNudge("That memory action did not stick \u2014 try again");
+    if (r && typeof showNudge === "function")
+      showNudge(!r.ok ? "That memory action did not stick \u2014 try again"
+        : (action === "confirm"
+            ? "Confirmed \u2014 Shadow applies it from its next boot."
+            : "Revoked \u2014 kept in the list, struck through."));
   } catch (e) {}
   loadShadowHome();
 }
