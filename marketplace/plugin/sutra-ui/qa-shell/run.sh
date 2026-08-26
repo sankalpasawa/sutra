@@ -55,6 +55,8 @@ fi
 
 if [ "$MODE" = "repo" ]; then
   step "repo mode: start the REPO backend on 8330 so the shell attaches to it"
+  # optional deterministic Shadow state for the gate (v1.2)
+  [ -n "${QA_SHADOW_HOME:-}" ] && export SUTRA_SHADOW_HOME="$QA_SHADOW_HOME"
   ( cd "$REPO" && nohup .venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8330 --log-level warning \
       >"$HERE/out/repo-backend.log" 2>&1 & echo $! > "$HERE/out/repo-backend.pid" )
   REPO_BPID=$(cat "$HERE/out/repo-backend.pid")
@@ -102,7 +104,9 @@ fi
 step "lane 1 (state) + lane 2 (pixels)"
 # QA_SCRIPT: an alternative lane script (default: the chat-surface check).
 # nav-check.mjs is the v3.3 shell lane — raw CDP, no playwright needed.
-SHELL_DEBUG_PORT="$PORT" node "${QA_SCRIPT:-$HERE/shell-check.mjs}"
+for one in ${QA_SCRIPTS:-${QA_SCRIPT:-$HERE/shell-check.mjs}}; do
+  SHELL_DEBUG_PORT="$PORT" node "${one:-$HERE/shell-check.mjs}"
+done
 RC=$?
 
 step "post-check liveness (the check must not have harmed the app)"

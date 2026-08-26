@@ -49,8 +49,9 @@ function shadowPlaneHtml(watching, missions, tab){
     return head + `<div class="shplane">${rows ||
       `<div class="shempty">Shadow is not watching any session yet.</div>`}</div>`;
   }
+  const foc = (typeof S !== "undefined" && S.shadowFocusMission) || null;
   const rows = active.map(m => `
-    <div class="shmissionrow" data-shmissionrow="${escAttr(m.id)}">
+    <div class="shmissionrow${m.id === foc ? " shfocused" : ""}" data-shmissionrow="${escAttr(m.id)}">
       ${missionCardHtml(m)}
       <span class="shrowacts">
         ${m.state === "queued" ? `<button class="btn" type="button"
@@ -66,7 +67,7 @@ function shadowPlaneHtml(watching, missions, tab){
   const finished = missions.filter(m =>
     ["failed", "stopped"].includes(m.state)).slice(-5).reverse();
   const fin = finished.map(m => `
-    <div class="shmissionrow shfinished" data-shmissionrow="${escAttr(m.id)}">
+    <div class="shmissionrow shfinished${m.id === foc ? " shfocused" : ""}" data-shmissionrow="${escAttr(m.id)}">
       ${missionCardHtml(m)}
       <span class="shrowacts">
         <button class="btn" type="button" data-shact="retry"
@@ -114,15 +115,24 @@ function shadowHomeHtml(){
   const thread = (S.shadowThread || []).map(t => `
     <div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}">
       ${esc(t.text || "")}</div>`).join("");
-  return `<div class="shhome">
-    <div class="shthread">${thread ||
-      `<div class="shempty">Ask Shadow anything \u2014 it sees your
-       sessions, your missions, and what it has learned.</div>`}</div>
-    ${shadowPlaneHtml(S.shadowWatching || [], S.shadowMissions || [],
-                      S.shadowTab)}
-    ${shadowMemoryHtml(S.shadowMemory || [])}
-    <textarea class="shcompose" data-shhomecompose="1"
-      placeholder="Talk to Shadow"></textarea>
+  /* mock v5 screen 2: the chat thread beside ONE plane (+ memory) */
+  const err = S.shadowHomeErr ? `<div class="sherr">Could not reach Shadow
+    just now \u2014 showing what I last knew.
+    <button class="btn" type="button" data-shreload="1">Retry</button></div>` : "";
+  return `<div class="shhome shcols">${err}
+    <div class="shchatcol">
+      <div class="shthread">${thread ||
+        `<div class="shempty">Ask Shadow anything \u2014 it sees your
+         sessions, your missions, and what it has learned.</div>`}</div>
+      <textarea class="shcompose" data-shhomecompose="1"
+        placeholder="Talk to Shadow"></textarea>
+    </div>
+    <div class="shsidecol">
+      ${shadowPlaneHtml(S.shadowWatching || [], S.shadowMissions || [],
+                        S.shadowTab)}
+      <div class="shfinhead">Memory</div>
+      ${shadowMemoryHtml(S.shadowMemory || [])}
+    </div>
   </div>`;
 }
 
@@ -130,19 +140,23 @@ async function loadShadowHome(){
   if (typeof fetch === "undefined" || typeof S === "undefined") return;
   try {
     const st = await fetch("/api/shadow/status");
-    if (!st.ok){ S.shadowHomeDark = true; return; }
+    if (!st.ok){ S.shadowHomeDark = true;
+      if (typeof scheduleRender === "function") scheduleRender(); return; }
     S.shadowHomeDark = false;
+    /* diagnosis fold 2026-08-26: a failed GET must NEVER masquerade as an
+       empty list -- failure is its own rendered state with a Retry */
     const [w, m, i] = await Promise.all([
-      fetch("/api/shadow/watches").then(r => r.ok ? r.json() : { watches: [] }),
-      fetch("/api/shadow/missions").then(r => r.ok ? r.json() : { missions: [] }),
-      fetch("/api/shadow/instructions").then(r => r.ok ? r.json()
-                                                       : { instructions: [] }),
+      fetch("/api/shadow/watches").then(r => r.ok ? r.json() : null),
+      fetch("/api/shadow/missions").then(r => r.ok ? r.json() : null),
+      fetch("/api/shadow/instructions").then(r => r.ok ? r.json() : null),
     ]);
-    S.shadowWatching = w.watches || [];
-    S.shadowMissions = m.missions || [];
-    S.shadowMemory = i.instructions || [];
+    S.shadowHomeErr = !(w && m && i);
+    if (w) S.shadowWatching = w.watches || [];
+    if (m) S.shadowMissions = m.missions || [];
+    if (i) S.shadowMemory = i.instructions || [];
     if (typeof scheduleRender === "function") scheduleRender();
-  } catch (e){ S.shadowHomeDark = true; }
+  } catch (e){ S.shadowHomeDark = true;
+    if (typeof scheduleRender === "function") scheduleRender(); }
 }
 
 if (typeof SCREENS !== "undefined"){
@@ -164,14 +178,16 @@ if (typeof TITLES !== "undefined"){
 if (typeof document !== "undefined" && document.addEventListener){
   document.addEventListener("click", (ev) => {
     const d = (ev.target && ev.target.dataset) || {};
+    if (d.shreload){
+      if (typeof loadShadowHome === "function") loadShadowHome(); return; }
     if (d.shtab){ if (typeof S !== "undefined") S.shadowTab = d.shtab;
       if (typeof scheduleRender === "function") scheduleRender(); return; }
     if (d.shtakeover){
       /* navigation, never mutation: land the founder where the delegate
          session can be resumed by hand */
-      if (typeof S !== "undefined")
-        S.pendingDeepLink = "sutra://session/" + d.shtakeover;
-      if (typeof goDest === "function") goDest("chats");
+      if (typeof shadowRouteDeepLink === "function")
+        shadowRouteDeepLink("sutra://session/" + d.shtakeover);
+      else if (typeof goDest === "function") goDest("chats");
       return;
     }
     if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
@@ -199,7 +215,8 @@ if (typeof document !== "undefined" && document.addEventListener){
 async function shadowWatchSet(sid, watch){
   if (typeof fetch === "undefined") return;
   try {
-    await shadowPost("/api/shadow/watches", "/api/shadow/watches");
+    /* the founder's dead-toggle fix: the BODY was the path string */
+    await shadowPost("/api/shadow/watches", { session_id: sid, watch: !!watch });
   } catch (e) {}
   loadShadowHome();
 }
@@ -207,7 +224,8 @@ async function shadowWatchSet(sid, watch){
 async function shadowInstructionAct(id, action){
   if (typeof fetch === "undefined") return;
   try {
-    await shadowPost("/api/shadow/instructions", "/api/shadow/instructions");
+    /* same disease as the watch toggle: Confirm/Revoke never reached the API */
+    await shadowPost("/api/shadow/instructions", { id, action });
   } catch (e) {}
   loadShadowHome();
 }

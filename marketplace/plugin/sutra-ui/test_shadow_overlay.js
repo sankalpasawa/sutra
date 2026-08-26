@@ -251,5 +251,28 @@ function part3(){
     "badge falls back to mission count, S stays");
   console.log("ok 13 alert pill (S-mark + badge)");
 }
+
+/* the deep-link router: every sutra:// link lands somewhere real */
+{
+  const ctx = fresh();
+  const calls = [];
+  ctx.goDest = (d) => calls.push("dest:" + d);
+  ctx.openScreen = (sc) => calls.push("screen:" + sc);
+  ctx.render = () => calls.push("render");
+  assert.strictEqual(
+    ctx.shadowRouteDeepLink("sutra://shadow/mission/m-abc123"), true);
+  assert(calls.includes("dest:focus") && calls.includes("screen:shadow"),
+    "mission link lands on Focus > Shadow");
+  assert.strictEqual(ctx.S.shadowTab, "working", "working tab selected");
+  assert.strictEqual(ctx.S.shadowFocusMission, "m-abc123", "mission focused");
+  calls.length = 0;
+  assert.strictEqual(ctx.shadowRouteDeepLink("sutra://shadow/m-short99"), true,
+    "short legacy form routes too");
+  assert.strictEqual(ctx.S.shadowFocusMission, "m-short99");
+  calls.length = 0;
+  ctx.shadowRouteDeepLink("sutra://session/sess-77");
+  assert(calls.includes("dest:chats"), "session link lands on Chats");
+  console.log("ok 14 deep-link router");
+}
 console.log("test_shadow_overlay.js: all green");
 }

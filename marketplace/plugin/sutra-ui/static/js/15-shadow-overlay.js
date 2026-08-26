@@ -200,6 +200,42 @@ function bootShadowOverlay(){
   }).catch(() => {});
 }
 
+/* THE deep-link router (the founder's dead-click fix, 2026-08-26): every
+   sutra:// link Shadow hands out lands somewhere real. Wrapped so a partial
+   shell never strands half-set state (deepseek fold). */
+function shadowRouteDeepLink(link){
+  const l = String(link || "");
+  try {
+    let m = l.match(/^sutra:\/\/shadow\/(?:mission\/)?(m-[a-z0-9]+)/);
+    if (m){
+      if (typeof S !== "undefined"){
+        S.shadowTab = "working"; S.shadowFocusMission = m[1];
+      }
+      if (typeof goDest === "function") goDest("focus");
+      if (typeof openScreen === "function") openScreen("shadow");
+      if (typeof render === "function") render();
+      return true;
+    }
+    if (/^sutra:\/\/shadow/.test(l)){
+      if (typeof goDest === "function") goDest("focus");
+      if (typeof openScreen === "function") openScreen("shadow");
+      if (typeof render === "function") render();
+      return true;
+    }
+    m = l.match(/^sutra:\/\/session\/(.+)$/);
+    if (m){
+      if (typeof S !== "undefined") S.pendingSessionHint = m[1];
+      if (typeof goDest === "function") goDest("chats");
+      if (typeof render === "function") render();
+      return true;
+    }
+  } catch (e){ /* fall through to the safe default */ }
+  if (typeof goDest === "function") goDest("focus");
+  if (typeof openScreen === "function") openScreen("shadow");
+  if (typeof render === "function") render();
+  return false;
+}
+
 /* event-driven pill (the overlay never polls -- pinned): whoever already
    holds fresh feed data pushes the alert count here (14-needs-you does). */
 function shadowDotAlerts(n){

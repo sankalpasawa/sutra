@@ -69,6 +69,8 @@ function needsYouHtml(items){
    navigation, never mutation. */
 function openNeedsYouItem(link){
   if (typeof S !== "undefined") S.pendingDeepLink = link || null;
+  if (typeof shadowRouteDeepLink === "function")
+    return shadowRouteDeepLink(link);
   if (typeof goDest === "function") goDest("focus");
 }
 

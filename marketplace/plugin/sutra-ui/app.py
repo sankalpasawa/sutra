@@ -1391,7 +1391,46 @@ async def api_shadow_watch_toggle(request: Request):
     watches = _shadow_watches()
     (watches.add if watch else watches.discard)(sid)
     _save_watches(watches)
+    # explicit opt-out semantics (deepseek fold): unwatch remembers the
+    # founder's choice against auto-watch; watch=true clears it
+    unwatched = _shadow_unwatched()
+    (unwatched.discard if watch else unwatched.add)(sid)
+    _save_unwatched(unwatched)
     return {"watching": sorted(watches)}
+
+
+def _unwatched_path():
+    import shadow_ledger
+    return os.path.join(os.path.dirname(shadow_ledger._path("actions")),
+                        "..", "unwatched.json")
+
+
+def _shadow_unwatched():
+    try:
+        with open(_unwatched_path(), encoding="utf-8") as handle:
+            return set(json.load(handle))
+    except (OSError, ValueError):
+        return set()
+
+
+def _save_unwatched(ids):
+    with open(_unwatched_path(), "w", encoding="utf-8") as handle:
+        json.dump(sorted(ids), handle)
+
+
+def _shadow_auto_watch(sid):
+    """Panes are watched by default (D68 spirit). Skips delegates (they are
+    Shadow's own hands, not founder work) and explicit opt-outs; skips the
+    write entirely when already listed (deepseek fold: no restart storms)."""
+    if sid in shadow_runner.DELEGATES:
+        return
+    if sid in _shadow_unwatched():
+        return
+    watches = _shadow_watches()
+    if sid in watches:
+        return
+    watches.add(sid)
+    _save_watches(watches)
 
 
 def _watches_path():
@@ -1874,6 +1913,13 @@ async def ws_chat(ws: WebSocket):
             if session_id and providers.shadow_enabled():
                 # the watcher rides every live pane (GAP-AUDIT row 3)
                 shadow_runner.attach_observer(session_id, rt)
+                # auto-watch (finish-list 2026-08-26): panes appear in the
+                # Watching list by default. No-op when already listed (no
+                # disk write storm), never for delegates or opted-out ids.
+                try:
+                    _shadow_auto_watch(session_id)
+                except Exception:
+                    pass
 
             # Do NOT read stderr to EOF or wait() here: both block forever on a
             # process that is meant to outlive the turn. Only a dead process is
