@@ -120,7 +120,14 @@
      fixture, S87) and a live document must scroll. Behavioural, not visual;
      flagged for the S20 diff. */
   .ws-panes{flex:1;display:flex;min-height:0}
-  .ws-side{width:286px;flex:none;border-right:1px solid var(--line);background:var(--inset);
+  /* SHRINKABLE, not fixed (r9 root cause): with `flex:none` the side pane and
+     the context rail (286+232=518) exceeded a browse pane dragged to 505px,
+     so the flexible DOCUMENT column absorbed the whole deficit and measured
+     ZERO — the editor's content then painted outside the pane, over the
+     neighbouring session pane, and swallowed every click there. The tree
+     yields first; the document always keeps its floor (.ws-doccol). */
+  .ws-side{flex:0 1 286px;width:auto;min-width:184px;
+    border-right:1px solid var(--line);background:var(--inset);
     padding:10px 10px 12px;overflow-y:auto;font-size:12.5px;
     scrollbar-gutter:stable}  /* classic-scrollbar appear/disappear reflowed
                                  every ellipsized row (glitch fix 2026-08-25) */
@@ -179,8 +186,12 @@
   /* doc pane — 620 centred column (fixed by design, A11Y.md §4). The column
      is a flex stack so the sidecar iframe fills the height below the crumb
      and notices; the document body itself renders inside the iframe. */
-  .ws-doccol{flex:1;min-width:0;overflow-y:auto;background:var(--card);padding:12px 0 40px;
-    display:flex;flex-direction:column}
+  /* min-width is the DOCUMENT'S FLOOR (r9): flexible columns hit zero when
+     their fixed siblings outgrow the row, and a zero-width editor spills its
+     content across the app. 280px keeps a readable column; the supplementary
+     rail yields before this does (container query below). */
+  .ws-doccol{flex:1 1 auto;min-width:280px;overflow-y:auto;background:var(--card);
+    padding:12px 0 40px;display:flex;flex-direction:column}
   /* padding-top 22->12 (founder spacing directive 2026-08-25) */
   .ws-col{width:100%;max-width:680px;margin:0 auto;padding:0 28px;box-sizing:border-box;
     flex:1;display:flex;flex-direction:column;min-height:0}
@@ -270,9 +281,16 @@
   .ws-editor .sb-line-table-outside,
   .ws-editor .sb-fenced-code-hide{display:none}
   .ws-editor .sb-line-tbl-header{font-weight:600}
-  .ws-editor .sb-table-widget{display:block;width:100%;overflow-x:auto}
+  /* The widget must NOT widen the editor's content layer (r9): a table's
+     intrinsic width (520px here) pushed .cm-content past the pane, so prose
+     stopped wrapping and BOTH were clipped mid-word. `width:0;min-width:100%`
+     contributes zero intrinsic width while still filling the column;
+     table-layout:fixed then keeps the table inside it, wrapping cells rather
+     than growing. Shape is preserved — which is the whole point. */
+  .ws-editor .sb-table-widget{display:block;width:0;min-width:100%;overflow-x:auto}
   .ws-editor .sb-table-widget table{border-collapse:collapse;margin:0 0 14px;
-    font-size:12.5px;max-width:100%}
+    font-size:12.5px;table-layout:fixed;width:100%;max-width:100%}
+  .ws-editor .sb-table-widget th,.ws-editor .sb-table-widget td{overflow-wrap:anywhere}
   .ws-editor .sb-table-widget th{text-align:left;font-size:10.5px;letter-spacing:.08em;
     color:var(--muted);border-bottom:1px solid var(--line);padding:5px 10px 5px 0;
     font-weight:600}
@@ -306,7 +324,7 @@
   .ws-page .ws-act{margin-top:22px}
 
   /* context rail 250 */
-  .ws-ctx{width:232px;flex:none;border-left:1px solid var(--line);background:var(--inset);
+  .ws-ctx{flex:0 1 232px;width:auto;min-width:0;border-left:1px solid var(--line);background:var(--inset);
     padding:16px 14px;font-size:12px;overflow-y:auto}
   .ws-cs{margin-bottom:26px}         /* one ctx section (mock .cx) */
   .ws-ck{color:var(--muted)}         /* row key (mock .cr span:first-child) */
@@ -359,3 +377,18 @@
     .ws .ws-cha, .ws .ws-doc, .ws .ws-fold, .ws .ws-rec,
     .ws-act, .ws-lens button { transition: none; }
   }
+
+  /* ── narrow-pane ladder (r9) ────────────────────────────────────────────
+     The browse pane carries `container-type:inline-size` (panel.css), so the
+     workspace degrades against ITS width, not the viewport's — the founder
+     drags this divider, and a 505px pane is normal. Supplementary columns
+     yield in order; nothing ever collapses to zero. */
+  @container (max-width: 820px){
+    .ws-ctx{display:none}          /* FILING is supplementary metadata */
+  }
+  @container (max-width: 560px){
+    .ws-side{flex:0 1 200px}       /* the tree tightens before the document */
+  }
+  /* Last resort at extreme widths: scroll the row rather than destroy the
+     content (the panel's own rule for the pane row, panel.css .panes). */
+  .ws-panes{overflow-x:auto}

@@ -796,15 +796,15 @@ function renderPlane(){
   const head = document.getElementById("planeHead");
   const body = document.getElementById("planeBody");
   const chats = document.getElementById("planeChats");
-  if (head) head.innerHTML = `<h2>${DEST_LABEL[dest] || ""}</h2>`;
+  setHtmlIfChanged(head, `<h2>${DEST_LABEL[dest] || ""}</h2>`);
   if (chats) chats.hidden = dest !== "chats";
   if (!body) return;
   body.hidden = dest === "chats";
-  if (dest === "chats"){ body.innerHTML = ""; return; }
+  if (dest === "chats"){ setHtmlIfChanged(body, ""); return; }
   /* Inline destinations own their rows in the rail; a hidden plane must not
      hold a second set of data-screen / aria-current controls (deepseek P2). */
-  if (off){ body.innerHTML = ""; return; }
-  body.innerHTML = planeRows(dest).map(g => {
+  if (off){ setHtmlIfChanged(body, ""); return; }
+  const planeHtml = planeRows(dest).map(g => {
     /* A group with no label is not a group -- it is the ungrouped remainder, and
        giving it a collapse control would offer to hide rows under a header the
        operator cannot see. Only labelled groups collapse. */
@@ -836,6 +836,7 @@ function renderPlane(){
           : (it.c!==undefined?`<span class="ct ${it.warn?"w":""}">${it.c}</span>`:"")}
       </button></li>`).join("")}</ul>`;
   }).join("");
+  setHtmlIfChanged(body, planeHtml);        /* r9: only when it changed */
 }
 
 /* Row metadata, in USER language (founder 2026-08-24: "user-friendly and
@@ -884,9 +885,29 @@ function workspaceLabel(s, sessions){
   return ws.size > 1 ? rowWorkspace(s) : "";
 }
 
+/* ── unchanged-HTML skip, shared (r9) ────────────────────────────────────────
+   #scBody got this in #143 and #panes in r8, but the RAIL, the plane and the
+   session list still rebuilt on EVERY render — and the rail is the most
+   clicked surface in the app. Replacing a button between mousedown and
+   mouseup means the browser never fires a click on it: the founder's "I press
+   it and nothing happens". Measured: a real-input sweep clicked the Workspace
+   rail row, the press and release both landed on it, and the screen never
+   changed. Regions whose markup is unchanged are left alone.
+   Any code that patches DOM inside one of these regions WITHOUT going through
+   its renderer must call invalidateHtmlCache(el) so the next identical render
+   still repaints. */
+function setHtmlIfChanged(el, html){
+  if (!el) return false;
+  if (el.__lastHtml === html) return false;
+  el.__lastHtml = html;
+  el.innerHTML = html;
+  return true;
+}
+function invalidateHtmlCache(el){ if (el) el.__lastHtml = null; }
+
 function renderRail(){
   const nav = document.getElementById("railnav");
-  if (nav) nav.innerHTML = DESTS.map(d=>{
+  const railHtml = !nav ? "" : DESTS.map(d=>{
     const inline = destInline(d);
     const open = inline && S.ui.railOpen === d;
     /* While the accordion is open the CHILD row carries the highlight and the
@@ -913,6 +934,7 @@ function renderRail(){
       ${DEST_LABEL[d]}${chev}
     </button>${sub}</li>`;
   }).join("");
+  setHtmlIfChanged(nav, railHtml);          /* r9: only when it changed */
   renderPlane();
   if (typeof paintTelemetry === "function") paintTelemetry();
 
@@ -1059,7 +1081,7 @@ function renderRail(){
       Nothing filed yet. Transcripts read from <code>~/.claude/projects</code> ran outside
       this panel, so no department was ever resolved for them — they group under Recent only.</p>`;
   }
-  document.getElementById("sessions").innerHTML = html;
+  setHtmlIfChanged(document.getElementById("sessions"), html);
 }
 
 

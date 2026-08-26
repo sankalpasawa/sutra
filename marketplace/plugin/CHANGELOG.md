@@ -2,6 +2,20 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.235.3 (2026-08-26)
+
+- **The workspace stops falling apart in a narrow pane.** Drag the divider in
+  and the document column used to collapse to zero width, throwing the
+  editor's content outside its pane — over the next pane, swallowing clicks.
+  The tree and the FILING rail now yield first, the document keeps a floor,
+  and a table can no longer widen the editor past its column (prose stopped
+  wrapping and both got clipped mid-word).
+- **Clearing a search brings the tree back.** Typing then clearing the box (or
+  pressing Escape) left an in-flight flag set forever, so the sidebar showed
+  "searching…" permanently — tree and lens buttons gone until you searched
+  again. Both found by a real-gesture sweep driving the app under 269
+  background repaints.
+
 ## 2.235.2 (2026-08-26)
 
 - **The whole panes row stops rebuilding when nothing changed** — hover

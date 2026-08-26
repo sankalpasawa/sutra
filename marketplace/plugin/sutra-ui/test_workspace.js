@@ -874,6 +874,52 @@ test("click-to-edit (r4): the keyboard path — 'e' enters edit, and read-only r
   assert(ro.S.ws.editing === false, "read-only mode must refuse the keyboard entry");
 });
 
+test("search (r9): clearing or escaping a live search brings the tree back", () => {
+  /* the trap: the debounce is cancelled, so nothing downstream ever clears
+     `searching` — the side pane renders "searching…" forever and the tree AND
+     the lens buttons vanish. Two gestures in the r9 sweep caught this. */
+  const mk = () => onSandbox(sb2 => {
+    sb2.S.ws.tree = { departments: [{ ref:"D1", name:"Asawa Inc.", charters:[] }], unfiled: [] };
+  });
+
+  const a = mk();
+  a.__W.wsSearchInput("sut");                 /* in flight (fetch parks) */
+  assert(a.S.ws.searching === true, "typing must show the in-flight state");
+  a.__W.wsSearchInput("");                    /* user clears the box */
+  assert(a.S.ws.searching === false, "clearing the box must end the in-flight state");
+  assert(a.__W.wsScreenHtml().indexOf("data-wslens") !== -1,
+    "the lens buttons must come back with the tree");
+  assert(a.__W.wsScreenHtml().indexOf("ws-dep") !== -1, "the tree must render again");
+
+  const b = mk();
+  b.__W.wsSearchInput("sut");
+  assert(b.S.ws.searching === true, "precondition");
+  b.handlers.keydown({ key: "Escape", target: { tagName: "DIV", closest: () => null },
+                       preventDefault(){} });
+  assert(b.S.ws.searching === false, "Escape must end the in-flight state too");
+  assert(b.__W.wsScreenHtml().indexOf("ws-dep") !== -1, "the tree must render after Escape");
+});
+
+test("layout (r9): the workspace columns degrade, they never collapse", () => {
+  const css = fs.readFileSync(path.join(__dirname, "static/workspace.css"), "utf8");
+  /* the side pane and context rail MUST be shrinkable — with flex:none they
+     out-sized the pane and the flexible document column measured ZERO, so the
+     editor's content painted outside the pane and swallowed clicks */
+  assert(!/\.ws-side\{width:286px;flex:none/.test(css),
+    "the side pane must not be a fixed, unshrinkable column");
+  assert(/\.ws-side\{flex:0 1 286px/.test(css), "side pane must shrink before the document");
+  assert(/\.ws-ctx\{flex:0 1 232px/.test(css), "context rail must shrink too");
+  assert(/\.ws-doccol\{[^}]*min-width:280px/.test(css),
+    "the document column needs a floor so it can never reach zero width");
+  assert(/@container \(max-width: 820px\)[\s\S]{0,80}\.ws-ctx\{display:none\}/.test(css),
+    "the supplementary rail must yield first, on a container query");
+  /* a table must not widen the editor's content layer past its column */
+  assert(/\.sb-table-widget\{display:block;width:0;min-width:100%/.test(css),
+    "the table widget must contribute zero intrinsic width");
+  assert(/\.sb-table-widget table\{[^}]*table-layout:fixed/.test(css),
+    "table-layout:fixed keeps the table inside its column");
+});
+
 test("folders lens (r7): nested model — counts, collapse, cap escape, md loader states", () => {
   const sb = onSandbox(sb2 => {
     sb2.S.ws.lens = "folders";

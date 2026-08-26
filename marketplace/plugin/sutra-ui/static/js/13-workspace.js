@@ -266,9 +266,13 @@ function wsSearchInput(q){
   S.ws.q = q;
   if (_wsSearchTimer) clearTimeout(_wsSearchTimer);
   if (!q){
-    /* Empty query = search CLOSED, centre keeps the last doc (SC9 / 03→01). */
+    /* Empty query = search CLOSED, centre keeps the last doc (SC9 / 03→01).
+       `searching` MUST clear here (r9): the debounced request was just
+       cancelled, so nothing downstream will ever turn the flag off, and the
+       side pane renders "searching…" forever — the tree and the lens buttons
+       simply disappear. Found by the gesture sweep, twice. */
     S.ws.results = null; S.ws.matched = null; S.ws.searchEpisode = false;
-    S.ws.cursor = null;
+    S.ws.cursor = null; S.ws.searching = false;
     render(); return;
   }
   if (!had && !S.ws.searchEpisode){ S.ws.searchEpisode = true; wsPing("search_used"); }
@@ -283,12 +287,14 @@ function wsSearchInput(q){
 async function wsRunSearch(q, seq){
   try {
     const r = await wsGet("/api/workspace/search?q=" + encodeURIComponent(q));
-    if (seq !== S.ws.searchSeq) return;          /* a newer query owns the pane */
+    /* a newer query owns the pane — but if the box is now EMPTY nothing else
+       will ever clear the in-flight flag (r9) */
+    if (seq !== S.ws.searchSeq){ if (!S.ws.q) S.ws.searching = false; return; }
     S.ws.results = r;
     S.ws.searching = false;
     S.ws.cursor = null;
   } catch (e){
-    if (seq !== S.ws.searchSeq) return;
+    if (seq !== S.ws.searchSeq){ if (!S.ws.q) S.ws.searching = false; return; }
     S.ws.searching = false;
     /* engine_down mid-search degrades the whole screen, not just the pane. */
     if ((e.kind || "engine_down") === "engine_down")
@@ -822,6 +828,8 @@ function wsKeydown(e){
       S.ws.q = ""; S.ws.results = null; S.ws.searchEpisode = false;
       if (!(S.ws.sel && S.ws.sel.type === "charter")) S.ws.matched = null;
       S.ws.cursor = null;
+      S.ws.searching = false;      /* r9: same trap as the empty-query path */
+      if (_wsSearchTimer){ clearTimeout(_wsSearchTimer); _wsSearchTimer = null; }
       render();
       const sel = document.querySelector(".ws-side [data-wsfocus]");
       if (sel) sel.focus();
