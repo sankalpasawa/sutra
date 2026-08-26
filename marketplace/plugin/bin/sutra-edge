@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""sutra-edge — the A22 Edge Engine (plugin L0, fleet-generic port 2026-08-26).
+
+The three-sentence system it implements:
+  1. Everything has a home (a registry row).
+  2. Everything says what it reads and what lists it (edges).
+  3. When something changes, its dependents get FLAGGED — and each flag is
+     cleared by code, by an LLM, or by a person (the dial), with evidence.
+
+Ledgers are append-only jsonl; status is derived last-row-wins. Deterministic
+spine per the Engine Library charter: the LLM only clears flags, with evidence.
+
+Commands:
+  add --type T --from F --to TO --system S --dial D [--blocking] --clear-hint H
+  list [--system S]
+  fire --node PATH --reason R [--commit SHA] [--trigger T]
+  flags [--all] [--system S]
+  clear --flag ID --how code|llm|human --evidence TEXT
+  orchestrate [--since REF] [--write-cursor]      (the system-level orchestrator)
+  check                                            (exit 1 on OPEN blocking flags)
+  board [--open]                                   (regenerate the human flag board)
+"""
+import argparse, datetime, html, json, os, subprocess, sys
+
+# Fleet-generic port (2026-08-26): state lives under <repo>/.sutra/edges.
+# Overrides: CLAUDE_PROJECT_DIR (repo root), SUTRA_EDGE_DIR (state dir).
+def _repo_root():
+    env = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env:
+        return os.path.abspath(env)
+    try:
+        out = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, check=True)
+        return out.stdout.strip()
+    except Exception:
+        return os.getcwd()
+
+ROOT = _repo_root()
+EDIR = os.environ.get("SUTRA_EDGE_DIR") or os.path.join(ROOT, ".sutra", "edges")
+EDGES = os.path.join(EDIR, "edges.jsonl")
+FLAGS = os.path.join(EDIR, "flags.jsonl")
+CURSOR = os.path.join(EDIR, ".cursor")
+BOARD = os.path.join(EDIR, "edges-board.html")
+SCHEMA = 1
+REPO = os.path.basename(ROOT)
+
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def read_jsonl(path):
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+def append_row(path, row):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+def git(*args):
+    r = subprocess.run(["git", "-C", ROOT] + list(args), capture_output=True, text=True)
+    return r.stdout.strip()
+
+def head_sha():
+    return git("rev-parse", "--short", "HEAD") or "unknown"
+
+def edges_state():
+    state = {}
+    for r in read_jsonl(EDGES):
+        state[r["edge"]] = r
+    return {k: v for k, v in state.items() if v.get("status", "active") == "active"}
+
+def flags_state():
+    state = {}
+    for r in read_jsonl(FLAGS):
+        cur = state.get(r["flag"], {})
+        cur.update(r)
+        state[r["flag"]] = cur
+    return state
+
+def age_str(ts):
+    try:
+        t = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        m = int((datetime.datetime.now(datetime.timezone.utc) - t).total_seconds() // 60)
+        return "%dm" % m if m < 120 else "%dh" % (m // 60)
+    except Exception:
+        return "?"
+
+def card(f):
+    kind = "BLOCKING" if f.get("blocking") else "advisory"
+    lines = [
+        "+-- EDGE FLAG " + "-" * 49 + "+",
+        "| Flag:     %-10s %-6s [%s]  age %s" % (f["flag"], f.get("status", "?"), kind, age_str(f.get("ts", ""))),
+        "| System:   %s" % f.get("system", "?"),
+        "| Changed:  %s" % f.get("from", "?"),
+        "| Reason:   %s (commit %s)" % (f.get("reason", "?"), f.get("commit", "?")),
+        "| Edge:     %s %s -> %s  (dial: %s)" % (f.get("edge", "?"), f.get("type", ""), f.get("to", "?"), f.get("dial", "?")),
+    ]
+    if f.get("status") == "OPEN":
+        lines.append("| Clear:    sutra-edge clear --flag %s --how %s --evidence '<what you did>'" % (f["flag"], f.get("dial", "code")))
+        if f.get("clear_hint"):
+            lines.append("| Hint:     %s" % f["clear_hint"])
+    else:
+        lines.append("| Cleared:  how=%s by %s" % (f.get("how", "?"), f.get("cleared_by", "?")))
+        lines.append("| Evidence: %s" % f.get("evidence", "?"))
+    lines.append("+" + "-" * 62 + "+")
+    print("\n".join(lines))
+
+def next_id(prefix, rows, key):
+    n = 0
+    for r in rows:
+        try:
+            n = max(n, int(r[key].split("-")[-1]))
+        except Exception:
+            pass
+    return "%s-%03d" % (prefix, n + 1)
+
+def cmd_add(a):
+    rows = read_jsonl(EDGES)
+    eid = a.edge or next_id("e", rows, "edge")
+    row = {"schema": SCHEMA, "edge": eid, "type": a.type, "from": a.node_from, "to": a.to,
+           "system": a.system, "dial": a.dial, "blocking": bool(a.blocking),
+           "clear_hint": a.clear_hint or "", "status": "active", "repo": REPO, "ts": now()}
+    append_row(EDGES, row)
+    print("edge added: %s %s %s -> %s [%s, dial=%s%s]" % (eid, a.type, a.node_from, a.to, a.system, a.dial, ", BLOCKING" if a.blocking else ""))
+
+def cmd_list(a):
+    for e in edges_state().values():
+        if a.system and e["system"] != a.system:
+            continue
+        print("%-6s %-15s %-11s %s -> %s%s" % (e["edge"], e["type"], "[" + e["system"] + "]", e["from"], e["to"], "  BLOCKING" if e.get("blocking") else ""))
+
+def open_flags_for(node, reason, commit, trigger):
+    fired = []
+    all_flags = flags_state().values()
+    frows = read_jsonl(FLAGS)
+    for e in edges_state().values():
+        if e["from"] != node:
+            continue
+        dupe = [f for f in all_flags if f.get("edge") == e["edge"] and f.get("commit") == commit]
+        if dupe:
+            print("dedupe: %s already flagged for commit %s (%s)" % (e["edge"], commit, dupe[0]["flag"]))
+            continue
+        fid = next_id("f", frows, "flag")
+        frows.append({"flag": fid})
+        row = {"schema": SCHEMA, "flag": fid, "edge": e["edge"], "type": e["type"],
+               "from": e["from"], "to": e["to"], "system": e["system"], "dial": e["dial"],
+               "blocking": e.get("blocking", False), "clear_hint": e.get("clear_hint", ""),
+               "trigger": trigger, "reason": reason, "commit": commit, "repo": REPO,
+               "status": "OPEN", "opened_by": os.environ.get("USER", "unknown"), "ts": now()}
+        append_row(FLAGS, row)
+        fired.append(row)
+        card(row)
+    return fired
+
+def cmd_fire(a):
+    commit = a.commit or head_sha()
+    fired = open_flags_for(a.node, a.reason, commit, a.trigger)
+    if not fired:
+        print("0 flags fired for %s (no active out-edges or all deduped)" % a.node)
+    else:
+        print("%d flag(s) fired." % len(fired))
+
+def cmd_flags(a):
+    n = 0
+    by_system = {}
+    for f in flags_state().values():
+        if a.system and f.get("system") != a.system:
+            continue
+        if not a.all and f.get("status") != "OPEN":
+            continue
+        card(f)
+        n += 1
+        s = f.get("system", "?")
+        by_system.setdefault(s, [0, 0])
+        if f.get("status") == "OPEN":
+            by_system[s][0] += 1
+            if f.get("blocking"):
+                by_system[s][1] += 1
+    print("\n%d flag(s) shown." % n)
+    for s, (o, b) in sorted(by_system.items()):
+        print("  %-14s open=%d blocking=%d" % (s, o, b))
+
+def cmd_clear(a):
+    if not a.evidence.strip():
+        print("REFUSED: evidence is mandatory — a flag clears only with proof of what was done.")
+        sys.exit(1)
+    f = flags_state().get(a.flag)
+    if not f:
+        print("REFUSED: no such flag %s" % a.flag)
+        sys.exit(1)
+    if f.get("status") == "CLEAR":
+        print("already clear: %s" % a.flag)
+        return
+    row = {"schema": SCHEMA, "flag": a.flag, "edge": f.get("edge"), "system": f.get("system"),
+           "status": "CLEAR", "how": a.how, "evidence": a.evidence,
+           "cleared_by": os.environ.get("USER", "unknown"), "ts": now()}
+    append_row(FLAGS, row)
+    merged = dict(f)
+    merged.update(row)
+    card(merged)
+
+def cmd_orchestrate(a):
+    base = a.since
+    if not base:
+        base = open(CURSOR).read().strip() if os.path.exists(CURSOR) else "HEAD~1"
+    head = head_sha()
+    changed = set(git("diff", "--name-only", base, "HEAD").splitlines())
+    nodes = {e["from"] for e in edges_state().values()}
+    fired = 0
+    for node in sorted(nodes & changed):
+        fired += len(open_flags_for(node, "changed in %s..%s" % (base, head), head, "orchestrate"))
+    if (not a.since) or a.write_cursor:
+        full = git("rev-parse", "HEAD")
+        with open(CURSOR, "w") as f:
+            f.write(full + "\n")
+        print("cursor -> %s" % full[:7])
+    print("orchestrate: %d changed file(s) since %s, %d flag(s) fired." % (len(changed), base, fired))
+
+def cmd_check(a):
+    opens = [f for f in flags_state().values() if f.get("status") == "OPEN"]
+    blocking = [f for f in opens if f.get("blocking")]
+    by_system = {}
+    for f in opens:
+        by_system.setdefault(f.get("system", "?"), [0, 0])
+        by_system[f.get("system", "?")][0] += 1
+        if f.get("blocking"):
+            by_system[f.get("system", "?")][1] += 1
+    print("edge check: %d open flag(s), %d blocking" % (len(opens), len(blocking)))
+    for s, (o, b) in sorted(by_system.items()):
+        print("  %-14s open=%d blocking=%d" % (s, o, b))
+    if blocking:
+        print("FAIL: blocking flags open — clear them with evidence first.")
+        sys.exit(1)
+    print("PASS" + (" (advisory flags remain)" if opens else ""))
+
+def cmd_board(a):
+    flags = sorted(flags_state().values(), key=lambda f: f.get("ts", ""), reverse=True)
+    systems = {}
+    for f in flags:
+        systems.setdefault(f.get("system", "?"), []).append(f)
+    e = html.escape
+    parts = ["""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Edge Flags &#8212; the board</title><style>
+body{font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#111827;margin:0;background:#f8fafc}
+.page{max-width:1080px;margin:0 auto;padding:28px 22px 60px}
+h1{font-size:21px;margin:0 0 2px} .sub{color:#6b7280;font-size:13px;margin-bottom:18px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin:24px 0 8px}
+.lane{display:flex;flex-wrap:wrap;gap:10px}
+.cardx{border-radius:8px;padding:10px 13px;font-size:12.5px;width:100%;max-width:500px;background:#fff;border:1px solid #e5e7eb;border-left:4px solid #9ca3af}
+.cardx.open{border-left-color:#dc2626;background:#fef2f2}
+.cardx.openadv{border-left-color:#d97706;background:#fffbeb}
+.cardx.clear{border-left-color:#059669}
+.fid{font-weight:800} .chip{display:inline-block;font-size:10px;font-weight:800;border-radius:4px;padding:1px 6px;margin-left:6px;background:#eef2ff;color:#3730a3}
+.chip.b{background:#fee2e2;color:#b91c1c} .muted{color:#6b7280}
+code{background:#f3f4f6;padding:1px 4px;border-radius:3px;font-size:11px}
+</style></head><body><div class="page">
+<h1>Edge Flags</h1><div class="sub">what changed, what it touches, who clears it &#183; regenerated by <code>sutra-edge board</code> &#183; """ + e(now()) + "</div>"]
+    opens_total = sum(1 for f in flags if f.get("status") == "OPEN")
+    parts.append('<div class="sub"><strong>%d open</strong> &#183; %d total flags &#183; %d systems</div>' % (opens_total, len(flags), len(systems)))
+    for s in sorted(systems):
+        parts.append("<h2>%s</h2><div class=\"lane\">" % e(s))
+        for f in systems[s]:
+            st = f.get("status")
+            cls = "clear" if st == "CLEAR" else ("open" if f.get("blocking") else "openadv")
+            chip = '<span class="chip b">BLOCKING</span>' if f.get("blocking") else '<span class="chip">advisory</span>'
+            body = ['<div class="cardx %s"><span class="fid">%s</span> %s <span class="chip">dial: %s</span>%s' % (cls, e(f.get("flag", "?")), e(st or "?"), e(f.get("dial", "?")), chip)]
+            body.append('<div><strong>%s</strong> changed &#8594; touches <strong>%s</strong> <span class="muted">(%s)</span></div>' % (e(f.get("from", "?")), e(f.get("to", "?")), e(f.get("type", ""))))
+            body.append('<div class="muted">%s &#183; commit %s &#183; %s</div>' % (e(f.get("reason", "")), e(f.get("commit", "?")), e(f.get("ts", ""))))
+            if st == "OPEN":
+                if f.get("clear_hint"):
+                    body.append('<div>hint: %s</div>' % e(f["clear_hint"]))
+                body.append('<div><code>sutra-edge clear --flag %s --how %s --evidence \'...\'</code></div>' % (e(f.get("flag", "")), e(f.get("dial", "code"))))
+            else:
+                body.append('<div>cleared how=%s: %s</div>' % (e(f.get("how", "?")), e(f.get("evidence", ""))))
+            body.append("</div>")
+            parts.append("".join(body))
+        parts.append("</div>")
+    parts.append("</div></body></html>")
+    os.makedirs(os.path.dirname(BOARD), exist_ok=True)
+    with open(BOARD, "w") as fh:
+        fh.write("\n".join(parts))
+    print("board written: %s" % BOARD)
+    if a.open:
+        subprocess.run(["open", BOARD])
+
+def main():
+    p = argparse.ArgumentParser(prog="sutra-edge")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    a = sub.add_parser("add"); a.add_argument("--edge"); a.add_argument("--type", required=True); a.add_argument("--from", dest="node_from", required=True); a.add_argument("--to", required=True); a.add_argument("--system", required=True); a.add_argument("--dial", required=True, choices=["code", "llm", "human"]); a.add_argument("--blocking", action="store_true"); a.add_argument("--clear-hint", dest="clear_hint"); a.set_defaults(fn=cmd_add)
+    a = sub.add_parser("list"); a.add_argument("--system"); a.set_defaults(fn=cmd_list)
+    a = sub.add_parser("fire"); a.add_argument("--node", required=True); a.add_argument("--reason", required=True); a.add_argument("--commit"); a.add_argument("--trigger", default="manual"); a.set_defaults(fn=cmd_fire)
+    a = sub.add_parser("flags"); a.add_argument("--all", action="store_true"); a.add_argument("--system"); a.set_defaults(fn=cmd_flags)
+    a = sub.add_parser("clear"); a.add_argument("--flag", required=True); a.add_argument("--how", required=True, choices=["code", "llm", "human"]); a.add_argument("--evidence", required=True); a.set_defaults(fn=cmd_clear)
+    a = sub.add_parser("orchestrate"); a.add_argument("--since"); a.add_argument("--write-cursor", action="store_true"); a.set_defaults(fn=cmd_orchestrate)
+    a = sub.add_parser("check"); a.set_defaults(fn=cmd_check)
+    a = sub.add_parser("board"); a.add_argument("--open", action="store_true"); a.set_defaults(fn=cmd_board)
+    args = p.parse_args()
+    args.fn(args)
+
+if __name__ == "__main__":
+    main()

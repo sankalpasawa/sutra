@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.233.0 (2026-08-26)
+
+W-next closeout: bin/sutra-edge (A22 Edge Engine) ported fleet-generic — state at .sutra/edges/, repo-root from CLAUDE_PROJECT_DIR/git; round-trip sim 6/6 (add/list/fire/flags/clear/check). New skill updating-canon: five-step routing for canon edits (charter section / new ADR / both / archive / reject), generalized from the Asawa D54 discipline.
+
 ## 2.232.1 (2026-08-26)
 
 - **The Edit button is gone** — docs open in edit; remaining read views enter
