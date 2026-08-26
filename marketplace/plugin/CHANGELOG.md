@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.235.1 (2026-08-26)
+
+- **The Folders lens works now** — the file walk capped at 4,000 files of any
+  type, so most markdown folders never appeared; the walk now filters to
+  markdown before the cap (3,013 docs, untruncated). Rebuilt as a real tree:
+  collapsible folders with counts, root docs on top, tooling dot-dirs hidden,
+  loading skeleton and a retryable error state.
+
 ## 2.235.0 (2026-08-26)
 
 - **Tables never lose their shape.** They render as one solid block, always;

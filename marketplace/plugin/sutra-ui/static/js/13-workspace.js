@@ -79,6 +79,8 @@ const WS_COPY = {
   offline: "offline",
   lensOrg: "Organisation",
   lensFolders: "Folders",
+  foldersError: "Folders did not load.",
+  foldersEmpty: "No markdown documents under the workdir.",
   unfiled: "Unfiled",
   recGroup: "CHARTERS AND DEPARTMENTS",
   ckCharter: "CHARTER",
@@ -429,8 +431,75 @@ function wsSetLens(lens){
   if (S.ws.lens === lens) return;
   S.ws.lens = lens;
   wsPing("lens_toggled");
-  if (lens === "folders") loadFs(false);
+  if (lens === "folders") wsLoadFolders(false);
   render();
+}
+
+/* ── folders lens data (r7) ─────────────────────────────────────────────────
+   WORKSPACE-OWNED md-only fetch. The shared S.fs stays all-files for the
+   Editor screen and the @-palette; overloading it would silently turn them
+   markdown-only after one visit here (codex r7). The md=1 walk applies the
+   4000 cap to markdown docs, so later folders stop vanishing. */
+function wsLoadFolders(force){
+  if ((S.ws.fsMd && !force) || S.ws.fsMdLoading) return;
+  S.ws.fsMdLoading = true; S.ws.fsMdError = null; render();
+  apiGet("/api/fs/tree?md=1")
+    .then(r => { S.ws.fsMd = r; S.ws.fsMdLoading = false; render(); })
+    .catch(e => { S.ws.fsMdError = e.message; S.ws.fsMdLoading = false; render(); });
+}
+
+/* ONE canonical row model for the folders lens — the renderer and the
+   keyboard cursor both walk THIS, so the cursor can never land on a row the
+   renderer did not draw (the org lens's own rule). Dir keys are full
+   relative paths; zero-md dirs are pruned; each dir caps its rendered
+   children at 14 with an activatable "… N more"; the selection and every
+   open dir escape the cap. */
+function wsFolderRows(){
+  const r = S.ws.fsMd;
+  if (!r || S.ws.fsMdLoading || S.ws.fsMdError) return [];
+  /* dot-dirs are tooling internals (.tmp, .enforcement, worktrees) — noise
+     in a DOCUMENT lens; the org tree never shows them either (r7 pixels). */
+  const files = (r.files || []).filter(f => /\.md$/i.test(f.path)
+    && !/(^|\/)\./.test(f.path.slice(0, f.path.lastIndexOf("/") + 1)));
+  const root = { dirs: new Map(), files: [] };
+  files.forEach(f => {
+    const segs = f.path.split("/");
+    let node = root;
+    for (let i = 0; i < segs.length - 1; i++){
+      const key = segs.slice(0, i + 1).join("/");
+      if (!node.dirs.has(key)) node.dirs.set(key, { dirs: new Map(), files: [] });
+      node = node.dirs.get(key);
+    }
+    node.files.push(f.path);
+  });
+  const count = (node) => node.files.length
+    + [...node.dirs.values()].reduce((a, n) => a + count(n), 0);
+  const selPath = S.ws.sel && S.ws.sel.type === "doc" ? S.ws.sel.path : null;
+  const rows = [];
+  const walk = (node, depth, dirKey) => {
+    const cap = 14;
+    const capped = dirKey != null
+      && !(S.ws.showAllFolds && S.ws.showAllFolds[dirKey]);
+    let drawn = 0, hidden = 0;
+    const push = (row, always) => {
+      if (capped && drawn >= cap && !always){ hidden++; return false; }
+      rows.push(row); drawn++; return true;
+    };
+    node.files.slice().sort().forEach(p => {
+      push({ type:"fold", key:p, depth, name: p.split("/").pop() }, selPath === p);
+    });
+    [...node.dirs.keys()].sort().forEach(k => {
+      const sub = node.dirs.get(k), c = count(sub);
+      if (!c) return;
+      const open = !!(S.ws.openFolds && S.ws.openFolds[k]);
+      const always = open || !!(selPath && selPath.indexOf(k + "/") === 0);
+      if (!push({ type:"folddir", key:k, depth, count:c, open }, always)) return;
+      if (open) walk(sub, Math.min(depth + 1, 3), k);
+    });
+    if (hidden > 0) rows.push({ type:"foldmore", key: dirKey, depth, more: hidden });
+  };
+  walk(root, 0, null);
+  return rows;
 }
 
 /* ── edit / done (states 07, 12) ────────────────────────────────────────────
@@ -625,10 +694,8 @@ function wsVisibleRows(){
   }
   const rows = [];
   if (w.lens === "folders"){
-    ((S.fs && S.fs.files) || []).forEach(f => {
-      if (/\.md$/i.test(f.path)) rows.push({ type:"fold", key:f.path });
-    });
-    return rows;
+    /* r7: same canonical walk as the renderer */
+    return wsFolderRows().map(r => ({ type: r.type, key: r.key }));
   }
   const t = w.tree || {};
   /* Mirrors wsTreeHtml's collapse EXACTLY — the cursor must never land on a
@@ -689,6 +756,16 @@ function wsMoveCursor(delta){
 }
 function wsActivateRow(row){
   if (!row) return;
+  if (row.type === "folddir"){
+    S.ws.openFolds = S.ws.openFolds || {};
+    S.ws.openFolds[row.key] = !S.ws.openFolds[row.key];
+    wsPing("lens_toggled"); render(); return;
+  }
+  if (row.type === "foldmore"){
+    S.ws.showAllFolds = S.ws.showAllFolds || {};
+    if (row.key) S.ws.showAllFolds[row.key] = true;
+    render(); return;
+  }
   if (row.type === "doc" || row.type === "fold" || row.type === "sdoc")
     wsOpenDoc(row.key, { fromSearch: row.type === "sdoc" });
   else if (row.type === "charter") wsOpenCharter(row.key, null);
@@ -897,22 +974,36 @@ function wsTreeHtml(){
    the Editor's tree — with directory headers derived from the paths. A lens,
    not a spine: doc rows behave exactly as in 01. */
 function wsFoldersHtml(){
-  const files = ((S.fs && S.fs.files) || []).filter(f => /\.md$/i.test(f.path));
+  /* r7: rendered FROM wsFolderRows() — never a second walk. */
+  if (S.ws.fsMdLoading && !S.ws.fsMd) return wsSkelHtml(6);
+  if (S.ws.fsMdError)
+    return '<div class="ws-searching">' + esc(WS_COPY.foldersError) + '</div>'
+      + '<button type="button" class="ws-act gold" data-wsact="foldretry"'
+      + ' style="margin:2px 8px 8px">' + WS_COPY.tryAgain + '</button>';
+  const rows = wsFolderRows();
+  if (!rows.length) return '<div class="ws-searching">' + esc(WS_COPY.foldersEmpty) + '</div>';
   const selPath = S.ws.sel && S.ws.sel.type === "doc" ? S.ws.sel.path : null;
-  let html = "", lastDir = null;
-  files.slice().sort((a,b)=> a.path < b.path ? -1 : 1).forEach(f => {
-    const cut = f.path.lastIndexOf("/");
-    const dir = cut === -1 ? "" : f.path.slice(0, cut);
-    const name = cut === -1 ? f.path : f.path.slice(cut + 1);
-    if (dir !== lastDir){
-      lastDir = dir;
-      if (dir) html += '<div class="ws-fold ws-fold-dir">' + esc(dir) + '</div>';
+  let html = "";
+  rows.forEach(r => {
+    const ind = r.depth ? " i" + Math.min(r.depth, 3) : "";
+    if (r.type === "folddir"){
+      html += '<button type="button" class="ws-fold ws-fold-dir' + ind
+        + (r.open ? " on" : "") + '" title="' + esc(r.key) + '" '
+        + wsRowAttrs("folddir", r.key) + '>' + esc(r.key.split("/").pop())
+        + '<span class="ws-count">' + esc(wsCount(r.count)) + '</span></button>';
+    } else if (r.type === "fold"){
+      html += '<button type="button" class="ws-fold' + ind
+        + (selPath === r.key ? " on" : "") + '" title="' + esc(r.key) + '" '
+        + wsRowAttrs("fold", r.key) + '>' + esc(r.name) + '</button>';
+    } else {
+      html += '<button type="button" class="ws-fold ws-more' + ind + '" '
+        + wsRowAttrs("foldmore", r.key || "") + '>\u2026 ' + r.more + ' more</button>';
     }
-    html += '<button type="button" class="ws-fold' + (dir ? " i1" : "")
-      + (selPath === f.path ? " on" : "") + '" '
-      + wsRowAttrs("fold", f.path) + '>' + esc(name) + '</button>';
   });
-  return html || '<div class="ws-none"></div>';
+  const trunc = S.ws.fsMd && S.ws.fsMd.truncated
+    ? '<div class="ws-searching">Showing the first ' + ((S.ws.fsMd.files || []).length)
+      + ' markdown files.</div>' : "";
+  return html + trunc;
 }
 function wsSearchingHtml(){
   /* In-flight search (reviewer blocker 1): one quiet line — plus three
@@ -1427,6 +1518,8 @@ function wireWorkspace(scBody){
       S.ws.doc = null; S.ws.docPath = null; S.ws.docMtime = null; S.ws.lastRead = null;
       S.ws.docGone = false; S.ws.changed = false; S.ws.editing = false; S.ws.unsaved = false;
       S.ws.notice = null; S.ws.busy = null;
+      S.ws.fsMd = null; S.ws.fsMdLoading = false; S.ws.fsMdError = null;
+      S.ws.openFolds = null; S.ws.showAllFolds = null;
       S.ws.lens = keep.lens; S.ws.lastDocPath = keep.lastDocPath;
     }
     return;
@@ -1487,6 +1580,7 @@ document.addEventListener("click", e => {
     else if (a === "keepmine") wsKeepMine();
     else if (a === "savecopy") wsSaveCopy();
     else if (a === "tryagain") wsTryAgain();
+    else if (a === "foldretry") wsLoadFolders(true);
     else if (a === "fileit") wsFileIt();
     else if (a === "newdoc" || a === "newdochere") wsNewDoc();
     return;

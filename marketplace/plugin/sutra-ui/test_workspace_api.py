@@ -543,3 +543,26 @@ class CorpusRuns(WsCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FsTreeMd(unittest.TestCase):
+    """r7: /api/fs/tree?md=1 filters DURING the walk so the entry cap applies
+    to markdown docs — the lexical all-files cap was silently dropping whole
+    folders from the Workspace Folders lens."""
+
+    def test_md_filter_applies_before_the_cap(self):
+        import org_api
+        wd = tempfile.mkdtemp(prefix="fs-md-")
+        os.makedirs(os.path.join(wd, "a", "b"))
+        Path(wd, "a", "one.md").write_text("x")
+        Path(wd, "a", "b", "two.md").write_text("y")
+        for i in range(5):
+            Path(wd, "a", "noise-%d.txt" % i).write_text("n")
+        with mock.patch.object(providers, "load_settings",
+                               return_value={"workdir": wd}),              mock.patch.object(providers, "workdir_allowed", return_value=True),              mock.patch.object(org_api, "FS_MAX_ENTRIES", 2):
+            got = org_api.api_fs_tree(md=1)
+        paths = sorted(f["path"] for f in got["files"])
+        self.assertEqual(paths, ["a/b/two.md", "a/one.md"])
+        # the cap counted MARKDOWN entries: 2 md == cap, txt noise never ate it
+        self.assertTrue(all(p.endswith(".md") for p in paths))
+        shutil.rmtree(wd, ignore_errors=True)

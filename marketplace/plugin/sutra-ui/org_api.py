@@ -971,8 +971,15 @@ def _fs_resolve(rel):
 
 
 @router.get("/fs/tree")
-def api_fs_tree():
-    """Every editable file under the workdir, relative-path sorted."""
+def api_fs_tree(md: int = 0):
+    """Every editable file under the workdir, relative-path sorted.
+
+    ``md=1`` filters to markdown DURING the walk, so the 4000-entry cap
+    applies to markdown documents rather than to every file the walk meets
+    first (r7: the lexical cap silently dropped whole later folders from the
+    Workspace Folders lens — the founder's corpus fits untruncated once the
+    filter runs pre-cap). Skip rules are identical either way, so the Editor
+    screen and the folders lens disagree only by file type."""
     root = _fs_root()
     out, truncated = [], False
     for dirpath, dirnames, filenames in os.walk(root):
@@ -982,6 +989,8 @@ def api_fs_tree():
                              if d not in FS_SKIP_DIRS and not d.startswith(".git"))
         for name in sorted(filenames):
             if name.startswith("."):
+                continue
+            if md and not name.lower().endswith(".md"):
                 continue
             full = os.path.join(dirpath, name)
             try:

@@ -171,6 +171,9 @@
     color:var(--muted);cursor:pointer}
   .ws-fold-dir{color:var(--ink)}     /* directory headers (mock .fold.d) */
   .ws-fold.i1{padding-left:22px}
+  .ws-fold.i2{padding-left:36px}
+  .ws-fold.i3{padding-left:50px}   /* indent caps at 3 visual levels (r7) */
+  .ws-fold.ws-more{color:var(--faint);font-style:italic}
   .ws-fold.on{background:var(--acc-bg);color:var(--ink)}
 
   /* doc pane — 620 centred column (fixed by design, A11Y.md §4). The column

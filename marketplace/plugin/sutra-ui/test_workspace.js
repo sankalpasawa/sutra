@@ -164,7 +164,7 @@ function freshSandbox(){
   wsSearchInput, wsVisibleRows, wsActivateRow, wsKeydown, wsParseRoute,
   wsOpenDoc, wsSetLens, wsEdit, wsKeepMine, wireWorkspace, wsUnmountEditor,
   wsScreenHtml, WS_COPY, wsMatchWords, wsCount, wsTreeHtml, wsMdHtml,
-  wsPaneHeadHtml, wsFileIt };
+  wsPaneHeadHtml, wsFileIt, wsFolderRows, wsFoldersHtml };
 `;
   new vm.Script(validatorSrc + "\n" + source + EPILOGUE,
     { filename: "13-workspace.js#test" }).runInContext(sb);
@@ -872,6 +872,52 @@ test("click-to-edit (r4): the keyboard path — 'e' enters edit, and read-only r
     sb2.S.ws.lastRead = { path: "holding/research/viewer.md", text: "body", editable: false }; });
   ro.handlers.keydown({ key: "e", target: { tagName: "DIV", closest: () => null }, preventDefault(){} });
   assert(ro.S.ws.editing === false, "read-only mode must refuse the keyboard entry");
+});
+
+test("folders lens (r7): nested model — counts, collapse, cap escape, md loader states", () => {
+  const sb = onSandbox(sb2 => {
+    sb2.S.ws.lens = "folders";
+    sb2.S.ws.fsMd = { files: [
+      { path: "z-root.md" },
+      { path: "a/one.md" }, { path: "a/two.md" },
+      { path: "a/b/deep.md" },
+      { path: "a/skip.txt" },
+      { path: "empty/only.txt" },
+      { path: ".tmp/scratch.md" },
+      { path: "a/.cache/x.md" },
+    ] };
+  });
+  let rows = sb.__W.wsFolderRows();
+  /* collapsed: root doc + two top dirs (empty/ pruned — zero md) */
+  assert(JSON.stringify(rows.map(r => r.type + ":" + r.key)) ===
+    JSON.stringify(["fold:z-root.md", "folddir:a"]),
+    "collapsed walk wrong: " + JSON.stringify(rows.map(r => r.type + ":" + r.key)));
+  assert(rows[1].count === 3, "recursive md count must be 3, got " + rows[1].count);
+  let html = sb.__W.wsFoldersHtml();
+  assert(html.indexOf("z-root.md") !== -1 && html.indexOf('title="a"') !== -1,
+    "renderer must draw the same rows");
+  assert(html.indexOf("only.txt") === -1 && html.indexOf("empty") === -1,
+    "zero-md dirs are pruned; non-md never renders");
+  assert(html.indexOf(".tmp") === -1 && html.indexOf(".cache") === -1,
+    "dot-dirs are tooling internals — never in the document lens");
+  /* open a -> children appear; cursor model matches renderer */
+  sb.S.ws.openFolds = { a: true };
+  rows = sb.__W.wsFolderRows();
+  assert(rows.some(r => r.type === "fold" && r.key === "a/one.md")
+      && rows.some(r => r.type === "folddir" && r.key === "a/b"),
+    "open dir must reveal children");
+  const vis = sb.__W.wsVisibleRows();
+  assert(JSON.stringify(vis.map(v => v.key)) === JSON.stringify(rows.map(r => r.key)),
+    "wsVisibleRows must walk the SAME canonical model");
+  /* loading + error states */
+  const ld = onSandbox(sb2 => { sb2.S.ws.lens = "folders"; sb2.S.ws.fsMdLoading = true; });
+  assert(ld.__W.wsFoldersHtml().indexOf("ws-skel") !== -1, "loading shows a skeleton");
+  const er = onSandbox(sb2 => { sb2.S.ws.lens = "folders"; sb2.S.ws.fsMdError = "boom"; });
+  const eh = er.__W.wsFoldersHtml();
+  assert(eh.indexOf("did not load") !== -1 && eh.indexOf("foldretry") !== -1,
+    "error state must name the failure and offer retry");
+  /* the loader is md-only and workspace-owned */
+  assert(/api\/fs\/tree\?md=1/.test(source), "wsLoadFolders must fetch md=1");
 });
 
 test("unmount flushes the editor BEFORE destroying it (r6: Done is gone)", () => {
