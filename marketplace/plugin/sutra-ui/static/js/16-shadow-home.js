@@ -114,15 +114,32 @@ function shadowChatLabel(key){
   const t = (typeof S !== "undefined" && S.shadowChatTitles) || {};
   return t[key] || String(key).slice(0, 8);
 }
+const SHADOW_TAB_CAP = 6;
 function shadowChatKeys(){
-  const watch = (typeof S !== "undefined" && S.shadowWatching) || [];
-  const miss = ((typeof S !== "undefined" && S.shadowMissions) || [])
+  /* every session is overseen by default, so "one tab per overseen chat"
+     would be 40+ tabs (measured live). Tabs are for the chats that
+     actually have something: a live mission, rules you taught it, or the
+     most recent watches -- the rest stay in the list behind "more". */
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const live = (S_.shadowMissions || [])
+    .filter(m => ["running", "queued", "paused"].includes(m.state))
     .map(m => m.target_session).filter(Boolean);
+  const taught = (S_.shadowMemory || [])
+    .filter(r => r.scope === "chat" && r.scope_id).map(r => r.scope_id);
+  const watch = (S_.shadowWatching || []).slice().reverse();  /* newest */
   const seen = {}; const out = [];
-  for (const k of [...watch, ...miss]){
+  for (const k of [...live, ...taught, ...watch]){
     if (k && !seen[k]){ seen[k] = 1; out.push(k); }
   }
   return out;
+}
+function shadowChatShown(){
+  const all = shadowChatKeys();
+  const active = (typeof S !== "undefined" && S.shadowChat) || "global";
+  const shown = all.slice(0, SHADOW_TAB_CAP);
+  if (active !== "global" && !shown.includes(active)) shown.unshift(active);
+  return { shown: shown.slice(0, SHADOW_TAB_CAP),
+           hidden: Math.max(0, all.length - SHADOW_TAB_CAP) };
 }
 function shadowChatTabsHtml(){
   const active = (typeof S !== "undefined" && S.shadowChat) || "global";
@@ -135,8 +152,10 @@ function shadowChatTabsHtml(){
     key === active ? " on" : ""}" data-shchat="${escAttr(key)}">${
     key === "global" ? "\u002b new" : esc(shadowChatLabel(key))
   }${missionsBy[key] ? `<span class="shchatdot"></span>` : ""}</span>`;
+  const { shown, hidden } = shadowChatShown();
   return `<div class="shchattabs">${
-    [tab("global"), ...shadowChatKeys().map(tab)].join("")
+    [tab("global"), ...shown.map(tab)].join("")
+  }${hidden ? `<span class="shchattab shchatmore">+${hidden} more</span>` : ""
   }<span class="shchattab shchatset" data-shscreen="shadowsettings">\u2699</span></div>`;
 }
 

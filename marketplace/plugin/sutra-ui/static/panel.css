@@ -1962,7 +1962,17 @@
 .shcols{ display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
 .shchatcol{ flex:1.2 1 300px; min-width:260px; display:flex;
   flex-direction:column; }
-.shchatcol .shthread{ max-height:420px; overflow-y:auto; }
+/* the thread takes what is left; the tab strip and the composer always
+   keep their room (learned live: adding tabs pushed the composer out of
+   the fixed-height column and the click landed on nothing) */
+.shchatcol .shthread{ flex:1 1 auto; min-height:0; overflow-y:auto; }
+.shchatcol .shcompose{ flex:0 0 auto; margin-top:8px; }
+.shchattabs{ flex:0 0 auto; min-width:0; max-width:100%; }
+/* without min-width:0 a flex child grows to its content: 40 tabs stretched
+   the column to 3406px and pushed the composer off-screen (measured live) */
+.shchatcol{ min-width:0; }
+.shchattab{ flex:0 0 auto; }
+.shchatmore{ color:var(--faint); border-style:dashed; }
 .shsidecol{ flex:1 1 240px; min-width:220px; }
 .shfocused{ outline:2px solid #B8945F; border-radius:10px; }
 

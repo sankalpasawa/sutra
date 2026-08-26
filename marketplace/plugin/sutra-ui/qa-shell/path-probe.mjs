@@ -93,6 +93,15 @@ report("P4 real click flips to Watching on the landed home",
 await evql(`(window.__sends = [], window.__origSend = window.sendToShadow,
   window.sendToShadow = t => (window.__sends.push(t), Promise.resolve({})), true)`);
 const comp = await realClick("[data-shhomecompose]");
+const diag = await evql(`(() => {
+  const el = document.querySelector("[data-shhomecompose]");
+  return { exists: !!el,
+    count: document.querySelectorAll("[data-shhomecompose]").length,
+    focused: !!el && document.activeElement === el,
+    activeTag: (document.activeElement || {}).tagName || "none",
+    inView: !!el && el.getBoundingClientRect().height > 0,
+    handler: typeof sendToShadow === "function" }; })()`);
+console.log("       P5 diag: " + JSON.stringify(diag) + " hitOk=" + comp.hitOk);
 if (comp.found){
   await cdp("Input.insertText", { text: "probe message" });
   for (const type of ["keyDown", "keyUp"])
