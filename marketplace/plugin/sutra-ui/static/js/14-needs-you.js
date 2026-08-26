@@ -67,7 +67,15 @@ function needsYouHtml(items){
 /* S60: a card click deep-links straight into the owning thread. The Shadow
    home lands in P6; until then the link records intent and moves to Focus --
    navigation, never mutation. */
-function openNeedsYouItem(link){
+function openNeedsYouItem(link, itemId){
+  /* opening retires the card (fire-and-forget); the feed reloads lazily */
+  if (itemId && typeof shadowPost === "function"){
+    try {
+      shadowPost("/api/shadow/feed/handle", { item_id: itemId })
+        .then(() => { if (typeof S !== "undefined") S.needsYou = undefined; })
+        .catch(() => {});
+    } catch (e) {}
+  }
   if (typeof S !== "undefined") S.pendingDeepLink = link || null;
   if (typeof shadowRouteDeepLink === "function")
     return shadowRouteDeepLink(link);
@@ -89,9 +97,13 @@ function loadNeedsYou(){
   if (typeof fetch === "undefined" || typeof S === "undefined") return;
   if (S._needsYouBusy) return;
   S._needsYouBusy = true;
-  fetch("/api/shadow/feed").then(r => r.ok ? r.json() : null).then(doc => {
+  fetch("/api/shadow/feed").then(r => r.ok ? r.json()
+      : (r.status === 403 ? null : "err")).then(doc => {
     S._needsYouBusy = false;
-    S.needsYou = doc ? (doc.items || []) : null;   /* null = feature dark */
+    /* survey fold: 403 = feature dark (null); any OTHER failure keeps the
+       last known items instead of masquerading as an empty feed */
+    if (doc === "err"){ S.needsYou = S.needsYou || []; }
+    else S.needsYou = doc ? (doc.items || []) : null;
     if (doc && typeof shadowDotAlerts === "function"){
       const alerts = (doc.items || []).filter(it => it.state === "new"
         && (it.kind === "needs_decision"
@@ -100,7 +112,8 @@ function loadNeedsYou(){
       shadowDotAlerts(alerts);
     }
     if (typeof scheduleRender === "function") scheduleRender();
-  }).catch(() => { S._needsYouBusy = false; S.needsYou = null; });
+  }).catch(() => { S._needsYouBusy = false;
+    S.needsYou = S.needsYou || []; });
 }
 
 /* Override the placeholder registered in 05-chat.js: same empty state when
@@ -138,7 +151,8 @@ if (typeof document !== "undefined" && document.addEventListener){
     }
     const card = t && t.closest ? t.closest("[data-deeplink]") : null;
     if (card && !(t.closest && t.closest("[data-nyact]"))){
-      openNeedsYouItem(card.dataset ? card.dataset.deeplink : null);
+      openNeedsYouItem(card.dataset ? card.dataset.deeplink : null,
+                       card.dataset ? card.dataset.itemid : null);
     }
   });
 }

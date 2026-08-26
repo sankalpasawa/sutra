@@ -191,6 +191,34 @@ class TestJourneySims(unittest.TestCase):
         self.assertIn("standing instructions unavailable", ctx)
         self.assertIn("ledger torn", ctx)
 
+    def test_feed_retirement_on_open(self):
+        """Observations pass: opening retires; idempotent; emit survives."""
+        ok, _ = shadow_feed.emit({
+            "item_id": "ret-1", "producer": "shadow",
+            "kind": "needs_decision", "title": "retire me",
+            "deep_link": "sutra://shadow/home", "dedupe_key": "r1",
+            "state": "new"})
+        self.assertTrue(ok)
+        self.assertTrue(shadow_feed.mark_handled("ret-1"))
+        self.assertFalse(shadow_feed.mark_handled("ret-1"),
+                         "second handle is a no-op")
+        ok2, _ = shadow_feed.emit({
+            "item_id": "ret-2", "producer": "shadow",
+            "kind": "info", "title": "after the rewrite",
+            "deep_link": "sutra://shadow/home", "dedupe_key": "r2",
+            "state": "new"})
+        self.assertTrue(ok2, "emit still works after a rewrite")
+        import importlib, shadow_feed as sf
+        importlib.reload(sf)
+        states = {}
+        with open(sf._feed_path()) as fh:
+            for line in fh:
+                import json as _j
+                row = _j.loads(line)
+                states[row["item_id"]] = row["state"]
+        self.assertEqual(states["ret-1"], "handled")
+        self.assertEqual(states["ret-2"], "new")
+
     # Delegate (U2), floors (permission mid-mission), down-state, takeover and
     # the say chain are pinned END TO END in: test_shadow_runner.py,
     # test_mission_engine.py, test_shadow_say.py, test_shadow_overlay.js.
