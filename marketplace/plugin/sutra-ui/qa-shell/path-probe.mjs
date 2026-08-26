@@ -60,12 +60,15 @@ await evql(`(window.__renders = 0, window.__origRender = render,
 await evql(`(goDest("now"), render(), true)`);
 await until(`typeof S !== "undefined" && S.needsYou !== undefined`);
 await evql(`render()`);
-const hasCard = await evql(`!!document.querySelector(".nycard .nyact")`);
-if (!hasCard){ console.log("SKIP - P1 no Now cards (feed empty on this machine)");
+/* a session-link card correctly lands on Chats -- this probe follows a
+   SHADOW-link card so the landing assertion is meaningful */
+const sel = '.nycard[data-deeplink^="sutra://shadow"] .nyact';
+const hasCard = await evql(`!!document.querySelector('${sel}')`);
+if (!hasCard){ console.log("SKIP - P1 no shadow-link cards on this machine");
   await evql(`(typeof openNeedsYouItem === "function" && openNeedsYouItem("sutra://shadow/home"), true)`);
 } else {
-  const c = await realClick(".nycard .nyact");
-  report("P1 real click on a Now card's action", c.found && c.hitOk);
+  const c = await realClick(sel);
+  report("P1 real click on a shadow-link card's action", c.found && c.hitOk);
 }
 /* P2: landed? */
 report("P2 landing: Focus > Shadow",
