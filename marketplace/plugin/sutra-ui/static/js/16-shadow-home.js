@@ -216,7 +216,10 @@ async function shadowWatchSet(sid, watch){
   if (typeof fetch === "undefined") return;
   try {
     /* the founder's dead-toggle fix: the BODY was the path string */
-    await shadowPost("/api/shadow/watches", { session_id: sid, watch: !!watch });
+    const r = await shadowPost("/api/shadow/watches",
+      { session_id: sid, watch: !!watch });
+    if (r && !r.ok && typeof showNudge === "function")
+      showNudge("The watch toggle did not stick \u2014 try again");
   } catch (e) {}
   loadShadowHome();
 }
@@ -225,7 +228,9 @@ async function shadowInstructionAct(id, action){
   if (typeof fetch === "undefined") return;
   try {
     /* same disease as the watch toggle: Confirm/Revoke never reached the API */
-    await shadowPost("/api/shadow/instructions", { id, action });
+    const r = await shadowPost("/api/shadow/instructions", { id, action });
+    if (r && !r.ok && typeof showNudge === "function")
+      showNudge("That memory action did not stick \u2014 try again");
   } catch (e) {}
   loadShadowHome();
 }

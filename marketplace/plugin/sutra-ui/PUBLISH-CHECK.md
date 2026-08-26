@@ -25,6 +25,14 @@ lane-1 backing is screenshot archaeology.
 3. node test_charter_filter.js   # 31  — untouched neighbors stay green
 4. .venv/bin/python -m pytest -q # backend — collect ALL test_*.py; never a hand-typed file list (two of the old names were removed and pytest silently reported 0)
 5. QA_BACKEND=repo PLAYWRIGHT=<path> bash qa-shell/run.sh   # BOTH lanes, repo code in the REAL shell (see Bundled builds)
+
+All lanes in ONE quiesce/relaunch (codex fold 2026-08-26 — the shell,
+nav, shadow, and all-surfaces lanes are the publish floor):
+
+```bash
+cd marketplace/plugin/sutra-ui/qa-shell
+QA_SCRIPTS="$PWD/shell-check.mjs $PWD/nav-check.mjs $PWD/shadow-check.mjs $PWD/surfaces-check.mjs" QA_BACKEND=repo bash run.sh
+```
 6. PANEL_URL=http://127.0.0.1:7011/ qa/run.sh   # the design-QA sweep against the repo backend
 ```
 

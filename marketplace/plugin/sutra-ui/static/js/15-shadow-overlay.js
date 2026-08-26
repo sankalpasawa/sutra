@@ -197,7 +197,14 @@ function bootShadowOverlay(){
     if (!status) return;
     _shadowStatus = status;
     mountShadowOverlay();
-  }).catch(() => {});
+  }).catch(() => {
+    /* transient failure must not leave Shadow dark forever: ONE delayed
+       retry (single-shot; the no-poll pin stands -- this is not a loop) */
+    if (typeof setTimeout === "function" && !bootShadowOverlay._retried){
+      bootShadowOverlay._retried = true;
+      setTimeout(bootShadowOverlay, 5000);
+    }
+  });
 }
 
 /* THE deep-link router (the founder's dead-click fix, 2026-08-26): every
@@ -399,6 +406,10 @@ async function shadowMissionAct(mid, action, extra){
     const r = await shadowPost("/api/shadow/missions/" + mid + "/act",
       Object.assign({ action }, extra || {}));
     const doc = r.ok ? await r.json() : null;
+    if (!r.ok && typeof showNudge === "function"){
+      /* survey fold: a failed action must never look like a dead click */
+      showNudge("That did not stick (" + r.status + ") \u2014 try again");
+    }
     if (doc && action === "start_now" && typeof showNudge === "function"){
       showNudge("Mission starting \u2014 follow it in Focus \u203a Shadow");
     }

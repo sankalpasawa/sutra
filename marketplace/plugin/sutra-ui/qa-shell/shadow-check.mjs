@@ -87,6 +87,10 @@ const RAW = "NEEDS_DECISION|APP_RESTART|D_LEDGER|BRIEF_CONFIRM|FOUNDER_CONFIRM";
 
 /* ── Now ─────────────────────────────────────────────────────────────────── */
 await evql(`(goDest("now"), typeof render === "function" && render(), true)`);
+/* the .zero placeholder matches instantly -- wait for the FETCH to settle
+   (S.needsYou defined) before counting cards (race caught live 2026-08-26) */
+await until(`typeof S !== "undefined" && S.needsYou !== undefined`);
+await evql(`(typeof render === "function" && render(), true)`);
 await until(`document.querySelector(".nyfeed, .zero")`);
 await shot("1-now");
 const cardCount = await evql(`document.querySelectorAll(".nycard").length`);

@@ -1537,6 +1537,20 @@ async def api_shadow_mission_act(mid: str, request: Request):
     raise HTTPException(400, "unknown action %r" % action)
 
 
+@app.post("/api/shadow/feed/handle")
+async def api_shadow_feed_handle(request: Request):
+    """Opening a card retires it (observations pass 2026-08-26): the pill
+    must stop counting things the founder has already looked at."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_feed
+    body = await request.json()
+    iid = (body.get("item_id") or "").strip()
+    if not iid:
+        raise HTTPException(400, "item_id required")
+    return {"handled": shadow_feed.mark_handled(iid), "item_id": iid}
+
+
 @app.get("/api/shadow/feed")
 async def api_shadow_feed():
     """PLAN-100 S59: the needs-you feed, render-only. 403 when the flag is

@@ -106,4 +106,18 @@ const ITEMS = [{
   console.log("ok 4 nudge");
 }
 
+/* observations pass: opening a card retires it */
+{
+  const ctx = fresh();
+  const posts = [];
+  ctx.shadowPost = (path, body) => { posts.push({ path, body });
+    return Promise.resolve({ ok: true }); };
+  ctx.shadowRouteDeepLink = () => true;
+  ctx.openNeedsYouItem("sutra://shadow/home", "item-9");
+  assert.strictEqual(posts[0].path, "/api/shadow/feed/handle");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(posts[0].body)),
+    { item_id: "item-9" }, "open retires the card");
+  console.log("ok 5 retire on open");
+}
+
 console.log("test_shadow_now.js: all green");

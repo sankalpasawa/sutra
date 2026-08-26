@@ -41,6 +41,51 @@ def validate(item):
     return problems
 
 
+def mark_handled(item_id):
+    """Retire ONE item (state -> handled) so the pill stops crying wolf.
+    feed.jsonl is a working set, not a ledger: rewrite-in-place under the
+    same exclusive lock emit() takes, via temp-file + rename so a crash
+    mid-rewrite never truncates the feed. Idempotent. Returns True when a
+    row actually changed."""
+    path = _feed_path()
+    changed = False
+    try:
+        # deepseek fold: the lock lives on a SIDECAR file that is never
+        # replaced -- flocking the data file's own fd would let a blocked
+        # emit() append to the orphaned inode after os.replace (lost row)
+        with open(path + ".lock", "a") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                rows = []
+                try:
+                    with open(path, encoding="utf-8") as handle:
+                        for line in handle:
+                            try:
+                                row = json.loads(line)
+                            except ValueError:
+                                continue
+                            if row.get("item_id") == item_id \
+                                    and row.get("state") != "handled":
+                                row["state"] = "handled"
+                                changed = True
+                            rows.append(row)
+                except OSError:
+                    return False
+                if changed:
+                    tmp = path + ".tmp"
+                    with open(tmp, "w", encoding="utf-8") as out:
+                        for row in rows:
+                            out.write(json.dumps(row) + "\n")
+                        out.flush()
+                        os.fsync(out.fileno())
+                    os.replace(tmp, path)
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        return False
+    return changed
+
+
 def emit(item):
     """Validate + dedupe + append. Returns (accepted, problems)."""
     problems = validate(item)
@@ -49,19 +94,22 @@ def emit(item):
     path = _feed_path()
     # scan-and-append under ONE lock (codex P2): two producers racing the
     # same dedupe_key must not both pass the scan and double-prompt the
-    # founder.
-    with open(path, "a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    # founder. The lock lives on the sidecar (deepseek fold): the data file
+    # gets replaced by mark_handled(), so its own fd is not a safe lock.
+    with open(path + ".lock", "a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         try:
-            handle.seek(0)
-            for line in handle:
-                try:
-                    if json.loads(line).get("dedupe_key") == item["dedupe_key"]:
-                        return False, ["duplicate dedupe_key"]
-                except ValueError:
-                    continue
-            handle.write(json.dumps(item) + "\n")
-            handle.flush()
+            with open(path, "a+", encoding="utf-8") as handle:
+                handle.seek(0)
+                for line in handle:
+                    try:
+                        if json.loads(line).get("dedupe_key") \
+                                == item["dedupe_key"]:
+                            return False, ["duplicate dedupe_key"]
+                    except ValueError:
+                        continue
+                handle.write(json.dumps(item) + "\n")
+                handle.flush()
         finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
     return True, []
