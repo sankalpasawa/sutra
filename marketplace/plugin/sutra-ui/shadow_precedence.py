@@ -15,11 +15,21 @@ def rank_key(row):
     return (_RANK.get(row.get("precedence"), 9), row.get("ts") or "")
 
 
-def replay_context(rows):
+def row_scope(row):
+    """Legacy rows carry no scope: they are GLOBAL (grandfather rule).
+    Scope is orthogonal to precedence and never enters _RANK."""
+    return (row or {}).get("scope") or "global"
+
+
+def replay_context(rows, scope="global", scope_id=None):
     """Confirmed rows only, precedence-ordered, floors restated first.
-    Returns the text block injected into Shadow's context each boot."""
+    scope="global" (default) returns the rules that apply everywhere;
+    scope="chat" with a scope_id returns ONLY that chat's rules, so a
+    per-chat rule can never color an unrelated reply."""
     confirmed = [r for r in rows or []
-                 if r.get("confirmed") and not r.get("revoked_at")]
+                 if r.get("confirmed") and not r.get("revoked_at")
+                 and row_scope(r) == scope
+                 and (scope != "chat" or r.get("scope_id") == scope_id)]
     confirmed.sort(key=rank_key)
     lines = ["FLOORS (not overridable by anything below): destructive git "
              "ops, external client repos, irreversible external sends -- "

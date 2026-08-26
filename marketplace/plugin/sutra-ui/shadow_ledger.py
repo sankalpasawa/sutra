@@ -61,6 +61,38 @@ def append(kind, row):
     return row
 
 
+def read_latest(kind):
+    """EVERY row of one kind, folded to the last writer per id.
+
+    Instructions are supersede-by-id, so a last-N-LINES tail is wrong for
+    them: per-chat rows dilute the window until confirmed global rules
+    silently age out and old rows become unrevokeable (codex P1
+    2026-08-26). Actions/missions keep using the cheap tail.
+    """
+    path = _path(kind)
+    latest = {}
+    order = []
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                rid = row.get("id")
+                if not rid:
+                    continue
+                if rid not in latest:
+                    order.append(rid)
+                latest[rid] = row
+    except OSError:
+        return []
+    return [latest[r] for r in order]
+
+
 def read(kind, limit=50):
     """Last `limit` rows, oldest first. Malformed lines are skipped, never
     fatal -- a torn write must not blind every later read."""

@@ -41,15 +41,17 @@ def standing_context():
     try:
         import shadow_ledger
         import shadow_precedence
-        latest = {}
-        for row in shadow_ledger.read("instructions", 200):
-            latest[row.get("id")] = row
-        block = shadow_precedence.replay_context(list(latest.values()))
+        # full scan (codex P1): a tail window would drop global rules
+        rows = shadow_ledger.read_latest("instructions")
+        # v10: GLOBAL rows only. Per-chat rules ride the turn that
+        # touches their chat, never Shadow's boot context.
+        block = shadow_precedence.replay_context(rows, scope="global")
         acts = shadow_ledger.read("actions", 10)
         lines = ["- %s: %s" % (a.get("kind"), (a.get("summary") or "")[:120])
                  for a in acts]
-        out = ("\n\nSTANDING INSTRUCTIONS (founder-confirmed; apply to "
-               "every reply):\n" + block)
+        out = ("\n\nSTANDING INSTRUCTIONS (global; founder-confirmed; "
+               "per-chat rules arrive with the chat they belong to):\n"
+               + block)
         if lines:
             out += ("\n\nRECENT SHADOW ACTIONS (ground undo requests in "
                     "these; if something cannot be undone, say so "

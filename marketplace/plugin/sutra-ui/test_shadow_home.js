@@ -153,4 +153,145 @@ console.log("ok 6 controls wired");
   console.log("ok 9 take-over present (routing pinned in overlay suite)");
 }
 
+/* v10: per-chat tabs — one mind, many threads */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowWatching = ["sess-paisa", "sess-dayflow"];
+  ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
+                            target_session: "sess-paisa" }];
+  const h = ctx.shadowHomeHtml();
+  assert(/data-shchat="global"/.test(h), "the new tab is present");
+  assert(/data-shchat="sess-paisa"/.test(h), "a chat tab is present");
+  assert(/data-shchat="sess-dayflow"/.test(h), "every overseen chat gets a tab");
+  assert(/shchatdot/.test(h), "a chat with a live mission shows its dot");
+  assert(!/data-shtab="global"/.test(h),
+    "tabs use their OWN namespace — data-shtab stays the plane's");
+  console.log("ok 10 per-chat tab strip");
+}
+{
+  /* threads are isolated per tab, and the accessor survives reassignment */
+  const ctx = fresh();
+  ctx.S.shadowChat = "global";
+  ctx.S.shadowThread.push({ who: "founder", text: "general" });
+  ctx.S.shadowChat = "sess-paisa";
+  ctx.S.shadowThread.push({ who: "founder", text: "about paisa" });
+  assert.strictEqual(ctx.S.shadowThread.length, 1, "paisa tab has its own");
+  ctx.S.shadowThread = ctx.S.shadowThread.filter(t => !t.busy);   /* the reassign */
+  ctx.S.shadowThread.push({ who: "shadow", text: "still paisa" });
+  assert.strictEqual(ctx.S.shadowThread.length, 2, "accessor survived reassign");
+  ctx.S.shadowChat = "global";
+  assert.strictEqual(ctx.S.shadowThread.length, 1, "global tab untouched");
+  assert.strictEqual(ctx.S.shadowThread[0].text, "general");
+  console.log("ok 11 per-tab threads isolated (accessor, not alias)");
+}
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = { engage: ["outcome first"],
+    global: [{ id: "i-1", text: "everywhere rule" }],
+    per_chat: { "sess-paisa": [{ id: "i-2", text: "paisa rule" }] },
+    attention: { watching: ["a"], off: [], alerts: 2 },
+    floors: ["destructive git"] };
+  const h = ctx.shadowSettingsHtml();
+  assert(/everywhere rule/.test(h) && /paisa rule/.test(h),
+    "settings shows global and per-chat rules");
+  assert(/data-shrevoke="i-2"/.test(h), "each rule can be revoked");
+  assert(/not editable/.test(h), "floors are shown as not editable");
+  console.log("ok 12 settings surface");
+}
+
+/* v10: per-chat tabs — one mind, many threads */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowWatching = ["sess-paisa", "sess-dayflow"];
+  ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
+                            target_session: "sess-paisa" }];
+  const h = ctx.shadowHomeHtml();
+  assert(/data-shchat="global"/.test(h), "the new tab is present");
+  assert(/data-shchat="sess-paisa"/.test(h), "a chat tab is present");
+  assert(/data-shchat="sess-dayflow"/.test(h), "every overseen chat gets a tab");
+  assert(/shchatdot/.test(h), "a chat with a live mission shows its dot");
+  assert(!/data-shtab="global"/.test(h),
+    "tabs use their OWN namespace — data-shtab stays the plane's");
+  console.log("ok 10 per-chat tab strip");
+}
+{
+  /* threads are isolated per tab, and the accessor survives reassignment */
+  const ctx = fresh();
+  ctx.S.shadowChat = "global";
+  ctx.S.shadowThread.push({ who: "founder", text: "general" });
+  ctx.S.shadowChat = "sess-paisa";
+  ctx.S.shadowThread.push({ who: "founder", text: "about paisa" });
+  assert.strictEqual(ctx.S.shadowThread.length, 1, "paisa tab has its own");
+  ctx.S.shadowThread = ctx.S.shadowThread.filter(t => !t.busy);   /* the reassign */
+  ctx.S.shadowThread.push({ who: "shadow", text: "still paisa" });
+  assert.strictEqual(ctx.S.shadowThread.length, 2, "accessor survived reassign");
+  ctx.S.shadowChat = "global";
+  assert.strictEqual(ctx.S.shadowThread.length, 1, "global tab untouched");
+  assert.strictEqual(ctx.S.shadowThread[0].text, "general");
+  console.log("ok 11 per-tab threads isolated (accessor, not alias)");
+}
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = { engage: ["outcome first"],
+    global: [{ id: "i-1", text: "everywhere rule" }],
+    per_chat: { "sess-paisa": [{ id: "i-2", text: "paisa rule" }] },
+    attention: { watching: ["a"], off: [], alerts: 2 },
+    floors: ["destructive git"] };
+  const h = ctx.shadowSettingsHtml();
+  assert(/everywhere rule/.test(h) && /paisa rule/.test(h),
+    "settings shows global and per-chat rules");
+  assert(/data-shrevoke="i-2"/.test(h), "each rule can be revoked");
+  assert(/not editable/.test(h), "floors are shown as not editable");
+  console.log("ok 12 settings surface");
+}
+
+/* v10: per-chat tabs — one mind, many threads */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowWatching = ["sess-paisa", "sess-dayflow"];
+  ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
+                            target_session: "sess-paisa" }];
+  const h = ctx.shadowHomeHtml();
+  assert(/data-shchat="global"/.test(h), "the new tab is present");
+  assert(/data-shchat="sess-paisa"/.test(h), "a chat tab is present");
+  assert(/data-shchat="sess-dayflow"/.test(h), "every overseen chat gets a tab");
+  assert(/shchatdot/.test(h), "a chat with a live mission shows its dot");
+  assert(!/data-shtab="global"/.test(h),
+    "tabs use their OWN namespace — data-shtab stays the plane's");
+  console.log("ok 10 per-chat tab strip");
+}
+{
+  /* threads are isolated per tab, and the accessor survives reassignment */
+  const ctx = fresh();
+  ctx.S.shadowChat = "global";
+  ctx.S.shadowThread.push({ who: "founder", text: "general" });
+  ctx.S.shadowChat = "sess-paisa";
+  ctx.S.shadowThread.push({ who: "founder", text: "about paisa" });
+  assert.strictEqual(ctx.S.shadowThread.length, 1, "paisa tab has its own");
+  ctx.S.shadowThread = ctx.S.shadowThread.filter(t => !t.busy);   /* the reassign */
+  ctx.S.shadowThread.push({ who: "shadow", text: "still paisa" });
+  assert.strictEqual(ctx.S.shadowThread.length, 2, "accessor survived reassign");
+  ctx.S.shadowChat = "global";
+  assert.strictEqual(ctx.S.shadowThread.length, 1, "global tab untouched");
+  assert.strictEqual(ctx.S.shadowThread[0].text, "general");
+  console.log("ok 11 per-tab threads isolated (accessor, not alias)");
+}
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = { engage: ["outcome first"],
+    global: [{ id: "i-1", text: "everywhere rule" }],
+    per_chat: { "sess-paisa": [{ id: "i-2", text: "paisa rule" }] },
+    attention: { watching: ["a"], off: [], alerts: 2 },
+    floors: ["destructive git"] };
+  const h = ctx.shadowSettingsHtml();
+  assert(/everywhere rule/.test(h) && /paisa rule/.test(h),
+    "settings shows global and per-chat rules");
+  assert(/data-shrevoke="i-2"/.test(h), "each rule can be revoked");
+  assert(/not editable/.test(h), "floors are shown as not editable");
+  console.log("ok 12 settings surface");
+}
+
 console.log("test_shadow_home.js: all green");
