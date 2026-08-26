@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.234.1 (2026-08-26)
+
+- **The sidecar is gone, the folded screens are gone** (expired one-release
+  clocks): sb_sidecar archived, `/api/files/status` + `S.sb` + `sbUrl` +
+  Knowledge/Files code deleted; `openScreen` still redirects the old ids.
+  Polish: shadow-FAB content gutter, git dense rows (35px) + filter, read-view
+  metadata card, twin-title suffixes, search skeletons, editor/settings copy.
+
 ## 2.234.0 (2026-08-26)
 
 Coverage trio (D31) ported fleet-side: auto-coverage (PostToolUse), coverage-gate (Stop, SOFT), log-coverage — repo registry at os/method-registry.jsonl with fallback to the plugin-shipped one. D69 migration seam: GitHub client id resolves env > ~/.sutra-connectors/github-client-id > legacy default, so the successor Asawa-owned App drops in with one echo, no code change. Connectors suite 217 green; seam+coverage sim 6/6.

@@ -185,6 +185,13 @@
      the FILING boundary (reviewer 2026-08-25, blocker 2) */
   .ws-crumb{font-size:11.5px;color:var(--faint);margin-bottom:6px;flex:none}
   .ws-read{cursor:text}   /* click-to-edit surface (r4): the body invites the caret */
+  /* leading-metadata block (r5): key/value rows instead of a bullet list */
+  .ws-metablock{margin:0 0 16px;padding:8px 12px;background:var(--inset);
+    border-radius:8px;font-size:12px}
+  .ws-metarow{display:flex;gap:10px;padding:2px 0}
+  .ws-metak{flex:none;min-width:88px;color:var(--muted);font-weight:600}
+  .ws-metav{color:var(--ink);min-width:0}
+  .ws-twin{color:var(--faint);font-size:10.5px}   /* twin-title dir suffix (r5) */
   .ws-frame{flex:1;width:100%;min-height:0;border:0;background:var(--card)}
   .ws-col h1{font-family:var(--serif);font-size:28px;font-weight:500;margin:0 0 16px;
     letter-spacing:-.01em}

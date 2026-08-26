@@ -413,7 +413,7 @@ function _focusedInputSelector(){
      matches a bare data-x. */
   for (const attr of ["data-sask", "data-ssend", "data-sideask", "data-cwdinput",
                       "data-prf", "data-edta", "data-workdir-input", "data-edfilter",
-                      "data-wssearch"]) {
+                      "data-wssearch", "data-gitfilter"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
   }
   return null;
@@ -498,20 +498,8 @@ function applyPalette(sid, idx){
               back.setSelectionRange(next.length, next.length); }
 }
 
-/* Knowledge search -- debounced, server-side. */
-let _sqT = null;
-function runSearch(q){
-  S.sq = q;
-  clearTimeout(_sqT);
-  if (!q.trim()){ S.searchRes = null; S.searchHits = null; S.searchBusy = false; render(); return; }
-  S.searchBusy = true;
-  _sqT = setTimeout(()=>{
-    apiGet("/api/org/search?q=" + encodeURIComponent(q) + "&limit=40")
-      .then(r => { S.searchRes = r; S.searchHits = r.results.length; S.searchBusy = false; render(); })
-      .catch(e => { S.searchRes = { query:q, results:[], counts:{}, error:e.message };
-                    S.searchHits = 0; S.searchBusy = false; render(); });
-  }, 250);
-}
+/* (r5) the Knowledge-screen search (runSearch/S.sq) is gone — workspace
+   search is the one search surface. */
 
 /* ── first run ───────────────────────────────────────────────────────────────
    Four facts the operator needs BEFORE the panel starts driving a CLI on their

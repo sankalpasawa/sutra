@@ -59,16 +59,8 @@ function catalogTick(){
 /* ── editor loaders ──────────────────────────────────────────────────────────
    On demand, like git: walking a real project at boot would cost every operator
    who never opens the editor. */
-/* Files screen (SilverBullet sidecar): spawned lazily by the backend on first
-   open — walking a repo and starting a process must not cost operators who
-   never open Files. force=true is the retry path after a failure. */
-async function loadFilesScreen(force){
-  if (S.sb && S.sb.running && !force) return;
-  S.sbBusy = true; S.sbError = null; render();
-  try { S.sb = await apiGet("/api/files/status?start=1"); }
-  catch (e) { S.sbError = e.message; S.sb = null; }
-  S.sbBusy = false; render();
-}
+/* (r5) loadFilesScreen DELETED — the SilverBullet sidecar left the app path
+   with PLAN-25; the native editor needs no sidecar process. */
 
 async function loadFs(force){
   if (S.fs && !force) return;

@@ -278,7 +278,7 @@ function updatesHtml(){
   const busy = S.updBusy;
 
   if (!u && !S.updError) return `
-    <section class="chsec"><h2 class="chh">Updates</h2>
+    <section class="chsec"><h3 class="sec">Updates</h3>
       <p style="font-size:11.5px;color:var(--muted);margin-bottom:9px">
         The desktop app and the Claude Code plugin update by different routes.
         Nothing is checked until you ask — this reaches GitHub.</p>
@@ -287,7 +287,7 @@ function updatesHtml(){
     </section>`;
 
   if (S.updError) return `
-    <section class="chsec"><h2 class="chh">Updates</h2>
+    <section class="chsec"><h3 class="sec">Updates</h3>
       <div class="note b"><b>Could not check.</b> ${esc(S.updError)}</div>
       <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
         ${busy==="check"?"Checking…":"Try again"}</button>
@@ -360,7 +360,7 @@ function updatesHtml(){
   };
 
   return `
-    <section class="chsec"><h2 class="chh">Updates</h2>
+    <section class="chsec"><h3 class="sec">Updates</h3>
       ${S.updMsg?`<div class="note"><b>${esc(S.updMsg)}</b></div>`:""}
       ${desktopRow()}
       ${row(p, "Plugin", pBtn)}
@@ -611,10 +611,9 @@ const TITLES = {
   /* v3.3 (PLAN-25 S4): Now is a deliberate placeholder — the destination
      exists so the shell is complete; its surface is designed later. */
   now:["Now","placeholder — surface not designed yet"],
-  files:["Files","browse the workdir — the sidecar serves it on demand"],
   connectors:["Connectors","External accounts · credentials in the OS keychain, never in this window"],
   teamsutra:["Help","~/.sutra-ui/teamsutra/t-*.json"],departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
-  placements:["Placements","CURRENT.jsonl"],knowledge:["Knowledge","live scan · domains · charters · placements"],
+  placements:["Placements","CURRENT.jsonl"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],
   git:["Git","git status · log · diff — read-only, over the workdir"],
   evals:["Evals","verifier registry · nightly decay runs · findings — read-only"],

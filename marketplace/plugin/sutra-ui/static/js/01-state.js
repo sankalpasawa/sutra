@@ -125,8 +125,9 @@ const DEST_PLANES = {
                 same SCREENS[sel] validation every stale selection goes through. */
              {screen:"workspace", flag:"workspace"},
              {screen:"departments"},{screen:"charters"},{screen:"placements"},
-             {screen:"knowledge", foldsInto:"workspace"},
-             {screen:"files", foldsInto:"workspace"},{screen:"reorg"}],
+             /* knowledge + files rows DELETED (r5): the S92 fold's one-release
+                clock expired — openScreen's redirect remains the only trace */
+             {screen:"reorg"}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"routines"},{screen:"connectors"}]},

@@ -518,44 +518,8 @@ SCREENS.placements = () => {
       one at all.</div>`;
 };
 
-/* ── S4 Knowledge (disabled) ── */
-SCREENS.knowledge = () => {
-  const r = S.searchRes;
-  const body = !S.sq
-    ? `<div class="zero"><h4>Search the registry</h4>
-        <p>Departments, charters and filed work. Matches on names, descriptions,
-        routing evidence, charter purpose and scope, and work paths — and tells you
-        which field hit, so a result is explainable rather than an opaque rank.</p></div>`
-    : S.searchBusy && !r
-      ? `<p style="color:var(--muted)">Searching…</p>`
-      : (!r || !r.results.length)
-        ? `<div class="zero"><h4>No matches for “${esc(S.sq)}”</h4>
-            <p>Nothing in the registry contains that term.</p></div>`
-        : `<div class="facets">${Object.entries(r.counts).map(([k,n])=>
-             `<span class="pill p-acc">${esc(k)} ${n}</span>`).join(" ")}
-             ${r.truncated?`<span class="pill p-warn">showing first ${r.results.length}</span>`:""}</div>
-           <div class="tw"><table><thead><tr>
-             <th>Kind</th><th>Result</th><th>Matched on</th><th>Detail</th>
-           </tr></thead><tbody>
-           ${r.results.map(x=>`<tr ${x.kind==="domain"?`data-goto-domain="${esc(x.ref)}"`:""}
-               style="${x.kind==="domain"?"cursor:pointer":""}">
-             <td><span class="pill ${x.kind==="domain"?"p-acc":x.kind==="charter"?"p-ok":"p-mut"}">${esc(x.kind)}</span></td>
-             <td class="k">${esc(x.path?x.path+" ":"")}${esc(x.title||"")}
-               ${x.owner_retired?'<span class="pill p-block">tombstone</span>':""}
-               ${x.status==="retired"?'<span class="pill p-block">retired</span>':""}</td>
-             <td>${(x.matched_on||[]).map(f=>`<code>${esc(f)}</code>`).join(" ")}</td>
-             <td>${esc((x.subtitle||"").slice(0,90))}
-               ${x.kind==="placement" && sbPageFromPath(x.title||"")
-                 ? `<button class="btn" type="button" data-openfiles="${esc(x.title)}"
-                      style="margin-left:6px">Open in Files</button>` : ""}</td></tr>`).join("")}
-           </tbody></table></div>`;
-  return `
-    <div class="facets">
-      <input type="search" id="sq" placeholder="Search departments, charters, filed work…"
-             value="${esc(S.sq)}" style="width:100%;max-width:460px">
-    </div>
-    ${body}`;
-};
+/* (r5) SCREENS.knowledge DELETED — the S92 fold's one-release clock
+   expired; workspace search replaced it. openScreen still redirects the id. */
 
 /* ── S5 Reorg ── */
 SCREENS.reorg = () => {

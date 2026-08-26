@@ -284,6 +284,10 @@ function wire(){
   scBody.querySelectorAll("[data-edopen]").forEach(b=>b.onclick=()=>openEdFile(b.dataset.edopen));
   const edFilter = scBody.querySelector("[data-edfilter]");
   if (edFilter) edFilter.oninput = ()=>{ S.fsQuery = edFilter.value; renderFilterOnly(); };
+  /* git filter (visual audit r5): full render is fine — the input rides the
+     focused-input preserve whitelist, so the caret survives. */
+  const gitFilter = scBody.querySelector("[data-gitfilter]");
+  if (gitFilter) gitFilter.oninput = ()=>{ S.gitQ = gitFilter.value; render(); };
   const edTa = scBody.querySelector("[data-edta]");
   if (edTa){
     /* No render() on input: a full rebuild on every keystroke would fight the caret
@@ -312,15 +316,8 @@ function wire(){
   if (typeof wireWorkspace === "function") wireWorkspace(scBody);
   /* sidecar iframe wiring removed — PLAN-25-EDITOR S15: Files folded into
      the Workspace and editing is native; no [data-sbframe] exists to mount. */
-  /* Knowledge -> Files. Validated a second time here: the button was rendered
-     from state that could have changed under it, and the check is cheap. */
-  scBody.querySelectorAll("[data-openfiles]").forEach(b=>b.onclick = ()=>{
-    const page = sbPageFromPath(b.dataset.openfiles);
-    if (!page) return;
-    S.sbOpen = page; S.screen = "files";
-    if (S.ui.browseClosed){ S.ui.browseClosed = false; saveLayout(); }
-    loadFilesScreen(); render();
-  });
+  /* (r5) the Knowledge->Files [data-openfiles] bridge is gone with both
+     screens; the Workspace opens docs directly. */
 
   /* ── git ── */
   scBody.querySelectorAll("[data-gitfile]").forEach(b=>b.onclick=()=>{
@@ -810,8 +807,7 @@ function wire(){
       S.draft.ops.push({op:"move",ref:src.ref,target:tgt.ref}); saveDraft();
       S.drag=null; render(); };
   });
-  const sqEl=scBody.querySelector("#sq");
-  if(sqEl) sqEl.oninput=()=>runSearch(sqEl.value);
+  /* (r5) the Knowledge #sq wiring is gone with the screen. */
   scBody.querySelectorAll("[data-goto-domain]").forEach(r=>r.onclick=()=>{
     S.screen="departments"; S.sel=r.dataset.gotoDomain; render(); });
   const q=scBody.querySelector("#q");
@@ -1100,7 +1096,6 @@ function openScreen(id){
   S.ui.browseClosed = false; saveLayout();
   if (id === "git") loadGit(false);      /* lazy: only when actually opened */
   if (id === "editor") loadFs(false);    /* walking a real project is not free */
-  if (id === "files") loadFilesScreen(); /* lazy: spawns the sidecar on demand */
   if (id === "automation") loadAuto(false);
   if (id === "balance") loadBalance(false); /* lazy, like Git */
   if (id === "optimus") loadOptimus(false); /* lazy: reads the daemon's files */

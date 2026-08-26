@@ -17,7 +17,7 @@
  *
  * BOUNDARIES (ARCH.md): this file owns SCREENS.workspace and the S.ws slice
  * and nothing else. It never builds a URL by hand — the iframe src comes ONLY
- * from sbUrl(port, sbPageFromPath(path)) (02-helpers.js) and is assigned as a
+ * validated by sbPageFromPath (02-helpers.js) before any open — and (r5) no
  * DOM property in wireWorkspace(), never rendered into markup. Every string
  * that reaches innerHTML goes through esc(); search snippets arrive as plain
  * text + integer ranges and are marked up client-side from offsets only.
@@ -157,8 +157,9 @@ function wsStateFromError(kind){
 function wsCurrentState(){
   const w = S.ws;
   if (w.loading && !w.tree) return "10";
-  if ((w.treeError && wsStateFromError(w.treeError.kind) === "13") ||
-      S.sbError || (S.sb && !S.sb.running)) return "13";
+  /* (r5) state 13 keys ONLY on the panel backend now — the sidecar and its
+     S.sb/S.sbError signals are gone with the module. */
+  if (w.treeError && wsStateFromError(w.treeError.kind) === "13") return "13";
   if (w.results){
     const c = w.results.counts || {};
     if (!(c.documents || 0) && !(c.records || 0)) return "09";
@@ -188,7 +189,8 @@ function wsDocIsUnfiled(path){
    answered. Optimistic before either has — the server 403s a write regardless,
    so the only cost of optimism is a button that reports the refusal. */
 function wsEditAllowed(){
-  if (S.sb && typeof S.sb.readonly === "boolean") return !S.sb.readonly;
+  /* (r5) /api/fs/read's editable flag is the ONLY client-side signal now —
+     the sidecar's readonly mirror died with it. The server 403s regardless. */
   if (S.ws.lastRead && typeof S.ws.lastRead.editable === "boolean") return S.ws.lastRead.editable;
   return true;
 }
@@ -209,7 +211,7 @@ function wsEnsureRegistered(){
 }
 
 /* ── loaders ─────────────────────────────────────────────────────────────── */
-/* The one open path (openScreen hooks this, like loadFilesScreen for Files).
+/* The one open path (openScreen hooks this).
    Flag off = no fetch, no state change, nothing. */
 async function loadWorkspace(force){
   if (!wsFlagOn()) return;
@@ -357,10 +359,9 @@ async function wsOpenDoc(path, opts){
   S.ws.focusFrameOnLoad = !opts.restore;       /* R1: explicit opens only */
   wsPing("doc_opened");
   render();
-  /* The sidecar renders the content; these two calls power the crumb, the
-     context rail, the mtime comparator (F3) and the Save-a-copy source (F2).
-     The sidecar itself starts lazily exactly as Files does. */
-  if (!(S.sb && S.sb.running)) loadFilesScreen();
+  /* (r5) the sidecar lazy-start that lived here is gone — the native editor
+     renders the content; these two calls power the crumb, the context rail,
+     the mtime comparator (F3) and the Save-a-copy source (F2). */
   try {
     const meta = await wsGet("/api/workspace/doc?path=" + encodeURIComponent(path));
     if (S.ws.docPath !== path) return;           /* a newer open won */
@@ -523,12 +524,11 @@ function wsKeepMine(){
 }
 
 /* ── state-13 retry ─────────────────────────────────────────────────────────
-   Manual, single refire (ERROR-MODEL F1): the tree fetch AND the sidecar
-   relaunch probe. No loop — Try again failing lands back in 13. */
+   Manual, single refire (ERROR-MODEL F1): the tree fetch. No loop — Try
+   again failing lands back in 13. (r5: the sidecar relaunch probe is gone.) */
 function wsTryAgain(){
-  S.ws.treeError = null; S.sbError = null;
+  S.ws.treeError = null;
   loadWorkspace(true);
-  loadFilesScreen(true);
 }
 
 /* ── unfiled → File it (state 06, PRD U5) ───────────────────────────────────
@@ -866,16 +866,24 @@ function wsTreeHtml(){
       const docs = c.docs || [];
       const showAll = S.ws.showAllDocs === c.id || docs.length <= cap;
       let drawn = 0;
+      /* twin titles get a parent-dir suffix (visual audit r5): two visible
+         "Changelog" rows are otherwise indistinguishable */
+      const twins = {};
+      docs.forEach(x => { twins[x.title] = (twins[x.title] || 0) + 1; });
+      const twinTag = x => {
+        if ((twins[x.title] || 0) < 2) return "";
+        const dir = String(x.path).split("/").slice(-2, -1)[0] || "";
+        return dir ? '<span class="ws-twin"> · ' + esc(dir) + "</span>" : "";
+      };
       docs.forEach(x => {
         const isSel = selPath === x.path;
         if (!showAll && drawn >= cap && !isSel) return;
         drawn++;
         html += '<button type="button" class="ws-doc'
           + (x.missing ? " gone" : "") + (isSel ? " on" : "") + '" '
-          /* full path as tooltip (visual audit r3): ellipsized twins like two
-             "Changelog" rows are otherwise indistinguishable */
+          /* full path as tooltip (visual audit r3) */
           + 'title="' + esc(x.path) + '" '
-          + wsRowAttrs("doc", x.path) + '>' + esc(x.title) + '</button>';
+          + wsRowAttrs("doc", x.path) + '>' + esc(x.title) + twinTag(x) + '</button>';
       });
       if (!showAll && docs.length > drawn){
         html += '<button type="button" class="ws-doc ws-more" '
@@ -934,9 +942,9 @@ function wsFoldersHtml(){
   return html || '<div class="ws-none"></div>';
 }
 function wsSearchingHtml(){
-  /* In-flight search (reviewer blocker 1): one quiet line, not a spinner —
-     the mock's restraint applies to waiting too. */
-  return '<div class="ws-searching">' + WS_COPY.searching + '</div>';
+  /* In-flight search (reviewer blocker 1): one quiet line — plus three
+     skeleton rows (visual audit r5) so the pane reads as WORKING, not empty. */
+  return '<div class="ws-searching">' + WS_COPY.searching + '</div>' + wsSkelHtml(3);
 }
 function wsResultsHtml(){
   const g = wsGroupResults(S.ws.results);
@@ -1069,7 +1077,7 @@ function wsCrumbHtml(state){
   return parts.length ? '<div class="ws-crumb">' + parts.join(" · ") + '</div>' : "";
 }
 /* The document column per state. The iframe carries NO src attribute in the
-   markup — wireWorkspace() assigns it as a property from sbUrl() only, the
+   markup — (r5) no frame URL is ever built; the
    wire() pattern the Files screen established. */
 /* ── read-state markdown renderer (reviewer round 2, blocker 1) ──────────────
    The READ state is the PANEL's (mock 02/03): serif title, themed body — the
@@ -1175,9 +1183,35 @@ function wsReadView(){
     const row = docs.find(d => d.path === w.sel.path);
     title = (row && row.title) || w.sel.path.split("/").pop();
   }
+  /* Leading "- **key**: value" runs render as a METADATA block, not bullets
+     (visual audit r5). Narrow by design (codex): contiguous top-of-doc lines
+     only, wrapped value lines absorbed, >= 2 rows or it is ordinary content. */
+  let metaHtml = "";
+  {
+    const metaRe = /^- \*\*([^*]+)\*\*:\s*(.*)$/;
+    const mLines = text.split(/\r?\n/);
+    const rows = []; let cur = null, end = 0, stop = false;
+    for (let k = 0; k < mLines.length && !stop; k++){
+      if (!cur && !mLines[k].trim()) continue;   /* blank lines above the run */
+      const mm = mLines[k].match(metaRe);
+      if (mm){ if (cur) rows.push(cur); cur = { k: mm[1], v: mm[2] }; end = k + 1; }
+      else if (cur && mLines[k].trim() && !/^[-#`>|]/.test(mLines[k].trim())){
+        cur.v += " " + mLines[k].trim(); end = k + 1;
+      }
+      else stop = true;
+    }
+    if (cur) rows.push(cur);
+    if (rows.length >= 2){
+      metaHtml = '<div class="ws-metablock">' + rows.map(r =>
+        '<div class="ws-metarow"><span class="ws-metak">' + esc(r.k) + '</span>'
+        + '<span class="ws-metav">' + wsMdInline(r.v) + '</span></div>').join("") + '</div>';
+      text = mLines.slice(end).join("\n");
+    }
+  }
   /* data-wsread: the click-to-edit surface (r4 — the Edit button is gone).
      title hints the affordance; the delegate guards selections and links. */
   return '<div class="ws-read" data-wsread title="Click to edit"><h1 class="ws-doctitle">' + esc(title) + "</h1>"
+    + metaHtml
     + '<div class="ws-mdbody">' + wsMdHtml(text) + "</div></div>";
 }
 /* ── native editor lifecycle (PLAN-25-EDITOR S10-S14) ────────────────────────
@@ -1380,7 +1414,7 @@ function wsRenderSideOnly(){
 /* ── wiring — the integrator calls this from wire() ─────────────────────────
    Everything per-render lives here: registration (idempotent), teardown on
    screen exit, the search input binding, and the iframe src assignment —
-   which happens HERE as a property, never in markup, from sbUrl() only
+   which no longer exists (r5) — the native editor owns the doc column
    (ARCH.md S34: no new URL builders anywhere). */
 function wireWorkspace(scBody){
   const edEl = scBody && scBody.querySelector && scBody.querySelector("[data-wseditor]");
@@ -1419,22 +1453,9 @@ function wireWorkspace(scBody){
        through wsRenderSideOnly() when the debounced fetch lands. */
     search.oninput = ()=> wsSearchInput(search.value);
   }
-  const frame = scBody.querySelector("[data-wsframe]");
-  if (frame && S.sb && S.sb.running && S.ws.docPath){
-    const page = sbPageFromPath(S.ws.docPath);
-    const url = page === null ? null : sbUrl(S.sb.port, page);
-    /* A null from either validator leaves the frame BLANK — nothing loads a
-       guess (DEEPLINKS §2). Skipping the reassignment when the URL already
-       matches keeps unrelated re-renders from reloading the document. */
-    if (url && frame.src !== url){
-      frame.onload = ()=>{
-        /* A11Y R1: focus enters the frame only after an EXPLICIT open action;
-           background reloads never steal it. */
-        if (S.ws.focusFrameOnLoad){ S.ws.focusFrameOnLoad = false; try { frame.focus(); } catch (e){} }
-      };
-      frame.src = url;
-    }
-  }
+  /* (r5) the [data-wsframe] iframe wiring that lived here is DELETED — no
+     markup has emitted the frame since PLAN-25 S14, and the sidecar whose URL
+     it loaded is gone. sbPageFromPath remains the doc-path validator. */
   /* Restore keyboard focus to the cursor row after a full render — the roving
      tabindex row is the only [data-wsfocus] in the pane. */
   const foc = scBody.querySelector(".ws-side [data-wsfocus]");

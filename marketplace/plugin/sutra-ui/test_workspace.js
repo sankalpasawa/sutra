@@ -60,21 +60,19 @@ if (/13-workspace\.js/.test(panelHtml)){
   skipped("13-workspace.js is loaded by panel.html", "panel.html not yet integrated -- S72");
 }
 
-test("no new URL builder: iframe URLs come only from sbUrl/sbPageFromPath", () => {
+test("no new URL builder; sbPageFromPath is the one validator (r5: sbUrl gone)", () => {
   assert(!/127\.0\.0\.1/.test(source),
     "a loopback literal in 13-workspace.js means a URL was built by hand");
-  assert(!/new URL\(/.test(source), "no URL construction outside sbUrl");
-  assert(/sbUrl\(/.test(source) && /sbPageFromPath\(/.test(source),
-    "the shipped validators must be the ones called");
+  assert(!/new URL\(/.test(source), "no URL construction in the workspace module");
+  assert(/sbPageFromPath\(/.test(source), "the shipped validator must be the one called");
+  assert(!/sbUrl\(/.test(source), "sbUrl died with the sidecar — nothing may rebuild frame URLs");
   assert(!/function sbPageFromPath|function sbUrl/.test(source),
     "13-workspace.js must not redefine the validators -- reuse, not a copy");
 });
 
-test("the iframe carries no src in markup -- property assignment only", () => {
-  assert(/data-wsframe/.test(source), "the frame hook attribute is missing");
-  assert(!/<iframe[^>]*src=/.test(source),
-    "an iframe src in markup is one escaping bug from executable");
-  assert(/frame\.src = url/.test(source), "the property-assignment path is missing");
+test("no iframe surface at all (r5): the wsframe hook and its wiring are gone", () => {
+  assert(!/<iframe/.test(source), "no iframe markup anywhere in the workspace module");
+  assert(!/frame\.src/.test(source), "no frame src assignment survives the sidecar");
 });
 
 test("the click delegate is document-level and scoped to #scBody", () => {
@@ -108,9 +106,9 @@ test("every delegated guard leads with the flag/screen predicate", () => {
 /* The REAL validators, extracted from 02-helpers.js so the bytes under test
    are the shipped ones. Both sbPageFromPath definitions are taken in file
    order -- the second wins at eval, exactly as in the browser. */
-const validatorSrc = (helpers.match(/^function (?:sbPageFromPath|sbUrl)\([\s\S]*?^\}/gm) || []).join("\n");
-assert(/sbPageFromPath/.test(validatorSrc) && /sbUrl/.test(validatorSrc),
-  "could not extract the shipped validators from 02-helpers.js");
+const validatorSrc = (helpers.match(/^function sbPageFromPath\([\s\S]*?^\}/gm) || []).join("\n");
+assert(/sbPageFromPath/.test(validatorSrc),
+  "could not extract the shipped validator from 02-helpers.js");
 
 function makeNode(){
   return {
@@ -259,10 +257,11 @@ test("state resolver walks all 14 states", () => {
   assert(at(sb => { sb.S.ws.sel = { type:"doc", path:"holding/research/viewer.md" }; sb.S.ws.editing = true; sb.S.ws.unsaved = true; }) === "07", "editing -> 07");
   assert(at(sb => { sb.S.ws.tree = EMPTY_TREE; }) === "08", "empty registry + no unfiled -> 08");
   assert(at(sb => { sb.S.ws.results = { documents:[], records:[], counts:{documents:0, records:0} }; }) === "09", "zero hits -> 09");
-  assert(at(sb => { sb.S.sb = { running: true, readonly: true }; }) === "11", "edit gate off -> 11");
+  assert(at(sb => { sb.S.ws.sel = { type:"doc", path:"holding/research/viewer.md" };
+    sb.S.ws.lastRead = { path:"holding/research/viewer.md", text:"b", editable:false }; }) === "11",
+    "edit gate off (fs-read editable:false) -> 11 (r5: S.sb is gone)");
   assert(at(sb => { sb.S.ws.sel = { type:"doc", path:"holding/research/viewer.md" }; sb.S.ws.editing = true; sb.S.ws.unsaved = true; sb.S.ws.changed = true; }) === "12", "external write -> 12");
   assert(at(sb => { sb.S.ws.treeError = { kind:"engine_down", message:"x" }; }) === "13", "engine_down -> 13");
-  assert(at(sb => { sb.S.sb = { running: false }; }) === "13", "sidecar dead -> 13");
   assert(at(sb => { sb.S.ws.sel = { type:"doc", path:"holding/research/viewer.md" }; sb.S.ws.docGone = true; }) === "14", "doc gone -> 14");
 });
 
@@ -553,7 +552,6 @@ test("the renderer never lets author bytes reach the DOM as markup", () => {
 
 test("state 14 hides Save a copy when the edit gate is off", () => {
   const sb = onSandbox(sb2 => {
-    sb2.S.sb = { running: true, readonly: true };
     sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
     sb2.S.ws.docGone = true;
     sb2.S.ws.lastRead = { path: "holding/research/viewer.md", text: "body", editable: false };
@@ -565,8 +563,8 @@ test("state 14 hides Save a copy when the edit gate is off", () => {
 
 test("state 11 shows the read-only chip and NO edit affordance anywhere", () => {
   const sb = onSandbox(sb2 => {
-    sb2.S.sb = { running: true, readonly: true };
     sb2.S.ws.sel = { type: "doc", path: "holding/research/viewer.md" };
+    sb2.S.ws.lastRead = { path: "holding/research/viewer.md", text: "b", editable: false };
   });
   /* r3: the chip cluster lives in the pane head now */
   const head = sb.__W.wsPaneHeadHtml();
@@ -680,7 +678,10 @@ async function asyncChecks(){
     await sb.__W.wsOpenDoc("holding/research/viewer.md", { fromSearch: true });
     if (sb.S.ws.editing) bad.push("fromSearch");
     sb = mk();
-    sb.S.sb = { running: true, readonly: true };
+    sb.fetchImpl = (u) => Promise.resolve({ ok: true, json: async () =>
+      String(u).indexOf("/api/fs/read") !== -1
+        ? { text: "body", editable: false, bytes: 4 }
+        : { meta: { mtime: 111 } } });
     await sb.__W.wsOpenDoc("holding/research/viewer.md", {});
     if (sb.S.ws.editing || sb.__W.wsCurrentState() !== "11") bad.push("read-only");
     sb = mk((u) => String(u).indexOf("/api/fs/read") !== -1
@@ -867,7 +868,8 @@ test("click-to-edit (r4): the keyboard path — 'e' enters edit, and read-only r
   const sb = onSandbox(seed);
   sb.handlers.keydown({ key: "e", target: { tagName: "DIV", closest: () => null }, preventDefault(){} });
   assert(sb.S.ws.editing === true, "'e' must enter edit from a read view");
-  const ro = onSandbox(sb2 => { seed(sb2); sb2.S.sb = { running: true, readonly: true }; });
+  const ro = onSandbox(sb2 => { seed(sb2);
+    sb2.S.ws.lastRead = { path: "holding/research/viewer.md", text: "body", editable: false }; });
   ro.handlers.keydown({ key: "e", target: { tagName: "DIV", closest: () => null }, preventDefault(){} });
   assert(ro.S.ws.editing === false, "read-only mode must refuse the keyboard entry");
 });

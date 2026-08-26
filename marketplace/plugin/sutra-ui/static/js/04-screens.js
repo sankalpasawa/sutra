@@ -202,7 +202,8 @@ SCREENS.editor = () => {
       <span class="od">${fmtBytes(f.bytes)}</span></span>
     </button>`).join("")}</div>
     ${files.length>600?`<p style="font-size:11px;color:var(--faint);margin:7px 0 0">
-      Showing 600 of ${files.length} matches — narrow the filter.</p>`:""}
+      ${q?`Showing 600 of ${files.length} matches — narrow the filter.`
+         :`Showing the first 600 of ${files.length} files — type to filter.`}</p>`:""}
     ${S.fs.truncated?`<p class="note w" style="margin-top:7px">The tree was truncated at
       ${S.fs.files.length} files. Files beyond that are not listed — this is a limit,
       not an empty result.</p>`:""}`;
@@ -225,7 +226,7 @@ SCREENS.editor = () => {
              aria-label="Contents of ${esc(open)}">${esc(S.edText)}</textarea>`}`)}`;
 
   return `${gate}
-    ${fold("ed.files", "Files", `${files.length}`, `
+    ${fold("ed.files", "Files", `${files.length} files`, `
       <input type="search" class="wdin" data-edfilter placeholder="Filter files…"
              value="${esc(S.fsQuery||"")}" aria-label="Filter files" style="margin-bottom:8px">
       ${files.length?list:`<p style="color:var(--faint);margin:0">No file matches
@@ -233,18 +234,8 @@ SCREENS.editor = () => {
     ${pane}`;
 };
 
-/* ── files ───────────────────────────────────────────────────────────────────
-   FOLDED (S92) + NATIVE (PLAN-25-EDITOR S15, 2026-08-25): Files lives inside
-   the Workspace now, and editing is the vendored native editor — the
-   SilverBullet sidecar iframe is GONE. openScreen() redirects the "files" id;
-   this renderer survives one release (FLAG deletion rule) purely as the
-   honest signpost for any stale deep link that lands before the redirect. */
-SCREENS.files = () => {
-  return `<div class="zero"><h4>Files lives in the Workspace now</h4>
-    <p>Browse, read and edit every document in one place.</p>
-    <p><button class="btn" type="button" data-screen="workspace">Open Workspace</button></p></div>`;
-};
-
+/* (r5) SCREENS.files DELETED — the signpost served its one release
+   (FLAG deletion rule, EXECUTED 2026-08-26); openScreen still redirects. */
 
 /* ── git ─────────────────────────────────────────────────────────────────────
    READ-ONLY, and says so. The endpoints behind this expose status/log/diff and
@@ -615,7 +606,11 @@ SCREENS.git = () => {
   if (!S.git) return `<div class="zero"><h4>Reading the repository…</h4></div>`;
 
   const st = S.git.status || {};
-  const files = st.files || [];
+  const gq = (S.gitQ || "").toLowerCase();
+  /* client-side filter (visual audit r5): an 800-file tree is unusable
+     without one; caret survives renders via the focused-input whitelist */
+  const files = (st.files || []).filter(f => !gq || f.path.toLowerCase().includes(gq));
+  const allCount = (st.files || []).length;
   const sel = S.gitFile;
   const CODE = {M:"modified", A:"added", D:"deleted", R:"renamed", C:"copied", "?":"untracked", U:"conflicted"};
   const label = f => CODE[(f.y !== " " ? f.y : f.x)] || "changed";
@@ -646,9 +641,13 @@ SCREENS.git = () => {
       <code>${esc(S.git.repo || "—")}</code>. There is no stage, commit or push here:
       those write, and writes are gated separately.</div>
 
-    ${fold("git.files", "Working tree", `${files.length} changed`, files.length
+    ${fold("git.files", "Working tree", `${gq?`${files.length} of ${allCount}`:allCount} changed`, allCount
       ? `<div class="kv"><b>Branch</b><span><code>${esc(st.branch||"—")}</code></span></div>
-         <div role="list" style="margin-top:7px">${files.map(row).join("")}</div>`
+         <input type="search" class="wdin" data-gitfilter placeholder="Filter changed files…"
+                value="${esc(S.gitQ||"")}" aria-label="Filter changed files" style="margin:7px 0 4px">
+         ${files.length
+           ? `<div role="list" style="margin-top:3px">${files.map(row).join("")}</div>`
+           : `<p style="color:var(--faint);margin:6px 0 0">No changed file matches “${esc(S.gitQ||"")}”.</p>`}`
       : `<p style="color:var(--faint);margin:0">Nothing changed. The working tree is
          clean relative to the index.</p>`)}
 

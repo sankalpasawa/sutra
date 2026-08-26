@@ -292,9 +292,9 @@ const S = {
      before a registry mutation is discarded instead of cached.
      renderDirty: a render() deferred because a drag is in progress (B11). */
   simCache:{}, simPending:new Set(), simGen:0, renderDirty:false, loaded:false,
-  /* Knowledge search + the composer's "/" palette. searchHits is null until
-     a query runs, so the rail shows no count rather than a misleading 0. */
-  sq:"", searchRes:null, searchHits:null, searchBusy:false, palette:null,
+  /* The composer's "/" palette. (r5: the knowledge-search fields that shared
+     this line died with the Knowledge screen.) */
+  palette:null,
   /* Composer text per session. render() rebuilds the pane from a template, so
      text living only in the DOM is lost on ANY re-render that is not focus-
      restored -- which is every re-render triggered by something other than the
@@ -499,32 +499,9 @@ function mdHtml(src){
 }
 
 /* ══════════════════════ rail ══════════════════════ */
-/* Knowledge -> Files bridge. A registry work path becomes a SilverBullet page
-   name ONLY if it is a plain relative .md path: no scheme, no leading slash,
-   no backslash, no control chars, no empty or dot segments. Anything else
-   returns null and the button is simply not offered. The iframe URL is then
-   assembled from the backend's numeric port + per-segment encoding -- never
-   from a string the registry (or anything else) supplied whole. */
-function sbPageFromPath(p){
-  /* A Knowledge row can hand a document to the Files screen. The value comes
-     from the REGISTRY (a placement work_ref), not from user HTML, but it ends
-     up in a URL this window loads, so it is validated as a bare relative path
-     and nothing else: no scheme, no absolute or home-relative form, no
-     traversal, no separators from the other OS, no control characters.
-     Returns the SilverBullet PAGE NAME (path minus .md) -- unencoded, because
-     encoding belongs to whoever builds the URL (sbUrl) -- or null, which
-     callers use to hide the affordance entirely. */
-  if (typeof p !== "string") return null;
-  const raw = p.trim();
-  if (!raw) return null;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;      /* scheme */
-  if (raw[0] === "/" || raw[0] === "~") return null;       /* absolute / home */
-  if (/[\\\u0000-\u001f\u007f]/.test(raw)) return null;   /* separator / control */
-  if (!/\.md$/i.test(raw)) return null;
-  const segs = raw.slice(0, -3).split("/");
-  if (!segs.length || segs.some(s => s === "" || s === "." || s === "..")) return null;
-  return segs.join("/");
-}
+/* (r5) the duplicate sbPageFromPath that lived here is gone — ONE definition
+   remains below (the stricter, previously-winning one). It survives the
+   sidecar's retirement as the WORKSPACE's doc-path validator. */
 const ICON = {
   term:'<rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9.5l3 2.5-3 2.5M12.5 15h5"/>',
   git:'<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="9" r="2.6"/><path d="M6 8.6v6.8M8.6 6H14a1.5 1.5 0 011.5 1.5v0"/>',
@@ -578,16 +555,9 @@ function sbPageFromPath(p){
   return page;
 }
 
-/* The sidecar's port comes back from OUR backend, but a port is the one part
-   of the iframe URL that is not a constant, so it is checked as an integer in
-   range rather than trusted -- Number() alone accepts NaN, 1e9 and decimals. */
-function sbUrl(port, page){
-  const n = Number(port);
-  if (!Number.isInteger(n) || n < 1 || n > 65535) return null;
-  const base = "http://127.0.0.1:" + n + "/";
-  if (!page) return base;
-  return base + String(page).split("/").map(encodeURIComponent).join("/");
-}
+/* (r5) sbUrl DELETED with the sidecar: no iframe URL is ever built again.
+   sbPageFromPath above stays — the workspace still validates doc paths
+   through it before any open (DEEPLINKS §2). */
 
 /* A DOM-id-safe, stable hash of an arbitrary key (a cwd can contain / and .).
    Only needs to be collision-free within one render, not cryptographic. */
@@ -615,13 +585,8 @@ function railSpec(){
       {id:"departments",n:"Departments",i:"dept", c:c(live().length)},
       {id:"charters",   n:"Charters",   i:"chart",c:c(CHARTERS.length)},
       {id:"placements", n:"Placements", i:"plc",  c:c(PLACEMENTS.length)},
-      /* S92 cutover: Knowledge + Files FOLD into Workspace when it is on --
-         their ids still resolve (openScreen redirects them), their code
-         stays until one release after cutover (FLAG.md deletion rule). */
-      ...(typeof wsFlagOn === "function" && wsFlagOn() ? [] : [
-        {id:"knowledge",  n:"Knowledge",  i:"know", c:(S.searchHits==null?undefined:S.searchHits)},
-        {id:"files",      n:"Files",      i:"files"}
-      ])
+      /* Knowledge + Files inventory rows DELETED (r5): the S92 fold's
+         one-release clock expired; the Workspace is the only org surface. */
     ],
     change:[
       {id:"reorg",  n:"Reorg plans", i:"reorg", c:PLANS.length},
@@ -802,10 +767,7 @@ function planeRows(dest){
     /* A row can be feature-flagged (FLAG.md). With the flag off the row must
        not render at all — the byId fallback would otherwise show a bare id. */
     if (entry.flag === "workspace" && !(typeof wsFlagOn === "function" && wsFlagOn())) continue;
-    /* S92 cutover: rows that folded into the Workspace leave the plane while
-       it is on; their ids still resolve via openScreen's redirect, and their
-       code survives one release past cutover (FLAG.md deletion rule). */
-    if (entry.foldsInto === "workspace" && typeof wsFlagOn === "function" && wsFlagOn()) continue;
+    /* (r5) the S92 foldsInto rows are gone from DEST_PLANES; no filter needed. */
     if (entry.group) groups.push({ label: entry.group, rows: entry.rows.map(row) });
     else {
       if (!groups.length || groups[groups.length-1].label) groups.push({ label:null, rows:[] });

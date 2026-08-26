@@ -122,6 +122,9 @@ function mountShadowOverlay(){
   dot.dataset && (dot.dataset.shadowdot = "1");
   if (dot.addEventListener) dot.addEventListener("click", toggleShadowCard);
   (document.body || document.documentElement).appendChild(dot);
+  /* reserve a bottom gutter while the FAB exists (visual audit r5): without
+     it the dot covered the last row of every scrollable pane */
+  try { document.body.classList.add("sh-fab-on"); } catch (_e){}
   return dot;
 }
 

@@ -30,7 +30,6 @@ import session_reader as sr
 import connectors_api
 import org_api
 import providers
-import sb_sidecar
 import secrets as _secrets
 import shadow_egress
 from session_runtime import (SessionRuntime, _drain_to_newline,
@@ -493,29 +492,10 @@ async def api_panel_token():
     return JSONResponse({"token": PANEL_TOKEN}, headers=_NOCACHE)
 
 
-@app.get("/api/files/status")
-def api_files_status(start: int = 0):
-    """Files screen (SilverBullet sidecar) state. `?start=1` lazily launches
-    the sidecar against the configured workdir — same root, same $HOME guard,
-    and the same out-of-band edit gate as /api/fs/write (sidecar goes
-    read-only when editing is off). Loopback-only like everything else here."""
-    if start:
-        root = providers.load_settings().get("workdir") or _ensure_workdir()
-        if not root:
-            return JSONResponse({"running": False, "error": "no usable workdir"},
-                                status_code=400)
-        try:
-            return sb_sidecar.start(os.path.realpath(os.path.expanduser(root)))
-        except Exception as exc:  # noqa: BLE001 — panel shows the reason verbatim
-            return JSONResponse({"running": False, "error": str(exc)}, status_code=500)
-    return sb_sidecar.status()
-
-
-@app.on_event("shutdown")
-def _sb_shutdown():
-    # The sidecar dies with the backend: no orphan SilverBullet process may
-    # outlive the app that gated its read-only mode.
-    sb_sidecar.stop()
+# (r5) /api/files/status and the shutdown hook are GONE with sb_sidecar:
+# the native editor replaced the SilverBullet sidecar (PLAN-25), and its
+# one-release retirement clock expired. Module archived at
+# sutra/archive/sutra-ui-sidecar/.
 
 
 @app.get("/", response_class=HTMLResponse)
