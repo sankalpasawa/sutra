@@ -410,8 +410,13 @@ async function shadowMissionAct(mid, action, extra){
       /* survey fold: a failed action must never look like a dead click */
       showNudge("That did not stick (" + r.status + ") \u2014 try again");
     }
-    if (doc && action === "start_now" && typeof showNudge === "function"){
-      showNudge("Mission starting \u2014 follow it in Focus \u203a Shadow");
+    if (doc && typeof showNudge === "function"){
+      /* founder 2026-08-26: a working click must SAY it worked */
+      const said = { start_now: "Mission starting \u2014 follow it in "
+          + "Focus \u203a Shadow", stop: "Stopped.", resume: "Resumed.",
+        drop: "Dropped.", retry: "Retry queued \u2014 a fresh mission "
+          + "takes the same brief", confirm_check: "Check confirmed." };
+      showNudge(said[action] || "Done.");
     }
     if (typeof loadShadowHome === "function") loadShadowHome();
     renderShadowCard();
