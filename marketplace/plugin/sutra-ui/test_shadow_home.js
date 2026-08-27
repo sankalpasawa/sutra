@@ -294,4 +294,27 @@ console.log("ok 6 controls wired");
   console.log("ok 12 settings surface");
 }
 
+/* tabs wear the chat's real name, from the list the rail already loads */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.sessions = [
+    { id: "sess-paisa", title: "Paisa EMI rounding fix" },
+    { id: "sess-long", title: "A very long chat title that must be trimmed somewhere" },
+    { id: "sess-lbl", label: "named by first line" },
+  ];
+  ctx.S.shadowWatching = ["sess-paisa", "sess-long", "sess-lbl", "sess-unknown"];
+  assert.strictEqual(ctx.shadowChatLabel("sess-paisa"), "Paisa EMI rounding fix");
+  assert(ctx.shadowChatLabel("sess-long").length <= 24, "long titles trim");
+  assert(/\u2026$/.test(ctx.shadowChatLabel("sess-long")), "trim shows an ellipsis");
+  assert.strictEqual(ctx.shadowChatLabel("sess-lbl"), "named by first line");
+  assert(/^session /.test(ctx.shadowChatLabel("sess-unknown")),
+    "an unknown chat says session <id>, never a bare id");
+  assert.strictEqual(ctx.shadowChatLabel("global"), "new");
+  const h = ctx.shadowHomeHtml();
+  assert(/Paisa EMI rounding fix/.test(h), "the tab strip renders the name");
+  assert(!/>sess-pai/.test(h), "no raw id leaks into a tab label");
+  console.log("ok 13 tabs wear real chat names");
+}
+
 console.log("test_shadow_home.js: all green");

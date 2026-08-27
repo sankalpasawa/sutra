@@ -170,6 +170,16 @@ else {
   await check("G11 tabs: the new tab exists and uses its own namespace",
     `!!document.querySelector('[data-shchat="global"]')
        && document.querySelectorAll('[data-shtab]').length <= 2`);
+  await check("G14 tabs wear names, not raw ids (known chats)",
+    `(() => {
+       const bad = [...document.querySelectorAll("[data-shchat]")]
+         .filter(t => { const k = t.dataset.shchat;
+           if (!k || k === "global") return false;
+           const known = (S.sessions || []).some(x => x && x.id === k);
+           if (!known) return false;      /* unknown -> honest fallback ok */
+           return (t.innerText || "").indexOf(k.slice(0, 6)) === 0; })
+         .map(t => t.innerText.slice(0, 20));
+       return bad; })()`, []);
   await check("G12 tab click switches the thread (no page churn)",
     `(() => { const t = document.querySelector('[data-shchat]:not(.on)');
        if (!t) return true; t.click();

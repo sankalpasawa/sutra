@@ -43,7 +43,7 @@ function shadowPlaneHtml(watching, missions, tab){
   if (t === "watching"){
     const rows = watching.map(sid => `
       <div class="shwatchrow" data-shwatch="${escAttr(sid)}">
-        <span class="shobj">${esc(sid)}</span>
+        <span class="shobj">${esc(shadowChatLabel(sid))}</span>
         <button class="btn" type="button" data-shunwatch="${escAttr(sid)}">Stop watching</button>
       </div>`).join("");
     return head + `<div class="shplane">${rows ||
@@ -111,8 +111,18 @@ function shadowMemoryHtml(rows){
    data-shtab keeps its meaning (three QA probes depend on it). */
 function shadowChatLabel(key){
   if (!key || key === "global") return "new";
-  const t = (typeof S !== "undefined" && S.shadowChatTitles) || {};
-  return t[key] || String(key).slice(0, 8);
+  const S_ = (typeof S !== "undefined") ? S : {};
+  /* the panel already loads every session with its title for the Chats
+     rail — a tab is the same chat, so it wears the same name. No second
+     source of truth, no extra fetch. */
+  const row = (S_.sessions || []).find(x => x && x.id === key);
+  const name = (row && (row.title || row.label || row.name)) || "";
+  const clean = String(name).trim().replace(/\s+/g, " ");
+  if (clean) return clean.length > 24 ? clean.slice(0, 23) + "\u2026" : clean;
+  const t = S_.shadowChatTitles || {};
+  if (t[key]) return String(t[key]).slice(0, 24);
+  /* honest fallback: say it is a session, do not pretend it is a name */
+  return "session " + String(key).slice(0, 6);
 }
 const SHADOW_TAB_CAP = 6;
 function shadowChatKeys(){
