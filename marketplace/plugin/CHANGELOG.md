@@ -2,6 +2,26 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.236.0 (2026-08-27)
+
+- **codex now runs the model the dispatcher chose.** The resolver has always returned a codex
+  model per class (gpt-5.4-mini class 1, gpt-5.4 class 3, gpt-5.5 class 5), but nothing passed
+  it, so codex silently used its server default — gpt-5.5, the most expensive tier — even for a
+  class-1 unit. The tier decision was a no-op. Found by a four-agent verification run.
+  `codex-sutra` gains a **Model resolution** section: it reads the frozen dispatch record and
+  splices `-m` as a bash ARRAY, but only when `PROVIDER=codex`. A codex review of Claude work is
+  review machinery, not a codex-provider dispatch unit, so those keep codex's default and no
+  existing review changes behaviour. `codex exec resume` is excluded so a resumed session keeps
+  its original model.
+- **`sutra-dispatch` persists `PROVIDER`.** It gains `--provider` (default `claude`), passes it
+  to the resolver, and writes `PROVIDER=` into the frozen record next to `MODEL=`. Without this
+  the launcher could not tell whether to pin a model, so the skill-side fix alone would never
+  have fired.
+- Verified: `resolve --provider codex --class 3` freezes `PROVIDER=codex MODEL=gpt-5.4`; omitting
+  the flag still freezes `PROVIDER=claude MODEL=claude-sonnet-5`. `-m` passthrough proven live —
+  baseline banner reports gpt-5.5, `-m gpt-5.4` reports gpt-5.4, and a bogus model exits 1 with
+  the API rejecting it, so the flag reaches the outbound request rather than only the banner.
+
 ## 2.235.4 (2026-08-26)
 
 **"Claude is installed but the panel cannot find it" — four causes, four fixes.**
@@ -51,7 +71,6 @@ for that specific loop.
 
 16 tests, mutation-checked: reverting the Desktop branch, the settings
 override, the set-time validation, or the timeout each fails the suite.
-
 ## 2.235.3 (2026-08-26)
 
 - **The workspace stops falling apart in a narrow pane.** Drag the divider in
