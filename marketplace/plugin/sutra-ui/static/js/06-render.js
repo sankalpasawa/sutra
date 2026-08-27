@@ -905,8 +905,29 @@ function render(){
        rebuild when the markup actually changed. */
     const html = SCREENS[S.screen]();
     if (scBody.__lastScreenHtml !== html){
+      /* the founder may be typing INTO this screen right now (a live
+         session update re-renders it under them) -- carry the cursor,
+         the draft and the caret across the rebuild */
+      const act = document.activeElement;
+      const keep = (act && scBody.contains(act)
+        && (act.tagName === "TEXTAREA" || act.tagName === "INPUT"))
+        ? { sel: act.dataset && act.dataset.shhomecompose
+              ? "[data-shhomecompose]"
+              : (act.dataset && act.dataset.shcompose
+                 ? "[data-shcompose]" : null),
+            value: act.value,
+            start: act.selectionStart, end: act.selectionEnd }
+        : null;
       scBody.__lastScreenHtml = html;
       scBody.innerHTML = html;
+      if (keep && keep.sel){
+        const el = scBody.querySelector(keep.sel);
+        if (el){
+          if (keep.value) el.value = keep.value;
+          try { el.focus({ preventScroll: true });
+            el.setSelectionRange(keep.start, keep.end); } catch (e) {}
+        }
+      }
     }
   }
   /* the shadow home is two columns; widen ONLY its pane (explicit class,
