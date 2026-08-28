@@ -163,6 +163,73 @@ class SessionsIntegration(unittest.TestCase):
         finally:
             os.chmod(self.sessions, 0o700)
 
+    # ---- the HTTP surface ------------------------------------------------
+
+    def _get(self, path):
+        with urllib.request.urlopen(
+                "http://127.0.0.1:%d%s" % (self.port, path), timeout=10) as r:
+            return r.status, json.loads(r.read())
+
+    def _post(self, path, body=None):
+        data = json.dumps(body or {}).encode()
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d%s" % (self.port, path), data=data,
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read())
+
+    def test_api_lists_sessions_the_chat_created(self):
+        frames = self._turn("listed please")
+        sid = [f for f in frames if f["type"] == "sutra_session"][0]["id"]
+        _, body = self._get("/api/sutra/sessions")
+        self.assertIn(sid, [r["id"] for r in body["sessions"]])
+
+    def test_api_returns_one_session_with_its_transcript(self):
+        frames = self._turn("with transcript")
+        sid = [f for f in frames if f["type"] == "sutra_session"][0]["id"]
+        _, body = self._get("/api/sutra/sessions/" + sid)
+        self.assertEqual(body["id"], sid)
+        self.assertEqual(body["transcript"][0]["text"], "with transcript")
+        self.assertIn("claude", body["handles"])
+
+    def test_api_create_rename_delete_round_trip(self):
+        _, made = self._post("/api/sutra/sessions", {"title": "made by hand"})
+        sid = made["id"]
+        self.assertTrue(ss.is_sutra_id(sid))
+        self._post("/api/sutra/sessions/%s/rename" % sid, {"title": "renamed"})
+        _, got = self._get("/api/sutra/sessions/" + sid)
+        self.assertEqual(got["title"], "renamed")
+        _, gone = self._post("/api/sutra/sessions/%s/delete" % sid)
+        self.assertTrue(gone["ok"])
+        self.assertTrue(gone["provider_transcript_kept"])
+
+    def test_api_resume_plan_states_what_would_happen(self):
+        frames = self._turn("plan via http")
+        sid = [f for f in frames if f["type"] == "sutra_session"][0]["id"]
+        _, native = self._get("/api/sutra/sessions/%s/resume-plan?provider=claude" % sid)
+        self.assertEqual(native["kind"], "native")
+        _, replay = self._get("/api/sutra/sessions/%s/resume-plan?provider=deepseek" % sid)
+        self.assertEqual(replay["kind"], "replay")
+        self.assertGreater(replay["turns"], 0, "the UI needs the count to warn")
+
+    def test_api_refuses_a_traversal_id(self):
+        import urllib.error
+        for bad in ("s_..%2F..%2Fetc", "notasutraid"):
+            try:
+                self._get("/api/sutra/sessions/" + bad)
+                self.fail("accepted %r" % bad)
+            except urllib.error.HTTPError as e:
+                self.assertIn(e.code, (400, 404), bad)
+
+    def test_api_refuses_a_cwd_outside_home(self):
+        import urllib.error
+        try:
+            self._post("/api/sutra/sessions", {"cwd": "/etc"})
+            self.fail("accepted a cwd outside home")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 400)
+
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

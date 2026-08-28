@@ -642,6 +642,94 @@ def api_session(sid: str):
     return data
 
 
+# --------------------------------------------------- Sutra-owned sessions ----
+# /api/sessions above is a READER over ~/.claude/projects -- Claude's files, in
+# Claude's format, listed by scanning Claude's directory. These routes serve
+# Sutra's OWN records instead: identity Sutra minted, a per-provider handle, and
+# a provider-neutral transcript. Kept on a separate prefix rather than merged
+# into /api/sessions because the two answer different questions, and a client
+# that silently got a different shape from the same URL would be worse than one
+# that has to ask for what it wants.
+
+
+@app.get("/api/sutra/sessions")
+def api_sutra_sessions(limit: int = 200):
+    return {"sessions": sessions_store.listing(limit=max(1, min(1000, limit)))}
+
+
+@app.post("/api/sutra/sessions")
+def api_sutra_session_create(body: dict = None):
+    b = body or {}
+    cwd = str(b.get("cwd") or "")
+    # Same confinement as every other path that records a working directory.
+    if cwd and not providers.workdir_allowed(cwd):
+        raise HTTPException(status_code=400,
+                            detail="cwd must be inside your home folder")
+    return sessions_store.create(title=str(b.get("title") or "")[:200],
+                                 cwd=cwd,
+                                 provider=str(b.get("provider") or ""))
+
+
+@app.get("/api/sutra/sessions/{sid}")
+def api_sutra_session(sid: str, turns: int = 200):
+    try:
+        meta = sessions_store.read(sid)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="not a sutra session id")
+    if meta is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {**meta,
+            "transcript": sessions_store.transcript(sid,
+                                                    limit=max(1, min(2000, turns)))}
+
+
+@app.get("/api/sutra/sessions/{sid}/resume-plan")
+def api_sutra_resume_plan(sid: str, provider: str = ""):
+    """What continuing this session under `provider` would actually do.
+
+    Exposed so the UI can SAY it before the operator pays for it: "continuing on
+    a different model, replaying 34 turns" is information they want in advance,
+    not a surprise on the invoice.
+    """
+    prov = provider or (providers.active_provider_detail() or {}).get("id") or ""
+    try:
+        kind, ref = sessions_store.resume_plan(sid, prov)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="not a sutra session id")
+    meta = sessions_store.read(sid) or {}
+    return {"kind": kind, "ref": ref, "provider": prov,
+            "turns": meta.get("turns") or 0,
+            "handles": list((meta.get("handles") or {}).keys())}
+
+
+@app.post("/api/sutra/sessions/{sid}/rename")
+def api_sutra_session_rename(sid: str, body: dict):
+    title = str((body or {}).get("title", "")).replace("\n", " ").strip()[:200]
+    if not title:
+        raise HTTPException(status_code=400, detail="title was empty")
+    try:
+        m = sessions_store.update(sid, title=title)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="not a sutra session id")
+    if m is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True, "title": title}
+
+
+@app.post("/api/sutra/sessions/{sid}/delete")
+def api_sutra_session_delete(sid: str):
+    """Removes SUTRA's record. The provider's own transcript is untouched --
+    this store never owned Claude's files, and deleting a Sutra session is not
+    a request to delete them."""
+    try:
+        gone = sessions_store.delete(sid)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="not a sutra session id")
+    if not gone:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True, "provider_transcript_kept": True}
+
+
 @app.post("/api/sessions/{sid}/rename")
 def api_session_rename(sid: str, body: dict):
     title = (body or {}).get("title", "")
