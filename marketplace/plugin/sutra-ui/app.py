@@ -30,6 +30,7 @@ import session_reader as sr
 import connectors_api
 import org_api
 import billing_guard
+import sessions_store
 import providers
 import secrets as _secrets
 import shadow_egress
@@ -1814,6 +1815,21 @@ async def ws_chat(ws: WebSocket):
     session_id = None
     resume_unverified = False   # session id came from the client, not from a live run
     dead_seeds = set()          # client-supplied ids claude has already rejected
+
+    # SUTRA'S OWN SESSION IDENTITY (sessions_store).
+    #
+    # `session_id` above is the PROVIDER'S handle -- a uuid Claude Code mints and
+    # only Claude Code understands. Treating it as the conversation's identity is
+    # what made sessions Claude-native: nothing existed until the CLI said so, and
+    # a second provider could never appear in a list built by scanning
+    # ~/.claude/projects. Sutra mints its own id, records the provider's as a
+    # handle hanging off it, and keeps a provider-neutral transcript beside it.
+    #
+    # Every call below is wrapped and fails open. This is bookkeeping: if the
+    # store is unwritable the operator still gets their turn, they just do not
+    # get the cross-provider history. Losing a conversation to a failed metadata
+    # write would be a far worse trade.
+    sutra_sid = None
     # A message to re-run immediately, bypassing the inbox. Set when a turn dies
     # because the resumed thread did not exist: the message itself was fine, so
     # it is replayed once WITHOUT --resume instead of being thrown away. See the
@@ -1972,8 +1988,37 @@ async def ws_chat(ws: WebSocket):
             # replay would bind the reply to whatever message the operator typed
             # while this turn was failing. A replay continues the turn that is
             # already on screen; it does not announce a new one.
+            # Resolve Sutra's id for this pane on the first real message: the
+            # client may carry one (reopening an existing conversation), and a
+            # fresh pane gets a new one titled from what was actually asked.
+            if sutra_sid is None:
+                try:
+                    want = payload.get("sutra_session")
+                    if (sessions_store.is_sutra_id(want)
+                            and sessions_store.read(want) is not None):
+                        sutra_sid = want
+                    else:
+                        sutra_sid = sessions_store.create(
+                            title=msg.strip()[:80], cwd=str(workdir),
+                            provider=active_id)["id"]
+                except Exception:
+                    sutra_sid = None
+            if sutra_sid and not payload.get("_replay"):
+                try:
+                    sessions_store.append_turn(sutra_sid, "user", msg,
+                                               provider=active_id)
+                except Exception:
+                    pass
+
             if not payload.get("_replay"):
                 await ws.send_json({"type": "start", "model": chosen_model})
+                # AFTER start, never before. The client treats `start` as the
+                # demarcation binding the next token stream to the next queued
+                # turn (see the note above); a frame ahead of it would shift that
+                # binding. Two characterization tests pin `start` as the first
+                # frame of a turn and caught this.
+                if sutra_sid:
+                    await ws.send_json({"type": "sutra_session", "id": sutra_sid})
             if not alive:
                 try:
                     proc = await rt.spawn(args, workdir, spawn_key)
@@ -1994,8 +2039,32 @@ async def ws_chat(ws: WebSocket):
                     "the agent process closed before the message was sent (%s)" % e})
                 continue
 
+            # Wrap the emit so Sutra learns the provider's handle the moment the
+            # runtime reports it, and keeps its own copy of the reply. `token`
+            # frames are deltas and `text` frames are the no-delta fallback --
+            # session_runtime emits one or the other, never both, so summing them
+            # does not double-count.
+            _reply = []
+
+            async def _record(frame):
+                try:
+                    t = frame.get("type")
+                    if t == "session" and frame.get("id") and sutra_sid:
+                        sessions_store.bind_handle(sutra_sid, active_id, frame["id"])
+                    elif t in ("token", "text") and frame.get("text"):
+                        _reply.append(frame["text"])
+                except Exception:
+                    pass          # never let bookkeeping break the stream
+                await ws.send_json(frame)
+
             (session_id, got_text, got_result,
-             result_error, eof) = await rt.demux_turn(ws.send_json, session_id)
+             result_error, eof) = await rt.demux_turn(_record, session_id)
+            if sutra_sid and _reply:
+                try:
+                    sessions_store.append_turn(sutra_sid, "assistant",
+                                               "".join(_reply), provider=active_id)
+                except Exception:
+                    pass
             # S23: now that the session id is known, make this runtime
             # discoverable (idempotent; same id + same rt every turn).
             register_runtime(session_id, rt)
