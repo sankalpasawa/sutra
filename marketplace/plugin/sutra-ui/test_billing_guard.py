@@ -60,6 +60,27 @@ class TestSemantics(unittest.TestCase):
         bg.scrub(env)
         self.assertEqual(sorted(env), ["ANTHROPIC_MODEL", "PATH"])
 
+    def test_scrub_honours_the_opt_in(self):
+        """If refusal() lets the turn through on an explicit opt-in, scrub must
+        not then remove the variables that opt-in was about -- otherwise the
+        setting silently does nothing and the turn runs on the default backend."""
+        env = {"ANTHROPIC_BASE_URL": "https://mine.example", bg.ALLOW_ENV: "1"}
+        self.assertIsNone(bg.refusal(env))
+        bg.scrub(env)
+        self.assertIn("ANTHROPIC_BASE_URL", env, "opt-in silently undone")
+
+    def test_scrub_can_be_forced_regardless_of_opt_in(self):
+        env = {"ANTHROPIC_BASE_URL": "https://mine.example", bg.ALLOW_ENV: "1"}
+        bg.scrub(env, allow=False)
+        self.assertNotIn("ANTHROPIC_BASE_URL", env)
+
+    def test_runner_mirrors_the_opt_in_rule(self):
+        """The generated runner cannot import billing_guard, so the rule is
+        inlined there; it must be the SAME rule."""
+        import routines
+        self.assertIn("SUTRA_UI_ALLOW_BACKEND_REDIRECT", routines._RUNNER)
+        self.assertEqual(routines.runner_undefined_names(), [])
+
 
 class TestNoDrift(unittest.TestCase):
     """Same list, four languages. Parsed, not grepped -- a grep would match a
@@ -141,11 +162,11 @@ class TestCallSitesWired(unittest.TestCase):
         """Mutation: without this, the test above is indistinguishable from a
         check that always returns []."""
         import routines
-        broken = routines._RUNNER.replace(
-            "for _v in REDIRECT_VARS:\n            env.pop(_v, None)",
-            "billing_guard.scrub(env)")
-        self.assertNotEqual(broken, routines._RUNNER, "mutation did not apply")
-        self.assertEqual(routines.runner_undefined_names(broken), ["billing_guard"])
+        # Appended rather than substituted: an exact-text replacement silently
+        # stops applying the moment the runner is edited, and a mutation that
+        # does not apply is a test that cannot fail.
+        broken = routines._RUNNER + "\nbilling_guard.scrub(env)\n"
+        self.assertIn("billing_guard", routines.runner_undefined_names(broken))
         self.assertIsNone(routines.runner_syntax_error(broken),
                           "syntax check now catches this; retire the name check?")
 

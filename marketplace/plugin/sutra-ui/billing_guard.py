@@ -133,12 +133,20 @@ def refusal(env=None):
     )
 
 
-def scrub(env):
+def scrub(env, allow=None):
     """Remove every redirect variable from a child environment, in place-ish.
 
-    For spawn paths that should ALWAYS use subscription auth regardless of the
-    parent's environment. Returns the same dict for convenience.
+    HONOURS THE OPT-IN. An earlier version stripped unconditionally, which made
+    ALLOW_ENV a lie: refusal() would let the turn through on the operator's
+    explicit opt-in, and then this quietly removed the very variables that
+    opt-in was about, so the turn ran against the default backend anyway. One
+    rule in both places or the setting means nothing.
+
+    `allow` is read from the same env by default; pass it explicitly only for a
+    path that must use subscription auth no matter what.
     """
+    if redirect_allowed(env) if allow is None else allow:
+        return env
     for v in REDIRECT_VARS:
         env.pop(v, None)
     return env

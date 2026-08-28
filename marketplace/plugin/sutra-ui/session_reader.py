@@ -89,7 +89,19 @@ def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
     """
     if not PROJECTS.exists():
         return []
-    files = sorted(PROJECTS.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    # stat() INSIDE a guard. The glob and the sort are two passes over a
+    # directory Claude Code is actively writing: a transcript that is archived,
+    # trashed or rotated between them raises FileNotFoundError out of the sort
+    # key, and the whole /api/sessions call becomes a 500 -- the Chats screen
+    # goes blank because one unrelated file moved. A vanished file simply sorts
+    # last; it is dropped when the row is read, which already tolerates that.
+    def _mtime(path):
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    files = sorted(PROJECTS.glob("*/*.jsonl"), key=_mtime, reverse=True)
     offset = max(0, offset)
     out = []
     for f in files[offset:offset + limit]:

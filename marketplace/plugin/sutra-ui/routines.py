@@ -495,8 +495,9 @@ def main():
         # this runner is deliberately stdlib-only: it has to keep working while
         # the .app is mid-update or deleted. test_billing_guard.py parses this
         # literal and fails if it drifts from billing_guard.REDIRECT_VARS.
-        for _v in REDIRECT_VARS:
-            env.pop(_v, None)
+        if not (os.environ.get("SUTRA_UI_ALLOW_BACKEND_REDIRECT") or "").strip():
+            for _v in REDIRECT_VARS:
+                env.pop(_v, None)
 
         prompt = r["prompt"]
         if (r.get("opts") or {}).get("teamsutra"):
