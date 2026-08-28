@@ -1826,6 +1826,29 @@ a user-facing feature did.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.237.0 (2026-08-29)
+
+**Sessions belong to Sutra, not to Claude.** A session is now a Sutra record
+with a Sutra id, minted before any provider runs. The provider's own id is
+stored as one handle among several, so a conversation keeps its identity,
+title and history when continued under a different provider: resume goes
+native on a bound handle and replays Sutra's own provider-neutral transcript
+otherwise. Six routes under `/api/sutra/sessions`. Claude's transcripts are
+not migrated and not deleted -- they stay authoritative for Claude-native
+sessions.
+
+**Backend-redirect guard.** `ANTHROPIC_API_KEY` was guarded in seven places;
+`ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` in none, so one line in a
+shell profile sent every chat turn, terminal session and scheduled routine to
+a third party while the panel still claimed Max-plan billing. Now guarded at
+the same seven sites, value-aware: `https://api.anthropic.com` is the official
+endpoint and does not trip it (Claude Code exports it), while
+`anthropic.com.evil.net` does. Model-selection variables are untouched.
+
+`install_runner()` additionally rejects a generated runner that references
+anything it does not define -- the previous check caught SyntaxError only,
+which is not how that failure presents.
+
 ## v2.64.3 (2026-08-04) — consult-gate false-positive fixes (WDP W1-T13, dual-reviewed)
 
 - consult-gate: hook-owned staging exemption (session scratchpads, codex/deepseek temp; dotdot-proof, NOT blanket /tmp) — kills the prompt-staging deadlock (d12).

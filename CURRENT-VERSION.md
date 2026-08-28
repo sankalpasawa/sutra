@@ -1,8 +1,13 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-08-25
+**status**: active · **updated**: 2026-08-29
 
-## v2.235.4 (2026-08-26, HEAD)
+## v2.237.0 (2026-08-29, HEAD)
+
+Sutra-owned session identity (provider handles + provider-neutral
+transcript) and a value-aware backend-redirect billing guard.
+
+## v2.235.4 (2026-08-26)
 
 Provider detection: Claude Desktop is recognised as a different product from the
 Claude Code CLI (Desktop ships no `claude` binary) and the panel says what to
