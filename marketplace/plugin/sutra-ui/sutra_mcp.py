@@ -35,6 +35,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
+# The SIBLING lib/ directory, or sutra_org_summary can never work: it imports
+# placement_engine, which lives in ../lib, and only org_api.py ever put that on
+# the path -- a module this server never imports. One of the nine advertised
+# tools therefore failed 100% of the time, every call returning an import error
+# rather than the registry the operator is being shown in the panel.
+_LIB_DIR = os.path.join(os.path.dirname(HERE), "lib")
+if os.path.isdir(_LIB_DIR) and _LIB_DIR not in sys.path:
+    sys.path.insert(0, _LIB_DIR)
+
 import proposals                                        # noqa: E402
 import teamsutra                                        # noqa: E402
 import routines                                         # noqa: E402
@@ -82,6 +91,14 @@ def t_routines_list(_args):
 
 def t_routine_runs(args):
     rid = str(args.get("id") or "")
+    # EXISTENCE FIRST. routines.runs() answers {"never_run": True} for ANY id and
+    # never raises, so a typo'd or deleted id was reported as "has never run" --
+    # which tells the agent the routine EXISTS. Every sibling tool resolves the
+    # record first; this one did not, and quietly invented a routine.
+    try:
+        routines.load(rid)
+    except (KeyError, OSError):
+        return _err("no routine %r. Use sutra_routines to list them." % rid)
     try:
         rr = routines.runs(rid, limit=int(args.get("limit") or 5))
     except (KeyError, OSError) as exc:
