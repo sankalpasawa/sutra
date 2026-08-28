@@ -212,6 +212,23 @@ const MED_MEMBERSHIP = {
   unknown:   ["off", "Status unknown"],
 };
 
+/* The DOT for one connector row comes from what the probe observed, not from
+   whether the connector is in Claude's list. Those are different questions, and
+   answering the second while colouring it like the first put a green dot on a
+   connector that had just failed to authenticate: MED_MEMBERSHIP.added maps to
+   "ok" and has no warn state at all, so every listed connector rendered healthy
+   whatever the check said. That conflation is the one mediated_connectors.py's
+   docstring exists to prevent. */
+const MED_OBSERVED_CLS = {
+  connected:        "ok",
+  degraded:         "warn",
+  needs_auth:       "warn",
+  pending_approval: "warn",
+  not_configured:   "warn",
+  probe_failed:     "warn",
+  unknown:          "off",
+};
+
 const MED_OBSERVED = {
   connected:        "connected",
   degraded:         "connected, but its tools did not answer",
@@ -280,7 +297,13 @@ function mediatedTile(t, svc){
      healthy one. */
   const rows = (svc.connectors || []).map(c => {
     const said = MED_OBSERVED[c.observation] || "something it did not recognise";
-    return `<li><span class="dot ${cls}"></span>
+    /* `cls` above is the TILE's membership colour. A row is about this one
+       connector, so it takes this one connector's observation. Unchecked stays
+       neutral rather than green -- "we have not looked" is not "healthy". */
+    const rcls = t.availability === "ok"
+      ? (MED_OBSERVED_CLS[c.observation] || "off")
+      : "off";
+    return `<li><span class="dot ${rcls}"></span>
       <span class="muted">Claude's last check reported it ${esc(said)}</span>
       ${c.raw_status ? `<code>${esc(c.raw_status)}</code>` : ""}
       ${(svc.connectors.length > 1) ? `<span class="tag">${esc(c.label)}</span>` : ""}

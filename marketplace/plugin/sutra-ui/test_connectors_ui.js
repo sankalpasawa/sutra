@@ -400,6 +400,39 @@ test("opening the screen reads cache only and never probes", () => {
     "no loader may force a probe on screen open");
 });
 
+/* The dot on a connector row states whether that connector WORKS. It used to
+   state whether Claude lists it, which is a different question with a
+   different answer -- MED_MEMBERSHIP.added maps to "ok" and has no warn state,
+   so a connector that had just failed to authenticate rendered green. */
+test("a broken connector does not get a green dot", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile({ services: [
+    { key: "gmail", name: "Gmail", membership: "added", observation: "needs_auth",
+      connectors: [{ label: "claude.ai Gmail", observation: "needs_auth",
+                     raw_status: "Needs authentication" }] }]}));
+  const rows = html.match(/<li><span class="dot ([a-z]+)"><\/span>/g) || [];
+  assert(rows.length === 1, "expected one connector row, got " + rows.length);
+  assert(!/<li><span class="dot ok"/.test(html),
+         "a connector needing auth was painted with the healthy dot");
+  assert(/<li><span class="dot warn"/.test(html),
+         "expected the row dot to warn; got: " + rows.join(","));
+});
+
+test("a working connector still gets a green dot", () => {
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile());
+  assert(/<li><span class="dot ok"/.test(html),
+         "a connected connector lost its healthy dot");
+});
+
+test("an unchecked tile paints no row green", () => {
+  /* "we have not looked" must not read as "healthy". */
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile({ availability: "not_checked" }));
+  assert(!/<li><span class="dot ok"/.test(html),
+         "an unchecked connector was painted healthy");
+});
+
 console.log("\n" + "-".repeat(60));
 console.log(`connectors UI wiring: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
