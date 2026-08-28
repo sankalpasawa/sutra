@@ -107,6 +107,34 @@ PAYLOAD_ARCH="$(sed -n 's/.*"arch": *"\([^"]*\)".*/\1/p' "$PAYLOAD/STAMP")"
   Rebuild it:  $HERE/bundle-runtime.sh --arch $ARCH"
 VERSION="$(sed -n 's/.*"plugin_version": *"\([^"]*\)".*/\1/p' "$PAYLOAD/STAMP")"
 [ -n "$VERSION" ] || VERSION="0.0.0"
+
+# STALE PAYLOAD GUARD.
+#
+# The check above only asks whether a payload EXISTS. It does not ask whether it
+# came from the tree being built, and bundle-runtime.sh is a separate script that
+# nothing here invokes. So a payload left by an earlier build is reused in full:
+# the DMG is named for the OLD version, none of the new source is in it, and the
+# build reports success. Observed 2026-08-29 -- a 2.220.2 payload was packaged
+# while the tree said 2.237.0, and two new modules were simply absent from the
+# .app. Nothing failed; the install was just silently wrong.
+#
+# Comparing the stamped version against the repo's plugin.json catches exactly
+# that, and nothing else. CI always runs bundle-runtime.sh first, so the two
+# agree there; a mismatch means the payload is genuinely from another build.
+PLUGIN_JSON="$HERE/../../.claude-plugin/plugin.json"
+if [ -f "$PLUGIN_JSON" ]; then
+  SRC_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$PLUGIN_JSON" | head -1)"
+  if [ -n "$SRC_VERSION" ] && [ "$SRC_VERSION" != "$VERSION" ]; then
+    if [ -n "${SUTRA_ALLOW_STALE_PAYLOAD:-}" ]; then
+      note "payload is $VERSION but the tree says $SRC_VERSION (allowed by SUTRA_ALLOW_STALE_PAYLOAD)"
+    else
+      die "stale payload: it was built for $VERSION but this tree is $SRC_VERSION.
+  Packaging it would ship the OLDER code under a name that looks current.
+  Rebuild it:  $HERE/bundle-runtime.sh --arch $ARCH
+  To package anyway: SUTRA_ALLOW_STALE_PAYLOAD=1 $0 ..."
+    fi
+  fi
+fi
 echo "  plugin $VERSION, $PAYLOAD_ARCH, $(du -sh "$PAYLOAD" | awk '{print $1}')"
 
 # ------------------------------------------------------------------- icon --
