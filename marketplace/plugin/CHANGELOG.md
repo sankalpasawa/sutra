@@ -1826,6 +1826,27 @@ a user-facing feature did.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.239.0 (2026-08-29)
+
+**A provider other than Claude can drive a chat.** `ws_chat` refused anything
+but Claude with a hardcoded check; provider support is a registry now. An
+adapter states how to start a provider, how to hand it a message, how to
+translate one line of its output into Sutra's frame vocabulary, and what it
+can do. `providers.ADAPTERS` derives from that registry instead of being a
+hand-kept set that had to be remembered in two places.
+
+Claude keeps its existing loop deliberately -- that code encodes many
+separately measured behaviours of a specific CLI build, and rewriting it with
+no second implementation to check against would risk regressions the tests
+cannot see. A reference line-protocol adapter, with a fake CLI speaking it,
+proves the generic path end to end: a real chat turn produces session,
+thinking, tool and token frames and lands in Sutra's session store under that
+provider's own handle.
+
+Resume now respects what a provider can actually do: holding a handle proves
+the thread existed, not that the CLI can continue it, so a provider without
+native resume replays Sutra's own transcript instead.
+
 ## v2.238.0 (2026-08-29)
 
 Fixes found by reading the shipping code against what it claims to do.

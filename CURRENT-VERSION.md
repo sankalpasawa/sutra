@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-29
 
-## v2.238.0 (2026-08-29, HEAD)
+## v2.239.0 (2026-08-29, HEAD)
+
+Provider adapter seam: a non-Claude provider can drive a chat.
+
+## v2.238.0 (2026-08-29)
 
 Fork/run-now/pause fixes, terminal billing guard, cost accounting,
 two MCP tools repaired, stale-payload build guard.
