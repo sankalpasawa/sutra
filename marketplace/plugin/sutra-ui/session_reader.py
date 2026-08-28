@@ -320,6 +320,68 @@ def relocate(session_id: str, kind: str) -> Optional[Dict]:
     return {"moved_to": str(dest), "original": orig}
 
 
+def relocated(kind: str = None):
+    """Everything moved out, with where it came from. Newest first.
+
+    The sidecar written above exists so a move can be undone; nothing ever read
+    it, so "is recoverable" in the confirm dialog meant "the bytes are still on
+    disk somewhere" rather than anything the operator could act on.
+    """
+    kinds = (kind,) if kind in ("archive", "trash") else ("archive", "trash")
+    out = []
+    for k in kinds:
+        root = SUTRA_STORE / k
+        if not root.is_dir():
+            continue
+        for side in root.glob("*/*.orig.json"):
+            try:
+                meta = json.loads(side.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            body = side.with_name(side.name[:-len(".orig.json")])
+            if not body.is_file():
+                continue          # the transcript itself is gone; nothing to offer
+            out.append({"kind": k, "session_id": meta.get("session_id"),
+                        "original": meta.get("original"),
+                        "moved_at": meta.get("moved_at") or 0,
+                        "path": str(body),
+                        "can_restore": bool(meta.get("original"))})
+    out.sort(key=lambda r: r.get("moved_at") or 0, reverse=True)
+    return out
+
+
+def restore(session_id: str) -> Optional[Dict]:
+    """Put an archived or trashed transcript back where it came from.
+
+    Refuses rather than guesses:
+      - no sidecar, or no original path recorded -> None
+      - something already sitting at the original path -> None, because
+        overwriting it could destroy a live conversation with the same id
+      - the original's project directory is gone -> recreated, since that is
+        just Claude's per-cwd folder and remaking it loses nothing
+    """
+    for row in relocated():
+        if row["session_id"] != session_id:
+            continue
+        orig = row.get("original")
+        if not orig:
+            return None
+        dest = Path(orig)
+        if dest.exists():
+            return None
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(row["path"], str(dest))
+        except OSError:
+            return None
+        try:
+            os.unlink(row["path"] + ".orig.json")
+        except OSError:
+            pass
+        return {"restored_to": orig, "from": row["kind"]}
+    return None
+
+
 _TOOL_INPUT_KEYS = ("command", "file_path", "path", "pattern", "query", "url",
                     "prompt", "notebook_path", "description")
 _RESULT_CAP = 8000   # per tool result, chars — bound the payload, keep the useful head

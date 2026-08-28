@@ -656,6 +656,24 @@ def _sse_event(event: str, data: dict) -> str:
     return "event: %s\ndata: %s\n\n" % (event, json.dumps(data))
 
 
+@app.get("/api/sessions/relocated")
+def api_sessions_relocated(kind: str = ""):
+    """What has been archived or trashed, and where each came from.
+
+    The confirm dialogs have always said "is recoverable". The sidecar that
+    makes recovery possible was written on every move and read by nothing, so
+    the promise meant "the bytes are somewhere on your disk". These two routes
+    are the other half of it.
+
+    DECLARED BEFORE /api/sessions/{sid}. FastAPI matches routes in declaration
+    order, so a literal segment registered after a path parameter is never
+    reached -- the request arrives at api_session(sid="relocated") and 404s.
+    The same shadowing already produced a confusing 405 on
+    /api/connectors/local/refresh.
+    """
+    return {"sessions": sr.relocated(kind or None)}
+
+
 @app.get("/api/sessions/{sid}")
 def api_session(sid: str):
     data = sr.read_session(sid)
@@ -762,8 +780,22 @@ def api_session_rename(sid: str, body: dict):
     return {"ok": True, "title": str(title).replace("\n", " ").strip()[:200], "title_source": "custom"}
 
 
+def _refuse_if_live(sid):
+    """A transcript being written RIGHT NOW must not be moved out from under its
+    writer. shutil.move within one filesystem is a rename, so the running
+    `claude` process keeps its open fd and follows the file: the rest of that
+    conversation is appended into ~/.sutra-ui/archive, where nothing lists it and
+    the operator has no idea their live session went there."""
+    if lookup_runtime(sid) is not None:
+        raise HTTPException(status_code=409, detail=
+            "that session is running right now. Stop the turn first -- moving "
+            "the file while the agent holds it open sends the rest of the "
+            "conversation to the archive instead of to the session.")
+
+
 @app.post("/api/sessions/{sid}/archive")
 def api_session_archive(sid: str):
+    _refuse_if_live(sid)
     r = sr.relocate(sid, "archive")
     if r is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -772,9 +804,20 @@ def api_session_archive(sid: str):
 
 @app.post("/api/sessions/{sid}/delete")
 def api_session_delete(sid: str):
+    _refuse_if_live(sid)
     r = sr.relocate(sid, "trash")
     if r is None:
         raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True, **r}
+
+
+@app.post("/api/sessions/{sid}/restore")
+def api_session_restore(sid: str):
+    r = sr.restore(sid)
+    if r is None:
+        raise HTTPException(status_code=404, detail=
+            "nothing to restore for that id, or a file already sits where it "
+            "came from -- refusing rather than overwriting it")
     return {"ok": True, **r}
 
 

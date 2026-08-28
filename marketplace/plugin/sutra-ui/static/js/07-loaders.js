@@ -1249,16 +1249,18 @@ async function archiveSession(sid){
   if(!confirm("Archive this session? The transcript moves out of Claude's project folder to ~/.sutra-ui/archive — it stops listing here and in Claude, and is recoverable.")) return;
   try{ await apiPost("/api/sessions/"+encodeURIComponent(sid)+"/archive", {});
     S.sessions=S.sessions.filter(x=>x.id!==sid); S.openPanes=S.openPanes.filter(x=>x!==sid);
-    S.sessMenu=null; S.toast="archived — recoverable in ~/.sutra-ui/archive";
-  }catch(e){ S.toast="archive failed: "+e.message; }
+    S.sessMenu=null; S.toast="archived — restore it from Archived";
+  }catch(e){ S.toast = /running right now/.test(e.message||"")
+        ? "that session is running — stop the turn first" : "archive failed: "+e.message; }
   render();
 }
 async function deleteSession(sid){
   if(!confirm("Delete this session? History is NOT destroyed — the transcript moves to ~/.sutra-ui/trash and can be restored.")) return;
   try{ await apiPost("/api/sessions/"+encodeURIComponent(sid)+"/delete", {});
     S.sessions=S.sessions.filter(x=>x.id!==sid); S.openPanes=S.openPanes.filter(x=>x!==sid);
-    S.sessMenu=null; S.toast="deleted — recoverable in ~/.sutra-ui/trash";
-  }catch(e){ S.toast="delete failed: "+e.message; }
+    S.sessMenu=null; S.toast="deleted — restore it from Archived";
+  }catch(e){ S.toast = /running right now/.test(e.message||"")
+        ? "that session is running — stop the turn first" : "delete failed: "+e.message; }
   render();
 }
 async function revealSession(sid){
