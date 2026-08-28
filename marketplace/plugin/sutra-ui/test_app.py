@@ -1270,10 +1270,33 @@ class TestApp(unittest.TestCase):
         status, _ = _post("/api/settings", {"onboarded": True})
         self.assertNotEqual(status, 403)
 
-    def test_42e_reads_are_untouched_even_cross_origin(self):
+    def test_42e_cross_origin_reads_are_refused_too(self):
+        """CORRECTED PREMISE (2026-08-29). This test used to assert 200, on the
+        stated grounds that "reads carry no new risk". That was true while every
+        GET was a pure read. It stopped being true once GETs acquired effects:
+        /connectors/mediated?refresh=true spawned the Claude CLI against every
+        connector, and /connectors/{p}/{c}/repositories?refresh=true still
+        re-fetches from GitHub with the operator's token. A page the operator had
+        open could fire either.
+
+        The probe moved to POST, which is the real fix for a side-effecting GET.
+        This is the second layer: a non-loopback Origin is refused whatever the
+        method. Nothing legitimate is lost -- the agent/CLI lane sends no Origin
+        and is unaffected, and a hostile page could never read the response
+        anyway (no CORS headers are served); what changes is that the request no
+        longer EXECUTES."""
         status, _ = _http_h("GET", "/api/settings",
                             headers={"Origin": "https://evil.example"})
-        self.assertEqual(status, 200, "reads carry no new risk and stay open")
+        self.assertEqual(status, 403)
+
+    def test_42e2_loopback_and_no_origin_reads_still_pass(self):
+        """The half that must not regress: this guard is about cross-SITE
+        requests, and both the panel and the CLI lane have to keep working."""
+        status, _ = _http_h("GET", "/api/settings",
+                            headers={"Origin": "http://127.0.0.1:%d" % TestApp.port})
+        self.assertEqual(status, 200, "the panel's own reads must pass")
+        status, _ = _get("/api/settings")
+        self.assertEqual(status, 200, "the no-Origin agent lane must pass")
 
     def test_43_settings_writes_outside_any_sutra_native_home(self):
         """Panel preferences are not governance state. If the settings file

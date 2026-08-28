@@ -191,6 +191,15 @@ function sessionPane(s){
   const ch = s.channel;
   const chanChip = ch ? `<span class="pill ${ch.writes_files?"p-block":"p-mut"}">${esc(ch.id)} ·
       ${esc(ch.permission_mode||"")}${ch.writes_files?" · writes files":""}</span>` : "";
+  /* WHERE THE TURN ACTUALLY GOES. billing_guard's refusal tells the operator
+     that opting into a redirect means "the panel will say on screen which
+     backend is in use". Nothing said it -- status() had no caller at all -- so
+     a pane could run against a third-party backend while every chip on screen
+     still read like the Max plan. Rendered next to the provider because that is
+     where someone looks to answer "what is this pane doing". */
+  const redir = ch && ch.backend && ch.backend.redirected
+    ? `<span class="pill p-block" title="Set in this environment: ${esc((ch.backend.vars||[]).join(", "))}"
+         >not your plan · ${esc((ch.backend.vars||[]).join(", "))}</span>` : "";
   const body = tab==="route" ? routingChart(s) : sessionBody(s);
   /* Chrome decisions (founder, 2026-08-18): the header exists only for the
      COLLAPSED strip -- while expanded it is display:none (panel.css), because
@@ -242,7 +251,7 @@ function sessionPane(s){
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
+    <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}${redir}</div>`:""}${body}</div>
     ${agentsFold(s)}
     ${S.sideOpen[s.id] ? `<div class="sidewrap">
       <div class="sidehead">

@@ -413,3 +413,33 @@ class HostileTextIsDefanged(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ProbeIsNotReachableByGET(unittest.TestCase):
+    """The probe spawns the Claude CLI, which opens a live connection to every
+    one of the operator's connectors. That is a side effect, and app.py's origin
+    guard only covers POST/PUT/PATCH/DELETE -- so as a GET query parameter it was
+    reachable from any page the operator happened to have open."""
+
+    def test_get_route_takes_no_refresh_parameter(self):
+        import inspect
+        import connectors_api
+        sig = inspect.signature(connectors_api.connectors_mediated)
+        self.assertNotIn("refresh", sig.parameters,
+                         "refresh is back on the GET route")
+
+    def test_the_probe_has_its_own_post_route(self):
+        import connectors_api
+        paths = {getattr(r, "path", ""): sorted(getattr(r, "methods", []) or [])
+                 for r in connectors_api.router.routes}
+        self.assertIn("POST", paths.get("/api/connectors/mediated/refresh", []))
+
+    def test_only_the_post_route_refreshes(self):
+        """Source-level, because calling it would run a real probe."""
+        import inspect
+        import connectors_api
+        get_src = inspect.getsource(connectors_api.connectors_mediated)
+        self.assertIn("refresh=False", get_src.replace(" ", ""))
+        post_src = inspect.getsource(connectors_api.connectors_mediated_refresh)
+        self.assertIn("refresh=True", post_src.replace(" ", ""))
+

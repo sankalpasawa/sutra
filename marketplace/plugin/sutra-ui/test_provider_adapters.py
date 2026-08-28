@@ -194,5 +194,49 @@ class NonClaudeChat(unittest.TestCase):
         self.assertIn("lines", body["handles"])
 
 
+class ShadowUsesTheSameGate(unittest.TestCase):
+    """build_agent_args emits Claude Code's flags. Every path that calls it must
+    check the adapter, not just the one in ws_chat -- otherwise selecting a
+    provider without a Claude-protocol adapter and starting Shadow spawns that
+    binary with arguments it cannot parse, which is the failure the chat gate
+    exists to prevent, reached by a second door."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="sutra-shadowgate-")
+        self.fake = os.path.join(self.tmp, "fake-lines")
+        with open(self.fake, "w") as f:
+            f.write(FAKE_LINES)
+        os.chmod(self.fake, 0o755)
+        cfg = os.path.join(self.tmp, "cfg")
+        os.makedirs(cfg, exist_ok=True)
+        self._saved = {k: os.environ.get(k) for k in
+                       ("SUTRA_UI_PROVIDER", "SUTRA_UI_EXTRA_PROVIDER")}
+        os.environ["SUTRA_UI_PROVIDER"] = "lines"
+        os.environ["SUTRA_UI_EXTRA_PROVIDER"] = (
+            "id=lines,name=Lines,bin=%s,config=%s" % (self.fake, cfg))
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_shadow_refuses_a_provider_with_no_claude_adapter(self):
+        import app
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as cm:
+            app._shadow_args()
+        self.assertEqual(cm.exception.status_code, 503)
+        self.assertIn("lines", str(cm.exception.detail))
+
+    def test_shadow_still_works_for_claude(self):
+        os.environ["SUTRA_UI_PROVIDER"] = "claude"
+        import app
+        args = app._shadow_args()
+        self.assertTrue(args and "--output-format" in args)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

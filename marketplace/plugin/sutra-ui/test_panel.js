@@ -2807,6 +2807,21 @@ test("34f. a notice is kept on the turn and rendered, not merely received", () =
     "notices must persist after the turn ends; `retrying` is the transient one");
 });
 
+test("34g. a redirected backend is stated on screen, as the refusal promises", () => {
+  /* billing_guard's refusal tells the operator that opting in means "the panel
+     will say on screen which backend is in use". status() had ZERO callers, so
+     a pane could run against a third party while every chip still read like the
+     Max plan. The server now puts it on the provider frame; this pins that the
+     client actually draws it. */
+  const fs = require("fs"), path = require("path");
+  const py = fs.readFileSync(path.join(__dirname, "app.py"), "utf8");
+  assert.ok(/"backend":\s*billing_guard\.status\(\)/.test(py),
+    "the provider frame must carry billing_guard.status()");
+  const render = fs.readFileSync(path.join(__dirname, "static", "js", "06-render.js"), "utf8");
+  assert.ok(/ch\.backend/.test(render), "06-render.js must read ch.backend");
+  assert.ok(/\$\{redir\}/.test(render), "the redirect chip must be interpolated");
+});
+
 /* NAMESPACE NOTE (2026-08-22): this spec was first written against S.sessMenu /
    data-sessmenu / sessMenuAction. Those names already belong to the RAIL's
    per-session actions menu (rename / pin / archive -- 02-helpers.js:809,

@@ -400,6 +400,20 @@ test("opening the screen reads cache only and never probes", () => {
     "no loader may force a probe on screen open");
 });
 
+test("the probe is requested with POST, not a GET query", () => {
+  /* As a GET it sat outside the panel's origin guard (which covers only
+     mutating methods), so any page the operator had open could make their
+     browser fire a probe that spawns the Claude CLI and touches every
+     connector. */
+  const fs = require("fs"), path = require("path");
+  const src = fs.readFileSync(path.join(__dirname, "static", "js", "12-connectors.js"), "utf8");
+  const mediated = src.slice(src.indexOf("async function loadMediated"),
+                             src.indexOf("async function loadMediated") + 900);
+  assert(!/refresh=true/.test(mediated), "the refresh query parameter is back");
+  assert(/apiPost\("\/api\/connectors\/mediated\/refresh"/.test(src),
+         "the refresh must go through apiPost");
+});
+
 /* The dot on a connector row states whether that connector WORKS. It used to
    state whether Claude lists it, which is a different question with a
    different answer -- MED_MEMBERSHIP.added maps to "ok" and has no warn state,

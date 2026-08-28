@@ -75,6 +75,27 @@ PANEL_TOKEN = _secrets.token_urlsafe(32)
 
 @app.middleware("http")
 async def _origin_guard(request, call_next):
+    # CROSS-SITE READS TOO, not only mutations.
+    #
+    # The guard below covers POST/PUT/PATCH/DELETE. Some GETs have effects
+    # anyway -- /connectors/.../repositories?refresh=true re-fetches from GitHub
+    # with the operator's token -- so a page the operator had open could make
+    # their browser fire those. This rejects any request whose Origin is not
+    # loopback, whatever the method.
+    #
+    # Deliberately NOT the panel-token half: apiGet sends the token, but other
+    # loopback GET consumers do not, and requiring it here would break them for
+    # no security gain. A same-origin request either sends a loopback Origin or
+    # none, so neither is affected. This does not stop a bare <img src=...>,
+    # which carries no Origin at all -- the real fix for a side-effecting GET is
+    # to not put the side effect on GET, which is why the connector probe moved
+    # to POST.
+    origin_any = request.headers.get("origin")
+    if origin_any:
+        from urllib.parse import urlsplit as _us2
+        if (_us2(origin_any).hostname or "") not in ("127.0.0.1", "localhost", "::1"):
+            return JSONResponse({"detail": "cross-origin request refused"},
+                                status_code=403)
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         raw_host = request.headers.get("host") or ""
         # IPv6-safe: [::1]:8330 must parse to ::1, not "[". urlsplit handles
@@ -1218,10 +1239,27 @@ _SHADOW_LOCK = asyncio.Lock()   # boot + turn serialization (codex P2 fold)
 
 
 def _shadow_args():
+    """Argv for a Shadow turn.
+
+    THE SAME ADAPTER GATE AS ws_chat. build_agent_args emits Claude Code's
+    flags -- --output-format stream-json, --include-partial-messages,
+    --permission-mode -- so handing it another vendor's binary spawns that
+    binary with arguments it does not understand. ws_chat refuses that case
+    loudly; this path only checked that SOME binary existed, so selecting a
+    provider without a Claude-protocol adapter and starting Shadow would have
+    reached exactly the failure the gate over there exists to prevent, by a
+    second door. Found by an audit lane, not by a test.
+    """
     detail = providers.active_provider_detail()
     prov = providers.provider_by_id(detail["id"]) if detail["id"] else None
     if not prov or not prov.get("bin_path"):
         raise HTTPException(503, "no usable provider for Shadow")
+    adapter = provider_adapters.for_provider(detail["id"])
+    if adapter is None or adapter.protocol != provider_adapters.PROTO_CLAUDE:
+        raise HTTPException(503,
+            "Shadow speaks Claude Code's stream-json protocol and the active "
+            "provider is %r, which has no adapter for it. Switch provider, or "
+            "write one." % detail["id"])
     return build_agent_args(prov["bin_path"], "", "plan", stream_input=True)
 
 
@@ -1907,6 +1945,13 @@ async def ws_chat(ws: WebSocket):
         # Stated, not swallowed: the session is running somewhere other than what
         # was asked for, and a UI that showed the requested path would be lying.
         "cwd_refused": cwd_refused,
+        # WHERE THE INFERENCE ACTUALLY GOES. billing_guard's refusal tells the
+        # operator that opting in means "the panel will say on screen which
+        # backend is in use" -- and nothing said it, because status() had no
+        # caller anywhere. A panel that keeps claiming Max-plan billing while a
+        # turn runs somewhere else is the failure the guard exists to prevent,
+        # just with an extra step.
+        "backend": billing_guard.status(),
     })
 
     session_id = None

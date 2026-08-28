@@ -233,16 +233,34 @@ def connector_providers():
 # Claude's connections inflate Sutra's connected count in the rail badge.
 @router.get("/connectors/mediated")
 @guarded("connectors_mediated")
-def connectors_mediated(refresh: bool = Query(False)):
-    """Connections Sutra can see but does not own.
+def connectors_mediated():
+    """Connections Sutra can see but does not own. READ ONLY.
 
-    A plain GET never spawns anything -- it answers from cache, or says
-    "not_checked". `refresh=true` asks for a real probe, which is rate limited
-    and single-flight inside the module, because the probe runs the Claude CLI
-    and that opens a live connection to every one of the operator's connectors.
+    `refresh` used to be a query parameter here, which put a real side effect --
+    spawning the Claude CLI, which opens a live connection to every one of the
+    operator's connectors -- behind a GET. The panel's origin guard
+    (app.py _origin_guard) only covers POST/PUT/PATCH/DELETE, so any page the
+    operator had open could fire that probe at 127.0.0.1 simply by requesting a
+    URL. Nothing sensitive comes BACK cross-origin, but the probe still ran.
+
+    The probe now lives on POST below, where the guard applies. This answers
+    from cache, or says "not_checked".
     """
     import mediated_connectors
-    return {"tiles": [mediated_connectors.snapshot(refresh=refresh)],
+    return {"tiles": [mediated_connectors.snapshot(refresh=False)],
+            "truth_class": "observed"}
+
+
+@router.post("/connectors/mediated/refresh")
+@guarded("connectors_mediated_refresh")
+def connectors_mediated_refresh():
+    """Run a real probe. Rate limited and single-flight inside the module.
+
+    POST because it has an effect outside this process, which is also what puts
+    it behind the origin guard.
+    """
+    import mediated_connectors
+    return {"tiles": [mediated_connectors.snapshot(refresh=True)],
             "truth_class": "observed"}
 
 

@@ -378,7 +378,12 @@ async function loadMediated(refresh){
   if (S.conn.mediatedBusy) return;
   if (refresh) { S.conn.mediatedBusy = true; render(); }
   try {
-    const d = await apiGet("/api/connectors/mediated" + (refresh ? "?refresh=true" : ""));
+    /* POST for the probe: it spawns the Claude CLI and touches every connector,
+       and the panel's origin guard only covers mutating methods -- as a GET it
+       was reachable from any page the operator had open. */
+    const d = refresh
+      ? await apiPost("/api/connectors/mediated/refresh", {})
+      : await apiGet("/api/connectors/mediated");
     S.conn.mediated = (d.tiles || [])[0] || null;
   } catch (e) {
     /* A failed fetch is not evidence about the connection. Fall back to the
