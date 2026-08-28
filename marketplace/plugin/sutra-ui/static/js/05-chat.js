@@ -1416,6 +1416,13 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
      the compose window it was supposed to cover. The run strip now carries the
      whole live window with a stopwatch, so keeping both meant two animated
      elements per turn saying different amounts of nothing. */
+  /* Persistent, unlike `retrying` above: a skipped frame or an unreadable
+     provider directive means this answer is missing something, and that remains
+     true after the turn ends. Rendered whether or not the turn is streaming. */
+  const notices = (t.notices && t.notices.length)
+    ? `<div class="tnotices">${t.notices.map(n =>
+        `<div class="tnotice"><i class="dot warn"></i><span>${esc(n)}</span></div>`).join("")}</div>`
+    : "";
   const waiting = "";
   /* data-resp is the PATCH ANCHOR. While a reply streams, patchStreaming()
      rewrites the innerHTML of exactly this node instead of letting render()
@@ -1440,7 +1447,7 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
   /* data-aturn anchors this block for patchTurn(): a tool frame replaces THIS
      node instead of re-rendering the pane. */
   return `<div class="a" data-aturn="${esc(t.uid||"")}"
-    >${stateTop}${replayed}${meta}${tools}${agents}${retrying}${waiting}${body}${err}${stateBottom}</div>`;
+    >${stateTop}${replayed}${meta}${tools}${agents}${retrying}${notices}${waiting}${body}${err}${stateBottom}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)

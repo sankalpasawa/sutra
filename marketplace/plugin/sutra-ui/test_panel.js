@@ -2760,6 +2760,53 @@ test("34d. patchStreaming uses the shared builder — no second caret writer", (
   assert.ok(!/class="caret"/.test(psBody), "a caret literal inside patchStreaming is the second writer returning");
 });
 
+test("34e. every frame the server can emit has a branch in the client", () => {
+  /* THE GENERAL FORM OF A BUG THAT ALREADY SHIPPED.
+     session_runtime emits {"type":"notice"} when it SKIPS an oversized frame --
+     the one signal that an answer has a hole in it -- and the client's
+     ws.onmessage had no branch for it, so every notice was dropped and the
+     answer looked whole. The server comment even reassures the operator that
+     "The answer continues"; they were never shown either half.
+
+     Asserting the one type would fix the one bug. This asserts the RULE: any
+     frame type the server emits to the chat socket must be handled here. The
+     next frame someone adds server-side cannot silently go nowhere. */
+  const fs = require("fs"), path = require("path");
+  const rt = fs.readFileSync(path.join(__dirname, "session_runtime.py"), "utf8");
+  const client = fs.readFileSync(path.join(__dirname, "static", "js", "01-state.js"), "utf8");
+
+  const emitted = new Set();
+  const re = /await emit\(\{\s*\n?\s*"type":\s*"([a-z_]+)"/g;
+  let m;
+  while ((m = re.exec(rt))) emitted.add(m[1]);
+  /* underscore-prefixed types are internal to the observer fan-out and are
+     documented as never reaching the primary client. */
+  for (const t of [...emitted]) if (t.startsWith("_")) emitted.delete(t);
+
+  assert.ok(emitted.size >= 4, "found only " + [...emitted] + " — the scraper broke, not the code");
+  assert.ok(emitted.has("notice"), "expected notice among the emitted types");
+
+  const missing = [...emitted].filter(t => !client.includes('f.type === "' + t + '"'));
+  assert.deepStrictEqual(missing, [],
+    "server emits these frames and the client drops them: " + missing.join(", "));
+});
+
+test("34f. a notice is kept on the turn and rendered, not merely received", () => {
+  /* The turn-level half: storing it and never drawing it is the same bug one
+     layer down. */
+  const fs = require("fs"), path = require("path");
+  const state = fs.readFileSync(path.join(__dirname, "static", "js", "01-state.js"), "utf8");
+  const chat = fs.readFileSync(path.join(__dirname, "static", "js", "05-chat.js"), "utf8");
+  assert.ok(/notices/.test(state), "01-state.js must keep the notice on the turn");
+  assert.ok(/t\.notices/.test(chat), "05-chat.js must read t.notices");
+  assert.ok(/\$\{notices\}/.test(chat), "the notices block must be interpolated into the turn");
+  /* and it must NOT be gated on streaming, the way `retrying` deliberately is:
+     a hole in the answer outlives the turn that made it. */
+  const decl = chat.slice(chat.indexOf("const notices ="), chat.indexOf("const waiting ="));
+  assert.ok(!/t\.streaming/.test(decl),
+    "notices must persist after the turn ends; `retrying` is the transient one");
+});
+
 /* NAMESPACE NOTE (2026-08-22): this spec was first written against S.sessMenu /
    data-sessmenu / sessMenuAction. Those names already belong to the RAIL's
    per-session actions menu (rename / pin / archive -- 02-helpers.js:809,

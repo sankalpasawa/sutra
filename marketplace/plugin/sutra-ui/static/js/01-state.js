@@ -1280,6 +1280,22 @@ function claudeChannel(s, side){
       /* A rate-limit backoff. Without this the pane went silent and a WAITING
          turn was indistinguishable from a WEDGED one. */
       if (ch.turn){ ch.turn.retrying = f.detail || "retrying"; }
+    } else if (f.type === "notice"){
+      /* The server emits this when the turn is INCOMPLETE in a way the operator
+         cannot otherwise see -- an oversized frame was skipped, or a provider
+         sent a directive this build does not understand. There was no branch for
+         it at all, so every one of those was dropped here and the answer looked
+         whole. The server's own comment ("The answer continues.") describes a
+         reassurance the operator was never shown.
+
+         Kept on the TURN and never cleared, unlike `retrying`: a backoff stops
+         being true when the turn finishes, but "this answer has a hole in it"
+         stays true afterwards. Attached to the last turn when none is live, so a
+         notice arriving between turns is not lost either. */
+      const target = ch.turn || ch.last;
+      if (target && f.text){
+        (target.notices || (target.notices = [])).push(String(f.text));
+      }
     } else if (f.type === "sysinit"){
       /* What the session actually resolved, as opposed to what was requested --
          they differ whenever a fallback or a settings default applies. */
