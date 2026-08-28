@@ -81,6 +81,23 @@ class TestSemantics(unittest.TestCase):
         self.assertIn("SUTRA_UI_ALLOW_BACKEND_REDIRECT", routines._RUNNER)
         self.assertEqual(routines.runner_undefined_names(), [])
 
+    def test_terminal_scrubs_like_chat(self):
+        """A guard covering chat but not the terminal is not a guard -- it just
+        moves where the operator is surprised. The terminal used to inherit a
+        redirect wholesale while its header said Claude Max."""
+        tree = ast.parse(_read("app.py"))
+        scrubbed = set()
+        for n in ast.walk(tree):
+            if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)):
+                for sub in ast.walk(n):
+                    if (isinstance(sub, ast.Call)
+                            and isinstance(sub.func, ast.Attribute)
+                            and sub.func.attr == "scrub"
+                            and isinstance(sub.func.value, ast.Name)
+                            and sub.func.value.id == "billing_guard"):
+                        scrubbed.add(n.name)
+        self.assertIn("ws_term", scrubbed, "terminal spawn does not scrub")
+
 
 class TestNoDrift(unittest.TestCase):
     """Same list, four languages. Parsed, not grepped -- a grep would match a

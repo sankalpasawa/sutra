@@ -540,16 +540,26 @@ def main():
             fd = os.open(outp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try: os.write(fd, body[-MAX_OUT:].encode("utf-8", "replace"))
             finally: os.close(fd)
+            # PARSE THE PAYLOAD WHATEVER THE EXIT CODE. The CLI reports what a
+            # turn cost even when it ends in error, and reading total_cost_usd
+            # only on the success branch meant every failed run was ledgered as
+            # cost_usd: null while the blob on disk carried the real number.
+            # Spend aggregated over the ledger therefore under-reported real
+            # money -- and a run that fails after burning tokens is precisely
+            # the one worth accounting for.
+            try:
+                j = json.loads(p.stdout or "{}")
+            except ValueError:
+                j = {}
+            if not isinstance(j, dict):
+                j = {}
+            if j.get("total_cost_usd") is not None:
+                cost = j.get("total_cost_usd")
             if exit_code != 0:
                 outcome = "failed"; detail = (p.stderr or p.stdout or "")[-600:]
             else:
-                try:
-                    j = json.loads(p.stdout or "{}")
-                    cost = j.get("total_cost_usd")
-                    result_text = str(j.get("result") or "")
-                    if j.get("is_error"): outcome, detail = "failed", str(j.get("subtype") or "")[:200]
-                except ValueError:
-                    pass
+                result_text = str(j.get("result") or "")
+                if j.get("is_error"): outcome, detail = "failed", str(j.get("subtype") or "")[:200]
         except subprocess.TimeoutExpired:
             outcome, detail = "timeout", "exceeded %ds" % TIMEOUT
         except OSError as e:
@@ -980,10 +990,24 @@ def update(rid, body):
     if body.get("clear_auto_disable"):
         rec["auto_disabled"] = None
     # Re-validate the whole record, so an update cannot reach a state create refuses.
-    checked = validate_new(dict(rec, id=rec["id"]), set())
-    for k in ("description", "prompt", "cwd", "model", "permission_mode", "opts"):
-        rec[k] = checked[k]
-    rec["prompt_sha256"] = checked["prompt_sha256"]
+    #
+    # EXCEPT when the only thing being asked for is "stop". validate_new requires
+    # cwd to be an existing directory, so a routine whose folder was deleted or
+    # renamed could not be paused: the {"enabled": false} patch was refused by
+    # the very condition that made the routine fail, and it went on firing on
+    # schedule. The only way out of the panel was deleting it, which throws away
+    # the prompt. Turning something off must never be blocked by the reason it
+    # needs turning off.
+    #
+    # Deliberately narrow: ONLY a patch that does nothing but disable. Anything
+    # that edits the record still has to produce a record create would accept.
+    stop_only = (not (set(body) - {"enabled", "clear_auto_disable"})
+                 and "enabled" in body and not body["enabled"])
+    if not stop_only:
+        checked = validate_new(dict(rec, id=rec["id"]), set())
+        for k in ("description", "prompt", "cwd", "model", "permission_mode", "opts"):
+            rec[k] = checked[k]
+        rec["prompt_sha256"] = checked["prompt_sha256"]
     save(rec)
     if resched:
         launchd = reload_job(rec) if rec["enabled"] else _paused(rid)
@@ -1102,20 +1126,44 @@ def run_now(rid):
     # fire, and unload again -- "Run now still works while paused" is the
     # behaviour Claude has, and pausing must not cost you the ability to test.
     temporary = not rec.get("enabled")
-    if temporary:
-        write_plist(rec)
-        bootstrap(rid)
-    # Marker first, then kickstart: the runner consumes it to label the run
-    # "manual". Written before firing because the job can start immediately.
+    # Marker first: the runner consumes it to label the run "manual". Written
+    # before firing because the job can start immediately.
     md = _mkdir_private(runs_dir() / rid)
     try:
         (md / ".manual").write_text(now_iso(), encoding="utf-8")
     except OSError:
         pass
-    r = kickstart(rid)
-    ok = r.returncode == 0
+
     if temporary:
-        bootout(rid)
+        # A PAUSED ROUTINE RUNS WITHOUT LAUNCHD AT ALL.
+        #
+        # The old path bootstrapped the job, kickstarted it and then immediately
+        # booted it out -- launchd tore the job down before the runner did any
+        # work, so "Run now" on a paused routine did nothing while the API
+        # reported success. It also left the .manual marker behind, because
+        # nothing survived long enough to consume it, so the NEXT scheduled fire
+        # picked it up and was recorded as manual -- corrupting the one signal
+        # that tells you whether your schedule has ever actually fired.
+        #
+        # The plist only ever ran `python3 <runner> <rid>`, so running that
+        # directly is the same work with none of the load/fire/unload race, and
+        # a paused routine is never momentarily loaded (it cannot fire by
+        # schedule during the window, which the old path allowed).
+        workdir = rec.get("cwd") or str(_home())
+        if not os.path.isdir(workdir):
+            workdir = str(_home())      # the folder may be why it was paused
+        try:
+            subprocess.Popen(
+                ["/usr/bin/python3", str(runner_path()), rid, "manual"],
+                cwd=workdir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+            ok, err = True, None
+        except OSError as e:
+            ok, err = False, str(e)
+        r = type("R", (), {"returncode": 0 if ok else 1, "stderr": err})()
+    else:
+        r = kickstart(rid)
+        ok = r.returncode == 0
     return {"kickstarted": ok, "label": label_for(rid),
             "stderr": (r.stderr or "").strip() or None,
             # kickstart ignores launch conditions, so a green run here proves the

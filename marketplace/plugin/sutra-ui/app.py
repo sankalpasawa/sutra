@@ -2344,6 +2344,12 @@ async def ws_term(ws: WebSocket):
 
     # Fix #2/#4: classic (non-alt-screen) renderer + correct TERM/locale reduce TUI corruption
     env = dict(os.environ)
+    # Same billing rule as the chat path (session_runtime spawn). Without this
+    # the terminal was the one pane that inherited a backend redirect wholesale,
+    # while the pane header and the usage chip both went on saying "Claude Max".
+    # A guard that covers chat but not the terminal is not a guard; it just
+    # moves where the operator gets surprised.
+    billing_guard.scrub(env)
     env.setdefault("TERM", "xterm-256color")
     env.setdefault("LANG", "en_US.UTF-8")
     env.setdefault("LC_ALL", "en_US.UTF-8")
