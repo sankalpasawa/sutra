@@ -55,6 +55,10 @@ class WsCase(unittest.TestCase):
 
     def build(self, builder, **kwargs):
         base = tempfile.mkdtemp(prefix="ws-corpus-")
+        # Isolate Sutra's session store. Chat turns now write real session
+        # records, so without this the suite deposits fake conversations
+        # into the operator's ~/.sutra-ui/sessions -- 104 of them, measured.
+        os.environ["SUTRA_UI_SESSIONS"] = os.path.join(base, "sessions")
         self.addCleanup(shutil.rmtree, base, True)
         c = builder(base, **kwargs)
         self.telemetry = os.path.join(base, "telemetry.jsonl")

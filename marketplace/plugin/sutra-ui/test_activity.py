@@ -56,6 +56,10 @@ class _PatchedProjects(unittest.TestCase):
     def setUp(self):
         self._saved_projects = sr.PROJECTS
         self.root = Path(tempfile.mkdtemp(prefix="sutra-test-activity-"))
+        # Isolate Sutra's session store. Chat turns now write real session
+        # records, so without this the suite deposits fake conversations
+        # into the operator's ~/.sutra-ui/sessions -- 104 of them, measured.
+        os.environ["SUTRA_UI_SESSIONS"] = str(self.root / "sessions")
         sr.PROJECTS = self.root
         # app referenced the SAME module object (import session_reader as sr),
         # so this one rebind is seen by api_activity's sr.index()/head_meta().

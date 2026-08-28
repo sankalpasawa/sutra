@@ -120,6 +120,10 @@ class TestApp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp(prefix="sutra-test-app-")
+        # Isolate Sutra's session store. Chat turns now write real session
+        # records, so without this the suite deposits fake conversations
+        # into the operator's ~/.sutra-ui/sessions -- 104 of them, measured.
+        os.environ["SUTRA_UI_SESSIONS"] = os.path.join(cls.tmpdir, "sessions")
         sys.path.insert(0, os.path.join(HERE, "..", "lib"))
         # seed BEFORE the server imports placement_engine in the subprocess --
         # the subprocess does its own import, so we just need the files on

@@ -18,6 +18,10 @@ if not os.path.exists(VENV_PY):
 class TestFeedLatency(unittest.TestCase):
     def test_p95_under_budget(self):
         tmp = tempfile.mkdtemp(prefix="feedlat-")
+        # Isolate Sutra's session store. Chat turns now write real session
+        # records, so without this the suite deposits fake conversations
+        # into the operator's ~/.sutra-ui/sessions -- 104 of them, measured.
+        os.environ["SUTRA_UI_SESSIONS"] = os.path.join(tmp, "sessions")
         settings = os.path.join(tmp, "settings.json")
         with open(settings, "w") as f:
             json.dump({"shadow.enabled": True}, f)

@@ -94,6 +94,10 @@ class TestMountedEngine(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp(prefix="runner-")
+        # Isolate Sutra's session store. Chat turns now write real session
+        # records, so without this the suite deposits fake conversations
+        # into the operator's ~/.sutra-ui/sessions -- 104 of them, measured.
+        os.environ["SUTRA_UI_SESSIONS"] = os.path.join(cls.tmp, "sessions")
         fake = os.path.join(cls.tmp, "fake-claude")
         with open(fake, "w") as f:
             f.write(FAKE)
