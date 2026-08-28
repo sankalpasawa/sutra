@@ -1903,6 +1903,7 @@ async def ws_chat(ws: WebSocket):
     session_id = None
     resume_unverified = False   # session id came from the client, not from a live run
     dead_seeds = set()          # client-supplied ids claude has already rejected
+    forked_from = set()         # ids we have already forked off, this socket
 
     # SUTRA'S OWN SESSION IDENTITY (sessions_store).
     #
@@ -2047,7 +2048,30 @@ async def ws_chat(ws: WebSocket):
             spawn_key = tuple(args)
             proc = rt.proc
             alive = rt.alive
-            if alive and rt.key != spawn_key:
+
+            # A FORK NEEDS ITS OWN PROCESS, so ask for one explicitly.
+            #
+            # --fork-session is only added when argv carries --resume, and
+            # spawn_key is built with session_id=None -- so the flag never
+            # reached the key, the reuse test saw no change, and the running
+            # process answered normally. Asking to fork a live pane did
+            # NOTHING: no new thread, no error, a UI toggle that looked
+            # connected to something and was not.
+            #
+            # Guarded by forked_from so a client that keeps the toggle set does
+            # not fork again on every subsequent message -- one fork per source
+            # thread per socket, which is what "fork this conversation" means.
+            if ((payload.get("opts") or {}).get("fork_session")
+                    and session_id and session_id not in forked_from):
+                forked_from.add(session_id)
+                if alive:
+                    rt.kill_group()
+                    try:
+                        await proc.wait()
+                    except Exception:
+                        pass
+                    alive = False
+            elif alive and rt.key != spawn_key:
                 # a spawn-time option changed: end this process and carry the
                 # conversation over rather than dropping it
                 rt.kill_group()

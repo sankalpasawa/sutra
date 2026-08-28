@@ -424,9 +424,22 @@ class SessionRuntime:
                 ev = json.loads(line.decode("utf-8", "replace"))
             except ValueError:
                 continue
-            # capture session id from the first event that carries one
-            if session_id is None and ev.get("session_id"):
-                session_id = ev["session_id"]
+            # Adopt the id whenever the runtime reports a DIFFERENT one -- not
+            # only when we have none.
+            #
+            # `--resume X --fork-session` mints a NEW session id: the fork is a
+            # separate thread by definition. Capturing only when session_id was
+            # None meant that new id was dropped on the floor, because resuming
+            # had already set it to X. The pane kept naming the ORIGINAL thread,
+            # every later --resume went back to it, and everything said into the
+            # fork was orphaned -- written to a session nothing referenced again.
+            #
+            # A same-id report is the overwhelmingly common case and costs one
+            # comparison; the dead-seed path sets session_id to None before it
+            # replays, so it still captures exactly as before.
+            new_sid = ev.get("session_id")
+            if new_sid and new_sid != session_id:
+                session_id = new_sid
                 await emit({"type": "session", "id": session_id})
             t = ev.get("type")
             if t == "stream_event":

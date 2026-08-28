@@ -231,5 +231,120 @@ class SessionsIntegration(unittest.TestCase):
 
 
 
+# A fake that behaves like the real CLI on a fork: `--resume X --fork-session`
+# answers under a NEW session id, because the fork is a separate thread.
+FAKE_FORK = r"""#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+resume = args[args.index("--resume") + 1] if "--resume" in args else None
+fork = "--fork-session" in args
+sid = ("forked-%d" % os.getpid()) if fork else (resume or "base-%d" % os.getpid())
+def emit(o):
+    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
+for line in sys.stdin:
+    try:
+        frame = json.loads(line)
+    except ValueError:
+        continue
+    try:
+        msg = frame["message"]["content"][0]["text"]
+    except Exception:
+        msg = ""
+    emit({"type": "system", "subtype": "init", "session_id": sid,
+          "model": "fake-model", "tools": [], "mcp_servers": [],
+          "slash_commands": [], "permissionMode": "plan", "cwd": os.getcwd()})
+    emit({"type": "assistant", "session_id": sid,
+          "message": {"role": "assistant",
+                      "content": [{"type": "text", "text": "reply to " + msg}]}})
+    emit({"type": "result", "subtype": "success", "session_id": sid,
+          "is_error": False, "result": "ok"})
+"""
+
+
+class ForkSession(unittest.TestCase):
+    """`--fork-session` mints a new provider session. Sutra must follow it.
+
+    It did not: the id was captured only when none was held, and resuming had
+    already set one -- so the pane kept naming the ORIGINAL thread and
+    everything said into the fork was written to a session nothing referenced
+    again.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.mkdtemp(prefix="sutra-fork-")
+        cls.fake = os.path.join(cls.tmpdir, "fake-claude")
+        with open(cls.fake, "w") as f:
+            f.write(FAKE_FORK)
+        os.chmod(cls.fake, 0o755)
+        cls._saved = {k: os.environ.get(k) for k in
+                      ("SUTRA_UI_SETTINGS", "SUTRA_UI_CLAUDE_BIN",
+                       "SUTRA_UI_WORKDIR_ROOT", "SUTRA_UI_SESSIONS")}
+        os.environ["SUTRA_UI_SETTINGS"] = os.path.join(cls.tmpdir, "settings.json")
+        os.environ["SUTRA_UI_CLAUDE_BIN"] = cls.fake
+        os.environ["SUTRA_UI_WORKDIR_ROOT"] = cls.tmpdir
+        os.environ["SUTRA_UI_SESSIONS"] = os.path.join(cls.tmpdir, "sessions")
+        cls.port = _free_port()
+        cls.proc = subprocess.Popen(
+            [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
+             "--port", str(cls.port), "--log-level", "warning"],
+            cwd=HERE, env=dict(os.environ),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/org/stats" % cls.port, timeout=1)
+                break
+            except Exception:
+                time.sleep(0.25)
+        else:
+            raise RuntimeError("server did not come up")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            cls.proc.terminate()
+            try:
+                cls.proc.wait(5)
+            except subprocess.TimeoutExpired:
+                cls.proc.kill()
+        for k, v in cls._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def test_fork_is_followed_not_dropped(self):
+        from websockets.sync.client import connect
+        seen = []
+        with connect("ws://127.0.0.1:%d/ws/chat" % self.port,
+                     open_timeout=10, close_timeout=5) as ws:
+            for payload in ({"message": "original"},
+                            {"message": "forked", "opts": {"fork_session": True}}):
+                ws.send(json.dumps(payload))
+                deadline = time.time() + 20
+                while time.time() < deadline:
+                    try:
+                        fr = json.loads(ws.recv(timeout=max(0.1, deadline - time.time())))
+                    except Exception:
+                        break
+                    seen.append(fr)
+                    if fr.get("type") in ("done", "error"):
+                        break
+        ids = [f["id"] for f in seen if f.get("type") == "session"]
+        self.assertGreaterEqual(len(ids), 2,
+                                "no second session frame -- the fork was dropped")
+        self.assertTrue(ids[-1].startswith("forked-"),
+                        "pane still names the original thread: %r" % (ids,))
+
+        # and Sutra's own record follows the fork
+        sutra_ids = [f["id"] for f in seen if f.get("type") == "sutra_session"]
+        meta = ss.read(sutra_ids[0])
+        self.assertEqual(meta["handles"]["claude"], ids[-1],
+                         "store still points at the pre-fork thread")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
