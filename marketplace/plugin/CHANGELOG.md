@@ -1826,6 +1826,31 @@ a user-facing feature did.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.241.0 (2026-08-29)
+
+**An unanswered keychain prompt could hold a panel worker forever.** Reading a
+connector credential blocks while macOS shows its authorization dialog, and the
+call takes no timeout; connector endpoints run in a threadpool, so one
+unanswered dialog holds one worker. Reproduced here: validate did not return in
+ten minutes. The wait is now bounded at five seconds and the error names the
+dialog to click.
+
+**A GET could make the panel spawn the Claude CLI.** The mediated-connector
+probe took `refresh` as a query parameter, and the origin guard only covered
+mutating methods, so any page the operator had open could fire a probe that
+contacts every connector. It is a POST now, and a non-loopback Origin is
+refused whatever the method.
+
+**Shadow used the chat adapter gate.** It built Claude Code's argv for whatever
+provider was active, with only a null check on the binary.
+
+**A `notice` frame reaches the screen.** The server emits it when it skips an
+oversized frame -- the only signal that a reply is incomplete -- and the client
+had no branch for it, so every one was dropped and the answer looked whole.
+
+**The panel says when a turn is not running on your plan**, which the billing
+guard's own refusal message had been promising while nothing displayed it.
+
 ## v2.240.0 (2026-08-29)
 
 **The base-URL shortcut for adding a provider leaks your Anthropic token.**

@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-29
 
-## v2.240.0 (2026-08-29, HEAD)
+## v2.241.0 (2026-08-29, HEAD)
+
+Keychain wedge, side-effecting GET, shadow adapter gate, dropped notice frame.
+
+## v2.240.0 (2026-08-29)
 
 Base-URL shim measured and refused; dead shell check removed.
 
