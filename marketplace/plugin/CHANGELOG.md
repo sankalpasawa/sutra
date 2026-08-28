@@ -1826,6 +1826,22 @@ a user-facing feature did.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.242.0 (2026-08-29)
+
+**"Is recoverable" is true now.** Archive and Delete both promised recovery and
+nothing could recover: relocate() had always written a sidecar recording where
+a transcript came from, and no code ever read it. There are routes for it, and
+restore refuses to overwrite a file already sitting at the original path.
+
+**Archiving a running session no longer moves the file out from under it.** A
+rename inside one filesystem leaves the agent's open handle following the file,
+so the rest of a live conversation was being appended into the archive where
+nothing lists it. Both routes refuse while the session has a live runtime.
+
+**The monthly spend cap shows its units.** It rendered as "2000" from a payload
+that also said `decimal_places: 2` and `spend.limit {amount_minor: 2000,
+exponent: 2}` -- twenty dollars, displayed as two thousand.
+
 ## v2.241.0 (2026-08-29)
 
 **An unanswered keychain prompt could hold a panel worker forever.** Reading a
