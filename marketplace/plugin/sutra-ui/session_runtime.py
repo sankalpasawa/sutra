@@ -7,6 +7,7 @@ freezes the behavior this move must not change.
 """
 import asyncio
 import json
+import billing_guard
 import os
 import signal
 
@@ -328,7 +329,12 @@ class SessionRuntime:
             # directly: a 200 KB line raises at the default and reads clean at
             # this limit.
             limit=8 * 1024 * 1024,
-            env=dict(os.environ, **(env or {})),  # no ANTHROPIC_API_KEY -> subscription auth
+            # The comment here used to read "no ANTHROPIC_API_KEY -> subscription
+            # auth", which was false: dict(os.environ, ...) inherits EVERY
+            # variable, key included. It only held because the server refuses to
+            # start with a key set. Scrub explicitly so this path is safe on its
+            # own terms and not by accident of a check somewhere else.
+            env=billing_guard.scrub(dict(os.environ, **(env or {}))),
             # own process group, so an interrupt can signal the whole tree
             start_new_session=True,
         )

@@ -59,6 +59,7 @@ WHAT A ROUTINE MAY DO, AND WHAT IT MAY NOT
 import errno
 import hashlib
 import json
+import builtins
 import os
 import plistlib
 import re
@@ -317,6 +318,10 @@ from datetime import datetime, timezone
 STORE = os.path.expanduser(os.environ.get("SUTRA_UI_ROUTINES", "~/.sutra-ui/routines"))
 RUNS  = os.path.expanduser(os.environ.get("SUTRA_UI_RUNS", "~/.sutra-ui/runs"))
 MAX_OUT = 256 * 1024
+# Mirror of billing_guard.REDIRECT_VARS -- see the note at the scrub below.
+REDIRECT_VARS = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY",
+                 "ANTHROPIC_BEDROCK_BASE_URL", "ANTHROPIC_VERTEX_BASE_URL",
+                 "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX")
 TIMEOUT = 30 * 60
 
 def iso(): return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -482,9 +487,16 @@ def main():
     try:
         env = dict(os.environ)
         env["PATH"] = login_path()
-        # NEVER inherited into a routine: it would route billing through the
-        # per-token API instead of the plan, silently, on a schedule.
-        env.pop("ANTHROPIC_API_KEY", None)
+        # NEVER inherited into a routine: these route billing away from the plan,
+        # silently, on a schedule. Widened 2026-08 -- the API key used to be the
+        # only variable removed, so ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN
+        # sent every SCHEDULED turn to a third-party backend with nobody
+        # watching. The list is INLINE, not imported from billing_guard, because
+        # this runner is deliberately stdlib-only: it has to keep working while
+        # the .app is mid-update or deleted. test_billing_guard.py parses this
+        # literal and fails if it drifts from billing_guard.REDIRECT_VARS.
+        for _v in REDIRECT_VARS:
+            env.pop(_v, None)
 
         prompt = r["prompt"]
         if (r.get("opts") or {}).get("teamsutra"):
@@ -632,6 +644,49 @@ def runner_syntax_error(source=None):
     return None
 
 
+def runner_undefined_names(source=None):
+    """Names the runner USES but never defines -- returned in source order.
+
+    WHY THIS EXISTS, alongside runner_syntax_error(). That check compiles the
+    runner, so it catches typos; it cannot catch a reference to something that
+    simply is not there. `billing_guard.scrub(env)` compiles perfectly and dies
+    with NameError when launchd fires the job -- silently, hours later, on a
+    machine nobody is watching. That is the exact failure runner_syntax_error's
+    own docstring says it exists to prevent, and it does not catch it. (Observed:
+    a 2026-08 edit to widen the billing scrub added precisely that line.)
+
+    The runner is deliberately stdlib-only so it keeps working while the .app is
+    mid-update or gone -- so "just import it" is not available here, and this
+    kind of check is the only thing standing in for a linter.
+
+    symtable rather than a hand-rolled ast walk: it does real scope analysis, so
+    comprehension variables, function arguments, except-as targets, lambda
+    parameters and class attributes do not produce false positives.
+    """
+    import symtable
+    src = _RUNNER if source is None else source
+    try:
+        top = symtable.symtable(src, RUNNER_NAME, "exec")
+    except SyntaxError:
+        return []          # runner_syntax_error() reports that, with the line
+    module = {sym.get_name() for sym in top.get_symbols()
+              if sym.is_assigned() or sym.is_imported() or sym.is_namespace()}
+    out, seen = [], set()
+
+    def walk(tbl):
+        for sym in tbl.get_symbols():
+            n = sym.get_name()
+            if (sym.is_global() and not sym.is_assigned()
+                    and n not in module and n not in dir(builtins) and n not in seen):
+                seen.add(n)
+                out.append(n)
+        for child in tbl.get_children():
+            walk(child)
+
+    walk(top)
+    return out
+
+
 def install_runner():
     """Write the runner out of the bundle. Idempotent; rewritten when it drifts,
     so an app update carries a new runner to already-scheduled routines.
@@ -648,6 +703,14 @@ def install_runner():
             "refusing to install %s: it does not parse (%s). The runner is a "
             "string literal in routines.py, so this is an edit to _RUNNER, not "
             "a corrupt file on disk." % (RUNNER_NAME, bad))
+    missing = runner_undefined_names(want)
+    if missing:
+        raise ValueError(
+            "refusing to install %s: it references %s, which it never defines. "
+            "The runner is stdlib-only on purpose (it must survive the .app "
+            "being mid-update), so a helper from the app cannot be imported into "
+            "it -- inline the value instead."
+            % (RUNNER_NAME, ", ".join(missing)))
     d = _mkdir_private(store_dir() / "bin")
     p = d / RUNNER_NAME
     if not p.exists() or p.read_text(encoding="utf-8") != want:

@@ -14,7 +14,7 @@
 #
 # Invariants carried over from sutra-ui.sh (do not relax):
 #   * binds 127.0.0.1 ONLY
-#   * REFUSES to start if ANTHROPIC_API_KEY is set (Max-plan billing guard)
+#   * REFUSES to start if any backend-redirect var is set (Max-plan billing guard)
 #   * no hardcoded port -- a free one is chosen at launch
 #
 # NEVER uses sudo. Idempotent: safe to re-run -- re-running IS the update path: it
@@ -404,7 +404,7 @@ Environment:
   SUTRA_UI_WORKDIR    directory the embedded claude session works in (default: cwd)
   SUTRA_UI_DEPT       marketing|sales|cs|hr|finance|devpm -- tunes the tasks panel
 
-Always binds 127.0.0.1. Refuses to start if ANTHROPIC_API_KEY is set.
+Always binds 127.0.0.1. Refuses to start if a backend-redirect var is set.
 USAGE
 }
 
@@ -433,8 +433,36 @@ if [ "$MODE" = "app" ]; then
 fi
 
 # --- Max-plan billing guard (#1 invariant, mirrors sutra-ui.sh) -------------
-if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  die "REFUSING TO START: ANTHROPIC_API_KEY is set. That routes through the API (per-token billing), not your Max plan. Fix: unset ANTHROPIC_API_KEY, then make sure 'claude' is logged in (claude /login)."
+SUTRA_REDIRECT_VARS="ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX"
+# Mirror of billing_guard.REDIRECT_VARS; test_billing_guard.py fails on drift.
+# Presence is NOT the test: Claude Code itself exports
+# ANTHROPIC_BASE_URL=https://api.anthropic.com, and refusing on that would brick
+# the panel over a setting that redirects nothing. Values decide.
+_sutra_official() {
+  _h=${1#*://}; _h=${_h%%/*}; _h=${_h##*@}; _h=${_h%%:*}
+  _h=$(printf '%s' "$_h" | tr '[:upper:]' '[:lower:]')
+  case "$_h" in anthropic.com|*.anthropic.com) return 0 ;; *) return 1 ;; esac
+}
+_sutra_redirected=""
+for _v in ANTHROPIC_BASE_URL ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL; do
+  eval "_val=\${$_v:-}"
+  if [ -n "$_val" ] && ! _sutra_official "$_val"; then
+    _sutra_redirected="$_sutra_redirected $_v"
+  fi
+done
+for _v in ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY; do
+  eval "_val=\${$_v:-}"
+  [ -n "$_val" ] && _sutra_redirected="$_sutra_redirected $_v"
+done
+for _v in CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX; do
+  eval "_val=\${$_v:-}"
+  case "$(printf '%s' "$_val" | tr '[:upper:]' '[:lower:]')" in
+    ''|0|false|no|off) ;;
+    *) _sutra_redirected="$_sutra_redirected $_v" ;;
+  esac
+done
+if [ -n "$_sutra_redirected" ] && [ -z "${SUTRA_UI_ALLOW_BACKEND_REDIRECT:-}" ]; then
+  die "REFUSING TO START:$_sutra_redirected set. That sends every turn -- prompts and whatever the agent reads -- to a backend other than your Max plan. Fix: unset$_sutra_redirected, then make sure 'claude' is logged in (claude /login)."
 fi
 
 PY="$SUTRA_UI_VENV/bin/python"

@@ -7,7 +7,7 @@
 #
 # BILLING INVARIANT: drives the `claude` CLI you are logged into (Claude Max),
 # the SAME billing as the terminal. NOT the API, NOT the Agent SDK.
-# REFUSES to start if ANTHROPIC_API_KEY is set.
+# REFUSES to start if any backend-redirect variable is set (see SUTRA_REDIRECT_VARS).
 #
 # Usage:
 #   cd <project you want Claude to work in>
@@ -21,10 +21,38 @@ PORT="${SUTRA_UI_PORT:-7681}"
 export SUTRA_UI_WORKDIR="${SUTRA_UI_WORKDIR:-$PWD}"
 
 # --- Max-plan billing guard (#1 invariant) ---
-if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "REFUSING TO START: ANTHROPIC_API_KEY is set." >&2
-  echo "  That routes through the API (per-token billing), NOT your Max plan." >&2
-  echo "  Fix: unset ANTHROPIC_API_KEY; ensure 'claude' is logged into Max (claude /login)." >&2
+SUTRA_REDIRECT_VARS="ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX"
+# Mirror of billing_guard.REDIRECT_VARS; test_billing_guard.py fails on drift.
+# Presence is NOT the test: Claude Code itself exports
+# ANTHROPIC_BASE_URL=https://api.anthropic.com, and refusing on that would brick
+# the panel over a setting that redirects nothing. Values decide.
+_sutra_official() {
+  _h=${1#*://}; _h=${_h%%/*}; _h=${_h##*@}; _h=${_h%%:*}
+  _h=$(printf '%s' "$_h" | tr '[:upper:]' '[:lower:]')
+  case "$_h" in anthropic.com|*.anthropic.com) return 0 ;; *) return 1 ;; esac
+}
+_sutra_redirected=""
+for _v in ANTHROPIC_BASE_URL ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL; do
+  eval "_val=\${$_v:-}"
+  if [ -n "$_val" ] && ! _sutra_official "$_val"; then
+    _sutra_redirected="$_sutra_redirected $_v"
+  fi
+done
+for _v in ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY; do
+  eval "_val=\${$_v:-}"
+  [ -n "$_val" ] && _sutra_redirected="$_sutra_redirected $_v"
+done
+for _v in CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX; do
+  eval "_val=\${$_v:-}"
+  case "$(printf '%s' "$_val" | tr '[:upper:]' '[:lower:]')" in
+    ''|0|false|no|off) ;;
+    *) _sutra_redirected="$_sutra_redirected $_v" ;;
+  esac
+done
+if [ -n "$_sutra_redirected" ] && [ -z "${SUTRA_UI_ALLOW_BACKEND_REDIRECT:-}" ]; then
+  echo "REFUSING TO START:$_sutra_redirected set -- that sends every turn to a backend other than your Max plan." >&2
+  echo "  Your prompts -- and whatever the agent reads -- would go there, not to your Max plan." >&2
+  echo "  Fix: unset$_sutra_redirected; ensure 'claude' is logged into Max (claude /login)." >&2
   exit 2
 fi
 

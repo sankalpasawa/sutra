@@ -44,6 +44,42 @@ const http = require("http");
 const net = require("net");
 const provision = require("./provision.js");
 
+// Variables that change WHERE inference goes or WHO it authenticates as.
+// Mirror of billing_guard.REDIRECT_VARS (python); test_billing_guard.py fails
+// if the two lists drift apart. Model-selection vars (ANTHROPIC_MODEL, ...) are
+// deliberately NOT here -- they redirect nothing, and refusing on them would
+// brick the app for anyone who has legitimately pinned a model.
+const REDIRECT_VARS = [
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_BEDROCK_BASE_URL",
+  "ANTHROPIC_VERTEX_BASE_URL",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+];
+
+// Presence is NOT the test. Claude Code itself exports
+// ANTHROPIC_BASE_URL=https://api.anthropic.com; refusing on that would brick the
+// app over a setting that redirects nothing. Values decide -- and note the host
+// check is a suffix match on ".anthropic.com" so "anthropic.com.evil.net" fails.
+const OFFICIAL = (url) => {
+  const h = String(url).replace(/^[a-z]+:\/\//i, "").split("/")[0]
+    .split("@").pop().split(":")[0].toLowerCase();
+  return h === "anthropic.com" || h.endsWith(".anthropic.com");
+};
+const FALSEY = ["", "0", "false", "no", "off"];
+function activeRedirects(env) {
+  const out = [];
+  ["ANTHROPIC_BASE_URL", "ANTHROPIC_BEDROCK_BASE_URL", "ANTHROPIC_VERTEX_BASE_URL"]
+    .forEach((v) => { const x = (env[v] || "").trim(); if (x && !OFFICIAL(x)) out.push(v); });
+  ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"]
+    .forEach((v) => { if ((env[v] || "").trim()) out.push(v); });
+  ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]
+    .forEach((v) => { if (FALSEY.indexOf((env[v] || "").trim().toLowerCase()) === -1) out.push(v); });
+  return out;
+}
+
 const HOST = "127.0.0.1";
 const PORT = 8330; // canonical, pinned -- see header
 const ORIGIN = `http://${HOST}:${PORT}`;
@@ -225,7 +261,10 @@ function loginShellEnv() {
   if (merged.length) env.PATH = merged.join(":");
 
   // Never inherited: see the note above.
-  delete env.ANTHROPIC_API_KEY;
+  // Widened 2026-08: deleting only the API key left ANTHROPIC_BASE_URL and
+  // ANTHROPIC_AUTH_TOKEN free to redirect every turn to a third-party backend
+  // while the panel still claimed Max-plan billing.
+  REDIRECT_VARS.forEach((v) => { delete env[v]; });
   // Ours win -- these describe THIS process, not the shell's.
   delete env.PWD;
   delete env.OLDPWD;
@@ -344,10 +383,13 @@ function createWindow() {
 }
 
 async function boot() {
-  if (process.env.ANTHROPIC_API_KEY) {
+  const redirected = activeRedirects(process.env);
+  if (redirected.length && !process.env.SUTRA_UI_ALLOW_BACKEND_REDIRECT) {
     return fail("Sutra refuses to start",
-      "ANTHROPIC_API_KEY is set. That routes through the API (per-token billing) " +
-      "instead of your Max plan.\n\nUnset it, then make sure `claude` is logged in.");
+      redirected.join(", ") + " set in your environment. That sends every turn " +
+      "-- prompts and whatever the agent reads -- to a backend other than your " +
+      "Max plan, which this app otherwise tells you it is using.\n\nUnset it, " +
+      "then make sure `claude` is logged in.");
   }
   RUNTIME = provision.resolveRuntime(process.resourcesPath, app.getPath("appData"));
   if (RUNTIME.kind === "none") {

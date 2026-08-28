@@ -29,6 +29,7 @@ import log_reader as lr
 import session_reader as sr
 import connectors_api
 import org_api
+import billing_guard
 import providers
 import secrets as _secrets
 import shadow_egress
@@ -1714,10 +1715,9 @@ async def ws_chat(ws: WebSocket):
     # Same refusal ws_term already makes: a key in the server env bills the API
     # instead of the Max plan. Silently spending the operator's API credit
     # because a stray key was exported is not an acceptable default.
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        await ws.send_json({"type": "error", "detail":
-            "Refused: ANTHROPIC_API_KEY is set in the server environment -- that bills "
-            "the API, not your Max plan. Unset it and restart the server."})
+    _redirect = billing_guard.refusal()
+    if _redirect:
+        await ws.send_json({"type": "error", "detail": _redirect})
         await ws.close()
         return
     # --- resolve the ACTIVE provider, per connect ------------------------
@@ -2121,8 +2121,9 @@ async def ws_term(ws: WebSocket):
     if await _reject_cross_origin(ws):
         return
     await ws.accept()
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        await ws.send_text("\r\n\x1b[31mRefused: ANTHROPIC_API_KEY is set — that bills the API, not your Max plan.\x1b[0m\r\n")
+    _redirect = billing_guard.refusal()
+    if _redirect:
+        await ws.send_text("\r\n\x1b[31m" + _redirect + "\x1b[0m\r\n")
         await ws.close()
         return
 
