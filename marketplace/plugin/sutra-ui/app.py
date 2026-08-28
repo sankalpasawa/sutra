@@ -1854,7 +1854,8 @@ async def ws_chat(ws: WebSocket):
             "written for it -- so it is not being run rather than run wrongly. "
             "Adapters exist for: %s. Use the provider selector, or the terminal "
             "tab." % (active_id, prov["name"], prov["bin_path"],
-                      ", ".join(provider_adapters.available()))})
+                      ", ".join(provider_adapters.available(
+                          include_reference=False)))})
         await ws.close()
         return
     claude_protocol = adapter.protocol == provider_adapters.PROTO_CLAUDE

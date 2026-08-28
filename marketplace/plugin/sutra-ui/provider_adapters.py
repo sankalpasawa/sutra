@@ -87,8 +87,12 @@ def for_provider(pid):
     return _REGISTRY.get(pid)
 
 
-def available():
-    return sorted(_REGISTRY)
+def available(include_reference=True):
+    """Adapter ids. `include_reference=False` drops adapters that exist only to
+    exercise the seam -- naming one of those in a message shown to an operator
+    would advertise a provider they can never select."""
+    return sorted(a.id for a in _REGISTRY.values()
+                  if include_reference or not a.reference)
 
 
 class Adapter(object):
@@ -97,6 +101,10 @@ class Adapter(object):
     id = ""
     display = ""
     protocol = PROTO_LINES
+
+    #: True for an adapter that exists to exercise the interface rather than to
+    #: drive a product someone can choose. Kept out of operator-facing lists.
+    reference = False
 
     #: Can the provider continue a thread from its own id? When False, Sutra
     #: replays its own transcript instead (sessions_store.resume_plan).
@@ -168,6 +176,7 @@ class LinesAdapter(Adapter):
 
     id = "lines"
     display = "Line protocol (reference)"
+    reference = True
     protocol = PROTO_LINES
     native_resume = False          # so resume_plan() replays Sutra's transcript
     stream_input = True
