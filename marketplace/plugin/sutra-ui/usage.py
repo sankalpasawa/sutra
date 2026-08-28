@@ -295,6 +295,13 @@ def _extra(d):
         "monthly_limit": e.get("monthly_limit"),
         "used_credits": e.get("used_credits"),
         "currency": e.get("currency"),
+        # HOW TO READ monthly_limit. It is MINOR units: the live payload carries
+        # monthly_limit=2000 alongside decimal_places=2 and an explicit
+        # spend.limit of {amount_minor: 2000, currency: "USD", exponent: 2} --
+        # twenty dollars. The panel printed the bare 2000 with no currency, so a
+        # $20 cap read as a $2000 one. Passing the exponent through is the
+        # minimum needed to render it as money.
+        "decimal_places": e.get("decimal_places"),
         "limit_reached": bool(e.get("spend_limit_reached")),
     }
 
@@ -308,6 +315,10 @@ def sanitize(d, source):
         "fetched_at": time.time(),
         "limits": _rows(d),
         "extra_usage": _extra(d),
+        # The unambiguous form of the same numbers: {used, limit} as
+        # {amount_minor, currency, exponent}. Preferred by the UI because it
+        # states its own units, where monthly_limit does not.
+        "spend": d.get("spend") if isinstance(d.get("spend"), dict) else None,
         # Stated so the UI can say WHY a figure is missing instead of showing 0.
         "member_dashboard_available": bool(d.get("member_dashboard_available")),
     }

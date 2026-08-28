@@ -1,6 +1,24 @@
 /* A date must not wrap mid-token (visual audit r4: "2026-08-" / "25" in the
    verdict tables): non-breaking hyphen + space keep it one unit, plain text
    so it survives any cell escaping. */
+/* MONEY, WITH ITS UNITS. monthly_limit is in MINOR units -- the payload carries
+   monthly_limit=2000 next to decimal_places=2 and an explicit
+   spend.limit={amount_minor:2000, currency:"USD", exponent:2}, i.e. twenty
+   dollars. Printing the bare number made a $20 cap read as $2000.
+   Prefers the `spend` object, which states its own units; falls back to
+   monthly_limit + decimal_places; and says "no limit set" rather than 0. */
+function spendLimitText(x, u){
+  const sp = (u && u.spend && u.spend.limit) || null;
+  const minor = sp ? sp.amount_minor : (x ? x.monthly_limit : null);
+  if (minor == null) return "no limit set";
+  const exp = sp ? (sp.exponent ?? 2) : (x && x.decimal_places != null ? x.decimal_places : 2);
+  const cur = (sp && sp.currency) || (x && x.currency) || "";
+  const amount = Number(minor) / Math.pow(10, Number(exp) || 0);
+  if (!isFinite(amount)) return "no limit set";
+  const shown = amount.toFixed(Number(exp) || 0);
+  return cur ? shown + " " + cur : shown;
+}
+
 function nbDate(s){ return String(s).replace(/-/g, "‑").replace(/ /g, " "); }
 
 /* ── Evals (Verifier layer, 2026-08-08) ──
@@ -580,7 +598,7 @@ SCREENS.usage = () => {
       : `<div class="kv"><b>Used</b><span>${esc(String(x.used_credits ?? "—"))} ${esc(x.currency||"")}</span></div>
          <div class="kv"><b>Daily</b><span>${esc(String(x.daily ?? "no limit set"))}</span></div>
          <div class="kv"><b>Weekly</b><span>${esc(String(x.weekly ?? "no limit set"))}</span></div>
-         <div class="kv"><b>Monthly limit</b><span>${esc(String(x.monthly_limit ?? "no limit set"))}</span></div>
+         <div class="kv"><b>Monthly limit</b><span>${esc(spendLimitText(x, u))}</span></div>
          ${x.limit_reached?`<div class="note w" style="margin-top:7px">The spend limit has been reached.</div>`:""}`;
 
   const age = u.source === "stale-cache"

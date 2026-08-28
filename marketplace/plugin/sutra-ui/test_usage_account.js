@@ -60,5 +60,49 @@ test("loadUsage reads /api/account on its own route", () => {
          "account should load first");
 });
 
+/* ── the spend cap is money, and money has units ────────────────────────────
+   The live payload carries monthly_limit=2000 next to decimal_places=2 and an
+   explicit spend.limit of {amount_minor:2000, currency:"USD", exponent:2} --
+   twenty dollars. The panel printed the bare 2000 with no currency, so a $20
+   cap read as a $2000 one. Confirmed against the real cache on this machine. */
+function loadSpendLimitText(){
+  const m = screens.match(/function spendLimitText[\s\S]*?\n}/);
+  assert(m, "spendLimitText is gone from 04-screens.js");
+  // eslint-disable-next-line no-eval
+  return eval("(" + m[0].replace(/^function /, "function ") + ")");
+}
+
+test("the monthly cap renders as money, from the payload's own units", () => {
+  const f = loadSpendLimitText();
+  assert(f({monthly_limit: 2000, decimal_places: 2, currency: "USD"},
+      {spend: {limit: {amount_minor: 2000, currency: "USD", exponent: 2}}}) === "20.00 USD",
+         "got " + JSON.stringify(f({monthly_limit: 2000, decimal_places: 2, currency: "USD"},
+      {spend: {limit: {amount_minor: 2000, currency: "USD", exponent: 2}}})) + " want " + "20.00 USD");
+});
+
+test("it falls back to monthly_limit + decimal_places when spend is absent", () => {
+  const f = loadSpendLimitText();
+  assert(f({monthly_limit: 2000, decimal_places: 2, currency: "USD"}, {}) === "20.00 USD",
+         "got " + JSON.stringify(f({monthly_limit: 2000, decimal_places: 2, currency: "USD"}, {})) + " want " + "20.00 USD");
+});
+
+test("a bare number is never rendered as the cap", () => {
+  const f = loadSpendLimitText();
+  const out = f({monthly_limit: 2000, decimal_places: 2, currency: "USD"}, {});
+  assert(!/^2000/.test(out), "the raw minor-unit figure reached the screen: " + out);
+});
+
+test("no cap says so rather than showing zero", () => {
+  const f = loadSpendLimitText();
+  assert(f({monthly_limit: null}, {}) === "no limit set",
+         "got " + JSON.stringify(f({monthly_limit: null}, {})) + " want " + "no limit set");
+});
+
+test("the server passes the units through", () => {
+  const py = fs.readFileSync(path.join(__dirname, "usage.py"), "utf8");
+  assert(/"decimal_places":/.test(py), "decimal_places must reach the client");
+  assert(/"spend":/.test(py), "the explicit spend object must reach the client");
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
