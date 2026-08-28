@@ -31,6 +31,7 @@ import connectors_api
 import org_api
 import billing_guard
 import sessions_store
+import provider_adapters
 import providers
 import secrets as _secrets
 import shadow_egress
@@ -692,8 +693,10 @@ def api_sutra_resume_plan(sid: str, provider: str = ""):
     not a surprise on the invoice.
     """
     prov = provider or (providers.active_provider_detail() or {}).get("id") or ""
+    _ad = provider_adapters.for_provider(prov)
     try:
-        kind, ref = sessions_store.resume_plan(sid, prov)
+        kind, ref = sessions_store.resume_plan(
+            sid, prov, native_ok=bool(_ad and _ad.native_resume))
     except ValueError:
         raise HTTPException(status_code=400, detail="not a sutra session id")
     meta = sessions_store.read(sid) or {}
@@ -1836,20 +1839,25 @@ async def ws_chat(ws: WebSocket):
         await ws.close()
         return
 
-    if active_id != "claude":
-        # Honest refusal instead of a confusing crash: the frames below parse
-        # Claude Code's `--output-format stream-json` protocol. Spawning
-        # another vendor's CLI with these flags would fail on argument
-        # parsing and report as though the provider were broken. No adapter
-        # has been written, so say that.
+    # WHICH ADAPTER DRIVES THIS PROVIDER.
+    #
+    # This used to be `if active_id != "claude": refuse`. The refusal was
+    # honest -- running another vendor's CLI with Claude's flags fails on
+    # argument parsing and looks like a broken provider -- but the identity was
+    # hardcoded, so adding a provider meant editing this socket, and nothing
+    # stated what a provider actually has to supply. It is a registry lookup
+    # now: provider_adapters says what exists, and the refusal names it.
+    adapter = provider_adapters.for_provider(active_id)
+    if adapter is None:
         await ws.send_json({"type": "error", "code": "no-adapter", "detail":
-            "Active provider is %r (%s at %s). This chat channel speaks Claude "
-            "Code's --output-format stream-json protocol and no adapter has "
-            "been written for %s, so it is not being run rather than run "
-            "wrongly. Use the provider selector to switch to claude, or the "
-            "terminal tab." % (active_id, prov["name"], prov["bin_path"], active_id)})
+            "Active provider is %r (%s at %s), and no chat adapter has been "
+            "written for it -- so it is not being run rather than run wrongly. "
+            "Adapters exist for: %s. Use the provider selector, or the terminal "
+            "tab." % (active_id, prov["name"], prov["bin_path"],
+                      ", ".join(provider_adapters.available()))})
         await ws.close()
         return
+    claude_protocol = adapter.protocol == provider_adapters.PROTO_CLAUDE
 
     settings = providers.load_settings()
     # Clamp at the point of USE, not just where it was written: a settings.json
@@ -2042,9 +2050,12 @@ async def ws_chat(ws: WebSocket):
             # carry the thread across with --resume. That keeps per-message
             # overrides working instead of silently ignoring them, which is what
             # a naive "always reuse" would do.
-            args = build_agent_args(agent_bin, msg, perm_mode,
-                                    session_id=None, model=chosen_model,
-                                    opts=payload.get("opts"), stream_input=True)
+            if claude_protocol:
+                args = build_agent_args(agent_bin, msg, perm_mode,
+                                        session_id=None, model=chosen_model,
+                                        opts=payload.get("opts"), stream_input=True)
+            else:
+                args = adapter.argv(agent_bin, msg, payload.get("opts"))
             spawn_key = tuple(args)
             proc = rt.proc
             alive = rt.alive
@@ -2080,7 +2091,7 @@ async def ws_chat(ws: WebSocket):
                 except Exception:
                     pass
                 alive = False
-            if not alive and session_id:
+            if not alive and session_id and claude_protocol:
                 args = build_agent_args(agent_bin, msg, perm_mode,
                                         session_id=session_id, model=chosen_model,
                                         opts=payload.get("opts"), stream_input=True)
@@ -2143,7 +2154,10 @@ async def ws_chat(ws: WebSocket):
 
             # The turn itself: one stream-json frame on stdin.
             try:
-                await rt.send_user_frame(msg)
+                if claude_protocol:
+                    await rt.send_user_frame(msg)
+                else:
+                    await rt.send_user_bytes(adapter.encode_user(msg))
             except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
                 # the process died between the liveness check and the write
                 rt.proc = None
@@ -2169,8 +2183,13 @@ async def ws_chat(ws: WebSocket):
                     pass          # never let bookkeeping break the stream
                 await ws.send_json(frame)
 
-            (session_id, got_text, got_result,
-             result_error, eof) = await rt.demux_turn(_record, session_id)
+            if claude_protocol:
+                (session_id, got_text, got_result,
+                 result_error, eof) = await rt.demux_turn(_record, session_id)
+            else:
+                (session_id, got_text, got_result,
+                 result_error, eof) = await rt.demux_turn_adapter(
+                     _record, session_id, adapter)
             if sutra_sid and _reply:
                 try:
                     sessions_store.append_turn(sutra_sid, "assistant",

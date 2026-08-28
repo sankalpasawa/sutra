@@ -408,10 +408,25 @@ PERMISSION_MODE_NOTES = {
                          "-- the widest setting there is.",
 }
 
-# Providers this codebase can actually DRIVE. Keep in lockstep with app.py's
-# ws_chat guard (`if active_id != "claude": ... no adapter`). Adding an id here
-# without writing its adapter re-creates the bug this set exists to prevent.
-ADAPTERS = frozenset({"claude"})
+# Providers this codebase can actually DRIVE.
+#
+# DERIVED, not declared. This used to be a hand-maintained frozenset with a
+# comment telling the next person to keep it in lockstep with a hardcoded
+# `if active_id != "claude"` in ws_chat -- two places that had to agree, and a
+# comment is not a mechanism. provider_adapters is the one registry now, so an
+# adapter that exists is automatically drivable and one that does not cannot be
+# claimed by accident.
+def _adapter_ids():
+    try:
+        import provider_adapters
+        return frozenset(provider_adapters.available())
+    except Exception:
+        # Never let a broken import make every provider look unusable: the panel
+        # would report "no provider" on a machine where Claude is fine.
+        return frozenset({"claude"})
+
+
+ADAPTERS = _adapter_ids()
 
 # ------------------------------------------------------------- catalog -----
 # Order is precedence order for the "first runnable provider" fallback.
@@ -424,6 +439,40 @@ _CATALOG = (
     {"id": "gemini", "name": "Gemini CLI", "bin": "gemini",
      "config_dir": "~/.gemini", "default": False},
 )
+
+
+#: An extra provider, for someone WRITING an adapter.
+#:
+#: A new adapter cannot be exercised until its provider is catalogued, and
+#: cataloguing a provider the panel cannot yet drive is exactly the failure
+#: ADAPTERS exists to prevent. This env var closes that loop without shipping a
+#: half-supported vendor to everyone:
+#:
+#:   SUTRA_UI_EXTRA_PROVIDER="id=lines,name=Lines,bin=/path/to/cli,config=/path"
+#:
+#: Unset in every normal install, so the catalogue above is what people see.
+_EXTRA_ENV = "SUTRA_UI_EXTRA_PROVIDER"
+
+
+def _extra_provider():
+    raw = (os.environ.get(_EXTRA_ENV) or "").strip()
+    if not raw:
+        return None
+    spec = {}
+    for part in raw.split(","):
+        k, _, v = part.partition("=")
+        spec[k.strip()] = v.strip()
+    pid = spec.get("id")
+    if not pid or not spec.get("bin"):
+        return None
+    return {"id": pid, "name": spec.get("name") or pid,
+            "bin": spec["bin"],
+            "config_dir": spec.get("config") or "~", "default": False}
+
+
+def _catalog():
+    extra = _extra_provider()
+    return _CATALOG + (extra,) if extra else _CATALOG
 
 
 #: Claude Desktop's bundle. It is NOT the Claude Code CLI and ships no `claude`
@@ -507,7 +556,7 @@ def _describe(spec):
     cfg_path = Path(os.path.expanduser(cfg_display))
     configured = cfg_path.is_dir()
 
-    adapter = spec["id"] in ADAPTERS
+    adapter = spec["id"] in _adapter_ids()
 
     if installed and configured and adapter:
         reason = None
@@ -565,14 +614,14 @@ def _describe(spec):
 
 def discover_providers():
     """Every catalogued provider, in precedence order, with live state."""
-    return [_describe(spec) for spec in _CATALOG]
+    return [_describe(spec) for spec in _catalog()]
 
 
 def provider_by_id(pid):
     """One provider's live state, or None if `pid` is not catalogued."""
     if not pid:
         return None
-    for spec in _CATALOG:
+    for spec in _catalog():
         if spec["id"] == pid:
             return _describe(spec)
     return None

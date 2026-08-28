@@ -261,7 +261,7 @@ def handle_for(sid, provider):
     return (meta.get("handles") or {}).get(provider) or None
 
 
-def resume_plan(sid, provider):
+def resume_plan(sid, provider, native_ok=True):
     """How to continue this session under `provider`, without deciding for the
     caller. Returns ('native', handle) | ('replay', sid) | ('fresh', sid).
 
@@ -274,7 +274,11 @@ def resume_plan(sid, provider):
     if meta is None:
         return ("fresh", sid)
     h = (meta.get("handles") or {}).get(provider)
-    if h:
+    # A handle is not enough: the provider must also be ABLE to resume from it.
+    # Holding an id proves the thread existed, not that this CLI can continue
+    # it -- some take a conversation only as replayed context. Saying "native"
+    # for one of those would hand it an id it has no flag to accept.
+    if h and native_ok:
         return ("native", h)
     if meta.get("turns"):
         return ("replay", sid)

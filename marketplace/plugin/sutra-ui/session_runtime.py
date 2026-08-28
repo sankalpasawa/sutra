@@ -364,6 +364,91 @@ class SessionRuntime:
         self.proc = None
         self.key = None
 
+    async def send_user_bytes(self, data):
+        """Hand one operator message to a NON-Claude provider, in whatever shape
+        its adapter chose. Mirrors send_user_frame and raises the same things,
+        so the socket's recovery policy does not need to know which is which."""
+        self.proc.stdin.write(data)
+        await self.proc.stdin.drain()
+
+    async def demux_turn_adapter(self, emit, session_id, adapter):
+        """The turn loop for any provider that is not Claude Code.
+
+        Everything that is genuinely about TRANSPORT lives here -- reading lines,
+        surviving an oversized one, noticing EOF, tracking the session id -- and
+        everything about a particular vendor's wire format lives in the
+        adapter's parse_line/translate. That split is the whole point: adding a
+        provider should be writing a translator, not editing this loop.
+
+        Returns the same 5-tuple as demux_turn so the socket layer's error,
+        stop and replay policy is shared rather than reimplemented per provider.
+        """
+        emit = self._fanout(emit)
+        st = {}
+        got_result = False
+        result_error = None
+        eof = False
+        if not self.stopped:
+            self.state = "active"
+        while True:
+            try:
+                line = await self.proc.stdout.readline()
+            except (ValueError, asyncio.LimitOverrunError):
+                await emit({
+                    "type": "notice",
+                    "text": "one oversized frame from the agent was skipped. "
+                            "The answer continues.",
+                })
+                if not await _drain_to_newline(self.proc.stdout):
+                    eof = True
+                    break
+                continue
+            if not line:
+                eof = True
+                break
+            try:
+                ev = adapter.parse_line(line)
+            except Exception:
+                # A provider's own output must not be able to kill the socket.
+                continue
+            if ev is None:
+                continue
+            try:
+                sid = adapter.session_id(ev)
+            except Exception:
+                sid = None
+            if sid and sid != session_id:
+                session_id = sid
+                await emit({"type": "session", "id": session_id})
+            try:
+                frames, done, err = adapter.translate(ev, st)
+            except Exception as exc:
+                await emit({"type": "notice",
+                            "text": "%s produced output this build could not "
+                                    "read (%s)" % (adapter.id, exc)})
+                continue
+            for f in frames or ():
+                await emit(f)
+            if err:
+                result_error = err
+            if done:
+                got_result = True
+                # The client needs a `done` to close the turn. Claude's loop
+                # emits one from inside its result branch; without this the
+                # adapter path streamed a complete answer and then left the
+                # pane spinning forever.
+                if not result_error:
+                    await emit({"type": "done"})
+                break
+        await self._notify_subscribers({
+            "type": "_turn_boundary",
+            "session": session_id,
+            "got_result": got_result,
+            "error": result_error,
+            "eof": eof,
+        })
+        return session_id, bool(st.get("got_text")), got_result, result_error, eof
+
     async def demux_turn(self, emit, session_id):
         """S20 wrapper: run the turn, then hand a boundary event to the
         OBSERVERS only. The underscore type marks it internal -- it is never
