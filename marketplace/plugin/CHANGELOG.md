@@ -1826,6 +1826,22 @@ a user-facing feature did.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.240.0 (2026-08-29)
+
+**The base-URL shortcut for adding a provider leaks your Anthropic token.**
+Measured against claude 2.1.212: redirecting via `--settings` sends the
+operator's subscription OAuth credential (`sk-ant-oat…`) to whichever backend
+the base URL names, and neither `ANTHROPIC_AUTH_TOKEN` nor `apiKeyHelper`
+overrides it. Only `--bare` selects the supplied credential, and `--bare`
+skips hooks, auto-memory and CLAUDE.md — Sutra's governance. `backends.py`
+records the measurement and refuses to render a redirect unless the caller
+states which trade-off it is accepting. Adding a vendor stays a native
+adapter, which never touches the Anthropic credential.
+
+Also: the Electron shell no longer POSTs to two connector endpoints that were
+removed with the old connector layer, which had been logging two errors on
+every launch since.
+
 ## v2.239.0 (2026-08-29)
 
 **A provider other than Claude can drive a chat.** `ws_chat` refused anything

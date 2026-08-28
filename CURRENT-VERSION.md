@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-29
 
-## v2.239.0 (2026-08-29, HEAD)
+## v2.240.0 (2026-08-29, HEAD)
+
+Base-URL shim measured and refused; dead shell check removed.
+
+## v2.239.0 (2026-08-29)
 
 Provider adapter seam: a non-Claude provider can drive a chat.
 
