@@ -2,7 +2,12 @@
 
 **status**: active · **updated**: 2026-08-29
 
-## v2.237.0 (2026-08-29, HEAD)
+## v2.238.0 (2026-08-29, HEAD)
+
+Fork/run-now/pause fixes, terminal billing guard, cost accounting,
+two MCP tools repaired, stale-payload build guard.
+
+## v2.237.0 (2026-08-29)
 
 Sutra-owned session identity (provider handles + provider-neutral
 transcript) and a value-aware backend-redirect billing guard.

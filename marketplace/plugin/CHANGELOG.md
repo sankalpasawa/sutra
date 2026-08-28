@@ -1826,6 +1826,39 @@ a user-facing feature did.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.238.0 (2026-08-29)
+
+Fixes found by reading the shipping code against what it claims to do.
+
+**"Fork this conversation" now forks it.** `--fork-session` never triggered a
+respawn (the flag could not reach the process-reuse key), so asking to fork a
+live pane did nothing at all -- no new thread, no error. And when a fork did
+happen, its new session id was dropped, so the pane kept naming the original
+thread and everything said into the fork was orphaned.
+
+**"Run now" on a paused routine now runs it.** It bootstrapped the job,
+kickstarted it and immediately booted it out, so launchd tore the job down
+before any work happened -- while the API reported success. It also left a
+marker that made the next SCHEDULED run report itself as manual.
+
+**A routine whose folder was deleted can be paused.** The disable patch was
+refused by the very validation that made the routine fail, so it kept firing.
+
+**The terminal honours the billing guard**, like chat already did. It was the
+one pane that inherited a backend redirect while the header said Claude Max.
+
+**Failed routine runs record their real cost** instead of null, so ledger
+totals stop under-reporting spend.
+
+**sutra_org_summary works** -- it had never worked, missing a sys.path entry --
+and **sutra_routine_runs** no longer reports that a routine which does not
+exist "has never run".
+
+**One moved transcript no longer blanks the Chats screen** (GET /api/sessions
+500'd when a file vanished between the glob and the sort), and **make-dmg.sh
+refuses to package a payload from another build**, which had been silently
+shipping old code under an old version number.
+
 ## v2.237.0 (2026-08-29)
 
 **Sessions belong to Sutra, not to Claude.** A session is now a Sutra record
