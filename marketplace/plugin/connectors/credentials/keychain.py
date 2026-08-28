@@ -19,6 +19,7 @@ Stdlib only: ctypes is in the standard library.
 """
 import ctypes
 import ctypes.util
+import threading
 import json
 import platform
 from typing import Optional
@@ -27,6 +28,11 @@ from ..models import Credential
 from .store import CredentialNotFound, CredentialStore
 
 SERVICE_NAME = "com.sutra.connector"
+
+#: How long to wait for a keychain read before giving the worker back. Generous
+#: next to an uncontended read (sub-millisecond) and short next to a human
+#: noticing a dialog, which is the only thing that makes it slow.
+GET_TIMEOUT_S = 5.0
 
 _ERR_SUCCESS = 0
 _ERR_ITEM_NOT_FOUND = -25300
@@ -40,6 +46,34 @@ class KeychainError(RuntimeError):
         super().__init__("Keychain %s failed with OSStatus %d" % (operation, status))
         self.status = status
         self.operation = operation
+
+
+class KeychainTimeout(KeychainError):
+    """The read did not come back in time -- almost always an unanswered prompt.
+
+    SecItemCopyMatching BLOCKS while macOS shows "python3.12 wants to use your
+    confidential information stored in com.sutra.connector". It has no timeout
+    argument. Connector endpoints are synchronous `def`, so FastAPI runs each in
+    a threadpool worker, and a blocked call holds that worker until somebody
+    answers a dialog that may be behind another window -- or on a machine nobody
+    is sitting at. Enough of them and the panel stops answering anything.
+
+    So the WAIT is bounded even though the CALL cannot be cancelled. The worker
+    is released and the operator gets a sentence that names the dialog; the
+    orphaned thread ends when the prompt is finally answered or the process
+    exits. Losing one thread beats losing the panel.
+    """
+
+    def __init__(self, seconds):
+        RuntimeError.__init__(
+            self,
+            "the macOS keychain did not answer within %gs. This is almost "
+            "always an authorization dialog waiting for you -- look for "
+            '"wants to use your confidential information stored in '
+            '%s" and click Always Allow.' % (seconds, SERVICE_NAME))
+        self.status = None
+        self.operation = "get"
+        self.seconds = seconds
 
 
 class _Frameworks:
@@ -191,7 +225,29 @@ class KeychainCredentialStore(CredentialStore):
             owned.append(query)
 
             result = ctypes.c_void_p()
-            status = self._sec.SecItemCopyMatching(query, ctypes.byref(result))
+            # Bounded wait -- see KeychainTimeout. The call itself cannot be
+            # cancelled, so this stops WAITING rather than stopping the call.
+            box = {}
+
+            def _run():
+                try:
+                    box["status"] = self._sec.SecItemCopyMatching(
+                        query, ctypes.byref(result))
+                except BaseException as exc:      # pragma: no cover - defensive
+                    box["exc"] = exc
+
+            worker = threading.Thread(target=_run, daemon=True,
+                                      name="keychain-get")
+            worker.start()
+            worker.join(GET_TIMEOUT_S)
+            if worker.is_alive():
+                # DO NOT release `owned` here: the thread still holds those
+                # CFTypeRefs and freeing them under it would crash the process.
+                owned[:] = []
+                raise KeychainTimeout(GET_TIMEOUT_S)
+            if "exc" in box:
+                raise box["exc"]
+            status = box.get("status", _ERR_SUCCESS)
             if status == _ERR_ITEM_NOT_FOUND:
                 raise CredentialNotFound(key)
             if status != _ERR_SUCCESS:
