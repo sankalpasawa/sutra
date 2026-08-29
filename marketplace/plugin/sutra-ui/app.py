@@ -2161,8 +2161,18 @@ async def ws_chat(ws: WebSocket):
             # Guarded by forked_from so a client that keeps the toggle set does
             # not fork again on every subsequent message -- one fork per source
             # thread per socket, which is what "fork this conversation" means.
-            if ((payload.get("opts") or {}).get("fork_session")
-                    and session_id and session_id not in forked_from):
+            # forked_from holds BOTH sides of every fork -- the thread forked
+            # FROM and the thread forked INTO. Keying it only on the source id
+            # was a half fix: the companion change that adopts a changed session
+            # id then rewrites session_id to the newly minted fork, so on the
+            # next message the guard was asked about an id it had never seen,
+            # and a pane whose fork toggle stayed set forked again on EVERY
+            # turn -- each message landing in its own brand-new thread with no
+            # memory of the last, which is the failure forking is supposed to
+            # avoid. The new id is added after the turn, below.
+            _forking = ((payload.get("opts") or {}).get("fork_session")
+                        and session_id and session_id not in forked_from)
+            if _forking:
                 forked_from.add(session_id)
                 if alive:
                     rt.kill_group()
@@ -2313,6 +2323,9 @@ async def ws_chat(ws: WebSocket):
             #
             # demux_turn RETURNS the id it ran under, whether or not it changed,
             # so binding here covers fresh, resumed and forked alike.
+            # The thread we forked INTO must not itself be forked next turn.
+            if _forking and session_id:
+                forked_from.add(session_id)
             if sutra_sid and session_id:
                 try:
                     sessions_store.bind_handle(sutra_sid, active_id, session_id)
@@ -2379,7 +2392,15 @@ async def ws_chat(ws: WebSocket):
             if failed:
                 # stderr carries the specific cause ("No conversation found with
                 # session ID: ..."); the result payload is the fallback.
-                detail = err.strip()[:600] or result_error or ("claude exited " + str(rc))
+                #
+                # THE TAIL, not the head. `err` is stderr accumulated across the
+                # whole life of a PERSISTENT process, so the first 600 bytes are
+                # whatever it printed at startup -- a wrapper banner, a node
+                # warning, an MCP notice -- and the reason THIS turn failed is at
+                # the end. Reporting the head handed the operator a deprecation
+                # warning as the explanation for a failure that happened minutes
+                # later.
+                detail = err.strip()[-600:] or result_error or ("claude exited " + str(rc))
                 frame = {"type": "error", "detail": detail}
                 if resume_unverified:
                     # The id the browser handed us may be stale, from another

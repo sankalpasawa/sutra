@@ -368,6 +368,42 @@ class ForkSession(unittest.TestCase):
                 os.environ[k] = v
         shutil.rmtree(cls.tmpdir, ignore_errors=True)
 
+    def test_a_fork_pane_does_not_re_fork_on_every_turn(self):
+        """The other half of the fork fix. forked_from keyed only on the SOURCE
+        id, and adopting the changed session id rewrites session_id to the newly
+        minted fork -- so on the next message the guard was asked about an id it
+        had never seen. A pane whose fork toggle stayed set therefore forked
+        again on every turn, each message landing in its own fresh thread with
+        no memory of the last, which is precisely what forking exists to avoid.
+
+        The client keeps the toggle set (S.turnOpts is sticky), so this is the
+        normal path, not an edge case."""
+        from websockets.sync.client import connect
+        seen = []
+        with connect("ws://127.0.0.1:%d/ws/chat" % self.port,
+                     open_timeout=10, close_timeout=5) as ws:
+            payloads = [{"message": "original"}]
+            payloads += [{"message": "forked %d" % i,
+                          "opts": {"fork_session": True}} for i in range(1, 4)]
+            for payload in payloads:
+                ws.send(json.dumps(payload))
+                deadline = time.time() + 20
+                while time.time() < deadline:
+                    try:
+                        fr = json.loads(ws.recv(timeout=max(0.1, deadline - time.time())))
+                    except Exception:
+                        break
+                    seen.append(fr)
+                    if fr.get("type") in ("done", "error"):
+                        break
+        ids = [f["id"] for f in seen if f.get("type") == "session"]
+        forks = sorted({i for i in ids if i.startswith("forked-")})
+        self.assertEqual(len(forks), 1,
+                         "the pane forked %d times across three messages: %s"
+                         % (len(forks), forks))
+        self.assertTrue(ids[-1].startswith("forked-"),
+                        "the pane left the fork it created: %s" % (ids,))
+
     def test_fork_is_followed_not_dropped(self):
         from websockets.sync.client import connect
         seen = []
