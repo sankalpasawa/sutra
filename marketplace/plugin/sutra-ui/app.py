@@ -2206,13 +2206,33 @@ async def ws_chat(ws: WebSocket):
             if sutra_sid is None:
                 try:
                     want = payload.get("sutra_session")
+                    adopted = None
                     if (sessions_store.is_sutra_id(want)
                             and sessions_store.read(want) is not None):
                         sutra_sid = want
                     else:
-                        sutra_sid = sessions_store.create(
-                            title=msg.strip()[:80], cwd=str(workdir),
-                            provider=active_id)["id"]
+                        # RECOGNISE A CONVERSATION SUTRA HAS ALREADY SEEN.
+                        #
+                        # Minting whenever the client did not hand back an id
+                        # meant one conversation became one record per reopen:
+                        # nothing in the client read the sutra_session frame, so
+                        # the id never came back and the store fragmented into
+                        # shards, each holding whatever turns that pane carried.
+                        #
+                        # Reopening always carries the PROVIDER's id, because
+                        # that is what --resume needs. So look the conversation
+                        # up by its handle before deciding it is new. The wire
+                        # round trip is now an optimisation; this is what makes
+                        # identity actually hold.
+                        if session_id:
+                            adopted = sessions_store.find_by_handle(
+                                active_id, session_id)
+                        if adopted:
+                            sutra_sid = adopted["id"]
+                        else:
+                            sutra_sid = sessions_store.create(
+                                title=msg.strip()[:80], cwd=str(workdir),
+                                provider=active_id)["id"]
                 except Exception:
                     sutra_sid = None
             if sutra_sid and not payload.get("_replay"):
@@ -2279,6 +2299,25 @@ async def ws_chat(ws: WebSocket):
                 (session_id, got_text, got_result,
                  result_error, eof) = await rt.demux_turn_adapter(
                      _record, session_id, adapter)
+            # BIND THE HANDLE FROM THE TURN'S RESULT.
+            #
+            # It used to be bound only inside the `session` frame observer, and
+            # session_runtime emits that frame only when the id CHANGES (the
+            # --fork-session fix). A RESUMED pane sends its id up, the CLI
+            # echoes the same one back, nothing changes, no frame is emitted --
+            # so a continued conversation never recorded a provider handle at
+            # all, and resume_plan answered "replay" for it forever. Replay
+            # re-sends the whole transcript as seed context, which the operator
+            # pays for. That is the exact case the store exists for, and it was
+            # the one case that did not work.
+            #
+            # demux_turn RETURNS the id it ran under, whether or not it changed,
+            # so binding here covers fresh, resumed and forked alike.
+            if sutra_sid and session_id:
+                try:
+                    sessions_store.bind_handle(sutra_sid, active_id, session_id)
+                except Exception:
+                    pass
             if sutra_sid and _reply:
                 try:
                     sessions_store.append_turn(sutra_sid, "assistant",

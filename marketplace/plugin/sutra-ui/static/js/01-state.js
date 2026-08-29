@@ -589,7 +589,24 @@ function adoptRealSessions(rows){
       claude_session: r.id
     };
   });
-  S.sessions = local.concat(real)
+  /* KEEP WHAT FELL OUT OF THE PAGE.
+     The two preservation maps above are consulted INSIDE the map over `rows`,
+     so they only rescue a session the server sent back. The list request is
+     capped (limit=100) and this machine holds ~900 transcripts, so an active
+     conversation can simply drop out of the newest-100 window -- and then it is
+     not in `rows`, not in `real`, and gone from S.sessions altogether, while
+     S.openPanes keeps its id and renders a pane for a session that no longer
+     exists. Measured: forcing a refresh whose page omitted the open session
+     took S.sessions from 100 to 99 and left the pane dangling.
+     Busy and on-screen sessions are re-appended by id when the page did not
+     carry them; everything else still comes wholesale from disk. */
+  const returned = new Set((rows || []).map(r => r.id));
+  const rescued = [];
+  busy.forEach((sess, id) => { if (!returned.has(id)) rescued.push(sess); });
+  openLoaded.forEach((sess, id) => {
+    if (!returned.has(id) && !rescued.includes(sess)) rescued.push(sess);
+  });
+  S.sessions = local.concat(real, rescued)
     .sort((a,b)=>(b.updated_ms||b.created_ms)-(a.updated_ms||a.created_ms));
 }
 
@@ -1280,6 +1297,15 @@ function claudeChannel(s, side){
       /* A rate-limit backoff. Without this the pane went silent and a WAITING
          turn was indistinguishable from a WEDGED one. */
       if (ch.turn){ ch.turn.retrying = f.detail || "retrying"; }
+    } else if (f.type === "sutra_session"){
+      /* SUTRA'S OWN id for this conversation, as opposed to the provider's.
+         The server announces it once per pane and expects it back on the next
+         message; nothing here read the frame, so the id never came back, and
+         every reopen minted a NEW record -- one conversation shattered into a
+         record per pane, each holding whatever turns that pane happened to
+         carry. Kept on the SESSION, not the channel, so it survives a socket
+         reconnect, which is exactly when it is needed. */
+      if (f.id){ s.sutra_session = f.id; }
     } else if (f.type === "notice"){
       /* The server emits this when the turn is INCOMPLETE in a way the operator
          cannot otherwise see -- an oversized frame was skipped, or a provider

@@ -62,6 +62,12 @@ function askClaude(s, turn, side){
                                     one of these (build_agent_args); nothing here is
                                     trusted, and an unknown or junk value is dropped
                                     rather than passed to the CLI. */
+                                 /* Sutra's own id for this conversation, echoed
+                                    back so the server continues the SAME record
+                                    instead of minting another. A side chat is a
+                                    separate conversation by definition and
+                                    deliberately carries none. */
+                                 sutra_session: side ? null : (s.sutra_session || null),
                                  opts: S.turnOpts[s.id] || null });
   if (ch.open) ch.ws.send(frame); else ch.queue.push(frame);
   scheduleRender();

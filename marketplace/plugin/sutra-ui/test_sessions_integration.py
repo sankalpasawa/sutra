@@ -73,11 +73,13 @@ class SessionsIntegration(unittest.TestCase):
                 os.environ[k] = v
         shutil.rmtree(cls.tmpdir, ignore_errors=True)
 
-    def _turn(self, message, sutra_session=None, timeout=20):
+    def _turn(self, message, sutra_session=None, resume=None, timeout=20):
         from websockets.sync.client import connect
         payload = {"message": message}
         if sutra_session:
             payload["sutra_session"] = sutra_session
+        if resume:
+            payload["resume"] = resume
         frames = []
         with connect("ws://127.0.0.1:%d/ws/chat" % self.port,
                      open_timeout=10, close_timeout=5) as ws:
@@ -162,6 +164,56 @@ class SessionsIntegration(unittest.TestCase):
             self.assertNotIn("error", kinds, kinds)
         finally:
             os.chmod(self.sessions, 0o700)
+
+    # ---- reopening must not fragment the store ---------------------------
+
+    def test_reopening_by_provider_handle_reuses_the_session(self):
+        """THE BUG THIS EXISTS FOR. Identity was supposed to travel on the wire:
+        the socket announces a sutra_session id and the client hands it back.
+        Nothing in the client read that frame, so the id never came back and
+        every reopen minted a NEW record -- one conversation shattered into a
+        record per pane, each holding whatever turns that pane carried.
+
+        A reopen always carries the PROVIDER's id, because that is what --resume
+        needs. Recognising the conversation by its handle is what makes identity
+        hold even when the wire round trip does not."""
+        first = self._turn("original message")
+        sid = [f["id"] for f in first if f["type"] == "sutra_session"][0]
+        claude_id = [f["id"] for f in first if f["type"] == "session"][0]
+
+        before = len(ss.listing())
+        # a client that has forgotten (or never knew) the sutra id, but does
+        # resume the provider thread -- exactly what the panel sent for months
+        second = self._turn("continued message", resume=claude_id)
+        sid2 = [f["id"] for f in second if f["type"] == "sutra_session"][0]
+
+        self.assertEqual(sid2, sid, "reopening minted a second record")
+        self.assertEqual(len(ss.listing()), before, "the store grew on a reopen")
+        roles = [t["role"] for t in ss.transcript(sid)]
+        self.assertEqual(roles, ["user", "assistant", "user", "assistant"],
+                         "the continued turns landed somewhere else")
+
+    def test_a_resumed_turn_still_binds_the_provider_handle(self):
+        """bind_handle used to live only inside the `session` frame observer,
+        and that frame is emitted only when the id CHANGES. A resumed pane sends
+        its id up and the CLI echoes the same one back, so no frame fired and a
+        CONTINUED conversation never recorded a handle -- resume_plan answered
+        "replay" for it forever, which re-sends the whole transcript and is paid
+        for in tokens. The one case the store exists for was the one that failed."""
+        first = self._turn("bind me")
+        sid = [f["id"] for f in first if f["type"] == "sutra_session"][0]
+        claude_id = [f["id"] for f in first if f["type"] == "session"][0]
+
+        # a fresh store record, resumed -- no `session` frame will be emitted
+        fresh = ss.create(title="carried over", provider="claude")["id"]
+        frames = self._turn("second turn", sutra_session=fresh, resume=claude_id)
+        self.assertFalse([f for f in frames if f["type"] == "session"],
+                         "the fake echoed a changed id; this test proves nothing")
+
+        meta = ss.read(fresh)
+        self.assertEqual(meta["handles"].get("claude"), claude_id,
+                         "a resumed turn recorded no provider handle")
+        self.assertEqual(ss.resume_plan(fresh, "claude"), ("native", claude_id))
 
     # ---- the HTTP surface ------------------------------------------------
 

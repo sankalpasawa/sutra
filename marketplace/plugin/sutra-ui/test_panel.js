@@ -687,6 +687,30 @@ test("14a. every adopted field is the server's, and turns are NOT invented", () 
   assert.strictEqual(s0.created_ms, 1700000000 * 1000, "mtime is seconds, buckets are ms");
 });
 
+test("14a2. a session that falls out of the page is not evicted from under you", () => {
+  /* The list request is capped at limit=100 and this machine holds ~900
+     transcripts, so an active conversation can drop out of the newest-100
+     window. adoptRealSessions preserves busy and on-screen sessions -- but only
+     for ids the server sent back, because both maps are consulted inside the
+     map over `rows`. A page that omitted the open session therefore removed it
+     from S.sessions entirely while S.openPanes kept the id, leaving a pane
+     rendered for a conversation that no longer existed. */
+  T.S.sessions = [
+    { id: "on-screen", real: true, local: false, loadState: "loaded",
+      turns: [{}], updated_ms: 5 },
+    { id: "still-listed", real: true, local: false, loadState: "loaded",
+      turns: [], updated_ms: 9 },
+  ];
+  T.S.openPanes = ["on-screen"];
+  T.adoptRealSessions([{ id: "still-listed", mtime: 9 }]);
+  const ids = T.S.sessions.map(s => s.id);
+  assert.ok(ids.includes("on-screen"),
+    "the open conversation was evicted by a page that did not mention it: " + ids.join(","));
+  const kept = T.S.sessions.find(s => s.id === "on-screen");
+  assert.strictEqual(kept.turns.length, 1, "it came back stripped of its turns");
+  assert.strictEqual(kept.loadState, "loaded", "it came back as unread");
+});
+
 test("14b. a session with no readable prompt says so rather than being titled", () => {
   T.S.sessions = [];
   T.adoptRealSessions([{ id: "no-prompt", title: "", mtime: 1, size: 0 }]);

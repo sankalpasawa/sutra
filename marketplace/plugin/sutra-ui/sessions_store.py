@@ -261,6 +261,33 @@ def handle_for(sid, provider):
     return (meta.get("handles") or {}).get(provider) or None
 
 
+def find_by_handle(provider, handle):
+    """The Sutra session that already owns this provider handle, or None.
+
+    THE STORE HEALS ITSELF. Identity is supposed to travel on the wire: the
+    socket announces a sutra_session id and the client hands it back on the next
+    message. When that round trip is broken -- as it was, because nothing in the
+    client ever read the frame -- every reopen minted a NEW record and one
+    conversation shattered into a record per pane.
+
+    Reopening always carries the PROVIDER's id (that is what --resume needs), so
+    the provider handle is a second, independent way to recognise a conversation
+    Sutra has already seen. Looking it up here means a forgetful or older client
+    cannot fragment the store; the wire round trip becomes an optimisation
+    rather than the only thing holding identity together.
+
+    A linear scan over meta.json files, like listing(). At the size this store
+    reaches -- one record per conversation -- an index would be a second thing to
+    keep correct for no measurable gain.
+    """
+    if not provider or not handle:
+        return None
+    for meta in listing(limit=10000):
+        if (meta.get("handles") or {}).get(provider) == handle:
+            return meta
+    return None
+
+
 def resume_plan(sid, provider, native_ok=True):
     """How to continue this session under `provider`, without deciding for the
     caller. Returns ('native', handle) | ('replay', sid) | ('fresh', sid).
