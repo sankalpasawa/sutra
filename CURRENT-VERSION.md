@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-08-29
 
-## v2.242.0 (2026-08-29, HEAD)
+## v2.243.0 (2026-08-29, HEAD)
+
+Session identity round trip, handle binding on resume, fork-once, no eviction.
+
+## v2.242.0 (2026-08-29)
 
 Session restore, live-session guard, spend cap units.
 

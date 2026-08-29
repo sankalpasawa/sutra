@@ -1826,6 +1826,33 @@ a user-facing feature did.
 
 > **CHANGELOG drift note (2026-05-09)**: v2.33.0 + v2.34.0 release notes live in `.claude-plugin/plugin.json` description field but were not back-filled into this CHANGELOG. v2.35.0 below is the first entry written here since v2.32.0. Backfill of v2.33-34 is queued as a small follow-up; full release detail for those two versions is in plugin.json.
 
+## v2.243.0 (2026-08-29)
+
+Re-audit of the session work shipped earlier today, and three defects it had
+introduced.
+
+**Reopening a conversation no longer creates a second one.** Nothing in the
+client read the `sutra_session` frame, so Sutra's id never came back and every
+reopen minted a new record -- one conversation shattered into a record per
+pane. The client now returns it, and the server recognises a conversation by
+its provider handle even when the client says nothing, so identity no longer
+depends on the round trip alone.
+
+**A resumed pane records its provider handle.** Binding happened only inside
+the `session` frame, which a resumed turn never emits (the id does not change),
+so continued conversations degraded to replaying the whole transcript as seed
+context -- paid for in tokens.
+
+**A fork pane forks once.** The guard keyed on the source thread while the
+adopt-on-change fix rewrote that id, so a pane with the toggle set forked again
+on every message.
+
+**A list refresh cannot evict the conversation on screen.** A session that fell
+out of the capped newest-100 window vanished from state while its pane kept
+rendering.
+
+**A failed turn reports the tail of stderr**, not the startup banner.
+
 ## v2.242.0 (2026-08-29)
 
 **"Is recoverable" is true now.** Archive and Delete both promised recovery and
