@@ -26,7 +26,6 @@ import itertools
 import json
 import os
 import signal
-import sys
 
 from session_runtime import _drain_to_newline, TurnQueue
 
@@ -57,8 +56,33 @@ _DEFAULT_ACP_MODE = "default"
 _ALLOW_KINDS = ("allow_once", "allow_always")
 _REJECT_KINDS = ("reject_once", "reject_always")
 
+# Claude's -p runs pre-allow mcp__sutra__* unconditionally (build_agent_args
+# in app.py): a -p run has nobody to answer a permission prompt, so it would
+# just stall, and the mutating sutra tools only ever write an inert proposal
+# -- safe to wave through regardless of mode. DeepSeek's ACP layer surfaces
+# the same prompt instead of swallowing it, so it needs the same carve-out.
+#
+# What identifies "this tool call is a sutra one" on the wire: NOT much.
+# Read directly out of the installed CLI (@sluisr/deepseek-cli@1.3.2,
+# bundle/chunk-UNFT3LTQ.js): the `params` object built for
+# session/request_permission (bundle/gemini-RIEFLUTB.js ~14350) sets only
+# toolCallId/status/title/content/locations/kind -- no server name, no
+# rawInput, nothing in `_meta`. The one place server identity leaks through
+# is `title`: DiscoveredMCPToolInvocation.getDisplayTitle() returns
+# `this.displayName || this.serverToolName` (chunk-UNFT3LTQ.js ~285343),
+# and displayName is built as "${serverToolName} (${serverName} MCP
+# Server)" -- UNLESS the call's own params carry a "command" key, which
+# shadows it entirely (getDisplayTitle special-cases that). None of
+# sutra_mcp.py's tool schemas define a "command" parameter, so that
+# collision doesn't hit us today, but this is a display string from one
+# CLI build, not a protocol-level identifier -- it can silently stop
+# matching on a CLI upgrade. serverName here must equal the "name" field
+# _sutra_acp_mcp_servers() (app.py) puts in the mcpServers entry.
+_SUTRA_MCP_TITLE_SUFFIX = " (sutra MCP Server)"
 
-def _choose_permission_option(effective_permission_mode, tool_kind, options):
+
+def _choose_permission_option(effective_permission_mode, tool_kind, options,
+                              tool_title=None):
     """One offered option's optionId to answer `session/request_permission`
     with, or None to send `{"outcome":{"outcome":"cancelled"}}` instead.
 
@@ -69,7 +93,9 @@ def _choose_permission_option(effective_permission_mode, tool_kind, options):
     explicit, because DeepSeek's ACP layer surfaces the ask instead of
     swallowing it internally.
     """
-    if effective_permission_mode == "bypassPermissions":
+    if isinstance(tool_title, str) and tool_title.endswith(_SUTRA_MCP_TITLE_SUFFIX):
+        approve = True
+    elif effective_permission_mode == "bypassPermissions":
         approve = True
     elif effective_permission_mode == "acceptEdits":
         # PERMISSION_MODE_NOTES already documents acceptEdits as covering
@@ -170,7 +196,6 @@ class AcpRuntime:
         p = self.proc
         if p is None or p.returncode is not None:
             return False
-        print("[DBG-DS] kill_group: terminating pid=%r" % p.pid, file=sys.stderr)
         try:
             os.killpg(os.getpgid(p.pid), signal.SIGTERM)
         except (ProcessLookupError, PermissionError, OSError):
@@ -293,8 +318,6 @@ class AcpRuntime:
                 await self._notify_id_error(msg["id"], method)
 
     def _on_eof(self):
-        print("[DBG-DS] _on_eof: agent stdout closed -- proc rc=%r"
-              % (self.proc.returncode if self.proc else None), file=sys.stderr)
         for fut in self._pending.values():
             if not fut.done():
                 fut.set_exception(ConnectionResetError("ACP process closed stdout"))
@@ -315,7 +338,8 @@ class AcpRuntime:
         options = params.get("options") or []
         tool_call = params.get("toolCall") or {}
         option_id = _choose_permission_option(
-            self.effective_permission_mode, tool_call.get("kind"), options)
+            self.effective_permission_mode, tool_call.get("kind"), options,
+            tool_call.get("title"))
         if option_id is not None:
             result = {"outcome": {"outcome": "selected", "optionId": option_id}}
             approved = True
@@ -399,7 +423,6 @@ class AcpRuntime:
         )
         self.proc = p
         self.key = key
-        print("[DBG-DS] spawn: new subprocess pid=%r args=%r" % (p.pid, args), file=sys.stderr)
         self._reader_task = asyncio.ensure_future(self._reader_loop())
         await self.initialize()
         return p
@@ -438,9 +461,6 @@ class AcpRuntime:
         if session_id:
             resp = await self._call("session/load", {
                 "sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers or []})
-            print("[DBG-DS] new_session: session/load(sessionId=%r) -> %s"
-                  % (session_id, ("error: %r" % resp["error"]) if "error" in resp
-                     else "ok"), file=sys.stderr)
             if "error" not in resp:
                 # zLoadSessionResponse carries no sessionId -- unlike
                 # session/new, the id isn't echoed back, so it's kept from
@@ -459,8 +479,6 @@ class AcpRuntime:
                 raise RuntimeError("session/new failed: %s" % resp["error"])
             result = resp["result"]
             self.session_id = result["sessionId"]
-            print("[DBG-DS] new_session: session/new -> sessionId=%r (session_id arg was %r)"
-                  % (self.session_id, session_id), file=sys.stderr)
 
         modes = result.get("modes") or {}
         available = {m.get("id") for m in (modes.get("availableModes") or [])}
