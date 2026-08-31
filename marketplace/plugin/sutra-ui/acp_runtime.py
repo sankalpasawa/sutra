@@ -26,6 +26,7 @@ import itertools
 import json
 import os
 import signal
+import sys
 
 from session_runtime import _drain_to_newline, TurnQueue
 
@@ -169,6 +170,7 @@ class AcpRuntime:
         p = self.proc
         if p is None or p.returncode is not None:
             return False
+        print("[DBG-DS] kill_group: terminating pid=%r" % p.pid, file=sys.stderr)
         try:
             os.killpg(os.getpgid(p.pid), signal.SIGTERM)
         except (ProcessLookupError, PermissionError, OSError):
@@ -291,6 +293,8 @@ class AcpRuntime:
                 await self._notify_id_error(msg["id"], method)
 
     def _on_eof(self):
+        print("[DBG-DS] _on_eof: agent stdout closed -- proc rc=%r"
+              % (self.proc.returncode if self.proc else None), file=sys.stderr)
         for fut in self._pending.values():
             if not fut.done():
                 fut.set_exception(ConnectionResetError("ACP process closed stdout"))
@@ -395,6 +399,7 @@ class AcpRuntime:
         )
         self.proc = p
         self.key = key
+        print("[DBG-DS] spawn: new subprocess pid=%r args=%r" % (p.pid, args), file=sys.stderr)
         self._reader_task = asyncio.ensure_future(self._reader_loop())
         await self.initialize()
         return p
@@ -433,6 +438,9 @@ class AcpRuntime:
         if session_id:
             resp = await self._call("session/load", {
                 "sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers or []})
+            print("[DBG-DS] new_session: session/load(sessionId=%r) -> %s"
+                  % (session_id, ("error: %r" % resp["error"]) if "error" in resp
+                     else "ok"), file=sys.stderr)
             if "error" not in resp:
                 # zLoadSessionResponse carries no sessionId -- unlike
                 # session/new, the id isn't echoed back, so it's kept from
@@ -451,6 +459,8 @@ class AcpRuntime:
                 raise RuntimeError("session/new failed: %s" % resp["error"])
             result = resp["result"]
             self.session_id = result["sessionId"]
+            print("[DBG-DS] new_session: session/new -> sessionId=%r (session_id arg was %r)"
+                  % (self.session_id, session_id), file=sys.stderr)
 
         modes = result.get("modes") or {}
         available = {m.get("id") for m in (modes.get("availableModes") or [])}

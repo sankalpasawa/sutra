@@ -1977,6 +1977,10 @@ async def ws_chat(ws: WebSocket):
             spawn_key = tuple(args)
             proc = rt.proc
             alive = rt.alive
+            if active_id == "deepseek":
+                print("[DBG-DS] pre-spawn-check alive=%r proc=%r rc=%r session_id=%r"
+                      % (alive, proc, (proc.returncode if proc else None), session_id),
+                      file=sys.stderr)
             if alive and rt.key != spawn_key:
                 # a spawn-time option changed: end this process and carry the
                 # conversation over rather than dropping it
@@ -2031,7 +2035,13 @@ async def ws_chat(ws: WebSocket):
                         # --resume path reads), or None on a cold pane.
                         # AcpRuntime resolves the fallback-on-dead-id case
                         # internally -- nothing else to do here.
-                        await rt.new_session(workdir, perm_mode, session_id=session_id)
+                        if active_id == "deepseek":
+                            print("[DBG-DS] entering respawn block, calling "
+                                  "new_session(session_id=%r)" % session_id, file=sys.stderr)
+                        got = await rt.new_session(workdir, perm_mode, session_id=session_id)
+                        if active_id == "deepseek":
+                            print("[DBG-DS] new_session returned %r, rt.session_id=%r"
+                                  % (got, rt.session_id), file=sys.stderr)
                     except Exception as e:
                         await ws.send_json({"type": "error", "detail":
                             "could not start a %s session: %s" % (active_id, e)})
@@ -2057,8 +2067,14 @@ async def ws_chat(ws: WebSocket):
                 # read-until-terminal collapse into one call. Same 5-tuple
                 # contract as demux_turn, so everything below this point
                 # (stderr/rc reap, stop/failed/done handling) is unchanged.
+                pre_prompt_session_id = session_id
                 (session_id, got_text, got_result,
                  result_error, eof) = await rt.prompt_turn(msg, ws.send_json, session_id)
+                if active_id == "deepseek":
+                    print("[DBG-DS] prompt_turn: session_id before=%r after=%r "
+                          "got_text=%r got_result=%r eof=%r"
+                          % (pre_prompt_session_id, session_id, got_text, got_result, eof),
+                          file=sys.stderr)
             # S23: now that the session id is known, make this runtime
             # discoverable (idempotent; same id + same rt every turn).
             register_runtime(session_id, rt)
@@ -2078,6 +2094,9 @@ async def ws_chat(ws: WebSocket):
             # drained and reaped.
             err = ""
             rc = 0
+            if eof and active_id == "deepseek":
+                print("[DBG-DS] eof=True -- draining stderr, reaping proc, rt.clear() "
+                      "will run (this forces a respawn next turn)", file=sys.stderr)
             if eof:
                 try:
                     err = (await asyncio.wait_for(proc.stderr.read(), 2)).decode(
