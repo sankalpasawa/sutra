@@ -241,6 +241,33 @@ class AcpRuntime:
             except Exception:
                 pass
 
+    def _fanout(self, primary):
+        """Wrap a turn's primary emit with subscriber fan-out -- mirrors
+        SessionRuntime._fanout (session_runtime.py) so Shadow's observer
+        (shadow_runner.attach_observer) sees every frame type, not just the
+        _turn_boundary ones prompt_turn already pushes via
+        _notify_subscribers directly. Without this, subscribers never saw a
+        "token" frame: _RECENT_TEXT (mission live-text preview) stayed empty
+        for a DeepSeek target, and _LAST_FRAME_TS (stall detection) only
+        advanced at turn start/end instead of continuously -- a long single
+        ACP turn (session/prompt is one request/response, not Claude's
+        multi-frame demux) could false-positive a stall mid-turn.
+
+        No _observe call here (unlike SessionRuntime's version): AcpRuntime
+        already sets self.state directly at each transition rather than
+        inferring it from frames passing through.
+        """
+        async def emit(frame):
+            await primary(frame)
+            for cb in list(self.subscribers):
+                try:
+                    res = cb(frame)
+                    if asyncio.iscoroutine(res):
+                        await res
+                except Exception:
+                    pass
+        return emit
+
     # ------------------------------------------------------------- wire --
 
     async def _call(self, method, params=None):
@@ -503,7 +530,7 @@ class AcpRuntime:
         (session_id, got_text, got_result, result_error, eof) so the
         surrounding loop's bookkeeping doesn't need a second code path.
         """
-        self._emit = emit
+        self._emit = self._fanout(emit)
         self._got_text = False
         if not self.stopped:
             self.state = "active"
