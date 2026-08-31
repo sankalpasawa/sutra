@@ -423,6 +423,8 @@ _CATALOG = (
      "config_dir": "~/.codex", "default": False},
     {"id": "gemini", "name": "Gemini CLI", "bin": "gemini",
      "config_dir": "~/.gemini", "default": False},
+    {"id": "deepseek", "name": "DeepSeek", "bin": "deepseek",
+     "config_dir": "~/.deepseek", "default": False},
 )
 
 

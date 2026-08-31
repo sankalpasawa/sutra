@@ -210,6 +210,42 @@ Override via `--xhigh` (with cost warning) or via `-m <model>` passthrough.
 
 ---
 
+## Model resolution (`model_from_dispatch`)
+
+Effort and model are SEPARATE knobs. The per-mode table above fixes effort; the model comes
+from the frozen dispatch envelope, and ONLY when that envelope says this unit was dispatched
+to the codex provider.
+
+```bash
+# Read the frozen record; absence is a normal answer, not an error.
+_DREC="$ROOT/.sutra/dispatch/${CLAUDE_CODE_SESSION_ID:-nosession}/dispatch-record"
+CODEX_MODEL=""
+if [ -f "$_DREC" ] && [ "$(grep -m1 '^PROVIDER=' "$_DREC" | cut -d= -f2-)" = "codex" ]; then
+  CODEX_MODEL=$(grep -m1 '^MODEL=' "$_DREC" | cut -d= -f2-)
+fi
+
+# Splice as an ARRAY. Never write -m "${CODEX_MODEL:-}" — that passes an empty
+# model argument, which codex rejects (codex P2, 2026-08-27).
+CODEX_MODEL_ARGS=()
+[ -n "$CODEX_MODEL" ] && CODEX_MODEL_ARGS=(-m "$CODEX_MODEL")
+```
+
+**Why conditional, not always.** A codex-sutra *review of Claude work* is review machinery, not
+a codex-provider dispatch unit. Pinning a model there would change behaviour for every review
+in the fleet. So when `PROVIDER` is anything but `codex`, or no envelope exists,
+`CODEX_MODEL_ARGS` stays empty and codex keeps its own default.
+
+**Why this exists.** The resolver has always returned a codex model per class (`gpt-5.4-mini`
+class 1, `gpt-5.4` class 3, `gpt-5.5` class 5), but nothing passed it, so codex silently ran its
+server default — `gpt-5.5`, the most expensive tier — even for a class-1 unit. The tier decision
+was a no-op. Found by a four-agent verification run, 2026-08-27; `-m` was documented at the line
+above and used at zero call sites.
+
+**`resume` is excluded.** `codex exec resume <session-id>` must preserve the session's original
+model; do NOT splice `CODEX_MODEL_ARGS` into a resume (codex Q4, 2026-08-27).
+
+---
+
 ## Step 2A: Review
 
 Run `codex review` against the current branch diff. Use the launcher
@@ -230,6 +266,7 @@ output. PROTO-019 gate hook reads JSONL, not the human-facing block.
 Review-specific codex args:
 ```bash
 codex review "<the boundary>\n\n<focus, if any>" \
+  "${CODEX_MODEL_ARGS[@]}" \
   --base "$BASE" \
   -c 'model_reasoning_effort="high"' \
   --enable web_search_cached
@@ -257,7 +294,7 @@ With focus (e.g. `/codex-sutra challenge security`): same prompt + a
 
 Codex args:
 ```bash
-codex exec "<prompt>" -C "$REPO_ROOT" -s read-only \
+codex exec "<prompt>" "${CODEX_MODEL_ARGS[@]}" -C "$REPO_ROOT" -s read-only \
   -c 'model_reasoning_effort="high"' \
   --enable web_search_cached --json
 ```
@@ -291,7 +328,7 @@ Free-form Q&A with session continuity via `.context/codex-session-id`.
    + embedded plan (or free-form question) + repo-relative source paths
    referenced in the plan.
 4. Launch via the launcher pattern with codex args:
-   - New session: `codex exec "<prompt>" -C "$REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached --json`
+   - New session: `codex exec "<prompt>" "${CODEX_MODEL_ARGS[@]}" -C "$REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached --json`
    - Resume: `codex exec resume <session-id> "<prompt>" ...` (same flags)
 5. Capture session id from the `thread.started` JSONL event. Persist to
    `.context/codex-session-id`.
@@ -327,7 +364,7 @@ case.
    `CODEX-VERDICT: PASS|ADVISORY|CHANGES-REQUIRED`. Be decisive — only true
    blockers as P1." + the file content embedded.
 3. Launch via the launcher pattern with codex args:
-   `codex exec "<prompt>" -C "$REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached --json </dev/null`
+   `codex exec "<prompt>" "${CODEX_MODEL_ARGS[@]}" -C "$REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached --json </dev/null`
 4. Parse the final `CODEX-VERDICT:` line. Map to gate-log entry with
    `mode=design-review`, `verdict=<value>`, `findings=<P1 count>`,
    `advisories=<P2 count>`.
