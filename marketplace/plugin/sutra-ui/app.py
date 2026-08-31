@@ -36,6 +36,7 @@ from session_runtime import (SessionRuntime, _drain_to_newline,
                              _tool_command, _tool_output, _tool_summary,
                              register_runtime, unregister_runtime,
                              lookup_runtime)
+from acp_runtime import AcpRuntime
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -396,6 +397,21 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     return args
 
 
+def build_acp_args(agent_bin):
+    """The full argv for the ACP subprocess. Unlike build_agent_args, this
+    is spawn-time only and constant across every turn on this pane -- ACP's
+    model/permission-mode/session are protocol-level (session/new,
+    session/set_session_mode), not CLI flags, so there is no per-message
+    argv to build.
+
+    --skip-trust: this CLI is spawned into whatever workdir the operator's
+    Sutra workdir setting points at -- the same directory Claude is spawned
+    into -- which by definition was never trusted from an interactive
+    `deepseek` prompt first. Without this flag the underlying Gemini-CLI-
+    fork trust dialog stalls the process waiting for a TTY answer that
+    never comes.
+    """
+    return [agent_bin, "--acp", "--skip-trust"]
 
 
 def _ensure_workdir(path=None):
@@ -1747,18 +1763,31 @@ async def ws_chat(ws: WebSocket):
         await ws.close()
         return
 
-    if active_id != "claude":
+    deepseek_key = None
+    if active_id == "deepseek":
+        # Mirrors the ANTHROPIC_API_KEY refusal above, for the opposite
+        # reason: Claude inherits the logged-in Max subscription and
+        # REFUSES a stray key; DeepSeek has no subscription path at all and
+        # REQUIRES one. Refused here, at connect time, rather than left to
+        # fail inside spawn() as a dead socket with no text.
+        deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not deepseek_key:
+            await ws.send_json({"type": "error", "code": "provider-missing", "detail":
+                "Active provider is 'deepseek', but DEEPSEEK_API_KEY is not set "
+                "in the server environment. Export it and restart the server."})
+            await ws.close()
+            return
+    elif active_id != "claude":
         # Honest refusal instead of a confusing crash: the frames below parse
-        # Claude Code's `--output-format stream-json` protocol. Spawning
-        # another vendor's CLI with these flags would fail on argument
-        # parsing and report as though the provider were broken. No adapter
-        # has been written, so say that.
+        # either Claude Code's `--output-format stream-json` protocol or
+        # DeepSeek's ACP protocol. Spawning another vendor's CLI with these
+        # flags would fail on argument parsing and report as though the
+        # provider were broken. No adapter has been written, so say that.
         await ws.send_json({"type": "error", "code": "no-adapter", "detail":
-            "Active provider is %r (%s at %s). This chat channel speaks Claude "
-            "Code's --output-format stream-json protocol and no adapter has "
-            "been written for %s, so it is not being run rather than run "
-            "wrongly. Use the provider selector to switch to claude, or the "
-            "terminal tab." % (active_id, prov["name"], prov["bin_path"], active_id)})
+            "Active provider is %r (%s at %s). No chat adapter has been "
+            "written for it here, so it is not being run rather than run "
+            "wrongly. Use the provider selector to switch to claude or "
+            "deepseek, or the terminal tab." % (active_id, prov["name"], prov["bin_path"])})
         await ws.close()
         return
 
@@ -1828,7 +1857,7 @@ async def ws_chat(ws: WebSocket):
     #
     # One reader task owns the socket, handles `stop` inline (the only frame that
     # must act during a turn) and queues everything else for the main loop.
-    rt = SessionRuntime()
+    rt = SessionRuntime() if active_id == "claude" else AcpRuntime()
     inbox = asyncio.Queue()
     reader_dead = asyncio.Event()
 
@@ -1937,9 +1966,14 @@ async def ws_chat(ws: WebSocket):
             # carry the thread across with --resume. That keeps per-message
             # overrides working instead of silently ignoring them, which is what
             # a naive "always reuse" would do.
-            args = build_agent_args(agent_bin, msg, perm_mode,
-                                    session_id=None, model=chosen_model,
-                                    opts=payload.get("opts"), stream_input=True)
+            if active_id == "claude":
+                args = build_agent_args(agent_bin, msg, perm_mode,
+                                        session_id=None, model=chosen_model,
+                                        opts=payload.get("opts"), stream_input=True)
+            else:
+                # Constant every turn -- model/permission-mode are set once
+                # in new_session below, not per message.
+                args = build_acp_args(agent_bin)
             spawn_key = tuple(args)
             proc = rt.proc
             alive = rt.alive
@@ -1952,7 +1986,7 @@ async def ws_chat(ws: WebSocket):
                 except Exception:
                     pass
                 alive = False
-            if not alive and session_id:
+            if not alive and session_id and active_id == "claude":
                 args = build_agent_args(agent_bin, msg, perm_mode,
                                         session_id=session_id, model=chosen_model,
                                         opts=payload.get("opts"), stream_input=True)
@@ -1965,6 +1999,11 @@ async def ws_chat(ws: WebSocket):
                 # missed, the conversation re-read from disk. `args` still carries
                 # --resume for THIS spawn; only the stored comparison key stops
                 # depending on it, so the next message reuses the live process.
+                #
+                # Not applicable to deepseek: ACP has no --resume flag, so a
+                # dead ACP process starts a genuinely new session below rather
+                # than resuming the old one -- a known gap (session/load could
+                # close it later), not a silent one.
 
             # EXACTLY ONE `start` PER OPERATOR MESSAGE. The client treats `start`
             # as the demarcation that binds the next token stream to the next
@@ -1975,27 +2014,51 @@ async def ws_chat(ws: WebSocket):
             if not payload.get("_replay"):
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
+                spawn_env = ({"DEEPSEEK_API_KEY": deepseek_key}
+                             if active_id == "deepseek" else None)
                 try:
-                    proc = await rt.spawn(args, workdir, spawn_key)
+                    proc = await rt.spawn(args, workdir, spawn_key, env=spawn_env)
                 except OSError as e:
                     # Real cause, verbatim -- a dead socket taught the operator nothing.
                     await ws.send_json({"type": "error", "detail":
                         "could not start %r in %s: %s" % (agent_bin, workdir, e)})
                     continue
+                if active_id != "claude":
+                    try:
+                        # session_id is already in scope here: the client's
+                        # `resume` seed on a reconnect (set above, before
+                        # this block -- the same variable Claude's own
+                        # --resume path reads), or None on a cold pane.
+                        # AcpRuntime resolves the fallback-on-dead-id case
+                        # internally -- nothing else to do here.
+                        await rt.new_session(workdir, perm_mode, session_id=session_id)
+                    except Exception as e:
+                        await ws.send_json({"type": "error", "detail":
+                            "could not start a %s session: %s" % (active_id, e)})
+                        rt.kill_group()
+                        rt.clear()
+                        continue
             proc = rt.proc
 
-            # The turn itself: one stream-json frame on stdin.
-            try:
-                await rt.send_user_frame(msg)
-            except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
-                # the process died between the liveness check and the write
-                rt.proc = None
-                await ws.send_json({"type": "error", "detail":
-                    "the agent process closed before the message was sent (%s)" % e})
-                continue
-
-            (session_id, got_text, got_result,
-             result_error, eof) = await rt.demux_turn(ws.send_json, session_id)
+            if active_id == "claude":
+                # The turn itself: one stream-json frame on stdin.
+                try:
+                    await rt.send_user_frame(msg)
+                except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
+                    # the process died between the liveness check and the write
+                    rt.proc = None
+                    await ws.send_json({"type": "error", "detail":
+                        "the agent process closed before the message was sent (%s)" % e})
+                    continue
+                (session_id, got_text, got_result,
+                 result_error, eof) = await rt.demux_turn(ws.send_json, session_id)
+            else:
+                # ACP's session/prompt is one request/response -- send and
+                # read-until-terminal collapse into one call. Same 5-tuple
+                # contract as demux_turn, so everything below this point
+                # (stderr/rc reap, stop/failed/done handling) is unchanged.
+                (session_id, got_text, got_result,
+                 result_error, eof) = await rt.prompt_turn(msg, ws.send_json, session_id)
             # S23: now that the session id is known, make this runtime
             # discoverable (idempotent; same id + same rt every turn).
             register_runtime(session_id, rt)

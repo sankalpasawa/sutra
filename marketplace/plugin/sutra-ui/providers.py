@@ -409,9 +409,11 @@ PERMISSION_MODE_NOTES = {
 }
 
 # Providers this codebase can actually DRIVE. Keep in lockstep with app.py's
-# ws_chat guard (`if active_id != "claude": ... no adapter`). Adding an id here
-# without writing its adapter re-creates the bug this set exists to prevent.
-ADAPTERS = frozenset({"claude"})
+# ws_chat provider dispatch (SessionRuntime for claude, AcpRuntime for
+# deepseek; anything else falls through to the "no-adapter" refusal). Adding
+# an id here without writing its adapter re-creates the bug this set exists
+# to prevent.
+ADAPTERS = frozenset({"claude", "deepseek"})
 
 # ------------------------------------------------------------- catalog -----
 # Order is precedence order for the "first runnable provider" fallback.

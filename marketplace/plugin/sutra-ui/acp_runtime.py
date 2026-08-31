@@ -27,7 +27,7 @@ import json
 import os
 import signal
 
-from session_runtime import _drain_to_newline
+from session_runtime import _drain_to_newline, TurnQueue
 
 
 # session/new returns {modes: {availableModes: [{id, name}, ...], currentModeId}}.
@@ -131,9 +131,13 @@ class AcpRuntime:
     full-duplex on one stream) that inheriting from SessionRuntime would
     mean overriding every method anyway -- see the design-turn plan.
 
-    NOT YET PORTED from SessionRuntime: the Shadow turn_queue (S24/S25) and
-    founder-takeover pause. Those are ws_chat loop-level concerns, not
-    transport concerns -- they belong in the wiring step, not this skeleton.
+    CORRECTION (post-wiring): turn_queue/queue_event were NOT optional --
+    ws_chat's main loop reads them unconditionally on every pass
+    (`len(rt.turn_queue)`, `rt.queue_event.wait()`), for every provider, not
+    just when Shadow enqueues something. Missing them crashed every single
+    DeepSeek message with AttributeError, not just a Shadow edge case.
+    Reused verbatim from session_runtime.TurnQueue rather than
+    reimplemented -- it's already the exact class the loop expects.
     """
 
     def __init__(self):
@@ -152,6 +156,8 @@ class AcpRuntime:
         self._emit = None           # the CURRENT turn's emit; reassigned per prompt_turn
         self._got_text = False
         self._open_tools = set()
+        self.turn_queue = TurnQueue()
+        self.queue_event = asyncio.Event()
 
     @property
     def alive(self):
@@ -179,6 +185,7 @@ class AcpRuntime:
         process running."""
         self.stopped = True
         self.state = "stopped"
+        self.turn_queue.clear_shadow()
         if self.session_id:
             asyncio.ensure_future(
                 self._notify("session/cancel", {"sessionId": self.session_id}))
@@ -400,16 +407,51 @@ class AcpRuntime:
         self.agent_capabilities = (resp.get("result") or {}).get("agentCapabilities") or {}
         return self.agent_capabilities
 
-    async def new_session(self, cwd, effective_permission_mode, mcp_servers=None):
-        """Create the session and set its mode from Sutra's permission_mode.
-        Call once per pane, after spawn(), before the first prompt_turn()."""
+    async def new_session(self, cwd, effective_permission_mode, session_id=None,
+                          mcp_servers=None):
+        """Create or resume the session and set its mode from Sutra's
+        permission_mode. Call once per pane, after spawn(), before the
+        first prompt_turn().
+
+        `session_id`, when given, is tried via `session/load` first --
+        ACP's stable, capability-advertised resume path (agentCapabilities.
+        loadSession, confirmed true on this CLI). `session/resume` exists
+        too but dispatches to an internal `unstable_resumeSession`, so load
+        is the one to use. A dead or unknown id comes back as a JSON-RPC
+        error (loadSession's own session lookup throws) -- caught here and
+        treated exactly like Claude's dead ``--resume`` id: fall back to a
+        fresh session rather than failing the turn.
+
+        KNOWN GAP (follow-up, accepted for now): the fallback is silent.
+        There is no channel to tell the client continuity was lost -- this
+        runs before self._emit is set (that only happens in prompt_turn),
+        so unlike Claude's resume_reset/retry frame, a dropped session id
+        here just quietly starts fresh.
+        """
         self.effective_permission_mode = effective_permission_mode
-        resp = await self._call("session/new", {
-            "cwd": cwd, "mcpServers": mcp_servers or []})
-        if "error" in resp:
-            raise RuntimeError("session/new failed: %s" % resp["error"])
-        result = resp["result"]
-        self.session_id = result["sessionId"]
+        result = None
+        if session_id:
+            resp = await self._call("session/load", {
+                "sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers or []})
+            if "error" not in resp:
+                # zLoadSessionResponse carries no sessionId -- unlike
+                # session/new, the id isn't echoed back, so it's kept from
+                # what was requested.
+                self.session_id = session_id
+                result = resp.get("result") or {}
+            # else: the id is gone (client reconnected with a stale/foreign
+            # one, or the CLI's own session store was cleared) -- fall
+            # through to session/new below rather than raise, exactly like
+            # Claude's dead-seed retry: not the operator's fault, and there
+            # is nothing to replay here since no prompt has been sent yet.
+        if result is None:
+            resp = await self._call("session/new", {
+                "cwd": cwd, "mcpServers": mcp_servers or []})
+            if "error" in resp:
+                raise RuntimeError("session/new failed: %s" % resp["error"])
+            result = resp["result"]
+            self.session_id = result["sessionId"]
+
         modes = result.get("modes") or {}
         available = {m.get("id") for m in (modes.get("availableModes") or [])}
         current = modes.get("currentModeId")
