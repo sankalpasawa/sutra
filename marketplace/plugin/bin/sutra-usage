@@ -204,7 +204,10 @@ if pct >= cfg["BLOCK"]:
     print("| Utilization %d%% >= %d%% block threshold" % (round(pct), cfg["BLOCK"]))
     print("| ALL tool use is blocked (founder direction 2026-08-07).")
     print("| Founder: reply \"continue\" to override until the window resets.")
-    print("| On \"continue\", Claude runs: bash %s continue" % BIN)
+    print("| On \"continue\", Claude runs the line below EXACTLY -- this path,")
+    print("| bare: no pipes, no redirection, nothing chained. Anything else")
+    print("| misses the guard's deadlock exemption and is blocked too:")
+    print("|   bash %s continue" % BIN)
     print("+------------------------------------------------------------------+")
     sys.exit(20)
 

@@ -2,6 +2,30 @@
 
 **status**: active · **updated**: 2026-08-26
 
+## 2.236.2 (2026-08-28)
+
+- **The usage-guard's deadlock exemption now checks path identity, not just a filename.** It
+  previously exempted any Bash command whose target filename was `sutra-usage`, so a look-alike
+  file could carry an arbitrary command past the hard block. The exemption now resolves the real
+  path and requires this plugin's own helper, drops an interpreter token only when it resolves to
+  a genuine bash, and refuses anything with pipes, redirection or chaining.
+- **The block message now says the override must be run exactly as printed.** A command with a
+  pipe appended misses the exemption and is blocked too, which reads as the guard being broken.
+
+## 2.236.1 (2026-08-28)
+
+- **The codex gate-log now records which model ran.** `model` added to the documented
+  gate-log.jsonl schema. Until now the row carried verdict, tokens, mode and commit but NOT the
+  model, so a silent revert to the top tier left no trace and no past review could be audited for
+  which model executed it. Optional for legacy rows, required for new ones — readers that ignore
+  unknown fields are unaffected (codex re-review, 2026-08-28).
+- Not shipped: *enforcement* of the model pin. A codex re-review proved the planned
+  dispatch-gate check cannot work as designed — `dispatch-gate.sh:58-59` returns early on
+  `no-targets` (a read-only `codex exec` has no mutation target, so the check would never run) and
+  `:46-49` establishes that Bash arguments are target PATHS, not the raw command, so there is no
+  command line to inspect. Closing it requires a change to the dispatcher's gate contract, not a
+  hook edit. Filed in holding/TODO.md with the findings.
+
 ## 2.236.0 (2026-08-27)
 
 - **codex now runs the model the dispatcher chose.** The resolver has always returned a codex

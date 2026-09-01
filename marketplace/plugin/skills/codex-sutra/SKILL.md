@@ -536,6 +536,16 @@ emitting a parseable result on at least one of the three channels.
 One JSON object per line. POSIX append (`>>`) is atomic for writes <PIPE_BUF
 (4096 bytes on Linux/macOS). Every entry stays well under that.
 
+**`model` (added 2026-08-28).** The model the invocation actually ran on — the value spliced via
+`-m` from the frozen dispatch record, or `null` when no model was pinned and codex used its own
+default. Until this field existed there was NO audit trail of which model any past review ran on:
+the row carried verdict, tokens, mode and commit, but not the model, so a silent revert to the
+top tier left no trace. Write it on every row that launches a codex invocation.
+
+Compatibility, per codex re-review: `model` is **optional for legacy rows, required for new
+rows**. Readers that ignore unknown fields are unaffected; a reader that compares exact key sets
+or deserializes into a closed struct would need updating — none in this repo does.
+
 ```json
 {
   "skill": "codex-sutra",
@@ -546,6 +556,7 @@ One JSON object per line. POSIX append (`>>`) is atomic for writes <PIPE_BUF
   "findings": <int>,
   "advisories": <int>,
   "tokens": <int|null>,
+  "model": "<string|null>",
   "reason": "<string|null>",
   "commit": "<short-sha|null>",
   "wall_seconds": <int>,
