@@ -88,22 +88,16 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
           New chat
         </button>
+        <!-- Two groupings, not three. Project grouping was DELETED (founder,
+             2026-09-02): a chat's folder is already on every row's meta line, so
+             a whole grouping mode bought a second way to read the same fact.
+             "Recent" is when you touched it; "Dept" is who owns it (ADR-028) --
+             the one axis only Sutra has. The sort control went with it: both
+             remaining modes carry their own order (date buckets / department
+             path), so there was nothing left for it to sort. -->
         <div class="rtoggle">
           <button type="button" data-sgroup="recent">Recent</button>
-          <button type="button" data-sgroup="project">Project</button>
           <button type="button" data-sgroup="dept">Dept</button>
-          <!-- Sort applies to the PROJECT grouping only: "Recent" is already an
-               ordering (that is what the buckets are) and "Dept" is ordered by the
-               department path, which is a hierarchy, not a preference. The control
-               is therefore disabled rather than hidden outside Project view -- a
-               control that vanishes reads as a bug, one that greys out reads as
-               "not for this view". -->
-          <button type="button" class="rsort" id="sessSort"
-                  title="Sort projects" aria-label="Sort projects">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" aria-hidden="true">
-              <path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l3 3M17 20l-3-3"/></svg>
-          </button>
         </div>
         <div id="sessions"></div>
       </div>

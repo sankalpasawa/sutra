@@ -108,7 +108,13 @@ function lsSet(key, value){
    registry itself does not change. DEST_PLANES is the single source for what
    each plane lists; the coverage test (test_nav.js) walks it against the
    legacy railSpec inventory so nothing can silently fall out of reach. */
-const DESTS = ["now","focus","chats","org","team","settings"];
+/* Routines earned a destination of its own (founder, 2026-09-02). It had been a
+   row inside Settings -> Automation, two clicks deep behind a noun ("Settings")
+   that describes configuration -- but a routine is not a setting, it is work the
+   operator scheduled and expects to see running. It sits after Chats because the
+   pair is the whole picture of what is executing: chats are what you run, routines
+   are what runs without you. */
+const DESTS = ["now","focus","chats","routines","org","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
      exist now so the shape is honest about what is and is not built. */
@@ -120,6 +126,10 @@ const DEST_PLANES = {
              {screen:null, label:"Daily brief",  soon:true}],
   /* chats has no screen rows: its plane hosts the session list verbatim. */
   chats:    [],
+  /* routines is full-bleed: the Routines screen already carries its own
+     sections (routines + proposals), so a one-row plane would be a click that
+     buys nothing -- the same call Help made on 2026-08-24. */
+  routines: [],
   org:      [/* workspace row is flag-gated at render: with the flag off,
                 SCREENS.workspace never registers and the row is dropped by the
                 same SCREENS[sel] validation every stale selection goes through. */
@@ -130,7 +140,10 @@ const DEST_PLANES = {
              {screen:"reorg"}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
-             {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"routines"},{screen:"connectors"}]},
+             /* routines LEFT this group on 2026-09-02 -- it is a rail destination
+                now (see DESTS). What stays here reports on subsystems; a routine
+                is something the operator creates. */
+             {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"connectors"}]},
              {group:"System",      rows:[{screen:"health"},{screen:"evals"},{screen:"usage"},{screen:"history"}]},
              {group:"Preferences", rows:[{screen:"settings"}]}]
 };
@@ -141,13 +154,14 @@ const DEST_PLANES = {
 const DEST_INLINE = new Set(["focus","org"]);
 /* Where a destination lands before the operator has picked anything. */
 const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
+                              routines:"routines",
                               org:"departments", team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
                 navCollapsed:false, planeSections:{},
                 dest:"now", destSel:{}, railOpen:null,
-                balanceTab:"today", sessCollapsed:{} };
+                balanceTab:"today" };
   if (raw && typeof raw === "object"){
     if (raw.paneCollapsed && typeof raw.paneCollapsed === "object") out.paneCollapsed = raw.paneCollapsed;
     if (raw.folds && typeof raw.folds === "object") out.folds = raw.folds;
@@ -171,9 +185,11 @@ function loadLayout(){
         if (k.indexOf(":") !== -1) out.planeSections[k] = !!raw.planeSections[k];
       });
     }
-    /* Collapsed session groups, keyed "<mode>:<groupkey>" so a group collapsed
-       under Project does not silently collapse a same-named bucket under Recent. */
-    if (raw.sessCollapsed && typeof raw.sessCollapsed === "object") out.sessCollapsed = raw.sessCollapsed;
+    /* sessCollapsed is NOT adopted (2026-09-02). It only ever held collapsed
+       PROJECT groups, and Project grouping is gone; carrying the keys forward
+       would leave every operator's stored layout holding a map that nothing
+       reads. Dropping an unreadable key loses nothing -- the groups it named
+       do not exist. */
     /* v3.3 destination (PLAN-25 S3/S10). Migration: an operator whose stored
        shell was the Code tab lands in Chats — the same surface renamed. The
        railTab field itself is retired; only the migration still reads it. */

@@ -736,7 +736,7 @@ test("14e. an assistant block with no recorded prompt is marked orphan, not give
 const LAYOUT_DEFAULTS = { paneCollapsed: {}, folds: {}, browseW: null, browseClosed: false,
                           navCollapsed: false, planeSections: {},
                           dest: "now", destSel: {}, railOpen: null,
-                          balanceTab: "today", sessCollapsed: {} };
+                          balanceTab: "today" };
 
 test("15. a corrupt/hostile stored layout degrades to defaults", () => {
   const prev = sandbox.localStorage._m["sutra.panel.layout"];

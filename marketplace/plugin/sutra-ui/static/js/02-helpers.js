@@ -267,9 +267,9 @@ const S = {
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
      through the org. Departments do NOT hand work to each other — no such channel exists. */
+  /* "recent" (date buckets) | "dept" (the owning department, ADR-028). Project
+     grouping was deleted 2026-09-02 -- see the rtoggle comment in panel.html. */
   sessions:[], openPanes:[], sgroup:"recent",
-  /* "recent" (most-recently-touched project first) | "az". Project grouping only. */
-  sessSort:"recent",
   /* Pagination of the on-disk session list. The REST list parses titles, which
      is the expensive part, so it is fetched a page at a time as the operator
      scrolls rather than all at once at boot. sessionRows is the UNION of every
@@ -703,10 +703,10 @@ function sessMenuHtml(s){
    destination's rows, every one of them an EXISTING screen. railSpec() stays
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
-const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", org:"Org",
-                     team:"Help", settings:"Settings" };
-const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", org:"dept",
-                     team:"team", settings:"gear" };
+const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", routines:"Routines",
+                     org:"Org", team:"Help", settings:"Settings" };
+const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", routines:"rout",
+                     org:"dept", team:"team", settings:"gear" };
 
 /* A destination whose plane spec is empty is FULL-BLEED: no second plane, and
    its screen opens directly — a persisted destSel must not reroute it (codex
@@ -945,29 +945,13 @@ function renderRail(){
      accountable department, so the session list and the org chart are the same tree. */
   document.querySelectorAll("[data-sgroup]").forEach(b=>
     b.setAttribute("aria-pressed", String(S.sgroup===b.dataset.sgroup)));
-  /* The sort control only means something under Project grouping (see the markup
-     comment). Its label states the CURRENT order, not the one clicking would
-     produce -- a control whose text is a promise about the next click reads as
-     the current state to everyone who is not thinking about it. */
-  const sortBtn = document.getElementById("sessSort");
-  if (sortBtn){
-    const on = S.sgroup === "project";
-    sortBtn.disabled = !on;
-    sortBtn.setAttribute("aria-pressed", String(on && S.sessSort === "az"));
-    sortBtn.title = !on
-      ? "Sorting applies to Project grouping"
-      : (S.sessSort === "az" ? "Sorted A–Z — click for most recent"
-                             : "Sorted by most recent — click for A–Z");
-    sortBtn.setAttribute("aria-label", sortBtn.title);
-  }
-
   const bucket = ms => {
     const d = Math.floor((NOW - ms)/DAY);
     return d<=0 ? "Today" : d===1 ? "Yesterday" : d<=7 ? "Previous 7 days"
          : d<=30 ? "Previous 30 days" : "Older";
   };
   const deptsOf = s => [...new Set(s.turns.filter(t=>t.domain).map(t=>dPath(t.domain.ref)))];
-  const sessMeta = rowMeta, projOf = rowWorkspace;
+  const sessMeta = rowMeta;
 
   const sessRow = (s, trail) => {
     const sid=s.id, open=S.openPanes.includes(sid);
@@ -1007,61 +991,6 @@ function renderRail(){
         ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
            Nothing is claimed here about what is or is not on disk.`
         : `No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.`}</p>`;
-  } else if (S.sgroup === "project"){
-    /* Keyed on the FULL cwd, labelled with its last segment. Two checkouts can
-       share a basename ("sutra" under two parents) and merging them would put
-       sessions from different repositories in one group -- and, worse, give the
-       group's + a directory it might not belong to. The full path is also what
-       the + needs, so the key is the useful value rather than a display string. */
-    const g = new Map();
-    S.sessions.forEach(s=>{
-      const key = (s.cwd || "").replace(/\/+$/, "") || null;
-      const label = key ? key.slice(key.lastIndexOf("/") + 1) : (projOf(s) || "No folder");
-      if (!g.has(key)) g.set(key, {label, cwd:key, items:[], last:0});
-      const e = g.get(key);
-      e.items.push(s);
-      e.last = Math.max(e.last, s.updated_ms || s.created_ms || 0);
-    });
-    const groups = [...g.values()].sort((a,b)=>
-      S.sessSort === "az"
-        ? a.label.localeCompare(b.label, undefined, {numeric:true, sensitivity:"base"})
-        /* Default is most-recently-touched first: the project you were last in is
-           the one you are most likely returning to. */
-        : (b.last - a.last));
-    html = groups.map(grp=>{
-      /* Collapse is per project, keyed by cwd under the "project:" namespace so
-         a folder collapsed here cannot also collapse a same-named bucket in the
-         department view. Default is EXPANDED: only an explicit collapse persists,
-         so a fresh install shows every group open. */
-      const ckey = "project:" + (grp.cwd || "\u2205");
-      const collapsed = !!(S.ui.sessCollapsed && S.ui.sessCollapsed[ckey]);
-      const bodyId = "rl-" + hashKey(ckey);
-      return `
-      <div class="rgrp rgrph ${collapsed ? "collapsed" : ""}">
-        <button type="button" class="rgtog" data-sesscollapse="${esc(ckey)}"
-            aria-expanded="${!collapsed}" aria-controls="${bodyId}"
-            title="${collapsed ? "Expand" : "Collapse"} ${esc(grp.label)}">
-          <svg class="rgchev" width="9" height="9" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="3" aria-hidden="true">
-            <path d="M9 6l6 6-6 6"/></svg>
-          <span class="rgn" title="${esc(grp.cwd || "sessions with no recorded folder")}">${esc(grp.label)}</span>
-          <span class="rgc">${grp.items.length}</span>
-        </button>
-        ${grp.cwd ? `<button type="button" class="rgadd" data-newproj="${esc(grp.cwd)}"
-             title="New session in ${esc(grp.cwd)}"
-             aria-label="New session in ${esc(grp.label)}">
-           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-         </button>` : ""}
-      </div>
-      <ul class="rlist" id="${bodyId}" ${collapsed ? "hidden" : ""}>${pinFirst(grp.items
-        .sort((a,b)=>(b.updated_ms||b.created_ms||0)-(a.updated_ms||a.created_ms||0)))
-        .map(s=>{
-          const held = s.turns.some(t=>t.mode==="floor");
-          const trail = held?'<span style="color:var(--warn)">held</span>':"";
-          return sessRow(s, trail);}).join("")}</ul>`;}).join("");
-    if (!groups.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
-      No sessions yet. Transcripts are read from <code>~/.claude/projects</code>.</p>`;
   } else {
     const g = {};
     S.sessions.forEach(s=>s.turns.forEach(t=>{

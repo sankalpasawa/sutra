@@ -918,25 +918,6 @@ document.getElementById("app").addEventListener("click", e=>{
   }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
-  /* Collapse/expand one project group. Persisted per cwd; default expanded, so
-     the store only ever holds the groups the operator explicitly closed. */
-  const sc = e.target.closest("[data-sesscollapse]");
-  if (sc){
-    const key = sc.dataset.sesscollapse;
-    S.ui.sessCollapsed = S.ui.sessCollapsed || {};
-    if (S.ui.sessCollapsed[key]) delete S.ui.sessCollapsed[key];
-    else S.ui.sessCollapsed[key] = true;
-    saveLayout();
-    render();
-    return;
-  }
-  /* + on a project heading. Starts the session IN that folder rather than in the
-     global workdir -- which is the only thing that makes a per-project + different
-     from the one at the top of the rail. */
-  const np = e.target.closest("[data-newproj]");
-  if (np){ newSession(np.dataset.newproj); return; }
-  const ss = e.target.closest("#sessSort");
-  if (ss){ S.sessSort = S.sessSort === "az" ? "recent" : "az"; render(); return; }
   const op = e.target.closest("[data-open]");
   if (op){ const id=op.dataset.open;
     markRead(id); S.sessMenu = null; S.sessRename = null;

@@ -1,6 +1,15 @@
 # Changelog
 
-**status**: active · **updated**: 2026-08-26
+**status**: active · **updated**: 2026-09-02
+
+## 2.237.0 (2026-09-02)
+
+- **Routines is its own rail destination.** It was a row two clicks deep under Settings →
+  Automation; a routine is not a setting, it is work the operator scheduled. It now sits next
+  to Chats — what you run, and what runs without you.
+- **Chats groups by Recent or Dept only.** Project grouping and the sort control it fed were
+  deleted: a chat's folder already appears on every row, so the mode bought a second way to
+  read the same fact. Stored collapsed-project keys are dropped rather than carried forward.
 
 ## 2.236.2 (2026-08-28)
 

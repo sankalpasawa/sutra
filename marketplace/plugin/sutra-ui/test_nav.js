@@ -94,8 +94,19 @@ function test(name, fn){
 }
 
 /* §model ─ S3 */
-test("model: exactly six destinations, in the founder's order", () => {
-  assert.strictEqual(JSON.stringify(T.DESTS), JSON.stringify(["now","focus","chats","org","team","settings"]));
+test("model: exactly seven destinations, in the founder's order", () => {
+  /* Seven since 2026-09-02: Routines was promoted out of Settings -> Automation
+     into a destination of its own, and sits next to Chats. */
+  assert.strictEqual(JSON.stringify(T.DESTS),
+    JSON.stringify(["now","focus","chats","routines","org","team","settings"]));
+});
+test("model: routines is a full-bleed destination that opens its own screen", () => {
+  assert.strictEqual(JSON.stringify(T.DEST_PLANES.routines), "[]");
+  assert.strictEqual(T.DEST_DEFAULT_SCREEN.routines, "routines");
+  /* and it must NOT still be a row under Settings -- one home, not two */
+  const settingsRows = T.planeRows("settings").flatMap(g => g.rows).map(r => r.screen);
+  assert.strictEqual(settingsRows.indexOf("routines"), -1,
+    "routines must not remain a Settings plane row");
 });
 test("model: a stored Code tab migrates to Chats", () => {
   storage._m["sutra.panel.layout"] = JSON.stringify({ railTab: "code" });
@@ -142,18 +153,26 @@ test("planes: focus leads with Shadow, Balance + Optimus live, one honest coming
 });
 
 /* §rail ─ S7 */
-test("rail: renderRail paints six data-dest buttons", () => {
+test("rail: renderRail paints seven data-dest buttons", () => {
   T.S.ui = T.loadLayout();
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 6);
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7);
 });
 
 /* §chats ─ S8: the Code tab's controls survive, verbatim, exactly once */
-test("chats: newSession, sgroup filters, sessSort and #sessions moved intact", () => {
-  for (const needle of ['id="newSession"', 'id="sessSort"', 'id="sessions"'])
+test("chats: newSession and #sessions intact; two groupings, no sort", () => {
+  for (const needle of ['id="newSession"', 'id="sessions"'])
     assert.strictEqual(html.split(needle).length - 1, 1, needle + " must occur exactly once");
-  assert.strictEqual((html.match(/data-sgroup="/g) || []).length, 3);
+  /* Recent + Dept only. Project grouping and the sort control it fed were
+     deleted on 2026-09-02 (founder). */
+  assert.strictEqual((html.match(/data-sgroup="/g) || []).length, 2);
+  assert(html.indexOf('data-sgroup="project"') === -1, "Project grouping must be gone");
+  assert(html.indexOf('id="sessSort"') === -1, "the sort control must be gone");
+  const helpers = fs.readFileSync(
+    path.join(__dirname, "static", "js", "02-helpers.js"), "utf8");
+  assert(helpers.indexOf('S.sgroup === "project"') === -1,
+    "the project grouping branch must be deleted, not orphaned");
   const plane = html.slice(html.indexOf('id="plane"'));
   assert(plane.indexOf('id="sessions"') !== -1, "#sessions must live inside the plane");
 });
@@ -465,7 +484,7 @@ test("inline: entering Org renders its rows inside the rail with the plane's mar
   T.goDest("org");
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 6, "still six destinations");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "still seven destinations");
   assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
   assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
   assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");

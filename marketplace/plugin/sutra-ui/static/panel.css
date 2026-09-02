@@ -568,18 +568,6 @@
   .rgrph .rgn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .rgrph .rgc{font:600 9px/1 var(--mono);color:var(--line);flex:none;
     font-variant-numeric:tabular-nums}
-  .rgrph .rgadd{margin-left:auto;flex:none;display:grid;place-items:center;
-    width:16px;height:16px;padding:0;border:0;border-radius:4px;cursor:pointer;
-    background:none;color:var(--faint);opacity:0;transition:opacity .12s ease}
-  .rgrph:hover .rgadd,.rgrph .rgadd:focus-visible{opacity:1}
-  .rgrph .rgadd:hover{background:var(--acc-bg);color:var(--acc)}
-  .rsort{flex:none;display:grid;place-items:center;width:26px;padding:0;
-    background:none;border:1px solid var(--line);border-radius:6px;
-    color:var(--faint);cursor:pointer}
-  .rsort:hover:not(:disabled){color:var(--ink);border-color:var(--acc)}
-  /* Greyed, not hidden: see the markup comment. */
-  .rsort:disabled{opacity:.38;cursor:default}
-  .rsort[aria-pressed="true"]{color:var(--acc);border-color:var(--acc)}
   .rlist{list-style:none;margin:0;padding:0 6px}
   .rlist button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:6px;
                 padding:6px 8px;cursor:pointer;color:var(--muted)}
