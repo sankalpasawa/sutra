@@ -2,6 +2,19 @@
 
 **status**: active · **updated**: 2026-09-02
 
+## 2.237.1 (2026-09-02)
+
+- **The Chats department view stopped hiding most of your chats.** It grouped only turns that
+  carried a resolved department and silently dropped everything else — which on a real machine
+  is most of the list: an unopened transcript has no turns loaded yet, a transcript that ran in
+  the terminal carries no department by design, and a turn the engine could not place carries
+  mode "none". The view read as a complete index of your work while showing the subset that
+  happened to route. It now PARTITIONS the list: every chat Recent shows appears here too,
+  under its departments or under a counted "No department yet" group that states which of the
+  four reasons applies. Nothing is invented to fill the slot.
+- **A department that left the registry no longer swallows its chats.** Its group could not
+  render, but the chats were already counted as filed, so they fell between the two.
+
 ## 2.237.0 (2026-09-02)
 
 - **Routines is its own rail destination.** It was a row two clicks deep under Settings →

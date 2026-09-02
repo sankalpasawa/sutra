@@ -176,6 +176,48 @@ test("chats: newSession and #sessions intact; two groupings, no sort", () => {
   const plane = html.slice(html.indexOf('id="plane"'));
   assert(plane.indexOf('id="sessions"') !== -1, "#sessions must live inside the plane");
 });
+/* The partition invariant (founder, 2026-09-02): "all chats are there in the
+   department". Dept must PARTITION S.sessions, not filter it -- a chat with no
+   resolved department lands in the catch-all rather than vanishing. */
+test("dept: every chat is rendered, filed or not", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  T.S.sgroup = "dept";
+  /* the three ways a chat can carry no department, plus one that carries one */
+  T.S.sessions = [
+    { id:"s-unread",   title:"never opened",       real:true,  loadState:"unread",
+      turns:[], updated_ms:1 },
+    { id:"s-terminal", title:"ran in the terminal", real:true, loadState:"ok",
+      turns:[{ transcript:true, domain:null, mode:"transcript" }], updated_ms:2 },
+    { id:"s-nomatch",  title:"engine placed nothing", real:false, loadState:"ok",
+      turns:[{ domain:null, mode:"none" }], updated_ms:3 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  for (const s of T.S.sessions)
+    assert(out.indexOf('data-sid="' + s.id + '"') !== -1,
+           s.id + " was dropped from the department view");
+  assert(/No department yet · 3/.test(out), "the catch-all must be labelled and counted");
+  for (const why of ["not read yet", "ran outside the panel", "no department matched"])
+    assert(out.indexOf(why) !== -1, "missing reason: " + why);
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+});
+test("dept: a group whose ref left the registry does not swallow its chats", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  T.S.sgroup = "dept";
+  /* byRef("dref-gone") returns nothing: the group cannot render, so the chat
+     must fall through to the catch-all rather than disappear between the two */
+  T.S.sessions = [
+    { id:"s-orphan", title:"filed under a deleted domain", real:true, loadState:"ok",
+      turns:[{ domain:{ ref:"dref-gone", name:"Gone" }, mode:"match" }], updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(out.indexOf('data-sid="s-orphan"') !== -1,
+         "a chat whose department left the registry must still render");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+});
 test("chats: the old tab chrome is gone", () => {
   for (const dead of ["rtabs", "data-railtab", "tabHome", "tabCode"])
     assert.strictEqual(html.indexOf(dead), -1, dead + " should be deleted");

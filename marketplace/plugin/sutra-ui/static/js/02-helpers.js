@@ -992,13 +992,37 @@ function renderRail(){
            Nothing is claimed here about what is or is not on disk.`
         : `No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.`}</p>`;
   } else {
+    /* BY DEPARTMENT PARTITIONS the list -- it does not filter it. Every chat
+       Recent shows appears here exactly once: under each department its turns
+       resolved to, or, when nothing resolved, under one catch-all that says
+       WHY rather than inventing a placement to fill the slot.
+
+       The old branch iterated domain-bearing turns and silently dropped the
+       rest, which on a real machine is most of the list. A chat can lack a
+       department three different ways and none of them is "there is no work in
+       it": an unopened transcript has turns:[] until it is read
+       (adoptRealSessions), a transcript that ran in the terminal carries
+       domain:null BY DESIGN (transcriptTurns -- it never passed the routing
+       floor), and a panel turn the engine could not place carries mode "none".
+       Hiding all three made the view look like a complete index of the
+       operator's work when it was an index of the subset that happened to
+       route -- the most expensive kind of wrong, because it reads as complete.
+       (founder, 2026-09-02) */
     const g = {};
     S.sessions.forEach(s=>s.turns.forEach(t=>{
       if (!t.domain) return; (g[t.domain.ref]=g[t.domain.ref]||[]).push({s,t}); }));
-    html = Object.entries(g)
-      .sort((a,b)=>dPath(a[0]).localeCompare(dPath(b[0]),undefined,{numeric:true}))
+    /* A group whose ref is not in the registry renders nothing, so its sessions
+       must NOT count as filed -- otherwise they fall between a group that
+       claimed them and a group that never drew, which is how the partition
+       would quietly stop being one. */
+    const groups = Object.entries(g)
+      .filter(([ref]) => byRef(ref))
+      .sort((a,b)=>dPath(a[0]).localeCompare(dPath(b[0]),undefined,{numeric:true}));
+    const filed = new Set();
+    groups.forEach(([,items]) => items.forEach(x => filed.add(x.s.id)));
+    html = groups
       .map(([ref,items])=>{
-        const d = byRef(ref); if(!d) return "";
+        const d = byRef(ref);
         const held = items.filter(x=>x.t.mode==="floor").length;
         const uniq = [...new Map(items.map(x=>[x.s.id,x.s])).values()];
         return `<div class="rgrp">${esc(dPath(ref))} ${esc(d.name)}${held?` · ${held} held`:""}</div>
@@ -1006,9 +1030,27 @@ function renderRail(){
             sessRow(s, `<span>${items.filter(x=>x.s.id===s.id).length} turn(s) here</span>`)
           ).join("")}</ul>`;
       }).join("");
+    /* One reason per chat, stated rather than guessed. The four are genuinely
+       different situations and a bare "unfiled" would flatten them into one
+       shrug; only the last is the engine declining to place something it read. */
+    const unfiledWhy = s =>
+        s.loadState === "unread"          ? "not read yet"
+      : !s.turns.length                   ? "no turns recorded"
+      : s.turns.every(t => t.transcript)  ? "ran outside the panel"
+      :                                     "no department matched";
+    const unfiled = S.sessions.filter(s => !filed.has(s.id));
+    if (unfiled.length) html += `
+      <div class="rgrp">No department yet · ${unfiled.length}</div>
+      <ul class="rlist">${pinFirst(unfiled).map(s=>
+        sessRow(s, `<span>${esc(unfiledWhy(s))}</span>`)).join("")}</ul>`;
+    /* Empty now means EMPTY -- with the partition in place the only way to
+       render nothing is to have no sessions at all, so this says that and
+       stops claiming anything about where the missing ones went. */
     if (!html) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
-      Nothing filed yet. Transcripts read from <code>~/.claude/projects</code> ran outside
-      this panel, so no department was ever resolved for them — they group under Recent only.</p>`;
+      ${S.sessionsError
+        ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
+           Nothing is claimed here about what is or is not on disk.`
+        : `No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.`}</p>`;
   }
   setHtmlIfChanged(document.getElementById("sessions"), html);
 }
