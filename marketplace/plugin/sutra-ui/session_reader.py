@@ -16,6 +16,15 @@ from typing import Dict, List, Optional
 
 PROJECTS = Path(os.path.expanduser("~/.claude/projects"))
 
+# DeepSeek sessions (via the Gemini-CLI-derived ACP runtime) live at
+# ~/.gemini/tmp/<project>/chats/session-*.jsonl -- a different tree, different
+# file format, but the same "recent conversations" concept the rail already
+# shows for Claude. projects.json maps a real cwd to the short folder name
+# used under tmp/; a session file only carries the folder name, so listing
+# needs the map inverted to recover a real path for the `cwd` field.
+GEMINI_ROOT = Path(os.path.expanduser("~/.gemini"))
+GEMINI_PROJECTS_FILE = GEMINI_ROOT / "projects.json"
+
 
 def _text_of(content) -> str:
     """Extract human-readable text from a message.content (str or block list)."""
@@ -61,8 +70,284 @@ def _strip_injected(text: str) -> str:
     return rest if sep and rest else t
 
 
+def _claude_session_meta(f: Path) -> dict:
+    """One Claude transcript -> the sidebar's session dict. See list_sessions
+    for the title-precedence and cost notes; unchanged, just extracted so the
+    DeepSeek side can be merged into the same paginated slice."""
+    first_msg, cwd, branch = "", "", ""
+    custom_title = ai_title = ""
+    try:
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                head = i <= 40
+                # LAST title record wins: a rename overwrites an earlier one.
+                titley = "customTitle" in line or "aiTitle" in line
+                if not head and not titley:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if titley:
+                    if d.get("type") == "custom-title" and isinstance(d.get("customTitle"), str):
+                        custom_title = d["customTitle"].strip() or custom_title
+                    elif d.get("type") == "ai-title" and isinstance(d.get("aiTitle"), str):
+                        ai_title = d["aiTitle"].strip() or ai_title
+                if head:
+                    cwd = cwd or d.get("cwd", "")
+                    branch = branch or d.get("gitBranch", "")
+                    if not first_msg and d.get("type") == "user":
+                        msg = d.get("message", {})
+                        if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
+                            t = _strip_injected(_text_of(msg.get("content")))
+                            t = t.strip().replace("\n", " ")
+                            if t and not t.startswith("<"):
+                                first_msg = t[:90]
+    except OSError:
+        pass
+    # A title you set is verbatim -- NOT run through _strip_injected, which is
+    # only for the machine preamble on a first message.
+    title = custom_title or ai_title or first_msg or "(no prompt)"
+    return {
+        "id": f.stem,
+        "title": title[:90],
+        # Stated so the UI could badge a renamed session if it wanted; also
+        # what the test uses to know a title is a legitimate on-disk record.
+        "title_source": ("custom" if custom_title else
+                         "ai" if ai_title else
+                         "prompt" if first_msg else "none"),
+        "project": f.parent.name,
+        "cwd": cwd,
+        "branch": branch,
+        "mtime": int(f.stat().st_mtime),
+        "size": f.stat().st_size,
+        "source": "claude",
+    }
+
+
+def _gemini_project_cwd_map() -> Dict[str, str]:
+    """{tmp-folder name: real cwd}, inverted from ~/.gemini/projects.json (which
+    maps cwd -> folder name). A session file only ever carries the folder name,
+    so this is the only way to put a real path in the `cwd` field. Fails soft
+    to {} -- a missing/unreadable map just means DeepSeek rows show no cwd."""
+    try:
+        data = json.loads(GEMINI_PROJECTS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    projects = data.get("projects")
+    if not isinstance(projects, dict):
+        return {}
+    return {v: k for k, v in projects.items() if isinstance(v, str)}
+
+
+def _ds_text(content) -> str:
+    """Text of a DeepSeek/Gemini-CLI message.content: a plain string (model
+    turns) or a list of {"text": ...} blocks (user turns). These blocks carry
+    no "type" key -- unlike Claude's content blocks -- so _text_of doesn't fit."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b["text"] for b in content
+                          if isinstance(b, dict) and isinstance(b.get("text"), str))
+    return ""
+
+
+def _gemini_messages(f: Path) -> List[dict]:
+    """Every real per-turn message in one DeepSeek session file, file order.
+
+    The file mixes three record shapes: a header ({sessionId, projectHash,
+    startTime, lastUpdated, kind} -- no `type` key), a `{"$set": {"messages":
+    [...]}}` snapshot written when the doc is first created (this is what
+    carries the auto-injected <session_context> turn), and bare
+    {id, timestamp, type, content} records appended one per turn after that.
+    The $set snapshot has been observed to repeat across consecutive header
+    rewrites, so dedup by id.
+    """
+    seen, out = set(), []
+    try:
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if "$set" in d:
+                    candidates = d["$set"].get("messages")
+                    if not isinstance(candidates, list):
+                        continue
+                elif "type" in d and "content" in d:
+                    candidates = [d]
+                else:
+                    continue
+                for m in candidates:
+                    mid = m.get("id")
+                    if mid:
+                        if mid in seen:
+                            continue
+                        seen.add(mid)
+                    out.append(m)
+    except OSError:
+        pass
+    return out
+
+
+def _gemini_header_id(f: Path) -> Optional[str]:
+    """The real ACP session UUID from a DeepSeek transcript's header line
+    ({sessionId, projectHash, startTime, lastUpdated, kind} -- no `type` key,
+    so _gemini_messages skips it as a message). session/load needs this UUID
+    to resume -- the filename stem (e.g. session-2026-08-31T15-08-52805cf9)
+    is just a timestamped label the CLI picked, not the id ACP tracks."""
+    try:
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            first = fh.readline()
+    except OSError:
+        return None
+    try:
+        d = json.loads(first)
+    except ValueError:
+        return None
+    sid = d.get("sessionId")
+    return sid if isinstance(sid, str) and sid else None
+
+
+def _gemini_session_meta(f: Path, project_cwd: Dict[str, str]) -> Optional[dict]:
+    """One DeepSeek transcript -> the same session dict shape _claude_session_meta
+    returns, or None when the CLI created the file but no real prompt was ever
+    sent (header + the auto-injected <session_context> turn, nothing else) --
+    that's not a conversation, and shouldn't occupy a row in the rail. No
+    custom/ai title records exist on this side yet, so a real session always
+    titles from its first real user message -- the injected <session_context>
+    block starts with "<" and is filtered out by the same rule Claude titles use."""
+    project = f.parent.parent.name   # .../tmp/<project>/chats/<file>.jsonl
+    session_id = _gemini_header_id(f) or f.stem
+    first_msg = ""
+    for m in _gemini_messages(f):
+        if m.get("type") != "user":
+            continue
+        t = _strip_injected(_ds_text(m.get("content")))
+        t = t.strip().replace("\n", " ")
+        if t and not t.startswith("<"):
+            first_msg = t[:90]
+            break
+    if not first_msg:
+        return None
+    st = f.stat()
+    return {
+        "id": session_id,
+        "title": first_msg[:90],
+        "title_source": "prompt",
+        "project": project,
+        "cwd": project_cwd.get(project, ""),
+        "branch": "",
+        "mtime": int(st.st_mtime),
+        "size": st.st_size,
+        "source": "deepseek",
+    }
+
+
+def _ds_tool_result_text(tc: dict) -> str:
+    """The human-readable outcome of one DeepSeek toolCalls entry.
+
+    Unlike Claude's tool_use/tool_result pair (matched later, by id, once the
+    whole file is read), a DeepSeek toolCalls entry carries its own result
+    inline -- `resultDisplay` (a string, or a dict like write_file's
+    {fileDiff, fileName, filePath}) is the human-facing rendering; `result` is
+    the raw functionResponse envelope, used only as a fallback."""
+    rd = tc.get("resultDisplay")
+    if isinstance(rd, str) and rd.strip():
+        return rd[:_RESULT_CAP]
+    if isinstance(rd, dict):
+        text = rd.get("fileDiff") or rd.get("output")
+        if isinstance(text, str) and text.strip():
+            return text[:_RESULT_CAP]
+    parts = []
+    for r in (tc.get("result") or []):
+        if not isinstance(r, dict):
+            continue
+        resp = (r.get("functionResponse") or {}).get("response")
+        if not isinstance(resp, dict):
+            continue
+        val = resp.get("output", resp.get("error", resp.get("result")))
+        if isinstance(val, str):
+            parts.append(val)
+        elif val is not None:
+            try:
+                parts.append(json.dumps(val))
+            except (TypeError, ValueError):
+                parts.append(str(val))
+    return ("\n".join(parts))[:_RESULT_CAP]
+
+
+def _gemini_transcript(f: Path, project_cwd: Dict[str, str]) -> Dict:
+    """One DeepSeek transcript -> the same {cwd, branch, messages} shape
+    _parse_transcript returns for Claude, so read_session's output is source-
+    agnostic to the caller.
+
+    LAST WRITE WINS, by id -- unlike the listing path (_gemini_messages), which
+    only ever needed the FIRST user message and could stop there. A `gemini`
+    turn's record is rewritten in place as tool calls run against it (the same
+    id reappears with a longer `toolCalls` array each time -- observed on disk:
+    a write_file call that failed validation, corrected, and retried, all under
+    one message id), so keeping the first occurrence would show the transcript
+    mid-turn instead of as it ended.
+    """
+    order: List[str] = []
+    by_id: Dict[str, dict] = {}
+    try:
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if "$set" in d:
+                    msgs = d["$set"].get("messages")
+                    records = msgs if isinstance(msgs, list) else []
+                elif "type" in d and "content" in d and "id" in d:
+                    records = [d]
+                else:
+                    records = []
+                for m in records:
+                    mid = m.get("id")
+                    if mid is None:
+                        continue
+                    if mid not in by_id:
+                        order.append(mid)
+                    by_id[mid] = m
+    except OSError:
+        pass
+
+    messages = []
+    for mid in order:
+        m = by_id[mid]
+        mtype = m.get("type")
+        if mtype == "user":
+            text = _ds_text(m.get("content")).strip()
+            if text and not text.startswith("<"):
+                messages.append({"role": "user", "text": text, "ts": m.get("timestamp", "")})
+        elif mtype == "gemini":
+            text = _ds_text(m.get("content")).strip()
+            calls = [{
+                "id": tc.get("id"),
+                "name": tc.get("name", ""),
+                "input": _tool_input_summary(tc.get("name"), tc.get("args")),
+                "output": _ds_tool_result_text(tc),
+                "is_error": tc.get("status") == "error",
+            } for tc in (m.get("toolCalls") or []) if isinstance(tc, dict)]
+            if text or calls:
+                messages.append({"role": "assistant", "text": text,
+                                 "tools": [c["name"] for c in calls],   # back-compat
+                                 "calls": calls, "ts": m.get("timestamp", "")})
+
+    project = f.parent.parent.name
+    return {"cwd": project_cwd.get(project, ""), "branch": "", "messages": messages}
+
+
 def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
-    """Most-recent sessions across all projects, newest first.
+    """Most-recent sessions across all projects AND all providers, newest first
+    -- Claude transcripts under ~/.claude/projects plus DeepSeek transcripts
+    under ~/.gemini/tmp (see _gemini_session_meta). Each entry carries `source`
+    ("claude" | "deepseek") so the UI can badge or filter by provider.
 
     THE TITLE HONOURS WHAT YOU SET IN CLAUDE. Claude appends two kinds of title
     record to the transcript -- `custom-title` (you renamed it) and `ai-title`
@@ -70,6 +355,8 @@ def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
     deliberately titled still showed its raw first prompt here. Now the precedence
     is: a title you set > the AI title > the first user message. The first two are
     quotations of records Claude actually wrote, not anything Sutra invents.
+    DeepSeek sessions have no such record yet, so they always title from the
+    first real user message.
 
     Cost: the head fields (cwd, branch, first-message fallback) still come from the
     first ~40 lines, but a rename can be appended ANYWHERE in a long session, so
@@ -87,60 +374,36 @@ def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
     which the client dedups by id. A short page (fewer than `limit`) is how the
     client knows it has reached the end.
     """
-    if not PROJECTS.exists():
+    claude_files = list(PROJECTS.glob("*/*.jsonl")) if PROJECTS.exists() else []
+    gemini_files = list(GEMINI_ROOT.glob("tmp/*/chats/session-*.jsonl")) if GEMINI_ROOT.exists() else []
+    if not claude_files and not gemini_files:
         return []
-    files = sorted(PROJECTS.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
-    offset = max(0, offset)
-    out = []
-    for f in files[offset:offset + limit]:
-        first_msg, cwd, branch = "", "", ""
-        custom_title = ai_title = ""
+
+    def _mtime(p: Path) -> float:
         try:
-            with f.open(encoding="utf-8", errors="replace") as fh:
-                for i, line in enumerate(fh):
-                    head = i <= 40
-                    # LAST title record wins: a rename overwrites an earlier one.
-                    titley = "customTitle" in line or "aiTitle" in line
-                    if not head and not titley:
-                        continue
-                    try:
-                        d = json.loads(line)
-                    except ValueError:
-                        continue
-                    if titley:
-                        if d.get("type") == "custom-title" and isinstance(d.get("customTitle"), str):
-                            custom_title = d["customTitle"].strip() or custom_title
-                        elif d.get("type") == "ai-title" and isinstance(d.get("aiTitle"), str):
-                            ai_title = d["aiTitle"].strip() or ai_title
-                    if head:
-                        cwd = cwd or d.get("cwd", "")
-                        branch = branch or d.get("gitBranch", "")
-                        if not first_msg and d.get("type") == "user":
-                            msg = d.get("message", {})
-                            if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
-                                t = _strip_injected(_text_of(msg.get("content")))
-                                t = t.strip().replace("\n", " ")
-                                if t and not t.startswith("<"):
-                                    first_msg = t[:90]
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    entries = sorted(
+        [("claude", f) for f in claude_files] + [("deepseek", f) for f in gemini_files],
+        key=lambda e: _mtime(e[1]), reverse=True,
+    )
+    offset = max(0, offset)
+    window = entries[offset:offset + limit]
+    project_cwd = _gemini_project_cwd_map() if any(s == "deepseek" for s, _ in window) else {}
+
+    out = []
+    for source, f in window:
+        try:
+            if source == "claude":
+                out.append(_claude_session_meta(f))
+            else:
+                meta = _gemini_session_meta(f, project_cwd)
+                if meta is not None:
+                    out.append(meta)
         except OSError:
             continue
-        # A title you set is verbatim -- NOT run through _strip_injected, which is
-        # only for the machine preamble on a first message.
-        title = custom_title or ai_title or first_msg or "(no prompt)"
-        out.append({
-            "id": f.stem,
-            "title": title[:90],
-            # Stated so the UI could badge a renamed session if it wanted; also
-            # what the test uses to know a title is a legitimate on-disk record.
-            "title_source": ("custom" if custom_title else
-                             "ai" if ai_title else
-                             "prompt" if first_msg else "none"),
-            "project": f.parent.name,
-            "cwd": cwd,
-            "branch": branch,
-            "mtime": int(f.stat().st_mtime),
-            "size": f.stat().st_size,
-        })
     return out
 
 
@@ -269,11 +532,25 @@ def _safe_id(session_id: str) -> bool:
     return not ("/" in session_id or "\\" in session_id or ".." in session_id)
 
 
+def _gemini_resolve_path(session_id: str) -> Optional[Path]:
+    """session_id here is the header UUID _gemini_session_meta hands out (see
+    _gemini_header_id), not the filename stem -- the two no longer match, so
+    this has to check file content instead of globbing on the name."""
+    if not _safe_id(session_id) or not GEMINI_ROOT.exists():
+        return None
+    for f in GEMINI_ROOT.glob("tmp/*/chats/*.jsonl"):
+        if _gemini_header_id(f) == session_id:
+            return f
+    return None
+
+
 def resolve_path(session_id: str) -> Optional[Path]:
     if not _safe_id(session_id):
         return None
     matches = list(PROJECTS.glob("*/" + session_id + ".jsonl"))
-    return matches[0] if matches else None
+    if matches:
+        return matches[0]
+    return _gemini_resolve_path(session_id)
 
 
 def append_title(session_id: str, title: str) -> bool:
@@ -416,15 +693,20 @@ def _parse_transcript(f) -> Dict:
 
 
 def read_session(session_id: str) -> Optional[Dict]:
-    """Parse one session transcript into chat-renderable messages. Read-only."""
+    """Parse one session transcript into chat-renderable messages. Read-only.
+    Checks Claude's tree first, then DeepSeek's -- same {id, cwd, branch,
+    messages} shape either way, so the caller never needs to know which."""
     if "/" in session_id or "\\" in session_id or ".." in session_id:
         return None  # path-traversal guard
     matches = list(PROJECTS.glob("*/" + session_id + ".jsonl"))
-    if not matches:
-        return None
-    # Single source of truth: read_session and read_agent parse identically, so
-    # an agent turn and a session turn can never disagree about one record.
-    return {"id": session_id, **_parse_transcript(matches[0])}
+    if matches:
+        # Single source of truth: read_session and read_agent parse identically,
+        # so an agent turn and a session turn can never disagree about one record.
+        return {"id": session_id, **_parse_transcript(matches[0])}
+    f = _gemini_resolve_path(session_id)
+    if f is not None:
+        return {"id": session_id, **_gemini_transcript(f, _gemini_project_cwd_map())}
+    return None
 
 
 # --------------------------------------------------------------- subagents ---
