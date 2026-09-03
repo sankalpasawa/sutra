@@ -131,8 +131,21 @@ const DEST_PLANES = {
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"routines"},{screen:"connectors"}]},
-             {group:"System",      rows:[{screen:"health"},{screen:"evals"},{screen:"usage"},{screen:"history"}]},
-             {group:"Preferences", rows:[{screen:"settings"}]}]
+             /* The assistant row joined System and the one-row Preferences group
+                went with it (founder 2026-09-03). A group holding a single row
+                is a header that earns nothing, and "Preferences" described the
+                row least accurately of anything on this plane: the screen sets
+                which assistant runs, what it may do without asking, and where
+                it works -- operational facts about the agent process, not
+                preferences. Named "AI Assistant" rather than "AI provider" for
+                the same reason: the provider is one of its three folds. */
+             /* Usage is no longer a row here (founder 2026-09-03): it renders as
+                a section INSIDE the AI Assistant screen, because how much of an
+                assistant you have used is a fact about the assistant you just
+                picked. SCREENS.usage stays registered, so openScreen("usage")
+                and any saved selection still resolve. */
+             {group:"System",      rows:[{screen:"health"},{screen:"evals"},
+                                         {screen:"history"},{screen:"settings"}]}]
 };
 /* 2.226.0 (founder 2026-08-25, design canvas 68c685b1): these destinations
    render their DEST_PLANES rows INLINE in the rail as an accordion under the

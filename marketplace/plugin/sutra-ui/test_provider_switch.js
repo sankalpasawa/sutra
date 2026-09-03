@@ -103,6 +103,24 @@ test("a pane that never switched sends no chat id", () => {
   finally { sandbox.SETTINGS = prev; }
 });
 
+/* The Settings provider-change handler, extracted by brace-matching rather than
+   by a fixed-width window. Windows kept silently falling out of range every
+   time a comment was added inside the handler -- three tests broke that way in
+   one sitting, none of them because the code was wrong. */
+function provHandlerSrc() {
+  const i = loaders.indexOf('apiPost("/api/providers/active"');
+  assert(i >= 0, "the Settings provider handler is gone");
+  /* Bounded by the NEXT handler, not by brace matching: the first brace after
+     apiPost is the { id: ... } argument object, which closes immediately and
+     would end the slice on line one. Not bounded by a fixed width either --
+     three tests fell out of range in one sitting when a comment was added
+     inside the handler, none of them because the code was wrong. */
+  const j = loaders.indexOf('querySelectorAll("[data-pmode-set]")', i);
+  assert(j > i, "the permission-mode handler no longer follows this one -- "
+                + "provHandlerSrc needs a new boundary");
+  return loaders.slice(i, j);
+}
+
 /* ── 2. the composer row is an indicator, not a control ──────────────────── */
 
 function switcherSrc() {
@@ -178,15 +196,13 @@ test("changing the Settings provider drops the open chat sockets", () => {
 });
 
 test("a pane mid-reply is spared", () => {
-  const i = loaders.indexOf('apiPost("/api/providers/active"');
-  const body = loaders.slice(i, i + 2000);
+  const body = provHandlerSrc();
   assert(/streamingFor\(/.test(body) && /sideStreamingFor\(/.test(body),
          "closing a streaming pane would discard a reply being written");
 });
 
 test("the confirmation says when the change takes effect", () => {
-  const i = loaders.indexOf('apiPost("/api/providers/active"');
-  const body = loaders.slice(i, i + 2000);
+  const body = provHandlerSrc();
   assert(/next message use/.test(body),
          "'active provider is now X' overstated it -- nothing moves until you send");
 });
@@ -200,7 +216,8 @@ test("the rail still badges which provider wrote each transcript", () => {
 
 test("Settings still calls it the DEFAULT provider", () => {
   assert(chat.includes('"Default provider"'));
-  assert(/new chats start on/.test(chat));
+  assert(/Which AI answers your messages/.test(chat),
+         "the fold must say what it does in plain words");
 });
 
 test("the dead override notice is gone", () => {
@@ -275,6 +292,144 @@ test("the percentage is derived in exactly one place", () => {
     assert(!pat.test(src.replace(/\s/g, "")),
            who + " still derives Claude's window percentage directly");
   });
+});
+
+/* ── 6. the Assistant row (founder 2026-09-03) ─────────────────────────────── */
+
+test("the nested row is called AI Assistant, not Settings", () => {
+  // "Settings" inside the Settings destination repeated its parent and said
+  // nothing about what was behind it.
+  assert(helpers.includes('n:"AI Assistant"'), "railSpec does not label the row AI Assistant");
+  assert(chat.includes('settings:["AI Assistant"'), "TITLES does not say AI Assistant");
+  // The provider is ONE of this screen's three folds (provider, permission
+  // mode, workdir), which is why it is not named for the provider alone.
+  assert(!/n:"AI [Pp]rovider"/.test(helpers), "named for one of its three folds");
+});
+
+test("the Preferences group is gone and the row lives under System", () => {
+  const plane = state.slice(state.indexOf('settings: [{group:"Tools"'));
+  const body = plane.slice(0, plane.indexOf("\n};"));
+  assert(!/group:"Preferences"/.test(body), "a one-row group is a header that earns nothing");
+  const sys = body.slice(body.indexOf('group:"System"'));
+  const rows = [...sys.matchAll(/screen:"([a-z]+)"/g)].map(m => m[1]);
+  assert(rows.includes("settings"), "the assistant row is not under System");
+  // eq() is strict ===, which is always false for arrays -- compare serialised.
+  eq(rows.join(","), "health,evals,history,settings", "System rows;");
+});
+
+test("the top-level destination is still called Settings", () => {
+  // Only the nested row was renamed; the rail button keeps its name.
+  assert(/settings:"Settings"/.test(helpers), "DEST_LABEL was renamed by mistake");
+});
+
+test("the screen id did not change", () => {
+  // Links, openScreen and every stale selection validate against this id.
+  assert(helpers.includes('id:"settings"'), "the screen id moved with the label");
+});
+
+/* ── 7. plain language in the two operator-facing folds (founder 2026-09-03) ── */
+
+function foldSrc(a, b) {
+  const i = chat.indexOf(a); const j = chat.indexOf(b, i);
+  assert(i >= 0 && j > i, "could not isolate " + a);
+  return chat.slice(i, j);
+}
+
+test("the provider fold carries no implementation jargon", () => {
+  const src = foldSrc('fold("set.prov"', 'fold("set.mode"');
+  ["binary", "on PATH", "config directory", "adapter", "stream-json",
+   "Resolved via", "catalog default"].forEach(j =>
+    assert(!src.includes(j), "operator-facing copy still says " + JSON.stringify(j)));
+});
+
+test("the project-folder fold carries no implementation jargon", () => {
+  const src = foldSrc('fold("set.workdir"', "Some saved settings could not be used");
+  ["working directory", "read oracle", "In force", "cwd",
+   "SUTRA_UI_WORKDIR_ROOT"].forEach(j =>
+    assert(!src.includes(j), "operator-facing copy still says " + JSON.stringify(j)));
+  assert(src.includes('"Project folder"'), "the fold is still called Workdir");
+});
+
+test("a provider that cannot run still says WHY", () => {
+  // providers.py exists so the panel never says "unavailable" without saying
+  // why. Plain language must not cost that: the status line leads, the exact
+  // server reason stays underneath.
+  assert(/Not installed on this Mac/.test(chat), "no plain status for not-installed");
+  assert(/not signed in yet/.test(chat), "no plain status for installed-but-unconfigured");
+  assert(/p\.reason\?/.test(chat.replace(/\s/g, "")),
+         "the server's exact reason was dropped along with the jargon");
+});
+
+test("a refused saved choice is explained, not labelled", () => {
+  assert(/could not be used/.test(chat), "the ignored-override notice is gone");
+  assert(!/An override was NOT honoured/.test(chat), "still says 'override not honoured'");
+});
+
+test("Usage renders inside the AI Assistant screen, not as its own row", () => {
+  // How much of an assistant you have used is a fact about the assistant you
+  // just picked; a separate destination made you cross the app to answer a
+  // question this screen had raised.
+  assert(chat.includes("SCREENS.usage()"),
+         "the AI Assistant screen does not render the usage section");
+  const plane = state.slice(state.indexOf('settings: [{group:"Tools"'));
+  const body = plane.slice(0, plane.indexOf("\n};"));
+  assert(!/screen:"usage"/.test(body), "usage still has a nav row");
+});
+
+test("the usage figure moved onto the row you can actually click", () => {
+  const i = helpers.indexOf('{id:"settings",n:"AI Assistant"');
+  assert(i > 0, "the AI Assistant entry is gone");
+  assert(/providerUsage\(\)/.test(helpers.slice(i, i + 260)),
+         "the AI Assistant row carries no usage count");
+  const j = helpers.indexOf('{id:"usage"');
+  assert(!/providerUsage\(\)/.test(helpers.slice(j, j + 160)),
+         "the row-less usage entry still computes a badge nobody sees");
+});
+
+test("opening the AI Assistant screen fetches usage", () => {
+  // Otherwise the section sits on "Reading usage..." until something else
+  // happens to load it.
+  // Match the screen-open dispatcher specifically -- loadUsage is also called
+  // from the composer popover and the sign-in flow, and indexOf found those.
+  assert(/id === "usage" \|\| id === "settings"/.test(loaders),
+         "the AI Assistant screen does not trigger a usage load on open");
+});
+
+/* ── 8. two defects from a screenshot, 2026-09-03 ──────────────────────────── */
+
+test("switching provider refetches usage for the provider you switched TO", () => {
+  // Usage renders as a section of this very screen and the two providers keep
+  // their figures in different state. Without a refetch the section sat on
+  // "Reading usage..." indefinitely -- the screen-open trigger cannot help,
+  // because you never left the screen.
+  const body = provHandlerSrc();
+  assert(/loadUsage\(true\)/.test(body),
+         "the provider change never refetches usage");
+});
+
+test("the refetch forces, because the cached state belongs to the other provider", () => {
+  const body = provHandlerSrc();
+  assert(!/loadUsage\(\s*\)/.test(body),
+         "loadUsage() without force early-returns on state left by the "
+         + "provider you just switched away from");
+});
+
+test("the status line and the detail line are separate blocks", () => {
+  // .oi is a plain block and both are spans, so without display:block they
+  // flow inline and their margin-top does nothing -- producing
+  // "Not installed on this Mac binary 'gemini' not on PATH...".
+  const od = css.slice(css.indexOf(".opt .od{"), css.indexOf(".opt .od{") + 90);
+  const why = css.slice(css.indexOf(".opt .why{"), css.indexOf(".opt .why{") + 90);
+  assert(/display:block/.test(od), ".opt .od is not a block -- it will run inline");
+  assert(/display:block/.test(why), ".opt .why is not a block -- it will run inline");
+});
+
+test("the detail line reads as supporting detail, not a second error", () => {
+  // The plain status already says what is wrong; the detail carries the fix.
+  const why = css.slice(css.indexOf(".opt .why{"), css.indexOf(".opt .why{") + 120);
+  assert(!/color:var\(--block\)/.test(why),
+         "the detail line still shouts in the error colour beneath a status "
+         + "line that already stated the problem");
 });
 
 console.log("\n" + pass + " passed, " + fail + " failed");

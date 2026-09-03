@@ -275,6 +275,16 @@ function wire(){
                    try { ch.ws.close(); } catch (e) {}
                    CLAUDE_SOCKETS.delete(k);
                  });
+                 /* REFETCH USAGE FOR THE PROVIDER WE JUST SWITCHED TO.
+                    Usage renders as a section of this very screen, and the two
+                    providers keep their figures in different state (S.usage vs
+                    S.deepseekUsage). Without this the section sat on "Reading
+                    usage…" indefinitely: nothing had asked for the new
+                    provider's numbers, and the screen-open trigger does not
+                    fire because you never left the screen. force=true because
+                    loadUsage early-returns on already-populated state, which
+                    after a switch belongs to the OTHER provider. */
+                 if (typeof loadUsage === "function") loadUsage(true);
                  S.setOk = "new chats and your next message use " + r.active + "."
                          + (kept ? " A chat is still replying and will move after it finishes." : ""); })
       .catch(e=>{ S.setError = e.message; })
@@ -1137,7 +1147,10 @@ function openScreen(id){
   /* force=true: unlike a repo, utilization moves while you are not looking, and
      a stale percentage is the one number this screen must not show. The 60s
      server cache is what keeps re-opening cheap. */
-  if (id === "usage") loadUsage(true);
+  /* "settings" too: Usage renders as a section of the AI Assistant screen,
+     so opening that screen has to fetch it -- otherwise the section would
+     sit on "Reading usage..." until something else happened to load it. */
+  if (id === "usage" || id === "settings") loadUsage(true);
   if (id === "evals") loadEvals(false);     /* lazy, like Git */
   if (id === "routines"){ loadRoutines(false); loadProposals(false); }
   if (id === "teamsutra") loadTeamsutra(false);

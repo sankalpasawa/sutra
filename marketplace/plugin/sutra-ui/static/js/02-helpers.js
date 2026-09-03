@@ -646,10 +646,11 @@ function railSpec(){
          org. The count is the ACTIVE window's percentage -- the one number worth
          seeing without opening anything -- and is withheld until the screen has
          been read, like Git's, so the rail never asserts a figure nobody fetched. */
-      /* Provider-aware since 2026-09-03: a percentage here while DeepSeek is
-         selected describes a plan the panel is not using. See providerUsage. */
-      {id:"usage",    n:"Usage",     i:"usage",
-       c:((providerUsage() || {}).short) ?? undefined},
+      /* Usage has no nav row of its own any more -- it renders inside the AI
+         Assistant screen. The entry stays because railSpec is the single source
+         for screen metadata (label, icon) and openScreen still resolves the id;
+         only the count moved, onto the row the operator can actually click. */
+      {id:"usage",    n:"Usage",     i:"usage"},
       /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
          anyway. It shipped as a 19px unlabelled icon in the footer and the first
          operator to use it reported "I don't see terminal": a control nobody can
@@ -670,7 +671,15 @@ function railSpec(){
       {id:"terminal",n:"Terminal", i:"term", toggle:true},
       /* Settings is not a count -- it is provider + permission mode + workdir,
          all three of which are single values with a live server behind them. */
-      {id:"settings",n:"Settings", i:"gear"}
+      /* "AI Assistant", not "Settings": this row sits inside the Settings
+         destination, so the old label repeated its parent and told an operator
+         nothing about what was behind it. The screen configures which
+         assistant runs, what it may do without asking, and where it works. */
+      /* Carries the usage figure now that Usage is a section of this screen.
+         Provider-aware: a percentage while DeepSeek is selected would describe
+         a plan the panel is not using. See providerUsage. */
+      {id:"settings",n:"AI Assistant", i:"gear",
+       c:((providerUsage() || {}).short) ?? undefined}
     ]
   };
 }

@@ -859,11 +859,19 @@
   .opt .oi{min-width:0;flex:1}
   .opt .on{font-size:12.5px;font-weight:600;color:var(--ink);display:flex;
            align-items:center;gap:7px;flex-wrap:wrap}
-  .opt .od{font-size:11px;color:var(--muted);margin-top:3px}
-  /* 10->11px (visual audit r5): the provider-unavailable reason was at the
-     edge of legibility in dark */
-  .opt .why{font:500 11px/1.5 var(--mono);color:var(--block);margin-top:5px;
-            white-space:normal;overflow-wrap:anywhere}
+  /* display:block is LOAD-BEARING on both of these. .oi is a plain block and
+     these are spans, so without it they flow inline and their margin-top does
+     nothing -- the status line and the detail line ran together as one
+     sentence ("Not installed on this Mac binary 'gemini' not on PATH..."),
+     reported from a screenshot 2026-09-03. .on escaped it only because it sets
+     display:flex for its pills. */
+  .opt .od{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+  /* The plain status above already says WHAT is wrong. This line is the
+     supporting detail -- usually the fix -- so it reads as secondary rather
+     than as a second, louder error: faint, not the block colour it used to
+     carry. (Was 10->11px in visual audit r5 for legibility in dark; kept.) */
+  .opt .why{display:block;font:500 11px/1.5 var(--mono);color:var(--faint);
+            margin-top:5px;white-space:normal;overflow-wrap:anywhere}
   /* ── run state ──────────────────────────────────────────────────────────
      There was previously ONE animation in this whole file, so a running turn and a
      finished one looked identical and the operator could not tell whether anything

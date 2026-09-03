@@ -497,14 +497,15 @@ SCREENS.settings = () => {
         ${S.setBusy==="prov:"+p.id?"aria-busy=\"true\"":""}>
       <span class="rd" aria-hidden="true"></span>
       <span class="oi">
-        <span class="on">${esc(p.name)} <code>${esc(p.id)}</code>
-          ${p.default?'<span class="pill p-mut">catalog default</span>':""}
-          ${active===p.id?'<span class="pill p-ok">active</span>':""}
+        <span class="on">${esc(p.name)}
+          ${active===p.id?'<span class="pill p-ok">in use</span>':""}
           ${S.setBusy==="prov:"+p.id?'<span class="pill p-acc">saving…</span>':""}</span>
-        <span class="od">binary <code>${esc(p.bin)}</code>
-          ${p.installed?`at <code>${esc(p.bin_path||"")}</code>`:"— not on PATH"} ·
-          config <code>${esc(p.config_dir)}</code>${p.configured?"":" — absent"}</span>
-        ${p.reason?`<span class="why">unavailable: ${esc(p.reason)}</span>`:""}
+        <span class="od">${p.runnable
+            ? "Ready to use"
+            : !p.installed ? "Not installed on this Mac"
+            : !p.configured ? "Installed, but not signed in yet"
+            : "Installed, but this panel can’t talk to it yet"}</span>
+        ${p.reason?`<span class="why">${esc(p.reason)}</span>`:""}
       </span>
     </button>`;
 
@@ -541,24 +542,20 @@ SCREENS.settings = () => {
     ${banner}
     ${upd}
     ${fold("set.prov", "Default provider", esc(active||"none runnable"), `
-      <p style="margin-bottom:9px">The provider <b>new chats start on</b>. A chat can be switched to
-        the other one from its own composer, and that choice stays in that chat — changing this does
-        not move a conversation that is already running somewhere else.</p>
-      <p style="margin-bottom:9px">A provider is offered only when
-        its binary is on PATH, it has a config directory, <i>and</i> this build has an adapter for it;
-        the others stay listed, disabled, with the exact reason — so "can I use this one?" is answered
-        here rather than by a chat that fails later. Installing a CLI is not enough on its own:
-        the chat channel speaks Claude's stream-json protocol.</p>
+      <p style="margin-bottom:9px">Which AI answers your messages. New chats start here, and your
+        next message in any open chat moves to it too — nothing already written changes.</p>
+      <p style="margin-bottom:9px">Only the ones ready to use can be picked. The rest stay listed
+        with what is missing, so you can see whether a name is unavailable or simply not set up
+        yet — rather than finding out when a chat fails to answer.</p>
       <div role="radiogroup" aria-label="Default provider">${PROVIDERS.map(provRow).join("")}</div>
-      <div class="kv"><b>Resolved via</b><span>${esc(st.provider_source||"—")}${
-        st.provider_stored?` · stored <code>${esc(st.provider_stored)}</code>`:""}</span></div>
       ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-bottom:0">
-        <b>An override was NOT honoured.</b>
-        ${st.provider_ignored.map(i=>`<div><code>${esc(i.source)}</code> asked for
-          <code>${esc(i.id)}</code> — ${esc(i.reason)}</div>`).join("")}</div>`:""}
+        <b>Your saved choice could not be used.</b>
+        ${st.provider_ignored.map(i=>`<div>You picked <b>${esc(providerLabel(i.id))}</b>,
+          but ${esc(i.reason)}</div>`).join("")}
+        <div class="swhint">Using ${esc(providerLabel(active))} instead.</div></div>`:""}
       ${PROVIDERS.filter(p=>p.runnable).length<2?`<p style="font-size:11px;color:var(--faint);margin:9px 0 0">
-        ${PROVIDERS.filter(p=>p.runnable).length} of ${PROVIDERS.length} catalogued providers can run on
-        this machine. The rest are shown above, disabled, with their reason — never silently missing.</p>`:""}`)}
+        Only ${esc(providerLabel(active))} is ready to use on this Mac right now. The others are
+        listed above with what they need — never quietly left out.</p>`:""}`)}
 
     ${fold("set.mode", "Permission mode", esc(running||"—"), `
       ${st.permission_mode_clamped?`<div class="note w"><b>The stored mode is not the one running.</b>
@@ -576,35 +573,43 @@ SCREENS.settings = () => {
         you approve each one. Choosing <code>acceptEdits</code> below removes that prompt.</div>`}
       <div role="radiogroup" aria-label="Permission mode">${PERM_MODES.map(modeRow).join("")}</div>`)}
 
-    ${fold("set.workdir", "Workdir", esc((st.workdir||"").split("/").pop()||"—"), `
-      <p style="margin-bottom:9px">The directory every session this panel starts uses as its
-        working directory. It is created if it does not exist. A change applies to the
-        <b>next</b> session — moving a running agent out from under the transcript it is
-        writing is not something this panel will do to you.</p>
+    ${fold("set.workdir", "Project folder", esc((st.workdir||"").split("/").pop()||"—"), `
+      <p style="margin-bottom:9px">The folder your AI works in. It can read and change files here,
+        and this is where anything it creates will go. If the folder does not exist yet, it is
+        made for you.</p>
+      <p style="margin-bottom:9px">A change applies to your <b>next</b> chat. A chat that is
+        already running stays where it is — moving it mid-answer would break the work it is in
+        the middle of.</p>
       <div class="wdrow">
         <input type="text" class="wdin" data-workdir-input
                value="${esc(S.workdirDraft !== null ? S.workdirDraft : (st.workdir||""))}"
                spellcheck="false" autocapitalize="off" autocorrect="off"
-               aria-label="Working directory" placeholder="~/sutra-ui-workspace">
+               aria-label="Project folder" placeholder="~/sutra-ui-workspace">
         ${dirPickerAvailable()?`<button class="btn" type="button" data-workdir-browse
           title="Choose a folder in Finder">Browse…</button>`:""}
         <button class="btn" type="button" data-workdir-save
           ${S.setBusy==="workdir"?'aria-busy="true" disabled':""}>${
-            S.setBusy==="workdir"?"Saving…":"Use this directory"}</button>
+            S.setBusy==="workdir"?"Saving…":"Use this folder"}</button>
       </div>
-      <p style="font-size:11px;color:var(--faint);margin:7px 0 9px">Must sit inside
-        <code>${esc(st.workdir_root||"~")}</code>. The chat session runs with this as its cwd, so an
-        arbitrary path would turn this panel into a read oracle over the whole disk; widen the
-        root with <code>SUTRA_UI_WORKDIR_ROOT</code> when starting the server if you need to.</p>
-      <div class="kv"><b>In force</b><span><code>${esc(st.workdir||"—")}</code></span></div>
-      <div class="kv"><b>Settings file</b><span><code>${esc(st.settings_path||"—")}</code>
-        ${st.settings_file_exists?'<span class="pill p-ok">exists</span>'
-                                 :'<span class="pill p-mut">not written yet</span>'}</span></div>
+      <p style="font-size:11px;color:var(--faint);margin:7px 0 9px">Has to be somewhere inside
+        <code>${esc(st.workdir_root||"~")}</code>. Your AI can read every file in the folder you
+        pick, so picking the top of your drive would hand it everything on this Mac.</p>
+      <div class="kv"><b>Working in</b><span><code>${esc(st.workdir||"—")}</code></span></div>
       ${Object.keys(st.invalid_stored_values||{}).length?`<div class="note w">
-        <b>Ignored values in the settings file.</b>
+        <b>Some saved settings could not be used.</b>
         ${Object.entries(st.invalid_stored_values).map(([k,v])=>
-          `<div><code>${esc(k)}</code> = <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
-        These were not silently corrected — the documented default is in force instead.</div>`:""}`)}`;
+          `<div>${esc(k.replace(/_/g," "))} — <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
+        Nothing was changed behind your back; the normal default is being used instead.</div>`:""}`)}
+    ${/* Usage lives HERE now (founder 2026-09-03), not as a nav row of its own.
+          It is a fact about the assistant you just picked -- how much of it you
+          have used, or what is left to spend -- and it changed shape with the
+          provider, so a separate destination made you cross the app to answer a
+          question this screen had just raised.
+
+          SCREENS.usage is still registered and still renders whichever shape
+          the selected provider needs, so deep links and openScreen("usage")
+          keep working; only the nav row went. */""}
+    <section class="chsec"><h3 class="sec">Usage</h3>${SCREENS.usage()}</section>`;
 };
 
 /* ── Staged department creation (§3.3). Four collapsible sections and a completion meter —
@@ -625,7 +630,7 @@ const TITLES = {
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
-  settings:["Settings","~/.sutra-ui/settings.json · PATH"],
+  settings:["AI Assistant","which assistant runs, what it may do, and where · ~/.sutra-ui/settings.json"],
   balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
   optimus:["Optimus","the daemon, visible — ~/.sutra-native/daemon · asks, routes, runs"],
   /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()

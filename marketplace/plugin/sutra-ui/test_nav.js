@@ -128,10 +128,24 @@ test("planes: org post-S92 — Workspace leads; Knowledge/Files folded in", () =
   assert.strictEqual(JSON.stringify(rows), JSON.stringify(
     ["workspace","departments","charters","placements","reorg"]));
 });
-test("planes: settings carries four labelled groups", () => {
+test("planes: settings carries three labelled groups", () => {
+  /* Was four. "Preferences" held exactly one row -- the AI Assistant screen --
+     and a group wrapping a single row is a header that earns nothing. The row
+     moved into System (founder 2026-09-03), which is where the rest of the
+     machine-state screens already live. The assertion stays EXACT rather than
+     loosening to a subset: this plane is a fixed, ordered list. */
   const groups = T.planeRows("settings");
   assert.strictEqual(JSON.stringify(groups.map(g => g.label)), JSON.stringify(
-    ["Tools","Automation","System","Preferences"]));
+    ["Tools","Automation","System"]));
+  const system = groups.find(g => g.label === "System").rows.map(r => r.screen);
+  /* Usage lost its row on 2026-09-03 -- it renders as a section inside the AI
+     Assistant screen, since how much of an assistant you have used is a fact
+     about the assistant you just picked. The SCREEN is still registered. */
+  assert.strictEqual(JSON.stringify(system), JSON.stringify(
+    ["health","evals","history","settings"]),
+    "the AI Assistant row must be the last System row, and Usage must not be one");
+  assert.ok(T.SCREENS && typeof T.SCREENS.usage === "function",
+    "the usage screen must stay registered so openScreen('usage') still resolves");
 });
 test("planes: focus leads with Shadow, Balance + Optimus live, one honest coming-soon", () => {
   const rows = T.DEST_PLANES.focus;
@@ -369,6 +383,15 @@ test("coverage: all 20 legacy rail ids stay reachable through the new shell", ()
      claim they satisfy is the redirect, asserted here at the source level
      (behavior is exercised in the workspace suite). */
   ["knowledge", "files"].forEach(id => reachable.add(id));
+  /* Usage lost its nav row on 2026-09-03 and is reached by being RENDERED
+     INSIDE the AI Assistant screen -- a stronger form of reachable than a row,
+     since you arrive at it while answering the question that raised it. Same
+     shape of claim as knowledge/files above, so it is asserted the same way:
+     at the source level, that SCREENS.settings actually calls SCREENS.usage. */
+  assert(/SCREENS\.usage\(\)/.test(String(T.SCREENS.settings)),
+         "usage has no nav row AND is not rendered inside the AI Assistant "
+         + "screen -- it would be orphaned");
+  reachable.add("usage");
   const loaders = require("fs").readFileSync(__dirname + "/static/js/07-loaders.js", "utf8");
   assert.ok(/id === "knowledge" \|\| id === "files"/.test(loaders)
     && /id = "workspace"/.test(loaders),
