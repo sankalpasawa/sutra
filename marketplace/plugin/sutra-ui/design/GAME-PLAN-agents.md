@@ -136,3 +136,34 @@ run, diff shown.
 | backend | `.venv/bin/python -m pytest test_agents_api.py` | routes, panel-token guard, secrets never echoed, data dir under home |
 | engine | `python -m pytest seo_agent/tests` | the 99 + CLI-provider checks |
 | L3/L4 | Playwright against the repo backend | screenshots of each checkpoint, light and dark |
+
+---
+
+## What shipped, and how it was verified (2026-09-03)
+
+| Lane | Result |
+|---|---|
+| `node test_agents.js` | 24 passed: block ids agree with the Python splitter byte for byte; substeps nest; an answered approval shows its decision; an interrupted step never spins; hostile labels are escaped; the topic footer needs a pick |
+| `node test_panel.js` / `test_nav.js` / `test_charter_filter.js` / `test_governance.js` | 224 / 46 / 31 / 104 passed. `test_nav.js` now pins eight destinations |
+| `pytest -q` (all `test_*.py`) | 685 passed, 21 failed — the same 21 as before this work (shadow / runtime-state tests that need a live flag on this machine). `test_agents_api.py`: 15 passed |
+| `seo_agent/tests/run_all.sh` | ALL SUITES PASS, including the 529-retry and crawl-refused fallback checks |
+| `electron/test_provision.js` | 17 passed |
+| Live, repo backend on :7011 | the `claude` CLI answered through the subscription (turns of 4.7–5.2 s when the API was quiet, 529s retried with the retry visible in the log); DataForSEO indexed 108 ranking pages of testlify.com after the site refused the crawl |
+| Screenshots, light and dark | the run log with a real failed-and-explained crawl; the hero; Connections; Tools. The pane measured 942 px wide beside an open chat pane after the `agwide` fix (385 px before) |
+| Not run here | `qa-shell/run.sh` (needs `/Applications/Sutra.app`, not installed on this Mac); `qa/run.sh` |
+
+### Found by running it, not by reading it
+
+1. A `note` class on a run-log entry picked up Sutra's callout style (`.note`). Renamed `quiet`.
+2. The browse pane shrank to 385 px beside an open chat pane. `render()` now pins the Agents pane to the row, the way it pins the Shadow screen.
+3. `(compatible; seo-agent/1.0)` as a User-Agent got a 429 on the first request. The crawler now presents as a browser; the site still refuses, so the index falls back to search data.
+4. `API Error: 529 Overloaded` on one turn killed a run and was reported as "not signed in". Transient errors are retried with backoff and named in the log; only a login failure is a login failure.
+5. Pytest collected the engine's script-style tests and hit their `sys.exit`, aborting the whole session. `conftest.py` excludes them; they have their own runner.
+6. The Playwright wait for `networkidle` never fired: the panel holds an SSE stream open.
+
+### Left for a later release
+
+- Drag-to-reorder in the blueprint (arrows ship).
+- A "try again" button on a failed run (typing a message starts a new run).
+- The Electron shell lane, once an app is installed on the QA machine.
+- Speed: a model turn on the CLI's default model took 2–5 minutes when the API was loaded. `SEO_AGENT_MODEL=sonnet` is the knob; not set by default because writing quality wins.
