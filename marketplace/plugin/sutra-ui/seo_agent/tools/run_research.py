@@ -140,13 +140,6 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
     say("Studied the pages that win",
         "%s common headings, %s we can own" % (len(win.get("common_h2s") or []), _plural(len(win.get("gaps_to_own") or []), "gap")))
 
-    # ---- 7. the verdict and the build spec ------------------------------------------------------
-    brief, _ = step("brief", lambda: assemble.run(topic, angle, final, snap["md"], win["md"], company))
-    if brief.get("incomplete"):
-        say("The brief is missing pieces", ", ".join(brief["incomplete"]))
-    else:
-        say("Brief assembled", "Verdict and build spec written; every box checked")
-
     # ---- 1a. cannibalisation (never blocks) ------------------------------------------------------
     cann, _ = step("cannibalisation", lambda: {"hit": cannibalisation.check(primary["keyword"])})
     if cann.get("hit"):
@@ -160,7 +153,7 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
         store.save_artifact(chat_id, run_id, "research.json", _compat({
             "topic": topic, "angle": angle, "angle_before": angle, "world": w,
             "keywords": final, "serp": _serp_block(extract, snap), "winners": _win_block(win),
-            "verdict": brief["verdict"], "build_spec": brief["build_spec"], "cannibalisation": cann.get("hit"),
+            "verdict": [], "build_spec": {}, "cannibalisation": cann.get("hit"),
             "persona": None, "topic_gate": gate, "cost_usd": _cost(pool, met, sp),
             "outcome": "not our topic", "demo_data": demo, "generated_at": store.now()}))
         return {"summary": "This topic is not ours to write: %s" % (gate.get("why") or "no reason given"),
@@ -172,6 +165,15 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
         (gate.get("why") or "")[:160])
     if gate.get("angle_changed"):
         say("Angle rewritten from the real search results", angle[:200])
+
+    # ---- 7. the verdict and the build spec (after the gate, so the angle it anchors on is the
+    # settled one; found live 2026-09-04: with no angle given, the brief said "Anchors missing"
+    # a moment before the gate wrote the angle) ------------------------------------------------
+    brief, _ = step("brief", lambda: assemble.run(topic, angle, final, snap["md"], win["md"], company))
+    if brief.get("incomplete"):
+        say("The brief is missing pieces", ", ".join(brief["incomplete"]))
+    else:
+        say("Brief assembled", "Verdict and build spec written; every box checked")
 
     # ---- 2a. the spine ---------------------------------------------------------------------------
     spn, _ = step("spine", lambda: {"spine": spine.run(topic, angle, w, win, company)})

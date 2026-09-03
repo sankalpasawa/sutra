@@ -16,6 +16,7 @@ import threading
 
 from .. import llm, store
 from ..tools import _shared as sh
+from ..tools import _browser
 
 # ---- the paragraph maths (architect + writer both design on these) --------------------------------
 WORDS_PER_SENTENCE = 25             # the house sentence cap
@@ -256,19 +257,40 @@ FETCH_GAP = 1.5           # seconds between hits on the SAME host
 FETCH_RETRIES = 2         # a throttled 200 reads as "wrong" -> retry
 
 
+_BROWSER_HOSTS = set()    # hosts that answered a plain request with a bot challenge; read by browser from then on
+
+
+def _browser_text(url, timeout):
+    """The page through the browser: (raw html, content type). Raises on failure like httpx would."""
+    res = _browser.fetch(url, timeout=max(int(timeout), 30))
+    if int(res.get("status") or 0) >= 400:
+        raise RuntimeError("HTTP%d" % int(res["status"]))
+    return (res.get("text") or "")[:3_000_000], (res.get("content_type") or "text/html").lower()
+
+
 def _fetch_once(url, timeout=FETCH_TIMEOUT):
     import html as _html
     import httpx
     if url.lower().split("?")[0].endswith((".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip")):
         return "__ERR__NotHTML"
     try:
-        r = httpx.get(url, headers={"User-Agent": _UA}, timeout=timeout, follow_redirects=True)
-        if r.status_code >= 400:
-            return "__ERR__HTTP%d" % r.status_code
-        ctype = (r.headers.get("content-type") or "").lower()
+        host = url.split("/")[2].lower() if "://" in url else url
+        if host in _BROWSER_HOSTS:
+            raw, ctype = _browser_text(url, timeout)
+        else:
+            r = httpx.get(url, headers={"User-Agent": _UA}, timeout=timeout, follow_redirects=True)
+            if _browser.challenged(r.status_code, dict(r.headers), r.content) and _browser.available():
+                # found live 2026-09-04: every one of the article's own-site sources "could not be
+                # read" because the site sits behind a bot wall the crawl already passed by browser
+                _BROWSER_HOSTS.add(host)
+                raw, ctype = _browser_text(url, timeout)
+            else:
+                if r.status_code >= 400:
+                    return "__ERR__HTTP%d" % r.status_code
+                ctype = (r.headers.get("content-type") or "").lower()
+                raw = r.text[:3_000_000]
         if ctype and "html" not in ctype and "text/plain" not in ctype:
             return "__ERR__NotHTML"
-        raw = r.text[:3_000_000]
         if raw.lstrip()[:5] == "%PDF-":
             return "__ERR__NotHTML"
         raw = re.sub(r"<(script|style)\b.*?</\1>", " ", raw, flags=re.S | re.I)

@@ -28,6 +28,9 @@
   brand pack once, then the topics, the brief, the plan and the draft.
 - **Memory reaches the work.** A rule you save once is handed to every step that shapes or
   writes prose, and to the research steps that decide topic and angle.
+- **A fresh chat knows what is already done.** The agent is told what Knowledge holds (catalogue,
+  page index, brand pack) so it goes straight to the article instead of re-running setup. The
+  source check and the research page reader read walled sites through the browser too.
 - **Tools in plain English.** What each does, when it runs, what it needs, how long.
 - Engine: `sutra-ui/seo_agent/` gains `foundation/`, `brand/`, `research/`, `write/`, the
   Voyage index (`tools/_index.py`, `tools/voyage.py`) and the browser client

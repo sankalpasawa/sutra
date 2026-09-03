@@ -84,7 +84,12 @@ def _pool_block(cards, kind):
 def run(st, idx, ctx, say=lambda *a: None):
     pool = load_pool()
     if not pool or not (pool["research"] or pool["results"]):
-        say("No brand material to place", "brand-cards.json is not on file for this company")
+        # found live 2026-09-04: the file existed but held no cards (no confirmed customer story, no
+        # research report), and "not on file" sent the reader looking for a missing file
+        say("No brand material to place",
+            "brand-cards.json is not on file for this company" if pool is None else
+            "the brand cards file is on file but empty: no confirmed customer story and no research "
+            "report to draw numbers from yet")
         return {"structure": st, "used": {}, "placement": {"placements": [], "rejected": [], "notes": "no pool"}}
     sections = st["sections"]
     reply = llm.json_call(C.prompt(

@@ -140,6 +140,9 @@ def run(fx, site, rows, reconciled, wp, sm, archive, traffic, found_urls, read_u
     tmeta = traffic.get("meta") or {}
     if tmeta.get("skipped"):
         detail = "not checked: " + tmeta["skipped"]
+    elif tmeta.get("demo"):
+        # demo traffic names made-up pages, so a "gap" here is fiction; say so instead of failing
+        gaps, detail = [], "not checked: the traffic is demo data (no DataForSEO credentials)"
     elif gaps:
         detail = "%d pages that rank in search are missing from the catalogue (first: %s)" % (len(gaps), ", ".join(gaps[:3]))
     else:

@@ -82,6 +82,19 @@ loop.start(c2, r2, "go")
 s = loop.resume(c2, r2, {"approved": False})
 ok("declining does not run the paid tool", len(CALLS) == before)
 
+# the system prompt tells the model what Knowledge already holds, so setup is never redone
+site = store.knowledge("site_index.json") or {}
+had_brief = store.knowledge("brand/writer-brief.md")
+if had_brief: store.save_knowledge("brand/writer-brief.md", "")
+kb = loop._knowledge_block(site)
+ok("knowledge block names the catalogue", "Site catalogue: %s" % site.get("domain") in kb and "%d pages" % len(site["pages"]) in kb)
+ok("knowledge block says the brand pack is missing", "Brand pack: not built" in kb and "Finish setup first" in kb)
+store.save_knowledge("brand/writer-brief.md", had_brief or "# Writer brief\n\nA test brief.")
+kb = loop._knowledge_block(site)
+ok("with the brief on file it says setup is complete", "Setup is complete. Do NOT run index_site" in kb)
+ok("the system prompt carries the block", "## What is already in Knowledge" in loop._system_prompt() and "{{KNOWLEDGE}}" not in loop._system_prompt())
+if not had_brief: store.save_knowledge("brand/writer-brief.md", "")
+
 print("\nevents in run 1:", evs)
 shutil.rmtree(store.chat_dir(c)); shutil.rmtree(store.chat_dir(c2))
 
@@ -89,4 +102,4 @@ print()
 if FAILS:
     print("%d FAILED: %s" % (len(FAILS), ", ".join(FAILS)))
     sys.exit(1)
-print("all %d checks passed" % 14)
+print("all %d checks passed" % 18)

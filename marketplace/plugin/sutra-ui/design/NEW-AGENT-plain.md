@@ -465,6 +465,13 @@ same step numbers.
     like a disaster.
 12. Testing your code against the installed app. It runs its own sealed copy and
     ignores yours.
+13. Assuming the model knows what is already done. It cannot see the files on disk.
+    If setup is finished, the system prompt has to say so, or a new chat redoes it all.
+14. Fixing a website block in one place. The crawler learned to read a site behind a
+    bot wall, but two other page readers still used the plain way and failed on the
+    same site. Every place that reads a page has to use the same helper.
+15. Checking a document is complete before the step that fills it in. The research
+    brief flagged "no angle" a moment before the angle was written.
 
 ---
 
@@ -473,11 +480,13 @@ same step numbers.
 - [ ] Plan written: layout, run log, checkpoints, how you will verify
 - [ ] Engine folder built, knowing nothing about the app
 - [ ] Memory: folder-per-run, safe writes, owner-only credentials, path resolved fresh
-- [ ] Loop: money check reads from disk, step cap asks rather than kills, approval runs immediately
+- [ ] Loop: checkpoints enforced by code, step cap asks rather than kills, approval runs immediately
+- [ ] The model is told what is already done, so a new chat never redoes setup
 - [ ] Model caller: command first, prompt on standard input, parent session stripped, overload retried visibly
-- [ ] Tool list: every tool has a price and a permission level, and the model sees neither
+- [ ] Tool list: every tool described in plain English (what, when, needs, how long)
 - [ ] Tools written, each reporting progress as it goes
 - [ ] Prompts in files, none inside the code
+- [ ] Every place that reads a web page uses the same helper, so a blocked site is handled once
 - [ ] Engine tests green, in a throwaway folder, with the model switched off
 - [ ] Routes added, ids validated, secrets returned as yes-or-no only, API keys refused
 - [ ] Route tests green

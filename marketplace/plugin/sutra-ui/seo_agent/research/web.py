@@ -12,6 +12,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from . import _common as _c
+from ..tools import _browser
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/122.0 Safari/537.36")
@@ -36,18 +37,31 @@ def parse(html):
     return {"title": title[:200], "headings": heads, "text": text, "word_count": len(text.split())}
 
 
+_BROWSER_HOSTS = set()    # hosts that answered a plain request with a bot challenge
+
+
 def fetch(url, tries=TRIES):
     """Read one page. Raises RuntimeError after `tries` failed attempts (caller decides to skip)."""
     last = None
     for attempt in range(tries):
         try:
-            r = httpx.get(url, headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"},
-                          timeout=TIMEOUT, follow_redirects=True, verify=False)
-            r.raise_for_status()
-            ctype = (r.headers.get("content-type") or "").lower()
+            host = url.split("/")[2].lower() if "://" in url else url
+            if host in _BROWSER_HOSTS:
+                res = _browser.fetch(url, timeout=max(int(TIMEOUT), 30))
+                if int(res.get("status") or 0) >= 400:
+                    raise RuntimeError("HTTP %s via browser" % res.get("status"))
+                body, ctype = res.get("text") or "", (res.get("content_type") or "text/html").lower()
+            else:
+                r = httpx.get(url, headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"},
+                              timeout=TIMEOUT, follow_redirects=True, verify=False)
+                if _browser.challenged(r.status_code, dict(r.headers), r.content) and _browser.available():
+                    _BROWSER_HOSTS.add(host)     # a bot wall; this host is read by browser from now on
+                    continue
+                r.raise_for_status()
+                body, ctype = r.text, (r.headers.get("content-type") or "").lower()
             if "html" not in ctype and "text" not in ctype and ctype:
                 raise RuntimeError("not an HTML page (%s)" % ctype[:40])
-            page = parse(r.text)
+            page = parse(body)
             if page["word_count"] > 0:
                 page["attempts"] = attempt + 1
                 page["url"] = url

@@ -136,6 +136,11 @@ is the build contract every layer followed.
 3. Playwright's sync API is bound to its creating thread. Six crawler threads through one lock: 12 of 19 pages failed with "fetch failed (HTTP 0)". One worker thread and a queue fixed it.
 4. Archived pages all read as "gone" on a challenged host because the HEAD probe was still plain HTTP.
 5. The knowledge block in `agents_api.py` was replaced wholesale and took the library routes with it; the API test caught it.
+6. A fresh chat re-ran the whole setup on a site that was already catalogued, embedded and brand-packed, because nothing told the model what Knowledge held. `loop._knowledge_block()` now writes that state into the system prompt with a plain "Setup is complete, do not run it again".
+7. With no angle given, the research brief said "Anchors (title + angle) missing" a moment before the topic gate wrote the angle. The brief is now assembled after the gate.
+8. Demo traffic names made-up pages, so the catalogue's traffic cross-check "failed" on every demo run. It now says "not checked: demo traffic" instead.
+9. The demo article run (no DataForSEO login) proved the whole chain end to end at $0: research → brief checkpoint → blueprint checkpoint → draft. The blueprint filter dropped 307 of 327 cards, and that was right: every dropped card was demo text from the fake ranking pages, and the 20 kept were real Testlify passages. The agent then noticed on its own that the blueprint had no formula section and asked before the long write, which is the kind of question it should ask.
+10. The write phase's source check and the research page reader still fetched with a plain client, so on the walled site every own-page source "could not be read". Both now recognise the challenge and read through the browser like the crawl does. And the brand-cards step said the file was "not on file" when it was on file but empty (no confirmed story, no research report); it now says which.
 
 ### Not done, and said so
 

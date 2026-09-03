@@ -104,6 +104,32 @@ ok("a liveness probe on a challenged host goes through the browser and reads as 
 r4 = fx.get("https://open.example/x", obey_robots=False)
 ok("an unchallenged host still goes plain", r4.status == 200 and "https://open.example/x" in plain_hits)
 
+print("\nthe write phase's source check and the research page reader use the same fallback")
+from seo_agent.write import _common as WC  # noqa: E402
+from seo_agent.research import web as RW  # noqa: E402
+real_get = httpx.get
+def fake_get(url, **kw):
+    plain_hits.append(url)
+    if "walled.example" in url:
+        return httpx.Response(429, headers={"x-vercel-mitigated": "challenge", "content-type": "text/html"},
+                              content=b"<html><title>Verifying</title></html>", request=httpx.Request("GET", url))
+    return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html><body>" + b"open words " * 80 + b"</body></html>",
+                          request=httpx.Request("GET", url))
+httpx.get = fake_get
+try:
+    txt = WC._fetch_once("https://walled.example/a")     # the fixture stubs WC.fetch's network; test the real reader
+    ok("the source check reads a walled page through the browser", "real words" in txt and not txt.startswith("__ERR__"), txt[:80])
+    ok("and remembers the host", "walled.example" in WC._BROWSER_HOSTS)
+    n_plain = len(plain_hits)
+    WC._fetch_once("https://walled.example/a")
+    ok("the second read on that host spends no plain request", len(plain_hits) == n_plain)
+    ok("an open host still reads plain in the source check", not WC._fetch_once("https://open.example/y").startswith("__ERR__"))
+    page = RW.fetch("https://walled.example/a")
+    ok("the research page reader reads a walled page through the browser", page["word_count"] > 50 and "Page A" in page["headings"], page)
+    ok("and remembers the host too", "walled.example" in RW._BROWSER_HOSTS)
+finally:
+    httpx.get = real_get
+
 print("\nno browser at all")
 del os.environ["SEO_AGENT_BROWSER_FETCH"]
 import importlib

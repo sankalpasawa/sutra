@@ -439,6 +439,15 @@ to every prompt that shapes or writes prose (the plan, the headings, each sectio
 edits, the intro and the close) and to the research prompts that decide topic and
 angle. A rule the user states once holds everywhere, or it is not a rule.
 
+**The system prompt also carries what Knowledge already holds.** A fourth token,
+`{{KNOWLEDGE}}`, is filled by `loop._knowledge_block(site)`: the catalogue (domain,
+page count, when it was read), the page index (pages, passages), the brand pack
+(built or not), and one plain sentence: *"Setup is complete. Do NOT run index_site,
+build_page_index or learn_brand again unless the user asks for a rebuild."* Without it
+the model cannot see the data directory, so a fresh chat re-runs the whole setup on a
+site that was finished an hour earlier. State the model cannot see is state it will
+redo.
+
 ### Step 3. Declare the tools, with the costs the model never sees
 
 **Does:** puts every cost and gate in one file, out of the model's reach.
@@ -1050,6 +1059,17 @@ expected state between step 4 and step 5.
     app in debug mode.
 14. **Playwright's `networkidle` never fires** against the panel: it holds an SSE
     stream open. Wait on a selector.
+15. **The model cannot see the data directory.** Anything on disk that should stop
+    it from redoing work (a finished setup, a built index) has to be written into the
+    system prompt, or a fresh chat starts from zero.
+16. **Every fetcher needs the same bot-wall fallback.** The crawl learned to read a
+    challenged site through the browser; the write phase's source check and the
+    research page reader still used a plain client and reported every own-page source
+    as unreadable. One helper (`tools/_browser.py`), called from every place that
+    fetches.
+17. **Assemble a brief after the step that settles its inputs.** The research brief
+    checked "title + angle present" before the topic gate wrote the angle, so it said
+    the anchors were missing on every run without a user-given angle.
 
 ---
 
@@ -1058,11 +1078,13 @@ expected state between step 4 and step 5.
 - [ ] Brief written: layout, run log table, checkpoints table, verification lanes
 - [ ] `<agent>/` package created, importing nothing from sutra-ui
 - [ ] `store.py`: run folder layout, atomic writes, `0600` on credentials, data dir resolved per call
-- [ ] `loop.py`: money gate re-reads state, autonomy cap asks rather than kills, approved call runs inline
+- [ ] `loop.py`: checkpoints enforced in code, autonomy cap asks rather than kills, approved call runs inline
+- [ ] System prompt carries memory AND what Knowledge already holds (`{{MEMORY}}`, `{{KNOWLEDGE}}`)
 - [ ] `llm.py`: CLI first, prompt on stdin, no `--bare`, parent session env stripped, transient retries visible
-- [ ] `registry.py`: every tool has a gate and a cost; `for_model()` strips both
+- [ ] `registry.py`: every tool has a plain-English row (does, when, needs, takes); `for_model()` strips the UI-only fields
 - [ ] Tools written, each `run(ctx, **kw) -> dict`, emitting substeps
 - [ ] Prompts in files, none inline
+- [ ] Every page reader (crawl, research, source check) goes through the one fetch helper with the bot-wall fallback
 - [ ] `tests/run_all.sh` green in a throwaway data dir, with the CLI disabled
 - [ ] Routes added; ids validated; secrets returned as booleans; API keys dropped
 - [ ] `test_<agent>_api.py` green, loopback base_url, panel token header

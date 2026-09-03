@@ -159,6 +159,20 @@ run, diff shown.
 
 ---
 
+## What shipped, and how it was verified (2026-09-04, release 2.240.0)
+
+| Lane | Result |
+|---|---|
+| `seo_agent/tests/run_all.sh` | ALL SUITES PASS, eleven suites: store, loop (18, incl. the Knowledge block), registry, behaviour, CLI provider, foundation (14 gates and reconcile checks), index, browser fetch (incl. the write-phase and research fallbacks), brand, research, write phase |
+| `pytest -q` | 708 passed, 21 failed: the same 21 as the baseline in `/tmp/base.txt` (shadow / runtime-state tests that need a live flag). `test_agents_api.py` 16, `test_shell_browser_fetch.py` 8, `test_update_install_guard.py` 14 |
+| Node suites | `test_agents.js` 30; panel 224, nav 46, charter 31, governance 104, connectors 28, provider switch 41, workspace 55, update attach 9, update banner 7, usage 7, three shadow suites green |
+| Live setup, testlify.com, repo backend on :7011 | the site answered every plain request with a Vercel challenge; read through the browser. 11,656 sitemap URLs, 9,792 archive URLs (261 live of 300 probed), settled to 400 pages with text; 1,050 passages embedded with Voyage; brand pack built from the pages: writer brief 2,089 words, 4 personas, 26 flagged stats, features 7,946 words after a failed-then-passed quality gate, 25 CTA pages |
+| Live article, demo mode ($0) | ARTICLE_FACTS |
+| Screenshots, light and dark | fresh hero, ready hero, Knowledge (catalogue, gates, page index and map), brand pack, a brand file, Tools, Connections, the research brief panel, the blueprint panel, the draft panel |
+| Not run here | `qa-shell/run.sh`; a real-account research or article (DataForSEO balance is below zero until topped up) |
+
+The findings from running it are in `seo_agent/HISTORY.md` under "Found by running it, not by reading it (this release)".
+
 ## What shipped, and how it was verified (2026-09-03)
 
 | Lane | Result |

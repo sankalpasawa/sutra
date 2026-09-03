@@ -43,8 +43,37 @@ def _system_prompt():
                      "in this conversation:\n" + "\n".join("- " + r["text"] for r in rules))
 
     return (tpl.replace("{{COMPANY}}", company)
+               .replace("{{KNOWLEDGE}}", _knowledge_block(site))
                .replace("{{VOICE}}", voice_block)
                .replace("{{MEMORY}}", mem_block))
+
+
+def _knowledge_block(site):
+    """What is already on file, so the model never redoes setup that is done. Found live
+    (2026-09-04): a fresh chat re-ran the whole setup because nothing told the model the site
+    was catalogued, embedded and the brand pack built."""
+    lines = []
+    pages = site.get("pages") if isinstance(site, dict) else None
+    if pages:
+        lines.append("- Site catalogue: %s, %d pages, read %s." % (site.get("domain") or "the site", len(pages),
+                                                                   site.get("indexed_at") or "earlier"))
+    else:
+        lines.append("- Site catalogue: NOT built. Ask for the website if you do not have it, then run index_site.")
+    try:
+        from .tools import _index
+        st = _index.status()
+        lines.append("- Page index (meaning): built, %d pages, %d passages." % (st["pages"], st["chunks"])
+                     if st.get("built") else "- Page index (meaning): not built. Run build_page_index (needs a Voyage key).")
+    except Exception:  # noqa: BLE001
+        pass
+    brief = store.knowledge("brand/writer-brief.md")
+    lines.append("- Brand pack: built (writer brief on file)." if isinstance(brief, str) and brief.strip()
+                 else "- Brand pack: not built. Run learn_brand after the site is read.")
+    done = pages and isinstance(brief, str) and brief.strip()
+    tail = ("\nSetup is complete. Do NOT run index_site, build_page_index or learn_brand again unless the user "
+            "asks for a rebuild. Go straight to the article." if done else
+            "\nFinish setup first, in the order above, then the article.")
+    return "## What is already in Knowledge\n\n" + "\n".join(lines) + tail
 
 
 def _run_tool(chat_id, run_id, name, args, step_id=None):

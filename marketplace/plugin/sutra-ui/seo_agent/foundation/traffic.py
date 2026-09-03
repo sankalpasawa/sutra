@@ -125,7 +125,7 @@ def run(site, say, rows, redo_traffic=False):
     if doc:
         say("Joined traffic to the catalogue", "%d of %d pages have search traffic%s"
             % (hit, len(rows), " (demo data)" if doc.get("demo") else ""))
-    meta = {"market": market_label, "ranked_pages": len(per_url), "rows": len((doc or {}).get("rows") or []),
+    meta = {"demo": bool(doc and doc.get("demo")), "market": market_label, "ranked_pages": len(per_url), "rows": len((doc or {}).get("rows") or []),
             "total_count": (doc or {}).get("total_count", 0), "cost_usd": (doc or {}).get("cost_usd", 0.0),
             "demo": bool((doc or {}).get("demo")), "skipped": skipped, "matched_pages": hit}
     return {"per_url": per_url, "top_pages": top_pages, "meta": meta}
