@@ -1132,11 +1132,36 @@ function sessCwd(sid){
    socket URL -- not sent as a later message. Changing it therefore has to drop the
    socket (see setSessCwd), or the label would claim a directory the running process
    is not in. */
+/* The durable chat id, which OUTLIVES any one provider session. Sent on the
+   socket so the server can carry the prior conversation across a switch; absent
+   for a pane that has never switched, which is what keeps the server-side
+   feature additive. */
+function sessSutraId(sid){
+  if (sid && S.sutraId && S.sutraId[sid]) return String(S.sutraId[sid]).trim();
+  return "";
+}
 function claudeWsUrl(sid){
   const base = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/chat";
+  const q = [];
   const cwd = sid ? sessCwd(sid) : "";
-  return cwd ? base + "?cwd=" + encodeURIComponent(cwd) : base;
+  if (cwd) q.push("cwd=" + encodeURIComponent(cwd));
+  /* No provider param. Provider is chosen in Settings and nowhere else
+     (founder direction 2026-09-03), so the server's own resolution IS the
+     answer -- sending one from here could only ever disagree with it. The
+     server still accepts ?provider= and refuses an unrunnable one; nothing in
+     this client sends it. */
+  const sutra = sid ? sessSutraId(sid) : "";
+  if (sutra) q.push("sutra=" + encodeURIComponent(sutra));
+  return q.length ? base + "?" + q.join("&") : base;
 }
+/* Provider is chosen in Settings and nowhere else (founder direction
+   2026-09-03), so there is no per-session setter. setSessProvider used to live
+   here, modelled on setSessCwd: it dropped the socket because the provider is a
+   spawn-time property. That mechanism did not go away -- it moved to the
+   Settings handler in 07-loaders.js, which drops EVERY open chat socket when
+   the default changes, so the next prompt in any pane lands on the new
+   provider. The per-chat override state went with it. */
+
 /* Point this session at a different folder.
    The running agent CANNOT be moved -- its cwd was set by the spawn -- so the open
    socket is closed rather than relabelled. The next message opens a new one in the
@@ -1242,6 +1267,35 @@ function claudeChannel(s, side){
            was typed -- they differ, and echoing the input would misreport the result. */
         S.cwd[s.id] = f.workdir;
       }
+      /* The chat id the server agrees this pane is bound to. Echoed rather than
+         assumed: if the two ever disagree, the server's answer is the one that
+         decides which transcript gets replayed on the next switch. */
+      if (f.sutra_id){ if (!S.sutraId) S.sutraId = {}; S.sutraId[s.id] = f.sutra_id; }
+    } else if (f.type === "chat"){
+      /* The server minted (or resolved) the DURABLE chat id for this pane, once
+         the provider handed back a native session. Storing it is what makes a
+         later provider switch able to carry the conversation: claudeWsUrl sends
+         it as ?sutra= on the next connect, and without it the server has no way
+         to know which transcript to replay.
+
+         This frame exists because the id CANNOT be minted client-side: it is
+         keyed to a provider-native session id that only the server sees. The
+         first version of this feature sent ?sutra= only when the client already
+         knew the id, and nothing produced the first one -- so a provider change
+         swapped the provider and silently carried nothing. */
+      if (f.sutra_id){ if (!S.sutraId) S.sutraId = {}; S.sutraId[s.id] = f.sutra_id; }
+    } else if (f.type === "switch"){
+      /* The provider changed and the prior conversation was (or was not)
+         carried across. NEVER silent: a new provider answering turn 51 as
+         though it were turn 1 is the failure this frame exists to make
+         visible, so a refusal is shown with its reason. */
+      /* switchMarkerHtml renders both outcomes from this one field, including
+         a refusal and its reason. A second copy in S.providerError existed only
+         to feed the composer's note, which went with the composer control --
+         and two places holding the same failure is how one of them goes stale. */
+      if (!S.switchNote) S.switchNote = {};
+      S.switchNote[s.id] = f;
+      scheduleRender();
     } else if (f.type === "session"){
       /* A SIDE channel must never write s.claude_session: that field is what the main
          thread resumes from, and overwriting it with the branch's id would silently

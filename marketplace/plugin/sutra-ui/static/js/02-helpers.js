@@ -308,6 +308,17 @@ const S = {
      the operator never chose in this one. */
   cwd:{},
   cwdEdit:null,        /* sessionId whose folder editor is open, or null */
+  /* No per-session provider override: provider is chosen in Settings and
+     nowhere else (founder direction 2026-09-03). S.provider/providerError were
+     removed with the composer control they served. */
+  /* sessionId -> sutra chat id. The DURABLE chat, which outlives any one
+     provider session: a chat that has run on Claude and then DeepSeek has two
+     native session ids and one of these. Learned from the server's provider
+     frame rather than minted here, so the two cannot disagree. */
+  sutraId:{},
+  /* sessionId -> the last switch frame the server sent, so the thread can show
+     a marker at the point the provider changed (or say why it did not). */
+  switchNote:{},
   /* Per-session actions menu (Feature A). sessMenu = the session id whose menu
      popover is open (one at a time). sessRename = the session id whose inline
      rename input is showing, or null. Pinned/unread/group are localStorage-
@@ -852,8 +863,22 @@ function rowMeta(s){
      subagent liveness fold lands. Only active/running draw — a badge on every
      row would say nothing. */
   const running = sessionBusy(s.id);
-  const badge =
-      (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
+  /* WHICH PROVIDER WROTE THIS TRANSCRIPT. /api/sessions has always returned
+     `source` ("claude" | "deepseek", session_reader.py:124 and :244) and the
+     rail has never rendered it -- so with 30 Claude and 35 DeepSeek sessions on
+     this machine the list showed 65 indistinguishable rows. Not a livedot:
+     those mean "something is happening right now", and this is a property of
+     the file, so it gets its own quiet tag.
+
+     Both providers are labelled rather than only the non-default. There is no
+     default to be the exception to -- the two are near evenly split -- and
+     labelling one silently implies the other. */
+  const prov = s.source
+    ? `<span class="provtag ${esc(s.source)}"
+         title="This transcript was written by ${esc(s.source)}">${esc(s.source)}</span>`
+    : "";
+  const badge = prov
+    + (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
     + (!running && s.live === "active"
          ? `<span class="livedot" title="Being written right now in Claude">live</span>` : "")
     + (s.agents_live ? `<span class="livedot" title="Subagent transcripts being written right now"

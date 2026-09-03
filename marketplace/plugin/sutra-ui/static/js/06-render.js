@@ -279,9 +279,11 @@ function sessionPane(s){
         <button class="attx" type="button" data-attrm="${s.id}:${i}"
                 aria-label="Remove ${esc(a.name)}">&times;</button></span>`).join("")}
     </div>` : ""}
+    ${switchMarkerHtml(s.id)}
     ${permConfirmHtml()}
     ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
     ${cwdEditorHtml(s.id)}
+    ${providerSwitcherHtml(s.id)}
     ${prFormHtml(s.id)}
     ${prListHtml(s.id)}
     <div class="pc">

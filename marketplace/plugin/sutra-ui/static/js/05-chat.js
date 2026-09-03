@@ -540,13 +540,16 @@ SCREENS.settings = () => {
   return `
     ${banner}
     ${upd}
-    ${fold("set.prov", "Provider", esc(active||"none runnable"), `
-      <p style="margin-bottom:9px">Which AI CLI this panel drives. A provider is offered only when
+    ${fold("set.prov", "Default provider", esc(active||"none runnable"), `
+      <p style="margin-bottom:9px">The provider <b>new chats start on</b>. A chat can be switched to
+        the other one from its own composer, and that choice stays in that chat — changing this does
+        not move a conversation that is already running somewhere else.</p>
+      <p style="margin-bottom:9px">A provider is offered only when
         its binary is on PATH, it has a config directory, <i>and</i> this build has an adapter for it;
         the others stay listed, disabled, with the exact reason — so "can I use this one?" is answered
         here rather than by a chat that fails later. Installing a CLI is not enough on its own:
         the chat channel speaks Claude's stream-json protocol.</p>
-      <div role="radiogroup" aria-label="Provider">${PROVIDERS.map(provRow).join("")}</div>
+      <div role="radiogroup" aria-label="Default provider">${PROVIDERS.map(provRow).join("")}</div>
       <div class="kv"><b>Resolved via</b><span>${esc(st.provider_source||"—")}${
         st.provider_stored?` · stored <code>${esc(st.provider_stored)}</code>`:""}</span></div>
       ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-bottom:0">
@@ -800,6 +803,88 @@ function cwdButtonHtml(sid){
         <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
       <span class="cwdn">${esc(cwdLabel(eff))}</span>
     </button>`;
+}
+/* ── AI provider, in the composer ────────────────────────────────────────────
+   Same argument as the folder control above: the provider is a property of the
+   turn you are about to send, and two sessions can legitimately want two
+   different ones. It sits here rather than only in Settings because Settings is
+   GLOBAL -- picking DeepSeek there moved every pane at once, which is not what
+   an operator who ran out of Claude credits in ONE chat is asking for.
+
+   Only providers this machine can actually run are offered. PROVIDERS carries
+   `runnable` from the server (installed AND configured AND this build has an
+   adapter), and offering a name that cannot start is the exact failure
+   providers.py was written to prevent. */
+function providerLabel(pid){
+  const p = (PROVIDERS || []).find(x => x.id === pid);
+  return p ? p.name : (pid || "default");
+}
+function providerSwitcherHtml(sid){
+  const usable = (PROVIDERS || []).filter(p => p.runnable);
+  /* NOTHING TO SAY when the machine can only run one thing. A one-item row
+     would imply a choice that does not exist, and naming the only possible
+     answer to "which provider?" is noise on every turn. */
+  if (usable.length < 2) return "";
+  /* READ-ONLY (founder direction 2026-09-03). Provider is chosen in Settings
+     and nowhere else, so this is an INDICATOR, not a control: no buttons, no
+     handlers, nothing focusable. It exists only because with two runnable
+     providers the answer to "which one am I talking to?" stops being obvious,
+     and a chat that will not say is worse than one that cannot be changed here.
+
+     Reported from the SERVER's provider frame, never from a local preference:
+     the frame is what the socket actually resolved at spawn, and the Settings
+     default can have changed since. Saying what is RUNNING is the only claim
+     this row can make honestly. */
+  const sess = (S.sessions || []).find(x => x.id === sid) || {};
+  const running = ((sess.channel || {}).id) || "";
+  if (!running) return "";        /* nothing spawned yet: no answer to give */
+  const dflt = ((SETTINGS || {}).provider) || "";
+  /* Settings changed under a live socket. The next prompt will open a new one
+     on the new provider (see the Settings handler, which drops the sockets), so
+     this states both facts rather than picking one and being half right. */
+  const pending = dflt && dflt !== running
+    ? `<span class="provpend">next message uses ${esc(providerLabel(dflt))}</span>` : "";
+  return `<div class="provrow" role="status" aria-label="AI provider">
+      <span class="provnow" title="Chosen in Settings">${esc(providerLabel(running))}</span>
+      ${pending}
+    </div>`;
+}
+/* providerOverridesHtml lived here. It listed the chats whose provider
+   differed from the Settings default -- necessary while a chat could be
+   switched from its own composer, and dead the moment selection moved to
+   Settings only (founder direction 2026-09-03): with no per-chat control there
+   are no overrides to disclose. The composer's read-only row reports what a
+   pane is actually running, which is the only divergence that can still
+   happen (a live socket outlasting a Settings change). */
+
+/* The marker the thread shows where the provider changed. Honest in both
+   directions: a switch that carried the conversation says how much of it moved,
+   and one that did not says why -- because a new provider answering turn 51 as
+   though it were turn 1 is the failure this marker exists to make visible. */
+function switchMarkerHtml(sid){
+  const f = (S.switchNote || {})[sid];
+  if (!f) return "";
+  if (!f.ok){
+    return `<div class="swmark bad" role="status">
+        <b>Provider changed to ${esc(providerLabel(f.target))}, but the earlier
+        conversation was NOT carried over.</b>
+        <span>${esc(f.detail || f.reason || "")}</span>
+        <span class="swhint">This turn ran without the earlier history.</span>
+      </div>`;
+  }
+  const dropped = Object.keys(f.dropped || {}).length
+    ? " · left out: " + Object.entries(f.dropped)
+        .map(([k, v]) => v + " " + k.replace(/_/g, " ")).join(", ")
+    : "";
+  const red = f.redactions
+    ? " · " + f.redactions + " credential" + (f.redactions === 1 ? "" : "s") + " redacted"
+    : "";
+  return `<div class="swmark" role="status">
+      <b>${esc(providerLabel(f.source))} → ${esc(providerLabel(f.target))}</b>
+      <span>turns 1–${esc(String(f.from_turn))} carried over${
+        f.tier === 2 ? " (conversation only — tool output left on disk for it to read)" : ""
+      }${esc(dropped)}${esc(red)}</span>
+    </div>`;
 }
 function cwdEditorHtml(sid){
   if (S.cwdEdit !== sid) return "";
