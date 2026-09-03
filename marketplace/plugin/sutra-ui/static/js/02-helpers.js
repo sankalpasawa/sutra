@@ -646,11 +646,10 @@ function railSpec(){
          org. The count is the ACTIVE window's percentage -- the one number worth
          seeing without opening anything -- and is withheld until the screen has
          been read, like Git's, so the rail never asserts a figure nobody fetched. */
+      /* Provider-aware since 2026-09-03: a percentage here while DeepSeek is
+         selected describes a plan the panel is not using. See providerUsage. */
       {id:"usage",    n:"Usage",     i:"usage",
-       c:(S.usage && S.usage.available
-            ? Math.round(((S.usage.limits||[]).find(r=>r.active)
-                          || (S.usage.limits||[])[0] || {}).percent ?? NaN) || undefined
-            : undefined)},
+       c:((providerUsage() || {}).short) ?? undefined},
       /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
          anyway. It shipped as a 19px unlabelled icon in the footer and the first
          operator to use it reported "I don't see terminal": a control nobody can
@@ -848,6 +847,44 @@ function renderPlane(){
       </button></li>`).join("")}</ul>`;
   }).join("");
   setHtmlIfChanged(body, planeHtml);        /* r9: only when it changed */
+}
+
+/* The one usage figure worth showing without opening anything, for WHICHEVER
+   provider is selected.
+
+   Three surfaces render this number -- the rail badge, the footer telemetry
+   line, and the per-pane menu row -- and each of them used to derive Claude's
+   window percentage directly from S.usage. So selecting DeepSeek changed the
+   Usage SCREEN and left three "26%" readings behind it, all of them describing
+   a plan the panel was no longer using. Reported 2026-09-03 with a screenshot:
+   the screen said "USD 1.81" while the rail said 26 and the footer said "26% of
+   the usage window".
+
+   One derivation, three callers. The two providers report different KINDS of
+   fact -- a percentage of a rate-limit window versus a pay-as-you-go balance --
+   so this returns pre-phrased strings per surface rather than a number the
+   callers would have to label themselves and could label inconsistently.
+
+   Returns null when there is nothing true to show yet, which every caller
+   renders as its own kind of blank. That matches the existing rule for Claude:
+   the rail withholds a figure until the screen has been read, so it never
+   asserts a number nobody fetched. */
+function providerUsage(){
+  if (SETTINGS && SETTINGS.provider === "deepseek"){
+    const u = S.deepseekUsage;
+    const bal = u && u.available && (u.balances || [])[0];
+    if (!bal || bal.total_balance == null) return null;
+    const amt = String(bal.total_balance);
+    return { short: "$" + amt,
+             long:  (bal.currency || "USD") + " " + amt + " balance",
+             row:   "$" + amt + " balance" };
+  }
+  const u = S.usage;
+  if (!u || !u.available) return null;
+  const pct = Math.round((((u.limits || []).find(r => r.active)
+                           || (u.limits || [])[0] || {}).percent) ?? NaN);
+  if (!Number.isFinite(pct)) return null;
+  return { short: pct, long: pct + "% of the usage window", row: pct + "% used" };
 }
 
 /* Row metadata, in USER language (founder 2026-08-24: "user-friendly and

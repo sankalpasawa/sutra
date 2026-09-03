@@ -147,7 +147,9 @@ function agentDetailHtml(meta, messages){
    survive unchanged (a select inside a button is invalid HTML -- codex P1). */
 function paneMenuHtml(s){
   if (S.paneMenu !== s.id) return "";
-  const u = S.usage ? usageActive(S.usage) : null;
+  /* The Claude-only `u = usageActive(S.usage)` binding lived here. Its one
+     consumer was the Usage row, which now asks providerUsage() so the row
+     matches the provider actually selected. */
   const row = (key, label, val) => `<button class="mrow" type="button" data-mrow="${key}">
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
   /* role="group", not "menu": the rows are buttons and <label>s, not menuitems,
@@ -172,7 +174,7 @@ function paneMenuHtml(s){
           <option value="${esc(m.id)}" ${(S.model[s.id] ?? ((SETTINGS||{}).model||"")) === m.id ? "selected":""}
           >${esc(m.name)}</option>`).join("")}
       </select></span><span class="ma"></span></label>
-    ${row("usage", "Usage", u ? Math.round(u.percent) + "% used" : "plan usage")}
+    ${row("usage", "Usage", (providerUsage() || {}).row || "plan usage")}
     ${row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
     ${row("fold", "Fold", "collapse this pane")}

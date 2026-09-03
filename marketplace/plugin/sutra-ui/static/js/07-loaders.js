@@ -1221,11 +1221,12 @@ function buildAccentRow(){
 function paintTelemetry(){
   const el = document.getElementById("idStat");
   if (!el) return;
-  const pct = (S.usage && S.usage.available)
-    ? Math.round((((S.usage.limits||[]).find(r=>r.active)
-                   || (S.usage.limits||[])[0] || {}).percent) ?? NaN)
-    : NaN;
-  el.textContent = Number.isFinite(pct) ? pct + "% of the usage window" : "—";
+  /* Provider-aware since 2026-09-03. This line read Claude's window
+     percentage unconditionally, so with DeepSeek selected the footer asserted
+     "26% of the usage window" for a plan the panel was not using -- while the
+     Usage screen two panes away showed a USD balance. */
+  const pu = providerUsage();
+  el.textContent = pu ? pu.long : "—";
 }
 /* ══════════════════════ bootstrap ══════════════════════
    One registry, one org, so there is no scope to settle before reading it.

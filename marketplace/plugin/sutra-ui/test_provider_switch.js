@@ -67,10 +67,11 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 new vm.Script([
+  grab(helpers, "providerUsage"),
   grab(state, "sessCwd"),
   grab(state, "sessSutraId"),
   grab(state, "claudeWsUrl"),
-].join("\n") + "\n;globalThis.__T={sessSutraId,claudeWsUrl};",
+].join("\n") + "\n;globalThis.__T={sessSutraId,claudeWsUrl,providerUsage};",
   { filename: "01-state.js#extract" }).runInContext(sandbox);
 const T = sandbox.__T;
 
@@ -218,6 +219,62 @@ test("the carry-over failure has exactly one home", () => {
   assert(!/S\.providerError\s*=/.test(state),
          "two copies of the same failure is how one goes stale");
   assert(state.includes("S.switchNote"), "the marker's source is gone");
+});
+
+/* ── 5. usage follows the selected provider ─────────────────────────────────
+   Reported 2026-09-03 with a screenshot: the Usage SCREEN showed "USD 1.81"
+   while the rail badge said 26 and the footer said "26% of the usage window".
+   Three surfaces derived Claude's window percentage directly, so they went on
+   describing a plan the panel was no longer using. */
+
+test("claude selected -> the window percentage", () => {
+  sandbox.SETTINGS = { provider: "claude" };
+  sandbox.S.usage = { available: true, limits: [{ active: true, percent: 26.4 }] };
+  const r = T.providerUsage();
+  eq(r.short, 26); eq(r.long, "26% of the usage window"); eq(r.row, "26% used");
+});
+
+test("deepseek selected -> a balance, never a percentage", () => {
+  sandbox.SETTINGS = { provider: "deepseek" };
+  sandbox.S.deepseekUsage = { available: true,
+    balances: [{ currency: "USD", total_balance: "1.81" }] };
+  const r = T.providerUsage();
+  eq(r.short, "$1.81"); eq(r.long, "USD 1.81 balance"); eq(r.row, "$1.81 balance");
+  assert(!String(r.long).includes("%"), "a percentage leaked into the deepseek reading");
+});
+
+test("stale claude usage is ignored when deepseek is selected", () => {
+  // THE REPORTED BUG: falling through to S.usage left three 26% readings behind.
+  sandbox.SETTINGS = { provider: "deepseek" };
+  sandbox.S.usage = { available: true, limits: [{ active: true, percent: 26.4 }] };
+  sandbox.S.deepseekUsage = null;
+  assert(T.providerUsage() === null, "fell back to Claude's percentage");
+});
+
+test("nothing fetched yet -> null, so no surface asserts a number", () => {
+  sandbox.SETTINGS = { provider: "claude" };
+  sandbox.S.usage = null; sandbox.S.deepseekUsage = null;
+  assert(T.providerUsage() === null, "asserted a figure nobody fetched");
+});
+
+test("all three surfaces read the one helper", () => {
+  // A correct helper that two of three callers ignore is the bug unfixed.
+  assert(/c:\(\(providerUsage\(\)/.test(helpers), "the rail badge does not use it");
+  assert(loaders.includes("providerUsage()"), "the footer telemetry does not use it");
+  assert(render.includes("providerUsage()"), "the pane menu row does not use it");
+});
+
+test("the percentage is derived in exactly one place", () => {
+  // providerUsage itself must derive it -- that is its job. What must NOT
+  // happen is a second copy in a rendering surface, which is how the three
+  // readings drifted apart in the first place.
+  const pat = /limits\|\|\[\]\)\.find\(r=>r\.active\)/g;
+  const n = (helpers.replace(/\s/g, "").match(pat) || []).length;
+  eq(n, 1, "the derivation should live only inside providerUsage;");
+  [["footer", loaders], ["pane menu", render]].forEach(([who, src]) => {
+    assert(!pat.test(src.replace(/\s/g, "")),
+           who + " still derives Claude's window percentage directly");
+  });
 });
 
 console.log("\n" + pass + " passed, " + fail + " failed");
