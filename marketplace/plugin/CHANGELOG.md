@@ -1,6 +1,40 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-02
+**status**: active · **updated**: 2026-09-03
+
+## 2.238.0 (2026-09-03)
+
+- **A chat can change which AI answers it, and the conversation comes with it.** Pick a
+  different assistant in Settings and your next message goes to it — carrying every prior
+  turn verbatim, tool calls and their results included, with nothing summarised. The two
+  providers cannot read each other's sessions, so the prior conversation is read out to the
+  new one as its first prompt. A marker in the thread says what was carried and, when
+  something could not be, why: a new assistant answering turn 51 as though it were turn 1 is
+  the failure the whole feature exists to prevent.
+- **The recording is fenced, and the actions in it are past tense.** A replay is mostly file
+  contents and command output that nobody vetted, handed to a model that acts on what it
+  reads. Each transcript is wrapped in a marker carrying a per-switch random nonce, so quoted
+  text cannot close the fence and speak with the prompt's authority; the payload is refused
+  outright if that boundary cannot be guaranteed. Tool calls are rendered as already executed,
+  so the receiving assistant reads a record rather than a plan and does not re-apply an edit
+  the disk already has.
+- **Credentials are stripped on the way out, and the strip is auditable.** Twelve credential
+  shapes — keys, tokens, JWTs, private keys, webhooks, database URLs — are redacted before
+  anything leaves the machine. Because that happens silently, every switch appends a row
+  recording which SHAPES matched and how many, never the values: a log holding what it caught
+  would be a second copy of every secret.
+- **Settings is where the assistant is chosen, and it says so in plain words.** "Settings ›
+  Preferences › Settings" is now "Settings › System › AI Assistant" — the old row repeated its
+  parent and named a group that held one thing. "Which AI CLI this panel drives … binary on
+  PATH, config directory, adapter, stream-json protocol" is now "Which AI answers your
+  messages", and a provider that cannot run says "Not installed on this Mac" before it says
+  anything technical. Workdir is Project folder.
+- **Usage follows the assistant you picked.** DeepSeek is pay-as-you-go, so it reports a
+  balance where Claude reports a percentage of a rate-limit window. Usage now renders inside
+  the AI Assistant screen rather than across the app, and the rail badge, the footer meter and
+  the per-chat menu all read the same figure — they had each been deriving Claude's percentage
+  directly, so selecting DeepSeek left three readings describing a plan the panel was no
+  longer using.
 
 ## 2.237.1 (2026-09-02)
 
