@@ -1172,11 +1172,42 @@ _SHADOW = {"session": None}
 _SHADOW_LOCK = asyncio.Lock()   # boot + turn serialization (codex P2 fold)
 
 
+#: Providers the Shadow path can actually drive. NOT providers.ADAPTERS: that
+#: set answers "can a CHAT PANE run this", and a pane has two transports
+#: (SessionRuntime for Claude, AcpRuntime for DeepSeek) selected by ws_chat.
+#: Shadow has one -- build_agent_args + SessionRuntime + demux_turn -- so its
+#: answer is narrower. Adding an id here without building the transport for it
+#: is exactly the bug the guard below closes.
+SHADOW_PROVIDERS = frozenset({"claude"})
+
+
 def _shadow_args():
     detail = providers.active_provider_detail()
     prov = providers.provider_by_id(detail["id"]) if detail["id"] else None
     if not prov or not prov.get("bin_path"):
         raise HTTPException(503, "no usable provider for Shadow")
+    # REFUSE, rather than hand another vendor's CLI Claude's flags (2026-09-03).
+    # This resolved the ACTIVE provider's binary and then unconditionally built
+    # Claude's argv below (-p, --input-format stream-json, --permission-mode
+    # plan). With `provider: deepseek` selected, Shadow's own boot AND every
+    # delegate spawn ran `deepseek -p --input-format stream-json ...`, which
+    # that CLI rejects at its argv parser -- surfacing as "shadow could not
+    # boot" / "delegate session failed to boot" with a parse error attached.
+    # The operator reads that as a broken Shadow; nothing in it points at the
+    # provider selector, which is the one thing that would fix it.
+    #
+    # ws_chat has branched on active_id since the ACP wiring; this path never
+    # did. SHORT-TERM ON PURPOSE: the honest refusal is not the ACP delegate
+    # path. That is separate work -- AcpRuntime + session/new (plan mode is a
+    # session mode there, not a flag) + DEEPSEEK_API_KEY in the spawn env + a
+    # prompt_turn pump in shadow_runner.spawn_delegate_session, whose Claude
+    # path test_shadow_delegate.py now pins. When it lands, it replaces this.
+    if prov["id"] not in SHADOW_PROVIDERS:
+        raise HTTPException(503,
+            "Shadow and its delegates run on Claude only in this build; the "
+            "active provider is %r (%s). Switch to Claude to use Shadow -- "
+            "chat panes still run %s." % (prov["id"], prov["name"],
+                                          prov["name"]))
     return build_agent_args(prov["bin_path"], "", "plan", stream_input=True)
 
 
