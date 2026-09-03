@@ -5,6 +5,9 @@ Repo: `sankalpasawa/sutra`, `marketplace/plugin/sutra-ui`
 Reference surfaces: Unify GTM (the run log, the checkpoint cards, the review panel),
 Dust (the agent list), Sutra's own chat surface (bubbles, tool rows, composer).
 
+Building a SECOND agent: `NEW-AGENT-plan.md` is the recipe extracted from this
+one, and `NEW-AGENT-plain.md` is the same recipe in plain English.
+
 ---
 
 ## What ships
