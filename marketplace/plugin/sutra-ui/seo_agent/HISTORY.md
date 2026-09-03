@@ -141,6 +141,10 @@ is the build contract every layer followed.
 8. Demo traffic names made-up pages, so the catalogue's traffic cross-check "failed" on every demo run. It now says "not checked: demo traffic" instead.
 9. The demo article run (no DataForSEO login) proved the whole chain end to end at $0: research → brief checkpoint → blueprint checkpoint → draft. The blueprint filter dropped 307 of 327 cards, and that was right: every dropped card was demo text from the fake ranking pages, and the 20 kept were real Testlify passages. The agent then noticed on its own that the blueprint had no formula section and asked before the long write, which is the kind of question it should ask.
 10. The write phase's source check and the research page reader still fetched with a plain client, so on the walled site every own-page source "could not be read". Both now recognise the challenge and read through the browser like the crawl does. And the brand-cards step said the file was "not on file" when it was on file but empty (no confirmed story, no research report); it now says which.
+11. The readable rewrite was asked for about 2,100 words and returned 2,899; the assembled draft came in at 3,100 against a 2,200 to 2,800 band, and the report says so. The pass is ported as it was; the length drift is the original's, not a porting slip, and is worth a tighter prompt later.
+12. The FAQ answers the wrapper writes can carry general-knowledge numbers (an agency fee range, for one) that no card supports. The body's numbers are source-checked; the wrapper's are not. Listed under "Not done".
+13. The agent closed the demo run with "Saved. It's in the Library" and the Library was empty: saving was a button, and the model narrated a step it never took. Approving the draft now saves it in code (`loop.save_to_library`, the same function the button calls), the run log gets a `saved_to_library` row, the model only learns of it from the tool result, and the item is titled from the draft's own H1 rather than the blueprint's. Loop suite +6.
+14. A fresh chat on the finished site went straight to research, no setup re-run, once the Knowledge block was in the prompt (checked live after the restart).
 
 ### Not done, and said so
 
@@ -149,3 +153,4 @@ is the build contract every layer followed.
 - Voices from the field (Reddit/Blind/LinkedIn per article) is not ported.
 - The ranked net (s1b) needs the asset engine's vetted competitor URLs, which this agent does not have.
 - The bundled app has no Playwright; it uses the shell's window. A source checkout without Playwright says plainly that a challenged site needs the app.
+- The wrapper's FAQ and close are not run through the source check, so a number there can be unsupported. The body is checked; the wrapper is the next place to check.

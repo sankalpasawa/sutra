@@ -31,6 +31,8 @@
 - **A fresh chat knows what is already done.** The agent is told what Knowledge holds (catalogue,
   page index, brand pack) so it goes straight to the article instead of re-running setup. The
   source check and the research page reader read walled sites through the browser too.
+- **Approving the draft saves it.** The Library entry is written by the app the moment you
+  approve, titled from the article's own H1; the agent can no longer say "saved" before it is.
 - **Tools in plain English.** What each does, when it runs, what it needs, how long.
 - Engine: `sutra-ui/seo_agent/` gains `foundation/`, `brand/`, `research/`, `write/`, the
   Voyage index (`tools/_index.py`, `tools/voyage.py`) and the browser client

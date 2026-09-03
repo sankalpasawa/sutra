@@ -359,12 +359,52 @@ def resume(chat_id, run_id, answer):
                 text = art if isinstance(art, str) else json.dumps(art, ensure_ascii=False)
                 content["artifact"] = art if len(text) <= 24000 else (
                     text[:24000] + "\n... (truncated; the file on disk is complete)")
+            saved = _save_if_draft_approved(chat_id, run_id, w, answer)
+            if saved:
+                content["saved_to_library"] = saved
+                content["artifact"] = "(the approved draft; it is now in the Library as '%s')" % saved["title"]
         messages.append({"role": "user", "content": [{
             "type": "tool_result", "tool_use_id": call_id, "content": content}]})
 
     store.save_messages(chat_id, messages)
     store.patch_state(chat_id, run_id, status="running", waiting_on=None)
     return step(chat_id, run_id)
+
+
+def save_to_library(chat_id, run_id, title=None):
+    """Save the run's draft to the Library and say so in the run log. The one place this
+    happens: the publish route and the draft approval both call it. Returns
+    {"item_id", "title"} or None when there is no draft yet."""
+    draft = store.load_artifact(chat_id, run_id, "draft.md")
+    if not draft:
+        return None
+    bp = store.load_artifact(chat_id, run_id, "blueprint.json") or {}
+    rs = store.load_artifact(chat_id, run_id, "research.json") or {}
+    state = store.get_state(chat_id, run_id) or {}
+    h1 = next((ln[2:].strip() for ln in draft.splitlines() if ln.startswith("# ")), "")
+    # the draft's own H1 first: the heading pass rewrites it after the blueprint was approved
+    title = (title or h1 or bp.get("h1") or bp.get("title") or state.get("topic") or "Untitled").strip()[:120]
+    kw = rs.get("keywords") or {}
+    primary = kw.get("primary") or rs.get("primary_keyword") or {}
+    item = store.library_save(chat_id, run_id, title, draft, {
+        "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary)})
+    store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
+    return {"item_id": item, "title": title}
+
+
+def _save_if_draft_approved(chat_id, run_id, waiting, answer):
+    """Approving the draft IS saving it. Found live (2026-09-04): the model announced
+    "Saved. It's in the Library" after an approval that saved nothing, because the save
+    was a button. Now the loop saves, and the model only learns of it from the result."""
+    if not isinstance(answer, dict) or answer.get("approved") is not True:
+        return None
+    if (waiting or {}).get("view") != "article" and (waiting or {}).get("artifact") != "draft.md":
+        return None
+    try:
+        return save_to_library(chat_id, run_id)
+    except Exception as e:  # noqa: BLE001 — a failed save must never lose the approval
+        store.emit(chat_id, run_id, "note", text="Could not save to the Library: %s" % str(e)[:160])
+        return None
 
 
 def _answer_summary(answer):

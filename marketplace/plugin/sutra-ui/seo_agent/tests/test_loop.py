@@ -95,6 +95,23 @@ ok("with the brief on file it says setup is complete", "Setup is complete. Do NO
 ok("the system prompt carries the block", "## What is already in Knowledge" in loop._system_prompt() and "{{KNOWLEDGE}}" not in loop._system_prompt())
 if not had_brief: store.save_knowledge("brand/writer-brief.md", "")
 
+# approving the draft saves it to the Library in code; anything else saves nothing
+c3 = store.new_chat("library test"); r3 = store.new_run(c3, "cost per hire")
+ok("no draft, nothing to save", loop.save_to_library(c3, r3) is None)
+store.save_artifact(c3, r3, "draft.md", "# Cost Per Hire: The Formula\n\nBody text.")
+store.save_artifact(c3, r3, "blueprint.json", {"h1": "Cost per hire"})
+store.save_artifact(c3, r3, "research.json", {"keywords": {"primary": {"keyword": "cost per hire"}}})
+before_lib = len(store.library_list())
+ok("asking for changes does not save", loop._save_if_draft_approved(c3, r3, {"view": "article", "artifact": "draft.md"}, {"approved": False, "changes": "shorter"}) is None
+   and len(store.library_list()) == before_lib)
+ok("approving the brief does not save", loop._save_if_draft_approved(c3, r3, {"view": "research_brief", "artifact": "research.json"}, {"approved": True}) is None)
+saved = loop._save_if_draft_approved(c3, r3, {"view": "article", "artifact": "draft.md"}, {"approved": True})
+ok("approving the draft saves it, titled from the draft's own H1", saved and saved["title"] == "Cost Per Hire: The Formula" and len(store.library_list()) == before_lib + 1, saved)
+item = next((i for i in store.library_list() if i.get("id", i.get("item_id")) == saved["item_id"]), None) or {}
+ok("the library row carries the primary keyword", (item.get("primary_keyword") or item.get("meta", {}).get("primary_keyword")) == "cost per hire", item)
+ok("the run log says it was saved", any(e["type"] == "saved_to_library" and e.get("title") == saved["title"] for e in store.get_events(c3, r3)))
+shutil.rmtree(store.chat_dir(c3))
+
 print("\nevents in run 1:", evs)
 shutil.rmtree(store.chat_dir(c)); shutil.rmtree(store.chat_dir(c2))
 
@@ -102,4 +119,4 @@ print()
 if FAILS:
     print("%d FAILED: %s" % (len(FAILS), ", ".join(FAILS)))
     sys.exit(1)
-print("all %d checks passed" % 18)
+print("all %d checks passed" % 24)

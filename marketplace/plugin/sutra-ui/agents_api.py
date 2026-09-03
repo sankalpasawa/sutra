@@ -311,19 +311,10 @@ def api_publish(chat_id: str, run_id: str, body: dict = Body(default={})):
     """'Publish' means: save to the Library. Nothing leaves this machine."""
     if not _ok_id(chat_id, run_id):
         return _bad("bad id")
-    draft = store.load_artifact(chat_id, run_id, "draft.md")
-    if not draft:
+    saved = loop.save_to_library(chat_id, run_id, title=body.get("title"))
+    if not saved:
         return _bad("There is no draft to save yet.", 404)
-    bp = store.load_artifact(chat_id, run_id, "blueprint.json") or {}
-    rs = store.load_artifact(chat_id, run_id, "research.json") or {}
-    state = store.get_state(chat_id, run_id) or {}
-    title = (body.get("title") or bp.get("h1") or bp.get("title") or state.get("topic") or "Untitled").strip()[:120]
-    kw = rs.get("keywords") or {}
-    primary = (kw.get("primary") or rs.get("primary_keyword") or {})
-    item = store.library_save(chat_id, run_id, title, draft, {
-        "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary)})
-    store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
-    return {"ok": True, "item_id": item, "title": title}
+    return {"ok": True, "item_id": saved["item_id"], "title": saved["title"]}
 
 
 # ---- knowledge / memory / connections / tools ----------------------------------------------
