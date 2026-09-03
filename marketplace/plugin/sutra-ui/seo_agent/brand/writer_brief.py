@@ -159,7 +159,7 @@ def assemble(co, sections, say):
     kept = _kept_block(sections)
     draft = cm.strip_fence(llm.text(cm.fill(cm.prompt("assemble-brief"), brand=co["brand"],
                                              niche=co.get("niche_definition") or "", kept=kept,
-                                             rulings=rulings(co, say), template=cm.template("writer-brief"))))
+                                             rulings=rulings(co, say), template=cm.template("writer-brief")), timeout=llm.LONG_TIMEOUT))
     cm.save(OUTPUT, draft)
     # Search the WHOLE normalised brief, not a set of output atoms: the brief is allowed to reformat a
     # bullet into a table cell, and an atom-to-atom compare called every such reformat a loss.

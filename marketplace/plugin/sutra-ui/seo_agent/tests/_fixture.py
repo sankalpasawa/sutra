@@ -122,7 +122,7 @@ def setup():
 
 # ---- the model stubs -----------------------------------------------------------------
 
-def stub_json(prompt, system=None, retries=1):
+def stub_json(prompt, system=None, retries=1, **kw):
     """Match on the literal output keys each prompt asks for. That is the only reliable
     signal, because prompts share vocabulary but never share their output shape."""
     p = prompt
@@ -183,7 +183,7 @@ def stub_json(prompt, system=None, retries=1):
             "examples": ["We teach by doing.", "The classroom is the boardroom."]}
 
 
-def stub_text(prompt, system=None):
+def stub_text(prompt, system=None, **kw):
     """Long enough that a written section looks like a real one."""
     w = stub_write_text(prompt)
     if w is not None:

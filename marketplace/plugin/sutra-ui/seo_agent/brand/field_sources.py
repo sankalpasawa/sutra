@@ -69,8 +69,13 @@ def probe(sub):
     u = ("https://old.reddit.com/r/%s/search?q=%s&restrict_sr=on&sort=top&t=year"
          % (urllib.parse.quote(sub), urllib.parse.quote(QUERY)))
     page = fetch(u)
-    if page is None or "search-result" not in page:
-        return None                                   # blocked, private, or genuinely gone: cannot tell
+    # Reddit now answers an anonymous search with a redirect to its login page (reason=lor2), and
+    # that page happens to contain the string "search-result" once, so it used to read as "zero
+    # posts" and every real community was dropped (measured 2026-09-04: r/recruiting, 0 of 18 kept).
+    # A login page, a block, or no results markup at all is UNKNOWN, never empty.
+    if page is None or "search-result-link" not in page or "<title>Welcome to Reddit" in page \
+            or "reason=lor2" in page or 'id="login-form"' in page:
+        return None                                   # blocked, login-walled, private, or gone: cannot tell
     hits = _RESULT.findall(page)
     return len(hits), sum(int(c.replace(",", "")) for _, c in hits)
 

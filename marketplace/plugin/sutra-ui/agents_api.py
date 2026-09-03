@@ -203,7 +203,15 @@ def _brand_pack():
     """The brand pack as the screen shows it: one row per file, with review flags."""
     try:
         from seo_agent.brand import pack
-        return pack.summary()
+        out = pack.summary()
+        # the company record is built by the crawler, not a brand builder, so the pack does not
+        # list it; the screen shows it as a file all the same
+        if not any(f.get("name") == "company.json" for f in out.get("files", [])):
+            rec = store.knowledge("brand/company.json")
+            out.setdefault("files", []).insert(0, {"name": "company.json", "exists": bool(rec),
+                                                   "words": len(__import__("json").dumps(rec or {}).split()),
+                                                   "flags": 0 if (rec or {}).get("brand_oneliner") else 1})
+        return out
     except Exception:  # noqa: BLE001 -- the builder may not be installed yet; list what is on disk
         files = []
         for name in store.list_knowledge("brand"):

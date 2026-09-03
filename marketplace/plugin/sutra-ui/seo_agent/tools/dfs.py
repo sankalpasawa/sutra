@@ -301,11 +301,28 @@ def ranked_keywords_bulk(domain, location_name, language_code, limit=1000, max_r
     location_name, language_code = market(location_name, language_code)
     limit = max(1, _int(limit, 1000))
     rows, offset, total, cost = [], 0, None, 0.0
+    partial = None
     while True:
         task = {"target": bare_domain(domain), "location_name": location_name,
                 "language_code": language_code, "limit": limit, "offset": offset,
                 "order_by": ["ranked_serp_element.serp_item.etv,desc"]}
-        t, result = _task(post("/dataforseo_labs/google/ranked_keywords/live", [task]))
+        # Every page is paid for. A refusal mid-pull (402: out of balance) must not throw
+        # away the pages already bought: measured 2026-09-04, a $0.72 balance bought five
+        # pages, the sixth was refused, and the whole pull was discarded. Keep what we have,
+        # say it is partial, and let the caller join it.
+        if rows:
+            bal = balance()
+            if bal is not None and bal < BULK_PAGE_FLOOR:
+                partial = "stopped at %d of %d rows to keep the balance above $%.2f (it is $%.2f)" % (
+                    len(rows), total or 0, BULK_PAGE_FLOOR, bal)
+                break
+        try:
+            t, result = _task(post("/dataforseo_labs/google/ranked_keywords/live", [task]))
+        except Exception as e:  # noqa: BLE001 -- 402, a timeout, a 5xx: the rows so far are still paid for
+            if not rows:
+                raise
+            partial = "stopped at %d of %d rows: %s" % (len(rows), total or 0, str(e)[:140])
+            break
         cost += float(t.get("cost") or 0)
         if total is None:
             total = _int(result.get("total_count"), 0)
@@ -321,7 +338,15 @@ def ranked_keywords_bulk(domain, location_name, language_code, limit=1000, max_r
         offset += limit
         if offset >= total or not items or offset >= max_rows:
             break
-    return {"rows": rows, "total_count": total or 0, "cost_usd": round(cost, 4)}
+    out = {"rows": rows, "total_count": total or 0, "cost_usd": round(cost, 4)}
+    if partial:
+        out["partial"] = partial
+    return out
+
+
+# A page of 1,000 ranked rows costs about $0.11 on DataForSEO Labs. Stop paging when the
+# balance would not cover another one, so a pull never drives the account negative.
+BULK_PAGE_FLOOR = 0.15
 
 
 def _demo_ranked_bulk(domain, limit):

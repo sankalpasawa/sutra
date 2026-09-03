@@ -198,7 +198,7 @@ def assemble(co, rows, say, redo_notes=""):
                 oneliner=co.get("brand_oneliner") or "", schema=cm.template("brand-voice-schema"),
                 mapping=cm.template("brand-voice-mapping"), evidence=_evidence_block(rows),
                 redo_notes=("\nREDO NOTES from the last quality gate (fix these specifically):\n%s\n" % redo_notes) if redo_notes else "")
-    draft = cm.strip_fence(llm.text(p))
+    draft = cm.strip_fence(llm.text(p, timeout=llm.LONG_TIMEOUT))   # a whole document in one call
     cm.save(OUTPUT, draft)
     say("Assembled brand-voice.md", "%d words%s" % (cm.words(draft), " (rebuilt with the gate's notes)" if redo_notes else ""))
     return draft

@@ -1,6 +1,41 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-03
+**status**: active · **updated**: 2026-09-04
+
+## 2.240.0 (2026-09-04)
+
+- **The SEO Writer is now a port of the whole workflow, not a sketch of it.** Setup reads
+  every page of the site the way the workflow's catalogue engine does (CMS API, sitemaps,
+  web archive, crawl, with coverage gates), indexes every page by meaning with Voyage, and
+  builds the brand pack from the site's own pages: voice, style guide, product facts,
+  readers, real numbers, customer stories, brand cards, the pages a call to action may link
+  to, and the writer brief every article follows. You confirm the flagged rows before they
+  are used. Per article it runs the content machine (the world statement, real keyword
+  numbers with the world check, the live results with Google's own answer, the winning
+  pages, evidence with verbatim quotes and sources, the gap check, your own pages found by
+  meaning) and the write phase (planner, architect by format, the writer with its editing
+  passes, internal links laid in by meaning and judged on real page text, sources numbered).
+- **Sites behind a bot wall can be read.** A real customer site answered every plain request
+  with a JavaScript challenge, robots.txt and the sitemap included, and cookies from a
+  browser did not help a plain client. The agent now recognises a challenge and reads that
+  site through a real browser: the app's own hidden window. One request in flight, loopback
+  only, a token per launch. On a developer machine Playwright does the same job.
+- **Knowledge shows what the agent knows.** The company record you can edit, the page
+  catalogue with its coverage gates and a search box, the page index with a map of the
+  pages by meaning, and every brand file, readable and editable in the panel.
+- **No credit talk.** Every step runs when called. Paid steps check the DataForSEO balance
+  first and say plainly when they skipped. Five stages on the bar, five checkpoints: the
+  brand pack once, then the topics, the brief, the plan and the draft.
+- **Memory reaches the work.** A rule you save once is handed to every step that shapes or
+  writes prose, and to the research steps that decide topic and angle.
+- **Tools in plain English.** What each does, when it runs, what it needs, how long.
+- Engine: `sutra-ui/seo_agent/` gains `foundation/`, `brand/`, `research/`, `write/`, the
+  Voyage index (`tools/_index.py`, `tools/voyage.py`) and the browser client
+  (`tools/_browser.py`); 74 prompts ported near-verbatim under `prompts/`. Shell: a
+  loopback fetch service in `electron/main.js`. `requirements.txt` gains `numpy==2.0.2`
+  (wheels for both Mac architectures, and the dev venv's Python 3.9). Suites: engine
+  ALL SUITES PASS (foundation 75, browser 18, brand 140, research 69, write 141 plus the
+  older six); `test_agents.js` 30; `test_agents_api.py` 16; `test_shell_browser_fetch.py` 8.
 
 ## 2.239.1 (2026-09-03)
 

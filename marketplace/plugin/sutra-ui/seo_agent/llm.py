@@ -197,13 +197,13 @@ def _transient(text):
     return any(k in t for k in _TRANSIENT)
 
 
-def _claude_cli(system, messages, tools, binary, model, on_retry=None):
+def _claude_cli(system, messages, tools, binary, model, on_retry=None, timeout=None):
     cmd = _cli_command(binary, system, tools, model)
     prompt = _cli_prompt(messages)
     attempts = 1 + len(CLI_RETRY_SLEEPS)
     for attempt in range(attempts):
         try:
-            return _claude_cli_once(cmd, prompt, binary)
+            return _claude_cli_once(cmd, prompt, binary, timeout)
         except ModelError as e:
             if attempt + 1 < attempts and _transient(str(e)):
                 wait = CLI_RETRY_SLEEPS[attempt]
@@ -220,12 +220,13 @@ def _claude_cli(system, messages, tools, binary, model, on_retry=None):
             raise
 
 
-def _claude_cli_once(cmd, prompt, binary):
+def _claude_cli_once(cmd, prompt, binary, timeout=None):
+    limit = float(timeout or CLI_TIMEOUT)
     try:
         p = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                           timeout=CLI_TIMEOUT, env=_cli_env())
+                           timeout=limit, env=_cli_env())
     except subprocess.TimeoutExpired:
-        raise RuntimeError("Claude CLI gave no answer within %d seconds." % int(CLI_TIMEOUT))
+        raise RuntimeError("Claude CLI gave no answer within %d seconds." % int(limit))
     except OSError as e:
         raise RuntimeError("Could not start the Claude CLI at %s: %s" % (binary, e))
 
@@ -343,19 +344,24 @@ PARALLEL = int(os.environ.get("SEO_AGENT_PARALLEL", "3"))   # concurrent CLI cal
 _GATE = _threading.BoundedSemaphore(PARALLEL)
 
 
-def call(system, messages, tools=None, model=None, on_retry=None):
+LONG_TIMEOUT = 1200.0        # a whole document in one call (a brand file, a full-article edit)
+
+
+def call(system, messages, tools=None, model=None, on_retry=None, timeout=None):
+    """timeout: seconds for this one call. Whole-document calls pass LONG_TIMEOUT; the
+    default CLI_TIMEOUT is for a turn or a section. Per call, never a global swap."""
     with _GATE:
-        return _call(system, messages, tools, model, on_retry)
+        return _call(system, messages, tools, model, on_retry, timeout)
 
 
-def _call(system, messages, tools=None, model=None, on_retry=None):
+def _call(system, messages, tools=None, model=None, on_retry=None, timeout=None):
     """on_retry(message) is called before each retry of a transient CLI error, so the
     caller can put a line in the run log instead of leaving the user staring at a spinner."""
     binary = cli_bin()
     if binary:
         return _claude_cli(system, messages, tools, binary,
                            model or os.environ.get("SEO_AGENT_MODEL", "").strip() or None,
-                           on_retry=on_retry)
+                           on_retry=on_retry, timeout=timeout)
     a, o = _keys()
     if a:
         return _anthropic(system, messages, tools, a, model or ANTHROPIC_MODEL)
@@ -364,15 +370,15 @@ def _call(system, messages, tools=None, model=None, on_retry=None):
     raise NoKey("No model available. Install the Claude CLI or add a key in Connections.")
 
 
-def text(prompt, system="You are a precise assistant. Answer with only what was asked."):
+def text(prompt, system="You are a precise assistant. Answer with only what was asked.", timeout=None):
     """One-shot text. Used inside tools, where no tool-calling is needed."""
-    return call(system, [{"role": "user", "content": prompt}])["text"]
+    return call(system, [{"role": "user", "content": prompt}], timeout=timeout)["text"]
 
 
-def json_call(prompt, system="Reply with valid JSON only. No prose, no code fences.", retries=1):
+def json_call(prompt, system="Reply with valid JSON only. No prose, no code fences.", retries=1, timeout=None):
     """One-shot JSON, with a tolerant extractor and one retry on a parse failure."""
     for attempt in range(retries + 1):
-        raw = text(prompt, system)
+        raw = text(prompt, system, timeout=timeout)
         cleaned = raw.strip()
         if cleaned.startswith("```"):
             cleaned = cleaned.split("```")[1]

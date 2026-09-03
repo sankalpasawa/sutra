@@ -27,6 +27,7 @@ lane-1 backing is screenshot archaeology.
 4. .venv/bin/python -m pytest -q # backend — collect ALL test_*.py; never a hand-typed file list (two of the old names were removed and pytest silently reported 0)
                                   # (conftest.py excludes seo_agent/, whose scripts sys.exit at import; test_agents_api.py covers the routes)
 4b. bash seo_agent/tests/run_all.sh   # the SEO Writer engine's own checks, in a throwaway data dir
+                                  # (2.240.0: eleven suites incl. foundation, browser, brand, research, write; test_shell_browser_fetch.py is collected by step 4)
 5. QA_BACKEND=repo PLAYWRIGHT=<path> bash qa-shell/run.sh   # BOTH lanes, repo code in the REAL shell (see Bundled builds)
 
 All lanes in ONE quiesce/relaunch (codex fold 2026-08-26 — the shell,

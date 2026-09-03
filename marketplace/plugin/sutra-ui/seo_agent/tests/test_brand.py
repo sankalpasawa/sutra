@@ -20,14 +20,14 @@ CALLS = {"json": 0, "text": 0}
 UNFILLED = []          # any prompt that still carries a {{TOKEN}} when it reaches the model
 
 
-def _json(prompt, system=None, retries=1):
+def _json(prompt, system=None, retries=1, **kw):
     CALLS["json"] += 1
     if "{{" in prompt:
         UNFILLED.append(prompt[:80])
     return _fixture.stub_json(prompt, system, retries)
 
 
-def _text(prompt, system=None):
+def _text(prompt, system=None, **kw):
     CALLS["text"] += 1
     if "{{" in prompt:
         UNFILLED.append(prompt[:80])

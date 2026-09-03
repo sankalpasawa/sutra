@@ -350,3 +350,8 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
   .ag.haspanel .ag-panel{min-width:300px;width:50%}
   .ag-side{width:200px}
 }
+/* the review panel takes half the row; the brand pack in the Knowledge column drops its blurbs then */
+.ag.haspanel .ag-file .fd{display:none}
+.ag.haspanel .ag-file{align-items:center}
+.ag.haspanel .ag-view.wide{max-width:none}
+.ag.haspanel .ag-form .two{grid-template-columns:1fr}

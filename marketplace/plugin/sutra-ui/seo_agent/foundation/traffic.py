@@ -76,6 +76,9 @@ def _pull(site, say, market):
     doc = {"domain": site["host"], "market": "%s/%s" % (location, language),
            "total_count": res.get("total_count", 0), "cost_usd": res.get("cost_usd", 0.0),
            "rows": res.get("rows") or [], "demo": mode == "demo"}
+    if res.get("partial"):
+        doc["partial"] = res["partial"]
+        say("The traffic pull is partial", res["partial"] + "; the rows bought so far are kept and joined")
     return doc, None
 
 

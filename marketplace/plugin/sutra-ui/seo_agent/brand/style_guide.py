@@ -105,7 +105,7 @@ def fill(co, top, merged, say, redo_notes=""):
                 template=cm.template("style-guide"), analysis=json.dumps(merged, indent=1, ensure_ascii=False),
                 blog_table=blog_table,
                 redo_notes=("\nREVIEWER FINDINGS to fold in (implement each concretely):\n%s\n" % redo_notes) if redo_notes else "")
-    draft = cm.strip_fence(llm.text(p))
+    draft = cm.strip_fence(llm.text(p, timeout=llm.LONG_TIMEOUT))   # a whole document in one call
     cm.save(OUTPUT, draft)
     leftovers = _TAG.findall(draft)
     say("Filled the style guide", "%d words; %d unresolved template tags" % (cm.words(draft), len(leftovers)))

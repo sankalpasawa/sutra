@@ -1,8 +1,17 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-03
+**status**: active · **updated**: 2026-09-04
 
-## v2.239.1 (2026-09-03, HEAD)
+## v2.240.0 (2026-09-04, HEAD)
+
+The SEO Writer becomes a port of the whole SEO workflow: the four-source site catalogue
+with coverage gates, the Voyage page index with a map, the twelve brand builders and the
+writer brief, the content machine's research with the world check and evidence cards,
+and the write phase with its editing passes and internal links laid in by meaning. Sites
+behind a bot challenge are read through the app's own hidden window. No credit stops;
+five checkpoints; memory reaches every writing step; Knowledge shows everything.
+
+## v2.239.1 (2026-09-03)
 
 Sutra now offers to install itself. Opening the app straight out of the DMG
 window works, so nothing ever tells you it was never installed -- and a disk

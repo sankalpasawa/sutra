@@ -644,7 +644,7 @@ function agArticleHtml(md, edit, last, readOnly, extra){
   if (!blocks.length) return `<div class="zero"><h4>Empty draft</h4></div>`;
   extra = extra || {};
   const rep = extra.write || {};
-  const cov = rep.checklist || rep.coverage;
+  const cov = rep.coverage_checklist || rep.checklist || rep.coverage;
   const len = rep.length;
   return `<p class="ag-sub" style="margin:0 0 10px">${agEsc(agNum(agWords(text)))} words${len && len.band_min ? ` · aimed ${agEsc(agNum(len.band_min))}–${agEsc(agNum(len.band_max))}` : ""} · ${blocks.length} blocks${readOnly ? "" : " · hover a paragraph to edit it"}</p>
     ${cov ? agChecksHtml(cov) : last && last.checks ? agChecksHtml(last.checks) : ""}
@@ -807,13 +807,13 @@ function agKnowledgeHtml(k, a){
 
     <h3 class="sec">The site catalogue</h3>
     ${indexed ? `<div class="ag-row"><div class="ri">
-        <div class="rn">${agEsc(idx.domain || "your site")} <span class="pill p-ok">${agEsc(agNum(idx.page_count))} pages</span>${rep.confidence ? `<span class="pill ${/FULL/.test(rep.confidence) ? "p-ok" : "p-warn"}" title="${agEsc(rep.confidence)}">${agEsc(String(rep.confidence).split(" ")[0].toLowerCase())} confidence</span>` : ""}</div>
+        <div class="rn">${agEsc(idx.domain || "your site")} <span class="pill p-ok">${agEsc(agNum(idx.page_count))} pages</span>${rep.confidence ? `<span class="pill ${/^full/i.test(rep.confidence) ? "p-ok" : "p-warn"}" title="${agEsc(rep.confidence)}">${agEsc(String(rep.confidence).split(/[:\s(]/)[0].toLowerCase())} confidence</span>` : ""}</div>
         <div class="rd">${agEsc(agNum(idx.ranking_pages))} pages rank for something · ${agEsc(agNum(idx.ok_pages))} with full text${idx.indexed_at ? " · read " + agEsc(agAgo(idx.indexed_at)) : ""}</div>
         ${gates.length ? `<div class="ag-checks" style="margin:8px 0 4px">${gates.map(g => `<span class="ag-check ${g.pass ? "" : "warn"}" title="${agEsc(g.detail || "")}">${g.pass ? "✓" : "!"} ${agEsc(g.name)}</span>`).join("")}</div>` : ""}
         ${typeList.length ? `<div class="rm">${typeList.slice(0, 8).map(t => `<span>${agEsc(t)} <b>${agEsc(agNum(types[t]))}</b></span>`).join("")}</div>` : ""}
         <div class="ag-addrow" style="margin:12px 0 8px"><input type="search" data-agpageq placeholder="Search pages by title, address or keyword" value="${agEsc(a.pageQ || "")}" aria-label="Search pages">
           <select data-agpagetype aria-label="Page type"><option value="">All types</option>${typeList.map(t => `<option value="${agEsc(t)}" ${a.pageType === t ? "selected" : ""}>${agEsc(t)}</option>`).join("")}</select></div>
-        ${pages ? `<table class="ag-pages"><thead><tr><th>Page</th><th>Type</th><th>Visits/mo</th><th>Ranks for</th><th>Text</th></tr></thead><tbody>${(pages.rows || []).map(p => `<tr><td><button class="ag-pagelink" type="button" data-ag="page" data-arg="${agEsc(p.url)}">${agEsc(p.title || agPath(p.url))}</button><div class="h">${agEsc(agPath(p.url))}</div></td><td class="m">${agEsc(p.type || "")}</td><td class="m">${agEsc(agNum(p.traffic_clean != null ? p.traffic_clean : p.traffic))}</td><td>${p.top_keyword ? agEsc(p.top_keyword) + (p.position ? ` <small class="m">#${agEsc(p.position)}</small>` : "") : "—"}</td><td class="m">${p.body_status === "ok" ? agEsc(agNum(p.word_count)) + "w" : agEsc(p.body_status || "")}</td></tr>`).join("")}</tbody></table>
+        ${pages ? `<table class="ag-pages"><thead><tr><th>Page</th><th>Type</th><th>Visits/mo</th><th>Ranks for</th><th>Text</th></tr></thead><tbody>${(pages.rows || []).map(p => `<tr><td><button class="ag-pagelink" type="button" data-ag="page" data-arg="${agEsc(p.url)}">${agEsc(p.title || agPath(p.url))}</button><div class="h">${agEsc(agPath(p.url))}</div></td><td class="m">${agEsc(p.type || "")}</td><td class="m">${(p.traffic_clean || p.traffic) ? agEsc(agNum(p.traffic_clean || p.traffic)) : "—"}</td><td>${p.top_keyword ? agEsc(p.top_keyword) + (p.position ? ` <small class="m">#${agEsc(p.position)}</small>` : "") : "—"}</td><td class="m">${p.body_status === "ok" ? agEsc(agNum(p.word_count)) + "w" : agEsc(p.body_status || "")}</td></tr>`).join("")}</tbody></table>
           <div class="ag-pager"><span>${agEsc(agNum(pages.offset + 1))}–${agEsc(agNum(Math.min(pages.total, pages.offset + (pages.rows || []).length)))} of ${agEsc(agNum(pages.total))}</span>
             <button class="btn" type="button" data-ag="pagesprev" ${pages.offset <= 0 ? "disabled" : ""}>Previous</button><button class="btn" type="button" data-ag="pagesnext" ${pages.offset + (pages.rows || []).length >= pages.total ? "disabled" : ""}>Next</button></div>` : `<div class="rd">Loading pages…</div>`}
       </div></div>`

@@ -85,8 +85,8 @@ the code.**
 - **Never let a check fail silently**
 - **Never reference anything outside this folder**
 - **Never put a key in a file that could reach git**
-- **Never let the model decide when to spend money.** The loop decides
-- **Never add a fifth stop.** Four is the budget
+- **Never let the model decide when to spend money.** Code decides: since 2.240.0 there are no approval stops for cost (the user asked for none), so every paid step pre-flights the DataForSEO balance itself and says plainly when it skipped
+- **Never add a sixth stop.** Five is the budget: the brand pack once at setup, then the topics, the brief, the plan and the draft per article
 - **Never hide a failure to make the log look clean.** The failures are the trust
 
 ## Verify like this
@@ -105,3 +105,42 @@ Build it. Run it on real data. **Screenshot it.** Compare to the reference in
 | 03c | **The evidence engine is NOT STORM.** 11-storm is a vendored research engine with its own venv and cannot ship in this package. `research/evidence.py` is the honest substitute: live SERP (depth 10) on the primary + up to 6 secondaries → free page reads → 1,200-char passages, 14 per page → one LLM harvest per page → every quote checked as an exact substring of the page, invented ones dropped. Narrower than STORM's interviews and outline; the run notes say so | The suite drops a planted fake quote and records the count |
 
 Left out on purpose: the ranked net (s1b, needs the asset engine's vetted competitor URLs), the research-notes.md commentary file (the agent's substeps are that log), the HTML viewer, the queue/sheet bookkeeping and the spoke minting (topics come from the chat, not a CSV).
+
+
+---
+
+## 2.240.0 — the rebuild as a port of the whole workflow (2026-09-04)
+
+The first agent was a sketch: one-shot research, a word-overlap link picker, a
+voice profile. This release replaces it with a port of the SEO workflow in
+`Backlink gets Automated`, layer by layer. Each layer was built by reading the
+original scripts and prompts and copying them, not from memory. `CONTRACTS.md`
+is the build contract every layer followed.
+
+| # | Thing | How it was proven |
+|---|---|---|
+| 00a | **`tools/index_site.py` + `foundation/`**: four enumeration sources (CMS API, sitemaps with the 17 probes and index recursion, web archive with capped liveness, link crawl as last resort), reconcile with provenance and the tracking-param blocklist, per-host token bucket with cooldowns, the keep-everything extractor with `#`/`##`/`###` markers and hidden-element stripping, per-language de-boilerplate, the bulk `ranked_keywords` traffic pull with Traffic_clean, the coverage gates and the report | `tests/test_foundation.py`, 75 checks on a fake site served through `httpx.MockTransport` |
+| 00b | **Sites behind a bot challenge are read through a real browser.** Found live: testlify.com moved to Next.js on Vercel with Attack Challenge Mode; robots.txt, the sitemaps and every page answered 429 to any plain client, and cookies from a browser did not carry over. `tools/_browser.py` recognises a challenge (header markers, then body markers, only on 403/429/503), switches that host to the browser for the run, and fetches with an in-page `fetch()` so XML and text come back raw. Two backends: the desktop shell's hidden window (`main.js` loopback service, token per launch, one request in flight, three windows max) and Playwright on a dev machine, driven from ONE thread because the sync API is thread-bound (with a plain lock, 12 of the first 19 pages failed) | `tests/test_browser.py` 18 checks against a fake shell service; `test_shell_browser_fetch.py` 8 pins on main.js; live: one navigation cleared the challenge in 4.6s, then six threads fetched six pages, all 200, in 9.7s |
+| 00c | Liveness probes on a challenged host go through the browser too. Found live: all 300 archived pages read as "gone" because HEAD got the challenge | pinned in `test_browser.py` |
+| 0i | **`tools/_index.py` + `tools/voyage.py` + `tools/build_page_index.py`**: the two-vector Voyage index (voyage-4-large, one vector per title, 4,800-char body chunks with 600 overlap, resumable per page, atomic .npy saves), the blended score (0.5 title + 0.5 best body chunk), and an embedding map (PCA of the title vectors) for the Knowledge screen | `test_research.py` and `test_write.py` build a tiny index with a deterministic fake Voyage; the map is served by `/knowledge/embedding-map` |
+| 01 | **`brand/` + `tools/learn_brand.py`**: the twelve builders (type roles, brand facts with ⚠️ rows, brand voice with the shortlist and the quality gate, style guide, features and cta-pages, writing examples, persona, voices, writing integrity, the writer brief with the verdict order and the loss check, brand cards from 8001, field sources verified on old.reddit) saved under `knowledge/brand/`, templates lifted byte-for-byte from the recipes | `tests/test_brand.py`, 140 checks |
+| 03 | see the Layer 03 section above | 69 checks |
+| 04 | **`write/` + `tools/write_article.py` + `editing/links_pass.py`**: planner (gather, select at 0.45, verify sources, freeze), architect (format router over eight archetypes, shape by road, brand cards with caps in code, allocate, section keywords with the free gate then the DataForSEO buy, headings with locked keywords), writer (body per section from its own facts and the writer brief, blend, wrapper with the CTA check, coherence with the invented-number block, readable, sentence pass, slop pass, the links pass, clean, assemble with the coverage checklist counted in code). The links pass is the workflow's: per-section blend + rerank over real page text, the judge sees the page excerpts, tolerant anchor placement, the integrity diff | `tests/test_write.py`, 141 checks |
+| ui | Five stages (Setup first), five checkpoints (the brand pack), no credit talk anywhere, plain-English Tools rows from `registry.for_screen()`, Voyage in Connections, Knowledge with the company record, the searchable catalogue and its gates, the page index and its map, every brand file readable and editable, the draft panel with the links placed and their match scores | `test_agents.js` 30, `test_agents_api.py` 16 |
+| mem | Memory reaches the work: `sh.memory_block()` is `{{MEMORY}}` in every prompt that shapes or writes prose and in the research prompts that decide topic and angle | pinned per suite |
+
+### Found by running it, not by reading it (this release)
+
+1. The site refused every plain request (429, Vercel challenge). Browser fetch, above.
+2. DataForSEO answered 401 to everything, including the free balance call that had worked three hours earlier: the user had changed the API password. The truth for credentials is the user's `.env`; re-synced.
+3. Playwright's sync API is bound to its creating thread. Six crawler threads through one lock: 12 of 19 pages failed with "fetch failed (HTTP 0)". One worker thread and a queue fixed it.
+4. Archived pages all read as "gone" on a challenged host because the HEAD probe was still plain HTTP.
+5. The knowledge block in `agents_api.py` was replaced wholesale and took the library routes with it; the API test caught it.
+
+### Not done, and said so
+
+- STORM does not ship. `research/evidence.py` is the named substitute (see Layer 03).
+- The paid replacement-source hunt and the paid enrichment search in the write phase are skipped and reported.
+- Voices from the field (Reddit/Blind/LinkedIn per article) is not ported.
+- The ranked net (s1b) needs the asset engine's vetted competitor URLs, which this agent does not have.
+- The bundled app has no Playwright; it uses the shell's window. A source checkout without Playwright says plainly that a challenged site needs the app.

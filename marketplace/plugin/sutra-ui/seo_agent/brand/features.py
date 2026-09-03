@@ -138,7 +138,7 @@ def fill(co, facts, say, redo_notes=""):
                 schema=cm.template("features-schema"), method=cm.template("features-method"),
                 mapping=cm.template("features-mapping"), voice=voice, facts=_pool(facts), seed=seed or "(no seed file)",
                 redo_notes=("\nREDO NOTES (fix these):\n%s\n" % redo_notes) if redo_notes else "")
-    draft = cm.strip_fence(llm.text(p))
+    draft = cm.strip_fence(llm.text(p, timeout=llm.LONG_TIMEOUT))   # a whole document in one call
     cm.save(OUTPUT, draft)
     say("Filled features.md", "%d words%s%s" % (cm.words(draft), "; the human-verified seed was applied" if seed else "",
                                                  " (rebuilt with the gate's notes)" if redo_notes else ""))
