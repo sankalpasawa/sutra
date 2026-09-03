@@ -287,11 +287,49 @@ def load_artifact(chat_id, run_id, name):
 # ---- knowledge / memory / connections ---------------------------------------------------
 
 def knowledge(name, default=None):
-    return read_json(os.path.join(knowledge_dir(), name), default)
+    """knowledge/<name>. JSON when the name ends in .json, else the file's text (or default).
+    `name` may carry a subfolder: knowledge("brand/writer-brief.md")."""
+    p = os.path.join(knowledge_dir(), name)
+    if name.endswith(".json"):
+        return read_json(p, default)
+    try:
+        with open(p, encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return default
 
 
 def save_knowledge(name, data):
-    write_json(os.path.join(knowledge_dir(), name), data)
+    """Atomic. dict/list -> JSON; str -> text. Subfolders are created."""
+    p = os.path.join(knowledge_dir(), name)
+    if isinstance(data, (dict, list)):
+        write_json(p, data)
+        return p
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data if isinstance(data, str) else str(data))
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, p)
+    except BaseException:
+        try: os.remove(tmp)
+        except OSError: pass
+        raise
+    return p
+
+
+def list_knowledge(sub=""):
+    """Names (relative to knowledge/) of the files in a subfolder, sorted."""
+    d = os.path.join(knowledge_dir(), sub) if sub else knowledge_dir()
+    if not os.path.isdir(d):
+        return []
+    out = []
+    for f in sorted(os.listdir(d)):
+        fp = os.path.join(d, f)
+        if os.path.isfile(fp):
+            out.append((sub + "/" + f) if sub else f)
+    return out
 
 
 def memory_rules(active_only=True):

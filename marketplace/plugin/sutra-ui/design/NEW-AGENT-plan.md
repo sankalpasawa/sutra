@@ -22,13 +22,14 @@ names the exact lines that have to become a list.
 ## What this does
 
 Takes a job a person would otherwise do by hand over an hour, and turns it into
-an agent that does the work in front of them: named steps, a run log, checkpoints
-where the person edits or redirects, and a hard stop before anything is spent.
+an agent that does the work in front of them: named steps, a run log, and checkpoints
+where the person edits or redirects before the next step runs.
 
 An agent is four things, in this order of importance:
 
 1. **A loop that enforces the rules in code.** Not a prompt that asks nicely.
-2. **A registry of tools** carrying costs and gates the model never sees.
+2. **A registry of tools** whose descriptions carry the RULE for when each runs, and
+   whose plain-English rows are what the Tools screen shows.
 3. **A run folder on disk** that is the whole truth about what happened.
 4. **A screen** that projects that folder, and never holds state of its own.
 
@@ -128,6 +129,8 @@ checkpoints table · Settings views · Binding constraints · Verification lanes
 The two tables that matter most are the run log (one row per event kind, saying
 what glyph and what text it draws) and the checkpoints (one row per review view,
 saying what it shows and what its footer buttons do). Write both before any code.
+The SEO Writer has five: the brand pack after setup, then per article the topics, the
+research brief, the plan and the draft.
 
 **Gotcha:** if you cannot fill the checkpoint table, the job is not agent-shaped
 yet. Stop and re-describe the job.
@@ -137,7 +140,11 @@ yet. Stop and re-describe the job.
 **Does:** gives the agent a home that imports nothing from the app.
 **Follows:** `seo_agent/` as the reference implementation.
 **Output:** `<agent>/` with `__init__.py`, `store.py`, `registry.py`, `loop.py`,
-`llm.py`, `tools/`, `prompts/`, `checks/`, `tests/`, `README.md`, `HISTORY.md`.
+`llm.py`, `tools/`, `prompts/`, `checks/`, `tests/`, `README.md`, `HISTORY.md`, and one
+sub-package per long pipeline (`brand/`, `research/`, `write/`), one module per step,
+each `run(<inputs>) -> dict`, with the tool in `tools/` sequencing them. The build
+contract the sub-packages follow is `CONTRACTS.md`, and it is the file to hand a
+builder before they write a line.
 
 The standalone rule is load-bearing and asserted by the module docstrings: the
 engine never imports anything from `sutra-ui`. The entire coupling in the other
@@ -426,8 +433,11 @@ the step whose `id` matches.
 and substitutes three tokens, each collapsing to `""` when empty:
 `{{COMPANY}}`, `{{VOICE}}`, `{{MEMORY}}`. The last one is
 `store.memory_rules()` rendered as a bulleted list under *"Follow these unless
-they say otherwise in this conversation"*. That is the entire mechanism by which
-standing rules reach the model. Copy it.
+they say otherwise in this conversation"*. That is how standing rules reach the
+conversation. They also reach the WORK: `sh.memory_block()` is passed as `{{MEMORY}}`
+to every prompt that shapes or writes prose (the plan, the headings, each section, the
+edits, the intro and the close) and to the research prompts that decide topic and
+angle. A rule the user states once holds everywhere, or it is not a rule.
 
 ### Step 3. Declare the tools, with the costs the model never sees
 
@@ -459,9 +469,9 @@ Gate semantics:
 
 | Gate | Meaning |
 |---|---|
-| `auto` | just run it. Free, read-only, reversible |
-| `ask_before` | stop and ask, with the cost stated. Costs money or a lot of time |
-| `always_approve` | stop every time. Irreversible |
+| `auto` | just run it. Every work tool in the SEO Writer is `auto` since 2.240.0: the user asked for no credit stops. Paid steps do their own balance pre-flight and say when they skipped. |
+| `ask_before` | the loop still supports it: stop and ask before the tool runs |
+| `always_approve` | stop every time, for an irreversible step |
 
 UI tools (`ask_user`, `show_artifact`) carry `"pauses": True` instead of `module`.
 

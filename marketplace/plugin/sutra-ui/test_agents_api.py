@@ -88,19 +88,22 @@ class TestAgentsApi(unittest.TestCase):
 
     # ---- the run -----------------------------------------------------------------------
 
-    def test_10_a_message_starts_a_run_and_a_paid_tool_stops_for_approval(self):
+    def test_10_a_message_starts_a_run_and_a_question_stops_it(self):
+        """No credit gates any more: a work tool runs when called. What still stops the run is
+        the agent asking the user something, which is what this pins."""
         llm.call = ScriptedModel([
-            {"text": "I'll find topics.", "tool_calls": [_tool("suggest_topics")], "raw": None},
+            {"text": "One thing first.", "tool_calls": [_tool("ask_user", question="Which site?",
+                                                             why="I need the domain",
+                                                             options=[{"label": "example.com", "recommended": True}])], "raw": None},
         ])
         cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
-        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "Suggest topics"}, headers=HDR)
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "Set up for my site"}, headers=HDR)
         self.assertEqual(r.status_code, 200, r.text)
         rid = r.json()["run_id"]
         s = _settle(self.client, cid, rid, ("waiting",))
-        self.assertEqual(s["waiting_on"]["kind"], "approval")
-        self.assertEqual(s["waiting_on"]["tool"], "suggest_topics")
-        self.assertEqual(s["waiting_on"]["cost_credits"], 3)
-        self.assertEqual(s["request"], "Suggest topics", "the full request is kept on the run")
+        self.assertEqual(s["waiting_on"]["kind"], "question")
+        self.assertEqual(s["waiting_on"]["question"], "Which site?")
+        self.assertEqual(s["request"], "Set up for my site", "the full request is kept on the run")
         # the events carry the call_id so the screen can pair the answer
         ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()
         waits = [e for e in ev["events"] if e["type"] == "waiting"]
@@ -113,21 +116,25 @@ class TestAgentsApi(unittest.TestCase):
 
     def test_11_a_typed_message_while_waiting_is_the_answer_not_a_new_run(self):
         cid, rid = self.__class__.cid, self.__class__.rid
-        llm.call = ScriptedModel([{"text": "Understood, I'll stop here.", "tool_calls": [], "raw": None}])
-        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "no, too expensive"}, headers=HDR)
+        llm.call = ScriptedModel([{"text": "Got it, example.com.", "tool_calls": [], "raw": None}])
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "example.com please"}, headers=HDR)
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.json()["answered"])
         self.assertEqual(r.json()["run_id"], rid, "same run, no new one")
-        s = _settle(self.client, cid, rid, ("done",))
-        self.assertEqual(s["credits_spent"], 0, "declined means nothing spent")
+        _settle(self.client, cid, rid, ("done",))
         ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()["events"]
         res = [e for e in ev if e["type"] == "resumed"]
-        self.assertEqual(res[0].get("approved"), False)
-        self.assertEqual(res[0].get("answer"), "no, too expensive")
-        # and the model saw the reason
+        self.assertEqual(res[0].get("answer"), "example.com please")
+        # and the model saw the answer as the tool's result
         msgs = store.get_messages(cid)
         last_result = msgs[-2]["content"][0]["content"]
-        self.assertEqual(last_result.get("user_said"), "no, too expensive")
+        self.assertEqual(last_result.get("text"), "example.com please")
+
+    def test_11b_work_tools_run_without_an_approval_stop(self):
+        """The old money gate is gone: a work tool call goes straight to the tool."""
+        from seo_agent import registry
+        self.assertTrue(all(t["gate"] == "auto" for t in registry.WORK_TOOLS))
+        self.assertTrue(all(not t.get("cost_credits") for t in registry.WORK_TOOLS))
 
     def test_12_send_while_running_is_refused_with_409(self):
         cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
@@ -191,7 +198,7 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(self.client.post(BASE + "/runs/%s/%s/publish" % (cid, rid), json={}, headers=HDR).status_code, 404,
                          "no draft yet -> 404, never an empty library item")
         store.save_artifact(cid, rid, "draft.md", "# Hello\n\nA body.\n")
-        store.save_artifact(cid, rid, "blueprint.json", {"title": "Hello there"})
+        store.save_artifact(cid, rid, "blueprint.json", {"h1": "Hello there"})
         r = self.client.post(BASE + "/runs/%s/%s/publish" % (cid, rid), json={}, headers=HDR)
         self.assertEqual(r.status_code, 200, r.text)
         item = r.json()["item_id"]
@@ -213,7 +220,7 @@ class TestAgentsApi(unittest.TestCase):
                                                           "anthropic_key": "sk-should-never-stick"}, headers=HDR)
         self.assertEqual(r.status_code, 200)
         j = self.client.get(BASE + "/connections").json()
-        self.assertEqual(j, {"dataforseo_login": True, "dataforseo_password": True})
+        self.assertEqual(j, {"dataforseo_login": True, "dataforseo_password": True, "voyage_key": False})
         self.assertNotIn("sk-should", json.dumps(j))
         on_disk = store.connections()
         self.assertNotIn("anthropic_key", on_disk, "an API key is dropped, the panel bills the subscription")
@@ -223,7 +230,15 @@ class TestAgentsApi(unittest.TestCase):
         # clearing
         self.client.post(BASE + "/connections", json={"dataforseo_login": "", "dataforseo_password": ""}, headers=HDR)
         self.assertEqual(self.client.get(BASE + "/connections").json(),
-                         {"dataforseo_login": False, "dataforseo_password": False})
+                         {"dataforseo_login": False, "dataforseo_password": False, "voyage_key": False})
+        # the Voyage key: saved, reported as a boolean, cleared
+        self.client.post(BASE + "/connections", json={"voyage_key": "pa-secretsecretsecretsecret"}, headers=HDR)
+        j = self.client.get(BASE + "/connections").json()
+        self.assertTrue(j["voyage_key"])
+        self.assertNotIn("pa-secret", json.dumps(j))
+        self.assertTrue(self.client.get(BASE + "/health").json()["voyage"])
+        self.client.post(BASE + "/connections", json={"voyage_key": ""}, headers=HDR)
+        self.assertFalse(self.client.get(BASE + "/connections").json()["voyage_key"])
 
     def test_21_memory_add_toggle_and_list(self):
         r = self.client.post(BASE + "/memory", json={"text": "Never open with a question", "kind": "rule"}, headers=HDR)
@@ -235,14 +250,18 @@ class TestAgentsApi(unittest.TestCase):
         row = [x for x in m["rules"] if x["id"] == mid][0]
         self.assertFalse(row["active"])
 
-    def test_22_tools_list_carries_gates_and_costs_but_no_module_paths(self):
+    def test_22_tools_list_is_plain_english_and_carries_no_module_paths(self):
         tools = self.client.get(BASE + "/tools").json()
         names = {t["name"] for t in tools}
         self.assertIn("run_research", names)
+        self.assertIn("learn_brand", names)
+        self.assertIn("build_page_index", names)
         rr = [t for t in tools if t["name"] == "run_research"][0]
-        self.assertEqual(rr["gate"], "ask_before")
-        self.assertEqual(rr["cost_credits"], 8)
+        for k in ("label", "does", "when", "needs", "takes"):
+            self.assertTrue(rr.get(k), k)
         self.assertNotIn("module", rr)
+        self.assertNotIn("gate", rr)
+        self.assertNotIn("cost_credits", rr)
 
     def test_23_knowledge_round_trip(self):
         r = self.client.post(BASE + "/knowledge", json={"competitors": {"competitors": ["a.com", "b.com"]}}, headers=HDR)

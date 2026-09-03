@@ -12,13 +12,30 @@ one, and `NEW-AGENT-plain.md` is the same recipe in plain English.
 
 ## What ships
 
-A new rail destination, **Agents**, between Chats and Routines. It opens the first
-agent, **SEO Writer**: you name a topic or ask for ideas, it studies the site, researches
-the keyword, builds a structure, writes the draft, and stops at four checkpoints for
-you to look, edit, or redirect. Anything that costs credits asks first, with the number.
+A rail destination, **Agents**, between Chats and Routines, and its first agent, the
+**SEO Writer**. It is a port of the SEO workflow in `Backlink gets Automated` into an
+agent that works in front of you:
+
+1. **Setup, once.** You give the website. It catalogues every page the way the
+   workflow's site-catalogue engine does (CMS API, sitemaps, web archive, crawl, with
+   coverage gates), indexes every page by meaning with Voyage (one vector per title,
+   many per body), and builds the brand pack: voice, style guide, product facts, readers,
+   real numbers, stories, brand cards, the pages a call to action may link to, and the
+   writer brief every article is written from. You confirm the flagged rows.
+2. **Per article.** Topic (named or suggested) → research the way the content machine
+   does (the world statement, real keyword numbers with the world check, the live
+   results with Google's answer, the winning pages, evidence cards with verbatim quotes
+   and sources, the gap check, your own pages found by meaning) → the blueprint (the
+   spine filter with PROTECT, clustering, headings, links attached) → the write phase
+   (planner, architect by format, writer with its editing passes, internal links laid
+   in by meaning and judged on real page text, sources numbered).
+
+Five stages on the bar: Setup › Topic › Research › Blueprint › Draft. Five checkpoints:
+the brand pack, the topics, the brief, the plan, the draft. No credit gates: paid steps
+do a DataForSEO balance pre-flight and say plainly when they skipped.
 
 The agent runs on the `claude` CLI the panel already drives, so it bills the same
-subscription the chat does. No API key. DataForSEO credentials are the only setup.
+subscription the chat does. No API key. DataForSEO and a free Voyage key are the setup.
 
 ## Where it lives
 

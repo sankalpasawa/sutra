@@ -74,9 +74,10 @@ def _wait(chat_id, run_id, kind, call_id, payload, stage=None):
     store.emit(chat_id, run_id, "waiting", kind=kind, call_id=call_id, **payload)
 
 
-STAGE_FOR = {"suggest_topics": "topic", "run_research": "research",
+STAGE_FOR = {"index_site": "setup", "build_page_index": "setup", "learn_brand": "setup",
+             "suggest_topics": "topic", "run_research": "research",
              "build_blueprint": "blueprint", "write_article": "draft"}
-VIEW_STAGE = {"topic_list": "topic", "research_brief": "research",
+VIEW_STAGE = {"brand_pack": "setup", "topic_list": "topic", "research_brief": "research",
               "blueprint": "blueprint", "article": "draft"}
 
 
@@ -311,7 +312,16 @@ def resume(chat_id, run_id, answer):
             # The tool promised "returns the artifact, which may have been edited", so hand
             # back what is on disk NOW, not what the model wrote. If the user picked a topic,
             # spell it out so the model does not have to look it up by id.
-            art = store.load_artifact(chat_id, run_id, w.get("artifact", ""))
+            if w.get("artifact") == "brand":
+                # the brand pack is not one file; hand the model the pack summary plus the
+                # brief it will write from, so it can answer questions about it
+                try:
+                    from .brand import pack as _pack
+                    art = _pack.summary()
+                except Exception:  # noqa: BLE001
+                    art = {"files": store.list_knowledge("brand")}
+            else:
+                art = store.load_artifact(chat_id, run_id, w.get("artifact", ""))
             if isinstance(art, dict) and answer.get("picked") and isinstance(art.get("topics"), list):
                 chosen = [t for t in art["topics"] if t.get("id") == answer.get("picked")]
                 if chosen:

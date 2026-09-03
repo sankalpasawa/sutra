@@ -23,8 +23,8 @@ WANT_TOPICS = 6
 
 
 def _load_competitors():
-    """competitors.json as [{domain, last_used}], whether it was saved as plain strings
-    or as full rows."""
+    """knowledge/competitors.json is {competitors: [{domain, why, last_used}]}; a bare list or plain
+    strings (older saves) are read too."""
     raw = store.knowledge("competitors.json") or []
     if isinstance(raw, dict):
         raw = raw.get("competitors") or []
@@ -59,7 +59,7 @@ def _derive_competitors(ctx, say):
         if domain:
             rows.append({"domain": domain, "why": item.get("why", ""), "last_used": None})
     if rows:
-        store.save_knowledge("competitors.json", rows)
+        store.save_knowledge("competitors.json", {"competitors": rows})
         say("Saved " + sh.plural(len(rows), "competitor"), ", ".join(r["domain"] for r in rows))
     return rows
 
@@ -142,7 +142,7 @@ def run(ctx, competitor=None):
 
     prompt = sh.fill(
         sh.load_prompt("suggest_topics"),
-        company=sh.company_name(),
+        company=sh.company()["brand"],
         competitor=domain,
         voice=sh.voice_block(),
         rival_keywords=sh.bullets(_rival_lines(keywords[:RIVAL_SHOWN])),
@@ -175,7 +175,7 @@ def run(ctx, competitor=None):
 
     # Stamp the rotation only once the run actually used this competitor.
     chosen["last_used"] = store.now()
-    store.save_knowledge("competitors.json", rows)
+    store.save_knowledge("competitors.json", {"competitors": rows})
 
     store.save_artifact(ctx["chat_id"], ctx["run_id"], "topics.json", {
         "competitor": domain,

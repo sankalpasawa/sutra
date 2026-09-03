@@ -22,13 +22,13 @@ below is what building it actually taught us.
 You take a job someone would otherwise do by hand over an hour, and you turn it
 into an agent that does the work in front of them. Named steps. A running log.
 Moments where the person looks at the work and either approves it or sends it
-back. And a hard stop before anything gets spent.
+back before the next step runs.
 
 An agent is four things, in order of how much they matter:
 
 1. **A loop that enforces the rules in code.** Not a prompt that asks nicely.
-2. **A list of tools** where the price of each one is written down somewhere the
-   model cannot see.
+2. **A list of tools** where each one carries the rule for when it runs, and a plain
+   description a person can read on the Tools screen.
 3. **A folder on disk** that is the complete truth about what happened.
 4. **A screen** that just shows that folder. The screen remembers nothing itself.
 
@@ -112,7 +112,8 @@ matter most are the run log (what each kind of event looks like on screen) and t
 checkpoints (what each review panel shows and what its buttons do).
 
 If you cannot fill in the checkpoints table, the job is not agent-shaped yet. Stop
-and describe the job again.
+and describe the job again. The SEO Writer has five checkpoints: the brand pack after
+setup, then for every article the topics, the research, the plan and the draft.
 
 ### 2. Build the engine on its own
 
@@ -165,6 +166,11 @@ not nag you twice for the same thing.
 There is a cap of twenty-five steps without checking in. Hitting it does not kill
 the run. It asks you whether to keep going.
 
+**Memory reaches the work, not just the chat.** A rule you save once is handed to every
+step that shapes or writes prose: the plan, the headings, each section, the edits, the
+intro and the close. It is also handed to the research steps that decide the topic and
+the angle.
+
 Credits are counted after a step succeeds, never before.
 
 **Approval runs the step immediately.** When you say yes, the code runs the exact
@@ -186,13 +192,15 @@ Prices and permissions live in one file, out of the model's reach. The model see
 only three things per tool: the name, the description, and what inputs it takes.
 There is a test that checks the price never leaks into what the model sees.
 
-Three permission levels:
+Three permission levels exist in the code. The SEO Writer uses only the first, because
+you asked for no credit stops. Paid steps check the DataForSEO balance first and say
+plainly when they skipped something.
 
 | Level | Meaning |
 |---|---|
-| Automatic | just run it. Free, read-only, undoable |
-| Ask first | stop and ask, with the cost stated. Costs money or a lot of time |
-| Always ask | stop every single time. Cannot be undone |
+| Automatic | just run it |
+| Ask first | stop and ask before the tool runs |
+| Always ask | stop every single time, for something that cannot be undone |
 
 The description is not a definition. It is a rule. "Run this after the site index
 exists" beats "researches a keyword". That description is the only lever you have

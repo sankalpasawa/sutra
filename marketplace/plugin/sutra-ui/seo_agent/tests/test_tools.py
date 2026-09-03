@@ -65,12 +65,15 @@ from seo_agent.tools import run_research
 try:
     n0 = len(events)
     out = run_research.run(ctx, topic="executive education for CHROs")
-    rs = art("research.json")
-    ok("writes research.json", bool(rs))
-    ok("has a primary keyword", bool((rs or {}).get("primary_keyword")))
-    ok("has People Also Ask", isinstance((rs or {}).get("people_also_ask"), list))
-    ok("has top results", len((rs or {}).get("top_results", [])) > 0)
-    ok("has the gap", bool((rs or {}).get("the_gap")))
+    rs = art("research.json") or {}
+    ok("writes research.json", bool(rs), out.get("error"))
+    ok("has a primary keyword", bool(((rs.get("keywords") or {}).get("primary") or {}).get("keyword")))
+    ok("has the world statement", bool((rs.get("world") or {}).get("not_about")))
+    ok("has People Also Ask", isinstance((rs.get("serp") or {}).get("paa"), list))
+    ok("has who ranks", len((rs.get("serp") or {}).get("who_ranks") or []) > 0)
+    ok("has gaps to own", bool((rs.get("winners") or {}).get("gaps_to_own")))
+    ok("says the numbers are demo data", rs.get("demo_data") is True and "demo" in out.get("summary", ""))
+    ok("writes cards.json", bool(art("cards.json")))
     ok("emitted several substeps", len(events) - n0 >= 3, len(events) - n0)
 except Exception as e:
     ok("runs", False, e)
@@ -78,27 +81,40 @@ except Exception as e:
 print("\nbuild_blueprint")
 from seo_agent.tools import build_blueprint
 try:
-    out = build_blueprint.run(ctx, target_words=1500)
-    bp = art("blueprint.json")
-    ok("writes blueprint.json", bool(bp))
-    ok("has sections", len((bp or {}).get("sections", [])) > 0)
-    ok("has a title", bool((bp or {}).get("title")))
-    secs = (bp or {}).get("sections", [])
-    ok("every section has a brief", all(s.get("covers") for s in secs))
+    out = build_blueprint.run(ctx, target_words=1500)     # an old caller's extra argument is ignored
+    bp = art("blueprint.json") or {}
+    ok("writes blueprint.json", bool(bp), out.get("error"))
+    ok("has sections", len(bp.get("sections", [])) > 0)
+    ok("has an h1", bool(bp.get("h1")))
+    secs = bp.get("sections", [])
+    ok("every section has a job", all(s.get("job") for s in secs))
+    ok("keyword set carries the primary", bool((bp.get("keyword_set") or {}).get("primary")))
+    ok("faq is a list", isinstance(bp.get("faq"), list))
 except Exception as e:
     ok("runs", False, e)
 
 print("\nwrite_article")
 from seo_agent.tools import write_article
+# The write phase reads the CONTRACTS-shaped blueprint, research brief and evidence cards. Until the
+# research and blueprint tools write that shape, the fixture plants it here.
+_fixture.plant_write_inputs(c, r)
+_fixture.plant_brand_files()
 try:
     n0 = len(events)
     out = write_article.run(ctx)
     d = art("draft.md")
+    a = art("article.json") or {}
+    ok("returns a summary, no error", bool(out.get("summary")) and not out.get("error"), out.get("error"))
     ok("writes draft.md", bool(d))
     ok("draft has an H1", bool(d) and d.strip().startswith("#"))
     ok("draft has real length", bool(d) and len(d.split()) > 50, len((d or "").split()))
-    ok("emitted a substep per section", len(events) - n0 >= 3, len(events) - n0)
+    ok("draft carries the sources list", bool(d) and "## Sources" in d)
+    ok("writes article.json with sections and sources", bool(a.get("sections")) and isinstance(a.get("sources"), list))
+    ok("writes links-report.json", bool(art("links-report.json")))
+    ok("writes write-report.json with every step", len((art("write-report.json") or {}).get("steps", {})) >= 20)
+    ok("emitted a substep per step", len(events) - n0 >= 20, len(events) - n0)
 except Exception as e:
+    import traceback; traceback.print_exc()
     ok("runs", False, e)
 
 print("\nindex_site, when the site refuses the crawl")

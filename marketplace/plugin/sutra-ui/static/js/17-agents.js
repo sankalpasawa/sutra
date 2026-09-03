@@ -1,9 +1,9 @@
 /* 17-agents.js — the Agents destination, and its first agent: the SEO Writer.
  *
  * What this is. A screen where an agent works in front of you: it names each step
- * before it takes it, stops before spending credits, and puts every draft in a panel
- * you can edit before it carries on. The engine is seo_agent/ on the server; this
- * file only draws what the run folder already says and posts your answers back.
+ * before it takes it and puts every draft in a panel you can edit before it carries
+ * on. The engine is seo_agent/ on the server; this file only draws what the run
+ * folder already says and posts your answers back.
  *
  * How it coexists with render(). render() rewrites #panes wholesale and #scBody when
  * a screen's HTML changes, so SCREENS.agents returns a CONSTANT shell and a
@@ -17,12 +17,13 @@
 
 /* ── constants ─────────────────────────────────────────────────────────────── */
 const AG_API = "/api/agents/seo";
-const AG_STAGES = [["topic", "Topic"], ["research", "Research"], ["blueprint", "Blueprint"], ["draft", "Draft"]];
-const AG_VIEW_TITLE = { topic_list: "Topic ideas", research_brief: "Research brief",
-                        blueprint: "Article blueprint", article: "The draft" };
+const AG_STAGES = [["setup", "Setup"], ["topic", "Topic"], ["research", "Research"], ["blueprint", "Blueprint"], ["draft", "Draft"]];
+const AG_VIEW_TITLE = { brand_pack: "The brand pack", topic_list: "Topic ideas", research_brief: "Research brief",
+                        blueprint: "Article plan", article: "The draft", brand_file: "Brand file", page: "Page" };
 const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
 const AG_MAX_SUBS = 8;
+const AG_LINK_WEAK = 0.45;      /* mirrors LINK_WEAK_SCORE in the engine: below this a link is flagged weak */
 
 /* ── tiny helpers ──────────────────────────────────────────────────────────── */
 function agEsc(x){
@@ -65,6 +66,9 @@ function agWords(md){ return String(md || "").trim().split(/\s+/).filter(Boolean
 function agDomain(url){
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch (e) { return String(url || ""); }
 }
+function agPath(url){
+  try { const u = new URL(url); return (u.pathname.replace(/\/$/, "") || "/"); } catch (e) { return String(url || ""); }
+}
 
 /* Markdown blocks, split EXACTLY like editing/edit_block.py: paragraphs on blank
    lines, fences kept whole, ids p0..pN. The server addresses an edit by this id, so a
@@ -97,8 +101,10 @@ function agS(){
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
     picked: null, collapsed: {}, draft: "", scroll: null, stick: true,
     health: null, knowledge: null, memory: null, library: null, tools: null, conns: null,
+    pages: null, pageQ: "", pageType: "", map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
-    compForm: null, kwForm: null, libOpen: null, detailOpen: {},
+    compForm: null, coForm: null, memForm: null, connForm: null, libOpen: null, detailOpen: {},
+    fileEdit: null,
   };
   return S.ag;
 }
@@ -163,7 +169,7 @@ function agStepsFromEvents(events, state){
           e = { kind: "ask", question: ev.question || "", why: ev.why || "", options: ev.options || [], t: ev.t };
         else if (ev.kind === "approval")
           e = { kind: "approval", tool: ev.tool || "", question: ev.question || "", why: ev.why || "",
-                cost: ev.cost_credits || 0, mins: ev.est_minutes || 0, options: ev.options || [], t: ev.t };
+                mins: ev.est_minutes || 0, options: ev.options || [], t: ev.t };
         else
           e = { kind: "artifact", artifact: ev.artifact || "", view: ev.view || "article",
                 prompt: ev.prompt || "", t: ev.t };
@@ -214,13 +220,28 @@ function agRunSummary(events, state, now){
            status: state ? state.status : "" };
 }
 
-/* Which of the four stages is done, current, or ahead. */
+/* Which of the five stages is done, current, or ahead. A run that never left setup
+   shows Setup as its stage; an article run starts at Topic. */
 function agStageOf(state){
   const cur = state && state.stage || "topic";
   const idx = Math.max(0, AG_STAGES.findIndex(s => s[0] === cur));
   const done = state && state.status === "done";
   return AG_STAGES.map((s, i) => ({ id: s[0], label: s[1],
     state: done ? "done" : i < idx ? "done" : i === idx ? (state && state.status === "waiting" ? "wait" : "cur") : "todo" }));
+}
+
+/* The setup state, from health: what is in place and what the next step is. */
+function agSetupOf(h){
+  if (!h) return { steps: [], next: "", ready: false };
+  const pi = h.page_index || {};
+  const steps = [
+    { id: "model", label: "Model signed in", ok: !!h.model_provider },
+    { id: "site", label: "Site read", ok: !!h.site_indexed },
+    { id: "index", label: "Pages indexed by meaning", ok: !!pi.built, soft: !h.voyage },
+    { id: "brand", label: "Brand pack built", ok: !!h.brand_ready },
+  ];
+  const missing = steps.find(s => !s.ok && !s.soft);
+  return { steps, ready: !missing, next: missing ? missing.id : "" };
 }
 
 /* ── renderers (pure, return HTML strings) ─────────────────────────────────── */
@@ -230,7 +251,6 @@ const AG_ICON = {
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   ask: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M9 9.5a3 3 0 115.2 2c-1 .9-2.2 1.4-2.2 3"/><circle cx="12" cy="18" r=".8" fill="currentColor"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4M9 12h6M9 16h6"/></svg>',
-  coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v9M9.5 10h3.5a1.5 1.5 0 010 3H10a1.5 1.5 0 000 3h4"/></svg>',
   star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1.1 5.8L12 16.8l-5.3 2.8 1.1-5.8L3.5 9.7l5.9-.8z"/></svg>',
   arrow: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
@@ -239,12 +259,12 @@ const AG_ICON = {
   down: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
   plus: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.5 1.5"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1.5-1.5"/></svg>',
 };
 
 function agGlyph(e){
   if (e.kind === "step") return e.state === "ok" ? AG_ICON.check : e.state === "bad" ? AG_ICON.x : "";
-  if (e.kind === "ask") return AG_ICON.ask;
-  if (e.kind === "approval") return AG_ICON.coin;
+  if (e.kind === "ask" || e.kind === "approval") return AG_ICON.ask;
   if (e.kind === "artifact") return AG_ICON.doc;
   if (e.kind === "mem") return AG_ICON.star;
   if (e.kind === "failed" || e.kind === "stopped") return AG_ICON.x;
@@ -290,6 +310,7 @@ function agEntryHtml(e, ctx){
         ${e.state === "bad" && e.reason ? `<div class="ag-body" style="color:var(--block)">${agEsc(e.reason)}</div>` : ""}
         ${e.state === "ok" && e.summary && !e.subs.length ? `<div class="ag-body">${agEsc(e.summary)}</div>` : ""}
         ${agSubsHtml(e.subs, e.id, open)}
+        ${e.state === "ok" && e.summary && e.subs.length ? `<div class="ag-body" style="margin-top:6px">${agEsc(e.summary)}</div>` : ""}
         ${e.detail ? `<button class="ag-more" type="button" data-ag="detail" data-arg="${agEsc(e.id)}">${open ? "Hide" : "Show"} the error detail</button>${open ? `<pre class="ag-detail">${agEsc(e.detail)}</pre>` : ""}` : ""}
       </div>`;
     }
@@ -307,23 +328,19 @@ function agEntryHtml(e, ctx){
           ${e.live ? `<div class="ag-hint">Pick one, or type your own answer below.</div>`
                    : `<div class="ag-answer"><span>You said</span><b>${agEsc(e.answer || "")}</b></div>`}
         </div></div>`;
-    case "approval": {
-      const bits = [];
-      if (e.cost) bits.push(`<b>${agEsc(e.cost)}</b> credits`);
-      if (e.mins) bits.push(`about <b>${agEsc(e.mins)}</b> min`);
+    case "approval":
       return `<div class="ag-step ask"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
-        <div class="ag-title">Asked before spending</div>
+        <div class="ag-title">Asked before going on</div>
         <div class="ag-card ${e.live ? "live" : ""}">
           <div class="q">${agEsc(e.question)}</div>
-          ${bits.length ? `<div class="ag-cost">${bits.join(" · ")}</div>` : ""}
+          ${e.mins ? `<div class="ag-cost">about <b>${agEsc(e.mins)}</b> min</div>` : ""}
           ${e.why ? `<div class="why">${agEsc(e.why)}</div>` : ""}
           ${e.live ? `<div class="ag-chips">
               <button class="ag-chip pri" type="button" data-ag="approve" data-arg="yes">Go ahead</button>
               <button class="ag-chip" type="button" data-ag="approve" data-arg="no">Not now</button>
-            </div><div class="ag-hint">Nothing is spent until you say yes.</div>`
+            </div>`
           : `<div class="ag-answer"><span>You said</span><b>${e.decision === "approved" ? "Go ahead" : e.decision === "declined" ? "Not now" : agEsc(e.answer || "")}</b></div>`}
         </div></div>`;
-    }
     case "artifact": {
       const title = AG_VIEW_TITLE[e.view] || "Something to review";
       const isOpen = ctx.panel && ctx.panel.name === e.artifact && ctx.panel.run_id === ctx.run_id;
@@ -372,7 +389,6 @@ function agRunHtml(run, events, ctx){
     <div class="ag-run">
       <div class="ag-runhead">${head}
         ${entries.length ? `<button class="ag-fold" type="button" data-ag="fold" data-arg="${agEsc(run.run_id)}" aria-expanded="${!collapsed}">${AG_ICON.chev} ${collapsed ? "Show" : "Hide"} steps <span class="n">${sum.steps}</span></button>` : ""}
-        ${run.credits_spent ? `<span class="n">${agEsc(run.credits_spent)} credits</span>` : ""}
       </div>
       <div class="ag-steps" ${collapsed ? "hidden" : ""}>${entries.map(e => agEntryHtml(e, Object.assign({}, ctx, { run_id: run.run_id }))).join("")}</div>
       ${run.status === "failed" && run.error && !entries.some(e => e.kind === "failed") ? `<div class="ag-err">${agEsc(run.error)}</div>` : ""}
@@ -381,31 +397,38 @@ function agRunHtml(run, events, ctx){
 
 function agStagesHtml(state){
   const st = agStageOf(state);
-  return `<div class="ag-stages" role="list" aria-label="Where this article is">
+  return `<div class="ag-stages" role="list" aria-label="Where this is">
     ${st.map((s, i) => `${i ? `<span class="ag-sep" aria-hidden="true">›</span>` : ""}<span class="ag-stage ${s.state}" role="listitem"><i aria-hidden="true"></i>${agEsc(s.label)}</span>`).join("")}
-    <span class="sp">${state && state.credits_spent ? `<b>${agEsc(state.credits_spent)}</b> credits spent` : "no credits spent"}</span>
+    <span class="sp">${state && state.status === "waiting" ? "waiting for you" : state && state.status === "running" ? "working" : state && state.status === "done" ? "done" : ""}</span>
   </div>`;
 }
 
 function agHeroHtml(health, conns){
-  const dfs = !!(health && health.dataforseo);
   const model = health ? health.model_provider : null;
-  const plays = [
-    ["Set up the agent for my site", "Index every page of your website and learn how you write. Runs once; everything else builds on it.",
-     "Set up for my site: index example.com and learn how we write."],
+  const setup = agSetupOf(health);
+  const ready = !!health && setup.ready;
+  const plays = ready ? [
     ["Suggest six topics we could own", "Studies one competitor's best pages and proposes six topics with an angle they have not taken.",
-     "Suggest six topics from a competitor we could own."],
-    ["Write an article about a topic I name", "Research, blueprint, then a full draft in your voice. You review at each of the four stops.",
+     "Suggest six topics we could own."],
+    ["Write an article about a topic I name", "Real keyword numbers, the pages that win, evidence with sources, a plan, then the draft in your voice. You review at each of the four stops.",
      "Write an article about "],
+    ["Improve one of our existing pages", "Names the page, checks what ranks around it, and rebuilds it from the evidence.",
+     "Improve our page "],
+  ] : [
+    ["Set up for my website", "Reads every page, indexes them by meaning, and learns how you write, who you write for and what you sell. Runs once.",
+     "Set up for my website: "],
   ];
   return `<div class="ag-hero">
     <h2>SEO Writer</h2>
-    <p>Name a topic or ask for ideas. It studies your site, researches the keyword, builds a structure and writes the draft, stopping at four points for you to look, edit, or redirect. Anything that costs credits asks first.</p>
+    <p>${ready ? "Name a topic or ask for ideas. It researches the keyword with real numbers, reads what already ranks, gathers evidence with sources, plans the article, writes it in your voice and links it to your own pages. You look at each stage before it moves on."
+                : "Give it your website once. It reads every page, learns how you write and what you sell, and builds the writer brief every article follows. Then you name topics."}</p>
     <div class="ag-plays">${plays.map(p => `<button class="ag-play" type="button" data-ag="play" data-text="${agEsc(p[2])}">
       <span class="pi"><span class="pt">${agEsc(p[0])}</span><span class="pd">${agEsc(p[1])}</span></span><span class="go">Let's go ${AG_ICON.arrow}</span></button>`).join("")}</div>
+    ${health ? `<div class="ag-setupbar" aria-label="Setup">${setup.steps.map(s => `<span class="ag-sstep ${s.ok ? "ok" : s.soft ? "soft" : ""}"><i aria-hidden="true"></i>${agEsc(s.label)}${!s.ok && s.soft ? " · no Voyage key" : ""}</span>`).join("")}</div>` : ""}
     <div class="ag-setup">
       ${health && !model ? `<div class="note b"><b>No model is available.</b> The agent runs on the <code>claude</code> command line, billed to your Claude subscription. Open a terminal, run <code>claude</code> once and sign in, then come back.</div>` : ""}
-      ${health && !dfs ? `<div class="note w"><b>Running on demo keyword data.</b> Search volumes and difficulty will not be real until DataForSEO is connected. <button class="btn" type="button" data-ag="view" data-arg="connections" style="margin-left:6px">Connect</button></div>` : ""}
+      ${health && !health.dataforseo ? `<div class="note w"><b>DataForSEO is not connected.</b> Keyword volumes, difficulty and who ranks come from there. <button class="btn" type="button" data-ag="view" data-arg="connections" style="margin-left:6px">Connect</button></div>` : ""}
+      ${health && !health.voyage ? `<div class="note w"><b>No Voyage key.</b> Without it the agent cannot index pages by meaning, so internal links fall back to weaker matching. The key is free. <button class="btn" type="button" data-ag="view" data-arg="connections" style="margin-left:6px">Add it</button></div>` : ""}
     </div>
   </div>`;
 }
@@ -413,14 +436,17 @@ function agHeroHtml(health, conns){
 function agSideHtml(a){
   const chats = a.chats || [];
   const h = a.health;
-  const dotCls = !h ? "" : !h.model_provider ? "bad" : !h.dataforseo ? "warn" : "run";
-  const status = !h ? "checking…" : !h.model_provider ? "no model available" : !h.dataforseo ? "demo keyword data" : "ready";
+  const setup = agSetupOf(h);
+  const dotCls = !h ? "" : !h.model_provider ? "bad" : !setup.ready ? "warn" : "run";
+  const status = !h ? "checking…" : !h.model_provider ? "no model available" : !setup.ready ? "needs setup" : "ready";
+  const brand = (a.knowledge && a.knowledge.company && a.knowledge.company.brand) || "";
   const rows = [["knowledge", "Knowledge", AG_ICON.doc, null], ["memory", "Memory", AG_ICON.star, a.memory ? a.memory.active : null],
                 ["library", "Library", AG_ICON.check, a.library ? a.library.length : null], ["tools", "Tools", AG_ICON.spark, null],
-                ["connections", "Connections", AG_ICON.coin, null]];
+                ["connections", "Connections", AG_ICON.link, null]];
+  const connWarn = h && (!h.dataforseo || !h.voyage);
   return `<div class="ag-agent">
       <div class="ag-mark" aria-hidden="true">S</div>
-      <div style="min-width:0"><b>SEO Writer</b><span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
+      <div style="min-width:0"><b>SEO Writer${brand ? ` · ${agEsc(brand)}` : ""}</b><span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
     </div>
     <button class="newBtn" type="button" data-ag="new">${AG_ICON.plus} New chat</button>
     <div class="ag-sec">Recent</div>
@@ -433,7 +459,7 @@ function agSideHtml(a){
     <ul class="nav">${rows.map(r => `<li><button type="button" data-ag="view" data-arg="${r[0]}" aria-current="${a.view === r[0]}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${r[2].replace(/<svg[^>]*>|<\/svg>/g, "")}</svg>${r[1]}
       ${r[3] != null ? `<span class="ct">${agEsc(r[3])}</span>` : ""}
-      ${r[0] === "connections" && h && !h.dataforseo ? `<span class="ct w">!</span>` : ""}</button></li>`).join("")}</ul>`;
+      ${r[0] === "connections" && connWarn ? `<span class="ct w">!</span>` : ""}</button></li>`).join("")}</ul>`;
 }
 
 function agComposerHtml(a){
@@ -441,12 +467,15 @@ function agComposerHtml(a){
   const running = live && live.status === "running";
   const waiting = live && live.status === "waiting";
   const w = waiting ? (live.waiting_on || {}) : null;
+  const setup = agSetupOf(a.health);
   const ph = running ? "Working… you can stop it, or wait."
     : waiting && w.kind === "approval" ? "Say no with a reason, or use the buttons above"
     : waiting && w.kind === "artifact" ? "Ask for changes, or approve in the panel"
     : waiting ? "Type your answer, or pick an option above"
-    : a.chat ? "Ask for another article, or give feedback" : "Name a topic, or ask for ideas";
-  const state = running ? `<span class="ag-cstate"><i class="dot run"></i>the agent is working · ${agEsc(live.current_step ? live.current_step.replace(/_/g, " ") : live.stage)}</span>`
+    : a.chat ? "Ask for another article, or give feedback"
+    : a.health && !setup.ready ? "Give the website, e.g. example.com" : "Name a topic, or ask for ideas";
+  const step = live && live.current_step ? live.current_step.replace(/_/g, " ") : (live ? live.stage : "");
+  const state = running ? `<span class="ag-cstate"><i class="dot run"></i>the agent is working · ${agEsc(step)}</span>`
     : waiting ? `<span class="ag-cstate"><i class="dot wait"></i>waiting for you</span>` : "";
   return `${state}
     <textarea data-agask rows="1" aria-label="Message the SEO Writer" placeholder="${agEsc(ph)}" ${running ? "disabled" : ""}></textarea>
@@ -460,7 +489,7 @@ function agTranscriptHtml(a){
   return (a.chat.runs || []).map(r => agRunHtml(r, a.events[r.run_id] || [], ctx)).join("");
 }
 
-/* ── the four artifact views ───────────────────────────────────────────────── */
+/* ── the artifact views ────────────────────────────────────────────────────── */
 
 function agTopicListHtml(data, picked){
   const topics = (data && data.topics) || [];
@@ -478,51 +507,100 @@ function agTopicListHtml(data, picked){
     </button>`).join("")}</div>`;
 }
 
+/* One labelled block of the brief. Empty content renders nothing, so a brief that
+   skipped a step (no balance, no index) shows only what was actually found. */
+function agBlock(title, inner, note){
+  if (!inner) return "";
+  return `<h3 class="sec">${agEsc(title)}${note ? ` <small>${agEsc(note)}</small>` : ""}</h3>${inner}`;
+}
+function agUl(items, fmt){
+  const list = (items || []).filter(x => x != null && x !== "");
+  if (!list.length) return "";
+  return `<ul class="ag-list">${list.map(x => `<li>${fmt ? fmt(x) : agEsc(typeof x === "string" ? x : JSON.stringify(x))}</li>`).join("")}</ul>`;
+}
+function agKwRow(k){
+  if (typeof k === "string") return agEsc(k);
+  return `${agEsc(k.keyword || "")}${k.volume != null ? ` <small>${agEsc(agNum(k.volume))}/mo</small>` : ""}${k.kd != null ? ` <small>kd ${agEsc(k.kd)}</small>` : ""}${k.why ? `<div class="h">${agEsc(k.why)}</div>` : ""}`;
+}
+
 function agResearchHtml(r){
   if (!r) return `<div class="zero"><h4>Nothing to show</h4></div>`;
-  const pk = r.primary_keyword || {};
+  /* the new brief carries keywords.primary; an older run carried primary_keyword */
+  const kw = r.keywords || {};
+  const pk = kw.primary || r.primary_keyword || {};
+  const serp = r.serp || {};
+  const win = r.winners || {};
+  const world = r.world || {};
+  const spec = r.build_spec || {};
+  const band = spec.word_band || {};
   const demo = !!r.demo;
   return `<div class="ag-kw">${agEsc(pk.keyword || r.topic || "")}</div>
+    ${r.topic && pk.keyword && r.topic !== pk.keyword ? `<div class="ag-sub">${agEsc(r.topic)}</div>` : ""}
     <div class="ag-nums">
       <div class="ag-num ${demo ? "demo" : ""}"><b>${agEsc(agNum(pk.volume))}</b><span>searches / mo</span></div>
-      <div class="ag-num ${demo ? "demo" : ""}"><b>${agEsc(agNum(pk.difficulty))}</b><span>difficulty</span></div>
-      ${pk.cpc != null ? `<div class="ag-num ${demo ? "demo" : ""}"><b>$${agEsc(pk.cpc)}</b><span>cpc</span></div>` : ""}
-      ${r.intent ? `<div class="ag-num"><b style="font-family:var(--sans);font-size:13px;text-transform:capitalize">${agEsc(r.intent)}</b><span>intent</span></div>` : ""}
+      <div class="ag-num ${demo ? "demo" : ""}"><b>${agEsc(agNum(pk.kd != null ? pk.kd : pk.difficulty))}</b><span>difficulty</span></div>
+      ${pk.intent ? `<div class="ag-num"><b style="font-family:var(--sans);font-size:13px;text-transform:capitalize">${agEsc(pk.intent)}</b><span>intent</span></div>` : ""}
+      ${band.min ? `<div class="ag-num"><b>${agEsc(agNum(band.min))}–${agEsc(agNum(band.max))}</b><span>words that rank</span></div>` : ""}
     </div>
-    ${demo ? `<div class="note w" style="margin:0 0 12px"><b>Demo numbers.</b> DataForSEO is not connected, so these figures are placeholders.</div>` : ""}
-    ${r.primary_keyword_why ? `<h3 class="sec">Why this keyword</h3><p style="margin:0 0 12px;font-size:12px;color:var(--muted);line-height:1.55">${agEsc(r.primary_keyword_why)}</p>` : ""}
-    ${(r.secondary_keywords || []).length ? `<h3 class="sec">Also worth using</h3><ul class="ag-list">${r.secondary_keywords.map(k => `<li>${agEsc(k.keyword)}<small>${agEsc(agNum(k.volume))}/mo · d${agEsc(k.difficulty)}</small></li>`).join("")}</ul>` : ""}
-    ${(r.people_also_ask || []).length ? `<h3 class="sec">People also ask</h3><ul class="ag-list">${r.people_also_ask.map(q => `<li>${agEsc(q)}</li>`).join("")}</ul>` : ""}
-    ${(r.top_results || []).length ? `<h3 class="sec">Who ranks today</h3><table class="ag-pages"><thead><tr><th></th><th>Page</th></tr></thead><tbody>${r.top_results.map(p => `<tr><td class="n">${agEsc(p.position)}</td><td><a href="${agEsc(p.url)}" target="_blank" rel="noopener">${agEsc(p.title || p.url)}</a><div class="h">${agEsc(agDomain(p.url))}${p.description ? " · " + agEsc(p.description) : ""}</div></td></tr>`).join("")}</tbody></table>` : ""}
-    ${(r.what_they_all_cover || []).length ? `<h3 class="sec">What they all cover</h3><ul class="ag-list">${r.what_they_all_cover.map(x => `<li>${agEsc(x)}</li>`).join("")}</ul>` : ""}
-    ${r.the_gap ? `<h3 class="sec">The gap</h3><div class="ag-gap">${agEsc(r.the_gap)}</div>` : ""}
-    ${r.recommended_angle ? `<h3 class="sec">The angle</h3><p style="margin:0 0 12px;font-size:12px;color:var(--ink);line-height:1.55">${agEsc(r.recommended_angle)}</p>` : ""}
-    ${r.candidates_considered != null ? `<p style="font:500 10.5px/1.5 var(--mono);color:var(--faint);margin:0">${agEsc(r.candidates_considered)} keywords considered${r.skipped_already_ranking ? ` · ${agEsc(r.skipped_already_ranking)} skipped because you already rank` : ""}</p>` : ""}`;
+    ${pk.split_world ? `<div class="note w" style="margin:0 0 12px"><b>Shared phrase.</b> Part of this keyword's searches belong to another field. ${agEsc(pk.why || "")}</div>` : pk.why ? `<p class="ag-why">${agEsc(pk.why)}</p>` : ""}
+    ${r.cannibalisation && r.cannibalisation.url ? `<div class="note w" style="margin:0 0 12px"><b>You already rank for this.</b> <a href="${agEsc(r.cannibalisation.url)}" target="_blank" rel="noopener">${agEsc(agPath(r.cannibalisation.url))}</a> sits at #${agEsc(r.cannibalisation.rank)} for “${agEsc(r.cannibalisation.keyword)}”. A second page can split that traffic. The team should know.</div>` : ""}
+    ${r.angle ? agBlock("The angle", `<div class="ag-gap">${agEsc(r.angle)}</div>`) : ""}
+    ${r.spine ? agBlock("What the article argues", `<p class="ag-p">${agEsc(r.spine)}</p>`) : ""}
+    ${world.about ? agBlock("What it is about, and not about", `<dl class="ag-kv"><dt>About</dt><dd>${agEsc(world.about)}</dd><dt>Not about</dt><dd>${agEsc(world.not_about || "")}</dd></dl>`) : ""}
+    ${agBlock("Also worth weaving in", agUl(kw.variations, agKwRow), "same meaning as the primary")}
+    ${agBlock("Section-worthy sub-topics", agUl(kw.secondary, agKwRow))}
+    ${(serp.who_ranks || r.top_results || []).length ? agBlock("Who ranks today", `<table class="ag-pages"><thead><tr><th>#</th><th>Page</th></tr></thead><tbody>${(serp.who_ranks || r.top_results).slice(0, 10).map(t => `<tr><td class="n">${agEsc(t.rank || t.position)}</td><td><a href="${agEsc(t.url)}" target="_blank" rel="noopener">${agEsc(t.title || t.url)}</a><div class="h">${agEsc(t.domain || agDomain(t.url))}</div></td></tr>`).join("")}</tbody></table>`) : ""}
+    ${serp.ai_overview && serp.ai_overview.text ? agBlock("Google's own answer", `<p class="ag-p">${agEsc(String(serp.ai_overview.text).slice(0, 900))}</p>${(serp.ai_overview.cites || []).length ? `<div class="ag-sub">Cites: ${serp.ai_overview.cites.slice(0, 8).map(agEsc).join(", ")}</div>` : ""}`) : ""}
+    ${agBlock("Questions people ask", agUl(serp.paa_on || r.people_also_ask))}
+    ${agBlock("What the winning pages all cover", agUl(win.common_h2s || r.what_they_all_cover))}
+    ${agBlock("Where they drift", agUl(win.drift))}
+    ${(win.gaps_to_own || []).length || r.the_gap ? agBlock("The gap we can own", (win.gaps_to_own || []).length ? agUl(win.gaps_to_own) : `<div class="ag-gap">${agEsc(r.the_gap)}</div>`) : ""}
+    ${(r.verdict || []).length ? agBlock("Verdict", agUl(r.verdict)) : ""}
+    ${r.evidence_count != null || r.ownpage_count != null ? agBlock("Evidence gathered", `<div class="ag-nums"><div class="ag-num"><b>${agEsc(agNum(r.evidence_count))}</b><span>facts with sources</span></div><div class="ag-num"><b>${agEsc(agNum(r.ownpage_count))}</b><span>of your pages found</span></div>${r.cost_usd != null ? `<div class="ag-num"><b>$${agEsc(Number(r.cost_usd).toFixed(2))}</b><span>DataForSEO spent</span></div>` : ""}</div>`) : ""}
+    ${r.reuse && r.reuse.verdict ? agBlock("Do you already have this?", `<p class="ag-p"><b>${agEsc(r.reuse.verdict)}.</b> ${agEsc(r.reuse.why || "")}</p>${agUl(r.reuse.chosen_links, u => `<a href="${agEsc(u)}" target="_blank" rel="noopener">${agEsc(agPath(u))}</a>`)}`) : ""}
+    ${r.persona && r.persona.name ? agBlock("Written for", `<p class="ag-p"><b>${agEsc(r.persona.name)}.</b> ${agEsc(r.persona.lens || r.persona.why || "")}</p>`) : ""}
+    ${(r.notes || []).length ? agBlock("Notes", agUl(r.notes)) : ""}`;
 }
 
 function agBlueprintHtml(bp, edit, checks){
   if (!bp) return `<div class="zero"><h4>Nothing to show</h4></div>`;
   const secs = bp.sections || [];
-  const total = secs.reduce((n, s) => n + (Number(s.words) || 0), 0);
-  return `<div class="ag-kw" style="font-size:17px">${agEsc(bp.title || "")}</div>
-    ${bp.meta_description ? `<p style="margin:6px 0 10px;font-size:12px;color:var(--muted);line-height:1.5">${agEsc(bp.meta_description)}</p>` : ""}
-    <div class="ag-nums"><div class="ag-num"><b>${agEsc(secs.length)}</b><span>sections</span></div><div class="ag-num"><b>${agEsc(agNum(total))}</b><span>words planned</span></div></div>
+  const ks = bp.keyword_set || {};
+  const newShape = secs.length && secs[0].h2 !== undefined;
+  return `${bp.h1 || bp.title ? `<div class="ag-kw">${agEsc(bp.h1 || bp.title)}</div>` : ""}
+    <div class="ag-sub">${agEsc(secs.length)} sections${bp.format_archetype ? ` · ${agEsc(String(bp.format_archetype).replace(/-/g, " "))}` : ""}${bp.word_band && bp.word_band.min ? ` · ${agEsc(agNum(bp.word_band.min))}–${agEsc(agNum(bp.word_band.max))} words` : bp.target_words ? ` · about ${agEsc(agNum(bp.target_words))} words` : ""}${bp.angle_filter ? ` · kept ${agEsc(bp.angle_filter.kept)} of ${agEsc((bp.angle_filter.kept || 0) + (bp.angle_filter.dropped || 0))} facts` : ""}</div>
     ${checks ? agChecksHtml(checks) : ""}
-    ${bp.keyword_placement ? `<div class="ag-gap" style="font-size:11.5px">${agEsc(bp.keyword_placement)}</div>` : ""}
-    <h3 class="sec">Sections · reorder with the arrows, or ask for a rewrite</h3>
-    ${secs.map((s, i) => `<div class="ag-bp" data-sec="${agEsc(s.id)}">
-      <div class="bh"><span class="n">${i + 1}</span><span class="bt">${agEsc(s.heading)}</span><span class="bw">${agEsc(s.words || "")}${s.words ? "w" : ""}</span>
-        <button class="ib" type="button" data-ag="bpmove" data-arg="${agEsc(s.id)}" data-dir="-1" aria-label="Move up" ${i === 0 ? "disabled" : ""}>${AG_ICON.up}</button>
-        <button class="ib" type="button" data-ag="bpmove" data-arg="${agEsc(s.id)}" data-dir="1" aria-label="Move down" ${i === secs.length - 1 ? "disabled" : ""}>${AG_ICON.down}</button>
-        <button class="ib" type="button" data-ag="bpedit" data-arg="${agEsc(s.id)}" aria-label="Rewrite this section's plan" title="Rewrite this section's plan">${AG_ICON.pencil}</button></div>
-      <div class="bc">${agEsc(s.covers || "")}
-        ${(s.internal_links || []).length ? `<div class="bl">Links: ${s.internal_links.map(l => `<a href="${agEsc(l.url)}" target="_blank" rel="noopener">${agEsc(l.anchor || l.url)}</a>`).join(" · ")}</div>` : ""}
-        ${edit && edit.id === s.id ? `<div class="be"><input type="text" data-agbpinstr placeholder="What should change in this section?" value="${agEsc(edit.text || "")}" aria-label="Instruction"><button class="btn pri" type="button" data-ag="bpsubmit" data-arg="${agEsc(s.id)}" ${edit.busy ? "disabled" : ""}>${edit.busy ? "Rewriting…" : "Rewrite"}</button><button class="btn" type="button" data-ag="bpcancel">Cancel</button></div>` : ""}
-      </div></div>`).join("")}`;
+    ${ks.primary ? `<dl class="ag-kv" style="margin-top:10px"><dt>Primary</dt><dd>${agEsc(ks.primary)}</dd>${(ks.variations || []).length ? `<dt>Variations</dt><dd>${ks.variations.map(agEsc).join(", ")}</dd>` : ""}${(ks.secondaries || []).length ? `<dt>Sub-topics</dt><dd>${ks.secondaries.map(agEsc).join(", ")}</dd>` : ""}</dl>` : ""}
+    ${secs.map((s, i) => {
+      const id = s.id || ("s" + (i + 1));
+      const heading = newShape ? s.h2 : s.heading;
+      const job = newShape ? s.job : s.covers;
+      const ev = newShape ? (s.evidence || []).length + (s.h3 || []).reduce((n, h) => n + (h.evidence || []).length, 0) : null;
+      const links = newShape ? (s.internal_links || []) : (s.internal_links || []).map(l => l.url);
+      const editing = edit && edit.id === id;
+      return `<div class="ag-bp" data-sec="${agEsc(id)}">
+        <div class="bh"><span class="n">${i + 1}</span><span class="bt">${agEsc(heading || "")}</span>
+          ${s.target_keyword ? `<span class="pill p-acc" title="Keyword this heading carries">${agEsc(s.target_keyword)}</span>` : ""}
+          ${ev != null ? `<span class="bw">${ev} facts</span>` : s.words ? `<span class="bw">${agEsc(s.words)}w</span>` : ""}
+          <button class="ib" type="button" data-ag="bpmove" data-arg="${agEsc(id)}" data-dir="-1" aria-label="Move up" ${i === 0 ? "disabled" : ""}>${AG_ICON.up}</button>
+          <button class="ib" type="button" data-ag="bpmove" data-arg="${agEsc(id)}" data-dir="1" aria-label="Move down" ${i === secs.length - 1 ? "disabled" : ""}>${AG_ICON.down}</button>
+          <button class="ib" type="button" data-ag="bpedit" data-arg="${agEsc(id)}" aria-label="Ask for a change to this section" title="Rewrite this section only">${AG_ICON.pencil}</button></div>
+        <div class="bc">${agEsc(job || "")}
+          ${(s.h3 || []).length ? `<ul class="ag-h3s">${s.h3.map(h => `<li>${agEsc(h.h3)}${(h.evidence || []).length ? ` <small>${h.evidence.length} facts</small>` : ""}</li>`).join("")}</ul>` : ""}
+          ${links.length ? `<div class="bl">Links to your pages: ${links.map(u => `<a href="${agEsc(u)}" target="_blank" rel="noopener">${agEsc(agPath(u))}</a>`).join(" · ")}</div>` : ""}
+          ${editing ? `<div class="be"><input type="text" data-agbpinstr placeholder="What should change in this section?" value="${agEsc(edit.text || "")}" aria-label="Instruction">
+              <button class="btn pri" type="button" data-ag="bpsubmit" data-arg="${agEsc(id)}" ${edit.busy ? "disabled" : ""}>${edit.busy ? "Rewriting…" : "Rewrite"}</button>
+              <button class="btn" type="button" data-ag="bpcancel">Cancel</button></div>` : ""}
+        </div></div>`;
+    }).join("")}
+    ${(bp.faq || []).length ? agBlock("FAQ the article will answer", agUl(bp.faq)) : ""}
+    ${(bp.orphan_keywords || []).length ? agBlock("Searched-for phrases no section covers", agUl(bp.orphan_keywords, k => `${agEsc(k.keyword)} <small>${agEsc(agNum(k.volume))}/mo</small>`), "consider a section") : ""}
+    ${bp.persona && bp.persona.name ? `<div class="ag-sub" style="margin-top:12px">Written for <b>${agEsc(bp.persona.name)}</b></div>` : ""}`;
 }
 
 function agChecksHtml(checks){
-  const list = Array.isArray(checks) ? checks : (checks && checks.results) || [];
+  const list = Array.isArray(checks) ? checks : (checks && checks.results) || (checks && typeof checks === "object" && !checks.results
+    ? Object.keys(checks).map(k => ({ name: k, ok: !!checks[k] })) : []);
   if (!list.length) return "";
   return `<div class="ag-checks" aria-label="Checks">${list.map(c => {
     const ok = c.ok === true || c.pass === true || c.status === "ok" || c.status === "pass";
@@ -533,16 +611,44 @@ function agChecksHtml(checks){
 
 function agDiffHtml(diff){
   if (!diff) return "";
-  const lines = String(diff).split("\n").filter(l => !/^(---|\+\+\+|@@)/.test(l));
-  return `<pre class="ag-diff">${lines.map(l => l[0] === "+" ? `<span class="add">${agEsc(l)}</span>` : l[0] === "-" ? `<span class="del">${agEsc(l)}</span>` : agEsc(l)).join("\n")}</pre>`;
+  return `<pre class="ag-diff">${String(diff).split("\n").map(l => l.startsWith("+") && !l.startsWith("+++") ? `<span class="add">${agEsc(l)}</span>`
+    : l.startsWith("-") && !l.startsWith("---") ? `<span class="del">${agEsc(l)}</span>` : agEsc(l)).join("\n")}</pre>`;
 }
 
-function agArticleHtml(md, edit, last, readOnly){
+/* The links the pass laid in, with the match score each one earned. */
+function agLinksHtml(rep){
+  if (!rep) return "";
+  const inline = (rep.placed || []).filter(p => p.kind === "inline");
+  const rm = (rep.placed || []).filter(p => p.kind === "read-more");
+  const ext = rep.external_kept || [];
+  if (!inline.length && !rm.length && !ext.length && !rep.note) return "";
+  const score = p => {
+    const v = p.rr != null ? p.rr : p.sim;
+    if (v == null) return "";
+    const weak = Number(v) < AG_LINK_WEAK;
+    return `<span class="ag-score ${weak ? "weak" : ""}" title="How well the page matched the section (rerank score)">match ${agEsc(Number(v).toFixed(2))}${weak ? " · weak" : ""}</span>`;
+  };
+  return `<div class="ag-links">
+    <h3 class="sec">Links placed <small>${inline.length} to your pages · ${rm.length} read-more · ${ext.length} sources</small></h3>
+    ${rep.note ? `<p class="ag-sub">${agEsc(rep.note)}</p>` : ""}
+    ${inline.map(p => `<div class="ag-link"><span class="an">“${agEsc(p.anchor)}”</span> → <a href="${agEsc(p.url)}" target="_blank" rel="noopener">${agEsc(agPath(p.url))}</a>${score(p)}<div class="h">in “${agEsc(p.section)}”${p.why ? ` · ${agEsc(p.why)}` : ""}</div></div>`).join("")}
+    ${rm.map(p => `<div class="ag-link"><span class="an">Read more</span> → <a href="${agEsc(p.url)}" target="_blank" rel="noopener">${agEsc(agPath(p.url))}</a><div class="h">after “${agEsc(p.after_section)}”</div></div>`).join("")}
+    ${ext.map(k => `<div class="ag-link"><span class="an">Source</span> → <a href="${agEsc(k.url)}" target="_blank" rel="noopener">${agEsc(agDomain(k.url))}</a>${k.anchor_phrase ? `<div class="h">on “${agEsc(k.anchor_phrase)}”</div>` : `<div class="h">as a numbered citation</div>`}</div>`).join("")}
+    ${rep.integrity_clean === false ? `<div class="ag-err">Some text moved beyond the declared links, so those blocks were put back exactly as they were.</div>` : ""}
+  </div>`;
+}
+
+function agArticleHtml(md, edit, last, readOnly, extra){
   const text = typeof md === "string" ? md : (md && md.text) || "";
   const blocks = agBlocks(text);
   if (!blocks.length) return `<div class="zero"><h4>Empty draft</h4></div>`;
-  return `<p style="font:500 10.5px/1.5 var(--mono);color:var(--faint);margin:0 0 10px">${agEsc(agNum(agWords(text)))} words · ${blocks.length} blocks${readOnly ? "" : " · hover a paragraph to edit it"}</p>
-    ${last && last.checks ? agChecksHtml(last.checks) : ""}
+  extra = extra || {};
+  const rep = extra.write || {};
+  const cov = rep.checklist || rep.coverage;
+  const len = rep.length;
+  return `<p class="ag-sub" style="margin:0 0 10px">${agEsc(agNum(agWords(text)))} words${len && len.band_min ? ` · aimed ${agEsc(agNum(len.band_min))}–${agEsc(agNum(len.band_max))}` : ""} · ${blocks.length} blocks${readOnly ? "" : " · hover a paragraph to edit it"}</p>
+    ${cov ? agChecksHtml(cov) : last && last.checks ? agChecksHtml(last.checks) : ""}
+    ${extra.links ? agLinksHtml(extra.links) : ""}
     <div class="ag-doc">${blocks.map((b, i) => {
       const id = "p" + i;
       const editing = edit && edit.id === id;
@@ -554,6 +660,70 @@ function agArticleHtml(md, edit, last, readOnly){
           ${last && last.block === id && last.diff ? agDiffHtml(last.diff) : ""}
         </div>` : ""}</div>`;
     }).join("")}</div>`;
+}
+
+/* The brand pack: every file the setup built, what each is for, and what needs a look. */
+const AG_BRAND_FILES = [
+  ["company.json", "The company record", "Name, website, one line on what they do, the market. The agent asks you to confirm the one-liner."],
+  ["writer-brief.md", "Writer brief", "The one page every article is written from: what they believe, how they sound, words they use and refuse."],
+  ["brand-voice.md", "Brand voice", "How the brand sounds, with real examples from the site."],
+  ["style-guide.md", "Style guide", "Capitalisation, numbers, punctuation, house spelling, words to avoid."],
+  ["persona.md", "Readers", "Who the articles are written for. Three or four reader types and how to pick one."],
+  ["features.md", "Product facts", "What they sell, integrations, pricing, proof. The close reads this."],
+  ["cta-pages.md", "Pages a call to action may link to", "The short list the article's close is allowed to point at."],
+  ["stats.md", "Real numbers", "Figures about the company drafted from the site. Rows marked ⚠️ need your confirmation."],
+  ["stories.md", "Customer stories", "Named results drafted from the site. Confirm before they can be cited."],
+  ["opinions.md", "Opinions", "What the company believes. Only a person fills this."],
+  ["brand-cards.json", "Brand cards", "The numbers and stories as placeable facts, each with its source."],
+  ["writing-examples.md", "Worked examples", "The best on-voice articles, annotated."],
+  ["voices.md", "Bylines", "Who signs the writing. Filled by the team."],
+  ["writer-brief-rulings.md", "Rulings", "Decisions that outrank everything else in the brief."],
+  ["writing-integrity.md", "Writing integrity", "The honesty contract: no invented customers, no hype, cite properly."],
+  ["field-sources.md", "Where the audience talks", "The checked communities where practitioners argue in public."],
+  ["page-shortlist.md", "Pages the voice was learned from", "Twenty to forty pages, top-traffic plus the positioning pages."],
+  ["type-roles.json", "Page types", "Which page types carry numbers, stories, products, articles."],
+  ["seo-aeo-geo-checklist.md", "SEO checklist", "The per-article gate the write phase follows."],
+];
+
+function agBrandPackHtml(pack, opts){
+  opts = opts || {};
+  const files = (pack && pack.files) || [];
+  const byName = {};
+  for (const f of files) byName[f.name] = f;
+  const review = (pack && pack.needs_review) || [];
+  const known = AG_BRAND_FILES.map(r => r[0]);
+  const extra = files.filter(f => known.indexOf(f.name) === -1 && f.exists);
+  const built = files.filter(f => f.exists).length;
+  return `<p class="ag-sub" style="margin:0 0 10px">${built} of ${AG_BRAND_FILES.length} files built${review.length ? ` · <b style="color:var(--warn)">${review.length} need a look</b>` : ""}</p>
+    ${review.length ? `<div class="note w" style="margin:0 0 12px"><b>Confirm these before they are used.</b><ul class="ag-list" style="margin:6px 0 0">${review.map(r => `<li>${agEsc(r)}</li>`).join("")}</ul></div>` : ""}
+    <div class="ag-files">${AG_BRAND_FILES.map(r => {
+      const f = byName[r[0]];
+      const ok = !!(f && f.exists);
+      return `<button class="ag-file ${ok ? "" : "off"}" type="button" data-ag="brandfile" data-arg="${agEsc(r[0])}" ${ok ? "" : "disabled"}>
+        <span class="fi" aria-hidden="true">${AG_ICON.doc}</span>
+        <span class="ft"><span class="fn">${agEsc(r[1])}${f && f.flags ? ` <span class="pill p-warn">${agEsc(f.flags)} to confirm</span>` : ""}</span><span class="fd">${agEsc(r[2])}</span></span>
+        <span class="fm">${ok ? (f.words ? agEsc(agNum(f.words)) + " words" : "built") : "not built yet"}</span></button>`;
+    }).join("")}${extra.map(f => `<button class="ag-file" type="button" data-ag="brandfile" data-arg="${agEsc(f.name)}"><span class="fi" aria-hidden="true">${AG_ICON.doc}</span><span class="ft"><span class="fn">${agEsc(f.name)}</span></span><span class="fm">${agEsc(agNum(f.words))} words</span></button>`).join("")}</div>`;
+}
+
+function agBrandFileHtml(d, edit){
+  if (!d) return `<div class="zero"><h4>Nothing to show</h4></div>`;
+  const isJson = typeof d.text !== "string";
+  const text = isJson ? JSON.stringify(d, null, 2) : d.text;
+  if (edit) return `<div class="ag-editbox"><textarea data-agfiletext class="tall" aria-label="File text">${agEsc(edit.text != null ? edit.text : text)}</textarea>
+    <div class="row"><button class="btn pri" type="button" data-ag="filesave" ${edit.busy ? "disabled" : ""}>${edit.busy ? "Saving…" : "Save"}</button><button class="btn" type="button" data-ag="filecancel">Cancel</button><span class="sp">${edit.msg ? agEsc(edit.msg) : "Your text becomes the truth; the builders never overwrite it."}</span></div></div>`;
+  return isJson ? `<pre class="ag-detail" style="max-height:none">${agEsc(text)}</pre>` : `<div class="ag-doc">${agMd(text)}</div>`;
+}
+
+function agPageHtml(d){
+  if (!d) return `<div class="zero"><h4>Nothing to show</h4></div>`;
+  const r = d.row || {};
+  return `<div class="ag-sub" style="margin:0 0 10px"><a href="${agEsc(d.url)}" target="_blank" rel="noopener">${agEsc(d.url)}</a></div>
+    <div class="ag-nums">${r.traffic_clean != null || r.traffic != null ? `<div class="ag-num"><b>${agEsc(agNum(r.traffic_clean != null ? r.traffic_clean : r.traffic))}</b><span>visits / mo</span></div>` : ""}
+      <div class="ag-num"><b>${agEsc(agNum(r.word_count || agWords(d.text)))}</b><span>words</span></div>
+      ${r.top_keyword ? `<div class="ag-num"><b style="font-family:var(--sans);font-size:13px">${agEsc(r.top_keyword)}</b><span>top keyword${r.position ? " · #" + agEsc(r.position) : ""}</span></div>` : ""}
+      ${r.type ? `<div class="ag-num"><b style="font-family:var(--sans);font-size:13px">${agEsc(r.type)}</b><span>type</span></div>` : ""}</div>
+    <div class="ag-doc">${agMd(d.text)}</div>`;
 }
 
 function agPanelHtml(a){
@@ -570,6 +740,16 @@ function agPanelHtml(a){
     if (atCheckpoint) footer = `<button class="btn pri" type="button" data-ag="usetopic" ${a.picked ? "" : "disabled"}>Use this topic</button>
       <button class="btn" type="button" data-ag="changes" data-text="Different ideas, please. This time ">Ask for different ideas</button>
       <span class="sp">${a.picked ? "" : "Pick one to continue"}</span>`;
+  } else if (p.view === "brand_pack"){
+    body = agBrandPackHtml(p.data);
+    if (atCheckpoint) footer = `<button class="btn pri" type="button" data-ag="approvert">Looks right, continue</button>
+      <button class="btn" type="button" data-ag="changes" data-text="About the brand pack: ">Ask for changes</button>
+      <span class="sp">Open a file to read or edit it</span>`;
+  } else if (p.view === "brand_file"){
+    body = agBrandFileHtml(p.data, a.fileEdit);
+    footer = a.fileEdit ? "" : `<button class="btn" type="button" data-ag="fileedit">Edit</button>${p.back ? `<button class="btn" type="button" data-ag="back">Back to the pack</button>` : ""}`;
+  } else if (p.view === "page"){
+    body = agPageHtml(p.data);
   } else if (p.view === "research_brief"){
     body = agResearchHtml(p.data);
     if (atCheckpoint) footer = `<button class="btn pri" type="button" data-ag="approvert">Approve &amp; continue</button>
@@ -577,10 +757,10 @@ function agPanelHtml(a){
   } else if (p.view === "blueprint"){
     body = agBlueprintHtml(p.data, a.bpEdit, p.checks);
     if (atCheckpoint) footer = `<button class="btn pri" type="button" data-ag="approvert" ${a.busy ? "disabled" : ""}>Approve &amp; continue</button>
-      <button class="btn" type="button" data-ag="changes" data-text="About the structure: ">Ask for changes</button>
+      <button class="btn" type="button" data-ag="changes" data-text="About the plan: ">Ask for changes</button>
       <span class="sp">${p.dirty ? "Reordered · saved on approve" : ""}</span>`;
   } else if (p.view === "article"){
-    body = agArticleHtml(p.data, a.artEdit, a.lastEdit, !!p.readOnly);
+    body = agArticleHtml(p.data, a.artEdit, a.lastEdit, !!p.readOnly, { links: p.links, write: p.write });
     if (p.readOnly) footer = `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
       <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="publish" ${a.busy ? "disabled" : ""}>Save to Library</button>
@@ -595,35 +775,126 @@ function agPanelHtml(a){
 
 /* ── settings views ────────────────────────────────────────────────────────── */
 
-function agKnowledgeHtml(k, form){
+function agKnowledgeHtml(k, a){
+  a = a || {};
   if (!k) return `<div class="ag-view"><h2>Knowledge</h2><p class="lead">Reading…</p></div>`;
-  const idx = k.site_index; const pages = idx ? (Array.isArray(idx) ? idx : (idx.pages || [])) : [];
-  const domain = idx && !Array.isArray(idx) ? idx.domain : "";
-  const voice = k.brand_voice || null;
+  const idx = k.site_index || {};
+  const co = k.company || {};
+  const rep = k.report || {};
+  const pi = k.page_index || {};
+  const pages = a.pages || null;
+  const gates = rep.gates || [];
+  const types = idx.types || {};
+  const typeList = Object.keys(types).sort((x, y) => types[y] - types[x]);
   const comps = k.competitors; const compList = Array.isArray(comps) ? comps : (comps && (comps.competitors || comps.domains)) || [];
-  const compText = form && form.text != null ? form.text : compList.map(c => typeof c === "string" ? c : (c.domain || c.name || "")).join("\n");
-  return `<div class="ag-view"><h2>Knowledge</h2>
-    <p class="lead">What the agent knows about the business. Big and searched, not pasted into every prompt. Rebuilt by asking the agent to index the site again.</p>
-    <h3 class="sec">Site index</h3>
-    ${pages.length ? `<div class="ag-row"><div class="ri"><div class="rn">${agEsc(domain || "your site")} <span class="pill p-ok">${agEsc(pages.length)} pages</span></div>
-        <div class="rd">${agEsc(pages.filter(p => p.top_keyword).length)} pages with a ranking keyword${idx.indexed_at ? " · indexed " + agEsc(agAgo(idx.indexed_at)) : ""}</div>
-        <table class="ag-pages" style="margin-top:10px"><thead><tr><th>Page</th><th>Ranks for</th></tr></thead><tbody>${pages.slice(0, 12).map(p => `<tr><td><a href="${agEsc(p.url || "")}" target="_blank" rel="noopener">${agEsc(p.title || p.url || "")}</a>${p.covers ? `<div class="h">${agEsc(String(p.covers).slice(0, 120))}</div>` : ""}</td><td>${p.top_keyword ? agEsc(p.top_keyword) + (p.position ? ` <small style="color:var(--faint);font-family:var(--mono)">#${agEsc(p.position)}</small>` : "") : "—"}</td></tr>`).join("")}</tbody></table>
-        ${pages.length > 12 ? `<div class="rm">and ${pages.length - 12} more</div>` : ""}</div></div>`
-      : `<div class="ag-row"><div class="ri"><div class="rn">No site index yet</div><div class="rd">Ask the agent: “Set up for my site: index example.com”. It catalogues every page and what each ranks for.</div></div></div>`}
-    <h3 class="sec">Voice</h3>
-    ${voice && voice.summary ? `<div class="ag-row"><div class="ri"><div class="rn">${agEsc(voice.company || domain || "How you write")}</div><div class="rd">${agEsc(voice.summary)}</div>
-        ${(voice.avoid || []).length ? `<div class="rm">Never uses: ${voice.avoid.slice(0, 15).map(agEsc).join(", ")}</div>` : ""}</div></div>`
-      : `<div class="ag-row"><div class="ri"><div class="rn">No voice profile yet</div><div class="rd">Learned from your own pages after the site is indexed.</div></div></div>`}
+  const compText = a.compForm && a.compForm.text != null ? a.compForm.text : compList.map(c => typeof c === "string" ? c : (c.domain || c.name || "")).join("\n");
+  const cf = a.coForm || {};
+  const indexed = !!idx.page_count;
+  return `<div class="ag-view wide"><h2>Knowledge</h2>
+    <p class="lead">Everything the agent knows about ${agEsc(co.brand || idx.domain || "the business")}. Big and searched, not pasted into every prompt. Click anything to read it.</p>
+
+    <h3 class="sec">The company</h3>
+    <div class="ag-row"><div class="ri">
+      <div class="ag-form" style="max-width:none">
+        <div class="two"><label><b>Name</b><input type="text" data-agco="brand" value="${agEsc(cf.brand != null ? cf.brand : co.brand || "")}" placeholder="Company name"></label>
+          <label><b>Website</b><input type="text" data-agco="domain" value="${agEsc(cf.domain != null ? cf.domain : co.domain || "")}" placeholder="example.com"></label></div>
+        <label><b>One line on what they do</b><input type="text" data-agco="brand_oneliner" value="${agEsc(cf.brand_oneliner != null ? cf.brand_oneliner : co.brand_oneliner || "")}" placeholder="Drafted from the site during setup; confirm or fix it"></label>
+        <label><b>The field they sell into</b><input type="text" data-agco="niche_definition" value="${agEsc(cf.niche_definition != null ? cf.niche_definition : co.niche_definition || "")}" placeholder="Used to judge whether a topic is theirs"></label>
+        <div class="two"><label><b>Market for keyword numbers</b><input type="text" data-agco="location_name" value="${agEsc(cf.location_name != null ? cf.location_name : co.location_name || "United States")}"></label>
+          <label><b>Language</b><input type="text" data-agco="language_code" value="${agEsc(cf.language_code != null ? cf.language_code : co.language_code || "en")}"></label></div>
+        <div class="row"><button class="btn pri" type="button" data-ag="saveco">Save</button><span class="sp">${cf.msg ? agEsc(cf.msg) : co.wordpress_url ? "WordPress site · read through its own API" : ""}</span></div>
+      </div></div></div>
+
+    <h3 class="sec">The site catalogue</h3>
+    ${indexed ? `<div class="ag-row"><div class="ri">
+        <div class="rn">${agEsc(idx.domain || "your site")} <span class="pill p-ok">${agEsc(agNum(idx.page_count))} pages</span>${rep.confidence ? `<span class="pill ${/FULL/.test(rep.confidence) ? "p-ok" : "p-warn"}" title="${agEsc(rep.confidence)}">${agEsc(String(rep.confidence).split(" ")[0].toLowerCase())} confidence</span>` : ""}</div>
+        <div class="rd">${agEsc(agNum(idx.ranking_pages))} pages rank for something · ${agEsc(agNum(idx.ok_pages))} with full text${idx.indexed_at ? " · read " + agEsc(agAgo(idx.indexed_at)) : ""}</div>
+        ${gates.length ? `<div class="ag-checks" style="margin:8px 0 4px">${gates.map(g => `<span class="ag-check ${g.pass ? "" : "warn"}" title="${agEsc(g.detail || "")}">${g.pass ? "✓" : "!"} ${agEsc(g.name)}</span>`).join("")}</div>` : ""}
+        ${typeList.length ? `<div class="rm">${typeList.slice(0, 8).map(t => `<span>${agEsc(t)} <b>${agEsc(agNum(types[t]))}</b></span>`).join("")}</div>` : ""}
+        <div class="ag-addrow" style="margin:12px 0 8px"><input type="search" data-agpageq placeholder="Search pages by title, address or keyword" value="${agEsc(a.pageQ || "")}" aria-label="Search pages">
+          <select data-agpagetype aria-label="Page type"><option value="">All types</option>${typeList.map(t => `<option value="${agEsc(t)}" ${a.pageType === t ? "selected" : ""}>${agEsc(t)}</option>`).join("")}</select></div>
+        ${pages ? `<table class="ag-pages"><thead><tr><th>Page</th><th>Type</th><th>Visits/mo</th><th>Ranks for</th><th>Text</th></tr></thead><tbody>${(pages.rows || []).map(p => `<tr><td><button class="ag-pagelink" type="button" data-ag="page" data-arg="${agEsc(p.url)}">${agEsc(p.title || agPath(p.url))}</button><div class="h">${agEsc(agPath(p.url))}</div></td><td class="m">${agEsc(p.type || "")}</td><td class="m">${agEsc(agNum(p.traffic_clean != null ? p.traffic_clean : p.traffic))}</td><td>${p.top_keyword ? agEsc(p.top_keyword) + (p.position ? ` <small class="m">#${agEsc(p.position)}</small>` : "") : "—"}</td><td class="m">${p.body_status === "ok" ? agEsc(agNum(p.word_count)) + "w" : agEsc(p.body_status || "")}</td></tr>`).join("")}</tbody></table>
+          <div class="ag-pager"><span>${agEsc(agNum(pages.offset + 1))}–${agEsc(agNum(Math.min(pages.total, pages.offset + (pages.rows || []).length)))} of ${agEsc(agNum(pages.total))}</span>
+            <button class="btn" type="button" data-ag="pagesprev" ${pages.offset <= 0 ? "disabled" : ""}>Previous</button><button class="btn" type="button" data-ag="pagesnext" ${pages.offset + (pages.rows || []).length >= pages.total ? "disabled" : ""}>Next</button></div>` : `<div class="rd">Loading pages…</div>`}
+      </div></div>`
+      : `<div class="ag-row"><div class="ri"><div class="rn">No site catalogue yet</div><div class="rd">In the chat, give the agent the website. It reads every page and what each ranks for, and the catalogue appears here.</div></div></div>`}
+
+    <h3 class="sec">Pages indexed by meaning</h3>
+    ${pi.built ? `<div class="ag-row"><div class="ri">
+        <div class="rn">Page index <span class="pill p-ok">${agEsc(agNum(pi.pages))} pages · ${agEsc(agNum(pi.chunks))} passages</span></div>
+        <div class="rd">Every page's title and text turned into meaning vectors${pi.model ? ` (${agEsc(pi.model)})` : ""}${pi.built_at ? `, built ${agEsc(agAgo(pi.built_at))}` : ""}. This is how the agent finds the right page of yours to link to from each section.</div>
+        <div class="row" style="margin-top:8px"><button class="btn ${a.mapOn ? "" : "pri"}" type="button" data-ag="map">${a.mapOn ? "Hide the map" : "Show the map of your pages"}</button><span class="sp">${a.mapOn && a.map ? `${agEsc(agNum(a.map.n))} pages · pages that mean similar things sit close together · hover to read, click to open` : ""}</span></div>
+        ${a.mapOn ? `<div class="ag-map"><canvas id="agMap" width="900" height="520" aria-label="Map of the pages by meaning"></canvas><div class="ag-maptip" id="agMapTip" hidden></div>${a.map ? `<div class="ag-maplegend">${agMapLegend(a.map)}</div>` : `<div class="rd" style="padding:10px">Loading the map…</div>`}</div>` : ""}
+      </div></div>`
+      : `<div class="ag-row"><div class="ri"><div class="rn">Not built yet</div><div class="rd">${a.health && !a.health.voyage ? "Needs a Voyage key in Connections (free). Then ask the agent to index the pages by meaning." : indexed ? "Ask the agent to index the pages by meaning. It runs once and takes a minute per thousand pages." : "Built right after the site is read."}</div></div></div>`}
+
+    <h3 class="sec">The brand pack</h3>
+    ${k.brand && (k.brand.files || []).some(f => f.exists) ? agBrandPackHtml(k.brand, { inline: true })
+      : `<div class="ag-row"><div class="ri"><div class="rn">Not built yet</div><div class="rd">Built during setup from the site's own pages: voice, style, products, readers, real numbers, stories, and the writer brief every article follows.</div></div></div>`}
+
     <h3 class="sec">Competitors · one domain per line</h3>
-    <div class="ag-form"><label><textarea data-agcomps rows="5" style="background:var(--inset);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:7px 9px;font:400 12px/1.4 var(--mono)">${agEsc(compText)}</textarea></label>
-      <div class="row"><button class="btn pri" type="button" data-ag="savecomps">Save competitors</button><span class="sp">${form && form.saved ? "Saved" : "Topic ideas rotate through this list"}</span></div></div>
+    <div class="ag-form"><label><textarea data-agcomps rows="5" class="mono">${agEsc(compText)}</textarea></label>
+      <div class="row"><button class="btn pri" type="button" data-ag="savecomps">Save competitors</button><span class="sp">${a.compForm && a.compForm.saved ? "Saved" : "Topic ideas rotate through this list; their pages are never cited as sources"}</span></div></div>
   </div>`;
+}
+
+const AG_MAP_COLOURS = ["var(--acc)", "var(--ok)", "var(--warn)", "var(--block)", "#7c6cf0", "#2aa7c9", "#c96a2a", "#8a8a8a"];
+function agMapTypes(m){
+  const counts = {};
+  for (const p of (m && m.points) || []) counts[p.k || "page"] = (counts[p.k || "page"] || 0) + 1;
+  return Object.keys(counts).sort((x, y) => counts[y] - counts[x]);
+}
+function agMapLegend(m){
+  return agMapTypes(m).slice(0, AG_MAP_COLOURS.length).map((t, i) => `<span><i style="background:${AG_MAP_COLOURS[i]}"></i>${agEsc(t)}</span>`).join("");
+}
+/* Draw the map onto the canvas that agKnowledgeHtml rendered. Not pure: it needs the
+   DOM, so it runs after agDraw. Hover finds the nearest point within 8px. */
+function agDrawMap(){
+  if (typeof document === "undefined") return;
+  const a = agS(); const cv = document.getElementById("agMap");
+  if (!a || !cv || !a.map || !a.map.points) return;
+  const ctx = cv.getContext("2d"); if (!ctx) return;
+  const W = cv.width, H = cv.height, pad = 18;
+  const types = agMapTypes(a.map);
+  const colour = t => { const i = types.indexOf(t || "page"); return AG_MAP_COLOURS[i >= 0 && i < AG_MAP_COLOURS.length ? i : AG_MAP_COLOURS.length - 1]; };
+  const css = getComputedStyle(document.documentElement);
+  const resolve = c => c.startsWith("var(") ? (css.getPropertyValue(c.slice(4, -1)).trim() || "#888") : c;
+  ctx.clearRect(0, 0, W, H);
+  const pts = a.map.points;
+  const sx = x => pad + (x + 1) / 2 * (W - 2 * pad), sy = y => pad + (1 - (y + 1) / 2) * (H - 2 * pad);
+  cv.__agPts = [];
+  for (const p of pts){
+    const x = sx(p.x), y = sy(p.y);
+    const r = 2 + Math.min(4, Math.log10(1 + (p.v || 0)));
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = resolve(colour(p.k)); ctx.globalAlpha = 0.72; ctx.fill(); ctx.globalAlpha = 1;
+    cv.__agPts.push([x, y, p]);
+  }
+  if (!cv.__agHover){
+    cv.__agHover = true;
+    const nearest = ev => {
+      const rect = cv.getBoundingClientRect();
+      const mx = (ev.clientX - rect.left) * (cv.width / rect.width), my = (ev.clientY - rect.top) * (cv.height / rect.height);
+      let best = null, bd = 64;
+      for (const [x, y, p] of (cv.__agPts || [])){ const d = (x - mx) * (x - mx) + (y - my) * (y - my); if (d < bd){ bd = d; best = p; } }
+      return { best, rect };
+    };
+    cv.addEventListener("mousemove", ev => {
+      const { best, rect } = nearest(ev);
+      const tip = document.getElementById("agMapTip"); if (!tip) return;
+      if (!best){ tip.hidden = true; return; }
+      tip.hidden = false; tip.textContent = (best.t || agPath(best.u)) + (best.k ? "  ·  " + best.k : "") + (best.v ? "  ·  " + agNum(best.v) + " visits/mo" : "");
+      tip.style.left = Math.min(rect.width - 260, (ev.clientX - rect.left) + 12) + "px"; tip.style.top = ((ev.clientY - rect.top) + 12) + "px";
+    });
+    cv.addEventListener("mouseleave", () => { const tip = document.getElementById("agMapTip"); if (tip) tip.hidden = true; });
+    cv.addEventListener("click", ev => { const { best } = nearest(ev); if (best) agOpenPage(best.u); });
+  }
 }
 
 function agMemoryHtml(m, form){
   const rules = (m && m.rules) || [];
   return `<div class="ag-view"><h2>Memory</h2>
-    <p class="lead">Standing rules about your taste. Small, and pasted into every prompt. The agent saves one when you say something that should hold for future articles; you can add your own here.</p>
+    <p class="lead">Standing rules about your taste. Every step that shapes or writes prose reads them: the plan, the headings, each section, the edits, the intro and the close. The agent saves one when you say something that should hold for every future article. Add your own here.</p>
     <div class="ag-addrow"><input type="text" data-agmem placeholder="e.g. Never open an article with a question" value="${agEsc(form && form.text || "")}" aria-label="New rule"><button class="btn pri" type="button" data-ag="addmem">Add rule</button></div>
     ${rules.length ? rules.map(r => `<div class="ag-row ${r.active === false ? "off" : ""}"><div class="ri"><div class="rn">${agEsc(r.text)}</div>
         <div class="rm"><span>${agEsc(r.kind || "rule")}</span><span>${r.source === "agent" ? "saved by the agent" : "added by you"}</span><span>${agEsc(agAgo(r.t))}</span></div></div>
@@ -635,12 +906,12 @@ function agMemoryHtml(m, form){
 function agLibraryHtml(items){
   const list = items || [];
   return `<div class="ag-view"><h2>Library</h2>
-    <p class="lead">Finished drafts. Nothing leaves this Mac; publishing is your step.</p>
+    <p class="lead">Finished articles. Nothing leaves this Mac; publishing is your step.</p>
     ${list.length ? list.map(it => `<div class="ag-row"><div class="ri"><div class="rn">${agEsc(it.title)} <span class="pill ${it.status === "ready" ? "p-ok" : it.status === "published" ? "p-acc" : "p-mut"}">${agEsc(it.status || "draft")}</span></div>
         <div class="rm"><span>${agEsc(agNum(it.words))} words</span>${it.primary_keyword ? `<span>${agEsc(it.primary_keyword)}</span>` : ""}<span>${agEsc(agAgo(it.created_at))}</span></div></div>
         <div class="ra"><button class="btn" type="button" data-ag="libopen" data-arg="${agEsc(it.id)}">Open</button>
           <button class="btn" type="button" data-ag="libstatus" data-arg="${agEsc(it.id)}" data-status="${it.status === "ready" ? "draft" : "ready"}">${it.status === "ready" ? "Back to draft" : "Mark ready"}</button>
-          <button class="ib" type="button" data-ag="libdel" data-arg="${agEsc(it.id)}" aria-label="Delete" title="Delete this draft"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></div>`).join("")
+          <button class="ib" type="button" data-ag="libdel" data-arg="${agEsc(it.id)}" aria-label="Delete" title="Delete this article"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></div>`).join("")
       : `<div class="ag-row"><div class="ri"><div class="rn">Nothing saved yet</div><div class="rd">When a draft is done, “Save to Library” in the review panel puts it here.</div></div></div>`}
   </div>`;
 }
@@ -648,31 +919,42 @@ function agLibraryHtml(items){
 function agToolsHtml(tools){
   const list = tools || [];
   return `<div class="ag-view"><h2>Tools</h2>
-    <p class="lead">What the agent can do, and what each step costs. The gate is enforced by the loop, not asked of the model: a paid step always stops here first.</p>
-    ${list.map(t => `<div class="ag-row"><div class="ri"><div class="rn">${agEsc(t.name.replace(/_/g, " "))}
-        <span class="pill ${t.gate === "auto" ? "p-ok" : "p-warn"}">${t.gate === "auto" ? "runs freely" : "asks first"}</span>
-        ${t.cost_credits ? `<span class="pill p-acc">${agEsc(t.cost_credits)} credits</span>` : ""}</div>
-        <div class="rd">${agEsc(t.description)}</div>
-        <div class="rm">${t.est_minutes ? `<span>about ${agEsc(t.est_minutes)} min</span>` : ""}${t.pauses ? `<span>pauses for you</span>` : ""}</div></div></div>`).join("")}
+    <p class="lead">The seven things the agent can do, in the order they usually run. Setup runs once. The last four run for every article, and you look at the result of each before the next starts.</p>
+    ${list.map((t, i) => `<div class="ag-row"><div class="ri"><div class="rn"><span class="n">${i + 1}</span>${agEsc(t.label || String(t.name || "").replace(/_/g, " "))}</div>
+        <dl class="ag-kv" style="margin:8px 0 0">
+          <dt>What it does</dt><dd>${agEsc(t.does || t.description || "")}</dd>
+          ${t.when ? `<dt>When it runs</dt><dd>${agEsc(t.when)}</dd>` : ""}
+          ${t.needs ? `<dt>What it needs</dt><dd>${agEsc(t.needs)}</dd>` : ""}
+          ${t.takes ? `<dt>How long</dt><dd>${agEsc(t.takes)}</dd>` : ""}
+        </dl></div></div>`).join("")}
   </div>`;
 }
 
 function agConnectionsHtml(c, h, form){
   const dfs = !!(c && c.dataforseo_login && c.dataforseo_password);
+  const voy = !!(c && c.voyage_key);
   const prov = h ? h.model_provider : null;
+  form = form || {};
   return `<div class="ag-view"><h2>Connections</h2>
-    <p class="lead">Two things the agent needs. Secrets are stored on this Mac, owner-only, and never sent back to this screen.</p>
+    <p class="lead">Three things the agent needs. Secrets are stored on this Mac, owner-only, and never sent back to this screen.</p>
     <h3 class="sec">Model</h3>
     <div class="ag-row"><div class="ri"><div class="rn">${prov === "claude-cli" ? "Claude, through the command line" : prov ? agEsc(prov) : "No model available"}
         <span class="ag-status"><i class="dot ${prov ? "ok" : "bad"}"></i>${prov === "claude-cli" ? "billed to your Claude subscription" : prov ? "connected" : "not signed in"}</span></div>
       <div class="rd">${prov ? "The same sign-in the chat uses. No API key anywhere." : "Open a terminal, run <code>claude</code> once and sign in. This screen will notice."}</div></div></div>
     <h3 class="sec">DataForSEO · real search numbers</h3>
-    <div class="ag-row"><div class="ri"><div class="rn">DataForSEO <span class="ag-status"><i class="dot ${dfs ? "ok" : "warn"}"></i>${dfs ? "connected" : "not connected · demo numbers"}</span></div>
-      <div class="rd">Keyword volumes, difficulty, People Also Ask and the top ten pages come from here. Without it the agent still runs, on clearly labelled demo data.</div>
+    <div class="ag-row"><div class="ri"><div class="rn">DataForSEO <span class="ag-status"><i class="dot ${dfs ? "ok" : "warn"}"></i>${dfs ? "connected" : "not connected"}</span></div>
+      <div class="rd">Keyword volumes, difficulty, who ranks, the questions people ask and Google's own answer come from here. Research needs it. Each research run costs under a dollar of their credit.</div>
       <div class="ag-form" style="margin-top:10px">
-        <label><b>Login</b><input type="text" data-agdfs="login" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "the email you sign in with"}" value="${agEsc(form && form.login || "")}"></label>
-        <label><b>API password</b><input type="password" data-agdfs="password" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "from app.dataforseo.com → API access"}" value="${agEsc(form && form.password || "")}"></label>
-        <div class="row"><button class="btn pri" type="button" data-ag="savedfs">Save</button>${dfs ? `<button class="btn" type="button" data-ag="cleardfs">Disconnect</button>` : ""}<span class="sp">${form && form.msg ? agEsc(form.msg) : ""}</span></div>
+        <label><b>Login</b><input type="text" data-agdfs="login" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "the email you sign in with"}" value="${agEsc(form.login || "")}"></label>
+        <label><b>API password</b><input type="password" data-agdfs="password" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "from app.dataforseo.com → API access"}" value="${agEsc(form.password || "")}"></label>
+        <div class="row"><button class="btn pri" type="button" data-ag="savedfs">Save</button>${dfs ? `<button class="btn" type="button" data-ag="cleardfs">Disconnect</button>` : ""}<span class="sp">${form.msg ? agEsc(form.msg) : ""}</span></div>
+      </div></div></div>
+    <h3 class="sec">Voyage · pages indexed by meaning</h3>
+    <div class="ag-row"><div class="ri"><div class="rn">Voyage <span class="ag-status"><i class="dot ${voy ? "ok" : "warn"}"></i>${voy ? "connected" : "not connected"}</span></div>
+      <div class="rd">Turns every page into meaning vectors so the agent can find the right page of yours to link to from each section, and check whether you already cover a topic. The free tier is enough for a whole site.</div>
+      <div class="ag-form" style="margin-top:10px">
+        <label><b>API key</b><input type="password" data-agvoy="key" autocomplete="off" placeholder="${voy ? "•••••• (set)" : "pa-… from dash.voyageai.com"}" value="${agEsc(form.voyage || "")}"></label>
+        <div class="row"><button class="btn pri" type="button" data-ag="savevoy">Save</button>${voy ? `<button class="btn" type="button" data-ag="clearvoy">Disconnect</button>` : ""}<span class="sp">${form.vmsg ? agEsc(form.vmsg) : ""}</span></div>
       </div></div></div>
   </div>`;
 }
@@ -682,7 +964,7 @@ if (typeof SCREENS !== "undefined"){
   SCREENS.agents = () => `<div class="ag" id="agRoot" data-ag-shell></div>`;
 }
 if (typeof TITLES !== "undefined"){
-  TITLES.agents = ["Agents", "agents that work in front of you · SEO Writer"];
+  TITLES.agents = ["Agents", "agents that work in front of you"];
 }
 
 /* ── mount, draw, poll ─────────────────────────────────────────────────────── */
@@ -762,12 +1044,17 @@ function agDraw(force){
     agSetHtml("agStages", "");
     /* a settings view is a new document: start it at the top, not where the chat was */
     if (scroll && a.lastView !== a.view) scroll.scrollTop = 0;
-    const html = a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a.compForm)
+    const html = a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a)
       : a.view === "memory" ? agMemoryHtml(a.memory, a.memForm)
       : a.view === "library" ? agLibraryHtml(a.library)
       : a.view === "tools" ? agToolsHtml(a.tools)
       : agConnectionsHtml(a.conns, a.health, a.connForm);
-    agSetHtml("agScroll", html);
+    const searching = document.activeElement && document.activeElement.matches && document.activeElement.matches("[data-agpageq]");
+    const sel = searching ? document.activeElement.selectionStart : null;
+    if (agSetHtml("agScroll", html) && searching){
+      const q = document.querySelector("[data-agpageq]"); if (q){ try { q.focus({ preventScroll: true }); q.setSelectionRange(sel, sel); } catch (e) {} }
+    }
+    if (a.view === "knowledge" && a.mapOn) agDrawMap();
     const comp = document.getElementById("agComposer"); if (comp){ comp.hidden = true; }
   }
   agSetHtml("agPanel", a.panel ? agPanelHtml(a) : "");
@@ -826,7 +1113,7 @@ async function agRefresh(){
         if (c && a.chat && c.updated_at !== (a.chat.chat || {}).updated_at) await agLoadChat(a.chatId, true);
       }
     }
-    if (agRefreshN % 8 === 1){ a.health = await agApi("/health"); }
+    if (agRefreshN % 8 === 1 || (live && agRefreshN % 20 === 0)){ a.health = await agApi("/health"); }
   } finally { agRefreshBusy = false; }
   agDraw();
 }
@@ -841,6 +1128,7 @@ async function agBootLoad(){
   }
   try { a.memory = await agApi("/memory"); } catch (e) {}
   try { a.library = await agApi("/library"); } catch (e) {}
+  try { a.knowledge = await agApi("/knowledge"); } catch (e) {}
   agDraw(true);
 }
 
@@ -875,7 +1163,7 @@ function agMaybeOpenCheckpoint(state){
 async function agOpenArtifact(runId, name, view, extra){
   const a = agS();
   a.panel = Object.assign({ run_id: runId, name, view, data: null, loading: true, error: null }, extra || {});
-  a.bpEdit = null; a.artEdit = null; a.lastEdit = null;
+  a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null;
   agDraw();
   try {
     const d = await agApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(runId)}/artifact/${encodeURIComponent(name)}`);
@@ -883,7 +1171,39 @@ async function agOpenArtifact(runId, name, view, extra){
     if (view === "topic_list" && !a.picked && d && d.topics){
       const rec = d.topics.find(t => t.recommended); a.picked = rec ? rec.id : null;
     }
+    if (view === "article" && a.panel && a.panel.name === name){
+      /* the receipts beside the draft: which links were laid in, and the coverage counts */
+      const base = `/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(runId)}/artifact/`;
+      a.panel.links = await agApi(base + "links-report.json").catch(() => null);
+      a.panel.write = await agApi(base + "write-report.json").catch(() => null);
+    }
   } catch (e) { if (a.panel){ a.panel.loading = false; a.panel.error = String(e && e.message || e); } }
+  agDraw();
+}
+
+async function agOpenBrandFile(name, back){
+  const a = agS();
+  a.panel = { run_id: null, name: "brand/" + name, view: "brand_file", data: null, loading: true, error: null,
+              title: (AG_BRAND_FILES.find(r => r[0] === name) || [name, name])[1], subtitle: name, back: !!back };
+  a.fileEdit = null; agDraw();
+  try { a.panel.data = await agApi(`/knowledge/brand/${encodeURIComponent(name)}`); a.panel.loading = false; }
+  catch (e) { a.panel.loading = false; a.panel.error = String(e && e.message || e); }
+  agDraw();
+}
+
+async function agOpenPage(url){
+  const a = agS();
+  a.panel = { run_id: null, name: "page:" + url, view: "page", data: null, loading: true, error: null, title: "Page", subtitle: agPath(url) };
+  agDraw();
+  try { const d = await agApi(`/knowledge/page?url=${encodeURIComponent(url)}`); a.panel.data = d; a.panel.title = d.title || agPath(url); a.panel.loading = false; }
+  catch (e) { a.panel.loading = false; a.panel.error = String(e && e.message || e); }
+  agDraw();
+}
+
+async function agLoadPages(offset){
+  const a = agS();
+  const params = `offset=${encodeURIComponent(offset || 0)}&limit=25&q=${encodeURIComponent(a.pageQ || "")}&type=${encodeURIComponent(a.pageType || "")}`;
+  try { a.pages = await agApi(`/knowledge/pages?${params}`); } catch (e) { a.pages = { total: 0, offset: 0, rows: [] }; }
   agDraw();
 }
 
@@ -926,7 +1246,7 @@ async function agAction(act, el){
     case "chat": a.view = "chat"; await agLoadChat(arg, false); break;
     case "view": {
       a.view = arg; a.panel = null;
-      if (arg === "knowledge") a.knowledge = await agApi("/knowledge").catch(() => null);
+      if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); agDraw(true); await agLoadPages(0); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
       if (arg === "memory") a.memory = await agApi("/memory").catch(() => null);
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
@@ -948,7 +1268,13 @@ async function agAction(act, el){
       else await agOpenArtifact(run, arg, el.getAttribute("data-view") || "article");
       break;
     }
-    case "closepanel": a.panel = null; agDraw(); break;
+    case "closepanel": a.panel = null; a.fileEdit = null; agDraw(); break;
+    case "back": {
+      const live = agLiveRun();
+      if (live && live.waiting_on && live.waiting_on.artifact === "brand") await agOpenArtifact(live.run_id, "brand", "brand_pack");
+      else { a.panel = null; agDraw(); }
+      break;
+    }
     case "pick": a.picked = arg; agDraw(); break;
     case "usetopic": {
       const t = ((a.panel && a.panel.data && a.panel.data.topics) || []).find(x => x.id === a.picked);
@@ -964,7 +1290,7 @@ async function agAction(act, el){
     case "changes": a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
     case "bpmove": {
       const secs = a.panel && a.panel.data && a.panel.data.sections; if (!secs) break;
-      const i = secs.findIndex(s => s.id === arg), j = i + Number(el.getAttribute("data-dir") || 0);
+      const i = secs.findIndex((s, k) => (s.id || ("s" + (k + 1))) === arg), j = i + Number(el.getAttribute("data-dir") || 0);
       if (i < 0 || j < 0 || j >= secs.length) break;
       const tmp = secs[i]; secs[i] = secs[j]; secs[j] = tmp; a.panel.dirty = true; agDraw(); break;
     }
@@ -1009,12 +1335,44 @@ async function agAction(act, el){
       try { await navigator.clipboard.writeText(text); agToast("Markdown copied"); } catch (e) { agToast("Could not copy"); }
       break;
     }
+    /* knowledge */
+    case "brandfile": await agOpenBrandFile(arg, !!(a.panel && a.panel.view === "brand_pack")); break;
+    case "fileedit": { const d = a.panel && a.panel.data; a.fileEdit = { text: d && typeof d.text === "string" ? d.text : JSON.stringify(d, null, 2) }; agDraw(); break; }
+    case "filecancel": a.fileEdit = null; agDraw(); break;
+    case "filesave": {
+      const ta = document.querySelector("[data-agfiletext]"); if (!ta || !a.panel) break;
+      const name = a.panel.name.replace(/^brand\//, "");
+      a.fileEdit = { text: ta.value, busy: true }; agDraw();
+      try {
+        const body = name.endsWith(".json") ? { data: JSON.parse(ta.value) } : { text: ta.value };
+        await agPostApi(`/knowledge/brand/${encodeURIComponent(name)}`, body);
+        a.panel.data = await agApi(`/knowledge/brand/${encodeURIComponent(name)}`);
+        a.fileEdit = null; a.knowledge = await agApi("/knowledge").catch(() => a.knowledge); agToast("Saved");
+      } catch (e) { a.fileEdit = { text: ta.value, busy: false, msg: "Could not save: " + (e.message || e) }; }
+      agDraw(); break;
+    }
+    case "page": await agOpenPage(arg); break;
+    case "pagesprev": await agLoadPages(Math.max(0, ((a.pages && a.pages.offset) || 0) - 25)); break;
+    case "pagesnext": await agLoadPages(((a.pages && a.pages.offset) || 0) + 25); break;
+    case "map": {
+      a.mapOn = !a.mapOn; agDraw();
+      if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(e => { agToast(String(e.message || e)); return null; }); agDraw(); }
+      break;
+    }
+    case "saveco": {
+      const rec = {};
+      document.querySelectorAll("[data-agco]").forEach(i => { rec[i.getAttribute("data-agco")] = i.value; });
+      try { await agPostApi("/knowledge", { company: rec }); a.coForm = { msg: "Saved" }; a.knowledge = await agApi("/knowledge"); }
+      catch (e) { a.coForm = Object.assign({}, rec, { msg: "Could not save: " + (e.message || e) }); }
+      agDraw(); break;
+    }
     case "savecomps": {
       const ta = document.querySelector("[data-agcomps]"); const lines = ta ? ta.value.split("\n").map(s => s.trim()).filter(Boolean) : [];
       try { await agPostApi("/knowledge", { competitors: { competitors: lines } }); a.compForm = { text: lines.join("\n"), saved: true }; a.knowledge = await agApi("/knowledge"); }
       catch (e) { agToast("Could not save: " + (e.message || e)); }
       agDraw(); break;
     }
+    /* memory, library */
     case "addmem": {
       const inp = document.querySelector("[data-agmem]"); const text = inp ? inp.value.trim() : ""; if (!text) break;
       try { await agPostApi("/memory", { text, kind: "rule" }); a.memForm = null; a.memory = await agApi("/memory"); agToast("Rule added"); }
@@ -1039,15 +1397,16 @@ async function agAction(act, el){
       agDraw(); break;
     }
     case "libdel": {
-      if (typeof confirm === "function" && !confirm("Delete this draft from the Library? The chat that made it stays.")) break;
+      if (typeof confirm === "function" && !confirm("Delete this article from the Library? The chat that made it stays.")) break;
       try { await agPostApi(`/library/${encodeURIComponent(arg)}/delete`, {}); a.library = await agApi("/library"); agToast("Deleted"); }
       catch (e) { agToast("Could not delete: " + (e.message || e)); }
       agDraw(); break;
     }
+    /* connections */
     case "savedfs": {
       const login = (document.querySelector('[data-agdfs="login"]') || {}).value || "";
       const password = (document.querySelector('[data-agdfs="password"]') || {}).value || "";
-      if (!login.trim() || !password.trim()){ a.connForm = { login, password, msg: "Both fields are needed" }; agDraw(); break; }
+      if (!login.trim() || !password.trim()){ a.connForm = Object.assign({}, a.connForm, { login, password, msg: "Both fields are needed" }); agDraw(); break; }
       try { await agPostApi("/connections", { dataforseo_login: login.trim(), dataforseo_password: password.trim() });
         a.conns = await agApi("/connections"); a.health = await agApi("/health"); a.connForm = { msg: "Saved. Real numbers from the next run." }; }
       catch (e) { a.connForm = { login, password, msg: "Could not save: " + (e.message || e) }; }
@@ -1057,6 +1416,20 @@ async function agAction(act, el){
       try { await agPostApi("/connections", { dataforseo_login: "", dataforseo_password: "" });
         a.conns = await agApi("/connections"); a.health = await agApi("/health"); a.connForm = { msg: "Disconnected" }; }
       catch (e) { a.connForm = { msg: "Could not disconnect: " + (e.message || e) }; }
+      agDraw(); break;
+    }
+    case "savevoy": {
+      const key = (document.querySelector('[data-agvoy="key"]') || {}).value || "";
+      if (!key.trim()){ a.connForm = Object.assign({}, a.connForm, { vmsg: "Paste the key first" }); agDraw(); break; }
+      try { await agPostApi("/connections", { voyage_key: key.trim() });
+        a.conns = await agApi("/connections"); a.health = await agApi("/health"); a.connForm = { vmsg: "Saved. Ask the agent to index the pages by meaning." }; }
+      catch (e) { a.connForm = { voyage: key, vmsg: "Could not save: " + (e.message || e) }; }
+      agDraw(); break;
+    }
+    case "clearvoy": {
+      try { await agPostApi("/connections", { voyage_key: "" });
+        a.conns = await agApi("/connections"); a.health = await agApi("/health"); a.connForm = { vmsg: "Disconnected" }; }
+      catch (e) { a.connForm = { vmsg: "Could not disconnect: " + (e.message || e) }; }
       agDraw(); break;
     }
     default: break;
@@ -1078,21 +1451,29 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
   });
   document.addEventListener("keydown", (ev) => {
     const ta = ev.target;
-    if (!ta || !ta.matches || !ta.matches("[data-agask]")) return;
-    if (ev.key === "Enter" && !ev.shiftKey){
-      ev.preventDefault();
-      agSend(ta.value);
-    }
+    if (!ta || !ta.matches) return;
+    if (ta.matches("[data-agask]") && ev.key === "Enter" && !ev.shiftKey){ ev.preventDefault(); agSend(ta.value); }
+    if (ta.matches("[data-agpageq]") && ev.key === "Enter"){ ev.preventDefault(); agLoadPages(0); }
   });
+  let agSearchTimer = null;
   document.addEventListener("input", (ev) => {
     const t = ev.target; if (!t || !t.matches) return;
     const a = agS(); if (!a) return;
     if (t.matches("[data-agask]")){ a.draft = t.value; agGrow(t); }
     else if (t.matches("[data-agcomps]")){ a.compForm = { text: t.value, saved: false }; }
     else if (t.matches("[data-agmem]")){ a.memForm = { text: t.value }; }
+    else if (t.matches("[data-agco]")){ const f = a.coForm || {}; document.querySelectorAll("[data-agco]").forEach(i => { f[i.getAttribute("data-agco")] = i.value; }); f.msg = ""; a.coForm = f; }
+    else if (t.matches("[data-agpageq]")){ a.pageQ = t.value; clearTimeout(agSearchTimer); agSearchTimer = setTimeout(() => agLoadPages(0), 250); }
+    else if (t.matches("[data-agfiletext]")){ if (a.fileEdit) a.fileEdit.text = t.value; }
     else if (t.matches("[data-agdfs]")){
       const f = a.connForm || {}; f[t.getAttribute("data-agdfs")] = t.value; f.msg = ""; a.connForm = f;
     }
+    else if (t.matches("[data-agvoy]")){ const f = a.connForm || {}; f.voyage = t.value; f.vmsg = ""; a.connForm = f; }
+  });
+  document.addEventListener("change", (ev) => {
+    const t = ev.target; if (!t || !t.matches || !t.matches("[data-agpagetype]")) return;
+    const a = agS(); if (!a) return;
+    a.pageType = t.value; agLoadPages(0);
   });
   document.addEventListener("scroll", (ev) => {
     const el = ev.target; if (!el || el.id !== "agScroll") return;

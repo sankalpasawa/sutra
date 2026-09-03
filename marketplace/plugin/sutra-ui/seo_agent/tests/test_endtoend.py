@@ -70,8 +70,10 @@ def ok(label, cond, extra=""):
 
 print("\ntools")
 tools = registry.WORK_TOOLS
-ok("six work tools", len(tools) == 6, len(tools))
-ok("paid tools carry a cost", any(t["cost_credits"] > 0 for t in tools))
+ok("seven work tools", len(tools) == 7, len(tools))
+ok("no credit gates: every work tool runs when called", all(t["gate"] == "auto" and not t.get("cost_credits") for t in tools))
+ok("every work tool carries a plain-English row for the Tools screen",
+   all(all(k in (t.get("plain") or {}) for k in ("does", "when", "needs", "takes")) for t in tools))
 ok("gates exposed", all("gate" in t for t in tools))
 ok("the model never sees costs or gates",
    all("gate" not in t and "cost_credits" not in t and "module" not in t
@@ -103,6 +105,11 @@ for _ in range(16):
         break
     w = s.get("waiting_on") or {}
     seen.append((w.get("kind"), w.get("view") or w.get("tool")))
+    if w.get("view") == "blueprint":
+        # The write phase reads the CONTRACTS-shaped inputs. Until research and the blueprint tools
+        # write that shape, the fixture plants them at the moment the user approves the blueprint.
+        _fixture.plant_write_inputs(chat, run, keep_research=True)
+        _fixture.plant_brand_files()
     s = loop.resume(chat, run, {"approved": True, "picked": "t1"})
 
 print("\nthe sequence of stops")
@@ -114,8 +121,7 @@ approvals = [w for k, w in seen if k == "approval"]
 ok("four artifact stops, not five", len(artifacts) == 4, artifacts)
 ok("in the right order",
    artifacts == ["topic_list", "research_brief", "blueprint", "article"], artifacts)
-ok("paid tools asked first", set(approvals) == {"suggest_topics", "run_research", "write_article"},
-   approvals)
+ok("nothing stopped for approval (no credit gates)", approvals == [], approvals)
 ok("the run finished", s["status"] == "done", s.get("error"))
 
 print("\nthe artifacts it actually produced")
@@ -128,6 +134,9 @@ bp = store.load_artifact(chat, run, "blueprint.json") or {}
 ok("blueprint has sections", len(bp.get("sections", [])) > 0)
 d = store.load_artifact(chat, run, "draft.md") or ""
 ok("draft is a real length", len(d.split()) > 100, len(d.split()))
+a = store.load_artifact(chat, run, "article.json") or {}
+ok("article.json has sections, sources and a close", bool(a.get("sections")) and "sources" in a and a.get("close"))
+ok("the write report says what was skipped", bool((store.load_artifact(chat, run, "write-report.json") or {}).get("skipped")))
 
 print("\nthe log the screen reads")
 evs = store.get_events(chat, run)
@@ -137,7 +146,7 @@ ok("steps started and finished", "step_started" in types and "step_finished" in 
 subs = [e for e in evs if e["type"] == "substep_finished"]
 ok("substeps were emitted", len(subs) > 5, len(subs))
 ok("every substep has a parent", all(e.get("parent") for e in subs))
-ok("credits were counted", (s.get("credits_spent") or 0) > 0, s.get("credits_spent"))
+ok("no credits counted (there are none)", (s.get("credits_spent") or 0) == 0, s.get("credits_spent"))
 ok("the run folder is under data_dir()", store.run_dir(chat, run).startswith(store.data_dir()))
 
 print("\nfile it in the library")

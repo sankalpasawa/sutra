@@ -63,9 +63,10 @@ def num(v):
 # ---- prompts ---------------------------------------------------------------------------
 
 def load_prompt(name):
-    """Read prompts/<name>.md and fold in the shared writing rules, so the ban list is
-    written once and every prompt that needs it gets the same copy."""
-    with open(os.path.join(PROMPTS, name + ".md"), encoding="utf-8") as f:
+    """Read prompts/<name>.md (name may carry a subfolder, "write/blend") and fold in the
+    shared writing rules, so the ban list is written once and every prompt that needs it
+    gets the same copy."""
+    with open(os.path.join(PROMPTS, *name.split("/")) + ".md", encoding="utf-8") as f:
         tpl = f.read()
     if "{{WRITING_RULES}}" in tpl:
         with open(os.path.join(PROMPTS, "_writing_rules.md"), encoding="utf-8") as f:
@@ -219,3 +220,66 @@ def link_candidates(index=None, topic="", limit=40):
                                "covers": page_summary(page)[:160]}))
     scored.sort(key=lambda s: -s[0])
     return [p for _, p in scored[:limit]]
+
+
+# ---- the company, the catalogue bodies, the brand files ----------------------------------------
+
+def company():
+    """knowledge/brand/company.json, with the fields every prompt expects present."""
+    rec = store.knowledge("brand/company.json") or {}
+    idx = store.knowledge("site_index.json") or {}
+    dom = rec.get("domain") or (idx.get("domain") if isinstance(idx, dict) else "") or ""
+    brand = rec.get("brand") or (brand_voice().get("company") if brand_voice() else "") or dom or "this company"
+    return {"brand": brand, "domain": dom,
+            "wordpress_url": rec.get("wordpress_url") or "",
+            "brand_oneliner": rec.get("brand_oneliner") or "",
+            "niche_definition": rec.get("niche_definition") or "",
+            "location_name": rec.get("location_name") or "United States",
+            "language_code": rec.get("language_code") or "en",
+            "about": rec.get("about") or ""}
+
+
+_BODIES = {"mtime": None, "rows": None}
+
+
+def _content_db_path():
+    return os.path.join(store.knowledge_dir(), "content-database.jsonl")
+
+
+def pages_with_bodies():
+    """[(url, title, body)] for every page whose text the crawl saved. Cached per process,
+    refreshed when the file changes."""
+    p = _content_db_path()
+    try:
+        m = os.stat(p).st_mtime
+    except OSError:
+        return []
+    if _BODIES["mtime"] != m or _BODIES["rows"] is None:
+        rows = []
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if d.get("url") and (d.get("body") or "").strip():
+                    rows.append((d["url"], d.get("title") or "", d["body"]))
+        _BODIES["mtime"], _BODIES["rows"] = m, rows
+    return list(_BODIES["rows"])
+
+
+def page_bodies():
+    """{url without trailing slash: body}"""
+    return {u.rstrip("/"): b for u, _t, b in pages_with_bodies()}
+
+
+def brand_file(name):
+    """knowledge/brand/<name> as text, or "" when it is not there yet."""
+    v = store.knowledge("brand/" + name)
+    return v if isinstance(v, str) else ""
+
+
+def memory_block():
+    """The user's standing rules as a bulleted list for a prompt, or "(none)"."""
+    rules = store.memory_rules()
+    return "\n".join("- " + r["text"] for r in rules) if rules else "(none)"

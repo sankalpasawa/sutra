@@ -1,54 +1,53 @@
-"""index_site.py — read the whole site once, so nothing after this has to guess.
+"""index_site.py — catalogue the whole site once, so nothing after this has to guess.
 
-Every later tool asks the same questions: what pages exist, what is each one about,
-how long is it, and does it already rank. Answering that per tool would mean crawling
-the site four times and getting four slightly different answers. So it happens once,
-here, and lands in knowledge as site_index.json.
+Every later tool asks the same questions: what pages exist, what is each one about, how long is
+it, and does it already rank. Answering that per tool would mean crawling the site four times and
+getting four slightly different answers. So it happens once, here, and lands in knowledge.
 
-Discovery goes sitemap first, homepage links second. A sitemap is the site telling us
-what it considers a page, which beats guessing from navigation, but plenty of sites do
-not have one, and a tool that fails on those is a tool nobody trusts at setup.
+This is the site-catalogue engine (workflows/00-foundation/1-site-catalogue) ported to the agent.
+The stages live in seo_agent/foundation/, one module each; this file sequences them:
 
-Rankings are attached by exact URL match. A page with no match keeps top_keyword None
-rather than borrowing a neighbour's keyword, because a wrong keyword on a page is worse
-than no keyword: it steers every article written afterwards.
+  1. ENUMERATE from four sources, unioned with provenance — the CMS's own list (WordPress REST,
+     types derived at runtime, counts asserted), every sitemap, the web archive (liveness-checked),
+     and a link crawl only when the other three are thin.
+  2. RECONCILE — drop machine paths, group by match key, fetch every page once through a raw
+     cache (polite: per-host rate, cooldowns on firewall pushback), drop dead pages and soft 404s,
+     collapse redirect and canonical aliases (never a fan-in suspect), infer types.
+  3. EXTRACT offline from the cache — the CMS body when it is a fair share of the page, else the
+     visible DOM text with h1/h2/h3 kept inline as #/##/###; then remove site chrome by repetition.
+  4. TRAFFIC — one bulk DataForSEO pull, cached so it never repeats by accident, raw and cleaned
+     figures per page, joined by match key.
+  5. GATES — enumeration accounting, response integrity, extraction coverage, the traffic
+     cross-check. A failed gate is REPORTED in the tool's note, never raised.
+  6. WRITE — site_index.json, content-database.jsonl, top-pages.json, catalogue-report.json,
+     brand/company.json.
+
+The one rule that governs everything: ask the site, never assume the site — and no silent
+shortfall. Every list is derived at runtime; every count is checked against an authority the source
+itself publishes; anything that cannot be verified is reported as lower confidence, never claimed.
+
+Resume: every stage's output under knowledge/_work/ is its done-marker; a re-run reuses it unless
+redo=True. The raw HTML cache is kept even then, and the paid traffic pull only repeats with
+redo_traffic=True.
+
+When the site refuses every fetch (a bot wall answering 403/429 to the homepage itself), the index
+is built from what the domain ranks for instead: URLs, titles and keywords, no page text. The
+summary says so, so the agent can tell the user.
 """
+import os
 import re
-from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import urljoin, urlparse
-
-import httpx
-from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
-import warnings
-
-# Sitemaps are XML read with the HTML parser on purpose: the bundle ships pure-Python
-# wheels only, and <loc> inside <sitemap>/<url> parses the same either way.
-warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+import urllib.parse as _up
 
 from .. import store
 from . import _shared as sh
 from . import dfs
+from ..foundation import settings
+from ..foundation import fetch as fetchmod
+from ..foundation import (enumerate_archive, enumerate_crawl, enumerate_sitemap, enumerate_wp,
+                          extract, gates, reconcile, traffic)
+from ..foundation.urls import bare_host, host_of, store_norm
 
-WORKERS = 10                 # polite: ten open connections is a crawl, not an attack
-FETCH_TIMEOUT = 20.0
-# A real browser string, not a bot label. The first live run (testlify.com, 2026-09-03)
-# got a 429 on the very first request with "(compatible; seo-agent/1.0 ...)": the site's
-# edge refuses anything that announces itself as a crawler, before a single page is read.
-# This is the user indexing their OWN site, so presenting as the browser they would use
-# to read it is the honest thing, and the concurrency cap below keeps it polite.
-UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-HEADERS = {"User-Agent": UA,
-           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-           "Accept-Language": "en-US,en;q=0.9"}
-BODY_CHARS = 400             # enough for learn_voice to hear the tone, small enough to store
-SITEMAP_PATHS = ("/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml")
-SKIP_EXTENSIONS = (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".zip",
-                   ".mp4", ".mp3", ".css", ".js", ".xml", ".ico", ".woff", ".woff2")
-
-
-def _client():
-    return httpx.Client(timeout=FETCH_TIMEOUT, follow_redirects=True, headers=HEADERS)
+UA = settings.UA             # the browser-like identity, kept here by name for anything that reads it
 
 
 def _roots(domain):
@@ -63,182 +62,34 @@ def _roots(domain):
     return ["https://" + d, "http://" + d]
 
 
-def _same_site(url, host):
-    try:
-        h = (urlparse(url).netloc or "").lower()
-    except ValueError:
-        return False
-    h = h[4:] if h.startswith("www.") else h
-    host = host[4:] if host.startswith("www.") else host
-    return h == host
-
-
-def _wanted(url):
-    if not url or not url.startswith("http"):
-        return False
-    path = urlparse(url).path.lower()
-    return not path.endswith(SKIP_EXTENSIONS)
-
-
-def _clean(url):
-    """Drop the fragment and trailing slash so /about and /about#team are one page, not
-    two entries fighting for the same ranking row."""
-    url = url.split("#")[0]
-    if url.endswith("/") and urlparse(url).path != "/":
-        url = url[:-1]
-    return url
-
-
-# ---- discovery -------------------------------------------------------------------------
-
-def _sitemap_urls(client, root, max_pages, depth=0):
-    """Returns page URLs from a sitemap, following one level of sitemap-index nesting."""
-    found = []
-    for path in (SITEMAP_PATHS if depth == 0 else [""]):
-        target = root + path if depth == 0 else root
-        try:
-            r = client.get(target)
-        except httpx.HTTPError:
-            continue
-        if r.status_code != 200 or "<" not in r.text[:2000]:
-            continue
-        soup = BeautifulSoup(r.text, "html.parser")   # no lxml: the bundle carries pure-Python deps only
-        # A sitemap index points at more sitemaps; a sitemap points at pages.
-        children = [s.loc.get_text(strip=True) for s in soup.find_all("sitemap") if s.loc]
-        if children and depth == 0:
-            for child in children[:20]:
-                found.extend(_sitemap_urls(client, child, max_pages, depth + 1))
-                if len(found) >= max_pages:
-                    break
-        else:
-            found.extend(u.get_text(strip=True) for u in soup.find_all("loc"))
-        if found:
-            break
-    return found
-
-
-def _homepage_links(client, root):
-    """The fallback when there is no sitemap: whatever the homepage links to on its own
-    domain. Shallow by design, since a full crawl at setup is not worth the minutes."""
-    try:
-        r = client.get(root)
-        r.raise_for_status()
-    except httpx.HTTPError as e:
-        raise RuntimeError("Could not open %s to find any pages: %s" % (root, e))
-    soup = BeautifulSoup(r.text, "html.parser")
-    host = (urlparse(root).netloc or "").lower()
-    urls = [root]
-    for a in soup.find_all("a", href=True):
-        u = _clean(urljoin(root, a["href"]))
-        if _wanted(u) and _same_site(u, host) and u not in urls:
-            urls.append(u)
-    return urls
-
-
-def _discover_at(client, root, max_pages):
-    host = (urlparse(root).netloc or "").lower()
-    urls, source = [], "sitemap"
-    for u in _sitemap_urls(client, root, max_pages):
-        u = _clean(u)
-        if _wanted(u) and _same_site(u, host):
-            urls.append(u)
-    if not urls:
-        source = "homepage links"
-        urls = _homepage_links(client, root)
-    # dict.fromkeys keeps the sitemap's own order, which is usually importance order.
-    urls = list(dict.fromkeys(urls))[:max_pages]
-    if not urls:
-        raise RuntimeError("Found no pages at %s. Is the domain right?" % root)
-    return urls, source
-
-
-def _discover(client, roots, max_pages):
+def _discover(fx, roots, max_pages):
+    """Open the homepage and settle the root the site actually serves (scheme and host after its
+    own redirects). Raises RuntimeError when every root refuses — that is the "site refuses the
+    crawl" signal the fallback keys off."""
     last = None
     for root in roots:
         try:
-            urls, source = _discover_at(client, root, max_pages)
-            return root, urls, source
-        except (RuntimeError, httpx.HTTPError) as e:
-            last = e
+            r = fx.get(root + "/")
+        except fetchmod.Blocked as e:
+            last = str(e)[:160]
+            continue
+        except fetchmod.RobotsDisallowed:
+            last = "robots.txt disallows the homepage"
+            continue
+        if r.status == 200:
+            final = r.final_url or root + "/"
+            p = _up.urlsplit(final)
+            return "%s://%s" % (p.scheme or "https", p.netloc or host_of(root))
+        last = ("HTTP %d" % r.status) if r.status else (r.headers.get("_fetch_error") or "no response")
     raise RuntimeError("Could not read %s: %s" % (roots[0], last))
 
 
-# ---- fetching --------------------------------------------------------------------------
-
-def _fetch_one(client, url):
-    try:
-        r = client.get(url)
-        if r.status_code != 200 or "html" not in r.headers.get("content-type", "").lower():
-            return None
-        soup = BeautifulSoup(r.text, "html.parser")
-    except (httpx.HTTPError, ValueError):
-        # One dead page must not end the crawl. It is dropped and counted, not raised.
-        return None
-
-    for tag in soup(["script", "style", "nav", "footer", "noscript"]):
-        tag.decompose()
-
-    title = soup.title.get_text(strip=True) if soup.title else ""
-    desc_tag = (soup.find("meta", attrs={"name": "description"})
-                or soup.find("meta", attrs={"property": "og:description"}))
-    desc = (desc_tag.get("content") or "").strip() if desc_tag else ""
-    h1_tag = soup.find("h1")
-    h1 = h1_tag.get_text(strip=True) if h1_tag else ""
-    body = re.sub(r"\s+", " ", soup.get_text(" ", strip=True)).strip()
-
-    return {
-        "url": url,
-        "title": title,
-        "description": desc,
-        "h1": h1,
-        "word_count": len(body.split()),
-        "text": body[:BODY_CHARS],
-        "keywords": [],
-        "top_keyword": None,
-        "position": None,
-    }
-
-
-def _fetch_all(urls):
-    with _client() as client:
-        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            results = list(pool.map(lambda u: _fetch_one(client, u), urls))
-    return [p for p in results if p]
-
-
-# ---- rankings --------------------------------------------------------------------------
-
-def _attach_rankings(pages, domain):
-    """Every keyword a URL ranks for goes on the page, best position first.
-
-    The full list matters because run_research uses it as a hard filter: do not chase a
-    keyword we already hold. Keeping only the top one would hide the other nineteen and
-    the filter would quietly pass everything. top_keyword is the same data flattened, for
-    anywhere that wants a single line.
-    """
-    rows = dfs.ranked_keywords(domain, limit=100)
-    by_url = {}
-    for row in rows:
-        url = sh.normalise_url(row.get("url") or "")
-        if not url:
-            continue
-        by_url.setdefault(url, []).append({
-            "keyword": row.get("keyword"),
-            "position": row.get("position"),
-            "volume": row.get("volume"),
-        })
-    matched = 0
-    for page in pages:
-        found = by_url.get(sh.normalise_url(page["url"]))
-        if not found:
-            continue
-        found.sort(key=lambda r: r.get("position") or 999)
-        page["keywords"] = found
-        page["top_keyword"] = found[0].get("keyword")
-        page["position"] = found[0].get("position")
-        page["keyword_volume"] = found[0].get("volume")
-        matched += 1
-    return matched, len(rows)
+def _stage(site, name, redo, produce):
+    """A stage's output file is its done-marker. Reuse it when it exists for THIS domain."""
+    doc = store.read_json(os.path.join(site["work"], name))
+    if doc and not redo and doc.get("domain") == site["host"]:
+        return doc, True
+    return produce(), False
 
 
 # ---- the fallback when the crawl is refused ------------------------------------------------
@@ -290,62 +141,160 @@ def _index_from_search(ctx, domain, why, say):
     }
 
 
-# ---- the tool --------------------------------------------------------------------------
+# ---- writing the knowledge files ---------------------------------------------------------------
 
-def run(ctx, domain, max_pages=300):
+def _brand_from(rows, root):
+    """og:site_name of the homepage, else its <title> before " | " or " - "."""
+    home = store_norm(root + "/")
+    row = next((r for r in rows if store_norm(r["url"]) == home), None) or (rows[0] if rows else None)
+    if not row:
+        return ""
+    if row.get("og_site_name"):
+        return row["og_site_name"].strip()
+    title = (row.get("title") or "").strip()
+    return re.split(r"\s+[|\-–]\s+", title, maxsplit=1)[0].strip() if title else ""
+
+
+def _light_row(r):
+    return {
+        "url": r["url"], "type": r.get("type", ""), "title": r.get("title", ""),
+        "description": r.get("description", ""), "h1": r.get("h1", ""),
+        "word_count": r.get("word_count", 0), "body_chars": len(r.get("body") or ""),
+        "body_status": r.get("body_status", ""),
+        "traffic": r.get("traffic", 0), "traffic_clean": r.get("traffic_clean", 0),
+        "top_keyword": r.get("top_keyword"), "intent": r.get("intent", ""),
+        "keywords": r.get("keywords") or [],
+        # the single best keyword flattened, for the older readers (already_ranking, learn_voice)
+        "position": ((r.get("keywords") or [{}])[0].get("position") if r.get("keywords") else None),
+        "keyword_volume": ((r.get("keywords") or [{}])[0].get("volume") if r.get("keywords") else None),
+        "modified": r.get("modified", ""), "lang": r.get("lang", ""), "source": r.get("source", ""),
+        "extractor": r.get("extractor", ""),
+        "text": (r.get("body") or "")[:settings.BODY_CHARS],
+    }
+
+
+def _write_knowledge(site, rows, tr, report, wp_doc):
+    import json
+    store.save_knowledge("content-database.jsonl", "".join(
+        json.dumps({"url": r["url"], "type": r.get("type", ""), "title": r.get("title", ""),
+                    "body": r.get("body", "")}, ensure_ascii=False) + "\n" for r in rows))
+    store.save_knowledge("top-pages.json", tr["top_pages"])
+    store.save_knowledge("catalogue-report.json", report)
+    store.save_knowledge("site_index.json", {
+        "domain": site["host"],
+        "page_count": len(rows),
+        "pages": [_light_row(r) for r in rows],
+        "indexed_at": store.now(),
+        "confidence": report["confidence"],
+        "report": {"confidence": report["confidence"],
+                   "gates": [{"name": g["name"], "pass": g["pass"]} for g in report["gates"]],
+                   "found_urls": report["found_urls"], "read_urls": report["read_urls"],
+                   "traffic": report["traffic"]},
+    })
+    company = store.knowledge("brand/company.json") or {}
+    company["domain"] = site["host"]
+    if wp_doc.get("types"):
+        company["wordpress_url"] = wp_doc.get("wordpress_url") or site["root"]
+    brand = _brand_from(rows, site["root"])
+    if brand:
+        company["brand"] = brand
+    store.save_knowledge("brand/company.json", company)
+    return company
+
+
+# ---- the tool ----------------------------------------------------------------------------------
+
+def run(ctx, domain, max_pages=3000, redo=False, redo_traffic=False, force_crawl=False):
     say = sh.reporter(ctx, "index_site")
     roots = _roots(domain)
-    max_pages = max(1, int(max_pages or 300))
-
+    max_pages = max(1, int(max_pages or 3000))
+    work = os.path.join(store.knowledge_dir(), "_work")
+    raw = os.path.join(store.knowledge_dir(), "_raw")
+    fx = fetchmod.Fetcher(work, raw, on_event=say)
     try:
-        with _client() as client:
-            root, urls, source = _discover(client, roots, max_pages)
-    except RuntimeError as e:
-        # The site would not let us in (a 429 or 403 from a bot wall, seen live on
-        # testlify.com 2026-09-03). The pages still exist in Google's index, and
-        # DataForSEO can list every URL the domain ranks for, with the title and
-        # description Google shows. That is a real, if thinner, site index: enough for
-        # topics and research, not enough to learn the voice. Say so, in the data and
-        # in the summary, and let the model tell the user.
-        if sh.dfs_mode(dfs) == "off":
-            raise
-        say("The site refused the crawl", str(e)[:160])
-        return _index_from_search(ctx, domain, str(e), say)
-    say("Found the pages", "%d URLs from the %s" % (len(urls), source))
-
-    pages = _fetch_all(urls)
-    if not pages:
-        raise RuntimeError("Fetched %d URLs from %s and none returned readable HTML."
-                           % (len(urls), root))
-    skipped = len(urls) - len(pages)
-    say("Read the pages",
-        "%d pages read%s" % (len(pages), (", %d skipped" % skipped) if skipped else ""))
-
-    ranked_count = 0
-    mode = sh.dfs_mode(dfs)
-    if mode in ("live", "demo"):
         try:
-            ranked_count, total = _attach_rankings(pages, domain)
-            note = "%d of %d pages matched a ranking keyword" % (ranked_count, len(pages))
-            if mode == "demo":
-                note += " (demo data, no DataForSEO credentials)"
-            say("Checked rankings", note)
-        except Exception as e:
-            # Rankings are a bonus on top of the crawl. Losing them must not lose the crawl,
-            # but the user is told, because a silent skip looks like "this site ranks for
-            # nothing".
-            say("Rankings unavailable", str(e)[:200])
-    else:
-        say("Skipped rankings", "DataForSEO is not connected")
+            root = _discover(fx, roots, max_pages)
+        except RuntimeError as e:
+            # The site would not let us in (a 429 or 403 from a bot wall, seen live on
+            # testlify.com 2026-09-03). The pages still exist in Google's index, and DataForSEO
+            # can list every URL the domain ranks for. That is a real, if thinner, site index:
+            # enough for topics and research, not enough to learn the voice. Say so.
+            if sh.dfs_mode(dfs) == "off":
+                raise
+            say("The site refused the crawl", str(e)[:160])
+            return _index_from_search(ctx, domain, str(e), say)
+        host = bare_host(root)
+        say("Opened the site", root)
+        site = {"root": root, "host": host, "work": work, "raw": raw, "max_pages": max_pages,
+                "force_crawl": force_crawl, "wordpress_url": sh.company().get("wordpress_url") or ""}
 
-    store.save_knowledge("site_index.json", {
-        "domain": dfs.bare_domain(domain),
-        "page_count": len(pages),
-        "pages": pages,
-        "indexed_at": store.now(),
-    })
+        # 1. ENUMERATE
+        wp, reused = _stage(site, "urls-wp.json", redo, lambda: enumerate_wp.run(fx, site, say))
+        if reused:
+            say("Reused the site's own list", "%d pages from the last run" % len(wp.get("urls") or {}))
+        sm, reused = _stage(site, "urls-sitemap.json", redo, lambda: enumerate_sitemap.run(fx, site, say))
+        if reused:
+            say("Reused the sitemap list", "%d pages from the last run" % len(sm.get("urls") or {}))
+        ar, reused = _stage(site, "urls-archive.json", redo, lambda: enumerate_archive.run(fx, site, say))
+        if reused:
+            say("Reused the web archive's list", "%d live pages from the last run" % len(ar.get("urls") or {}))
+        cr, reused = _stage(site, "urls-crawl.json", redo, lambda: enumerate_crawl.run(fx, site, say))
+        if reused and not cr.get("skipped"):
+            say("Reused the link crawl", "%d pages from the last run" % len(cr.get("urls") or {}))
 
+        # 2. RECONCILE (fetches every page once)
+        try:
+            rec, reused = _stage(site, "reconciled.json", redo, lambda: reconcile.run(fx, site, say))
+        except reconcile.SiteRefused as e:
+            if sh.dfs_mode(dfs) == "off":
+                raise RuntimeError("The site blocked every page fetch: %s" % e)
+            say("The site refused the crawl", str(e)[:160])
+            return _index_from_search(ctx, domain, str(e), say)
+        if reused:
+            say("Reused the settled page list", "%d pages from the last run" % len(rec.get("pages") or {}))
+
+        # 3. EXTRACT (offline)
+        ex, reused = _stage(site, "extracted.json", redo,
+                            lambda: {"domain": host, "rows": extract.run(fx, site, say, rec)})
+        rows = ex["rows"]
+        if reused:
+            say("Reused the extracted text", "%d pages from the last run" % len(rows))
+        if not rows:
+            raise RuntimeError("Found %d URLs at %s and none survived as a readable page."
+                               % (rec.get("stats", {}).get("found", 0), root))
+
+        # 4. TRAFFIC
+        tr = traffic.run(site, say, rows, redo_traffic=redo_traffic)
+
+        # 5. GATES
+        st = rec.get("stats") or {}
+        report = gates.run(fx, site, rows, rec, wp, sm, ar, tr, st.get("found", len(rows)), st.get("read", len(rows)))
+        failed = [g for g in report["gates"] if not g["pass"]]
+        say("Checked the catalogue", ("all %d checks passed" % len(report["gates"])) if not failed else
+            "%d of %d checks failed: %s" % (len(failed), len(report["gates"]), "; ".join(g["name"] for g in failed)))
+
+        # 6. WRITE
+        company = _write_knowledge(site, rows, tr, report, wp)
+        say("Saved the catalogue", "%d pages, %s" % (len(rows), company.get("brand") or host))
+    finally:
+        fx.close()
+
+    coverage = report["coverage_overall"]
+    found, read = report["found_urls"], report["read_urls"]
+    summary = "%d pages catalogued for %s (%d URLs found, %d read, %.0f%% with readable text); confidence %s; %s" % (
+        len(rows), host, found, read, coverage * 100, report["confidence"].split(":")[0],
+        ("all %d checks passed" % len(report["gates"])) if not failed else
+        "%d check(s) failed" % len(failed))
+    notes = ["%s: %s" % (g["name"], g["detail"]) for g in failed]
+    notes += report.get("warnings") or []
+    if tr["meta"].get("skipped"):
+        notes.append(tr["meta"]["skipped"])
+    if tr["meta"].get("demo"):
+        notes.append("traffic figures are demo data (no DataForSEO credentials)")
     return {
-        "summary": "%d pages, %d with rankings" % (len(pages), ranked_count),
-        "page_count": len(pages),
+        "summary": summary,
+        "page_count": len(rows),
+        "coverage": coverage,
+        "confidence": report["confidence"],
+        "note": " ".join(n.rstrip(".") + "." for n in notes) if notes else "",
     }

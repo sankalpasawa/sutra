@@ -242,6 +242,122 @@ function shellEnv() {
   return _shellEnv;
 }
 
+
+/* ------------------------------------------------------------ browser fetch --
+ * The agent's crawler reads the user's own website. More and more sites sit behind
+ * a JavaScript bot challenge (Vercel "Attack Challenge Mode", Cloudflare "Under
+ * Attack"): every plain request, robots.txt and the sitemap included, answers 429
+ * with a page only a browser running JavaScript can get past, and the pass is bound
+ * to the browser's network fingerprint, so cookies do not carry over. Measured on a
+ * real customer site on 2026-09-03: 429 on the very first request, from any client.
+ *
+ * This app IS a browser. So the shell runs a tiny loopback service: POST /fetch
+ * {url} -> a hidden window for that origin clears the challenge once, then an
+ * in-page fetch() returns the raw body (HTML, XML, text) in a fraction of a second.
+ * The backend gets the address and a token in its environment and uses it only
+ * when a site has refused plain requests. Loopback only, token on every call,
+ * http(s) only, one request in flight at a time, windows retired after ten idle
+ * minutes. Nothing here can be reached from a web page: the token never leaves
+ * the two processes.
+ */
+const BROWSER_TOKEN = crypto.randomBytes(24).toString("hex");
+const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+const BROWSER_IDLE_MS = 10 * 60 * 1000;
+const BROWSER_MAX_WINDOWS = 3;
+const IN_PAGE_FETCH = `(async (u) => {
+  const r = await fetch(u, {credentials: 'include', redirect: 'follow'});
+  const t = await r.text();
+  const h = {}; r.headers.forEach((v, k) => { h[k] = v; });
+  return {status: r.status, url: r.url, text: t, content_type: r.headers.get('content-type') || '', headers: h};
+})`;
+let browserFetchUrl = "";
+const browserWindows = new Map();      // origin -> {win, ready, lastUsed}
+let browserQueue = Promise.resolve();
+
+function browserChallenged(r) {
+  if (!r || ![403, 429, 503].includes(r.status)) return false;
+  const h = r.headers || {};
+  if (/challenge/i.test(h["x-vercel-mitigated"] || "") || /challenge/i.test(h["cf-mitigated"] || "")) return true;
+  const body = (r.text || "").slice(0, 6000);
+  return /cf-chl|_cf_chl_opt|challenge-platform|vercel-challenge|Just a moment|Verifying you are human|Checking your browser/i.test(body);
+}
+
+function browserWindowFor(origin) {
+  const have = browserWindows.get(origin);
+  if (have && !have.win.isDestroyed()) { have.lastUsed = Date.now(); return have; }
+  if (browserWindows.size >= BROWSER_MAX_WINDOWS) {
+    const oldest = [...browserWindows.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0];
+    if (oldest) { try { oldest[1].win.destroy(); } catch {} browserWindows.delete(oldest[0]); }
+  }
+  const win = new BrowserWindow({
+    show: false, width: 1280, height: 800,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false,
+                      images: false, backgroundThrottling: false, partition: "persist:agent-fetch" },
+  });
+  win.webContents.setUserAgent(BROWSER_UA);
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const ready = new Promise((resolve) => {
+    const done = () => resolve();
+    win.webContents.once("did-finish-load", done);
+    win.webContents.once("did-fail-load", done);
+    setTimeout(done, 45000);
+  });
+  win.loadURL(origin + "/").catch(() => {});
+  const entry = { win, ready, lastUsed: Date.now() };
+  browserWindows.set(origin, entry);
+  return entry;
+}
+
+async function browserFetch(url, timeoutMs) {
+  const u = new URL(url);
+  if (!/^https?:$/.test(u.protocol)) throw new Error("only http(s) urls");
+  const origin = u.origin;
+  const entry = browserWindowFor(origin);
+  await entry.ready;
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  for (let i = 0; i < 10 && Date.now() < deadline; i++) {
+    try {
+      last = await entry.win.webContents.executeJavaScript(`${IN_PAGE_FETCH}(${JSON.stringify(url)})`, true);
+    } catch (e) {
+      last = { status: 0, url, text: "", content_type: "", headers: {}, error: String(e && e.message || e).slice(0, 160) };
+    }
+    if (last && !browserChallenged(last) && last.status) return last;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return last || { status: 0, url, text: "", content_type: "", headers: {} };
+}
+
+function startBrowserFetchService() {
+  const server = http.createServer((req, res) => {
+    const reply = (code, obj) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(obj)); };
+    if (req.method !== "POST" || req.url !== "/fetch") return reply(404, { error: "not found" });
+    if (req.headers["x-sutra-browser"] !== BROWSER_TOKEN) return reply(403, { error: "bad token" });
+    let body = "";
+    req.on("data", (d) => { body += d; if (body.length > 65536) req.destroy(); });
+    req.on("end", () => {
+      let want;
+      try { want = JSON.parse(body || "{}"); } catch { return reply(400, { error: "bad json" }); }
+      const url = String(want.url || "");
+      const timeoutMs = Math.min(120, Math.max(5, Number(want.timeout) || 60)) * 1000;
+      browserQueue = browserQueue.then(() => browserFetch(url, timeoutMs))
+        .then((r) => reply(200, r), (e) => reply(502, { error: String(e && e.message || e).slice(0, 200) }));
+    });
+  });
+  server.on("error", (e) => console.error("[sutra] browser fetch service:", e && e.message));
+  server.listen(0, HOST, () => {
+    browserFetchUrl = `http://${HOST}:${server.address().port}`;
+    console.log("[sutra] browser fetch service on", browserFetchUrl);
+  });
+  setInterval(() => {
+    const cut = Date.now() - BROWSER_IDLE_MS;
+    for (const [origin, e] of browserWindows) {
+      if (e.lastUsed < cut) { try { e.win.destroy(); } catch {} browserWindows.delete(origin); }
+    }
+  }, 60000).unref();
+  return server;
+}
+
 function startBackend() {
   const child = spawn(
     RUNTIME.python,
@@ -269,6 +385,9 @@ function startBackend() {
         // payload/sb/ is retired; the env stays for any bundled resource a
         // backend module resolves — e.g. the update sidecar's assets.)
         SUTRA_UI_RESOURCES: path.join(process.resourcesPath || "", "payload"),
+        // The agent's crawler can read a site behind a bot challenge through this
+        // app's own hidden window. Address + token, both minted per launch.
+        ...(browserFetchUrl ? { SEO_AGENT_BROWSER_FETCH: browserFetchUrl, SEO_AGENT_BROWSER_TOKEN: BROWSER_TOKEN } : {}),
       } }
   );
   let stderr = "";
@@ -494,6 +613,8 @@ async function boot() {
       "Find it with:  lsof -ti tcp:8330");
   }
 
+  startBrowserFetchService();
+  await new Promise((r) => setTimeout(r, 150));   // listen(0) binds on the next tick; the port must be known before spawn
   backend = startBackend();
   const up = await waitForOwnBackend(backend);
   if (!up) {

@@ -5,3 +5,7 @@ websockets==15.0.1
 # DMG bundle can install them with --only-binary.
 httpx==0.28.1
 beautifulsoup4==4.15.0
+# The page index (seo_agent/tools/_index.py). 2.0.2 is the newest numpy that still runs on the
+# dev venv's Python 3.9 AND ships cp312 wheels for both macOS arches (arm64 11_0, x86_64 10_9),
+# checked 2026-09-03 with pip download --only-binary=:all: --platform.
+numpy==2.0.2

@@ -93,3 +93,15 @@ the code.**
 
 Build it. Run it on real data. **Screenshot it.** Compare to the reference in
 `Ai for org/projects/unify-gtm/_raw/screenshots/`. Then tick it.
+
+---
+
+## Layer 03 — the content machine (research → blueprint), ported 2026-09-04
+
+| # | Thing | How it was proven |
+|---|---|---|
+| 03a | **`tools/run_research.py`** + `research/` (one module per step): world → seeds → tight net → filter → metrics + intent → scorer panel + judge (the world check) → live SERP + snapshot → winners + extract → verdict/build spec → cannibalisation → topic gate → spine → persona → evidence → gap check (≤3 fill rounds) → own pages via the Voyage index + reuse verdict → `research.json` + `cards.json` | `tests/test_research.py`, 69 checks, DataForSEO faked at the wire so the real parsers run; every step resumable under `artifacts/_work/`; a second run spends nothing |
+| 03b | **`tools/build_blueprint.py`**: spine filter (PROTECT, fail closed) → MECE clustering (asserted in code) → name + split → attach → orphan → FAQ + order (valid permutation only) → keyword set → `blueprint.json` | Same suite: PROTECT rescues a numeric off-spine card, MECE holds, an invalid order is rejected, a dead scorer aborts the build |
+| 03c | **The evidence engine is NOT STORM.** 11-storm is a vendored research engine with its own venv and cannot ship in this package. `research/evidence.py` is the honest substitute: live SERP (depth 10) on the primary + up to 6 secondaries → free page reads → 1,200-char passages, 14 per page → one LLM harvest per page → every quote checked as an exact substring of the page, invented ones dropped. Narrower than STORM's interviews and outline; the run notes say so | The suite drops a planted fake quote and records the count |
+
+Left out on purpose: the ranked net (s1b, needs the asset engine's vetted competitor URLs), the research-notes.md commentary file (the agent's substeps are that log), the HTML viewer, the queue/sheet bookkeeping and the spoke minting (topics come from the chat, not a CSV).

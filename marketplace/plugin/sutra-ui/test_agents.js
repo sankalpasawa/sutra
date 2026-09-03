@@ -78,7 +78,7 @@ test("an approval that was answered shows its decision, not a live card", () => 
   assert.ok(ap, "approval entry");
   assert.strictEqual(ap.live, false);
   assert.strictEqual(ap.decision, "approved");
-  assert.strictEqual(ap.cost, 3);
+  assert.strictEqual(ap.mins, 4, "the time estimate rides along; there are no credits any more");
 });
 test("a step still running when the run FAILED is marked interrupted, never left spinning", () => {
   const evs = [{ t: "2026-09-03T08:00:00Z", type: "step_started", id: "s1", label: "Reading the website", tool: "index_site" }];
@@ -130,7 +130,8 @@ test("agRunSummary: live runs measure to now; finished runs measure to the last 
 test("agStageOf: earlier stages done, current marked, waiting marked", () => {
   const st = A.agStageOf({ stage: "blueprint", status: "waiting" });
   /* JSON, not deepStrictEqual: arrays born inside the vm context have another Array prototype */
-  assert.strictEqual(JSON.stringify(st.map(s => s.state)), JSON.stringify(["done", "done", "wait", "todo"]));
+  /* five stages since 2.240.0: Setup joined the front */
+  assert.strictEqual(JSON.stringify(st.map(s => s.state)), JSON.stringify(["done", "done", "done", "wait", "todo"]));
   const done = A.agStageOf({ stage: "draft", status: "done" });
   assert.ok(done.every(s => s.state === "done"));
 });
@@ -163,9 +164,10 @@ test("the run header says Working while live and Worked when done, with the step
   assert.ok(/<span class="n">1<\/span>/.test(doneHtml), "one step_started in the fixture");
 });
 test("a live approval card renders Go ahead / Not now; an answered one renders the decision", () => {
-  const live = A.agEntryHtml({ kind: "approval", live: true, tool: "run_research", question: "Research needs 8 credits. Go ahead?", cost: 8, mins: 12, options: [] }, {});
+  const live = A.agEntryHtml({ kind: "approval", live: true, tool: "run_research", question: "Research will take a while. Go ahead?", mins: 12, options: [] }, {});
   assert.ok(/data-ag="approve" data-arg="yes"/.test(live) && /Not now/.test(live));
-  assert.ok(/<b>8<\/b> credits/.test(live), "the cost is stated");
+  assert.ok(/<b>12<\/b> min/.test(live), "the time is stated");
+  assert.ok(!/credit/i.test(live), "credits are gone from the screen");
   const done = A.agEntryHtml({ kind: "approval", live: false, decision: "declined", question: "q", options: [] }, {});
   assert.ok(/You said/.test(done) && /Not now/.test(done));
   assert.ok(!/data-ag="approve"/.test(done), "no buttons after the fact");
@@ -208,18 +210,64 @@ test("a library item opens read-only: no edit affordance, copy only", () => {
   assert.ok(/data-ag="copymd"/.test(html));
   assert.ok(/Saved one/.test(html));
 });
-test("the stage bar names four stages and the credits spent", () => {
+test("the stage bar names five stages and says what the run is doing, never a credit", () => {
   const html = A.agStagesHtml({ stage: "research", status: "running", credits_spent: 11 });
-  assert.strictEqual((html.match(/class="ag-stage /g) || []).length, 4);
-  assert.ok(/<b>11<\/b> credits spent/.test(html));
-  assert.ok(/no credits spent/.test(A.agStagesHtml({ stage: "topic", status: "running" })));
+  assert.strictEqual((html.match(/class="ag-stage /g) || []).length, 5);
+  assert.ok(/Setup/.test(html) && /Draft/.test(html));
+  assert.ok(/>working</.test(html));
+  assert.ok(!/credit/i.test(html), "no credit talk on the stage bar");
+  assert.ok(/waiting for you/.test(A.agStagesHtml({ stage: "topic", status: "waiting" })));
 });
-test("the hero says plainly when there is no model and when keyword data is demo", () => {
-  const html = A.agHeroHtml({ model_provider: null, dataforseo: false });
+test("the hero says plainly when there is no model, no DataForSEO and no Voyage key", () => {
+  const html = A.agHeroHtml({ model_provider: null, dataforseo: false, voyage: false });
   assert.ok(/No model is available/.test(html));
-  assert.ok(/demo keyword data/i.test(html));
-  const ok = A.agHeroHtml({ model_provider: "claude-cli", dataforseo: true });
-  assert.ok(!/No model/.test(ok) && !/demo keyword/i.test(ok));
+  assert.ok(/DataForSEO is not connected/.test(html));
+  assert.ok(/No Voyage key/.test(html));
+  const ok = A.agHeroHtml({ model_provider: "claude-cli", dataforseo: true, voyage: true, site_indexed: true, page_index: { built: true }, brand_ready: true });
+  assert.ok(!/No model/.test(ok) && !/not connected/.test(ok) && !/No Voyage/.test(ok));
+  assert.ok(/Suggest six topics/.test(ok), "a set-up site offers the article plays");
+  const fresh = A.agHeroHtml({ model_provider: "claude-cli", dataforseo: true, voyage: true, site_indexed: false, page_index: { built: false }, brand_ready: false });
+  assert.ok(/Set up for my website/.test(fresh), "a fresh install offers setup first");
+});
+test("agSetupOf: the index is a soft step without a Voyage key, so setup can still be ready", () => {
+  const s = A.agSetupOf({ model_provider: "claude-cli", site_indexed: true, voyage: false, page_index: { built: false }, brand_ready: true });
+  assert.strictEqual(s.ready, true);
+  const t = A.agSetupOf({ model_provider: "claude-cli", site_indexed: false, voyage: true, page_index: { built: false }, brand_ready: false });
+  assert.strictEqual(t.ready, false); assert.strictEqual(t.next, "site");
+});
+test("connections shows Voyage as its own section and never the key", () => {
+  const html = A.agConnectionsHtml({ dataforseo_login: true, dataforseo_password: true, voyage_key: true }, { model_provider: "claude-cli" }, null);
+  assert.ok(/Voyage/.test(html) && /data-agvoy="key"/.test(html));
+  assert.ok(/data-ag="clearvoy"/.test(html), "a set key can be disconnected");
+  assert.ok(!/pa-[A-Za-z0-9]{10}/.test(html));
+});
+test("the tools screen is plain English: what, when, needs, how long", () => {
+  const html = A.agToolsHtml([{ name: "index_site", label: "Reading the website", does: "Reads the whole website.", when: "Once, at setup.", needs: "The website address.", takes: "A few minutes." }]);
+  assert.ok(/What it does/.test(html) && /When it runs/.test(html) && /What it needs/.test(html) && /How long/.test(html));
+  assert.ok(/Reading the website/.test(html));
+  assert.ok(!/gate|credit|module/i.test(html));
+});
+test("the brand pack lists every file with its purpose and flags the rows to confirm", () => {
+  const html = A.agBrandPackHtml({ files: [{ name: "writer-brief.md", exists: true, words: 1660, flags: 0 }, { name: "stats.md", exists: true, words: 400, flags: 12 }], needs_review: ["stats.md: 12 rows to confirm"] });
+  assert.ok(/Writer brief/.test(html) && /1,660 words/.test(html));
+  assert.ok(/12 to confirm/.test(html));
+  assert.ok(/data-ag="brandfile" data-arg="stats.md"/.test(html));
+  assert.ok(/not built yet/.test(html), "unbuilt files are listed so the user knows what is coming");
+});
+test("the links block shows each placed link with its match score and flags a weak one", () => {
+  const html = A.agLinksHtml({ placed: [{ kind: "inline", anchor: "cost per hire", url: "https://x.com/hr-glossary/cost-per-hire/", section: "S1", rr: 0.95 },
+                                          { kind: "inline", anchor: "work sample", url: "https://x.com/blog/ws/", section: "S2", rr: 0.31 }], external_kept: [], integrity_clean: true });
+  assert.ok(/cost per hire/.test(html) && /match 0\.95/.test(html));
+  assert.ok(/match 0\.31 · weak/.test(html), "under 0.45 is flagged weak, the engine's own threshold");
+  assert.ok(!/put back exactly/.test(html));
+});
+test("the research brief shows the world check, the shared-phrase warning and the cannibalisation flag", () => {
+  const html = A.agResearchHtml({ topic: "Cost per hire", keywords: { primary: { keyword: "cost per hire", volume: 2900, kd: 31, intent: "informational", split_world: true, why: "part of the volume is finance" }, variations: [{ keyword: "cph", volume: 100 }], secondary: [] },
+    world: { about: "hiring costs", not_about: "cost of goods" }, cannibalisation: { keyword: "cost per hire", rank: 4, url: "https://x.com/hr-glossary/cph/" }, serp: { who_ranks: [{ rank: 1, url: "https://a.com/x", title: "A" }] }, winners: { gaps_to_own: ["the hidden costs"] } });
+  assert.ok(/Shared phrase/.test(html) && /You already rank for this/.test(html));
+  assert.ok(/About<\/dt><dd>hiring costs/.test(html));
+  assert.ok(/The gap we can own/.test(html) && /the hidden costs/.test(html));
+  assert.ok(/2,900/.test(html));
 });
 test("connections never echoes a secret: inputs are empty, placeholders say (set)", () => {
   const html = A.agConnectionsHtml({ dataforseo_login: true, dataforseo_password: true }, { model_provider: "claude-cli" }, null);

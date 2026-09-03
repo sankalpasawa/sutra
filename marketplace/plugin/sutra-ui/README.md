@@ -335,15 +335,28 @@ written pytest-style, so `unittest` collects **0** tests from it — run it with
 ## Agents
 
 **Agents** is the rail destination between Chats and Routines. The first agent is the
-**SEO Writer**: name a topic or ask for ideas, and it indexes your site, learns how you
-write, researches the keyword, builds an article structure and writes the draft, stopping
-at four checkpoints (topics, research brief, blueprint, draft) where you look, edit, or
-redirect before it continues. Anything that costs credits stops and asks first, with the
-number.
+**SEO Writer**, a port of the SEO workflow (`Backlink gets Automated`, layers 00, 01, 03
+and 04) into an agent that works in front of you.
+
+**Setup, once.** Give it the website. It catalogues every page (CMS API, sitemaps, web
+archive, crawl, with coverage gates), indexes every page by meaning with Voyage, and
+builds the brand pack from the site's own pages: voice, style guide, product facts,
+readers, real numbers, customer stories, brand cards, the pages a call to action may
+link to, and the one-page writer brief every article follows. You confirm the flagged
+rows in the review panel. All of it is visible in Knowledge, including a map of the
+pages by meaning.
+
+**Per article.** Topic → research (real keyword numbers with the world check, who ranks,
+Google's own answer, the winning pages, evidence cards with verbatim quotes and sources,
+the gap check, your own pages found by meaning) → the plan → the draft (planner,
+architect by format, writer with its editing passes, internal links laid in by meaning
+and judged on real page text, sources numbered). You look at each before the next.
 
 | | |
 |---|---|
-| Model | the `claude` CLI the chat already drives — **billed to your Claude subscription**, never an API key. `agents_api` hands the agent the binary `providers.py` resolved. |
-| Keyword data | DataForSEO, login + password on the agent's Connections view. Without it the agent runs on clearly labelled demo numbers. |
-| Data | `~/.sutra-ui/agents/seo/` — chats, runs, artifacts, knowledge, memory, library. `connections.json` is owner-only. Never inside the bundle. |
-| Design | `design/GAME-PLAN-agents.md` |
+| Model | the `claude` CLI the chat already drives — **billed to your Claude subscription**, never an API key. `agents_api` hands the agent the binary `providers.py` resolved. Up to three calls run at once. |
+| Keyword data | DataForSEO, login + password on the Connections view. Research needs it; paid steps do a balance pre-flight and say when they skipped. |
+| Meaning index | Voyage (`voyage-4-large` + `rerank-2.5`, free tier), key on the Connections view. Without it internal links fall back to weaker matching. |
+| Memory | standing rules the user states; every step that shapes or writes prose receives them. |
+| Data | `~/.sutra-ui/agents/seo/` — chats, runs, artifacts, knowledge (catalogue, page index, brand pack), memory, library. `connections.json` is owner-only. Never inside the bundle. |
+| Design | `design/GAME-PLAN-agents.md` · building the next agent: `design/NEW-AGENT-plan.md` |

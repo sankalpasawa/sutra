@@ -338,7 +338,17 @@ def _openai(system, messages, tools, key, model):
 
 # ---- the call --------------------------------------------------------------------------
 
+import threading as _threading
+PARALLEL = int(os.environ.get("SEO_AGENT_PARALLEL", "3"))   # concurrent CLI calls; the workflow's shim used 3
+_GATE = _threading.BoundedSemaphore(PARALLEL)
+
+
 def call(system, messages, tools=None, model=None, on_retry=None):
+    with _GATE:
+        return _call(system, messages, tools, model, on_retry)
+
+
+def _call(system, messages, tools=None, model=None, on_retry=None):
     """on_retry(message) is called before each retry of a transient CLI error, so the
     caller can put a line in the run log instead of leaving the user staring at a spinner."""
     binary = cli_bin()

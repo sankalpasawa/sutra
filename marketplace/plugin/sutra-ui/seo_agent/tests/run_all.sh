@@ -17,7 +17,8 @@ export SEO_AGENT_DATA
 export SEO_AGENT_NO_CLI=1            # the model is stubbed; never shell out to claude here
 echo "data dir: $SEO_AGENT_DATA"
 fail=0
-for t in test_loop test_tools test_endtoend test_behaviour test_checks_editing test_llm_cli; do
+for t in test_loop test_tools test_endtoend test_behaviour test_checks_editing test_llm_cli test_foundation test_browser test_brand test_research test_write; do
+  [ -f "seo_agent/tests/$t.py" ] || { echo "══ $t (not written yet, skipped)"; continue; }
   echo "══ $t"
   out="$($PY -m seo_agent.tests.$t 2>&1)" || fail=1
   echo "$out" | grep -E "^  (PASS|FAIL)|passed|failed|FAILED|Error|Traceback" | tail -6

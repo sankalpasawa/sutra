@@ -191,10 +191,28 @@ def api_events(chat_id: str, run_id: str, since: int = 0):
 def api_artifact(chat_id: str, run_id: str, name: str):
     if not _ok_id(chat_id, run_id) or not _NAME.match(name or ""):
         return _bad("bad name")
+    if name == "brand":
+        return _brand_pack()
     data = store.load_artifact(chat_id, run_id, name)
     if data is None:
         return _bad("not found", 404)
     return data if isinstance(data, (dict, list)) else {"text": data}
+
+
+def _brand_pack():
+    """The brand pack as the screen shows it: one row per file, with review flags."""
+    try:
+        from seo_agent.brand import pack
+        return pack.summary()
+    except Exception:  # noqa: BLE001 -- the builder may not be installed yet; list what is on disk
+        files = []
+        for name in store.list_knowledge("brand"):
+            base = name.split("/", 1)[1]
+            text = store.knowledge(name)
+            body = text if isinstance(text, str) else __import__("json").dumps(text)
+            files.append({"name": base, "exists": True, "words": len(body.split()),
+                          "flags": body.count("\u26a0")})
+        return {"files": files, "needs_review": []}
 
 
 @router.post("/runs/{chat_id}/{run_id}/artifact/{name}")
@@ -291,9 +309,11 @@ def api_publish(chat_id: str, run_id: str, body: dict = Body(default={})):
     bp = store.load_artifact(chat_id, run_id, "blueprint.json") or {}
     rs = store.load_artifact(chat_id, run_id, "research.json") or {}
     state = store.get_state(chat_id, run_id) or {}
-    title = (body.get("title") or bp.get("title") or state.get("topic") or "Untitled").strip()[:120]
+    title = (body.get("title") or bp.get("h1") or bp.get("title") or state.get("topic") or "Untitled").strip()[:120]
+    kw = rs.get("keywords") or {}
+    primary = (kw.get("primary") or rs.get("primary_keyword") or {})
     item = store.library_save(chat_id, run_id, title, draft, {
-        "primary_keyword": (rs.get("primary_keyword") or {}).get("keyword", "")})
+        "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary)})
     store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
     return {"ok": True, "item_id": item, "title": title}
 
@@ -302,16 +322,133 @@ def api_publish(chat_id: str, run_id: str, body: dict = Body(default={})):
 
 @router.get("/knowledge")
 def api_knowledge():
-    return {"site_index": store.knowledge("site_index.json"),
+    """Everything the Knowledge screen shows, light. Page bodies and the embedding map have
+    their own routes because a 10,000-page site does not fit in one reply."""
+    idx = store.knowledge("site_index.json") or {}
+    pages = idx.get("pages") if isinstance(idx, dict) else (idx if isinstance(idx, list) else [])
+    pages = pages or []
+    light = dict(idx) if isinstance(idx, dict) else {}
+    light.pop("pages", None)
+    types = {}
+    for p in pages:
+        types[p.get("type") or "page"] = types.get(p.get("type") or "page", 0) + 1
+    light.update({"page_count": len(pages), "types": types,
+                  "ranking_pages": sum(1 for p in pages if p.get("top_keyword")),
+                  "ok_pages": sum(1 for p in pages if (p.get("body_status") or "ok") == "ok")})
+    try:
+        from seo_agent.tools import _index
+        page_index = _index.status()
+    except Exception:  # noqa: BLE001
+        page_index = {"built": False}
+    return {"site_index": light,
+            "report": store.knowledge("catalogue-report.json"),
+            "top_pages": (store.knowledge("top-pages.json") or [])[:25],
+            "page_index": page_index,
+            "brand": _brand_pack(),
+            "company": store.knowledge("brand/company.json") or {},
             "brand_voice": store.knowledge("brand_voice.json"),
             "competitors": store.knowledge("competitors.json")}
 
 
+@router.get("/knowledge/pages")
+def api_knowledge_pages(offset: int = 0, limit: int = 50, q: str = "", type: str = ""):
+    """A page of the catalogue: searchable by title or url, filterable by type, sorted by
+    traffic then title. Light rows only."""
+    idx = store.knowledge("site_index.json") or {}
+    pages = idx.get("pages") if isinstance(idx, dict) else (idx if isinstance(idx, list) else [])
+    pages = pages or []
+    ql = (q or "").strip().lower()
+    if ql:
+        pages = [p for p in pages if ql in (p.get("title") or "").lower() or ql in (p.get("url") or "").lower()
+                 or ql in (p.get("top_keyword") or "").lower()]
+    if type:
+        pages = [p for p in pages if (p.get("type") or "page") == type]
+    pages.sort(key=lambda p: (-(p.get("traffic_clean") or p.get("traffic") or 0), (p.get("title") or "").lower()))
+    limit = max(1, min(int(limit or 50), 200))
+    offset = max(0, int(offset or 0))
+    rows = []
+    for p in pages[offset:offset + limit]:
+        rows.append({k: p.get(k) for k in ("url", "type", "title", "word_count", "body_status",
+                                             "traffic", "traffic_clean", "top_keyword", "intent",
+                                             "position", "modified", "source")})
+    return {"total": len(pages), "offset": offset, "rows": rows}
+
+
+@router.get("/knowledge/page")
+def api_knowledge_page(url: str = ""):
+    """One page's saved text, for the reader in the panel."""
+    from seo_agent.tools import _shared as sh
+    u = (url or "").strip().rstrip("/")
+    if not u:
+        return _bad("url is needed")
+    body = sh.page_bodies().get(u)
+    if body is None:
+        return _bad("no saved text for that page", 404)
+    idx = store.knowledge("site_index.json") or {}
+    row = next((p for p in (idx.get("pages") or []) if (p.get("url") or "").rstrip("/") == u), {})
+    return {"url": u, "title": row.get("title") or "", "text": body, "row": row}
+
+
+@router.get("/knowledge/embedding-map")
+def api_embedding_map():
+    """Every page as a point: a two-dimensional view of the page index."""
+    try:
+        from seo_agent.tools import _index
+    except Exception as e:  # noqa: BLE001
+        return _bad("page index unavailable: %s" % str(e)[:120], 404)
+    idx = store.knowledge("site_index.json") or {}
+    types = {(p.get("url") or ""): (p.get("type") or "page") for p in (idx.get("pages") or [])}
+    traffic = {(p.get("url") or ""): (p.get("traffic_clean") or p.get("traffic") or 0)
+               for p in (idx.get("pages") or [])}
+    m = _index.embedding_map(types=types, traffic=traffic)
+    if not m:
+        return _bad("The page index has not been built yet.", 404)
+    return m
+
+
+_BRAND_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(md|json)$")
+
+
+@router.get("/knowledge/brand/{name}")
+def api_brand_file(name: str):
+    if not _BRAND_FILE.match(name or ""):
+        return _bad("bad name")
+    v = store.knowledge("brand/" + name)
+    if v is None:
+        return _bad("not found", 404)
+    return v if isinstance(v, (dict, list)) else {"name": name, "text": v}
+
+
+@router.post("/knowledge/brand/{name}")
+def api_save_brand_file(name: str, body: dict = Body(...)):
+    """The user edited a brand file (confirmed the flagged rows, fixed a persona). Their text
+    is the truth from then on; the builders never overwrite a file that exists."""
+    if not _BRAND_FILE.match(name or ""):
+        return _bad("bad name")
+    if name.endswith(".json"):
+        data = body.get("data")
+        if not isinstance(data, (dict, list)):
+            return _bad("json data is needed")
+    else:
+        data = body.get("text")
+        if not isinstance(data, str):
+            return _bad("text is needed")
+    store.save_knowledge("brand/" + name, data)
+    return {"ok": True}
+
+
 @router.post("/knowledge")
 def api_save_knowledge(body: dict = Body(...)):
-    for key in ("site_index", "brand_voice", "competitors"):
+    for key in ("competitors",):
         if key in body and body[key] is not None:
             store.save_knowledge(key + ".json", body[key])
+    if isinstance(body.get("company"), dict):
+        rec = store.knowledge("brand/company.json") or {}
+        for k in ("brand", "domain", "brand_oneliner", "niche_definition", "location_name",
+                  "language_code", "about", "wordpress_url"):
+            if k in body["company"]:
+                rec[k] = str(body["company"][k] or "").strip()[:600]
+        store.save_knowledge("brand/company.json", rec)
     return {"ok": True}
 
 
@@ -326,24 +463,23 @@ def api_add_memory(body: dict = Body(...)):
     text = (body.get("text") or "").strip()
     if not text:
         return _bad("empty")
-    kind = body.get("kind") if body.get("kind") in ("rule", "preference") else "rule"
-    return store.add_memory(text[:500], kind, source="user")
+    return store.add_memory(text, body.get("kind", "rule"), source="user")
 
 
 @router.post("/memory/{mem_id}/toggle")
 def api_toggle_memory(mem_id: str, body: dict = Body(default={})):
     if not _ok_id(mem_id):
         return _bad("bad id")
-    store.set_memory_active(mem_id, bool(body.get("active", False)))
+    store.set_memory_active(mem_id, bool(body.get("active", True)))
     return {"ok": True}
 
 
-_CONN_KEYS = ("dataforseo_login", "dataforseo_password")
+_CONN_KEYS = ("dataforseo_login", "dataforseo_password", "voyage_key")
 
 
 @router.get("/connections")
 def api_connections():
-    """Never the secrets themselves. Only whether each one is set. And only DataForSEO:
+    """Never the secrets themselves. Only whether each one is set. DataForSEO and Voyage;
     the model is the `claude` CLI on the user's subscription, never an API key."""
     c = store.connections()
     return {k: bool((c.get(k) or "").strip()) for k in _CONN_KEYS}
@@ -369,10 +505,7 @@ def api_save_connections(body: dict = Body(...)):
 
 @router.get("/tools")
 def api_tools():
-    return [{"name": t["name"], "description": t["description"],
-             "gate": t.get("gate", "auto"), "cost_credits": t.get("cost_credits", 0),
-             "est_minutes": t.get("est_minutes", 0), "pauses": bool(t.get("pauses"))}
-            for t in registry.WORK_TOOLS]
+    return registry.for_screen()
 
 
 # ---- library -----------------------------------------------------------------------------------
@@ -411,10 +544,22 @@ def api_library_delete(item_id: str):
 def api_health():
     _sync_claude_bin()
     c = store.connections()
+    try:
+        from seo_agent.tools import _index
+        page_index = _index.status()
+    except Exception:  # noqa: BLE001
+        page_index = {"built": False}
+    idx = store.knowledge("site_index.json") or {}
+    brand = _brand_pack()
     return {"ok": True,
             "model_provider": llm.provider(),
             "claude_bin": os.environ.get("SEO_AGENT_CLAUDE_BIN") or None,
             "dataforseo": bool((c.get("dataforseo_login") or "").strip()
                                and (c.get("dataforseo_password") or "").strip()),
+            "voyage": bool((c.get("voyage_key") or "").strip()),
+            "site_indexed": bool(idx.get("pages")) if isinstance(idx, dict) else False,
+            "page_index": page_index,
+            "brand_ready": bool(next((f for f in brand.get("files", [])
+                                      if f.get("name") == "writer-brief.md" and f.get("exists")), None)),
             "chats": len(store.list_chats()),
             "data_dir": store.data_dir()}
