@@ -203,7 +203,9 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         item = r.json()["item_id"]
         lib = self.client.get(BASE + "/library").json()
-        self.assertTrue(any(i["id"] == item and i["title"] == "Hello there" for i in lib))
+        # titled from the draft's own H1 ("Hello"), not the blueprint's ("Hello there"): the heading
+        # pass rewrites the H1 after the blueprint was approved, so the draft is the truth
+        self.assertTrue(any(i["id"] == item and i["title"] == "Hello" for i in lib), lib)
         one = self.client.get(BASE + "/library/%s" % item).json()
         self.assertIn("A body.", one["draft"])
         r = self.client.post(BASE + "/library/%s/status" % item, json={"status": "ready"}, headers=HDR)
