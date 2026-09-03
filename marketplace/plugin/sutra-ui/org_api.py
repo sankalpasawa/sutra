@@ -1605,6 +1605,12 @@ def api_updates_desktop():
     fallback when the automatic path has given up, and a fallback that shares
     the automatic path's failure modes is not a fallback.
     """
+    # Checked BEFORE the 240MB download. A user once waited for the whole file
+    # and was then told a folder was "not writable" -- the real answer, that the
+    # app had never been dragged out of the installer image, was never said.
+    blocked = updates.install_blocker()
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
     try:
         got = updates.download_and_verify()
         sched = updates.install_desktop(got["dmg"], relaunch=True,
@@ -1657,6 +1663,12 @@ def api_updates_staged():
 def api_updates_stage(request: Request):
     """Download + verify into durable staging. Arms nothing."""
     _desktop_control(request)
+    # Same pre-check as the manual button. Without it the AUTOMATIC path
+    # re-downloads 240MB on every schedule tick on a machine that can never
+    # install it, silently, forever.
+    blocked = updates.install_blocker()
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
     try:
         return updates.stage_desktop()
     except RuntimeError as exc:

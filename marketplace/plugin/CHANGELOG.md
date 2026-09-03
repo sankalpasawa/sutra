@@ -2,6 +2,32 @@
 
 **status**: active · **updated**: 2026-09-03
 
+## 2.239.1 (2026-09-03)
+
+- **An app run from the installer disk image now offers to install itself.** Open
+  the DMG, double-click Sutra without dragging it anywhere, and it opens and works
+  and says nothing. A disk image is read-only, so that copy can never replace
+  itself: every update from then on is impossible, and nothing says so. A user
+  ran 2.238.0 that way for weeks and found out only when an update finally
+  refused. macOS cannot fix this from the other end, because opening a disk image
+  is not allowed to run code, so the app has to move itself. It now asks once, on
+  launch, and moves and reopens from Applications when you say yes. "Do not ask
+  again" is honoured; a source checkout is never asked.
+- **The refusal says what is wrong instead of naming a permission bit.** The old
+  message was "/Volumes/Sutra 2.238.0 is not writable by this user -- install the
+  DMG manually", which names a folder and a flag and never the cause. It now says
+  Sutra is running from the installer disk image, that a disk image is read-only,
+  and what to do about it, in that order.
+- **And it says so before the download, not after.** Both update paths asked for
+  240MB first and refused second. The automatic one is the worse of the two: on a
+  machine that can never install, it re-fetched the whole image on every schedule
+  tick, forever, with nobody watching.
+- Guard: `updates.install_blocker()`, one rule asked by the manual button, the
+  automatic staging route and the installer itself, so the sentence cannot differ
+  by path. Shell: `ensureInstalled()` in `electron/main.js`, before the backend
+  starts, using Electron's own mover with a `ditto` fallback (a plain copy breaks
+  the signature inside a .app). 14 new checks in `test_update_install_guard.py`.
+
 ## 2.239.0 (2026-09-03)
 
 - **Agents, and the first one: the SEO Writer.** A new rail destination between Chats and

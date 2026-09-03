@@ -2440,7 +2440,12 @@ class TestUpdates(unittest.TestCase):
             self.skipTest("no unwritable .app to test against")
         with self.assertRaises(RuntimeError) as cm:
             self.U.install_desktop(__file__, app_path=str(app))
-        self.assertIn("writable", str(cm.exception))
+        msg = str(cm.exception)
+        # The wording moved to plain English in 2.239.1 (install_blocker), so
+        # this asserts what the sentence has to DO -- name the folder and say
+        # the account cannot write there -- not the one word it used to use.
+        self.assertIn("/System/Library/CoreServices", msg)
+        self.assertIn("cannot write", msg)
 
     def test_install_desktop_refuses_a_missing_image(self):
         app = self.Path(self.tmp) / "W.app"

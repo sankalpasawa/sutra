@@ -514,6 +514,37 @@ def _bundle_identity(app):
     return team, bid
 
 
+ON_IMAGE = (
+    "Sutra is running from the installer disk image, which is read-only, so it "
+    "cannot replace itself and no update can ever land.\n\n"
+    "Quit Sutra, drag it to your Applications folder, eject the disk image, and "
+    "open it from Applications. Updates work by themselves from then on."
+)
+
+
+def install_blocker(app_path=None):
+    """A plain-English reason this machine cannot install an update, or None.
+
+    Checked BEFORE the download, because the alternative is what actually
+    happened to a user: wait for 240MB, then get told a folder is "not
+    writable". The overwhelming cause is an app still running from the DMG --
+    people double-click it in the installer window and it works, so nothing
+    ever tells them they never installed it. Name that, rather than naming a
+    path and a permission bit.
+    """
+    target = app_path or app_bundle()
+    if not target:
+        return None                      # a source checkout updates by git
+    app = Path(target)
+    if str(app).startswith("/Volumes/"):
+        return ON_IMAGE
+    if not os.access(app.parent, os.W_OK):
+        return ("Sutra is installed in %s, which this user account cannot write "
+                "to, so the update cannot be put there. Move Sutra to your "
+                "Applications folder, or install the DMG by hand." % app.parent)
+    return None
+
+
 def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
                     relaunch=False, version=None, result_path=None,
                     recover_path=None):
@@ -541,9 +572,9 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
     app = Path(target)
     if not app.is_dir() or app.suffix != ".app":
         raise RuntimeError("%s is not an installed .app bundle" % app)
-    if not os.access(app.parent, os.W_OK):
-        raise RuntimeError("%s is not writable by this user -- install the DMG "
-                           "manually" % app.parent)
+    blocked = install_blocker(app)
+    if blocked:
+        raise RuntimeError(blocked)
     if not Path(dmg).is_file():
         raise RuntimeError("no such disk image: %s" % dmg)
 

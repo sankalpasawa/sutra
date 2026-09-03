@@ -343,7 +343,120 @@ function createWindow() {
   win.loadURL(ORIGIN);
 }
 
+/* ------------------------------------------------------------- installed? --
+ * The one install mistake that costs a user everything and tells them nothing.
+ *
+ * You open the DMG and double-click Sutra right there in the installer window.
+ * It opens. It works. Nothing anywhere says you never installed it -- and a
+ * disk image is read-only, so the app can never replace itself. Every update
+ * from then on fails, or worse, never even announces itself. A real user ran
+ * 2.238.0 off the image for weeks and only found out when an update refused
+ * with "/Volumes/Sutra 2.238.0 is not writable by this user".
+ *
+ * macOS cannot fix this from the other end: opening a disk image is not allowed
+ * to run code, so a DMG can never install itself. The app has to move ITSELF,
+ * which is what every well-behaved Mac app does and what this function is.
+ *
+ * Deliberately a question, not a silent move. A window that vanishes and comes
+ * back somewhere else reads as a crash. One question, answered once.
+ *
+ * Returns true to carry on booting here, false when this process is done
+ * (the app has been moved and relaunched from Applications).
+ */
+function skipMoveMarker() {
+  return path.join(app.getPath("userData"), "skip-move-to-applications");
+}
+
+function appBundleDir() {
+  /* <...>/Sutra.app/Contents/MacOS/Sutra -> <...>/Sutra.app */
+  return path.resolve(app.getPath("exe"), "..", "..", "..");
+}
+
+/* The fallback when Electron's own mover declines: copy, open the copy, quit.
+   ditto rather than cp because it preserves the signature and the symlinks
+   inside a .app; a plain recursive copy produces a bundle that will not
+   launch on a machine with Gatekeeper awake. */
+function copyIntoApplications() {
+  const src = appBundleDir();
+  const dst = path.join("/Applications", path.basename(src));
+  execFileSync("/usr/bin/ditto", [src, dst]);
+  spawn("/usr/bin/open", ["-n", "-a", dst], { detached: true, stdio: "ignore" }).unref();
+  return dst;
+}
+
+async function ensureInstalled() {
+  if (process.platform !== "darwin" || !app.isPackaged) return true;
+  try { if (fs.existsSync(skipMoveMarker())) return true; } catch {}
+  try { if (app.isInApplicationsFolder()) return true; } catch { return true; }
+
+  const onImage = appBundleDir().startsWith("/Volumes/");
+  /* The async form, not showMessageBoxSync: only this one reports the
+     checkbox, and "do not ask again" has to actually mean it. */
+  const r = await dialog.showMessageBox({
+    type: "question",
+    buttons: ["Move to Applications", "Not now"],
+    defaultId: 0,
+    cancelId: 1,
+    title: "Move Sutra to Applications?",
+    message: onImage
+      ? "Sutra is running from the installer disk image."
+      : "Sutra is not in your Applications folder.",
+    detail: (onImage
+      ? "A disk image is read-only, so Sutra cannot update itself from here. "
+      : "Sutra updates itself by replacing its own copy, which only works from Applications. ") +
+      "Move it now and Sutra will reopen from Applications. You will not be asked again.",
+    checkboxLabel: "Do not ask again",
+    checkboxChecked: false,
+    noLink: true,
+  });
+
+  if (r.response !== 0) {
+    /* Asked again next launch, because the problem is still there next launch.
+       Silencing it is the user's call to make, not ours to default to. */
+    if (r.checkboxChecked) {
+      try { fs.writeFileSync(skipMoveMarker(), new Date().toISOString() + "\n"); }
+      catch (e) { console.error("[sutra] could not write skip marker:", e && e.message); }
+    }
+    return true;
+  }
+
+  try {
+    const moved = app.moveToApplicationsFolder({
+      conflictHandler: (conflict) => {
+        if (conflict === "existsAndRunning") {
+          dialog.showErrorBox(
+            "Sutra is already open",
+            "There is already a copy of Sutra in Applications and it is running.\n\n" +
+            "Quit that one, then try again.");
+          return false;
+        }
+        return true;    /* replace an older, idle copy */
+      },
+    });
+    if (moved) return false;               /* it relaunched from Applications */
+  } catch (e) {
+    console.error("[sutra] moveToApplicationsFolder:", e && e.message);
+  }
+
+  /* Electron declined (it refuses some read-only sources). Copy by hand. */
+  try {
+    const dst = copyIntoApplications();
+    console.log("[sutra] installed to", dst);
+    app.exit(0);
+    return false;
+  } catch (e) {
+    dialog.showErrorBox(
+      "Could not move Sutra",
+      "Sutra could not copy itself into Applications:\n\n" + (e && e.message) +
+      "\n\nDrag Sutra.app to Applications in Finder, then open it from there.");
+    return true;                            /* carry on; it still works today */
+  }
+}
+
 async function boot() {
+  /* Before anything else: a copy running off the installer image can never
+     update itself, and everything below assumes it can. */
+  if (!(await ensureInstalled())) return;
   if (process.env.ANTHROPIC_API_KEY) {
     return fail("Sutra refuses to start",
       "ANTHROPIC_API_KEY is set. That routes through the API (per-token billing) " +

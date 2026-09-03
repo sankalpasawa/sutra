@@ -2,7 +2,16 @@
 
 **status**: active · **updated**: 2026-09-03
 
-## v2.239.0 (2026-09-03, HEAD)
+## v2.239.1 (2026-09-03, HEAD)
+
+Sutra now offers to install itself. Opening the app straight out of the DMG
+window works, so nothing ever tells you it was never installed -- and a disk
+image is read-only, so that copy can never update itself. It now asks once on
+launch and moves itself to Applications. The update refusal was rewritten to
+name the disk image rather than a permission bit, and both update paths check
+before downloading 240MB instead of after.
+
+## v2.239.0 (2026-09-03)
 
 Agents: a new rail destination between Chats and Routines, and its first agent, the
 SEO Writer. It indexes your site, learns how you write, researches a keyword, builds
