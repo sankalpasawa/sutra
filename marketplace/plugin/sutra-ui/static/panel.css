@@ -847,11 +847,19 @@
   .opt .oi{min-width:0;flex:1}
   .opt .on{font-size:12.5px;font-weight:600;color:var(--ink);display:flex;
            align-items:center;gap:7px;flex-wrap:wrap}
-  .opt .od{font-size:11px;color:var(--muted);margin-top:3px}
-  /* 10->11px (visual audit r5): the provider-unavailable reason was at the
-     edge of legibility in dark */
-  .opt .why{font:500 11px/1.5 var(--mono);color:var(--block);margin-top:5px;
-            white-space:normal;overflow-wrap:anywhere}
+  /* display:block is LOAD-BEARING on both of these. .oi is a plain block and
+     these are spans, so without it they flow inline and their margin-top does
+     nothing -- the status line and the detail line ran together as one
+     sentence ("Not installed on this Mac binary 'gemini' not on PATH..."),
+     reported from a screenshot 2026-09-03. .on escaped it only because it sets
+     display:flex for its pills. */
+  .opt .od{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+  /* The plain status above already says WHAT is wrong. This line is the
+     supporting detail -- usually the fix -- so it reads as secondary rather
+     than as a second, louder error: faint, not the block colour it used to
+     carry. (Was 10->11px in visual audit r5 for legibility in dark; kept.) */
+  .opt .why{display:block;font:500 11px/1.5 var(--mono);color:var(--faint);
+            margin-top:5px;white-space:normal;overflow-wrap:anywhere}
   /* ── run state ──────────────────────────────────────────────────────────
      There was previously ONE animation in this whole file, so a running turn and a
      finished one looked identical and the operator could not tell whether anything
@@ -1269,6 +1277,36 @@
   .cwdnote{padding:0 11px 8px;font-size:10.5px;color:var(--faint);line-height:1.45;
     background:var(--surface)}
   .cwdnote.bad{color:var(--block)}
+  /* Which provider wrote a transcript, in the session rail. Quiet on purpose:
+     it appears on EVERY row, so it has to read as a label rather than compete
+     with the livedot, which means something is happening right now. */
+  .provtag{display:inline-block;margin-right:5px;padding:1px 5px;border-radius:4px;
+    border:1px solid var(--line);background:var(--inset);color:var(--faint);
+    font:600 9px/1.5 var(--mono);text-transform:lowercase;vertical-align:1px}
+  .provtag.deepseek{color:var(--acc);border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
+  /* Per-session AI provider. Borrows .cwdrow's frame deliberately: it is the
+     same KIND of control -- a spawn-time property of the next message, changing
+     which drops the socket -- so it should not look like a different species. */
+  .provrow{display:flex;gap:6px;align-items:center;padding:8px 11px;
+    border-top:1px solid var(--line-soft);background:var(--surface)}
+  /* READ-ONLY since 2026-09-03. No cursor, no hover, no focus ring: this row
+     states which provider answered, it does not offer a choice. The button
+     styles (.provopt/.provclear) and the error note went with the control. */
+  .provnow{color:var(--muted);font:600 10px/1 var(--mono);padding:6px 10px;
+    border:1px solid var(--line);border-radius:6px;background:var(--inset)}
+  .provpend{color:var(--acc);font:600 10px/1.4 var(--mono)}
+  /* The switch marker. A provider change is a fact about the conversation, so
+     it reads as a thread event rather than chrome -- and a FAILED carry-over
+     carries the block colour, because a new provider answering turn 51 as
+     though it were turn 1 is the thing this marker exists to make visible. */
+  .swmark{display:flex;flex-direction:column;gap:2px;margin:8px 11px;
+    padding:8px 10px;border:1px solid var(--line);border-left:3px solid var(--acc);
+    border-radius:6px;background:var(--inset);
+    font:11px/1.45 var(--mono);color:var(--muted)}
+  .swmark b{color:var(--acc);font-weight:600}
+  .swmark.bad{border-left-color:var(--block)}
+  .swmark.bad b{color:var(--block)}
+  .swmark .swhint{color:var(--faint)}
   .modelsel:hover,.permsel:hover{color:var(--ink);border-color:var(--line)}
   .modelsel:focus-visible,.permsel:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   /* A mode that writes files without asking is not a neutral preference, and the

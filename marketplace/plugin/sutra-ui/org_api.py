@@ -1254,6 +1254,20 @@ def api_account():
     return usage.account()
 
 
+@router.get("/deepseek/usage")
+def api_deepseek_usage():
+    """DeepSeek's pay-as-you-go balance -- the equivalent fact to /usage for
+    the deepseek provider, not the same fact: no five-hour/weekly window
+    exists for a DeepSeek account, only a USD balance. Own route rather than a
+    branch inside /usage, because the two payload shapes share no fields and a
+    caller for one provider must never have to guess which keys the other left
+    null. Never 5xx: deepseek_usage.snapshot() fails open to
+    {"available": false, "reason": ...}.
+    """
+    import deepseek_usage
+    return deepseek_usage.snapshot()
+
+
 # ================================================================= repo =====
 # The repository a SESSION is in, which is not necessarily the Settings workdir --
 # see repo.py. `cwd` IS a caller-supplied path here, unlike /git/*, and is safe

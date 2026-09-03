@@ -53,11 +53,25 @@ test("the plan shows raw values beside a friendly name, or instead of one", () =
 
 test("loadUsage reads /api/account on its own route", () => {
   const i = boot.indexOf("async function loadUsage");
-  const body = boot.slice(i, boot.indexOf("render();", i));
+  // loadUsage now branches on provider (DeepSeek's own early return, which
+  // hits "render();" first) before reaching the Claude path this test pins --
+  // scope to the SECOND render() so the slice covers both branches rather
+  // than stopping inside the DeepSeek one.
+  const firstRender = boot.indexOf("render();", i);
+  const body = boot.slice(i, boot.indexOf("render();", firstRender + 1));
   assert(body.includes('apiGet("/api/account")'), "loadUsage does not fetch /api/account");
   assert(body.includes('apiGet("/api/usage")'), "loadUsage no longer fetches /api/usage");
   assert(body.indexOf('apiGet("/api/account")') < body.indexOf('apiGet("/api/usage")'),
          "account should load first");
+});
+
+test("loadUsage branches to DeepSeek's own route before the Claude path", () => {
+  const i = boot.indexOf("async function loadUsage");
+  const firstRender = boot.indexOf("render();", i);
+  const branch = boot.slice(i, firstRender);
+  assert(branch.includes('SETTINGS.provider === "deepseek"'), "no provider branch found");
+  assert(branch.includes('apiGet("/api/deepseek/usage")'), "DeepSeek branch does not call its own route");
+  assert(!branch.includes('apiGet("/api/account")'), "DeepSeek branch must not fetch the Claude account route");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

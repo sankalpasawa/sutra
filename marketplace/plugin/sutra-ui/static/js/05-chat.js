@@ -497,14 +497,15 @@ SCREENS.settings = () => {
         ${S.setBusy==="prov:"+p.id?"aria-busy=\"true\"":""}>
       <span class="rd" aria-hidden="true"></span>
       <span class="oi">
-        <span class="on">${esc(p.name)} <code>${esc(p.id)}</code>
-          ${p.default?'<span class="pill p-mut">catalog default</span>':""}
-          ${active===p.id?'<span class="pill p-ok">active</span>':""}
+        <span class="on">${esc(p.name)}
+          ${active===p.id?'<span class="pill p-ok">in use</span>':""}
           ${S.setBusy==="prov:"+p.id?'<span class="pill p-acc">saving…</span>':""}</span>
-        <span class="od">binary <code>${esc(p.bin)}</code>
-          ${p.installed?`at <code>${esc(p.bin_path||"")}</code>`:"— not on PATH"} ·
-          config <code>${esc(p.config_dir)}</code>${p.configured?"":" — absent"}</span>
-        ${p.reason?`<span class="why">unavailable: ${esc(p.reason)}</span>`:""}
+        <span class="od">${p.runnable
+            ? "Ready to use"
+            : !p.installed ? "Not installed on this Mac"
+            : !p.configured ? "Installed, but not signed in yet"
+            : "Installed, but this panel can’t talk to it yet"}</span>
+        ${p.reason?`<span class="why">${esc(p.reason)}</span>`:""}
       </span>
     </button>`;
 
@@ -540,22 +541,21 @@ SCREENS.settings = () => {
   return `
     ${banner}
     ${upd}
-    ${fold("set.prov", "Provider", esc(active||"none runnable"), `
-      <p style="margin-bottom:9px">Which AI CLI this panel drives. A provider is offered only when
-        its binary is on PATH, it has a config directory, <i>and</i> this build has an adapter for it;
-        the others stay listed, disabled, with the exact reason — so "can I use this one?" is answered
-        here rather than by a chat that fails later. Installing a CLI is not enough on its own:
-        the chat channel speaks Claude's stream-json protocol.</p>
-      <div role="radiogroup" aria-label="Provider">${PROVIDERS.map(provRow).join("")}</div>
-      <div class="kv"><b>Resolved via</b><span>${esc(st.provider_source||"—")}${
-        st.provider_stored?` · stored <code>${esc(st.provider_stored)}</code>`:""}</span></div>
+    ${fold("set.prov", "Default provider", esc(active||"none runnable"), `
+      <p style="margin-bottom:9px">Which AI answers your messages. New chats start here, and your
+        next message in any open chat moves to it too — nothing already written changes.</p>
+      <p style="margin-bottom:9px">Only the ones ready to use can be picked. The rest stay listed
+        with what is missing, so you can see whether a name is unavailable or simply not set up
+        yet — rather than finding out when a chat fails to answer.</p>
+      <div role="radiogroup" aria-label="Default provider">${PROVIDERS.map(provRow).join("")}</div>
       ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-bottom:0">
-        <b>An override was NOT honoured.</b>
-        ${st.provider_ignored.map(i=>`<div><code>${esc(i.source)}</code> asked for
-          <code>${esc(i.id)}</code> — ${esc(i.reason)}</div>`).join("")}</div>`:""}
+        <b>Your saved choice could not be used.</b>
+        ${st.provider_ignored.map(i=>`<div>You picked <b>${esc(providerLabel(i.id))}</b>,
+          but ${esc(i.reason)}</div>`).join("")}
+        <div class="swhint">Using ${esc(providerLabel(active))} instead.</div></div>`:""}
       ${PROVIDERS.filter(p=>p.runnable).length<2?`<p style="font-size:11px;color:var(--faint);margin:9px 0 0">
-        ${PROVIDERS.filter(p=>p.runnable).length} of ${PROVIDERS.length} catalogued providers can run on
-        this machine. The rest are shown above, disabled, with their reason — never silently missing.</p>`:""}`)}
+        Only ${esc(providerLabel(active))} is ready to use on this Mac right now. The others are
+        listed above with what they need — never quietly left out.</p>`:""}`)}
 
     ${fold("set.mode", "Permission mode", esc(running||"—"), `
       ${st.permission_mode_clamped?`<div class="note w"><b>The stored mode is not the one running.</b>
@@ -573,35 +573,43 @@ SCREENS.settings = () => {
         you approve each one. Choosing <code>acceptEdits</code> below removes that prompt.</div>`}
       <div role="radiogroup" aria-label="Permission mode">${PERM_MODES.map(modeRow).join("")}</div>`)}
 
-    ${fold("set.workdir", "Workdir", esc((st.workdir||"").split("/").pop()||"—"), `
-      <p style="margin-bottom:9px">The directory every session this panel starts uses as its
-        working directory. It is created if it does not exist. A change applies to the
-        <b>next</b> session — moving a running agent out from under the transcript it is
-        writing is not something this panel will do to you.</p>
+    ${fold("set.workdir", "Project folder", esc((st.workdir||"").split("/").pop()||"—"), `
+      <p style="margin-bottom:9px">The folder your AI works in. It can read and change files here,
+        and this is where anything it creates will go. If the folder does not exist yet, it is
+        made for you.</p>
+      <p style="margin-bottom:9px">A change applies to your <b>next</b> chat. A chat that is
+        already running stays where it is — moving it mid-answer would break the work it is in
+        the middle of.</p>
       <div class="wdrow">
         <input type="text" class="wdin" data-workdir-input
                value="${esc(S.workdirDraft !== null ? S.workdirDraft : (st.workdir||""))}"
                spellcheck="false" autocapitalize="off" autocorrect="off"
-               aria-label="Working directory" placeholder="~/sutra-ui-workspace">
+               aria-label="Project folder" placeholder="~/sutra-ui-workspace">
         ${dirPickerAvailable()?`<button class="btn" type="button" data-workdir-browse
           title="Choose a folder in Finder">Browse…</button>`:""}
         <button class="btn" type="button" data-workdir-save
           ${S.setBusy==="workdir"?'aria-busy="true" disabled':""}>${
-            S.setBusy==="workdir"?"Saving…":"Use this directory"}</button>
+            S.setBusy==="workdir"?"Saving…":"Use this folder"}</button>
       </div>
-      <p style="font-size:11px;color:var(--faint);margin:7px 0 9px">Must sit inside
-        <code>${esc(st.workdir_root||"~")}</code>. The chat session runs with this as its cwd, so an
-        arbitrary path would turn this panel into a read oracle over the whole disk; widen the
-        root with <code>SUTRA_UI_WORKDIR_ROOT</code> when starting the server if you need to.</p>
-      <div class="kv"><b>In force</b><span><code>${esc(st.workdir||"—")}</code></span></div>
-      <div class="kv"><b>Settings file</b><span><code>${esc(st.settings_path||"—")}</code>
-        ${st.settings_file_exists?'<span class="pill p-ok">exists</span>'
-                                 :'<span class="pill p-mut">not written yet</span>'}</span></div>
+      <p style="font-size:11px;color:var(--faint);margin:7px 0 9px">Has to be somewhere inside
+        <code>${esc(st.workdir_root||"~")}</code>. Your AI can read every file in the folder you
+        pick, so picking the top of your drive would hand it everything on this Mac.</p>
+      <div class="kv"><b>Working in</b><span><code>${esc(st.workdir||"—")}</code></span></div>
       ${Object.keys(st.invalid_stored_values||{}).length?`<div class="note w">
-        <b>Ignored values in the settings file.</b>
+        <b>Some saved settings could not be used.</b>
         ${Object.entries(st.invalid_stored_values).map(([k,v])=>
-          `<div><code>${esc(k)}</code> = <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
-        These were not silently corrected — the documented default is in force instead.</div>`:""}`)}`;
+          `<div>${esc(k.replace(/_/g," "))} — <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
+        Nothing was changed behind your back; the normal default is being used instead.</div>`:""}`)}
+    ${/* Usage lives HERE now (founder 2026-09-03), not as a nav row of its own.
+          It is a fact about the assistant you just picked -- how much of it you
+          have used, or what is left to spend -- and it changed shape with the
+          provider, so a separate destination made you cross the app to answer a
+          question this screen had just raised.
+
+          SCREENS.usage is still registered and still renders whichever shape
+          the selected provider needs, so deep links and openScreen("usage")
+          keep working; only the nav row went. */""}
+    <section class="chsec"><h3 class="sec">Usage</h3>${SCREENS.usage()}</section>`;
 };
 
 /* ── Staged department creation (§3.3). Four collapsible sections and a completion meter —
@@ -622,7 +630,7 @@ const TITLES = {
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
-  settings:["Settings","~/.sutra-ui/settings.json · PATH"],
+  settings:["AI Assistant","which assistant runs, what it may do, and where · ~/.sutra-ui/settings.json"],
   balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
   optimus:["Optimus","the daemon, visible — ~/.sutra-native/daemon · asks, routes, runs"],
   /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()
@@ -800,6 +808,88 @@ function cwdButtonHtml(sid){
         <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
       <span class="cwdn">${esc(cwdLabel(eff))}</span>
     </button>`;
+}
+/* ── AI provider, in the composer ────────────────────────────────────────────
+   Same argument as the folder control above: the provider is a property of the
+   turn you are about to send, and two sessions can legitimately want two
+   different ones. It sits here rather than only in Settings because Settings is
+   GLOBAL -- picking DeepSeek there moved every pane at once, which is not what
+   an operator who ran out of Claude credits in ONE chat is asking for.
+
+   Only providers this machine can actually run are offered. PROVIDERS carries
+   `runnable` from the server (installed AND configured AND this build has an
+   adapter), and offering a name that cannot start is the exact failure
+   providers.py was written to prevent. */
+function providerLabel(pid){
+  const p = (PROVIDERS || []).find(x => x.id === pid);
+  return p ? p.name : (pid || "default");
+}
+function providerSwitcherHtml(sid){
+  const usable = (PROVIDERS || []).filter(p => p.runnable);
+  /* NOTHING TO SAY when the machine can only run one thing. A one-item row
+     would imply a choice that does not exist, and naming the only possible
+     answer to "which provider?" is noise on every turn. */
+  if (usable.length < 2) return "";
+  /* READ-ONLY (founder direction 2026-09-03). Provider is chosen in Settings
+     and nowhere else, so this is an INDICATOR, not a control: no buttons, no
+     handlers, nothing focusable. It exists only because with two runnable
+     providers the answer to "which one am I talking to?" stops being obvious,
+     and a chat that will not say is worse than one that cannot be changed here.
+
+     Reported from the SERVER's provider frame, never from a local preference:
+     the frame is what the socket actually resolved at spawn, and the Settings
+     default can have changed since. Saying what is RUNNING is the only claim
+     this row can make honestly. */
+  const sess = (S.sessions || []).find(x => x.id === sid) || {};
+  const running = ((sess.channel || {}).id) || "";
+  if (!running) return "";        /* nothing spawned yet: no answer to give */
+  const dflt = ((SETTINGS || {}).provider) || "";
+  /* Settings changed under a live socket. The next prompt will open a new one
+     on the new provider (see the Settings handler, which drops the sockets), so
+     this states both facts rather than picking one and being half right. */
+  const pending = dflt && dflt !== running
+    ? `<span class="provpend">next message uses ${esc(providerLabel(dflt))}</span>` : "";
+  return `<div class="provrow" role="status" aria-label="AI provider">
+      <span class="provnow" title="Chosen in Settings">${esc(providerLabel(running))}</span>
+      ${pending}
+    </div>`;
+}
+/* providerOverridesHtml lived here. It listed the chats whose provider
+   differed from the Settings default -- necessary while a chat could be
+   switched from its own composer, and dead the moment selection moved to
+   Settings only (founder direction 2026-09-03): with no per-chat control there
+   are no overrides to disclose. The composer's read-only row reports what a
+   pane is actually running, which is the only divergence that can still
+   happen (a live socket outlasting a Settings change). */
+
+/* The marker the thread shows where the provider changed. Honest in both
+   directions: a switch that carried the conversation says how much of it moved,
+   and one that did not says why -- because a new provider answering turn 51 as
+   though it were turn 1 is the failure this marker exists to make visible. */
+function switchMarkerHtml(sid){
+  const f = (S.switchNote || {})[sid];
+  if (!f) return "";
+  if (!f.ok){
+    return `<div class="swmark bad" role="status">
+        <b>Provider changed to ${esc(providerLabel(f.target))}, but the earlier
+        conversation was NOT carried over.</b>
+        <span>${esc(f.detail || f.reason || "")}</span>
+        <span class="swhint">This turn ran without the earlier history.</span>
+      </div>`;
+  }
+  const dropped = Object.keys(f.dropped || {}).length
+    ? " · left out: " + Object.entries(f.dropped)
+        .map(([k, v]) => v + " " + k.replace(/_/g, " ")).join(", ")
+    : "";
+  const red = f.redactions
+    ? " · " + f.redactions + " credential" + (f.redactions === 1 ? "" : "s") + " redacted"
+    : "";
+  return `<div class="swmark" role="status">
+      <b>${esc(providerLabel(f.source))} → ${esc(providerLabel(f.target))}</b>
+      <span>turns 1–${esc(String(f.from_turn))} carried over${
+        f.tier === 2 ? " (conversation only — tool output left on disk for it to read)" : ""
+      }${esc(dropped)}${esc(red)}</span>
+    </div>`;
 }
 function cwdEditorHtml(sid){
   if (S.cwdEdit !== sid) return "";

@@ -30,8 +30,11 @@ import session_reader as sr
 import connectors_api
 import org_api
 import providers
+import chat_store
 import secrets as _secrets
 import shadow_egress
+import switch
+import switch_egress
 from session_runtime import (SessionRuntime, _drain_to_newline,
                              _tool_command, _tool_output, _tool_summary,
                              register_runtime, unregister_runtime,
@@ -1771,7 +1774,45 @@ async def ws_chat(ws: WebSocket):
     # Resolve it here instead, and REFUSE clearly rather than handing an
     # unrunnable name to create_subprocess_exec -- which fails as a socket
     # that dies mid-handshake with no text on screen.
-    detail = providers.active_provider_detail()
+    # PER-CHAT provider override (provider-switch piece 7). The global setting
+    # is the DEFAULT; one chat may run on a different provider, which is what
+    # the composer's provider control sets.
+    #
+    # WHY A QUERY PARAM AND NOT A MESSAGE FIELD: the provider decides which
+    # BINARY is spawned and which protocol the runtime speaks (Claude's
+    # stream-json vs ACP), both fixed at spawn. It is the same class of thing as
+    # cwd, and cwd is carried on the socket URL for exactly this reason -- see
+    # claudeWsUrl/setSessCwd in static/js/01-state.js. Changing it therefore
+    # drops the socket and the next message opens a new one; a per-message field
+    # would promise something this handler cannot deliver.
+    #
+    # An unrunnable or unknown request is REFUSED rather than silently falling
+    # back to the global provider: a pane that answers as Claude after the
+    # operator picked DeepSeek is worse than one that says why it cannot.
+    req_provider = (ws.query_params.get("provider") or "").strip()
+    # The durable chat this pane belongs to. Absent for every existing caller,
+    # which is what keeps this whole feature additive -- without it the handler
+    # behaves exactly as it did before piece 7.
+    sutra_id = (ws.query_params.get("sutra") or "").strip()
+
+    if req_provider:
+        want = providers.provider_by_id(req_provider)
+        if want is None:
+            await ws.send_json({"type": "error", "code": "unknown-provider",
+                "detail": "unknown provider %r -- known ids: %s"
+                          % (req_provider,
+                             ", ".join(p["id"] for p in providers.discover_providers()))})
+            await ws.close()
+            return
+        if not want["runnable"]:
+            await ws.send_json({"type": "error", "code": "provider-missing",
+                "detail": "provider %r cannot be started here: %s"
+                          % (req_provider, want["reason"])})
+            await ws.close()
+            return
+        detail = {"id": want["id"], "source": "chat", "ignored": []}
+    else:
+        detail = providers.active_provider_detail()
     active_id = detail["id"]
     if active_id is None:
         lines = ["  - %s: %s" % (p["id"], p["reason"] or "?")
@@ -1867,7 +1908,16 @@ async def ws_chat(ws: WebSocket):
         # Stated, not swallowed: the session is running somewhere other than what
         # was asked for, and a UI that showed the requested path would be lying.
         "cwd_refused": cwd_refused,
+        # Which chat this pane is bound to, echoed so the UI can confirm the
+        # server agrees with it rather than assuming.
+        "sutra_id": sutra_id or None,
     })
+
+    # Provider-switch seeding (piece 7). Armed only when the pane named a chat;
+    # consumed by the FIRST message of this connection and then cleared, because
+    # a switch happens once -- at the moment the provider changes -- and turns
+    # after it are ordinary turns on the new provider's own session.
+    seed_switch = bool(sutra_id)
 
     session_id = None
     resume_unverified = False   # session id came from the client, not from a live run
@@ -1969,6 +2019,69 @@ async def ws_chat(ws: WebSocket):
             model = payload.get("model")
             if not msg.strip():
                 continue
+
+            # ---- carry the conversation across a provider switch ------------
+            # The operator picked a different provider, the socket reopened on
+            # it, and this is the first message. The new provider knows nothing
+            # about the previous N turns, so the prior transcript is replayed to
+            # it as the first prompt and the operator's message rides along at
+            # the end (switch.plan -> switch_egress.prepare).
+            #
+            # A REFUSAL IS SURFACED, NOT SWALLOWED. Every reason switch.plan can
+            # decline -- unreadable source transcript, a payload that will not
+            # fit even without tool output, a boundary that cannot be trusted --
+            # is a thing the operator has to know, because the alternative is a
+            # new provider answering turn 51 as though it were turn 1. The turn
+            # still runs; it just runs WITHOUT the history, and says so.
+            # The operator's OWN message, kept before the replay can replace
+            # `msg` below. The chat record stores what the operator typed, not
+            # the 200KB recording that got wrapped around it -- otherwise every
+            # switch would append a copy of the entire prior conversation to the
+            # very record the next switch reads.
+            operator_msg = msg
+
+            switch_note = None
+            if seed_switch:
+                seed_switch = False   # once per connection, whatever happens
+                try:
+                    # Same resolution build_agent_args gets below; computed here
+                    # because the budget depends on WHICH model will answer
+                    # (Haiku 4.5 is 200K where its siblings are 1M) and the
+                    # payload has to be sized before it is built.
+                    plan = switch.plan(
+                        sutra_id, active_id, next_message=msg,
+                        model=(providers.clean_model(model)
+                               or providers.stored_model()))
+                    if plan.get("switch"):
+                        plan = switch_egress.prepare(plan)
+                    if plan.get("switch"):
+                        msg = plan["payload"]
+                        switch_note = {
+                            "type": "switch", "ok": True,
+                            "source": plan["source"], "target": plan["target"],
+                            "from_turn": plan["from_turn"], "tier": plan["tier"],
+                            "chars": plan["chars"],
+                            "redactions": plan.get("redaction_count", 0),
+                            "dropped": {k: v for k, v in
+                                        (plan.get("dropped") or {}).items() if v},
+                            "detail": switch.describe(plan),
+                        }
+                    elif plan.get("reason") != switch.NOT_NEEDED:
+                        switch_note = {
+                            "type": "switch", "ok": False,
+                            "reason": plan.get("reason"),
+                            "detail": plan.get("detail"),
+                            "source": plan.get("source"),
+                            "target": active_id,
+                        }
+                except Exception as exc:   # never let this kill a live turn
+                    switch_note = {"type": "switch", "ok": False,
+                                   "reason": "internal-error",
+                                   "detail": "the conversation could not be "
+                                             "carried over (%s); this turn runs "
+                                             "without it" % exc}
+            if switch_note:
+                await ws.send_json(switch_note)
             if (session_id is None and seed and isinstance(seed, str)
                     and seed not in dead_seeds
                     and "/" not in seed and ".." not in seed):
@@ -2092,6 +2205,52 @@ async def ws_chat(ws: WebSocket):
             # S23: now that the session id is known, make this runtime
             # discoverable (idempotent; same id + same rt every turn).
             register_runtime(session_id, rt)
+
+            # The segment records a session that EXISTS, which is why this is
+            # here and not next to switch.plan above: writing it before the
+            # transport returned an id would leave a from_turn pointing at a
+            # session that may never have been created, and the next reconnect
+            # would try to resume a thread that was never born. Idempotent for
+            # the same (provider, id), so calling it every turn is correct and
+            # a reconnect on the live session does not split one run in two.
+            #
+            # AND THIS IS WHERE THE CHAT ID IS MINTED. It has to be: the id is
+            # keyed to a provider-native session, and that session does not
+            # exist until the transport hands one back. The first version of
+            # this feature only sent `?sutra=` when the client ALREADY knew the
+            # id and nothing ever produced the first one -- so seed_switch was
+            # always false, switch.plan was never called, and a provider change
+            # switched the provider while silently carrying nothing. The
+            # provider swapped, the conversation did not, and no error said so.
+            # Minted server-side rather than in the browser because the id is
+            # durable state keyed on a session id only the server sees.
+            if session_id:
+                try:
+                    if not sutra_id:
+                        # Resolve first: a pane reopened on an existing session
+                        # already belongs to a chat, and creating a second
+                        # record for it would split one conversation in two.
+                        found = chat_store.resolve(active_id, session_id)
+                        if found:
+                            sutra_id = found
+                        else:
+                            rec = chat_store.create(cwd=workdir, branch="")
+                            sutra_id = rec["sutra_id"]
+                        await ws.send_json({"type": "chat", "sutra_id": sutra_id})
+                    switch.confirm(sutra_id, active_id, session_id)
+                    # The operator's turn, so turn_count -- and therefore the
+                    # `from_turn` of the NEXT segment -- is a real number rather
+                    # than permanently 0.
+                    rec = chat_store.load(sutra_id)
+                    if rec is not None:
+                        chat_store.append_turn(
+                            rec, "user", [chat_store.block_text(operator_msg)])
+                except Exception:
+                    # Bookkeeping must never take down a turn that worked. The
+                    # cost of losing it is a switch that is not recorded, which
+                    # the next connect reports as a provider mismatch rather
+                    # than corrupting anything.
+                    pass
             if session_id and providers.shadow_enabled():
                 # the watcher rides every live pane (GAP-AUDIT row 3)
                 shadow_runner.attach_observer(session_id, rt)

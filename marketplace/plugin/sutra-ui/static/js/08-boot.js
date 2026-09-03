@@ -181,6 +181,25 @@ async function rtLoadRuns(id){
    utilization figure that is quietly ten minutes stale is worse than one that
    costs a request, and the server already coalesces at 60s against a shared cache. */
 async function loadUsage(force){
+  /* Two entirely different payloads live behind this one call, gated on the
+     ACTIVE provider (SETTINGS.provider) -- not per-session, because the panel
+     only ever drives one provider's CLI at a time (providers.py
+     active_provider_detail). DeepSeek has no account concept in this build
+     (no whoami-shaped endpoint was found) and no rate-limit window, only a
+     balance -- so it gets its own state (S.deepseekUsage) and skips /api/account
+     entirely rather than rendering "not reported" rows for fields that do not
+     exist for this provider. */
+  if (SETTINGS && SETTINGS.provider === "deepseek"){
+    if (S.deepseekUsage && !force) return;
+    try {
+      S.deepseekUsage = await apiGet("/api/deepseek/usage");
+      S.deepseekUsageError = null;
+    } catch (e){
+      S.deepseekUsageError = e.message; S.deepseekUsage = null;
+    }
+    render();
+    return;
+  }
   if (S.usage && !force) return;
   /* The account rides the same open: same screen, local read, and it has to
      render when the usage endpoint cannot. Its own route rather than a field

@@ -308,6 +308,17 @@ const S = {
      the operator never chose in this one. */
   cwd:{},
   cwdEdit:null,        /* sessionId whose folder editor is open, or null */
+  /* No per-session provider override: provider is chosen in Settings and
+     nowhere else (founder direction 2026-09-03). S.provider/providerError were
+     removed with the composer control they served. */
+  /* sessionId -> sutra chat id. The DURABLE chat, which outlives any one
+     provider session: a chat that has run on Claude and then DeepSeek has two
+     native session ids and one of these. Learned from the server's provider
+     frame rather than minted here, so the two cannot disagree. */
+  sutraId:{},
+  /* sessionId -> the last switch frame the server sent, so the thread can show
+     a marker at the point the provider changed (or say why it did not). */
+  switchNote:{},
   /* Per-session actions menu (Feature A). sessMenu = the session id whose menu
      popover is open (one at a time). sessRename = the session id whose inline
      rename input is showing, or null. Pinned/unread/group are localStorage-
@@ -635,11 +646,11 @@ function railSpec(){
          org. The count is the ACTIVE window's percentage -- the one number worth
          seeing without opening anything -- and is withheld until the screen has
          been read, like Git's, so the rail never asserts a figure nobody fetched. */
-      {id:"usage",    n:"Usage",     i:"usage",
-       c:(S.usage && S.usage.available
-            ? Math.round(((S.usage.limits||[]).find(r=>r.active)
-                          || (S.usage.limits||[])[0] || {}).percent ?? NaN) || undefined
-            : undefined)},
+      /* Usage has no nav row of its own any more -- it renders inside the AI
+         Assistant screen. The entry stays because railSpec is the single source
+         for screen metadata (label, icon) and openScreen still resolves the id;
+         only the count moved, onto the row the operator can actually click. */
+      {id:"usage",    n:"Usage",     i:"usage"},
       /* Terminal is a PANE TOGGLE, not a screen -- but it belongs in the rail
          anyway. It shipped as a 19px unlabelled icon in the footer and the first
          operator to use it reported "I don't see terminal": a control nobody can
@@ -660,7 +671,15 @@ function railSpec(){
       {id:"terminal",n:"Terminal", i:"term", toggle:true},
       /* Settings is not a count -- it is provider + permission mode + workdir,
          all three of which are single values with a live server behind them. */
-      {id:"settings",n:"Settings", i:"gear"}
+      /* "AI Assistant", not "Settings": this row sits inside the Settings
+         destination, so the old label repeated its parent and told an operator
+         nothing about what was behind it. The screen configures which
+         assistant runs, what it may do without asking, and where it works. */
+      /* Carries the usage figure now that Usage is a section of this screen.
+         Provider-aware: a percentage while DeepSeek is selected would describe
+         a plan the panel is not using. See providerUsage. */
+      {id:"settings",n:"AI Assistant", i:"gear",
+       c:((providerUsage() || {}).short) ?? undefined}
     ]
   };
 }
@@ -839,6 +858,44 @@ function renderPlane(){
   setHtmlIfChanged(body, planeHtml);        /* r9: only when it changed */
 }
 
+/* The one usage figure worth showing without opening anything, for WHICHEVER
+   provider is selected.
+
+   Three surfaces render this number -- the rail badge, the footer telemetry
+   line, and the per-pane menu row -- and each of them used to derive Claude's
+   window percentage directly from S.usage. So selecting DeepSeek changed the
+   Usage SCREEN and left three "26%" readings behind it, all of them describing
+   a plan the panel was no longer using. Reported 2026-09-03 with a screenshot:
+   the screen said "USD 1.81" while the rail said 26 and the footer said "26% of
+   the usage window".
+
+   One derivation, three callers. The two providers report different KINDS of
+   fact -- a percentage of a rate-limit window versus a pay-as-you-go balance --
+   so this returns pre-phrased strings per surface rather than a number the
+   callers would have to label themselves and could label inconsistently.
+
+   Returns null when there is nothing true to show yet, which every caller
+   renders as its own kind of blank. That matches the existing rule for Claude:
+   the rail withholds a figure until the screen has been read, so it never
+   asserts a number nobody fetched. */
+function providerUsage(){
+  if (SETTINGS && SETTINGS.provider === "deepseek"){
+    const u = S.deepseekUsage;
+    const bal = u && u.available && (u.balances || [])[0];
+    if (!bal || bal.total_balance == null) return null;
+    const amt = String(bal.total_balance);
+    return { short: "$" + amt,
+             long:  (bal.currency || "USD") + " " + amt + " balance",
+             row:   "$" + amt + " balance" };
+  }
+  const u = S.usage;
+  if (!u || !u.available) return null;
+  const pct = Math.round((((u.limits || []).find(r => r.active)
+                           || (u.limits || [])[0] || {}).percent) ?? NaN);
+  if (!Number.isFinite(pct)) return null;
+  return { short: pct, long: pct + "% of the usage window", row: pct + "% used" };
+}
+
 /* Row metadata, in USER language (founder 2026-08-24: "user-friendly and
    concise"). The list endpoint reads only each .jsonl's head, so an unopened
    session has no turn count — but the file's size and the word "transcript"
@@ -852,8 +909,22 @@ function rowMeta(s){
      subagent liveness fold lands. Only active/running draw — a badge on every
      row would say nothing. */
   const running = sessionBusy(s.id);
-  const badge =
-      (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
+  /* WHICH PROVIDER WROTE THIS TRANSCRIPT. /api/sessions has always returned
+     `source` ("claude" | "deepseek", session_reader.py:124 and :244) and the
+     rail has never rendered it -- so with 30 Claude and 35 DeepSeek sessions on
+     this machine the list showed 65 indistinguishable rows. Not a livedot:
+     those mean "something is happening right now", and this is a property of
+     the file, so it gets its own quiet tag.
+
+     Both providers are labelled rather than only the non-default. There is no
+     default to be the exception to -- the two are near evenly split -- and
+     labelling one silently implies the other. */
+  const prov = s.source
+    ? `<span class="provtag ${esc(s.source)}"
+         title="This transcript was written by ${esc(s.source)}">${esc(s.source)}</span>`
+    : "";
+  const badge = prov
+    + (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
     + (!running && s.live === "active"
          ? `<span class="livedot" title="Being written right now in Claude">live</span>` : "")
     + (s.agents_live ? `<span class="livedot" title="Subagent transcripts being written right now"

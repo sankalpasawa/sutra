@@ -250,7 +250,43 @@ function wire(){
     apiPost("/api/providers/active", { id: b.dataset.prov })
       .then(r=>{ PROVIDERS = r.providers || PROVIDERS;
                  SETTINGS = r.settings || SETTINGS;
-                 S.setOk = "active provider is now " + r.active + "."; })
+                 /* THE NEW PROVIDER APPLIES TO WHATEVER YOU DO NEXT (founder
+                    direction 2026-09-03), and that is only true if the open
+                    sockets go. A socket is bound to its provider at spawn --
+                    the binary and the protocol are both fixed there -- so a
+                    message sent down an existing one would reach the OLD
+                    provider while the UI claimed otherwise.
+
+                    Dropping them here is the same move setSessProvider made
+                    before selection came back to Settings. Nothing is sent and
+                    nothing is replayed now: the next PROMPT opens a fresh
+                    socket, and the server carries that chat's history across
+                    if it had any. So a Settings change costs nothing until you
+                    actually use a chat.
+
+                    A pane mid-reply is left alone: closing it would discard a
+                    reply the operator is waiting on. That pane finishes on the
+                    old provider and moves on its next message. */
+                 let kept = 0;
+                 [...CLAUDE_SOCKETS.keys()].forEach(k=>{
+                   const sid = k.replace(/::side$/, "");
+                   if (streamingFor(sid) || sideStreamingFor(sid)){ kept++; return; }
+                   const ch = CLAUDE_SOCKETS.get(k);
+                   try { ch.ws.close(); } catch (e) {}
+                   CLAUDE_SOCKETS.delete(k);
+                 });
+                 /* REFETCH USAGE FOR THE PROVIDER WE JUST SWITCHED TO.
+                    Usage renders as a section of this very screen, and the two
+                    providers keep their figures in different state (S.usage vs
+                    S.deepseekUsage). Without this the section sat on "Reading
+                    usage…" indefinitely: nothing had asked for the new
+                    provider's numbers, and the screen-open trigger does not
+                    fire because you never left the screen. force=true because
+                    loadUsage early-returns on already-populated state, which
+                    after a switch belongs to the OTHER provider. */
+                 if (typeof loadUsage === "function") loadUsage(true);
+                 S.setOk = "new chats and your next message use " + r.active + "."
+                         + (kept ? " A chat is still replying and will move after it finishes." : ""); })
       .catch(e=>{ S.setError = e.message; })
       .then(()=>{ S.setBusy = null; render(); }); });
   scBody.querySelectorAll("[data-pmode-set]").forEach(b=>b.onclick=()=>{
@@ -354,6 +390,10 @@ function wire(){
   if(ea) ea.onclick=()=>{ S.collapsed.clear(); render(); };
   const ca=scBody.querySelector("[data-collall]");
   if(ca) ca.onclick=()=>{ live().forEach(d=>{ if(d.parent_ref) S.collapsed.add(d.ref); }); render(); };
+
+  /* No per-pane provider handlers: the row in the composer is a read-only
+     indicator (founder direction 2026-09-03). Selection lives in Settings, and
+     the socket-drop that used to happen here now happens there. */
 
   /* working directory, per session */
   panes.querySelectorAll("[data-cwdopen]").forEach(b=>b.onclick=()=>{
@@ -1088,7 +1128,10 @@ function openScreen(id){
   /* force=true: unlike a repo, utilization moves while you are not looking, and
      a stale percentage is the one number this screen must not show. The 60s
      server cache is what keeps re-opening cheap. */
-  if (id === "usage") loadUsage(true);
+  /* "settings" too: Usage renders as a section of the AI Assistant screen,
+     so opening that screen has to fetch it -- otherwise the section would
+     sit on "Reading usage..." until something else happened to load it. */
+  if (id === "usage" || id === "settings") loadUsage(true);
   if (id === "evals") loadEvals(false);     /* lazy, like Git */
   if (id === "routines"){ loadRoutines(false); loadProposals(false); }
   if (id === "teamsutra") loadTeamsutra(false);
@@ -1172,11 +1215,12 @@ function buildAccentRow(){
 function paintTelemetry(){
   const el = document.getElementById("idStat");
   if (!el) return;
-  const pct = (S.usage && S.usage.available)
-    ? Math.round((((S.usage.limits||[]).find(r=>r.active)
-                   || (S.usage.limits||[])[0] || {}).percent) ?? NaN)
-    : NaN;
-  el.textContent = Number.isFinite(pct) ? pct + "% of the usage window" : "—";
+  /* Provider-aware since 2026-09-03. This line read Claude's window
+     percentage unconditionally, so with DeepSeek selected the footer asserted
+     "26% of the usage window" for a plan the panel was not using -- while the
+     Usage screen two panes away showed a USD balance. */
+  const pu = providerUsage();
+  el.textContent = pu ? pu.long : "—";
 }
 /* ══════════════════════ bootstrap ══════════════════════
    One registry, one org, so there is no scope to settle before reading it.

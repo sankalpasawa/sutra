@@ -1091,7 +1091,12 @@ class TestApp(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("providers", body)
         ids = [p["id"] for p in body["providers"]]
-        self.assertEqual(ids, ["claude", "codex", "gemini"],
+        # deepseek joined the catalogue in a2be95d ("Add deepseek to provider
+        # catalog"); the assertion was not updated with it, so this test was
+        # red on the branch. The INTENT is unchanged -- the catalogue is a
+        # fixed, ordered list and the endpoint must return exactly it -- so the
+        # list is kept exact rather than loosened to a subset check.
+        self.assertEqual(ids, ["claude", "codex", "gemini", "deepseek"],
                          "the catalogue is fixed and ordered by precedence")
 
         for p in body["providers"]:
@@ -1314,34 +1319,56 @@ class TestApp(unittest.TestCase):
 
     # ========================================================== tenants ====
 
-    def test_52_sessions_are_real_files_under_dot_claude_projects(self):
+    def test_52_sessions_are_real_files_on_disk(self):
         """The panel used to manufacture sessions by grouping placement rows by
         path segment ("Scratchpad -- 3 turns"). Nothing like that ever existed.
         Every id this endpoint returns must be a file that is actually on
-        disk -- that is the only definition of "real" available here."""
-        import glob
+        disk -- that is the only definition of "real" available here.
+
+        TWO TREES SINCE THE DEEPSEEK PROVIDER LANDED. list_sessions now spans
+        ~/.claude/projects AND ~/.gemini/tmp/*/chats (session_reader.py:377),
+        and a DeepSeek session's id is its HEADER uuid, not its filename stem
+        (session_reader.py:535) -- so it cannot be found by globbing on the
+        name. This test asserted the Claude-only layout and was red on the
+        branch for a real DeepSeek session. The invariant is unchanged: resolve
+        each id to a file and require the reported size to be that file's.
+        Resolution goes through session_reader.resolve_path, which is the only
+        thing that knows both layouts.
+        """
+        import session_reader
         status, rows = _get("/api/sessions")
         self.assertEqual(status, 200)
         self.assertIsInstance(rows, list)
-        projects = os.path.expanduser("~/.claude/projects")
-        if not os.path.isdir(projects):
-            self.skipTest("no ~/.claude/projects on this machine")
+        if not rows:
+            self.skipTest("no sessions on this machine")
         for r in rows:
-            hits = glob.glob(os.path.join(projects, "*", r["id"] + ".jsonl"))
-            self.assertTrue(hits,
-                            "session %r is not a transcript on disk -- it was "
-                            "invented" % r["id"])
-            self.assertEqual(r["size"], os.path.getsize(hits[0]),
+            p = session_reader.resolve_path(r["id"])
+            self.assertIsNotNone(p, "session %r resolves to no file on disk -- "
+                                     "it was invented" % r["id"])
+            self.assertEqual(r["size"], os.path.getsize(p),
                              "%s: size must be the file's, not a guess" % r["id"])
-            self.assertEqual(r["project"], os.path.basename(os.path.dirname(hits[0])))
+            # The two trees nest differently: Claude is
+            # projects/<project>/<id>.jsonl and DeepSeek is
+            # tmp/<project>/chats/<file>.jsonl (session_reader.py:119 vs :221).
+            is_ds = str(p).startswith(str(session_reader.GEMINI_ROOT.resolve()))
+            self.assertEqual(r["project"],
+                             p.parent.parent.name if is_ds else p.parent.name)
             # The title must be a QUOTATION from the transcript, never
             # generated. Re-derive the candidate prompts here from the raw
             # JSONL -- independently of session_reader -- and require the
             # title to be the head of one of them.
             if r["title"] == "(no prompt)":
                 continue
+            if is_ds:
+                # The derivation below is Claude-SHAPED (type "user" with a
+                # message.content envelope). A DeepSeek record is
+                # {id, type, content} with no envelope, so running it here
+                # would assert nothing and pass for the wrong reason. The
+                # invariant is not loosened -- it needs its own DeepSeek-shaped
+                # test, which does not exist yet.
+                continue
             prompts = []
-            with io.open(hits[0], encoding="utf-8", errors="replace") as fh:
+            with io.open(p, encoding="utf-8", errors="replace") as fh:
                 for i, line in enumerate(fh):
                     if i > 400:
                         break
@@ -1386,7 +1413,7 @@ class TestApp(unittest.TestCase):
             # so this stays cheap. The invariant is unchanged in spirit: the title
             # must QUOTE the transcript. Only the set of quotable records grew.
             disk_titles = []
-            with io.open(hits[0], encoding="utf-8", errors="replace") as fh:
+            with io.open(p, encoding="utf-8", errors="replace") as fh:
                 for line in fh:
                     if "customTitle" not in line and "aiTitle" not in line:
                         continue
@@ -1471,6 +1498,159 @@ class TestApp(unittest.TestCase):
             self.assertIsNone(app_mod._ensure_workdir(f))
         finally:
             shutil.rmtree(blocker, ignore_errors=True)
+
+
+class TestChatProviderParam(unittest.TestCase):
+    """/ws/chat?provider= -- the per-chat provider override (provider-switch
+    piece 7).
+
+    The provider decides WHICH BINARY is spawned and which protocol the runtime
+    speaks, both fixed at spawn, so it is carried on the socket URL like cwd
+    rather than as a message field. Every assertion here lands BEFORE any spawn
+    (the refusals are in the handshake, and the provider frame is sent before
+    the first message), so nothing is ever billed and no CLI runs.
+    """
+
+    proc = None
+    port = None
+    tmpdir = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.mkdtemp(prefix="sutra-test-provparam-")
+        sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+        sys.path.insert(0, HERE)
+        import fixture_seed  # noqa: E402
+        fixture_seed.seed(cls.tmpdir)
+
+        cls.port = _free_port()
+        env = dict(os.environ)
+        env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        env.pop("ANTHROPIC_API_KEY", None)   # that refusal is another test's job
+        env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
+        cls.proc = subprocess.Popen(
+            [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
+             "--port", str(cls.port), "--log-level", "warning"],
+            cwd=HERE, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                urllib.request.urlopen("http://127.0.0.1:%d/api/org/stats" % cls.port, timeout=1)
+                break
+            except Exception:  # noqa: BLE001
+                time.sleep(0.25)
+        else:
+            raise RuntimeError("provider-param server did not come up")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            cls.proc.terminate()
+            try:
+                cls.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.proc.kill()
+                cls.proc.wait(timeout=5)
+        if cls.tmpdir and os.path.isdir(cls.tmpdir):
+            shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def _first_frame(self, query=""):
+        from websockets.sync.client import connect
+        url = "ws://127.0.0.1:%d/ws/chat%s" % (self.port, query)
+        with connect(url, open_timeout=10) as ws:
+            return json.loads(ws.recv(timeout=10))
+
+    def test_unknown_provider_is_refused_by_name(self):
+        """Silently falling back to the global provider would answer as Claude
+        after the operator picked something else."""
+        f = self._first_frame("?provider=not-a-provider")
+        self.assertEqual(f["type"], "error")
+        self.assertEqual(f["code"], "unknown-provider")
+        self.assertIn("not-a-provider", f["detail"])
+        self.assertIn("known ids", f["detail"])
+
+    def test_unrunnable_provider_is_refused_with_its_reason(self):
+        """A catalogued provider this machine cannot start must say WHY, not
+        fall back -- providers.py exists to prevent offering a dead choice."""
+        import providers
+        blocked = [p for p in providers.discover_providers() if not p["runnable"]]
+        if not blocked:
+            self.skipTest("every catalogued provider is runnable here")
+        f = self._first_frame("?provider=" + blocked[0]["id"])
+        self.assertEqual(f["type"], "error")
+        self.assertEqual(f["code"], "provider-missing")
+        self.assertIn(blocked[0]["id"], f["detail"])
+
+    def test_no_param_still_resolves_the_global_provider(self):
+        """The whole feature is additive: absent the new params the handshake
+        behaves exactly as it did before piece 7."""
+        f = self._first_frame()
+        self.assertEqual(f["type"], "provider")
+        self.assertIsNone(f["sutra_id"])
+        self.assertIn(f["source"], ("env", "settings", "fallback"))
+
+    def test_a_runnable_override_is_honoured_and_labelled_chat(self):
+        import providers
+        runnable = [p for p in providers.discover_providers() if p["runnable"]]
+        if not runnable:
+            self.skipTest("no runnable provider on this machine")
+        f = self._first_frame("?provider=" + runnable[0]["id"])
+        self.assertEqual(f["type"], "provider")
+        self.assertEqual(f["id"], runnable[0]["id"])
+        self.assertEqual(f["source"], "chat",
+                         "a per-chat override must be labelled as such, not as "
+                         "the global setting")
+
+    def test_the_chat_id_is_minted_server_side_not_by_the_client(self):
+        """THE BUG THIS TEST EXISTS FOR (found in live testing 2026-09-02).
+
+        ?sutra= was only ever sent when the client ALREADY knew the chat id, and
+        nothing produced the first one. So seed_switch was permanently false,
+        switch.plan was never called, and clicking a different provider swapped
+        the provider while silently carrying NO conversation across -- with no
+        error frame, because from the handler's point of view nothing had gone
+        wrong. The provider changed and the conversation did not.
+
+        The id cannot be minted in the browser: it is keyed to a
+        provider-native session id that only the server sees. So the server
+        mints it after the first turn and TELLS the client, in a "chat" frame.
+        This asserts the frame exists in the handler and that the mint is
+        wired -- a live turn would be needed to observe the frame itself, and
+        the source assertion is what keeps the wiring from being deleted.
+        """
+        src = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+        self.assertIn('"type": "chat", "sutra_id"', src,
+                      "the handler never tells the client its chat id, so a "
+                      "provider switch can never carry the conversation")
+        self.assertIn("chat_store.resolve(active_id, session_id)", src,
+                      "a reopened pane must RESOLVE to its existing chat before "
+                      "creating one, or one conversation becomes two records")
+        self.assertIn("chat_store.create(", src, "nothing mints a chat record")
+        # The mint has to sit AFTER the session id is known: it is keyed on it.
+        self.assertLess(src.index("register_runtime(session_id, rt)"),
+                        src.index('"type": "chat", "sutra_id"'),
+                        "the chat id is keyed to the native session, so it "
+                        "cannot be minted before the transport returns one")
+
+    def test_the_operator_message_is_stored_not_the_replay_payload(self):
+        """append_turn must record what the operator typed. Storing `msg` after
+        the switch block would append the whole 200KB recording to the very
+        record the next switch reads from."""
+        src = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+        self.assertIn("operator_msg = msg", src)
+        self.assertIn("chat_store.block_text(operator_msg)", src,
+                      "the chat record must store the operator's own message")
+        self.assertLess(src.index("operator_msg = msg"),
+                        src.index("switch_note = None"),
+                        "operator_msg must be captured BEFORE the replay can "
+                        "overwrite msg")
+
+    def test_the_chat_id_is_echoed_so_the_client_can_confirm_it(self):
+        f = self._first_frame("?sutra=" + ("a" * 32))
+        self.assertEqual(f["type"], "provider")
+        self.assertEqual(f["sutra_id"], "a" * 32)
 
 
 class TestChatRefusesApiKey(unittest.TestCase):
