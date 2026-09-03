@@ -540,7 +540,10 @@ const ICON = {
      already uses -- two nav rows with the same glyph are two rows nobody can
      tell apart at 14px. */
   usage:'<path d="M4.2 17a8.5 8.5 0 1115.6 0"/><path d="M12 17l4.2-5.2"/><circle cx="12" cy="17" r="1.3"/>',
-  evals:'<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8.5 12.2l2.4 2.4 4.6-5.2"/><path d="M8.5 17h7"/>'
+  evals:'<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8.5 12.2l2.4 2.4 4.6-5.2"/><path d="M8.5 17h7"/>',
+  /* Agents (2.239.0): a spark -- something that works on its own. Not the chat
+     bubble (Chats) and not the clock (Routines): three rows, three glyphs. */
+  agents:'<path d="M12 3v3.5M12 17.5V21M3 12h3.5M17.5 12H21M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/><circle cx="12" cy="12" r="2.6"/>'
 };
 /* ── Files bridge helpers ────────────────────────────────────────────────────
    A Knowledge row can open its document in Files. The path arrives from the
@@ -722,9 +725,9 @@ function sessMenuHtml(s){
    destination's rows, every one of them an EXISTING screen. railSpec() stays
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
-const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", routines:"Routines",
+const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Agents", routines:"Routines",
                      org:"Org", team:"Help", settings:"Settings" };
-const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", routines:"rout",
+const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents", routines:"rout",
                      org:"dept", team:"team", settings:"gear" };
 
 /* A destination whose plane spec is empty is FULL-BLEED: no second plane, and

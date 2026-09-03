@@ -94,11 +94,13 @@ function test(name, fn){
 }
 
 /* §model ─ S3 */
-test("model: exactly seven destinations, in the founder's order", () => {
+test("model: exactly eight destinations, in the founder's order", () => {
+  /* 2.239.0: Agents joined the rail between Chats and Routines -- the SEO Writer
+     is the first agent that works in front of you (design/GAME-PLAN-agents.md). */
   /* Seven since 2026-09-02: Routines was promoted out of Settings -> Automation
      into a destination of its own, and sits next to Chats. */
   assert.strictEqual(JSON.stringify(T.DESTS),
-    JSON.stringify(["now","focus","chats","routines","org","team","settings"]));
+    JSON.stringify(["now","focus","chats","agents","routines","org","team","settings"]));
 });
 test("model: routines is a full-bleed destination that opens its own screen", () => {
   assert.strictEqual(JSON.stringify(T.DEST_PLANES.routines), "[]");
@@ -167,11 +169,11 @@ test("planes: focus leads with Shadow, Balance + Optimus live, one honest coming
 });
 
 /* §rail ─ S7 */
-test("rail: renderRail paints seven data-dest buttons", () => {
+test("rail: renderRail paints eight data-dest buttons", () => {
   T.S.ui = T.loadLayout();
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7);
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 8);
 });
 
 /* §chats ─ S8: the Code tab's controls survive, verbatim, exactly once */
@@ -549,7 +551,7 @@ test("inline: entering Org renders its rows inside the rail with the plane's mar
   T.goDest("org");
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "still seven destinations");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 8, "still eight destinations");
   assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
   assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
   assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");

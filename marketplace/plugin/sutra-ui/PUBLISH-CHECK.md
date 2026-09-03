@@ -23,7 +23,10 @@ lane-1 backing is screenshot archaeology.
 1. node test_panel.js            # 134 — the DOM contract, in a vm
 2. node test_governance.js       # 51  — pure projections vs a real captured fan-out
 3. node test_charter_filter.js   # 31  — untouched neighbors stay green
+3b. node test_agents.js          # 24  — the Agents screen: projections vs a captured run, rendered DOM, block ids vs Python
 4. .venv/bin/python -m pytest -q # backend — collect ALL test_*.py; never a hand-typed file list (two of the old names were removed and pytest silently reported 0)
+                                  # (conftest.py excludes seo_agent/, whose scripts sys.exit at import; test_agents_api.py covers the routes)
+4b. bash seo_agent/tests/run_all.sh   # the SEO Writer engine's own checks, in a throwaway data dir
 5. QA_BACKEND=repo PLAYWRIGHT=<path> bash qa-shell/run.sh   # BOTH lanes, repo code in the REAL shell (see Bundled builds)
 
 All lanes in ONE quiesce/relaunch (codex fold 2026-08-26 — the shell,

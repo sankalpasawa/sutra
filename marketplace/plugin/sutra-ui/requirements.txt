@@ -1,3 +1,7 @@
 fastapi==0.128.8
 uvicorn==0.39.0
 websockets==15.0.1
+# The SEO Writer agent (seo_agent/). Pure-Python wheels only, so the cross-arch
+# DMG bundle can install them with --only-binary.
+httpx==0.28.1
+beautifulsoup4==4.15.0

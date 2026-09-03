@@ -1,8 +1,18 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-08-25
+**status**: active · **updated**: 2026-09-03
 
-## v2.235.4 (2026-08-26, HEAD)
+## v2.239.0 (2026-09-03, HEAD)
+
+Agents: a new rail destination between Chats and Routines, and its first agent, the
+SEO Writer. It indexes your site, learns how you write, researches a keyword, builds
+an article structure and writes the draft, stopping at four checkpoints where you
+edit or redirect before it continues; anything that costs credits asks first with the
+number. Runs on the `claude` CLI the chat already drives (subscription, no API key);
+keyword data from DataForSEO. Engine in `sutra-ui/seo_agent/`, standalone.
+(2.238.0 in between: see marketplace/plugin/CHANGELOG.md.)
+
+## v2.235.4 (2026-08-26)
 
 Provider detection: Claude Desktop is recognised as a different product from the
 Claude Code CLI (Desktop ships no `claude` binary) and the panel says what to

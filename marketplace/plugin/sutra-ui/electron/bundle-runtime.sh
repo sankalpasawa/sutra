@@ -142,7 +142,7 @@ fi
 # a missing dependency on a stranger's machine.
 "$PY" - <<'PYEOF' || die "bundled interpreter cannot import the runtime deps"
 import importlib
-for m in ("fastapi", "uvicorn", "websockets"):
+for m in ("fastapi", "uvicorn", "websockets", "httpx", "bs4"):
     mod = importlib.import_module(m)
     print("  %s %s" % (m, getattr(mod, "__version__", "?")))
 PYEOF

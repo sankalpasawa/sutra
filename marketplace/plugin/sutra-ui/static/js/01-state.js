@@ -114,7 +114,7 @@ function lsSet(key, value){
    operator scheduled and expects to see running. It sits after Chats because the
    pair is the whole picture of what is executing: chats are what you run, routines
    are what runs without you. */
-const DESTS = ["now","focus","chats","routines","org","team","settings"];
+const DESTS = ["now","focus","chats","agents","routines","org","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
      exist now so the shape is honest about what is and is not built. */
@@ -126,6 +126,10 @@ const DEST_PLANES = {
              {screen:null, label:"Daily brief",  soon:true}],
   /* chats has no screen rows: its plane hosts the session list verbatim. */
   chats:    [],
+  /* agents is full-bleed too: the Agents screen carries its own agent column
+     (the agent, its chats, its settings rows), so a second plane would only
+     repeat it. 17-agents.js owns everything inside the pane. */
+  agents:   [],
   /* routines is full-bleed: the Routines screen already carries its own
      sections (routines + proposals), so a one-row plane would be a click that
      buys nothing -- the same call Help made on 2026-08-24. */
@@ -167,7 +171,7 @@ const DEST_PLANES = {
 const DEST_INLINE = new Set(["focus","org"]);
 /* Where a destination lands before the operator has picked anything. */
 const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
-                              routines:"routines",
+                              agents:"agents", routines:"routines",
                               org:"departments", team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);

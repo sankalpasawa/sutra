@@ -123,6 +123,11 @@ app.include_router(workspace_api.router)
 # fixed-path + bounded; mutations shell the daemon CLI (desktop-token gated).
 import optimus_api
 app.include_router(optimus_api.router)
+# The Agents destination (2.239.0). Its routes live under /api/agents/<agent>/ so a
+# second agent is another prefix, not another top-level shape. The engine itself is
+# the `seo_agent` package: standalone, no import of anything in this app.
+import agents_api  # noqa: E402
+app.include_router(agents_api.router)
 HERE = Path(__file__).resolve().parent
 
 
@@ -494,7 +499,8 @@ def _asset_version() -> str:
     bump. Cheap -- a dozen stats on one page load."""
     root = HERE / "static"
     newest = 0.0
-    for p in [root / "panel.css", root / "panel.html", *sorted((root / "js").glob("*.js"))]:
+    for p in [root / "panel.css", root / "workspace.css", root / "agents.css", root / "panel.html",
+              *sorted((root / "js").glob("*.js"))]:
         try:
             m = p.stat().st_mtime
             if m > newest:

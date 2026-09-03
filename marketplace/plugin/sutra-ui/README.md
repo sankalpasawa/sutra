@@ -328,3 +328,22 @@ written pytest-style, so `unittest` collects **0** tests from it — run it with
 | `providers.py` | which AI CLIs are actually usable, and the settings file |
 | `session_reader.py` | read-only parser for `~/.claude/projects/*.jsonl` |
 | `static/panel.html` | the entire UI — no build step, no framework |
+| `agents_api.py` | the Agents destination's routes, `/api/agents/seo/*` — read a file or kick the engine's loop |
+| `seo_agent/` | the SEO Writer engine: loop, store, tools, checks, prompts. Standalone; imports nothing from this app. Its own checks: `seo_agent/tests/run_all.sh` |
+| `static/js/17-agents.js` + `static/agents.css` | the Agents screen — agent column, run log, review panel; self-mounts into the shell `SCREENS.agents` returns |
+
+## Agents
+
+**Agents** is the rail destination between Chats and Routines. The first agent is the
+**SEO Writer**: name a topic or ask for ideas, and it indexes your site, learns how you
+write, researches the keyword, builds an article structure and writes the draft, stopping
+at four checkpoints (topics, research brief, blueprint, draft) where you look, edit, or
+redirect before it continues. Anything that costs credits stops and asks first, with the
+number.
+
+| | |
+|---|---|
+| Model | the `claude` CLI the chat already drives — **billed to your Claude subscription**, never an API key. `agents_api` hands the agent the binary `providers.py` resolved. |
+| Keyword data | DataForSEO, login + password on the agent's Connections view. Without it the agent runs on clearly labelled demo numbers. |
+| Data | `~/.sutra-ui/agents/seo/` — chats, runs, artifacts, knowledge, memory, library. `connections.json` is owner-only. Never inside the bundle. |
+| Design | `design/GAME-PLAN-agents.md` |

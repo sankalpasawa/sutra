@@ -2,6 +2,36 @@
 
 **status**: active · **updated**: 2026-09-03
 
+## 2.239.0 (2026-09-03)
+
+- **Agents, and the first one: the SEO Writer.** A new rail destination between Chats and
+  Routines. Name a topic or ask for ideas; the agent indexes your website, learns how you
+  write, researches the keyword with real search numbers, builds an article structure and
+  writes the draft in your voice. It stops at four checkpoints -- topic ideas, the research
+  brief, the blueprint, the draft -- and shows each in a review panel where you pick, reorder,
+  or rewrite one paragraph at a time before it carries on. The next step reads your edited
+  file, so redirecting the agent is editing the artifact, not arguing with it.
+- **Every step is named before it is taken, and every credit asks first.** The run log reads
+  the way a colleague would report: the sentence the agent wrote before acting sits under the
+  step it took, sub-steps nest beneath it with their durations, and a failed step says what it
+  will try instead. A paid step (topic ideas, research) stops with the cost stated and does
+  nothing until you say yes; the gate is enforced by the loop, not asked of the model.
+- **Bills the subscription the chat already uses.** The agent drives the `claude` CLI that
+  `providers.py` resolves for the panel, so there is no API key anywhere and the billing
+  invariant the rest of this app refuses to break holds here too. Transient upstream errors
+  (a 529, a rate limit) are retried with backoff and never reported as a sign-in problem.
+- **Honest about its data.** Without DataForSEO credentials the agent still runs, on keyword
+  numbers labelled demo everywhere they appear. A site that refuses the crawl (a bot wall
+  returning 429 on the first request, seen live) is indexed from what it ranks for instead,
+  and the agent says plainly that it cannot learn a voice from titles.
+- **Data lives beside the panel's own.** `~/.sutra-ui/agents/seo/` holds chats, runs,
+  artifacts, knowledge, memory and the library; the DataForSEO credentials are owner-only
+  and never echoed back to the screen. Nothing is written inside the bundle.
+- Engine: `sutra-ui/seo_agent/`, a standalone package with its own 160-check suite; routes in
+  `agents_api.py` under `/api/agents/seo/`; screen in `17-agents.js` + `agents.css`, drawn
+  from Sutra's own tokens and components. `requirements.txt` gains `httpx` and
+  `beautifulsoup4`, pure-Python so the DMG bundle carries them.
+
 ## 2.238.0 (2026-09-03)
 
 - **A chat can change which AI answers it, and the conversation comes with it.** Pick a

@@ -948,6 +948,13 @@ function render(){
          the render rebuilds it fresh each pass, so setting inline here is
          authoritative for THIS paint only (learned live 2026-08-26) */
       if (wide && bp.style) bp.style.flex = "0 0 720px";
+      /* Agents (2.239.0) carries three columns of its own -- agent, conversation,
+         review panel -- so it takes the row the way a session pane would. Measured
+         at 385px beside an open chat before this: the composer was four words wide.
+         The class also drops the pane's padding (agents.css). */
+      const agw = S.screen === "agents" && !bCol;
+      bp.classList.toggle("agwide", agw);
+      if (agw && bp.style) bp.style.flex = "1 1 100%";
     }
   }
   wire();
